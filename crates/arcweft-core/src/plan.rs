@@ -1,4 +1,11 @@
 pub mod entry_inventory;
+pub mod generation_contract;
+
+pub use generation_contract::{
+    CharacterDialogueRuntimeCustomFieldDigest, RuntimeCharacterCatalogDigest,
+    RuntimeGenerationIdentity, RuntimeProducerRootId, RuntimeProjectRootId,
+    RuntimeViewCatalogDigest, RuntimeViewId,
+};
 
 use crate::effect::{LineEffectRequest, RuntimeEffectExpr};
 pub use crate::entry::{

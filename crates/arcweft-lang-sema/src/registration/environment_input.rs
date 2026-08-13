@@ -9,7 +9,7 @@ use arcweft_core::{
     entry::{RuntimeNominalTypeId, TypeLayoutHash},
     pattern::RuntimeOpaqueTypeProducerId,
 };
-use arcweft_dialogue::CharacterDialogueCustomFieldId;
+use arcweft_interaction_model::dialogue::CharacterDialogueCustomFieldId;
 use arcweft_lang_hir::symbol::ProjectSymbolWorldId;
 use arcweft_rust_abi::ArcweftRustTypeParameterIndex;
 use arcweft_source::{SourceDocumentIdentity, SourceSpan};

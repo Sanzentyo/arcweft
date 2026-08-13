@@ -12,7 +12,7 @@ use arcweft_character::{
     registration_catalog::SourceBackedCharacterCatalog,
 };
 use arcweft_core::entry::TypeLayoutHash;
-use arcweft_dialogue::CharacterDialogueCustomFieldId;
+use arcweft_interaction_model::dialogue::CharacterDialogueCustomFieldId;
 use arcweft_lang_hir::{
     database::HirDatabase,
     expr::{HirCallCallee, HirExprKind, HirSelectedMember},

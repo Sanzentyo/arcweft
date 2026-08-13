@@ -15,11 +15,12 @@ pub use character_dialogue::{
     CharacterDialogueCustomValue, CharacterDialogueFocusValue, CharacterDialogueHookValue,
     CharacterDialogueLimits, CharacterDialoguePatch, CharacterDialoguePortraitValue,
     CharacterDialogueRichTextValue, CharacterDialogueRuntimeCustomFieldCatalog,
-    CharacterDialogueRuntimeCustomFieldDescriptor, CharacterDialogueRuntimeSchema,
-    CharacterDialogueStageValue, CharacterDialogueStyleValue, CharacterDialogueType,
-    CharacterDialogueTypedValue, CharacterDialogueValue, CharacterDialogueValueError,
-    CharacterDialogueVoice, CharacterDialogueVoiceId, DialogueLocaleId,
-    PRODUCTION_CHARACTER_DIALOGUE_LIMITS, PatchField, RuntimeFieldPath, StructuredPatch,
+    CharacterDialogueRuntimeCustomFieldDescriptor, CharacterDialogueRuntimeRole,
+    CharacterDialogueRuntimeSchema, CharacterDialogueStageValue, CharacterDialogueStyleValue,
+    CharacterDialogueType, CharacterDialogueTypedValue, CharacterDialogueValue,
+    CharacterDialogueValueError, CharacterDialogueVoice, CharacterDialogueVoiceId,
+    DialogueLocaleId, PRODUCTION_CHARACTER_DIALOGUE_LIMITS, PatchField, RuntimeFieldPath,
+    StructuredPatch,
 };
 pub use inline_failure::{
     FallbackStylePolicy, InlineFailurePolicy, InlineFallback, InlineTextFailure,

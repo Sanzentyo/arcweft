@@ -6,6 +6,7 @@
 
 pub mod action;
 pub mod audio;
+pub mod dialogue;
 pub mod id;
 pub mod input;
 pub mod payload;

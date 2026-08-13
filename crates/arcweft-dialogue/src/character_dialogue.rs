@@ -16,6 +16,10 @@ use arcweft_core::{
     value::RuntimeOpaqueValueError,
 };
 use arcweft_id::TextKey;
+use arcweft_interaction_model::dialogue::CharacterDialogueCustomFieldIdError;
+pub use arcweft_interaction_model::dialogue::{
+    CharacterDialogueCustomFieldId, CharacterDialogueRuntimeRole,
+};
 use arcweft_source::SourceAnchor;
 use arcweft_view::ViewId;
 use core::hash::{Hash, Hasher};
@@ -25,8 +29,8 @@ use thiserror::Error;
 use self::limits::{MAX_LOCAL_ID_BYTES, MAX_PUBLIC_ID_BYTES};
 
 pub use identity::{
-    CharacterDialogueContractIdentity, CharacterDialogueCustomFieldId, CharacterDialogueVoice,
-    CharacterDialogueVoiceId, DialogueLocaleId,
+    CharacterDialogueContractIdentity, CharacterDialogueVoice, CharacterDialogueVoiceId,
+    DialogueLocaleId,
 };
 pub use limits::{CharacterDialogueLimits, PRODUCTION_CHARACTER_DIALOGUE_LIMITS};
 pub use patch::{CharacterDialoguePatch, PatchField, RuntimeFieldPath, StructuredPatch};
@@ -158,6 +162,21 @@ pub enum CharacterDialogueValueError {
     Nominal(#[from] arcweft_core::value::RuntimeNominalRecordError),
     #[error(transparent)]
     RuntimeSchema(#[from] arcweft_core::entry::RuntimeSchemaError),
+}
+
+impl From<CharacterDialogueCustomFieldIdError> for CharacterDialogueValueError {
+    fn from(error: CharacterDialogueCustomFieldIdError) -> Self {
+        match error {
+            CharacterDialogueCustomFieldIdError::TooLong { maximum, .. } => Self::Limit {
+                limit: "custom_field_id_bytes",
+                maximum,
+            },
+            CharacterDialogueCustomFieldIdError::Invalid { value } => Self::Identity {
+                kind: "CharacterDialogue custom field",
+                value,
+            },
+        }
+    }
 }
 
 impl CharacterDialogue {

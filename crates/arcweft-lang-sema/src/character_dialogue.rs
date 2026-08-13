@@ -3,7 +3,7 @@
 use std::collections::{BTreeMap, BTreeSet};
 
 use arcweft_core::entry::{RuntimeNominalTypeId, TypeLayoutHash};
-use arcweft_dialogue::CharacterDialogueCustomFieldId;
+use arcweft_interaction_model::dialogue::CharacterDialogueCustomFieldId;
 use arcweft_lang_syntax::ast::module_path::CanonicalModulePath;
 use arcweft_source::SourceSpan;
 use arcweft_view::ViewId;

@@ -1,8 +1,6 @@
 //! Stable identities owned by `CharacterDialogue`.
 
-use super::{
-    CharacterDialogueValueError, PRODUCTION_CHARACTER_DIALOGUE_LIMITS, limits::MAX_PUBLIC_ID_BYTES,
-};
+use super::{CharacterDialogueValueError, limits::MAX_PUBLIC_ID_BYTES};
 use arcweft_core::entry::RuntimeValueDigest;
 use arcweft_core::locale::LocaleId;
 use arcweft_id::PublicId;
@@ -34,10 +32,6 @@ pub struct CharacterDialogueVoiceId(PublicId);
 /// Canonical source-locale identity.
 #[derive(Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub struct DialogueLocaleId(LocaleId);
-
-/// Stable custom-field identity in the `character_dialogue_field.*` family.
-#[derive(Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
-pub struct CharacterDialogueCustomFieldId(PublicId);
 
 impl CharacterDialogueContractIdentity {
     #[must_use]
@@ -110,41 +104,6 @@ impl CharacterDialogueVoiceId {
     }
 }
 
-impl CharacterDialogueCustomFieldId {
-    pub fn try_new(value: impl Into<String>) -> Result<Self, CharacterDialogueValueError> {
-        let value = value.into();
-        let maximum = usize::from(PRODUCTION_CHARACTER_DIALOGUE_LIMITS.max_custom_field_id_bytes);
-        if value.len() > maximum {
-            return Err(CharacterDialogueValueError::Limit {
-                limit: "custom_field_id_bytes",
-                maximum,
-            });
-        }
-        if !value.starts_with("character_dialogue_field.") {
-            return Err(CharacterDialogueValueError::Identity {
-                kind: "CharacterDialogue custom field",
-                value,
-            });
-        }
-        PublicId::try_new(value.clone()).map(Self).map_err(|_| {
-            CharacterDialogueValueError::Identity {
-                kind: "CharacterDialogue custom field",
-                value,
-            }
-        })
-    }
-
-    #[must_use]
-    pub const fn public_id(&self) -> &PublicId {
-        &self.0
-    }
-
-    #[must_use]
-    pub fn as_str(&self) -> &str {
-        self.0.as_str()
-    }
-}
-
 impl DialogueLocaleId {
     /// Validates and canonicalizes an ASCII BCP-47 locale.
     pub fn try_new(value: impl Into<String>) -> Result<Self, CharacterDialogueValueError> {
@@ -169,12 +128,6 @@ impl DialogueLocaleId {
 }
 
 impl fmt::Display for CharacterDialogueVoiceId {
-    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
-        formatter.write_str(self.as_str())
-    }
-}
-
-impl fmt::Display for CharacterDialogueCustomFieldId {
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
         formatter.write_str(self.as_str())
     }
@@ -209,8 +162,4 @@ macro_rules! validated_string_serde {
 }
 
 validated_string_serde!(CharacterDialogueVoiceId, CharacterDialogueVoiceId::try_new);
-validated_string_serde!(
-    CharacterDialogueCustomFieldId,
-    CharacterDialogueCustomFieldId::try_new
-);
 validated_string_serde!(DialogueLocaleId, DialogueLocaleId::try_new);

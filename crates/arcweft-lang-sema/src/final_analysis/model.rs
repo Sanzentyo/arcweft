@@ -9,7 +9,7 @@ use super::{
     SemanticTypeDigest, TypeKind, TypeParameterSubstitutions,
 };
 use crate::callable::CharacterDialoguePatchContext;
-use arcweft_dialogue::CharacterDialogueCustomFieldId;
+use arcweft_interaction_model::dialogue::CharacterDialogueCustomFieldId;
 use arcweft_lang_hir::symbol::ExternalDeclarationId;
 use arcweft_source::SourceSpan;
 

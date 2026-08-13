@@ -876,6 +876,7 @@ dependencies = [
  "arcweft-character",
  "arcweft-core",
  "arcweft-id",
+ "arcweft-interaction-model",
  "arcweft-ref",
  "arcweft-resource-model",
  "arcweft-rich-text-schema",
@@ -941,6 +942,7 @@ dependencies = [
 name = "arcweft-interaction-model"
 version = "0.1.0"
 dependencies = [
+ "arcweft-id",
  "serde",
  "serde_json",
  "thiserror 2.0.18",
@@ -979,6 +981,7 @@ dependencies = [
  "arcweft-data",
  "arcweft-dialogue",
  "arcweft-id",
+ "arcweft-interaction-model",
  "arcweft-lang-hir",
  "arcweft-lang-syntax",
  "arcweft-presentation",

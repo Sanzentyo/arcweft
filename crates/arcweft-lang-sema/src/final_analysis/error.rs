@@ -1,6 +1,6 @@
 //! Publication and semantic-analysis failures.
 
-use arcweft_dialogue::CharacterDialogueCustomFieldId;
+use arcweft_interaction_model::dialogue::CharacterDialogueCustomFieldId;
 use arcweft_lang_syntax::ast::module_path::CanonicalModulePath;
 use arcweft_source::{Diagnostic, DiagnosticLabel, DiagnosticSeverity, SourceSpan};
 use thiserror::Error;
