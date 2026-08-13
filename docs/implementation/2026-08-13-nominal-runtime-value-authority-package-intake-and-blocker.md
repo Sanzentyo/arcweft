@@ -9,7 +9,7 @@ Inspected Git baseline:
 `50771a19f57f86570837f616a66252be24e77e0c` on `main`, equal to
 `origin/main`, with a clean working tree before ZIP intake and G1 editing. The
 independent G1 correction was committed as
-`1648894fba1297d1146c015b0d8a96ef5f85f6af` before this intake record.
+`1648894fbfc38ba623d1b01c6001fbd55b67b10b` before this intake record.
 
 ## Returned archive intake
 
