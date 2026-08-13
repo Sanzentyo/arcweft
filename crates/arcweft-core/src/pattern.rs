@@ -417,19 +417,20 @@ impl RuntimeCheckedType {
                 },
             ) => record.type_id() == nominal && record.layout() == *layout,
             (
-                RuntimeValue::Variant { owner, .. },
-                Self::Variant {
-                    nominal,
-                    semantic_identity,
-                    ..
+                RuntimeValue::Variant {
+                    owner,
+                    ordinal,
+                    name,
+                    payload,
                 },
-            ) => {
-                owner
-                    == &RuntimeVariantIdentity::Nominal {
-                        nominal: nominal.clone(),
-                        semantic_identity: *semantic_identity,
-                    }
-            }
+                Self::Variant { .. },
+            ) => self.accepts_nominal_variant_at_depth(
+                owner,
+                *ordinal,
+                name,
+                payload.as_deref(),
+                depth,
+            ),
             (
                 RuntimeValue::Variant {
                     owner,
@@ -462,6 +463,45 @@ impl RuntimeCheckedType {
             }
             _ => false,
         }
+    }
+
+    fn accepts_nominal_variant_at_depth(
+        &self,
+        owner: &RuntimeVariantIdentity,
+        ordinal: u32,
+        name: &str,
+        payload: Option<&RuntimeValue>,
+        depth: usize,
+    ) -> bool {
+        let Self::Variant {
+            nominal,
+            semantic_identity,
+            cases,
+        } = self
+        else {
+            return false;
+        };
+        if owner
+            != &(RuntimeVariantIdentity::Nominal {
+                nominal: nominal.clone(),
+                semantic_identity: *semantic_identity,
+            })
+        {
+            return false;
+        }
+        usize::try_from(ordinal)
+            .ok()
+            .and_then(|ordinal| cases.get(ordinal))
+            .is_some_and(|case| {
+                case.name == name
+                    && match (case.payload.as_deref(), payload) {
+                        (None, None) => true,
+                        (Some(expected), Some(actual)) => {
+                            expected.accepts_value_at_depth(actual, depth + 1)
+                        }
+                        (None, Some(_)) | (Some(_), None) => false,
+                    }
+            })
     }
 }
 
@@ -819,5 +859,96 @@ mod tests {
         };
 
         assert!(match_runtime_pattern(&pattern, &value).unwrap().is_none());
+    }
+
+    #[test]
+    fn checked_variant_requires_exact_case_and_payload_shape() {
+        let nominal = RuntimeNominalTypeId::try_new("game.Outcome").unwrap();
+        let semantic_identity = RuntimeSemanticTypeId::from_bytes([23; 32]);
+        let checked = RuntimeCheckedType::Variant {
+            nominal: nominal.clone(),
+            semantic_identity,
+            cases: vec![
+                RuntimeCheckedVariantCase {
+                    name: "Idle".to_owned(),
+                    payload: None,
+                },
+                RuntimeCheckedVariantCase {
+                    name: "Ready".to_owned(),
+                    payload: Some(Box::new(RuntimeCheckedType::Bool)),
+                },
+            ],
+        };
+        let owner = RuntimeVariantIdentity::Nominal {
+            nominal,
+            semantic_identity,
+        };
+        let value = |ordinal, name: &str, payload: Option<RuntimeValue>| RuntimeValue::Variant {
+            owner: owner.clone(),
+            ordinal,
+            name: name.to_owned(),
+            payload: payload.map(Box::new),
+        };
+
+        assert!(checked.accepts_value(&value(0, "Idle", None)));
+        assert!(checked.accepts_value(&value(1, "Ready", Some(RuntimeValue::Bool(true)))));
+        assert!(!checked.accepts_value(&value(2, "Ready", Some(RuntimeValue::Bool(true)))));
+        assert!(!checked.accepts_value(&value(1, "Idle", Some(RuntimeValue::Bool(true)))));
+        assert!(!checked.accepts_value(&value(0, "Idle", Some(RuntimeValue::Bool(true)))));
+        assert!(!checked.accepts_value(&value(1, "Ready", None)));
+        assert!(!checked.accepts_value(&value(
+            1,
+            "Ready",
+            Some(RuntimeValue::String("wrong".to_owned())),
+        )));
+        assert!(!checked.accepts_value(&RuntimeValue::Variant {
+            owner: RuntimeVariantIdentity::Nominal {
+                nominal: RuntimeNominalTypeId::try_new("game.Other").unwrap(),
+                semantic_identity,
+            },
+            ordinal: 0,
+            name: "Idle".to_owned(),
+            payload: None,
+        }));
+    }
+
+    #[test]
+    fn checked_result_and_option_require_exact_builtin_cases() {
+        let result = RuntimeCheckedType::Result {
+            ok: Box::new(RuntimeCheckedType::Bool),
+            error: Box::new(RuntimeCheckedType::String),
+        };
+        assert!(result.accepts_value(&RuntimeValue::result_ok(RuntimeValue::Bool(true))));
+        assert!(
+            result.accepts_value(&RuntimeValue::result_err(RuntimeValue::String(
+                "failed".to_owned(),
+            )))
+        );
+        assert!(
+            !result.accepts_value(&RuntimeValue::result_ok(RuntimeValue::String(
+                "wrong".to_owned(),
+            )))
+        );
+        assert!(!result.accepts_value(&RuntimeValue::Variant {
+            owner: RuntimeVariantIdentity::Result,
+            ordinal: 0,
+            name: "Err".to_owned(),
+            payload: Some(Box::new(RuntimeValue::Bool(true))),
+        }));
+
+        let option = RuntimeCheckedType::Option(Box::new(RuntimeCheckedType::Bool));
+        assert!(option.accepts_value(&RuntimeValue::option_some(RuntimeValue::Bool(true))));
+        assert!(option.accepts_value(&RuntimeValue::option_none()));
+        assert!(
+            !option.accepts_value(&RuntimeValue::option_some(RuntimeValue::String(
+                "wrong".to_owned(),
+            )))
+        );
+        assert!(!option.accepts_value(&RuntimeValue::Variant {
+            owner: RuntimeVariantIdentity::Option,
+            ordinal: 1,
+            name: "None".to_owned(),
+            payload: Some(Box::new(RuntimeValue::Bool(true))),
+        }));
     }
 }
