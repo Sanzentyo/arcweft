@@ -807,6 +807,38 @@ mod tests {
         )
     }
 
+    fn nested_nominal_variant(depth: usize) -> (RuntimeCheckedType, RuntimeValue) {
+        (0..depth).fold(
+            (RuntimeCheckedType::Bool, RuntimeValue::Bool(true)),
+            |(payload_type, payload_value), index| {
+                let nominal = RuntimeNominalTypeId::try_new(format!("game.Nested{index}"))
+                    .expect("generated nominal ID is valid");
+                let identity_byte =
+                    u8::try_from(index + 1).expect("test nesting depth fits in one byte");
+                let semantic_identity = RuntimeSemanticTypeId::from_bytes([identity_byte; 32]);
+                (
+                    RuntimeCheckedType::Variant {
+                        nominal: nominal.clone(),
+                        semantic_identity,
+                        cases: vec![RuntimeCheckedVariantCase {
+                            name: "Next".to_owned(),
+                            payload: Some(Box::new(payload_type)),
+                        }],
+                    },
+                    RuntimeValue::Variant {
+                        owner: RuntimeVariantIdentity::Nominal {
+                            nominal,
+                            semantic_identity,
+                        },
+                        ordinal: 0,
+                        name: "Next".to_owned(),
+                        payload: Some(Box::new(payload_value)),
+                    },
+                )
+            },
+        )
+    }
+
     #[test]
     fn nominal_record_pattern_resolves_name_to_layout_field_id() {
         let layout = nominal_layout();
@@ -880,7 +912,7 @@ mod tests {
             ],
         };
         let owner = RuntimeVariantIdentity::Nominal {
-            nominal,
+            nominal: nominal.clone(),
             semantic_identity,
         };
         let value = |ordinal, name: &str, payload: Option<RuntimeValue>| RuntimeValue::Variant {
@@ -893,6 +925,7 @@ mod tests {
         assert!(checked.accepts_value(&value(0, "Idle", None)));
         assert!(checked.accepts_value(&value(1, "Ready", Some(RuntimeValue::Bool(true)))));
         assert!(!checked.accepts_value(&value(2, "Ready", Some(RuntimeValue::Bool(true)))));
+        assert!(!checked.accepts_value(&value(u32::MAX, "Ready", Some(RuntimeValue::Bool(true)),)));
         assert!(!checked.accepts_value(&value(1, "Idle", Some(RuntimeValue::Bool(true)))));
         assert!(!checked.accepts_value(&value(0, "Idle", Some(RuntimeValue::Bool(true)))));
         assert!(!checked.accepts_value(&value(1, "Ready", None)));
@@ -905,6 +938,15 @@ mod tests {
             owner: RuntimeVariantIdentity::Nominal {
                 nominal: RuntimeNominalTypeId::try_new("game.Other").unwrap(),
                 semantic_identity,
+            },
+            ordinal: 0,
+            name: "Idle".to_owned(),
+            payload: None,
+        }));
+        assert!(!checked.accepts_value(&RuntimeValue::Variant {
+            owner: RuntimeVariantIdentity::Nominal {
+                nominal,
+                semantic_identity: RuntimeSemanticTypeId::from_bytes([99; 32]),
             },
             ordinal: 0,
             name: "Idle".to_owned(),
@@ -935,6 +977,24 @@ mod tests {
             name: "Err".to_owned(),
             payload: Some(Box::new(RuntimeValue::Bool(true))),
         }));
+        assert!(!result.accepts_value(&RuntimeValue::Variant {
+            owner: RuntimeVariantIdentity::Option,
+            ordinal: 0,
+            name: "Ok".to_owned(),
+            payload: Some(Box::new(RuntimeValue::Bool(true))),
+        }));
+        assert!(!result.accepts_value(&RuntimeValue::Variant {
+            owner: RuntimeVariantIdentity::Result,
+            ordinal: 2,
+            name: "Ok".to_owned(),
+            payload: Some(Box::new(RuntimeValue::Bool(true))),
+        }));
+        assert!(!result.accepts_value(&RuntimeValue::Variant {
+            owner: RuntimeVariantIdentity::Result,
+            ordinal: 0,
+            name: "Ok".to_owned(),
+            payload: None,
+        }));
 
         let option = RuntimeCheckedType::Option(Box::new(RuntimeCheckedType::Bool));
         assert!(option.accepts_value(&RuntimeValue::option_some(RuntimeValue::Bool(true))));
@@ -950,5 +1010,139 @@ mod tests {
             name: "None".to_owned(),
             payload: Some(Box::new(RuntimeValue::Bool(true))),
         }));
+        assert!(!option.accepts_value(&RuntimeValue::Variant {
+            owner: RuntimeVariantIdentity::Result,
+            ordinal: 1,
+            name: "None".to_owned(),
+            payload: None,
+        }));
+        assert!(!option.accepts_value(&RuntimeValue::Variant {
+            owner: RuntimeVariantIdentity::Option,
+            ordinal: 0,
+            name: "None".to_owned(),
+            payload: Some(Box::new(RuntimeValue::Bool(true))),
+        }));
+        assert!(!option.accepts_value(&RuntimeValue::Variant {
+            owner: RuntimeVariantIdentity::Option,
+            ordinal: 2,
+            name: "None".to_owned(),
+            payload: None,
+        }));
+    }
+
+    #[test]
+    fn checked_choice_selects_only_a_complete_exact_variant() {
+        let semantic_identity = RuntimeSemanticTypeId::from_bytes([26; 32]);
+        let first_nominal = RuntimeNominalTypeId::try_new("game.FirstChoice").unwrap();
+        let second_nominal = RuntimeNominalTypeId::try_new("game.SecondChoice").unwrap();
+        let choice = RuntimeCheckedType::Choice(vec![
+            RuntimeCheckedType::Variant {
+                nominal: first_nominal.clone(),
+                semantic_identity,
+                cases: vec![RuntimeCheckedVariantCase {
+                    name: "First".to_owned(),
+                    payload: None,
+                }],
+            },
+            RuntimeCheckedType::Variant {
+                nominal: second_nominal.clone(),
+                semantic_identity,
+                cases: vec![RuntimeCheckedVariantCase {
+                    name: "Second".to_owned(),
+                    payload: None,
+                }],
+            },
+        ]);
+        let value = |nominal, name: &str| RuntimeValue::Variant {
+            owner: RuntimeVariantIdentity::Nominal {
+                nominal,
+                semantic_identity,
+            },
+            ordinal: 0,
+            name: name.to_owned(),
+            payload: None,
+        };
+
+        assert!(choice.accepts_value(&value(second_nominal.clone(), "Second")));
+        assert!(!choice.accepts_value(&value(second_nominal, "First")));
+        assert!(!choice.accepts_value(&value(
+            RuntimeNominalTypeId::try_new("game.ForeignChoice").unwrap(),
+            "First",
+        )));
+        assert!(!choice.accepts_value(&value(first_nominal, "Second")));
+    }
+
+    #[test]
+    fn checked_nominal_variant_respects_the_shared_nesting_limit() {
+        let (at_limit_type, at_limit_value) =
+            nested_nominal_variant(crate::value::MAX_RUNTIME_VALUE_NESTING_DEPTH);
+        assert!(at_limit_type.accepts_value(&at_limit_value));
+
+        let (over_limit_type, over_limit_value) =
+            nested_nominal_variant(crate::value::MAX_RUNTIME_VALUE_NESTING_DEPTH + 1);
+        assert!(!over_limit_type.accepts_value(&over_limit_value));
+    }
+
+    #[test]
+    fn checked_inline_failure_recurses_into_the_fallback_variant() {
+        let fallback_nominal =
+            RuntimeNominalTypeId::try_new("arcweft.dialogue.InlineFallback").unwrap();
+        let fallback_semantic_identity = RuntimeSemanticTypeId::from_bytes([24; 32]);
+        let fallback_type = RuntimeCheckedType::Variant {
+            nominal: fallback_nominal.clone(),
+            semantic_identity: fallback_semantic_identity,
+            cases: vec![RuntimeCheckedVariantCase {
+                name: "ValuePlain".to_owned(),
+                payload: None,
+            }],
+        };
+        let failure_nominal =
+            RuntimeNominalTypeId::try_new("arcweft.dialogue.InlineFailurePolicy").unwrap();
+        let failure_semantic_identity = RuntimeSemanticTypeId::from_bytes([25; 32]);
+        let failure_type = RuntimeCheckedType::Variant {
+            nominal: failure_nominal.clone(),
+            semantic_identity: failure_semantic_identity,
+            cases: vec![
+                RuntimeCheckedVariantCase {
+                    name: "FailLine".to_owned(),
+                    payload: None,
+                },
+                RuntimeCheckedVariantCase {
+                    name: "Discard".to_owned(),
+                    payload: None,
+                },
+                RuntimeCheckedVariantCase {
+                    name: "Fallback".to_owned(),
+                    payload: Some(Box::new(fallback_type)),
+                },
+            ],
+        };
+        let fallback_owner = RuntimeVariantIdentity::Nominal {
+            nominal: fallback_nominal,
+            semantic_identity: fallback_semantic_identity,
+        };
+        let fallback = RuntimeValue::Variant {
+            owner: fallback_owner.clone(),
+            ordinal: 0,
+            name: "ValuePlain".to_owned(),
+            payload: None,
+        };
+        let failure = |payload| RuntimeValue::Variant {
+            owner: RuntimeVariantIdentity::Nominal {
+                nominal: failure_nominal.clone(),
+                semantic_identity: failure_semantic_identity,
+            },
+            ordinal: 2,
+            name: "Fallback".to_owned(),
+            payload: Some(Box::new(payload)),
+        };
+
+        assert!(failure_type.accepts_value(&failure(fallback.clone())));
+        assert!(!failure_type.accepts_value(&failure(RuntimeValue::Variant {
+            owner: fallback_owner,
+            ordinal: 0,
+            name: "Text".to_owned(),
+            payload: None,
+        })));
     }
 }
