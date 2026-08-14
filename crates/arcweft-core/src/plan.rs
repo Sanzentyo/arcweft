@@ -1,6 +1,7 @@
 pub mod entry_inventory;
 pub mod generation_contract;
 mod local_declarations;
+mod type_kind;
 
 pub use generation_contract::{
     CharacterDialogueRuntimeCustomFieldDigest, RuntimeCharacterCatalogDigest,
@@ -11,6 +12,7 @@ pub use local_declarations::{
     RuntimeLocalDeclarationTable, RuntimeLocalDeclarationTableBuilder,
     RuntimeLocalDeclarationTableError,
 };
+pub use type_kind::{RuntimeOperationalType, RuntimePlanTypeKind};
 
 use crate::effect::{LineEffectRequest, RuntimeEffectExpr};
 pub use crate::entry::{

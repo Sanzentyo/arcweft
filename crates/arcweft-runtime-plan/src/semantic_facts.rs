@@ -28,8 +28,8 @@ use arcweft_core::pattern::{
 };
 use arcweft_core::plan::{
     FlowRuntimeId, RuntimeIteratorEvidence, RuntimeLineId, RuntimeLocalDeclarationTable,
-    RuntimeLocalDeclarationTableBuilder, RuntimeLocalDeclarationTableError, RuntimeReceiverMode,
-    RuntimeTraitMethodId,
+    RuntimeLocalDeclarationTableBuilder, RuntimeLocalDeclarationTableError, RuntimeOperationalType,
+    RuntimePlanTypeKind, RuntimeReceiverMode, RuntimeTraitMethodId,
 };
 use arcweft_core::runtime_id::RuntimeLocalDeclarationId;
 use arcweft_core::step::RuntimeHostCallMode;
@@ -258,6 +258,33 @@ impl RuntimeNormalizedType {
         self.checked_type_at(&RuntimeTypeProjectionPath::root())
     }
 
+    /// Selects the final runtime representation for this normalized type.
+    ///
+    /// Complete checked shapes retain their exact checked predicate. When a
+    /// checked projection reaches an operational descendant, the normalized
+    /// root selects its closed execution family. Nominal and opaque validation
+    /// failures remain errors rather than being reclassified.
+    pub fn runtime_plan_type_kind(
+        &self,
+    ) -> Result<RuntimePlanTypeKind, RuntimeCheckedTypeProjectionError> {
+        self.classify_runtime_plan_type_projection(self.checked_type())
+    }
+
+    fn classify_runtime_plan_type_projection(
+        &self,
+        projection: Result<RuntimeCheckedType, RuntimeCheckedTypeProjectionError>,
+    ) -> Result<RuntimePlanTypeKind, RuntimeCheckedTypeProjectionError> {
+        match projection {
+            Ok(checked) => Ok(RuntimePlanTypeKind::Checked(checked)),
+            Err(error @ RuntimeCheckedTypeProjectionError::UnsupportedRuntimeShape { .. }) => self
+                .shape
+                .operational_type()
+                .map(RuntimePlanTypeKind::Operational)
+                .ok_or(error),
+            Err(error) => Err(error),
+        }
+    }
+
     fn checked_type_at(
         &self,
         path: &RuntimeTypeProjectionPath,
@@ -386,6 +413,42 @@ impl RuntimeNormalizedType {
             semantic_identity: self.identity(),
             path: path.clone(),
             shape,
+        }
+    }
+}
+
+impl RuntimeTypeShape {
+    fn operational_type(&self) -> Option<RuntimeOperationalType> {
+        match self {
+            Self::Range(_) => Some(RuntimeOperationalType::Range),
+            Self::Iterator(_) => Some(RuntimeOperationalType::Iterator),
+            Self::Sequence { .. } | Self::Array { .. } => Some(RuntimeOperationalType::Sequence),
+            Self::Tuple(_) => Some(RuntimeOperationalType::Tuple),
+            Self::Choice(_) => Some(RuntimeOperationalType::Choice),
+            Self::Result { .. } => Some(RuntimeOperationalType::Result),
+            Self::Option(_) => Some(RuntimeOperationalType::Option),
+            Self::Map { .. } => Some(RuntimeOperationalType::Map),
+            Self::Need { .. } => Some(RuntimeOperationalType::Need),
+            Self::Stream { .. } => Some(RuntimeOperationalType::Stream),
+            Self::Source { .. } => Some(RuntimeOperationalType::Source),
+            Self::ThreadHandle(_) => Some(RuntimeOperationalType::ThreadHandle),
+            Self::Shared(_) => Some(RuntimeOperationalType::Shared),
+            Self::Reference(_) => Some(RuntimeOperationalType::Reference),
+            Self::Function { .. } => Some(RuntimeOperationalType::Function),
+            Self::Never
+            | Self::Unit
+            | Self::Bool
+            | Self::Signed(_)
+            | Self::Unsigned(_)
+            | Self::F32
+            | Self::F64
+            | Self::String
+            | Self::Char
+            | Self::Bytes
+            | Self::Duration
+            | Self::EntityReference
+            | Self::ProjectNominal { .. }
+            | Self::Opaque { .. } => None,
         }
     }
 }

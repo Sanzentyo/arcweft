@@ -1,9 +1,13 @@
 use std::{collections::BTreeMap, sync::Arc};
 
+use arcweft_core::entry::{RuntimeNominalTypeId, TypeLayoutHash};
 use arcweft_core::pattern::{
-    RuntimeCheckedType, RuntimeOpaqueTypeAdmission, RuntimeOpaqueTypeProducerId,
+    RuntimeCheckedType, RuntimeOpaqueTypeAdmission, RuntimeOpaqueTypeOwner,
+    RuntimeOpaqueTypeProducerId,
 };
-use arcweft_core::plan::{FlowRuntimeId, RuntimeLineId};
+use arcweft_core::plan::{
+    FlowRuntimeId, RuntimeLineId, RuntimeOperationalType, RuntimePlanTypeKind,
+};
 use arcweft_core::value::RuntimeValue;
 use arcweft_lang_hir::database::HirDatabase;
 use arcweft_lang_hir::dialogue_application::HirPostfixBracketCandidates;
@@ -22,9 +26,9 @@ use super::{
     RuntimeCallResultShape, RuntimeCheckedTypeProjectionError, RuntimePlanSemanticFactInput,
     RuntimePlanSemanticFacts, RuntimeReductionConstructor, RuntimeRegisteredValueId,
     RuntimeResolvedCall, RuntimeResolvedCallArgument, RuntimeResolvedCallTarget,
-    RuntimeResolvedValue, RuntimeResolvedVariant, RuntimeSemanticFactFamily,
-    RuntimeSemanticFactsError, RuntimeSemanticTypeId, RuntimeTypeProjectionStep, RuntimeTypeShape,
-    RuntimeUnsupportedTypeShape,
+    RuntimeResolvedNominalError, RuntimeResolvedValue, RuntimeResolvedVariant,
+    RuntimeSemanticFactFamily, RuntimeSemanticFactsError, RuntimeSemanticTypeId,
+    RuntimeSequenceKind, RuntimeTypeProjectionStep, RuntimeTypeShape, RuntimeUnsupportedTypeShape,
 };
 
 fn project_fixture(label: &str, source: &str) -> HirProject {
@@ -157,10 +161,19 @@ fn entity_reference(project: &HirProject) -> arcweft_lang_hir::identity::ExprId 
 }
 
 fn unit_type() -> super::RuntimeNormalizedType {
-    super::RuntimeNormalizedType::new(
-        RuntimeSemanticTypeId::from_bytes([0x11; 32]),
-        RuntimeTypeShape::Unit,
-    )
+    normalized_type(0x11, RuntimeTypeShape::Unit)
+}
+
+fn normalized_type(marker: u8, shape: RuntimeTypeShape) -> super::RuntimeNormalizedType {
+    super::RuntimeNormalizedType::new(RuntimeSemanticTypeId::from_bytes([marker; 32]), shape)
+}
+
+fn boxed_unit_type() -> Box<super::RuntimeNormalizedType> {
+    Box::new(unit_type())
+}
+
+fn unsupported_range_type() -> super::RuntimeNormalizedType {
+    normalized_type(0x70, RuntimeTypeShape::Range(boxed_unit_type()))
 }
 
 fn complete_type_input(project: &HirProject) -> RuntimePlanSemanticFactInput {
@@ -531,6 +544,249 @@ fn duplicate_pattern_types_are_rejected_before_publication() {
             family: RuntimeSemanticFactFamily::PatternType,
         },
     );
+}
+
+#[test]
+fn every_direct_operational_shape_selects_its_closed_plan_family() {
+    let cases = vec![
+        (
+            RuntimeTypeShape::Range(boxed_unit_type()),
+            RuntimeUnsupportedTypeShape::Range,
+            RuntimeOperationalType::Range,
+        ),
+        (
+            RuntimeTypeShape::Iterator(boxed_unit_type()),
+            RuntimeUnsupportedTypeShape::Iterator,
+            RuntimeOperationalType::Iterator,
+        ),
+        (
+            RuntimeTypeShape::Map {
+                key: boxed_unit_type(),
+                value: boxed_unit_type(),
+            },
+            RuntimeUnsupportedTypeShape::Map,
+            RuntimeOperationalType::Map,
+        ),
+        (
+            RuntimeTypeShape::Need {
+                ready: boxed_unit_type(),
+                error: boxed_unit_type(),
+            },
+            RuntimeUnsupportedTypeShape::Need,
+            RuntimeOperationalType::Need,
+        ),
+        (
+            RuntimeTypeShape::Stream {
+                item: boxed_unit_type(),
+                error: boxed_unit_type(),
+            },
+            RuntimeUnsupportedTypeShape::Stream,
+            RuntimeOperationalType::Stream,
+        ),
+        (
+            RuntimeTypeShape::Source {
+                item: boxed_unit_type(),
+                error: boxed_unit_type(),
+            },
+            RuntimeUnsupportedTypeShape::Source,
+            RuntimeOperationalType::Source,
+        ),
+        (
+            RuntimeTypeShape::ThreadHandle(boxed_unit_type()),
+            RuntimeUnsupportedTypeShape::ThreadHandle,
+            RuntimeOperationalType::ThreadHandle,
+        ),
+        (
+            RuntimeTypeShape::Shared(boxed_unit_type()),
+            RuntimeUnsupportedTypeShape::Shared,
+            RuntimeOperationalType::Shared,
+        ),
+        (
+            RuntimeTypeShape::Reference(boxed_unit_type()),
+            RuntimeUnsupportedTypeShape::Reference,
+            RuntimeOperationalType::Reference,
+        ),
+        (
+            RuntimeTypeShape::Function {
+                parameters: vec![unit_type()].into_boxed_slice(),
+                result: boxed_unit_type(),
+            },
+            RuntimeUnsupportedTypeShape::Function,
+            RuntimeOperationalType::Function,
+        ),
+    ];
+
+    for (index, (shape, unsupported, operational)) in cases.into_iter().enumerate() {
+        let marker = 0x30_u8 + u8::try_from(index).expect("bounded operational fixture");
+        let identity = RuntimeSemanticTypeId::from_bytes([marker; 32]);
+        let normalized = super::RuntimeNormalizedType::new(identity, shape);
+        assert_eq!(
+            normalized.checked_type(),
+            Err(RuntimeCheckedTypeProjectionError::UnsupportedRuntimeShape {
+                semantic_identity: identity,
+                path: super::RuntimeTypeProjectionPath::root(),
+                shape: unsupported,
+            })
+        );
+        assert_eq!(
+            normalized.runtime_plan_type_kind(),
+            Ok(RuntimePlanTypeKind::Operational(operational))
+        );
+    }
+}
+
+#[test]
+fn nested_operational_descendants_select_their_outer_composite_family() {
+    let cases = vec![
+        (
+            RuntimeTypeShape::Sequence {
+                kind: RuntimeSequenceKind::Vec,
+                item: Box::new(unsupported_range_type()),
+            },
+            RuntimeTypeProjectionStep::SequenceItem,
+            RuntimeOperationalType::Sequence,
+        ),
+        (
+            RuntimeTypeShape::Array {
+                item: Box::new(unsupported_range_type()),
+                length: 1,
+            },
+            RuntimeTypeProjectionStep::SequenceItem,
+            RuntimeOperationalType::Sequence,
+        ),
+        (
+            RuntimeTypeShape::Tuple(vec![unsupported_range_type()].into_boxed_slice()),
+            RuntimeTypeProjectionStep::TupleItem(0),
+            RuntimeOperationalType::Tuple,
+        ),
+        (
+            RuntimeTypeShape::Choice(vec![unsupported_range_type()].into_boxed_slice()),
+            RuntimeTypeProjectionStep::ChoiceAlternative(0),
+            RuntimeOperationalType::Choice,
+        ),
+        (
+            RuntimeTypeShape::Result {
+                value: Box::new(unsupported_range_type()),
+                error: boxed_unit_type(),
+            },
+            RuntimeTypeProjectionStep::ResultOk,
+            RuntimeOperationalType::Result,
+        ),
+        (
+            RuntimeTypeShape::Option(Box::new(unsupported_range_type())),
+            RuntimeTypeProjectionStep::OptionItem,
+            RuntimeOperationalType::Option,
+        ),
+    ];
+
+    for (index, (shape, step, operational)) in cases.into_iter().enumerate() {
+        let marker = 0x80_u8 + u8::try_from(index).expect("bounded composite fixture");
+        let normalized = normalized_type(marker, shape);
+        assert_eq!(
+            normalized.checked_type(),
+            Err(RuntimeCheckedTypeProjectionError::UnsupportedRuntimeShape {
+                semantic_identity: RuntimeSemanticTypeId::from_bytes([0x70; 32]),
+                path: super::RuntimeTypeProjectionPath::root().pushed(step),
+                shape: RuntimeUnsupportedTypeShape::Range,
+            })
+        );
+        assert_eq!(
+            normalized.runtime_plan_type_kind(),
+            Ok(RuntimePlanTypeKind::Operational(operational))
+        );
+    }
+}
+
+#[test]
+fn complete_checked_composites_retain_their_exact_checked_predicate() {
+    let normalized = normalized_type(
+        0x90,
+        RuntimeTypeShape::Result {
+            value: Box::new(normalized_type(
+                0x91,
+                RuntimeTypeShape::Option(boxed_unit_type()),
+            )),
+            error: Box::new(normalized_type(
+                0x92,
+                RuntimeTypeShape::Sequence {
+                    kind: RuntimeSequenceKind::Seq,
+                    item: Box::new(normalized_type(0x93, RuntimeTypeShape::Bool)),
+                },
+            )),
+        },
+    );
+
+    assert_eq!(
+        normalized.runtime_plan_type_kind(),
+        Ok(RuntimePlanTypeKind::Checked(RuntimeCheckedType::Result {
+            ok: Box::new(RuntimeCheckedType::Option(Box::new(
+                RuntimeCheckedType::Unit
+            ))),
+            error: Box::new(RuntimeCheckedType::Sequence(Box::new(
+                RuntimeCheckedType::Bool
+            ))),
+        }))
+    );
+}
+
+#[test]
+fn opaque_and_nominal_checked_results_remain_atomic_checked_types() {
+    let opaque_identity = RuntimeSemanticTypeId::from_bytes([0xa0; 32]);
+    let producer = RuntimeOpaqueTypeProducerId::try_new("fixture.runtime-plan.atomic-opaque")
+        .expect("valid fixture producer");
+    let opaque = super::RuntimeNormalizedType::new(
+        opaque_identity,
+        RuntimeTypeShape::Opaque {
+            producer: producer.clone(),
+            admission: RuntimeOpaqueTypeAdmission::ExactIdentity,
+        },
+    );
+    assert_eq!(
+        opaque.runtime_plan_type_kind(),
+        Ok(RuntimePlanTypeKind::Checked(RuntimeCheckedType::Opaque {
+            owner: RuntimeOpaqueTypeOwner::exact(producer, opaque_identity),
+        }))
+    );
+
+    let nominal = RuntimeCheckedType::Nominal {
+        nominal: RuntimeNominalTypeId::try_new("fixture.runtime-plan.AtomicNominal")
+            .expect("valid fixture nominal"),
+        semantic_identity: RuntimeSemanticTypeId::from_bytes([0xa1; 32]),
+        layout: TypeLayoutHash::from_bytes([0xa2; 32]),
+    };
+    // Project nominal declaration IDs are intentionally issued outside this
+    // crate. Exercise the exact successful projection result here without
+    // adding a forgeable nominal constructor solely for a unit test.
+    assert_eq!(
+        unit_type().classify_runtime_plan_type_projection(Ok(nominal.clone())),
+        Ok(RuntimePlanTypeKind::Checked(nominal))
+    );
+}
+
+#[test]
+fn non_unsupported_projection_errors_are_returned_unchanged() {
+    let identity = RuntimeSemanticTypeId::from_bytes([0xb0; 32]);
+    let errors = [
+        RuntimeCheckedTypeProjectionError::MissingOpaqueProducerEvidence {
+            semantic_identity: identity,
+            path: super::RuntimeTypeProjectionPath::root(),
+            type_label: "fixture.missing-opaque".to_owned(),
+        },
+        RuntimeCheckedTypeProjectionError::InvalidProjectNominal {
+            semantic_identity: identity,
+            path: super::RuntimeTypeProjectionPath::root(),
+            reason: RuntimeResolvedNominalError::InvalidIdentity(
+                RuntimeNominalTypeId::try_new("").expect_err("empty nominal is invalid"),
+            ),
+        },
+    ];
+
+    for error in errors {
+        assert_eq!(
+            unit_type().classify_runtime_plan_type_projection(Err(error.clone())),
+            Err(error)
+        );
+    }
 }
 
 #[test]
