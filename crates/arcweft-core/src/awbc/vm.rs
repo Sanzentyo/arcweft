@@ -13,10 +13,11 @@ use super::fiber::{
 use super::schema::{
     AwbcBinaryOp, AwbcBlockId, AwbcCodeLocation, AwbcConstant, AwbcConstantId, AwbcContentUnitId,
     AwbcEffectPlanId, AwbcFunctionId, AwbcInstruction, AwbcInstructionId, AwbcIntrinsicId,
-    AwbcOpcode, AwbcPattern, AwbcPatternId, AwbcProgram, AwbcPureHelperId, AwbcRegisterId,
-    AwbcResumePointId, AwbcRuntimeType, AwbcSignedIntKind, AwbcSourceMapId, AwbcSourcePlanId,
-    AwbcStreamPlanId, AwbcStringId, AwbcTaskPlanId, AwbcTerminator, AwbcTraitMethodId,
-    AwbcTraitReceiverMode, AwbcTrapCode, AwbcTypeId, AwbcUnaryOp, AwbcUnsignedIntKind,
+    AwbcOpcode, AwbcPattern, AwbcPatternId, AwbcPatternRest, AwbcProgram, AwbcPureHelperId,
+    AwbcRegisterId, AwbcResumePointId, AwbcRuntimeType, AwbcSignedIntKind, AwbcSourceMapId,
+    AwbcSourcePlanId, AwbcStreamPlanId, AwbcStringId, AwbcTaskPlanId, AwbcTerminator,
+    AwbcTraitMethodId, AwbcTraitReceiverMode, AwbcTrapCode, AwbcTypeId, AwbcUnaryOp,
+    AwbcUnsignedIntKind,
 };
 use crate::task::NeedId;
 use crate::time::LogicalDuration;
@@ -1576,7 +1577,7 @@ pub(crate) fn test_pattern(
             owner_matches
                 && match value {
                     RuntimeValue::Record(values) => {
-                        (*rest || values.len() == fields.len())
+                        rest.accepts_len(fields.len(), values.len())
                             && fields.iter().all(|field| {
                                 values.get(field.field as usize).is_some_and(|value| {
                                     test_pattern(program, field.pattern, value.value())
@@ -1585,7 +1586,7 @@ pub(crate) fn test_pattern(
                             })
                     }
                     RuntimeValue::NominalRecord(record) => {
-                        (*rest || record.fields().len() == fields.len())
+                        rest.accepts_len(fields.len(), record.fields().len())
                             && fields.iter().all(|field| {
                                 record
                                     .fields()
@@ -1598,8 +1599,8 @@ pub(crate) fn test_pattern(
                     _ => false,
                 }
         }
-        AwbcPattern::Sequence { items, .. } => {
-            matches!(value, RuntimeValue::Seq(sequence) if sequence.len() >= items.len() && items.iter().enumerate().all(|(index, pattern)| test_pattern(program, *pattern, &sequence.value_at(index)).unwrap_or(false)))
+        AwbcPattern::Sequence { items, rest } => {
+            matches!(value, RuntimeValue::Seq(sequence) if rest.accepts_len(items.len(), sequence.len()) && items.iter().enumerate().all(|(index, pattern)| test_pattern(program, *pattern, &sequence.value_at(index)).unwrap_or(false)))
         }
         AwbcPattern::Variant {
             ty,
@@ -1621,25 +1622,36 @@ pub(crate) fn bind_pattern(
     pattern: AwbcPatternId,
     value: &RuntimeValue,
 ) -> Result<(), VmError> {
+    if !test_pattern(program, pattern, value)? {
+        return Err(VmError::Runtime("pattern did not match".to_owned()));
+    }
+    bind_tested_pattern(program, fiber, pattern, value)
+}
+
+/// Applies a pattern graph only after the complete root has matched.
+///
+/// Keeping all writes behind the root pretest makes binding atomic with
+/// respect to ordinary mismatch: no child register can be written before a
+/// later exact-length, literal, or type predicate fails.
+fn bind_tested_pattern(
+    program: &AwbcProgram,
+    fiber: &mut FiberState,
+    pattern: AwbcPatternId,
+    value: &RuntimeValue,
+) -> Result<(), VmError> {
     let pattern_record = program
         .patterns
         .get(pattern.index())
         .ok_or(VmError::MissingPattern(pattern))?
         .clone();
     match pattern_record {
-        AwbcPattern::Bind {
-            target, expected, ..
-        } => {
-            if expected
-                .is_some_and(|expected| !runtime_value_matches_type(program, value, expected, 0))
-            {
-                return Err(VmError::Runtime("pattern did not match".to_owned()));
-            }
+        AwbcPattern::Bind { target, .. } => {
             fiber
                 .active_frame_mut()?
                 .set_register(target, value.clone())?;
         }
-        AwbcPattern::Whole { target, .. } => {
+        AwbcPattern::Whole { target, inner } => {
+            bind_tested_pattern(program, fiber, inner, value)?;
             fiber
                 .active_frame_mut()?
                 .set_register(target, value.clone())?;
@@ -1647,7 +1659,7 @@ pub(crate) fn bind_pattern(
         AwbcPattern::Tuple(children) => {
             if let RuntimeValue::Tuple(values) = value {
                 for (child, value) in children.into_iter().zip(values) {
-                    bind_pattern(program, fiber, child, value)?;
+                    bind_tested_pattern(program, fiber, child, value)?;
                 }
             }
         }
@@ -1655,26 +1667,23 @@ pub(crate) fn bind_pattern(
             if let RuntimeValue::Seq(sequence) = value {
                 let item_count = items.len();
                 for (index, child) in items.iter().copied().enumerate() {
-                    bind_pattern(program, fiber, child, &sequence.value_at(index))?;
+                    bind_tested_pattern(program, fiber, child, &sequence.value_at(index))?;
                 }
-                if let Some(rest) = rest {
+                if let AwbcPatternRest::Bind(rest) = rest {
                     fiber
                         .active_frame_mut()?
                         .set_register(rest, RuntimeValue::Seq(sequence.tail_from(item_count)))?;
                 }
             }
         }
-        AwbcPattern::Record { fields, .. } => {
-            if !test_pattern(program, pattern, value)? {
-                return Err(VmError::Runtime("pattern did not match".to_owned()));
-            }
+        AwbcPattern::Record { fields, rest, .. } => {
             match value {
                 RuntimeValue::Record(values) => {
                     for field in fields {
                         let value = values.get(field.field as usize).ok_or_else(|| {
                             VmError::Runtime("record pattern field is absent".to_owned())
                         })?;
-                        bind_pattern(program, fiber, field.pattern, value.value())?;
+                        bind_tested_pattern(program, fiber, field.pattern, value.value())?;
                     }
                 }
                 RuntimeValue::NominalRecord(record) => {
@@ -1682,17 +1691,30 @@ pub(crate) fn bind_pattern(
                         let value = record.fields().get(field.field as usize).ok_or_else(|| {
                             VmError::Runtime("record pattern field is absent".to_owned())
                         })?;
-                        bind_pattern(program, fiber, field.pattern, value)?;
+                        bind_tested_pattern(program, fiber, field.pattern, value)?;
                     }
                 }
                 _ => unreachable!("record pattern was tested before binding"),
             }
-        }
-        _ => {
-            if !test_pattern(program, pattern, value)? {
-                return Err(VmError::Runtime("pattern did not match".to_owned()));
+            if let AwbcPatternRest::Bind(rest) = rest {
+                fiber
+                    .active_frame_mut()?
+                    .set_register(rest, value.clone())?;
             }
         }
+        AwbcPattern::Variant { payload, .. } => {
+            if let (
+                Some(pattern),
+                RuntimeValue::Variant {
+                    payload: Some(value),
+                    ..
+                },
+            ) = (payload, value)
+            {
+                bind_tested_pattern(program, fiber, pattern, value)?;
+            }
+        }
+        AwbcPattern::Discard | AwbcPattern::Literal(_) | AwbcPattern::Entity(_) => {}
     }
     Ok(())
 }

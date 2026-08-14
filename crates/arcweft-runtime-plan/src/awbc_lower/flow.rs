@@ -4,7 +4,7 @@ use crate::awbc_lower::expr::AwbcExprLowerer;
 use crate::awbc_lower::frame::FrameBuilder;
 use crate::awbc_lower::inventory::{AwbcInventory, AwbcLowerDiagnostic};
 use crate::awbc_lower::line::AwbcLineLowerer;
-use crate::awbc_lower::pattern::lower_pattern;
+use crate::awbc_lower::pattern::{lower_pattern, pattern_binding_names};
 use crate::awbc_lower::{table_index, table_range_len};
 use arcweft_core::audio::RuntimeAudioCommand;
 use arcweft_core::awbc::schema::{
@@ -1802,7 +1802,7 @@ impl EntryParameterCollector {
                 else_ops,
             } => {
                 self.collect_expr(expr);
-                let names = pattern_names(pattern);
+                let names = pattern_binding_names(pattern);
                 self.collect_with_declared(&names, |this| {
                     this.collect_optional_expr(guard.as_ref());
                     this.collect_ops(then_ops);
@@ -1812,7 +1812,7 @@ impl EntryParameterCollector {
             FlowOp::Match { scrutinee, arms } => {
                 self.collect_expr(scrutinee);
                 for arm in arms {
-                    let names = pattern_names(&arm.pattern);
+                    let names = pattern_binding_names(&arm.pattern);
                     self.collect_with_declared(&names, |this| {
                         this.collect_optional_expr(arm.guard.as_ref());
                         this.collect_ops(&arm.ops);
@@ -1838,7 +1838,7 @@ impl EntryParameterCollector {
                 body,
             } => {
                 self.collect_expr(expr);
-                let names = pattern_names(pattern);
+                let names = pattern_binding_names(pattern);
                 self.collect_with_declared(&names, |this| {
                     this.collect_optional_expr(guard.as_ref());
                     this.collect_ops(body);
@@ -1851,7 +1851,7 @@ impl EntryParameterCollector {
                 ..
             } => {
                 self.collect_expr(source);
-                let names = pattern_names(pattern);
+                let names = pattern_binding_names(pattern);
                 self.collect_with_declared(&names, |this| this.collect_ops(body));
             }
             FlowOp::LetScope {
@@ -2108,7 +2108,7 @@ impl EntryParameterCollector {
         else_expr: &RuntimeExpr,
     ) {
         self.collect_expr(expr);
-        let names = pattern_names(pattern);
+        let names = pattern_binding_names(pattern);
         self.collect_with_declared(&names, |this| {
             this.collect_optional_expr(guard);
             this.collect_expr(then_expr);
@@ -2123,7 +2123,7 @@ impl EntryParameterCollector {
     ) {
         self.collect_expr(scrutinee);
         for arm in arms {
-            let names = pattern_names(&arm.pattern);
+            let names = pattern_binding_names(&arm.pattern);
             self.collect_with_declared(&names, |this| {
                 this.collect_optional_expr(arm.guard.as_ref());
                 this.collect_expr(&arm.value);
@@ -2172,43 +2172,12 @@ impl EntryParameterCollector {
     }
 
     fn declare_pattern(&mut self, pattern: &RuntimePattern) {
-        self.declared.extend(pattern_names(pattern));
+        self.declared.extend(pattern_binding_names(pattern));
     }
 
     fn parameter(&mut self, name: &str) {
         if !self.declared.contains(name) && self.seen_parameters.insert(name.to_owned()) {
             self.parameters.push(name.to_owned());
-        }
-    }
-}
-
-fn pattern_names(pattern: &RuntimePattern) -> Vec<String> {
-    match pattern {
-        RuntimePattern::Ident(name)
-        | RuntimePattern::MutIdent(name)
-        | RuntimePattern::Typed { name, .. } => vec![name.clone()],
-        RuntimePattern::Whole { name, pattern } => {
-            let mut names = vec![name.clone()];
-            names.extend(pattern_names(pattern));
-            names
-        }
-        RuntimePattern::Tuple(patterns) => patterns.iter().flat_map(pattern_names).collect(),
-        RuntimePattern::Record { fields, .. } => fields
-            .iter()
-            .flat_map(|field| pattern_names(&field.pattern))
-            .collect(),
-        RuntimePattern::BracketSeq { items, rest } => {
-            let mut names = items.iter().flat_map(pattern_names).collect::<Vec<_>>();
-            if let Some(rest) = rest {
-                names.push(rest.clone());
-            }
-            names
-        }
-        RuntimePattern::Variant { payload, .. } => {
-            payload.as_deref().map_or_else(Vec::new, pattern_names)
-        }
-        RuntimePattern::Discard | RuntimePattern::Literal(_) | RuntimePattern::Entity(_) => {
-            Vec::new()
         }
     }
 }

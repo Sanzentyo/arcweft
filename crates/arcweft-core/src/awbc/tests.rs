@@ -12,7 +12,7 @@ use crate::pattern::{
     RuntimeOpaqueTypeProducerId, RuntimeSemanticTypeId,
 };
 use crate::plan::{FlowRuntimeId, RuntimeFlowTargetError};
-use crate::value::{RuntimeFunctionValue, RuntimeValue};
+use crate::value::{RuntimeFunctionValue, RuntimeValue, runtime_sequence_values};
 
 fn test_flow_binding(label: &str, function: u32) -> AwbcFlowBinding {
     AwbcFlowBinding {
@@ -62,6 +62,281 @@ fn minimal_program() -> AwbcProgram {
         }],
         ..AwbcProgram::default()
     }
+}
+
+#[test]
+fn pattern_rest_modes_roundtrip_in_the_schema_one_codec() {
+    let patterns = vec![
+        AwbcPattern::Record {
+            ty: None,
+            fields: Vec::new(),
+            rest: AwbcPatternRest::Exact,
+        },
+        AwbcPattern::Record {
+            ty: None,
+            fields: Vec::new(),
+            rest: AwbcPatternRest::Ignore,
+        },
+        AwbcPattern::Record {
+            ty: None,
+            fields: Vec::new(),
+            rest: AwbcPatternRest::Bind(AwbcRegisterId(3)),
+        },
+        AwbcPattern::Sequence {
+            items: Vec::new(),
+            rest: AwbcPatternRest::Exact,
+        },
+        AwbcPattern::Sequence {
+            items: Vec::new(),
+            rest: AwbcPatternRest::Ignore,
+        },
+        AwbcPattern::Sequence {
+            items: Vec::new(),
+            rest: AwbcPatternRest::Bind(AwbcRegisterId(5)),
+        },
+    ];
+    let program = AwbcProgram {
+        patterns: patterns.clone(),
+        ..AwbcProgram::default()
+    };
+
+    let encoded = program.encode_canonical().unwrap();
+    let decoded = AwbcProgram::decode_canonical(&encoded, AwbcDecodeBudget::default()).unwrap();
+
+    assert_eq!(AWBC_CODEC_VERSION, 1);
+    assert_eq!(decoded.patterns, patterns);
+}
+
+#[test]
+fn verifier_rejects_duplicate_binding_targets_across_pattern_rest() {
+    let mut program = minimal_program();
+    program.runtime_types = vec![AwbcRuntimeType::Dynamic, AwbcRuntimeType::Bool];
+    program.signatures[0].params = vec![AwbcTypeId(0)];
+    program.frame_layouts[0] = AwbcFrameLayout {
+        slots: vec![
+            AwbcFrameSlot {
+                name: None,
+                ty: AwbcTypeId(0),
+                role: AwbcFrameSlotRole::Parameter,
+                scope_depth: 0,
+            },
+            AwbcFrameSlot {
+                name: None,
+                ty: AwbcTypeId(0),
+                role: AwbcFrameSlotRole::Local,
+                scope_depth: 0,
+            },
+            AwbcFrameSlot {
+                name: None,
+                ty: AwbcTypeId(1),
+                role: AwbcFrameSlotRole::Temporary,
+                scope_depth: 0,
+            },
+        ],
+        max_scope_depth: 0,
+    };
+    program.patterns = vec![
+        AwbcPattern::Bind {
+            target: AwbcRegisterId(1),
+            mutable: false,
+            expected: None,
+        },
+        AwbcPattern::Sequence {
+            items: vec![AwbcPatternId(0)],
+            rest: AwbcPatternRest::Bind(AwbcRegisterId(1)),
+        },
+    ];
+    program.instructions = vec![AwbcInstruction::TestPattern {
+        dst: AwbcRegisterId(2),
+        pattern: AwbcPatternId(1),
+        value: AwbcRegisterId(0),
+    }];
+    program.blocks[0].instructions = AwbcTableRange::new(0, 1);
+
+    assert_eq!(
+        program.verify(AwbcVerifyBudget::default(), AwbcVerifyContext::default()),
+        Err(AwbcVerifyError::DuplicatePatternBindingTarget {
+            pattern: 1,
+            register: 1,
+        })
+    );
+}
+
+#[test]
+fn verifier_tracks_dynamic_record_children_before_the_rest_binding() {
+    let mut program = minimal_program();
+    program.runtime_types = vec![AwbcRuntimeType::Dynamic];
+    program.signatures[0].params = vec![AwbcTypeId(0)];
+    program.frame_layouts[0] = AwbcFrameLayout {
+        slots: vec![
+            AwbcFrameSlot {
+                name: None,
+                ty: AwbcTypeId(0),
+                role: AwbcFrameSlotRole::Parameter,
+                scope_depth: 0,
+            },
+            AwbcFrameSlot {
+                name: None,
+                ty: AwbcTypeId(0),
+                role: AwbcFrameSlotRole::Local,
+                scope_depth: 0,
+            },
+            AwbcFrameSlot {
+                name: None,
+                ty: AwbcTypeId(0),
+                role: AwbcFrameSlotRole::Local,
+                scope_depth: 0,
+            },
+            AwbcFrameSlot {
+                name: None,
+                ty: AwbcTypeId(0),
+                role: AwbcFrameSlotRole::Temporary,
+                scope_depth: 0,
+            },
+        ],
+        max_scope_depth: 0,
+    };
+    program.patterns = vec![
+        AwbcPattern::Bind {
+            target: AwbcRegisterId(1),
+            mutable: false,
+            expected: None,
+        },
+        AwbcPattern::Record {
+            ty: None,
+            fields: vec![AwbcRecordPatternField {
+                field: 0,
+                pattern: AwbcPatternId(0),
+            }],
+            rest: AwbcPatternRest::Bind(AwbcRegisterId(2)),
+        },
+    ];
+    program.instructions = vec![
+        AwbcInstruction::BindPattern {
+            pattern: AwbcPatternId(1),
+            value: AwbcRegisterId(0),
+            mode: AwbcBindMode::Declare,
+        },
+        AwbcInstruction::Move {
+            dst: AwbcRegisterId(3),
+            src: AwbcRegisterId(1),
+        },
+        AwbcInstruction::Move {
+            dst: AwbcRegisterId(3),
+            src: AwbcRegisterId(2),
+        },
+    ];
+    program.blocks[0].instructions = AwbcTableRange::new(0, 3);
+
+    program
+        .verify(AwbcVerifyBudget::default(), AwbcVerifyContext::default())
+        .unwrap();
+}
+
+#[test]
+fn vm_pretests_before_writes_and_binds_record_and_sequence_rests_last() {
+    let mut program = minimal_program();
+    program.runtime_types = vec![AwbcRuntimeType::Dynamic];
+    program.frame_layouts[0] = AwbcFrameLayout {
+        slots: (0..3)
+            .map(|_| AwbcFrameSlot {
+                name: None,
+                ty: AwbcTypeId(0),
+                role: AwbcFrameSlotRole::Local,
+                scope_depth: 0,
+            })
+            .collect(),
+        max_scope_depth: 0,
+    };
+    program.constants = vec![AwbcConstant::Bool(true)];
+    program.patterns = vec![
+        AwbcPattern::Bind {
+            target: AwbcRegisterId(0),
+            mutable: false,
+            expected: None,
+        },
+        AwbcPattern::Literal(AwbcConstantId(0)),
+        AwbcPattern::Tuple(vec![AwbcPatternId(0), AwbcPatternId(1)]),
+        AwbcPattern::Sequence {
+            items: vec![AwbcPatternId(0)],
+            rest: AwbcPatternRest::Bind(AwbcRegisterId(1)),
+        },
+        AwbcPattern::Record {
+            ty: None,
+            fields: vec![AwbcRecordPatternField {
+                field: 0,
+                pattern: AwbcPatternId(0),
+            }],
+            rest: AwbcPatternRest::Bind(AwbcRegisterId(2)),
+        },
+        AwbcPattern::Sequence {
+            items: Vec::new(),
+            rest: AwbcPatternRest::Exact,
+        },
+        AwbcPattern::Sequence {
+            items: Vec::new(),
+            rest: AwbcPatternRest::Ignore,
+        },
+        AwbcPattern::Record {
+            ty: None,
+            fields: Vec::new(),
+            rest: AwbcPatternRest::Exact,
+        },
+        AwbcPattern::Record {
+            ty: None,
+            fields: Vec::new(),
+            rest: AwbcPatternRest::Ignore,
+        },
+    ];
+    let mut fiber = FiberState::for_entry(&program, AwbcEntryId(0), 0, 64).unwrap();
+    fiber
+        .active_frame_mut()
+        .unwrap()
+        .set_register(AwbcRegisterId(0), RuntimeValue::String("old".to_owned()))
+        .unwrap();
+
+    let mismatch = RuntimeValue::Tuple(vec![RuntimeValue::i64(1), RuntimeValue::Bool(false)]);
+    super::vm::bind_pattern(&program, &mut fiber, AwbcPatternId(2), &mismatch)
+        .expect_err("a later literal mismatch rejects the complete pattern");
+    assert_eq!(
+        fiber
+            .active_frame()
+            .unwrap()
+            .register(AwbcRegisterId(0))
+            .unwrap(),
+        &RuntimeValue::String("old".to_owned())
+    );
+
+    let sequence = runtime_sequence_values(vec![RuntimeValue::i64(1), RuntimeValue::i64(2)]);
+    super::vm::bind_pattern(&program, &mut fiber, AwbcPatternId(3), &sequence).unwrap();
+    assert_eq!(
+        fiber
+            .active_frame()
+            .unwrap()
+            .register(AwbcRegisterId(1))
+            .unwrap(),
+        &runtime_sequence_values(vec![RuntimeValue::i64(2)])
+    );
+
+    let record = RuntimeValue::try_record(vec![
+        ("first".to_owned(), RuntimeValue::i64(3)),
+        ("second".to_owned(), RuntimeValue::i64(4)),
+    ])
+    .unwrap();
+    super::vm::bind_pattern(&program, &mut fiber, AwbcPatternId(4), &record).unwrap();
+    assert_eq!(
+        fiber
+            .active_frame()
+            .unwrap()
+            .register(AwbcRegisterId(2))
+            .unwrap(),
+        &record
+    );
+
+    assert!(!super::vm::test_pattern(&program, AwbcPatternId(5), &sequence).unwrap());
+    assert!(super::vm::test_pattern(&program, AwbcPatternId(6), &sequence).unwrap());
+    assert!(!super::vm::test_pattern(&program, AwbcPatternId(7), &record).unwrap());
+    assert!(super::vm::test_pattern(&program, AwbcPatternId(8), &record).unwrap());
 }
 
 #[test]

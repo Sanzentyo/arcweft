@@ -1,6 +1,6 @@
 //! Runtime-pattern projection from the accepted final-HIR generation.
 
-use arcweft_core::pattern::{RuntimePattern, RuntimeRecordPatternField};
+use arcweft_core::pattern::{RuntimePattern, RuntimePatternRest, RuntimeRecordPatternField};
 use arcweft_lang_hir::identity::{LocalId, PatternId};
 use arcweft_lang_hir::module::HirModule;
 use arcweft_lang_hir::pattern::{
@@ -106,7 +106,7 @@ impl<'hir> FinalPatternLowerer<'hir> {
                     }
                 };
                 let mut lowered = Vec::with_capacity(fields.len());
-                let mut rest = false;
+                let mut rest = RuntimePatternRest::Exact;
                 for field in fields {
                     match field {
                         HirPatternField::Explicit { name, pattern } => {
@@ -122,12 +122,10 @@ impl<'hir> FinalPatternLowerer<'hir> {
                             });
                         }
                         HirPatternField::Rest { binding } => {
-                            if binding.is_some() {
-                                return Err(format!(
-                                    "record pattern {id:?} has a bound rest, which the runtime pattern algebra cannot preserve"
-                                ));
-                            }
-                            rest = true;
+                            rest = match binding {
+                                None => RuntimePatternRest::Ignore,
+                                Some(local) => RuntimePatternRest::Bind(self.local_name(*local)?),
+                            };
                         }
                         HirPatternField::Invalid { .. } => {
                             return Err(format!("record pattern {id:?} has an invalid field"));
@@ -146,8 +144,11 @@ impl<'hir> FinalPatternLowerer<'hir> {
                     .map(|element| self.lower(*element))
                     .collect::<Result<Vec<_>, _>>()?;
                 let rest = match rest {
-                    HirPatternSequenceRest::Absent | HirPatternSequenceRest::Unbound => None,
-                    HirPatternSequenceRest::Bound(local) => Some(self.local_name(*local)?),
+                    HirPatternSequenceRest::Absent => RuntimePatternRest::Exact,
+                    HirPatternSequenceRest::Unbound => RuntimePatternRest::Ignore,
+                    HirPatternSequenceRest::Bound(local) => {
+                        RuntimePatternRest::Bind(self.local_name(*local)?)
+                    }
                     HirPatternSequenceRest::Recovered(_) => {
                         return Err(format!(
                             "bracket-sequence pattern {id:?} has a recovered rest"

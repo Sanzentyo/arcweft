@@ -2,7 +2,7 @@ use super::*;
 use arcweft_core::awbc::fiber::FiberState;
 use arcweft_core::awbc::schema::{
     AwbcConstant, AwbcEffectKind, AwbcEntryId, AwbcEntryTarget, AwbcFunctionId, AwbcInstruction,
-    AwbcProgram, AwbcRuntimeType, AwbcTerminator, AwbcTrapCode,
+    AwbcPattern, AwbcPatternRest, AwbcProgram, AwbcRuntimeType, AwbcTerminator, AwbcTrapCode,
 };
 use arcweft_core::awbc::vm::{self, VmError, VmExit, VmHost, VmObservation, VmStepOptions};
 use arcweft_core::effect::{LineEffectRequest, RuntimeCall};
@@ -10,8 +10,8 @@ use arcweft_core::entry::{EntryBindingIdentity, RuntimeCallableId, RuntimeEntryR
 use arcweft_core::entry::{RuntimeNominalTypeId, TypeLayoutHash};
 use arcweft_core::pattern::{
     RuntimeCheckedType, RuntimeCheckedVariantCase, RuntimeOpaqueTypeAdmission,
-    RuntimeOpaqueTypeOwner, RuntimeOpaqueTypeProducerId, RuntimePattern, RuntimeSemanticTypeId,
-    RuntimeVariantIdentity,
+    RuntimeOpaqueTypeOwner, RuntimeOpaqueTypeProducerId, RuntimePattern, RuntimePatternRest,
+    RuntimeRecordPatternField, RuntimeSemanticTypeId, RuntimeVariantIdentity,
 };
 use arcweft_core::plan::{
     EntryRuntimeId, FlowOp, FlowRuntimeId, RuntimeEntryKind, RuntimeEntrySpec, RuntimeEntryTarget,
@@ -36,6 +36,91 @@ fn lower_plan(plan: &RuntimePlan) -> AwbcLowerReport {
     )
     .lower()
     .expect("AWBC lowers runtime plan")
+}
+
+#[test]
+fn pattern_rest_projection_preserves_modes_and_allocates_children_before_rest() {
+    let mut inventory = AwbcInventory::new("test.arcw", AwbcLowerOptions::default());
+    inventory.intern_runtime_primitives();
+    let mut frame = FrameBuilder::new();
+    let record = RuntimePattern::Record {
+        nominal_layout: None,
+        fields: vec![RuntimeRecordPatternField {
+            name: "first".to_owned(),
+            pattern: RuntimePattern::Ident("field".to_owned()),
+        }],
+        rest: RuntimePatternRest::Bind("record".to_owned()),
+    };
+    let record_id = super::pattern::lower_pattern(&mut inventory, &mut frame, &record);
+    let exact_id = super::pattern::lower_pattern(
+        &mut inventory,
+        &mut frame,
+        &RuntimePattern::BracketSeq {
+            items: Vec::new(),
+            rest: RuntimePatternRest::Exact,
+        },
+    );
+    let ignore_id = super::pattern::lower_pattern(
+        &mut inventory,
+        &mut frame,
+        &RuntimePattern::BracketSeq {
+            items: Vec::new(),
+            rest: RuntimePatternRest::Ignore,
+        },
+    );
+    let whole = RuntimePattern::Whole {
+        name: "whole".to_owned(),
+        pattern: Box::new(RuntimePattern::Ident("inner".to_owned())),
+    };
+    let whole_id = super::pattern::lower_pattern(&mut inventory, &mut frame, &whole);
+    let program = inventory.finish();
+
+    let AwbcPattern::Record { fields, rest, .. } = &program.patterns[record_id.index()] else {
+        panic!("record pattern remains a record");
+    };
+    let AwbcPattern::Bind { target: child, .. } = program.patterns[fields[0].pattern.index()]
+    else {
+        panic!("record field binding remains a binding");
+    };
+    let AwbcPatternRest::Bind(rest) = rest else {
+        panic!("record rest remains a binding rest");
+    };
+    assert!(
+        child.0 < rest.0,
+        "child registers are allocated before rest"
+    );
+    assert!(matches!(
+        program.patterns[exact_id.index()],
+        AwbcPattern::Sequence {
+            rest: AwbcPatternRest::Exact,
+            ..
+        }
+    ));
+    assert!(matches!(
+        program.patterns[ignore_id.index()],
+        AwbcPattern::Sequence {
+            rest: AwbcPatternRest::Ignore,
+            ..
+        }
+    ));
+    let AwbcPattern::Whole { target, inner } = &program.patterns[whole_id.index()] else {
+        panic!("whole pattern remains a whole binding");
+    };
+    let AwbcPattern::Bind {
+        target: inner_target,
+        ..
+    } = &program.patterns[inner.index()]
+    else {
+        panic!("whole child remains a binding");
+    };
+    assert!(
+        inner_target.0 < target.0,
+        "whole child registers are allocated before the whole binding"
+    );
+    assert_eq!(
+        super::pattern::pattern_binding_names(&whole),
+        ["inner".to_owned(), "whole".to_owned()]
+    );
 }
 
 fn entry_id(value: &str) -> EntryRuntimeId {

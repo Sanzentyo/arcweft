@@ -33,6 +33,8 @@ pub enum RuntimePatternBindingStep {
     SequenceRest,
     /// The binding is below the sole payload edge of a selected variant case.
     VariantPayload,
+    /// The binding consumes the original complete record value.
+    RecordRest,
 }
 
 /// A validated non-empty path from one pattern root to a local binding.
@@ -48,9 +50,9 @@ pub enum RuntimePatternBindingPathError {
     TooDeep { actual: usize, maximum: usize },
     #[error("a whole-value binding step must be the sole path step")]
     WholeNotExclusive,
-    #[error("a sequence-rest binding step must be unique")]
+    #[error("a rest binding step must be unique")]
     DuplicateRest,
-    #[error("a sequence-rest binding step must be terminal")]
+    #[error("a rest binding step must be terminal")]
     RestNotTerminal,
 }
 
@@ -76,7 +78,11 @@ impl RuntimePatternBindingPath {
             .iter()
             .enumerate()
             .filter_map(|(index, step)| {
-                (*step == RuntimePatternBindingStep::SequenceRest).then_some(index)
+                matches!(
+                    step,
+                    RuntimePatternBindingStep::SequenceRest | RuntimePatternBindingStep::RecordRest
+                )
+                .then_some(index)
             })
             .collect::<Box<[_]>>();
         if rest_positions.len() > 1 {
@@ -161,6 +167,7 @@ impl RuntimePatternBindingCoordinate {
                 }
                 RuntimePatternBindingStep::SequenceRest => bytes.push(4),
                 RuntimePatternBindingStep::VariantPayload => bytes.push(5),
+                RuntimePatternBindingStep::RecordRest => bytes.push(6),
             }
         }
         bytes
@@ -190,6 +197,7 @@ impl RuntimePatternBindingCoordinate {
                 3 => RuntimePatternBindingStep::SequenceElement(reader.u32()?),
                 4 => RuntimePatternBindingStep::SequenceRest,
                 5 => RuntimePatternBindingStep::VariantPayload,
+                6 => RuntimePatternBindingStep::RecordRest,
                 tag => return Err(RuntimePatternBindingWireError::UnknownStepTag { tag }),
             });
         }
@@ -306,6 +314,20 @@ mod tests {
             RuntimePatternBindingCoordinate::decode(&expected, &locals),
             Ok(coordinate)
         );
+
+        let record_rest = RuntimePatternBindingCoordinate::try_new(
+            local,
+            RuntimePatternBindingPath::try_from_steps([RuntimePatternBindingStep::RecordRest])
+                .expect("record rest is a terminal binding path"),
+            &locals,
+        )
+        .expect("local belongs to table");
+        let expected_record_rest = [1, 1, 0, 0, 0, 1, 6];
+        assert_eq!(record_rest.encode(), expected_record_rest);
+        assert_eq!(
+            RuntimePatternBindingCoordinate::decode(&expected_record_rest, &locals),
+            Ok(record_rest)
+        );
     }
 
     #[test]
@@ -324,7 +346,7 @@ mod tests {
         assert_eq!(
             RuntimePatternBindingPath::try_from_steps([
                 RuntimePatternBindingStep::SequenceRest,
-                RuntimePatternBindingStep::SequenceRest,
+                RuntimePatternBindingStep::RecordRest,
             ]),
             Err(RuntimePatternBindingPathError::DuplicateRest)
         );
@@ -332,6 +354,13 @@ mod tests {
             RuntimePatternBindingPath::try_from_steps([
                 RuntimePatternBindingStep::SequenceRest,
                 RuntimePatternBindingStep::TupleElement(0),
+            ]),
+            Err(RuntimePatternBindingPathError::RestNotTerminal)
+        );
+        assert_eq!(
+            RuntimePatternBindingPath::try_from_steps([
+                RuntimePatternBindingStep::RecordRest,
+                RuntimePatternBindingStep::VariantPayload,
             ]),
             Err(RuntimePatternBindingPathError::RestNotTerminal)
         );

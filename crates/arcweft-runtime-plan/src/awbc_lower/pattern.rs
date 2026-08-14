@@ -2,10 +2,13 @@ use crate::awbc_lower::frame::FrameBuilder;
 use crate::awbc_lower::inventory::AwbcInventory;
 use crate::awbc_lower::table_index;
 use arcweft_core::awbc::schema::{
-    AwbcPattern, AwbcPatternId, AwbcRecordField, AwbcRecordPatternField, AwbcRuntimeType,
-    AwbcSignedIntKind, AwbcTypeId, AwbcUnsignedIntKind, AwbcVariantCase, AwbcVariantIdentity,
+    AwbcPattern, AwbcPatternId, AwbcPatternRest, AwbcRecordField, AwbcRecordPatternField,
+    AwbcRuntimeType, AwbcSignedIntKind, AwbcTypeId, AwbcUnsignedIntKind, AwbcVariantCase,
+    AwbcVariantIdentity,
 };
-use arcweft_core::pattern::{RuntimeCheckedType, RuntimePattern, RuntimeRecordPatternField};
+use arcweft_core::pattern::{
+    RuntimeCheckedType, RuntimePattern, RuntimePatternRest, RuntimeRecordPatternField,
+};
 use arcweft_core::value::RuntimeNominalRecordLayout;
 
 /// Lowers runtime patterns into executable AWBC pattern graph nodes.
@@ -79,21 +82,29 @@ pub(crate) fn lower_pattern(
             let ty = nominal_layout
                 .as_deref()
                 .map(|layout| intern_nominal_record_type(inventory, layout));
-            inventory.intern_pattern(AwbcPattern::Record {
-                ty,
-                fields,
-                rest: *rest,
-            })
+            let rest = match rest {
+                RuntimePatternRest::Exact => AwbcPatternRest::Exact,
+                RuntimePatternRest::Ignore => AwbcPatternRest::Ignore,
+                RuntimePatternRest::Bind(name) => {
+                    let name_id = inventory.intern_string(name);
+                    AwbcPatternRest::Bind(frame.local(name, name_id, inventory.dynamic_ty()))
+                }
+            };
+            inventory.intern_pattern(AwbcPattern::Record { ty, fields, rest })
         }
         RuntimePattern::BracketSeq { items, rest } => {
-            let rest = rest.as_ref().map(|name| {
-                let name_id = inventory.intern_string(name);
-                frame.local(name, name_id, inventory.dynamic_ty())
-            });
             let items = items
                 .iter()
                 .map(|item| lower_pattern(inventory, frame, item))
                 .collect();
+            let rest = match rest {
+                RuntimePatternRest::Exact => AwbcPatternRest::Exact,
+                RuntimePatternRest::Ignore => AwbcPatternRest::Ignore,
+                RuntimePatternRest::Bind(name) => {
+                    let name_id = inventory.intern_string(name);
+                    AwbcPatternRest::Bind(frame.local(name, name_id, inventory.dynamic_ty()))
+                }
+            };
             inventory.intern_pattern(AwbcPattern::Sequence { items, rest })
         }
         RuntimePattern::Variant {
@@ -115,9 +126,9 @@ pub(crate) fn lower_pattern(
             })
         }
         RuntimePattern::Whole { name, pattern } => {
+            let inner = lower_pattern(inventory, frame, pattern);
             let name_id = inventory.intern_string(name);
             let register = frame.local(name, name_id, inventory.dynamic_ty());
-            let inner = lower_pattern(inventory, frame, pattern);
             inventory.intern_pattern(AwbcPattern::Whole {
                 target: register,
                 inner,
@@ -132,24 +143,30 @@ pub(crate) fn pattern_binding_names(pattern: &RuntimePattern) -> Vec<String> {
         | RuntimePattern::MutIdent(name)
         | RuntimePattern::Typed { name, .. } => vec![name.clone()],
         RuntimePattern::Whole { name, pattern } => {
-            let mut names = vec![name.clone()];
-            names.extend(pattern_binding_names(pattern));
+            let mut names = pattern_binding_names(pattern);
+            names.push(name.clone());
             names
         }
         RuntimePattern::Tuple(patterns) => {
             patterns.iter().flat_map(pattern_binding_names).collect()
         }
-        RuntimePattern::Record { fields, .. } => fields
-            .iter()
-            .flat_map(|field| pattern_binding_names(&field.pattern))
-            .collect(),
+        RuntimePattern::Record { fields, rest, .. } => {
+            let mut names = fields
+                .iter()
+                .flat_map(|field| pattern_binding_names(&field.pattern))
+                .collect::<Vec<_>>();
+            if let Some(rest) = rest.binding_name() {
+                names.push(rest.to_owned());
+            }
+            names
+        }
         RuntimePattern::BracketSeq { items, rest } => {
             let mut names = items
                 .iter()
                 .flat_map(pattern_binding_names)
                 .collect::<Vec<_>>();
-            if let Some(rest) = rest {
-                names.push(rest.clone());
+            if let Some(rest) = rest.binding_name() {
+                names.push(rest.to_owned());
             }
             names
         }

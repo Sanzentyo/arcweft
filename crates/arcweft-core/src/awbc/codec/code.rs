@@ -9,11 +9,11 @@ use crate::awbc::schema::{
     AwbcBinaryOp, AwbcBindMode, AwbcBlock, AwbcBlockId, AwbcChoiceId, AwbcConstantId,
     AwbcContentUnitId, AwbcEffectPlanId, AwbcFrameLayoutId, AwbcFunction, AwbcFunctionFlags,
     AwbcFunctionId, AwbcFunctionKind, AwbcHostCallId, AwbcInstruction, AwbcIntrinsicId,
-    AwbcLineTaskGroupId, AwbcMatchArm, AwbcOpcode, AwbcPattern, AwbcPatternId, AwbcPureHelperId,
-    AwbcRecordPatternField, AwbcRegisterId, AwbcResumePoint, AwbcResumePointId, AwbcSafePointKind,
-    AwbcScopeId, AwbcSignatureId, AwbcSourceMapId, AwbcSourcePlanId, AwbcStreamPlanId,
-    AwbcStringId, AwbcTableRange, AwbcTaskPlanId, AwbcTerminator, AwbcTraitMethodId, AwbcTrapCode,
-    AwbcTypeId, AwbcUnaryOp,
+    AwbcLineTaskGroupId, AwbcMatchArm, AwbcOpcode, AwbcPattern, AwbcPatternId, AwbcPatternRest,
+    AwbcPureHelperId, AwbcRecordPatternField, AwbcRegisterId, AwbcResumePoint, AwbcResumePointId,
+    AwbcSafePointKind, AwbcScopeId, AwbcSignatureId, AwbcSourceMapId, AwbcSourcePlanId,
+    AwbcStreamPlanId, AwbcStringId, AwbcTableRange, AwbcTaskPlanId, AwbcTerminator,
+    AwbcTraitMethodId, AwbcTrapCode, AwbcTypeId, AwbcUnaryOp,
 };
 
 impl Wire for AwbcFunction {
@@ -869,11 +869,11 @@ impl Wire for AwbcPattern {
             5 => Self::Record {
                 ty: Option::<AwbcTypeId>::read_wire(reader)?,
                 fields: Vec::<AwbcRecordPatternField>::read_wire(reader)?,
-                rest: bool::read_wire(reader)?,
+                rest: AwbcPatternRest::read_wire(reader)?,
             },
             6 => Self::Sequence {
                 items: Vec::<AwbcPatternId>::read_wire(reader)?,
-                rest: Option::<AwbcRegisterId>::read_wire(reader)?,
+                rest: AwbcPatternRest::read_wire(reader)?,
             },
             7 => Self::Variant {
                 ty: AwbcTypeId::read_wire(reader)?,
@@ -893,6 +893,34 @@ impl Wire for AwbcPattern {
                 });
             }
         })
+    }
+}
+
+impl Wire for AwbcPatternRest {
+    fn write_wire(&self, writer: &mut Writer) -> Result<(), AwbcCodecError> {
+        match self {
+            Self::Exact => writer.write_u8(0),
+            Self::Ignore => writer.write_u8(1),
+            Self::Bind(register) => {
+                writer.write_u8(2);
+                register.write_wire(writer)?;
+            }
+        }
+        Ok(())
+    }
+
+    fn read_wire(reader: &mut Reader<'_>) -> Result<Self, AwbcCodecError> {
+        let offset = reader.offset();
+        match reader.read_u8()? {
+            0 => Ok(Self::Exact),
+            1 => Ok(Self::Ignore),
+            2 => Ok(Self::Bind(AwbcRegisterId::read_wire(reader)?)),
+            tag => Err(AwbcCodecError::UnknownTag {
+                kind: "pattern rest",
+                tag,
+                offset,
+            }),
+        }
     }
 }
 

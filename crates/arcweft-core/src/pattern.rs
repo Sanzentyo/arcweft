@@ -259,11 +259,11 @@ pub enum RuntimePattern {
     Record {
         nominal_layout: Option<Arc<RuntimeNominalRecordLayout>>,
         fields: Vec<RuntimeRecordPatternField>,
-        rest: bool,
+        rest: RuntimePatternRest,
     },
     BracketSeq {
         items: Vec<RuntimePattern>,
-        rest: Option<String>,
+        rest: RuntimePatternRest,
     },
     Variant {
         owner: RuntimeCheckedType,
@@ -279,6 +279,37 @@ pub enum RuntimePattern {
         name: String,
         ty: RuntimeCheckedType,
     },
+}
+
+/// Exact, open, or binding remainder semantics shared by structural patterns.
+///
+/// A record rest binding receives the original complete record. A bracket-
+/// sequence rest binding receives only the unmatched tail.
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+pub enum RuntimePatternRest {
+    Exact,
+    Ignore,
+    Bind(String),
+}
+
+impl RuntimePatternRest {
+    /// Returns whether `actual` elements/fields satisfy this remainder mode.
+    #[must_use]
+    pub const fn accepts_len(&self, required: usize, actual: usize) -> bool {
+        match self {
+            Self::Exact => required == actual,
+            Self::Ignore | Self::Bind(_) => required <= actual,
+        }
+    }
+
+    /// Returns the local name written by a binding rest.
+    #[must_use]
+    pub fn binding_name(&self) -> Option<&str> {
+        match self {
+            Self::Bind(name) => Some(name),
+            Self::Exact | Self::Ignore => None,
+        }
+    }
 }
 
 /// Closed structural type predicate for a runtime typed-binding pattern.
@@ -553,7 +584,13 @@ pub(crate) fn pattern_binding_capacity(pattern: &RuntimePattern) -> usize {
     direct
         + usize::from(matches!(
             pattern,
-            RuntimePattern::BracketSeq { rest: Some(_), .. }
+            RuntimePattern::Record {
+                rest: RuntimePatternRest::Bind(_),
+                ..
+            } | RuntimePattern::BracketSeq {
+                rest: RuntimePatternRest::Bind(_),
+                ..
+            }
         ))
 }
 
@@ -611,12 +648,12 @@ fn collect_pattern_bindings(
         } => collect_record_pattern_bindings(
             nominal_layout.as_deref(),
             fields,
-            *rest,
+            rest,
             value,
             bindings,
         ),
         RuntimePattern::BracketSeq { items, rest } => {
-            collect_bracket_seq_pattern_bindings(items, rest.as_deref(), value, bindings)
+            collect_bracket_seq_pattern_bindings(items, rest, value, bindings)
         }
         RuntimePattern::Variant {
             owner,
@@ -647,13 +684,13 @@ fn collect_pattern_bindings(
 fn collect_record_pattern_bindings(
     nominal_layout: Option<&RuntimeNominalRecordLayout>,
     fields: &[RuntimeRecordPatternField],
-    rest: bool,
+    rest: &RuntimePatternRest,
     value: &RuntimeValue,
     bindings: &mut Vec<RuntimeBinding>,
 ) -> Result<bool, RuntimeEvalError> {
     match (nominal_layout, value) {
         (None, RuntimeValue::Record(values)) => {
-            if !rest && fields.len() != values.len() {
+            if !rest.accepts_len(fields.len(), values.len()) {
                 return Ok(false);
             }
             for field in fields {
@@ -667,15 +704,19 @@ fn collect_record_pattern_bindings(
                     return Ok(false);
                 }
             }
+            if let Some(name) = rest.binding_name() {
+                bindings.push(RuntimeBinding {
+                    name: name.to_owned(),
+                    value: value.clone(),
+                });
+            }
             Ok(true)
         }
         (Some(layout), RuntimeValue::NominalRecord(record)) => {
             if record.validate_against_layout(layout).is_err() {
                 return Ok(false);
             }
-            if (!rest && fields.len() != record.fields().len())
-                || fields.len() > record.fields().len()
-            {
+            if !rest.accepts_len(fields.len(), record.fields().len()) {
                 return Ok(false);
             }
             for field in fields {
@@ -689,6 +730,12 @@ fn collect_record_pattern_bindings(
                     return Ok(false);
                 }
             }
+            if let Some(name) = rest.binding_name() {
+                bindings.push(RuntimeBinding {
+                    name: name.to_owned(),
+                    value: value.clone(),
+                });
+            }
             Ok(true)
         }
         _ => Ok(false),
@@ -697,19 +744,19 @@ fn collect_record_pattern_bindings(
 
 fn collect_bracket_seq_pattern_bindings(
     items: &[RuntimePattern],
-    rest: Option<&str>,
+    rest: &RuntimePatternRest,
     value: &RuntimeValue,
     bindings: &mut Vec<RuntimeBinding>,
 ) -> Result<bool, RuntimeEvalError> {
     match value {
         RuntimeValue::Seq(RuntimeSeq::Values(values)) => {
-            if !bracket_pattern_len_matches(items.len(), rest, values.len()) {
+            if !rest.accepts_len(items.len(), values.len()) {
                 return Ok(false);
             }
             if !collect_pattern_list(items, &values[..items.len()], bindings)? {
                 return Ok(false);
             }
-            if let Some(name) = rest {
+            if let Some(name) = rest.binding_name() {
                 bindings.push(RuntimeBinding {
                     name: name.to_owned(),
                     value: runtime_sequence_values(values[items.len()..].to_vec()),
@@ -718,7 +765,7 @@ fn collect_bracket_seq_pattern_bindings(
             Ok(true)
         }
         RuntimeValue::Seq(RuntimeSeq::Dense(values)) => {
-            if !bracket_pattern_len_matches(items.len(), rest, values.len()) {
+            if !rest.accepts_len(items.len(), values.len()) {
                 return Ok(false);
             }
             for (index, pattern) in items.iter().enumerate() {
@@ -726,7 +773,7 @@ fn collect_bracket_seq_pattern_bindings(
                     return Ok(false);
                 }
             }
-            if let Some(name) = rest {
+            if let Some(name) = rest.binding_name() {
                 bindings.push(RuntimeBinding {
                     name: name.to_owned(),
                     value: RuntimeValue::Seq(RuntimeSeq::Dense(values.tail_from(items.len()))),
@@ -736,16 +783,6 @@ fn collect_bracket_seq_pattern_bindings(
         }
         _ => Ok(false),
     }
-}
-
-fn bracket_pattern_len_matches(pattern_len: usize, rest: Option<&str>, value_len: usize) -> bool {
-    if rest.is_none() && pattern_len != value_len {
-        return false;
-    }
-    if rest.is_some() && pattern_len > value_len {
-        return false;
-    }
-    true
 }
 
 fn collect_variant_pattern_bindings(
@@ -866,7 +903,7 @@ mod tests {
                 name: "zeta".to_owned(),
                 pattern: RuntimePattern::Ident("chosen".to_owned()),
             }],
-            rest: true,
+            rest: RuntimePatternRest::Ignore,
         };
 
         let bindings = match_runtime_pattern(&pattern, &value).unwrap().unwrap();
@@ -895,10 +932,127 @@ mod tests {
                 name: "zeta".to_owned(),
                 pattern: RuntimePattern::Ident("chosen".to_owned()),
             }],
-            rest: true,
+            rest: RuntimePatternRest::Ignore,
         };
 
         assert!(match_runtime_pattern(&pattern, &value).unwrap().is_none());
+    }
+
+    #[test]
+    fn record_rest_modes_are_exact_open_and_bind_the_original_value_last() {
+        let complete = RuntimeValue::try_record(vec![
+            ("first".to_owned(), RuntimeValue::i64(1)),
+            ("second".to_owned(), RuntimeValue::i64(2)),
+        ])
+        .unwrap();
+        let pattern = |rest| RuntimePattern::Record {
+            nominal_layout: None,
+            fields: vec![RuntimeRecordPatternField {
+                name: "first".to_owned(),
+                pattern: RuntimePattern::Ident("head".to_owned()),
+            }],
+            rest,
+        };
+
+        assert!(
+            match_runtime_pattern(&pattern(RuntimePatternRest::Exact), &complete)
+                .unwrap()
+                .is_none()
+        );
+        let ignored = match_runtime_pattern(&pattern(RuntimePatternRest::Ignore), &complete)
+            .unwrap()
+            .unwrap();
+        assert_eq!(
+            ignored,
+            vec![RuntimeBinding {
+                name: "head".to_owned(),
+                value: RuntimeValue::i64(1),
+            }]
+        );
+        let bound = match_runtime_pattern(
+            &pattern(RuntimePatternRest::Bind("record".to_owned())),
+            &complete,
+        )
+        .unwrap()
+        .unwrap();
+        assert_eq!(
+            bound,
+            vec![
+                RuntimeBinding {
+                    name: "head".to_owned(),
+                    value: RuntimeValue::i64(1),
+                },
+                RuntimeBinding {
+                    name: "record".to_owned(),
+                    value: complete,
+                },
+            ]
+        );
+    }
+
+    #[test]
+    fn sequence_rest_modes_are_exact_open_and_bind_the_tail_last() {
+        let complete = runtime_sequence_values(vec![RuntimeValue::i64(1), RuntimeValue::i64(2)]);
+        let pattern = |rest| RuntimePattern::BracketSeq {
+            items: vec![RuntimePattern::Ident("head".to_owned())],
+            rest,
+        };
+
+        assert!(
+            match_runtime_pattern(&pattern(RuntimePatternRest::Exact), &complete)
+                .unwrap()
+                .is_none()
+        );
+        let ignored = match_runtime_pattern(&pattern(RuntimePatternRest::Ignore), &complete)
+            .unwrap()
+            .unwrap();
+        assert_eq!(ignored.len(), 1);
+        let bound = match_runtime_pattern(
+            &pattern(RuntimePatternRest::Bind("tail".to_owned())),
+            &complete,
+        )
+        .unwrap()
+        .unwrap();
+        assert_eq!(bound[0].name, "head");
+        assert_eq!(bound[1].name, "tail");
+        assert_eq!(
+            bound[1].value,
+            runtime_sequence_values(vec![RuntimeValue::i64(2)])
+        );
+    }
+
+    #[test]
+    fn rest_binding_participates_in_duplicate_admission() {
+        for pattern in [
+            RuntimePattern::Record {
+                nominal_layout: None,
+                fields: vec![RuntimeRecordPatternField {
+                    name: "first".to_owned(),
+                    pattern: RuntimePattern::Ident("value".to_owned()),
+                }],
+                rest: RuntimePatternRest::Bind("value".to_owned()),
+            },
+            RuntimePattern::BracketSeq {
+                items: vec![RuntimePattern::Ident("value".to_owned())],
+                rest: RuntimePatternRest::Bind("value".to_owned()),
+            },
+        ] {
+            let value = match &pattern {
+                RuntimePattern::Record { .. } => RuntimeValue::try_record(vec![
+                    ("first".to_owned(), RuntimeValue::i64(1)),
+                    ("second".to_owned(), RuntimeValue::i64(2)),
+                ])
+                .unwrap(),
+                RuntimePattern::BracketSeq { .. } => {
+                    runtime_sequence_values(vec![RuntimeValue::i64(1), RuntimeValue::i64(2)])
+                }
+                _ => unreachable!(),
+            };
+            assert_eq!(
+                match_runtime_pattern(&pattern, &value),
+                Err(RuntimeEvalError::DuplicateBinding("value".to_owned()))
+            );
+        }
     }
 
     #[test]

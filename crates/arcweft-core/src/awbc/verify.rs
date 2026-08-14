@@ -117,6 +117,8 @@ pub enum AwbcVerifyError {
     PatternCycle { pattern: usize },
     #[error("AWBC pattern graph exceeds depth {limit} at pattern {pattern}")]
     PatternDepthExceeded { pattern: usize, limit: usize },
+    #[error("AWBC pattern {pattern} binds register {register} more than once")]
+    DuplicatePatternBindingTarget { pattern: usize, register: u32 },
     #[error("AWBC register {register} is out of bounds in function {function}, block {block}")]
     RegisterOutOfBounds {
         function: usize,

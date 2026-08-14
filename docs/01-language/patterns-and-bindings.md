@@ -52,7 +52,12 @@ Rules:
 field        binds field with the same name
 field: name  binds field to a different local name
 ..           ignores remaining fields
+..record     accepts remaining fields and binds the original complete record
 ```
+
+Without a rest, a record pattern is exact and rejects additional fields.
+`..record` does not construct a residual record: after all field patterns
+match, it binds the same complete record value that was matched.
 
 ## Enum patterns
 
@@ -87,9 +92,14 @@ Phase 1 syntax supports fixed-length bracket sequence patterns and rest patterns
 match items {
     [] => .Empty
     [one] => .One(one)
+    [first, ..] => .NonEmpty(first)
     [first, ..rest] => .Many(first, rest)
 }
 ```
+
+A sequence pattern without a rest is exact. `..` accepts and ignores an
+unmatched tail, while `..rest` binds that tail as a sequence after every fixed
+element pattern matches.
 
 `Vec`, `Array`, and borrowed `Slice` destructuring use the same `[ ... ]`
 surface syntax. Type checking decides which sequence-like scrutinee forms are

@@ -1473,11 +1473,11 @@ pub enum AwbcPattern {
     Record {
         ty: Option<AwbcTypeId>,
         fields: Vec<AwbcRecordPatternField>,
-        rest: bool,
+        rest: AwbcPatternRest,
     },
     Sequence {
         items: Vec<AwbcPatternId>,
-        rest: Option<AwbcRegisterId>,
+        rest: AwbcPatternRest,
     },
     Variant {
         ty: AwbcTypeId,
@@ -1489,6 +1489,24 @@ pub enum AwbcPattern {
         target: AwbcRegisterId,
         inner: AwbcPatternId,
     },
+}
+
+/// Exact, open, or binding remainder semantics shared by AWBC patterns.
+#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
+pub enum AwbcPatternRest {
+    Exact,
+    Ignore,
+    Bind(AwbcRegisterId),
+}
+
+impl AwbcPatternRest {
+    #[must_use]
+    pub const fn accepts_len(self, required: usize, actual: usize) -> bool {
+        match self {
+            Self::Exact => required == actual,
+            Self::Ignore | Self::Bind(_) => required <= actual,
+        }
+    }
 }
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]

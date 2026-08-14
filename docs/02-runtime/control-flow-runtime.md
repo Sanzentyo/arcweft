@@ -141,13 +141,23 @@ pub enum RuntimePattern {
     Literal(RuntimeValue),
     Entity(String),
     Tuple(Vec<RuntimePattern>),
-    Record { path: Option<String>, fields: Vec<RuntimeRecordPatternField>, rest: bool },
-    List { items: Vec<RuntimePattern>, rest: Option<String> },
+    Record { path: Option<String>, fields: Vec<RuntimeRecordPatternField>, rest: RuntimePatternRest },
+    List { items: Vec<RuntimePattern>, rest: RuntimePatternRest },
     Variant { path: Option<String>, name: String, payload: Option<Box<RuntimePattern>> },
     Whole { name: String, pattern: Box<RuntimePattern> },
     Typed { name: String, ty: String },
 }
+
+pub enum RuntimePatternRest {
+    Exact,
+    Ignore,
+    Bind(String),
+}
 ```
+
+For both records and bracket sequences, `Exact` rejects unmentioned values and
+`Ignore` accepts them without a binding. Record `Bind` receives the original
+complete record; sequence `Bind` receives the unmatched tail.
 
 This evaluator is deliberately small and Sans I/O. It handles deterministic
 bool/int/string/entity/list/tuple/record/variant values, structured bindings,

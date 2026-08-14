@@ -2307,7 +2307,7 @@ fn runtime_pattern_binding_capacity_counts_nested_bindings() {
                 RuntimePattern::Discard,
                 RuntimePattern::MutIdent("item".to_owned()),
             ],
-            rest: Some("tail".to_owned()),
+            rest: crate::pattern::RuntimePatternRest::Bind("tail".to_owned()),
         },
         RuntimePattern::Whole {
             name: "whole".to_owned(),
@@ -2321,9 +2321,17 @@ fn runtime_pattern_binding_capacity_counts_nested_bindings() {
                 })),
             }),
         },
+        RuntimePattern::Record {
+            nominal_layout: None,
+            fields: vec![RuntimeRecordPatternField {
+                name: "field".to_owned(),
+                pattern: RuntimePattern::Ident("field".to_owned()),
+            }],
+            rest: RuntimePatternRest::Bind("record".to_owned()),
+        },
     ]);
 
-    assert_eq!(pattern_binding_capacity(&pattern), 5);
+    assert_eq!(pattern_binding_capacity(&pattern), 7);
 }
 
 #[test]

@@ -11,11 +11,11 @@ use super::structure::{
 use crate::awbc::schema::{
     AwbcBinaryOp, AwbcBindMode, AwbcBlockId, AwbcConstant, AwbcEffectSetId, AwbcFrameLayout,
     AwbcFrameSlotRole, AwbcFunctionFlags, AwbcFunctionKind, AwbcInstruction, AwbcPattern,
-    AwbcPatternId, AwbcProgram, AwbcRegisterId, AwbcResumePointId, AwbcRuntimeType,
-    AwbcSafePointKind, AwbcScopeId, AwbcSignatureId, AwbcTerminator, AwbcTraitReceiverMode,
-    AwbcTypeId, AwbcUnaryOp,
+    AwbcPatternId, AwbcPatternRest, AwbcProgram, AwbcRegisterId, AwbcResumePointId,
+    AwbcRuntimeType, AwbcSafePointKind, AwbcScopeId, AwbcSignatureId, AwbcTerminator,
+    AwbcTraitReceiverMode, AwbcTypeId, AwbcUnaryOp,
 };
-use std::collections::VecDeque;
+use std::collections::{BTreeSet, VecDeque};
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 struct FlowState {
@@ -1471,6 +1471,16 @@ fn validate_pattern(
         "patterns",
         &format!("pattern use in block {block}"),
     )?;
+    if depth == 0 {
+        validate_unique_pattern_binding_targets(
+            verifier.program,
+            pattern,
+            pattern,
+            &mut BTreeSet::new(),
+            0,
+            verifier.budget.pattern_depth,
+        )?;
+    }
     let program = verifier.program;
     match &program.patterns[pattern.index()] {
         AwbcPattern::Bind {
@@ -1511,9 +1521,8 @@ fn validate_pattern(
                 return invalid_type("entity pattern", "entity reference");
             }
         }
-        AwbcPattern::Tuple(items) => {
-            if let Some(AwbcRuntimeType::Tuple(types)) = program.runtime_types.get(value_ty.index())
-            {
+        AwbcPattern::Tuple(items) => match program.runtime_types.get(value_ty.index()) {
+            Some(AwbcRuntimeType::Tuple(types)) => {
                 if items.len() != types.len() {
                     return argument_count("tuple pattern", types.len(), items.len());
                 }
@@ -1529,11 +1538,24 @@ fn validate_pattern(
                         depth + 1,
                     )?;
                 }
-            } else if !is_dynamic(program.runtime_types.get(value_ty.index())) {
-                return invalid_type("tuple pattern", "tuple scrutinee");
             }
-        }
-        AwbcPattern::Record { ty, fields, .. } => {
+            Some(AwbcRuntimeType::Dynamic) => {
+                for child in items {
+                    validate_pattern(
+                        verifier,
+                        function,
+                        block,
+                        *child,
+                        value_ty,
+                        mode,
+                        state,
+                        depth + 1,
+                    )?;
+                }
+            }
+            _ => return invalid_type("tuple pattern", "tuple scrutinee"),
+        },
+        AwbcPattern::Record { ty, fields, rest } => {
             if let Some(expected) = ty {
                 require_compatible(program, *expected, value_ty, "record pattern")?;
             }
@@ -1569,8 +1591,34 @@ fn validate_pattern(
                         )?;
                     }
                 }
-                Some(AwbcRuntimeType::Dynamic) if ty.is_none() => {}
+                Some(AwbcRuntimeType::Dynamic) if ty.is_none() => {
+                    for field in fields {
+                        validate_pattern(
+                            verifier,
+                            function,
+                            block,
+                            field.pattern,
+                            value_ty,
+                            mode,
+                            state,
+                            depth + 1,
+                        )?;
+                    }
+                }
                 _ => return invalid_type("record pattern", "typed record scrutinee"),
+            }
+            if let AwbcPatternRest::Bind(rest) = rest {
+                let rest_ty = register_type(verifier, function, block, *rest)?;
+                require_compatible(program, rest_ty, value_ty, "record rest binding")?;
+                match mode {
+                    Some(AwbcBindMode::Declare) => {
+                        write_register(verifier, function, block, *rest, state)?;
+                    }
+                    Some(AwbcBindMode::Assign) => {
+                        read_register(verifier, function, block, *rest, state)?;
+                    }
+                    None => {}
+                }
             }
         }
         AwbcPattern::Sequence { items, rest } => {
@@ -1595,7 +1643,7 @@ fn validate_pattern(
                     depth + 1,
                 )?;
             }
-            if let Some(rest) = rest {
+            if let AwbcPatternRest::Bind(rest) = rest {
                 let rest_ty = register_type(verifier, function, block, *rest)?;
                 require_compatible(program, rest_ty, value_ty, "sequence rest binding")?;
                 match mode {
@@ -1654,15 +1702,6 @@ fn validate_pattern(
         AwbcPattern::Whole { target, inner } => {
             let target_ty = register_type(verifier, function, block, *target)?;
             require_compatible(program, target_ty, value_ty, "whole pattern")?;
-            match mode {
-                Some(AwbcBindMode::Declare) => {
-                    write_register(verifier, function, block, *target, state)?;
-                }
-                Some(AwbcBindMode::Assign) => {
-                    read_register(verifier, function, block, *target, state)?;
-                }
-                None => {}
-            }
             validate_pattern(
                 verifier,
                 function,
@@ -1673,9 +1712,128 @@ fn validate_pattern(
                 state,
                 depth + 1,
             )?;
+            match mode {
+                Some(AwbcBindMode::Declare) => {
+                    write_register(verifier, function, block, *target, state)?;
+                }
+                Some(AwbcBindMode::Assign) => {
+                    read_register(verifier, function, block, *target, state)?;
+                }
+                None => {}
+            }
         }
     }
     Ok(())
+}
+
+fn validate_unique_pattern_binding_targets(
+    program: &AwbcProgram,
+    root: AwbcPatternId,
+    pattern: AwbcPatternId,
+    targets: &mut BTreeSet<AwbcRegisterId>,
+    depth: usize,
+    limit: usize,
+) -> Result<(), AwbcVerifyError> {
+    if depth > limit {
+        return Err(AwbcVerifyError::PatternDepthExceeded {
+            pattern: pattern.index(),
+            limit,
+        });
+    }
+    let record = &program.patterns[pattern.index()];
+    match record {
+        AwbcPattern::Bind { target, .. } => insert_pattern_binding(root, *target, targets),
+        AwbcPattern::Tuple(children)
+        | AwbcPattern::Sequence {
+            items: children,
+            rest: AwbcPatternRest::Exact | AwbcPatternRest::Ignore,
+        } => {
+            for child in children {
+                validate_unique_pattern_binding_targets(
+                    program,
+                    root,
+                    *child,
+                    targets,
+                    depth + 1,
+                    limit,
+                )?;
+            }
+            Ok(())
+        }
+        AwbcPattern::Sequence {
+            items,
+            rest: AwbcPatternRest::Bind(target),
+        } => {
+            for child in items {
+                validate_unique_pattern_binding_targets(
+                    program,
+                    root,
+                    *child,
+                    targets,
+                    depth + 1,
+                    limit,
+                )?;
+            }
+            insert_pattern_binding(root, *target, targets)
+        }
+        AwbcPattern::Record { fields, rest, .. } => {
+            for field in fields {
+                validate_unique_pattern_binding_targets(
+                    program,
+                    root,
+                    field.pattern,
+                    targets,
+                    depth + 1,
+                    limit,
+                )?;
+            }
+            if let AwbcPatternRest::Bind(target) = rest {
+                insert_pattern_binding(root, *target, targets)?;
+            }
+            Ok(())
+        }
+        AwbcPattern::Variant {
+            payload: Some(payload),
+            ..
+        } => validate_unique_pattern_binding_targets(
+            program,
+            root,
+            *payload,
+            targets,
+            depth + 1,
+            limit,
+        ),
+        AwbcPattern::Whole { target, inner } => {
+            validate_unique_pattern_binding_targets(
+                program,
+                root,
+                *inner,
+                targets,
+                depth + 1,
+                limit,
+            )?;
+            insert_pattern_binding(root, *target, targets)
+        }
+        AwbcPattern::Discard
+        | AwbcPattern::Literal(_)
+        | AwbcPattern::Entity(_)
+        | AwbcPattern::Variant { payload: None, .. } => Ok(()),
+    }
+}
+
+fn insert_pattern_binding(
+    root: AwbcPatternId,
+    target: AwbcRegisterId,
+    targets: &mut BTreeSet<AwbcRegisterId>,
+) -> Result<(), AwbcVerifyError> {
+    if targets.insert(target) {
+        Ok(())
+    } else {
+        Err(AwbcVerifyError::DuplicatePatternBindingTarget {
+            pattern: root.index(),
+            register: target.0,
+        })
+    }
 }
 
 #[allow(
