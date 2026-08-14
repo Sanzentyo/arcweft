@@ -8,6 +8,14 @@ use serde::{Deserialize, Deserializer, Serialize};
 use std::collections::BTreeSet;
 use std::sync::Arc;
 
+mod binding;
+
+pub use binding::{
+    MAX_RUNTIME_PATTERN_BINDING_DEPTH, RuntimePatternBindingCoordinate,
+    RuntimePatternBindingCoordinateError, RuntimePatternBindingPath,
+    RuntimePatternBindingPathError, RuntimePatternBindingStep, RuntimePatternBindingWireError,
+};
+
 /// Stable semantic identity for a checked type after alias and projection
 /// normalization.
 ///

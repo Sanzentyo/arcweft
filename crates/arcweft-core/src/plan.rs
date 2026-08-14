@@ -1,10 +1,15 @@
 pub mod entry_inventory;
 pub mod generation_contract;
+mod local_declarations;
 
 pub use generation_contract::{
     CharacterDialogueRuntimeCustomFieldDigest, RuntimeCharacterCatalogDigest,
     RuntimeGenerationIdentity, RuntimeProducerRootId, RuntimeProjectRootId,
     RuntimeViewCatalogDigest, RuntimeViewId,
+};
+pub use local_declarations::{
+    RuntimeLocalDeclarationTable, RuntimeLocalDeclarationTableBuilder,
+    RuntimeLocalDeclarationTableError,
 };
 
 use crate::effect::{LineEffectRequest, RuntimeEffectExpr};
