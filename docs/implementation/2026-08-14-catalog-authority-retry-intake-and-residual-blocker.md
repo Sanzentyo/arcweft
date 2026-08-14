@@ -37,11 +37,18 @@ inventory, and 671-row test matrix materially answer the maintained request.
 ## Readiness adjudication
 
 Direct full-package/current-source inspection and an independent Sol max audit
-classify the retry as `NOT_READY`, not `INVALID_AS_DELIVERED`. The Character
-and View digest transcripts, role declarations/table, semantic root-ID byte
-projection, project/producer construction domains, AWBC `MakeRecord` domain,
-and checked Choice semantics are concrete and retained. Three residual
-conflicts block the root/admission/checked-validator cuts:
+classify the retry as `INVALID_AS_DELIVERED`. The package claims
+`READY_FOR_IMPLEMENTATION` and `OPEN_QUESTIONS=0`, but its normative decisions,
+inventory, and test matrix contradict current source and one another at
+implementation-observable boundaries. These are current-Git-resolvable design
+defects, not an external unresolved authority, so `NOT_READY` would be the
+wrong repository classification.
+
+The Character and View digest transcripts, role declarations/table, semantic
+root-ID byte projection, project/producer construction domains, AWBC
+`MakeRecord` domain, and parts of the checked Choice semantics remain useful
+salvageable material. The following conflicts block the claimed package-level
+acceptance and the root/admission/checked-validator cuts:
 
 1. Decision 13 redeclares `RuntimeValuePath` and
    `RuntimeValuePathSegment` in `pattern.rs`, although current
@@ -68,6 +75,10 @@ conflicts block the root/admission/checked-validator cuts:
 5. The proposed catalog wrapper crosses the forbidden dialogue-to-runtime-
    driver dependency, accepts a free generation assertion, and names a
    Character-to-View relationship absent from the current CharacterCatalog.
+6. The normative test matrix contradicts the decisions and mapping CSVs:
+   it expects nonexistent digest errors/fields, requires root rows for the
+   explicitly excluded `PRM-085..091` and `ARM-026..033` entries, and names
+   relationship errors for which no source model exists.
 
 ## Safe implementation boundary
 
