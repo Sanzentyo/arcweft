@@ -122,6 +122,32 @@ runtime_u32_identity!(RuntimeChildPacketId);
 runtime_u32_identity!(RuntimeTransferPacketId);
 runtime_u32_identity!(RuntimeCleanupSlotId);
 
+/// Contiguous plan-local identity of one interned semantic type declaration.
+///
+/// Unlike persisted runtime identities, this unreleased construction
+/// substrate has no Serde or wire representation. Only the core plan type
+/// table builder can issue a value.
+#[repr(transparent)]
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub struct RuntimePlanTypeId(NonZeroU32);
+
+impl RuntimePlanTypeId {
+    #[must_use]
+    pub const fn get(self) -> NonZeroU32 {
+        self.0
+    }
+
+    pub(crate) const fn from_accepted_ordinal(raw: NonZeroU32) -> Self {
+        Self(raw)
+    }
+}
+
+impl fmt::Display for RuntimePlanTypeId {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        self.0.fmt(formatter)
+    }
+}
+
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub enum RuntimeIdCursor {
     Next(NonZeroU64),
