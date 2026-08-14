@@ -58,24 +58,36 @@ impl<'hir> FinalPatternLowerer<'hir> {
                     .facts
                     .pattern_variant(id)
                     .ok_or_else(|| format!("checked variant fact is missing for pattern {id:?}"))?;
+                let selected_payload = selected
+                    .selected_payload_type()
+                    .map_err(|error| error.to_string())?;
+                let payload = match (variant.payload(), selected_payload) {
+                    (HirVariantPatternPayload::Absent, None) => None,
+                    (HirVariantPatternPayload::Pattern(payload), Some(expected)) => {
+                        let actual = self.facts.pattern_type(*payload).ok_or_else(|| {
+                            format!(
+                                "accepted type is missing for variant payload pattern {payload:?}"
+                            )
+                        })?;
+                        if actual != expected {
+                            return Err(format!(
+                                "variant payload pattern {payload:?} does not match its selected normalized payload type"
+                            ));
+                        }
+                        Some(Box::new(self.lower(*payload)?))
+                    }
+                    (HirVariantPatternPayload::Recovered { .. }, _) => {
+                        return Err(format!("variant pattern {id:?} has a recovered payload"));
+                    }
+                    _ => {
+                        return Err(format!(
+                            "variant pattern at {id:?} has incompatible payload presence"
+                        ));
+                    }
+                };
                 let selection = selected
                     .checked_selection()
                     .map_err(|error| error.to_string())?;
-                let payload = match variant.payload() {
-                    HirVariantPatternPayload::Absent => None,
-                    HirVariantPatternPayload::Pattern(payload) => {
-                        Some(Box::new(self.lower(*payload)?))
-                    }
-                    HirVariantPatternPayload::Recovered { .. } => {
-                        return Err(format!("variant pattern {id:?} has a recovered payload"));
-                    }
-                };
-                if selection.payload().is_some() != payload.is_some() {
-                    return Err(format!(
-                        "variant pattern `{}` at {id:?} has incompatible payload presence",
-                        selection.name()
-                    ));
-                }
                 Ok(RuntimePattern::Variant {
                     owner: selection.owner().clone(),
                     ordinal: selection.ordinal(),

@@ -23,12 +23,13 @@ use arcweft_source::identity::SourceSnapshotId;
 use arcweft_source::{SourceDocument, SourceDocumentId, SourceName};
 
 use super::{
-    RuntimeCallResultShape, RuntimeCheckedTypeProjectionError, RuntimePlanSemanticFactInput,
-    RuntimePlanSemanticFacts, RuntimeReductionConstructor, RuntimeRegisteredValueId,
-    RuntimeResolvedCall, RuntimeResolvedCallArgument, RuntimeResolvedCallTarget,
-    RuntimeResolvedNominalError, RuntimeResolvedValue, RuntimeResolvedVariant,
-    RuntimeSemanticFactFamily, RuntimeSemanticFactsError, RuntimeSemanticTypeId,
-    RuntimeSequenceKind, RuntimeTypeProjectionStep, RuntimeTypeShape, RuntimeUnsupportedTypeShape,
+    RuntimeCallResultShape, RuntimeCheckedTypeProjectionError, RuntimeNormalizedVariantCase,
+    RuntimePlanSemanticFactInput, RuntimePlanSemanticFacts, RuntimeReductionConstructor,
+    RuntimeRegisteredValueId, RuntimeResolvedCall, RuntimeResolvedCallArgument,
+    RuntimeResolvedCallTarget, RuntimeResolvedNominalError, RuntimeResolvedValue,
+    RuntimeResolvedVariant, RuntimeResolvedVariantError, RuntimeSemanticFactFamily,
+    RuntimeSemanticFactsError, RuntimeSemanticTypeId, RuntimeSequenceKind,
+    RuntimeTypeProjectionStep, RuntimeTypeShape, RuntimeUnsupportedTypeShape,
 };
 
 fn project_fixture(label: &str, source: &str) -> HirProject {
@@ -1059,7 +1060,15 @@ fn checked_variant_selection_retains_both_result_branches() {
         RuntimeSemanticTypeId::from_bytes([9; 32]),
         RuntimeTypeShape::String,
     );
-    let selection = RuntimeResolvedVariant::result_ok(ok, error)
+    let variant =
+        RuntimeResolvedVariant::result(ok.clone(), error, 0, "Ok").expect("accepted Result case");
+    assert_eq!(
+        variant
+            .selected_payload_type()
+            .expect("selected normalized Result payload"),
+        Some(&ok)
+    );
+    let selection = variant
         .checked_selection()
         .expect("complete Result selection");
     assert_eq!(selection.ordinal(), 0);
@@ -1071,5 +1080,121 @@ fn checked_variant_selection_retains_both_result_branches() {
             ok: Box::new(RuntimeCheckedType::Unit),
             error: Box::new(RuntimeCheckedType::String),
         }
+    );
+}
+
+#[test]
+fn option_and_character_cases_use_the_shared_normalized_selection_path() {
+    let item = normalized_type(0x71, RuntimeTypeShape::Unit);
+    let some =
+        RuntimeResolvedVariant::option(item.clone(), 0, "Some").expect("accepted Option Some case");
+    assert_eq!(some.selected_name(), Ok("Some"));
+    assert_eq!(some.selected_payload_type(), Ok(Some(&item)));
+    assert_eq!(
+        some.checked_selection()
+            .expect("Some checked selection")
+            .payload(),
+        Some(&RuntimeCheckedType::Unit)
+    );
+
+    let none = RuntimeResolvedVariant::option(item, 1, "None").expect("accepted Option None case");
+    assert_eq!(none.selected_name(), Ok("None"));
+    assert_eq!(none.selected_payload_type(), Ok(None));
+    assert!(
+        none.checked_selection()
+            .expect("None checked selection")
+            .payload()
+            .is_none()
+    );
+
+    let character = RuntimeResolvedVariant::character(
+        RuntimeSemanticTypeId::from_bytes([0x72; 32]),
+        RuntimeNominalTypeId::try_new("fixture.CharacterState")
+            .expect("valid Character fixture nominal"),
+        [
+            RuntimeNormalizedVariantCase::new("Idle", None),
+            RuntimeNormalizedVariantCase::new("Speaking", None),
+        ]
+        .into(),
+        1,
+        "Speaking",
+    )
+    .expect("accepted payload-free Character case");
+    assert_eq!(character.selected_name(), Ok("Speaking"));
+    assert_eq!(character.selected_payload_type(), Ok(None));
+    assert_eq!(
+        character
+            .checked_selection()
+            .expect("Character checked selection")
+            .name(),
+        "Speaking"
+    );
+}
+
+#[test]
+fn normalized_variant_case_table_is_the_only_selected_payload_authority() {
+    let payload = normalized_type(0x81, RuntimeTypeShape::String);
+    let cases = || {
+        vec![
+            RuntimeNormalizedVariantCase::new("Empty", None),
+            RuntimeNormalizedVariantCase::new("Payload", Some(payload.clone())),
+        ]
+        .into_boxed_slice()
+    };
+    let identity = RuntimeSemanticTypeId::from_bytes([0x82; 32]);
+    let nominal =
+        RuntimeNominalTypeId::try_new("fixture.NormalizedVariant").expect("valid fixture nominal");
+    let variant =
+        RuntimeResolvedVariant::builtin_closed(identity, nominal.clone(), cases(), 1, "Payload")
+            .expect("name and ordinal select the normalized row");
+    assert_eq!(variant.selected_name(), Ok("Payload"));
+    assert_eq!(variant.selected_payload_type(), Ok(Some(&payload)));
+
+    let selection = variant
+        .checked_selection()
+        .expect("checked view derives from the normalized table");
+    assert_eq!(selection.name(), "Payload");
+    assert_eq!(selection.payload(), Some(&RuntimeCheckedType::String));
+    let RuntimeCheckedType::Variant {
+        cases: checked_cases,
+        ..
+    } = selection.owner()
+    else {
+        panic!("base-environment owner projects as a checked variant");
+    };
+    assert_eq!(checked_cases.len(), 2);
+    assert!(checked_cases[0].payload.is_none());
+    assert_eq!(
+        checked_cases[1].payload.as_deref(),
+        Some(&RuntimeCheckedType::String)
+    );
+
+    assert!(matches!(
+        RuntimeResolvedVariant::builtin_closed(identity, nominal, cases(), 1, "Other"),
+        Err(RuntimeResolvedVariantError::CaseName {
+            ordinal: 1,
+            expected,
+            actual,
+        }) if expected == "Payload" && actual == "Other"
+    ));
+}
+
+#[test]
+fn operational_variant_payload_is_not_admitted_through_raw_facts() {
+    let variant = RuntimeResolvedVariant::builtin_closed(
+        RuntimeSemanticTypeId::from_bytes([0x83; 32]),
+        RuntimeNominalTypeId::try_new("fixture.OperationalVariant").expect("valid fixture nominal"),
+        [RuntimeNormalizedVariantCase::new(
+            "Payload",
+            Some(unsupported_range_type()),
+        )]
+        .into(),
+        0,
+        "Payload",
+    )
+    .expect("normalized selection itself is structurally complete");
+    assert_eq!(
+        super::validate_variant(&BTreeMap::new(), &variant),
+        Err(RuntimeSemanticFactsError::WrongVariantIdentity)
     );
 }

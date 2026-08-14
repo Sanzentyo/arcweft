@@ -49,8 +49,7 @@ use arcweft_lang_hir::pattern::HirPatternKind;
 use arcweft_lang_hir::project::{HirExecutableProjectView, HirSelectedExpressionInventoryError};
 use arcweft_lang_hir::stmt::HirStmtKind;
 use arcweft_lang_hir::symbol::{
-    CallableDeclarationKey, CallableDeclarationOwner,
-    nominal::{ProjectNominalDeclarationId, ProjectNominalVariant},
+    CallableDeclarationKey, CallableDeclarationOwner, nominal::ProjectNominalDeclarationId,
 };
 use arcweft_lang_hir::type_ref::HirTypeKind;
 use arcweft_text_model::DialogueContentSpec;
@@ -755,7 +754,65 @@ pub enum RuntimeResolvedSelect {
     },
 }
 
+/// One source-ordered case in a complete normalized runtime variant schema.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct RuntimeNormalizedVariantCase {
+    name: String,
+    payload: Option<Box<RuntimeNormalizedType>>,
+}
+
+impl RuntimeNormalizedVariantCase {
+    #[must_use]
+    pub fn new(name: impl Into<String>, payload: Option<RuntimeNormalizedType>) -> Self {
+        Self {
+            name: name.into(),
+            payload: payload.map(Box::new),
+        }
+    }
+
+    #[must_use]
+    pub fn name(&self) -> &str {
+        &self.name
+    }
+
+    #[must_use]
+    pub fn payload(&self) -> Option<&RuntimeNormalizedType> {
+        self.payload.as_deref()
+    }
+
+    fn checked_case(&self) -> Result<RuntimeCheckedVariantCase, RuntimeCheckedTypeProjectionError> {
+        Ok(RuntimeCheckedVariantCase {
+            name: self.name.clone(),
+            payload: self
+                .payload()
+                .map(RuntimeNormalizedType::checked_type)
+                .transpose()?
+                .map(Box::new),
+        })
+    }
+}
+
+#[derive(Clone, Copy)]
+struct RuntimeNormalizedVariantCaseRef<'a> {
+    name: &'a str,
+    payload: Option<&'a RuntimeNormalizedType>,
+}
+
+impl<'a> RuntimeNormalizedVariantCaseRef<'a> {
+    fn from_case(case: &'a RuntimeNormalizedVariantCase) -> Self {
+        Self {
+            name: case.name(),
+            payload: case.payload(),
+        }
+    }
+}
+
 /// Exact semantic owner of one runtime enum case.
+///
+/// Project, Character, and base-environment variants retain one complete
+/// normalized case table. Checked cases are derived views rather than a
+/// parallel payload authority. Option and Result retain their normalized type
+/// arguments and expose the same internal source-ordered selection algebra.
 #[derive(Clone, Debug, Eq, PartialEq)]
 #[allow(
     clippy::large_enum_variant,
@@ -764,17 +821,17 @@ pub enum RuntimeResolvedSelect {
 pub enum RuntimeVariantOwner {
     Project {
         nominal: RuntimeResolvedNominal,
-        cases: Box<[RuntimeCheckedVariantCase]>,
+        cases: Box<[RuntimeNormalizedVariantCase]>,
     },
     CharacterNominal {
         identity: RuntimeSemanticTypeId,
         nominal: RuntimeNominalTypeId,
-        cases: Box<[RuntimeCheckedVariantCase]>,
+        cases: Box<[RuntimeNormalizedVariantCase]>,
     },
     BuiltinClosed {
         identity: RuntimeSemanticTypeId,
         nominal: RuntimeNominalTypeId,
-        cases: Box<[RuntimeCheckedVariantCase]>,
+        cases: Box<[RuntimeNormalizedVariantCase]>,
     },
     Option {
         item: RuntimeNormalizedType,
@@ -786,6 +843,55 @@ pub enum RuntimeVariantOwner {
 }
 
 impl RuntimeVariantOwner {
+    fn selected_case(
+        &self,
+        ordinal: u32,
+    ) -> Result<RuntimeNormalizedVariantCaseRef<'_>, RuntimeResolvedVariantError> {
+        let ordinal_index = usize::try_from(ordinal).ok();
+        let selected = match self {
+            Self::Project { cases, .. }
+            | Self::CharacterNominal { cases, .. }
+            | Self::BuiltinClosed { cases, .. } => ordinal_index
+                .and_then(|ordinal| cases.get(ordinal))
+                .map(RuntimeNormalizedVariantCaseRef::from_case),
+            Self::Option { item } => match ordinal {
+                0 => Some(RuntimeNormalizedVariantCaseRef {
+                    name: "Some",
+                    payload: Some(item),
+                }),
+                1 => Some(RuntimeNormalizedVariantCaseRef {
+                    name: "None",
+                    payload: None,
+                }),
+                _ => None,
+            },
+            Self::Result { ok, error } => match ordinal {
+                0 => Some(RuntimeNormalizedVariantCaseRef {
+                    name: "Ok",
+                    payload: Some(ok),
+                }),
+                1 => Some(RuntimeNormalizedVariantCaseRef {
+                    name: "Err",
+                    payload: Some(error),
+                }),
+                _ => None,
+            },
+        };
+        selected.ok_or(RuntimeResolvedVariantError::CaseOrdinal {
+            ordinal,
+            case_count: self.case_count(),
+        })
+    }
+
+    fn case_count(&self) -> u32 {
+        match self {
+            Self::Project { cases, .. }
+            | Self::CharacterNominal { cases, .. }
+            | Self::BuiltinClosed { cases, .. } => u32::try_from(cases.len()).unwrap_or(u32::MAX),
+            Self::Option { .. } | Self::Result { .. } => 2,
+        }
+    }
+
     fn project_checked_type(
         &self,
     ) -> Result<RuntimeCheckedType, RuntimeCheckedTypeProjectionError> {
@@ -800,7 +906,10 @@ impl RuntimeVariantOwner {
                         },
                     )?,
                 semantic_identity: nominal.identity(),
-                cases: cases.to_vec(),
+                cases: cases
+                    .iter()
+                    .map(RuntimeNormalizedVariantCase::checked_case)
+                    .collect::<Result<Vec<_>, _>>()?,
             },
             Self::CharacterNominal {
                 identity,
@@ -814,7 +923,10 @@ impl RuntimeVariantOwner {
             } => RuntimeCheckedType::Variant {
                 nominal: nominal.clone(),
                 semantic_identity: *identity,
-                cases: cases.to_vec(),
+                cases: cases
+                    .iter()
+                    .map(RuntimeNormalizedVariantCase::checked_case)
+                    .collect::<Result<Vec<_>, _>>()?,
             },
             Self::Option { item } => RuntimeCheckedType::Option(Box::new(item.checked_type()?)),
             Self::Result { ok, error } => RuntimeCheckedType::Result {
@@ -883,111 +995,101 @@ pub enum RuntimeResolvedVariantError {
 pub struct RuntimeResolvedVariant {
     owner: RuntimeVariantOwner,
     ordinal: u32,
-    case: RuntimeVariantCase,
-}
-
-/// Closed case vocabulary retained below semantic analysis.
-#[derive(Clone, Debug, Eq, PartialEq)]
-enum RuntimeVariantCase {
-    Project(Box<str>),
-    Character(HirName),
-    BuiltinClosed(HirName),
-    OptionSome,
-    OptionNone,
-    ResultOk,
-    ResultErr,
 }
 
 impl RuntimeResolvedVariant {
+    fn try_new(
+        owner: RuntimeVariantOwner,
+        ordinal: u32,
+        selected_name: &str,
+    ) -> Result<Self, RuntimeResolvedVariantError> {
+        let selected = owner.selected_case(ordinal)?;
+        if selected.name != selected_name {
+            return Err(RuntimeResolvedVariantError::CaseName {
+                ordinal,
+                expected: selected.name.to_owned(),
+                actual: selected_name.to_owned(),
+            });
+        }
+        Ok(Self { owner, ordinal })
+    }
+
     /// Retains a case directly from its accepted project enum declaration.
     pub fn project(
         owner: RuntimeResolvedNominal,
         ordinal: u32,
-        variant: &ProjectNominalVariant,
-        cases: Box<[RuntimeCheckedVariantCase]>,
-    ) -> Self {
-        Self {
-            owner: RuntimeVariantOwner::Project {
+        selected_name: &str,
+        cases: Box<[RuntimeNormalizedVariantCase]>,
+    ) -> Result<Self, RuntimeResolvedVariantError> {
+        Self::try_new(
+            RuntimeVariantOwner::Project {
                 nominal: owner,
                 cases,
             },
             ordinal,
-            case: RuntimeVariantCase::Project(variant.name().as_str().into()),
-        }
+            selected_name,
+        )
     }
 
     /// Retains a Character nominal case already admitted by checked final HIR.
     pub fn character(
         identity: RuntimeSemanticTypeId,
         nominal: RuntimeNominalTypeId,
-        cases: Box<[RuntimeCheckedVariantCase]>,
+        cases: Box<[RuntimeNormalizedVariantCase]>,
         ordinal: u32,
-        name: &HirName,
-    ) -> Self {
-        Self {
-            owner: RuntimeVariantOwner::CharacterNominal {
+        selected_name: &str,
+    ) -> Result<Self, RuntimeResolvedVariantError> {
+        Self::try_new(
+            RuntimeVariantOwner::CharacterNominal {
                 identity,
                 nominal,
                 cases,
             },
             ordinal,
-            case: RuntimeVariantCase::Character(name.clone()),
-        }
+            selected_name,
+        )
     }
 
     /// Retains a case from one source-ordered base-environment enum schema.
     pub fn builtin_closed(
         identity: RuntimeSemanticTypeId,
         nominal: RuntimeNominalTypeId,
-        cases: Box<[RuntimeCheckedVariantCase]>,
+        cases: Box<[RuntimeNormalizedVariantCase]>,
         ordinal: u32,
-        name: &HirName,
-    ) -> Self {
-        Self {
-            owner: RuntimeVariantOwner::BuiltinClosed {
+        selected_name: &str,
+    ) -> Result<Self, RuntimeResolvedVariantError> {
+        Self::try_new(
+            RuntimeVariantOwner::BuiltinClosed {
                 identity,
                 nominal,
                 cases,
             },
             ordinal,
-            case: RuntimeVariantCase::BuiltinClosed(name.clone()),
-        }
+            selected_name,
+        )
     }
 
-    /// Selects the payload-bearing Option case.
-    pub fn option_some(item: RuntimeNormalizedType) -> Self {
-        Self {
-            owner: RuntimeVariantOwner::Option { item },
-            ordinal: 0,
-            case: RuntimeVariantCase::OptionSome,
-        }
+    /// Retains one accepted Option case after reconciling its closed name.
+    pub fn option(
+        item: RuntimeNormalizedType,
+        ordinal: u32,
+        selected_name: &str,
+    ) -> Result<Self, RuntimeResolvedVariantError> {
+        Self::try_new(RuntimeVariantOwner::Option { item }, ordinal, selected_name)
     }
 
-    /// Selects the payload-free Option case.
-    pub fn option_none(item: RuntimeNormalizedType) -> Self {
-        Self {
-            owner: RuntimeVariantOwner::Option { item },
-            ordinal: 1,
-            case: RuntimeVariantCase::OptionNone,
-        }
-    }
-
-    /// Selects the successful Result constructor.
-    pub fn result_ok(ok: RuntimeNormalizedType, error: RuntimeNormalizedType) -> Self {
-        Self {
-            owner: RuntimeVariantOwner::Result { ok, error },
-            ordinal: 0,
-            case: RuntimeVariantCase::ResultOk,
-        }
-    }
-
-    /// Selects the error Result constructor.
-    pub fn result_err(ok: RuntimeNormalizedType, error: RuntimeNormalizedType) -> Self {
-        Self {
-            owner: RuntimeVariantOwner::Result { ok, error },
-            ordinal: 1,
-            case: RuntimeVariantCase::ResultErr,
-        }
+    /// Retains one accepted Result case after reconciling its closed name.
+    pub fn result(
+        ok: RuntimeNormalizedType,
+        error: RuntimeNormalizedType,
+        ordinal: u32,
+        selected_name: &str,
+    ) -> Result<Self, RuntimeResolvedVariantError> {
+        Self::try_new(
+            RuntimeVariantOwner::Result { ok, error },
+            ordinal,
+            selected_name,
+        )
     }
 
     pub const fn owner(&self) -> &RuntimeVariantOwner {
@@ -998,45 +1100,35 @@ impl RuntimeResolvedVariant {
         self.ordinal
     }
 
-    pub fn name(&self) -> &str {
-        match &self.case {
-            RuntimeVariantCase::Project(name) => name,
-            RuntimeVariantCase::Character(name) | RuntimeVariantCase::BuiltinClosed(name) => {
-                name.as_str()
-            }
-            RuntimeVariantCase::OptionSome => "Some",
-            RuntimeVariantCase::OptionNone => "None",
-            RuntimeVariantCase::ResultOk => "Ok",
-            RuntimeVariantCase::ResultErr => "Err",
-        }
+    /// Returns the selected name borrowed from the complete owner table.
+    pub fn selected_name(&self) -> Result<&str, RuntimeResolvedVariantError> {
+        self.owner
+            .selected_case(self.ordinal)
+            .map(|selected| selected.name)
+    }
+
+    /// Returns the selected normalized payload borrowed from its sole owner.
+    pub fn selected_payload_type(
+        &self,
+    ) -> Result<Option<&RuntimeNormalizedType>, RuntimeResolvedVariantError> {
+        self.owner
+            .selected_case(self.ordinal)
+            .map(|selected| selected.payload)
     }
 
     /// Reconciles the selected semantic case with the complete checked owner.
     pub fn checked_selection(
         &self,
     ) -> Result<RuntimeCheckedVariantSelection, RuntimeResolvedVariantError> {
+        self.owner.selected_case(self.ordinal)?;
         let owner = self.owner.project_checked_type()?;
-        let case_count = match &owner {
-            RuntimeCheckedType::Variant { cases, .. } => {
-                u32::try_from(cases.len()).unwrap_or(u32::MAX)
-            }
-            RuntimeCheckedType::Option(_) | RuntimeCheckedType::Result { .. } => 2,
-            _ => 0,
-        };
         let case =
             owner
                 .variant_case(self.ordinal)
                 .ok_or(RuntimeResolvedVariantError::CaseOrdinal {
                     ordinal: self.ordinal,
-                    case_count,
+                    case_count: self.owner.case_count(),
                 })?;
-        if case.name != self.name() {
-            return Err(RuntimeResolvedVariantError::CaseName {
-                ordinal: self.ordinal,
-                expected: case.name,
-                actual: self.name().to_owned(),
-            });
-        }
         Ok(RuntimeCheckedVariantSelection {
             owner,
             ordinal: self.ordinal,
@@ -2432,23 +2524,28 @@ fn validate_variant(
     modules: &BTreeMap<HirModuleId, &HirModule>,
     variant: &RuntimeResolvedVariant,
 ) -> Result<(), RuntimeSemanticFactsError> {
+    variant
+        .checked_selection()
+        .map_err(|_| RuntimeSemanticFactsError::WrongVariantIdentity)?;
+    let selected_name = variant
+        .selected_name()
+        .map_err(|_| RuntimeSemanticFactsError::WrongVariantIdentity)?;
     match variant.owner() {
         RuntimeVariantOwner::Project { nominal, cases } => {
             validate_nominal(modules, nominal)?;
+            validate_normalized_variant_payloads(modules, cases)?;
             let HirItemKind::Enum(declaration) = resolve_item(modules, nominal.owner())?.kind()
             else {
                 return Err(RuntimeSemanticFactsError::WrongVariantIdentity);
             };
             if declaration.variants().len() != cases.len()
-                || declaration
-                    .variants()
-                    .iter()
-                    .zip(cases)
-                    .any(|(declaration, checked)| {
+                || declaration.variants().iter().zip(cases.iter()).any(
+                    |(declaration, normalized)| {
                         declaration.name().resolved().map(HirName::as_str)
-                            != Some(checked.name.as_str())
-                            || declaration.payload().is_some() != checked.payload.is_some()
-                    })
+                            != Some(normalized.name())
+                            || declaration.payload().is_some() != normalized.payload().is_some()
+                    },
+                )
             {
                 return Err(RuntimeSemanticFactsError::WrongVariantIdentity);
             }
@@ -2457,7 +2554,7 @@ fn validate_variant(
                 .and_then(|ordinal| declaration.variants().get(ordinal))
                 .and_then(|selected| selected.name().resolved())
                 .ok_or(RuntimeSemanticFactsError::WrongVariantIdentity)?;
-            if selected.as_str() == variant.name() {
+            if selected.as_str() == selected_name {
                 Ok(())
             } else {
                 Err(RuntimeSemanticFactsError::WrongVariantIdentity)
@@ -2467,16 +2564,16 @@ fn validate_variant(
             if nominal.as_str().is_empty()
                 || cases.is_empty()
                 || cases.iter().enumerate().any(|(ordinal, case)| {
-                    case.name.is_empty()
-                        || case.payload.is_some()
+                    case.name().is_empty()
+                        || case.payload().is_some()
                         || cases[..ordinal]
                             .iter()
-                            .any(|previous| previous.name == case.name)
+                            .any(|previous| previous.name() == case.name())
                 })
                 || usize::try_from(variant.ordinal())
                     .ok()
                     .and_then(|ordinal| cases.get(ordinal))
-                    .is_none_or(|case| case.name != variant.name())
+                    .is_none_or(|case| case.name() != selected_name)
             {
                 Err(RuntimeSemanticFactsError::WrongVariantIdentity)
             } else {
@@ -2484,18 +2581,19 @@ fn validate_variant(
             }
         }
         RuntimeVariantOwner::BuiltinClosed { nominal, cases, .. } => {
+            validate_normalized_variant_payloads(modules, cases)?;
             if nominal.as_str().is_empty()
                 || cases.is_empty()
                 || cases.iter().enumerate().any(|(ordinal, case)| {
-                    case.name.is_empty()
+                    case.name().is_empty()
                         || cases[..ordinal]
                             .iter()
-                            .any(|previous| previous.name == case.name)
+                            .any(|previous| previous.name() == case.name())
                 })
                 || usize::try_from(variant.ordinal())
                     .ok()
                     .and_then(|ordinal| cases.get(ordinal))
-                    .is_none_or(|case| case.name != variant.name())
+                    .is_none_or(|case| case.name() != selected_name)
             {
                 Err(RuntimeSemanticFactsError::WrongVariantIdentity)
             } else {
@@ -2505,7 +2603,7 @@ fn validate_variant(
         RuntimeVariantOwner::Option { item } => {
             validate_normalized_type(modules, item)?;
             if matches!(
-                (variant.ordinal(), variant.name()),
+                (variant.ordinal(), selected_name),
                 (0, "Some") | (1, "None")
             ) {
                 Ok(())
@@ -2516,13 +2614,25 @@ fn validate_variant(
         RuntimeVariantOwner::Result { ok, error } => {
             validate_normalized_type(modules, ok)?;
             validate_normalized_type(modules, error)?;
-            if matches!((variant.ordinal(), variant.name()), (0, "Ok") | (1, "Err")) {
+            if matches!((variant.ordinal(), selected_name), (0, "Ok") | (1, "Err")) {
                 Ok(())
             } else {
                 Err(RuntimeSemanticFactsError::WrongVariantIdentity)
             }
         }
     }
+}
+
+fn validate_normalized_variant_payloads(
+    modules: &BTreeMap<HirModuleId, &HirModule>,
+    cases: &[RuntimeNormalizedVariantCase],
+) -> Result<(), RuntimeSemanticFactsError> {
+    for case in cases {
+        if let Some(payload) = case.payload() {
+            validate_normalized_type(modules, payload)?;
+        }
+    }
+    Ok(())
 }
 
 fn validate_normalized_type(

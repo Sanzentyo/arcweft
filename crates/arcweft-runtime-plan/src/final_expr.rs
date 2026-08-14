@@ -15,8 +15,9 @@ use arcweft_lang_hir::stmt::HirStmtKind;
 use crate::agent::RuntimeAgentIntrinsic;
 use crate::final_pattern::FinalPatternLowerer;
 use crate::semantic_facts::{
-    RuntimePlanSemanticFacts, RuntimeReductionConstructor, RuntimeResolvedCallArgument,
-    RuntimeResolvedCallTarget, RuntimeResolvedSelect, RuntimeResolvedValue,
+    RuntimeNormalizedType, RuntimePlanSemanticFacts, RuntimeReductionConstructor,
+    RuntimeResolvedCallArgument, RuntimeResolvedCallTarget, RuntimeResolvedSelect,
+    RuntimeResolvedValue, RuntimeResolvedVariant, RuntimeTypeShape,
 };
 
 pub(crate) struct FinalExprLowerer<'hir> {
@@ -332,15 +333,18 @@ impl<'hir> FinalExprLowerer<'hir> {
             .facts
             .expression_variant(id)
             .ok_or_else(|| format!("checked variant fact is missing for expression {id:?}"))?;
+        if selected
+            .selected_payload_type()
+            .map_err(|error| error.to_string())?
+            .is_some()
+        {
+            return Err(format!(
+                "payload-bearing variant at {id:?} was selected without a payload"
+            ));
+        }
         let selection = selected
             .checked_selection()
             .map_err(|error| error.to_string())?;
-        if selection.payload().is_some() {
-            return Err(format!(
-                "payload-bearing variant `{}` at {id:?} was selected without a payload",
-                selection.name()
-            ));
-        }
         Ok(RuntimeExpr::Variant {
             owner: selection.owner().clone(),
             ordinal: selection.ordinal(),
@@ -400,6 +404,7 @@ impl<'hir> FinalExprLowerer<'hir> {
                 args: arguments,
             }),
             RuntimeResolvedCallTarget::Variant(variant) => {
+                self.validate_variant_call_payload(id, call, selected.arguments(), variant)?;
                 let selection = variant
                     .checked_selection()
                     .map_err(|error| error.to_string())?;
@@ -413,12 +418,6 @@ impl<'hir> FinalExprLowerer<'hir> {
                     )),
                     _ => Some(Box::new(RuntimeExpr::Tuple(arguments))),
                 };
-                if selection.payload().is_some() != payload.is_some() {
-                    return Err(format!(
-                        "variant constructor `{}` at {id:?} has incompatible payload presence",
-                        selection.name()
-                    ));
-                }
                 Ok(RuntimeExpr::Variant {
                     owner: selection.owner().clone(),
                     ordinal: selection.ordinal(),
@@ -475,6 +474,48 @@ impl<'hir> FinalExprLowerer<'hir> {
             RuntimeResolvedCallTarget::Host { .. } => Err(format!(
                 "host call {id:?} is effectful and cannot enter pure expression lowering"
             )),
+        }
+    }
+
+    fn validate_variant_call_payload(
+        &self,
+        id: ExprId,
+        call: &arcweft_lang_hir::expr::HirCallExpr,
+        arguments: &[RuntimeResolvedCallArgument],
+        variant: &RuntimeResolvedVariant,
+    ) -> Result<(), String> {
+        let mut argument_types = Vec::with_capacity(arguments.len());
+        let mut exact_argument_shape = true;
+        for argument in arguments {
+            let RuntimeResolvedCallArgument::Authored { ordinal } = argument else {
+                exact_argument_shape = false;
+                continue;
+            };
+            let ordinal = usize::try_from(*ordinal)
+                .map_err(|_| format!("call argument ordinal {ordinal} does not fit usize"))?;
+            let argument = call
+                .arguments()
+                .get(ordinal)
+                .ok_or_else(|| format!("call argument ordinal {ordinal} is absent at {id:?}"))?;
+            exact_argument_shape &= matches!(argument, HirCallArgument::Positional { .. });
+            let owner = argument.value();
+            argument_types.push(self.facts.expression_type(owner).ok_or_else(|| {
+                format!("accepted type is missing for variant constructor argument {owner:?}")
+            })?);
+        }
+        let payload = variant
+            .selected_payload_type()
+            .map_err(|error| error.to_string())?;
+        let payload_presence_matches = payload.is_some() != arguments.is_empty();
+        if payload_presence_matches
+            && (!exact_argument_shape
+                || variant_payload_accepts_argument_types(payload, &argument_types))
+        {
+            Ok(())
+        } else {
+            Err(format!(
+                "variant constructor at {id:?} does not match its selected normalized payload type"
+            ))
         }
     }
 
@@ -808,6 +849,29 @@ fn lower_agent_predicate(
     }
 }
 
+fn variant_payload_accepts_argument_types(
+    payload: Option<&RuntimeNormalizedType>,
+    arguments: &[&RuntimeNormalizedType],
+) -> bool {
+    match arguments {
+        [] => payload.is_none(),
+        [argument] => payload == Some(*argument),
+        arguments => {
+            let Some(payload) = payload else {
+                return false;
+            };
+            let RuntimeTypeShape::Tuple(items) = payload.shape() else {
+                return false;
+            };
+            items.len() == arguments.len()
+                && items
+                    .iter()
+                    .zip(arguments)
+                    .all(|(expected, actual)| expected == *actual)
+        }
+    }
+}
+
 fn lower_agent_probe_comparison(
     id: ExprId,
     operation: crate::agent::RuntimeAgentProbeComparison,
@@ -882,4 +946,40 @@ fn runtime_binary(operator: HirBinaryOp) -> Option<RuntimeBinaryOp> {
             return None;
         }
     })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::variant_payload_accepts_argument_types;
+    use crate::semantic_facts::{RuntimeNormalizedType, RuntimeSemanticTypeId, RuntimeTypeShape};
+
+    fn normalized(marker: u8, shape: RuntimeTypeShape) -> RuntimeNormalizedType {
+        RuntimeNormalizedType::new(RuntimeSemanticTypeId::from_bytes([marker; 32]), shape)
+    }
+
+    #[test]
+    fn synthetic_variant_tuple_uses_the_selected_normalized_payload() {
+        let first = normalized(1, RuntimeTypeShape::Unit);
+        let second = normalized(2, RuntimeTypeShape::String);
+        let payload = normalized(
+            3,
+            RuntimeTypeShape::Tuple(vec![first.clone(), second.clone()].into_boxed_slice()),
+        );
+        assert!(variant_payload_accepts_argument_types(
+            Some(&payload),
+            &[&first, &second]
+        ));
+
+        let wrong = normalized(4, RuntimeTypeShape::Bool);
+        assert!(!variant_payload_accepts_argument_types(
+            Some(&payload),
+            &[&first, &wrong]
+        ));
+        assert!(!variant_payload_accepts_argument_types(
+            Some(&first),
+            &[&first, &second]
+        ));
+        assert!(variant_payload_accepts_argument_types(None, &[]));
+        assert!(!variant_payload_accepts_argument_types(None, &[&first]));
+    }
 }

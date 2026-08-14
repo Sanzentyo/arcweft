@@ -34,7 +34,9 @@ use arcweft_project::graph::ModuleDependency;
 use arcweft_project::sources::{ProjectSourceFile, ProjectSources};
 use arcweft_runtime_plan::{
     flow::{RuntimeEntryLoweringInput, lower_runtime_plan_with_stats},
-    semantic_facts::{RuntimeSemanticTypeId, RuntimeTypeShape},
+    semantic_facts::{
+        RuntimeNormalizedType, RuntimeSemanticTypeId, RuntimeTypeShape, RuntimeVariantOwner,
+    },
 };
 use arcweft_source::{
     SourceDocument, SourceDocumentId, SourceEdit, SourceName, SourceRange,
@@ -699,6 +701,54 @@ fn runtime_semantic_facts_retain_exact_local_expression_and_pattern_types() {
     assert!(saw_bool_expression, "Bool expression projection is present");
     assert!(saw_i64_expression, "i64 expression projection is present");
     assert!(saw_bool_pattern, "Bool pattern projection is present");
+}
+
+#[test]
+fn runtime_variant_facts_retain_the_complete_normalized_project_case_table() {
+    let (project, facts) = fixture(
+        "enum Event {\n    Unit,\n    Text String,\n}\n\nfn event() -> Event { .Unit }\n\nflow main() -> String { return \"done\" }\n",
+        "runtime-normalized-variant-cases",
+    );
+    let mut cache = RecordingCache::default();
+    let mut session = AttachedCompiler::new(&project);
+    let compiled = session
+        .compile(
+            &project,
+            &context(TypeCheckEnv::standard(), facts),
+            &mut cache,
+        )
+        .expect("project enum fixture compiles");
+    let executable = compiled
+        .hir_project()
+        .executable_view()
+        .expect("accepted project is executable");
+    let runtime_facts = project_runtime_semantic_facts(
+        executable,
+        compiled.project_symbols(),
+        compiled.final_analysis(),
+        None,
+        None,
+    )
+    .expect("project enum cases project from accepted semantic types");
+    let selected = executable
+        .modules()
+        .flat_map(|(_, module)| module.expressions())
+        .filter_map(|(owner, _)| runtime_facts.expression_variant(owner))
+        .find(|variant| variant.selected_name() == Ok("Unit"))
+        .expect("unit expression retains its selected project variant fact");
+
+    assert_eq!(selected.selected_payload_type(), Ok(None));
+    let RuntimeVariantOwner::Project { cases, .. } = selected.owner() else {
+        panic!("project enum expression retains a project variant owner");
+    };
+    assert_eq!(cases.len(), 2);
+    assert_eq!(cases[0].name(), "Unit");
+    assert!(cases[0].payload().is_none());
+    assert_eq!(cases[1].name(), "Text");
+    assert!(matches!(
+        cases[1].payload().map(RuntimeNormalizedType::shape),
+        Some(RuntimeTypeShape::String)
+    ));
 }
 
 #[test]

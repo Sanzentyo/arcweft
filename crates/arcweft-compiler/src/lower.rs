@@ -22,7 +22,6 @@ use arcweft_character::{
 };
 use arcweft_core::{
     entry::{RuntimeNominalTypeId, RuntimeSchemaError},
-    pattern::RuntimeCheckedVariantCase,
     plan::{
         FlowRuntimeId, RuntimeIteratorEvidence, RuntimeIteratorIdentityWitnessCalls,
         RuntimeIteratorWitnessCalls, RuntimeIteratorWitnessEvidence,
@@ -86,13 +85,13 @@ use arcweft_runtime_plan::{
     semantic_facts::{
         RuntimeAssertionAdmission, RuntimeCallResultShape, RuntimeCheckedCapture,
         RuntimeCheckedTypeProjectionError, RuntimeDialogueApplication,
-        RuntimeNominalRecordFactError, RuntimeNormalizedType, RuntimePlanSemanticFactInput,
-        RuntimePlanSemanticFacts, RuntimeProjectCallable, RuntimeProjectItem,
-        RuntimeReductionConstructor, RuntimeRegisteredValueId, RuntimeResolvedCall,
-        RuntimeResolvedCallArgument, RuntimeResolvedCallTarget, RuntimeResolvedNominal,
-        RuntimeResolvedNominalRecord, RuntimeResolvedSelect, RuntimeResolvedValue,
-        RuntimeResolvedVariant, RuntimeSemanticFactsError, RuntimeSemanticTypeId,
-        RuntimeSequenceKind, RuntimeTraitIdentity, RuntimeTraitMethodFact,
+        RuntimeNominalRecordFactError, RuntimeNormalizedType, RuntimeNormalizedVariantCase,
+        RuntimePlanSemanticFactInput, RuntimePlanSemanticFacts, RuntimeProjectCallable,
+        RuntimeProjectItem, RuntimeReductionConstructor, RuntimeRegisteredValueId,
+        RuntimeResolvedCall, RuntimeResolvedCallArgument, RuntimeResolvedCallTarget,
+        RuntimeResolvedNominal, RuntimeResolvedNominalRecord, RuntimeResolvedSelect,
+        RuntimeResolvedValue, RuntimeResolvedVariant, RuntimeSemanticFactsError,
+        RuntimeSemanticTypeId, RuntimeSequenceKind, RuntimeTraitIdentity, RuntimeTraitMethodFact,
         RuntimeTypeProjectionPath, RuntimeTypeProjectionStep, RuntimeTypeShape,
     },
 };
@@ -1621,10 +1620,6 @@ fn runtime_nominal_record(
     })
 }
 
-#[expect(
-    clippy::too_many_lines,
-    reason = "variant ownership is a closed semantic matrix whose validation stays atomic"
-)]
 fn runtime_variant(
     variant: &CheckedVariantResolution,
     symbols: &ProjectSymbolTable,
@@ -1640,26 +1635,20 @@ fn runtime_variant(
                     declaration: Box::new(nominal.declaration().clone()),
                 }
             })?;
-            let arcweft_lang_hir::symbol::nominal::ProjectNominalBody::Enum { variants } =
+            let arcweft_lang_hir::symbol::nominal::ProjectNominalBody::Enum { .. } =
                 declaration.body()
             else {
                 return Err(RuntimeSemanticProjectionError::Type {
                     reason: "checked project variant owner is not an enum".to_owned(),
                 });
             };
-            let selected = usize::try_from(variant.ordinal())
-                .ok()
-                .and_then(|ordinal| variants.get(ordinal))
-                .ok_or_else(|| RuntimeSemanticProjectionError::Type {
-                    reason: "checked project variant ordinal is outside its enum declaration"
-                        .to_owned(),
-                })?;
             RuntimeResolvedVariant::project(
                 runtime_nominal(nominal, symbols, analysis)?,
                 variant.ordinal(),
-                selected,
+                variant.name().as_str(),
                 runtime_project_variant_cases(declaration, nominal, symbols, analysis)?,
             )
+            .map_err(|error| runtime_variant_projection_error(&error))?
         }
         CheckedVariantOwner::CharacterNominal { nominal, cases } => {
             let ty = TypeKind::CharacterNominal(nominal.clone());
@@ -1670,15 +1659,13 @@ fn runtime_variant(
                 ),
                 cases
                     .iter()
-                    .map(|name| RuntimeCheckedVariantCase {
-                        name: name.clone(),
-                        payload: None,
-                    })
+                    .map(|name| RuntimeNormalizedVariantCase::new(name, None))
                     .collect::<Vec<_>>()
                     .into_boxed_slice(),
                 variant.ordinal(),
-                variant.name(),
+                variant.name().as_str(),
             )
+            .map_err(|error| runtime_variant_projection_error(&error))?
         }
         CheckedVariantOwner::BuiltinClosed {
             nominal,
@@ -1691,18 +1678,11 @@ fn runtime_variant(
                     let payload = case
                         .payload()
                         .map(|payload| {
-                            runtime_type(payload, symbols, analysis)?
-                                .checked_type()
-                                .map(Box::new)
-                                .map_err(|reason| RuntimeSemanticProjectionError::Type {
-                                    reason: reason.to_string(),
-                                })
+                            let payload = runtime_type(payload, symbols, analysis)?;
+                            retain_checked_variant_payload(payload)
                         })
                         .transpose()?;
-                    Ok(RuntimeCheckedVariantCase {
-                        name: case.name().to_owned(),
-                        payload,
-                    })
+                    Ok(RuntimeNormalizedVariantCase::new(case.name(), payload))
                 })
                 .collect::<Result<Vec<_>, RuntimeSemanticProjectionError>>()?
                 .into_boxed_slice();
@@ -1717,32 +1697,21 @@ fn runtime_variant(
                 })?,
                 cases,
                 variant.ordinal(),
-                variant.name(),
+                variant.name().as_str(),
             )
+            .map_err(|error| runtime_variant_projection_error(&error))?
         }
-        CheckedVariantOwner::Option { item } => match variant.ordinal() {
-            0 => RuntimeResolvedVariant::option_some(runtime_type(item, symbols, analysis)?),
-            1 => RuntimeResolvedVariant::option_none(runtime_type(item, symbols, analysis)?),
-            _ => {
-                return Err(RuntimeSemanticProjectionError::Type {
-                    reason: "checked Option variant ordinal is outside the closed case set"
-                        .to_owned(),
-                });
-            }
-        },
+        CheckedVariantOwner::Option { item } => RuntimeResolvedVariant::option(
+            runtime_type(item, symbols, analysis)?,
+            variant.ordinal(),
+            variant.name().as_str(),
+        )
+        .map_err(|error| runtime_variant_projection_error(&error))?,
         CheckedVariantOwner::Result { ok, error } => {
             let ok = runtime_type(ok, symbols, analysis)?;
             let error = runtime_type(error, symbols, analysis)?;
-            match variant.ordinal() {
-                0 => RuntimeResolvedVariant::result_ok(ok, error),
-                1 => RuntimeResolvedVariant::result_err(ok, error),
-                _ => {
-                    return Err(RuntimeSemanticProjectionError::Type {
-                        reason: "checked Result variant ordinal is outside the closed case set"
-                            .to_owned(),
-                    });
-                }
-            }
+            RuntimeResolvedVariant::result(ok, error, variant.ordinal(), variant.name().as_str())
+                .map_err(|error| runtime_variant_projection_error(&error))?
         }
     };
     Ok(projected)
@@ -2134,14 +2103,13 @@ fn runtime_variant_constructor(
             };
             let ok = runtime_type(ok, symbols, analysis)?;
             let error = runtime_type(error, symbols, analysis)?;
-            Ok(Some(match kind {
-                arcweft_lang_sema::callable::ResultConstructorKind::Ok => {
-                    RuntimeResolvedVariant::result_ok(ok, error)
-                }
-                arcweft_lang_sema::callable::ResultConstructorKind::Err => {
-                    RuntimeResolvedVariant::result_err(ok, error)
-                }
-            }))
+            let (ordinal, name) = match kind {
+                arcweft_lang_sema::callable::ResultConstructorKind::Ok => (0, "Ok"),
+                arcweft_lang_sema::callable::ResultConstructorKind::Err => (1, "Err"),
+            };
+            RuntimeResolvedVariant::result(ok, error, ordinal, name)
+                .map(Some)
+                .map_err(|error| invalid(&error.to_string()))
         }
         CallableInstantiation::Option { .. } => {
             let Some(TypeKind::Option(item)) = facts.result() else {
@@ -2159,9 +2127,9 @@ fn runtime_variant_constructor(
                     "Option constructor instantiation has a non-Option candidate identity",
                 ));
             }
-            Ok(Some(RuntimeResolvedVariant::option_some(runtime_type(
-                item, symbols, analysis,
-            )?)))
+            RuntimeResolvedVariant::option(runtime_type(item, symbols, analysis)?, 0, "Some")
+                .map(Some)
+                .map_err(|error| invalid(&error.to_string()))
         }
         CallableInstantiation::ExpectedEnum { expected } => {
             let TypeKind::ProjectNominal(nominal) = expected else {
@@ -2202,7 +2170,7 @@ fn runtime_variant_constructor(
                     "enum constructor checked type does not resolve to an enum declaration",
                 ));
             };
-            let (ordinal, variant) = variants
+            let (ordinal, _) = variants
                 .iter()
                 .enumerate()
                 .find(|(_, variant)| variant.name().as_str() == candidate.variant().as_str())
@@ -2217,12 +2185,20 @@ fn runtime_variant_constructor(
                 expected.semantic_identity_digest(),
                 nominal.arguments().to_vec(),
             );
-            Ok(Some(RuntimeResolvedVariant::project(
-                runtime_nominal(&checked_nominal, symbols, analysis)?,
-                ordinal,
-                variant,
-                runtime_project_variant_cases(declaration, &checked_nominal, symbols, analysis)?,
-            )))
+            Ok(Some(
+                RuntimeResolvedVariant::project(
+                    runtime_nominal(&checked_nominal, symbols, analysis)?,
+                    ordinal,
+                    candidate.variant().as_str(),
+                    runtime_project_variant_cases(
+                        declaration,
+                        &checked_nominal,
+                        symbols,
+                        analysis,
+                    )?,
+                )
+                .map_err(|error| invalid(&error.to_string()))?,
+            ))
         }
         CallableInstantiation::None
         | CallableInstantiation::Character { .. }
@@ -2238,7 +2214,7 @@ fn runtime_project_variant_cases(
     nominal: &CheckedProjectNominal,
     symbols: &ProjectSymbolTable,
     analysis: &FinalSemanticAnalysis,
-) -> Result<Box<[RuntimeCheckedVariantCase]>, RuntimeSemanticProjectionError> {
+) -> Result<Box<[RuntimeNormalizedVariantCase]>, RuntimeSemanticProjectionError> {
     let arcweft_lang_hir::symbol::nominal::ProjectNominalBody::Enum { variants } =
         declaration.body()
     else {
@@ -2266,21 +2242,36 @@ fn runtime_project_variant_cases(
                                 "project enum payload {owner:?} cannot apply its checked nominal arguments"
                             ),
                         })?;
-                    runtime_type(&ty, symbols, analysis)?
-                        .checked_type()
-                        .map(Box::new)
-                        .map_err(|reason| RuntimeSemanticProjectionError::Type {
-                            reason: reason.to_string(),
-                        })
+                    let payload = runtime_type(&ty, symbols, analysis)?;
+                    retain_checked_variant_payload(payload)
                 })
                 .transpose()?;
-            Ok(RuntimeCheckedVariantCase {
-                name: variant.name().as_str().to_owned(),
+            Ok(RuntimeNormalizedVariantCase::new(
+                variant.name().as_str(),
                 payload,
-            })
+            ))
         })
         .collect::<Result<Vec<_>, _>>()
         .map(Vec::into_boxed_slice)
+}
+
+fn retain_checked_variant_payload(
+    payload: RuntimeNormalizedType,
+) -> Result<RuntimeNormalizedType, RuntimeSemanticProjectionError> {
+    payload
+        .checked_type()
+        .map_err(|reason| RuntimeSemanticProjectionError::Type {
+            reason: reason.to_string(),
+        })?;
+    Ok(payload)
+}
+
+fn runtime_variant_projection_error(
+    error: &arcweft_runtime_plan::semantic_facts::RuntimeResolvedVariantError,
+) -> RuntimeSemanticProjectionError {
+    RuntimeSemanticProjectionError::Type {
+        reason: error.to_string(),
+    }
 }
 
 fn runtime_selected_callable_id(
