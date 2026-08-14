@@ -25,6 +25,7 @@ mod range;
 mod record_id;
 mod sequence_constructors;
 mod sequence_impls;
+mod shape;
 
 pub use integer::{RuntimeInt, RuntimeSignedIntWidth, RuntimeUInt, RuntimeUnsignedIntWidth};
 pub use nesting::{MAX_RUNTIME_VALUE_NESTING_DEPTH, RuntimeValueNestingError};
@@ -51,6 +52,7 @@ pub use sequence_constructors::{
     runtime_sequence_dense_u64, runtime_sequence_dense_u128, runtime_sequence_dense_units,
     runtime_sequence_dense_usize, runtime_sequence_repeat_value,
 };
+pub use shape::RuntimeValueShape;
 
 #[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
 pub struct RuntimeBinding {
