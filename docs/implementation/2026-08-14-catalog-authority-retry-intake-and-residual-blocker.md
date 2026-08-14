@@ -61,6 +61,13 @@ conflicts block the root/admission/checked-validator cuts:
    `AdmittedRuntimeGeneration` in phase 2, while current production lacks that
    type and the returned order does not create generation admission until
    phase 7. A placeholder or temporary constructor is prohibited.
+4. The checked outer-shape enum omits current Range/Matrix/Tensor value
+   families, and nominal values do not carry the `actual` semantic ID required
+   by the proposed pre-lookup error. `RuntimeIndexPath` also derives
+   deserialization that bypasses its stated checked constructor.
+5. The proposed catalog wrapper crosses the forbidden dialogue-to-runtime-
+   driver dependency, accepts a free generation assertion, and names a
+   Character-to-View relationship absent from the current CharacterCatalog.
 
 ## Safe implementation boundary
 
