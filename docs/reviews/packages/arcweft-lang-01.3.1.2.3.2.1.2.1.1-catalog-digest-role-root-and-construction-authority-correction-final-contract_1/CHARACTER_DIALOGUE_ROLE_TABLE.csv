@@ -1,0 +1,8 @@
+ordinal,serde_name,authored,accepted_nominal,owner,origin,arity,producer,semantic_projection,runtime_projection
+0,stage,yes,DialogueStage,Standard,Domain,0,std.character_dialogue,AcceptedNominal(DialogueStage),Opaque exact producer+semantic-id
+1,portrait,yes,DialoguePortrait,Standard,Domain,0,std.character_dialogue,AcceptedNominal(DialoguePortrait),Opaque exact producer+semantic-id
+2,focus,yes,DialogueFocus,Standard,Domain,0,std.character_dialogue,AcceptedNominal(DialogueFocus),Opaque exact producer+semantic-id
+3,cleanup,yes,DialogueCleanup,Standard,Domain,0,std.character_dialogue,AcceptedNominal(DialogueCleanup),Opaque exact producer+semantic-id
+4,hook,yes,DialogueHook,Standard,Domain,0,std.character_dialogue,AcceptedNominal(DialogueHook),Opaque exact producer+semantic-id
+5,style,no,,,,,,"Choice(EntityRef<Style>, RichText)","Choice(EntityReference, RichText exact opaque)"
+6,rich_text,yes,RichTextStyle,Standard,Domain,0,std.character_dialogue,AcceptedNominal(RichTextStyle),Opaque exact producer+semantic-id

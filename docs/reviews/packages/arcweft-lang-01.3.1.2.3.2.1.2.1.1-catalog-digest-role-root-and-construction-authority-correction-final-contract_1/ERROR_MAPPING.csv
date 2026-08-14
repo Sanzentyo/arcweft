@@ -1,0 +1,14 @@
+boundary,outer_error_variant,typed_payload,path_preservation,string_flattening
+nominal tree,RuntimeNominalRecordTreeError::CheckedValue,field: RuntimeRecordFieldId; type_path; value_path; source: RuntimeCheckedTypeError,exact defining-order field and nested paths,forbidden
+CharacterDialogue,CharacterDialogueValueError::CheckedValue,path: CharacterDialogueValuePath; source: RuntimeCheckedTypeError,dialogue coordinate plus nested paths,forbidden
+session restore,SessionRestoreError::RuntimeValue,slot: SessionRuntimeSlot; path: RuntimeValuePath; source: RuntimeNominalRecordTreeError,session slot plus nested paths,forbidden
+replay,RuntimeReplayError::RuntimeValue,event: RuntimeReplayEventId; path; source,event plus nested paths,forbidden
+View activation,ViewRuntimeError::InputCheckedValue,view: RuntimeViewId; input: u32; source,View/input plus nested paths,forbidden
+RuntimePlan admission,RuntimePlanAdmissionError::CheckedLiteral,site: RuntimePlanTypedSite; source,typed plan site plus nested paths,forbidden
+generation contract,RuntimeGenerationContractError::ProjectLiteral,root: RuntimeProjectRootId; site; source,root and site plus nested paths,forbidden
+AWBC admission,AwbcAdmissionError::CheckedConstant,constant: AwbcConstantId; source,constant and nested paths,forbidden
+AWBC verifier,AwbcVerifyError::MakeRecordDomain,site; domain: AwbcNominalRecordDomainId; source,instruction site/domain,forbidden
+AWBC VM,AwbcVmError::MakeRecord,function; block; instruction; source: RuntimeNominalRecordConstructionError,instruction site plus field paths,forbidden
+dialogue restore,CharacterDialogueRestoreError::CheckedValue,field/entry/path/source,domain coordinate plus nested paths,forbidden
+bundle ingress,BundleAdmissionError::RuntimeValue,artifact coordinate; path; source,artifact coordinate plus nested paths,forbidden
+save ingress,SaveAdmissionError::RuntimeValue,save slot; path; source,save slot plus nested paths,forbidden

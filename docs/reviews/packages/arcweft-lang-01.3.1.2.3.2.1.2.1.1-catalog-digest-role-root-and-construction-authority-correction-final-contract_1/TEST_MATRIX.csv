@@ -1,0 +1,672 @@
+id,area,gate,kind,fixture,operation,expected,owner
+GBA-T-001,identity,G1,positive,canonical declaration,recompute identity,claimed identity equals BLAKE3 canonical body,arcweft-core generation/codec unit
+GBA-T-002,identity,G1,negative,change one project-root byte,recompute identity,identity changes,arcweft-core generation/codec unit
+GBA-T-003,identity,G1,negative,change one producer root checked type,recompute identity,identity changes,arcweft-core generation/codec unit
+GBA-T-004,identity,G1,negative,change one claimed authorization key,recompute identity,identity changes,arcweft-core generation/codec unit
+GBA-T-005,identity,G1,negative,change custom clearable only,recompute identity,identity changes through custom payload,arcweft-core generation/codec unit
+GBA-T-006,identity,G1,negative,change accepted View only,recompute identity,identity changes,arcweft-core generation/codec unit
+GBA-T-007,identity,G1,negative,same claimed identity/different body,join artifacts,IdentityCollision,arcweft-core generation/codec unit
+GBA-T-008,identity,G1,positive,independent byte-identical declarations,join artifacts,identity and body match,arcweft-core generation/codec unit
+GBA-T-009,grammar,G1,negative,noncanonical project root order,decode/admit,NonCanonicalOrder before traversal,arcweft-core generation/codec unit
+GBA-T-010,grammar,G1,negative,duplicate project root ID,decode/admit,Duplicate root,arcweft-core generation/codec unit
+GBA-T-011,grammar,G1,negative,noncanonical producer order,decode/admit,producer order error,arcweft-core generation/codec unit
+GBA-T-012,grammar,G1,negative,duplicate producer ID,decode/admit,DuplicateProducer,arcweft-core generation/codec unit
+GBA-T-013,grammar,G1,negative,noncanonical catalog-key order,decode/admit,catalog order error,arcweft-core generation/codec unit
+GBA-T-014,grammar,G1,negative,duplicate catalog key,decode/admit,DuplicateLayout,arcweft-core generation/codec unit
+GBA-T-015,grammar,G1,negative,unknown checked-type tag,decode,typed codec error with offset,arcweft-core generation/codec unit
+GBA-T-016,grammar,G1,negative,u32 length over limit,decode,limit error before allocation,arcweft-core generation/codec unit
+GBA-T-017,grammar,G1,positive,every RuntimeCheckedType variant,encode/decode,byte-identical round trip,arcweft-core generation/codec unit
+GBA-T-018,grammar,G1,negative,Variant duplicate/empty case name,admit,typed variant declaration error,arcweft-core generation/codec unit
+GBA-T-019,grammar,G1,positive,Opaque exact owner,encode/decode,owner/admission bytes stable,arcweft-core generation/codec unit
+GBA-T-020,grammar,G1,positive,Opaque producer-wide static root,admit,closed static root accepted; no concrete wrap,arcweft-core generation/codec unit
+GBA-T-021,root traversal,G1/G4,positive,Never,derive closure,no key and no child,core producer-contract unit
+GBA-T-022,root traversal,G1/G4,positive,Unit,derive closure,no key,core producer-contract unit
+GBA-T-023,root traversal,G1/G4,positive,Bool,derive closure,no key,core producer-contract unit
+GBA-T-024,root traversal,G1/G4,positive,Signed/Unsigned,derive closure,no key,core producer-contract unit
+GBA-T-025,root traversal,G1/G4,positive,F32/F64,derive closure,no key,core producer-contract unit
+GBA-T-026,root traversal,G1/G4,positive,String/Char/Duration,derive closure,no key,core producer-contract unit
+GBA-T-027,root traversal,G1/G4,positive,EntityRef/Bytes,derive closure,no key,core producer-contract unit
+GBA-T-028,root traversal,G1/G4,positive,Sequence(Nominal A),derive closure,A key,core producer-contract unit
+GBA-T-029,root traversal,G1/G4,positive,Option(Nominal A),derive closure,A key,core producer-contract unit
+GBA-T-030,root traversal,G1/G4,positive,"Result(Nominal A, Nominal B)",derive closure,A then B keys,core producer-contract unit
+GBA-T-031,root traversal,G1/G4,positive,"Tuple([B,A])",derive closure,visit ordinal 0 then 1,core producer-contract unit
+GBA-T-032,root traversal,G1/G4,positive,"Choice([A,B])",derive closure,visit both in source order,core producer-contract unit
+GBA-T-033,root traversal,G1/G4,positive,"Variant cases [A,B]",derive closure,visit payloads by ordinal,core producer-contract unit
+GBA-T-034,root traversal,G1/G4,positive,Opaque exact,derive closure,validate owner and stop,core producer-contract unit
+GBA-T-035,root traversal,G1/G4,positive,Opaque producer-wide,derive closure,validate owner and stop,core producer-contract unit
+GBA-T-036,root traversal,G1/G4,positive,Nominal A with primitive fields,derive closure,A key and defining-order fields,core producer-contract unit
+GBA-T-037,root traversal,G1/G4,positive,Nominal A containing B,derive closure,A then B keys,core producer-contract unit
+GBA-T-038,root traversal,G1/G4,positive,recursive Nominal A,derive closure,terminate through visited set,core producer-contract unit
+GBA-T-039,root traversal,G1/G4,positive,"diamond A->C, B->C",derive closure,C traversed once per closure,core producer-contract unit
+GBA-T-040,limits,G1/G4,boundary,"project roots 65,536",admit generation,accepted at limit,core producer-contract unit
+GBA-T-041,limits,G1/G4,boundary,"project roots 65,537",admit generation,Limit,core producer-contract unit
+GBA-T-042,limits,G1/G4,boundary,"producers 1,024",admit generation,accepted at limit,core producer-contract unit
+GBA-T-043,limits,G1/G4,boundary,"producers 1,025",admit generation,Limit,core producer-contract unit
+GBA-T-044,limits,G1/G4,boundary,"generic producer roots 4,096",admit generation,accepted at limit,core producer-contract unit
+GBA-T-045,limits,G1/G4,boundary,"generic producer roots 4,097",admit generation,Limit,core producer-contract unit
+GBA-T-046,limits,G1/G4,boundary,"custom fields 4,096",admit generation,accepted at limit,core producer-contract unit
+GBA-T-047,limits,G1/G4,boundary,"custom fields 4,097",admit generation,Limit,core producer-contract unit
+GBA-T-048,limits,G1/G4,boundary,accepted Views 256,admit generation,accepted at limit,core producer-contract unit
+GBA-T-049,limits,G1/G4,boundary,accepted Views 257,admit generation,Limit,core producer-contract unit
+GBA-T-050,limits,G1/G4,boundary,"catalog layouts 65,536",admit generation,accepted at limit,core producer-contract unit
+GBA-T-051,limits,G1/G4,boundary,"catalog layouts 65,537",admit generation,Limit,core producer-contract unit
+GBA-T-052,limits,G1/G4,boundary,"root work 65,536",admit generation,accepted at limit,core producer-contract unit
+GBA-T-053,limits,G1/G4,boundary,"root work 65,537",admit generation,Work,core producer-contract unit
+GBA-T-054,limits,G1/G4,boundary,"generation work 1,048,576",admit generation,accepted at limit,core producer-contract unit
+GBA-T-055,limits,G1/G4,boundary,"generation work 1,048,577",admit generation,Work,core producer-contract unit
+GBA-T-056,limits,G1/G4,boundary,nesting exactly MAX_RUNTIME_VALUE_NESTING_DEPTH,admit generation,accepted,core producer-contract unit
+GBA-T-057,limits,G1/G4,boundary,nesting one over maximum,admit generation,Depth,core producer-contract unit
+GBA-T-058,producer authorization,G4,negative,extra producer/key absent from roots,RuntimePlan::try_admit,ExtraAuthorization,core plan/admission unit
+GBA-T-059,producer authorization,G4,negative,missing key derived from root,RuntimePlan::try_admit,MissingAuthorization,core plan/admission unit
+GBA-T-060,producer authorization,G4,negative,producer row only names otherwise unreachable layout,RuntimePlan::try_admit,ExtraAuthorization then UnreachableLayout cannot be legitimized,core plan/admission unit
+GBA-T-061,producer authorization,G4,negative,claimed key duplicated,RuntimePlan::try_admit,DuplicateAuthorization,core plan/admission unit
+GBA-T-062,producer authorization,G4,negative,claimed key noncanonical order,RuntimePlan::try_admit,NonCanonicalOrder,core plan/admission unit
+GBA-T-063,producer authorization,G4,negative,claimed key absent from catalog,RuntimePlan::try_admit,MissingLayout after exact-set comparison where applicable,core plan/admission unit
+GBA-T-064,producer authorization,G4,positive,catalog layout reachable only from project root,RuntimePlan::try_admit,accepted as project closure,core plan/admission unit
+GBA-T-065,producer authorization,G4,positive,catalog layout reachable only from producer root,RuntimePlan::try_admit,accepted as producer closure,core plan/admission unit
+GBA-T-066,producer authorization,G4,negative,catalog layout unreachable from all roots,RuntimePlan::try_admit,UnreachableLayout,core plan/admission unit
+GBA-T-067,producer authorization,G4,negative,reachable key missing catalog descriptor,RuntimePlan::try_admit,MissingLayout,core plan/admission unit
+GBA-T-068,producer authorization,G4,negative,same key conflicting descriptor,RuntimePlan::try_admit,ConflictingLayout,core plan/admission unit
+GBA-T-069,producer authorization,G4,negative,descriptor key scalar mismatch,RuntimePlan::try_admit,LayoutKeyMismatch,core plan/admission unit
+GBA-T-070,producer authorization,G4,positive,producer roots A; claimed A,RuntimePlan::try_admit,accepted,core plan/admission unit
+GBA-T-071,producer authorization,G4,negative,producer roots A+B; claimed A,RuntimePlan::try_admit,first missing B,core plan/admission unit
+GBA-T-072,producer authorization,G4,negative,producer roots A; claimed A+B,RuntimePlan::try_admit,first extra B,core plan/admission unit
+GBA-T-073,producer authorization,G4,positive,two producers share key A,RuntimePlan::try_admit,both exact closures accepted,core plan/admission unit
+GBA-T-074,producer authorization,G4,negative,producer A claims B's exclusive root key,RuntimePlan::try_admit,ExtraAuthorization for A,core plan/admission unit
+GBA-T-075,producer authorization,G4,negative,CharacterDialogue payload under wrong producer ID,RuntimePlan::try_admit,CharacterDialogueProducer before traversal,core plan/admission unit
+GBA-T-076,producer authorization,G4,negative,unknown payload kind,RuntimePlan::try_admit,codec/declaration error,core plan/admission unit
+GBA-T-077,producer authorization,G4,positive,empty generic root set and empty claim,RuntimePlan::try_admit,accepted if producer contract itself is meaningful and catalog unaffected,core plan/admission unit
+GBA-T-078,dialogue role projection,G2/G3,negative,exactly six typed base declarations,accept/project roles,seven runtime roles with derived Style,sema/runtime-plan unit
+GBA-T-079,dialogue role projection,G2/G3,negative,missing Stage declaration,accept/project roles,MissingRole(Stage) with source owner,sema/runtime-plan unit
+GBA-T-080,dialogue role projection,G2/G3,negative,missing RichText declaration,accept/project roles,MissingRole(RichText),sema/runtime-plan unit
+GBA-T-081,dialogue role projection,G2/G3,negative,duplicate Hook declaration,accept/project roles,DuplicateRole(Hook),sema/runtime-plan unit
+GBA-T-082,dialogue role projection,G2/G3,negative,authored Style declaration,accept/project roles,UnexpectedAuthoredRole(Style),sema/runtime-plan unit
+GBA-T-083,dialogue role projection,G2/G3,negative,Stage declaration contains unresolved Named,accept/project roles,UnresolvedRoleType(Stage),sema/runtime-plan unit
+GBA-T-084,dialogue role projection,G2/G3,negative,RichText declaration leaks CharacterDialogueRole coordinate,accept/project roles,UnresolvedRoleType(RichText),sema/runtime-plan unit
+GBA-T-085,dialogue role projection,G2/G3,negative,role accepted world differs from custom registry,accept/project roles,AcceptedWorldMismatch,sema/runtime-plan unit
+GBA-T-086,dialogue role projection,G2/G3,positive,"style exact Choice(EntityRef, RichText)",accept/project roles,accepted,sema/runtime-plan unit
+GBA-T-087,dialogue role projection,G2/G3,negative,serialized Style swaps branch order,accept/project roles,StyleMismatch,sema/runtime-plan unit
+GBA-T-088,dialogue role projection,G2/G3,negative,serialized Style substitutes Bool,accept/project roles,StyleMismatch,sema/runtime-plan unit
+GBA-T-089,dialogue role projection,G2/G3,positive,current DialogueStage spelling absent,accept/project roles,no name lookup; typed fixture still projects,sema/runtime-plan unit
+GBA-T-090,dialogue role projection,G2/G3,positive,current RichTextStyle spelling absent,accept/project roles,no name lookup; typed fixture still projects,sema/runtime-plan unit
+GBA-T-091,dialogue role projection,G2/G3,negative,all role sources retained,accept/project roles,projection error reports exact role/type/span,sema/runtime-plan unit
+GBA-T-092,custom catalog,G2/G3/G4/G7,negative,empty custom descriptor set,construct/admit catalog,canonical empty digest,sema/core/dialogue unit
+GBA-T-093,custom catalog,G2/G3/G4/G7,positive,one canonical descriptor,construct/admit catalog,computed digest accepted,sema/core/dialogue unit
+GBA-T-094,custom catalog,G2/G3/G4/G7,negative,caller supplies mismatched raw digest,construct/admit catalog,DigestMismatch,sema/core/dialogue unit
+GBA-T-095,custom catalog,G2/G3/G4/G7,positive,change field ID only,construct/admit catalog,digest changes,sema/core/dialogue unit
+GBA-T-096,custom catalog,G2/G3/G4/G7,positive,change checked type only,construct/admit catalog,digest changes,sema/core/dialogue unit
+GBA-T-097,custom catalog,G2/G3/G4/G7,positive,change clearable only,construct/admit catalog,digest changes,sema/core/dialogue unit
+GBA-T-098,custom catalog,G2/G3/G4/G7,positive,add accepted View,construct/admit catalog,digest changes,sema/core/dialogue unit
+GBA-T-099,custom catalog,G2/G3/G4/G7,positive,remove accepted View,construct/admit catalog,digest changes,sema/core/dialogue unit
+GBA-T-100,custom catalog,G2/G3/G4/G7,negative,reorder accepted Views in raw Serde,construct/admit catalog,NonCanonicalViewOrder,sema/core/dialogue unit
+GBA-T-101,custom catalog,G2/G3/G4/G7,negative,duplicate accepted View,construct/admit catalog,DuplicateView,sema/core/dialogue unit
+GBA-T-102,custom catalog,G2/G3/G4/G7,negative,reorder raw fields,construct/admit catalog,NonCanonicalFieldOrder,sema/core/dialogue unit
+GBA-T-103,custom catalog,G2/G3/G4/G7,negative,duplicate field ID,construct/admit catalog,DuplicateField,sema/core/dialogue unit
+GBA-T-104,custom catalog,G2/G3/G4/G7,negative,unknown View in admitted registry,construct/admit catalog,MissingView before value validation,sema/core/dialogue unit
+GBA-T-105,custom catalog,G2/G3/G4/G7,negative,custom checked type contains missing nominal,construct/admit catalog,producer root NominalLookup,sema/core/dialogue unit
+GBA-T-106,custom catalog,G2/G3/G4/G7,negative,custom checked type contains wrong producer nominal claim,construct/admit catalog,authorization equality failure,sema/core/dialogue unit
+GBA-T-107,custom catalog,G2/G3/G4/G7,negative,custom registry world mismatch,construct/admit catalog,AcceptedWorldMismatch,sema/core/dialogue unit
+GBA-T-108,custom catalog,G2/G3/G4/G7,positive,same semantic descriptors/different source spans,construct/admit catalog,same runtime digest,sema/core/dialogue unit
+GBA-T-109,custom catalog,G2/G3/G4/G7,positive,source-inclusive sema digest changes only,construct/admit catalog,runtime digest unchanged; sema evidence still distinct,sema/core/dialogue unit
+GBA-T-110,custom catalog,G2/G3/G4/G7,positive,"4,096 fields",construct/admit catalog,accepted at limit,sema/core/dialogue unit
+GBA-T-111,custom catalog,G2/G3/G4/G7,negative,"4,097 fields",construct/admit catalog,Limit,sema/core/dialogue unit
+GBA-T-112,voice,G7,positive,voice absent,encode/decode tuple index 5,Option None ordinal1 name None no payload,dialogue unit/golden
+GBA-T-113,voice,G7,positive,voice Auto,encode/decode tuple index 5,Option Some -> Voice Auto ordinal0 no payload,dialogue unit/golden
+GBA-T-114,voice,G7,positive,voice Id,encode/decode tuple index 5,Option Some -> Voice Id ordinal1 EntityRef payload,dialogue unit/golden
+GBA-T-115,voice,G7,negative,flat three-case voice value,encode/decode tuple index 5,PayloadShape/owner failure,dialogue unit/golden
+GBA-T-116,voice,G7,negative,outer Some with no payload,encode/decode tuple index 5,payload presence error,dialogue unit/golden
+GBA-T-117,voice,G7,negative,outer None with payload,encode/decode tuple index 5,payload presence error,dialogue unit/golden
+GBA-T-118,voice,G7,negative,outer wrong owner,encode/decode tuple index 5,owner error before ordinal,dialogue unit/golden
+GBA-T-119,voice,G7,negative,outer wrong ordinal,encode/decode tuple index 5,ordinal error before name,dialogue unit/golden
+GBA-T-120,voice,G7,negative,outer right ordinal/wrong name,encode/decode tuple index 5,name error,dialogue unit/golden
+GBA-T-121,voice,G7,negative,inner wrong nominal owner,encode/decode tuple index 5,inner owner error,dialogue unit/golden
+GBA-T-122,voice,G7,negative,inner Auto with payload,encode/decode tuple index 5,payload presence error,dialogue unit/golden
+GBA-T-123,voice,G7,negative,inner Id without payload,encode/decode tuple index 5,payload presence error,dialogue unit/golden
+GBA-T-124,voice,G7,negative,inner Id with String,encode/decode tuple index 5,payload checked-type error,dialogue unit/golden
+GBA-T-125,voice,G7,positive,canonical encode/decode each voice state,encode/decode tuple index 5,byte-identical nested representation,dialogue unit/golden
+GBA-T-126,variant,G0/G7,positive,nominal Variant correct owner/ordinal/name/payload,typed validation,accepted,core/dialogue unit
+GBA-T-127,variant,G0/G7,negative,wrong owner with valid case spelling,typed validation,owner failure,core/dialogue unit
+GBA-T-128,variant,G0/G7,negative,correct owner/out-of-range ordinal,typed validation,ordinal failure,core/dialogue unit
+GBA-T-129,variant,G0/G7,negative,correct ordinal/wrong name,typed validation,name failure,core/dialogue unit
+GBA-T-130,variant,G0/G7,negative,payload required but missing,typed validation,presence failure,core/dialogue unit
+GBA-T-131,variant,G0/G7,negative,payload forbidden but present,typed validation,presence failure,core/dialogue unit
+GBA-T-132,variant,G0/G7,negative,payload wrong type,typed validation,payload failure,core/dialogue unit
+GBA-T-133,variant,G0/G7,positive,Option Some/None exact intrinsic cases,typed validation,accepted,core/dialogue unit
+GBA-T-134,variant,G0/G7,positive,Result Ok/Err exact intrinsic cases,typed validation,accepted,core/dialogue unit
+GBA-T-135,choice,G1/G4/G7,positive,Style EntityRef only,admit/validate/transform,unique branch 0,core/dialogue unit
+GBA-T-136,choice,G1/G4/G7,positive,Style RichText only,admit/validate/transform,unique branch 1,core/dialogue unit
+GBA-T-137,choice,G1/G4/G7,negative,value matches neither Style branch,admit/validate/transform,ChoiceNoMatch with ordered branch evidence,core/dialogue unit
+GBA-T-138,choice,G1/G4/G7,negative,value matches two generic alternatives,admit/validate/transform,ChoiceAmbiguous first two indices,core/dialogue unit
+GBA-T-139,choice,G1/G4/G7,negative,Choice later branch contains malformed nominal root,admit/validate/transform,admission fails despite earlier valid branch,core/dialogue unit
+GBA-T-140,choice,G1/G4/G7,positive,Choice root A|B,admit/validate/transform,authorization closure contains A and B,core/dialogue unit
+GBA-T-141,choice,G1/G4/G7,positive,reorder Choice alternatives,admit/validate/transform,generation identity changes,core/dialogue unit
+GBA-T-142,choice,G1/G4/G7,positive,normalize unique branch,admit/validate/transform,uses selected branch,core/dialogue unit
+GBA-T-143,choice,G1/G4/G7,negative,clear output matches two branches,admit/validate/transform,ChoiceAmbiguous; no publication,core/dialogue unit
+GBA-T-144,choice,G1/G4/G7,negative,Choice work budget exhausted,admit/validate/transform,typed Work with branch path,core/dialogue unit
+GBA-T-145,RuntimePlan admission,G4/G6/G9,negative,structurally invalid plan plus bad generation contract,try_admit/compile,existing RuntimePlanError first,core plan unit/trybuild
+GBA-T-146,RuntimePlan admission,G4/G6/G9,negative,valid plan/malformed producer roots,try_admit/compile,GenerationContract::Producer,core plan unit/trybuild
+GBA-T-147,RuntimePlan admission,G4/G6/G9,negative,valid plan/custom digest mismatch,try_admit/compile,GenerationContract::Custom,core plan unit/trybuild
+GBA-T-148,RuntimePlan admission,G4/G6/G9,negative,valid plan/catalog conflict,try_admit/compile,GenerationContract::Catalog,core plan unit/trybuild
+GBA-T-149,RuntimePlan admission,G4/G6/G9,negative,valid plan/project traversal failure,try_admit/compile,ProjectRoot typed source,core plan unit/trybuild
+GBA-T-150,RuntimePlan admission,G4/G6/G9,negative,valid plan/producer traversal failure,try_admit/compile,ProducerRoot typed source,core plan unit/trybuild
+GBA-T-151,RuntimePlan admission,G4/G6/G9,negative,valid plan/authorization mismatch,try_admit/compile,Missing/ExtraAuthorization,core plan unit/trybuild
+GBA-T-152,RuntimePlan admission,G4/G6/G9,negative,valid plan/unreachable layout,try_admit/compile,UnreachableLayout,core plan unit/trybuild
+GBA-T-153,RuntimePlan admission,G4/G6/G9,negative,valid plan/root inventory differs from declaration,try_admit/compile,typed plan correlation error,core plan unit/trybuild
+GBA-T-154,RuntimePlan admission,G4/G6/G9,negative,valid plan/claimed identity mismatch,try_admit/compile,Identity,core plan unit/trybuild
+GBA-T-155,RuntimePlan admission,G4/G6/G9,positive,fully canonical plan,try_admit/compile,AdmittedRuntimePlan,core plan unit/trybuild
+GBA-T-156,RuntimePlan admission,G4/G6/G9,compile_fail,admitted plan has no Serde,try_admit/compile,compile fail,core plan unit/trybuild
+GBA-T-157,RuntimePlan admission,G4/G6/G9,compile_fail,admitted plan has no Deref,try_admit/compile,compile fail,core plan unit/trybuild
+GBA-T-158,RuntimePlan admission,G4/G6/G9,compile_fail,admitted plan has no into_runtime_plan,try_admit/compile,compile fail,core plan unit/trybuild
+GBA-T-159,RuntimePlan admission,G4/G6/G9,compile_fail,raw verify success passed to Engine,try_admit/compile,compile fail/no conversion,core plan unit/trybuild
+GBA-T-160,RuntimePlan admission,G4/G6/G9,positive,raw plan cloned after deserialization,try_admit/compile,still cannot execute without try_admit,core plan unit/trybuild
+GBA-T-161,AWBC admission,G5/G6/G9,negative,AWBC header wrong magic + bad contract,decode/try_admit/compile,header error first,core AWBC unit/trybuild
+GBA-T-162,AWBC admission,G5/G6/G9,negative,AWBC ABI version !=1,decode/try_admit/compile,version error,core AWBC unit/trybuild
+GBA-T-163,AWBC admission,G5/G6/G9,negative,AWBC codec version !=1,decode/try_admit/compile,version error,core AWBC unit/trybuild
+GBA-T-164,AWBC admission,G5/G6/G9,negative,structurally invalid table + bad contract,decode/try_admit/compile,AwbcVerifyError first,core AWBC unit/trybuild
+GBA-T-165,AWBC admission,G5/G6/G9,negative,truncated generation section,decode/try_admit/compile,AwbcCodecError with offset/section,core AWBC unit/trybuild
+GBA-T-166,AWBC admission,G5/G6/G9,negative,contract length over limit,decode/try_admit/compile,limit before allocation,core AWBC unit/trybuild
+GBA-T-167,AWBC admission,G5/G6/G9,negative,valid tables/custom digest mismatch,decode/try_admit/compile,AwbcAdmissionError::GenerationContract,core AWBC unit/trybuild
+GBA-T-168,AWBC admission,G5/G6/G9,negative,valid tables/extra producer key,decode/try_admit/compile,ExtraAuthorization source,core AWBC unit/trybuild
+GBA-T-169,AWBC admission,G5/G6/G9,negative,valid tables/root inventory mismatch,decode/try_admit/compile,AwbcRootInventoryError,core AWBC unit/trybuild
+GBA-T-170,AWBC admission,G5/G6/G9,negative,valid tables/identity mismatch,decode/try_admit/compile,Identity,core AWBC unit/trybuild
+GBA-T-171,AWBC admission,G5/G6/G9,positive,canonical standalone AWBC,decode/try_admit/compile,AdmittedAwbcProduct,core AWBC unit/trybuild
+GBA-T-172,AWBC admission,G5/G6/G9,positive,plan-paired byte-identical contract,decode/try_admit/compile,wrapper reuses plan aggregate,core AWBC unit/trybuild
+GBA-T-173,AWBC admission,G5/G6/G9,negative,plan-paired different identity,decode/try_admit/compile,RuntimeGenerationMismatch,core AWBC unit/trybuild
+GBA-T-174,AWBC admission,G5/G6/G9,negative,plan-paired same identity/different body,decode/try_admit/compile,ContractCollision,core AWBC unit/trybuild
+GBA-T-175,AWBC admission,G5/G6/G9,positive,AWBC generation bytes changed only,decode/try_admit/compile,program/product digest changes,core AWBC unit/trybuild
+GBA-T-176,AWBC admission,G5/G6/G9,positive,AWBC roundtrip,decode/try_admit/compile,generation contract byte-identical,core AWBC unit/trybuild
+GBA-T-177,AWBC admission,G5/G6/G9,negative,old AWBC without generation section,decode/try_admit/compile,decode failure; no old reader,core AWBC unit/trybuild
+GBA-T-178,AWBC admission,G5/G6/G9,negative,optional/empty generation marker,decode/try_admit/compile,decode failure,core AWBC unit/trybuild
+GBA-T-179,AWBC admission,G5/G6/G9,compile_fail,standalone admitted product attached to plan,decode/try_admit/compile,no API/compile fail,core AWBC unit/trybuild
+GBA-T-180,AWBC admission,G5/G6/G9,compile_fail,admitted product has no Serde,decode/try_admit/compile,compile fail,core AWBC unit/trybuild
+GBA-T-181,AWBC admission,G5/G6/G9,compile_fail,admitted product has no Deref,decode/try_admit/compile,compile fail,core AWBC unit/trybuild
+GBA-T-182,AWBC admission,G5/G6/G9,compile_fail,admitted product has no into_program,decode/try_admit/compile,compile fail,core AWBC unit/trybuild
+GBA-T-183,execution API,G6/G9,compile_fail,external call awbc::vm::step(raw),compile/run,function not public/signature mismatch,core compile/integration
+GBA-T-184,execution API,G6/G9,compile_fail,internal call vm::step(raw),compile/run,compile fail; admitted product required,core compile/integration
+GBA-T-185,execution API,G6/G9,compile_fail,external FiberState::for_entry(raw),compile/run,not public/admitted required,core compile/integration
+GBA-T-186,execution API,G6/G9,compile_fail,internal FiberState::for_function(raw),compile/run,compile fail,core compile/integration
+GBA-T-187,execution API,G6/G9,compile_fail,AwbcProductStepExecutor::for_entry(raw),compile/run,compile fail,core compile/integration
+GBA-T-188,execution API,G6/G9,compile_fail,replace_program_preserving_state(raw),compile/run,method absent,core compile/integration
+GBA-T-189,execution API,G6/G9,compile_fail,ArcweftRuntimeExecutor::from_awbc_product old name,compile/run,method absent,core compile/integration
+GBA-T-190,execution API,G6/G9,compile_fail,ArcweftRuntimeExecutor::from_awbc_product_function old name,compile/run,method absent,core compile/integration
+GBA-T-191,execution API,G6/G9,compile_fail,replace_product_awbc_program(raw),compile/run,method absent,core compile/integration
+GBA-T-192,execution API,G6/G9,negative,try_from_awbc_product malformed raw,compile/run,typed admission error; no executor,core compile/integration
+GBA-T-193,execution API,G6/G9,positive,try_from_awbc_product canonical raw,compile/run,executor published after admission,core compile/integration
+GBA-T-194,execution API,G6/G9,compile_fail,Engine::new(raw plan),compile/run,compile fail,core compile/integration
+GBA-T-195,execution API,G6/G9,compile_fail,Engine::for_flow(raw plan),compile/run,compile fail,core compile/integration
+GBA-T-196,execution API,G6/G9,compile_fail,Engine::for_entry(raw plan),compile/run,compile fail,core compile/integration
+GBA-T-197,execution API,G6/G9,negative,Engine::try_from_raw_plan invalid,compile/run,typed admission error; no engine,core compile/integration
+GBA-T-198,execution API,G6/G9,positive,Engine::try_from_raw_plan valid,compile/run,engine owns admitted plan,core compile/integration
+GBA-T-199,execution API,G6/G9,compile_fail,BytecodeProgram::from_runtime_plan old name,compile/run,method absent,core compile/integration
+GBA-T-200,execution API,G6/G9,compile_fail,BytecodeProgram::into_runtime_plan old name,compile/run,method absent,core compile/integration
+GBA-T-201,execution API,G6/G9,positive,BytecodeProgram::into_raw_runtime_plan,compile/run,returns quarantine only,core compile/integration
+GBA-T-202,execution API,G6/G9,positive,BytecodeProgram::try_admit,compile/run,admitted enum,core compile/integration
+GBA-T-203,nominal shape,G4/G9,compile_fail,external construct RuntimeNominalRecordValue::new after G9,lookup/construct/compile,compile fail,core unit/trybuild
+GBA-T-204,nominal shape,G4/G9,compile_fail,internal stale call RuntimeNominalRecordValue::new after G9,lookup/construct/compile,workspace compile fail until migrated,core unit/trybuild
+GBA-T-205,nominal shape,G4/G9,compile_fail,external call try_from_accepted_layout,lookup/construct/compile,privacy compile fail,core unit/trybuild
+GBA-T-206,nominal shape,G4/G9,compile_fail,external construct RuntimeNominalRecordShape fields,lookup/construct/compile,privacy compile fail,core unit/trybuild
+GBA-T-207,nominal shape,G4/G9,compile_fail,Serde deserialize RuntimeNominalRecordShape,lookup/construct/compile,trait missing compile fail,core unit/trybuild
+GBA-T-208,nominal shape,G4/G9,compile_fail,Default producer shape,lookup/construct/compile,trait missing compile fail,core unit/trybuild
+GBA-T-209,nominal shape,G4/G9,negative,producer_shape unknown ID,lookup/construct/compile,ProducerNotAdmitted,core unit/trybuild
+GBA-T-210,nominal shape,G4/G9,positive,producer_shape exact admitted ID,lookup/construct/compile,borrowed non-exclusive shape,core unit/trybuild
+GBA-T-211,nominal shape,G4/G9,negative,shape require missing nominal,lookup/construct/compile,Missing,core unit/trybuild
+GBA-T-212,nominal shape,G4/G9,negative,shape require stale semantic,lookup/construct/compile,StaleSemanticIdentity,core unit/trybuild
+GBA-T-213,nominal shape,G4/G9,negative,shape require stale layout,lookup/construct/compile,StaleLayout,core unit/trybuild
+GBA-T-214,nominal shape,G4/G9,negative,shape require key authorized to other producer,lookup/construct/compile,WrongProducer,core unit/trybuild
+GBA-T-215,nominal shape,G4/G9,negative,shape construct wrong field count,lookup/construct/compile,RuntimeNominalRecordError::FieldCount,core unit/trybuild
+GBA-T-216,nominal shape,G4/G9,negative,shape construct wrong field type,lookup/construct/compile,first defining-order field error,core unit/trybuild
+GBA-T-217,nominal shape,G4/G9,positive,shape construct valid fields,lookup/construct/compile,canonical nominal value,core unit/trybuild
+GBA-T-218,nominal shape,G4/G9,compile_fail,shape used after aggregate drop,lookup/construct/compile,borrow checker compile fail,core unit/trybuild
+GBA-T-219,dialogue schema,G7/G9,compile_fail,arbitrary Bool supplied as Style through old role constructor,construct/encode/decode/compile,method absent/compile fail,dialogue unit/integration
+GBA-T-220,dialogue schema,G7/G9,negative,raw role declaration Style=Bool,construct/encode/decode/compile,StyleMismatch during generation admission,dialogue unit/integration
+GBA-T-221,dialogue schema,G7/G9,negative,schema uses generation A admission and generation B Character catalog,construct/encode/decode/compile,RuntimeGenerationMismatch first,dialogue unit/integration
+GBA-T-222,dialogue schema,G7/G9,negative,schema uses generation A admission and generation B View registry,construct/encode/decode/compile,RuntimeGenerationMismatch first,dialogue unit/integration
+GBA-T-223,dialogue schema,G7/G9,negative,schema uses wrong producer payload,construct/encode/decode/compile,exact producer error,dialogue unit/integration
+GBA-T-224,dialogue schema,G7/G9,negative,schema custom digest mismatch,construct/encode/decode/compile,custom correlation error,dialogue unit/integration
+GBA-T-225,dialogue schema,G7/G9,negative,schema Character digest mismatch,construct/encode/decode/compile,Character catalog admission error,dialogue unit/integration
+GBA-T-226,dialogue schema,G7/G9,negative,schema View digest mismatch,construct/encode/decode/compile,View catalog admission error,dialogue unit/integration
+GBA-T-227,dialogue schema,G7/G9,negative,schema role nominal missing catalog key,construct/encode/decode/compile,lookup error,dialogue unit/integration
+GBA-T-228,dialogue schema,G7/G9,negative,schema role nominal wrong producer,construct/encode/decode/compile,WrongProducer,dialogue unit/integration
+GBA-T-229,dialogue schema,G7/G9,positive,fully correlated generation/catalogs,construct/encode/decode/compile,schema published,dialogue unit/integration
+GBA-T-230,dialogue schema,G7/G9,compile_fail,schema operational views have no Serde,construct/encode/decode/compile,compile fail,dialogue unit/integration
+GBA-T-231,dialogue schema,G7/G9,compile_fail,schema operational custom catalog no public constructor,construct/encode/decode/compile,compile fail,dialogue unit/integration
+GBA-T-232,dialogue schema,G7/G9,compile_fail,schema operational role types no public new,construct/encode/decode/compile,compile fail,dialogue unit/integration
+GBA-T-233,dialogue schema,G7/G9,negative,encode value under generation A with schema B,construct/encode/decode/compile,generation mismatch,dialogue unit/integration
+GBA-T-234,dialogue schema,G7/G9,negative,decode value under generation A with schema B,construct/encode/decode/compile,generation mismatch,dialogue unit/integration
+GBA-T-235,dialogue schema,G7/G9,positive,digest/equality/hash across different generations,construct/encode/decode/compile,generation participates/rejects,dialogue unit/integration
+GBA-T-236,dialogue value,G7/G9,positive,exact opaque tuple18,encode/decode/normalize/clear/patch,encode/decode roundtrip,dialogue unit/integration
+GBA-T-237,dialogue value,G7/G9,negative,old root nominal record,encode/decode/normalize/clear/patch,reject; no reader,dialogue unit/integration
+GBA-T-238,dialogue value,G7/G9,negative,tuple length 17,encode/decode/normalize/clear/patch,PayloadShape before field validation,dialogue unit/integration
+GBA-T-239,dialogue value,G7/G9,negative,tuple length 19,encode/decode/normalize/clear/patch,PayloadShape before field validation,dialogue unit/integration
+GBA-T-240,dialogue value,G7/G9,positive,custom tuple2 sorted,encode/decode/normalize/clear/patch,accepted,dialogue unit/integration
+GBA-T-241,dialogue value,G7/G9,negative,custom tuple2 duplicate ID,encode/decode/normalize/clear/patch,DuplicateCustomField,dialogue unit/integration
+GBA-T-242,dialogue value,G7/G9,negative,custom tuple2 out of order,encode/decode/normalize/clear/patch,NonCanonicalCustomOrder,dialogue unit/integration
+GBA-T-243,dialogue value,G7/G9,negative,old four-field custom wrapper,encode/decode/normalize/clear/patch,reject; no fallback,dialogue unit/integration
+GBA-T-244,dialogue value,G7/G9,positive,direct inline-failure variant,encode/decode/normalize/clear/patch,accepted exact owner/case/payload,dialogue unit/integration
+GBA-T-245,dialogue value,G7/G9,negative,old inline nominal wrapper,encode/decode/normalize/clear/patch,reject; no reader,dialogue unit/integration
+GBA-T-246,dialogue value,G7/G9,negative,nested nominal missing descriptor,encode/decode/normalize/clear/patch,typed Lookup path,dialogue unit/integration
+GBA-T-247,dialogue value,G7/G9,negative,nested nominal stale semantic,encode/decode/normalize/clear/patch,typed StaleSemanticIdentity path,dialogue unit/integration
+GBA-T-248,dialogue value,G7/G9,negative,nested nominal stale layout,encode/decode/normalize/clear/patch,typed StaleLayout path,dialogue unit/integration
+GBA-T-249,dialogue value,G7/G9,negative,nested nominal wrong producer,encode/decode/normalize/clear/patch,typed WrongProducer path,dialogue unit/integration
+GBA-T-250,dialogue value,G7/G9,positive,normalize valid nominal,encode/decode/normalize/clear/patch,rebuild through shape and validate,dialogue unit/integration
+GBA-T-251,dialogue value,G7/G9,negative,normalize wrong nested value,encode/decode/normalize/clear/patch,typed error; original unchanged,dialogue unit/integration
+GBA-T-252,dialogue value,G7/G9,positive,clear clearable custom Option,encode/decode/normalize/clear/patch,None,dialogue unit/integration
+GBA-T-253,dialogue value,G7/G9,negative,clear nonclearable custom,encode/decode/normalize/clear/patch,typed rejection,dialogue unit/integration
+GBA-T-254,dialogue value,G7/G9,negative,patch duplicate paths,encode/decode/normalize/clear/patch,preflight overlap; no mutation,dialogue unit/integration
+GBA-T-255,dialogue value,G7/G9,negative,patch late invalid replacement,encode/decode/normalize/clear/patch,no partial publication,dialogue unit/integration
+GBA-T-256,dialogue value,G7/G9,negative,patch generation mismatch,encode/decode/normalize/clear/patch,failure before path resolution,dialogue unit/integration
+GBA-T-257,generation correlation,G8/G9,negative,"ProgramGeneration host slot same, semantic identities differ",activate/restore/swap/compile,reject semantic mismatch,driver/bundle/save/player integration
+GBA-T-258,generation correlation,G8/G9,positive,"host slots differ, semantic identity/body same",activate/restore/swap/compile,allowed as separate host images,driver/bundle/save/player integration
+GBA-T-259,generation correlation,G8/G9,negative,plan A + AWBC B,activate/restore/swap/compile,reject before VM/fiber,driver/bundle/save/player integration
+GBA-T-260,generation correlation,G8/G9,negative,producer shape A + schema B,activate/restore/swap/compile,borrow/type path impossible or mismatch,driver/bundle/save/player integration
+GBA-T-261,generation correlation,G8/G9,negative,role types A + custom catalog B,activate/restore/swap/compile,mismatch before schema,driver/bundle/save/player integration
+GBA-T-262,generation correlation,G8/G9,negative,Character catalog A + View registry B,activate/restore/swap/compile,mismatch before schema,driver/bundle/save/player integration
+GBA-T-263,generation correlation,G8/G9,negative,save A restored into generation B,activate/restore/swap/compile,RuntimeGenerationMismatch before ownership,driver/bundle/save/player integration
+GBA-T-264,generation correlation,G8/G9,negative,fiber A resumed with product B,activate/restore/swap/compile,RuntimeGenerationMismatch before frame execution,driver/bundle/save/player integration
+GBA-T-265,generation correlation,G8/G9,negative,root replay A under generation B,activate/restore/swap/compile,mismatch before transition,driver/bundle/save/player integration
+GBA-T-266,generation correlation,G8/G9,negative,View state A mounted under B,activate/restore/swap/compile,mismatch before mount,driver/bundle/save/player integration
+GBA-T-267,generation correlation,G8/G9,negative,hot-swap malformed candidate,activate/restore/swap/compile,old image unchanged,driver/bundle/save/player integration
+GBA-T-268,generation correlation,G8/G9,positive,hot-swap same identity/same body,activate/restore/swap/compile,atomic replacement allowed,driver/bundle/save/player integration
+GBA-T-269,generation correlation,G8/G9,negative,hot-swap same identity/different body,activate/restore/swap/compile,IdentityCollision,driver/bundle/save/player integration
+GBA-T-270,generation correlation,G8/G9,positive,hot-swap different identity valid migration,activate/restore/swap/compile,new handles only after migration success,driver/bundle/save/player integration
+GBA-T-271,generation correlation,G8/G9,positive,bundle plan/AWBC identical contract,activate/restore/swap/compile,one aggregate,driver/bundle/save/player integration
+GBA-T-272,generation correlation,G8/G9,negative,bundle plan/AWBC differing contract,activate/restore/swap/compile,bundle activation failure,driver/bundle/save/player integration
+GBA-T-273,generation correlation,G8/G9,positive,AWBC-only bundle canonical,activate/restore/swap/compile,standalone admitted aggregate,driver/bundle/save/player integration
+GBA-T-274,generation correlation,G8/G9,negative,snapshot lacks required generation identity,activate/restore/swap/compile,version-1 decode failure; no legacy reader,driver/bundle/save/player integration
+GBA-T-275,generation correlation,G8/G9,compile_fail,GenerationRuntimeImage::into_runtime old escape,activate/restore/swap/compile,method absent,driver/bundle/save/player integration
+GBA-T-276,generation correlation,G8/G9,compile_fail,player raw program injection,activate/restore/swap/compile,no public raw VM path,driver/bundle/save/player integration
+GBA-T-277,precedence,G4/G5/G7/G8,negative,bad header + bad plan roots,trigger combined faults,header,unit/integration precedence
+GBA-T-278,precedence,G4/G5/G7/G8,negative,bad structural plan + bad custom digest,trigger combined faults,structural plan,unit/integration precedence
+GBA-T-279,precedence,G4/G5/G7/G8,negative,bad role declaration + bad custom digest,trigger combined faults,role declaration,unit/integration precedence
+GBA-T-280,precedence,G4/G5/G7/G8,negative,bad custom digest + catalog conflict,trigger combined faults,custom digest,unit/integration precedence
+GBA-T-281,precedence,G4/G5/G7/G8,negative,catalog conflict + root missing key,trigger combined faults,catalog conflict,unit/integration precedence
+GBA-T-282,precedence,G4/G5/G7/G8,negative,project root error + producer root error,trigger combined faults,project root,unit/integration precedence
+GBA-T-283,precedence,G4/G5/G7/G8,negative,producer root error + authorization mismatch,trigger combined faults,producer root,unit/integration precedence
+GBA-T-284,precedence,G4/G5/G7/G8,negative,missing authorization + extra authorization,trigger combined faults,first sorted set difference,unit/integration precedence
+GBA-T-285,precedence,G4/G5/G7/G8,negative,unreachable row + identity mismatch,trigger combined faults,unreachable row,unit/integration precedence
+GBA-T-286,precedence,G4/G5/G7/G8,negative,identity mismatch + attempted wrapper publication,trigger combined faults,identity; no wrapper,unit/integration precedence
+GBA-T-287,precedence,G4/G5/G7/G8,negative,schema generation mismatch + wrong producer,trigger combined faults,generation,unit/integration precedence
+GBA-T-288,precedence,G4/G5/G7/G8,negative,schema wrong producer + custom mismatch,trigger combined faults,producer,unit/integration precedence
+GBA-T-289,precedence,G4/G5/G7/G8,negative,schema custom mismatch + nominal lookup,trigger combined faults,custom,unit/integration precedence
+GBA-T-290,precedence,G4/G5/G7/G8,negative,nominal missing + stale semantic,trigger combined faults,Missing,unit/integration precedence
+GBA-T-291,precedence,G4/G5/G7/G8,negative,nominal stale semantic + stale layout,trigger combined faults,StaleSemanticIdentity,unit/integration precedence
+GBA-T-292,precedence,G4/G5/G7/G8,negative,nominal stale layout + wrong producer,trigger combined faults,StaleLayout,unit/integration precedence
+GBA-T-293,precedence,G4/G5/G7/G8,negative,nominal wrong producer + bad fields,trigger combined faults,WrongProducer,unit/integration precedence
+GBA-T-294,precedence,G4/G5/G7/G8,negative,nominal wrong identity + bad layout,trigger combined faults,Type,unit/integration precedence
+GBA-T-295,precedence,G4/G5/G7/G8,negative,nominal bad layout + count,trigger combined faults,Layout,unit/integration precedence
+GBA-T-296,precedence,G4/G5/G7/G8,negative,nominal count + field type,trigger combined faults,FieldCount,unit/integration precedence
+GBA-T-297,full gate,G10/G11,regression,A1 nominal defining order,run/audit,retained tests green,workspace
+GBA-T-298,full gate,G10/G11,regression,A2 authored evaluation/scatter,run/audit,retained tests green,workspace
+GBA-T-299,full gate,G10/G11,regression,A3 anonymous/column carriers,run/audit,retained tests green,workspace
+GBA-T-300,full gate,G10/G11,regression,.1.2 opaque tuple/transform,run/audit,retained tests green,workspace
+GBA-T-301,full gate,G10/G11,regression,accepted G1 closed variants,run/audit,retained tests green,workspace
+GBA-T-302,full gate,G10/G11,regression,anonymous versus nominal bytes,run/audit,remain distinct,workspace
+GBA-T-303,full gate,G10/G11,full_gate,AWBC ABI version,run/audit,exactly 1,workspace
+GBA-T-304,full gate,G10/G11,full_gate,AWBC codec version,run/audit,exactly 1,workspace
+GBA-T-305,full gate,G10/G11,full_gate,bundle version,run/audit,exactly 1,workspace
+GBA-T-306,full gate,G10/G11,full_gate,save version,run/audit,exactly 1,workspace
+GBA-T-307,full gate,G10/G11,full_gate,replay version,run/audit,exactly 1,workspace
+GBA-T-308,full gate,G10/G11,full_gate,custom digest domain suffix,run/audit,v1,workspace
+GBA-T-309,full gate,G10/G11,full_gate,generation digest domain suffix,run/audit,v1,workspace
+GBA-T-310,full gate,G10/G11,full_gate,workspace fmt,run/audit,green,workspace
+GBA-T-311,full gate,G10/G11,full_gate,workspace check all targets/features,run/audit,green,workspace
+GBA-T-312,full gate,G10/G11,full_gate,workspace tests all targets/features,run/audit,green,workspace
+GBA-T-313,full gate,G10/G11,full_gate,workspace clippy -D warnings,run/audit,green,workspace
+GBA-T-314,full gate,G10/G11,full_gate,structure audit,run/audit,no fallback/dual authority,workspace
+GBA-T-315,full gate,G10/G11,full_gate,nextest all features,run/audit,green,workspace
+GBA-T-316,full gate,G10/G11,full_gate,doc tests,run/audit,green,workspace
+GBA-T-317,full gate,G10/G11,full_gate,llvm-cov,run/audit,report produced; critical branches covered,workspace
+GBA-T-318,full gate,G10/G11,full_gate,miri core,run/audit,green,workspace
+GBA-T-319,full gate,G10/G11,full_gate,miri dialogue,run/audit,green,workspace
+GBA-T-320,full gate,G10/G11,full_gate,cargo audit,run/audit,no disallowed advisory,workspace
+CDR-T-001,character digest,D1,property,valid catalog with one changed character ID,recompute runtime_digest_v1,digest differs from baseline,arcweft-character unit
+CDR-T-002,character digest,D1,property,valid catalog with one changed canvas width,recompute runtime_digest_v1,digest differs from baseline,arcweft-character unit
+CDR-T-003,character digest,D1,property,valid catalog with one changed canvas height,recompute runtime_digest_v1,digest differs from baseline,arcweft-character unit
+CDR-T-004,character digest,D1,property,valid catalog with one changed anchor x,recompute runtime_digest_v1,digest differs from baseline,arcweft-character unit
+CDR-T-005,character digest,D1,property,valid catalog with one changed anchor y,recompute runtime_digest_v1,digest differs from baseline,arcweft-character unit
+CDR-T-006,character digest,D1,property,valid catalog with one changed default look,recompute runtime_digest_v1,digest differs from baseline,arcweft-character unit
+CDR-T-007,character digest,D1,property,valid catalog with one changed part ID,recompute runtime_digest_v1,digest differs from baseline,arcweft-character unit
+CDR-T-008,character digest,D1,property,valid catalog with one changed part default variant,recompute runtime_digest_v1,digest differs from baseline,arcweft-character unit
+CDR-T-009,character digest,D1,property,valid catalog with one changed part variant ID,recompute runtime_digest_v1,digest differs from baseline,arcweft-character unit
+CDR-T-010,character digest,D1,property,valid catalog with one changed asset reference,recompute runtime_digest_v1,digest differs from baseline,arcweft-character unit
+CDR-T-011,character digest,D1,property,valid catalog with one changed rect x,recompute runtime_digest_v1,digest differs from baseline,arcweft-character unit
+CDR-T-012,character digest,D1,property,valid catalog with one changed rect y,recompute runtime_digest_v1,digest differs from baseline,arcweft-character unit
+CDR-T-013,character digest,D1,property,valid catalog with one changed rect width,recompute runtime_digest_v1,digest differs from baseline,arcweft-character unit
+CDR-T-014,character digest,D1,property,valid catalog with one changed rect height,recompute runtime_digest_v1,digest differs from baseline,arcweft-character unit
+CDR-T-015,character digest,D1,property,valid catalog with one changed opacity,recompute runtime_digest_v1,digest differs from baseline,arcweft-character unit
+CDR-T-016,character digest,D1,property,valid catalog with one changed blend mode stable code,recompute runtime_digest_v1,digest differs from baseline,arcweft-character unit
+CDR-T-017,character digest,D1,property,valid catalog with one changed clipping flag,recompute runtime_digest_v1,digest differs from baseline,arcweft-character unit
+CDR-T-018,character digest,D1,property,valid catalog with one changed look ID,recompute runtime_digest_v1,digest differs from baseline,arcweft-character unit
+CDR-T-019,character digest,D1,property,valid catalog with one changed look selection part ID,recompute runtime_digest_v1,digest differs from baseline,arcweft-character unit
+CDR-T-020,character digest,D1,property,valid catalog with one changed look selection variant ID,recompute runtime_digest_v1,digest differs from baseline,arcweft-character unit
+CDR-T-021,character digest,D1,property,valid catalog with only changed source path,recompute runtime_digest_v1,digest equals baseline,arcweft-character unit
+CDR-T-022,character digest,D1,property,valid catalog with only changed source layer provenance,recompute runtime_digest_v1,digest equals baseline,arcweft-character unit
+CDR-T-023,character digest,D1,positive,same rows inserted in reverse order,recompute runtime_digest_v1,digest equals CharacterId-sorted baseline,arcweft-character unit
+CDR-T-024,character digest,D1,negative,duplicate CharacterId,construct catalog then digest,typed duplicate error before transcript,arcweft-character unit
+CDR-T-025,character digest,D1,negative,"65,537 live rows",recompute runtime_digest_v1,TooManyRows before allocation/transcript,arcweft-character unit
+CDR-T-026,character digest,D1,negative,malformed manifest identity,construct catalog then digest,existing manifest validation error precedes digest,arcweft-character unit
+CDR-T-027,character digest,D1,golden,fixed two-character catalog,emit canonical transcript/digest,matches version-1 LE golden bytes,arcweft-character golden
+CDR-T-028,character digest,D1,tamper,replace semantic fingerprint with display/debug bytes,compare golden,does not match canonical digest,arcweft-character tamper
+CDR-T-029,view digest,D2,property,live public descriptor with changed public ViewId,recompute runtime_digest_v1,digest differs from baseline,arcweft-view unit
+CDR-T-030,view digest,D2,property,live public descriptor with changed projected RuntimeViewId,recompute runtime_digest_v1,digest differs from baseline,arcweft-view unit
+CDR-T-031,view digest,D2,property,live public descriptor with changed ViewSchemaId,recompute runtime_digest_v1,digest differs from baseline,arcweft-view unit
+CDR-T-032,view digest,D2,property,live public descriptor with changed RustViewId,recompute runtime_digest_v1,digest differs from baseline,arcweft-view unit
+CDR-T-033,view digest,D2,property,live public descriptor with changed Arcweft program identity,recompute runtime_digest_v1,digest differs from baseline,arcweft-view unit
+CDR-T-034,view digest,D2,property,live public descriptor with changed AcceptedViewProgramRevision,recompute runtime_digest_v1,digest differs from baseline,arcweft-view unit
+CDR-T-035,view digest,D2,positive,same public descriptors registered in reverse order,recompute runtime_digest_v1,digest equals ViewId-sorted baseline,arcweft-view unit
+CDR-T-036,view digest,D2,positive,add anonymous/generated process-local registration,recompute runtime_digest_v1,digest unchanged; row is not publishable generation identity,arcweft-view unit
+CDR-T-037,view digest,D2,positive,retire public row leaving tombstone slot,recompute runtime_digest_v1,digest equals catalog with row absent,arcweft-view unit
+CDR-T-038,view digest,D2,negative,duplicate live public ViewId,register,typed duplicate error before digest,arcweft-view unit
+CDR-T-039,view digest,D2,negative,Arcweft implementation lacks accepted revision,register/admit,typed MissingAcceptedRevision,arcweft-view unit
+CDR-T-040,view digest,D2,negative,"65,537 live public rows",recompute runtime_digest_v1,TooManyRows before transcript,arcweft-view unit
+CDR-T-041,view digest,D2,golden,fixed Rust and Arcweft descriptors,emit canonical transcript/digest,matches version-1 LE golden bytes and tags,arcweft-view golden
+CDR-T-042,view digest,D2,tamper,slot index/insertion order changed only,recompute runtime_digest_v1,digest unchanged,arcweft-view property
+CDR-T-043,catalog admission,D3,negative,invalid Character catalog plus invalid View catalog,try_admit generation catalogs,Character local error; no wrapper published,runtime-driver integration
+CDR-T-044,catalog admission,D3,negative,valid Character plus invalid View catalog,try_admit generation catalogs,View local error; no wrapper published,runtime-driver integration
+CDR-T-045,catalog admission,D3,negative,valid catalogs with wrong declared Character digest,try_admit generation catalogs,CharacterDigestMismatch; no wrapper published,runtime-driver integration
+CDR-T-046,catalog admission,D3,negative,valid Character declaration and wrong declared View digest,try_admit generation catalogs,ViewDigestMismatch; no wrapper published,runtime-driver integration
+CDR-T-047,catalog admission,D3,negative,correct digests under wrong generation,try_admit generation catalogs,GenerationMismatch; no wrapper published,runtime-driver integration
+CDR-T-048,catalog admission,D3,negative,correct generation with missing referenced View,try_admit generation catalogs,RelationshipMissingView; no wrapper published,runtime-driver integration
+CDR-T-049,catalog admission,D3,negative,correct generation with missing referenced Character,try_admit generation catalogs,RelationshipMissingCharacter; no wrapper published,runtime-driver integration
+CDR-T-050,catalog admission,D3,positive,matching generation and catalogs,try_admit generation catalogs,one non-Serde generation-bound wrapper issued atomically,runtime-driver integration
+CDR-T-051,catalog admission,D3,compile-fail,external caller,construct admitted catalog wrapper or digest from raw bytes,private fields/constructors inaccessible,trybuild
+CDR-T-052,dialogue role,D4-D6,positive,one accepted standard Stage opaque fact,register and project,exact Stage declaration and closed RuntimeCheckedType,sema unit
+CDR-T-053,dialogue role,D4-D6,negative,duplicate Stage accepted fact,register,DuplicateRole with both source evidences,sema unit
+CDR-T-054,dialogue role,D4-D6,negative,Stage fact from wrong world/producer,register,WrongWorld or WrongProducer with source evidence,sema unit
+CDR-T-055,dialogue role,D4-D6,positive,one accepted standard Portrait opaque fact,register and project,exact Portrait declaration and closed RuntimeCheckedType,sema unit
+CDR-T-056,dialogue role,D4-D6,negative,duplicate Portrait accepted fact,register,DuplicateRole with both source evidences,sema unit
+CDR-T-057,dialogue role,D4-D6,negative,Portrait fact from wrong world/producer,register,WrongWorld or WrongProducer with source evidence,sema unit
+CDR-T-058,dialogue role,D4-D6,positive,one accepted standard Focus opaque fact,register and project,exact Focus declaration and closed RuntimeCheckedType,sema unit
+CDR-T-059,dialogue role,D4-D6,negative,duplicate Focus accepted fact,register,DuplicateRole with both source evidences,sema unit
+CDR-T-060,dialogue role,D4-D6,negative,Focus fact from wrong world/producer,register,WrongWorld or WrongProducer with source evidence,sema unit
+CDR-T-061,dialogue role,D4-D6,positive,one accepted standard Cleanup opaque fact,register and project,exact Cleanup declaration and closed RuntimeCheckedType,sema unit
+CDR-T-062,dialogue role,D4-D6,negative,duplicate Cleanup accepted fact,register,DuplicateRole with both source evidences,sema unit
+CDR-T-063,dialogue role,D4-D6,negative,Cleanup fact from wrong world/producer,register,WrongWorld or WrongProducer with source evidence,sema unit
+CDR-T-064,dialogue role,D4-D6,positive,one accepted standard Hook opaque fact,register and project,exact Hook declaration and closed RuntimeCheckedType,sema unit
+CDR-T-065,dialogue role,D4-D6,negative,duplicate Hook accepted fact,register,DuplicateRole with both source evidences,sema unit
+CDR-T-066,dialogue role,D4-D6,negative,Hook fact from wrong world/producer,register,WrongWorld or WrongProducer with source evidence,sema unit
+CDR-T-067,dialogue role,D4-D6,positive,one accepted standard RichText opaque fact,register and project,exact RichText declaration and closed RuntimeCheckedType,sema unit
+CDR-T-068,dialogue role,D4-D6,negative,duplicate RichText accepted fact,register,DuplicateRole with both source evidences,sema unit
+CDR-T-069,dialogue role,D4-D6,negative,RichText fact from wrong world/producer,register,WrongWorld or WrongProducer with source evidence,sema unit
+CDR-T-070,dialogue role,D4-D6,negative,one base role missing,finalize accepted role set,MissingRole naming typed coordinate,sema unit
+CDR-T-071,dialogue role,D4-D6,negative,"TypeKind::Named(""DialogueStage"")",project role,UnresolvedNamed; never role success,sema unit
+CDR-T-072,dialogue role,D5-D6,positive,accepted six-role set,derive Style,"exact ordered Choice index 0 EntityRef<Style>, index 1 RichText",sema/core unit
+CDR-T-073,dialogue role,D5-D6,negative,caller-authored Style declaration,register,UnexpectedAuthoredRole before publication,sema unit
+CDR-T-074,dialogue role,D4-D6,compile-fail,external caller,construct role declaration from arbitrary RuntimeCheckedType,private fields/constructor constraints reject,trybuild
+CDR-T-075,root identity,D7-D8,positive,RuntimeSemanticTypeId bytes,project/producer root projection,byte-for-byte same 32 bytes,core unit
+CDR-T-076,root identity,D8,property,display name change,project same RuntimeSemanticTypeId,root ID unchanged,core property
+CDR-T-077,root identity,D8,property,dense index reassignment,project same RuntimeSemanticTypeId,root ID unchanged,core property
+CDR-T-078,root identity,D8,property,iteration order change,project same RuntimeSemanticTypeId,root ID unchanged,core property
+CDR-T-079,root identity,D8,property,debug output change,project same RuntimeSemanticTypeId,root ID unchanged,core property
+CDR-T-080,root identity,D8,property,HIR local ID change,project same RuntimeSemanticTypeId,root ID unchanged,core property
+CDR-T-081,root identity,D7,negative,project root malformed checked type,validate root fact,RuntimeProjectRootError with site/source/path,runtime-plan/core integration
+CDR-T-082,root identity,D7,negative,producer root malformed checked type,validate root fact,RuntimeProducerRootError with producer/source/path,runtime-plan/core integration
+CDR-T-083,plan root mapping,D9,positive,only PRM-001 carries a nominal-reachable type,lower/admit,root retained and nominal reachable,runtime-plan integration
+CDR-T-084,plan root mapping,D9,negative,omit typed-root-use for PRM-001,admit,MissingTypedRootUse at exact site,core plan admission
+CDR-T-085,plan root mapping,D9,positive,only PRM-002 carries a nominal-reachable type,lower/admit,root retained and nominal reachable,runtime-plan integration
+CDR-T-086,plan root mapping,D9,negative,omit typed-root-use for PRM-002,admit,MissingTypedRootUse at exact site,core plan admission
+CDR-T-087,plan root mapping,D9,positive,only PRM-003 carries a nominal-reachable type,lower/admit,root retained and nominal reachable,runtime-plan integration
+CDR-T-088,plan root mapping,D9,negative,omit typed-root-use for PRM-003,admit,MissingTypedRootUse at exact site,core plan admission
+CDR-T-089,plan root mapping,D9,positive,only PRM-004 carries a nominal-reachable type,lower/admit,root retained and nominal reachable,runtime-plan integration
+CDR-T-090,plan root mapping,D9,negative,omit typed-root-use for PRM-004,admit,MissingTypedRootUse at exact site,core plan admission
+CDR-T-091,plan root mapping,D9,positive,only PRM-005 carries a nominal-reachable type,lower/admit,root retained and nominal reachable,runtime-plan integration
+CDR-T-092,plan root mapping,D9,negative,omit typed-root-use for PRM-005,admit,MissingTypedRootUse at exact site,core plan admission
+CDR-T-093,plan root mapping,D9,positive,only PRM-006 carries a nominal-reachable type,lower/admit,root retained and nominal reachable,runtime-plan integration
+CDR-T-094,plan root mapping,D9,negative,omit typed-root-use for PRM-006,admit,MissingTypedRootUse at exact site,core plan admission
+CDR-T-095,plan root mapping,D9,positive,only PRM-007 carries a nominal-reachable type,lower/admit,root retained and nominal reachable,runtime-plan integration
+CDR-T-096,plan root mapping,D9,negative,omit typed-root-use for PRM-007,admit,MissingTypedRootUse at exact site,core plan admission
+CDR-T-097,plan root mapping,D9,positive,only PRM-008 carries a nominal-reachable type,lower/admit,root retained and nominal reachable,runtime-plan integration
+CDR-T-098,plan root mapping,D9,negative,omit typed-root-use for PRM-008,admit,MissingTypedRootUse at exact site,core plan admission
+CDR-T-099,plan root mapping,D9,positive,only PRM-009 carries a nominal-reachable type,lower/admit,root retained and nominal reachable,runtime-plan integration
+CDR-T-100,plan root mapping,D9,negative,omit typed-root-use for PRM-009,admit,MissingTypedRootUse at exact site,core plan admission
+CDR-T-101,plan root mapping,D9,positive,only PRM-010 carries a nominal-reachable type,lower/admit,root retained and nominal reachable,runtime-plan integration
+CDR-T-102,plan root mapping,D9,negative,omit typed-root-use for PRM-010,admit,MissingTypedRootUse at exact site,core plan admission
+CDR-T-103,plan root mapping,D9,positive,only PRM-011 carries a nominal-reachable type,lower/admit,root retained and nominal reachable,runtime-plan integration
+CDR-T-104,plan root mapping,D9,negative,omit typed-root-use for PRM-011,admit,MissingTypedRootUse at exact site,core plan admission
+CDR-T-105,plan root mapping,D9,positive,only PRM-012 carries a nominal-reachable type,lower/admit,root retained and nominal reachable,runtime-plan integration
+CDR-T-106,plan root mapping,D9,negative,omit typed-root-use for PRM-012,admit,MissingTypedRootUse at exact site,core plan admission
+CDR-T-107,plan root mapping,D9,positive,only PRM-013 carries a nominal-reachable type,lower/admit,root retained and nominal reachable,runtime-plan integration
+CDR-T-108,plan root mapping,D9,negative,omit typed-root-use for PRM-013,admit,MissingTypedRootUse at exact site,core plan admission
+CDR-T-109,plan root mapping,D9,positive,only PRM-014 carries a nominal-reachable type,lower/admit,root retained and nominal reachable,runtime-plan integration
+CDR-T-110,plan root mapping,D9,negative,omit typed-root-use for PRM-014,admit,MissingTypedRootUse at exact site,core plan admission
+CDR-T-111,plan root mapping,D9,positive,only PRM-015 carries a nominal-reachable type,lower/admit,root retained and nominal reachable,runtime-plan integration
+CDR-T-112,plan root mapping,D9,negative,omit typed-root-use for PRM-015,admit,MissingTypedRootUse at exact site,core plan admission
+CDR-T-113,plan root mapping,D9,positive,only PRM-016 carries a nominal-reachable type,lower/admit,root retained and nominal reachable,runtime-plan integration
+CDR-T-114,plan root mapping,D9,negative,omit typed-root-use for PRM-016,admit,MissingTypedRootUse at exact site,core plan admission
+CDR-T-115,plan root mapping,D9,positive,only PRM-017 carries a nominal-reachable type,lower/admit,root retained and nominal reachable,runtime-plan integration
+CDR-T-116,plan root mapping,D9,negative,omit typed-root-use for PRM-017,admit,MissingTypedRootUse at exact site,core plan admission
+CDR-T-117,plan root mapping,D9,positive,only PRM-018 carries a nominal-reachable type,lower/admit,root retained and nominal reachable,runtime-plan integration
+CDR-T-118,plan root mapping,D9,negative,omit typed-root-use for PRM-018,admit,MissingTypedRootUse at exact site,core plan admission
+CDR-T-119,plan root mapping,D9,positive,only PRM-019 carries a nominal-reachable type,lower/admit,root retained and nominal reachable,runtime-plan integration
+CDR-T-120,plan root mapping,D9,negative,omit typed-root-use for PRM-019,admit,MissingTypedRootUse at exact site,core plan admission
+CDR-T-121,plan root mapping,D9,positive,only PRM-020 carries a nominal-reachable type,lower/admit,root retained and nominal reachable,runtime-plan integration
+CDR-T-122,plan root mapping,D9,negative,omit typed-root-use for PRM-020,admit,MissingTypedRootUse at exact site,core plan admission
+CDR-T-123,plan root mapping,D9,positive,only PRM-021 carries a nominal-reachable type,lower/admit,root retained and nominal reachable,runtime-plan integration
+CDR-T-124,plan root mapping,D9,negative,omit typed-root-use for PRM-021,admit,MissingTypedRootUse at exact site,core plan admission
+CDR-T-125,plan root mapping,D9,positive,only PRM-022 carries a nominal-reachable type,lower/admit,root retained and nominal reachable,runtime-plan integration
+CDR-T-126,plan root mapping,D9,negative,omit typed-root-use for PRM-022,admit,MissingTypedRootUse at exact site,core plan admission
+CDR-T-127,plan root mapping,D9,positive,only PRM-023 carries a nominal-reachable type,lower/admit,root retained and nominal reachable,runtime-plan integration
+CDR-T-128,plan root mapping,D9,negative,omit typed-root-use for PRM-023,admit,MissingTypedRootUse at exact site,core plan admission
+CDR-T-129,plan root mapping,D9,positive,only PRM-024 carries a nominal-reachable type,lower/admit,root retained and nominal reachable,runtime-plan integration
+CDR-T-130,plan root mapping,D9,negative,omit typed-root-use for PRM-024,admit,MissingTypedRootUse at exact site,core plan admission
+CDR-T-131,plan root mapping,D9,positive,only PRM-025 carries a nominal-reachable type,lower/admit,root retained and nominal reachable,runtime-plan integration
+CDR-T-132,plan root mapping,D9,negative,omit typed-root-use for PRM-025,admit,MissingTypedRootUse at exact site,core plan admission
+CDR-T-133,plan root mapping,D9,positive,only PRM-026 carries a nominal-reachable type,lower/admit,root retained and nominal reachable,runtime-plan integration
+CDR-T-134,plan root mapping,D9,negative,omit typed-root-use for PRM-026,admit,MissingTypedRootUse at exact site,core plan admission
+CDR-T-135,plan root mapping,D9,positive,only PRM-027 carries a nominal-reachable type,lower/admit,root retained and nominal reachable,runtime-plan integration
+CDR-T-136,plan root mapping,D9,negative,omit typed-root-use for PRM-027,admit,MissingTypedRootUse at exact site,core plan admission
+CDR-T-137,plan root mapping,D9,positive,only PRM-028 carries a nominal-reachable type,lower/admit,root retained and nominal reachable,runtime-plan integration
+CDR-T-138,plan root mapping,D9,negative,omit typed-root-use for PRM-028,admit,MissingTypedRootUse at exact site,core plan admission
+CDR-T-139,plan root mapping,D9,positive,only PRM-029 carries a nominal-reachable type,lower/admit,root retained and nominal reachable,runtime-plan integration
+CDR-T-140,plan root mapping,D9,negative,omit typed-root-use for PRM-029,admit,MissingTypedRootUse at exact site,core plan admission
+CDR-T-141,plan root mapping,D9,positive,only PRM-030 carries a nominal-reachable type,lower/admit,root retained and nominal reachable,runtime-plan integration
+CDR-T-142,plan root mapping,D9,negative,omit typed-root-use for PRM-030,admit,MissingTypedRootUse at exact site,core plan admission
+CDR-T-143,plan root mapping,D9,positive,only PRM-031 carries a nominal-reachable type,lower/admit,root retained and nominal reachable,runtime-plan integration
+CDR-T-144,plan root mapping,D9,negative,omit typed-root-use for PRM-031,admit,MissingTypedRootUse at exact site,core plan admission
+CDR-T-145,plan root mapping,D9,positive,only PRM-032 carries a nominal-reachable type,lower/admit,root retained and nominal reachable,runtime-plan integration
+CDR-T-146,plan root mapping,D9,negative,omit typed-root-use for PRM-032,admit,MissingTypedRootUse at exact site,core plan admission
+CDR-T-147,plan root mapping,D9,positive,only PRM-033 carries a nominal-reachable type,lower/admit,root retained and nominal reachable,runtime-plan integration
+CDR-T-148,plan root mapping,D9,negative,omit typed-root-use for PRM-033,admit,MissingTypedRootUse at exact site,core plan admission
+CDR-T-149,plan root mapping,D9,positive,only PRM-034 carries a nominal-reachable type,lower/admit,root retained and nominal reachable,runtime-plan integration
+CDR-T-150,plan root mapping,D9,negative,omit typed-root-use for PRM-034,admit,MissingTypedRootUse at exact site,core plan admission
+CDR-T-151,plan root mapping,D9,positive,only PRM-035 carries a nominal-reachable type,lower/admit,root retained and nominal reachable,runtime-plan integration
+CDR-T-152,plan root mapping,D9,negative,omit typed-root-use for PRM-035,admit,MissingTypedRootUse at exact site,core plan admission
+CDR-T-153,plan root mapping,D9,positive,only PRM-036 carries a nominal-reachable type,lower/admit,root retained and nominal reachable,runtime-plan integration
+CDR-T-154,plan root mapping,D9,negative,omit typed-root-use for PRM-036,admit,MissingTypedRootUse at exact site,core plan admission
+CDR-T-155,plan root mapping,D9,positive,only PRM-037 carries a nominal-reachable type,lower/admit,root retained and nominal reachable,runtime-plan integration
+CDR-T-156,plan root mapping,D9,negative,omit typed-root-use for PRM-037,admit,MissingTypedRootUse at exact site,core plan admission
+CDR-T-157,plan root mapping,D9,positive,only PRM-038 carries a nominal-reachable type,lower/admit,root retained and nominal reachable,runtime-plan integration
+CDR-T-158,plan root mapping,D9,negative,omit typed-root-use for PRM-038,admit,MissingTypedRootUse at exact site,core plan admission
+CDR-T-159,plan root mapping,D9,positive,only PRM-039 carries a nominal-reachable type,lower/admit,root retained and nominal reachable,runtime-plan integration
+CDR-T-160,plan root mapping,D9,negative,omit typed-root-use for PRM-039,admit,MissingTypedRootUse at exact site,core plan admission
+CDR-T-161,plan root mapping,D9,positive,only PRM-040 carries a nominal-reachable type,lower/admit,root retained and nominal reachable,runtime-plan integration
+CDR-T-162,plan root mapping,D9,negative,omit typed-root-use for PRM-040,admit,MissingTypedRootUse at exact site,core plan admission
+CDR-T-163,plan root mapping,D9,positive,only PRM-041 carries a nominal-reachable type,lower/admit,root retained and nominal reachable,runtime-plan integration
+CDR-T-164,plan root mapping,D9,negative,omit typed-root-use for PRM-041,admit,MissingTypedRootUse at exact site,core plan admission
+CDR-T-165,plan root mapping,D9,positive,only PRM-042 carries a nominal-reachable type,lower/admit,root retained and nominal reachable,runtime-plan integration
+CDR-T-166,plan root mapping,D9,negative,omit typed-root-use for PRM-042,admit,MissingTypedRootUse at exact site,core plan admission
+CDR-T-167,plan root mapping,D9,positive,only PRM-043 carries a nominal-reachable type,lower/admit,root retained and nominal reachable,runtime-plan integration
+CDR-T-168,plan root mapping,D9,negative,omit typed-root-use for PRM-043,admit,MissingTypedRootUse at exact site,core plan admission
+CDR-T-169,plan root mapping,D9,positive,only PRM-044 carries a nominal-reachable type,lower/admit,root retained and nominal reachable,runtime-plan integration
+CDR-T-170,plan root mapping,D9,negative,omit typed-root-use for PRM-044,admit,MissingTypedRootUse at exact site,core plan admission
+CDR-T-171,plan root mapping,D9,positive,only PRM-045 carries a nominal-reachable type,lower/admit,root retained and nominal reachable,runtime-plan integration
+CDR-T-172,plan root mapping,D9,negative,omit typed-root-use for PRM-045,admit,MissingTypedRootUse at exact site,core plan admission
+CDR-T-173,plan root mapping,D9,positive,only PRM-046 carries a nominal-reachable type,lower/admit,root retained and nominal reachable,runtime-plan integration
+CDR-T-174,plan root mapping,D9,negative,omit typed-root-use for PRM-046,admit,MissingTypedRootUse at exact site,core plan admission
+CDR-T-175,plan root mapping,D9,positive,only PRM-047 carries a nominal-reachable type,lower/admit,root retained and nominal reachable,runtime-plan integration
+CDR-T-176,plan root mapping,D9,negative,omit typed-root-use for PRM-047,admit,MissingTypedRootUse at exact site,core plan admission
+CDR-T-177,plan root mapping,D9,positive,only PRM-048 carries a nominal-reachable type,lower/admit,root retained and nominal reachable,runtime-plan integration
+CDR-T-178,plan root mapping,D9,negative,omit typed-root-use for PRM-048,admit,MissingTypedRootUse at exact site,core plan admission
+CDR-T-179,plan root mapping,D9,positive,only PRM-049 carries a nominal-reachable type,lower/admit,root retained and nominal reachable,runtime-plan integration
+CDR-T-180,plan root mapping,D9,negative,omit typed-root-use for PRM-049,admit,MissingTypedRootUse at exact site,core plan admission
+CDR-T-181,plan root mapping,D9,positive,only PRM-050 carries a nominal-reachable type,lower/admit,root retained and nominal reachable,runtime-plan integration
+CDR-T-182,plan root mapping,D9,negative,omit typed-root-use for PRM-050,admit,MissingTypedRootUse at exact site,core plan admission
+CDR-T-183,plan root mapping,D9,positive,only PRM-051 carries a nominal-reachable type,lower/admit,root retained and nominal reachable,runtime-plan integration
+CDR-T-184,plan root mapping,D9,negative,omit typed-root-use for PRM-051,admit,MissingTypedRootUse at exact site,core plan admission
+CDR-T-185,plan root mapping,D9,positive,only PRM-052 carries a nominal-reachable type,lower/admit,root retained and nominal reachable,runtime-plan integration
+CDR-T-186,plan root mapping,D9,negative,omit typed-root-use for PRM-052,admit,MissingTypedRootUse at exact site,core plan admission
+CDR-T-187,plan root mapping,D9,positive,only PRM-053 carries a nominal-reachable type,lower/admit,root retained and nominal reachable,runtime-plan integration
+CDR-T-188,plan root mapping,D9,negative,omit typed-root-use for PRM-053,admit,MissingTypedRootUse at exact site,core plan admission
+CDR-T-189,plan root mapping,D9,positive,only PRM-054 carries a nominal-reachable type,lower/admit,root retained and nominal reachable,runtime-plan integration
+CDR-T-190,plan root mapping,D9,negative,omit typed-root-use for PRM-054,admit,MissingTypedRootUse at exact site,core plan admission
+CDR-T-191,plan root mapping,D9,positive,only PRM-055 carries a nominal-reachable type,lower/admit,root retained and nominal reachable,runtime-plan integration
+CDR-T-192,plan root mapping,D9,negative,omit typed-root-use for PRM-055,admit,MissingTypedRootUse at exact site,core plan admission
+CDR-T-193,plan root mapping,D9,positive,only PRM-056 carries a nominal-reachable type,lower/admit,root retained and nominal reachable,runtime-plan integration
+CDR-T-194,plan root mapping,D9,negative,omit typed-root-use for PRM-056,admit,MissingTypedRootUse at exact site,core plan admission
+CDR-T-195,plan root mapping,D9,positive,only PRM-057 carries a nominal-reachable type,lower/admit,root retained and nominal reachable,runtime-plan integration
+CDR-T-196,plan root mapping,D9,negative,omit typed-root-use for PRM-057,admit,MissingTypedRootUse at exact site,core plan admission
+CDR-T-197,plan root mapping,D9,positive,only PRM-058 carries a nominal-reachable type,lower/admit,root retained and nominal reachable,runtime-plan integration
+CDR-T-198,plan root mapping,D9,negative,omit typed-root-use for PRM-058,admit,MissingTypedRootUse at exact site,core plan admission
+CDR-T-199,plan root mapping,D9,positive,only PRM-059 carries a nominal-reachable type,lower/admit,root retained and nominal reachable,runtime-plan integration
+CDR-T-200,plan root mapping,D9,negative,omit typed-root-use for PRM-059,admit,MissingTypedRootUse at exact site,core plan admission
+CDR-T-201,plan root mapping,D9,positive,only PRM-060 carries a nominal-reachable type,lower/admit,root retained and nominal reachable,runtime-plan integration
+CDR-T-202,plan root mapping,D9,negative,omit typed-root-use for PRM-060,admit,MissingTypedRootUse at exact site,core plan admission
+CDR-T-203,plan root mapping,D9,positive,only PRM-061 carries a nominal-reachable type,lower/admit,root retained and nominal reachable,runtime-plan integration
+CDR-T-204,plan root mapping,D9,negative,omit typed-root-use for PRM-061,admit,MissingTypedRootUse at exact site,core plan admission
+CDR-T-205,plan root mapping,D9,positive,only PRM-062 carries a nominal-reachable type,lower/admit,root retained and nominal reachable,runtime-plan integration
+CDR-T-206,plan root mapping,D9,negative,omit typed-root-use for PRM-062,admit,MissingTypedRootUse at exact site,core plan admission
+CDR-T-207,plan root mapping,D9,positive,only PRM-063 carries a nominal-reachable type,lower/admit,root retained and nominal reachable,runtime-plan integration
+CDR-T-208,plan root mapping,D9,negative,omit typed-root-use for PRM-063,admit,MissingTypedRootUse at exact site,core plan admission
+CDR-T-209,plan root mapping,D9,positive,only PRM-064 carries a nominal-reachable type,lower/admit,root retained and nominal reachable,runtime-plan integration
+CDR-T-210,plan root mapping,D9,negative,omit typed-root-use for PRM-064,admit,MissingTypedRootUse at exact site,core plan admission
+CDR-T-211,plan root mapping,D9,positive,only PRM-065 carries a nominal-reachable type,lower/admit,root retained and nominal reachable,runtime-plan integration
+CDR-T-212,plan root mapping,D9,negative,omit typed-root-use for PRM-065,admit,MissingTypedRootUse at exact site,core plan admission
+CDR-T-213,plan root mapping,D9,positive,only PRM-066 carries a nominal-reachable type,lower/admit,root retained and nominal reachable,runtime-plan integration
+CDR-T-214,plan root mapping,D9,negative,omit typed-root-use for PRM-066,admit,MissingTypedRootUse at exact site,core plan admission
+CDR-T-215,plan root mapping,D9,positive,only PRM-067 carries a nominal-reachable type,lower/admit,root retained and nominal reachable,runtime-plan integration
+CDR-T-216,plan root mapping,D9,negative,omit typed-root-use for PRM-067,admit,MissingTypedRootUse at exact site,core plan admission
+CDR-T-217,plan root mapping,D9,positive,only PRM-068 carries a nominal-reachable type,lower/admit,root retained and nominal reachable,runtime-plan integration
+CDR-T-218,plan root mapping,D9,negative,omit typed-root-use for PRM-068,admit,MissingTypedRootUse at exact site,core plan admission
+CDR-T-219,plan root mapping,D9,positive,only PRM-069 carries a nominal-reachable type,lower/admit,root retained and nominal reachable,runtime-plan integration
+CDR-T-220,plan root mapping,D9,negative,omit typed-root-use for PRM-069,admit,MissingTypedRootUse at exact site,core plan admission
+CDR-T-221,plan root mapping,D9,positive,only PRM-070 carries a nominal-reachable type,lower/admit,root retained and nominal reachable,runtime-plan integration
+CDR-T-222,plan root mapping,D9,negative,omit typed-root-use for PRM-070,admit,MissingTypedRootUse at exact site,core plan admission
+CDR-T-223,plan root mapping,D9,positive,only PRM-071 carries a nominal-reachable type,lower/admit,root retained and nominal reachable,runtime-plan integration
+CDR-T-224,plan root mapping,D9,negative,omit typed-root-use for PRM-071,admit,MissingTypedRootUse at exact site,core plan admission
+CDR-T-225,plan root mapping,D9,positive,only PRM-072 carries a nominal-reachable type,lower/admit,root retained and nominal reachable,runtime-plan integration
+CDR-T-226,plan root mapping,D9,negative,omit typed-root-use for PRM-072,admit,MissingTypedRootUse at exact site,core plan admission
+CDR-T-227,plan root mapping,D9,positive,only PRM-073 carries a nominal-reachable type,lower/admit,root retained and nominal reachable,runtime-plan integration
+CDR-T-228,plan root mapping,D9,negative,omit typed-root-use for PRM-073,admit,MissingTypedRootUse at exact site,core plan admission
+CDR-T-229,plan root mapping,D9,positive,only PRM-074 carries a nominal-reachable type,lower/admit,root retained and nominal reachable,runtime-plan integration
+CDR-T-230,plan root mapping,D9,negative,omit typed-root-use for PRM-074,admit,MissingTypedRootUse at exact site,core plan admission
+CDR-T-231,plan root mapping,D9,positive,only PRM-075 carries a nominal-reachable type,lower/admit,root retained and nominal reachable,runtime-plan integration
+CDR-T-232,plan root mapping,D9,negative,omit typed-root-use for PRM-075,admit,MissingTypedRootUse at exact site,core plan admission
+CDR-T-233,plan root mapping,D9,positive,only PRM-076 carries a nominal-reachable type,lower/admit,root retained and nominal reachable,runtime-plan integration
+CDR-T-234,plan root mapping,D9,negative,omit typed-root-use for PRM-076,admit,MissingTypedRootUse at exact site,core plan admission
+CDR-T-235,plan root mapping,D9,positive,only PRM-077 carries a nominal-reachable type,lower/admit,root retained and nominal reachable,runtime-plan integration
+CDR-T-236,plan root mapping,D9,negative,omit typed-root-use for PRM-077,admit,MissingTypedRootUse at exact site,core plan admission
+CDR-T-237,plan root mapping,D9,positive,only PRM-078 carries a nominal-reachable type,lower/admit,root retained and nominal reachable,runtime-plan integration
+CDR-T-238,plan root mapping,D9,negative,omit typed-root-use for PRM-078,admit,MissingTypedRootUse at exact site,core plan admission
+CDR-T-239,plan root mapping,D9,positive,only PRM-079 carries a nominal-reachable type,lower/admit,root retained and nominal reachable,runtime-plan integration
+CDR-T-240,plan root mapping,D9,negative,omit typed-root-use for PRM-079,admit,MissingTypedRootUse at exact site,core plan admission
+CDR-T-241,plan root mapping,D9,positive,only PRM-080 carries a nominal-reachable type,lower/admit,root retained and nominal reachable,runtime-plan integration
+CDR-T-242,plan root mapping,D9,negative,omit typed-root-use for PRM-080,admit,MissingTypedRootUse at exact site,core plan admission
+CDR-T-243,plan root mapping,D9,positive,only PRM-081 carries a nominal-reachable type,lower/admit,root retained and nominal reachable,runtime-plan integration
+CDR-T-244,plan root mapping,D9,negative,omit typed-root-use for PRM-081,admit,MissingTypedRootUse at exact site,core plan admission
+CDR-T-245,plan root mapping,D9,positive,only PRM-082 carries a nominal-reachable type,lower/admit,root retained and nominal reachable,runtime-plan integration
+CDR-T-246,plan root mapping,D9,negative,omit typed-root-use for PRM-082,admit,MissingTypedRootUse at exact site,core plan admission
+CDR-T-247,plan root mapping,D9,positive,only PRM-083 carries a nominal-reachable type,lower/admit,root retained and nominal reachable,runtime-plan integration
+CDR-T-248,plan root mapping,D9,negative,omit typed-root-use for PRM-083,admit,MissingTypedRootUse at exact site,core plan admission
+CDR-T-249,plan root mapping,D9,positive,only PRM-084 carries a nominal-reachable type,lower/admit,root retained and nominal reachable,runtime-plan integration
+CDR-T-250,plan root mapping,D9,negative,omit typed-root-use for PRM-084,admit,MissingTypedRootUse at exact site,core plan admission
+CDR-T-251,plan root mapping,D9,positive,only PRM-085 carries a nominal-reachable type,lower/admit,root retained and nominal reachable,runtime-plan integration
+CDR-T-252,plan root mapping,D9,negative,omit typed-root-use for PRM-085,admit,MissingTypedRootUse at exact site,core plan admission
+CDR-T-253,plan root mapping,D9,positive,only PRM-086 carries a nominal-reachable type,lower/admit,root retained and nominal reachable,runtime-plan integration
+CDR-T-254,plan root mapping,D9,negative,omit typed-root-use for PRM-086,admit,MissingTypedRootUse at exact site,core plan admission
+CDR-T-255,plan root mapping,D9,positive,only PRM-087 carries a nominal-reachable type,lower/admit,root retained and nominal reachable,runtime-plan integration
+CDR-T-256,plan root mapping,D9,negative,omit typed-root-use for PRM-087,admit,MissingTypedRootUse at exact site,core plan admission
+CDR-T-257,plan root mapping,D9,positive,only PRM-088 carries a nominal-reachable type,lower/admit,root retained and nominal reachable,runtime-plan integration
+CDR-T-258,plan root mapping,D9,negative,omit typed-root-use for PRM-088,admit,MissingTypedRootUse at exact site,core plan admission
+CDR-T-259,plan root mapping,D9,positive,only PRM-089 carries a nominal-reachable type,lower/admit,root retained and nominal reachable,runtime-plan integration
+CDR-T-260,plan root mapping,D9,negative,omit typed-root-use for PRM-089,admit,MissingTypedRootUse at exact site,core plan admission
+CDR-T-261,plan root mapping,D9,positive,only PRM-090 carries a nominal-reachable type,lower/admit,root retained and nominal reachable,runtime-plan integration
+CDR-T-262,plan root mapping,D9,negative,omit typed-root-use for PRM-090,admit,MissingTypedRootUse at exact site,core plan admission
+CDR-T-263,plan root mapping,D9,positive,only PRM-091 carries a nominal-reachable type,lower/admit,root retained and nominal reachable,runtime-plan integration
+CDR-T-264,plan root mapping,D9,negative,omit typed-root-use for PRM-091,admit,MissingTypedRootUse at exact site,core plan admission
+CDR-T-265,AWBC root mapping,D10,positive,plan/AWBC pair for ARM-001,normalize and correlate,"site, root ID, semantic ID and checked type equal",runtime-plan/AWBC integration
+CDR-T-266,AWBC root mapping,D10,positive,plan/AWBC pair for ARM-002,normalize and correlate,"site, root ID, semantic ID and checked type equal",runtime-plan/AWBC integration
+CDR-T-267,AWBC root mapping,D10,positive,plan/AWBC pair for ARM-003,normalize and correlate,"site, root ID, semantic ID and checked type equal",runtime-plan/AWBC integration
+CDR-T-268,AWBC root mapping,D10,positive,plan/AWBC pair for ARM-004,normalize and correlate,"site, root ID, semantic ID and checked type equal",runtime-plan/AWBC integration
+CDR-T-269,AWBC root mapping,D10,positive,plan/AWBC pair for ARM-005,normalize and correlate,"site, root ID, semantic ID and checked type equal",runtime-plan/AWBC integration
+CDR-T-270,AWBC root mapping,D10,positive,plan/AWBC pair for ARM-006,normalize and correlate,"site, root ID, semantic ID and checked type equal",runtime-plan/AWBC integration
+CDR-T-271,AWBC root mapping,D10,positive,plan/AWBC pair for ARM-007,normalize and correlate,"site, root ID, semantic ID and checked type equal",runtime-plan/AWBC integration
+CDR-T-272,AWBC root mapping,D10,positive,plan/AWBC pair for ARM-008,normalize and correlate,"site, root ID, semantic ID and checked type equal",runtime-plan/AWBC integration
+CDR-T-273,AWBC root mapping,D10,positive,plan/AWBC pair for ARM-009,normalize and correlate,"site, root ID, semantic ID and checked type equal",runtime-plan/AWBC integration
+CDR-T-274,AWBC root mapping,D10,positive,plan/AWBC pair for ARM-010,normalize and correlate,"site, root ID, semantic ID and checked type equal",runtime-plan/AWBC integration
+CDR-T-275,AWBC root mapping,D10,positive,plan/AWBC pair for ARM-011,normalize and correlate,"site, root ID, semantic ID and checked type equal",runtime-plan/AWBC integration
+CDR-T-276,AWBC root mapping,D10,positive,plan/AWBC pair for ARM-012,normalize and correlate,"site, root ID, semantic ID and checked type equal",runtime-plan/AWBC integration
+CDR-T-277,AWBC root mapping,D10,positive,plan/AWBC pair for ARM-013,normalize and correlate,"site, root ID, semantic ID and checked type equal",runtime-plan/AWBC integration
+CDR-T-278,AWBC root mapping,D10,positive,plan/AWBC pair for ARM-014,normalize and correlate,"site, root ID, semantic ID and checked type equal",runtime-plan/AWBC integration
+CDR-T-279,AWBC root mapping,D10,positive,plan/AWBC pair for ARM-015,normalize and correlate,"site, root ID, semantic ID and checked type equal",runtime-plan/AWBC integration
+CDR-T-280,AWBC root mapping,D10,positive,plan/AWBC pair for ARM-016,normalize and correlate,"site, root ID, semantic ID and checked type equal",runtime-plan/AWBC integration
+CDR-T-281,AWBC root mapping,D10,positive,plan/AWBC pair for ARM-017,normalize and correlate,"site, root ID, semantic ID and checked type equal",runtime-plan/AWBC integration
+CDR-T-282,AWBC root mapping,D10,positive,plan/AWBC pair for ARM-018,normalize and correlate,"site, root ID, semantic ID and checked type equal",runtime-plan/AWBC integration
+CDR-T-283,AWBC root mapping,D10,positive,plan/AWBC pair for ARM-019,normalize and correlate,"site, root ID, semantic ID and checked type equal",runtime-plan/AWBC integration
+CDR-T-284,AWBC root mapping,D10,positive,plan/AWBC pair for ARM-020,normalize and correlate,"site, root ID, semantic ID and checked type equal",runtime-plan/AWBC integration
+CDR-T-285,AWBC root mapping,D10,positive,plan/AWBC pair for ARM-021,normalize and correlate,"site, root ID, semantic ID and checked type equal",runtime-plan/AWBC integration
+CDR-T-286,AWBC root mapping,D10,positive,plan/AWBC pair for ARM-022,normalize and correlate,"site, root ID, semantic ID and checked type equal",runtime-plan/AWBC integration
+CDR-T-287,AWBC root mapping,D10,positive,plan/AWBC pair for ARM-023,normalize and correlate,"site, root ID, semantic ID and checked type equal",runtime-plan/AWBC integration
+CDR-T-288,AWBC root mapping,D10,positive,plan/AWBC pair for ARM-024,normalize and correlate,"site, root ID, semantic ID and checked type equal",runtime-plan/AWBC integration
+CDR-T-289,AWBC root mapping,D10,positive,plan/AWBC pair for ARM-025,normalize and correlate,"site, root ID, semantic ID and checked type equal",runtime-plan/AWBC integration
+CDR-T-290,AWBC root mapping,D10,positive,plan/AWBC pair for ARM-026,normalize and correlate,"site, root ID, semantic ID and checked type equal",runtime-plan/AWBC integration
+CDR-T-291,AWBC root mapping,D10,positive,plan/AWBC pair for ARM-027,normalize and correlate,"site, root ID, semantic ID and checked type equal",runtime-plan/AWBC integration
+CDR-T-292,AWBC root mapping,D10,positive,plan/AWBC pair for ARM-028,normalize and correlate,"site, root ID, semantic ID and checked type equal",runtime-plan/AWBC integration
+CDR-T-293,AWBC root mapping,D10,positive,plan/AWBC pair for ARM-029,normalize and correlate,"site, root ID, semantic ID and checked type equal",runtime-plan/AWBC integration
+CDR-T-294,AWBC root mapping,D10,positive,plan/AWBC pair for ARM-030,normalize and correlate,"site, root ID, semantic ID and checked type equal",runtime-plan/AWBC integration
+CDR-T-295,AWBC root mapping,D10,positive,plan/AWBC pair for ARM-031,normalize and correlate,"site, root ID, semantic ID and checked type equal",runtime-plan/AWBC integration
+CDR-T-296,AWBC root mapping,D10,positive,plan/AWBC pair for ARM-032,normalize and correlate,"site, root ID, semantic ID and checked type equal",runtime-plan/AWBC integration
+CDR-T-297,AWBC root mapping,D10,positive,plan/AWBC pair for ARM-033,normalize and correlate,"site, root ID, semantic ID and checked type equal",runtime-plan/AWBC integration
+CDR-T-298,AWBC root mapping,D10,negative,same checked type under substituted root ID,correlate,RootIdMismatch before publication,core AWBC admission
+CDR-T-299,AWBC root mapping,D10,negative,dense runtime type IDs permuted without site update,verify/admit,DenseTypeCoordinateMismatch,core AWBC verifier
+CDR-T-300,AWBC root mapping,D10,negative,duplicate typed root use for one site,admit,DuplicateTypedRootUse in canonical site order,core AWBC admission
+CDR-T-301,AWBC root mapping,D10,negative,remove sole typed root reaching nominal,admit,nominal row is unreachable,core AWBC admission
+CDR-T-302,nominal authority,D11,positive,project domain issued for exact execution site/root,construct admitted nominal,succeeds through crate-private constructor,core plan unit
+CDR-T-303,nominal authority,D11,positive,producer domain for exact producer/layout,construct admitted nominal,succeeds through retained producer view,core plan unit
+CDR-T-304,nominal authority,D11,negative,project domain substituted with producer domain,select/construct domain,DomainKindMismatch before construction,core plan unit
+CDR-T-305,nominal authority,D11,negative,producer A domain used for producer B nominal,select/construct domain,ProducerMismatch before construction,core plan unit
+CDR-T-306,nominal authority,D11,negative,project root A used at site bound to root B,select/construct domain,ProjectRootMismatch before construction,core plan unit
+CDR-T-307,nominal authority,D11,negative,stale generation domain borrow paired with new generation,select/construct domain,GenerationMismatch before construction,core plan unit
+CDR-T-308,nominal authority,D11,negative,layout exists globally but is absent from selected domain,select/construct domain,UnauthorizedNominalLayout before construction,core plan unit
+CDR-T-309,nominal authority,D11,compile-fail,external caller,"serialize, default, clone-to-owned or construct admission domain",no such API/trait surface,trybuild
+CDR-T-310,MakeRecord,D12,negative,domain table index out of range,verify/admit/execute,InvalidDomainReference at required precedence,core AWBC unit/integration
+CDR-T-311,MakeRecord,D12,negative,project domain row at producer-rooted execution site,verify/admit/execute,DomainKindMismatch at required precedence,core AWBC unit/integration
+CDR-T-312,MakeRecord,D12,negative,producer domain row with malformed producer ID,verify/admit/execute,ProducerIdError at required precedence,core AWBC unit/integration
+CDR-T-313,MakeRecord,D12,negative,project root bytes not declared by generation,verify/admit/execute,UnknownProjectRoot at required precedence,core AWBC unit/integration
+CDR-T-314,MakeRecord,D12,negative,MakeRecord semantic/layout differs from admitted shape,verify/admit/execute,NominalShapeMismatch at required precedence,core AWBC unit/integration
+CDR-T-315,MakeRecord,D12,negative,field count differs,verify/admit/execute,FieldCountMismatch at required precedence,core AWBC unit/integration
+CDR-T-316,MakeRecord,D12,negative,field value fails checked type,verify/admit/execute,CheckedValue source/path retained at required precedence,core AWBC unit/integration
+CDR-T-317,MakeRecord,D12,positive,canonical project-domain instruction,codec round-trip and execute,"opcode 0x0f, mandatory domain operand, checked construction",core AWBC golden/integration
+CDR-T-318,MakeRecord,D12,positive,canonical producer-domain record constant,codec round-trip and materialize,mandatory producer domain and checked construction,core AWBC golden/integration
+CDR-T-319,MakeRecord,D12,golden,fixed domain table with project and producer rows,encode,"LE count, tags 00/01, root32/str32 exact bytes",core AWBC golden
+CDR-T-320,MakeRecord,D12,tamper,remove domain operand from version-1 instruction,decode/verify,deterministic malformed instruction; no old-reader fallback,core AWBC tamper
+CDR-T-321,checked value,D13,negative,Choice with zero matching alternatives,validate_value,ChoiceNoMatch with ordered typed branch failures,core pattern/value unit
+CDR-T-322,checked value,D13,negative,Choice with alternatives 1 and 3 matching,validate_value,ChoiceAmbiguous with indices 1 and 3,core pattern/value unit
+CDR-T-323,checked value,D13,negative,"Choice first branch matches, later branch malformed",validate_value,later structured failure still evaluated and reported by validation rule,core pattern/value unit
+CDR-T-324,checked value,D13,negative,Variant wrong owner and wrong ordinal,validate_value,owner error precedes ordinal,core pattern/value unit
+CDR-T-325,checked value,D13,negative,"Variant correct owner, wrong ordinal/name",validate_value,ordinal error precedes name,core pattern/value unit
+CDR-T-326,checked value,D13,negative,"Variant correct identity, wrong payload presence",validate_value,payload-presence error before recursive payload,core pattern/value unit
+CDR-T-327,checked value,D13,negative,nested nominal missing admitted shape,validate_value,NominalShapeMissing after Choice evaluation,core pattern/value unit
+CDR-T-328,checked value,D13,negative,"65,537th charged node/alternative",validate_value,WorkBudgetExceeded with consumed/limit/path,core pattern/value unit
+CDR-T-329,checked value,D13,negative,depth 65 nested value,validate_value,NestingLimitExceeded at exact path,core pattern/value unit
+CDR-T-330,checked value,D13,positive,Choice with exactly one match and all branches within budget,validate_value,success after evaluating every branch,core pattern unit
+CDR-T-331,checked value,D13,property,same Choice/value repeated,validate_value,"identical branch evidence, first two matches and budget count",core property
+CDR-T-332,checked value,D13,compile-fail,external authority caller,use boolean accepts_value,public method absent,trybuild
+CDR-T-333,typed error mapping,D14,negative,checked-value failure at nominal tree,map failure,nominal tree error retains RuntimeCheckedTypeError and typed paths; no string flattening,boundary integration
+CDR-T-334,typed error mapping,D14,negative,checked-value failure at CharacterDialogue schema,map failure,CharacterDialogue schema error retains RuntimeCheckedTypeError and typed paths; no string flattening,boundary integration
+CDR-T-335,typed error mapping,D14,negative,checked-value failure at CharacterDialogue typed value,map failure,CharacterDialogue typed value error retains RuntimeCheckedTypeError and typed paths; no string flattening,boundary integration
+CDR-T-336,typed error mapping,D14,negative,checked-value failure at structured patch,map failure,structured patch error retains RuntimeCheckedTypeError and typed paths; no string flattening,boundary integration
+CDR-T-337,typed error mapping,D14,negative,checked-value failure at restore,map failure,restore error retains RuntimeCheckedTypeError and typed paths; no string flattening,boundary integration
+CDR-T-338,typed error mapping,D14,negative,checked-value failure at replay,map failure,replay error retains RuntimeCheckedTypeError and typed paths; no string flattening,boundary integration
+CDR-T-339,typed error mapping,D14,negative,checked-value failure at View activation,map failure,View activation error retains RuntimeCheckedTypeError and typed paths; no string flattening,boundary integration
+CDR-T-340,typed error mapping,D14,negative,checked-value failure at RuntimePlan admission,map failure,RuntimePlan admission error retains RuntimeCheckedTypeError and typed paths; no string flattening,boundary integration
+CDR-T-341,typed error mapping,D14,negative,checked-value failure at AWBC admission,map failure,AWBC admission error retains RuntimeCheckedTypeError and typed paths; no string flattening,boundary integration
+CDR-T-342,typed error mapping,D14,negative,checked-value failure at VM MakeRecord,map failure,VM MakeRecord error retains RuntimeCheckedTypeError and typed paths; no string flattening,boundary integration
+CDR-T-343,typed error mapping,D14,property,"same malformed value through dialogue, restore and VM",compare sources,same checked source class/path with boundary context only,cross-crate integration
+CDR-T-344,acceptance,D15,gate,lower enum relocation,run enumerated command,"serde spelling, PublicId validation and 128-byte limit unchanged",workspace acceptance
+CDR-T-345,acceptance,D15,gate,workspace check after each migration phase,run enumerated command,compile-clean without temporary compatibility API,workspace acceptance
+CDR-T-346,acceptance,D15,gate,workspace Clippy all-targets,run enumerated command,zero warnings under repository policy,workspace acceptance
+CDR-T-347,acceptance,D15,gate,rustfmt check,run enumerated command,no formatting drift,workspace acceptance
+CDR-T-348,acceptance,D15,gate,structure audit,run enumerated command,owner/module/dependency boundaries accepted,workspace acceptance
+CDR-T-349,acceptance,D15,gate,codec/golden/tamper suite,run enumerated command,all version markers remain 1,workspace acceptance
+CDR-T-350,acceptance,D15,gate,Tier 2 applicable suites,run enumerated command,all selected suites green,workspace acceptance
+CDR-T-351,acceptance,D15,gate,final unchecked constructor deletion,run enumerated command,old internal and external call sites fail compilation,workspace acceptance

@@ -1,0 +1,47 @@
+{
+  "arcweft_owned_versions": {
+    "abi": 1,
+    "codec": 1,
+    "digest_domain": 1,
+    "persistence": 1,
+    "protocol": 1,
+    "save": 1,
+    "schema": 1,
+    "snapshot": 1
+  },
+  "branch": "main",
+  "clone_attempt": {
+    "completed": false,
+    "fallback": "commit-pinned raw/rendered GitHub plus hashed source captures",
+    "performed": true,
+    "reason": "container GitHub network/DNS connectivity failure"
+  },
+  "design_only": true,
+  "evidence_commit": "36f83f8509417d1110a34f1b32aee6f4a113dcf3",
+  "invalid_intake_note_sha256": "6f2d13f40738fb05c806f3283404afc8e1c9617d26aee0a42fad1c5b9f53e7f7",
+  "inventory_rows": 226,
+  "maintained_request_sha256": "0c570da664999507d1895813d65a707fb13726d48c489e8fd322c238a3361b78",
+  "open_questions": 0,
+  "package": "Lang-01.3.1.2.3.2.1.2.1.1",
+  "repository": "Sanzentyo/arcweft",
+  "required_exact_decisions": [
+    1,
+    2,
+    3,
+    4,
+    5,
+    6,
+    7,
+    8,
+    9,
+    10,
+    11,
+    12,
+    13,
+    14,
+    15
+  ],
+  "retained_parent_sha256": "aa43429b6ffe5aac6489c94c7ff7a117ca1bbd43c764fed6ff4a1f3b5d540e06",
+  "status": "READY_FOR_IMPLEMENTATION",
+  "test_rows": 671
+}

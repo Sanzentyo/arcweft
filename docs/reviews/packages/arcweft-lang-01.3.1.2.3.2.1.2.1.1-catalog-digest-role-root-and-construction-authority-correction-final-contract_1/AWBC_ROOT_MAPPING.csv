@@ -1,0 +1,34 @@
+id,awbc_table,awbc_site,typed_material,plan_coordinate_rule,result
+ARM-001,runtime_types,RuntimeType{ty},semantic identity + checked type,root copied from corresponding plan type use,declaration checked
+ARM-002,constants,Constant{constant},constant value type,plan constant/nested op site,constant admitted
+ARM-003,signatures,"SignatureParameter{signature,parameter}",parameter type,callable/flow/trait parameter site,signature admitted
+ARM-004,signatures,SignatureResult{signature},result type,callable/flow/trait result site,signature admitted
+ARM-005,frame_layouts,"FrameSlot{frame,slot}",local/capture type,frame local/capture plan site,frame admitted
+ARM-006,instructions,"InstructionInput{function,block,instruction,input}",operand register type,originating FlowOp/call site,instruction admitted
+ARM-007,instructions,"InstructionResult{function,block,instruction}",destination register type,originating FlowOp result site,instruction admitted
+ARM-008,patterns,PatternExpected{pattern},scrutinee expected type,plan pattern expected site,pattern admitted
+ARM-009,patterns,"PatternRecordField{pattern,field}",record field type,plan record pattern site,pattern admitted
+ARM-010,patterns,PatternVariantPayload{pattern},variant payload type,plan variant pattern site,pattern admitted
+ARM-011,task_plans,"TaskPlan{task,slot}",task input/result/error,line task node site,task admitted
+ARM-012,audio_commands,"AudioCommand{command,slot}",audio payload value,line/effect input site,command admitted
+ARM-013,effect_plans,"EffectPlan{effect,slot}",effect input/output,FlowOp/line effect site,effect admitted
+ARM-014,choices,"ChoiceOption{choice,option}",choice option payload,FlowOp/line choice site,choice admitted
+ARM-015,content_units,ContentUnit{content},content runtime value,line content site,content admitted
+ARM-016,line_task_groups,"LineTaskNode{group,node,slot}",line node value,LineTaskNode plan site,line group admitted
+ARM-017,stream_plans,"StreamPlan{plan,slot}",item/error/handler type,StreamPlan site,stream admitted
+ARM-018,source_plans,"SourcePlan{plan,slot}",item/error/open/handler type,SourcePlan site,source admitted
+ARM-019,pure_helpers,"PureHelper{helper,slot}",parameter/capture/local/result,PureHelper site,helper admitted
+ARM-020,trait_methods,"TraitMethod{method,slot}",receiver/parameter/result,TraitMethod site,method admitted
+ARM-021,resources,ResourcePayload{resource},resource payload type,callable/FlowOp resource payload site,resource admitted
+ARM-022,callable_executables,"CallableExecutable{executable,slot}",signature/frame/runtime values,CallableExecutable site,executable admitted
+ARM-023,flow_bindings,FlowBinding{binding},bound runtime value,FlowOp pattern binding site,binding admitted
+ARM-024,flow_executables,"FlowExecutable{executable,slot}",signature/frame/runtime values,FlowExecutable site,executable admitted
+ARM-025,entries,"Entry{entry,slot}",entry state/event/command/View/persisted type,Entry site,entry admitted
+ARM-026,strings,none,UTF-8 symbol data,no root,identity/text only
+ARM-027,blocks,none,control-flow topology,no root,no RuntimeValue declaration
+ARM-028,resume_points,none,control location,no root,identity only
+ARM-029,match_arms,none,control edge,pattern/result types mapped separately,no independent root
+ARM-030,intrinsics,none,intrinsic ID,operand/result sites mapped separately,no independent root
+ARM-031,host_calls,none,host-call ID/mode,signature/operand/result sites mapped separately,no independent root
+ARM-032,display_map,none,display metadata,no root,excluded
+ARM-033,source_map,none,source evidence,no root,excluded

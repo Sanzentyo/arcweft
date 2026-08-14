@@ -1,0 +1,92 @@
+id,runtime_plan_owner,typed_site_variant,slot,semantic_source,root_rule,publication_or_exclusion
+PRM-001,entry,Entry,StateInput,entry accepted state input,semantic identity byte copy,live/persisted value
+PRM-002,entry,Entry,StateOutput,entry accepted state output,semantic identity byte copy,live/persisted value
+PRM-003,entry,Entry,EventInput,entry event input,semantic identity byte copy,live value
+PRM-004,entry,Entry,EventOutput,entry event output,semantic identity byte copy,live value
+PRM-005,entry,Entry,CommandInput,command contract input,semantic identity byte copy,live value
+PRM-006,entry,Entry,CommandOutput,command contract output,semantic identity byte copy,live value
+PRM-007,entry,Entry,"CommandConstructorPayload{constructor,field}",constructor field fact,semantic identity byte copy,constructed value
+PRM-008,entry,Entry,RouterPayload{route},route binding payload fact,semantic identity byte copy,published route value
+PRM-009,entry,Entry,ViewInput{input},accepted View input fact,semantic identity byte copy,View activation input
+PRM-010,entry,Entry,ReplayVisible{slot},underlying entry slot fact,same root as live slot,replay-visible value
+PRM-011,entry,Entry,SaveVisible{slot},underlying entry slot fact,same root as live slot,save-visible value
+PRM-012,callable_executables,CallableExecutable,Parameter{parameter},callable accepted signature/frame fact,semantic identity byte copy,runtime value
+PRM-013,callable_executables,CallableExecutable,Result,callable accepted signature/frame fact,semantic identity byte copy,runtime value
+PRM-014,callable_executables,CallableExecutable,Capture{capture},callable accepted signature/frame fact,semantic identity byte copy,runtime value
+PRM-015,callable_executables,CallableExecutable,FrameLocal{local},callable accepted signature/frame fact,semantic identity byte copy,runtime value
+PRM-016,callable_executables,CallableExecutable,Constant{constant},callable accepted signature/frame fact,semantic identity byte copy,runtime value
+PRM-017,callable_executables,CallableExecutable,Pattern{pattern},callable accepted signature/frame fact,semantic identity byte copy,runtime value
+PRM-018,callable_executables,CallableExecutable,ReducerInput,callable accepted signature/frame fact,semantic identity byte copy,runtime value
+PRM-019,callable_executables,CallableExecutable,ReducerOutput,callable accepted signature/frame fact,semantic identity byte copy,runtime value
+PRM-020,callable_executables,CallableExecutable,ResourcePayload{resource},callable accepted signature/frame fact,semantic identity byte copy,runtime value
+PRM-021,flow_executables,FlowExecutable,Parameter{parameter},flow executable signature/frame fact,semantic identity byte copy,runtime value
+PRM-022,flow_executables,FlowExecutable,Result,flow executable signature/frame fact,semantic identity byte copy,runtime value
+PRM-023,flow_executables,FlowExecutable,Capture{capture},flow executable signature/frame fact,semantic identity byte copy,runtime value
+PRM-024,flow_executables,FlowExecutable,FrameLocal{local},flow executable signature/frame fact,semantic identity byte copy,runtime value
+PRM-025,flow_executables,FlowExecutable,ReplayVisible{slot},flow executable signature/frame fact,semantic identity byte copy,runtime value
+PRM-026,flow_executables,FlowExecutable,SaveVisible{slot},flow executable signature/frame fact,semantic identity byte copy,runtime value
+PRM-027,flows,FlowOp,ExpressionResult,typed FlowOp semantic fact,semantic identity byte copy,nested RuntimeValue boundary
+PRM-028,flows,FlowOp,ExpressionInput{input},typed FlowOp semantic fact,semantic identity byte copy,nested RuntimeValue boundary
+PRM-029,flows,FlowOp,Condition,typed FlowOp semantic fact,semantic identity byte copy,nested RuntimeValue boundary
+PRM-030,flows,FlowOp,PatternExpected,typed FlowOp semantic fact,semantic identity byte copy,nested RuntimeValue boundary
+PRM-031,flows,FlowOp,PatternBinding{binding},typed FlowOp semantic fact,semantic identity byte copy,nested RuntimeValue boundary
+PRM-032,flows,FlowOp,CallArgument{argument},typed FlowOp semantic fact,semantic identity byte copy,nested RuntimeValue boundary
+PRM-033,flows,FlowOp,CallResult,typed FlowOp semantic fact,semantic identity byte copy,nested RuntimeValue boundary
+PRM-034,flows,FlowOp,MatchScrutinee,typed FlowOp semantic fact,semantic identity byte copy,nested RuntimeValue boundary
+PRM-035,flows,FlowOp,MatchArmPattern{arm},typed FlowOp semantic fact,semantic identity byte copy,nested RuntimeValue boundary
+PRM-036,flows,FlowOp,MatchArmResult{arm},typed FlowOp semantic fact,semantic identity byte copy,nested RuntimeValue boundary
+PRM-037,flows,FlowOp,ChoiceOptionPayload{option},typed FlowOp semantic fact,semantic identity byte copy,nested RuntimeValue boundary
+PRM-038,flows,FlowOp,EffectInput{input},typed FlowOp semantic fact,semantic identity byte copy,nested RuntimeValue boundary
+PRM-039,flows,FlowOp,EffectOutput,typed FlowOp semantic fact,semantic identity byte copy,nested RuntimeValue boundary
+PRM-040,flows,FlowOp,ReturnValue,typed FlowOp semantic fact,semantic identity byte copy,nested RuntimeValue boundary
+PRM-041,flows,FlowOp,Constant,typed FlowOp semantic fact,semantic identity byte copy,nested RuntimeValue boundary
+PRM-042,flows,FlowOp,NominalConstructor,typed FlowOp semantic fact,semantic identity byte copy,nested RuntimeValue boundary
+PRM-043,flows,FlowOp,NominalField{field},typed FlowOp semantic fact,semantic identity byte copy,nested RuntimeValue boundary
+PRM-044,flows,FlowOp,RecordPattern,typed FlowOp semantic fact,semantic identity byte copy,nested RuntimeValue boundary
+PRM-045,flows,FlowOp,VariantPattern,typed FlowOp semantic fact,semantic identity byte copy,nested RuntimeValue boundary
+PRM-046,flows,FlowOp,ViewInput{input},typed FlowOp semantic fact,semantic identity byte copy,nested RuntimeValue boundary
+PRM-047,flows,FlowOp,ReducerInput,typed FlowOp semantic fact,semantic identity byte copy,nested RuntimeValue boundary
+PRM-048,flows,FlowOp,ReducerOutput,typed FlowOp semantic fact,semantic identity byte copy,nested RuntimeValue boundary
+PRM-049,flows,FlowOp,ResourcePayload,typed FlowOp semantic fact,semantic identity byte copy,nested RuntimeValue boundary
+PRM-050,pure_helpers,PureHelper,Parameter{parameter},pure helper signature/frame fact,semantic identity byte copy,runtime value
+PRM-051,pure_helpers,PureHelper,Capture{capture},pure helper signature/frame fact,semantic identity byte copy,runtime value
+PRM-052,pure_helpers,PureHelper,FrameLocal{local},pure helper signature/frame fact,semantic identity byte copy,runtime value
+PRM-053,pure_helpers,PureHelper,Constant{constant},pure helper signature/frame fact,semantic identity byte copy,runtime value
+PRM-054,pure_helpers,PureHelper,Pattern{pattern},pure helper signature/frame fact,semantic identity byte copy,runtime value
+PRM-055,pure_helpers,PureHelper,Result,pure helper signature/frame fact,semantic identity byte copy,runtime value
+PRM-056,trait_methods,TraitMethod,Receiver,accepted trait method signature,semantic identity byte copy,runtime value
+PRM-057,trait_methods,TraitMethod,Parameter{parameter},accepted trait method signature,semantic identity byte copy,runtime value
+PRM-058,trait_methods,TraitMethod,Result,accepted trait method signature,semantic identity byte copy,runtime value
+PRM-059,line_task_groups,LineTaskNode,Content,typed line-task node fact,semantic identity byte copy,line/task runtime value
+PRM-060,line_task_groups,LineTaskNode,ChoicePayload{option},typed line-task node fact,semantic identity byte copy,line/task runtime value
+PRM-061,line_task_groups,LineTaskNode,TaskResult,typed line-task node fact,semantic identity byte copy,line/task runtime value
+PRM-062,line_task_groups,LineTaskNode,Progress,typed line-task node fact,semantic identity byte copy,line/task runtime value
+PRM-063,line_task_groups,LineTaskNode,Error,typed line-task node fact,semantic identity byte copy,line/task runtime value
+PRM-064,line_task_groups,LineTaskNode,Cleanup,typed line-task node fact,semantic identity byte copy,line/task runtime value
+PRM-065,line_task_groups,LineTaskNode,EffectInput{input},typed line-task node fact,semantic identity byte copy,line/task runtime value
+PRM-066,line_task_groups,LineTaskNode,EffectOutput,typed line-task node fact,semantic identity byte copy,line/task runtime value
+PRM-067,line_task_groups,LineTaskNode,ReplayVisible,typed line-task node fact,semantic identity byte copy,line/task runtime value
+PRM-068,line_task_groups,LineTaskNode,SaveVisible,typed line-task node fact,semantic identity byte copy,line/task runtime value
+PRM-069,stream_plans,StreamPlan,Item,stream accepted type fact,semantic identity byte copy,stream runtime value
+PRM-070,stream_plans,StreamPlan,Error,stream accepted type fact,semantic identity byte copy,stream runtime value
+PRM-071,stream_plans,StreamPlan,TransformParameter{parameter},stream accepted type fact,semantic identity byte copy,stream runtime value
+PRM-072,stream_plans,StreamPlan,TransformResult,stream accepted type fact,semantic identity byte copy,stream runtime value
+PRM-073,stream_plans,StreamPlan,HandlerParameter{parameter},stream accepted type fact,semantic identity byte copy,stream runtime value
+PRM-074,stream_plans,StreamPlan,HandlerResult,stream accepted type fact,semantic identity byte copy,stream runtime value
+PRM-075,stream_plans,StreamPlan,ReplayVisible,stream accepted type fact,semantic identity byte copy,stream runtime value
+PRM-076,stream_plans,StreamPlan,SaveVisible,stream accepted type fact,semantic identity byte copy,stream runtime value
+PRM-077,source_plans,SourcePlan,Item,source accepted type fact,semantic identity byte copy,source runtime value
+PRM-078,source_plans,SourcePlan,Error,source accepted type fact,semantic identity byte copy,source runtime value
+PRM-079,source_plans,SourcePlan,OpenParameter{parameter},source accepted type fact,semantic identity byte copy,source runtime value
+PRM-080,source_plans,SourcePlan,OpenResult,source accepted type fact,semantic identity byte copy,source runtime value
+PRM-081,source_plans,SourcePlan,HandlerParameter{parameter},source accepted type fact,semantic identity byte copy,source runtime value
+PRM-082,source_plans,SourcePlan,HandlerResult,source accepted type fact,semantic identity byte copy,source runtime value
+PRM-083,source_plans,SourcePlan,ReplayVisible,source accepted type fact,semantic identity byte copy,source runtime value
+PRM-084,source_plans,SourcePlan,SaveVisible,source accepted type fact,semantic identity byte copy,source runtime value
+PRM-085,RuntimePlan,none,entry/flow/callable IDs,typed identity owner,no root,identity only
+PRM-086,RuntimePlan,none,public labels and display maps,display metadata,no root,not a RuntimeValue
+PRM-087,RuntimePlan,none,source maps and SourceSpan,source evidence,no root,not a RuntimeValue
+PRM-088,RuntimePlan,none,NeedId/TaskId/flow target IDs,control identity,no root,not a RuntimeValue payload
+PRM-089,RuntimePlan,none,resource reference without payload,resource identity,no root,payload slot emits root separately
+PRM-090,RuntimePlan,none,ViewId itself,View identity,no root,View input slot emits value root
+PRM-091,RuntimePlan,none,retirement/tombstone metadata,registry metadata,no root,not a RuntimeValue
