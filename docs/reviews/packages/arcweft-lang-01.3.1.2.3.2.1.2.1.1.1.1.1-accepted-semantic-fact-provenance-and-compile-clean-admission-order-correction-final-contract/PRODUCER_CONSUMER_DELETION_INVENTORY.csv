@@ -1,0 +1,18 @@
+owner,producer,consumer,final_authority,delete
+arcweft-lang-sema,FinalSemanticAnalysis,compiler semantic projection,exhaustive CheckedExpression map,none
+arcweft-compiler,semantic projection,RuntimePlanSemanticFacts,one exhaustive expression type table,partial copied type maps
+arcweft-runtime-plan,RuntimePlanSemanticFacts,FinalExprLowerer,borrowed expression_type,any reconstructed type inference
+arcweft-runtime-plan,RuntimePlanSemanticFacts,FinalPatternLowerer,borrowed same facts,second pattern type map
+arcweft-core,RuntimePlanBuilder,runtime-plan lowerer,intern_type issuer,unchecked RuntimePlanTypeId construction
+arcweft-core,generation projection,compiler and bundle structural admission,AdmittedRuntimeGeneration structural only,non-forgeability claims
+arcweft-compiler,accepted semantic assembly,runtime-driver/AOT,CompilerAcceptedRuntimeProduct,bare structural operational publication
+arcweft-bundle,verified container loader,runtime-driver/restore,VerifiedBundleRuntimeProduct,fact decoder as authority
+arcweft-core,AdmittedRuntimeProduct,checked-value consumers,inherent context/domain methods,pre-product context/domain API
+arcweft-core,RuntimeNominalRecordFieldProjection,compiler generation assembly,try_new+accessors,field literals/unchecked row
+arcweft-core,RuntimePatternBindingCoordinate,runtime-plan/AWBC correlation,closed v1 grammar,string/local-index reconstruction
+arcweft-core,AwbcProgramBuilder,AWBC lowerer,push_nominal_record_domain,second domain map
+arcweft-core,AwbcProgram,verifier/VM,nominal_record_domains accessor,spelling-derived domain
+arcweft-runtime-plan,synthetic typed coordinate,final lowering,accepted derivation rules,runtime-value inferred synthetic type
+arcweft-runtime-driver,compiler/bundle evidence wrappers,VM/executor/hot swap,evidence-gated publication,raw/bare admitted executor constructor
+arcweft-save,verified restored product,replay/restore,generation-first evidence,decode-before-context
+arcweft-aot,compiler or verified-bundle product,AOT execution,evidence-gated product,raw AWBC execution

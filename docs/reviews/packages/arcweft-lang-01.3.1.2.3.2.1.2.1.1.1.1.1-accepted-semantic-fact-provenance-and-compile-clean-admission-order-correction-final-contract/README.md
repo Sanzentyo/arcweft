@@ -1,0 +1,2 @@
+# Lang-01.3.1.2.3.2.1.2.1.1.1.1.1 final contract
+This package closes Required exact decisions 1–12 for accepted semantic-fact provenance and compile-clean admission order. Normative documents are `FINAL_CONTRACT.md`, `IMPLEMENTATION_ORDER.csv`, `TYPE_MAPPING.csv`, `SYNTHETIC_EXPR_TYPE_TABLE.csv`, `TEST_MATRIX.csv`, and `PRODUCER_CONSUMER_DELETION_INVENTORY.csv`. `OPEN_QUESTIONS.md` is exactly `none`.

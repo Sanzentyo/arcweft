@@ -1,0 +1,54 @@
+id,area,case,expected
+T001,semantic-fact,every executable ExprId present,exact accepted normalized identity and kind
+T002,semantic-fact,missing ExprId,MissingExpressionTypeFact
+T003,semantic-fact,duplicate ExprId,DuplicateExpressionTypeFact
+T004,semantic-fact,stale snapshot,SnapshotMismatch
+T005,semantic-fact,wrong symbol world/revision,SymbolWorldMismatch
+T006,semantic-fact,runtime value could suggest a type,ignored; accepted fact wins
+T007,type-interner,type interned before typed expr,pass
+T008,type-interner,exact duplicate declaration,same RuntimePlanTypeId
+T009,type-interner,same semantic identity conflicting kind,ConflictingTypeDeclaration
+T010,type-interner,construct RuntimePlanTypeId from u32,compile-fail
+T011,provenance,public projection+try_issue,structural admission succeeds but no operational wrapper
+T012,provenance,public decoded fact section,not operational authority
+T013,provenance,compiler accepted analysis+assembly,CompilerAcceptedRuntimeProduct
+T014,provenance,verified bundle all trust checks,VerifiedBundleRuntimeProduct
+T015,provenance,raw plan tries to amend generation facts,reject
+T016,provenance,raw AWBC tries to amend generation facts,reject
+T017,bundle,generation facts tampered,fail before plan/AWBC/value decode
+T018,bundle,missing generation facts,fail before executable decode
+T019,bundle,signature/trust policy fails,no VerifiedBundleRuntimeProduct
+T020,pair,plan and AWBC different parent,ParentMismatch
+T021,product,checked context before admitted product,no API/compile-fail
+T022,product,nominal domain before admitted product,no API/compile-fail
+T023,nominal-field,compiler uses try_new,pass
+T024,nominal-field,field struct literal,compile-fail
+T025,nominal-field,duplicate field,reject
+T026,pattern,Local Whole roundtrip,exact coordinate
+T027,pattern,Capture tuple path roundtrip,exact coordinate
+T028,pattern,Whole plus child,WholeNotExclusive
+T029,pattern,Rest nonterminal,RestNotTerminal
+T030,pattern,duplicate Rest,DuplicateRest
+T031,pattern,unknown wire tag,UnknownTag
+T032,pattern,coordinate absent from plan,BindingNotInPlan
+T033,awbc-domain,push row then encode/decode,one identical table row
+T034,awbc-domain,exact duplicate row,same ID
+T035,awbc-domain,conflicting authority,fail
+T036,awbc-domain,MakeRecord domain out of bounds,verifier fail
+T037,awbc-domain,nominal constant domain omitted,decode fail
+T038,awbc-domain,derive from spelling,prohibited/no path
+T039,synthetic,BlockEmptyTail,accepted Unit
+T040,synthetic,AssignmentUnit,accepted Unit
+T041,synthetic,reduction accumulator,accepted reduction fact
+T042,synthetic,agent slot,accepted intrinsic signature fact
+T043,synthetic,empty composite,owner accepted composite identity
+T044,synthetic,missing evidence,MissingSyntheticTypeEvidence
+T045,synthetic,mismatched derivation,SyntheticTypeMismatch
+T046,driver,bare AdmittedRuntimeProduct publication,no public API
+T047,driver,compiler wrapper publication,pass
+T048,driver,bundle wrapper publication,pass
+T049,restore,restored structural facts without verified bundle evidence,no publication
+T050,replay,wrong generation parent,fail before replay execution
+T051,hot-swap,new product exact same accepted parent,atomic pass
+T052,hot-swap,parent mismatch,rollback/no publication
+T053,phase,P01-P15 focused gates,each phase compiles with owners available so far

@@ -1,0 +1,16 @@
+condition,error_owner,error
+missing accepted expression type,RuntimePlanSemanticFacts projection,MissingExpressionTypeFact
+duplicate accepted expression type,RuntimePlanSemanticFacts projection,DuplicateExpressionTypeFact
+stale snapshot,semantic projection,SnapshotMismatch
+wrong world/revision,semantic projection,SymbolWorldMismatch
+unsupported normalized shape,type projection,UnsupportedAcceptedSemanticType
+conflicting type declaration,RuntimePlanBuilder,ConflictingTypeDeclaration
+missing synthetic evidence,final lowerer,MissingSyntheticTypeEvidence
+synthetic mismatch,final lowerer,SyntheticTypeMismatch
+invalid pattern path,RuntimePatternBindingPath,EmptyPath/TooDeep/WholeNotExclusive/RestNotTerminal/DuplicateRest
+unknown pattern wire tag,pattern decoder,UnknownTag
+missing binding coordinate,plan resolution,BindingNotInPlan
+conflicting AWBC domain,AwbcProgramBuilder,ConflictingNominalRecordDomain
+AWBC domain out of bounds,AWBC verifier,NominalRecordDomainOutOfBounds
+wrong plan/AWBC parent,core admission,RuntimeGenerationParentMismatch
+unverified operational publication,higher-layer publication API,no constructible public path

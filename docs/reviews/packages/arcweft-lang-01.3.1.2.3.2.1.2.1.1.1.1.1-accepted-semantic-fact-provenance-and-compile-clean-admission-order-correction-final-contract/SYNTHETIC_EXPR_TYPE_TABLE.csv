@@ -1,0 +1,8 @@
+node_family,accepted_source,derivation,missing_error,mismatch_error
+source-backed,RuntimePlanSemanticFacts.expression_type(ExprId),exact normalized identity+shape,MissingExpressionTypeFact,AcceptedExpressionTypeMismatch
+BlockEmptyTail,accepted canonical Unit semantic fact,Unit declaration,MissingSyntheticTypeEvidence,SyntheticTypeMismatch
+AssignmentUnit,accepted canonical Unit semantic fact,Unit declaration,MissingSyntheticTypeEvidence,SyntheticTypeMismatch
+ReductionAccumulator,accepted reduction accumulator fact,exact accumulator normalized type,MissingSyntheticTypeEvidence,SyntheticTypeMismatch
+ReductionStep,accepted reduction result/step fact,exact step normalized type,MissingSyntheticTypeEvidence,SyntheticTypeMismatch
+AgentScaffold,accepted registered intrinsic signature fact for slot,exact signature result/input slot type,MissingSyntheticTypeEvidence,SyntheticTypeMismatch
+CompositeEmpty,owner ExprId accepted normalized composite type,same identity plus legal-empty-family validation,MissingSyntheticTypeEvidence,SyntheticTypeMismatch

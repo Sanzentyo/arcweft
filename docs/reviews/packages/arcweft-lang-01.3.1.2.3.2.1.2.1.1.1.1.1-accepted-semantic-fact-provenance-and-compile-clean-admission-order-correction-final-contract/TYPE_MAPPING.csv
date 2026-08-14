@@ -1,0 +1,30 @@
+runtime_type_shape,plan_kind
+Never,Checked
+Unit,Checked
+Bool,Checked
+Signed,Checked
+Unsigned,Checked
+F32,Checked
+F64,Checked
+String,Checked
+Char,Checked
+Bytes,Checked
+Duration,Checked
+EntityReference,Checked
+Sequence/Array,Checked when checked_type projection succeeds; otherwise Operational(Sequence)
+ProjectNominal,Checked
+Tuple,Checked
+Choice,Checked
+Result,Checked
+Option,Checked
+Opaque,Checked atomic owner-only
+Range,Operational(Range)
+Iterator,Operational(Iterator)
+Map,Operational(Map)
+Need,Operational(Need)
+Stream,Operational(Stream)
+Source,Operational(Source)
+ThreadHandle,Operational(ThreadHandle)
+Shared,Operational(Shared)
+Reference,Operational(Reference)
+Function,Operational(Function)
