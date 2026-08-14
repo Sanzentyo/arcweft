@@ -1,4 +1,4 @@
-use std::sync::Arc;
+use std::{collections::BTreeSet, sync::Arc};
 
 use arcweft_id::dialogue::DialogueLineId;
 use arcweft_lang_syntax::ast::module_path::{CanonicalModulePath, ModuleSegment};
@@ -8,9 +8,12 @@ use arcweft_source::{SourceDocument, SourceDocumentId, SourceEdit, SourceName, S
 
 use super::{
     HirPackageModuleKey, HirProject, HirProjectBuildError, HirProjectBuilder,
-    HirProjectExecutionError, HirProjectModule, HirProjectModuleError, exported_parts, styles,
+    HirProjectExecutionError, HirProjectModule, HirProjectModuleError,
+    HirSelectedExpressionInventoryError, exported_parts, styles,
 };
 use crate::database::HirDatabase;
+use crate::dialogue_application::HirPostfixBracketCandidates;
+use crate::expr::HirExprKind;
 use crate::final_lowering::stage_unpublished_module_for_invariant_test;
 use crate::item::{HirDeclarationMemberKind, HirItemKind};
 use crate::line_identity::{DialogueLineDiagnostic, DialogueLineIdOrigin, DialogueTextKeyOrigin};
@@ -344,6 +347,137 @@ fn ordered_project_iteration_preserves_module_ids() {
     let executable = project.executable_view().unwrap();
     assert_eq!(executable.modules().len(), 2);
     assert_eq!(executable.items().count(), 3);
+}
+
+#[test]
+fn selected_expression_inventory_validates_and_projects_one_postfix_graph() {
+    let package = package();
+    let root_path = CanonicalModulePath::crate_root();
+    let child_path = root_path.join(ModuleSegment::new("child").unwrap());
+    let mut root_syntax = SyntaxDatabase::try_new().unwrap();
+    let root_source = parse_initial(
+        &mut root_syntax,
+        "arcweft-test://proof/final-project/selected-expression-root",
+        "selected-expression-root.arcw",
+        "fn root(items: Vec<i64>, key: i64) { items[key] }\n",
+    );
+    let mut child_syntax = SyntaxDatabase::try_new().unwrap();
+    let child_source = parse_initial(
+        &mut child_syntax,
+        "arcweft-test://proof/final-project/selected-expression-child",
+        "selected-expression-child.arcw",
+        "fn foreign() { true }\n",
+    );
+    let mut database = HirDatabase::try_new().unwrap();
+    let root = lower(&mut database, &root_source, &package, &root_path);
+    let child = lower(&mut database, &child_source, &package, &child_path);
+    let foreign = child
+        .expressions()
+        .next()
+        .map(|(owner, _)| owner)
+        .expect("foreign expression fixture");
+    let (owner, target, index, dialogue, index_children) = root
+        .expressions()
+        .find_map(|(owner, expression)| {
+            let HirExprKind::PostfixBracket(postfix) = expression.kind() else {
+                return None;
+            };
+            let HirPostfixBracketCandidates::Ambiguous { index, dialogue } = postfix.candidates()
+            else {
+                return None;
+            };
+            let index_children = root
+                .resolve_expr(*index)
+                .expect("index candidate")
+                .kind()
+                .direct_expression_children();
+            Some((owner, postfix.target(), *index, *dialogue, index_children))
+        })
+        .expect("ambiguous postfix fixture");
+    let project = build_project(
+        &database,
+        package.clone(),
+        [
+            bind(&database, &package, &child_path, child),
+            bind(&database, &package, &root_path, root),
+        ],
+    )
+    .unwrap();
+    let executable = project.executable_view().unwrap();
+
+    assert_eq!(
+        executable.selected_expression_owners(|_| None),
+        Err(HirSelectedExpressionInventoryError::MissingPostfixSelection { expression: owner })
+    );
+    assert_eq!(
+        executable.selected_expression_owners(|candidate_owner| {
+            (candidate_owner == owner).then_some(foreign)
+        }),
+        Err(
+            HirSelectedExpressionInventoryError::InvalidPostfixSelection {
+                expression: owner,
+                candidate: foreign,
+            }
+        )
+    );
+
+    let selected = executable
+        .selected_expression_owners(|candidate_owner| (candidate_owner == owner).then_some(index))
+        .expect("selected index graph");
+    assert!(selected.contains(&owner));
+    assert!(selected.contains(&target));
+    assert!(selected.contains(&index));
+    assert!(!selected.contains(&dialogue));
+    assert!(
+        index_children.iter().all(|child| selected.contains(child)),
+        "the complete selected candidate graph remains reachable"
+    );
+}
+
+#[test]
+fn selected_expression_inventory_is_deterministic_across_module_input_order() {
+    let package = package();
+    let root_path = CanonicalModulePath::crate_root();
+    let child_path = root_path.join(ModuleSegment::new("child").unwrap());
+    let mut root_syntax = SyntaxDatabase::try_new().unwrap();
+    let root_source = parse_initial(
+        &mut root_syntax,
+        "arcweft-test://proof/final-project/selected-roots-root",
+        "selected-roots-root.arcw",
+        "fn root() { 1 }\n",
+    );
+    let mut child_syntax = SyntaxDatabase::try_new().unwrap();
+    let child_source = parse_initial(
+        &mut child_syntax,
+        "arcweft-test://proof/final-project/selected-roots-child",
+        "selected-roots-child.arcw",
+        "fn child() { true }\n",
+    );
+    let mut database = HirDatabase::try_new().unwrap();
+    let root = lower(&mut database, &root_source, &package, &root_path);
+    let child = lower(&mut database, &child_source, &package, &child_path);
+    let expected = root
+        .expressions()
+        .chain(child.expressions())
+        .map(|(owner, _)| owner)
+        .collect::<BTreeSet<_>>();
+    let root = bind(&database, &package, &root_path, root);
+    let child = bind(&database, &package, &child_path, child);
+    let forward = build_project(&database, package.clone(), [root.clone(), child.clone()]).unwrap();
+    let reverse = build_project(&database, package, [child, root]).unwrap();
+
+    let forward = forward
+        .executable_view()
+        .unwrap()
+        .selected_expression_owners(|_| None)
+        .expect("postfix-free forward inventory");
+    let reverse = reverse
+        .executable_view()
+        .unwrap()
+        .selected_expression_owners(|_| None)
+        .expect("postfix-free reverse inventory");
+    assert_eq!(forward, expected);
+    assert_eq!(reverse, expected);
 }
 
 #[test]

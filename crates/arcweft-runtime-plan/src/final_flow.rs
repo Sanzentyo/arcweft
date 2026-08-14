@@ -1802,7 +1802,10 @@ mod tests {
     use super::{
         RuntimeCheckedEntryInput, RuntimeEntryLoweringInput, lower_runtime_plan_with_stats,
     };
-    use crate::semantic_facts::{RuntimePlanSemanticFactInput, RuntimePlanSemanticFacts};
+    use crate::semantic_facts::{
+        RuntimeNormalizedType, RuntimePlanSemanticFactInput, RuntimePlanSemanticFacts,
+        RuntimeSemanticTypeId, RuntimeTypeShape,
+    };
 
     #[test]
     fn empty_flow_lowers_only_with_its_checked_core_identity() {
@@ -1814,7 +1817,7 @@ mod tests {
             .map(arcweft_lang_hir::project::HirProjectItemRef::id)
             .expect("Flow item");
         let identity = FlowRuntimeId::canonical("opening").expect("runtime Flow identity");
-        let mut input = RuntimePlanSemanticFactInput::new();
+        let mut input = complete_type_input(executable);
         input.push_flow(owner, identity.clone());
         let facts = RuntimePlanSemanticFacts::try_new(executable, input).expect("checked facts");
         let entry_input = RuntimeEntryLoweringInput::empty(executable);
@@ -1838,7 +1841,7 @@ mod tests {
             .map(arcweft_lang_hir::project::HirProjectItemRef::id)
             .expect("Flow item");
         let identity = FlowRuntimeId::canonical("opening").expect("runtime Flow identity");
-        let mut input = RuntimePlanSemanticFactInput::new();
+        let mut input = complete_type_input(executable);
         input.push_flow(owner, identity);
         let facts = RuntimePlanSemanticFacts::try_new(executable, input).expect("checked facts");
         let report = lower_runtime_plan_with_stats(
@@ -1874,7 +1877,7 @@ mod tests {
             .expect("Entry item");
         let flow =
             FlowRuntimeId::from_source_entity_body("flow.main").expect("runtime Flow identity");
-        let mut fact_input = RuntimePlanSemanticFactInput::new();
+        let mut fact_input = complete_type_input(executable);
         fact_input.push_flow(flow_owner, flow.clone());
         let facts =
             RuntimePlanSemanticFacts::try_new(executable, fact_input).expect("checked facts");
@@ -1980,5 +1983,32 @@ mod tests {
             .insert_module(project_module)
             .expect("module insertion");
         builder.finish().expect("fixture project")
+    }
+
+    fn complete_type_input(
+        project: arcweft_lang_hir::project::HirExecutableProjectView<'_>,
+    ) -> RuntimePlanSemanticFactInput {
+        let mut input = RuntimePlanSemanticFactInput::new();
+        for (_, module) in project.modules() {
+            for (owner, _) in module.expressions() {
+                input.push_expression_type(
+                    owner,
+                    RuntimeNormalizedType::new(
+                        RuntimeSemanticTypeId::from_bytes([0x11; 32]),
+                        RuntimeTypeShape::Unit,
+                    ),
+                );
+            }
+            for (owner, _) in module.patterns() {
+                input.push_pattern_type(
+                    owner,
+                    RuntimeNormalizedType::new(
+                        RuntimeSemanticTypeId::from_bytes([0x11; 32]),
+                        RuntimeTypeShape::Unit,
+                    ),
+                );
+            }
+        }
+        input
     }
 }

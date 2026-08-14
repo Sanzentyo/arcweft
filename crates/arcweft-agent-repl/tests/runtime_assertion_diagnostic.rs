@@ -31,7 +31,8 @@ use arcweft_runtime_plan::{
     assertion_identity::{RuntimeAssertionMode, RuntimeAssertionProjectionError},
     flow::{RuntimeEntryLoweringInput, lower_runtime_plan_with_stats},
     semantic_facts::{
-        RuntimeAssertionAdmission, RuntimePlanSemanticFactInput, RuntimePlanSemanticFacts,
+        RuntimeAssertionAdmission, RuntimeNormalizedType, RuntimePlanSemanticFactInput,
+        RuntimePlanSemanticFacts, RuntimeSemanticTypeId, RuntimeTypeShape,
     },
 };
 use arcweft_source::{SourceDocument, SourceDocumentId, SourceName, identity::SourceSnapshotId};
@@ -132,6 +133,26 @@ fn agent_debug_diagnostic_projects_fresh_session_fault() {
         .expect("typed assertion statement");
 
     let mut input = RuntimePlanSemanticFactInput::new();
+    for (_, module) in executable.modules() {
+        for (owner, _) in module.expressions() {
+            input.push_expression_type(
+                owner,
+                RuntimeNormalizedType::new(
+                    RuntimeSemanticTypeId::from_bytes([0x11; 32]),
+                    RuntimeTypeShape::Unit,
+                ),
+            );
+        }
+        for (owner, _) in module.patterns() {
+            input.push_pattern_type(
+                owner,
+                RuntimeNormalizedType::new(
+                    RuntimeSemanticTypeId::from_bytes([0x11; 32]),
+                    RuntimeTypeShape::Unit,
+                ),
+            );
+        }
+    }
     input.push_flow(
         flow_owner,
         FlowRuntimeId::canonical("checks").expect("runtime flow identity"),

@@ -18,11 +18,14 @@ use crate::symbol::CallablePackageId;
 
 #[path = "final_project/dialogue_lines.rs"]
 mod dialogue_lines;
+#[path = "final_project/selected_expressions.rs"]
+mod selected_expressions;
 
 pub use self::dialogue_lines::{
     AcceptedDialogueLine, AcceptedDialogueLineInventory, AcceptedDialogueLineSource,
     DialogueLineIndex, DialogueLineProjectFatal, DialogueLineProjectRejection,
 };
+pub use self::selected_expressions::HirSelectedExpressionInventoryError;
 
 /// Package-qualified canonical key for one project module.
 #[derive(Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]

@@ -32,7 +32,10 @@ use arcweft_manifest_model::{BuildSpec, PackageId, PackageSpec, PackageVersion};
 use arcweft_project::fingerprint::BuildDigest;
 use arcweft_project::graph::ModuleDependency;
 use arcweft_project::sources::{ProjectSourceFile, ProjectSources};
-use arcweft_runtime_plan::flow::{RuntimeEntryLoweringInput, lower_runtime_plan_with_stats};
+use arcweft_runtime_plan::{
+    flow::{RuntimeEntryLoweringInput, lower_runtime_plan_with_stats},
+    semantic_facts::{RuntimeSemanticTypeId, RuntimeTypeShape},
+};
 use arcweft_source::{
     SourceDocument, SourceDocumentId, SourceEdit, SourceName, SourceRange,
     identity::SourceSnapshotId,
@@ -607,6 +610,73 @@ fn runtime_plan_consumes_project_view_without_flattening() {
             .map(|(_, _, runtime)| runtime.clone())
             .collect::<Vec<_>>()
     );
+}
+
+#[test]
+fn runtime_semantic_facts_retain_exact_expression_and_pattern_types() {
+    let (project, facts) = fixture(
+        "fn main(flag: bool) -> i64 {\n    match flag { true => 1i64, false => 2i64 }\n}\n",
+        "runtime-exact-types",
+    );
+    let mut cache = RecordingCache::default();
+    let mut session = AttachedCompiler::new(&project);
+    let compiled = session
+        .compile(
+            &project,
+            &context(TypeCheckEnv::standard(), facts),
+            &mut cache,
+        )
+        .expect("typed Match project compiles");
+    let executable = compiled
+        .hir_project()
+        .executable_view()
+        .expect("accepted project is executable");
+    let runtime_facts = project_runtime_semantic_facts(
+        executable,
+        compiled.project_symbols(),
+        compiled.final_analysis(),
+        None,
+        None,
+    )
+    .expect("accepted types project through the compiler boundary");
+
+    let mut saw_bool_expression = false;
+    let mut saw_i64_expression = false;
+    for (owner, checked) in compiled.final_analysis().expressions() {
+        let projected = runtime_facts
+            .expression_type(owner)
+            .expect("every accepted expression retains one runtime type fact");
+        assert_eq!(
+            projected.identity(),
+            RuntimeSemanticTypeId::from_bytes(*checked.ty().semantic_identity_digest().as_bytes())
+        );
+        match (checked.ty(), projected.shape()) {
+            (TypeKind::Bool, RuntimeTypeShape::Bool) => saw_bool_expression = true,
+            (TypeKind::I64, RuntimeTypeShape::Signed(_)) => saw_i64_expression = true,
+            _ => {}
+        }
+    }
+
+    let mut saw_bool_pattern = false;
+    for (owner, checked) in compiled.final_analysis().patterns() {
+        let projected = runtime_facts
+            .pattern_type(owner)
+            .expect("every accepted pattern retains one runtime type fact");
+        assert_eq!(
+            projected.identity(),
+            RuntimeSemanticTypeId::from_bytes(*checked.ty().semantic_identity_digest().as_bytes())
+        );
+        if matches!(
+            (checked.ty(), projected.shape()),
+            (TypeKind::Bool, RuntimeTypeShape::Bool)
+        ) {
+            saw_bool_pattern = true;
+        }
+    }
+
+    assert!(saw_bool_expression, "Bool expression projection is present");
+    assert!(saw_i64_expression, "i64 expression projection is present");
+    assert!(saw_bool_pattern, "Bool pattern projection is present");
 }
 
 #[test]

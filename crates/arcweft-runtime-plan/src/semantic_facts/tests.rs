@@ -1,4 +1,4 @@
-use std::sync::Arc;
+use std::{collections::BTreeMap, sync::Arc};
 
 use arcweft_core::pattern::{
     RuntimeCheckedType, RuntimeOpaqueTypeAdmission, RuntimeOpaqueTypeProducerId,
@@ -6,6 +6,7 @@ use arcweft_core::pattern::{
 use arcweft_core::plan::{FlowRuntimeId, RuntimeLineId};
 use arcweft_core::value::RuntimeValue;
 use arcweft_lang_hir::database::HirDatabase;
+use arcweft_lang_hir::dialogue_application::HirPostfixBracketCandidates;
 use arcweft_lang_hir::expr::HirExprKind;
 use arcweft_lang_hir::leaf::HirLiteral;
 use arcweft_lang_hir::lowering::{HirModuleKey, LoweringRequest};
@@ -155,15 +156,39 @@ fn entity_reference(project: &HirProject) -> arcweft_lang_hir::identity::ExprId 
         .expect("fixture entity-reference expression")
 }
 
+fn unit_type() -> super::RuntimeNormalizedType {
+    super::RuntimeNormalizedType::new(
+        RuntimeSemanticTypeId::from_bytes([0x11; 32]),
+        RuntimeTypeShape::Unit,
+    )
+}
+
+fn complete_type_input(project: &HirProject) -> RuntimePlanSemanticFactInput {
+    let mut input = RuntimePlanSemanticFactInput::new();
+    for (_, module) in project
+        .executable_view()
+        .expect("executable type fixture")
+        .modules()
+    {
+        for (owner, _) in module.expressions() {
+            input.push_expression_type(owner, unit_type());
+        }
+        for (owner, _) in module.patterns() {
+            input.push_pattern_type(owner, unit_type());
+        }
+    }
+    input
+}
+
 #[test]
 fn semantic_facts_are_bound_to_the_exact_accepted_generation() {
     let first = project_fixture("generation-first", "fn root() {}\n");
     let second = project_fixture("generation-second", "fn root() {}\n");
     let facts = RuntimePlanSemanticFacts::try_new(
         first.executable_view().expect("first executable view"),
-        RuntimePlanSemanticFactInput::new(),
+        complete_type_input(&first),
     )
-    .expect("empty checked fact set");
+    .expect("complete checked fact set");
 
     assert_eq!(
         facts.validate_generation(first.executable_view().expect("same generation")),
@@ -179,7 +204,7 @@ fn semantic_facts_are_bound_to_the_exact_accepted_generation() {
 fn checked_literal_fact_uses_the_qualified_expression_owner() {
     let project = project_fixture("literal-owner", "fn root() {\n    let value = true;\n}\n");
     let owner = boolean_literal(&project);
-    let mut input = RuntimePlanSemanticFactInput::new();
+    let mut input = complete_type_input(&project);
     input.push_expression_literal(owner, RuntimeValue::Bool(true));
 
     let facts = RuntimePlanSemanticFacts::try_new(
@@ -198,7 +223,7 @@ fn checked_flow_identity_uses_the_qualified_item_owner() {
     let project = project_fixture("flow-owner", "flow opening {}\n");
     let owner = flow_item(&project);
     let identity = FlowRuntimeId::canonical("opening").expect("runtime Flow identity");
-    let mut input = RuntimePlanSemanticFactInput::new();
+    let mut input = complete_type_input(&project);
     input.push_flow(owner, identity.clone());
 
     let facts = RuntimePlanSemanticFacts::try_new(
@@ -213,7 +238,7 @@ fn checked_flow_identity_uses_the_qualified_item_owner() {
 fn wrong_expression_family_is_not_reinterpreted() {
     let project = project_fixture("wrong-family", "fn root() {\n    let value = true;\n}\n");
     let owner = boolean_literal(&project);
-    let mut input = RuntimePlanSemanticFactInput::new();
+    let mut input = complete_type_input(&project);
     input.push_value(
         owner,
         RuntimeResolvedValue::Constant(RuntimeValue::Bool(true)),
@@ -241,7 +266,7 @@ fn dialogue_line_fact_owns_the_checked_path_only_runtime_identity() {
     let owner = entity_reference(&project);
     let line = RuntimeLineId::from_source_entity_body("say.story.greeting")
         .expect("checked dialogue line conversion");
-    let mut input = RuntimePlanSemanticFactInput::new();
+    let mut input = complete_type_input(&project);
     input.push_value(owner, RuntimeResolvedValue::DialogueLine(line.clone()));
 
     let facts = RuntimePlanSemanticFacts::try_new(
@@ -260,7 +285,7 @@ fn dialogue_line_fact_owns_the_checked_path_only_runtime_identity() {
 fn duplicate_facts_are_rejected_before_publication() {
     let project = project_fixture("duplicate", "fn root() {\n    let value = true;\n}\n");
     let owner = boolean_literal(&project);
-    let mut input = RuntimePlanSemanticFactInput::new();
+    let mut input = complete_type_input(&project);
     input.push_expression_literal(owner, RuntimeValue::Bool(true));
     input.push_expression_literal(owner, RuntimeValue::Bool(false));
 
@@ -273,6 +298,243 @@ fn duplicate_facts_are_rejected_before_publication() {
         RuntimeSemanticFactsError::DuplicateFact {
             family: RuntimeSemanticFactFamily::ExpressionLiteral,
         }
+    );
+}
+
+#[test]
+fn accepted_expression_and_pattern_types_are_complete_and_exact() {
+    let project = project_fixture(
+        "complete-types",
+        "fn root(value: bool) {\n    match value { true => (), false => () }\n}\n",
+    );
+    let input = complete_type_input(&project);
+    let facts = RuntimePlanSemanticFacts::try_new(
+        project.executable_view().expect("executable fixture"),
+        input,
+    )
+    .expect("complete type facts");
+
+    for (_, module) in project
+        .executable_view()
+        .expect("executable fixture")
+        .modules()
+    {
+        for (owner, _) in module.expressions() {
+            assert_eq!(facts.expression_type(owner), Some(&unit_type()));
+        }
+        for (owner, _) in module.patterns() {
+            assert_eq!(facts.pattern_type(owner), Some(&unit_type()));
+        }
+    }
+}
+
+#[test]
+fn missing_expression_type_is_rejected_before_publication() {
+    let project = project_fixture("missing-expression-type", "fn root() { true }\n");
+    let owner = boolean_literal(&project);
+
+    assert_eq!(
+        RuntimePlanSemanticFacts::try_new(
+            project.executable_view().expect("executable fixture"),
+            RuntimePlanSemanticFactInput::new(),
+        )
+        .expect_err("an accepted expression cannot omit its type"),
+        RuntimeSemanticFactsError::MissingExpressionType { expression: owner },
+    );
+}
+
+#[test]
+fn missing_pattern_type_is_rejected_before_publication() {
+    let project = project_fixture(
+        "missing-pattern-type",
+        "fn root(value: bool) {\n    match value { true => (), false => () }\n}\n",
+    );
+    let mut input = RuntimePlanSemanticFactInput::new();
+    let executable = project.executable_view().expect("executable fixture");
+    for (_, module) in executable.modules() {
+        for (owner, _) in module.expressions() {
+            input.push_expression_type(owner, unit_type());
+        }
+    }
+    let pattern = executable
+        .modules()
+        .flat_map(|(_, module)| module.patterns())
+        .map(|(owner, _)| owner)
+        .next()
+        .expect("pattern fixture");
+
+    assert_eq!(
+        RuntimePlanSemanticFacts::try_new(executable, input)
+            .expect_err("an accepted pattern cannot omit its type"),
+        RuntimeSemanticFactsError::MissingPatternType { pattern },
+    );
+}
+
+#[test]
+fn duplicate_expression_types_are_rejected_before_publication() {
+    let project = project_fixture("duplicate-expression-type", "fn root() { true }\n");
+    let owner = boolean_literal(&project);
+    let mut input = complete_type_input(&project);
+    input.push_expression_type(owner, unit_type());
+
+    assert_eq!(
+        RuntimePlanSemanticFacts::try_new(
+            project.executable_view().expect("executable fixture"),
+            input,
+        )
+        .expect_err("one expression cannot own two accepted types"),
+        RuntimeSemanticFactsError::DuplicateFact {
+            family: RuntimeSemanticFactFamily::ExpressionType,
+        },
+    );
+}
+
+#[test]
+fn duplicate_pattern_types_are_rejected_before_publication() {
+    let project = project_fixture(
+        "duplicate-pattern-type",
+        "fn root(value: bool) { match value { true => (), false => () } }\n",
+    );
+    let pattern = project
+        .executable_view()
+        .expect("executable fixture")
+        .modules()
+        .flat_map(|(_, module)| module.patterns())
+        .map(|(owner, _)| owner)
+        .next()
+        .expect("pattern fixture");
+    let mut input = complete_type_input(&project);
+    input.push_pattern_type(pattern, unit_type());
+
+    assert_eq!(
+        RuntimePlanSemanticFacts::try_new(
+            project.executable_view().expect("executable fixture"),
+            input,
+        )
+        .expect_err("one pattern cannot own two accepted types"),
+        RuntimeSemanticFactsError::DuplicateFact {
+            family: RuntimeSemanticFactFamily::PatternType,
+        },
+    );
+}
+
+#[test]
+fn nested_operational_expression_type_is_retained_without_reconstruction() {
+    let project = project_fixture("nested-operational-type", "fn root() { true }\n");
+    let owner = boolean_literal(&project);
+    let leaf = super::RuntimeNormalizedType::new(
+        RuntimeSemanticTypeId::from_bytes([0x22; 32]),
+        RuntimeTypeShape::Unit,
+    );
+    let range = super::RuntimeNormalizedType::new(
+        RuntimeSemanticTypeId::from_bytes([0x33; 32]),
+        RuntimeTypeShape::Range(Box::new(leaf)),
+    );
+    let nested = super::RuntimeNormalizedType::new(
+        RuntimeSemanticTypeId::from_bytes([0x44; 32]),
+        RuntimeTypeShape::Option(Box::new(range)),
+    );
+    let mut input = RuntimePlanSemanticFactInput::new();
+    for (_, module) in project
+        .executable_view()
+        .expect("executable fixture")
+        .modules()
+    {
+        for (expression, _) in module.expressions() {
+            input.push_expression_type(expression, nested.clone());
+        }
+        for (pattern, _) in module.patterns() {
+            input.push_pattern_type(pattern, nested.clone());
+        }
+    }
+    let facts = RuntimePlanSemanticFacts::try_new(
+        project.executable_view().expect("executable fixture"),
+        input,
+    )
+    .expect("nested operational fact remains accepted semantic data");
+
+    assert_eq!(facts.expression_type(owner), Some(&nested));
+    assert_eq!(
+        facts
+            .expression_type(owner)
+            .expect("exact retained type")
+            .checked_type(),
+        Err(RuntimeCheckedTypeProjectionError::UnsupportedRuntimeShape {
+            semantic_identity: RuntimeSemanticTypeId::from_bytes([0x33; 32]),
+            path: super::RuntimeTypeProjectionPath::root()
+                .pushed(RuntimeTypeProjectionStep::OptionItem),
+            shape: RuntimeUnsupportedTypeShape::Range,
+        }),
+    );
+}
+
+#[test]
+fn postfix_type_completeness_keeps_only_the_selected_candidate_expression_tree() {
+    let project = project_fixture(
+        "postfix-selected-types",
+        "fn root(items: Vec<i64>, subject: i64) {\n    items[{ match subject { value => value }; 0 }]\n}\n",
+    );
+    let executable = project.executable_view().expect("executable fixture");
+    let modules = executable
+        .modules()
+        .map(|(_, module)| (module.module_id(), module.as_ref()))
+        .collect::<BTreeMap<_, _>>();
+    let (postfix_owner, target, index, dialogue) = modules
+        .values()
+        .flat_map(|module| module.expressions())
+        .find_map(|(owner, expression)| {
+            let HirExprKind::PostfixBracket(postfix) = expression.kind() else {
+                return None;
+            };
+            let HirPostfixBracketCandidates::Ambiguous { index, dialogue } = postfix.candidates()
+            else {
+                return None;
+            };
+            Some((owner, postfix.target(), *index, *dialogue))
+        })
+        .expect("ambiguous postfix fixture");
+    assert!(
+        modules
+            .values()
+            .flat_map(|module| module.patterns())
+            .next()
+            .is_some(),
+        "the ordinary candidate retains a Match pattern"
+    );
+
+    let postfix_candidates = BTreeMap::from([(postfix_owner, dialogue)]);
+    let accepted = executable
+        .selected_expression_owners(|owner| postfix_candidates.get(&owner).copied())
+        .expect("selected candidate inventory");
+    assert!(accepted.contains(&postfix_owner));
+    assert!(accepted.contains(&target));
+    assert!(accepted.contains(&dialogue));
+    assert!(!accepted.contains(&index));
+
+    let complete_selected_input = || {
+        let mut input = RuntimePlanSemanticFactInput::new();
+        for owner in &accepted {
+            input.push_expression_type(*owner, unit_type());
+        }
+        for module in modules.values() {
+            for (owner, _) in module.patterns() {
+                input.push_pattern_type(owner, unit_type());
+            }
+        }
+        input.push_postfix_candidate(postfix_owner, dialogue);
+        input
+    };
+    let facts = RuntimePlanSemanticFacts::try_new(executable, complete_selected_input())
+        .expect("the rolled-back expression candidate needs no type fact");
+    assert!(facts.expression_type(dialogue).is_some());
+    assert!(facts.expression_type(index).is_none());
+
+    let mut input = complete_selected_input();
+    input.push_expression_type(index, unit_type());
+    assert_eq!(
+        RuntimePlanSemanticFacts::try_new(executable, input)
+            .expect_err("an unselected candidate cannot publish an expression type"),
+        RuntimeSemanticFactsError::InactiveExpressionType { expression: index },
     );
 }
 
@@ -302,7 +564,7 @@ fn reduction_constructor_fact_requires_one_authored_value_argument() {
         [RuntimeResolvedCallArgument::Authored { ordinal: 0 }],
         RuntimeCallResultShape::Value,
     );
-    let mut input = RuntimePlanSemanticFactInput::new();
+    let mut input = complete_type_input(&project);
     input.push_call(owner, valid.clone());
     let facts = RuntimePlanSemanticFacts::try_new(
         project.executable_view().expect("executable fixture"),
@@ -323,7 +585,7 @@ fn reduction_constructor_fact_requires_one_authored_value_argument() {
             RuntimeCallResultShape::PartialFunction,
         ),
     ] {
-        let mut input = RuntimePlanSemanticFactInput::new();
+        let mut input = complete_type_input(&project);
         input.push_call(owner, invalid);
         assert_eq!(
             RuntimePlanSemanticFacts::try_new(

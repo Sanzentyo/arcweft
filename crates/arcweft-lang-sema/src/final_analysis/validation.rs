@@ -7,6 +7,7 @@ use std::{
 
 use arcweft_lang_hir::{
     expr::HirCallCallee,
+    project::HirSelectedExpressionInventoryError,
     source_index::{
         HirExprSourceRole, HirLocalSourceRole, HirSourcePresence, HirSourceQuery, HirSourceSite,
         HirTypeSourceRole,
@@ -243,6 +244,7 @@ fn remove_type_subtree(
 }
 
 pub(super) fn validate_complete_inventory(
+    project: HirExecutableProjectView<'_>,
     modules: &BTreeMap<HirModuleId, &HirModule>,
     inventory: SemanticFactInventory<'_>,
     type_resolutions: &BTreeMap<TypeId, TypeResolutionReport>,
@@ -281,7 +283,7 @@ pub(super) fn validate_complete_inventory(
         SemanticFactFamily::Capture,
     )?;
     require_complete(
-        checked_expression_owners(modules, expressions)?.into_iter(),
+        selected_expression_owners(project, modules, expressions)?.into_iter(),
         expressions,
         SemanticFactFamily::Expression,
     )?;
@@ -309,75 +311,58 @@ pub(super) fn validate_complete_inventory(
     Ok(())
 }
 
-/// Computes the expressions reachable after each bounded postfix ambiguity
-/// has one checked interpretation. Both candidate trees remain immutable HIR
-/// tooling data, but only the selected tree belongs to the executable semantic
-/// inventory. Losing candidate facts must not leak from a probe transaction.
-fn checked_expression_owners(
+fn selected_expression_owners(
+    project: HirExecutableProjectView<'_>,
     modules: &BTreeMap<HirModuleId, &HirModule>,
     expressions: &BTreeMap<ExprId, CheckedExpression>,
 ) -> Result<BTreeSet<ExprId>, FinalSemanticAnalysisError> {
-    let all = modules
-        .values()
-        .flat_map(|module| module.expressions().map(|(owner, _)| owner))
-        .collect::<BTreeSet<_>>();
-    let children = modules
-        .values()
-        .flat_map(|module| module.expressions().map(|(_, expression)| expression))
-        .flat_map(|expression| expression.kind().direct_expression_children())
-        .collect::<BTreeSet<_>>();
-    let mut pending = all.difference(&children).copied().collect::<Vec<_>>();
-    let mut reachable = BTreeSet::new();
-    while let Some(owner) = pending.pop() {
-        if !reachable.insert(owner) {
-            continue;
-        }
-        let module = resolve_module(modules, owner.module())?;
-        let expression = module
-            .resolve_expr(owner)
-            .map_err(|_| FinalSemanticAnalysisError::InvalidOwner)?;
-        match expression.kind() {
-            HirExprKind::PostfixBracket(postfix) => {
-                pending.push(postfix.target());
-                let fact =
-                    expressions
-                        .get(&owner)
-                        .ok_or(FinalSemanticAnalysisError::MissingFact {
-                            family: SemanticFactFamily::Expression,
-                        })?;
-                let CheckedExpressionResolution::PostfixBracket(resolution) = fact.resolution()
-                else {
-                    return Err(FinalSemanticAnalysisError::WrongPayloadFamily);
-                };
-                let candidate = resolution.candidate();
-                let admissible = matches!(
-                    (postfix.candidates(), resolution),
-                    (
-                        arcweft_lang_hir::dialogue_application::HirPostfixBracketCandidates::Ambiguous {
-                            index,
-                            ..
-                        },
-                        PostfixBracketResolution::Index { candidate }
-                    ) if index == candidate
-                ) || matches!(
-                    (postfix.candidates(), resolution),
-                    (
-                        arcweft_lang_hir::dialogue_application::HirPostfixBracketCandidates::Ambiguous {
-                            dialogue,
-                            ..
-                        },
-                        PostfixBracketResolution::Dialogue { candidate }
-                    ) if dialogue == candidate
-                );
-                if !admissible {
-                    return Err(FinalSemanticAnalysisError::WrongPayloadFamily);
-                }
-                pending.push(candidate);
+    project
+        .selected_expression_owners(|owner| {
+            let checked = expressions.get(&owner)?;
+            let CheckedExpressionResolution::PostfixBracket(resolution) = checked.resolution()
+            else {
+                return None;
+            };
+            let module = modules.get(&owner.module())?;
+            let HirExprKind::PostfixBracket(postfix) = module.resolve_expr(owner).ok()?.kind()
+            else {
+                return None;
+            };
+            match (postfix.candidates(), resolution) {
+                (
+                    arcweft_lang_hir::dialogue_application::HirPostfixBracketCandidates::Ambiguous {
+                        index,
+                        ..
+                    },
+                    PostfixBracketResolution::Index { candidate },
+                ) if index == candidate => Some(*candidate),
+                (
+                    arcweft_lang_hir::dialogue_application::HirPostfixBracketCandidates::Ambiguous {
+                        dialogue,
+                        ..
+                    },
+                    PostfixBracketResolution::Dialogue { candidate },
+                ) if dialogue == candidate => Some(*candidate),
+                _ => None,
             }
-            kind => pending.extend(kind.direct_expression_children()),
-        }
-    }
-    Ok(reachable)
+        })
+        .map_err(|error| match error {
+            HirSelectedExpressionInventoryError::MissingPostfixSelection { expression }
+                if !expressions.contains_key(&expression) =>
+            {
+                FinalSemanticAnalysisError::MissingFact {
+                    family: SemanticFactFamily::Expression,
+                }
+            }
+            HirSelectedExpressionInventoryError::MissingPostfixSelection { .. }
+            | HirSelectedExpressionInventoryError::InvalidPostfixSelection { .. } => {
+                FinalSemanticAnalysisError::WrongPayloadFamily
+            }
+            HirSelectedExpressionInventoryError::UnknownModule { .. }
+            | HirSelectedExpressionInventoryError::UnresolvedExpression { .. } => {
+                FinalSemanticAnalysisError::InvalidOwner
+            }
+        })
 }
 
 fn require_complete<K: Copy + Ord, V>(

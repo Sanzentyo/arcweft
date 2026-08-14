@@ -233,6 +233,7 @@ pub fn project_runtime_semantic_facts(
     }
 
     for (owner, expression) in analysis.expressions() {
+        input.push_expression_type(owner, runtime_type(expression.ty(), symbols, analysis)?);
         match expression.resolution() {
             CheckedExpressionResolution::Structural => {
                 let module = project
@@ -349,6 +350,7 @@ pub fn project_runtime_semantic_facts(
     }
 
     for (owner, pattern) in analysis.patterns() {
+        input.push_pattern_type(owner, runtime_type(pattern.ty(), symbols, analysis)?);
         match pattern.resolution() {
             CheckedPatternResolution::Literal(literal) => {
                 input.push_pattern_literal(

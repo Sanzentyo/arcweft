@@ -5,6 +5,12 @@
 //! vocabulary and binds them to the exact executable HIR generation. Facts are
 //! keyed by qualified final-HIR IDs; source-order counters, byte ranges,
 //! display labels, and reconstructed paths are not accepted as identities.
+//!
+//! The closed fact vocabulary, staging input, immutable inventory, and atomic
+//! admission remain one cohesive boundary so their families cannot drift into
+//! partial schemas. HIR-owned graph traversal is delegated to HIR rather than
+//! duplicated here; only runtime-plan validation and storage stay in this
+//! module.
 
 use std::{
     collections::{BTreeMap, BTreeSet},
@@ -38,7 +44,7 @@ use arcweft_lang_hir::item::{HirImplMember, HirItemFamily, HirItemKind};
 use arcweft_lang_hir::leaf::{HirName, HirPathSegment};
 use arcweft_lang_hir::module::HirModule;
 use arcweft_lang_hir::pattern::HirPatternKind;
-use arcweft_lang_hir::project::HirExecutableProjectView;
+use arcweft_lang_hir::project::{HirExecutableProjectView, HirSelectedExpressionInventoryError};
 use arcweft_lang_hir::stmt::HirStmtKind;
 use arcweft_lang_hir::symbol::{
     CallableDeclarationKey, CallableDeclarationOwner,
@@ -1172,6 +1178,8 @@ impl RuntimeCheckedCapture {
 #[derive(Clone, Debug, Default)]
 pub struct RuntimePlanSemanticFactInput {
     flows: Vec<(ItemId, FlowRuntimeId)>,
+    expression_types: Vec<(ExprId, RuntimeNormalizedType)>,
+    pattern_types: Vec<(PatternId, RuntimeNormalizedType)>,
     expression_literals: Vec<(ExprId, RuntimeValue)>,
     pattern_literals: Vec<(PatternId, RuntimeValue)>,
     pattern_items: Vec<(PatternId, RuntimeProjectItem)>,
@@ -1197,6 +1205,16 @@ impl RuntimePlanSemanticFactInput {
 
     pub fn push_flow(&mut self, owner: ItemId, identity: FlowRuntimeId) {
         self.flows.push((owner, identity));
+    }
+
+    /// Stages the accepted normalized type of one live final-HIR expression.
+    pub fn push_expression_type(&mut self, owner: ExprId, ty: RuntimeNormalizedType) {
+        self.expression_types.push((owner, ty));
+    }
+
+    /// Stages the accepted normalized type of one final-HIR pattern.
+    pub fn push_pattern_type(&mut self, owner: PatternId, ty: RuntimeNormalizedType) {
+        self.pattern_types.push((owner, ty));
     }
 
     pub fn push_expression_literal(&mut self, owner: ExprId, value: RuntimeValue) {
@@ -1274,6 +1292,8 @@ impl RuntimePlanSemanticFactInput {
 pub struct RuntimePlanSemanticFacts {
     snapshots: BTreeMap<HirModuleId, HirSnapshotId>,
     flows: BTreeMap<ItemId, FlowRuntimeId>,
+    expression_types: BTreeMap<ExprId, RuntimeNormalizedType>,
+    pattern_types: BTreeMap<PatternId, RuntimeNormalizedType>,
     expression_literals: BTreeMap<ExprId, RuntimeValue>,
     pattern_literals: BTreeMap<PatternId, RuntimeValue>,
     pattern_items: BTreeMap<PatternId, RuntimeProjectItem>,
@@ -1312,6 +1332,22 @@ impl RuntimePlanSemanticFacts {
             .iter()
             .map(|(id, module)| (*id, module.snapshot_id()))
             .collect();
+
+        let expression_types = collect_unique(
+            input.expression_types,
+            RuntimeSemanticFactFamily::ExpressionType,
+        )?;
+        for (owner, ty) in &expression_types {
+            resolve_expr(&modules, *owner)?;
+            validate_normalized_type(&modules, ty)?;
+        }
+
+        let pattern_types =
+            collect_unique(input.pattern_types, RuntimeSemanticFactFamily::PatternType)?;
+        for (owner, ty) in &pattern_types {
+            resolve_pattern(&modules, *owner)?;
+            validate_normalized_type(&modules, ty)?;
+        }
 
         let flows = collect_unique(input.flows, RuntimeSemanticFactFamily::FlowIdentity)?;
         for item in flows.keys() {
@@ -1531,6 +1567,9 @@ impl RuntimePlanSemanticFacts {
             resolve_expr(&modules, *candidate)?;
         }
 
+        validate_complete_expression_types(project, &postfix_candidates, &expression_types)?;
+        validate_complete_pattern_types(&modules, &pattern_types)?;
+
         let trait_methods = collect_unique(
             input
                 .trait_methods
@@ -1598,6 +1637,8 @@ impl RuntimePlanSemanticFacts {
         Ok(Self {
             snapshots,
             flows,
+            expression_types,
+            pattern_types,
             expression_literals,
             pattern_literals,
             pattern_items,
@@ -1702,6 +1743,16 @@ impl RuntimePlanSemanticFacts {
         self.expression_literals.get(&expression)
     }
 
+    /// Returns the sole accepted normalized type of one live final-HIR expression.
+    pub fn expression_type(&self, expression: ExprId) -> Option<&RuntimeNormalizedType> {
+        self.expression_types.get(&expression)
+    }
+
+    /// Returns the sole accepted normalized type of one final-HIR pattern.
+    pub fn pattern_type(&self, pattern: PatternId) -> Option<&RuntimeNormalizedType> {
+        self.pattern_types.get(&pattern)
+    }
+
     /// Compiler-admitted core identity for one exact final-HIR Flow item.
     pub fn flow(&self, item: ItemId) -> Option<&FlowRuntimeId> {
         self.flows.get(&item)
@@ -1794,6 +1845,16 @@ pub enum RuntimeSemanticFactsError {
     WrongProjectGeneration,
     #[error("runtime semantic facts contain more than one {family:?} fact for the same HIR ID")]
     DuplicateFact { family: RuntimeSemanticFactFamily },
+    #[error("accepted runtime semantic facts omit expression type {expression:?}")]
+    MissingExpressionType { expression: ExprId },
+    #[error(
+        "accepted runtime semantic facts contain a type for inactive expression {expression:?}"
+    )]
+    InactiveExpressionType { expression: ExprId },
+    #[error("accepted runtime semantic facts omit pattern type {pattern:?}")]
+    MissingPatternType { pattern: PatternId },
+    #[error("postfix expression {expression:?} has no accepted candidate fact")]
+    MissingPostfixCandidate { expression: ExprId },
     #[error("runtime semantic fact references unknown HIR module {module:?}")]
     UnknownModule { module: HirModuleId },
     #[error("runtime semantic fact references unresolved item {item:?}")]
@@ -1897,6 +1958,8 @@ pub enum RuntimeSemanticFactsError {
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum RuntimeSemanticFactFamily {
     FlowIdentity,
+    ExpressionType,
+    PatternType,
     ExpressionLiteral,
     PatternLiteral,
     PatternItem,
@@ -1914,6 +1977,70 @@ pub enum RuntimeSemanticFactFamily {
     Assertion,
     Capture,
     DialogueApplication,
+}
+
+fn validate_complete_expression_types(
+    project: HirExecutableProjectView<'_>,
+    postfix_candidates: &BTreeMap<ExprId, ExprId>,
+    expression_types: &BTreeMap<ExprId, RuntimeNormalizedType>,
+) -> Result<(), RuntimeSemanticFactsError> {
+    let accepted = project
+        .selected_expression_owners(|owner| postfix_candidates.get(&owner).copied())
+        .map_err(|error| match error {
+            HirSelectedExpressionInventoryError::UnknownModule { module } => {
+                RuntimeSemanticFactsError::UnknownModule { module }
+            }
+            HirSelectedExpressionInventoryError::UnresolvedExpression { expression } => {
+                RuntimeSemanticFactsError::UnresolvedExpression { expression }
+            }
+            HirSelectedExpressionInventoryError::MissingPostfixSelection { expression } => {
+                RuntimeSemanticFactsError::MissingPostfixCandidate { expression }
+            }
+            HirSelectedExpressionInventoryError::InvalidPostfixSelection {
+                expression,
+                candidate,
+            } => RuntimeSemanticFactsError::WrongPostfixCandidate {
+                expression,
+                candidate,
+            },
+        })?;
+
+    if let Some(expression) = accepted
+        .iter()
+        .find(|owner| !expression_types.contains_key(owner))
+    {
+        return Err(RuntimeSemanticFactsError::MissingExpressionType {
+            expression: *expression,
+        });
+    }
+    if let Some(expression) = expression_types
+        .keys()
+        .find(|owner| !accepted.contains(owner))
+    {
+        return Err(RuntimeSemanticFactsError::InactiveExpressionType {
+            expression: *expression,
+        });
+    }
+    Ok(())
+}
+
+/// Final semantic publication owns a fact for every final-HIR pattern,
+/// including patterns retained inside bounded candidate HIR. If candidate
+/// rollback leaves one without a type, semantic analysis fails before this
+/// projection can be constructed.
+fn validate_complete_pattern_types(
+    modules: &BTreeMap<HirModuleId, &HirModule>,
+    pattern_types: &BTreeMap<PatternId, RuntimeNormalizedType>,
+) -> Result<(), RuntimeSemanticFactsError> {
+    for pattern in modules
+        .values()
+        .flat_map(|module| module.patterns().map(|(owner, _)| owner))
+    {
+        if !pattern_types.contains_key(&pattern) {
+            return Err(RuntimeSemanticFactsError::MissingPatternType { pattern });
+        }
+    }
+    Ok(())
 }
 
 fn collect_unique<K: Ord + Copy, V>(

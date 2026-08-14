@@ -164,7 +164,7 @@ impl FinalSemanticAnalysis {
             items: &items,
             calls: &calls,
         };
-        validate_complete_inventory(&modules, inventory, &type_resolutions)?;
+        validate_complete_inventory(project, &modules, inventory, &type_resolutions)?;
         control.check()?;
         validate_types(&modules, &types, &calls, &type_resolutions)?;
         control.check()?;
