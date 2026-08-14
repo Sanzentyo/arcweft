@@ -4,7 +4,7 @@ use arcweft_lang_syntax::attachment::SyntaxNodeId;
 use arcweft_source::SourceSpan;
 
 use crate::arena::{ArenaIter, ArenaSnapshot, HirArenaError};
-use crate::expr::HirExpr;
+use crate::expr::{HirCallExpr, HirExpr, HirExprKind};
 use crate::identity::{
     CaptureId, ExprId, HirIdKind, HirTypedId, IdResolveError, ItemId, LocalId, PatternId, ScopeId,
     StmtId, TypeId,
@@ -102,6 +102,26 @@ impl HirModule {
     /// Resolves one expression ID against this exact immutable module revision.
     pub fn resolve_expr(&self, id: ExprId) -> Result<&HirExpr, IdResolveError> {
         self.resolve_arena(&self.arenas.expressions, id)
+    }
+
+    /// Resolves the runtime value receiver carried by one final-HIR call.
+    ///
+    /// An unresolved-dot callee already stores the receiver expression
+    /// directly. A value callee may retain a synthetic `Select` carrier; in
+    /// that case the selected target is the value receiver consumed by call
+    /// lowering, not the carrier itself.
+    pub fn resolve_call_value_receiver(
+        &self,
+        call: &HirCallExpr,
+    ) -> Result<Option<ExprId>, IdResolveError> {
+        let Some(callee) = call.callee().value_expression() else {
+            return Ok(None);
+        };
+        let receiver = match self.resolve_expr(callee)?.kind() {
+            HirExprKind::Select(select) => select.target(),
+            _ => callee,
+        };
+        Ok(Some(receiver))
     }
 
     /// Resolves one statement ID against this exact immutable module revision.

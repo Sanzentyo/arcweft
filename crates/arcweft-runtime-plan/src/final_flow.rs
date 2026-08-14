@@ -1789,7 +1789,9 @@ mod tests {
     use arcweft_lang_hir::database::HirDatabase;
     use arcweft_lang_hir::item::HirItemKind;
     use arcweft_lang_hir::lowering::{HirModuleKey, LoweringRequest};
-    use arcweft_lang_hir::project::{HirProject, HirProjectBuilder, HirProjectModule};
+    use arcweft_lang_hir::project::{
+        HirProject, HirProjectBuilder, HirProjectModule, HirRuntimeExpressionTypeDisposition,
+    };
     use arcweft_lang_hir::proof_return::HirProofReturnSemanticFactSet;
     use arcweft_lang_hir::symbol::{
         CallablePackageId, ProjectSymbolRevision, ProjectSymbolWorldId,
@@ -2001,15 +2003,6 @@ mod tests {
                     )
                     .expect("fixture local identity");
             }
-            for (owner, _) in module.expressions() {
-                input.push_expression_type(
-                    owner,
-                    RuntimeNormalizedType::new(
-                        RuntimeSemanticTypeId::from_bytes([0x11; 32]),
-                        RuntimeTypeShape::Unit,
-                    ),
-                );
-            }
             for (owner, _) in module.patterns() {
                 input.push_pattern_type(
                     owner,
@@ -2019,6 +2012,21 @@ mod tests {
                     ),
                 );
             }
+        }
+        for owner in project
+            .selected_runtime_expression_type_owners(
+                |_| None,
+                |_| HirRuntimeExpressionTypeDisposition::Retain,
+            )
+            .expect("postfix-free runtime expression-type fixture")
+        {
+            input.push_expression_type(
+                owner,
+                RuntimeNormalizedType::new(
+                    RuntimeSemanticTypeId::from_bytes([0x11; 32]),
+                    RuntimeTypeShape::Unit,
+                ),
+            );
         }
         input
     }

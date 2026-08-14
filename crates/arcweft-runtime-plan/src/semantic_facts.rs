@@ -46,7 +46,10 @@ use arcweft_lang_hir::item::{HirImplMember, HirItemFamily, HirItemKind};
 use arcweft_lang_hir::leaf::{HirName, HirPathSegment};
 use arcweft_lang_hir::module::HirModule;
 use arcweft_lang_hir::pattern::HirPatternKind;
-use arcweft_lang_hir::project::{HirExecutableProjectView, HirSelectedExpressionInventoryError};
+use arcweft_lang_hir::project::{
+    HirExecutableProjectView, HirRuntimeCallCalleeDisposition, HirRuntimeExpressionTypeDisposition,
+    HirSelectedExpressionInventoryError,
+};
 use arcweft_lang_hir::stmt::HirStmtKind;
 use arcweft_lang_hir::symbol::{
     CallableDeclarationKey, CallableDeclarationOwner, nominal::ProjectNominalDeclarationId,
@@ -1169,6 +1172,35 @@ impl RuntimeResolvedCall {
     pub const fn result(&self) -> RuntimeCallResultShape {
         self.result
     }
+
+    /// Classifies whether this selected call owns a retained runtime value type
+    /// or lowers as a synthetic call carrier, including the accepted use of
+    /// its HIR callee.
+    pub fn expression_type_disposition(&self) -> HirRuntimeExpressionTypeDisposition {
+        match &self.target {
+            RuntimeResolvedCallTarget::Agent(_)
+            | RuntimeResolvedCallTarget::AgentProbeComparison(_) => {
+                let callee = if self
+                    .arguments
+                    .iter()
+                    .any(|argument| matches!(argument, RuntimeResolvedCallArgument::Receiver))
+                {
+                    HirRuntimeCallCalleeDisposition::RuntimeReceiver
+                } else {
+                    HirRuntimeCallCalleeDisposition::Static
+                };
+                HirRuntimeExpressionTypeDisposition::NonValueCallCarrier { callee }
+            }
+            RuntimeResolvedCallTarget::Intrinsic(_)
+            | RuntimeResolvedCallTarget::Declaration(_)
+            | RuntimeResolvedCallTarget::Variant(_)
+            | RuntimeResolvedCallTarget::Reduction(_)
+            | RuntimeResolvedCallTarget::FunctionValue
+            | RuntimeResolvedCallTarget::TraitMethod { .. }
+            | RuntimeResolvedCallTarget::Registered(_)
+            | RuntimeResolvedCallTarget::Host { .. } => HirRuntimeExpressionTypeDisposition::Retain,
+        }
+    }
 }
 
 /// Closed runtime dispatch selected by the shared semantic resolver.
@@ -1401,7 +1433,8 @@ impl RuntimePlanSemanticFactInput {
         self.flows.push((owner, identity));
     }
 
-    /// Stages the accepted normalized type of one live final-HIR expression.
+    /// Stages the accepted normalized type of one runtime-value final-HIR
+    /// expression.
     pub fn push_expression_type(&mut self, owner: ExprId, ty: RuntimeNormalizedType) {
         self.expression_types.push((owner, ty));
     }
@@ -1834,7 +1867,12 @@ impl RuntimePlanSemanticFacts {
             resolve_expr(&modules, *candidate)?;
         }
 
-        validate_complete_expression_types(project, &postfix_candidates, &expression_types)?;
+        validate_complete_expression_types(
+            project,
+            &postfix_candidates,
+            &calls,
+            &expression_types,
+        )?;
         validate_complete_pattern_types(&modules, &pattern_types)?;
 
         let trait_methods = collect_unique(
@@ -2012,7 +2050,8 @@ impl RuntimePlanSemanticFacts {
         self.expression_literals.get(&expression)
     }
 
-    /// Returns the sole accepted normalized type of one live final-HIR expression.
+    /// Returns the sole accepted normalized type of one runtime-value final-HIR
+    /// expression.
     pub fn expression_type(&self, expression: ExprId) -> Option<&RuntimeNormalizedType> {
         self.expression_types.get(&expression)
     }
@@ -2245,6 +2284,12 @@ pub enum RuntimeSemanticFactsError {
         expression: ExprId,
         candidate: ExprId,
     },
+    #[error(
+        "expression {expression:?} was classified as a non-value call carrier but is not a Call"
+    )]
+    InvalidNonValueCallCarrier { expression: ExprId },
+    #[error("non-value call carrier {expression:?} requires a runtime receiver but has none")]
+    MissingRuntimeCallReceiver { expression: ExprId },
     #[error("runtime trait method fact does not match its final-HIR implementation member")]
     InvalidTraitMethodIdentity,
     #[error("dialogue projection and Character presentation catalog presence disagree")]
@@ -2283,10 +2328,20 @@ pub enum RuntimeSemanticFactFamily {
 fn validate_complete_expression_types(
     project: HirExecutableProjectView<'_>,
     postfix_candidates: &BTreeMap<ExprId, ExprId>,
+    calls: &BTreeMap<ExprId, RuntimeResolvedCall>,
     expression_types: &BTreeMap<ExprId, RuntimeNormalizedType>,
 ) -> Result<(), RuntimeSemanticFactsError> {
     let accepted = project
-        .selected_expression_owners(|owner| postfix_candidates.get(&owner).copied())
+        .selected_runtime_expression_type_owners(
+            |owner| postfix_candidates.get(&owner).copied(),
+            |owner| {
+                calls
+                    .get(&owner)
+                    .map_or(HirRuntimeExpressionTypeDisposition::Retain, |call| {
+                        call.expression_type_disposition()
+                    })
+            },
+        )
         .map_err(|error| match error {
             HirSelectedExpressionInventoryError::UnknownModule { module } => {
                 RuntimeSemanticFactsError::UnknownModule { module }
@@ -2304,6 +2359,12 @@ fn validate_complete_expression_types(
                 expression,
                 candidate,
             },
+            HirSelectedExpressionInventoryError::InvalidNonValueCallCarrier { expression } => {
+                RuntimeSemanticFactsError::InvalidNonValueCallCarrier { expression }
+            }
+            HirSelectedExpressionInventoryError::MissingRuntimeCallReceiver { expression } => {
+                RuntimeSemanticFactsError::MissingRuntimeCallReceiver { expression }
+            }
         })?;
 
     if let Some(expression) = accepted

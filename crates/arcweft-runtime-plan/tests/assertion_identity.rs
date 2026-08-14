@@ -14,7 +14,9 @@ use arcweft_lang_hir::{
     identity::StmtId,
     item::HirItemKind,
     lowering::{HirModuleKey, LoweringRequest},
-    project::{HirProject, HirProjectBuilder, HirProjectModule},
+    project::{
+        HirProject, HirProjectBuilder, HirProjectModule, HirRuntimeExpressionTypeDisposition,
+    },
     proof_return::HirProofReturnSemanticFactSet,
     stmt::HirStmtKind,
     symbol::{
@@ -561,15 +563,6 @@ fn lower_assertion_project(
                 )
                 .expect("fixture local identity");
         }
-        for (owner, _) in module.expressions() {
-            input.push_expression_type(
-                owner,
-                RuntimeNormalizedType::new(
-                    RuntimeSemanticTypeId::from_bytes([0x11; 32]),
-                    RuntimeTypeShape::Unit,
-                ),
-            );
-        }
         for (owner, _) in module.patterns() {
             input.push_pattern_type(
                 owner,
@@ -579,6 +572,21 @@ fn lower_assertion_project(
                 ),
             );
         }
+    }
+    for owner in executable
+        .selected_runtime_expression_type_owners(
+            |_| None,
+            |_| HirRuntimeExpressionTypeDisposition::Retain,
+        )
+        .expect("postfix-free runtime expression-type fixture")
+    {
+        input.push_expression_type(
+            owner,
+            RuntimeNormalizedType::new(
+                RuntimeSemanticTypeId::from_bytes([0x11; 32]),
+                RuntimeTypeShape::Unit,
+            ),
+        );
     }
     input.push_flow(
         flow_owner,

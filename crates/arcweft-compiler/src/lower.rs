@@ -50,7 +50,10 @@ use arcweft_lang_hir::{
         HirBigUint, HirCharacterLiteral, HirDecimal, HirDurationLiteral, HirFloatLiteral,
         HirIntegerLiteral, HirLiteral, HirStringLiteral, HirUnitNumberLiteral,
     },
-    project::{HirExecutableProjectView, HirProjectItemRef},
+    project::{
+        HirExecutableProjectView, HirProjectItemRef, HirRuntimeExpressionTypeDisposition,
+        HirSelectedExpressionInventoryError,
+    },
     scope::HirScopeOwner,
     symbol::{CallableDeclarationKey, ProjectSymbolTable, nominal::ProjectNominalDeclarationId},
 };
@@ -115,6 +118,8 @@ pub enum RuntimeSemanticProjectionError {
     Facts(Box<RuntimeSemanticFactsError>),
     #[error(transparent)]
     LocalDeclarations(#[from] RuntimeLocalDeclarationTableError),
+    #[error(transparent)]
+    ExpressionTypeInventory(#[from] HirSelectedExpressionInventoryError),
     #[error("final semantic analysis omits executable HIR local {local:?}")]
     MissingLocalSemanticFact { local: LocalId },
     #[error("final semantic owner {owner:?} belongs to no executable HIR module")]
@@ -202,6 +207,29 @@ pub fn project_runtime_semantic_facts(
     character_name_policy: Option<&CharacterNameLocalePolicySpec>,
 ) -> Result<RuntimePlanSemanticFacts, RuntimeSemanticProjectionError> {
     analysis.validate_generation(project, symbols)?;
+    let dialogue_application_calls = dialogue_application_owned_calls(project, analysis)?;
+    let runtime_calls = analysis
+        .calls()
+        .filter(|(owner, _)| !dialogue_application_calls.contains(owner))
+        .map(|(owner, call)| runtime_call(owner, call, symbols, analysis).map(|call| (owner, call)))
+        .collect::<Result<BTreeMap<_, _>, _>>()?;
+    let runtime_expression_type_owners = project.selected_runtime_expression_type_owners(
+        |owner| {
+            let expression = analysis.expression(owner)?;
+            let CheckedExpressionResolution::PostfixBracket(resolution) = expression.resolution()
+            else {
+                return None;
+            };
+            Some(resolution.candidate())
+        },
+        |owner| {
+            runtime_calls
+                .get(&owner)
+                .map_or(HirRuntimeExpressionTypeDisposition::Retain, |call| {
+                    call.expression_type_disposition()
+                })
+        },
+    )?;
     let mut input = RuntimePlanSemanticFactInput::new();
 
     for (_, module) in project.modules() {
@@ -246,7 +274,9 @@ pub fn project_runtime_semantic_facts(
     }
 
     for (owner, expression) in analysis.expressions() {
-        input.push_expression_type(owner, runtime_type(expression.ty(), symbols, analysis)?);
+        if runtime_expression_type_owners.contains(&owner) {
+            input.push_expression_type(owner, runtime_type(expression.ty(), symbols, analysis)?);
+        }
         match expression.resolution() {
             CheckedExpressionResolution::Structural => {
                 let module = project
@@ -411,12 +441,8 @@ pub fn project_runtime_semantic_facts(
         ));
     }
 
-    let dialogue_application_calls = dialogue_application_owned_calls(project, analysis)?;
-    for (owner, call) in analysis.calls() {
-        if dialogue_application_calls.contains(&owner) {
-            continue;
-        }
-        input.push_call(owner, runtime_call(owner, call, symbols, analysis)?);
+    for (owner, call) in runtime_calls {
+        input.push_call(owner, call);
     }
 
     let facts = RuntimePlanSemanticFacts::try_new(project, input)?;

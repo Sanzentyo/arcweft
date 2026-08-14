@@ -606,19 +606,12 @@ impl<'hir> FinalExprLowerer<'hir> {
         call: &arcweft_lang_hir::expr::HirCallExpr,
         id: ExprId,
     ) -> Result<RuntimeExpr, String> {
-        let callee = call
-            .callee()
-            .value_expression()
-            .ok_or_else(|| format!("call {id:?} has no receiver-bearing value callee"))?;
-        let expression = self
+        let receiver = self
             .module
-            .resolve_expr(callee)
-            .map_err(|error| format!("cannot resolve call receiver {callee:?}: {error}"))?;
-        if let HirExprKind::Select(select) = expression.kind() {
-            self.lower(select.target())
-        } else {
-            self.lower(callee)
-        }
+            .resolve_call_value_receiver(call)
+            .map_err(|error| format!("cannot resolve call receiver at {id:?}: {error}"))?
+            .ok_or_else(|| format!("call {id:?} has no receiver-bearing value callee"))?;
+        self.lower(receiver)
     }
 
     fn lower_record_fields(

@@ -7,14 +7,16 @@ use arcweft_source::identity::SourceSnapshotId;
 use arcweft_source::{SourceDocument, SourceDocumentId, SourceEdit, SourceName, SourceRange};
 
 use super::{
-    HirPackageModuleKey, HirProject, HirProjectBuildError, HirProjectBuilder,
-    HirProjectExecutionError, HirProjectModule, HirProjectModuleError,
+    HirExecutableProjectView, HirPackageModuleKey, HirProject, HirProjectBuildError,
+    HirProjectBuilder, HirProjectExecutionError, HirProjectModule, HirProjectModuleError,
+    HirRuntimeCallCalleeDisposition, HirRuntimeExpressionTypeDisposition,
     HirSelectedExpressionInventoryError, exported_parts, styles,
 };
 use crate::database::HirDatabase;
 use crate::dialogue_application::HirPostfixBracketCandidates;
 use crate::expr::HirExprKind;
 use crate::final_lowering::stage_unpublished_module_for_invariant_test;
+use crate::identity::ExprId;
 use crate::item::{HirDeclarationMemberKind, HirItemKind};
 use crate::line_identity::{DialogueLineDiagnostic, DialogueLineIdOrigin, DialogueTextKeyOrigin};
 use crate::lowering::{HirModuleKey, LoweringRequest};
@@ -376,7 +378,7 @@ fn selected_expression_inventory_validates_and_projects_one_postfix_graph() {
         .next()
         .map(|(owner, _)| owner)
         .expect("foreign expression fixture");
-    let (owner, target, index, dialogue, index_children) = root
+    let (owner, target, index, dialogue, index_children, dialogue_children) = root
         .expressions()
         .find_map(|(owner, expression)| {
             let HirExprKind::PostfixBracket(postfix) = expression.kind() else {
@@ -391,7 +393,19 @@ fn selected_expression_inventory_validates_and_projects_one_postfix_graph() {
                 .expect("index candidate")
                 .kind()
                 .direct_expression_children();
-            Some((owner, postfix.target(), *index, *dialogue, index_children))
+            let dialogue_children = root
+                .resolve_expr(*dialogue)
+                .expect("dialogue candidate")
+                .kind()
+                .direct_expression_children();
+            Some((
+                owner,
+                postfix.target(),
+                *index,
+                *dialogue,
+                index_children,
+                dialogue_children,
+            ))
         })
         .expect("ambiguous postfix fixture");
     let project = build_project(
@@ -431,6 +445,227 @@ fn selected_expression_inventory_validates_and_projects_one_postfix_graph() {
     assert!(
         index_children.iter().all(|child| selected.contains(child)),
         "the complete selected candidate graph remains reachable"
+    );
+
+    assert_runtime_postfix_expression_type_inventory(
+        executable,
+        owner,
+        target,
+        index,
+        dialogue,
+        &index_children,
+        &dialogue_children,
+    );
+}
+
+fn assert_runtime_postfix_expression_type_inventory(
+    executable: HirExecutableProjectView<'_>,
+    owner: ExprId,
+    target: ExprId,
+    index: ExprId,
+    dialogue: ExprId,
+    index_children: &[ExprId],
+    dialogue_children: &[ExprId],
+) {
+    assert_eq!(
+        executable.selected_runtime_expression_type_owners(
+            |_| None,
+            |_| HirRuntimeExpressionTypeDisposition::Retain,
+        ),
+        Err(HirSelectedExpressionInventoryError::MissingPostfixSelection { expression: owner })
+    );
+    let runtime_index = executable
+        .selected_runtime_expression_type_owners(
+            |candidate_owner| (candidate_owner == owner).then_some(index),
+            |_| HirRuntimeExpressionTypeDisposition::Retain,
+        )
+        .expect("selected runtime index type graph");
+    assert!(runtime_index.contains(&owner));
+    assert!(runtime_index.contains(&target));
+    assert!(runtime_index.contains(&index));
+    assert!(!runtime_index.contains(&dialogue));
+    assert!(
+        index_children
+            .iter()
+            .all(|child| runtime_index.contains(child)),
+        "the complete runtime index graph remains reachable"
+    );
+
+    let runtime_dialogue = executable
+        .selected_runtime_expression_type_owners(
+            |candidate_owner| (candidate_owner == owner).then_some(dialogue),
+            |_| HirRuntimeExpressionTypeDisposition::Retain,
+        )
+        .expect("selected runtime dialogue operand graph");
+    assert!(!runtime_dialogue.contains(&owner));
+    assert!(!runtime_dialogue.contains(&dialogue));
+    assert!(!runtime_dialogue.contains(&index));
+    assert!(runtime_dialogue.contains(&target));
+    assert!(
+        dialogue_children
+            .iter()
+            .all(|child| runtime_dialogue.contains(child)),
+        "dialogue operands remain runtime type owners without carrier types"
+    );
+}
+
+#[test]
+fn runtime_expression_type_inventory_excludes_effect_metadata_subtrees() {
+    let package = package();
+    let root_path = CanonicalModulePath::crate_root();
+    let mut syntax = SyntaxDatabase::try_new().unwrap();
+    let parsed = parse_initial(
+        &mut syntax,
+        "arcweft-test://proof/final-project/runtime-expression-types",
+        "runtime-expression-types.arcw",
+        "fn root() effects { fs.read } { true }\n",
+    );
+    let mut database = HirDatabase::try_new().unwrap();
+    let module = lower(&mut database, &parsed, &package, &root_path);
+    let effect_root = module
+        .items()
+        .find_map(|(_, item)| item.kind().effect_expression_roots().into_iter().next())
+        .expect("fixture effect expression root");
+    let effect_children = module
+        .resolve_expr(effect_root)
+        .expect("effect root resolves")
+        .kind()
+        .direct_expression_children();
+    let body_literal = module
+        .expressions()
+        .find_map(|(owner, expression)| {
+            matches!(expression.kind(), HirExprKind::Literal(_)).then_some(owner)
+        })
+        .expect("ordinary body literal");
+    let project = build_project(
+        &database,
+        package.clone(),
+        [bind(&database, &package, &root_path, module)],
+    )
+    .unwrap();
+    let executable = project.executable_view().unwrap();
+
+    let semantic = executable
+        .selected_expression_owners(|_| None)
+        .expect("postfix-free semantic inventory");
+    assert!(semantic.contains(&effect_root));
+    assert!(
+        effect_children.iter().all(|child| semantic.contains(child)),
+        "semantic analysis retains the complete effect expression subtree"
+    );
+
+    let runtime = executable
+        .selected_runtime_expression_type_owners(
+            |_| None,
+            |_| HirRuntimeExpressionTypeDisposition::Retain,
+        )
+        .expect("postfix-free runtime type inventory");
+    assert!(!runtime.contains(&effect_root));
+    assert!(
+        effect_children.iter().all(|child| !runtime.contains(child)),
+        "effect metadata descendants do not publish runtime types"
+    );
+    assert!(runtime.contains(&body_literal));
+}
+
+#[test]
+fn runtime_expression_type_inventory_applies_typed_non_value_call_carriers() {
+    let package = package();
+    let root_path = CanonicalModulePath::crate_root();
+    let mut syntax = SyntaxDatabase::try_new().unwrap();
+    let parsed = parse_initial(
+        &mut syntax,
+        "arcweft-test://proof/final-project/runtime-expression-carrier",
+        "runtime-expression-carrier.arcw",
+        "fn helper(value: bool) -> bool { value }\nfn root(value: bool) { helper(value) }\n",
+    );
+    let mut database = HirDatabase::try_new().unwrap();
+    let module = lower(&mut database, &parsed, &package, &root_path);
+    let (call, callee, argument) = module
+        .expressions()
+        .find_map(|(owner, expression)| {
+            let HirExprKind::Call(call) = expression.kind() else {
+                return None;
+            };
+            Some((
+                owner,
+                call.callee()
+                    .value_expression()
+                    .expect("fixture value callee"),
+                call.arguments()[0].value(),
+            ))
+        })
+        .expect("fixture call expression");
+    let project = build_project(
+        &database,
+        package.clone(),
+        [bind(&database, &package, &root_path, module)],
+    )
+    .unwrap();
+    let executable = project.executable_view().unwrap();
+
+    let retained = executable
+        .selected_runtime_expression_type_owners(
+            |_| None,
+            |_| HirRuntimeExpressionTypeDisposition::Retain,
+        )
+        .expect("postfix-free retained call inventory");
+    assert!(retained.contains(&call));
+
+    let carrier = executable
+        .selected_runtime_expression_type_owners(
+            |_| None,
+            |owner| {
+                if owner == call {
+                    HirRuntimeExpressionTypeDisposition::NonValueCallCarrier {
+                        callee: HirRuntimeCallCalleeDisposition::Static,
+                    }
+                } else {
+                    HirRuntimeExpressionTypeDisposition::Retain
+                }
+            },
+        )
+        .expect("postfix-free carrier inventory");
+    assert!(!carrier.contains(&call));
+    assert!(!carrier.contains(&callee));
+    assert!(carrier.contains(&argument));
+
+    let receiver = executable
+        .selected_runtime_expression_type_owners(
+            |_| None,
+            |owner| {
+                if owner == call {
+                    HirRuntimeExpressionTypeDisposition::NonValueCallCarrier {
+                        callee: HirRuntimeCallCalleeDisposition::RuntimeReceiver,
+                    }
+                } else {
+                    HirRuntimeExpressionTypeDisposition::Retain
+                }
+            },
+        )
+        .expect("runtime-receiver call carrier inventory");
+    assert!(!receiver.contains(&call));
+    assert!(receiver.contains(&callee));
+    assert!(receiver.contains(&argument));
+
+    assert_eq!(
+        executable.selected_runtime_expression_type_owners(
+            |_| None,
+            |owner| {
+                if owner == argument {
+                    HirRuntimeExpressionTypeDisposition::NonValueCallCarrier {
+                        callee: HirRuntimeCallCalleeDisposition::Static,
+                    }
+                } else {
+                    HirRuntimeExpressionTypeDisposition::Retain
+                }
+            },
+        ),
+        Err(
+            HirSelectedExpressionInventoryError::InvalidNonValueCallCarrier {
+                expression: argument,
+            }
+        )
     );
 }
 

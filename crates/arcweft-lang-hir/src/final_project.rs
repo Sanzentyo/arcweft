@@ -25,7 +25,10 @@ pub use self::dialogue_lines::{
     AcceptedDialogueLine, AcceptedDialogueLineInventory, AcceptedDialogueLineSource,
     DialogueLineIndex, DialogueLineProjectFatal, DialogueLineProjectRejection,
 };
-pub use self::selected_expressions::HirSelectedExpressionInventoryError;
+pub use self::selected_expressions::{
+    HirRuntimeCallCalleeDisposition, HirRuntimeExpressionTypeDisposition,
+    HirSelectedExpressionInventoryError,
+};
 
 /// Package-qualified canonical key for one project module.
 #[derive(Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]

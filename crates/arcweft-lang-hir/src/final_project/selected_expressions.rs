@@ -5,7 +5,7 @@ use std::collections::{BTreeMap, BTreeSet};
 use thiserror::Error;
 
 use crate::dialogue_application::HirPostfixBracketCandidates;
-use crate::expr::HirExprKind;
+use crate::expr::{HirCallArgument, HirExprKind};
 use crate::identity::{ExprId, HirModuleId};
 use crate::module::HirModule;
 
@@ -28,6 +28,35 @@ pub enum HirSelectedExpressionInventoryError {
         expression: ExprId,
         candidate: ExprId,
     },
+    #[error(
+        "expression {expression:?} was classified as a non-value call carrier but is not a Call"
+    )]
+    InvalidNonValueCallCarrier { expression: ExprId },
+    #[error("non-value call carrier {expression:?} requires a runtime receiver but has none")]
+    MissingRuntimeCallReceiver { expression: ExprId },
+}
+
+/// Accepted use of a final-HIR call callee in runtime lowering.
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub enum HirRuntimeCallCalleeDisposition {
+    /// The accepted target is selected statically, so the callee subtree is
+    /// not a runtime value operand.
+    Static,
+    /// The accepted call arguments include the call's value receiver.
+    RuntimeReceiver,
+}
+
+/// Accepted higher-layer disposition of one HIR expression at the runtime
+/// type-fact boundary.
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub enum HirRuntimeExpressionTypeDisposition {
+    /// The expression produces a runtime value whose accepted type is retained.
+    Retain,
+    /// A selected call lowers as a non-value carrier. Its authored arguments
+    /// remain live, while its callee follows the accepted dispatch use.
+    NonValueCallCarrier {
+        callee: HirRuntimeCallCalleeDisposition,
+    },
 }
 
 impl HirExecutableProjectView<'_> {
@@ -39,7 +68,40 @@ impl HirExecutableProjectView<'_> {
     /// accepted; this method neither infers nor stores that decision.
     pub fn selected_expression_owners(
         self,
+        selected_postfix: impl FnMut(ExprId) -> Option<ExprId>,
+    ) -> Result<BTreeSet<ExprId>, HirSelectedExpressionInventoryError> {
+        self.selected_expression_owners_in_domain(
+            SelectedExpressionDomain::SemanticAnalysis,
+            selected_postfix,
+            |_| HirRuntimeExpressionTypeDisposition::Retain,
+        )
+    }
+
+    /// Returns the exact expression owners whose accepted types enter runtime
+    /// lowering after bounded postfix ambiguity has been resolved.
+    ///
+    /// Effect metadata and non-value dialogue carrier nodes remain in the
+    /// semantic inventory but do not publish runtime type facts. Their runtime
+    /// operands are still traversed from the same HIR-owned graph authority.
+    /// The second callback supplies the accepted use of selected call carriers;
+    /// HIR validates that a call-only disposition cannot hide another family.
+    pub fn selected_runtime_expression_type_owners(
+        self,
+        selected_postfix: impl FnMut(ExprId) -> Option<ExprId>,
+        expression_disposition: impl FnMut(ExprId) -> HirRuntimeExpressionTypeDisposition,
+    ) -> Result<BTreeSet<ExprId>, HirSelectedExpressionInventoryError> {
+        self.selected_expression_owners_in_domain(
+            SelectedExpressionDomain::RuntimeType,
+            selected_postfix,
+            expression_disposition,
+        )
+    }
+
+    fn selected_expression_owners_in_domain(
+        self,
+        domain: SelectedExpressionDomain,
         mut selected_postfix: impl FnMut(ExprId) -> Option<ExprId>,
+        mut expression_disposition: impl FnMut(ExprId) -> HirRuntimeExpressionTypeDisposition,
     ) -> Result<BTreeSet<ExprId>, HirSelectedExpressionInventoryError> {
         let modules = self
             .modules()
@@ -55,40 +117,124 @@ impl HirExecutableProjectView<'_> {
             .flat_map(|expression| expression.kind().direct_expression_children())
             .collect::<BTreeSet<_>>();
         let mut pending = all.difference(&children).copied().collect::<Vec<_>>();
+        let excluded_roots = if domain == SelectedExpressionDomain::RuntimeType {
+            self.items()
+                .flat_map(|item| item.item().kind().effect_expression_roots())
+                .collect::<BTreeSet<_>>()
+        } else {
+            BTreeSet::new()
+        };
+        let mut visited = BTreeSet::new();
         let mut selected = BTreeSet::new();
 
         while let Some(owner) = pending.pop() {
-            if !selected.insert(owner) {
+            if !visited.insert(owner) || excluded_roots.contains(&owner) {
                 continue;
             }
-            match resolve_expression(&modules, owner)? {
+            let kind = resolve_expression(&modules, owner)?;
+            let disposition = if domain == SelectedExpressionDomain::RuntimeType {
+                expression_disposition(owner)
+            } else {
+                HirRuntimeExpressionTypeDisposition::Retain
+            };
+            if let HirRuntimeExpressionTypeDisposition::NonValueCallCarrier { callee } = disposition
+            {
+                append_non_value_call_operands(&modules, owner, kind, callee, &mut pending)?;
+                continue;
+            }
+            match kind {
                 HirExprKind::PostfixBracket(postfix) => {
-                    pending.push(postfix.target());
                     let candidate = selected_postfix(owner).ok_or(
                         HirSelectedExpressionInventoryError::MissingPostfixSelection {
                             expression: owner,
                         },
                     )?;
-                    let admissible = matches!(
-                        postfix.candidates(),
+                    let selected_index = match postfix.candidates() {
                         HirPostfixBracketCandidates::Ambiguous { index, dialogue }
-                            if candidate == *index || candidate == *dialogue
-                    );
-                    if !admissible {
-                        return Err(
-                            HirSelectedExpressionInventoryError::InvalidPostfixSelection {
-                                expression: owner,
-                                candidate,
-                            },
-                        );
+                            if candidate == *index || candidate == *dialogue =>
+                        {
+                            candidate == *index
+                        }
+                        HirPostfixBracketCandidates::Ambiguous { .. }
+                        | HirPostfixBracketCandidates::Invalid { .. } => {
+                            return Err(
+                                HirSelectedExpressionInventoryError::InvalidPostfixSelection {
+                                    expression: owner,
+                                    candidate,
+                                },
+                            );
+                        }
+                    };
+                    match domain {
+                        SelectedExpressionDomain::SemanticAnalysis => {
+                            selected.insert(owner);
+                            pending.extend([postfix.target(), candidate]);
+                        }
+                        SelectedExpressionDomain::RuntimeType => {
+                            if selected_index {
+                                selected.insert(owner);
+                            }
+                            pending.extend([postfix.target(), candidate]);
+                        }
                     }
-                    pending.push(candidate);
                 }
-                kind => pending.extend(kind.direct_expression_children()),
+                kind @ HirExprKind::DialogueContentApplication(_)
+                    if domain == SelectedExpressionDomain::RuntimeType =>
+                {
+                    pending.extend(kind.direct_expression_children());
+                }
+                kind => {
+                    selected.insert(owner);
+                    pending.extend(kind.direct_expression_children());
+                }
             }
         }
         Ok(selected)
     }
+}
+
+#[derive(Clone, Copy, Eq, PartialEq)]
+enum SelectedExpressionDomain {
+    SemanticAnalysis,
+    RuntimeType,
+}
+
+fn append_non_value_call_operands(
+    modules: &BTreeMap<HirModuleId, &HirModule>,
+    owner: ExprId,
+    kind: &HirExprKind,
+    callee: HirRuntimeCallCalleeDisposition,
+    pending: &mut Vec<ExprId>,
+) -> Result<(), HirSelectedExpressionInventoryError> {
+    let HirExprKind::Call(call) = kind else {
+        return Err(
+            HirSelectedExpressionInventoryError::InvalidNonValueCallCarrier { expression: owner },
+        );
+    };
+    pending.extend(call.arguments().iter().map(HirCallArgument::value));
+    if callee == HirRuntimeCallCalleeDisposition::Static {
+        return Ok(());
+    }
+    let callee_owner = call.callee().value_expression().ok_or(
+        HirSelectedExpressionInventoryError::MissingRuntimeCallReceiver { expression: owner },
+    )?;
+    let module = modules.get(&callee_owner.module()).copied().ok_or(
+        HirSelectedExpressionInventoryError::UnknownModule {
+            module: callee_owner.module(),
+        },
+    )?;
+    let receiver = module
+        .resolve_call_value_receiver(call)
+        .map_err(
+            |_| HirSelectedExpressionInventoryError::UnresolvedExpression {
+                expression: callee_owner,
+            },
+        )?
+        .ok_or(
+            HirSelectedExpressionInventoryError::MissingRuntimeCallReceiver { expression: owner },
+        )?;
+    pending.push(receiver);
+    Ok(())
 }
 
 fn resolve_expression<'project>(
