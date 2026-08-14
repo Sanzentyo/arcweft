@@ -3,6 +3,7 @@
 //! These values are typed serialized evidence. Possessing or constructing one
 //! does not admit a plan, program, catalog, producer, or runtime value.
 
+use crate::pattern::RuntimeSemanticTypeId;
 use serde::{Deserialize, Serialize};
 
 macro_rules! public_digest_newtype {
@@ -34,6 +35,24 @@ public_digest_newtype!(RuntimeProducerRootId);
 public_digest_newtype!(RuntimeViewId);
 public_digest_newtype!(RuntimeCharacterCatalogDigest);
 public_digest_newtype!(RuntimeViewCatalogDigest);
+
+impl RuntimeProjectRootId {
+    /// Projects an accepted semantic type identity into its project-root
+    /// coordinate without hashing or changing any bytes.
+    #[must_use]
+    pub const fn from_semantic_type(id: RuntimeSemanticTypeId) -> Self {
+        Self::from_bytes(*id.as_bytes())
+    }
+}
+
+impl RuntimeProducerRootId {
+    /// Projects an accepted semantic type identity into its producer-root
+    /// coordinate without hashing or changing any bytes.
+    #[must_use]
+    pub const fn from_semantic_type(id: RuntimeSemanticTypeId) -> Self {
+        Self::from_bytes(*id.as_bytes())
+    }
+}
 
 /// Digest of the canonical `CharacterDialogue` runtime custom-field catalog.
 ///
@@ -74,6 +93,20 @@ mod tests {
             RuntimeViewCatalogDigest::from_bytes(bytes).as_bytes(),
             &bytes
         );
+    }
+
+    #[test]
+    fn semantic_root_projections_preserve_all_bytes_and_domains() {
+        let bytes = core::array::from_fn(|index| {
+            u8::try_from(255_usize - index).expect("index difference fits u8")
+        });
+        let semantic = RuntimeSemanticTypeId::from_bytes(bytes);
+
+        let project = RuntimeProjectRootId::from_semantic_type(semantic);
+        let producer = RuntimeProducerRootId::from_semantic_type(semantic);
+
+        assert_eq!(project.as_bytes(), &bytes);
+        assert_eq!(producer.as_bytes(), &bytes);
     }
 
     #[test]
