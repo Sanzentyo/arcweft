@@ -1,0 +1,24 @@
+shape,physical_variant,actual_shape_rule,bytes_rule
+Unit,RuntimeValue::Unit,Unit,not applicable
+Bool,RuntimeValue::Bool,Bool,not applicable
+Signed,RuntimeValue::Int,Signed,not applicable
+Unsigned,RuntimeValue::UInt,Unsigned,not applicable
+F32,RuntimeValue::F32,F32,not applicable
+F64,RuntimeValue::F64,F64,not applicable
+MatrixF32,RuntimeValue::MatrixF32,MatrixF32,not applicable
+MatrixF64,RuntimeValue::MatrixF64,MatrixF64,not applicable
+TensorF32,RuntimeValue::TensorF32,TensorF32,not applicable
+TensorF64,RuntimeValue::TensorF64,TensorF64,not applicable
+String,RuntimeValue::String,String,not applicable
+Char,RuntimeValue::Char,Char,not applicable
+Duration,RuntimeValue::Duration,Duration,not applicable
+Range,RuntimeValue::Range,Range,not applicable
+Iterator,RuntimeValue::Iterator,Iterator,not applicable
+EntityReference,RuntimeValue::EntityRef,EntityReference,not applicable
+Tuple,RuntimeValue::Tuple,Tuple,not applicable
+Sequence,RuntimeValue::Seq,Sequence,RuntimeCheckedType::Bytes also requires this physical Sequence shape and validates each element as Unsigned(U8); no RuntimeValue::Bytes exists
+Record,RuntimeValue::Record,Record,not applicable
+NominalRecord,RuntimeValue::NominalRecord,NominalRecord,not applicable
+Opaque,RuntimeValue::Opaque,Opaque,not applicable
+Function,RuntimeValue::Function,Function,not applicable
+Variant,RuntimeValue::Variant,Variant,not applicable

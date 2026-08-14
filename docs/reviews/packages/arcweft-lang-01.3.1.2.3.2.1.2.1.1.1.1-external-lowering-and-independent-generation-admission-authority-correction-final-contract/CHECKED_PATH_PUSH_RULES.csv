@@ -1,0 +1,12 @@
+edge,expected_owner,physical_value,type_path_push,value_path_push,index_rule,deterministic_order
+Sequence item,RuntimeCheckedType::Sequence(item),RuntimeValue::Seq,SequenceItem(u64),SequenceElement(u64),enumerate actual items; usize -> u64 checked,budget/depth; outer Sequence; length/iteration; index conversion; child
+Bytes item,RuntimeCheckedType::Bytes,RuntimeValue::Seq,SequenceItem(u64),SequenceElement(u64),same physical sequence index; expected child is Unsigned(U8),budget/depth; outer Sequence; index conversion; U8 child
+Tuple item,RuntimeCheckedType::Tuple(items),RuntimeValue::Tuple,TupleItem(u32),TupleElement(u32),usize -> u32 checked after exact tuple-length check,budget/depth; outer Tuple; length; index conversion; child
+Choice alternative,RuntimeCheckedType::Choice(alternatives),same candidate value,ChoiceAlternative(u32),no push,usize -> u32 checked before evaluating branch,budget/depth at Choice; alternative index; branch under shared budget
+Result Ok payload,"RuntimeCheckedType::Result { ok, .. }",RuntimeValue::Variant owner Result ordinal 0 name Ok,ResultOk,VariantPayload,no numeric index,owner; ordinal/name; payload presence; push; child
+Result Err payload,"RuntimeCheckedType::Result { error, .. }",RuntimeValue::Variant owner Result ordinal 1 name Err,ResultError,VariantPayload,no numeric index,owner; ordinal/name; payload presence; push; child
+Option Some payload,RuntimeCheckedType::Option(item),RuntimeValue::Variant owner Option ordinal 0 name Some,OptionSome,VariantPayload,no numeric index,owner; ordinal/name; payload presence; push; child
+Option None,RuntimeCheckedType::Option(item),RuntimeValue::Variant owner Option ordinal 1 name None,no push,no push,no child,owner; ordinal/name; payload absence; success
+Opaque payload,RuntimeCheckedType::Opaque { owner },RuntimeValue::Opaque,no push,no push,atomic checked leaf; payload is not inspected,context; work charge current wrapper; outer Opaque; producer; exact semantic identity when required; success
+Nominal/closed Variant payload,RuntimeCheckedType::Variant,RuntimeValue::Variant,VariantPayload { ordinal:u32 },VariantPayload,raw ordinal already u32,owner; ordinal; canonical name; payload presence; push; child
+Nominal record field,RuntimeCheckedType::Nominal,RuntimeValue::NominalRecord,NominalField(RuntimeRecordFieldId),NominalRecordField(RuntimeRecordFieldId),field IDs derived one-based in defining order with checked u32 conversion,lookup; identity; layout; count; field ID; push; child

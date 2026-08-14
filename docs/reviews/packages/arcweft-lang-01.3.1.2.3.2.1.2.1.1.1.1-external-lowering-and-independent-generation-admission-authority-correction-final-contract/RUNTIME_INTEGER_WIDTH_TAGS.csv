@@ -1,0 +1,13 @@
+family,tag_hex,tag_decimal,variant,source_owner
+signed,0x00,0,I8,arcweft_core::value::integer original enum declaration and inherent canonical encoder
+signed,0x01,1,I16,arcweft_core::value::integer original enum declaration and inherent canonical encoder
+signed,0x02,2,I32,arcweft_core::value::integer original enum declaration and inherent canonical encoder
+signed,0x03,3,I64,arcweft_core::value::integer original enum declaration and inherent canonical encoder
+signed,0x04,4,I128,arcweft_core::value::integer original enum declaration and inherent canonical encoder
+signed,0x05,5,ISize,arcweft_core::value::integer original enum declaration and inherent canonical encoder
+unsigned,0x00,0,U8,arcweft_core::value::integer original enum declaration and inherent canonical encoder
+unsigned,0x01,1,U16,arcweft_core::value::integer original enum declaration and inherent canonical encoder
+unsigned,0x02,2,U32,arcweft_core::value::integer original enum declaration and inherent canonical encoder
+unsigned,0x03,3,U64,arcweft_core::value::integer original enum declaration and inherent canonical encoder
+unsigned,0x04,4,U128,arcweft_core::value::integer original enum declaration and inherent canonical encoder
+unsigned,0x05,5,USize,arcweft_core::value::integer original enum declaration and inherent canonical encoder

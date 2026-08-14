@@ -1,0 +1,18 @@
+check,result,evidence
+request-copy,passed,byte-identical; 11995 bytes; SHA-256 2498106d805515f2fba326ef55685a8699aec2ab1abb986e22bc2f0a1f984cc6
+current-main-evidence,passed,full Git SHA 80348beed0efa72db07f712122217b4e679e0a97; exact commit patch plus full-SHA raw captures
+decision-closure,passed,12/12 exact decisions; each decision document/output exists; D1-D12 test coverage present
+external-construction,passed,public checked builders/private fields/custom v1 decode are normative; no caller-name gate
+independent-generation,passed,compiler accepted-world assembly -> core projection -> consumed-once try_issue; no raw conversion
+admission-direction,passed,issued generation admits plan/AWBC; no RuntimePlan/AwbcProgram self-admission declaration
+generation-fact-wire,passed,"AWGF v1 framing, exact production decode limits, decoder-to-projection only, and issuance-only section construction"
+bundle-section-cut,passed,existing BundleSectionKind extended in place with required schema-v1 tags 23/24 alongside ProgramBytecode tag 1
+restore-token,passed,verified section token owns buffers and exposes checked decoders only; no raw three-slice bypass
+opaque-rule,passed,atomic owner-only generic checked validation; OpaquePayload retained only for physical traversal
+audio-resolution,passed,35 fields; 35 effect-owned site rows; no EffectPlan::AudioValue
+runtime-expr-rule,passed,47 exhaustive variant/edge rows; root [0] for checked and operational declarations
+test-matrix,passed,2021 rows (1878 retained/corrected + 143 focused); contradiction scans passed
+inventory,passed,836 rows; all request-item-13 producer/consumer categories present
+implementation-order,passed,14 compile-clean phases with same-phase deletion
+design-only-surface,passed,"no Rust source, patch, overlay, binary, nested archive, unsafe path, or symlink"
+production-cargo-tests,not run,"design-only archive; commands are future implementation requirements, not claimed results"

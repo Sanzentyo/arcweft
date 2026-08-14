@@ -1,0 +1,9 @@
+step,owner,input,operation,output,failure_precedence
+1,compiler or runtime-driver generation loader,accepted world or independent generation-fact section,construct RuntimeGenerationAdmissionProjection through checked rows,single-use projection,projection wire/owner/order/root errors
+2,pub fn try_issue,projection,validate facts and compute v1 declaration/transcript,AdmittedRuntimeGeneration Arc parent,generation fact/catalog errors
+3,arcweft-runtime-plan,accepted semantic facts + generation declaration,lower through RuntimePlanBuilder,raw RuntimePlan,lower/build errors
+4,pub fn try_admit_plan,generation + raw plan,declaration equality; type/site resolution; wrapper publication,AdmittedRuntimePlan,raw limits; declaration mismatch; declarations; owner traversal; sites
+5,arcweft-runtime-plan::awbc_lower,admitted plan source + generation declaration,lower through AwbcProgramBuilder,raw AwbcProgram,lower/build errors
+6,AdmittedRuntimePlan::try_admit_awbc,admitted plan + raw AWBC,same generation admission then direct origin equality,AdmittedRuntimeProduct,AWBC admission; same-parent; origin completeness/equality
+7,AdmittedCharacterDialogueCatalogs::try_admit,generation + immutable catalogs,digest/view validation and same-parent clone,admitted catalogs,local digest; generation digest; accepted view IDs
+8,RuntimeDriverGeneration::try_new,admitted product + admitted catalogs,Arc parent equality,driver generation,same-parent before executor/session state

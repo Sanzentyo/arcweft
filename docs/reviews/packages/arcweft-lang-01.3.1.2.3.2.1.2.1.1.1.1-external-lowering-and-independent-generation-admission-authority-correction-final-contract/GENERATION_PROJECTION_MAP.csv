@@ -1,0 +1,6 @@
+row_family,canonical_key,constructor,required_checks,stored_fact
+project checked,semantic_identity[32],RuntimeProjectTypeProjection::checked,closed RuntimeCheckedType canonical bytes; project root recomputed; strictly increasing key,AdmittedProjectTypeFact::Checked
+project operational,semantic_identity[32],RuntimeProjectTypeProjection::operational,closed RuntimeOperationalType tag; accepted semantic root shape equality; strictly increasing key,AdmittedProjectTypeFact::Operational
+producer exact opaque,producer UTF-8 bytes then semantic_identity[32],RuntimeProducerTypeProjection::try_exact,owner admission ExactIdentity; producer/semantic copied from owner; root recomputed; strictly increasing key,AdmittedProducerTypeFact
+nominal record,nominal newtype bytes then semantic_identity[32],RuntimeNominalRecordProjection::try_new,nonempty exact fields; one-based RuntimeRecordFieldId in defining order; field semantic identities reachable; layout exact,AdmittedNominalRecordFact
+catalog digests,fixed field order,RuntimeGenerationCatalogProjection::new,all exact digest newtypes; no free generation scalar,RuntimeGenerationContractDeclaration digest fields

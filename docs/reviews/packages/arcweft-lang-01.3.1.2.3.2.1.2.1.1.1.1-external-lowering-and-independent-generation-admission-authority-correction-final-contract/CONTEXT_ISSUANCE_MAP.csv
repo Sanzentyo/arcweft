@@ -1,0 +1,6 @@
+issuer,required_owner,borrows,output,cannot_issue_for
+AdmittedRuntimePlan::checked_value_context,RuntimePlanTypedSite resolving to Checked,plan generation Arc parent + resolved plan row,RuntimeCheckedValueContext,raw plan; operational declaration; unresolved/missing site
+AdmittedRuntimeProduct::checked_value_context,AwbcTypedOrigin whose plan/AWBC rows directly agree and are Checked,product generation Arc parent + pair correlation row,RuntimeCheckedValueContext,raw AWBC; operational origin; cross-generation origin
+AdmittedRuntimeProduct::nominal_record_domain,version-1 domain operand reachable from exact origin,product generation + project/producer nominal fact,RuntimeNominalRecordAdmissionDomain,semantic world before plan; caller root scalar; missing/wrong domain
+RuntimeCheckedValueContext::validate,issued context,resolved checked type + limits + optional nominal domain,"Result<(), RuntimeCheckedValueError>",Operational RuntimePlanTypeKind
+RuntimeValue ownership/save traversal,physical RuntimeValue,none from checked context unless caller also has one,RuntimeValuePath including OpaquePayload,type-path authority; generic opaque recursion

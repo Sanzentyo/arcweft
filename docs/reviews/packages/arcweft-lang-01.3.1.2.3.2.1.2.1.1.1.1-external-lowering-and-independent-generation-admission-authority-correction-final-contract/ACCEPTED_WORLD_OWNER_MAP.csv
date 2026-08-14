@@ -1,0 +1,11 @@
+fact_family,accepted_owner,standard_reader,core_projection,provenance_rule
+project semantic types,arcweft_runtime_plan::RuntimePlanSemanticFacts,ProjectRuntimeGenerationAssembly::issue,pub struct RuntimeProjectTypeProjection,facts are bound to accepted HirExecutableProjectView snapshots; no raw artifact input
+project root IDs,RuntimeSemanticTypeId from accepted normalized type,core projection/issuance,RuntimeProjectRootId computed from exact 32 bytes,caller cannot pass a root scalar
+opaque producer declarations,arcweft_lang_sema::registration::runtime_producers::AcceptedRuntimeOpaqueProducerRegistry,ProjectRuntimeGenerationAssembly::issue,pub struct RuntimeProducerTypeProjection,exact accepted producer registry; concrete ExactIdentity rows only
+producer root IDs,accepted exact opaque semantic identity,core projection/issuance,RuntimeProducerRootId computed from exact 32 bytes,caller cannot pass a root scalar
+nominal layouts,arcweft_lang_sema::AcceptedNominalWorld,ProjectRuntimeGenerationAssembly::issue,RuntimeNominalRecordProjection,same AcceptedNominalWorldStamp as role/custom registries
+CharacterDialogue roles,CharacterDialogueRuntimeRoleRegistry,RegisteredTypeCheckEnv accessor,project/producer type rows only,issued atomically from the same AcceptedNominalWorld
+custom fields,CharacterDialogueCustomFieldRegistry,RegisteredTypeCheckEnv accessor,catalog digest plus accepted type/view rows,same nominal-world stamp; accepted views checked against exact registry
+Character catalog,arcweft_character::CharacterCatalog,canonical runtime digest API,RuntimeCharacterCatalogDigest,immutable catalog; no Character-to-View inference
+View catalog,arcweft_view::ViewRegistry,canonical runtime digest API,RuntimeViewCatalogDigest,immutable registry; exact IDs
+generation declaration,arcweft_core::AdmittedRuntimeGeneration::try_issue,private transcript encoder,RuntimeGenerationContractDeclaration,computed after all independent facts; never copied from plan/AWBC

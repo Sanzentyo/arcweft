@@ -1,0 +1,4 @@
+rust_variant,encoded_u32_le,status,schema_version,required_for,payload,decode_gate
+ProgramBytecode,1,existing retained owner,1,Program and AgentController,AwbcProgram canonical v1 bytes from admitted product,only VerifiedRuntimeGenerationSections::decode_awbc_program after generation and plan admission
+RuntimeGenerationFacts,23,add to existing BundleSectionKind and its inherent impl,1,Program and AgentController,RuntimeGenerationFactSection exact AWGF v1 bytes from admitted generation,"first content section decoded; returns projection, never admitted parent"
+RuntimePlan,24,add to existing BundleSectionKind and its inherent impl,1,Program and AgentController,RuntimePlan canonical v1 bytes from admitted product,only after generation issuance and catalog admission

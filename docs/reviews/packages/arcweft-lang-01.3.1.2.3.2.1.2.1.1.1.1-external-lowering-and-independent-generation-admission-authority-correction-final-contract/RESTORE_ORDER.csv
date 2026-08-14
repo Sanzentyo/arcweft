@@ -1,0 +1,14 @@
+order,owner,operation,allowed_payload,forbidden_before_this
+1,arcweft-bundle verify_runtime_generation_sections,"parse AWFB v1 through BundleView; verify external payloads; require exactly one RuntimeGenerationFacts(23), RuntimePlan(24), ProgramBytecode(1), schema version 1; publish owned private token",verified owned decoded section buffers only,generation/plan/AWBC/snapshot/replay content decode
+2,VerifiedRuntimeGenerationSections::decode_generation_projection,decode fixed AWGF v1 generation-fact grammar through private DTO and checked core projection builder,core scalar/type projection rows,plan/AWBC/snapshot/replay RuntimeValue decode
+3,runtime-driver generation loader,build checked single-use projection in canonical order,projection staging,raw artifact admission
+4,pub fn try_issue,issue independent Arc parent and declaration,non-Serde projection,none after step 3
+5,AdmittedCharacterDialogueCatalogs::try_admit,admit immutable catalogs against generation digests,catalog Arcs,driver publication
+6,RuntimePlan custom v1 decoder,decode raw plan section through checked builder,verified plan section,plan decode before generation
+7,generation.try_admit_plan,admit raw plan,raw plan,AWBC pair/execution
+8,AwbcProgram custom v1 decoder,decode raw AWBC section through checked builder,verified AWBC section,AWBC decode before generation
+9,admitted_plan.try_admit_awbc,admit and correlate pair,raw AWBC,executor/session publication
+10,RuntimeDriverGeneration::try_new,publish same-parent product/catalog generation,admitted wrappers,snapshot/replay value decode
+11,save/replay fixed header decoder,read version 1 and generation identity; compare exact,fixed scalar header,nested RuntimeValue payload
+12,product-issued RuntimeCheckedValueContext,decode/validate snapshot or replay values with exact path/domain,RuntimeValue payloads,value decode without context
+13,RuntimeSession/AwbcProductStepExecutor,publish restored/replayed state and execute,fully admitted generation and checked state,execution

@@ -1,0 +1,18 @@
+tag,variant,payload_grammar
+0,RuntimeType,ty:u32_le
+1,Constant,constant:u32_le
+2,Pattern,pattern:u32_le || pattern_slot
+3,Signature,signature:u32_le || signature_slot
+4,FunctionFrame,function:u32_le || register:u32_le
+5,Instruction,function:u32_le || instruction:u32_le || opcode:u8 || field_tag:u8 || optional field index:u32_le
+6,Terminator,function:u32_le || block:u32_le || opcode:u8 || field_tag:u8 || optional field index:u32_le
+7,TaskPlan,task:u32_le || task_slot
+8,AudioCommand,effect:u32_le || command_tag:u8 || field_tag:u8
+9,EffectPlan,effect:u32_le || effect_slot
+10,LineTaskGroup,group:u32_le || line_slot
+11,StreamPlan,stream:u32_le || stream_slot
+12,SourcePlan,source:u32_le || source_slot
+13,PureHelper,helper:u32_le || pure_helper_slot
+14,TraitMethod,method:u32_le || trait_method_slot
+15,FlowExecutable,flow:u32_le || flow_executable_slot
+16,Entry,entry:u32_le || entry_slot

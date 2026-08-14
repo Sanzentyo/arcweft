@@ -1,0 +1,7 @@
+surface,owner,stores,must_not_store,same_parent_rule
+RuntimeDriverGeneration,arcweft-runtime-driver/src/generation_runtime.rs,AdmittedRuntimeProduct + AdmittedCharacterDialogueCatalogs,raw RuntimePlan/AwbcProgram; free generation scalar,public require_same_parent; implementation is Arc::ptr_eq
+AwbcProductStepExecutor,arcweft-core/src/awbc/product_step.rs,AdmittedAwbcProduct + execution state,raw program replacement API,candidate.generation require_same_parent current generation
+PreparedRuntimeGenerationSwap,arcweft-runtime-driver/src/swap.rs,candidate RuntimeDriverGeneration + complete migration + exact cloned current AdmittedRuntimeGeneration,scalar-only expected identity; partially applied state,commit require_same_parent against exact prepared parent; byte-equal reissue fails
+VerifiedRuntimeGenerationSections,arcweft-bundle/src/product_awbc/runtime_generation.rs,owned verified decoded generation/plan/AWBC section buffers + manifest digest,public raw-byte access or replaceable section fields; decoded RuntimeValue,one verified product AWFB section set; generation issued before plan/AWBC decode
+RuntimeSession::restore,arcweft-runtime-driver/src/session_save.rs,RuntimeDriverGeneration before decoded values,string-only value path; raw artifact authority,snapshot header identity must equal generation identity
+RuntimeSession::replay,arcweft-runtime-driver/src/session_save.rs,RuntimeDriverGeneration before replay values/events,replay-issued generation,log header identity must equal generation identity

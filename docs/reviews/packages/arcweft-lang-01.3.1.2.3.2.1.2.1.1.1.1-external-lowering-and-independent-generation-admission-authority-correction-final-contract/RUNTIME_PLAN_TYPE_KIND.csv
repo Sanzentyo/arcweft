@@ -1,0 +1,34 @@
+source_family,normalized_root,declaration_kind,payload,checked_boundary,generation_match
+RuntimeValue::Unit,Unit,Checked,RuntimeCheckedType::Unit,yes,semantic_identity exact plus checked type/authority
+RuntimeValue::Bool,Bool,Checked,RuntimeCheckedType::Bool,yes,semantic_identity exact plus checked type/authority
+RuntimeValue::Int,Signed integer width,Checked,RuntimeCheckedType::Signed(width),yes,semantic_identity exact plus checked type/authority
+RuntimeValue::UInt,Unsigned integer width,Checked,RuntimeCheckedType::Unsigned(width),yes,semantic_identity exact plus checked type/authority
+RuntimeValue::F32,F32,Checked,RuntimeCheckedType::F32,yes,semantic_identity exact plus checked type/authority
+RuntimeValue::F64,F64,Checked,RuntimeCheckedType::F64,yes,semantic_identity exact plus checked type/authority
+RuntimeValue::MatrixF32,MatrixF32,Operational,RuntimeOperationalType::MatrixF32,no,semantic_identity exact plus operational root-shape tag
+RuntimeValue::MatrixF64,MatrixF64,Operational,RuntimeOperationalType::MatrixF64,no,semantic_identity exact plus operational root-shape tag
+RuntimeValue::TensorF32,TensorF32,Operational,RuntimeOperationalType::TensorF32,no,semantic_identity exact plus operational root-shape tag
+RuntimeValue::TensorF64,TensorF64,Operational,RuntimeOperationalType::TensorF64,no,semantic_identity exact plus operational root-shape tag
+RuntimeValue::String,String,Checked,RuntimeCheckedType::String,yes,semantic_identity exact plus checked type/authority
+RuntimeValue::Char,Char,Checked,RuntimeCheckedType::Char,yes,semantic_identity exact plus checked type/authority
+RuntimeValue::Duration,Duration,Checked,RuntimeCheckedType::Duration,yes,semantic_identity exact plus checked type/authority
+RuntimeValue::Range,Range,Operational,RuntimeOperationalType::Range,no,semantic_identity exact plus operational root-shape tag
+RuntimeValue::Iterator,Iterator,Operational,RuntimeOperationalType::Iterator,no,semantic_identity exact plus operational root-shape tag
+RuntimeValue::EntityRef,EntityRef,Checked,RuntimeCheckedType::EntityRef,yes,semantic_identity exact plus checked type/authority
+RuntimeValue::Tuple,Tuple,Checked when full projection succeeds; otherwise Operational,RuntimeCheckedType::Tuple or RuntimeOperationalType::Tuple,conditional on full nested projection,semantic_identity exact plus operational root-shape tag
+RuntimeValue::Seq,Sequence,Checked when full projection succeeds; otherwise Operational,RuntimeCheckedType::Sequence/Bytes or RuntimeOperationalType::Sequence,conditional on full nested projection,semantic_identity exact plus operational root-shape tag
+RuntimeValue::Record,StructuralRecord,Operational,RuntimeOperationalType::StructuralRecord,no,semantic_identity exact plus operational root-shape tag
+RuntimeValue::NominalRecord,Nominal,Checked,RuntimeCheckedType::Nominal + admitted descriptor,yes,semantic_identity exact plus checked type/authority
+RuntimeValue::Opaque,Opaque,Checked,RuntimeCheckedType::Opaque { owner },yes; atomic payload,semantic_identity exact plus checked type/authority
+RuntimeValue::Function,Function,Operational,RuntimeOperationalType::Function,no,semantic_identity exact plus operational root-shape tag
+RuntimeValue::Variant,Option/Result/Variant,Checked when full projection succeeds; otherwise Operational,corresponding RuntimeCheckedType or Operational Option/Result/Variant,conditional on full nested projection,semantic_identity exact plus operational root-shape tag
+semantic TypeShape::Map,Map,Operational,RuntimeOperationalType::Map,no,semantic_identity exact plus operational root-shape tag
+semantic TypeShape::Need,Need,Operational,RuntimeOperationalType::Need,no,semantic_identity exact plus operational root-shape tag
+semantic TypeShape::Stream,Stream,Operational,RuntimeOperationalType::Stream,no,semantic_identity exact plus operational root-shape tag
+semantic TypeShape::Source,Source,Operational,RuntimeOperationalType::Source,no,semantic_identity exact plus operational root-shape tag
+semantic TypeShape::ThreadHandle,ThreadHandle,Operational,RuntimeOperationalType::ThreadHandle,no,semantic_identity exact plus operational root-shape tag
+semantic TypeShape::Shared,Shared,Operational,RuntimeOperationalType::Shared,no,semantic_identity exact plus operational root-shape tag
+semantic TypeShape::Reference,Reference,Operational,RuntimeOperationalType::Reference,no,semantic_identity exact plus operational root-shape tag
+semantic TypeShape::Choice,Choice,Checked when all alternatives project; otherwise Operational,RuntimeCheckedType::Choice or RuntimeOperationalType::Choice,conditional,semantic_identity exact plus operational root-shape tag
+semantic TypeShape::Result,Result,Checked when both sides project; otherwise Operational,RuntimeCheckedType::Result or RuntimeOperationalType::Result,conditional,semantic_identity exact plus operational root-shape tag
+semantic TypeShape::Option,Option,Checked when item projects; otherwise Operational,RuntimeCheckedType::Option or RuntimeOperationalType::Option,conditional,semantic_identity exact plus operational root-shape tag

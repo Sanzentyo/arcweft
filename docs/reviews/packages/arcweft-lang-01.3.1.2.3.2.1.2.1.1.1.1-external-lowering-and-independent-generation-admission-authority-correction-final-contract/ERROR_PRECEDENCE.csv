@@ -1,0 +1,16 @@
+boundary,step_1,step_2,step_3,step_4,step_5
+public raw builder finish,count/work limits,table-local key/order/duplicate checks,reference bounds,nested typed completeness including expr root [0],generation declaration is data only
+generation projection finish,count/work limits,strict project order/duplicates,strict producer order/duplicates,strict nominal/field order/duplicates,root/owner checks occur at issuance
+generation fact section decode,AWGF magic and section version 1,transcript length/bounds and exact EOF,transcript domain/version 1,UTF-8/newtype/count/tag/checked-type grammar,checked projection finish; no raw plan/AWBC fact fallback
+generation issuance,projection limits,canonical rows/duplicates,lossless roots and exact producer owners,nominal reachability,catalog transcript/identity then Arc publication
+issued-parent comparison,Arc::ptr_eq on private inner Arcs,DifferentIssuedParent,no scalar equality fallback,no declaration-byte fallback,no caller gate
+plan admission,raw plan limits,generation declaration mismatch,type declarations versus generation,actual owner traversal and site completeness,admitted wrapper publication
+AWBC admission,raw AWBC limits,generation declaration mismatch,type declarations/constants/patterns,actual site traversal and nominal domains,admitted wrapper publication
+pair admission,AWBC admission,require_same_parent,origin syntax/completeness,direct semantic/type/authority equality,correlation publication
+opaque checked value,work unit/depth at wrapper,outer shape,producer,semantic identity when Exact,success; payload is not visited
+AudioCommand site,effect bounds,effect kind Audio,command presence and command bounds,slot/command variant and optional presence,Arg -> owning signature bounds; Const -> constant bounds; equality
+expression facts,path syntax/depth/order/duplicates,complete present-node set and root [0],declaration lookup,independent generation semantic/kind equality,checked sites may issue context; operational sites may not
+product AWFB section verification,ContainerError magic/version/header/index/file-length/read-budget,ContainerError bounds/overlap and external payload validation,stored/content/index/manifest digests,"exactly one RuntimeGenerationFacts(23), RuntimePlan(24), ProgramBytecode(1)",all section schema versions exactly 1; owned token publication
+runtime generation load,verified token required,generation fact decode,generation issuance,catalog admission then plan decode/admission then AWBC decode/pair,driver generation publication
+restore/replay,fixed header version 1,generation identity versus supplied driver generation,site/context/domain lookup,RuntimeValue decode and checked validation,state publication
+hot-swap commit,"require_same_parent(current, prepared.expected_current)",StalePreparedSwap on mismatch including byte-equal reissue,migration revalidation,one atomic state swap,no partial mutation

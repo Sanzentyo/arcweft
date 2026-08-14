@@ -1,0 +1,18 @@
+id,area,gate,kind,fixture,operation,expected,owner
+ELIGA-T-00001,construction,D1,compile_pass,external arcweft-runtime-plan lowerer,construct all plan typed declarations/expr/pattern/site rows and finish RuntimePlan,compiles without core-private access; returned aggregate passes builder checks,arcweft-runtime-plan trybuild pass
+ELIGA-T-00002,construction,D1,compile_pass,external runtime-plan coordinate construction,construct flow/stream/source coordinates through public checked constructors and use them in RuntimePlanTypedSite,compiles; overlong descent is rejected before allocation; actual-owner bounds remain admission checks,arcweft-runtime-plan trybuild pass
+ELIGA-T-00003,construction,D1,compile_pass,external arcweft-runtime-plan AWBC lowerer,"construct every typed AWBC DTO, effect-owned audio site/origin, and finish AwbcProgram",compiles through public checked API; no feature/caller gate,arcweft-runtime-plan trybuild pass
+ELIGA-T-00004,construction,D1,compile_fail,external struct literal RuntimePlanTypeId(0),compile,tuple field is private; ID only returned by builder,arcweft-core trybuild
+ELIGA-T-00005,construction,D1,compile_fail,external struct literal RuntimeTypedExpr { .. },compile,private fields; only try_new exists,arcweft-core trybuild
+ELIGA-T-00006,construction,D1,compile_fail,external struct literal RuntimePlan { .. },compile,all fields private,arcweft-core trybuild
+ELIGA-T-00007,construction,D1,compile_fail,RuntimePlan::default(),compile,Default is not implemented,arcweft-core trybuild
+ELIGA-T-00008,construction,D1,compile_fail,external struct literal AwbcProgram { .. },compile,all fields private,arcweft-core trybuild
+ELIGA-T-00009,construction,D1,compile_fail,AwbcProgram::default(),compile,Default is not implemented,arcweft-core trybuild
+ELIGA-T-00010,construction,D1,compile_fail,name private RuntimePlanWireV1/AwbcProgramWireV1,compile,private wire DTO cannot be named,arcweft-core trybuild
+ELIGA-T-00011,construction,D1,negative,Serde plan missing expression root [0],deserialize RuntimePlan v1,custom decode reaches RuntimeTypedExpr::try_new and rejects MissingRoot,arcweft-core codec
+ELIGA-T-00012,construction,D1,negative,Serde AWBC duplicate typed origin,deserialize AwbcProgram v1,custom decode reaches builder and rejects exact duplicate pair,arcweft-core codec
+ELIGA-T-00013,authority,D2,compile_fail,construct AdmittedRuntimeGenerationInner,compile,private type/fields and no public constructor,arcweft-core trybuild
+ELIGA-T-00014,authority,D2,compile_fail,construct AdmittedRuntimePlan or AdmittedAwbcProduct,compile,private fields and constructors,arcweft-core trybuild
+ELIGA-T-00015,authority,D2,compile_pass,runtime-driver calls require_same_parent,compare product/catalog admitted generation handles,"public method compiles across crates and exposes comparison only, not construction",arcweft-runtime-driver compile test
+ELIGA-T-00016,authority,D2,negative,valid raw plan only,attempt execution/context issuance,"no API path to executor, nominal domain, or checked context",arcweft-core boundary
+ELIGA-T-00017,authority,D2,negative,valid raw AWBC only,attempt execution,no API path to executor; generation required,arcweft-core boundary

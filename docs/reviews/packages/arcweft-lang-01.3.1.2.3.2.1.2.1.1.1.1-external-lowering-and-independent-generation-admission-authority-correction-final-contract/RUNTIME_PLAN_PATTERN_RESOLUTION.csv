@@ -1,0 +1,12 @@
+variant,child_field,child_ordinal,current_owner_path,expected_type_rule
+Ident,none,none,RuntimePattern::Ident,bind exact expected type
+MutIdent,none,none,RuntimePattern::MutIdent,bind exact expected type with mutable mode
+Discard,none,none,RuntimePattern::Discard,accept exact expected type without binding
+Literal,none,none,RuntimePattern::Literal,derive literal type and require equality
+Entity,none,none,RuntimePattern::Entity,require EntityReference
+Tuple,items[i],i,RuntimePattern::Tuple,expected must be tuple; item i exact
+Record,fields[i].pattern,i,RuntimePattern::Record.fields,expected anonymous/nominal record; match one-based field identity; rest does not create child
+BracketSeq,items[i],i,RuntimePattern::BracketSeq.items,expected sequence; item i exact; rest binding gets remainder sequence type
+Variant,payload,0,RuntimePattern::Variant.payload,owner/ordinal/name/presence then exact payload type; absent emits no child
+Whole,pattern,0,RuntimePattern::Whole.pattern,inner expected equals whole expected; whole binding gets same type
+Typed,none,none,RuntimePattern::Typed.ty,serialized checked type must equal independently supplied expected type

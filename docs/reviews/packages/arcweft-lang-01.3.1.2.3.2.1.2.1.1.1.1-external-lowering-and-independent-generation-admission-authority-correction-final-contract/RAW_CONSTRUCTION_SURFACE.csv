@@ -1,0 +1,48 @@
+owner,method,visibility,input,output,checked_before_return
+RuntimePlanBuilder,new,pub,RuntimeGenerationContractDeclaration,RuntimePlanBuilder,version exactly 1; no table publication
+RuntimePlanBuilder,push_type,pub,RuntimePlanTypeDeclaration,"Result<RuntimePlanTypeId, RuntimePlanBuildError>",u32 capacity; semantic identity uniqueness; declaration local invariants
+RuntimePlanBuilder,push_entry,pub,RuntimeEntrySpec,"Result<u32, RuntimePlanBuildError>",u32 capacity; owner-local identity/order; all embedded RuntimePlanTypeId values already allocated
+RuntimePlanBuilder,push_callable_executable,pub,RuntimeCallableExecutable,"Result<u32, RuntimePlanBuildError>",u32 capacity; owner-local identity/order; all embedded RuntimePlanTypeId values already allocated
+RuntimePlanBuilder,push_flow_executable,pub,RuntimeFlowExecutable,"Result<u32, RuntimePlanBuildError>",u32 capacity; owner-local identity/order; all embedded RuntimePlanTypeId values already allocated
+RuntimePlanBuilder,push_flow,pub,RuntimeFlow,"Result<u32, RuntimePlanBuildError>",u32 capacity; owner-local identity/order; all embedded RuntimePlanTypeId values already allocated
+RuntimePlanBuilder,push_pure_helper,pub,RuntimePureHelper,"Result<u32, RuntimePlanBuildError>",u32 capacity; owner-local identity/order; all embedded RuntimePlanTypeId values already allocated
+RuntimePlanBuilder,push_trait_method,pub,RuntimeTraitMethod,"Result<u32, RuntimePlanBuildError>",u32 capacity; owner-local identity/order; all embedded RuntimePlanTypeId values already allocated
+RuntimePlanBuilder,push_line_task_group,pub,LineTaskGroup,"Result<u32, RuntimePlanBuildError>",u32 capacity; owner-local identity/order; all embedded RuntimePlanTypeId values already allocated
+RuntimePlanBuilder,push_stream_plan,pub,StreamPlan,"Result<u32, RuntimePlanBuildError>",u32 capacity; owner-local identity/order; all embedded RuntimePlanTypeId values already allocated
+RuntimePlanBuilder,push_source_plan,pub,SourcePlan,"Result<u32, RuntimePlanBuildError>",u32 capacity; owner-local identity/order; all embedded RuntimePlanTypeId values already allocated
+RuntimePlanBuilder,finish,pub,self,"Result<RuntimePlan, RuntimePlanBuildError>",all cross-table references; exact typed expr/pattern node sets; canonical table order; atomic publication
+AwbcProgramBuilder,push_string,pub,String,"Result<AwbcStringId, AwbcProgramBuildError>",u32 capacity; owner-local shape; references target already allocated or are deferred and checked by finish
+AwbcProgramBuilder,push_runtime_type,pub,AwbcRuntimeTypeDeclaration,"Result<AwbcTypeId, AwbcProgramBuildError>",u32 capacity; owner-local shape; references target already allocated or are deferred and checked by finish
+AwbcProgramBuilder,push_constant,pub,AwbcTypedConstant,"Result<AwbcConstantId, AwbcProgramBuildError>",u32 capacity; owner-local shape; references target already allocated or are deferred and checked by finish
+AwbcProgramBuilder,push_effect_set,pub,AwbcEffectSet,"Result<AwbcEffectSetId, AwbcProgramBuildError>",u32 capacity; owner-local shape; references target already allocated or are deferred and checked by finish
+AwbcProgramBuilder,push_signature,pub,AwbcSignature,"Result<AwbcSignatureId, AwbcProgramBuildError>",u32 capacity; owner-local shape; references target already allocated or are deferred and checked by finish
+AwbcProgramBuilder,push_frame_layout,pub,AwbcFrameLayout,"Result<AwbcFrameLayoutId, AwbcProgramBuildError>",u32 capacity; owner-local shape; references target already allocated or are deferred and checked by finish
+AwbcProgramBuilder,push_function,pub,AwbcFunction,"Result<AwbcFunctionId, AwbcProgramBuildError>",u32 capacity; owner-local shape; references target already allocated or are deferred and checked by finish
+AwbcProgramBuilder,push_block,pub,AwbcBlock,"Result<AwbcBlockId, AwbcProgramBuildError>",u32 capacity; owner-local shape; references target already allocated or are deferred and checked by finish
+AwbcProgramBuilder,push_instruction,pub,AwbcInstruction,"Result<AwbcInstructionId, AwbcProgramBuildError>",u32 capacity; owner-local shape; references target already allocated or are deferred and checked by finish
+AwbcProgramBuilder,push_resume_point,pub,AwbcResumePoint,"Result<AwbcResumePointId, AwbcProgramBuildError>",u32 capacity; owner-local shape; references target already allocated or are deferred and checked by finish
+AwbcProgramBuilder,push_pattern,pub,AwbcTypedPattern,"Result<AwbcPatternId, AwbcProgramBuildError>",u32 capacity; owner-local shape; references target already allocated or are deferred and checked by finish
+AwbcProgramBuilder,push_match_arm,pub,AwbcMatchArm,"Result<AwbcMatchArmId, AwbcProgramBuildError>",u32 capacity; owner-local shape; references target already allocated or are deferred and checked by finish
+AwbcProgramBuilder,push_intrinsic,pub,AwbcIntrinsic,"Result<AwbcIntrinsicId, AwbcProgramBuildError>",u32 capacity; owner-local shape; references target already allocated or are deferred and checked by finish
+AwbcProgramBuilder,push_host_call,pub,AwbcHostCall,"Result<AwbcHostCallId, AwbcProgramBuildError>",u32 capacity; owner-local shape; references target already allocated or are deferred and checked by finish
+AwbcProgramBuilder,push_task_plan,pub,AwbcTaskPlan,"Result<AwbcTaskPlanId, AwbcProgramBuildError>",u32 capacity; owner-local shape; references target already allocated or are deferred and checked by finish
+AwbcProgramBuilder,push_audio_command,pub,AwbcAudioCommand,"Result<AwbcAudioCommandId, AwbcProgramBuildError>",u32 capacity; owner-local shape; references target already allocated or are deferred and checked by finish
+AwbcProgramBuilder,push_effect_plan,pub,AwbcEffectPlan,"Result<AwbcEffectPlanId, AwbcProgramBuildError>",u32 capacity; owner-local shape; references target already allocated or are deferred and checked by finish
+AwbcProgramBuilder,push_choice,pub,AwbcChoice,"Result<AwbcChoiceId, AwbcProgramBuildError>",u32 capacity; owner-local shape; references target already allocated or are deferred and checked by finish
+AwbcProgramBuilder,push_choice_option,pub,AwbcChoiceOption,"Result<AwbcChoiceOptionId, AwbcProgramBuildError>",u32 capacity; owner-local shape; references target already allocated or are deferred and checked by finish
+AwbcProgramBuilder,push_content_unit,pub,AwbcContentUnit,"Result<AwbcContentUnitId, AwbcProgramBuildError>",u32 capacity; owner-local shape; references target already allocated or are deferred and checked by finish
+AwbcProgramBuilder,push_line_task_group,pub,AwbcLineTaskGroup,"Result<AwbcLineTaskGroupId, AwbcProgramBuildError>",u32 capacity; owner-local shape; references target already allocated or are deferred and checked by finish
+AwbcProgramBuilder,push_line_task_node,pub,AwbcLineTaskNode,"Result<AwbcLineTaskNodeId, AwbcProgramBuildError>",u32 capacity; owner-local shape; references target already allocated or are deferred and checked by finish
+AwbcProgramBuilder,push_stream_plan,pub,AwbcStreamPlan,"Result<AwbcStreamPlanId, AwbcProgramBuildError>",u32 capacity; owner-local shape; references target already allocated or are deferred and checked by finish
+AwbcProgramBuilder,push_source_plan,pub,AwbcSourcePlan,"Result<AwbcSourcePlanId, AwbcProgramBuildError>",u32 capacity; owner-local shape; references target already allocated or are deferred and checked by finish
+AwbcProgramBuilder,push_pure_helper,pub,AwbcPureHelper,"Result<AwbcPureHelperId, AwbcProgramBuildError>",u32 capacity; owner-local shape; references target already allocated or are deferred and checked by finish
+AwbcProgramBuilder,push_trait_method,pub,AwbcTraitMethod,"Result<AwbcTraitMethodId, AwbcProgramBuildError>",u32 capacity; owner-local shape; references target already allocated or are deferred and checked by finish
+AwbcProgramBuilder,push_display_map,pub,AwbcDisplayMapEntry,"Result<AwbcDisplayMapId, AwbcProgramBuildError>",u32 capacity; owner-local shape; references target already allocated or are deferred and checked by finish
+AwbcProgramBuilder,push_source_map,pub,AwbcSourceMapEntry,"Result<AwbcSourceMapId, AwbcProgramBuildError>",u32 capacity; owner-local shape; references target already allocated or are deferred and checked by finish
+AwbcProgramBuilder,push_resource,pub,AwbcResourceRef,"Result<AwbcResourceId, AwbcProgramBuildError>",u32 capacity; owner-local shape; references target already allocated or are deferred and checked by finish
+AwbcProgramBuilder,push_callable_executable,pub,AwbcCallableExecutable,"Result<u32, AwbcProgramBuildError>",u32 capacity; owner-local shape; references target already allocated or are deferred and checked by finish
+AwbcProgramBuilder,push_flow_binding,pub,AwbcFlowBinding,"Result<u32, AwbcProgramBuildError>",u32 capacity; owner-local shape; references target already allocated or are deferred and checked by finish
+AwbcProgramBuilder,push_flow_executable,pub,AwbcFlowExecutable,"Result<u32, AwbcProgramBuildError>",u32 capacity; owner-local shape; references target already allocated or are deferred and checked by finish
+AwbcProgramBuilder,push_entry,pub,AwbcEntry,"Result<AwbcEntryId, AwbcProgramBuildError>",u32 capacity; owner-local shape; references target already allocated or are deferred and checked by finish
+AwbcProgramBuilder,push_typed_origin,pub,AwbcTypedOrigin,"Result<(), AwbcProgramBuildError>",canonical pair order; exact duplicate pair rejection; no root/type payload
+AwbcProgramBuilder,finish,pub,self,"Result<AwbcProgram, AwbcProgramBuildError>",all ranges/references; typed graph cycles; exact site enumeration; atomic publication
