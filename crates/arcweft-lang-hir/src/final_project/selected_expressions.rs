@@ -9,7 +9,7 @@ use crate::expr::{HirCallArgument, HirExprKind};
 use crate::identity::{ExprId, HirModuleId};
 use crate::module::HirModule;
 
-use super::HirExecutableProjectView;
+use super::{HirExecutableProjectView, HirRuntimeSemanticOwnerInventory};
 
 /// Failure to resolve the expression owners selected by a higher-layer
 /// postfix decision.
@@ -72,34 +72,16 @@ impl HirExecutableProjectView<'_> {
     ) -> Result<BTreeSet<ExprId>, HirSelectedExpressionInventoryError> {
         self.selected_expression_owners_in_domain(
             SelectedExpressionDomain::SemanticAnalysis,
+            None,
             selected_postfix,
             |_| HirRuntimeExpressionTypeDisposition::Retain,
-        )
-    }
-
-    /// Returns the exact expression owners whose accepted types enter runtime
-    /// lowering after bounded postfix ambiguity has been resolved.
-    ///
-    /// Effect metadata and non-value dialogue carrier nodes remain in the
-    /// semantic inventory but do not publish runtime type facts. Their runtime
-    /// operands are still traversed from the same HIR-owned graph authority.
-    /// The second callback supplies the accepted use of selected call carriers;
-    /// HIR validates that a call-only disposition cannot hide another family.
-    pub fn selected_runtime_expression_type_owners(
-        self,
-        selected_postfix: impl FnMut(ExprId) -> Option<ExprId>,
-        expression_disposition: impl FnMut(ExprId) -> HirRuntimeExpressionTypeDisposition,
-    ) -> Result<BTreeSet<ExprId>, HirSelectedExpressionInventoryError> {
-        self.selected_expression_owners_in_domain(
-            SelectedExpressionDomain::RuntimeType,
-            selected_postfix,
-            expression_disposition,
         )
     }
 
     fn selected_expression_owners_in_domain(
         self,
         domain: SelectedExpressionDomain,
+        outer_owners: Option<&BTreeSet<ExprId>>,
         mut selected_postfix: impl FnMut(ExprId) -> Option<ExprId>,
         mut expression_disposition: impl FnMut(ExprId) -> HirRuntimeExpressionTypeDisposition,
     ) -> Result<BTreeSet<ExprId>, HirSelectedExpressionInventoryError> {
@@ -110,11 +92,15 @@ impl HirExecutableProjectView<'_> {
         let all = modules
             .values()
             .flat_map(|module| module.expressions().map(|(owner, _)| owner))
+            .filter(|owner| outer_owners.is_none_or(|outer| outer.contains(owner)))
             .collect::<BTreeSet<_>>();
         let children = modules
             .values()
-            .flat_map(|module| module.expressions().map(|(_, expression)| expression))
+            .flat_map(|module| module.expressions())
+            .filter(|(owner, _)| outer_owners.is_none_or(|outer| outer.contains(owner)))
+            .map(|(_, expression)| expression)
             .flat_map(|expression| expression.kind().direct_expression_children())
+            .filter(|owner| outer_owners.is_none_or(|outer| outer.contains(owner)))
             .collect::<BTreeSet<_>>();
         let mut pending = all.difference(&children).copied().collect::<Vec<_>>();
         let excluded_roots = if domain == SelectedExpressionDomain::RuntimeType {
@@ -128,7 +114,10 @@ impl HirExecutableProjectView<'_> {
         let mut selected = BTreeSet::new();
 
         while let Some(owner) = pending.pop() {
-            if !visited.insert(owner) || excluded_roots.contains(&owner) {
+            if !visited.insert(owner)
+                || excluded_roots.contains(&owner)
+                || outer_owners.is_some_and(|outer| !outer.contains(&owner))
+            {
                 continue;
             }
             let kind = resolve_expression(&modules, owner)?;
@@ -190,6 +179,29 @@ impl HirExecutableProjectView<'_> {
             }
         }
         Ok(selected)
+    }
+}
+
+impl HirRuntimeSemanticOwnerInventory<'_> {
+    /// Returns the exact retained expression owners whose accepted types enter
+    /// runtime lowering after bounded postfix ambiguity has been resolved.
+    ///
+    /// Effect metadata and non-value dialogue carrier nodes remain in the
+    /// semantic inventory but do not publish runtime type facts. Their runtime
+    /// operands are still traversed from the same HIR-owned graph authority.
+    /// The second callback supplies the accepted use of selected call carriers;
+    /// HIR validates that a call-only disposition cannot hide another family.
+    pub fn selected_expression_type_owners(
+        &self,
+        selected_postfix: impl FnMut(ExprId) -> Option<ExprId>,
+        expression_disposition: impl FnMut(ExprId) -> HirRuntimeExpressionTypeDisposition,
+    ) -> Result<BTreeSet<ExprId>, HirSelectedExpressionInventoryError> {
+        self.project.selected_expression_owners_in_domain(
+            SelectedExpressionDomain::RuntimeType,
+            Some(self.expression_owners()),
+            selected_postfix,
+            expression_disposition,
+        )
     }
 }
 

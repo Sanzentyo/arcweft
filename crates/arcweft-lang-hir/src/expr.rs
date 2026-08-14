@@ -183,6 +183,73 @@ pub(crate) enum HirRecoveryOperandSlot {
 }
 
 impl HirExprKind {
+    /// Returns every type-arena root attached directly to this expression.
+    ///
+    /// Nested type structure remains owned by [`crate::type_ref::HirTypeKind`].
+    /// Keeping the expression-to-type edge here lets higher-level domains
+    /// follow accepted typed ownership without source reconstruction.
+    pub(crate) fn direct_type_roots(&self) -> Vec<TypeId> {
+        match self {
+            Self::Call(call) => call
+                .callee()
+                .associated_parts()
+                .and_then(|(receiver, _, _)| receiver.type_id())
+                .into_iter()
+                .chain(
+                    call.explicit_type_application()
+                        .arguments()
+                        .iter()
+                        .filter_map(HirCallTypeArgument::type_id),
+                )
+                .collect(),
+            Self::Closure(closure) => closure
+                .result_type()
+                .into_iter()
+                .chain(
+                    closure
+                        .parameters()
+                        .iter()
+                        .filter_map(HirClosureParameter::ty),
+                )
+                .collect(),
+            Self::Unit
+            | Self::Literal(_)
+            | Self::EntityReference(_)
+            | Self::LifetimePath(_)
+            | Self::Path(_)
+            | Self::ShortVariant(_)
+            | Self::Placeholder(_)
+            | Self::Tuple(_)
+            | Self::BracketSequence(_)
+            | Self::NumericBracketSequence(_)
+            | Self::ArrayRepeat(_)
+            | Self::Select(_)
+            | Self::Index(_)
+            | Self::Pipe(_)
+            | Self::Try(_)
+            | Self::Await(_)
+            | Self::Thread(_)
+            | Self::Choice(_)
+            | Self::Range(_)
+            | Self::Record(_)
+            | Self::RecordLiteral(_)
+            | Self::Binary(_)
+            | Self::Borrow(_)
+            | Self::Dereference(_)
+            | Self::Unary(_)
+            | Self::Block(_)
+            | Self::ComputationBlock(_)
+            | Self::NamedBlock(_)
+            | Self::If(_)
+            | Self::IfLet(_)
+            | Self::Match(_)
+            | Self::DialogueContentApplication(_)
+            | Self::PostfixBracket(_)
+            | Self::Error(_)
+            | Self::ForSynthetic(_) => Vec::new(),
+        }
+    }
+
     /// Returns every expression-arena edge owned directly by this payload.
     ///
     /// This inventory is source-independent: synthetic children and children

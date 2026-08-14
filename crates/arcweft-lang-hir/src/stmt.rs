@@ -529,6 +529,52 @@ impl HirAssertionMode {
 }
 
 impl HirStmtKind {
+    /// Returns every type-arena root attached directly to this statement.
+    pub(crate) fn direct_type_roots(&self) -> Vec<TypeId> {
+        match self {
+            Self::Let { annotation, .. } | Self::LetElse { annotation, .. } => {
+                annotation.iter().copied().collect()
+            }
+            Self::Assertion { .. }
+            | Self::Assign { .. }
+            | Self::LetChoice { .. }
+            | Self::LetScope { .. }
+            | Self::LetLoop { .. }
+            | Self::LetAwait { .. }
+            | Self::LetActionReceive { .. }
+            | Self::Return { .. }
+            | Self::Out { .. }
+            | Self::Goto { .. }
+            | Self::DeferBlock { .. }
+            | Self::Defer { .. }
+            | Self::Yield { .. }
+            | Self::Signal { .. }
+            | Self::LifetimeSet { .. }
+            | Self::Wait { .. }
+            | Self::On { .. }
+            | Self::UnsafeLifetime { .. }
+            | Self::Choice { .. }
+            | Self::If(_)
+            | Self::IfLet(_)
+            | Self::Match(_)
+            | Self::Loop(_)
+            | Self::While(_)
+            | Self::WhileLet(_)
+            | Self::For(_)
+            | Self::Close { .. }
+            | Self::Select(_)
+            | Self::SourceLocale(_)
+            | Self::Scope(_)
+            | Self::Include(_)
+            | Self::AwaitWith(_)
+            | Self::Break { .. }
+            | Self::Continue { .. }
+            | Self::Expression { .. }
+            | Self::ProofCall { .. }
+            | Self::Error => Vec::new(),
+        }
+    }
+
     /// Returns locals whose names become visible only after this complete
     /// statement has finished evaluating.
     ///

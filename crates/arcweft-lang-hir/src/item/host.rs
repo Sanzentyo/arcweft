@@ -354,6 +354,26 @@ impl HirStyleItem {
         &self.body
     }
 
+    /// Returns every typed expression root whose value belongs to this Style
+    /// product, in authored Style order.
+    ///
+    /// Descendant expressions remain owned by the expression graph. This
+    /// method is the sole Style-specific root inventory shared by source
+    /// freeze, presentation lowering, and runtime semantic-domain selection.
+    pub(crate) fn value_expression_roots(&self) -> Vec<ExprId> {
+        let mut roots = self.tokens.iter().map(HirStyleToken::value).collect();
+        append_style_body_value_roots(&self.body, &mut roots);
+        roots
+    }
+
+    /// Returns every authored type root attached directly to a Style value.
+    pub(crate) fn value_type_roots(&self) -> Vec<TypeId> {
+        self.tokens
+            .iter()
+            .filter_map(HirStyleToken::value_type)
+            .collect()
+    }
+
     pub(crate) fn has_recovery(&self) -> bool {
         self.id.is_recovered()
             || self.tokens.iter().any(HirStyleToken::has_recovery)
@@ -371,6 +391,27 @@ impl HirStyleItem {
             item.validate_module(expected)?;
         }
         Ok(())
+    }
+}
+
+fn append_style_body_value_roots(body: &[HirStyleBodyItem], roots: &mut Vec<ExprId>) {
+    for item in body {
+        match item {
+            HirStyleBodyItem::Rule(rule) => {
+                roots.extend(rule.declarations().iter().map(HirStyleDeclaration::value));
+            }
+            HirStyleBodyItem::Environment(environment) => {
+                roots.extend(
+                    environment
+                        .clauses()
+                        .iter()
+                        .copied()
+                        .map(HirStyleEnvironmentClause::value),
+                );
+                append_style_body_value_roots(environment.body(), roots);
+            }
+            HirStyleBodyItem::Recovered(_) => {}
+        }
     }
 }
 

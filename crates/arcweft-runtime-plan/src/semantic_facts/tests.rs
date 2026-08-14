@@ -8,7 +8,7 @@ use arcweft_core::pattern::{
 use arcweft_core::plan::{
     FlowRuntimeId, RuntimeLineId, RuntimeOperationalType, RuntimePlanTypeKind,
 };
-use arcweft_core::value::RuntimeValue;
+use arcweft_core::value::{RuntimeIntrinsic, RuntimeValue};
 use arcweft_lang_hir::database::HirDatabase;
 use arcweft_lang_hir::dialogue_application::HirPostfixBracketCandidates;
 use arcweft_lang_hir::expr::HirExprKind;
@@ -182,21 +182,19 @@ fn unsupported_range_type() -> super::RuntimeNormalizedType {
 fn complete_type_input(project: &HirProject) -> RuntimePlanSemanticFactInput {
     let mut input = RuntimePlanSemanticFactInput::new();
     let executable = project.executable_view().expect("executable type fixture");
-    for (_, module) in executable.modules() {
-        for (owner, _) in module.locals() {
-            input
-                .push_local_declaration(owner, unit_type())
-                .expect("fixture local identity");
-        }
-        for (owner, _) in module.patterns() {
-            input.push_pattern_type(owner, unit_type());
-        }
+    let runtime_owners = executable
+        .runtime_semantic_owner_inventory()
+        .expect("runtime semantic owner inventory");
+    for owner in runtime_owners.locals() {
+        input
+            .push_local_declaration(owner, unit_type())
+            .expect("fixture local identity");
     }
-    for owner in executable
-        .selected_runtime_expression_type_owners(
-            |_| None,
-            |_| HirRuntimeExpressionTypeDisposition::Retain,
-        )
+    for owner in runtime_owners.patterns() {
+        input.push_pattern_type(owner, unit_type());
+    }
+    for owner in runtime_owners
+        .selected_expression_type_owners(|_| None, |_| HirRuntimeExpressionTypeDisposition::Retain)
         .expect("postfix-free runtime expression-type fixture")
     {
         input.push_expression_type(owner, unit_type());
@@ -208,8 +206,9 @@ fn local_owners(project: &HirProject) -> Vec<arcweft_lang_hir::identity::LocalId
     project
         .executable_view()
         .expect("executable local fixture")
-        .modules()
-        .flat_map(|(_, module)| module.locals().map(|(owner, _)| owner))
+        .runtime_semantic_owner_inventory()
+        .expect("runtime semantic owner inventory")
+        .locals()
         .collect()
 }
 
@@ -239,7 +238,7 @@ fn local_declarations_use_one_complete_contiguous_canonical_projection() {
         assert_eq!(
             facts
                 .local_declaration(owner)
-                .expect("every executable HIR local has one plan-local ID")
+                .expect("every runtime-domain HIR local has one plan-local ID")
                 .get()
                 .get(),
             u32::try_from(position).expect("bounded fixture ordinal") + 1
@@ -250,6 +249,185 @@ fn local_declarations_use_one_complete_contiguous_canonical_projection() {
             "the local identity and accepted type are published by one row"
         );
     }
+}
+
+#[test]
+#[allow(
+    clippy::too_many_lines,
+    reason = "one mixed product fixture proves the runtime-domain gate and contiguous local projection across every representative HIR owner family"
+)]
+fn presentation_owned_facts_are_inactive_and_filtered_local_ids_remain_contiguous() {
+    let project = project_fixture(
+        "presentation-owner-domain",
+        concat!(
+            "fn before(first: bool) { let second: bool = first; second }\n",
+            "#[tool.flag(1)]\n",
+            "view Card(dialogue: DialogueView, count: i64 = 1i64) { Text(\"x\") }\n",
+            "#[tool.flag(2)]\n",
+            "style Theme {\n",
+            "    token color.text: Color = white\n",
+            "    Button { color = rgba(10, 20, 30, 255) }\n",
+            "    when environment(color-scheme == dark) { Button { color = red } }\n",
+            "}\n",
+            "fn after(third: bool) { third }\n",
+        ),
+    );
+    let executable = project.executable_view().expect("executable fixture");
+    let runtime_owners = executable
+        .runtime_semantic_owner_inventory()
+        .expect("runtime semantic owner inventory");
+    let module = executable.modules().next().expect("one fixture module").1;
+    let all_locals = module.locals().map(|(owner, _)| owner).collect::<Vec<_>>();
+    let retained_locals = runtime_owners.locals().collect::<Vec<_>>();
+    let presentation_local = all_locals
+        .iter()
+        .copied()
+        .find(|owner| !runtime_owners.contains_local(*owner))
+        .expect("View parameter local");
+    let removed_position = all_locals
+        .iter()
+        .position(|owner| *owner == presentation_local)
+        .expect("presentation local position");
+    assert!(removed_position > 0 && removed_position + 1 < all_locals.len());
+
+    let facts = RuntimePlanSemanticFacts::try_new(executable, complete_type_input(&project))
+        .expect("filtered runtime-domain fact set");
+    assert_eq!(facts.local_declaration(presentation_local), None);
+    assert_eq!(
+        usize::try_from(facts.local_declaration_table().len()).ok(),
+        Some(retained_locals.len())
+    );
+    for (position, owner) in retained_locals.iter().copied().enumerate() {
+        assert_eq!(
+            facts
+                .local_declaration(owner)
+                .expect("retained local identity")
+                .get()
+                .get(),
+            u32::try_from(position).expect("bounded fixture ordinal") + 1
+        );
+    }
+
+    let presentation_pattern = module
+        .patterns()
+        .map(|(owner, _)| owner)
+        .find(|owner| !runtime_owners.contains_pattern(*owner))
+        .expect("View parameter pattern");
+    let presentation_type = module
+        .types()
+        .map(|(owner, _)| owner)
+        .find(|owner| !runtime_owners.contains_type(*owner))
+        .expect("View or Style type");
+    let presentation_literal = module
+        .expressions()
+        .find_map(|(owner, expression)| {
+            (!runtime_owners.contains_expression(owner)
+                && matches!(expression.kind(), HirExprKind::Literal(_)))
+            .then_some(owner)
+        })
+        .expect("presentation literal");
+    let presentation_call = module
+        .expressions()
+        .find_map(|(owner, expression)| {
+            (!runtime_owners.contains_expression(owner)
+                && matches!(expression.kind(), HirExprKind::Call(_)))
+            .then_some(owner)
+        })
+        .expect("presentation call");
+    let retained_path = module
+        .expressions()
+        .find_map(|(owner, expression)| {
+            (runtime_owners.contains_expression(owner)
+                && matches!(expression.kind(), HirExprKind::Path(_)))
+            .then_some(owner)
+        })
+        .expect("retained local path");
+
+    let mut input = complete_type_input(&project);
+    input
+        .push_local_declaration(presentation_local, unit_type())
+        .expect("bounded inactive local identity");
+    assert_eq!(
+        RuntimePlanSemanticFacts::try_new(executable, input)
+            .expect_err("a presentation local cannot extend the runtime domain"),
+        RuntimeSemanticFactsError::ExtraLocalDeclaration {
+            local: presentation_local,
+        }
+    );
+
+    let mut input = complete_type_input(&project);
+    input.push_expression_type(presentation_literal, unit_type());
+    assert_eq!(
+        RuntimePlanSemanticFacts::try_new(executable, input)
+            .expect_err("a presentation expression cannot publish a runtime type"),
+        RuntimeSemanticFactsError::InactiveExpressionFact {
+            expression: presentation_literal,
+            family: RuntimeSemanticFactFamily::ExpressionType,
+        }
+    );
+
+    let mut input = complete_type_input(&project);
+    input.push_pattern_literal(presentation_pattern, RuntimeValue::Unit);
+    assert_eq!(
+        RuntimePlanSemanticFacts::try_new(executable, input)
+            .expect_err("a presentation pattern cannot publish an operational fact"),
+        RuntimeSemanticFactsError::InactivePatternFact {
+            pattern: presentation_pattern,
+            family: RuntimeSemanticFactFamily::PatternLiteral,
+        }
+    );
+
+    let mut input = complete_type_input(&project);
+    input.push_expression_literal(presentation_literal, RuntimeValue::Unit);
+    assert_eq!(
+        RuntimePlanSemanticFacts::try_new(executable, input)
+            .expect_err("a presentation expression cannot publish a literal fact"),
+        RuntimeSemanticFactsError::InactiveExpressionFact {
+            expression: presentation_literal,
+            family: RuntimeSemanticFactFamily::ExpressionLiteral,
+        }
+    );
+
+    let mut input = complete_type_input(&project);
+    input.push_type(presentation_type, unit_type());
+    assert_eq!(
+        RuntimePlanSemanticFacts::try_new(executable, input)
+            .expect_err("a presentation type cannot publish a runtime type fact"),
+        RuntimeSemanticFactsError::InactiveTypeFact {
+            ty: presentation_type,
+        }
+    );
+
+    let mut input = complete_type_input(&project);
+    input.push_call(
+        presentation_call,
+        RuntimeResolvedCall::new(
+            RuntimeResolvedCallTarget::Intrinsic(RuntimeIntrinsic::Add),
+            [],
+            RuntimeCallResultShape::Value,
+        ),
+    );
+    assert_eq!(
+        RuntimePlanSemanticFacts::try_new(executable, input)
+            .expect_err("a presentation call cannot publish a runtime call fact"),
+        RuntimeSemanticFactsError::InactiveExpressionFact {
+            expression: presentation_call,
+            family: RuntimeSemanticFactFamily::Call,
+        }
+    );
+
+    let mut input = complete_type_input(&project);
+    input.push_value(
+        retained_path,
+        RuntimeResolvedValue::Local(presentation_local),
+    );
+    assert_eq!(
+        RuntimePlanSemanticFacts::try_new(executable, input)
+            .expect_err("a retained value cannot reference a presentation local"),
+        RuntimeSemanticFactsError::InactiveLocalReference {
+            local: presentation_local,
+        }
+    );
 }
 
 #[test]
@@ -449,19 +627,17 @@ fn accepted_expression_and_pattern_types_are_complete_and_exact() {
     .expect("complete type facts");
 
     let executable = project.executable_view().expect("executable fixture");
-    for owner in executable
-        .selected_runtime_expression_type_owners(
-            |_| None,
-            |_| HirRuntimeExpressionTypeDisposition::Retain,
-        )
+    let runtime_owners = executable
+        .runtime_semantic_owner_inventory()
+        .expect("runtime semantic owner inventory");
+    for owner in runtime_owners
+        .selected_expression_type_owners(|_| None, |_| HirRuntimeExpressionTypeDisposition::Retain)
         .expect("postfix-free runtime expression-type fixture")
     {
         assert_eq!(facts.expression_type(owner), Some(&unit_type()));
     }
-    for (_, module) in executable.modules() {
-        for (owner, _) in module.patterns() {
-            assert_eq!(facts.pattern_type(owner), Some(&unit_type()));
-        }
+    for owner in runtime_owners.patterns() {
+        assert_eq!(facts.pattern_type(owner), Some(&unit_type()));
     }
 }
 
@@ -493,7 +669,10 @@ fn runtime_type_completeness_excludes_effect_metadata_owners() {
     assert_eq!(
         RuntimePlanSemanticFacts::try_new(executable, input)
             .expect_err("effect metadata cannot publish a runtime expression type"),
-        RuntimeSemanticFactsError::InactiveExpressionType { expression: effect },
+        RuntimeSemanticFactsError::InactiveExpressionFact {
+            expression: effect,
+            family: RuntimeSemanticFactFamily::ExpressionType,
+        },
     );
 }
 
@@ -525,8 +704,11 @@ fn runtime_type_completeness_uses_the_selected_call_carrier_disposition() {
         [RuntimeResolvedCallArgument::Authored { ordinal: 0 }],
         RuntimeCallResultShape::Value,
     );
-    let accepted = executable
-        .selected_runtime_expression_type_owners(
+    let runtime_owners = executable
+        .runtime_semantic_owner_inventory()
+        .expect("runtime semantic owner inventory");
+    let accepted = runtime_owners
+        .selected_expression_type_owners(
             |_| None,
             |owner| {
                 if owner == call {
@@ -538,15 +720,13 @@ fn runtime_type_completeness_uses_the_selected_call_carrier_disposition() {
         )
         .expect("postfix-free call-carrier inventory");
     let mut input = RuntimePlanSemanticFactInput::new();
-    for (_, module) in executable.modules() {
-        for (owner, _) in module.locals() {
-            input
-                .push_local_declaration(owner, unit_type())
-                .expect("fixture local identity");
-        }
-        for (owner, _) in module.patterns() {
-            input.push_pattern_type(owner, unit_type());
-        }
+    for owner in runtime_owners.locals() {
+        input
+            .push_local_declaration(owner, unit_type())
+            .expect("fixture local identity");
+    }
+    for owner in runtime_owners.patterns() {
+        input.push_pattern_type(owner, unit_type());
     }
     for owner in accepted {
         input.push_expression_type(owner, unit_type());
@@ -583,28 +763,21 @@ fn missing_pattern_type_is_rejected_before_publication() {
     );
     let mut input = RuntimePlanSemanticFactInput::new();
     let executable = project.executable_view().expect("executable fixture");
-    for (_, module) in executable.modules() {
-        for (owner, _) in module.locals() {
-            input
-                .push_local_declaration(owner, unit_type())
-                .expect("fixture local identity");
-        }
+    let runtime_owners = executable
+        .runtime_semantic_owner_inventory()
+        .expect("runtime semantic owner inventory");
+    for owner in runtime_owners.locals() {
+        input
+            .push_local_declaration(owner, unit_type())
+            .expect("fixture local identity");
     }
-    for owner in executable
-        .selected_runtime_expression_type_owners(
-            |_| None,
-            |_| HirRuntimeExpressionTypeDisposition::Retain,
-        )
+    for owner in runtime_owners
+        .selected_expression_type_owners(|_| None, |_| HirRuntimeExpressionTypeDisposition::Retain)
         .expect("postfix-free runtime expression-type fixture")
     {
         input.push_expression_type(owner, unit_type());
     }
-    let pattern = executable
-        .modules()
-        .flat_map(|(_, module)| module.patterns())
-        .map(|(owner, _)| owner)
-        .next()
-        .expect("pattern fixture");
+    let pattern = runtime_owners.patterns().next().expect("pattern fixture");
 
     assert_eq!(
         RuntimePlanSemanticFacts::try_new(executable, input)
@@ -922,21 +1095,19 @@ fn nested_operational_expression_type_is_retained_without_reconstruction() {
     );
     let mut input = RuntimePlanSemanticFactInput::new();
     let executable = project.executable_view().expect("executable fixture");
-    for (_, module) in executable.modules() {
-        for (local, _) in module.locals() {
-            input
-                .push_local_declaration(local, nested.clone())
-                .expect("fixture local identity");
-        }
-        for (pattern, _) in module.patterns() {
-            input.push_pattern_type(pattern, nested.clone());
-        }
+    let runtime_owners = executable
+        .runtime_semantic_owner_inventory()
+        .expect("runtime semantic owner inventory");
+    for local in runtime_owners.locals() {
+        input
+            .push_local_declaration(local, nested.clone())
+            .expect("fixture local identity");
     }
-    for expression in executable
-        .selected_runtime_expression_type_owners(
-            |_| None,
-            |_| HirRuntimeExpressionTypeDisposition::Retain,
-        )
+    for pattern in runtime_owners.patterns() {
+        input.push_pattern_type(pattern, nested.clone());
+    }
+    for expression in runtime_owners
+        .selected_expression_type_owners(|_| None, |_| HirRuntimeExpressionTypeDisposition::Retain)
         .expect("postfix-free runtime expression-type fixture")
     {
         input.push_expression_type(expression, nested.clone());
@@ -1009,8 +1180,11 @@ fn postfix_type_completeness_keeps_only_the_selected_candidate_expression_tree()
     assert!(semantic.contains(&target));
     assert!(semantic.contains(&dialogue));
     assert!(!semantic.contains(&index));
-    let accepted = executable
-        .selected_runtime_expression_type_owners(
+    let runtime_owners = executable
+        .runtime_semantic_owner_inventory()
+        .expect("runtime semantic owner inventory");
+    let accepted = runtime_owners
+        .selected_expression_type_owners(
             |owner| postfix_candidates.get(&owner).copied(),
             |_| HirRuntimeExpressionTypeDisposition::Retain,
         )
@@ -1022,20 +1196,16 @@ fn postfix_type_completeness_keeps_only_the_selected_candidate_expression_tree()
 
     let complete_selected_input = || {
         let mut input = RuntimePlanSemanticFactInput::new();
-        for (_, module) in executable.modules() {
-            for (owner, _) in module.locals() {
-                input
-                    .push_local_declaration(owner, unit_type())
-                    .expect("fixture local identity");
-            }
+        for owner in runtime_owners.locals() {
+            input
+                .push_local_declaration(owner, unit_type())
+                .expect("fixture local identity");
         }
         for owner in &accepted {
             input.push_expression_type(*owner, unit_type());
         }
-        for module in modules.values() {
-            for (owner, _) in module.patterns() {
-                input.push_pattern_type(owner, unit_type());
-            }
+        for owner in runtime_owners.patterns() {
+            input.push_pattern_type(owner, unit_type());
         }
         input.push_postfix_candidate(postfix_owner, dialogue);
         input
@@ -1052,8 +1222,9 @@ fn postfix_type_completeness_keeps_only_the_selected_candidate_expression_tree()
     assert_eq!(
         RuntimePlanSemanticFacts::try_new(executable, input)
             .expect_err("a selected dialogue carrier cannot publish an expression type"),
-        RuntimeSemanticFactsError::InactiveExpressionType {
-            expression: dialogue
+        RuntimeSemanticFactsError::InactiveExpressionFact {
+            expression: dialogue,
+            family: RuntimeSemanticFactFamily::ExpressionType,
         },
     );
 
@@ -1062,7 +1233,10 @@ fn postfix_type_completeness_keeps_only_the_selected_candidate_expression_tree()
     assert_eq!(
         RuntimePlanSemanticFacts::try_new(executable, input)
             .expect_err("an unselected candidate cannot publish an expression type"),
-        RuntimeSemanticFactsError::InactiveExpressionType { expression: index },
+        RuntimeSemanticFactsError::InactiveExpressionFact {
+            expression: index,
+            family: RuntimeSemanticFactFamily::ExpressionType,
+        },
     );
 }
 

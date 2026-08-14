@@ -1991,30 +1991,31 @@ mod tests {
         project: arcweft_lang_hir::project::HirExecutableProjectView<'_>,
     ) -> RuntimePlanSemanticFactInput {
         let mut input = RuntimePlanSemanticFactInput::new();
-        for (_, module) in project.modules() {
-            for (owner, _) in module.locals() {
-                input
-                    .push_local_declaration(
-                        owner,
-                        RuntimeNormalizedType::new(
-                            RuntimeSemanticTypeId::from_bytes([0x11; 32]),
-                            RuntimeTypeShape::Unit,
-                        ),
-                    )
-                    .expect("fixture local identity");
-            }
-            for (owner, _) in module.patterns() {
-                input.push_pattern_type(
+        let runtime_owners = project
+            .runtime_semantic_owner_inventory()
+            .expect("runtime semantic owner inventory");
+        for owner in runtime_owners.locals() {
+            input
+                .push_local_declaration(
                     owner,
                     RuntimeNormalizedType::new(
                         RuntimeSemanticTypeId::from_bytes([0x11; 32]),
                         RuntimeTypeShape::Unit,
                     ),
-                );
-            }
+                )
+                .expect("fixture local identity");
         }
-        for owner in project
-            .selected_runtime_expression_type_owners(
+        for owner in runtime_owners.patterns() {
+            input.push_pattern_type(
+                owner,
+                RuntimeNormalizedType::new(
+                    RuntimeSemanticTypeId::from_bytes([0x11; 32]),
+                    RuntimeTypeShape::Unit,
+                ),
+            );
+        }
+        for owner in runtime_owners
+            .selected_expression_type_owners(
                 |_| None,
                 |_| HirRuntimeExpressionTypeDisposition::Retain,
             )

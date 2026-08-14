@@ -4,7 +4,7 @@ use std::collections::BTreeSet;
 
 use crate::arena::ArenaSnapshot;
 use crate::identity::{ExprId, ItemId};
-use crate::item::{HirItem, HirItemKind, HirStyleBodyItem};
+use crate::item::{HirItem, HirItemKind};
 use crate::slot::SlotSnapshot;
 
 /// Collects the exact expression owners retained by final Style records.
@@ -22,34 +22,13 @@ pub(in crate::source_index) fn retained_expression_owners(
         let HirItemKind::Style(style) = item.kind() else {
             continue;
         };
-        for token in style.tokens() {
-            if !retained.insert(token.value()) {
-                return None;
-            }
-        }
-        if !collect_body_expression_owners(style.body(), &mut retained) {
+        if !style
+            .value_expression_roots()
+            .into_iter()
+            .all(|owner| retained.insert(owner))
+        {
             return None;
         }
     }
     Some(retained)
-}
-
-fn collect_body_expression_owners(
-    body: &[HirStyleBodyItem],
-    retained: &mut BTreeSet<ExprId>,
-) -> bool {
-    body.iter().all(|item| match item {
-        HirStyleBodyItem::Recovered(_) => true,
-        HirStyleBodyItem::Rule(rule) => rule
-            .declarations()
-            .iter()
-            .all(|declaration| retained.insert(declaration.value())),
-        HirStyleBodyItem::Environment(environment) => {
-            environment
-                .clauses()
-                .iter()
-                .all(|clause| retained.insert(clause.value()))
-                && collect_body_expression_owners(environment.body(), retained)
-        }
-    })
 }

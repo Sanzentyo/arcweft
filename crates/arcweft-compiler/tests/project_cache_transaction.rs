@@ -16,8 +16,8 @@ use arcweft_compiler::project::{
     ProjectCompileCache, ProjectCompileCacheStatus, ProjectCompileError,
     ProjectCompileUnitFingerprint, compile_project_with_cache,
 };
-use arcweft_lang_hir::item::HirItemKind;
 use arcweft_lang_hir::symbol::{CallablePackageId, ProjectSymbolWorldId};
+use arcweft_lang_hir::{item::HirItemKind, project::HirRuntimeExpressionTypeDisposition};
 use arcweft_lang_sema::{
     env::TypeCheckEnv,
     registration::{CharacterRegistrar, CharacterRegistrationRequest, ProjectRegistrationFacts},
@@ -615,9 +615,24 @@ fn runtime_plan_consumes_project_view_without_flattening() {
 }
 
 #[test]
-fn runtime_semantic_facts_retain_exact_local_expression_and_pattern_types() {
+#[expect(
+    clippy::too_many_lines,
+    reason = "one compiler-boundary fixture compares every normalized type owner family across the runtime and presentation domains"
+)]
+fn runtime_semantic_facts_retain_exact_runtime_domain_types_and_omit_presentation_owners() {
     let (project, facts) = fixture(
-        "fn main(flag: bool) -> i64 {\n    match flag { true => 1i64, false => 2i64 }\n}\n",
+        concat!(
+            "fn main(flag: bool) -> i64 {\n",
+            "    match flag { true => 1i64, false => 2i64 }\n",
+            "}\n",
+            "pub view Mobile(dialogue: DialogueView) {\n",
+            "    RichText(dialogue.content)\n",
+            "}\n",
+            "pub style Mobile {\n",
+            "    Button { color = rgba(10, 20, 30, 255) }\n",
+            "}\n",
+            "fn tail(value: i64) -> i64 { value }\n",
+        ),
         "runtime-exact-types",
     );
     let mut cache = RecordingCache::default();
@@ -641,16 +656,34 @@ fn runtime_semantic_facts_retain_exact_local_expression_and_pattern_types() {
         None,
     )
     .expect("accepted types project through the compiler boundary");
+    let runtime_owners = executable
+        .runtime_semantic_owner_inventory()
+        .expect("runtime semantic owner inventory");
+    let expression_type_owners = runtime_owners
+        .selected_expression_type_owners(
+            |owner| runtime_facts.postfix_candidate(owner),
+            |owner| {
+                runtime_facts.call(owner).map_or(
+                    HirRuntimeExpressionTypeDisposition::Retain,
+                    arcweft_runtime_plan::semantic_facts::RuntimeResolvedCall::expression_type_disposition,
+                )
+            },
+        )
+        .expect("accepted runtime expression type owners");
 
     let mut saw_bool_local = false;
+    let mut saw_presentation_local = false;
     for (owner, checked) in compiled.final_analysis().locals() {
+        if !runtime_owners.contains_local(owner) {
+            saw_presentation_local = true;
+            assert!(runtime_facts.local_type(owner).is_none());
+            assert!(runtime_facts.local_declaration(owner).is_none());
+            continue;
+        }
         let projected = runtime_facts
             .local_type(owner)
-            .expect("every accepted local retains one runtime type fact");
-        assert!(
-            runtime_facts.local_declaration(owner).is_some(),
-            "the same accepted local row retains its plan-local identity"
-        );
+            .expect("every runtime-domain local retains one runtime type fact");
+        assert!(runtime_facts.local_declaration(owner).is_some());
         assert_eq!(
             projected.identity(),
             RuntimeSemanticTypeId::from_bytes(*checked.ty().semantic_identity_digest().as_bytes())
@@ -665,10 +698,16 @@ fn runtime_semantic_facts_retain_exact_local_expression_and_pattern_types() {
 
     let mut saw_bool_expression = false;
     let mut saw_i64_expression = false;
+    let mut saw_presentation_expression = false;
     for (owner, checked) in compiled.final_analysis().expressions() {
+        if !expression_type_owners.contains(&owner) {
+            saw_presentation_expression |= !runtime_owners.contains_expression(owner);
+            assert!(runtime_facts.expression_type(owner).is_none());
+            continue;
+        }
         let projected = runtime_facts
             .expression_type(owner)
-            .expect("every accepted expression retains one runtime type fact");
+            .expect("every selected runtime expression retains one runtime type fact");
         assert_eq!(
             projected.identity(),
             RuntimeSemanticTypeId::from_bytes(*checked.ty().semantic_identity_digest().as_bytes())
@@ -681,10 +720,16 @@ fn runtime_semantic_facts_retain_exact_local_expression_and_pattern_types() {
     }
 
     let mut saw_bool_pattern = false;
+    let mut saw_presentation_pattern = false;
     for (owner, checked) in compiled.final_analysis().patterns() {
+        if !runtime_owners.contains_pattern(owner) {
+            saw_presentation_pattern = true;
+            assert!(runtime_facts.pattern_type(owner).is_none());
+            continue;
+        }
         let projected = runtime_facts
             .pattern_type(owner)
-            .expect("every accepted pattern retains one runtime type fact");
+            .expect("every runtime-domain pattern retains one runtime type fact");
         assert_eq!(
             projected.identity(),
             RuntimeSemanticTypeId::from_bytes(*checked.ty().semantic_identity_digest().as_bytes())
@@ -697,10 +742,39 @@ fn runtime_semantic_facts_retain_exact_local_expression_and_pattern_types() {
         }
     }
 
+    let mut saw_presentation_type = false;
+    for (owner, checked) in compiled.final_analysis().types() {
+        if !runtime_owners.contains_type(owner) {
+            saw_presentation_type = true;
+            assert!(runtime_facts.ty(owner).is_none());
+            continue;
+        }
+        let projected = runtime_facts
+            .ty(owner)
+            .expect("every runtime-domain authored type retains one runtime type fact");
+        assert_eq!(
+            projected.identity(),
+            RuntimeSemanticTypeId::from_bytes(*checked.semantic_identity_digest().as_bytes())
+        );
+    }
+
     assert!(saw_bool_local, "Bool local projection is present");
     assert!(saw_bool_expression, "Bool expression projection is present");
     assert!(saw_i64_expression, "i64 expression projection is present");
     assert!(saw_bool_pattern, "Bool pattern projection is present");
+    assert!(saw_presentation_local, "View local projection is absent");
+    assert!(
+        saw_presentation_expression,
+        "View/Style expression projection is absent"
+    );
+    assert!(
+        saw_presentation_pattern,
+        "View pattern projection is absent"
+    );
+    assert!(
+        saw_presentation_type,
+        "View/Style type projection is absent"
+    );
 }
 
 #[test]

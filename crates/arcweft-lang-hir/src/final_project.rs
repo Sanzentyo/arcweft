@@ -18,12 +18,17 @@ use crate::symbol::CallablePackageId;
 
 #[path = "final_project/dialogue_lines.rs"]
 mod dialogue_lines;
+#[path = "final_project/runtime_semantic_owners.rs"]
+mod runtime_semantic_owners;
 #[path = "final_project/selected_expressions.rs"]
 mod selected_expressions;
 
 pub use self::dialogue_lines::{
     AcceptedDialogueLine, AcceptedDialogueLineInventory, AcceptedDialogueLineSource,
     DialogueLineIndex, DialogueLineProjectFatal, DialogueLineProjectRejection,
+};
+pub use self::runtime_semantic_owners::{
+    HirRuntimeSemanticOwnerInventory, HirRuntimeSemanticOwnerInventoryError,
 };
 pub use self::selected_expressions::{
     HirRuntimeCallCalleeDisposition, HirRuntimeExpressionTypeDisposition,

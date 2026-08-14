@@ -52,6 +52,7 @@ use arcweft_lang_hir::{
     },
     project::{
         HirExecutableProjectView, HirProjectItemRef, HirRuntimeExpressionTypeDisposition,
+        HirRuntimeSemanticOwnerInventory, HirRuntimeSemanticOwnerInventoryError,
         HirSelectedExpressionInventoryError,
     },
     scope::HirScopeOwner,
@@ -120,7 +121,9 @@ pub enum RuntimeSemanticProjectionError {
     LocalDeclarations(#[from] RuntimeLocalDeclarationTableError),
     #[error(transparent)]
     ExpressionTypeInventory(#[from] HirSelectedExpressionInventoryError),
-    #[error("final semantic analysis omits executable HIR local {local:?}")]
+    #[error(transparent)]
+    RuntimeSemanticOwnerInventory(#[from] HirRuntimeSemanticOwnerInventoryError),
+    #[error("final semantic analysis omits runtime-domain HIR local {local:?}")]
     MissingLocalSemanticFact { local: LocalId },
     #[error("final semantic owner {owner:?} belongs to no executable HIR module")]
     MissingModule { owner: ExprId },
@@ -207,13 +210,18 @@ pub fn project_runtime_semantic_facts(
     character_name_policy: Option<&CharacterNameLocalePolicySpec>,
 ) -> Result<RuntimePlanSemanticFacts, RuntimeSemanticProjectionError> {
     analysis.validate_generation(project, symbols)?;
-    let dialogue_application_calls = dialogue_application_owned_calls(project, analysis)?;
+    let runtime_owners = project.runtime_semantic_owner_inventory()?;
+    let dialogue_application_calls =
+        dialogue_application_owned_calls(project, analysis, &runtime_owners)?;
     let runtime_calls = analysis
         .calls()
-        .filter(|(owner, _)| !dialogue_application_calls.contains(owner))
+        .filter(|(owner, _)| {
+            runtime_owners.contains_expression(*owner)
+                && !dialogue_application_calls.contains(owner)
+        })
         .map(|(owner, call)| runtime_call(owner, call, symbols, analysis).map(|call| (owner, call)))
         .collect::<Result<BTreeMap<_, _>, _>>()?;
-    let runtime_expression_type_owners = project.selected_runtime_expression_type_owners(
+    let runtime_expression_type_owners = runtime_owners.selected_expression_type_owners(
         |owner| {
             let expression = analysis.expression(owner)?;
             let CheckedExpressionResolution::PostfixBracket(resolution) = expression.resolution()
@@ -232,16 +240,14 @@ pub fn project_runtime_semantic_facts(
     )?;
     let mut input = RuntimePlanSemanticFactInput::new();
 
-    for (_, module) in project.modules() {
-        for (owner, _) in module.locals() {
-            let local = analysis
-                .local(owner)
-                .ok_or(RuntimeSemanticProjectionError::MissingLocalSemanticFact { local: owner })?;
-            input.push_local_declaration(owner, runtime_type(local.ty(), symbols, analysis)?)?;
-        }
+    for owner in runtime_owners.locals() {
+        let local = analysis
+            .local(owner)
+            .ok_or(RuntimeSemanticProjectionError::MissingLocalSemanticFact { local: owner })?;
+        input.push_local_declaration(owner, runtime_type(local.ty(), symbols, analysis)?)?;
     }
 
-    let iteration_methods = runtime_iteration_methods(analysis)?;
+    let iteration_methods = runtime_iteration_methods(analysis, &runtime_owners)?;
     let mut method_ids = BTreeMap::new();
     for (ordinal, (conformance, self_type)) in iteration_methods.iter().enumerate() {
         let id = RuntimeTraitMethodId(ordinal);
@@ -270,10 +276,15 @@ pub fn project_runtime_semantic_facts(
     }
 
     for (owner, ty) in analysis.types() {
-        input.push_type(owner, runtime_type(ty, symbols, analysis)?);
+        if runtime_owners.contains_type(owner) {
+            input.push_type(owner, runtime_type(ty, symbols, analysis)?);
+        }
     }
 
     for (owner, expression) in analysis.expressions() {
+        if !runtime_owners.contains_expression(owner) {
+            continue;
+        }
         if runtime_expression_type_owners.contains(&owner) {
             input.push_expression_type(owner, runtime_type(expression.ty(), symbols, analysis)?);
         }
@@ -393,6 +404,9 @@ pub fn project_runtime_semantic_facts(
     }
 
     for (owner, pattern) in analysis.patterns() {
+        if !runtime_owners.contains_pattern(owner) {
+            continue;
+        }
         input.push_pattern_type(owner, runtime_type(pattern.ty(), symbols, analysis)?);
         match pattern.resolution() {
             CheckedPatternResolution::Literal(literal) => {
@@ -420,6 +434,9 @@ pub fn project_runtime_semantic_facts(
     }
 
     for (owner, statement) in analysis.statements() {
+        if !runtime_owners.contains_statement(owner) {
+            continue;
+        }
         match statement.role() {
             CheckedStatementRole::Assertion(disposition) => {
                 input.push_assertion(owner, runtime_assertion(owner, *disposition)?);
@@ -435,6 +452,9 @@ pub fn project_runtime_semantic_facts(
     }
 
     for (owner, capture) in analysis.captures() {
+        if !runtime_owners.contains_capture(owner) {
+            continue;
+        }
         input.push_capture(RuntimeCheckedCapture::new(
             owner,
             runtime_type(capture.ty(), symbols, analysis)?,
@@ -451,6 +471,7 @@ pub fn project_runtime_semantic_facts(
         analysis,
         dialogue_profile,
         character_name_policy,
+        &runtime_owners,
         facts,
     )
 }
@@ -458,14 +479,16 @@ pub fn project_runtime_semantic_facts(
 fn dialogue_application_owned_calls(
     project: HirExecutableProjectView<'_>,
     analysis: &FinalSemanticAnalysis,
+    runtime_owners: &HirRuntimeSemanticOwnerInventory<'_>,
 ) -> Result<BTreeSet<ExprId>, RuntimeSemanticProjectionError> {
     analysis
         .expressions()
         .filter_map(|(owner, expression)| {
-            matches!(
-                expression.resolution(),
-                CheckedExpressionResolution::DialogueApplication { .. }
-            )
+            (runtime_owners.contains_expression(owner)
+                && matches!(
+                    expression.resolution(),
+                    CheckedExpressionResolution::DialogueApplication { .. }
+                ))
             .then_some(owner)
         })
         .try_fold(BTreeSet::new(), |mut calls, owner| {
@@ -501,9 +524,10 @@ fn project_dialogue_semantic_facts(
     analysis: &FinalSemanticAnalysis,
     dialogue_profile: Option<(&DialoguePresentationProfile, &DialogueProfileRevision)>,
     policy: Option<&CharacterNameLocalePolicySpec>,
+    runtime_owners: &HirRuntimeSemanticOwnerInventory<'_>,
     facts: RuntimePlanSemanticFacts,
 ) -> Result<RuntimePlanSemanticFacts, RuntimeSemanticProjectionError> {
-    let applications = executable_dialogue_applications(project, analysis)?;
+    let applications = executable_dialogue_applications(project, analysis, runtime_owners)?;
     if applications.is_empty() {
         return facts
             .with_dialogue_projection(project, None, [])
@@ -559,13 +583,16 @@ type CheckedDialogueApplication<'analysis> = (
 fn executable_dialogue_applications<'analysis>(
     project: HirExecutableProjectView<'_>,
     analysis: &'analysis FinalSemanticAnalysis,
+    runtime_owners: &HirRuntimeSemanticOwnerInventory<'_>,
 ) -> Result<Vec<CheckedDialogueApplication<'analysis>>, RuntimeSemanticProjectionError> {
     analysis
         .expressions()
         .filter_map(|(owner, expression)| match expression.resolution() {
             CheckedExpressionResolution::DialogueApplication {
                 target, rich_text, ..
-            } => Some((owner, target, rich_text.as_ref())),
+            } if runtime_owners.contains_expression(owner) => {
+                Some((owner, target, rich_text.as_ref()))
+            }
             _ => None,
         })
         .try_fold(Vec::new(), |mut applications, application| {
@@ -1820,6 +1847,7 @@ fn runtime_iteration(
 
 fn runtime_iteration_methods(
     analysis: &FinalSemanticAnalysis,
+    runtime_owners: &HirRuntimeSemanticOwnerInventory<'_>,
 ) -> Result<BTreeMap<CheckedTraitConformance, TypeKind>, RuntimeSemanticProjectionError> {
     let mut methods = BTreeMap::new();
     let mut insert = |conformance: &CheckedTraitConformance, self_type: &TypeKind| match methods
@@ -1830,7 +1858,10 @@ fn runtime_iteration_methods(
         }
         _ => Ok(()),
     };
-    for (_, statement) in analysis.statements() {
+    for (owner, statement) in analysis.statements() {
+        if !runtime_owners.contains_statement(owner) {
+            continue;
+        }
         let CheckedStatementRole::Iteration(iteration) = statement.role() else {
             continue;
         };

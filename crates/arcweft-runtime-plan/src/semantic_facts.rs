@@ -48,6 +48,7 @@ use arcweft_lang_hir::module::HirModule;
 use arcweft_lang_hir::pattern::HirPatternKind;
 use arcweft_lang_hir::project::{
     HirExecutableProjectView, HirRuntimeCallCalleeDisposition, HirRuntimeExpressionTypeDisposition,
+    HirRuntimeSemanticOwnerInventory, HirRuntimeSemanticOwnerInventoryError,
     HirSelectedExpressionInventoryError,
 };
 use arcweft_lang_hir::stmt::HirStmtKind;
@@ -1416,7 +1417,7 @@ impl RuntimePlanSemanticFactInput {
         }
     }
 
-    /// Appends one accepted HIR local and its exact normalized type in
+    /// Appends one runtime-domain HIR local and its exact normalized type in
     /// canonical project order, then returns its final plan-local identity.
     pub fn push_local_declaration(
         &mut self,
@@ -1433,13 +1434,14 @@ impl RuntimePlanSemanticFactInput {
         self.flows.push((owner, identity));
     }
 
-    /// Stages the accepted normalized type of one runtime-value final-HIR
-    /// expression.
+    /// Stages the accepted normalized type of one selected runtime-domain
+    /// final-HIR expression.
     pub fn push_expression_type(&mut self, owner: ExprId, ty: RuntimeNormalizedType) {
         self.expression_types.push((owner, ty));
     }
 
-    /// Stages the accepted normalized type of one final-HIR pattern.
+    /// Stages the accepted normalized type of one runtime-domain final-HIR
+    /// pattern.
     pub fn push_pattern_type(&mut self, owner: PatternId, ty: RuntimeNormalizedType) {
         self.pattern_types.push((owner, ty));
     }
@@ -1567,10 +1569,8 @@ impl RuntimePlanSemanticFacts {
         project: HirExecutableProjectView<'_>,
         input: RuntimePlanSemanticFactInput,
     ) -> Result<Self, RuntimeSemanticFactsError> {
-        let expected_local_declarations = project
-            .modules()
-            .flat_map(|(_, module)| module.locals().map(|(owner, _)| owner))
-            .collect::<Vec<_>>();
+        let runtime_owners = project.runtime_semantic_owner_inventory()?;
+        let expected_local_declarations = runtime_owners.locals().collect::<Vec<_>>();
         let modules = project
             .modules()
             .map(|(_, module)| (module.module_id(), module.as_ref()))
@@ -1586,6 +1586,11 @@ impl RuntimePlanSemanticFacts {
         )?;
         for (owner, ty) in &expression_types {
             resolve_expr(&modules, *owner)?;
+            require_runtime_expression_owner(
+                &runtime_owners,
+                *owner,
+                RuntimeSemanticFactFamily::ExpressionType,
+            )?;
             validate_normalized_type(&modules, ty)?;
         }
 
@@ -1593,6 +1598,11 @@ impl RuntimePlanSemanticFacts {
             collect_unique(input.pattern_types, RuntimeSemanticFactFamily::PatternType)?;
         for (owner, ty) in &pattern_types {
             resolve_pattern(&modules, *owner)?;
+            require_runtime_pattern_owner(
+                &runtime_owners,
+                *owner,
+                RuntimeSemanticFactFamily::PatternType,
+            )?;
             validate_normalized_type(&modules, ty)?;
         }
 
@@ -1667,6 +1677,7 @@ impl RuntimePlanSemanticFacts {
         for expression in expression_literals.keys() {
             require_expr_family(
                 &modules,
+                &runtime_owners,
                 *expression,
                 RuntimeSemanticFactFamily::ExpressionLiteral,
                 |kind| {
@@ -1685,6 +1696,7 @@ impl RuntimePlanSemanticFacts {
         for pattern in pattern_literals.keys() {
             require_pattern_family(
                 &modules,
+                &runtime_owners,
                 *pattern,
                 RuntimeSemanticFactFamily::PatternLiteral,
                 |kind| matches!(kind, HirPatternKind::Literal(_)),
@@ -1696,6 +1708,7 @@ impl RuntimePlanSemanticFacts {
         for (pattern, item) in &pattern_items {
             require_pattern_family(
                 &modules,
+                &runtime_owners,
                 *pattern,
                 RuntimeSemanticFactFamily::PatternItem,
                 |kind| matches!(kind, HirPatternKind::EntityReference(_)),
@@ -1707,11 +1720,12 @@ impl RuntimePlanSemanticFacts {
         for (expression, value) in &values {
             require_expr_family(
                 &modules,
+                &runtime_owners,
                 *expression,
                 RuntimeSemanticFactFamily::Value,
                 |kind| matches!(kind, HirExprKind::Path(_) | HirExprKind::EntityReference(_)),
             )?;
-            validate_resolved_value(&modules, value)?;
+            validate_resolved_value(&modules, &runtime_owners, value)?;
             match (resolve_expr(&modules, *expression)?, value) {
                 (
                     HirExprKind::Path(_),
@@ -1743,6 +1757,7 @@ impl RuntimePlanSemanticFacts {
         for (expression, select) in &selects {
             require_expr_family(
                 &modules,
+                &runtime_owners,
                 *expression,
                 RuntimeSemanticFactFamily::Select,
                 |kind| matches!(kind, HirExprKind::Select(_)),
@@ -1757,6 +1772,7 @@ impl RuntimePlanSemanticFacts {
         for (expression, nominal) in &nominal_records {
             require_expr_family(
                 &modules,
+                &runtime_owners,
                 *expression,
                 RuntimeSemanticFactFamily::NominalRecord,
                 |kind| matches!(kind, HirExprKind::Record(_)),
@@ -1771,6 +1787,7 @@ impl RuntimePlanSemanticFacts {
         for (pattern, nominal) in &pattern_nominal_records {
             require_pattern_family(
                 &modules,
+                &runtime_owners,
                 *pattern,
                 RuntimeSemanticFactFamily::PatternNominalRecord,
                 |kind| matches!(kind, HirPatternKind::Record { .. }),
@@ -1793,6 +1810,7 @@ impl RuntimePlanSemanticFacts {
         for (expression, variant) in &expression_variants {
             require_expr_family(
                 &modules,
+                &runtime_owners,
                 *expression,
                 RuntimeSemanticFactFamily::ExpressionVariant,
                 |kind| matches!(kind, HirExprKind::ShortVariant(_) | HirExprKind::Path(_)),
@@ -1807,6 +1825,7 @@ impl RuntimePlanSemanticFacts {
         for (pattern, variant) in &pattern_variants {
             require_pattern_family(
                 &modules,
+                &runtime_owners,
                 *pattern,
                 RuntimeSemanticFactFamily::PatternVariant,
                 |kind| matches!(kind, HirPatternKind::Variant(_)),
@@ -1819,6 +1838,7 @@ impl RuntimePlanSemanticFacts {
             let hir_type = module_for(&modules, owner.module())?
                 .resolve_type(*owner)
                 .map_err(|_| RuntimeSemanticFactsError::UnresolvedType { ty: *owner })?;
+            require_runtime_type_owner(&runtime_owners, *owner)?;
             if hir_type.is_poisoned() {
                 return Err(RuntimeSemanticFactsError::PoisonedType { ty: *owner });
             }
@@ -1828,6 +1848,11 @@ impl RuntimePlanSemanticFacts {
         let calls = collect_unique(input.calls, RuntimeSemanticFactFamily::Call)?;
         for (expression, call) in &calls {
             let kind = resolve_expr(&modules, *expression)?;
+            require_runtime_expression_owner(
+                &runtime_owners,
+                *expression,
+                RuntimeSemanticFactFamily::Call,
+            )?;
             let HirExprKind::Call(hir_call) = kind else {
                 return Err(RuntimeSemanticFactsError::WrongExpressionFamily {
                     expression: *expression,
@@ -1842,7 +1867,19 @@ impl RuntimePlanSemanticFacts {
             RuntimeSemanticFactFamily::PostfixCandidate,
         )?;
         for (expression, candidate) in &postfix_candidates {
-            let HirExprKind::PostfixBracket(postfix) = resolve_expr(&modules, *expression)? else {
+            let kind = resolve_expr(&modules, *expression)?;
+            require_runtime_expression_owner(
+                &runtime_owners,
+                *expression,
+                RuntimeSemanticFactFamily::PostfixCandidate,
+            )?;
+            resolve_expr(&modules, *candidate)?;
+            require_runtime_expression_owner(
+                &runtime_owners,
+                *candidate,
+                RuntimeSemanticFactFamily::PostfixCandidate,
+            )?;
+            let HirExprKind::PostfixBracket(postfix) = kind else {
                 return Err(RuntimeSemanticFactsError::WrongExpressionFamily {
                     expression: *expression,
                     expected: RuntimeSemanticFactFamily::PostfixCandidate,
@@ -1864,16 +1901,15 @@ impl RuntimePlanSemanticFacts {
                     candidate: *candidate,
                 });
             }
-            resolve_expr(&modules, *candidate)?;
         }
 
         validate_complete_expression_types(
-            project,
+            &runtime_owners,
             &postfix_candidates,
             &calls,
             &expression_types,
         )?;
-        validate_complete_pattern_types(&modules, &pattern_types)?;
+        validate_complete_pattern_types(&runtime_owners, &pattern_types)?;
 
         let trait_methods = collect_unique(
             input
@@ -1893,6 +1929,7 @@ impl RuntimePlanSemanticFacts {
         for (statement, evidence) in &iterations {
             require_stmt_family(
                 &modules,
+                &runtime_owners,
                 *statement,
                 RuntimeSemanticFactFamily::Iteration,
                 |kind| matches!(kind, HirStmtKind::For(_)),
@@ -1919,6 +1956,7 @@ impl RuntimePlanSemanticFacts {
         for statement in assertions.keys() {
             require_stmt_family(
                 &modules,
+                &runtime_owners,
                 *statement,
                 RuntimeSemanticFactFamily::Assertion,
                 |kind| matches!(kind, HirStmtKind::Assertion { .. }),
@@ -1928,9 +1966,16 @@ impl RuntimePlanSemanticFacts {
         let mut captures = BTreeMap::new();
         for checked in input.captures {
             let id = checked.capture();
-            module_for(&modules, id.module())?
+            let capture = module_for(&modules, id.module())?
                 .resolve_capture(id)
                 .map_err(|_| RuntimeSemanticFactsError::UnresolvedCapture { capture: id })?;
+            require_runtime_capture_owner(&runtime_owners, id)?;
+            module_for(&modules, capture.local().module())?
+                .resolve_local(capture.local())
+                .map_err(|_| RuntimeSemanticFactsError::UnresolvedLocal {
+                    local: capture.local(),
+                })?;
+            require_runtime_local_reference(&runtime_owners, capture.local())?;
             validate_normalized_type(&modules, checked.ty())?;
             if captures.insert(id, checked).is_some() {
                 return Err(RuntimeSemanticFactsError::DuplicateFact {
@@ -1975,6 +2020,7 @@ impl RuntimePlanSemanticFacts {
         applications: impl IntoIterator<Item = (ExprId, RuntimeDialogueApplication)>,
     ) -> Result<Self, RuntimeSemanticFactsError> {
         self.validate_generation(project)?;
+        let runtime_owners = project.runtime_semantic_owner_inventory()?;
         let applications =
             collect_unique(applications, RuntimeSemanticFactFamily::DialogueApplication)?;
         if applications.is_empty() != catalog.is_none() {
@@ -1987,6 +2033,7 @@ impl RuntimePlanSemanticFacts {
         for (owner, application) in &applications {
             require_expr_family(
                 &modules,
+                &runtime_owners,
                 *owner,
                 RuntimeSemanticFactFamily::DialogueApplication,
                 |kind| matches!(kind, HirExprKind::DialogueContentApplication(_)),
@@ -2050,23 +2097,26 @@ impl RuntimePlanSemanticFacts {
         self.expression_literals.get(&expression)
     }
 
-    /// Returns the sole accepted normalized type of one runtime-value final-HIR
-    /// expression.
+    /// Returns the sole accepted normalized type of one selected runtime-domain
+    /// final-HIR expression.
     pub fn expression_type(&self, expression: ExprId) -> Option<&RuntimeNormalizedType> {
         self.expression_types.get(&expression)
     }
 
-    /// Returns the sole accepted normalized type of one final-HIR pattern.
+    /// Returns the sole accepted normalized type of one runtime-domain
+    /// final-HIR pattern.
     pub fn pattern_type(&self, pattern: PatternId) -> Option<&RuntimeNormalizedType> {
         self.pattern_types.get(&pattern)
     }
 
-    /// Final plan-local identity for one accepted final-HIR local.
+    /// Final plan-local identity for one accepted runtime-domain final-HIR
+    /// local.
     pub fn local_declaration(&self, local: LocalId) -> Option<RuntimeLocalDeclarationId> {
         self.local_declarations.get(&local).map(|fact| fact.local)
     }
 
-    /// Sole accepted normalized semantic type of one final-HIR local.
+    /// Sole accepted normalized semantic type of one runtime-domain final-HIR
+    /// local.
     pub fn local_type(&self, local: LocalId) -> Option<&RuntimeNormalizedType> {
         self.local_declarations.get(&local).map(|fact| &fact.ty)
     }
@@ -2172,11 +2222,21 @@ pub enum RuntimeSemanticFactsError {
     #[error("accepted runtime semantic facts omit expression type {expression:?}")]
     MissingExpressionType { expression: ExprId },
     #[error(
-        "accepted runtime semantic facts contain a type for inactive expression {expression:?}"
+        "accepted runtime semantic facts contain a {family:?} fact for inactive expression {expression:?}"
     )]
-    InactiveExpressionType { expression: ExprId },
+    InactiveExpressionFact {
+        expression: ExprId,
+        family: RuntimeSemanticFactFamily,
+    },
     #[error("accepted runtime semantic facts omit pattern type {pattern:?}")]
     MissingPatternType { pattern: PatternId },
+    #[error(
+        "accepted runtime semantic facts contain a {family:?} fact for inactive pattern {pattern:?}"
+    )]
+    InactivePatternFact {
+        pattern: PatternId,
+        family: RuntimeSemanticFactFamily,
+    },
     #[error("postfix expression {expression:?} has no accepted candidate fact")]
     MissingPostfixCandidate { expression: ExprId },
     #[error("runtime semantic fact references unknown HIR module {module:?}")]
@@ -2185,7 +2245,9 @@ pub enum RuntimeSemanticFactsError {
     UnresolvedItem { item: ItemId },
     #[error("runtime semantic fact references unresolved local {local:?}")]
     UnresolvedLocal { local: LocalId },
-    #[error("accepted runtime semantic facts omit executable local declaration {local:?}")]
+    #[error("runtime semantic fact references presentation-owned local {local:?}")]
+    InactiveLocalReference { local: LocalId },
+    #[error("accepted runtime semantic facts omit runtime-domain local declaration {local:?}")]
     MissingLocalDeclaration { local: LocalId },
     #[error("accepted runtime semantic facts contain extra local declaration {local:?}")]
     ExtraLocalDeclaration { local: LocalId },
@@ -2204,14 +2266,27 @@ pub enum RuntimeSemanticFactsError {
     UnresolvedExpression { expression: ExprId },
     #[error("runtime semantic fact references unresolved statement {statement:?}")]
     UnresolvedStatement { statement: StmtId },
+    #[error(
+        "accepted runtime semantic facts contain a {family:?} fact for inactive statement {statement:?}"
+    )]
+    InactiveStatementFact {
+        statement: StmtId,
+        family: RuntimeSemanticFactFamily,
+    },
     #[error("runtime semantic fact references unresolved pattern {pattern:?}")]
     UnresolvedPattern { pattern: PatternId },
     #[error("runtime semantic fact references unresolved type {ty:?}")]
     UnresolvedType { ty: TypeId },
+    #[error("accepted runtime semantic facts contain a fact for inactive type {ty:?}")]
+    InactiveTypeFact { ty: TypeId },
     #[error("runtime semantic fact references poisoned type {ty:?}")]
     PoisonedType { ty: TypeId },
     #[error("runtime semantic fact references unresolved capture {capture:?}")]
     UnresolvedCapture { capture: CaptureId },
+    #[error("accepted runtime semantic facts contain a fact for inactive capture {capture:?}")]
+    InactiveCaptureFact { capture: CaptureId },
+    #[error(transparent)]
+    RuntimeSemanticOwnerInventory(#[from] HirRuntimeSemanticOwnerInventoryError),
     #[error("expression {expression:?} cannot own a {expected:?} runtime semantic fact")]
     WrongExpressionFamily {
         expression: ExprId,
@@ -2326,13 +2401,13 @@ pub enum RuntimeSemanticFactFamily {
 }
 
 fn validate_complete_expression_types(
-    project: HirExecutableProjectView<'_>,
+    runtime_owners: &HirRuntimeSemanticOwnerInventory<'_>,
     postfix_candidates: &BTreeMap<ExprId, ExprId>,
     calls: &BTreeMap<ExprId, RuntimeResolvedCall>,
     expression_types: &BTreeMap<ExprId, RuntimeNormalizedType>,
 ) -> Result<(), RuntimeSemanticFactsError> {
-    let accepted = project
-        .selected_runtime_expression_type_owners(
+    let accepted = runtime_owners
+        .selected_expression_type_owners(
             |owner| postfix_candidates.get(&owner).copied(),
             |owner| {
                 calls
@@ -2379,30 +2454,107 @@ fn validate_complete_expression_types(
         .keys()
         .find(|owner| !accepted.contains(owner))
     {
-        return Err(RuntimeSemanticFactsError::InactiveExpressionType {
+        return Err(RuntimeSemanticFactsError::InactiveExpressionFact {
             expression: *expression,
+            family: RuntimeSemanticFactFamily::ExpressionType,
         });
     }
     Ok(())
 }
 
-/// Final semantic publication owns a fact for every final-HIR pattern,
-/// including patterns retained inside bounded candidate HIR. If candidate
-/// rollback leaves one without a type, semantic analysis fails before this
-/// projection can be constructed.
+/// Final semantic publication owns a fact for every runtime-domain final-HIR
+/// pattern, including patterns retained inside bounded candidate HIR. If
+/// candidate rollback leaves one without a type, semantic analysis fails
+/// before this projection can be constructed. Presentation-owned patterns do
+/// not enter this table.
 fn validate_complete_pattern_types(
-    modules: &BTreeMap<HirModuleId, &HirModule>,
+    runtime_owners: &HirRuntimeSemanticOwnerInventory<'_>,
     pattern_types: &BTreeMap<PatternId, RuntimeNormalizedType>,
 ) -> Result<(), RuntimeSemanticFactsError> {
-    for pattern in modules
-        .values()
-        .flat_map(|module| module.patterns().map(|(owner, _)| owner))
-    {
+    for pattern in runtime_owners.patterns() {
         if !pattern_types.contains_key(&pattern) {
             return Err(RuntimeSemanticFactsError::MissingPatternType { pattern });
         }
     }
+    if let Some(pattern) = pattern_types
+        .keys()
+        .find(|owner| !runtime_owners.contains_pattern(**owner))
+    {
+        return Err(RuntimeSemanticFactsError::InactivePatternFact {
+            pattern: *pattern,
+            family: RuntimeSemanticFactFamily::PatternType,
+        });
+    }
     Ok(())
+}
+
+fn require_runtime_expression_owner(
+    runtime_owners: &HirRuntimeSemanticOwnerInventory<'_>,
+    expression: ExprId,
+    family: RuntimeSemanticFactFamily,
+) -> Result<(), RuntimeSemanticFactsError> {
+    if runtime_owners.contains_expression(expression) {
+        Ok(())
+    } else {
+        Err(RuntimeSemanticFactsError::InactiveExpressionFact { expression, family })
+    }
+}
+
+fn require_runtime_statement_owner(
+    runtime_owners: &HirRuntimeSemanticOwnerInventory<'_>,
+    statement: StmtId,
+    family: RuntimeSemanticFactFamily,
+) -> Result<(), RuntimeSemanticFactsError> {
+    if runtime_owners.contains_statement(statement) {
+        Ok(())
+    } else {
+        Err(RuntimeSemanticFactsError::InactiveStatementFact { statement, family })
+    }
+}
+
+fn require_runtime_pattern_owner(
+    runtime_owners: &HirRuntimeSemanticOwnerInventory<'_>,
+    pattern: PatternId,
+    family: RuntimeSemanticFactFamily,
+) -> Result<(), RuntimeSemanticFactsError> {
+    if runtime_owners.contains_pattern(pattern) {
+        Ok(())
+    } else {
+        Err(RuntimeSemanticFactsError::InactivePatternFact { pattern, family })
+    }
+}
+
+fn require_runtime_type_owner(
+    runtime_owners: &HirRuntimeSemanticOwnerInventory<'_>,
+    ty: TypeId,
+) -> Result<(), RuntimeSemanticFactsError> {
+    if runtime_owners.contains_type(ty) {
+        Ok(())
+    } else {
+        Err(RuntimeSemanticFactsError::InactiveTypeFact { ty })
+    }
+}
+
+fn require_runtime_capture_owner(
+    runtime_owners: &HirRuntimeSemanticOwnerInventory<'_>,
+    capture: CaptureId,
+) -> Result<(), RuntimeSemanticFactsError> {
+    if runtime_owners.contains_capture(capture) {
+        Ok(())
+    } else {
+        Err(RuntimeSemanticFactsError::InactiveCaptureFact { capture })
+    }
+}
+
+fn require_runtime_local_reference(
+    runtime_owners: &HirRuntimeSemanticOwnerInventory<'_>,
+    local: LocalId,
+) -> Result<(), RuntimeSemanticFactsError> {
+    if runtime_owners.contains_local(local) {
+        Ok(())
+    } else {
+        Err(RuntimeSemanticFactsError::InactiveLocalReference { local })
+    }
 }
 
 fn collect_unique<K: Ord + Copy, V>(
@@ -2460,11 +2612,14 @@ fn resolve_pattern<'project>(
 
 fn require_expr_family(
     modules: &BTreeMap<HirModuleId, &HirModule>,
+    runtime_owners: &HirRuntimeSemanticOwnerInventory<'_>,
     expression: ExprId,
     expected: RuntimeSemanticFactFamily,
     predicate: impl FnOnce(&HirExprKind) -> bool,
 ) -> Result<(), RuntimeSemanticFactsError> {
-    if predicate(resolve_expr(modules, expression)?) {
+    let kind = resolve_expr(modules, expression)?;
+    require_runtime_expression_owner(runtime_owners, expression, expected)?;
+    if predicate(kind) {
         Ok(())
     } else {
         Err(RuntimeSemanticFactsError::WrongExpressionFamily {
@@ -2476,11 +2631,14 @@ fn require_expr_family(
 
 fn require_stmt_family(
     modules: &BTreeMap<HirModuleId, &HirModule>,
+    runtime_owners: &HirRuntimeSemanticOwnerInventory<'_>,
     statement: StmtId,
     expected: RuntimeSemanticFactFamily,
     predicate: impl FnOnce(&HirStmtKind) -> bool,
 ) -> Result<(), RuntimeSemanticFactsError> {
-    if predicate(resolve_stmt(modules, statement)?) {
+    let kind = resolve_stmt(modules, statement)?;
+    require_runtime_statement_owner(runtime_owners, statement, expected)?;
+    if predicate(kind) {
         Ok(())
     } else {
         Err(RuntimeSemanticFactsError::WrongStatementFamily {
@@ -2492,11 +2650,14 @@ fn require_stmt_family(
 
 fn require_pattern_family(
     modules: &BTreeMap<HirModuleId, &HirModule>,
+    runtime_owners: &HirRuntimeSemanticOwnerInventory<'_>,
     pattern: PatternId,
     expected: RuntimeSemanticFactFamily,
     predicate: impl FnOnce(&HirPatternKind) -> bool,
 ) -> Result<(), RuntimeSemanticFactsError> {
-    if predicate(resolve_pattern(modules, pattern)?) {
+    let kind = resolve_pattern(modules, pattern)?;
+    require_runtime_pattern_owner(runtime_owners, pattern, expected)?;
+    if predicate(kind) {
         Ok(())
     } else {
         Err(RuntimeSemanticFactsError::WrongPatternFamily { pattern, expected })
@@ -2505,13 +2666,16 @@ fn require_pattern_family(
 
 fn validate_resolved_value(
     modules: &BTreeMap<HirModuleId, &HirModule>,
+    runtime_owners: &HirRuntimeSemanticOwnerInventory<'_>,
     value: &RuntimeResolvedValue,
 ) -> Result<(), RuntimeSemanticFactsError> {
     match value {
-        RuntimeResolvedValue::Local(local) => module_for(modules, local.module())?
-            .resolve_local(*local)
-            .map(|_| ())
-            .map_err(|_| RuntimeSemanticFactsError::UnresolvedLocal { local: *local }),
+        RuntimeResolvedValue::Local(local) => {
+            module_for(modules, local.module())?
+                .resolve_local(*local)
+                .map_err(|_| RuntimeSemanticFactsError::UnresolvedLocal { local: *local })?;
+            require_runtime_local_reference(runtime_owners, *local)
+        }
         RuntimeResolvedValue::ProjectCallable(callable) => validate_callable(modules, callable),
         RuntimeResolvedValue::ProjectItem(item) => validate_project_item(modules, item),
         RuntimeResolvedValue::DialogueLine(_)
