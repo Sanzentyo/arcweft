@@ -613,7 +613,7 @@ fn runtime_plan_consumes_project_view_without_flattening() {
 }
 
 #[test]
-fn runtime_semantic_facts_retain_exact_expression_and_pattern_types() {
+fn runtime_semantic_facts_retain_exact_local_expression_and_pattern_types() {
     let (project, facts) = fixture(
         "fn main(flag: bool) -> i64 {\n    match flag { true => 1i64, false => 2i64 }\n}\n",
         "runtime-exact-types",
@@ -639,6 +639,27 @@ fn runtime_semantic_facts_retain_exact_expression_and_pattern_types() {
         None,
     )
     .expect("accepted types project through the compiler boundary");
+
+    let mut saw_bool_local = false;
+    for (owner, checked) in compiled.final_analysis().locals() {
+        let projected = runtime_facts
+            .local_type(owner)
+            .expect("every accepted local retains one runtime type fact");
+        assert!(
+            runtime_facts.local_declaration(owner).is_some(),
+            "the same accepted local row retains its plan-local identity"
+        );
+        assert_eq!(
+            projected.identity(),
+            RuntimeSemanticTypeId::from_bytes(*checked.ty().semantic_identity_digest().as_bytes())
+        );
+        if matches!(
+            (checked.ty(), projected.shape()),
+            (TypeKind::Bool, RuntimeTypeShape::Bool)
+        ) {
+            saw_bool_local = true;
+        }
+    }
 
     let mut saw_bool_expression = false;
     let mut saw_i64_expression = false;
@@ -674,6 +695,7 @@ fn runtime_semantic_facts_retain_exact_expression_and_pattern_types() {
         }
     }
 
+    assert!(saw_bool_local, "Bool local projection is present");
     assert!(saw_bool_expression, "Bool expression projection is present");
     assert!(saw_i64_expression, "i64 expression projection is present");
     assert!(saw_bool_pattern, "Bool pattern projection is present");

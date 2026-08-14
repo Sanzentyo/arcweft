@@ -1992,7 +1992,13 @@ mod tests {
         for (_, module) in project.modules() {
             for (owner, _) in module.locals() {
                 input
-                    .push_local_declaration(owner)
+                    .push_local_declaration(
+                        owner,
+                        RuntimeNormalizedType::new(
+                            RuntimeSemanticTypeId::from_bytes([0x11; 32]),
+                            RuntimeTypeShape::Unit,
+                        ),
+                    )
                     .expect("fixture local identity");
             }
             for (owner, _) in module.expressions() {

@@ -1243,7 +1243,7 @@ impl RuntimeCheckedCapture {
 #[derive(Debug)]
 pub struct RuntimePlanSemanticFactInput {
     local_declaration_builder: RuntimeLocalDeclarationTableBuilder,
-    local_declarations: Vec<(LocalId, RuntimeLocalDeclarationId)>,
+    local_declarations: Vec<(LocalId, RuntimeLocalDeclarationFact)>,
     flows: Vec<(ItemId, FlowRuntimeId)>,
     expression_types: Vec<(ExprId, RuntimeNormalizedType)>,
     pattern_types: Vec<(PatternId, RuntimeNormalizedType)>,
@@ -1292,14 +1292,16 @@ impl RuntimePlanSemanticFactInput {
         }
     }
 
-    /// Appends one accepted HIR local in canonical project order and returns
-    /// its final plan-local identity.
+    /// Appends one accepted HIR local and its exact normalized type in
+    /// canonical project order, then returns its final plan-local identity.
     pub fn push_local_declaration(
         &mut self,
         owner: LocalId,
+        ty: RuntimeNormalizedType,
     ) -> Result<RuntimeLocalDeclarationId, RuntimeLocalDeclarationTableError> {
         let local = self.local_declaration_builder.push()?;
-        self.local_declarations.push((owner, local));
+        self.local_declarations
+            .push((owner, RuntimeLocalDeclarationFact { local, ty }));
         Ok(local)
     }
 
@@ -1398,7 +1400,7 @@ impl Default for RuntimePlanSemanticFactInput {
 pub struct RuntimePlanSemanticFacts {
     snapshots: BTreeMap<HirModuleId, HirSnapshotId>,
     local_declaration_table: RuntimeLocalDeclarationTable,
-    local_declarations: BTreeMap<LocalId, RuntimeLocalDeclarationId>,
+    local_declarations: BTreeMap<LocalId, RuntimeLocalDeclarationFact>,
     flows: BTreeMap<ItemId, FlowRuntimeId>,
     expression_types: BTreeMap<ExprId, RuntimeNormalizedType>,
     pattern_types: BTreeMap<PatternId, RuntimeNormalizedType>,
@@ -1420,6 +1422,14 @@ pub struct RuntimePlanSemanticFacts {
     captures: BTreeMap<CaptureId, RuntimeCheckedCapture>,
     dialogue_applications: BTreeMap<ExprId, RuntimeDialogueApplication>,
     character_presentation_catalog: Option<Arc<CharacterPresentationCatalogData>>,
+}
+
+/// One atomic accepted local projection. The plan-local identity and semantic
+/// type cannot be published or reordered independently.
+#[derive(Clone, Debug, Eq, PartialEq)]
+struct RuntimeLocalDeclarationFact {
+    local: RuntimeLocalDeclarationId,
+    ty: RuntimeNormalizedType,
 }
 
 impl RuntimePlanSemanticFacts {
@@ -1463,7 +1473,7 @@ impl RuntimePlanSemanticFacts {
 
         let local_declaration_table = input.local_declaration_builder.finish();
         let local_declarations = collect_unique(
-            input.local_declarations.iter().copied(),
+            input.local_declarations.iter().cloned(),
             RuntimeSemanticFactFamily::LocalDeclaration,
         )?;
         let expected_local_set = expected_local_declarations
@@ -1483,7 +1493,7 @@ impl RuntimePlanSemanticFacts {
         {
             return Err(RuntimeSemanticFactsError::MissingLocalDeclaration { local: *local });
         }
-        for (position, ((owner, local), expected_owner)) in input
+        for (position, ((owner, fact), expected_owner)) in input
             .local_declarations
             .iter()
             .zip(&expected_local_declarations)
@@ -1500,14 +1510,15 @@ impl RuntimePlanSemanticFacts {
             let expected = u32::try_from(position)
                 .ok()
                 .and_then(|position| position.checked_add(1));
-            if expected != Some(local.get().get()) {
+            if expected != Some(fact.local.get().get()) {
                 return Err(
                     RuntimeSemanticFactsError::NonCanonicalLocalDeclarationIdentity {
                         owner: *owner,
-                        actual: *local,
+                        actual: fact.local,
                     },
                 );
             }
+            validate_normalized_type(&modules, &fact.ty)?;
         }
         if usize::try_from(local_declaration_table.len()).ok() != Some(local_declarations.len()) {
             return Err(RuntimeSemanticFactsError::LocalDeclarationTableMismatch);
@@ -1921,7 +1932,12 @@ impl RuntimePlanSemanticFacts {
 
     /// Final plan-local identity for one accepted final-HIR local.
     pub fn local_declaration(&self, local: LocalId) -> Option<RuntimeLocalDeclarationId> {
-        self.local_declarations.get(&local).copied()
+        self.local_declarations.get(&local).map(|fact| fact.local)
+    }
+
+    /// Sole accepted normalized semantic type of one final-HIR local.
+    pub fn local_type(&self, local: LocalId) -> Option<&RuntimeNormalizedType> {
+        self.local_declarations.get(&local).map(|fact| &fact.ty)
     }
 
     /// Complete contiguous local domain shared by patterns, expressions, and

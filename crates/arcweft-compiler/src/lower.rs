@@ -207,12 +207,10 @@ pub fn project_runtime_semantic_facts(
 
     for (_, module) in project.modules() {
         for (owner, _) in module.locals() {
-            if analysis.local(owner).is_none() {
-                return Err(RuntimeSemanticProjectionError::MissingLocalSemanticFact {
-                    local: owner,
-                });
-            }
-            input.push_local_declaration(owner)?;
+            let local = analysis
+                .local(owner)
+                .ok_or(RuntimeSemanticProjectionError::MissingLocalSemanticFact { local: owner })?;
+            input.push_local_declaration(owner, runtime_type(local.ty(), symbols, analysis)?)?;
         }
     }
 

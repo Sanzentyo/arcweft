@@ -185,7 +185,7 @@ fn complete_type_input(project: &HirProject) -> RuntimePlanSemanticFactInput {
     {
         for (owner, _) in module.locals() {
             input
-                .push_local_declaration(owner)
+                .push_local_declaration(owner, unit_type())
                 .expect("fixture local identity");
         }
         for (owner, _) in module.expressions() {
@@ -238,6 +238,11 @@ fn local_declarations_use_one_complete_contiguous_canonical_projection() {
                 .get(),
             u32::try_from(position).expect("bounded fixture ordinal") + 1
         );
+        assert_eq!(
+            facts.local_type(owner),
+            Some(&unit_type()),
+            "the local identity and accepted type are published by one row"
+        );
     }
 }
 
@@ -269,7 +274,7 @@ fn missing_extra_duplicate_and_reordered_local_projections_are_rejected() {
     let foreign_owner = local_owners(&foreign)[0];
     let mut extra = complete_type_input(&project);
     extra
-        .push_local_declaration(foreign_owner)
+        .push_local_declaration(foreign_owner, unit_type())
         .expect("bounded extra local identity");
     assert_eq!(
         RuntimePlanSemanticFacts::try_new(executable, extra)
@@ -281,7 +286,7 @@ fn missing_extra_duplicate_and_reordered_local_projections_are_rejected() {
 
     let mut duplicate = complete_type_input(&project);
     duplicate
-        .push_local_declaration(owners[0])
+        .push_local_declaration(owners[0], unit_type())
         .expect("bounded duplicate local identity");
     assert_eq!(
         RuntimePlanSemanticFacts::try_new(executable, duplicate)
@@ -477,7 +482,7 @@ fn missing_pattern_type_is_rejected_before_publication() {
     for (_, module) in executable.modules() {
         for (owner, _) in module.locals() {
             input
-                .push_local_declaration(owner)
+                .push_local_declaration(owner, unit_type())
                 .expect("fixture local identity");
         }
         for (owner, _) in module.expressions() {
@@ -791,7 +796,7 @@ fn non_unsupported_projection_errors_are_returned_unchanged() {
 
 #[test]
 fn nested_operational_expression_type_is_retained_without_reconstruction() {
-    let project = project_fixture("nested-operational-type", "fn root() { true }\n");
+    let project = project_fixture("nested-operational-type", "fn root(value: bool) { true }\n");
     let owner = boolean_literal(&project);
     let leaf = super::RuntimeNormalizedType::new(
         RuntimeSemanticTypeId::from_bytes([0x22; 32]),
@@ -813,7 +818,7 @@ fn nested_operational_expression_type_is_retained_without_reconstruction() {
     {
         for (local, _) in module.locals() {
             input
-                .push_local_declaration(local)
+                .push_local_declaration(local, nested.clone())
                 .expect("fixture local identity");
         }
         for (expression, _) in module.expressions() {
@@ -830,6 +835,11 @@ fn nested_operational_expression_type_is_retained_without_reconstruction() {
     .expect("nested operational fact remains accepted semantic data");
 
     assert_eq!(facts.expression_type(owner), Some(&nested));
+    let local = local_owners(&project)
+        .into_iter()
+        .next()
+        .expect("root fixture retains a local");
+    assert_eq!(facts.local_type(local), Some(&nested));
     assert_eq!(
         facts
             .expression_type(owner)
@@ -892,7 +902,7 @@ fn postfix_type_completeness_keeps_only_the_selected_candidate_expression_tree()
         for (_, module) in executable.modules() {
             for (owner, _) in module.locals() {
                 input
-                    .push_local_declaration(owner)
+                    .push_local_declaration(owner, unit_type())
                     .expect("fixture local identity");
             }
         }
