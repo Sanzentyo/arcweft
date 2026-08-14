@@ -87,6 +87,44 @@ pub enum CharacterDialogueRuntimeRole {
     RichText = 6,
 }
 
+impl CharacterDialogueRuntimeRole {
+    /// Every runtime role in canonical wire order.
+    pub const ALL: [Self; 7] = [
+        Self::Stage,
+        Self::Portrait,
+        Self::Focus,
+        Self::Cleanup,
+        Self::Hook,
+        Self::Style,
+        Self::RichText,
+    ];
+
+    /// Roles backed by authored accepted nominal declarations.
+    ///
+    /// `Style` is derived from the entity-reference and rich-text alternatives
+    /// and therefore has no independent authored declaration.
+    pub const AUTHORED_BASE: [Self; 6] = [
+        Self::Stage,
+        Self::Portrait,
+        Self::Focus,
+        Self::Cleanup,
+        Self::Hook,
+        Self::RichText,
+    ];
+
+    /// Stable version-one ordinal used by canonical binary transcripts.
+    #[must_use]
+    pub const fn canonical_tag(self) -> u8 {
+        self as u8
+    }
+
+    /// Returns whether this role owns an authored accepted nominal row.
+    #[must_use]
+    pub const fn is_authored_base(self) -> bool {
+        !matches!(self, Self::Style)
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -131,19 +169,32 @@ mod tests {
 
     #[test]
     fn runtime_roles_have_fixed_version_one_wire_names() {
-        let roles = [
-            CharacterDialogueRuntimeRole::Stage,
-            CharacterDialogueRuntimeRole::Portrait,
-            CharacterDialogueRuntimeRole::Focus,
-            CharacterDialogueRuntimeRole::Cleanup,
-            CharacterDialogueRuntimeRole::Hook,
-            CharacterDialogueRuntimeRole::Style,
-            CharacterDialogueRuntimeRole::RichText,
-        ];
-        let encoded = serde_json::to_string(&roles).expect("serialize roles");
+        let encoded =
+            serde_json::to_string(&CharacterDialogueRuntimeRole::ALL).expect("serialize roles");
         assert_eq!(
             encoded,
             r#"["stage","portrait","focus","cleanup","hook","style","rich_text"]"#
         );
+        assert_eq!(
+            CharacterDialogueRuntimeRole::ALL.map(CharacterDialogueRuntimeRole::canonical_tag),
+            [0, 1, 2, 3, 4, 5, 6]
+        );
+        assert_eq!(
+            CharacterDialogueRuntimeRole::AUTHORED_BASE,
+            [
+                CharacterDialogueRuntimeRole::Stage,
+                CharacterDialogueRuntimeRole::Portrait,
+                CharacterDialogueRuntimeRole::Focus,
+                CharacterDialogueRuntimeRole::Cleanup,
+                CharacterDialogueRuntimeRole::Hook,
+                CharacterDialogueRuntimeRole::RichText,
+            ]
+        );
+        assert!(
+            CharacterDialogueRuntimeRole::AUTHORED_BASE
+                .into_iter()
+                .all(CharacterDialogueRuntimeRole::is_authored_base)
+        );
+        assert!(!CharacterDialogueRuntimeRole::Style.is_authored_base());
     }
 }
