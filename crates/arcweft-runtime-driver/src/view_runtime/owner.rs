@@ -121,12 +121,12 @@ impl ResolvedMountedViewOwner {
                     rust: *rust,
                 }),
             },
-            ViewImplementation::Arcweft { program } => {
+            ViewImplementation::Arcweft { program, revision } => {
                 let view = descriptor
                     .id()
                     .ok_or(ViewSaveError::ImplementationKindMismatch)?;
                 let catalog = catalog.ok_or(ViewSaveError::ProgramMismatch)?;
-                if catalog.program_id() != program {
+                if catalog.program_id() != program || catalog.revision() != *revision {
                     return Err(ViewSaveError::ProgramMismatch);
                 }
                 let definition = catalog
@@ -137,7 +137,7 @@ impl ResolvedMountedViewOwner {
                     registry: slot,
                     definition,
                     program: program.clone(),
-                    revision: catalog.revision(),
+                    revision: *revision,
                     generation,
                 })
             }
@@ -199,6 +199,7 @@ impl ResolvedMountedViewOwner {
                 if descriptor.implementation()
                     != &(ViewImplementation::Arcweft {
                         program: program.clone(),
+                        revision: *revision,
                     })
                 {
                     return Err(ViewSaveError::ImplementationKindMismatch);
@@ -260,6 +261,7 @@ impl ResolvedMountedViewOwner {
                 if descriptor.implementation()
                     != &(ViewImplementation::Arcweft {
                         program: program.clone(),
+                        revision: *revision,
                     })
                 {
                     return Err(ViewSaveError::ImplementationKindMismatch);

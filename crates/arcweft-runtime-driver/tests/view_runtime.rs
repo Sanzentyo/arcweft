@@ -263,8 +263,9 @@ fn view_identity_catalog_preserves_host_views_and_registers_arcweft_definitions(
     assert_eq!(authored_descriptor.schema(), ViewSchemaId(11));
     assert!(matches!(
         authored_descriptor.implementation(),
-        ViewImplementation::Arcweft { program }
+        ViewImplementation::Arcweft { program, revision }
             if program == &program_id("view.program.catalog")
+                && *revision == runtime.catalog().unwrap().revision()
     ));
 }
 

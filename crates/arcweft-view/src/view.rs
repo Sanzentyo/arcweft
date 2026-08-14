@@ -7,10 +7,12 @@ mod identity;
 mod registry;
 
 pub use identity::{
-    AcceptedViewProgramRevision, ViewId, ViewIdError, ViewIdentityError, ViewProgramId,
+    AcceptedViewProgramRevision, ProjectedRuntimeViewId, ViewId, ViewIdError, ViewIdentityError,
+    ViewProgramId,
 };
 pub use registry::{
     ViewDescriptor, ViewImplementation, ViewRegistry, ViewRegistryError, ViewRegistryId,
+    ViewRegistryRuntimeDigest, ViewRegistryRuntimeDigestError, ViewRegistryStringField,
 };
 
 /// Stable identifier for a view call/property schema.

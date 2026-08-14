@@ -1,8 +1,8 @@
 use crate::{
-    DirtyFlags, Entity, EntityStore, PropertyBinding, PropertyBindingTableBuilder, ReactiveGraph,
-    Revision, RustViewId, ValueSourceId, ViewDescriptor, ViewError, ViewId, ViewImplementation,
-    ViewProgramId, ViewPropertyId, ViewPropertyKind, ViewRegistry, ViewRegistryError,
-    ViewRegistryId, ViewSchemaId,
+    AcceptedViewProgramRevision, DirtyFlags, Entity, EntityStore, PropertyBinding,
+    PropertyBindingTableBuilder, ReactiveGraph, Revision, RustViewId, ValueSourceId,
+    ViewDescriptor, ViewError, ViewId, ViewImplementation, ViewProgramId, ViewPropertyId,
+    ViewPropertyKind, ViewRegistry, ViewRegistryError, ViewRegistryId, ViewSchemaId,
 };
 
 #[derive(Debug, Eq, PartialEq)]
@@ -23,6 +23,10 @@ fn program_id(value: &str) -> ViewProgramId {
     ViewProgramId::try_new(value).unwrap()
 }
 
+fn revision(byte: u8) -> AcceptedViewProgramRevision {
+    AcceptedViewProgramRevision::try_from_bytes([byte; 32]).unwrap()
+}
+
 fn registry_id(index: usize) -> ViewRegistryId {
     ViewRegistryId::try_from_index(index).unwrap()
 }
@@ -35,6 +39,7 @@ fn view_registry_resolves_public_ids_to_dense_registry_ids() {
         public_id.clone(),
         ViewSchemaId(7),
         program_id("view-program.dialogue"),
+        revision(1),
     );
 
     let id = registry.register(descriptor).unwrap();
@@ -44,7 +49,8 @@ fn view_registry_resolves_public_ids_to_dense_registry_ids() {
     assert_eq!(
         registry.get(id).unwrap().implementation(),
         &ViewImplementation::Arcweft {
-            program: program_id("view-program.dialogue")
+            program: program_id("view-program.dialogue"),
+            revision: revision(1),
         }
     );
 }

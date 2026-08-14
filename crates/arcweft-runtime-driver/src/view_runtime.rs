@@ -594,6 +594,7 @@ impl BundleViewRuntime {
                     view.clone(),
                     ViewSchemaId(definition.state_schema_hash()),
                     catalog.program_id().clone(),
+                    catalog.revision(),
                 )?;
             }
         }

@@ -119,9 +119,11 @@ pub use value_program::{
     ViewValueProgramInventory, ViewValueSlotSnapshot,
 };
 pub use view::{
-    AcceptedViewProgramRevision, RustViewId, ViewDescriptor, ViewId, ViewIdError,
-    ViewIdentityError, ViewImplementation, ViewMountAllocationError, ViewMountAllocator,
-    ViewMountId, ViewProgramId, ViewRegistry, ViewRegistryError, ViewRegistryId, ViewSchemaId,
+    AcceptedViewProgramRevision, ProjectedRuntimeViewId, RustViewId, ViewDescriptor, ViewId,
+    ViewIdError, ViewIdentityError, ViewImplementation, ViewMountAllocationError,
+    ViewMountAllocator, ViewMountId, ViewProgramId, ViewRegistry, ViewRegistryError,
+    ViewRegistryId, ViewRegistryRuntimeDigest, ViewRegistryRuntimeDigestError,
+    ViewRegistryStringField, ViewSchemaId,
 };
 
 /// Stable key for one retained View fragment node.

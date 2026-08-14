@@ -191,13 +191,14 @@ impl BundleViewRuntime {
         let frame_revision = checked_next_frame_revision(self.frame_revision)?;
         let mut registry = self.registry.clone();
         for view in current.view_ids() {
-            registry.retire_arcweft(view, current.program_id())?;
+            registry.retire_arcweft(view, current.program_id(), current.revision())?;
         }
         for (view, definition) in candidate_catalog.definitions() {
             registry.register_arcweft(
                 view.clone(),
                 ViewSchemaId(definition.state_schema_hash()),
                 candidate_catalog.program_id().clone(),
+                candidate_catalog.revision(),
             )?;
         }
         let inventory = ViewValueProgramInventory::from_programs(

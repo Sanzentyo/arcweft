@@ -22,6 +22,17 @@ pub enum ViewIdError {
 #[derive(Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub struct ViewProgramId(PublicId);
 
+/// Stable runtime identity projected from one public View identity.
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub struct ProjectedRuntimeViewId([u8; 32]);
+
+impl ProjectedRuntimeViewId {
+    #[must_use]
+    pub const fn as_bytes(&self) -> &[u8; 32] {
+        &self.0
+    }
+}
+
 /// Semantic content revision of one accepted View program catalog.
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub struct AcceptedViewProgramRevision([u8; 32]);
@@ -120,6 +131,16 @@ impl ViewId {
 
     pub fn into_public_id(self) -> PublicId {
         self.0
+    }
+
+    /// Projects this public identity into the exact version-one runtime ID.
+    #[must_use]
+    pub fn projected_runtime_id_v1(&self) -> ProjectedRuntimeViewId {
+        let mut hasher = blake3::Hasher::new();
+        hasher.update(b"arcweft.runtime-view-id.v1\0");
+        hasher.update(&1_u32.to_le_bytes());
+        hash_string(&mut hasher, self.as_str());
+        ProjectedRuntimeViewId(*hasher.finalize().as_bytes())
     }
 }
 
@@ -273,6 +294,15 @@ const fn hex_value(byte: u8) -> u8 {
     }
 }
 
+fn hash_string(hasher: &mut blake3::Hasher, value: &str) {
+    hasher.update(
+        &u32::try_from(value.len())
+            .expect("View identities always fit the runtime string grammar")
+            .to_le_bytes(),
+    );
+    hasher.update(value.as_bytes());
+}
+
 #[cfg(test)]
 mod tests {
     use super::{
@@ -395,5 +425,30 @@ mod tests {
 
         assert_eq!(first, first_again);
         assert_ne!(first, second);
+    }
+
+    #[test]
+    fn projected_runtime_view_id_uses_the_version_one_byte_grammar() {
+        let view = ViewId::try_new("view.dialogue.standard").unwrap();
+        let mut expected = Vec::new();
+        expected.extend_from_slice(b"arcweft.runtime-view-id.v1\0");
+        expected.extend_from_slice(&1_u32.to_le_bytes());
+        expected.extend_from_slice(
+            &u32::try_from(view.as_str().len())
+                .expect("test identity length")
+                .to_le_bytes(),
+        );
+        expected.extend_from_slice(view.as_str().as_bytes());
+
+        assert_eq!(
+            view.projected_runtime_id_v1().as_bytes(),
+            blake3::hash(&expected).as_bytes()
+        );
+        assert_ne!(
+            view.projected_runtime_id_v1(),
+            ViewId::try_new("view.dialogue.other")
+                .unwrap()
+                .projected_runtime_id_v1()
+        );
     }
 }
