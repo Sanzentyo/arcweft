@@ -1,0 +1,19 @@
+boundary,outer_error,coordinate,source_variants,propagation_rule
+Runtime checked value,RuntimeCheckedTypeError,type_path + value_path,NestingLimit; WorkBudget; PathIndexOverflow; OuterShape; width/length/owner/variant; Choice; NominalLookup,never stringified
+Nominal descriptor lookup,RuntimeNominalCatalogLookupError,expected authority/nominal/semantic/layout,MissingDomain; MissingNominal; SemanticIdentity; NominalIdentity; Layout; Generation,embedded by RuntimeCheckedTypeError::NominalLookup
+Nominal tree,RuntimeNominalRecordTreeError::CheckedValue,field + both paths,RuntimeCheckedTypeError,source retained
+RuntimePlan declaration,RuntimePlanAdmissionError::TypeDeclaration,type_id + semantic/domain,RuntimeGenerationTypeLookupError,before site traversal
+RuntimePlan site,RuntimePlanAdmissionError::Site,RuntimePlanTypedSite,RuntimePlanSiteResolutionError,actual owner coordinate retained
+RuntimePlan checked value,RuntimePlanAdmissionError::CheckedValue,RuntimePlanTypedSite + both paths,RuntimeCheckedTypeError,before admitted plan publication
+AWBC structural reference,AwbcAdmissionError::Reference,AwbcTypedSite,AwbcReferenceError,before root correlation
+AWBC type declaration,AwbcAdmissionError::TypeDeclaration,AwbcTypeId,RuntimeGenerationTypeLookupError,before typed site resolution
+AWBC typed site,AwbcAdmissionError::TypedSite,AwbcTypedSite,AwbcTypedSiteResolutionError,actual table/slot retained
+Plan/AWBC pair,RuntimeProductAdmissionError::Origin,plan_site + awbc_site,RuntimeProductOriginError,coordinate-only; no root claim
+Plan/AWBC equality,RuntimeProductAdmissionError::Equality,plan_site,Missing; Extra; Conflicting; TypeMismatch; AuthorityMismatch,direct row evidence retained
+Catalog provenance,RuntimeGenerationCatalogError,catalog kind + expected/actual digest,CharacterDigest; ViewDigest; CustomDigest,no free generation mismatch scalar
+Dialogue catalog,CharacterDialogueCatalogAdmissionError,custom field + View where needed,local digest errors; generation source; MissingCustomFieldView,MissingCharacterView absent
+Dialogue checked value,CharacterDialogueValueError::CheckedValue,dialogue domain path + runtime paths,RuntimeCheckedTypeError,before canonical encode/publish
+Restore/replay/save,owner-specific CheckedValue variant,artifact coordinate + runtime paths,RuntimeCheckedTypeError,before ownership traversal/activation
+View activation,ViewRuntimeError::CheckedValue,ViewId + input field + runtime paths,RuntimeCheckedTypeError,same admitted catalog bridge
+VM,AwbcVmError::CheckedValue,function/block/instruction + AwbcTypedSite,RuntimeCheckedTypeError,no message-only flattening
+Role issuance,CharacterDialogueRuntimeRoleDeclarationError,role + accepted world/source,Missing/Duplicate/WrongOwner/WrongPath/WrongProducer/WrongWorld/LeakedCoordinate/LeakedNamed,registrar fails atomically

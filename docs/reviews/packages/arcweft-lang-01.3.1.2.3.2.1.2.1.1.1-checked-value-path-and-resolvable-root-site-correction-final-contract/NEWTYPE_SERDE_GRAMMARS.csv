@@ -1,0 +1,23 @@
+type,role,deserialize_owner,validation,wire_shape,bypass_prevention
+RuntimeValuePath,public canonical value evidence,custom Deserialize via try_from_segments,sequence length 0..=64,human u64 indices decimal strings; nonhuman u64,valid path only; existing owner
+RuntimeCheckedTypePath,public diagnostic evidence,no Deserialize,internal length 0..=64,none,cannot be supplied by raw artifacts
+RuntimeIndexPath,plan syntax coordinate,custom Deserialize via try_from_indices,length 1..=64; first=0,sequence<u32>,empty/invalid-root/too-deep rejected identically
+RuntimePlanTypeId,raw dense index,private wire u32 in enclosing DTO,u32; owner bounds at admission,u32,private field; not capability
+RuntimePlanTypeDeclaration,raw generation claim,private declaration wire DTO,semantic/root/check type consistency,tagged authority map,try_from_wire resolves structural relation; admission resolves generation
+RuntimeProjectRootId,operational root identity,no direct Deserialize; [u8;32] in declaration wire,exact 32 bytes equal semantic ID projection,[u8;32],crate-private from_semantic_type
+RuntimeProducerRootId,operational root identity,no direct Deserialize; [u8;32] in declaration wire,exact 32 bytes equal semantic ID projection,[u8;32],crate-private from_semantic_type
+RuntimePlanTypedSite,derived/coordinate evidence,private wire DTO + try_from_wire,nested paths/slot shape bounded,table-tagged map,no public field construction
+RuntimeFlowOpCoordinate,derived plan coordinate,private wire DTO + try_from_wire,descent <=64; every step named,tagged steps,actual owner bounds at admission
+RuntimeStreamOpCoordinate,derived plan coordinate,private wire DTO + try_from_wire,descent <=64,tagged steps,actual owner bounds at admission
+RuntimeSourceOpCoordinate,derived plan coordinate,private wire DTO,u32 indices,map,actual owner bounds at admission
+AwbcRuntimeTypeDeclaration,raw generation claim,private wire DTO + constructor,semantic/root/check type structural consistency,map,admission resolves generation
+AwbcTypedConstant,raw typed constant,private wire DTO + constructor,type id present,map,constant graph/bounds at verifier
+AwbcTypedPattern,raw typed pattern,private wire DTO + constructor,expected type mandatory,map,pattern graph/bounds at verifier
+AwbcTypedSite,derived AWBC coordinate,private wire DTO + try_from_wire,closed named slots,table-tagged map,actual table bounds at verifier
+AwbcTypedOrigin,coordinate-only mapping,private wire DTO + constructor,unique canonical pair,map,no root/type/generation field
+AwbcNominalRecordDomainId,dense domain index,no direct Deserialize; enclosing instruction/constant wire u32,u32; mandatory bounds,u32,owner verifies table bounds and exact project/producer tag
+RuntimeNominalRecordAdmissionDomain,borrowed authority,no Serde,generation lifetime,none,private fields; no owned escape
+RuntimeCheckedValueContext,borrowed domain-scoped validation provenance,no Serde,same generation lifetime plus exact project-site or producer domain,none,only RuntimeNominalRecordAdmissionDomain::checked_values
+RuntimeGenerationCatalogAdmission,borrowed catalog provenance,no Serde,generation lifetime,none,only admitted generation digest method
+CharacterDialogueGenerationCatalogs,borrowed concrete catalogs,no Serde,one shared lifetime,none,dialogue-owned checked constructor
+CharacterDialogueRuntimeRoleRegistry,accepted sema registry,no Serde,exact six rows + derived Style,none,only AcceptedNominalWorld projection

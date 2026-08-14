@@ -1,0 +1,48 @@
+variant,child_field,child_ordinal,current_owner_path,type_rule
+Value,none,none,RuntimeExpr::Value(value),derive exact checked type from RuntimeValue plus admitted nominal/opaque descriptor; non-checkable families are not root sites
+Local,none,none,RuntimeExpr::Local(name),resolve lexical binding type ID from enclosing typed owner scope
+EntityRef,none,none,RuntimeExpr::EntityRef(id),resolve accepted entity reference semantic type from admitted generation
+Let,expr,0,RuntimeExpr::Let.expr,child fact; binds to declared lexical type
+Let,body,1,RuntimeExpr::Let.body,root type equals body type
+Tuple,items[i],i,RuntimeExpr::Tuple(items),i is source/vector order; checked u32 path segment
+BracketSeq,items[i],i,RuntimeExpr::BracketSeq(items),i is source/vector order; checked u32 path segment
+RepeatSeq,value,0,RuntimeExpr::RepeatSeq.value,sequence item type
+Range,start,0,RuntimeExpr::Range.start,reserved ordinal 0; absent optional emits no row
+Range,end,1,RuntimeExpr::Range.end,reserved ordinal 1; absent optional emits no row
+Record,fields[i].expr,i,RuntimeExpr::Record fields,authored field order; row identity also checks field name/id
+NominalRecord,initializers[i].expr,i,RuntimeExpr::NominalRecord initializers,authored order; scatter to defining field ID only after typed validation
+Variant,payload,0,RuntimeExpr::Variant.payload,absent optional emits no child; owner/case determines payload type
+Field,target,0,RuntimeExpr::Field.target,projection result derives from target checked type and selected field/ordinal
+ProjectTuple,target,0,RuntimeExpr::ProjectTuple.target,projection result derives from target checked type and selected field/ordinal
+ProjectRecord,target,0,RuntimeExpr::ProjectRecord.target,projection result derives from target checked type and selected field/ordinal
+AssignField,target,0,RuntimeExpr::AssignField.target,target aggregate type
+AssignField,expr,1,RuntimeExpr::AssignField.expr,must equal selected field type
+AssignField,body,2,RuntimeExpr::AssignField.body,root type equals body type
+Call,args[i],i,RuntimeExpr::Call.args,exact accepted callable/intrinsic signature parameter i
+Function,body,0,RuntimeExpr::Function.body,body typed; function value itself is deliberate non-root checked-type exclusion
+Apply,callee,0,RuntimeExpr::Apply.callee,callee closure evidence; deliberate non-root result unless exact function signature exists
+Apply,args[i],i+1,RuntimeExpr::Apply.args,checked u32 add; parameter order
+TraitCall,receiver,0,RuntimeExpr::TraitCall.receiver,exact receiver type from RuntimeTraitMethod declaration
+TraitCall,args[i],i+1,RuntimeExpr::TraitCall.args,exact trait method parameter i
+PureCall,args[i],i,RuntimeExpr::PureCall.args,exact RuntimePureHelper input_type_ids[i]
+SpreadArg,inner,0,RuntimeExpr::SpreadArg.0,same child type; spread legality checked by call owner
+MethodCall,receiver,0,RuntimeExpr::MethodCall.receiver,resolved method receiver type
+MethodCall,args[i],i+1,RuntimeExpr::MethodCall.args,resolved method parameter i
+Map,source,0,RuntimeExpr::Map.source,sequence source type
+Map,body,1,RuntimeExpr::Map.body,mapped value or predicate type under bound parameter
+Filter,source,0,RuntimeExpr::Filter.source,sequence source type
+Filter,body,1,RuntimeExpr::Filter.body,mapped value or predicate type under bound parameter
+Sum,source,0,RuntimeExpr::Sum.source,numeric sequence source
+Unary,expr,0,RuntimeExpr::Unary.expr,operator-specific operand/result rule
+Binary,lhs,0,RuntimeExpr::Binary.lhs,operator-specific left operand
+Binary,rhs,1,RuntimeExpr::Binary.rhs,operator-specific right operand
+If,condition,0,RuntimeExpr::If.condition,Bool
+If,then_expr,1,RuntimeExpr::If.then_expr,must equal root result type
+If,else_expr,2,RuntimeExpr::If.else_expr,must equal then/root result type
+IfLet,expr,0,RuntimeExpr::IfLet.expr,pattern scrutinee type
+IfLet,guard,1,RuntimeExpr::IfLet.guard,reserved ordinal 1; absent optional emits no row; Bool
+IfLet,then_expr,2,RuntimeExpr::IfLet.then_expr,must equal root result type
+IfLet,else_expr,3,RuntimeExpr::IfLet.else_expr,must equal then/root result type
+Match,scrutinee,0,RuntimeExpr::Match.scrutinee,all arm patterns use this type
+Match,arms[i].guard,1 + i*2,RuntimeExpr::Match.arms[i].guard,checked u32 arithmetic; absent guard emits no row; Bool
+Match,arms[i].expr,2 + i*2,RuntimeExpr::Match.arms[i].expr,checked u32 arithmetic; every arm equals root result type

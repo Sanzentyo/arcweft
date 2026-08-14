@@ -1,0 +1,3 @@
+Cloning into '/mnt/data/arcweft-current-main'...
+fatal: unable to access 'https://github.com/Sanzentyo/arcweft.git/': Could not resolve host: github.com
+exit_status=128

@@ -1,0 +1,23 @@
+owner_enum,tag,tag_hex,variant,payload_grammar
+RuntimeFlowOpStep,0,0x00,LetElseElse,op:u32_le
+RuntimeFlowOpStep,1,0x01,IfThen,op:u32_le
+RuntimeFlowOpStep,2,0x02,IfElse,op:u32_le
+RuntimeFlowOpStep,3,0x03,IfLetThen,op:u32_le
+RuntimeFlowOpStep,4,0x04,IfLetElse,op:u32_le
+RuntimeFlowOpStep,5,0x05,MatchArm,arm:u32_le || op:u32_le
+RuntimeFlowOpStep,6,0x06,LoopBody,op:u32_le
+RuntimeFlowOpStep,7,0x07,LetLoopBody,op:u32_le
+RuntimeFlowOpStep,8,0x08,LoopNextBody,op:u32_le
+RuntimeFlowOpStep,9,0x09,WhileBody,op:u32_le
+RuntimeFlowOpStep,10,0x0a,WhileNextBody,op:u32_le
+RuntimeFlowOpStep,11,0x0b,WhileLetBody,op:u32_le
+RuntimeFlowOpStep,12,0x0c,WhileLetNextBody,op:u32_le
+RuntimeFlowOpStep,13,0x0d,ForBody,op:u32_le
+RuntimeFlowOpStep,14,0x0e,ForNextBody,op:u32_le
+RuntimeFlowOpStep,15,0x0f,ThreadBody,op:u32_le
+RuntimeFlowOpStep,16,0x10,ScopeBody,op:u32_le
+RuntimeFlowOpStep,17,0x11,LetScopeBody,op:u32_le
+RuntimeStreamOpStep,0,0x00,ForNextBody,op:u32_le
+RuntimeStreamOpStep,1,0x01,IfThen,op:u32_le
+RuntimeStreamOpStep,2,0x02,IfElse,op:u32_le
+RuntimeStreamOpStep,3,0x03,MatchArm,arm:u32_le || op:u32_le

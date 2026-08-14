@@ -1,0 +1,12 @@
+canonical_tag,variant,payload,serde_kind,human_readable,non_human,status_and_use
+0,TupleElement,u32,tuple_element,index:u32,index:u32,existing; tuple/anonymous tuple physical edge
+1,SequenceElement,u64,sequence_element,index:canonical decimal string,index:u64,existing; sequence/bytes physical edge
+2,TupleColumn,u32,tuple_column,index:u32,index:u32,existing; column ownership edge
+3,RecordField,RuntimeRecordFieldId,record_field,field:RuntimeRecordFieldId,field:RuntimeRecordFieldId,existing; anonymous record field
+4,RecordColumn,RuntimeRecordFieldId,record_column,field:RuntimeRecordFieldId,field:RuntimeRecordFieldId,existing; record-column edge
+5,NominalRecordField,RuntimeRecordFieldId,nominal_record_field,field:RuntimeRecordFieldId,field:RuntimeRecordFieldId,existing; nominal defining-order field
+6,FunctionCapture,RuntimeCaptureSlotId,function_capture,capture:RuntimeCaptureSlotId,capture:RuntimeCaptureSlotId,existing; affine capture edge
+7,VariantPayload,none,variant_payload,no payload fields,no payload fields,existing; nominal/Option/Result physical payload
+8,IteratorRemainder,u64,iterator_remainder,index:canonical decimal string,index:u64,existing; affine iterator remainder
+9,IteratorWitnessState,none,iterator_witness_state,no payload fields,no payload fields,existing; affine iterator evidence
+10,OpaquePayload,none,opaque_payload,no payload fields,no payload fields,new; sole opaque physical payload edge

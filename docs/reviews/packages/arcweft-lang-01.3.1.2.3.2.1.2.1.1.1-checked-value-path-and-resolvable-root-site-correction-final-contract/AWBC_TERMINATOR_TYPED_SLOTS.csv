@@ -1,0 +1,14 @@
+terminator_variant,field_tag,rust_slot_variant,current_field,type_resolution
+Branch,0,BranchCondition,condition,frame(condition) must Bool
+Match,0,MatchScrutinee,scrutinee,frame(scrutinee); each match-arm pattern expected type
+CallFunction,0,CallFunctionArgument { argument: u32 },args[i],frame(args[i]); target signature params[i]
+CallFunction,1,CallFunctionDestination,dst,optional frame(dst); target result
+GotoStatic,0,GotoStaticArgument { argument: u32 },args[i],frame(args[i]); target signature params[i]
+Choice,0,ChoiceDestination,dst,frame(dst); canonical choice result declaration
+Await,0,AwaitHandle,handle,frame(handle) TaskHandle
+Await,1,AwaitBinding,binding,typed pattern expected equals task result
+AwaitMany,0,AwaitManySource,source,frame(source) sequence/iterator
+AwaitMany,1,AwaitManyBinding,binding,typed pattern expected equals task item
+HostCall,0,HostCallArgument { argument: u32 },args[i],frame(args[i]); host call signature params[i]
+HostCall,1,HostCallDestination,dst,optional frame(dst); host call result
+Return,0,ReturnValue,value,optional frame(value); owning function result

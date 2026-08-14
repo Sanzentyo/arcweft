@@ -1,0 +1,16 @@
+tag,variant,payload_grammar
+0,Entry,entry:u32_le || entry_slot
+1,FlowExecutable,executable:u32_le || flow_executable_slot
+2,FlowConstant,flow_op_coordinate || binding:u32_le
+3,FlowExpression,flow_op_coordinate || expression_field || runtime_index_path
+4,FlowPattern,flow_op_coordinate || pattern_field || runtime_index_path
+5,PureHelper,helper:u32_le || helper_slot
+6,PureHelperExpression,helper:u32_le || runtime_index_path
+7,TraitMethod,method:u32_le || method_slot
+8,TraitMethodExpression,method:u32_le || runtime_index_path
+9,Stream,plan:u32_le || stream_slot
+10,StreamExpression,stream_op_coordinate || stream_expression_field || runtime_index_path
+11,StreamPattern,stream_op_coordinate || stream_pattern_field || runtime_index_path
+12,Source,plan:u32_le || source_slot
+13,SourceExpression,source_op_coordinate || source_expression_field || runtime_index_path
+14,SourcePattern,plan:u32_le || handler:u32_le || runtime_index_path

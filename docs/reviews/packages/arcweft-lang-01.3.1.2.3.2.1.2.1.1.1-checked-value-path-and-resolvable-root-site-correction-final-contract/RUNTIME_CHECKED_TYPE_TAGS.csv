@@ -1,0 +1,21 @@
+tag_hex,tag_decimal,variant,payload_grammar
+0x00,0,Never,none
+0x01,1,Unit,none
+0x02,2,Bool,none
+0x03,3,Signed,signed_width_tag:u8
+0x04,4,Unsigned,unsigned_width_tag:u8
+0x05,5,F32,none
+0x06,6,F64,none
+0x07,7,String,none
+0x08,8,Char,none
+0x09,9,Duration,none
+0x0a,10,EntityReference,none
+0x0b,11,Bytes,none
+0x10,16,Sequence,child:RuntimeCheckedTypeV1
+0x11,17,Tuple,u32_le(count) || child[count] in ordinal order
+0x12,18,Choice,u32_le(count) || alternative[count] in source order
+0x13,19,Nominal,nominal_id || semantic_identity[32] || layout_hash[32]
+0x14,20,Opaque,producer_id || semantic_identity[32] || admission_tag:u8
+0x15,21,Variant,nominal_id || semantic_identity[32] || u32_le(case_count) || cases in ordinal order
+0x16,22,Result,ok:RuntimeCheckedTypeV1 || error:RuntimeCheckedTypeV1
+0x17,23,Option,item:RuntimeCheckedTypeV1

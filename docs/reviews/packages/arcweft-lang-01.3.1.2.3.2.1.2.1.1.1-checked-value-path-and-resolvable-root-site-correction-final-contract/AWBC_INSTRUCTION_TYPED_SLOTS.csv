@@ -1,0 +1,64 @@
+instruction_variant,field_tag,rust_slot_variant,current_field,type_resolution
+LoadConst,0,LoadConstDestination,dst,frame(dst)
+LoadConst,1,LoadConstConstant,constant,typed constant type
+Move,0,MoveDestination,dst,frame(dst)
+Move,1,MoveSource,src,frame(src)
+Clear,0,ClearRegister,register,frame(register)
+BindPattern,0,BindPatternPatternExpected,pattern,typed pattern expected
+BindPattern,1,BindPatternValue,value,frame(value)
+TestPattern,0,TestPatternDestinationBool,dst,frame(dst) must Bool
+TestPattern,1,TestPatternPatternExpected,pattern,typed pattern expected
+TestPattern,2,TestPatternValue,value,frame(value)
+MakeTuple,0,MakeTupleDestination,dst,frame(dst) tuple
+MakeTuple,1,MakeTupleItem { item: u32 },items[i],frame(items[i])
+MakeSequence,0,MakeSequenceDestination,dst,frame(dst) sequence
+MakeSequence,1,MakeSequenceItem { item: u32 },items[i],frame(items[i])
+RepeatSequence,0,RepeatSequenceDestination,dst,frame(dst) sequence
+RepeatSequence,1,RepeatSequenceValue,value,frame(value) item
+RepeatSequence,2,RepeatSequenceLength,len,frame(len) unsigned
+SequenceLen,0,SequenceLenDestination,dst,frame(dst) unsigned
+SequenceLen,1,SequenceLenSequence,sequence,frame(sequence)
+SequenceGet,0,SequenceGetDestination,dst,frame(dst) item
+SequenceGet,1,SequenceGetSequence,sequence,frame(sequence)
+SequenceGet,2,SequenceGetIndex,index,frame(index) unsigned
+SequenceSlice,0,SequenceSliceDestination,dst,frame(dst) sequence
+SequenceSlice,1,SequenceSliceSequence,sequence,frame(sequence)
+SequenceSlice,2,SequenceSliceStart,start,frame(start) unsigned
+SequencePush,0,SequencePushSequence,sequence,frame(sequence)
+SequencePush,1,SequencePushValue,value,frame(value) item
+MakeRecord,0,MakeRecordDestination,dst,frame(dst)
+MakeRecord,1,MakeRecordDeclaredType,ty,runtime type declaration
+MakeRecord,2,MakeRecordField { field: u32 },fields[i],frame(fields[i]); field_names[i] resolves descriptor field
+MakeVariant,0,MakeVariantDestination,dst,frame(dst)
+MakeVariant,1,MakeVariantDeclaredType,ty,runtime type declaration
+MakeVariant,2,MakeVariantPayload,payload,frame(payload) when present
+ProjectTuple,0,ProjectTupleDestination,dst,frame(dst)
+ProjectTuple,1,ProjectTupleTarget,target,frame(target) tuple
+ProjectRecord,0,ProjectRecordDestination,dst,frame(dst)
+ProjectRecord,1,ProjectRecordTarget,target,frame(target) record
+ProjectField,0,ProjectFieldDestination,dst,frame(dst)
+ProjectField,1,ProjectFieldTarget,target,frame(target) record
+Unary,0,UnaryDestination,dst,frame(dst)
+Unary,1,UnarySource,src,frame(src)
+Binary,0,BinaryDestination,dst,frame(dst)
+Binary,1,BinaryLeft,lhs,frame(lhs)
+Binary,2,BinaryRight,rhs,frame(rhs)
+CallPureHelper,0,CallPureHelperDestination,dst,frame(dst)
+CallPureHelper,1,CallPureHelperArgument { argument: u32 },args[i],frame(args[i]); helper.signature.params[i]
+CallIntrinsic,0,CallIntrinsicDestination,dst,optional frame(dst); intrinsic signature result
+CallIntrinsic,1,CallIntrinsicArgument { argument: u32 },args[i],frame(args[i]); intrinsic signature params[i]
+EmitEffect,0,EmitEffectArgument { argument: u32 },args[i],frame(args[i]); effect.signature parameter after static prefix
+StartTask,0,StartTaskDestination,dst,frame(dst); task signature result/handle rule
+StartTask,1,StartTaskArgument { argument: u32 },args[i],frame(args[i]); task.signature.params[i]
+SpawnFiber,0,SpawnFiberDestination,dst,optional frame(dst); function signature result/handle rule
+SpawnFiber,1,SpawnFiberArgument { argument: u32 },args[i],frame(args[i]); target function signature params[i]
+StreamYield,0,StreamYieldValue,value,frame(value); stream.item_type
+Drop,0,DropRegister,register,frame(register)
+SourceYield,0,SourceYieldValue,value,frame(value); source.item_type
+AssignField,0,AssignFieldTarget,target,frame(target) record
+AssignField,1,AssignFieldValue,value,frame(value); selected field type
+CallTraitMethod,0,CallTraitMethodDestination,dst,frame(dst); method result
+CallTraitMethod,1,CallTraitMethodReceiver,receiver,frame(receiver); method receiver
+CallTraitMethod,2,CallTraitMethodArgument { argument: u32 },args[i],frame(args[i]); method signature parameter after receiver
+CallTraitMethod,3,CallTraitMethodReceiverOut,receiver_out,optional frame; same receiver type for mutable/owned
+RegisterCleanup,0,RegisterCleanupArgument { argument: u32 },args[i],frame(args[i]); effect signature after static prefix

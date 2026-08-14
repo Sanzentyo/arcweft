@@ -1,0 +1,3 @@
+# Producer, consumer, migration, and deletion inventory
+
+`PRODUCER_CONSUMER_DELETION_INVENTORY.csv` is normative and contains 772 concrete rows. It covers every canonical path edge, physical value family, actual-owner plan/AWBC site, optional-presence site, indirect reference, deliberate exclusion, catalog/role/domain boundary, execution consumer, migration, and deletion. Excluded Function/GotoDynamic/RegisterCleanup fields have explicit negative-authority rows and no emitted enum/tag rows; the current product-step raw program/verify-only replacement paths have exact admitted-product migration rows.

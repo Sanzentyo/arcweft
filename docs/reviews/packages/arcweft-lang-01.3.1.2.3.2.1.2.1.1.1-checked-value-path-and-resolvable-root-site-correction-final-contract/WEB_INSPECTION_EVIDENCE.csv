@@ -1,0 +1,2 @@
+path,commit,raw_url,line_range,evidence,retrieval
+crates/arcweft-core/src/awbc/product_step.rs,36f83f8509417d1110a34f1b32aee6f4a113dcf3,https://raw.githubusercontent.com/Sanzentyo/arcweft/36f83f8509417d1110a34f1b32aee6f4a113dcf3/crates/arcweft-core/src/awbc/product_step.rs,"121-225, 283-285",AwbcProductStepExecutor owns raw AwbcProgram; raw replace_program_preserving_state; for_entry/for_function only verify; program() exposes raw program,commit-pinned web.open; local binary downloader rejected text/x-c despite HTTP 200

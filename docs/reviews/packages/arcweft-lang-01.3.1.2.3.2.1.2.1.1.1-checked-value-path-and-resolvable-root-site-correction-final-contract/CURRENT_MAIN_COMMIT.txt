@@ -1,0 +1,3 @@
+36f83f8509417d1110a34f1b32aee6f4a113dcf3
+main
+Record invalid catalog authority return
