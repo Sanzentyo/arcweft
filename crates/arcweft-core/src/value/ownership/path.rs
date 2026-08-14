@@ -23,6 +23,7 @@ pub enum RuntimeValuePathSegment {
     VariantPayload,
     IteratorRemainder(u64),
     IteratorWitnessState,
+    OpaquePayload,
 }
 
 /// Failure to construct or resolve a canonical runtime-value path.
@@ -96,6 +97,7 @@ impl RuntimeValuePathSegment {
             Self::VariantPayload => 7,
             Self::IteratorRemainder(_) => 8,
             Self::IteratorWitnessState => 9,
+            Self::OpaquePayload => 10,
         }
     }
 }
@@ -153,6 +155,7 @@ enum HumanPathSegmentRef {
     VariantPayload,
     IteratorRemainder { index: String },
     IteratorWitnessState,
+    OpaquePayload {},
 }
 
 #[derive(Deserialize)]
@@ -168,6 +171,7 @@ enum HumanPathSegment {
     VariantPayload,
     IteratorRemainder { index: String },
     IteratorWitnessState,
+    OpaquePayload {},
 }
 
 #[derive(Serialize)]
@@ -183,6 +187,7 @@ enum NonHumanPathSegmentRef {
     VariantPayload,
     IteratorRemainder { index: u64 },
     IteratorWitnessState,
+    OpaquePayload {},
 }
 
 #[derive(Deserialize)]
@@ -198,6 +203,7 @@ enum NonHumanPathSegment {
     VariantPayload,
     IteratorRemainder { index: u64 },
     IteratorWitnessState,
+    OpaquePayload {},
 }
 
 fn parse_canonical_u64<E: serde::de::Error>(value: &str) -> Result<u64, E> {
@@ -233,6 +239,7 @@ impl Serialize for RuntimeValuePathSegment {
                     NonHumanPathSegmentRef::IteratorRemainder { index }
                 }
                 Self::IteratorWitnessState => NonHumanPathSegmentRef::IteratorWitnessState,
+                Self::OpaquePayload => NonHumanPathSegmentRef::OpaquePayload {},
             };
             return segment.serialize(serializer);
         }
@@ -251,6 +258,7 @@ impl Serialize for RuntimeValuePathSegment {
                 index: index.to_string(),
             },
             Self::IteratorWitnessState => HumanPathSegmentRef::IteratorWitnessState,
+            Self::OpaquePayload => HumanPathSegmentRef::OpaquePayload {},
         };
         human.serialize(serializer)
     }
@@ -275,6 +283,7 @@ impl<'de> Deserialize<'de> for RuntimeValuePathSegment {
                 NonHumanPathSegment::VariantPayload => Self::VariantPayload,
                 NonHumanPathSegment::IteratorRemainder { index } => Self::IteratorRemainder(index),
                 NonHumanPathSegment::IteratorWitnessState => Self::IteratorWitnessState,
+                NonHumanPathSegment::OpaquePayload {} => Self::OpaquePayload,
             });
         }
         Ok(match HumanPathSegment::deserialize(deserializer)? {
@@ -292,6 +301,7 @@ impl<'de> Deserialize<'de> for RuntimeValuePathSegment {
                 Self::IteratorRemainder(parse_canonical_u64(&index)?)
             }
             HumanPathSegment::IteratorWitnessState => Self::IteratorWitnessState,
+            HumanPathSegment::OpaquePayload {} => Self::OpaquePayload,
         })
     }
 }
@@ -340,6 +350,7 @@ mod tests {
                 record_field(1),
             )])
             .unwrap(),
+            RuntimeValuePath::try_from_segments([RuntimeValuePathSegment::OpaquePayload]).unwrap(),
         ];
         assert!(paths.windows(2).all(|pair| pair[0] < pair[1]));
     }
@@ -364,12 +375,13 @@ mod tests {
             RuntimeValuePathSegment::RecordField(record_field(2)),
             RuntimeValuePathSegment::SequenceElement(4),
             RuntimeValuePathSegment::VariantPayload,
+            RuntimeValuePathSegment::OpaquePayload,
         ])
         .unwrap();
         let json = serde_json::to_string(&path).unwrap();
         assert_eq!(
             json,
-            r#"[{"kind":"record_field","field":2},{"kind":"sequence_element","index":"4"},{"kind":"variant_payload"}]"#
+            r#"[{"kind":"record_field","field":2},{"kind":"sequence_element","index":"4"},{"kind":"variant_payload"},{"kind":"opaque_payload"}]"#
         );
         assert_eq!(
             serde_json::from_str::<RuntimeValuePath>(&json).unwrap(),
@@ -389,6 +401,7 @@ mod tests {
             r#"[{"kind":"record_field","field":0}]"#,
             r#"[{"kind":"sequence_element","index":"4","extra":true}]"#,
             r#"[{"kind":"variant_payload","kind":"variant_payload"}]"#,
+            r#"[{"kind":"opaque_payload","extra":true}]"#,
             r#"[{"kind":"unknown"}]"#,
         ] {
             assert!(serde_json::from_str::<RuntimeValuePath>(invalid).is_err());

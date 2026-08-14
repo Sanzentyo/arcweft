@@ -193,7 +193,8 @@ pub(super) fn encode_value_path(path: &RuntimeValuePath) -> Vec<u8> {
                 push_u32(&mut bytes, capture.get());
             }
             RuntimeValuePathSegment::VariantPayload
-            | RuntimeValuePathSegment::IteratorWitnessState => {}
+            | RuntimeValuePathSegment::IteratorWitnessState
+            | RuntimeValuePathSegment::OpaquePayload => {}
         }
     }
     bytes
@@ -231,6 +232,7 @@ pub(super) fn decode_value_path(
             7 => RuntimeValuePathSegment::VariantPayload,
             8 => RuntimeValuePathSegment::IteratorRemainder(reader.u64()?),
             9 => RuntimeValuePathSegment::IteratorWitnessState,
+            10 => RuntimeValuePathSegment::OpaquePayload,
             tag => return Err(RuntimeOwnershipBinaryError::UnknownPathSegmentTag { tag }),
         };
         segments.push(segment);
@@ -378,6 +380,7 @@ mod tests {
                 "020000000603000000080600000000000000",
             ),
             (r#"[{"kind":"iterator_witness_state"}]"#, "0100000009"),
+            (r#"[{"kind":"opaque_payload"}]"#, "010000000a"),
         ];
         for (json, expected) in goldens {
             let path: RuntimeValuePath = self::json(json);
@@ -395,8 +398,8 @@ mod tests {
         ));
         assert!(decode_owned_slot(&[0, 0, 0, 0, 0, 0, 0, 0, 0, 2, 0, 0, 0, 0, 0, 0, 0]).is_err());
         assert!(matches!(
-            decode_value_path(&[1, 0, 0, 0, 10]),
-            Err(RuntimeOwnershipBinaryError::UnknownPathSegmentTag { tag: 10 })
+            decode_value_path(&[1, 0, 0, 0, 11]),
+            Err(RuntimeOwnershipBinaryError::UnknownPathSegmentTag { tag: 11 })
         ));
         assert!(decode_value_path(&[1, 0, 0, 0, 3, 0, 0, 0, 0]).is_err());
         assert!(decode_value_path(&[2, 0, 0, 0, 7]).is_err());
