@@ -156,6 +156,11 @@ fn runtime_projection_emits_stable_diagnostic_without_message_parsing() {
         .expect("typed assertion statement");
     let mut input = RuntimePlanSemanticFactInput::new();
     for (_, module) in executable.modules() {
+        for (owner, _) in module.locals() {
+            input
+                .push_local_declaration(owner)
+                .expect("fixture local identity");
+        }
         for (owner, _) in module.expressions() {
             input.push_expression_type(
                 owner,

@@ -134,6 +134,11 @@ fn agent_debug_diagnostic_projects_fresh_session_fault() {
 
     let mut input = RuntimePlanSemanticFactInput::new();
     for (_, module) in executable.modules() {
+        for (owner, _) in module.locals() {
+            input
+                .push_local_declaration(owner)
+                .expect("fixture local identity");
+        }
         for (owner, _) in module.expressions() {
             input.push_expression_type(
                 owner,

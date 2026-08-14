@@ -27,9 +27,11 @@ use arcweft_core::pattern::{
     RuntimeOpaqueTypeOwner, RuntimeOpaqueTypeProducerId,
 };
 use arcweft_core::plan::{
-    FlowRuntimeId, RuntimeIteratorEvidence, RuntimeLineId, RuntimeReceiverMode,
+    FlowRuntimeId, RuntimeIteratorEvidence, RuntimeLineId, RuntimeLocalDeclarationTable,
+    RuntimeLocalDeclarationTableBuilder, RuntimeLocalDeclarationTableError, RuntimeReceiverMode,
     RuntimeTraitMethodId,
 };
+use arcweft_core::runtime_id::RuntimeLocalDeclarationId;
 use arcweft_core::step::RuntimeHostCallMode;
 use arcweft_core::value::{
     RuntimeIntrinsic, RuntimeNominalRecordLayout, RuntimeSignedIntWidth, RuntimeUnsignedIntWidth,
@@ -1175,8 +1177,10 @@ impl RuntimeCheckedCapture {
 ///
 /// Staged facts are not executable. [`RuntimePlanSemanticFacts::try_new`]
 /// validates every owner and nested project identity before publication.
-#[derive(Clone, Debug, Default)]
+#[derive(Debug)]
 pub struct RuntimePlanSemanticFactInput {
+    local_declaration_builder: RuntimeLocalDeclarationTableBuilder,
+    local_declarations: Vec<(LocalId, RuntimeLocalDeclarationId)>,
     flows: Vec<(ItemId, FlowRuntimeId)>,
     expression_types: Vec<(ExprId, RuntimeNormalizedType)>,
     pattern_types: Vec<(PatternId, RuntimeNormalizedType)>,
@@ -1200,7 +1204,40 @@ pub struct RuntimePlanSemanticFactInput {
 
 impl RuntimePlanSemanticFactInput {
     pub fn new() -> Self {
-        Self::default()
+        Self {
+            local_declaration_builder: RuntimeLocalDeclarationTableBuilder::new(),
+            local_declarations: Vec::new(),
+            flows: Vec::new(),
+            expression_types: Vec::new(),
+            pattern_types: Vec::new(),
+            expression_literals: Vec::new(),
+            pattern_literals: Vec::new(),
+            pattern_items: Vec::new(),
+            values: Vec::new(),
+            selects: Vec::new(),
+            nominal_records: Vec::new(),
+            pattern_nominal_records: Vec::new(),
+            expression_variants: Vec::new(),
+            pattern_variants: Vec::new(),
+            types: Vec::new(),
+            calls: Vec::new(),
+            postfix_candidates: Vec::new(),
+            trait_methods: Vec::new(),
+            iterations: Vec::new(),
+            assertions: Vec::new(),
+            captures: Vec::new(),
+        }
+    }
+
+    /// Appends one accepted HIR local in canonical project order and returns
+    /// its final plan-local identity.
+    pub fn push_local_declaration(
+        &mut self,
+        owner: LocalId,
+    ) -> Result<RuntimeLocalDeclarationId, RuntimeLocalDeclarationTableError> {
+        let local = self.local_declaration_builder.push()?;
+        self.local_declarations.push((owner, local));
+        Ok(local)
     }
 
     pub fn push_flow(&mut self, owner: ItemId, identity: FlowRuntimeId) {
@@ -1287,10 +1324,18 @@ impl RuntimePlanSemanticFactInput {
     }
 }
 
+impl Default for RuntimePlanSemanticFactInput {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 /// Immutable semantic fact set bound to one exact executable project generation.
 #[derive(Clone, Debug)]
 pub struct RuntimePlanSemanticFacts {
     snapshots: BTreeMap<HirModuleId, HirSnapshotId>,
+    local_declaration_table: RuntimeLocalDeclarationTable,
+    local_declarations: BTreeMap<LocalId, RuntimeLocalDeclarationId>,
     flows: BTreeMap<ItemId, FlowRuntimeId>,
     expression_types: BTreeMap<ExprId, RuntimeNormalizedType>,
     pattern_types: BTreeMap<PatternId, RuntimeNormalizedType>,
@@ -1324,6 +1369,10 @@ impl RuntimePlanSemanticFacts {
         project: HirExecutableProjectView<'_>,
         input: RuntimePlanSemanticFactInput,
     ) -> Result<Self, RuntimeSemanticFactsError> {
+        let expected_local_declarations = project
+            .modules()
+            .flat_map(|(_, module)| module.locals().map(|(owner, _)| owner))
+            .collect::<Vec<_>>();
         let modules = project
             .modules()
             .map(|(_, module)| (module.module_id(), module.as_ref()))
@@ -1347,6 +1396,58 @@ impl RuntimePlanSemanticFacts {
         for (owner, ty) in &pattern_types {
             resolve_pattern(&modules, *owner)?;
             validate_normalized_type(&modules, ty)?;
+        }
+
+        let local_declaration_table = input.local_declaration_builder.finish();
+        let local_declarations = collect_unique(
+            input.local_declarations.iter().copied(),
+            RuntimeSemanticFactFamily::LocalDeclaration,
+        )?;
+        let expected_local_set = expected_local_declarations
+            .iter()
+            .copied()
+            .collect::<BTreeSet<_>>();
+        if let Some((local, _)) = input
+            .local_declarations
+            .iter()
+            .find(|(local, _)| !expected_local_set.contains(local))
+        {
+            return Err(RuntimeSemanticFactsError::ExtraLocalDeclaration { local: *local });
+        }
+        if let Some(local) = expected_local_declarations
+            .iter()
+            .find(|local| !local_declarations.contains_key(local))
+        {
+            return Err(RuntimeSemanticFactsError::MissingLocalDeclaration { local: *local });
+        }
+        for (position, ((owner, local), expected_owner)) in input
+            .local_declarations
+            .iter()
+            .zip(&expected_local_declarations)
+            .enumerate()
+        {
+            if owner != expected_owner {
+                return Err(
+                    RuntimeSemanticFactsError::NonCanonicalLocalDeclarationOrder {
+                        expected: *expected_owner,
+                        actual: *owner,
+                    },
+                );
+            }
+            let expected = u32::try_from(position)
+                .ok()
+                .and_then(|position| position.checked_add(1));
+            if expected != Some(local.get().get()) {
+                return Err(
+                    RuntimeSemanticFactsError::NonCanonicalLocalDeclarationIdentity {
+                        owner: *owner,
+                        actual: *local,
+                    },
+                );
+            }
+        }
+        if usize::try_from(local_declaration_table.len()).ok() != Some(local_declarations.len()) {
+            return Err(RuntimeSemanticFactsError::LocalDeclarationTableMismatch);
         }
 
         let flows = collect_unique(input.flows, RuntimeSemanticFactFamily::FlowIdentity)?;
@@ -1636,6 +1737,8 @@ impl RuntimePlanSemanticFacts {
 
         Ok(Self {
             snapshots,
+            local_declaration_table,
+            local_declarations,
             flows,
             expression_types,
             pattern_types,
@@ -1753,6 +1856,17 @@ impl RuntimePlanSemanticFacts {
         self.pattern_types.get(&pattern)
     }
 
+    /// Final plan-local identity for one accepted final-HIR local.
+    pub fn local_declaration(&self, local: LocalId) -> Option<RuntimeLocalDeclarationId> {
+        self.local_declarations.get(&local).copied()
+    }
+
+    /// Complete contiguous local domain shared by patterns, expressions, and
+    /// later capture projection.
+    pub const fn local_declaration_table(&self) -> &RuntimeLocalDeclarationTable {
+        &self.local_declaration_table
+    }
+
     /// Compiler-admitted core identity for one exact final-HIR Flow item.
     pub fn flow(&self, item: ItemId) -> Option<&FlowRuntimeId> {
         self.flows.get(&item)
@@ -1861,6 +1975,21 @@ pub enum RuntimeSemanticFactsError {
     UnresolvedItem { item: ItemId },
     #[error("runtime semantic fact references unresolved local {local:?}")]
     UnresolvedLocal { local: LocalId },
+    #[error("accepted runtime semantic facts omit executable local declaration {local:?}")]
+    MissingLocalDeclaration { local: LocalId },
+    #[error("accepted runtime semantic facts contain extra local declaration {local:?}")]
+    ExtraLocalDeclaration { local: LocalId },
+    #[error(
+        "runtime local declarations are not in canonical project order: expected {expected:?}, observed {actual:?}"
+    )]
+    NonCanonicalLocalDeclarationOrder { expected: LocalId, actual: LocalId },
+    #[error("runtime local declaration {owner:?} has non-canonical identity {actual}")]
+    NonCanonicalLocalDeclarationIdentity {
+        owner: LocalId,
+        actual: RuntimeLocalDeclarationId,
+    },
+    #[error("runtime local-declaration table does not match its HIR owner projection")]
+    LocalDeclarationTableMismatch,
     #[error("runtime semantic fact references unresolved expression {expression:?}")]
     UnresolvedExpression { expression: ExprId },
     #[error("runtime semantic fact references unresolved statement {statement:?}")]
@@ -1957,6 +2086,7 @@ pub enum RuntimeSemanticFactsError {
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum RuntimeSemanticFactFamily {
+    LocalDeclaration,
     FlowIdentity,
     ExpressionType,
     PatternType,

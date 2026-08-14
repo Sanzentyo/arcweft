@@ -1990,6 +1990,11 @@ mod tests {
     ) -> RuntimePlanSemanticFactInput {
         let mut input = RuntimePlanSemanticFactInput::new();
         for (_, module) in project.modules() {
+            for (owner, _) in module.locals() {
+                input
+                    .push_local_declaration(owner)
+                    .expect("fixture local identity");
+            }
             for (owner, _) in module.expressions() {
                 input.push_expression_type(
                     owner,

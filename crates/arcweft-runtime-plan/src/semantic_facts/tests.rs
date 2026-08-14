@@ -170,6 +170,11 @@ fn complete_type_input(project: &HirProject) -> RuntimePlanSemanticFactInput {
         .expect("executable type fixture")
         .modules()
     {
+        for (owner, _) in module.locals() {
+            input
+                .push_local_declaration(owner)
+                .expect("fixture local identity");
+        }
         for (owner, _) in module.expressions() {
             input.push_expression_type(owner, unit_type());
         }
@@ -178,6 +183,111 @@ fn complete_type_input(project: &HirProject) -> RuntimePlanSemanticFactInput {
         }
     }
     input
+}
+
+fn local_owners(project: &HirProject) -> Vec<arcweft_lang_hir::identity::LocalId> {
+    project
+        .executable_view()
+        .expect("executable local fixture")
+        .modules()
+        .flat_map(|(_, module)| module.locals().map(|(owner, _)| owner))
+        .collect()
+}
+
+#[test]
+fn local_declarations_use_one_complete_contiguous_canonical_projection() {
+    let project = project_fixture(
+        "local-declaration-order",
+        "fn root(first: bool, second: bool) { let third = first; second }\n",
+    );
+    let owners = local_owners(&project);
+    assert!(
+        owners.len() >= 3,
+        "fixture retains parameters and let binding"
+    );
+
+    let facts = RuntimePlanSemanticFacts::try_new(
+        project.executable_view().expect("executable fixture"),
+        complete_type_input(&project),
+    )
+    .expect("complete canonical local projection");
+
+    assert_eq!(
+        usize::try_from(facts.local_declaration_table().len()).ok(),
+        Some(owners.len())
+    );
+    for (position, owner) in owners.into_iter().enumerate() {
+        assert_eq!(
+            facts
+                .local_declaration(owner)
+                .expect("every executable HIR local has one plan-local ID")
+                .get()
+                .get(),
+            u32::try_from(position).expect("bounded fixture ordinal") + 1
+        );
+    }
+}
+
+#[test]
+fn missing_extra_duplicate_and_reordered_local_projections_are_rejected() {
+    let project = project_fixture(
+        "invalid-local-declarations",
+        "fn root(first: bool, second: bool) { first }\n",
+    );
+    let owners = local_owners(&project);
+    assert!(owners.len() >= 2, "fixture retains both parameters");
+    let executable = project.executable_view().expect("executable fixture");
+
+    let mut missing = complete_type_input(&project);
+    let missing_owner = missing
+        .local_declarations
+        .pop()
+        .expect("fixture local declaration")
+        .0;
+    assert_eq!(
+        RuntimePlanSemanticFacts::try_new(executable, missing)
+            .expect_err("a local cannot be omitted"),
+        RuntimeSemanticFactsError::MissingLocalDeclaration {
+            local: missing_owner,
+        }
+    );
+
+    let foreign = project_fixture("extra-local-declaration", "fn foreign(value: bool) {}\n");
+    let foreign_owner = local_owners(&foreign)[0];
+    let mut extra = complete_type_input(&project);
+    extra
+        .push_local_declaration(foreign_owner)
+        .expect("bounded extra local identity");
+    assert_eq!(
+        RuntimePlanSemanticFacts::try_new(executable, extra)
+            .expect_err("a foreign local cannot extend the plan domain"),
+        RuntimeSemanticFactsError::ExtraLocalDeclaration {
+            local: foreign_owner,
+        }
+    );
+
+    let mut duplicate = complete_type_input(&project);
+    duplicate
+        .push_local_declaration(owners[0])
+        .expect("bounded duplicate local identity");
+    assert_eq!(
+        RuntimePlanSemanticFacts::try_new(executable, duplicate)
+            .expect_err("one HIR local cannot receive two plan identities"),
+        RuntimeSemanticFactsError::DuplicateFact {
+            family: RuntimeSemanticFactFamily::LocalDeclaration,
+        }
+    );
+
+    let mut reordered = complete_type_input(&project);
+    reordered.local_declarations.swap(0, 1);
+    assert_eq!(
+        RuntimePlanSemanticFacts::try_new(executable, reordered)
+            .expect_err("the same local set in a noncanonical order is invalid"),
+        RuntimeSemanticFactsError::NonCanonicalLocalDeclarationOrder {
+            expected: owners[0],
+            actual: owners[1],
+        }
+    );
 }
 
 #[test]
@@ -352,6 +462,11 @@ fn missing_pattern_type_is_rejected_before_publication() {
     let mut input = RuntimePlanSemanticFactInput::new();
     let executable = project.executable_view().expect("executable fixture");
     for (_, module) in executable.modules() {
+        for (owner, _) in module.locals() {
+            input
+                .push_local_declaration(owner)
+                .expect("fixture local identity");
+        }
         for (owner, _) in module.expressions() {
             input.push_expression_type(owner, unit_type());
         }
@@ -440,6 +555,11 @@ fn nested_operational_expression_type_is_retained_without_reconstruction() {
         .expect("executable fixture")
         .modules()
     {
+        for (local, _) in module.locals() {
+            input
+                .push_local_declaration(local)
+                .expect("fixture local identity");
+        }
         for (expression, _) in module.expressions() {
             input.push_expression_type(expression, nested.clone());
         }
@@ -513,6 +633,13 @@ fn postfix_type_completeness_keeps_only_the_selected_candidate_expression_tree()
 
     let complete_selected_input = || {
         let mut input = RuntimePlanSemanticFactInput::new();
+        for (_, module) in executable.modules() {
+            for (owner, _) in module.locals() {
+                input
+                    .push_local_declaration(owner)
+                    .expect("fixture local identity");
+            }
+        }
         for owner in &accepted {
             input.push_expression_type(*owner, unit_type());
         }

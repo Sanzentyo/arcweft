@@ -26,7 +26,8 @@ use arcweft_core::{
     plan::{
         FlowRuntimeId, RuntimeIteratorEvidence, RuntimeIteratorIdentityWitnessCalls,
         RuntimeIteratorWitnessCalls, RuntimeIteratorWitnessEvidence,
-        RuntimeIteratorWitnessExecutable, RuntimeLineId, RuntimeTraitMethodId,
+        RuntimeIteratorWitnessExecutable, RuntimeLineId, RuntimeLocalDeclarationTableError,
+        RuntimeTraitMethodId,
     },
     step::RuntimeHostCallMode,
     time::LogicalDuration,
@@ -44,7 +45,7 @@ use arcweft_dialogue::{
 };
 use arcweft_lang_hir::{
     expr::HirExprKind,
-    identity::{ExprId, ItemId, PatternId, StmtId},
+    identity::{ExprId, ItemId, LocalId, PatternId, StmtId},
     item::{HirCharacterSurfaceAlias, HirDeclarationMemberKind, HirItemKind, HirRetainedName},
     leaf::{
         HirBigUint, HirCharacterLiteral, HirDecimal, HirDurationLiteral, HirFloatLiteral,
@@ -113,6 +114,10 @@ pub enum RuntimeSemanticProjectionError {
     Generation(Box<FinalSemanticAnalysisError>),
     #[error(transparent)]
     Facts(Box<RuntimeSemanticFactsError>),
+    #[error(transparent)]
+    LocalDeclarations(#[from] RuntimeLocalDeclarationTableError),
+    #[error("final semantic analysis omits executable HIR local {local:?}")]
+    MissingLocalSemanticFact { local: LocalId },
     #[error("final semantic owner {owner:?} belongs to no executable HIR module")]
     MissingModule { owner: ExprId },
     #[error("project nominal {declaration:?} is absent from the accepted symbol table")]
@@ -199,6 +204,17 @@ pub fn project_runtime_semantic_facts(
 ) -> Result<RuntimePlanSemanticFacts, RuntimeSemanticProjectionError> {
     analysis.validate_generation(project, symbols)?;
     let mut input = RuntimePlanSemanticFactInput::new();
+
+    for (_, module) in project.modules() {
+        for (owner, _) in module.locals() {
+            if analysis.local(owner).is_none() {
+                return Err(RuntimeSemanticProjectionError::MissingLocalSemanticFact {
+                    local: owner,
+                });
+            }
+            input.push_local_declaration(owner)?;
+        }
+    }
 
     let iteration_methods = runtime_iteration_methods(analysis)?;
     let mut method_ids = BTreeMap::new();
