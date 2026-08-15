@@ -573,38 +573,7 @@ fn runtime_expression_type_inventory_excludes_effect_metadata_subtrees() {
 
 #[test]
 fn runtime_expression_type_inventory_applies_typed_non_value_call_carriers() {
-    let package = package();
-    let root_path = CanonicalModulePath::crate_root();
-    let mut syntax = SyntaxDatabase::try_new().unwrap();
-    let parsed = parse_initial(
-        &mut syntax,
-        "arcweft-test://proof/final-project/runtime-expression-carrier",
-        "runtime-expression-carrier.arcw",
-        "fn helper(value: bool) -> bool { value }\nfn root(value: bool) { helper(value) }\n",
-    );
-    let mut database = HirDatabase::try_new().unwrap();
-    let module = lower(&mut database, &parsed, &package, &root_path);
-    let (call, callee, argument) = module
-        .expressions()
-        .find_map(|(owner, expression)| {
-            let HirExprKind::Call(call) = expression.kind() else {
-                return None;
-            };
-            Some((
-                owner,
-                call.callee()
-                    .value_expression()
-                    .expect("fixture value callee"),
-                call.arguments()[0].value(),
-            ))
-        })
-        .expect("fixture call expression");
-    let project = build_project(
-        &database,
-        package.clone(),
-        [bind(&database, &package, &root_path, module)],
-    )
-    .unwrap();
+    let (project, call, callee, argument, _, _, _, _) = runtime_call_inventory_fixture();
     let executable = project.executable_view().unwrap();
     let runtime_owners = executable
         .runtime_semantic_owner_inventory()
@@ -614,6 +583,44 @@ fn runtime_expression_type_inventory_applies_typed_non_value_call_carriers() {
         .selected_expression_type_owners(|_| None, |_| HirRuntimeExpressionTypeDisposition::Retain)
         .expect("postfix-free retained call inventory");
     assert!(retained.contains(&call));
+    assert!(retained.contains(&callee));
+    assert!(retained.contains(&argument));
+
+    let retained_static_call = runtime_owners
+        .selected_expression_type_owners(
+            |_| None,
+            |owner| {
+                if owner == call {
+                    HirRuntimeExpressionTypeDisposition::RetainedCallResult {
+                        callee: HirRuntimeCallCalleeDisposition::Static,
+                    }
+                } else {
+                    HirRuntimeExpressionTypeDisposition::Retain
+                }
+            },
+        )
+        .expect("retained static call result inventory");
+    assert!(retained_static_call.contains(&call));
+    assert!(!retained_static_call.contains(&callee));
+    assert!(retained_static_call.contains(&argument));
+
+    let retained_receiver_call = runtime_owners
+        .selected_expression_type_owners(
+            |_| None,
+            |owner| {
+                if owner == call {
+                    HirRuntimeExpressionTypeDisposition::RetainedCallResult {
+                        callee: HirRuntimeCallCalleeDisposition::RuntimeReceiver,
+                    }
+                } else {
+                    HirRuntimeExpressionTypeDisposition::Retain
+                }
+            },
+        )
+        .expect("retained runtime-receiver call result inventory");
+    assert!(retained_receiver_call.contains(&call));
+    assert!(retained_receiver_call.contains(&callee));
+    assert!(retained_receiver_call.contains(&argument));
 
     let carrier = runtime_owners
         .selected_expression_type_owners(
@@ -665,11 +672,108 @@ fn runtime_expression_type_inventory_applies_typed_non_value_call_carriers() {
             },
         ),
         Err(
-            HirSelectedExpressionInventoryError::InvalidNonValueCallCarrier {
+            HirSelectedExpressionInventoryError::InvalidRuntimeCallDisposition {
                 expression: argument,
             }
         )
     );
+}
+
+#[test]
+fn retained_member_call_result_keeps_receiver_and_omits_select_callee() {
+    let (project, _, _, _, call, callee, receiver, argument) = runtime_call_inventory_fixture();
+    let executable = project.executable_view().expect("executable fixture");
+    let runtime_owners = executable
+        .runtime_semantic_owner_inventory()
+        .expect("runtime semantic owner inventory");
+    let retained = runtime_owners
+        .selected_expression_type_owners(
+            |_| None,
+            |owner| {
+                if owner == call {
+                    HirRuntimeExpressionTypeDisposition::RetainedCallResult {
+                        callee: HirRuntimeCallCalleeDisposition::RuntimeReceiver,
+                    }
+                } else {
+                    HirRuntimeExpressionTypeDisposition::Retain
+                }
+            },
+        )
+        .expect("retained member-call result inventory");
+    assert!(retained.contains(&call));
+    assert!(!retained.contains(&callee));
+    assert!(retained.contains(&receiver));
+    assert!(retained.contains(&argument));
+}
+
+fn runtime_call_inventory_fixture() -> (
+    HirProject,
+    ExprId,
+    ExprId,
+    ExprId,
+    ExprId,
+    ExprId,
+    ExprId,
+    ExprId,
+) {
+    let package = package();
+    let root_path = CanonicalModulePath::crate_root();
+    let mut syntax = SyntaxDatabase::try_new().unwrap();
+    let parsed = parse_initial(
+        &mut syntax,
+        "arcweft-test://proof/final-project/runtime-expression-carrier",
+        "runtime-expression-carrier.arcw",
+        concat!(
+            "fn helper(value: bool) -> bool { value }\n",
+            "fn root(value: bool) { helper(value) }\n",
+            "fn compare(value: bool) { (value.eq)(false) }\n",
+        ),
+    );
+    let mut database = HirDatabase::try_new().unwrap();
+    let module = lower(&mut database, &parsed, &package, &root_path);
+    let (call, callee, argument) = module
+        .expressions()
+        .find_map(|(owner, expression)| {
+            let HirExprKind::Call(call) = expression.kind() else {
+                return None;
+            };
+            let callee = call.callee().value_expression()?;
+            (!matches!(
+                module.resolve_expr(callee).ok()?.kind(),
+                HirExprKind::Select(_)
+            ))
+            .then_some((owner, callee, call.arguments()[0].value()))
+        })
+        .expect("fixture call expression");
+    let (member_call, member_callee, receiver, member_argument) = module
+        .expressions()
+        .find_map(|(owner, expression)| {
+            let HirExprKind::Call(call) = expression.kind() else {
+                return None;
+            };
+            let callee = call.callee().value_expression()?;
+            let HirExprKind::Select(select) = module.resolve_expr(callee).ok()?.kind() else {
+                return None;
+            };
+            Some((owner, callee, select.target(), call.arguments()[0].value()))
+        })
+        .expect("fixture member call expression");
+    let project = build_project(
+        &database,
+        package.clone(),
+        [bind(&database, &package, &root_path, module)],
+    )
+    .unwrap();
+    (
+        project,
+        call,
+        callee,
+        argument,
+        member_call,
+        member_callee,
+        receiver,
+        member_argument,
+    )
 }
 
 #[test]

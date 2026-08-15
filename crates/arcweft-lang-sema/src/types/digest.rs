@@ -328,7 +328,24 @@ impl Encoder {
             }
             TypeKind::Unit => self.tag(77),
             TypeKind::Never => self.tag(78),
+            TypeKind::AgentBuiltin(builtin) => {
+                self.tag(79);
+                self.agent_builtin(*builtin);
+            }
         }
+    }
+
+    fn agent_builtin(&mut self, builtin: super::AgentBuiltinType) {
+        self.tag(match builtin {
+            super::AgentBuiltinType::ObservedObjectId => 1,
+            super::AgentBuiltinType::CaptureFormat => 2,
+            super::AgentBuiltinType::CaptureKind => 3,
+            super::AgentBuiltinType::Diagnostics => 4,
+            super::AgentBuiltinType::WaitError => 5,
+            super::AgentBuiltinType::ViewportPoint => 6,
+            super::AgentBuiltinType::PointerButton => 7,
+            super::AgentBuiltinType::RagError => 8,
+        });
     }
 
     fn types(&mut self, types: &[TypeKind]) {
@@ -382,6 +399,13 @@ impl Encoder {
             GenericTypeOwnerId::Detached(id) => {
                 self.byte(4);
                 self.u64(id.value());
+            }
+            GenericTypeOwnerId::AgentIntrinsic(owner) => {
+                self.byte(5);
+                self.byte(match owner {
+                    super::AgentIntrinsicGenericOwner::Signal => 0,
+                    super::AgentIntrinsicGenericOwner::Metric => 1,
+                });
             }
         }
     }

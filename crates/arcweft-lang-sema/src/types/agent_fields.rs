@@ -1,4 +1,4 @@
-use super::{MapKind, TypeKind};
+use super::{AgentBuiltinType, MapKind, TypeKind};
 
 impl TypeKind {
     /// Returns the exact typed field published by an Agent runtime record.
@@ -21,7 +21,7 @@ impl TypeKind {
                 _ => return None,
             },
             Self::ObservedObject => match field {
-                "id" => Self::Named("ObservedObjectId".to_owned()),
+                "id" => Self::AgentBuiltin(AgentBuiltinType::ObservedObjectId),
                 "parent_id" | "entity" | "layer" | "role" | "text" => Self::String,
                 "visible" | "enabled" => Self::Bool,
                 "bbox" => Self::AgentBBox,

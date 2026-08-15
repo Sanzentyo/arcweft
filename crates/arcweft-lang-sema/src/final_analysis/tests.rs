@@ -59,15 +59,16 @@ use super::{
 use crate::{
     assertion::{AssertionBuildProfile, AssertionContext, AssertionRuntimePolicy},
     callable::{
-        AdapterPackageId, CallCalleeClassificationFact, CallResolverAuthority, CallResolverContext,
-        CallResolverRequest, CallTargetFact, CallableAccess, CallableArgumentPolicy,
-        CallableAuthorityRank, CallableCandidateId, CallableDocumentation, CallableEffectSchema,
-        CallableGroupIndex, CallableGroupKind, CallableLimits, CallableLookupKey, CallableName,
-        CallableOverloadIndex, CallableParameter, CallableParameterGroup, CallableParameterIndex,
-        CallableParameterPassing, CallableParameterPresence, CallableParameterType, CallablePath,
-        CallableProviderId, CallableRecord, CallableSignatureSchema, CallableValidator,
-        CatalogCallableEntry, CheckedCallArgumentSlotSource, CheckedClosureId, DialogueCallableId,
-        DomainMethodId, EffectContractOrigin, EnvironmentCallableCatalog, EnvironmentCallableId,
+        AdapterPackageId, AgentIntrinsicSignatureId, CallCalleeClassificationFact,
+        CallResolverAuthority, CallResolverContext, CallResolverRequest, CallTargetFact,
+        CallableAccess, CallableArgumentPolicy, CallableAuthorityRank, CallableCandidateId,
+        CallableDocumentation, CallableEffectSchema, CallableGroupIndex, CallableGroupKind,
+        CallableLimits, CallableLookupKey, CallableName, CallableOverloadIndex, CallableParameter,
+        CallableParameterGroup, CallableParameterIndex, CallableParameterPassing,
+        CallableParameterPresence, CallableParameterType, CallablePath, CallableProviderId,
+        CallableRecord, CallableSignatureSchema, CallableValidator, CatalogCallableEntry,
+        CheckedCallArgumentSlotSource, CheckedClosureId, DialogueCallableId, DomainMethodId,
+        EffectContractOrigin, EnvironmentCallableCatalog, EnvironmentCallableId,
         EnvironmentCallableKind, EnvironmentCallableOwner, EnvironmentCallablePublicationDigest,
         EnvironmentDeclarationOrdinal, FinalCallCalleeFacts, NonEmptyCallableSet,
         PRODUCTION_CALLABLE_LIMITS, PresentationCallableId, ProjectCallablePath,
@@ -97,7 +98,8 @@ use crate::{
         SignatureQueryStep, query_signature,
     },
     types::{
-        DetachedTypeOwnerId, EntityKind, GenericTypeOwnerId, GenericTypeParameterId, TypeKind,
+        AgentBuiltinType, DetachedTypeOwnerId, EntityKind, GenericTypeOwnerId,
+        GenericTypeParameterId, TypeKind,
     },
 };
 
@@ -4636,6 +4638,7 @@ fn agent_composite_wait_retains_typed_predicate_calls() {
 fn composite_wait() -> Result<Unit, AgentError>
 effects { agent.observe, agent.wait }
 {
+    let count_probe = metric(@metric.count)
     wait(
         all(exists(signal(@signal.ready)), not(signal(@signal.ready).eq(false))),
         timeout = 5s,
@@ -4645,10 +4648,22 @@ effects { agent.observe, agent.wait }
     return Ok(())
 }
 signal ready: bool
+metric counter count: u64 {}
 ",
         None,
     );
-    let report = analyze(&fixture).expect("Agent composite wait analysis");
+    let report = analyze(&fixture).unwrap_or_else(|error| {
+        let module = fixture
+            .project
+            .executable_view()
+            .expect("executable HIR")
+            .module(&CanonicalModulePath::crate_root())
+            .expect("root HIR module");
+        panic!(
+            "Agent composite wait analysis failed: {error:?}\nexpressions: {:#?}",
+            module.expressions().collect::<Vec<_>>()
+        )
+    });
     assert_eq!(
         report
             .calls()
@@ -4658,7 +4673,9 @@ signal ready: bool
                     if matches!(selected.id(), CallableCandidateId::Agent(_))
             ))
             .count(),
-        6
+        7,
+        "calls: {:#?}",
+        report.calls().collect::<Vec<_>>()
     );
     assert_eq!(
         report
@@ -4673,6 +4690,44 @@ signal ready: bool
             ))
             .count(),
         1
+    );
+    let (signal_owner, signal) = report
+        .calls()
+        .find(|(_, call)| {
+            matches!(
+                call.target(),
+                CallTargetFact::Selected { selected, .. }
+                    if selected.id()
+                        == &CallableCandidateId::Agent(AgentIntrinsicSignatureId::Signal)
+            )
+        })
+        .expect("typed signal probe call");
+    assert_eq!(
+        signal.result(),
+        Some(&TypeKind::Probe(Box::new(TypeKind::Bool)))
+    );
+    assert_eq!(
+        report.expression(signal_owner).map(CheckedExpression::ty),
+        Some(&TypeKind::Probe(Box::new(TypeKind::Bool)))
+    );
+    let (metric_owner, metric) = report
+        .calls()
+        .find(|(_, call)| {
+            matches!(
+                call.target(),
+                CallTargetFact::Selected { selected, .. }
+                    if selected.id()
+                        == &CallableCandidateId::Agent(AgentIntrinsicSignatureId::Metric)
+            )
+        })
+        .expect("typed metric probe call");
+    assert_eq!(
+        metric.result(),
+        Some(&TypeKind::Probe(Box::new(TypeKind::U64)))
+    );
+    assert_eq!(
+        report.expression(metric_owner).map(CheckedExpression::ty),
+        Some(&TypeKind::Probe(Box::new(TypeKind::U64)))
     );
 }
 
@@ -4714,6 +4769,63 @@ effects { agent.act.physical }
     assert_eq!(
         report.expression(accepted).map(CheckedExpression::ty),
         Some(&TypeKind::Bool)
+    );
+}
+
+#[test]
+fn agent_diagnostics_method_uses_the_typed_builtin_receiver() {
+    let fixture = fixture(
+        r"
+fn inspect() effects { agent.observe } {
+    let result = diagnostics().has_error()
+}
+",
+        None,
+    );
+    let report = analyze(&fixture).expect("typed Agent diagnostics analysis");
+    let (owner, call) = report
+        .calls()
+        .find(|(_, call)| {
+            matches!(
+                call.target(),
+                CallTargetFact::Selected { selected, .. }
+                    if selected.id() == &CallableCandidateId::DomainMethod(
+                        DomainMethodId::DiagnosticsHasError
+                    )
+            )
+        })
+        .expect("typed diagnostics method call");
+    assert_eq!(call.result(), Some(&TypeKind::Predicate));
+
+    let module = fixture
+        .project
+        .executable_view()
+        .expect("executable HIR")
+        .module(&CanonicalModulePath::crate_root())
+        .expect("root HIR module");
+    let HirExprKind::Call(hir_call) = module
+        .resolve_expr(owner)
+        .expect("diagnostics method call resolves")
+        .kind()
+    else {
+        panic!("diagnostics method fact must belong to one Call expression")
+    };
+    let callee = hir_call
+        .callee()
+        .value_expression()
+        .expect("diagnostics method has a value callee");
+    let HirExprKind::Select(select) = module
+        .resolve_expr(callee)
+        .expect("diagnostics method select resolves")
+        .kind()
+    else {
+        panic!("diagnostics method callee must be a member selection")
+    };
+    assert_eq!(
+        report
+            .expression(select.target())
+            .map(CheckedExpression::ty),
+        Some(&TypeKind::AgentBuiltin(AgentBuiltinType::Diagnostics))
     );
 }
 

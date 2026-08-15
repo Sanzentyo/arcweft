@@ -4,7 +4,10 @@
 //! deliberately has no retained-first/external-second fallback and never
 //! reconstructs a path from source text.
 
-use super::{Analyzer, CheckedProjectItem, HirIdRef, HirModule, ResolvedProjectSymbol, SourceSpan};
+use super::{
+    Analyzer, CheckedProjectItem, HirIdRef, HirItemKind, HirModule, ItemId, ResolvedProjectSymbol,
+    SourceSpan, TypeKind,
+};
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub(super) enum EntityReferenceResolutionError {
@@ -28,6 +31,7 @@ impl Analyzer<'_, '_, '_> {
                 symbol.public_id().clone(),
                 symbol.family(),
                 symbol.owner(),
+                self.retained_entity_value_type(symbol.owner())?,
             )
             .ok_or(EntityReferenceResolutionError::WrongFamily),
             ResolvedProjectSymbol::External(symbol) => {
@@ -53,5 +57,31 @@ impl Analyzer<'_, '_, '_> {
             | ResolvedProjectSymbol::Nominal(_)
             | ResolvedProjectSymbol::Module(_) => Err(EntityReferenceResolutionError::WrongFamily),
         }
+    }
+
+    pub(super) fn retained_entity_value_type(
+        &self,
+        owner: ItemId,
+    ) -> Result<Option<TypeKind>, EntityReferenceResolutionError> {
+        let module = self
+            .modules
+            .get(&owner.module())
+            .ok_or(EntityReferenceResolutionError::Lookup)?;
+        let item = module
+            .resolve_item(owner)
+            .map_err(|_| EntityReferenceResolutionError::Lookup)?;
+        let value = match item.kind() {
+            HirItemKind::Signal(signal) => Some(signal.observable_type()),
+            HirItemKind::Metric(metric) => Some(metric.value_type()),
+            _ => None,
+        };
+        value
+            .map(|value| {
+                self.types
+                    .get(&value)
+                    .cloned()
+                    .ok_or(EntityReferenceResolutionError::Lookup)
+            })
+            .transpose()
     }
 }

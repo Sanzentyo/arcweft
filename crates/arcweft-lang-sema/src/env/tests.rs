@@ -119,21 +119,25 @@ fn standard_closed_enum_inventories_preserve_owner_authored_order() {
 
     let capture_format = inventories
         .iter()
-        .find(|(ty, _)| ty == &TypeKind::Named("CaptureFormat".to_owned()))
+        .find(|(ty, _)| {
+            ty == &TypeKind::AgentBuiltin(crate::types::AgentBuiltinType::CaptureFormat)
+        })
         .map(|(_, variants)| variants)
         .expect("CaptureFormat has one closed environment enum inventory");
     assert_eq!(capture_format, &["png", "raw_rgba"].map(str::to_owned));
 
     let capture_kind = inventories
         .iter()
-        .find(|(ty, _)| ty == &TypeKind::Named("CaptureKind".to_owned()))
+        .find(|(ty, _)| ty == &TypeKind::AgentBuiltin(crate::types::AgentBuiltinType::CaptureKind))
         .map(|(_, variants)| variants)
         .expect("CaptureKind has one closed environment enum inventory");
     assert_eq!(capture_kind, &["color", "mask"].map(str::to_owned));
 
     let pointer_button = inventories
         .iter()
-        .find(|(ty, _)| ty == &TypeKind::Named("PointerButton".to_owned()))
+        .find(|(ty, _)| {
+            ty == &TypeKind::AgentBuiltin(crate::types::AgentBuiltinType::PointerButton)
+        })
         .map(|(_, variants)| variants)
         .expect("PointerButton has one closed environment enum inventory");
     assert_eq!(

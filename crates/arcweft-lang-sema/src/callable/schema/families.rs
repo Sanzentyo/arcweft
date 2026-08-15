@@ -5,7 +5,10 @@ use crate::{
     effect_row::EffectRow,
     effects::EffectSet,
     env::nominal::standard_agent_error_type,
-    types::{CharacterDialogueCharacterType, CharacterDialogueType, EntityKind, MapKind, TypeKind},
+    types::{
+        AgentIntrinsicGenericOwner, CharacterDialogueCharacterType, CharacterDialogueType,
+        EntityKind, GenericTypeOwnerId, GenericTypeParameterId, MapKind, TypeKind,
+    },
 };
 use arcweft_character::id::CharacterId;
 
@@ -748,7 +751,7 @@ impl AgentIntrinsicSignatureId {
             ),
             Self::Object => one_positional(
                 "id",
-                named("ObservedObjectId"),
+                TypeKind::AgentBuiltin(crate::types::AgentBuiltinType::ObservedObjectId),
                 TypeKind::CaptureTarget,
                 &[],
                 validator,
@@ -757,8 +760,16 @@ impl AgentIntrinsicSignatureId {
                 vec![
                     required(0, "target", TypeKind::CaptureTarget),
                     optional_named(1, "name", TypeKind::String),
-                    optional_named(2, "format", named("CaptureFormat")),
-                    optional_named(3, "kind", named("CaptureKind")),
+                    optional_named(
+                        2,
+                        "format",
+                        TypeKind::AgentBuiltin(crate::types::AgentBuiltinType::CaptureFormat),
+                    ),
+                    optional_named(
+                        3,
+                        "kind",
+                        TypeKind::AgentBuiltin(crate::types::AgentBuiltinType::CaptureKind),
+                    ),
                 ],
                 agent_result(TypeKind::CaptureRef),
                 &["agent.capture"],
@@ -835,7 +846,11 @@ impl AgentIntrinsicSignatureId {
                 closed(),
                 validator,
             ),
-            Self::Diagnostics => empty(named("Diagnostics"), &["agent.observe"], validator),
+            Self::Diagnostics => empty(
+                TypeKind::AgentBuiltin(crate::types::AgentBuiltinType::Diagnostics),
+                &["agent.observe"],
+                validator,
+            ),
             Self::Exists => one_positional(
                 "probe",
                 TypeKind::Probe(Box::new(named("_"))),
@@ -879,7 +894,9 @@ impl AgentIntrinsicSignatureId {
                 ],
                 TypeKind::Result {
                     ok: Box::new(TypeKind::Observation),
-                    error: Box::new(named("WaitError")),
+                    error: Box::new(TypeKind::AgentBuiltin(
+                        crate::types::AgentBuiltinType::WaitError,
+                    )),
                 },
                 &["agent.wait", "agent.observe"],
                 closed(),
@@ -895,15 +912,23 @@ impl AgentIntrinsicSignatureId {
                     required(0, "x", TypeKind::U32),
                     required(1, "y", TypeKind::U32),
                 ],
-                named("ViewportPoint"),
+                TypeKind::AgentBuiltin(crate::types::AgentBuiltinType::ViewportPoint),
                 &[],
                 closed(),
                 validator,
             ),
             Self::PointerClick => schema(
                 vec![
-                    required(0, "point", named("ViewportPoint")),
-                    defaulted_named(1, "button", named("PointerButton")),
+                    required(
+                        0,
+                        "point",
+                        TypeKind::AgentBuiltin(crate::types::AgentBuiltinType::ViewportPoint),
+                    ),
+                    defaulted_named(
+                        1,
+                        "button",
+                        TypeKind::AgentBuiltin(crate::types::AgentBuiltinType::PointerButton),
+                    ),
                 ],
                 agent_result(TypeKind::ActionResult),
                 &["agent.act.physical"],
@@ -940,7 +965,9 @@ impl AgentIntrinsicSignatureId {
                 ],
                 TypeKind::Result {
                     ok: Box::new(TypeKind::RagContextPack),
-                    error: Box::new(named("RagError")),
+                    error: Box::new(TypeKind::AgentBuiltin(
+                        crate::types::AgentBuiltinType::RagError,
+                    )),
                 },
                 &["rag.query"],
                 closed(),
@@ -1102,9 +1129,22 @@ fn background_reference_parameters(id: PresentationCallableId) -> Vec<CallablePa
 }
 
 fn probe_schema(kind: EntityKind, validator: CallableValidator) -> CallableSignatureSchema {
+    let owner = match kind {
+        EntityKind::Signal => AgentIntrinsicGenericOwner::Signal,
+        EntityKind::Metric => AgentIntrinsicGenericOwner::Metric,
+        _ => unreachable!("probe schemas are only published for signal and metric references"),
+    };
+    let value = TypeKind::GenericParam(GenericTypeParameterId::new(
+        GenericTypeOwnerId::AgentIntrinsic(owner),
+        0,
+    ));
     schema(
-        vec![required_positional(0, "entity", TypeKind::entity_ref(kind))],
-        TypeKind::Probe(Box::new(named("_"))),
+        vec![required_positional(
+            0,
+            "entity",
+            TypeKind::entity_ref_with_value(kind, value.clone()),
+        )],
+        TypeKind::Probe(Box::new(value)),
         &["agent.observe"],
         closed(),
         validator,
@@ -1365,4 +1405,49 @@ const fn open_unchecked() -> CallableArgumentPolicy {
         UnknownNamedArgumentPolicy::OpenUnchecked,
         SpreadArgumentPolicy::Reject,
     )
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn signal_and_metric_schemas_share_their_exact_payload_parameter() {
+        for (intrinsic, kind, owner) in [
+            (
+                AgentIntrinsicSignatureId::Signal,
+                EntityKind::Signal,
+                AgentIntrinsicGenericOwner::Signal,
+            ),
+            (
+                AgentIntrinsicSignatureId::Metric,
+                EntityKind::Metric,
+                AgentIntrinsicGenericOwner::Metric,
+            ),
+        ] {
+            let schema = intrinsic.signature_schema();
+            let [group] = schema.groups() else {
+                panic!("probe schema must have one parameter group")
+            };
+            let [parameter] = group.parameters() else {
+                panic!("probe schema must have one parameter")
+            };
+            let CallableParameterType::Exact(TypeKind::Ref(entity)) = parameter.ty() else {
+                panic!("probe schema must accept one typed entity reference")
+            };
+            assert_eq!(entity.kind(), &kind);
+            let Some(TypeKind::GenericParam(parameter)) = entity.value() else {
+                panic!("probe entity reference must retain its payload parameter")
+            };
+            assert_eq!(
+                parameter.owner(),
+                &GenericTypeOwnerId::AgentIntrinsic(owner)
+            );
+            assert_eq!(parameter.ordinal(), 0);
+            assert_eq!(
+                schema.result(),
+                &TypeKind::Probe(Box::new(TypeKind::GenericParam(parameter.clone())))
+            );
+        }
+    }
 }

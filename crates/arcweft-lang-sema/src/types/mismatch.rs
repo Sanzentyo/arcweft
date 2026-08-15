@@ -70,6 +70,7 @@ pub enum TypeMismatchPathSegment {
     CharacterOwner,
     CharacterVariantPart,
     NamedName,
+    AgentBuiltin,
     TupleArity,
     TupleElement(usize),
     ChoiceArity,
@@ -1015,6 +1016,19 @@ impl TypeKind {
                         self,
                         actual,
                         TypeMismatchPathSegment::NamedName,
+                        TypeMismatchReason::NonTypeParameter,
+                    )
+                })
+            }
+            Self::AgentBuiltin(expected_builtin) => {
+                let Self::AgentBuiltin(actual_builtin) = actual else {
+                    unreachable!("equal discriminants")
+                };
+                (expected_builtin != actual_builtin).then(|| {
+                    TypeMismatch::at(
+                        self,
+                        actual,
+                        TypeMismatchPathSegment::AgentBuiltin,
                         TypeMismatchReason::NonTypeParameter,
                     )
                 })

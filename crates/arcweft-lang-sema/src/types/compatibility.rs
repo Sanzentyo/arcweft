@@ -76,6 +76,7 @@ impl TypeKind {
                     || matches!(actual.as_ref(), Self::Named(name) if name == "_")
             }
             (Self::DialogueLine(expected), Self::DialogueLine(actual))
+            | (Self::Probe(expected), Self::Probe(actual))
             | (Self::Vec(expected), Self::Vec(actual))
             | (Self::Seq(expected), Self::Seq(actual))
             | (Self::Slice(expected), Self::Slice(actual))
@@ -193,6 +194,7 @@ fn is_agent_value_type(ty: &TypeKind) -> bool {
         | TypeKind::CaptureRef
         | TypeKind::AgentResource
         | TypeKind::AgentResourceBody
+        | TypeKind::AgentBuiltin(_)
         | TypeKind::Error(_) => true,
         TypeKind::Vec(inner)
         | TypeKind::Array { item: inner, .. }

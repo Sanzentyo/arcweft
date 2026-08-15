@@ -149,7 +149,7 @@ pub(super) fn checked_character_dialogue_target(
         );
         return Some(CheckedCharacterDialogueTarget::Character {
             expression,
-            item: Some(item.clone()),
+            item: Some(Box::new(item.clone())),
             character,
         });
     }
@@ -160,7 +160,7 @@ pub(super) fn checked_character_dialogue_target(
                 item: match checked.resolution() {
                     CheckedExpressionResolution::Value(CheckedValueResolution::ProjectItem(
                         item,
-                    )) => Some(item.clone()),
+                    )) => Some(Box::new(item.clone())),
                     _ => None,
                 },
                 character: CharacterDialogueCharacterType::Any,
@@ -1786,7 +1786,8 @@ impl Analyzer<'_, '_, '_> {
             None
         };
         let declared_expected = clear_expected.as_ref().or_else(|| slot.expected());
-        let expected = declared_expected.map(|expected| substitutions.apply(expected));
+        let expected =
+            declared_expected.and_then(|expected| substitutions.apply_argument_expected(expected));
         let physical_expected = physical_expected_type(
             expected.as_ref(),
             slot.coordinate().is_some(),

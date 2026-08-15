@@ -1197,7 +1197,9 @@ impl DomainMethodId {
                 operation,
             });
         }
-        if receiver == &TypeKind::Named("Diagnostics".to_owned()) && name == "has_error" {
+        if receiver == &TypeKind::AgentBuiltin(crate::types::AgentBuiltinType::Diagnostics)
+            && name == "has_error"
+        {
             return Some(Self::DiagnosticsHasError);
         }
         if receiver == &TypeKind::RagContextPack && name == "summary" {

@@ -2,6 +2,42 @@
 
 use crate::pattern::RuntimeCheckedType;
 
+/// Closed top-level runtime families owned by the Agent Prelude.
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub enum RuntimeAgentOperationalType {
+    DebugStatePath,
+    ObservationFieldPath,
+    Probe,
+    Predicate,
+    Observation,
+    ObservedObject,
+    BoundingBox,
+    ActionName,
+    ActionTarget,
+    ActionResult,
+    AgentValue,
+    DataFormat,
+    DataShape,
+    EntityMetadata,
+    SourceAnchor,
+    ProjectGraphNeighborhood,
+    ProjectGraphSymbol,
+    ProjectGraphEdge,
+    CaptureTarget,
+    CaptureReference,
+    Resource,
+    ResourceBody,
+    RagContextPack,
+    ObservedObjectId,
+    CaptureFormat,
+    CaptureKind,
+    Diagnostics,
+    WaitError,
+    ViewportPoint,
+    PointerButton,
+    RagError,
+}
+
 /// Top-level execution family for a semantic type outside the closed checked
 /// value algebra.
 ///
@@ -26,6 +62,7 @@ pub enum RuntimeOperationalType {
     Shared,
     Reference,
     Function,
+    Agent(RuntimeAgentOperationalType),
 }
 
 /// Final runtime representation selected for one normalized semantic type.

@@ -6,7 +6,8 @@ use arcweft_core::pattern::{
     RuntimeOpaqueTypeProducerId,
 };
 use arcweft_core::plan::{
-    FlowRuntimeId, RuntimeLineId, RuntimeOperationalType, RuntimePlanTypeKind,
+    FlowRuntimeId, RuntimeAgentOperationalType, RuntimeLineId, RuntimeOperationalType,
+    RuntimePlanTypeKind,
 };
 use arcweft_core::value::{RuntimeIntrinsic, RuntimeValue};
 use arcweft_lang_hir::database::HirDatabase;
@@ -15,7 +16,8 @@ use arcweft_lang_hir::expr::HirExprKind;
 use arcweft_lang_hir::leaf::HirLiteral;
 use arcweft_lang_hir::lowering::{HirModuleKey, LoweringRequest};
 use arcweft_lang_hir::project::{
-    HirProject, HirProjectBuilder, HirProjectModule, HirRuntimeExpressionTypeDisposition,
+    HirProject, HirProjectBuilder, HirProjectModule, HirRuntimeCallCalleeDisposition,
+    HirRuntimeExpressionTypeDisposition,
 };
 use arcweft_lang_hir::proof_return::HirProofReturnSemanticFactSet;
 use arcweft_lang_hir::symbol::{CallablePackageId, ProjectSymbolRevision, ProjectSymbolWorldId};
@@ -25,13 +27,13 @@ use arcweft_source::identity::SourceSnapshotId;
 use arcweft_source::{SourceDocument, SourceDocumentId, SourceName};
 
 use super::{
-    RuntimeCallResultShape, RuntimeCheckedTypeProjectionError, RuntimeNormalizedVariantCase,
-    RuntimePlanSemanticFactInput, RuntimePlanSemanticFacts, RuntimeReductionConstructor,
-    RuntimeRegisteredValueId, RuntimeResolvedCall, RuntimeResolvedCallArgument,
-    RuntimeResolvedCallTarget, RuntimeResolvedNominalError, RuntimeResolvedValue,
-    RuntimeResolvedVariant, RuntimeResolvedVariantError, RuntimeSemanticFactFamily,
-    RuntimeSemanticFactsError, RuntimeSemanticTypeId, RuntimeSequenceKind,
-    RuntimeTypeProjectionStep, RuntimeTypeShape, RuntimeUnsupportedTypeShape,
+    RuntimeAgentTypeShape, RuntimeCallResultShape, RuntimeCheckedTypeProjectionError,
+    RuntimeNormalizedVariantCase, RuntimePlanSemanticFactInput, RuntimePlanSemanticFacts,
+    RuntimeReductionConstructor, RuntimeRegisteredValueId, RuntimeResolvedCall,
+    RuntimeResolvedCallArgument, RuntimeResolvedCallTarget, RuntimeResolvedNominalError,
+    RuntimeResolvedValue, RuntimeResolvedVariant, RuntimeResolvedVariantError,
+    RuntimeSemanticFactFamily, RuntimeSemanticFactsError, RuntimeSemanticTypeId,
+    RuntimeSequenceKind, RuntimeTypeProjectionStep, RuntimeTypeShape, RuntimeUnsupportedTypeShape,
 };
 
 fn project_fixture(label: &str, source: &str) -> HirProject {
@@ -700,7 +702,7 @@ fn runtime_type_completeness_uses_the_selected_call_carrier_disposition() {
         })
         .expect("fixture call expression");
     let call_fact = RuntimeResolvedCall::new(
-        RuntimeResolvedCallTarget::Agent(crate::agent::RuntimeAgentIntrinsic::Observation),
+        RuntimeResolvedCallTarget::Agent(crate::agent::RuntimeAgentIntrinsic::Observe),
         [RuntimeResolvedCallArgument::Authored { ordinal: 0 }],
         RuntimeCallResultShape::Value,
     );
@@ -738,6 +740,197 @@ fn runtime_type_completeness_uses_the_selected_call_carrier_disposition() {
     assert!(facts.expression_type(call).is_none());
     assert!(facts.expression_type(callee).is_none());
     assert_eq!(facts.expression_type(argument), Some(&unit_type()));
+}
+
+#[test]
+fn agent_call_disposition_separates_results_from_host_carriers() {
+    for intrinsic in runtime_agent_intrinsics() {
+        let is_host = agent_intrinsic_is_host(intrinsic);
+        assert_eq!(intrinsic.host_operation().is_some(), is_host);
+        let call = RuntimeResolvedCall::new(
+            RuntimeResolvedCallTarget::Agent(intrinsic),
+            [],
+            RuntimeCallResultShape::Value,
+        );
+        let expected = if is_host {
+            HirRuntimeExpressionTypeDisposition::NonValueCallCarrier {
+                callee: HirRuntimeCallCalleeDisposition::Static,
+            }
+        } else {
+            HirRuntimeExpressionTypeDisposition::RetainedCallResult {
+                callee: HirRuntimeCallCalleeDisposition::Static,
+            }
+        };
+        assert_eq!(call.expression_type_disposition(), expected);
+    }
+
+    let comparison = RuntimeResolvedCall::new(
+        RuntimeResolvedCallTarget::AgentProbeComparison(
+            crate::agent::RuntimeAgentProbeComparison::Eq,
+        ),
+        [
+            RuntimeResolvedCallArgument::Receiver,
+            RuntimeResolvedCallArgument::Authored { ordinal: 0 },
+        ],
+        RuntimeCallResultShape::Value,
+    );
+    assert_eq!(
+        comparison.expression_type_disposition(),
+        HirRuntimeExpressionTypeDisposition::RetainedCallResult {
+            callee: HirRuntimeCallCalleeDisposition::RuntimeReceiver,
+        }
+    );
+}
+
+fn runtime_agent_intrinsics() -> Vec<crate::agent::RuntimeAgentIntrinsic> {
+    use crate::agent::RuntimeAgentIntrinsic;
+
+    vec![
+        RuntimeAgentIntrinsic::Observe,
+        RuntimeAgentIntrinsic::Expect,
+        RuntimeAgentIntrinsic::Deny,
+        RuntimeAgentIntrinsic::Checkpoint,
+        RuntimeAgentIntrinsic::Note,
+        RuntimeAgentIntrinsic::Attach,
+        RuntimeAgentIntrinsic::ChoiceAction,
+        RuntimeAgentIntrinsic::Viewport,
+        RuntimeAgentIntrinsic::Layer,
+        RuntimeAgentIntrinsic::Object,
+        RuntimeAgentIntrinsic::Capture,
+        RuntimeAgentIntrinsic::ReadResource,
+        RuntimeAgentIntrinsic::EntityMeta,
+        RuntimeAgentIntrinsic::ProjectNeighbors,
+        RuntimeAgentIntrinsic::Signal,
+        RuntimeAgentIntrinsic::Metric,
+        RuntimeAgentIntrinsic::StatePath,
+        RuntimeAgentIntrinsic::ObservationPath,
+        RuntimeAgentIntrinsic::State,
+        RuntimeAgentIntrinsic::Observation,
+        RuntimeAgentIntrinsic::Diagnostics,
+        RuntimeAgentIntrinsic::Exists,
+        RuntimeAgentIntrinsic::ActionEnabled,
+        RuntimeAgentIntrinsic::All,
+        RuntimeAgentIntrinsic::Any,
+        RuntimeAgentIntrinsic::Not,
+        RuntimeAgentIntrinsic::Wait,
+        RuntimeAgentIntrinsic::AdvanceText,
+        RuntimeAgentIntrinsic::ViewportPoint,
+        RuntimeAgentIntrinsic::PointerClick,
+        RuntimeAgentIntrinsic::Invoke,
+        RuntimeAgentIntrinsic::RagQuery,
+    ]
+}
+
+fn agent_intrinsic_is_host(intrinsic: crate::agent::RuntimeAgentIntrinsic) -> bool {
+    use crate::agent::RuntimeAgentIntrinsic;
+
+    match intrinsic {
+        RuntimeAgentIntrinsic::Observe
+        | RuntimeAgentIntrinsic::Expect
+        | RuntimeAgentIntrinsic::Deny
+        | RuntimeAgentIntrinsic::Checkpoint
+        | RuntimeAgentIntrinsic::Note
+        | RuntimeAgentIntrinsic::Attach
+        | RuntimeAgentIntrinsic::Capture
+        | RuntimeAgentIntrinsic::ReadResource
+        | RuntimeAgentIntrinsic::EntityMeta
+        | RuntimeAgentIntrinsic::ProjectNeighbors
+        | RuntimeAgentIntrinsic::Wait
+        | RuntimeAgentIntrinsic::AdvanceText
+        | RuntimeAgentIntrinsic::PointerClick
+        | RuntimeAgentIntrinsic::Invoke
+        | RuntimeAgentIntrinsic::RagQuery => true,
+        RuntimeAgentIntrinsic::ChoiceAction
+        | RuntimeAgentIntrinsic::Viewport
+        | RuntimeAgentIntrinsic::Layer
+        | RuntimeAgentIntrinsic::Object
+        | RuntimeAgentIntrinsic::Signal
+        | RuntimeAgentIntrinsic::Metric
+        | RuntimeAgentIntrinsic::StatePath
+        | RuntimeAgentIntrinsic::ObservationPath
+        | RuntimeAgentIntrinsic::State
+        | RuntimeAgentIntrinsic::Observation
+        | RuntimeAgentIntrinsic::Diagnostics
+        | RuntimeAgentIntrinsic::Exists
+        | RuntimeAgentIntrinsic::ActionEnabled
+        | RuntimeAgentIntrinsic::All
+        | RuntimeAgentIntrinsic::Any
+        | RuntimeAgentIntrinsic::Not
+        | RuntimeAgentIntrinsic::ViewportPoint => false,
+    }
+}
+
+#[test]
+fn agent_call_arguments_cannot_forge_runtime_receiver_disposition() {
+    let project = project_fixture(
+        "agent-call-arguments",
+        "fn helper(value: bool) -> bool { value }\nfn root(value: bool) { helper(value) }\n",
+    );
+    let owner = call_expression(&project);
+    let invalid = [
+        RuntimeResolvedCall::new(
+            RuntimeResolvedCallTarget::Agent(crate::agent::RuntimeAgentIntrinsic::Observation),
+            [
+                RuntimeResolvedCallArgument::Receiver,
+                RuntimeResolvedCallArgument::Authored { ordinal: 0 },
+            ],
+            RuntimeCallResultShape::Value,
+        ),
+        RuntimeResolvedCall::new(
+            RuntimeResolvedCallTarget::AgentProbeComparison(
+                crate::agent::RuntimeAgentProbeComparison::Eq,
+            ),
+            [RuntimeResolvedCallArgument::Authored { ordinal: 0 }],
+            RuntimeCallResultShape::Value,
+        ),
+        RuntimeResolvedCall::new(
+            RuntimeResolvedCallTarget::AgentProbeComparison(
+                crate::agent::RuntimeAgentProbeComparison::Eq,
+            ),
+            [
+                RuntimeResolvedCallArgument::Receiver,
+                RuntimeResolvedCallArgument::Authored { ordinal: 0 },
+            ],
+            RuntimeCallResultShape::PartialFunction,
+        ),
+    ];
+
+    for call in invalid {
+        let executable = project.executable_view().expect("executable fixture");
+        let runtime_owners = executable
+            .runtime_semantic_owner_inventory()
+            .expect("runtime semantic owner inventory");
+        let mut input = RuntimePlanSemanticFactInput::new();
+        for local in runtime_owners.locals() {
+            input
+                .push_local_declaration(local, unit_type())
+                .expect("fixture local identity");
+        }
+        for pattern in runtime_owners.patterns() {
+            input.push_pattern_type(pattern, unit_type());
+        }
+        for expression in runtime_owners
+            .selected_expression_type_owners(
+                |_| None,
+                |candidate| {
+                    if candidate == owner {
+                        call.expression_type_disposition()
+                    } else {
+                        HirRuntimeExpressionTypeDisposition::Retain
+                    }
+                },
+            )
+            .expect("invalid call still has one deterministic owner inventory")
+        {
+            input.push_expression_type(expression, unit_type());
+        }
+        input.push_call(owner, call);
+        assert_eq!(
+            RuntimePlanSemanticFacts::try_new(executable, input)
+                .expect_err("Agent receiver disposition must follow the selected call family"),
+            RuntimeSemanticFactsError::InvalidAgentCallArguments,
+        );
+    }
 }
 
 #[test]
@@ -919,6 +1112,160 @@ fn every_direct_operational_shape_selects_its_closed_plan_family() {
         assert_eq!(
             normalized.runtime_plan_type_kind(),
             Ok(RuntimePlanTypeKind::Operational(operational))
+        );
+    }
+}
+
+#[test]
+#[expect(
+    clippy::too_many_lines,
+    reason = "one exhaustive table proves every closed Agent type mapping"
+)]
+fn every_agent_shape_selects_its_closed_operational_family() {
+    let cases = vec![
+        (
+            RuntimeAgentTypeShape::DebugStatePath,
+            RuntimeAgentOperationalType::DebugStatePath,
+        ),
+        (
+            RuntimeAgentTypeShape::ObservationFieldPath,
+            RuntimeAgentOperationalType::ObservationFieldPath,
+        ),
+        (
+            RuntimeAgentTypeShape::Probe(boxed_unit_type()),
+            RuntimeAgentOperationalType::Probe,
+        ),
+        (
+            RuntimeAgentTypeShape::Predicate,
+            RuntimeAgentOperationalType::Predicate,
+        ),
+        (
+            RuntimeAgentTypeShape::Observation,
+            RuntimeAgentOperationalType::Observation,
+        ),
+        (
+            RuntimeAgentTypeShape::ObservedObject,
+            RuntimeAgentOperationalType::ObservedObject,
+        ),
+        (
+            RuntimeAgentTypeShape::BoundingBox,
+            RuntimeAgentOperationalType::BoundingBox,
+        ),
+        (
+            RuntimeAgentTypeShape::ActionName,
+            RuntimeAgentOperationalType::ActionName,
+        ),
+        (
+            RuntimeAgentTypeShape::ActionTarget,
+            RuntimeAgentOperationalType::ActionTarget,
+        ),
+        (
+            RuntimeAgentTypeShape::ActionResult,
+            RuntimeAgentOperationalType::ActionResult,
+        ),
+        (
+            RuntimeAgentTypeShape::AgentValue,
+            RuntimeAgentOperationalType::AgentValue,
+        ),
+        (
+            RuntimeAgentTypeShape::DataFormat,
+            RuntimeAgentOperationalType::DataFormat,
+        ),
+        (
+            RuntimeAgentTypeShape::DataShape,
+            RuntimeAgentOperationalType::DataShape,
+        ),
+        (
+            RuntimeAgentTypeShape::EntityMetadata,
+            RuntimeAgentOperationalType::EntityMetadata,
+        ),
+        (
+            RuntimeAgentTypeShape::SourceAnchor,
+            RuntimeAgentOperationalType::SourceAnchor,
+        ),
+        (
+            RuntimeAgentTypeShape::ProjectGraphNeighborhood,
+            RuntimeAgentOperationalType::ProjectGraphNeighborhood,
+        ),
+        (
+            RuntimeAgentTypeShape::ProjectGraphSymbol,
+            RuntimeAgentOperationalType::ProjectGraphSymbol,
+        ),
+        (
+            RuntimeAgentTypeShape::ProjectGraphEdge,
+            RuntimeAgentOperationalType::ProjectGraphEdge,
+        ),
+        (
+            RuntimeAgentTypeShape::CaptureTarget,
+            RuntimeAgentOperationalType::CaptureTarget,
+        ),
+        (
+            RuntimeAgentTypeShape::CaptureReference,
+            RuntimeAgentOperationalType::CaptureReference,
+        ),
+        (
+            RuntimeAgentTypeShape::Resource,
+            RuntimeAgentOperationalType::Resource,
+        ),
+        (
+            RuntimeAgentTypeShape::ResourceBody,
+            RuntimeAgentOperationalType::ResourceBody,
+        ),
+        (
+            RuntimeAgentTypeShape::RagContextPack,
+            RuntimeAgentOperationalType::RagContextPack,
+        ),
+        (
+            RuntimeAgentTypeShape::ObservedObjectId,
+            RuntimeAgentOperationalType::ObservedObjectId,
+        ),
+        (
+            RuntimeAgentTypeShape::CaptureFormat,
+            RuntimeAgentOperationalType::CaptureFormat,
+        ),
+        (
+            RuntimeAgentTypeShape::CaptureKind,
+            RuntimeAgentOperationalType::CaptureKind,
+        ),
+        (
+            RuntimeAgentTypeShape::Diagnostics,
+            RuntimeAgentOperationalType::Diagnostics,
+        ),
+        (
+            RuntimeAgentTypeShape::WaitError,
+            RuntimeAgentOperationalType::WaitError,
+        ),
+        (
+            RuntimeAgentTypeShape::ViewportPoint,
+            RuntimeAgentOperationalType::ViewportPoint,
+        ),
+        (
+            RuntimeAgentTypeShape::PointerButton,
+            RuntimeAgentOperationalType::PointerButton,
+        ),
+        (
+            RuntimeAgentTypeShape::RagError,
+            RuntimeAgentOperationalType::RagError,
+        ),
+    ];
+
+    for (index, (shape, operational)) in cases.into_iter().enumerate() {
+        let marker = u8::try_from(index + 1).expect("bounded Agent type fixture");
+        let identity = RuntimeSemanticTypeId::from_bytes([marker; 32]);
+        let normalized = normalized_type(marker, RuntimeTypeShape::Agent(shape));
+        assert_eq!(
+            normalized.checked_type(),
+            Err(RuntimeCheckedTypeProjectionError::UnsupportedRuntimeShape {
+                semantic_identity: identity,
+                path: super::RuntimeTypeProjectionPath::root(),
+                shape: RuntimeUnsupportedTypeShape::Agent(operational),
+            })
+        );
+        assert_eq!(
+            normalized.runtime_plan_type_kind(),
+            Ok(RuntimePlanTypeKind::Operational(
+                RuntimeOperationalType::Agent(operational,)
+            ))
         );
     }
 }

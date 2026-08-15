@@ -95,6 +95,7 @@ impl TypeKind {
             | Self::AgentResource
             | Self::AgentResourceBody
             | Self::RagContextPack
+            | Self::AgentBuiltin(_)
             | Self::GenericParam(_)
             | Self::Handle { .. }
             | Self::CharacterPatch(_)
@@ -201,6 +202,7 @@ impl TypeKind {
             | Self::AgentResource
             | Self::AgentResourceBody
             | Self::RagContextPack
+            | Self::AgentBuiltin(_)
             | Self::GenericParam(_)
             | Self::Handle { .. }
             | Self::CharacterPatch(_)

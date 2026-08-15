@@ -96,6 +96,7 @@ pub struct CheckedProjectItem {
     family: DeclarationIdentityFamily,
     owner: CheckedProjectItemOwner,
     character: Option<CharacterId>,
+    value: Option<TypeKind>,
 }
 
 impl CheckedProjectItem {
@@ -108,6 +109,7 @@ impl CheckedProjectItem {
             family: DeclarationIdentityFamily::Flow,
             owner: CheckedProjectItemOwner::Flow { declaration, item },
             character: None,
+            value: None,
         })
     }
 
@@ -115,6 +117,7 @@ impl CheckedProjectItem {
         public_id: PublicId,
         family: DeclarationIdentityFamily,
         owner: ItemId,
+        value: Option<TypeKind>,
     ) -> Option<Self> {
         crate::types::EntityKind::from_declaration_identity_family(family)?;
         let character = (family == DeclarationIdentityFamily::Character)
@@ -128,6 +131,7 @@ impl CheckedProjectItem {
             family,
             owner: CheckedProjectItemOwner::Retained(owner),
             character,
+            value,
         })
     }
 
@@ -140,6 +144,7 @@ impl CheckedProjectItem {
             family: DeclarationIdentityFamily::Character,
             owner: CheckedProjectItemOwner::External(declaration),
             character: Some(character),
+            value: None,
         }
     }
 
@@ -190,7 +195,7 @@ impl CheckedProjectItem {
     pub fn ty(&self) -> TypeKind {
         let kind = crate::types::EntityKind::from_declaration_identity_family(self.family)
             .expect("checked project items only retain entity-reference families");
-        TypeKind::Ref(crate::types::EntityType::new(kind, None))
+        TypeKind::Ref(crate::types::EntityType::new(kind, self.value.clone()))
     }
 }
 
@@ -462,7 +467,7 @@ pub enum CheckedExpressionResolution {
 pub enum CheckedCharacterDialogueTarget {
     Character {
         expression: ExprId,
-        item: Option<CheckedProjectItem>,
+        item: Option<Box<CheckedProjectItem>>,
         character: CharacterDialogueCharacterType,
     },
     Dialogue {

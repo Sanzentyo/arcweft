@@ -80,15 +80,15 @@ use arcweft_lang_sema::{
         CheckedValueResolution, CheckedVariantOwner, CheckedVariantResolution,
         FinalSemanticAnalysis, FinalSemanticAnalysisError, NominalSchemaProjectionError,
     },
-    types::{ArrayLength, TypeKind},
+    types::{AgentBuiltinType, ArrayLength, TypeKind},
 };
 use arcweft_manifest_model::CharacterNameLocalePolicySpec;
 use arcweft_runtime_plan::{
     agent::{RuntimeAgentIntrinsic, RuntimeAgentProbeComparison},
     assertion_identity::RuntimeAssertionMode,
     semantic_facts::{
-        RuntimeAssertionAdmission, RuntimeCallResultShape, RuntimeCheckedCapture,
-        RuntimeCheckedTypeProjectionError, RuntimeDialogueApplication,
+        RuntimeAgentTypeShape, RuntimeAssertionAdmission, RuntimeCallResultShape,
+        RuntimeCheckedCapture, RuntimeCheckedTypeProjectionError, RuntimeDialogueApplication,
         RuntimeNominalRecordFactError, RuntimeNormalizedType, RuntimeNormalizedVariantCase,
         RuntimePlanSemanticFactInput, RuntimePlanSemanticFacts, RuntimeProjectCallable,
         RuntimeProjectItem, RuntimeReductionConstructor, RuntimeRegisteredValueId,
@@ -1150,6 +1150,45 @@ fn runtime_type_at(
         TypeKind::Bytes => RuntimeTypeShape::Bytes,
         TypeKind::Duration => RuntimeTypeShape::Duration,
         TypeKind::Ref(_) => RuntimeTypeShape::EntityReference,
+        TypeKind::DebugStatePath => RuntimeTypeShape::Agent(RuntimeAgentTypeShape::DebugStatePath),
+        TypeKind::ObservationFieldPath => {
+            RuntimeTypeShape::Agent(RuntimeAgentTypeShape::ObservationFieldPath)
+        }
+        TypeKind::Probe(value) => RuntimeTypeShape::Agent(RuntimeAgentTypeShape::Probe(nested_at(
+            value,
+            RuntimeTypeProjectionStep::AgentProbeValue,
+        )?)),
+        TypeKind::Predicate => RuntimeTypeShape::Agent(RuntimeAgentTypeShape::Predicate),
+        TypeKind::Observation => RuntimeTypeShape::Agent(RuntimeAgentTypeShape::Observation),
+        TypeKind::ObservedObject => RuntimeTypeShape::Agent(RuntimeAgentTypeShape::ObservedObject),
+        TypeKind::AgentBBox => RuntimeTypeShape::Agent(RuntimeAgentTypeShape::BoundingBox),
+        TypeKind::ActionName => RuntimeTypeShape::Agent(RuntimeAgentTypeShape::ActionName),
+        TypeKind::ActionTarget => RuntimeTypeShape::Agent(RuntimeAgentTypeShape::ActionTarget),
+        TypeKind::ActionResult => RuntimeTypeShape::Agent(RuntimeAgentTypeShape::ActionResult),
+        TypeKind::AgentValue => RuntimeTypeShape::Agent(RuntimeAgentTypeShape::AgentValue),
+        TypeKind::DataFormat => RuntimeTypeShape::Agent(RuntimeAgentTypeShape::DataFormat),
+        TypeKind::DataShape => RuntimeTypeShape::Agent(RuntimeAgentTypeShape::DataShape),
+        TypeKind::AgentEntityMetadata => {
+            RuntimeTypeShape::Agent(RuntimeAgentTypeShape::EntityMetadata)
+        }
+        TypeKind::AgentSourceAnchor => RuntimeTypeShape::Agent(RuntimeAgentTypeShape::SourceAnchor),
+        TypeKind::AgentProjectGraphNeighborhood => {
+            RuntimeTypeShape::Agent(RuntimeAgentTypeShape::ProjectGraphNeighborhood)
+        }
+        TypeKind::AgentProjectGraphSymbol => {
+            RuntimeTypeShape::Agent(RuntimeAgentTypeShape::ProjectGraphSymbol)
+        }
+        TypeKind::AgentProjectGraphEdge => {
+            RuntimeTypeShape::Agent(RuntimeAgentTypeShape::ProjectGraphEdge)
+        }
+        TypeKind::CaptureTarget => RuntimeTypeShape::Agent(RuntimeAgentTypeShape::CaptureTarget),
+        TypeKind::CaptureRef => RuntimeTypeShape::Agent(RuntimeAgentTypeShape::CaptureReference),
+        TypeKind::AgentResource => RuntimeTypeShape::Agent(RuntimeAgentTypeShape::Resource),
+        TypeKind::AgentResourceBody => RuntimeTypeShape::Agent(RuntimeAgentTypeShape::ResourceBody),
+        TypeKind::RagContextPack => RuntimeTypeShape::Agent(RuntimeAgentTypeShape::RagContextPack),
+        TypeKind::AgentBuiltin(builtin) => {
+            RuntimeTypeShape::Agent(runtime_agent_builtin_type(*builtin))
+        }
         TypeKind::Range(item) => RuntimeTypeShape::Range(nested(item)?),
         TypeKind::IteratorState { item, .. } => RuntimeTypeShape::Iterator(nested(item)?),
         TypeKind::Vec(item) => RuntimeTypeShape::Sequence {
@@ -1307,29 +1346,6 @@ fn runtime_type_at(
         TypeKind::Array { .. }
         | TypeKind::TextCluster
         | TypeKind::DisplayText
-        | TypeKind::DebugStatePath
-        | TypeKind::ObservationFieldPath
-        | TypeKind::Probe(_)
-        | TypeKind::Predicate
-        | TypeKind::Observation
-        | TypeKind::ObservedObject
-        | TypeKind::AgentBBox
-        | TypeKind::ActionName
-        | TypeKind::ActionTarget
-        | TypeKind::ActionResult
-        | TypeKind::AgentValue
-        | TypeKind::DataFormat
-        | TypeKind::DataShape
-        | TypeKind::AgentEntityMetadata
-        | TypeKind::AgentSourceAnchor
-        | TypeKind::AgentProjectGraphNeighborhood
-        | TypeKind::AgentProjectGraphSymbol
-        | TypeKind::AgentProjectGraphEdge
-        | TypeKind::CaptureTarget
-        | TypeKind::CaptureRef
-        | TypeKind::AgentResource
-        | TypeKind::AgentResourceBody
-        | TypeKind::RagContextPack
         | TypeKind::Handle { .. }
         | TypeKind::GenericParam(_)
         | TypeKind::OpenNominal(_)
@@ -1346,6 +1362,19 @@ fn runtime_type_at(
         }
     };
     Ok(RuntimeNormalizedType::new(identity, shape))
+}
+
+const fn runtime_agent_builtin_type(builtin: AgentBuiltinType) -> RuntimeAgentTypeShape {
+    match builtin {
+        AgentBuiltinType::ObservedObjectId => RuntimeAgentTypeShape::ObservedObjectId,
+        AgentBuiltinType::CaptureFormat => RuntimeAgentTypeShape::CaptureFormat,
+        AgentBuiltinType::CaptureKind => RuntimeAgentTypeShape::CaptureKind,
+        AgentBuiltinType::Diagnostics => RuntimeAgentTypeShape::Diagnostics,
+        AgentBuiltinType::WaitError => RuntimeAgentTypeShape::WaitError,
+        AgentBuiltinType::ViewportPoint => RuntimeAgentTypeShape::ViewportPoint,
+        AgentBuiltinType::PointerButton => RuntimeAgentTypeShape::PointerButton,
+        AgentBuiltinType::RagError => RuntimeAgentTypeShape::RagError,
+    }
 }
 
 fn projection_index(index: usize) -> u32 {

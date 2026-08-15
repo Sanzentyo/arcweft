@@ -22,8 +22,8 @@ pub use digest::SemanticTypeDigest;
 pub(crate) use digest::accepted_nominal_semantic_identity_digest;
 pub use mismatch::{TypeMismatch, TypeMismatchPathSegment, TypeMismatchReason};
 pub use nominal::{
-    AcceptedNominalType, DetachedTypeOwnerId, GenericTypeOwnerId, GenericTypeParameterId,
-    OpenNominalType, ProjectNominalType, TypePoisonId,
+    AcceptedNominalType, AgentIntrinsicGenericOwner, DetachedTypeOwnerId, GenericTypeOwnerId,
+    GenericTypeParameterId, OpenNominalType, ProjectNominalType, TypePoisonId,
 };
 pub(crate) use substitution::TypeParameterSubstitutions;
 
@@ -347,6 +347,57 @@ pub struct EntityType {
     value: Option<Box<TypeKind>>,
 }
 
+/// Closed semantic types owned by the Agent Prelude.
+///
+/// These identities are intentionally distinct from [`TypeKind::Named`].
+/// Agent callable schemas and runtime projection select them through this
+/// typed vocabulary rather than reconstructing authority from a source
+/// spelling.
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub enum AgentBuiltinType {
+    ObservedObjectId,
+    CaptureFormat,
+    CaptureKind,
+    Diagnostics,
+    WaitError,
+    ViewportPoint,
+    PointerButton,
+    RagError,
+}
+
+impl AgentBuiltinType {
+    /// Canonical Agent Prelude spelling retained for diagnostics and tooling.
+    #[must_use]
+    pub const fn source_label(self) -> &'static str {
+        match self {
+            Self::ObservedObjectId => "ObservedObjectId",
+            Self::CaptureFormat => "CaptureFormat",
+            Self::CaptureKind => "CaptureKind",
+            Self::Diagnostics => "Diagnostics",
+            Self::WaitError => "WaitError",
+            Self::ViewportPoint => "ViewportPoint",
+            Self::PointerButton => "PointerButton",
+            Self::RagError => "RagError",
+        }
+    }
+
+    /// Resolves one canonical Agent Prelude type spelling.
+    #[must_use]
+    pub fn from_source_label(label: &str) -> Option<Self> {
+        Some(match label {
+            "ObservedObjectId" => Self::ObservedObjectId,
+            "CaptureFormat" => Self::CaptureFormat,
+            "CaptureKind" => Self::CaptureKind,
+            "Diagnostics" => Self::Diagnostics,
+            "WaitError" => Self::WaitError,
+            "ViewportPoint" => Self::ViewportPoint,
+            "PointerButton" => Self::PointerButton,
+            "RagError" => Self::RagError,
+            _ => return None,
+        })
+    }
+}
+
 /// Minimal semantic type used by parser/HIR contract tests.
 #[derive(Clone, Debug, Eq, Hash, PartialEq)]
 pub enum TypeKind {
@@ -400,6 +451,7 @@ pub enum TypeKind {
     AgentResource,
     AgentResourceBody,
     RagContextPack,
+    AgentBuiltin(AgentBuiltinType),
     Vec(Box<TypeKind>),
     Array {
         item: Box<TypeKind>,
@@ -674,6 +726,7 @@ impl TypeKind {
             Self::AgentResource => "AgentResource",
             Self::AgentResourceBody => "AgentResourceBody",
             Self::RagContextPack => "RagContextPack",
+            Self::AgentBuiltin(builtin) => builtin.source_label(),
             Self::FocusPatch => "FocusPatch",
             Self::Unit => "Unit",
             Self::Never => "Never",
@@ -857,6 +910,9 @@ impl TypeKind {
 
     #[must_use]
     pub fn primitive_name(name: &str) -> Option<Self> {
+        if let Some(builtin) = AgentBuiltinType::from_source_label(name) {
+            return Some(Self::AgentBuiltin(builtin));
+        }
         Some(match name {
             "bool" => Self::Bool,
             "i8" => Self::I8,
@@ -898,7 +954,7 @@ impl fmt::Display for TypeKind {
 
 #[cfg(test)]
 mod entity_kind_tests {
-    use super::EntityKind;
+    use super::{AgentBuiltinType, EntityKind, TypeKind};
 
     #[test]
     fn authored_entity_families_round_trip_without_other() {
@@ -964,6 +1020,35 @@ mod entity_kind_tests {
             ]
         );
         assert_eq!(EntityKind::Other("plugin".to_owned()).as_str(), "plugin");
+    }
+
+    #[test]
+    fn agent_builtin_identity_is_typed_even_when_its_source_label_matches_named() {
+        let builtins = [
+            AgentBuiltinType::ObservedObjectId,
+            AgentBuiltinType::CaptureFormat,
+            AgentBuiltinType::CaptureKind,
+            AgentBuiltinType::Diagnostics,
+            AgentBuiltinType::WaitError,
+            AgentBuiltinType::ViewportPoint,
+            AgentBuiltinType::PointerButton,
+            AgentBuiltinType::RagError,
+        ];
+
+        for builtin in builtins {
+            let typed = TypeKind::AgentBuiltin(builtin);
+            let named = TypeKind::Named(builtin.source_label().to_owned());
+            assert_eq!(typed.source_label(), named.source_label());
+            assert_ne!(typed, named);
+            assert_ne!(
+                typed.semantic_identity_digest(),
+                named.semantic_identity_digest()
+            );
+            assert_eq!(
+                TypeKind::primitive_name(builtin.source_label()),
+                Some(typed)
+            );
+        }
     }
 }
 

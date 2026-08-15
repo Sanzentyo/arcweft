@@ -26,6 +26,14 @@ pub enum GenericTypeOwnerId {
     AcceptedNominal(AcceptedNominalId),
     AcceptedSource(SourceSpan),
     Detached(DetachedTypeOwnerId),
+    AgentIntrinsic(AgentIntrinsicGenericOwner),
+}
+
+/// Standard Agent intrinsic that owns one closed generic type parameter.
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub enum AgentIntrinsicGenericOwner {
+    Signal,
+    Metric,
 }
 
 /// Stable caller-supplied owner for generic parameters resolved without a project.
@@ -123,6 +131,10 @@ impl GenericTypeParameterId {
                 )
             }
             GenericTypeOwnerId::Detached(owner) => format!("detached:{}", owner.value()),
+            GenericTypeOwnerId::AgentIntrinsic(owner) => match owner {
+                AgentIntrinsicGenericOwner::Signal => "agent.signal".to_owned(),
+                AgentIntrinsicGenericOwner::Metric => "agent.metric".to_owned(),
+            },
         };
         format!("$generic<{owner}>#{}", self.ordinal)
     }

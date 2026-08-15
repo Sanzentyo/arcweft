@@ -20,7 +20,7 @@ use super::{
     },
 };
 use crate::nominal::{AcceptedNominalCatalogLimitKind, AcceptedNominalCatalogLimits};
-use crate::types::{AcceptedNominalType, TypeKind};
+use crate::types::{AcceptedNominalType, AgentBuiltinType, TypeKind};
 
 fn producer(value: &str) -> RuntimeOpaqueTypeProducerId {
     RuntimeOpaqueTypeProducerId::try_new(value).expect("valid test producer")
@@ -579,26 +579,7 @@ fn catalog_limits_and_typecheck_environment_updates_are_atomic() {
 #[test]
 fn standard_environment_projects_domain_and_structural_nominals_exactly() {
     let environment = TypeCheckEnv::standard();
-    for (name, semantics) in [
-        ("DataFormat", TypeKind::DataFormat),
-        ("DataShape", TypeKind::DataShape),
-        ("AgentValue", TypeKind::AgentValue),
-        ("TextCluster", TypeKind::TextCluster),
-        ("Duration", TypeKind::Duration),
-        ("DebugStatePath", TypeKind::DebugStatePath),
-        ("ObservationFieldPath", TypeKind::ObservationFieldPath),
-    ] {
-        let record = environment
-            .nominal_catalog()
-            .exact(&path(name))
-            .expect("standard domain atom is exact accepted evidence");
-        assert_eq!(record.origin(), AcceptedNominalOrigin::Domain);
-        assert_eq!(
-            record.semantics(),
-            &AcceptedNominalSemantics::Exact(semantics)
-        );
-        assert_eq!(record.arity(), 0);
-    }
+    assert_exact_standard_domain_nominals(&environment);
 
     for (name, expected_producer) in [
         ("VirtualPath", "std.virtual_path"),
@@ -666,6 +647,61 @@ fn standard_environment_projects_domain_and_structural_nominals_exactly() {
         transform_fields.get("rotation"),
         Some(&TypeKind::Named("Angle".to_owned()))
     );
+}
+
+fn assert_exact_standard_domain_nominals(environment: &TypeCheckEnv) {
+    for (name, semantics) in [
+        ("DataFormat", TypeKind::DataFormat),
+        ("DataShape", TypeKind::DataShape),
+        ("AgentValue", TypeKind::AgentValue),
+        (
+            "ObservedObjectId",
+            TypeKind::AgentBuiltin(AgentBuiltinType::ObservedObjectId),
+        ),
+        (
+            "CaptureFormat",
+            TypeKind::AgentBuiltin(AgentBuiltinType::CaptureFormat),
+        ),
+        (
+            "CaptureKind",
+            TypeKind::AgentBuiltin(AgentBuiltinType::CaptureKind),
+        ),
+        (
+            "Diagnostics",
+            TypeKind::AgentBuiltin(AgentBuiltinType::Diagnostics),
+        ),
+        (
+            "WaitError",
+            TypeKind::AgentBuiltin(AgentBuiltinType::WaitError),
+        ),
+        (
+            "ViewportPoint",
+            TypeKind::AgentBuiltin(AgentBuiltinType::ViewportPoint),
+        ),
+        (
+            "PointerButton",
+            TypeKind::AgentBuiltin(AgentBuiltinType::PointerButton),
+        ),
+        (
+            "RagError",
+            TypeKind::AgentBuiltin(AgentBuiltinType::RagError),
+        ),
+        ("TextCluster", TypeKind::TextCluster),
+        ("Duration", TypeKind::Duration),
+        ("DebugStatePath", TypeKind::DebugStatePath),
+        ("ObservationFieldPath", TypeKind::ObservationFieldPath),
+    ] {
+        let record = environment
+            .nominal_catalog()
+            .exact(&path(name))
+            .expect("standard domain atom is exact accepted evidence");
+        assert_eq!(record.origin(), AcceptedNominalOrigin::Domain);
+        assert_eq!(
+            record.semantics(),
+            &AcceptedNominalSemantics::Exact(semantics)
+        );
+        assert_eq!(record.arity(), 0);
+    }
 }
 
 #[test]

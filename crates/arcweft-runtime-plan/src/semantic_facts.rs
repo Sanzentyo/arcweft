@@ -27,9 +27,10 @@ use arcweft_core::pattern::{
     RuntimeOpaqueTypeOwner, RuntimeOpaqueTypeProducerId,
 };
 use arcweft_core::plan::{
-    FlowRuntimeId, RuntimeIteratorEvidence, RuntimeLineId, RuntimeLocalDeclarationTable,
-    RuntimeLocalDeclarationTableBuilder, RuntimeLocalDeclarationTableError, RuntimeOperationalType,
-    RuntimePlanTypeKind, RuntimeReceiverMode, RuntimeTraitMethodId,
+    FlowRuntimeId, RuntimeAgentOperationalType, RuntimeIteratorEvidence, RuntimeLineId,
+    RuntimeLocalDeclarationTable, RuntimeLocalDeclarationTableBuilder,
+    RuntimeLocalDeclarationTableError, RuntimeOperationalType, RuntimePlanTypeKind,
+    RuntimeReceiverMode, RuntimeTraitMethodId,
 };
 use arcweft_core::runtime_id::RuntimeLocalDeclarationId;
 use arcweft_core::step::RuntimeHostCallMode;
@@ -74,6 +75,42 @@ impl RuntimeRegisteredValueId {
     pub const fn as_bytes(&self) -> &[u8; 32] {
         &self.0
     }
+}
+
+/// Exact normalized shape of a semantic type owned by the Agent Prelude.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum RuntimeAgentTypeShape {
+    DebugStatePath,
+    ObservationFieldPath,
+    Probe(Box<RuntimeNormalizedType>),
+    Predicate,
+    Observation,
+    ObservedObject,
+    BoundingBox,
+    ActionName,
+    ActionTarget,
+    ActionResult,
+    AgentValue,
+    DataFormat,
+    DataShape,
+    EntityMetadata,
+    SourceAnchor,
+    ProjectGraphNeighborhood,
+    ProjectGraphSymbol,
+    ProjectGraphEdge,
+    CaptureTarget,
+    CaptureReference,
+    Resource,
+    ResourceBody,
+    RagContextPack,
+    ObservedObjectId,
+    CaptureFormat,
+    CaptureKind,
+    Diagnostics,
+    WaitError,
+    ViewportPoint,
+    PointerButton,
+    RagError,
 }
 
 /// Runtime-relevant shape paired with an exact semantic type identity.
@@ -148,6 +185,7 @@ pub enum RuntimeTypeShape {
         producer: RuntimeOpaqueTypeProducerId,
         admission: RuntimeOpaqueTypeAdmission,
     },
+    Agent(RuntimeAgentTypeShape),
 }
 
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
@@ -167,6 +205,7 @@ pub enum RuntimeTypeProjectionStep {
     ResultOk,
     ResultError,
     OptionItem,
+    AgentProbeValue,
 }
 
 /// Typed location of the first checked-type projection failure.
@@ -205,6 +244,7 @@ pub enum RuntimeUnsupportedTypeShape {
     Shared,
     Reference,
     Function,
+    Agent(RuntimeAgentOperationalType),
 }
 
 /// Invalid retained identity on a checked project nominal fact.
@@ -386,6 +426,9 @@ impl RuntimeNormalizedType {
             | RuntimeTypeShape::Function { .. } => {
                 unreachable!("leaf and unsupported shapes returned before recursive projection")
             }
+            RuntimeTypeShape::Agent(_) => {
+                unreachable!("Agent shapes returned before recursive projection")
+            }
         })
     }
 
@@ -438,6 +481,7 @@ impl RuntimeTypeShape {
             Self::Shared(_) => Some(RuntimeOperationalType::Shared),
             Self::Reference(_) => Some(RuntimeOperationalType::Reference),
             Self::Function { .. } => Some(RuntimeOperationalType::Function),
+            Self::Agent(agent) => Some(RuntimeOperationalType::Agent(agent.operational_type())),
             Self::Never
             | Self::Unit
             | Self::Bool
@@ -472,7 +516,48 @@ fn unsupported_runtime_shape(shape: &RuntimeTypeShape) -> Option<RuntimeUnsuppor
         RuntimeTypeShape::Shared(_) => Some(RuntimeUnsupportedTypeShape::Shared),
         RuntimeTypeShape::Reference(_) => Some(RuntimeUnsupportedTypeShape::Reference),
         RuntimeTypeShape::Function { .. } => Some(RuntimeUnsupportedTypeShape::Function),
+        RuntimeTypeShape::Agent(agent) => {
+            Some(RuntimeUnsupportedTypeShape::Agent(agent.operational_type()))
+        }
         _ => None,
+    }
+}
+
+impl RuntimeAgentTypeShape {
+    const fn operational_type(&self) -> RuntimeAgentOperationalType {
+        match self {
+            Self::DebugStatePath => RuntimeAgentOperationalType::DebugStatePath,
+            Self::ObservationFieldPath => RuntimeAgentOperationalType::ObservationFieldPath,
+            Self::Probe(_) => RuntimeAgentOperationalType::Probe,
+            Self::Predicate => RuntimeAgentOperationalType::Predicate,
+            Self::Observation => RuntimeAgentOperationalType::Observation,
+            Self::ObservedObject => RuntimeAgentOperationalType::ObservedObject,
+            Self::BoundingBox => RuntimeAgentOperationalType::BoundingBox,
+            Self::ActionName => RuntimeAgentOperationalType::ActionName,
+            Self::ActionTarget => RuntimeAgentOperationalType::ActionTarget,
+            Self::ActionResult => RuntimeAgentOperationalType::ActionResult,
+            Self::AgentValue => RuntimeAgentOperationalType::AgentValue,
+            Self::DataFormat => RuntimeAgentOperationalType::DataFormat,
+            Self::DataShape => RuntimeAgentOperationalType::DataShape,
+            Self::EntityMetadata => RuntimeAgentOperationalType::EntityMetadata,
+            Self::SourceAnchor => RuntimeAgentOperationalType::SourceAnchor,
+            Self::ProjectGraphNeighborhood => RuntimeAgentOperationalType::ProjectGraphNeighborhood,
+            Self::ProjectGraphSymbol => RuntimeAgentOperationalType::ProjectGraphSymbol,
+            Self::ProjectGraphEdge => RuntimeAgentOperationalType::ProjectGraphEdge,
+            Self::CaptureTarget => RuntimeAgentOperationalType::CaptureTarget,
+            Self::CaptureReference => RuntimeAgentOperationalType::CaptureReference,
+            Self::Resource => RuntimeAgentOperationalType::Resource,
+            Self::ResourceBody => RuntimeAgentOperationalType::ResourceBody,
+            Self::RagContextPack => RuntimeAgentOperationalType::RagContextPack,
+            Self::ObservedObjectId => RuntimeAgentOperationalType::ObservedObjectId,
+            Self::CaptureFormat => RuntimeAgentOperationalType::CaptureFormat,
+            Self::CaptureKind => RuntimeAgentOperationalType::CaptureKind,
+            Self::Diagnostics => RuntimeAgentOperationalType::Diagnostics,
+            Self::WaitError => RuntimeAgentOperationalType::WaitError,
+            Self::ViewportPoint => RuntimeAgentOperationalType::ViewportPoint,
+            Self::PointerButton => RuntimeAgentOperationalType::PointerButton,
+            Self::RagError => RuntimeAgentOperationalType::RagError,
+        }
     }
 }
 
@@ -1179,18 +1264,20 @@ impl RuntimeResolvedCall {
     /// its HIR callee.
     pub fn expression_type_disposition(&self) -> HirRuntimeExpressionTypeDisposition {
         match &self.target {
-            RuntimeResolvedCallTarget::Agent(_)
-            | RuntimeResolvedCallTarget::AgentProbeComparison(_) => {
-                let callee = if self
-                    .arguments
-                    .iter()
-                    .any(|argument| matches!(argument, RuntimeResolvedCallArgument::Receiver))
-                {
-                    HirRuntimeCallCalleeDisposition::RuntimeReceiver
-                } else {
-                    HirRuntimeCallCalleeDisposition::Static
-                };
-                HirRuntimeExpressionTypeDisposition::NonValueCallCarrier { callee }
+            RuntimeResolvedCallTarget::Agent(intrinsic) if intrinsic.host_operation().is_some() => {
+                HirRuntimeExpressionTypeDisposition::NonValueCallCarrier {
+                    callee: self.runtime_callee_disposition(),
+                }
+            }
+            RuntimeResolvedCallTarget::Agent(_) => {
+                HirRuntimeExpressionTypeDisposition::RetainedCallResult {
+                    callee: self.runtime_callee_disposition(),
+                }
+            }
+            RuntimeResolvedCallTarget::AgentProbeComparison(_) => {
+                HirRuntimeExpressionTypeDisposition::RetainedCallResult {
+                    callee: HirRuntimeCallCalleeDisposition::RuntimeReceiver,
+                }
             }
             RuntimeResolvedCallTarget::Intrinsic(_)
             | RuntimeResolvedCallTarget::Declaration(_)
@@ -1200,6 +1287,18 @@ impl RuntimeResolvedCall {
             | RuntimeResolvedCallTarget::TraitMethod { .. }
             | RuntimeResolvedCallTarget::Registered(_)
             | RuntimeResolvedCallTarget::Host { .. } => HirRuntimeExpressionTypeDisposition::Retain,
+        }
+    }
+
+    fn runtime_callee_disposition(&self) -> HirRuntimeCallCalleeDisposition {
+        if self
+            .arguments
+            .iter()
+            .any(|argument| matches!(argument, RuntimeResolvedCallArgument::Receiver))
+        {
+            HirRuntimeCallCalleeDisposition::RuntimeReceiver
+        } else {
+            HirRuntimeCallCalleeDisposition::Static
         }
     }
 }
@@ -2354,16 +2453,16 @@ pub enum RuntimeSemanticFactsError {
         "Reduction.unchanged runtime call requires exactly one authored argument and a value result"
     )]
     InvalidReductionConstructorCall,
+    #[error("Agent runtime call arguments do not match the selected intrinsic family")]
+    InvalidAgentCallArguments,
     #[error("postfix expression {expression:?} does not own selected candidate {candidate:?}")]
     WrongPostfixCandidate {
         expression: ExprId,
         candidate: ExprId,
     },
-    #[error(
-        "expression {expression:?} was classified as a non-value call carrier but is not a Call"
-    )]
-    InvalidNonValueCallCarrier { expression: ExprId },
-    #[error("non-value call carrier {expression:?} requires a runtime receiver but has none")]
+    #[error("expression {expression:?} has a runtime call disposition but is not a Call")]
+    InvalidRuntimeCallDisposition { expression: ExprId },
+    #[error("selected runtime call {expression:?} requires a runtime receiver but has none")]
     MissingRuntimeCallReceiver { expression: ExprId },
     #[error("runtime trait method fact does not match its final-HIR implementation member")]
     InvalidTraitMethodIdentity,
@@ -2434,8 +2533,8 @@ fn validate_complete_expression_types(
                 expression,
                 candidate,
             },
-            HirSelectedExpressionInventoryError::InvalidNonValueCallCarrier { expression } => {
-                RuntimeSemanticFactsError::InvalidNonValueCallCarrier { expression }
+            HirSelectedExpressionInventoryError::InvalidRuntimeCallDisposition { expression } => {
+                RuntimeSemanticFactsError::InvalidRuntimeCallDisposition { expression }
             }
             HirSelectedExpressionInventoryError::MissingRuntimeCallReceiver { expression } => {
                 RuntimeSemanticFactsError::MissingRuntimeCallReceiver { expression }
@@ -2873,6 +2972,9 @@ fn validate_normalized_type(
         | RuntimeTypeShape::ThreadHandle(item)
         | RuntimeTypeShape::Shared(item)
         | RuntimeTypeShape::Reference(item) => validate_normalized_type(modules, item),
+        RuntimeTypeShape::Agent(RuntimeAgentTypeShape::Probe(value)) => {
+            validate_normalized_type(modules, value)
+        }
         RuntimeTypeShape::Map { key, value }
         | RuntimeTypeShape::Need {
             ready: key,
@@ -2924,7 +3026,39 @@ fn validate_normalized_type(
         | RuntimeTypeShape::Bytes
         | RuntimeTypeShape::Duration
         | RuntimeTypeShape::EntityReference
-        | RuntimeTypeShape::Opaque { .. } => Ok(()),
+        | RuntimeTypeShape::Opaque { .. }
+        | RuntimeTypeShape::Agent(
+            RuntimeAgentTypeShape::DebugStatePath
+            | RuntimeAgentTypeShape::ObservationFieldPath
+            | RuntimeAgentTypeShape::Predicate
+            | RuntimeAgentTypeShape::Observation
+            | RuntimeAgentTypeShape::ObservedObject
+            | RuntimeAgentTypeShape::BoundingBox
+            | RuntimeAgentTypeShape::ActionName
+            | RuntimeAgentTypeShape::ActionTarget
+            | RuntimeAgentTypeShape::ActionResult
+            | RuntimeAgentTypeShape::AgentValue
+            | RuntimeAgentTypeShape::DataFormat
+            | RuntimeAgentTypeShape::DataShape
+            | RuntimeAgentTypeShape::EntityMetadata
+            | RuntimeAgentTypeShape::SourceAnchor
+            | RuntimeAgentTypeShape::ProjectGraphNeighborhood
+            | RuntimeAgentTypeShape::ProjectGraphSymbol
+            | RuntimeAgentTypeShape::ProjectGraphEdge
+            | RuntimeAgentTypeShape::CaptureTarget
+            | RuntimeAgentTypeShape::CaptureReference
+            | RuntimeAgentTypeShape::Resource
+            | RuntimeAgentTypeShape::ResourceBody
+            | RuntimeAgentTypeShape::RagContextPack
+            | RuntimeAgentTypeShape::ObservedObjectId
+            | RuntimeAgentTypeShape::CaptureFormat
+            | RuntimeAgentTypeShape::CaptureKind
+            | RuntimeAgentTypeShape::Diagnostics
+            | RuntimeAgentTypeShape::WaitError
+            | RuntimeAgentTypeShape::ViewportPoint
+            | RuntimeAgentTypeShape::PointerButton
+            | RuntimeAgentTypeShape::RagError,
+        ) => Ok(()),
     }
 }
 
@@ -2975,6 +3109,37 @@ fn validate_call(
         ) || call.result() != RuntimeCallResultShape::Value)
     {
         return Err(RuntimeSemanticFactsError::InvalidReductionConstructorCall);
+    }
+    match call.target() {
+        RuntimeResolvedCallTarget::Agent(_)
+            if call
+                .arguments()
+                .iter()
+                .any(|argument| matches!(argument, RuntimeResolvedCallArgument::Receiver)) =>
+        {
+            return Err(RuntimeSemanticFactsError::InvalidAgentCallArguments);
+        }
+        RuntimeResolvedCallTarget::AgentProbeComparison(_)
+            if !matches!(
+                call.arguments(),
+                [
+                    RuntimeResolvedCallArgument::Receiver,
+                    RuntimeResolvedCallArgument::Authored { ordinal: 0 }
+                ]
+            ) || call.result() != RuntimeCallResultShape::Value =>
+        {
+            return Err(RuntimeSemanticFactsError::InvalidAgentCallArguments);
+        }
+        RuntimeResolvedCallTarget::Agent(_)
+        | RuntimeResolvedCallTarget::AgentProbeComparison(_)
+        | RuntimeResolvedCallTarget::Intrinsic(_)
+        | RuntimeResolvedCallTarget::Declaration(_)
+        | RuntimeResolvedCallTarget::Variant(_)
+        | RuntimeResolvedCallTarget::Reduction(_)
+        | RuntimeResolvedCallTarget::FunctionValue
+        | RuntimeResolvedCallTarget::TraitMethod { .. }
+        | RuntimeResolvedCallTarget::Registered(_)
+        | RuntimeResolvedCallTarget::Host { .. } => {}
     }
     Ok(())
 }

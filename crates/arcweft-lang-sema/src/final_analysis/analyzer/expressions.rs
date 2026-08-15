@@ -1728,6 +1728,8 @@ impl Analyzer<'_, '_, '_> {
                             symbol.public_id().clone(),
                             symbol.family(),
                             symbol.owner(),
+                            self.retained_entity_value_type(symbol.owner())
+                                .map_err(|_| FinalSemanticAnalysisError::WrongPayloadFamily)?,
                         )
                         .ok_or(FinalSemanticAnalysisError::WrongPayloadFamily)?;
                         return Ok(Some(CheckedValueResolution::ProjectItem(item)));

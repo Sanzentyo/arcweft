@@ -3,8 +3,8 @@
 use std::collections::BTreeMap;
 
 use super::{
-    AcceptedNominalType, EntityType, GenericTypeParameterId, OpenNominalType, ProjectNominalType,
-    TypeKind,
+    AcceptedNominalType, EntityType, GenericTypeOwnerId, GenericTypeParameterId, OpenNominalType,
+    ProjectNominalType, TypeKind,
 };
 
 /// One call-site instantiation of declaration-owned generic type parameters.
@@ -43,11 +43,35 @@ impl TypeParameterSubstitutions {
         let applied = self.apply(ty);
         (!contains_generic_parameter(&applied)).then_some(applied)
     }
+
+    /// Applies known bindings while withholding only a standard Agent
+    /// intrinsic's still-unbound payload from contextual expression checking.
+    ///
+    /// Those closed intrinsics infer their payload from the referenced Signal
+    /// or Metric. Other declaration generics remain visible as the candidate's
+    /// exact expected type until ordinary observation specializes them.
+    pub(crate) fn apply_argument_expected(&self, ty: &TypeKind) -> Option<TypeKind> {
+        let applied = self.apply(ty);
+        (!contains_agent_intrinsic_parameter(&applied)).then_some(applied)
+    }
 }
 
 fn contains_generic_parameter(ty: &TypeKind) -> bool {
+    contains_generic_parameter_where(ty, &|_| true)
+}
+
+fn contains_agent_intrinsic_parameter(ty: &TypeKind) -> bool {
+    contains_generic_parameter_where(ty, &|parameter| {
+        matches!(parameter.owner(), GenericTypeOwnerId::AgentIntrinsic(_))
+    })
+}
+
+fn contains_generic_parameter_where(
+    ty: &TypeKind,
+    predicate: &impl Fn(&GenericTypeParameterId) -> bool,
+) -> bool {
     match ty {
-        TypeKind::GenericParam(_) => true,
+        TypeKind::GenericParam(parameter) => predicate(parameter),
         TypeKind::Range(inner)
         | TypeKind::Probe(inner)
         | TypeKind::Vec(inner)
@@ -57,13 +81,16 @@ fn contains_generic_parameter(ty: &TypeKind) -> bool {
         | TypeKind::ThreadHandle(inner)
         | TypeKind::Shared(inner)
         | TypeKind::DialogueLine(inner)
-        | TypeKind::BorrowRef { inner, .. } => contains_generic_parameter(inner),
+        | TypeKind::BorrowRef { inner, .. } => contains_generic_parameter_where(inner, predicate),
         TypeKind::IteratorState { item, .. } | TypeKind::Array { item, .. } => {
-            contains_generic_parameter(item)
+            contains_generic_parameter_where(item, predicate)
         }
-        TypeKind::Ref(entity) => entity.value().is_some_and(contains_generic_parameter),
+        TypeKind::Ref(entity) => entity
+            .value()
+            .is_some_and(|value| contains_generic_parameter_where(value, predicate)),
         TypeKind::Map { key, value, .. } => {
-            contains_generic_parameter(key) || contains_generic_parameter(value)
+            contains_generic_parameter_where(key, predicate)
+                || contains_generic_parameter_where(value, predicate)
         }
         TypeKind::Need {
             ready: left,
@@ -72,24 +99,48 @@ fn contains_generic_parameter(ty: &TypeKind) -> bool {
         | TypeKind::Result {
             ok: left,
             error: right,
-        } => contains_generic_parameter(left) || contains_generic_parameter(right),
+        } => {
+            contains_generic_parameter_where(left, predicate)
+                || contains_generic_parameter_where(right, predicate)
+        }
         TypeKind::Stream { item, error } | TypeKind::Source { item, error } => {
-            contains_generic_parameter(item) || contains_generic_parameter(error)
+            contains_generic_parameter_where(item, predicate)
+                || contains_generic_parameter_where(error, predicate)
         }
         TypeKind::Function {
             params,
             return_type,
             ..
         } => {
-            params.iter().any(contains_generic_parameter) || contains_generic_parameter(return_type)
+            params
+                .iter()
+                .any(|parameter| contains_generic_parameter_where(parameter, predicate))
+                || contains_generic_parameter_where(return_type, predicate)
         }
-        TypeKind::ProjectNominal(nominal) => contains_any_generic(nominal.arguments()),
-        TypeKind::AcceptedNominal(nominal) => contains_any_generic(nominal.arguments()),
-        TypeKind::OpenNominal(nominal) => contains_any_generic(nominal.arguments()),
-        TypeKind::Projection { subject, .. } => contains_generic_parameter(subject),
+        TypeKind::ProjectNominal(nominal) => {
+            contains_any_generic_where(nominal.arguments(), predicate)
+        }
+        TypeKind::AcceptedNominal(nominal) => {
+            contains_any_generic_where(nominal.arguments(), predicate)
+        }
+        TypeKind::OpenNominal(nominal) => {
+            contains_any_generic_where(nominal.arguments(), predicate)
+        }
+        TypeKind::Projection { subject, .. } => {
+            contains_generic_parameter_where(subject, predicate)
+        }
         TypeKind::Tuple(items) | TypeKind::Choice(items) => {
-            items.iter().any(contains_generic_parameter)
+            contains_any_generic_where(items, predicate)
         }
+        atomic => atomic_contains_generic_parameter(atomic, predicate),
+    }
+}
+
+fn atomic_contains_generic_parameter(
+    ty: &TypeKind,
+    _predicate: &impl Fn(&GenericTypeParameterId) -> bool,
+) -> bool {
+    match ty {
         TypeKind::Bool
         | TypeKind::I8
         | TypeKind::I16
@@ -133,6 +184,7 @@ fn contains_generic_parameter(ty: &TypeKind) -> bool {
         | TypeKind::AgentResource
         | TypeKind::AgentResourceBody
         | TypeKind::RagContextPack
+        | TypeKind::AgentBuiltin(_)
         | TypeKind::Handle { .. }
         | TypeKind::Error(_)
         | TypeKind::CharacterPatch(_)
@@ -142,11 +194,42 @@ fn contains_generic_parameter(ty: &TypeKind) -> bool {
         | TypeKind::Named(_)
         | TypeKind::Unit
         | TypeKind::Never => false,
+        TypeKind::GenericParam(_)
+        | TypeKind::Range(_)
+        | TypeKind::Probe(_)
+        | TypeKind::Vec(_)
+        | TypeKind::Slice(_)
+        | TypeKind::Seq(_)
+        | TypeKind::Option(_)
+        | TypeKind::ThreadHandle(_)
+        | TypeKind::Shared(_)
+        | TypeKind::DialogueLine(_)
+        | TypeKind::BorrowRef { .. }
+        | TypeKind::IteratorState { .. }
+        | TypeKind::Array { .. }
+        | TypeKind::Ref(_)
+        | TypeKind::Map { .. }
+        | TypeKind::Need { .. }
+        | TypeKind::Result { .. }
+        | TypeKind::Stream { .. }
+        | TypeKind::Source { .. }
+        | TypeKind::Function { .. }
+        | TypeKind::ProjectNominal(_)
+        | TypeKind::AcceptedNominal(_)
+        | TypeKind::OpenNominal(_)
+        | TypeKind::Projection { .. }
+        | TypeKind::Tuple(_)
+        | TypeKind::Choice(_) => unreachable!("composite type reached atomic generic scan"),
     }
 }
 
-fn contains_any_generic(types: &[TypeKind]) -> bool {
-    types.iter().any(contains_generic_parameter)
+fn contains_any_generic_where(
+    types: &[TypeKind],
+    predicate: &impl Fn(&GenericTypeParameterId) -> bool,
+) -> bool {
+    types
+        .iter()
+        .any(|ty| contains_generic_parameter_where(ty, predicate))
 }
 
 impl TypeKind {

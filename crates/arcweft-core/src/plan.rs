@@ -13,7 +13,7 @@ pub use local_declarations::{
     RuntimeLocalDeclarationTable, RuntimeLocalDeclarationTableBuilder,
     RuntimeLocalDeclarationTableError,
 };
-pub use type_kind::{RuntimeOperationalType, RuntimePlanTypeKind};
+pub use type_kind::{RuntimeAgentOperationalType, RuntimeOperationalType, RuntimePlanTypeKind};
 pub use type_table::{
     RuntimePlanTypeDeclaration, RuntimePlanTypeTable, RuntimePlanTypeTableBuilder,
     RuntimePlanTypeTableError,

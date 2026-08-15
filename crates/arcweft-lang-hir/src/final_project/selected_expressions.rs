@@ -28,11 +28,9 @@ pub enum HirSelectedExpressionInventoryError {
         expression: ExprId,
         candidate: ExprId,
     },
-    #[error(
-        "expression {expression:?} was classified as a non-value call carrier but is not a Call"
-    )]
-    InvalidNonValueCallCarrier { expression: ExprId },
-    #[error("non-value call carrier {expression:?} requires a runtime receiver but has none")]
+    #[error("expression {expression:?} has a runtime call disposition but is not a Call")]
+    InvalidRuntimeCallDisposition { expression: ExprId },
+    #[error("selected runtime call {expression:?} requires a runtime receiver but has none")]
     MissingRuntimeCallReceiver { expression: ExprId },
 }
 
@@ -52,6 +50,11 @@ pub enum HirRuntimeCallCalleeDisposition {
 pub enum HirRuntimeExpressionTypeDisposition {
     /// The expression produces a runtime value whose accepted type is retained.
     Retain,
+    /// A selected call produces a retained runtime value, while its callee
+    /// follows the accepted static-dispatch or receiver use.
+    RetainedCallResult {
+        callee: HirRuntimeCallCalleeDisposition,
+    },
     /// A selected call lowers as a non-value carrier. Its authored arguments
     /// remain live, while its callee follows the accepted dispatch use.
     NonValueCallCarrier {
@@ -126,10 +129,17 @@ impl HirExecutableProjectView<'_> {
             } else {
                 HirRuntimeExpressionTypeDisposition::Retain
             };
-            if let HirRuntimeExpressionTypeDisposition::NonValueCallCarrier { callee } = disposition
-            {
-                append_non_value_call_operands(&modules, owner, kind, callee, &mut pending)?;
-                continue;
+            match disposition {
+                HirRuntimeExpressionTypeDisposition::NonValueCallCarrier { callee } => {
+                    append_selected_call_operands(&modules, owner, kind, callee, &mut pending)?;
+                    continue;
+                }
+                HirRuntimeExpressionTypeDisposition::RetainedCallResult { callee } => {
+                    selected.insert(owner);
+                    append_selected_call_operands(&modules, owner, kind, callee, &mut pending)?;
+                    continue;
+                }
+                HirRuntimeExpressionTypeDisposition::Retain => {}
             }
             match kind {
                 HirExprKind::PostfixBracket(postfix) => {
@@ -211,7 +221,7 @@ enum SelectedExpressionDomain {
     RuntimeType,
 }
 
-fn append_non_value_call_operands(
+fn append_selected_call_operands(
     modules: &BTreeMap<HirModuleId, &HirModule>,
     owner: ExprId,
     kind: &HirExprKind,
@@ -220,7 +230,9 @@ fn append_non_value_call_operands(
 ) -> Result<(), HirSelectedExpressionInventoryError> {
     let HirExprKind::Call(call) = kind else {
         return Err(
-            HirSelectedExpressionInventoryError::InvalidNonValueCallCarrier { expression: owner },
+            HirSelectedExpressionInventoryError::InvalidRuntimeCallDisposition {
+                expression: owner,
+            },
         );
     };
     pending.extend(call.arguments().iter().map(HirCallArgument::value));

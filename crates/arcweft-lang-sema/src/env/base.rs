@@ -485,17 +485,17 @@ impl TypeCheckEnv {
         [
             (
                 "CaptureFormat",
-                TypeKind::Named("CaptureFormat".to_owned()),
+                TypeKind::AgentBuiltin(crate::types::AgentBuiltinType::CaptureFormat),
                 &["png", "raw_rgba"][..],
             ),
             (
                 "CaptureKind",
-                TypeKind::Named("CaptureKind".to_owned()),
+                TypeKind::AgentBuiltin(crate::types::AgentBuiltinType::CaptureKind),
                 &["color", "mask"][..],
             ),
             (
                 "PointerButton",
-                TypeKind::Named("PointerButton".to_owned()),
+                TypeKind::AgentBuiltin(crate::types::AgentBuiltinType::PointerButton),
                 &["primary", "secondary", "middle"][..],
             ),
         ]

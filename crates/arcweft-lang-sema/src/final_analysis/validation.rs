@@ -356,7 +356,7 @@ fn selected_expression_owners(
             }
             HirSelectedExpressionInventoryError::MissingPostfixSelection { .. }
             | HirSelectedExpressionInventoryError::InvalidPostfixSelection { .. }
-            | HirSelectedExpressionInventoryError::InvalidNonValueCallCarrier { .. }
+            | HirSelectedExpressionInventoryError::InvalidRuntimeCallDisposition { .. }
             | HirSelectedExpressionInventoryError::MissingRuntimeCallReceiver { .. } => {
                 FinalSemanticAnalysisError::WrongPayloadFamily
             }

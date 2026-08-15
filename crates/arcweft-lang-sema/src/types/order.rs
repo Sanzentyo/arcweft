@@ -198,6 +198,7 @@ impl TypeKind {
                     left.stable_ordering(right)
                 }
                 (Self::CharacterNominal(left), Self::CharacterNominal(right)) => left.cmp(right),
+                (Self::AgentBuiltin(left), Self::AgentBuiltin(right)) => left.cmp(right),
                 (Self::Tuple(left), Self::Tuple(right))
                 | (Self::Choice(left), Self::Choice(right)) => type_slice_ordering(left, right),
                 _ => Ordering::Equal,
@@ -410,5 +411,6 @@ const fn type_kind_tag(kind: &TypeKind) -> u8 {
         TypeKind::Choice(_) => 75,
         TypeKind::Unit => 76,
         TypeKind::Never => 77,
+        TypeKind::AgentBuiltin(_) => 78,
     }
 }
