@@ -10,12 +10,20 @@ use arcweft_agent_protocol::{
     },
     value::AgentValue,
 };
-use arcweft_core::value::{RuntimePayload, RuntimeValue};
+use arcweft_core::{
+    entry::RuntimeCommandTargetId,
+    value::{
+        RuntimeAgentAction, RuntimeAgentActionDispatch, RuntimeAgentActionTarget,
+        RuntimeAgentValue, RuntimePayload, RuntimeValue,
+    },
+};
 
 use crate::runtime_value::{runtime_field, runtime_record};
 
-pub(crate) fn runtime_payload_from_response(response: &AgentHostResponse) -> RuntimePayload {
-    RuntimePayload::new(match response {
+pub(crate) fn runtime_payload_from_response(
+    response: &AgentHostResponse,
+) -> Result<RuntimePayload, String> {
+    let value = match response {
         AgentHostResponse::Observation(observation) => runtime_record(vec![
             runtime_field("tick", RuntimeValue::u64(observation.tick)),
             runtime_field(
@@ -30,7 +38,7 @@ pub(crate) fn runtime_payload_from_response(response: &AgentHostResponse) -> Run
                 "render_hash",
                 RuntimeValue::String(observation.render_hash.clone()),
             ),
-            runtime_field("actions", runtime_action_targets(&observation.actions)),
+            runtime_field("actions", runtime_action_targets(&observation.actions)?),
             runtime_field("objects", runtime_observed_objects(&observation.payload)),
             runtime_field("signals", runtime_agent_value_fields(&observation.signals)),
         ]),
@@ -66,7 +74,8 @@ pub(crate) fn runtime_payload_from_response(response: &AgentHostResponse) -> Run
         }
         AgentHostResponse::RagContext(value) => runtime_rag_context_payload(value),
         AgentHostResponse::Unit => RuntimeValue::Unit,
-    })
+    };
+    Ok(RuntimePayload::new(value))
 }
 
 pub(crate) fn project_graph_neighborhood(
@@ -391,27 +400,26 @@ pub(crate) fn runtime_resource_payload(value: &serde_json::Value) -> RuntimeValu
     ])
 }
 
-fn runtime_action_targets(actions: &[AgentActionTarget]) -> RuntimeValue {
-    RuntimeValue::Seq(arcweft_core::value::RuntimeSeq::values(
-        actions
-            .iter()
-            .map(|action| {
-                runtime_record(vec![
-                    runtime_field("id", RuntimeValue::String(action.id.clone())),
-                    runtime_field("target", RuntimeValue::String(action.target.clone())),
-                    runtime_field(
-                        "action",
-                        RuntimeValue::String(agent_action_kind_label(action.action).to_owned()),
-                    ),
-                    runtime_field(
-                        "kind",
-                        RuntimeValue::String(agent_action_dispatch_label(action.kind).to_owned()),
-                    ),
-                    runtime_field("enabled", RuntimeValue::Bool(action.enabled)),
-                ])
-            })
-            .collect(),
-    ))
+fn runtime_action_targets(actions: &[AgentActionTarget]) -> Result<RuntimeValue, String> {
+    actions
+        .iter()
+        .map(|action| {
+            let id = RuntimeCommandTargetId::try_new(action.id.clone())
+                .map_err(|error| format!("invalid Agent action identity: {error}"))?;
+            let target = RuntimeCommandTargetId::try_new(action.target.clone())
+                .map_err(|error| format!("invalid Agent action target: {error}"))?;
+            Ok(RuntimeValue::Agent(RuntimeAgentValue::ActionTarget(
+                RuntimeAgentActionTarget::new(
+                    id,
+                    target,
+                    runtime_agent_action(action.action),
+                    runtime_agent_action_dispatch(action.kind),
+                    action.enabled,
+                ),
+            )))
+        })
+        .collect::<Result<Vec<_>, _>>()
+        .map(arcweft_core::value::runtime_sequence_values)
 }
 
 fn runtime_observed_objects(payload: &serde_json::Value) -> RuntimeValue {
@@ -504,20 +512,20 @@ fn runtime_agent_value_payload(value: &AgentValue) -> RuntimeValue {
     }
 }
 
-fn agent_action_kind_label(kind: AgentActionKind) -> &'static str {
+const fn runtime_agent_action(kind: AgentActionKind) -> RuntimeAgentAction {
     match kind {
-        AgentActionKind::AdvanceText => "advance_text",
-        AgentActionKind::SelectChoice => "select_choice",
-        AgentActionKind::Invoke => "invoke",
-        AgentActionKind::Scroll => "scroll",
-        AgentActionKind::PointerClick => "pointer_click",
+        AgentActionKind::AdvanceText => RuntimeAgentAction::AdvanceText,
+        AgentActionKind::SelectChoice => RuntimeAgentAction::SelectChoice,
+        AgentActionKind::Invoke => RuntimeAgentAction::Invoke,
+        AgentActionKind::Scroll => RuntimeAgentAction::Scroll,
+        AgentActionKind::PointerClick => RuntimeAgentAction::PointerClick,
     }
 }
 
-fn agent_action_dispatch_label(kind: AgentActionDispatch) -> &'static str {
+const fn runtime_agent_action_dispatch(kind: AgentActionDispatch) -> RuntimeAgentActionDispatch {
     match kind {
-        AgentActionDispatch::Semantic => "semantic",
-        AgentActionDispatch::Physical => "physical",
+        AgentActionDispatch::Semantic => RuntimeAgentActionDispatch::Semantic,
+        AgentActionDispatch::Physical => RuntimeAgentActionDispatch::Physical,
     }
 }
 

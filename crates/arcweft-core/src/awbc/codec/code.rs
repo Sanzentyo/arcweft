@@ -15,6 +15,7 @@ use crate::awbc::schema::{
     AwbcStreamPlanId, AwbcStringId, AwbcTableRange, AwbcTaskPlanId, AwbcTerminator,
     AwbcTraitMethodId, AwbcTrapCode, AwbcTypeId, AwbcUnaryOp,
 };
+use crate::value::RuntimeAgentConstructor;
 
 impl Wire for AwbcFunction {
     fn write_wire(&self, writer: &mut Writer) -> Result<(), AwbcCodecError> {
@@ -282,6 +283,15 @@ impl Wire for AwbcInstruction {
                 callee.write_wire(writer)?;
                 args.write_wire(writer)?;
             }
+            Self::MakeAgent {
+                dst,
+                constructor,
+                operands,
+            } => {
+                dst.write_wire(writer)?;
+                constructor.write_wire(writer)?;
+                operands.write_wire(writer)?;
+            }
         }
         Ok(())
     }
@@ -477,6 +487,11 @@ impl Wire for AwbcInstruction {
                 dst: AwbcRegisterId::read_wire(reader)?,
                 callee: AwbcRegisterId::read_wire(reader)?,
                 args: Vec::<AwbcRegisterId>::read_wire(reader)?,
+            },
+            AwbcOpcode::MakeAgent => Self::MakeAgent {
+                dst: AwbcRegisterId::read_wire(reader)?,
+                constructor: RuntimeAgentConstructor::read_wire(reader)?,
+                operands: Vec::<AwbcRegisterId>::read_wire(reader)?,
             },
             AwbcOpcode::Jump
             | AwbcOpcode::Branch
@@ -720,7 +735,8 @@ impl Wire for AwbcTerminator {
             | AwbcOpcode::RegisterCleanup
             | AwbcOpcode::CancelCleanup
             | AwbcOpcode::MakeFunction
-            | AwbcOpcode::ApplyFunction => unreachable!("instruction opcode rejected above"),
+            | AwbcOpcode::ApplyFunction
+            | AwbcOpcode::MakeAgent => unreachable!("instruction opcode rejected above"),
         })
     }
 }
@@ -748,6 +764,33 @@ wire_enum!(AwbcBinaryOp, "binary operator", {
     9 => AwbcBinaryOp::Div,
     10 => AwbcBinaryOp::And,
     11 => AwbcBinaryOp::Or,
+});
+
+wire_enum!(RuntimeAgentConstructor, "Agent constructor", {
+    0 => RuntimeAgentConstructor::ChoiceAction,
+    1 => RuntimeAgentConstructor::CaptureViewport,
+    2 => RuntimeAgentConstructor::CaptureLayer,
+    3 => RuntimeAgentConstructor::CaptureObject,
+    4 => RuntimeAgentConstructor::StatePath,
+    5 => RuntimeAgentConstructor::ObservationPath,
+    6 => RuntimeAgentConstructor::ProbeSignal,
+    7 => RuntimeAgentConstructor::ProbeMetric,
+    8 => RuntimeAgentConstructor::ProbeState,
+    9 => RuntimeAgentConstructor::ProbeObservation,
+    10 => RuntimeAgentConstructor::Diagnostics,
+    11 => RuntimeAgentConstructor::PredicateExists,
+    12 => RuntimeAgentConstructor::PredicateActionEnabled,
+    13 => RuntimeAgentConstructor::PredicateDiagnosticsHasError,
+    14 => RuntimeAgentConstructor::PredicateAll,
+    15 => RuntimeAgentConstructor::PredicateAny,
+    16 => RuntimeAgentConstructor::PredicateNot,
+    17 => RuntimeAgentConstructor::PredicateEq,
+    18 => RuntimeAgentConstructor::PredicateNotEq,
+    19 => RuntimeAgentConstructor::PredicateGreater,
+    20 => RuntimeAgentConstructor::PredicateGreaterOrEqual,
+    21 => RuntimeAgentConstructor::PredicateLess,
+    22 => RuntimeAgentConstructor::PredicateLessOrEqual,
+    23 => RuntimeAgentConstructor::ViewportPoint,
 });
 
 wire_enum!(AwbcSafePointKind, "safe point kind", {

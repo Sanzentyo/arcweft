@@ -420,6 +420,10 @@ impl CanonicalRuntimeValueBytes {
                 self.extend(value.semantic_identity().as_bytes())?;
                 self.value(value.payload())
             }
+            RuntimeValue::Agent(value) => {
+                self.u8(17)?;
+                self.agent_value(value)
+            }
             RuntimeValue::Variant {
                 owner,
                 ordinal,
@@ -441,6 +445,144 @@ impl CanonicalRuntimeValueBytes {
             | RuntimeValue::Function(_) => Err(RuntimeSchemaError::Encoding {
                 message: "runtime-only value has no replay/save encoding".to_owned(),
             }),
+        }
+    }
+
+    fn agent_value(
+        &mut self,
+        value: &crate::value::RuntimeAgentValue,
+    ) -> Result<(), RuntimeSchemaError> {
+        use crate::value::RuntimeAgentCaptureTarget;
+        match value {
+            crate::value::RuntimeAgentValue::ActionTarget(target) => {
+                self.u8(0)?;
+                self.string(target.id().as_str())?;
+                self.string(target.target().as_str())?;
+                self.u8(match target.action() {
+                    crate::value::RuntimeAgentAction::AdvanceText => 0,
+                    crate::value::RuntimeAgentAction::SelectChoice => 1,
+                    crate::value::RuntimeAgentAction::Invoke => 2,
+                    crate::value::RuntimeAgentAction::Scroll => 3,
+                    crate::value::RuntimeAgentAction::PointerClick => 4,
+                })?;
+                self.u8(match target.dispatch() {
+                    crate::value::RuntimeAgentActionDispatch::Semantic => 0,
+                    crate::value::RuntimeAgentActionDispatch::Physical => 1,
+                })?;
+                self.u8(u8::from(target.enabled()))
+            }
+            crate::value::RuntimeAgentValue::CaptureTarget(target) => {
+                self.u8(1)?;
+                match target {
+                    RuntimeAgentCaptureTarget::Viewport => self.u8(0),
+                    RuntimeAgentCaptureTarget::Layer { target } => {
+                        self.u8(1)?;
+                        self.string(target.as_str())
+                    }
+                    RuntimeAgentCaptureTarget::Object { target } => {
+                        self.u8(2)?;
+                        self.string(target.as_str())
+                    }
+                }
+            }
+            crate::value::RuntimeAgentValue::DebugStatePath(path) => {
+                self.u8(2)?;
+                self.string(path.as_str())
+            }
+            crate::value::RuntimeAgentValue::ObservationFieldPath(path) => {
+                self.u8(3)?;
+                self.string(path.as_str())
+            }
+            crate::value::RuntimeAgentValue::Probe(probe) => {
+                self.u8(4)?;
+                self.agent_probe(probe)
+            }
+            crate::value::RuntimeAgentValue::Diagnostics => self.u8(5),
+            crate::value::RuntimeAgentValue::Predicate(predicate) => {
+                self.u8(6)?;
+                self.agent_predicate(predicate)
+            }
+            crate::value::RuntimeAgentValue::ViewportPoint { x, y } => {
+                self.u8(7)?;
+                self.u32(*x)?;
+                self.u32(*y)
+            }
+        }
+    }
+
+    fn agent_probe(
+        &mut self,
+        probe: &crate::value::RuntimeAgentProbe,
+    ) -> Result<(), RuntimeSchemaError> {
+        use crate::value::RuntimeAgentProbe;
+        match probe {
+            RuntimeAgentProbe::Signal { target } => {
+                self.u8(0)?;
+                self.string(target.as_str())
+            }
+            RuntimeAgentProbe::Metric { target } => {
+                self.u8(1)?;
+                self.string(target.as_str())
+            }
+            RuntimeAgentProbe::StatePath { path } => {
+                self.u8(2)?;
+                self.string(path.as_str())
+            }
+            RuntimeAgentProbe::ObservationField { path } => {
+                self.u8(3)?;
+                self.string(path.as_str())
+            }
+        }
+    }
+
+    fn agent_predicate(
+        &mut self,
+        predicate: &crate::value::RuntimeAgentPredicate,
+    ) -> Result<(), RuntimeSchemaError> {
+        use crate::value::RuntimeAgentPredicate;
+        match predicate {
+            RuntimeAgentPredicate::Compare { probe, op, value } => {
+                self.u8(0)?;
+                self.agent_probe(probe)?;
+                self.u8(match op {
+                    crate::value::RuntimeAgentCompareOp::Eq => 0,
+                    crate::value::RuntimeAgentCompareOp::NotEq => 1,
+                    crate::value::RuntimeAgentCompareOp::Greater => 2,
+                    crate::value::RuntimeAgentCompareOp::GreaterOrEqual => 3,
+                    crate::value::RuntimeAgentCompareOp::Less => 4,
+                    crate::value::RuntimeAgentCompareOp::LessOrEqual => 5,
+                })?;
+                self.value(value)
+            }
+            RuntimeAgentPredicate::Exists { probe } => {
+                self.u8(1)?;
+                self.agent_probe(probe)
+            }
+            RuntimeAgentPredicate::ActionEnabled { target } => {
+                self.u8(2)?;
+                self.string(target.as_str())
+            }
+            RuntimeAgentPredicate::DiagnosticsHasError => self.u8(3),
+            RuntimeAgentPredicate::All { predicates } => {
+                self.u8(4)?;
+                self.len(predicates.len())?;
+                for predicate in predicates {
+                    self.agent_predicate(predicate)?;
+                }
+                Ok(())
+            }
+            RuntimeAgentPredicate::Any { predicates } => {
+                self.u8(5)?;
+                self.len(predicates.len())?;
+                for predicate in predicates {
+                    self.agent_predicate(predicate)?;
+                }
+                Ok(())
+            }
+            RuntimeAgentPredicate::Not { predicate } => {
+                self.u8(6)?;
+                self.agent_predicate(predicate)
+            }
         }
     }
 
@@ -1020,6 +1162,7 @@ const fn runtime_value_type(value: &RuntimeValue) -> &'static str {
         RuntimeValue::Record(_) => "record",
         RuntimeValue::NominalRecord(_) => "nominal record",
         RuntimeValue::Opaque(_) => "opaque value",
+        RuntimeValue::Agent(_) => "Agent value",
         RuntimeValue::Function(_) => "function",
         RuntimeValue::Variant { .. } => "variant",
     }

@@ -49,6 +49,8 @@ where
     ProjectGraphSymbolMissing { entity: String },
     #[error("Agent controller emitted unsupported effect: {0}")]
     UnsupportedControllerEffect(String),
+    #[error("Agent host response failed typed runtime admission: {0}")]
+    InvalidHostResponse(String),
     #[error("Agent assertion failed ({kind:?}): {message}")]
     AssertionFailed {
         kind: AgentAssertionKind,

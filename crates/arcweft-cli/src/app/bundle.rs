@@ -911,6 +911,7 @@ fn static_image_asset_ref_expr(expr: &RuntimeExpr) -> Option<String> {
             Some(id.clone())
         }
         RuntimeExpr::Value(_)
+        | RuntimeExpr::Agent(_)
         | RuntimeExpr::Local(_)
         | RuntimeExpr::Let { .. }
         | RuntimeExpr::Tuple(_)

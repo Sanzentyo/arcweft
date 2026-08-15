@@ -11,7 +11,7 @@ use crate::pattern::{
     RuntimeCheckedType, RuntimeOpaqueTypeAdmission, RuntimeOpaqueTypeOwner,
     RuntimeOpaqueTypeProducerId, RuntimeSemanticTypeId,
 };
-use crate::plan::{FlowRuntimeId, RuntimeFlowTargetError};
+use crate::plan::{FlowRuntimeId, RuntimeAgentOperationalType, RuntimeFlowTargetError};
 use crate::value::{RuntimeFunctionValue, RuntimeValue, runtime_sequence_values};
 
 fn test_flow_binding(label: &str, function: u32) -> AwbcFlowBinding {
@@ -231,6 +231,133 @@ fn verifier_tracks_dynamic_record_children_before_the_rest_binding() {
     program
         .verify(AwbcVerifyBudget::default(), AwbcVerifyContext::default())
         .unwrap();
+}
+
+#[test]
+fn verifier_rejects_incorrect_agent_field_destination_type() {
+    let mut program = minimal_program();
+    program.strings.push("enabled".to_owned());
+    program.runtime_types = vec![
+        AwbcRuntimeType::Agent(RuntimeAgentOperationalType::ActionTarget),
+        AwbcRuntimeType::String,
+    ];
+    program.signatures[0].params = vec![AwbcTypeId(0)];
+    program.frame_layouts[0] = AwbcFrameLayout {
+        slots: vec![
+            AwbcFrameSlot {
+                name: None,
+                ty: AwbcTypeId(0),
+                role: AwbcFrameSlotRole::Parameter,
+                scope_depth: 0,
+            },
+            AwbcFrameSlot {
+                name: None,
+                ty: AwbcTypeId(1),
+                role: AwbcFrameSlotRole::Temporary,
+                scope_depth: 0,
+            },
+        ],
+        max_scope_depth: 0,
+    };
+    program.instructions = vec![AwbcInstruction::ProjectField {
+        dst: AwbcRegisterId(1),
+        target: AwbcRegisterId(0),
+        field: AwbcStringId(1),
+    }];
+    program.blocks[0].instructions = AwbcTableRange::new(0, 1);
+    program.canonicalize_string_table();
+
+    let error = program
+        .verify(AwbcVerifyBudget::default(), AwbcVerifyContext::default())
+        .expect_err("Agent enabled field must not project into a string register");
+    assert!(
+        matches!(&error, AwbcVerifyError::InvalidInvariant { message, .. }
+            if message == "Agent field projection destination"),
+        "{error:?}"
+    );
+}
+
+#[test]
+fn verifier_rejects_agent_operands_that_can_only_fail_at_runtime() {
+    let mut viewport = minimal_program();
+    viewport.runtime_types = vec![
+        AwbcRuntimeType::Int(AwbcSignedIntKind::I64),
+        AwbcRuntimeType::Agent(RuntimeAgentOperationalType::ViewportPoint),
+    ];
+    viewport.signatures[0].params = vec![AwbcTypeId(0), AwbcTypeId(0)];
+    viewport.frame_layouts[0] = AwbcFrameLayout {
+        slots: vec![
+            AwbcFrameSlot {
+                name: None,
+                ty: AwbcTypeId(0),
+                role: AwbcFrameSlotRole::Parameter,
+                scope_depth: 0,
+            },
+            AwbcFrameSlot {
+                name: None,
+                ty: AwbcTypeId(0),
+                role: AwbcFrameSlotRole::Parameter,
+                scope_depth: 0,
+            },
+            AwbcFrameSlot {
+                name: None,
+                ty: AwbcTypeId(1),
+                role: AwbcFrameSlotRole::Temporary,
+                scope_depth: 0,
+            },
+        ],
+        max_scope_depth: 0,
+    };
+    viewport.instructions = vec![AwbcInstruction::MakeAgent {
+        dst: AwbcRegisterId(2),
+        constructor: crate::value::RuntimeAgentConstructor::ViewportPoint,
+        operands: vec![AwbcRegisterId(0), AwbcRegisterId(1)],
+    }];
+    viewport.blocks[0].instructions = AwbcTableRange::new(0, 1);
+    assert!(matches!(
+        viewport
+            .verify(AwbcVerifyBudget::default(), AwbcVerifyContext::default())
+            .expect_err("signed viewport coordinates must reject"),
+        AwbcVerifyError::InvalidInvariant { message, .. }
+            if message.contains("ViewportPoint rejects operand")
+    ));
+
+    let mut all = minimal_program();
+    all.runtime_types = vec![
+        AwbcRuntimeType::String,
+        AwbcRuntimeType::Sequence(AwbcTypeId(0)),
+        AwbcRuntimeType::Agent(RuntimeAgentOperationalType::Predicate),
+    ];
+    all.signatures[0].params = vec![AwbcTypeId(1)];
+    all.frame_layouts[0] = AwbcFrameLayout {
+        slots: vec![
+            AwbcFrameSlot {
+                name: None,
+                ty: AwbcTypeId(1),
+                role: AwbcFrameSlotRole::Parameter,
+                scope_depth: 0,
+            },
+            AwbcFrameSlot {
+                name: None,
+                ty: AwbcTypeId(2),
+                role: AwbcFrameSlotRole::Temporary,
+                scope_depth: 0,
+            },
+        ],
+        max_scope_depth: 0,
+    };
+    all.instructions = vec![AwbcInstruction::MakeAgent {
+        dst: AwbcRegisterId(1),
+        constructor: crate::value::RuntimeAgentConstructor::PredicateAll,
+        operands: vec![AwbcRegisterId(0)],
+    }];
+    all.blocks[0].instructions = AwbcTableRange::new(0, 1);
+    assert!(matches!(
+        all.verify(AwbcVerifyBudget::default(), AwbcVerifyContext::default())
+            .expect_err("sequence<string> must not construct an Agent predicate list"),
+        AwbcVerifyError::InvalidInvariant { message, .. }
+            if message.contains("PredicateAll rejects operand")
+    ));
 }
 
 #[test]

@@ -16,7 +16,10 @@ use arcweft_core::{
     entry::{EntryBindingIdentity, RootExecutionLimits, RuntimeCommandPolicy, RuntimeEntryRoles},
     plan::{FlowOp, FlowRuntimeId, RuntimeEntryTarget},
     task::HostTaskArgTemplate,
-    value::{RuntimeExpr, RuntimeUInt, RuntimeValue},
+    value::{
+        RuntimeAgentCompareOp, RuntimeAgentExpr, RuntimeAgentPredicateExpr, RuntimeExpr,
+        RuntimeUInt, RuntimeValue,
+    },
 };
 use arcweft_debug_model::sink::NullDebugEventSink;
 use arcweft_id::PublicId;
@@ -726,47 +729,72 @@ entry agent @entry.agent.controller {
         panic!("Agent wait call must lower to one typed host task");
     };
     assert_eq!(target.request.operation, "wait");
-    let Some(HostTaskArgTemplate::Positional(RuntimeExpr::Record(all))) =
-        target.request.args.first()
+    let Some(HostTaskArgTemplate::Positional(RuntimeExpr::Agent(RuntimeAgentExpr::Predicate(
+        RuntimeAgentPredicateExpr::All { predicates },
+    )))) = target.request.args.first()
     else {
-        panic!("wait predicate must remain a typed runtime record");
+        panic!("wait predicate must remain a typed Agent expression");
     };
-    assert_eq!(runtime_string_field(all, "kind"), Some("all"));
-    let predicates = all
-        .iter()
-        .find(|field| field.name == "predicates")
-        .map(|field| &field.value)
-        .expect("all predicate tuple");
-    let RuntimeExpr::Tuple(predicates) = predicates else {
-        panic!("all predicate children must remain an ordered tuple");
+    let RuntimeExpr::Agent(RuntimeAgentExpr::Predicate(RuntimeAgentPredicateExpr::Not {
+        predicate: compare,
+    })) = &predicates[1]
+    else {
+        panic!("second predicate must remain the typed Agent not expression");
     };
-    let RuntimeExpr::Record(not) = &predicates[1] else {
-        panic!("second predicate must remain the typed not record");
+    let RuntimeExpr::Agent(RuntimeAgentExpr::Predicate(RuntimeAgentPredicateExpr::Compare {
+        op,
+        ..
+    })) = compare.as_ref()
+    else {
+        panic!("probe comparison must remain a typed Agent expression");
     };
-    let compare = not
-        .iter()
-        .find(|field| field.name == "predicate")
-        .map(|field| &field.value)
-        .expect("not predicate payload");
-    let RuntimeExpr::Record(compare) = compare else {
-        panic!("probe comparison must remain a typed runtime record");
-    };
-    assert_eq!(runtime_string_field(compare, "kind"), Some("compare"));
-    assert_eq!(runtime_string_field(compare, "op"), Some("eq"));
+    assert_eq!(*op, RuntimeAgentCompareOp::Eq);
 }
 
-fn runtime_string_field<'a>(
-    fields: &'a [arcweft_core::value::RuntimeFieldExpr],
-    name: &str,
-) -> Option<&'a str> {
-    fields.iter().find_map(|field| {
-        (field.name == name)
-            .then_some(&field.value)
-            .and_then(|value| match value {
-                RuntimeExpr::Value(RuntimeValue::String(value)) => Some(value.as_str()),
-                _ => None,
+#[test]
+fn selected_agent_controller_lowers_diagnostics_method_into_typed_predicate() {
+    let source = r"
+fn controller() -> Result<Unit, AgentError>
+effects { agent.observe, agent.wait }
+{
+    wait(diagnostics().has_error(), timeout = 5s)
+    return Ok(())
+}
+
+entry agent @entry.agent.controller {
+    controller = controller
+}
+";
+    let (project, context) = entry_project(
+        source,
+        "entry.agent.controller",
+        ProjectEntrySelectionKind::Agent,
+    );
+    let compiled = compile_attached_project(&project, &context)
+        .expect("typed Agent Diagnostics method controller compiles");
+    let controller = compiled
+        .runtime_plan()
+        .plan
+        .flows
+        .iter()
+        .find(|flow| flow.id.canonical_label().contains("controller"))
+        .expect("selected controller flow");
+    let Some(FlowOp::Await { target, .. }) = controller.ops.first() else {
+        panic!("Agent wait call must lower to one typed host task");
+    };
+    assert!(matches!(
+        target.request.args.first(),
+        Some(HostTaskArgTemplate::Positional(RuntimeExpr::Agent(
+            RuntimeAgentExpr::Predicate(RuntimeAgentPredicateExpr::DiagnosticsHasError {
+                diagnostics,
             })
-    })
+        ))) if matches!(
+            diagnostics.as_ref(),
+            RuntimeExpr::Agent(RuntimeAgentExpr::Probe(
+                arcweft_core::value::RuntimeAgentProbeExpr::Diagnostics
+            ))
+        )
+    ));
 }
 
 #[test]

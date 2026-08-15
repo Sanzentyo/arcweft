@@ -11,7 +11,7 @@ use crate::{
         runtime_project_graph_symbol_payload, runtime_rag_context_payload,
         runtime_resource_payload,
     },
-    runtime_value::{runtime_field, runtime_record_get, runtime_record_string},
+    runtime_value::{runtime_field, runtime_predicate},
     session::{AgentSession, NoopRagService, ReplayAgentSession, ReplayAgentSessionError},
 };
 use arcweft_agent_protocol::protocol::ActionResult;
@@ -62,7 +62,12 @@ use arcweft_core::{
         AwaitTarget, HostTaskArgTemplate, HostTaskRequest, HostTaskRequestTemplate, NeedId, TaskId,
     },
     time::LogicalDuration,
-    value::{RuntimeExpr, RuntimeFieldExpr, RuntimePayload, RuntimeValue},
+    value::{
+        RuntimeAgentCompareOp, RuntimeAgentExpr, RuntimeAgentPath, RuntimeAgentPredicate,
+        RuntimeAgentPredicateExpr, RuntimeAgentProbe, RuntimeAgentProbeExpr,
+        RuntimeAgentTargetExpr, RuntimeAgentValue, RuntimeExpr, RuntimeFieldExpr,
+        RuntimeFieldValue, RuntimePayload, RuntimeValue,
+    },
 };
 use arcweft_debug_model::{
     event::{DebugEvent, DebugEventKind},
@@ -72,6 +77,24 @@ use arcweft_source::{SourceDocument, SourceDocumentId, SourceName};
 use arcweft_text_model::DialogueContentCatalog;
 use std::collections::BTreeMap;
 use std::convert::Infallible;
+
+fn runtime_record_get<'a>(
+    fields: &'a [RuntimeFieldValue],
+    name: &str,
+) -> Result<&'a RuntimeValue, String> {
+    fields
+        .iter()
+        .find(|field| field.name() == name)
+        .map(RuntimeFieldValue::value)
+        .ok_or_else(|| format!("record is missing `{name}`"))
+}
+
+fn runtime_record_string(fields: &[RuntimeFieldValue], name: &str) -> Result<String, String> {
+    match runtime_record_get(fields, name)? {
+        RuntimeValue::String(value) | RuntimeValue::EntityRef(value) => Ok(value.clone()),
+        value => Err(format!("record field `{name}` is not text: {value:?}")),
+    }
+}
 
 fn fixture_runtime_artifact_fingerprint() -> arcweft_core::effect::RuntimeArtifactFingerprint {
     arcweft_core::effect::RuntimeArtifactFingerprint::try_from_bytes([0x6a; 32])
@@ -669,14 +692,9 @@ fn capture_binding_program_with_budget(budget: AgentBudget) -> BytecodeProgram {
                             "agent",
                             "capture",
                             [
-                                HostTaskArgTemplate::positional(RuntimeExpr::Record(vec![
-                                    RuntimeFieldExpr {
-                                        name: "kind".to_owned(),
-                                        value: RuntimeExpr::Value(RuntimeValue::String(
-                                            "viewport".to_owned(),
-                                        )),
-                                    },
-                                ])),
+                                HostTaskArgTemplate::positional(RuntimeExpr::Agent(
+                                    RuntimeAgentExpr::Target(RuntimeAgentTargetExpr::Viewport),
+                                )),
                                 HostTaskArgTemplate::positional(RuntimeExpr::Record(vec![
                                     RuntimeFieldExpr {
                                         name: "format".to_owned(),
@@ -823,41 +841,25 @@ fn wait_binding_program() -> BytecodeProgram {
                             "agent",
                             "wait",
                             [
-                                HostTaskArgTemplate::positional(RuntimeExpr::Record(vec![
-                                    RuntimeFieldExpr {
-                                        name: "kind".to_owned(),
-                                        value: RuntimeExpr::Value(RuntimeValue::String(
-                                            "compare".to_owned(),
-                                        )),
-                                    },
-                                    RuntimeFieldExpr {
-                                        name: "probe".to_owned(),
-                                        value: RuntimeExpr::Record(vec![
-                                            RuntimeFieldExpr {
-                                                name: "kind".to_owned(),
-                                                value: RuntimeExpr::Value(RuntimeValue::String(
-                                                    "signal".to_owned(),
-                                                )),
-                                            },
-                                            RuntimeFieldExpr {
-                                                name: "target".to_owned(),
-                                                value: RuntimeExpr::Value(RuntimeValue::String(
-                                                    "signal.ready".to_owned(),
-                                                )),
-                                            },
-                                        ]),
-                                    },
-                                    RuntimeFieldExpr {
-                                        name: "op".to_owned(),
-                                        value: RuntimeExpr::Value(RuntimeValue::String(
-                                            "eq".to_owned(),
-                                        )),
-                                    },
-                                    RuntimeFieldExpr {
-                                        name: "value".to_owned(),
-                                        value: RuntimeExpr::Value(RuntimeValue::Bool(true)),
-                                    },
-                                ])),
+                                HostTaskArgTemplate::positional(RuntimeExpr::Agent(
+                                    RuntimeAgentExpr::Predicate(
+                                        RuntimeAgentPredicateExpr::Compare {
+                                            probe: Box::new(RuntimeExpr::Agent(
+                                                RuntimeAgentExpr::Probe(
+                                                    RuntimeAgentProbeExpr::Signal {
+                                                        target: Box::new(RuntimeExpr::EntityRef(
+                                                            "signal.ready".to_owned(),
+                                                        )),
+                                                    },
+                                                ),
+                                            )),
+                                            op: RuntimeAgentCompareOp::Eq,
+                                            value: Box::new(RuntimeExpr::Value(
+                                                RuntimeValue::Bool(true),
+                                            )),
+                                        },
+                                    ),
+                                )),
                                 HostTaskArgTemplate::named(
                                     "timeout",
                                     RuntimeExpr::Value(RuntimeValue::Duration(
@@ -1233,7 +1235,10 @@ fn observation_payload_exposes_action_targets_for_contains_checks() {
         payload: serde_json::json!({}),
     }));
 
-    let RuntimeValue::Record(fields) = runtime_payload_from_response(&response).0 else {
+    let RuntimeValue::Record(fields) = runtime_payload_from_response(&response)
+        .expect("observation action targets pass typed admission")
+        .0
+    else {
         panic!("observation payload is a record");
     };
     let RuntimeValue::Seq(actions) =
@@ -1245,9 +1250,32 @@ fn observation_payload_exposes_action_targets_for_contains_checks() {
     assert_eq!(actions.len(), 1);
     assert!(matches!(
         actions.value_at(0),
-        RuntimeValue::Record(ref fields)
-            if runtime_record_get(fields, "target")
-                == Ok(&RuntimeValue::String("choice.opening.listen".to_owned()))
+        RuntimeValue::Agent(arcweft_core::value::RuntimeAgentValue::ActionTarget(target))
+            if target.target().as_str() == "choice.opening.listen"
+    ));
+}
+
+#[test]
+fn observation_payload_rejects_invalid_action_target_identity() {
+    let response = AgentHostResponse::Observation(Box::new(ObservationEnvelope {
+        tick: 7,
+        frame_id: "frame.7".to_owned(),
+        state_hash: "state.7".to_owned(),
+        render_hash: "render.7".to_owned(),
+        actions: vec![AgentActionTarget {
+            id: String::new(),
+            target: "choice.opening.listen".to_owned(),
+            action: AgentActionKind::SelectChoice,
+            kind: AgentActionDispatch::Semantic,
+            enabled: true,
+        }],
+        signals: BTreeMap::new(),
+        payload: serde_json::json!({}),
+    }));
+
+    assert!(matches!(
+        runtime_payload_from_response(&response),
+        Err(message) if message.contains("invalid Agent action identity")
     ));
 }
 
@@ -1283,7 +1311,10 @@ fn observation_payload_exposes_observed_objects_for_visual_regression_scripts() 
         }),
     }));
 
-    let RuntimeValue::Record(fields) = runtime_payload_from_response(&response).0 else {
+    let RuntimeValue::Record(fields) = runtime_payload_from_response(&response)
+        .expect("observed objects pass typed admission")
+        .0
+    else {
         panic!("observation payload is a record");
     };
     let RuntimeValue::Seq(objects) =
@@ -1503,6 +1534,34 @@ fn wait_matches_diagnostics_has_error_predicate() {
 }
 
 #[test]
+fn runtime_wait_predicate_accepts_only_the_typed_agent_algebra() {
+    let typed = RuntimeValue::Agent(RuntimeAgentValue::Predicate(
+        RuntimeAgentPredicate::Compare {
+            probe: RuntimeAgentProbe::StatePath {
+                path: RuntimeAgentPath::try_new("route.phase").expect("valid Agent path"),
+            },
+            op: RuntimeAgentCompareOp::Eq,
+            value: Box::new(RuntimeValue::String("opening".to_owned())),
+        },
+    ));
+    assert!(matches!(
+        runtime_predicate(&typed),
+        Ok(Predicate::Compare {
+            probe: Probe::StatePath { ref path },
+            op: CompareOp::Eq,
+            ..
+        }) if path.as_str() == "route.phase"
+    ));
+
+    let raw_record = RuntimeValue::try_record(vec![runtime_field(
+        "kind",
+        RuntimeValue::String("diagnostics_has_error".to_owned()),
+    )])
+    .expect("test record is valid");
+    assert!(runtime_predicate(&raw_record).is_err());
+}
+
+#[test]
 fn assertion_host_request_records_passed_expect() {
     let mut runner = AgentRunner::new(
         TestSession::default(),
@@ -1615,6 +1674,40 @@ fn controller_bytecode_dispatches_effect_calls_to_runner_host_boundary() {
         AgentHostResponse::Observation(observation) if observation.tick == 1
     ));
     assert!(matches!(report.responses[1], AgentHostResponse::Unit));
+}
+
+#[test]
+fn controller_bytecode_propagates_invalid_host_response_admission() {
+    let mut invalid = observation(1, true);
+    invalid.actions.push(AgentActionTarget {
+        id: String::new(),
+        target: "choice.opening.listen".to_owned(),
+        action: AgentActionKind::SelectChoice,
+        kind: AgentActionDispatch::Semantic,
+        enabled: true,
+    });
+    let mut runner = AgentRunner::new(
+        TestSession {
+            observations: vec![invalid],
+        },
+        NullDebugEventSink,
+        NoopRagService,
+        RuntimeAgentPolicy::new([
+            RuntimeAgentCapability::Observe,
+            RuntimeAgentCapability::DebugRecord,
+        ]),
+        AgentRunnerConfig::new(SessionId::new("session.test").expect("valid session id")),
+    );
+    let program = observe_checkpoint_program();
+    let entry = program.entries[0].id.clone();
+
+    assert!(matches!(
+        runner
+            .run_controller_bytecode(program, &entry, AgentControllerRunConfig::default())
+            .expect_err("invalid host response must abort before runtime resumption"),
+        AgentRunError::InvalidHostResponse(message)
+            if message.contains("invalid Agent action identity")
+    ));
 }
 
 #[test]

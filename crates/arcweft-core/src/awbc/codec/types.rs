@@ -13,6 +13,7 @@ use crate::awbc::schema::{
     AwbcVariantCase, AwbcVariantIdentity,
 };
 use crate::pattern::RuntimeOpaqueTypeAdmission;
+use crate::plan::RuntimeAgentOperationalType;
 
 wire_id!(
     AwbcStringId,
@@ -266,6 +267,10 @@ impl Wire for AwbcRuntimeType {
             }
             Self::Bytes => writer.write_u8(25),
             Self::Never => writer.write_u8(26),
+            Self::Agent(agent) => {
+                writer.write_u8(27);
+                agent.write_wire(writer)?;
+            }
         }
         Ok(())
     }
@@ -319,6 +324,7 @@ impl Wire for AwbcRuntimeType {
             },
             25 => Self::Bytes,
             26 => Self::Never,
+            27 => Self::Agent(RuntimeAgentOperationalType::read_wire(reader)?),
             tag => {
                 return Err(AwbcCodecError::UnknownTag {
                     kind: "runtime type",
@@ -329,6 +335,40 @@ impl Wire for AwbcRuntimeType {
         })
     }
 }
+
+wire_enum!(RuntimeAgentOperationalType, "Agent runtime type", {
+    0 => RuntimeAgentOperationalType::DebugStatePath,
+    1 => RuntimeAgentOperationalType::ObservationFieldPath,
+    2 => RuntimeAgentOperationalType::Probe,
+    3 => RuntimeAgentOperationalType::Predicate,
+    4 => RuntimeAgentOperationalType::Observation,
+    5 => RuntimeAgentOperationalType::ObservedObject,
+    6 => RuntimeAgentOperationalType::BoundingBox,
+    7 => RuntimeAgentOperationalType::ActionName,
+    8 => RuntimeAgentOperationalType::ActionTarget,
+    9 => RuntimeAgentOperationalType::ActionResult,
+    10 => RuntimeAgentOperationalType::AgentValue,
+    11 => RuntimeAgentOperationalType::DataFormat,
+    12 => RuntimeAgentOperationalType::DataShape,
+    13 => RuntimeAgentOperationalType::EntityMetadata,
+    14 => RuntimeAgentOperationalType::SourceAnchor,
+    15 => RuntimeAgentOperationalType::ProjectGraphNeighborhood,
+    16 => RuntimeAgentOperationalType::ProjectGraphSymbol,
+    17 => RuntimeAgentOperationalType::ProjectGraphEdge,
+    18 => RuntimeAgentOperationalType::CaptureTarget,
+    19 => RuntimeAgentOperationalType::CaptureReference,
+    20 => RuntimeAgentOperationalType::Resource,
+    21 => RuntimeAgentOperationalType::ResourceBody,
+    22 => RuntimeAgentOperationalType::RagContextPack,
+    23 => RuntimeAgentOperationalType::ObservedObjectId,
+    24 => RuntimeAgentOperationalType::CaptureFormat,
+    25 => RuntimeAgentOperationalType::CaptureKind,
+    26 => RuntimeAgentOperationalType::Diagnostics,
+    27 => RuntimeAgentOperationalType::WaitError,
+    28 => RuntimeAgentOperationalType::ViewportPoint,
+    29 => RuntimeAgentOperationalType::PointerButton,
+    30 => RuntimeAgentOperationalType::RagError,
+});
 
 impl Wire for AwbcConstant {
     fn write_wire(&self, writer: &mut Writer) -> Result<(), AwbcCodecError> {

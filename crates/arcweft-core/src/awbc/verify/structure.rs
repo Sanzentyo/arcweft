@@ -230,6 +230,7 @@ fn verify_runtime_types(program: &AwbcProgram) -> Result<(), AwbcVerifyError> {
             | AwbcRuntimeType::TensorF64
             | AwbcRuntimeType::TaskHandle
             | AwbcRuntimeType::NeedHandle
+            | AwbcRuntimeType::Agent(_)
             | AwbcRuntimeType::Dynamic => {}
         }
     }

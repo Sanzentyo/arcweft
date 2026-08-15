@@ -3,10 +3,10 @@ use crate::pattern::{RuntimePattern, match_runtime_pattern};
 use crate::plan::{RuntimePureHelper, RuntimePureInputType, RuntimePureOutputType};
 use crate::step::RuntimePureCallStats;
 use crate::value::{
-    RuntimeBinaryOp, RuntimeBinding, RuntimeCallTarget, RuntimeEnv, RuntimeEvalError,
-    RuntimeExactInteger, RuntimeExpr, RuntimeExprMatchArm, RuntimeFieldExpr, RuntimeFieldValue,
-    RuntimeFunctionValue, RuntimeISizeValue, RuntimeIntrinsic, RuntimeIterator, RuntimeSeq,
-    RuntimeUSizeValue, RuntimeUnaryOp, RuntimeValue, evaluate_binary,
+    RuntimeAgentExpr, RuntimeBinaryOp, RuntimeBinding, RuntimeCallTarget, RuntimeEnv,
+    RuntimeEvalError, RuntimeExactInteger, RuntimeExpr, RuntimeExprMatchArm, RuntimeFieldExpr,
+    RuntimeFieldValue, RuntimeFunctionValue, RuntimeISizeValue, RuntimeIntrinsic, RuntimeIterator,
+    RuntimeSeq, RuntimeUSizeValue, RuntimeUnaryOp, RuntimeValue, evaluate_binary,
     evaluate_core_iter_collect_intrinsic, evaluate_core_iter_into_iter_intrinsic,
     evaluate_core_iter_next_intrinsic, evaluate_core_option_is_some_intrinsic,
     evaluate_core_option_unwrap_intrinsic, evaluate_core_range_intrinsic, evaluate_numeric_op,
@@ -1305,6 +1305,7 @@ impl PureEvaluator {
         self.stats.evaluated_exprs += 1;
         match expr {
             RuntimeExpr::Value(value) => Ok(value.clone()),
+            RuntimeExpr::Agent(agent) => self.evaluate_agent_expr(agent),
             RuntimeExpr::Local(name) => self
                 .env
                 .get(name)
@@ -1394,6 +1395,26 @@ impl PureEvaluator {
             } => self.evaluate_if_let_expr(pattern, expr, guard.as_deref(), then_expr, else_expr),
             RuntimeExpr::Match { scrutinee, arms } => self.evaluate_match_expr(scrutinee, arms),
         }
+    }
+
+    fn evaluate_agent_expr(
+        &mut self,
+        agent: &RuntimeAgentExpr,
+    ) -> Result<RuntimeValue, RuntimeEvalError> {
+        let mut operands = Vec::new();
+        if let Some(choice) = agent.choice() {
+            operands.push(RuntimeValue::EntityRef(choice.as_str().to_owned()));
+        }
+        for operand in agent.operands() {
+            let operand = match operand {
+                RuntimeExpr::SpreadArg(operand) => operand,
+                operand => operand,
+            };
+            operands.push(self.evaluate_expr(operand)?);
+        }
+        crate::value::RuntimeAgentValue::try_construct(agent.constructor(), operands)
+            .map(RuntimeValue::Agent)
+            .map_err(|error| RuntimeEvalError::AgentConstruction(error.to_string()))
     }
 
     fn evaluate_record_expr(
@@ -1885,6 +1906,14 @@ impl PureEvaluator {
                     field: field.to_owned(),
                     value: "entity reference".to_owned(),
                 })
+            }
+            RuntimeValue::Agent(value) => {
+                value
+                    .project_field(field)
+                    .ok_or_else(|| RuntimeEvalError::MissingField {
+                        field: field.to_owned(),
+                        value: value.label().to_owned(),
+                    })
             }
             value => Err(RuntimeEvalError::MissingField {
                 field: field.to_owned(),

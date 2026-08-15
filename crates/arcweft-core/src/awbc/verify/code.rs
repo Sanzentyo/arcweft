@@ -13,7 +13,7 @@ use crate::awbc::schema::{
     AwbcFrameSlotRole, AwbcFunctionFlags, AwbcFunctionKind, AwbcInstruction, AwbcPattern,
     AwbcPatternId, AwbcPatternRest, AwbcProgram, AwbcRegisterId, AwbcResumePointId,
     AwbcRuntimeType, AwbcSafePointKind, AwbcScopeId, AwbcSignatureId, AwbcTerminator,
-    AwbcTraitReceiverMode, AwbcTypeId, AwbcUnaryOp,
+    AwbcTraitReceiverMode, AwbcTypeId, AwbcUnaryOp, AwbcUnsignedIntKind,
 };
 use std::collections::{BTreeSet, VecDeque};
 
@@ -502,6 +502,39 @@ fn apply_instruction(
             require_compatible(program, dst_ty, *ty, "variant destination")?;
             write_register(verifier, function, block, *dst, state)?;
         }
+        AwbcInstruction::MakeAgent {
+            dst,
+            constructor,
+            operands,
+        } => {
+            if !constructor.accepts_operand_count(operands.len()) {
+                return Err(AwbcVerifyError::InvalidInvariant {
+                    at,
+                    message: format!(
+                        "Agent constructor {constructor:?} rejects {} operand(s)",
+                        operands.len()
+                    ),
+                });
+            }
+            for (ordinal, operand) in operands.iter().enumerate() {
+                let ty = read_register(verifier, function, block, *operand, state)?;
+                if !agent_operand_type_is_valid(program, *constructor, ordinal, ty) {
+                    return Err(AwbcVerifyError::InvalidInvariant {
+                        at: at.clone(),
+                        message: format!(
+                            "Agent constructor {constructor:?} rejects operand {ordinal} runtime type"
+                        ),
+                    });
+                }
+            }
+            let dst_ty = register_type(verifier, function, block, *dst)?;
+            match program.runtime_types.get(dst_ty.index()) {
+                Some(AwbcRuntimeType::Agent(actual)) if *actual == constructor.result_type() => {}
+                Some(AwbcRuntimeType::Dynamic) => {}
+                _ => return invalid_type(&at, "Agent constructor destination"),
+            }
+            write_register(verifier, function, block, *dst, state)?;
+        }
         AwbcInstruction::ProjectTuple {
             dst,
             target,
@@ -540,6 +573,54 @@ fn apply_instruction(
                     require_compatible(program, dst_ty, field_layout.ty, "field projection")?;
                 }
                 Some(AwbcRuntimeType::Dynamic) => {}
+                Some(AwbcRuntimeType::Agent(agent)) => {
+                    let field = program
+                        .strings
+                        .get(field.index())
+                        .map(String::as_str)
+                        .unwrap_or_default();
+                    let destination = program.runtime_types.get(dst_ty.index());
+                    let field_exists = match agent {
+                        crate::plan::RuntimeAgentOperationalType::ActionTarget => {
+                            matches!(field, "id" | "target" | "action" | "kind" | "enabled")
+                        }
+                        crate::plan::RuntimeAgentOperationalType::ViewportPoint => {
+                            matches!(field, "x" | "y")
+                        }
+                        _ => false,
+                    };
+                    if !field_exists {
+                        return Err(AwbcVerifyError::InvalidInvariant {
+                            at,
+                            message: "projected Agent field does not exist".to_owned(),
+                        });
+                    }
+                    let destination_matches = match (agent, field) {
+                        (
+                            crate::plan::RuntimeAgentOperationalType::ActionTarget,
+                            "id" | "target" | "action" | "kind",
+                        ) => matches!(
+                            destination,
+                            Some(AwbcRuntimeType::String | AwbcRuntimeType::Dynamic)
+                        ),
+                        (crate::plan::RuntimeAgentOperationalType::ActionTarget, "enabled") => {
+                            is_bool(destination)
+                        }
+                        (crate::plan::RuntimeAgentOperationalType::ViewportPoint, "x" | "y") => {
+                            matches!(
+                                destination,
+                                Some(
+                                    AwbcRuntimeType::UInt(AwbcUnsignedIntKind::U32)
+                                        | AwbcRuntimeType::Dynamic
+                                )
+                            )
+                        }
+                        _ => false,
+                    };
+                    if !destination_matches {
+                        return invalid_type(&at, "Agent field projection destination");
+                    }
+                }
                 _ => return invalid_type(&at, "record projection target"),
             }
             write_register(verifier, function, block, *dst, state)?;
@@ -867,6 +948,90 @@ fn apply_instruction(
         }
     }
     Ok(())
+}
+
+fn agent_operand_type_is_valid(
+    program: &AwbcProgram,
+    constructor: crate::value::RuntimeAgentConstructor,
+    ordinal: usize,
+    ty: AwbcTypeId,
+) -> bool {
+    use crate::plan::RuntimeAgentOperationalType as AgentType;
+    use crate::value::RuntimeAgentConstructor as Constructor;
+
+    let Some(ty) = program.runtime_types.get(ty.index()) else {
+        return false;
+    };
+    if matches!(ty, AwbcRuntimeType::Dynamic) {
+        return true;
+    }
+    match constructor {
+        Constructor::CaptureViewport | Constructor::Diagnostics => false,
+        Constructor::ChoiceAction | Constructor::CaptureLayer | Constructor::CaptureObject => {
+            matches!(ty, AwbcRuntimeType::String | AwbcRuntimeType::EntityRef)
+        }
+        Constructor::StatePath | Constructor::ObservationPath => {
+            matches!(ty, AwbcRuntimeType::String)
+        }
+        Constructor::ProbeSignal | Constructor::ProbeMetric => {
+            matches!(ty, AwbcRuntimeType::String | AwbcRuntimeType::EntityRef)
+        }
+        Constructor::ProbeState => matches!(ty, AwbcRuntimeType::Agent(AgentType::DebugStatePath)),
+        Constructor::ProbeObservation => {
+            matches!(ty, AwbcRuntimeType::Agent(AgentType::ObservationFieldPath))
+        }
+        Constructor::PredicateExists => {
+            matches!(ty, AwbcRuntimeType::Agent(AgentType::Probe))
+        }
+        Constructor::PredicateActionEnabled => {
+            matches!(ty, AwbcRuntimeType::Agent(AgentType::ActionTarget))
+        }
+        Constructor::PredicateDiagnosticsHasError => {
+            matches!(ty, AwbcRuntimeType::Agent(AgentType::Diagnostics))
+        }
+        Constructor::PredicateAll | Constructor::PredicateAny => {
+            agent_predicate_collection_operand_type_is_valid(program, ty)
+        }
+        Constructor::PredicateNot => {
+            matches!(ty, AwbcRuntimeType::Agent(AgentType::Predicate))
+        }
+        Constructor::PredicateEq
+        | Constructor::PredicateNotEq
+        | Constructor::PredicateGreater
+        | Constructor::PredicateGreaterOrEqual
+        | Constructor::PredicateLess
+        | Constructor::PredicateLessOrEqual => {
+            ordinal != 0 || matches!(ty, AwbcRuntimeType::Agent(AgentType::Probe))
+        }
+        Constructor::ViewportPoint => {
+            matches!(
+                ty,
+                AwbcRuntimeType::UInt(AwbcUnsignedIntKind::U32) | AwbcRuntimeType::Dynamic
+            )
+        }
+    }
+}
+
+fn agent_predicate_collection_operand_type_is_valid(
+    program: &AwbcProgram,
+    ty: &AwbcRuntimeType,
+) -> bool {
+    use crate::plan::RuntimeAgentOperationalType as AgentType;
+
+    let predicate_item = |ty: AwbcTypeId| {
+        matches!(
+            program.runtime_types.get(ty.index()),
+            Some(AwbcRuntimeType::Agent(AgentType::Predicate) | AwbcRuntimeType::Dynamic)
+        )
+    };
+    match ty {
+        AwbcRuntimeType::Agent(AgentType::Predicate) | AwbcRuntimeType::Dynamic => true,
+        AwbcRuntimeType::Sequence(item) => predicate_item(*item),
+        AwbcRuntimeType::Tuple(items) => {
+            !items.is_empty() && items.iter().copied().all(predicate_item)
+        }
+        _ => false,
+    }
 }
 
 fn apply_terminator(

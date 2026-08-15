@@ -1,8 +1,10 @@
 //! Runtime-expression projection from final arena HIR and checked semantic facts.
 
+use arcweft_core::entry::RuntimeCommandTargetId;
 use arcweft_core::value::{
-    RuntimeBinaryOp, RuntimeCallTarget, RuntimeExpr, RuntimeExprMatchArm, RuntimeFieldExpr,
-    RuntimeNominalRecordExpr, RuntimeUnaryOp, RuntimeValue,
+    RuntimeAgentExpr, RuntimeAgentPathExpr, RuntimeAgentPredicateExpr, RuntimeAgentProbeExpr,
+    RuntimeAgentTargetExpr, RuntimeBinaryOp, RuntimeCallTarget, RuntimeExpr, RuntimeExprMatchArm,
+    RuntimeFieldExpr, RuntimeNominalRecordExpr, RuntimeUnaryOp, RuntimeValue,
 };
 use arcweft_lang_hir::expr::{
     HirBinaryOp, HirCallArgument, HirExprKind, HirRecordField, HirUnaryOp,
@@ -399,6 +401,19 @@ impl<'hir> FinalExprLowerer<'hir> {
             RuntimeResolvedCallTarget::AgentProbeComparison(operation) => {
                 lower_agent_probe_comparison(id, *operation, &arguments)
             }
+            RuntimeResolvedCallTarget::AgentDiagnosticsHasError => {
+                let [diagnostics] = arguments.as_slice() else {
+                    return Err(format!(
+                        "typed Agent Diagnostics.has_error call {id:?} has {} runtime arguments instead of one receiver",
+                        arguments.len()
+                    ));
+                };
+                Ok(RuntimeExpr::Agent(RuntimeAgentExpr::Predicate(
+                    RuntimeAgentPredicateExpr::DiagnosticsHasError {
+                        diagnostics: Box::new(diagnostics.clone()),
+                    },
+                )))
+            }
             RuntimeResolvedCallTarget::Declaration(callable) => Ok(RuntimeExpr::Call {
                 callee: RuntimeCallTarget::callable(callable.runtime().clone()),
                 args: arguments,
@@ -532,9 +547,21 @@ impl<'hir> FinalExprLowerer<'hir> {
             ));
         }
         match intrinsic {
-            RuntimeAgentIntrinsic::StatePath | RuntimeAgentIntrinsic::ObservationPath => {
+            RuntimeAgentIntrinsic::StatePath => {
                 require_agent_argument_count(id, intrinsic, &arguments, 1)?;
-                Ok(arguments[0].clone())
+                Ok(RuntimeExpr::Agent(RuntimeAgentExpr::Path(
+                    RuntimeAgentPathExpr::State {
+                        path: Box::new(arguments[0].clone()),
+                    },
+                )))
+            }
+            RuntimeAgentIntrinsic::ObservationPath => {
+                require_agent_argument_count(id, intrinsic, &arguments, 1)?;
+                Ok(RuntimeExpr::Agent(RuntimeAgentExpr::Path(
+                    RuntimeAgentPathExpr::Observation {
+                        path: Box::new(arguments[0].clone()),
+                    },
+                )))
             }
             RuntimeAgentIntrinsic::Viewport
             | RuntimeAgentIntrinsic::Layer
@@ -558,16 +585,12 @@ impl<'hir> FinalExprLowerer<'hir> {
                     .ok_or_else(|| format!("choice_action at {id:?} has no authored argument"))?
                     .value();
                 let target = self.static_entity_label(authored)?;
-                Ok(RuntimeExpr::Record(vec![
-                    agent_field(
-                        "id",
-                        agent_string(&format!("action.select_choice.{target}")),
-                    ),
-                    agent_field("target", agent_string(&target)),
-                    agent_field("action", agent_string("select_choice")),
-                    agent_field("kind", agent_string("semantic")),
-                    agent_field("enabled", RuntimeExpr::Value(RuntimeValue::Bool(true))),
-                ]))
+                let choice = RuntimeCommandTargetId::try_new(target).map_err(|error| {
+                    format!("choice_action at {id:?} has invalid target identity: {error}")
+                })?;
+                Ok(RuntimeExpr::Agent(RuntimeAgentExpr::ChoiceAction {
+                    choice,
+                }))
             }
             RuntimeAgentIntrinsic::Observe
             | RuntimeAgentIntrinsic::Expect
@@ -727,29 +750,26 @@ fn lower_agent_target(
     match intrinsic {
         RuntimeAgentIntrinsic::Viewport => {
             require_agent_argument_count(id, intrinsic, arguments, 0)?;
-            Ok(RuntimeExpr::Record(vec![agent_field(
-                "kind",
-                agent_string("viewport"),
-            )]))
+            Ok(RuntimeExpr::Agent(RuntimeAgentExpr::Target(
+                RuntimeAgentTargetExpr::Viewport,
+            )))
         }
         RuntimeAgentIntrinsic::Layer | RuntimeAgentIntrinsic::Object => {
             require_agent_argument_count(id, intrinsic, arguments, 1)?;
-            let kind = if intrinsic == RuntimeAgentIntrinsic::Layer {
-                "layer"
+            let target = Box::new(arguments[0].clone());
+            let target = if intrinsic == RuntimeAgentIntrinsic::Layer {
+                RuntimeAgentTargetExpr::Layer { target }
             } else {
-                "object"
+                RuntimeAgentTargetExpr::Object { target }
             };
-            Ok(RuntimeExpr::Record(vec![
-                agent_field("kind", agent_string(kind)),
-                agent_field("target", arguments[0].clone()),
-            ]))
+            Ok(RuntimeExpr::Agent(RuntimeAgentExpr::Target(target)))
         }
         RuntimeAgentIntrinsic::ViewportPoint => {
             require_agent_argument_count(id, intrinsic, arguments, 2)?;
-            Ok(RuntimeExpr::Record(vec![
-                agent_field("x", arguments[0].clone()),
-                agent_field("y", arguments[1].clone()),
-            ]))
+            Ok(RuntimeExpr::Agent(RuntimeAgentExpr::ViewportPoint {
+                x: Box::new(arguments[0].clone()),
+                y: Box::new(arguments[1].clone()),
+            }))
         }
         _ => unreachable!("target constructor dispatcher owns only Agent target intrinsics"),
     }
@@ -763,34 +783,29 @@ fn lower_agent_probe(
     match intrinsic {
         RuntimeAgentIntrinsic::Signal | RuntimeAgentIntrinsic::Metric => {
             require_agent_argument_count(id, intrinsic, arguments, 1)?;
-            let kind = if intrinsic == RuntimeAgentIntrinsic::Signal {
-                "signal"
+            let target = Box::new(arguments[0].clone());
+            let probe = if intrinsic == RuntimeAgentIntrinsic::Signal {
+                RuntimeAgentProbeExpr::Signal { target }
             } else {
-                "metric"
+                RuntimeAgentProbeExpr::Metric { target }
             };
-            Ok(RuntimeExpr::Record(vec![
-                agent_field("kind", agent_string(kind)),
-                agent_field("target", arguments[0].clone()),
-            ]))
+            Ok(RuntimeExpr::Agent(RuntimeAgentExpr::Probe(probe)))
         }
         RuntimeAgentIntrinsic::State | RuntimeAgentIntrinsic::Observation => {
             require_agent_argument_count(id, intrinsic, arguments, 1)?;
-            let kind = if intrinsic == RuntimeAgentIntrinsic::State {
-                "state"
+            let path = Box::new(arguments[0].clone());
+            let probe = if intrinsic == RuntimeAgentIntrinsic::State {
+                RuntimeAgentProbeExpr::State { path }
             } else {
-                "observation"
+                RuntimeAgentProbeExpr::Observation { path }
             };
-            Ok(RuntimeExpr::Record(vec![
-                agent_field("kind", agent_string(kind)),
-                agent_field("path", arguments[0].clone()),
-            ]))
+            Ok(RuntimeExpr::Agent(RuntimeAgentExpr::Probe(probe)))
         }
         RuntimeAgentIntrinsic::Diagnostics => {
             require_agent_argument_count(id, intrinsic, arguments, 0)?;
-            Ok(RuntimeExpr::Record(vec![agent_field(
-                "kind",
-                agent_string("diagnostics"),
-            )]))
+            Ok(RuntimeExpr::Agent(RuntimeAgentExpr::Probe(
+                RuntimeAgentProbeExpr::Diagnostics,
+            )))
         }
         _ => unreachable!("probe constructor dispatcher owns only Agent probe intrinsics"),
     }
@@ -804,40 +819,34 @@ fn lower_agent_predicate(
     match intrinsic {
         RuntimeAgentIntrinsic::Exists | RuntimeAgentIntrinsic::Not => {
             require_agent_argument_count(id, intrinsic, &arguments, 1)?;
-            let (kind, value) = if intrinsic == RuntimeAgentIntrinsic::Exists {
-                ("exists", "probe")
+            let value = Box::new(arguments[0].clone());
+            let predicate = if intrinsic == RuntimeAgentIntrinsic::Exists {
+                RuntimeAgentPredicateExpr::Exists { probe: value }
             } else {
-                ("not", "predicate")
+                RuntimeAgentPredicateExpr::Not { predicate: value }
             };
-            Ok(RuntimeExpr::Record(vec![
-                agent_field("kind", agent_string(kind)),
-                agent_field(value, arguments[0].clone()),
-            ]))
+            Ok(RuntimeExpr::Agent(RuntimeAgentExpr::Predicate(predicate)))
         }
         RuntimeAgentIntrinsic::ActionEnabled => {
             require_agent_argument_count(id, intrinsic, &arguments, 1)?;
-            Ok(RuntimeExpr::Record(vec![
-                agent_field("kind", agent_string("action_enabled")),
-                agent_field(
-                    "target",
-                    RuntimeExpr::Field {
-                        target: Box::new(arguments[0].clone()),
-                        field: "target".to_owned(),
-                    },
-                ),
-            ]))
+            Ok(RuntimeExpr::Agent(RuntimeAgentExpr::Predicate(
+                RuntimeAgentPredicateExpr::ActionEnabled {
+                    target: Box::new(arguments[0].clone()),
+                },
+            )))
         }
-        RuntimeAgentIntrinsic::All | RuntimeAgentIntrinsic::Any => Ok(RuntimeExpr::Record(vec![
-            agent_field(
-                "kind",
-                agent_string(if intrinsic == RuntimeAgentIntrinsic::All {
-                    "all"
-                } else {
-                    "any"
-                }),
-            ),
-            agent_field("predicates", RuntimeExpr::Tuple(arguments)),
-        ])),
+        RuntimeAgentIntrinsic::All | RuntimeAgentIntrinsic::Any => {
+            let predicate = if intrinsic == RuntimeAgentIntrinsic::All {
+                RuntimeAgentPredicateExpr::All {
+                    predicates: arguments,
+                }
+            } else {
+                RuntimeAgentPredicateExpr::Any {
+                    predicates: arguments,
+                }
+            };
+            Ok(RuntimeExpr::Agent(RuntimeAgentExpr::Predicate(predicate)))
+        }
         _ => unreachable!("predicate dispatcher owns only Agent predicate intrinsics"),
     }
 }
@@ -867,7 +876,7 @@ fn variant_payload_accepts_argument_types(
 
 fn lower_agent_probe_comparison(
     id: ExprId,
-    operation: crate::agent::RuntimeAgentProbeComparison,
+    operation: arcweft_core::value::RuntimeAgentCompareOp,
     arguments: &[RuntimeExpr],
 ) -> Result<RuntimeExpr, String> {
     if arguments.len() != 2 {
@@ -876,12 +885,13 @@ fn lower_agent_probe_comparison(
             arguments.len()
         ));
     }
-    Ok(RuntimeExpr::Record(vec![
-        agent_field("kind", agent_string("compare")),
-        agent_field("probe", arguments[0].clone()),
-        agent_field("op", agent_string(operation.operation())),
-        agent_field("value", arguments[1].clone()),
-    ]))
+    Ok(RuntimeExpr::Agent(RuntimeAgentExpr::Predicate(
+        RuntimeAgentPredicateExpr::Compare {
+            probe: Box::new(arguments[0].clone()),
+            op: operation,
+            value: Box::new(arguments[1].clone()),
+        },
+    )))
 }
 
 fn require_agent_argument_count(
@@ -896,17 +906,6 @@ fn require_agent_argument_count(
             arguments.len()
         )
     })
-}
-
-fn agent_field(name: &str, value: RuntimeExpr) -> RuntimeFieldExpr {
-    RuntimeFieldExpr {
-        name: name.to_owned(),
-        value,
-    }
-}
-
-fn agent_string(value: &str) -> RuntimeExpr {
-    RuntimeExpr::Value(RuntimeValue::String(value.to_owned()))
 }
 
 fn simple_binding(

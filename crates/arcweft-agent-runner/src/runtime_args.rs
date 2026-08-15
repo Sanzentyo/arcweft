@@ -13,8 +13,7 @@ use crate::label_parse::parse_pointer_button_label;
 use crate::runtime_value::{
     runtime_agent_value_map, runtime_bool, runtime_capture_format, runtime_capture_target,
     runtime_duration_millis, runtime_predicate, runtime_public_id, runtime_public_ids,
-    runtime_record_get, runtime_string, runtime_u32, runtime_usize, runtime_value_to_json,
-    value_label,
+    runtime_string, runtime_u32, runtime_usize, runtime_value_to_json, value_label,
 };
 
 #[derive(Debug)]
@@ -190,15 +189,11 @@ impl<'a> RuntimeAgentArgs<'a> {
 
 fn runtime_viewport_point(value: &RuntimeValue) -> Result<(u32, u32), String> {
     match value {
-        RuntimeValue::Record(fields) => Ok((
-            runtime_record_get(fields, "x").and_then(runtime_u32)?,
-            runtime_record_get(fields, "y").and_then(runtime_u32)?,
-        )),
-        RuntimeValue::Tuple(values) if values.len() == 2 => {
-            Ok((runtime_u32(&values[0])?, runtime_u32(&values[1])?))
+        RuntimeValue::Agent(arcweft_core::value::RuntimeAgentValue::ViewportPoint { x, y }) => {
+            Ok((*x, *y))
         }
         other => Err(format!(
-            "expected viewport point record, got `{}`",
+            "expected typed Agent viewport point, got `{}`",
             value_label(other)
         )),
     }

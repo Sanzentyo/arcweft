@@ -1274,7 +1274,8 @@ impl RuntimeResolvedCall {
                     callee: self.runtime_callee_disposition(),
                 }
             }
-            RuntimeResolvedCallTarget::AgentProbeComparison(_) => {
+            RuntimeResolvedCallTarget::AgentProbeComparison(_)
+            | RuntimeResolvedCallTarget::AgentDiagnosticsHasError => {
                 HirRuntimeExpressionTypeDisposition::RetainedCallResult {
                     callee: HirRuntimeCallCalleeDisposition::RuntimeReceiver,
                 }
@@ -1312,7 +1313,8 @@ impl RuntimeResolvedCall {
 pub enum RuntimeResolvedCallTarget {
     Intrinsic(RuntimeIntrinsic),
     Agent(crate::agent::RuntimeAgentIntrinsic),
-    AgentProbeComparison(crate::agent::RuntimeAgentProbeComparison),
+    AgentProbeComparison(arcweft_core::value::RuntimeAgentCompareOp),
+    AgentDiagnosticsHasError,
     Declaration(RuntimeProjectCallable),
     /// Typed enum case selected by the shared callable resolver.
     ///
@@ -3081,6 +3083,7 @@ fn validate_call(
         RuntimeResolvedCallTarget::Variant(variant) => validate_variant(modules, variant)?,
         RuntimeResolvedCallTarget::Agent(_)
         | RuntimeResolvedCallTarget::AgentProbeComparison(_)
+        | RuntimeResolvedCallTarget::AgentDiagnosticsHasError
         | RuntimeResolvedCallTarget::Reduction(_)
         | RuntimeResolvedCallTarget::Intrinsic(_)
         | RuntimeResolvedCallTarget::TraitMethod { .. }
@@ -3130,8 +3133,15 @@ fn validate_call(
         {
             return Err(RuntimeSemanticFactsError::InvalidAgentCallArguments);
         }
+        RuntimeResolvedCallTarget::AgentDiagnosticsHasError
+            if !matches!(call.arguments(), [RuntimeResolvedCallArgument::Receiver])
+                || call.result() != RuntimeCallResultShape::Value =>
+        {
+            return Err(RuntimeSemanticFactsError::InvalidAgentCallArguments);
+        }
         RuntimeResolvedCallTarget::Agent(_)
         | RuntimeResolvedCallTarget::AgentProbeComparison(_)
+        | RuntimeResolvedCallTarget::AgentDiagnosticsHasError
         | RuntimeResolvedCallTarget::Intrinsic(_)
         | RuntimeResolvedCallTarget::Declaration(_)
         | RuntimeResolvedCallTarget::Variant(_)

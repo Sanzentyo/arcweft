@@ -171,6 +171,7 @@ fn opcode_eligible(opcode: AwbcOpcode, options: &AwbcRegionLowerOptions) -> bool
         | AwbcOpcode::SequencePush
         | AwbcOpcode::MakeRecord
         | AwbcOpcode::MakeVariant
+        | AwbcOpcode::MakeAgent
         | AwbcOpcode::ProjectTuple
         | AwbcOpcode::ProjectRecord
         | AwbcOpcode::ProjectField

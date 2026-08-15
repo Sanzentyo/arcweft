@@ -22,8 +22,8 @@ use super::schema::{
 use crate::task::NeedId;
 use crate::time::LogicalDuration;
 use crate::value::{
-    RuntimeBinding, RuntimeFunctionBody, RuntimeFunctionValue, RuntimeNominalRecordValue,
-    RuntimeSeq, RuntimeValue, evaluate_binary, evaluate_unary,
+    RuntimeAgentValue, RuntimeBinding, RuntimeFunctionBody, RuntimeFunctionValue,
+    RuntimeNominalRecordValue, RuntimeSeq, RuntimeValue, evaluate_binary, evaluate_unary,
     runtime_sequence_from_literal_values, runtime_sequence_repeat_value, runtime_value_label,
 };
 use thiserror::Error;
@@ -569,6 +569,20 @@ fn execute_instruction(
                 },
             )?;
         }
+        AwbcInstruction::MakeAgent {
+            dst,
+            constructor,
+            operands,
+        } => {
+            let operands = operands
+                .iter()
+                .map(|operand| register(fiber, *operand).cloned())
+                .collect::<Result<Vec<_>, _>>()?;
+            let value = RuntimeAgentValue::try_construct(*constructor, operands)
+                .map(RuntimeValue::Agent)
+                .map_err(|error| VmError::Runtime(error.to_string()))?;
+            fiber.active_frame_mut()?.set_register(*dst, value)?;
+        }
         AwbcInstruction::ProjectTuple {
             dst,
             target,
@@ -603,16 +617,16 @@ fn execute_instruction(
         }
         AwbcInstruction::ProjectField { dst, target, field } => {
             let field = string(program, *field)?;
-            let RuntimeValue::Record(items) = register(fiber, *target)? else {
-                return Err(VmError::Runtime(
-                    "field projection expected record".to_owned(),
-                ));
+            let value = match register(fiber, *target)? {
+                RuntimeValue::Record(items) => items
+                    .iter()
+                    .find(|item| item.name() == field)
+                    .map(|field| field.value().clone()),
+                RuntimeValue::Agent(value) => value.project_field(field),
+                _ => None,
             };
-            let value = items
-                .iter()
-                .find(|item| item.name() == field)
-                .map(|field| field.value().clone())
-                .ok_or_else(|| VmError::Runtime(format!("missing field `{field}`")))?;
+            let value =
+                value.ok_or_else(|| VmError::Runtime(format!("missing field `{field}`")))?;
             fiber.active_frame_mut()?.set_register(*dst, value)?;
         }
         AwbcInstruction::Unary { dst, op, src } => {

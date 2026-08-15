@@ -28,6 +28,7 @@ pub enum RuntimeValueShape {
     Record,
     NominalRecord,
     Opaque,
+    Agent,
     Function,
     Variant,
 }
@@ -58,6 +59,7 @@ impl RuntimeValue {
             Self::Record(_) => RuntimeValueShape::Record,
             Self::NominalRecord(_) => RuntimeValueShape::NominalRecord,
             Self::Opaque(_) => RuntimeValueShape::Opaque,
+            Self::Agent(_) => RuntimeValueShape::Agent,
             Self::Function(_) => RuntimeValueShape::Function,
             Self::Variant { .. } => RuntimeValueShape::Variant,
         }

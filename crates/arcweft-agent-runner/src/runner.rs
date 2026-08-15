@@ -365,6 +365,7 @@ where
                 AgentHostResponse::Unit
             }
         };
+        runtime_payload_from_response(&response).map_err(AgentRunError::InvalidHostResponse)?;
         self.emit(DebugEventKind::StepFinished, None, serde_json::json!({}))?;
         Ok(AgentHostCallReport {
             response,
@@ -803,9 +804,10 @@ where
                     logical_epoch: LogicalEpoch(0),
                     task_id: task.id.clone(),
                     sequence: TaskSequence(report.host_calls as u64),
-                    kind: TaskEventKind::Ready(runtime_payload_from_response(
-                        &host_report.response,
-                    )),
+                    kind: TaskEventKind::Ready(
+                        runtime_payload_from_response(&host_report.response)
+                            .map_err(AgentRunError::InvalidHostResponse)?,
+                    ),
                 });
                 report.host_calls += 1;
                 report.responses.push(host_report.response);

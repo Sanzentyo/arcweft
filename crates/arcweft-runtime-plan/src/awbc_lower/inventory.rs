@@ -270,6 +270,9 @@ impl AwbcInventory {
 
     pub(crate) fn intern_runtime_value_type(&mut self, value: &RuntimeValue) -> AwbcTypeId {
         match value {
+            RuntimeValue::Agent(value) => {
+                self.intern_type(AwbcRuntimeType::Agent(value.operational_type()))
+            }
             RuntimeValue::Opaque(value) => {
                 let producer = self.intern_string(value.producer().as_str());
                 self.intern_type(AwbcRuntimeType::Opaque {
@@ -466,6 +469,10 @@ impl AwbcInventory {
                 let payload = self.constant_runtime_value(opaque.payload());
                 AwbcConstant::Opaque { ty, payload }
             }
+            RuntimeValue::Agent(value) => panic!(
+                "typed Agent runtime value `{}` must be produced by AWBC MakeAgent and cannot be encoded as a constant",
+                value.label()
+            ),
             RuntimeValue::Variant {
                 owner,
                 ordinal,

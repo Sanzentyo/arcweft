@@ -766,7 +766,7 @@ fn agent_call_disposition_separates_results_from_host_carriers() {
 
     let comparison = RuntimeResolvedCall::new(
         RuntimeResolvedCallTarget::AgentProbeComparison(
-            crate::agent::RuntimeAgentProbeComparison::Eq,
+            arcweft_core::value::RuntimeAgentCompareOp::Eq,
         ),
         [
             RuntimeResolvedCallArgument::Receiver,
@@ -776,6 +776,17 @@ fn agent_call_disposition_separates_results_from_host_carriers() {
     );
     assert_eq!(
         comparison.expression_type_disposition(),
+        HirRuntimeExpressionTypeDisposition::RetainedCallResult {
+            callee: HirRuntimeCallCalleeDisposition::RuntimeReceiver,
+        }
+    );
+    let diagnostics = RuntimeResolvedCall::new(
+        RuntimeResolvedCallTarget::AgentDiagnosticsHasError,
+        [RuntimeResolvedCallArgument::Receiver],
+        RuntimeCallResultShape::Value,
+    );
+    assert_eq!(
+        diagnostics.expression_type_disposition(),
         HirRuntimeExpressionTypeDisposition::RetainedCallResult {
             callee: HirRuntimeCallCalleeDisposition::RuntimeReceiver,
         }
@@ -878,19 +889,29 @@ fn agent_call_arguments_cannot_forge_runtime_receiver_disposition() {
         ),
         RuntimeResolvedCall::new(
             RuntimeResolvedCallTarget::AgentProbeComparison(
-                crate::agent::RuntimeAgentProbeComparison::Eq,
+                arcweft_core::value::RuntimeAgentCompareOp::Eq,
             ),
             [RuntimeResolvedCallArgument::Authored { ordinal: 0 }],
             RuntimeCallResultShape::Value,
         ),
         RuntimeResolvedCall::new(
             RuntimeResolvedCallTarget::AgentProbeComparison(
-                crate::agent::RuntimeAgentProbeComparison::Eq,
+                arcweft_core::value::RuntimeAgentCompareOp::Eq,
             ),
             [
                 RuntimeResolvedCallArgument::Receiver,
                 RuntimeResolvedCallArgument::Authored { ordinal: 0 },
             ],
+            RuntimeCallResultShape::PartialFunction,
+        ),
+        RuntimeResolvedCall::new(
+            RuntimeResolvedCallTarget::AgentDiagnosticsHasError,
+            [],
+            RuntimeCallResultShape::Value,
+        ),
+        RuntimeResolvedCall::new(
+            RuntimeResolvedCallTarget::AgentDiagnosticsHasError,
+            [RuntimeResolvedCallArgument::Receiver],
             RuntimeCallResultShape::PartialFunction,
         ),
     ];

@@ -329,6 +329,7 @@ fn runtime_value_to_data_value(value: &RuntimeValue) -> Result<Value, RuntimeEva
         RuntimeValue::Duration(_)
         | RuntimeValue::NominalRecord(_)
         | RuntimeValue::Opaque(_)
+        | RuntimeValue::Agent(_)
         | RuntimeValue::Function(_)
         | RuntimeValue::Iterator(_)
         | RuntimeValue::Range(_)
@@ -1119,6 +1120,7 @@ fn runtime_value_label_for_data(value: &RuntimeValue) -> String {
             format!("nominal-record/{}", record.type_id().as_str())
         }
         RuntimeValue::Range(range) => range.label(),
+        RuntimeValue::Agent(value) => value.label().to_owned(),
         RuntimeValue::Variant {
             owner,
             ordinal,

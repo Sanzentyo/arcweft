@@ -203,6 +203,7 @@ pub(super) fn runtime_scalar_text(value: &RuntimeValue) -> Option<String> {
         | RuntimeValue::Record(_)
         | RuntimeValue::NominalRecord(_)
         | RuntimeValue::Opaque(_)
+        | RuntimeValue::Agent(_)
         | RuntimeValue::Function(_)
         | RuntimeValue::Variant { .. } => None,
     }
@@ -429,6 +430,7 @@ fn runtime_type_name(value: &RuntimeValue) -> &'static str {
         RuntimeValue::Record(_) => "record",
         RuntimeValue::NominalRecord(_) => "nominal record",
         RuntimeValue::Opaque(_) => "opaque",
+        RuntimeValue::Agent(value) => value.label(),
         RuntimeValue::Function(_) => "function",
         RuntimeValue::Variant { .. } => "variant",
     }

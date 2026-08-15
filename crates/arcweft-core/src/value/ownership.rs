@@ -81,6 +81,7 @@ impl RuntimeValue {
                 }),
             Self::NominalRecord(record) => values_ownership(record.fields()),
             Self::Opaque(value) => value.payload().ownership(),
+            Self::Agent(value) => value.ownership(),
             Self::Function(function) => function.ownership(),
             Self::Variant { payload, .. } => payload
                 .as_deref()

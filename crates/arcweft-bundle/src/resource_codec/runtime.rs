@@ -84,6 +84,7 @@ pub enum RuntimeValueKind {
     Choice,
     Nominal,
     Opaque,
+    Agent,
     Matrix,
     Tensor,
     TaskHandle,
@@ -953,6 +954,7 @@ impl RuntimeValueKind {
             Self::Choice => 118,
             Self::Nominal => 119,
             Self::Opaque => 120,
+            Self::Agent => 121,
         }
     }
 
@@ -978,6 +980,7 @@ impl RuntimeValueKind {
             118 => Some(Self::Choice),
             119 => Some(Self::Nominal),
             120 => Some(Self::Opaque),
+            121 => Some(Self::Agent),
             _ => None,
         }
     }
@@ -1078,7 +1081,8 @@ fn runtime_type_declaration(
             | AwbcRuntimeType::Variant { .. }
             | AwbcRuntimeType::Nominal { .. }
             | AwbcRuntimeType::NominalRecord { .. }
-            | AwbcRuntimeType::Opaque { .. } => TypeCompatibilityLabel::RestartRequired,
+            | AwbcRuntimeType::Opaque { .. }
+            | AwbcRuntimeType::Agent(_) => TypeCompatibilityLabel::RestartRequired,
             _ => TypeCompatibilityLabel::CodeCompatible,
         },
     })
@@ -1123,6 +1127,7 @@ fn runtime_value_kind(ty: &AwbcRuntimeType) -> RuntimeValueKind {
             RuntimeValueKind::Nominal
         }
         AwbcRuntimeType::Opaque { .. } => RuntimeValueKind::Opaque,
+        AwbcRuntimeType::Agent(_) => RuntimeValueKind::Agent,
         AwbcRuntimeType::MatrixF32 | AwbcRuntimeType::MatrixF64 => RuntimeValueKind::Matrix,
         AwbcRuntimeType::TensorF32 | AwbcRuntimeType::TensorF64 => RuntimeValueKind::Tensor,
         AwbcRuntimeType::TaskHandle => RuntimeValueKind::TaskHandle,
@@ -2053,6 +2058,7 @@ mod opaque_runtime_type_tests {
     use super::*;
     use arcweft_core::awbc::schema::{AwbcStringId, AwbcTypeId};
     use arcweft_core::pattern::RuntimeOpaqueTypeAdmission;
+    use arcweft_core::plan::RuntimeAgentOperationalType;
 
     #[test]
     fn opaque_awbc_type_projects_to_final_bundle_value_family() {
@@ -2078,5 +2084,28 @@ mod opaque_runtime_type_tests {
             RuntimeValueKind::from_encoded(120),
             Some(RuntimeValueKind::Opaque)
         );
+    }
+
+    #[test]
+    fn agent_awbc_type_projects_to_non_colliding_bundle_value_family() {
+        let mut program = AwbcProgram::default();
+        program.runtime_types.push(AwbcRuntimeType::Agent(
+            RuntimeAgentOperationalType::Predicate,
+        ));
+        let declaration =
+            runtime_type_declaration(&program, &program.runtime_types[AwbcTypeId(2).index()])
+                .expect("Agent runtime type declaration projects");
+
+        assert_eq!(declaration.value_kind, RuntimeValueKind::Agent);
+        assert_eq!(
+            declaration.compatibility,
+            TypeCompatibilityLabel::RestartRequired
+        );
+        assert_eq!(RuntimeValueKind::Agent.encoded(), 121);
+        assert_eq!(
+            RuntimeValueKind::from_encoded(121),
+            Some(RuntimeValueKind::Agent)
+        );
+        assert_eq!(RuntimeValueKind::from_encoded(122), None);
     }
 }

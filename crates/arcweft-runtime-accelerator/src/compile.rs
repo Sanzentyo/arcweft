@@ -56,6 +56,7 @@ pub(super) fn runtime_value_kind(value: &RuntimeValue) -> String {
         RuntimeValue::Record(_) => "record",
         RuntimeValue::NominalRecord(_) => "nominal_record",
         RuntimeValue::Opaque(_) => "opaque",
+        RuntimeValue::Agent(value) => value.label(),
         RuntimeValue::Function(_) => "function",
         RuntimeValue::Variant { .. } => "variant",
         RuntimeValue::Iterator(_) => "iterator",
@@ -785,6 +786,13 @@ pub(super) fn helper_work_unit_slots(helpers: &[RuntimePureHelper]) -> Vec<usize
 pub(super) fn runtime_expr_work_units(expr: &RuntimeExpr) -> usize {
     match expr {
         RuntimeExpr::Value(_) | RuntimeExpr::Local(_) | RuntimeExpr::EntityRef(_) => 1,
+        RuntimeExpr::Agent(agent) => {
+            1 + agent
+                .operands()
+                .into_iter()
+                .map(runtime_expr_work_units)
+                .sum::<usize>()
+        }
         RuntimeExpr::Unary { expr, .. } => 1 + runtime_expr_work_units(expr),
         RuntimeExpr::Binary { lhs, rhs, .. } => {
             2 + runtime_expr_work_units(lhs) + runtime_expr_work_units(rhs)

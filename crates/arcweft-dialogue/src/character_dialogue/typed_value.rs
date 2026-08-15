@@ -267,6 +267,22 @@ fn validate_config_strings(value: &RuntimeValue) -> Result<(), CharacterDialogue
         }
         RuntimeValue::NominalRecord(record) => validate_config_string_values(record.fields()),
         RuntimeValue::Opaque(value) => validate_config_strings(value.payload()),
+        RuntimeValue::Agent(value) => {
+            if value
+                .text_values()
+                .into_iter()
+                .any(|value| value.len() > maximum)
+            {
+                return Err(CharacterDialogueValueError::Limit {
+                    limit: "config_string_bytes",
+                    maximum,
+                });
+            }
+            for (_, value) in value.nested_runtime_values_with_depth() {
+                validate_config_strings(value)?;
+            }
+            Ok(())
+        }
         RuntimeValue::Variant {
             payload: Some(payload),
             ..
@@ -381,6 +397,7 @@ fn count_structured_leaves(
         } => count_structured_leaves(payload, depth, leaves)?,
         RuntimeValue::Function(_)
         | RuntimeValue::Iterator(_)
+        | RuntimeValue::Agent(_)
         | RuntimeValue::MatrixF32(_)
         | RuntimeValue::MatrixF64(_)
         | RuntimeValue::TensorF32(_)

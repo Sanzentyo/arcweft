@@ -298,6 +298,7 @@ impl AwbcProgram {
             }
             AwbcRuntimeType::Record { .. }
             | AwbcRuntimeType::NominalRecord { .. }
+            | AwbcRuntimeType::Agent(_)
             | AwbcRuntimeType::MatrixF32
             | AwbcRuntimeType::MatrixF64
             | AwbcRuntimeType::TensorF32

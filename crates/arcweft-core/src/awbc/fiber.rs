@@ -1082,6 +1082,24 @@ fn validate_nested_runtime_value(
         RuntimeValue::Opaque(value) => {
             validate_nested_runtime_value(program, value.payload(), depth + 1)
         }
+        RuntimeValue::Agent(value) => {
+            if depth.saturating_add(value.structural_nesting_depth())
+                > crate::value::MAX_RUNTIME_VALUE_NESTING_DEPTH
+            {
+                return Err(FiberStateError::InvalidRuntimeFunction {
+                    reason: format!(
+                        "runtime value nesting exceeds {} levels",
+                        crate::value::MAX_RUNTIME_VALUE_NESTING_DEPTH
+                    ),
+                });
+            }
+            value
+                .nested_runtime_values_with_depth()
+                .into_iter()
+                .try_for_each(|(offset, value)| {
+                    validate_nested_runtime_value(program, value, depth.saturating_add(offset))
+                })
+        }
         RuntimeValue::Iterator(RuntimeIterator::Values { items, .. }) => items
             .iter()
             .try_for_each(|item| validate_nested_runtime_value(program, item, depth + 1)),
@@ -1727,6 +1745,9 @@ pub(crate) fn runtime_value_matches_type(
         | (RuntimeValue::MatrixF64(_), AwbcRuntimeType::MatrixF64)
         | (RuntimeValue::TensorF32(_), AwbcRuntimeType::TensorF32)
         | (RuntimeValue::TensorF64(_), AwbcRuntimeType::TensorF64) => true,
+        (RuntimeValue::Agent(value), AwbcRuntimeType::Agent(expected)) => {
+            value.operational_type() == *expected
+        }
         (RuntimeValue::Seq(values), AwbcRuntimeType::Bytes) => values
             .clone()
             .into_values()
@@ -1886,6 +1907,7 @@ fn runtime_value_type_label(value: &RuntimeValue) -> String {
         RuntimeValue::Record(_) => "record",
         RuntimeValue::NominalRecord(record) => record.type_id().as_str(),
         RuntimeValue::Opaque(_) => "opaque value",
+        RuntimeValue::Agent(value) => value.label(),
         RuntimeValue::Function(_) => "function",
         RuntimeValue::Variant { .. } => "variant",
     }
@@ -1975,6 +1997,29 @@ mod tests {
             name: name.to_owned(),
             value,
         }
+    }
+
+    #[test]
+    fn fiber_snapshot_validation_enforces_agent_structural_nesting() {
+        fn nested_predicate(depth: usize) -> RuntimeValue {
+            let mut predicate = crate::value::RuntimeAgentPredicate::DiagnosticsHasError;
+            for _ in 0..depth {
+                predicate = crate::value::RuntimeAgentPredicate::Not {
+                    predicate: Box::new(predicate),
+                };
+            }
+            RuntimeValue::Agent(crate::value::RuntimeAgentValue::Predicate(predicate))
+        }
+
+        assert!(
+            validate_nested_runtime_value(&AwbcProgram::default(), &nested_predicate(64), 0)
+                .is_ok()
+        );
+        assert!(matches!(
+            validate_nested_runtime_value(&AwbcProgram::default(), &nested_predicate(65), 0),
+            Err(FiberStateError::InvalidRuntimeFunction { reason })
+                if reason.contains("nesting exceeds 64")
+        ));
     }
 
     #[test]

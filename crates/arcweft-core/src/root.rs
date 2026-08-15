@@ -14,7 +14,7 @@ use crate::pattern::RuntimeVariantIdentity;
 use crate::plan::{
     EntryRuntimeId, FlowRuntimeId, RuntimeEntryRoles, RuntimePlan, RuntimePlanError,
 };
-use crate::value::{RuntimeBinding, RuntimePayload, RuntimeValue};
+use crate::value::{RuntimeAgentValue, RuntimeBinding, RuntimePayload, RuntimeValue};
 use serde::{Deserialize, Serialize};
 use std::collections::{BTreeMap, BTreeSet, VecDeque};
 use std::fmt;
@@ -1036,6 +1036,7 @@ fn validate_replay_safe_value(
         RuntimeValue::Opaque(value) => {
             validate_replay_safe_value(value.payload(), limits, depth + 1, nodes)
         }
+        RuntimeValue::Agent(value) => validate_replay_safe_agent_value(value, limits, depth, nodes),
         RuntimeValue::Variant { payload, .. } => {
             if let Some(payload) = payload {
                 validate_replay_safe_value(payload, limits, depth + 1, nodes)?;
@@ -1060,6 +1061,41 @@ fn validate_replay_safe_value(
         | RuntimeValue::Duration(_)
         | RuntimeValue::EntityRef(_) => Ok(()),
     }
+}
+
+fn validate_replay_safe_agent_value(
+    value: &RuntimeAgentValue,
+    limits: RuntimeSchemaLimits,
+    depth: usize,
+    nodes: &mut usize,
+) -> Result<(), String> {
+    if depth.saturating_add(value.structural_nesting_depth()) > limits.max_depth {
+        return Err("replay-safe payload exceeds depth budget".to_owned());
+    }
+    *nodes = nodes
+        .checked_add(value.additional_structural_node_count())
+        .ok_or_else(|| "replay-safe node count overflows usize".to_owned())?;
+    if *nodes > limits.max_nodes {
+        return Err("replay-safe payload exceeds node budget".to_owned());
+    }
+    if value
+        .text_values()
+        .into_iter()
+        .any(|value| value.len() > limits.max_string_bytes)
+    {
+        return Err("replay-safe payload exceeds string byte budget".to_owned());
+    }
+    if value
+        .predicate_collection_lengths()
+        .into_iter()
+        .any(|length| length > limits.max_sequence_items)
+    {
+        return Err("replay-safe payload exceeds sequence item budget".to_owned());
+    }
+    for (offset, nested) in value.nested_runtime_values_with_depth() {
+        validate_replay_safe_value(nested, limits, depth.saturating_add(offset), nodes)?;
+    }
+    Ok(())
 }
 
 /// Final in-place session payload for one durable root state.

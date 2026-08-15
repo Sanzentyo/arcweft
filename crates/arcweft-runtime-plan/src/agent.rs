@@ -42,30 +42,6 @@ pub enum RuntimeAgentIntrinsic {
     RagQuery,
 }
 
-/// Canonical comparison selected for an Agent probe method.
-#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
-pub enum RuntimeAgentProbeComparison {
-    Eq,
-    NotEq,
-    Greater,
-    GreaterOrEqual,
-    Less,
-    LessOrEqual,
-}
-
-impl RuntimeAgentProbeComparison {
-    pub const fn operation(self) -> &'static str {
-        match self {
-            Self::Eq => "eq",
-            Self::NotEq => "not_eq",
-            Self::Greater => "greater",
-            Self::GreaterOrEqual => "greater_or_equal",
-            Self::Less => "less",
-            Self::LessOrEqual => "less_or_equal",
-        }
-    }
-}
-
 impl RuntimeAgentIntrinsic {
     /// Returns the canonical Agent host ABI operation for effectful calls.
     /// Deterministic value constructors return `None` and remain in expression

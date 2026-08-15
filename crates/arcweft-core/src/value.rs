@@ -13,6 +13,7 @@ use serde::{Deserialize, Serialize};
 use std::fmt;
 use thiserror::Error;
 
+mod agent;
 mod env;
 mod integer;
 mod nesting;
@@ -27,6 +28,13 @@ mod sequence_constructors;
 mod sequence_impls;
 mod shape;
 
+pub use agent::{
+    RuntimeAgentAction, RuntimeAgentActionDispatch, RuntimeAgentActionTarget,
+    RuntimeAgentCaptureTarget, RuntimeAgentCompareOp, RuntimeAgentConstructionError,
+    RuntimeAgentConstructor, RuntimeAgentExpr, RuntimeAgentPath, RuntimeAgentPathExpr,
+    RuntimeAgentPredicate, RuntimeAgentPredicateExpr, RuntimeAgentProbe, RuntimeAgentProbeExpr,
+    RuntimeAgentTargetExpr, RuntimeAgentValue,
+};
 pub use integer::{RuntimeInt, RuntimeSignedIntWidth, RuntimeUInt, RuntimeUnsignedIntWidth};
 pub use nesting::{MAX_RUNTIME_VALUE_NESTING_DEPTH, RuntimeValueNestingError};
 pub use nominal_record::{
@@ -166,6 +174,7 @@ pub enum RuntimeValue {
     Record(Vec<RuntimeFieldValue>),
     NominalRecord(RuntimeNominalRecordValue),
     Opaque(RuntimeOpaqueValue),
+    Agent(RuntimeAgentValue),
     Function(RuntimeFunctionValue),
     Variant {
         owner: RuntimeVariantIdentity,
@@ -929,6 +938,7 @@ impl RuntimeFieldValue {
 #[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
 pub enum RuntimeExpr {
     Value(RuntimeValue),
+    Agent(RuntimeAgentExpr),
     Local(String),
     EntityRef(String),
     Let {
@@ -1052,6 +1062,11 @@ impl RuntimeExpr {
         &self,
     ) -> Result<(), RuntimeNominalRecordInitializerError> {
         match self {
+            Self::Agent(agent) => {
+                for operand in agent.operands() {
+                    operand.validate_nominal_record_carriers()?;
+                }
+            }
             Self::NominalRecord(record) => {
                 record.validate()?;
                 for initializer in record.initializers() {
@@ -1182,6 +1197,7 @@ impl RuntimeExpr {
                     && else_expr.supports_scalar_pure_eval()
             }
             Self::Value(_)
+            | Self::Agent(_)
             | Self::EntityRef(_)
             | Self::Tuple(_)
             | Self::BracketSeq(_)
@@ -1223,6 +1239,7 @@ impl fmt::Display for RuntimeExpr {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             Self::Value(value) => f.write_str(&runtime_value_label(value)),
+            Self::Agent(agent) => write!(f, "agent/{:?}", agent.constructor()),
             Self::Local(name) => f.write_str(name),
             Self::EntityRef(target) => write!(f, "@{target}"),
             Self::Let { name, .. } => write!(f, "let {name}"),
@@ -1435,6 +1452,8 @@ pub enum RuntimeEvalError {
     Audio(String),
     #[error("runtime effect error: {0}")]
     Effect(String),
+    #[error("Agent value construction failed: {0}")]
+    AgentConstruction(String),
     #[error("audio command expected {expected}, found {actual}")]
     AudioValue {
         expected: &'static str,
@@ -2695,6 +2714,7 @@ pub(crate) fn runtime_value_label(value: &RuntimeValue) -> String {
             )
         }
         RuntimeValue::Opaque(value) => format!("opaque/{}", value.producer().as_str()),
+        RuntimeValue::Agent(value) => value.label().to_owned(),
         RuntimeValue::Function(function) => format!("function/{}", function.arity()),
         RuntimeValue::Variant { name, payload, .. } => {
             if payload.is_some() {

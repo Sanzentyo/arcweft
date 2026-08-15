@@ -19,7 +19,9 @@ use arcweft_core::plan::{
     RuntimePureInputType, RuntimePureOutputType, RuntimeRouteSpec,
 };
 use arcweft_core::value::{
-    RuntimeBinaryOp, RuntimeCallTarget, RuntimeExpr, RuntimeFieldExpr, RuntimeNominalRecordExpr,
+    RuntimeAgentCompareOp, RuntimeAgentExpr, RuntimeAgentPredicate, RuntimeAgentPredicateExpr,
+    RuntimeAgentProbe, RuntimeAgentProbeExpr, RuntimeAgentValue, RuntimeBinaryOp,
+    RuntimeCallTarget, RuntimeExpr, RuntimeFieldExpr, RuntimeNominalRecordExpr,
     RuntimeNominalRecordLayout, RuntimeValue,
 };
 use std::sync::Arc;
@@ -472,6 +474,63 @@ fn let_bound_call_is_evaluated_once_and_shared_by_awbc_reads() {
         "let-bound callable must execute exactly once"
     );
     assert_eq!(exit, VmExit::Returned(Some(RuntimeValue::i64(10))));
+}
+
+#[test]
+fn typed_agent_expression_lowers_roundtrips_and_executes_through_make_agent() {
+    let expression = RuntimeExpr::Agent(RuntimeAgentExpr::Predicate(
+        RuntimeAgentPredicateExpr::Compare {
+            probe: Box::new(RuntimeExpr::Agent(RuntimeAgentExpr::Probe(
+                RuntimeAgentProbeExpr::Signal {
+                    target: Box::new(RuntimeExpr::EntityRef("signal.ready".to_owned())),
+                },
+            ))),
+            op: RuntimeAgentCompareOp::Eq,
+            value: Box::new(RuntimeExpr::Value(RuntimeValue::Bool(false))),
+        },
+    ));
+    let plan = RuntimePlan::new(
+        vec![RuntimeFlow {
+            id: flow_id("main"),
+            ops: vec![FlowOp::ReturnExpr(expression)],
+        }],
+        Vec::new(),
+    )
+    .expect("plan builds");
+    let plan = with_test_entry(plan, flow_id("main"));
+    let report = lower_plan(&plan);
+    assert_eq!(
+        report
+            .program
+            .instructions
+            .iter()
+            .filter(|instruction| matches!(instruction, AwbcInstruction::MakeAgent { .. }))
+            .count(),
+        2
+    );
+
+    let encoded = report
+        .program
+        .encode_canonical()
+        .expect("encode typed Agent AWBC");
+    let decoded = AwbcProgram::decode_canonical(
+        &encoded,
+        arcweft_core::awbc::codec::AwbcDecodeBudget::default(),
+    )
+    .expect("decode typed Agent AWBC");
+    let mut host = TestPureHelperHost;
+    let exit = run_entry(&decoded, &mut host);
+
+    assert!(matches!(
+        exit,
+        VmExit::Returned(Some(RuntimeValue::Agent(RuntimeAgentValue::Predicate(
+            RuntimeAgentPredicate::Compare {
+                probe: RuntimeAgentProbe::Signal { ref target },
+                op: RuntimeAgentCompareOp::Eq,
+                ref value,
+            }
+        )))) if target.as_str() == "signal.ready" && value.as_ref() == &RuntimeValue::Bool(false)
+    ));
 }
 
 #[test]

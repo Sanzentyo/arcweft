@@ -2,7 +2,8 @@ use crate::entry::{
     EntryBindingIdentity, RuntimeCallableRole, RuntimeEntryRoles, RuntimeFlowExecutable,
 };
 use crate::pattern::RuntimeOpaqueTypeAdmission;
-use crate::plan::{FlowRuntimeId, RuntimeFlowTargetError};
+use crate::plan::{FlowRuntimeId, RuntimeAgentOperationalType, RuntimeFlowTargetError};
+use crate::value::RuntimeAgentConstructor;
 use arcweft_interaction_model::audio::{
     AudioEffectParameterKind, AudioLoopMode, MicrophoneConstraints,
 };
@@ -457,6 +458,7 @@ fn visit_runtime_type_strings(
         | AwbcRuntimeType::TensorF64
         | AwbcRuntimeType::TaskHandle
         | AwbcRuntimeType::NeedHandle
+        | AwbcRuntimeType::Agent(_)
         | AwbcRuntimeType::Dynamic => {}
     }
 }
@@ -661,6 +663,9 @@ pub enum AwbcRuntimeType {
     Bytes,
     /// Uninhabited checked type, distinct from an authored empty choice.
     Never,
+    /// Closed Agent runtime family. Exact semantic identity remains in the
+    /// runtime-plan facts; this type selects the executable value carrier.
+    Agent(RuntimeAgentOperationalType),
     MatrixF32,
     MatrixF64,
     TensorF32,
@@ -899,6 +904,7 @@ pub enum AwbcOpcode {
     CancelCleanup,
     MakeFunction,
     ApplyFunction,
+    MakeAgent,
     Jump,
     Branch,
     Match,
@@ -958,6 +964,7 @@ impl AwbcOpcode {
             Self::CancelCleanup => 0x24,
             Self::MakeFunction => 0x25,
             Self::ApplyFunction => 0x26,
+            Self::MakeAgent => 0x27,
             Self::Jump => 0x80,
             Self::Branch => 0x81,
             Self::Match => 0x82,
@@ -1017,6 +1024,7 @@ impl AwbcOpcode {
             0x24 => Self::CancelCleanup,
             0x25 => Self::MakeFunction,
             0x26 => Self::ApplyFunction,
+            0x27 => Self::MakeAgent,
             0x80 => Self::Jump,
             0x81 => Self::Branch,
             0x82 => Self::Match,
@@ -1217,6 +1225,11 @@ pub enum AwbcInstruction {
         callee: AwbcRegisterId,
         args: Vec<AwbcRegisterId>,
     },
+    MakeAgent {
+        dst: AwbcRegisterId,
+        constructor: RuntimeAgentConstructor,
+        operands: Vec<AwbcRegisterId>,
+    },
 }
 
 impl AwbcInstruction {
@@ -1261,6 +1274,7 @@ impl AwbcInstruction {
             Self::CancelCleanup { .. } => AwbcOpcode::CancelCleanup,
             Self::MakeFunction { .. } => AwbcOpcode::MakeFunction,
             Self::ApplyFunction { .. } => AwbcOpcode::ApplyFunction,
+            Self::MakeAgent { .. } => AwbcOpcode::MakeAgent,
         }
     }
 }

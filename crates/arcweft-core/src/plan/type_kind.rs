@@ -1,9 +1,10 @@
 //! Closed runtime-plan type families.
 
 use crate::pattern::RuntimeCheckedType;
+use serde::{Deserialize, Serialize};
 
 /// Closed top-level runtime families owned by the Agent Prelude.
-#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+#[derive(Clone, Copy, Debug, Deserialize, Eq, Hash, Ord, PartialEq, PartialOrd, Serialize)]
 pub enum RuntimeAgentOperationalType {
     DebugStatePath,
     ObservationFieldPath,

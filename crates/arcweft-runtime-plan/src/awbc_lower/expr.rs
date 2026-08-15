@@ -71,6 +71,33 @@ impl<'a, 'b> AwbcExprLowerer<'a, 'b> {
                     .push_instruction(AwbcInstruction::LoadConst { dst, constant });
                 dst
             }
+            RuntimeExpr::Agent(agent) => {
+                let mut operands = Vec::with_capacity(
+                    agent.operands().len() + usize::from(agent.choice().is_some()),
+                );
+                if let Some(choice) = agent.choice() {
+                    operands.push(self.load_runtime_const(
+                        &arcweft_core::value::RuntimeValue::EntityRef(choice.as_str().to_owned()),
+                    ));
+                }
+                operands.extend(
+                    agent
+                        .operands()
+                        .into_iter()
+                        .map(|operand| self.lower(operand)),
+                );
+                let constructor = agent.constructor();
+                let ty = self
+                    .inventory
+                    .intern_type(AwbcRuntimeType::Agent(constructor.result_type()));
+                let dst = self.frame.temp(ty);
+                self.inventory.push_instruction(AwbcInstruction::MakeAgent {
+                    dst,
+                    constructor,
+                    operands,
+                });
+                dst
+            }
             RuntimeExpr::Let { name, expr, body } => {
                 let value = self.lower(expr);
                 let name_id = self.inventory.intern_string(name);
@@ -1116,6 +1143,11 @@ impl RuntimeExprFreeLocalCollector {
             RuntimeExpr::Variant { payload, .. } => {
                 if let Some(payload) = payload {
                     self.collect_expr(payload);
+                }
+            }
+            RuntimeExpr::Agent(agent) => {
+                for operand in agent.operands() {
+                    self.collect_expr(operand);
                 }
             }
             RuntimeExpr::Field { target, .. }

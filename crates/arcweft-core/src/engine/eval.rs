@@ -16,12 +16,12 @@ use crate::pure::{
     RuntimeI64Args, RuntimePureCallBackend, RuntimePureScalarInteger, VmRuntimePureCallBackend,
 };
 use crate::value::RuntimeNominalRecordExpr;
-use crate::value::{RuntimeBinaryOp, RuntimeExactInteger, RuntimeFieldExpr};
 use crate::value::{
-    RuntimeCallTarget, RuntimeIntrinsic, evaluate_core_iter_into_iter_intrinsic,
-    evaluate_core_iter_next_intrinsic, evaluate_core_option_is_some_intrinsic,
-    evaluate_core_option_unwrap_intrinsic,
+    RuntimeAgentExpr, RuntimeAgentValue, RuntimeCallTarget, RuntimeIntrinsic,
+    evaluate_core_iter_into_iter_intrinsic, evaluate_core_iter_next_intrinsic,
+    evaluate_core_option_is_some_intrinsic, evaluate_core_option_unwrap_intrinsic,
 };
+use crate::value::{RuntimeBinaryOp, RuntimeExactInteger, RuntimeFieldExpr};
 use crate::value::{RuntimeISizeValue, RuntimeUSizeValue};
 use crate::value::{
     evaluate_core_iter_collect_intrinsic, evaluate_core_range_intrinsic,
@@ -117,6 +117,7 @@ impl Engine {
     ) -> Result<RuntimeValue, RuntimeEvalError> {
         match expr {
             RuntimeExpr::Value(value) => Ok(value.clone()),
+            RuntimeExpr::Agent(agent) => self.evaluate_agent_expr(agent, pure_backend),
             RuntimeExpr::Local(name) => self
                 .fiber
                 .env
@@ -211,6 +212,27 @@ impl Engine {
                 self.evaluate_match_expr(scrutinee, arms, pure_backend)
             }
         }
+    }
+
+    fn evaluate_agent_expr(
+        &mut self,
+        agent: &RuntimeAgentExpr,
+        pure_backend: &mut impl RuntimeCallBackend,
+    ) -> Result<RuntimeValue, RuntimeEvalError> {
+        let mut operands = Vec::new();
+        if let Some(choice) = agent.choice() {
+            operands.push(RuntimeValue::EntityRef(choice.as_str().to_owned()));
+        }
+        for operand in agent.operands() {
+            let operand = match operand {
+                RuntimeExpr::SpreadArg(operand) => operand,
+                operand => operand,
+            };
+            operands.push(self.evaluate_expr_with_backend(operand, pure_backend)?);
+        }
+        RuntimeAgentValue::try_construct(agent.constructor(), operands)
+            .map(RuntimeValue::Agent)
+            .map_err(|error| RuntimeEvalError::AgentConstruction(error.to_string()))
     }
 
     fn evaluate_data_expr(
@@ -792,6 +814,14 @@ impl Engine {
                     field: field.to_owned(),
                     value: "entity reference".to_owned(),
                 })
+            }
+            RuntimeValue::Agent(value) => {
+                value
+                    .project_field(field)
+                    .ok_or_else(|| RuntimeEvalError::MissingField {
+                        field: field.to_owned(),
+                        value: value.label().to_owned(),
+                    })
             }
             value => Err(RuntimeEvalError::MissingField {
                 field: field.to_owned(),

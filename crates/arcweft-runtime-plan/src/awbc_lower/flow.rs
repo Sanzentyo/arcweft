@@ -23,7 +23,7 @@ use arcweft_core::plan::{
     RuntimeIteratorWitnessExecutable, RuntimeMatchArm, RuntimePlan, RuntimePureHelper,
     RuntimePureHelperOrigin,
 };
-use arcweft_core::value::{RuntimeExpr, RuntimeValue};
+use arcweft_core::value::{RuntimeAgentExpr, RuntimeExpr, RuntimeValue};
 use std::collections::BTreeSet;
 
 /// Builds one contiguous flow body while allowing host-visible suspension
@@ -2037,6 +2037,7 @@ impl EntryParameterCollector {
                     self.collect_expr(&field.value);
                 }
             }
+            RuntimeExpr::Agent(agent) => self.collect_agent_expr(agent),
             RuntimeExpr::NominalRecord(record) => {
                 for initializer in record.initializers() {
                     self.collect_expr(initializer.value());
@@ -2096,6 +2097,12 @@ impl EntryParameterCollector {
                 else_expr,
             } => self.collect_if_let_expr(pattern, expr, guard.as_deref(), then_expr, else_expr),
             RuntimeExpr::Match { scrutinee, arms } => self.collect_match_expr(scrutinee, arms),
+        }
+    }
+
+    fn collect_agent_expr(&mut self, agent: &RuntimeAgentExpr) {
+        for operand in agent.operands() {
+            self.collect_expr(operand);
         }
     }
 

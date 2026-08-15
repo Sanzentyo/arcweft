@@ -314,6 +314,7 @@ fn runtime_value_summary(value: &RuntimeValue) -> String {
             record.fields().len()
         ),
         RuntimeValue::Opaque(value) => format!("opaque/{}", value.producer().as_str()),
+        RuntimeValue::Agent(value) => value.label().to_owned(),
         RuntimeValue::Function(function) => format!("function/{}", function.arity()),
         RuntimeValue::Variant { name, payload, .. } => {
             if payload.is_some() {

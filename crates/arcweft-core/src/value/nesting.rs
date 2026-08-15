@@ -36,6 +36,18 @@ fn validate_value(
             .try_for_each(|field| validate_value(field.value(), depth + 1, maximum)),
         RuntimeValue::NominalRecord(record) => validate_values(record.fields(), depth + 1, maximum),
         RuntimeValue::Opaque(value) => validate_value(value.payload(), depth + 1, maximum),
+        RuntimeValue::Agent(value) => {
+            ensure_depth(
+                depth.saturating_add(value.structural_nesting_depth()),
+                maximum,
+            )?;
+            value
+                .nested_runtime_values_with_depth()
+                .into_iter()
+                .try_for_each(|(offset, value)| {
+                    validate_value(value, depth.saturating_add(offset), maximum)
+                })
+        }
         RuntimeValue::Function(function) => function
             .captures
             .iter()

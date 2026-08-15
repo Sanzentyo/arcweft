@@ -84,7 +84,7 @@ use arcweft_lang_sema::{
 };
 use arcweft_manifest_model::CharacterNameLocalePolicySpec;
 use arcweft_runtime_plan::{
-    agent::{RuntimeAgentIntrinsic, RuntimeAgentProbeComparison},
+    agent::RuntimeAgentIntrinsic,
     assertion_identity::RuntimeAssertionMode,
     semantic_facts::{
         RuntimeAgentTypeShape, RuntimeAssertionAdmission, RuntimeCallResultShape,
@@ -2049,6 +2049,12 @@ fn runtime_call_target(
             runtime_agent_probe_comparison(operation.operator()),
         ));
     }
+    if matches!(
+        selected.id(),
+        CallableCandidateId::DomainMethod(DomainMethodId::DiagnosticsHasError)
+    ) {
+        return Ok(RuntimeResolvedCallTarget::AgentDiagnosticsHasError);
+    }
     if let SignatureOrigin::Project { declaration, .. } = selected.origin() {
         let symbol =
             symbols
@@ -2154,14 +2160,15 @@ const fn runtime_agent_intrinsic(intrinsic: AgentIntrinsicSignatureId) -> Runtim
 
 const fn runtime_agent_probe_comparison(
     operation: ProbeComparisonOperator,
-) -> RuntimeAgentProbeComparison {
+) -> arcweft_core::value::RuntimeAgentCompareOp {
+    use arcweft_core::value::RuntimeAgentCompareOp;
     match operation {
-        ProbeComparisonOperator::Eq => RuntimeAgentProbeComparison::Eq,
-        ProbeComparisonOperator::NotEq => RuntimeAgentProbeComparison::NotEq,
-        ProbeComparisonOperator::Greater => RuntimeAgentProbeComparison::Greater,
-        ProbeComparisonOperator::GreaterOrEqual => RuntimeAgentProbeComparison::GreaterOrEqual,
-        ProbeComparisonOperator::Less => RuntimeAgentProbeComparison::Less,
-        ProbeComparisonOperator::LessOrEqual => RuntimeAgentProbeComparison::LessOrEqual,
+        ProbeComparisonOperator::Eq => RuntimeAgentCompareOp::Eq,
+        ProbeComparisonOperator::NotEq => RuntimeAgentCompareOp::NotEq,
+        ProbeComparisonOperator::Greater => RuntimeAgentCompareOp::Greater,
+        ProbeComparisonOperator::GreaterOrEqual => RuntimeAgentCompareOp::GreaterOrEqual,
+        ProbeComparisonOperator::Less => RuntimeAgentCompareOp::Less,
+        ProbeComparisonOperator::LessOrEqual => RuntimeAgentCompareOp::LessOrEqual,
     }
 }
 

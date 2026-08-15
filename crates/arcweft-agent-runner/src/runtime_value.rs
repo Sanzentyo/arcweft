@@ -6,7 +6,10 @@ use arcweft_agent_protocol::{
     protocol::{CaptureFormat, CaptureTarget},
     value::AgentValue,
 };
-use arcweft_core::value::{RuntimeFieldValue, RuntimePayload, RuntimeValue};
+use arcweft_core::value::{
+    RuntimeAgentCaptureTarget, RuntimeAgentCompareOp, RuntimeAgentPredicate, RuntimeAgentProbe,
+    RuntimeAgentValue, RuntimePayload, RuntimeValue,
+};
 
 use crate::label_parse::{
     parse_bool_label, parse_capture_format, parse_public_id_arg, parse_public_id_list,
@@ -52,6 +55,7 @@ pub(crate) fn runtime_value_to_json(value: &RuntimeValue) -> serde_json::Value {
                 .collect::<Vec<_>>(),
         }),
         RuntimeValue::Opaque(value) => runtime_value_to_json(value.payload()),
+        RuntimeValue::Agent(value) => runtime_agent_to_json(value),
         RuntimeValue::Variant {
             owner,
             ordinal,
@@ -85,6 +89,96 @@ pub(crate) fn runtime_value_to_json(value: &RuntimeValue) -> serde_json::Value {
     }
 }
 
+fn runtime_agent_to_json(value: &RuntimeAgentValue) -> serde_json::Value {
+    match value {
+        RuntimeAgentValue::ActionTarget(target) => serde_json::json!({
+            "id": target.id().as_str(),
+            "target": target.target().as_str(),
+            "action": target.action().as_label(),
+            "kind": target.dispatch().as_label(),
+            "enabled": target.enabled(),
+        }),
+        RuntimeAgentValue::CaptureTarget(RuntimeAgentCaptureTarget::Viewport) => {
+            serde_json::json!({ "kind": "viewport" })
+        }
+        RuntimeAgentValue::CaptureTarget(RuntimeAgentCaptureTarget::Layer { target }) => {
+            serde_json::json!({ "kind": "layer", "target": target.as_str() })
+        }
+        RuntimeAgentValue::CaptureTarget(RuntimeAgentCaptureTarget::Object { target }) => {
+            serde_json::json!({ "kind": "object", "target": target.as_str() })
+        }
+        RuntimeAgentValue::DebugStatePath(path) => serde_json::json!({
+            "kind": "state_path",
+            "path": path.as_str(),
+        }),
+        RuntimeAgentValue::ObservationFieldPath(path) => serde_json::json!({
+            "kind": "observation_field",
+            "path": path.as_str(),
+        }),
+        RuntimeAgentValue::Probe(probe) => runtime_agent_probe_to_json(probe),
+        RuntimeAgentValue::Diagnostics => serde_json::json!({ "kind": "diagnostics" }),
+        RuntimeAgentValue::Predicate(predicate) => runtime_agent_predicate_to_json(predicate),
+        RuntimeAgentValue::ViewportPoint { x, y } => serde_json::json!({ "x": x, "y": y }),
+    }
+}
+
+fn runtime_agent_probe_to_json(probe: &RuntimeAgentProbe) -> serde_json::Value {
+    match probe {
+        RuntimeAgentProbe::Signal { target } => {
+            serde_json::json!({ "kind": "signal", "target": target.as_str() })
+        }
+        RuntimeAgentProbe::Metric { target } => {
+            serde_json::json!({ "kind": "metric", "target": target.as_str() })
+        }
+        RuntimeAgentProbe::StatePath { path } => {
+            serde_json::json!({ "kind": "state", "path": path.as_str() })
+        }
+        RuntimeAgentProbe::ObservationField { path } => {
+            serde_json::json!({ "kind": "observation", "path": path.as_str() })
+        }
+    }
+}
+
+fn runtime_agent_predicate_to_json(predicate: &RuntimeAgentPredicate) -> serde_json::Value {
+    match predicate {
+        RuntimeAgentPredicate::Compare { probe, op, value } => serde_json::json!({
+            "kind": "compare",
+            "probe": runtime_agent_probe_to_json(probe),
+            "op": op.as_label(),
+            "value": runtime_value_to_json(value),
+        }),
+        RuntimeAgentPredicate::Exists { probe } => serde_json::json!({
+            "kind": "exists",
+            "probe": runtime_agent_probe_to_json(probe),
+        }),
+        RuntimeAgentPredicate::ActionEnabled { target } => serde_json::json!({
+            "kind": "action_enabled",
+            "target": target.as_str(),
+        }),
+        RuntimeAgentPredicate::DiagnosticsHasError => {
+            serde_json::json!({ "kind": "diagnostics_has_error" })
+        }
+        RuntimeAgentPredicate::All { predicates } => serde_json::json!({
+            "kind": "all",
+            "predicates": predicates
+                .iter()
+                .map(runtime_agent_predicate_to_json)
+                .collect::<Vec<_>>(),
+        }),
+        RuntimeAgentPredicate::Any { predicates } => serde_json::json!({
+            "kind": "any",
+            "predicates": predicates
+                .iter()
+                .map(runtime_agent_predicate_to_json)
+                .collect::<Vec<_>>(),
+        }),
+        RuntimeAgentPredicate::Not { predicate } => serde_json::json!({
+            "kind": "not",
+            "predicate": runtime_agent_predicate_to_json(predicate),
+        }),
+    }
+}
+
 fn runtime_int_to_json(value: arcweft_core::value::RuntimeInt) -> serde_json::Value {
     match value {
         arcweft_core::value::RuntimeInt::I8(value) => serde_json::json!(value),
@@ -114,106 +208,75 @@ fn runtime_uint_to_json(value: arcweft_core::value::RuntimeUInt) -> serde_json::
 }
 
 pub(crate) fn runtime_predicate(value: &RuntimeValue) -> Result<Predicate, String> {
-    let fields = runtime_record_fields(value, "predicate")?;
-    match runtime_record_string(fields, "kind")?.as_str() {
-        "compare" => Ok(Predicate::Compare {
-            probe: runtime_record_get(fields, "probe").and_then(runtime_probe)?,
-            op: runtime_record_get(fields, "op").and_then(runtime_compare_op)?,
-            value: Box::new(runtime_record_get(fields, "value").and_then(runtime_agent_value)?),
+    let RuntimeValue::Agent(RuntimeAgentValue::Predicate(predicate)) = value else {
+        return Err(format!(
+            "expected typed Agent predicate, got `{}`",
+            value_label(value)
+        ));
+    };
+    protocol_predicate(predicate)
+}
+
+fn protocol_predicate(predicate: &RuntimeAgentPredicate) -> Result<Predicate, String> {
+    match predicate {
+        RuntimeAgentPredicate::Compare { probe, op, value } => Ok(Predicate::Compare {
+            probe: protocol_probe(probe)?,
+            op: protocol_compare_op(*op),
+            value: Box::new(runtime_agent_value(value)?),
         }),
-        "exists" => Ok(Predicate::Exists {
-            probe: runtime_record_get(fields, "probe").and_then(runtime_probe)?,
+        RuntimeAgentPredicate::Exists { probe } => Ok(Predicate::Exists {
+            probe: protocol_probe(probe)?,
         }),
-        "action_enabled" => runtime_record_string(fields, "target")
-            .and_then(|target| PublicId::new(target).map_err(|error| error.to_string()))
-            .map(|target| Predicate::ActionEnabled { target }),
-        "all" => runtime_record_get(fields, "predicates")
-            .and_then(runtime_predicate_list)
+        RuntimeAgentPredicate::ActionEnabled { target } => Ok(Predicate::ActionEnabled {
+            target: PublicId::new(target.as_str().to_owned()).map_err(|error| error.to_string())?,
+        }),
+        RuntimeAgentPredicate::DiagnosticsHasError => Ok(Predicate::DiagnosticsHasError),
+        RuntimeAgentPredicate::All { predicates } => predicates
+            .iter()
+            .map(protocol_predicate)
+            .collect::<Result<Vec<_>, _>>()
             .map(|predicates| Predicate::All { predicates }),
-        "any" => runtime_record_get(fields, "predicates")
-            .and_then(runtime_predicate_list)
+        RuntimeAgentPredicate::Any { predicates } => predicates
+            .iter()
+            .map(protocol_predicate)
+            .collect::<Result<Vec<_>, _>>()
             .map(|predicates| Predicate::Any { predicates }),
-        "not" => runtime_record_get(fields, "predicate")
-            .and_then(runtime_predicate)
-            .map(|predicate| Predicate::Not {
+        RuntimeAgentPredicate::Not { predicate } => {
+            protocol_predicate(predicate).map(|predicate| Predicate::Not {
                 predicate: Box::new(predicate),
-            }),
-        "diagnostics_has_error" => Ok(Predicate::DiagnosticsHasError),
-        other => Err(format!("unsupported predicate kind `{other}`")),
+            })
+        }
     }
 }
 
-pub(crate) fn runtime_predicate_list(value: &RuntimeValue) -> Result<Vec<Predicate>, String> {
-    let RuntimeValue::Tuple(values) = value else {
-        return Err(format!(
-            "expected predicate tuple, got `{}`",
-            value_label(value)
-        ));
-    };
-    values.iter().map(runtime_predicate).collect()
-}
-
-fn runtime_probe(value: &RuntimeValue) -> Result<Probe, String> {
-    let fields = runtime_record_fields(value, "probe")?;
-    match runtime_record_string(fields, "kind")?.as_str() {
-        "signal" => Ok(Probe::Signal {
-            target: runtime_record_get(fields, "target").and_then(runtime_public_id)?,
+fn protocol_probe(probe: &RuntimeAgentProbe) -> Result<Probe, String> {
+    match probe {
+        RuntimeAgentProbe::Signal { target } => Ok(Probe::Signal {
+            target: PublicId::new(target.as_str().to_owned()).map_err(|error| error.to_string())?,
         }),
-        "metric" => Ok(Probe::Metric {
-            target: runtime_record_get(fields, "target").and_then(runtime_public_id)?,
+        RuntimeAgentProbe::Metric { target } => Ok(Probe::Metric {
+            target: PublicId::new(target.as_str().to_owned()).map_err(|error| error.to_string())?,
         }),
-        "state" | "state_path" => Ok(Probe::StatePath {
-            path: DebugStatePath::new(runtime_record_string(fields, "path")?)?,
+        RuntimeAgentProbe::StatePath { path } => Ok(Probe::StatePath {
+            path: DebugStatePath::new(path.as_str().to_owned())?,
         }),
-        "observation" | "observation_field" => Ok(Probe::ObservationField {
-            path: ObservationFieldPath::new(runtime_record_string(fields, "path")?)?,
+        RuntimeAgentProbe::ObservationField { path } => Ok(Probe::ObservationField {
+            path: ObservationFieldPath::new(path.as_str().to_owned())?,
         }),
-        other => Err(format!("unsupported probe kind `{other}`")),
     }
 }
 
-fn runtime_compare_op(value: &RuntimeValue) -> Result<CompareOp, String> {
-    match runtime_string(value)?.as_str() {
-        "eq" => Ok(CompareOp::Eq),
-        "not_eq" | "ne" => Ok(CompareOp::NotEq),
-        "greater" | "gt" => Ok(CompareOp::Greater),
-        "greater_or_equal" | "ge" => Ok(CompareOp::GreaterOrEqual),
-        "less" | "lt" => Ok(CompareOp::Less),
-        "less_or_equal" | "le" => Ok(CompareOp::LessOrEqual),
-        other => Err(format!("unsupported compare op `{other}`")),
+const fn protocol_compare_op(op: RuntimeAgentCompareOp) -> CompareOp {
+    match op {
+        RuntimeAgentCompareOp::Eq => CompareOp::Eq,
+        RuntimeAgentCompareOp::NotEq => CompareOp::NotEq,
+        RuntimeAgentCompareOp::Greater => CompareOp::Greater,
+        RuntimeAgentCompareOp::GreaterOrEqual => CompareOp::GreaterOrEqual,
+        RuntimeAgentCompareOp::Less => CompareOp::Less,
+        RuntimeAgentCompareOp::LessOrEqual => CompareOp::LessOrEqual,
     }
 }
 
-fn runtime_record_fields<'a>(
-    value: &'a RuntimeValue,
-    label: &str,
-) -> Result<&'a [RuntimeFieldValue], String> {
-    let RuntimeValue::Record(fields) = value else {
-        return Err(format!(
-            "expected {label} record, got `{}`",
-            value_label(value)
-        ));
-    };
-    Ok(fields)
-}
-
-pub(crate) fn runtime_record_get<'a>(
-    fields: &'a [RuntimeFieldValue],
-    name: &str,
-) -> Result<&'a RuntimeValue, String> {
-    fields
-        .iter()
-        .find(|field| field.name() == name)
-        .map(RuntimeFieldValue::value)
-        .ok_or_else(|| format!("record is missing `{name}`"))
-}
-
-pub(crate) fn runtime_record_string(
-    fields: &[RuntimeFieldValue],
-    name: &str,
-) -> Result<String, String> {
-    runtime_record_get(fields, name).and_then(runtime_string)
-}
 pub(crate) fn runtime_field(name: &str, value: RuntimeValue) -> (String, RuntimeValue) {
     (name.to_owned(), value)
 }
@@ -328,16 +391,20 @@ pub(crate) fn runtime_public_ids(value: &RuntimeValue) -> Result<Vec<PublicId>, 
 }
 
 pub(crate) fn runtime_capture_target(value: &RuntimeValue) -> Result<CaptureTarget, String> {
-    let fields = runtime_record_fields(value, "capture target")?;
-    match runtime_record_string(fields, "kind")?.as_str() {
-        "viewport" => Ok(CaptureTarget::Viewport),
-        "layer" => runtime_record_get(fields, "target")
-            .and_then(runtime_public_id)
-            .map(|id| CaptureTarget::Layer { id }),
-        "object" => runtime_record_get(fields, "target")
-            .and_then(runtime_string)
-            .map(|id| CaptureTarget::Object { id }),
-        other => Err(format!("unsupported typed capture target kind `{other}`")),
+    let RuntimeValue::Agent(RuntimeAgentValue::CaptureTarget(target)) = value else {
+        return Err(format!(
+            "expected typed Agent capture target, got `{}`",
+            value_label(value)
+        ));
+    };
+    match target {
+        RuntimeAgentCaptureTarget::Viewport => Ok(CaptureTarget::Viewport),
+        RuntimeAgentCaptureTarget::Layer { target } => PublicId::new(target.as_str().to_owned())
+            .map(|id| CaptureTarget::Layer { id })
+            .map_err(|error| error.to_string()),
+        RuntimeAgentCaptureTarget::Object { target } => Ok(CaptureTarget::Object {
+            id: target.as_str().to_owned(),
+        }),
     }
 }
 
