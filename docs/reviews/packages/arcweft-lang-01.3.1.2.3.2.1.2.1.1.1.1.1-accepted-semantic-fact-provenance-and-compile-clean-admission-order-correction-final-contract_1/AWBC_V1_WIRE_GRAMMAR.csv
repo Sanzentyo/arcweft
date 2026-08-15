@@ -1,0 +1,14 @@
+element,encoding,semantic,rule
+envelope.magic,8 bytes,AWBC\r\n\x1a\n,fixed
+envelope.codec_version,u16_le,1,fixed
+envelope.reserved,u16_le,0,must reject nonzero
+envelope.payload_length,u64_le,exact remaining bytes,trailing/truncation rejected
+table.nominal_record_domains.count,var_u32,0..262144,new in-place v1 table
+domain.origin.plan,0x00 + RuntimePlanTypedSite v1,plan coordinate,no spelling
+domain.origin.project,0x01 + 32 bytes,RuntimeProjectRootId,derived root
+domain.origin.producer,0x02 + var_u32 len + UTF8 + 32 bytes,producer ID + RuntimeProducerRootId,ID max 128 bytes
+domain.type,var_u32,AwbcTypeId,must be checked nominal record
+construction.structural,0x00 + type + names,anonymous/structural record,field spellings allowed only here
+construction.nominal,0x01 + domain ID,nominal record,mandatory domain; no names
+constant.record,tag 12,construction + constants,tag retained
+instruction.make_record,opcode 0x0f,dst + construction + registers,opcode retained

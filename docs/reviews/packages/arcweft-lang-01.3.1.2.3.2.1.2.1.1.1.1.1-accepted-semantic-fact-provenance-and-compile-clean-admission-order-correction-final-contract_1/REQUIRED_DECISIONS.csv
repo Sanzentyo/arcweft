@@ -1,0 +1,16 @@
+decision,requirement,closed_decision
+1,final RuntimePlan builder and unique type/local ownership,"RuntimePlanBuilder consumes the landed local table, owns the sole RuntimePlanTypeTableBuilder, seals both into private RuntimePlan; no second issuer/map"
+2,RuntimeTypedExpr / RuntimeTypedPattern / typed sites,"builder-only typed wrappers with RuntimeIndexPath root [0], complete node rows, checked binding coordinates, private fields/accessors; retained closed RuntimePlanTypedSite grammar"
+3,exact FinalExpr/Pattern/flow construction order,one Flow lowerer owns one builder; nested expression/pattern lowerers borrow it mutably; draft -> complete declaration preflight -> atomic type interning -> typed wrapper -> owner insertion
+4,all synthetic RuntimeExpr accepted type sources,closed HIR synthetic site enums plus accepted RuntimeNormalizedType map; exhaustive CSV; no RuntimeValue/spelling reconstruction
+5,RuntimeNominalRecordFieldProjection API,public checked accepted-ordinal constructor and field/type accessors; private fields; compiler uses it in defining order
+6,AWBC nominal-record domain table/builder/wire/operands,"one canonical table, opaque staging handle, atomic sorted final ID remap, MakeRecord opcode 0x0f and constant tag 12 retained with mandatory construction operand"
+7,RuntimeProjectRootFact / RuntimeProducerFact / aggregate,core facts derive roots internally from semantic identities; canonical aggregate reuses catalog fact owners and contains no caller root/digest maps
+8,type-enforceable AdmittedRuntimeGeneration trust model,"structural issued token with private Arc inner; public issuer means caller is trusted integrator; guarantees structural/canonical invariants, not origin authenticity"
+9,compiler and verified-bundle evidence issuance,compiler private evidence issued by official compiler path; bundle private evidence issued by full canonical decode/signature/pair verifier; layers do not depend upward
+10,AdmittedRuntimePlan / AdmittedAwbcProgram / product,independent consuming admissions retain exact parent Arc and private plan admission key; pairing uses Arc::ptr_eq for parent and key
+11,checked-value context and construction domain,only same-parent AdmittedRuntimeProduct issues borrowed context/domain; project and producer domains remain distinct; raw values never reconstruct type
+12,publication/direct VM/AOT/hot swap/restore/replay API,runtime-driver accepts only VerifiedRuntimeBundleProduct; in-memory compiler output runs same bundle verifier; VM/JIT/runtime-codegen entry uses PublishedRuntimeGeneration
+13,raw plan/AWBC cannot self-report accepted facts,private fields/custom decode; no self-admission; decoded facts are quarantine; independent parent/evidence is required and raw artifacts cannot mutate it
+14,compile-clean final-owner order,P00-P16 order introduces owners before consumers and deletes old paths in the same coherent phase
+15,complete inventory and executable tests,fresh producer/consumer/deletion inventory and test matrix cover current core/runtime-plan/compiler/bundle/driver/VM/JIT/codegen/save/verify consumers

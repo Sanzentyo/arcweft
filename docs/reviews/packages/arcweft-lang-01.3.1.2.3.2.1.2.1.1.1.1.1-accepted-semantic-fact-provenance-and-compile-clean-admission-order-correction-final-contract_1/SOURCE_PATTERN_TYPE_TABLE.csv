@@ -1,0 +1,14 @@
+id,source_owner,accepted_type_source,classification,disposition
+PSRC-001,HirPatternKind::Binding,RuntimePlanSemanticFacts::pattern_type(owner); child PatternId uses its own accepted pattern_type,RuntimeNormalizedType::runtime_plan_type_kind,lower and seal RuntimeTypedPattern
+PSRC-002,HirPatternKind::MutableBinding,RuntimePlanSemanticFacts::pattern_type(owner); child PatternId uses its own accepted pattern_type,RuntimeNormalizedType::runtime_plan_type_kind,lower and seal RuntimeTypedPattern
+PSRC-003,HirPatternKind::Literal,RuntimePlanSemanticFacts::pattern_type(owner); child PatternId uses its own accepted pattern_type,RuntimeNormalizedType::runtime_plan_type_kind,lower and seal RuntimeTypedPattern
+PSRC-004,HirPatternKind::EntityReference,RuntimePlanSemanticFacts::pattern_type(owner); child PatternId uses its own accepted pattern_type,RuntimeNormalizedType::runtime_plan_type_kind,lower and seal RuntimeTypedPattern
+PSRC-005,HirPatternKind::Variant,RuntimePlanSemanticFacts::pattern_type(owner); child PatternId uses its own accepted pattern_type,RuntimeNormalizedType::runtime_plan_type_kind,lower and seal RuntimeTypedPattern
+PSRC-006,HirPatternKind::Discard,RuntimePlanSemanticFacts::pattern_type(owner); child PatternId uses its own accepted pattern_type,RuntimeNormalizedType::runtime_plan_type_kind,lower and seal RuntimeTypedPattern
+PSRC-007,HirPatternKind::Tuple,RuntimePlanSemanticFacts::pattern_type(owner); child PatternId uses its own accepted pattern_type,RuntimeNormalizedType::runtime_plan_type_kind,lower and seal RuntimeTypedPattern
+PSRC-008,HirPatternKind::Record,RuntimePlanSemanticFacts::pattern_type(owner); child PatternId uses its own accepted pattern_type,RuntimeNormalizedType::runtime_plan_type_kind,lower and seal RuntimeTypedPattern
+PSRC-009,HirPatternKind::BracketSequence,RuntimePlanSemanticFacts::pattern_type(owner); child PatternId uses its own accepted pattern_type,RuntimeNormalizedType::runtime_plan_type_kind,lower and seal RuntimeTypedPattern
+PSRC-010,HirPatternKind::WholeBinding,RuntimePlanSemanticFacts::pattern_type(owner); child PatternId uses its own accepted pattern_type,RuntimeNormalizedType::runtime_plan_type_kind,lower and seal RuntimeTypedPattern
+PSRC-011,HirPatternKind::TypedBinding,RuntimePlanSemanticFacts::pattern_type(owner); child PatternId uses its own accepted pattern_type,RuntimeNormalizedType::runtime_plan_type_kind,lower and seal RuntimeTypedPattern
+PSRC-012,HirPatternKind::Or,RuntimePlanSemanticFacts::pattern_type(owner); child PatternId uses its own accepted pattern_type,RuntimeNormalizedType::runtime_plan_type_kind,reject before builder mutation
+PSRC-013,HirPatternKind::Error,RuntimePlanSemanticFacts::pattern_type(owner); child PatternId uses its own accepted pattern_type,RuntimeNormalizedType::runtime_plan_type_kind,reject before builder mutation

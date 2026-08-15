@@ -1,0 +1,14 @@
+owner,responsibility,inputs,may_depend_on,must_not_depend_on
+arcweft-lang-hir,HIR runtime owner inventory and closed synthetic site identities,syntax only; no sema/core types,arcweft-lang-syntax,no core/runtime-plan
+arcweft-lang-sema,checked semantic judgments used by compiler projection,HIR,arcweft-lang-hir,no runtime plan IDs
+arcweft-core,"runtime IDs, local/type tables, typed wrappers/sites, raw builders, generation/admission/product, AWBC schema/verifier/VM",Sans I/O,lower utility crates,no HIR/sema/compiler/bundle/driver
+arcweft-runtime-plan,"accepted semantic facts, final lowerers, AWBC lowering",core + HIR/sema projections,arcweft-core; arcweft-lang-hir,no bundle/driver
+arcweft-compiler,official projection/orchestration and CompilerRuntimeEvidence,runtime-plan + sema/HIR/catalog inputs,arcweft-runtime-plan; arcweft-lang-sema,no driver
+arcweft-bundle,v1 container codec/full verification/VerifiedRuntimeBundleProduct,core plus character/view/catalog sections; never compiler types,arcweft-core; arcweft-character; arcweft-view,no compiler; no driver
+arcweft-runtime-driver,"publication, direct core VM, hot swap, restore/replay orchestration",verified bundle product + host bindings + lower save bytes,arcweft-bundle; arcweft-core; arcweft-save; runtime host,no compiler/JIT/codegen dependency
+arcweft-lang-jit-cranelift,JIT adapter for published product,PublishedRuntimeGeneration,arcweft-core; arcweft-runtime-driver,no raw plan/AWBC/admitted-product entry
+arcweft-runtime-codegen,AOT/native codegen for published product,PublishedRuntimeGeneration,arcweft-core; arcweft-runtime-driver,no raw plan/AWBC/admitted-product entry
+arcweft-runtime-accelerator,accelerator adapter after publication,PublishedRuntimeGeneration,arcweft-core; arcweft-runtime-driver,no authority issuance or raw artifact entry
+arcweft-save,Sans-I/O save/snapshot/replay envelope and payload codecs,raw bounded bytes and neutral data only,lower data/core types only where required,no runtime-driver dependency; no semantic admission/publication
+arcweft-verify,structural/semantic verifier integration,core raw reports and admitted checks,arcweft-core,does not publish
+arcweft-character / arcweft-view / arcweft-dialogue,canonical catalog/custom-field fact owners,their own accepted catalogs,core fact DTO only where layer permits,no caller digest map

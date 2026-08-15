@@ -1,0 +1,31 @@
+runtime_type_shape,runtime_plan_type_kind,rule,notes
+Never,Checked(Never),leaf,exact current projection
+Unit,Checked(Unit),leaf,exact current projection
+Bool,Checked(Bool),leaf,exact current projection
+Signed(width),Checked(Signed(width)),leaf,exact width
+Unsigned(width),Checked(Unsigned(width)),leaf,exact width
+F32,Checked(F32),leaf,
+F64,Checked(F64),leaf,
+String,Checked(String),leaf,
+Char,Checked(Char),leaf,
+Bytes,Checked(Bytes),leaf,
+Duration,Checked(Duration),leaf,
+EntityReference,Checked(EntityReference),leaf,
+Sequence(item),Checked(Sequence(item)) iff item checked; else Operational(Sequence),recursive,no dynamic fallback
+"Array(item,len)","Checked(Array(item,len)) iff item checked; else Operational(Sequence)",recursive,retains current root operational family
+ProjectNominal,Checked(Nominal) or structured InvalidProjectNominal,exact nominal,never infer from name
+Choice(items),Checked(Choice) iff all descendants checked; else Operational(Choice),recursive,fixes prior invalid
+Tuple(items),Checked(Tuple) iff all descendants checked; else Operational(Tuple),recursive,fixes prior invalid
+"Result(value,error)",Checked(Result) iff both checked; else Operational(Result),recursive,fixes prior invalid
+Option(item),Checked(Option) iff item checked; else Operational(Option),recursive,fixes prior invalid
+"Opaque(owner,producer,payload)",Checked(Opaque) only with exact accepted owner/producer evidence; otherwise error,atomic owner,not operational fallback
+Range(item),Operational(Range),closed root,
+Iterator(item),Operational(Iterator),closed root,
+"Map(key,value)",Operational(Map),closed root,
+"Need(value,error)",Operational(Need),closed root,
+"Stream(value,error)",Operational(Stream),closed root,
+"Source(value,error)",Operational(Source),closed root,
+ThreadHandle(item),Operational(ThreadHandle),closed root,
+Shared(item),Operational(Shared),closed root,
+Reference(item),Operational(Reference),closed root,
+"Function(parameters,result)",Operational(Function),closed root,

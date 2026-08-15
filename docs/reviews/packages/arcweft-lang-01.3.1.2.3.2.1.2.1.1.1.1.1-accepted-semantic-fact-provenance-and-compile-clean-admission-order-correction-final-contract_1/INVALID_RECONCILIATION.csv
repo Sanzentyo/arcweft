@@ -1,0 +1,9 @@
+id,invalid_finding,final_resolution,status
+I01,exact current request copy/hash missing,SOURCE_REQUEST.md and SOURCE_REQUEST.sha256 are exact bytes/hash,closed
+I02,core binding coordinate contained HIR LocalId/CaptureId,retain current core RuntimeLocalDeclarationId + checked path; HIR IDs stay only in runtime-plan semantic/synthetic keys,closed
+I03,no accepted PatternId type facts,retain current exhaustive pattern_types map/accessor/completeness,closed by current main; not redesigned
+I04,driver wrapper required compiler dependency/nonexistent VerifiedBundle/placeholder args,bundle owns VerifiedRuntimeBundleProduct; driver accepts it plus exact host/policy arguments; no compiler dependency,closed
+I05,Tuple/Choice/Result/Option unconditionally Checked,retain recursive current runtime_plan_type_kind; operational descendant selects closed operational root,closed by current main; table included
+I06,synthetic table incomplete,"closed HIR synthetic site enums and exhaustive source/accepted-type table include shorthand, variant tuple, let/assignment, reduction, Agent, flow, assertion",closed
+I07,AWBC domain IDs/order/remap unspecified,"ephemeral handles, preflight conflict, encoded-row sort, zero-based final IDs, atomic remap and rewrite",closed
+I08,inventory/test too small and nonexistent arcweft-aot command,fresh complete inventory/test matrices; commands use only current workspace members,closed
