@@ -154,7 +154,7 @@ fn run_script_test(
         }
     };
     let matching_entries = plan
-        .entries
+        .entries()
         .iter()
         .filter(|entry| {
             entry.kind == RuntimeEntryKind::Test

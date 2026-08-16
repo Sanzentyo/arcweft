@@ -1,8 +1,9 @@
+use crate::pattern::RuntimeCheckedType;
 use crate::value::{RuntimeExpr, RuntimePayload};
 use arcweft_need::Need;
 use serde::{Deserialize, Serialize};
 
-pub const AWAIT_MANY_ITEM_BINDING: &str = "__arcweft_await_many_item";
+use crate::runtime_id::RuntimeLocalDeclarationId;
 
 #[derive(Clone, Debug, Default, Deserialize, Eq, Hash, Ord, PartialEq, PartialOrd, Serialize)]
 pub struct TaskId(pub String);
@@ -38,6 +39,34 @@ pub struct RuntimeNeedState {
     need: NeedId,
     sequence: TaskSequence,
     state: Need<RuntimePayload, RuntimePayload>,
+}
+
+/// The typed terminal outcomes a host task may publish.
+///
+/// `Ready` and `Error` are both completed task outcomes.  `Failed` is reserved
+/// for an infrastructure failure which cannot be represented by the task's
+/// authored error type and therefore cannot be resumed through the normal
+/// `Need<T, E>` boundary.
+#[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
+pub struct TaskOutcomeContract {
+    pub ready: RuntimeCheckedType,
+    pub error: RuntimeCheckedType,
+}
+
+impl TaskOutcomeContract {
+    #[must_use]
+    pub const fn new(ready: RuntimeCheckedType, error: RuntimeCheckedType) -> Self {
+        Self { ready, error }
+    }
+}
+
+impl Default for TaskOutcomeContract {
+    fn default() -> Self {
+        Self {
+            ready: RuntimeCheckedType::Unit,
+            error: RuntimeCheckedType::String,
+        }
+    }
 }
 
 impl RuntimeNeedState {
@@ -77,35 +106,43 @@ impl RuntimeNeedState {
 )]
 pub struct TaskPriority(pub i32);
 
-#[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
+#[derive(Clone, Debug, PartialEq)]
 pub struct AwaitTarget {
     pub need: NeedId,
     pub task: TaskId,
+    pub outcome: TaskOutcomeContract,
     pub request: HostTaskRequestTemplate,
 }
 
-#[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
+#[derive(Clone, Debug, PartialEq)]
 pub struct AwaitManyTarget {
     pub need: NeedId,
     pub task: TaskId,
+    pub outcome: TaskOutcomeContract,
     pub source: RuntimeExpr,
-    pub item_binding: String,
+    pub item_binding: RuntimeLocalDeclarationId,
     pub limit: usize,
     pub request: HostTaskRequestTemplate,
 }
 
-#[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
+#[derive(Clone, Debug, PartialEq)]
 pub struct HostTaskRequestTemplate {
     pub capability: HostCapabilityId,
     pub operation: String,
-    pub args: Vec<HostTaskArgTemplate>,
+    pub args: Vec<RuntimeHostArgumentTemplate>,
+}
+
+#[derive(Clone, Debug, PartialEq)]
+pub enum RuntimeHostArgumentTemplate {
+    Positional(RuntimeExpr),
+    Named(NamedHostArg<RuntimeExpr>),
+    Spread(RuntimeExpr),
 }
 
 #[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
-pub enum HostTaskArgTemplate {
-    Positional(RuntimeExpr),
-    Named { name: String, value: RuntimeExpr },
-    Spread(RuntimeExpr),
+pub struct NamedHostArg<T> {
+    pub name: String,
+    pub value: T,
 }
 
 #[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
@@ -116,6 +153,7 @@ pub struct TaskSpec {
     pub priority: TaskPriority,
     pub cancel_scope: CancelScopeId,
     pub policy: TaskPolicy,
+    pub outcome: TaskOutcomeContract,
     pub request: HostTaskRequest,
     pub debug_label: String,
 }
@@ -177,14 +215,8 @@ pub enum HostTaskRequest {
         operation: String,
         args: Vec<RuntimePayload>,
         #[serde(default, skip_serializing_if = "Vec::is_empty")]
-        named_args: Vec<NamedHostTaskArg>,
+        named_args: Vec<NamedHostArg<RuntimePayload>>,
     },
-}
-
-#[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
-pub struct NamedHostTaskArg {
-    pub name: String,
-    pub value: RuntimePayload,
 }
 
 #[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
@@ -285,7 +317,8 @@ pub struct TaskEvent {
 #[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
 pub enum TaskEventKind {
     Ready(RuntimePayload),
-    Err(String),
+    Error(RuntimePayload),
+    Failed(String),
     Cancelled,
     Progress(RuntimePayload),
 }
@@ -306,6 +339,28 @@ impl TaskSpec {
         policy: TaskPolicy,
         request: HostTaskRequest,
     ) -> Self {
+        Self::new_with_outcome(
+            id,
+            key,
+            class,
+            priority,
+            cancel_scope,
+            policy,
+            TaskOutcomeContract::default(),
+            request,
+        )
+    }
+
+    pub fn new_with_outcome(
+        id: TaskId,
+        key: TaskKey,
+        class: TaskClass,
+        priority: TaskPriority,
+        cancel_scope: CancelScopeId,
+        policy: TaskPolicy,
+        outcome: TaskOutcomeContract,
+        request: HostTaskRequest,
+    ) -> Self {
         let debug_label = request.debug_label();
         Self {
             id,
@@ -314,6 +369,7 @@ impl TaskSpec {
             priority,
             cancel_scope,
             policy,
+            outcome,
             request,
             debug_label,
         }
@@ -325,6 +381,21 @@ impl AwaitTarget {
         Self {
             need,
             task,
+            outcome: TaskOutcomeContract::default(),
+            request,
+        }
+    }
+
+    pub fn with_outcome(
+        need: NeedId,
+        task: TaskId,
+        outcome: TaskOutcomeContract,
+        request: HostTaskRequestTemplate,
+    ) -> Self {
+        Self {
+            need,
+            task,
+            outcome,
             request,
         }
     }
@@ -335,15 +406,16 @@ impl AwaitManyTarget {
         need: NeedId,
         task: TaskId,
         source: RuntimeExpr,
-        item_binding: impl Into<String>,
+        item_binding: RuntimeLocalDeclarationId,
         limit: usize,
         request: HostTaskRequestTemplate,
     ) -> Self {
         Self {
             need,
             task,
+            outcome: TaskOutcomeContract::default(),
             source,
-            item_binding: item_binding.into(),
+            item_binding,
             limit,
             request,
         }
@@ -354,7 +426,7 @@ impl HostTaskRequestTemplate {
     pub fn new(
         capability: impl Into<String>,
         operation: impl Into<String>,
-        args: impl IntoIterator<Item = HostTaskArgTemplate>,
+        args: impl IntoIterator<Item = RuntimeHostArgumentTemplate>,
     ) -> Self {
         Self {
             capability: HostCapabilityId(capability.into()),
@@ -364,16 +436,16 @@ impl HostTaskRequestTemplate {
     }
 }
 
-impl HostTaskArgTemplate {
+impl RuntimeHostArgumentTemplate {
     pub fn positional(value: RuntimeExpr) -> Self {
         Self::Positional(value)
     }
 
     pub fn named(name: impl Into<String>, value: RuntimeExpr) -> Self {
-        Self::Named {
+        Self::Named(NamedHostArg {
             name: name.into(),
             value,
-        }
+        })
     }
 
     pub fn spread(value: RuntimeExpr) -> Self {
@@ -382,14 +454,15 @@ impl HostTaskArgTemplate {
 
     pub fn name(&self) -> Option<&str> {
         match self {
-            Self::Named { name, .. } => Some(name),
+            Self::Named(argument) => Some(&argument.name),
             Self::Positional(_) | Self::Spread(_) => None,
         }
     }
 
     pub fn value(&self) -> &RuntimeExpr {
         match self {
-            Self::Positional(value) | Self::Named { value, .. } | Self::Spread(value) => value,
+            Self::Positional(value) | Self::Spread(value) => value,
+            Self::Named(argument) => &argument.value,
         }
     }
 
@@ -424,7 +497,7 @@ impl HostTaskRequest {
             args: args.into_iter().collect(),
             named_args: named_args
                 .into_iter()
-                .map(|(name, value)| NamedHostTaskArg { name, value })
+                .map(|(name, value)| NamedHostArg { name, value })
                 .collect(),
         }
     }
@@ -579,7 +652,7 @@ pub fn compare_runtime_need_states(
 /// Selects the current state for one Need from a normalized publication list.
 ///
 /// Progress and `NotStarted` publications may advance until the first terminal
-/// publication. Once Ready, Err, or Cancelled is committed, later publications
+/// publication. Once Ready, Error, or Cancelled is committed, later publications
 /// for the same identity cannot replace it.
 pub fn resolved_runtime_need_state<'a>(
     states: &'a [RuntimeNeedState],

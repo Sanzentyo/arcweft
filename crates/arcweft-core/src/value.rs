@@ -3,17 +3,21 @@ use crate::entry::{
     RuntimeCallableId, RuntimeIdentityError, RuntimeSchemaError, RuntimeValueDigest,
 };
 use crate::math::{DenseMatrixF32, DenseMatrixF64, DenseTensorF32, DenseTensorF64};
-use crate::pattern::{RuntimeCheckedType, RuntimePattern, RuntimeVariantIdentity};
+use crate::pattern::{RuntimePattern, RuntimeVariantIdentity};
 use crate::plan::{
-    RuntimeIteratorEvidence, RuntimePureHelperId, RuntimePureInputType, RuntimePureOutputType,
-    RuntimeReceiverMode, RuntimeTraitMethodId,
+    RuntimeIteratorEvidence, RuntimeLineId, RuntimePlan, RuntimePlanValueTypeError,
+    RuntimePureHelperId, RuntimePureInputType, RuntimePureOutputType, RuntimeReceiverMode,
+    RuntimeTraitMethodId,
 };
+use crate::runtime_id::{RuntimeFunctionSiteId, RuntimeLocalDeclarationId, RuntimePlanTypeId};
 use crate::time::LogicalDuration;
-use serde::{Deserialize, Serialize};
-use std::fmt;
+use arcweft_id::{DeclarationIdentityFamily, PublicId, PublicIdFamilyError};
+use serde::{Deserialize, Deserializer, Serialize, Serializer, de::Error as _, ser::Error as _};
+use std::{fmt, sync::Arc};
 use thiserror::Error;
 
 mod agent;
+mod awbc_save;
 mod env;
 mod integer;
 mod nesting;
@@ -24,6 +28,7 @@ mod option_value;
 pub mod ownership;
 mod range;
 mod record_id;
+mod reduction;
 mod sequence_constructors;
 mod sequence_impls;
 mod shape;
@@ -31,25 +36,28 @@ mod shape;
 pub use agent::{
     RuntimeAgentAction, RuntimeAgentActionDispatch, RuntimeAgentActionTarget,
     RuntimeAgentCaptureTarget, RuntimeAgentCompareOp, RuntimeAgentConstructionError,
-    RuntimeAgentConstructor, RuntimeAgentExpr, RuntimeAgentPath, RuntimeAgentPathExpr,
-    RuntimeAgentPredicate, RuntimeAgentPredicateExpr, RuntimeAgentProbe, RuntimeAgentProbeExpr,
-    RuntimeAgentTargetExpr, RuntimeAgentValue,
+    RuntimeAgentConstructor, RuntimeAgentExpr, RuntimeAgentField, RuntimeAgentFieldOwner,
+    RuntimeAgentFieldResult, RuntimeAgentPath, RuntimeAgentPathExpr, RuntimeAgentPredicate,
+    RuntimeAgentPredicateExpr, RuntimeAgentProbe, RuntimeAgentProbeExpr, RuntimeAgentTargetExpr,
+    RuntimeAgentValue,
 };
+pub use awbc_save::{AwbcRuntimeValueSnapshot, AwbcRuntimeValueSnapshotError};
 pub use integer::{RuntimeInt, RuntimeSignedIntWidth, RuntimeUInt, RuntimeUnsignedIntWidth};
 pub use nesting::{MAX_RUNTIME_VALUE_NESTING_DEPTH, RuntimeValueNestingError};
 pub use nominal_record::{
     RuntimeNominalRecordError, RuntimeNominalRecordLayout, RuntimeNominalRecordLayoutError,
     RuntimeNominalRecordLayoutField, RuntimeNominalRecordValue,
 };
-pub use nominal_record_expr::{
-    RuntimeNominalRecordExpr, RuntimeNominalRecordFieldExpr, RuntimeNominalRecordInitializerError,
-};
+pub use nominal_record_expr::{RuntimeNominalRecordExpr, RuntimeNominalRecordFieldExpr};
 pub use opaque::{RuntimeOpaqueValue, RuntimeOpaqueValueError};
 pub use option_value::{
     evaluate_core_option_is_some_intrinsic, evaluate_core_option_unwrap_intrinsic,
 };
 pub use range::{RuntimeIterator, RuntimeRange, RuntimeRangeIterator};
 pub use record_id::{RuntimeRecordFieldId, RuntimeRecordFieldIdError};
+pub use reduction::{
+    RuntimeCommand, RuntimeReductionProducer, RuntimeReductionValue, RuntimeReductionValueError,
+};
 pub use sequence_constructors::{
     runtime_sequence_dense_bool, runtime_sequence_dense_bytes, runtime_sequence_dense_chars,
     runtime_sequence_dense_durations, runtime_sequence_dense_entity_refs,
@@ -68,10 +76,32 @@ pub struct RuntimeBinding {
     pub value: RuntimeValue,
 }
 
-#[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
-pub enum RuntimeFunctionBody {
-    Expr(Box<RuntimeExpr>),
-    Awbc(AwbcFunctionId),
+/// One binding in the plan-local structured execution domain.
+#[derive(Clone, Debug, PartialEq)]
+pub struct RuntimeLocalBinding {
+    pub local: RuntimeLocalDeclarationId,
+    pub value: RuntimeValue,
+}
+
+#[derive(Clone)]
+pub(crate) enum RuntimeFunctionBody {
+    Structured(RuntimeStructuredClosure),
+    Awbc(RuntimeAwbcClosure),
+}
+
+#[derive(Clone)]
+pub(crate) struct RuntimeStructuredClosure {
+    plan: Arc<RuntimePlan>,
+    site: RuntimeFunctionSiteId,
+    capture_values: Box<[RuntimeValue]>,
+    bound_args: Box<[RuntimeValue]>,
+}
+
+#[derive(Clone, Debug, PartialEq)]
+pub(crate) struct RuntimeAwbcClosure {
+    function: AwbcFunctionId,
+    remaining_params: Vec<String>,
+    captures: Vec<RuntimeBinding>,
 }
 
 /// Captured runtime function value.
@@ -79,20 +109,105 @@ pub enum RuntimeFunctionBody {
 /// Captures are deterministic runtime bindings collected when a function
 /// expression is evaluated. They are rebound before call arguments when the
 /// function is applied.
-#[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
+#[derive(Clone)]
 pub struct RuntimeFunctionValue {
-    pub params: Vec<String>,
-    pub body: RuntimeFunctionBody,
-    pub captures: Vec<RuntimeBinding>,
+    body: RuntimeFunctionBody,
+}
+
+/// Dormant wire evidence for an AWBC-backed function value.
+///
+/// The owning AWBC program is deliberately absent. A decoded value is not
+/// executable authority until the enclosing fiber snapshot is admitted by
+/// `FiberState::validate_for_program` against its generation-pinned program.
+#[derive(Clone, Debug, Eq, Error, PartialEq)]
+pub enum RuntimeFunctionApplyError {
+    #[error("structured function site {site} does not belong to its owning plan")]
+    UnknownStructuredSite { site: RuntimeFunctionSiteId },
+    #[error("structured function site {site} requires {expected} captures, received {actual}")]
+    CaptureCountMismatch {
+        site: RuntimeFunctionSiteId,
+        expected: usize,
+        actual: usize,
+    },
+    #[error("structured function site {site} references unknown local declaration {local}")]
+    UnknownStructuredLocal {
+        site: RuntimeFunctionSiteId,
+        local: RuntimeLocalDeclarationId,
+    },
+    #[error(
+        "structured function site {site} capture {index} for local {local} does not match plan type {expected}"
+    )]
+    CaptureTypeMismatch {
+        site: RuntimeFunctionSiteId,
+        index: usize,
+        local: RuntimeLocalDeclarationId,
+        expected: RuntimePlanTypeId,
+    },
+    #[error(
+        "structured function site {site} argument {index} for local {local} does not match plan type {expected}"
+    )]
+    ArgumentTypeMismatch {
+        site: RuntimeFunctionSiteId,
+        index: usize,
+        local: RuntimeLocalDeclarationId,
+        expected: RuntimePlanTypeId,
+    },
+    #[error("function has {remaining} remaining parameters, received {provided} arguments")]
+    TooManyArguments { remaining: usize, provided: usize },
+    #[error("structured function site {site} has an invalid bound-argument prefix")]
+    InvalidBoundArgumentPrefix { site: RuntimeFunctionSiteId },
+    #[error(transparent)]
+    ValueType(#[from] RuntimePlanValueTypeError),
 }
 
 impl RuntimeFunctionValue {
-    pub fn new(params: Vec<String>, body: RuntimeExpr, captures: Vec<RuntimeBinding>) -> Self {
-        Self {
-            params,
-            body: RuntimeFunctionBody::Expr(Box::new(body)),
-            captures,
+    pub(crate) fn capture_site(
+        plan: Arc<RuntimePlan>,
+        site: RuntimeFunctionSiteId,
+        capture_values: impl IntoIterator<Item = RuntimeValue>,
+    ) -> Result<Self, RuntimeFunctionApplyError> {
+        let capture_values = capture_values
+            .into_iter()
+            .collect::<Vec<_>>()
+            .into_boxed_slice();
+        let site_declaration = plan
+            .function_sites()
+            .get(site)
+            .ok_or(RuntimeFunctionApplyError::UnknownStructuredSite { site })?;
+        if capture_values.len() != site_declaration.captures().len() {
+            return Err(RuntimeFunctionApplyError::CaptureCountMismatch {
+                site,
+                expected: site_declaration.captures().len(),
+                actual: capture_values.len(),
+            });
         }
+        for (index, (&local, value)) in site_declaration
+            .captures()
+            .iter()
+            .zip(&capture_values)
+            .enumerate()
+        {
+            let expected = plan
+                .local_declarations()
+                .get(local)
+                .ok_or(RuntimeFunctionApplyError::UnknownStructuredLocal { site, local })?;
+            if !plan.value_matches_type(expected.ty(), value)? {
+                return Err(RuntimeFunctionApplyError::CaptureTypeMismatch {
+                    site,
+                    index,
+                    local,
+                    expected: expected.ty(),
+                });
+            }
+        }
+        Ok(Self {
+            body: RuntimeFunctionBody::Structured(RuntimeStructuredClosure {
+                plan,
+                site,
+                capture_values,
+                bound_args: Box::new([]),
+            }),
+        })
     }
 
     pub fn new_awbc(
@@ -101,41 +216,212 @@ impl RuntimeFunctionValue {
         captures: Vec<RuntimeBinding>,
     ) -> Self {
         Self {
-            params,
-            body: RuntimeFunctionBody::Awbc(function),
-            captures,
+            body: RuntimeFunctionBody::Awbc(RuntimeAwbcClosure {
+                function,
+                remaining_params: params,
+                captures,
+            }),
         }
     }
 
-    pub const fn expr_body(&self) -> Option<&RuntimeExpr> {
+    pub(crate) const fn body(&self) -> &RuntimeFunctionBody {
+        &self.body
+    }
+
+    pub(crate) const fn as_structured(&self) -> Option<&RuntimeStructuredClosure> {
         match &self.body {
-            RuntimeFunctionBody::Expr(body) => Some(body),
+            RuntimeFunctionBody::Structured(closure) => Some(closure),
             RuntimeFunctionBody::Awbc(_) => None,
         }
     }
 
-    pub fn arity(&self) -> usize {
-        self.params.len()
+    pub fn remaining_arity(&self) -> Result<usize, RuntimeFunctionApplyError> {
+        match &self.body {
+            RuntimeFunctionBody::Structured(closure) => closure.remaining_arity(),
+            RuntimeFunctionBody::Awbc(closure) => Ok(closure.remaining_params.len()),
+        }
     }
 
-    #[must_use]
-    pub fn partially_apply(&self, args: &[RuntimeValue]) -> Self {
-        let mut captures = self.captures.clone();
-        captures.extend(
-            self.params
-                .iter()
-                .take(args.len())
-                .zip(args)
-                .map(|(name, value)| RuntimeBinding {
-                    name: name.clone(),
-                    value: value.clone(),
-                }),
-        );
-        Self {
-            params: self.params[args.len()..].to_vec(),
-            body: self.body.clone(),
-            captures,
+    pub fn try_bind_prefix(
+        &self,
+        args: &[RuntimeValue],
+    ) -> Result<Self, RuntimeFunctionApplyError> {
+        self.validate_bind_prefix(args)?;
+        match &self.body {
+            RuntimeFunctionBody::Structured(closure) => {
+                let mut bound_args = closure.bound_args.to_vec();
+                bound_args.extend_from_slice(args);
+                Ok(Self {
+                    body: RuntimeFunctionBody::Structured(RuntimeStructuredClosure {
+                        plan: Arc::clone(&closure.plan),
+                        site: closure.site,
+                        capture_values: closure.capture_values.clone(),
+                        bound_args: bound_args.into_boxed_slice(),
+                    }),
+                })
+            }
+            RuntimeFunctionBody::Awbc(closure) => {
+                let mut captures = closure.captures.clone();
+                captures.extend(
+                    closure
+                        .remaining_params
+                        .iter()
+                        .take(args.len())
+                        .zip(args)
+                        .map(|(name, value)| RuntimeBinding {
+                            name: name.clone(),
+                            value: value.clone(),
+                        }),
+                );
+                Ok(Self::new_awbc(
+                    closure.remaining_params[args.len()..].to_vec(),
+                    closure.function,
+                    captures,
+                ))
+            }
         }
+    }
+
+    pub(crate) fn validate_bind_prefix(
+        &self,
+        args: &[RuntimeValue],
+    ) -> Result<(), RuntimeFunctionApplyError> {
+        let remaining = self.remaining_arity()?;
+        if args.len() > remaining {
+            return Err(RuntimeFunctionApplyError::TooManyArguments {
+                remaining,
+                provided: args.len(),
+            });
+        }
+        match &self.body {
+            RuntimeFunctionBody::Structured(closure) => {
+                let site = closure.plan.function_sites().get(closure.site).ok_or(
+                    RuntimeFunctionApplyError::UnknownStructuredSite { site: closure.site },
+                )?;
+                let parameter_offset = closure.bound_args.len();
+                for (relative_index, (argument, &local)) in args
+                    .iter()
+                    .zip(&site.params()[parameter_offset..])
+                    .enumerate()
+                {
+                    let expected = closure.plan.local_declarations().get(local).ok_or(
+                        RuntimeFunctionApplyError::UnknownStructuredLocal {
+                            site: closure.site,
+                            local,
+                        },
+                    )?;
+                    if !closure.plan.value_matches_type(expected.ty(), argument)? {
+                        return Err(RuntimeFunctionApplyError::ArgumentTypeMismatch {
+                            site: closure.site,
+                            index: parameter_offset + relative_index,
+                            local,
+                            expected: expected.ty(),
+                        });
+                    }
+                }
+                Ok(())
+            }
+            RuntimeFunctionBody::Awbc(_) => Ok(()),
+        }
+    }
+}
+
+impl RuntimeStructuredClosure {
+    pub(crate) const fn plan(&self) -> &Arc<RuntimePlan> {
+        &self.plan
+    }
+
+    pub(crate) const fn site(&self) -> RuntimeFunctionSiteId {
+        self.site
+    }
+
+    pub(crate) const fn capture_values(&self) -> &[RuntimeValue] {
+        &self.capture_values
+    }
+
+    pub(crate) const fn bound_args(&self) -> &[RuntimeValue] {
+        &self.bound_args
+    }
+
+    fn remaining_arity(&self) -> Result<usize, RuntimeFunctionApplyError> {
+        let site = self
+            .plan
+            .function_sites()
+            .get(self.site)
+            .ok_or(RuntimeFunctionApplyError::UnknownStructuredSite { site: self.site })?;
+        site.params()
+            .len()
+            .checked_sub(self.bound_args.len())
+            .ok_or(RuntimeFunctionApplyError::InvalidBoundArgumentPrefix { site: self.site })
+    }
+}
+
+impl RuntimeAwbcClosure {
+    pub(crate) const fn function(&self) -> AwbcFunctionId {
+        self.function
+    }
+
+    pub(crate) fn remaining_params(&self) -> &[String] {
+        &self.remaining_params
+    }
+
+    pub(crate) fn captures(&self) -> &[RuntimeBinding] {
+        &self.captures
+    }
+}
+
+impl PartialEq for RuntimeFunctionValue {
+    fn eq(&self, other: &Self) -> bool {
+        match (&self.body, &other.body) {
+            (RuntimeFunctionBody::Structured(left), RuntimeFunctionBody::Structured(right)) => {
+                Arc::ptr_eq(&left.plan, &right.plan)
+                    && left.site == right.site
+                    && left.capture_values == right.capture_values
+                    && left.bound_args == right.bound_args
+            }
+            (RuntimeFunctionBody::Awbc(left), RuntimeFunctionBody::Awbc(right)) => left == right,
+            (RuntimeFunctionBody::Structured(_), RuntimeFunctionBody::Awbc(_))
+            | (RuntimeFunctionBody::Awbc(_), RuntimeFunctionBody::Structured(_)) => false,
+        }
+    }
+}
+
+impl fmt::Debug for RuntimeFunctionValue {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match &self.body {
+            RuntimeFunctionBody::Structured(closure) => f
+                .debug_struct("RuntimeFunctionValue::Structured")
+                .field("site", &closure.site)
+                .field("capture_values", &closure.capture_values)
+                .field("bound_args", &closure.bound_args)
+                .finish(),
+            RuntimeFunctionBody::Awbc(closure) => f
+                .debug_tuple("RuntimeFunctionValue::Awbc")
+                .field(closure)
+                .finish(),
+        }
+    }
+}
+
+impl Serialize for RuntimeFunctionValue {
+    fn serialize<S>(&self, _serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: Serializer,
+    {
+        Err(S::Error::custom(
+            "runtime functions cannot cross a generic persistence boundary; use the AWBC session-save DTO",
+        ))
+    }
+}
+
+impl<'de> Deserialize<'de> for RuntimeFunctionValue {
+    fn deserialize<D>(_deserializer: D) -> Result<Self, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        Err(D::Error::custom(
+            "runtime functions cannot cross a generic persistence boundary; use the AWBC session-save DTO",
+        ))
     }
 }
 
@@ -174,6 +460,7 @@ pub enum RuntimeValue {
     Record(Vec<RuntimeFieldValue>),
     NominalRecord(RuntimeNominalRecordValue),
     Opaque(RuntimeOpaqueValue),
+    Reduction(RuntimeReductionValue),
     Agent(RuntimeAgentValue),
     Function(RuntimeFunctionValue),
     Variant {
@@ -182,6 +469,74 @@ pub enum RuntimeValue {
         name: String,
         payload: Option<Box<RuntimeValue>>,
     },
+}
+
+impl RuntimeValue {
+    /// Returns whether this value graph contains executable function state.
+    ///
+    /// Runtime-plan constants and pattern literals use this exhaustive owner
+    /// predicate to prevent a live closure from retaining its owning plan.
+    #[must_use]
+    pub fn contains_function(&self) -> bool {
+        match self {
+            Self::Function(_) => true,
+            Self::Tuple(values) => values.iter().any(Self::contains_function),
+            Self::Record(fields) => fields.iter().any(|field| field.value().contains_function()),
+            Self::Seq(sequence) => sequence_contains_function(sequence),
+            Self::NominalRecord(record) => record.fields().iter().any(Self::contains_function),
+            Self::Opaque(value) => value.payload().contains_function(),
+            Self::Reduction(value) => {
+                value.state().contains_function()
+                    || value
+                        .commands()
+                        .iter()
+                        .any(|command| command.payload().0.contains_function())
+            }
+            Self::Agent(value) => value
+                .nested_runtime_values_with_depth()
+                .into_iter()
+                .any(|(_, value)| value.contains_function()),
+            Self::Iterator(RuntimeIterator::Values { items, .. }) => {
+                items.iter().any(Self::contains_function)
+            }
+            Self::Iterator(RuntimeIterator::Witness { state, .. }) => state.contains_function(),
+            Self::Variant {
+                payload: Some(payload),
+                ..
+            } => payload.contains_function(),
+            Self::Unit
+            | Self::Bool(_)
+            | Self::Int(_)
+            | Self::UInt(_)
+            | Self::F32(_)
+            | Self::F64(_)
+            | Self::MatrixF32(_)
+            | Self::MatrixF64(_)
+            | Self::TensorF32(_)
+            | Self::TensorF64(_)
+            | Self::String(_)
+            | Self::Char(_)
+            | Self::Duration(_)
+            | Self::Range(_)
+            | Self::Iterator(RuntimeIterator::Range(_))
+            | Self::EntityRef(_)
+            | Self::Variant { payload: None, .. } => false,
+        }
+    }
+}
+
+fn sequence_contains_function(sequence: &RuntimeSeq) -> bool {
+    match sequence {
+        RuntimeSeq::Values(values) => values.iter().any(RuntimeValue::contains_function),
+        RuntimeSeq::TupleColumns(columns) => {
+            columns.columns().iter().any(sequence_contains_function)
+        }
+        RuntimeSeq::RecordColumns(records) => records
+            .fields()
+            .iter()
+            .any(|field| sequence_contains_function(field.values())),
+        RuntimeSeq::Dense(_) => false,
+    }
 }
 
 /// Runtime call target after syntax lowering.
@@ -238,6 +593,9 @@ pub enum RuntimeIntrinsic {
     CoreIterNext,
     CoreOptionIsSome,
     CoreOptionUnwrap,
+    CoreIndex,
+    StringTrim,
+    StringToString,
     StdF32Abs,
     StdF32Floor,
     StdF32Ceil,
@@ -312,6 +670,9 @@ impl RuntimeIntrinsic {
             "core.iter.next" => Some(Self::CoreIterNext),
             "core.option.is_some" => Some(Self::CoreOptionIsSome),
             "core.option.unwrap" => Some(Self::CoreOptionUnwrap),
+            "core.index" => Some(Self::CoreIndex),
+            "string.trim" => Some(Self::StringTrim),
+            "string.to_string" => Some(Self::StringToString),
             "std.f32.abs" => Some(Self::StdF32Abs),
             "std.f32.floor" => Some(Self::StdF32Floor),
             "std.f32.ceil" => Some(Self::StdF32Ceil),
@@ -387,6 +748,9 @@ impl RuntimeIntrinsic {
             Self::CoreIterNext => "core.iter.next",
             Self::CoreOptionIsSome => "core.option.is_some",
             Self::CoreOptionUnwrap => "core.option.unwrap",
+            Self::CoreIndex => "core.index",
+            Self::StringTrim => "string.trim",
+            Self::StringToString => "string.to_string",
             Self::StdF32Abs => "std.f32.abs",
             Self::StdF32Floor => "std.f32.floor",
             Self::StdF32Ceil => "std.f32.ceil",
@@ -465,6 +829,9 @@ impl RuntimeIntrinsic {
             | Self::CoreIterNext
             | Self::CoreOptionIsSome
             | Self::CoreOptionUnwrap
+            | Self::CoreIndex
+            | Self::StringTrim
+            | Self::StringToString
             | Self::StdF32Abs
             | Self::StdF32Floor
             | Self::StdF32Ceil
@@ -934,15 +1301,119 @@ impl RuntimeFieldValue {
     }
 }
 
-/// Expression subset executable by the Sans I/O flow runtime.
-#[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
-pub enum RuntimeExpr {
+/// One recursively typed expression admitted into a runtime plan.
+///
+/// Construction is owned by `RuntimePlanBuilder`; the private type identity
+/// and kind cannot be assembled independently or deserialized as a second
+/// plan authority.
+#[derive(Clone, Debug, PartialEq)]
+pub struct RuntimeExpr {
+    ty: RuntimePlanTypeId,
+    kind: RuntimeExprKind,
+}
+
+/// Checked runtime identity retained by an entity-reference expression or
+/// pattern. Project identities preserve their accepted declaration family;
+/// structural dialogue lines retain their typed runtime ID.
+#[derive(Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub enum RuntimeEntityReference {
+    Project {
+        family: DeclarationIdentityFamily,
+        public_id: PublicId,
+    },
+    DialogueLine(RuntimeLineId),
+}
+
+/// Closed projection coordinate exposed by entity-reference values.
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub enum RuntimeEntityReferenceField {
+    Id,
+    Family,
+    Name,
+}
+
+impl RuntimeEntityReferenceField {
+    #[must_use]
+    pub const fn as_label(self) -> &'static str {
+        match self {
+            Self::Id => "id",
+            Self::Family => "family",
+            Self::Name => "name",
+        }
+    }
+}
+
+/// Checked field projection retained by a runtime expression.
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub enum RuntimeFieldProjection {
+    Nominal(RuntimeRecordFieldId),
+    Agent(RuntimeAgentField),
+    EntityReference(RuntimeEntityReferenceField),
+}
+
+impl RuntimeFieldProjection {
+    #[must_use]
+    pub fn label(self) -> String {
+        match self {
+            Self::Nominal(field) => format!("field#{}", field.zero_based()),
+            Self::Agent(field) => field.as_label().to_owned(),
+            Self::EntityReference(field) => field.as_label().to_owned(),
+        }
+    }
+}
+
+impl RuntimeEntityReference {
+    pub fn try_project(
+        family: DeclarationIdentityFamily,
+        public_id: PublicId,
+    ) -> Result<Self, PublicIdFamilyError> {
+        family.validate_public_id(&public_id)?;
+        Ok(Self::Project { family, public_id })
+    }
+
+    #[must_use]
+    pub const fn project_family(&self) -> Option<DeclarationIdentityFamily> {
+        match self {
+            Self::Project { family, .. } => Some(*family),
+            Self::DialogueLine(_) => None,
+        }
+    }
+
+    #[must_use]
+    pub fn runtime_label(&self) -> String {
+        match self {
+            Self::Project { public_id, .. } => public_id.as_str().to_owned(),
+            Self::DialogueLine(line) => line.canonical_label(),
+        }
+    }
+}
+
+impl RuntimeExpr {
+    pub(crate) const fn from_admitted_parts(ty: RuntimePlanTypeId, kind: RuntimeExprKind) -> Self {
+        Self { ty, kind }
+    }
+
+    #[must_use]
+    pub const fn ty(&self) -> RuntimePlanTypeId {
+        self.ty
+    }
+
+    #[must_use]
+    pub const fn kind(&self) -> &RuntimeExprKind {
+        &self.kind
+    }
+}
+
+/// Closed expression algebra. Every recursive value child is another typed
+/// [`RuntimeExpr`]; spread is call-argument metadata rather than a fake node.
+#[derive(Clone, Debug, PartialEq)]
+pub enum RuntimeExprKind {
     Value(RuntimeValue),
     Agent(RuntimeAgentExpr),
-    Local(String),
-    EntityRef(String),
+    Local(RuntimeLocalDeclarationId),
+    EntityRef(RuntimeEntityReference),
     Let {
-        name: String,
+        binding: RuntimeLocalDeclarationId,
         expr: Box<RuntimeExpr>,
         body: Box<RuntimeExpr>,
     },
@@ -957,17 +1428,14 @@ pub enum RuntimeExpr {
         end: Option<Box<RuntimeExpr>>,
         inclusive: bool,
     },
-    Record(Vec<RuntimeFieldExpr>),
     NominalRecord(RuntimeNominalRecordExpr),
     Variant {
-        owner: RuntimeCheckedType,
         ordinal: u32,
-        name: String,
         payload: Option<Box<RuntimeExpr>>,
     },
     Field {
         target: Box<RuntimeExpr>,
-        field: String,
+        field: RuntimeFieldProjection,
     },
     ProjectTuple {
         target: Box<RuntimeExpr>,
@@ -977,48 +1445,39 @@ pub enum RuntimeExpr {
         target: Box<RuntimeExpr>,
         ordinal: usize,
     },
-    AssignField {
-        target: Box<RuntimeExpr>,
-        field: String,
+    AssignNominalField {
+        base: RuntimeLocalDeclarationId,
+        field: RuntimeRecordFieldId,
         expr: Box<RuntimeExpr>,
         body: Box<RuntimeExpr>,
     },
     Call {
         callee: RuntimeCallTarget,
-        args: Vec<RuntimeExpr>,
+        args: Vec<RuntimeCallArgument>,
     },
-    Function {
-        params: Vec<String>,
-        body: Box<RuntimeExpr>,
-    },
+    Function(RuntimeFunctionSiteId),
     Apply {
         callee: Box<RuntimeExpr>,
-        args: Vec<RuntimeExpr>,
+        args: Vec<RuntimeCallArgument>,
     },
     TraitCall {
         callable: RuntimeTraitMethodId,
         receiver: Box<RuntimeExpr>,
         receiver_mode: RuntimeReceiverMode,
-        args: Vec<RuntimeExpr>,
+        args: Vec<RuntimeCallArgument>,
     },
     PureCall {
         helper: RuntimePureHelperId,
-        args: Vec<RuntimeExpr>,
-    },
-    SpreadArg(Box<RuntimeExpr>),
-    MethodCall {
-        receiver: Box<RuntimeExpr>,
-        method: String,
-        args: Vec<RuntimeExpr>,
+        args: Vec<RuntimeCallArgument>,
     },
     Map {
         source: Box<RuntimeExpr>,
-        param: String,
+        param: RuntimeLocalDeclarationId,
         body: Box<RuntimeExpr>,
     },
     Filter {
         source: Box<RuntimeExpr>,
-        param: String,
+        param: RuntimeLocalDeclarationId,
         body: Box<RuntimeExpr>,
     },
     Sum {
@@ -1049,145 +1508,66 @@ pub enum RuntimeExpr {
         scrutinee: Box<RuntimeExpr>,
         arms: Vec<RuntimeExprMatchArm>,
     },
+    /// Core `Reduction.unchanged` construction; no anonymous record or empty
+    /// sequence is fabricated below the accepted call-result type.
+    ReductionUnchanged {
+        state: Box<RuntimeExpr>,
+    },
+}
+
+/// One call operand in resolved runtime order.
+#[derive(Clone, Debug, PartialEq)]
+pub struct RuntimeCallArgument {
+    value: RuntimeExpr,
+    mode: RuntimeCallArgumentMode,
+}
+
+impl RuntimeCallArgument {
+    pub(crate) const fn from_admitted_parts(
+        value: RuntimeExpr,
+        mode: RuntimeCallArgumentMode,
+    ) -> Self {
+        Self { value, mode }
+    }
+
+    #[must_use]
+    pub const fn value(&self) -> &RuntimeExpr {
+        &self.value
+    }
+
+    #[must_use]
+    pub const fn mode(&self) -> RuntimeCallArgumentMode {
+        self.mode
+    }
+}
+
+/// Closed call-edge modifier after argument order has been resolved.
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub enum RuntimeCallArgumentMode {
+    Value,
+    Spread,
 }
 
 impl RuntimeExpr {
-    /// Revalidates every checked nominal-record carrier reachable from this
-    /// expression after an interim plan has been deserialized.
-    #[allow(
-        clippy::too_many_lines,
-        reason = "carrier validation exhaustively traverses every recursive RuntimeExpr variant"
-    )]
-    pub fn validate_nominal_record_carriers(
-        &self,
-    ) -> Result<(), RuntimeNominalRecordInitializerError> {
-        match self {
-            Self::Agent(agent) => {
-                for operand in agent.operands() {
-                    operand.validate_nominal_record_carriers()?;
-                }
-            }
-            Self::NominalRecord(record) => {
-                record.validate()?;
-                for initializer in record.initializers() {
-                    initializer.value().validate_nominal_record_carriers()?;
-                }
-            }
-            Self::Let { expr, body, .. } => {
-                expr.validate_nominal_record_carriers()?;
-                body.validate_nominal_record_carriers()?;
-            }
-            Self::Tuple(items) | Self::BracketSeq(items) => {
-                validate_nominal_record_exprs(items)?;
-            }
-            Self::RepeatSeq { value, .. }
-            | Self::Field { target: value, .. }
-            | Self::ProjectTuple { target: value, .. }
-            | Self::ProjectRecord { target: value, .. }
-            | Self::Function { body: value, .. }
-            | Self::SpreadArg(value)
-            | Self::Sum { source: value }
-            | Self::Unary { expr: value, .. } => value.validate_nominal_record_carriers()?,
-            Self::Range { start, end, .. } => {
-                if let Some(start) = start {
-                    start.validate_nominal_record_carriers()?;
-                }
-                if let Some(end) = end {
-                    end.validate_nominal_record_carriers()?;
-                }
-            }
-            Self::Record(fields) => {
-                for field in fields {
-                    field.value.validate_nominal_record_carriers()?;
-                }
-            }
-            Self::Variant { payload, .. } => {
-                if let Some(payload) = payload {
-                    payload.validate_nominal_record_carriers()?;
-                }
-            }
-            Self::AssignField {
-                target, expr, body, ..
-            } => {
-                target.validate_nominal_record_carriers()?;
-                expr.validate_nominal_record_carriers()?;
-                body.validate_nominal_record_carriers()?;
-            }
-            Self::Call { args, .. } | Self::PureCall { args, .. } => {
-                validate_nominal_record_exprs(args)?;
-            }
-            Self::Apply { callee, args } => {
-                callee.validate_nominal_record_carriers()?;
-                validate_nominal_record_exprs(args)?;
-            }
-            Self::TraitCall { receiver, args, .. } | Self::MethodCall { receiver, args, .. } => {
-                receiver.validate_nominal_record_carriers()?;
-                validate_nominal_record_exprs(args)?;
-            }
-            Self::Map { source, body, .. } | Self::Filter { source, body, .. } => {
-                source.validate_nominal_record_carriers()?;
-                body.validate_nominal_record_carriers()?;
-            }
-            Self::Binary { lhs, rhs, .. } => {
-                lhs.validate_nominal_record_carriers()?;
-                rhs.validate_nominal_record_carriers()?;
-            }
-            Self::If {
-                condition,
-                then_expr,
-                else_expr,
-            } => {
-                condition.validate_nominal_record_carriers()?;
-                then_expr.validate_nominal_record_carriers()?;
-                else_expr.validate_nominal_record_carriers()?;
-            }
-            Self::IfLet {
-                expr,
-                guard,
-                then_expr,
-                else_expr,
-                ..
-            } => {
-                expr.validate_nominal_record_carriers()?;
-                if let Some(guard) = guard {
-                    guard.validate_nominal_record_carriers()?;
-                }
-                then_expr.validate_nominal_record_carriers()?;
-                else_expr.validate_nominal_record_carriers()?;
-            }
-            Self::Match { scrutinee, arms } => {
-                scrutinee.validate_nominal_record_carriers()?;
-                for arm in arms {
-                    if let Some(guard) = &arm.guard {
-                        guard.validate_nominal_record_carriers()?;
-                    }
-                    arm.value.validate_nominal_record_carriers()?;
-                }
-            }
-            Self::Value(_) | Self::Local(_) | Self::EntityRef(_) => {}
-        }
-        Ok(())
-    }
-
     /// Returns whether this expression can use the allocation-light scalar pure evaluator.
     pub fn supports_scalar_pure_eval(&self) -> bool {
-        match self {
-            Self::Value(
+        match self.kind() {
+            RuntimeExprKind::Value(
                 RuntimeValue::Bool(_)
                 | RuntimeValue::Int(_)
                 | RuntimeValue::UInt(_)
                 | RuntimeValue::F32(_)
                 | RuntimeValue::F64(_),
             )
-            | Self::Local(_) => true,
-            Self::Let { expr, body, .. } => {
+            | RuntimeExprKind::Local(_) => true,
+            RuntimeExprKind::Let { expr, body, .. } => {
                 expr.supports_scalar_pure_eval() && body.supports_scalar_pure_eval()
             }
-            Self::Unary { expr, .. } => expr.supports_scalar_pure_eval(),
-            Self::Binary { lhs, rhs, .. } => {
+            RuntimeExprKind::Unary { expr, .. } => expr.supports_scalar_pure_eval(),
+            RuntimeExprKind::Binary { lhs, rhs, .. } => {
                 lhs.supports_scalar_pure_eval() && rhs.supports_scalar_pure_eval()
             }
-            Self::If {
+            RuntimeExprKind::If {
                 condition,
                 then_expr,
                 else_expr,
@@ -1196,88 +1576,74 @@ impl RuntimeExpr {
                     && then_expr.supports_scalar_pure_eval()
                     && else_expr.supports_scalar_pure_eval()
             }
-            Self::Value(_)
-            | Self::Agent(_)
-            | Self::EntityRef(_)
-            | Self::Tuple(_)
-            | Self::BracketSeq(_)
-            | Self::RepeatSeq { .. }
-            | Self::Range { .. }
-            | Self::Record(_)
-            | Self::NominalRecord(_)
-            | Self::Variant { .. }
-            | Self::Field { .. }
-            | Self::ProjectTuple { .. }
-            | Self::ProjectRecord { .. }
-            | Self::AssignField { .. }
-            | Self::Call { .. }
-            | Self::Function { .. }
-            | Self::Apply { .. }
-            | Self::TraitCall { .. }
-            | Self::PureCall { .. }
-            | Self::SpreadArg(_)
-            | Self::MethodCall { .. }
-            | Self::Map { .. }
-            | Self::Filter { .. }
-            | Self::Sum { .. }
-            | Self::IfLet { .. }
-            | Self::Match { .. } => false,
+            RuntimeExprKind::Value(_)
+            | RuntimeExprKind::Agent(_)
+            | RuntimeExprKind::EntityRef(_)
+            | RuntimeExprKind::Tuple(_)
+            | RuntimeExprKind::BracketSeq(_)
+            | RuntimeExprKind::RepeatSeq { .. }
+            | RuntimeExprKind::Range { .. }
+            | RuntimeExprKind::NominalRecord(_)
+            | RuntimeExprKind::Variant { .. }
+            | RuntimeExprKind::Field { .. }
+            | RuntimeExprKind::ProjectTuple { .. }
+            | RuntimeExprKind::ProjectRecord { .. }
+            | RuntimeExprKind::AssignNominalField { .. }
+            | RuntimeExprKind::Call { .. }
+            | RuntimeExprKind::Function(_)
+            | RuntimeExprKind::Apply { .. }
+            | RuntimeExprKind::TraitCall { .. }
+            | RuntimeExprKind::PureCall { .. }
+            | RuntimeExprKind::Map { .. }
+            | RuntimeExprKind::Filter { .. }
+            | RuntimeExprKind::Sum { .. }
+            | RuntimeExprKind::IfLet { .. }
+            | RuntimeExprKind::Match { .. }
+            | RuntimeExprKind::ReductionUnchanged { .. } => false,
         }
     }
 }
 
-fn validate_nominal_record_exprs(
-    expressions: &[RuntimeExpr],
-) -> Result<(), RuntimeNominalRecordInitializerError> {
-    for expression in expressions {
-        expression.validate_nominal_record_carriers()?;
-    }
-    Ok(())
-}
-
 impl fmt::Display for RuntimeExpr {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            Self::Value(value) => f.write_str(&runtime_value_label(value)),
-            Self::Agent(agent) => write!(f, "agent/{:?}", agent.constructor()),
-            Self::Local(name) => f.write_str(name),
-            Self::EntityRef(target) => write!(f, "@{target}"),
-            Self::Let { name, .. } => write!(f, "let {name}"),
-            Self::Tuple(items) => write!(f, "tuple/{}", items.len()),
-            Self::BracketSeq(items) => write!(f, "bracket_seq/{}", items.len()),
-            Self::RepeatSeq { len, .. } => write!(f, "repeat_seq/{len}"),
-            Self::Range { inclusive, .. } => f.write_str(if *inclusive {
+        match self.kind() {
+            RuntimeExprKind::Value(value) => f.write_str(&runtime_value_label(value)),
+            RuntimeExprKind::Agent(agent) => write!(f, "agent/{:?}", agent.constructor()),
+            RuntimeExprKind::Local(local) => write!(f, "local#{local}"),
+            RuntimeExprKind::EntityRef(target) => write!(f, "@{}", target.runtime_label()),
+            RuntimeExprKind::Let { binding, .. } => write!(f, "let local#{binding}"),
+            RuntimeExprKind::Tuple(items) => write!(f, "tuple/{}", items.len()),
+            RuntimeExprKind::BracketSeq(items) => write!(f, "bracket_seq/{}", items.len()),
+            RuntimeExprKind::RepeatSeq { len, .. } => write!(f, "repeat_seq/{len}"),
+            RuntimeExprKind::Range { inclusive, .. } => f.write_str(if *inclusive {
                 "range/inclusive"
             } else {
                 "range"
             }),
-            Self::Record(fields) => write!(f, "record/{}", fields.len()),
-            Self::NominalRecord(record) => write!(
-                f,
-                "nominal_record/{}/{}",
-                record.layout().nominal().as_str(),
-                record.initializers().len()
-            ),
-            Self::Variant { name, .. } => write!(f, ".{name}"),
-            Self::Field { field, .. } => write!(f, ".{field}"),
-            Self::ProjectTuple { ordinal, .. } => write!(f, ".{ordinal}"),
-            Self::ProjectRecord { ordinal, .. } => write!(f, ".#{ordinal}"),
-            Self::AssignField { field, .. } => write!(f, "assign .{field}"),
-            Self::Call { callee, .. } => write!(f, "{callee}()"),
-            Self::Function { params, .. } => write!(f, "fn/{}", params.len()),
-            Self::Apply { .. } => f.write_str("apply"),
-            Self::TraitCall { callable, .. } => write!(f, "trait#{}()", callable.0),
-            Self::PureCall { helper, .. } => write!(f, "pure#{}()", helper.0),
-            Self::SpreadArg(expr) => write!(f, "{expr}..."),
-            Self::MethodCall { method, .. } => write!(f, ".{method}()"),
-            Self::Map { .. } => f.write_str("map"),
-            Self::Filter { .. } => f.write_str("filter"),
-            Self::Sum { .. } => f.write_str("sum"),
-            Self::Unary { op, .. } => f.write_str(op.as_label()),
-            Self::Binary { op, .. } => f.write_str(op.as_label()),
-            Self::If { .. } => f.write_str("if"),
-            Self::IfLet { .. } => f.write_str("if let"),
-            Self::Match { .. } => f.write_str("match"),
+            RuntimeExprKind::NominalRecord(record) => {
+                write!(f, "nominal_record/{}", record.initializers().len())
+            }
+            RuntimeExprKind::Variant { ordinal, .. } => write!(f, "variant#{ordinal}"),
+            RuntimeExprKind::Field { field, .. } => write!(f, ".{}", field.label()),
+            RuntimeExprKind::ProjectTuple { ordinal, .. } => write!(f, ".{ordinal}"),
+            RuntimeExprKind::ProjectRecord { ordinal, .. } => write!(f, ".#{ordinal}"),
+            RuntimeExprKind::AssignNominalField { field, .. } => {
+                write!(f, "assign .field#{}", field.zero_based())
+            }
+            RuntimeExprKind::Call { callee, .. } => write!(f, "{callee}()"),
+            RuntimeExprKind::Function(site) => write!(f, "fn#{site}"),
+            RuntimeExprKind::Apply { .. } => f.write_str("apply"),
+            RuntimeExprKind::TraitCall { callable, .. } => write!(f, "trait#{}()", callable.0),
+            RuntimeExprKind::PureCall { helper, .. } => write!(f, "pure#{}()", helper.0),
+            RuntimeExprKind::Map { .. } => f.write_str("map"),
+            RuntimeExprKind::Filter { .. } => f.write_str("filter"),
+            RuntimeExprKind::Sum { .. } => f.write_str("sum"),
+            RuntimeExprKind::Unary { op, .. } => f.write_str(op.as_label()),
+            RuntimeExprKind::Binary { op, .. } => f.write_str(op.as_label()),
+            RuntimeExprKind::If { .. } => f.write_str("if"),
+            RuntimeExprKind::IfLet { .. } => f.write_str("if let"),
+            RuntimeExprKind::Match { .. } => f.write_str("match"),
+            RuntimeExprKind::ReductionUnchanged { .. } => f.write_str("Reduction.unchanged"),
         }
     }
 }
@@ -1295,18 +1661,37 @@ impl fmt::Display for RuntimeBinaryOp {
 }
 
 /// One value-producing `match` arm in a runtime expression.
-#[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
+#[derive(Clone, Debug, PartialEq)]
 pub struct RuntimeExprMatchArm {
-    pub pattern: RuntimePattern,
-    pub guard: Option<RuntimeExpr>,
-    pub value: RuntimeExpr,
+    pattern: RuntimePattern,
+    guard: Option<RuntimeExpr>,
+    value: RuntimeExpr,
 }
 
-/// One field inside a runtime record expression.
-#[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
-pub struct RuntimeFieldExpr {
-    pub name: String,
-    pub value: RuntimeExpr,
+impl RuntimeExprMatchArm {
+    pub(crate) const fn from_admitted_parts(
+        pattern: RuntimePattern,
+        guard: Option<RuntimeExpr>,
+        value: RuntimeExpr,
+    ) -> Self {
+        Self {
+            pattern,
+            guard,
+            value,
+        }
+    }
+
+    pub const fn pattern(&self) -> &RuntimePattern {
+        &self.pattern
+    }
+
+    pub const fn guard(&self) -> Option<&RuntimeExpr> {
+        self.guard.as_ref()
+    }
+
+    pub const fn value(&self) -> &RuntimeExpr {
+        &self.value
+    }
 }
 
 /// Unary operator supported by the Sans I/O expression evaluator.
@@ -1377,7 +1762,7 @@ pub struct RuntimeEnv {
 
 #[derive(Clone, Debug, Default, PartialEq)]
 struct RuntimeScope {
-    bindings: Vec<RuntimeBinding>,
+    bindings: Vec<RuntimeLocalBinding>,
 }
 
 /// Pure runtime program consumed by the minimal Sans I/O engine.
@@ -1386,6 +1771,46 @@ struct RuntimeScope {
 pub enum RuntimeEvalError {
     #[error("unknown runtime binding `{0}`")]
     UnknownBinding(String),
+    #[error("unknown runtime local declaration {0}")]
+    UnknownLocal(RuntimeLocalDeclarationId),
+    #[error(
+        "runtime flow `{flow}` cannot accept binding `{binding}` without selected flow metadata"
+    )]
+    MissingFlowBindingTarget { flow: String, binding: String },
+    #[error("runtime flow `{flow}` has no executable parameter named `{binding}`")]
+    UnknownFlowBinding { flow: String, binding: String },
+    #[error("runtime flow `{flow}` has ambiguous executable parameter name `{binding}`")]
+    AmbiguousFlowBinding { flow: String, binding: String },
+    #[error("runtime flow `{flow}` received duplicate binding `{binding}`")]
+    DuplicateFlowBinding { flow: String, binding: String },
+    #[error("runtime flow `{flow}` executable parameter {position} has no plan-local declaration")]
+    MissingFlowParameterLocal { flow: String, position: usize },
+    #[error(
+        "runtime flow `{flow}` binding `{binding}` does not match plan type {expected} for local {local}"
+    )]
+    FlowBindingType {
+        flow: String,
+        binding: String,
+        local: RuntimeLocalDeclarationId,
+        expected: RuntimePlanTypeId,
+    },
+    #[error("unknown runtime plan type {0}")]
+    UnknownPlanType(RuntimePlanTypeId),
+    #[error("runtime plan type {0} has no nominal-record domain")]
+    MissingNominalRecordDomain(RuntimePlanTypeId),
+    #[error("runtime plan type {0} has no variant domain")]
+    MissingVariantDomain(RuntimePlanTypeId),
+    #[error("runtime plan type {ty} has no variant case {ordinal}")]
+    UnknownVariantCase { ty: RuntimePlanTypeId, ordinal: u32 },
+    #[error("runtime plan type {0} is not valid for this expression kind")]
+    InvalidExpressionType(RuntimePlanTypeId),
+    #[error(transparent)]
+    PlanValueType(#[from] RuntimePlanValueTypeError),
+    #[error("nominal record type {ty} has no initializer for field {field}")]
+    MissingRecordInitializer {
+        ty: RuntimePlanTypeId,
+        field: RuntimeRecordFieldId,
+    },
     #[error("expected bool expression, found {0}")]
     ExpectedBool(String),
     #[error("expected integer expression, found {0}")]
@@ -1410,6 +1835,15 @@ pub enum RuntimeEvalError {
     ExpectedFunction(String),
     #[error("runtime function expected {expected} argument(s), found {found}")]
     FunctionArgumentCount { expected: usize, found: usize },
+    #[error(transparent)]
+    FunctionApply(#[from] RuntimeFunctionApplyError),
+    #[error("structured function site {site} belongs to a different admitted runtime plan")]
+    ForeignStructuredFunction { site: RuntimeFunctionSiteId },
+    #[error("structured function site {site} capture local {local} is not bound")]
+    UnboundStructuredCapture {
+        site: RuntimeFunctionSiteId,
+        local: RuntimeLocalDeclarationId,
+    },
     #[error(
         "runtime pure helper `{helper}` expected at most {max} fast-path argument(s), found {found}"
     )]
@@ -1442,6 +1876,8 @@ pub enum RuntimeEvalError {
     UnsupportedPure { name: String, reason: String },
     #[error("pattern did not match {0}")]
     PatternMismatch(String),
+    #[error(transparent)]
+    Pattern(#[from] crate::pattern::RuntimePatternMatchError),
     #[error("pattern binds `{0}` more than once")]
     DuplicateBinding(String),
     #[error("break value can only be consumed by a value-producing loop")]
@@ -1581,6 +2017,68 @@ pub fn evaluate_std_float_intrinsic(
         return Ok(Some(value));
     }
     evaluate_std_f64_intrinsic(intrinsic, args)
+}
+
+pub fn evaluate_string_intrinsic(
+    intrinsic: RuntimeIntrinsic,
+    args: &[RuntimeValue],
+) -> Result<Option<RuntimeValue>, RuntimeEvalError> {
+    let value = match (intrinsic, args) {
+        (RuntimeIntrinsic::StringTrim, [RuntimeValue::String(value)]) => {
+            RuntimeValue::String(value.trim().to_owned())
+        }
+        (RuntimeIntrinsic::StringToString, [RuntimeValue::String(value)]) => {
+            RuntimeValue::String(value.clone())
+        }
+        (RuntimeIntrinsic::StringTrim | RuntimeIntrinsic::StringToString, _) => {
+            return Err(RuntimeEvalError::UnsupportedPure {
+                name: intrinsic.as_label().to_owned(),
+                reason: "expected one String receiver".to_owned(),
+            });
+        }
+        _ => return Ok(None),
+    };
+    Ok(Some(value))
+}
+
+pub fn evaluate_index_intrinsic(
+    intrinsic: RuntimeIntrinsic,
+    args: &[RuntimeValue],
+) -> Result<Option<RuntimeValue>, RuntimeEvalError> {
+    if intrinsic != RuntimeIntrinsic::CoreIndex {
+        return Ok(None);
+    }
+    let [target, index] = args else {
+        return Err(index_intrinsic_error(
+            "expected a target and an integer index",
+        ));
+    };
+    let index = match index {
+        RuntimeValue::Int(value) => usize::try_from(value.as_i128()).ok(),
+        RuntimeValue::UInt(value) => usize::try_from(value.as_u128()).ok(),
+        _ => None,
+    }
+    .ok_or_else(|| index_intrinsic_error("index is negative or outside the host index range"))?;
+    match target {
+        RuntimeValue::Seq(sequence) if index < sequence.len() => Ok(Some(sequence.value_at(index))),
+        RuntimeValue::String(value) => value
+            .chars()
+            .nth(index)
+            .map(RuntimeValue::Char)
+            .map(Some)
+            .ok_or_else(|| index_intrinsic_error("String index is out of bounds")),
+        RuntimeValue::Seq(_) => Err(index_intrinsic_error("sequence index is out of bounds")),
+        _ => Err(index_intrinsic_error(
+            "target is not an indexable runtime value",
+        )),
+    }
+}
+
+fn index_intrinsic_error(reason: &str) -> RuntimeEvalError {
+    RuntimeEvalError::UnsupportedPure {
+        name: RuntimeIntrinsic::CoreIndex.as_label().to_owned(),
+        reason: reason.to_owned(),
+    }
 }
 
 fn evaluate_std_f32_intrinsic(
@@ -2714,8 +3212,12 @@ pub(crate) fn runtime_value_label(value: &RuntimeValue) -> String {
             )
         }
         RuntimeValue::Opaque(value) => format!("opaque/{}", value.producer().as_str()),
+        RuntimeValue::Reduction(value) => format!("reduction/{}", value.commands().len()),
         RuntimeValue::Agent(value) => value.label().to_owned(),
-        RuntimeValue::Function(function) => format!("function/{}", function.arity()),
+        RuntimeValue::Function(function) => function.remaining_arity().map_or_else(
+            |_| "function/invalid".to_owned(),
+            |arity| format!("function/{arity}"),
+        ),
         RuntimeValue::Variant { name, payload, .. } => {
             if payload.is_some() {
                 format!(".{name}(...)")

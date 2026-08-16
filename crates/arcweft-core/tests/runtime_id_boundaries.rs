@@ -1,5 +1,6 @@
 use arcweft_core::plan::{
-    EntryRuntimeId, FlowRuntimeId, RuntimeFlow, RuntimeFlowTargetError, RuntimeLineId, RuntimePlan,
+    EntryRuntimeId, FlowRuntimeId, RuntimeFlowSeed, RuntimeFlowTargetError, RuntimeLineId,
+    RuntimePlan, RuntimePlanBuilder,
 };
 use arcweft_core::runtime_id::{
     RuntimeIdError, RuntimeIdFamily, RuntimeIdPath, RuntimeIdReference, RuntimeIdReferenceAnchor,
@@ -37,33 +38,13 @@ fn dynamic_flow_target_selects_one_accepted_identity_or_reports_label_ambiguity(
         .expect("accepted Flow public label");
     let right = FlowRuntimeId::from_checked_declaration_digest([0x22; 32], "flow.opening")
         .expect("accepted Flow public label");
-    let one = RuntimePlan::new(
-        vec![RuntimeFlow {
-            id: left.clone(),
-            ops: Vec::new(),
-        }],
-        Vec::new(),
-    )
-    .expect("single Flow plan");
+    let one = plan_with_flows([left.clone()]);
     assert_eq!(
         one.resolve_flow_target_value("flow.opening"),
         Ok(left.clone())
     );
 
-    let ambiguous = RuntimePlan::new(
-        vec![
-            RuntimeFlow {
-                id: left,
-                ops: Vec::new(),
-            },
-            RuntimeFlow {
-                id: right,
-                ops: Vec::new(),
-            },
-        ],
-        Vec::new(),
-    )
-    .expect("module-distinct Flow plan");
+    let ambiguous = plan_with_flows([left, right]);
     assert_eq!(
         ambiguous.resolve_flow_target_value("flow.opening"),
         Err(RuntimeFlowTargetError::Ambiguous {
@@ -71,6 +52,16 @@ fn dynamic_flow_target_selects_one_accepted_identity_or_reports_label_ambiguity(
             matches: 2,
         })
     );
+}
+
+fn plan_with_flows(flows: impl IntoIterator<Item = FlowRuntimeId>) -> RuntimePlan {
+    let mut builder = RuntimePlanBuilder::new();
+    for flow in flows {
+        builder
+            .push_flow_seed(RuntimeFlowSeed::new(flow, [], Vec::new()))
+            .expect("test Flow admits");
+    }
+    builder.finish().expect("test runtime plan seals")
 }
 
 #[test]

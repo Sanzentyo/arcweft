@@ -55,7 +55,7 @@ struct SessionRuntimeResources {
 }
 
 impl BundleSession {
-    /// Builds a portable bytecode VM session without materializing bundle files.
+    /// Builds a portable AWBC session without materializing bundle files.
     pub fn new(
         bundle: &ArcweftBundle,
         options: BundleSessionOptions,
@@ -184,7 +184,6 @@ fn initial_generation(bundle: &ArcweftBundle) -> Result<ProgramGeneration, Bundl
         GenerationBuildError::UnsupportedBundleKind(kind) => {
             BundleSessionError::UnsupportedBundleKind(kind)
         }
-        GenerationBuildError::VerifyBytecode(error) => BundleSessionError::VerifyBytecode(error),
         GenerationBuildError::ProductAwbcVerification { message } => {
             BundleSessionError::ProductAwbcVerification { message }
         }
@@ -315,10 +314,7 @@ fn build_session_runtime_with_executor(
         ));
     }
 
-    let program = bundle
-        .product_awbc_program()
-        .map_err(|_| BundleSessionError::MissingProductAwbc)?
-        .clone();
+    let program = bundle.product_awbc_program().clone();
     let entry = selected_awbc_entry(&program, bundle, options)?;
     ensure_session_awbc_entry_selects_flow(&program, entry)?;
     validate_root_command_host_call_catalog(&program, entry, &options.root_command_host_calls)?;

@@ -2,13 +2,19 @@ use std::collections::BTreeMap;
 
 use arcweft_bundle::{ArcweftBundle, BundleKind};
 use arcweft_core::{
-    bytecode::BytecodeProgram,
+    awbc::{
+        schema::{AwbcEntryId, AwbcEntryKind, AwbcEntryTarget, AwbcProgram},
+        verify::{AwbcVerifyBudget, AwbcVerifyContext},
+    },
     effect::{LineEffectRequest, RuntimeAssertionFailure},
-    engine::{EngineStartError, FlowFiberStatus},
-    entry::{AgentBudget, RuntimeCallableExecutableCode},
-    executor::{ArcweftExecutionTier, ArcweftRuntimeExecutor, RuntimeExecutor},
-    plan::{EntryRuntimeId, RuntimeEntryKind, RuntimeEntryTarget},
-    step::{RuntimeStepBudget, RuntimeStepInput, RuntimeStepMode, RuntimeStepOptions},
+    engine::FlowFiberStatus,
+    entry::AgentBudget,
+    executor::{ArcweftRuntimeExecutor, RuntimeExecutor},
+    plan::EntryRuntimeId,
+    step::{
+        RuntimeHostCallResult, RuntimeStepBudget, RuntimeStepInput, RuntimeStepMode,
+        RuntimeStepOptions,
+    },
     task::{LogicalEpoch, TaskEvent, TaskEventKind, TaskSequence},
 };
 use arcweft_debug_model::{
@@ -30,7 +36,9 @@ use crate::config::{
 };
 use crate::effect_policy::{AgentEffectAuthorization, AgentEffectRegistry};
 use crate::error::AgentRunError;
-use crate::host_request::{agent_host_request_from_effect, agent_host_request_from_task};
+use crate::host_request::{
+    agent_host_request_from_effect, agent_host_request_from_host_call, agent_host_request_from_task,
+};
 use crate::policy::{RuntimeAgentCapability, RuntimeAgentPolicy};
 use crate::predicate::predicate_matches;
 use crate::runtime_payload::{project_graph_neighborhood, runtime_payload_from_response};
@@ -54,199 +62,6 @@ pub struct AgentRunner<S, D, R> {
     authorization: Option<AgentEffectAuthorization>,
     config: AgentRunnerConfig,
     sequence: u64,
-}
-
-/// Builds the executor used for one Agent controller bytecode run.
-///
-/// The default factory returns the bytecode VM, while REPL/dev policies can
-/// provide a tiered executor without changing host-call dispatch.
-pub trait AgentControllerExecutorFactory<S, D, R>
-where
-    S: AgentSession,
-    D: DebugEventSink,
-    R: RagService,
-{
-    type Executor: RuntimeExecutor;
-
-    fn build(&mut self, program: BytecodeProgram) -> AgentRunnerResult<Self::Executor, S, D, R>;
-
-    fn start(
-        &mut self,
-        executor: &mut Self::Executor,
-        entry: &EntryRuntimeId,
-    ) -> Result<(), EngineStartError>;
-}
-
-/// Default Agent controller executor factory.
-#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
-pub struct BytecodeVmAgentControllerExecutorFactory;
-
-impl<S, D, R> AgentControllerExecutorFactory<S, D, R> for BytecodeVmAgentControllerExecutorFactory
-where
-    S: AgentSession,
-    D: DebugEventSink,
-    R: RagService,
-{
-    type Executor = ArcweftRuntimeExecutor;
-
-    fn build(&mut self, program: BytecodeProgram) -> AgentRunnerResult<Self::Executor, S, D, R> {
-        ArcweftRuntimeExecutor::from_bytecode(program, ArcweftExecutionTier::StructuredVm)
-            .map_err(AgentRunError::Bytecode)
-    }
-
-    fn start(
-        &mut self,
-        executor: &mut Self::Executor,
-        entry: &EntryRuntimeId,
-    ) -> Result<(), EngineStartError> {
-        executor.start_structured_entry(entry)
-    }
-}
-
-/// Agent controller executor tier policy used by tooling and REPL/dev adapters.
-///
-/// Product paths keep using [`BytecodeVmAgentControllerExecutorFactory`]. This
-/// policy is intentionally runner-local so selecting a dev tier never makes
-/// product players depend on REPL, compiler, codegen, JIT, or AOT crates.
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub struct AgentControllerExecutorTierPolicy {
-    requested: ArcweftExecutionTier,
-    allow_vm_fallback: bool,
-}
-
-/// Agent controller executor factory that can request a non-default tier while
-/// preserving bytecode-VM fallback semantics.
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub struct TieredAgentControllerExecutorFactory {
-    policy: AgentControllerExecutorTierPolicy,
-    last_requested: Option<ArcweftExecutionTier>,
-    last_built: Option<ArcweftExecutionTier>,
-    fell_back_to_vm: bool,
-}
-
-impl AgentControllerExecutorTierPolicy {
-    /// Product and stable runner policy: request the structured bytecode VM.
-    #[must_use]
-    pub const fn bytecode_vm_first() -> Self {
-        Self {
-            requested: ArcweftExecutionTier::StructuredVm,
-            allow_vm_fallback: true,
-        }
-    }
-
-    /// REPL/dev policy: request a tier but keep VM fallback enabled.
-    #[must_use]
-    pub const fn repl_dev(requested: ArcweftExecutionTier) -> Self {
-        Self {
-            requested,
-            allow_vm_fallback: true,
-        }
-    }
-
-    #[must_use]
-    pub const fn requested_tier(self) -> ArcweftExecutionTier {
-        self.requested
-    }
-
-    #[must_use]
-    pub const fn allow_vm_fallback(self) -> bool {
-        self.allow_vm_fallback
-    }
-
-    #[must_use]
-    pub const fn with_vm_fallback(self, allow_vm_fallback: bool) -> Self {
-        Self {
-            allow_vm_fallback,
-            ..self
-        }
-    }
-}
-
-impl TieredAgentControllerExecutorFactory {
-    #[must_use]
-    pub const fn new(policy: AgentControllerExecutorTierPolicy) -> Self {
-        Self {
-            policy,
-            last_requested: None,
-            last_built: None,
-            fell_back_to_vm: false,
-        }
-    }
-
-    #[must_use]
-    pub const fn policy(self) -> AgentControllerExecutorTierPolicy {
-        self.policy
-    }
-
-    #[must_use]
-    pub const fn last_requested_tier(self) -> Option<ArcweftExecutionTier> {
-        self.last_requested
-    }
-
-    #[must_use]
-    pub const fn last_built_tier(self) -> Option<ArcweftExecutionTier> {
-        self.last_built
-    }
-
-    #[must_use]
-    pub const fn fell_back_to_vm(self) -> bool {
-        self.fell_back_to_vm
-    }
-}
-
-impl Default for AgentControllerExecutorTierPolicy {
-    fn default() -> Self {
-        Self::bytecode_vm_first()
-    }
-}
-
-impl Default for TieredAgentControllerExecutorFactory {
-    fn default() -> Self {
-        Self::new(AgentControllerExecutorTierPolicy::bytecode_vm_first())
-    }
-}
-
-impl<S, D, R> AgentControllerExecutorFactory<S, D, R> for TieredAgentControllerExecutorFactory
-where
-    S: AgentSession,
-    D: DebugEventSink,
-    R: RagService,
-{
-    type Executor = ArcweftRuntimeExecutor;
-
-    fn build(&mut self, program: BytecodeProgram) -> AgentRunnerResult<Self::Executor, S, D, R> {
-        let requested = self.policy.requested_tier();
-        self.last_requested = Some(requested);
-        match ArcweftRuntimeExecutor::from_bytecode(program.clone(), requested) {
-            Ok(executor) => {
-                self.last_built = Some(executor.tier());
-                self.fell_back_to_vm = false;
-                Ok(executor)
-            }
-            Err(_error)
-                if self.policy.allow_vm_fallback()
-                    && requested != ArcweftExecutionTier::StructuredVm =>
-            {
-                let executor = ArcweftRuntimeExecutor::from_bytecode(
-                    program,
-                    ArcweftExecutionTier::StructuredVm,
-                )
-                .map_err(AgentRunError::Bytecode)?;
-                self.last_built = Some(executor.tier());
-                self.fell_back_to_vm = true;
-                Ok(executor)
-            }
-            Err(error) => Err(AgentRunError::Bytecode(error)),
-        }
-    }
-
-    fn start(
-        &mut self,
-        executor: &mut Self::Executor,
-        entry: &EntryRuntimeId,
-    ) -> Result<(), EngineStartError> {
-        executor.start_structured_entry(entry)
-    }
 }
 
 impl<S, D, R> AgentRunner<S, D, R>
@@ -601,71 +416,49 @@ where
         }
     }
 
-    /// Runs one compiled Agent controller bytecode program and dispatches
-    /// Agent host calls in source/runtime order.
-    pub fn run_controller_bytecode(
+    /// Runs one canonical Product AWBC Agent controller and dispatches Agent
+    /// host calls in source/runtime order.
+    pub fn run_controller_awbc(
         &mut self,
-        program: BytecodeProgram,
+        program: AwbcProgram,
         entry: &EntryRuntimeId,
         config: AgentControllerRunConfig,
     ) -> AgentRunnerResult<AgentControllerRunReport, S, D, R> {
-        let mut factory = BytecodeVmAgentControllerExecutorFactory;
-        self.run_controller_bytecode_with_executor_factory_and_budget(
+        self.run_controller_awbc_with_budget(
             program,
             entry,
             config,
             effective_controller_budget(AgentBudget::default(), config),
-            &mut factory,
         )
     }
 
-    /// Runs one Agent controller bytecode program through a supplied executor
-    /// factory.
-    pub fn run_controller_bytecode_with_executor_factory<F>(
+    fn run_controller_awbc_with_budget(
         &mut self,
-        program: BytecodeProgram,
-        entry: &EntryRuntimeId,
-        config: AgentControllerRunConfig,
-        factory: &mut F,
-    ) -> AgentRunnerResult<AgentControllerRunReport, S, D, R>
-    where
-        F: AgentControllerExecutorFactory<S, D, R>,
-    {
-        self.run_controller_bytecode_with_executor_factory_and_budget(
-            program,
-            entry,
-            config,
-            effective_controller_budget(AgentBudget::default(), config),
-            factory,
-        )
-    }
-
-    fn run_controller_bytecode_with_executor_factory_and_budget<F>(
-        &mut self,
-        program: BytecodeProgram,
+        program: AwbcProgram,
         entry: &EntryRuntimeId,
         config: AgentControllerRunConfig,
         budget: AgentBudget,
-        factory: &mut F,
-    ) -> AgentRunnerResult<AgentControllerRunReport, S, D, R>
-    where
-        F: AgentControllerExecutorFactory<S, D, R>,
-    {
-        Self::validate_controller_program_entry(&program, entry)?;
-        let mut executor = factory.build(program)?;
-        factory
-            .start(&mut executor, entry)
-            .map_err(AgentRunError::ControllerEntryStart)?;
+    ) -> AgentRunnerResult<AgentControllerRunReport, S, D, R> {
+        program
+            .verify(AwbcVerifyBudget::default(), AwbcVerifyContext::default())
+            .map_err(AgentRunError::ProductAwbcVerification)?;
+        let entry = Self::validate_controller_program_entry(&program, entry)?;
+        let mut executor = ArcweftRuntimeExecutor::from_awbc_product(program, entry)
+            .map_err(AgentRunError::ProductAwbcExecutor)?;
         self.run_controller_executor_with_budget(&mut executor, config, budget)
     }
 
     fn validate_controller_program_entry(
-        program: &BytecodeProgram,
+        program: &AwbcProgram,
         selected: &EntryRuntimeId,
-    ) -> AgentRunnerResult<(), S, D, R> {
+    ) -> AgentRunnerResult<AwbcEntryId, S, D, R> {
         let invalid = |detail: String| AgentRunError::InvalidControllerEntry { detail };
-        let mut entries = program.entries.iter().filter(|entry| &entry.id == selected);
-        let Some(entry) = entries.next() else {
+        let mut entries = program
+            .entries
+            .iter()
+            .enumerate()
+            .filter(|(_, entry)| &entry.runtime_id == selected);
+        let Some((index, entry)) = entries.next() else {
             return Err(invalid(format!(
                 "selected entry `{}` is missing",
                 selected.canonical_label(),
@@ -677,16 +470,15 @@ where
                 selected.canonical_label(),
             )));
         }
-        if entry.kind != RuntimeEntryKind::Agent {
+        if entry.kind != AwbcEntryKind::Agent {
             return Err(invalid(format!(
-                "selected entry `{}` has kind `{}` instead of `agent`",
+                "selected entry `{}` is not an Agent Product AWBC entry",
                 selected.canonical_label(),
-                entry.kind.as_str(),
             )));
         }
-        let RuntimeEntryTarget::Controller(controller_flow) = &entry.target else {
+        let AwbcEntryTarget::Function(controller) = &entry.target else {
             return Err(invalid(format!(
-                "selected entry `{}` does not target a controller flow",
+                "selected entry `{}` does not target an AWBC function",
                 selected.canonical_label(),
             )));
         };
@@ -702,44 +494,35 @@ where
                 selected.canonical_label(),
             )));
         }
-        let mut callables = program.callable_executables.iter().filter(|callable| {
-            callable.callable == roles.controller.callable
-                && callable.contract == roles.controller.contract
-                && matches!(
-                    &callable.code,
-                    RuntimeCallableExecutableCode::ControllerFlow(flow)
-                        if flow == controller_flow
-                )
-        });
-        if callables.next().is_none() || callables.next().is_some() {
-            return Err(invalid(format!(
-                "selected entry `{}` does not own exactly one controller executable",
-                selected.canonical_label(),
-            )));
-        }
-        let mut flow_executables = program.flow_executables.iter().filter(|flow| {
-            flow.flow == *controller_flow
-                && flow.parameters.is_empty()
-                && flow.controller.as_ref() == Some(&roles.controller)
-                && flow.contract.as_bytes() == roles.controller.contract.as_bytes()
-        });
-        if flow_executables.next().is_none() || flow_executables.next().is_some() {
-            return Err(invalid(format!(
-                "selected entry `{}` does not own exactly one controller flow executable",
-                selected.canonical_label(),
-            )));
-        }
-        let mut flows = program
-            .flows
+        let callable_matches = program
+            .callable_executables
             .iter()
-            .filter(|flow| flow.id == *controller_flow);
-        if flows.next().is_none() || flows.next().is_some() {
+            .filter(|callable| {
+                callable.role == roles.controller && callable.function == *controller
+            })
+            .count();
+        let flow_matches = program
+            .flow_executables
+            .iter()
+            .filter(|flow| {
+                flow.function == *controller
+                    && flow.metadata.parameters.is_empty()
+                    && flow.metadata.controller.as_ref() == Some(&roles.controller)
+            })
+            .count();
+        if callable_matches != 1 || flow_matches != 1 {
             return Err(invalid(format!(
-                "selected entry `{}` does not own exactly one bytecode flow",
+                "selected entry `{}` does not own one exact AWBC controller executable",
                 selected.canonical_label(),
             )));
         }
-        Ok(())
+        let index = u32::try_from(index).map_err(|_| {
+            invalid(format!(
+                "selected entry `{}` index exceeds the Product AWBC address space",
+                selected.canonical_label(),
+            ))
+        })?;
+        Ok(AwbcEntryId(index))
     }
 
     fn run_controller_executor_with_budget<E>(
@@ -766,6 +549,7 @@ where
             final_status: None,
         };
         let mut task_events = Vec::new();
+        let mut host_call_results = Vec::new();
         let mut budget_tracker = AgentBudgetTracker::default();
 
         let max_steps = usize::try_from(budget.max_vm_steps)
@@ -776,6 +560,7 @@ where
             let step = executor.step(
                 RuntimeStepInput {
                     task_events: std::mem::take(&mut task_events),
+                    host_call_results: std::mem::take(&mut host_call_results),
                     ..RuntimeStepInput::default()
                 },
                 options,
@@ -813,6 +598,20 @@ where
                 report.responses.push(host_report.response);
                 report.events_emitted = host_report.events_emitted;
             }
+            for call in &step.output.requests.host_calls {
+                let request = agent_host_request_from_host_call(call)
+                    .map_err(AgentRunError::UnsupportedControllerEffect)?;
+                let host_report =
+                    self.handle_controller_host_request(request, budget, &mut budget_tracker)?;
+                host_call_results.push(RuntimeHostCallResult {
+                    id: call.id.clone(),
+                    outcome: Ok(runtime_payload_from_response(&host_report.response)
+                        .map_err(AgentRunError::InvalidHostResponse)?),
+                });
+                report.host_calls += 1;
+                report.responses.push(host_report.response);
+                report.events_emitted = host_report.events_emitted;
+            }
             report.final_status = Some(step.fiber_status.clone());
 
             match step.fiber_status {
@@ -833,8 +632,7 @@ where
         Err(AgentRunError::ControllerBudgetExceeded { max_steps })
     }
 
-    /// Runs a decoded `.awfb` Agent controller bundle through the shared
-    /// bytecode VM.
+    /// Runs a decoded `.awfb` Agent controller bundle through Product AWBC.
     pub fn run_controller_bundle(
         &mut self,
         bundle: &ArcweftBundle,
@@ -849,18 +647,18 @@ where
             .ok_or(AgentRunError::MissingAgentManifest)?;
         let entry = Self::validate_controller_artifact(bundle, manifest)?;
         self.validate_project_binding(&manifest.project_binding)?;
+        let program = bundle.product_awbc().program().clone();
+        let mut executor = ArcweftRuntimeExecutor::from_awbc_product(program, entry)
+            .map_err(AgentRunError::ProductAwbcExecutor)?;
         let authorization = AgentEffectRegistry::canonical()
             .authorization_for_artifact(&manifest.verified_effects.inferred, &self.policy)
             .map_err(AgentRunError::EffectPolicy)?;
         let previous_policy = std::mem::replace(&mut self.policy, authorization.policy().clone());
         let previous_authorization = self.authorization.replace(authorization);
-        let mut factory = BytecodeVmAgentControllerExecutorFactory;
-        let result = self.run_controller_bytecode_with_executor_factory_and_budget(
-            bundle.bytecode.program.clone(),
-            &entry,
+        let result = self.run_controller_executor_with_budget(
+            &mut executor,
             config,
             effective_controller_budget(manifest.budget, config),
-            &mut factory,
         );
         self.policy = previous_policy;
         self.authorization = previous_authorization;
@@ -870,7 +668,7 @@ where
     fn validate_controller_artifact(
         bundle: &ArcweftBundle,
         manifest: &AgentArtifactManifest,
-    ) -> AgentRunnerResult<EntryRuntimeId, S, D, R> {
+    ) -> AgentRunnerResult<AwbcEntryId, S, D, R> {
         let mismatch = |detail: String| AgentRunError::AgentArtifactMismatch { detail };
         if manifest.schema_version != 1 || manifest.bundle_kind != AgentBundleKind::AgentController
         {
@@ -885,25 +683,30 @@ where
                 "bundle launch entry does not match the Agent artifact entry".to_owned(),
             ));
         }
-        let [entry] = bundle.bytecode.program.entries.as_slice() else {
+        let product = bundle.product_awbc();
+        product
+            .verify_product_executable()
+            .map_err(AgentRunError::BundleProductAwbc)?;
+        let program = product.program();
+        let [entry] = program.entries.as_slice() else {
             return Err(mismatch(format!(
                 "Agent controller artifact must contain exactly one entry, found {}",
-                bundle.bytecode.program.entries.len(),
+                program.entries.len(),
             )));
         };
-        if entry.id != entry_id || entry.kind != RuntimeEntryKind::Agent {
+        if entry.runtime_id != entry_id || entry.kind != AwbcEntryKind::Agent {
             return Err(mismatch(
-                "bytecode entry identity or kind does not match the Agent manifest".to_owned(),
+                "AWBC entry identity or kind does not match the Agent manifest".to_owned(),
             ));
         }
-        let RuntimeEntryTarget::Controller(controller_flow) = &entry.target else {
+        let AwbcEntryTarget::Function(controller) = &entry.target else {
             return Err(mismatch(
-                "Agent bytecode entry does not target a controller flow".to_owned(),
+                "Agent AWBC entry does not target a controller function".to_owned(),
             ));
         };
         let Some(roles) = entry.roles.agent() else {
             return Err(mismatch(
-                "Agent bytecode entry is missing exact Agent roles".to_owned(),
+                "Agent AWBC entry is missing exact Agent roles".to_owned(),
             ));
         };
         if StableHash::from_blake3_bytes(*entry.binding.as_bytes()) != manifest.entry_binding_hash
@@ -916,59 +719,46 @@ where
             || manifest.budget != roles.budget
         {
             return Err(mismatch(
-                "Agent manifest identity, contract, policy, or budget does not match bytecode roles"
+                "Agent manifest identity, contract, policy, or budget does not match AWBC roles"
                     .to_owned(),
             ));
         }
-        let [callable] = bundle.bytecode.program.callable_executables.as_slice() else {
+        let [callable] = program.callable_executables.as_slice() else {
             return Err(mismatch(format!(
                 "Agent controller artifact must contain exactly one callable executable, found {}",
-                bundle.bytecode.program.callable_executables.len(),
+                program.callable_executables.len(),
             )));
         };
-        if callable.callable != roles.controller.callable
-            || callable.contract != roles.controller.contract
-            || !matches!(
-                &callable.code,
-                RuntimeCallableExecutableCode::ControllerFlow(flow) if flow == controller_flow
-            )
-        {
+        if callable.role != roles.controller || callable.function != *controller {
             return Err(mismatch(
                 "Agent callable executable does not match the selected controller role".to_owned(),
             ));
         }
-        let [flow_executable] = bundle.bytecode.program.flow_executables.as_slice() else {
+        let [flow_executable] = program.flow_executables.as_slice() else {
             return Err(mismatch(format!(
                 "Agent controller artifact must contain exactly one flow executable, found {}",
-                bundle.bytecode.program.flow_executables.len(),
+                program.flow_executables.len(),
             )));
         };
-        if flow_executable.flow != *controller_flow
-            || !flow_executable.parameters.is_empty()
-            || flow_executable.controller.as_ref() != Some(&roles.controller)
-            || StableHash::from_blake3_bytes(*flow_executable.contract.as_bytes())
+        if flow_executable.function != *controller
+            || !flow_executable.metadata.parameters.is_empty()
+            || flow_executable.metadata.controller.as_ref() != Some(&roles.controller)
+            || StableHash::from_blake3_bytes(*flow_executable.metadata.contract.as_bytes())
                 != manifest.controller_contract_hash
         {
             return Err(mismatch(
                 "Agent flow executable does not match the selected controller role".to_owned(),
             ));
         }
-        let [flow] = bundle.bytecode.program.flows.as_slice() else {
-            return Err(mismatch(format!(
-                "Agent controller artifact must contain exactly one bytecode flow, found {}",
-                bundle.bytecode.program.flows.len(),
-            )));
-        };
-        let controller_label = controller_flow.public_label().into_string();
-        if flow.id != *controller_flow
-            || bundle.manifest.runtime.entry_flow.as_deref() != Some(controller_label.as_str())
-        {
+        let controller_label = flow_executable.metadata.flow.public_label().into_string();
+        if bundle.manifest.runtime.entry_flow.as_deref() != Some(controller_label.as_str()) {
             return Err(mismatch(
-                "Agent bytecode flow or runtime summary does not match the selected controller"
+                "Agent AWBC flow or runtime summary does not match the selected controller"
                     .to_owned(),
             ));
         }
-        Ok(entry_id)
+        // The exact single-entry artifact check above establishes table index zero.
+        Ok(AwbcEntryId(0))
     }
 
     fn validate_project_binding(
@@ -1086,32 +876,5 @@ where
             created_unix_ms: self.config.created_unix_ms,
         };
         self.debug.append(&event).map_err(AgentRunError::Debug)
-    }
-}
-
-#[cfg(test)]
-mod tier_policy_tests {
-    use super::*;
-
-    #[test]
-    fn agent_controller_tier_policy_product_default_is_vm_first() {
-        let policy = AgentControllerExecutorTierPolicy::default();
-
-        assert_eq!(policy.requested_tier(), ArcweftExecutionTier::StructuredVm);
-        assert!(policy.allow_vm_fallback());
-    }
-
-    #[test]
-    fn agent_controller_tier_policy_repl_can_request_aot_with_vm_fallback() {
-        let policy =
-            AgentControllerExecutorTierPolicy::repl_dev(ArcweftExecutionTier::StructuredAot);
-        let factory = TieredAgentControllerExecutorFactory::new(policy);
-
-        assert_eq!(
-            factory.policy().requested_tier(),
-            ArcweftExecutionTier::StructuredAot
-        );
-        assert!(factory.policy().allow_vm_fallback());
-        assert!(!factory.fell_back_to_vm());
     }
 }

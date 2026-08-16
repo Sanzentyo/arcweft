@@ -1,6 +1,6 @@
 //! Persistent runtime schemas, canonical value bytes, and validation.
 
-use super::identity::{RuntimeValueDigest, TypeLayoutHash};
+use super::identity::{RuntimeNominalTypeId, RuntimeValueDigest, TypeLayoutHash};
 use crate::pattern::RuntimeVariantIdentity;
 use crate::value::{RuntimeInt, RuntimePayload, RuntimeUInt, RuntimeValue};
 use serde::{Deserialize, Serialize};
@@ -153,6 +153,14 @@ pub enum RuntimeSchemaError {
     BudgetExceeded { budget: &'static str },
     #[error("runtime value canonical encoding failed: {message}")]
     Encoding { message: String },
+    #[error("runtime nominal value at `{path}` has identity `{actual}`, expected `{expected}`")]
+    NominalIdentity {
+        path: String,
+        expected: String,
+        actual: String,
+    },
+    #[error("runtime nominal value at `{path}` has the wrong accepted layout")]
+    NominalLayout { path: String },
     #[error("runtime schema canonical encoding exceeds u32 collection limits")]
     SchemaEncodingOverflow,
 }
@@ -171,6 +179,51 @@ impl RuntimeTypeSchema {
         limits: RuntimeSchemaLimits,
     ) -> Result<RuntimeValueDigest, RuntimeSchemaError> {
         self.validate_value(&payload.0, limits)
+    }
+
+    /// Validates a nominal root payload against its exact accepted role and
+    /// this structural persistence schema.
+    pub fn validate_nominal_payload(
+        &self,
+        payload: &RuntimePayload,
+        expected_identity: &RuntimeNominalTypeId,
+        expected_layout: TypeLayoutHash,
+        limits: RuntimeSchemaLimits,
+    ) -> Result<RuntimeValueDigest, RuntimeSchemaError> {
+        let definitions = schema_definitions(self);
+        let mut state = SchemaValidationState {
+            limits,
+            nodes: 0,
+            definitions,
+        };
+        match (self, &payload.0) {
+            (Self::Record { fields, .. }, RuntimeValue::NominalRecord(record)) => {
+                validate_nominal_identity(expected_identity, record.type_id(), "$")?;
+                if record.layout() != expected_layout {
+                    return Err(RuntimeSchemaError::NominalLayout {
+                        path: "$".to_owned(),
+                    });
+                }
+                state.validate_nominal_record(fields, record.fields(), "$", 0)?;
+            }
+            (
+                Self::Enum { variants, .. },
+                RuntimeValue::Variant {
+                    owner: RuntimeVariantIdentity::Nominal { nominal, .. },
+                    ordinal,
+                    name,
+                    payload,
+                },
+            ) => {
+                validate_nominal_identity(expected_identity, nominal, "$")?;
+                state.validate_enum(variants, *ordinal, name, payload.as_deref(), "$", 0)?;
+            }
+            _ => state.validate(self, &payload.0, "$", 0)?,
+        }
+        let encoded = canonical_runtime_value_bytes(&payload.0, limits.max_encoded_bytes)?;
+        Ok(RuntimeValueDigest::from_bytes(
+            blake3::hash(&encoded).into(),
+        ))
     }
 
     pub fn validate_value(
@@ -195,6 +248,22 @@ impl RuntimeTypeSchema {
         let mut bytes = CanonicalSchemaBytes::new();
         bytes.schema(self)?;
         Some(bytes.finish())
+    }
+}
+
+fn validate_nominal_identity(
+    expected: &RuntimeNominalTypeId,
+    actual: &RuntimeNominalTypeId,
+    path: &str,
+) -> Result<(), RuntimeSchemaError> {
+    if expected == actual {
+        Ok(())
+    } else {
+        Err(RuntimeSchemaError::NominalIdentity {
+            path: path.to_owned(),
+            expected: expected.as_str().to_owned(),
+            actual: actual.as_str().to_owned(),
+        })
     }
 }
 
@@ -419,6 +488,19 @@ impl CanonicalRuntimeValueBytes {
                 self.string(value.producer().as_str())?;
                 self.extend(value.semantic_identity().as_bytes())?;
                 self.value(value.payload())
+            }
+            RuntimeValue::Reduction(value) => {
+                self.u8(18)?;
+                self.string(value.owner().producer().as_str())?;
+                self.extend(value.owner().semantic_identity().as_bytes())?;
+                self.value(value.state())?;
+                self.len(value.commands().len())?;
+                for command in value.commands() {
+                    self.string(command.constructor().as_str())?;
+                    self.string(command.target().as_str())?;
+                    self.value(&command.payload().0)?;
+                }
+                Ok(())
             }
             RuntimeValue::Agent(value) => {
                 self.u8(17)?;
@@ -888,6 +970,12 @@ impl<'a> SchemaValidationState<'a> {
                 self.validate_record(fields, values, path, depth)
             }
             (
+                RuntimeTypeSchema::Record { name, fields, .. },
+                RuntimeValue::NominalRecord(record),
+            ) if record.type_id().as_str() == name => {
+                self.validate_nominal_record(fields, record.fields(), path, depth)
+            }
+            (
                 RuntimeTypeSchema::Enum {
                     name: owner_name,
                     variants,
@@ -988,6 +1076,33 @@ impl<'a> SchemaValidationState<'a> {
                     field: field.rust_name.clone(),
                 });
             };
+            self.validate(
+                &field.schema,
+                value,
+                &format!("{path}.{}", field.rust_name),
+                depth + 1,
+            )?;
+        }
+        Ok(())
+    }
+
+    fn validate_nominal_record(
+        &mut self,
+        fields: &'a [RuntimeSchemaField],
+        values: &[RuntimeValue],
+        path: &str,
+        depth: usize,
+    ) -> Result<(), RuntimeSchemaError> {
+        if values.len() != fields.len() {
+            return Err(RuntimeSchemaError::Encoding {
+                message: format!(
+                    "nominal record at `{path}` has {} fields, expected {}",
+                    values.len(),
+                    fields.len()
+                ),
+            });
+        }
+        for (field, value) in fields.iter().zip(values) {
             self.validate(
                 &field.schema,
                 value,
@@ -1162,6 +1277,7 @@ const fn runtime_value_type(value: &RuntimeValue) -> &'static str {
         RuntimeValue::Record(_) => "record",
         RuntimeValue::NominalRecord(_) => "nominal record",
         RuntimeValue::Opaque(_) => "opaque value",
+        RuntimeValue::Reduction(_) => "Reduction value",
         RuntimeValue::Agent(_) => "Agent value",
         RuntimeValue::Function(_) => "function",
         RuntimeValue::Variant { .. } => "variant",

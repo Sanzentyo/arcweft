@@ -34,11 +34,11 @@ use arcweft_lang_sema::{
         AcceptedNominalInputVisibility, AcceptedNominalInventoryInput,
         EnvironmentCallableLookupInput, EnvironmentCallablePublicationMetadataInput,
         EnvironmentCallablePublicationRecordInput, EnvironmentCallableSignatureInput,
-        EnvironmentParameterGroupInput, EnvironmentParameterInput,
-        EnvironmentParameterMetadataInput, EnvironmentParameterTypeInput,
-        EnvironmentPublicationItemId, EnvironmentTypeProjectionKind, EnvironmentTypeProjectionNode,
-        EnvironmentTypeSiteRoot, EnvironmentTypeSiteStep, EnvironmentValueBindingInput,
-        SourceBackedEnvironmentRegistrationInput,
+        EnvironmentHostCallContractInput, EnvironmentParameterGroupInput,
+        EnvironmentParameterInput, EnvironmentParameterMetadataInput,
+        EnvironmentParameterTypeInput, EnvironmentPublicationItemId, EnvironmentTypeProjectionKind,
+        EnvironmentTypeProjectionNode, EnvironmentTypeSiteRoot, EnvironmentTypeSiteStep,
+        EnvironmentValueBindingInput, SourceBackedEnvironmentRegistrationInput,
     },
 };
 use arcweft_lang_syntax::ast::{
@@ -226,6 +226,7 @@ impl<'a> EnvironmentInputProjector<'a> {
         let value_bindings = self.value_bindings()?;
         let rust_metadata = self.rust_metadata(&mut nominal_inventory)?;
         let callable_records = self.callable_records()?;
+        let host_call_contracts = self.host_call_contracts()?;
         Ok(SourceBackedEnvironmentRegistrationInput::new(
             self.owner.clone(),
             self.document.identity().clone(),
@@ -234,7 +235,8 @@ impl<'a> EnvironmentInputProjector<'a> {
             value_bindings,
             rust_metadata,
             callable_records,
-        ))
+        )
+        .with_host_call_contracts(host_call_contracts))
     }
 
     fn adapter_nominals(
@@ -275,6 +277,58 @@ impl<'a> EnvironmentInputProjector<'a> {
                     AcceptedNominalOrigin::Adapter,
                     item_source(self.document, self.source_map, &item)?,
                     item,
+                ))
+            })
+            .collect()
+    }
+
+    fn host_call_contracts(
+        &self,
+    ) -> Result<Vec<EnvironmentHostCallContractInput>, AdapterRegistrationFactsError> {
+        let mut host_calls = self.manifest.host_calls().iter().collect::<Vec<_>>();
+        host_calls.sort_by_key(|call| call.id());
+        host_calls
+            .into_iter()
+            .map(|call| {
+                let path = CallablePath::try_new(
+                    call.id()
+                        .split('.')
+                        .map(|segment| CallableName::try_new(segment.to_owned()))
+                        .collect::<Result<Vec<_>, _>>()?,
+                )?;
+                let item = EnvironmentPublicationItemId::AdapterHostCall {
+                    owner: self.owner.clone(),
+                    path: path.clone(),
+                };
+                let signature = signature_input(
+                    call.signature(),
+                    call.effects(),
+                    &self.environment_owner,
+                    self.document,
+                    self.source_map,
+                    &item,
+                )?;
+                let domain_error = call
+                    .domain_error()
+                    .map(|error| {
+                        adapter_type_node(
+                            error,
+                            &self.environment_owner,
+                            &TypeSource::new(
+                                self.document,
+                                self.source_map,
+                                &item,
+                                EnvironmentTypeSiteRoot::HostCallDomainError,
+                            ),
+                        )
+                    })
+                    .transpose()?;
+                Ok(EnvironmentHostCallContractInput::new(
+                    item.clone(),
+                    path,
+                    signature,
+                    domain_error,
+                    item_source(self.document, self.source_map, &item)?,
                 ))
             })
             .collect()
@@ -1089,6 +1143,7 @@ fn accepted_owner(
     expected_environment_owner: &AdapterEnvironmentOwnerId,
 ) -> Result<AcceptedNominalOwnerId, AdapterRegistrationFactsError> {
     match owner {
+        AdapterNominalOwner::Standard => Ok(AcceptedNominalOwnerId::Standard),
         AdapterNominalOwner::Environment { owner } => {
             if owner != expected_environment_owner {
                 return Err(AdapterRegistrationFactsError::EnvironmentOwnerMismatch {

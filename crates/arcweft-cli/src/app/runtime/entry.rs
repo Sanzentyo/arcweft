@@ -9,11 +9,15 @@ pub(in crate::app) fn select_runtime_entry(
     entry: &str,
 ) -> Result<EntryRuntimeId, ExitCode> {
     let entry = parse_entry_id(entry)?;
-    let Some(spec) = plan.entries.iter().find(|candidate| candidate.id == entry) else {
+    let Some(spec) = plan
+        .entries()
+        .iter()
+        .find(|candidate| candidate.id == entry)
+    else {
         eprintln!("error: unknown entry `{}`", entry.public_label());
         return Err(ExitCode::FAILURE);
     };
-    if matches!(spec.target, RuntimeEntryTarget::Routes(_)) {
+    if matches!(&spec.target, RuntimeEntryTarget::Routes(_)) {
         eprintln!(
             "error: entry `{}` does not select a runnable flow or controller",
             entry.public_label()
@@ -28,7 +32,11 @@ pub(in crate::app) fn select_server_entry<'a>(
     entry: &str,
 ) -> Result<&'a RuntimeEntrySpec, ExitCode> {
     let entry = parse_entry_id(entry)?;
-    let Some(spec) = plan.entries.iter().find(|candidate| candidate.id == entry) else {
+    let Some(spec) = plan
+        .entries()
+        .iter()
+        .find(|candidate| candidate.id == entry)
+    else {
         eprintln!("error: unknown entry `{}`", entry.public_label());
         return Err(ExitCode::FAILURE);
     };
@@ -61,7 +69,11 @@ pub(in crate::app) fn select_runtime_cli_entry(
     entry: &str,
 ) -> Result<EntryRuntimeId, ExitCode> {
     let entry = parse_entry_id(entry)?;
-    let Some(spec) = plan.entries.iter().find(|candidate| candidate.id == entry) else {
+    let Some(spec) = plan
+        .entries()
+        .iter()
+        .find(|candidate| candidate.id == entry)
+    else {
         eprintln!("error: unknown entry `{}`", entry.public_label());
         return Err(ExitCode::FAILURE);
     };
@@ -69,7 +81,7 @@ pub(in crate::app) fn select_runtime_cli_entry(
         eprintln!("error: entry `{}` is not a cli entry", entry.public_label());
         return Err(ExitCode::FAILURE);
     }
-    if matches!(spec.target, RuntimeEntryTarget::Routes(_)) {
+    if matches!(&spec.target, RuntimeEntryTarget::Routes(_)) {
         eprintln!(
             "error: cli entry `{}` does not select a runnable flow or controller",
             entry.public_label()

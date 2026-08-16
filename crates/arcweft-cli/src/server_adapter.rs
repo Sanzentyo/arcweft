@@ -9,6 +9,7 @@ use arcweft_host_adapter::HostCallPolicy;
 use arcweft_runtime_accelerator::{RuntimePureAccelerator, RuntimePureAcceleratorConfig};
 use std::io::{Read, Write};
 use std::net::{SocketAddr, TcpListener, TcpStream};
+use std::sync::Arc;
 use thiserror::Error;
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -157,7 +158,6 @@ pub(crate) fn handle_http_request(
     run_route_flow(
         plan,
         route,
-        &parsed,
         &params,
         max_ops,
         pure_config,
@@ -176,14 +176,14 @@ fn require_host_call(host_policy: &HostCallPolicy, id: &str) -> Result<(), Serve
 fn run_route_flow(
     plan: &RuntimePlan,
     route: &RuntimeRouteSpec,
-    request: &HttpRequestHead,
     params: &[(String, String)],
     max_ops: usize,
     pure_config: RuntimePureAcceleratorConfig,
     assertion_projector: &impl NativeHttpAssertionProjector,
 ) -> Result<NativeHttpResponse, ServerAdapterError> {
-    let mut pure = RuntimePureAccelerator::with_config(pure_config, &plan.pure_helpers);
-    let mut executor = match Engine::for_flow(plan.clone(), &route.target) {
+    let plan = Arc::new(plan.clone());
+    let mut pure = RuntimePureAccelerator::with_config(pure_config, &plan);
+    let mut executor = match Engine::for_flow(Arc::unwrap_or_clone(plan), &route.target) {
         Ok(executor) => executor,
         Err(error) => {
             return Ok(NativeHttpResponse::new(
@@ -194,7 +194,7 @@ fn run_route_flow(
     };
     let result = executor.step_with_pure_backend(
         RuntimeStepInput {
-            bindings: request_bindings(request, route, params),
+            bindings: request_bindings(route, params),
             ..RuntimeStepInput::default()
         },
         RuntimeStepOptions {
@@ -265,12 +265,8 @@ impl NativeHttpAssertionProjector for ExecutionDiagnosticContext {
     }
 }
 
-fn request_bindings(
-    request: &HttpRequestHead,
-    route: &RuntimeRouteSpec,
-    params: &[(String, String)],
-) -> Vec<RuntimeBinding> {
-    let route_param_bindings = route
+fn request_bindings(route: &RuntimeRouteSpec, params: &[(String, String)]) -> Vec<RuntimeBinding> {
+    route
         .bindings
         .iter()
         .filter_map(|binding| match &binding.source {
@@ -281,27 +277,8 @@ fn request_bindings(
                     name: binding.name.clone(),
                     value: RuntimeValue::String(value.clone()),
                 }),
-        });
-    std::iter::once(RuntimeBinding {
-        name: "request".to_owned(),
-        value: RuntimeValue::try_record(vec![
-            (
-                "method".to_owned(),
-                RuntimeValue::String(request.method.clone()),
-            ),
-            (
-                "path".to_owned(),
-                RuntimeValue::String(request.path.clone()),
-            ),
-            (
-                "body".to_owned(),
-                RuntimeValue::String(request.body.clone()),
-            ),
-        ])
-        .expect("HTTP request runtime record has fixed unique fields"),
-    })
-    .chain(route_param_bindings)
-    .collect()
+        })
+        .collect()
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -403,7 +380,9 @@ mod tests {
     use arcweft_core::effect::{
         LineEffectRequest, RuntimeAssertion, RuntimeAssertionGuardId, RuntimeAssertionProfile,
     };
-    use arcweft_core::plan::{FlowOp, FlowRuntimeId, RuntimeFlow};
+    use arcweft_core::plan::{
+        FlowRuntimeId, RuntimeFlowOpSeed, RuntimeFlowSeed, RuntimePlanBuilder,
+    };
 
     struct SessionTestAssertionProjector;
 
@@ -422,7 +401,10 @@ mod tests {
 
     #[test]
     fn native_http_adapter_routes_request_to_flow() {
-        let plan = plan_with_flow("flow.health", vec![FlowOp::Return("ok".to_owned())]);
+        let plan = plan_with_flow(
+            "flow.health",
+            vec![RuntimeFlowOpSeed::Return("ok".to_owned())],
+        );
         let routes = vec![RuntimeRouteSpec {
             method: "GET".to_owned(),
             path: "/health".to_owned(),
@@ -447,52 +429,20 @@ mod tests {
     }
 
     #[test]
-    fn native_http_adapter_binds_explicit_route_parameters() {
-        let plan = plan_with_flow(
-            "flow.hello",
-            vec![FlowOp::ReturnExpr(arcweft_core::value::RuntimeExpr::Local(
-                "name".to_owned(),
-            ))],
-        );
-        let routes = vec![RuntimeRouteSpec {
-            method: "GET".to_owned(),
-            path: "/hello/:name".to_owned(),
-            target: FlowRuntimeId::from_runtime_target_value("flow.hello")
-                .expect("flow runtime id"),
-            bindings: vec![arcweft_core::plan::RuntimeRouteBinding {
-                name: "name".to_owned(),
-                source: RuntimeRouteBindingSource::PathParam("name".to_owned()),
-            }],
-        }];
-
-        let response = handle_http_request(
-            &plan,
-            &routes,
-            "GET /hello/alice HTTP/1.1\r\nhost: localhost\r\n\r\n",
-            8,
-            RuntimePureAcceleratorConfig::default(),
-            &native_http_host_calls(),
-            &SessionTestAssertionProjector,
-        )
-        .expect("request is handled");
-
-        assert_eq!(response.status, 200);
-        assert_eq!(response.body, "alice");
-    }
-
-    #[test]
     fn native_http_adapter_reports_runtime_assertion_without_changing_flow_status() {
         let plan = plan_with_flow(
             "flow.assertion",
             vec![
-                FlowOp::Effect(LineEffectRequest::Assert(RuntimeAssertion::new(
-                    RuntimeAssertionGuardId::try_from_bytes([0x41; 16])
-                        .expect("fixture assertion guard"),
-                    "ready".to_owned(),
-                    "runtime condition failed".to_owned(),
-                    RuntimeAssertionProfile::Always,
-                ))),
-                FlowOp::Return("ok".to_owned()),
+                RuntimeFlowOpSeed::Effect(arcweft_core::plan::RuntimeLineEffectSeed::Static(
+                    LineEffectRequest::Assert(RuntimeAssertion::new(
+                        RuntimeAssertionGuardId::try_from_bytes([0x41; 16])
+                            .expect("fixture assertion guard"),
+                        "ready".to_owned(),
+                        "runtime condition failed".to_owned(),
+                        RuntimeAssertionProfile::Always,
+                    )),
+                )),
+                RuntimeFlowOpSeed::Return("ok".to_owned()),
             ],
         );
         let routes = vec![RuntimeRouteSpec {
@@ -530,7 +480,10 @@ mod tests {
 
     #[test]
     fn native_http_adapter_requires_respond_host_call_manifest() {
-        let plan = plan_with_flow("flow.health", vec![FlowOp::Return("ok".to_owned())]);
+        let plan = plan_with_flow(
+            "flow.health",
+            vec![RuntimeFlowOpSeed::Return("ok".to_owned())],
+        );
         let routes = vec![RuntimeRouteSpec {
             method: "GET".to_owned(),
             path: "/health".to_owned(),
@@ -560,8 +513,12 @@ mod tests {
         HostCallPolicy::from_manifests([standard::native_http_manifest()])
     }
 
-    fn plan_with_flow(id: &str, ops: Vec<FlowOp>) -> RuntimePlan {
+    fn plan_with_flow(id: &str, ops: Vec<RuntimeFlowOpSeed>) -> RuntimePlan {
         let id = FlowRuntimeId::from_runtime_target_value(id).expect("flow runtime id");
-        RuntimePlan::new(vec![RuntimeFlow { id, ops }], Vec::new()).expect("plan is valid")
+        let mut builder = RuntimePlanBuilder::new();
+        builder
+            .push_flow_seed(RuntimeFlowSeed::new(id, [], ops))
+            .expect("typed flow seed is admitted");
+        builder.finish().expect("plan is valid")
     }
 }

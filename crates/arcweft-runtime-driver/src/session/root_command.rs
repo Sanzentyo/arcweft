@@ -196,6 +196,7 @@ impl RootCommandHostCallCatalog {
                 capability: binding.endpoint.capability.clone(),
                 operation: binding.endpoint.operation.clone(),
                 args,
+                named_args: Vec::new(),
                 mode: binding.endpoint.mode,
                 deterministic: binding.endpoint.deterministic,
             },

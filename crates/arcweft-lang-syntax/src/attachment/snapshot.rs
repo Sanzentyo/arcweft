@@ -27,7 +27,6 @@ use crate::grammar::event::{PendingPatternProjection, PendingTypeProjection};
 use crate::grammar::flow_projection::PendingFlowDeclarationProjection;
 use crate::grammar::keyword_statement_projection::PendingKeywordStatementProjection;
 use crate::grammar::kinds::{AstTag, SyntaxKind, SyntaxRole};
-use crate::grammar::source_declaration_projection::PendingSourceDeclarationProjection;
 use crate::grammar::source_projection::{
     PendingPathProjection, PendingUseProjection, PendingVisibilityKind,
 };
@@ -166,7 +165,6 @@ pub(crate) struct AttachedNodeRecord {
     layer_projection: Option<PendingLayerDeclarationProjection>,
     entry_projection: Option<PendingEntryDeclarationProjection>,
     style_projection: Option<PendingStyleDeclarationProjection>,
-    source_declaration_projection: Option<PendingSourceDeclarationProjection>,
     method_receiver_projection: Option<PendingMethodReceiverProjection>,
     contract_clause_projection: Option<PendingFlowContractClauseProjection>,
     flow_declaration_projection: Option<PendingFlowDeclarationProjection>,
@@ -202,7 +200,6 @@ pub(super) struct AttachedNodeRecordParts {
     pub(super) layer_projection: Option<PendingLayerDeclarationProjection>,
     pub(super) entry_projection: Option<PendingEntryDeclarationProjection>,
     pub(super) style_projection: Option<PendingStyleDeclarationProjection>,
-    pub(super) source_declaration_projection: Option<PendingSourceDeclarationProjection>,
     pub(super) method_receiver_projection: Option<PendingMethodReceiverProjection>,
     pub(super) contract_clause_projection: Option<PendingFlowContractClauseProjection>,
     pub(super) flow_declaration_projection: Option<PendingFlowDeclarationProjection>,
@@ -239,7 +236,6 @@ impl AttachedNodeRecord {
             layer_projection: parts.layer_projection,
             entry_projection: parts.entry_projection,
             style_projection: parts.style_projection,
-            source_declaration_projection: parts.source_declaration_projection,
             method_receiver_projection: parts.method_receiver_projection,
             contract_clause_projection: parts.contract_clause_projection,
             flow_declaration_projection: parts.flow_declaration_projection,
@@ -507,13 +503,6 @@ impl SyntaxSnapshotData {
         id: SyntaxNodeId,
     ) -> Option<&PendingStyleDeclarationProjection> {
         self.record(id).style_projection.as_ref()
-    }
-
-    pub(crate) fn source_declaration_projection(
-        self: &Arc<Self>,
-        id: SyntaxNodeId,
-    ) -> Option<&PendingSourceDeclarationProjection> {
-        self.record(id).source_declaration_projection.as_ref()
     }
 
     pub(crate) fn view_export_projection(
@@ -799,12 +788,6 @@ impl SyntaxNodeHandle {
 
     pub(crate) fn style_projection(&self) -> Option<&PendingStyleDeclarationProjection> {
         self.snapshot.style_projection(self.id)
-    }
-
-    pub(crate) fn source_declaration_projection(
-        &self,
-    ) -> Option<&PendingSourceDeclarationProjection> {
-        self.snapshot.source_declaration_projection(self.id)
     }
 
     pub(crate) fn view_export_projection(&self) -> Option<&PendingViewExportProjection> {

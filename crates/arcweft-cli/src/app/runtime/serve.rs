@@ -96,7 +96,7 @@ pub(in crate::app) fn runtime_serve_selection(
         return Err(ExitCode::FAILURE);
     }
     for route in &routes {
-        if !plan.flows.iter().any(|flow| flow.id == route.target) {
+        if !plan.flows().iter().any(|flow| flow.id == route.target) {
             eprintln!(
                 "error: server route {} {} targets unknown flow `{}`",
                 route.method,

@@ -1,6 +1,6 @@
 use super::{
     Engine, FlowControlStackEntryKind, FlowCursor, FlowEvent, FlowExit, FlowFiberStatus,
-    LineEffectRequest, RuntimeStepInput, RuntimeStepOutput, run_line_task_group_for_input,
+    LineEffectRequest, RuntimeStepInput, RuntimeStepOutput,
 };
 use crate::plan::FlowRuntimeId;
 use crate::pure::RuntimeCallBackend;
@@ -12,19 +12,8 @@ impl Engine {
         output: &mut RuntimeStepOutput,
         pure_backend: &mut impl RuntimeCallBackend,
     ) {
-        let Some(group) = self.plan.line_task_groups.get(self.fiber.line_cursor) else {
-            self.finish(output, pure_backend);
-            return;
-        };
-        self.merge_step_output(
-            run_line_task_group_for_input(group, input),
-            output,
-            pure_backend,
-        );
-        self.fiber.line_cursor += 1;
-        if self.fiber.line_cursor >= self.plan.line_task_groups.len() {
-            self.finish(output, pure_backend);
-        }
+        let _ = input;
+        self.finish(output, pure_backend);
     }
 
     pub(super) fn apply_control_effects(

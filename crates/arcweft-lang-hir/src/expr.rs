@@ -12,11 +12,11 @@ mod for_synthetic;
 mod thread;
 
 pub use self::basic::{
-    HirArrayRepeatExpr, HirAwaitExpr, HirAwaitPropagation, HirBinaryExpr, HirBinaryOp,
-    HirBorrowExpr, HirBorrowKind, HirBracketSequenceExpr, HirDereferenceExpr, HirIndexExpr,
-    HirPipeExpr, HirPlaceholderKind, HirRangeExpr, HirRecordExpr, HirRecordField,
+    HirArrayRepeatExpr, HirAwaitBranch, HirAwaitBranchKind, HirAwaitExpr, HirBinaryExpr,
+    HirBinaryOp, HirBorrowExpr, HirBorrowKind, HirBracketSequenceExpr, HirDereferenceExpr,
+    HirIndexExpr, HirPipeExpr, HirPlaceholderKind, HirRangeExpr, HirRecordExpr, HirRecordField,
     HirRecordFieldIssue, HirRecordLiteralExpr, HirSelectExpr, HirSelectedMember, HirTryExpr,
-    HirTryForm, HirTupleExpr, HirUnaryExpr, HirUnaryOp,
+    HirTupleExpr, HirUnaryExpr, HirUnaryOp,
 };
 pub use self::call::{
     HirAssociatedCallSyntax, HirAssociatedReceiver, HirAssociatedReceiverError,
@@ -60,7 +60,7 @@ use crate::leaf::{
     HirPathValue, HirShortVariantName, HirStringLiteral, HirTypeRegionIssue, HirUnitNumberLiteral,
 };
 use crate::source_index::HirExprSourceRole;
-use crate::stmt::HirTriggerPattern;
+use crate::stmt::{HirThreadStmtInvariantError, HirTriggerPattern};
 
 /// One immutable expression-arena record.
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -449,6 +449,7 @@ impl HirExprKind {
             Self::Thread(expression) => {
                 (expression.body().scope() == scope).then(|| expression.body())
             }
+            Self::Await(expression) => expression.thread_body_for_scope(scope),
             Self::Choice(expression) => expression.thread_body_for_scope(scope),
             _ => None,
         }
@@ -482,7 +483,6 @@ impl HirExprKind {
             | Self::Index(_)
             | Self::Pipe(_)
             | Self::Try(_)
-            | Self::Await(_)
             | Self::Thread(_)
             | Self::Range(_)
             | Self::Binary(_)
@@ -496,6 +496,10 @@ impl HirExprKind {
             | Self::IfLet(_)
             | Self::Match(_)
             | Self::ForSynthetic(_) => false,
+            Self::Await(expression) => expression
+                .branches()
+                .iter()
+                .any(|branch| matches!(branch.kind(), crate::expr::HirAwaitBranchKind::Recovered)),
             Self::NamedBlock(expression) => expression.name().recovery_issue().is_some(),
         }
     }
@@ -573,7 +577,14 @@ impl HirExprKind {
                 validate_expr(expected, expression.right())
             }
             Self::Try(expression) => validate_expr(expected, expression.operand()),
-            Self::Await(expression) => validate_expr(expected, expression.operand()),
+            Self::Await(expression) => {
+                validate_expr(expected, expression.operand())?;
+                expression
+                    .branches()
+                    .iter()
+                    .try_for_each(|branch| branch.validate_module(expected))
+                    .map_err(HirExprInvariantError::InvalidAwaitBranch)
+            }
             Self::Thread(expression) => expression.validate_module(expected),
             Self::Choice(expression) => expression.validate_module(expected),
             Self::Range(expression) => {
@@ -813,6 +824,7 @@ pub(crate) enum HirExprInvariantError {
     DuplicateMatchArmScope {
         scope: ScopeId,
     },
+    InvalidAwaitBranch(HirThreadStmtInvariantError),
 }
 
 /// Publication state for one semantic HIR expression.

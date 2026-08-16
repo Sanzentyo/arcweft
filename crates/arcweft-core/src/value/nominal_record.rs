@@ -283,6 +283,25 @@ impl RuntimeNominalRecordValue {
             .and_then(|ordinal| self.fields.get(ordinal))
     }
 
+    /// Replaces one field selected by its accepted defining-order identity.
+    ///
+    /// The caller retains the supplied value when the identity is outside this
+    /// record's admitted layout.
+    pub(crate) fn replace_field(
+        &mut self,
+        field: RuntimeRecordFieldId,
+        value: RuntimeValue,
+    ) -> Result<(), RuntimeValue> {
+        let Some(slot) = usize::try_from(field.zero_based())
+            .ok()
+            .and_then(|ordinal| self.fields.get_mut(ordinal))
+        else {
+            return Err(value);
+        };
+        *slot = value;
+        Ok(())
+    }
+
     /// Validates a restored or otherwise pre-existing value against one layout.
     pub fn validate_against_layout(
         &self,

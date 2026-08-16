@@ -358,13 +358,17 @@ fn malformed_proof_body_stays_queryable_while_following_proof_keeps_clean_identi
         .expressions()
         .resolve(module.slots(), *tail)
         .unwrap();
-    assert!(matches!(tail_payload.kind(), HirExprKind::Try(_)));
+    assert!(matches!(
+        tail_payload.kind(),
+        HirExprKind::Error(error)
+            if error.issue() == HirGenericExprIssue::UnclassifiedSyntax
+    ));
     assert_eq!(
         tail_payload.state(),
         &HirPoisonState::Poisoned(HirRecoveryIssue::InvalidExpression(
-            crate::expr::HirExpressionRecoveryIssue::RecoveredChild {
-                role: HirExprSourceRole::Operand,
-            },
+            crate::expr::HirExpressionRecoveryIssue::Generic(
+                HirGenericExprIssue::UnclassifiedSyntax,
+            ),
         ))
     );
     assert!(matches!(

@@ -461,12 +461,12 @@ fn rich_text_direction_and_theme_never_infer_a_different_axis_provider() {
     presentation.view.mounts[0].text[0].value = BundleViewTextValue::RichTextDocument {
         document: Box::new(RichTextDocument::new(vec![
             RichTextNode::StyleStart {
-                style: RichTextStyle::Layout {
+                style: Box::new(RichTextStyle::Layout {
                     layout: RichTextLayout {
                         direction: RichTextInlineDirection::Rtl,
                         ..RichTextLayout::default()
                     },
-                },
+                }),
             },
             RichTextNode::Text {
                 text: "changed text and inline direction".to_owned(),

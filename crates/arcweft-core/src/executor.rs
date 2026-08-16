@@ -3,10 +3,9 @@ use crate::awbc::product_step::{
     AwbcProductExecutorSnapshot, AwbcProductStepBuildError, AwbcProductStepExecutor,
 };
 use crate::awbc::schema::{AwbcEntryId, AwbcFunctionId, AwbcProgram};
-use crate::bytecode::BytecodeProgram;
 use crate::engine::{Engine, EngineStartError, FlowFiber};
 use crate::entry::ActiveEntrySnapshotV1;
-use crate::plan::{EntryRuntimeId, RuntimePlan, RuntimePlanError};
+use crate::plan::{EntryRuntimeId, RuntimePlan};
 use crate::pure::RuntimeCallBackend;
 use crate::root::{
     RootRuntimeError, RootSaveBlockers, RootStateSnapshotV1, RuntimeCommandEnvelope,
@@ -45,12 +44,6 @@ pub(crate) struct AotExecutor {
     fast_path_ops: usize,
 }
 
-/// Runtime executor backed by a bytecode bundle.
-#[derive(Clone, Debug, PartialEq)]
-pub(crate) struct BytecodeVmExecutor {
-    vm: VmExecutor,
-}
-
 /// Runtime executor backed by canonical product AWBC.
 #[derive(Clone, Debug, PartialEq)]
 pub(crate) struct AwbcProductExecutor {
@@ -64,7 +57,7 @@ pub(crate) struct AwbcProductExecutor {
 /// prevents hosts from constructing low-level executors directly.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum ArcweftExecutionTier {
-    StructuredVm,
+    RuntimePlanVm,
     StructuredAot,
     AwbcProduct,
 }
@@ -73,7 +66,7 @@ impl ArcweftExecutionTier {
     #[must_use]
     pub const fn as_str(self) -> &'static str {
         match self {
-            Self::StructuredVm => "structured_vm",
+            Self::RuntimePlanVm => "runtime_plan_vm",
             Self::StructuredAot => "structured_aot",
             Self::AwbcProduct => "awbc_product",
         }
@@ -81,7 +74,7 @@ impl ArcweftExecutionTier {
 
     #[must_use]
     pub const fn is_vm_first(self) -> bool {
-        matches!(self, Self::StructuredVm | Self::AwbcProduct)
+        matches!(self, Self::RuntimePlanVm | Self::AwbcProduct)
     }
 }
 
@@ -104,12 +97,17 @@ pub enum ArcweftRuntimeExecutorSnapshotError {
     ProductAwbc { message: String },
 }
 
+#[derive(Clone, Debug, Error, Eq, PartialEq)]
+pub enum ArcweftRuntimeExecutorBuildError {
+    #[error("execution tier `{tier}` requires an AWBC product")]
+    TierRequiresAwbc { tier: &'static str },
+}
+
 /// Shared runtime executor facade used by application-facing crates.
 ///
 /// The facade owns concrete executor construction so runtime hosts, CLI paths,
-/// native players, and development runners do not wire `BytecodeVmExecutor`
-/// directly. Product AWBC bytecode execution can replace or extend these
-/// variants without changing those callers.
+/// native players, and development runners do not wire concrete engines
+/// directly.
 #[derive(Clone, Debug, PartialEq)]
 pub struct ArcweftRuntimeExecutor {
     inner: ArcweftRuntimeExecutorInner,
@@ -117,7 +115,7 @@ pub struct ArcweftRuntimeExecutor {
 
 #[derive(Clone, Debug, PartialEq)]
 enum ArcweftRuntimeExecutorInner {
-    StructuredVm(BytecodeVmExecutor),
+    RuntimePlanVm(VmExecutor),
     StructuredAot(AotExecutor),
     AwbcProduct(Box<AwbcProductExecutor>),
 }
@@ -168,11 +166,6 @@ impl AotExecutor {
         }
     }
 
-    #[cfg(test)]
-    pub(crate) const fn program(&self) -> &AotProgram {
-        &self.program
-    }
-
     pub(crate) const fn fast_path_ops(&self) -> usize {
         self.fast_path_ops
     }
@@ -198,7 +191,7 @@ impl AotExecutor {
                 .engine_mut()
                 .step_prechecked_aot_linear_with_pure_backend(
                     &self.program,
-                    input,
+                    &input,
                     root_bindings,
                     options,
                     pure_backend,
@@ -206,39 +199,6 @@ impl AotExecutor {
             self.fast_path_ops += fast_path_ops;
             return result;
         }
-        self.vm.step_with_root_bindings_and_pure_backend(
-            input,
-            root_bindings,
-            options,
-            pure_backend,
-        )
-    }
-}
-
-impl BytecodeVmExecutor {
-    pub(crate) fn new(program: BytecodeProgram) -> Result<Self, RuntimePlanError> {
-        Ok(Self {
-            vm: VmExecutor::new(program.into_runtime_plan()?),
-        })
-    }
-
-    pub(crate) fn from_runtime_plan(plan: RuntimePlan) -> Self {
-        Self {
-            vm: VmExecutor::new(plan),
-        }
-    }
-
-    pub(crate) fn start_entry(&mut self, entry: &EntryRuntimeId) -> Result<(), EngineStartError> {
-        self.vm.start_entry(entry)
-    }
-
-    pub(crate) fn step_with_root_bindings_and_pure_backend(
-        &mut self,
-        input: RuntimeStepInput,
-        root_bindings: &[RuntimeBinding],
-        options: RuntimeStepOptions,
-        pure_backend: &mut impl RuntimeCallBackend,
-    ) -> RuntimeStepResult {
         self.vm.step_with_root_bindings_and_pure_backend(
             input,
             root_bindings,
@@ -263,17 +223,23 @@ impl AwbcProductExecutor {
 }
 
 impl ArcweftRuntimeExecutor {
-    pub fn from_runtime_plan(plan: RuntimePlan, tier: ArcweftExecutionTier) -> Self {
-        match tier {
-            ArcweftExecutionTier::StructuredVm | ArcweftExecutionTier::AwbcProduct => {
-                Self::from_inner(ArcweftRuntimeExecutorInner::StructuredVm(
-                    BytecodeVmExecutor::from_runtime_plan(plan),
-                ))
-            }
+    pub fn from_runtime_plan(
+        plan: RuntimePlan,
+        tier: ArcweftExecutionTier,
+    ) -> Result<Self, ArcweftRuntimeExecutorBuildError> {
+        Ok(match tier {
+            ArcweftExecutionTier::RuntimePlanVm => Self::from_inner(
+                ArcweftRuntimeExecutorInner::RuntimePlanVm(VmExecutor::new(plan)),
+            ),
             ArcweftExecutionTier::StructuredAot => Self::from_inner(
                 ArcweftRuntimeExecutorInner::StructuredAot(AotExecutor::new(plan)),
             ),
-        }
+            ArcweftExecutionTier::AwbcProduct => {
+                return Err(ArcweftRuntimeExecutorBuildError::TierRequiresAwbc {
+                    tier: tier.as_str(),
+                });
+            }
+        })
     }
 
     pub fn from_awbc_product(
@@ -297,27 +263,9 @@ impl ArcweftRuntimeExecutor {
         )))
     }
 
-    pub fn from_bytecode(
-        program: BytecodeProgram,
-        tier: ArcweftExecutionTier,
-    ) -> Result<Self, RuntimePlanError> {
-        Ok(match tier {
-            ArcweftExecutionTier::StructuredVm | ArcweftExecutionTier::AwbcProduct => {
-                Self::from_inner(ArcweftRuntimeExecutorInner::StructuredVm(
-                    BytecodeVmExecutor::new(program)?,
-                ))
-            }
-            ArcweftExecutionTier::StructuredAot => {
-                Self::from_inner(ArcweftRuntimeExecutorInner::StructuredAot(
-                    AotExecutor::new(program.into_runtime_plan()?),
-                ))
-            }
-        })
-    }
-
     pub const fn tier(&self) -> ArcweftExecutionTier {
         match &self.inner {
-            ArcweftRuntimeExecutorInner::StructuredVm(_) => ArcweftExecutionTier::StructuredVm,
+            ArcweftRuntimeExecutorInner::RuntimePlanVm(_) => ArcweftExecutionTier::RuntimePlanVm,
             ArcweftRuntimeExecutorInner::StructuredAot(_) => ArcweftExecutionTier::StructuredAot,
             ArcweftRuntimeExecutorInner::AwbcProduct(_) => ArcweftExecutionTier::AwbcProduct,
         }
@@ -328,7 +276,7 @@ impl ArcweftRuntimeExecutor {
         entry: &EntryRuntimeId,
     ) -> Result<(), EngineStartError> {
         match &mut self.inner {
-            ArcweftRuntimeExecutorInner::StructuredVm(executor) => executor.start_entry(entry),
+            ArcweftRuntimeExecutorInner::RuntimePlanVm(executor) => executor.start_entry(entry),
             ArcweftRuntimeExecutorInner::StructuredAot(executor) => executor.start_entry(entry),
             ArcweftRuntimeExecutorInner::AwbcProduct(_) => {
                 Err(EngineStartError::EntryDoesNotSelectFlow {
@@ -342,7 +290,7 @@ impl ArcweftRuntimeExecutor {
     pub const fn product_awbc_program(&self) -> Option<&AwbcProgram> {
         match &self.inner {
             ArcweftRuntimeExecutorInner::AwbcProduct(executor) => Some(executor.vm.program()),
-            ArcweftRuntimeExecutorInner::StructuredVm(_)
+            ArcweftRuntimeExecutorInner::RuntimePlanVm(_)
             | ArcweftRuntimeExecutorInner::StructuredAot(_) => None,
         }
     }
@@ -357,7 +305,7 @@ impl ArcweftRuntimeExecutor {
             ArcweftRuntimeExecutorInner::AwbcProduct(executor) => {
                 executor.vm.replace_program_preserving_state(program)
             }
-            ArcweftRuntimeExecutorInner::StructuredVm(_)
+            ArcweftRuntimeExecutorInner::RuntimePlanVm(_)
             | ArcweftRuntimeExecutorInner::StructuredAot(_) => {
                 Err(AwbcProductStepBuildError::RestoreSnapshot {
                     message: "code-compatible Product AWBC replacement requires Product AWBC tier"
@@ -370,7 +318,7 @@ impl ArcweftRuntimeExecutor {
     pub const fn fast_path_ops(&self) -> usize {
         match &self.inner {
             ArcweftRuntimeExecutorInner::StructuredAot(executor) => executor.fast_path_ops(),
-            ArcweftRuntimeExecutorInner::StructuredVm(_)
+            ArcweftRuntimeExecutorInner::RuntimePlanVm(_)
             | ArcweftRuntimeExecutorInner::AwbcProduct(_) => 0,
         }
     }
@@ -382,7 +330,7 @@ impl ArcweftRuntimeExecutor {
             ArcweftRuntimeExecutorInner::AwbcProduct(executor) => Ok(
                 ArcweftRuntimeExecutorSnapshot::AwbcProduct(executor.snapshot()),
             ),
-            ArcweftRuntimeExecutorInner::StructuredVm(_)
+            ArcweftRuntimeExecutorInner::RuntimePlanVm(_)
             | ArcweftRuntimeExecutorInner::StructuredAot(_) => {
                 Err(ArcweftRuntimeExecutorSnapshotError::UnsupportedTier {
                     tier: self.tier().as_str(),
@@ -420,8 +368,8 @@ impl ArcweftRuntimeExecutor {
         accepted: &[RuntimeCommandEnvelope],
     ) -> Result<(), RootRuntimeError> {
         match &mut self.inner {
-            ArcweftRuntimeExecutorInner::StructuredVm(executor) => {
-                executor.vm.engine_mut().acknowledge_root_commands(accepted)
+            ArcweftRuntimeExecutorInner::RuntimePlanVm(executor) => {
+                executor.engine_mut().acknowledge_root_commands(accepted)
             }
             ArcweftRuntimeExecutorInner::StructuredAot(executor) => {
                 executor.vm.engine_mut().acknowledge_root_commands(accepted)
@@ -439,7 +387,7 @@ impl ArcweftRuntimeExecutor {
             ArcweftRuntimeExecutorInner::AwbcProduct(executor) => {
                 executor.vm.active_entry_snapshot_identity().map(Some)
             }
-            ArcweftRuntimeExecutorInner::StructuredVm(_)
+            ArcweftRuntimeExecutorInner::RuntimePlanVm(_)
             | ArcweftRuntimeExecutorInner::StructuredAot(_) => Ok(None),
         }
     }
@@ -448,7 +396,7 @@ impl ArcweftRuntimeExecutor {
     pub fn product_root_state_snapshot(&self) -> Option<RootStateSnapshotV1> {
         match &self.inner {
             ArcweftRuntimeExecutorInner::AwbcProduct(executor) => executor.vm.root_state_snapshot(),
-            ArcweftRuntimeExecutorInner::StructuredVm(_)
+            ArcweftRuntimeExecutorInner::RuntimePlanVm(_)
             | ArcweftRuntimeExecutorInner::StructuredAot(_) => None,
         }
     }
@@ -457,7 +405,7 @@ impl ArcweftRuntimeExecutor {
     pub fn product_root_save_blockers(&self) -> Option<RootSaveBlockers> {
         match &self.inner {
             ArcweftRuntimeExecutorInner::AwbcProduct(executor) => executor.vm.root_save_blockers(),
-            ArcweftRuntimeExecutorInner::StructuredVm(_)
+            ArcweftRuntimeExecutorInner::RuntimePlanVm(_)
             | ArcweftRuntimeExecutorInner::StructuredAot(_) => None,
         }
     }
@@ -471,7 +419,7 @@ impl ArcweftRuntimeExecutor {
             ArcweftRuntimeExecutorInner::AwbcProduct(executor) => {
                 executor.vm.restore_root_snapshot(active, snapshot)
             }
-            ArcweftRuntimeExecutorInner::StructuredVm(_)
+            ArcweftRuntimeExecutorInner::RuntimePlanVm(_)
             | ArcweftRuntimeExecutorInner::StructuredAot(_) => {
                 Err(RootRuntimeError::SnapshotRoleMismatch("executor tier"))
             }
@@ -495,7 +443,7 @@ impl ArcweftRuntimeExecutor {
         pure_backend: &mut impl RuntimeCallBackend,
     ) -> RuntimeStepResult {
         match &mut self.inner {
-            ArcweftRuntimeExecutorInner::StructuredVm(executor) => executor
+            ArcweftRuntimeExecutorInner::RuntimePlanVm(executor) => executor
                 .step_with_root_bindings_and_pure_backend(
                     input,
                     root_bindings,
@@ -548,7 +496,7 @@ impl RuntimeExecutor for AotExecutor {
                 .engine_mut()
                 .step_prechecked_aot_linear_with_pure_backend(
                     &self.program,
-                    input,
+                    &input,
                     &[],
                     options,
                     &mut pure_backend,
@@ -564,20 +512,10 @@ impl RuntimeExecutor for AotExecutor {
     }
 }
 
-impl RuntimeExecutor for BytecodeVmExecutor {
-    fn step(&mut self, input: RuntimeStepInput, options: RuntimeStepOptions) -> RuntimeStepResult {
-        self.vm.step(input, options)
-    }
-
-    fn fiber(&self) -> &FlowFiber {
-        self.vm.fiber()
-    }
-}
-
 impl RuntimeExecutor for ArcweftRuntimeExecutor {
     fn step(&mut self, input: RuntimeStepInput, options: RuntimeStepOptions) -> RuntimeStepResult {
         match &mut self.inner {
-            ArcweftRuntimeExecutorInner::StructuredVm(executor) => executor.step(input, options),
+            ArcweftRuntimeExecutorInner::RuntimePlanVm(executor) => executor.step(input, options),
             ArcweftRuntimeExecutorInner::StructuredAot(executor) => executor.step(input, options),
             ArcweftRuntimeExecutorInner::AwbcProduct(executor) => executor.vm.step(input, options),
         }
@@ -585,7 +523,7 @@ impl RuntimeExecutor for ArcweftRuntimeExecutor {
 
     fn fiber(&self) -> &FlowFiber {
         match &self.inner {
-            ArcweftRuntimeExecutorInner::StructuredVm(executor) => executor.fiber(),
+            ArcweftRuntimeExecutorInner::RuntimePlanVm(executor) => executor.fiber(),
             ArcweftRuntimeExecutorInner::StructuredAot(executor) => executor.fiber(),
             ArcweftRuntimeExecutorInner::AwbcProduct(executor) => executor.vm.fiber(),
         }

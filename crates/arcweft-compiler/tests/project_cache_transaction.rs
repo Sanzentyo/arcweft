@@ -17,9 +17,12 @@ use arcweft_compiler::project::{
     ProjectCompileUnitFingerprint, compile_project_with_cache,
 };
 use arcweft_lang_hir::symbol::{CallablePackageId, ProjectSymbolWorldId};
-use arcweft_lang_hir::{item::HirItemKind, project::HirRuntimeExpressionTypeDisposition};
+use arcweft_lang_hir::{
+    item::HirItemKind, project::HirRuntimeExpressionTypeDisposition, stmt::HirStmtKind,
+};
 use arcweft_lang_sema::{
     env::TypeCheckEnv,
+    final_analysis::CheckedStatementRole,
     registration::{CharacterRegistrar, CharacterRegistrationRequest, ProjectRegistrationFacts},
     types::TypeKind,
 };
@@ -603,7 +606,7 @@ fn runtime_plan_consumes_project_view_without_flattening() {
     assert_eq!(
         lowered
             .plan
-            .flows
+            .flows()
             .iter()
             .map(|flow| flow.id.clone())
             .collect::<Vec<_>>(),
@@ -677,13 +680,11 @@ fn runtime_semantic_facts_retain_exact_runtime_domain_types_and_omit_presentatio
         if !runtime_owners.contains_local(owner) {
             saw_presentation_local = true;
             assert!(runtime_facts.local_type(owner).is_none());
-            assert!(runtime_facts.local_declaration(owner).is_none());
             continue;
         }
         let projected = runtime_facts
             .local_type(owner)
             .expect("every runtime-domain local retains one runtime type fact");
-        assert!(runtime_facts.local_declaration(owner).is_some());
         assert_eq!(
             projected.identity(),
             RuntimeSemanticTypeId::from_bytes(*checked.ty().semantic_identity_digest().as_bytes())
@@ -775,6 +776,90 @@ fn runtime_semantic_facts_retain_exact_runtime_domain_types_and_omit_presentatio
         saw_presentation_type,
         "View/Style type projection is absent"
     );
+}
+
+#[test]
+fn runtime_assignment_projection_retains_exact_checked_place_and_types() {
+    let (project, facts) = fixture(
+        concat!(
+            "struct Point { x: i64, active: bool }\n",
+            "fn main(point: Point) -> bool {\n",
+            "    point.active = true\n",
+            "    point.active\n",
+            "}\n",
+        ),
+        "runtime-assignment-fact",
+    );
+    let mut cache = RecordingCache::default();
+    let mut session = AttachedCompiler::new(&project);
+    let compiled = session
+        .compile(
+            &project,
+            &context(TypeCheckEnv::standard(), facts),
+            &mut cache,
+        )
+        .expect("direct record-field assignment compiles");
+    let executable = compiled
+        .hir_project()
+        .executable_view()
+        .expect("accepted assignment project is executable");
+    let statement = executable
+        .modules()
+        .flat_map(|(_, module)| module.statements())
+        .find_map(|(owner, statement)| {
+            matches!(statement.kind(), HirStmtKind::Assign { .. }).then_some(owner)
+        })
+        .expect("assignment statement");
+    let checked = compiled
+        .final_analysis()
+        .statement(statement)
+        .expect("checked assignment statement");
+    let CheckedStatementRole::Assignment(checked) = checked.role() else {
+        panic!("assignment owns its checked semantic role")
+    };
+    let runtime = project_runtime_semantic_facts(
+        executable,
+        compiled.project_symbols(),
+        compiled.final_analysis(),
+        None,
+        None,
+    )
+    .expect("assignment projects through the compiler boundary");
+    let assignment = runtime
+        .assignment(statement)
+        .expect("assignment has one runtime fact");
+
+    assert_eq!(assignment.base(), checked.place().local());
+    assert_eq!(assignment.field_ordinal(), checked.place().field_ordinal());
+    assert_eq!(assignment.field_ordinal(), 1);
+    assert_eq!(checked.place().field_type(), &TypeKind::Bool);
+    assert_eq!(checked.value_type(), &TypeKind::Bool);
+    assert_eq!(
+        assignment.nominal().identity().as_bytes(),
+        checked.place().nominal().identity().as_bytes()
+    );
+    assert_eq!(
+        assignment.field_type().identity().as_bytes(),
+        checked
+            .place()
+            .field_type()
+            .semantic_identity_digest()
+            .as_bytes()
+    );
+    assert_eq!(
+        assignment.value_type().identity().as_bytes(),
+        checked.value_type().semantic_identity_digest().as_bytes()
+    );
+    assert_eq!(assignment.field_type(), assignment.value_type());
+    let RuntimeTypeShape::ProjectNominal { nominal, .. } = runtime
+        .local_type(assignment.base())
+        .expect("assignment base local type")
+        .shape()
+    else {
+        panic!("assignment base retains its project nominal shape")
+    };
+    assert_eq!(nominal, assignment.nominal());
+    assert_eq!(nominal.layout(), assignment.nominal().layout());
 }
 
 #[test]

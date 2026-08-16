@@ -1,5 +1,4 @@
 use arcweft_bundle::{ArcweftBundle, BundleVirtualFileSpace};
-use arcweft_core::source::SourceId;
 use arcweft_core::task::{
     CancelScopeId, HostTaskRequest, SystemInfoKind, TaskEvent, TaskEventKind,
 };
@@ -18,7 +17,6 @@ pub struct BrowserTaskBroker {
     files: BTreeMap<String, Vec<u8>>,
     asset_files: BTreeMap<String, String>,
     cancelled_scopes: BTreeSet<CancelScopeId>,
-    closed_sources: BTreeSet<SourceId>,
     queued_task_events: Vec<TaskEvent>,
 }
 
@@ -80,7 +78,6 @@ impl BrowserTaskBroker {
             files,
             asset_files,
             cancelled_scopes: BTreeSet::new(),
-            closed_sources: BTreeSet::new(),
             queued_task_events: Vec::new(),
         })
     }
@@ -97,7 +94,7 @@ impl BrowserTaskBroker {
                 }
                 let kind = self
                     .resolve(&dispatch)
-                    .unwrap_or_else(|error| TaskEventKind::Err(error.to_string()));
+                    .unwrap_or_else(|error| TaskEventKind::Failed(error.to_string()));
                 dispatch.into_event(kind)
             })
             .collect::<Vec<_>>();
@@ -122,14 +119,6 @@ impl BrowserTaskBroker {
 
     pub fn cancel_scopes(&mut self, scopes: impl IntoIterator<Item = CancelScopeId>) {
         self.cancelled_scopes.extend(scopes);
-    }
-
-    pub fn close_sources(&mut self, sources: impl IntoIterator<Item = SourceId>) {
-        self.closed_sources.extend(sources);
-    }
-
-    pub fn is_source_closed(&self, source: &SourceId) -> bool {
-        self.closed_sources.contains(source)
     }
 
     fn resolve(

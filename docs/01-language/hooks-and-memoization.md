@@ -17,7 +17,8 @@ Author-facing event handling stays next to its owner:
 - choice selection is the option's `select` body.
 - line-local signal, mark, timeout, and task reactions use the line plan's
   scoped `on` branches.
-- live-source lifecycle events use handlers inside the `source` declaration.
+- live-stream lifecycle is owned by the external capability; consumers handle
+  the typed `Stream<T, E>` events returned by its ordinary operation.
 - durable state transitions go through the selected typed state-transition
   function rather than a global callback.
 - Agent and debugger observation is read-only trace data.
@@ -46,9 +47,9 @@ option @.listen {
 ```
 
 These surfaces may lower to a shared deterministic subscription or dispatch
-table. That lower-level representation is not a reason to expose one universal
-source declaration: the source language keeps target, event, lifetime, and
-allowed effects explicit through the owning construct.
+table. That lower-level representation is not a reason to expose a universal
+source declaration: the language keeps target, event, lifetime, and allowed
+effects explicit through the owning construct or external capability.
 
 ## Deterministic dispatch
 

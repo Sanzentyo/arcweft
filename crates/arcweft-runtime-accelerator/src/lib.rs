@@ -16,20 +16,23 @@ use apache_avro::{Reader, Schema, Writer, types::Value as AvroValue};
 use arcweft_core::{
     math::{DenseMatrixF32, DenseMatrixF64, DenseTensorF32, DenseTensorF64},
     plan::{
-        RuntimePureHelper, RuntimePureHelperId, RuntimePureHelperOrigin, RuntimePureInputType,
-        RuntimePureOutputType,
+        RuntimePlan, RuntimePureHelper, RuntimePureHelperId, RuntimePureHelperOrigin,
+        RuntimePureInputType, RuntimePureOutputType,
     },
     pure::{
         AotPureFunctionBackend, AotPureI64Plan, AotPureScalarPlan, PureFunctionRequest,
         PureFunctionStats, RuntimeExternalCallBackend, RuntimeFixedArgs, RuntimeFloat32Args,
         RuntimeFloat64Args, RuntimeI32Args, RuntimeI64Args, RuntimeMathCallBackend,
-        RuntimePureCallBackend, RuntimePureScalar, RuntimePureScalarInteger, VmPureFunctionScratch,
+        RuntimePureCallBackend, RuntimePureHelperRef, RuntimePureScalar, RuntimePureScalarInteger,
+        VmPureFunctionScratch,
     },
+    runtime_id::RuntimeLocalDeclarationId,
     step::RuntimePureCallStats,
     value::{
-        DenseSeq, RuntimeBinding, RuntimeCallTarget, RuntimeEvalError, RuntimeExactInteger,
-        RuntimeExactIntegerSlice, RuntimeExactIntegerSliceMut, RuntimeExpr, RuntimeIntrinsic,
-        RuntimeSeq, RuntimeValue, runtime_sequence_dense_bytes, runtime_sequence_dense_usize,
+        DenseSeq, RuntimeCallTarget, RuntimeEvalError, RuntimeExactInteger,
+        RuntimeExactIntegerSlice, RuntimeExactIntegerSliceMut, RuntimeExpr, RuntimeExprKind,
+        RuntimeIntrinsic, RuntimeSeq, RuntimeValue, runtime_sequence_dense_bytes,
+        runtime_sequence_dense_usize,
     },
 };
 use arcweft_data::{
@@ -93,134 +96,134 @@ mod native_jit {
     pub struct CompiledPureF32Inputs;
     pub struct CompiledPureF64Inputs;
     impl CraneliftPureFunctionBackend {
-        pub fn compile_i64_with_inputs<'a, I>(
+        pub fn compile_i64_with_inputs<I>(
             &self,
             _request: &PureFunctionRequest,
-            _input_names: I,
+            _input_locals: I,
         ) -> Result<CompiledPureI64Inputs, NativeJitUnavailable>
         where
-            I: IntoIterator<Item = &'a str>,
+            I: IntoIterator<Item = RuntimeLocalDeclarationId>,
         {
             Err(NativeJitUnavailable)
         }
 
-        pub fn compile_i32_with_inputs<'a, I>(
+        pub fn compile_i32_with_inputs<I>(
             &self,
             _request: &PureFunctionRequest,
-            _input_names: I,
+            _input_locals: I,
         ) -> Result<CompiledPureI32Inputs, NativeJitUnavailable>
         where
-            I: IntoIterator<Item = &'a str>,
+            I: IntoIterator<Item = RuntimeLocalDeclarationId>,
         {
             Err(NativeJitUnavailable)
         }
 
-        pub fn compile_i8_with_inputs<'a, I>(
+        pub fn compile_i8_with_inputs<I>(
             &self,
             _request: &PureFunctionRequest,
-            _input_names: I,
+            _input_locals: I,
         ) -> Result<CompiledPureI8Inputs, NativeJitUnavailable>
         where
-            I: IntoIterator<Item = &'a str>,
+            I: IntoIterator<Item = RuntimeLocalDeclarationId>,
         {
             Err(NativeJitUnavailable)
         }
 
-        pub fn compile_i16_with_inputs<'a, I>(
+        pub fn compile_i16_with_inputs<I>(
             &self,
             _request: &PureFunctionRequest,
-            _input_names: I,
+            _input_locals: I,
         ) -> Result<CompiledPureI16Inputs, NativeJitUnavailable>
         where
-            I: IntoIterator<Item = &'a str>,
+            I: IntoIterator<Item = RuntimeLocalDeclarationId>,
         {
             Err(NativeJitUnavailable)
         }
 
-        pub fn compile_i128_batch_with_inputs<'a, I>(
+        pub fn compile_i128_batch_with_inputs<I>(
             &self,
             _request: &PureFunctionRequest,
-            _input_names: I,
+            _input_locals: I,
         ) -> Result<CompiledPureI128BatchInputs, NativeJitUnavailable>
         where
-            I: IntoIterator<Item = &'a str>,
+            I: IntoIterator<Item = RuntimeLocalDeclarationId>,
         {
             Err(NativeJitUnavailable)
         }
 
-        pub fn compile_u32_with_inputs<'a, I>(
+        pub fn compile_u32_with_inputs<I>(
             &self,
             _request: &PureFunctionRequest,
-            _input_names: I,
+            _input_locals: I,
         ) -> Result<CompiledPureU32Inputs, NativeJitUnavailable>
         where
-            I: IntoIterator<Item = &'a str>,
+            I: IntoIterator<Item = RuntimeLocalDeclarationId>,
         {
             Err(NativeJitUnavailable)
         }
 
-        pub fn compile_u8_with_inputs<'a, I>(
+        pub fn compile_u8_with_inputs<I>(
             &self,
             _request: &PureFunctionRequest,
-            _input_names: I,
+            _input_locals: I,
         ) -> Result<CompiledPureU8Inputs, NativeJitUnavailable>
         where
-            I: IntoIterator<Item = &'a str>,
+            I: IntoIterator<Item = RuntimeLocalDeclarationId>,
         {
             Err(NativeJitUnavailable)
         }
 
-        pub fn compile_u16_with_inputs<'a, I>(
+        pub fn compile_u16_with_inputs<I>(
             &self,
             _request: &PureFunctionRequest,
-            _input_names: I,
+            _input_locals: I,
         ) -> Result<CompiledPureU16Inputs, NativeJitUnavailable>
         where
-            I: IntoIterator<Item = &'a str>,
+            I: IntoIterator<Item = RuntimeLocalDeclarationId>,
         {
             Err(NativeJitUnavailable)
         }
 
-        pub fn compile_u64_with_inputs<'a, I>(
+        pub fn compile_u64_with_inputs<I>(
             &self,
             _request: &PureFunctionRequest,
-            _input_names: I,
+            _input_locals: I,
         ) -> Result<CompiledPureU64Inputs, NativeJitUnavailable>
         where
-            I: IntoIterator<Item = &'a str>,
+            I: IntoIterator<Item = RuntimeLocalDeclarationId>,
         {
             Err(NativeJitUnavailable)
         }
 
-        pub fn compile_u128_batch_with_inputs<'a, I>(
+        pub fn compile_u128_batch_with_inputs<I>(
             &self,
             _request: &PureFunctionRequest,
-            _input_names: I,
+            _input_locals: I,
         ) -> Result<CompiledPureU128BatchInputs, NativeJitUnavailable>
         where
-            I: IntoIterator<Item = &'a str>,
+            I: IntoIterator<Item = RuntimeLocalDeclarationId>,
         {
             Err(NativeJitUnavailable)
         }
 
-        pub fn compile_f32_with_inputs<'a, I>(
+        pub fn compile_f32_with_inputs<I>(
             &self,
             _request: &PureFunctionRequest,
-            _input_names: I,
+            _input_locals: I,
         ) -> Result<CompiledPureF32Inputs, NativeJitUnavailable>
         where
-            I: IntoIterator<Item = &'a str>,
+            I: IntoIterator<Item = RuntimeLocalDeclarationId>,
         {
             Err(NativeJitUnavailable)
         }
 
-        pub fn compile_f64_with_inputs<'a, I>(
+        pub fn compile_f64_with_inputs<I>(
             &self,
             _request: &PureFunctionRequest,
-            _input_names: I,
+            _input_locals: I,
         ) -> Result<CompiledPureF64Inputs, NativeJitUnavailable>
         where
-            I: IntoIterator<Item = &'a str>,
+            I: IntoIterator<Item = RuntimeLocalDeclarationId>,
         {
             Err(NativeJitUnavailable)
         }
@@ -674,7 +677,7 @@ impl RuntimePureNativeKind {
     }
 }
 
-fn helper_native_kind(helper: &RuntimePureHelper) -> Option<RuntimePureNativeKind> {
+fn helper_native_kind(helper: RuntimePureHelperRef<'_>) -> Option<RuntimePureNativeKind> {
     let kind = match helper.output_type {
         RuntimePureOutputType::I8 => RuntimePureNativeKind::I8,
         RuntimePureOutputType::I16 => RuntimePureNativeKind::I16,
@@ -692,7 +695,7 @@ fn helper_native_kind(helper: &RuntimePureHelper) -> Option<RuntimePureNativeKin
         RuntimePureOutputType::F64 => RuntimePureNativeKind::F64,
         RuntimePureOutputType::Bool | RuntimePureOutputType::Value => return None,
     };
-    (helper.input_names.len() == helper.input_types.len()
+    (helper.input_locals.len() == helper.input_types.len()
         && helper
             .input_types
             .iter()
@@ -702,7 +705,7 @@ fn helper_native_kind(helper: &RuntimePureHelper) -> Option<RuntimePureNativeKin
 
 fn call_jit_exact_int_slice<T: RuntimePureScalarInteger>(
     entry: &RuntimePureCacheEntry,
-    helper: &RuntimePureHelper,
+    helper: RuntimePureHelperRef<'_>,
     args: &[T],
 ) -> Option<Result<Option<T>, RuntimeEvalError>> {
     let value = match (T::exact_slice(args), entry) {
@@ -757,7 +760,7 @@ fn call_jit_exact_int_slice<T: RuntimePureScalarInteger>(
 
 fn call_jit_exact_int_flat_batch<T: RuntimePureScalarInteger>(
     entry: &RuntimePureCacheEntry,
-    helper: &RuntimePureHelper,
+    helper: RuntimePureHelperRef<'_>,
     flat_inputs: &[T],
     out: &mut [T],
 ) -> Option<Result<(), RuntimeEvalError>> {
@@ -782,7 +785,7 @@ fn call_jit_exact_int_flat_batch<T: RuntimePureScalarInteger>(
 
 fn call_jit_exact_int_flat_batch_sum<T: RuntimePureScalarInteger>(
     entry: &RuntimePureCacheEntry,
-    helper: &RuntimePureHelper,
+    helper: RuntimePureHelperRef<'_>,
     flat_inputs: &[T],
     rows: usize,
 ) -> Option<Result<i64, RuntimeEvalError>> {
@@ -1185,7 +1188,10 @@ impl RuntimePureAotPlan {
         }
     }
 
-    fn require_i64(&self, helper: &RuntimePureHelper) -> Result<&AotPureI64Plan, RuntimeEvalError> {
+    fn require_i64(
+        &self,
+        helper: RuntimePureHelperRef<'_>,
+    ) -> Result<&AotPureI64Plan, RuntimeEvalError> {
         self.i64_plan()
             .ok_or_else(|| RuntimeEvalError::UnsupportedPure {
                 name: helper.name.clone(),

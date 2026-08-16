@@ -309,10 +309,10 @@ impl RuntimeScheduler {
         }
         self.stats.completed_by_class.record(&task.class);
         match event.kind {
-            TaskEventKind::Ready(_) | TaskEventKind::Progress(_) => {
+            TaskEventKind::Ready(_) | TaskEventKind::Error(_) | TaskEventKind::Progress(_) => {
                 self.stats.completed += 1;
             }
-            TaskEventKind::Err(_) => {
+            TaskEventKind::Failed(_) => {
                 self.stats.failed += 1;
             }
             TaskEventKind::Cancelled => {
@@ -531,7 +531,7 @@ mod tests {
         scheduler.dispatch(SchedulerBudget { max_events: 8 });
 
         let events = scheduler.complete([
-            event("b", 2, TaskEventKind::Err("failed".to_owned())),
+            event("b", 2, TaskEventKind::Failed("failed".to_owned())),
             event("a", 1, TaskEventKind::Ready(RuntimePayload::from("ok"))),
         ]);
 

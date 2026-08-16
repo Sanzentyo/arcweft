@@ -1,7 +1,7 @@
 use std::{collections::BTreeSet, fmt, iter::FromIterator, str::FromStr};
 
 use arcweft_lang_hir::{
-    expr::{HirExprKind, HirSelectedMember},
+    expr::{HirCallArgument, HirCallCallee, HirCallValue, HirExprKind, HirSelectedMember},
     identity::ExprId,
     leaf::{HirPathRoot, HirPathSegment},
     module::HirModule,
@@ -71,10 +71,53 @@ impl EffectId {
         module: &HirModule,
         owner: ExprId,
     ) -> Result<(Self, Vec<ExprId>), HirEffectProjectionError> {
+        let expression = module
+            .resolve_expr(owner)
+            .map_err(|_| HirEffectProjectionError::InvalidOwner { owner })?;
         let mut segments = Vec::new();
         let mut owners = Vec::new();
-        collect_hir_effect_path(module, owner, &mut segments, &mut owners)?;
-        Ok((Self::parse(segments.join("."))?, owners))
+        let identity = if let HirExprKind::Call(call) = expression.kind() {
+            match call.callee() {
+                HirCallCallee::Value { value } => {
+                    collect_hir_effect_path(module, *value, &mut segments, &mut owners)?;
+                }
+                HirCallCallee::UnresolvedDot {
+                    value_receiver,
+                    member,
+                    ..
+                } => {
+                    collect_hir_effect_path(module, *value_receiver, &mut segments, &mut owners)?;
+                    let member = member
+                        .resolved()
+                        .ok_or(HirEffectProjectionError::Recovered { owner })?;
+                    segments.push(member.as_str().to_owned());
+                }
+                HirCallCallee::Associated { .. } => {
+                    return Err(HirEffectProjectionError::Unsupported { owner });
+                }
+            }
+            let scopes = call
+                .arguments()
+                .iter()
+                .map(|argument| {
+                    let HirCallArgument::Positional {
+                        value: HirCallValue::Present { value },
+                    } = argument
+                    else {
+                        return Err(HirEffectProjectionError::Unsupported { owner });
+                    };
+                    let mut scope_segments = Vec::new();
+                    collect_hir_effect_path(module, *value, &mut scope_segments, &mut owners)?;
+                    Ok(scope_segments.join("."))
+                })
+                .collect::<Result<Vec<_>, _>>()?;
+            owners.push(owner);
+            format!("{}({})", segments.join("."), scopes.join(","))
+        } else {
+            collect_hir_effect_path(module, owner, &mut segments, &mut owners)?;
+            segments.join(".")
+        };
+        Ok((Self::parse(identity)?, owners))
     }
 
     pub fn as_str(&self) -> &str {

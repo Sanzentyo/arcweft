@@ -50,11 +50,11 @@ use super::projection::poison_state_matches;
 use crate::arena::ArenaSnapshot;
 use crate::dialogue_application::HirPostfixBracketCandidates;
 use crate::expr::{
-    HirAssociatedReceiver, HirAwaitPropagation, HirBorrowKind, HirCallArgument, HirCallCallee,
-    HirCallChildPoison, HirCallChildStates, HirCallTypeApplication, HirCallTypeArgument,
-    HirCallValue, HirComputationBlockKind, HirExpr, HirExprKind, HirExpressionRecoveryIssue,
-    HirGenericExprIssue, HirNamedBlockName, HirPlaceholderKind, HirPoisonState, HirRecoveryIssue,
-    HirSelectedMember, HirTryForm, HirUnaryOp, literal_recovery_issue,
+    HirAssociatedReceiver, HirBorrowKind, HirCallArgument, HirCallCallee, HirCallChildPoison,
+    HirCallChildStates, HirCallTypeApplication, HirCallTypeArgument, HirCallValue,
+    HirComputationBlockKind, HirExpr, HirExprKind, HirExpressionRecoveryIssue, HirGenericExprIssue,
+    HirNamedBlockName, HirPlaceholderKind, HirPoisonState, HirRecoveryIssue, HirSelectedMember,
+    HirUnaryOp, literal_recovery_issue,
 };
 use crate::identity::{
     ExprId, LocalId, PatternId, ScopeId, StmtId, SyntheticKey, SyntheticOwner, SyntheticRole,
@@ -805,31 +805,11 @@ impl<'a> CandidateValidationCursor<'a> {
                 matches!(children.as_slice(), [left, right]
                     if actual.left() == left.id && actual.right() == right.id)
             }
-            (HirExprKind::Try(actual), ExpressionProjection::Try { form, .. }) => {
+            (HirExprKind::Try(actual), ExpressionProjection::Try { .. }) => {
                 matches!(children.as_slice(), [operand] if actual.operand() == operand.id)
-                    && matches!(
-                        (actual.form(), form),
-                        (
-                            HirTryForm::PrefixTry,
-                            arcweft_lang_syntax::expressions::SyntaxTryForm::PrefixTry
-                        ) | (
-                            HirTryForm::PostfixQuestion,
-                            arcweft_lang_syntax::expressions::SyntaxTryForm::PostfixQuestion
-                        )
-                    )
             }
-            (HirExprKind::Await(actual), ExpressionProjection::Await { propagation, .. }) => {
+            (HirExprKind::Await(actual), ExpressionProjection::Await { .. }) => {
                 matches!(children.as_slice(), [operand] if actual.operand() == operand.id)
-                    && matches!(
-                    (actual.propagation(), propagation),
-                    (
-                        HirAwaitPropagation::PreserveResult,
-                        arcweft_lang_syntax::expressions::SyntaxAwaitPropagation::PreserveResult
-                    ) | (
-                        HirAwaitPropagation::PropagateError,
-                        arcweft_lang_syntax::expressions::SyntaxAwaitPropagation::PropagateError
-                    )
-                )
             }
             (
                 HirExprKind::Range(actual),

@@ -18,9 +18,10 @@ pub use diagnostic::{
 };
 pub use index::{NominalResolutionIndex, NominalResolutionIndexError, NominalTypeNodeKey};
 pub use input::{
-    GenericTypeBinding, GenericTypeScope, GenericTypeScopeError, GenericTypeScopeFingerprint,
-    SelfTypeScope, SelfTypeScopeFingerprint, TypeResolutionInput, TypeResolutionInputError,
-    TypeResolutionModule, TypeResolutionProject, TypeResolutionWorld,
+    AssociatedTypeScope, AssociatedTypeScopeFingerprint, GenericTypeBinding, GenericTypeScope,
+    GenericTypeScopeError, GenericTypeScopeFingerprint, SelfTypeScope, SelfTypeScopeFingerprint,
+    TypeResolutionInput, TypeResolutionInputError, TypeResolutionModule, TypeResolutionProject,
+    TypeResolutionWorld,
 };
 pub use limits::{
     AcceptedNominalCatalogLimitKind, AcceptedNominalCatalogLimits,

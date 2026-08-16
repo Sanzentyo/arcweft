@@ -9,12 +9,13 @@ use super::structure::{
     types_compatible,
 };
 use crate::awbc::schema::{
-    AwbcBinaryOp, AwbcBindMode, AwbcBlockId, AwbcConstant, AwbcEffectSetId, AwbcFrameLayout,
-    AwbcFrameSlotRole, AwbcFunctionFlags, AwbcFunctionKind, AwbcInstruction, AwbcPattern,
-    AwbcPatternId, AwbcPatternRest, AwbcProgram, AwbcRegisterId, AwbcResumePointId,
+    AwbcBinaryOp, AwbcBindMode, AwbcBlockId, AwbcConstant, AwbcDialogueValueRole, AwbcEffectSetId,
+    AwbcFrameLayout, AwbcFrameSlotRole, AwbcFunctionFlags, AwbcFunctionKind, AwbcInstruction,
+    AwbcPattern, AwbcPatternId, AwbcPatternRest, AwbcProgram, AwbcRegisterId, AwbcResumePointId,
     AwbcRuntimeType, AwbcSafePointKind, AwbcScopeId, AwbcSignatureId, AwbcTerminator,
     AwbcTraitReceiverMode, AwbcTypeId, AwbcUnaryOp, AwbcUnsignedIntKind,
 };
+use crate::value::RuntimeReductionProducer;
 use std::collections::{BTreeSet, VecDeque};
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -149,8 +150,6 @@ fn verify_entry_safe_point(
         AwbcFunctionKind::PureHelper
         | AwbcFunctionKind::TraitMethod
         | AwbcFunctionKind::StreamTransform
-        | AwbcFunctionKind::SourceOpen
-        | AwbcFunctionKind::SourceHandler
         | AwbcFunctionKind::LineTask
         | AwbcFunctionKind::Synthetic => AwbcSafePointKind::CallableBoundary,
     };
@@ -535,6 +534,38 @@ fn apply_instruction(
             }
             write_register(verifier, function, block, *dst, state)?;
         }
+        AwbcInstruction::MakeReductionUnchanged {
+            dst,
+            ty,
+            state: value,
+        } => {
+            let Some(AwbcRuntimeType::Opaque {
+                admission,
+                arguments,
+                ..
+            }) = program.runtime_types.get(ty.index())
+            else {
+                return invalid_type(&at, "Reduction opaque type");
+            };
+            let Some(owner) = program
+                .runtime_types
+                .get(ty.index())
+                .and_then(|row| row.try_opaque_owner(&program.strings).ok().flatten())
+            else {
+                return invalid_type(&at, "Reduction opaque owner");
+            };
+            if *admission != crate::pattern::RuntimeOpaqueTypeAdmission::ExactIdentity
+                || !RuntimeReductionProducer::accepts(owner.producer())
+                || arguments.len() != 1
+            {
+                return invalid_type(&at, "exact std.reduction opaque type with one argument");
+            }
+            let state_ty = read_register(verifier, function, block, *value, state)?;
+            require_compatible(program, arguments[0], state_ty, &at)?;
+            let dst_ty = register_type(verifier, function, block, *dst)?;
+            require_compatible(program, dst_ty, *ty, &at)?;
+            write_register(verifier, function, block, *dst, state)?;
+        }
         AwbcInstruction::ProjectTuple {
             dst,
             target,
@@ -692,19 +723,16 @@ fn apply_instruction(
                 &format!("pure helper {}", helper.public_id.0),
             )?;
         }
-        AwbcInstruction::AssignField {
+        AwbcInstruction::AssignRecordField {
             target,
             field,
             value,
         } => {
-            check_string(program, *field, &at)?;
             let target_ty = read_register(verifier, function, block, *target, state)?;
             let value_ty = read_register(verifier, function, block, *value, state)?;
             match program.runtime_types.get(target_ty.index()) {
                 Some(AwbcRuntimeType::Record { fields, .. }) => {
-                    let Some(field_layout) =
-                        fields.iter().find(|candidate| candidate.name == *field)
-                    else {
+                    let Some(field_layout) = fields.get(*field as usize) else {
                         return Err(AwbcVerifyError::InvalidInvariant {
                             at,
                             message: "assigned field does not exist".to_owned(),
@@ -712,7 +740,6 @@ fn apply_instruction(
                     };
                     require_compatible(program, field_layout.ty, value_ty, "field assignment")?;
                 }
-                Some(AwbcRuntimeType::Dynamic) => {}
                 _ => return invalid_type(&at, "record assignment target"),
             }
         }
@@ -928,19 +955,6 @@ fn apply_instruction(
         }
         AwbcInstruction::StreamClose { stream } => {
             check_index(program.stream_plans.len(), stream.0, "stream_plans", &at)?;
-        }
-        AwbcInstruction::SourceClose { source } => {
-            check_index(program.source_plans.len(), source.0, "source_plans", &at)?;
-        }
-        AwbcInstruction::SourceYield { source, value } => {
-            check_index(program.source_plans.len(), source.0, "source_plans", &at)?;
-            let actual = read_register(verifier, function, block, *value, state)?;
-            require_compatible(
-                program,
-                program.source_plans[source.index()].item_type,
-                actual,
-                &at,
-            )?;
         }
         AwbcInstruction::Drop { register } => {
             read_register(verifier, function, block, *register, state)?;
@@ -1196,21 +1210,50 @@ fn apply_terminator(
         }
         AwbcTerminator::Dialogue {
             content,
-            line_task_group,
+            values,
+            line_task_captures,
             resume,
         } => {
             check_index(program.content_units.len(), content.0, "content_units", &at)?;
-            check_index(
-                program.line_task_groups.len(),
-                line_task_group.0,
-                "line_task_groups",
-                &at,
-            )?;
-            if program.content_units[content.index()].line_task_group != Some(*line_task_group) {
+            let group = program.content_units[content.index()]
+                .line_task_group
+                .and_then(|group| program.line_task_groups.get(group.index()));
+            if group.is_some_and(|group| group.captures.len() != line_task_captures.len()) {
                 return Err(AwbcVerifyError::InvalidInvariant {
                     at: at.clone(),
-                    message: "dialogue content and line-task group disagree".to_owned(),
+                    message: "dialogue line-task capture arity disagrees with its content group"
+                        .to_owned(),
                 });
+            }
+            if group.is_none() && !line_task_captures.is_empty() {
+                return Err(AwbcVerifyError::InvalidInvariant {
+                    at: at.clone(),
+                    message: "dialogue without a content-owned line-task group carries captures"
+                        .to_owned(),
+                });
+            }
+            for capture in line_task_captures {
+                read_register(verifier, function, block, *capture, state)?;
+            }
+            for (index, binding) in values.iter().enumerate() {
+                let expected =
+                    crate::runtime_id::RuntimeDialogueValueSlotId::from_zero_based(index)
+                        .ok_or_else(|| AwbcVerifyError::InvalidInvariant {
+                            at: at.clone(),
+                            message: "dialogue value slot count exceeds u32".to_owned(),
+                        })?;
+                if binding.slot != expected {
+                    return Err(AwbcVerifyError::InvalidInvariant {
+                        at: at.clone(),
+                        message: "dialogue value slots are not canonical and contiguous".to_owned(),
+                    });
+                }
+                let ty = read_register(verifier, function, block, binding.value, state)?;
+                if binding.role == AwbcDialogueValueRole::Condition
+                    && !is_bool(program.runtime_types.get(ty.index()))
+                {
+                    return invalid_type(&at, "dialogue condition Bool");
+                }
             }
             successors.push((
                 verify_resume(

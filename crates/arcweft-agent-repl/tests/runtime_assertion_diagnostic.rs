@@ -135,24 +135,27 @@ fn agent_debug_diagnostic_projects_fresh_session_fault() {
     let mut input = RuntimePlanSemanticFactInput::new();
     for (_, module) in executable.modules() {
         for (owner, _) in module.locals() {
-            input
-                .push_local_declaration(
-                    owner,
-                    RuntimeNormalizedType::new(
-                        RuntimeSemanticTypeId::from_bytes([0x11; 32]),
-                        RuntimeTypeShape::Unit,
-                    ),
-                )
-                .expect("fixture local identity");
-        }
-        for (owner, _) in module.expressions() {
-            input.push_expression_type(
+            input.push_local_declaration(
                 owner,
                 RuntimeNormalizedType::new(
                     RuntimeSemanticTypeId::from_bytes([0x11; 32]),
                     RuntimeTypeShape::Unit,
                 ),
             );
+        }
+        for (owner, _) in module.expressions() {
+            let (semantic_identity, shape) = if owner == condition {
+                (
+                    RuntimeSemanticTypeId::from_bytes([0x12; 32]),
+                    RuntimeTypeShape::Bool,
+                )
+            } else {
+                (
+                    RuntimeSemanticTypeId::from_bytes([0x11; 32]),
+                    RuntimeTypeShape::Unit,
+                )
+            };
+            input.push_expression_type(owner, RuntimeNormalizedType::new(semantic_identity, shape));
         }
         for (owner, _) in module.patterns() {
             input.push_pattern_type(
@@ -180,7 +183,7 @@ fn agent_debug_diagnostic_projects_fresh_session_fault() {
         &RuntimeEntryLoweringInput::empty(executable),
     )
     .expect("runtime plan");
-    let guard = report.plan.flows[0]
+    let guard = report.plan.flows()[0]
         .ops
         .iter()
         .find_map(|operation| match operation {

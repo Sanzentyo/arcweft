@@ -1,5 +1,3 @@
-use arcweft_core::bytecode::BytecodeProgram;
-
 use crate::cell::ReplCellId;
 use crate::evidence::ReplGenerationId;
 
@@ -39,10 +37,9 @@ pub struct ReplExecutableCell {
     pub source_hash: String,
     pub synthetic_controller_name: String,
     pub entry: Option<String>,
-    pub bytecode: BytecodeProgram,
 }
 
-/// Executable snapshot consumed by VM/JIT/AOT tiering packages.
+/// Executable-generation snapshot consumed by JIT/AOT tiering packages.
 #[derive(Clone, Debug, PartialEq)]
 pub struct ReplExecutableSnapshot {
     pub base_program_hash: String,

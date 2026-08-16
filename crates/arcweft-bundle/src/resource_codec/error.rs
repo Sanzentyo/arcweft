@@ -14,6 +14,8 @@ pub enum SectionCodecError {
     ),
     #[error("section codec budget exceeded: {0}")]
     BudgetExceeded(&'static str),
+    #[error("RuntimeTypes ABI or runtime-layout digest does not match the AWBC header")]
+    RuntimeLayoutMismatch,
     #[error("section codec magic {actual:?} does not match {expected:?}")]
     BadMagic { expected: [u8; 8], actual: [u8; 8] },
     #[error("unsupported section codec schema version {actual}; expected {expected}")]

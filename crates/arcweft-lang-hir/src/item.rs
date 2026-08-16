@@ -20,7 +20,6 @@ mod host;
 mod member_index;
 mod nominal;
 mod retained;
-mod source;
 mod trait_impl;
 
 pub use self::host::{
@@ -81,15 +80,6 @@ pub use self::nominal::{
     HirEnumItem, HirEnumVariant, HirResourceDeclaration, HirResourceField, HirStructField,
     HirStructItem, HirTypeAliasItem,
 };
-pub use self::source::{
-    HirSourceBackpressurePolicy, HirSourceBackpressureValue, HirSourceBody,
-    HirSourceBoundedArgument, HirSourceChildState, HirSourceEventIssue, HirSourceEventPattern,
-    HirSourceExpressionValue, HirSourceHandler, HirSourceHandlerBody, HirSourceHeaders,
-    HirSourceId, HirSourceItem, HirSourceOverflowPolicy, HirSourceOverflowValue,
-    HirSourcePatternValue, HirSourcePolicyBinding, HirSourcePolicyIssue, HirSourcePrivacyPolicy,
-    HirSourcePrivacyValue, HirSourcePunctuationState, HirSourceReplayPolicy, HirSourceReplayValue,
-    HirSourceRequiredSlot,
-};
 /// Exact source-backed top-level item inventory.
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub enum HirItemFamily {
@@ -116,14 +106,13 @@ pub enum HirItemFamily {
     ExternCapability,
     Test,
     Bench,
-    Source,
     Style,
     Error,
 }
 
 impl HirItemFamily {
     /// All source item families in grammar inventory order.
-    pub const ALL: [Self; 26] = [
+    pub const ALL: [Self; 25] = [
         Self::Module,
         Self::Use,
         Self::Flow,
@@ -147,7 +136,6 @@ impl HirItemFamily {
         Self::ExternCapability,
         Self::Test,
         Self::Bench,
-        Self::Source,
         Self::Style,
         Self::Error,
     ];
@@ -276,7 +264,6 @@ impl HirItem {
             | HirItemKind::ExternCapability(_)
             | HirItemKind::Test(_)
             | HirItemKind::Bench(_)
-            | HirItemKind::Source(_)
             | HirItemKind::Error(_) => None,
         }
     }
@@ -328,9 +315,6 @@ fn item_state_matches_kind(kind: &HirItemKind, state: HirItemPoisonState) -> boo
         HirItemKind::View(declaration) => !declaration.has_recovery() || state.is_poisoned(),
         HirItemKind::Layer(declaration) => !declaration.has_recovery() || state.is_poisoned(),
         HirItemKind::Entry(declaration) => {
-            !declaration.has_structural_recovery() || state.is_poisoned()
-        }
-        HirItemKind::Source(declaration) => {
             !declaration.has_structural_recovery() || state.is_poisoned()
         }
         HirItemKind::Style(declaration) => !declaration.has_recovery() || state.is_poisoned(),
@@ -507,7 +491,6 @@ pub enum HirItemKind {
     ExternCapability(HirExternCapabilityItem),
     Test(HirTestItem),
     Bench(HirBenchItem),
-    Source(HirSourceItem),
     Style(HirStyleItem),
     Error(HirErrorItem),
 }
@@ -538,7 +521,6 @@ impl HirItemKind {
             Self::ExternCapability(_) => HirItemFamily::ExternCapability,
             Self::Test(_) => HirItemFamily::Test,
             Self::Bench(_) => HirItemFamily::Bench,
-            Self::Source(_) => HirItemFamily::Source,
             Self::Style(_) => HirItemFamily::Style,
             Self::Error(_) => HirItemFamily::Error,
         }
@@ -607,7 +589,6 @@ impl HirItemKind {
             | Self::Entry(_)
             | Self::Test(_)
             | Self::Bench(_)
-            | Self::Source(_)
             | Self::Style(_)
             | Self::Error(_) => Vec::new(),
         }
@@ -637,7 +618,6 @@ impl HirItemKind {
             Self::ExternCapability(item) => item.validate_module(expected),
             Self::Test(item) => item.validate_module(expected),
             Self::Bench(item) => item.validate_module(expected),
-            Self::Source(item) => item.validate_module(expected),
             Self::Style(item) => item.validate_module(expected),
         }
     }
@@ -755,10 +735,6 @@ pub(crate) enum HirItemInvariantError {
     FlowIssueItemOwner { expected: ItemId, actual: ItemId },
     #[error("Flow poison contains related issues without a primary issue")]
     InvalidFlowPoison,
-    #[error("source declaration has neither a retained ID nor an ordinary name")]
-    MissingSourceIdentity,
-    #[error("source recovery payload is inconsistent with its typed issue")]
-    InvalidSourceRecovery,
     #[error("a clean use declaration requires at least one flattened binding")]
     EmptyUseDeclaration,
     #[error("a HIR where predicate requires at least one typed bound")]
@@ -890,16 +866,6 @@ fn validate_pattern(
     pattern: PatternId,
 ) -> Result<(), HirItemInvariantError> {
     validate_module(expected, pattern.module())
-}
-
-fn validate_optional_pattern(
-    expected: HirModuleId,
-    pattern: Option<PatternId>,
-) -> Result<(), HirItemInvariantError> {
-    if let Some(pattern) = pattern {
-        validate_pattern(expected, pattern)?;
-    }
-    Ok(())
 }
 
 fn validate_scope(expected: HirModuleId, scope: ScopeId) -> Result<(), HirItemInvariantError> {

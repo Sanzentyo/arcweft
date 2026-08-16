@@ -181,7 +181,7 @@ impl FinalSemanticAnalysis {
         control.check()?;
         validate_patterns(symbols, &modules, &patterns)?;
         control.check()?;
-        validate_statements(&modules, &statements)?;
+        validate_statements(&modules, &locals, &expressions, &statements, &calls)?;
         control.check()?;
         validate_items(&modules, &items)?;
         control.check()?;
@@ -542,6 +542,9 @@ fn validate_type_resolution_reports(
             return Err(FinalSemanticAnalysisError::TypeResolutionReportMismatch { owner: *owner });
         }
         for node in product.nodes() {
+            if node.is_contextual_alias_target() {
+                continue;
+            }
             if !all_nodes.contains(&node.node()) {
                 return Err(FinalSemanticAnalysisError::TypeResolutionReportMismatch {
                     owner: node.node(),

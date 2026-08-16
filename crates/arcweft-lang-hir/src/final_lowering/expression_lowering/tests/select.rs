@@ -117,22 +117,11 @@ fn has_recovery_query(module: &HirModule, owner: ExprId, role: HirExprSourceRole
     reason = "this test is the closed E13 payload, poison, source-component, and diagnostic acceptance matrix"
 )]
 fn attached_e13_select_publishes_typed_member_poison_and_exact_sources() {
-    let parsed = parsed_source(
-        "select-matrix",
-        &[
-            "target.member".into(),
-            "target.".into(),
-            "target?.member".into(),
-            "target?.".into(),
-        ],
-    );
+    let parsed = parsed_source("select-matrix", &["target.member".into(), "target.".into()]);
     let (module, owners, attached) = lower_and_publish(&parsed);
     assert_eq!(module.status(), HirModuleStatus::Recovered);
 
-    for (ordinal, expected_member) in [Some("member"), None, Some("member"), None]
-        .into_iter()
-        .enumerate()
-    {
+    for (ordinal, expected_member) in [Some("member"), None].into_iter().enumerate() {
         let select = select(&module, owners[ordinal]);
         match (select.member(), expected_member) {
             (HirSelectedMember::Name(actual), Some(expected)) => {
@@ -195,29 +184,6 @@ fn attached_e13_select_publishes_typed_member_poison_and_exact_sources() {
             }
             _ => panic!("Select member site disagrees with member payload"),
         }
-
-        if ordinal >= 2 {
-            let tried = expression(&module, select.target());
-            assert!(matches!(
-                tried.kind(),
-                HirExprKind::Try(tried) if tried.form() == HirTryForm::PostfixQuestion
-            ));
-            for role in [HirExprSourceRole::Operand, HirExprSourceRole::Operator] {
-                let source = module
-                    .source_site(
-                        parsed.document().identity(),
-                        HirSourceQuery::Expr {
-                            owner: select.target(),
-                            role,
-                        },
-                    )
-                    .expect("postfix Try source remains queryable");
-                assert!(matches!(
-                    source.presence(),
-                    HirSourcePresence::Present(HirSourceSite::Span(_))
-                ));
-            }
-        }
     }
 
     assert!(matches!(
@@ -230,28 +196,14 @@ fn attached_e13_select_publishes_typed_member_poison_and_exact_sources() {
             role: HirExprSourceRole::SelectedMember,
         })
     );
-    assert!(matches!(
-        expression(&module, owners[2]).state(),
-        HirPoisonState::Clean
-    ));
-    assert_eq!(
-        expression(&module, owners[3]).state(),
-        &HirPoisonState::Poisoned(HirRecoveryIssue::MissingOperand {
-            role: HirExprSourceRole::SelectedMember,
-        })
-    );
-
     let recovery = recovery_diagnostics(&module);
-    assert_eq!(recovery.len(), 2);
+    assert_eq!(recovery.len(), 1);
     assert_eq!(
         recovery
             .iter()
             .map(|diagnostic| diagnostic.owner())
             .collect::<Vec<_>>(),
-        vec![
-            SyntheticOwner::Expr(owners[1]),
-            SyntheticOwner::Expr(owners[3]),
-        ]
+        vec![SyntheticOwner::Expr(owners[1]),]
     );
     assert!(recovery.iter().all(|diagnostic| matches!(
         diagnostic.primary_role(),

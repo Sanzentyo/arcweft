@@ -2,7 +2,6 @@
 
 use arcweft_id::{LocaleTag, LocaleTagError};
 
-use crate::expressions::SyntaxAwaitPropagation;
 use crate::grammar::kinds::SyntaxKind;
 use crate::name::{SyntaxName, SyntaxNameIssue};
 
@@ -60,10 +59,6 @@ impl PendingAwaitBranchProjection {
     pub(crate) const fn kind(self) -> Option<SyntaxAwaitBranchKind> {
         self.kind
     }
-
-    pub(crate) const fn has_recovery(self) -> bool {
-        self.kind.is_none()
-    }
 }
 
 /// Exact keyword-statement family and its optional typed control label.
@@ -93,10 +88,6 @@ pub(crate) enum PendingKeywordStatementProjection {
         name: Option<Result<SyntaxName, SyntaxNameIssue>>,
     },
     Include,
-    AwaitWith {
-        propagation: SyntaxAwaitPropagation,
-        branches: Box<[PendingAwaitBranchProjection]>,
-    },
 }
 
 impl PendingKeywordStatementProjection {
@@ -114,7 +105,6 @@ impl PendingKeywordStatementProjection {
                 | (Self::SourceLocale { .. }, SyntaxKind::SourceLocaleStatement)
                 | (Self::Scope { .. }, SyntaxKind::ScopeStatement)
                 | (Self::Include, SyntaxKind::IncludeStatement)
-                | (Self::AwaitWith { .. }, SyntaxKind::AwaitWithStatement)
         )
     }
 
@@ -130,8 +120,7 @@ impl PendingKeywordStatementProjection {
             | Self::Select { .. }
             | Self::SourceLocale { .. }
             | Self::Scope { .. }
-            | Self::Include
-            | Self::AwaitWith { .. } => None,
+            | Self::Include => None,
         }
     }
 
@@ -143,10 +132,6 @@ impl PendingKeywordStatementProjection {
                 Self::Select { branches, .. } => branches
                     .iter()
                     .any(PendingSelectBranchProjection::has_recovery),
-                Self::AwaitWith { branches, .. } => branches
-                    .iter()
-                    .copied()
-                    .any(PendingAwaitBranchProjection::has_recovery),
                 _ => false,
             }
     }
@@ -165,7 +150,6 @@ impl PendingKeywordStatementProjection {
                 | SyntaxKind::SourceLocaleStatement
                 | SyntaxKind::ScopeStatement
                 | SyntaxKind::IncludeStatement
-                | SyntaxKind::AwaitWithStatement
         )
     }
 }

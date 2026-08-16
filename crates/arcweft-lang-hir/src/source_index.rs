@@ -396,7 +396,6 @@ pub(crate) enum HirStmtRecoveryOperandSlot {
     ForSource { insertion: usize },
     SelectOperand { insertion: usize },
     SelectBranchSource { insertion: usize, branch: u32 },
-    AwaitWithOperand { insertion: usize },
     MatchScrutinee { insertion: usize },
     MatchArmGuard { insertion: usize, arm: u32 },
     UnsafeAuditReason { insertion: usize },
@@ -425,7 +424,6 @@ impl HirStmtRecoveryOperandSlot {
             | Self::ForSource { insertion }
             | Self::SelectOperand { insertion }
             | Self::SelectBranchSource { insertion, .. }
-            | Self::AwaitWithOperand { insertion }
             | Self::MatchScrutinee { insertion }
             | Self::MatchArmGuard { insertion, .. }
             | Self::UnsafeAuditReason { insertion } => insertion,
@@ -455,7 +453,6 @@ impl HirStmtRecoveryOperandSlot {
             | Self::WhileLetScrutinee { .. }
             | Self::ForSource { .. }
             | Self::SelectOperand { .. }
-            | Self::AwaitWithOperand { .. }
             | Self::MatchScrutinee { .. }
             | Self::UnsafeAuditReason { .. } => Some(0),
         }
@@ -484,7 +481,6 @@ impl HirStmtRecoveryOperandSlot {
             | Self::YieldExpression { .. }
             | Self::SelectOperand { .. }
             | Self::SelectBranchSource { .. }
-            | Self::AwaitWithOperand { .. }
             | Self::UnsafeAuditReason { .. } => HirExprSourceRole::Operand,
         }
     }

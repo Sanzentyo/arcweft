@@ -4,6 +4,7 @@ use arcweft_agent_protocol::{
 };
 use arcweft_core::{
     effect::{LineEffectRequest, RuntimeCall},
+    step::RuntimeHostCallRequest,
     task::HostTaskRequest,
 };
 
@@ -115,7 +116,27 @@ pub(crate) fn agent_host_request_from_task(
         ));
     }
     let args = RuntimeAgentArgs::new(args, named_args);
-    match operation.as_str() {
+    agent_host_request_from_runtime_args(operation, &args)
+}
+
+pub(crate) fn agent_host_request_from_host_call(
+    request: &RuntimeHostCallRequest,
+) -> Result<AgentHostRequest, String> {
+    if request.capability != "agent" {
+        return Err(format!(
+            "unsupported Agent host-call capability `{}`",
+            request.capability
+        ));
+    }
+    let args = RuntimeAgentArgs::new(&request.args, &request.named_args);
+    agent_host_request_from_runtime_args(&request.operation, &args)
+}
+
+fn agent_host_request_from_runtime_args(
+    operation: &str,
+    args: &RuntimeAgentArgs<'_>,
+) -> Result<AgentHostRequest, String> {
+    match operation {
         "observe" => args
             .observe_request()
             .map(|request| AgentHostRequest::Observe(Box::new(request))),

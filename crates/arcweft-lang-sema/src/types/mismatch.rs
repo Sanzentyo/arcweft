@@ -36,8 +36,6 @@ pub enum TypeMismatchPathSegment {
     NeedError,
     StreamItem,
     StreamError,
-    SourceItem,
-    SourceError,
     ResultOk,
     ResultError,
     OptionItem,
@@ -632,26 +630,6 @@ impl TypeKind {
                         expected_error
                             .first_mismatch(actual_error)
                             .map(|mismatch| mismatch.prepend(TypeMismatchPathSegment::StreamError))
-                    })
-            }
-            Self::Source {
-                item: expected_item,
-                error: expected_error,
-            } => {
-                let Self::Source {
-                    item: actual_item,
-                    error: actual_error,
-                } = actual
-                else {
-                    unreachable!("equal discriminants")
-                };
-                expected_item
-                    .first_mismatch(actual_item)
-                    .map(|mismatch| mismatch.prepend(TypeMismatchPathSegment::SourceItem))
-                    .or_else(|| {
-                        expected_error
-                            .first_mismatch(actual_error)
-                            .map(|mismatch| mismatch.prepend(TypeMismatchPathSegment::SourceError))
                     })
             }
             Self::Result {

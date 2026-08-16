@@ -14,7 +14,6 @@ use arcweft_compiler::{
 use arcweft_core::{
     aot::{AotProgram, AotProgramStats},
     awbc::schema::AwbcProgram,
-    bytecode::{BytecodeProgram, BytecodeStats},
     plan::RuntimePlan,
 };
 use arcweft_lang_syntax::{
@@ -50,8 +49,6 @@ pub(in crate::app) struct ProfileCompiledRuntimePlan {
     pub(in crate::app) character_presentation_catalog:
         Option<Arc<CharacterPresentationCatalogData>>,
     pub(in crate::app) product_awbc: AwbcProgram,
-    pub(in crate::app) bytecode: BytecodeProgram,
-    pub(in crate::app) bytecode_stats: BytecodeStats,
     pub(in crate::app) aot_stats: AotProgramStats,
     pub(in crate::app) source_document: Arc<SourceDocument>,
     pub(in crate::app) source_map: SourceMapSection,
@@ -226,15 +223,7 @@ pub(in crate::app) fn compile_accepted_project_runtime_plan(
         Ok::<AotProgram, ExitCode>(AotProgram::from_runtime_plan(&plan))
     })?;
     let aot_stats = aot.stats().clone();
-    let bytecode = run_profile_phase(phases, "bytecode_lower", || {
-        Ok::<BytecodeProgram, ExitCode>(BytecodeProgram::from_runtime_plan(plan))
-    })?;
-    let bytecode_stats = bytecode.stats();
-    let plan = bytecode.clone().into_runtime_plan().map_err(|error| {
-        eprintln!("error: {error}");
-        ExitCode::FAILURE
-    })?;
-    let line_task_groups = plan.line_task_groups.len();
+    let line_task_groups = plan.line_task_groups().len();
     Ok(ProfileCompiledRuntimePlan {
         execution_diagnostics,
         fx_definitions: Arc::from(compiled.fx_definitions()),
@@ -247,8 +236,6 @@ pub(in crate::app) fn compile_accepted_project_runtime_plan(
         dialogue_content_catalog,
         character_presentation_catalog,
         product_awbc,
-        bytecode,
-        bytecode_stats,
         aot_stats,
         source_document,
         source_map,

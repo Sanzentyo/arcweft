@@ -377,6 +377,7 @@ impl Resolver<'_, '_> {
         if let Some(poison) = self.global_halt {
             self.nodes.push(ResolvedTypeNode::new(
                 owner,
+                context.alias_target,
                 context.evidence(owner, false),
                 context.terminal_evidence(owner),
                 context.reference_path(owner),
@@ -432,6 +433,7 @@ impl Resolver<'_, '_> {
         let recovered = value.ty.clone();
         self.nodes.push(ResolvedTypeNode::new(
             owner,
+            context.alias_target,
             context.evidence(owner, false),
             context.terminal_evidence(owner),
             context.reference_path(owner),

@@ -154,7 +154,6 @@ pub enum HirThreadFlowItem {
     SourceLocale(StmtId),
     Scope(StmtId),
     Include(StmtId),
-    AwaitWith(StmtId),
     Error(StmtId),
 }
 
@@ -175,7 +174,6 @@ impl HirThreadFlowItem {
             | Self::SourceLocale(statement)
             | Self::Scope(statement)
             | Self::Include(statement)
-            | Self::AwaitWith(statement)
             | Self::Error(statement) => statement.module(),
         }
     }
@@ -196,7 +194,6 @@ impl HirThreadFlowItem {
             | Self::SourceLocale(statement)
             | Self::Scope(statement)
             | Self::Include(statement)
-            | Self::AwaitWith(statement)
             | Self::Error(statement) => SyntheticOwner::Stmt(*statement),
         }
     }

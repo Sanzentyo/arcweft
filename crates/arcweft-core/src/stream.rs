@@ -1,6 +1,6 @@
 use crate::pattern::RuntimePattern;
+use crate::runtime_id::RuntimePlanTypeId;
 use crate::runtime_id::{RuntimeIdError, RuntimeIdFamily, RuntimeIdPath, RuntimePublicLabel};
-use crate::source::SourceEventKind;
 use crate::task::TaskSequence;
 use crate::value::{RuntimeExpr, RuntimePayload};
 use serde::{Deserialize, Serialize};
@@ -16,16 +16,52 @@ pub struct StreamRuntimeId {
 /// The core runtime keeps this as deterministic data. Host adapters may execute
 /// the state machine or replace it with an equivalent backend implementation,
 /// but device acquisition never happens inside this plan.
-#[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
+#[derive(Clone, Debug, PartialEq)]
 pub struct StreamPlan {
-    pub id: StreamRuntimeId,
-    pub item_ty: String,
-    pub error_ty: String,
-    pub ops: Vec<StreamOp>,
+    id: StreamRuntimeId,
+    item_ty: RuntimePlanTypeId,
+    error_ty: RuntimePlanTypeId,
+    ops: Vec<StreamOp>,
+}
+
+impl StreamPlan {
+    pub(crate) fn from_admitted_parts(
+        id: StreamRuntimeId,
+        item_ty: RuntimePlanTypeId,
+        error_ty: RuntimePlanTypeId,
+        ops: Vec<StreamOp>,
+    ) -> Self {
+        Self {
+            id,
+            item_ty,
+            error_ty,
+            ops,
+        }
+    }
+
+    #[must_use]
+    pub const fn id(&self) -> &StreamRuntimeId {
+        &self.id
+    }
+
+    #[must_use]
+    pub const fn item_ty(&self) -> RuntimePlanTypeId {
+        self.item_ty
+    }
+
+    #[must_use]
+    pub const fn error_ty(&self) -> RuntimePlanTypeId {
+        self.error_ty
+    }
+
+    #[must_use]
+    pub fn ops(&self) -> &[StreamOp] {
+        &self.ops
+    }
 }
 
 /// One operation in a lowered stream transform.
-#[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
+#[derive(Clone, Debug, PartialEq)]
 pub enum StreamOp {
     Let {
         pattern: RuntimePattern,
@@ -55,14 +91,12 @@ pub enum StreamOp {
 }
 
 /// One stream `match` arm.
-#[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
+#[derive(Clone, Debug, PartialEq)]
 pub struct StreamMatchArm {
     pub pattern: RuntimePattern,
     pub guard: Option<RuntimeExpr>,
     pub ops: Vec<StreamOp>,
 }
-
-/// Lowered live source declaration.
 
 #[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
 pub struct StreamRuntimeState {
@@ -72,13 +106,19 @@ pub struct StreamRuntimeState {
     pub emitted_count: u64,
 }
 
-/// Runtime stack frame used to make scope exit and loop transfer explicit.
+/// Event emitted by an ordinary callable-backed stream.
+#[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
+pub enum StreamEventKind<T, E> {
+    Item(T),
+    Error(E),
+    End,
+}
 
 #[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
 pub struct StreamEvent<T, E> {
     pub stream: StreamRuntimeId,
     pub sequence: TaskSequence,
-    pub kind: SourceEventKind<T, E>,
+    pub kind: StreamEventKind<T, E>,
 }
 
 pub type RuntimeStreamEvent = StreamEvent<RuntimePayload, RuntimePayload>;

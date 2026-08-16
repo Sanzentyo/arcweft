@@ -97,16 +97,8 @@ impl TypeKind {
                     Self::Stream {
                         item: left_item,
                         error: left_error,
-                    }
-                    | Self::Source {
-                        item: left_item,
-                        error: left_error,
                     },
                     Self::Stream {
-                        item: right_item,
-                        error: right_error,
-                    }
-                    | Self::Source {
                         item: right_item,
                         error: right_error,
                     },
@@ -313,7 +305,6 @@ const fn entity_kind_tag(kind: &EntityKind) -> u8 {
         EntityKind::Signal => 20,
         EntityKind::Metric => 21,
         EntityKind::Scene => 22,
-        EntityKind::Source => 23,
         EntityKind::Test => 24,
         EntityKind::Bench => 25,
         EntityKind::Layer => 26,
@@ -388,7 +379,6 @@ const fn type_kind_tag(kind: &TypeKind) -> u8 {
         TypeKind::BorrowRef { .. } => 52,
         TypeKind::Need { .. } => 53,
         TypeKind::Stream { .. } => 54,
-        TypeKind::Source { .. } => 55,
         TypeKind::Result { .. } => 56,
         TypeKind::Option(_) => 57,
         TypeKind::Handle { .. } => 58,

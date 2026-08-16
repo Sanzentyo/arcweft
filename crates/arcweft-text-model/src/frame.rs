@@ -1,7 +1,7 @@
 //! Resolved dialogue display frame and source map.
 
 use crate::{
-    DialogueHostEvent, RichTextControl, RichTextPresentation, RichTextStyle,
+    DialogueHostEvent, RichTextControl, RichTextPresentation, RichTextSpanKind, RichTextStyle,
     RichTextStyleContribution,
 };
 use arcweft_character::id::{CharacterId, CharacterLookId};
@@ -54,7 +54,7 @@ pub struct LineDisplayFrame {
     pub text: String,
     pub base_styles: Vec<RichTextStyle>,
     pub style_contributions: Vec<RichTextStyleContribution>,
-    pub nodes: Vec<crate::RichTextNode>,
+    pub nodes: Vec<ResolvedRichTextNode>,
     pub display_map: RichTextDisplayMap,
     pub host_events: Vec<DialogueHostEvent>,
     pub inline_failures: Vec<InlineTextFailure>,
@@ -71,7 +71,7 @@ struct LineDisplayFrameWire {
     text: String,
     base_styles: Vec<RichTextStyle>,
     style_contributions: Vec<RichTextStyleContribution>,
-    nodes: Vec<crate::RichTextNode>,
+    nodes: Vec<ResolvedRichTextNode>,
     display_map: RichTextDisplayMap,
     host_events: Vec<DialogueHostEvent>,
     inline_failures: Vec<InlineTextFailure>,
@@ -181,13 +181,28 @@ pub struct RichTextHostEventMarker {
     pub event: DialogueHostEvent,
 }
 
+/// One fully resolved, persistence-safe rich-text node.
+///
+/// Executable interpolation and condition slots are consumed by the resolver
+/// and therefore cannot enter a display frame.
+#[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
+#[serde(tag = "kind", rename_all = "snake_case")]
+pub enum ResolvedRichTextNode {
+    Text { text: String },
+    Ruby { base: String, ruby: String },
+    StyleStart { style: Box<RichTextStyle> },
+    StyleEnd { span: RichTextSpanKind },
+    Control { control: RichTextControl },
+    HostEvent { event: DialogueHostEvent },
+}
+
 impl LineDisplayFrame {
     /// Returns each active typed Fx application once in authored style-start order.
     pub fn fx_applications(&self) -> impl Iterator<Item = &FxApplication> {
         self.base_styles
             .iter()
             .chain(self.nodes.iter().filter_map(|node| match node {
-                crate::RichTextNode::StyleStart { style } => Some(style),
+                ResolvedRichTextNode::StyleStart { style } => Some(style.as_ref()),
                 _ => None,
             }))
             .filter_map(|style| match style {
@@ -200,7 +215,7 @@ impl LineDisplayFrame {
 #[cfg(test)]
 mod serde_tests {
     use super::*;
-    use crate::{RichTextNode, RichTextTextSource};
+    use crate::RichTextTextSource;
 
     fn frame() -> LineDisplayFrame {
         let text = "Hello".to_owned();
@@ -229,7 +244,7 @@ mod serde_tests {
             text,
             base_styles: Vec::new(),
             style_contributions: Vec::new(),
-            nodes: vec![RichTextNode::Text {
+            nodes: vec![ResolvedRichTextNode::Text {
                 text: "Hello".to_owned(),
             }],
             display_map: RichTextDisplayMap {

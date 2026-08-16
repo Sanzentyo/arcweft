@@ -28,23 +28,6 @@ impl RuntimeValue {
         }
         Ok(Self::Record(fields))
     }
-
-    /// Builds the runtime `usize` value used by collection `len` methods.
-    #[must_use]
-    pub(crate) fn from_collection_len(len: usize) -> Self {
-        Self::usize(u64::try_from(len).unwrap_or(u64::MAX))
-    }
-
-    /// Interprets any non-negative, host-representable runtime integer as a
-    /// collection index.
-    #[must_use]
-    pub(crate) fn to_collection_index(&self) -> Option<usize> {
-        match self {
-            Self::Int(value) => usize::try_from(value.as_i128()).ok(),
-            Self::UInt(value) => usize::try_from(value.as_u128()).ok(),
-            _ => None,
-        }
-    }
 }
 
 fn preflight_anonymous_record_field_count(
@@ -967,14 +950,6 @@ impl RuntimeSeq {
             Self::TupleColumns(values) => values.value_at(index),
             Self::RecordColumns(values) => values.value_at(index),
         }
-    }
-
-    #[must_use]
-    pub(crate) fn value_at_runtime_index(&self, index: &RuntimeValue) -> RuntimeValue {
-        index
-            .to_collection_index()
-            .filter(|index| *index < self.len())
-            .map_or(RuntimeValue::Unit, |index| self.value_at(index))
     }
 
     #[must_use]

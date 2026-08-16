@@ -298,10 +298,6 @@ fn every_current_top_level_declaration_family_has_one_lossless_root() {
         ),
         (SyntaxKind::TestItem, "test @test.smoke scenario {}\n"),
         (SyntaxKind::BenchItem, "bench @bench.speed {}\n"),
-        (
-            SyntaxKind::SourceItem,
-            "source data: Source<Event, Error> {}\n",
-        ),
         (SyntaxKind::StyleItem, "style theme {}\n"),
         (SyntaxKind::ErrorItem, "???\n"),
     ];
@@ -341,7 +337,6 @@ fn every_current_top_level_declaration_family_has_one_lossless_root() {
             SyntaxKind::ExternCapabilityItem,
             SyntaxKind::TestItem,
             SyntaxKind::BenchItem,
-            SyntaxKind::SourceItem,
             SyntaxKind::StyleItem,
             SyntaxKind::ErrorItem,
         ]
@@ -417,7 +412,6 @@ fn every_current_top_level_declaration_family_has_one_lossless_root() {
             TypedItemNode::ExternCapability(_),
             TypedItemNode::Test(_),
             TypedItemNode::Bench(_),
-            TypedItemNode::Source(_),
             TypedItemNode::Style(_),
             TypedItemNode::Error(_),
         ]

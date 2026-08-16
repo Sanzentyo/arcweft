@@ -363,23 +363,6 @@ const fn position(value: ViewPosition) -> ViewSpecifiedValue {
     ViewSpecifiedValue::Position { value }
 }
 
-pub(crate) fn merge_text(
-    mut standard: ViewTextResource,
-    authored: ViewTextResource,
-) -> ViewTextResource {
-    standard.sources.extend(authored.sources);
-    standard.localized.extend(authored.localized);
-    standard
-        .rich_text_documents
-        .extend(authored.rich_text_documents);
-    standard.display_frames.extend(authored.display_frames);
-    standard.source_ranges.extend(authored.source_ranges);
-    standard.reveal_policies.extend(authored.reveal_policies);
-    standard.cursor_policies.extend(authored.cursor_policies);
-    standard.redactions.extend(authored.redactions);
-    standard
-}
-
 fn text_block_milli(
     public_id: &str,
     source: &str,

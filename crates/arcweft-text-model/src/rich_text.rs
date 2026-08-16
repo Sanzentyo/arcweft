@@ -1,15 +1,14 @@
 //! Authored rich-text nodes and dialogue-local control data.
 
 use crate::{RichTextSpanKind, RichTextStyle};
-use arcweft_core::value::RuntimeExpr;
+use arcweft_core::runtime_id::RuntimeDialogueValueSlotId;
 use arcweft_dialogue::InlineFailurePolicy;
 use serde::{Deserialize, Serialize};
 
 /// Ordered rich-text document used by source resolvers.
-#[derive(Clone, Debug, Default, PartialEq, Serialize)]
+#[derive(Clone, Debug, Default, Deserialize, PartialEq, Serialize)]
 pub struct RichTextDocument {
     pub nodes: Vec<RichTextNode>,
-    #[serde(skip)]
     resolved_text: String,
 }
 
@@ -25,7 +24,7 @@ pub enum RichTextNode {
         ruby: String,
     },
     StyleStart {
-        style: RichTextStyle,
+        style: Box<RichTextStyle>,
     },
     StyleEnd {
         span: RichTextSpanKind,
@@ -34,8 +33,8 @@ pub enum RichTextNode {
         control: RichTextControl,
     },
     Interpolation {
-        /// Sema-accepted expression lowered into the shared runtime algebra.
-        expr: RuntimeExpr,
+        /// Document-local value supplied by the owning runtime dialogue plan.
+        slot: RuntimeDialogueValueSlotId,
         /// Stable authored label used only for diagnostics and fallback text.
         label: String,
         on_error: InlineFailurePolicy,
@@ -43,6 +42,11 @@ pub enum RichTextNode {
     HostEvent {
         event: DialogueHostEvent,
     },
+    ConditionalStart {
+        condition: RuntimeDialogueValueSlotId,
+    },
+    ConditionalElse,
+    ConditionalEnd,
 }
 
 /// Text-container-local control instruction.
@@ -73,12 +77,7 @@ pub enum DialogueHostEvent {
     Rotate { angle: crate::RichTextAngle },
     Anim { animation: String },
     Shake { amplitude: crate::Milli },
-    TimedCue { at_millis: u64, call: RuntimeExpr },
-    Call { call: RuntimeExpr },
     Signal { signal: String },
-    ConditionalStart { condition: RuntimeExpr },
-    ConditionalElse,
-    ConditionalEnd,
 }
 
 /// Closed voice selection accepted by the `RichText` semantic checker.
@@ -122,22 +121,10 @@ impl RichTextNode {
             | Self::StyleEnd { .. }
             | Self::Control { .. }
             | Self::Interpolation { .. }
-            | Self::HostEvent { .. } => None,
+            | Self::HostEvent { .. }
+            | Self::ConditionalStart { .. }
+            | Self::ConditionalElse
+            | Self::ConditionalEnd => None,
         }
-    }
-}
-
-impl<'de> Deserialize<'de> for RichTextDocument {
-    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
-    where
-        D: serde::Deserializer<'de>,
-    {
-        #[derive(Deserialize)]
-        struct SerializedDocument {
-            nodes: Vec<RichTextNode>,
-        }
-
-        let serialized = SerializedDocument::deserialize(deserializer)?;
-        Ok(Self::new(serialized.nodes))
     }
 }

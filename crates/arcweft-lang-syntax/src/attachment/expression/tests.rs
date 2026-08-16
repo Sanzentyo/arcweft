@@ -739,19 +739,6 @@ fn attached_select_owns_target_and_exact_missing_member_insertion() {
             .range(),
         SourceRange::new(expression_base + 10, expression_base + 10)
     );
-
-    let optional = expression("target?.member", SyntaxKind::SelectExpression);
-    let target = optional.children()[0]
-        .authored_semantic()
-        .expect("attached Try target")
-        .expect("authored Try target");
-    assert!(matches!(
-        target.projection(),
-        ExpressionProjection::Try {
-            form: crate::expressions::SyntaxTryForm::PostfixQuestion,
-            ..
-        }
-    ));
 }
 
 #[test]
@@ -961,7 +948,6 @@ fn attached_e14_through_e17_keep_exact_semantic_children_and_recovery_slots() {
         prefix_try.projection(),
         ExpressionProjection::Try {
             operand: SyntaxExpressionSlot::Authored,
-            form: crate::expressions::SyntaxTryForm::PrefixTry,
         }
     ));
     assert_eq!(prefix_try.children().len(), 1);
@@ -971,7 +957,7 @@ fn attached_e14_through_e17_keep_exact_semantic_children_and_recovery_slots() {
         missing_await.projection(),
         ExpressionProjection::Await {
             operand: SyntaxExpressionSlot::Missing,
-            propagation: crate::expressions::SyntaxAwaitPropagation::PreserveResult,
+            branches: None,
         }
     ));
     assert!(matches!(

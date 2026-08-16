@@ -4,7 +4,6 @@ use core::num::{NonZeroU32, NonZeroU64};
 use arcweft_id::LocaleTag;
 
 use super::{
-    HirAwaitPropagation, HirAwaitWithBranch, HirAwaitWithBranchKind, HirAwaitWithStmt,
     HirConditionalElseBranch, HirContextualStmtBody, HirForStmt, HirIfLetStmt, HirIfStmt,
     HirIncludeStmt, HirLoopStmt, HirMatchStmt, HirScopeStmt, HirSelectBindingLocal,
     HirSelectBranch, HirSelectBranchHead, HirSelectStmt, HirSourceLocaleIssue, HirSourceLocaleStmt,
@@ -300,79 +299,6 @@ fn locale_scope_and_include_payloads_keep_semantic_values_only() {
 
     let include = HirIncludeStmt::new(include_target());
     assert!(include.target().as_resolved().is_some());
-}
-
-#[test]
-fn await_with_enforces_branch_shape_module_and_scope_identity() {
-    assert_record_traits::<HirAwaitWithStmt>();
-    assert_record_traits::<HirAwaitWithBranch>();
-    assert_record_traits::<HirAwaitWithBranchKind>();
-
-    let owner = module(8);
-    let pending = HirAwaitWithBranch::try_new(
-        HirAwaitWithBranchKind::Pending,
-        Some(id(owner, 1)),
-        Box::new([id(owner, 2)]),
-        thread_body(owner, 10),
-    )
-    .expect("known branch with pattern");
-    let recovered = HirAwaitWithBranch::try_new(
-        HirAwaitWithBranchKind::Recovered,
-        None,
-        Box::new([]),
-        thread_body(owner, 11),
-    )
-    .expect("recovered head has no fabricated pattern or local");
-    let payload = HirAwaitWithStmt::try_new(
-        id(owner, 3),
-        HirAwaitPropagation::PropagateError,
-        Box::new([pending, recovered]),
-    )
-    .expect("source-ordered AwaitWith branches");
-    assert_eq!(payload.propagation(), HirAwaitPropagation::PropagateError);
-    assert_eq!(payload.branches().len(), 2);
-
-    assert_eq!(
-        HirAwaitWithBranch::try_new(
-            HirAwaitWithBranchKind::Ready,
-            None,
-            Box::new([]),
-            ordinary_body(owner, 12),
-        ),
-        Err(HirThreadStmtInvariantError::InvalidAwaitBranchShape)
-    );
-    assert_eq!(
-        HirAwaitWithBranch::try_new(
-            HirAwaitWithBranchKind::Recovered,
-            Some(id(owner, 4)),
-            Box::new([]),
-            ordinary_body(owner, 13),
-        ),
-        Err(HirThreadStmtInvariantError::InvalidAwaitBranchShape)
-    );
-
-    let duplicate_a = HirAwaitWithBranch::try_new(
-        HirAwaitWithBranchKind::Error,
-        Some(id(owner, 5)),
-        Box::new([]),
-        ordinary_body(owner, 14),
-    )
-    .unwrap();
-    let duplicate_b = HirAwaitWithBranch::try_new(
-        HirAwaitWithBranchKind::Denied,
-        Some(id(owner, 6)),
-        Box::new([]),
-        ordinary_body(owner, 14),
-    )
-    .unwrap();
-    assert_eq!(
-        HirAwaitWithStmt::try_new(
-            id(owner, 7),
-            HirAwaitPropagation::PreserveResult,
-            Box::new([duplicate_a, duplicate_b]),
-        ),
-        Err(HirThreadStmtInvariantError::DuplicateChild)
-    );
 }
 
 #[test]

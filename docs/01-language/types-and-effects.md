@@ -25,11 +25,11 @@ pub enum Result<T, E> {
 }
 ```
 
-`?` で伝播。
+`try` で伝播。
 
 ```arcw
 fn parse_choice(input: String) -> Result<Ref<ChoiceOption>, ParseError> {
-    let id = parse_ref(input)?
+    let id = try parse_ref(input)
     Ok(id)
 }
 ```

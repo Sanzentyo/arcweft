@@ -1,12 +1,16 @@
 use crate::entry::{RuntimeIdentityError, RuntimeNominalTypeId, TypeLayoutHash};
+use crate::plan::{
+    RuntimePlan, RuntimePlanTypeDeclaration, RuntimePlanTypeProjection, RuntimePlanValueTypeError,
+};
+use crate::runtime_id::{RuntimeLocalDeclarationId, RuntimePlanTypeId};
 use crate::value::{
-    RuntimeBinding, RuntimeEvalError, RuntimeNominalRecordLayout, RuntimeOpaqueValue,
-    RuntimeOpaqueValueError, RuntimeSeq, RuntimeSignedIntWidth, RuntimeUnsignedIntWidth,
-    RuntimeValue, runtime_sequence_values,
+    RuntimeEntityReference, RuntimeLocalBinding, RuntimeNominalRecordValue, RuntimeOpaqueValue,
+    RuntimeOpaqueValueError, RuntimeRecordFieldId, RuntimeSeq, RuntimeSignedIntWidth,
+    RuntimeUnsignedIntWidth, RuntimeValue,
 };
 use serde::{Deserialize, Deserializer, Serialize};
 use std::collections::BTreeSet;
-use std::sync::Arc;
+use thiserror::Error;
 
 mod binding;
 
@@ -247,37 +251,62 @@ pub struct RuntimeCheckedVariantCase {
     pub payload: Option<Box<RuntimeCheckedType>>,
 }
 
-/// Pattern subset executable by the Sans I/O flow runtime.
-#[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
-pub enum RuntimePattern {
-    Ident(String),
-    MutIdent(String),
+/// One recursively typed pattern admitted into a runtime plan.
+#[derive(Clone, Debug, PartialEq)]
+pub struct RuntimePattern {
+    ty: RuntimePlanTypeId,
+    kind: RuntimePatternKind,
+}
+
+impl RuntimePattern {
+    pub(crate) const fn from_admitted_parts(
+        ty: RuntimePlanTypeId,
+        kind: RuntimePatternKind,
+    ) -> Self {
+        Self { ty, kind }
+    }
+
+    #[must_use]
+    pub const fn ty(&self) -> RuntimePlanTypeId {
+        self.ty
+    }
+
+    #[must_use]
+    pub const fn kind(&self) -> &RuntimePatternKind {
+        &self.kind
+    }
+}
+
+/// Closed executable pattern algebra. Local destinations are plan-local IDs
+/// paired with coordinates derived by the aggregate plan builder.
+#[derive(Clone, Debug, PartialEq)]
+pub enum RuntimePatternKind {
+    Bind {
+        mutable: bool,
+        binding: RuntimePatternBindingCoordinate,
+    },
     Discard,
     Literal(RuntimeValue),
-    Entity(String),
-    Tuple(Vec<RuntimePattern>),
+    Entity(RuntimeEntityReference),
+    Tuple(Box<[RuntimePattern]>),
     Record {
-        nominal_layout: Option<Arc<RuntimeNominalRecordLayout>>,
-        fields: Vec<RuntimeRecordPatternField>,
+        fields: Box<[RuntimeRecordPatternField]>,
         rest: RuntimePatternRest,
     },
-    BracketSeq {
-        items: Vec<RuntimePattern>,
+    Sequence {
+        items: Box<[RuntimePattern]>,
         rest: RuntimePatternRest,
     },
     Variant {
-        owner: RuntimeCheckedType,
         ordinal: u32,
-        name: String,
         payload: Option<Box<RuntimePattern>>,
     },
     Whole {
-        name: String,
+        binding: RuntimePatternBindingCoordinate,
         pattern: Box<RuntimePattern>,
     },
     Typed {
-        name: String,
-        ty: RuntimeCheckedType,
+        binding: RuntimePatternBindingCoordinate,
     },
 }
 
@@ -285,11 +314,11 @@ pub enum RuntimePattern {
 ///
 /// A record rest binding receives the original complete record. A bracket-
 /// sequence rest binding receives only the unmatched tail.
-#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[derive(Clone, Debug, Eq, PartialEq)]
 pub enum RuntimePatternRest {
     Exact,
     Ignore,
-    Bind(String),
+    Bind(RuntimePatternBindingCoordinate),
 }
 
 impl RuntimePatternRest {
@@ -302,11 +331,11 @@ impl RuntimePatternRest {
         }
     }
 
-    /// Returns the local name written by a binding rest.
+    /// Returns the admitted local coordinate written by a binding rest.
     #[must_use]
-    pub fn binding_name(&self) -> Option<&str> {
+    pub const fn binding(&self) -> Option<&RuntimePatternBindingCoordinate> {
         match self {
-            Self::Bind(name) => Some(name),
+            Self::Bind(binding) => Some(binding),
             Self::Exact | Self::Ignore => None,
         }
     }
@@ -449,6 +478,9 @@ impl RuntimeCheckedType {
             (RuntimeValue::Opaque(value), Self::Opaque { owner }) => {
                 owner.accepts_opaque_value(value)
             }
+            (RuntimeValue::Reduction(value), Self::Opaque { owner }) => {
+                owner.accepts_owner(value.owner())
+            }
             (
                 RuntimeValue::NominalRecord(record),
                 Self::Nominal {
@@ -545,19 +577,42 @@ impl RuntimeCheckedType {
 }
 
 /// One field inside a runtime record pattern.
-#[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
+#[derive(Clone, Debug, PartialEq)]
 pub struct RuntimeRecordPatternField {
-    pub name: String,
-    pub pattern: RuntimePattern,
+    field: RuntimeRecordFieldId,
+    pattern: RuntimePattern,
+}
+
+impl RuntimeRecordPatternField {
+    pub(crate) const fn from_admitted_parts(
+        field: RuntimeRecordFieldId,
+        pattern: RuntimePattern,
+    ) -> Self {
+        Self { field, pattern }
+    }
+
+    #[must_use]
+    pub const fn field(&self) -> RuntimeRecordFieldId {
+        self.field
+    }
+
+    #[must_use]
+    pub const fn pattern(&self) -> &RuntimePattern {
+        &self.pattern
+    }
 }
 
 pub(crate) fn match_runtime_pattern(
+    plan: &RuntimePlan,
     pattern: &RuntimePattern,
     value: &RuntimeValue,
-) -> Result<Option<Vec<RuntimeBinding>>, RuntimeEvalError> {
+) -> Result<Option<Vec<RuntimeLocalBinding>>, RuntimePatternMatchError> {
+    validate_runtime_pattern(plan, pattern)?;
+    if !plan.value_matches_type(pattern.ty(), value)? {
+        return Ok(None);
+    }
     let mut bindings = Vec::with_capacity(pattern_binding_capacity(pattern));
-    if collect_pattern_bindings(pattern, value, &mut bindings)? {
-        reject_duplicate_bindings(&bindings)?;
+    if collect_pattern_bindings(plan, pattern, value, &mut bindings)? {
         Ok(Some(bindings))
     } else {
         Ok(None)
@@ -565,115 +620,428 @@ pub(crate) fn match_runtime_pattern(
 }
 
 pub(crate) fn pattern_binding_capacity(pattern: &RuntimePattern) -> usize {
-    let direct = match pattern {
-        RuntimePattern::Ident(_) | RuntimePattern::MutIdent(_) | RuntimePattern::Typed { .. } => 1,
-        RuntimePattern::Discard | RuntimePattern::Literal(_) | RuntimePattern::Entity(_) => 0,
-        RuntimePattern::Tuple(patterns)
-        | RuntimePattern::BracketSeq {
+    let direct = match pattern.kind() {
+        RuntimePatternKind::Bind { .. } | RuntimePatternKind::Typed { .. } => 1,
+        RuntimePatternKind::Discard
+        | RuntimePatternKind::Literal(_)
+        | RuntimePatternKind::Entity(_) => 0,
+        RuntimePatternKind::Tuple(patterns)
+        | RuntimePatternKind::Sequence {
             items: patterns, ..
         } => patterns.iter().map(pattern_binding_capacity).sum(),
-        RuntimePattern::Record { fields, .. } => fields
+        RuntimePatternKind::Record { fields, .. } => fields
             .iter()
-            .map(|field| pattern_binding_capacity(&field.pattern))
+            .map(|field| pattern_binding_capacity(field.pattern()))
             .sum(),
-        RuntimePattern::Variant { payload, .. } => {
+        RuntimePatternKind::Variant { payload, .. } => {
             payload.as_deref().map_or(0, pattern_binding_capacity)
         }
-        RuntimePattern::Whole { pattern, .. } => pattern_binding_capacity(pattern) + 1,
+        RuntimePatternKind::Whole { pattern, .. } => pattern_binding_capacity(pattern) + 1,
     };
     direct
         + usize::from(matches!(
-            pattern,
-            RuntimePattern::Record {
+            pattern.kind(),
+            RuntimePatternKind::Record {
                 rest: RuntimePatternRest::Bind(_),
                 ..
-            } | RuntimePattern::BracketSeq {
+            } | RuntimePatternKind::Sequence {
                 rest: RuntimePatternRest::Bind(_),
                 ..
             }
         ))
 }
 
-fn reject_duplicate_bindings(bindings: &[RuntimeBinding]) -> Result<(), RuntimeEvalError> {
-    let mut seen = BTreeSet::<&str>::new();
-    for binding in bindings {
-        if !seen.insert(binding.name.as_str()) {
-            return Err(RuntimeEvalError::DuplicateBinding(binding.name.clone()));
+#[derive(Clone, Debug, Eq, Error, PartialEq)]
+pub enum RuntimePatternMatchError {
+    #[error(transparent)]
+    ValueType(#[from] RuntimePlanValueTypeError),
+    #[error("runtime pattern references unknown plan type {ty}")]
+    UnknownType { ty: RuntimePlanTypeId },
+    #[error("runtime pattern kind is incompatible with plan type {ty}")]
+    InvalidKind { ty: RuntimePlanTypeId },
+    #[error("runtime pattern child has type {actual}, expected {expected}")]
+    ChildType {
+        expected: RuntimePlanTypeId,
+        actual: RuntimePlanTypeId,
+    },
+    #[error("runtime pattern references unknown local declaration {local}")]
+    UnknownLocal { local: RuntimeLocalDeclarationId },
+    #[error("runtime pattern local {local} has type {actual}, expected {expected}")]
+    LocalType {
+        local: RuntimeLocalDeclarationId,
+        expected: RuntimePlanTypeId,
+        actual: RuntimePlanTypeId,
+    },
+    #[error("runtime pattern local {local} has a coordinate inconsistent with its node")]
+    InvalidCoordinate { local: RuntimeLocalDeclarationId },
+    #[error("runtime pattern binds local {local} more than once")]
+    DuplicateLocal { local: RuntimeLocalDeclarationId },
+    #[error("runtime record pattern type {ty} has no nominal-record domain")]
+    MissingRecordDomain { ty: RuntimePlanTypeId },
+    #[error("runtime record pattern type {ty} references unknown field {field}")]
+    UnknownRecordField {
+        ty: RuntimePlanTypeId,
+        field: RuntimeRecordFieldId,
+    },
+    #[error("runtime record pattern type {ty} repeats field {field}")]
+    DuplicateRecordField {
+        ty: RuntimePlanTypeId,
+        field: RuntimeRecordFieldId,
+    },
+    #[error("runtime variant pattern type {ty} has no case {ordinal}")]
+    UnknownVariantCase { ty: RuntimePlanTypeId, ordinal: u32 },
+    #[error("runtime variant pattern type {ty} has no nominal-variant domain")]
+    MissingVariantDomain { ty: RuntimePlanTypeId },
+    #[error("runtime variant pattern type {ty} has an invalid payload shape for case {ordinal}")]
+    VariantPayload { ty: RuntimePlanTypeId, ordinal: u32 },
+}
+
+fn validate_runtime_pattern(
+    plan: &RuntimePlan,
+    pattern: &RuntimePattern,
+) -> Result<(), RuntimePatternMatchError> {
+    let mut locals = BTreeSet::new();
+    validate_pattern_node(plan, pattern, &[], &mut locals)
+}
+
+fn validate_pattern_node(
+    plan: &RuntimePlan,
+    pattern: &RuntimePattern,
+    path: &[RuntimePatternBindingStep],
+    locals: &mut BTreeSet<RuntimeLocalDeclarationId>,
+) -> Result<(), RuntimePatternMatchError> {
+    let declaration = plan
+        .type_table()
+        .get(pattern.ty())
+        .ok_or(RuntimePatternMatchError::UnknownType { ty: pattern.ty() })?;
+    match pattern.kind() {
+        RuntimePatternKind::Bind { binding, .. } | RuntimePatternKind::Typed { binding } => {
+            validate_binding(plan, pattern.ty(), path, binding, locals)
         }
+        RuntimePatternKind::Discard => Ok(()),
+        RuntimePatternKind::Literal(value) => {
+            if plan.value_matches_type(pattern.ty(), value)? {
+                Ok(())
+            } else {
+                Err(RuntimePatternMatchError::InvalidKind { ty: pattern.ty() })
+            }
+        }
+        RuntimePatternKind::Entity(_) => match declaration.projection() {
+            RuntimePlanTypeProjection::EntityReference => Ok(()),
+            _ => Err(RuntimePatternMatchError::InvalidKind { ty: pattern.ty() }),
+        },
+        RuntimePatternKind::Tuple(patterns) => {
+            validate_tuple_pattern(plan, pattern.ty(), patterns, path, locals)
+        }
+        RuntimePatternKind::Record { fields, rest } => {
+            validate_record_pattern(plan, pattern.ty(), fields, rest, path, locals)
+        }
+        RuntimePatternKind::Sequence { items, rest } => {
+            validate_sequence_pattern(plan, pattern.ty(), items, rest, path, locals)
+        }
+        RuntimePatternKind::Variant { ordinal, payload } => validate_variant_pattern(
+            plan,
+            pattern.ty(),
+            *ordinal,
+            payload.as_deref(),
+            path,
+            locals,
+        ),
+        RuntimePatternKind::Whole {
+            binding,
+            pattern: inner,
+        } => {
+            validate_child_type(pattern.ty(), inner.ty())?;
+            validate_binding(plan, pattern.ty(), path, binding, locals)?;
+            validate_pattern_node(plan, inner, path, locals)
+        }
+    }
+}
+
+fn validate_tuple_pattern(
+    plan: &RuntimePlan,
+    ty: RuntimePlanTypeId,
+    patterns: &[RuntimePattern],
+    path: &[RuntimePatternBindingStep],
+    locals: &mut BTreeSet<RuntimeLocalDeclarationId>,
+) -> Result<(), RuntimePatternMatchError> {
+    let Some(RuntimePlanTypeProjection::Tuple(types)) = plan
+        .type_table()
+        .get(ty)
+        .map(crate::plan::RuntimePlanTypeDeclaration::projection)
+    else {
+        return Err(RuntimePatternMatchError::InvalidKind { ty });
+    };
+    if patterns.len() != types.len() {
+        return Err(RuntimePatternMatchError::InvalidKind { ty });
+    }
+    for (ordinal, (pattern, expected)) in patterns.iter().zip(types).enumerate() {
+        validate_child_type(*expected, pattern.ty())?;
+        let ordinal =
+            u32::try_from(ordinal).map_err(|_| RuntimePatternMatchError::InvalidKind { ty })?;
+        let mut child_path = path.to_vec();
+        child_path.push(RuntimePatternBindingStep::TupleElement(ordinal));
+        validate_pattern_node(plan, pattern, &child_path, locals)?;
     }
     Ok(())
 }
 
+fn validate_record_pattern(
+    plan: &RuntimePlan,
+    ty: RuntimePlanTypeId,
+    fields: &[RuntimeRecordPatternField],
+    rest: &RuntimePatternRest,
+    path: &[RuntimePatternBindingStep],
+    locals: &mut BTreeSet<RuntimeLocalDeclarationId>,
+) -> Result<(), RuntimePatternMatchError> {
+    if !matches!(
+        plan.type_table()
+            .get(ty)
+            .map(crate::plan::RuntimePlanTypeDeclaration::projection),
+        Some(RuntimePlanTypeProjection::ProjectNominal { .. })
+    ) {
+        return Err(RuntimePatternMatchError::InvalidKind { ty });
+    }
+    let domain = plan
+        .nominal_record_domains()
+        .get(ty)
+        .ok_or(RuntimePatternMatchError::MissingRecordDomain { ty })?;
+    let mut seen_fields = BTreeSet::new();
+    for (ordinal, field) in fields.iter().enumerate() {
+        if !seen_fields.insert(field.field()) {
+            return Err(RuntimePatternMatchError::DuplicateRecordField {
+                ty,
+                field: field.field(),
+            });
+        }
+        let expected = usize::try_from(field.field().zero_based())
+            .ok()
+            .and_then(|index| domain.fields().get(index))
+            .ok_or(RuntimePatternMatchError::UnknownRecordField {
+                ty,
+                field: field.field(),
+            })?
+            .ty();
+        validate_child_type(expected, field.pattern().ty())?;
+        let ordinal =
+            u32::try_from(ordinal).map_err(|_| RuntimePatternMatchError::InvalidKind { ty })?;
+        let mut child_path = path.to_vec();
+        child_path.push(RuntimePatternBindingStep::RecordField(ordinal));
+        validate_pattern_node(plan, field.pattern(), &child_path, locals)?;
+    }
+    if let Some(binding) = rest.binding() {
+        let mut rest_path = path.to_vec();
+        rest_path.push(RuntimePatternBindingStep::RecordRest);
+        validate_binding(plan, ty, &rest_path, binding, locals)?;
+    }
+    Ok(())
+}
+
+fn validate_sequence_pattern(
+    plan: &RuntimePlan,
+    ty: RuntimePlanTypeId,
+    items: &[RuntimePattern],
+    rest: &RuntimePatternRest,
+    path: &[RuntimePatternBindingStep],
+    locals: &mut BTreeSet<RuntimeLocalDeclarationId>,
+) -> Result<(), RuntimePatternMatchError> {
+    let declaration = plan
+        .type_table()
+        .get(ty)
+        .ok_or(RuntimePatternMatchError::UnknownType { ty })?;
+    let item_ty = match declaration.projection() {
+        RuntimePlanTypeProjection::Sequence { item, .. } => *item,
+        RuntimePlanTypeProjection::Array { item, .. }
+            if !matches!(rest, RuntimePatternRest::Bind(_)) =>
+        {
+            *item
+        }
+        _ => return Err(RuntimePatternMatchError::InvalidKind { ty }),
+    };
+    for (ordinal, item) in items.iter().enumerate() {
+        validate_child_type(item_ty, item.ty())?;
+        let ordinal =
+            u32::try_from(ordinal).map_err(|_| RuntimePatternMatchError::InvalidKind { ty })?;
+        let mut child_path = path.to_vec();
+        child_path.push(RuntimePatternBindingStep::SequenceElement(ordinal));
+        validate_pattern_node(plan, item, &child_path, locals)?;
+    }
+    if let Some(binding) = rest.binding() {
+        let mut rest_path = path.to_vec();
+        rest_path.push(RuntimePatternBindingStep::SequenceRest);
+        validate_binding(plan, ty, &rest_path, binding, locals)?;
+    }
+    Ok(())
+}
+
+fn validate_variant_pattern(
+    plan: &RuntimePlan,
+    ty: RuntimePlanTypeId,
+    ordinal: u32,
+    payload: Option<&RuntimePattern>,
+    path: &[RuntimePatternBindingStep],
+    locals: &mut BTreeSet<RuntimeLocalDeclarationId>,
+) -> Result<(), RuntimePatternMatchError> {
+    match (variant_payload_type(plan, ty, ordinal)?, payload) {
+        (Some(expected), Some(payload)) => {
+            validate_child_type(expected, payload.ty())?;
+            let mut child_path = path.to_vec();
+            child_path.push(RuntimePatternBindingStep::VariantPayload);
+            validate_pattern_node(plan, payload, &child_path, locals)
+        }
+        (None, None) => Ok(()),
+        (Some(_), None) | (None, Some(_)) => {
+            Err(RuntimePatternMatchError::VariantPayload { ty, ordinal })
+        }
+    }
+}
+
+fn validate_binding(
+    plan: &RuntimePlan,
+    expected_ty: RuntimePlanTypeId,
+    path: &[RuntimePatternBindingStep],
+    binding: &RuntimePatternBindingCoordinate,
+    locals: &mut BTreeSet<RuntimeLocalDeclarationId>,
+) -> Result<(), RuntimePatternMatchError> {
+    let local = plan.local_declarations().get(binding.local()).ok_or(
+        RuntimePatternMatchError::UnknownLocal {
+            local: binding.local(),
+        },
+    )?;
+    if local.ty() != expected_ty {
+        return Err(RuntimePatternMatchError::LocalType {
+            local: binding.local(),
+            expected: expected_ty,
+            actual: local.ty(),
+        });
+    }
+    let expected_path = if path.is_empty() {
+        &[RuntimePatternBindingStep::Whole][..]
+    } else {
+        path
+    };
+    if binding.path().steps() != expected_path {
+        return Err(RuntimePatternMatchError::InvalidCoordinate {
+            local: binding.local(),
+        });
+    }
+    if !locals.insert(binding.local()) {
+        return Err(RuntimePatternMatchError::DuplicateLocal {
+            local: binding.local(),
+        });
+    }
+    Ok(())
+}
+
+fn validate_child_type(
+    expected: RuntimePlanTypeId,
+    actual: RuntimePlanTypeId,
+) -> Result<(), RuntimePatternMatchError> {
+    if expected == actual {
+        Ok(())
+    } else {
+        Err(RuntimePatternMatchError::ChildType { expected, actual })
+    }
+}
+
+fn variant_payload_type(
+    plan: &RuntimePlan,
+    ty: RuntimePlanTypeId,
+    ordinal: u32,
+) -> Result<Option<RuntimePlanTypeId>, RuntimePatternMatchError> {
+    let declaration = plan
+        .type_table()
+        .get(ty)
+        .ok_or(RuntimePatternMatchError::UnknownType { ty })?;
+    match declaration.projection() {
+        RuntimePlanTypeProjection::Result { value, error } => match ordinal {
+            0 => Ok(Some(*value)),
+            1 => Ok(Some(*error)),
+            _ => Err(RuntimePatternMatchError::UnknownVariantCase { ty, ordinal }),
+        },
+        RuntimePlanTypeProjection::Option(item) => match ordinal {
+            0 => Ok(Some(*item)),
+            1 => Ok(None),
+            _ => Err(RuntimePatternMatchError::UnknownVariantCase { ty, ordinal }),
+        },
+        RuntimePlanTypeProjection::ProjectNominal { .. }
+        | RuntimePlanTypeProjection::Opaque { .. } => {
+            let domain = plan
+                .variant_domains()
+                .get(ty)
+                .ok_or(RuntimePatternMatchError::MissingVariantDomain { ty })?;
+            domain
+                .case(ordinal)
+                .map(crate::plan::RuntimeVariantCase::payload)
+                .ok_or(RuntimePatternMatchError::UnknownVariantCase { ty, ordinal })
+        }
+        _ => Err(RuntimePatternMatchError::InvalidKind { ty }),
+    }
+}
+
 fn collect_pattern_bindings(
+    plan: &RuntimePlan,
     pattern: &RuntimePattern,
     value: &RuntimeValue,
-    bindings: &mut Vec<RuntimeBinding>,
-) -> Result<bool, RuntimeEvalError> {
-    match pattern {
-        RuntimePattern::Ident(name) | RuntimePattern::MutIdent(name) => {
-            bindings.push(RuntimeBinding {
-                name: name.clone(),
+    bindings: &mut Vec<RuntimeLocalBinding>,
+) -> Result<bool, RuntimePatternMatchError> {
+    match pattern.kind() {
+        RuntimePatternKind::Bind { binding, .. } | RuntimePatternKind::Typed { binding } => {
+            bindings.push(RuntimeLocalBinding {
+                local: binding.local(),
                 value: value.clone(),
             });
             Ok(true)
         }
-        RuntimePattern::Typed { name, ty } => {
-            if !ty.accepts_value(value) {
-                return Ok(false);
-            }
-            bindings.push(RuntimeBinding {
-                name: name.clone(),
-                value: value.clone(),
-            });
-            Ok(true)
-        }
-        RuntimePattern::Discard => Ok(true),
-        RuntimePattern::Literal(expected) => Ok(expected == value),
-        RuntimePattern::Entity(expected) => {
-            Ok(matches!(value, RuntimeValue::EntityRef(actual) if actual == expected))
-        }
-        RuntimePattern::Tuple(patterns) => {
+        RuntimePatternKind::Discard => Ok(true),
+        RuntimePatternKind::Literal(expected) => Ok(expected == value),
+        RuntimePatternKind::Entity(expected) => Ok(matches!(
+            value,
+            RuntimeValue::EntityRef(actual) if actual == &expected.runtime_label()
+        )),
+        RuntimePatternKind::Tuple(patterns) => {
             let RuntimeValue::Tuple(values) = value else {
                 return Ok(false);
             };
-            if patterns.len() != values.len() {
+            collect_pattern_list(plan, patterns, values, bindings)
+        }
+        RuntimePatternKind::Record { fields, rest } => {
+            collect_record_pattern_bindings(plan, pattern.ty(), fields, rest, value, bindings)
+        }
+        RuntimePatternKind::Sequence { items, rest } => {
+            collect_sequence_pattern_bindings(plan, items, rest, value, bindings)
+        }
+        RuntimePatternKind::Variant {
+            ordinal, payload, ..
+        } => {
+            let RuntimeValue::Variant {
+                ordinal: actual_ordinal,
+                payload: actual_payload,
+                ..
+            } = value
+            else {
+                return Ok(false);
+            };
+            if ordinal != actual_ordinal {
                 return Ok(false);
             }
-            collect_pattern_list(patterns, values, bindings)
+            match (payload.as_deref(), actual_payload.as_deref()) {
+                (Some(pattern), Some(value)) => {
+                    collect_pattern_bindings(plan, pattern, value, bindings)
+                }
+                (None, None) => Ok(true),
+                (Some(_), None) | (None, Some(_)) => Ok(false),
+            }
         }
-        RuntimePattern::Record {
-            nominal_layout,
-            fields,
-            rest,
-        } => collect_record_pattern_bindings(
-            nominal_layout.as_deref(),
-            fields,
-            rest,
-            value,
-            bindings,
-        ),
-        RuntimePattern::BracketSeq { items, rest } => {
-            collect_bracket_seq_pattern_bindings(items, rest, value, bindings)
-        }
-        RuntimePattern::Variant {
-            owner,
-            ordinal,
-            name,
-            payload,
-        } => collect_variant_pattern_bindings(
-            owner,
-            *ordinal,
-            name,
-            payload.as_deref(),
-            value,
-            bindings,
-        ),
-        RuntimePattern::Whole { name, pattern } => {
-            if !collect_pattern_bindings(pattern, value, bindings)? {
+        RuntimePatternKind::Whole {
+            binding,
+            pattern: inner,
+        } => {
+            if !collect_pattern_bindings(plan, inner, value, bindings)? {
                 return Ok(false);
             }
-            bindings.push(RuntimeBinding {
-                name: name.clone(),
+            bindings.push(RuntimeLocalBinding {
+                local: binding.local(),
                 value: value.clone(),
             });
             Ok(true)
@@ -682,629 +1050,565 @@ fn collect_pattern_bindings(
 }
 
 fn collect_record_pattern_bindings(
-    nominal_layout: Option<&RuntimeNominalRecordLayout>,
+    plan: &RuntimePlan,
+    ty: RuntimePlanTypeId,
     fields: &[RuntimeRecordPatternField],
     rest: &RuntimePatternRest,
     value: &RuntimeValue,
-    bindings: &mut Vec<RuntimeBinding>,
-) -> Result<bool, RuntimeEvalError> {
-    match (nominal_layout, value) {
-        (None, RuntimeValue::Record(values)) => {
-            if !rest.accepts_len(fields.len(), values.len()) {
-                return Ok(false);
-            }
-            for field in fields {
-                let Some(value_field) = values
-                    .iter()
-                    .find(|candidate| candidate.name() == field.name)
-                else {
-                    return Ok(false);
-                };
-                if !collect_pattern_bindings(&field.pattern, value_field.value(), bindings)? {
-                    return Ok(false);
-                }
-            }
-            if let Some(name) = rest.binding_name() {
-                bindings.push(RuntimeBinding {
-                    name: name.to_owned(),
-                    value: value.clone(),
-                });
-            }
-            Ok(true)
-        }
-        (Some(layout), RuntimeValue::NominalRecord(record)) => {
-            if record.validate_against_layout(layout).is_err() {
-                return Ok(false);
-            }
-            if !rest.accepts_len(fields.len(), record.fields().len()) {
-                return Ok(false);
-            }
-            for field in fields {
-                let Some((field_id, _)) = layout.field_by_name(&field.name) else {
-                    return Ok(false);
-                };
-                let Some(value) = record.field(field_id) else {
-                    return Ok(false);
-                };
-                if !collect_pattern_bindings(&field.pattern, value, bindings)? {
-                    return Ok(false);
-                }
-            }
-            if let Some(name) = rest.binding_name() {
-                bindings.push(RuntimeBinding {
-                    name: name.to_owned(),
-                    value: value.clone(),
-                });
-            }
-            Ok(true)
-        }
-        _ => Ok(false),
+    bindings: &mut Vec<RuntimeLocalBinding>,
+) -> Result<bool, RuntimePatternMatchError> {
+    let RuntimeValue::NominalRecord(record) = value else {
+        return Ok(false);
+    };
+    if !rest.accepts_len(fields.len(), record.fields().len()) {
+        return Ok(false);
     }
+    for field in fields {
+        let Some(value) = record.field(field.field()) else {
+            return Ok(false);
+        };
+        if !collect_pattern_bindings(plan, field.pattern(), value, bindings)? {
+            return Ok(false);
+        }
+    }
+    if let Some(binding) = rest.binding() {
+        bindings.push(RuntimeLocalBinding {
+            local: binding.local(),
+            value: value.clone(),
+        });
+    }
+    debug_assert!(plan.nominal_record_domains().get(ty).is_some());
+    Ok(true)
 }
 
-fn collect_bracket_seq_pattern_bindings(
+fn collect_sequence_pattern_bindings(
+    plan: &RuntimePlan,
     items: &[RuntimePattern],
     rest: &RuntimePatternRest,
     value: &RuntimeValue,
-    bindings: &mut Vec<RuntimeBinding>,
-) -> Result<bool, RuntimeEvalError> {
-    match value {
-        RuntimeValue::Seq(RuntimeSeq::Values(values)) => {
-            if !rest.accepts_len(items.len(), values.len()) {
-                return Ok(false);
-            }
-            if !collect_pattern_list(items, &values[..items.len()], bindings)? {
-                return Ok(false);
-            }
-            if let Some(name) = rest.binding_name() {
-                bindings.push(RuntimeBinding {
-                    name: name.to_owned(),
-                    value: runtime_sequence_values(values[items.len()..].to_vec()),
-                });
-            }
-            Ok(true)
-        }
-        RuntimeValue::Seq(RuntimeSeq::Dense(values)) => {
-            if !rest.accepts_len(items.len(), values.len()) {
-                return Ok(false);
-            }
-            for (index, pattern) in items.iter().enumerate() {
-                if !collect_pattern_bindings(pattern, &values.value_at(index), bindings)? {
-                    return Ok(false);
-                }
-            }
-            if let Some(name) = rest.binding_name() {
-                bindings.push(RuntimeBinding {
-                    name: name.to_owned(),
-                    value: RuntimeValue::Seq(RuntimeSeq::Dense(values.tail_from(items.len()))),
-                });
-            }
-            Ok(true)
-        }
-        _ => Ok(false),
-    }
-}
-
-fn collect_variant_pattern_bindings(
-    owner: &RuntimeCheckedType,
-    ordinal: u32,
-    name: &str,
-    payload: Option<&RuntimePattern>,
-    value: &RuntimeValue,
-    bindings: &mut Vec<RuntimeBinding>,
-) -> Result<bool, RuntimeEvalError> {
-    let RuntimeValue::Variant {
-        owner: actual_owner,
-        ordinal: actual_ordinal,
-        name: actual_name,
-        payload: actual_payload,
-    } = value
-    else {
+    bindings: &mut Vec<RuntimeLocalBinding>,
+) -> Result<bool, RuntimePatternMatchError> {
+    let RuntimeValue::Seq(sequence) = value else {
         return Ok(false);
     };
-    if owner
-        .variant_case(ordinal)
-        .is_none_or(|case| case.name != name)
-        || owner.variant_identity().as_ref() != Some(actual_owner)
-        || ordinal != *actual_ordinal
-        || name != actual_name
-    {
+    if !rest.accepts_len(items.len(), sequence.len()) {
         return Ok(false);
     }
-    match (payload, actual_payload) {
-        (Some(pattern), Some(value)) => collect_pattern_bindings(pattern, value, bindings),
-        (None, None | Some(_)) => Ok(true),
-        (Some(_), None) => Ok(false),
+    for (index, pattern) in items.iter().enumerate() {
+        if !collect_pattern_bindings(plan, pattern, &sequence.value_at(index), bindings)? {
+            return Ok(false);
+        }
     }
+    if let Some(binding) = rest.binding() {
+        bindings.push(RuntimeLocalBinding {
+            local: binding.local(),
+            value: RuntimeValue::Seq(sequence.tail_from(items.len())),
+        });
+    }
+    Ok(true)
 }
 
 fn collect_pattern_list(
+    plan: &RuntimePlan,
     patterns: &[RuntimePattern],
     values: &[RuntimeValue],
-    bindings: &mut Vec<RuntimeBinding>,
-) -> Result<bool, RuntimeEvalError> {
+    bindings: &mut Vec<RuntimeLocalBinding>,
+) -> Result<bool, RuntimePatternMatchError> {
     for (pattern, value) in patterns.iter().zip(values) {
-        if !collect_pattern_bindings(pattern, value, bindings)? {
+        if !collect_pattern_bindings(plan, pattern, value, bindings)? {
             return Ok(false);
         }
     }
     Ok(true)
 }
 
+impl RuntimePlan {
+    /// Checks one value against the sole admitted plan type graph.
+    ///
+    /// Pattern matching and structured closure capture/application share this
+    /// context-owned operation instead of maintaining parallel predicates.
+    pub(crate) fn value_matches_type(
+        &self,
+        ty: RuntimePlanTypeId,
+        value: &RuntimeValue,
+    ) -> Result<bool, RuntimePlanValueTypeError> {
+        if self.type_table().get(ty).is_none() {
+            return Err(RuntimePlanValueTypeError::UnknownType { ty });
+        }
+        Ok(runtime_value_matches_type_inner(self, ty, value, 0))
+    }
+}
+
+fn runtime_value_matches_type_inner(
+    plan: &RuntimePlan,
+    ty: RuntimePlanTypeId,
+    value: &RuntimeValue,
+    depth: usize,
+) -> bool {
+    if depth > crate::value::MAX_RUNTIME_VALUE_NESTING_DEPTH {
+        return false;
+    }
+    let Some(declaration) = plan.type_table().get(ty) else {
+        return false;
+    };
+    match (declaration.projection(), value) {
+        (RuntimePlanTypeProjection::Unit, RuntimeValue::Unit)
+        | (RuntimePlanTypeProjection::Bool, RuntimeValue::Bool(_))
+        | (RuntimePlanTypeProjection::F32, RuntimeValue::F32(_))
+        | (RuntimePlanTypeProjection::F64, RuntimeValue::F64(_))
+        | (RuntimePlanTypeProjection::String, RuntimeValue::String(_))
+        | (RuntimePlanTypeProjection::Char, RuntimeValue::Char(_))
+        | (RuntimePlanTypeProjection::Duration, RuntimeValue::Duration(_))
+        | (RuntimePlanTypeProjection::EntityReference, RuntimeValue::EntityRef(_))
+        | (RuntimePlanTypeProjection::Range(_), RuntimeValue::Range(_))
+        | (RuntimePlanTypeProjection::Iterator(_), RuntimeValue::Iterator(_))
+        | (RuntimePlanTypeProjection::Function { .. }, RuntimeValue::Function(_)) => true,
+        (RuntimePlanTypeProjection::Signed(expected), RuntimeValue::Int(actual)) => {
+            *expected == actual.width()
+        }
+        (RuntimePlanTypeProjection::Unsigned(expected), RuntimeValue::UInt(actual)) => {
+            *expected == actual.width()
+        }
+        (RuntimePlanTypeProjection::Bytes, RuntimeValue::Seq(sequence)) => {
+            runtime_sequence_is_bytes(sequence)
+        }
+        (RuntimePlanTypeProjection::Sequence { item, .. }, RuntimeValue::Seq(sequence)) => {
+            runtime_sequence_matches_type(plan, *item, sequence, None, depth)
+        }
+        (RuntimePlanTypeProjection::Array { item, length }, RuntimeValue::Seq(sequence)) => {
+            runtime_sequence_matches_type(plan, *item, sequence, Some(*length), depth)
+        }
+        (RuntimePlanTypeProjection::Tuple(types), RuntimeValue::Tuple(values)) => {
+            runtime_tuple_matches_type(plan, types, values, depth)
+        }
+        (RuntimePlanTypeProjection::Choice(types), value) => {
+            runtime_choice_matches_type(plan, types, value, depth)
+        }
+        (
+            RuntimePlanTypeProjection::Result { value: ok, error },
+            RuntimeValue::Variant {
+                owner: RuntimeVariantIdentity::Result,
+                ordinal,
+                name,
+                payload,
+            },
+        ) => runtime_result_matches_type(
+            plan,
+            *ok,
+            *error,
+            *ordinal,
+            name,
+            payload.as_deref(),
+            depth,
+        ),
+        (
+            RuntimePlanTypeProjection::Option(item),
+            RuntimeValue::Variant {
+                owner: RuntimeVariantIdentity::Option,
+                ordinal,
+                name,
+                payload,
+            },
+        ) => runtime_option_matches_type(plan, *item, *ordinal, name, payload.as_deref(), depth),
+        (
+            RuntimePlanTypeProjection::ProjectNominal {
+                nominal, layout, ..
+            },
+            RuntimeValue::NominalRecord(record),
+        ) => runtime_nominal_record_matches_type(plan, ty, nominal, *layout, record, depth),
+        (
+            RuntimePlanTypeProjection::ProjectNominal { .. }
+            | RuntimePlanTypeProjection::Opaque { .. },
+            value @ RuntimeValue::Variant {
+                owner: RuntimeVariantIdentity::Nominal { .. },
+                ..
+            },
+        ) => runtime_nominal_variant_matches_type(plan, ty, declaration, value, depth),
+        (
+            RuntimePlanTypeProjection::Opaque {
+                producer,
+                admission,
+                ..
+            },
+            RuntimeValue::Opaque(value),
+        ) => runtime_opaque_matches_type(declaration, producer, *admission, value),
+        (
+            RuntimePlanTypeProjection::Shared(inner) | RuntimePlanTypeProjection::Reference(inner),
+            value,
+        ) => runtime_value_matches_type_inner(plan, *inner, value, depth + 1),
+        (RuntimePlanTypeProjection::Agent(agent), RuntimeValue::Agent(value)) => {
+            agent.operational_type() == value.operational_type()
+        }
+        _ => false,
+    }
+}
+
+fn runtime_sequence_is_bytes(sequence: &RuntimeSeq) -> bool {
+    sequence.clone().into_values().iter().all(
+        |value| matches!(value, RuntimeValue::UInt(value) if value.width() == RuntimeUnsignedIntWidth::U8),
+    )
+}
+
+fn runtime_sequence_matches_type(
+    plan: &RuntimePlan,
+    item: RuntimePlanTypeId,
+    sequence: &RuntimeSeq,
+    expected_length: Option<u64>,
+    depth: usize,
+) -> bool {
+    if expected_length.is_some_and(|length| usize::try_from(length).ok() != Some(sequence.len())) {
+        return false;
+    }
+    sequence
+        .clone()
+        .into_values()
+        .iter()
+        .all(|value| runtime_value_matches_type_inner(plan, item, value, depth + 1))
+}
+
+fn runtime_tuple_matches_type(
+    plan: &RuntimePlan,
+    types: &[RuntimePlanTypeId],
+    values: &[RuntimeValue],
+    depth: usize,
+) -> bool {
+    types.len() == values.len()
+        && types
+            .iter()
+            .zip(values)
+            .all(|(ty, value)| runtime_value_matches_type_inner(plan, *ty, value, depth + 1))
+}
+
+fn runtime_choice_matches_type(
+    plan: &RuntimePlan,
+    types: &[RuntimePlanTypeId],
+    value: &RuntimeValue,
+    depth: usize,
+) -> bool {
+    types
+        .iter()
+        .any(|ty| runtime_value_matches_type_inner(plan, *ty, value, depth + 1))
+}
+
+fn runtime_result_matches_type(
+    plan: &RuntimePlan,
+    ok: RuntimePlanTypeId,
+    error: RuntimePlanTypeId,
+    ordinal: u32,
+    name: &str,
+    payload: Option<&RuntimeValue>,
+    depth: usize,
+) -> bool {
+    match (ordinal, name, payload) {
+        (0, "Ok", Some(value)) => runtime_value_matches_type_inner(plan, ok, value, depth + 1),
+        (1, "Err", Some(value)) => runtime_value_matches_type_inner(plan, error, value, depth + 1),
+        _ => false,
+    }
+}
+
+fn runtime_option_matches_type(
+    plan: &RuntimePlan,
+    item: RuntimePlanTypeId,
+    ordinal: u32,
+    name: &str,
+    payload: Option<&RuntimeValue>,
+    depth: usize,
+) -> bool {
+    match (ordinal, name, payload) {
+        (0, "Some", Some(value)) => runtime_value_matches_type_inner(plan, item, value, depth + 1),
+        (1, "None", None) => true,
+        _ => false,
+    }
+}
+
+fn runtime_nominal_record_matches_type(
+    plan: &RuntimePlan,
+    ty: RuntimePlanTypeId,
+    nominal: &RuntimeNominalTypeId,
+    layout: TypeLayoutHash,
+    record: &RuntimeNominalRecordValue,
+    depth: usize,
+) -> bool {
+    plan.nominal_record_domains().get(ty).is_some_and(|domain| {
+        record.type_id() == nominal
+            && record.layout() == layout
+            && record.fields().len() == domain.fields().len()
+            && record
+                .fields()
+                .iter()
+                .zip(domain.fields())
+                .all(|(value, field)| {
+                    runtime_value_matches_type_inner(plan, field.ty(), value, depth + 1)
+                })
+    })
+}
+
+fn runtime_nominal_variant_matches_type(
+    plan: &RuntimePlan,
+    ty: RuntimePlanTypeId,
+    declaration: &RuntimePlanTypeDeclaration,
+    value: &RuntimeValue,
+    depth: usize,
+) -> bool {
+    let RuntimeValue::Variant {
+        owner:
+            RuntimeVariantIdentity::Nominal {
+                nominal: actual_nominal,
+                semantic_identity,
+            },
+        ordinal,
+        name,
+        payload,
+    } = value
+    else {
+        return false;
+    };
+    let Some(domain) = plan.variant_domains().get(ty) else {
+        return false;
+    };
+    actual_nominal == domain.nominal()
+        && *semantic_identity == declaration.semantic_identity()
+        && domain.case(*ordinal).is_some_and(|case| {
+            case.name() == name
+                && match (case.payload(), payload.as_deref()) {
+                    (Some(ty), Some(value)) => {
+                        runtime_value_matches_type_inner(plan, ty, value, depth + 1)
+                    }
+                    (None, None) => true,
+                    _ => false,
+                }
+        })
+}
+
+fn runtime_opaque_matches_type(
+    declaration: &RuntimePlanTypeDeclaration,
+    producer: &RuntimeOpaqueTypeProducerId,
+    admission: RuntimeOpaqueTypeAdmission,
+    value: &RuntimeOpaqueValue,
+) -> bool {
+    let owner = match admission {
+        RuntimeOpaqueTypeAdmission::ExactIdentity => {
+            RuntimeOpaqueTypeOwner::exact(producer.clone(), declaration.semantic_identity())
+        }
+        RuntimeOpaqueTypeAdmission::ProducerWide => {
+            RuntimeOpaqueTypeOwner::producer_wide(producer.clone(), declaration.semantic_identity())
+        }
+    };
+    owner.accepts_opaque_value(value)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::entry::TypeLayoutHash;
+    use crate::plan::{
+        RuntimeLocalDeclarationSeed, RuntimeNominalRecordDomainFieldSeed,
+        RuntimeNominalRecordDomainSeed, RuntimePatternSeed, RuntimePatternSeedKind,
+        RuntimePlanBuildError, RuntimePlanBuilder, RuntimePlanTypeProjection, RuntimePlanTypeSeed,
+        RuntimeRecordFieldSeedId, RuntimeRecordPatternFieldSeed,
+    };
     use crate::value::RuntimeNominalRecordValue;
 
-    fn nominal_layout() -> Arc<RuntimeNominalRecordLayout> {
-        Arc::new(
-            RuntimeNominalRecordLayout::try_from_checked_projection(
-                RuntimeNominalTypeId::try_new("game.Pair").unwrap(),
-                RuntimeSemanticTypeId::from_bytes([17; 32]),
-                TypeLayoutHash::from_bytes([19; 32]),
-                vec![
-                    ("alpha".to_owned(), RuntimeCheckedType::Bool),
-                    ("zeta".to_owned(), RuntimeCheckedType::String),
-                ],
-            )
-            .unwrap(),
-        )
-    }
-
-    fn nested_nominal_variant(depth: usize) -> (RuntimeCheckedType, RuntimeValue) {
-        (0..depth).fold(
-            (RuntimeCheckedType::Bool, RuntimeValue::Bool(true)),
-            |(payload_type, payload_value), index| {
-                let nominal = RuntimeNominalTypeId::try_new(format!("game.Nested{index}"))
-                    .expect("generated nominal ID is valid");
-                let identity_byte =
-                    u8::try_from(index + 1).expect("test nesting depth fits in one byte");
-                let semantic_identity = RuntimeSemanticTypeId::from_bytes([identity_byte; 32]);
-                (
-                    RuntimeCheckedType::Variant {
-                        nominal: nominal.clone(),
-                        semantic_identity,
-                        cases: vec![RuntimeCheckedVariantCase {
-                            name: "Next".to_owned(),
-                            payload: Some(Box::new(payload_type)),
-                        }],
-                    },
-                    RuntimeValue::Variant {
-                        owner: RuntimeVariantIdentity::Nominal {
-                            nominal,
-                            semantic_identity,
-                        },
-                        ordinal: 0,
-                        name: "Next".to_owned(),
-                        payload: Some(Box::new(payload_value)),
-                    },
-                )
-            },
-        )
+    fn identity(marker: u8) -> RuntimeSemanticTypeId {
+        RuntimeSemanticTypeId::from_bytes([marker; 32])
     }
 
     #[test]
-    fn nominal_record_pattern_resolves_name_to_layout_field_id() {
-        let layout = nominal_layout();
-        let value = RuntimeValue::NominalRecord(
-            RuntimeNominalRecordValue::try_from_accepted_layout(
-                &layout,
-                vec![
-                    RuntimeValue::Bool(true),
-                    RuntimeValue::String("selected".to_owned()),
+    fn tuple_pattern_binds_plan_local_ids() {
+        let mut builder = RuntimePlanBuilder::new();
+        let admitted = builder
+            .admit_semantic_batch(
+                [
+                    RuntimePlanTypeSeed::new(identity(1), RuntimePlanTypeProjection::Bool),
+                    RuntimePlanTypeSeed::new(identity(2), RuntimePlanTypeProjection::String),
+                    RuntimePlanTypeSeed::new(
+                        identity(3),
+                        RuntimePlanTypeProjection::Tuple(
+                            vec![identity(1), identity(2)].into_boxed_slice(),
+                        ),
+                    ),
                 ],
+                [
+                    RuntimeLocalDeclarationSeed::new(identity(1)),
+                    RuntimeLocalDeclarationSeed::new(identity(2)),
+                ],
+                [],
+                [],
             )
-            .unwrap(),
-        );
-        let pattern = RuntimePattern::Record {
-            nominal_layout: Some(layout),
-            fields: vec![RuntimeRecordPatternField {
-                name: "zeta".to_owned(),
-                pattern: RuntimePattern::Ident("chosen".to_owned()),
-            }],
-            rest: RuntimePatternRest::Ignore,
+            .expect("typed tuple admission");
+        let pattern = builder
+            .lower_pattern_seed_for_test(RuntimePatternSeed::new(
+                identity(3),
+                RuntimePatternSeedKind::Tuple(
+                    vec![
+                        RuntimePatternSeed::new(
+                            identity(1),
+                            RuntimePatternSeedKind::Bind {
+                                mutable: false,
+                                local: admitted.local_ids()[0].clone(),
+                            },
+                        ),
+                        RuntimePatternSeed::new(
+                            identity(2),
+                            RuntimePatternSeedKind::Typed {
+                                local: admitted.local_ids()[1].clone(),
+                            },
+                        ),
+                    ]
+                    .into_boxed_slice(),
+                ),
+            ))
+            .expect("admitted tuple pattern");
+        let RuntimePatternKind::Tuple(items) = pattern.kind() else {
+            panic!("tuple pattern kind");
         };
+        let RuntimePatternKind::Bind {
+            binding: bool_binding,
+            ..
+        } = items[0].kind()
+        else {
+            panic!("bool binding kind");
+        };
+        let RuntimePatternKind::Typed {
+            binding: string_binding,
+        } = items[1].kind()
+        else {
+            panic!("string binding kind");
+        };
+        let bool_local = bool_binding.local();
+        let string_local = string_binding.local();
+        let plan = builder.finish().expect("plan");
+        let value = RuntimeValue::Tuple(vec![
+            RuntimeValue::Bool(true),
+            RuntimeValue::String("ready".to_owned()),
+        ]);
 
-        let bindings = match_runtime_pattern(&pattern, &value).unwrap().unwrap();
-        assert_eq!(bindings.len(), 1);
-        assert_eq!(bindings[0].name, "chosen");
         assert_eq!(
-            bindings[0].value,
-            RuntimeValue::String("selected".to_owned())
+            match_runtime_pattern(&plan, &pattern, &value),
+            Ok(Some(vec![
+                RuntimeLocalBinding {
+                    local: bool_local,
+                    value: RuntimeValue::Bool(true),
+                },
+                RuntimeLocalBinding {
+                    local: string_local,
+                    value: RuntimeValue::String("ready".to_owned()),
+                },
+            ]))
         );
     }
 
     #[test]
-    fn nominal_record_pattern_rejects_wrong_layout_before_child_binding() {
-        let layout = nominal_layout();
+    fn nominal_record_pattern_uses_owner_domain_and_field_id() {
+        let nominal = RuntimeNominalTypeId::try_new("game.Pair").unwrap();
+        let layout = TypeLayoutHash::from_bytes([7; 32]);
+        let mut builder = RuntimePlanBuilder::new();
+        let admitted = builder
+            .admit_semantic_batch(
+                [
+                    RuntimePlanTypeSeed::new(
+                        identity(1),
+                        RuntimePlanTypeProjection::ProjectNominal {
+                            nominal: nominal.clone(),
+                            layout,
+                            arguments: Box::new([]),
+                        },
+                    ),
+                    RuntimePlanTypeSeed::new(identity(2), RuntimePlanTypeProjection::Bool),
+                    RuntimePlanTypeSeed::new(identity(3), RuntimePlanTypeProjection::String),
+                ],
+                [RuntimeLocalDeclarationSeed::new(identity(2))],
+                [RuntimeNominalRecordDomainSeed::new(
+                    identity(1),
+                    [
+                        RuntimeNominalRecordDomainFieldSeed::new("alpha", identity(2)),
+                        RuntimeNominalRecordDomainFieldSeed::new("zeta", identity(3)),
+                    ],
+                )],
+                [],
+            )
+            .expect("record admission");
+        let pattern = builder
+            .lower_pattern_seed_for_test(RuntimePatternSeed::new(
+                identity(1),
+                RuntimePatternSeedKind::Record {
+                    fields: Box::new([RuntimeRecordPatternFieldSeed::new(
+                        RuntimeRecordFieldSeedId::from_zero_based(0),
+                        RuntimePatternSeed::new(
+                            identity(2),
+                            RuntimePatternSeedKind::Bind {
+                                mutable: false,
+                                local: admitted.local_ids()[0].clone(),
+                            },
+                        ),
+                    )]),
+                    rest: crate::plan::RuntimePatternRestSeed::Ignore,
+                },
+            ))
+            .expect("admitted record pattern");
+        let RuntimePatternKind::Record { fields, .. } = pattern.kind() else {
+            panic!("record pattern kind");
+        };
+        let RuntimePatternKind::Bind { binding, .. } = fields[0].pattern().kind() else {
+            panic!("record binding kind");
+        };
+        let local = binding.local();
+        let plan = builder.finish().expect("plan");
         let value = RuntimeValue::NominalRecord(RuntimeNominalRecordValue::new(
-            layout.nominal().clone(),
-            TypeLayoutHash::from_bytes([99; 32]),
+            nominal,
+            layout,
             vec![
                 RuntimeValue::Bool(true),
-                RuntimeValue::String("bad".to_owned()),
+                RuntimeValue::String("tail".to_owned()),
             ],
         ));
-        let pattern = RuntimePattern::Record {
-            nominal_layout: Some(layout),
-            fields: vec![RuntimeRecordPatternField {
-                name: "zeta".to_owned(),
-                pattern: RuntimePattern::Ident("chosen".to_owned()),
-            }],
-            rest: RuntimePatternRest::Ignore,
-        };
 
-        assert!(match_runtime_pattern(&pattern, &value).unwrap().is_none());
-    }
-
-    #[test]
-    fn record_rest_modes_are_exact_open_and_bind_the_original_value_last() {
-        let complete = RuntimeValue::try_record(vec![
-            ("first".to_owned(), RuntimeValue::i64(1)),
-            ("second".to_owned(), RuntimeValue::i64(2)),
-        ])
-        .unwrap();
-        let pattern = |rest| RuntimePattern::Record {
-            nominal_layout: None,
-            fields: vec![RuntimeRecordPatternField {
-                name: "first".to_owned(),
-                pattern: RuntimePattern::Ident("head".to_owned()),
-            }],
-            rest,
-        };
-
-        assert!(
-            match_runtime_pattern(&pattern(RuntimePatternRest::Exact), &complete)
-                .unwrap()
-                .is_none()
-        );
-        let ignored = match_runtime_pattern(&pattern(RuntimePatternRest::Ignore), &complete)
-            .unwrap()
-            .unwrap();
         assert_eq!(
-            ignored,
-            vec![RuntimeBinding {
-                name: "head".to_owned(),
-                value: RuntimeValue::i64(1),
-            }]
+            match_runtime_pattern(&plan, &pattern, &value),
+            Ok(Some(vec![RuntimeLocalBinding {
+                local,
+                value: RuntimeValue::Bool(true),
+            }]))
         );
-        let bound = match_runtime_pattern(
-            &pattern(RuntimePatternRest::Bind("record".to_owned())),
-            &complete,
-        )
-        .unwrap()
-        .unwrap();
+    }
+
+    #[test]
+    fn binding_local_type_must_equal_the_pattern_node_type() {
+        let mut builder = RuntimePlanBuilder::new();
+        let admitted = builder
+            .admit_semantic_batch(
+                [
+                    RuntimePlanTypeSeed::new(identity(1), RuntimePlanTypeProjection::Bool),
+                    RuntimePlanTypeSeed::new(identity(2), RuntimePlanTypeProjection::String),
+                ],
+                [RuntimeLocalDeclarationSeed::new(identity(2))],
+                [],
+                [],
+            )
+            .expect("local admission");
+        let result = builder.lower_pattern_seed_for_test(RuntimePatternSeed::new(
+            identity(1),
+            RuntimePatternSeedKind::Bind {
+                mutable: false,
+                local: admitted.local_ids()[0].clone(),
+            },
+        ));
+        let plan = builder.finish().expect("plan");
+        let bool_ty = plan
+            .type_table()
+            .id_for_semantic(identity(1))
+            .expect("bool type");
+        let string_ty = plan
+            .type_table()
+            .id_for_semantic(identity(2))
+            .expect("string type");
+
         assert_eq!(
-            bound,
-            vec![
-                RuntimeBinding {
-                    name: "head".to_owned(),
-                    value: RuntimeValue::i64(1),
-                },
-                RuntimeBinding {
-                    name: "record".to_owned(),
-                    value: complete,
-                },
-            ]
+            result,
+            Err(RuntimePlanBuildError::TypeMismatch {
+                context: "pattern binding local",
+                expected: bool_ty,
+                actual: string_ty,
+            })
         );
-    }
-
-    #[test]
-    fn sequence_rest_modes_are_exact_open_and_bind_the_tail_last() {
-        let complete = runtime_sequence_values(vec![RuntimeValue::i64(1), RuntimeValue::i64(2)]);
-        let pattern = |rest| RuntimePattern::BracketSeq {
-            items: vec![RuntimePattern::Ident("head".to_owned())],
-            rest,
-        };
-
-        assert!(
-            match_runtime_pattern(&pattern(RuntimePatternRest::Exact), &complete)
-                .unwrap()
-                .is_none()
-        );
-        let ignored = match_runtime_pattern(&pattern(RuntimePatternRest::Ignore), &complete)
-            .unwrap()
-            .unwrap();
-        assert_eq!(ignored.len(), 1);
-        let bound = match_runtime_pattern(
-            &pattern(RuntimePatternRest::Bind("tail".to_owned())),
-            &complete,
-        )
-        .unwrap()
-        .unwrap();
-        assert_eq!(bound[0].name, "head");
-        assert_eq!(bound[1].name, "tail");
-        assert_eq!(
-            bound[1].value,
-            runtime_sequence_values(vec![RuntimeValue::i64(2)])
-        );
-    }
-
-    #[test]
-    fn rest_binding_participates_in_duplicate_admission() {
-        for pattern in [
-            RuntimePattern::Record {
-                nominal_layout: None,
-                fields: vec![RuntimeRecordPatternField {
-                    name: "first".to_owned(),
-                    pattern: RuntimePattern::Ident("value".to_owned()),
-                }],
-                rest: RuntimePatternRest::Bind("value".to_owned()),
-            },
-            RuntimePattern::BracketSeq {
-                items: vec![RuntimePattern::Ident("value".to_owned())],
-                rest: RuntimePatternRest::Bind("value".to_owned()),
-            },
-        ] {
-            let value = match &pattern {
-                RuntimePattern::Record { .. } => RuntimeValue::try_record(vec![
-                    ("first".to_owned(), RuntimeValue::i64(1)),
-                    ("second".to_owned(), RuntimeValue::i64(2)),
-                ])
-                .unwrap(),
-                RuntimePattern::BracketSeq { .. } => {
-                    runtime_sequence_values(vec![RuntimeValue::i64(1), RuntimeValue::i64(2)])
-                }
-                _ => unreachable!(),
-            };
-            assert_eq!(
-                match_runtime_pattern(&pattern, &value),
-                Err(RuntimeEvalError::DuplicateBinding("value".to_owned()))
-            );
-        }
-    }
-
-    #[test]
-    fn checked_variant_requires_exact_case_and_payload_shape() {
-        let nominal = RuntimeNominalTypeId::try_new("game.Outcome").unwrap();
-        let semantic_identity = RuntimeSemanticTypeId::from_bytes([23; 32]);
-        let checked = RuntimeCheckedType::Variant {
-            nominal: nominal.clone(),
-            semantic_identity,
-            cases: vec![
-                RuntimeCheckedVariantCase {
-                    name: "Idle".to_owned(),
-                    payload: None,
-                },
-                RuntimeCheckedVariantCase {
-                    name: "Ready".to_owned(),
-                    payload: Some(Box::new(RuntimeCheckedType::Bool)),
-                },
-            ],
-        };
-        let owner = RuntimeVariantIdentity::Nominal {
-            nominal: nominal.clone(),
-            semantic_identity,
-        };
-        let value = |ordinal, name: &str, payload: Option<RuntimeValue>| RuntimeValue::Variant {
-            owner: owner.clone(),
-            ordinal,
-            name: name.to_owned(),
-            payload: payload.map(Box::new),
-        };
-
-        assert!(checked.accepts_value(&value(0, "Idle", None)));
-        assert!(checked.accepts_value(&value(1, "Ready", Some(RuntimeValue::Bool(true)))));
-        assert!(!checked.accepts_value(&value(2, "Ready", Some(RuntimeValue::Bool(true)))));
-        assert!(!checked.accepts_value(&value(u32::MAX, "Ready", Some(RuntimeValue::Bool(true)),)));
-        assert!(!checked.accepts_value(&value(1, "Idle", Some(RuntimeValue::Bool(true)))));
-        assert!(!checked.accepts_value(&value(0, "Idle", Some(RuntimeValue::Bool(true)))));
-        assert!(!checked.accepts_value(&value(1, "Ready", None)));
-        assert!(!checked.accepts_value(&value(
-            1,
-            "Ready",
-            Some(RuntimeValue::String("wrong".to_owned())),
-        )));
-        assert!(!checked.accepts_value(&RuntimeValue::Variant {
-            owner: RuntimeVariantIdentity::Nominal {
-                nominal: RuntimeNominalTypeId::try_new("game.Other").unwrap(),
-                semantic_identity,
-            },
-            ordinal: 0,
-            name: "Idle".to_owned(),
-            payload: None,
-        }));
-        assert!(!checked.accepts_value(&RuntimeValue::Variant {
-            owner: RuntimeVariantIdentity::Nominal {
-                nominal,
-                semantic_identity: RuntimeSemanticTypeId::from_bytes([99; 32]),
-            },
-            ordinal: 0,
-            name: "Idle".to_owned(),
-            payload: None,
-        }));
-    }
-
-    #[test]
-    fn checked_result_and_option_require_exact_builtin_cases() {
-        let result = RuntimeCheckedType::Result {
-            ok: Box::new(RuntimeCheckedType::Bool),
-            error: Box::new(RuntimeCheckedType::String),
-        };
-        assert!(result.accepts_value(&RuntimeValue::result_ok(RuntimeValue::Bool(true))));
-        assert!(
-            result.accepts_value(&RuntimeValue::result_err(RuntimeValue::String(
-                "failed".to_owned(),
-            )))
-        );
-        assert!(
-            !result.accepts_value(&RuntimeValue::result_ok(RuntimeValue::String(
-                "wrong".to_owned(),
-            )))
-        );
-        assert!(!result.accepts_value(&RuntimeValue::Variant {
-            owner: RuntimeVariantIdentity::Result,
-            ordinal: 0,
-            name: "Err".to_owned(),
-            payload: Some(Box::new(RuntimeValue::Bool(true))),
-        }));
-        assert!(!result.accepts_value(&RuntimeValue::Variant {
-            owner: RuntimeVariantIdentity::Option,
-            ordinal: 0,
-            name: "Ok".to_owned(),
-            payload: Some(Box::new(RuntimeValue::Bool(true))),
-        }));
-        assert!(!result.accepts_value(&RuntimeValue::Variant {
-            owner: RuntimeVariantIdentity::Result,
-            ordinal: 2,
-            name: "Ok".to_owned(),
-            payload: Some(Box::new(RuntimeValue::Bool(true))),
-        }));
-        assert!(!result.accepts_value(&RuntimeValue::Variant {
-            owner: RuntimeVariantIdentity::Result,
-            ordinal: 0,
-            name: "Ok".to_owned(),
-            payload: None,
-        }));
-
-        let option = RuntimeCheckedType::Option(Box::new(RuntimeCheckedType::Bool));
-        assert!(option.accepts_value(&RuntimeValue::option_some(RuntimeValue::Bool(true))));
-        assert!(option.accepts_value(&RuntimeValue::option_none()));
-        assert!(
-            !option.accepts_value(&RuntimeValue::option_some(RuntimeValue::String(
-                "wrong".to_owned(),
-            )))
-        );
-        assert!(!option.accepts_value(&RuntimeValue::Variant {
-            owner: RuntimeVariantIdentity::Option,
-            ordinal: 1,
-            name: "None".to_owned(),
-            payload: Some(Box::new(RuntimeValue::Bool(true))),
-        }));
-        assert!(!option.accepts_value(&RuntimeValue::Variant {
-            owner: RuntimeVariantIdentity::Result,
-            ordinal: 1,
-            name: "None".to_owned(),
-            payload: None,
-        }));
-        assert!(!option.accepts_value(&RuntimeValue::Variant {
-            owner: RuntimeVariantIdentity::Option,
-            ordinal: 0,
-            name: "None".to_owned(),
-            payload: Some(Box::new(RuntimeValue::Bool(true))),
-        }));
-        assert!(!option.accepts_value(&RuntimeValue::Variant {
-            owner: RuntimeVariantIdentity::Option,
-            ordinal: 2,
-            name: "None".to_owned(),
-            payload: None,
-        }));
-    }
-
-    #[test]
-    fn checked_choice_selects_only_a_complete_exact_variant() {
-        let semantic_identity = RuntimeSemanticTypeId::from_bytes([26; 32]);
-        let first_nominal = RuntimeNominalTypeId::try_new("game.FirstChoice").unwrap();
-        let second_nominal = RuntimeNominalTypeId::try_new("game.SecondChoice").unwrap();
-        let choice = RuntimeCheckedType::Choice(vec![
-            RuntimeCheckedType::Variant {
-                nominal: first_nominal.clone(),
-                semantic_identity,
-                cases: vec![RuntimeCheckedVariantCase {
-                    name: "First".to_owned(),
-                    payload: None,
-                }],
-            },
-            RuntimeCheckedType::Variant {
-                nominal: second_nominal.clone(),
-                semantic_identity,
-                cases: vec![RuntimeCheckedVariantCase {
-                    name: "Second".to_owned(),
-                    payload: None,
-                }],
-            },
-        ]);
-        let value = |nominal, name: &str| RuntimeValue::Variant {
-            owner: RuntimeVariantIdentity::Nominal {
-                nominal,
-                semantic_identity,
-            },
-            ordinal: 0,
-            name: name.to_owned(),
-            payload: None,
-        };
-
-        assert!(choice.accepts_value(&value(second_nominal.clone(), "Second")));
-        assert!(!choice.accepts_value(&value(second_nominal, "First")));
-        assert!(!choice.accepts_value(&value(
-            RuntimeNominalTypeId::try_new("game.ForeignChoice").unwrap(),
-            "First",
-        )));
-        assert!(!choice.accepts_value(&value(first_nominal, "Second")));
-    }
-
-    #[test]
-    fn checked_nominal_variant_respects_the_shared_nesting_limit() {
-        let (at_limit_type, at_limit_value) =
-            nested_nominal_variant(crate::value::MAX_RUNTIME_VALUE_NESTING_DEPTH);
-        assert!(at_limit_type.accepts_value(&at_limit_value));
-
-        let (over_limit_type, over_limit_value) =
-            nested_nominal_variant(crate::value::MAX_RUNTIME_VALUE_NESTING_DEPTH + 1);
-        assert!(!over_limit_type.accepts_value(&over_limit_value));
-    }
-
-    #[test]
-    fn checked_inline_failure_recurses_into_the_fallback_variant() {
-        let fallback_nominal =
-            RuntimeNominalTypeId::try_new("arcweft.dialogue.InlineFallback").unwrap();
-        let fallback_semantic_identity = RuntimeSemanticTypeId::from_bytes([24; 32]);
-        let fallback_type = RuntimeCheckedType::Variant {
-            nominal: fallback_nominal.clone(),
-            semantic_identity: fallback_semantic_identity,
-            cases: vec![RuntimeCheckedVariantCase {
-                name: "ValuePlain".to_owned(),
-                payload: None,
-            }],
-        };
-        let failure_nominal =
-            RuntimeNominalTypeId::try_new("arcweft.dialogue.InlineFailurePolicy").unwrap();
-        let failure_semantic_identity = RuntimeSemanticTypeId::from_bytes([25; 32]);
-        let failure_type = RuntimeCheckedType::Variant {
-            nominal: failure_nominal.clone(),
-            semantic_identity: failure_semantic_identity,
-            cases: vec![
-                RuntimeCheckedVariantCase {
-                    name: "FailLine".to_owned(),
-                    payload: None,
-                },
-                RuntimeCheckedVariantCase {
-                    name: "Discard".to_owned(),
-                    payload: None,
-                },
-                RuntimeCheckedVariantCase {
-                    name: "Fallback".to_owned(),
-                    payload: Some(Box::new(fallback_type)),
-                },
-            ],
-        };
-        let fallback_owner = RuntimeVariantIdentity::Nominal {
-            nominal: fallback_nominal,
-            semantic_identity: fallback_semantic_identity,
-        };
-        let fallback = RuntimeValue::Variant {
-            owner: fallback_owner.clone(),
-            ordinal: 0,
-            name: "ValuePlain".to_owned(),
-            payload: None,
-        };
-        let failure = |payload| RuntimeValue::Variant {
-            owner: RuntimeVariantIdentity::Nominal {
-                nominal: failure_nominal.clone(),
-                semantic_identity: failure_semantic_identity,
-            },
-            ordinal: 2,
-            name: "Fallback".to_owned(),
-            payload: Some(Box::new(payload)),
-        };
-
-        assert!(failure_type.accepts_value(&failure(fallback.clone())));
-        assert!(!failure_type.accepts_value(&failure(RuntimeValue::Variant {
-            owner: fallback_owner,
-            ordinal: 0,
-            name: "Text".to_owned(),
-            payload: None,
-        })));
     }
 }

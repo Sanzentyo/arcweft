@@ -3,6 +3,7 @@ use arcweft_adapter_context::{
     manifest::{AdapterHostCall, AdapterManifest},
     standard,
 };
+use arcweft_core::pattern::RuntimeCheckedType;
 use arcweft_core::task::{
     HostTaskRequest, LogicalEpoch, SchedulerBudget, TaskEvent, TaskEventKind, TaskSequence,
     TaskSpec,
@@ -10,8 +11,8 @@ use arcweft_core::task::{
 use arcweft_core::value::{RuntimePayload, RuntimeValue, runtime_sequence_dense_bytes};
 use arcweft_host_adapter::{
     HostAdapter, HostAdapterCompletion, HostAdapterError, HostAdapterRegistry,
-    HostAdapterRegistryBuilder, HostCallPolicy, HostTaskMetrics, HostTaskOutcome,
-    HostTaskSubmission,
+    HostAdapterRegistryBuilder, HostCallPolicy, HostTaskCompletion, HostTaskMetrics,
+    HostTaskOutcome, HostTaskSubmission,
 };
 use arcweft_runtime_scheduler::{RuntimeScheduler, RuntimeSchedulerStats, TaskClassCounts};
 use rayon::prelude::*;
@@ -178,7 +179,7 @@ impl NativeTaskBridge {
             .map(|HostAdapterCompletion { task_id, outcome }| {
                 self.task_event(TaskCompletion {
                     task_id,
-                    result: outcome.result,
+                    completion: outcome.completion,
                     stats: outcome.metrics,
                 })
             })
@@ -283,7 +284,7 @@ impl NativeTaskBridge {
             logical_epoch: LogicalEpoch(0),
             task_id: task.id,
             sequence: TaskSequence(self.sequence),
-            kind: TaskEventKind::Err(format!(
+            kind: TaskEventKind::Failed(format!(
                 "host call `{}` is not provided by the active adapter manifest",
                 task.request.host_call_id()
             )),
@@ -298,7 +299,7 @@ impl NativeTaskBridge {
             logical_epoch: LogicalEpoch(0),
             task_id: task.id,
             sequence: TaskSequence(self.sequence),
-            kind: TaskEventKind::Err(format!(
+            kind: TaskEventKind::Failed(format!(
                 "host call `{}` is provided by the active adapter manifest but no native adapter implementation is registered",
                 task.request.host_call_id()
             )),
@@ -313,16 +314,20 @@ impl NativeTaskBridge {
         self.stats.system_info_ops += completion.stats.system_info_ops;
         self.stats.bytes_read += completion.stats.bytes_read;
         self.stats.bytes_written += completion.stats.bytes_written;
-        let kind = completion.result.map_or_else(
-            |error| {
-                self.stats.failed_tasks += 1;
-                TaskEventKind::Err(error)
-            },
-            |value| {
+        let kind = match completion.completion {
+            HostTaskCompletion::Ready(value) => {
                 self.stats.completed_tasks += 1;
                 TaskEventKind::Ready(value)
-            },
-        );
+            }
+            HostTaskCompletion::Error(error) => {
+                self.stats.completed_tasks += 1;
+                TaskEventKind::Error(error)
+            }
+            HostTaskCompletion::Failed(error) => {
+                self.stats.failed_tasks += 1;
+                TaskEventKind::Failed(error)
+            }
+        };
         let event = TaskEvent {
             logical_epoch: LogicalEpoch(0),
             task_id: completion.task_id,
@@ -373,7 +378,7 @@ struct TaskCompletions {
 #[derive(Clone, Debug)]
 struct TaskCompletion {
     task_id: arcweft_core::task::TaskId,
-    result: Result<RuntimePayload, String>,
+    completion: HostTaskCompletion,
     stats: HostTaskMetrics,
 }
 
@@ -415,7 +420,10 @@ impl HostAdapter for NativeFileAdapter {
             }
             _ => return None,
         };
-        Some(HostTaskOutcome { result, metrics })
+        Some(HostTaskOutcome {
+            completion: file_task_completion(task, result),
+            metrics,
+        })
     }
 
     fn can_complete_in_parallel(&self, request: &HostTaskRequest) -> bool {
@@ -423,6 +431,34 @@ impl HostAdapter for NativeFileAdapter {
             request,
             HostTaskRequest::FileReadText(_) | HostTaskRequest::FileReadBytes(_)
         )
+    }
+}
+
+fn file_task_completion(
+    task: &TaskSpec,
+    result: Result<RuntimePayload, String>,
+) -> HostTaskCompletion {
+    match result {
+        Ok(value) => HostTaskCompletion::Ready(value),
+        Err(error) => {
+            let RuntimeCheckedType::Opaque { owner } = &task.outcome.error else {
+                return HostTaskCompletion::Failed(
+                    "native file task has no exact opaque domain-error contract".to_owned(),
+                );
+            };
+            if owner.producer().as_str() != "arcweft.adapter.native-file" {
+                return HostTaskCompletion::Failed(format!(
+                    "native file task error owner uses foreign producer `{}`",
+                    owner.producer().as_str()
+                ));
+            }
+            match owner.try_wrap(RuntimeValue::String(error)) {
+                Ok(value) => HostTaskCompletion::Error(RuntimePayload::new(value)),
+                Err(error) => HostTaskCompletion::Failed(format!(
+                    "native file task could not materialize its domain error: {error}"
+                )),
+            }
+        }
     }
 }
 
@@ -436,9 +472,9 @@ impl HostAdapter for NativeSystemInfoAdapter {
             return None;
         };
         Some(HostTaskOutcome {
-            result: Ok(RuntimePayload::new(RuntimeValue::usize(usize_to_u64(
-                system_info_value(self.host_system, request.kind),
-            )))),
+            completion: HostTaskCompletion::Ready(RuntimePayload::new(RuntimeValue::usize(
+                usize_to_u64(system_info_value(self.host_system, request.kind)),
+            ))),
             metrics: HostTaskMetrics {
                 system_info_ops: 1,
                 ..HostTaskMetrics::default()
@@ -458,7 +494,7 @@ impl HostAdapter for InternalSchedulerMarkerAdapter {
 
     fn complete(&self, task: &TaskSpec) -> Option<HostTaskOutcome> {
         is_scheduler_marker_task(&task.request).then(|| HostTaskOutcome {
-            result: Ok(RuntimePayload::new(RuntimeValue::Unit)),
+            completion: HostTaskCompletion::Ready(RuntimePayload::new(RuntimeValue::Unit)),
             metrics: HostTaskMetrics::default(),
         })
     }
@@ -539,7 +575,7 @@ fn complete_task(registry: &HostAdapterRegistry, task: &TaskSpec) -> Option<Task
     match registry.submit(task)? {
         HostTaskSubmission::Completed(outcome) => Some(TaskCompletion {
             task_id: task.id.clone(),
-            result: outcome.result,
+            completion: outcome.completion,
             stats: outcome.metrics,
         }),
         HostTaskSubmission::Pending => None,
@@ -786,7 +822,7 @@ mod tests {
         assert_eq!(events.len(), 1);
         assert!(matches!(
             &events[0].kind,
-            TaskEventKind::Err(message)
+            TaskEventKind::Failed(message)
                 if message.contains("host call `system.core_count` is not provided")
         ));
         assert_eq!(bridge.stats().failed_tasks, 1);

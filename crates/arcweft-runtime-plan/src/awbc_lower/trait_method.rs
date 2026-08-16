@@ -5,22 +5,23 @@ use crate::awbc_lower::{table_index, table_range_len};
 use arcweft_core::awbc::schema::{
     AwbcBlock, AwbcBlockId, AwbcFunction, AwbcFunctionFlags, AwbcFunctionId, AwbcFunctionKind,
     AwbcInstruction, AwbcRegisterId, AwbcSafePointKind, AwbcTableRange, AwbcTerminator,
-    AwbcTraitMethod, AwbcTraitReceiverMode,
+    AwbcTraitMethod, AwbcTraitMethodId, AwbcTraitReceiverMode,
 };
 use arcweft_core::plan::{RuntimePlan, RuntimeReceiverMode, RuntimeTraitMethod};
 use arcweft_core::value::RuntimeExpr;
 
-pub(crate) struct AwbcTraitMethodLowerer<'a> {
+pub(crate) struct AwbcTraitMethodLowerer<'a, 'plan> {
     inventory: &'a mut AwbcInventory,
+    plan: &'plan RuntimePlan,
 }
 
-impl<'a> AwbcTraitMethodLowerer<'a> {
-    pub(crate) fn new(inventory: &'a mut AwbcInventory) -> Self {
-        Self { inventory }
+impl<'a, 'plan> AwbcTraitMethodLowerer<'a, 'plan> {
+    pub(crate) fn new(inventory: &'a mut AwbcInventory, plan: &'plan RuntimePlan) -> Self {
+        Self { inventory, plan }
     }
 
-    pub(crate) fn lower_plan(&mut self, plan: &RuntimePlan) {
-        for method in &plan.trait_methods {
+    pub(crate) fn lower_plan(&mut self) {
+        for method in self.plan.trait_methods() {
             self.lower_method(method);
         }
     }
@@ -42,15 +43,26 @@ impl<'a> AwbcTraitMethodLowerer<'a> {
         let owner = self.inventory.reserve_function_slot();
         let mut frame = FrameBuilder::new();
         let dynamic_ty = self.inventory.dynamic_ty();
-        for input in &method.input_names {
-            let name = self.inventory.intern_string(input);
-            frame.parameter(input, name, dynamic_ty);
+        for input in &method.input_locals {
+            let ty = self
+                .plan
+                .local_declarations()
+                .get(*input)
+                .map_or(dynamic_ty, |declaration| {
+                    crate::awbc_lower::pattern::plan_type(
+                        self.inventory,
+                        self.plan,
+                        declaration.ty(),
+                    )
+                });
+            frame.parameter(*input, ty);
         }
 
         let mut body = TraitMethodBodyBuilder::new(self.inventory, owner);
         body.lower_returning_expr(
             self.inventory,
             &mut frame,
+            self.plan,
             &method.body,
             trait_method_path(method),
         );
@@ -62,7 +74,7 @@ impl<'a> AwbcTraitMethodLowerer<'a> {
         let public_id = self.inventory.intern_string(&public_label);
         let signature = self
             .inventory
-            .intern_dynamic_value_signature(method.input_names.len());
+            .intern_dynamic_value_signature(method.input_locals.len());
         let function = self.inventory.replace_function(
             owner,
             AwbcFunction {
@@ -83,6 +95,8 @@ impl<'a> AwbcTraitMethodLowerer<'a> {
             receiver_state_slot: (method.receiver == RuntimeReceiverMode::MutRef)
                 .then_some(AwbcRegisterId(0)),
         });
+        self.inventory
+            .record_trait_method(method.id, AwbcTraitMethodId(table_index(expected)));
     }
 }
 
@@ -110,17 +124,18 @@ impl TraitMethodBodyBuilder {
         &mut self,
         inventory: &mut AwbcInventory,
         frame: &mut FrameBuilder,
+        plan: &RuntimePlan,
         expr: &RuntimeExpr,
         path: String,
     ) {
-        match expr {
-            RuntimeExpr::If {
+        match expr.kind() {
+            arcweft_core::value::RuntimeExprKind::If {
                 condition,
                 then_expr,
                 else_expr,
             } => {
                 let condition =
-                    AwbcExprLowerer::new(inventory, frame, path.clone()).lower(condition);
+                    AwbcExprLowerer::new(inventory, frame, path.clone(), plan).lower(condition);
                 let then_block = AwbcBlockId(table_index(
                     inventory.program.blocks.len().saturating_add(1),
                 ));
@@ -133,57 +148,76 @@ impl TraitMethodBodyBuilder {
                     },
                     AwbcSafePointKind::None,
                 );
-                self.lower_returning_expr(inventory, frame, then_expr, format!("{path}.then"));
+                self.lower_returning_expr(
+                    inventory,
+                    frame,
+                    plan,
+                    then_expr,
+                    format!("{path}.then"),
+                );
                 let else_block = AwbcBlockId(table_index(inventory.program.blocks.len()));
                 patch_branch_else_block(inventory, branch_block, else_block);
-                self.lower_returning_expr(inventory, frame, else_expr, format!("{path}.else"));
+                self.lower_returning_expr(
+                    inventory,
+                    frame,
+                    plan,
+                    else_expr,
+                    format!("{path}.else"),
+                );
             }
-            RuntimeExpr::Let { name, expr, body } => {
-                let value = AwbcExprLowerer::new(inventory, frame, path.clone()).lower(expr);
-                let local =
-                    frame.local(name, inventory.intern_string(name), inventory.dynamic_ty());
+            arcweft_core::value::RuntimeExprKind::Let {
+                binding,
+                expr,
+                body,
+            } => {
+                let value = AwbcExprLowerer::new(inventory, frame, path.clone(), plan).lower(expr);
+                let ty = if let Some(declaration) = plan.local_declarations().get(*binding) {
+                    crate::awbc_lower::pattern::plan_type(inventory, plan, declaration.ty())
+                } else {
+                    inventory.dynamic_ty()
+                };
+                let local = frame.local(*binding, ty);
                 inventory.push_instruction(AwbcInstruction::Move {
                     dst: local,
                     src: value,
                 });
-                self.lower_returning_expr(inventory, frame, body, format!("{path}.let.{name}"));
+                self.lower_returning_expr(
+                    inventory,
+                    frame,
+                    plan,
+                    body,
+                    format!("{path}.let.{binding}"),
+                );
             }
-            RuntimeExpr::AssignField {
-                target,
+            arcweft_core::value::RuntimeExprKind::AssignNominalField {
+                base,
                 field,
                 expr,
                 body,
             } => {
-                let value = AwbcExprLowerer::new(inventory, frame, path.clone()).lower(expr);
-                if let RuntimeExpr::Local(name) = target.as_ref() {
-                    if let Some(target) = frame.register_for_local(name) {
-                        let field = inventory.intern_string(field);
-                        inventory.push_instruction(AwbcInstruction::AssignField {
-                            target,
-                            field,
-                            value,
-                        });
-                    } else {
-                        inventory.diagnostic(AwbcLowerDiagnostic::error(
-                            path.clone(),
-                            format!("field assignment target `{name}` is not a local register"),
-                        ));
-                    }
+                let value = AwbcExprLowerer::new(inventory, frame, path.clone(), plan).lower(expr);
+                if let Some(target) = frame.register_for_local(*base) {
+                    inventory.push_instruction(AwbcInstruction::AssignRecordField {
+                        target,
+                        field: field.zero_based(),
+                        value,
+                    });
                 } else {
                     inventory.diagnostic(AwbcLowerDiagnostic::error(
                         path.clone(),
-                        "field assignment lowering requires a local receiver target",
+                        format!("field assignment base `{base}` is not a local register"),
                     ));
                 }
                 self.lower_returning_expr(
                     inventory,
                     frame,
+                    plan,
                     body,
-                    format!("{path}.assign_field.{field}"),
+                    format!("{path}.assign_field.{}", field.zero_based()),
                 );
             }
             _ => {
-                let value = AwbcExprLowerer::new(inventory, frame, path).lower(expr);
+                let value = AwbcExprLowerer::new(inventory, frame, path, plan).lower(expr);
                 self.close_block(
                     inventory,
                     AwbcTerminator::Return { value: Some(value) },

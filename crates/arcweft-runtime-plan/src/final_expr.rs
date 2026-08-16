@@ -1,10 +1,19 @@
-//! Runtime-expression projection from final arena HIR and checked semantic facts.
+//! Runtime-expression seed projection from accepted final HIR.
 
-use arcweft_core::entry::RuntimeCommandTargetId;
+use std::collections::BTreeMap;
+
+use arcweft_core::entry::RuntimeCallableId;
+use arcweft_core::plan::{
+    RuntimeAgentExprSeed, RuntimeCallArgumentSeed, RuntimeExprMatchArmSeed, RuntimeExprSeed,
+    RuntimeExprSeedKind, RuntimeFieldProjectionSeed, RuntimeFlowOpSeed, RuntimeFunctionSiteSeedId,
+    RuntimeHostArgumentSeed, RuntimeHostCallTargetSeed, RuntimeLocalSeedId,
+    RuntimeNominalRecordFieldSeed, RuntimePureHelperSeedId, RuntimeRecordFieldSeedId,
+    RuntimeTraitMethodSeedId,
+};
+use arcweft_core::task::NamedHostArg;
 use arcweft_core::value::{
-    RuntimeAgentExpr, RuntimeAgentPathExpr, RuntimeAgentPredicateExpr, RuntimeAgentProbeExpr,
-    RuntimeAgentTargetExpr, RuntimeBinaryOp, RuntimeCallTarget, RuntimeExpr, RuntimeExprMatchArm,
-    RuntimeFieldExpr, RuntimeNominalRecordExpr, RuntimeUnaryOp, RuntimeValue,
+    RuntimeAgentCompareOp, RuntimeBinaryOp, RuntimeCallArgumentMode, RuntimeCallTarget,
+    RuntimeUnaryOp, RuntimeValue,
 };
 use arcweft_lang_hir::expr::{
     HirBinaryOp, HirCallArgument, HirExprKind, HirRecordField, HirUnaryOp,
@@ -13,33 +22,97 @@ use arcweft_lang_hir::identity::{ExprId, LocalId, StmtId};
 use arcweft_lang_hir::item::HirFunctionBody;
 use arcweft_lang_hir::module::HirModule;
 use arcweft_lang_hir::stmt::HirStmtKind;
+use arcweft_lang_hir::symbol::ImplMethodDeclarationId;
 
 use crate::agent::RuntimeAgentIntrinsic;
-use crate::final_pattern::FinalPatternLowerer;
+use crate::final_pattern::{FinalPatternLowerer, project_entity_reference};
 use crate::semantic_facts::{
     RuntimeNormalizedType, RuntimePlanSemanticFacts, RuntimeReductionConstructor,
-    RuntimeResolvedCallArgument, RuntimeResolvedCallTarget, RuntimeResolvedSelect,
-    RuntimeResolvedValue, RuntimeResolvedVariant, RuntimeTypeShape,
+    RuntimeResolvedCallArgument, RuntimeResolvedCallTarget, RuntimeResolvedHostArgumentPassing,
+    RuntimeResolvedSelect, RuntimeResolvedValue, RuntimeResolvedVariant, RuntimeTypeShape,
 };
 
 pub(crate) struct FinalExprLowerer<'hir> {
     module: &'hir HirModule,
     facts: &'hir RuntimePlanSemanticFacts,
+    locals: &'hir BTreeMap<LocalId, RuntimeLocalSeedId>,
+    pure_helpers: &'hir BTreeMap<RuntimeCallableId, RuntimePureHelperSeedId>,
+    trait_methods: &'hir BTreeMap<ImplMethodDeclarationId, RuntimeTraitMethodSeedId>,
+    function_sites: &'hir BTreeMap<ExprId, RuntimeFunctionSiteSeedId>,
 }
 
 impl<'hir> FinalExprLowerer<'hir> {
     pub(crate) const fn new(
         module: &'hir HirModule,
         facts: &'hir RuntimePlanSemanticFacts,
+        locals: &'hir BTreeMap<LocalId, RuntimeLocalSeedId>,
+        pure_helpers: &'hir BTreeMap<RuntimeCallableId, RuntimePureHelperSeedId>,
+        trait_methods: &'hir BTreeMap<ImplMethodDeclarationId, RuntimeTraitMethodSeedId>,
+        function_sites: &'hir BTreeMap<ExprId, RuntimeFunctionSiteSeedId>,
     ) -> Self {
-        Self { module, facts }
+        Self {
+            module,
+            facts,
+            locals,
+            pure_helpers,
+            trait_methods,
+            function_sites,
+        }
+    }
+
+    pub(crate) fn lower_host_call_target(
+        &self,
+        id: ExprId,
+        call: &arcweft_lang_hir::expr::HirCallExpr,
+    ) -> Result<Option<RuntimeHostCallTargetSeed>, String> {
+        let selected = self
+            .facts
+            .call(id)
+            .ok_or_else(|| format!("checked call fact is missing for expression {id:?}"))?;
+        let RuntimeResolvedCallTarget::Host(host) = selected.target() else {
+            return Ok(None);
+        };
+        let args = selected
+            .arguments()
+            .iter()
+            .map(|argument| match argument {
+                RuntimeResolvedCallArgument::Authored { passing, .. } => {
+                    let (value, _) = self.resolved_argument(call, id, argument)?;
+                    Ok(match passing {
+                        RuntimeResolvedHostArgumentPassing::Positional => {
+                            RuntimeHostArgumentSeed::Positional(value)
+                        }
+                        RuntimeResolvedHostArgumentPassing::Named(name) => {
+                            RuntimeHostArgumentSeed::Named(NamedHostArg {
+                                name: name.clone(),
+                                value,
+                            })
+                        }
+                        RuntimeResolvedHostArgumentPassing::Spread => {
+                            RuntimeHostArgumentSeed::Spread(value)
+                        }
+                    })
+                }
+                RuntimeResolvedCallArgument::Receiver => Err(format!(
+                    "host call {id:?} cannot project a receiver argument"
+                )),
+            })
+            .collect::<Result<Vec<_>, _>>()?;
+        Ok(Some(RuntimeHostCallTargetSeed {
+            public_id: host.public_id().to_owned(),
+            capability: host.capability().to_owned(),
+            operation: host.operation().to_owned(),
+            args,
+            mode: host.mode(),
+            deterministic: host.deterministic(),
+        }))
     }
 
     #[allow(
         clippy::too_many_lines,
-        reason = "the exhaustive final-HIR expression projection is kept in one match so every executable and rejected family remains visibly closed"
+        reason = "one closed final-HIR expression projection"
     )]
-    pub(crate) fn lower(&self, id: ExprId) -> Result<RuntimeExpr, String> {
+    pub(crate) fn lower(&self, id: ExprId) -> Result<RuntimeExprSeed, String> {
         let expression = self
             .module
             .resolve_expr(id)
@@ -49,167 +122,103 @@ impl<'hir> FinalExprLowerer<'hir> {
                 "final-HIR expression {id:?} contains recovery and is not executable"
             ));
         }
-        match expression.kind() {
-            HirExprKind::Unit => Ok(RuntimeExpr::Value(RuntimeValue::Unit)),
-            HirExprKind::Literal(_) | HirExprKind::NumericBracketSequence(_) => self
-                .facts
-                .expression_literal(id)
-                .cloned()
-                .map(RuntimeExpr::Value)
-                .ok_or_else(|| format!("checked literal fact is missing for expression {id:?}")),
-            HirExprKind::EntityReference(_) => match self.facts.value(id) {
-                Some(RuntimeResolvedValue::ProjectItem(item)) => {
-                    Ok(RuntimeExpr::EntityRef(item.public_id().as_str().to_owned()))
-                }
-                Some(RuntimeResolvedValue::DialogueLine(line)) => {
-                    Ok(RuntimeExpr::EntityRef(line.canonical_label()))
-                }
-                Some(_) => Err(format!(
-                    "checked value fact for entity expression {id:?} has the wrong family"
-                )),
-                None => Err(format!(
-                    "checked project-item fact is missing for entity expression {id:?}"
-                )),
+        let kind = match expression.kind() {
+            HirExprKind::Unit => RuntimeExprSeedKind::Value(RuntimeValue::Unit),
+            HirExprKind::Literal(_) | HirExprKind::NumericBracketSequence(_) => {
+                RuntimeExprSeedKind::Value(self.facts.expression_literal(id).cloned().ok_or_else(
+                    || format!("checked literal fact is missing for expression {id:?}"),
+                )?)
+            }
+            HirExprKind::EntityReference(_) => {
+                RuntimeExprSeedKind::EntityRef(self.entity_reference(id)?)
+            }
+            HirExprKind::Path(_) if self.facts.expression_variant(id).is_some() => {
+                self.lower_unit_variant(id)?
+            }
+            HirExprKind::Path(_) => self.lower_path(id)?,
+            HirExprKind::ShortVariant(_) => self.lower_unit_variant(id)?,
+            HirExprKind::Tuple(tuple) => RuntimeExprSeedKind::Tuple(
+                tuple
+                    .elements()
+                    .iter()
+                    .map(|element| self.lower(*element))
+                    .collect::<Result<Vec<_>, _>>()?
+                    .into_boxed_slice(),
+            ),
+            HirExprKind::BracketSequence(sequence) => RuntimeExprSeedKind::BracketSeq(
+                sequence
+                    .elements()
+                    .iter()
+                    .map(|element| self.lower(*element))
+                    .collect::<Result<Vec<_>, _>>()?
+                    .into_boxed_slice(),
+            ),
+            HirExprKind::ArrayRepeat(repeat) => RuntimeExprSeedKind::RepeatSeq {
+                value: Box::new(self.lower(repeat.value())?),
+                len: self.lower_constant_length(repeat.length())?,
             },
-            HirExprKind::Path(_) => {
-                if self.facts.expression_variant(id).is_some() {
-                    self.lower_unit_variant(id)
-                } else {
-                    self.lower_path(id)
-                }
-            }
-            HirExprKind::ShortVariant(_) => self.lower_unit_variant(id),
-            HirExprKind::Tuple(tuple) => tuple
-                .elements()
-                .iter()
-                .map(|element| self.lower(*element))
-                .collect::<Result<Vec<_>, _>>()
-                .map(RuntimeExpr::Tuple),
-            HirExprKind::BracketSequence(sequence) => sequence
-                .elements()
-                .iter()
-                .map(|element| self.lower(*element))
-                .collect::<Result<Vec<_>, _>>()
-                .map(RuntimeExpr::BracketSeq),
-            HirExprKind::ArrayRepeat(repeat) => {
-                let length = self.lower_constant_length(repeat.length())?;
-                Ok(RuntimeExpr::RepeatSeq {
-                    value: Box::new(self.lower(repeat.value())?),
-                    len: length,
-                })
-            }
-            HirExprKind::Call(call) => self.lower_call(id, call),
-            HirExprKind::Select(select) => {
-                let target = Box::new(self.lower(select.target())?);
-                let selected = self.facts.select(id).ok_or_else(|| {
-                    format!("checked member fact is missing for expression {id:?}")
-                })?;
-                match selected {
-                    RuntimeResolvedSelect::Method { name } => Err(format!(
-                        "bound method {} at {id:?} cannot execute outside its checked Call",
-                        name.as_str()
-                    )),
-                    RuntimeResolvedSelect::Field { name, .. } => Ok(RuntimeExpr::Field {
-                        target,
-                        field: name.as_str().to_owned(),
-                    }),
-                    RuntimeResolvedSelect::TupleElement { ordinal } => {
-                        Ok(RuntimeExpr::ProjectTuple {
-                            target,
-                            ordinal: usize::try_from(*ordinal).map_err(|_| {
-                                format!("tuple ordinal {ordinal} does not fit usize")
-                            })?,
-                        })
-                    }
-                    RuntimeResolvedSelect::RecordElement { ordinal, .. } => {
-                        Ok(RuntimeExpr::ProjectRecord {
-                            target,
-                            ordinal: usize::try_from(*ordinal).map_err(|_| {
-                                format!("record ordinal {ordinal} does not fit usize")
-                            })?,
-                        })
-                    }
-                }
-            }
-            HirExprKind::Range(range) => Ok(RuntimeExpr::Range {
+            HirExprKind::Call(call) => self.lower_call(id, call)?,
+            HirExprKind::Select(select) => self.lower_select(id, select.target())?,
+            HirExprKind::Range(range) => RuntimeExprSeedKind::Range {
                 start: range
                     .start()
-                    .map(|start| self.lower(start))
+                    .map(|value| self.lower(value))
                     .transpose()?
                     .map(Box::new),
                 end: range
                     .end()
-                    .map(|end| self.lower(end))
+                    .map(|value| self.lower(value))
                     .transpose()?
                     .map(Box::new),
                 inclusive: range.inclusive(),
-            }),
-            HirExprKind::RecordLiteral(record) => self
-                .lower_record_fields(id, record.fields())
-                .map(RuntimeExpr::Record),
-            HirExprKind::Record(record) => {
-                let nominal = self
-                    .facts
-                    .nominal_record(id)
-                    .ok_or_else(|| {
-                        format!(
-                            "nominal record expression {id:?} requires a typed runtime nominal-expression owner"
-                        )
-                    })?;
-                RuntimeNominalRecordExpr::try_from_checked_initializers(
-                    nominal.layout().clone(),
-                    self.lower_record_initializers(id, record.fields())?,
-                )
-                .map(RuntimeExpr::NominalRecord)
-                .map_err(|error| {
-                    format!("nominal record expression {id:?} failed runtime admission: {error}")
-                })
+            },
+            HirExprKind::RecordLiteral(_) => {
+                return Err(format!(
+                    "structural record expression {id:?} has no closed runtime seed variant"
+                ));
             }
-            HirExprKind::Binary(binary) => {
-                let op = runtime_binary(binary.operator()).ok_or_else(|| {
+            HirExprKind::Record(record) => RuntimeExprSeedKind::NominalRecord(
+                self.lower_nominal_fields(id, record.fields())?
+                    .into_boxed_slice(),
+            ),
+            HirExprKind::Binary(binary) => RuntimeExprSeedKind::Binary {
+                lhs: Box::new(self.lower(binary.left())?),
+                op: runtime_binary(binary.operator()).ok_or_else(|| {
                     format!(
                         "binary operator {:?} at {id:?} has no runtime expression representation",
                         binary.operator()
                     )
-                })?;
-                Ok(RuntimeExpr::Binary {
-                    lhs: Box::new(self.lower(binary.left())?),
-                    op,
-                    rhs: Box::new(self.lower(binary.right())?),
-                })
-            }
-            HirExprKind::Unary(unary) => Ok(RuntimeExpr::Unary {
+                })?,
+                rhs: Box::new(self.lower(binary.right())?),
+            },
+            HirExprKind::Unary(unary) => RuntimeExprSeedKind::Unary {
                 op: match unary.operator() {
                     HirUnaryOp::Not => RuntimeUnaryOp::Not,
                     HirUnaryOp::Negate => RuntimeUnaryOp::Neg,
                 },
                 expr: Box::new(self.lower(unary.operand())?),
-            }),
-            HirExprKind::Closure(closure) => {
-                let mut parameters = Vec::with_capacity(closure.parameters().len());
-                for parameter in closure.parameters() {
-                    let pattern = FinalPatternLowerer::new(self.module, self.facts)
-                        .lower(parameter.pattern())?;
-                    parameters.push(simple_binding(pattern, parameter.pattern())?);
-                }
-                Ok(RuntimeExpr::Function {
-                    params: parameters,
-                    body: Box::new(self.lower(closure.body())?),
-                })
+            },
+            HirExprKind::Closure(_) => {
+                RuntimeExprSeedKind::Function(self.function_sites.get(&id).cloned().ok_or_else(
+                    || format!("builder-issued function site seed is missing for closure {id:?}"),
+                )?)
             }
-            HirExprKind::Block(block) => self.lower_block(block.statements(), block.tail()),
+            HirExprKind::Block(block) => {
+                return self.lower_block(id, block.statements(), block.tail());
+            }
             HirExprKind::ComputationBlock(block) => {
-                self.lower_block(block.statements(), block.tail())
+                return self.lower_block(id, block.statements(), block.tail());
             }
-            HirExprKind::NamedBlock(block) => self.lower_block(block.statements(), block.tail()),
-            HirExprKind::If(branch) => Ok(RuntimeExpr::If {
+            HirExprKind::NamedBlock(block) => {
+                return self.lower_block(id, block.statements(), block.tail());
+            }
+            HirExprKind::If(branch) => RuntimeExprSeedKind::If {
                 condition: Box::new(self.lower(branch.condition())?),
                 then_expr: Box::new(self.lower(branch.then_branch())?),
                 else_expr: Box::new(self.lower(branch.else_branch())?),
-            }),
-            HirExprKind::IfLet(branch) => Ok(RuntimeExpr::IfLet {
-                pattern: FinalPatternLowerer::new(self.module, self.facts)
-                    .lower(branch.pattern())?,
+            },
+            HirExprKind::IfLet(branch) => RuntimeExprSeedKind::IfLet {
+                pattern: self.pattern().lower(branch.pattern())?,
                 expr: Box::new(self.lower(branch.scrutinee())?),
                 guard: branch
                     .guard()
@@ -218,33 +227,44 @@ impl<'hir> FinalExprLowerer<'hir> {
                     .map(Box::new),
                 then_expr: Box::new(self.lower(branch.then_branch())?),
                 else_expr: Box::new(self.lower(branch.else_branch())?),
-            }),
-            HirExprKind::Match(matched) => {
-                let arms = matched
+            },
+            HirExprKind::Match(matched) => RuntimeExprSeedKind::Match {
+                scrutinee: Box::new(self.lower(matched.scrutinee())?),
+                arms: matched
                     .arms()
                     .iter()
                     .map(|arm| {
-                        Ok(RuntimeExprMatchArm {
-                            pattern: FinalPatternLowerer::new(self.module, self.facts)
-                                .lower(arm.pattern())?,
-                            guard: arm.guard().map(|guard| self.lower(guard)).transpose()?,
-                            value: self.lower(arm.value())?,
-                        })
+                        Ok(RuntimeExprMatchArmSeed::new(
+                            self.pattern().lower(arm.pattern())?,
+                            arm.guard().map(|guard| self.lower(guard)).transpose()?,
+                            self.lower(arm.value())?,
+                        ))
                     })
-                    .collect::<Result<Vec<_>, String>>()?;
-                Ok(RuntimeExpr::Match {
-                    scrutinee: Box::new(self.lower(matched.scrutinee())?),
-                    arms,
-                })
-            }
+                    .collect::<Result<Vec<_>, String>>()?
+                    .into_boxed_slice(),
+            },
             HirExprKind::PostfixBracket(_) => {
-                let candidate = self.facts.postfix_candidate(id).ok_or_else(|| {
+                return self.lower(self.facts.postfix_candidate(id).ok_or_else(|| {
                     format!("checked postfix candidate is missing for expression {id:?}")
-                })?;
-                self.lower(candidate)
+                })?);
             }
+            HirExprKind::Index(index) => RuntimeExprSeedKind::Call {
+                callee: RuntimeCallTarget::intrinsic(
+                    arcweft_core::value::RuntimeIntrinsic::CoreIndex,
+                ),
+                args: vec![
+                    RuntimeCallArgumentSeed::new(
+                        self.lower(index.target())?,
+                        RuntimeCallArgumentMode::Value,
+                    ),
+                    RuntimeCallArgumentSeed::new(
+                        self.lower(index.index())?,
+                        RuntimeCallArgumentMode::Value,
+                    ),
+                ]
+                .into_boxed_slice(),
+            },
             HirExprKind::Placeholder(_)
-            | HirExprKind::Index(_)
             | HirExprKind::Pipe(_)
             | HirExprKind::Try(_)
             | HirExprKind::Await(_)
@@ -255,82 +275,105 @@ impl<'hir> FinalExprLowerer<'hir> {
             | HirExprKind::DialogueContentApplication(_)
             | HirExprKind::Error(_)
             | HirExprKind::ForSynthetic(_)
-            | HirExprKind::LifetimePath(_) => Err(format!(
-                "final-HIR expression family {:?} at {id:?} is not a pure runtime expression",
-                expression.kind()
-            )),
-        }
+            | HirExprKind::LifetimePath(_) => {
+                return Err(format!(
+                    "final-HIR expression family {:?} at {id:?} is not a pure runtime expression",
+                    expression.kind()
+                ));
+            }
+        };
+        Ok(RuntimeExprSeed::new(self.expression_type(id)?, kind))
     }
 
-    /// Lowers the exact final-HIR body owned by one admitted ordinary function.
     pub(crate) fn lower_function_body(
         &self,
         body: &HirFunctionBody,
-    ) -> Result<RuntimeExpr, String> {
+    ) -> Result<RuntimeExprSeed, String> {
         match body {
             HirFunctionBody::Block {
                 statements, tail, ..
-            } => self.lower_block(statements, *tail),
+            } => self.lower_block(*tail, statements, *tail),
             HirFunctionBody::Error(expression) => Err(format!(
                 "recovered ordinary-function body {expression:?} cannot enter runtime lowering"
             )),
         }
     }
 
-    /// Lowers one checked named-field assignment and continues with the
-    /// caller-owned expression. Both pure method blocks and Flow statement
-    /// lowering consume this exact projection.
     pub(crate) fn lower_assignment(
         &self,
-        target: ExprId,
+        statement: StmtId,
         value: ExprId,
-        body: RuntimeExpr,
-    ) -> Result<RuntimeExpr, String> {
-        let target_expression = self
-            .module
-            .resolve_expr(target)
-            .map_err(|error| format!("cannot resolve assignment target {target:?}: {error}"))?;
-        let HirExprKind::Select(select) = target_expression.kind() else {
-            return Err(format!(
-                "assignment target {target:?} is not a typed field selection"
-            ));
-        };
-        let RuntimeResolvedSelect::Field { name, .. } = self
-            .facts
-            .select(target)
-            .ok_or_else(|| format!("assignment target {target:?} has no checked field fact"))?
-        else {
-            return Err(format!(
-                "assignment target {target:?} is not a checked named field"
-            ));
-        };
-        Ok(RuntimeExpr::AssignField {
-            target: Box::new(self.lower(select.target())?),
-            field: name.as_str().to_owned(),
-            expr: Box::new(self.lower(value)?),
-            body: Box::new(body),
+        body: RuntimeExprSeed,
+    ) -> Result<RuntimeExprSeed, String> {
+        let (local, owner, field) = self.assignment_parts(statement)?;
+        Ok(RuntimeExprSeed::new(
+            body.ty(),
+            RuntimeExprSeedKind::AssignNominalField {
+                base: self.local(local)?,
+                owner,
+                field,
+                expr: Box::new(self.lower(value)?),
+                body: Box::new(body),
+            },
+        ))
+    }
+
+    pub(crate) fn lower_flow_assignment(
+        &self,
+        statement: StmtId,
+        value: ExprId,
+    ) -> Result<RuntimeFlowOpSeed, String> {
+        let (local, owner, field) = self.assignment_parts(statement)?;
+        Ok(RuntimeFlowOpSeed::AssignNominalField {
+            base: self.local(local)?,
+            owner,
+            field,
+            value: self.lower(value)?,
         })
     }
 
-    fn lower_path(&self, id: ExprId) -> Result<RuntimeExpr, String> {
+    fn assignment_parts(
+        &self,
+        statement: StmtId,
+    ) -> Result<
+        (
+            LocalId,
+            arcweft_core::pattern::RuntimeSemanticTypeId,
+            RuntimeRecordFieldSeedId,
+        ),
+        String,
+    > {
+        let assignment = self.facts.assignment(statement).ok_or_else(|| {
+            format!("checked assignment fact is missing for statement {statement:?}")
+        })?;
+        Ok((
+            assignment.base(),
+            assignment.nominal().identity(),
+            RuntimeRecordFieldSeedId::from_zero_based(assignment.field_ordinal()),
+        ))
+    }
+
+    fn lower_path(&self, id: ExprId) -> Result<RuntimeExprSeedKind, String> {
         match self
             .facts
             .value(id)
             .ok_or_else(|| format!("checked value fact is missing for expression {id:?}"))?
         {
-            RuntimeResolvedValue::Local(local) => Ok(RuntimeExpr::Local(self.local_name(*local)?)),
-            RuntimeResolvedValue::Constant(value) => Ok(RuntimeExpr::Value(value.clone())),
+            RuntimeResolvedValue::Local(local) => {
+                Ok(RuntimeExprSeedKind::Local(self.local(*local)?))
+            }
+            RuntimeResolvedValue::Constant(value) => Ok(RuntimeExprSeedKind::Value(value.clone())),
             RuntimeResolvedValue::Intrinsic(_)
             | RuntimeResolvedValue::ProjectCallable(_)
             | RuntimeResolvedValue::ProjectItem(_)
             | RuntimeResolvedValue::DialogueLine(_)
             | RuntimeResolvedValue::Registered(_) => Err(format!(
-                "resolved callable/project value at {id:?} requires a typed runtime function-value identity"
+                "resolved callable/project value at {id:?} requires a builder-issued runtime function-value identity"
             )),
         }
     }
 
-    fn lower_unit_variant(&self, id: ExprId) -> Result<RuntimeExpr, String> {
+    fn lower_unit_variant(&self, id: ExprId) -> Result<RuntimeExprSeedKind, String> {
         let selected = self
             .facts
             .expression_variant(id)
@@ -344,26 +387,24 @@ impl<'hir> FinalExprLowerer<'hir> {
                 "payload-bearing variant at {id:?} was selected without a payload"
             ));
         }
-        let selection = selected
-            .checked_selection()
-            .map_err(|error| error.to_string())?;
-        Ok(RuntimeExpr::Variant {
-            owner: selection.owner().clone(),
-            ordinal: selection.ordinal(),
-            name: selection.name().to_owned(),
+        Ok(RuntimeExprSeedKind::Variant {
+            ordinal: selected
+                .checked_selection()
+                .map_err(|error| error.to_string())?
+                .ordinal(),
             payload: None,
         })
     }
 
     #[allow(
         clippy::too_many_lines,
-        reason = "one checked call projection must keep argument ownership and every closed runtime dispatch target visibly aligned"
+        reason = "the closed call target projection remains together"
     )]
     fn lower_call(
         &self,
         id: ExprId,
         call: &arcweft_lang_hir::expr::HirCallExpr,
-    ) -> Result<RuntimeExpr, String> {
+    ) -> Result<RuntimeExprSeedKind, String> {
         let selected = self
             .facts
             .call(id)
@@ -371,167 +412,309 @@ impl<'hir> FinalExprLowerer<'hir> {
         let arguments = selected
             .arguments()
             .iter()
-            .map(|argument| match argument {
-                RuntimeResolvedCallArgument::Authored { ordinal } => {
-                    let ordinal = usize::try_from(*ordinal).map_err(|_| {
-                        format!("call argument ordinal {ordinal} does not fit usize")
-                    })?;
-                    let argument = call.arguments().get(ordinal).ok_or_else(|| {
-                        format!("call argument ordinal {ordinal} is absent at {id:?}")
-                    })?;
-                    let value = self.lower(argument.value())?;
-                    Ok(if matches!(argument, HirCallArgument::Spread { .. }) {
-                        RuntimeExpr::SpreadArg(Box::new(value))
-                    } else {
-                        value
-                    })
-                }
-                RuntimeResolvedCallArgument::Receiver => self.lower_call_receiver(call, id),
-            })
-            .collect::<Result<Vec<_>, String>>()?;
-
+            .map(|argument| self.lower_call_argument(call, id, argument))
+            .collect::<Result<Vec<_>, _>>()?;
         match selected.target() {
-            RuntimeResolvedCallTarget::Intrinsic(intrinsic) => Ok(RuntimeExpr::Call {
+            RuntimeResolvedCallTarget::Intrinsic(intrinsic) => Ok(RuntimeExprSeedKind::Call {
                 callee: RuntimeCallTarget::intrinsic(*intrinsic),
-                args: arguments,
+                args: arguments.into_boxed_slice(),
             }),
             RuntimeResolvedCallTarget::Agent(intrinsic) => {
-                self.lower_agent_intrinsic(id, call, *intrinsic, arguments)
+                self.lower_agent_intrinsic(id, call, *intrinsic)
             }
             RuntimeResolvedCallTarget::AgentProbeComparison(operation) => {
-                lower_agent_probe_comparison(id, *operation, &arguments)
+                self.lower_agent_compare(id, call, *operation)
             }
-            RuntimeResolvedCallTarget::AgentDiagnosticsHasError => {
-                let [diagnostics] = arguments.as_slice() else {
-                    return Err(format!(
-                        "typed Agent Diagnostics.has_error call {id:?} has {} runtime arguments instead of one receiver",
-                        arguments.len()
-                    ));
-                };
-                Ok(RuntimeExpr::Agent(RuntimeAgentExpr::Predicate(
-                    RuntimeAgentPredicateExpr::DiagnosticsHasError {
-                        diagnostics: Box::new(diagnostics.clone()),
-                    },
-                )))
-            }
-            RuntimeResolvedCallTarget::Declaration(callable) => Ok(RuntimeExpr::Call {
-                callee: RuntimeCallTarget::callable(callable.runtime().clone()),
-                args: arguments,
+            RuntimeResolvedCallTarget::AgentDiagnosticsHasError => Ok(RuntimeExprSeedKind::Agent(
+                RuntimeAgentExprSeed::PredicateDiagnosticsHasError {
+                    diagnostics: Box::new(
+                        self.value_arguments(call, id, 1)?
+                            .pop()
+                            .expect("one argument"),
+                    ),
+                },
+            )),
+            RuntimeResolvedCallTarget::Declaration(callable) => Ok(RuntimeExprSeedKind::PureCall {
+                helper: self
+                    .pure_helpers
+                    .get(callable.runtime())
+                    .cloned()
+                    .ok_or_else(|| {
+                        format!(
+                            "builder-issued pure-helper seed is missing for callable {:?}",
+                            callable.runtime()
+                        )
+                    })?,
+                args: arguments.into_boxed_slice(),
             }),
             RuntimeResolvedCallTarget::Variant(variant) => {
                 self.validate_variant_call_payload(id, call, selected.arguments(), variant)?;
-                let selection = variant
-                    .checked_selection()
-                    .map_err(|error| error.to_string())?;
                 let payload = match arguments.len() {
                     0 => None,
                     1 => Some(Box::new(
-                        arguments
-                            .into_iter()
-                            .next()
-                            .expect("one constructor argument was observed"),
+                        self.value_arguments(call, id, 1)?
+                            .pop()
+                            .expect("one argument"),
                     )),
-                    _ => Some(Box::new(RuntimeExpr::Tuple(arguments))),
+                    _ => Some(Box::new(RuntimeExprSeed::new(
+                        self.expression_type(id)?,
+                        RuntimeExprSeedKind::Tuple(
+                            self.value_arguments(call, id, arguments.len())?
+                                .into_boxed_slice(),
+                        ),
+                    ))),
                 };
-                Ok(RuntimeExpr::Variant {
-                    owner: selection.owner().clone(),
-                    ordinal: selection.ordinal(),
-                    name: selection.name().to_owned(),
+                Ok(RuntimeExprSeedKind::Variant {
+                    ordinal: variant
+                        .checked_selection()
+                        .map_err(|error| error.to_string())?
+                        .ordinal(),
                     payload,
                 })
             }
             RuntimeResolvedCallTarget::Reduction(RuntimeReductionConstructor::Unchanged) => {
-                let [state] = arguments.as_slice() else {
-                    return Err(format!(
-                        "Reduction.unchanged call {id:?} has {} runtime arguments instead of one",
-                        arguments.len()
-                    ));
-                };
-                Ok(RuntimeExpr::Record(vec![
-                    RuntimeFieldExpr {
-                        name: "state".to_owned(),
-                        value: state.clone(),
-                    },
-                    RuntimeFieldExpr {
-                        name: "commands".to_owned(),
-                        value: RuntimeExpr::BracketSeq(Vec::new()),
-                    },
-                ]))
-            }
-            RuntimeResolvedCallTarget::Registered(registered) => Ok(RuntimeExpr::Call {
-                callee: RuntimeCallTarget::callable(registered.clone()),
-                args: arguments,
-            }),
-            RuntimeResolvedCallTarget::FunctionValue => {
-                let callee = call.callee().value_expression().ok_or_else(|| {
-                    format!("function-value call {id:?} has no final-HIR value callee")
-                })?;
-                Ok(RuntimeExpr::Apply {
-                    callee: Box::new(self.lower(callee)?),
-                    args: arguments,
+                Ok(RuntimeExprSeedKind::ReductionUnchanged {
+                    state: Box::new(
+                        self.value_arguments(call, id, 1)?
+                            .pop()
+                            .expect("one argument"),
+                    ),
                 })
             }
-            RuntimeResolvedCallTarget::TraitMethod { method, receiver } => {
+            RuntimeResolvedCallTarget::Registered(registered) => Ok(RuntimeExprSeedKind::Call {
+                callee: RuntimeCallTarget::callable(registered.clone()),
+                args: arguments.into_boxed_slice(),
+            }),
+            RuntimeResolvedCallTarget::FunctionValue => Ok(RuntimeExprSeedKind::Apply {
+                callee: Box::new(self.lower(call.callee().value_expression().ok_or_else(
+                    || format!("function-value call {id:?} has no final-HIR value callee"),
+                )?)?),
+                args: arguments.into_boxed_slice(),
+            }),
+            RuntimeResolvedCallTarget::TraitMethod { method, .. } => {
                 let receiver_index = selected
                     .arguments()
                     .iter()
                     .position(|argument| matches!(argument, RuntimeResolvedCallArgument::Receiver))
                     .ok_or_else(|| format!("trait call {id:?} has no receiver projection"))?;
-                let mut arguments = arguments;
-                let receiver_value = arguments.remove(receiver_index);
-                Ok(RuntimeExpr::TraitCall {
-                    callable: *method,
-                    receiver: Box::new(receiver_value),
-                    receiver_mode: *receiver,
-                    args: arguments,
+                let mut values = self.value_arguments(call, id, arguments.len())?;
+                let receiver = values.remove(receiver_index);
+                Ok(RuntimeExprSeedKind::TraitCall {
+                    callable: self.trait_methods.get(method).cloned().ok_or_else(|| {
+                        format!("builder-issued trait-method seed is missing for {method:?}")
+                    })?,
+                    receiver: Box::new(receiver),
+                    args: values
+                        .into_iter()
+                        .map(|value| {
+                            RuntimeCallArgumentSeed::new(value, RuntimeCallArgumentMode::Value)
+                        })
+                        .collect::<Vec<_>>()
+                        .into_boxed_slice(),
                 })
             }
-            RuntimeResolvedCallTarget::Host { .. } => Err(format!(
+            RuntimeResolvedCallTarget::Host(_) => Err(format!(
                 "host call {id:?} is effectful and cannot enter pure expression lowering"
             )),
         }
     }
 
-    fn validate_variant_call_payload(
+    fn lower_call_argument(
+        &self,
+        call: &arcweft_lang_hir::expr::HirCallExpr,
+        id: ExprId,
+        resolved: &RuntimeResolvedCallArgument,
+    ) -> Result<RuntimeCallArgumentSeed, String> {
+        let (value, mode) = self.resolved_argument(call, id, resolved)?;
+        Ok(RuntimeCallArgumentSeed::new(value, mode))
+    }
+
+    fn resolved_argument(
+        &self,
+        call: &arcweft_lang_hir::expr::HirCallExpr,
+        id: ExprId,
+        resolved: &RuntimeResolvedCallArgument,
+    ) -> Result<(RuntimeExprSeed, RuntimeCallArgumentMode), String> {
+        match resolved {
+            RuntimeResolvedCallArgument::Authored { ordinal, .. } => {
+                let ordinal = usize::try_from(*ordinal)
+                    .map_err(|_| format!("call argument ordinal {ordinal} does not fit usize"))?;
+                let argument = call.arguments().get(ordinal).ok_or_else(|| {
+                    format!("call argument ordinal {ordinal} is absent at {id:?}")
+                })?;
+                Ok((
+                    self.lower(argument.value())?,
+                    if matches!(argument, HirCallArgument::Spread { .. }) {
+                        RuntimeCallArgumentMode::Spread
+                    } else {
+                        RuntimeCallArgumentMode::Value
+                    },
+                ))
+            }
+            RuntimeResolvedCallArgument::Receiver => Ok((
+                self.lower_call_receiver(call, id)?,
+                RuntimeCallArgumentMode::Value,
+            )),
+        }
+    }
+
+    fn value_arguments(
+        &self,
+        call: &arcweft_lang_hir::expr::HirCallExpr,
+        id: ExprId,
+        expected: usize,
+    ) -> Result<Vec<RuntimeExprSeed>, String> {
+        let selected = self
+            .facts
+            .call(id)
+            .ok_or_else(|| format!("checked call fact is missing for expression {id:?}"))?;
+        let values = selected
+            .arguments()
+            .iter()
+            .map(|resolved| self.resolved_argument(call, id, resolved))
+            .collect::<Result<Vec<_>, _>>()?;
+        if values.len() != expected
+            || values
+                .iter()
+                .any(|(_, mode)| *mode != RuntimeCallArgumentMode::Value)
+        {
+            return Err(format!(
+                "typed call {id:?} requires {expected} non-spread arguments"
+            ));
+        }
+        Ok(values.into_iter().map(|(value, _)| value).collect())
+    }
+
+    fn lower_select(&self, id: ExprId, target_id: ExprId) -> Result<RuntimeExprSeedKind, String> {
+        let target = Box::new(self.lower(target_id)?);
+        match self
+            .facts
+            .select(id)
+            .ok_or_else(|| format!("checked member fact is missing for expression {id:?}"))?
+        {
+            RuntimeResolvedSelect::Method { .. } => Err(format!(
+                "bound method at {id:?} cannot execute outside its checked Call"
+            )),
+            RuntimeResolvedSelect::AgentField { field } => Ok(RuntimeExprSeedKind::Field {
+                target,
+                field: RuntimeFieldProjectionSeed::Agent(*field),
+            }),
+            RuntimeResolvedSelect::Field {
+                nominal: Some(nominal),
+                ordinal: Some(ordinal),
+                ..
+            } => Ok(RuntimeExprSeedKind::Field {
+                target,
+                field: RuntimeFieldProjectionSeed::Nominal {
+                    owner: nominal.identity(),
+                    field: RuntimeRecordFieldSeedId::from_zero_based(*ordinal),
+                },
+            }),
+            RuntimeResolvedSelect::Field {
+                nominal: Some(_),
+                ordinal: None,
+                ..
+            } => Err(format!(
+                "nominal field selection {id:?} has no accepted defining-order coordinate"
+            )),
+            RuntimeResolvedSelect::Field { nominal: None, .. } => Err(format!(
+                "field selection {id:?} has no closed Agent/entity field coordinate in semantic facts"
+            )),
+            RuntimeResolvedSelect::TupleElement { ordinal } => {
+                Ok(RuntimeExprSeedKind::ProjectTuple {
+                    target,
+                    ordinal: *ordinal,
+                })
+            }
+            RuntimeResolvedSelect::RecordElement {
+                nominal: Some(_),
+                ordinal,
+                ..
+            } => Ok(RuntimeExprSeedKind::ProjectRecord {
+                target,
+                field: RuntimeRecordFieldSeedId::from_zero_based(*ordinal),
+            }),
+            RuntimeResolvedSelect::RecordElement { nominal: None, .. } => Err(format!(
+                "record selection {id:?} has no accepted nominal field coordinate"
+            )),
+        }
+    }
+
+    fn lower_nominal_fields(
         &self,
         id: ExprId,
-        call: &arcweft_lang_hir::expr::HirCallExpr,
-        arguments: &[RuntimeResolvedCallArgument],
-        variant: &RuntimeResolvedVariant,
-    ) -> Result<(), String> {
-        let mut argument_types = Vec::with_capacity(arguments.len());
-        let mut exact_argument_shape = true;
-        for argument in arguments {
-            let RuntimeResolvedCallArgument::Authored { ordinal } = argument else {
-                exact_argument_shape = false;
-                continue;
-            };
-            let ordinal = usize::try_from(*ordinal)
-                .map_err(|_| format!("call argument ordinal {ordinal} does not fit usize"))?;
-            let argument = call
-                .arguments()
-                .get(ordinal)
-                .ok_or_else(|| format!("call argument ordinal {ordinal} is absent at {id:?}"))?;
-            exact_argument_shape &= matches!(argument, HirCallArgument::Positional { .. });
-            let owner = argument.value();
-            argument_types.push(self.facts.expression_type(owner).ok_or_else(|| {
-                format!("accepted type is missing for variant constructor argument {owner:?}")
-            })?);
-        }
-        let payload = variant
-            .selected_payload_type()
-            .map_err(|error| error.to_string())?;
-        let payload_presence_matches = payload.is_some() != arguments.is_empty();
-        if payload_presence_matches
-            && (!exact_argument_shape
-                || variant_payload_accepts_argument_types(payload, &argument_types))
-        {
-            Ok(())
-        } else {
-            Err(format!(
-                "variant constructor at {id:?} does not match its selected normalized payload type"
-            ))
-        }
+        fields: &[HirRecordField],
+    ) -> Result<Vec<RuntimeNominalRecordFieldSeed>, String> {
+        let nominal = self.facts.nominal_record(id).ok_or_else(|| {
+            format!(
+                "nominal record expression {id:?} requires a typed runtime nominal-expression owner"
+            )
+        })?;
+        fields
+            .iter()
+            .map(|field| match field {
+                HirRecordField::Explicit { name, value } => Ok(RuntimeNominalRecordFieldSeed::new(
+                    Self::nominal_record_field(nominal, name.as_str(), id)?,
+                    self.lower(*value)?,
+                )),
+                HirRecordField::Shorthand { name, local } => {
+                    Ok(RuntimeNominalRecordFieldSeed::new(
+                        Self::nominal_record_field(nominal, name.as_str(), id)?,
+                        RuntimeExprSeed::new(
+                            self.local_type(*local)?,
+                            RuntimeExprSeedKind::Local(self.local(*local)?),
+                        ),
+                    ))
+                }
+                HirRecordField::Invalid { .. } => {
+                    Err(format!("record expression {id:?} has an invalid field"))
+                }
+            })
+            .collect()
+    }
+
+    fn lower_block(
+        &self,
+        owner: ExprId,
+        statements: &[StmtId],
+        tail: ExprId,
+    ) -> Result<RuntimeExprSeed, String> {
+        let body = statements
+            .iter()
+            .rev()
+            .try_fold(self.lower(tail)?, |body, statement| {
+                let statement_id = *statement;
+                let statement = self.module.resolve_stmt(statement_id).map_err(|error| {
+                    format!("cannot resolve block statement {statement_id:?}: {error}")
+                })?;
+                if statement.is_poisoned() {
+                    return Err("recovered block statement is not executable".to_owned());
+                }
+                match statement.kind() {
+                    HirStmtKind::Let {
+                        pattern,
+                        initializer,
+                        ..
+                    } => Ok(RuntimeExprSeed::new(
+                        body.ty(),
+                        RuntimeExprSeedKind::Let {
+                            binding: self.simple_binding(*pattern)?,
+                            expr: Box::new(self.lower(*initializer)?),
+                            body: Box::new(body),
+                        },
+                    )),
+                    HirStmtKind::Assign { value, .. } => {
+                        self.lower_assignment(statement_id, *value, body)
+                    }
+                    other => Err(format!(
+                        "statement {other:?} cannot be embedded in a pure runtime expression block"
+                    )),
+                }
+            })?;
+        Ok(RuntimeExprSeed::new(
+            self.expression_type(owner)?,
+            body.kind().clone(),
+        ))
     }
 
     fn lower_agent_intrinsic(
@@ -539,58 +722,85 @@ impl<'hir> FinalExprLowerer<'hir> {
         id: ExprId,
         call: &arcweft_lang_hir::expr::HirCallExpr,
         intrinsic: RuntimeAgentIntrinsic,
-        arguments: Vec<RuntimeExpr>,
-    ) -> Result<RuntimeExpr, String> {
+    ) -> Result<RuntimeExprSeedKind, String> {
         if let Some(operation) = intrinsic.host_operation() {
             return Err(format!(
                 "Agent host call {operation} at {id:?} cannot enter pure expression lowering"
             ));
         }
-        match intrinsic {
-            RuntimeAgentIntrinsic::StatePath => {
-                require_agent_argument_count(id, intrinsic, &arguments, 1)?;
-                Ok(RuntimeExpr::Agent(RuntimeAgentExpr::Path(
-                    RuntimeAgentPathExpr::State {
-                        path: Box::new(arguments[0].clone()),
-                    },
-                )))
+        let values = self.value_arguments(
+            call,
+            id,
+            self.facts
+                .call(id)
+                .expect("selected call")
+                .arguments()
+                .len(),
+        )?;
+        let one = |values: &Vec<RuntimeExprSeed>| exact_one(id, values);
+        Ok(RuntimeExprSeedKind::Agent(match intrinsic {
+            RuntimeAgentIntrinsic::StatePath => RuntimeAgentExprSeed::StatePath {
+                path: Box::new(one(&values)?),
+            },
+            RuntimeAgentIntrinsic::ObservationPath => RuntimeAgentExprSeed::ObservationPath {
+                path: Box::new(one(&values)?),
+            },
+            RuntimeAgentIntrinsic::Viewport => {
+                require_count(id, intrinsic, &values, 0)?;
+                RuntimeAgentExprSeed::CaptureViewport
             }
-            RuntimeAgentIntrinsic::ObservationPath => {
-                require_agent_argument_count(id, intrinsic, &arguments, 1)?;
-                Ok(RuntimeExpr::Agent(RuntimeAgentExpr::Path(
-                    RuntimeAgentPathExpr::Observation {
-                        path: Box::new(arguments[0].clone()),
-                    },
-                )))
+            RuntimeAgentIntrinsic::Layer => RuntimeAgentExprSeed::CaptureLayer {
+                target: Box::new(one(&values)?),
+            },
+            RuntimeAgentIntrinsic::Object => RuntimeAgentExprSeed::CaptureObject {
+                target: Box::new(one(&values)?),
+            },
+            RuntimeAgentIntrinsic::Signal => RuntimeAgentExprSeed::ProbeSignal {
+                target: Box::new(one(&values)?),
+            },
+            RuntimeAgentIntrinsic::Metric => RuntimeAgentExprSeed::ProbeMetric {
+                target: Box::new(one(&values)?),
+            },
+            RuntimeAgentIntrinsic::State => RuntimeAgentExprSeed::ProbeState {
+                path: Box::new(one(&values)?),
+            },
+            RuntimeAgentIntrinsic::Observation => RuntimeAgentExprSeed::ProbeObservation {
+                path: Box::new(one(&values)?),
+            },
+            RuntimeAgentIntrinsic::Diagnostics => {
+                require_count(id, intrinsic, &values, 0)?;
+                RuntimeAgentExprSeed::Diagnostics
             }
-            RuntimeAgentIntrinsic::Viewport
-            | RuntimeAgentIntrinsic::Layer
-            | RuntimeAgentIntrinsic::Object
-            | RuntimeAgentIntrinsic::ViewportPoint => lower_agent_target(id, intrinsic, &arguments),
-            RuntimeAgentIntrinsic::Signal
-            | RuntimeAgentIntrinsic::Metric
-            | RuntimeAgentIntrinsic::State
-            | RuntimeAgentIntrinsic::Observation
-            | RuntimeAgentIntrinsic::Diagnostics => lower_agent_probe(id, intrinsic, &arguments),
-            RuntimeAgentIntrinsic::Exists
-            | RuntimeAgentIntrinsic::ActionEnabled
-            | RuntimeAgentIntrinsic::All
-            | RuntimeAgentIntrinsic::Any
-            | RuntimeAgentIntrinsic::Not => lower_agent_predicate(id, intrinsic, arguments),
-            RuntimeAgentIntrinsic::ChoiceAction => {
-                require_agent_argument_count(id, intrinsic, &arguments, 1)?;
-                let authored = call
-                    .arguments()
-                    .first()
-                    .ok_or_else(|| format!("choice_action at {id:?} has no authored argument"))?
-                    .value();
-                let target = self.static_entity_label(authored)?;
-                let choice = RuntimeCommandTargetId::try_new(target).map_err(|error| {
-                    format!("choice_action at {id:?} has invalid target identity: {error}")
-                })?;
-                Ok(RuntimeExpr::Agent(RuntimeAgentExpr::ChoiceAction {
-                    choice,
-                }))
+            RuntimeAgentIntrinsic::Exists => RuntimeAgentExprSeed::PredicateExists {
+                probe: Box::new(one(&values)?),
+            },
+            RuntimeAgentIntrinsic::ActionEnabled => RuntimeAgentExprSeed::PredicateActionEnabled {
+                target: Box::new(one(&values)?),
+            },
+            RuntimeAgentIntrinsic::All => RuntimeAgentExprSeed::PredicateAll {
+                predicates: values.into_boxed_slice(),
+            },
+            RuntimeAgentIntrinsic::Any => RuntimeAgentExprSeed::PredicateAny {
+                predicates: values.into_boxed_slice(),
+            },
+            RuntimeAgentIntrinsic::Not => RuntimeAgentExprSeed::PredicateNot {
+                predicate: Box::new(one(&values)?),
+            },
+            RuntimeAgentIntrinsic::ChoiceAction => RuntimeAgentExprSeed::ChoiceAction {
+                choice: self.choice_target(call, id)?,
+            },
+            RuntimeAgentIntrinsic::ViewportPoint => {
+                let mut values = values;
+                if values.len() != 2 {
+                    return Err(format!(
+                        "typed Agent intrinsic {intrinsic:?} at {id:?} has {} runtime arguments instead of 2",
+                        values.len()
+                    ));
+                }
+                RuntimeAgentExprSeed::ViewportPoint {
+                    x: Box::new(values.remove(0)),
+                    y: Box::new(values.remove(0)),
+                }
             }
             RuntimeAgentIntrinsic::Observe
             | RuntimeAgentIntrinsic::Expect
@@ -607,19 +817,54 @@ impl<'hir> FinalExprLowerer<'hir> {
             | RuntimeAgentIntrinsic::PointerClick
             | RuntimeAgentIntrinsic::Invoke
             | RuntimeAgentIntrinsic::RagQuery => {
-                unreachable!("Agent host operations returned before deterministic value lowering")
+                unreachable!("host operations return before deterministic value lowering")
             }
-        }
+        }))
     }
 
-    fn static_entity_label(&self, expression: ExprId) -> Result<String, String> {
-        match self.facts.value(expression) {
-            Some(RuntimeResolvedValue::ProjectItem(item)) => {
-                Ok(item.public_id().as_str().to_owned())
-            }
-            Some(RuntimeResolvedValue::DialogueLine(line)) => Ok(line.canonical_label()),
+    fn lower_agent_compare(
+        &self,
+        id: ExprId,
+        call: &arcweft_lang_hir::expr::HirCallExpr,
+        op: RuntimeAgentCompareOp,
+    ) -> Result<RuntimeExprSeedKind, String> {
+        let mut values = self.value_arguments(call, id, 2)?;
+        Ok(RuntimeExprSeedKind::Agent(
+            RuntimeAgentExprSeed::PredicateCompare {
+                probe: Box::new(values.remove(0)),
+                op,
+                value: Box::new(values.remove(0)),
+            },
+        ))
+    }
+
+    fn choice_target(
+        &self,
+        call: &arcweft_lang_hir::expr::HirCallExpr,
+        id: ExprId,
+    ) -> Result<arcweft_core::entry::RuntimeCommandTargetId, String> {
+        let expression = call
+            .arguments()
+            .first()
+            .ok_or_else(|| format!("choice_action at {id:?} has no authored argument"))?
+            .value();
+        arcweft_core::entry::RuntimeCommandTargetId::try_new(
+            self.entity_reference(expression)?.runtime_label(),
+        )
+        .map_err(|error| format!("choice_action at {id:?} has invalid target identity: {error}"))
+    }
+
+    fn entity_reference(
+        &self,
+        id: ExprId,
+    ) -> Result<arcweft_core::value::RuntimeEntityReference, String> {
+        match self.facts.value(id) {
+            Some(RuntimeResolvedValue::ProjectItem(item)) => Ok(project_entity_reference(item)),
+            Some(RuntimeResolvedValue::DialogueLine(line)) => Ok(
+                arcweft_core::value::RuntimeEntityReference::DialogueLine(line.clone()),
+            ),
             _ => Err(format!(
-                "Agent semantic identity at {expression:?} is not an exact accepted entity"
+                "Agent semantic identity at {id:?} is not an exact accepted entity"
             )),
         }
     }
@@ -628,102 +873,78 @@ impl<'hir> FinalExprLowerer<'hir> {
         &self,
         call: &arcweft_lang_hir::expr::HirCallExpr,
         id: ExprId,
-    ) -> Result<RuntimeExpr, String> {
-        let receiver = self
-            .module
-            .resolve_call_value_receiver(call)
-            .map_err(|error| format!("cannot resolve call receiver at {id:?}: {error}"))?
-            .ok_or_else(|| format!("call {id:?} has no receiver-bearing value callee"))?;
-        self.lower(receiver)
+    ) -> Result<RuntimeExprSeed, String> {
+        self.lower(
+            self.module
+                .resolve_call_value_receiver(call)
+                .map_err(|error| format!("cannot resolve call receiver at {id:?}: {error}"))?
+                .ok_or_else(|| format!("call {id:?} has no receiver-bearing value callee"))?,
+        )
     }
 
-    fn lower_record_fields(
+    fn validate_variant_call_payload(
         &self,
-        owner: ExprId,
-        fields: &[HirRecordField],
-    ) -> Result<Vec<RuntimeFieldExpr>, String> {
-        fields
+        id: ExprId,
+        call: &arcweft_lang_hir::expr::HirCallExpr,
+        arguments: &[RuntimeResolvedCallArgument],
+        variant: &RuntimeResolvedVariant,
+    ) -> Result<(), String> {
+        let types = arguments
             .iter()
-            .map(|field| match field {
-                HirRecordField::Explicit { name, value } => Ok(RuntimeFieldExpr {
-                    name: name.as_str().to_owned(),
-                    value: self.lower(*value)?,
-                }),
-                HirRecordField::Shorthand { name, local } => Ok(RuntimeFieldExpr {
-                    name: name.as_str().to_owned(),
-                    value: RuntimeExpr::Local(self.local_name(*local)?),
-                }),
-                HirRecordField::Invalid { .. } => {
-                    Err(format!("record expression {owner:?} has an invalid field"))
+            .map(|argument| match argument {
+                RuntimeResolvedCallArgument::Authored { ordinal, .. } => {
+                    let ordinal = usize::try_from(*ordinal).map_err(|_| {
+                        format!("call argument ordinal {ordinal} does not fit usize")
+                    })?;
+                    let value = call
+                        .arguments()
+                        .get(ordinal)
+                        .ok_or_else(|| {
+                            format!("call argument ordinal {ordinal} is absent at {id:?}")
+                        })?
+                        .value();
+                    self.facts.expression_type(value).ok_or_else(|| {
+                        format!(
+                            "accepted type is missing for variant constructor argument {value:?}"
+                        )
+                    })
                 }
-            })
-            .collect()
-    }
-
-    fn lower_record_initializers(
-        &self,
-        owner: ExprId,
-        fields: &[HirRecordField],
-    ) -> Result<Vec<(String, RuntimeExpr)>, String> {
-        fields
-            .iter()
-            .map(|field| match field {
-                HirRecordField::Explicit { name, value } => {
-                    Ok((name.as_str().to_owned(), self.lower(*value)?))
-                }
-                HirRecordField::Shorthand { name, local } => Ok((
-                    name.as_str().to_owned(),
-                    RuntimeExpr::Local(self.local_name(*local)?),
+                RuntimeResolvedCallArgument::Receiver => Err(format!(
+                    "variant constructor {id:?} has an invalid receiver"
                 )),
-                HirRecordField::Invalid { .. } => {
-                    Err(format!("record expression {owner:?} has an invalid field"))
-                }
             })
-            .collect()
+            .collect::<Result<Vec<_>, _>>()?;
+        let payload = variant
+            .selected_payload_type()
+            .map_err(|error| error.to_string())?;
+        (payload.is_some() != arguments.is_empty()
+            && variant_payload_accepts_argument_types(payload, &types))
+        .then_some(())
+        .ok_or_else(|| {
+            format!(
+                "variant constructor at {id:?} does not match its selected normalized payload type"
+            )
+        })
     }
 
-    fn lower_block(&self, statements: &[StmtId], tail: ExprId) -> Result<RuntimeExpr, String> {
-        statements
-            .iter()
-            .rev()
-            .try_fold(self.lower(tail)?, |body, statement| {
-                let statement = self.module.resolve_stmt(*statement).map_err(|error| {
-                    format!("cannot resolve block statement {statement:?}: {error}")
-                })?;
-                if statement.is_poisoned() {
-                    return Err("recovered block statement is not executable".to_owned());
-                }
-                match statement.kind() {
-                    HirStmtKind::Let {
-                        pattern,
-                        initializer,
-                        ..
-                    } => {
-                        let pattern_id = *pattern;
-                        let pattern =
-                            FinalPatternLowerer::new(self.module, self.facts).lower(pattern_id)?;
-                        Ok(RuntimeExpr::Let {
-                            name: simple_binding(pattern, pattern_id)?,
-                            expr: Box::new(self.lower(*initializer)?),
-                            body: Box::new(body),
-                        })
-                    }
-                    HirStmtKind::Assign { target, value } => {
-                        self.lower_assignment(*target, *value, body)
-                    }
-                    other => Err(format!(
-                        "statement {other:?} cannot be embedded in a pure runtime expression block"
-                    )),
-                }
-            })
+    fn nominal_record_field(
+        nominal: &crate::semantic_facts::RuntimeResolvedNominalRecord,
+        name: &str,
+        owner: ExprId,
+    ) -> Result<RuntimeRecordFieldSeedId, String> {
+        nominal
+            .layout()
+            .field_by_name(name)
+            .map(|(field, _)| RuntimeRecordFieldSeedId::from_zero_based(field.zero_based()))
+            .ok_or_else(|| format!("accepted nominal record {owner:?} lacks field {name:?}"))
     }
 
     fn lower_constant_length(&self, id: ExprId) -> Result<usize, String> {
-        let value = self
+        match self
             .facts
             .expression_literal(id)
-            .ok_or_else(|| format!("checked array length fact is missing for {id:?}"))?;
-        match value {
+            .ok_or_else(|| format!("checked array length fact is missing for {id:?}"))?
+        {
             RuntimeValue::UInt(value) => usize::try_from(value.as_u128())
                 .map_err(|_| format!("array length at {id:?} does not fit usize")),
             RuntimeValue::Int(value) if value.as_i128() >= 0 => usize::try_from(value.as_i128())
@@ -734,123 +955,76 @@ impl<'hir> FinalExprLowerer<'hir> {
         }
     }
 
-    fn local_name(&self, local: LocalId) -> Result<String, String> {
-        self.module
-            .resolve_local(local)
-            .map(|local| local.name().as_str().to_owned())
-            .map_err(|error| format!("cannot resolve final-HIR local {local:?}: {error}"))
+    fn simple_binding(
+        &self,
+        id: arcweft_lang_hir::identity::PatternId,
+    ) -> Result<RuntimeLocalSeedId, String> {
+        let pattern = self
+            .module
+            .resolve_pattern(id)
+            .map_err(|error| format!("cannot resolve final-HIR binding pattern {id:?}: {error}"))?;
+        let local = match pattern.kind() {
+            arcweft_lang_hir::pattern::HirPatternKind::Binding(
+                arcweft_lang_hir::pattern::HirPatternBinding::Bound { local, .. },
+            )
+            | arcweft_lang_hir::pattern::HirPatternKind::MutableBinding(
+                arcweft_lang_hir::pattern::HirPatternBinding::Bound { local, .. },
+            )
+            | arcweft_lang_hir::pattern::HirPatternKind::TypedBinding {
+                binding: arcweft_lang_hir::pattern::HirPatternBinding::Bound { local, .. },
+                ..
+            } => *local,
+            _ => return Err(format!("pattern {id:?} is not a single runtime binding")),
+        };
+        self.local(local)
+    }
+
+    fn expression_type(
+        &self,
+        id: ExprId,
+    ) -> Result<arcweft_core::pattern::RuntimeSemanticTypeId, String> {
+        self.facts
+            .expression_type(id)
+            .map(RuntimeNormalizedType::identity)
+            .ok_or_else(|| format!("accepted type is missing for expression {id:?}"))
+    }
+    fn local_type(
+        &self,
+        id: LocalId,
+    ) -> Result<arcweft_core::pattern::RuntimeSemanticTypeId, String> {
+        self.facts
+            .local_type(id)
+            .map(RuntimeNormalizedType::identity)
+            .ok_or_else(|| format!("accepted type is missing for local {id:?}"))
+    }
+    fn local(&self, id: LocalId) -> Result<RuntimeLocalSeedId, String> {
+        self.locals.get(&id).cloned().ok_or_else(|| {
+            format!("runtime local seed handle is missing for accepted local {id:?}")
+        })
+    }
+    fn pattern(&self) -> FinalPatternLowerer<'hir> {
+        FinalPatternLowerer::new(self.module, self.facts, self.locals)
     }
 }
 
-fn lower_agent_target(
+fn exact_one(id: ExprId, values: &[RuntimeExprSeed]) -> Result<RuntimeExprSeed, String> {
+    if values.len() == 1 {
+        Ok(values[0].clone())
+    } else {
+        Err(format!(
+            "typed Agent intrinsic at {id:?} has {} runtime arguments instead of one",
+            values.len()
+        ))
+    }
+}
+fn require_count(
     id: ExprId,
     intrinsic: RuntimeAgentIntrinsic,
-    arguments: &[RuntimeExpr],
-) -> Result<RuntimeExpr, String> {
-    match intrinsic {
-        RuntimeAgentIntrinsic::Viewport => {
-            require_agent_argument_count(id, intrinsic, arguments, 0)?;
-            Ok(RuntimeExpr::Agent(RuntimeAgentExpr::Target(
-                RuntimeAgentTargetExpr::Viewport,
-            )))
-        }
-        RuntimeAgentIntrinsic::Layer | RuntimeAgentIntrinsic::Object => {
-            require_agent_argument_count(id, intrinsic, arguments, 1)?;
-            let target = Box::new(arguments[0].clone());
-            let target = if intrinsic == RuntimeAgentIntrinsic::Layer {
-                RuntimeAgentTargetExpr::Layer { target }
-            } else {
-                RuntimeAgentTargetExpr::Object { target }
-            };
-            Ok(RuntimeExpr::Agent(RuntimeAgentExpr::Target(target)))
-        }
-        RuntimeAgentIntrinsic::ViewportPoint => {
-            require_agent_argument_count(id, intrinsic, arguments, 2)?;
-            Ok(RuntimeExpr::Agent(RuntimeAgentExpr::ViewportPoint {
-                x: Box::new(arguments[0].clone()),
-                y: Box::new(arguments[1].clone()),
-            }))
-        }
-        _ => unreachable!("target constructor dispatcher owns only Agent target intrinsics"),
-    }
+    values: &[RuntimeExprSeed],
+    expected: usize,
+) -> Result<(), String> {
+    (values.len() == expected).then_some(()).ok_or_else(|| format!("typed Agent intrinsic {intrinsic:?} at {id:?} has {} runtime arguments instead of {expected}", values.len()))
 }
-
-fn lower_agent_probe(
-    id: ExprId,
-    intrinsic: RuntimeAgentIntrinsic,
-    arguments: &[RuntimeExpr],
-) -> Result<RuntimeExpr, String> {
-    match intrinsic {
-        RuntimeAgentIntrinsic::Signal | RuntimeAgentIntrinsic::Metric => {
-            require_agent_argument_count(id, intrinsic, arguments, 1)?;
-            let target = Box::new(arguments[0].clone());
-            let probe = if intrinsic == RuntimeAgentIntrinsic::Signal {
-                RuntimeAgentProbeExpr::Signal { target }
-            } else {
-                RuntimeAgentProbeExpr::Metric { target }
-            };
-            Ok(RuntimeExpr::Agent(RuntimeAgentExpr::Probe(probe)))
-        }
-        RuntimeAgentIntrinsic::State | RuntimeAgentIntrinsic::Observation => {
-            require_agent_argument_count(id, intrinsic, arguments, 1)?;
-            let path = Box::new(arguments[0].clone());
-            let probe = if intrinsic == RuntimeAgentIntrinsic::State {
-                RuntimeAgentProbeExpr::State { path }
-            } else {
-                RuntimeAgentProbeExpr::Observation { path }
-            };
-            Ok(RuntimeExpr::Agent(RuntimeAgentExpr::Probe(probe)))
-        }
-        RuntimeAgentIntrinsic::Diagnostics => {
-            require_agent_argument_count(id, intrinsic, arguments, 0)?;
-            Ok(RuntimeExpr::Agent(RuntimeAgentExpr::Probe(
-                RuntimeAgentProbeExpr::Diagnostics,
-            )))
-        }
-        _ => unreachable!("probe constructor dispatcher owns only Agent probe intrinsics"),
-    }
-}
-
-fn lower_agent_predicate(
-    id: ExprId,
-    intrinsic: RuntimeAgentIntrinsic,
-    arguments: Vec<RuntimeExpr>,
-) -> Result<RuntimeExpr, String> {
-    match intrinsic {
-        RuntimeAgentIntrinsic::Exists | RuntimeAgentIntrinsic::Not => {
-            require_agent_argument_count(id, intrinsic, &arguments, 1)?;
-            let value = Box::new(arguments[0].clone());
-            let predicate = if intrinsic == RuntimeAgentIntrinsic::Exists {
-                RuntimeAgentPredicateExpr::Exists { probe: value }
-            } else {
-                RuntimeAgentPredicateExpr::Not { predicate: value }
-            };
-            Ok(RuntimeExpr::Agent(RuntimeAgentExpr::Predicate(predicate)))
-        }
-        RuntimeAgentIntrinsic::ActionEnabled => {
-            require_agent_argument_count(id, intrinsic, &arguments, 1)?;
-            Ok(RuntimeExpr::Agent(RuntimeAgentExpr::Predicate(
-                RuntimeAgentPredicateExpr::ActionEnabled {
-                    target: Box::new(arguments[0].clone()),
-                },
-            )))
-        }
-        RuntimeAgentIntrinsic::All | RuntimeAgentIntrinsic::Any => {
-            let predicate = if intrinsic == RuntimeAgentIntrinsic::All {
-                RuntimeAgentPredicateExpr::All {
-                    predicates: arguments,
-                }
-            } else {
-                RuntimeAgentPredicateExpr::Any {
-                    predicates: arguments,
-                }
-            };
-            Ok(RuntimeExpr::Agent(RuntimeAgentExpr::Predicate(predicate)))
-        }
-        _ => unreachable!("predicate dispatcher owns only Agent predicate intrinsics"),
-    }
-}
-
 fn variant_payload_accepts_argument_types(
     payload: Option<&RuntimeNormalizedType>,
     arguments: &[&RuntimeNormalizedType],
@@ -859,67 +1033,10 @@ fn variant_payload_accepts_argument_types(
         [] => payload.is_none(),
         [argument] => payload == Some(*argument),
         arguments => {
-            let Some(payload) = payload else {
-                return false;
-            };
-            let RuntimeTypeShape::Tuple(items) = payload.shape() else {
-                return false;
-            };
-            items.len() == arguments.len()
-                && items
-                    .iter()
-                    .zip(arguments)
-                    .all(|(expected, actual)| expected == *actual)
+            matches!(payload.map(RuntimeNormalizedType::shape), Some(RuntimeTypeShape::Tuple(items)) if items.len() == arguments.len() && items.iter().zip(arguments).all(|(expected, actual)| expected == *actual))
         }
     }
 }
-
-fn lower_agent_probe_comparison(
-    id: ExprId,
-    operation: arcweft_core::value::RuntimeAgentCompareOp,
-    arguments: &[RuntimeExpr],
-) -> Result<RuntimeExpr, String> {
-    if arguments.len() != 2 {
-        return Err(format!(
-            "typed Agent probe comparison {operation:?} at {id:?} has {} runtime arguments instead of 2",
-            arguments.len()
-        ));
-    }
-    Ok(RuntimeExpr::Agent(RuntimeAgentExpr::Predicate(
-        RuntimeAgentPredicateExpr::Compare {
-            probe: Box::new(arguments[0].clone()),
-            op: operation,
-            value: Box::new(arguments[1].clone()),
-        },
-    )))
-}
-
-fn require_agent_argument_count(
-    id: ExprId,
-    intrinsic: RuntimeAgentIntrinsic,
-    arguments: &[RuntimeExpr],
-    expected: usize,
-) -> Result<(), String> {
-    (arguments.len() == expected).then_some(()).ok_or_else(|| {
-        format!(
-            "typed Agent intrinsic {intrinsic:?} at {id:?} has {} runtime arguments instead of {expected}",
-            arguments.len()
-        )
-    })
-}
-
-fn simple_binding(
-    pattern: arcweft_core::pattern::RuntimePattern,
-    owner: impl std::fmt::Debug,
-) -> Result<String, String> {
-    match pattern {
-        arcweft_core::pattern::RuntimePattern::Ident(name)
-        | arcweft_core::pattern::RuntimePattern::MutIdent(name)
-        | arcweft_core::pattern::RuntimePattern::Typed { name, .. } => Ok(name),
-        _ => Err(format!("pattern {owner:?} is not a single runtime binding")),
-    }
-}
-
 fn runtime_binary(operator: HirBinaryOp) -> Option<RuntimeBinaryOp> {
     Some(match operator {
         HirBinaryOp::Or => RuntimeBinaryOp::Or,
@@ -938,40 +1055,4 @@ fn runtime_binary(operator: HirBinaryOp) -> Option<RuntimeBinaryOp> {
             return None;
         }
     })
-}
-
-#[cfg(test)]
-mod tests {
-    use super::variant_payload_accepts_argument_types;
-    use crate::semantic_facts::{RuntimeNormalizedType, RuntimeSemanticTypeId, RuntimeTypeShape};
-
-    fn normalized(marker: u8, shape: RuntimeTypeShape) -> RuntimeNormalizedType {
-        RuntimeNormalizedType::new(RuntimeSemanticTypeId::from_bytes([marker; 32]), shape)
-    }
-
-    #[test]
-    fn synthetic_variant_tuple_uses_the_selected_normalized_payload() {
-        let first = normalized(1, RuntimeTypeShape::Unit);
-        let second = normalized(2, RuntimeTypeShape::String);
-        let payload = normalized(
-            3,
-            RuntimeTypeShape::Tuple(vec![first.clone(), second.clone()].into_boxed_slice()),
-        );
-        assert!(variant_payload_accepts_argument_types(
-            Some(&payload),
-            &[&first, &second]
-        ));
-
-        let wrong = normalized(4, RuntimeTypeShape::Bool);
-        assert!(!variant_payload_accepts_argument_types(
-            Some(&payload),
-            &[&first, &wrong]
-        ));
-        assert!(!variant_payload_accepts_argument_types(
-            Some(&first),
-            &[&first, &second]
-        ));
-        assert!(variant_payload_accepts_argument_types(None, &[]));
-        assert!(!variant_payload_accepts_argument_types(None, &[&first]));
-    }
 }

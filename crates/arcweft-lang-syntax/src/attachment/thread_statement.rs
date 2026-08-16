@@ -6,11 +6,10 @@ use super::access::{RequiredStatementExpressionNode, required_statement_expressi
 use super::expression::AttachedExpressionNode;
 use super::family::PatternFamily;
 use super::node::{
-    AstNode, AwaitWithBranchKind, AwaitWithStatementKind, BlockKind, CloseBraceKind, EqualsKind,
-    ErrorNodeKind, ForInKind, ForStatementKind, IncludeStatementKind, LoopStatementKind,
-    MissingBodyKind, MissingExpressionKind, MissingNameKind, NameDefinitionKind, NameReferenceKind,
-    OpenBraceKind, ScopeStatementKind, SelectBranchKind, SelectStatementKind,
-    SourceLocaleStatementKind, WhileLetStatementKind, WhileStatementKind,
+    AstNode, BlockKind, CloseBraceKind, EqualsKind, ErrorNodeKind, ForInKind, ForStatementKind,
+    IncludeStatementKind, LoopStatementKind, MissingExpressionKind, MissingNameKind,
+    NameDefinitionKind, NameReferenceKind, OpenBraceKind, ScopeStatementKind, SelectBranchKind,
+    SelectStatementKind, SourceLocaleStatementKind, WhileLetStatementKind, WhileStatementKind,
 };
 use super::source_file::AttachedDelimiterState;
 use super::statement::{invalid, keyword_statement_projection, optional_recovery, require_roles};
@@ -18,9 +17,9 @@ use super::thread_body::{AttachedRequiredNestedThreadFlowBody, required_nested_t
 use super::{AttachedPatternNode, SyntaxAccessError};
 use crate::expressions::ExpressionProjection;
 use crate::grammar::keyword_statement_projection::{
-    PendingAwaitBranchProjection, PendingKeywordStatementProjection, PendingSelectBranchProjection,
+    PendingKeywordStatementProjection, PendingSelectBranchProjection,
 };
-use crate::grammar::{SyntaxAwaitBranchKind, SyntaxKind, SyntaxRole, SyntaxRoleClass};
+use crate::grammar::{SyntaxKind, SyntaxRole, SyntaxRoleClass};
 use crate::id_ref::SyntaxIdRefSyntax;
 use crate::name::{SyntaxName, SyntaxNameIssue};
 use crate::patterns::PatternSyntaxState;
@@ -478,134 +477,6 @@ impl AttachedSelectBranch {
     }
 }
 
-/// Complete typed `AwaitWith` statement relation.
-#[derive(Clone, Debug, Eq, PartialEq)]
-pub struct AttachedAwaitWithStatement {
-    syntax: AstNode<AwaitWithStatementKind>,
-    propagation: crate::expressions::SyntaxAwaitPropagation,
-    operand: RequiredStatementExpressionNode,
-    body: AttachedRequiredAwaitWithBranchBody,
-}
-
-impl AttachedAwaitWithStatement {
-    pub const fn syntax(&self) -> &AstNode<AwaitWithStatementKind> {
-        &self.syntax
-    }
-
-    pub const fn propagation(&self) -> crate::expressions::SyntaxAwaitPropagation {
-        self.propagation
-    }
-
-    pub const fn operand(&self) -> &RequiredStatementExpressionNode {
-        &self.operand
-    }
-
-    pub const fn body(&self) -> &AttachedRequiredAwaitWithBranchBody {
-        &self.body
-    }
-
-    pub fn has_recovery(&self) -> bool {
-        matches!(self.operand, RequiredStatementExpressionNode::Missing(_))
-            || self.body.has_recovery()
-    }
-}
-
-/// Present `AwaitWith` branch body or its exact missing-body insertion.
-#[derive(Clone, Debug, Eq, PartialEq)]
-pub enum AttachedRequiredAwaitWithBranchBody {
-    Present(AttachedAwaitWithBranchBlock),
-    Missing(AstNode<MissingBodyKind>),
-}
-
-impl AttachedRequiredAwaitWithBranchBody {
-    pub fn has_recovery(&self) -> bool {
-        match self {
-            Self::Present(body) => body.has_recovery(),
-            Self::Missing(_) => true,
-        }
-    }
-}
-
-/// Source-ordered `AwaitWith` branch container with no ordinary value tail.
-#[derive(Clone, Debug, Eq, PartialEq)]
-pub struct AttachedAwaitWithBranchBlock {
-    syntax: AstNode<BlockKind>,
-    open: AstNode<OpenBraceKind>,
-    branches: Box<[AttachedAwaitWithBranch]>,
-    close: AstNode<CloseBraceKind>,
-}
-
-impl AttachedAwaitWithBranchBlock {
-    pub const fn syntax(&self) -> &AstNode<BlockKind> {
-        &self.syntax
-    }
-
-    pub const fn open(&self) -> &AstNode<OpenBraceKind> {
-        &self.open
-    }
-
-    pub fn branches(&self) -> &[AttachedAwaitWithBranch] {
-        &self.branches
-    }
-
-    pub const fn close(&self) -> &AstNode<CloseBraceKind> {
-        &self.close
-    }
-
-    pub fn close_state(&self) -> AttachedDelimiterState {
-        self.close.delimiter_state()
-    }
-
-    pub fn has_recovery(&self) -> bool {
-        matches!(self.close_state(), AttachedDelimiterState::Missing(_))
-            || self
-                .branches
-                .iter()
-                .any(AttachedAwaitWithBranch::has_recovery)
-    }
-}
-
-/// One typed wait-view branch and its nested Thread/Flow body.
-#[derive(Clone, Debug, Eq, PartialEq)]
-pub struct AttachedAwaitWithBranch {
-    syntax: AstNode<AwaitWithBranchKind>,
-    kind: Option<SyntaxAwaitBranchKind>,
-    pattern: Option<AttachedPatternNode>,
-    recovery: Option<AstNode<ErrorNodeKind>>,
-    body: AttachedRequiredNestedThreadFlowBody,
-}
-
-impl AttachedAwaitWithBranch {
-    pub const fn syntax(&self) -> &AstNode<AwaitWithBranchKind> {
-        &self.syntax
-    }
-
-    pub const fn kind(&self) -> Option<SyntaxAwaitBranchKind> {
-        self.kind
-    }
-
-    pub const fn pattern(&self) -> Option<&AttachedPatternNode> {
-        self.pattern.as_ref()
-    }
-
-    pub const fn recovery(&self) -> Option<&AstNode<ErrorNodeKind>> {
-        self.recovery.as_ref()
-    }
-
-    pub const fn body(&self) -> &AttachedRequiredNestedThreadFlowBody {
-        &self.body
-    }
-
-    pub fn has_recovery(&self) -> bool {
-        self.kind.is_none()
-            || self.pattern.as_ref().is_some_and(|pattern| {
-                matches!(pattern.value().state(), PatternSyntaxState::Recovered(_))
-            })
-            || self.recovery.is_some()
-            || self.body.has_recovery()
-    }
-}
-
 impl AstNode<LoopStatementKind> {
     pub fn semantics(&self) -> Result<AttachedLoopStatement, SyntaxAccessError> {
         require_roles(self, &[SyntaxRole::Body])?;
@@ -775,25 +646,6 @@ impl AstNode<SelectStatementKind> {
     }
 }
 
-impl AstNode<AwaitWithStatementKind> {
-    pub fn semantics(&self) -> Result<AttachedAwaitWithStatement, SyntaxAccessError> {
-        let PendingKeywordStatementProjection::AwaitWith {
-            propagation,
-            branches,
-        } = keyword_statement_projection(self)?
-        else {
-            return Err(invalid(self));
-        };
-        require_roles(self, &[SyntaxRole::Operand, SyntaxRole::Body])?;
-        Ok(AttachedAwaitWithStatement {
-            syntax: self.clone(),
-            propagation,
-            operand: required_statement_expression(self, SyntaxRole::Operand)?,
-            body: attach_required_await_with_branch_body(self, &branches)?,
-        })
-    }
-}
-
 fn required_include_target(
     owner: &AstNode<IncludeStatementKind>,
 ) -> Result<AttachedRequiredIncludeTarget, SyntaxAccessError> {
@@ -923,84 +775,6 @@ fn attach_select_branch(
                 body,
             })
         }
-    }
-}
-
-fn attach_await_with_branch_block(
-    owner: &AstNode<AwaitWithStatementKind>,
-    projections: &[PendingAwaitBranchProjection],
-) -> Result<AttachedAwaitWithBranchBlock, SyntaxAccessError> {
-    let syntax = owner.required_exact_child::<BlockKind>(SyntaxRole::Body)?;
-    let open = syntax.required_exact_child::<OpenBraceKind>(SyntaxRole::OpenDelimiter)?;
-    let close = syntax.required_exact_child::<CloseBraceKind>(SyntaxRole::CloseDelimiter)?;
-    let branches = syntax.ordered_exact_children::<AwaitWithBranchKind>(SyntaxRoleClass::Branch)?;
-    if branches.len() != projections.len()
-        || syntax.syntax().children().iter().any(|child| {
-            !matches!(
-                child.role(),
-                SyntaxRole::OpenDelimiter | SyntaxRole::CloseDelimiter | SyntaxRole::Branch(_)
-            )
-        })
-    {
-        return Err(invalid(owner));
-    }
-    let branches = branches
-        .into_iter()
-        .zip(projections.iter().copied())
-        .map(|(syntax, projection)| {
-            let body = required_nested_thread_flow_body(&syntax)?;
-            if let Some(kind) = projection.kind() {
-                require_roles(&syntax, &[SyntaxRole::Pattern, SyntaxRole::Body])?;
-                Ok(AttachedAwaitWithBranch {
-                    pattern: Some(
-                        syntax
-                            .required_family_child::<PatternFamily>(SyntaxRole::Pattern)?
-                            .semantic()?,
-                    ),
-                    syntax,
-                    kind: Some(kind),
-                    recovery: None,
-                    body,
-                })
-            } else {
-                require_roles(&syntax, &[SyntaxRole::Recovery(0), SyntaxRole::Body])?;
-                Ok(AttachedAwaitWithBranch {
-                    recovery: Some(
-                        syntax.required_exact_child::<ErrorNodeKind>(SyntaxRole::Recovery(0))?,
-                    ),
-                    syntax,
-                    kind: None,
-                    pattern: None,
-                    body,
-                })
-            }
-        })
-        .collect::<Result<Vec<_>, SyntaxAccessError>>()?
-        .into_boxed_slice();
-    Ok(AttachedAwaitWithBranchBlock {
-        syntax,
-        open,
-        branches,
-        close,
-    })
-}
-
-fn attach_required_await_with_branch_body(
-    owner: &AstNode<AwaitWithStatementKind>,
-    projections: &[PendingAwaitBranchProjection],
-) -> Result<AttachedRequiredAwaitWithBranchBody, SyntaxAccessError> {
-    let body = owner
-        .syntax()
-        .optional_unique_child(SyntaxRole::Body)?
-        .ok_or_else(|| invalid(owner))?;
-    match body.kind() {
-        SyntaxKind::Block => Ok(AttachedRequiredAwaitWithBranchBody::Present(
-            attach_await_with_branch_block(owner, projections)?,
-        )),
-        SyntaxKind::MissingBody if projections.is_empty() && body.range().is_empty() => {
-            Ok(AttachedRequiredAwaitWithBranchBody::Missing(body.cast()?))
-        }
-        _ => Err(invalid(owner)),
     }
 }
 

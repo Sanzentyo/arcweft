@@ -1,4 +1,4 @@
-# Await, Need, Result, and `?`
+# Await, Need, Result, and `try`
 
 Arcweft uses `Need<T, E>` for values that may take time.
 
@@ -43,28 +43,28 @@ let bg = match bg_result {
 }
 ```
 
-## Postfix `?`
+## Try propagation
 
-Arcweft supports Rust-like postfix `?`.
+Arcweft uses the prefix `try` operator for propagation.
 
 ```arcw
-let config = load_config()?
+let config = try load_config()
 ```
 
 For `Result<T, E>`, this unwraps `Ok(T)` or propagates `Err(E)`. For `Option<T>`, this unwraps `Some(T)` or propagates absence according to the surrounding return type.
 
-This ordinary postfix `?` is a core expression operator. It remains valid on any expression that has an appropriate `Result` or `Option` type:
+`try` is valid on any expression that has an appropriate `Result` or `Option` type:
 
 ```arcw
-let config = load_config()?
-let route = state.route_override.context("missing route")?
-let bg = (await asset.image(@asset:.bg.room) with:
+let config = try load_config()
+let route = try state.route_override.context("missing route")
+let bg = try (await asset.image(@asset:.bg.room) with:
     pending p:
         scene.show(@scene.loading)
-)?
+)
 ```
 
-`?` relies on the bottom type `!` for its error branch. Conceptually:
+`try` relies on the bottom type `!` for its error branch. Conceptually:
 
 ```arcw
 let image = match load_image() {
@@ -80,11 +80,11 @@ The error arm has type `!`, so the whole expression has type `Image`.
 Writing this is technically valid but unpleasant:
 
 ```arcw
-let bg = (await asset.image(@asset:.bg.room) with:
+let bg = try (await asset.image(@asset:.bg.room) with:
     pending p:
         scene.show(@scene.loading)
         progress.set(p.ratio)
-)?
+)
 ```
 
 Therefore Arcweft's canonical user-facing form is:
@@ -96,37 +96,16 @@ let bg = try await asset.image(@asset:.bg.room) with:
         progress.set(p.ratio)
 ```
 
-Arcweft also retains the equivalent attached-question spelling:
-
-```arcw
-let bg = await? asset.image(@asset:.bg.room) with:
-    pending p:
-        scene.show(@scene.loading)
-        progress.set(p.ratio)
-```
-
 Meaning:
 
 ```text
 await Need<T, E>       -> Result<T, E>
-(await Need<T, E>)?    -> T
+try (await Need<T, E>) -> T
 try await Need<T, E>   -> T
-await? Need<T, E>      -> T
 ```
 
-`try await` and `await?` are not separate error models. They are sugar for awaiting a `Need` and applying the ordinary `?` operator to the resulting `Result`.
-
-## Rejected ambiguous syntax
-
-Do not write:
-
-```arcw
-await asset.image(@asset:.bg.room)? with:
-    pending p:
-        scene.show(@scene.loading)
-```
-
-That shape is visually close to Rust, but in Arcweft it is ambiguous because `with:` belongs to the await operation. Arcweft rejects only this grouped form: `await expr? with:`. The ordinary postfix `?` remains valid elsewhere, including `(await expr with: ...)?`.
+`try await` is not a separate error model. It is the ordinary prefix `try`
+operation applied to the `Result` produced by `await`.
 
 Use one of:
 
@@ -137,16 +116,13 @@ let bg_result = await asset.image(@asset:.bg.room) with:
 let bg = try await asset.image(@asset:.bg.room) with:
     pending p:
         scene.show(@scene.loading)
-let bg = await? asset.image(@asset:.bg.room) with:
+let bg = try await asset.image(@asset:.bg.room) with:
     pending p:
         scene.show(@scene.loading)
 ```
 
-Parenthesized `(await ...)?` remains valid and is semantically distinct from
-`await ...?`: the former is a general Try around Await, while the latter applies
-Try to the Await operand. A formatter preserves that grouping and the authored
-Try/Await spelling; it does not prefer or canonicalize either propagating Await
-form.
+Parenthesized `try (await ...)` is equivalent to the compact `try await ...`
+form. Both lower to a `Try` expression around a result-preserving `Await`.
 
 ## Context with await
 
@@ -171,11 +147,11 @@ let bg = (await asset.image(@asset:.bg.room) with:
     pending p:
         scene.show(@scene.loading)
         progress.set(p.ratio)
-).context("opening background failed")?
+).context("opening background failed")
 ```
 
-The parenthesized form remains appropriate when the surrounding general Try is
-the intended semantic grouping.
+The parenthesized form remains appropriate when the surrounding general `try`
+is the intended semantic grouping.
 
 ## Await in flow
 
@@ -211,24 +187,15 @@ await expr with:
   returns Result<T, E>
 
 try await expr with:
-  returns T and propagates E with `?` semantics
-
-await? expr with:
-  equivalent to try await
-
-expr?
-  ordinary Rust-like postfix try operator
+  returns T and propagates E
 
 try expr
-  equivalent general Try operation with retained prefix spelling
-
-await expr? with:
-  rejected
+  general Try operation
 ```
 
 ## See also
 
-- [Result / Option, `?`, and Context](result-option-context.md)
-- [Error, Trace, `?`, and Context](error-trace-context.md)
+- [Result / Option, `try`, and Context](result-option-context.md)
+- [Error, Trace, `try`, and Context](error-trace-context.md)
 - [Never / Bottom Type](never-bottom-type.md)
 - [Expression Control Flow](expression-control-flow.md)

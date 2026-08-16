@@ -527,8 +527,6 @@ fn is_keyword(spelling: &str) -> bool {
             | "select"
             | "self"
             | "signal"
-            | "source"
-            | "state"
             | "struct"
             | "style"
             | "super"
@@ -600,11 +598,11 @@ mod tests {
 
     #[test]
     fn unclosed_delimited_entity_reference_stops_at_its_first_recovery_boundary() {
-        let source = "@<source.events: Source<Event, Error>";
+        let source = "@<flow.events: Stream<Event, Error>";
         let tokens = DocumentLexer::new(source).lex();
 
         assert_eq!(tokens[0].kind(), SyntaxKind::EntityReferenceToken);
-        assert_eq!(&source[tokens[0].range().as_range()], "@<source.events:");
+        assert_eq!(&source[tokens[0].range().as_range()], "@<flow.events:");
         assert!(tokens.iter().any(|token| {
             token.kind() == SyntaxKind::PunctuationToken && &source[token.range().as_range()] == ">"
         }));

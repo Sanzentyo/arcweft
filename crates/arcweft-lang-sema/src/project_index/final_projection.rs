@@ -400,11 +400,7 @@ fn summarize_flow(
                 summary.record_branch();
                 summary.add_select_branches(branches.len());
             }
-            HirStmtKind::AwaitWith(_) | HirStmtKind::Wait { .. } => summary.record_await(),
-            HirStmtKind::LetAwait { await_expr, .. } => {
-                summary.record_await();
-                statement_owned_control.insert(*await_expr);
-            }
+            HirStmtKind::Wait { .. } => summary.record_await(),
             HirStmtKind::LetActionReceive { action, .. } => {
                 summary.record_await();
                 statement_owned_control.insert(*action);

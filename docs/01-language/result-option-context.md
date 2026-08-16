@@ -1,7 +1,7 @@
-# Result / Option, `?`, and Context
+# Result / Option, `try`, and Context
 
-Arcweft includes Rust-like `Result` and `Option`, two retained Try spellings
-(`expr?` and `try expr`), and standard context helpers inspired by
+Arcweft includes Rust-like `Result` and `Option`, the prefix `try expr`
+propagation operator, and standard context helpers inspired by
 `anyhow::Context`.
 
 ## Result and Option
@@ -21,7 +21,7 @@ pub enum Option<T> {
 ## Try on Result
 
 ```arcw
-let config = load_config()?
+let config = try load_config()
 let cached = try load_cached_config()
 ```
 
@@ -36,18 +36,16 @@ let config = match load_config() {
 
 The error path has type `!`, so the expression has type `T`.
 
-`try expr` and `expr?` are both canonical authored forms of the same general
-Try operation. Neither is deprecated or an alias for the other. Source-facing
-tools preserve the authored form. Prefix Try binds at prefix precedence `90`,
-while postfix Try binds at postfix precedence `100`.
+`try expr` is the sole authored form of the general Try operation. It binds at
+prefix precedence `90`.
 
-When the surrounding result type uses an anonymous error sum, `?` widens only
+When the surrounding result type uses an anonymous error sum, `try` widens only
 through exact branch injection:
 
 ```arcw
 fn load_config(path: VirtualPath) -> Result<Config, FsError | ParseError> {
-    let text = read_text(path)?
-    parse_config(text)?
+    let text = try read_text(path)
+    try parse_config(text)
 }
 ```
 
@@ -67,7 +65,7 @@ In an `Option`-returning function:
 
 ```arcw
 fn selected_route(state: GameState) -> Option<Ref<Flow>> {
-    let route = state.route_override?
+    let route = try state.route_override
     Some(route)
 }
 ```
@@ -78,8 +76,8 @@ propagation boundary. It does not implicitly convert `None` into an error for
 
 ```arcw
 fn selected_route(state: GameState) -> ArcResult<Ref<Flow>> {
-    let route = state.route_override
-        .context("route override is missing")?
+    let route = try state.route_override
+        .context("route override is missing")
     Ok(route)
 }
 ```
@@ -89,7 +87,7 @@ from `Option<T>` to `ArcResult<T>` before Try is applied. `ok_or(...)` and
 `ok_or_else(...)` provide the corresponding conversion into a typed `Result`.
 
 ```arcw
-let route = state.route_override.ok_or(MissingRouteError.new())?
+let route = try state.route_override.ok_or(MissingRouteError.new())
 ```
 
 The reverse direction is equally explicit: a `Result<T, E>` Try expression is
@@ -102,13 +100,13 @@ Arcweft provides `context` and `with_context` for both `Result` and `Option`.
 
 ```arcw
 let config = load_config()
-    .context("failed to load project config")?
+    .context("failed to load project config")
 
 let route = state.route_override
-    .context("missing route override")?
+    .context("missing route override")
 
 let voice = voice_catalog.find(line.voice_key)
-    .with_context(|| fmt("missing voice for {line}", line=line.id))?
+    .with_context(|| fmt("missing voice for {line}", line=line.id))
 ```
 
 Standard traits:
@@ -163,10 +161,10 @@ Result<Option<T>, E>.transpose_option() -> Option<Result<T, E>>
 
 The second name is intentionally `transpose_option` rather than another overload of `transpose`, to avoid confusion in diagnostics.
 
-## `?` with `await`
+## `try` with `await`
 
-`await need with:` returns `Result<T, E>`. Both propagating Await spellings are
-retained:
+`await need with:` returns `Result<T, E>`. Apply the ordinary prefix `try`
+operator when the result should be unwrapped and its error propagated:
 
 ```arcw
 let bg = try await asset.image(@asset:.bg.room)
@@ -187,30 +185,12 @@ with:
         scene.show(@scene.loading)
         progress.set(p.ratio)
 
-let bg = bg_result?
+let bg = try bg_result
 ```
 
-`await? expr with:` has the same propagation semantics as `try await expr
-with:`, but its source form remains distinct. Formatters and refactorings retain
-the authored spelling.
-
-```arcw
-let bg = await? asset.image(@asset:.bg.room)
-    .context("opening background failed")
-with:
-    pending p:
-        scene.show(@scene.loading)
-        progress.set(p.ratio)
-```
-
-Rejected because `with:` belongs to the await operation and the postfix grouping
-is ambiguous:
-
-```arcw
-await asset.image(@asset:.bg.room)? with:
-    pending p:
-        scene.show(@scene.loading)
-```
+There is no postfix `?` or attached `await?` form. `with:` is owned by the
+Await expression, and `try await ... with:` is parsed as ordinary
+`try (await ... with:)` composition.
 
 ## `bail`, `ensure`, and `fail`
 
@@ -251,7 +231,7 @@ fn validate_score(score: i32) -> ArcResult<Unit> {
 Preferred:
 
 ```arcw
-let route = route_override.context("route missing")?
+let route = try route_override.context("route missing")
 ```
 
 Instead of:

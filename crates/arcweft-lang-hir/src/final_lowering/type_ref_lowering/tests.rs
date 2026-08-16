@@ -24,7 +24,7 @@ use crate::source_index::{
 };
 use crate::symbol::CallablePackageId;
 
-fn source_document(document_id: &str, type_source: &str) -> (SourceName, Arc<SourceDocument>) {
+fn alias_document(document_id: &str, type_source: &str) -> (SourceName, Arc<SourceDocument>) {
     let name = SourceName::path(format!("proof/type-lowering/{document_id}.arcw"));
     let document = Arc::new(
         SourceDocument::try_new(
@@ -33,7 +33,7 @@ fn source_document(document_id: &str, type_source: &str) -> (SourceName, Arc<Sou
             ))
             .expect("type-lowering document ID"),
             name.clone(),
-            format!("source values: {type_source} {{}}\n"),
+            format!("type Values = {type_source}\n"),
         )
         .expect("type-lowering source"),
     );
@@ -41,15 +41,7 @@ fn source_document(document_id: &str, type_source: &str) -> (SourceName, Arc<Sou
 }
 
 fn parsed_type(document_id: &str, type_source: &str) -> ParsedSource {
-    let (name, document) = source_document(document_id, type_source);
-    SyntaxDatabase::try_new()
-        .expect("type-lowering syntax database")
-        .parse_initial(
-            SourceSnapshotId::initial(name),
-            document,
-            arcweft_lang_syntax::parser::ParseOptions::default(),
-        )
-        .expect("attached type source parses")
+    parsed_alias_type(document_id, type_source)
 }
 
 fn parsed_alias_type(document_id: &str, type_source: &str) -> ParsedSource {
@@ -76,21 +68,7 @@ fn parsed_alias_type(document_id: &str, type_source: &str) -> ParsedSource {
 }
 
 fn attached_type(parsed: &ParsedSource) -> AttachedTypeRefNode {
-    let item = parsed
-        .items()
-        .expect("source item inventory")
-        .into_iter()
-        .next()
-        .expect("source declaration");
-    let TypedItemNode::Source(source) = item else {
-        panic!("expected source item family");
-    };
-    source
-        .source_type()
-        .expect("source type access")
-        .expect("source declaration type")
-        .semantic()
-        .expect("attached semantic type")
+    attached_alias_type(parsed)
 }
 
 fn attached_alias_type(parsed: &ParsedSource) -> AttachedTypeRefNode {
@@ -495,7 +473,7 @@ fn recovery_uses_the_exact_type_poison_and_recovery_source() {
 fn invalid_named_regions_publish_known_reference_poison_and_exact_source_authority() {
     for (case, invalid_name) in [("leading-digit", "9"), ("unicode-digit", "a١")] {
         let type_source = format!("&'{invalid_name} mut Value");
-        let (name, document) = source_document(case, &type_source);
+        let (name, document) = alias_document(case, &type_source);
         let mut syntax = SyntaxDatabase::try_new().expect("syntax database");
         let parsed = syntax
             .parse_initial(
@@ -699,7 +677,7 @@ fn invalid_named_region_reuses_rolled_back_ids_but_name_one_over_is_fatal() {
 fn retained_elided_type_reuses_type_and_key_identity_across_revision() {
     const INSERTED_TRIVIA: &str = "// retained trivia\n";
 
-    let (name, document) = source_document("retained-elision", "&Value");
+    let (name, document) = alias_document("retained-elision", "&Value");
     let mut syntax = SyntaxDatabase::try_new().expect("syntax database");
     let initial = syntax
         .parse_initial(
@@ -820,7 +798,7 @@ fn dropped_elided_lowering_reuses_unpublished_ids_without_publishing_state() {
 
 #[test]
 fn stale_attached_type_and_foreign_scope_poison_the_whole_transaction() {
-    let (name, document) = source_document("stale-type", "Value");
+    let (name, document) = alias_document("stale-type", "Value");
     let mut syntax = SyntaxDatabase::try_new().expect("syntax database");
     let initial = syntax
         .parse_initial(

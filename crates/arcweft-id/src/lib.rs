@@ -59,9 +59,8 @@ pub struct AssetId(PublicId);
 ///
 /// `Asset` participates in retained reference validation even though packaged
 /// assets are discovered by the asset catalog rather than an authored
-/// top-level declaration.  The callable and source families are included here
-/// so syntax producers share one family authority instead of maintaining
-/// parser-local string tables.
+/// top-level declaration. Callable declaration families share this authority
+/// instead of maintaining parser-local string tables.
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub enum DeclarationIdentityFamily {
     Asset,
@@ -74,7 +73,6 @@ pub enum DeclarationIdentityFamily {
     Layer,
     Flow,
     Proof,
-    Source,
     Style,
 }
 
@@ -173,7 +171,6 @@ impl DeclarationIdentityFamily {
             Self::Layer => "layer",
             Self::Flow => "flow",
             Self::Proof => "proof",
-            Self::Source => "source",
             Self::Style => "style",
         }
     }
@@ -190,7 +187,6 @@ impl DeclarationIdentityFamily {
             "layer" => Some(Self::Layer),
             "flow" => Some(Self::Flow),
             "proof" => Some(Self::Proof),
-            "source" => Some(Self::Source),
             "style" => Some(Self::Style),
             _ => None,
         }
@@ -574,7 +570,6 @@ mod tests {
             DeclarationIdentityFamily::Layer,
             DeclarationIdentityFamily::Flow,
             DeclarationIdentityFamily::Proof,
-            DeclarationIdentityFamily::Source,
             DeclarationIdentityFamily::Style,
         ] {
             assert_eq!(

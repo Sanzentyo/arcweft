@@ -10,10 +10,10 @@ use super::item::TypedItemNode;
 use super::node::{
     AssertionStatementKind, AssignmentStatementKind, AstKind, AstNode, BinaryExpressionKind,
     BlockKind, CallArgumentKind, CallExpressionKind, ChoiceExpressionKind, CloseParenKind,
-    CloseStatementKind, DeclarationHeaderKind, DeclarationPublicIdKind, DocBlockKind, ExactAstKind,
-    ExpressionBodyKind, ExpressionStatementKind, FixedParameterGroupKind, FunctionBodyKind,
-    FunctionTypeKind, GenericApplicationTypeKind, IfStatementKind, LetChoiceStatementKind,
-    LetStatementKind, LifetimeSetStatementKind, MatchArmKind, MatchStatementKind, MissingBodyKind,
+    CloseStatementKind, DeclarationHeaderKind, DocBlockKind, ExactAstKind, ExpressionBodyKind,
+    ExpressionStatementKind, FixedParameterGroupKind, FunctionBodyKind, FunctionTypeKind,
+    GenericApplicationTypeKind, IfStatementKind, LetChoiceStatementKind, LetStatementKind,
+    LifetimeSetStatementKind, MatchArmKind, MatchStatementKind, MissingBodyKind,
     MissingExpressionKind, NameReferenceKind, OmittedBlockTailKind, OpenParenKind,
     OuterAttributeKind, ParameterKind, PredicateBlockKind, PredicateBodyKind, ProofBlockKind,
     ProofBodyKind, ProofCallStatementKind, RecordPatternFieldKind, RecordPatternKind,
@@ -21,9 +21,8 @@ use super::node::{
     RichTextArgumentValueKind, RichTextConditionPayloadKind, RichTextDialogueCallPayloadKind,
     RichTextEndTagKind, RichTextFxCallPayloadKind, RichTextInvalidArgumentKind,
     RichTextNamedArgumentKind, RichTextPositionalArgumentKind, RichTextTagKind,
-    RichTextTagNameKind, SelectStatementKind, SourceItemKind, TypeArgumentKind,
-    UnsafeLifetimeStatementKind, VisibilityKind, WaitStatementKind, WholeBindingPatternKind,
-    YieldStatementKind,
+    RichTextTagNameKind, SelectStatementKind, TypeArgumentKind, UnsafeLifetimeStatementKind,
+    VisibilityKind, WaitStatementKind, WholeBindingPatternKind, YieldStatementKind,
 };
 use super::{SyntaxAccessError, SyntaxNodeHandle};
 use crate::grammar::kinds::{SyntaxKind, SyntaxRole, SyntaxRoleClass};
@@ -191,38 +190,6 @@ impl<K: AstKind> AstNode<K> {
             .into_iter()
             .map(FamilyNode::new)
             .collect()
-    }
-}
-
-impl AstNode<SourceItemKind> {
-    pub fn header(&self) -> Result<AstNode<DeclarationHeaderKind>, SyntaxAccessError> {
-        self.required_exact_child(SyntaxRole::Element(0))
-    }
-
-    pub fn public_id(&self) -> Result<Option<AstNode<DeclarationPublicIdKind>>, SyntaxAccessError> {
-        self.header()?.optional_exact_child(SyntaxRole::PublicId)
-    }
-
-    pub fn name(&self) -> Result<Option<NameNode>, SyntaxAccessError> {
-        self.header()?
-            .optional_family_child::<NameFamily>(SyntaxRole::Name)
-    }
-
-    pub fn source_type(&self) -> Result<Option<TypeNode>, SyntaxAccessError> {
-        self.header()?
-            .optional_family_child::<TypeFamily>(SyntaxRole::Type)
-    }
-
-    pub fn body(&self) -> Result<DeclarationBodyNode, SyntaxAccessError> {
-        let syntax = self
-            .syntax()
-            .optional_unique_child(SyntaxRole::Body)?
-            .ok_or(SyntaxAccessError::MissingFamilyChild {
-                parent: self.id(),
-                role: SyntaxRole::Body,
-                expected: AstNodeFamily::Body,
-            })?;
-        DeclarationBodyNode::new(syntax)
     }
 }
 
@@ -479,6 +446,8 @@ pub enum UnsafeAuditBodyNode {
 pub enum MatchStatementArmBodyNode {
     /// Source-backed expression body.
     Expression(ExprNode),
+    /// Source-backed unbraced statement body.
+    Statement(StatementNode),
     /// Source-backed statement-only block body.
     Block(AstNode<BlockKind>),
     /// Exact zero-width recovery insertion for a missing required body.
@@ -883,6 +852,11 @@ impl AstNode<MatchArmKind> {
         match syntax.kind() {
             SyntaxKind::Block => Ok(MatchStatementArmBodyNode::Block(syntax.cast()?)),
             SyntaxKind::MissingExpression => Ok(MatchStatementArmBodyNode::Missing(syntax.cast()?)),
+            kind if kind.is_statement() => Ok(MatchStatementArmBodyNode::Statement(FamilyNode::<
+                StatementFamily,
+            >::new(
+                syntax
+            )?)),
             _ => Ok(MatchStatementArmBodyNode::Expression(FamilyNode::<
                 ExpressionFamily,
             >::new(

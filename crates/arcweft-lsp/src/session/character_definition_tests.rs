@@ -15,9 +15,7 @@ use std::{
     time::{SystemTime, UNIX_EPOCH},
 };
 
-const CHARACTER_REFERENCE_SOURCE: &str = "flow @flow.main main {\n    let hero = show(@character.akane)\n}\n\
-entry server @entry.server.main {\n    goto @flow.main\n}\n";
-const CHARACTER_MEMBER_SOURCE: &str = "flow @flow.main main {\n    let hero = show(@character.akane, look = .normal)\n}\n\
+const CHARACTER_REFERENCE_SOURCE: &str = "flow @flow.main main {\n    let hero = @character.akane\n}\n\
 entry server @entry.server.main {\n    goto @flow.main\n}\n";
 
 #[test]
@@ -349,35 +347,6 @@ fn closing_manifest_overlay_rebuilds_remaining_profiles_from_disk() {
     );
 }
 
-#[test]
-fn globally_unique_local_member_resolves_through_typed_member_index() {
-    let project = CharacterDefinitionProject::new("character-local-member");
-    let source = CHARACTER_MEMBER_SOURCE;
-    let manifest = character_manifest();
-    project.write_project(source, manifest);
-    let uri = file_uri(&project.path("src/main.arcw"));
-    let mut session = ArcweftLspSession::new(
-        &LspConfig::new(arcweft_runtime_host::RuntimeHostRunnerKind::Native)
-            .with_profile_id("game"),
-    );
-    open(&mut session, &uri, source);
-
-    let response = definition_request(&mut session, uri, position_of(source, "normal"));
-    assert!(response.error.is_none(), "{:?}", response.error);
-    let definition = serde_json::from_value::<GotoDefinitionResponse>(
-        response.result.expect("member definition"),
-    )
-    .expect("definition response");
-    let GotoDefinitionResponse::Link(links) = definition else {
-        panic!("character definition must use LocationLink");
-    };
-    assert_eq!(links.len(), 1);
-    assert_eq!(
-        links[0].target_selection_range.start,
-        position_of_last(manifest, "normal")
-    );
-}
-
 fn definition_request(session: &mut ArcweftLspSession, uri: Uri, position: Position) -> Response {
     session.handle_request(Request {
         id: RequestId::from(99),
@@ -443,19 +412,6 @@ fn close(session: &mut ArcweftLspSession, uri: Uri) {
 
 fn position_of(source: &str, needle: &str) -> Position {
     let offset = source.find(needle).expect("needle");
-    let before = &source[..offset];
-    let line = before.bytes().filter(|byte| *byte == b'\n').count();
-    let character = before
-        .rsplit_once('\n')
-        .map_or(before.len(), |(_, tail)| tail.len());
-    Position::new(
-        u32::try_from(line).expect("line"),
-        u32::try_from(character).expect("character"),
-    )
-}
-
-fn position_of_last(source: &str, needle: &str) -> Position {
-    let offset = source.rfind(needle).expect("needle");
     let before = &source[..offset];
     let line = before.bytes().filter(|byte| *byte == b'\n').count();
     let character = before

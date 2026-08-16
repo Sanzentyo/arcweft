@@ -160,6 +160,11 @@ impl Encoder {
                 self.environment_owner(owner);
                 self.project_symbol_path(path.path());
             }
+            EnvironmentPublicationItemId::AdapterHostCall { owner, path } => {
+                self.u16(6);
+                self.environment_owner(owner);
+                self.callable_path_raw(path);
+            }
             EnvironmentPublicationItemId::AdapterFunction {
                 owner,
                 path,
@@ -242,8 +247,12 @@ impl Encoder {
         for segment in path.module().segments() {
             self.string(segment.as_str());
         }
-        self.len(path.path().segments().len());
-        for segment in path.path().segments() {
+        self.callable_path_raw(path.path());
+    }
+
+    fn callable_path_raw(&mut self, path: &crate::callable::CallablePath) {
+        self.len(path.segments().len());
+        for segment in path.segments() {
             self.string(segment.as_str());
         }
     }

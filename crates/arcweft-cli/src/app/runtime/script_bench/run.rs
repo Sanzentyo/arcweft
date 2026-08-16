@@ -7,27 +7,18 @@ use super::super::steps::{
 };
 use super::BenchRuntimeContext;
 use super::samples::{RuntimeBenchSamples, bench_goto_flow, validate_bench_section};
-use crate::app::jit::{
-    JitBuiltinCase, JitCheckOptions, JitCheckReport, JitCheckTarget, jit_check_input_array,
-    per_iteration_ns, run_jit_check, speedup_x, timing_samples,
-};
 use crate::output::{
-    RuntimeExecutorTier, RuntimePureCallStatsSummary, RuntimeStepRunSummary,
-    ScriptBenchMeasurementSummary, ScriptBenchPureHelperMeasurementSummary,
-    ScriptBenchPureHelperRuntimeBatchSummary, ScriptBenchPureHelperTimingSamples,
+    RuntimeExecutorTier, RuntimeStepRunSummary, ScriptBenchMeasurementSummary,
     ScriptBenchRunSummary, ScriptBenchSectionRunSummary,
 };
 use arcweft_core::plan::{
     EntryRuntimeId, FlowRuntimeId, RuntimeEntryKind, RuntimeEntryTarget, RuntimePlan,
-    RuntimePureHelper, RuntimePureHelperId, RuntimePureHelperOrigin, RuntimePureInputType,
-    RuntimePureOutputType,
 };
-use arcweft_core::pure::RuntimePureCallBackend;
-use arcweft_runtime_accelerator::{RuntimePureAccelerator, RuntimePureAcceleratorConfig};
-use arcweft_runtime_host::{NativeFileRoots, host_system_info, runtime_executor_stats};
+use arcweft_runtime_accelerator::RuntimePureAccelerator;
+use arcweft_runtime_host::{NativeFileRoots, host_system_info};
 use arcweft_test::{BenchSection, ScriptBench, ScriptCommand, ScriptExpectation};
 use std::path::Path;
-use std::process::ExitCode;
+use std::sync::Arc;
 use std::time::Instant;
 
 fn validate_script_bench(bench: &ScriptBench) -> ScriptBenchRunSummary {
@@ -72,7 +63,6 @@ fn validate_script_bench(bench: &ScriptBench) -> ScriptBenchRunSummary {
 pub(in crate::app) fn run_script_bench(
     bench: &ScriptBench,
     plan: &RuntimePlan,
-    pure_helpers: &[RuntimePureHelper],
     source_path: &Path,
     options: &ScriptBenchOptions,
     runtime: BenchRuntimeContext<'_>,
@@ -84,9 +74,7 @@ pub(in crate::app) fn run_script_bench(
     let sections = bench
         .sections
         .iter()
-        .map(|section| {
-            run_bench_section(section, plan, pure_helpers, source_path, options, runtime)
-        })
+        .map(|section| run_bench_section(section, plan, source_path, options, runtime))
         .collect::<Vec<_>>();
     let section_failures = sections
         .iter()
@@ -105,6 +93,15 @@ pub(in crate::app) fn run_script_bench(
         if !diagnostics.is_empty() {
             "failed".clone_into(&mut summary.status);
             summary.diagnostics.extend(diagnostics);
+        }
+    } else {
+        summary.sections = sections;
+        if summary
+            .sections
+            .iter()
+            .any(|section| section.status == "skipped")
+        {
+            "skipped".clone_into(&mut summary.status);
         }
     }
     summary
@@ -199,178 +196,18 @@ fn bench_assertion_expectation(section: &BenchSection) -> Result<&ScriptExpectat
 
 fn run_bench_pure_helper_section(
     section: &BenchSection,
-    pure_helpers: &[RuntimePureHelper],
-    options: &ScriptBenchOptions,
-    pure_config: RuntimePureAcceleratorConfig,
     validated: ScriptBenchSectionRunSummary,
 ) -> ScriptBenchSectionRunSummary {
     let Some(helper_name) = bench_pure_helper_name(section) else {
         return validated;
     };
-    let Some(candidate) = pure_helpers
-        .iter()
-        .find(|candidate| candidate.name == helper_name)
-    else {
-        return ScriptBenchSectionRunSummary::new(
-            &section.name,
-            "failed",
-            vec![format!("pure helper `{helper_name}` was not found")],
-        );
-    };
-    let target = match JitCheckTarget::from_candidate(candidate, None) {
-        Ok(target) => target,
-        Err(code) => {
-            return ScriptBenchSectionRunSummary::new(
-                &section.name,
-                "failed",
-                vec![format!(
-                    "pure helper `{helper_name}` cannot be measured by the current JIT tier: exit code {code:?}"
-                )],
-            );
-        }
-    };
-    match script_bench_pure_helper_summary(helper_name, &target, options, pure_config) {
-        Ok(summary) => ScriptBenchSectionRunSummary::measured_pure_helper(
-            &section.name,
-            validated.diagnostics,
-            summary,
-        ),
-        Err(message) => ScriptBenchSectionRunSummary::new(&section.name, "failed", vec![message]),
-    }
-}
-
-fn script_bench_pure_helper_summary(
-    helper_name: String,
-    target: &JitCheckTarget,
-    options: &ScriptBenchOptions,
-    pure_config: RuntimePureAcceleratorConfig,
-) -> Result<ScriptBenchPureHelperMeasurementSummary, String> {
-    let jit_options = JitCheckOptions {
-        path: None,
-        helper: Some(helper_name),
-        case: JitBuiltinCase::Score,
-        julia: false,
-        iterations: options.iterations,
-        warmup: options.warmup,
-        samples: options.samples,
-        input_seed: options.input_seed,
-        json: false,
-    };
-    let report = run_jit_check(&jit_options, target).map_err(|code| {
-        format!(
-            "pure helper `{}` failed during VM/AOT/JIT measurement: exit code {code:?}",
-            target.name
-        )
-    })?;
-    if !report.matches_vm {
-        return Err(format!(
-            "pure helper `{}` did not match the VM reference",
-            report.helper
-        ));
-    }
-    let runtime_batch = measure_script_bench_runtime_pure_batch(target, &report, options, pure_config)
-        .map_err(|code| {
-            format!(
-                "pure helper `{}` failed during runtime accelerator batch measurement: exit code {code:?}",
-                target.name
-            )
-        })?;
-    if !runtime_batch.matches_vm {
-        return Err(format!(
-            "pure helper `{}` runtime accelerator batch did not match the VM reference",
-            target.name
-        ));
-    }
-    let mut summary = ScriptBenchPureHelperMeasurementSummary::from(&report);
-    summary.runtime_batch = Some(runtime_batch);
-    Ok(summary)
-}
-
-fn measure_script_bench_runtime_pure_batch(
-    target: &JitCheckTarget,
-    report: &JitCheckReport,
-    options: &ScriptBenchOptions,
-    pure_config: RuntimePureAcceleratorConfig,
-) -> Result<ScriptBenchPureHelperRuntimeBatchSummary, ExitCode> {
-    let helper = RuntimePureHelper {
-        id: RuntimePureHelperId(0),
-        name: target.name.clone(),
-        input_names: target.input_names.clone(),
-        input_types: vec![RuntimePureInputType::I64; target.input_names.len()],
-        output_type: RuntimePureOutputType::I64,
-        expr: target.expr.clone(),
-        scalar_eval_supported: target.expr.supports_scalar_pure_eval(),
-        origin: RuntimePureHelperOrigin::Annotated,
-    };
-    if options.warmup > 0 {
-        let mut warmup_accelerator =
-            RuntimePureAccelerator::with_config(pure_config, std::slice::from_ref(&helper));
-        let mut rows = Vec::with_capacity(options.warmup.saturating_mul(target.input_names.len()));
-        fill_runtime_flat_batch_inputs(&mut rows, target, options.input_seed, 0, options.warmup);
-        let mut out = vec![0_i64; options.warmup];
-        warmup_accelerator
-            .call_i64_flat_batch(&helper, &rows, target.input_names.len(), &mut out)
-            .map_err(|error| {
-                eprintln!("error: runtime pure batch warmup failed: {error}");
-                ExitCode::FAILURE
-            })?;
-    }
-
-    let mut accelerator =
-        RuntimePureAccelerator::with_config(pure_config, std::slice::from_ref(&helper));
-    let mut elapsed = Vec::with_capacity(options.samples);
-    let mut rows = Vec::with_capacity(options.iterations.saturating_mul(target.input_names.len()));
-    let mut out = vec![0_i64; options.iterations];
-    let mut accumulator = 0_i64;
-    for sample in 0..options.samples {
-        fill_runtime_flat_batch_inputs(
-            &mut rows,
-            target,
-            options.input_seed,
-            sample,
-            options.iterations,
-        );
-        out.fill(0);
-        let started = Instant::now();
-        accelerator
-            .call_i64_flat_batch(&helper, &rows, target.input_names.len(), &mut out)
-            .map_err(|error| {
-                eprintln!("error: runtime pure batch measurement failed: {error}");
-                ExitCode::FAILURE
-            })?;
-        elapsed.push(started.elapsed().as_nanos());
-        accumulator = out.iter().copied().fold(accumulator, i64::saturating_add);
-    }
-    let samples = timing_samples(elapsed);
-    let executor_stats = runtime_executor_stats(0, &accelerator);
-    Ok(ScriptBenchPureHelperRuntimeBatchSummary {
-        matches_vm: accumulator == report.deterministic.vm,
-        accumulator,
-        elapsed_ns: samples.median,
-        per_iteration_ns: per_iteration_ns(samples.median, options.iterations),
-        speedup_x: speedup_x(report.timings.vm, samples.median),
-        samples: ScriptBenchPureHelperTimingSamples::from(samples),
-        config: executor_stats.pure_config,
-        compile: executor_stats.pure_compile,
-        stats: RuntimePureCallStatsSummary::from(accelerator.stats()),
-    })
-}
-
-fn fill_runtime_flat_batch_inputs(
-    inputs: &mut Vec<i64>,
-    target: &JitCheckTarget,
-    input_seed: u64,
-    sample: usize,
-    iterations: usize,
-) {
-    let arity = target.input_names.len();
-    inputs.clear();
-    inputs.reserve(iterations.saturating_mul(arity));
-    for iteration in 0..iterations {
-        inputs.extend_from_slice(
-            &jit_check_input_array(input_seed, sample, iteration, arity)[..arity],
-        );
-    }
+    ScriptBenchSectionRunSummary::new(
+        &section.name,
+        "skipped",
+        vec![format!(
+            "pure helper `{helper_name}` benchmark is unavailable until it can be driven by an admitted RuntimePlan helper"
+        )],
+    )
 }
 
 fn bench_pure_helper_name(section: &BenchSection) -> Option<String> {
@@ -383,7 +220,6 @@ fn bench_pure_helper_name(section: &BenchSection) -> Option<String> {
 fn run_bench_section(
     section: &BenchSection,
     plan: &RuntimePlan,
-    pure_helpers: &[RuntimePureHelper],
     source_path: &Path,
     options: &ScriptBenchOptions,
     runtime: BenchRuntimeContext<'_>,
@@ -393,13 +229,7 @@ fn run_bench_section(
         return validated;
     }
     if bench_pure_helper_name(section).is_some() {
-        return run_bench_pure_helper_section(
-            section,
-            pure_helpers,
-            options,
-            runtime.pure_config,
-            validated,
-        );
+        return run_bench_pure_helper_section(section, validated);
     }
     let Some(flow) = bench_goto_flow(section) else {
         return validated;
@@ -446,7 +276,8 @@ fn run_bench_flow_section(
         }
     };
     let executor_template = RuntimeExecutorTemplate::new(plan, entry, options.executor);
-    let mut pure = RuntimePureAccelerator::with_config(runtime.pure_config, &plan.pure_helpers);
+    let pure_plan = Arc::new(plan.clone());
+    let mut pure = RuntimePureAccelerator::with_config(runtime.pure_config, &pure_plan);
     for iteration in 0..options.warmup + options.iterations {
         pure.reset_runtime_counters();
         let executor = match executor_template.instantiate() {
@@ -511,7 +342,7 @@ fn bench_entry_for_flow(
     flow: &FlowRuntimeId,
 ) -> Result<EntryRuntimeId, String> {
     let matching_entries = plan
-        .entries
+        .entries()
         .iter()
         .filter(|entry| {
             entry.kind == RuntimeEntryKind::Bench

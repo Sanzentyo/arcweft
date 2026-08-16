@@ -21,9 +21,10 @@ use crate::{
     registration::{
         AcceptedNominalWorld, AcceptedNominalWorldLookupError, BoundEnvironmentRegistrationInput,
         EnvironmentCallableLookupInput, EnvironmentCallablePublicationRecordInput,
-        EnvironmentParameterGroupInput, EnvironmentParameterInput, EnvironmentParameterTypeInput,
-        EnvironmentPublicationItemId, EnvironmentTypeProjectionKind, EnvironmentTypeProjectionNode,
-        EnvironmentTypeSite, EnvironmentTypeSiteRoot, EnvironmentTypeSiteStep,
+        EnvironmentHostCallContractInput, EnvironmentParameterGroupInput,
+        EnvironmentParameterInput, EnvironmentParameterTypeInput, EnvironmentPublicationItemId,
+        EnvironmentTypeProjectionKind, EnvironmentTypeProjectionNode, EnvironmentTypeSite,
+        EnvironmentTypeSiteRoot, EnvironmentTypeSiteStep,
     },
     types::{GenericTypeOwnerId, GenericTypeParameterId, TypeKind},
 };
@@ -187,6 +188,60 @@ impl std::fmt::Display for EnvironmentPublicationProjectionReport {
 impl std::error::Error for EnvironmentPublicationProjectionReport {}
 
 impl AcceptedNominalWorld {
+    pub(crate) fn try_project_host_call_contract(
+        &self,
+        contract: &EnvironmentHostCallContractInput,
+        limits: NominalResolutionLimits,
+    ) -> Result<ProjectedHostCallContract, EnvironmentPublicationProjectionReport> {
+        let parameter_types = contract
+            .signature()
+            .groups()
+            .iter()
+            .map(|group| {
+                group
+                    .parameters()
+                    .iter()
+                    .map(|parameter| match parameter.ty() {
+                        EnvironmentParameterTypeInput::Exact(ty) => self.project_callable_type(
+                            ty,
+                            contract.item(),
+                            EnvironmentTypeSiteRoot::Parameter {
+                                group: group.index(),
+                                parameter: parameter.index(),
+                            },
+                            limits,
+                        ),
+                        EnvironmentParameterTypeInput::Unchecked { .. } => {
+                            Err(EnvironmentPublicationProjectionReport::omitted())
+                        }
+                    })
+                    .collect::<Result<Vec<_>, _>>()
+            })
+            .collect::<Result<Vec<_>, _>>()?;
+        let result_type = self.project_callable_type(
+            contract.signature().result(),
+            contract.item(),
+            EnvironmentTypeSiteRoot::Result,
+            limits,
+        )?;
+        let domain_error = contract
+            .domain_error()
+            .map(|error| {
+                self.project_callable_type(
+                    error,
+                    contract.item(),
+                    EnvironmentTypeSiteRoot::HostCallDomainError,
+                    limits,
+                )
+            })
+            .transpose()?;
+        Ok(ProjectedHostCallContract {
+            parameter_types,
+            result_type,
+            domain_error,
+        })
+    }
+
     pub(crate) fn try_project_character_dialogue_field_type(
         &self,
         root: &EnvironmentTypeProjectionNode,
@@ -680,6 +735,18 @@ impl AcceptedNominalWorld {
         TypeProjector::new(self, item, site_root, limits, Some(binder))
             .project(root, 1)
             .map_err(EnvironmentPublicationProjectionReport::one)
+    }
+}
+
+pub(crate) struct ProjectedHostCallContract {
+    pub(super) parameter_types: Vec<Vec<TypeKind>>,
+    pub(super) result_type: TypeKind,
+    pub(super) domain_error: Option<TypeKind>,
+}
+
+impl ProjectedHostCallContract {
+    pub(crate) const fn domain_error(&self) -> Option<&TypeKind> {
+        self.domain_error.as_ref()
     }
 }
 

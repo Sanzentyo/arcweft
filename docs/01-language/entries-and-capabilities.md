@@ -278,19 +278,15 @@ extern capability http {
 }
 ```
 
-## Source declarations remain canonical
+## External Stream capabilities
 
-External live streams still use `source` declarations with explicit backpressure, replay, and privacy policy.
+External live streams use ordinary capability members returning `Stream<T, E>`.
+The operation is not a declaration or content root; capability and host
+adapters own acquisition, backpressure, replay, and privacy policy.
 
 ```arcw
-source http_requests: Source<HttpRequest, HttpError> {
-    from http.requests(@entry.http)
-    backpressure = bounded(capacity = 1024, overflow = drop_oldest)
-    replay = event_only
-    privacy = redacted
-
-    on item req => yield req
-    on error e => log.warn("http source error", error = e)
+extern capability http {
+    fn requests() -> Stream<HttpRequest, HttpError>
 }
 ```
 

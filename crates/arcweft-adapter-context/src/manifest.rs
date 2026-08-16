@@ -136,6 +136,7 @@ pub struct AdapterEffectCapability {
 pub struct AdapterHostCall {
     id: AdapterHostCallId,
     signature: AdapterFunctionSignature,
+    domain_error: Option<AdapterTypeKind>,
     effects: Vec<AdapterEffectCapability>,
 }
 
@@ -346,6 +347,7 @@ impl AdapterHostCall {
         Self {
             id: AdapterHostCallId::new(id),
             signature: empty_adapter_signature(AdapterTypeKind::Unit),
+            domain_error: None,
             effects: effects.into_iter().collect(),
         }
     }
@@ -359,8 +361,16 @@ impl AdapterHostCall {
         Self {
             id: AdapterHostCallId::new(id),
             signature,
+            domain_error: None,
             effects: effects.into_iter().collect(),
         }
+    }
+
+    /// Attaches the typed domain error produced by this host call.
+    #[must_use]
+    pub fn with_domain_error(mut self, domain_error: AdapterTypeKind) -> Self {
+        self.domain_error = Some(domain_error);
+        self
     }
 
     /// Stable runtime host-call id.
@@ -376,6 +386,11 @@ impl AdapterHostCall {
     /// Runtime ABI signature used by host adapters to decode payloads.
     pub const fn signature(&self) -> &AdapterFunctionSignature {
         &self.signature
+    }
+
+    /// Typed domain error carried by the host call, when one exists.
+    pub const fn domain_error(&self) -> Option<&AdapterTypeKind> {
+        self.domain_error.as_ref()
     }
 }
 

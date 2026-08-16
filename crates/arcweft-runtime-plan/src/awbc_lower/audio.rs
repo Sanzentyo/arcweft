@@ -6,25 +6,29 @@ use arcweft_core::audio::RuntimeAudioCommand;
 use arcweft_core::awbc::schema::{
     AwbcAudioArg, AwbcAudioCommand, AwbcAudioValueRef, AwbcRegisterId,
 };
-use arcweft_core::value::{RuntimeExpr, RuntimeValue};
+use arcweft_core::plan::RuntimePlan;
+use arcweft_core::value::{RuntimeExpr, RuntimeExprKind, RuntimeValue};
 
 /// Lowers typed audio commands into compact-VM evaluated payload references.
-pub(crate) struct AwbcAudioLowerer<'a, 'b> {
+pub(crate) struct AwbcAudioLowerer<'a, 'b, 'plan> {
     inventory: &'a mut AwbcInventory,
     frame: &'b mut FrameBuilder,
+    plan: &'plan RuntimePlan,
     path: String,
     args: Vec<AwbcRegisterId>,
 }
 
-impl<'a, 'b> AwbcAudioLowerer<'a, 'b> {
+impl<'a, 'b, 'plan> AwbcAudioLowerer<'a, 'b, 'plan> {
     pub(crate) fn new(
         inventory: &'a mut AwbcInventory,
         frame: &'b mut FrameBuilder,
         path: impl Into<String>,
+        plan: &'plan RuntimePlan,
     ) -> Self {
         Self {
             inventory,
             frame,
+            plan,
             path: path.into(),
             args: Vec::new(),
         }
@@ -40,7 +44,8 @@ impl<'a, 'b> AwbcAudioLowerer<'a, 'b> {
 
     fn arg(&mut self, expr: &RuntimeExpr) -> AwbcAudioValueRef {
         let register =
-            AwbcExprLowerer::new(self.inventory, self.frame, self.path.clone()).lower(expr);
+            AwbcExprLowerer::new(self.inventory, self.frame, self.path.clone(), self.plan)
+                .lower(expr);
         let arg = AwbcAudioArg::new(table_index(self.args.len()));
         self.args.push(register);
         AwbcAudioValueRef::Arg(arg)
@@ -183,14 +188,14 @@ struct ConstantAudioLowerer<'a> {
 
 impl ConstantAudioLowerer<'_> {
     fn expr(&mut self, expr: &RuntimeExpr) -> AwbcAudioValueRef {
-        let value = match expr {
-            RuntimeExpr::Value(value) => value.clone(),
-            RuntimeExpr::EntityRef(value) => RuntimeValue::EntityRef(value.clone()),
-            other => {
+        let value = match expr.kind() {
+            RuntimeExprKind::Value(value) => value.clone(),
+            RuntimeExprKind::EntityRef(value) => RuntimeValue::EntityRef(value.runtime_label()),
+            _ => {
                 self.inventory.diagnostic(AwbcLowerDiagnostic::error(
                     self.path.clone(),
                     format!(
-                        "line-task audio expression `{other}` requires a flow frame and cannot be lowered as a constant AWBC audio payload"
+                        "line-task audio expression `{expr}` requires a flow frame and cannot be lowered as a constant AWBC audio payload"
                     ),
                 ));
                 RuntimeValue::Unit

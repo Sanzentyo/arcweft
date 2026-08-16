@@ -16,37 +16,48 @@ mod suspension;
 
 use self::execution::{
     ProductVmHost, entry_argument_diagnostic, has_host_requests, has_visible_output,
-    input_choice_selection, run_function, source_id_for, stream_id_for,
+    input_choice_selection, run_function, stream_id_for,
 };
 use self::mapping::{MappedEffect, content_request, source_diagnostic, task_spec};
 use self::runtime_id::line_id_from_awbc_public_id;
 pub use self::snapshot::{
-    AwbcProductActiveChoiceSnapshot, AwbcProductActiveDialogueSnapshot,
-    AwbcProductExecutorSnapshot, AwbcProductPendingHostCallSnapshot,
+    AwbcProductActiveChoiceSnapshot, AwbcProductActiveDialogueSaveSnapshot,
+    AwbcProductActiveDialogueSnapshot, AwbcProductChildFiberOwnerSnapshot,
+    AwbcProductChildFiberSaveSnapshot, AwbcProductChildFiberSnapshot,
+    AwbcProductExecutorSaveSnapshot, AwbcProductExecutorSnapshot,
+    AwbcProductLineTaskCancelSnapshot, AwbcProductLineTaskExitPolicySnapshot,
+    AwbcProductLineTaskExitSnapshot, AwbcProductLineTaskFiberPhaseSnapshot,
+    AwbcProductLineTaskJoinSnapshot, AwbcProductLineTaskLiveSnapshot,
+    AwbcProductLineTaskNodeStateSnapshot, AwbcProductLineTaskPhaseSnapshot,
+    AwbcProductLineTaskWorkSnapshot, AwbcProductLineTaskWorkTagSnapshot,
+    AwbcProductPendingHostCallSnapshot,
 };
 use crate::awbc::fiber::{
-    FiberAwaitManyInFlight, FiberAwaitTarget, FiberBudget, FiberCursor, FiberState, FiberStatus,
-    FiberSuspensionReason, FiberTerminalValue, FiberTrap,
+    FiberAwaitManyInFlight, FiberAwaitManyState, FiberAwaitTarget, FiberBudget, FiberCursor,
+    FiberState, FiberStatus, FiberSuspensionReason, FiberTerminalValue, FiberTrap,
 };
 use crate::awbc::schema::{
-    AwbcBlockId, AwbcChoiceId, AwbcContentUnitId, AwbcEffectPlanId, AwbcEntryId, AwbcFrameSlotRole,
-    AwbcFunctionId, AwbcHostCallId, AwbcHostCallMode, AwbcLineTaskGroupId, AwbcLineTaskNode,
-    AwbcLineTaskNodeId, AwbcLineTaskTrigger, AwbcProgram, AwbcResumePointId, AwbcSourceEventKind,
-    AwbcSourcePlanId, AwbcStreamPlanId, AwbcTaskPlanId, AwbcTrapCode,
+    AwbcBlockId, AwbcChoiceId, AwbcContentUnitId, AwbcEffectPlanId, AwbcEntryId, AwbcFunctionId,
+    AwbcHostCallId, AwbcHostCallMode, AwbcLineTaskGroupId, AwbcLineTaskNode, AwbcLineTaskNodeId,
+    AwbcLineTaskTrigger, AwbcProgram, AwbcResumePointId, AwbcStreamPlanId, AwbcTaskPlanId,
+    AwbcTrapCode,
 };
 use crate::awbc::verify::{AwbcVerifyBudget, AwbcVerifyContext};
 use crate::awbc::vm::{VmExit, VmObservation, VmStepOptions, step_with_host};
 use crate::engine::{
-    AwaitManyInFlight, AwaitManyState, AwaitState, ChoiceState, DialogueState, FlowExit, FlowFiber,
+    AwaitState, ChoiceState, DialogueState, FlowExit, FlowFiber, FlowFiberId, FlowFiberOwner,
     FlowFiberStatus, HostCallState,
+};
+use crate::line_task::{
+    ChildCancelPolicy, ChildJoinPolicy, LineTaskCommand, LineTaskExitPolicy, LineTaskLiveState,
+    LineTaskNodeView, LineTaskPlanView, LineTaskTrigger, LineTaskWork, LineTaskWorkTag, ScopeExit,
+    cancel_live_line_task_group, complete_live_line_task_work, finish_live_line_task_group,
+    progress_live_line_task_group,
 };
 use crate::observation::RuntimeObservationState;
 use crate::plan::{ChoiceRuntimeOption, FlowEvent, RuntimeHostCallTarget};
 use crate::pure::{RuntimeCallBackend, VmRuntimePureCallBackend};
 use crate::root::RootRuntime;
-use crate::source::{
-    RuntimeSourceEvent, SourceEventKind, SourceId, SourceRuntimeState, normalize_source_events,
-};
 use crate::step::{
     RuntimeDiagnostic, RuntimeDiagnosticCategory, RuntimeHostCallId, RuntimeHostCallMode,
     RuntimeHostCallRequest, RuntimeStepInput, RuntimeStepMode, RuntimeStepOptions,
@@ -55,14 +66,14 @@ use crate::step::{
 };
 use crate::stream::{RuntimeStreamEvent, StreamRuntimeState};
 use crate::task::{
-    AwaitManyTarget, AwaitTarget, HostTaskRequestTemplate, NeedId, RuntimeNeedState, TaskEvent,
-    TaskEventKind, TaskId, TaskKey, TaskSequence, normalize_runtime_need_states,
-    normalize_task_events, resolved_runtime_need_state,
+    AwaitTarget, HostTaskRequestTemplate, NeedId, RuntimeNeedState, TaskEvent, TaskEventKind,
+    TaskId, TaskKey, TaskSequence, normalize_runtime_need_states, normalize_task_events,
+    resolved_runtime_need_state,
 };
 use crate::time::LogicalDuration;
 use crate::value::{
-    RuntimeBinding, RuntimeEnv, RuntimePayload, RuntimeValue, runtime_sequence_from_literal_values,
-    runtime_sequence_values, runtime_value_label,
+    RuntimeBinding, RuntimeEnv, RuntimePayload, RuntimeValue, runtime_sequence_values,
+    runtime_value_label,
 };
 use arcweft_interaction_model::audio::{AudioCommandEnvelope, AudioDispatchId};
 use std::collections::{BTreeMap, BTreeSet, VecDeque};
@@ -107,9 +118,224 @@ impl ProductStepError {
 #[derive(Clone, Debug, PartialEq)]
 struct ActiveDialogue {
     content: AwbcContentUnitId,
-    group: AwbcLineTaskGroupId,
-    started_nodes: BTreeSet<AwbcLineTaskNodeId>,
+    captures: Box<[RuntimeValue]>,
+    line_task: Option<LineTaskLiveState>,
     elapsed_nanos: u64,
+}
+
+impl AwbcProductStepExecutor {
+    fn dialogue_group(&self, content: AwbcContentUnitId) -> Option<AwbcLineTaskGroupId> {
+        self.program
+            .content_units
+            .get(content.index())
+            .and_then(|content| content.line_task_group)
+    }
+}
+
+/// Ownership of a compact child fiber. A child may never outlive an active
+/// dialogue scope merely because it was stored in a shared queue.
+#[derive(Clone, Debug, Eq, PartialEq)]
+enum ProductChildFiberOwner {
+    Independent,
+    LineTask {
+        content: AwbcContentUnitId,
+        tag: LineTaskWorkTag,
+        policy: LineTaskExitPolicy,
+        phase: ProductLineTaskFiberPhase,
+    },
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum ProductLineTaskFiberPhase {
+    Active,
+    Closing,
+}
+
+#[derive(Clone, Debug, PartialEq)]
+struct ProductChildFiber {
+    owner: ProductChildFiberOwner,
+    fiber: FiberState,
+}
+
+/// AWBC's payload-free view of one content-owned line task graph. The common
+/// reducer sees only dense local node identities; AWBC function payloads are
+/// resolved separately at the executor boundary.
+struct AwbcLineTaskPlanView<'a> {
+    program: &'a AwbcProgram,
+    group: &'a crate::awbc::schema::AwbcLineTaskGroup,
+    children: Vec<Box<[crate::runtime_id::RuntimeLineTaskNodeId]>>,
+}
+
+impl<'a> AwbcLineTaskPlanView<'a> {
+    fn new(
+        program: &'a AwbcProgram,
+        group: &'a crate::awbc::schema::AwbcLineTaskGroup,
+    ) -> Option<Self> {
+        let end = group.nodes.checked_end()?;
+        let local = |node: AwbcLineTaskNodeId| {
+            node.0.checked_sub(group.nodes.start).and_then(|index| {
+                crate::runtime_id::RuntimeLineTaskNodeId::from_zero_based(index as usize)
+            })
+        };
+        let children = (group.nodes.start..end)
+            .map(|index| {
+                let node = program.line_task_nodes.get(index as usize)?;
+                let children = match node {
+                    AwbcLineTaskNode::Sequence(children)
+                    | AwbcLineTaskNode::Start(children)
+                    | AwbcLineTaskNode::Parallel { children, .. } => children
+                        .iter()
+                        .copied()
+                        .map(local)
+                        .collect::<Option<Vec<_>>>()?
+                        .into_boxed_slice(),
+                    AwbcLineTaskNode::Child { scope, .. } => {
+                        vec![local(*scope)?].into_boxed_slice()
+                    }
+                    AwbcLineTaskNode::Action(_) => Box::default(),
+                };
+                Some(children)
+            })
+            .collect::<Option<Vec<_>>>()?;
+        Some(Self {
+            program,
+            group,
+            children,
+        })
+    }
+
+    fn global_node(
+        &self,
+        node: crate::runtime_id::RuntimeLineTaskNodeId,
+    ) -> Option<AwbcLineTaskNodeId> {
+        let offset = u32::try_from(node.index()).ok()?;
+        let index = self.group.nodes.start.checked_add(offset)?;
+        (index < self.group.nodes.checked_end()?).then_some(AwbcLineTaskNodeId(index))
+    }
+
+    fn global_node_to_local(
+        &self,
+        node: AwbcLineTaskNodeId,
+    ) -> Option<crate::runtime_id::RuntimeLineTaskNodeId> {
+        node.0
+            .checked_sub(self.group.nodes.start)
+            .and_then(|index| {
+                crate::runtime_id::RuntimeLineTaskNodeId::from_zero_based(index as usize)
+            })
+    }
+
+    fn function_for(&self, tag: LineTaskWorkTag) -> Option<AwbcFunctionId> {
+        match tag.work {
+            LineTaskWork::Node(node) => match self
+                .program
+                .line_task_nodes
+                .get(self.global_node(node)?.index())?
+            {
+                AwbcLineTaskNode::Action(function) => Some(*function),
+                _ => None,
+            },
+            LineTaskWork::Cancellation(mark) => self
+                .group
+                .cancel_handlers
+                .iter()
+                .find(|handler| handler.trigger == mark)
+                .map(|handler| handler.function),
+            LineTaskWork::Cleanup(ScopeExit::Completed) => self.group.cleanup_completed,
+            LineTaskWork::Cleanup(ScopeExit::Cancelled) => self.group.cleanup_cancelled,
+            LineTaskWork::Cleanup(ScopeExit::Failed) => self.group.cleanup_failed,
+        }
+    }
+}
+
+impl LineTaskPlanView for AwbcLineTaskPlanView<'_> {
+    fn node_count(&self) -> usize {
+        self.children.len()
+    }
+
+    fn root_node(&self) -> crate::runtime_id::RuntimeLineTaskNodeId {
+        self.global_node_to_local(self.group.root)
+            .expect("verified AWBC line task root belongs to its group")
+    }
+
+    fn node_view(
+        &self,
+        id: crate::runtime_id::RuntimeLineTaskNodeId,
+    ) -> Option<LineTaskNodeView<'_>> {
+        let global = self.global_node(id)?;
+        let children = self.children.get(id.index())?;
+        match self.program.line_task_nodes.get(global.index())? {
+            AwbcLineTaskNode::Sequence(_) => Some(LineTaskNodeView::Sequence(children)),
+            AwbcLineTaskNode::Start(_) => Some(LineTaskNodeView::Start(children)),
+            AwbcLineTaskNode::Parallel { .. } => Some(LineTaskNodeView::Parallel(children)),
+            AwbcLineTaskNode::Child {
+                trigger,
+                join,
+                cancel,
+                ..
+            } => Some(LineTaskNodeView::Child {
+                trigger: match trigger {
+                    AwbcLineTaskTrigger::Immediate => LineTaskTrigger::Immediate,
+                    AwbcLineTaskTrigger::Mark(mark) => LineTaskTrigger::Mark(*mark),
+                    AwbcLineTaskTrigger::DelayNanos(nanos) => {
+                        LineTaskTrigger::Delay(LogicalDuration::from_nanos(*nanos))
+                    }
+                },
+                policy: LineTaskExitPolicy {
+                    join: match join {
+                        crate::awbc::schema::AwbcChildJoinPolicy::Join => ChildJoinPolicy::Join,
+                        crate::awbc::schema::AwbcChildJoinPolicy::Detached => {
+                            ChildJoinPolicy::Detached
+                        }
+                    },
+                    cancel: match cancel {
+                        crate::awbc::schema::AwbcChildCancelPolicy::CancelAndJoin => {
+                            ChildCancelPolicy::CancelAndJoin
+                        }
+                        crate::awbc::schema::AwbcChildCancelPolicy::Finish => {
+                            ChildCancelPolicy::Finish
+                        }
+                        crate::awbc::schema::AwbcChildCancelPolicy::Detach => {
+                            ChildCancelPolicy::Detach
+                        }
+                    },
+                },
+                scope: *children.first()?,
+            }),
+            AwbcLineTaskNode::Action(_) => Some(LineTaskNodeView::Action),
+        }
+    }
+
+    fn has_action(&self, node: crate::runtime_id::RuntimeLineTaskNodeId) -> bool {
+        self.global_node(node)
+            .and_then(|node| self.program.line_task_nodes.get(node.index()))
+            .is_some_and(|node| matches!(node, AwbcLineTaskNode::Action(_)))
+    }
+
+    fn cancellation_mark(
+        &self,
+        marks: &BTreeSet<crate::runtime_id::RuntimeDialogueMarkId>,
+    ) -> Option<crate::runtime_id::RuntimeDialogueMarkId> {
+        self.group
+            .cancel_handlers
+            .iter()
+            .find(|handler| marks.contains(&handler.trigger))
+            .map(|handler| handler.trigger)
+    }
+
+    fn has_cancellation_work(&self, mark: crate::runtime_id::RuntimeDialogueMarkId) -> bool {
+        self.group
+            .cancel_handlers
+            .iter()
+            .any(|handler| handler.trigger == mark)
+    }
+
+    fn has_cleanup(&self, exit: ScopeExit) -> bool {
+        match exit {
+            ScopeExit::Completed => self.group.cleanup_completed.is_some(),
+            ScopeExit::Cancelled => self.group.cleanup_cancelled.is_some(),
+            ScopeExit::Failed => self.group.cleanup_failed.is_some(),
+        }
+    }
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -126,6 +352,15 @@ struct PendingHostCall {
     id: RuntimeHostCallId,
 }
 
+/// Product-only presentation state derived from the compact fiber.
+/// Evaluated await-many state remains in AWBC coordinates and never becomes a
+/// synthetic plan-qualified expression.
+#[derive(Clone, Debug, PartialEq)]
+enum AwbcProductExecutorStatus {
+    Shared(FlowFiberStatus),
+    WaitingMany(FiberAwaitManyState),
+}
+
 /// Stateful canonical AWBC executor exposed through `RuntimeStepResult`.
 #[derive(Clone, Debug, PartialEq)]
 pub struct AwbcProductStepExecutor {
@@ -139,13 +374,13 @@ pub struct AwbcProductStepExecutor {
     started_tasks: BTreeSet<TaskId>,
     emitted_content: BTreeSet<AwbcContentUnitId>,
     stream_sequences: BTreeMap<AwbcStreamPlanId, u64>,
-    child_fibers: VecDeque<FiberState>,
+    child_fibers: VecDeque<ProductChildFiber>,
+    next_line_task_activation: u64,
     next_generation: u64,
     next_host_call_sequence: u64,
     next_audio_sequence: u64,
     compact_pure_stats: crate::step::RuntimePureCallStats,
     root: Option<RootRuntime>,
-    root_flow_binding_name: Option<String>,
 }
 
 impl AwbcProductStepExecutor {
@@ -164,7 +399,6 @@ impl AwbcProductStepExecutor {
         let mut candidate = self.clone();
         candidate.program = program;
         candidate.validate_snapshot(&snapshot)?;
-        candidate.rebuild_facade_source_states_from_compact();
         candidate.rebuild_facade_stream_states_from_compact();
         candidate.sync_facade();
         *self = candidate;
@@ -200,7 +434,6 @@ impl AwbcProductStepExecutor {
                     quantum: budget_quantum,
                 },
                 line_cursor: 0,
-                sources: Vec::new(),
                 streams: Vec::new(),
             }
         } else {
@@ -245,24 +478,15 @@ impl AwbcProductStepExecutor {
             root_cleanups: Vec::new(),
             env: RuntimeEnv::default(),
             observations: RuntimeObservationState::default(),
-            source_states: BTreeMap::new(),
             stream_states: BTreeMap::new(),
+            id: FlowFiberId::from_executor_ordinal(0),
+            owner: FlowFiberOwner::Executor,
             status: if matches!(fiber.status, FiberStatus::Returned | FiberStatus::Cancelled) {
                 FlowFiberStatus::Done(FlowExit::Done)
             } else {
                 FlowFiberStatus::Running
             },
         };
-        for (index, source) in program.source_plans.iter().enumerate() {
-            let Some(index) = u32::try_from(index).ok() else {
-                continue;
-            };
-            let id = source_id_for(&program, AwbcSourcePlanId(index));
-            facade_fiber.source_states.insert(
-                id.clone(),
-                SourceRuntimeState::new(id, source.policy.runtime_policy()),
-            );
-        }
         for (index, _) in program.stream_plans.iter().enumerate() {
             let Some(index) = u32::try_from(index).ok() else {
                 continue;
@@ -284,12 +508,12 @@ impl AwbcProductStepExecutor {
             emitted_content: BTreeSet::new(),
             stream_sequences: BTreeMap::new(),
             child_fibers: VecDeque::new(),
+            next_line_task_activation: 0,
             next_generation: 1,
             next_host_call_sequence: 0,
             next_audio_sequence: 0,
             compact_pure_stats: crate::step::RuntimePureCallStats::default(),
             root: None,
-            root_flow_binding_name: None,
         }
     }
 
@@ -339,7 +563,6 @@ impl AwbcProductStepExecutor {
         let root_events_in = input.root_events.len();
         let deferred_root_events = std::mem::take(&mut input.deferred_root_events);
 
-        self.bind_facade_inputs_preserving_root_flow(root_bindings, &input.bindings);
         if !self.entry_bound && !self.fiber.frames.is_empty() {
             let mut entry_bindings = root_bindings.to_vec();
             for binding in &input.bindings {
@@ -413,17 +636,14 @@ impl AwbcProductStepExecutor {
 
         let need_states = normalize_runtime_need_states(std::mem::take(&mut input.need_states));
         let task_events = normalize_task_events(std::mem::take(&mut input.task_events));
-        let source_events = normalize_source_events(std::mem::take(&mut input.source_events));
         let need_states_in = need_states.len();
         let task_events_in = task_events.len();
-        let source_events_in = source_events.len();
         output.diagnostics.extend(task_events.iter().map(|event| {
             RuntimeDiagnostic::new(format!(
                 "task {} sequence {} delivered",
                 event.task_id.0, event.sequence.0
             ))
         }));
-        self.apply_source_events(source_events, &mut output);
         self.step_stream_plans(&mut output, pure_backend);
 
         if matches!(
@@ -494,12 +714,10 @@ impl AwbcProductStepExecutor {
                 .saturating_add(self.compact_pure_stats.saturating_delta(local_pure_before)),
             task_events_in,
             need_states_in,
-            source_events_in,
             root_events_in,
             root_transitions: output.root_transitions.len(),
             root_commands: output.root_commands.len(),
             root_events_deferred: output.requests.root_events_next_step.len(),
-            source_events_emitted: output.effects.source_events.len(),
             stream_events_emitted: output.effects.stream_events.len(),
             line_effects: output.effects.line.len(),
             audio_commands: output.requests.audio.len(),
@@ -534,7 +752,7 @@ impl AwbcProductStepExecutor {
         ) || self
             .child_fibers
             .iter()
-            .any(|fiber| fiber.status == FiberStatus::Running)
+            .any(|child| child.fiber.status == FiberStatus::Running)
     }
 
     fn step_main_vm(
@@ -677,18 +895,20 @@ impl AwbcProductStepExecutor {
         let Some(mut child) = self.child_fibers.pop_front() else {
             return false;
         };
-        if child.status != FiberStatus::Running {
+        let owner = child.owner.clone();
+        if child.fiber.status != FiberStatus::Running {
             self.child_fibers.push_back(child);
             return false;
         }
-        child.replenish_budget();
+        child.fiber.replenish_budget();
         let mut host = ProductVmHost {
             backend: pure_backend,
             fallback_stats: &mut self.compact_pure_stats,
         };
+        let mut completed = None;
         match step_with_host(
             &self.program,
-            &mut child,
+            &mut child.fiber,
             VmStepOptions {
                 max_instructions: 1,
             },
@@ -696,21 +916,52 @@ impl AwbcProductStepExecutor {
         ) {
             Ok(vm_output) => {
                 self.consume_observations(vm_output.observations, output);
-                match child.status {
-                    FiberStatus::Running | FiberStatus::Suspended => {
+                match child.fiber.status {
+                    FiberStatus::Running => {
                         self.child_fibers.push_back(child);
                     }
-                    FiberStatus::Returned | FiberStatus::Cancelled => {}
+                    FiberStatus::Suspended => {
+                        if matches!(&owner, ProductChildFiberOwner::LineTask { .. }) {
+                            completed = Some(true);
+                            self.record_error(
+                                ProductStepError::Internal(
+                                    "AWBC line-task action suspended without an owned resume protocol"
+                                        .to_owned(),
+                                ),
+                                output,
+                            );
+                        } else {
+                            self.child_fibers.push_back(child);
+                        }
+                    }
+                    FiberStatus::Returned | FiberStatus::Cancelled => {
+                        completed = Some(false);
+                    }
                     FiberStatus::Trapped => {
-                        if let Some(FiberTerminalValue::Trapped(trap)) = child.terminal {
+                        completed = Some(true);
+                        if let Some(FiberTerminalValue::Trapped(trap)) = child.fiber.terminal {
                             self.terminate_with_trap(trap, output);
                         }
                     }
                 }
             }
             Err(error) => {
+                completed = Some(true);
                 self.fail_with_error(ProductStepError::Internal(error.to_string()), output);
             }
+        }
+        if let (
+            Some(failed),
+            ProductChildFiberOwner::LineTask {
+                content,
+                tag,
+                policy,
+                ..
+            },
+        ) = (completed, owner)
+            && policy.join == ChildJoinPolicy::Join
+        {
+            self.complete_owned_line_task_work(content, tag, failed, output);
         }
         true
     }
@@ -728,8 +979,9 @@ impl AwbcProductStepExecutor {
         match suspension.reason {
             FiberSuspensionReason::Dialogue {
                 content,
-                line_task_group,
-            } => self.present_dialogue(content, line_task_group, output),
+                values,
+                line_task_captures,
+            } => self.present_dialogue(content, values, line_task_captures, output),
             FiberSuspensionReason::Choice { choice, .. } => {
                 self.present_choice(choice, output, pure_backend);
             }
@@ -775,8 +1027,9 @@ impl AwbcProductStepExecutor {
         match suspension.reason {
             FiberSuspensionReason::Dialogue {
                 content,
-                line_task_group,
-            } => self.resume_dialogue(content, line_task_group, resume, input, output),
+                values,
+                line_task_captures,
+            } => self.resume_dialogue(content, values, line_task_captures, resume, input, output),
             FiberSuspensionReason::Choice {
                 choice,
                 destination,
@@ -802,13 +1055,14 @@ impl AwbcProductStepExecutor {
     fn present_dialogue(
         &mut self,
         content: AwbcContentUnitId,
-        group: AwbcLineTaskGroupId,
+        values: Box<[crate::plan::RuntimeDialogueValueBinding]>,
+        captures: Box<[RuntimeValue]>,
         output: &mut RuntimeStepOutput,
     ) {
         if self
             .active_dialogue
             .as_ref()
-            .is_some_and(|active| active.content == content && active.group == group)
+            .is_some_and(|active| active.content == content)
         {
             return;
         }
@@ -822,16 +1076,17 @@ impl AwbcProductStepExecutor {
         };
         output.flow_events.push(FlowEvent::DialogueLine {
             line: line_id,
-            bindings: self.facade_fiber.env.bindings_snapshot(),
+            values,
         });
         self.emitted_content.insert(content);
+        let line_task = self.line_task_state(content);
         let mut active = ActiveDialogue {
             content,
-            group,
-            started_nodes: BTreeSet::new(),
+            captures,
+            line_task,
             elapsed_nanos: 0,
         };
-        self.run_line_task_nodes(&mut active, None, output);
+        self.progress_line_task(&mut active, &BTreeSet::new(), output);
         self.active_dialogue = Some(active);
         self.fiber.line_cursor = self.fiber.line_cursor.saturating_add(1);
     }
@@ -839,179 +1094,326 @@ impl AwbcProductStepExecutor {
     fn resume_dialogue(
         &mut self,
         content: AwbcContentUnitId,
-        group: AwbcLineTaskGroupId,
+        values: Box<[crate::plan::RuntimeDialogueValueBinding]>,
+        captures: Box<[RuntimeValue]>,
         resume: AwbcResumePointId,
         input: &RuntimeStepInput,
         output: &mut RuntimeStepOutput,
     ) -> bool {
         if self.active_dialogue.is_none() {
-            self.present_dialogue(content, group, output);
+            self.present_dialogue(content, values, captures.clone(), output);
         }
         let mut active = self.active_dialogue.take().unwrap_or(ActiveDialogue {
             content,
-            group,
-            started_nodes: BTreeSet::new(),
+            captures,
+            line_task: self.line_task_state(content),
             elapsed_nanos: 0,
         });
         active.elapsed_nanos = active.elapsed_nanos.saturating_add(input.dt.as_nanos());
-        self.run_line_task_nodes(&mut active, Some(input), output);
-        if let Some(trigger) = self.dialogue_cancel_trigger(group, input) {
+        let marks = self.dialogue_marks(active.content, input);
+        self.progress_line_task(&mut active, &marks, output);
+        if let Some(trigger) = self.cancel_line_task(&mut active, &marks, output) {
             output.flow_events.push(FlowEvent::LineCancelled {
-                trigger: trigger.clone(),
+                trigger: self.dialogue_mark_label(content, trigger),
             });
-            self.spawn_cancel_handler(group, &trigger, output);
-            self.cleanup_dialogue(group, output);
-            self.active_dialogue = None;
-            return self.resume_at(resume, output);
         }
         let line = self.content_public_id(content);
         if input.advances_dialogue_label(&line) {
-            self.cleanup_dialogue(group, output);
-            self.active_dialogue = None;
-            return self.resume_at(resume, output);
+            self.finish_line_task(&mut active, output);
+            if active
+                .line_task
+                .as_ref()
+                .is_none_or(LineTaskLiveState::is_closed)
+            {
+                self.active_dialogue = None;
+                return self.resume_at(resume, output);
+            }
         }
         self.active_dialogue = Some(active);
         false
     }
 
-    fn run_line_task_nodes(
-        &mut self,
-        active: &mut ActiveDialogue,
-        input: Option<&RuntimeStepInput>,
-        output: &mut RuntimeStepOutput,
-    ) {
-        let Some(group) = self.program.line_task_groups.get(active.group.index()) else {
-            output.diagnostics.push(RuntimeDiagnostic::categorized(
-                RuntimeDiagnosticCategory::Internal,
-                format!("missing AWBC line task group {}", active.group.0),
-            ));
-            return;
-        };
-        self.run_line_task_node(group.root, active, input, output);
+    fn line_task_view(&self, content: AwbcContentUnitId) -> Option<AwbcLineTaskPlanView<'_>> {
+        let group = self
+            .dialogue_group(content)
+            .and_then(|group| self.program.line_task_groups.get(group.index()))?;
+        AwbcLineTaskPlanView::new(&self.program, group)
     }
 
-    fn run_line_task_node(
+    fn line_task_state(&mut self, content: AwbcContentUnitId) -> Option<LineTaskLiveState> {
+        let group = self.dialogue_group(content)?;
+        self.program.line_task_groups.get(group.index())?;
+        let activation = self.next_line_task_activation;
+        self.next_line_task_activation = self.next_line_task_activation.saturating_add(1);
+        let view = self.line_task_view(content)?;
+        Some(LineTaskLiveState::new(&view, activation))
+    }
+
+    fn progress_line_task(
         &mut self,
-        node: AwbcLineTaskNodeId,
         active: &mut ActiveDialogue,
-        input: Option<&RuntimeStepInput>,
+        marks: &BTreeSet<crate::runtime_id::RuntimeDialogueMarkId>,
         output: &mut RuntimeStepOutput,
     ) {
-        let Some(record) = self.program.line_task_nodes.get(node.index()).cloned() else {
+        let commands = {
+            let Some(view) = self.line_task_view(active.content) else {
+                self.record_error(
+                    ProductStepError::Internal(
+                        "dialogue content has no verified AWBC line-task view".to_owned(),
+                    ),
+                    output,
+                );
+                return;
+            };
+            let Some(state) = active.line_task.as_mut() else {
+                return;
+            };
+            progress_live_line_task_group(
+                &view,
+                LogicalDuration::from_nanos(active.elapsed_nanos),
+                marks,
+                state,
+            )
+            .commands
+        };
+        self.execute_line_task_commands(active, commands, output);
+    }
+
+    fn cancel_line_task(
+        &mut self,
+        active: &mut ActiveDialogue,
+        marks: &BTreeSet<crate::runtime_id::RuntimeDialogueMarkId>,
+        output: &mut RuntimeStepOutput,
+    ) -> Option<crate::runtime_id::RuntimeDialogueMarkId> {
+        let (selected, commands) = {
+            let view = self.line_task_view(active.content)?;
+            let state = active.line_task.as_mut()?;
+            let selected = view.cancellation_mark(marks);
+            let activation = cancel_live_line_task_group(&view, marks, state);
+            let selected = activation.as_ref().and(selected);
+            (selected, activation.unwrap_or_default().commands)
+        };
+        self.execute_line_task_commands(active, commands, output);
+        selected
+    }
+
+    fn finish_line_task(&mut self, active: &mut ActiveDialogue, output: &mut RuntimeStepOutput) {
+        let commands = {
+            let Some(view) = self.line_task_view(active.content) else {
+                return;
+            };
+            let Some(state) = active.line_task.as_mut() else {
+                return;
+            };
+            finish_live_line_task_group(&view, state).commands
+        };
+        self.execute_line_task_commands(active, commands, output);
+    }
+
+    fn execute_line_task_commands(
+        &mut self,
+        active: &mut ActiveDialogue,
+        commands: Vec<LineTaskCommand>,
+        output: &mut RuntimeStepOutput,
+    ) {
+        let commands = {
+            let Some(view) = self.line_task_view(active.content) else {
+                return;
+            };
+            commands
+                .into_iter()
+                .map(|command| {
+                    let function = match &command {
+                        LineTaskCommand::Run { tag, .. } => view.function_for(*tag),
+                        LineTaskCommand::Cancel { .. } => None,
+                    };
+                    (command, function)
+                })
+                .collect::<Vec<_>>()
+        };
+        for (command, function) in commands {
+            match command {
+                LineTaskCommand::Run { tag, policy } => {
+                    let Some(function) = function else {
+                        self.record_error(
+                            ProductStepError::Internal(
+                                "AWBC line-task reducer command has no action function".to_owned(),
+                            ),
+                            output,
+                        );
+                        continue;
+                    };
+                    let phase = if matches!(tag.work, LineTaskWork::Node(_)) {
+                        ProductLineTaskFiberPhase::Active
+                    } else {
+                        ProductLineTaskFiberPhase::Closing
+                    };
+                    self.spawn_owned_child(
+                        ProductChildFiberOwner::LineTask {
+                            content: active.content,
+                            tag,
+                            policy,
+                            phase,
+                        },
+                        function,
+                        &active.captures,
+                        output,
+                    );
+                }
+                LineTaskCommand::Cancel { activation, node } => {
+                    self.cancel_line_task_children(active, activation, node, output);
+                }
+            }
+        }
+    }
+
+    fn cancel_line_task_children(
+        &mut self,
+        active: &mut ActiveDialogue,
+        activation: crate::line_task::LineTaskActivationId,
+        node: crate::runtime_id::RuntimeLineTaskNodeId,
+        output: &mut RuntimeStepOutput,
+    ) {
+        let mut completed = Vec::new();
+        let mut observations = Vec::new();
+        let mut detach_rejected = false;
+        self.child_fibers.retain_mut(|child| {
+            let ProductChildFiberOwner::LineTask {
+                content,
+                tag,
+                policy,
+                phase,
+            } = &mut child.owner
+            else {
+                return true;
+            };
+            if *content != active.content
+                || tag.activation != activation
+                || tag.work != LineTaskWork::Node(node)
+            {
+                return true;
+            }
+            match policy.cancel {
+                ChildCancelPolicy::CancelAndJoin => {
+                    observations
+                        .extend(crate::awbc::vm::cancel_fiber(&mut child.fiber).observations);
+                    completed.push(*tag);
+                    false
+                }
+                ChildCancelPolicy::Finish => {
+                    *phase = ProductLineTaskFiberPhase::Closing;
+                    true
+                }
+                ChildCancelPolicy::Detach => {
+                    observations
+                        .extend(crate::awbc::vm::cancel_fiber(&mut child.fiber).observations);
+                    detach_rejected = true;
+                    completed.push(*tag);
+                    false
+                }
+            }
+        });
+        self.consume_observations(observations, output);
+        if detach_rejected {
+            self.record_error(
+                ProductStepError::Internal(
+                    "AWBC line-task detach has no verified detached-owner boundary".to_owned(),
+                ),
+                output,
+            );
+        }
+        for tag in completed {
+            self.complete_line_task_work(active, tag, false, output);
+        }
+    }
+
+    fn complete_line_task_work(
+        &mut self,
+        active: &mut ActiveDialogue,
+        tag: LineTaskWorkTag,
+        failed: bool,
+        output: &mut RuntimeStepOutput,
+    ) {
+        let commands = {
+            let Some(view) = self.line_task_view(active.content) else {
+                return;
+            };
+            let Some(state) = active.line_task.as_mut() else {
+                return;
+            };
+            complete_live_line_task_work(&view, state, tag, failed).commands
+        };
+        self.execute_line_task_commands(active, commands, output);
+    }
+
+    fn complete_owned_line_task_work(
+        &mut self,
+        content: AwbcContentUnitId,
+        tag: LineTaskWorkTag,
+        failed: bool,
+        output: &mut RuntimeStepOutput,
+    ) {
+        let Some(mut active) = self.active_dialogue.take() else {
+            self.record_error(
+                ProductStepError::Internal(
+                    "AWBC line-owned child completed outside an active dialogue".to_owned(),
+                ),
+                output,
+            );
             return;
         };
-        match record {
-            AwbcLineTaskNode::Sequence(children)
-            | AwbcLineTaskNode::Start(children)
-            | AwbcLineTaskNode::Parallel { children, .. } => {
-                for child in children {
-                    self.run_line_task_node(child, active, input, output);
-                }
-            }
-            AwbcLineTaskNode::Effect(effect) => {
-                if active.started_nodes.insert(node) {
-                    self.emit_effect(effect, &[], output);
-                }
-            }
-            AwbcLineTaskNode::Child {
-                task,
-                trigger,
-                scope,
-                ..
-            } => {
-                let triggered = match trigger {
-                    AwbcLineTaskTrigger::Immediate => true,
-                    AwbcLineTaskTrigger::Mark(mark) => input.is_some_and(|input| {
-                        let mark = self
-                            .program
-                            .strings
-                            .get(mark.index())
-                            .map(String::as_str)
-                            .unwrap_or_default();
+        if active.content == content {
+            self.complete_line_task_work(&mut active, tag, failed, output);
+        } else {
+            self.record_error(
+                ProductStepError::Internal(
+                    "AWBC line-owned child completed for a stale dialogue content".to_owned(),
+                ),
+                output,
+            );
+        }
+        self.active_dialogue = Some(active);
+    }
+
+    fn dialogue_marks(
+        &self,
+        content: AwbcContentUnitId,
+        input: &RuntimeStepInput,
+    ) -> BTreeSet<crate::runtime_id::RuntimeDialogueMarkId> {
+        let Some(content) = self.program.content_units.get(content.index()) else {
+            return BTreeSet::new();
+        };
+        content
+            .marks
+            .iter()
+            .filter(|mark| {
+                self.program
+                    .strings
+                    .get(mark.label.index())
+                    .is_some_and(|label| {
                         input.input_events.iter().any(|event| {
-                            input_event_trigger_name(event).is_some_and(|value| {
-                                value == mark || value == format!("mark:{mark}")
+                            input_event_trigger_name(event).is_some_and(|trigger| {
+                                trigger == label || trigger == format!("mark:{label}")
                             })
                         })
-                    }),
-                    AwbcLineTaskTrigger::DelayNanos(nanos) => active.elapsed_nanos >= nanos,
-                };
-                if triggered && active.started_nodes.insert(node) {
-                    let task_id = TaskId(self.task_public_id(task));
-                    match task_spec(&self.program, task, &task_id, Vec::new()) {
-                        Ok((need, spec)) => {
-                            output.flow_events.push(FlowEvent::AwaitStarted {
-                                need,
-                                task: task_id.clone(),
-                            });
-                            output.requests.tasks.push(spec);
-                            self.started_tasks.insert(task_id);
-                        }
-                        Err(error) => self.record_error(error, output),
-                    }
-                    self.run_line_task_node(scope, active, input, output);
-                }
-            }
-        }
+                    })
+            })
+            .map(|mark| mark.id)
+            .collect()
     }
 
-    fn dialogue_cancel_trigger(
+    fn dialogue_mark_label(
         &self,
-        group: AwbcLineTaskGroupId,
-        input: &RuntimeStepInput,
-    ) -> Option<String> {
-        let group = self.program.line_task_groups.get(group.index())?;
-        group.cancel_handlers.iter().find_map(|handler| {
-            let trigger = self.program.strings.get(handler.trigger.index())?;
-            input
-                .input_events
-                .iter()
-                .any(|event| input_event_trigger_name(event) == Some(trigger.as_str()))
-                .then(|| trigger.clone())
-        })
-    }
-
-    fn spawn_cancel_handler(
-        &mut self,
-        group: AwbcLineTaskGroupId,
-        trigger: &str,
-        output: &mut RuntimeStepOutput,
-    ) {
-        let function = self
-            .program
-            .line_task_groups
-            .get(group.index())
-            .and_then(|group| {
-                group.cancel_handlers.iter().find_map(|handler| {
-                    self.program
-                        .strings
-                        .get(handler.trigger.index())
-                        .filter(|candidate| candidate.as_str() == trigger)
-                        .map(|_| handler.function)
-                })
-            });
-        if let Some(function) = function {
-            self.spawn_child(function, &[], output);
-        }
-    }
-
-    fn cleanup_dialogue(&mut self, group: AwbcLineTaskGroupId, output: &mut RuntimeStepOutput) {
-        let Some(group) = self.program.line_task_groups.get(group.index()) else {
-            return;
-        };
-        if matches!(
-            group.cleanup.child_tasks,
-            crate::awbc::schema::AwbcChildCleanup::CancelAndJoin
-        ) {
-            for task in &self.program.task_plans {
-                if let Some(scope) = self.program.strings.get(task.cancel_scope.index()) {
-                    output
-                        .requests
-                        .cancel_scopes
-                        .push(crate::task::CancelScopeId(scope.clone()));
-                }
-            }
-        }
+        content: AwbcContentUnitId,
+        id: crate::runtime_id::RuntimeDialogueMarkId,
+    ) -> String {
+        self.program
+            .content_units
+            .get(content.index())
+            .and_then(|content| content.marks.iter().find(|mark| mark.id == id))
+            .and_then(|mark| self.program.strings.get(mark.label.index()))
+            .cloned()
+            .unwrap_or_else(|| id.to_string())
     }
 
     fn present_choice(

@@ -9,12 +9,12 @@ effects { log.write }
         pending p:
             log.info("loading bg", progress = p.ratio)
 
-    let fg = (await asset.image(@asset:.bg.fg) with:
+    let fg = try (await asset.image(@asset:.bg.fg) with:
         pending p:
             log.info("loading fg", progress = p.ratio)
-    )?
+    )
 
-    let voice = await? voice.load(@voice.alice.001) with:
+    let voice = try await voice.load(@voice.alice.001) with:
         pending p:
             log.info("loading voice", progress = p.ratio)
 

@@ -1,31 +1,29 @@
 use super::{
-    Engine, FlowFiberStatus, RuntimeBinding, RuntimeDiagnostic, RuntimeEvalError, RuntimeExpr,
-    RuntimeExprMatchArm, RuntimeFieldValue, RuntimeFunctionValue, RuntimeMatchArm,
-    RuntimeMatchSelection, RuntimePattern, RuntimeSeq, RuntimeStepOutput, RuntimeValue,
-    evaluate_binary, evaluate_unary, match_runtime_pattern, runtime_sequence_dense_f32,
-    runtime_sequence_dense_f64, runtime_sequence_dense_i8, runtime_sequence_dense_i16,
-    runtime_sequence_dense_i32, runtime_sequence_dense_i64, runtime_sequence_dense_i128,
-    runtime_sequence_dense_u8, runtime_sequence_dense_u16, runtime_sequence_dense_u32,
-    runtime_sequence_dense_u64, runtime_sequence_dense_u128, runtime_sequence_from_literal_values,
+    Engine, FlowFiberStatus, RuntimeDiagnostic, RuntimeEvalError, RuntimeExpr, RuntimeExprMatchArm,
+    RuntimeMatchArm, RuntimeMatchSelection, RuntimePattern, RuntimeSeq, RuntimeStepOutput,
+    RuntimeValue, evaluate_binary, evaluate_unary, match_runtime_pattern,
+    runtime_sequence_dense_i64, runtime_sequence_from_literal_values,
     runtime_sequence_repeat_value, runtime_sequence_values, runtime_value_into_sequence_values,
     runtime_value_label, sum_i64_sequence_ref,
 };
-use crate::plan::{FlowRuntimeId, RuntimePureInputType, RuntimePureOutputType};
-use crate::pure::{
-    RuntimeCallBackend, RuntimeFixedArgs, RuntimeFloat32Args, RuntimeFloat64Args, RuntimeI32Args,
-    RuntimeI64Args, RuntimePureCallBackend, RuntimePureScalarInteger, VmRuntimePureCallBackend,
+use crate::pattern::{RuntimeOpaqueTypeAdmission, RuntimeOpaqueTypeOwner, RuntimeVariantIdentity};
+use crate::plan::{
+    FlowRuntimeId, RuntimePlanTypeDeclaration, RuntimePlanTypeProjection, RuntimePureInputType,
+    RuntimePureOutputType,
 };
-use crate::value::RuntimeNominalRecordExpr;
+use crate::pure::{RuntimeCallBackend, RuntimeI64Args, VmRuntimePureCallBackend};
+use crate::runtime_id::RuntimeLocalDeclarationId;
+use crate::value::RuntimeBinaryOp;
 use crate::value::{
-    RuntimeAgentExpr, RuntimeAgentValue, RuntimeCallTarget, RuntimeIntrinsic,
+    RuntimeAgentExpr, RuntimeAgentValue, RuntimeCallArgumentMode, RuntimeCallTarget,
+    RuntimeEntityReferenceField, RuntimeExprKind, RuntimeFieldProjection, RuntimeIntrinsic,
     evaluate_core_iter_into_iter_intrinsic, evaluate_core_iter_next_intrinsic,
     evaluate_core_option_is_some_intrinsic, evaluate_core_option_unwrap_intrinsic,
 };
-use crate::value::{RuntimeBinaryOp, RuntimeExactInteger, RuntimeFieldExpr};
-use crate::value::{RuntimeISizeValue, RuntimeUSizeValue};
+use crate::value::{RuntimeLocalBinding, RuntimeNominalRecordExpr};
 use crate::value::{
-    evaluate_core_iter_collect_intrinsic, evaluate_core_range_intrinsic,
-    evaluate_std_float_intrinsic,
+    RuntimeReductionValue, evaluate_core_iter_collect_intrinsic, evaluate_core_range_intrinsic,
+    evaluate_index_intrinsic, evaluate_std_float_intrinsic, evaluate_string_intrinsic,
 };
 
 mod calls;
@@ -63,9 +61,9 @@ impl Engine {
         expr: &RuntimeExpr,
         guard: Option<&RuntimeExpr>,
         pure_backend: &mut impl RuntimeCallBackend,
-    ) -> Result<Option<Vec<RuntimeBinding>>, RuntimeEvalError> {
+    ) -> Result<Option<Vec<RuntimeLocalBinding>>, RuntimeEvalError> {
         let value = self.evaluate_expr_with_backend(expr, pure_backend)?;
-        let Some(bindings) = match_runtime_pattern(pattern, &value)? else {
+        let Some(bindings) = match_runtime_pattern(&self.plan, pattern, &value)? else {
             return Ok(None);
         };
         if let Some(guard) = guard {
@@ -87,7 +85,7 @@ impl Engine {
     ) -> Result<RuntimeMatchSelection, RuntimeEvalError> {
         let value = self.evaluate_expr_with_backend(scrutinee, pure_backend)?;
         for arm in arms {
-            let Some(bindings) = match_runtime_pattern(&arm.pattern, &value)? else {
+            let Some(bindings) = match_runtime_pattern(&self.plan, &arm.pattern, &value)? else {
                 continue;
             };
             if let Some(guard) = arm.guard.as_ref()
@@ -115,39 +113,43 @@ impl Engine {
         expr: &RuntimeExpr,
         pure_backend: &mut impl RuntimeCallBackend,
     ) -> Result<RuntimeValue, RuntimeEvalError> {
-        match expr {
-            RuntimeExpr::Value(value) => Ok(value.clone()),
-            RuntimeExpr::Agent(agent) => self.evaluate_agent_expr(agent, pure_backend),
-            RuntimeExpr::Local(name) => self
+        match expr.kind() {
+            RuntimeExprKind::Value(value) => Ok(value.clone()),
+            RuntimeExprKind::Agent(agent) => self.evaluate_agent_expr(agent, pure_backend),
+            RuntimeExprKind::Local(local) => self
                 .fiber
                 .env
-                .get(name)
+                .get(*local)
                 .cloned()
-                .ok_or_else(|| RuntimeEvalError::UnknownBinding(name.clone())),
-            RuntimeExpr::EntityRef(target) => Ok(RuntimeValue::EntityRef(target.clone())),
-            RuntimeExpr::Let { name, expr, body } => {
-                self.evaluate_let_expr(name, expr, body, pure_backend)
+                .ok_or(RuntimeEvalError::UnknownLocal(*local)),
+            RuntimeExprKind::EntityRef(target) => {
+                Ok(RuntimeValue::EntityRef(target.runtime_label()))
             }
-            RuntimeExpr::Tuple(_)
-            | RuntimeExpr::BracketSeq(_)
-            | RuntimeExpr::RepeatSeq { .. }
-            | RuntimeExpr::Range { .. }
-            | RuntimeExpr::Record(_)
-            | RuntimeExpr::NominalRecord(_)
-            | RuntimeExpr::Variant { .. }
-            | RuntimeExpr::Field { .. }
-            | RuntimeExpr::ProjectTuple { .. }
-            | RuntimeExpr::ProjectRecord { .. }
-            | RuntimeExpr::AssignField { .. } => self.evaluate_data_expr(expr, pure_backend),
-            RuntimeExpr::SpreadArg(_) => Err(RuntimeEvalError::SpreadOutsideCall),
-            RuntimeExpr::Call { callee, args } => {
+            RuntimeExprKind::Let {
+                binding,
+                expr,
+                body,
+            } => self.evaluate_let_expr(*binding, expr, body, pure_backend),
+            RuntimeExprKind::Tuple(_)
+            | RuntimeExprKind::BracketSeq(_)
+            | RuntimeExprKind::RepeatSeq { .. }
+            | RuntimeExprKind::Range { .. }
+            | RuntimeExprKind::NominalRecord(_)
+            | RuntimeExprKind::Variant { .. }
+            | RuntimeExprKind::Field { .. }
+            | RuntimeExprKind::ProjectTuple { .. }
+            | RuntimeExprKind::ProjectRecord { .. }
+            | RuntimeExprKind::AssignNominalField { .. } => {
+                self.evaluate_data_expr(expr, pure_backend)
+            }
+            RuntimeExprKind::Call { callee, args } => {
                 self.evaluate_call_expr(callee, args, pure_backend)
             }
-            RuntimeExpr::Function { params, body } => Ok(self.evaluate_function_expr(params, body)),
-            RuntimeExpr::Apply { callee, args } => {
+            RuntimeExprKind::Function(site) => self.evaluate_function_expr(*site),
+            RuntimeExprKind::Apply { callee, args } => {
                 self.evaluate_apply_expr(callee, args, pure_backend)
             }
-            RuntimeExpr::TraitCall {
+            RuntimeExprKind::TraitCall {
                 callable,
                 receiver,
                 receiver_mode,
@@ -155,46 +157,32 @@ impl Engine {
             } => self
                 .evaluate_trait_method_call(*callable, *receiver_mode, receiver, args, pure_backend)
                 .map(|outcome| outcome.value),
-            RuntimeExpr::PureCall { helper, args } => {
+            RuntimeExprKind::PureCall { helper, args } => {
                 self.evaluate_pure_call_expr(*helper, args, pure_backend)
             }
-            RuntimeExpr::MethodCall {
-                receiver,
-                method,
-                args,
-            } => self.evaluate_method_call_expr(receiver, method, args, pure_backend),
-            RuntimeExpr::Map {
+            RuntimeExprKind::Map {
                 source,
                 param,
                 body,
-            } => self.evaluate_map_expr(source, param, body, pure_backend),
-            RuntimeExpr::Filter {
+            } => self.evaluate_map_expr(source, *param, body, pure_backend),
+            RuntimeExprKind::Filter {
                 source,
                 param,
                 body,
-            } => self.evaluate_filter_expr(source, param, body, pure_backend),
-            RuntimeExpr::Sum { source } => self.evaluate_sum_expr(source, pure_backend),
-            RuntimeExpr::Unary { op, expr } => {
-                let value = self.evaluate_expr_with_backend(expr, pure_backend)?;
-                evaluate_unary(*op, value)
+            } => self.evaluate_filter_expr(source, *param, body, pure_backend),
+            RuntimeExprKind::Sum { source } => self.evaluate_sum_expr(source, pure_backend),
+            RuntimeExprKind::Unary { op, expr } => {
+                self.evaluate_unary_expr(*op, expr, pure_backend)
             }
-            RuntimeExpr::Binary { lhs, op, rhs } => {
-                let lhs = self.evaluate_expr_with_backend(lhs, pure_backend)?;
-                let rhs = self.evaluate_expr_with_backend(rhs, pure_backend)?;
-                evaluate_binary(lhs, *op, rhs)
+            RuntimeExprKind::Binary { lhs, op, rhs } => {
+                self.evaluate_binary_expr(lhs, *op, rhs, pure_backend)
             }
-            RuntimeExpr::If {
+            RuntimeExprKind::If {
                 condition,
                 then_expr,
                 else_expr,
-            } => {
-                if self.evaluate_bool_with_backend(condition, pure_backend)? {
-                    self.evaluate_expr_with_backend(then_expr, pure_backend)
-                } else {
-                    self.evaluate_expr_with_backend(else_expr, pure_backend)
-                }
-            }
-            RuntimeExpr::IfLet {
+            } => self.evaluate_if_expr(condition, then_expr, else_expr, pure_backend),
+            RuntimeExprKind::IfLet {
                 pattern,
                 expr,
                 guard,
@@ -208,10 +196,35 @@ impl Engine {
                 else_expr,
                 pure_backend,
             ),
-            RuntimeExpr::Match { scrutinee, arms } => {
+            RuntimeExprKind::Match { scrutinee, arms } => {
                 self.evaluate_match_expr(scrutinee, arms, pure_backend)
             }
+            RuntimeExprKind::ReductionUnchanged { state } => {
+                self.evaluate_reduction_unchanged(expr.ty(), state, pure_backend)
+            }
         }
+    }
+
+    fn evaluate_unary_expr(
+        &mut self,
+        op: crate::value::RuntimeUnaryOp,
+        expr: &RuntimeExpr,
+        pure_backend: &mut impl RuntimeCallBackend,
+    ) -> Result<RuntimeValue, RuntimeEvalError> {
+        let value = self.evaluate_expr_with_backend(expr, pure_backend)?;
+        evaluate_unary(op, value)
+    }
+
+    fn evaluate_binary_expr(
+        &mut self,
+        lhs: &RuntimeExpr,
+        op: RuntimeBinaryOp,
+        rhs: &RuntimeExpr,
+        pure_backend: &mut impl RuntimeCallBackend,
+    ) -> Result<RuntimeValue, RuntimeEvalError> {
+        let lhs = self.evaluate_expr_with_backend(lhs, pure_backend)?;
+        let rhs = self.evaluate_expr_with_backend(rhs, pure_backend)?;
+        evaluate_binary(lhs, op, rhs)
     }
 
     fn evaluate_agent_expr(
@@ -224,10 +237,6 @@ impl Engine {
             operands.push(RuntimeValue::EntityRef(choice.as_str().to_owned()));
         }
         for operand in agent.operands() {
-            let operand = match operand {
-                RuntimeExpr::SpreadArg(operand) => operand,
-                operand => operand,
-            };
             operands.push(self.evaluate_expr_with_backend(operand, pure_backend)?);
         }
         RuntimeAgentValue::try_construct(agent.constructor(), operands)
@@ -240,74 +249,46 @@ impl Engine {
         expr: &RuntimeExpr,
         pure_backend: &mut impl RuntimeCallBackend,
     ) -> Result<RuntimeValue, RuntimeEvalError> {
-        match expr {
-            RuntimeExpr::Tuple(items) => items
+        match expr.kind() {
+            RuntimeExprKind::Tuple(items) => items
                 .iter()
                 .map(|item| self.evaluate_expr_with_backend(item, pure_backend))
                 .collect::<Result<Vec<_>, _>>()
                 .map(RuntimeValue::Tuple),
-            RuntimeExpr::BracketSeq(items) => self.evaluate_bracket_seq_expr(items, pure_backend),
-            RuntimeExpr::RepeatSeq { value, len } => {
+            RuntimeExprKind::BracketSeq(items) => {
+                self.evaluate_bracket_seq_expr(items, pure_backend)
+            }
+            RuntimeExprKind::RepeatSeq { value, len } => {
                 self.evaluate_repeat_seq_expr(value, *len, pure_backend)
             }
-            RuntimeExpr::Range {
+            RuntimeExprKind::Range {
                 start,
                 end,
                 inclusive,
             } => {
                 self.evaluate_range_expr(start.as_deref(), end.as_deref(), *inclusive, pure_backend)
             }
-            RuntimeExpr::Record(fields) => self.evaluate_record_expr(fields, pure_backend),
-            RuntimeExpr::NominalRecord(record) => {
-                self.evaluate_nominal_record_expr(record, pure_backend)
+            RuntimeExprKind::NominalRecord(record) => {
+                self.evaluate_nominal_record_expr(expr.ty(), record, pure_backend)
             }
-            RuntimeExpr::Variant {
-                owner,
-                ordinal,
-                name,
-                payload,
-            } => {
-                if owner
-                    .variant_case(*ordinal)
-                    .is_none_or(|case| case.name != *name)
-                {
-                    return Err(RuntimeEvalError::PatternMismatch(format!(
-                        "variant owner {owner:?} case {ordinal} `{name}`"
-                    )));
-                }
-                let owner = owner.variant_identity().ok_or_else(|| {
-                    RuntimeEvalError::PatternMismatch(format!(
-                        "non-variant checked owner {owner:?}"
-                    ))
-                })?;
-                Ok(RuntimeValue::Variant {
-                    owner,
-                    ordinal: *ordinal,
-                    name: name.clone(),
-                    payload: payload
-                        .as_ref()
-                        .map(|expr| {
-                            self.evaluate_expr_with_backend(expr, pure_backend)
-                                .map(Box::new)
-                        })
-                        .transpose()?,
-                })
+            RuntimeExprKind::Variant { ordinal, payload } => {
+                self.evaluate_variant_expr(expr.ty(), *ordinal, payload.as_deref(), pure_backend)
             }
-            RuntimeExpr::Field { target, field } => {
-                self.evaluate_field_expr(target, field, pure_backend)
+            RuntimeExprKind::Field { target, field } => {
+                self.evaluate_field_expr(target, *field, pure_backend)
             }
-            RuntimeExpr::ProjectTuple { target, ordinal } => {
+            RuntimeExprKind::ProjectTuple { target, ordinal } => {
                 self.evaluate_project_tuple_expr(target, *ordinal, pure_backend)
             }
-            RuntimeExpr::ProjectRecord { target, ordinal } => {
+            RuntimeExprKind::ProjectRecord { target, ordinal } => {
                 self.evaluate_project_record_expr(target, *ordinal, pure_backend)
             }
-            RuntimeExpr::AssignField {
-                target,
+            RuntimeExprKind::AssignNominalField {
+                base,
                 field,
                 expr,
                 body,
-            } => self.evaluate_assign_field_expr(target, field, expr, body, pure_backend),
+            } => self.evaluate_assign_field_expr(*base, *field, expr, body, pure_backend),
             _ => unreachable!("data expression helper received non-data expression"),
         }
     }
@@ -366,7 +347,7 @@ impl Engine {
         len: usize,
         pure_backend: &mut impl RuntimeCallBackend,
     ) -> Result<RuntimeValue, RuntimeEvalError> {
-        if let RuntimeExpr::Value(value) = value {
+        if let RuntimeExprKind::Value(value) = value.kind() {
             return Ok(runtime_sequence_repeat_value(value, len));
         }
         (0..len)
@@ -379,8 +360,8 @@ impl Engine {
         &self,
         items: &[RuntimeExpr],
     ) -> Option<(crate::plan::RuntimePureHelperId, usize)> {
-        let (first_helper, first_args) = match items.first()? {
-            RuntimeExpr::PureCall { helper, args } => (*helper, args),
+        let (first_helper, first_args) = match items.first()?.kind() {
+            RuntimeExprKind::PureCall { helper, args } => (*helper, args),
             _ => return None,
         };
         if first_helper.0 >= self.plan.pure_helpers.len() || first_args.len() > RuntimeI64Args::MAX
@@ -398,13 +379,13 @@ impl Engine {
         let arity = first_args.len();
         items
             .iter()
-            .all(|item| match item {
-                RuntimeExpr::PureCall { helper, args } => {
+            .all(|item| match item.kind() {
+                RuntimeExprKind::PureCall { helper, args } => {
                     *helper == first_helper
                         && args.len() == arity
                         && args
                             .iter()
-                            .all(|arg| !matches!(arg, RuntimeExpr::SpreadArg(_)))
+                            .all(|arg| arg.mode() == RuntimeCallArgumentMode::Value)
                 }
                 _ => false,
             })
@@ -421,11 +402,11 @@ impl Engine {
         flat_inputs.clear();
         flat_inputs.reserve(items.len().saturating_mul(arity));
         for item in items {
-            let RuntimeExpr::PureCall { args, .. } = item else {
+            let RuntimeExprKind::PureCall { args, .. } = item.kind() else {
                 unreachable!("i64 pure batch shape checked before row collection");
             };
             for arg in args.iter().take(arity) {
-                flat_inputs.push(self.evaluate_i64_arg_with_backend(arg, pure_backend)?);
+                flat_inputs.push(self.evaluate_i64_arg_with_backend(arg.value(), pure_backend)?);
             }
         }
         Ok(())
@@ -442,7 +423,7 @@ impl Engine {
     ) -> Result<T, RuntimeEvalError> {
         let mut out = std::mem::take(&mut self.pure_i64_batch_outputs);
         out.resize(row_count, 0);
-        let helper = &self.plan.pure_helpers[helper_id.0];
+        let helper = crate::pure::RuntimePureHelperRef::resolve(&self.plan, helper_id)?;
         let batch_result = pure_backend.call_i64_flat_batch(helper, flat_inputs, arity, &mut out);
         if let Err(error) = batch_result {
             self.pure_i64_batch_outputs = out;
@@ -454,388 +435,209 @@ impl Engine {
         Ok(result)
     }
 
-    fn call_i32_flat_batch_with_outputs<T>(
-        &mut self,
-        helper_id: crate::plan::RuntimePureHelperId,
-        flat_inputs: &[i32],
-        arity: usize,
-        row_count: usize,
-        pure_backend: &mut impl RuntimeCallBackend,
-        map_outputs: impl FnOnce(&[i32]) -> T,
-    ) -> Result<T, RuntimeEvalError> {
-        let mut out = std::mem::take(&mut self.pure_i32_batch_outputs);
-        out.resize(row_count, 0);
-        let helper = &self.plan.pure_helpers[helper_id.0];
-        let batch_result = pure_backend.call_i32_flat_batch(helper, flat_inputs, arity, &mut out);
-        if let Err(error) = batch_result {
-            self.pure_i32_batch_outputs = out;
-            return Err(error);
-        }
-        let result = map_outputs(&out);
-        out.clear();
-        self.pure_i32_batch_outputs = out;
-        Ok(result)
-    }
-
-    fn call_i8_flat_batch_with_outputs<T>(
-        &mut self,
-        helper_id: crate::plan::RuntimePureHelperId,
-        flat_inputs: &[i8],
-        arity: usize,
-        row_count: usize,
-        pure_backend: &mut impl RuntimeCallBackend,
-        map_outputs: impl FnOnce(&[i8]) -> T,
-    ) -> Result<T, RuntimeEvalError> {
-        let mut out = std::mem::take(&mut self.pure_i8_batch_outputs);
-        out.resize(row_count, 0);
-        let helper = &self.plan.pure_helpers[helper_id.0];
-        let batch_result = pure_backend.call_i8_flat_batch(helper, flat_inputs, arity, &mut out);
-        if let Err(error) = batch_result {
-            self.pure_i8_batch_outputs = out;
-            return Err(error);
-        }
-        let result = map_outputs(&out);
-        out.clear();
-        self.pure_i8_batch_outputs = out;
-        Ok(result)
-    }
-
-    fn call_i16_flat_batch_with_outputs<T>(
-        &mut self,
-        helper_id: crate::plan::RuntimePureHelperId,
-        flat_inputs: &[i16],
-        arity: usize,
-        row_count: usize,
-        pure_backend: &mut impl RuntimeCallBackend,
-        map_outputs: impl FnOnce(&[i16]) -> T,
-    ) -> Result<T, RuntimeEvalError> {
-        let mut out = std::mem::take(&mut self.pure_i16_batch_outputs);
-        out.resize(row_count, 0);
-        let helper = &self.plan.pure_helpers[helper_id.0];
-        let batch_result = pure_backend.call_i16_flat_batch(helper, flat_inputs, arity, &mut out);
-        if let Err(error) = batch_result {
-            self.pure_i16_batch_outputs = out;
-            return Err(error);
-        }
-        let result = map_outputs(&out);
-        out.clear();
-        self.pure_i16_batch_outputs = out;
-        Ok(result)
-    }
-
-    fn call_i128_flat_batch_with_outputs<T>(
-        &mut self,
-        helper_id: crate::plan::RuntimePureHelperId,
-        flat_inputs: &[i128],
-        arity: usize,
-        row_count: usize,
-        pure_backend: &mut impl RuntimeCallBackend,
-        map_outputs: impl FnOnce(&[i128]) -> T,
-    ) -> Result<T, RuntimeEvalError> {
-        let mut out = std::mem::take(&mut self.pure_i128_batch_outputs);
-        out.resize(row_count, 0);
-        let helper = &self.plan.pure_helpers[helper_id.0];
-        let batch_result = pure_backend.call_i128_flat_batch(helper, flat_inputs, arity, &mut out);
-        if let Err(error) = batch_result {
-            self.pure_i128_batch_outputs = out;
-            return Err(error);
-        }
-        let result = map_outputs(&out);
-        out.clear();
-        self.pure_i128_batch_outputs = out;
-        Ok(result)
-    }
-
-    fn call_u32_flat_batch_with_outputs<T>(
-        &mut self,
-        helper_id: crate::plan::RuntimePureHelperId,
-        flat_inputs: &[u32],
-        arity: usize,
-        row_count: usize,
-        pure_backend: &mut impl RuntimeCallBackend,
-        map_outputs: impl FnOnce(&[u32]) -> T,
-    ) -> Result<T, RuntimeEvalError> {
-        let mut out = std::mem::take(&mut self.pure_u32_batch_outputs);
-        out.resize(row_count, 0);
-        let helper = &self.plan.pure_helpers[helper_id.0];
-        let batch_result = pure_backend.call_u32_flat_batch(helper, flat_inputs, arity, &mut out);
-        if let Err(error) = batch_result {
-            self.pure_u32_batch_outputs = out;
-            return Err(error);
-        }
-        let result = map_outputs(&out);
-        out.clear();
-        self.pure_u32_batch_outputs = out;
-        Ok(result)
-    }
-
-    fn call_u8_flat_batch_with_outputs<T>(
-        &mut self,
-        helper_id: crate::plan::RuntimePureHelperId,
-        flat_inputs: &[u8],
-        arity: usize,
-        row_count: usize,
-        pure_backend: &mut impl RuntimeCallBackend,
-        map_outputs: impl FnOnce(&[u8]) -> T,
-    ) -> Result<T, RuntimeEvalError> {
-        let mut out = std::mem::take(&mut self.pure_u8_batch_outputs);
-        out.resize(row_count, 0);
-        let helper = &self.plan.pure_helpers[helper_id.0];
-        let batch_result = pure_backend.call_u8_flat_batch(helper, flat_inputs, arity, &mut out);
-        if let Err(error) = batch_result {
-            self.pure_u8_batch_outputs = out;
-            return Err(error);
-        }
-        let result = map_outputs(&out);
-        out.clear();
-        self.pure_u8_batch_outputs = out;
-        Ok(result)
-    }
-
-    fn call_u16_flat_batch_with_outputs<T>(
-        &mut self,
-        helper_id: crate::plan::RuntimePureHelperId,
-        flat_inputs: &[u16],
-        arity: usize,
-        row_count: usize,
-        pure_backend: &mut impl RuntimeCallBackend,
-        map_outputs: impl FnOnce(&[u16]) -> T,
-    ) -> Result<T, RuntimeEvalError> {
-        let mut out = std::mem::take(&mut self.pure_u16_batch_outputs);
-        out.resize(row_count, 0);
-        let helper = &self.plan.pure_helpers[helper_id.0];
-        let batch_result = pure_backend.call_u16_flat_batch(helper, flat_inputs, arity, &mut out);
-        if let Err(error) = batch_result {
-            self.pure_u16_batch_outputs = out;
-            return Err(error);
-        }
-        let result = map_outputs(&out);
-        out.clear();
-        self.pure_u16_batch_outputs = out;
-        Ok(result)
-    }
-
-    fn call_u128_flat_batch_with_outputs<T>(
-        &mut self,
-        helper_id: crate::plan::RuntimePureHelperId,
-        flat_inputs: &[u128],
-        arity: usize,
-        row_count: usize,
-        pure_backend: &mut impl RuntimeCallBackend,
-        map_outputs: impl FnOnce(&[u128]) -> T,
-    ) -> Result<T, RuntimeEvalError> {
-        let mut out = std::mem::take(&mut self.pure_u128_batch_outputs);
-        out.resize(row_count, 0);
-        let helper = &self.plan.pure_helpers[helper_id.0];
-        let batch_result = pure_backend.call_u128_flat_batch(helper, flat_inputs, arity, &mut out);
-        if let Err(error) = batch_result {
-            self.pure_u128_batch_outputs = out;
-            return Err(error);
-        }
-        let result = map_outputs(&out);
-        out.clear();
-        self.pure_u128_batch_outputs = out;
-        Ok(result)
-    }
-
-    fn call_u64_flat_batch_with_outputs<T>(
-        &mut self,
-        helper_id: crate::plan::RuntimePureHelperId,
-        flat_inputs: &[u64],
-        arity: usize,
-        row_count: usize,
-        pure_backend: &mut impl RuntimeCallBackend,
-        map_outputs: impl FnOnce(&[u64]) -> T,
-    ) -> Result<T, RuntimeEvalError> {
-        let mut out = std::mem::take(&mut self.pure_u64_batch_outputs);
-        out.resize(row_count, 0);
-        let helper = &self.plan.pure_helpers[helper_id.0];
-        let batch_result = pure_backend.call_u64_flat_batch(helper, flat_inputs, arity, &mut out);
-        if let Err(error) = batch_result {
-            self.pure_u64_batch_outputs = out;
-            return Err(error);
-        }
-        let result = map_outputs(&out);
-        out.clear();
-        self.pure_u64_batch_outputs = out;
-        Ok(result)
-    }
-
-    fn call_f32_flat_batch_with_outputs<T>(
-        &mut self,
-        helper_id: crate::plan::RuntimePureHelperId,
-        flat_inputs: &[f32],
-        arity: usize,
-        row_count: usize,
-        pure_backend: &mut impl RuntimeCallBackend,
-        map_outputs: impl FnOnce(&[f32]) -> T,
-    ) -> Result<T, RuntimeEvalError> {
-        let mut out = std::mem::take(&mut self.pure_f32_batch_outputs);
-        out.resize(row_count, f32::from_bits(0));
-        let helper = &self.plan.pure_helpers[helper_id.0];
-        let batch_result = pure_backend.call_f32_flat_batch(helper, flat_inputs, arity, &mut out);
-        if let Err(error) = batch_result {
-            self.pure_f32_batch_outputs = out;
-            return Err(error);
-        }
-        let result = map_outputs(&out);
-        out.clear();
-        self.pure_f32_batch_outputs = out;
-        Ok(result)
-    }
-
-    fn call_f64_flat_batch_with_outputs<T>(
-        &mut self,
-        helper_id: crate::plan::RuntimePureHelperId,
-        flat_inputs: &[f64],
-        arity: usize,
-        row_count: usize,
-        pure_backend: &mut impl RuntimeCallBackend,
-        map_outputs: impl FnOnce(&[f64]) -> T,
-    ) -> Result<T, RuntimeEvalError> {
-        let mut out = std::mem::take(&mut self.pure_f64_batch_outputs);
-        out.resize(row_count, f64::from_bits(0));
-        let helper = &self.plan.pure_helpers[helper_id.0];
-        let batch_result = pure_backend.call_f64_flat_batch(helper, flat_inputs, arity, &mut out);
-        if let Err(error) = batch_result {
-            self.pure_f64_batch_outputs = out;
-            return Err(error);
-        }
-        let result = map_outputs(&out);
-        out.clear();
-        self.pure_f64_batch_outputs = out;
-        Ok(result)
-    }
-
-    fn call_i64_flat_batch_sum(
-        &mut self,
-        helper_id: crate::plan::RuntimePureHelperId,
-        flat_inputs: &[i64],
-        arity: usize,
-        row_count: usize,
-        pure_backend: &mut impl RuntimeCallBackend,
-    ) -> Result<i64, RuntimeEvalError> {
-        let helper = &self.plan.pure_helpers[helper_id.0];
-        pure_backend.call_i64_flat_batch_sum(helper, flat_inputs, arity, row_count)
-    }
-
-    fn call_i64_repeated_flat_batch_sum(
-        &mut self,
-        helper_id: crate::plan::RuntimePureHelperId,
-        row: &[i64],
-        row_count: usize,
-        pure_backend: &mut impl RuntimeCallBackend,
-    ) -> Result<i64, RuntimeEvalError> {
-        let helper = &self.plan.pure_helpers[helper_id.0];
-        pure_backend.call_i64_repeated_flat_batch_sum(helper, row, row_count)
-    }
-
-    fn evaluate_record_expr(
-        &mut self,
-        fields: &[RuntimeFieldExpr],
-        pure_backend: &mut impl RuntimeCallBackend,
-    ) -> Result<RuntimeValue, RuntimeEvalError> {
-        let fields = fields
-            .iter()
-            .map(|field| {
-                Ok((
-                    field.name.clone(),
-                    self.evaluate_expr_with_backend(&field.value, pure_backend)?,
-                ))
-            })
-            .collect::<Result<Vec<_>, _>>()?;
-        RuntimeValue::try_record(fields)
-            .map_err(|error| RuntimeEvalError::PatternMismatch(error.to_string()))
-    }
-
     fn evaluate_nominal_record_expr(
         &mut self,
+        ty: crate::runtime_id::RuntimePlanTypeId,
         record: &RuntimeNominalRecordExpr,
         pure_backend: &mut impl RuntimeCallBackend,
     ) -> Result<RuntimeValue, RuntimeEvalError> {
-        record.validate().map_err(|error| {
-            RuntimeEvalError::PatternMismatch(format!("invalid nominal record expression: {error}"))
-        })?;
+        let plan = std::sync::Arc::clone(&self.plan);
+        let declaration = plan
+            .type_table()
+            .get(ty)
+            .ok_or(RuntimeEvalError::UnknownPlanType(ty))?;
+        let RuntimePlanTypeProjection::ProjectNominal {
+            nominal, layout, ..
+        } = declaration.projection()
+        else {
+            return Err(RuntimeEvalError::InvalidExpressionType(ty));
+        };
+        let domain = plan
+            .nominal_record_domains()
+            .get(ty)
+            .ok_or(RuntimeEvalError::MissingNominalRecordDomain(ty))?;
         let mut fields = std::iter::repeat_with(|| None)
-            .take(record.layout().len())
+            .take(domain.fields().len())
             .collect::<Vec<_>>();
         for initializer in record.initializers() {
             let value = self.evaluate_expr_with_backend(initializer.value(), pure_backend)?;
-            let ordinal = usize::try_from(initializer.field().zero_based()).map_err(|_| {
-                RuntimeEvalError::PatternMismatch(
-                    "nominal record field identity does not fit this target".to_owned(),
-                )
-            })?;
+            let ordinal = usize::try_from(initializer.field().zero_based())
+                .map_err(|_| RuntimeEvalError::InvalidExpressionType(ty))?;
+            let Some(field) = domain.fields().get(ordinal) else {
+                return Err(RuntimeEvalError::InvalidExpressionType(ty));
+            };
+            if !plan.value_matches_type(field.ty(), &value)? {
+                return Err(RuntimeEvalError::InvalidExpressionType(
+                    initializer.value().ty(),
+                ));
+            }
             fields[ordinal] = Some(value);
         }
         let fields = fields
             .into_iter()
-            .map(|field| {
-                field.ok_or_else(|| {
-                    RuntimeEvalError::PatternMismatch(
-                        "validated nominal record initializer is incomplete".to_owned(),
-                    )
+            .enumerate()
+            .map(|(ordinal, field)| {
+                let field_id =
+                    crate::value::RuntimeRecordFieldId::from_accepted_zero_based(ordinal)
+                        .map_err(|_| RuntimeEvalError::InvalidExpressionType(ty))?;
+                field.ok_or(RuntimeEvalError::MissingRecordInitializer {
+                    ty,
+                    field: field_id,
                 })
             })
             .collect::<Result<Vec<_>, _>>()?;
-        crate::value::RuntimeNominalRecordValue::try_from_accepted_layout(record.layout(), fields)
-            .map(RuntimeValue::NominalRecord)
-            .map_err(|error| {
-                RuntimeEvalError::PatternMismatch(format!("invalid nominal record value: {error}"))
-            })
+        Ok(RuntimeValue::NominalRecord(
+            crate::value::RuntimeNominalRecordValue::new(nominal.clone(), *layout, fields),
+        ))
+    }
+
+    fn evaluate_variant_expr(
+        &mut self,
+        ty: crate::runtime_id::RuntimePlanTypeId,
+        ordinal: u32,
+        payload: Option<&RuntimeExpr>,
+        pure_backend: &mut impl RuntimeCallBackend,
+    ) -> Result<RuntimeValue, RuntimeEvalError> {
+        let plan = std::sync::Arc::clone(&self.plan);
+        let declaration = plan
+            .type_table()
+            .get(ty)
+            .ok_or(RuntimeEvalError::UnknownPlanType(ty))?;
+        let (owner, name) = match declaration.projection() {
+            RuntimePlanTypeProjection::Option(_) => match ordinal {
+                0 => (RuntimeVariantIdentity::Option, "Some".to_owned()),
+                1 => (RuntimeVariantIdentity::Option, "None".to_owned()),
+                _ => return Err(RuntimeEvalError::UnknownVariantCase { ty, ordinal }),
+            },
+            RuntimePlanTypeProjection::Result { .. } => match ordinal {
+                0 => (RuntimeVariantIdentity::Result, "Ok".to_owned()),
+                1 => (RuntimeVariantIdentity::Result, "Err".to_owned()),
+                _ => return Err(RuntimeEvalError::UnknownVariantCase { ty, ordinal }),
+            },
+            RuntimePlanTypeProjection::ProjectNominal { .. }
+            | RuntimePlanTypeProjection::Opaque { .. } => {
+                let domain = plan
+                    .variant_domains()
+                    .get(ty)
+                    .ok_or(RuntimeEvalError::MissingVariantDomain(ty))?;
+                let case = domain
+                    .case(ordinal)
+                    .ok_or(RuntimeEvalError::UnknownVariantCase { ty, ordinal })?;
+                (
+                    RuntimeVariantIdentity::Nominal {
+                        nominal: domain.nominal().clone(),
+                        semantic_identity: declaration.semantic_identity(),
+                    },
+                    case.name().to_owned(),
+                )
+            }
+            _ => return Err(RuntimeEvalError::InvalidExpressionType(ty)),
+        };
+        Ok(RuntimeValue::Variant {
+            owner,
+            ordinal,
+            name,
+            payload: payload
+                .map(|expr| {
+                    self.evaluate_expr_with_backend(expr, pure_backend)
+                        .map(Box::new)
+                })
+                .transpose()?,
+        })
+    }
+
+    fn evaluate_reduction_unchanged(
+        &mut self,
+        ty: crate::runtime_id::RuntimePlanTypeId,
+        state: &RuntimeExpr,
+        pure_backend: &mut impl RuntimeCallBackend,
+    ) -> Result<RuntimeValue, RuntimeEvalError> {
+        let plan = std::sync::Arc::clone(&self.plan);
+        let declaration = plan
+            .type_table()
+            .get(ty)
+            .ok_or(RuntimeEvalError::UnknownPlanType(ty))?;
+        let RuntimePlanTypeProjection::Opaque {
+            producer,
+            admission: RuntimeOpaqueTypeAdmission::ExactIdentity,
+            arguments,
+        } = declaration.projection()
+        else {
+            return Err(RuntimeEvalError::InvalidExpressionType(ty));
+        };
+        let state_ty = match plan
+            .type_table()
+            .get(state.ty())
+            .map(RuntimePlanTypeDeclaration::projection)
+        {
+            Some(RuntimePlanTypeProjection::Reference(inner)) => *inner,
+            _ => state.ty(),
+        };
+        if arguments.as_ref() != [state_ty] {
+            return Err(RuntimeEvalError::InvalidExpressionType(ty));
+        }
+        let producer = producer.clone();
+        let semantic_identity = declaration.semantic_identity();
+        let state = self.evaluate_expr_with_backend(state, pure_backend)?;
+        if !plan.value_matches_type(state_ty, &state)? {
+            return Err(RuntimeEvalError::InvalidExpressionType(ty));
+        }
+        RuntimeReductionValue::try_unchanged(
+            RuntimeOpaqueTypeOwner::exact(producer, semantic_identity),
+            state,
+        )
+        .map(RuntimeValue::Reduction)
+        .map_err(|_| RuntimeEvalError::InvalidExpressionType(ty))
     }
 
     fn evaluate_field_expr(
         &mut self,
         target: &RuntimeExpr,
-        field: &str,
+        field: RuntimeFieldProjection,
         pure_backend: &mut impl RuntimeCallBackend,
     ) -> Result<RuntimeValue, RuntimeEvalError> {
         let value = self.evaluate_expr_with_backend(target, pure_backend)?;
-        match value {
-            RuntimeValue::Record(fields) => fields
-                .into_iter()
-                .find(|candidate| candidate.name() == field)
-                .map(RuntimeFieldValue::into_value)
-                .ok_or_else(|| RuntimeEvalError::MissingField {
-                    field: field.to_owned(),
-                    value: "record".to_owned(),
-                }),
-            RuntimeValue::Seq(RuntimeSeq::RecordColumns(records)) => records
-                .field_by_name(field)
+        match (field, value) {
+            (RuntimeFieldProjection::Nominal(field), RuntimeValue::NominalRecord(record)) => record
+                .field(field)
                 .cloned()
-                .map(RuntimeValue::Seq)
                 .ok_or_else(|| RuntimeEvalError::MissingField {
-                    field: field.to_owned(),
-                    value: "record sequence".to_owned(),
+                    field: field.zero_based().to_string(),
+                    value: "nominal record".to_owned(),
                 }),
-            RuntimeValue::EntityRef(id) => {
-                Self::entity_ref_field(&id, field).ok_or_else(|| RuntimeEvalError::MissingField {
-                    field: field.to_owned(),
-                    value: "entity reference".to_owned(),
-                })
+            (RuntimeFieldProjection::EntityReference(field), RuntimeValue::EntityRef(id)) => {
+                Ok(Self::entity_ref_field(&id, field))
             }
-            RuntimeValue::Agent(value) => {
-                value
-                    .project_field(field)
+            (RuntimeFieldProjection::Agent(field), RuntimeValue::Agent(value)) => value
+                .project_typed_field(field)
+                .ok_or_else(|| RuntimeEvalError::MissingField {
+                    field: field.as_label().to_owned(),
+                    value: value.label().to_owned(),
+                }),
+            (RuntimeFieldProjection::Agent(field), RuntimeValue::Record(fields))
+                if field.permits_protocol_record() =>
+            {
+                fields
+                    .iter()
+                    .find(|entry| entry.name() == field.as_label())
+                    .map(|entry| entry.value().clone())
                     .ok_or_else(|| RuntimeEvalError::MissingField {
-                        field: field.to_owned(),
-                        value: value.label().to_owned(),
+                        field: field.as_label().to_owned(),
+                        value: "Agent protocol record".to_owned(),
                     })
             }
             value => Err(RuntimeEvalError::MissingField {
-                field: field.to_owned(),
-                value: runtime_value_label(&value),
+                field: field.label(),
+                value: runtime_value_label(&value.1),
             }),
         }
     }
 
-    fn entity_ref_field(id: &str, field: &str) -> Option<RuntimeValue> {
-        Some(match field {
-            "id" => RuntimeValue::String(id.to_owned()),
-            "family" => RuntimeValue::String(Self::entity_ref_family(id).to_owned()),
-            "name" => RuntimeValue::String(Self::entity_ref_name(id).to_owned()),
-            _ => return None,
+    fn entity_ref_field(id: &str, field: RuntimeEntityReferenceField) -> RuntimeValue {
+        RuntimeValue::String(match field {
+            RuntimeEntityReferenceField::Id => id.to_owned(),
+            RuntimeEntityReferenceField::Family => Self::entity_ref_family(id).to_owned(),
+            RuntimeEntityReferenceField::Name => Self::entity_ref_name(id).to_owned(),
         })
     }
 
@@ -913,14 +715,14 @@ impl Engine {
 
     fn evaluate_let_expr(
         &mut self,
-        name: &str,
+        binding: RuntimeLocalDeclarationId,
         expr: &RuntimeExpr,
         body: &RuntimeExpr,
         pure_backend: &mut impl RuntimeCallBackend,
     ) -> Result<RuntimeValue, RuntimeEvalError> {
         let value = self.evaluate_expr_with_backend(expr, pure_backend)?;
         self.fiber.env.push_scope_with_capacity(1);
-        self.fiber.env.set(name.to_owned(), value);
+        self.fiber.env.set(binding, value);
         let result = self.evaluate_expr_with_backend(body, pure_backend);
         self.fiber.env.pop_scope();
         result
@@ -928,28 +730,35 @@ impl Engine {
 
     fn evaluate_assign_field_expr(
         &mut self,
-        target: &RuntimeExpr,
-        field: &str,
+        base: RuntimeLocalDeclarationId,
+        field: crate::value::RuntimeRecordFieldId,
         expr: &RuntimeExpr,
         body: &RuntimeExpr,
         pure_backend: &mut impl RuntimeCallBackend,
     ) -> Result<RuntimeValue, RuntimeEvalError> {
-        let RuntimeExpr::Local(binding) = target else {
-            let value = self.evaluate_expr_with_backend(target, pure_backend)?;
-            return Err(RuntimeEvalError::InvalidFieldAssignment {
-                field: field.to_owned(),
-                value: runtime_value_label(&value),
-            });
-        };
         let value = self.evaluate_expr_with_backend(expr, pure_backend)?;
         self.fiber
             .env
-            .set_record_field(binding, field, value)
+            .set_record_field(base, field, value)
             .map_err(|target| RuntimeEvalError::InvalidFieldAssignment {
-                field: field.to_owned(),
+                field: field.zero_based().to_string(),
                 value: runtime_value_label(&target),
             })?;
         self.evaluate_expr_with_backend(body, pure_backend)
+    }
+
+    fn evaluate_if_expr(
+        &mut self,
+        condition: &RuntimeExpr,
+        then_expr: &RuntimeExpr,
+        else_expr: &RuntimeExpr,
+        pure_backend: &mut impl RuntimeCallBackend,
+    ) -> Result<RuntimeValue, RuntimeEvalError> {
+        if self.evaluate_bool_with_backend(condition, pure_backend)? {
+            self.evaluate_expr_with_backend(then_expr, pure_backend)
+        } else {
+            self.evaluate_expr_with_backend(else_expr, pure_backend)
+        }
     }
 
     pub(super) fn evaluate_if_let_expr(
@@ -962,7 +771,7 @@ impl Engine {
         pure_backend: &mut impl RuntimeCallBackend,
     ) -> Result<RuntimeValue, RuntimeEvalError> {
         let value = self.evaluate_expr_with_backend(expr, pure_backend)?;
-        let Some(bindings) = match_runtime_pattern(pattern, &value)? else {
+        let Some(bindings) = match_runtime_pattern(&self.plan, pattern, &value)? else {
             return self.evaluate_expr_with_backend(else_expr, pure_backend);
         };
         let guard_matched = if let Some(guard) = guard {
@@ -989,10 +798,10 @@ impl Engine {
     ) -> Result<RuntimeValue, RuntimeEvalError> {
         let value = self.evaluate_expr_with_backend(scrutinee, pure_backend)?;
         for arm in arms {
-            let Some(bindings) = match_runtime_pattern(&arm.pattern, &value)? else {
+            let Some(bindings) = match_runtime_pattern(&self.plan, arm.pattern(), &value)? else {
                 continue;
             };
-            if let Some(guard) = arm.guard.as_ref()
+            if let Some(guard) = arm.guard()
                 && !self.with_temp_bindings_ref(&bindings, |this| {
                     this.evaluate_bool_with_backend(guard, pure_backend)
                 })?
@@ -1000,7 +809,7 @@ impl Engine {
                 continue;
             }
             return self.with_temp_bindings(bindings, |this| {
-                this.evaluate_expr_with_backend(&arm.value, pure_backend)
+                this.evaluate_expr_with_backend(arm.value(), pure_backend)
             });
         }
         Err(RuntimeEvalError::PatternMismatch(runtime_value_label(
@@ -1025,7 +834,7 @@ impl Engine {
         f: impl FnOnce(&mut Self) -> T,
     ) -> T
     where
-        I: IntoIterator<Item = RuntimeBinding>,
+        I: IntoIterator<Item = RuntimeLocalBinding>,
         I::IntoIter: ExactSizeIterator,
     {
         let bindings = bindings.into_iter();
@@ -1038,7 +847,7 @@ impl Engine {
 
     pub(super) fn with_temp_bindings_ref<T>(
         &mut self,
-        bindings: &[RuntimeBinding],
+        bindings: &[RuntimeLocalBinding],
         f: impl FnOnce(&mut Self) -> T,
     ) -> T {
         self.fiber.env.push_scope_with_capacity(bindings.len());
@@ -1050,12 +859,12 @@ impl Engine {
 
     pub(super) fn with_temp_binding_ref<T>(
         &mut self,
-        name: &str,
+        local: RuntimeLocalDeclarationId,
         value: &RuntimeValue,
         f: impl FnOnce(&mut Self) -> T,
     ) -> T {
         self.fiber.env.push_scope_with_capacity(1);
-        self.fiber.env.set_ref(name, value);
+        self.fiber.env.set_ref(local, value);
         let result = f(self);
         self.fiber.env.pop_scope();
         result
@@ -1084,7 +893,7 @@ impl Engine {
         pattern: &RuntimePattern,
         value: &RuntimeValue,
     ) -> Result<bool, RuntimeEvalError> {
-        let Some(bindings) = match_runtime_pattern(pattern, value)? else {
+        let Some(bindings) = match_runtime_pattern(&self.plan, pattern, value)? else {
             return Ok(false);
         };
         self.fiber.env.bind_all(bindings);
@@ -1103,305 +912,23 @@ impl Engine {
 }
 
 pub(super) fn pure_helper_has_i64_call_shape(helper: &crate::plan::RuntimePureHelper) -> bool {
-    if helper.output_type != RuntimePureOutputType::I64 || !pure_helper_has_only_i64_inputs(helper)
-    {
-        return false;
-    }
-    let mut int_names = helper
-        .input_names
-        .iter()
-        .zip(helper.input_types.iter())
-        .filter_map(|(name, ty)| {
-            matches!(ty, crate::plan::RuntimePureInputType::I64).then_some(name.as_str())
-        })
-        .collect::<Vec<_>>();
-    expr_returns_integer(&helper.expr, &mut int_names)
-}
-
-pub(super) fn pure_helper_has_i32_call_shape(helper: &crate::plan::RuntimePureHelper) -> bool {
-    if helper.output_type != RuntimePureOutputType::I32 || !pure_helper_has_only_i32_inputs(helper)
-    {
-        return false;
-    }
-    let mut int_names = helper
-        .input_names
-        .iter()
-        .zip(helper.input_types.iter())
-        .filter_map(|(name, ty)| matches!(ty, RuntimePureInputType::I32).then_some(name.as_str()))
-        .collect::<Vec<_>>();
-    expr_returns_integer(&helper.expr, &mut int_names)
+    helper.scalar_eval_supported
+        && helper.output_type == RuntimePureOutputType::I64
+        && pure_helper_has_only_inputs(helper, RuntimePureInputType::I64)
 }
 
 pub(super) fn pure_helper_has_u32_call_shape(helper: &crate::plan::RuntimePureHelper) -> bool {
-    pure_helper_has_exact_int_call_shape::<u32>(helper)
+    helper.scalar_eval_supported
+        && helper.output_type == RuntimePureOutputType::U32
+        && pure_helper_has_only_inputs(helper, RuntimePureInputType::U32)
 }
 
-pub(super) fn pure_helper_has_f32_call_shape(helper: &crate::plan::RuntimePureHelper) -> bool {
-    if helper.output_type != RuntimePureOutputType::F32 || !pure_helper_has_only_f32_inputs(helper)
-    {
-        return false;
-    }
-    let mut float_names = helper
-        .input_names
-        .iter()
-        .zip(helper.input_types.iter())
-        .filter_map(|(name, ty)| matches!(ty, RuntimePureInputType::F32).then_some(name.as_str()))
-        .collect::<Vec<_>>();
-    expr_returns_f32(&helper.expr, &mut float_names)
-}
-
-pub(super) fn pure_helper_has_f64_call_shape(helper: &crate::plan::RuntimePureHelper) -> bool {
-    if helper.output_type != RuntimePureOutputType::F64 || !pure_helper_has_only_f64_inputs(helper)
-    {
-        return false;
-    }
-    let mut float_names = helper
-        .input_names
-        .iter()
-        .zip(helper.input_types.iter())
-        .filter_map(|(name, ty)| matches!(ty, RuntimePureInputType::F64).then_some(name.as_str()))
-        .collect::<Vec<_>>();
-    expr_returns_f64(&helper.expr, &mut float_names)
-}
-
-fn pure_helper_has_exact_int_call_shape<T: RuntimePureScalarInteger>(
+fn pure_helper_has_only_inputs(
     helper: &crate::plan::RuntimePureHelper,
+    expected: RuntimePureInputType,
 ) -> bool {
-    if helper.output_type != T::OUTPUT_TYPE || !pure_helper_has_only_exact_int_inputs::<T>(helper) {
-        return false;
-    }
-    let mut int_names = helper
-        .input_names
-        .iter()
-        .zip(helper.input_types.iter())
-        .filter_map(|(name, ty)| (*ty == T::INPUT_TYPE).then_some(name.as_str()))
-        .collect::<Vec<_>>();
-    expr_returns_integer(&helper.expr, &mut int_names)
-}
-
-fn pure_helper_has_only_i64_inputs(helper: &crate::plan::RuntimePureHelper) -> bool {
-    helper.input_names.len() == helper.input_types.len()
-        && helper
-            .input_types
-            .iter()
-            .all(|ty| matches!(ty, RuntimePureInputType::I64))
-}
-
-fn pure_helper_has_only_i32_inputs(helper: &crate::plan::RuntimePureHelper) -> bool {
-    helper.input_names.len() == helper.input_types.len()
-        && helper
-            .input_types
-            .iter()
-            .all(|ty| matches!(ty, RuntimePureInputType::I32))
-}
-
-fn pure_helper_has_only_f32_inputs(helper: &crate::plan::RuntimePureHelper) -> bool {
-    helper.input_names.len() == helper.input_types.len()
-        && helper
-            .input_types
-            .iter()
-            .all(|ty| matches!(ty, RuntimePureInputType::F32))
-}
-
-fn pure_helper_has_only_f64_inputs(helper: &crate::plan::RuntimePureHelper) -> bool {
-    helper.input_names.len() == helper.input_types.len()
-        && helper
-            .input_types
-            .iter()
-            .all(|ty| matches!(ty, RuntimePureInputType::F64))
-}
-
-fn pure_helper_has_only_exact_int_inputs<T: RuntimePureScalarInteger>(
-    helper: &crate::plan::RuntimePureHelper,
-) -> bool {
-    helper.input_names.len() == helper.input_types.len()
-        && helper.input_types.iter().all(|ty| *ty == T::INPUT_TYPE)
-}
-
-fn expr_returns_integer<'a>(expr: &'a RuntimeExpr, int_names: &mut Vec<&'a str>) -> bool {
-    match expr {
-        RuntimeExpr::Value(RuntimeValue::Int(_) | RuntimeValue::UInt(_)) => true,
-        RuntimeExpr::Local(name) => int_names.contains(&name.as_str()),
-        RuntimeExpr::Let { name, expr, body } => {
-            if !expr_returns_integer(expr, int_names) {
-                return false;
-            }
-            let original_len = int_names.len();
-            int_names.push(name.as_str());
-            let returns_integer = expr_returns_integer(body, int_names);
-            int_names.truncate(original_len);
-            returns_integer
-        }
-        RuntimeExpr::Call { callee, args }
-            if callee.as_intrinsic() == Some(RuntimeIntrinsic::Add) =>
-        {
-            args.iter().all(|arg| expr_returns_integer(arg, int_names))
-        }
-        RuntimeExpr::Unary {
-            op: crate::value::RuntimeUnaryOp::Neg,
-            expr,
-        } => expr_returns_integer(expr, int_names),
-        RuntimeExpr::Binary {
-            lhs,
-            op:
-                RuntimeBinaryOp::Add
-                | RuntimeBinaryOp::Sub
-                | RuntimeBinaryOp::Mul
-                | RuntimeBinaryOp::Div,
-            rhs,
-        } => expr_returns_integer(lhs, int_names) && expr_returns_integer(rhs, int_names),
-        RuntimeExpr::If {
-            condition,
-            then_expr,
-            else_expr,
-        } => {
-            expr_returns_bool(condition, int_names)
-                && expr_returns_integer(then_expr, int_names)
-                && expr_returns_integer(else_expr, int_names)
-        }
-        _ => false,
-    }
-}
-
-fn expr_returns_f32<'a>(expr: &'a RuntimeExpr, float_names: &mut Vec<&'a str>) -> bool {
-    match expr {
-        RuntimeExpr::Value(RuntimeValue::F32(_)) => true,
-        RuntimeExpr::Local(name) => float_names.contains(&name.as_str()),
-        RuntimeExpr::Let { name, expr, body } => {
-            if !expr_returns_f32(expr, float_names) {
-                return false;
-            }
-            let original_len = float_names.len();
-            float_names.push(name.as_str());
-            let returns_f32 = expr_returns_f32(body, float_names);
-            float_names.truncate(original_len);
-            returns_f32
-        }
-        RuntimeExpr::Unary {
-            op: crate::value::RuntimeUnaryOp::Neg,
-            expr,
-        } => expr_returns_f32(expr, float_names),
-        RuntimeExpr::Binary {
-            lhs,
-            op:
-                RuntimeBinaryOp::Add
-                | RuntimeBinaryOp::Sub
-                | RuntimeBinaryOp::Mul
-                | RuntimeBinaryOp::Div,
-            rhs,
-        } => expr_returns_f32(lhs, float_names) && expr_returns_f32(rhs, float_names),
-        RuntimeExpr::If {
-            condition,
-            then_expr,
-            else_expr,
-        } => {
-            expr_returns_float_bool(condition, float_names, expr_returns_f32)
-                && expr_returns_f32(then_expr, float_names)
-                && expr_returns_f32(else_expr, float_names)
-        }
-        _ => false,
-    }
-}
-
-fn expr_returns_f64<'a>(expr: &'a RuntimeExpr, float_names: &mut Vec<&'a str>) -> bool {
-    match expr {
-        RuntimeExpr::Value(RuntimeValue::F64(_)) => true,
-        RuntimeExpr::Local(name) => float_names.contains(&name.as_str()),
-        RuntimeExpr::Let { name, expr, body } => {
-            if !expr_returns_f64(expr, float_names) {
-                return false;
-            }
-            let original_len = float_names.len();
-            float_names.push(name.as_str());
-            let returns_f64 = expr_returns_f64(body, float_names);
-            float_names.truncate(original_len);
-            returns_f64
-        }
-        RuntimeExpr::Unary {
-            op: crate::value::RuntimeUnaryOp::Neg,
-            expr,
-        } => expr_returns_f64(expr, float_names),
-        RuntimeExpr::Binary {
-            lhs,
-            op:
-                RuntimeBinaryOp::Add
-                | RuntimeBinaryOp::Sub
-                | RuntimeBinaryOp::Mul
-                | RuntimeBinaryOp::Div,
-            rhs,
-        } => expr_returns_f64(lhs, float_names) && expr_returns_f64(rhs, float_names),
-        RuntimeExpr::If {
-            condition,
-            then_expr,
-            else_expr,
-        } => {
-            expr_returns_float_bool(condition, float_names, expr_returns_f64)
-                && expr_returns_f64(then_expr, float_names)
-                && expr_returns_f64(else_expr, float_names)
-        }
-        _ => false,
-    }
-}
-
-fn expr_returns_float_bool<'a>(
-    expr: &'a RuntimeExpr,
-    float_names: &mut Vec<&'a str>,
-    expr_returns_float: fn(&'a RuntimeExpr, &mut Vec<&'a str>) -> bool,
-) -> bool {
-    match expr {
-        RuntimeExpr::Value(RuntimeValue::Bool(_)) => true,
-        RuntimeExpr::Unary {
-            op: crate::value::RuntimeUnaryOp::Not,
-            expr,
-        } => expr_returns_float_bool(expr, float_names, expr_returns_float),
-        RuntimeExpr::Binary {
-            lhs,
-            op:
-                RuntimeBinaryOp::Eq
-                | RuntimeBinaryOp::Ne
-                | RuntimeBinaryOp::Lt
-                | RuntimeBinaryOp::Le
-                | RuntimeBinaryOp::Gt
-                | RuntimeBinaryOp::Ge,
-            rhs,
-        } => expr_returns_float(lhs, float_names) && expr_returns_float(rhs, float_names),
-        RuntimeExpr::Binary {
-            lhs,
-            op: RuntimeBinaryOp::And | RuntimeBinaryOp::Or,
-            rhs,
-        } => {
-            expr_returns_float_bool(lhs, float_names, expr_returns_float)
-                && expr_returns_float_bool(rhs, float_names, expr_returns_float)
-        }
-        _ => false,
-    }
-}
-
-fn expr_returns_bool<'a>(expr: &'a RuntimeExpr, int_names: &mut Vec<&'a str>) -> bool {
-    match expr {
-        RuntimeExpr::Value(RuntimeValue::Bool(_)) => true,
-        RuntimeExpr::Unary {
-            op: crate::value::RuntimeUnaryOp::Not,
-            expr,
-        } => expr_returns_bool(expr, int_names),
-        RuntimeExpr::Binary {
-            lhs,
-            op:
-                RuntimeBinaryOp::Eq
-                | RuntimeBinaryOp::Ne
-                | RuntimeBinaryOp::Lt
-                | RuntimeBinaryOp::Le
-                | RuntimeBinaryOp::Gt
-                | RuntimeBinaryOp::Ge,
-            rhs,
-        } => expr_returns_integer(lhs, int_names) && expr_returns_integer(rhs, int_names),
-        RuntimeExpr::Binary {
-            lhs,
-            op: RuntimeBinaryOp::And | RuntimeBinaryOp::Or,
-            rhs,
-        } => expr_returns_bool(lhs, int_names) && expr_returns_bool(rhs, int_names),
-        _ => false,
-    }
+    helper.input_locals.len() == helper.input_types.len()
+        && helper.input_types.iter().all(|ty| *ty == expected)
 }
 
 fn spread_runtime_values(value: RuntimeValue) -> Result<Vec<RuntimeValue>, RuntimeEvalError> {
@@ -1451,6 +978,16 @@ pub(crate) fn evaluate_runtime_call(
 ) -> RuntimeValue {
     if let Some(intrinsic) = callee.as_intrinsic()
         && let Ok(Some(value)) = evaluate_std_float_intrinsic(intrinsic, args)
+    {
+        return value;
+    }
+    if let Some(intrinsic) = callee.as_intrinsic()
+        && let Ok(Some(value)) = evaluate_string_intrinsic(intrinsic, args)
+    {
+        return value;
+    }
+    if let Some(intrinsic) = callee.as_intrinsic()
+        && let Ok(Some(value)) = evaluate_index_intrinsic(intrinsic, args)
     {
         return value;
     }
@@ -1542,64 +1079,4 @@ pub(crate) fn evaluate_runtime_call(
             },
         ),
     }
-}
-
-fn evaluate_runtime_method_call(
-    receiver: RuntimeValue,
-    method: &str,
-    args: &[RuntimeValue],
-) -> RuntimeValue {
-    match (receiver, method, args) {
-        (RuntimeValue::String(value), "trim", []) => {
-            RuntimeValue::String(value.trim_matches(char::is_whitespace).to_owned())
-        }
-        (RuntimeValue::String(value), "to_string", []) => RuntimeValue::String(value),
-        (RuntimeValue::Seq(seq), "len", []) => RuntimeValue::from_collection_len(seq.len()),
-        (RuntimeValue::Seq(seq), "contains", [needle]) => {
-            RuntimeValue::Bool(seq.into_values().iter().any(|item| item == needle))
-        }
-        (RuntimeValue::Seq(seq), "require_role", [RuntimeValue::String(role)]) => seq
-            .into_values()
-            .into_iter()
-            .find(|item| runtime_record_string_field(item, "role").as_deref() == Some(role))
-            .unwrap_or(RuntimeValue::Unit),
-        (RuntimeValue::Seq(seq), "__index", [index]) => seq.value_at_runtime_index(index),
-        (RuntimeValue::Tuple(items), "len", []) => RuntimeValue::from_collection_len(items.len()),
-        (RuntimeValue::Tuple(items), "contains", [needle]) => {
-            RuntimeValue::Bool(items.iter().any(|item| item == needle))
-        }
-        (RuntimeValue::Tuple(items), "__index", [index]) => index
-            .to_collection_index()
-            .and_then(|index| items.get(index).cloned())
-            .unwrap_or(RuntimeValue::Unit),
-        (
-            RuntimeValue::Record(fields),
-            "get",
-            [RuntimeValue::String(key) | RuntimeValue::EntityRef(key)],
-        ) => fields
-            .iter()
-            .find(|field| field.name() == *key)
-            .map_or(RuntimeValue::Unit, |field| field.value().clone()),
-        (receiver, method, args) => RuntimeValue::String(format!(
-            "{}.{method}({})",
-            runtime_value_label(&receiver),
-            args.iter()
-                .map(runtime_value_label)
-                .collect::<Vec<_>>()
-                .join(", ")
-        )),
-    }
-}
-
-fn runtime_record_string_field(value: &RuntimeValue, field: &str) -> Option<String> {
-    let RuntimeValue::Record(fields) = value else {
-        return None;
-    };
-    fields
-        .iter()
-        .find(|candidate| candidate.name() == field)
-        .and_then(|candidate| match candidate.value() {
-            RuntimeValue::String(value) | RuntimeValue::EntityRef(value) => Some(value.clone()),
-            _ => None,
-        })
 }

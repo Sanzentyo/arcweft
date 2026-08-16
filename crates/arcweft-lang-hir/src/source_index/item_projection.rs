@@ -84,7 +84,6 @@ mod metric;
 mod predicate;
 mod proof;
 mod resource;
-mod source;
 mod style;
 mod trait_impl;
 mod use_declaration;
@@ -368,12 +367,6 @@ impl HirSourceIndex {
                 (TypedItemNode::Resource(resource), HirItemKind::Resource(_)) => {
                     resource.semantics().is_ok_and(|attached| {
                         resource::payload_matches(&attached, item, slots, arenas)
-                            && declaration_members.arena(owner).is_none()
-                    })
-                }
-                (TypedItemNode::Source(source), HirItemKind::Source(_)) => {
-                    source.semantics().is_ok_and(|attached| {
-                        source::payload_matches(owner, &attached, item, parsed, slots, arenas)
                             && declaration_members.arena(owner).is_none()
                     })
                 }

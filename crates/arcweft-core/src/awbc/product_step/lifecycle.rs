@@ -1,18 +1,14 @@
 use super::{
-    AwaitManyInFlight, AwaitManyState, AwaitManyTarget, AwaitState, AwaitTarget, AwbcContentUnitId,
-    AwbcFrameSlotRole, AwbcFunctionId, AwbcHostCallId, AwbcHostCallMode, AwbcProductStepExecutor,
-    AwbcResumePointId, AwbcSourceEventKind, AwbcSourcePlanId, AwbcTaskPlanId, AwbcTrapCode,
-    ChoiceRuntimeOption, ChoiceState, DialogueState, FiberAwaitTarget, FiberStatus,
+    AwaitState, AwaitTarget, AwbcContentUnitId, AwbcFunctionId, AwbcHostCallId, AwbcHostCallMode,
+    AwbcProductExecutorStatus, AwbcProductStepExecutor, AwbcResumePointId, AwbcTaskPlanId,
+    AwbcTrapCode, ChoiceRuntimeOption, ChoiceState, DialogueState, FiberAwaitTarget, FiberStatus,
     FiberSuspensionReason, FiberTerminalValue, FiberTrap, FlowExit, FlowFiberStatus, HostCallState,
     HostTaskRequestTemplate, LogicalDuration, MappedEffect, NeedId, ProductStepError,
-    RuntimeBinding, RuntimeDiagnostic, RuntimeDiagnosticCategory, RuntimeHostCallId,
-    RuntimeHostCallMode, RuntimeHostCallTarget, RuntimePayload, RuntimeSourceEvent,
-    RuntimeStepMode, RuntimeStepOptions, RuntimeStepOutput, RuntimeStepStopReason, RuntimeValue,
-    SourceEventKind, SourceId, SourceRuntimeState, TaskId, has_host_requests, has_visible_output,
-    line_id_from_awbc_public_id, runtime_sequence_from_literal_values, runtime_value_label,
-    source_diagnostic, source_id_for,
+    RuntimeDiagnostic, RuntimeDiagnosticCategory, RuntimeHostCallId, RuntimeHostCallMode,
+    RuntimeHostCallTarget, RuntimeStepMode, RuntimeStepOptions, RuntimeStepOutput,
+    RuntimeStepStopReason, TaskId, has_host_requests, has_visible_output,
+    line_id_from_awbc_public_id, runtime_value_label, source_diagnostic,
 };
-use crate::source::SourcePolicy;
 
 impl AwbcProductStepExecutor {
     pub(super) fn entry_targets_active_function(&self) -> bool {
@@ -26,141 +22,6 @@ impl AwbcProductStepExecutor {
             .frames
             .first()
             .is_some_and(|frame| frame.function == entry_function)
-    }
-
-    pub(super) fn apply_source_events(
-        &mut self,
-        events: Vec<RuntimeSourceEvent>,
-        output: &mut RuntimeStepOutput,
-    ) {
-        for event in events {
-            if let Some(plan_id) = self.source_plan_for_id(&event.source) {
-                self.record_source_event_state(&event, output);
-                self.sync_compact_source_state(plan_id);
-                let handled = self.spawn_source_handler(plan_id, &event, output);
-                if !handled && matches!(event.kind, SourceEventKind::Item(_)) {
-                    self.apply_unhandled_source_event(event.clone(), output);
-                    self.sync_compact_source_state(plan_id);
-                }
-            } else {
-                self.apply_unhandled_source_event(event.clone(), output);
-            }
-            output.effects.source_events.push(event);
-        }
-    }
-
-    pub(super) fn record_source_event_state(
-        &mut self,
-        event: &RuntimeSourceEvent,
-        output: &mut RuntimeStepOutput,
-    ) {
-        let state = self
-            .facade_fiber
-            .source_states
-            .entry(event.source.clone())
-            .or_insert_with(|| {
-                SourceRuntimeState::new(event.source.clone(), SourcePolicy::default())
-            });
-        match &event.kind {
-            SourceEventKind::Error(error) => {
-                state.last_error = Some(error.clone());
-                output.diagnostics.push(RuntimeDiagnostic::new(format!(
-                    "source {} error: {}",
-                    state.id.0,
-                    error.label()
-                )));
-            }
-            SourceEventKind::Disconnected
-            | SourceEventKind::PermissionRevoked
-            | SourceEventKind::End => state.close(),
-            SourceEventKind::Item(_) | SourceEventKind::Progress(_) => {}
-        }
-    }
-
-    pub(super) fn apply_unhandled_source_event(
-        &mut self,
-        event: RuntimeSourceEvent,
-        output: &mut RuntimeStepOutput,
-    ) {
-        let state = self
-            .facade_fiber
-            .source_states
-            .entry(event.source.clone())
-            .or_insert_with(|| {
-                SourceRuntimeState::new(event.source.clone(), SourcePolicy::default())
-            });
-        if let Some(message) = state.apply_event(event) {
-            output.diagnostics.push(RuntimeDiagnostic::new(message));
-        }
-    }
-
-    pub(super) fn sync_compact_source_state(&mut self, plan: AwbcSourcePlanId) {
-        let id = source_id_for(&self.program, plan);
-        let Some(runtime) = self.facade_fiber.source_states.get(&id) else {
-            return;
-        };
-        let Some(compact) = self
-            .fiber
-            .sources
-            .iter_mut()
-            .find(|state| state.plan == plan)
-        else {
-            return;
-        };
-        compact.queue = runtime
-            .queue
-            .iter()
-            .map(|payload| payload.value().clone())
-            .collect();
-        compact.closed = runtime.closed;
-        compact.last_error = runtime
-            .last_error
-            .as_ref()
-            .map(|payload| payload.value().clone());
-        compact.overflow_count = runtime.overflow_count;
-    }
-
-    pub(super) fn spawn_source_handler(
-        &mut self,
-        plan: AwbcSourcePlanId,
-        event: &RuntimeSourceEvent,
-        output: &mut RuntimeStepOutput,
-    ) -> bool {
-        let Some(source) = self.program.source_plans.get(plan.index()) else {
-            return false;
-        };
-        let kind = match event.kind {
-            SourceEventKind::Item(_) => AwbcSourceEventKind::Item,
-            SourceEventKind::Error(_) => AwbcSourceEventKind::Error,
-            SourceEventKind::Progress(_) => AwbcSourceEventKind::Progress,
-            SourceEventKind::Disconnected => AwbcSourceEventKind::Disconnected,
-            SourceEventKind::PermissionRevoked => AwbcSourceEventKind::PermissionRevoked,
-            SourceEventKind::End => AwbcSourceEventKind::End,
-        };
-        let Some(handler) = source.handlers.iter().find(|handler| handler.kind == kind) else {
-            return false;
-        };
-        let args = match &event.kind {
-            SourceEventKind::Item(value) | SourceEventKind::Error(value) => {
-                vec![value.value().clone()]
-            }
-            SourceEventKind::Progress(value) => vec![RuntimeValue::String(value.clone())],
-            SourceEventKind::Disconnected
-            | SourceEventKind::PermissionRevoked
-            | SourceEventKind::End => Vec::new(),
-        };
-        if let (Some(pattern), Some(value)) = (handler.pattern, args.first()) {
-            match crate::awbc::vm::test_pattern(&self.program, pattern, value) {
-                Ok(true) => {}
-                Ok(false) => return false,
-                Err(error) => {
-                    self.record_error(ProductStepError::Internal(error.to_string()), output);
-                    return false;
-                }
-            }
-        }
-        self.spawn_child(handler.function, &args, output);
-        true
     }
 
     pub(super) fn resume_at(
@@ -177,26 +38,39 @@ impl AwbcProductStepExecutor {
         }
     }
 
-    #[allow(clippy::needless_pass_by_value)]
     pub(super) fn fail_with_error(
         &mut self,
         error: ProductStepError,
         output: &mut RuntimeStepOutput,
     ) {
-        let message = error.to_string();
-        output.diagnostics.push(RuntimeDiagnostic::categorized(
-            error.category(),
-            message.clone(),
-        ));
+        let (category, code, message) = match error {
+            ProductStepError::Type(message) => (
+                RuntimeDiagnosticCategory::Type,
+                AwbcTrapCode::TypeMismatch,
+                message,
+            ),
+            ProductStepError::Host(message) => (
+                RuntimeDiagnosticCategory::Host,
+                AwbcTrapCode::HostAbiMismatch,
+                message,
+            ),
+            ProductStepError::Input(message) => (
+                RuntimeDiagnosticCategory::Input,
+                AwbcTrapCode::InternalInvariant,
+                message,
+            ),
+            ProductStepError::Internal(message) => (
+                RuntimeDiagnosticCategory::Internal,
+                AwbcTrapCode::InternalInvariant,
+                message,
+            ),
+        };
+        output
+            .diagnostics
+            .push(RuntimeDiagnostic::categorized(category, message.clone()));
         self.terminate_with_trap(
             FiberTrap {
-                code: match error {
-                    ProductStepError::Type(_) => AwbcTrapCode::TypeMismatch,
-                    ProductStepError::Host(_) => AwbcTrapCode::HostAbiMismatch,
-                    ProductStepError::Input(_) | ProductStepError::Internal(_) => {
-                        AwbcTrapCode::InternalInvariant
-                    }
-                },
+                code,
                 message: Some(message),
                 source_map: None,
             },
@@ -233,12 +107,16 @@ impl AwbcProductStepExecutor {
         self.fiber.mark_trapped(trap);
     }
 
-    #[allow(clippy::needless_pass_by_value, clippy::unused_self)]
     pub(super) fn record_error(&self, error: ProductStepError, output: &mut RuntimeStepOutput) {
-        output.diagnostics.push(RuntimeDiagnostic::categorized(
-            error.category(),
-            error.to_string(),
-        ));
+        let (category, message) = match error {
+            ProductStepError::Input(message) => (RuntimeDiagnosticCategory::Input, message),
+            ProductStepError::Type(message) => (RuntimeDiagnosticCategory::Type, message),
+            ProductStepError::Host(message) => (RuntimeDiagnosticCategory::Host, message),
+            ProductStepError::Internal(message) => (RuntimeDiagnosticCategory::Internal, message),
+        };
+        output
+            .diagnostics
+            .push(source_diagnostic(&self.program, None, category, message));
     }
 
     pub(super) fn record_trap(&self, trap: &FiberTrap, output: &mut RuntimeStepOutput) {
@@ -348,52 +226,41 @@ impl AwbcProductStepExecutor {
     }
 
     pub(super) fn sync_facade(&mut self) {
-        if let Ok(frame) = self.fiber.active_frame()
-            && let Some(layout) = self.program.frame_layouts.get(frame.layout.index())
-        {
-            let active_scope_count = frame.scopes.len();
-            let mut scopes = vec![Vec::new(); active_scope_count.saturating_add(1)];
-            for (index, slot) in layout.slots.iter().enumerate() {
-                let slot_depth = usize::try_from(slot.scope_depth).unwrap_or(usize::MAX);
-                if !matches!(
-                    slot.role,
-                    AwbcFrameSlotRole::Parameter | AwbcFrameSlotRole::Local
-                ) || slot_depth > active_scope_count
-                {
-                    continue;
-                }
-                let Some(name) = slot
-                    .name
-                    .and_then(|id| self.program.strings.get(id.index()))
-                else {
-                    continue;
-                };
-                if let Some(value) = frame.registers.get(index).and_then(Option::as_ref)
-                    && let Some(scope) = scopes.get_mut(slot_depth)
-                {
-                    scope.push(RuntimeBinding {
-                        name: name.clone(),
-                        value: value.clone(),
-                    });
-                }
-            }
-            self.facade_fiber.env.replace_scopes_with_bindings(scopes);
-        }
         self.facade_fiber.line_cursor =
             usize::try_from(self.fiber.line_cursor).unwrap_or(usize::MAX);
         self.facade_fiber.status = self.effective_status();
     }
 
     pub(super) fn effective_status(&self) -> FlowFiberStatus {
+        match self.product_status() {
+            AwbcProductExecutorStatus::Shared(status) => status,
+            AwbcProductExecutorStatus::WaitingMany(state) => {
+                // The shared structured facade has no evaluated-source
+                // waiting-many carrier. Preserve the exact items and binding
+                // in the compact status, and expose only a coarse suspension.
+                FlowFiberStatus::Waiting(AwaitState {
+                    binding: None,
+                    target: AwaitTarget::new(
+                        self.task_need_id(state.plan),
+                        TaskId(self.task_public_id(state.plan)),
+                        HostTaskRequestTemplate::new("awbc", "await_many", []),
+                    ),
+                    resume: None,
+                })
+            }
+        }
+    }
+
+    fn product_status(&self) -> AwbcProductExecutorStatus {
         if !self.child_fibers.is_empty()
             && matches!(
                 self.fiber.status,
                 FiberStatus::Returned | FiberStatus::Cancelled | FiberStatus::Suspended
             )
         {
-            return FlowFiberStatus::Running;
+            return AwbcProductExecutorStatus::Shared(FlowFiberStatus::Running);
         }
-        match self.fiber.status {
+        AwbcProductExecutorStatus::Shared(match self.fiber.status {
             FiberStatus::Running => FlowFiberStatus::Running,
             FiberStatus::Returned => match self.fiber.terminal.as_ref() {
                 Some(FiberTerminalValue::Returned(Some(value))) => {
@@ -410,40 +277,83 @@ impl AwbcProductStepExecutor {
                 ),
                 _ => FlowFiberStatus::Failed("AWBC fiber trapped".to_owned()),
             },
-            FiberStatus::Suspended => self.suspension_status(),
-        }
+            FiberStatus::Suspended => return self.product_suspension_status(),
+        })
     }
 
-    pub(super) fn suspension_status(&self) -> FlowFiberStatus {
+    fn product_suspension_status(&self) -> AwbcProductExecutorStatus {
+        let Some(suspension) = self.fiber.suspension.as_ref() else {
+            return AwbcProductExecutorStatus::Shared(FlowFiberStatus::Running);
+        };
+        if let FiberSuspensionReason::AwaitMany(state) = &suspension.reason {
+            return AwbcProductExecutorStatus::WaitingMany(state.clone());
+        }
+        AwbcProductExecutorStatus::Shared(self.suspension_status())
+    }
+
+    fn suspension_status(&self) -> FlowFiberStatus {
         let Some(suspension) = self.fiber.suspension.as_ref() else {
             return FlowFiberStatus::Running;
         };
         match &suspension.reason {
             FiberSuspensionReason::Dialogue {
                 content,
-                line_task_group,
-            } => FlowFiberStatus::Dialogue(DialogueState {
-                line: line_id_from_awbc_public_id(&self.content_public_id(*content))
-                    .expect("AWBC content public ID should be a valid runtime line ID"),
-                task_group: line_task_group.index(),
-                resume: None,
-                started_nodes: self
+                values: _,
+                line_task_captures: _,
+            } => {
+                let content_unit = self.program.content_units.get(content.index());
+                let group = content_unit
+                    .and_then(|content| content.line_task_group)
+                    .and_then(|group| self.program.line_task_groups.get(group.index()));
+                let active = self
                     .active_dialogue
                     .as_ref()
-                    .map(|active| {
-                        active
-                            .started_nodes
+                    .filter(|active| active.content == *content);
+                let captures = group
+                    .zip(active)
+                    .map(|(group, active)| {
+                        group
+                            .captures
                             .iter()
-                            .map(|node| node.index())
+                            .copied()
+                            .zip(active.captures.iter().cloned())
+                            .map(|(local, value)| crate::value::RuntimeLocalBinding {
+                                local,
+                                value,
+                            })
                             .collect()
                     })
-                    .unwrap_or_default(),
-                elapsed: LogicalDuration::from_nanos(
-                    self.active_dialogue
-                        .as_ref()
-                        .map_or(0, |active| active.elapsed_nanos),
-                ),
-            }),
+                    .unwrap_or_default();
+                let task_group = content_unit.and_then(|content| {
+                    content.line_task_group.and_then(|group| {
+                        group
+                            .0
+                            .checked_add(1)
+                            .and_then(std::num::NonZeroU32::new)
+                            .map(crate::runtime_id::RuntimeLineTaskGroupId::from_accepted_ordinal)
+                    })
+                });
+                FlowFiberStatus::Dialogue(DialogueState {
+                    line: line_id_from_awbc_public_id(&self.content_public_id(*content))
+                        .expect("AWBC content public ID should be a valid runtime line ID"),
+                    content: crate::runtime_id::RuntimeDialogueContentPlanId::from_accepted_ordinal(
+                        std::num::NonZeroU32::new(
+                            content
+                                .0
+                                .checked_add(1)
+                                .expect("verified AWBC content identity should fit a plan ordinal"),
+                        )
+                        .expect("AWBC content plan ordinals are one-based"),
+                    ),
+                    task_group,
+                    resume: None,
+                    captures,
+                    line_task: active.and_then(|active| active.line_task.clone()),
+                    elapsed: LogicalDuration::from_nanos(
+                        active.map_or(0, |active| active.elapsed_nanos),
+                    ),
+                })
+            }
             FiberSuspensionReason::Choice { .. } => {
                 let active = self.active_choice.as_ref();
                 FlowFiberStatus::Choice(ChoiceState {
@@ -473,46 +383,10 @@ impl AwbcProductStepExecutor {
                 }
                 FiberAwaitTarget::Need(need) => FlowFiberStatus::NeedWaiting(need.clone()),
             },
-            FiberSuspensionReason::AwaitMany(state) => {
-                let target = AwaitManyTarget::new(
-                    self.task_need_id(state.plan),
-                    TaskId(self.task_public_id(state.plan)),
-                    crate::value::RuntimeExpr::Value(runtime_sequence_from_literal_values(
-                        state.items.clone(),
-                    )),
-                    "item",
-                    self.program
-                        .task_plans
-                        .get(state.plan.index())
-                        .and_then(|plan| plan.many.as_ref())
-                        .map_or(usize::MAX, |many| many.limit as usize),
-                    HostTaskRequestTemplate::new("awbc", "await_many", []),
-                );
-                FlowFiberStatus::WaitingMany(Box::new(AwaitManyState {
-                    binding: None,
-                    target,
-                    resume: None,
-                    items: state.items.clone(),
-                    next_index: state.next_index as usize,
-                    in_flight: state
-                        .in_flight
-                        .iter()
-                        .map(|item| AwaitManyInFlight {
-                            index: item.index as usize,
-                            task: TaskId(item.task_id.clone()),
-                            need: NeedId(item.need_id.clone()),
-                        })
-                        .collect(),
-                    results: state
-                        .results
-                        .iter()
-                        .cloned()
-                        .map(|value| value.map(RuntimePayload::from))
-                        .collect(),
-                }))
-            }
             FiberSuspensionReason::HostCall { call, .. } => self.host_call_status(*call),
-            FiberSuspensionReason::BudgetYield => FlowFiberStatus::Running,
+            FiberSuspensionReason::AwaitMany(_) | FiberSuspensionReason::BudgetYield => {
+                FlowFiberStatus::Running
+            }
         }
     }
 
@@ -639,20 +513,5 @@ impl AwbcProductStepExecutor {
                 .cloned()
                 .unwrap_or_else(|| format!("awbc.need.{}", plan.0)),
         )
-    }
-
-    pub(super) fn source_plan_for_id(&self, id: &SourceId) -> Option<AwbcSourcePlanId> {
-        self.program
-            .source_plans
-            .iter()
-            .enumerate()
-            .find_map(|(index, plan)| {
-                self.program
-                    .strings
-                    .get(plan.public_id.index())
-                    .filter(|public_id| public_id.as_str() == id.0)
-                    .and_then(|_| u32::try_from(index).ok())
-                    .map(AwbcSourcePlanId)
-            })
     }
 }

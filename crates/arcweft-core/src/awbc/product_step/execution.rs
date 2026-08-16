@@ -1,13 +1,7 @@
 use crate::awbc::fiber::{FiberState, FiberStateError};
-use crate::awbc::schema::{
-    AwbcBackpressurePolicy, AwbcEntryId, AwbcFunctionId, AwbcOverflowPolicy, AwbcPrivacyPolicy,
-    AwbcProgram, AwbcReplayPolicy, AwbcSourcePlanId, AwbcStreamPlanId,
-};
+use crate::awbc::schema::{AwbcEntryId, AwbcFunctionId, AwbcProgram, AwbcStreamPlanId};
 use crate::awbc::vm::{VmError, VmExit, VmHost, VmStepOptions, step_with_host};
 use crate::pure::{RuntimeCallBackend, RuntimeCompactPureHelper};
-use crate::source::{
-    BackpressurePolicy, OverflowPolicy, PrivacyPolicy, ReplayPolicy, SourceId, SourcePolicy,
-};
 use crate::step::{
     RuntimeDiagnostic, RuntimeDiagnosticCategory, RuntimeStepInput, RuntimeStepOutput,
     input_event_text_payload, input_event_trigger_name,
@@ -136,53 +130,6 @@ fn run_function_with_host(
     }
 }
 
-impl crate::awbc::schema::AwbcSourcePolicy {
-    pub(super) fn runtime_policy(&self) -> SourcePolicy {
-        SourcePolicy {
-            backpressure: match self.backpressure {
-                AwbcBackpressurePolicy::LatestOnly => BackpressurePolicy::LatestOnly,
-                AwbcBackpressurePolicy::BoundedQueue { capacity, overflow } => {
-                    BackpressurePolicy::BoundedQueue {
-                        capacity: capacity as usize,
-                        on_overflow: match overflow {
-                            AwbcOverflowPolicy::DropOldest => OverflowPolicy::DropOldest,
-                            AwbcOverflowPolicy::DropNewest => OverflowPolicy::DropNewest,
-                            AwbcOverflowPolicy::Error => OverflowPolicy::Error,
-                            AwbcOverflowPolicy::Coalesce => OverflowPolicy::Coalesce,
-                        },
-                    }
-                }
-                AwbcBackpressurePolicy::BlockingNotAllowed => {
-                    BackpressurePolicy::BlockingNotAllowed
-                }
-            },
-            replay: match self.replay {
-                AwbcReplayPolicy::Full => ReplayPolicy::Full,
-                AwbcReplayPolicy::HashOnly => ReplayPolicy::HashOnly,
-                AwbcReplayPolicy::Summary => ReplayPolicy::Summary,
-                AwbcReplayPolicy::EventOnly => ReplayPolicy::EventOnly,
-                AwbcReplayPolicy::None => ReplayPolicy::None,
-            },
-            privacy: match self.privacy {
-                AwbcPrivacyPolicy::Transient => PrivacyPolicy::Transient,
-                AwbcPrivacyPolicy::Redacted => PrivacyPolicy::Redacted,
-                AwbcPrivacyPolicy::Recordable => PrivacyPolicy::Recordable,
-                AwbcPrivacyPolicy::Private => PrivacyPolicy::Private,
-            },
-            max_queue: self.max_queue as usize,
-        }
-    }
-}
-
-pub(super) fn source_id_for(program: &AwbcProgram, source: AwbcSourcePlanId) -> SourceId {
-    program
-        .source_plans
-        .get(source.index())
-        .and_then(|plan| program.strings.get(plan.public_id.index()))
-        .cloned()
-        .map_or_else(|| SourceId(format!("awbc.source.{}", source.0)), SourceId)
-}
-
 pub(super) fn stream_id_for(program: &AwbcProgram, stream: AwbcStreamPlanId) -> StreamRuntimeId {
     program
         .stream_plans
@@ -224,7 +171,6 @@ pub(super) fn has_host_requests(output: &RuntimeStepOutput) -> bool {
     !output.requests.tasks.is_empty()
         || !output.requests.audio.is_empty()
         || !output.requests.cancel_scopes.is_empty()
-        || !output.requests.source_close.is_empty()
         || !output.requests.ensure_content.is_empty()
         || !output.requests.host_calls.is_empty()
 }
@@ -232,6 +178,5 @@ pub(super) fn has_host_requests(output: &RuntimeStepOutput) -> bool {
 pub(super) fn has_visible_output(output: &RuntimeStepOutput) -> bool {
     !output.flow_events.is_empty()
         || !output.effects.line.is_empty()
-        || !output.effects.source_events.is_empty()
         || !output.effects.stream_events.is_empty()
 }

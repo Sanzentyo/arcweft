@@ -1,23 +1,23 @@
 use super::{
     AwaitManyInFlight, AwaitManyState, AwaitState, AwaitTarget, CancelScopeId, ChoiceState,
     DialogueState, Engine, FlowEvent, FlowExit, FlowFiberStatus, HostCallState, LineEffectRequest,
-    RuntimeDiagnostic, RuntimeEvalError, RuntimeFieldValue, RuntimePayload, RuntimeSeq,
-    RuntimeStepInput, RuntimeStepOutput, RuntimeValue, TaskEvent, TaskEventKind, TaskKey,
-    TaskPolicy, TaskPriority, TaskSpec, runtime_sequence_values,
-    runtime_value_into_sequence_values,
+    RuntimeDiagnostic, RuntimeEvalError, RuntimePayload, RuntimeSeq, RuntimeStepInput,
+    RuntimeStepOutput, RuntimeValue, TaskEvent, TaskEventKind, TaskKey, TaskPolicy, TaskPriority,
+    TaskSpec, runtime_sequence_values, runtime_value_into_sequence_values,
 };
 use crate::line_task::{
-    cancel_live_line_task_group, finish_live_line_task_group, progress_live_line_task_group,
+    cancel_live_line_task_group, finalize_live_line_task_close, finish_live_line_task_group,
+    progress_live_line_task_group,
 };
 use crate::pure::RuntimeCallBackend;
 use crate::step::RuntimeDiagnosticCategory;
 use crate::task::{
     AssetRequest, AudioDecodeRequest, AwaitManyTarget, FileReadBytesRequest, FileReadTextRequest,
-    FileWriteBytesRequest, FileWriteTextRequest, HostTaskArgTemplate, HostTaskRequest,
-    HostTaskRequestTemplate, HttpFetchRequest, HttpRespondRequest, NeedId, ProcessRunRequest,
+    FileWriteBytesRequest, FileWriteTextRequest, HostTaskRequest, HostTaskRequestTemplate,
+    HttpFetchRequest, HttpRespondRequest, NeedId, ProcessRunRequest, RuntimeHostArgumentTemplate,
     ShaderRequest, SystemInfoKind, SystemInfoRequest, TaskId, TtsRequest, WasmCallRequest,
 };
-use crate::value::DenseSeq;
+use crate::value::{DenseSeq, RuntimeFieldValue};
 
 impl Engine {
     pub(super) fn resume_suspended(
@@ -30,7 +30,7 @@ impl Engine {
         let status = std::mem::replace(&mut self.fiber.status, FlowFiberStatus::Running);
         match status {
             FlowFiberStatus::Dialogue(state) => {
-                self.resume_dialogue_state(state, input, output, pure_backend);
+                self.resume_dialogue_state(state, input, output);
                 true
             }
             FlowFiberStatus::Waiting(state) => {
@@ -67,10 +67,9 @@ impl Engine {
         mut state: DialogueState,
         input: &RuntimeStepInput,
         output: &mut RuntimeStepOutput,
-        pure_backend: &mut impl RuntimeCallBackend,
     ) {
-        let Some(group) = self.plan.line_task_groups.get(state.task_group).cloned() else {
-            let message = format!("missing line task group {}", state.task_group);
+        let Some(content) = self.plan.dialogue_content().get(state.content).cloned() else {
+            let message = format!("missing dialogue content plan {}", state.content);
             self.fiber.status = FlowFiberStatus::Failed(message.clone());
             output.diagnostics.push(RuntimeDiagnostic::categorized(
                 RuntimeDiagnosticCategory::Internal,
@@ -78,31 +77,75 @@ impl Engine {
             ));
             return;
         };
-        if let Some(cancelled) = cancel_live_line_task_group(&group, input) {
-            self.merge_step_output(cancelled, output, pure_backend);
-            if self.apply_control_effects(output, pure_backend) {
+        let marks = Self::dialogue_marks_for_input(&content, input);
+        if let (Some(group_id), Some(line_task)) = (state.task_group, state.line_task.as_mut()) {
+            let Some(group) = self.plan.line_task_groups().get(group_id.index()).cloned() else {
+                let message = format!("missing line task group {group_id}");
+                self.fiber.status = FlowFiberStatus::Failed(message.clone());
+                output.diagnostics.push(RuntimeDiagnostic::categorized(
+                    RuntimeDiagnosticCategory::Internal,
+                    message,
+                ));
+                return;
+            };
+            if let Some(cancelled) = cancel_live_line_task_group(&group, &marks, line_task) {
+                if let Some(mark) = marks.iter().copied().find(|mark| {
+                    group
+                        .cancel_rules()
+                        .iter()
+                        .any(|rule| rule.trigger() == *mark)
+                }) && let Some(trigger) = content
+                    .marks()
+                    .iter()
+                    .find(|candidate| candidate.id() == mark)
+                    .map(|candidate| candidate.label().to_owned())
+                {
+                    output
+                        .flow_events
+                        .push(FlowEvent::LineCancelled { trigger });
+                }
+                self.request_line_task_cancellation();
+                self.spawn_line_task_commands(&group, cancelled, &state.captures);
+                // Cancellation never drops queued fibers. Keep the dialogue
+                // owner suspended until the reducer's Closing protocol has
+                // observed all joined work and its cleanup.
+                self.fiber.status = FlowFiberStatus::Dialogue(state);
                 return;
             }
-            self.fiber.cursor = state.resume;
-            self.fiber.status = FlowFiberStatus::Running;
-            return;
-        }
-        state.elapsed = state.elapsed.saturating_add(input.dt);
-        self.merge_step_output(
-            progress_live_line_task_group(&group, input, state.elapsed, &mut state.started_nodes),
-            output,
-            pure_backend,
-        );
-        if self.apply_control_effects(output, pure_backend) {
-            return;
+            if line_task.is_closing() {
+                let activation = finalize_live_line_task_close(&group, line_task);
+                self.spawn_line_task_commands(&group, activation, &state.captures);
+                if line_task.is_closed() {
+                    self.fiber.cursor = state.resume;
+                    self.fiber.status = FlowFiberStatus::Running;
+                } else {
+                    self.fiber.status = FlowFiberStatus::Dialogue(state);
+                }
+                return;
+            }
+            state.elapsed = state.elapsed.saturating_add(input.dt);
+            let activation =
+                progress_live_line_task_group(&group, state.elapsed, &marks, line_task);
+            self.spawn_line_task_commands(&group, activation, &state.captures);
         }
         if input.advances_dialogue(&state.line) {
-            self.merge_step_output(finish_live_line_task_group(&group), output, pure_backend);
-            if self.apply_control_effects(output, pure_backend) {
-                return;
+            if let (Some(group_id), Some(line_task)) = (state.task_group, state.line_task.as_mut())
+                && let Some(group) = self.plan.line_task_groups().get(group_id.index()).cloned()
+            {
+                let cleanup = finish_live_line_task_group(&group, line_task);
+                self.request_line_task_cancellation();
+                self.spawn_line_task_commands(&group, cleanup, &state.captures);
             }
-            self.fiber.cursor = state.resume;
-            self.fiber.status = FlowFiberStatus::Running;
+            if state
+                .line_task
+                .as_ref()
+                .is_none_or(super::super::line_task::LineTaskLiveState::is_closed)
+            {
+                self.fiber.cursor = state.resume;
+                self.fiber.status = FlowFiberStatus::Running;
+            } else {
+                self.fiber.status = FlowFiberStatus::Dialogue(state);
+            }
         } else {
             self.fiber.status = FlowFiberStatus::Dialogue(state);
         }
@@ -124,6 +167,7 @@ impl Engine {
         };
         match event.kind {
             TaskEventKind::Ready(value) => {
+                let value = RuntimePayload::from(RuntimeValue::result_ok(value.value().clone()));
                 if let Some(binding) = &state.binding {
                     match self.try_bind_pattern(binding, value.value()) {
                         Ok(true) => {}
@@ -149,6 +193,33 @@ impl Engine {
                 self.fiber.cursor = state.resume;
                 self.fiber.status = FlowFiberStatus::Running;
             }
+            TaskEventKind::Error(error) => {
+                let value = RuntimePayload::from(RuntimeValue::result_err(error.value().clone()));
+                if let Some(binding) = &state.binding {
+                    match self.try_bind_pattern(binding, value.value()) {
+                        Ok(true) => {}
+                        Ok(false) => {
+                            self.fiber.status = FlowFiberStatus::Failed(
+                                "await error did not match binding pattern".to_owned(),
+                            );
+                            output.diagnostics.push(RuntimeDiagnostic::new(
+                                "await error did not match binding pattern".to_owned(),
+                            ));
+                            return;
+                        }
+                        Err(error) => {
+                            self.fail_eval(error, output);
+                            return;
+                        }
+                    }
+                }
+                output.flow_events.push(FlowEvent::AwaitReady {
+                    need: state.target.need,
+                    value,
+                });
+                self.fiber.cursor = state.resume;
+                self.fiber.status = FlowFiberStatus::Running;
+            }
             TaskEventKind::Progress(progress) => {
                 output.flow_events.push(FlowEvent::AwaitProgress {
                     need: state.target.need.clone(),
@@ -156,7 +227,7 @@ impl Engine {
                 });
                 self.fiber.status = FlowFiberStatus::Waiting(state);
             }
-            TaskEventKind::Err(error) => {
+            TaskEventKind::Failed(error) => {
                 let message = format!("await task {} failed: {error}", state.target.task.0);
                 self.fiber.status = FlowFiberStatus::Failed(message.clone());
                 output.diagnostics.push(RuntimeDiagnostic::categorized(
@@ -294,13 +365,14 @@ impl Engine {
                 return None;
             }
         };
-        Some(TaskSpec::new(
+        Some(TaskSpec::new_with_outcome(
             target.task.clone(),
             TaskKey(target.task.0.clone()),
             request.task_class(),
             TaskPriority(0),
             CancelScopeId("flow".to_owned()),
             TaskPolicy::JoinSameKey,
+            target.outcome.clone(),
             request,
         ))
     }
@@ -374,7 +446,22 @@ impl Engine {
                         progress: progress.clone(),
                     });
                 }
-                TaskEventKind::Err(error) => {
+                TaskEventKind::Error(error) => {
+                    let in_flight = &state.in_flight[position];
+                    let message = format!(
+                        "await task {} at index {} returned error: {}",
+                        in_flight.task.0,
+                        in_flight.index,
+                        crate::value::runtime_value_label(error.value())
+                    );
+                    self.fiber.status = FlowFiberStatus::Failed(message.clone());
+                    output.diagnostics.push(RuntimeDiagnostic::categorized(
+                        RuntimeDiagnosticCategory::Host,
+                        message,
+                    ));
+                    return;
+                }
+                TaskEventKind::Failed(error) => {
                     let in_flight = &state.in_flight[position];
                     let message = format!(
                         "await task {} at index {} failed: {error}",
@@ -473,7 +560,7 @@ impl Engine {
         output: &mut RuntimeStepOutput,
         pure_backend: &mut impl RuntimeCallBackend,
     ) -> Option<TaskSpec> {
-        let request = match self.with_temp_binding_ref(&target.item_binding, item, |this| {
+        let request = match self.with_temp_binding_ref(target.item_binding, item, |this| {
             this.evaluate_host_task_request_template(&target.request, pure_backend)
         }) {
             Ok(request) => request,
@@ -482,13 +569,14 @@ impl Engine {
                 return None;
             }
         };
-        Some(TaskSpec::new(
+        Some(TaskSpec::new_with_outcome(
             task.clone(),
             TaskKey(request.debug_label()),
             request.task_class(),
             TaskPriority(0),
             CancelScopeId("flow".to_owned()),
             TaskPolicy::JoinSameKey,
+            target.outcome.clone(),
             request,
         ))
     }
@@ -517,7 +605,7 @@ impl Engine {
 
     fn evaluate_host_task_args(
         &mut self,
-        args: &[HostTaskArgTemplate],
+        args: &[RuntimeHostArgumentTemplate],
         pure_backend: &mut impl RuntimeCallBackend,
     ) -> Result<Vec<EvaluatedHostArg>, String> {
         let mut evaluated = Vec::new();
@@ -912,6 +1000,7 @@ fn runtime_value_to_string(value: &RuntimeValue) -> String {
         | RuntimeValue::NominalRecord(_)
         | RuntimeValue::Opaque(_)
         | RuntimeValue::Agent(_)
+        | RuntimeValue::Reduction(_)
         | RuntimeValue::Function(_)
         | RuntimeValue::Variant { .. } => super::runtime_value_label(value),
     }

@@ -31,7 +31,7 @@ impl TypeKind {
             Self::Need { ready, error } => {
                 ready.contains_dialogue_line_operation() || error.contains_dialogue_line_operation()
             }
-            Self::Stream { item, error } | Self::Source { item, error } => {
+            Self::Stream { item, error } => {
                 item.contains_dialogue_line_operation() || error.contains_dialogue_line_operation()
             }
             Self::Result { ok, error } => {
@@ -138,7 +138,7 @@ impl TypeKind {
             Self::Need { ready, error } => {
                 ready.contains_nominal_poison() || error.contains_nominal_poison()
             }
-            Self::Stream { item, error } | Self::Source { item, error } => {
+            Self::Stream { item, error } => {
                 item.contains_nominal_poison() || error.contains_nominal_poison()
             }
             Self::Result { ok, error } => {

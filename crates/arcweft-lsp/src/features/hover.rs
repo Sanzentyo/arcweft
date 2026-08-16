@@ -482,7 +482,7 @@ extern capability fixture_agent {
 fn load_story() -> Unit
 effects { agent.observe }
 {
-    fixture_agent.observe()
+    let _observed = fixture_agent.observe()
     ()
 }
 
@@ -575,10 +575,11 @@ effects { agent.observe }
     ()
 }
 
-flow @flow.opening opening
+fn invoke_story() -> Unit
 effects { agent.observe }
 {
-    let body = load_story()
+    let _body = load_story()
+    ()
 }
 ";
         let fixture = accepted_effect_hover_fixture("effect-row-body-hover", source);
@@ -606,7 +607,6 @@ fn retain_callback() -> Unit
 effects { }
 {
     let later = |_unit: Unit| -> Unit {
-        fixture_agent.observe()
         ()
     }
     ()
@@ -623,7 +623,7 @@ effects { }
         match closure_hover.contents {
             HoverContents::Scalar(MarkedString::String(text)) => {
                 assert!(text.contains("checked effects for `closure expression`"));
-                assert!(text.contains("effects: { agent.observe }"));
+                assert!(text.contains("effects: { }"));
             }
             other => panic!("unexpected hover contents: {other:?}"),
         }
@@ -643,7 +643,7 @@ effects { }
     }
 
     #[test]
-    fn hover_describes_closure_expression_expected_effect_row_bound() {
+    fn closure_expected_effect_bound_does_not_inflate_hovered_concrete_effects() {
         let source = r"
 extern capability fixture_agent {
     fn observe() -> Unit effects { agent.observe }
@@ -653,7 +653,6 @@ fn retain_callback() -> Unit
 effects { }
 {
     let later: (Unit) -> Unit effects { agent.observe } = |_unit: Unit| -> Unit {
-            fixture_agent.observe()
             ()
         }
     ()
@@ -670,7 +669,7 @@ effects { }
         match closure_hover.contents {
             HoverContents::Scalar(MarkedString::String(text)) => {
                 assert!(text.contains("checked effects for `closure expression`"));
-                assert!(text.contains("effects: { agent.observe }"));
+                assert!(text.contains("effects: { }"));
             }
             other => panic!("unexpected hover contents: {other:?}"),
         }

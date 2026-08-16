@@ -139,10 +139,11 @@ impl StagedHirModuleTransaction<'_> {
                 )?;
                 let lowered_items = self.lower_attached_thread_flow_items(body.items(), scope)?;
                 self.close_thread_body_scope(scope, Box::new([]), &lowered_items)?;
-                let recovery = lowered_items.recoveries.first().cloned().or_else(|| {
-                    matches!(body.close_state(), AttachedDelimiterState::Missing(_))
-                        .then_some(HirThreadIssue::UnclosedBody)
-                });
+                let recovery = lowered_items
+                    .recoveries
+                    .first()
+                    .cloned()
+                    .or_else(|| body.is_unclosed().then_some(HirThreadIssue::UnclosedBody));
                 let body = HirThreadBody::try_new(
                     HirThreadBodyOwner::ThreadExpression(owner),
                     scope,
@@ -210,7 +211,7 @@ impl StagedHirModuleTransaction<'_> {
                 body.syntax().id(),
                 body.syntax().source_span(),
                 body.items(),
-                matches!(body.close_state(), AttachedDelimiterState::Missing(_)),
+                body.is_unclosed(),
                 false,
             ),
             AttachedRequiredNestedThreadFlowBody::Missing(missing) => {
@@ -386,7 +387,6 @@ fn thread_flow_statement(
         AttachedThreadFlowItemFamily::SourceLocale => HirThreadFlowItem::SourceLocale(owner),
         AttachedThreadFlowItemFamily::Scope => HirThreadFlowItem::Scope(owner),
         AttachedThreadFlowItemFamily::Include => HirThreadFlowItem::Include(owner),
-        AttachedThreadFlowItemFamily::AwaitWith => HirThreadFlowItem::AwaitWith(owner),
         AttachedThreadFlowItemFamily::Error => HirThreadFlowItem::Error(owner),
     })
 }

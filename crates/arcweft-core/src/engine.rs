@@ -1,6 +1,8 @@
 use crate::effect::LineEffectRequest;
 use crate::entry::{RuntimeCallableExecutableCode, RuntimeCallableRole};
-use crate::line_task::run_line_task_group_for_input;
+use crate::line_task::{
+    ChildCancelPolicy, ChildJoinPolicy, LineTaskGroup, LineTaskLiveState, LineTaskWorkTag,
+};
 use crate::observation::RuntimeObservationState;
 use crate::pattern::{RuntimePattern, match_runtime_pattern};
 use crate::plan::{
@@ -11,10 +13,6 @@ use crate::pure::{RuntimeCallBackend, VmPureFunctionScratch, VmRuntimePureCallBa
 use crate::root::{
     RootCallableEvaluationError, RootCallableEvaluator, RootEventInput, RootRuntime,
     RootRuntimeError, RootStartupContract, RuntimeCommandEnvelope,
-};
-use crate::source::{
-    RuntimeSourceEvent, SourceEventKind, SourceHandlerPlan, SourceId, SourceOp, SourcePlan,
-    SourcePolicy, SourceRuntimeState, normalize_source_events,
 };
 use crate::step::{
     RuntimeDiagnostic, RuntimeDiagnosticCategory, RuntimeHostCallId, RuntimeStepInput,
@@ -30,16 +28,13 @@ use crate::task::{
 };
 use crate::value::{
     RuntimeBinding, RuntimeEnv, RuntimeEvalError, RuntimeExpr, RuntimeExprMatchArm,
-    RuntimeFieldValue, RuntimeFunctionValue, RuntimeISizeValue, RuntimeIterator, RuntimePayload,
-    RuntimeSeq, RuntimeUSizeValue, RuntimeValue, evaluate_binary, evaluate_unary,
-    runtime_sequence_dense_f32, runtime_sequence_dense_f64, runtime_sequence_dense_i8,
-    runtime_sequence_dense_i16, runtime_sequence_dense_i32, runtime_sequence_dense_i64,
-    runtime_sequence_dense_i128, runtime_sequence_dense_u8, runtime_sequence_dense_u16,
-    runtime_sequence_dense_u32, runtime_sequence_dense_u64, runtime_sequence_dense_u128,
+    RuntimeIterator, RuntimeLocalBinding, RuntimePayload, RuntimeSeq, RuntimeValue,
+    evaluate_binary, evaluate_unary, runtime_sequence_dense_i64,
     runtime_sequence_from_literal_values, runtime_sequence_repeat_value, runtime_sequence_values,
     runtime_value_into_sequence_values, runtime_value_label, sum_i64_sequence_ref,
 };
-use std::collections::{BTreeMap, VecDeque};
+use std::collections::{BTreeMap, BTreeSet, VecDeque};
+use std::sync::Arc;
 use thiserror::Error;
 pub mod aot;
 pub mod audio;
@@ -47,64 +42,34 @@ pub mod eval;
 pub(crate) use eval::evaluate_runtime_call;
 pub mod flow;
 pub mod line;
-pub mod source;
 pub mod stream;
 pub mod suspend;
 
 #[derive(Clone, Debug, PartialEq)]
 pub struct Engine {
-    plan: RuntimePlan,
+    plan: Arc<RuntimePlan>,
     flow_positions: BTreeMap<FlowRuntimeId, usize>,
     main_started: bool,
     root: Option<RootRuntime>,
-    root_flow_binding: Option<RuntimeBinding>,
+    root_flow_binding: Option<RuntimeLocalBinding>,
     fiber: FlowFiber,
     child_fibers: VecDeque<FlowFiber>,
+    next_fiber_id: u64,
+    next_line_task_activation: u64,
     run_child_next: bool,
-    pure_i8_batch_inputs: Vec<i8>,
-    pure_i8_batch_outputs: Vec<i8>,
-    pure_i16_batch_inputs: Vec<i16>,
-    pure_i16_batch_outputs: Vec<i16>,
-    pure_i32_batch_inputs: Vec<i32>,
-    pure_i128_batch_inputs: Vec<i128>,
-    pure_i128_batch_outputs: Vec<i128>,
-    pure_i32_batch_outputs: Vec<i32>,
-    pure_u8_batch_inputs: Vec<u8>,
-    pure_u8_batch_outputs: Vec<u8>,
-    pure_u16_batch_inputs: Vec<u16>,
-    pure_u16_batch_outputs: Vec<u16>,
-    pure_u32_batch_inputs: Vec<u32>,
-    pure_u32_batch_outputs: Vec<u32>,
-    pure_u64_batch_inputs: Vec<u64>,
-    pure_u64_batch_outputs: Vec<u64>,
-    pure_u128_batch_inputs: Vec<u128>,
-    pure_u128_batch_outputs: Vec<u128>,
-    pure_isize_batch_inputs: Vec<RuntimeISizeValue>,
-    pure_isize_batch_outputs: Vec<RuntimeISizeValue>,
-    pure_usize_batch_inputs: Vec<RuntimeUSizeValue>,
-    pure_usize_batch_outputs: Vec<RuntimeUSizeValue>,
-    pure_f32_batch_inputs: Vec<f32>,
-    pure_f32_batch_outputs: Vec<f32>,
-    pure_f64_batch_inputs: Vec<f64>,
-    pure_f64_batch_outputs: Vec<f64>,
     pure_i64_batch_inputs: Vec<i64>,
     pure_i64_batch_outputs: Vec<i64>,
-    pure_helper_i32_call_shapes: Vec<bool>,
+    pure_u32_batch_inputs: Vec<u32>,
     pure_helper_u32_call_shapes: Vec<bool>,
     pure_helper_i64_call_shapes: Vec<bool>,
-    pure_helper_f32_call_shapes: Vec<bool>,
-    pure_helper_f64_call_shapes: Vec<bool>,
     audio_epoch: u64,
     next_audio_sequence: u64,
     next_host_call_sequence: u64,
 }
 
 struct PureHelperCallShapes {
-    i32: Vec<bool>,
     u32: Vec<bool>,
     i64: Vec<bool>,
-    f32: Vec<bool>,
-    f64: Vec<bool>,
 }
 
 /// Current flow execution cursor.
@@ -117,9 +82,55 @@ pub struct FlowFiber {
     pub root_cleanups: Vec<FlowScopeCleanup>,
     pub env: RuntimeEnv,
     pub observations: RuntimeObservationState,
-    pub source_states: BTreeMap<SourceId, SourceRuntimeState>,
     pub stream_states: BTreeMap<StreamRuntimeId, StreamRuntimeState>,
+    pub id: FlowFiberId,
+    pub(crate) owner: FlowFiberOwner,
     pub status: FlowFiberStatus,
+}
+
+/// Stable executor-local identity. It is allocated independently from a
+/// plan node so an old child completion cannot be attributed to a later run.
+#[derive(Clone, Copy, Debug, Default, Eq, Ord, PartialEq, PartialOrd)]
+pub struct FlowFiberId(u64);
+
+impl FlowFiberId {
+    #[must_use]
+    pub(crate) const fn from_executor_ordinal(ordinal: u64) -> Self {
+        Self(ordinal)
+    }
+}
+
+#[derive(Clone, Debug, PartialEq)]
+pub(crate) enum FlowFiberOwner {
+    Executor,
+    LineTask(LineTaskFiberOwner),
+}
+
+#[derive(Clone, Debug, PartialEq)]
+pub(crate) struct LineTaskFiberOwner {
+    pub(crate) tag: LineTaskWorkTag,
+    pub(crate) join_policy: ChildJoinPolicy,
+    pub(crate) cancel_policy: ChildCancelPolicy,
+    pub(crate) closing: bool,
+}
+
+impl FlowFiberOwner {
+    fn has_joined_work(&self) -> bool {
+        !matches!(
+            self,
+            Self::LineTask(LineTaskFiberOwner {
+                join_policy: ChildJoinPolicy::Detached,
+                ..
+            })
+        )
+    }
+
+    fn requests_line_task_close(&self) -> bool {
+        matches!(
+            self,
+            Self::LineTask(LineTaskFiberOwner { closing: true, .. })
+        )
+    }
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -188,12 +199,12 @@ pub enum EngineStartError {
 }
 
 struct StructuredRootEvaluator<'a> {
-    plan: &'a RuntimePlan,
+    plan: &'a Arc<RuntimePlan>,
     scratch: VmPureFunctionScratch,
 }
 
 impl<'a> StructuredRootEvaluator<'a> {
-    fn new(plan: &'a RuntimePlan) -> Self {
+    fn new(plan: &'a Arc<RuntimePlan>) -> Self {
         Self {
             plan,
             scratch: VmPureFunctionScratch::default(),
@@ -226,19 +237,8 @@ impl RootCallableEvaluator for StructuredRootEvaluator<'_> {
                 callable.callable.as_str()
             )));
         };
-        let helper = self
-            .plan
-            .pure_helpers
-            .iter()
-            .find(|candidate| candidate.id == helper)
-            .ok_or_else(|| {
-                RootCallableEvaluationError::new(format!(
-                    "callable `{}` maps to a missing pure helper",
-                    callable.callable.as_str()
-                ))
-            })?;
         self.scratch
-            .evaluate_values(helper, args)
+            .evaluate_values(self.plan, helper, args)
             .map_err(|error| RootCallableEvaluationError::new(error.to_string()))
     }
 }
@@ -261,9 +261,11 @@ pub enum FlowFiberStatus {
 #[derive(Clone, Debug, PartialEq)]
 pub struct DialogueState {
     pub line: crate::plan::RuntimeLineId,
-    pub task_group: usize,
+    pub content: crate::runtime_id::RuntimeDialogueContentPlanId,
+    pub task_group: Option<crate::runtime_id::RuntimeLineTaskGroupId>,
     pub resume: Option<FlowCursor>,
-    pub started_nodes: std::collections::BTreeSet<usize>,
+    pub captures: Box<[RuntimeLocalBinding]>,
+    pub line_task: Option<LineTaskLiveState>,
     /// Logical time accumulated while this line has been active.
     pub elapsed: crate::time::LogicalDuration,
 }
@@ -423,8 +425,9 @@ impl Default for FlowFiber {
             root_cleanups: Vec::new(),
             env: RuntimeEnv::default(),
             observations: RuntimeObservationState::default(),
-            source_states: BTreeMap::new(),
             stream_states: BTreeMap::new(),
+            id: FlowFiberId::default(),
+            owner: FlowFiberOwner::Executor,
             status: FlowFiberStatus::Done(FlowExit::Done),
         }
     }
@@ -432,11 +435,6 @@ impl Default for FlowFiber {
 
 fn pure_helper_call_shapes(plan: &RuntimePlan) -> PureHelperCallShapes {
     PureHelperCallShapes {
-        i32: plan
-            .pure_helpers
-            .iter()
-            .map(eval::pure_helper_has_i32_call_shape)
-            .collect(),
         u32: plan
             .pure_helpers
             .iter()
@@ -447,16 +445,6 @@ fn pure_helper_call_shapes(plan: &RuntimePlan) -> PureHelperCallShapes {
             .iter()
             .map(eval::pure_helper_has_i64_call_shape)
             .collect(),
-        f32: plan
-            .pure_helpers
-            .iter()
-            .map(eval::pure_helper_has_f32_call_shape)
-            .collect(),
-        f64: plan
-            .pure_helpers
-            .iter()
-            .map(eval::pure_helper_has_f64_call_shape)
-            .collect(),
     }
 }
 
@@ -465,8 +453,9 @@ impl Engine {
     ///
     /// Flow-bearing plans remain dormant until [`Self::start_flow`] or
     /// [`Self::start_entry`] is called. Plans that contain only line tasks,
-    /// sources, or streams remain directly executable.
+    /// streams remain directly executable.
     pub fn new(plan: RuntimePlan) -> Self {
+        let plan = Arc::new(plan);
         let flow_positions: BTreeMap<_, _> = plan
             .flows
             .iter()
@@ -479,20 +468,15 @@ impl Engine {
         } else {
             FlowFiberStatus::Running
         };
-        let source_states = plan
-            .source_plans
-            .iter()
-            .map(|plan| {
-                (
-                    plan.id.clone(),
-                    SourceRuntimeState::new(plan.id.clone(), plan.policy.clone()),
-                )
-            })
-            .collect();
         let stream_states = plan
             .stream_plans
             .iter()
-            .map(|plan| (plan.id.clone(), StreamRuntimeState::new(plan.id.clone())))
+            .map(|plan| {
+                (
+                    plan.id().clone(),
+                    StreamRuntimeState::new(plan.id().clone()),
+                )
+            })
             .collect();
         let call_shapes = pure_helper_call_shapes(&plan);
         Self {
@@ -509,45 +493,20 @@ impl Engine {
                 root_cleanups: Vec::new(),
                 env: RuntimeEnv::default(),
                 observations: RuntimeObservationState::default(),
-                source_states,
                 stream_states,
+                id: FlowFiberId::default(),
+                owner: FlowFiberOwner::Executor,
                 status,
             },
             child_fibers: VecDeque::new(),
+            next_fiber_id: 1,
+            next_line_task_activation: 1,
             run_child_next: false,
-            pure_i8_batch_inputs: Vec::new(),
-            pure_i8_batch_outputs: Vec::new(),
-            pure_i16_batch_inputs: Vec::new(),
-            pure_i16_batch_outputs: Vec::new(),
-            pure_i32_batch_inputs: Vec::new(),
-            pure_i128_batch_inputs: Vec::new(),
-            pure_i128_batch_outputs: Vec::new(),
-            pure_i32_batch_outputs: Vec::new(),
-            pure_u8_batch_inputs: Vec::new(),
-            pure_u8_batch_outputs: Vec::new(),
-            pure_u16_batch_inputs: Vec::new(),
-            pure_u16_batch_outputs: Vec::new(),
-            pure_u32_batch_inputs: Vec::new(),
-            pure_u32_batch_outputs: Vec::new(),
-            pure_u64_batch_inputs: Vec::new(),
-            pure_u64_batch_outputs: Vec::new(),
-            pure_u128_batch_inputs: Vec::new(),
-            pure_u128_batch_outputs: Vec::new(),
-            pure_isize_batch_inputs: Vec::new(),
-            pure_isize_batch_outputs: Vec::new(),
-            pure_usize_batch_inputs: Vec::new(),
-            pure_usize_batch_outputs: Vec::new(),
-            pure_f32_batch_inputs: Vec::new(),
-            pure_f32_batch_outputs: Vec::new(),
-            pure_f64_batch_inputs: Vec::new(),
-            pure_f64_batch_outputs: Vec::new(),
             pure_i64_batch_inputs: Vec::new(),
             pure_i64_batch_outputs: Vec::new(),
-            pure_helper_i32_call_shapes: call_shapes.i32,
+            pure_u32_batch_inputs: Vec::new(),
             pure_helper_u32_call_shapes: call_shapes.u32,
             pure_helper_i64_call_shapes: call_shapes.i64,
-            pure_helper_f32_call_shapes: call_shapes.f32,
-            pure_helper_f64_call_shapes: call_shapes.f64,
             audio_epoch: 0,
             next_audio_sequence: 0,
             next_host_call_sequence: 0,
@@ -641,11 +600,25 @@ impl Engine {
                 op_index: 0,
             });
             self.fiber.status = FlowFiberStatus::Running;
+            let initial_state_binding = self
+                .admit_current_flow_bindings(std::iter::once(&startup.initial_state_binding))
+                .and_then(|mut bindings| {
+                    bindings
+                        .pop()
+                        .ok_or_else(|| RuntimeEvalError::UnknownFlowBinding {
+                            flow: startup.initial_flow.canonical_label(),
+                            binding: startup.initial_state_binding.name.clone(),
+                        })
+                })
+                .map_err(|error| EngineStartError::InvalidRootStartup {
+                    entry: entry.canonical_label(),
+                    message: error.to_string(),
+                })?;
             self.fiber.env.set_root(
-                startup.initial_state_binding.name.clone(),
-                startup.initial_state_binding.value.clone(),
+                initial_state_binding.local,
+                initial_state_binding.value.clone(),
             );
-            self.root_flow_binding = Some(startup.initial_state_binding);
+            self.root_flow_binding = Some(initial_state_binding);
             self.root = Some(startup.root);
             self.main_started = true;
             return Ok(());
@@ -679,6 +652,100 @@ impl Engine {
 
     pub(super) fn flow_index(&self, flow: &FlowRuntimeId) -> Option<usize> {
         self.flow_positions.get(flow).copied()
+    }
+
+    fn admit_current_flow_bindings<'a>(
+        &self,
+        bindings: impl IntoIterator<Item = &'a RuntimeBinding>,
+    ) -> Result<Vec<RuntimeLocalBinding>, RuntimeEvalError> {
+        let mut bindings = bindings.into_iter().peekable();
+        let Some(first) = bindings.peek() else {
+            return Ok(Vec::new());
+        };
+        let Some(cursor) = self.fiber.cursor.as_ref() else {
+            return Err(RuntimeEvalError::MissingFlowBindingTarget {
+                flow: "<none>".to_owned(),
+                binding: first.name.clone(),
+            });
+        };
+        let Some(flow) = self.plan.flows.get(cursor.flow_index) else {
+            return Err(RuntimeEvalError::MissingFlowBindingTarget {
+                flow: format!("#{}", cursor.flow_index),
+                binding: first.name.clone(),
+            });
+        };
+        let flow_label = flow.id.canonical_label();
+        let Some(executable) = self
+            .plan
+            .flow_executables
+            .iter()
+            .find(|candidate| candidate.flow == flow.id)
+        else {
+            return Err(RuntimeEvalError::MissingFlowBindingTarget {
+                flow: flow_label,
+                binding: first.name.clone(),
+            });
+        };
+
+        let mut admitted = Vec::new();
+        let mut unique = BTreeSet::new();
+        for binding in bindings {
+            if !unique.insert(binding.name.as_str()) {
+                return Err(RuntimeEvalError::DuplicateFlowBinding {
+                    flow: flow_label,
+                    binding: binding.name.clone(),
+                });
+            }
+            let mut matching = executable
+                .parameters
+                .iter()
+                .filter(|parameter| parameter.name == binding.name);
+            let Some(parameter) = matching.next() else {
+                return Err(RuntimeEvalError::UnknownFlowBinding {
+                    flow: flow_label,
+                    binding: binding.name.clone(),
+                });
+            };
+            if matching.next().is_some() {
+                return Err(RuntimeEvalError::AmbiguousFlowBinding {
+                    flow: flow_label,
+                    binding: binding.name.clone(),
+                });
+            }
+            let position = usize::try_from(parameter.position).map_err(|_| {
+                RuntimeEvalError::MissingFlowParameterLocal {
+                    flow: flow_label.clone(),
+                    position: usize::MAX,
+                }
+            })?;
+            let local = flow.params.get(position).copied().ok_or_else(|| {
+                RuntimeEvalError::MissingFlowParameterLocal {
+                    flow: flow_label.clone(),
+                    position,
+                }
+            })?;
+            let declaration = self
+                .plan
+                .local_declarations
+                .get(local)
+                .ok_or(RuntimeEvalError::UnknownLocal(local))?;
+            if !self
+                .plan
+                .value_matches_type(declaration.ty(), &binding.value)?
+            {
+                return Err(RuntimeEvalError::FlowBindingType {
+                    flow: flow_label,
+                    binding: binding.name.clone(),
+                    local,
+                    expected: declaration.ty(),
+                });
+            }
+            admitted.push(RuntimeLocalBinding {
+                local,
+                value: binding.value.clone(),
+            });
+        }
+        Ok(admitted)
     }
 
     pub fn child_fiber_count(&self) -> usize {
@@ -717,21 +784,22 @@ impl Engine {
         let root_events_in = input.root_events.len();
         let deferred_root_events = std::mem::take(&mut input.deferred_root_events);
         let need_states_in = input.need_states.len();
-        let protected_root_flow_binding = self.root_flow_binding.as_ref().and_then(|binding| {
-            self.fiber
-                .env
-                .get_cloned(&binding.name)
-                .map(|value| RuntimeBinding {
-                    name: binding.name.clone(),
-                    value,
-                })
-        });
-        self.fiber.env.bind_all_root_ref(root_bindings);
-        self.fiber
-            .env
-            .bind_all_root(std::mem::take(&mut input.bindings));
-        if let Some(binding) = protected_root_flow_binding {
-            self.fiber.env.set_root(binding.name, binding.value);
+        if let Err(error) = self.bind_step_inputs(root_bindings, &input.bindings) {
+            output.diagnostics.push(RuntimeDiagnostic::categorized(
+                RuntimeDiagnosticCategory::Input,
+                error.to_string(),
+            ));
+            let stats = RuntimeStepStats {
+                executed_ops,
+                pending_ops_before,
+                pending_ops_after: self.pending_ops_len(),
+                child_fibers: self.child_fibers.len(),
+                pure: pure_backend.stats().saturating_delta(pure_stats_before),
+                root_events_in,
+                diagnostics: output.diagnostics.len(),
+                ..RuntimeStepStats::default()
+            };
+            return self.step_result(output, options, stats);
         }
         if !self.run_root_phase(std::mem::take(&mut input.root_events), &mut output) {
             let stats = RuntimeStepStats {
@@ -753,16 +821,13 @@ impl Engine {
             .root_events_next_step
             .extend(deferred_root_events);
         let events = normalize_task_events(std::mem::take(&mut input.task_events));
-        let source_events = normalize_source_events(std::mem::take(&mut input.source_events));
         let task_events_in = events.len();
-        let source_events_in = source_events.len();
         output.diagnostics.extend(events.iter().map(|event| {
             RuntimeDiagnostic::new(format!(
                 "task {} sequence {} delivered",
                 event.task_id.0, event.sequence.0
             ))
         }));
-        self.apply_source_events(source_events, &mut output, pure_backend);
         self.step_stream_plans(&mut output, pure_backend);
 
         while executed_ops < options.budget.max_ops && self.can_attempt_runtime_op() {
@@ -781,18 +846,43 @@ impl Engine {
             pure: pure_backend.stats().saturating_delta(pure_stats_before),
             task_events_in,
             need_states_in,
-            source_events_in,
             root_events_in,
             root_transitions: output.root_transitions.len(),
             root_commands: output.root_commands.len(),
             root_events_deferred: output.requests.root_events_next_step.len(),
-            source_events_emitted: output.effects.source_events.len(),
             stream_events_emitted: output.effects.stream_events.len(),
             line_effects: output.effects.line.len(),
             audio_commands: output.requests.audio.len(),
             diagnostics: output.diagnostics.len(),
         };
         self.step_result(output, options, stats)
+    }
+
+    fn protected_root_flow_binding(&self) -> Option<RuntimeLocalBinding> {
+        self.root_flow_binding.as_ref().and_then(|binding| {
+            self.fiber
+                .env
+                .get_cloned(binding.local)
+                .map(|value| RuntimeLocalBinding {
+                    local: binding.local,
+                    value,
+                })
+        })
+    }
+
+    pub(super) fn bind_step_inputs(
+        &mut self,
+        root_bindings: &[RuntimeBinding],
+        input_bindings: &[RuntimeBinding],
+    ) -> Result<(), RuntimeEvalError> {
+        let protected = self.protected_root_flow_binding();
+        let admitted =
+            self.admit_current_flow_bindings(root_bindings.iter().chain(input_bindings.iter()))?;
+        self.fiber.env.bind_all_root(admitted);
+        if let Some(binding) = protected {
+            self.fiber.env.set_root(binding.local, binding.value);
+        }
+        Ok(())
     }
 
     fn run_root_phase(
@@ -855,7 +945,7 @@ impl Engine {
     }
 
     fn can_attempt_runtime_op(&self) -> bool {
-        self.main_fiber_can_attempt_runtime_op() || self.has_active_child_fibers()
+        self.main_fiber_can_attempt_runtime_op() || self.has_executor_work()
     }
 
     fn step_runtime_op(
@@ -895,8 +985,38 @@ impl Engine {
             )
     }
 
-    pub(super) fn has_active_child_fibers(&self) -> bool {
+    /// Joined work controls parent flow completion. Detached line work remains
+    /// executor work but is intentionally excluded from this local join.
+    pub(super) fn has_joined_work(&self) -> bool {
+        self.child_fibers
+            .iter()
+            .any(|child| child.owner.has_joined_work())
+    }
+
+    /// Executor work controls scheduling. It includes detached line fibers so
+    /// their scopes are still unwound by their owning executor.
+    pub(super) fn has_executor_work(&self) -> bool {
         !self.child_fibers.is_empty()
+    }
+
+    /// Requests cancellation without deleting a queued child. Cancel-and-join
+    /// transitions the owner into Closing; the scheduler subsequently enters
+    /// that fiber and performs its lexical cleanup before reporting completion.
+    pub(super) fn request_line_task_cancellation(&mut self) {
+        for child in &mut self.child_fibers {
+            let FlowFiberOwner::LineTask(owner) = &mut child.owner else {
+                continue;
+            };
+            match owner.cancel_policy {
+                ChildCancelPolicy::Finish => {}
+                // Builder admission rejects Detach until it has a proved
+                // ownership-transfer target. A malformed in-memory plan must
+                // fail closed rather than silently changing ownership.
+                ChildCancelPolicy::CancelAndJoin | ChildCancelPolicy::Detach => {
+                    owner.closing = true;
+                }
+            }
+        }
     }
 
     fn pending_ops_len(&self) -> usize {
@@ -908,6 +1028,12 @@ impl Engine {
                 .sum::<usize>()
     }
 
+    fn allocate_fiber_id(&mut self) -> FlowFiberId {
+        let id = FlowFiberId(self.next_fiber_id);
+        self.next_fiber_id = self.next_fiber_id.saturating_add(1);
+        id
+    }
+
     pub(super) fn spawn_child_fiber(&mut self, body: Vec<FlowOp>) {
         let mut pending_ops = VecDeque::with_capacity(body.len().saturating_add(2));
         if !body.is_empty() {
@@ -917,6 +1043,7 @@ impl Engine {
             }
             pending_ops.push_front(FlowOp::EnterScope);
         }
+        let id = self.allocate_fiber_id();
         self.child_fibers.push_back(FlowFiber {
             line_cursor: 0,
             cursor: None,
@@ -925,11 +1052,96 @@ impl Engine {
             root_cleanups: Vec::new(),
             env: self.fiber.env.clone(),
             observations: RuntimeObservationState::default(),
-            source_states: BTreeMap::new(),
             stream_states: BTreeMap::new(),
+            id,
+            owner: FlowFiberOwner::Executor,
             status: FlowFiberStatus::Running,
         });
         self.run_child_next = true;
+    }
+
+    pub(super) fn capture_line_task_locals(
+        &self,
+        group: &LineTaskGroup,
+    ) -> Result<Box<[RuntimeLocalBinding]>, String> {
+        group
+            .captures()
+            .iter()
+            .map(|local| {
+                self.fiber
+                    .env
+                    .get_cloned(*local)
+                    .map(|value| RuntimeLocalBinding {
+                        local: *local,
+                        value,
+                    })
+                    .ok_or_else(|| format!("line task capture local {local} is not bound"))
+            })
+            .collect::<Result<Vec<_>, _>>()
+            .map(Vec::into_boxed_slice)
+    }
+
+    pub(super) fn spawn_line_task_commands(
+        &mut self,
+        group: &LineTaskGroup,
+        activation: crate::line_task::LineTaskActivation,
+        captures: &[RuntimeLocalBinding],
+    ) {
+        for command in activation.commands {
+            let crate::line_task::LineTaskCommand::Run { tag, policy } = command else {
+                let crate::line_task::LineTaskCommand::Cancel { activation, node } = command else {
+                    unreachable!("line task command is closed");
+                };
+                self.request_line_task_node_cancellation(activation, node);
+                continue;
+            };
+            let ops = group.command_ops(tag);
+            let mut pending_ops = VecDeque::with_capacity(ops.len().saturating_add(2));
+            pending_ops.push_front(FlowOp::ExitScope);
+            for op in ops.iter().rev().cloned() {
+                pending_ops.push_front(op);
+            }
+            pending_ops.push_front(FlowOp::EnterScope);
+            let mut env = RuntimeEnv::default();
+            env.bind_all(captures.iter().cloned());
+            let id = self.allocate_fiber_id();
+            self.child_fibers.push_back(FlowFiber {
+                line_cursor: 0,
+                cursor: None,
+                pending_ops,
+                control_stack: Vec::new(),
+                root_cleanups: Vec::new(),
+                env,
+                observations: RuntimeObservationState::default(),
+                stream_states: BTreeMap::new(),
+                id,
+                owner: FlowFiberOwner::LineTask(LineTaskFiberOwner {
+                    tag,
+                    join_policy: policy.join,
+                    cancel_policy: policy.cancel,
+                    closing: false,
+                }),
+                status: FlowFiberStatus::Running,
+            });
+            self.run_child_next = true;
+        }
+    }
+
+    fn request_line_task_node_cancellation(
+        &mut self,
+        activation: crate::line_task::LineTaskActivationId,
+        node: crate::runtime_id::RuntimeLineTaskNodeId,
+    ) {
+        for child in &mut self.child_fibers {
+            let FlowFiberOwner::LineTask(owner) = &mut child.owner else {
+                continue;
+            };
+            if owner.tag.activation == activation
+                && matches!(owner.tag.work, crate::line_task::LineTaskWork::Node(candidate) if candidate == node)
+            {
+                owner.closing = true;
+            }
+        }
     }
 
     fn step_next_child_fiber(
@@ -946,14 +1158,48 @@ impl Engine {
         self.step_active_child_fiber(input, events, output, pure_backend);
         self.finish_active_child_if_exhausted();
         std::mem::swap(&mut self.fiber, &mut child);
+        let owner = child.owner.clone();
         match child.status {
-            FlowFiberStatus::Done(_) => {}
+            FlowFiberStatus::Done(_) => {
+                if let FlowFiberOwner::LineTask(owner) = owner {
+                    self.complete_line_task_work(owner.tag, false);
+                }
+            }
             FlowFiberStatus::Failed(message) => {
-                self.fiber.status = FlowFiberStatus::Failed(message);
+                if let FlowFiberOwner::LineTask(owner) = owner {
+                    self.complete_line_task_work(owner.tag, true);
+                }
+                if child.owner.has_joined_work() {
+                    self.fiber.status = FlowFiberStatus::Failed(message);
+                }
             }
             _ => self.child_fibers.push_back(child),
         }
         true
+    }
+
+    fn complete_line_task_work(&mut self, tag: LineTaskWorkTag, failed: bool) {
+        let Some(group_id) = (match &self.fiber.status {
+            FlowFiberStatus::Dialogue(dialogue) => dialogue.task_group,
+            _ => None,
+        }) else {
+            return;
+        };
+        let Some(group) = self.plan.line_task_groups().get(group_id.index()).cloned() else {
+            return;
+        };
+        let Some((activation, captures)) = (match &mut self.fiber.status {
+            FlowFiberStatus::Dialogue(dialogue) => dialogue.line_task.as_mut().map(|state| {
+                (
+                    crate::line_task::complete_live_line_task_work(&group, state, tag, failed),
+                    dialogue.captures.clone(),
+                )
+            }),
+            _ => None,
+        }) else {
+            return;
+        };
+        self.spawn_line_task_commands(&group, activation, &captures);
     }
 
     fn step_active_child_fiber(
@@ -963,6 +1209,10 @@ impl Engine {
         output: &mut RuntimeStepOutput,
         pure_backend: &mut impl RuntimeCallBackend,
     ) {
+        if self.fiber.owner.requests_line_task_close() {
+            self.close_active_line_task_fiber(output, pure_backend);
+            return;
+        }
         if self.resume_suspended(input, events, output, pure_backend) {
             return;
         }
@@ -972,6 +1222,23 @@ impl Engine {
         if self.fiber.cursor.is_some() || !self.fiber.pending_ops.is_empty() {
             self.step_flow(input, output, pure_backend);
         }
+    }
+
+    fn close_active_line_task_fiber(
+        &mut self,
+        output: &mut RuntimeStepOutput,
+        pure_backend: &mut impl RuntimeCallBackend,
+    ) {
+        let frames = std::mem::take(&mut self.fiber.control_stack);
+        for frame in frames.into_iter().rev() {
+            if let FlowControlStackEntryKind::Scope { cleanups } = frame.kind {
+                self.emit_scope_cleanups(cleanups, output, pure_backend);
+            }
+        }
+        self.drain_root_cleanups(output, pure_backend);
+        self.fiber.cursor = None;
+        self.fiber.pending_ops.clear();
+        self.fiber.status = FlowFiberStatus::Done(FlowExit::Done);
     }
 
     fn finish_active_child_if_exhausted(&mut self) {
@@ -1035,7 +1302,7 @@ impl Engine {
     }
 
     fn effective_fiber_status(&self) -> FlowFiberStatus {
-        if self.has_active_child_fibers()
+        if self.has_executor_work()
             && matches!(
                 self.fiber.status,
                 FlowFiberStatus::Done(_)
@@ -1054,7 +1321,7 @@ impl Engine {
     }
 
     fn hard_stop_reason(&self, output: &RuntimeStepOutput) -> Option<RuntimeStepStopReason> {
-        if self.has_active_child_fibers()
+        if self.has_executor_work()
             && matches!(
                 self.fiber.status,
                 FlowFiberStatus::Done(_)
@@ -1121,7 +1388,6 @@ fn has_host_requests(output: &RuntimeStepOutput) -> bool {
     !output.requests.tasks.is_empty()
         || !output.requests.audio.is_empty()
         || !output.requests.cancel_scopes.is_empty()
-        || !output.requests.source_close.is_empty()
         || !output.requests.ensure_content.is_empty()
         || !output.requests.host_calls.is_empty()
 }

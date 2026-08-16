@@ -267,6 +267,13 @@ fn validate_config_strings(value: &RuntimeValue) -> Result<(), CharacterDialogue
         }
         RuntimeValue::NominalRecord(record) => validate_config_string_values(record.fields()),
         RuntimeValue::Opaque(value) => validate_config_strings(value.payload()),
+        RuntimeValue::Reduction(value) => {
+            validate_config_strings(value.state())?;
+            for command in value.commands() {
+                validate_config_strings(command.payload().value())?;
+            }
+            Ok(())
+        }
         RuntimeValue::Agent(value) => {
             if value
                 .text_values()
@@ -398,6 +405,7 @@ fn count_structured_leaves(
         RuntimeValue::Function(_)
         | RuntimeValue::Iterator(_)
         | RuntimeValue::Agent(_)
+        | RuntimeValue::Reduction(_)
         | RuntimeValue::MatrixF32(_)
         | RuntimeValue::MatrixF64(_)
         | RuntimeValue::TensorF32(_)

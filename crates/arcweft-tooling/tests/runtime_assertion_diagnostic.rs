@@ -157,24 +157,27 @@ fn runtime_projection_emits_stable_diagnostic_without_message_parsing() {
     let mut input = RuntimePlanSemanticFactInput::new();
     for (_, module) in executable.modules() {
         for (owner, _) in module.locals() {
-            input
-                .push_local_declaration(
-                    owner,
-                    RuntimeNormalizedType::new(
-                        RuntimeSemanticTypeId::from_bytes([0x11; 32]),
-                        RuntimeTypeShape::Unit,
-                    ),
-                )
-                .expect("fixture local identity");
-        }
-        for (owner, _) in module.expressions() {
-            input.push_expression_type(
+            input.push_local_declaration(
                 owner,
                 RuntimeNormalizedType::new(
                     RuntimeSemanticTypeId::from_bytes([0x11; 32]),
                     RuntimeTypeShape::Unit,
                 ),
             );
+        }
+        for (owner, _) in module.expressions() {
+            let expression_type = if owner == condition {
+                RuntimeNormalizedType::new(
+                    RuntimeSemanticTypeId::from_bytes([0x12; 32]),
+                    RuntimeTypeShape::Bool,
+                )
+            } else {
+                RuntimeNormalizedType::new(
+                    RuntimeSemanticTypeId::from_bytes([0x11; 32]),
+                    RuntimeTypeShape::Unit,
+                )
+            };
+            input.push_expression_type(owner, expression_type);
         }
         for (owner, _) in module.patterns() {
             input.push_pattern_type(
@@ -203,7 +206,7 @@ fn runtime_projection_emits_stable_diagnostic_without_message_parsing() {
         &RuntimeEntryLoweringInput::empty(executable),
     )
     .expect("runtime assertion lowers");
-    let guard = report.plan.flows[0]
+    let guard = report.plan.flows()[0]
         .ops
         .iter()
         .find_map(|operation| match operation {

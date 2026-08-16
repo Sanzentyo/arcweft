@@ -871,144 +871,6 @@ impl HirIncludeStmt {
     }
 }
 
-/// Await result-propagation semantics selected by the parser.
-#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
-pub enum HirAwaitPropagation {
-    PreserveResult,
-    PropagateError,
-}
-
-/// Closed semantic family of one `AwaitWith` branch.
-#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
-pub enum HirAwaitWithBranchKind {
-    Pending,
-    Ready,
-    Error,
-    Denied,
-    Recovered,
-}
-
-/// One source-ordered `AwaitWith` branch and its branch-local bindings.
-#[derive(Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
-pub struct HirAwaitWithBranch {
-    kind: HirAwaitWithBranchKind,
-    pattern: Option<PatternId>,
-    locals: Box<[LocalId]>,
-    body: HirContextualStmtBody,
-}
-
-impl HirAwaitWithBranch {
-    pub(crate) fn try_new(
-        kind: HirAwaitWithBranchKind,
-        pattern: Option<PatternId>,
-        locals: Box<[LocalId]>,
-        body: HirContextualStmtBody,
-    ) -> Result<Self, HirThreadStmtInvariantError> {
-        let invalid_shape = match kind {
-            HirAwaitWithBranchKind::Recovered => pattern.is_some() || !locals.is_empty(),
-            HirAwaitWithBranchKind::Pending
-            | HirAwaitWithBranchKind::Ready
-            | HirAwaitWithBranchKind::Error
-            | HirAwaitWithBranchKind::Denied => pattern.is_none(),
-        };
-        if invalid_shape {
-            return Err(HirThreadStmtInvariantError::InvalidAwaitBranchShape);
-        }
-        let value = Self {
-            kind,
-            pattern,
-            locals,
-            body,
-        };
-        value.validate_module(value.body.scope().module())?;
-        reject_duplicate_ids(value.locals.iter().copied())?;
-        Ok(value)
-    }
-
-    pub const fn kind(&self) -> HirAwaitWithBranchKind {
-        self.kind
-    }
-
-    pub const fn pattern(&self) -> Option<PatternId> {
-        self.pattern
-    }
-
-    pub fn locals(&self) -> &[LocalId] {
-        &self.locals
-    }
-
-    pub const fn body(&self) -> &HirContextualStmtBody {
-        &self.body
-    }
-
-    pub(crate) fn thread_body_for_scope(&self, scope: ScopeId) -> Option<&HirThreadBody> {
-        self.body.thread_body_for_scope(scope)
-    }
-
-    fn validate_module(&self, expected: HirModuleId) -> Result<(), HirThreadStmtInvariantError> {
-        if let Some(pattern) = self.pattern {
-            validate_module(expected, pattern.module())?;
-        }
-        validate_locals(expected, &self.locals)?;
-        self.body.validate_module(expected)
-    }
-}
-
-/// Statement-form `AwaitWith` payload.
-#[derive(Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
-pub struct HirAwaitWithStmt {
-    operand: ExprId,
-    propagation: HirAwaitPropagation,
-    branches: Box<[HirAwaitWithBranch]>,
-}
-
-impl HirAwaitWithStmt {
-    pub(crate) fn try_new(
-        operand: ExprId,
-        propagation: HirAwaitPropagation,
-        branches: Box<[HirAwaitWithBranch]>,
-    ) -> Result<Self, HirThreadStmtInvariantError> {
-        for branch in &branches {
-            branch.validate_module(operand.module())?;
-        }
-        reject_duplicate_ids(branches.iter().map(|branch| branch.body.scope()))?;
-        Ok(Self {
-            operand,
-            propagation,
-            branches,
-        })
-    }
-
-    pub const fn operand(&self) -> ExprId {
-        self.operand
-    }
-
-    pub const fn propagation(&self) -> HirAwaitPropagation {
-        self.propagation
-    }
-
-    pub fn branches(&self) -> &[HirAwaitWithBranch] {
-        &self.branches
-    }
-
-    pub(crate) fn thread_body_for_scope(&self, scope: ScopeId) -> Option<&HirThreadBody> {
-        self.branches
-            .iter()
-            .find_map(|branch| branch.thread_body_for_scope(scope))
-    }
-
-    pub(crate) fn validate_module(
-        &self,
-        expected: HirModuleId,
-    ) -> Result<(), HirThreadStmtInvariantError> {
-        validate_module(expected, self.operand.module())?;
-        for branch in &self.branches {
-            branch.validate_module(expected)?;
-        }
-        Ok(())
-    }
-}
-
 /// Source-independent recovery class for the F04-F15 statement payloads.
 #[derive(Clone, Copy, Debug, Eq, Error, Hash, Ord, PartialEq, PartialOrd)]
 pub enum HirThreadStmtRecoveryIssue {
@@ -1032,10 +894,6 @@ pub enum HirThreadStmtRecoveryIssue {
     InvalidScopeName(HirNameInvariantError),
     #[error("Include target is invalid")]
     InvalidIncludeTarget(HirIdRefIssue),
-    #[error("AwaitWith statement has no branch")]
-    EmptyAwaitWith,
-    #[error("AwaitWith branch {ordinal} has a recovered head")]
-    RecoveredAwaitWithBranch { ordinal: u32 },
 }
 
 /// Semantic child selected as the primary recovery owner.
@@ -1054,9 +912,6 @@ pub enum HirThreadStmtChildRole {
     SelectBranchStatement { branch: u32, statement: u32 },
     Locale,
     IncludeTarget,
-    AwaitOperand,
-    AwaitPattern { branch: u32 },
-    AwaitBranchStatement { branch: u32, statement: u32 },
 }
 
 /// Required nested body selected as the primary recovery owner.
@@ -1074,8 +929,6 @@ pub enum HirThreadStmtBodyRole {
     SelectBranch { ordinal: u32 },
     SourceLocale,
     Scope,
-    AwaitWith,
-    AwaitBranch { ordinal: u32 },
 }
 
 /// Structural failure detected before one statement payload is published.
@@ -1090,7 +943,7 @@ pub(crate) enum HirThreadStmtInvariantError {
     DuplicateChild,
     #[error("one contextual match-arm body does not use its arm scope")]
     MismatchedBodyScope,
-    #[error("an AwaitWith branch kind disagrees with its pattern and locals")]
+    #[error("an Await branch kind disagrees with its pattern and locals")]
     InvalidAwaitBranchShape,
 }
 
@@ -1134,7 +987,7 @@ fn validate_module(
     }
 }
 
-fn reject_duplicate_ids<I>(
+pub(crate) fn reject_duplicate_ids<I>(
     ids: impl IntoIterator<Item = I>,
 ) -> Result<(), HirThreadStmtInvariantError>
 where

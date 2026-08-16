@@ -41,7 +41,7 @@ pub enum ReplTransactionError {
     },
     #[error("semantic/effect policy rejected the REPL cell: {message}")]
     EffectPolicy { message: String },
-    #[error("bytecode verifier rejected the REPL cell: {message}")]
+    #[error("Product AWBC verifier rejected the REPL cell: {message}")]
     Verifier { message: String },
     #[error("runtime project binding rejected the REPL cell before commit: {message}")]
     ProjectBinding { message: String },

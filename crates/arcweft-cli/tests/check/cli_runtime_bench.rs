@@ -2148,17 +2148,12 @@ effects { signal.write, metric.write }
 }
 
 #[test]
-fn plan_json_lists_source_generation_plans() {
+fn plan_json_lists_stream_generation_plans_without_source_roots() {
     let path = temp_arcw(
         "generation-plan",
         r#"
-pub source fixture_frames: Source<IteratorItem, CaptureError> {
-    from "fixture"
-    backpressure = latest
-    replay = hash_only
-    privacy = transient
-
-    on item frame => yield frame
+fn fixture_frames() -> Stream<String, String> {
+    yield "frame"
 }
 
 flow generation() -> String {
@@ -2182,25 +2177,18 @@ flow generation() -> String {
     let stdout = String::from_utf8_lossy(&output.stdout);
     assert!(
         stdout.contains("\"streams\"")
-            && stdout.contains("\"sources\"")
-            && stdout.contains("source.fixture_frames")
-            && stdout.contains("HashOnly"),
-        "plan JSON should include source metadata: {stdout}"
+            && !stdout.contains("\"sources\""),
+        "plan JSON should expose stream plans without Source roots: {stdout}"
     );
 }
 
 #[test]
-fn run_json_lists_source_runtime_state() {
+fn run_json_lists_stream_runtime_state_without_source_state() {
     let path = temp_arcw(
         "generation-run",
         r#"
-pub source fixture_frames: Source<IteratorItem, CaptureError> {
-    from "fixture"
-    backpressure = latest
-    replay = hash_only
-    privacy = transient
-
-    on item frame => yield frame
+fn fixture_frames() -> Stream<String, String> {
+    yield "frame"
 }
 
 entry cli @entry.generation { goto @flow.generation }
@@ -2229,10 +2217,8 @@ flow generation() -> String {
     );
     let stdout = String::from_utf8_lossy(&output.stdout);
     assert!(
-        stdout.contains("\"source_states\"")
-            && stdout.contains("source.fixture_frames")
-            && stdout.contains("\"stream_states\""),
-        "run JSON should include source runtime state: {stdout}"
+        !stdout.contains("\"source_states\"") && stdout.contains("\"stream_states\""),
+        "run JSON should expose stream state without Source state: {stdout}"
     );
 }
 

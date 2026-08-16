@@ -19,11 +19,10 @@ use crate::resource_codec::runtime::{
 use crate::resource_codec::view::migrated_view_section_compatibility;
 use arcweft_core::awbc::codec::AwbcDecodeBudget;
 use arcweft_core::awbc::schema::{
-    AwbcBlock, AwbcFrameLayout, AwbcFunction, AwbcInstruction, AwbcProgram, AwbcSignature,
-    AwbcTableRange,
+    AWBC_ABI_VERSION, AwbcBlock, AwbcFrameLayout, AwbcFunction, AwbcInstruction, AwbcProgram,
+    AwbcSignature, AwbcTableRange,
 };
 use arcweft_core::awbc::verify::{AwbcVerifyBudget, AwbcVerifyContext};
-use arcweft_core::bytecode::BYTECODE_ABI_VERSION;
 use serde::Serialize;
 use std::collections::{BTreeMap, BTreeSet};
 use thiserror::Error;
@@ -350,8 +349,8 @@ impl BundlePatchPlan {
 
 impl RuntimeAbiRange {
     pub const CURRENT: Self = Self {
-        min: BYTECODE_ABI_VERSION,
-        max: BYTECODE_ABI_VERSION,
+        min: AWBC_ABI_VERSION,
+        max: AWBC_ABI_VERSION,
     };
 
     pub const fn contains(self, abi: u32) -> bool {
@@ -531,11 +530,11 @@ impl BundlePatchArtifact {
         {
             return Err(PatchBundleError::ContentRootMismatch);
         }
-        if !self.manifest.runtime_abi.contains(BYTECODE_ABI_VERSION) {
+        if !self.manifest.runtime_abi.contains(AWBC_ABI_VERSION) {
             return Err(PatchBundleError::UnsupportedRuntimeAbi {
                 min: self.manifest.runtime_abi.min,
                 max: self.manifest.runtime_abi.max,
-                current: BYTECODE_ABI_VERSION,
+                current: AWBC_ABI_VERSION,
             });
         }
         validate_operation_ids(&self.plan)?;

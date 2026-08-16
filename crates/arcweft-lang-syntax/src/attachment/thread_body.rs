@@ -4,7 +4,7 @@ use super::access::IfStatementHeadNode;
 use super::expression::AttachedExpressionNode;
 use super::family::{FamilyNode, StatementFamily, StatementNode};
 use super::node::{
-    AstNode, AwaitWithStatementKind, BlockKind, ChoiceStatementKind, CloseBraceKind,
+    AstNode, BlockKind, ChoiceStatementKind, CloseBraceKind,
     DialogueContentApplicationExpressionKind, ErrorStatementKind, FlowBodyKind, ForStatementKind,
     IfStatementKind, IncludeStatementKind, LoopStatementKind, MatchStatementKind, MissingBodyKind,
     OpenBraceKind, ScopeStatementKind, SelectStatementKind, SourceLocaleStatementKind,
@@ -31,7 +31,6 @@ pub enum AttachedThreadFlowItemFamily {
     SourceLocale,
     Scope,
     Include,
-    AwaitWith,
     Error,
 }
 
@@ -52,7 +51,6 @@ pub enum AttachedThreadFlowItem {
     SourceLocale(AstNode<SourceLocaleStatementKind>),
     Scope(AstNode<ScopeStatementKind>),
     Include(AstNode<IncludeStatementKind>),
-    AwaitWith(AstNode<AwaitWithStatementKind>),
     Error(AstNode<ErrorStatementKind>),
 }
 
@@ -83,7 +81,6 @@ impl AttachedThreadFlowItem {
             SyntaxKind::SourceLocaleStatement => Ok(Self::SourceLocale(syntax.cast()?)),
             SyntaxKind::ScopeStatement => Ok(Self::Scope(syntax.cast()?)),
             SyntaxKind::IncludeStatement => Ok(Self::Include(syntax.cast()?)),
-            SyntaxKind::AwaitWithStatement => Ok(Self::AwaitWith(syntax.cast()?)),
             SyntaxKind::ErrorStatement => Ok(Self::Error(syntax.cast()?)),
             _ if kind.is_statement() => {
                 Ok(Self::Statement(FamilyNode::<StatementFamily>::new(syntax)?))
@@ -108,7 +105,6 @@ impl AttachedThreadFlowItem {
             Self::SourceLocale(node) => node.syntax(),
             Self::Scope(node) => node.syntax(),
             Self::Include(node) => node.syntax(),
-            Self::AwaitWith(node) => node.syntax(),
             Self::Error(node) => node.syntax(),
         }
     }
@@ -133,7 +129,6 @@ impl AttachedThreadFlowItem {
             Self::SourceLocale(_) => AttachedThreadFlowItemFamily::SourceLocale,
             Self::Scope(_) => AttachedThreadFlowItemFamily::Scope,
             Self::Include(_) => AttachedThreadFlowItemFamily::Include,
-            Self::AwaitWith(_) => AttachedThreadFlowItemFamily::AwaitWith,
             Self::Error(_) => AttachedThreadFlowItemFamily::Error,
         }
     }
@@ -218,9 +213,16 @@ impl AttachedFlowStatementBody {
         self.close.delimiter_state()
     }
 
+    /// Returns whether an authored opening brace is missing its closing peer.
+    /// Two zero-width delimiters encode an accepted implicit one-line or
+    /// indentation body rather than an unclosed authored block.
+    pub fn is_unclosed(&self) -> bool {
+        !self.open.range().is_empty()
+            && matches!(self.close_state(), AttachedDelimiterState::Missing(_))
+    }
+
     pub fn has_recovery(&self) -> bool {
-        matches!(self.close_state(), AttachedDelimiterState::Missing(_))
-            || self.items.iter().any(AttachedThreadFlowItem::has_recovery)
+        self.is_unclosed() || self.items.iter().any(AttachedThreadFlowItem::has_recovery)
     }
 
     pub(super) fn range(&self) -> arcweft_source::SourceRange {
@@ -305,9 +307,13 @@ impl AttachedNestedThreadFlowBody {
         self.close.delimiter_state()
     }
 
+    pub fn is_unclosed(&self) -> bool {
+        !self.open.range().is_empty()
+            && matches!(self.close_state(), AttachedDelimiterState::Missing(_))
+    }
+
     pub fn has_recovery(&self) -> bool {
-        matches!(self.close_state(), AttachedDelimiterState::Missing(_))
-            || self.items.iter().any(AttachedThreadFlowItem::has_recovery)
+        self.is_unclosed() || self.items.iter().any(AttachedThreadFlowItem::has_recovery)
     }
 }
 
@@ -361,9 +367,13 @@ impl AttachedThreadExpressionBody {
         self.close.delimiter_state()
     }
 
+    pub fn is_unclosed(&self) -> bool {
+        !self.open.range().is_empty()
+            && matches!(self.close_state(), AttachedDelimiterState::Missing(_))
+    }
+
     pub fn has_recovery(&self) -> bool {
-        matches!(self.close_state(), AttachedDelimiterState::Missing(_))
-            || self.items.iter().any(AttachedThreadFlowItem::has_recovery)
+        self.is_unclosed() || self.items.iter().any(AttachedThreadFlowItem::has_recovery)
     }
 }
 
@@ -395,7 +405,7 @@ impl AstNode<ThreadExpressionKind> {
     }
 }
 
-pub(super) fn required_nested_thread_flow_body<K: super::node::AstKind>(
+pub(crate) fn required_nested_thread_flow_body<K: super::node::AstKind>(
     owner: &AstNode<K>,
 ) -> Result<AttachedRequiredNestedThreadFlowBody, SyntaxAccessError> {
     let body = owner
@@ -435,9 +445,6 @@ fn attach_body_children(
         return Err(SyntaxAccessError::InvalidThreadFlowBodyShape { id: body.id() });
     }
     let open = body.required_exact_child::<OpenBraceKind>(SyntaxRole::OpenDelimiter)?;
-    if open.range().is_empty() {
-        return Err(SyntaxAccessError::InvalidThreadFlowBodyShape { id: body.id() });
-    }
     let items = body
         .syntax()
         .ordered_children(SyntaxRoleClass::ThreadFlowItem)?

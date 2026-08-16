@@ -71,6 +71,19 @@ pub enum SelfTypeScope {
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub struct SelfTypeScopeFingerprint([u8; 32]);
 
+/// Lexical associated-type bindings supplied by an owning extern capability
+/// signature. These bindings are scoped to one checked signature and never
+/// enter the global nominal catalog.
+#[derive(Clone, Debug)]
+pub struct AssociatedTypeScope {
+    bindings: BTreeMap<ModuleSegment, TypeKind>,
+    fingerprint: AssociatedTypeScopeFingerprint,
+}
+
+/// Deterministic fingerprint of one lexical associated-type scope.
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub struct AssociatedTypeScopeFingerprint([u8; 32]);
+
 /// Exact module reader used by the sole nominal resolver. The staged variant
 /// borrows the paused Proof-return transaction directly; it is not a second
 /// HIR database or a reconstructed header model.
@@ -106,6 +119,7 @@ pub struct TypeResolutionInput<'a> {
     world: TypeResolutionWorld<'a>,
     generics: &'a GenericTypeScope,
     self_scope: SelfTypeScope,
+    associated: Option<AssociatedTypeScope>,
     limits: NominalResolutionLimits,
 }
 
@@ -233,6 +247,44 @@ impl GenericTypeScope {
 
     pub const fn fingerprint(&self) -> GenericTypeScopeFingerprint {
         self.fingerprint
+    }
+}
+
+impl AssociatedTypeScope {
+    /// Creates an empty lexical associated-type scope.
+    pub fn empty() -> Self {
+        Self {
+            bindings: BTreeMap::new(),
+            fingerprint: fingerprint_associated(&BTreeMap::new()),
+        }
+    }
+
+    /// Creates a lexical scope from already validated typed bindings.
+    pub fn from_bindings(bindings: impl IntoIterator<Item = (ModuleSegment, TypeKind)>) -> Self {
+        let bindings = bindings.into_iter().collect::<BTreeMap<_, _>>();
+        let fingerprint = fingerprint_associated(&bindings);
+        Self {
+            bindings,
+            fingerprint,
+        }
+    }
+
+    pub fn binding(&self, name: &ModuleSegment) -> Option<&TypeKind> {
+        self.bindings.get(name)
+    }
+
+    pub const fn fingerprint(&self) -> AssociatedTypeScopeFingerprint {
+        self.fingerprint
+    }
+}
+
+impl AssociatedTypeScopeFingerprint {
+    pub const fn empty() -> Self {
+        Self([0; 32])
+    }
+
+    pub const fn as_bytes(&self) -> &[u8; 32] {
+        &self.0
     }
 }
 
@@ -449,8 +501,40 @@ impl<'a> TypeResolutionInput<'a> {
             },
             generics,
             self_scope,
+            associated: None,
             limits,
         })
+    }
+
+    /// Constructs an accepted input with one explicit lexical associated-type
+    /// scope. The scope is consulted before world lookup for direct names.
+    #[allow(
+        clippy::too_many_arguments,
+        reason = "associated signatures add one explicit lexical scope to the accepted resolver boundary"
+    )]
+    pub fn accepted_with_associated(
+        root: TypeId,
+        module: &'a HirModule,
+        project: HirProjectView<'a>,
+        symbols: &'a ProjectSymbolTable,
+        environment: &'a AcceptedNominalWorld,
+        generics: &'a GenericTypeScope,
+        self_scope: SelfTypeScope,
+        associated: &AssociatedTypeScope,
+        limits: NominalResolutionLimits,
+    ) -> Result<Self, TypeResolutionInputError> {
+        let mut input = Self::accepted(
+            root,
+            module,
+            project,
+            symbols,
+            environment,
+            generics,
+            self_scope,
+            limits,
+        )?;
+        input.associated = Some(associated.clone());
+        Ok(input)
     }
 
     #[allow(
@@ -496,6 +580,7 @@ impl<'a> TypeResolutionInput<'a> {
             },
             generics,
             self_scope,
+            associated: None,
             limits,
         })
     }
@@ -517,6 +602,7 @@ impl<'a> TypeResolutionInput<'a> {
             world: TypeResolutionWorld::Detached { environment },
             generics,
             self_scope,
+            associated: None,
             limits,
         })
     }
@@ -543,6 +629,10 @@ impl<'a> TypeResolutionInput<'a> {
 
     pub const fn self_scope(&self) -> &SelfTypeScope {
         &self.self_scope
+    }
+
+    pub const fn associated(&self) -> Option<&AssociatedTypeScope> {
+        self.associated.as_ref()
     }
 
     pub const fn limits(&self) -> NominalResolutionLimits {
@@ -673,6 +763,18 @@ fn fingerprint_generics(
         binding.source.project().hash(&mut hasher);
     }
     GenericTypeScopeFingerprint(hasher.finalize())
+}
+
+fn fingerprint_associated(
+    bindings: &BTreeMap<ModuleSegment, TypeKind>,
+) -> AssociatedTypeScopeFingerprint {
+    let mut hasher = Blake3Hasher::new(b"arcweft-associated-type-scope-v1\0");
+    hasher.write_usize(bindings.len());
+    for (name, ty) in bindings {
+        name.hash(&mut hasher);
+        ty.hash(&mut hasher);
+    }
+    AssociatedTypeScopeFingerprint(hasher.finalize())
 }
 
 struct Blake3Hasher(blake3::Hasher);

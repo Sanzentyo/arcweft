@@ -16,7 +16,7 @@ pub struct AgentRunnerConfig {
     pub created_unix_ms: i64,
 }
 
-/// Deterministic controller-bytecode execution limits.
+/// Deterministic Product AWBC controller execution limits.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct AgentControllerRunConfig {
     pub max_steps: usize,
@@ -30,7 +30,7 @@ pub struct AgentHostCallReport {
     pub events_emitted: u64,
 }
 
-/// Summary returned after running one Agent controller bytecode program.
+/// Summary returned after running one Agent Product AWBC controller.
 #[derive(Clone, Debug, PartialEq)]
 pub struct AgentControllerRunReport {
     pub steps: usize,

@@ -638,9 +638,9 @@ fn proof_block_separates_statements_tail_braces_and_omitted_tail() {
 }
 
 #[test]
-fn expression_events_preserve_precedence_arguments_and_postfix_identity() {
+fn expression_events_preserve_precedence_arguments_and_bracket_select_identity() {
     let source =
-        "proof p(a: Int, b: Int, c: Int, list: List<Int>) = lemma(a + b * c, list[0]?.field)?\n";
+        "proof p(a: Int, b: Int, c: Int, list: List<Int>) = try lemma(a + b * c, list[0].field)\n";
     let built = parse_document(&document(source), crate::parser::ParseOptions::default()).unwrap();
     let kinds = built
         .index()

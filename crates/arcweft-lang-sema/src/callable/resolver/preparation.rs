@@ -291,9 +291,13 @@ fn prepare_unresolved_dot_callee<'a>(
             }
         }
         Some(ProjectValueLookup::Absent) if !staged_value => {
-            if let Some(path) =
-                prepare_language_free_dot_path(value_receiver, expression, member, limits)?
-            {
+            if let Some(path) = prepare_language_free_dot_path(
+                authority.world().environment().callable_catalog(),
+                value_receiver,
+                expression,
+                member,
+                limits,
+            )? {
                 return Ok(PreparedFinalCallCallee::Free {
                     path: Box::new(path),
                     project: None,
@@ -328,6 +332,7 @@ fn prepare_unresolved_dot_callee<'a>(
 /// project roots never enter language namespaces. Candidate construction and
 /// accounting remain owned by `resolve_call_target`.
 pub(crate) fn prepare_language_free_dot_path(
+    accepted: &crate::callable::RegisteredCallableCatalog,
     expression: ExprId,
     receiver: &HirExpr,
     member: &arcweft_lang_hir::leaf::HirName,
@@ -346,7 +351,8 @@ pub(crate) fn prepare_language_free_dot_path(
     ) || BuiltinCallableId::resolve(&path).is_some()
         || AgentIntrinsicSignatureId::resolve(&path).is_some()
         || PresentationCallableId::resolve(&path).is_some()
-        || PromotionCallableId::resolve(&path).is_some();
+        || PromotionCallableId::resolve(&path).is_some()
+        || accepted.free(&path).is_some();
     Ok(is_language_free.then_some(path))
 }
 

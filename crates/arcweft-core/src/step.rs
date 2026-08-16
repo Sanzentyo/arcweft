@@ -1,9 +1,8 @@
 use crate::effect::LineEffectRequest;
 use crate::plan::{FlowEvent, RuntimeLineId};
 use crate::root::{RootEventInput, RootTransitionOutcome, RuntimeCommandEnvelope};
-use crate::source::{RuntimeSourceEvent, SourceId};
 use crate::stream::RuntimeStreamEvent;
-use crate::task::{CancelScopeId, RuntimeNeedState, TaskEvent, TaskSpec};
+use crate::task::{CancelScopeId, NamedHostArg, RuntimeNeedState, TaskEvent, TaskSpec};
 use crate::time::{LogicalDuration, TickId};
 use crate::value::{RuntimeBinding, RuntimePayload};
 use arcweft_interaction_model::{
@@ -25,7 +24,6 @@ pub struct RuntimeStepInput {
     pub need_states: Vec<RuntimeNeedState>,
     pub task_events: Vec<TaskEvent>,
     pub audio_events: Vec<AudioEvent>,
-    pub source_events: Vec<RuntimeSourceEvent>,
     pub host_call_results: Vec<RuntimeHostCallResult>,
     pub root_events: Vec<RootEventInput>,
     /// Typed events emitted by a later-phase owner for root ingress on the
@@ -47,7 +45,6 @@ pub struct RuntimeStepInputRef<'a> {
     need_states: &'a [RuntimeNeedState],
     task_events: &'a [TaskEvent],
     audio_events: &'a [AudioEvent],
-    source_events: &'a [RuntimeSourceEvent],
     host_call_results: &'a [RuntimeHostCallResult],
     root_events: &'a [RootEventInput],
 }
@@ -66,7 +63,6 @@ pub struct RuntimeStepOutput {
 #[derive(Clone, Debug, Default, PartialEq)]
 pub struct RuntimeEffectBatch {
     pub line: Vec<LineEffectRequest>,
-    pub source_events: Vec<RuntimeSourceEvent>,
     pub stream_events: Vec<RuntimeStreamEvent>,
 }
 
@@ -76,7 +72,6 @@ pub struct HostRequestBatch {
     pub tasks: Vec<TaskSpec>,
     pub audio: Vec<AudioCommandEnvelope>,
     pub cancel_scopes: Vec<CancelScopeId>,
-    pub source_close: Vec<SourceId>,
     pub ensure_content: Vec<RuntimeContentRequest>,
     pub host_calls: Vec<RuntimeHostCallRequest>,
     /// Events accepted from later-phase owners for deterministic next-step
@@ -116,6 +111,7 @@ pub struct RuntimeHostCallRequest {
     pub capability: String,
     pub operation: String,
     pub args: Vec<RuntimePayload>,
+    pub named_args: Vec<NamedHostArg<RuntimePayload>>,
     pub mode: RuntimeHostCallMode,
     pub deterministic: bool,
 }
@@ -184,12 +180,10 @@ pub struct RuntimeStepStats {
     pub pure: RuntimePureCallStats,
     pub task_events_in: usize,
     pub need_states_in: usize,
-    pub source_events_in: usize,
     pub root_events_in: usize,
     pub root_transitions: usize,
     pub root_commands: usize,
     pub root_events_deferred: usize,
-    pub source_events_emitted: usize,
     pub stream_events_emitted: usize,
     pub line_effects: usize,
     pub audio_commands: usize,
@@ -480,7 +474,6 @@ impl RuntimeStepInput {
             need_states: self.need_states.as_slice(),
             task_events: self.task_events.as_slice(),
             audio_events: self.audio_events.as_slice(),
-            source_events: self.source_events.as_slice(),
             host_call_results: self.host_call_results.as_slice(),
             root_events: self.root_events.as_slice(),
         }
@@ -562,10 +555,6 @@ impl<'a> RuntimeStepInputRef<'a> {
         self.audio_events
     }
 
-    pub const fn source_events(&self) -> &'a [RuntimeSourceEvent] {
-        self.source_events
-    }
-
     pub const fn host_call_results(&self) -> &'a [RuntimeHostCallResult] {
         self.host_call_results
     }
@@ -585,9 +574,6 @@ impl RuntimeStepOutput {
         self.flow_events.extend(other.flow_events);
         self.effects.line.extend(other.effects.line);
         self.effects
-            .source_events
-            .extend(other.effects.source_events);
-        self.effects
             .stream_events
             .extend(other.effects.stream_events);
         self.requests.tasks.extend(other.requests.tasks);
@@ -595,9 +581,6 @@ impl RuntimeStepOutput {
         self.requests
             .cancel_scopes
             .extend(other.requests.cancel_scopes);
-        self.requests
-            .source_close
-            .extend(other.requests.source_close);
         self.requests
             .ensure_content
             .extend(other.requests.ensure_content);

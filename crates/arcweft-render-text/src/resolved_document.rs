@@ -3,11 +3,10 @@
 use arcweft_core::locale::LocaleId;
 use arcweft_presentation::fx::FxColor;
 use arcweft_text_model::{
-    DialogueHostEvent, LineDisplayFrame, LineDisplayFrameValidationError, LineDisplayStage,
-    RichTextAngle, RichTextColor, RichTextControl, RichTextDocument, RichTextFontFamily,
-    RichTextInlineDirection, RichTextNode, RichTextPresentation, RichTextRange,
-    RichTextRubyPosition, RichTextSpanKind, RichTextStyle, RichTextWritingMode,
-    presentation_from_styles,
+    LineDisplayFrame, LineDisplayFrameValidationError, LineDisplayStage, RichTextAngle,
+    RichTextColor, RichTextControl, RichTextDocument, RichTextFontFamily, RichTextInlineDirection,
+    RichTextNode, RichTextPresentation, RichTextRange, RichTextRubyPosition, RichTextSpanKind,
+    RichTextStyle, RichTextWritingMode, presentation_from_styles,
 };
 use serde::{Deserialize, Serialize};
 use std::fmt::{self, Write};
@@ -931,7 +930,7 @@ pub fn resolve_document_with_source<'a>(
                     )?);
                 }
             }
-            RichTextNode::StyleStart { style } => active_styles.push(style.clone()),
+            RichTextNode::StyleStart { style } => active_styles.push(style.as_ref().clone()),
             RichTextNode::StyleEnd { span } => remove_style(&mut active_styles, *span),
             RichTextNode::Control {
                 control: RichTextControl::HardBreak,
@@ -939,12 +938,11 @@ pub fn resolve_document_with_source<'a>(
                 resolver.push_text("\n", node_index, &active_styles)?;
             }
             RichTextNode::Interpolation { .. }
-            | RichTextNode::HostEvent {
-                event:
-                    DialogueHostEvent::ConditionalStart { .. }
-                    | DialogueHostEvent::ConditionalElse
-                    | DialogueHostEvent::ConditionalEnd,
-            } => return Err(TextResolveError::DynamicNode { node_index }),
+            | RichTextNode::ConditionalStart { .. }
+            | RichTextNode::ConditionalElse
+            | RichTextNode::ConditionalEnd => {
+                return Err(TextResolveError::DynamicNode { node_index });
+            }
             RichTextNode::Control { .. } | RichTextNode::HostEvent { .. } => {}
         }
     }

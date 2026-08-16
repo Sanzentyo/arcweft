@@ -159,25 +159,6 @@ impl StagedHirModuleTransaction<'_> {
         })
     }
 
-    pub(super) fn lower_attached_single_statement_body(
-        &mut self,
-        statement: &StatementNode,
-        scope: ScopeId,
-        prefix_locals: Box<[LocalId]>,
-    ) -> Result<LoweredStatementOnlyBlock, HirLowerFailure> {
-        let lowered =
-            self.lower_attached_statement(statement, scope, HirStatementContext::Ordinary)?;
-        let mut locals = Vec::with_capacity(prefix_locals.len() + lowered.locals.len());
-        locals.extend(prefix_locals);
-        locals.extend(lowered.locals);
-        require_limit(HirLimit::LocalsPerScope, locals.len())?;
-        self.close_scope_members(scope, locals.into_boxed_slice())?;
-        Ok(LoweredStatementOnlyBlock {
-            statements: Box::<[StmtId]>::from([lowered.owner]),
-            poisoned: lowered.poisoned,
-        })
-    }
-
     pub(super) fn lower_attached_value_block(
         &mut self,
         attached: &AttachedExpressionNode,
@@ -700,8 +681,7 @@ impl StagedHirModuleTransaction<'_> {
             | SyntaxKind::WhileStatement
             | SyntaxKind::WhileLetStatement
             | SyntaxKind::ForStatement
-            | SyntaxKind::SelectStatement
-            | SyntaxKind::AwaitWithStatement => {
+            | SyntaxKind::SelectStatement => {
                 let (kind, recovery) =
                     self.lower_attached_thread_control_statement(attached, owner, scope, context)?;
                 (kind, Box::<[LocalId]>::from([]), recovery)
@@ -1105,6 +1085,16 @@ impl StagedHirModuleTransaction<'_> {
                 let expression =
                     self.lower_missing_required_tail_for_scope(scope, &missing.source_span())?;
                 (HirStmtMatchArmBody::Expression(expression), true)
+            }
+            MatchStatementArmBodyNode::Statement(statement) => {
+                let lowered = self.lower_attached_statement(&statement, scope, context)?;
+                locals.extend(lowered.locals);
+                let body = HirContextualStmtBody::try_ordinary(
+                    scope,
+                    Box::<[StmtId]>::from([lowered.owner]),
+                )
+                .map_err(|_| HirInvariantFailure::InvalidArenaCommit)?;
+                (HirStmtMatchArmBody::Body(body), lowered.poisoned)
             }
             MatchStatementArmBodyNode::Block(block) => {
                 let lowered = self.lower_attached_statement_block(&block, scope, context)?;

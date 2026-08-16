@@ -121,6 +121,13 @@ pub struct RuntimePatternBindingCoordinate {
 }
 
 impl RuntimePatternBindingCoordinate {
+    pub(crate) const fn from_admitted_parts(
+        local: RuntimeLocalDeclarationId,
+        path: RuntimePatternBindingPath,
+    ) -> Self {
+        Self { local, path }
+    }
+
     /// Binds one validated structural path to a local admitted by this plan.
     pub fn try_new(
         local: RuntimeLocalDeclarationId,
@@ -285,10 +292,12 @@ impl<'a> BindingReader<'a> {
 mod tests {
     use super::*;
     use crate::plan::RuntimeLocalDeclarationTableBuilder;
+    use crate::runtime_id::RuntimePlanTypeId;
 
     fn locals() -> (RuntimeLocalDeclarationId, RuntimeLocalDeclarationTable) {
         let mut builder = RuntimeLocalDeclarationTableBuilder::new();
-        let local = builder.push().expect("first local identity");
+        let ty = RuntimePlanTypeId::from_accepted_ordinal(NonZeroU32::MIN);
+        let local = builder.push(ty).expect("first local identity");
         (local, builder.finish())
     }
 

@@ -80,8 +80,17 @@ mod tests {
             LineEffectRequest, RuntimeAssertion, RuntimeAssertionFailure, RuntimeAssertionProfile,
             RuntimeEffectExpr, RuntimeEffectMaterializeError,
         },
-        value::{RuntimeExpr, RuntimeValue},
+        runtime_id::RuntimePlanTypeId,
+        value::{RuntimeExpr, RuntimeExprKind, RuntimeValue},
     };
+    use std::num::NonZeroU32;
+
+    fn value_expr(value: RuntimeValue) -> RuntimeExpr {
+        RuntimeExpr::from_admitted_parts(
+            RuntimePlanTypeId::from_accepted_ordinal(NonZeroU32::MIN),
+            RuntimeExprKind::Value(value),
+        )
+    }
 
     fn failure_fixture() -> RuntimeAssertionFailure {
         RuntimeAssertionFailure::new(RuntimeAssertion::new(
@@ -145,8 +154,8 @@ mod tests {
         let guard = RuntimeAssertionGuardId::try_from_bytes([7; 16]).unwrap();
         let effect = RuntimeEffectExpr::Assert {
             guard,
-            condition: RuntimeExpr::Value(RuntimeValue::Bool(false)),
-            message: RuntimeExpr::Value(RuntimeValue::String("must be ready".to_owned())),
+            condition: value_expr(RuntimeValue::Bool(false)),
+            message: "must be ready".to_owned(),
             profile: RuntimeAssertionProfile::Always,
         };
 
@@ -155,13 +164,10 @@ mod tests {
         };
         assert_eq!(descriptor.guard(), guard);
         assert!(descriptor.condition().is_empty());
-        assert!(descriptor.message().is_empty());
+        assert_eq!(descriptor.message(), "must be ready");
 
         let Some(LineEffectRequest::Assert(materialized)) = effect
-            .materialize(&[
-                RuntimeValue::Bool(false),
-                RuntimeValue::String("must be ready".to_owned()),
-            ])
+            .materialize(&[RuntimeValue::Bool(false)])
             .expect("assertion payload materializes")
         else {
             panic!("materialized assertion must retain its typed request kind");
@@ -176,16 +182,13 @@ mod tests {
     fn successful_runtime_assertion_materializes_no_host_request() {
         let effect = RuntimeEffectExpr::Assert {
             guard: RuntimeAssertionGuardId::try_from_bytes([7; 16]).unwrap(),
-            condition: RuntimeExpr::Value(RuntimeValue::Bool(true)),
-            message: RuntimeExpr::Value(RuntimeValue::String("must be ready".to_owned())),
+            condition: value_expr(RuntimeValue::Bool(true)),
+            message: "must be ready".to_owned(),
             profile: RuntimeAssertionProfile::Always,
         };
 
         let materialized = effect
-            .materialize(&[
-                RuntimeValue::Bool(true),
-                RuntimeValue::String("must be ready".to_owned()),
-            ])
+            .materialize(&[RuntimeValue::Bool(true)])
             .expect("typed assertion payload is valid");
 
         assert_eq!(materialized, None);
@@ -195,16 +198,13 @@ mod tests {
     fn non_bool_runtime_assertion_is_a_typed_materialization_error() {
         let effect = RuntimeEffectExpr::Assert {
             guard: RuntimeAssertionGuardId::try_from_bytes([7; 16]).unwrap(),
-            condition: RuntimeExpr::Value(RuntimeValue::String("false".to_owned())),
-            message: RuntimeExpr::Value(RuntimeValue::String("must be ready".to_owned())),
+            condition: value_expr(RuntimeValue::String("false".to_owned())),
+            message: "must be ready".to_owned(),
             profile: RuntimeAssertionProfile::Always,
         };
 
         let error = effect
-            .materialize(&[
-                RuntimeValue::String("false".to_owned()),
-                RuntimeValue::String("must be ready".to_owned()),
-            ])
+            .materialize(&[RuntimeValue::String("false".to_owned())])
             .expect_err("string labels must not drive assertion truth");
 
         assert_eq!(

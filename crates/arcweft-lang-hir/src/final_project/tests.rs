@@ -935,7 +935,6 @@ fn runtime_semantic_owner_inventory_excludes_complete_view_and_style_products() 
             | HirItemKind::ExternCapability(_)
             | HirItemKind::Test(_)
             | HirItemKind::Bench(_)
-            | HirItemKind::Source(_)
             | HirItemKind::Error(_) => panic!("unexpected fixture item family"),
         }
     }

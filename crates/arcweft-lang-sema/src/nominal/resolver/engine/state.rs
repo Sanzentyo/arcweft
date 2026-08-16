@@ -27,6 +27,7 @@ impl Resolver<'_, '_> {
         let poison = self.emit_failure(&failure, context.evidence(node, true), related);
         self.nodes.push(ResolvedTypeNode::new(
             node,
+            context.alias_target,
             context.evidence(node, false),
             context.terminal_evidence(node),
             context.reference_path(node),
@@ -127,6 +128,7 @@ impl Resolver<'_, '_> {
         let poison = self.emit_work_overflow(context.evidence(node, true), attempted, maximum);
         self.nodes.push(ResolvedTypeNode::new(
             node,
+            context.alias_target,
             context.evidence(node, false),
             context.terminal_evidence(node),
             context.reference_path(node),
@@ -202,8 +204,10 @@ impl Resolver<'_, '_> {
             let terminal_source = self.nodes[index].terminal_source().cloned();
             let reference_path = self.nodes[index].reference_path().cloned();
             let recovered = self.nodes[index].recovered().cloned();
+            let contextual_alias_target = self.nodes[index].is_contextual_alias_target();
             self.nodes[index] = ResolvedTypeNode::new(
                 owner,
+                contextual_alias_target,
                 source,
                 terminal_source,
                 reference_path,

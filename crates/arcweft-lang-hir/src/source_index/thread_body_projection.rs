@@ -820,7 +820,7 @@ fn flow_body_graph_matches(
             attached.syntax().id(),
             &attached.syntax().source_span(),
             attached.items(),
-            matches!(attached.close_state(), AttachedDelimiterState::Missing(_)),
+            attached.is_unclosed(),
             false,
             &HirScopeOwner::Item(owner),
             parent_scope,
@@ -937,7 +937,6 @@ fn thread_flow_item_source_site<'a>(
         | HirThreadFlowItem::SourceLocale(statement)
         | HirThreadFlowItem::Scope(statement)
         | HirThreadFlowItem::Include(statement)
-        | HirThreadFlowItem::AwaitWith(statement)
         | HirThreadFlowItem::Error(statement) => slots
             .resolve_prepared(*statement)
             .ok()
@@ -1006,10 +1005,6 @@ fn thread_body_families_match(
                             HirThreadFlowItem::Include(_)
                         )
                         | (
-                            AttachedThreadFlowItemFamily::AwaitWith,
-                            HirThreadFlowItem::AwaitWith(_)
-                        )
-                        | (
                             AttachedThreadFlowItemFamily::Error,
                             HirThreadFlowItem::Error(_)
                         )
@@ -1071,9 +1066,6 @@ fn thread_body_semantic_items_match(
         HirThreadFlowItem::Include(owner) => statements
             .resolve_prepared(slots, *owner)
             .is_ok_and(|statement| matches!(statement.kind(), HirStmtKind::Include(_))),
-        HirThreadFlowItem::AwaitWith(owner) => statements
-            .resolve_prepared(slots, *owner)
-            .is_ok_and(|statement| matches!(statement.kind(), HirStmtKind::AwaitWith(_))),
         HirThreadFlowItem::Error(owner) => statements
             .resolve_prepared(slots, *owner)
             .is_ok_and(|statement| matches!(statement.kind(), HirStmtKind::Error)),
@@ -1095,7 +1087,6 @@ fn ordinary_thread_statement(kind: &HirStmtKind) -> bool {
             | HirStmtKind::SourceLocale(_)
             | HirStmtKind::Scope(_)
             | HirStmtKind::Include(_)
-            | HirStmtKind::AwaitWith(_)
             | HirStmtKind::Error
     )
 }

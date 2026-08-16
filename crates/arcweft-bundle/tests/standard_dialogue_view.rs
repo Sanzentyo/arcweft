@@ -489,7 +489,7 @@ fn try_test_bundle(
     source_map: SourceMapSection,
 ) -> Result<arcweft_bundle::ArcweftBundle, SourceMapBuildError> {
     use arcweft_bundle::{BundleManifest, BundleRuntimeSummary};
-    use arcweft_core::bytecode::BytecodeProgram;
+    use arcweft_core::awbc::schema::AwbcProgram;
     use arcweft_text_model::DialogueContentCatalog;
 
     arcweft_bundle::ArcweftBundle::try_new(
@@ -508,11 +508,10 @@ fn try_test_bundle(
                 bytecode_instructions: 0,
                 line_task_groups: 0,
                 stream_plans: 0,
-                source_plans: 0,
             },
         },
         source_map,
-        BytecodeProgram::default(),
+        AwbcProgram::default(),
         DialogueContentCatalog::new(),
     )
 }

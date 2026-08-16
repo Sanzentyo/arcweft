@@ -337,9 +337,25 @@ fn remaining_components_validate(
                 ],
             )
         }
-        ExpressionProjection::Try { .. }
-        | ExpressionProjection::Await { .. }
-        | ExpressionProjection::Borrow { .. }
+        ExpressionProjection::Try { .. } => exact_component_roles(
+            roles,
+            components,
+            &[
+                ExpressionComponentRole::Operand,
+                ExpressionComponentRole::Operator,
+            ],
+        ),
+        ExpressionProjection::Await { branches, .. } => {
+            let mut expected = vec![
+                ExpressionComponentRole::Operand,
+                ExpressionComponentRole::Operator,
+            ];
+            if branches.is_some() {
+                expected.push(ExpressionComponentRole::AwaitWith);
+            }
+            exact_component_roles(roles, components, &expected)
+        }
+        ExpressionProjection::Borrow { .. }
         | ExpressionProjection::Dereference { .. }
         | ExpressionProjection::Unary { .. } => exact_component_roles(
             roles,

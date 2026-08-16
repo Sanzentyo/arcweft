@@ -1,7 +1,8 @@
 use crate::effect::LineEffectRequest;
 use crate::pattern::RuntimePattern;
 use crate::plan::{FlowOp, FlowRuntimeId, RuntimeFlow, RuntimePlan};
-use crate::value::{RuntimeBinding, RuntimeExpr};
+use crate::runtime_id::RuntimeLocalDeclarationId;
+use crate::value::{RuntimeExpr, RuntimeLocalBinding, RuntimeRecordFieldId};
 
 /// Typed AOT compilation artifact for a runtime plan.
 ///
@@ -49,10 +50,15 @@ pub enum AotOpClass {
 /// step.
 #[derive(Clone, Debug, PartialEq)]
 pub(crate) enum AotLinearOp {
-    Bind(Vec<RuntimeBinding>),
+    Bind(Vec<RuntimeLocalBinding>),
     Let {
         pattern: RuntimePattern,
         expr: RuntimeExpr,
+    },
+    AssignNominalField {
+        base: RuntimeLocalDeclarationId,
+        field: RuntimeRecordFieldId,
+        value: RuntimeExpr,
     },
     Return(String),
     ReturnExpr(RuntimeExpr),
@@ -83,6 +89,11 @@ impl AotLinearOp {
             FlowOp::Let { pattern, expr } => Some(Self::Let {
                 pattern: pattern.clone(),
                 expr: expr.clone(),
+            }),
+            FlowOp::AssignNominalField { base, field, value } => Some(Self::AssignNominalField {
+                base: *base,
+                field: *field,
+                value: value.clone(),
             }),
             FlowOp::Return(value) => Some(Self::Return(value.clone())),
             FlowOp::ReturnExpr(expr) => Some(Self::ReturnExpr(expr.clone())),
@@ -217,6 +228,7 @@ pub(crate) fn aot_linear_supported_op(op: &FlowOp) -> bool {
     match op {
         FlowOp::Bind(_)
         | FlowOp::Let { .. }
+        | FlowOp::AssignNominalField { .. }
         | FlowOp::Return(_)
         | FlowOp::ReturnExpr(_)
         | FlowOp::RegisterCleanup { .. }
@@ -273,6 +285,7 @@ impl AotOpClass {
         match op {
             FlowOp::Bind(_)
             | FlowOp::Let { .. }
+            | FlowOp::AssignNominalField { .. }
             | FlowOp::LetScope { .. }
             | FlowOp::Return(_)
             | FlowOp::ReturnExpr(_)
@@ -343,6 +356,7 @@ impl AotProgramStats {
                 FlowOp::Scope(ops) | FlowOp::LetScope { ops, .. } => self.record_ops(ops),
                 FlowOp::Bind(_)
                 | FlowOp::Let { .. }
+                | FlowOp::AssignNominalField { .. }
                 | FlowOp::Dialogue { .. }
                 | FlowOp::Choice { .. }
                 | FlowOp::Await { .. }

@@ -1,18 +1,17 @@
 use super::{
     HirArrayRepeatExpr, HirAssociatedCallSyntax, HirAssociatedReceiver, HirAssociatedSeparator,
-    HirAwaitExpr, HirAwaitPropagation, HirBinaryExpr, HirBinaryOp, HirBlockExpr, HirBorrowExpr,
-    HirBorrowKind, HirBracketSequenceExpr, HirCallArgument, HirCallArgumentListTerminator,
-    HirCallArgumentOrdinal, HirCallBuildError, HirCallCallee, HirCallChildPoison,
-    HirCallChildStates, HirCallExpr, HirCallIssue, HirCallTypeApplication, HirChoiceBody,
-    HirChoiceExpr, HirChoiceItem, HirClosureExpr, HirClosureParameter, HirComputationBlockExpr,
-    HirComputationBlockKind, HirDereferenceExpr, HirExpr, HirExprInvariantError, HirExprKind,
-    HirExpressionRecoveryIssue, HirGenericExprIssue, HirIfExpr, HirIfLetExpr, HirIndexExpr,
-    HirMatchArm, HirMatchExpr, HirNamedBlockExpr, HirNamedBlockName, HirPipeExpr,
-    HirPlaceholderKind, HirPoisonState, HirRangeExpr, HirRecordExpr, HirRecordField,
-    HirRecordLiteralExpr, HirRecoveredName, HirRecoveryIssue, HirSelectExpr, HirSelectedMember,
-    HirThreadBody, HirThreadBodyInvariantError, HirThreadBodyOwner, HirThreadExpr,
-    HirThreadFlowItem, HirThreadMode, HirTryExpr, HirTryForm, HirTupleExpr, HirUnaryExpr,
-    HirUnaryOp,
+    HirAwaitExpr, HirBinaryExpr, HirBinaryOp, HirBlockExpr, HirBorrowExpr, HirBorrowKind,
+    HirBracketSequenceExpr, HirCallArgument, HirCallArgumentListTerminator, HirCallArgumentOrdinal,
+    HirCallBuildError, HirCallCallee, HirCallChildPoison, HirCallChildStates, HirCallExpr,
+    HirCallIssue, HirCallTypeApplication, HirChoiceBody, HirChoiceExpr, HirChoiceItem,
+    HirClosureExpr, HirClosureParameter, HirComputationBlockExpr, HirComputationBlockKind,
+    HirDereferenceExpr, HirExpr, HirExprInvariantError, HirExprKind, HirExpressionRecoveryIssue,
+    HirGenericExprIssue, HirIfExpr, HirIfLetExpr, HirIndexExpr, HirMatchArm, HirMatchExpr,
+    HirNamedBlockExpr, HirNamedBlockName, HirPipeExpr, HirPlaceholderKind, HirPoisonState,
+    HirRangeExpr, HirRecordExpr, HirRecordField, HirRecordLiteralExpr, HirRecoveredName,
+    HirRecoveryIssue, HirSelectExpr, HirSelectedMember, HirThreadBody, HirThreadBodyInvariantError,
+    HirThreadBodyOwner, HirThreadExpr, HirThreadFlowItem, HirThreadMode, HirTryExpr, HirTupleExpr,
+    HirUnaryExpr, HirUnaryOp,
 };
 use crate::dialogue_application::{
     HirBuiltinRichTextTag, HirDialogueContent, HirDialogueContentApplication, HirDialogueContentId,
@@ -988,14 +987,13 @@ fn expression_source_roles_cover_the_closed_thirty_six_family_matrix() {
             HirExprSourceRole::LeftOperand,
         ),
         (
-            HirExprKind::Try(HirTryExpr::new(first, HirTryForm::PrefixTry)),
+            HirExprKind::Try(HirTryExpr::new(first)),
             HirExprSourceRole::Operator,
         ),
         (
-            HirExprKind::Await(HirAwaitExpr::new(
-                first,
-                HirAwaitPropagation::PreserveResult,
-            )),
+            HirExprKind::Await(
+                HirAwaitExpr::try_new(first, Box::new([])).expect("empty await branches"),
+            ),
             HirExprSourceRole::Operand,
         ),
         (

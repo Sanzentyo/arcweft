@@ -4,7 +4,7 @@
 //! network, or OS integration belongs in adapter crates or application hosts.
 
 use arcweft_adapter_context::manifest::AdapterManifest;
-use arcweft_core::task::{HostTaskRequest, NamedHostTaskArg, TaskId, TaskSpec};
+use arcweft_core::task::{HostTaskRequest, NamedHostArg, TaskId, TaskSpec};
 use arcweft_core::value::{RuntimePayload, RuntimeValue};
 use std::collections::{BTreeMap, BTreeSet};
 use std::sync::Arc;
@@ -82,8 +82,20 @@ pub struct HostAdapterRegistryBuilder {
 /// Result and accounting returned by one concrete adapter call.
 #[derive(Clone, Debug, PartialEq)]
 pub struct HostTaskOutcome {
-    pub result: Result<RuntimePayload, String>,
+    pub completion: HostTaskCompletion,
     pub metrics: HostTaskMetrics,
+}
+
+/// Typed terminal result of a host task.
+///
+/// `Ready` and `Error` are normal completed outcomes and carry the payload
+/// selected by the task's [`arcweft_core::task::TaskOutcomeContract`]. `Failed` is reserved for a
+/// host or adapter failure that cannot be represented by that contract.
+#[derive(Clone, Debug, PartialEq)]
+pub enum HostTaskCompletion {
+    Ready(RuntimePayload),
+    Error(RuntimePayload),
+    Failed(String),
 }
 
 /// Host-side work counters, aggregated by the embedding runtime.
@@ -99,7 +111,7 @@ pub struct HostTaskMetrics {
 /// Shared typed view over generic custom host-call payloads.
 pub struct HostCallArgs<'a> {
     positional: &'a [RuntimePayload],
-    named: &'a [NamedHostTaskArg],
+    named: &'a [NamedHostArg<RuntimePayload>],
 }
 
 /// Host adapter registration error.
@@ -313,7 +325,10 @@ impl HostAdapterRegistryBuilder {
 }
 
 impl<'a> HostCallArgs<'a> {
-    pub fn new(positional: &'a [RuntimePayload], named: &'a [NamedHostTaskArg]) -> Self {
+    pub fn new(
+        positional: &'a [RuntimePayload],
+        named: &'a [NamedHostArg<RuntimePayload>],
+    ) -> Self {
         Self { positional, named }
     }
 
@@ -458,6 +473,7 @@ fn runtime_value_kind(value: &RuntimeValue) -> &'static str {
         RuntimeValue::NominalRecord(_) => "NominalRecord",
         RuntimeValue::Opaque(_) => "Opaque",
         RuntimeValue::Agent(value) => value.label(),
+        RuntimeValue::Reduction(_) => "Reduction",
         RuntimeValue::Function(_) => "Function",
         RuntimeValue::Variant { .. } => "Variant",
         RuntimeValue::Iterator(_) => "Iterator",
@@ -487,7 +503,7 @@ mod tests {
 
         fn complete(&self, task: &TaskSpec) -> Option<HostTaskOutcome> {
             (task.request.host_call_id() == self.host_call_id).then(|| HostTaskOutcome {
-                result: Ok(self.result.clone()),
+                completion: HostTaskCompletion::Ready(self.result.clone()),
                 metrics: HostTaskMetrics::default(),
             })
         }
@@ -512,7 +528,10 @@ mod tests {
         let task = task("fixture", "echo");
         let outcome = registry.dispatch(&task).expect("adapter handles task");
 
-        assert_eq!(outcome.result.expect("task succeeds").label(), "ok");
+        let HostTaskCompletion::Ready(value) = outcome.completion else {
+            panic!("task succeeds");
+        };
+        assert_eq!(value.label(), "ok");
         assert!(registry.can_complete_in_parallel(&task.request));
     }
 

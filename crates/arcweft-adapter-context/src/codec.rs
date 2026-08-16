@@ -172,6 +172,8 @@ struct AdapterHostCallFile {
     id: String,
     signature: AdapterFunctionSignatureFile,
     #[serde(default)]
+    domain_error: Option<AdapterTypeKindFile>,
+    #[serde(default)]
     effects: Vec<String>,
 }
 
@@ -222,6 +224,7 @@ struct AdapterNominalTypeRefFile {
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 #[serde(tag = "kind", rename_all = "snake_case")]
 enum AdapterNominalOwnerFile {
+    Standard,
     Environment { owner: String },
     RustPackage { package: String },
 }
@@ -401,11 +404,23 @@ impl AdapterManifestFile {
             manifest = manifest.with_effect(AdapterEffectCapability::new(effect));
         }
         for host_call in self.host_calls {
-            manifest = manifest.with_host_call(AdapterHostCall::with_signature(
-                host_call.id,
-                signature_from_file(host_call.signature, &environment_owner)?,
-                effect_capabilities(host_call.effects),
-            ));
+            let AdapterHostCallFile {
+                id,
+                signature,
+                domain_error,
+                effects,
+            } = host_call;
+            let host_call = AdapterHostCall::with_signature(
+                id,
+                signature_from_file(signature, &environment_owner)?,
+                effect_capabilities(effects),
+            );
+            let host_call = match domain_error {
+                Some(domain_error) => host_call
+                    .with_domain_error(adapter_type_from_file(domain_error, &environment_owner)?),
+                None => host_call,
+            };
+            manifest = manifest.with_host_call(host_call);
         }
         for doc in self.tooling_docs {
             manifest = manifest.with_tooling_doc(AdapterToolingDoc::try_new(
@@ -856,6 +871,7 @@ impl TypeConversionBudget {
             },
             AdapterTypeKindFile::Nominal { nominal } => {
                 let owner = match nominal.owner {
+                    AdapterNominalOwnerFile::Standard => AdapterNominalOwner::Standard,
                     AdapterNominalOwnerFile::Environment { owner } => {
                         if owner != environment_owner.as_str() {
                             return Err(AdapterManifestCodecError::EnvironmentOwnerMismatch {

@@ -14,58 +14,89 @@ use arcweft_core::{
     entry::RuntimeCommandTargetId,
     value::{
         RuntimeAgentAction, RuntimeAgentActionDispatch, RuntimeAgentActionTarget,
-        RuntimeAgentValue, RuntimePayload, RuntimeValue,
+        RuntimeAgentField, RuntimeAgentValue, RuntimePayload, RuntimeValue,
     },
 };
 
 use crate::runtime_value::{runtime_field, runtime_record};
+
+fn agent_field(field: RuntimeAgentField, value: RuntimeValue) -> (String, RuntimeValue) {
+    runtime_field(field.as_label(), value)
+}
 
 pub(crate) fn runtime_payload_from_response(
     response: &AgentHostResponse,
 ) -> Result<RuntimePayload, String> {
     let value = match response {
         AgentHostResponse::Observation(observation) => runtime_record(vec![
-            runtime_field("tick", RuntimeValue::u64(observation.tick)),
-            runtime_field(
-                "frame_id",
+            agent_field(
+                RuntimeAgentField::ObservationTick,
+                RuntimeValue::u64(observation.tick),
+            ),
+            agent_field(
+                RuntimeAgentField::ObservationFrameId,
                 RuntimeValue::String(observation.frame_id.clone()),
             ),
-            runtime_field(
-                "state_hash",
+            agent_field(
+                RuntimeAgentField::ObservationStateHash,
                 RuntimeValue::String(observation.state_hash.clone()),
             ),
-            runtime_field(
-                "render_hash",
+            agent_field(
+                RuntimeAgentField::ObservationRenderHash,
                 RuntimeValue::String(observation.render_hash.clone()),
             ),
-            runtime_field("actions", runtime_action_targets(&observation.actions)?),
-            runtime_field("objects", runtime_observed_objects(&observation.payload)),
-            runtime_field("signals", runtime_agent_value_fields(&observation.signals)),
+            agent_field(
+                RuntimeAgentField::ObservationActions,
+                runtime_action_targets(&observation.actions)?,
+            ),
+            agent_field(
+                RuntimeAgentField::ObservationObjects,
+                runtime_observed_objects(&observation.payload),
+            ),
+            agent_field(
+                RuntimeAgentField::ObservationSignals,
+                runtime_agent_value_fields(&observation.signals),
+            ),
         ]),
         AgentHostResponse::Action(result) => runtime_record(vec![
-            runtime_field("accepted", RuntimeValue::Bool(result.accepted)),
-            runtime_field("before_tick", RuntimeValue::u64(result.before_tick)),
-            runtime_field("after_tick", RuntimeValue::u64(result.after_tick)),
-            runtime_field(
-                "before_state_hash",
+            agent_field(
+                RuntimeAgentField::ActionResultAccepted,
+                RuntimeValue::Bool(result.accepted),
+            ),
+            agent_field(
+                RuntimeAgentField::ActionResultBeforeTick,
+                RuntimeValue::u64(result.before_tick),
+            ),
+            agent_field(
+                RuntimeAgentField::ActionResultAfterTick,
+                RuntimeValue::u64(result.after_tick),
+            ),
+            agent_field(
+                RuntimeAgentField::ActionResultBeforeStateHash,
                 RuntimeValue::String(result.before_state_hash.clone()),
             ),
-            runtime_field(
-                "after_state_hash",
+            agent_field(
+                RuntimeAgentField::ActionResultAfterStateHash,
                 RuntimeValue::String(result.after_state_hash.clone()),
             ),
         ]),
         AgentHostResponse::Capture(result) => runtime_record(vec![
-            runtime_field("uri", RuntimeValue::String(result.uri.as_str().to_owned())),
-            runtime_field(
-                "content_hash",
+            agent_field(
+                RuntimeAgentField::CaptureReferenceUri,
+                RuntimeValue::String(result.uri.as_str().to_owned()),
+            ),
+            agent_field(
+                RuntimeAgentField::CaptureReferenceContentHash,
                 RuntimeValue::String(result.content_hash.clone()),
             ),
-            runtime_field(
-                "media_type",
+            agent_field(
+                RuntimeAgentField::CaptureReferenceMediaType,
                 RuntimeValue::String(result.media_type.clone()),
             ),
-            runtime_field("byte_len", RuntimeValue::u64(result.byte_len)),
+            agent_field(
+                RuntimeAgentField::CaptureReferenceByteLen,
+                RuntimeValue::u64(result.byte_len),
+            ),
         ]),
         AgentHostResponse::Resource(value) => runtime_resource_payload(value),
         AgentHostResponse::EntityMetadata(metadata) => runtime_entity_metadata_payload(metadata),
@@ -131,17 +162,20 @@ pub(crate) fn project_graph_neighborhood(
 
 fn runtime_entity_metadata_payload(metadata: &RequiredEntity) -> RuntimeValue {
     runtime_record(vec![
-        runtime_field(
-            "id",
+        agent_field(
+            RuntimeAgentField::EntityMetadataId,
             RuntimeValue::String(metadata.public_id.as_str().to_owned()),
         ),
-        runtime_field("kind", RuntimeValue::String(metadata.kind.clone())),
-        runtime_field(
-            "semantic_hash",
+        agent_field(
+            RuntimeAgentField::EntityMetadataKind,
+            RuntimeValue::String(metadata.kind.clone()),
+        ),
+        agent_field(
+            RuntimeAgentField::EntityMetadataSemanticHash,
             RuntimeValue::String(metadata.semantic_hash.as_str().to_owned()),
         ),
-        runtime_field(
-            "source",
+        agent_field(
+            RuntimeAgentField::EntityMetadataSource,
             runtime_entity_source_anchor_payload(metadata.source_anchor.as_ref()),
         ),
     ])
@@ -152,35 +186,65 @@ fn runtime_entity_source_anchor_payload(
 ) -> RuntimeValue {
     let Some(source) = source else {
         return runtime_record(vec![
-            runtime_field("has_source", RuntimeValue::Bool(false)),
-            runtime_field("path", RuntimeValue::String(String::new())),
-            runtime_field("start_byte", RuntimeValue::u64(0)),
-            runtime_field("end_byte", RuntimeValue::u64(0)),
-            runtime_field("start_line", RuntimeValue::u32(0)),
-            runtime_field("start_column", RuntimeValue::u32(0)),
-            runtime_field("end_line", RuntimeValue::u32(0)),
-            runtime_field("end_column", RuntimeValue::u32(0)),
+            agent_field(
+                RuntimeAgentField::SourceAnchorHasSource,
+                RuntimeValue::Bool(false),
+            ),
+            agent_field(
+                RuntimeAgentField::SourceAnchorPath,
+                RuntimeValue::String(String::new()),
+            ),
+            agent_field(
+                RuntimeAgentField::SourceAnchorStartByte,
+                RuntimeValue::u64(0),
+            ),
+            agent_field(RuntimeAgentField::SourceAnchorEndByte, RuntimeValue::u64(0)),
+            agent_field(
+                RuntimeAgentField::SourceAnchorStartLine,
+                RuntimeValue::u32(0),
+            ),
+            agent_field(
+                RuntimeAgentField::SourceAnchorStartColumn,
+                RuntimeValue::u32(0),
+            ),
+            agent_field(RuntimeAgentField::SourceAnchorEndLine, RuntimeValue::u32(0)),
+            agent_field(
+                RuntimeAgentField::SourceAnchorEndColumn,
+                RuntimeValue::u32(0),
+            ),
         ]);
     };
     runtime_record(vec![
-        runtime_field("has_source", RuntimeValue::Bool(true)),
-        runtime_field("path", RuntimeValue::String(source.path.clone())),
-        runtime_field("start_byte", RuntimeValue::u64(source.start_byte)),
-        runtime_field("end_byte", RuntimeValue::u64(source.end_byte)),
-        runtime_field(
-            "start_line",
+        agent_field(
+            RuntimeAgentField::SourceAnchorHasSource,
+            RuntimeValue::Bool(true),
+        ),
+        agent_field(
+            RuntimeAgentField::SourceAnchorPath,
+            RuntimeValue::String(source.path.clone()),
+        ),
+        agent_field(
+            RuntimeAgentField::SourceAnchorStartByte,
+            RuntimeValue::u64(source.start_byte),
+        ),
+        agent_field(
+            RuntimeAgentField::SourceAnchorEndByte,
+            RuntimeValue::u64(source.end_byte),
+        ),
+        agent_field(
+            RuntimeAgentField::SourceAnchorStartLine,
             RuntimeValue::u32(source.start.map_or(0, |position| position.line)),
         ),
-        runtime_field(
-            "start_column",
+        agent_field(
+            RuntimeAgentField::SourceAnchorStartColumn,
             RuntimeValue::u32(source.start.map_or(0, |position| position.column)),
         ),
-        runtime_field(
-            "end_line",
+        agent_field(
+            RuntimeAgentField::SourceAnchorEndLine,
             RuntimeValue::u32(source.end.map_or(0, |position| position.line)),
         ),
-        runtime_field(
-            "end_column",
+        agent_field(
+            RuntimeAgentField::SourceAnchorEndColumn,
             RuntimeValue::u32(source.end.map_or(0, |position| position.column)),
         ),
     ])
@@ -392,11 +456,26 @@ fn rag_context_summary(value: &serde_json::Value) -> String {
 
 pub(crate) fn runtime_resource_payload(value: &serde_json::Value) -> RuntimeValue {
     runtime_record(vec![
-        runtime_field("uri", runtime_json_string_field(value, "uri")),
-        runtime_field("kind", runtime_json_string_field(value, "kind")),
-        runtime_field("mime_type", runtime_json_string_field(value, "mime_type")),
-        runtime_field("hash", runtime_json_string_field(value, "hash")),
-        runtime_field("body", runtime_resource_body_payload(value.get("body"))),
+        agent_field(
+            RuntimeAgentField::ResourceUri,
+            runtime_json_string_field(value, "uri"),
+        ),
+        agent_field(
+            RuntimeAgentField::ResourceKind,
+            runtime_json_string_field(value, "kind"),
+        ),
+        agent_field(
+            RuntimeAgentField::ResourceMimeType,
+            runtime_json_string_field(value, "mime_type"),
+        ),
+        agent_field(
+            RuntimeAgentField::ResourceHash,
+            runtime_json_string_field(value, "hash"),
+        ),
+        agent_field(
+            RuntimeAgentField::ResourceBody,
+            runtime_resource_body_payload(value.get("body")),
+        ),
     ])
 }
 
@@ -435,13 +514,28 @@ fn runtime_observed_objects(payload: &serde_json::Value) -> RuntimeValue {
 
 fn runtime_observed_object(object: &serde_json::Value) -> RuntimeValue {
     runtime_record(vec![
-        runtime_field("id", runtime_json_string_field(object, "id")),
-        runtime_field("parent_id", runtime_json_string_field(object, "parent_id")),
-        runtime_field("entity", runtime_json_string_field(object, "entity")),
-        runtime_field("layer", runtime_json_string_field(object, "layer")),
-        runtime_field("role", runtime_json_string_field(object, "role")),
-        runtime_field(
-            "visible",
+        agent_field(
+            RuntimeAgentField::ObservedObjectId,
+            runtime_json_string_field(object, "id"),
+        ),
+        agent_field(
+            RuntimeAgentField::ObservedObjectParentId,
+            runtime_json_string_field(object, "parent_id"),
+        ),
+        agent_field(
+            RuntimeAgentField::ObservedObjectEntity,
+            runtime_json_string_field(object, "entity"),
+        ),
+        agent_field(
+            RuntimeAgentField::ObservedObjectLayer,
+            runtime_json_string_field(object, "layer"),
+        ),
+        agent_field(
+            RuntimeAgentField::ObservedObjectRole,
+            runtime_json_string_field(object, "role"),
+        ),
+        agent_field(
+            RuntimeAgentField::ObservedObjectVisible,
             RuntimeValue::Bool(
                 object
                     .get("visible")
@@ -449,8 +543,8 @@ fn runtime_observed_object(object: &serde_json::Value) -> RuntimeValue {
                     .unwrap_or(false),
             ),
         ),
-        runtime_field(
-            "enabled",
+        agent_field(
+            RuntimeAgentField::ObservedObjectEnabled,
             RuntimeValue::Bool(
                 object
                     .get("enabled")
@@ -458,27 +552,51 @@ fn runtime_observed_object(object: &serde_json::Value) -> RuntimeValue {
                     .unwrap_or(true),
             ),
         ),
-        runtime_field("bbox", runtime_bbox(object.get("bbox"))),
-        runtime_field("text", runtime_json_string_field(object, "text")),
+        agent_field(
+            RuntimeAgentField::ObservedObjectBoundingBox,
+            runtime_bbox(object.get("bbox")),
+        ),
+        agent_field(
+            RuntimeAgentField::ObservedObjectText,
+            runtime_json_string_field(object, "text"),
+        ),
     ])
 }
 
 fn runtime_bbox(value: Option<&serde_json::Value>) -> RuntimeValue {
     let Some(value) = value else {
         return runtime_record(vec![
-            runtime_field("space", RuntimeValue::String(String::new())),
-            runtime_field("x", RuntimeValue::u32(0)),
-            runtime_field("y", RuntimeValue::u32(0)),
-            runtime_field("width", RuntimeValue::u32(0)),
-            runtime_field("height", RuntimeValue::u32(0)),
+            agent_field(
+                RuntimeAgentField::BoundingBoxSpace,
+                RuntimeValue::String(String::new()),
+            ),
+            agent_field(RuntimeAgentField::BoundingBoxX, RuntimeValue::u32(0)),
+            agent_field(RuntimeAgentField::BoundingBoxY, RuntimeValue::u32(0)),
+            agent_field(RuntimeAgentField::BoundingBoxWidth, RuntimeValue::u32(0)),
+            agent_field(RuntimeAgentField::BoundingBoxHeight, RuntimeValue::u32(0)),
         ]);
     };
     runtime_record(vec![
-        runtime_field("space", runtime_json_string_field(value, "space")),
-        runtime_field("x", runtime_json_u32_field(value, "x")),
-        runtime_field("y", runtime_json_u32_field(value, "y")),
-        runtime_field("width", runtime_json_u32_field(value, "width")),
-        runtime_field("height", runtime_json_u32_field(value, "height")),
+        agent_field(
+            RuntimeAgentField::BoundingBoxSpace,
+            runtime_json_string_field(value, "space"),
+        ),
+        agent_field(
+            RuntimeAgentField::BoundingBoxX,
+            runtime_json_u32_field(value, "x"),
+        ),
+        agent_field(
+            RuntimeAgentField::BoundingBoxY,
+            runtime_json_u32_field(value, "y"),
+        ),
+        agent_field(
+            RuntimeAgentField::BoundingBoxWidth,
+            runtime_json_u32_field(value, "width"),
+        ),
+        agent_field(
+            RuntimeAgentField::BoundingBoxHeight,
+            runtime_json_u32_field(value, "height"),
+        ),
     ])
 }
 

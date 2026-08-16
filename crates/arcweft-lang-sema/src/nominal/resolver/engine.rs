@@ -20,15 +20,15 @@ use arcweft_source::SourceRange;
 use crate::types::{EntityKind, GenericTypeParameterId, TypeKind, TypePoisonId};
 
 use super::super::{
-    AliasExpansionFact, BuiltinTypeConstructor, DetachedNominalEvidence, DetachedNominalReason,
-    DetachedTypeRef, ExternalNominalResolution, GenericTypeScope, NominalDiagnosticRelated,
-    NominalRelatedMessage, NominalResolutionLimitKind, NominalTypeDiagnostic,
-    NominalTypeDiagnosticKind, PoisonedTypeRef, ResolvedAliasReference, ResolvedOpenNominal,
-    ResolvedTypeNode, ResolvedTypeProduct, ResolvedTypeRefOutcome, SelfTypeScope,
-    StructuralTypeNodeKind, TypeArgumentExpectation, TypeArgumentKind, TypeArityExpectation,
-    TypeArityTarget, TypeNameResolution, TypePoisonOrigin, TypePoisonRecord, TypeResolutionFailure,
-    TypeResolutionInput, TypeResolutionInputError, TypeResolutionModule, TypeResolutionReport,
-    TypeResolutionWorld, TypeSourceEvidence,
+    AliasExpansionFact, AssociatedTypeScope, BuiltinTypeConstructor, DetachedNominalEvidence,
+    DetachedNominalReason, DetachedTypeRef, ExternalNominalResolution, GenericTypeScope,
+    NominalDiagnosticRelated, NominalRelatedMessage, NominalResolutionLimitKind,
+    NominalTypeDiagnostic, NominalTypeDiagnosticKind, PoisonedTypeRef, ResolvedAliasReference,
+    ResolvedOpenNominal, ResolvedTypeNode, ResolvedTypeProduct, ResolvedTypeRefOutcome,
+    SelfTypeScope, StructuralTypeNodeKind, TypeArgumentExpectation, TypeArgumentKind,
+    TypeArityExpectation, TypeArityTarget, TypeNameResolution, TypePoisonOrigin, TypePoisonRecord,
+    TypeResolutionFailure, TypeResolutionInput, TypeResolutionInputError, TypeResolutionModule,
+    TypeResolutionReport, TypeResolutionWorld, TypeSourceEvidence,
 };
 use support::{
     ProjectNameLookup, ProjectSelection, canonical_cycle, canonical_poisons, diagnostic_kind,
@@ -61,6 +61,7 @@ struct Resolver<'input, 'world> {
 struct SourceContext<'a> {
     module: TypeResolutionModule<'a>,
     generics: GenericContext<'a>,
+    associated: Option<AssociatedTypeScope>,
     alias_target: bool,
 }
 
@@ -254,6 +255,7 @@ impl<'input, 'world> Resolver<'input, 'world> {
         let root_context = SourceContext {
             module: self.input.module(),
             generics: GenericContext::Input(self.input.generics()),
+            associated: self.input.associated().cloned(),
             alias_target: false,
         };
         let root = self.input.root();

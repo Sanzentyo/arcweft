@@ -1,22 +1,67 @@
+mod construction;
+mod dialogue_content;
 pub mod entry_inventory;
+mod function_sites;
 pub mod generation_contract;
 mod local_declarations;
+#[cfg(test)]
+pub(crate) use local_declarations::RuntimeLocalDeclarationTableBuilder;
+mod nominal_record_domains;
 mod type_kind;
 mod type_table;
+mod variant_domains;
 
+pub use construction::{
+    RuntimeAgentExprSeed, RuntimeAudioCommandSeed, RuntimeAwaitManyTargetSeed,
+    RuntimeAwaitTargetSeed, RuntimeCallArgumentSeed, RuntimeCallableExecutableSeed,
+    RuntimeCallableExecutableSeedCode, RuntimeChoiceOptionSeed, RuntimeDialogueContentPlanSeed,
+    RuntimeDialogueContentPlanSeedId, RuntimeDialogueMarkSeedId, RuntimeDialogueValueSiteSeed,
+    RuntimeEffectFieldSeed, RuntimeEvaluatedEffectSeed, RuntimeExprMatchArmSeed, RuntimeExprSeed,
+    RuntimeExprSeedKind, RuntimeFieldProjectionSeed, RuntimeFlowMatchArmSeed, RuntimeFlowOpSeed,
+    RuntimeFlowSeed, RuntimeFunctionSiteDeclarationSeed, RuntimeFunctionSiteSeedId,
+    RuntimeHostArgumentSeed, RuntimeHostCallTargetSeed, RuntimeHostTaskRequestTemplateSeed,
+    RuntimeIteratorEvidenceSeed, RuntimeIteratorWitnessEvidenceSeed,
+    RuntimeIteratorWitnessExecutableSeed, RuntimeLineEffectSeed, RuntimeLineTaskCancelRuleSeed,
+    RuntimeLineTaskGroupSeed, RuntimeLineTaskGroupSeedId, RuntimeLineTaskNodeSeed,
+    RuntimeLineTaskTriggerSeed, RuntimeLocalDeclarationSeed, RuntimeLocalSeedId,
+    RuntimeNominalRecordFieldSeed, RuntimePatternRestSeed, RuntimePatternSeed,
+    RuntimePatternSeedKind, RuntimePlanBuildError, RuntimePlanBuilder,
+    RuntimePlanSemanticAdmission, RuntimePlanTable, RuntimePureHelperDeclarationSeed,
+    RuntimePureHelperSeed, RuntimePureHelperSeedId, RuntimeRecordFieldSeedId,
+    RuntimeRecordPatternFieldSeed, RuntimeStreamMatchArmSeed, RuntimeStreamOpSeed,
+    RuntimeStreamPlanSeed, RuntimeTraitMethodDeclarationSeed, RuntimeTraitMethodSeed,
+    RuntimeTraitMethodSeedId,
+};
+pub use dialogue_content::{
+    RuntimeDialogueContentPlan, RuntimeDialogueContentPlanTable,
+    RuntimeDialogueContentPlanTableError, RuntimeDialogueMark, RuntimeDialogueValueRole,
+    RuntimeDialogueValueSite,
+};
+pub use function_sites::{RuntimeFunctionSite, RuntimeFunctionSiteError, RuntimeFunctionSiteTable};
 pub use generation_contract::{
     CharacterDialogueRuntimeCustomFieldDigest, RuntimeCharacterCatalogDigest,
     RuntimeGenerationIdentity, RuntimeProducerRootId, RuntimeProjectRootId,
     RuntimeViewCatalogDigest, RuntimeViewId,
 };
 pub use local_declarations::{
-    RuntimeLocalDeclarationTable, RuntimeLocalDeclarationTableBuilder,
-    RuntimeLocalDeclarationTableError,
+    RuntimeLocalDeclaration, RuntimeLocalDeclarationTable, RuntimeLocalDeclarationTableError,
 };
-pub use type_kind::{RuntimeAgentOperationalType, RuntimeOperationalType, RuntimePlanTypeKind};
+pub use nominal_record_domains::{
+    RuntimeNominalRecordDomain, RuntimeNominalRecordDomainError, RuntimeNominalRecordDomainField,
+    RuntimeNominalRecordDomainFieldSeed, RuntimeNominalRecordDomainSeed,
+    RuntimeNominalRecordDomainTable,
+};
+pub use type_kind::{
+    RuntimeAgentOperationalType, RuntimeAgentTypeProjection, RuntimeOperationalType,
+    RuntimePlanSequenceKind, RuntimePlanTypeClass, RuntimePlanTypeProjection,
+};
 pub use type_table::{
-    RuntimePlanTypeDeclaration, RuntimePlanTypeTable, RuntimePlanTypeTableBuilder,
-    RuntimePlanTypeTableError,
+    MAX_RUNTIME_PLAN_TYPE_DEPTH, RuntimePlanTypeDeclaration, RuntimePlanTypeResolutionError,
+    RuntimePlanTypeSeed, RuntimePlanTypeTable, RuntimePlanTypeTableError,
+};
+pub use variant_domains::{
+    RuntimeVariantCase, RuntimeVariantCaseSeed, RuntimeVariantDomain, RuntimeVariantDomainError,
+    RuntimeVariantDomainSeed, RuntimeVariantDomainTable,
 };
 
 use crate::effect::{LineEffectRequest, RuntimeEffectExpr};
@@ -30,33 +75,317 @@ pub use crate::entry::{
     RuntimeStatefulEntryRoles, RuntimeTypeSchema, RuntimeValueDigest, TypeLayoutHash,
 };
 use crate::line_task::{LineOutRequest, LineTaskGroup};
-use crate::pattern::RuntimePattern;
-use crate::runtime_id::{RuntimeIdError, RuntimeIdFamily, RuntimeIdPath, RuntimePublicLabel};
-use crate::source::SourcePlan;
+use crate::pattern::{
+    RuntimeCheckedType, RuntimeCheckedVariantCase, RuntimeOpaqueTypeAdmission,
+    RuntimeOpaqueTypeOwner, RuntimePattern,
+};
+use crate::runtime_id::{
+    RuntimeDialogueValueSlotId, RuntimeIdError, RuntimeIdFamily, RuntimeIdPath,
+    RuntimeLocalDeclarationId, RuntimePlanTypeId, RuntimePublicLabel,
+};
 use crate::step::RuntimeHostCallMode;
 use crate::stream::StreamPlan;
-use crate::task::{AwaitManyTarget, AwaitTarget, NeedId, TaskId};
-use crate::value::{RuntimeBinding, RuntimeExpr, RuntimeIterator, RuntimePayload};
+use crate::task::{AwaitManyTarget, AwaitTarget, NeedId, RuntimeHostArgumentTemplate, TaskId};
+use crate::value::{RuntimeExpr, RuntimeIterator, RuntimeLocalBinding, RuntimePayload};
 pub use entry_inventory::{
     EntryRuntimeId, RuntimeEntryKind, RuntimeEntrySpec, RuntimeEntryTarget, RuntimePlanError,
     RuntimeRouteBinding, RuntimeRouteBindingSource, RuntimeRouteSpec,
 };
 use serde::{Deserialize, Serialize};
+use std::collections::{BTreeMap, BTreeSet};
 use std::fmt;
 use std::sync::Arc;
 use thiserror::Error;
 
-#[derive(Clone, Debug, Default, Deserialize, PartialEq, Serialize)]
+#[derive(Clone, Debug, PartialEq)]
 pub struct RuntimePlan {
-    pub entries: Vec<RuntimeEntrySpec>,
-    pub callable_executables: Vec<RuntimeCallableExecutable>,
-    pub flow_executables: Vec<RuntimeFlowExecutable>,
-    pub flows: Vec<RuntimeFlow>,
-    pub pure_helpers: Vec<RuntimePureHelper>,
-    pub trait_methods: Vec<RuntimeTraitMethod>,
-    pub line_task_groups: Vec<LineTaskGroup>,
-    pub stream_plans: Vec<StreamPlan>,
-    pub source_plans: Vec<SourcePlan>,
+    pub(crate) type_table: RuntimePlanTypeTable,
+    pub(crate) local_declarations: RuntimeLocalDeclarationTable,
+    pub(crate) nominal_record_domains: RuntimeNominalRecordDomainTable,
+    pub(crate) variant_domains: RuntimeVariantDomainTable,
+    pub(crate) function_sites: RuntimeFunctionSiteTable,
+    pub(crate) dialogue_content: RuntimeDialogueContentPlanTable,
+    pub(crate) entries: Vec<RuntimeEntrySpec>,
+    pub(crate) callable_executables: Vec<RuntimeCallableExecutable>,
+    pub(crate) flow_executables: Vec<RuntimeFlowExecutable>,
+    pub(crate) flows: Vec<RuntimeFlow>,
+    pub(crate) pure_helpers: Vec<RuntimePureHelper>,
+    pub(crate) trait_methods: Vec<RuntimeTraitMethod>,
+    pub(crate) line_task_groups: Vec<LineTaskGroup>,
+    pub(crate) stream_plans: Vec<StreamPlan>,
+}
+
+/// Failure to resolve the plan-owned semantic type of a runtime value.
+#[derive(Clone, Copy, Debug, Eq, Error, PartialEq)]
+pub enum RuntimePlanValueTypeError {
+    #[error("runtime value references unknown plan type {ty}")]
+    UnknownType {
+        ty: crate::runtime_id::RuntimePlanTypeId,
+    },
+}
+
+impl RuntimePlan {
+    #[must_use]
+    pub const fn type_table(&self) -> &RuntimePlanTypeTable {
+        &self.type_table
+    }
+
+    #[must_use]
+    pub const fn local_declarations(&self) -> &RuntimeLocalDeclarationTable {
+        &self.local_declarations
+    }
+
+    #[must_use]
+    pub const fn nominal_record_domains(&self) -> &RuntimeNominalRecordDomainTable {
+        &self.nominal_record_domains
+    }
+
+    #[must_use]
+    pub const fn variant_domains(&self) -> &RuntimeVariantDomainTable {
+        &self.variant_domains
+    }
+
+    #[must_use]
+    pub const fn function_sites(&self) -> &RuntimeFunctionSiteTable {
+        &self.function_sites
+    }
+
+    #[must_use]
+    pub const fn dialogue_content(&self) -> &RuntimeDialogueContentPlanTable {
+        &self.dialogue_content
+    }
+
+    #[must_use]
+    pub fn entries(&self) -> &[RuntimeEntrySpec] {
+        &self.entries
+    }
+
+    #[must_use]
+    pub fn callable_executables(&self) -> &[RuntimeCallableExecutable] {
+        &self.callable_executables
+    }
+
+    #[must_use]
+    pub fn flow_executables(&self) -> &[RuntimeFlowExecutable] {
+        &self.flow_executables
+    }
+
+    #[must_use]
+    pub fn flows(&self) -> &[RuntimeFlow] {
+        &self.flows
+    }
+
+    #[must_use]
+    pub fn pure_helpers(&self) -> &[RuntimePureHelper] {
+        &self.pure_helpers
+    }
+
+    #[must_use]
+    pub fn trait_methods(&self) -> &[RuntimeTraitMethod] {
+        &self.trait_methods
+    }
+
+    #[must_use]
+    pub fn line_task_groups(&self) -> &[LineTaskGroup] {
+        &self.line_task_groups
+    }
+
+    #[must_use]
+    pub fn stream_plans(&self) -> &[StreamPlan] {
+        &self.stream_plans
+    }
+
+    /// Derives the complete checked predicate in plan context. Nominal enum
+    /// cases come from the owner-keyed variant domain rather than a copied
+    /// type-row sidecar.
+    pub fn checked_type(
+        &self,
+        ty: crate::runtime_id::RuntimePlanTypeId,
+    ) -> Result<Option<RuntimeCheckedType>, RuntimePlanTypeResolutionError> {
+        self.checked_type_inner(ty, &mut BTreeMap::new(), &mut BTreeSet::new())
+    }
+
+    /// Derives the final execution class from the complete plan-owned graph.
+    pub fn type_class(
+        &self,
+        ty: crate::runtime_id::RuntimePlanTypeId,
+    ) -> Result<RuntimePlanTypeClass, RuntimePlanTypeResolutionError> {
+        self.type_table.class(ty)
+    }
+
+    fn checked_type_inner(
+        &self,
+        ty: crate::runtime_id::RuntimePlanTypeId,
+        memo: &mut BTreeMap<crate::runtime_id::RuntimePlanTypeId, Option<RuntimeCheckedType>>,
+        visiting: &mut BTreeSet<crate::runtime_id::RuntimePlanTypeId>,
+    ) -> Result<Option<RuntimeCheckedType>, RuntimePlanTypeResolutionError> {
+        if let Some(checked) = memo.get(&ty) {
+            return Ok(checked.clone());
+        }
+        if !visiting.insert(ty) {
+            return Err(RuntimePlanTypeResolutionError::CheckedProjectionCycle { ty });
+        }
+        let declaration = self
+            .type_table
+            .get(ty)
+            .ok_or(RuntimePlanTypeResolutionError::UnknownType { ty })?;
+        let checked = match declaration.projection() {
+            RuntimePlanTypeProjection::Never => Some(RuntimeCheckedType::Never),
+            RuntimePlanTypeProjection::Unit => Some(RuntimeCheckedType::Unit),
+            RuntimePlanTypeProjection::Bool => Some(RuntimeCheckedType::Bool),
+            RuntimePlanTypeProjection::Signed(width) => Some(RuntimeCheckedType::Signed(*width)),
+            RuntimePlanTypeProjection::Unsigned(width) => {
+                Some(RuntimeCheckedType::Unsigned(*width))
+            }
+            RuntimePlanTypeProjection::F32 => Some(RuntimeCheckedType::F32),
+            RuntimePlanTypeProjection::F64 => Some(RuntimeCheckedType::F64),
+            RuntimePlanTypeProjection::String => Some(RuntimeCheckedType::String),
+            RuntimePlanTypeProjection::Char => Some(RuntimeCheckedType::Char),
+            RuntimePlanTypeProjection::Bytes => Some(RuntimeCheckedType::Bytes),
+            RuntimePlanTypeProjection::Duration => Some(RuntimeCheckedType::Duration),
+            RuntimePlanTypeProjection::EntityReference => Some(RuntimeCheckedType::EntityReference),
+            RuntimePlanTypeProjection::Sequence { item, .. }
+            | RuntimePlanTypeProjection::Array { item, .. } => self
+                .checked_type_inner(*item, memo, visiting)?
+                .map(|item| RuntimeCheckedType::Sequence(Box::new(item))),
+            RuntimePlanTypeProjection::ProjectNominal {
+                nominal, layout, ..
+            } => self.checked_nominal_or_variant(
+                ty,
+                nominal,
+                declaration.semantic_identity(),
+                *layout,
+                memo,
+                visiting,
+            )?,
+            RuntimePlanTypeProjection::Tuple(items) => self
+                .checked_children(items, memo, visiting)?
+                .map(RuntimeCheckedType::Tuple),
+            RuntimePlanTypeProjection::Choice(items) => self
+                .checked_children(items, memo, visiting)?
+                .map(RuntimeCheckedType::Choice),
+            RuntimePlanTypeProjection::Result { value, error } => match (
+                self.checked_type_inner(*value, memo, visiting)?,
+                self.checked_type_inner(*error, memo, visiting)?,
+            ) {
+                (Some(ok), Some(error)) => Some(RuntimeCheckedType::Result {
+                    ok: Box::new(ok),
+                    error: Box::new(error),
+                }),
+                _ => None,
+            },
+            RuntimePlanTypeProjection::Option(item) => self
+                .checked_type_inner(*item, memo, visiting)?
+                .map(|item| RuntimeCheckedType::Option(Box::new(item))),
+            RuntimePlanTypeProjection::Opaque {
+                producer,
+                admission,
+                ..
+            } => {
+                if self.variant_domains.get(ty).is_some() {
+                    self.checked_variant(ty, declaration.semantic_identity(), memo, visiting)?
+                } else {
+                    Some(RuntimeCheckedType::Opaque {
+                        owner: match admission {
+                            RuntimeOpaqueTypeAdmission::ExactIdentity => {
+                                RuntimeOpaqueTypeOwner::exact(
+                                    producer.clone(),
+                                    declaration.semantic_identity(),
+                                )
+                            }
+                            RuntimeOpaqueTypeAdmission::ProducerWide => {
+                                RuntimeOpaqueTypeOwner::producer_wide(
+                                    producer.clone(),
+                                    declaration.semantic_identity(),
+                                )
+                            }
+                        },
+                    })
+                }
+            }
+            RuntimePlanTypeProjection::Range(_)
+            | RuntimePlanTypeProjection::Iterator(_)
+            | RuntimePlanTypeProjection::Map { .. }
+            | RuntimePlanTypeProjection::Need { .. }
+            | RuntimePlanTypeProjection::Stream { .. }
+            | RuntimePlanTypeProjection::ThreadHandle(_)
+            | RuntimePlanTypeProjection::Shared(_)
+            | RuntimePlanTypeProjection::Reference(_)
+            | RuntimePlanTypeProjection::Function { .. }
+            | RuntimePlanTypeProjection::Agent(_) => None,
+        };
+        visiting.remove(&ty);
+        memo.insert(ty, checked.clone());
+        Ok(checked)
+    }
+
+    fn checked_nominal_or_variant(
+        &self,
+        ty: crate::runtime_id::RuntimePlanTypeId,
+        nominal: &RuntimeNominalTypeId,
+        semantic_identity: crate::pattern::RuntimeSemanticTypeId,
+        layout: TypeLayoutHash,
+        memo: &mut BTreeMap<crate::runtime_id::RuntimePlanTypeId, Option<RuntimeCheckedType>>,
+        visiting: &mut BTreeSet<crate::runtime_id::RuntimePlanTypeId>,
+    ) -> Result<Option<RuntimeCheckedType>, RuntimePlanTypeResolutionError> {
+        if self.variant_domains.get(ty).is_some() {
+            return self.checked_variant(ty, semantic_identity, memo, visiting);
+        }
+        Ok(Some(RuntimeCheckedType::Nominal {
+            nominal: nominal.clone(),
+            semantic_identity,
+            layout,
+        }))
+    }
+
+    fn checked_variant(
+        &self,
+        ty: crate::runtime_id::RuntimePlanTypeId,
+        semantic_identity: crate::pattern::RuntimeSemanticTypeId,
+        memo: &mut BTreeMap<crate::runtime_id::RuntimePlanTypeId, Option<RuntimeCheckedType>>,
+        visiting: &mut BTreeSet<crate::runtime_id::RuntimePlanTypeId>,
+    ) -> Result<Option<RuntimeCheckedType>, RuntimePlanTypeResolutionError> {
+        let Some(domain) = self.variant_domains.get(ty) else {
+            return Ok(None);
+        };
+        let mut cases = Vec::with_capacity(domain.cases().len());
+        for case in domain.cases() {
+            let payload = match case.payload() {
+                Some(payload) => {
+                    let Some(payload) = self.checked_type_inner(payload, memo, visiting)? else {
+                        return Ok(None);
+                    };
+                    Some(Box::new(payload))
+                }
+                None => None,
+            };
+            cases.push(RuntimeCheckedVariantCase {
+                name: case.name().to_owned(),
+                payload,
+            });
+        }
+        Ok(Some(RuntimeCheckedType::Variant {
+            nominal: domain.nominal().clone(),
+            semantic_identity,
+            cases,
+        }))
+    }
+
+    fn checked_children(
+        &self,
+        children: &[crate::runtime_id::RuntimePlanTypeId],
+        memo: &mut BTreeMap<crate::runtime_id::RuntimePlanTypeId, Option<RuntimeCheckedType>>,
+        visiting: &mut BTreeSet<crate::runtime_id::RuntimePlanTypeId>,
+    ) -> Result<Option<Vec<RuntimeCheckedType>>, RuntimePlanTypeResolutionError> {
+        let mut checked = Vec::with_capacity(children.len());
+        for child in children {
+            let Some(child) = self.checked_type_inner(*child, memo, visiting)? else {
+                return Ok(None);
+            };
+            checked.push(child);
+        }
+        Ok(Some(checked))
+    }
 }
 
 /// Runtime identifier for a lowered flow.
@@ -88,9 +417,10 @@ pub struct RuntimeLineId {
 }
 
 /// Lowered flow program.
-#[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
+#[derive(Clone, Debug, PartialEq)]
 pub struct RuntimeFlow {
     pub id: FlowRuntimeId,
+    pub params: Box<[RuntimeLocalDeclarationId]>,
     pub ops: Vec<FlowOp>,
 }
 
@@ -257,11 +587,11 @@ impl fmt::Display for RuntimeLineId {
 pub struct RuntimePureHelperId(pub usize);
 
 /// Lowered deterministic pure helper callable from runtime expressions.
-#[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
+#[derive(Clone, Debug, PartialEq)]
 pub struct RuntimePureHelper {
     pub id: RuntimePureHelperId,
     pub name: String,
-    pub input_names: Vec<String>,
+    pub input_locals: Box<[RuntimeLocalDeclarationId]>,
     pub input_types: Vec<RuntimePureInputType>,
     pub output_type: RuntimePureOutputType,
     pub expr: RuntimeExpr,
@@ -296,12 +626,12 @@ pub struct RuntimeTraitMethodIdentity {
 }
 
 /// Lowered deterministic trait/impl method body callable by runtime dispatch.
-#[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
+#[derive(Clone, Debug, PartialEq)]
 pub struct RuntimeTraitMethod {
     pub id: RuntimeTraitMethodId,
     pub identity: RuntimeTraitMethodIdentity,
     pub receiver: RuntimeReceiverMode,
-    pub input_names: Vec<String>,
+    pub input_locals: Box<[RuntimeLocalDeclarationId]>,
     pub input_types: Vec<RuntimePureInputType>,
     pub output_type: RuntimePureOutputType,
     pub body: RuntimeExpr,
@@ -357,7 +687,7 @@ pub enum RuntimePureHelperOrigin {
 
 /// Serializable evidence that a `for` source was resolved through the standard
 /// `IntoIterator` / `Iterator` contract before runtime lowering.
-#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[derive(Clone, Debug, Eq, PartialEq)]
 pub enum RuntimeIteratorEvidence {
     Builtin(RuntimeBuiltinIteratorEvidence),
     Witness(RuntimeIteratorWitnessEvidence),
@@ -379,29 +709,22 @@ pub enum RuntimeBuiltinIteratorEvidence {
 ///
 /// Runtime dispatch can execute trait-call witnesses; AWBC lowering still
 /// requires a typed trait-method table before it can consume them.
-#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[derive(Clone, Debug, Eq, PartialEq)]
 pub struct RuntimeIteratorWitnessEvidence {
-    pub item_type: String,
-    pub into_iter_type: String,
+    pub item: RuntimePlanTypeId,
+    pub iterator: RuntimePlanTypeId,
     pub executable: RuntimeIteratorWitnessExecutable,
 }
 
-#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[derive(Clone, Debug, Eq, PartialEq)]
 pub enum RuntimeIteratorWitnessExecutable {
-    TraitCalls(RuntimeIteratorWitnessCalls),
-    IdentityIntoIterator(RuntimeIteratorIdentityWitnessCalls),
-    UnsupportedMethodBodyLowering,
-}
-
-#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
-pub struct RuntimeIteratorWitnessCalls {
-    pub into_iter: RuntimeTraitMethodId,
-    pub next: RuntimeTraitMethodId,
-}
-
-#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
-pub struct RuntimeIteratorIdentityWitnessCalls {
-    pub next: RuntimeTraitMethodId,
+    TraitCalls {
+        into_iter: RuntimeTraitMethodId,
+        next: RuntimeTraitMethodId,
+    },
+    IdentityIntoIterator {
+        next: RuntimeTraitMethodId,
+    },
 }
 
 impl RuntimeIteratorEvidence {
@@ -473,9 +796,9 @@ impl RuntimeIteratorEvidence {
 
 /// Runtime identifier for a lowered stream transform.
 
-#[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
+#[derive(Clone, Debug, PartialEq)]
 pub enum FlowOp {
-    Bind(Vec<RuntimeBinding>),
+    Bind(Vec<RuntimeLocalBinding>),
     Let {
         pattern: RuntimePattern,
         expr: RuntimeExpr,
@@ -485,9 +808,13 @@ pub enum FlowOp {
         expr: RuntimeExpr,
         else_ops: Vec<FlowOp>,
     },
+    AssignNominalField {
+        base: RuntimeLocalDeclarationId,
+        field: crate::value::RuntimeRecordFieldId,
+        value: RuntimeExpr,
+    },
     Dialogue {
-        line: RuntimeLineId,
-        task_group: usize,
+        content: crate::runtime_id::RuntimeDialogueContentPlanId,
     },
     Choice {
         id: Option<String>,
@@ -600,12 +927,12 @@ pub enum FlowOp {
 }
 
 /// Direct host-call request surface for runtime-step hosts.
-#[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
+#[derive(Clone, Debug, PartialEq)]
 pub struct RuntimeHostCallTarget {
     pub public_id: String,
     pub capability: String,
     pub operation: String,
-    pub args: Vec<RuntimeExpr>,
+    pub args: Vec<RuntimeHostArgumentTemplate>,
     pub mode: RuntimeHostCallMode,
     pub deterministic: bool,
 }
@@ -615,7 +942,7 @@ impl RuntimeHostCallTarget {
         public_id: impl Into<String>,
         capability: impl Into<String>,
         operation: impl Into<String>,
-        args: impl IntoIterator<Item = RuntimeExpr>,
+        args: impl IntoIterator<Item = RuntimeHostArgumentTemplate>,
         mode: RuntimeHostCallMode,
         deterministic: bool,
     ) -> Self {
@@ -631,17 +958,17 @@ impl RuntimeHostCallTarget {
 }
 
 /// One executable `match` arm in the runtime flow model.
-#[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
+#[derive(Clone, Debug, PartialEq)]
 pub struct RuntimeMatchArm {
     pub pattern: RuntimePattern,
     pub guard: Option<RuntimeExpr>,
     pub ops: Vec<FlowOp>,
 }
 
-pub(crate) type RuntimeMatchSelection = Option<(Vec<RuntimeBinding>, Vec<FlowOp>)>;
+pub(crate) type RuntimeMatchSelection = Option<(Vec<RuntimeLocalBinding>, Vec<FlowOp>)>;
 
 /// Runtime choice option visible to adapters and selectable from `RuntimeStepInput`.
-#[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
+#[derive(Clone, Debug, PartialEq)]
 pub struct ChoiceRuntimeOption {
     pub id: Option<String>,
     pub label: String,
@@ -655,7 +982,7 @@ pub struct ChoiceRuntimeOption {
 pub enum FlowEvent {
     DialogueLine {
         line: RuntimeLineId,
-        bindings: Vec<RuntimeBinding>,
+        values: Box<[RuntimeDialogueValueBinding]>,
     },
     LineCancelled {
         trigger: String,
@@ -689,66 +1016,16 @@ pub enum FlowEvent {
     Done,
 }
 
+/// One evaluated value supplied to a document-local dialogue slot.
+#[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
+pub struct RuntimeDialogueValueBinding {
+    pub slot: RuntimeDialogueValueSlotId,
+    pub value: crate::value::RuntimeValue,
+}
+
 impl RuntimePlan {
-    pub fn new(
-        flows: Vec<RuntimeFlow>,
-        line_task_groups: Vec<LineTaskGroup>,
-    ) -> Result<Self, RuntimePlanError> {
-        Ok(Self {
-            entries: Vec::new(),
-            callable_executables: Vec::new(),
-            flow_executables: Vec::new(),
-            flows,
-            pure_helpers: Vec::new(),
-            trait_methods: Vec::new(),
-            line_task_groups,
-            stream_plans: Vec::new(),
-            source_plans: Vec::new(),
-        })
-    }
-
-    #[must_use]
-    pub fn with_generation_plans(
-        mut self,
-        stream_plans: Vec<StreamPlan>,
-        source_plans: Vec<SourcePlan>,
-    ) -> Self {
-        self.stream_plans = stream_plans;
-        self.source_plans = source_plans;
-        self
-    }
-
-    #[must_use]
-    pub fn with_pure_helpers(mut self, pure_helpers: Vec<RuntimePureHelper>) -> Self {
-        self.pure_helpers = pure_helpers;
-        self
-    }
-
-    #[must_use]
-    pub fn with_trait_methods(mut self, trait_methods: Vec<RuntimeTraitMethod>) -> Self {
-        self.trait_methods = trait_methods;
-        self
-    }
-
-    pub fn lines_only(line_task_groups: Vec<LineTaskGroup>) -> Self {
-        Self {
-            entries: Vec::new(),
-            callable_executables: Vec::new(),
-            flow_executables: Vec::new(),
-            flows: Vec::new(),
-            pure_helpers: Vec::new(),
-            trait_methods: Vec::new(),
-            line_task_groups,
-            stream_plans: Vec::new(),
-            source_plans: Vec::new(),
-        }
-    }
-
     pub fn is_empty(&self) -> bool {
-        self.flows.is_empty()
-            && self.line_task_groups.is_empty()
-            && self.stream_plans.is_empty()
-            && self.source_plans.is_empty()
+        self.flows.is_empty() && self.line_task_groups.is_empty() && self.stream_plans.is_empty()
     }
 
     /// Resolves one dynamic target against the exact accepted Flow inventory.
@@ -763,346 +1040,4 @@ impl RuntimePlan {
         FlowRuntimeId::resolve_runtime_target(value, self.flows.iter().map(|flow| &flow.id))
             .cloned()
     }
-
-    fn validate_nominal_record_carriers(&self) -> Result<(), RuntimePlanError> {
-        for (index, helper) in self.pure_helpers.iter().enumerate() {
-            validate_plan_expr(&helper.expr, format!("pure helper {index}"))?;
-        }
-        for (index, method) in self.trait_methods.iter().enumerate() {
-            validate_plan_expr(&method.body, format!("trait method {index}"))?;
-        }
-        for (index, flow) in self.flows.iter().enumerate() {
-            validate_flow_ops(&flow.ops, &format!("flow {index}"))?;
-        }
-        for (index, stream) in self.stream_plans.iter().enumerate() {
-            validate_stream_ops(&stream.ops, &format!("stream {index}"))?;
-        }
-        for (index, source) in self.source_plans.iter().enumerate() {
-            validate_plan_expr(&source.from, format!("source {index} input"))?;
-            for (handler, plan) in source.handlers.iter().enumerate() {
-                let ops = match plan {
-                    crate::source::SourceHandlerPlan::Item { ops, .. }
-                    | crate::source::SourceHandlerPlan::Error { ops, .. }
-                    | crate::source::SourceHandlerPlan::Progress { ops, .. }
-                    | crate::source::SourceHandlerPlan::Disconnected { ops }
-                    | crate::source::SourceHandlerPlan::PermissionRevoked { ops }
-                    | crate::source::SourceHandlerPlan::End { ops } => ops,
-                };
-                validate_source_ops(ops, &format!("source {index} handler {handler}"))?;
-            }
-        }
-        Ok(())
-    }
-}
-
-fn validate_plan_expr(expr: &RuntimeExpr, location: String) -> Result<(), RuntimePlanError> {
-    expr.validate_nominal_record_carriers()
-        .map_err(|source| RuntimePlanError::InvalidNominalRecordExpression { location, source })
-}
-
-#[allow(
-    clippy::too_many_lines,
-    reason = "plan ingress validation exhaustively visits every expression-bearing Flow operation"
-)]
-fn validate_flow_ops(ops: &[FlowOp], owner: &str) -> Result<(), RuntimePlanError> {
-    for (index, op) in ops.iter().enumerate() {
-        let at = format!("{owner} op {index}");
-        match op {
-            FlowOp::LetElse { expr, else_ops, .. } => {
-                validate_plan_expr(expr, format!("{at} expression"))?;
-                validate_flow_ops(else_ops, &format!("{at} else"))?;
-            }
-            FlowOp::Await {
-                target, pending, ..
-            } => {
-                validate_task_request(&target.request, &at)?;
-                validate_line_effects(pending, &at)?;
-            }
-            FlowOp::AwaitMany {
-                target, pending, ..
-            } => {
-                validate_plan_expr(&target.source, format!("{at} source"))?;
-                validate_task_request(&target.request, &at)?;
-                validate_line_effects(pending, &at)?;
-            }
-            FlowOp::HostCall { target, .. } => {
-                for (argument, expr) in target.args.iter().enumerate() {
-                    validate_plan_expr(expr, format!("{at} argument {argument}"))?;
-                }
-            }
-            FlowOp::If {
-                condition,
-                then_ops,
-                else_ops,
-            } => {
-                validate_plan_expr(condition, format!("{at} condition"))?;
-                validate_flow_ops(then_ops, &format!("{at} then"))?;
-                validate_flow_ops(else_ops, &format!("{at} else"))?;
-            }
-            FlowOp::IfLet {
-                expr,
-                guard,
-                then_ops,
-                else_ops,
-                ..
-            } => {
-                validate_plan_expr(expr, format!("{at} expression"))?;
-                if let Some(guard) = guard {
-                    validate_plan_expr(guard, format!("{at} guard"))?;
-                }
-                validate_flow_ops(then_ops, &format!("{at} then"))?;
-                validate_flow_ops(else_ops, &format!("{at} else"))?;
-            }
-            FlowOp::Match { scrutinee, arms } => {
-                validate_plan_expr(scrutinee, format!("{at} scrutinee"))?;
-                for (arm_index, arm) in arms.iter().enumerate() {
-                    if let Some(guard) = &arm.guard {
-                        validate_plan_expr(guard, format!("{at} arm {arm_index} guard"))?;
-                    }
-                    validate_flow_ops(&arm.ops, &format!("{at} arm {arm_index}"))?;
-                }
-            }
-            FlowOp::Loop { body }
-            | FlowOp::LetLoop { body, .. }
-            | FlowOp::Thread { body, .. }
-            | FlowOp::Scope(body) => validate_flow_ops(body, &at)?,
-            FlowOp::LoopNext { body } | FlowOp::ForNext { body, .. } => {
-                validate_flow_ops(body, &at)?;
-            }
-            FlowOp::While { condition, body } => {
-                validate_plan_expr(condition, format!("{at} condition"))?;
-                validate_flow_ops(body, &at)?;
-            }
-            FlowOp::WhileNext {
-                condition, body, ..
-            } => {
-                validate_plan_expr(condition, format!("{at} condition"))?;
-                validate_flow_ops(body, &at)?;
-            }
-            FlowOp::WhileLet {
-                expr, guard, body, ..
-            } => {
-                validate_plan_expr(expr, format!("{at} expression"))?;
-                if let Some(guard) = guard {
-                    validate_plan_expr(guard, format!("{at} guard"))?;
-                }
-                validate_flow_ops(body, &at)?;
-            }
-            FlowOp::WhileLetNext {
-                expr, guard, body, ..
-            } => {
-                validate_plan_expr(expr, format!("{at} expression"))?;
-                if let Some(guard) = guard {
-                    validate_plan_expr(guard, format!("{at} guard"))?;
-                }
-                validate_flow_ops(body, &at)?;
-            }
-            FlowOp::For { source, body, .. } => {
-                validate_plan_expr(source, format!("{at} source"))?;
-                validate_flow_ops(body, &at)?;
-            }
-            FlowOp::LetScope { ops, value, .. } => {
-                validate_flow_ops(ops, &at)?;
-                validate_plan_expr(value, format!("{at} value"))?;
-            }
-            FlowOp::Break(expr) => {
-                if let Some(expr) = expr {
-                    validate_plan_expr(expr, at)?;
-                }
-            }
-            FlowOp::Let { expr, .. }
-            | FlowOp::GotoExpr(expr)
-            | FlowOp::ReturnExpr(expr)
-            | FlowOp::ExitScopeBind { expr, .. } => validate_plan_expr(expr, at)?,
-            FlowOp::EvaluatedEffect(effect) => {
-                for (argument, expr) in effect.argument_exprs().into_iter().enumerate() {
-                    validate_plan_expr(expr, format!("{at} argument {argument}"))?;
-                }
-            }
-            FlowOp::Effect(effect) | FlowOp::RegisterCleanup { effect, .. } => {
-                validate_line_effect(effect, &at)?;
-            }
-            FlowOp::Bind(_)
-            | FlowOp::Dialogue { .. }
-            | FlowOp::Choice { .. }
-            | FlowOp::Continue
-            | FlowOp::Goto(_)
-            | FlowOp::Return(_)
-            | FlowOp::CancelCleanup { .. }
-            | FlowOp::EnterScope
-            | FlowOp::ExitScope
-            | FlowOp::Noop => {}
-        }
-    }
-    Ok(())
-}
-
-fn validate_task_request(
-    request: &crate::task::HostTaskRequestTemplate,
-    owner: &str,
-) -> Result<(), RuntimePlanError> {
-    for (index, argument) in request.args.iter().enumerate() {
-        let expr = match argument {
-            crate::task::HostTaskArgTemplate::Positional(expr)
-            | crate::task::HostTaskArgTemplate::Spread(expr)
-            | crate::task::HostTaskArgTemplate::Named { value: expr, .. } => expr,
-        };
-        validate_plan_expr(expr, format!("{owner} task argument {index}"))?;
-    }
-    Ok(())
-}
-
-fn validate_stream_ops(
-    ops: &[crate::stream::StreamOp],
-    owner: &str,
-) -> Result<(), RuntimePlanError> {
-    for (index, op) in ops.iter().enumerate() {
-        let at = format!("{owner} op {index}");
-        match op {
-            crate::stream::StreamOp::Let { expr, .. }
-            | crate::stream::StreamOp::Yield { expr }
-            | crate::stream::StreamOp::Close { source: expr } => validate_plan_expr(expr, at)?,
-            crate::stream::StreamOp::ForNext { source, body, .. } => {
-                validate_plan_expr(source, format!("{at} source"))?;
-                validate_stream_ops(body, &at)?;
-            }
-            crate::stream::StreamOp::If {
-                condition,
-                then_ops,
-                else_ops,
-            } => {
-                validate_plan_expr(condition, format!("{at} condition"))?;
-                validate_stream_ops(then_ops, &format!("{at} then"))?;
-                validate_stream_ops(else_ops, &format!("{at} else"))?;
-            }
-            crate::stream::StreamOp::Match { scrutinee, arms } => {
-                validate_plan_expr(scrutinee, format!("{at} scrutinee"))?;
-                for (arm, branch) in arms.iter().enumerate() {
-                    if let Some(guard) = &branch.guard {
-                        validate_plan_expr(guard, format!("{at} arm {arm} guard"))?;
-                    }
-                    validate_stream_ops(&branch.ops, &format!("{at} arm {arm}"))?;
-                }
-            }
-            crate::stream::StreamOp::Return => {}
-        }
-    }
-    Ok(())
-}
-
-fn validate_source_ops(
-    ops: &[crate::source::SourceOp],
-    owner: &str,
-) -> Result<(), RuntimePlanError> {
-    for (index, op) in ops.iter().enumerate() {
-        let at = format!("{owner} op {index}");
-        match op {
-            crate::source::SourceOp::Yield(expr) => validate_plan_expr(expr, at)?,
-            crate::source::SourceOp::Effect(effect) => validate_line_effect(effect, &at)?,
-            crate::source::SourceOp::EvaluatedEffect(effect) => {
-                for (argument, expr) in effect.argument_exprs().into_iter().enumerate() {
-                    validate_plan_expr(expr, format!("{at} argument {argument}"))?;
-                }
-            }
-            crate::source::SourceOp::SignalWrite(_)
-            | crate::source::SourceOp::Log(_)
-            | crate::source::SourceOp::Close(_) => {}
-        }
-    }
-    Ok(())
-}
-
-fn validate_line_effects(
-    effects: &[LineEffectRequest],
-    owner: &str,
-) -> Result<(), RuntimePlanError> {
-    for (index, effect) in effects.iter().enumerate() {
-        validate_line_effect(effect, &format!("{owner} pending effect {index}"))?;
-    }
-    Ok(())
-}
-
-fn validate_line_effect(effect: &LineEffectRequest, owner: &str) -> Result<(), RuntimePlanError> {
-    if let LineEffectRequest::Audio(command) = effect {
-        validate_audio_command(command, owner)?;
-    }
-    Ok(())
-}
-
-fn validate_audio_command(
-    command: &crate::audio::RuntimeAudioCommand,
-    owner: &str,
-) -> Result<(), RuntimePlanError> {
-    use crate::audio::RuntimeAudioCommand;
-    let expressions: Vec<&RuntimeExpr> = match command {
-        RuntimeAudioCommand::Play {
-            voice,
-            resource,
-            bus,
-            gain_db_milli,
-            pan_milli,
-            start_frame,
-            fade_in_millis,
-            ..
-        } => vec![
-            voice,
-            resource,
-            bus,
-            gain_db_milli,
-            pan_milli,
-            start_frame,
-            fade_in_millis,
-        ],
-        RuntimeAudioCommand::Stop {
-            voice,
-            fade_out_millis,
-        } => vec![voice, fade_out_millis],
-        RuntimeAudioCommand::StopAll { fade_out_millis } => vec![fade_out_millis],
-        RuntimeAudioCommand::SetVoiceGain {
-            voice,
-            gain_db_milli,
-            transition_millis,
-        } => vec![voice, gain_db_milli, transition_millis],
-        RuntimeAudioCommand::SetVoicePan {
-            voice,
-            pan_milli,
-            transition_millis,
-        } => vec![voice, pan_milli, transition_millis],
-        RuntimeAudioCommand::SetBusGain {
-            bus,
-            gain_db_milli,
-            transition_millis,
-        } => vec![bus, gain_db_milli, transition_millis],
-        RuntimeAudioCommand::SetBusMute { bus, muted } => vec![bus, muted],
-        RuntimeAudioCommand::SetEffectEnabled {
-            bus,
-            effect,
-            enabled,
-        } => vec![bus, effect, enabled],
-        RuntimeAudioCommand::SetEffectParameter {
-            bus,
-            effect,
-            value,
-            transition_millis,
-            ..
-        } => vec![bus, effect, value, transition_millis],
-        RuntimeAudioCommand::ApplySnapshot {
-            snapshot,
-            transition_millis,
-        } => vec![snapshot, transition_millis],
-        RuntimeAudioCommand::RequestMicrophone { capture, .. }
-        | RuntimeAudioCommand::StopMicrophone { capture } => vec![capture],
-        RuntimeAudioCommand::SetCaptureMonitor {
-            capture,
-            bus,
-            gain_db_milli,
-        } => std::iter::once(capture)
-            .chain(bus.iter())
-            .chain(std::iter::once(gain_db_milli))
-            .collect(),
-    };
-    for (index, expr) in expressions.into_iter().enumerate() {
-        validate_plan_expr(expr, format!("{owner} audio argument {index}"))?;
-    }
-    Ok(())
 }

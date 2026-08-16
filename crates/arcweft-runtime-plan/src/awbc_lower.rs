@@ -12,7 +12,6 @@ mod frame;
 mod inventory;
 mod line;
 mod pattern;
-mod source;
 #[cfg(test)]
 mod tests;
 mod trait_method;
@@ -23,13 +22,13 @@ pub use flow::AwbcFlowLowerer;
 pub use frame::{FrameBuilder, FrameSlotKey};
 pub use inventory::{AwbcInventory, AwbcLowerDiagnostic, AwbcLowerStats};
 pub use line::AwbcLineLowerer;
-pub use source::AwbcSourceStreamLowerer;
 pub(crate) use trait_method::AwbcTraitMethodLowerer;
 
 use arcweft_core::awbc::schema::{AwbcProgram, AwbcSourceMapEntry};
 use arcweft_core::awbc::verify::{AwbcVerifyBudget, AwbcVerifyContext, AwbcVerifyError};
-use arcweft_core::plan::RuntimePlan;
+use arcweft_core::plan::{EntryRuntimeId, RuntimePlan};
 use arcweft_text_model::DialogueContentCatalog;
+use thiserror::Error;
 
 /// Compiler-side context for one `RuntimePlan` to AWBC lowering operation.
 #[derive(Clone, Copy, Debug)]
@@ -37,6 +36,7 @@ pub struct AwbcLowerer<'a> {
     plan: &'a RuntimePlan,
     dialogue_content: &'a DialogueContentCatalog,
     source_label: &'a str,
+    entry: Option<&'a EntryRuntimeId>,
     options: AwbcLowerOptions,
 }
 
@@ -73,9 +73,11 @@ pub struct AwbcLowerReport {
 }
 
 /// Top-level failure. Diagnostics remain structured and reusable by CLI/LSP.
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Error)]
 pub enum AwbcLowerError {
+    #[error("Product AWBC lowering reported structured diagnostics: {0:?}")]
     Lowering(Vec<AwbcLowerDiagnostic>),
+    #[error(transparent)]
     Verify(AwbcVerifyError),
 }
 
@@ -90,6 +92,28 @@ impl<'a> AwbcLowerer<'a> {
             plan,
             dialogue_content,
             source_label,
+            entry: None,
+            options: AwbcLowerOptions::default(),
+        }
+    }
+
+    /// Creates a lowerer for one selected entry and its executable Flow closure.
+    ///
+    /// Selection is resolved against the complete accepted plan. The lowerer
+    /// never reconstructs a partial `RuntimePlan`, so plan-local identities
+    /// retain their original owner while Product AWBC tables are allocated
+    /// afresh for the selected artifact.
+    pub fn for_entry(
+        plan: &'a RuntimePlan,
+        dialogue_content: &'a DialogueContentCatalog,
+        source_label: &'a str,
+        entry: &'a EntryRuntimeId,
+    ) -> Self {
+        Self {
+            plan,
+            dialogue_content,
+            source_label,
+            entry: Some(entry),
             options: AwbcLowerOptions::default(),
         }
     }
@@ -107,6 +131,7 @@ impl<'a> AwbcLowerer<'a> {
             plan,
             dialogue_content,
             source_label,
+            entry,
             options,
         } = self;
         let mut inventory = AwbcInventory::new(source_label, options);
@@ -114,12 +139,15 @@ impl<'a> AwbcLowerer<'a> {
         inventory.intern_dialogue_content_catalog(dialogue_content);
 
         let mut diagnostics = {
-            let mut flow_lowerer = AwbcFlowLowerer::new(&mut inventory);
-            flow_lowerer.lower_plan(plan);
+            let mut flow_lowerer = AwbcFlowLowerer::new(&mut inventory, plan);
+            if let Some(entry) = entry {
+                flow_lowerer.lower_entry_plan(entry);
+            } else {
+                flow_lowerer.lower_plan();
+            }
             flow_lowerer.into_diagnostics()
         };
-        AwbcSourceStreamLowerer::new(&mut inventory).lower_plan(plan);
-        expr::lower_pending_closures(&mut inventory);
+        expr::lower_pending_closures(&mut inventory, plan);
 
         diagnostics.extend(inventory.take_diagnostics());
         let mut program = inventory.finish();

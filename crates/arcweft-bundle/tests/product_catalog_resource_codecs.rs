@@ -20,7 +20,6 @@ use arcweft_core::awbc::schema::{
     AwbcFunctionId, AwbcFunctionKind, AwbcProgram, AwbcSafePointKind, AwbcSignature,
     AwbcSignatureId, AwbcStringId, AwbcTableRange, AwbcTerminator,
 };
-use arcweft_core::bytecode::BytecodeProgram;
 use arcweft_core::effect::RuntimeArtifactFingerprint;
 use arcweft_interaction_model::audio::{AudioBusId, AudioLoopMode, AudioResourceId, GainDbMilli};
 use arcweft_source::{SourceDocument, SourceDocumentId, SourceName};
@@ -286,15 +285,13 @@ fn fixture_bundle() -> ArcweftBundle {
                 bytecode_instructions: 0,
                 line_task_groups: 0,
                 stream_plans: 0,
-                source_plans: 0,
             },
         },
         source_map("main.arcw", "flow main { return \"ok\" }"),
-        BytecodeProgram::default(),
+        minimal_awbc_program(),
         DialogueContentCatalog::new(),
     )
     .expect("standard dialogue source joins source map")
-    .with_product_awbc(minimal_awbc_program())
     .with_virtual_files([image_file, audio_file])
     .with_image_assets([BundleImageAsset {
         id: "asset.view.logo".to_owned(),

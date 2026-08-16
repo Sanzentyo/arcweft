@@ -1,6 +1,6 @@
 use super::{
-    Engine, FlowFiberStatus, RuntimeStepInput, RuntimeStepOptions, RuntimeStepOutput,
-    RuntimeStepResult, RuntimeStepStats,
+    Engine, FlowFiberStatus, RuntimeDiagnostic, RuntimeDiagnosticCategory, RuntimeStepInput,
+    RuntimeStepOptions, RuntimeStepOutput, RuntimeStepResult, RuntimeStepStats,
 };
 use crate::aot::{AotLinearOp, AotProgram};
 use crate::pure::RuntimeCallBackend;
@@ -9,7 +9,7 @@ impl Engine {
     pub(crate) fn step_prechecked_aot_linear_with_pure_backend(
         &mut self,
         program: &AotProgram,
-        input: RuntimeStepInput,
+        input: &RuntimeStepInput,
         root_bindings: &[crate::value::RuntimeBinding],
         options: RuntimeStepOptions,
         pure_backend: &mut impl RuntimeCallBackend,
@@ -19,8 +19,21 @@ impl Engine {
         let mut aot_fast_path_ops = 0;
         let pure_stats_before = pure_backend.stats();
         let pending_ops_before = self.fiber.pending_ops.len();
-        self.fiber.env.bind_all_root_ref(root_bindings);
-        self.fiber.env.bind_all_root(input.bindings);
+        if let Err(error) = self.bind_step_inputs(root_bindings, &input.bindings) {
+            output.diagnostics.push(RuntimeDiagnostic::categorized(
+                RuntimeDiagnosticCategory::Input,
+                error.to_string(),
+            ));
+            let stats = RuntimeStepStats {
+                pending_ops_before,
+                pending_ops_after: self.fiber.pending_ops.len(),
+                child_fibers: self.child_fibers.len(),
+                pure: pure_backend.stats().saturating_delta(pure_stats_before),
+                diagnostics: output.diagnostics.len(),
+                ..RuntimeStepStats::default()
+            };
+            return (self.step_result(output, options, stats), 0);
+        }
         let runtime_input = RuntimeStepInput::default();
 
         while executed_ops < options.budget.max_ops && self.can_attempt_runtime_op() {
@@ -69,26 +82,33 @@ impl Engine {
         }
 
         self.record_observations(&output.effects.line);
-        let stats = RuntimeStepStats {
+        let stats = self.aot_linear_step_stats(
+            executed_ops,
+            pending_ops_before,
+            pure_backend.stats().saturating_delta(pure_stats_before),
+            &output,
+        );
+        (self.step_result(output, options, stats), aot_fast_path_ops)
+    }
+
+    fn aot_linear_step_stats(
+        &self,
+        executed_ops: usize,
+        pending_ops_before: usize,
+        pure: crate::step::RuntimePureCallStats,
+        output: &RuntimeStepOutput,
+    ) -> RuntimeStepStats {
+        RuntimeStepStats {
             executed_ops,
             pending_ops_before,
             pending_ops_after: self.fiber.pending_ops.len(),
             child_fibers: self.child_fiber_count(),
-            pure: pure_backend.stats().saturating_delta(pure_stats_before),
-            task_events_in: 0,
-            need_states_in: 0,
-            source_events_in: 0,
-            root_events_in: 0,
-            root_transitions: 0,
-            root_commands: 0,
-            root_events_deferred: 0,
-            source_events_emitted: 0,
-            stream_events_emitted: 0,
+            pure,
             line_effects: output.effects.line.len(),
             audio_commands: output.requests.audio.len(),
             diagnostics: output.diagnostics.len(),
-        };
-        (self.step_result(output, options, stats), aot_fast_path_ops)
+            ..RuntimeStepStats::default()
+        }
     }
 
     fn fail_aot_linear_precondition(&mut self, message: &str, output: &mut RuntimeStepOutput) {
@@ -104,10 +124,8 @@ impl Engine {
         input: &RuntimeStepInput,
     ) -> bool {
         input.task_events.is_empty()
-            && input.source_events.is_empty()
             && input.root_events.is_empty()
             && self.root.is_none()
-            && self.plan.source_plans.is_empty()
             && self.plan.stream_plans.is_empty()
             && self.fiber.pending_ops.is_empty()
             && self.fiber.control_stack.is_empty()
@@ -135,6 +153,21 @@ impl Engine {
             AotLinearOp::Let { pattern, expr } => {
                 self.evaluate_let_with_backend(pattern, expr, output, pure_backend);
                 self.advance_aot_linear_cursor(next_op_index);
+            }
+            AotLinearOp::AssignNominalField { base, field, value } => {
+                match self.evaluate_expr_with_backend(value, pure_backend) {
+                    Ok(value) => match self.fiber.env.set_record_field(*base, *field, value) {
+                        Ok(()) => self.advance_aot_linear_cursor(next_op_index),
+                        Err(target) => self.fail_eval(
+                            crate::value::RuntimeEvalError::InvalidFieldAssignment {
+                                field: field.zero_based().to_string(),
+                                value: super::runtime_value_label(&target),
+                            },
+                            output,
+                        ),
+                    },
+                    Err(error) => self.fail_eval(error, output),
+                }
             }
             AotLinearOp::Return(value) => self.return_value(value.clone(), output, pure_backend),
             AotLinearOp::ReturnExpr(expr) => {

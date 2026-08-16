@@ -16,9 +16,9 @@ use arcweft_lang_syntax::ast::module_path::CanonicalModulePath;
 use crate::env::nominal::AcceptedNominalCatalogDigest;
 
 use super::{
-    GenericTypeScopeFingerprint, NominalResolutionLimits, SelfTypeScopeFingerprint,
-    TypeResolutionInput, TypeResolutionInputError, TypeResolutionModule, TypeResolutionReport,
-    TypeResolutionWorld,
+    AssociatedTypeScopeFingerprint, GenericTypeScopeFingerprint, NominalResolutionLimits,
+    SelfTypeScopeFingerprint, TypeResolutionInput, TypeResolutionInputError, TypeResolutionModule,
+    TypeResolutionReport, TypeResolutionWorld,
 };
 
 /// Version of the final-HIR resolver/cache semantics represented by this key.
@@ -55,6 +55,7 @@ pub struct CheckedTypeReferenceCacheKey {
     structure: HirTypeStructuralDigest,
     generics: GenericTypeScopeFingerprint,
     self_scope: SelfTypeScopeFingerprint,
+    associated: AssociatedTypeScopeFingerprint,
     catalog: AcceptedNominalCatalogDigest,
     schema: NominalResolverSchemaVersion,
     limits: NominalResolutionLimits,
@@ -87,6 +88,11 @@ impl CheckedTypeReferenceCacheKey {
             structure: structural_digest(input.module(), input.root()),
             generics: input.generics().fingerprint(),
             self_scope: input.self_scope().fingerprint(),
+            associated: input
+                .associated()
+                .map_or(AssociatedTypeScopeFingerprint::empty(), |scope| {
+                    scope.fingerprint()
+                }),
             catalog: environment.nominal_catalog().digest(),
             schema: NominalResolverSchemaVersion::CURRENT,
             limits: input.limits(),
@@ -123,6 +129,10 @@ impl CheckedTypeReferenceCacheKey {
 
     pub const fn self_scope(&self) -> SelfTypeScopeFingerprint {
         self.self_scope
+    }
+
+    pub const fn associated(&self) -> AssociatedTypeScopeFingerprint {
+        self.associated
     }
 
     pub const fn catalog(&self) -> AcceptedNominalCatalogDigest {

@@ -96,7 +96,7 @@ pub(super) fn verify_types_command(
     let selection = resolve_source_selection(options.path.as_ref(), &options.profile)?;
     let mut checked = load_and_check_selection(&selection, None)?;
     let (runtime_plan, entry) = verify_types_runtime_plan(&mut checked, &selection, options)?;
-    let line_task_groups = runtime_plan.line_task_groups.len();
+    let line_task_groups = runtime_plan.line_task_groups().len();
     let verification = verify_types_semantics(&mut checked, options.mode)?;
     let runtime = verify_types_runtime_self_check(
         runtime_plan,

@@ -36,17 +36,18 @@ use super::nominal_signature::ProjectSignatureResolver;
 use super::{
     CallableAccess, CallableArgumentPolicy, CallableAuthorityRank, CallableBuildLimitError,
     CallableCandidateId, CallableCatalogBuildError, CallableDocumentation, CallableEffectSchema,
-    CallableGroupIndex, CallableGroupKind, CallableLimits, CallableLookupKey, CallableName,
-    CallableOverloadIndex, CallableParameter, CallableParameterGroup, CallableParameterIndex,
-    CallableParameterPassing, CallableParameterPresence, CallableParameterSource,
-    CallableParameterType, CallablePath, CallablePathError, CallableProviderId, CallableRecord,
-    CallableSignatureSchema, CallableSource, CallableValidator, CatalogCallableEntry,
-    DocumentationProvenance, EnvironmentCallableCatalog, EnvironmentCallableId,
-    EnvironmentCallableKind, EnvironmentCallableOwner, EnvironmentCallablePublication,
-    EnvironmentCallablePublicationRecord, EnvironmentDeclarationOrdinal, EquivalentCallableSource,
-    NonEmptyCallableSet, ProjectCallableCatalog, ProjectCallablePath, ProjectNameBinding,
-    RegisteredCallableCatalog, RegisteredProjectModuleCallables, SignatureOrigin,
-    SpreadArgumentPolicy, StandardEnvironmentId, UnknownNamedArgumentPolicy,
+    CallableEvaluatedEffect, CallableGroupIndex, CallableGroupKind, CallableLimits,
+    CallableLookupKey, CallableName, CallableOverloadIndex, CallableParameter,
+    CallableParameterGroup, CallableParameterIndex, CallableParameterPassing,
+    CallableParameterPresence, CallableParameterSource, CallableParameterType, CallablePath,
+    CallablePathError, CallableProviderId, CallableRecord, CallableSignatureSchema, CallableSource,
+    CallableValidator, CatalogCallableEntry, DocumentationProvenance, EnvironmentCallableCatalog,
+    EnvironmentCallableId, EnvironmentCallableKind, EnvironmentCallableOwner,
+    EnvironmentCallablePublication, EnvironmentCallablePublicationRecord,
+    EnvironmentDeclarationOrdinal, EquivalentCallableSource, NonEmptyCallableSet,
+    ProjectCallableCatalog, ProjectCallablePath, ProjectNameBinding, RegisteredCallableCatalog,
+    RegisteredProjectModuleCallables, SignatureOrigin, SpreadArgumentPolicy, StandardEnvironmentId,
+    UnknownNamedArgumentPolicy,
 };
 
 pub(crate) struct RegisteredCallableCatalogBuilder {
@@ -1396,6 +1397,8 @@ impl TypeCheckEnv {
                 key,
                 &function.signature,
                 Some(function.effects.as_slice()),
+                function.validator.clone(),
+                function.evaluated_effect,
                 ordinal,
                 limits,
             )?);
@@ -1450,14 +1453,11 @@ fn environment_record_from_signature(
     key: CallableLookupKey,
     signature: &FunctionSignature,
     effects: Option<&[crate::env::EffectCapability]>,
+    validator: CallableValidator,
+    evaluated_effect: Option<CallableEvaluatedEffect>,
     ordinal: usize,
     limits: &CallableLimits,
 ) -> Result<EnvironmentCallablePublicationRecord, super::CallablePublicationError> {
-    let validator = if signature.checks_args() {
-        CallableValidator::Ordinary
-    } else {
-        CallableValidator::Untyped
-    };
     let effects = EffectSet::from_labels(
         effects
             .unwrap_or_default()
@@ -1465,7 +1465,10 @@ fn environment_record_from_signature(
             .map(crate::env::EffectCapability::as_str),
     )
     .map_err(|_| super::CallablePublicationError::InvalidOverload)?;
-    let schema = signature.callable_schema(EffectRow::closed(effects), validator, limits)?;
+    let mut schema = signature.callable_schema(EffectRow::closed(effects), validator, limits)?;
+    if let Some(effect) = evaluated_effect {
+        schema = schema.with_evaluated_effect(effect);
+    }
     EnvironmentCallablePublicationRecord::try_new(
         kind,
         key,

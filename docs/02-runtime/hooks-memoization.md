@@ -6,7 +6,7 @@ declarations; see [Event Ownership and Caching](../01-language/hooks-and-memoiza
 
 ## Dispatch plans
 
-View input handlers, line-plan branches, live-source lifecycle handlers,
+View input handlers, line-plan branches, live-stream lifecycle observations,
 Activity events, and read-only observation points may lower to shared typed
 dispatch records. Each record retains its owner identity, event kind, allowed
 effects, source range, and deterministic ordering key.
@@ -31,14 +31,14 @@ that the owner surface does not permit.
 `arcweft-core` remains Sans I/O. Host adapters normalize input and external
 events, then `Engine::step` visits explicit dispatch points. Handler outputs are
 typed values such as `InputDisposition`, semantic actions, commands, line-plan
-outcomes, or source events. Durable state is not mutated by an arbitrary
+outcomes, or stream events. Durable state is not mutated by an arbitrary
 callback.
 
 Stable order is derived from the owning subsystem, for example:
 
 ```text
 dispatch phase
-  -> committed LayerTree / source / line-plan order
+  -> committed LayerTree / stream / line-plan order
   -> owner-local explicit priority when supported
   -> stable entity identity
 ```

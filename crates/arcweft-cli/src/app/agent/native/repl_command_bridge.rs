@@ -452,12 +452,11 @@ fn agent_repl_typed_cell_outcome(
                 "overlay_hash": record.overlay_hash,
                 "commit_hash": record.commit_hash,
                 "entry": record.entry,
-                "bytecode_stats": {
-                    "flows": record.bytecode_stats.flows,
-                    "instructions": record.bytecode_stats.instructions,
-                    "line_task_groups": record.bytecode_stats.line_task_groups,
-                    "stream_plans": record.bytecode_stats.stream_plans,
-                    "source_plans": record.bytecode_stats.source_plans,
+                "program_stats": {
+                    "flows": record.program_stats.flows,
+                    "instructions": record.program_stats.instructions,
+                    "line_task_groups": record.program_stats.line_task_groups,
+                    "stream_plans": record.program_stats.stream_plans,
                 },
                 "verified_effects": record.verified_effects,
                 "bindings": record.bindings.iter().map(|binding| serde_json::json!({
@@ -651,36 +650,6 @@ mod parse_diagnostic_tests {
             "View part export needs `as` before its public name"
         );
         assert_eq!(diagnostic["recovery"], serde_json::json!([]));
-    }
-
-    #[test]
-    fn agent_repl_parse_failure_human_output_preserves_related_ranges() {
-        let source = "entry game @entry.game.main {\nstate = GameState\nstate = OtherState\n}\n";
-        let parsed = attached(source, "related-ranges");
-        let diagnostic = parsed
-            .diagnostics()
-            .iter()
-            .find(|diagnostic| diagnostic.code() == "syntax.entry.duplicate_role")
-            .expect("duplicate-role diagnostic")
-            .clone();
-        let first = diagnostic.related().expect("first role source").range();
-        let error = ReplTransactionError::AttachedParse {
-            diagnostics: vec![diagnostic],
-            coordinate_space: ReplParseCoordinateSpace::SyntheticSourceUtf8Bytes,
-        };
-
-        let report = agent_repl_transaction_error_report(4, source, &error);
-        let message = report.message.expect("human parse diagnostic");
-        assert!(message.contains(&format!(
-            "related synthetic_source {}..{}: related syntax recovery",
-            first.start(),
-            first.end()
-        )));
-        assert_eq!(
-            report.value.expect("typed JSON")["transaction_error"]["diagnostics"][0]["related"][0]
-                ["range"]["start"],
-            first.start()
-        );
     }
 }
 

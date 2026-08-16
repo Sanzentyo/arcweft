@@ -16,7 +16,7 @@ pub(super) enum IndentedSuiteIssue {
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub(super) struct IndentedSuiteInterval {
+pub(in crate::parser) struct IndentedSuiteInterval {
     colon: usize,
     payload_start: usize,
     first_item: usize,

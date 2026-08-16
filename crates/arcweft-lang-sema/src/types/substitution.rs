@@ -103,7 +103,7 @@ fn contains_generic_parameter_where(
             contains_generic_parameter_where(left, predicate)
                 || contains_generic_parameter_where(right, predicate)
         }
-        TypeKind::Stream { item, error } | TypeKind::Source { item, error } => {
+        TypeKind::Stream { item, error } => {
             contains_generic_parameter_where(item, predicate)
                 || contains_generic_parameter_where(error, predicate)
         }
@@ -212,7 +212,6 @@ fn atomic_contains_generic_parameter(
         | TypeKind::Need { .. }
         | TypeKind::Result { .. }
         | TypeKind::Stream { .. }
-        | TypeKind::Source { .. }
         | TypeKind::Function { .. }
         | TypeKind::ProjectNominal(_)
         | TypeKind::AcceptedNominal(_)
@@ -276,10 +275,6 @@ impl TypeKind {
                 error: Box::new(error.substitute_type_parameters(substitutions)),
             },
             Self::Stream { item, error } => Self::Stream {
-                item: Box::new(item.substitute_type_parameters(substitutions)),
-                error: Box::new(error.substitute_type_parameters(substitutions)),
-            },
-            Self::Source { item, error } => Self::Source {
                 item: Box::new(item.substitute_type_parameters(substitutions)),
                 error: Box::new(error.substitute_type_parameters(substitutions)),
             },
@@ -515,10 +510,6 @@ fn observe_composite_type_parameters(
                 item: declared_first,
                 error: declared_second,
             }
-            | TypeKind::Source {
-                item: declared_first,
-                error: declared_second,
-            }
             | TypeKind::Result {
                 ok: declared_first,
                 error: declared_second,
@@ -528,10 +519,6 @@ fn observe_composite_type_parameters(
                 error: actual_second,
             }
             | TypeKind::Stream {
-                item: actual_first,
-                error: actual_second,
-            }
-            | TypeKind::Source {
                 item: actual_first,
                 error: actual_second,
             }
@@ -590,7 +577,6 @@ fn observe_composite_type_parameters(
         (
             TypeKind::Need { .. }
             | TypeKind::Stream { .. }
-            | TypeKind::Source { .. }
             | TypeKind::Result { .. }
             | TypeKind::Map { .. }
             | TypeKind::Function { .. }

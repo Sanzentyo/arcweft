@@ -3,8 +3,8 @@
 use arcweft_lang_hir::{
     identity::TypeId,
     item::{
-        HirCapabilityMember, HirGenericParameter, HirImplMember, HirItemKind, HirMethodParameter,
-        HirTraitMember, HirWherePredicate,
+        HirCapabilityMember, HirExternCapabilityItem, HirGenericParameter, HirImplMember,
+        HirItemKind, HirMethodParameter, HirTraitMember, HirWherePredicate,
     },
     module::HirModule,
     project::HirProjectView,
@@ -13,19 +13,20 @@ use arcweft_lang_hir::{
     },
     symbol::{CallableDeclarationOwner, CallableSymbol, ProjectSymbolTable},
 };
+use arcweft_lang_syntax::ast::module_path::ModuleSegment;
 use arcweft_source::SourceSpan;
 
 use crate::{
     nominal::{
-        CheckedTypeReferenceCache, GenericTypeBinding, GenericTypeScope, NominalResolutionIndex,
-        NominalResolutionLimits, ResolvedTypeRefOutcome, SelfTypeScope, TypeResolutionInput,
-        TypeSourceEvidence,
+        AssociatedTypeScope, CheckedTypeReferenceCache, GenericTypeBinding, GenericTypeScope,
+        NominalResolutionIndex, NominalResolutionLimits, ResolvedTypeRefOutcome, SelfTypeScope,
+        TypeResolutionInput, TypeSourceEvidence,
     },
     registration::AcceptedNominalWorld,
     types::{GenericTypeOwnerId, GenericTypeParameterId, TypeKind},
 };
 
-use super::CallableCatalogBuildError;
+use super::{CallableCatalogBuildError, CallableName, CallablePath};
 
 pub(super) struct ResolvedProjectSignature {
     pub(super) parameter_types: Vec<Vec<TypeKind>>,
@@ -38,6 +39,7 @@ pub(super) struct ProjectSignatureResolver<'a> {
     nominal_world: &'a AcceptedNominalWorld,
     resolutions: &'a mut NominalResolutionIndex,
     cache: &'a mut CheckedTypeReferenceCache,
+    associated_scope: Option<AssociatedTypeScope>,
 }
 
 impl<'a> ProjectSignatureResolver<'a> {
@@ -54,6 +56,7 @@ impl<'a> ProjectSignatureResolver<'a> {
             nominal_world,
             resolutions,
             cache,
+            associated_scope: None,
         }
     }
 
@@ -178,6 +181,68 @@ impl<'a> ProjectSignatureResolver<'a> {
                         declaration: declaration.clone(),
                     });
                 };
+                let host_call_path = capability
+                    .name()
+                    .resolved()
+                    .zip(function.name().resolved())
+                    .and_then(|(capability, function)| {
+                        let capability = CallableName::try_new(capability.as_str()).ok()?;
+                        let function = CallableName::try_new(function.as_str()).ok()?;
+                        CallablePath::try_new([capability, function]).ok()
+                    });
+                let host_call_contract = host_call_path
+                    .as_ref()
+                    .and_then(|path| self.nominal_world.host_call_contract(path))
+                    .cloned();
+                if let (Some(path), Some(contract)) =
+                    (host_call_path.as_ref(), host_call_contract.as_ref())
+                {
+                    let projected = self
+                        .nominal_world
+                        .try_project_host_call_contract(
+                            contract,
+                            NominalResolutionLimits::PRODUCTION,
+                        )
+                        .map_err(
+                            |_| CallableCatalogBuildError::InvalidProjectSignatureSource {
+                                span: contract.source().clone(),
+                            },
+                        )?;
+                    self.associated_scope = Some(associated_scope_for(
+                        capability,
+                        projected.domain_error.as_ref(),
+                    ));
+                    let resolved = self.resolve_signature_types(
+                        module,
+                        symbol.declaration_span(),
+                        function.generic_parameters(),
+                        &[],
+                        function
+                            .parameter_groups()
+                            .iter()
+                            .map(|group| {
+                                group
+                                    .parameters()
+                                    .iter()
+                                    .map(arcweft_lang_hir::item::HirParameter::ty)
+                                    .collect()
+                            })
+                            .collect(),
+                        function.return_type(),
+                        &owner,
+                    );
+                    self.associated_scope = None;
+                    let resolved = resolved?;
+                    if resolved.parameter_types != projected.parameter_types
+                        || resolved.return_type != projected.result_type
+                    {
+                        return Err(CallableCatalogBuildError::HostCallContractMismatch {
+                            declaration: declaration.clone(),
+                            path: path.clone(),
+                        });
+                    }
+                    return Ok(resolved);
+                }
                 self.resolve_signature_types(
                     module,
                     symbol.declaration_span(),
@@ -487,16 +552,30 @@ impl<'a> ProjectSignatureResolver<'a> {
         declaration_span: &SourceSpan,
     ) -> Result<TypeKind, CallableCatalogBuildError> {
         let source = type_source(module, root).unwrap_or_else(|| declaration_span.clone());
-        let input = TypeResolutionInput::accepted(
-            root,
-            module,
-            self.project,
-            self.symbols,
-            self.nominal_world,
-            generics,
-            self_scope,
-            NominalResolutionLimits::PRODUCTION,
-        )
+        let input = if let Some(associated) = self.associated_scope.as_ref() {
+            TypeResolutionInput::accepted_with_associated(
+                root,
+                module,
+                self.project,
+                self.symbols,
+                self.nominal_world,
+                generics,
+                self_scope,
+                associated,
+                NominalResolutionLimits::PRODUCTION,
+            )
+        } else {
+            TypeResolutionInput::accepted(
+                root,
+                module,
+                self.project,
+                self.symbols,
+                self.nominal_world,
+                generics,
+                self_scope,
+                NominalResolutionLimits::PRODUCTION,
+            )
+        }
         .map_err(
             |reason| CallableCatalogBuildError::ProjectSignatureResolutionInput {
                 span: source.clone(),
@@ -528,6 +607,33 @@ impl<'a> ProjectSignatureResolver<'a> {
             )?;
         Ok(resolved)
     }
+}
+
+pub(crate) fn associated_scope_for(
+    capability: &HirExternCapabilityItem,
+    domain_error: Option<&TypeKind>,
+) -> AssociatedTypeScope {
+    let Some(TypeKind::AcceptedNominal(domain_error)) = domain_error else {
+        return AssociatedTypeScope::empty();
+    };
+    let Some(domain_name) = domain_error
+        .declaration()
+        .canonical_path()
+        .segments()
+        .last()
+        .and_then(|segment| segment.try_as_module_segment().ok())
+    else {
+        return AssociatedTypeScope::empty();
+    };
+    let bindings = capability.members().iter().filter_map(|member| {
+        let HirCapabilityMember::AssociatedType(associated) = member else {
+            return None;
+        };
+        let name = associated.name().resolved()?;
+        let name = ModuleSegment::new(name.as_str()).ok()?;
+        (name == domain_name).then(|| (name, TypeKind::AcceptedNominal(domain_error.clone())))
+    });
+    AssociatedTypeScope::from_bindings(bindings)
 }
 
 fn type_source(module: &HirModule, owner: TypeId) -> Option<SourceSpan> {

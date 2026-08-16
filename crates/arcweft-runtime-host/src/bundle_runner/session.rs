@@ -1,8 +1,8 @@
 use super::{
-    BundleRunnerError, BundleRunnerExecutor, BundleRunnerOptions, BundleRunnerPhase,
-    BundleRunnerReport, BundleRunnerStepMode, BundleRunnerStepSummary, MaterializedBundleWorkspace,
-    RuntimeExecutorInstance, bundle_host_policy, bundle_runner_bytecode, run_bundle_runner_phase,
-    step_options, validate_bundle_image_assets, validate_bundle_kind,
+    BundleRunnerError, BundleRunnerOptions, BundleRunnerPhase, BundleRunnerReport,
+    BundleRunnerStepMode, BundleRunnerStepSummary, MaterializedBundleWorkspace,
+    RuntimeExecutorInstance, bundle_host_policy, bundle_runner_runtime_program,
+    run_bundle_runner_phase, step_options, validate_bundle_image_assets, validate_bundle_kind,
 };
 use crate::native_task::{NativeFileRoots, NativeTaskBridge, standard_cli_registry_builder};
 use arcweft_bundle::ArcweftBundle;
@@ -37,7 +37,6 @@ pub struct BundleRunnerSession {
     bytecode_instructions: usize,
     adapter_manifests: usize,
     phases: Vec<BundleRunnerPhase>,
-    executor_kind: BundleRunnerExecutor,
     executor: RuntimeExecutorInstance,
     host: NativeTaskBridge,
     values: Vec<RuntimeBinding>,
@@ -79,8 +78,8 @@ impl BundleRunnerSession {
         let workspace = run_bundle_runner_phase(&mut phases, "materialize_bundle", || {
             MaterializedBundleWorkspace::create(bundle)
         })?;
-        let (bytecode, entry) = run_bundle_runner_phase(&mut phases, "bytecode_decode", || {
-            bundle_runner_bytecode(bundle, options)
+        let program = run_bundle_runner_phase(&mut phases, "runtime_decode", || {
+            bundle_runner_runtime_program(bundle, options)
         })?;
 
         let policy = bundle_host_policy(bundle);
@@ -94,12 +93,7 @@ impl BundleRunnerSession {
             .map_err(BundleRunnerError::NativeAdapter)?;
         let host = NativeTaskBridge::try_with_registry(policy, registry)
             .map_err(BundleRunnerError::NativeAdapter)?;
-        let executor = RuntimeExecutorInstance::from_bytecode(
-            bytecode,
-            &entry,
-            options.executor,
-            options.pure_config,
-        )?;
+        let executor = RuntimeExecutorInstance::from_awbc_product(program)?;
 
         Ok(Self {
             _workspace: workspace,
@@ -107,7 +101,6 @@ impl BundleRunnerSession {
             bytecode_instructions: bundle.manifest.runtime.bytecode_instructions,
             adapter_manifests: bundle.adapter_manifests.len(),
             phases,
-            executor_kind: options.executor,
             executor,
             host,
             values: options.values.clone(),
@@ -200,7 +193,6 @@ impl BundleRunnerSession {
             bytecode_instructions: self.bytecode_instructions,
             adapter_manifests: self.adapter_manifests,
             phases: self.phases,
-            executor: self.executor_kind,
             executor_stats: self.executor.executor_stats(),
             native_io: self.host.stats(),
             steps: self.steps,

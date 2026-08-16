@@ -13,7 +13,7 @@ use serde::{Deserialize, Serialize};
 use thiserror::Error;
 
 /// One deterministic Agent expression retained by the runtime plan.
-#[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
+#[derive(Clone, Debug, PartialEq)]
 pub enum RuntimeAgentExpr {
     ChoiceAction {
         choice: RuntimeCommandTargetId,
@@ -28,20 +28,20 @@ pub enum RuntimeAgentExpr {
     },
 }
 
-#[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
+#[derive(Clone, Debug, PartialEq)]
 pub enum RuntimeAgentTargetExpr {
     Viewport,
     Layer { target: Box<RuntimeExpr> },
     Object { target: Box<RuntimeExpr> },
 }
 
-#[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
+#[derive(Clone, Debug, PartialEq)]
 pub enum RuntimeAgentPathExpr {
     State { path: Box<RuntimeExpr> },
     Observation { path: Box<RuntimeExpr> },
 }
 
-#[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
+#[derive(Clone, Debug, PartialEq)]
 pub enum RuntimeAgentProbeExpr {
     Signal { target: Box<RuntimeExpr> },
     Metric { target: Box<RuntimeExpr> },
@@ -50,7 +50,7 @@ pub enum RuntimeAgentProbeExpr {
     Diagnostics,
 }
 
-#[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
+#[derive(Clone, Debug, PartialEq)]
 pub enum RuntimeAgentPredicateExpr {
     Compare {
         probe: Box<RuntimeExpr>,
@@ -86,6 +86,500 @@ pub enum RuntimeAgentCompareOp {
     GreaterOrEqual,
     Less,
     LessOrEqual,
+}
+
+/// Closed field coordinate for Agent-owned runtime values.
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub enum RuntimeAgentField {
+    ObservationTick,
+    ObservationFrameId,
+    ObservationStateHash,
+    ObservationRenderHash,
+    ObservationActions,
+    ObservationObjects,
+    ObservationSignals,
+    ObservedObjectId,
+    ObservedObjectParentId,
+    ObservedObjectEntity,
+    ObservedObjectLayer,
+    ObservedObjectRole,
+    ObservedObjectText,
+    ObservedObjectVisible,
+    ObservedObjectEnabled,
+    ObservedObjectBoundingBox,
+    BoundingBoxSpace,
+    BoundingBoxX,
+    BoundingBoxY,
+    BoundingBoxWidth,
+    BoundingBoxHeight,
+    ActionId,
+    ActionTarget,
+    ActionName,
+    ActionKind,
+    ActionEnabled,
+    ActionResultAccepted,
+    ActionResultBeforeTick,
+    ActionResultAfterTick,
+    ActionResultBeforeStateHash,
+    ActionResultAfterStateHash,
+    CaptureReferenceUri,
+    CaptureReferenceContentHash,
+    CaptureReferenceMediaType,
+    CaptureReferenceByteLen,
+    ResourceUri,
+    ResourceKind,
+    ResourceMimeType,
+    ResourceHash,
+    ResourceBody,
+    ResourceBodyKind,
+    ResourceBodyJson,
+    ResourceBodyText,
+    ResourceBodyBase64,
+    ResourceBodyEncoding,
+    ResourceBodyValue,
+    EntityMetadataId,
+    EntityMetadataKind,
+    EntityMetadataSemanticHash,
+    EntityMetadataSource,
+    SourceAnchorHasSource,
+    SourceAnchorPath,
+    SourceAnchorStartByte,
+    SourceAnchorEndByte,
+    SourceAnchorStartLine,
+    SourceAnchorStartColumn,
+    SourceAnchorEndLine,
+    SourceAnchorEndColumn,
+    ProjectGraphNeighborhoodRoot,
+    ProjectGraphNeighborhoodNodeCount,
+    ProjectGraphNeighborhoodEdgeCount,
+    ProjectGraphNeighborhoodSymbols,
+    ProjectGraphNeighborhoodEdges,
+    ProjectGraphSymbolSymbolId,
+    ProjectGraphSymbolId,
+    ProjectGraphSymbolKind,
+    ProjectGraphSymbolSemanticHash,
+    ProjectGraphSymbolSummary,
+    ProjectGraphSymbolHasEntity,
+    ProjectGraphSymbolHasSemanticHash,
+    ProjectGraphSymbolHasFlowControl,
+    ProjectGraphSymbolHasDynamicControl,
+    ProjectGraphSymbolHasProjectSummary,
+    ProjectGraphSymbolEntityCount,
+    ProjectGraphSymbolAgentActionCount,
+    ProjectGraphSymbolProjectCallableCount,
+    ProjectGraphSymbolRelationCount,
+    ProjectGraphSymbolDependencyEdgeCount,
+    ProjectGraphSymbolDynamicControlFlowCount,
+    ProjectGraphSymbolDebugQueryCount,
+    ProjectGraphSymbolStaticGotoCount,
+    ProjectGraphSymbolDynamicGotoCount,
+    ProjectGraphSymbolBranchCount,
+    ProjectGraphSymbolLoopCount,
+    ProjectGraphSymbolAwaitCount,
+    ProjectGraphSymbolThreadCount,
+    ProjectGraphSymbolSelectBranchCount,
+    ProjectGraphEdgeFromSymbolId,
+    ProjectGraphEdgeToSymbolId,
+    ProjectGraphEdgeKind,
+    ReferenceId,
+    ReferenceFamily,
+    ReferenceName,
+    ViewportX,
+    ViewportY,
+}
+
+/// Closed owner family for one Agent protocol field coordinate.
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub enum RuntimeAgentFieldOwner {
+    Agent(RuntimeAgentOperationalType),
+    Reference,
+}
+
+/// Closed result family for one Agent protocol field coordinate.
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub enum RuntimeAgentFieldResult {
+    Bool,
+    String,
+    U32,
+    U64,
+    Agent(RuntimeAgentOperationalType),
+    VecAgent(RuntimeAgentOperationalType),
+    AgentValueMap,
+}
+
+impl RuntimeAgentField {
+    /// Whether this coordinate is represented by an admitted Agent protocol
+    /// record rather than an executable Agent value.
+    #[must_use]
+    pub const fn permits_protocol_record(self) -> bool {
+        !matches!(
+            self.owner(),
+            RuntimeAgentFieldOwner::Agent(
+                RuntimeAgentOperationalType::ActionTarget
+                    | RuntimeAgentOperationalType::ViewportPoint
+            ) | RuntimeAgentFieldOwner::Reference
+        )
+    }
+
+    #[must_use]
+    pub const fn owner(self) -> RuntimeAgentFieldOwner {
+        if let Some(owner) = self.graph_owner() {
+            return owner;
+        }
+        match self {
+            Self::ObservationTick
+            | Self::ObservationFrameId
+            | Self::ObservationStateHash
+            | Self::ObservationRenderHash
+            | Self::ObservationActions
+            | Self::ObservationObjects
+            | Self::ObservationSignals => agent_owner(RuntimeAgentOperationalType::Observation),
+            Self::ObservedObjectId
+            | Self::ObservedObjectParentId
+            | Self::ObservedObjectEntity
+            | Self::ObservedObjectLayer
+            | Self::ObservedObjectRole
+            | Self::ObservedObjectText
+            | Self::ObservedObjectVisible
+            | Self::ObservedObjectEnabled
+            | Self::ObservedObjectBoundingBox => {
+                agent_owner(RuntimeAgentOperationalType::ObservedObject)
+            }
+            Self::BoundingBoxSpace
+            | Self::BoundingBoxX
+            | Self::BoundingBoxY
+            | Self::BoundingBoxWidth
+            | Self::BoundingBoxHeight => agent_owner(RuntimeAgentOperationalType::BoundingBox),
+            Self::ActionId
+            | Self::ActionTarget
+            | Self::ActionName
+            | Self::ActionKind
+            | Self::ActionEnabled => agent_owner(RuntimeAgentOperationalType::ActionTarget),
+            Self::ActionResultAccepted
+            | Self::ActionResultBeforeTick
+            | Self::ActionResultAfterTick
+            | Self::ActionResultBeforeStateHash
+            | Self::ActionResultAfterStateHash => {
+                agent_owner(RuntimeAgentOperationalType::ActionResult)
+            }
+            Self::CaptureReferenceUri
+            | Self::CaptureReferenceContentHash
+            | Self::CaptureReferenceMediaType
+            | Self::CaptureReferenceByteLen => {
+                agent_owner(RuntimeAgentOperationalType::CaptureReference)
+            }
+            Self::ResourceUri
+            | Self::ResourceKind
+            | Self::ResourceMimeType
+            | Self::ResourceHash
+            | Self::ResourceBody => agent_owner(RuntimeAgentOperationalType::Resource),
+            Self::ResourceBodyKind
+            | Self::ResourceBodyJson
+            | Self::ResourceBodyText
+            | Self::ResourceBodyBase64
+            | Self::ResourceBodyEncoding
+            | Self::ResourceBodyValue => agent_owner(RuntimeAgentOperationalType::ResourceBody),
+            Self::EntityMetadataId
+            | Self::EntityMetadataKind
+            | Self::EntityMetadataSemanticHash
+            | Self::EntityMetadataSource => {
+                agent_owner(RuntimeAgentOperationalType::EntityMetadata)
+            }
+            Self::SourceAnchorHasSource
+            | Self::SourceAnchorPath
+            | Self::SourceAnchorStartByte
+            | Self::SourceAnchorEndByte
+            | Self::SourceAnchorStartLine
+            | Self::SourceAnchorStartColumn
+            | Self::SourceAnchorEndLine
+            | Self::SourceAnchorEndColumn => agent_owner(RuntimeAgentOperationalType::SourceAnchor),
+            Self::ViewportX | Self::ViewportY => {
+                agent_owner(RuntimeAgentOperationalType::ViewportPoint)
+            }
+            _ => unreachable!(),
+        }
+    }
+
+    const fn graph_owner(self) -> Option<RuntimeAgentFieldOwner> {
+        match self {
+            Self::ProjectGraphNeighborhoodRoot
+            | Self::ProjectGraphNeighborhoodNodeCount
+            | Self::ProjectGraphNeighborhoodEdgeCount
+            | Self::ProjectGraphNeighborhoodSymbols
+            | Self::ProjectGraphNeighborhoodEdges => Some(agent_owner(
+                RuntimeAgentOperationalType::ProjectGraphNeighborhood,
+            )),
+            Self::ProjectGraphSymbolSymbolId
+            | Self::ProjectGraphSymbolId
+            | Self::ProjectGraphSymbolKind
+            | Self::ProjectGraphSymbolSemanticHash
+            | Self::ProjectGraphSymbolSummary
+            | Self::ProjectGraphSymbolHasEntity
+            | Self::ProjectGraphSymbolHasSemanticHash
+            | Self::ProjectGraphSymbolHasFlowControl
+            | Self::ProjectGraphSymbolHasDynamicControl
+            | Self::ProjectGraphSymbolHasProjectSummary
+            | Self::ProjectGraphSymbolEntityCount
+            | Self::ProjectGraphSymbolAgentActionCount
+            | Self::ProjectGraphSymbolProjectCallableCount
+            | Self::ProjectGraphSymbolRelationCount
+            | Self::ProjectGraphSymbolDependencyEdgeCount
+            | Self::ProjectGraphSymbolDynamicControlFlowCount
+            | Self::ProjectGraphSymbolDebugQueryCount
+            | Self::ProjectGraphSymbolStaticGotoCount
+            | Self::ProjectGraphSymbolDynamicGotoCount
+            | Self::ProjectGraphSymbolBranchCount
+            | Self::ProjectGraphSymbolLoopCount
+            | Self::ProjectGraphSymbolAwaitCount
+            | Self::ProjectGraphSymbolThreadCount
+            | Self::ProjectGraphSymbolSelectBranchCount => Some(project_graph_symbol_owner()),
+            Self::ProjectGraphEdgeFromSymbolId
+            | Self::ProjectGraphEdgeToSymbolId
+            | Self::ProjectGraphEdgeKind => {
+                Some(agent_owner(RuntimeAgentOperationalType::ProjectGraphEdge))
+            }
+            Self::ReferenceId | Self::ReferenceFamily | Self::ReferenceName => {
+                Some(RuntimeAgentFieldOwner::Reference)
+            }
+            _ => None,
+        }
+    }
+
+    #[must_use]
+    pub const fn result(self) -> RuntimeAgentFieldResult {
+        if let Some(result) = self.u32_result() {
+            return result;
+        }
+        match self {
+            Self::ObservationTick
+            | Self::ActionResultBeforeTick
+            | Self::ActionResultAfterTick
+            | Self::CaptureReferenceByteLen
+            | Self::SourceAnchorStartByte
+            | Self::SourceAnchorEndByte => RuntimeAgentFieldResult::U64,
+            Self::ObservationActions => {
+                RuntimeAgentFieldResult::VecAgent(RuntimeAgentOperationalType::ActionTarget)
+            }
+            Self::ObservationObjects => {
+                RuntimeAgentFieldResult::VecAgent(RuntimeAgentOperationalType::ObservedObject)
+            }
+            Self::ObservationSignals => RuntimeAgentFieldResult::AgentValueMap,
+            Self::ObservedObjectId => {
+                RuntimeAgentFieldResult::Agent(RuntimeAgentOperationalType::ObservedObjectId)
+            }
+            Self::ObservedObjectVisible
+            | Self::ObservedObjectEnabled
+            | Self::ActionEnabled
+            | Self::ActionResultAccepted
+            | Self::SourceAnchorHasSource
+            | Self::ProjectGraphSymbolHasEntity
+            | Self::ProjectGraphSymbolHasSemanticHash
+            | Self::ProjectGraphSymbolHasFlowControl
+            | Self::ProjectGraphSymbolHasDynamicControl
+            | Self::ProjectGraphSymbolHasProjectSummary => RuntimeAgentFieldResult::Bool,
+            Self::ObservedObjectBoundingBox => {
+                RuntimeAgentFieldResult::Agent(RuntimeAgentOperationalType::BoundingBox)
+            }
+            Self::ActionName => {
+                RuntimeAgentFieldResult::Agent(RuntimeAgentOperationalType::ActionName)
+            }
+            Self::ResourceBody => {
+                RuntimeAgentFieldResult::Agent(RuntimeAgentOperationalType::ResourceBody)
+            }
+            Self::ResourceBodyValue => {
+                RuntimeAgentFieldResult::Agent(RuntimeAgentOperationalType::AgentValue)
+            }
+            Self::EntityMetadataSource => {
+                RuntimeAgentFieldResult::Agent(RuntimeAgentOperationalType::SourceAnchor)
+            }
+            Self::ProjectGraphNeighborhoodSymbols => {
+                RuntimeAgentFieldResult::VecAgent(RuntimeAgentOperationalType::ProjectGraphSymbol)
+            }
+            Self::ProjectGraphNeighborhoodEdges => {
+                RuntimeAgentFieldResult::VecAgent(RuntimeAgentOperationalType::ProjectGraphEdge)
+            }
+            Self::ObservationFrameId
+            | Self::ObservationStateHash
+            | Self::ObservationRenderHash
+            | Self::ObservedObjectParentId
+            | Self::ObservedObjectEntity
+            | Self::ObservedObjectLayer
+            | Self::ObservedObjectRole
+            | Self::ObservedObjectText
+            | Self::BoundingBoxSpace
+            | Self::ActionId
+            | Self::ActionTarget
+            | Self::ActionKind
+            | Self::ActionResultBeforeStateHash
+            | Self::ActionResultAfterStateHash
+            | Self::CaptureReferenceUri
+            | Self::CaptureReferenceContentHash
+            | Self::CaptureReferenceMediaType
+            | Self::ResourceUri
+            | Self::ResourceKind
+            | Self::ResourceMimeType
+            | Self::ResourceHash
+            | Self::ResourceBodyKind
+            | Self::ResourceBodyJson
+            | Self::ResourceBodyText
+            | Self::ResourceBodyBase64
+            | Self::ResourceBodyEncoding
+            | Self::EntityMetadataId
+            | Self::EntityMetadataKind
+            | Self::EntityMetadataSemanticHash
+            | Self::SourceAnchorPath
+            | Self::ProjectGraphNeighborhoodRoot
+            | Self::ProjectGraphSymbolSymbolId
+            | Self::ProjectGraphSymbolId
+            | Self::ProjectGraphSymbolKind
+            | Self::ProjectGraphSymbolSemanticHash
+            | Self::ProjectGraphSymbolSummary
+            | Self::ProjectGraphEdgeFromSymbolId
+            | Self::ProjectGraphEdgeToSymbolId
+            | Self::ProjectGraphEdgeKind
+            | Self::ReferenceId
+            | Self::ReferenceFamily
+            | Self::ReferenceName => RuntimeAgentFieldResult::String,
+            _ => unreachable!(),
+        }
+    }
+
+    const fn u32_result(self) -> Option<RuntimeAgentFieldResult> {
+        match self {
+            Self::ProjectGraphNeighborhoodNodeCount
+            | Self::ProjectGraphNeighborhoodEdgeCount
+            | Self::SourceAnchorStartLine
+            | Self::SourceAnchorStartColumn
+            | Self::SourceAnchorEndLine
+            | Self::SourceAnchorEndColumn
+            | Self::BoundingBoxX
+            | Self::BoundingBoxY
+            | Self::BoundingBoxWidth
+            | Self::BoundingBoxHeight
+            | Self::ViewportX
+            | Self::ViewportY
+            | Self::ProjectGraphSymbolEntityCount
+            | Self::ProjectGraphSymbolAgentActionCount
+            | Self::ProjectGraphSymbolProjectCallableCount
+            | Self::ProjectGraphSymbolRelationCount
+            | Self::ProjectGraphSymbolDependencyEdgeCount
+            | Self::ProjectGraphSymbolDynamicControlFlowCount
+            | Self::ProjectGraphSymbolDebugQueryCount
+            | Self::ProjectGraphSymbolStaticGotoCount
+            | Self::ProjectGraphSymbolDynamicGotoCount
+            | Self::ProjectGraphSymbolBranchCount
+            | Self::ProjectGraphSymbolLoopCount
+            | Self::ProjectGraphSymbolAwaitCount
+            | Self::ProjectGraphSymbolThreadCount
+            | Self::ProjectGraphSymbolSelectBranchCount => Some(RuntimeAgentFieldResult::U32),
+            _ => None,
+        }
+    }
+
+    #[must_use]
+    pub const fn as_label(self) -> &'static str {
+        match self {
+            Self::ObservationTick => "tick",
+            Self::ObservationFrameId => "frame_id",
+            Self::ObservationStateHash => "state_hash",
+            Self::ObservationRenderHash => "render_hash",
+            Self::ObservationActions => "actions",
+            Self::ObservationObjects => "objects",
+            Self::ObservationSignals => "signals",
+            Self::ObservedObjectId
+            | Self::ActionId
+            | Self::EntityMetadataId
+            | Self::ProjectGraphSymbolId
+            | Self::ReferenceId => "id",
+            Self::ObservedObjectParentId => "parent_id",
+            Self::ObservedObjectEntity => "entity",
+            Self::ObservedObjectLayer => "layer",
+            Self::ObservedObjectRole => "role",
+            Self::ObservedObjectText | Self::ResourceBodyText => "text",
+            Self::ObservedObjectVisible => "visible",
+            Self::ObservedObjectEnabled | Self::ActionEnabled => "enabled",
+            Self::ObservedObjectBoundingBox => "bbox",
+            Self::BoundingBoxSpace => "space",
+            Self::BoundingBoxX | Self::ViewportX => "x",
+            Self::BoundingBoxY | Self::ViewportY => "y",
+            Self::BoundingBoxWidth => "width",
+            Self::BoundingBoxHeight => "height",
+            Self::ActionTarget => "target",
+            Self::ActionName => "action",
+            Self::ActionKind
+            | Self::ResourceKind
+            | Self::EntityMetadataKind
+            | Self::ProjectGraphSymbolKind
+            | Self::ProjectGraphEdgeKind
+            | Self::ResourceBodyKind => "kind",
+            Self::ActionResultAccepted => "accepted",
+            Self::ActionResultBeforeTick => "before_tick",
+            Self::ActionResultAfterTick => "after_tick",
+            Self::ActionResultBeforeStateHash => "before_state_hash",
+            Self::ActionResultAfterStateHash => "after_state_hash",
+            Self::CaptureReferenceUri | Self::ResourceUri => "uri",
+            Self::CaptureReferenceContentHash => "content_hash",
+            Self::CaptureReferenceMediaType => "media_type",
+            Self::CaptureReferenceByteLen => "byte_len",
+            Self::ResourceMimeType => "mime_type",
+            Self::ResourceHash => "hash",
+            Self::ResourceBody => "body",
+            Self::ResourceBodyJson => "json",
+            Self::ResourceBodyBase64 => "base64",
+            Self::ResourceBodyEncoding => "encoding",
+            Self::ResourceBodyValue => "value",
+            Self::EntityMetadataSemanticHash | Self::ProjectGraphSymbolSemanticHash => {
+                "semantic_hash"
+            }
+            Self::EntityMetadataSource => "source",
+            Self::SourceAnchorHasSource => "has_source",
+            Self::SourceAnchorPath => "path",
+            Self::SourceAnchorStartByte => "start_byte",
+            Self::SourceAnchorEndByte => "end_byte",
+            Self::SourceAnchorStartLine => "start_line",
+            Self::SourceAnchorStartColumn => "start_column",
+            Self::SourceAnchorEndLine => "end_line",
+            Self::SourceAnchorEndColumn => "end_column",
+            Self::ProjectGraphNeighborhoodRoot => "root",
+            Self::ProjectGraphNeighborhoodNodeCount => "node_count",
+            Self::ProjectGraphNeighborhoodEdgeCount => "edge_count",
+            Self::ProjectGraphNeighborhoodSymbols => "symbols",
+            Self::ProjectGraphNeighborhoodEdges => "edges",
+            Self::ProjectGraphSymbolSymbolId => "symbol_id",
+            Self::ProjectGraphSymbolSummary => "summary",
+            Self::ProjectGraphSymbolHasEntity => "has_entity",
+            Self::ProjectGraphSymbolHasSemanticHash => "has_semantic_hash",
+            Self::ProjectGraphSymbolHasFlowControl => "has_flow_control",
+            Self::ProjectGraphSymbolHasDynamicControl => "has_dynamic_control",
+            Self::ProjectGraphSymbolHasProjectSummary => "has_project_summary",
+            Self::ProjectGraphSymbolEntityCount => "entity_count",
+            Self::ProjectGraphSymbolAgentActionCount => "agent_action_count",
+            Self::ProjectGraphSymbolProjectCallableCount => "project_callable_count",
+            Self::ProjectGraphSymbolRelationCount => "relation_count",
+            Self::ProjectGraphSymbolDependencyEdgeCount => "dependency_edge_count",
+            Self::ProjectGraphSymbolDynamicControlFlowCount => "dynamic_control_flow_count",
+            Self::ProjectGraphSymbolDebugQueryCount => "debug_query_count",
+            Self::ProjectGraphSymbolStaticGotoCount => "static_goto_count",
+            Self::ProjectGraphSymbolDynamicGotoCount => "dynamic_goto_count",
+            Self::ProjectGraphSymbolBranchCount => "branch_count",
+            Self::ProjectGraphSymbolLoopCount => "loop_count",
+            Self::ProjectGraphSymbolAwaitCount => "await_count",
+            Self::ProjectGraphSymbolThreadCount => "thread_count",
+            Self::ProjectGraphSymbolSelectBranchCount => "select_branch_count",
+            Self::ProjectGraphEdgeFromSymbolId => "from_symbol_id",
+            Self::ProjectGraphEdgeToSymbolId => "to_symbol_id",
+            Self::ReferenceFamily => "family",
+            Self::ReferenceName => "name",
+        }
+    }
+}
+
+const fn project_graph_symbol_owner() -> RuntimeAgentFieldOwner {
+    RuntimeAgentFieldOwner::Agent(RuntimeAgentOperationalType::ProjectGraphSymbol)
+}
+
+const fn agent_owner(kind: RuntimeAgentOperationalType) -> RuntimeAgentFieldOwner {
+    RuntimeAgentFieldOwner::Agent(kind)
 }
 
 impl RuntimeAgentCompareOp {
@@ -191,6 +685,111 @@ impl RuntimeAgentConstructor {
 }
 
 impl RuntimeAgentExpr {
+    pub(crate) fn try_from_admitted_constructor(
+        constructor: RuntimeAgentConstructor,
+        choice: Option<RuntimeCommandTargetId>,
+        operands: Vec<RuntimeExpr>,
+    ) -> Result<Self, RuntimeAgentConstructionError> {
+        use RuntimeAgentConstructor as Constructor;
+
+        if !constructor.accepts_operand_count(operands.len()) {
+            return Err(RuntimeAgentConstructionError::InvalidOperandCount {
+                constructor,
+                actual: operands.len(),
+            });
+        }
+        if matches!(constructor, RuntimeAgentConstructor::ChoiceAction) != choice.is_some() {
+            return Err(RuntimeAgentConstructionError::InvalidExpressionChoice { constructor });
+        }
+        let mut operands = operands.into_iter();
+        let mut next = || {
+            operands.next().map(Box::new).ok_or(
+                RuntimeAgentConstructionError::InvalidOperandCount {
+                    constructor,
+                    actual: 0,
+                },
+            )
+        };
+        Ok(match constructor {
+            Constructor::ChoiceAction => Self::ChoiceAction {
+                choice: choice.ok_or(RuntimeAgentConstructionError::InvalidExpressionChoice {
+                    constructor,
+                })?,
+            },
+            Constructor::CaptureViewport => Self::Target(RuntimeAgentTargetExpr::Viewport),
+            Constructor::CaptureLayer => {
+                Self::Target(RuntimeAgentTargetExpr::Layer { target: next()? })
+            }
+            Constructor::CaptureObject => {
+                Self::Target(RuntimeAgentTargetExpr::Object { target: next()? })
+            }
+            Constructor::StatePath => Self::Path(RuntimeAgentPathExpr::State { path: next()? }),
+            Constructor::ObservationPath => {
+                Self::Path(RuntimeAgentPathExpr::Observation { path: next()? })
+            }
+            Constructor::ProbeSignal => {
+                Self::Probe(RuntimeAgentProbeExpr::Signal { target: next()? })
+            }
+            Constructor::ProbeMetric => {
+                Self::Probe(RuntimeAgentProbeExpr::Metric { target: next()? })
+            }
+            Constructor::ProbeState => Self::Probe(RuntimeAgentProbeExpr::State { path: next()? }),
+            Constructor::ProbeObservation => {
+                Self::Probe(RuntimeAgentProbeExpr::Observation { path: next()? })
+            }
+            Constructor::Diagnostics => Self::Probe(RuntimeAgentProbeExpr::Diagnostics),
+            Constructor::PredicateExists => {
+                Self::Predicate(RuntimeAgentPredicateExpr::Exists { probe: next()? })
+            }
+            Constructor::PredicateActionEnabled => {
+                Self::Predicate(RuntimeAgentPredicateExpr::ActionEnabled { target: next()? })
+            }
+            Constructor::PredicateDiagnosticsHasError => {
+                Self::Predicate(RuntimeAgentPredicateExpr::DiagnosticsHasError {
+                    diagnostics: next()?,
+                })
+            }
+            Constructor::PredicateAll | Constructor::PredicateAny => {
+                let predicates = operands.collect::<Vec<_>>();
+                if constructor == Constructor::PredicateAll {
+                    Self::Predicate(RuntimeAgentPredicateExpr::All { predicates })
+                } else {
+                    Self::Predicate(RuntimeAgentPredicateExpr::Any { predicates })
+                }
+            }
+            Constructor::PredicateNot => {
+                Self::Predicate(RuntimeAgentPredicateExpr::Not { predicate: next()? })
+            }
+            Constructor::PredicateEq
+            | Constructor::PredicateNotEq
+            | Constructor::PredicateGreater
+            | Constructor::PredicateGreaterOrEqual
+            | Constructor::PredicateLess
+            | Constructor::PredicateLessOrEqual => {
+                let probe = next()?;
+                let value = next()?;
+                let op = match constructor {
+                    Constructor::PredicateEq => RuntimeAgentCompareOp::Eq,
+                    Constructor::PredicateNotEq => RuntimeAgentCompareOp::NotEq,
+                    Constructor::PredicateGreater => RuntimeAgentCompareOp::Greater,
+                    Constructor::PredicateGreaterOrEqual => RuntimeAgentCompareOp::GreaterOrEqual,
+                    Constructor::PredicateLess => RuntimeAgentCompareOp::Less,
+                    Constructor::PredicateLessOrEqual => RuntimeAgentCompareOp::LessOrEqual,
+                    _ => {
+                        return Err(RuntimeAgentConstructionError::InvalidExpressionChoice {
+                            constructor,
+                        });
+                    }
+                };
+                Self::Predicate(RuntimeAgentPredicateExpr::Compare { probe, op, value })
+            }
+            Constructor::ViewportPoint => Self::ViewportPoint {
+                x: next()?,
+                y: next()?,
+            },
+        })
+    }
+
     #[must_use]
     pub const fn constructor(&self) -> RuntimeAgentConstructor {
         match self {
@@ -474,6 +1073,10 @@ pub enum RuntimeAgentConstructionError {
         expected: &'static str,
         actual: &'static str,
     },
+    #[error("Agent expression constructor {constructor:?} has invalid accepted choice metadata")]
+    InvalidExpressionChoice {
+        constructor: RuntimeAgentConstructor,
+    },
     #[error("Agent path must be non-empty and contain no control characters")]
     InvalidPath,
     #[error("Agent target identity is invalid: {0}")]
@@ -593,23 +1196,49 @@ impl RuntimeAgentValue {
     }
 
     #[must_use]
-    pub fn project_field(&self, field: &str) -> Option<RuntimeValue> {
-        match self {
-            Self::ActionTarget(target) => Some(match field {
-                "id" => RuntimeValue::String(target.id().as_str().to_owned()),
-                "target" => RuntimeValue::String(target.target().as_str().to_owned()),
-                "action" => RuntimeValue::String(target.action().as_label().to_owned()),
-                "kind" => RuntimeValue::String(target.dispatch().as_label().to_owned()),
-                "enabled" => RuntimeValue::Bool(target.enabled()),
-                _ => return None,
-            }),
-            Self::ViewportPoint { x, y } => Some(match field {
-                "x" => RuntimeValue::u32(*x),
-                "y" => RuntimeValue::u32(*y),
-                _ => return None,
-            }),
+    pub fn project_typed_field(&self, field: RuntimeAgentField) -> Option<RuntimeValue> {
+        match (self, field) {
+            (Self::ActionTarget(target), RuntimeAgentField::ActionId) => {
+                Some(RuntimeValue::String(target.id().as_str().to_owned()))
+            }
+            (Self::ActionTarget(target), RuntimeAgentField::ActionTarget) => {
+                Some(RuntimeValue::String(target.target().as_str().to_owned()))
+            }
+            (Self::ActionTarget(target), RuntimeAgentField::ActionName) => {
+                Some(RuntimeValue::String(target.action().as_label().to_owned()))
+            }
+            (Self::ActionTarget(target), RuntimeAgentField::ActionKind) => Some(
+                RuntimeValue::String(target.dispatch().as_label().to_owned()),
+            ),
+            (Self::ActionTarget(target), RuntimeAgentField::ActionEnabled) => {
+                Some(RuntimeValue::Bool(target.enabled()))
+            }
+            (Self::ViewportPoint { x, .. }, RuntimeAgentField::ViewportX) => {
+                Some(RuntimeValue::u32(*x))
+            }
+            (Self::ViewportPoint { y, .. }, RuntimeAgentField::ViewportY) => {
+                Some(RuntimeValue::u32(*y))
+            }
             _ => None,
         }
+    }
+
+    pub(crate) fn project_field_label(&self, field: &str) -> Option<RuntimeValue> {
+        let field = match (self.operational_type(), field) {
+            (RuntimeAgentOperationalType::ActionTarget, "id") => RuntimeAgentField::ActionId,
+            (RuntimeAgentOperationalType::ActionTarget, "target") => {
+                RuntimeAgentField::ActionTarget
+            }
+            (RuntimeAgentOperationalType::ActionTarget, "action") => RuntimeAgentField::ActionName,
+            (RuntimeAgentOperationalType::ActionTarget, "kind") => RuntimeAgentField::ActionKind,
+            (RuntimeAgentOperationalType::ActionTarget, "enabled") => {
+                RuntimeAgentField::ActionEnabled
+            }
+            (RuntimeAgentOperationalType::ViewportPoint, "x") => RuntimeAgentField::ViewportX,
+            (RuntimeAgentOperationalType::ViewportPoint, "y") => RuntimeAgentField::ViewportY,
+            _ => return None,
+        };
+        self.project_typed_field(field)
     }
 
     #[must_use]
@@ -1063,6 +1692,7 @@ const fn value_kind(value: &RuntimeValue) -> &'static str {
         RuntimeValue::Record(_) => "record",
         RuntimeValue::NominalRecord(_) => "nominal record",
         RuntimeValue::Opaque(_) => "opaque",
+        RuntimeValue::Reduction(_) => "Reduction",
         RuntimeValue::Agent(_) => "Agent value",
         RuntimeValue::Function(_) => "function",
         RuntimeValue::Variant { .. } => "variant",
@@ -1119,5 +1749,22 @@ mod tests {
         }
         let value = RuntimeValue::Agent(RuntimeAgentValue::Predicate(predicate));
         assert!(value.validate_nesting_depth(64).is_err());
+    }
+
+    #[test]
+    fn protocol_field_coordinates_own_their_label_and_runtime_family() {
+        let field = RuntimeAgentField::ProjectGraphNeighborhoodSymbols;
+        assert_eq!(field.as_label(), "symbols");
+        assert_eq!(
+            field.owner(),
+            RuntimeAgentFieldOwner::Agent(RuntimeAgentOperationalType::ProjectGraphNeighborhood)
+        );
+        assert_eq!(
+            field.result(),
+            RuntimeAgentFieldResult::VecAgent(RuntimeAgentOperationalType::ProjectGraphSymbol)
+        );
+        assert!(field.permits_protocol_record());
+        assert!(!RuntimeAgentField::ActionId.permits_protocol_record());
+        assert!(!RuntimeAgentField::ViewportX.permits_protocol_record());
     }
 }

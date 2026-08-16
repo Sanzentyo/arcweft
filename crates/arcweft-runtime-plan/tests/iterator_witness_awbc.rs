@@ -1,292 +1,121 @@
-use arcweft_core::awbc::schema::{
-    AwbcEntryId, AwbcFunctionKind, AwbcInstruction, AwbcRegisterId, AwbcTraitReceiverMode,
-};
+use arcweft_core::awbc::schema::AwbcEntryId;
+use arcweft_core::engine::{FlowExit, FlowFiberStatus};
 use arcweft_core::entry::{EntryBindingIdentity, RuntimeEntryRoles};
 use arcweft_core::executor::ArcweftRuntimeExecutor;
-use arcweft_core::pattern::RuntimePattern;
+use arcweft_core::pattern::RuntimeSemanticTypeId;
 use arcweft_core::plan::{
-    EntryRuntimeId, FlowOp, FlowRuntimeId, RuntimeEntryKind, RuntimeEntrySpec, RuntimeEntryTarget,
-    RuntimeFlow, RuntimeIteratorEvidence, RuntimeIteratorIdentityWitnessCalls,
-    RuntimeIteratorWitnessCalls, RuntimeIteratorWitnessEvidence, RuntimeIteratorWitnessExecutable,
-    RuntimePlan, RuntimePureInputType, RuntimePureOutputType, RuntimeReceiverMode,
-    RuntimeTraitMethod, RuntimeTraitMethodId, RuntimeTraitMethodIdentity,
+    EntryRuntimeId, FlowRuntimeId, RuntimeBuiltinIteratorEvidence, RuntimeEntryKind,
+    RuntimeEntrySpec, RuntimeEntryTarget, RuntimeExprSeed, RuntimeExprSeedKind, RuntimeFlowOpSeed,
+    RuntimeFlowSeed, RuntimeIteratorEvidenceSeed, RuntimeLocalDeclarationSeed, RuntimePatternSeed,
+    RuntimePatternSeedKind, RuntimePlan, RuntimePlanBuilder, RuntimePlanSequenceKind,
+    RuntimePlanTypeProjection, RuntimePlanTypeSeed,
 };
 use arcweft_core::pure::VmRuntimePureCallBackend;
 use arcweft_core::step::{
     RuntimeStepBudget, RuntimeStepInput, RuntimeStepMode, RuntimeStepOptions,
 };
-use arcweft_core::value::{RuntimeBinaryOp, RuntimeExpr, RuntimeValue};
+use arcweft_core::value::{RuntimeSeq, RuntimeSignedIntWidth, RuntimeValue};
 use arcweft_runtime_plan::awbc_lower::AwbcLowerer;
 use arcweft_text_model::DialogueContentCatalog;
 
+fn type_id(marker: u8) -> RuntimeSemanticTypeId {
+    RuntimeSemanticTypeId::from_bytes([marker; 32])
+}
+
 fn flow_id(value: &str) -> FlowRuntimeId {
-    FlowRuntimeId::from_runtime_target_value(value).expect("test flow ID is valid")
+    FlowRuntimeId::canonical(value).expect("test flow ID is valid")
 }
 
-fn with_test_entry(plan: RuntimePlan) -> RuntimePlan {
-    plan.with_entries(vec![RuntimeEntrySpec {
-        id: EntryRuntimeId::from_source_entity_body("entry.iterator_witness")
-            .expect("test entry ID is valid"),
-        kind: RuntimeEntryKind::Cli,
-        binding: EntryBindingIdentity::from_bytes([1; 32]),
-        target: RuntimeEntryTarget::Flow(flow_id("flow.main")),
-        roles: RuntimeEntryRoles::None,
-    }])
+fn entry_id(value: &str) -> EntryRuntimeId {
+    EntryRuntimeId::canonical(value).expect("test entry ID is valid")
 }
 
-#[test]
-fn awbc_program_carries_trait_method_table_entries() {
-    let plan = counter_witness_plan();
-    let program = lower_plan(&plan);
-
-    assert_eq!(program.trait_methods.len(), 2);
-    assert_eq!(
-        program.trait_methods[0].receiver,
-        AwbcTraitReceiverMode::Owned
-    );
-    assert_eq!(
-        program.trait_methods[1].receiver,
-        AwbcTraitReceiverMode::MutRef
-    );
-    assert_eq!(
-        program.trait_methods[1].receiver_state_slot,
-        Some(AwbcRegisterId(0))
-    );
-    assert!(program.trait_methods.iter().all(|method| {
-        program.functions[method.function.index()].kind == AwbcFunctionKind::TraitMethod
-            && program.functions[method.function.index()].signature == method.signature
-    }));
-}
-
-#[test]
-fn witness_for_lowers_to_trait_method_calls() {
-    let plan = counter_witness_plan();
-    let program = lower_plan(&plan);
-
-    let calls = program
-        .instructions
-        .iter()
-        .filter(|instruction| matches!(instruction, AwbcInstruction::CallTraitMethod { .. }))
-        .count();
-    assert!(
-        calls >= 2,
-        "expected into_iter and next calls: {program:#?}"
-    );
-    assert!(program.instructions.iter().any(|instruction| {
-        matches!(
-            instruction,
-            AwbcInstruction::CallTraitMethod {
-                receiver_out: Some(_),
-                ..
-            }
+fn counter_plan() -> RuntimePlan {
+    let item_type = type_id(1);
+    let sequence_type = type_id(2);
+    let mut builder = RuntimePlanBuilder::new();
+    let admission = builder
+        .admit_semantic_batch(
+            [
+                RuntimePlanTypeSeed::new(
+                    item_type,
+                    RuntimePlanTypeProjection::Signed(RuntimeSignedIntWidth::I64),
+                ),
+                RuntimePlanTypeSeed::new(
+                    sequence_type,
+                    RuntimePlanTypeProjection::Sequence {
+                        kind: RuntimePlanSequenceKind::Vec,
+                        item: item_type,
+                    },
+                ),
+            ],
+            [RuntimeLocalDeclarationSeed::new(item_type)],
+            [],
+            [],
         )
-    }));
+        .expect("test semantic facts admit");
+    let item = admission.local_ids()[0].clone();
+    let main = flow_id("iterator.main");
+    builder
+        .push_flow_seed(RuntimeFlowSeed::new(
+            main.clone(),
+            [],
+            vec![RuntimeFlowOpSeed::For {
+                pattern: RuntimePatternSeed::new(
+                    item_type,
+                    RuntimePatternSeedKind::Bind {
+                        mutable: false,
+                        local: item.clone(),
+                    },
+                ),
+                source: RuntimeExprSeed::new(
+                    sequence_type,
+                    RuntimeExprSeedKind::Value(RuntimeValue::Seq(RuntimeSeq::values(vec![
+                        RuntimeValue::i64(0),
+                        RuntimeValue::i64(1),
+                    ]))),
+                ),
+                evidence: RuntimeIteratorEvidenceSeed::Builtin(RuntimeBuiltinIteratorEvidence::Vec),
+                body: vec![RuntimeFlowOpSeed::ReturnExpr(RuntimeExprSeed::new(
+                    item_type,
+                    RuntimeExprSeedKind::Local(item),
+                ))],
+            }],
+        ))
+        .expect("typed flow seed admits");
+    builder
+        .push_entry(RuntimeEntrySpec {
+            id: entry_id("iterator"),
+            kind: RuntimeEntryKind::Cli,
+            binding: EntryBindingIdentity::from_bytes([1; 32]),
+            target: RuntimeEntryTarget::Flow(main),
+            roles: RuntimeEntryRoles::None,
+        })
+        .expect("entry admits");
+    builder.finish().expect("typed runtime plan seals")
 }
 
 #[test]
-fn identity_witness_for_executes_on_awbc_product_vm() {
-    let plan = counter_identity_witness_plan();
-    let program = lower_plan(&plan);
-    assert_eq!(program.trait_methods.len(), 1);
+fn builtin_iterator_lowers_and_executes_on_awbc_product_vm() {
+    let plan = counter_plan();
+    let report = AwbcLowerer::new(&plan, &DialogueContentCatalog::new(), "iterator.arcw")
+        .lower()
+        .expect("builder-sealed iterator plan lowers to AWBC");
 
-    let mut executor = ArcweftRuntimeExecutor::from_awbc_product(program, AwbcEntryId(0))
-        .expect("AWBC product executor builds");
-    let mut backend = VmRuntimePureCallBackend::default();
+    let mut executor = ArcweftRuntimeExecutor::from_awbc_product(report.program, AwbcEntryId(0))
+        .expect("AWBC product executor initializes");
+    let mut pure_backend = VmRuntimePureCallBackend::default();
     let result = executor.step_with_root_bindings_and_pure_backend(
         RuntimeStepInput::default(),
         &[],
         RuntimeStepOptions {
             mode: RuntimeStepMode::Drain,
-            budget: RuntimeStepBudget { max_ops: 32 },
+            budget: RuntimeStepBudget { max_ops: 128 },
         },
-        &mut backend,
+        &mut pure_backend,
     );
-
-    assert!(
-        matches!(
-            result.fiber_status,
-            arcweft_core::engine::FlowFiberStatus::Done(
-                arcweft_core::engine::FlowExit::Return(ref value)
-            ) if value == "0"
-        ),
-        "unexpected AWBC runtime result: {result:#?}"
+    assert_eq!(
+        result.fiber_status,
+        FlowFiberStatus::Done(FlowExit::Return("0".to_owned()))
     );
-}
-
-fn lower_plan(plan: &RuntimePlan) -> arcweft_core::awbc::schema::AwbcProgram {
-    AwbcLowerer::new(
-        plan,
-        &DialogueContentCatalog::new(),
-        "iterator_witness.arcw",
-    )
-    .lower()
-    .expect("runtime plan lowers to verified AWBC")
-    .program
-}
-
-fn counter_trait_identity(id: usize, method_name: &str) -> RuntimeTraitMethodIdentity {
-    RuntimeTraitMethodIdentity {
-        impl_id: id,
-        trait_id: Some(id),
-        witness: Some(id),
-        trait_name: Some(
-            if method_name == "next" {
-                "Iterator"
-            } else {
-                "IntoIterator"
-            }
-            .to_owned(),
-        ),
-        self_type: "CounterIter".to_owned(),
-        method_name: method_name.to_owned(),
-        monomorph_label: format!("CounterIter::{method_name}"),
-    }
-}
-
-fn counter_state() -> RuntimeValue {
-    RuntimeValue::try_record(vec![
-        ("current".to_owned(), RuntimeValue::i64(0)),
-        ("end".to_owned(), RuntimeValue::i64(1)),
-    ])
-    .expect("test record fields are unique")
-}
-
-fn self_field(field: &str) -> RuntimeExpr {
-    RuntimeExpr::Field {
-        target: Box::new(RuntimeExpr::Local("self".to_owned())),
-        field: field.to_owned(),
-    }
-}
-
-fn counter_next_body() -> RuntimeExpr {
-    RuntimeExpr::If {
-        condition: Box::new(RuntimeExpr::Binary {
-            lhs: Box::new(self_field("current")),
-            op: RuntimeBinaryOp::Lt,
-            rhs: Box::new(self_field("end")),
-        }),
-        then_expr: Box::new(RuntimeExpr::Let {
-            name: "value".to_owned(),
-            expr: Box::new(self_field("current")),
-            body: Box::new(RuntimeExpr::AssignField {
-                target: Box::new(RuntimeExpr::Local("self".to_owned())),
-                field: "current".to_owned(),
-                expr: Box::new(RuntimeExpr::Binary {
-                    lhs: Box::new(RuntimeExpr::Local("value".to_owned())),
-                    op: RuntimeBinaryOp::Add,
-                    rhs: Box::new(RuntimeExpr::Value(RuntimeValue::i64(1))),
-                }),
-                body: Box::new(RuntimeExpr::Variant {
-                    owner: arcweft_core::pattern::RuntimeCheckedType::Option(Box::new(
-                        arcweft_core::pattern::RuntimeCheckedType::Signed(
-                            arcweft_core::value::RuntimeSignedIntWidth::I64,
-                        ),
-                    )),
-                    ordinal: 0,
-                    name: "Some".to_owned(),
-                    payload: Some(Box::new(RuntimeExpr::Local("value".to_owned()))),
-                }),
-            }),
-        }),
-        else_expr: Box::new(RuntimeExpr::Variant {
-            owner: arcweft_core::pattern::RuntimeCheckedType::Option(Box::new(
-                arcweft_core::pattern::RuntimeCheckedType::Signed(
-                    arcweft_core::value::RuntimeSignedIntWidth::I64,
-                ),
-            )),
-            ordinal: 1,
-            name: "None".to_owned(),
-            payload: None,
-        }),
-    }
-}
-
-fn counter_trait_methods() -> Vec<RuntimeTraitMethod> {
-    vec![
-        RuntimeTraitMethod {
-            id: RuntimeTraitMethodId(0),
-            identity: counter_trait_identity(0, "into_iter"),
-            receiver: RuntimeReceiverMode::Owned,
-            input_names: vec!["self".to_owned()],
-            input_types: vec![RuntimePureInputType::Value],
-            output_type: RuntimePureOutputType::Value,
-            body: RuntimeExpr::Local("self".to_owned()),
-        },
-        RuntimeTraitMethod {
-            id: RuntimeTraitMethodId(1),
-            identity: counter_trait_identity(1, "next"),
-            receiver: RuntimeReceiverMode::MutRef,
-            input_names: vec!["self".to_owned()],
-            input_types: vec![RuntimePureInputType::Value],
-            output_type: RuntimePureOutputType::Value,
-            body: counter_next_body(),
-        },
-    ]
-}
-
-fn counter_witness_plan() -> RuntimePlan {
-    with_test_entry(
-        RuntimePlan::new(
-            vec![RuntimeFlow {
-                id: flow_id("flow.main"),
-                ops: vec![FlowOp::For {
-                    pattern: RuntimePattern::Ident("item".to_owned()),
-                    source: RuntimeExpr::Value(counter_state()),
-                    evidence: RuntimeIteratorEvidence::Witness(RuntimeIteratorWitnessEvidence {
-                        item_type: "i64".to_owned(),
-                        into_iter_type: "CounterIter".to_owned(),
-                        executable: RuntimeIteratorWitnessExecutable::TraitCalls(
-                            RuntimeIteratorWitnessCalls {
-                                into_iter: RuntimeTraitMethodId(0),
-                                next: RuntimeTraitMethodId(1),
-                            },
-                        ),
-                    }),
-                    body: vec![FlowOp::ReturnExpr(RuntimeExpr::Local("item".to_owned()))],
-                }],
-            }],
-            Vec::new(),
-        )
-        .expect("flow plan is valid"),
-    )
-    .with_trait_methods(counter_trait_methods())
-}
-
-fn counter_identity_trait_methods() -> Vec<RuntimeTraitMethod> {
-    vec![RuntimeTraitMethod {
-        id: RuntimeTraitMethodId(0),
-        identity: counter_trait_identity(0, "next"),
-        receiver: RuntimeReceiverMode::MutRef,
-        input_names: vec!["self".to_owned()],
-        input_types: vec![RuntimePureInputType::Value],
-        output_type: RuntimePureOutputType::Value,
-        body: counter_next_body(),
-    }]
-}
-
-fn counter_identity_witness_plan() -> RuntimePlan {
-    with_test_entry(
-        RuntimePlan::new(
-            vec![RuntimeFlow {
-                id: flow_id("flow.main"),
-                ops: vec![FlowOp::For {
-                    pattern: RuntimePattern::Ident("item".to_owned()),
-                    source: RuntimeExpr::Value(counter_state()),
-                    evidence: RuntimeIteratorEvidence::Witness(RuntimeIteratorWitnessEvidence {
-                        item_type: "i64".to_owned(),
-                        into_iter_type: "Counter".to_owned(),
-                        executable: RuntimeIteratorWitnessExecutable::IdentityIntoIterator(
-                            RuntimeIteratorIdentityWitnessCalls {
-                                next: RuntimeTraitMethodId(0),
-                            },
-                        ),
-                    }),
-                    body: vec![FlowOp::ReturnExpr(RuntimeExpr::Local("item".to_owned()))],
-                }],
-            }],
-            Vec::new(),
-        )
-        .expect("flow plan is valid"),
-    )
-    .with_trait_methods(counter_identity_trait_methods())
 }

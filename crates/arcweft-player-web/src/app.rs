@@ -598,7 +598,6 @@ fn redraw(
             },
         );
         state.broker.cancel_scopes(step.cancel_scopes.clone());
-        state.broker.close_sources(step.source_close.clone());
         let queued = state.broker.queue_dispatches(step.requested_tasks.clone());
         let report = WebObservationReport::from_step(&step, queued);
         let json = serde_json::to_string(&report)

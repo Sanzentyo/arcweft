@@ -41,7 +41,6 @@ pub struct RuntimePlan {
     pub flows: Vec<RuntimeFlow>,
     pub line_task_groups: Vec<LineTaskGroup>,
     pub stream_plans: Vec<StreamPlan>,
-    pub source_plans: Vec<SourcePlan>,
 }
 
 pub struct RuntimeFlow {
@@ -89,7 +88,6 @@ pub struct FlowFiber {
     pub control_stack: Vec<FlowControlStackEntry>,
     pub env: RuntimeEnv,
     pub observations: RuntimeObservationState,
-    pub source_states: BTreeMap<SourceId, SourceRuntimeState>,
     pub stream_states: BTreeMap<StreamRuntimeId, StreamRuntimeState>,
     pub status: FlowFiberStatus,
 }
@@ -113,7 +111,7 @@ pub struct RuntimeStepInput {
     pub input_events: Vec<InputEvent>,
     pub task_events: Vec<TaskEvent>,
     pub audio_events: Vec<AudioEvent>,
-    pub source_events: Vec<RuntimeSourceEvent>,
+    pub host_call_results: Vec<RuntimeHostCallResult>,
 }
 
 pub struct RuntimeStepOutput {
@@ -125,14 +123,15 @@ pub struct RuntimeStepOutput {
 
 pub struct RuntimeEffectBatch {
     pub line: Vec<LineEffectRequest>,
-    pub source_events: Vec<RuntimeSourceEvent>,
     pub stream_events: Vec<RuntimeStreamEvent>,
 }
 
 pub struct HostRequestBatch {
     pub tasks: Vec<TaskSpec>,
+    pub audio: Vec<AudioCommandEnvelope>,
     pub cancel_scopes: Vec<CancelScopeId>,
-    pub source_close: Vec<SourceId>,
+    pub ensure_content: Vec<RuntimeContentRequest>,
+    pub host_calls: Vec<RuntimeHostCallRequest>,
 }
 
 pub struct RuntimeStepResult {
@@ -164,10 +163,10 @@ Match はコンテナ全体を覆う共通 Block を作らず、通常の arm �
 `MatchArm` scope を所有し、Thread の braced arm だけが単一の `Block` scope を所有する。
 binding は guard 評価後や arm 終了後には外側や sibling arm へ漏れない。
 `Goto` / `GotoExpr` / `Return` / `ReturnExpr` は `FlowFiber` の cursor/status を更新する。
-`RuntimeStepInput.source_events` は replay-stable order に正規化され、`SourcePlan` handler と
-`StreamPlan` によって queue state と `RuntimeStreamEvent` に反映される。source / stream
-payload は `RuntimePayload` として `RuntimeValue` shape を保持し、CLI 表示だけが
-human-readable label に変換する。`FlowFiber.observations`
+`RuntimeStepInput` の task/host ingress は replay-stable order に正規化され、外部
+capability の `StreamPlan` と stream state に反映される。stream payload は
+`RuntimePayload` として `RuntimeValue` shape を保持し、CLI 表示だけが human-readable
+label に変換する。`FlowFiber.observations`
 は emitted log / signal / metric / event を累積し、CLI/LSP/test/replay tooling が
 JSON で観測できる。
 実 thread、wall-clock、renderer、audio、device、filesystem は adapter 側の責務である。
@@ -336,8 +335,8 @@ cancel on ... { ... }       -> LineTaskGroup.cancel_rules
 memo name(...)              -> LineTaskGroup.memo
 ```
 
-`yield` is not a line effect. It lowers only through stream/source generation
-plans; a dialogue line plan must use `out` for line-scope values.
+`yield` is not a line effect. It lowers only through Stream generation plans;
+a dialogue line plan must use `out` for line-scope values.
 
 `on` and `at` do not lower by inserting synthetic `wait` effects. They become
 task triggers so scheduling and replay can reason about when a child task starts.

@@ -66,7 +66,7 @@ This applies to:
 - `loop` break typing
 - `let ... else`
 - block final expressions
-- `?` propagation
+- `try` propagation
 - cancellation branches that leave the current line or flow
 
 ## Diverging expressions
@@ -128,10 +128,10 @@ Use `match` or `unwrap_or` for fallback values.
 
 ## Error propagation and `!`
 
-The `?` operator produces `!` on the error branch and `T` on the success branch.
+The `try` operator produces `!` on the error branch and `T` on the success branch.
 
 ```arcw
-let image = load_image()?   // Ok(image) => image, Err(e) => return Err(e)
+let image = try load_image()   // Ok(image) => image, Err(e) => return Err(e)
 ```
 
 Conceptually:

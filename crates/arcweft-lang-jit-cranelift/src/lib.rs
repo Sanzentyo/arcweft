@@ -21,17 +21,19 @@ use lower::{
     codegen_error, emit_object_bytes, f32_bindings, f64_bindings, i32_bindings, int_bindings,
     jit_module, lower_expr, lower_f32_expr, lower_f64_expr, lower_i32_expr, lower_input_value,
     lower_next_input_value, lower_u32_expr, lower_u64_expr, object_module,
-    sanitize_symbol_component, u32_bindings, u64_bindings, validate_param_names,
+    sanitize_symbol_component, u32_bindings, u64_bindings, validate_input_locals,
 };
 
+use arcweft_core::plan::RuntimePureHelper;
 use arcweft_core::pure::{
     PureFunctionBackend, PureFunctionBackendKind, PureFunctionRequest, PureFunctionResult,
     PureFunctionStats, RuntimeI64Args,
 };
+use arcweft_core::runtime_id::RuntimeLocalDeclarationId;
 use arcweft_core::value::{
-    RuntimeBinaryOp, RuntimeBinding, RuntimeCallTarget, RuntimeEvalError, RuntimeExpr,
-    RuntimeISizeValue, RuntimeInt, RuntimeIntrinsic, RuntimeUInt, RuntimeUSizeValue,
-    RuntimeUnaryOp, RuntimeValue,
+    RuntimeBinaryOp, RuntimeCallTarget, RuntimeEvalError, RuntimeExpr, RuntimeExprKind,
+    RuntimeISizeValue, RuntimeInt, RuntimeIntrinsic, RuntimeLocalBinding, RuntimeUInt,
+    RuntimeUSizeValue, RuntimeUnaryOp, RuntimeValue,
 };
 use cranelift::codegen::ir::{BlockArg, MemFlags, Type, UserFuncName};
 use cranelift::codegen::isa::OwnedTargetIsa;
@@ -44,6 +46,15 @@ use cranelift::prelude::{
 use cranelift_object::{ObjectBuilder, ObjectModule};
 use std::collections::BTreeMap;
 use thiserror::Error;
+
+pub(crate) fn request_helper(
+    request: &PureFunctionRequest,
+) -> Result<&RuntimePureHelper, CraneliftCodegenError> {
+    request
+        .helper_ref()
+        .map(|helper| helper.declaration())
+        .map_err(|error| CraneliftCodegenError::UnsupportedExpr(error.to_string()))
+}
 
 /// Native Cranelift backend for the current pure helper subset.
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
@@ -76,7 +87,7 @@ pub struct CompiledPureI64Inputs {
     caller: native_call::I64InputCaller,
     batch_code: *const u8,
     batch_sum_code: *const u8,
-    param_names: Vec<String>,
+    input_locals: Vec<RuntimeLocalDeclarationId>,
     stats: PureFunctionStats,
 }
 
@@ -86,7 +97,7 @@ pub struct ObjectPureInputs {
     pub entry_symbol: String,
     pub batch_symbol: String,
     pub batch_sum_symbol: Option<String>,
-    pub param_names: Vec<String>,
+    pub input_locals: Vec<RuntimeLocalDeclarationId>,
     pub stats: PureFunctionStats,
 }
 
@@ -95,7 +106,7 @@ pub struct ObjectPureBatchInputs {
     pub object_bytes: Vec<u8>,
     pub batch_symbol: String,
     pub batch_sum_symbol: String,
-    pub param_names: Vec<String>,
+    pub input_locals: Vec<RuntimeLocalDeclarationId>,
     pub stats: PureFunctionStats,
 }
 
@@ -120,7 +131,7 @@ pub enum PureObjectInputKind {
 pub struct PureObjectBundleRequest<'a> {
     pub request: &'a PureFunctionRequest,
     pub kind: PureObjectInputKind,
-    pub param_names: Vec<String>,
+    pub input_locals: Vec<RuntimeLocalDeclarationId>,
 }
 
 impl<'a> PureObjectBundleRequest<'a> {
@@ -128,12 +139,12 @@ impl<'a> PureObjectBundleRequest<'a> {
     pub fn new(
         request: &'a PureFunctionRequest,
         kind: PureObjectInputKind,
-        param_names: impl IntoIterator<Item = impl Into<String>>,
+        input_locals: impl IntoIterator<Item = RuntimeLocalDeclarationId>,
     ) -> Self {
         Self {
             request,
             kind,
-            param_names: param_names.into_iter().map(Into::into).collect(),
+            input_locals: input_locals.into_iter().collect(),
         }
     }
 }
@@ -149,7 +160,7 @@ pub struct ObjectPureBundleHelper {
     pub name: String,
     pub kind: PureObjectInputKind,
     pub entrypoints: ObjectPureEntrypoints,
-    pub param_names: Vec<String>,
+    pub input_locals: Vec<RuntimeLocalDeclarationId>,
     pub stats: PureFunctionStats,
 }
 
@@ -231,7 +242,7 @@ pub struct DefinedPureScalarInputs {
     pub entry: FuncId,
     pub batch: FuncId,
     pub batch_sum: FuncId,
-    pub param_names: Vec<String>,
+    pub input_locals: Vec<RuntimeLocalDeclarationId>,
     pub stats: PureFunctionStats,
 }
 
@@ -239,7 +250,7 @@ pub struct DefinedPureScalarInputs {
 pub struct DefinedPureFloatInputs {
     pub entry: FuncId,
     pub batch: FuncId,
-    pub param_names: Vec<String>,
+    pub input_locals: Vec<RuntimeLocalDeclarationId>,
     pub stats: PureFunctionStats,
 }
 
@@ -248,7 +259,7 @@ pub struct DefinedPureSmallIntInputs {
     pub entry: FuncId,
     pub batch: FuncId,
     pub batch_sum: FuncId,
-    pub param_names: Vec<String>,
+    pub input_locals: Vec<RuntimeLocalDeclarationId>,
     pub stats: PureFunctionStats,
 }
 
@@ -256,14 +267,14 @@ pub struct DefinedPureSmallIntInputs {
 pub struct DefinedPureSmallIntBatchInputs {
     pub batch: FuncId,
     pub batch_sum: FuncId,
-    pub param_names: Vec<String>,
+    pub input_locals: Vec<RuntimeLocalDeclarationId>,
     pub stats: PureFunctionStats,
 }
 
 /// Deterministic benchmark batch function defined into a Cranelift module.
 pub struct DefinedPureI64BenchmarkBatch {
     pub entry: FuncId,
-    pub param_names: Vec<String>,
+    pub input_locals: Vec<RuntimeLocalDeclarationId>,
     pub stats: PureFunctionStats,
 }
 
@@ -275,7 +286,7 @@ pub struct CompiledPureI128BatchInputs {
     _module: JITModule,
     batch_code: *const u8,
     batch_sum_code: *const u8,
-    param_names: Vec<String>,
+    input_locals: Vec<RuntimeLocalDeclarationId>,
     stats: PureFunctionStats,
 }
 
@@ -285,7 +296,7 @@ pub struct CompiledPureI8Inputs {
     caller: native_call::I8InputCaller,
     batch_code: *const u8,
     batch_sum_code: *const u8,
-    param_names: Vec<String>,
+    input_locals: Vec<RuntimeLocalDeclarationId>,
     stats: PureFunctionStats,
 }
 
@@ -295,7 +306,7 @@ pub struct CompiledPureI16Inputs {
     caller: native_call::I16InputCaller,
     batch_code: *const u8,
     batch_sum_code: *const u8,
-    param_names: Vec<String>,
+    input_locals: Vec<RuntimeLocalDeclarationId>,
     stats: PureFunctionStats,
 }
 
@@ -308,7 +319,7 @@ pub struct CompiledPureI32Inputs {
     caller: native_call::I32InputCaller,
     batch_code: *const u8,
     batch_sum_code: *const u8,
-    param_names: Vec<String>,
+    input_locals: Vec<RuntimeLocalDeclarationId>,
     stats: PureFunctionStats,
 }
 
@@ -321,7 +332,7 @@ pub struct CompiledPureU32Inputs {
     caller: native_call::U32InputCaller,
     batch_code: *const u8,
     batch_sum_code: *const u8,
-    param_names: Vec<String>,
+    input_locals: Vec<RuntimeLocalDeclarationId>,
     stats: PureFunctionStats,
 }
 
@@ -331,7 +342,7 @@ pub struct CompiledPureU8Inputs {
     caller: native_call::U8InputCaller,
     batch_code: *const u8,
     batch_sum_code: *const u8,
-    param_names: Vec<String>,
+    input_locals: Vec<RuntimeLocalDeclarationId>,
     stats: PureFunctionStats,
 }
 
@@ -341,7 +352,7 @@ pub struct CompiledPureU16Inputs {
     caller: native_call::U16InputCaller,
     batch_code: *const u8,
     batch_sum_code: *const u8,
-    param_names: Vec<String>,
+    input_locals: Vec<RuntimeLocalDeclarationId>,
     stats: PureFunctionStats,
 }
 
@@ -353,7 +364,7 @@ pub struct CompiledPureU64Inputs {
     caller: native_call::U64InputCaller,
     batch_code: *const u8,
     batch_sum_code: *const u8,
-    param_names: Vec<String>,
+    input_locals: Vec<RuntimeLocalDeclarationId>,
     stats: PureFunctionStats,
 }
 
@@ -365,7 +376,7 @@ pub struct CompiledPureU128BatchInputs {
     _module: JITModule,
     batch_code: *const u8,
     batch_sum_code: *const u8,
-    param_names: Vec<String>,
+    input_locals: Vec<RuntimeLocalDeclarationId>,
     stats: PureFunctionStats,
 }
 
@@ -374,7 +385,7 @@ pub struct CompiledPureF32Inputs {
     _module: JITModule,
     caller: native_call::F32InputCaller,
     batch_code: *const u8,
-    param_names: Vec<String>,
+    input_locals: Vec<RuntimeLocalDeclarationId>,
     stats: PureFunctionStats,
 }
 
@@ -383,7 +394,7 @@ pub struct CompiledPureF64Inputs {
     _module: JITModule,
     caller: native_call::F64InputCaller,
     batch_code: *const u8,
-    param_names: Vec<String>,
+    input_locals: Vec<RuntimeLocalDeclarationId>,
     stats: PureFunctionStats,
 }
 
@@ -395,7 +406,7 @@ pub struct CompiledPureF64Inputs {
 pub struct CompiledPureI64Batch {
     _module: JITModule,
     code: *const u8,
-    param_names: Vec<String>,
+    input_locals: Vec<RuntimeLocalDeclarationId>,
     stats: PureFunctionStats,
 }
 
@@ -510,7 +521,7 @@ impl PureFunctionBackend for CraneliftPureFunctionBackend {
     ) -> Result<PureFunctionResult, RuntimeEvalError> {
         self.evaluate_jit(request)
             .map_err(|error| RuntimeEvalError::UnsupportedPure {
-                name: request.name.clone(),
+                name: format!("pure#{}", request.helper_id().0),
                 reason: error.to_string(),
             })
     }
@@ -555,29 +566,29 @@ impl CraneliftPureFunctionBackend {
     /// Compiles a pure helper request to a reusable native function with runtime
     /// integer inputs.
     ///
-    /// `param_names` names local bindings that become runtime `i64`
+    /// `input_locals` names local bindings that become runtime `i64`
     /// parameters. Other integer locals are captured from the request.
     pub fn compile_i64_with_inputs(
         &self,
         request: &PureFunctionRequest,
-        param_names: impl IntoIterator<Item = impl Into<String>>,
+        input_locals: impl IntoIterator<Item = RuntimeLocalDeclarationId>,
     ) -> Result<CompiledPureI64Inputs, CraneliftCodegenError> {
         let mut module = jit_module()?;
         let defined = define_i64_with_inputs(
             &mut module,
             "arcweft_pure_helper_inputs",
             request,
-            param_names,
+            input_locals,
         )?;
         module.finalize_definitions().map_err(codegen_error)?;
         let code = module.get_finalized_function(defined.entry);
         let batch_code = module.get_finalized_function(defined.batch);
         let batch_sum_code = module.get_finalized_function(defined.batch_sum);
-        let caller = native_call::I64InputCaller::from_code(code, defined.param_names.len())
+        let caller = native_call::I64InputCaller::from_code(code, defined.input_locals.len())
             .ok_or_else(|| {
                 CraneliftCodegenError::UnsupportedExpr(format!(
                     "JIT helper arity {} is outside the native call boundary",
-                    defined.param_names.len()
+                    defined.input_locals.len()
                 ))
             })?;
 
@@ -586,7 +597,7 @@ impl CraneliftPureFunctionBackend {
             caller,
             batch_code,
             batch_sum_code,
-            param_names: defined.param_names,
+            input_locals: defined.input_locals,
             stats: defined.stats,
         })
     }
@@ -596,9 +607,9 @@ impl CraneliftPureFunctionBackend {
     pub fn emit_object_i64_with_inputs(
         &self,
         request: &PureFunctionRequest,
-        param_names: impl IntoIterator<Item = impl Into<String>>,
+        input_locals: impl IntoIterator<Item = RuntimeLocalDeclarationId>,
     ) -> Result<ObjectPureInputs, CraneliftCodegenError> {
-        emit_object_i64_with_inputs(request, param_names)
+        emit_object_i64_with_inputs(request, input_locals)
     }
 
     /// Emits a relocatable object containing the parameterized `i32` helper
@@ -606,9 +617,9 @@ impl CraneliftPureFunctionBackend {
     pub fn emit_object_i32_with_inputs(
         &self,
         request: &PureFunctionRequest,
-        param_names: impl IntoIterator<Item = impl Into<String>>,
+        input_locals: impl IntoIterator<Item = RuntimeLocalDeclarationId>,
     ) -> Result<ObjectPureInputs, CraneliftCodegenError> {
-        emit_object_i32_with_inputs(request, param_names)
+        emit_object_i32_with_inputs(request, input_locals)
     }
 
     /// Compiles a pure helper request to a reusable native `i8` function with
@@ -616,17 +627,17 @@ impl CraneliftPureFunctionBackend {
     pub fn compile_i8_with_inputs(
         &self,
         request: &PureFunctionRequest,
-        param_names: impl IntoIterator<Item = impl Into<String>>,
+        input_locals: impl IntoIterator<Item = RuntimeLocalDeclarationId>,
     ) -> Result<CompiledPureI8Inputs, CraneliftCodegenError> {
-        let parts = compile_small_int_with_inputs(request, param_names, SmallIntKind::I8)?;
-        let caller = native_call::I8InputCaller::from_code(parts.code, parts.param_names.len())
-            .ok_or_else(|| small_int_arity_error(SmallIntKind::I8, parts.param_names.len()))?;
+        let parts = compile_small_int_with_inputs(request, input_locals, SmallIntKind::I8)?;
+        let caller = native_call::I8InputCaller::from_code(parts.code, parts.input_locals.len())
+            .ok_or_else(|| small_int_arity_error(SmallIntKind::I8, parts.input_locals.len()))?;
         Ok(CompiledPureI8Inputs {
             _module: parts.module,
             caller,
             batch_code: parts.batch_code,
             batch_sum_code: parts.batch_sum_code,
-            param_names: parts.param_names,
+            input_locals: parts.input_locals,
             stats: parts.stats,
         })
     }
@@ -636,9 +647,9 @@ impl CraneliftPureFunctionBackend {
     pub fn emit_object_i8_with_inputs(
         &self,
         request: &PureFunctionRequest,
-        param_names: impl IntoIterator<Item = impl Into<String>>,
+        input_locals: impl IntoIterator<Item = RuntimeLocalDeclarationId>,
     ) -> Result<ObjectPureInputs, CraneliftCodegenError> {
-        emit_object_i8_with_inputs(request, param_names)
+        emit_object_i8_with_inputs(request, input_locals)
     }
 
     /// Compiles a pure helper request to reusable native `i128` flat-batch
@@ -653,14 +664,14 @@ impl CraneliftPureFunctionBackend {
     pub fn compile_i128_batch_with_inputs(
         &self,
         request: &PureFunctionRequest,
-        param_names: impl IntoIterator<Item = impl Into<String>>,
+        input_locals: impl IntoIterator<Item = RuntimeLocalDeclarationId>,
     ) -> Result<CompiledPureI128BatchInputs, CraneliftCodegenError> {
-        let parts = compile_wide_int_batch_with_inputs(request, param_names, SmallIntKind::I128)?;
+        let parts = compile_wide_int_batch_with_inputs(request, input_locals, SmallIntKind::I128)?;
         Ok(CompiledPureI128BatchInputs {
             _module: parts.module,
             batch_code: parts.batch_code,
             batch_sum_code: parts.batch_sum_code,
-            param_names: parts.param_names,
+            input_locals: parts.input_locals,
             stats: parts.stats,
         })
     }
@@ -670,9 +681,9 @@ impl CraneliftPureFunctionBackend {
     pub fn emit_object_i128_batch_with_inputs(
         &self,
         request: &PureFunctionRequest,
-        param_names: impl IntoIterator<Item = impl Into<String>>,
+        input_locals: impl IntoIterator<Item = RuntimeLocalDeclarationId>,
     ) -> Result<ObjectPureBatchInputs, CraneliftCodegenError> {
-        emit_object_i128_batch_with_inputs(request, param_names)
+        emit_object_i128_batch_with_inputs(request, input_locals)
     }
 
     /// Compiles a pure helper request to a reusable native `i16` function with
@@ -680,17 +691,19 @@ impl CraneliftPureFunctionBackend {
     pub fn compile_i16_with_inputs(
         &self,
         request: &PureFunctionRequest,
-        param_names: impl IntoIterator<Item = impl Into<String>>,
+        input_locals: impl IntoIterator<Item = RuntimeLocalDeclarationId>,
     ) -> Result<CompiledPureI16Inputs, CraneliftCodegenError> {
-        let parts = compile_small_int_with_inputs(request, param_names, SmallIntKind::I16)?;
-        let caller = native_call::I16InputCaller::from_code(parts.code, parts.param_names.len())
-            .ok_or_else(|| small_int_arity_error(SmallIntKind::I16, parts.param_names.len()))?;
+        let parts = compile_small_int_with_inputs(request, input_locals, SmallIntKind::I16)?;
+        let caller = native_call::I16InputCaller::from_code(parts.code, parts.input_locals.len())
+            .ok_or_else(|| {
+            small_int_arity_error(SmallIntKind::I16, parts.input_locals.len())
+        })?;
         Ok(CompiledPureI16Inputs {
             _module: parts.module,
             caller,
             batch_code: parts.batch_code,
             batch_sum_code: parts.batch_sum_code,
-            param_names: parts.param_names,
+            input_locals: parts.input_locals,
             stats: parts.stats,
         })
     }
@@ -700,9 +713,9 @@ impl CraneliftPureFunctionBackend {
     pub fn emit_object_i16_with_inputs(
         &self,
         request: &PureFunctionRequest,
-        param_names: impl IntoIterator<Item = impl Into<String>>,
+        input_locals: impl IntoIterator<Item = RuntimeLocalDeclarationId>,
     ) -> Result<ObjectPureInputs, CraneliftCodegenError> {
-        emit_object_i16_with_inputs(request, param_names)
+        emit_object_i16_with_inputs(request, input_locals)
     }
 
     /// Compiles a pure helper request to a reusable native `i32` function with
@@ -710,24 +723,24 @@ impl CraneliftPureFunctionBackend {
     pub fn compile_i32_with_inputs(
         &self,
         request: &PureFunctionRequest,
-        param_names: impl IntoIterator<Item = impl Into<String>>,
+        input_locals: impl IntoIterator<Item = RuntimeLocalDeclarationId>,
     ) -> Result<CompiledPureI32Inputs, CraneliftCodegenError> {
         let mut module = jit_module()?;
         let defined = define_i32_with_inputs(
             &mut module,
             "arcweft_pure_i32_helper_inputs",
             request,
-            param_names,
+            input_locals,
         )?;
         module.finalize_definitions().map_err(codegen_error)?;
         let code = module.get_finalized_function(defined.entry);
         let batch_code = module.get_finalized_function(defined.batch);
         let batch_sum_code = module.get_finalized_function(defined.batch_sum);
-        let caller = native_call::I32InputCaller::from_code(code, defined.param_names.len())
+        let caller = native_call::I32InputCaller::from_code(code, defined.input_locals.len())
             .ok_or_else(|| {
                 CraneliftCodegenError::UnsupportedExpr(format!(
                     "JIT i32 helper arity {} is outside the native call boundary",
-                    defined.param_names.len()
+                    defined.input_locals.len()
                 ))
             })?;
 
@@ -736,7 +749,7 @@ impl CraneliftPureFunctionBackend {
             caller,
             batch_code,
             batch_sum_code,
-            param_names: defined.param_names,
+            input_locals: defined.input_locals,
             stats: defined.stats,
         })
     }
@@ -746,24 +759,24 @@ impl CraneliftPureFunctionBackend {
     pub fn compile_u32_with_inputs(
         &self,
         request: &PureFunctionRequest,
-        param_names: impl IntoIterator<Item = impl Into<String>>,
+        input_locals: impl IntoIterator<Item = RuntimeLocalDeclarationId>,
     ) -> Result<CompiledPureU32Inputs, CraneliftCodegenError> {
         let mut module = jit_module()?;
         let defined = define_u32_with_inputs(
             &mut module,
             "arcweft_pure_u32_helper_inputs",
             request,
-            param_names,
+            input_locals,
         )?;
         module.finalize_definitions().map_err(codegen_error)?;
         let code = module.get_finalized_function(defined.entry);
         let batch_code = module.get_finalized_function(defined.batch);
         let batch_sum_code = module.get_finalized_function(defined.batch_sum);
-        let caller = native_call::U32InputCaller::from_code(code, defined.param_names.len())
+        let caller = native_call::U32InputCaller::from_code(code, defined.input_locals.len())
             .ok_or_else(|| {
                 CraneliftCodegenError::UnsupportedExpr(format!(
                     "JIT u32 helper arity {} is outside the native call boundary",
-                    defined.param_names.len()
+                    defined.input_locals.len()
                 ))
             })?;
 
@@ -772,7 +785,7 @@ impl CraneliftPureFunctionBackend {
             caller,
             batch_code,
             batch_sum_code,
-            param_names: defined.param_names,
+            input_locals: defined.input_locals,
             stats: defined.stats,
         })
     }
@@ -782,9 +795,9 @@ impl CraneliftPureFunctionBackend {
     pub fn emit_object_u32_with_inputs(
         &self,
         request: &PureFunctionRequest,
-        param_names: impl IntoIterator<Item = impl Into<String>>,
+        input_locals: impl IntoIterator<Item = RuntimeLocalDeclarationId>,
     ) -> Result<ObjectPureInputs, CraneliftCodegenError> {
-        emit_object_u32_with_inputs(request, param_names)
+        emit_object_u32_with_inputs(request, input_locals)
     }
 
     /// Compiles a pure helper request to a reusable native `u8` function with
@@ -792,17 +805,17 @@ impl CraneliftPureFunctionBackend {
     pub fn compile_u8_with_inputs(
         &self,
         request: &PureFunctionRequest,
-        param_names: impl IntoIterator<Item = impl Into<String>>,
+        input_locals: impl IntoIterator<Item = RuntimeLocalDeclarationId>,
     ) -> Result<CompiledPureU8Inputs, CraneliftCodegenError> {
-        let parts = compile_small_int_with_inputs(request, param_names, SmallIntKind::U8)?;
-        let caller = native_call::U8InputCaller::from_code(parts.code, parts.param_names.len())
-            .ok_or_else(|| small_int_arity_error(SmallIntKind::U8, parts.param_names.len()))?;
+        let parts = compile_small_int_with_inputs(request, input_locals, SmallIntKind::U8)?;
+        let caller = native_call::U8InputCaller::from_code(parts.code, parts.input_locals.len())
+            .ok_or_else(|| small_int_arity_error(SmallIntKind::U8, parts.input_locals.len()))?;
         Ok(CompiledPureU8Inputs {
             _module: parts.module,
             caller,
             batch_code: parts.batch_code,
             batch_sum_code: parts.batch_sum_code,
-            param_names: parts.param_names,
+            input_locals: parts.input_locals,
             stats: parts.stats,
         })
     }
@@ -812,9 +825,9 @@ impl CraneliftPureFunctionBackend {
     pub fn emit_object_u8_with_inputs(
         &self,
         request: &PureFunctionRequest,
-        param_names: impl IntoIterator<Item = impl Into<String>>,
+        input_locals: impl IntoIterator<Item = RuntimeLocalDeclarationId>,
     ) -> Result<ObjectPureInputs, CraneliftCodegenError> {
-        emit_object_u8_with_inputs(request, param_names)
+        emit_object_u8_with_inputs(request, input_locals)
     }
 
     /// Compiles a pure helper request to a reusable native `u16` function with
@@ -822,17 +835,19 @@ impl CraneliftPureFunctionBackend {
     pub fn compile_u16_with_inputs(
         &self,
         request: &PureFunctionRequest,
-        param_names: impl IntoIterator<Item = impl Into<String>>,
+        input_locals: impl IntoIterator<Item = RuntimeLocalDeclarationId>,
     ) -> Result<CompiledPureU16Inputs, CraneliftCodegenError> {
-        let parts = compile_small_int_with_inputs(request, param_names, SmallIntKind::U16)?;
-        let caller = native_call::U16InputCaller::from_code(parts.code, parts.param_names.len())
-            .ok_or_else(|| small_int_arity_error(SmallIntKind::U16, parts.param_names.len()))?;
+        let parts = compile_small_int_with_inputs(request, input_locals, SmallIntKind::U16)?;
+        let caller = native_call::U16InputCaller::from_code(parts.code, parts.input_locals.len())
+            .ok_or_else(|| {
+            small_int_arity_error(SmallIntKind::U16, parts.input_locals.len())
+        })?;
         Ok(CompiledPureU16Inputs {
             _module: parts.module,
             caller,
             batch_code: parts.batch_code,
             batch_sum_code: parts.batch_sum_code,
-            param_names: parts.param_names,
+            input_locals: parts.input_locals,
             stats: parts.stats,
         })
     }
@@ -842,9 +857,9 @@ impl CraneliftPureFunctionBackend {
     pub fn emit_object_u16_with_inputs(
         &self,
         request: &PureFunctionRequest,
-        param_names: impl IntoIterator<Item = impl Into<String>>,
+        input_locals: impl IntoIterator<Item = RuntimeLocalDeclarationId>,
     ) -> Result<ObjectPureInputs, CraneliftCodegenError> {
-        emit_object_u16_with_inputs(request, param_names)
+        emit_object_u16_with_inputs(request, input_locals)
     }
 
     /// Compiles a pure helper request to reusable native `u128` flat-batch
@@ -859,14 +874,14 @@ impl CraneliftPureFunctionBackend {
     pub fn compile_u128_batch_with_inputs(
         &self,
         request: &PureFunctionRequest,
-        param_names: impl IntoIterator<Item = impl Into<String>>,
+        input_locals: impl IntoIterator<Item = RuntimeLocalDeclarationId>,
     ) -> Result<CompiledPureU128BatchInputs, CraneliftCodegenError> {
-        let parts = compile_wide_int_batch_with_inputs(request, param_names, SmallIntKind::U128)?;
+        let parts = compile_wide_int_batch_with_inputs(request, input_locals, SmallIntKind::U128)?;
         Ok(CompiledPureU128BatchInputs {
             _module: parts.module,
             batch_code: parts.batch_code,
             batch_sum_code: parts.batch_sum_code,
-            param_names: parts.param_names,
+            input_locals: parts.input_locals,
             stats: parts.stats,
         })
     }
@@ -876,9 +891,9 @@ impl CraneliftPureFunctionBackend {
     pub fn emit_object_u128_batch_with_inputs(
         &self,
         request: &PureFunctionRequest,
-        param_names: impl IntoIterator<Item = impl Into<String>>,
+        input_locals: impl IntoIterator<Item = RuntimeLocalDeclarationId>,
     ) -> Result<ObjectPureBatchInputs, CraneliftCodegenError> {
-        emit_object_u128_batch_with_inputs(request, param_names)
+        emit_object_u128_batch_with_inputs(request, input_locals)
     }
 
     /// Compiles a pure helper request to a reusable native `u64` function with
@@ -886,24 +901,24 @@ impl CraneliftPureFunctionBackend {
     pub fn compile_u64_with_inputs(
         &self,
         request: &PureFunctionRequest,
-        param_names: impl IntoIterator<Item = impl Into<String>>,
+        input_locals: impl IntoIterator<Item = RuntimeLocalDeclarationId>,
     ) -> Result<CompiledPureU64Inputs, CraneliftCodegenError> {
         let mut module = jit_module()?;
         let defined = define_u64_with_inputs(
             &mut module,
             "arcweft_pure_u64_helper_inputs",
             request,
-            param_names,
+            input_locals,
         )?;
         module.finalize_definitions().map_err(codegen_error)?;
         let code = module.get_finalized_function(defined.entry);
         let batch_code = module.get_finalized_function(defined.batch);
         let batch_sum_code = module.get_finalized_function(defined.batch_sum);
-        let caller = native_call::U64InputCaller::from_code(code, defined.param_names.len())
+        let caller = native_call::U64InputCaller::from_code(code, defined.input_locals.len())
             .ok_or_else(|| {
                 CraneliftCodegenError::UnsupportedExpr(format!(
                     "JIT u64 helper arity {} is outside the native call boundary",
-                    defined.param_names.len()
+                    defined.input_locals.len()
                 ))
             })?;
 
@@ -912,7 +927,7 @@ impl CraneliftPureFunctionBackend {
             caller,
             batch_code,
             batch_sum_code,
-            param_names: defined.param_names,
+            input_locals: defined.input_locals,
             stats: defined.stats,
         })
     }
@@ -922,9 +937,9 @@ impl CraneliftPureFunctionBackend {
     pub fn emit_object_u64_with_inputs(
         &self,
         request: &PureFunctionRequest,
-        param_names: impl IntoIterator<Item = impl Into<String>>,
+        input_locals: impl IntoIterator<Item = RuntimeLocalDeclarationId>,
     ) -> Result<ObjectPureInputs, CraneliftCodegenError> {
-        emit_object_u64_with_inputs(request, param_names)
+        emit_object_u64_with_inputs(request, input_locals)
     }
 
     /// Compiles a pure helper request to a reusable native `f32` function with
@@ -932,23 +947,23 @@ impl CraneliftPureFunctionBackend {
     pub fn compile_f32_with_inputs(
         &self,
         request: &PureFunctionRequest,
-        param_names: impl IntoIterator<Item = impl Into<String>>,
+        input_locals: impl IntoIterator<Item = RuntimeLocalDeclarationId>,
     ) -> Result<CompiledPureF32Inputs, CraneliftCodegenError> {
         let mut module = jit_module()?;
         let defined = define_f32_with_inputs(
             &mut module,
             "arcweft_pure_f32_helper_inputs",
             request,
-            param_names,
+            input_locals,
         )?;
         module.finalize_definitions().map_err(codegen_error)?;
         let code = module.get_finalized_function(defined.entry);
         let batch_code = module.get_finalized_function(defined.batch);
-        let caller = native_call::F32InputCaller::from_code(code, defined.param_names.len())
+        let caller = native_call::F32InputCaller::from_code(code, defined.input_locals.len())
             .ok_or_else(|| {
                 CraneliftCodegenError::UnsupportedExpr(format!(
                     "JIT f32 helper arity {} is outside the native call boundary",
-                    defined.param_names.len()
+                    defined.input_locals.len()
                 ))
             })?;
 
@@ -956,7 +971,7 @@ impl CraneliftPureFunctionBackend {
             _module: module,
             caller,
             batch_code,
-            param_names: defined.param_names,
+            input_locals: defined.input_locals,
             stats: defined.stats,
         })
     }
@@ -966,9 +981,9 @@ impl CraneliftPureFunctionBackend {
     pub fn emit_object_f32_with_inputs(
         &self,
         request: &PureFunctionRequest,
-        param_names: impl IntoIterator<Item = impl Into<String>>,
+        input_locals: impl IntoIterator<Item = RuntimeLocalDeclarationId>,
     ) -> Result<ObjectPureInputs, CraneliftCodegenError> {
-        emit_object_f32_with_inputs(request, param_names)
+        emit_object_f32_with_inputs(request, input_locals)
     }
 
     /// Compiles a pure helper request to a reusable native `f64` function with
@@ -976,23 +991,23 @@ impl CraneliftPureFunctionBackend {
     pub fn compile_f64_with_inputs(
         &self,
         request: &PureFunctionRequest,
-        param_names: impl IntoIterator<Item = impl Into<String>>,
+        input_locals: impl IntoIterator<Item = RuntimeLocalDeclarationId>,
     ) -> Result<CompiledPureF64Inputs, CraneliftCodegenError> {
         let mut module = jit_module()?;
         let defined = define_f64_with_inputs(
             &mut module,
             "arcweft_pure_f64_helper_inputs",
             request,
-            param_names,
+            input_locals,
         )?;
         module.finalize_definitions().map_err(codegen_error)?;
         let code = module.get_finalized_function(defined.entry);
         let batch_code = module.get_finalized_function(defined.batch);
-        let caller = native_call::F64InputCaller::from_code(code, defined.param_names.len())
+        let caller = native_call::F64InputCaller::from_code(code, defined.input_locals.len())
             .ok_or_else(|| {
                 CraneliftCodegenError::UnsupportedExpr(format!(
                     "JIT f64 helper arity {} is outside the native call boundary",
-                    defined.param_names.len()
+                    defined.input_locals.len()
                 ))
             })?;
 
@@ -1000,7 +1015,7 @@ impl CraneliftPureFunctionBackend {
             _module: module,
             caller,
             batch_code,
-            param_names: defined.param_names,
+            input_locals: defined.input_locals,
             stats: defined.stats,
         })
     }
@@ -1010,9 +1025,9 @@ impl CraneliftPureFunctionBackend {
     pub fn emit_object_f64_with_inputs(
         &self,
         request: &PureFunctionRequest,
-        param_names: impl IntoIterator<Item = impl Into<String>>,
+        input_locals: impl IntoIterator<Item = RuntimeLocalDeclarationId>,
     ) -> Result<ObjectPureInputs, CraneliftCodegenError> {
-        emit_object_f64_with_inputs(request, param_names)
+        emit_object_f64_with_inputs(request, input_locals)
     }
 
     /// Emits one relocatable object containing multiple pure helper artifacts.
@@ -1027,14 +1042,14 @@ impl CraneliftPureFunctionBackend {
     pub fn compile_i64_batch(
         &self,
         request: &PureFunctionRequest,
-        param_names: impl IntoIterator<Item = impl Into<String>>,
+        input_locals: impl IntoIterator<Item = RuntimeLocalDeclarationId>,
     ) -> Result<CompiledPureI64Batch, CraneliftCodegenError> {
         let mut module = jit_module()?;
         let defined = define_i64_benchmark_batch(
             &mut module,
             "arcweft_pure_helper_batch",
             request,
-            param_names,
+            input_locals,
         )?;
         module.finalize_definitions().map_err(codegen_error)?;
         let code = module.get_finalized_function(defined.entry);
@@ -1042,7 +1057,7 @@ impl CraneliftPureFunctionBackend {
         Ok(CompiledPureI64Batch {
             _module: module,
             code,
-            param_names: defined.param_names,
+            input_locals: defined.input_locals,
             stats: defined.stats,
         })
     }
@@ -1070,13 +1085,18 @@ where
     ctx.func.signature = signature;
     ctx.func.name = UserFuncName::user(0, entry.as_u32());
 
-    let bindings = int_bindings(&request.bindings)?;
+    let bindings = int_bindings(request.bindings())?;
     let mut stats = PureFunctionStats::default();
     {
         let mut builder = FunctionBuilder::new(&mut ctx.func, &mut func_ctx);
         let block = builder.create_block();
         builder.switch_to_block(block);
-        let value = lower_expr(&mut builder, &bindings, &request.expr, &mut stats)?;
+        let value = lower_expr(
+            &mut builder,
+            &bindings,
+            &request_helper(request)?.expr,
+            &mut stats,
+        )?;
         builder.ins().return_(&[value]);
         builder.seal_all_blocks();
         builder.finalize();
@@ -1096,20 +1116,19 @@ pub fn define_i64_with_inputs<M>(
     module: &mut M,
     symbol_prefix: &str,
     request: &PureFunctionRequest,
-    param_names: impl IntoIterator<Item = impl Into<String>>,
+    input_locals: impl IntoIterator<Item = RuntimeLocalDeclarationId>,
 ) -> Result<DefinedPureScalarInputs, CraneliftCodegenError>
 where
     M: Module,
 {
-    let param_names = param_names
+    let input_locals = input_locals
         .into_iter()
-        .map(Into::into)
-        .collect::<Vec<String>>();
-    validate_param_names(&param_names)?;
-    if param_names.len() > 4 {
+        .collect::<Vec<RuntimeLocalDeclarationId>>();
+    validate_input_locals(&input_locals)?;
+    if input_locals.len() > 4 {
         return Err(CraneliftCodegenError::UnsupportedExpr(format!(
             "Cranelift i64 helper supports at most 4 runtime inputs, got {}",
-            param_names.len()
+            input_locals.len()
         )));
     }
 
@@ -1118,7 +1137,7 @@ where
     let mut signature = module.make_signature();
     signature
         .params
-        .extend(param_names.iter().map(|_| AbiParam::new(types::I64)));
+        .extend(input_locals.iter().map(|_| AbiParam::new(types::I64)));
     signature.returns.push(AbiParam::new(types::I64));
 
     let entry_name = format!("{symbol_prefix}_entry");
@@ -1128,7 +1147,7 @@ where
     ctx.func.signature = signature;
     ctx.func.name = UserFuncName::user(0, entry.as_u32());
 
-    let captured_bindings = int_bindings(&request.bindings)?;
+    let captured_bindings = int_bindings(request.bindings())?;
     let mut bindings = captured_bindings.clone();
     let mut stats = PureFunctionStats::default();
     {
@@ -1137,10 +1156,15 @@ where
         builder.append_block_params_for_function_params(block);
         builder.switch_to_block(block);
         let params = builder.block_params(block);
-        for (name, value) in param_names.iter().zip(params.iter().copied()) {
-            bindings.insert(name.clone(), LoweredIntBinding::Value(value));
+        for (name, value) in input_locals.iter().zip(params.iter().copied()) {
+            bindings.insert(*name, LoweredIntBinding::Value(value));
         }
-        let value = lower_expr(&mut builder, &bindings, &request.expr, &mut stats)?;
+        let value = lower_expr(
+            &mut builder,
+            &bindings,
+            &request_helper(request)?.expr,
+            &mut stats,
+        )?;
         builder.ins().return_(&[value]);
         builder.seal_all_blocks();
         builder.finalize();
@@ -1153,23 +1177,23 @@ where
     let batch = define_i64_rows_batch_function(
         module,
         &format!("{symbol_prefix}_rows_batch"),
-        &request.expr,
+        &request_helper(request)?.expr,
         &captured_bindings,
-        &param_names,
+        &input_locals,
     )?;
     let batch_sum = define_i64_rows_batch_sum_function(
         module,
         &format!("{symbol_prefix}_rows_batch_sum"),
-        &request.expr,
+        &request_helper(request)?.expr,
         &captured_bindings,
-        &param_names,
+        &input_locals,
     )?;
 
     Ok(DefinedPureScalarInputs {
         entry,
         batch,
         batch_sum,
-        param_names,
+        input_locals,
         stats,
     })
 }
@@ -1183,20 +1207,19 @@ pub fn define_i64_benchmark_batch<M>(
     module: &mut M,
     symbol_name: &str,
     request: &PureFunctionRequest,
-    param_names: impl IntoIterator<Item = impl Into<String>>,
+    input_locals: impl IntoIterator<Item = RuntimeLocalDeclarationId>,
 ) -> Result<DefinedPureI64BenchmarkBatch, CraneliftCodegenError>
 where
     M: Module,
 {
-    let param_names = param_names
+    let input_locals = input_locals
         .into_iter()
-        .map(Into::into)
-        .collect::<Vec<String>>();
-    validate_param_names(&param_names)?;
-    if param_names.len() > 4 {
+        .collect::<Vec<RuntimeLocalDeclarationId>>();
+    validate_input_locals(&input_locals)?;
+    if input_locals.len() > 4 {
         return Err(CraneliftCodegenError::UnsupportedExpr(format!(
             "Cranelift i64 benchmark batch supports at most 4 runtime inputs, got {}",
-            param_names.len()
+            input_locals.len()
         )));
     }
 
@@ -1216,7 +1239,7 @@ where
     ctx.func.signature = signature;
     ctx.func.name = UserFuncName::user(0, entry.as_u32());
 
-    let captured_bindings = int_bindings(&request.bindings)?;
+    let captured_bindings = int_bindings(request.bindings())?;
     let mut stats = PureFunctionStats::default();
     {
         let mut builder = FunctionBuilder::new(&mut ctx.func, &mut func_ctx);
@@ -1232,12 +1255,12 @@ where
         let done_block = builder.create_block();
         builder.append_block_param(loop_block, types::I64);
         builder.append_block_param(loop_block, types::I64);
-        for _ in &param_names {
+        for _ in &input_locals {
             builder.append_block_param(loop_block, types::I64);
         }
 
         let zero = builder.ins().iconst(types::I64, 0);
-        let initial_inputs = (0..param_names.len())
+        let initial_inputs = (0..input_locals.len())
             .map(|param_index| lower_input_value(&mut builder, seed, sample, zero, param_index))
             .collect::<Vec<_>>();
         let mut initial_args = vec![BlockArg::from(zero), BlockArg::from(zero)];
@@ -1257,10 +1280,15 @@ where
 
         builder.switch_to_block(body_block);
         let mut bindings = captured_bindings.clone();
-        for (name, value) in param_names.iter().zip(input_values.iter().copied()) {
-            bindings.insert(name.clone(), LoweredIntBinding::Value(value));
+        for (name, value) in input_locals.iter().zip(input_values.iter().copied()) {
+            bindings.insert(*name, LoweredIntBinding::Value(value));
         }
-        let value = lower_expr(&mut builder, &bindings, &request.expr, &mut stats)?;
+        let value = lower_expr(
+            &mut builder,
+            &bindings,
+            &request_helper(request)?.expr,
+            &mut stats,
+        )?;
         let next_accumulator = builder.ins().iadd(accumulator, value);
         let one = builder.ins().iconst(types::I64, 1);
         let next_index = builder.ins().iadd(index, one);
@@ -1287,7 +1315,7 @@ where
 
     Ok(DefinedPureI64BenchmarkBatch {
         entry,
-        param_names,
+        input_locals,
         stats,
     })
 }
@@ -1301,7 +1329,7 @@ pub fn emit_object_bundle<'a>(
     for (index, helper) in helpers.into_iter().enumerate() {
         let symbol_prefix = format!(
             "arcweft_pure_bundle_{index}_{}",
-            sanitize_symbol_component(&helper.request.name)
+            sanitize_symbol_component(&request_helper(helper.request)?.name)
         );
         metadata.push(define_object_bundle_helper(
             &mut module,
@@ -1328,44 +1356,44 @@ fn define_object_bundle_helper<M>(
 where
     M: Module,
 {
-    let name = helper.request.name.clone();
+    let name = request_helper(helper.request)?.name.clone();
     let kind = helper.kind;
     match kind {
         PureObjectInputKind::I64 => {
             let defined =
-                define_i64_with_inputs(module, symbol_prefix, helper.request, helper.param_names)?;
+                define_i64_with_inputs(module, symbol_prefix, helper.request, helper.input_locals)?;
             Ok(scalar_bundle_helper(symbol_prefix, name, kind, defined))
         }
         PureObjectInputKind::I32 => {
             let defined =
-                define_i32_with_inputs(module, symbol_prefix, helper.request, helper.param_names)?;
+                define_i32_with_inputs(module, symbol_prefix, helper.request, helper.input_locals)?;
             Ok(scalar_bundle_helper(symbol_prefix, name, kind, defined))
         }
         PureObjectInputKind::U32 => {
             let defined =
-                define_u32_with_inputs(module, symbol_prefix, helper.request, helper.param_names)?;
+                define_u32_with_inputs(module, symbol_prefix, helper.request, helper.input_locals)?;
             Ok(scalar_bundle_helper(symbol_prefix, name, kind, defined))
         }
         PureObjectInputKind::U64 => {
             let defined =
-                define_u64_with_inputs(module, symbol_prefix, helper.request, helper.param_names)?;
+                define_u64_with_inputs(module, symbol_prefix, helper.request, helper.input_locals)?;
             Ok(scalar_bundle_helper(symbol_prefix, name, kind, defined))
         }
         PureObjectInputKind::F32 => {
             let defined =
-                define_f32_with_inputs(module, symbol_prefix, helper.request, helper.param_names)?;
+                define_f32_with_inputs(module, symbol_prefix, helper.request, helper.input_locals)?;
             Ok(float_bundle_helper(symbol_prefix, name, kind, defined))
         }
         PureObjectInputKind::F64 => {
             let defined =
-                define_f64_with_inputs(module, symbol_prefix, helper.request, helper.param_names)?;
+                define_f64_with_inputs(module, symbol_prefix, helper.request, helper.input_locals)?;
             Ok(float_bundle_helper(symbol_prefix, name, kind, defined))
         }
         PureObjectInputKind::I8 => small_int_bundle_helper(
             module,
             symbol_prefix,
             helper.request,
-            helper.param_names,
+            helper.input_locals,
             name,
             kind,
             SmallIntKind::I8,
@@ -1374,7 +1402,7 @@ where
             module,
             symbol_prefix,
             helper.request,
-            helper.param_names,
+            helper.input_locals,
             name,
             kind,
             SmallIntKind::I16,
@@ -1383,7 +1411,7 @@ where
             module,
             symbol_prefix,
             helper.request,
-            helper.param_names,
+            helper.input_locals,
             name,
             kind,
             SmallIntKind::U8,
@@ -1392,7 +1420,7 @@ where
             module,
             symbol_prefix,
             helper.request,
-            helper.param_names,
+            helper.input_locals,
             name,
             kind,
             SmallIntKind::U16,
@@ -1401,7 +1429,7 @@ where
             module,
             symbol_prefix,
             helper.request,
-            helper.param_names,
+            helper.input_locals,
             name,
             kind,
             SmallIntKind::I128,
@@ -1410,7 +1438,7 @@ where
             module,
             symbol_prefix,
             helper.request,
-            helper.param_names,
+            helper.input_locals,
             name,
             kind,
             SmallIntKind::U128,
@@ -1432,7 +1460,7 @@ fn scalar_bundle_helper(
             batch_symbol: format!("{symbol_prefix}_rows_batch"),
             batch_sum_symbol: Some(format!("{symbol_prefix}_rows_batch_sum")),
         },
-        param_names: defined.param_names,
+        input_locals: defined.input_locals,
         stats: defined.stats,
     }
 }
@@ -1451,7 +1479,7 @@ fn float_bundle_helper(
             batch_symbol: format!("{symbol_prefix}_rows_batch"),
             batch_sum_symbol: None,
         },
-        param_names: defined.param_names,
+        input_locals: defined.input_locals,
         stats: defined.stats,
     }
 }
@@ -1460,7 +1488,7 @@ fn small_int_bundle_helper<M>(
     module: &mut M,
     symbol_prefix: &str,
     request: &PureFunctionRequest,
-    param_names: Vec<String>,
+    input_locals: Vec<RuntimeLocalDeclarationId>,
     name: String,
     kind: PureObjectInputKind,
     small_kind: SmallIntKind,
@@ -1469,7 +1497,7 @@ where
     M: Module,
 {
     let defined =
-        define_small_int_with_inputs(module, symbol_prefix, request, param_names, small_kind)?;
+        define_small_int_with_inputs(module, symbol_prefix, request, input_locals, small_kind)?;
     Ok(ObjectPureBundleHelper {
         name,
         kind,
@@ -1478,7 +1506,7 @@ where
             batch_symbol: format!("{symbol_prefix}_rows_batch"),
             batch_sum_symbol: Some(format!("{symbol_prefix}_rows_batch_sum")),
         },
-        param_names: defined.param_names,
+        input_locals: defined.input_locals,
         stats: defined.stats,
     })
 }
@@ -1487,7 +1515,7 @@ fn wide_int_bundle_helper<M>(
     module: &mut M,
     symbol_prefix: &str,
     request: &PureFunctionRequest,
-    param_names: Vec<String>,
+    input_locals: Vec<RuntimeLocalDeclarationId>,
     name: String,
     kind: PureObjectInputKind,
     small_kind: SmallIntKind,
@@ -1499,7 +1527,7 @@ where
         module,
         symbol_prefix,
         request,
-        param_names,
+        input_locals,
         small_kind,
     )?;
     Ok(ObjectPureBundleHelper {
@@ -1509,7 +1537,7 @@ where
             batch_symbol: format!("{symbol_prefix}_rows_batch"),
             batch_sum_symbol: format!("{symbol_prefix}_rows_batch_sum"),
         },
-        param_names: defined.param_names,
+        input_locals: defined.input_locals,
         stats: defined.stats,
     })
 }
@@ -1518,11 +1546,14 @@ where
 /// entrypoint and flat-batch entrypoints.
 pub fn emit_object_i64_with_inputs(
     request: &PureFunctionRequest,
-    param_names: impl IntoIterator<Item = impl Into<String>>,
+    input_locals: impl IntoIterator<Item = RuntimeLocalDeclarationId>,
 ) -> Result<ObjectPureInputs, CraneliftCodegenError> {
     let mut module = object_module()?;
-    let symbol_prefix = format!("arcweft_pure_{}", sanitize_symbol_component(&request.name));
-    let defined = define_i64_with_inputs(&mut module, &symbol_prefix, request, param_names)?;
+    let symbol_prefix = format!(
+        "arcweft_pure_{}",
+        sanitize_symbol_component(&request_helper(request)?.name)
+    );
+    let defined = define_i64_with_inputs(&mut module, &symbol_prefix, request, input_locals)?;
     scalar_object_result(module, symbol_prefix, defined)
 }
 
@@ -1530,11 +1561,14 @@ pub fn emit_object_i64_with_inputs(
 /// entrypoint and flat-batch entrypoints.
 pub fn emit_object_i32_with_inputs(
     request: &PureFunctionRequest,
-    param_names: impl IntoIterator<Item = impl Into<String>>,
+    input_locals: impl IntoIterator<Item = RuntimeLocalDeclarationId>,
 ) -> Result<ObjectPureInputs, CraneliftCodegenError> {
     let mut module = object_module()?;
-    let symbol_prefix = format!("arcweft_pure_{}", sanitize_symbol_component(&request.name));
-    let defined = define_i32_with_inputs(&mut module, &symbol_prefix, request, param_names)?;
+    let symbol_prefix = format!(
+        "arcweft_pure_{}",
+        sanitize_symbol_component(&request_helper(request)?.name)
+    );
+    let defined = define_i32_with_inputs(&mut module, &symbol_prefix, request, input_locals)?;
     scalar_object_result(module, symbol_prefix, defined)
 }
 
@@ -1542,11 +1576,14 @@ pub fn emit_object_i32_with_inputs(
 /// entrypoint and flat-batch entrypoints.
 pub fn emit_object_u32_with_inputs(
     request: &PureFunctionRequest,
-    param_names: impl IntoIterator<Item = impl Into<String>>,
+    input_locals: impl IntoIterator<Item = RuntimeLocalDeclarationId>,
 ) -> Result<ObjectPureInputs, CraneliftCodegenError> {
     let mut module = object_module()?;
-    let symbol_prefix = format!("arcweft_pure_{}", sanitize_symbol_component(&request.name));
-    let defined = define_u32_with_inputs(&mut module, &symbol_prefix, request, param_names)?;
+    let symbol_prefix = format!(
+        "arcweft_pure_{}",
+        sanitize_symbol_component(&request_helper(request)?.name)
+    );
+    let defined = define_u32_with_inputs(&mut module, &symbol_prefix, request, input_locals)?;
     scalar_object_result(module, symbol_prefix, defined)
 }
 
@@ -1554,11 +1591,14 @@ pub fn emit_object_u32_with_inputs(
 /// entrypoint and flat-batch entrypoints.
 pub fn emit_object_u64_with_inputs(
     request: &PureFunctionRequest,
-    param_names: impl IntoIterator<Item = impl Into<String>>,
+    input_locals: impl IntoIterator<Item = RuntimeLocalDeclarationId>,
 ) -> Result<ObjectPureInputs, CraneliftCodegenError> {
     let mut module = object_module()?;
-    let symbol_prefix = format!("arcweft_pure_{}", sanitize_symbol_component(&request.name));
-    let defined = define_u64_with_inputs(&mut module, &symbol_prefix, request, param_names)?;
+    let symbol_prefix = format!(
+        "arcweft_pure_{}",
+        sanitize_symbol_component(&request_helper(request)?.name)
+    );
+    let defined = define_u64_with_inputs(&mut module, &symbol_prefix, request, input_locals)?;
     scalar_object_result(module, symbol_prefix, defined)
 }
 
@@ -1566,11 +1606,14 @@ pub fn emit_object_u64_with_inputs(
 /// entrypoint and flat-batch entrypoint.
 pub fn emit_object_f32_with_inputs(
     request: &PureFunctionRequest,
-    param_names: impl IntoIterator<Item = impl Into<String>>,
+    input_locals: impl IntoIterator<Item = RuntimeLocalDeclarationId>,
 ) -> Result<ObjectPureInputs, CraneliftCodegenError> {
     let mut module = object_module()?;
-    let symbol_prefix = format!("arcweft_pure_{}", sanitize_symbol_component(&request.name));
-    let defined = define_f32_with_inputs(&mut module, &symbol_prefix, request, param_names)?;
+    let symbol_prefix = format!(
+        "arcweft_pure_{}",
+        sanitize_symbol_component(&request_helper(request)?.name)
+    );
+    let defined = define_f32_with_inputs(&mut module, &symbol_prefix, request, input_locals)?;
     float_object_result(module, symbol_prefix, defined)
 }
 
@@ -1578,11 +1621,14 @@ pub fn emit_object_f32_with_inputs(
 /// entrypoint and flat-batch entrypoint.
 pub fn emit_object_f64_with_inputs(
     request: &PureFunctionRequest,
-    param_names: impl IntoIterator<Item = impl Into<String>>,
+    input_locals: impl IntoIterator<Item = RuntimeLocalDeclarationId>,
 ) -> Result<ObjectPureInputs, CraneliftCodegenError> {
     let mut module = object_module()?;
-    let symbol_prefix = format!("arcweft_pure_{}", sanitize_symbol_component(&request.name));
-    let defined = define_f64_with_inputs(&mut module, &symbol_prefix, request, param_names)?;
+    let symbol_prefix = format!(
+        "arcweft_pure_{}",
+        sanitize_symbol_component(&request_helper(request)?.name)
+    );
+    let defined = define_f64_with_inputs(&mut module, &symbol_prefix, request, input_locals)?;
     float_object_result(module, symbol_prefix, defined)
 }
 
@@ -1590,80 +1636,86 @@ pub fn emit_object_f64_with_inputs(
 /// entrypoint and flat-batch entrypoints.
 pub fn emit_object_i8_with_inputs(
     request: &PureFunctionRequest,
-    param_names: impl IntoIterator<Item = impl Into<String>>,
+    input_locals: impl IntoIterator<Item = RuntimeLocalDeclarationId>,
 ) -> Result<ObjectPureInputs, CraneliftCodegenError> {
-    emit_object_small_int_with_inputs(request, param_names, SmallIntKind::I8)
+    emit_object_small_int_with_inputs(request, input_locals, SmallIntKind::I8)
 }
 
 /// Emits a relocatable object containing the parameterized `i16` helper
 /// entrypoint and flat-batch entrypoints.
 pub fn emit_object_i16_with_inputs(
     request: &PureFunctionRequest,
-    param_names: impl IntoIterator<Item = impl Into<String>>,
+    input_locals: impl IntoIterator<Item = RuntimeLocalDeclarationId>,
 ) -> Result<ObjectPureInputs, CraneliftCodegenError> {
-    emit_object_small_int_with_inputs(request, param_names, SmallIntKind::I16)
+    emit_object_small_int_with_inputs(request, input_locals, SmallIntKind::I16)
 }
 
 /// Emits a relocatable object containing the parameterized `u8` helper
 /// entrypoint and flat-batch entrypoints.
 pub fn emit_object_u8_with_inputs(
     request: &PureFunctionRequest,
-    param_names: impl IntoIterator<Item = impl Into<String>>,
+    input_locals: impl IntoIterator<Item = RuntimeLocalDeclarationId>,
 ) -> Result<ObjectPureInputs, CraneliftCodegenError> {
-    emit_object_small_int_with_inputs(request, param_names, SmallIntKind::U8)
+    emit_object_small_int_with_inputs(request, input_locals, SmallIntKind::U8)
 }
 
 /// Emits a relocatable object containing the parameterized `u16` helper
 /// entrypoint and flat-batch entrypoints.
 pub fn emit_object_u16_with_inputs(
     request: &PureFunctionRequest,
-    param_names: impl IntoIterator<Item = impl Into<String>>,
+    input_locals: impl IntoIterator<Item = RuntimeLocalDeclarationId>,
 ) -> Result<ObjectPureInputs, CraneliftCodegenError> {
-    emit_object_small_int_with_inputs(request, param_names, SmallIntKind::U16)
+    emit_object_small_int_with_inputs(request, input_locals, SmallIntKind::U16)
 }
 
 /// Emits a relocatable object containing the parameterized `i128` flat-batch
 /// entrypoints.
 pub fn emit_object_i128_batch_with_inputs(
     request: &PureFunctionRequest,
-    param_names: impl IntoIterator<Item = impl Into<String>>,
+    input_locals: impl IntoIterator<Item = RuntimeLocalDeclarationId>,
 ) -> Result<ObjectPureBatchInputs, CraneliftCodegenError> {
-    emit_object_wide_int_batch_with_inputs(request, param_names, SmallIntKind::I128)
+    emit_object_wide_int_batch_with_inputs(request, input_locals, SmallIntKind::I128)
 }
 
 /// Emits a relocatable object containing the parameterized `u128` flat-batch
 /// entrypoints.
 pub fn emit_object_u128_batch_with_inputs(
     request: &PureFunctionRequest,
-    param_names: impl IntoIterator<Item = impl Into<String>>,
+    input_locals: impl IntoIterator<Item = RuntimeLocalDeclarationId>,
 ) -> Result<ObjectPureBatchInputs, CraneliftCodegenError> {
-    emit_object_wide_int_batch_with_inputs(request, param_names, SmallIntKind::U128)
+    emit_object_wide_int_batch_with_inputs(request, input_locals, SmallIntKind::U128)
 }
 
 fn emit_object_small_int_with_inputs(
     request: &PureFunctionRequest,
-    param_names: impl IntoIterator<Item = impl Into<String>>,
+    input_locals: impl IntoIterator<Item = RuntimeLocalDeclarationId>,
     kind: SmallIntKind,
 ) -> Result<ObjectPureInputs, CraneliftCodegenError> {
     let mut module = object_module()?;
-    let symbol_prefix = format!("arcweft_pure_{}", sanitize_symbol_component(&request.name));
+    let symbol_prefix = format!(
+        "arcweft_pure_{}",
+        sanitize_symbol_component(&request_helper(request)?.name)
+    );
     let defined =
-        define_small_int_with_inputs(&mut module, &symbol_prefix, request, param_names, kind)?;
+        define_small_int_with_inputs(&mut module, &symbol_prefix, request, input_locals, kind)?;
     small_int_object_result(module, symbol_prefix, defined)
 }
 
 fn emit_object_wide_int_batch_with_inputs(
     request: &PureFunctionRequest,
-    param_names: impl IntoIterator<Item = impl Into<String>>,
+    input_locals: impl IntoIterator<Item = RuntimeLocalDeclarationId>,
     kind: SmallIntKind,
 ) -> Result<ObjectPureBatchInputs, CraneliftCodegenError> {
     let mut module = object_module()?;
-    let symbol_prefix = format!("arcweft_pure_{}", sanitize_symbol_component(&request.name));
+    let symbol_prefix = format!(
+        "arcweft_pure_{}",
+        sanitize_symbol_component(&request_helper(request)?.name)
+    );
     let defined = define_small_int_batch_with_inputs(
         &mut module,
         &symbol_prefix,
         request,
-        param_names,
+        input_locals,
         kind,
     )?;
     batch_object_result(module, symbol_prefix, defined)
@@ -1679,7 +1731,7 @@ fn scalar_object_result(
         entry_symbol: format!("{symbol_prefix}_entry"),
         batch_symbol: format!("{symbol_prefix}_rows_batch"),
         batch_sum_symbol: Some(format!("{symbol_prefix}_rows_batch_sum")),
-        param_names: defined.param_names,
+        input_locals: defined.input_locals,
         stats: defined.stats,
     })
 }
@@ -1694,7 +1746,7 @@ fn small_int_object_result(
         entry_symbol: format!("{symbol_prefix}_entry"),
         batch_symbol: format!("{symbol_prefix}_rows_batch"),
         batch_sum_symbol: Some(format!("{symbol_prefix}_rows_batch_sum")),
-        param_names: defined.param_names,
+        input_locals: defined.input_locals,
         stats: defined.stats,
     })
 }
@@ -1708,7 +1760,7 @@ fn batch_object_result(
         object_bytes: emit_object_bytes(module)?,
         batch_symbol: format!("{symbol_prefix}_rows_batch"),
         batch_sum_symbol: format!("{symbol_prefix}_rows_batch_sum"),
-        param_names: defined.param_names,
+        input_locals: defined.input_locals,
         stats: defined.stats,
     })
 }
@@ -1723,7 +1775,7 @@ fn float_object_result(
         entry_symbol: format!("{symbol_prefix}_entry"),
         batch_symbol: format!("{symbol_prefix}_rows_batch"),
         batch_sum_symbol: None,
-        param_names: defined.param_names,
+        input_locals: defined.input_locals,
         stats: defined.stats,
     })
 }
@@ -1734,20 +1786,19 @@ pub fn define_i32_with_inputs<M>(
     module: &mut M,
     symbol_prefix: &str,
     request: &PureFunctionRequest,
-    param_names: impl IntoIterator<Item = impl Into<String>>,
+    input_locals: impl IntoIterator<Item = RuntimeLocalDeclarationId>,
 ) -> Result<DefinedPureScalarInputs, CraneliftCodegenError>
 where
     M: Module,
 {
-    let param_names = param_names
+    let input_locals = input_locals
         .into_iter()
-        .map(Into::into)
-        .collect::<Vec<String>>();
-    validate_param_names(&param_names)?;
-    if param_names.len() > 4 {
+        .collect::<Vec<RuntimeLocalDeclarationId>>();
+    validate_input_locals(&input_locals)?;
+    if input_locals.len() > 4 {
         return Err(CraneliftCodegenError::UnsupportedExpr(format!(
             "Cranelift i32 helper supports at most 4 runtime inputs, got {}",
-            param_names.len()
+            input_locals.len()
         )));
     }
 
@@ -1756,7 +1807,7 @@ where
     let mut signature = module.make_signature();
     signature
         .params
-        .extend(param_names.iter().map(|_| AbiParam::new(types::I32)));
+        .extend(input_locals.iter().map(|_| AbiParam::new(types::I32)));
     signature.returns.push(AbiParam::new(types::I32));
 
     let entry_name = format!("{symbol_prefix}_entry");
@@ -1766,7 +1817,7 @@ where
     ctx.func.signature = signature;
     ctx.func.name = UserFuncName::user(0, entry.as_u32());
 
-    let captured_bindings = i32_bindings(&request.bindings)?;
+    let captured_bindings = i32_bindings(request.bindings())?;
     let mut bindings = captured_bindings.clone();
     let mut stats = PureFunctionStats::default();
     {
@@ -1775,10 +1826,15 @@ where
         builder.append_block_params_for_function_params(block);
         builder.switch_to_block(block);
         let params = builder.block_params(block);
-        for (name, value) in param_names.iter().zip(params.iter().copied()) {
-            bindings.insert(name.clone(), LoweredIntBinding::Value(value));
+        for (name, value) in input_locals.iter().zip(params.iter().copied()) {
+            bindings.insert(*name, LoweredIntBinding::Value(value));
         }
-        let value = lower_i32_expr(&mut builder, &bindings, &request.expr, &mut stats)?;
+        let value = lower_i32_expr(
+            &mut builder,
+            &bindings,
+            &request_helper(request)?.expr,
+            &mut stats,
+        )?;
         builder.ins().return_(&[value]);
         builder.seal_all_blocks();
         builder.finalize();
@@ -1791,23 +1847,23 @@ where
     let batch = define_i32_rows_batch_function(
         module,
         &format!("{symbol_prefix}_rows_batch"),
-        &request.expr,
+        &request_helper(request)?.expr,
         &captured_bindings,
-        &param_names,
+        &input_locals,
     )?;
     let batch_sum = define_i32_rows_batch_sum_function(
         module,
         &format!("{symbol_prefix}_rows_batch_sum"),
-        &request.expr,
+        &request_helper(request)?.expr,
         &captured_bindings,
-        &param_names,
+        &input_locals,
     )?;
 
     Ok(DefinedPureScalarInputs {
         entry,
         batch,
         batch_sum,
-        param_names,
+        input_locals,
         stats,
     })
 }
@@ -1818,20 +1874,19 @@ pub fn define_u32_with_inputs<M>(
     module: &mut M,
     symbol_prefix: &str,
     request: &PureFunctionRequest,
-    param_names: impl IntoIterator<Item = impl Into<String>>,
+    input_locals: impl IntoIterator<Item = RuntimeLocalDeclarationId>,
 ) -> Result<DefinedPureScalarInputs, CraneliftCodegenError>
 where
     M: Module,
 {
-    let param_names = param_names
+    let input_locals = input_locals
         .into_iter()
-        .map(Into::into)
-        .collect::<Vec<String>>();
-    validate_param_names(&param_names)?;
-    if param_names.len() > 4 {
+        .collect::<Vec<RuntimeLocalDeclarationId>>();
+    validate_input_locals(&input_locals)?;
+    if input_locals.len() > 4 {
         return Err(CraneliftCodegenError::UnsupportedExpr(format!(
             "Cranelift u32 helper supports at most 4 runtime inputs, got {}",
-            param_names.len()
+            input_locals.len()
         )));
     }
 
@@ -1840,7 +1895,7 @@ where
     let mut signature = module.make_signature();
     signature
         .params
-        .extend(param_names.iter().map(|_| AbiParam::new(types::I32)));
+        .extend(input_locals.iter().map(|_| AbiParam::new(types::I32)));
     signature.returns.push(AbiParam::new(types::I32));
 
     let entry_name = format!("{symbol_prefix}_entry");
@@ -1850,7 +1905,7 @@ where
     ctx.func.signature = signature;
     ctx.func.name = UserFuncName::user(0, entry.as_u32());
 
-    let captured_bindings = u32_bindings(&request.bindings)?;
+    let captured_bindings = u32_bindings(request.bindings())?;
     let mut bindings = captured_bindings.clone();
     let mut stats = PureFunctionStats::default();
     {
@@ -1859,10 +1914,15 @@ where
         builder.append_block_params_for_function_params(block);
         builder.switch_to_block(block);
         let params = builder.block_params(block);
-        for (name, value) in param_names.iter().zip(params.iter().copied()) {
-            bindings.insert(name.clone(), LoweredIntBinding::Value(value));
+        for (name, value) in input_locals.iter().zip(params.iter().copied()) {
+            bindings.insert(*name, LoweredIntBinding::Value(value));
         }
-        let value = lower_u32_expr(&mut builder, &bindings, &request.expr, &mut stats)?;
+        let value = lower_u32_expr(
+            &mut builder,
+            &bindings,
+            &request_helper(request)?.expr,
+            &mut stats,
+        )?;
         builder.ins().return_(&[value]);
         builder.seal_all_blocks();
         builder.finalize();
@@ -1875,23 +1935,23 @@ where
     let batch = define_u32_rows_batch_function(
         module,
         &format!("{symbol_prefix}_rows_batch"),
-        &request.expr,
+        &request_helper(request)?.expr,
         &captured_bindings,
-        &param_names,
+        &input_locals,
     )?;
     let batch_sum = define_u32_rows_batch_sum_function(
         module,
         &format!("{symbol_prefix}_rows_batch_sum"),
-        &request.expr,
+        &request_helper(request)?.expr,
         &captured_bindings,
-        &param_names,
+        &input_locals,
     )?;
 
     Ok(DefinedPureScalarInputs {
         entry,
         batch,
         batch_sum,
-        param_names,
+        input_locals,
         stats,
     })
 }
@@ -1902,20 +1962,19 @@ pub fn define_u64_with_inputs<M>(
     module: &mut M,
     symbol_prefix: &str,
     request: &PureFunctionRequest,
-    param_names: impl IntoIterator<Item = impl Into<String>>,
+    input_locals: impl IntoIterator<Item = RuntimeLocalDeclarationId>,
 ) -> Result<DefinedPureScalarInputs, CraneliftCodegenError>
 where
     M: Module,
 {
-    let param_names = param_names
+    let input_locals = input_locals
         .into_iter()
-        .map(Into::into)
-        .collect::<Vec<String>>();
-    validate_param_names(&param_names)?;
-    if param_names.len() > 4 {
+        .collect::<Vec<RuntimeLocalDeclarationId>>();
+    validate_input_locals(&input_locals)?;
+    if input_locals.len() > 4 {
         return Err(CraneliftCodegenError::UnsupportedExpr(format!(
             "Cranelift u64 helper supports at most 4 runtime inputs, got {}",
-            param_names.len()
+            input_locals.len()
         )));
     }
 
@@ -1924,7 +1983,7 @@ where
     let mut signature = module.make_signature();
     signature
         .params
-        .extend(param_names.iter().map(|_| AbiParam::new(types::I64)));
+        .extend(input_locals.iter().map(|_| AbiParam::new(types::I64)));
     signature.returns.push(AbiParam::new(types::I64));
 
     let entry_name = format!("{symbol_prefix}_entry");
@@ -1934,7 +1993,7 @@ where
     ctx.func.signature = signature;
     ctx.func.name = UserFuncName::user(0, entry.as_u32());
 
-    let captured_bindings = u64_bindings(&request.bindings)?;
+    let captured_bindings = u64_bindings(request.bindings())?;
     let mut bindings = captured_bindings.clone();
     let mut stats = PureFunctionStats::default();
     {
@@ -1943,10 +2002,15 @@ where
         builder.append_block_params_for_function_params(block);
         builder.switch_to_block(block);
         let params = builder.block_params(block);
-        for (name, value) in param_names.iter().zip(params.iter().copied()) {
-            bindings.insert(name.clone(), LoweredIntBinding::Value(value));
+        for (name, value) in input_locals.iter().zip(params.iter().copied()) {
+            bindings.insert(*name, LoweredIntBinding::Value(value));
         }
-        let value = lower_u64_expr(&mut builder, &bindings, &request.expr, &mut stats)?;
+        let value = lower_u64_expr(
+            &mut builder,
+            &bindings,
+            &request_helper(request)?.expr,
+            &mut stats,
+        )?;
         builder.ins().return_(&[value]);
         builder.seal_all_blocks();
         builder.finalize();
@@ -1959,23 +2023,23 @@ where
     let batch = define_u64_rows_batch_function(
         module,
         &format!("{symbol_prefix}_rows_batch"),
-        &request.expr,
+        &request_helper(request)?.expr,
         &captured_bindings,
-        &param_names,
+        &input_locals,
     )?;
     let batch_sum = define_u64_rows_batch_sum_function(
         module,
         &format!("{symbol_prefix}_rows_batch_sum"),
-        &request.expr,
+        &request_helper(request)?.expr,
         &captured_bindings,
-        &param_names,
+        &input_locals,
     )?;
 
     Ok(DefinedPureScalarInputs {
         entry,
         batch,
         batch_sum,
-        param_names,
+        input_locals,
         stats,
     })
 }
@@ -1986,20 +2050,19 @@ pub fn define_f32_with_inputs<M>(
     module: &mut M,
     symbol_prefix: &str,
     request: &PureFunctionRequest,
-    param_names: impl IntoIterator<Item = impl Into<String>>,
+    input_locals: impl IntoIterator<Item = RuntimeLocalDeclarationId>,
 ) -> Result<DefinedPureFloatInputs, CraneliftCodegenError>
 where
     M: Module,
 {
-    let param_names = param_names
+    let input_locals = input_locals
         .into_iter()
-        .map(Into::into)
-        .collect::<Vec<String>>();
-    validate_param_names(&param_names)?;
-    if param_names.len() > 4 {
+        .collect::<Vec<RuntimeLocalDeclarationId>>();
+    validate_input_locals(&input_locals)?;
+    if input_locals.len() > 4 {
         return Err(CraneliftCodegenError::UnsupportedExpr(format!(
             "Cranelift f32 helper supports at most 4 runtime inputs, got {}",
-            param_names.len()
+            input_locals.len()
         )));
     }
 
@@ -2008,7 +2071,7 @@ where
     let mut signature = module.make_signature();
     signature
         .params
-        .extend(param_names.iter().map(|_| AbiParam::new(types::F32)));
+        .extend(input_locals.iter().map(|_| AbiParam::new(types::F32)));
     signature.returns.push(AbiParam::new(types::F32));
 
     let entry_name = format!("{symbol_prefix}_entry");
@@ -2018,7 +2081,7 @@ where
     ctx.func.signature = signature;
     ctx.func.name = UserFuncName::user(0, entry.as_u32());
 
-    let captured_bindings = f32_bindings(&request.bindings)?;
+    let captured_bindings = f32_bindings(request.bindings())?;
     let mut bindings = captured_bindings.clone();
     let mut stats = PureFunctionStats::default();
     {
@@ -2027,10 +2090,15 @@ where
         builder.append_block_params_for_function_params(block);
         builder.switch_to_block(block);
         let params = builder.block_params(block);
-        for (name, value) in param_names.iter().zip(params.iter().copied()) {
-            bindings.insert(name.clone(), LoweredF32Binding::Value(value));
+        for (name, value) in input_locals.iter().zip(params.iter().copied()) {
+            bindings.insert(*name, LoweredF32Binding::Value(value));
         }
-        let value = lower_f32_expr(&mut builder, &bindings, &request.expr, &mut stats)?;
+        let value = lower_f32_expr(
+            &mut builder,
+            &bindings,
+            &request_helper(request)?.expr,
+            &mut stats,
+        )?;
         builder.ins().return_(&[value]);
         builder.seal_all_blocks();
         builder.finalize();
@@ -2043,15 +2111,15 @@ where
     let batch = define_f32_rows_batch_function(
         module,
         &format!("{symbol_prefix}_rows_batch"),
-        &request.expr,
+        &request_helper(request)?.expr,
         &captured_bindings,
-        &param_names,
+        &input_locals,
     )?;
 
     Ok(DefinedPureFloatInputs {
         entry,
         batch,
-        param_names,
+        input_locals,
         stats,
     })
 }
@@ -2062,20 +2130,19 @@ pub fn define_f64_with_inputs<M>(
     module: &mut M,
     symbol_prefix: &str,
     request: &PureFunctionRequest,
-    param_names: impl IntoIterator<Item = impl Into<String>>,
+    input_locals: impl IntoIterator<Item = RuntimeLocalDeclarationId>,
 ) -> Result<DefinedPureFloatInputs, CraneliftCodegenError>
 where
     M: Module,
 {
-    let param_names = param_names
+    let input_locals = input_locals
         .into_iter()
-        .map(Into::into)
-        .collect::<Vec<String>>();
-    validate_param_names(&param_names)?;
-    if param_names.len() > 4 {
+        .collect::<Vec<RuntimeLocalDeclarationId>>();
+    validate_input_locals(&input_locals)?;
+    if input_locals.len() > 4 {
         return Err(CraneliftCodegenError::UnsupportedExpr(format!(
             "Cranelift f64 helper supports at most 4 runtime inputs, got {}",
-            param_names.len()
+            input_locals.len()
         )));
     }
 
@@ -2084,7 +2151,7 @@ where
     let mut signature = module.make_signature();
     signature
         .params
-        .extend(param_names.iter().map(|_| AbiParam::new(types::F64)));
+        .extend(input_locals.iter().map(|_| AbiParam::new(types::F64)));
     signature.returns.push(AbiParam::new(types::F64));
 
     let entry_name = format!("{symbol_prefix}_entry");
@@ -2094,7 +2161,7 @@ where
     ctx.func.signature = signature;
     ctx.func.name = UserFuncName::user(0, entry.as_u32());
 
-    let captured_bindings = f64_bindings(&request.bindings)?;
+    let captured_bindings = f64_bindings(request.bindings())?;
     let mut bindings = captured_bindings.clone();
     let mut stats = PureFunctionStats::default();
     {
@@ -2103,10 +2170,15 @@ where
         builder.append_block_params_for_function_params(block);
         builder.switch_to_block(block);
         let params = builder.block_params(block);
-        for (name, value) in param_names.iter().zip(params.iter().copied()) {
-            bindings.insert(name.clone(), LoweredF64Binding::Value(value));
+        for (name, value) in input_locals.iter().zip(params.iter().copied()) {
+            bindings.insert(*name, LoweredF64Binding::Value(value));
         }
-        let value = lower_f64_expr(&mut builder, &bindings, &request.expr, &mut stats)?;
+        let value = lower_f64_expr(
+            &mut builder,
+            &bindings,
+            &request_helper(request)?.expr,
+            &mut stats,
+        )?;
         builder.ins().return_(&[value]);
         builder.seal_all_blocks();
         builder.finalize();
@@ -2119,15 +2191,15 @@ where
     let batch = define_f64_rows_batch_function(
         module,
         &format!("{symbol_prefix}_rows_batch"),
-        &request.expr,
+        &request_helper(request)?.expr,
         &captured_bindings,
-        &param_names,
+        &input_locals,
     )?;
 
     Ok(DefinedPureFloatInputs {
         entry,
         batch,
-        param_names,
+        input_locals,
         stats,
     })
 }
@@ -2137,7 +2209,7 @@ struct SmallIntCompiledParts {
     code: *const u8,
     batch_code: *const u8,
     batch_sum_code: *const u8,
-    param_names: Vec<String>,
+    input_locals: Vec<RuntimeLocalDeclarationId>,
     stats: PureFunctionStats,
 }
 
@@ -2145,7 +2217,7 @@ struct WideIntBatchCompiledParts {
     module: JITModule,
     batch_code: *const u8,
     batch_sum_code: *const u8,
-    param_names: Vec<String>,
+    input_locals: Vec<RuntimeLocalDeclarationId>,
     stats: PureFunctionStats,
 }
 

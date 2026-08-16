@@ -50,8 +50,8 @@ pub use windowed_runtime::{
 use arcweft_bundle::ArcweftBundle;
 use arcweft_core::plan::FlowEvent;
 use arcweft_runtime_host::{
-    BundleRunnerExecutor, BundleRunnerOptions, BundleRunnerStepMode, NativeTaskStats,
-    RuntimeExecutorStats, run_bundle_with_native_adapters,
+    BundleRunnerOptions, BundleRunnerStepMode, NativeTaskStats, RuntimeExecutorStats,
+    run_bundle_with_native_adapters,
 };
 
 #[cfg(test)]
@@ -156,7 +156,7 @@ pub struct NativePlayerRuntimeMetadata {
     pub source: String,
     pub bytecode_instructions: usize,
     pub adapter_manifests: usize,
-    pub executor: BundleRunnerExecutor,
+    pub executor: &'static str,
     pub executor_stats: RuntimeExecutorStats,
     pub native_io: NativeTaskStats,
 }
@@ -202,7 +202,6 @@ pub fn run_bundle_headless(
             steps: max_steps,
             mode: BundleRunnerStepMode::Game,
             max_ops: 64,
-            executor: BundleRunnerExecutor::AwbcProduct,
             ..BundleRunnerOptions::default()
         },
         &[desktop_native_adapter_registrar],
@@ -222,7 +221,7 @@ pub fn run_bundle_headless(
             source: runner.source,
             bytecode_instructions: runner.bytecode_instructions,
             adapter_manifests: runner.adapter_manifests,
-            executor: runner.executor,
+            executor: "awbc_product",
             executor_stats: runner.executor_stats,
             native_io: runner.native_io,
         }),
@@ -278,9 +277,10 @@ mod tests {
     #[test]
     fn bundle_headless_rejects_dialogue_without_checked_presentation_projection() {
         use arcweft_bundle::{BundleManifest, BundleRuntimeSummary};
-        use arcweft_core::bytecode::BytecodeProgram;
-        use arcweft_core::line_task::LineTaskGroup;
-        use arcweft_core::plan::{FlowOp, FlowRuntimeId, RuntimeFlow, RuntimeLineId, RuntimePlan};
+        use arcweft_core::plan::{
+            FlowRuntimeId, RuntimeDialogueContentPlanSeed, RuntimeFlowOpSeed, RuntimeFlowSeed,
+            RuntimeLineId, RuntimePlanBuilder,
+        };
         use arcweft_id::TextKey;
         use arcweft_runtime_plan::awbc_lower::AwbcLowerer;
         use arcweft_text_model::{
@@ -289,21 +289,27 @@ mod tests {
 
         let line = RuntimeLineId::from_runtime_line_value("line.opening").expect("runtime line id");
         let expected_line = line.canonical_label().clone();
-        let plan = RuntimePlan::new(
-            vec![RuntimeFlow {
-                id: FlowRuntimeId::from_runtime_target_value("flow.main").expect("flow runtime id"),
-                ops: vec![
-                    FlowOp::Dialogue {
-                        line: line.clone(),
-                        task_group: 0,
-                    },
-                    FlowOp::Return("done".to_owned()),
+        let flow = FlowRuntimeId::from_runtime_target_value("flow.main").expect("flow runtime id");
+        let mut builder = RuntimePlanBuilder::new();
+        let content = builder
+            .push_dialogue_content_seed(RuntimeDialogueContentPlanSeed {
+                line: line.clone(),
+                values: Box::default(),
+                marks: Box::default(),
+            })
+            .expect("dialogue content admits");
+        builder
+            .push_flow_seed(RuntimeFlowSeed::new(
+                flow,
+                [],
+                vec![
+                    RuntimeFlowOpSeed::Dialogue { content },
+                    RuntimeFlowOpSeed::Return("done".to_owned()),
                 ],
-            }],
-            vec![LineTaskGroup::default()],
-        )
-        .expect("runtime plan is valid")
-        .with_entries(vec![cli_main_entry()]);
+            ))
+            .expect("flow admits");
+        builder.push_entry(cli_main_entry()).expect("entry admits");
+        let plan = builder.finish().expect("runtime plan is valid");
         let source_map = source_map("bundle-display.arcw", "flow main { dialogue }");
         let source = source_map
             .primary_document()
@@ -344,15 +350,13 @@ mod tests {
                     bytecode_instructions: 2,
                     line_task_groups: 1,
                     stream_plans: 0,
-                    source_plans: 0,
                 },
             },
             source_map,
-            BytecodeProgram::from_runtime_plan(plan),
+            product_awbc,
             dialogue_content,
         )
-        .expect("standard dialogue source joins source map")
-        .with_product_awbc(product_awbc);
+        .expect("standard dialogue source joins source map");
 
         let error = run_bundle_headless(&bundle, 8)
             .expect_err("dialogue cannot run before checked presentation is bundled");
@@ -374,19 +378,22 @@ mod tests {
     #[cfg(not(feature = "dev-capture"))]
     fn return_only_bundle() -> ArcweftBundle {
         use arcweft_bundle::{BundleManifest, BundleRuntimeSummary};
-        use arcweft_core::bytecode::BytecodeProgram;
-        use arcweft_core::plan::{FlowOp, FlowRuntimeId, RuntimeFlow, RuntimePlan};
+        use arcweft_core::plan::{
+            FlowRuntimeId, RuntimeFlowOpSeed, RuntimeFlowSeed, RuntimePlanBuilder,
+        };
         use arcweft_runtime_plan::awbc_lower::AwbcLowerer;
 
-        let plan = RuntimePlan::new(
-            vec![RuntimeFlow {
-                id: FlowRuntimeId::from_runtime_target_value("flow.main").expect("flow runtime id"),
-                ops: vec![FlowOp::Return("done".to_owned())],
-            }],
-            Vec::new(),
-        )
-        .expect("runtime plan is valid")
-        .with_entries(vec![cli_main_entry()]);
+        let flow = FlowRuntimeId::from_runtime_target_value("flow.main").expect("flow runtime id");
+        let mut builder = RuntimePlanBuilder::new();
+        builder
+            .push_flow_seed(RuntimeFlowSeed::new(
+                flow,
+                [],
+                vec![RuntimeFlowOpSeed::Return("done".to_owned())],
+            ))
+            .expect("flow admits");
+        builder.push_entry(cli_main_entry()).expect("entry admits");
+        let plan = builder.finish().expect("runtime plan is valid");
         let dialogue_content = arcweft_text_model::DialogueContentCatalog::new();
         let product_awbc = AwbcLowerer::new(&plan, &dialogue_content, "return-only.arcw")
             .lower()
@@ -407,15 +414,13 @@ mod tests {
                     bytecode_instructions: 1,
                     line_task_groups: 0,
                     stream_plans: 0,
-                    source_plans: 0,
                 },
             },
             source_map("return-only.arcw", "flow main { return \"done\" }"),
-            BytecodeProgram::from_runtime_plan(plan),
+            product_awbc,
             dialogue_content,
         )
         .expect("standard dialogue source joins source map")
-        .with_product_awbc(product_awbc)
     }
 
     fn source_map(label: &str, text: &str) -> SourceMapSection {

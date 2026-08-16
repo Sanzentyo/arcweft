@@ -409,15 +409,9 @@ fn preflight(
     if trace.artifact != artifact {
         return Err(RootReplayError::ArtifactMismatch);
     }
-    let program =
-        bundle
-            .product_awbc_program()
-            .map_err(|error| RootReplayError::ArtifactInspection {
-                message: error.to_string(),
-            })?;
+    let program = bundle.product_awbc_program();
     bundle
         .product_awbc()
-        .expect("product program was just resolved")
         .verify_product_executable()
         .map_err(|error| RootReplayError::ArtifactInspection {
             message: error.to_string(),

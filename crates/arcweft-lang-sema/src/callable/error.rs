@@ -15,7 +15,7 @@ use crate::nominal::{NominalResolutionIndexError, TypeResolutionInputError};
 use super::{
     CallableAuthorityRank, CallableCandidateId, CallableFamily, CallableGroupIndex,
     CallableLookupKey, CallableMethodRole, CallableName, CallableOverloadIndex,
-    CallableParameterIndex, CallableProviderId, DataLastCallableId, FloatWidth,
+    CallableParameterIndex, CallablePath, CallableProviderId, DataLastCallableId, FloatWidth,
     ProjectCallablePath, ProjectNameBinding, StdFloatOperation,
 };
 
@@ -519,6 +519,11 @@ pub enum CallableCatalogBuildError {
     ProjectIdentityMismatch { declaration: CallableDeclarationKey },
     #[error("project callable signature has invalid source evidence at {span:?}")]
     InvalidProjectSignatureSource { span: SourceSpan },
+    #[error("extern capability signature does not match adapter host-call contract {path:?}")]
+    HostCallContractMismatch {
+        declaration: CallableDeclarationKey,
+        path: CallablePath,
+    },
     #[error("project callable signature nominal input failed at {span:?}: {reason:?}")]
     ProjectSignatureResolutionInput {
         span: SourceSpan,
@@ -567,6 +572,7 @@ impl CallableCatalogBuildError {
             | Self::MissingProjectModuleSource { .. }
             | Self::ProjectIdentityMismatch { .. }
             | Self::InvalidProjectSignatureSource { .. }
+            | Self::HostCallContractMismatch { .. }
             | Self::ProjectSignatureResolutionInput { .. }
             | Self::ProjectSignatureResolutionIndex { .. }
             | Self::InvalidProjectSignatureTypeOutcome { .. }

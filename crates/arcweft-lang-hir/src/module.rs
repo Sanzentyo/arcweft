@@ -1055,7 +1055,6 @@ impl HirModule {
             | crate::expr::HirThreadFlowItem::SourceLocale(owner)
             | crate::expr::HirThreadFlowItem::Scope(owner)
             | crate::expr::HirThreadFlowItem::Include(owner)
-            | crate::expr::HirThreadFlowItem::AwaitWith(owner)
             | crate::expr::HirThreadFlowItem::Error(owner) => {
                 self.resolve_source_owner(query, *owner)
             }
@@ -1838,7 +1837,6 @@ fn prepared_thread_flow_item_metadata<'a>(
         | crate::expr::HirThreadFlowItem::SourceLocale(owner)
         | crate::expr::HirThreadFlowItem::Scope(owner)
         | crate::expr::HirThreadFlowItem::Include(owner)
-        | crate::expr::HirThreadFlowItem::AwaitWith(owner)
         | crate::expr::HirThreadFlowItem::Error(owner) => slots.resolve_prepared(*owner).ok(),
     }
 }

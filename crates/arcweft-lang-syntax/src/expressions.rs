@@ -36,6 +36,7 @@ pub use dialogue::{
 };
 pub(crate) use pending::{PendingExpressionComponent, PendingExpressionProjection};
 
+use crate::grammar::SyntaxAwaitBranchKind;
 use crate::id_ref::{SyntaxIdRefPart, SyntaxIdRefSyntax};
 use crate::literal::{IntSuffix, SyntaxIntegerIssue, SyntaxIntegerLiteral, SyntaxLiteralSyntax};
 use crate::name::{SyntaxName, SyntaxNameIssue};
@@ -81,15 +82,15 @@ pub enum ExpressionProjection {
     PostfixBracket(SyntaxPostfixBracketProjection),
     /// A pipeline left and right operand, in that fixed order.
     Pipe([SyntaxExpressionSlot; 2]),
-    /// One prefix or postfix try operand.
-    Try {
-        operand: SyntaxExpressionSlot,
-        form: SyntaxTryForm,
-    },
-    /// One await operand and its authored propagation semantics.
+    /// One prefix try operand.
+    Try { operand: SyntaxExpressionSlot },
+    /// One await operand and, when authored, its source-ordered `with`
+    /// branches. Error propagation is represented by an enclosing `try`
+    /// expression; `Some(empty)` retains an authored but missing/empty branch
+    /// body distinct from an await without `with`.
     Await {
         operand: SyntaxExpressionSlot,
-        propagation: SyntaxAwaitPropagation,
+        branches: Option<Box<[Option<SyntaxAwaitBranchKind>]>>,
     },
     /// One shared or mutable borrow operand.
     Borrow {
@@ -185,9 +186,14 @@ impl ExpressionProjection {
             Self::Index(index) => index.has_recovery(),
             Self::DialogueContentApplication(application) => application.has_recovery(),
             Self::PostfixBracket(postfix) => postfix.has_recovery(),
-            Self::Try { operand, .. }
-            | Self::Await { operand, .. }
-            | Self::Borrow { operand, .. }
+            Self::Try { operand, .. } => operand.is_missing(),
+            Self::Await { operand, branches } => {
+                operand.is_missing()
+                    || branches.as_ref().is_some_and(|branches| {
+                        branches.is_empty() || branches.iter().any(Option::is_none)
+                    })
+            }
+            Self::Borrow { operand, .. }
             | Self::Dereference { operand }
             | Self::Unary { operand, .. } => operand.is_missing(),
             Self::Range { start, end, .. } => start
@@ -754,20 +760,6 @@ impl SyntaxExpressionSlot {
     }
 }
 
-/// Parser-selected semantic form of a try expression.
-#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
-pub enum SyntaxTryForm {
-    PrefixTry,
-    PostfixQuestion,
-}
-
-/// Parser-selected error-propagation semantics of an await expression.
-#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
-pub enum SyntaxAwaitPropagation {
-    PreserveResult,
-    PropagateError,
-}
-
 /// Parser-selected borrow semantics independent of the detached expression model.
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub enum SyntaxBorrowKind {
@@ -1165,6 +1157,10 @@ pub enum ExpressionComponentRole {
     RangeStart,
     RangeEnd,
     RangeInclusiveMarker,
+    AwaitWith,
+    AwaitBranch {
+        ordinal: u32,
+    },
     RecordPath,
     RecordField {
         field: u32,

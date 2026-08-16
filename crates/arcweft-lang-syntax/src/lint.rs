@@ -3,8 +3,7 @@ use crate::attachment::{
     AttachedAttributeArgument, AttachedAttributeValue, AttachedCharacterSurfaceAlias,
     AttachedDeclarationPublicId, AttachedFlowIdSyntax, AttachedFlowIdentity,
     AttachedInnerAttribute, AttachedItemPrefix, AttachedOuterAttribute, AttachedRequiredFlowBody,
-    AttachedRetainedName, AttachedSourceId, AttachedStyleId, SyntaxAccessError, SyntaxNodeHandle,
-    TypedItemNode,
+    AttachedRetainedName, AttachedStyleId, SyntaxAccessError, SyntaxNodeHandle, TypedItemNode,
 };
 use crate::expressions::{ExpressionComponentRole, ExpressionProjection};
 use crate::grammar::kinds::SyntaxKind;
@@ -157,7 +156,6 @@ fn lint_item_ids(
         TypedItemNode::Signal(item) => lint_retained_item("signal", item, source_attrs, lints)?,
         TypedItemNode::Metric(item) => lint_retained_item("metric", item, source_attrs, lints)?,
         TypedItemNode::Layer(item) => lint_retained_item("layer", item, source_attrs, lints)?,
-        TypedItemNode::Source(source) => lint_source(source, source_attrs, lints)?,
         TypedItemNode::Proof(proof) => lint_proof(proof, source_attrs, lints)?,
         TypedItemNode::Style(style) => lint_style(style, source_attrs, lints)?,
         _ => {}
@@ -185,49 +183,6 @@ fn lint_character(
         source_attrs,
         lints,
     );
-    Ok(())
-}
-
-fn lint_source(
-    source: &crate::attachment::AstNode<crate::attachment::node::SourceItemKind>,
-    source_attrs: &[AttachedInnerAttribute],
-    lints: &mut Vec<SyntaxLint>,
-) -> Result<(), SyntaxAccessError> {
-    let declaration = source.semantics()?;
-    let prefix = declaration.prefix();
-    if let AttachedSourceId::Authored {
-        syntax, reference, ..
-    } = declaration.id()
-        && let Some(id) = valid_id(reference)
-    {
-        let id = authored_id_text(id);
-        let name = declaration
-            .name()
-            .value()
-            .and_then(|value| value.as_ref().ok())
-            .map(crate::name::SyntaxName::as_str);
-        if let Some(name) = name {
-            lint_decl_identity(
-                "source",
-                &id,
-                name,
-                text_range(syntax.range()),
-                prefix,
-                source_attrs,
-                lints,
-            );
-        } else if let Some(name) = id.rsplit('.').next() {
-            lint_explicit_decl_id(
-                "source",
-                &id,
-                name,
-                text_range(syntax.range()),
-                prefix,
-                source_attrs,
-                lints,
-            );
-        }
-    }
     Ok(())
 }
 
@@ -976,13 +931,13 @@ mod tests {
     }
 
     #[test]
-    fn lints_redundant_flow_and_source_decl_identity() {
+    fn lints_redundant_flow_and_proof_decl_identity() {
         let codes = lint_codes(
             r"
 flow @flow.opening opening {
 }
 
-source @source.http_requests http_requests: Source<HttpRequest, HttpError> {
+proof @proof.http_requests http_requests {
 }
 ",
         );
@@ -1071,7 +1026,7 @@ proof @proof.generated generated {
 flow @flow.opening start {
 }
 
-source @source.http_requests local_requests: Source<HttpRequest, HttpError> {
+proof @proof.http_requests local_requests {
 }
 ",
         );
@@ -1127,14 +1082,14 @@ flow @flow.opening {
     }
 
     #[test]
-    fn inner_generated_marker_applies_to_source_decl_forms() {
+    fn inner_generated_marker_applies_to_proof_decl_forms() {
         let codes = lint_codes(
             r"
 #![generated(tool)]
 flow @flow.opening opening {
 }
 
-source @source.http_requests http_requests: Source<HttpRequest, HttpError> {
+proof @proof.http_requests http_requests {
 }
 ",
         );

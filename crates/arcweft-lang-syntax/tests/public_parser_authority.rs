@@ -65,11 +65,11 @@ fn whole_source_publication_retains_one_exact_document_and_snapshot() {
 fn every_public_fragment_family_attaches_without_reparse() {
     let name = SourceName::path("public-fragments.arcw");
     let snapshot = SourceSnapshotId::initial(name.clone());
-    let source = "value?\nResult<Value>\nSome(value)\nlet value = source;\n";
+    let source = "try value\nResult<Value>\nSome(value)\nlet value = source;\n";
     let document = source_document(&name, source);
     let mut database = SyntaxDatabase::try_new().expect("syntax database");
 
-    let expression_text = "value?";
+    let expression_text = "try value";
     let expression = parse_expression_fragment(expression_text, ParseOptions::default());
     assert_eq!(expression.completion(), &ParseCompletion::Complete);
     assert!(expression.diagnostics().is_empty());

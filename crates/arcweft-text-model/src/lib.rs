@@ -18,8 +18,8 @@ pub use catalog::{
 };
 pub use frame::{
     CharacterDialoguePresentationConfig, DialoguePresentationCharacter, LineDisplayFrame,
-    RichTextControlMarker, RichTextDisplayMap, RichTextHostEventMarker, RichTextRange,
-    RichTextRubyAnnotation, RichTextTextRun, RichTextTextSource,
+    ResolvedRichTextNode, RichTextControlMarker, RichTextDisplayMap, RichTextHostEventMarker,
+    RichTextRange, RichTextRubyAnnotation, RichTextTextRun, RichTextTextSource,
 };
 pub use playback::{LineDisplayFrameValidationError, LineDisplayStage, LineDisplayStageEnd};
 pub use rich_effects::{

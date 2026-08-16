@@ -48,8 +48,7 @@ use crate::final_lowering::path_projection::{
 };
 
 use super::super::{
-    await_propagation, binary_operator, borrow_kind, project_lifetime_path,
-    project_numeric_sequence, try_form, unary_operator,
+    binary_operator, borrow_kind, project_lifetime_path, project_numeric_sequence, unary_operator,
 };
 
 struct DialogueCandidateInput<'attached> {
@@ -599,26 +598,23 @@ impl StagedHirModuleTransaction<'_> {
                 };
                 (HirExprKind::Pipe(HirPipeExpr::new(*left, *right)), recovery)
             }
-            ExpressionProjection::Try { form, .. } => {
+            ExpressionProjection::Try { .. } => {
                 let (children, recovery) = self.lower_candidate_children(node, scope, cursor)?;
                 let [operand] = children.as_ref() else {
                     return Err(HirInvariantFailure::InvalidArenaCommit.into());
                 };
-                (
-                    HirExprKind::Try(HirTryExpr::new(*operand, try_form(*form))),
-                    recovery,
-                )
+                (HirExprKind::Try(HirTryExpr::new(*operand)), recovery)
             }
-            ExpressionProjection::Await { propagation, .. } => {
+            ExpressionProjection::Await { .. } => {
                 let (children, recovery) = self.lower_candidate_children(node, scope, cursor)?;
                 let [operand] = children.as_ref() else {
                     return Err(HirInvariantFailure::InvalidArenaCommit.into());
                 };
                 (
-                    HirExprKind::Await(HirAwaitExpr::new(
-                        *operand,
-                        await_propagation(*propagation),
-                    )),
+                    HirExprKind::Await(
+                        HirAwaitExpr::try_new(*operand, Box::new([]))
+                            .map_err(|_| HirInvariantFailure::InvalidArenaCommit)?,
+                    ),
                     recovery,
                 )
             }

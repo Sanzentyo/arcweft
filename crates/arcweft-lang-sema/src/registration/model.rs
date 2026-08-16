@@ -33,7 +33,7 @@ use crate::{
             AcceptedNominalId, AcceptedNominalRecord,
         },
     },
-    registration::EnvironmentPublicationItemId,
+    registration::{EnvironmentHostCallContractInput, EnvironmentPublicationItemId},
     types::{CharacterNominalType, TypeKind},
 };
 
@@ -229,6 +229,7 @@ pub struct AcceptedNominalWorld {
     base: Arc<TypeCheckEnv>,
     external_owners: ExternalOwnerRegistry,
     visibility: Arc<AcceptedNominalVisibilityIndex>,
+    host_call_contracts: Arc<[EnvironmentHostCallContractInput]>,
 }
 
 /// Stable identity of the exact nominal world used for semantic projection.
@@ -947,7 +948,33 @@ impl AcceptedNominalWorld {
                 owners,
             },
             visibility: Arc::new(visibility),
+            host_call_contracts: Arc::new([]),
         }
+    }
+
+    pub(crate) fn with_host_call_contracts(
+        mut self,
+        contracts: impl Into<Box<[EnvironmentHostCallContractInput]>>,
+    ) -> Self {
+        self.host_call_contracts = Arc::from(contracts.into());
+        self
+    }
+
+    /// Finds the highest-authority typed contract for one host-call path.
+    pub(crate) fn host_call_contract(
+        &self,
+        path: &crate::callable::CallablePath,
+    ) -> Option<&EnvironmentHostCallContractInput> {
+        self.host_call_contracts
+            .iter()
+            .filter(|contract| contract.path() == path)
+            .min_by_key(|contract| match contract.item() {
+                EnvironmentPublicationItemId::AdapterHostCall { owner, .. } => match owner {
+                    crate::callable::EnvironmentCallableOwner::Standard(_) => 0_u8,
+                    crate::callable::EnvironmentCallableOwner::Adapter(_) => 1_u8,
+                },
+                _ => 2_u8,
+            })
     }
 
     pub(crate) fn try_with_environment_bindings(

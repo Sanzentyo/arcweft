@@ -9,10 +9,9 @@ use crate::container::{BundleDigest, BundleSectionKind};
 use crate::patch::PatchCompatibility;
 use crate::{ArcweftBundle, BundleAdapterHostCall, BundleAdapterManifest, BundleManifest};
 use arcweft_core::awbc::schema::{
-    AwbcEntryKind, AwbcEntryTarget, AwbcFunctionKind, AwbcProgram, AwbcRuntimeType,
+    AwbcDigest, AwbcEntryKind, AwbcEntryTarget, AwbcFunctionKind, AwbcProgram, AwbcRuntimeType,
     AwbcVariantIdentity,
 };
-use arcweft_core::bytecode::BytecodeRuntimeLayout;
 use serde::{Deserialize, Serialize};
 use std::cmp::Ordering;
 use std::collections::{BTreeMap, BTreeSet};
@@ -27,7 +26,7 @@ use super::wire::ProductResourceEnvelope;
 const NONE_REF: u32 = u32::MAX;
 
 const FIELD_RUNTIME_ABI_VERSION: FieldId = FieldId(1);
-const FIELD_RUNTIME_LAYOUT_SIGNATURE: FieldId = FieldId(2);
+const FIELD_RUNTIME_LAYOUT_DIGEST: FieldId = FieldId(2);
 const FIELD_RUNTIME_TYPE_DECLARATIONS: FieldId = FieldId(3);
 const FIELD_RUNTIME_FUNCTION_INTERFACES: FieldId = FieldId(4);
 
@@ -50,7 +49,8 @@ pub struct RuntimeResourceBudget {
 /// Product runtime type section decoded from `RuntimeTypes`.
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
 pub struct RuntimeTypesSection {
-    pub runtime_layout: BytecodeRuntimeLayout,
+    pub abi_version: u32,
+    pub runtime_layout_digest: AwbcDigest,
     pub declarations: Vec<RuntimeTypeDeclaration>,
     pub function_interfaces: Vec<FunctionInterfaceFingerprint>,
 }
@@ -123,8 +123,6 @@ pub enum RuntimeFunctionKind {
     PureHelper,
     TraitMethod,
     StreamTransform,
-    SourceOpen,
-    SourceHandler,
     LineTask,
     Synthetic,
 }
@@ -296,17 +294,19 @@ impl VersionRange {
 
 impl RuntimeTypesSection {
     pub fn from_bundle(bundle: &ArcweftBundle) -> Result<Self, SectionCodecError> {
-        let runtime_layout = bundle.bytecode.program.runtime_layout.clone();
-        let (declarations, function_interfaces) = bundle
-            .product_awbc()
-            .map(|program| Self::from_awbc_program(program.program()))
-            .transpose()?
-            .unwrap_or_default();
-        Ok(Self::new(runtime_layout, declarations, function_interfaces))
+        let program = bundle.product_awbc_program();
+        let (declarations, function_interfaces) = Self::from_awbc_program(program)?;
+        Ok(Self::new(
+            program.header.abi_version,
+            program.header.runtime_layout_digest,
+            declarations,
+            function_interfaces,
+        ))
     }
 
     pub fn new(
-        runtime_layout: BytecodeRuntimeLayout,
+        abi_version: u32,
+        runtime_layout_digest: AwbcDigest,
         declarations: impl IntoIterator<Item = RuntimeTypeDeclaration>,
         function_interfaces: impl IntoIterator<Item = FunctionInterfaceFingerprint>,
     ) -> Self {
@@ -315,7 +315,8 @@ impl RuntimeTypesSection {
         let mut function_interfaces = function_interfaces.into_iter().collect::<Vec<_>>();
         function_interfaces.sort_by(function_interface_order);
         Self {
-            runtime_layout,
+            abi_version,
+            runtime_layout_digest,
             declarations,
             function_interfaces,
         }
@@ -342,7 +343,13 @@ impl RuntimeTypesSection {
         )?;
         let envelope = decoded.envelope;
         let abi_version = field_u32(&envelope, FIELD_RUNTIME_ABI_VERSION)?;
-        let signature = field_string(&envelope, FIELD_RUNTIME_LAYOUT_SIGNATURE)?;
+        let runtime_layout_digest = AwbcDigest(
+            field_bytes(&envelope, FIELD_RUNTIME_LAYOUT_DIGEST)?
+                .payload
+                .as_slice()
+                .try_into()
+                .map_err(|_| SectionCodecError::Truncated)?,
+        );
         let declarations = decode_type_declarations(
             &field_bytes(&envelope, FIELD_RUNTIME_TYPE_DECLARATIONS)?.payload,
             &envelope.public_ids,
@@ -354,10 +361,8 @@ impl RuntimeTypesSection {
             budget,
         )?;
         Ok(Self::new(
-            BytecodeRuntimeLayout {
-                abi_version,
-                signature,
-            },
+            abi_version,
+            runtime_layout_digest,
             declarations,
             function_interfaces,
         ))
@@ -369,6 +374,11 @@ impl RuntimeTypesSection {
     }
 
     pub fn validate_awbc(&self, program: &AwbcProgram) -> Result<(), SectionCodecError> {
+        if self.abi_version != program.header.abi_version
+            || self.runtime_layout_digest != program.header.runtime_layout_digest
+        {
+            return Err(SectionCodecError::RuntimeLayoutMismatch);
+        }
         check_budget(
             self.function_interfaces.len(),
             program.functions.len(),
@@ -388,8 +398,8 @@ impl RuntimeTypesSection {
         if self == next {
             return RuntimeResourceCompatibility::ContentOnly;
         }
-        if self.runtime_layout.abi_version != next.runtime_layout.abi_version
-            || self.runtime_layout.signature != next.runtime_layout.signature
+        if self.abi_version != next.abi_version
+            || self.runtime_layout_digest != next.runtime_layout_digest
         {
             return RuntimeResourceCompatibility::RestartRequired;
         }
@@ -412,8 +422,7 @@ impl RuntimeTypesSection {
             budget.function_interfaces,
             "function_interfaces",
         )?;
-        let strings =
-            StringTable::new(enum_symbol_names().chain([self.runtime_layout.signature.clone()]))?;
+        let strings = StringTable::new(enum_symbol_names())?;
         let public_ids = PublicIdTable::new(unique_strings(
             self.declarations
                 .iter()
@@ -429,12 +438,12 @@ impl RuntimeTypesSection {
             ResourceField::required(
                 FIELD_RUNTIME_ABI_VERSION,
                 ResourceWireType::U32,
-                self.runtime_layout.abi_version.to_le_bytes(),
+                self.abi_version.to_le_bytes(),
             ),
             ResourceField::required(
-                FIELD_RUNTIME_LAYOUT_SIGNATURE,
-                ResourceWireType::StringRef,
-                required_string_ref(&strings, &self.runtime_layout.signature)?.to_le_bytes(),
+                FIELD_RUNTIME_LAYOUT_DIGEST,
+                ResourceWireType::Bytes,
+                self.runtime_layout_digest.0,
             ),
             ResourceField::new(
                 FIELD_RUNTIME_TYPE_DECLARATIONS,
@@ -522,11 +531,7 @@ impl RuntimeTypesSection {
 
 impl EntrypointsSection {
     pub fn from_bundle(bundle: &ArcweftBundle) -> Result<Self, SectionCodecError> {
-        let entries = bundle
-            .product_awbc()
-            .map(|program| entrypoints_from_awbc(program.program(), &bundle.manifest))
-            .transpose()?
-            .unwrap_or_else(|| entrypoints_from_manifest(&bundle.manifest));
+        let entries = entrypoints_from_awbc(bundle.product_awbc_program(), &bundle.manifest)?;
         Ok(Self::new(entries))
     }
 
@@ -894,8 +899,6 @@ impl RuntimeFunctionKind {
             Self::PureHelper => 202,
             Self::TraitMethod => 203,
             Self::StreamTransform => 204,
-            Self::SourceOpen => 205,
-            Self::SourceHandler => 206,
             Self::LineTask => 207,
             Self::Synthetic => 208,
         }
@@ -907,8 +910,6 @@ impl RuntimeFunctionKind {
             202 => Some(Self::PureHelper),
             203 => Some(Self::TraitMethod),
             204 => Some(Self::StreamTransform),
-            205 => Some(Self::SourceOpen),
-            206 => Some(Self::SourceHandler),
             207 => Some(Self::LineTask),
             208 => Some(Self::Synthetic),
             _ => None,
@@ -923,8 +924,6 @@ impl From<AwbcFunctionKind> for RuntimeFunctionKind {
             AwbcFunctionKind::PureHelper => Self::PureHelper,
             AwbcFunctionKind::TraitMethod => Self::TraitMethod,
             AwbcFunctionKind::StreamTransform => Self::StreamTransform,
-            AwbcFunctionKind::SourceOpen => Self::SourceOpen,
-            AwbcFunctionKind::SourceHandler => Self::SourceHandler,
             AwbcFunctionKind::LineTask => Self::LineTask,
             AwbcFunctionKind::Synthetic => Self::Synthetic,
         }
@@ -1048,7 +1047,7 @@ impl InitialStateRequirement {
 fn runtime_types_registry() -> Result<FieldRegistry, SectionCodecError> {
     FieldRegistry::new([
         FieldSpec::required(FIELD_RUNTIME_ABI_VERSION, ResourceWireType::U32),
-        FieldSpec::required(FIELD_RUNTIME_LAYOUT_SIGNATURE, ResourceWireType::StringRef),
+        FieldSpec::required(FIELD_RUNTIME_LAYOUT_DIGEST, ResourceWireType::Bytes),
         FieldSpec::required(FIELD_RUNTIME_TYPE_DECLARATIONS, ResourceWireType::Bytes),
         FieldSpec::required(FIELD_RUNTIME_FUNCTION_INTERFACES, ResourceWireType::Bytes),
     ])
@@ -1134,21 +1133,6 @@ fn runtime_value_kind(ty: &AwbcRuntimeType) -> RuntimeValueKind {
         AwbcRuntimeType::NeedHandle => RuntimeValueKind::NeedHandle,
         AwbcRuntimeType::Dynamic => RuntimeValueKind::Dynamic,
     }
-}
-
-fn entrypoints_from_manifest(manifest: &BundleManifest) -> Vec<EntrypointDeclaration> {
-    manifest
-        .entry
-        .iter()
-        .map(|entry| EntrypointDeclaration {
-            public_id: entry.clone(),
-            exported_name: Some(entry.clone()),
-            awbc_function_index: None,
-            initial_state: InitialStateRequirement::None,
-            source_anchor: None,
-            visibility: ProductVisibility::Public,
-        })
-        .collect()
 }
 
 fn entrypoints_from_awbc(
@@ -1335,11 +1319,10 @@ fn enum_symbol_specs() -> impl Iterator<Item = (u32, &'static str)> {
         (117, "dynamic"),
         (201, "flow"),
         (202, "pure_helper"),
-        (203, "stream_transform"),
-        (204, "source_open"),
-        (205, "source_handler"),
-        (206, "line_task"),
-        (207, "synthetic"),
+        (203, "trait_method"),
+        (204, "stream_transform"),
+        (207, "line_task"),
+        (208, "synthetic"),
         (301, "public"),
         (302, "hidden"),
         (303, "test_only"),
@@ -1455,28 +1438,6 @@ fn field_u32(envelope: &ProductResourceEnvelope, id: FieldId) -> Result<u32, Sec
             .try_into()
             .map_err(|_| SectionCodecError::Truncated)?,
     ))
-}
-
-fn field_string(
-    envelope: &ProductResourceEnvelope,
-    id: FieldId,
-) -> Result<String, SectionCodecError> {
-    let field = field(envelope, id)?;
-    if field.wire_type != ResourceWireType::StringRef || field.payload.len() != 4 {
-        return Err(SectionCodecError::FieldWireTypeMismatch {
-            field: id,
-            expected: ResourceWireType::StringRef,
-            actual: field.wire_type,
-        });
-    }
-    let raw = u32::from_le_bytes(
-        field
-            .payload
-            .as_slice()
-            .try_into()
-            .map_err(|_| SectionCodecError::Truncated)?,
-    );
-    envelope.strings.get(StringId(raw)).map(str::to_owned)
 }
 
 fn encode_type_declarations(
@@ -2068,6 +2029,7 @@ mod opaque_runtime_type_tests {
             producer: AwbcStringId(0),
             semantic_identity: [81; 32],
             admission: RuntimeOpaqueTypeAdmission::ExactIdentity,
+            arguments: vec![],
         });
         let declaration =
             runtime_type_declaration(&program, &program.runtime_types[AwbcTypeId(2).index()])

@@ -21,11 +21,10 @@ use crate::resource_type_manifests::{
     resource_type_manifest_section_input_v1,
 };
 use crate::{
-    ARCWEFT_BUNDLE_SCHEMA_VERSION, ArcweftBundle, BundleAwbcProgram, BundleBytecodeEncoding,
-    BundleBytecodeProgram, BundleCodecError, BundleKind, BundleManifest,
+    ARCWEFT_BUNDLE_SCHEMA_VERSION, ArcweftBundle, BundleAwbcProgram, BundleCodecError, BundleKind,
+    BundleManifest,
 };
 use arcweft_agent_protocol::artifact::AgentArtifactManifest;
-use arcweft_core::bytecode::BytecodeProgram;
 use arcweft_resource_manifest::{ResourceManifestDecodeLimits, ResourceManifestPublicationLimits};
 use arcweft_resource_model::registry::ResourceTypeRegistry;
 use serde::{Deserialize, Deserializer, Serialize};
@@ -36,10 +35,6 @@ use source_projection::validate_view_sources;
 use style_cross_section::{validate_style_bundle_view, validate_style_section_inputs};
 
 const AWFB_SECTION_SCHEMA_VERSION: u32 = 1;
-const LEGACY_BYTECODE_SECTION_MAGIC: [u8; 8] = *b"AWBC\r\n\x1a\n";
-const LEGACY_PRODUCT_BYTECODE_MESSAGEPACK_TAG: u32 = 1;
-const LEGACY_PRODUCT_BYTECODE_COMPACT_SIDECAR_TAG: u32 = 2;
-
 #[derive(Clone, Debug, Serialize, Deserialize)]
 struct ProductManifest {
     schema_version: u32,
@@ -84,11 +79,7 @@ pub(crate) fn to_awfb_bytes(bundle: &ArcweftBundle) -> Result<Vec<u8>, BundleCod
     let sections = vec![
         required_section(
             BundleSectionKind::ProgramBytecode,
-            bundle
-                .product_awbc
-                .as_ref()
-                .ok_or(BundleCodecError::MissingProductAwbcExecutable)?
-                .encode_product_section()?,
+            bundle.product_awbc.encode_product_section()?,
         ),
         required_section(
             BundleSectionKind::RuntimeTypes,
@@ -195,7 +186,7 @@ pub(crate) fn from_awfb_slice_with_external_sections_and_resource_types(
         });
     }
     let product_awbc = required_product_awbc_bytes(&view, external_sections)
-        .and_then(|bytes| reject_structured_or_decode_awbc(&bytes))?;
+        .and_then(|bytes| BundleAwbcProgram::decode_product_section(&bytes))?;
     let runtime_types = required_runtime_types(&view, external_sections)?;
     runtime_types
         .validate_awbc(product_awbc.program())
@@ -246,14 +237,7 @@ pub(crate) fn from_awfb_slice_with_external_sections_and_resource_types(
         manifest: product_manifest.manifest,
         agent: product_manifest.agent,
         source_map,
-        bytecode: BundleBytecodeProgram {
-            encoding: BundleBytecodeEncoding::StructuredJson,
-            program: BytecodeProgram {
-                runtime_layout: runtime_types.runtime_layout,
-                ..BytecodeProgram::default()
-            },
-        },
-        product_awbc: Some(product_awbc),
+        product_awbc,
         dialogue_content: content.dialogue_content,
         character_presentation,
         resource_type_manifests,
@@ -772,8 +756,12 @@ fn required_product_awbc_bytes(
     view: &BundleView<'_>,
     external_sections: &[ExternalSectionPayload],
 ) -> Result<Vec<u8>, BundleCodecError> {
-    let descriptor = required_descriptor(view, BundleSectionKind::ProgramBytecode)
-        .map_err(|_| BundleCodecError::MissingProductAwbcExecutable)?;
+    let descriptor =
+        required_descriptor(view, BundleSectionKind::ProgramBytecode).map_err(|error| {
+            BundleCodecError::DecodeAwfb {
+                message: error.to_string(),
+            }
+        })?;
     view.decoded_section_with_external_payloads(descriptor.id(), external_sections)
         .map_err(|error| BundleCodecError::DecodeAwfb {
             message: error.to_string(),
@@ -803,25 +791,6 @@ fn required_descriptor<'a>(
         });
     }
     Ok(descriptor)
-}
-
-fn reject_structured_or_decode_awbc(bytes: &[u8]) -> Result<BundleAwbcProgram, BundleCodecError> {
-    if let Some(tag) = structured_product_container_tag(bytes) {
-        return Err(BundleCodecError::StructuredProductBytecodeUnsupported { encoding_tag: tag });
-    }
-    BundleAwbcProgram::decode_product_section(bytes)
-}
-
-fn structured_product_container_tag(bytes: &[u8]) -> Option<u32> {
-    if bytes.len() < 16 || !bytes.starts_with(&LEGACY_BYTECODE_SECTION_MAGIC) {
-        return None;
-    }
-    let tag = u32::from_le_bytes(bytes[12..16].try_into().ok()?);
-    matches!(
-        tag,
-        LEGACY_PRODUCT_BYTECODE_MESSAGEPACK_TAG | LEGACY_PRODUCT_BYTECODE_COMPACT_SIDECAR_TAG
-    )
-    .then_some(tag)
 }
 
 fn encode_json<T>(value: &T) -> Result<Vec<u8>, BundleCodecError>
@@ -902,7 +871,6 @@ mod tests {
         AwbcFunctionId, AwbcFunctionKind, AwbcProgram, AwbcSafePointKind, AwbcSignature,
         AwbcSignatureId, AwbcStringId, AwbcTableRange, AwbcTerminator,
     };
-    use arcweft_core::bytecode::BytecodeProgram;
     use arcweft_core::effect::RuntimeArtifactFingerprint;
     use arcweft_presentation::fx::{FxDefinition, FxGraph, FxId, FxNode};
     use arcweft_resource_manifest::{
@@ -966,7 +934,6 @@ mod tests {
             bytecode_bytes,
             bundle
                 .product_awbc_program()
-                .expect("product AWBC exists")
                 .encode_canonical()
                 .expect("AWBC encodes")
         );
@@ -1180,30 +1147,9 @@ mod tests {
         assert_eq!(decoded.fx_definitions, bundle.fx_definitions);
     }
 
-    #[test]
-    fn awfb_product_rejects_old_structured_product_bytecode_tag() {
-        let bundle = empty_bundle();
-        let mut old_payload = Vec::new();
-        old_payload.extend_from_slice(b"AWBC\r\n\x1a\n");
-        old_payload.extend_from_slice(&1_u32.to_le_bytes());
-        old_payload.extend_from_slice(&2_u32.to_le_bytes());
-        old_payload.extend_from_slice(&0_u32.to_le_bytes());
-        old_payload.extend_from_slice(&0_u32.to_le_bytes());
-        let (bytes, payload) = awfb_with_external_program_bytecode(&bundle, old_payload);
-
-        let error = ArcweftBundle::from_awfb_slice_with_external_sections(&bytes, &[payload])
-            .expect_err("old structured product bytecode is rejected");
-
-        assert!(matches!(
-            error,
-            BundleCodecError::StructuredProductBytecodeUnsupported { encoding_tag: 2 }
-        ));
-    }
-
     fn awfb_with_external_bytecode(bundle: &ArcweftBundle) -> (Vec<u8>, ExternalSectionPayload) {
         let bytecode_bytes = bundle
             .product_awbc_program()
-            .expect("product AWBC exists")
             .encode_canonical()
             .expect("AWBC encodes");
         awfb_with_external_program_bytecode(bundle, bytecode_bytes)
@@ -1223,7 +1169,6 @@ mod tests {
     ) -> (Vec<u8>, ExternalSectionPayload) {
         let bytecode_bytes = bundle
             .product_awbc_program()
-            .expect("product AWBC exists")
             .encode_canonical()
             .expect("AWBC encodes");
         awfb_with_external_program_bytecode_and_manifest(bundle, bytecode_bytes, manifest)
@@ -1333,15 +1278,13 @@ mod tests {
                     bytecode_instructions: 0,
                     line_task_groups: 0,
                     stream_plans: 0,
-                    source_plans: 0,
                 },
             },
             source_map("main.arcw", "flow main { return \"ok\" }"),
-            BytecodeProgram::default(),
+            minimal_awbc_program(),
             DialogueContentCatalog::new(),
         )
         .expect("standard dialogue source joins source map")
-        .with_product_awbc(minimal_awbc_program())
     }
 
     #[test]

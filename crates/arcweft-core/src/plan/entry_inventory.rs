@@ -14,7 +14,7 @@ use thiserror::Error;
 use crate::entry::{
     CallableContractHash, EntryBindingIdentity, RuntimeCallableExecutable,
     RuntimeCallableExecutableCode, RuntimeCallableId, RuntimeCallableRole, RuntimeEntryRoles,
-    RuntimeFlowExecutable, RuntimeFlowParameterMode, RuntimeStatefulEntryRoles,
+    RuntimeFlowParameterMode, RuntimeStatefulEntryRoles,
 };
 use crate::runtime_id::{RuntimeIdError, RuntimeIdFamily, RuntimeIdPath, RuntimePublicLabel};
 
@@ -282,34 +282,11 @@ pub enum RuntimePlanError {
     UnreachableFlowExecutable(String),
     #[error("entry `{entry}` route targets missing flow `{flow}`")]
     MissingRouteTarget { entry: String, flow: String },
-    #[error("runtime plan expression at {location} has an invalid nominal record: {source}")]
-    InvalidNominalRecordExpression {
-        location: String,
-        source: crate::value::RuntimeNominalRecordInitializerError,
-    },
 }
 
 impl RuntimePlan {
-    #[must_use]
-    pub fn with_entries(mut self, entries: Vec<RuntimeEntrySpec>) -> Self {
-        self.entries = entries;
-        self
-    }
-
-    #[must_use]
-    pub fn with_entry_executables(
-        mut self,
-        callables: Vec<RuntimeCallableExecutable>,
-        flows: Vec<RuntimeFlowExecutable>,
-    ) -> Self {
-        self.callable_executables = callables;
-        self.flow_executables = flows;
-        self
-    }
-
     /// Verifies the complete executable entry inventory before selection.
     pub fn verify(&self) -> Result<(), RuntimePlanError> {
-        self.validate_nominal_record_carriers()?;
         let mut flow_ids = BTreeSet::new();
         for flow in &self.flows {
             if !flow_ids.insert(flow.id.clone()) {

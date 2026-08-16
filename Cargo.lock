@@ -421,6 +421,7 @@ dependencies = [
  "arcweft-core",
  "arcweft-debug-model",
  "arcweft-render-text",
+ "arcweft-runtime-plan",
  "arcweft-source",
  "arcweft-text-model",
  "serde",

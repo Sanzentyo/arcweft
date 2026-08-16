@@ -37,7 +37,7 @@ use arcweft_compiler::{
         compile_project_with_cache,
     },
 };
-use arcweft_core::{effect::RuntimeArtifactFingerprint, plan::RuntimePlan};
+use arcweft_core::effect::RuntimeArtifactFingerprint;
 use arcweft_lang_hir::{item::HirItemFamily, project::HirProject};
 use arcweft_lang_syntax::incremental::{ParsedSource, SyntaxDatabase};
 use arcweft_project::{
@@ -229,15 +229,17 @@ struct ProjectBuildCacheInputs<'a> {
 
 const RUNTIME_PLAN_ARTIFACT_SCHEMA_VERSION: u32 = 1;
 
-/// Single current persisted runtime-plan cache payload. The artifact
-/// fingerprint is repeated inside the envelope so a cache read cannot bind a
-/// plan stored under a wrong or stale generic key.
+/// Single current persisted runtime-plan cache receipt.
+///
+/// Runtime plans are admitted in-memory graphs and have no context-free wire
+/// form. The typed artifact key is the cache identity; persisting that identity
+/// is sufficient because this receipt is used only as reuse evidence and never
+/// reconstructs an executable plan.
 #[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
 #[serde(deny_unknown_fields)]
 struct RuntimePlanArtifactEnvelope {
     schema_version: u32,
     artifact_fingerprint: RuntimeArtifactFingerprint,
-    plan: RuntimePlan,
 }
 
 struct PersistentQueryWriteThroughResult {
@@ -436,7 +438,7 @@ impl ProjectCommandReport {
                 .items()
                 .filter(|item| item.item().kind().family() == HirItemFamily::Flow)
                 .count(),
-            line_task_groups: state.compiled.runtime_plan().plan.line_task_groups.len(),
+            line_task_groups: state.compiled.runtime_plan().plan.line_task_groups().len(),
             verifier_diagnostics: state.verification.diagnostics.len(),
             obligations: state.verification.obligations.len(),
             unsafe_audits: state.verification.unsafe_audit_count(),
@@ -623,8 +625,7 @@ fn write_project_build_artifacts(
     let bundle_path = target_root.join(format!("{package}.awfb"));
     write_json_file(&metadata_path, &report)?;
     let runtime_plan_key = runtime_plan_artifact_key(&state.snapshot, &state.compiled);
-    let plan_bytes =
-        encode_runtime_plan_artifact(runtime_plan_key, &state.compiled.runtime_plan().plan)?;
+    let plan_bytes = encode_runtime_plan_artifact(runtime_plan_key)?;
     let expected_runtime_artifact =
         runtime_plan_fingerprint(runtime_plan_key).map_err(|error| {
             eprintln!("error: invalid canonical runtime-plan artifact key: {error}");
@@ -1153,10 +1154,7 @@ fn read_cached_project_bundle(
     Some(bytes)
 }
 
-fn encode_runtime_plan_artifact(
-    key: RuntimePlanArtifactKey,
-    plan: &RuntimePlan,
-) -> Result<Vec<u8>, ExitCode> {
+fn encode_runtime_plan_artifact(key: RuntimePlanArtifactKey) -> Result<Vec<u8>, ExitCode> {
     let artifact_fingerprint = runtime_plan_fingerprint(key).map_err(|error| {
         eprintln!("error: invalid canonical runtime-plan artifact key: {error}");
         ExitCode::FAILURE
@@ -1164,7 +1162,6 @@ fn encode_runtime_plan_artifact(
     serde_json::to_vec_pretty(&RuntimePlanArtifactEnvelope {
         schema_version: RUNTIME_PLAN_ARTIFACT_SCHEMA_VERSION,
         artifact_fingerprint,
-        plan: plan.clone(),
     })
     .map_err(|error| {
         eprintln!("error: failed to encode runtime-plan artifact: {error}");
@@ -1254,9 +1251,7 @@ fn store_project_build_cache_artifacts(
     let runtime_plan_key =
         runtime_plan_artifact_key(&inputs.state.snapshot, &inputs.state.compiled);
     let runtime_plan_cache_hit = match read_runtime_plan_artifact(&store, runtime_plan_key) {
-        Ok(cached) => {
-            cached.is_some_and(|cached| cached.plan == inputs.state.compiled.runtime_plan().plan)
-        }
+        Ok(cached) => cached.is_some(),
         Err(error) => {
             eprintln!(
                 "warning: ignoring invalid cached runtime plan under {}: {error}",
@@ -2212,7 +2207,7 @@ pub(super) fn compile_command(options: &CompileOptions) -> Result<(), ExitCode> 
             .items()
             .filter(|item| item.item().family() == HirItemFamily::Flow)
             .count(),
-        line_task_groups: checked.runtime_plan().plan.line_task_groups.len(),
+        line_task_groups: checked.runtime_plan().plan.line_task_groups().len(),
         verifier_diagnostics: verification.diagnostics.len(),
         obligations: verification.obligations.len(),
     };

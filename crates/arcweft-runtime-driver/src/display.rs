@@ -27,7 +27,7 @@ use arcweft_character::presentation_name::{
 use arcweft_core::effect::{LineEffectRequest, RuntimeCall};
 use arcweft_core::engine::FlowFiberStatus;
 use arcweft_core::entry::RuntimeValueDigest;
-use arcweft_core::{plan::FlowEvent, value::RuntimeBinding};
+use arcweft_core::plan::{FlowEvent, RuntimeDialogueValueBinding};
 use arcweft_dialogue::character_presentation::CharacterPresentationTargetEvidence;
 use arcweft_id::LocaleTag;
 use arcweft_layout::ScalePolicy;
@@ -97,7 +97,7 @@ pub trait DialogueRuntimeContextProvider {
     fn context_for(
         &self,
         content: &DialogueContentSpec,
-        bindings: &[RuntimeBinding],
+        values: &[RuntimeDialogueValueBinding],
     ) -> Result<RuntimeLineContext, DialogueRuntimeContextError>;
 }
 
@@ -124,7 +124,7 @@ impl DialogueRuntimeContextProvider for CatalogDialogueRuntimeContextProvider<'_
     fn context_for(
         &self,
         content: &DialogueContentSpec,
-        bindings: &[RuntimeBinding],
+        values: &[RuntimeDialogueValueBinding],
     ) -> Result<RuntimeLineContext, DialogueRuntimeContextError> {
         let generation = self.catalog.generation();
         if content.character().semantic_digest() != generation.semantic_digest()
@@ -156,7 +156,7 @@ impl DialogueRuntimeContextProvider for CatalogDialogueRuntimeContextProvider<'_
             })?;
         let presentation = content.presentation();
         Ok(RuntimeLineContext::new(
-            bindings.to_vec(),
+            values.to_vec(),
             DialoguePresentationCharacter {
                 id: character.clone(),
                 display_name: resolved.value().to_owned(),
@@ -294,7 +294,7 @@ pub fn resolve_display_frames(
     events
         .iter()
         .fold(DisplayResolution::default(), |mut resolution, event| {
-            if let FlowEvent::DialogueLine { line, bindings } = event
+            if let FlowEvent::DialogueLine { line, values } = event
                 && let Some(spec) = catalog.find(line)
             {
                 let Some(provider) = context_provider else {
@@ -303,7 +303,7 @@ pub fn resolve_display_frames(
                     );
                     return resolution;
                 };
-                let context = match provider.context_for(spec, bindings) {
+                let context = match provider.context_for(spec, values) {
                     Ok(context) => context,
                     Err(error) => {
                         resolution.diagnostics.push(error.to_string());

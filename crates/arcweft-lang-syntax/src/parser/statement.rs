@@ -9,7 +9,8 @@ use arcweft_source::SourceRange;
 
 use super::cursor::DocumentParser;
 use super::expression::{
-    emit_entity_reference, emit_expression, emit_expression_node, expression_is_call,
+    emit_colon_dialogue_application, emit_entity_reference, emit_expression, emit_expression_node,
+    expression_is_call,
 };
 use super::pattern::emit_pattern;
 use super::shadow_recovery::{
@@ -19,7 +20,6 @@ use super::shadow_recovery::{
     trimmed_end,
 };
 use crate::assertion::AssertionMode;
-use crate::expressions::SyntaxAwaitPropagation;
 use crate::grammar::assertion_projection::PendingAssertionProjection;
 use crate::grammar::event::{PendingSyntaxDiagnostic, SyntaxEvent};
 use crate::grammar::keyword_statement_projection::{
@@ -86,7 +86,7 @@ pub(super) fn emit_braced_block_until(
 
 /// Emits a braced body whose final expression is an ordinary statement.
 ///
-/// Source handlers use this boundary because they never own a value tail.
+/// Statement-oriented bodies use this boundary because they never own a value tail.
 /// The return value records whether the closing brace was authored.
 pub(super) fn emit_braced_statement_block_until(
     parser: &mut DocumentParser<'_, '_>,
@@ -251,7 +251,10 @@ fn emit_block_sequence(
             break;
         }
         let start = parser.cursor();
-        let mut terminator = find_statement_terminator(parser, start, close);
+        let thread_flow = sequence_kind == BlockSequenceKind::ThreadFlow;
+        let mut terminator = thread_flow_await_terminator(parser, start, close, thread_flow)
+            .or_else(|| thread_flow_dialogue_terminator(parser, start, close, thread_flow))
+            .or_else(|| find_statement_terminator(parser, start, close));
         let choice_expression_start = if sequence_kind == BlockSequenceKind::ThreadFlow
             && parser.current_text() == Some("choice")
         {
@@ -327,7 +330,8 @@ fn emit_thread_flow_item(
         return;
     }
 
-    let expression = emit_expression_node(parser, end, role);
+    let expression = emit_colon_dialogue_application(parser, end, role)
+        .unwrap_or_else(|| emit_expression_node(parser, end, role));
     if parser.completed_kind(expression.start_event)
         == Some(SyntaxKind::DialogueContentApplicationExpression)
     {
@@ -341,6 +345,99 @@ fn emit_thread_flow_item(
     );
     parser.set_start_role(expression.start_event + 1, SyntaxRole::Initializer);
     parser.finish();
+}
+
+fn thread_flow_await_terminator(
+    parser: &DocumentParser<'_, '_>,
+    start: usize,
+    close: usize,
+    thread_flow: bool,
+) -> Option<(usize, bool)> {
+    if !thread_flow {
+        return None;
+    }
+    let mut delimiters = Vec::<&str>::new();
+    let mut saw_await = false;
+    let mut index = start;
+    while index < close {
+        let token = parser.token_at(index)?;
+        let text = parser.text_of(token);
+        if delimiters.is_empty() {
+            if text == "await" {
+                saw_await = true;
+            } else if saw_await && text == "with" {
+                let body = first_significant(parser, index.saturating_add(1), close)?;
+                match token_text(parser, body) {
+                    Some(":") => {
+                        let interval =
+                            indentation::indented_suite_interval(parser, start, body, close);
+                        if interval.issue().is_some() {
+                            return None;
+                        }
+                        return Some((trim_trailing_newline(parser, interval.end()), false));
+                    }
+                    Some("{") => {
+                        let end =
+                            find_matching_close_before(parser, body.saturating_add(1), close, "{")?
+                                .saturating_add(1);
+                        return Some((end, false));
+                    }
+                    _ => return None,
+                }
+            } else if token.kind() == SyntaxKind::NewlineToken {
+                let continuation = first_significant(parser, index.saturating_add(1), close)?;
+                if !matches!(token_text(parser, continuation), Some("." | "with")) {
+                    return None;
+                }
+            }
+        }
+        match text {
+            "(" | "[" | "{" => delimiters.push(text),
+            ")" if delimiters.last() == Some(&"(") => {
+                delimiters.pop();
+            }
+            "]" if delimiters.last() == Some(&"[") => {
+                delimiters.pop();
+            }
+            "}" if delimiters.last() == Some(&"{") => {
+                delimiters.pop();
+            }
+            _ => {}
+        }
+        index = index.saturating_add(1);
+    }
+    None
+}
+
+fn trim_trailing_newline(parser: &DocumentParser<'_, '_>, end: usize) -> usize {
+    end.checked_sub(1)
+        .filter(|last| {
+            parser
+                .token_at(*last)
+                .is_some_and(|token| token.kind() == SyntaxKind::NewlineToken)
+        })
+        .unwrap_or(end)
+}
+
+fn thread_flow_dialogue_terminator(
+    parser: &DocumentParser<'_, '_>,
+    start: usize,
+    close: usize,
+    thread_flow: bool,
+) -> Option<(usize, bool)> {
+    if !thread_flow {
+        return None;
+    }
+    let head_end = indentation::physical_line_end(parser, start, close);
+    let colon = indentation::head_body_introducer(parser, start, head_end)
+        .filter(|colon| token_text(parser, *colon) == Some(":"))?;
+    let interval = indentation::indented_suite_interval(parser, start, colon, close);
+    if interval.issue().is_some() {
+        return None;
+    }
+    let end = interval.end();
+    let terminator = trim_trailing_newline(parser, end);
+    Some((terminator, false))
 }
 
 fn emit_unsafe_audit_trivia(parser: &mut DocumentParser<'_, '_>) {
@@ -495,10 +592,6 @@ fn emit_statement_kind(
                 PendingKeywordStatementProjection::Include,
             );
         }
-        SyntaxKind::AwaitWithStatement => {
-            let projection = emit_await_with_statement_children(parser, child_end, item_kind);
-            parser.set_keyword_statement_projection(projection_owner, projection);
-        }
         SyntaxKind::ExpressionStatement => {
             emit_item_expression(parser, child_end, SyntaxRole::Initializer, item_kind);
         }
@@ -523,15 +616,6 @@ fn classify_thread_flow_item(
         }
         Some("scope" | "{") => SyntaxKind::ScopeStatement,
         Some("include") => SyntaxKind::IncludeStatement,
-        Some("await") if top_level_operator(parser, start, end, "with").is_some() => {
-            SyntaxKind::AwaitWithStatement
-        }
-        Some("try")
-            if next_significant_text(parser, start.saturating_add(1), end) == Some("await")
-                && top_level_operator(parser, start, end, "with").is_some() =>
-        {
-            SyntaxKind::AwaitWithStatement
-        }
         _ => classify_statement(parser, end, item_kind),
     }
 }
@@ -677,50 +761,6 @@ fn emit_include_statement_children(parser: &mut DocumentParser<'_, '_>, end: usi
         parser.start(SyntaxKind::ErrorNode, SyntaxRole::Recovery(0));
         bump_until(parser, end);
         parser.finish();
-    }
-}
-
-fn emit_await_with_statement_children(
-    parser: &mut DocumentParser<'_, '_>,
-    end: usize,
-    item_kind: SyntaxKind,
-) -> PendingKeywordStatementProjection {
-    let with = top_level_operator(parser, parser.cursor(), end, "with").unwrap_or(end);
-    let mut propagation = SyntaxAwaitPropagation::PreserveResult;
-    if parser.at("try") {
-        propagation = SyntaxAwaitPropagation::PropagateError;
-        parser.bump();
-        parser.bump_trivia();
-    }
-    if parser.at("await") {
-        parser.bump();
-        if parser.at("?") {
-            propagation = SyntaxAwaitPropagation::PropagateError;
-            parser.bump();
-        }
-    }
-    parser.bump_trivia();
-    emit_expression(parser, with, SyntaxRole::Operand);
-    bump_until(parser, with);
-    if parser.at("with") {
-        parser.bump();
-        parser.bump_trivia();
-    }
-    if parser.at("{") {
-        let branches = emit_await_with_branch_block(parser, end, item_kind);
-        return PendingKeywordStatementProjection::AwaitWith {
-            propagation,
-            branches: branches.into_boxed_slice(),
-        };
-    }
-    emit_required_statement_body_recovery(
-        parser,
-        "syntax.await_with.missing_body",
-        "missing AwaitWith branch body",
-    );
-    PendingKeywordStatementProjection::AwaitWith {
-        propagation,
-        branches: Box::new([]),
     }
 }
 
@@ -873,7 +913,7 @@ fn emit_select_branch_head(
     }
 }
 
-fn emit_await_with_branch_block(
+pub(super) fn emit_await_with_branch_block(
     parser: &mut DocumentParser<'_, '_>,
     end: usize,
     item_kind: SyntaxKind,
@@ -896,7 +936,7 @@ fn emit_await_with_branch_block(
                 close,
                 ordinal,
                 "syntax.await_with.invalid_branch",
-                "AwaitWith branch requires a known head and `=>` body separator",
+                "Await branch requires a known head and `=>` body separator",
             );
             projections.push(PendingAwaitBranchProjection::recovered());
             continue;
@@ -912,7 +952,7 @@ fn emit_await_with_branch_block(
                     close,
                     ordinal,
                     "syntax.await_with.unknown_branch",
-                    "unknown AwaitWith branch kind",
+                    "unknown Await branch kind",
                 );
                 projections.push(PendingAwaitBranchProjection::recovered());
                 continue;
@@ -930,7 +970,7 @@ fn emit_await_with_branch_block(
             close,
             item_kind,
             "syntax.await_with.missing_branch_body",
-            "missing AwaitWith branch body",
+            "missing Await branch body",
             "syntax.await_with.missing_branch_close",
         );
         parser.finish();
@@ -941,9 +981,163 @@ fn emit_await_with_branch_block(
         parser,
         close,
         "syntax.await_with.missing_block_close",
-        "missing closing `}` for AwaitWith branch block",
+        "missing closing `}` for Await branch block",
     );
     projections
+}
+
+pub(super) fn emit_await_with_indented_branch_block(
+    parser: &mut DocumentParser<'_, '_>,
+    interval: indentation::IndentedSuiteInterval,
+    item_kind: SyntaxKind,
+) -> Vec<PendingAwaitBranchProjection> {
+    parser.start(SyntaxKind::Block, SyntaxRole::Body);
+    emit_implicit_delimiter(parser, SyntaxKind::OpenBraceNode, SyntaxRole::OpenDelimiter);
+    parser.bump();
+    let mut projections = Vec::new();
+    if interval.issue().is_none() {
+        bump_until(parser, interval.first_item());
+        let suite_indent = interval
+            .item_indent()
+            .expect("accepted Await suite retains its branch indentation");
+        let mut indent_cursor =
+            indentation::SuiteLineIndentCursor::new(interval.first_item(), suite_indent);
+        while parser.cursor() < interval.end() {
+            indentation::bump_trivia_before(parser, interval.end());
+            if parser.cursor() >= interval.end() {
+                break;
+            }
+            let start = parser.cursor();
+            let item_end = indentation::indented_item_end(
+                parser,
+                start,
+                interval.end(),
+                suite_indent,
+                |kind, spelling| {
+                    kind == Some(SyntaxKind::IdentifierToken)
+                        || spelling.is_some_and(|spelling| {
+                            matches!(spelling, "pending" | "ready" | "error" | "denied")
+                        })
+                },
+                |_, _| false,
+            );
+            let ordinal = u32::try_from(projections.len()).unwrap_or(u32::MAX);
+            if indent_cursor.observe(parser, start) != suite_indent {
+                emit_invalid_await_branch(
+                    parser,
+                    item_end,
+                    ordinal,
+                    "syntax.await_with.invalid_branch_indent",
+                    "Await branch indentation must match the first branch",
+                );
+                projections.push(PendingAwaitBranchProjection::recovered());
+            } else {
+                projections.push(emit_indented_await_branch(
+                    parser, item_end, item_kind, ordinal,
+                ));
+            }
+            bump_until(parser, item_end);
+        }
+        bump_until(parser, interval.end());
+    } else {
+        bump_until(parser, interval.end());
+    }
+    emit_implicit_delimiter(
+        parser,
+        SyntaxKind::CloseBraceNode,
+        SyntaxRole::CloseDelimiter,
+    );
+    parser.finish();
+    projections
+}
+
+pub(super) fn await_with_indented_suite_interval(
+    parser: &DocumentParser<'_, '_>,
+    start: usize,
+    end: usize,
+) -> indentation::IndentedSuiteInterval {
+    let owner = indentation::physical_line_owner_start(parser, start);
+    indentation::indented_suite_interval(parser, owner, parser.cursor(), end)
+}
+
+fn emit_indented_await_branch(
+    parser: &mut DocumentParser<'_, '_>,
+    end: usize,
+    item_kind: SyntaxKind,
+    ordinal: u32,
+) -> PendingAwaitBranchProjection {
+    let branch_start = parser.cursor();
+    let head_end = indentation::physical_line_end(parser, parser.cursor(), end);
+    let Some(colon) = top_level_operator(parser, parser.cursor(), head_end, ":") else {
+        emit_invalid_await_branch(
+            parser,
+            end,
+            ordinal,
+            "syntax.await_with.invalid_branch",
+            "Await indentation branch requires a typed head and `:` separator",
+        );
+        return PendingAwaitBranchProjection::recovered();
+    };
+    let kind = match parser.current_text() {
+        Some("pending") => SyntaxAwaitBranchKind::Pending,
+        Some("ready") => SyntaxAwaitBranchKind::Ready,
+        Some("error") => SyntaxAwaitBranchKind::Error,
+        Some("denied") => SyntaxAwaitBranchKind::Denied,
+        _ => {
+            emit_invalid_await_branch(
+                parser,
+                end,
+                ordinal,
+                "syntax.await_with.unknown_branch",
+                "unknown Await branch kind",
+            );
+            return PendingAwaitBranchProjection::recovered();
+        }
+    };
+    parser.start(SyntaxKind::AwaitWithBranch, SyntaxRole::Branch(ordinal));
+    parser.bump();
+    parser.bump_trivia();
+    emit_pattern(parser, colon, SyntaxRole::Pattern);
+    bump_until(parser, colon);
+    parser.bump();
+    parser.bump_trivia();
+    // The branch head itself is the indentation owner. Re-measure from its
+    // physical line rather than from the first body token.
+    let body = indentation::indented_suite_interval(parser, branch_start, colon, end);
+    if body.issue().is_some() {
+        emit_required_statement_body_recovery(
+            parser,
+            "syntax.await_with.missing_branch_body",
+            "missing indented Await branch body",
+        );
+    } else {
+        emit_indented_await_branch_body(parser, body, item_kind);
+    }
+    parser.finish();
+    PendingAwaitBranchProjection::new(kind)
+}
+
+fn emit_indented_await_branch_body(
+    parser: &mut DocumentParser<'_, '_>,
+    interval: indentation::IndentedSuiteInterval,
+    item_kind: SyntaxKind,
+) {
+    parser.start(SyntaxKind::Block, SyntaxRole::Body);
+    emit_implicit_delimiter(parser, SyntaxKind::OpenBraceNode, SyntaxRole::OpenDelimiter);
+    bump_until(parser, interval.first_item());
+    emit_block_sequence(
+        parser,
+        interval.end(),
+        item_kind,
+        BlockSequenceKind::ThreadFlow,
+    );
+    bump_until(parser, interval.end());
+    emit_implicit_delimiter(
+        parser,
+        SyntaxKind::CloseBraceNode,
+        SyntaxRole::CloseDelimiter,
+    );
+    parser.finish();
 }
 
 fn emit_invalid_await_branch(
@@ -1026,8 +1220,31 @@ fn emit_required_branch_body(
             missing_close_code,
         );
     } else {
-        emit_required_statement_body_recovery(parser, missing_code, missing_message);
+        let body_end = indentation::physical_line_end(parser, parser.cursor(), end);
+        if trimmed_end(parser, parser.cursor(), body_end) == parser.cursor() {
+            emit_required_statement_body_recovery(parser, missing_code, missing_message);
+            return;
+        }
+        parser.start(SyntaxKind::Block, SyntaxRole::Body);
+        emit_implicit_delimiter(parser, SyntaxKind::OpenBraceNode, SyntaxRole::OpenDelimiter);
+        emit_block_sequence(parser, body_end, item_kind, BlockSequenceKind::ThreadFlow);
+        bump_until(parser, body_end);
+        emit_implicit_delimiter(
+            parser,
+            SyntaxKind::CloseBraceNode,
+            SyntaxRole::CloseDelimiter,
+        );
+        parser.finish();
     }
+}
+
+fn emit_implicit_delimiter(
+    parser: &mut DocumentParser<'_, '_>,
+    kind: SyntaxKind,
+    role: SyntaxRole,
+) {
+    parser.start(kind, role);
+    parser.finish();
 }
 
 fn finish_thread_branch_block(
@@ -1054,7 +1271,7 @@ fn finish_thread_branch_block(
     parser.finish();
 }
 
-fn emit_required_statement_body_recovery(
+pub(super) fn emit_required_statement_body_recovery(
     parser: &mut DocumentParser<'_, '_>,
     code: &'static str,
     message: &'static str,
@@ -1808,7 +2025,22 @@ fn emit_match_arm(
                 thread_flow_context,
             );
         } else {
-            emit_item_expression(parser, end, SyntaxRole::Body, item_kind);
+            let statement_kind = classify_statement(parser, end, item_kind);
+            if matches!(
+                statement_kind,
+                SyntaxKind::ExpressionStatement | SyntaxKind::ErrorStatement
+            ) {
+                emit_item_expression(parser, end, SyntaxRole::Body, item_kind);
+            } else {
+                emit_statement_kind(
+                    parser,
+                    end,
+                    item_kind,
+                    SyntaxRole::Body,
+                    statement_kind,
+                    thread_flow_context,
+                );
+            }
         }
     } else {
         emit_item_expression(parser, end, SyntaxRole::Body, item_kind);

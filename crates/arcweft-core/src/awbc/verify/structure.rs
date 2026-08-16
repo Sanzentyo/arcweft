@@ -8,9 +8,9 @@ use crate::awbc::schema::{
     AWBC_ABI_VERSION, AwbcAudioCommandId, AwbcAudioValueRef, AwbcBlockId, AwbcCodeLocation,
     AwbcConstant, AwbcConstantId, AwbcEffectKind, AwbcEffectPlan, AwbcEffectSetId, AwbcEntryKind,
     AwbcEntryTarget, AwbcFrameSlotRole, AwbcFunctionId, AwbcFunctionKind, AwbcLineTaskNode,
-    AwbcLineTaskTrigger, AwbcPattern, AwbcPatternId, AwbcProgram, AwbcRouteBindingSource,
-    AwbcRuntimeType, AwbcSignatureId, AwbcStringId, AwbcTableRange, AwbcTraitMethod,
-    AwbcTraitReceiverMode, AwbcTypeId, AwbcVariantIdentity,
+    AwbcPattern, AwbcPatternId, AwbcProgram, AwbcRouteBindingSource, AwbcRuntimeType,
+    AwbcSignatureId, AwbcStringId, AwbcTableRange, AwbcTraitMethod, AwbcTraitReceiverMode,
+    AwbcTypeId, AwbcVariantIdentity,
 };
 use crate::effect::RuntimeAssertionGuardId;
 use crate::entry::{RuntimeCallableRole, RuntimeEntryRoles, RuntimeFlowParameterMode};
@@ -203,8 +203,20 @@ fn verify_runtime_types(program: &AwbcProgram) -> Result<(), AwbcVerifyError> {
                         message: error.to_string(),
                     })?;
             }
-            AwbcRuntimeType::Opaque { producer, .. } => {
+            AwbcRuntimeType::Opaque {
+                producer,
+                arguments,
+                ..
+            } => {
                 check_string(program, *producer, &at)?;
+                for argument in arguments {
+                    check_index(
+                        program.runtime_types.len(),
+                        argument.0,
+                        "runtime_types",
+                        &at,
+                    )?;
+                }
                 ty.try_opaque_owner(&program.strings).map_err(|error| {
                     AwbcVerifyError::InvalidInvariant {
                         at: at.clone(),
@@ -893,6 +905,15 @@ fn verify_runtime_tables(verifier: &Verifier<'_, '_>) -> Result<(), AwbcVerifyEr
             "signatures",
             &at,
         )?;
+        for argument in &call.arguments {
+            check_optional_string(program, argument.name, &at)?;
+        }
+        if call.arguments.len() != program.signatures[call.signature.index()].params.len() {
+            return Err(AwbcVerifyError::InvalidInvariant {
+                at,
+                message: "host-call argument descriptors must match signature arity".to_owned(),
+            });
+        }
     }
     for (index, task) in program.task_plans.iter().enumerate() {
         let at = format!("task plan {index}");
@@ -907,8 +928,26 @@ fn verify_runtime_tables(verifier: &Verifier<'_, '_>) -> Result<(), AwbcVerifyEr
             "signatures",
             &at,
         )?;
+        check_index(
+            program.runtime_types.len(),
+            task.ready_type.0,
+            "runtime_types",
+            &at,
+        )?;
+        check_index(
+            program.runtime_types.len(),
+            task.error_type.0,
+            "runtime_types",
+            &at,
+        )?;
         for argument in &task.arguments {
             check_optional_string(program, argument.name, &at)?;
+        }
+        if task.arguments.len() != program.signatures[task.signature.index()].params.len() {
+            return Err(AwbcVerifyError::InvalidInvariant {
+                at,
+                message: "task argument descriptors must match signature arity".to_owned(),
+            });
         }
         if task.many.as_ref().is_some_and(|many| many.limit == 0) {
             return Err(AwbcVerifyError::InvalidInvariant {
@@ -981,7 +1020,7 @@ fn verify_runtime_tables(verifier: &Verifier<'_, '_>) -> Result<(), AwbcVerifyEr
         }
     }
     verify_content_and_line_tables(verifier)?;
-    verify_stream_and_source_tables(verifier)?;
+    verify_stream_tables(verifier)?;
     for (index, helper) in program.pure_helpers.iter().enumerate() {
         let at = format!("pure helper {index}");
         check_string(program, helper.public_id, &at)?;
@@ -1152,7 +1191,7 @@ fn verify_effect_payload_shape(
         }
         AwbcEffectKind::Assert => {
             require_effect_static_count(effect_index, effect.kind, static_count, 4)?;
-            require_effect_parameter_count(effect_index, effect.kind, parameter_count, &[0, 2])?;
+            require_effect_parameter_count(effect_index, effect.kind, parameter_count, &[0, 1])?;
             let guard = effect_static_bytes(program, effect, 0).ok_or_else(|| {
                 malformed_effect_payload(
                     effect_index,
@@ -1344,6 +1383,16 @@ fn verify_content_and_line_tables(verifier: &Verifier<'_, '_>) -> Result<(), Awb
     for (index, content) in program.content_units.iter().enumerate() {
         let at = format!("content unit {index}");
         check_string(program, content.public_id, &at)?;
+        let mut marks = BTreeSet::new();
+        for mark in &content.marks {
+            check_string(program, mark.label, &at)?;
+            if !marks.insert(mark.id) {
+                return Err(AwbcVerifyError::InvalidInvariant {
+                    at: at.clone(),
+                    message: "content unit repeats a dialogue mark identity".to_owned(),
+                });
+            }
+        }
         check_optional_index(
             program.line_task_groups.len(),
             content.line_task_group.map(|id| id.0),
@@ -1374,21 +1423,90 @@ fn verify_content_and_line_tables(verifier: &Verifier<'_, '_>) -> Result<(), Awb
             "line_task_nodes",
             &at,
         )?;
-        for option in &group.options {
-            check_string(program, option.name, &at)?;
-            check_index(program.constants.len(), option.value.0, "constants", &at)?;
-        }
-        for function in [group.bindings, group.out].into_iter().flatten() {
-            check_index(program.functions.len(), function.0, "functions", &at)?;
+        let node_end =
+            group
+                .nodes
+                .checked_end()
+                .ok_or_else(|| AwbcVerifyError::InvalidInvariant {
+                    at: at.clone(),
+                    message: "line task node range overflows".to_owned(),
+                })?;
+        if group.nodes.start > group.root.0
+            || group.root.0 >= node_end
+            || node_end as usize > program.line_task_nodes.len()
+        {
+            return Err(AwbcVerifyError::InvalidInvariant {
+                at: at.clone(),
+                message: "line task root is outside its dense node range".to_owned(),
+            });
         }
         for handler in &group.cancel_handlers {
-            check_string(program, handler.trigger, &at)?;
             check_index(
                 program.functions.len(),
                 handler.function.0,
                 "functions",
                 &at,
             )?;
+            if program.functions[handler.function.index()].kind != AwbcFunctionKind::LineTask {
+                return Err(AwbcVerifyError::InvalidInvariant {
+                    at: at.clone(),
+                    message: "line cancellation handler must target a LineTask function".to_owned(),
+                });
+            }
+            if program
+                .signatures
+                .get(
+                    program.functions[handler.function.index()]
+                        .signature
+                        .index(),
+                )
+                .is_none_or(|signature| signature.params.len() != group.captures.len())
+            {
+                return Err(AwbcVerifyError::InvalidInvariant {
+                    at: at.clone(),
+                    message: "line cancellation handler capture signature disagrees with its group"
+                        .to_owned(),
+                });
+            }
+        }
+        for node in &program.line_task_nodes[group.nodes.start as usize..node_end as usize] {
+            let contained = |node: crate::awbc::schema::AwbcLineTaskNodeId| {
+                group.nodes.start <= node.0 && node.0 < node_end
+            };
+            let children = match node {
+                AwbcLineTaskNode::Sequence(children)
+                | AwbcLineTaskNode::Start(children)
+                | AwbcLineTaskNode::Parallel { children, .. } => Some(children.as_slice()),
+                AwbcLineTaskNode::Child { scope, .. } => {
+                    if !contained(*scope) {
+                        return Err(AwbcVerifyError::InvalidInvariant {
+                            at: at.clone(),
+                            message: "line child scope escapes its dense group node range"
+                                .to_owned(),
+                        });
+                    }
+                    None
+                }
+                AwbcLineTaskNode::Action(_) => None,
+            };
+            if children.is_some_and(|children| children.iter().any(|child| !contained(*child))) {
+                return Err(AwbcVerifyError::InvalidInvariant {
+                    at: at.clone(),
+                    message: "line node child escapes its dense group node range".to_owned(),
+                });
+            }
+            if let AwbcLineTaskNode::Action(function) = node
+                && program
+                    .functions
+                    .get(function.index())
+                    .and_then(|function| program.signatures.get(function.signature.index()))
+                    .is_none_or(|signature| signature.params.len() != group.captures.len())
+            {
+                return Err(AwbcVerifyError::InvalidInvariant {
+                    at: at.clone(),
+                    message: "line action capture signature disagrees with its group".to_owned(),
+                });
+            }
         }
     }
     for (index, node) in program.line_task_nodes.iter().enumerate() {
@@ -1409,31 +1527,50 @@ fn verify_content_and_line_tables(verifier: &Verifier<'_, '_>) -> Result<(), Awb
                 }
             }
             AwbcLineTaskNode::Child {
-                task,
-                trigger,
+                id,
+                key,
+                name,
+                trigger: _,
+                cancel,
                 scope,
                 ..
             } => {
-                check_index(program.task_plans.len(), task.0, "task_plans", &at)?;
+                check_string(program, *id, &at)?;
+                if let Some(key) = key {
+                    check_string(program, *key, &at)?;
+                }
+                if let Some(name) = name {
+                    check_string(program, *name, &at)?;
+                }
                 check_index(
                     program.line_task_nodes.len(),
                     scope.0,
                     "line_task_nodes",
                     &at,
                 )?;
-                if let AwbcLineTaskTrigger::Mark(mark) = trigger {
-                    check_string(program, *mark, &at)?;
+                if matches!(cancel, crate::awbc::schema::AwbcChildCancelPolicy::Detach) {
+                    return Err(AwbcVerifyError::InvalidInvariant {
+                        at,
+                        message: "line child detach policy has no verified ownership boundary"
+                            .to_owned(),
+                    });
                 }
             }
-            AwbcLineTaskNode::Effect(effect) => {
-                check_index(program.effect_plans.len(), effect.0, "effect_plans", &at)?;
+            AwbcLineTaskNode::Action(function) => {
+                check_index(program.functions.len(), function.0, "functions", &at)?;
+                if program.functions[function.index()].kind != AwbcFunctionKind::LineTask {
+                    return Err(AwbcVerifyError::InvalidInvariant {
+                        at,
+                        message: "line action must target a LineTask function".to_owned(),
+                    });
+                }
             }
         }
     }
     Ok(())
 }
 
-fn verify_stream_and_source_tables(verifier: &Verifier<'_, '_>) -> Result<(), AwbcVerifyError> {
+fn verify_stream_tables(verifier: &Verifier<'_, '_>) -> Result<(), AwbcVerifyError> {
     let program = verifier.program;
     for (index, stream) in program.stream_plans.iter().enumerate() {
         let at = format!("stream plan {index}");
@@ -1460,59 +1597,6 @@ fn verify_stream_and_source_tables(verifier: &Verifier<'_, '_>) -> Result<(), Aw
             return Err(AwbcVerifyError::InvalidInvariant {
                 at,
                 message: "stream transform references wrong function kind".to_owned(),
-            });
-        }
-    }
-    for (index, source) in program.source_plans.iter().enumerate() {
-        let at = format!("source plan {index}");
-        check_string(program, source.public_id, &at)?;
-        check_index(
-            program.runtime_types.len(),
-            source.item_type.0,
-            "runtime_types",
-            &at,
-        )?;
-        check_index(
-            program.runtime_types.len(),
-            source.error_type.0,
-            "runtime_types",
-            &at,
-        )?;
-        check_index(program.functions.len(), source.open.0, "functions", &at)?;
-        if program.functions[source.open.index()].kind != AwbcFunctionKind::SourceOpen {
-            return Err(AwbcVerifyError::InvalidInvariant {
-                at: at.clone(),
-                message: "source open references wrong function kind".to_owned(),
-            });
-        }
-        let mut kinds = BTreeSet::new();
-        for handler in &source.handlers {
-            check_index(
-                program.functions.len(),
-                handler.function.0,
-                "functions",
-                &at,
-            )?;
-            if let Some(pattern) = handler.pattern {
-                check_index(program.patterns.len(), pattern.0, "patterns", &at)?;
-            }
-            if program.functions[handler.function.index()].kind != AwbcFunctionKind::SourceHandler {
-                return Err(AwbcVerifyError::InvalidInvariant {
-                    at: at.clone(),
-                    message: "source handler references wrong function kind".to_owned(),
-                });
-            }
-            if !kinds.insert(handler.kind as u8) {
-                return Err(AwbcVerifyError::InvalidInvariant {
-                    at: at.clone(),
-                    message: "source plan contains duplicate handler kind".to_owned(),
-                });
-            }
-        }
-        if source.policy.max_queue == 0 {
-            return Err(AwbcVerifyError::InvalidInvariant {
-                at,
-                message: "source max_queue must be non-zero".to_owned(),
             });
         }
     }
@@ -2157,7 +2241,16 @@ fn types_compatible_inner(
         return false;
     }
     let compatible = match (expected_type, actual_type) {
-        (AwbcRuntimeType::Opaque { .. }, AwbcRuntimeType::Opaque { .. }) => expected_type
+        (
+            AwbcRuntimeType::Opaque {
+                arguments: expected_arguments,
+                ..
+            },
+            AwbcRuntimeType::Opaque {
+                arguments: actual_arguments,
+                ..
+            },
+        ) => expected_type
             .try_opaque_owner(&program.strings)
             .ok()
             .flatten()
@@ -2167,7 +2260,16 @@ fn types_compatible_inner(
                     .ok()
                     .flatten(),
             )
-            .is_some_and(|(expected, actual)| expected.accepts_owner(&actual)),
+            .is_some_and(|(expected, actual)| {
+                expected.accepts_owner(&actual)
+                    && expected_arguments.len() == actual_arguments.len()
+                    && expected_arguments
+                        .iter()
+                        .zip(actual_arguments)
+                        .all(|(expected, actual)| {
+                            types_compatible_inner(program, *expected, *actual, visiting)
+                        })
+            }),
         (
             AwbcRuntimeType::Nominal {
                 public_id: expected_public,

@@ -62,7 +62,6 @@ game.awfb
       bytecode_instructions
       line_task_groups
       stream_plans
-      source_plans
   source
     label
     text
@@ -75,7 +74,6 @@ game.awfb
       pure_helpers
       line_task_groups
       stream_plans
-      source_plans
   adapter_manifests[]
     id
     display_name

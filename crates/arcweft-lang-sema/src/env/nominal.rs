@@ -987,7 +987,6 @@ fn is_reserved_path(path: &TypePath) -> bool {
             | "Result"
             | "Need"
             | "Stream"
-            | "Source"
             | "Ref"
     )
 }

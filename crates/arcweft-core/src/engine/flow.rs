@@ -1,23 +1,43 @@
 use super::{
     AwaitState, ChoiceState, DialogueState, Engine, FlowControlStackEntry,
     FlowControlStackEntryKind, FlowCursor, FlowEvent, FlowFiberStatus, FlowOp, FlowScopeCleanup,
-    HostCallState, RuntimeBinding, RuntimeDiagnostic, RuntimeEvalError, RuntimeExpr,
-    RuntimeIterator, RuntimePattern, RuntimeStepInput, RuntimeStepOutput, RuntimeValue,
-    runtime_value_label,
+    HostCallState, RuntimeDiagnostic, RuntimeEvalError, RuntimeExpr, RuntimeIterator,
+    RuntimePattern, RuntimeStepInput, RuntimeStepOutput, RuntimeValue, runtime_value_label,
 };
 use crate::effect::LineEffectRequest;
-use crate::line_task::progress_live_line_task_group;
+use crate::line_task::{LineTaskLiveState, progress_live_line_task_group};
 use crate::pattern::pattern_binding_capacity;
 use crate::plan::{RuntimeIteratorEvidence, RuntimeIteratorWitnessExecutable, RuntimeReceiverMode};
 use crate::pure::RuntimeCallBackend;
 use crate::step::{RuntimeHostCallId, RuntimeHostCallRequest};
 use crate::task::{
-    CancelScopeId, HostTaskRequest, TaskClass, TaskId, TaskKey, TaskPolicy, TaskPriority, TaskSpec,
+    CancelScopeId, HostTaskRequest, NamedHostArg, RuntimeHostArgumentTemplate, TaskClass, TaskId,
+    TaskKey, TaskPolicy, TaskPriority, TaskSpec,
 };
 use crate::time::LogicalDuration;
+use crate::value::RuntimeLocalBinding;
 use std::sync::Arc;
 
 impl Engine {
+    pub(super) fn dialogue_marks_for_input(
+        content: &crate::plan::RuntimeDialogueContentPlan,
+        input: &RuntimeStepInput,
+    ) -> std::collections::BTreeSet<crate::runtime_id::RuntimeDialogueMarkId> {
+        input
+            .input_events
+            .iter()
+            .filter_map(|event| {
+                let name = crate::step::input_event_trigger_name(event)?;
+                let label = if name == "mark" {
+                    crate::step::input_event_text_payload(event)?
+                } else {
+                    name.strip_prefix("mark:")?
+                };
+                content.resolve_mark_label(label)
+            })
+            .collect()
+    }
+
     // Keep the opcode dispatcher contiguous while the Phase 1 runtime surface is
     // still changing; extracting each arm now would obscure grammar coverage.
     #[allow(clippy::too_many_lines)]
@@ -75,32 +95,88 @@ impl Engine {
                     Err(error) => self.fail_eval(error, output),
                 }
             }
-            FlowOp::Dialogue { line, task_group } => {
-                output.flow_events.push(FlowEvent::DialogueLine {
-                    line: line.clone(),
-                    bindings: self.fiber.env.bindings_snapshot(),
-                });
-                let Some(group) = self.plan.line_task_groups.get(task_group) else {
+            FlowOp::AssignNominalField { base, field, value } => {
+                match self.evaluate_expr_with_backend(&value, pure_backend) {
+                    Ok(value) => match self.fiber.env.set_record_field(base, field, value) {
+                        Ok(()) => self.advance_if_needed(next_op_index),
+                        Err(target) => self.fail_eval(
+                            RuntimeEvalError::InvalidFieldAssignment {
+                                field: field.zero_based().to_string(),
+                                value: runtime_value_label(&target),
+                            },
+                            output,
+                        ),
+                    },
+                    Err(error) => self.fail_eval(error, output),
+                }
+            }
+            FlowOp::Dialogue { content } => {
+                let Some(content_plan) = self.plan.dialogue_content().get(content).cloned() else {
                     self.fiber.status =
-                        FlowFiberStatus::Failed(format!("missing line task group {task_group}"));
+                        FlowFiberStatus::Failed(format!("missing dialogue content plan {content}"));
                     return;
                 };
-                let mut started_nodes = std::collections::BTreeSet::new();
-                let elapsed = LogicalDuration::default();
-                self.merge_step_output(
-                    progress_live_line_task_group(group, input, elapsed, &mut started_nodes),
-                    output,
-                    pure_backend,
-                );
-                if !self.apply_control_effects(output, pure_backend) {
-                    self.fiber.status = FlowFiberStatus::Dialogue(DialogueState {
-                        line,
-                        task_group,
-                        resume: self.resume_cursor(next_op_index),
-                        started_nodes,
-                        elapsed,
-                    });
+                let mut values = Vec::with_capacity(content_plan.values().len());
+                for site in content_plan.values() {
+                    match self.evaluate_dialogue_site(site.function(), pure_backend) {
+                        Ok(value) => values.push(crate::plan::RuntimeDialogueValueBinding {
+                            slot: site.slot(),
+                            value,
+                        }),
+                        Err(error) => {
+                            self.fail_eval(error, output);
+                            return;
+                        }
+                    }
                 }
+                let line = content_plan.line().clone();
+                output.flow_events.push(FlowEvent::DialogueLine {
+                    line: line.clone(),
+                    values: values.into_boxed_slice(),
+                });
+                let elapsed = LogicalDuration::default();
+                let task_group = content_plan.line_task_group();
+                let (captures, line_task) = match task_group {
+                    Some(task_group) => {
+                        let Some(group) = self
+                            .plan
+                            .line_task_groups()
+                            .get(task_group.index())
+                            .cloned()
+                        else {
+                            self.fiber.status = FlowFiberStatus::Failed(format!(
+                                "dialogue content references missing line task group {task_group}"
+                            ));
+                            return;
+                        };
+                        let captures = match self.capture_line_task_locals(&group) {
+                            Ok(captures) => captures,
+                            Err(message) => {
+                                self.fiber.status = FlowFiberStatus::Failed(message);
+                                return;
+                            }
+                        };
+                        let activation_id = self.next_line_task_activation;
+                        self.next_line_task_activation =
+                            self.next_line_task_activation.saturating_add(1);
+                        let mut line_task = LineTaskLiveState::new(&group, activation_id);
+                        let marks = Self::dialogue_marks_for_input(&content_plan, input);
+                        let activation =
+                            progress_live_line_task_group(&group, elapsed, &marks, &mut line_task);
+                        self.spawn_line_task_commands(&group, activation, &captures);
+                        (captures, Some(line_task))
+                    }
+                    None => (Box::<[RuntimeLocalBinding]>::default(), None),
+                };
+                self.fiber.status = FlowFiberStatus::Dialogue(DialogueState {
+                    line,
+                    content,
+                    task_group,
+                    resume: self.resume_cursor(next_op_index),
+                    captures,
+                    line_task,
+                    elapsed,
+                });
             }
             FlowOp::Choice { id, options } => {
                 output.flow_events.push(FlowEvent::ChoicePresented {
@@ -148,21 +224,16 @@ impl Engine {
                 );
             }
             FlowOp::HostCall { binding, target } => {
-                let args = match target
-                    .args
-                    .iter()
-                    .map(|arg| {
-                        self.evaluate_expr_with_backend(arg, pure_backend)
-                            .map(crate::value::RuntimePayload::from)
-                    })
-                    .collect::<Result<Vec<_>, _>>()
+                let arguments = match self.evaluate_host_call_arguments(&target.args, pure_backend)
                 {
-                    Ok(args) => args,
+                    Ok(arguments) => arguments,
                     Err(error) => {
-                        self.fail_eval(error, output);
+                        self.fiber.status = FlowFiberStatus::Failed(error.clone());
+                        output.diagnostics.push(RuntimeDiagnostic::new(error));
                         return;
                     }
                 };
+                let (args, named_args) = arguments;
                 let id = self.next_host_call_id(&target.public_id);
                 output.requests.host_calls.push(RuntimeHostCallRequest {
                     id: id.clone(),
@@ -170,6 +241,7 @@ impl Engine {
                     capability: target.capability.clone(),
                     operation: target.operation.clone(),
                     args,
+                    named_args,
                     mode: target.mode,
                     deterministic: target.deterministic,
                 });
@@ -421,7 +493,7 @@ impl Engine {
                 Err(error) => self.fail_eval(error, output),
             },
             FlowOp::Return(value) => {
-                if self.has_active_child_fibers() {
+                if self.has_joined_work() {
                     self.push_ops(vec![FlowOp::Return(value)]);
                     self.run_child_next = true;
                 } else {
@@ -429,7 +501,7 @@ impl Engine {
                 }
             }
             FlowOp::ReturnExpr(expr) => {
-                if self.has_active_child_fibers() {
+                if self.has_joined_work() {
                     self.push_ops(vec![FlowOp::ReturnExpr(expr)]);
                     self.run_child_next = true;
                 } else {
@@ -492,6 +564,47 @@ impl Engine {
                 self.advance_if_needed(next_op_index);
             }
         }
+    }
+
+    fn evaluate_host_call_arguments(
+        &mut self,
+        arguments: &[RuntimeHostArgumentTemplate],
+        pure_backend: &mut impl RuntimeCallBackend,
+    ) -> Result<
+        (
+            Vec<crate::value::RuntimePayload>,
+            Vec<NamedHostArg<crate::value::RuntimePayload>>,
+        ),
+        String,
+    > {
+        let mut positional = Vec::new();
+        let mut named = Vec::new();
+        for argument in arguments {
+            let value = self
+                .evaluate_expr_with_backend(argument.value(), pure_backend)
+                .map_err(|error| error.to_string())?;
+            match argument {
+                RuntimeHostArgumentTemplate::Positional(_) => {
+                    positional.push(crate::value::RuntimePayload::from(value));
+                }
+                RuntimeHostArgumentTemplate::Named(argument) => named.push(NamedHostArg {
+                    name: argument.name.clone(),
+                    value: crate::value::RuntimePayload::from(value),
+                }),
+                RuntimeHostArgumentTemplate::Spread(_) => {
+                    let values = crate::value::runtime_value_into_sequence_values(value).map_err(
+                        |value| {
+                            format!(
+                                "spread host argument requires a tuple or bracket sequence, found {}",
+                                runtime_value_label(&value)
+                            )
+                        },
+                    )?;
+                    positional.extend(values.into_iter().map(crate::value::RuntimePayload::from));
+                }
+            }
+        }
+        Ok((positional, named))
     }
 
     pub(super) fn bind_value(
@@ -592,7 +705,7 @@ impl Engine {
 
     pub(super) fn push_scoped_ops_with_bindings(
         &mut self,
-        bindings: Vec<RuntimeBinding>,
+        bindings: Vec<RuntimeLocalBinding>,
         ops: Vec<FlowOp>,
     ) {
         if bindings.is_empty() && ops.is_empty() {
@@ -623,7 +736,7 @@ impl Engine {
         expr: RuntimeExpr,
         guard: Option<RuntimeExpr>,
         body: &Arc<[FlowOp]>,
-        bindings: Vec<RuntimeBinding>,
+        bindings: Vec<RuntimeLocalBinding>,
     ) {
         let prefix = (!bindings.is_empty()).then_some(FlowOp::Bind(bindings));
         let tail = FlowOp::WhileLetNext {
@@ -672,26 +785,19 @@ impl Engine {
                 cleanups: Vec::new(),
             },
         });
-        match bind_simple_for_pattern(&mut self.fiber.env, &pattern, item) {
-            Some(Ok(())) => {}
-            Some(Err(error)) => {
+        match self.try_bind_pattern(&pattern, item) {
+            Ok(true) => {}
+            Ok(false) => {
+                self.fail_eval(
+                    RuntimeEvalError::PatternMismatch(runtime_value_label(item)),
+                    output,
+                );
+                return;
+            }
+            Err(error) => {
                 self.fail_eval(error, output);
                 return;
             }
-            None => match self.try_bind_pattern(&pattern, item) {
-                Ok(true) => {}
-                Ok(false) => {
-                    self.fail_eval(
-                        RuntimeEvalError::PatternMismatch(runtime_value_label(item)),
-                        output,
-                    );
-                    return;
-                }
-                Err(error) => {
-                    self.fail_eval(error, output);
-                    return;
-                }
-            },
         }
         let tail = FlowOp::ForNext {
             pattern,
@@ -710,23 +816,19 @@ impl Engine {
     ) -> Result<RuntimeIterator, RuntimeEvalError> {
         if let RuntimeIteratorEvidence::Witness(witness) = evidence {
             return match &witness.executable {
-                RuntimeIteratorWitnessExecutable::TraitCalls(calls) => {
-                    let receiver = RuntimeExpr::Value(value);
-                    let outcome = self.evaluate_trait_method_call(
-                        calls.into_iter,
+                RuntimeIteratorWitnessExecutable::TraitCalls { into_iter, next } => {
+                    let outcome = self.evaluate_trait_method_values(
+                        *into_iter,
                         RuntimeReceiverMode::Owned,
-                        &receiver,
-                        &[],
+                        value,
+                        Vec::new(),
                         pure_backend,
                     )?;
-                    Ok(RuntimeIterator::witness(outcome.value, calls.next))
+                    Ok(RuntimeIterator::witness(outcome.value, *next))
                 }
-                RuntimeIteratorWitnessExecutable::IdentityIntoIterator(calls) => {
-                    Ok(RuntimeIterator::witness(value, calls.next))
+                RuntimeIteratorWitnessExecutable::IdentityIntoIterator { next } => {
+                    Ok(RuntimeIterator::witness(value, *next))
                 }
-                RuntimeIteratorWitnessExecutable::UnsupportedMethodBodyLowering => Err(
-                    RuntimeEvalError::ExpectedBracketSeq(runtime_value_label(&value)),
-                ),
             };
         }
         RuntimeIterator::from_value_with_evidence(value, evidence)
@@ -741,12 +843,11 @@ impl Engine {
         let RuntimeIterator::Witness { state, next } = iterator else {
             return Ok(iterator.next());
         };
-        let receiver = RuntimeExpr::Value((**state).clone());
-        let outcome = self.evaluate_trait_method_call(
+        let outcome = self.evaluate_trait_method_values(
             *next,
             RuntimeReceiverMode::MutRef,
-            &receiver,
-            &[],
+            (**state).clone(),
+            Vec::new(),
             pure_backend,
         )?;
         if let Some(updated_receiver) = outcome.updated_receiver {
@@ -971,21 +1072,6 @@ impl Engine {
         while let Some(cleanup) = cleanups.pop() {
             self.emit_line_effect(cleanup.effect, output, pure_backend);
         }
-    }
-}
-
-fn bind_simple_for_pattern(
-    env: &mut crate::value::RuntimeEnv,
-    pattern: &RuntimePattern,
-    item: &RuntimeValue,
-) -> Option<Result<(), RuntimeEvalError>> {
-    match pattern {
-        RuntimePattern::Ident(name) | RuntimePattern::MutIdent(name) => {
-            env.set_ref(name, item);
-            Some(Ok(()))
-        }
-        RuntimePattern::Discard => Some(Ok(())),
-        _ => None,
     }
 }
 

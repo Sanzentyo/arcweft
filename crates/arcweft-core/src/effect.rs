@@ -11,7 +11,7 @@ pub use assertion_identity::{
     RuntimeArtifactFingerprint, RuntimeAssertionGuardId, RuntimeIdentityDecodeError,
 };
 
-#[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
+#[derive(Clone, Debug, PartialEq)]
 pub enum LineEffectRequest {
     RegisterHandle {
         key: String,
@@ -64,7 +64,7 @@ impl LineEffectRequest {
 
 /// Effect request whose value arguments are evaluated at the owning runtime
 /// instruction instead of being preserved as source-text labels.
-#[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
+#[derive(Clone, Debug, PartialEq)]
 pub enum RuntimeEffectExpr {
     Log {
         level: String,
@@ -93,13 +93,13 @@ pub enum RuntimeEffectExpr {
     Assert {
         guard: RuntimeAssertionGuardId,
         condition: RuntimeExpr,
-        message: RuntimeExpr,
+        message: String,
         profile: RuntimeAssertionProfile,
     },
 }
 
 /// Named value argument of a typed log or event effect.
-#[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
+#[derive(Clone, Debug, PartialEq)]
 pub struct RuntimeEffectFieldExpr {
     pub name: String,
     pub value: RuntimeExpr,
@@ -131,10 +131,8 @@ impl RuntimeEffectExpr {
                 .chain(fields.iter().map(|field| &field.value))
                 .collect(),
             Self::Panic(message) | Self::Fail(message) | Self::Bail(message) => vec![message],
-            Self::Ensure { condition, message }
-            | Self::Assert {
-                condition, message, ..
-            } => vec![condition, message],
+            Self::Ensure { condition, message } => vec![condition, message],
+            Self::Assert { condition, .. } => vec![condition],
         }
     }
 
@@ -159,10 +157,8 @@ impl RuntimeEffectExpr {
                 expressions
             }
             Self::Panic(message) | Self::Fail(message) | Self::Bail(message) => vec![message],
-            Self::Ensure { condition, message }
-            | Self::Assert {
-                condition, message, ..
-            } => vec![condition, message],
+            Self::Ensure { condition, message } => vec![condition, message],
+            Self::Assert { condition, .. } => vec![condition],
         }
     }
 
@@ -188,9 +184,17 @@ impl RuntimeEffectExpr {
                 condition: String::new(),
                 message: String::new(),
             },
-            Self::Assert { guard, profile, .. } => LineEffectRequest::Assert(
-                RuntimeAssertion::new(*guard, String::new(), String::new(), *profile),
-            ),
+            Self::Assert {
+                guard,
+                message,
+                profile,
+                ..
+            } => LineEffectRequest::Assert(RuntimeAssertion::new(
+                *guard,
+                String::new(),
+                message.clone(),
+                *profile,
+            )),
         }
     }
 
@@ -245,9 +249,17 @@ impl RuntimeEffectExpr {
                 condition: labels[0].clone(),
                 message: labels[1].clone(),
             },
-            Self::Assert { guard, profile, .. } => LineEffectRequest::Assert(
-                RuntimeAssertion::new(*guard, labels[0].clone(), labels[1].clone(), *profile),
-            ),
+            Self::Assert {
+                guard,
+                message,
+                profile,
+                ..
+            } => LineEffectRequest::Assert(RuntimeAssertion::new(
+                *guard,
+                labels[0].clone(),
+                message.clone(),
+                *profile,
+            )),
         }))
     }
 }

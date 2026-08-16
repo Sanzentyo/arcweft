@@ -260,9 +260,9 @@ pub activity @activity.voice_minigame VoiceMinigame {
 
 ```arcw
 let result =
-    await #<activity.voice_minigame>.run({
+    try await #<activity.voice_minigame>.run({
         mic = capture.stream(@capture.player_microphone),
-    })? with {
+    }) with {
         pending p => scene.show(@scene.voice_game_loading); progress.set(p.ratio)
     }
 ```
@@ -419,5 +419,10 @@ Capture devices, USB/HID/Serial devices, and virtual controllers all use the sam
 
 ## Device stream policy
 
-Camera and microphone frames are represented as `Source<T, E>` streams after permissioned acquisition. Arcweft does not require a general-purpose generator to model capture devices. Instead, callbacks and browser events are normalized into `SourceEvent` queues with explicit backpressure and replay policy. See [Device Streams](../02-runtime/device-streams.md).
+Camera and microphone frames are represented as typed `Stream<T, E>` values
+returned by ordinary external capability operations after permissioned
+acquisition. Arcweft does not use a source declaration or a general-purpose
+generator to open capture devices. Callbacks and browser events are normalized
+by the capability/host boundary before they reach the typed stream. See
+[Device Streams](../02-runtime/device-streams.md).
 

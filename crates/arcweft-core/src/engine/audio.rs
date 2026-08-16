@@ -70,17 +70,6 @@ impl Engine {
         }
     }
 
-    pub(super) fn merge_step_output(
-        &mut self,
-        mut other: RuntimeStepOutput,
-        output: &mut RuntimeStepOutput,
-        pure_backend: &mut impl RuntimeCallBackend,
-    ) {
-        let effects = std::mem::take(&mut other.effects.line);
-        output.merge(other);
-        self.emit_line_effects(effects, output, pure_backend);
-    }
-
     fn next_audio_dispatch(&mut self) -> AudioDispatchId {
         let dispatch = AudioDispatchId::new(self.audio_epoch, self.next_audio_sequence);
         self.next_audio_sequence = self.next_audio_sequence.saturating_add(1);

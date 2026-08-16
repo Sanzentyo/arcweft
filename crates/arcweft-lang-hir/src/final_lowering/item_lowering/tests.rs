@@ -52,7 +52,6 @@ mod predicate;
 mod proof;
 mod removed_form_recovery;
 mod resource;
-mod source;
 mod style;
 mod style_freeze;
 mod synthetic_roles;

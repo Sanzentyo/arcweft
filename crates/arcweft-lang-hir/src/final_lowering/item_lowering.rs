@@ -43,7 +43,6 @@ mod flow;
 mod host;
 mod nominal;
 mod retained;
-mod source;
 mod style;
 mod trait_impl;
 
@@ -254,9 +253,6 @@ impl StagedHirModuleTransaction<'_> {
                 }
                 TypedItemNode::Entry(node) => {
                     self.lower_entry_declaration(owner, root_scope, node)?
-                }
-                TypedItemNode::Source(node) => {
-                    self.lower_source_declaration(owner, root_scope, node)?
                 }
                 TypedItemNode::Style(node) => {
                     self.lower_style_declaration(owner, root_scope, node)?

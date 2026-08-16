@@ -744,10 +744,8 @@ fn attached_e14_through_e17_publish_exact_children_forms_and_source_roles() {
             "items[key]".into(),
             "left |> right".into(),
             "try value".into(),
-            "value?".into(),
             "await value".into(),
             "try await value".into(),
-            "await? value".into(),
         ],
     );
     let (module, owners, _) = lower_and_publish(&parsed);
@@ -768,22 +766,27 @@ fn attached_e14_through_e17_publish_exact_children_forms_and_source_roles() {
     };
     assert_ne!(pipe.left(), pipe.right());
 
-    for (ordinal, expected) in [(2, HirTryForm::PrefixTry), (3, HirTryForm::PostfixQuestion)] {
-        let HirExprKind::Try(expression) = expression(&module, owners[ordinal]).kind() else {
-            panic!("E16 try payload");
-        };
-        assert_eq!(expression.form(), expected);
-    }
-    for (ordinal, expected) in [
-        (4, HirAwaitPropagation::PreserveResult),
-        (5, HirAwaitPropagation::PropagateError),
-        (6, HirAwaitPropagation::PropagateError),
-    ] {
-        let HirExprKind::Await(expression) = expression(&module, owners[ordinal]).kind() else {
-            panic!("E17 await payload");
-        };
-        assert_eq!(expression.propagation(), expected);
-    }
+    let HirExprKind::Try(tried) = expression(&module, owners[2]).kind() else {
+        panic!("E16 try payload");
+    };
+    assert_eq!(
+        tried.operand().module(),
+        expression(&module, owners[2]).scope().module()
+    );
+    let HirExprKind::Await(awaited) = expression(&module, owners[3]).kind() else {
+        panic!("E17 await payload");
+    };
+    assert_eq!(
+        awaited.operand().module(),
+        expression(&module, owners[3]).scope().module()
+    );
+    let HirExprKind::Try(tried_await) = expression(&module, owners[4]).kind() else {
+        panic!("nested try-await payload");
+    };
+    assert_eq!(
+        tried_await.operand().module(),
+        expression(&module, owners[4]).scope().module()
+    );
 
     for (owner, roles) in [
         (

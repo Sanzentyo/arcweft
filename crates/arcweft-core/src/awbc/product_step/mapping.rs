@@ -14,7 +14,8 @@ use crate::step::{
     RuntimeDiagnostic, RuntimeDiagnosticCategory, RuntimeDiagnosticSource,
 };
 use crate::task::{
-    CancelScopeId, HostTaskRequest, NeedId, TaskId, TaskKey, TaskPolicy, TaskPriority, TaskSpec,
+    CancelScopeId, HostTaskRequest, NeedId, TaskId, TaskKey, TaskOutcomeContract, TaskPolicy,
+    TaskPriority, TaskSpec,
 };
 use crate::value::{
     RuntimePayload, RuntimeValue, runtime_value_into_sequence_values, runtime_value_label,
@@ -268,7 +269,7 @@ impl AwbcEffectKind {
                     LineEffectRequest::Assert(RuntimeAssertion::new(
                         guard,
                         runtime_value_label(condition_value),
-                        dynamic_string(1),
+                        string(2),
                         profile,
                     ))
                 }
@@ -378,13 +379,22 @@ pub(super) fn task_spec(
     }
     let request = HostTaskRequest::custom_with_named_args(capability, operation, positional, named);
     let class = request.task_class();
-    let spec = TaskSpec::new(
+    let outcome = TaskOutcomeContract::new(
+        program
+            .checked_type(record.ready_type)
+            .map_err(|error| ProductStepError::Internal(error.to_string()))?,
+        program
+            .checked_type(record.error_type)
+            .map_err(|error| ProductStepError::Internal(error.to_string()))?,
+    );
+    let spec = TaskSpec::new_with_outcome(
         task_id.clone(),
         TaskKey(task_id.0.clone()),
         class,
         TaskPriority(record.priority),
         CancelScopeId(string(record.cancel_scope)?),
         task_policy(record.policy),
+        outcome,
         request,
     );
     Ok((need, spec))

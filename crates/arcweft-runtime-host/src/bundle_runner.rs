@@ -10,13 +10,10 @@ use arcweft_core::awbc::{
     product_step::AwbcProductStepBuildError,
     schema::{AwbcEntryId, AwbcProgram},
 };
-use arcweft_core::bytecode::{
-    BytecodeProgram, BytecodeVerificationBudget, BytecodeVerificationError,
-};
 use arcweft_core::effect::{LineEffectRequest, RuntimeAssertionFailure};
 use arcweft_core::engine::{EngineStartError, FlowFiber, FlowFiberStatus, FlowStatusLabelStyle};
-use arcweft_core::executor::{ArcweftExecutionTier, ArcweftRuntimeExecutor, RuntimeExecutor};
-use arcweft_core::plan::{EntryRuntimeId, FlowEvent, RuntimeEntryTarget, RuntimePlan};
+use arcweft_core::executor::{ArcweftRuntimeExecutor, RuntimeExecutor};
+use arcweft_core::plan::{EntryRuntimeId, FlowEvent, RuntimePlanBuilder};
 use arcweft_core::step::{
     RuntimeStepBudget, RuntimeStepInput, RuntimeStepMode, RuntimeStepOptions, RuntimeStepResult,
 };
@@ -27,6 +24,7 @@ use arcweft_resource_model::registry::ResourceTypeRegistry;
 use arcweft_runtime_accelerator::{RuntimePureAccelerator, RuntimePureAcceleratorConfig};
 use std::fs;
 use std::path::{Component, Path, PathBuf};
+use std::sync::Arc;
 use std::time::{Instant, SystemTime, UNIX_EPOCH};
 use thiserror::Error;
 
@@ -76,45 +74,22 @@ pub fn run_bundle_file_with_native_adapters(
 #[derive(Clone, Debug)]
 pub struct BundleRunnerOptions {
     pub entry: Option<EntryRuntimeId>,
-    pub executor: BundleRunnerExecutor,
     pub steps: usize,
     pub mode: BundleRunnerStepMode,
     pub max_ops: usize,
     pub values: Vec<RuntimeBinding>,
     pub engine_resource_types: std::sync::Arc<ResourceTypeRegistry>,
-    pub pure_config: RuntimePureAcceleratorConfig,
 }
 
 impl Default for BundleRunnerOptions {
     fn default() -> Self {
         Self {
             entry: None,
-            executor: BundleRunnerExecutor::AwbcProduct,
             steps: 8,
             mode: BundleRunnerStepMode::Drain,
             max_ops: 32,
             values: Vec::new(),
             engine_resource_types: std::sync::Arc::new(ResourceTypeRegistry::empty()),
-            pure_config: RuntimePureAcceleratorConfig::default(),
-        }
-    }
-}
-
-/// Runtime execution tier selected by an embedding bundle runner.
-#[derive(Clone, Copy, Debug, Eq, PartialEq, serde::Serialize)]
-#[serde(rename_all = "snake_case")]
-pub enum BundleRunnerExecutor {
-    AwbcProduct,
-    BytecodeVm,
-    Aot,
-}
-
-impl From<BundleRunnerExecutor> for ArcweftExecutionTier {
-    fn from(value: BundleRunnerExecutor) -> Self {
-        match value {
-            BundleRunnerExecutor::AwbcProduct => Self::AwbcProduct,
-            BundleRunnerExecutor::BytecodeVm => Self::StructuredVm,
-            BundleRunnerExecutor::Aot => Self::StructuredAot,
         }
     }
 }
@@ -136,7 +111,6 @@ pub struct BundleRunnerReport {
     pub bytecode_instructions: usize,
     pub adapter_manifests: usize,
     pub phases: Vec<BundleRunnerPhase>,
-    pub executor: BundleRunnerExecutor,
     pub executor_stats: RuntimeExecutorStats,
     pub native_io: NativeTaskStats,
     pub steps: Vec<BundleRunnerStepSummary>,
@@ -200,12 +174,8 @@ pub enum BundleRunnerError {
         expected: String,
         actual: String,
     },
-    #[error("failed to decode bundle bytecode: {0}")]
-    DecodeBytecode(arcweft_core::plan::RuntimePlanError),
     #[error(transparent)]
     ProductAwbcRuntime(#[from] AwbcProductStepBuildError),
-    #[error("failed to verify bundle bytecode: {0}")]
-    VerifyBytecode(BytecodeVerificationError),
     #[error("failed to create bundle workspace: {0}")]
     CreateWorkspace(std::io::Error),
     #[error("failed to create bundle source directory: {0}")]
@@ -250,7 +220,6 @@ fn execute_bundle_with_native_adapters(
     let runtime_program = run_bundle_runner_phase(phases, "runtime_decode", || {
         bundle_runner_runtime_program(bundle, options)
     })?;
-    let actual_executor = runtime_program.executor_kind();
     let host_policy = bundle_host_policy(bundle);
     let trace = run_bundle_runner_phase(phases, "run", || {
         run_product_runtime_steps(
@@ -260,8 +229,6 @@ fn execute_bundle_with_native_adapters(
                 steps: options.steps,
                 mode: options.mode,
                 max_ops: options.max_ops,
-                executor: options.executor,
-                pure_config: options.pure_config,
             },
             &host_policy,
             adapter_registrars,
@@ -273,7 +240,6 @@ fn execute_bundle_with_native_adapters(
         bytecode_instructions: bundle.manifest.runtime.bytecode_instructions,
         adapter_manifests: bundle.adapter_manifests.len(),
         phases: std::mem::take(phases),
-        executor: actual_executor,
         executor_stats: trace.executor_stats,
         native_io: trace.native_io,
         steps: trace.steps,
@@ -385,77 +351,21 @@ fn run_bundle_runner_phase<T>(
     result
 }
 
-fn bundle_runner_bytecode(
-    bundle: &ArcweftBundle,
-    options: &BundleRunnerOptions,
-) -> Result<(BytecodeProgram, EntryRuntimeId), BundleRunnerError> {
-    let structured_program = &bundle.bytecode.program;
-    let program = structured_program.clone();
-    program
-        .verify(BytecodeVerificationBudget::default())
-        .map_err(BundleRunnerError::VerifyBytecode)?;
-    let plan = program
-        .into_runtime_plan()
-        .map_err(BundleRunnerError::DecodeBytecode)?;
-    let entry = selected_structured_entry(&plan, bundle, options)?;
-    Ok((BytecodeProgram::from_runtime_plan(plan), entry))
-}
-
-enum BundleRunnerRuntimeProgram {
-    Awbc {
-        program: Box<AwbcProgram>,
-        entry: AwbcEntryId,
-    },
-    Structured {
-        program: Box<BytecodeProgram>,
-        entry: EntryRuntimeId,
-        executor: BundleRunnerExecutor,
-    },
-}
-
-impl BundleRunnerRuntimeProgram {
-    const fn executor_kind(&self) -> BundleRunnerExecutor {
-        match self {
-            Self::Awbc { .. } => BundleRunnerExecutor::AwbcProduct,
-            Self::Structured { executor, .. } => *executor,
-        }
-    }
+struct BundleRunnerRuntimeProgram {
+    program: Box<AwbcProgram>,
+    entry: AwbcEntryId,
 }
 
 fn bundle_runner_runtime_program(
     bundle: &ArcweftBundle,
     options: &BundleRunnerOptions,
 ) -> Result<BundleRunnerRuntimeProgram, BundleRunnerError> {
-    if let Some(product_awbc) = bundle.product_awbc() {
-        let program = product_awbc.program().clone();
-        let entry = selected_awbc_entry(&program, bundle, options)?;
-        return Ok(BundleRunnerRuntimeProgram::Awbc {
-            program: Box::new(program),
-            entry,
-        });
-    }
-    match options.executor {
-        BundleRunnerExecutor::AwbcProduct => {
-            let program = bundle
-                .product_awbc_program()
-                .map_err(BundleRunnerError::DecodeBundle)?
-                .clone();
-            let entry = selected_awbc_entry(&program, bundle, options)?;
-            Ok(BundleRunnerRuntimeProgram::Awbc {
-                program: Box::new(program),
-                entry,
-            })
-        }
-        BundleRunnerExecutor::BytecodeVm | BundleRunnerExecutor::Aot => {
-            bundle_runner_bytecode(bundle, options).map(|(program, entry)| {
-                BundleRunnerRuntimeProgram::Structured {
-                    program: Box::new(program),
-                    entry,
-                    executor: options.executor,
-                }
-            })
-        }
-    }
+    let program = bundle.product_awbc().program().clone();
+    let entry = selected_awbc_entry(&program, bundle, options)?;
+    Ok(BundleRunnerRuntimeProgram {
+        program: Box::new(program),
+        entry,
+    })
 }
 
 fn selected_awbc_entry(
@@ -505,24 +415,6 @@ fn bundle_runner_entry(
         .transpose()
 }
 
-fn selected_structured_entry(
-    plan: &RuntimePlan,
-    bundle: &ArcweftBundle,
-    options: &BundleRunnerOptions,
-) -> Result<EntryRuntimeId, BundleRunnerError> {
-    let Some(entry) = bundle_runner_entry(bundle, options)? else {
-        return Err(BundleRunnerError::MissingEntrySelection);
-    };
-    let label = entry.public_label().into_string();
-    let Some(spec) = plan.entries.iter().find(|candidate| candidate.id == entry) else {
-        return Err(BundleRunnerError::UnknownEntry { entry: label });
-    };
-    if !matches!(spec.target, RuntimeEntryTarget::Flow(_)) {
-        return Err(BundleRunnerError::NonFlowEntry { entry: label });
-    }
-    Ok(entry)
-}
-
 fn run_product_runtime_steps(
     program: BundleRunnerRuntimeProgram,
     source_path: Option<&Path>,
@@ -531,11 +423,7 @@ fn run_product_runtime_steps(
     adapter_registrars: &[NativeAdapterRegistrar],
     values: &[RuntimeBinding],
 ) -> Result<RuntimeRunTrace, BundleRunnerError> {
-    let mut executor = RuntimeExecutorInstance::from_product_program(
-        program,
-        config.executor,
-        config.pure_config,
-    )?;
+    let mut executor = RuntimeExecutorInstance::from_awbc_product(program)?;
     run_runtime_steps_with_executor(
         &mut executor,
         NativeRunHost {
@@ -614,8 +502,6 @@ struct RuntimeStepRunConfig {
     steps: usize,
     mode: BundleRunnerStepMode,
     max_ops: usize,
-    executor: BundleRunnerExecutor,
-    pure_config: RuntimePureAcceleratorConfig,
 }
 
 struct RuntimeRunTrace {
@@ -638,45 +524,19 @@ struct RuntimeExecutorInstance {
 }
 
 impl RuntimeExecutorInstance {
-    fn from_product_program(
-        program: BundleRunnerRuntimeProgram,
-        tier: BundleRunnerExecutor,
-        pure_config: RuntimePureAcceleratorConfig,
-    ) -> Result<Self, BundleRunnerError> {
-        match program {
-            BundleRunnerRuntimeProgram::Awbc { program, entry } => Ok(Self {
-                executor: ArcweftRuntimeExecutor::from_awbc_product(*program, entry)?,
-                pure: RuntimePureAccelerator::with_config(
-                    RuntimePureAcceleratorConfig::default(),
-                    &[],
-                ),
-            }),
-            BundleRunnerRuntimeProgram::Structured { program, entry, .. } => {
-                Self::from_bytecode(*program, &entry, tier, pure_config)
-            }
-        }
-    }
-
-    fn from_bytecode(
-        bytecode: BytecodeProgram,
-        entry: &EntryRuntimeId,
-        tier: BundleRunnerExecutor,
-        pure_config: RuntimePureAcceleratorConfig,
-    ) -> Result<Self, BundleRunnerError> {
-        bytecode
-            .verify(BytecodeVerificationBudget::default())
-            .map_err(BundleRunnerError::VerifyBytecode)?;
-        let plan = bytecode
-            .clone()
-            .into_runtime_plan()
-            .map_err(BundleRunnerError::DecodeBytecode)?;
-        let pure = RuntimePureAccelerator::with_config(pure_config, &plan.pure_helpers);
-        let mut executor = ArcweftRuntimeExecutor::from_bytecode(bytecode, tier.into())
-            .map_err(BundleRunnerError::DecodeBytecode)?;
-        executor
-            .start_structured_entry(entry)
-            .map_err(BundleRunnerError::StartEntry)?;
-        Ok(Self { executor, pure })
+    fn from_awbc_product(program: BundleRunnerRuntimeProgram) -> Result<Self, BundleRunnerError> {
+        let pure_plan = Arc::new(
+            RuntimePlanBuilder::new()
+                .finish()
+                .expect("empty runtime plan is valid"),
+        );
+        Ok(Self {
+            executor: ArcweftRuntimeExecutor::from_awbc_product(*program.program, program.entry)?,
+            pure: RuntimePureAccelerator::with_config(
+                RuntimePureAcceleratorConfig::default(),
+                &pure_plan,
+            ),
+        })
     }
 
     fn step_with_root_bindings(
@@ -900,14 +760,13 @@ mod tests {
             CharacterPresentationLocalePolicyDigest, CharacterPresentationSemanticDigest,
         },
     };
-    use arcweft_core::bytecode::BytecodeProgram;
     use arcweft_core::effect::{
         RuntimeAssertion, RuntimeAssertionGuardId, RuntimeAssertionProfile,
     };
     use arcweft_core::entry::{EntryBindingIdentity, RuntimeEntryRoles};
-    use arcweft_core::line_task::LineTaskGroup;
     use arcweft_core::plan::{
-        FlowOp, FlowRuntimeId, RuntimeEntryKind, RuntimeEntrySpec, RuntimeFlow, RuntimeLineId,
+        FlowRuntimeId, RuntimeDialogueContentPlanSeed, RuntimeEntryKind, RuntimeEntrySpec,
+        RuntimeEntryTarget, RuntimeFlowOpSeed, RuntimeFlowSeed, RuntimeLineId, RuntimePlanBuilder,
     };
     use arcweft_dialogue::{
         DialoguePresentationProfile, DialogueProfileRevision,
@@ -1194,32 +1053,41 @@ mod tests {
     }
 
     fn dialogue_bundle() -> ArcweftBundle {
-        let plan = RuntimePlan::new(
-            vec![RuntimeFlow {
-                id: flow_id("flow.main"),
-                ops: vec![
-                    FlowOp::Dialogue {
-                        line: line_id("line.opening"),
-                        task_group: 0,
-                    },
-                    FlowOp::Return("done".to_owned()),
+        let line = line_id("line.opening");
+        let flow = flow_id("flow.main");
+        let mut builder = RuntimePlanBuilder::new();
+        let content = builder
+            .push_dialogue_content_seed(RuntimeDialogueContentPlanSeed {
+                line: line.clone(),
+                values: Box::default(),
+                marks: Box::default(),
+            })
+            .expect("dialogue content admits");
+        builder
+            .push_flow_seed(RuntimeFlowSeed::new(
+                flow.clone(),
+                [],
+                vec![
+                    RuntimeFlowOpSeed::Dialogue { content },
+                    RuntimeFlowOpSeed::Return("done".to_owned()),
                 ],
-            }],
-            vec![LineTaskGroup::default()],
-        )
-        .expect("runtime plan is valid")
-        .with_entries(vec![RuntimeEntrySpec {
-            id: EntryRuntimeId::from_source_entity_body("entry.main")
-                .expect("test entry ID is valid"),
-            kind: RuntimeEntryKind::Cli,
-            binding: EntryBindingIdentity::from_bytes([1; 32]),
-            target: RuntimeEntryTarget::Flow(flow_id("flow.main")),
-            roles: RuntimeEntryRoles::None,
-        }]);
+            ))
+            .expect("flow admits");
+        builder
+            .push_entry(RuntimeEntrySpec {
+                id: EntryRuntimeId::from_source_entity_body("entry.main")
+                    .expect("test entry ID is valid"),
+                kind: RuntimeEntryKind::Cli,
+                binding: EntryBindingIdentity::from_bytes([1; 32]),
+                target: RuntimeEntryTarget::Flow(flow),
+                roles: RuntimeEntryRoles::None,
+            })
+            .expect("entry admits");
+        let plan = builder.finish().expect("runtime plan is valid");
         let source_map = source_map("dialogue-bundle.arcw", "flow main { dialogue }");
         let dialogue_content =
             DialogueContentCatalog::try_from_records(vec![DialogueContentSpec::new(
-                line_id("line.opening"),
+                line,
                 TextKey::try_new("text.opening").expect("text key"),
                 RichTextDocument::new(vec![RichTextNode::Text {
                     text: "Opening".to_owned(),
@@ -1240,7 +1108,6 @@ mod tests {
             .lower()
             .expect("product AWBC lowers")
             .program;
-        let bytecode = BytecodeProgram::from_runtime_plan(plan);
         ArcweftBundle::try_new(
             BundleManifest {
                 profile_id: None,
@@ -1256,15 +1123,13 @@ mod tests {
                     bytecode_instructions: 2,
                     line_task_groups: 1,
                     stream_plans: 0,
-                    source_plans: 0,
                 },
             },
             source_map,
-            bytecode,
+            product_awbc,
             dialogue_content,
         )
         .expect("standard dialogue source joins source map")
-        .with_product_awbc(product_awbc)
     }
 
     fn source_map(label: &str, text: &str) -> SourceMapSection {

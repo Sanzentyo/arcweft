@@ -1311,23 +1311,7 @@ impl Analyzer<'_, '_, '_> {
                     if let Some(resolution) =
                         self.resolve_path_value(module, *value, expression.scope(), path)?
                     {
-                        let ty = match &resolution {
-                            CheckedValueResolution::Local(local) => {
-                                Some(self.facts.locals().get(local).cloned().ok_or(
-                                    FinalSemanticAnalysisError::LocalTypeUnavailable {
-                                        owner: *local,
-                                    },
-                                )?)
-                            }
-                            CheckedValueResolution::ProjectCallable(_) => None,
-                            _ => Some(
-                                value_resolution_type(self.catalogs.world, &resolution).ok_or(
-                                    FinalSemanticAnalysisError::ExpressionTypeUnavailable {
-                                        owner: *value,
-                                    },
-                                )?,
-                            ),
-                        };
+                        let ty = self.staged_value_resolution_type(&resolution, *value)?;
                         if let Some(ty) = ty
                             && !self.facts.expressions().contains_key(value)
                         {
@@ -1372,7 +1356,7 @@ impl Analyzer<'_, '_, '_> {
                     match full_resolution {
                         Some(resolution) => {
                             if let Some(ty) =
-                                value_resolution_type(self.catalogs.world, &resolution)
+                                self.staged_value_resolution_type(&resolution, *value_receiver)?
                                 && !self.facts.expressions().contains_key(value_receiver)
                             {
                                 self.facts.set_expression(
@@ -1394,9 +1378,10 @@ impl Analyzer<'_, '_, '_> {
                                 path,
                             )? {
                                 Some(resolution) => {
-                                    if let Some(ty) =
-                                        value_resolution_type(self.catalogs.world, &resolution)
-                                        && !self.facts.expressions().contains_key(value_receiver)
+                                    if let Some(ty) = self.staged_value_resolution_type(
+                                        &resolution,
+                                        *value_receiver,
+                                    )? && !self.facts.expressions().contains_key(value_receiver)
                                     {
                                         self.facts.set_expression(
                                             *value_receiver,
@@ -1411,6 +1396,7 @@ impl Analyzer<'_, '_, '_> {
                                 }
                                 None => {
                                     if prepare_language_free_dot_path(
+                                        self.catalogs.world.environment().callable_catalog(),
                                         *value_receiver,
                                         expression,
                                         member,
@@ -1468,6 +1454,26 @@ impl Analyzer<'_, '_, '_> {
             }
         }
         Ok(None)
+    }
+
+    fn staged_value_resolution_type(
+        &self,
+        resolution: &CheckedValueResolution,
+        expression: ExprId,
+    ) -> Result<Option<TypeKind>, FinalSemanticAnalysisError> {
+        match resolution {
+            CheckedValueResolution::Local(local) => self
+                .facts
+                .locals()
+                .get(local)
+                .cloned()
+                .map(Some)
+                .ok_or(FinalSemanticAnalysisError::LocalTypeUnavailable { owner: *local }),
+            CheckedValueResolution::ProjectCallable(_) => Ok(None),
+            _ => value_resolution_type(self.catalogs.world, resolution)
+                .map(Some)
+                .ok_or(FinalSemanticAnalysisError::ExpressionTypeUnavailable { owner: expression }),
+        }
     }
 
     fn specialize_presentation_character_candidates(

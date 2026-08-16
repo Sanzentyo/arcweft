@@ -310,7 +310,7 @@ with {
     }
 
     at(marker("surprise")) {
-        flash(color=rgb("#ffffff"), time=90ms)?
+        try flash(color=rgb("#ffffff"), time=90ms)
     }
 
     cancel on input(.BackToTitle) {
@@ -554,7 +554,7 @@ with {
     let local_flash_color = rgb("#ffffff")
 
     at(0.25s) {
-        flash(color=local_flash_color)?
+        try flash(color=local_flash_color)
     }
 }
 
@@ -641,7 +641,7 @@ Use from line plan:
 alice.say()[まぶしい……[p]]
 with {
     at(0.25s) {
-        flash(color=rgb("#ffffff"), time=90ms)?
+        try flash(color=rgb("#ffffff"), time=90ms)
     }
 }
 ```

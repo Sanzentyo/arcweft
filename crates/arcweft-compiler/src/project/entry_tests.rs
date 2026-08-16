@@ -15,9 +15,9 @@ use arcweft_bundle::ArcweftBundle;
 use arcweft_core::{
     entry::{EntryBindingIdentity, RootExecutionLimits, RuntimeCommandPolicy, RuntimeEntryRoles},
     plan::{FlowOp, FlowRuntimeId, RuntimeEntryTarget},
-    task::HostTaskArgTemplate,
+    task::RuntimeHostArgumentTemplate,
     value::{
-        RuntimeAgentCompareOp, RuntimeAgentExpr, RuntimeAgentPredicateExpr, RuntimeExpr,
+        RuntimeAgentCompareOp, RuntimeAgentExpr, RuntimeAgentPredicateExpr, RuntimeExprKind,
         RuntimeUInt, RuntimeValue,
     },
 };
@@ -187,7 +187,8 @@ fn compile_attached_project(
 fn sel_005_checks_selected_entry_identity_and_kind_before_runtime_lowering() {
     let compiled = compile_entry_project(ENTRY_SOURCE).expect("matching selection compiles");
     assert_eq!(compiled.checked_entries().len(), 1);
-    let entry = &compiled.runtime_plan().plan.entries[0];
+    let plan = &compiled.runtime_plan().plan;
+    let entry = plan.entries().first().expect("lowered entry exists");
     let RuntimeEntryRoles::Stateful(roles) = &entry.roles else {
         panic!("checked game entry must project exact stateful roles");
     };
@@ -202,12 +203,9 @@ fn sel_005_checks_selected_entry_identity_and_kind_before_runtime_lowering() {
     );
     assert_eq!(entry.binding, expected_binding);
     assert_eq!(entry.binding, roles.binding);
-    assert_eq!(compiled.runtime_plan().plan.callable_executables.len(), 2);
-    assert_eq!(compiled.runtime_plan().plan.flow_executables.len(), 1);
-    assert_eq!(
-        compiled.runtime_plan().plan.flow_executables[0].parameters[0].name,
-        "current"
-    );
+    assert_eq!(plan.callable_executables().len(), 2);
+    assert_eq!(plan.flow_executables().len(), 1);
+    assert_eq!(plan.flow_executables()[0].parameters[0].name, "current");
     assert_eq!(
         entry.target,
         RuntimeEntryTarget::Flow(roles.initial_flow.flow.clone())
@@ -264,7 +262,12 @@ entry cli @entry.cli.main {
     let (project, context) =
         entry_project(source, "entry.cli.main", ProjectEntrySelectionKind::Cli);
     let compiled = compile_attached_project(&project, &context).expect("CLI entry compiles");
-    let entry = &compiled.runtime_plan().plan.entries[0];
+    let entry = compiled
+        .runtime_plan()
+        .plan
+        .entries()
+        .first()
+        .expect("lowered entry exists");
     let checked = compiled
         .checked_entries()
         .entries()
@@ -323,7 +326,12 @@ entry agent @entry.agent.smoke {
     );
     let compiled = compile_attached_project(&project, &context)
         .expect("checked ordinary-function Agent controller compiles");
-    let entry = &compiled.runtime_plan().plan.entries[0];
+    let entry = compiled
+        .runtime_plan()
+        .plan
+        .entries()
+        .first()
+        .expect("lowered entry exists");
     let RuntimeEntryTarget::Controller(generated) = &entry.target else {
         panic!("Agent entry must target its generated controller flow");
     };
@@ -354,7 +362,7 @@ entry agent @entry.agent.smoke {
         compiled
             .runtime_plan()
             .plan
-            .flows
+            .flows()
             .iter()
             .any(|flow| { flow.id == authored })
     );
@@ -362,7 +370,7 @@ entry agent @entry.agent.smoke {
         compiled
             .runtime_plan()
             .plan
-            .flows
+            .flows()
             .iter()
             .any(|flow| { flow.id == *generated })
     );
@@ -438,13 +446,11 @@ entry agent @entry.agent.second {
         artifact.manifest.controller_id.as_str(),
         "org.arcweft.compiler-entry::second"
     );
-    assert_eq!(artifact.bundle.bytecode.program.entries.len(), 1);
-    assert_eq!(artifact.bundle.bytecode.program.flows.len(), 1);
+    let product = artifact.bundle.product_awbc().program();
+    assert_eq!(product.entries.len(), 1);
+    assert_eq!(product.flow_bindings.len(), 1);
     assert_eq!(
-        artifact.bundle.bytecode.program.entries[0]
-            .id
-            .public_label()
-            .into_string(),
+        product.entries[0].runtime_id.public_label().into_string(),
         "entry.agent.second"
     );
 }
@@ -579,7 +585,7 @@ entry agent @entry.agent.controller {
     let entry = compiled
         .runtime_plan()
         .plan
-        .entries
+        .entries()
         .iter()
         .find(|entry| entry.id.public_label().as_str() == "entry.agent.controller")
         .expect("checked Agent entry exists");
@@ -589,17 +595,17 @@ entry agent @entry.agent.controller {
     let flow = compiled
         .runtime_plan()
         .plan
-        .flows
+        .flows()
         .iter()
         .find(|flow| &flow.id == controller)
         .expect("controller flow exists");
 
+    let Some(FlowOp::Let { expr, .. }) = flow.ops.first() else {
+        panic!("controller must begin by binding its typed local");
+    };
     assert!(matches!(
-        flow.ops.first(),
-        Some(FlowOp::Let {
-            expr: RuntimeExpr::Value(RuntimeValue::UInt(RuntimeUInt::U32(1))),
-            ..
-        })
+        expr.kind(),
+        RuntimeExprKind::Value(RuntimeValue::UInt(RuntimeUInt::U32(1)))
     ));
 }
 
@@ -679,15 +685,15 @@ entry agent @entry.agent.controller {
     let controller = compiled
         .runtime_plan()
         .plan
-        .flows
+        .flows()
         .iter()
         .find(|flow| flow.id.canonical_label().contains("controller"))
         .expect("selected controller flow");
-    let Some(FlowOp::Await { target, .. }) = controller.ops.first() else {
-        panic!("Agent observe call must lower to one typed host task");
+    let Some(FlowOp::HostCall { target, .. }) = controller.ops.first() else {
+        panic!("Agent observe call must lower to one typed direct host call");
     };
-    assert_eq!(target.request.capability.0, "agent");
-    assert_eq!(target.request.operation, "observe");
+    assert_eq!(target.capability, "agent");
+    assert_eq!(target.operation, "observe");
 }
 
 #[test]
@@ -721,30 +727,33 @@ entry agent @entry.agent.controller {
     let controller = compiled
         .runtime_plan()
         .plan
-        .flows
+        .flows()
         .iter()
         .find(|flow| flow.id.canonical_label().contains("controller"))
         .expect("selected controller flow");
-    let Some(FlowOp::Await { target, .. }) = controller.ops.first() else {
-        panic!("Agent wait call must lower to one typed host task");
+    let Some(FlowOp::HostCall { target, .. }) = controller.ops.first() else {
+        panic!("Agent wait call must lower to one typed direct host call");
     };
-    assert_eq!(target.request.operation, "wait");
-    let Some(HostTaskArgTemplate::Positional(RuntimeExpr::Agent(RuntimeAgentExpr::Predicate(
-        RuntimeAgentPredicateExpr::All { predicates },
-    )))) = target.request.args.first()
+    assert_eq!(target.operation, "wait");
+    let Some(RuntimeHostArgumentTemplate::Positional(predicate)) = target.args.first() else {
+        panic!("wait predicate must remain a typed Agent expression");
+    };
+    let RuntimeExprKind::Agent(RuntimeAgentExpr::Predicate(RuntimeAgentPredicateExpr::All {
+        predicates,
+    })) = predicate.kind()
     else {
         panic!("wait predicate must remain a typed Agent expression");
     };
-    let RuntimeExpr::Agent(RuntimeAgentExpr::Predicate(RuntimeAgentPredicateExpr::Not {
+    let RuntimeExprKind::Agent(RuntimeAgentExpr::Predicate(RuntimeAgentPredicateExpr::Not {
         predicate: compare,
-    })) = &predicates[1]
+    })) = predicates[1].kind()
     else {
         panic!("second predicate must remain the typed Agent not expression");
     };
-    let RuntimeExpr::Agent(RuntimeAgentExpr::Predicate(RuntimeAgentPredicateExpr::Compare {
+    let RuntimeExprKind::Agent(RuntimeAgentExpr::Predicate(RuntimeAgentPredicateExpr::Compare {
         op,
         ..
-    })) = compare.as_ref()
+    })) = compare.kind()
     else {
         panic!("probe comparison must remain a typed Agent expression");
     };
@@ -775,22 +784,23 @@ entry agent @entry.agent.controller {
     let controller = compiled
         .runtime_plan()
         .plan
-        .flows
+        .flows()
         .iter()
         .find(|flow| flow.id.canonical_label().contains("controller"))
         .expect("selected controller flow");
-    let Some(FlowOp::Await { target, .. }) = controller.ops.first() else {
-        panic!("Agent wait call must lower to one typed host task");
+    let Some(FlowOp::HostCall { target, .. }) = controller.ops.first() else {
+        panic!("Agent wait call must lower to one typed direct host call");
+    };
+    let Some(RuntimeHostArgumentTemplate::Positional(predicate)) = target.args.first() else {
+        panic!("diagnostics wait must have one predicate argument");
     };
     assert!(matches!(
-        target.request.args.first(),
-        Some(HostTaskArgTemplate::Positional(RuntimeExpr::Agent(
-            RuntimeAgentExpr::Predicate(RuntimeAgentPredicateExpr::DiagnosticsHasError {
-                diagnostics,
-            })
-        ))) if matches!(
-            diagnostics.as_ref(),
-            RuntimeExpr::Agent(RuntimeAgentExpr::Probe(
+        predicate.kind(),
+        RuntimeExprKind::Agent(RuntimeAgentExpr::Predicate(
+            RuntimeAgentPredicateExpr::DiagnosticsHasError { diagnostics }
+        )) if matches!(
+            diagnostics.kind(),
+            RuntimeExprKind::Agent(RuntimeAgentExpr::Probe(
                 arcweft_core::value::RuntimeAgentProbeExpr::Diagnostics
             ))
         )
@@ -843,7 +853,7 @@ entry agent @entry.agent.second {
         let entry = compiled
             .runtime_plan()
             .plan
-            .entries
+            .entries()
             .iter()
             .find(|entry| entry.id.public_label().as_str() == entry_id)
             .expect("checked Agent entry exists");
@@ -853,16 +863,16 @@ entry agent @entry.agent.second {
         let flow = compiled
             .runtime_plan()
             .plan
-            .flows
+            .flows()
             .iter()
             .find(|flow| &flow.id == controller)
             .expect("controller flow exists");
+        let Some(FlowOp::Let { expr, .. }) = flow.ops.first() else {
+            panic!("controller must begin by binding its typed local");
+        };
         assert!(matches!(
-            flow.ops.first(),
-            Some(FlowOp::Let {
-                expr: RuntimeExpr::Value(RuntimeValue::UInt(actual)),
-                ..
-            }) if actual == &expected
+            expr.kind(),
+            RuntimeExprKind::Value(RuntimeValue::UInt(actual)) if actual == &expected
         ));
     }
 }

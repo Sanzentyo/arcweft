@@ -158,7 +158,7 @@ impl<B: DesktopBackend> HostAdapter for DesktopArcweftAdapter<B> {
             Err(error) => {
                 return Some(HostTaskSubmission::Completed(
                     arcweft_host_adapter::HostTaskOutcome {
-                        result: Err(error),
+                        completion: arcweft_host_adapter::HostTaskCompletion::Failed(error),
                         metrics: arcweft_host_adapter::HostTaskMetrics::default(),
                     },
                 ));

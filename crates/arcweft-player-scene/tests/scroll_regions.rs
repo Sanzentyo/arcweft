@@ -563,13 +563,13 @@ fn mounted_view_rich_text_preserves_vertical_ruby_in_prepared_painter_order() {
     presentation.view.mounts[0].text[0].value = BundleViewTextValue::RichTextDocument {
         document: Box::new(RichTextDocument::new(vec![
             RichTextNode::StyleStart {
-                style: RichTextStyle::Layout {
+                style: Box::new(RichTextStyle::Layout {
                     layout: RichTextLayout {
                         writing_mode: RichTextWritingMode::VerticalRl,
                         direction: RichTextInlineDirection::Rtl,
                         ..RichTextLayout::default()
                     },
-                },
+                }),
             },
             RichTextNode::Ruby {
                 base: "漢字".to_owned(),

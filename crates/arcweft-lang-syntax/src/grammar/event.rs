@@ -20,7 +20,6 @@ use crate::grammar::declaration_projection::{
 use crate::grammar::entry_projection::PendingEntryDeclarationProjection;
 use crate::grammar::flow_projection::PendingFlowDeclarationProjection;
 use crate::grammar::keyword_statement_projection::PendingKeywordStatementProjection;
-use crate::grammar::source_declaration_projection::PendingSourceDeclarationProjection;
 use crate::grammar::style_projection::PendingStyleDeclarationProjection;
 use crate::grammar::test_projection::PendingTestKindProjection;
 use crate::grammar::view_projection::{PendingViewExportProjection, PendingViewFragmentProjection};
@@ -402,7 +401,6 @@ pub(crate) enum PendingStartProjection {
     Layer(Box<PendingLayerDeclarationProjection>),
     Entry(Box<PendingEntryDeclarationProjection>),
     Style(Box<PendingStyleDeclarationProjection>),
-    SourceDeclaration(Box<PendingSourceDeclarationProjection>),
     MethodReceiver(Box<PendingMethodReceiverProjection>),
     ContractClause(Box<PendingFlowContractClauseProjection>),
     FlowDeclaration(Box<PendingFlowDeclarationProjection>),
@@ -447,7 +445,6 @@ impl PendingStartProjection {
             Self::Layer(_) => kind == SyntaxKind::LayerDeclarationItem,
             Self::Entry(_) => kind == SyntaxKind::EntryDeclarationItem,
             Self::Style(_) => kind == SyntaxKind::StyleItem,
-            Self::SourceDeclaration(_) => kind == SyntaxKind::SourceItem,
             Self::MethodReceiver(_) => kind == SyntaxKind::Parameter,
             Self::ContractClause(projection) => projection.accepts_kind(kind),
             Self::FlowDeclaration(_) => kind == SyntaxKind::FlowItem,
@@ -480,9 +477,6 @@ impl PendingStartProjection {
             Self::Layer(projection) => Self::Layer(Box::new(projection.rebased(offset)?)),
             Self::Entry(projection) => Self::Entry(Box::new(projection.rebased(offset)?)),
             Self::Style(projection) => Self::Style(Box::new(projection.rebased(offset)?)),
-            Self::SourceDeclaration(projection) => {
-                Self::SourceDeclaration(Box::new(projection.rebased(offset)?))
-            }
             Self::MethodReceiver(projection) => {
                 Self::MethodReceiver(Box::new(projection.rebased(offset)?))
             }

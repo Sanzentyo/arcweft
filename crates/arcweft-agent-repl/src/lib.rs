@@ -24,9 +24,9 @@ pub use binding::{
     ReplBindingInvalidation, ReplBindingRecord, ReplBindingSnapshotKind, ReplBindingStatus,
 };
 pub use cell::{
-    ReplBytecodeStats, ReplCellExecutionStatus, ReplCellFilter, ReplCellId, ReplCellInput,
-    ReplCellKind, ReplCellList, ReplCellRecord, ReplEvaluateOutcome, ReplResetOptions,
-    ReplResetOutcome, ReplUndoOptions, ReplUndoOutcome,
+    ReplCellExecutionStatus, ReplCellFilter, ReplCellId, ReplCellInput, ReplCellKind, ReplCellList,
+    ReplCellRecord, ReplEvaluateOutcome, ReplProgramStats, ReplResetOptions, ReplResetOutcome,
+    ReplUndoOptions, ReplUndoOutcome,
 };
 pub use diagnostics::{
     AgentDiagnosticProjection, AgentDiagnosticProjector, AgentSyntaxDiagnosticProjection,

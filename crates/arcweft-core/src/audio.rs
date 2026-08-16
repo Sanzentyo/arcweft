@@ -1,14 +1,11 @@
+use crate::value::RuntimeExpr;
 use arcweft_interaction_model::audio::{
     AudioEffectParameterKind, AudioLoopMode, MicrophoneConstraints,
 };
-use serde::{Deserialize, Serialize};
-
-use crate::value::RuntimeExpr;
 
 /// Typed runtime IR for audio commands whose values are evaluated by `Engine`.
 #[allow(clippy::large_enum_variant)]
-#[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
-#[serde(tag = "kind", rename_all = "snake_case")]
+#[derive(Clone, Debug, PartialEq)]
 pub enum RuntimeAudioCommand {
     Play {
         voice: RuntimeExpr,

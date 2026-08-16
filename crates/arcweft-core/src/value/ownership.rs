@@ -5,7 +5,7 @@
 //! constructed in this cut; adding such a leaf must extend the exhaustive
 //! traversals below rather than introduce a side table.
 
-use super::{RuntimeFunctionValue, RuntimeIterator, RuntimeSeq, RuntimeValue};
+use super::{RuntimeFunctionBody, RuntimeFunctionValue, RuntimeIterator, RuntimeSeq, RuntimeValue};
 use serde::{Deserialize, Serialize};
 
 #[allow(dead_code, reason = "the canonical snapshot consumer lands in G1.2-D")]
@@ -81,6 +81,12 @@ impl RuntimeValue {
                 }),
             Self::NominalRecord(record) => values_ownership(record.fields()),
             Self::Opaque(value) => value.payload().ownership(),
+            Self::Reduction(value) => value
+                .commands()
+                .iter()
+                .fold(value.state().ownership(), |ownership, command| {
+                    ownership.join(command.payload().0.ownership())
+                }),
             Self::Agent(value) => value.ownership(),
             Self::Function(function) => function.ownership(),
             Self::Variant { payload, .. } => payload
@@ -94,11 +100,21 @@ impl RuntimeFunctionValue {
     /// Computes ownership from the exact captured value set.
     #[must_use]
     pub fn ownership(&self) -> RuntimeValueOwnership {
-        self.captures
-            .iter()
-            .fold(RuntimeValueOwnership::Unrestricted, |ownership, capture| {
-                ownership.join(capture.value.ownership())
-            })
+        match self.body() {
+            RuntimeFunctionBody::Structured(closure) => closure
+                .capture_values()
+                .iter()
+                .chain(closure.bound_args())
+                .fold(RuntimeValueOwnership::Unrestricted, |ownership, value| {
+                    ownership.join(value.ownership())
+                }),
+            RuntimeFunctionBody::Awbc(closure) => closure
+                .captures()
+                .iter()
+                .fold(RuntimeValueOwnership::Unrestricted, |ownership, capture| {
+                    ownership.join(capture.value.ownership())
+                }),
+        }
     }
 }
 
@@ -146,8 +162,9 @@ fn values_ownership(values: &[RuntimeValue]) -> RuntimeValueOwnership {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::awbc::schema::AwbcFunctionId;
     use crate::pattern::RuntimeVariantIdentity;
-    use crate::value::{RuntimeBinding, RuntimeExpr, RuntimeFunctionValue, TupleSeq};
+    use crate::value::{RuntimeBinding, RuntimeFunctionValue, TupleSeq};
 
     #[test]
     fn join_is_affine_if_either_side_is_affine() {
@@ -223,9 +240,9 @@ mod tests {
 
     #[test]
     fn function_ownership_is_derived_from_exact_captures() {
-        let function = RuntimeFunctionValue::new(
+        let function = RuntimeFunctionValue::new_awbc(
             Vec::new(),
-            RuntimeExpr::Value(RuntimeValue::Unit),
+            AwbcFunctionId(0),
             vec![RuntimeBinding {
                 name: "captured".to_owned(),
                 value: RuntimeValue::Tuple(vec![RuntimeValue::Bool(true)]),

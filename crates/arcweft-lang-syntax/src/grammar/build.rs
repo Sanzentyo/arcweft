@@ -26,7 +26,6 @@ use crate::grammar::declaration_projection::{
 use crate::grammar::entry_projection::PendingEntryDeclarationProjection;
 use crate::grammar::flow_projection::PendingFlowDeclarationProjection;
 use crate::grammar::keyword_statement_projection::PendingKeywordStatementProjection;
-use crate::grammar::source_declaration_projection::PendingSourceDeclarationProjection;
 use crate::grammar::style_projection::PendingStyleDeclarationProjection;
 use crate::grammar::test_projection::PendingTestKindProjection;
 use crate::grammar::view_projection::{PendingViewExportProjection, PendingViewFragmentProjection};
@@ -164,15 +163,6 @@ impl UnattachedGrammarEntry {
     pub(crate) fn style_projection(&self) -> Option<&PendingStyleDeclarationProjection> {
         match &self.projection {
             PendingStartProjection::Style(projection) => Some(projection),
-            _ => None,
-        }
-    }
-
-    pub(crate) fn source_declaration_projection(
-        &self,
-    ) -> Option<&PendingSourceDeclarationProjection> {
-        match &self.projection {
-            PendingStartProjection::SourceDeclaration(projection) => Some(projection),
             _ => None,
         }
     }
@@ -329,9 +319,6 @@ impl GrammarBuild {
                         .entry_projection()
                         .is_some_and(PendingEntryDeclarationProjection::has_recovery)
                     || entry
-                        .source_declaration_projection()
-                        .is_some_and(PendingSourceDeclarationProjection::has_recovery)
-                    || entry
                         .flow_declaration_projection()
                         .is_some_and(PendingFlowDeclarationProjection::has_recovery)
                     || entry
@@ -434,10 +421,6 @@ pub(crate) enum GrammarBuildError {
     MissingStyleProjection { event: usize },
     #[error("node event {event} with kind {kind:?} carries a Style projection")]
     InvalidStyleProjection { event: usize, kind: SyntaxKind },
-    #[error("Source item event {event} has no required semantic projection")]
-    MissingSourceDeclarationProjection { event: usize },
-    #[error("node event {event} with kind {kind:?} carries a Source projection")]
-    InvalidSourceDeclarationProjection { event: usize, kind: SyntaxKind },
     #[error("node event {event} with kind {kind:?} carries a method-receiver projection")]
     InvalidMethodReceiverProjection { event: usize, kind: SyntaxKind },
     #[error("Flow contract event {event} with kind {kind:?} has no source projection")]
@@ -879,11 +862,6 @@ fn validate_required_start_projection(
         SyntaxKind::StyleItem if !matches!(projection, PendingStartProjection::Style(_)) => {
             Some(GrammarBuildError::MissingStyleProjection { event })
         }
-        SyntaxKind::SourceItem
-            if !matches!(projection, PendingStartProjection::SourceDeclaration(_)) =>
-        {
-            Some(GrammarBuildError::MissingSourceDeclarationProjection { event })
-        }
         kind if flow_only_contract_kind(kind)
             && !matches!(projection, PendingStartProjection::ContractClause(_)) =>
         {
@@ -954,9 +932,6 @@ fn validate_selected_start_projection(
         }
         PendingStartProjection::Style(_) if kind != SyntaxKind::StyleItem => {
             Some(GrammarBuildError::InvalidStyleProjection { event, kind })
-        }
-        PendingStartProjection::SourceDeclaration(_) if kind != SyntaxKind::SourceItem => {
-            Some(GrammarBuildError::InvalidSourceDeclarationProjection { event, kind })
         }
         PendingStartProjection::MethodReceiver(_) if kind != SyntaxKind::Parameter => {
             Some(GrammarBuildError::InvalidMethodReceiverProjection { event, kind })

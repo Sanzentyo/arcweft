@@ -3,8 +3,8 @@ use super::{
     CompiledPureI32Inputs, CompiledPureI64, CompiledPureI64Batch, CompiledPureI64Inputs,
     CompiledPureI128BatchInputs, CompiledPureU8Inputs, CompiledPureU16Inputs,
     CompiledPureU32Inputs, CompiledPureU64Inputs, CompiledPureU128BatchInputs,
-    CraneliftCodegenError, PureFunctionStats, RuntimeI64Args, RuntimeISizeValue, RuntimeUSizeValue,
-    native_call,
+    CraneliftCodegenError, PureFunctionStats, RuntimeI64Args, RuntimeISizeValue,
+    RuntimeLocalDeclarationId, RuntimeUSizeValue, native_call,
 };
 
 impl CompiledPureI64 {
@@ -22,10 +22,10 @@ impl CompiledPureI64 {
 impl CompiledPureI64Inputs {
     /// Calls the compiled helper with runtime integer inputs.
     pub fn call(&self, inputs: &[i64]) -> Result<i64, CraneliftCodegenError> {
-        if inputs.len() != self.param_names.len() {
+        if inputs.len() != self.input_locals.len() {
             return Err(CraneliftCodegenError::UnsupportedExpr(format!(
                 "JIT helper expected {} input(s), got {}",
-                self.param_names.len(),
+                self.input_locals.len(),
                 inputs.len()
             )));
         }
@@ -39,10 +39,10 @@ impl CompiledPureI64Inputs {
 
     /// Calls the compiled helper with the runtime fixed-size integer pack.
     pub fn call_i64_args(&self, args: RuntimeI64Args) -> Result<i64, CraneliftCodegenError> {
-        if args.len() != self.param_names.len() {
+        if args.len() != self.input_locals.len() {
             return Err(CraneliftCodegenError::UnsupportedExpr(format!(
                 "JIT helper expected {} input(s), got {}",
-                self.param_names.len(),
+                self.input_locals.len(),
                 args.len()
             )));
         }
@@ -59,10 +59,10 @@ impl CompiledPureI64Inputs {
         &self,
         inputs: &[RuntimeISizeValue],
     ) -> Result<RuntimeISizeValue, CraneliftCodegenError> {
-        if inputs.len() != self.param_names.len() {
+        if inputs.len() != self.input_locals.len() {
             return Err(CraneliftCodegenError::UnsupportedExpr(format!(
                 "JIT isize helper expected {} input(s), got {}",
-                self.param_names.len(),
+                self.input_locals.len(),
                 inputs.len()
             )));
         }
@@ -80,10 +80,11 @@ impl CompiledPureI64Inputs {
         inputs: &[i64],
         out: &mut [i64],
     ) -> Result<(), CraneliftCodegenError> {
-        if !native_call::call_i64_rows_batch(self.batch_code, inputs, self.param_names.len(), out) {
+        if !native_call::call_i64_rows_batch(self.batch_code, inputs, self.input_locals.len(), out)
+        {
             return Err(CraneliftCodegenError::UnsupportedExpr(format!(
                 "JIT rows batch expected {} input value(s), got {} for {} row(s)",
-                self.param_names.len().saturating_mul(out.len()),
+                self.input_locals.len().saturating_mul(out.len()),
                 inputs.len(),
                 out.len()
             )));
@@ -97,11 +98,15 @@ impl CompiledPureI64Inputs {
         inputs: &[RuntimeISizeValue],
         out: &mut [RuntimeISizeValue],
     ) -> Result<(), CraneliftCodegenError> {
-        if !native_call::call_isize_rows_batch(self.batch_code, inputs, self.param_names.len(), out)
-        {
+        if !native_call::call_isize_rows_batch(
+            self.batch_code,
+            inputs,
+            self.input_locals.len(),
+            out,
+        ) {
             return Err(CraneliftCodegenError::UnsupportedExpr(format!(
                 "JIT isize rows batch expected {} input value(s), got {} for {} row(s)",
-                self.param_names.len().saturating_mul(out.len()),
+                self.input_locals.len().saturating_mul(out.len()),
                 inputs.len(),
                 out.len()
             )));
@@ -119,13 +124,13 @@ impl CompiledPureI64Inputs {
         native_call::call_i64_rows_batch_sum(
             self.batch_sum_code,
             inputs,
-            self.param_names.len(),
+            self.input_locals.len(),
             rows,
         )
         .ok_or_else(|| {
             CraneliftCodegenError::UnsupportedExpr(format!(
                 "JIT rows batch sum expected {} input value(s), got {} for {} row(s)",
-                self.param_names.len().saturating_mul(rows),
+                self.input_locals.len().saturating_mul(rows),
                 inputs.len(),
                 rows
             ))
@@ -142,13 +147,13 @@ impl CompiledPureI64Inputs {
         native_call::call_isize_rows_batch_sum(
             self.batch_sum_code,
             inputs,
-            self.param_names.len(),
+            self.input_locals.len(),
             rows,
         )
         .ok_or_else(|| {
             CraneliftCodegenError::UnsupportedExpr(format!(
                 "JIT isize rows batch sum expected {} input value(s), got {} for {} row(s)",
-                self.param_names.len().saturating_mul(rows),
+                self.input_locals.len().saturating_mul(rows),
                 inputs.len(),
                 rows
             ))
@@ -156,8 +161,8 @@ impl CompiledPureI64Inputs {
     }
 
     /// Returns the local binding names used as runtime parameters.
-    pub fn param_names(&self) -> &[String] {
-        &self.param_names
+    pub fn input_locals(&self) -> &[RuntimeLocalDeclarationId] {
+        &self.input_locals
     }
 
     /// Returns lowering counters captured during compilation.
@@ -183,11 +188,11 @@ impl CompiledPureI128BatchInputs {
         inputs: &[i128],
         out: &mut [i128],
     ) -> Result<(), CraneliftCodegenError> {
-        if !native_call::call_i128_rows_batch(self.batch_code, inputs, self.param_names.len(), out)
+        if !native_call::call_i128_rows_batch(self.batch_code, inputs, self.input_locals.len(), out)
         {
             return Err(CraneliftCodegenError::UnsupportedExpr(format!(
                 "JIT i128 rows batch expected {} input value(s), got {} for {} row(s)",
-                self.param_names.len().saturating_mul(out.len()),
+                self.input_locals.len().saturating_mul(out.len()),
                 inputs.len(),
                 out.len()
             )));
@@ -205,13 +210,13 @@ impl CompiledPureI128BatchInputs {
         native_call::call_i128_rows_batch_sum(
             self.batch_sum_code,
             inputs,
-            self.param_names.len(),
+            self.input_locals.len(),
             rows,
         )
         .ok_or_else(|| {
             CraneliftCodegenError::UnsupportedExpr(format!(
                 "JIT i128 rows batch sum expected {} input value(s), got {} for {} row(s)",
-                self.param_names.len().saturating_mul(rows),
+                self.input_locals.len().saturating_mul(rows),
                 inputs.len(),
                 rows
             ))
@@ -219,8 +224,8 @@ impl CompiledPureI128BatchInputs {
     }
 
     /// Returns the local binding names used as runtime parameters.
-    pub fn param_names(&self) -> &[String] {
-        &self.param_names
+    pub fn input_locals(&self) -> &[RuntimeLocalDeclarationId] {
+        &self.input_locals
     }
 
     /// Returns lowering counters captured during compilation.
@@ -232,10 +237,10 @@ impl CompiledPureI128BatchInputs {
 impl CompiledPureI32Inputs {
     /// Calls the compiled helper with runtime `i32` inputs.
     pub fn call(&self, inputs: &[i32]) -> Result<i32, CraneliftCodegenError> {
-        if inputs.len() != self.param_names.len() {
+        if inputs.len() != self.input_locals.len() {
             return Err(CraneliftCodegenError::UnsupportedExpr(format!(
                 "JIT i32 helper expected {} input(s), got {}",
-                self.param_names.len(),
+                self.input_locals.len(),
                 inputs.len()
             )));
         }
@@ -253,10 +258,11 @@ impl CompiledPureI32Inputs {
         inputs: &[i32],
         out: &mut [i32],
     ) -> Result<(), CraneliftCodegenError> {
-        if !native_call::call_i32_rows_batch(self.batch_code, inputs, self.param_names.len(), out) {
+        if !native_call::call_i32_rows_batch(self.batch_code, inputs, self.input_locals.len(), out)
+        {
             return Err(CraneliftCodegenError::UnsupportedExpr(format!(
                 "JIT i32 rows batch expected {} input value(s), got {} for {} row(s)",
-                self.param_names.len().saturating_mul(out.len()),
+                self.input_locals.len().saturating_mul(out.len()),
                 inputs.len(),
                 out.len()
             )));
@@ -274,13 +280,13 @@ impl CompiledPureI32Inputs {
         native_call::call_i32_rows_batch_sum(
             self.batch_sum_code,
             inputs,
-            self.param_names.len(),
+            self.input_locals.len(),
             rows,
         )
         .ok_or_else(|| {
             CraneliftCodegenError::UnsupportedExpr(format!(
                 "JIT i32 rows batch sum expected {} input value(s), got {} for {rows} row(s)",
-                self.param_names.len().saturating_mul(rows),
+                self.input_locals.len().saturating_mul(rows),
                 inputs.len()
             ))
         })
@@ -296,11 +302,11 @@ macro_rules! impl_compiled_small_int_inputs {
     ($compiled:ty, $ty:ty, $call_batch:path, $call_sum:path, $label:literal) => {
         impl $compiled {
             pub fn call(&self, inputs: &[$ty]) -> Result<$ty, CraneliftCodegenError> {
-                if inputs.len() != self.param_names.len() {
+                if inputs.len() != self.input_locals.len() {
                     return Err(CraneliftCodegenError::UnsupportedExpr(format!(
                         "JIT {} helper expected {} input(s), got {}",
                         $label,
-                        self.param_names.len(),
+                        self.input_locals.len(),
                         inputs.len()
                     )));
                 }
@@ -318,11 +324,11 @@ macro_rules! impl_compiled_small_int_inputs {
                 inputs: &[$ty],
                 out: &mut [$ty],
             ) -> Result<(), CraneliftCodegenError> {
-                if !$call_batch(self.batch_code, inputs, self.param_names.len(), out) {
+                if !$call_batch(self.batch_code, inputs, self.input_locals.len(), out) {
                     return Err(CraneliftCodegenError::UnsupportedExpr(format!(
                         "JIT {} rows batch expected {} input value(s), got {} for {} row(s)",
                         $label,
-                        self.param_names.len().saturating_mul(out.len()),
+                        self.input_locals.len().saturating_mul(out.len()),
                         inputs.len(),
                         out.len()
                     )));
@@ -335,12 +341,12 @@ macro_rules! impl_compiled_small_int_inputs {
                 inputs: &[$ty],
                 rows: usize,
             ) -> Result<i64, CraneliftCodegenError> {
-                $call_sum(self.batch_sum_code, inputs, self.param_names.len(), rows).ok_or_else(
+                $call_sum(self.batch_sum_code, inputs, self.input_locals.len(), rows).ok_or_else(
                     || {
                         CraneliftCodegenError::UnsupportedExpr(format!(
                             "JIT {} rows batch sum expected {} input value(s), got {} for {rows} row(s)",
                             $label,
-                            self.param_names.len().saturating_mul(rows),
+                            self.input_locals.len().saturating_mul(rows),
                             inputs.len()
                         ))
                     },
@@ -386,10 +392,10 @@ impl_compiled_small_int_inputs!(
 impl CompiledPureU32Inputs {
     /// Calls the compiled helper with runtime `u32` inputs.
     pub fn call(&self, inputs: &[u32]) -> Result<u32, CraneliftCodegenError> {
-        if inputs.len() != self.param_names.len() {
+        if inputs.len() != self.input_locals.len() {
             return Err(CraneliftCodegenError::UnsupportedExpr(format!(
                 "JIT u32 helper expected {} input(s), got {}",
-                self.param_names.len(),
+                self.input_locals.len(),
                 inputs.len()
             )));
         }
@@ -407,10 +413,11 @@ impl CompiledPureU32Inputs {
         inputs: &[u32],
         out: &mut [u32],
     ) -> Result<(), CraneliftCodegenError> {
-        if !native_call::call_u32_rows_batch(self.batch_code, inputs, self.param_names.len(), out) {
+        if !native_call::call_u32_rows_batch(self.batch_code, inputs, self.input_locals.len(), out)
+        {
             return Err(CraneliftCodegenError::UnsupportedExpr(format!(
                 "JIT u32 rows batch expected {} input value(s), got {} for {} row(s)",
-                self.param_names.len().saturating_mul(out.len()),
+                self.input_locals.len().saturating_mul(out.len()),
                 inputs.len(),
                 out.len()
             )));
@@ -428,13 +435,13 @@ impl CompiledPureU32Inputs {
         native_call::call_u32_rows_batch_sum(
             self.batch_sum_code,
             inputs,
-            self.param_names.len(),
+            self.input_locals.len(),
             rows,
         )
         .ok_or_else(|| {
             CraneliftCodegenError::UnsupportedExpr(format!(
                 "JIT u32 rows batch sum expected {} input value(s), got {} for {rows} row(s)",
-                self.param_names.len().saturating_mul(rows),
+                self.input_locals.len().saturating_mul(rows),
                 inputs.len()
             ))
         })
@@ -449,10 +456,10 @@ impl CompiledPureU32Inputs {
 impl CompiledPureU64Inputs {
     /// Calls the compiled helper with runtime `u64` inputs.
     pub fn call(&self, inputs: &[u64]) -> Result<u64, CraneliftCodegenError> {
-        if inputs.len() != self.param_names.len() {
+        if inputs.len() != self.input_locals.len() {
             return Err(CraneliftCodegenError::UnsupportedExpr(format!(
                 "JIT u64 helper expected {} input(s), got {}",
-                self.param_names.len(),
+                self.input_locals.len(),
                 inputs.len()
             )));
         }
@@ -469,10 +476,10 @@ impl CompiledPureU64Inputs {
         &self,
         inputs: &[RuntimeUSizeValue],
     ) -> Result<RuntimeUSizeValue, CraneliftCodegenError> {
-        if inputs.len() != self.param_names.len() {
+        if inputs.len() != self.input_locals.len() {
             return Err(CraneliftCodegenError::UnsupportedExpr(format!(
                 "JIT usize helper expected {} input(s), got {}",
-                self.param_names.len(),
+                self.input_locals.len(),
                 inputs.len()
             )));
         }
@@ -490,10 +497,11 @@ impl CompiledPureU64Inputs {
         inputs: &[u64],
         out: &mut [u64],
     ) -> Result<(), CraneliftCodegenError> {
-        if !native_call::call_u64_rows_batch(self.batch_code, inputs, self.param_names.len(), out) {
+        if !native_call::call_u64_rows_batch(self.batch_code, inputs, self.input_locals.len(), out)
+        {
             return Err(CraneliftCodegenError::UnsupportedExpr(format!(
                 "JIT u64 rows batch expected {} input value(s), got {} for {} row(s)",
-                self.param_names.len().saturating_mul(out.len()),
+                self.input_locals.len().saturating_mul(out.len()),
                 inputs.len(),
                 out.len()
             )));
@@ -507,11 +515,15 @@ impl CompiledPureU64Inputs {
         inputs: &[RuntimeUSizeValue],
         out: &mut [RuntimeUSizeValue],
     ) -> Result<(), CraneliftCodegenError> {
-        if !native_call::call_usize_rows_batch(self.batch_code, inputs, self.param_names.len(), out)
-        {
+        if !native_call::call_usize_rows_batch(
+            self.batch_code,
+            inputs,
+            self.input_locals.len(),
+            out,
+        ) {
             return Err(CraneliftCodegenError::UnsupportedExpr(format!(
                 "JIT usize rows batch expected {} input value(s), got {} for {} row(s)",
-                self.param_names.len().saturating_mul(out.len()),
+                self.input_locals.len().saturating_mul(out.len()),
                 inputs.len(),
                 out.len()
             )));
@@ -529,13 +541,13 @@ impl CompiledPureU64Inputs {
         native_call::call_u64_rows_batch_sum(
             self.batch_sum_code,
             inputs,
-            self.param_names.len(),
+            self.input_locals.len(),
             rows,
         )
         .ok_or_else(|| {
             CraneliftCodegenError::UnsupportedExpr(format!(
                 "JIT u64 rows batch sum expected {} input value(s), got {} for {rows} row(s)",
-                self.param_names.len().saturating_mul(rows),
+                self.input_locals.len().saturating_mul(rows),
                 inputs.len()
             ))
         })
@@ -551,13 +563,13 @@ impl CompiledPureU64Inputs {
         native_call::call_usize_rows_batch_sum(
             self.batch_sum_code,
             inputs,
-            self.param_names.len(),
+            self.input_locals.len(),
             rows,
         )
         .ok_or_else(|| {
             CraneliftCodegenError::UnsupportedExpr(format!(
                 "JIT usize rows batch sum expected {} input value(s), got {} for {rows} row(s)",
-                self.param_names.len().saturating_mul(rows),
+                self.input_locals.len().saturating_mul(rows),
                 inputs.len()
             ))
         })
@@ -586,11 +598,11 @@ impl CompiledPureU128BatchInputs {
         inputs: &[u128],
         out: &mut [u128],
     ) -> Result<(), CraneliftCodegenError> {
-        if !native_call::call_u128_rows_batch(self.batch_code, inputs, self.param_names.len(), out)
+        if !native_call::call_u128_rows_batch(self.batch_code, inputs, self.input_locals.len(), out)
         {
             return Err(CraneliftCodegenError::UnsupportedExpr(format!(
                 "JIT u128 rows batch expected {} input value(s), got {} for {} row(s)",
-                self.param_names.len().saturating_mul(out.len()),
+                self.input_locals.len().saturating_mul(out.len()),
                 inputs.len(),
                 out.len()
             )));
@@ -608,13 +620,13 @@ impl CompiledPureU128BatchInputs {
         native_call::call_u128_rows_batch_sum(
             self.batch_sum_code,
             inputs,
-            self.param_names.len(),
+            self.input_locals.len(),
             rows,
         )
         .ok_or_else(|| {
             CraneliftCodegenError::UnsupportedExpr(format!(
                 "JIT u128 rows batch sum expected {} input value(s), got {} for {} row(s)",
-                self.param_names.len().saturating_mul(rows),
+                self.input_locals.len().saturating_mul(rows),
                 inputs.len(),
                 rows
             ))
@@ -622,8 +634,8 @@ impl CompiledPureU128BatchInputs {
     }
 
     /// Returns the local binding names used as runtime parameters.
-    pub fn param_names(&self) -> &[String] {
-        &self.param_names
+    pub fn input_locals(&self) -> &[RuntimeLocalDeclarationId] {
+        &self.input_locals
     }
 
     /// Returns lowering counters captured during compilation.
@@ -635,10 +647,10 @@ impl CompiledPureU128BatchInputs {
 impl CompiledPureF32Inputs {
     /// Calls the compiled helper with runtime `f32` inputs.
     pub fn call(&self, inputs: &[f32]) -> Result<f32, CraneliftCodegenError> {
-        if inputs.len() != self.param_names.len() {
+        if inputs.len() != self.input_locals.len() {
             return Err(CraneliftCodegenError::UnsupportedExpr(format!(
                 "JIT f32 helper expected {} input(s), got {}",
-                self.param_names.len(),
+                self.input_locals.len(),
                 inputs.len()
             )));
         }
@@ -656,10 +668,11 @@ impl CompiledPureF32Inputs {
         inputs: &[f32],
         out: &mut [f32],
     ) -> Result<(), CraneliftCodegenError> {
-        if !native_call::call_f32_rows_batch(self.batch_code, inputs, self.param_names.len(), out) {
+        if !native_call::call_f32_rows_batch(self.batch_code, inputs, self.input_locals.len(), out)
+        {
             return Err(CraneliftCodegenError::UnsupportedExpr(format!(
                 "JIT f32 rows batch expected {} input value(s), got {} for {} row(s)",
-                self.param_names.len().saturating_mul(out.len()),
+                self.input_locals.len().saturating_mul(out.len()),
                 inputs.len(),
                 out.len()
             )));
@@ -676,10 +689,10 @@ impl CompiledPureF32Inputs {
 impl CompiledPureF64Inputs {
     /// Calls the compiled helper with runtime `f64` inputs.
     pub fn call(&self, inputs: &[f64]) -> Result<f64, CraneliftCodegenError> {
-        if inputs.len() != self.param_names.len() {
+        if inputs.len() != self.input_locals.len() {
             return Err(CraneliftCodegenError::UnsupportedExpr(format!(
                 "JIT f64 helper expected {} input(s), got {}",
-                self.param_names.len(),
+                self.input_locals.len(),
                 inputs.len()
             )));
         }
@@ -697,10 +710,11 @@ impl CompiledPureF64Inputs {
         inputs: &[f64],
         out: &mut [f64],
     ) -> Result<(), CraneliftCodegenError> {
-        if !native_call::call_f64_rows_batch(self.batch_code, inputs, self.param_names.len(), out) {
+        if !native_call::call_f64_rows_batch(self.batch_code, inputs, self.input_locals.len(), out)
+        {
             return Err(CraneliftCodegenError::UnsupportedExpr(format!(
                 "JIT f64 rows batch expected {} input value(s), got {} for {} row(s)",
-                self.param_names.len().saturating_mul(out.len()),
+                self.input_locals.len().saturating_mul(out.len()),
                 inputs.len(),
                 out.len()
             )));
@@ -737,8 +751,8 @@ impl CompiledPureI64Batch {
     }
 
     /// Returns the local binding names used as runtime parameters.
-    pub fn param_names(&self) -> &[String] {
-        &self.param_names
+    pub fn input_locals(&self) -> &[RuntimeLocalDeclarationId] {
+        &self.input_locals
     }
 
     /// Returns lowering counters captured during compilation.

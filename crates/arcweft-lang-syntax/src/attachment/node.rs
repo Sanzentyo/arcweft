@@ -125,7 +125,6 @@ define_ast_kinds!(ITEM_MARKERS, Item;
     ExternCapabilityItemKind => ExternCapabilityItem,
     TestItemKind => TestItem,
     BenchItemKind => BenchItem,
-    SourceItemKind => SourceItem,
     StyleItemKind => StyleItem,
     ErrorItemKind => ErrorItem,
 );
@@ -162,7 +161,6 @@ define_ast_kinds!(STATEMENT_MARKERS, Statement;
     SourceLocaleStatementKind => SourceLocaleStatement,
     ScopeStatementKind => ScopeStatement,
     IncludeStatementKind => IncludeStatement,
-    AwaitWithStatementKind => AwaitWithStatement,
     BreakStatementKind => BreakStatement,
     ContinueStatementKind => ContinueStatement,
     ExpressionStatementKind => ExpressionStatement,

@@ -10,9 +10,9 @@ use super::node::{
     CharacterDeclarationItemKind, EntryDeclarationItemKind, EnumItemKind, ErrorItemKind,
     ExternCapabilityItemKind, FlowItemKind, FunctionItemKind, ImplItemKind,
     LayerDeclarationItemKind, MetricDeclarationItemKind, ModuleDeclarationKind, PredicateItemKind,
-    ProofItemKind, ResourceDeclarationItemKind, SignalDeclarationItemKind, SourceItemKind,
-    StructItemKind, StyleItemKind, TestItemKind, TraitItemKind, TypeAliasItemKind,
-    UseDeclarationKind, ViewDeclarationItemKind,
+    ProofItemKind, ResourceDeclarationItemKind, SignalDeclarationItemKind, StructItemKind,
+    StyleItemKind, TestItemKind, TraitItemKind, TypeAliasItemKind, UseDeclarationKind,
+    ViewDeclarationItemKind,
 };
 use super::{SyntaxLookupError, SyntaxNodeHandle, SyntaxNodeId, SyntaxSnapshotId};
 use crate::grammar::kinds::{AstTag, SyntaxKind, SyntaxRole};
@@ -113,7 +113,6 @@ typed_item_inventory!(
     ExternCapability(ExternCapabilityItemKind) => ExternCapabilityItem,
     Test(TestItemKind) => TestItem,
     Bench(BenchItemKind) => BenchItem,
-    Source(SourceItemKind) => SourceItem,
     Style(StyleItemKind) => StyleItem,
     Error(ErrorItemKind) => ErrorItem,
 );
@@ -130,7 +129,7 @@ mod tests {
             .copied()
             .filter(|kind| kind.is_item())
             .collect::<Vec<_>>();
-        assert_eq!(expected.len(), 26);
+        assert_eq!(expected.len(), 25);
         assert_eq!(
             expected,
             [
@@ -157,7 +156,6 @@ mod tests {
                 SyntaxKind::ExternCapabilityItem,
                 SyntaxKind::TestItem,
                 SyntaxKind::BenchItem,
-                SyntaxKind::SourceItem,
                 SyntaxKind::StyleItem,
                 SyntaxKind::ErrorItem,
             ]

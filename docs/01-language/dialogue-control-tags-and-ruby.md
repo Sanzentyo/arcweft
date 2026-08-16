@@ -688,7 +688,7 @@ alice.say()[
 ]
 with {
     let flash_color = rgb("#a8b5ff")
-    at(0.2s) { flash(color=flash_color)? }
+    at(0.2s) { try flash(color=flash_color) }
 }
 ```
 

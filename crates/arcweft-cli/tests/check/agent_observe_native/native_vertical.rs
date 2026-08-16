@@ -7,16 +7,10 @@ fn agent_observe_writes_layer_png_and_object_raw_images() {
         r##"
 entry cli @entry.main { goto @flow.main }
 
-character alice {
-    dialogue_style {
-        font = serif
-        text_color = rgb("#202122")
-    }
-}
+character alice {}
 
 flow main {
-    let player = "Aoi"
-    alice(color=rgb("#303132")): Hello #[player] |[夢](ゆめ)[r][voice auto][p]
+    alice: Hello |[夢](ゆめ)[r][voice auto][p]
 }
 "##,
     );
@@ -916,7 +910,12 @@ flow main {
             && agent_json_bbox_bottom(&dialogue_view["bbox"]) >= agent_json_bbox_bottom(annotation),
         "dialogue_view reserved layout bounds should include the measured ruby annotation: {json}"
     );
-    assert_object_capture_ref_matches_image(dialogue_view, image, "mask", "application/octet-stream");
+    assert_object_capture_ref_matches_image(
+        dialogue_view,
+        image,
+        "mask",
+        "application/octet-stream",
+    );
 
     fs::remove_file(&path).expect("remove temp native dialogue_view ruby crop source");
     fs::remove_dir_all(&dir).expect("remove temp native dialogue_view ruby crop dir");
@@ -968,7 +967,12 @@ flow main {
         agent_json_bbox_bottom(&dialogue_view["bbox"]) >= vertical_bottom,
         "dialogue_view reserved layout bounds should include measured vertical cluster extents: {json}"
     );
-    assert_object_capture_ref_matches_image(dialogue_view, image, "mask", "application/octet-stream");
+    assert_object_capture_ref_matches_image(
+        dialogue_view,
+        image,
+        "mask",
+        "application/octet-stream",
+    );
 
     fs::remove_file(&path).expect("remove temp native dialogue_view vertical crop source");
     fs::remove_dir_all(&dir).expect("remove temp native dialogue_view vertical crop dir");
@@ -1072,7 +1076,8 @@ fn assert_repeated_native_capture_matches_imq_reference(label: &str, source: &st
 
 #[test]
 fn native_checked_in_visual_golden_artifacts_are_well_formed() {
-    let tutr = include_bytes!("../../../../../tests/fixtures/native_capture/vertical_tutr_golden.png");
+    let tutr =
+        include_bytes!("../../../../../tests/fixtures/native_capture/vertical_tutr_golden.png");
     let loose = include_bytes!(
         "../../../../../tests/fixtures/native_capture/vertical_jlreq_preset_loose_golden.png"
     );
@@ -1228,15 +1233,15 @@ fn agent_observe_native_renderer_matches_checked_in_imq_golden_fixture_vertical_
 
 #[test]
 #[ignore = "tier 2 visual regression: exact PNG/imq golden is environment-sensitive"]
-fn agent_observe_native_renderer_matches_checked_in_imq_golden_fixture_vertical_jlreq_preset_normal(
-) {
+fn agent_observe_native_renderer_matches_checked_in_imq_golden_fixture_vertical_jlreq_preset_normal()
+ {
     assert_checked_in_native_imq_golden("vertical_jlreq_preset_normal_golden");
 }
 
 #[test]
 #[ignore = "tier 2 visual regression: exact PNG/imq golden is environment-sensitive"]
-fn agent_observe_native_renderer_matches_checked_in_imq_golden_fixture_vertical_lr_ruby_text_combine(
-) {
+fn agent_observe_native_renderer_matches_checked_in_imq_golden_fixture_vertical_lr_ruby_text_combine()
+ {
     assert_checked_in_native_imq_golden("vertical_lr_ruby_text_combine_golden");
 }
 
@@ -1264,8 +1269,7 @@ fn assert_checked_in_native_imq_golden(fixture_id: &str) {
 }
 
 fn reset_native_exact_golden_artifacts(paths: &NativeExactGoldenArtifactPaths) {
-    fs::create_dir_all(&paths.artifact_dir)
-        .expect("create native exact golden artifact directory");
+    fs::create_dir_all(&paths.artifact_dir).expect("create native exact golden artifact directory");
     for stale_path in [
         &paths.candidate_path,
         &paths.observe_path,
@@ -1315,7 +1319,10 @@ fn capture_native_exact_golden_candidate(
         .and_then(|name| name.to_str())
         .expect("candidate path has UTF-8 file name");
     assert_native_exact_capture_has_content(&candidate_json, candidate_name);
-    assert_eq!(fixture.id, candidate_name.trim_end_matches(".candidate.png"));
+    assert_eq!(
+        fixture.id,
+        candidate_name.trim_end_matches(".candidate.png")
+    );
 }
 
 fn run_exact_native_golden_imq(
@@ -1336,12 +1343,7 @@ fn run_exact_native_golden_imq(
     fs::write(&paths.metrics_path, &imq_output.stdout)
         .expect("write checked-in native visual golden imq metrics");
     if !imq_output.status.success() {
-        write_exact_native_golden_fingerprint(
-            fixture,
-            paths,
-            "hard_visual_regression",
-            None,
-        );
+        write_exact_native_golden_fingerprint(fixture, paths, "hard_visual_regression", None);
         panic!(
             "fixture={} imq checked-in golden comparison should succeed, reference={}, candidate={}, observe={}, metrics={}, environment={}, stderr: {}",
             fixture.id,
@@ -1356,12 +1358,7 @@ fn run_exact_native_golden_imq(
     match serde_json::from_slice(&imq_output.stdout) {
         Ok(json) => json,
         Err(error) => {
-            write_exact_native_golden_fingerprint(
-                fixture,
-                paths,
-                "hard_visual_regression",
-                None,
-            );
+            write_exact_native_golden_fingerprint(fixture, paths, "hard_visual_regression", None);
             panic!(
                 "fixture={} imq output should be JSON, reference={}, candidate={}, observe={}, metrics={}, environment={}, error={error}",
                 fixture.id,
@@ -1382,7 +1379,9 @@ fn exact_native_golden_status(
     mae: f64,
 ) -> &'static str {
     let width = imq_json["dimensions"]["width"].as_u64().unwrap_or_default();
-    let height = imq_json["dimensions"]["height"].as_u64().unwrap_or_default();
+    let height = imq_json["dimensions"]["height"]
+        .as_u64()
+        .unwrap_or_default();
     if width != u64::from(EXACT_NATIVE_GOLDEN_VIEWPORT_WIDTH)
         || height != u64::from(EXACT_NATIVE_GOLDEN_VIEWPORT_HEIGHT)
     {
@@ -1450,12 +1449,7 @@ fn assert_exact_native_golden_metrics(
         paths.metrics_path.display(),
         paths.fingerprint_path.display()
     );
-    assert_metric_close(
-        metric_detail(imq_json, "psnr", "mse"),
-        mse,
-        0.0,
-        "psnr.mse",
-    );
+    assert_metric_close(metric_detail(imq_json, "psnr", "mse"), mse, 0.0, "psnr.mse");
 }
 
 fn assert_native_exact_capture_has_content(report: &serde_json::Value, written_name: &str) {
@@ -1463,8 +1457,14 @@ fn assert_native_exact_capture_has_content(report: &serde_json::Value, written_n
     assert_eq!(report["images"][0]["renderer"], "native");
     assert_eq!(report["images"][0]["composition"], "framebuffer");
     assert_eq!(report["images"][0]["mime_type"], "image/png");
-    assert_eq!(report["images"][0]["width"], EXACT_NATIVE_GOLDEN_VIEWPORT_WIDTH);
-    assert_eq!(report["images"][0]["height"], EXACT_NATIVE_GOLDEN_VIEWPORT_HEIGHT);
+    assert_eq!(
+        report["images"][0]["width"],
+        EXACT_NATIVE_GOLDEN_VIEWPORT_WIDTH
+    );
+    assert_eq!(
+        report["images"][0]["height"],
+        EXACT_NATIVE_GOLDEN_VIEWPORT_HEIGHT
+    );
     assert!(report["images"][0]["content_pixels"].as_u64().unwrap() > 0);
     let written = report["images"][0]["written"]
         .as_str()
@@ -1489,7 +1489,8 @@ fn native_exact_golden_fixture(fixture_id: &str) -> NativeExactGoldenFixture {
 }
 
 fn exact_native_golden_environment_blocker() -> Option<NativeExactGoldenEnvironmentBlocker> {
-    if exact_native_golden_required() && std::env::var_os("ARW_EXACT_NATIVE_GOLDEN_PINNED").is_none()
+    if exact_native_golden_required()
+        && std::env::var_os("ARW_EXACT_NATIVE_GOLDEN_PINNED").is_none()
     {
         return Some(NativeExactGoldenEnvironmentBlocker {
             classification: "environment_not_pinned",
@@ -1543,7 +1544,8 @@ fn pinned_native_golden_font_available() -> bool {
 }
 
 fn pinned_native_golden_font_path() -> Option<PathBuf> {
-    std::env::var_os("WINDIR").map(|windir| PathBuf::from(windir).join("Fonts").join("msmincho.ttc"))
+    std::env::var_os("WINDIR")
+        .map(|windir| PathBuf::from(windir).join("Fonts").join("msmincho.ttc"))
 }
 
 fn write_exact_native_golden_fingerprint(
@@ -1894,8 +1896,7 @@ fn assert_native_vertical_goal_clear_smoke_report(json: &serde_json::Value) {
         "vertical_rl text-combine and following Latin word must stay in one column"
     );
     assert!(
-        agent_json_bbox_y(&rl_sideways["bbox"])
-            > agent_json_bbox_y(&rl_text_combine["bbox"]),
+        agent_json_bbox_y(&rl_sideways["bbox"]) > agent_json_bbox_y(&rl_text_combine["bbox"]),
         "vertical_rl sideways Latin should follow text-combine inline: {rl_sideways}"
     );
     assert!(
@@ -1990,10 +1991,14 @@ flow main {{
         .expect("native observation objects are an array")
         .iter()
         .filter(|object| object["role"] == "rich_text_cluster")
-        .filter(|object| object["rich_text_ref"]["range"]["start"].as_u64().unwrap_or_default() > 0)
         .filter(|object| {
-            agent_json_bbox_x(&object["bbox"])
-                != agent_json_bbox_x(&first_column_start["bbox"])
+            object["rich_text_ref"]["range"]["start"]
+                .as_u64()
+                .unwrap_or_default()
+                > 0
+        })
+        .filter(|object| {
+            agent_json_bbox_x(&object["bbox"]) != agent_json_bbox_x(&first_column_start["bbox"])
         })
         .min_by_key(|object| {
             object["rich_text_ref"]["range"]["start"]

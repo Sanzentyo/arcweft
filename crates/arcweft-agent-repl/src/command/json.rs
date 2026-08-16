@@ -8,9 +8,9 @@ use serde_json::{Value, json};
 
 use crate::{
     ReplBaseChangeOutcome, ReplBindingEvidence, ReplBindingRecord, ReplBindingStatus,
-    ReplBytecodeStats, ReplCapabilityReport, ReplCellExecutionStatus, ReplCellId, ReplCellList,
-    ReplCellRecord, ReplCodegenStatus, ReplDebugEventCount, ReplExecutionRecord,
-    ReplGenerationEvidence, ReplGenerationId, ReplHostEffectEvidence, ReplTierDiagnostic,
+    ReplCapabilityReport, ReplCellExecutionStatus, ReplCellId, ReplCellList, ReplCellRecord,
+    ReplCodegenStatus, ReplDebugEventCount, ReplExecutionRecord, ReplGenerationEvidence,
+    ReplGenerationId, ReplHostEffectEvidence, ReplProgramStats, ReplTierDiagnostic,
     ReplTierDiagnosticSeverity, ReplTierInvalidationReason, ReplTierInvalidationToken,
     ReplTierStatusProjection, ReplTierStatusRecord, ReplTransactionError, ReplWarmOutcome,
     ReplWarmUnsupportedReason,
@@ -238,7 +238,7 @@ fn cell_json(value: &ReplCellRecord, options: &ReplCommandJsonOptions) -> Value 
         "commit_hash": &value.commit_hash,
         "overlay_hash": &value.overlay_hash,
         "entry": &value.entry,
-        "bytecode_stats": bytecode_stats_json(&value.bytecode_stats),
+        "program_stats": program_stats_json(&value.program_stats),
         "verified_effects": &value.verified_effects,
         "bindings": value.bindings.iter().take(options.max_items).map(binding_record_json).collect::<Vec<_>>(),
         "bindings_truncated": value.bindings.len() > options.max_items,
@@ -463,13 +463,12 @@ fn tier_status_record_json(value: &ReplTierStatusRecord) -> Value {
     })
 }
 
-fn bytecode_stats_json(value: &ReplBytecodeStats) -> Value {
+fn program_stats_json(value: &ReplProgramStats) -> Value {
     json!({
         "flows": value.flows,
         "instructions": value.instructions,
         "line_task_groups": value.line_task_groups,
         "stream_plans": value.stream_plans,
-        "source_plans": value.source_plans,
     })
 }
 

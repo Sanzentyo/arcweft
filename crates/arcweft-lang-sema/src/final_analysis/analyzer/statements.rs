@@ -1,19 +1,20 @@
 //! Statement roles, effect contracts, scopes, and source evidence.
 
 use super::{
-    Analyzer, AssertionContext, BTreeMap, CallableEffectContract, CheckedAssertionDisposition,
-    CheckedCallableExecution, CheckedCallableId, CheckedClosureId, CheckedExpression,
-    CheckedExpressionResolution, CheckedIteration, CheckedIteratorFamily, CheckedStatement,
-    CheckedStatementRole, CheckedTraitConformance, CheckedTraitIdentity, CheckedTypeSelection,
-    EffectClauseSource, EffectId, EffectItemSource, EffectRow, EffectSet, ExprId,
-    FinalSemanticAnalysisError, FinalSemanticAnalysisInput, GenericTypeBinding, GenericTypeOwnerId,
-    GenericTypeParameterId, GenericTypeScope, HirAssertionMode, HirCallableEffectSourcePart,
-    HirCallableSourceOwner, HirCallableSourceRole, HirExprKind, HirExprSourceRole, HirFunctionItem,
-    HirGenericParameter, HirImplMember, HirItem, HirItemKind, HirItemSourceRole, HirModule,
-    HirName, HirPatternSourceRole, HirScopeKind, HirScopeOwner, HirScopeSourceRole,
-    HirSourcePresence, HirSourceQuery, HirSourceSite, HirStmtKind, HirTypeKind, ItemId,
-    ModuleSegment, PatternId, ProjectSymbolTable, ScopeId, SourceSpan, TypeId, TypeKind,
-    TypeSourceEvidence,
+    Analyzer, AssertionContext, BTreeMap, BTreeSet, CallPoison, CallableEffectContract,
+    CheckedAssertionDisposition, CheckedAssignment, CheckedAssignmentPlace,
+    CheckedCallableExecution, CheckedCallableId, CheckedClosureId, CheckedEvaluatedEffect,
+    CheckedExpression, CheckedExpressionResolution, CheckedIteration, CheckedIteratorFamily,
+    CheckedStatement, CheckedStatementRole, CheckedSuspensionStatement, CheckedTraitConformance,
+    CheckedTraitIdentity, CheckedTypeSelection, CheckedValueResolution, EffectClauseSource,
+    EffectId, EffectItemSource, EffectRow, EffectSet, ExprId, FinalSemanticAnalysisError,
+    FinalSemanticAnalysisInput, GenericTypeBinding, GenericTypeOwnerId, GenericTypeParameterId,
+    GenericTypeScope, HirAssertionMode, HirCallableEffectSourcePart, HirCallableSourceOwner,
+    HirCallableSourceRole, HirExprKind, HirExprSourceRole, HirFunctionItem, HirGenericParameter,
+    HirImplMember, HirItem, HirItemKind, HirItemSourceRole, HirModule, HirName,
+    HirPatternSourceRole, HirScopeKind, HirScopeOwner, HirScopeSourceRole, HirSourcePresence,
+    HirSourceQuery, HirSourceSite, HirStmtKind, HirTypeKind, ItemId, ModuleSegment, PatternId,
+    ProjectSymbolTable, ScopeId, SourceSpan, TypeId, TypeKind, TypeSourceEvidence,
     expression_types::builtin_iteration,
     items::{SourceCallableShell, checked_catalog_error},
 };
@@ -231,14 +232,201 @@ impl Analyzer<'_, '_, '_> {
                 }
                 Ok(CheckedStatementRole::Iteration(Box::new(iteration.clone())))
             }
+            HirStmtKind::Assign { target, value } => {
+                self.checked_assignment_role(module, *target, *value)
+            }
+            HirStmtKind::Expression { expression } => {
+                self.checked_expression_statement_role(module, *expression)
+            }
+            HirStmtKind::Break { label, value } => {
+                self.checked_break_role(module, owner, scope, label.as_ref(), *value)
+            }
             HirStmtKind::Yield { .. } => Ok(CheckedStatementRole::Yield),
             HirStmtKind::UnsafeLifetime { .. } => Ok(CheckedStatementRole::UnsafeAudit),
-            HirStmtKind::Wait { .. } | HirStmtKind::AwaitWith(_) | HirStmtKind::LetAwait { .. } => {
-                Ok(CheckedStatementRole::Suspension)
-            }
+            HirStmtKind::Wait { .. } => Ok(CheckedStatementRole::Suspension(Box::new(
+                CheckedSuspensionStatement::Wait,
+            ))),
             HirStmtKind::Error => Err(FinalSemanticAnalysisError::RecoveredOwner),
             _ => Ok(CheckedStatementRole::Ordinary),
         }
+    }
+
+    fn checked_break_role(
+        &self,
+        module: &HirModule,
+        owner: super::StmtId,
+        mut scope: ScopeId,
+        label: Option<&HirName>,
+        value: Option<ExprId>,
+    ) -> Result<CheckedStatementRole, FinalSemanticAnalysisError> {
+        if label.is_some() {
+            return Err(FinalSemanticAnalysisError::WrongPayloadFamily);
+        }
+        let Some(value) = value else {
+            return Ok(CheckedStatementRole::Ordinary);
+        };
+        loop {
+            let current = module
+                .resolve_scope(scope)
+                .map_err(|_| FinalSemanticAnalysisError::InvalidOwner)?;
+            if let HirScopeOwner::Stmt(target) = current.owner() {
+                let statement = module
+                    .resolve_stmt(*target)
+                    .map_err(|_| FinalSemanticAnalysisError::InvalidOwner)?;
+                match statement.kind() {
+                    HirStmtKind::Loop(_) => return Ok(CheckedStatementRole::Ordinary),
+                    HirStmtKind::While(_) | HirStmtKind::WhileLet(_) | HirStmtKind::For(_) => {
+                        return Err(FinalSemanticAnalysisError::BreakValueRequiresLoop {
+                            owner,
+                            value,
+                            target: *target,
+                            value_source: expression_span(module, value)?,
+                            target_source: source_span(
+                                module,
+                                HirSourceQuery::Stmt {
+                                    owner: *target,
+                                    role: arcweft_lang_hir::source_index::HirStmtSourceRole::Whole,
+                                },
+                            )?,
+                        });
+                    }
+                    _ => {}
+                }
+            }
+            let Some(parent) = current.parent() else {
+                return Err(FinalSemanticAnalysisError::InvalidOwner);
+            };
+            scope = parent;
+        }
+    }
+
+    fn checked_expression_statement_role(
+        &self,
+        module: &HirModule,
+        expression: ExprId,
+    ) -> Result<CheckedStatementRole, FinalSemanticAnalysisError> {
+        let Some(pending) = self.facts.pending_calls().get(&expression) else {
+            return Ok(CheckedStatementRole::Ordinary);
+        };
+        let Some(effect) = pending.selected.schema().evaluated_effect() else {
+            return Ok(CheckedStatementRole::Ordinary);
+        };
+        if pending
+            .arguments
+            .iter()
+            .any(|argument| argument.poison() != CallPoison::Clean)
+            || pending
+                .selected
+                .schema()
+                .group(
+                    crate::callable::CallableGroupIndex::try_from_usize(
+                        pending.current_group.get().saturating_add(1),
+                    )
+                    .map_err(|_| FinalSemanticAnalysisError::WrongPayloadFamily)?,
+                )
+                .is_some()
+        {
+            return Err(FinalSemanticAnalysisError::WrongPayloadFamily);
+        }
+        let expression = module
+            .resolve_expr(expression)
+            .map_err(|_| FinalSemanticAnalysisError::InvalidOwner)?;
+        let HirExprKind::Call(call) = expression.kind() else {
+            return Err(FinalSemanticAnalysisError::WrongPayloadFamily);
+        };
+        Ok(CheckedStatementRole::EvaluatedEffect(Box::new(
+            CheckedEvaluatedEffect::try_from_call(effect, call.arguments())
+                .ok_or(FinalSemanticAnalysisError::WrongPayloadFamily)?,
+        )))
+    }
+
+    fn checked_assignment_role(
+        &self,
+        module: &HirModule,
+        target: ExprId,
+        value: ExprId,
+    ) -> Result<CheckedStatementRole, FinalSemanticAnalysisError> {
+        let target_expression = module
+            .resolve_expr(target)
+            .map_err(|_| FinalSemanticAnalysisError::InvalidOwner)?;
+        let HirExprKind::Select(select) = target_expression.kind() else {
+            return Err(FinalSemanticAnalysisError::WrongPayloadFamily);
+        };
+        let base_expression = module
+            .resolve_expr(select.target())
+            .map_err(|_| FinalSemanticAnalysisError::InvalidOwner)?;
+        if !matches!(base_expression.kind(), HirExprKind::Path(_)) {
+            return Err(FinalSemanticAnalysisError::WrongPayloadFamily);
+        }
+        let base = self.facts.expressions().get(&select.target()).ok_or(
+            FinalSemanticAnalysisError::ExpressionTypeUnavailable {
+                owner: select.target(),
+            },
+        )?;
+        let CheckedExpressionResolution::Value(CheckedValueResolution::Local(local)) =
+            base.resolution()
+        else {
+            return Err(FinalSemanticAnalysisError::WrongPayloadFamily);
+        };
+        let target = self
+            .facts
+            .expressions()
+            .get(&target)
+            .ok_or(FinalSemanticAnalysisError::ExpressionTypeUnavailable { owner: target })?;
+        let CheckedExpressionResolution::Select(super::CheckedSelectResolution::Field {
+            nominal: Some(nominal),
+            ordinal: Some(selected_ordinal),
+            name,
+        }) = target.resolution()
+        else {
+            return Err(FinalSemanticAnalysisError::WrongPayloadFamily);
+        };
+        if base.ty()
+            != self
+                .facts
+                .locals()
+                .get(local)
+                .ok_or(FinalSemanticAnalysisError::LocalTypeUnavailable { owner: *local })?
+        {
+            return Err(FinalSemanticAnalysisError::WrongPayloadFamily);
+        }
+        let declaration = self
+            .symbols
+            .nominal(nominal.declaration())
+            .ok_or(FinalSemanticAnalysisError::WrongPayloadFamily)?;
+        let arcweft_lang_hir::symbol::nominal::ProjectNominalBody::Struct { fields } =
+            declaration.body()
+        else {
+            return Err(FinalSemanticAnalysisError::WrongPayloadFamily);
+        };
+        let field_ordinal = fields
+            .iter()
+            .position(|field| field.name().as_str() == name.as_str())
+            .ok_or(FinalSemanticAnalysisError::WrongPayloadFamily)?;
+        let field_ordinal = u32::try_from(field_ordinal)
+            .map_err(|_| FinalSemanticAnalysisError::AccountingOverflow)?;
+        if field_ordinal != *selected_ordinal {
+            return Err(FinalSemanticAnalysisError::WrongPayloadFamily);
+        }
+        let value = self
+            .facts
+            .expressions()
+            .get(&value)
+            .ok_or(FinalSemanticAnalysisError::ExpressionTypeUnavailable { owner: value })?;
+        if target.ty() != value.ty() {
+            return Err(FinalSemanticAnalysisError::WrongPayloadFamily);
+        }
+        Ok(CheckedStatementRole::Assignment(Box::new(
+            CheckedAssignment::new(
+                CheckedAssignmentPlace::new(
+                    *local,
+                    nominal.clone(),
+                    field_ordinal,
+                    target.ty().clone(),
+                ),
+                value.ty().clone(),
+            ),
+        )))
     }
 
     fn checked_assertion_role(
@@ -362,7 +550,7 @@ fn statement_role_effects(role: &CheckedStatementRole) -> EffectSet {
     let mut effects = EffectSet::new();
     if matches!(
         role,
-        CheckedStatementRole::Suspension | CheckedStatementRole::Yield
+        CheckedStatementRole::Suspension(_) | CheckedStatementRole::Yield
     ) {
         effects.insert(
             EffectId::parse("control.suspend")
@@ -616,7 +804,9 @@ pub(super) fn generic_scope(
     symbols: &ProjectSymbolTable,
     owner: TypeId,
 ) -> Result<GenericTypeScope, FinalSemanticAnalysisError> {
-    let Some(item_id) = enclosing_item(module, scope)? else {
+    let item_id =
+        enclosing_item(module, scope)?.or(nominal_declaration_item_for_type(module, owner)?);
+    let Some(item_id) = item_id else {
         return Ok(GenericTypeScope::empty());
     };
     let item = module
@@ -661,6 +851,79 @@ pub(super) fn generic_scope(
     }
     GenericTypeScope::try_new(bindings)
         .map_err(|_| FinalSemanticAnalysisError::GenericScope { owner })
+}
+
+fn nominal_declaration_item_for_type(
+    module: &HirModule,
+    owner: TypeId,
+) -> Result<Option<ItemId>, FinalSemanticAnalysisError> {
+    let mut matched = None;
+    for (item_id, item) in module.items() {
+        let mut contains = false;
+        for root in nominal_item_type_roots(item) {
+            if type_graph_contains(module, root, owner)? {
+                contains = true;
+                break;
+            }
+        }
+        if !contains {
+            continue;
+        }
+        if matched.replace(item_id).is_some() {
+            return Err(FinalSemanticAnalysisError::GenericScope { owner });
+        }
+    }
+    Ok(matched)
+}
+
+fn nominal_item_type_roots(item: &HirItem) -> Vec<TypeId> {
+    let mut roots = Vec::new();
+    match item.kind() {
+        HirItemKind::TypeAlias(alias) => roots.push(alias.target()),
+        HirItemKind::Struct(item) => roots.extend(item.fields().iter().map(|field| field.ty())),
+        HirItemKind::Enum(item) => roots.extend(
+            item.variants()
+                .iter()
+                .filter_map(|variant| variant.payload()),
+        ),
+        _ => return roots,
+    }
+    for parameter in item_generic_parameters(item) {
+        roots.extend_from_slice(parameter.bounds());
+    }
+    let predicates = match item.kind() {
+        HirItemKind::TypeAlias(item) => item.where_predicates(),
+        HirItemKind::Struct(item) => item.where_predicates(),
+        HirItemKind::Enum(item) => item.where_predicates(),
+        _ => &[],
+    };
+    for predicate in predicates {
+        roots.push(predicate.subject());
+        roots.extend_from_slice(predicate.bounds());
+    }
+    roots
+}
+
+fn type_graph_contains(
+    module: &HirModule,
+    root: TypeId,
+    sought: TypeId,
+) -> Result<bool, FinalSemanticAnalysisError> {
+    let mut pending = vec![root];
+    let mut visited = BTreeSet::new();
+    while let Some(owner) = pending.pop() {
+        if owner == sought {
+            return Ok(true);
+        }
+        if !visited.insert(owner) {
+            continue;
+        }
+        let ty = module
+            .resolve_type(owner)
+            .map_err(|_| FinalSemanticAnalysisError::InvalidOwner)?;
+        pending.extend(ty.kind().direct_type_children());
+    }
+    Ok(false)
 }
 
 fn item_generic_parameters(item: &HirItem) -> &[HirGenericParameter] {

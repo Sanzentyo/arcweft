@@ -25,7 +25,6 @@ use crate::grammar::event::{
 use crate::grammar::flow_projection::PendingFlowDeclarationProjection;
 use crate::grammar::keyword_statement_projection::PendingKeywordStatementProjection;
 use crate::grammar::kinds::{IdentityClass, SyntaxKind, SyntaxRole};
-use crate::grammar::source_declaration_projection::PendingSourceDeclarationProjection;
 use crate::grammar::source_projection::{
     PendingPathProjection, PendingUseProjection, PendingVisibilityKind,
 };
@@ -246,7 +245,6 @@ fn candidate_semantic(projection: PendingStartProjection) -> PendingCandidateSem
         | PendingStartProjection::Layer(_)
         | PendingStartProjection::Entry(_)
         | PendingStartProjection::Style(_)
-        | PendingStartProjection::SourceDeclaration(_)
         | PendingStartProjection::MethodReceiver(_)
         | PendingStartProjection::ContractClause(_)
         | PendingStartProjection::FlowDeclaration(_)
@@ -540,18 +538,6 @@ impl<'source, 'events> DocumentParser<'source, 'events> {
         );
     }
 
-    pub(super) fn set_source_declaration_projection(
-        &mut self,
-        position: Option<usize>,
-        projection: PendingSourceDeclarationProjection,
-    ) {
-        self.select_start_projection(
-            position,
-            PendingStartProjection::SourceDeclaration(Box::new(projection)),
-            "Source projection marker",
-        );
-    }
-
     pub(super) fn set_flow_contract_clause_projection(
         &mut self,
         position: Option<usize>,
@@ -574,20 +560,6 @@ impl<'source, 'events> DocumentParser<'source, 'events> {
             PendingStartProjection::FlowDeclaration(Box::new(projection)),
             "Flow projection marker",
         );
-    }
-
-    pub(super) fn expression_projection_at(
-        &self,
-        position: usize,
-    ) -> Option<&PendingExpressionProjection> {
-        let SyntaxEvent::StartNode {
-            projection: PendingStartProjection::Expression(projection),
-            ..
-        } = self.events.get(position)?
-        else {
-            return None;
-        };
-        Some(projection)
     }
 
     /// Returns the outermost completed expression projection with this exact
@@ -924,10 +896,6 @@ impl<'source, 'events> DocumentParser<'source, 'events> {
         self.budget.grouped_use_member()
     }
 
-    pub(super) fn charge_source_member(&mut self) -> bool {
-        self.budget.source_member()
-    }
-
     pub(super) fn enter_prefix_expression(&mut self) -> bool {
         self.budget.enter_prefix_expression()
     }
@@ -1028,7 +996,7 @@ impl<'source, 'events> DocumentParser<'source, 'events> {
                     assert_ne!(
                         *kind,
                         SyntaxKind::SourceFile,
-                        "candidate event stream cannot own a source root"
+                        "candidate event stream cannot own a document root"
                     );
                     depth = depth
                         .checked_add(1)

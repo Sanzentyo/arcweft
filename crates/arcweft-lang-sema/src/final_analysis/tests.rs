@@ -51,10 +51,10 @@ use super::{
     CheckedExpressionResolution, CheckedFunctionExecution, CheckedItem, CheckedItemRole,
     CheckedIteration, CheckedIteratorFamily, CheckedPatchOperation, CheckedPattern,
     CheckedPatternResolution, CheckedStatement, CheckedStatementRole, CheckedSuspensionRole,
-    CheckedTypeSelection, CheckedValueResolution, CheckedVariantOwner, FinalSemanticAnalysis,
-    FinalSemanticAnalysisControl, FinalSemanticAnalysisError, FinalSemanticAnalysisInput,
-    FinalSemanticCatalogs, PhysicalArgumentEvaluationKind, RegisteredSemanticValueId,
-    ResolvedCallable, analyze_final_project,
+    CheckedSuspensionStatement, CheckedTypeSelection, CheckedValueResolution, CheckedVariantOwner,
+    FinalSemanticAnalysis, FinalSemanticAnalysisControl, FinalSemanticAnalysisError,
+    FinalSemanticAnalysisInput, FinalSemanticCatalogs, PhysicalArgumentEvaluationKind,
+    RegisteredSemanticValueId, ResolvedCallable, analyze_final_project,
 };
 use crate::{
     assertion::{AssertionBuildProfile, AssertionContext, AssertionRuntimePolicy},
@@ -836,6 +836,109 @@ fn analyze_with_assertion_profile(
     )
 }
 
+#[test]
+fn assignment_semantics_admit_only_one_direct_local_nominal_field() {
+    let fixture = fixture(
+        concat!(
+            "struct Point { x: i64, active: bool }\n",
+            "fn update(point: Point) -> bool {\n",
+            "    point.active = true\n",
+            "    point.active\n",
+            "}\n",
+        ),
+        None,
+    );
+    let report = analyze(&fixture).expect("direct local nominal field assignment is accepted");
+    let assignment = report
+        .statements()
+        .find_map(|(_, statement)| match statement.role() {
+            CheckedStatementRole::Assignment(assignment) => Some(assignment),
+            _ => None,
+        })
+        .expect("assignment statement retains one checked place");
+
+    assert_eq!(assignment.place().field_ordinal(), 1);
+    assert_eq!(assignment.place().field_type(), &TypeKind::Bool);
+    assert_eq!(assignment.value_type(), &TypeKind::Bool);
+    assert_eq!(
+        assignment.place().nominal().declaration().name().as_str(),
+        "Point"
+    );
+    assert!(matches!(
+        report
+            .local(assignment.place().local())
+            .expect("assignment base is one accepted local")
+            .ty(),
+        TypeKind::ProjectNominal(nominal)
+            if nominal.declaration() == assignment.place().nominal().declaration()
+    ));
+}
+
+#[test]
+fn assignment_semantics_reject_non_direct_or_non_nominal_places_and_type_mismatch() {
+    let parser_rejected_cases = [
+        ("bare-local", "fn invalid(value: i64) { value = 1i64 }\n"),
+        (
+            "index-place",
+            "fn invalid(values: Vec<i64>) { values[0] = 1i64 }\n",
+        ),
+        (
+            "dereference-place",
+            "fn invalid(value: &mut i64) { *value = 1i64 }\n",
+        ),
+    ];
+    for (label, source) in parser_rejected_cases {
+        let fixture = fixture(source, None);
+        assert!(
+            fixture.project.executable_view().is_err(),
+            "{label} must be rejected before final semantic publication",
+        );
+    }
+
+    let semantic_cases = [
+        (
+            "nested-field",
+            concat!(
+                "struct Point { x: i64 }\n",
+                "struct Wrapper { point: Point }\n",
+                "fn invalid(wrapper: Wrapper) { wrapper.point.x = 1i64 }\n",
+            ),
+        ),
+        (
+            "agent-field",
+            "fn invalid(result: ActionResult) { result.accepted = false }\n",
+        ),
+        (
+            "entity-field",
+            concat!(
+                "entry agent @entry.agent.main {}\n",
+                "fn invalid() { @entry.agent.main.name = \"changed\" }\n",
+            ),
+        ),
+        (
+            "rhs-type-mismatch",
+            concat!(
+                "struct Point { x: i64 }\n",
+                "fn invalid(point: Point) { point.x = true }\n",
+            ),
+        ),
+    ];
+
+    for (label, source) in semantic_cases {
+        let fixture = fixture(source, None);
+        if fixture.project.executable_view().is_err() {
+            continue;
+        }
+        assert!(
+            matches!(
+                analyze(&fixture),
+                Err(FinalSemanticAnalysisError::WrongPayloadFamily)
+            ),
+            "{label} must be rejected by the checked assignment authority",
+        );
+    }
+}
+
 fn function_owner(fixture: &Fixture, name: &str) -> arcweft_lang_hir::identity::ItemId {
     fixture
         .project
@@ -1077,8 +1180,8 @@ fn push_complete_statement_facts(module: &HirModule, input: &mut FinalSemanticAn
             }
             HirStmtKind::Yield { .. } => CheckedStatementRole::Yield,
             HirStmtKind::UnsafeLifetime { .. } => CheckedStatementRole::UnsafeAudit,
-            HirStmtKind::Wait { .. } | HirStmtKind::AwaitWith(_) | HirStmtKind::LetAwait { .. } => {
-                CheckedStatementRole::Suspension
+            HirStmtKind::Wait { .. } => {
+                CheckedStatementRole::Suspension(Box::new(CheckedSuspensionStatement::Wait))
             }
             HirStmtKind::Error => panic!("executable fixture contains poisoned statement"),
             _ => CheckedStatementRole::Ordinary,
@@ -1118,7 +1221,6 @@ fn push_complete_item_facts(module: &HirModule, input: &mut FinalSemanticAnalysi
             HirItemKind::ExternCapability(_) => CheckedItemRole::ExternCapability,
             HirItemKind::Test(_) => CheckedItemRole::Test,
             HirItemKind::Bench(_) => CheckedItemRole::Bench,
-            HirItemKind::Source(_) => CheckedItemRole::Source,
             HirItemKind::Style(_) => CheckedItemRole::Style,
             HirItemKind::Error(_) => panic!("executable fixture contains poisoned item"),
         };
@@ -1495,7 +1597,7 @@ fn nested(need: Need<i64, String>) -> Result<i64, String> {
 }
 
 #[test]
-fn propagating_await_unwraps_need_inside_a_matching_result_boundary() {
+fn prefix_try_unwraps_the_result_of_await_inside_a_matching_result_boundary() {
     let fixture = fixture(
         r"
 fn nested(need: Need<i64, String>) -> Result<i64, String> {
@@ -1504,7 +1606,7 @@ fn nested(need: Need<i64, String>) -> Result<i64, String> {
 ",
         None,
     );
-    let report = analyze(&fixture).expect("propagating Await final analysis");
+    let report = analyze(&fixture).expect("Try of Await final analysis");
     assert!(report.expressions().any(|(_, expression)| {
         expression.ty() == &TypeKind::I64
             && expression
@@ -4432,6 +4534,45 @@ fn vec_turbofish_path() { Vec::<i32>::with_capacity(6); }
 }
 
 #[test]
+fn production_analyzer_routes_string_preserving_value_methods_through_capacity_family() {
+    let fixture = fixture(
+        "fn normalize(name: String) -> String { name.trim().to_string() }\n",
+        None,
+    );
+    let report = analyze(&fixture).expect("typed String value-method analysis");
+    let calls = report.calls().map(|(_, facts)| facts).collect::<Vec<_>>();
+    assert_eq!(calls.len(), 2);
+    assert!(calls.iter().all(|facts| matches!(
+        facts.target(),
+        CallTargetFact::Selected { selected, considered }
+            if matches!(selected.id(), CallableCandidateId::CapacityMethod(_))
+                && considered.len() == 1
+    )));
+    assert!(
+        calls
+            .iter()
+            .all(|facts| facts.result() == Some(&TypeKind::String))
+    );
+}
+
+#[test]
+fn production_analyzer_routes_single_string_preserving_value_method() {
+    let fixture = fixture(
+        "fn normalize(name: String) -> String { name.trim() }\n",
+        None,
+    );
+    let report = analyze(&fixture).expect("typed String value-method analysis");
+    let (_, call) = report.calls().next().expect("one method call");
+    assert!(matches!(
+        call.target(),
+        CallTargetFact::Selected { selected, considered }
+            if matches!(selected.id(), CallableCandidateId::CapacityMethod(_))
+                && considered.len() == 1
+    ));
+    assert_eq!(call.result(), Some(&TypeKind::String));
+}
+
+#[test]
 fn bare_vec_capacity_retains_candidate_neutral_arguments_without_resolver_entry() {
     let fixture = fixture("fn caller() { Vec.with_capacity(1, 2, 3); }\n", None);
     let report = analyze(&fixture).expect("bare generic associated recovery");
@@ -4947,6 +5088,24 @@ ensures no_effect network.request
         ["agent.observe"],
         "the exposed Flow row includes effects operands but not no_effect prohibitions"
     );
+}
+
+#[test]
+fn scoped_flow_effect_bound_covers_the_same_unscoped_runtime_operation() {
+    let fixture = fixture(
+        r#"
+extern capability fs {
+    fn read_text(path: String) -> String effects { fs.read }
+}
+
+flow main() effects { fs.read(save) } {
+    let text = fs.read_text(path = "profile.json")
+}
+"#,
+        None,
+    );
+
+    analyze(&fixture).expect("a scoped Flow effect bound covers its unscoped operation");
 }
 
 #[test]

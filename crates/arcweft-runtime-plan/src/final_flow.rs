@@ -6,33 +6,30 @@ use std::{
 };
 
 use arcweft_character::presentation_name::CharacterPresentationCatalogData;
-use arcweft_core::effect::{
-    RuntimeArtifactFingerprint, RuntimeAssertionProfile, RuntimeEffectExpr,
-};
-use arcweft_core::entry::{
-    RuntimeCallableExecutable, RuntimeCallableExecutableCode, RuntimeCallableId,
-    RuntimeCallableRole, RuntimeFlowExecutable,
-};
-use arcweft_core::line_task::LineTaskGroup;
-use arcweft_core::pattern::RuntimePattern;
+use arcweft_core::effect::{RuntimeArtifactFingerprint, RuntimeAssertionProfile};
+use arcweft_core::entry::{RuntimeCallableId, RuntimeCallableRole, RuntimeFlowExecutable};
+use arcweft_core::line_task::{ChildCancelPolicy, ChildJoinPolicy, LineCleanupPolicy};
 use arcweft_core::plan::{
-    FlowOp, FlowRuntimeId, RuntimeEntryKind, RuntimeEntrySpec, RuntimeFlow, RuntimeMatchArm,
-    RuntimePlan, RuntimePureHelper, RuntimePureHelperId, RuntimePureHelperOrigin,
-    RuntimePureInputType, RuntimePureOutputType, RuntimeReceiverMode, RuntimeTraitMethod,
-    RuntimeTraitMethodIdentity,
+    FlowRuntimeId, RuntimeDialogueContentPlanSeedId, RuntimeEffectFieldSeed, RuntimeEntryKind,
+    RuntimeEntrySpec, RuntimeEvaluatedEffectSeed, RuntimeExprSeed, RuntimeFlowMatchArmSeed,
+    RuntimeFlowOpSeed, RuntimeFlowSeed, RuntimeFunctionSiteDeclarationSeed,
+    RuntimeFunctionSiteSeedId, RuntimeHostTaskRequestTemplateSeed, RuntimeIteratorEvidenceSeed,
+    RuntimeIteratorWitnessEvidenceSeed, RuntimeIteratorWitnessExecutableSeed,
+    RuntimeLineTaskGroupSeed, RuntimeLineTaskNodeSeed, RuntimeLineTaskTriggerSeed,
+    RuntimeLocalDeclarationSeed, RuntimeLocalSeedId, RuntimePatternSeed, RuntimePatternSeedKind,
+    RuntimePlan, RuntimePlanBuilder, RuntimePureHelperDeclarationSeed, RuntimePureHelperOrigin,
+    RuntimePureHelperSeedId, RuntimePureInputType, RuntimePureOutputType, RuntimeReceiverMode,
+    RuntimeTraitMethodDeclarationSeed, RuntimeTraitMethodIdentity, RuntimeTraitMethodSeedId,
 };
-use arcweft_core::task::{
-    AwaitTarget, HostTaskArgTemplate, HostTaskRequestTemplate, NeedId, TaskId,
-};
-use arcweft_core::value::{
-    RuntimeExpr, RuntimeSignedIntWidth, RuntimeUnsignedIntWidth, RuntimeValue,
-};
+use arcweft_core::task::{HostCapabilityId, NeedId, TaskId, TaskOutcomeContract, TaskPriority};
+use arcweft_core::time::LogicalDuration;
+use arcweft_core::value::{RuntimeSignedIntWidth, RuntimeUnsignedIntWidth};
 use arcweft_lang_hir::expr::{HirExprKind, HirThreadBody, HirThreadFlowItem, HirThreadMode};
-use arcweft_lang_hir::identity::{HirModuleId, HirSnapshotId, ItemId, StmtId};
+use arcweft_lang_hir::identity::{ExprId, HirModuleId, HirSnapshotId, ItemId, LocalId, StmtId};
 use arcweft_lang_hir::item::{
     HirEntryDeclaration, HirEntryId, HirEntryKind, HirFunctionBody, HirFunctionItem,
     HirFunctionParameterGroup, HirImplFunction, HirImplMember, HirItemKind, HirMethodParameter,
-    HirMethodParameterGroup, HirMethodReceiverKind, HirParameterKind,
+    HirMethodParameterGroup, HirMethodReceiverKind, HirParameter, HirParameterKind,
 };
 use arcweft_lang_hir::leaf::HirIdRef;
 use arcweft_lang_hir::module::HirModule;
@@ -46,6 +43,7 @@ use arcweft_lang_hir::stmt::{
 };
 use arcweft_lang_hir::symbol::{
     CallableDeclarationId, CallableDeclarationKey, CallableDeclarationOwner, CallablePackageId,
+    ImplMethodDeclarationId,
 };
 use arcweft_source::SourceSpan;
 use arcweft_text_model::DialogueContentCatalog;
@@ -58,10 +56,13 @@ use crate::errors::RuntimePlanLowerError;
 use crate::final_expr::FinalExprLowerer;
 use crate::final_pattern::FinalPatternLowerer;
 use crate::semantic_facts::{
-    RuntimeAssertionAdmission, RuntimePlanSemanticFacts, RuntimeResolvedCallTarget,
-    RuntimeResolvedValue, RuntimeSemanticFactsError, RuntimeTraitIdentity, RuntimeTraitMethodFact,
-    RuntimeTypeShape,
+    RuntimeAssertionAdmission, RuntimeAwaitBranchContinuation, RuntimeAwaitFact,
+    RuntimeDialogueApplication, RuntimeDialogueEffectTrigger, RuntimeEvaluatedEffect,
+    RuntimeIteratorFact, RuntimeIteratorWitnessExecutableFact, RuntimeNormalizedType,
+    RuntimePlanSemanticFacts, RuntimeResolvedCallTarget, RuntimeResolvedValue,
+    RuntimeSemanticFactsError, RuntimeTraitIdentity, RuntimeTraitMethodFact, RuntimeTypeShape,
 };
+use arcweft_text_model::{RichTextControl, RichTextNode};
 
 /// Final-HIR owner and checked runtime Entry metadata admitted by semantic analysis.
 #[derive(Clone, Debug, PartialEq)]
@@ -253,6 +254,89 @@ pub struct RuntimePlanLowerStats {
     pub pure_call_exprs: usize,
 }
 
+#[derive(Clone)]
+struct ReservedFunctionSiteDefinition {
+    module: HirModuleId,
+    body: ExprId,
+    site: RuntimeFunctionSiteSeedId,
+}
+
+#[derive(Clone)]
+struct ReservedPureHelperDefinition {
+    owner: ItemId,
+    helper: RuntimePureHelperSeedId,
+}
+
+#[derive(Clone)]
+struct ReservedTraitMethodDefinition {
+    checked: RuntimeTraitMethodFact,
+    method: RuntimeTraitMethodSeedId,
+}
+
+#[derive(Clone)]
+struct PendingDialogueValueDefinition {
+    expression: ExprId,
+    site: RuntimeFunctionSiteSeedId,
+    body: RuntimeExprSeed,
+}
+
+#[derive(Clone)]
+struct PendingDialogueContentDefinition {
+    owner: ExprId,
+    line: arcweft_core::plan::RuntimeLineId,
+    values: Vec<(
+        arcweft_core::runtime_id::RuntimeDialogueValueSlotId,
+        arcweft_core::plan::RuntimeDialogueValueRole,
+        RuntimeFunctionSiteSeedId,
+    )>,
+    marks: Box<[String]>,
+    effects: Vec<PendingDialogueEffectDefinition>,
+}
+
+#[derive(Clone)]
+struct PendingDialogueEffectDefinition {
+    trigger: RuntimeDialogueEffectTrigger,
+    target: arcweft_core::plan::RuntimeHostCallTargetSeed,
+}
+
+struct LoweredControllerCallable {
+    flow: RuntimeFlowSeed,
+    flow_executable: RuntimeFlowExecutable,
+    executable: arcweft_core::plan::RuntimeCallableExecutableSeed,
+    assertions: Vec<RuntimeAssertionSite>,
+}
+
+struct FinalLoweringContext<'project, 'data> {
+    project: HirExecutableProjectView<'project>,
+    facts: &'data RuntimePlanSemanticFacts,
+    locals: &'data BTreeMap<LocalId, RuntimeLocalSeedId>,
+    pure_helpers: &'data BTreeMap<RuntimeCallableId, RuntimePureHelperSeedId>,
+    trait_methods: &'data BTreeMap<ImplMethodDeclarationId, RuntimeTraitMethodSeedId>,
+    function_sites: &'data BTreeMap<ExprId, RuntimeFunctionSiteSeedId>,
+    dialogue_content: &'data BTreeMap<ExprId, RuntimeDialogueContentPlanSeedId>,
+    await_locals: &'data BTreeMap<ExprId, AwaitLocalSeeds>,
+}
+
+#[derive(Clone)]
+struct AwaitLocalSeeds {
+    result: RuntimeLocalSeedId,
+    ready: RuntimeLocalSeedId,
+    error: RuntimeLocalSeedId,
+}
+
+impl FinalLoweringContext<'_, '_> {
+    fn expr_lowerer<'a>(&'a self, module: &'a HirModule) -> FinalExprLowerer<'a> {
+        FinalExprLowerer::new(
+            module,
+            self.facts,
+            self.locals,
+            self.pure_helpers,
+            self.trait_methods,
+            self.function_sites,
+        )
+    }
+}
+
 /// Lowers one exact accepted HIR generation and its checked semantic facts.
 #[allow(
     clippy::too_many_lines,
@@ -272,10 +356,96 @@ pub fn lower_runtime_plan_with_stats(
         )]);
     }
 
-    let mut flows = Vec::new();
-    let mut assertion_sites = Vec::new();
+    let type_seeds = facts
+        .runtime_plan_type_seeds()
+        .map_err(|error| vec![RuntimePlanLowerError::new(error.to_string())])?;
+    let local_facts = facts.local_declarations().collect::<Vec<_>>();
+    let mut local_seeds = local_facts
+        .iter()
+        .map(|(_, ty)| RuntimeLocalDeclarationSeed::new(ty.identity()))
+        .collect::<Vec<_>>();
+    let await_facts = facts.awaits().collect::<Vec<_>>();
+    for (_, awaited) in &await_facts {
+        local_seeds.extend([
+            RuntimeLocalDeclarationSeed::new(awaited.physical_result().identity()),
+            RuntimeLocalDeclarationSeed::new(awaited.ready().identity()),
+            RuntimeLocalDeclarationSeed::new(awaited.error().identity()),
+        ]);
+    }
+    let mut builder = RuntimePlanBuilder::new();
+    let admission = builder
+        .admit_semantic_batch(
+            type_seeds,
+            local_seeds,
+            facts.runtime_plan_nominal_record_domain_seeds(),
+            facts.runtime_plan_variant_domain_seeds(),
+        )
+        .map_err(|error| vec![RuntimePlanLowerError::new(error.to_string())])?;
+    let locals = local_facts
+        .iter()
+        .map(|(local, _)| *local)
+        .zip(admission.local_ids().iter().cloned())
+        .collect::<BTreeMap<_, _>>();
+    let await_locals = await_facts
+        .iter()
+        .zip(admission.local_ids()[local_facts.len()..].chunks_exact(3))
+        .map(|((expression, _), locals)| {
+            (
+                **expression,
+                AwaitLocalSeeds {
+                    result: locals[0].clone(),
+                    ready: locals[1].clone(),
+                    error: locals[2].clone(),
+                },
+            )
+        })
+        .collect::<BTreeMap<_, _>>();
     let mut errors = Vec::new();
-    let mut entries = collect_entry_inputs(entry_input, &mut errors);
+    let (function_sites, function_definitions) =
+        reserve_function_sites(project, facts, &locals, &mut builder, &mut errors);
+    let (pure_helpers, pure_definitions) = reserve_entry_pure_helpers(
+        project,
+        facts,
+        entry_input,
+        &locals,
+        &mut builder,
+        &mut errors,
+    );
+    let (pure_helpers, pure_definitions) = reserve_called_project_helpers(
+        project,
+        facts,
+        &locals,
+        pure_helpers,
+        pure_definitions,
+        &mut builder,
+        &mut errors,
+    );
+    let (trait_methods, trait_definitions) =
+        reserve_trait_methods(project, facts, &locals, &mut builder, &mut errors);
+    let empty_dialogue_content = BTreeMap::new();
+    let context = FinalLoweringContext {
+        project,
+        facts,
+        locals: &locals,
+        pure_helpers: &pure_helpers,
+        trait_methods: &trait_methods,
+        function_sites: &function_sites,
+        dialogue_content: &empty_dialogue_content,
+        await_locals: &await_locals,
+    };
+
+    define_function_sites(&context, &function_definitions, &mut builder, &mut errors);
+    define_pure_helpers(&context, &pure_definitions, &mut builder, &mut errors);
+    define_trait_methods(&context, &trait_definitions, &mut builder, &mut errors);
+    let dialogue_content = lower_dialogue_content(&context, &mut builder, &mut errors);
+    let context = FinalLoweringContext {
+        dialogue_content: &dialogue_content,
+        ..context
+    };
+
+    let mut entry_owners = collect_entry_inputs(entry_input, &mut errors);
+    let mut flow_seeds = Vec::new();
+    let mut assertion_sites = Vec::new();
     for item in project.items() {
         match item.item().kind() {
             HirItemKind::Flow(flow) => {
@@ -286,21 +456,39 @@ pub fn lower_runtime_plan_with_stats(
                     )));
                     continue;
                 };
+                let params = flow
+                    .parameters()
+                    .iter()
+                    .flat_map(HirParameter::locals)
+                    .map(|local| {
+                        locals.get(local).cloned().ok_or_else(|| {
+                            RuntimePlanLowerError::new(format!(
+                                "runtime Flow {identity} parameter {local:?} has no admitted local"
+                            ))
+                        })
+                    })
+                    .collect::<Result<Vec<_>, _>>();
+                let params = match params {
+                    Ok(params) => params,
+                    Err(error) => {
+                        errors.push(error);
+                        continue;
+                    }
+                };
                 let mut lowerer = FinalFlowLowerer::new(
                     item.module(),
-                    facts,
-                    project.package(),
+                    &context,
                     RuntimeAssertionOwner::Flow(identity.clone()),
                 );
                 match lowerer.lower_body(flow.body()) {
                     Ok(ops) => {
                         assertion_sites.extend(lowerer.into_assertion_sites());
-                        flows.push(RuntimeFlow { id: identity, ops });
+                        flow_seeds.push(RuntimeFlowSeed::new(identity, params, ops));
                     }
                     Err(mut item_errors) => errors.append(&mut item_errors),
                 }
             }
-            HirItemKind::Entry(entry) => match entries.remove(&item.id()) {
+            HirItemKind::Entry(entry) => match entry_owners.remove(&item.id()) {
                 Some(input) => {
                     if let Err(error) = validate_entry_input(entry, input.entry()) {
                         errors.push(error);
@@ -311,10 +499,6 @@ pub fn lower_runtime_plan_with_stats(
                     item.id()
                 ))),
             },
-            HirItemKind::Source(_) => errors.push(RuntimePlanLowerError::new(format!(
-                "final-HIR Source item {:?} requires a checked generation-plan projection fact",
-                item.id()
-            ))),
             HirItemKind::Error(_) => errors.push(RuntimePlanLowerError::new(format!(
                 "recovered final-HIR item {:?} cannot enter runtime-plan lowering",
                 item.id()
@@ -343,49 +527,45 @@ pub fn lower_runtime_plan_with_stats(
             | HirItemKind::Style(_) => {}
         }
     }
-
-    for owner in entries.keys() {
+    for owner in entry_owners.keys() {
         errors.push(RuntimePlanLowerError::new(format!(
             "checked runtime Entry input references non-Entry or stale owner {owner:?}"
         )));
     }
-
-    if !errors.is_empty() {
-        return Err(errors);
-    }
-
-    let entries = entry_input
-        .entries
-        .iter()
-        .map(|input| input.entry.clone())
-        .collect::<Vec<_>>();
-    let (
-        pure_helpers,
-        callable_executables,
-        mut controller_flows,
-        controller_executables,
-        controller_assertion_sites,
-    ) = lower_entry_callables(project, facts, entry_input)?;
-    assertion_sites.extend(controller_assertion_sites);
-    let flow_executables = lower_entry_flows(project, facts, entry_input, &mut errors)?;
-    for controller in controller_flows.drain(..) {
-        if flows.iter().any(|flow| flow.id == controller.id) {
-            errors.push(RuntimePlanLowerError::new(format!(
-                "Entry controller flow `{}` conflicts with a final-HIR Flow identity",
-                controller.id
-            )));
-        } else {
-            flows.push(controller);
-        }
-    }
-    if !errors.is_empty() {
-        return Err(errors);
-    }
+    let (controller_flows, controller_executables, callable_executables, controller_assertions) =
+        lower_entry_callables(&context, entry_input, &mut errors);
+    flow_seeds.extend(controller_flows);
+    assertion_sites.extend(controller_assertions);
+    let mut flow_executables = lower_entry_flows(project, facts, entry_input, &mut errors)?;
+    flow_executables.extend(controller_executables);
     validate_unique_assertion_guards(&assertion_sites)?;
-    let mut all_flow_executables = flow_executables;
-    all_flow_executables.extend(controller_executables);
-    let trait_methods = lower_trait_methods(project, facts)?;
+    if !errors.is_empty() {
+        return Err(errors);
+    }
 
+    for input in &entry_input.entries {
+        builder
+            .push_entry(input.entry.clone())
+            .map_err(|error| vec![RuntimePlanLowerError::new(error.to_string())])?;
+    }
+    for executable in callable_executables {
+        builder
+            .push_callable_executable_seed(executable)
+            .map_err(|error| vec![RuntimePlanLowerError::new(error.to_string())])?;
+    }
+    for executable in flow_executables {
+        builder
+            .push_flow_executable(executable)
+            .map_err(|error| vec![RuntimePlanLowerError::new(error.to_string())])?;
+    }
+    for flow in flow_seeds {
+        builder
+            .push_flow_seed(flow)
+            .map_err(|error| vec![RuntimePlanLowerError::new(error.to_string())])?;
+    }
+    let plan = builder
+        .finish()
+        .map_err(|error| vec![RuntimePlanLowerError::new(error.to_string())])?;
     let mut dialogue_records = facts
         .dialogue_applications()
         .map(|(_, application)| application.content().clone())
@@ -395,17 +575,6 @@ pub fn lower_runtime_plan_with_stats(
     });
     let dialogue_content_catalog = DialogueContentCatalog::try_from_records(dialogue_records)
         .map_err(|error| vec![RuntimePlanLowerError::new(error.to_string())])?;
-    let line_task_groups = if dialogue_content_catalog.records().is_empty() {
-        Vec::new()
-    } else {
-        vec![LineTaskGroup::default()]
-    };
-    let plan = RuntimePlan::new(flows, line_task_groups)
-        .map_err(|error| vec![RuntimePlanLowerError::new(error.to_string())])?
-        .with_entries(entries)
-        .with_pure_helpers(pure_helpers.clone())
-        .with_trait_methods(trait_methods)
-        .with_entry_executables(callable_executables, all_flow_executables);
     Ok(RuntimePlanLowerReport {
         plan,
         stats: RuntimePlanLowerStats {
@@ -420,109 +589,377 @@ pub fn lower_runtime_plan_with_stats(
     })
 }
 
-fn lower_trait_methods(
+fn reserve_function_sites(
     project: HirExecutableProjectView<'_>,
     facts: &RuntimePlanSemanticFacts,
-) -> Result<Vec<RuntimeTraitMethod>, Vec<RuntimePlanLowerError>> {
-    facts
-        .trait_methods()
-        .map(|method| lower_trait_method(project, facts, method))
-        .collect::<Result<Vec<_>, _>>()
-        .map_err(|error| vec![error])
+    locals: &BTreeMap<LocalId, RuntimeLocalSeedId>,
+    builder: &mut RuntimePlanBuilder,
+    errors: &mut Vec<RuntimePlanLowerError>,
+) -> (
+    BTreeMap<ExprId, RuntimeFunctionSiteSeedId>,
+    Vec<ReservedFunctionSiteDefinition>,
+) {
+    let mut sites = BTreeMap::new();
+    let mut definitions = Vec::new();
+    for (_, module) in project.modules() {
+        for (owner, expression) in module.expressions() {
+            let HirExprKind::Closure(closure) = expression.kind() else {
+                continue;
+            };
+            let pattern_lowerer = FinalPatternLowerer::new(module, facts, locals);
+            let params = closure
+                .parameters()
+                .iter()
+                .map(|parameter| pattern_lowerer.lower(parameter.pattern()))
+                .collect::<Result<Vec<_>, _>>()
+                .map(|patterns| {
+                    patterns
+                        .iter()
+                        .flat_map(|pattern| pattern.binding_locals().into_vec())
+                        .collect::<Vec<_>>()
+                });
+            let captures = closure
+                .captures()
+                .iter()
+                .map(|capture| {
+                    module
+                        .resolve_capture(*capture)
+                        .map_err(|error| error.to_string())
+                        .and_then(|capture| {
+                            locals.get(&capture.local()).cloned().ok_or_else(|| {
+                                format!(
+                                    "closure {owner:?} capture {:?} has no admitted local",
+                                    capture.local()
+                                )
+                            })
+                        })
+                })
+                .collect::<Result<Vec<_>, _>>();
+            let result = facts
+                .expression_type(closure.body())
+                .map(RuntimeNormalizedType::identity)
+                .ok_or_else(|| {
+                    format!(
+                        "closure {owner:?} body {:?} has no accepted runtime type",
+                        closure.body()
+                    )
+                });
+            let declaration = params.and_then(|params| {
+                captures.and_then(|captures| {
+                    result.map(|result| RuntimeFunctionSiteDeclarationSeed {
+                        params: params.into_boxed_slice(),
+                        captures: captures.into_boxed_slice(),
+                        result,
+                    })
+                })
+            });
+            let declaration = match declaration {
+                Ok(declaration) => declaration,
+                Err(error) => {
+                    errors.push(RuntimePlanLowerError::new(error));
+                    continue;
+                }
+            };
+            match builder.reserve_function_site_seed(declaration) {
+                Ok(site) => {
+                    sites.insert(owner, site.clone());
+                    definitions.push(ReservedFunctionSiteDefinition {
+                        module: module.module_id(),
+                        body: closure.body(),
+                        site,
+                    });
+                }
+                Err(error) => {
+                    errors.push(RuntimePlanLowerError::new(error.to_string()));
+                    break;
+                }
+            }
+        }
+    }
+    (sites, definitions)
 }
 
-fn lower_trait_method(
+fn reserve_entry_pure_helpers(
     project: HirExecutableProjectView<'_>,
     facts: &RuntimePlanSemanticFacts,
-    checked: &RuntimeTraitMethodFact,
-) -> Result<RuntimeTraitMethod, RuntimePlanLowerError> {
-    let module = project
-        .modules()
-        .find_map(|(_, module)| {
-            (module.module_id() == checked.implementation().module()).then_some(module)
-        })
-        .ok_or_else(|| {
+    input: &RuntimeEntryLoweringInput,
+    locals: &BTreeMap<LocalId, RuntimeLocalSeedId>,
+    builder: &mut RuntimePlanBuilder,
+    errors: &mut Vec<RuntimePlanLowerError>,
+) -> (
+    BTreeMap<RuntimeCallableId, RuntimePureHelperSeedId>,
+    Vec<ReservedPureHelperDefinition>,
+) {
+    let mut by_callable = BTreeMap::<RuntimeCallableId, &RuntimeEntryCallableInput>::new();
+    for callable in &input.callables {
+        let identity = callable.role().callable.clone();
+        if let Some(previous) = by_callable.insert(identity.clone(), callable)
+            && previous != callable
+        {
+            errors.push(RuntimePlanLowerError::new(format!(
+                "checked Entry callable `{}` has conflicting owners or body roles",
+                identity.as_str()
+            )));
+        }
+    }
+    let mut helpers = BTreeMap::new();
+    let mut definitions = Vec::new();
+    for (identity, callable) in by_callable {
+        if !matches!(callable.body(), RuntimeEntryCallableBody::PureHelper) {
+            continue;
+        }
+        let Some(item) = project.items().find(|item| item.id() == callable.owner()) else {
+            errors.push(RuntimePlanLowerError::new(format!(
+                "checked Entry callable `{}` has a stale owner",
+                identity.as_str()
+            )));
+            continue;
+        };
+        let HirItemKind::Function(function) = item.item().kind() else {
+            errors.push(RuntimePlanLowerError::new(format!(
+                "checked Entry callable `{}` is not a function",
+                identity.as_str()
+            )));
+            continue;
+        };
+        if let Err(error) =
+            validate_callable_owner(project.package(), item.module_path(), function, callable)
+        {
+            errors.push(error);
+            continue;
+        }
+        match pure_helper_declaration(item.module(), facts, locals, function, identity.as_str())
+            .and_then(|declaration| {
+                builder
+                    .reserve_pure_helper_seed(declaration)
+                    .map_err(|error| RuntimePlanLowerError::new(error.to_string()))
+            }) {
+            Ok(helper) => {
+                helpers.insert(identity, helper.clone());
+                definitions.push(ReservedPureHelperDefinition {
+                    owner: callable.owner(),
+                    helper,
+                });
+            }
+            Err(error) => errors.push(error),
+        }
+    }
+    (helpers, definitions)
+}
+
+#[expect(
+    clippy::too_many_arguments,
+    reason = "the reservation transaction retains each typed authority without a detached aggregate"
+)]
+fn reserve_called_project_helpers(
+    project: HirExecutableProjectView<'_>,
+    facts: &RuntimePlanSemanticFacts,
+    locals: &BTreeMap<LocalId, RuntimeLocalSeedId>,
+    mut helpers: BTreeMap<RuntimeCallableId, RuntimePureHelperSeedId>,
+    mut definitions: Vec<ReservedPureHelperDefinition>,
+    builder: &mut RuntimePlanBuilder,
+    errors: &mut Vec<RuntimePlanLowerError>,
+) -> (
+    BTreeMap<RuntimeCallableId, RuntimePureHelperSeedId>,
+    Vec<ReservedPureHelperDefinition>,
+) {
+    let mut helpers_by_owner = definitions
+        .iter()
+        .map(|definition| (definition.owner, definition.helper.clone()))
+        .collect::<BTreeMap<_, _>>();
+    let mut called = BTreeMap::<ItemId, (RuntimeCallableId, &CallableDeclarationKey)>::new();
+    for (_, call) in facts.calls() {
+        let RuntimeResolvedCallTarget::Declaration(callable) = call.target() else {
+            continue;
+        };
+        match called.entry(callable.owner()) {
+            std::collections::btree_map::Entry::Vacant(entry) => {
+                entry.insert((callable.runtime().clone(), callable.declaration()));
+            }
+            std::collections::btree_map::Entry::Occupied(entry)
+                if entry.get().1 != callable.declaration() =>
+            {
+                errors.push(RuntimePlanLowerError::new(format!(
+                    "project function owner {:?} has conflicting accepted callable declarations",
+                    callable.owner()
+                )));
+            }
+            std::collections::btree_map::Entry::Occupied(_) => {}
+        }
+        if let Some(helper) = helpers_by_owner.get(&callable.owner()).cloned() {
+            helpers.insert(callable.runtime().clone(), helper);
+        }
+    }
+
+    for (owner, (runtime, declaration)) in called {
+        if helpers.contains_key(&runtime) {
+            continue;
+        }
+        let Some(item) = project.items().find(|item| item.id() == owner) else {
+            errors.push(RuntimePlanLowerError::new(format!(
+                "called project function {owner:?} has a stale final-HIR owner"
+            )));
+            continue;
+        };
+        let HirItemKind::Function(function) = item.item().kind() else {
+            errors.push(RuntimePlanLowerError::new(format!(
+                "called project callable {owner:?} is not a function"
+            )));
+            continue;
+        };
+        if let Err(error) = validate_project_callable_owner(
+            project.package(),
+            item.module_path(),
+            function,
+            declaration,
+        ) {
+            errors.push(error);
+            continue;
+        }
+        let name = function
+            .name()
+            .resolved()
+            .map_or_else(|| runtime.as_str(), |name| name.as_str());
+        let declaration = pure_helper_declaration(item.module(), facts, locals, function, name)
+            .and_then(|declaration| {
+                builder
+                    .reserve_pure_helper_seed(declaration)
+                    .map_err(|error| RuntimePlanLowerError::new(error.to_string()))
+            });
+        match declaration {
+            Ok(helper) => {
+                helpers.insert(runtime, helper.clone());
+                helpers_by_owner.insert(owner, helper.clone());
+                definitions.push(ReservedPureHelperDefinition { owner, helper });
+            }
+            Err(error) => errors.push(error),
+        }
+    }
+    (helpers, definitions)
+}
+
+fn pure_helper_declaration(
+    module: &HirModule,
+    facts: &RuntimePlanSemanticFacts,
+    locals: &BTreeMap<LocalId, RuntimeLocalSeedId>,
+    function: &HirFunctionItem,
+    name: &str,
+) -> Result<RuntimePureHelperDeclarationSeed, RuntimePlanLowerError> {
+    if !function.generic_parameters().is_empty() {
+        return Err(RuntimePlanLowerError::new(format!(
+            "Entry pure helper `{name}` cannot retain unbound generic parameters"
+        )));
+    }
+    let mut inputs = Vec::new();
+    let mut input_abi = Vec::new();
+    for parameter in function
+        .parameter_groups()
+        .iter()
+        .flat_map(HirFunctionParameterGroup::parameters)
+    {
+        if parameter.kind() != HirParameterKind::Fixed
+            || parameter.default().is_some()
+            || parameter.locals().len() != 1
+        {
+            return Err(RuntimePlanLowerError::new(format!(
+                "Entry pure helper `{name}` requires fixed single-binding parameters"
+            )));
+        }
+        inputs.push(
+            locals
+                .get(&parameter.locals()[0])
+                .cloned()
+                .ok_or_else(|| RuntimePlanLowerError::new("pure helper local is not admitted"))?,
+        );
+        let ty = facts.ty(parameter.ty()).ok_or_else(|| {
             RuntimePlanLowerError::new(format!(
-                "runtime trait method {:?} belongs to no accepted HIR module",
-                checked.id()
+                "Entry pure helper `{name}` is missing a parameter type fact"
             ))
         })?;
-    let item = module
-        .resolve_item(checked.implementation())
-        .map_err(|error| RuntimePlanLowerError::new(error.to_string()))?;
-    let HirItemKind::Impl(implementation) = item.kind() else {
-        return Err(RuntimePlanLowerError::new(
-            "checked runtime trait method owner is not an Impl item",
-        ));
-    };
-    let Some(HirImplMember::Function(function)) =
-        implementation.members().get(usize::from(checked.member()))
-    else {
-        return Err(RuntimePlanLowerError::new(
-            "checked runtime trait method member is not a function",
-        ));
-    };
-    if !function.generic_parameters().is_empty() {
-        return Err(RuntimePlanLowerError::new(
-            "runtime trait method cannot retain unbound generic parameters",
-        ));
+        input_abi.push(runtime_input_type(ty.shape()));
     }
+    let body = function_body_expression(function.body())?;
+    let result = facts.expression_type(body).ok_or_else(|| {
+        RuntimePlanLowerError::new(format!(
+            "Entry pure helper `{name}` body has no accepted runtime type"
+        ))
+    })?;
+    let output_abi = function
+        .return_type()
+        .and_then(|ty| facts.ty(ty))
+        .map_or(RuntimePureOutputType::Value, |ty| {
+            runtime_output_type(ty.shape())
+        });
+    let scalar_eval_supported = output_abi != RuntimePureOutputType::Value
+        && input_abi
+            .iter()
+            .all(|input| *input != RuntimePureInputType::Value);
+    let _ = module;
+    Ok(RuntimePureHelperDeclarationSeed {
+        name: name.to_owned(),
+        inputs: inputs.into_boxed_slice(),
+        input_abi,
+        result: result.identity(),
+        output_abi,
+        scalar_eval_supported,
+        origin: RuntimePureHelperOrigin::Inferred,
+    })
+}
+
+fn reserve_trait_methods(
+    project: HirExecutableProjectView<'_>,
+    facts: &RuntimePlanSemanticFacts,
+    locals: &BTreeMap<LocalId, RuntimeLocalSeedId>,
+    builder: &mut RuntimePlanBuilder,
+    errors: &mut Vec<RuntimePlanLowerError>,
+) -> (
+    BTreeMap<ImplMethodDeclarationId, RuntimeTraitMethodSeedId>,
+    Vec<ReservedTraitMethodDefinition>,
+) {
+    let mut methods = BTreeMap::new();
+    let mut definitions = Vec::new();
+    for (position, checked) in facts.trait_methods().enumerate() {
+        match trait_method_declaration(project, facts, locals, checked, position).and_then(
+            |declaration| {
+                builder
+                    .reserve_trait_method_seed(declaration)
+                    .map_err(|error| RuntimePlanLowerError::new(error.to_string()))
+            },
+        ) {
+            Ok(method) => {
+                methods.insert(checked.declaration().clone(), method.clone());
+                definitions.push(ReservedTraitMethodDefinition {
+                    checked: checked.clone(),
+                    method,
+                });
+            }
+            Err(error) => errors.push(error),
+        }
+    }
+    (methods, definitions)
+}
+
+fn trait_method_declaration(
+    project: HirExecutableProjectView<'_>,
+    facts: &RuntimePlanSemanticFacts,
+    locals: &BTreeMap<LocalId, RuntimeLocalSeedId>,
+    checked: &RuntimeTraitMethodFact,
+    witness: usize,
+) -> Result<RuntimeTraitMethodDeclarationSeed, RuntimePlanLowerError> {
+    let (module, function) = resolve_trait_method(project, checked)?;
     let method_name = function
         .name()
         .resolved()
         .ok_or_else(|| RuntimePlanLowerError::new("runtime trait method has no resolved name"))?;
-    let signature = lower_trait_method_signature(module, facts, function)?;
-    let body = function
-        .body()
-        .ok_or_else(|| RuntimePlanLowerError::new("runtime trait method has no body"))?;
-    let body = FinalExprLowerer::new(module, facts)
-        .lower_function_body(body)
-        .map_err(RuntimePlanLowerError::new)?;
-    let impl_id = project
-        .items()
-        .position(|item| item.id() == checked.implementation())
-        .ok_or_else(|| RuntimePlanLowerError::new("runtime trait Impl owner is absent"))?;
-    let (trait_id, trait_name) = lower_runtime_trait_identity(project, checked.trait_identity())?;
-    Ok(RuntimeTraitMethod {
-        id: checked.id(),
-        identity: RuntimeTraitMethodIdentity {
-            impl_id,
-            trait_id,
-            witness: Some(checked.id().0),
-            trait_name,
-            self_type: checked.self_type().to_owned(),
-            method_name: method_name.as_str().to_owned(),
-            monomorph_label: format!("{}::{}", checked.self_type(), method_name.as_str()),
-        },
-        receiver: signature.receiver,
-        input_names: signature.input_names,
-        input_types: signature.input_types,
-        output_type: signature.output_type,
-        body,
-    })
-}
-
-struct LoweredTraitMethodSignature {
-    receiver: RuntimeReceiverMode,
-    input_names: Vec<String>,
-    input_types: Vec<RuntimePureInputType>,
-    output_type: RuntimePureOutputType,
-}
-
-fn lower_trait_method_signature(
-    module: &HirModule,
-    facts: &RuntimePlanSemanticFacts,
-    function: &HirImplFunction,
-) -> Result<LoweredTraitMethodSignature, RuntimePlanLowerError> {
     let mut receiver = None;
-    let mut input_names = Vec::new();
-    let mut input_types = Vec::new();
+    let mut inputs = Vec::new();
+    let mut input_abi = Vec::new();
     for parameter in function
         .parameter_groups()
         .iter()
         .flat_map(HirMethodParameterGroup::parameters)
     {
-        match parameter {
+        let (local, abi) = match parameter {
             HirMethodParameter::Receiver(parameter) => {
                 if receiver.is_some() {
                     return Err(RuntimePlanLowerError::new(
@@ -534,15 +971,7 @@ fn lower_trait_method_signature(
                     HirMethodReceiverKind::SharedReference => RuntimeReceiverMode::SharedRef,
                     HirMethodReceiverKind::MutableReference => RuntimeReceiverMode::MutRef,
                 });
-                let local = module
-                    .resolve_local(parameter.locals()[0])
-                    .map_err(|error| {
-                        RuntimePlanLowerError::new(format!(
-                            "runtime trait receiver local is stale: {error}"
-                        ))
-                    })?;
-                input_names.push(local.name().as_str().to_owned());
-                input_types.push(RuntimePureInputType::Value);
+                (parameter.locals()[0], RuntimePureInputType::Value)
             }
             HirMethodParameter::Typed(parameter) => {
                 if parameter.kind() != HirParameterKind::Fixed
@@ -550,49 +979,625 @@ fn lower_trait_method_signature(
                     || parameter.locals().len() != 1
                 {
                     return Err(RuntimePlanLowerError::new(
-                        "runtime trait method requires fixed, non-defaulted, single-binding parameters",
+                        "runtime trait method requires fixed single-binding parameters",
                     ));
                 }
-                let local = module
-                    .resolve_local(parameter.locals()[0])
-                    .map_err(|error| {
-                        RuntimePlanLowerError::new(format!(
-                            "runtime trait parameter local is stale: {error}"
-                        ))
-                    })?;
                 let ty = facts.ty(parameter.ty()).ok_or_else(|| {
-                    RuntimePlanLowerError::new(
-                        "runtime trait parameter is missing its checked type fact",
-                    )
+                    RuntimePlanLowerError::new("runtime trait parameter type fact is missing")
                 })?;
-                input_names.push(local.name().as_str().to_owned());
-                input_types.push(runtime_input_type(ty.shape()));
+                (parameter.locals()[0], runtime_input_type(ty.shape()))
+            }
+        };
+        inputs.push(
+            locals
+                .get(&local)
+                .cloned()
+                .ok_or_else(|| RuntimePlanLowerError::new("trait method local is not admitted"))?,
+        );
+        input_abi.push(abi);
+    }
+    let receiver = receiver
+        .ok_or_else(|| RuntimePlanLowerError::new("runtime trait method requires a receiver"))?;
+    let body = function_body_expression(
+        function
+            .body()
+            .ok_or_else(|| RuntimePlanLowerError::new("runtime trait method has no body"))?,
+    )?;
+    let result = facts.expression_type(body).ok_or_else(|| {
+        RuntimePlanLowerError::new("runtime trait method body has no accepted runtime type")
+    })?;
+    let output_abi = function
+        .return_type()
+        .and_then(|ty| facts.ty(ty))
+        .map_or(RuntimePureOutputType::Value, |ty| {
+            runtime_output_type(ty.shape())
+        });
+    let impl_id = project
+        .items()
+        .position(|item| item.id() == checked.implementation())
+        .ok_or_else(|| RuntimePlanLowerError::new("runtime trait Impl owner is absent"))?;
+    let (trait_id, trait_name) = lower_runtime_trait_identity(project, checked.trait_identity())?;
+    let _ = module;
+    Ok(RuntimeTraitMethodDeclarationSeed {
+        identity: RuntimeTraitMethodIdentity {
+            impl_id,
+            trait_id,
+            witness: Some(witness),
+            trait_name,
+            self_type: semantic_type_label(checked.self_type()),
+            method_name: method_name.as_str().to_owned(),
+            monomorph_label: format!(
+                "{}::{}",
+                semantic_type_label(checked.self_type()),
+                method_name.as_str()
+            ),
+        },
+        receiver,
+        inputs: inputs.into_boxed_slice(),
+        input_abi,
+        result: result.identity(),
+        output_abi,
+    })
+}
+
+fn semantic_type_label(ty: &crate::semantic_facts::RuntimeNormalizedType) -> String {
+    let mut label = String::with_capacity(64);
+    for byte in ty.identity().as_bytes() {
+        use std::fmt::Write as _;
+        write!(&mut label, "{byte:02x}").expect("writing to String cannot fail");
+    }
+    label
+}
+
+fn resolve_trait_method<'a>(
+    project: HirExecutableProjectView<'a>,
+    checked: &RuntimeTraitMethodFact,
+) -> Result<(&'a HirModule, &'a HirImplFunction), RuntimePlanLowerError> {
+    let module = project
+        .modules()
+        .find_map(|(_, module)| {
+            (module.module_id() == checked.implementation().module()).then_some(module)
+        })
+        .ok_or_else(|| RuntimePlanLowerError::new("runtime trait method module is absent"))?;
+    let item = module
+        .resolve_item(checked.implementation())
+        .map_err(|error| RuntimePlanLowerError::new(error.to_string()))?;
+    let HirItemKind::Impl(implementation) = item.kind() else {
+        return Err(RuntimePlanLowerError::new(
+            "checked runtime trait method owner is not an Impl",
+        ));
+    };
+    let Some(HirImplMember::Function(function)) =
+        implementation.members().get(usize::from(checked.member()))
+    else {
+        return Err(RuntimePlanLowerError::new(
+            "checked runtime trait method member is not a function",
+        ));
+    };
+    Ok((module, function))
+}
+
+fn define_function_sites(
+    context: &FinalLoweringContext<'_, '_>,
+    definitions: &[ReservedFunctionSiteDefinition],
+    builder: &mut RuntimePlanBuilder,
+    errors: &mut Vec<RuntimePlanLowerError>,
+) {
+    for definition in definitions {
+        let Some(module) = module_by_id(context.project, definition.module) else {
+            errors.push(RuntimePlanLowerError::new("closure module is absent"));
+            continue;
+        };
+        let body = context.expr_lowerer(module).lower(definition.body);
+        match body.and_then(|body| {
+            builder
+                .define_function_site_seed(&definition.site, body)
+                .map_err(|error| error.to_string())
+        }) {
+            Ok(()) => {}
+            Err(error) => errors.push(RuntimePlanLowerError::new(error)),
+        }
+    }
+}
+
+fn define_pure_helpers(
+    context: &FinalLoweringContext<'_, '_>,
+    definitions: &[ReservedPureHelperDefinition],
+    builder: &mut RuntimePlanBuilder,
+    errors: &mut Vec<RuntimePlanLowerError>,
+) {
+    for definition in definitions {
+        let Some(item) = context
+            .project
+            .items()
+            .find(|item| item.id() == definition.owner)
+        else {
+            errors.push(RuntimePlanLowerError::new("pure helper owner is absent"));
+            continue;
+        };
+        let HirItemKind::Function(function) = item.item().kind() else {
+            errors.push(RuntimePlanLowerError::new(
+                "pure helper owner is not a function",
+            ));
+            continue;
+        };
+        let body = context
+            .expr_lowerer(item.module())
+            .lower_function_body(function.body());
+        match body.and_then(|body| {
+            builder
+                .define_pure_helper_seed(&definition.helper, body)
+                .map_err(|error| error.to_string())
+        }) {
+            Ok(()) => {}
+            Err(error) => errors.push(RuntimePlanLowerError::new(error)),
+        }
+    }
+}
+
+fn define_trait_methods(
+    context: &FinalLoweringContext<'_, '_>,
+    definitions: &[ReservedTraitMethodDefinition],
+    builder: &mut RuntimePlanBuilder,
+    errors: &mut Vec<RuntimePlanLowerError>,
+) {
+    for definition in definitions {
+        let Ok((module, function)) = resolve_trait_method(context.project, &definition.checked)
+        else {
+            errors.push(RuntimePlanLowerError::new("trait method owner is absent"));
+            continue;
+        };
+        let Some(body_owner) = function.body() else {
+            errors.push(RuntimePlanLowerError::new(
+                "runtime trait method has no body",
+            ));
+            continue;
+        };
+        let body = context.expr_lowerer(module).lower_function_body(body_owner);
+        match body.and_then(|body| {
+            builder
+                .define_trait_method_seed(&definition.method, body)
+                .map_err(|error| error.to_string())
+        }) {
+            Ok(()) => {}
+            Err(error) => errors.push(RuntimePlanLowerError::new(error)),
+        }
+    }
+}
+
+fn lower_dialogue_content(
+    context: &FinalLoweringContext<'_, '_>,
+    builder: &mut RuntimePlanBuilder,
+    errors: &mut Vec<RuntimePlanLowerError>,
+) -> BTreeMap<ExprId, RuntimeDialogueContentPlanSeedId> {
+    let mut value_definitions = Vec::new();
+    let mut content_definitions = Vec::new();
+    for (owner, application) in context.facts.dialogue_applications() {
+        let Some((dialogue, pending_values)) =
+            lower_dialogue_application(context, *owner, application, builder, errors)
+        else {
+            continue;
+        };
+        content_definitions.push(dialogue);
+        value_definitions.extend(pending_values);
+    }
+    for definition in value_definitions {
+        if let Err(error) = builder.define_function_site_seed(&definition.site, definition.body) {
+            errors.push(RuntimePlanLowerError::new(format!(
+                "dialogue value {:?} is invalid: {error}",
+                definition.expression
+            )));
+        }
+    }
+    let mut content_handles = BTreeMap::new();
+    for definition in content_definitions {
+        let line_task_id = definition.line.public_label().into_string();
+        let seed = arcweft_core::plan::RuntimeDialogueContentPlanSeed {
+            line: definition.line,
+            values: definition
+                .values
+                .into_iter()
+                .map(
+                    |(slot, role, function)| arcweft_core::plan::RuntimeDialogueValueSiteSeed {
+                        slot,
+                        role,
+                        function,
+                    },
+                )
+                .collect::<Vec<_>>()
+                .into_boxed_slice(),
+            marks: definition.marks.clone(),
+        };
+        match builder.push_dialogue_content_seed(seed) {
+            Ok(handle) => {
+                if let Err(error) = attach_dialogue_effects(
+                    builder,
+                    definition.owner,
+                    &line_task_id,
+                    &definition.marks,
+                    definition.effects,
+                    &handle,
+                ) {
+                    errors.push(RuntimePlanLowerError::new(error));
+                    continue;
+                }
+                content_handles.insert(definition.owner, handle);
+            }
+            Err(error) => errors.push(RuntimePlanLowerError::new(error.to_string())),
+        }
+    }
+    content_handles
+}
+
+fn lower_dialogue_application(
+    context: &FinalLoweringContext<'_, '_>,
+    owner: ExprId,
+    application: &RuntimeDialogueApplication,
+    builder: &mut RuntimePlanBuilder,
+    errors: &mut Vec<RuntimePlanLowerError>,
+) -> Option<(
+    PendingDialogueContentDefinition,
+    Vec<PendingDialogueValueDefinition>,
+)> {
+    let Some(module) = module_by_id(context.project, owner.module()) else {
+        errors.push(RuntimePlanLowerError::new("dialogue module is absent"));
+        return None;
+    };
+    let lowerer = context.expr_lowerer(module);
+    let effects = lower_dialogue_effects(module, &lowerer, application, errors);
+    let mut invalid = effects.is_none();
+    let mut values = Vec::new();
+    let mut value_definitions = Vec::new();
+    for value in application.values() {
+        let body = match lowerer.lower(value.expression) {
+            Ok(body) => body,
+            Err(error) => {
+                errors.push(RuntimePlanLowerError::new(error));
+                invalid = true;
+                continue;
+            }
+        };
+        let declaration = RuntimeFunctionSiteDeclarationSeed {
+            params: Box::new([]),
+            captures: body.free_locals(),
+            result: body.ty(),
+        };
+        match builder.reserve_function_site_seed(declaration) {
+            Ok(site) => {
+                values.push((value.slot, value.role, site.clone()));
+                value_definitions.push(PendingDialogueValueDefinition {
+                    expression: value.expression,
+                    site,
+                    body,
+                });
+            }
+            Err(error) => {
+                errors.push(RuntimePlanLowerError::new(error.to_string()));
+                invalid = true;
             }
         }
     }
-    let receiver = receiver.ok_or_else(|| {
-        RuntimePlanLowerError::new("runtime trait method requires one typed receiver")
-    })?;
-    let output_type = function
-        .return_type()
-        .map(|owner| {
-            facts
-                .ty(owner)
-                .map(|ty| runtime_output_type(ty.shape()))
-                .ok_or_else(|| {
-                    RuntimePlanLowerError::new(
-                        "runtime trait method is missing its checked return type fact",
-                    )
-                })
+    if invalid {
+        return None;
+    }
+    let effects = effects?;
+    let marks = application
+        .content()
+        .content()
+        .nodes
+        .iter()
+        .filter_map(|node| match node {
+            RichTextNode::Control {
+                control: RichTextControl::Mark { name },
+            } => Some(name.clone()),
+            _ => None,
         })
-        .transpose()?
-        .unwrap_or(RuntimePureOutputType::Value);
-    Ok(LoweredTraitMethodSignature {
-        receiver,
-        input_names,
-        input_types,
-        output_type,
+        .collect::<Vec<_>>()
+        .into_boxed_slice();
+    Some((
+        PendingDialogueContentDefinition {
+            owner,
+            line: application.content().line().clone(),
+            values,
+            marks,
+            effects,
+        },
+        value_definitions,
+    ))
+}
+
+fn lower_dialogue_effects(
+    module: &HirModule,
+    lowerer: &FinalExprLowerer<'_>,
+    application: &RuntimeDialogueApplication,
+    errors: &mut Vec<RuntimePlanLowerError>,
+) -> Option<Vec<PendingDialogueEffectDefinition>> {
+    let mut effects = Vec::with_capacity(application.effects().len());
+    let mut valid = true;
+    for effect in application.effects() {
+        let expression = match module.resolve_expr(effect.expression) {
+            Ok(expression) => expression,
+            Err(error) => {
+                errors.push(RuntimePlanLowerError::new(format!(
+                    "cannot resolve dialogue effect {:?}: {error}",
+                    effect.expression
+                )));
+                valid = false;
+                continue;
+            }
+        };
+        let HirExprKind::Call(call) = expression.kind() else {
+            errors.push(RuntimePlanLowerError::new(format!(
+                "dialogue effect {:?} is not a checked Call expression",
+                effect.expression
+            )));
+            valid = false;
+            continue;
+        };
+        match lowerer.lower_host_call_target(effect.expression, call) {
+            Ok(Some(target)) => effects.push(PendingDialogueEffectDefinition {
+                trigger: effect.trigger.clone(),
+                target,
+            }),
+            Ok(None) => {
+                errors.push(RuntimePlanLowerError::new(format!(
+                    "dialogue effect {:?} is not a typed host call",
+                    effect.expression
+                )));
+                valid = false;
+            }
+            Err(error) => {
+                errors.push(RuntimePlanLowerError::new(error));
+                valid = false;
+            }
+        }
+    }
+    valid.then_some(effects)
+}
+
+fn attach_dialogue_effects(
+    builder: &mut RuntimePlanBuilder,
+    owner: ExprId,
+    line_task_id: &str,
+    marks: &[String],
+    effects: Vec<PendingDialogueEffectDefinition>,
+    handle: &RuntimeDialogueContentPlanSeedId,
+) -> Result<(), String> {
+    let mut children = Vec::with_capacity(effects.len());
+    for (ordinal, effect) in effects.into_iter().enumerate() {
+        let trigger = match effect.trigger {
+            RuntimeDialogueEffectTrigger::Mark(label) => marks
+                .iter()
+                .position(|mark| mark == &label)
+                .and_then(|index| handle.mark(index))
+                .map(RuntimeLineTaskTriggerSeed::Mark)
+                .ok_or_else(|| {
+                    format!("dialogue application {owner:?} effect mark `{label}` is absent")
+                })?,
+            RuntimeDialogueEffectTrigger::DelayMillis(millis) => millis
+                .checked_mul(1_000_000)
+                .map(LogicalDuration::from_nanos)
+                .map(RuntimeLineTaskTriggerSeed::Delay)
+                .ok_or_else(|| {
+                    format!("dialogue application {owner:?} delay {millis}ms overflows nanoseconds")
+                })?,
+        };
+        children.push(RuntimeLineTaskNodeSeed::Child {
+            id: TaskId(format!("{line_task_id}.effect.{ordinal}")),
+            key: None,
+            name: None,
+            trigger,
+            priority: TaskPriority::default(),
+            join_policy: ChildJoinPolicy::Join,
+            cancel_policy: ChildCancelPolicy::CancelAndJoin,
+            scope: Box::new(RuntimeLineTaskNodeSeed::Action(vec![
+                RuntimeFlowOpSeed::HostCall {
+                    binding: None,
+                    target: effect.target,
+                },
+            ])),
+        });
+    }
+    if children.is_empty() {
+        return Ok(());
+    }
+    let group = RuntimeLineTaskGroupSeed {
+        root: RuntimeLineTaskNodeSeed::Start(children),
+        cancel_rules: Box::new([]),
+        cleanup_completed: Vec::new(),
+        cleanup_cancelled: Vec::new(),
+        cleanup_failed: Vec::new(),
+        cleanup_policy: LineCleanupPolicy::default(),
+    };
+    builder
+        .push_line_task_group_seed(group)
+        .and_then(|group| builder.attach_line_task_group_seed(handle, &group))
+        .map_err(|error| error.to_string())
+}
+
+fn lower_entry_callables(
+    context: &FinalLoweringContext<'_, '_>,
+    input: &RuntimeEntryLoweringInput,
+    errors: &mut Vec<RuntimePlanLowerError>,
+) -> (
+    Vec<RuntimeFlowSeed>,
+    Vec<RuntimeFlowExecutable>,
+    Vec<arcweft_core::plan::RuntimeCallableExecutableSeed>,
+    Vec<RuntimeAssertionSite>,
+) {
+    let mut flows = Vec::new();
+    let mut flow_executables = Vec::new();
+    let mut executables = Vec::new();
+    let mut assertions = Vec::new();
+    let mut admitted = BTreeMap::new();
+    for callable in &input.callables {
+        match admitted.insert(callable.role().callable.clone(), callable) {
+            Some(previous) if previous != callable => {
+                errors.push(RuntimePlanLowerError::new(format!(
+                    "Entry callable `{}` has conflicting executable projections",
+                    callable.role().callable.as_str()
+                )));
+                continue;
+            }
+            Some(_) => continue,
+            None => {}
+        }
+        match callable.body() {
+            RuntimeEntryCallableBody::PureHelper => {
+                let Some(helper) = context.pure_helpers.get(&callable.role().callable).cloned()
+                else {
+                    continue;
+                };
+                executables.push(arcweft_core::plan::RuntimeCallableExecutableSeed {
+                    callable: callable.role().callable.clone(),
+                    contract: callable.role().contract,
+                    code: arcweft_core::plan::RuntimeCallableExecutableSeedCode::PureHelper(helper),
+                });
+            }
+            RuntimeEntryCallableBody::ControllerFlow(flow) => {
+                match lower_controller_callable(context, callable, flow) {
+                    Ok(lowered) => {
+                        flows.push(lowered.flow);
+                        flow_executables.push(lowered.flow_executable);
+                        executables.push(lowered.executable);
+                        assertions.extend(lowered.assertions);
+                    }
+                    Err(error) => errors.push(error),
+                }
+            }
+        }
+    }
+    (flows, flow_executables, executables, assertions)
+}
+
+fn lower_controller_callable(
+    context: &FinalLoweringContext<'_, '_>,
+    callable: &RuntimeEntryCallableInput,
+    flow: &FlowRuntimeId,
+) -> Result<LoweredControllerCallable, RuntimePlanLowerError> {
+    let item = context
+        .project
+        .items()
+        .find(|item| item.id() == callable.owner())
+        .ok_or_else(|| RuntimePlanLowerError::new("controller owner is absent"))?;
+    let HirItemKind::Function(function) = item.item().kind() else {
+        return Err(RuntimePlanLowerError::new(
+            "controller owner is not a function",
+        ));
+    };
+    if function
+        .parameter_groups()
+        .iter()
+        .any(|group| !group.parameters().is_empty())
+    {
+        return Err(RuntimePlanLowerError::new(
+            "Agent controller ordinary function must not accept parameters",
+        ));
+    }
+    let HirFunctionBody::Block {
+        statements, tail, ..
+    } = function.body()
+    else {
+        return Err(RuntimePlanLowerError::new(
+            "recovered Agent controller body cannot enter runtime lowering",
+        ));
+    };
+    let CallableDeclarationKey::Existing(declaration) = callable.declaration() else {
+        return Err(RuntimePlanLowerError::new(
+            "Agent controller has no ordinary declaration identity",
+        ));
+    };
+    let mut lowerer = FinalFlowLowerer::new(
+        item.module(),
+        context,
+        RuntimeAssertionOwner::Callable(declaration.clone()),
+    );
+    let mut ops = lowerer.lower_statement_ids(statements)?;
+    let tail = context
+        .expr_lowerer(item.module())
+        .lower(*tail)
+        .map_err(RuntimePlanLowerError::new)?;
+    ops.push(RuntimeFlowOpSeed::ReturnExpr(tail));
+    let assertions = lowerer.into_assertion_sites();
+    let flow_executable = RuntimeFlowExecutable {
+        flow: flow.clone(),
+        contract: arcweft_core::entry::FlowContractHash::from_bytes(
+            *callable.role().contract.as_bytes(),
+        ),
+        parameters: Vec::new(),
+        controller: Some(callable.role().clone()),
+    };
+    let executable = arcweft_core::plan::RuntimeCallableExecutableSeed {
+        callable: callable.role().callable.clone(),
+        contract: callable.role().contract,
+        code: arcweft_core::plan::RuntimeCallableExecutableSeedCode::ControllerFlow(flow.clone()),
+    };
+    Ok(LoweredControllerCallable {
+        flow: RuntimeFlowSeed::new(flow.clone(), [], ops),
+        flow_executable,
+        executable,
+        assertions,
     })
+}
+
+fn function_body_expression(body: &HirFunctionBody) -> Result<ExprId, RuntimePlanLowerError> {
+    match body {
+        HirFunctionBody::Block { tail, .. } => Ok(*tail),
+        HirFunctionBody::Error(expression) => Err(RuntimePlanLowerError::new(format!(
+            "recovered ordinary-function body {expression:?} cannot enter runtime lowering"
+        ))),
+    }
+}
+
+fn bind_seed(ty: &RuntimeNormalizedType, local: RuntimeLocalSeedId) -> RuntimePatternSeed {
+    RuntimePatternSeed::new(
+        ty.identity(),
+        RuntimePatternSeedKind::Bind {
+            local,
+            mutable: false,
+        },
+    )
+}
+
+fn local_seed(ty: &RuntimeNormalizedType, local: RuntimeLocalSeedId) -> RuntimeExprSeed {
+    RuntimeExprSeed::new(
+        ty.identity(),
+        arcweft_core::plan::RuntimeExprSeedKind::Local(local),
+    )
+}
+
+fn variant_bind_seed(
+    result: &RuntimeNormalizedType,
+    ordinal: u32,
+    payload: &RuntimeNormalizedType,
+    local: RuntimeLocalSeedId,
+) -> RuntimePatternSeed {
+    RuntimePatternSeed::new(
+        result.identity(),
+        RuntimePatternSeedKind::Variant {
+            ordinal,
+            payload: Some(Box::new(bind_seed(payload, local))),
+        },
+    )
+}
+
+fn handler_falls_through(
+    fact: &RuntimeAwaitFact,
+    kind: arcweft_lang_hir::expr::HirAwaitBranchKind,
+) -> bool {
+    fact.branches()
+        .iter()
+        .find(|branch| branch.kind() == kind)
+        .is_none_or(|branch| branch.continuation() == RuntimeAwaitBranchContinuation::FallsThrough)
+}
+
+fn module_by_id(
+    project: HirExecutableProjectView<'_>,
+    expected: HirModuleId,
+) -> Option<&Arc<HirModule>> {
+    project
+        .modules()
+        .find_map(|(_, module)| (module.module_id() == expected).then_some(module))
 }
 
 fn lower_runtime_trait_identity(
@@ -690,147 +1695,6 @@ fn validate_entry_input(
     Ok(())
 }
 
-type LoweredEntryCallables = (
-    Vec<RuntimePureHelper>,
-    Vec<RuntimeCallableExecutable>,
-    Vec<RuntimeFlow>,
-    Vec<RuntimeFlowExecutable>,
-    Vec<RuntimeAssertionSite>,
-);
-
-#[allow(
-    clippy::too_many_lines,
-    reason = "entry callable admission is one closed transaction across function roles, signatures, helpers, and controller bodies"
-)]
-fn lower_entry_callables(
-    project: HirExecutableProjectView<'_>,
-    facts: &RuntimePlanSemanticFacts,
-    input: &RuntimeEntryLoweringInput,
-) -> Result<LoweredEntryCallables, Vec<RuntimePlanLowerError>> {
-    let mut by_callable = BTreeMap::<RuntimeCallableId, &RuntimeEntryCallableInput>::new();
-    let mut errors = Vec::new();
-    for callable in &input.callables {
-        let identity = callable.role().callable.clone();
-        if let Some(previous) = by_callable.get(&identity) {
-            if *previous != callable {
-                errors.push(RuntimePlanLowerError::new(format!(
-                    "checked Entry callable `{}` has conflicting final-HIR owners or body roles",
-                    identity.as_str()
-                )));
-            }
-        } else {
-            by_callable.insert(identity, callable);
-        }
-    }
-    if !errors.is_empty() {
-        return Err(errors);
-    }
-
-    let mut pure_helpers = Vec::new();
-    let mut executables = Vec::new();
-    let mut controller_flows = Vec::new();
-    let mut controller_executables = Vec::new();
-    let mut assertion_sites = Vec::new();
-    for callable in by_callable.into_values() {
-        let Some(item) = project.items().find(|item| item.id() == callable.owner()) else {
-            errors.push(RuntimePlanLowerError::new(format!(
-                "checked Entry callable `{}` references a foreign or stale final-HIR owner {:?}",
-                callable.role().callable.as_str(),
-                callable.owner()
-            )));
-            continue;
-        };
-        let HirItemKind::Function(function) = item.item().kind() else {
-            errors.push(RuntimePlanLowerError::new(format!(
-                "checked Entry callable `{}` owner {:?} is not an ordinary function",
-                callable.role().callable.as_str(),
-                callable.owner()
-            )));
-            continue;
-        };
-        if let Err(error) =
-            validate_callable_owner(project.package(), item.module_path(), function, callable)
-        {
-            errors.push(error);
-            continue;
-        }
-        match callable.body() {
-            RuntimeEntryCallableBody::PureHelper => {
-                let helper = match lower_pure_helper(
-                    item.module(),
-                    facts,
-                    function,
-                    RuntimePureHelperId(pure_helpers.len()),
-                    callable.role().callable.as_str(),
-                ) {
-                    Ok(helper) => helper,
-                    Err(error) => {
-                        errors.push(error);
-                        continue;
-                    }
-                };
-                executables.push(RuntimeCallableExecutable {
-                    callable: callable.role().callable.clone(),
-                    contract: callable.role().contract,
-                    code: RuntimeCallableExecutableCode::PureHelper(helper.id),
-                });
-                pure_helpers.push(helper);
-            }
-            RuntimeEntryCallableBody::ControllerFlow(flow) => {
-                let CallableDeclarationKey::Existing(declaration) = callable.declaration() else {
-                    errors.push(RuntimePlanLowerError::new(format!(
-                        "Entry callable `{}` does not use an ordinary declaration identity",
-                        callable.role().callable.as_str()
-                    )));
-                    continue;
-                };
-                let lowered = match lower_controller_body(
-                    item.module(),
-                    facts,
-                    function,
-                    project.package(),
-                    declaration.clone(),
-                ) {
-                    Ok(lowered) => lowered,
-                    Err(error) => {
-                        errors.push(error);
-                        continue;
-                    }
-                };
-                assertion_sites.extend(lowered.assertion_sites);
-                executables.push(RuntimeCallableExecutable {
-                    callable: callable.role().callable.clone(),
-                    contract: callable.role().contract,
-                    code: RuntimeCallableExecutableCode::ControllerFlow(flow.clone()),
-                });
-                controller_flows.push(RuntimeFlow {
-                    id: flow.clone(),
-                    ops: lowered.ops,
-                });
-                controller_executables.push(RuntimeFlowExecutable {
-                    flow: flow.clone(),
-                    contract: arcweft_core::entry::FlowContractHash::from_bytes(
-                        *callable.role().contract.as_bytes(),
-                    ),
-                    parameters: Vec::new(),
-                    controller: Some(callable.role().clone()),
-                });
-            }
-        }
-    }
-    if errors.is_empty() {
-        Ok((
-            pure_helpers,
-            executables,
-            controller_flows,
-            controller_executables,
-            assertion_sites,
-        ))
-    } else {
-        Err(errors)
-    }
-}
-
 fn validate_callable_owner(
     package: &CallablePackageId,
     module_path: &arcweft_lang_syntax::ast::module_path::CanonicalModulePath,
@@ -864,122 +1728,33 @@ fn validate_callable_owner(
     Ok(())
 }
 
-fn lower_pure_helper(
-    module: &HirModule,
-    facts: &RuntimePlanSemanticFacts,
-    function: &HirFunctionItem,
-    id: RuntimePureHelperId,
-    name: &str,
-) -> Result<RuntimePureHelper, RuntimePlanLowerError> {
-    if !function.generic_parameters().is_empty() {
-        return Err(RuntimePlanLowerError::new(format!(
-            "Entry pure helper `{name}` cannot retain unbound generic parameters"
-        )));
-    }
-    let mut input_names = Vec::new();
-    let mut input_types = Vec::new();
-    for parameter in function
-        .parameter_groups()
-        .iter()
-        .flat_map(HirFunctionParameterGroup::parameters)
-    {
-        if parameter.kind() != HirParameterKind::Fixed
-            || parameter.default().is_some()
-            || parameter.locals().len() != 1
-        {
-            return Err(RuntimePlanLowerError::new(format!(
-                "Entry pure helper `{name}` requires fixed, non-defaulted, single-binding parameters"
-            )));
-        }
-        let local = module
-            .resolve_local(parameter.locals()[0])
-            .map_err(|error| {
-                RuntimePlanLowerError::new(format!(
-                    "Entry pure helper `{name}` parameter owner is stale: {error}"
-                ))
-            })?;
-        let ty = facts.ty(parameter.ty()).ok_or_else(|| {
-            RuntimePlanLowerError::new(format!(
-                "Entry pure helper `{name}` is missing a checked parameter type fact"
-            ))
-        })?;
-        input_names.push(local.name().as_str().to_owned());
-        input_types.push(runtime_input_type(ty.shape()));
-    }
-    let output_type = function
-        .return_type()
-        .map(|ty| {
-            facts
-                .ty(ty)
-                .map(|ty| runtime_output_type(ty.shape()))
-                .ok_or_else(|| {
-                    RuntimePlanLowerError::new(format!(
-                        "Entry pure helper `{name}` is missing a checked return type fact"
-                    ))
-                })
-        })
-        .transpose()?
-        .unwrap_or(RuntimePureOutputType::Value);
-    let expression = FinalExprLowerer::new(module, facts)
-        .lower_function_body(function.body())
-        .map_err(RuntimePlanLowerError::new)?;
-    Ok(RuntimePureHelper {
-        id,
-        name: name.to_owned(),
-        input_names,
-        input_types,
-        output_type,
-        expr: expression,
-        scalar_eval_supported: true,
-        origin: RuntimePureHelperOrigin::Inferred,
-    })
-}
-
-struct LoweredControllerBody {
-    ops: Vec<FlowOp>,
-    assertion_sites: Vec<RuntimeAssertionSite>,
-}
-
-fn lower_controller_body(
-    module: &HirModule,
-    facts: &RuntimePlanSemanticFacts,
-    function: &HirFunctionItem,
+fn validate_project_callable_owner(
     package: &CallablePackageId,
-    declaration: CallableDeclarationId,
-) -> Result<LoweredControllerBody, RuntimePlanLowerError> {
-    if function
-        .parameter_groups()
-        .iter()
-        .any(|group| !group.parameters().is_empty())
-    {
+    module_path: &arcweft_lang_syntax::ast::module_path::CanonicalModulePath,
+    function: &HirFunctionItem,
+    declaration: &CallableDeclarationKey,
+) -> Result<(), RuntimePlanLowerError> {
+    let CallableDeclarationKey::Existing(declaration) = declaration else {
         return Err(RuntimePlanLowerError::new(
-            "Agent controller ordinary function must not accept parameters",
-        ));
-    }
-    let HirFunctionBody::Block {
-        statements, tail, ..
-    } = function.body()
-    else {
-        return Err(RuntimePlanLowerError::new(
-            "recovered Agent controller body cannot enter runtime lowering",
+            "called project function does not use an ordinary declaration identity",
         ));
     };
-    let mut lowerer = FinalFlowLowerer::new(
-        module,
-        facts,
-        package,
-        RuntimeAssertionOwner::Callable(declaration),
-    );
-    let mut ops = lowerer.lower_statement_ids(statements)?;
-    ops.push(FlowOp::ReturnExpr(
-        FinalExprLowerer::new(module, facts)
-            .lower(*tail)
-            .map_err(RuntimePlanLowerError::new)?,
-    ));
-    Ok(LoweredControllerBody {
-        ops,
-        assertion_sites: lowerer.into_assertion_sites(),
-    })
+    let Some(name) = function.name().resolved() else {
+        return Err(RuntimePlanLowerError::new(
+            "called project function has a recovered final-HIR name",
+        ));
+    };
+    if declaration.owner() != CallableDeclarationOwner::Function
+        || declaration.package() != package
+        || declaration.module() != module_path
+        || declaration.name() != name.as_str()
+    {
+        return Err(RuntimePlanLowerError::new(format!(
+            "called project function `{}` does not match its accepted declaration identity",
+            name.as_str()
+        )));
+    }
+    Ok(())
 }
 
 fn lower_entry_flows(
@@ -1112,30 +1887,60 @@ impl RuntimeAssertionOwner {
     }
 }
 
-struct FinalFlowLowerer<'hir> {
-    module: &'hir HirModule,
-    facts: &'hir RuntimePlanSemanticFacts,
-    package: &'hir CallablePackageId,
+struct FinalFlowLowerer<'a> {
+    module: &'a HirModule,
+    facts: &'a RuntimePlanSemanticFacts,
+    package: &'a CallablePackageId,
+    locals: &'a BTreeMap<LocalId, RuntimeLocalSeedId>,
+    pure_helpers: &'a BTreeMap<RuntimeCallableId, RuntimePureHelperSeedId>,
+    trait_methods: &'a BTreeMap<ImplMethodDeclarationId, RuntimeTraitMethodSeedId>,
+    function_sites: &'a BTreeMap<ExprId, RuntimeFunctionSiteSeedId>,
+    dialogue_content: &'a BTreeMap<ExprId, RuntimeDialogueContentPlanSeedId>,
+    await_locals: &'a BTreeMap<ExprId, AwaitLocalSeeds>,
     assertion_owner: RuntimeAssertionOwner,
     assertion_ordinal: u32,
-    agent_host_call_ordinal: u32,
+    await_ordinal: u32,
     assertion_sites: Vec<RuntimeAssertionSite>,
 }
 
-impl<'hir> FinalFlowLowerer<'hir> {
+#[derive(Clone)]
+enum RuntimeFlowValueContinuation {
+    Bind {
+        pattern: RuntimePatternSeed,
+        tail: RuntimeFlowTail,
+    },
+    Return,
+    Ignore(RuntimeFlowTail),
+    Try(Box<Self>),
+}
+
+#[derive(Clone, Default)]
+enum RuntimeFlowTail {
+    #[default]
+    None,
+    Statements(Box<[StmtId]>),
+    ThreadItems(Box<[HirThreadFlowItem]>),
+}
+
+impl<'a> FinalFlowLowerer<'a> {
     fn new(
-        module: &'hir HirModule,
-        facts: &'hir RuntimePlanSemanticFacts,
-        package: &'hir CallablePackageId,
+        module: &'a HirModule,
+        context: &'a FinalLoweringContext<'_, '_>,
         assertion_owner: RuntimeAssertionOwner,
     ) -> Self {
         Self {
             module,
-            facts,
-            package,
+            facts: context.facts,
+            package: context.project.package(),
+            locals: context.locals,
+            pure_helpers: context.pure_helpers,
+            trait_methods: context.trait_methods,
+            function_sites: context.function_sites,
+            dialogue_content: context.dialogue_content,
+            await_locals: context.await_locals,
             assertion_owner,
             assertion_ordinal: 0,
-            agent_host_call_ordinal: 0,
+            await_ordinal: 0,
             assertion_sites: Vec::new(),
         }
     }
@@ -1144,43 +1949,61 @@ impl<'hir> FinalFlowLowerer<'hir> {
         self.assertion_sites
     }
 
+    fn trait_method(
+        &self,
+        declaration: &ImplMethodDeclarationId,
+        statement: StmtId,
+    ) -> Result<RuntimeTraitMethodSeedId, RuntimePlanLowerError> {
+        self.trait_methods.get(declaration).cloned().ok_or_else(|| {
+            RuntimePlanLowerError::new(format!(
+                "For statement {statement:?} refers to an unreserved trait method"
+            ))
+        })
+    }
+
     fn lower_body(
         &mut self,
         body: &HirThreadBody,
-    ) -> Result<Vec<FlowOp>, Vec<RuntimePlanLowerError>> {
-        let mut ops = Vec::new();
-        let mut errors = Vec::new();
-        for item in body.items() {
-            match self.lower_thread_item(item) {
-                Ok(mut item_ops) => ops.append(&mut item_ops),
-                Err(error) => errors.push(error),
-            }
-        }
-        if errors.is_empty() {
-            Ok(ops)
-        } else {
-            Err(errors)
-        }
+    ) -> Result<Vec<RuntimeFlowOpSeed>, Vec<RuntimePlanLowerError>> {
+        self.lower_thread_items(body.items())
+            .map_err(|error| vec![error])
+    }
+
+    fn lower_thread_items(
+        &mut self,
+        items: &[HirThreadFlowItem],
+    ) -> Result<Vec<RuntimeFlowOpSeed>, RuntimePlanLowerError> {
+        let Some((item, tail)) = items.split_first() else {
+            return Ok(Vec::new());
+        };
+        self.lower_thread_item(
+            item,
+            RuntimeFlowTail::ThreadItems(tail.to_vec().into_boxed_slice()),
+        )
     }
 
     fn lower_thread_item(
         &mut self,
         item: &HirThreadFlowItem,
-    ) -> Result<Vec<FlowOp>, RuntimePlanLowerError> {
+        tail: RuntimeFlowTail,
+    ) -> Result<Vec<RuntimeFlowOpSeed>, RuntimePlanLowerError> {
         let statement = match item {
             HirThreadFlowItem::DialogueApplication(expression) => {
-                let application =
-                    self.facts
-                        .dialogue_application(*expression)
-                        .ok_or_else(|| {
-                            RuntimePlanLowerError::new(format!(
-                                "dialogue application {expression:?} has no checked projection fact"
-                            ))
-                        })?;
-                return Ok(vec![FlowOp::Dialogue {
-                    line: application.content().line().clone(),
-                    task_group: 0,
-                }]);
+                self.facts
+                    .dialogue_application(*expression)
+                    .ok_or_else(|| {
+                        RuntimePlanLowerError::new(format!(
+                            "dialogue application {expression:?} has no checked projection fact"
+                        ))
+                    })?;
+                let content = self.dialogue_content.get(expression).cloned().ok_or_else(|| {
+                    RuntimePlanLowerError::new(format!(
+                        "dialogue application {expression:?} has no builder-issued content handle"
+                    ))
+                })?;
+                let mut ops = vec![RuntimeFlowOpSeed::Dialogue { content }];
+                ops.extend(self.lower_flow_tail(tail)?);
+                return Ok(ops);
             }
             HirThreadFlowItem::Statement(statement)
             | HirThreadFlowItem::Choice(statement)
@@ -1195,7 +2018,6 @@ impl<'hir> FinalFlowLowerer<'hir> {
             | HirThreadFlowItem::SourceLocale(statement)
             | HirThreadFlowItem::Scope(statement)
             | HirThreadFlowItem::Include(statement)
-            | HirThreadFlowItem::AwaitWith(statement)
             | HirThreadFlowItem::Error(statement) => *statement,
         };
         let kind = self.resolve_statement(statement)?.kind().clone();
@@ -1204,7 +2026,7 @@ impl<'hir> FinalFlowLowerer<'hir> {
                 "final-HIR thread item family does not match statement {statement:?} payload {kind:?}"
             )));
         }
-        self.lower_statement(statement, &kind)
+        self.lower_statement_with_tail(statement, &kind, tail)
     }
 
     fn resolve_statement(
@@ -1218,6 +2040,43 @@ impl<'hir> FinalFlowLowerer<'hir> {
         })
     }
 
+    fn lower_statement_with_tail(
+        &mut self,
+        id: StmtId,
+        kind: &HirStmtKind,
+        tail: RuntimeFlowTail,
+    ) -> Result<Vec<RuntimeFlowOpSeed>, RuntimePlanLowerError> {
+        match kind {
+            HirStmtKind::Let {
+                pattern: owner,
+                initializer,
+                ..
+            } if self.contains_flow_value_expression(*initializer)? => {
+                let pattern = FinalPatternLowerer::new(self.module, self.facts, self.locals)
+                    .lower(*owner)
+                    .map_err(RuntimePlanLowerError::new)?;
+                self.lower_flow_value(
+                    *initializer,
+                    RuntimeFlowValueContinuation::Bind { pattern, tail },
+                )
+            }
+            HirStmtKind::Expression { expression }
+                if self.contains_flow_value_expression(*expression)? =>
+            {
+                self.lower_flow_value(*expression, RuntimeFlowValueContinuation::Ignore(tail))
+            }
+            HirStmtKind::Return { .. }
+            | HirStmtKind::Goto { .. }
+            | HirStmtKind::Break { .. }
+            | HirStmtKind::Continue { .. } => self.lower_statement(id, kind),
+            _ => {
+                let mut ops = self.lower_statement(id, kind)?;
+                ops.extend(self.lower_flow_tail(tail)?);
+                Ok(ops)
+            }
+        }
+    }
+
     #[allow(
         clippy::too_many_lines,
         reason = "the final-HIR statement match is intentionally exhaustive so unsupported execution families cannot fall through to a second reader"
@@ -1226,9 +2085,16 @@ impl<'hir> FinalFlowLowerer<'hir> {
         &mut self,
         id: StmtId,
         kind: &HirStmtKind,
-    ) -> Result<Vec<FlowOp>, RuntimePlanLowerError> {
-        let expr = FinalExprLowerer::new(self.module, self.facts);
-        let pattern = FinalPatternLowerer::new(self.module, self.facts);
+    ) -> Result<Vec<RuntimeFlowOpSeed>, RuntimePlanLowerError> {
+        let expr = FinalExprLowerer::new(
+            self.module,
+            self.facts,
+            self.locals,
+            self.pure_helpers,
+            self.trait_methods,
+            self.function_sites,
+        );
+        let pattern = FinalPatternLowerer::new(self.module, self.facts, self.locals);
         match kind {
             HirStmtKind::Assertion { mode, conditions } => {
                 self.lower_assertion(id, *mode, conditions)
@@ -1239,12 +2105,19 @@ impl<'hir> FinalFlowLowerer<'hir> {
                 ..
             } => {
                 let binding = pattern.lower(*owner).map_err(RuntimePlanLowerError::new)?;
-                if let Some(host) =
-                    self.lower_agent_host_call(*initializer, Some(binding.clone()))?
-                {
+                if self.contains_flow_value_expression(*initializer)? {
+                    return self.lower_flow_value(
+                        *initializer,
+                        RuntimeFlowValueContinuation::Bind {
+                            pattern: binding,
+                            tail: RuntimeFlowTail::None,
+                        },
+                    );
+                }
+                if let Some(host) = self.lower_host_call(*initializer, Some(binding.clone()))? {
                     Ok(vec![host])
                 } else {
-                    Ok(vec![FlowOp::Let {
+                    Ok(vec![RuntimeFlowOpSeed::Let {
                         pattern: binding,
                         expr: expr
                             .lower(*initializer)
@@ -1252,40 +2125,68 @@ impl<'hir> FinalFlowLowerer<'hir> {
                     }])
                 }
             }
-            HirStmtKind::Assign { target, value } => Ok(vec![FlowOp::Let {
-                pattern: RuntimePattern::Discard,
-                expr: expr
-                    .lower_assignment(*target, *value, RuntimeExpr::Value(RuntimeValue::Unit))
+            HirStmtKind::Assign { value, .. } => Ok(vec![
+                expr.lower_flow_assignment(id, *value)
                     .map_err(RuntimePlanLowerError::new)?,
-            }]),
+            ]),
             HirStmtKind::LetElse {
                 pattern: owner,
                 initializer,
                 else_body,
                 ..
-            } => Ok(vec![FlowOp::LetElse {
+            } => Ok(vec![RuntimeFlowOpSeed::LetElse {
                 pattern: pattern.lower(*owner).map_err(RuntimePlanLowerError::new)?,
                 expr: expr
                     .lower(*initializer)
                     .map_err(RuntimePlanLowerError::new)?,
                 else_ops: self.lower_statement_ids(else_body)?,
             }]),
-            HirStmtKind::Return { value } => Ok(vec![FlowOp::ReturnExpr(
-                expr.lower(*value).map_err(RuntimePlanLowerError::new)?,
-            )]),
+            HirStmtKind::Return { value } => {
+                if self.contains_flow_value_expression(*value)? {
+                    return self.lower_flow_value(*value, RuntimeFlowValueContinuation::Return);
+                }
+                if let Some(host) = self.lower_host_call(*value, None)? {
+                    let result = self.facts.expression_type(*value).ok_or_else(|| {
+                        RuntimePlanLowerError::new(format!(
+                            "return host call {value:?} has no accepted result type"
+                        ))
+                    })?;
+                    if !matches!(result.shape(), RuntimeTypeShape::Never) {
+                        return Err(RuntimePlanLowerError::new(format!(
+                            "return host call {value:?} must have the Never result type"
+                        )));
+                    }
+                    Ok(vec![host])
+                } else {
+                    Ok(vec![RuntimeFlowOpSeed::ReturnExpr(
+                        expr.lower(*value).map_err(RuntimePlanLowerError::new)?,
+                    )])
+                }
+            }
             HirStmtKind::Goto { target } => {
                 if let Some(RuntimeResolvedValue::ProjectItem(item)) = self.facts.value(*target)
                     && let Some(target) = item.flow_runtime_id()
                 {
-                    Ok(vec![FlowOp::Goto(target.clone())])
+                    Ok(vec![RuntimeFlowOpSeed::Goto(target.clone())])
                 } else {
-                    Ok(vec![FlowOp::GotoExpr(
+                    Ok(vec![RuntimeFlowOpSeed::GotoExpr(
                         expr.lower(*target).map_err(RuntimePlanLowerError::new)?,
                     )])
                 }
             }
             HirStmtKind::Expression { expression: thread } => {
-                if let Some(host) = self.lower_agent_host_call(*thread, None)? {
+                if let Some(effect) = self.facts.evaluated_effect(id) {
+                    return Ok(vec![RuntimeFlowOpSeed::EvaluatedEffect(
+                        lower_evaluated_effect(&expr, effect.effect())?,
+                    )]);
+                }
+                if self.contains_flow_value_expression(*thread)? {
+                    return self.lower_flow_value(
+                        *thread,
+                        RuntimeFlowValueContinuation::Ignore(RuntimeFlowTail::None),
+                    );
+                }
+                if let Some(host) = self.lower_host_call(*thread, None)? {
                     return Ok(vec![host]);
                 }
                 let thread_expr = self.module.resolve_expr(*thread).map_err(|error| {
@@ -1303,12 +2204,12 @@ impl<'hir> FinalFlowLowerer<'hir> {
                         "detached Thread expression {thread:?} requires typed runtime ownership metadata"
                     )));
                 }
-                Ok(vec![FlowOp::Thread {
+                Ok(vec![RuntimeFlowOpSeed::Thread {
                     name: thread_expr.name().map(|name| name.as_str().to_owned()),
                     body: self.lower_body_as_one_error(thread_expr.body())?,
                 }])
             }
-            HirStmtKind::If(branch) => Ok(vec![FlowOp::If {
+            HirStmtKind::If(branch) => Ok(vec![RuntimeFlowOpSeed::If {
                 condition: expr
                     .lower(branch.condition())
                     .map_err(RuntimePlanLowerError::new)?,
@@ -1319,7 +2220,7 @@ impl<'hir> FinalFlowLowerer<'hir> {
                     .transpose()?
                     .unwrap_or_default(),
             }]),
-            HirStmtKind::IfLet(branch) => Ok(vec![FlowOp::IfLet {
+            HirStmtKind::IfLet(branch) => Ok(vec![RuntimeFlowOpSeed::IfLet {
                 pattern: pattern
                     .lower(branch.pattern())
                     .map_err(RuntimePlanLowerError::new)?,
@@ -1348,7 +2249,7 @@ impl<'hir> FinalFlowLowerer<'hir> {
                             )));
                         }
                     };
-                    arms.push(RuntimeMatchArm {
+                    arms.push(RuntimeFlowMatchArmSeed {
                         pattern: pattern
                             .lower(arm.pattern())
                             .map_err(RuntimePlanLowerError::new)?,
@@ -1359,7 +2260,7 @@ impl<'hir> FinalFlowLowerer<'hir> {
                         ops,
                     });
                 }
-                Ok(vec![FlowOp::Match {
+                Ok(vec![RuntimeFlowOpSeed::Match {
                     scrutinee: expr
                         .lower(matched.scrutinee())
                         .map_err(RuntimePlanLowerError::new)?,
@@ -1372,17 +2273,17 @@ impl<'hir> FinalFlowLowerer<'hir> {
                         "labeled loop {id:?} requires a typed runtime control-label identity"
                     )));
                 }
-                Ok(vec![FlowOp::Loop {
+                Ok(vec![RuntimeFlowOpSeed::Loop {
                     body: self.lower_contextual_body(loop_stmt.body())?,
                 }])
             }
-            HirStmtKind::While(while_stmt) => Ok(vec![FlowOp::While {
+            HirStmtKind::While(while_stmt) => Ok(vec![RuntimeFlowOpSeed::While {
                 condition: expr
                     .lower(while_stmt.condition())
                     .map_err(RuntimePlanLowerError::new)?,
                 body: self.lower_contextual_body(while_stmt.body())?,
             }]),
-            HirStmtKind::WhileLet(while_stmt) => Ok(vec![FlowOp::WhileLet {
+            HirStmtKind::WhileLet(while_stmt) => Ok(vec![RuntimeFlowOpSeed::WhileLet {
                 pattern: pattern
                     .lower(while_stmt.pattern())
                     .map_err(RuntimePlanLowerError::new)?,
@@ -1395,18 +2296,43 @@ impl<'hir> FinalFlowLowerer<'hir> {
                     .transpose()?,
                 body: self.lower_contextual_body(while_stmt.body())?,
             }]),
-            HirStmtKind::For(for_stmt) => Ok(vec![FlowOp::For {
+            HirStmtKind::For(for_stmt) => Ok(vec![RuntimeFlowOpSeed::For {
                 pattern: pattern
                     .lower(for_stmt.pattern())
                     .map_err(RuntimePlanLowerError::new)?,
                 source: expr
                     .lower(for_stmt.source())
                     .map_err(RuntimePlanLowerError::new)?,
-                evidence: self.facts.iteration(id).cloned().ok_or_else(|| {
+                evidence: match self.facts.iteration(id).cloned().ok_or_else(|| {
                     RuntimePlanLowerError::new(format!(
                         "checked iteration evidence is missing for For statement {id:?}"
                     ))
-                })?,
+                })? {
+                    RuntimeIteratorFact::Builtin(evidence) => {
+                        RuntimeIteratorEvidenceSeed::Builtin(evidence)
+                    }
+                    RuntimeIteratorFact::Witness(witness) => {
+                        let executable = match witness.executable() {
+                            RuntimeIteratorWitnessExecutableFact::TraitCalls {
+                                into_iter,
+                                next,
+                            } => RuntimeIteratorWitnessExecutableSeed::TraitCalls {
+                                into_iter: self.trait_method(into_iter, id)?,
+                                next: self.trait_method(next, id)?,
+                            },
+                            RuntimeIteratorWitnessExecutableFact::IdentityIntoIterator { next } => {
+                                RuntimeIteratorWitnessExecutableSeed::IdentityIntoIterator {
+                                    next: self.trait_method(next, id)?,
+                                }
+                            }
+                        };
+                        RuntimeIteratorEvidenceSeed::Witness(RuntimeIteratorWitnessEvidenceSeed {
+                            item: witness.item().identity(),
+                            iterator: witness.iterator().identity(),
+                            executable,
+                        })
+                    }
+                },
                 body: self.lower_contextual_body(for_stmt.body())?,
             }]),
             HirStmtKind::Scope(scope) => {
@@ -1415,16 +2341,20 @@ impl<'hir> FinalFlowLowerer<'hir> {
                         "named Scope {id:?} requires a typed runtime scope identity"
                     )));
                 }
-                Ok(vec![FlowOp::Scope(
+                Ok(vec![RuntimeFlowOpSeed::Scope(
                     self.lower_contextual_body(scope.body())?,
                 )])
             }
-            HirStmtKind::Break { label, value } if label.is_none() => Ok(vec![FlowOp::Break(
-                value
-                    .map(|value| expr.lower(value).map_err(RuntimePlanLowerError::new))
-                    .transpose()?,
-            )]),
-            HirStmtKind::Continue { label } if label.is_none() => Ok(vec![FlowOp::Continue]),
+            HirStmtKind::Break { label, value } if label.is_none() => {
+                Ok(vec![RuntimeFlowOpSeed::Break(
+                    value
+                        .map(|value| expr.lower(value).map_err(RuntimePlanLowerError::new))
+                        .transpose()?,
+                )])
+            }
+            HirStmtKind::Continue { label } if label.is_none() => {
+                Ok(vec![RuntimeFlowOpSeed::Continue])
+            }
             HirStmtKind::Error => Err(RuntimePlanLowerError::new(format!(
                 "recovered statement {id:?} cannot enter runtime-plan lowering"
             ))),
@@ -1434,63 +2364,296 @@ impl<'hir> FinalFlowLowerer<'hir> {
         }
     }
 
-    fn lower_agent_host_call(
-        &mut self,
-        expression: arcweft_lang_hir::identity::ExprId,
-        binding: Option<RuntimePattern>,
-    ) -> Result<Option<FlowOp>, RuntimePlanLowerError> {
-        let Some((call_id, call)) = self.agent_call_operand(expression)? else {
-            return Ok(None);
-        };
-        let Some(selected) = self.facts.call(call_id) else {
-            return Ok(None);
-        };
-        let RuntimeResolvedCallTarget::Agent(intrinsic) = selected.target() else {
-            return Ok(None);
-        };
-        let Some(operation) = intrinsic.host_operation() else {
-            return Ok(None);
-        };
-        let lowerer = FinalExprLowerer::new(self.module, self.facts);
-        let mut arguments = Vec::with_capacity(call.arguments().len());
-        for argument in call.arguments() {
-            let value = lowerer
-                .lower(argument.value())
-                .map_err(RuntimePlanLowerError::new)?;
-            arguments.push(match argument {
-                arcweft_lang_hir::expr::HirCallArgument::Positional { .. } => {
-                    HostTaskArgTemplate::positional(value)
-                }
-                arcweft_lang_hir::expr::HirCallArgument::Named { .. } => {
-                    let name = argument.resolved_name().ok_or_else(|| {
-                        RuntimePlanLowerError::new(format!(
-                            "checked Agent host call {call_id:?} has a recovered named argument"
-                        ))
-                    })?;
-                    HostTaskArgTemplate::named(name.as_str(), value)
-                }
-                arcweft_lang_hir::expr::HirCallArgument::Spread { .. } => {
-                    HostTaskArgTemplate::spread(value)
-                }
-            });
-        }
-        let ordinal = self.agent_host_call_ordinal;
-        self.agent_host_call_ordinal = self
-            .agent_host_call_ordinal
-            .checked_add(1)
-            .ok_or_else(|| RuntimePlanLowerError::new("Agent host-call ordinal overflow"))?;
-        Ok(Some(FlowOp::Await {
-            binding,
-            target: AwaitTarget::new(
-                NeedId(format!("need.agent.{ordinal}")),
-                TaskId(format!("task.agent.{ordinal}")),
-                HostTaskRequestTemplate::new("agent", operation, arguments),
-            ),
-            pending: Vec::new(),
-        }))
+    fn contains_flow_value_expression(
+        &self,
+        expression: ExprId,
+    ) -> Result<bool, RuntimePlanLowerError> {
+        let expression = self.module.resolve_expr(expression).map_err(|error| {
+            RuntimePlanLowerError::new(format!(
+                "cannot resolve flow value expression {expression:?}: {error}"
+            ))
+        })?;
+        Ok(matches!(expression.kind(), HirExprKind::Await(_))
+            || matches!(expression.kind(), HirExprKind::Try(operation) if self.contains_flow_value_expression(operation.operand()).unwrap_or(false)))
     }
 
-    fn agent_call_operand(
+    fn lower_flow_value(
+        &mut self,
+        expression: ExprId,
+        continuation: RuntimeFlowValueContinuation,
+    ) -> Result<Vec<RuntimeFlowOpSeed>, RuntimePlanLowerError> {
+        let resolved = self.module.resolve_expr(expression).map_err(|error| {
+            RuntimePlanLowerError::new(format!(
+                "cannot resolve flow value expression {expression:?}: {error}"
+            ))
+        })?;
+        match resolved.kind() {
+            HirExprKind::Try(operation) => self.lower_flow_value(
+                operation.operand(),
+                RuntimeFlowValueContinuation::Try(Box::new(continuation)),
+            ),
+            HirExprKind::Await(awaited) => {
+                self.lower_await_value(expression, awaited, continuation)
+            }
+            _ => {
+                let value = FinalExprLowerer::new(
+                    self.module,
+                    self.facts,
+                    self.locals,
+                    self.pure_helpers,
+                    self.trait_methods,
+                    self.function_sites,
+                )
+                .lower(expression)
+                .map_err(RuntimePlanLowerError::new)?;
+                self.apply_value_continuation(value, continuation)
+            }
+        }
+    }
+
+    fn lower_await_value(
+        &mut self,
+        expression: ExprId,
+        awaited: &arcweft_lang_hir::expr::HirAwaitExpr,
+        continuation: RuntimeFlowValueContinuation,
+    ) -> Result<Vec<RuntimeFlowOpSeed>, RuntimePlanLowerError> {
+        let fact = self.facts.awaited(expression).cloned().ok_or_else(|| {
+            RuntimePlanLowerError::new(format!(
+                "Await expression {expression:?} has no checked runtime fact"
+            ))
+        })?;
+        let locals = self.await_locals.get(&expression).cloned().ok_or_else(|| {
+            RuntimePlanLowerError::new(format!(
+                "Await expression {expression:?} has no admitted continuation locals"
+            ))
+        })?;
+        let operand = self
+            .module
+            .resolve_expr(awaited.operand())
+            .map_err(|error| {
+                RuntimePlanLowerError::new(format!(
+                    "cannot resolve Await operand {:?}: {error}",
+                    awaited.operand()
+                ))
+            })?;
+        let HirExprKind::Call(call) = operand.kind() else {
+            return Err(RuntimePlanLowerError::new(format!(
+                "Await operand {:?} is not a checked host call",
+                awaited.operand()
+            )));
+        };
+        let lowerer = FinalExprLowerer::new(
+            self.module,
+            self.facts,
+            self.locals,
+            self.pure_helpers,
+            self.trait_methods,
+            self.function_sites,
+        );
+        let target = lowerer
+            .lower_host_call_target(awaited.operand(), call)
+            .map_err(RuntimePlanLowerError::new)?
+            .ok_or_else(|| {
+                RuntimePlanLowerError::new(format!(
+                    "Await operand {:?} is not a typed host call",
+                    awaited.operand()
+                ))
+            })?;
+        let ordinal = self.await_ordinal;
+        self.await_ordinal = self
+            .await_ordinal
+            .checked_add(1)
+            .ok_or_else(|| RuntimePlanLowerError::new("runtime Await ordinal overflow"))?;
+        let owner = self.assertion_owner.label();
+        let task = TaskId(format!("{owner}.await.{ordinal}"));
+        let need = NeedId(format!("{owner}.need.{ordinal}"));
+        let await_op = RuntimeFlowOpSeed::Await {
+            binding: Some(bind_seed(fact.physical_result(), locals.result.clone())),
+            target: arcweft_core::plan::RuntimeAwaitTargetSeed {
+                need,
+                task,
+                outcome: TaskOutcomeContract::new(
+                    fact.ready()
+                        .checked_type()
+                        .map_err(|error| RuntimePlanLowerError::new(error.to_string()))?,
+                    fact.error()
+                        .checked_type()
+                        .map_err(|error| RuntimePlanLowerError::new(error.to_string()))?,
+                ),
+                request: RuntimeHostTaskRequestTemplateSeed {
+                    capability: HostCapabilityId(target.capability),
+                    operation: target.operation,
+                    args: target.args,
+                },
+            },
+            pending: Vec::new(),
+        };
+        let mut ready_ops = self.lower_await_handler(
+            awaited,
+            &fact,
+            arcweft_lang_hir::expr::HirAwaitBranchKind::Ready,
+        )?;
+        let propagates = matches!(&continuation, RuntimeFlowValueContinuation::Try(_));
+        if propagates
+            && handler_falls_through(&fact, arcweft_lang_hir::expr::HirAwaitBranchKind::Ready)
+        {
+            ready_ops.extend(self.apply_await_outcome(
+                true,
+                local_seed(fact.ready(), locals.ready.clone()),
+                &fact,
+                continuation.clone(),
+            )?);
+        }
+        let mut error_ops = self.lower_await_handler(
+            awaited,
+            &fact,
+            arcweft_lang_hir::expr::HirAwaitBranchKind::Error,
+        )?;
+        if propagates
+            && handler_falls_through(&fact, arcweft_lang_hir::expr::HirAwaitBranchKind::Error)
+        {
+            error_ops.extend(self.apply_await_outcome(
+                false,
+                local_seed(fact.error(), locals.error.clone()),
+                &fact,
+                continuation.clone(),
+            )?);
+        }
+        let physical_result = local_seed(fact.physical_result(), locals.result.clone());
+        let mut ops = vec![
+            await_op,
+            RuntimeFlowOpSeed::Match {
+                scrutinee: physical_result.clone(),
+                arms: vec![
+                    RuntimeFlowMatchArmSeed {
+                        pattern: variant_bind_seed(
+                            fact.physical_result(),
+                            0,
+                            fact.ready(),
+                            locals.ready,
+                        ),
+                        guard: None,
+                        ops: ready_ops,
+                    },
+                    RuntimeFlowMatchArmSeed {
+                        pattern: variant_bind_seed(
+                            fact.physical_result(),
+                            1,
+                            fact.error(),
+                            locals.error,
+                        ),
+                        guard: None,
+                        ops: error_ops,
+                    },
+                ],
+            },
+        ];
+        if !propagates {
+            ops.extend(self.apply_value_continuation(physical_result, continuation)?);
+        }
+        Ok(ops)
+    }
+
+    fn lower_await_handler(
+        &mut self,
+        awaited: &arcweft_lang_hir::expr::HirAwaitExpr,
+        fact: &RuntimeAwaitFact,
+        kind: arcweft_lang_hir::expr::HirAwaitBranchKind,
+    ) -> Result<Vec<RuntimeFlowOpSeed>, RuntimePlanLowerError> {
+        let Some((_, branch)) = fact
+            .branches()
+            .iter()
+            .zip(awaited.branches())
+            .find(|(checked, _)| checked.kind() == kind)
+        else {
+            return Ok(Vec::new());
+        };
+        self.lower_contextual_body(branch.body())
+    }
+
+    fn apply_await_outcome(
+        &mut self,
+        ready: bool,
+        payload: RuntimeExprSeed,
+        fact: &RuntimeAwaitFact,
+        continuation: RuntimeFlowValueContinuation,
+    ) -> Result<Vec<RuntimeFlowOpSeed>, RuntimePlanLowerError> {
+        if let RuntimeFlowValueContinuation::Try(outer) = continuation {
+            if ready {
+                return self.apply_value_continuation(payload, *outer);
+            }
+            return Err(RuntimePlanLowerError::new(
+                "fallthrough from an Await Error handler requires a typed generic Try propagation fact",
+            ));
+        }
+        let result = RuntimeExprSeed::new(
+            fact.physical_result().identity(),
+            arcweft_core::plan::RuntimeExprSeedKind::Variant {
+                ordinal: u32::from(!ready),
+                payload: Some(Box::new(payload)),
+            },
+        );
+        self.apply_value_continuation(result, continuation)
+    }
+
+    fn apply_value_continuation(
+        &mut self,
+        value: RuntimeExprSeed,
+        continuation: RuntimeFlowValueContinuation,
+    ) -> Result<Vec<RuntimeFlowOpSeed>, RuntimePlanLowerError> {
+        Ok(match continuation {
+            RuntimeFlowValueContinuation::Bind { pattern, tail } => {
+                let mut ops = vec![RuntimeFlowOpSeed::Let {
+                    pattern,
+                    expr: value,
+                }];
+                ops.extend(self.lower_flow_tail(tail)?);
+                ops
+            }
+            RuntimeFlowValueContinuation::Return => vec![RuntimeFlowOpSeed::ReturnExpr(value)],
+            RuntimeFlowValueContinuation::Ignore(tail) => self.lower_flow_tail(tail)?,
+            RuntimeFlowValueContinuation::Try(_) => {
+                return Err(RuntimePlanLowerError::new(
+                    "generic Try lowering requires a typed Result continuation",
+                ));
+            }
+        })
+    }
+
+    fn lower_flow_tail(
+        &mut self,
+        tail: RuntimeFlowTail,
+    ) -> Result<Vec<RuntimeFlowOpSeed>, RuntimePlanLowerError> {
+        match tail {
+            RuntimeFlowTail::None => Ok(Vec::new()),
+            RuntimeFlowTail::Statements(statements) => self.lower_statement_ids(&statements),
+            RuntimeFlowTail::ThreadItems(items) => self.lower_thread_items(&items),
+        }
+    }
+
+    fn lower_host_call(
+        &mut self,
+        expression: arcweft_lang_hir::identity::ExprId,
+        binding: Option<RuntimePatternSeed>,
+    ) -> Result<Option<RuntimeFlowOpSeed>, RuntimePlanLowerError> {
+        let Some((call_id, call)) = self.host_call_operand(expression)? else {
+            return Ok(None);
+        };
+        let lowerer = FinalExprLowerer::new(
+            self.module,
+            self.facts,
+            self.locals,
+            self.pure_helpers,
+            self.trait_methods,
+            self.function_sites,
+        );
+        lowerer
+            .lower_host_call_target(call_id, call)
+            .map(|target| target.map(|target| RuntimeFlowOpSeed::HostCall { binding, target }))
+            .map_err(RuntimePlanLowerError::new)
+    }
+
+    fn host_call_operand(
         &self,
         expression: arcweft_lang_hir::identity::ExprId,
     ) -> Result<
@@ -1502,12 +2665,12 @@ impl<'hir> FinalFlowLowerer<'hir> {
     > {
         let resolved = self.module.resolve_expr(expression).map_err(|error| {
             RuntimePlanLowerError::new(format!(
-                "cannot resolve possible Agent host expression {expression:?}: {error}"
+                "cannot resolve possible host expression {expression:?}: {error}"
             ))
         })?;
         match resolved.kind() {
             HirExprKind::Call(call) => Ok(Some((expression, call))),
-            HirExprKind::Try(propagation) => self.agent_call_operand(propagation.operand()),
+            HirExprKind::Try(propagation) => self.host_call_operand(propagation.operand()),
             _ => Ok(None),
         }
     }
@@ -1521,7 +2684,7 @@ impl<'hir> FinalFlowLowerer<'hir> {
         statement: StmtId,
         hir_mode: HirAssertionMode,
         conditions: &[arcweft_lang_hir::identity::ExprId],
-    ) -> Result<Vec<FlowOp>, RuntimePlanLowerError> {
+    ) -> Result<Vec<RuntimeFlowOpSeed>, RuntimePlanLowerError> {
         let ordinal = self.assertion_ordinal;
         self.assertion_ordinal = self.assertion_ordinal.checked_add(1).ok_or_else(|| {
             RuntimePlanLowerError::new(format!(
@@ -1631,22 +2794,29 @@ impl<'hir> FinalFlowLowerer<'hir> {
                     )
                 }
             };
-            let condition_expr = FinalExprLowerer::new(self.module, self.facts)
-                .lower(condition)
-                .map_err(RuntimePlanLowerError::new)?;
+            let condition_expr = FinalExprLowerer::new(
+                self.module,
+                self.facts,
+                self.locals,
+                self.pure_helpers,
+                self.trait_methods,
+                self.function_sites,
+            )
+            .lower(condition)
+            .map_err(RuntimePlanLowerError::new)?;
             let mode_label = match runtime_mode {
                 RuntimeAssertionMode::Check => "check",
                 RuntimeAssertionMode::Debug => "debug",
             };
-            let message = RuntimeExpr::Value(RuntimeValue::String(format!(
-                "assert.{mode_label} condition {index} failed"
-            )));
-            ops.push(FlowOp::EvaluatedEffect(RuntimeEffectExpr::Assert {
-                guard,
-                condition: condition_expr,
-                message,
-                profile,
-            }));
+            let message = format!("assert.{mode_label} condition {index} failed");
+            ops.push(RuntimeFlowOpSeed::EvaluatedEffect(
+                RuntimeEvaluatedEffectSeed::Assert {
+                    guard,
+                    condition: condition_expr,
+                    message,
+                    profile,
+                },
+            ));
             sites.push(RuntimeAssertionSite::new(
                 guard,
                 statement,
@@ -1688,19 +2858,22 @@ impl<'hir> FinalFlowLowerer<'hir> {
     fn lower_statement_ids(
         &mut self,
         statements: &[StmtId],
-    ) -> Result<Vec<FlowOp>, RuntimePlanLowerError> {
-        let mut ops = Vec::new();
-        for statement in statements {
-            let kind = self.resolve_statement(*statement)?.kind().clone();
-            ops.extend(self.lower_statement(*statement, &kind)?);
-        }
-        Ok(ops)
+    ) -> Result<Vec<RuntimeFlowOpSeed>, RuntimePlanLowerError> {
+        let Some((statement, tail)) = statements.split_first() else {
+            return Ok(Vec::new());
+        };
+        let kind = self.resolve_statement(*statement)?.kind().clone();
+        self.lower_statement_with_tail(
+            *statement,
+            &kind,
+            RuntimeFlowTail::Statements(tail.to_vec().into_boxed_slice()),
+        )
     }
 
     fn lower_contextual_body(
         &mut self,
         body: &HirContextualStmtBody,
-    ) -> Result<Vec<FlowOp>, RuntimePlanLowerError> {
+    ) -> Result<Vec<RuntimeFlowOpSeed>, RuntimePlanLowerError> {
         match body {
             HirContextualStmtBody::Ordinary { statements, .. } => {
                 self.lower_statement_ids(statements)
@@ -1712,7 +2885,7 @@ impl<'hir> FinalFlowLowerer<'hir> {
     fn lower_else_branch(
         &mut self,
         branch: &HirConditionalElseBranch,
-    ) -> Result<Vec<FlowOp>, RuntimePlanLowerError> {
+    ) -> Result<Vec<RuntimeFlowOpSeed>, RuntimePlanLowerError> {
         match branch {
             HirConditionalElseBranch::Body(body) => self.lower_contextual_body(body),
             HirConditionalElseBranch::ElseIf(statement) => {
@@ -1725,7 +2898,7 @@ impl<'hir> FinalFlowLowerer<'hir> {
     fn lower_body_as_one_error(
         &mut self,
         body: &HirThreadBody,
-    ) -> Result<Vec<FlowOp>, RuntimePlanLowerError> {
+    ) -> Result<Vec<RuntimeFlowOpSeed>, RuntimePlanLowerError> {
         self.lower_body(body).map_err(|errors| {
             RuntimePlanLowerError::new(
                 errors
@@ -1736,6 +2909,69 @@ impl<'hir> FinalFlowLowerer<'hir> {
             )
         })
     }
+}
+
+fn lower_evaluated_effect(
+    expr: &FinalExprLowerer<'_>,
+    effect: &RuntimeEvaluatedEffect,
+) -> Result<RuntimeEvaluatedEffectSeed, RuntimePlanLowerError> {
+    let lower = |expression| expr.lower(expression).map_err(RuntimePlanLowerError::new);
+    let fields = |fields: &[crate::semantic_facts::RuntimeEffectFieldFact]| {
+        fields
+            .iter()
+            .map(|field| {
+                Ok(RuntimeEffectFieldSeed {
+                    name: field.name().to_owned(),
+                    value: lower(field.value())?,
+                })
+            })
+            .collect::<Result<Vec<_>, RuntimePlanLowerError>>()
+    };
+    Ok(match effect {
+        RuntimeEvaluatedEffect::Log {
+            level,
+            message,
+            fields: effect_fields,
+        } => RuntimeEvaluatedEffectSeed::Log {
+            level: level.as_str().to_owned(),
+            message: lower(*message)?,
+            fields: fields(effect_fields)?,
+        },
+        RuntimeEvaluatedEffect::SignalWrite { target, value } => {
+            RuntimeEvaluatedEffectSeed::SignalWrite {
+                target: lower(*target)?,
+                value: lower(*value)?,
+            }
+        }
+        RuntimeEvaluatedEffect::MetricWrite { target, value } => {
+            RuntimeEvaluatedEffectSeed::MetricWrite {
+                target: lower(*target)?,
+                value: lower(*value)?,
+            }
+        }
+        RuntimeEvaluatedEffect::EmitEvent {
+            event,
+            fields: effect_fields,
+        } => RuntimeEvaluatedEffectSeed::EmitEvent {
+            event: lower(*event)?,
+            fields: fields(effect_fields)?,
+        },
+        RuntimeEvaluatedEffect::Panic { message } => {
+            RuntimeEvaluatedEffectSeed::Panic(lower(*message)?)
+        }
+        RuntimeEvaluatedEffect::Fail { message } => {
+            RuntimeEvaluatedEffectSeed::Fail(lower(*message)?)
+        }
+        RuntimeEvaluatedEffect::Bail { message } => {
+            RuntimeEvaluatedEffectSeed::Bail(lower(*message)?)
+        }
+        RuntimeEvaluatedEffect::Ensure { condition, message } => {
+            RuntimeEvaluatedEffectSeed::Ensure {
+                condition: lower(*condition)?,
+                message: lower(*message)?,
+            }
+        }
+    })
 }
 
 fn thread_item_matches_kind(item: &HirThreadFlowItem, kind: &HirStmtKind) -> bool {
@@ -1755,7 +2991,6 @@ fn thread_item_matches_kind(item: &HirThreadFlowItem, kind: &HirStmtKind) -> boo
                 | HirStmtKind::SourceLocale(_)
                 | HirStmtKind::Scope(_)
                 | HirStmtKind::Include(_)
-                | HirStmtKind::AwaitWith(_)
                 | HirStmtKind::Error
         ),
         HirThreadFlowItem::Choice(_) => matches!(kind, HirStmtKind::Choice { .. }),
@@ -1770,7 +3005,6 @@ fn thread_item_matches_kind(item: &HirThreadFlowItem, kind: &HirStmtKind) -> boo
         HirThreadFlowItem::SourceLocale(_) => matches!(kind, HirStmtKind::SourceLocale(_)),
         HirThreadFlowItem::Scope(_) => matches!(kind, HirStmtKind::Scope(_)),
         HirThreadFlowItem::Include(_) => matches!(kind, HirStmtKind::Include(_)),
-        HirThreadFlowItem::AwaitWith(_) => matches!(kind, HirStmtKind::AwaitWith(_)),
         HirThreadFlowItem::Error(_) => matches!(kind, HirStmtKind::Error),
     }
 }
@@ -1825,9 +3059,9 @@ mod tests {
         let entry_input = RuntimeEntryLoweringInput::empty(executable);
         let report = lower_runtime_plan_with_stats(executable, &facts, &entry_input)
             .expect("empty Flow lowers");
-        assert_eq!(report.plan.flows.len(), 1);
-        assert_eq!(report.plan.flows[0].id, identity);
-        assert!(report.plan.flows[0].ops.is_empty());
+        assert_eq!(report.plan.flows().len(), 1);
+        assert_eq!(report.plan.flows()[0].id, identity);
+        assert!(report.plan.flows()[0].ops.is_empty());
     }
 
     #[test]
@@ -1853,7 +3087,7 @@ mod tests {
         )
         .expect("Thread expression statement lowers");
 
-        let [FlowOp::Thread { name, body }] = report.plan.flows[0].ops.as_slice() else {
+        let [FlowOp::Thread { name, body }] = report.plan.flows()[0].ops.as_slice() else {
             panic!("ordinary expression statement must project its typed Thread payload")
         };
         assert!(name.is_none());
@@ -1909,8 +3143,8 @@ mod tests {
         );
         let report = lower_runtime_plan_with_stats(executable, &facts, &input)
             .expect("exact checked Entry owner lowers");
-        assert_eq!(report.plan.entries.len(), 1);
-        assert_eq!(report.plan.flows.len(), 1);
+        assert_eq!(report.plan.entries().len(), 1);
+        assert_eq!(report.plan.flows().len(), 1);
     }
 
     fn project_fixture(label: &str, source: &str) -> HirProject {
@@ -1995,15 +3229,13 @@ mod tests {
             .runtime_semantic_owner_inventory()
             .expect("runtime semantic owner inventory");
         for owner in runtime_owners.locals() {
-            input
-                .push_local_declaration(
-                    owner,
-                    RuntimeNormalizedType::new(
-                        RuntimeSemanticTypeId::from_bytes([0x11; 32]),
-                        RuntimeTypeShape::Unit,
-                    ),
-                )
-                .expect("fixture local identity");
+            input.push_local_declaration(
+                owner,
+                RuntimeNormalizedType::new(
+                    RuntimeSemanticTypeId::from_bytes([0x11; 32]),
+                    RuntimeTypeShape::Unit,
+                ),
+            );
         }
         for owner in runtime_owners.patterns() {
             input.push_pattern_type(

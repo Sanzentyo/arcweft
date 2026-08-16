@@ -1,11 +1,10 @@
 #![allow(unreachable_code)]
 
-use arcweft_core::value::{RuntimeExpr, RuntimeNominalRecordFieldExpr, RuntimeValue};
+use arcweft_core::value::RuntimeNominalRecordFieldExpr;
 
 fn main() {
     let _ = RuntimeNominalRecordFieldExpr {
         field: todo!(),
-        name: "field".to_owned(),
-        value: RuntimeExpr::Value(RuntimeValue::Unit),
+        value: todo!(),
     };
 }

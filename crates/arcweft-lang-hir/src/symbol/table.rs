@@ -1836,7 +1836,6 @@ fn is_reserved_type_name(name: &str) -> bool {
             | "Result"
             | "Need"
             | "Stream"
-            | "Source"
             | "Ref"
     )
 }

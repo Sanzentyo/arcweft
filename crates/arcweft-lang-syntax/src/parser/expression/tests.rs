@@ -395,7 +395,7 @@ fn associated_call_recovery_starts_only_after_an_authored_separator() {
 }
 
 #[test]
-fn select_projection_keeps_missing_member_and_splits_postfix_try() {
+fn select_projection_keeps_missing_member_without_postfix_try() {
     let selected = expression_events("target.member");
     let pending = projection(&selected, SyntaxKind::SelectExpression);
     assert!(matches!(
@@ -422,20 +422,6 @@ fn select_projection_keeps_missing_member_and_splits_postfix_try() {
         component.role() == ExpressionComponentRole::SelectedMember
             && component.range() == SourceRange::new(10, 10)
     }));
-
-    let optional = expression_events("target?.member");
-    assert!(matches!(
-        projection(&optional, SyntaxKind::SelectExpression).projection(),
-        ExpressionProjection::Select(SyntaxSelectedMember::Name(member))
-            if member.as_str() == "member"
-    ));
-    assert!(matches!(
-        projection(&optional, SyntaxKind::TryExpression).projection(),
-        ExpressionProjection::Try {
-            form: SyntaxTryForm::PostfixQuestion,
-            ..
-        }
-    ));
 }
 
 #[test]
@@ -533,7 +519,7 @@ fn known_leaf_recovery_keeps_its_typed_family() {
 }
 
 #[test]
-fn lifetime_optional_marker_is_not_reclassified_as_postfix_try() {
+fn question_marker_is_not_reclassified_as_try() {
     let lifetime = expression_events("'line.focus?");
     assert!(!lifetime.iter().any(|event| matches!(
         event,
@@ -544,24 +530,13 @@ fn lifetime_optional_marker_is_not_reclassified_as_postfix_try() {
     )));
 
     let ordinary = expression_events("value?");
-    assert!(ordinary.iter().any(|event| matches!(
+    assert!(!ordinary.iter().any(|event| matches!(
         event,
         SyntaxEvent::StartNode {
             kind: SyntaxKind::TryExpression,
             ..
         }
     )));
-    assert!(matches!(
-        projection(&ordinary, SyntaxKind::PathExpression).projection(),
-        ExpressionProjection::Path
-    ));
-    assert!(matches!(
-        projection(&ordinary, SyntaxKind::TryExpression).projection(),
-        ExpressionProjection::Try {
-            operand: SyntaxExpressionSlot::Authored,
-            form: SyntaxTryForm::PostfixQuestion,
-        }
-    ));
 }
 
 #[test]
@@ -608,14 +583,6 @@ fn pratt_e14_through_e17_projections_retain_slots_forms_and_components() {
         projection(&expression_events("try value"), SyntaxKind::TryExpression).projection(),
         ExpressionProjection::Try {
             operand: SyntaxExpressionSlot::Authored,
-            form: SyntaxTryForm::PrefixTry,
-        }
-    ));
-    assert!(matches!(
-        projection(&expression_events("value?"), SyntaxKind::TryExpression).projection(),
-        ExpressionProjection::Try {
-            operand: SyntaxExpressionSlot::Authored,
-            form: SyntaxTryForm::PostfixQuestion,
         }
     ));
     assert!(matches!(
@@ -626,18 +593,23 @@ fn pratt_e14_through_e17_projections_retain_slots_forms_and_components() {
         .projection(),
         ExpressionProjection::Await {
             operand: SyntaxExpressionSlot::Authored,
-            propagation: SyntaxAwaitPropagation::PreserveResult,
+            branches: None,
         }
     ));
-    for source in ["try await value", "await? value"] {
-        assert!(matches!(
-            projection(&expression_events(source), SyntaxKind::AwaitExpression).projection(),
-            ExpressionProjection::Await {
-                operand: SyntaxExpressionSlot::Authored,
-                propagation: SyntaxAwaitPropagation::PropagateError,
-            }
-        ));
-    }
+    let nested = expression_events("try await value");
+    assert!(matches!(
+        projection(&nested, SyntaxKind::TryExpression).projection(),
+        ExpressionProjection::Try {
+            operand: SyntaxExpressionSlot::Authored,
+        }
+    ));
+    assert!(matches!(
+        projection(&nested, SyntaxKind::AwaitExpression).projection(),
+        ExpressionProjection::Await {
+            operand: SyntaxExpressionSlot::Authored,
+            branches: None,
+        }
+    ));
 }
 
 #[test]
@@ -1011,32 +983,4 @@ fn pratt_start_insertion_preserves_each_child_leaf_projection() {
             .count(),
         2
     );
-}
-
-#[test]
-fn selected_postfix_try_slot_recovers_a_missing_operator_at_operand_end() {
-    let source = "value";
-    let tokens = DocumentLexer::new(source).lex();
-    let mut events = Vec::new();
-    let mut budget = GrammarBudget::default();
-    {
-        let mut parser = DocumentParser::new(source, &tokens, &mut events, &mut budget);
-
-        let operand = parse_prefix(&mut parser, tokens.len(), SyntaxRole::Element(0));
-        assert!(parser.is_at_end());
-        emit_try(&mut parser, operand, SyntaxRole::Element(0));
-    }
-
-    assert!(events.iter().any(|event| matches!(
-        event,
-        SyntaxEvent::StartNode {
-            kind: SyntaxKind::MissingTokenNode,
-            role: SyntaxRole::Token,
-            ..
-        }
-    )));
-    assert!(events.iter().any(|event| matches!(
-        event,
-        SyntaxEvent::MissingToken { at, .. } if *at == source.len()
-    )));
 }

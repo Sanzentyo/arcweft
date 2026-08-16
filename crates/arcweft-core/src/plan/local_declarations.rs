@@ -1,54 +1,71 @@
-//! Plan-local declaration identity table and its sole raw builder.
+//! Final typed plan-local declaration table.
 
 use std::num::NonZeroU32;
 
 use thiserror::Error;
 
-use crate::runtime_id::RuntimeLocalDeclarationId;
+use crate::runtime_id::{RuntimeLocalDeclarationId, RuntimePlanTypeId};
 
-/// The complete contiguous local-declaration identity domain of one plan.
-///
-/// Identity `1` names the first local pushed into the builder and `len` names
-/// the last. The external lowerer owns the HIR-to-runtime map, while this core
-/// table is the final authority for whether a runtime identity belongs to the
-/// plan.
-#[derive(Clone, Debug, Default, Eq, PartialEq)]
+/// One sealed plan-local declaration row.
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub struct RuntimeLocalDeclaration {
+    ty: RuntimePlanTypeId,
+}
+
+impl RuntimeLocalDeclaration {
+    #[must_use]
+    pub const fn ty(self) -> RuntimePlanTypeId {
+        self.ty
+    }
+}
+
+/// The complete typed local-declaration identity domain of one plan.
+#[derive(Clone, Debug, Eq, PartialEq)]
 pub struct RuntimeLocalDeclarationTable {
-    len: u32,
+    declarations: Box<[RuntimeLocalDeclaration]>,
 }
 
 impl RuntimeLocalDeclarationTable {
-    /// Number of local declarations in the plan.
     #[must_use]
-    pub const fn len(&self) -> u32 {
-        self.len
+    pub fn len(&self) -> usize {
+        self.declarations.len()
     }
 
     #[must_use]
-    pub const fn is_empty(&self) -> bool {
-        self.len == 0
+    pub fn is_empty(&self) -> bool {
+        self.declarations.is_empty()
     }
 
-    /// Returns whether the exact local identity belongs to this table.
     #[must_use]
-    pub const fn contains(&self, local: RuntimeLocalDeclarationId) -> bool {
-        local.get().get() <= self.len
+    pub fn contains(&self, local: RuntimeLocalDeclarationId) -> bool {
+        self.get(local).is_some()
+    }
+
+    #[must_use]
+    pub fn get(&self, local: RuntimeLocalDeclarationId) -> Option<RuntimeLocalDeclaration> {
+        usize::try_from(local.get().get() - 1)
+            .ok()
+            .and_then(|index| self.declarations.get(index))
+            .copied()
+    }
+
+    pub fn declarations(&self) -> impl ExactSizeIterator<Item = RuntimeLocalDeclaration> + '_ {
+        self.declarations.iter().copied()
     }
 }
 
-/// Sole raw-construction owner for one contiguous plan-local declaration table.
-///
-/// The builder is deliberately not cloneable. A compiler or other trusted
-/// structural integrator pushes locals once in its accepted canonical order,
-/// retains the returned IDs in its higher-layer map, and seals the domain
-/// before constructing binding coordinates.
+/// Sole internal issuer for final typed local identities.
 #[derive(Debug)]
-pub struct RuntimeLocalDeclarationTableBuilder {
-    next: Option<NonZeroU32>,
-    issued: u32,
+pub(crate) struct RuntimeLocalDeclarationTableBuilder {
+    declarations: Vec<RuntimeLocalDeclaration>,
+    maximum: u32,
 }
 
-/// Exhaustion of the bounded plan-local declaration identity domain.
+pub(crate) struct PreparedRuntimeLocalDeclarationBatch {
+    ids: Box<[RuntimeLocalDeclarationId]>,
+    declarations: Vec<RuntimeLocalDeclaration>,
+}
+
 #[derive(Clone, Copy, Debug, Eq, Error, Hash, Ord, PartialEq, PartialOrd)]
 pub enum RuntimeLocalDeclarationTableError {
     #[error("runtime local-declaration identity space is exhausted")]
@@ -57,66 +74,127 @@ pub enum RuntimeLocalDeclarationTableError {
 
 impl RuntimeLocalDeclarationTableBuilder {
     #[must_use]
-    pub const fn new() -> Self {
+    pub(crate) const fn new() -> Self {
         Self {
-            next: Some(NonZeroU32::MIN),
-            issued: 0,
+            declarations: Vec::new(),
+            maximum: u32::MAX,
         }
     }
 
-    /// Appends one declaration and returns its contiguous plan-local identity.
-    pub fn push(&mut self) -> Result<RuntimeLocalDeclarationId, RuntimeLocalDeclarationTableError> {
-        let current = self
-            .next
+    pub(crate) fn contains(&self, local: RuntimeLocalDeclarationId) -> bool {
+        usize::try_from(local.get().get() - 1)
+            .ok()
+            .is_some_and(|index| index < self.declarations.len())
+    }
+
+    #[cfg(test)]
+    pub(crate) fn push(
+        &mut self,
+        ty: RuntimePlanTypeId,
+    ) -> Result<RuntimeLocalDeclarationId, RuntimeLocalDeclarationTableError> {
+        let prepared = self.prepare_batch([ty])?;
+        self.commit_batch(prepared)
+            .first()
+            .copied()
+            .ok_or(RuntimeLocalDeclarationTableError::IdentityExhausted)
+    }
+
+    pub(crate) fn prepare_batch(
+        &self,
+        types: impl IntoIterator<Item = RuntimePlanTypeId>,
+    ) -> Result<PreparedRuntimeLocalDeclarationBatch, RuntimeLocalDeclarationTableError> {
+        let types = types.into_iter().collect::<Box<[_]>>();
+        let final_len = self
+            .declarations
+            .len()
+            .checked_add(types.len())
+            .and_then(|value| u32::try_from(value).ok())
+            .filter(|value| *value <= self.maximum)
             .ok_or(RuntimeLocalDeclarationTableError::IdentityExhausted)?;
-        self.issued = current.get();
-        self.next = NonZeroU32::new(current.get().wrapping_add(1));
-        Ok(RuntimeLocalDeclarationId::from_accepted_ordinal(current))
+        let _ = final_len;
+        let mut declarations = self.declarations.clone();
+        let mut ids = Vec::with_capacity(types.len());
+        for ty in types {
+            let ordinal = declarations
+                .len()
+                .checked_add(1)
+                .and_then(|value| u32::try_from(value).ok())
+                .and_then(NonZeroU32::new)
+                .ok_or(RuntimeLocalDeclarationTableError::IdentityExhausted)?;
+            declarations.push(RuntimeLocalDeclaration { ty });
+            ids.push(RuntimeLocalDeclarationId::from_accepted_ordinal(ordinal));
+        }
+        Ok(PreparedRuntimeLocalDeclarationBatch {
+            ids: ids.into_boxed_slice(),
+            declarations,
+        })
     }
 
-    /// Seals the complete identity domain. No mutable issuer survives finish.
+    pub(crate) fn commit_batch(
+        &mut self,
+        prepared: PreparedRuntimeLocalDeclarationBatch,
+    ) -> Box<[RuntimeLocalDeclarationId]> {
+        self.declarations = prepared.declarations;
+        prepared.ids
+    }
+
     #[must_use]
-    pub const fn finish(self) -> RuntimeLocalDeclarationTable {
-        RuntimeLocalDeclarationTable { len: self.issued }
+    pub(crate) fn finish(self) -> RuntimeLocalDeclarationTable {
+        RuntimeLocalDeclarationTable {
+            declarations: self.declarations.into_boxed_slice(),
+        }
     }
-}
 
-impl Default for RuntimeLocalDeclarationTableBuilder {
-    fn default() -> Self {
-        Self::new()
+    #[cfg(test)]
+    fn with_maximum_for_test(maximum: u32) -> Self {
+        Self {
+            maximum,
+            ..Self::new()
+        }
     }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::runtime_id::RuntimePlanTypeId;
 
-    #[test]
-    fn builder_issues_one_contiguous_table_and_exhausts_without_wrapping() {
-        let mut builder = RuntimeLocalDeclarationTableBuilder::new();
-        let first = builder.push().expect("first local");
-        let second = builder.push().expect("second local");
-        assert_eq!(first.get(), NonZeroU32::MIN);
-        assert_eq!(second.get(), NonZeroU32::new(2).unwrap());
-
-        builder.next = Some(NonZeroU32::MAX);
-        let last = builder.push().expect("maximum local");
-        assert_eq!(last.get(), NonZeroU32::MAX);
-        assert_eq!(
-            builder.push(),
-            Err(RuntimeLocalDeclarationTableError::IdentityExhausted)
-        );
-
-        let table = builder.finish();
-        assert_eq!(table.len(), u32::MAX);
-        assert!(table.contains(first));
-        assert!(table.contains(last));
+    fn ty(ordinal: u32) -> RuntimePlanTypeId {
+        RuntimePlanTypeId::from_accepted_ordinal(NonZeroU32::new(ordinal).unwrap())
     }
 
     #[test]
-    fn empty_builder_seals_an_empty_table() {
-        let table = RuntimeLocalDeclarationTableBuilder::new().finish();
-        assert!(table.is_empty());
-        assert_eq!(table.len(), 0);
+    fn builder_seals_typed_rows_in_contiguous_order() {
+        let mut builder = RuntimeLocalDeclarationTableBuilder::new();
+        let first = builder.push(ty(3)).expect("first local");
+        let second = builder.push(ty(7)).expect("second local");
+        let table = builder.finish();
+
+        assert_eq!(first.get(), NonZeroU32::MIN);
+        assert_eq!(second.get(), NonZeroU32::new(2).unwrap());
+        assert_eq!(
+            table.get(first).map(RuntimeLocalDeclaration::ty),
+            Some(ty(3))
+        );
+        assert_eq!(
+            table.get(second).map(RuntimeLocalDeclaration::ty),
+            Some(ty(7))
+        );
+    }
+
+    #[test]
+    fn exhaustion_does_not_append_an_untyped_row() {
+        let mut builder = RuntimeLocalDeclarationTableBuilder::with_maximum_for_test(1);
+        let first = builder.push(ty(1)).expect("bounded first local");
+        assert_eq!(
+            builder.push(ty(2)),
+            Err(RuntimeLocalDeclarationTableError::IdentityExhausted)
+        );
+        let table = builder.finish();
+        assert_eq!(table.len(), 1);
+        assert_eq!(
+            table.get(first).map(RuntimeLocalDeclaration::ty),
+            Some(ty(1))
+        );
     }
 }

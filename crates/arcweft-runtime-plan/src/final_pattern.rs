@@ -1,6 +1,12 @@
-//! Runtime-pattern projection from the accepted final-HIR generation.
+//! Runtime-pattern seed projection from accepted final HIR.
 
-use arcweft_core::pattern::{RuntimePattern, RuntimePatternRest, RuntimeRecordPatternField};
+use std::collections::BTreeMap;
+
+use arcweft_core::plan::{
+    RuntimeLocalSeedId, RuntimePatternRestSeed, RuntimePatternSeed, RuntimePatternSeedKind,
+    RuntimeRecordFieldSeedId, RuntimeRecordPatternFieldSeed,
+};
+use arcweft_core::value::RuntimeEntityReference;
 use arcweft_lang_hir::identity::{LocalId, PatternId};
 use arcweft_lang_hir::module::HirModule;
 use arcweft_lang_hir::pattern::{
@@ -8,26 +14,34 @@ use arcweft_lang_hir::pattern::{
     HirPatternSequenceRest, HirVariantPatternPayload,
 };
 
-use crate::semantic_facts::RuntimePlanSemanticFacts;
+use crate::semantic_facts::{
+    RuntimePlanSemanticFacts, RuntimeProjectItem, RuntimeResolvedNominalRecord,
+};
 
 pub(crate) struct FinalPatternLowerer<'hir> {
     module: &'hir HirModule,
     facts: &'hir RuntimePlanSemanticFacts,
+    locals: &'hir BTreeMap<LocalId, RuntimeLocalSeedId>,
 }
 
 impl<'hir> FinalPatternLowerer<'hir> {
     pub(crate) const fn new(
         module: &'hir HirModule,
         facts: &'hir RuntimePlanSemanticFacts,
+        locals: &'hir BTreeMap<LocalId, RuntimeLocalSeedId>,
     ) -> Self {
-        Self { module, facts }
+        Self {
+            module,
+            facts,
+            locals,
+        }
     }
 
     #[allow(
         clippy::too_many_lines,
-        reason = "the exhaustive final-HIR pattern projection keeps accepted and rejected pattern families in one closed match"
+        reason = "one closed final-HIR pattern projection"
     )]
-    pub(crate) fn lower(&self, id: PatternId) -> Result<RuntimePattern, String> {
+    pub(crate) fn lower(&self, id: PatternId) -> Result<RuntimePatternSeed, String> {
         let pattern = self
             .module
             .resolve_pattern(id)
@@ -37,39 +51,34 @@ impl<'hir> FinalPatternLowerer<'hir> {
                 "final-HIR pattern {id:?} contains recovery and is not executable"
             ));
         }
-        match pattern.kind() {
-            HirPatternKind::Binding(binding) => self.binding(binding, false),
-            HirPatternKind::MutableBinding(binding) => self.binding(binding, true),
-            HirPatternKind::Literal(_) => self
-                .facts
-                .pattern_literal(id)
-                .cloned()
-                .map(RuntimePattern::Literal)
-                .ok_or_else(|| format!("checked literal fact is missing for pattern {id:?}")),
-            HirPatternKind::EntityReference(_) => self
-                .facts
-                .pattern_item(id)
-                .map(|item| RuntimePattern::Entity(item.public_id().as_str().to_owned()))
-                .ok_or_else(|| {
+        let kind = match pattern.kind() {
+            HirPatternKind::Binding(binding) => self.binding(binding, false)?,
+            HirPatternKind::MutableBinding(binding) => self.binding(binding, true)?,
+            HirPatternKind::Literal(_) => RuntimePatternSeedKind::Literal(
+                self.facts
+                    .pattern_literal(id)
+                    .cloned()
+                    .ok_or_else(|| format!("checked literal fact is missing for pattern {id:?}"))?,
+            ),
+            HirPatternKind::EntityReference(_) => RuntimePatternSeedKind::Entity(
+                project_entity_reference(self.facts.pattern_item(id).ok_or_else(|| {
                     format!("checked project-item fact is missing for entity pattern {id:?}")
-                }),
+                })?),
+            ),
             HirPatternKind::Variant(variant) => {
                 let selected = self
                     .facts
                     .pattern_variant(id)
                     .ok_or_else(|| format!("checked variant fact is missing for pattern {id:?}"))?;
-                let selected_payload = selected
-                    .selected_payload_type()
-                    .map_err(|error| error.to_string())?;
-                let payload = match (variant.payload(), selected_payload) {
+                let payload = match (
+                    variant.payload(),
+                    selected
+                        .selected_payload_type()
+                        .map_err(|error| error.to_string())?,
+                ) {
                     (HirVariantPatternPayload::Absent, None) => None,
                     (HirVariantPatternPayload::Pattern(payload), Some(expected)) => {
-                        let actual = self.facts.pattern_type(*payload).ok_or_else(|| {
-                            format!(
-                                "accepted type is missing for variant payload pattern {payload:?}"
-                            )
-                        })?;
-                        if actual != expected {
+                        if self.facts.pattern_type(*payload) != Some(expected) {
                             return Err(format!(
                                 "variant payload pattern {payload:?} does not match its selected normalized payload type"
                             ));
@@ -85,141 +94,176 @@ impl<'hir> FinalPatternLowerer<'hir> {
                         ));
                     }
                 };
-                let selection = selected
-                    .checked_selection()
-                    .map_err(|error| error.to_string())?;
-                Ok(RuntimePattern::Variant {
-                    owner: selection.owner().clone(),
-                    ordinal: selection.ordinal(),
-                    name: selection.name().to_owned(),
+                RuntimePatternSeedKind::Variant {
+                    ordinal: selected
+                        .checked_selection()
+                        .map_err(|error| error.to_string())?
+                        .ordinal(),
                     payload,
-                })
+                }
             }
-            HirPatternKind::Discard => Ok(RuntimePattern::Discard),
-            HirPatternKind::Tuple { elements } => elements
-                .iter()
-                .map(|element| self.lower(*element))
-                .collect::<Result<Vec<_>, _>>()
-                .map(RuntimePattern::Tuple),
+            HirPatternKind::Discard => RuntimePatternSeedKind::Discard,
+            HirPatternKind::Tuple { elements } => RuntimePatternSeedKind::Tuple(
+                elements
+                    .iter()
+                    .map(|element| self.lower(*element))
+                    .collect::<Result<Vec<_>, _>>()?
+                    .into_boxed_slice(),
+            ),
             HirPatternKind::Record { path, fields } => {
-                let nominal_layout = match path {
+                let nominal = match path {
                     HirPatternRecordPath::Absent => None,
-                    HirPatternRecordPath::Resolved(_) => Some(
-                        self.facts
-                            .pattern_nominal_record(id)
-                            .ok_or_else(|| {
-                                format!("checked nominal fact is missing for pattern {id:?}")
-                            })?
-                            .layout()
-                            .clone(),
-                    ),
+                    HirPatternRecordPath::Resolved(_) => {
+                        Some(self.facts.pattern_nominal_record(id).ok_or_else(|| {
+                            format!("checked nominal fact is missing for pattern {id:?}")
+                        })?)
+                    }
                     HirPatternRecordPath::Recovered(_) => {
                         return Err(format!("record pattern {id:?} has a recovered path"));
                     }
                 };
                 let mut lowered = Vec::with_capacity(fields.len());
-                let mut rest = RuntimePatternRest::Exact;
+                let mut rest = RuntimePatternRestSeed::Exact;
                 for field in fields {
                     match field {
                         HirPatternField::Explicit { name, pattern } => {
-                            lowered.push(RuntimeRecordPatternField {
-                                name: name.as_str().to_owned(),
-                                pattern: self.lower(*pattern)?,
-                            });
+                            lowered.push(RuntimeRecordPatternFieldSeed::new(
+                                record_field(nominal, name.as_str(), id)?,
+                                self.lower(*pattern)?,
+                            ));
                         }
                         HirPatternField::Shorthand { name, local } => {
-                            lowered.push(RuntimeRecordPatternField {
-                                name: name.as_str().to_owned(),
-                                pattern: RuntimePattern::Ident(self.local_name(*local)?),
-                            });
+                            lowered.push(RuntimeRecordPatternFieldSeed::new(
+                                record_field(nominal, name.as_str(), id)?,
+                                RuntimePatternSeed::new(
+                                    self.local_type(*local)?,
+                                    RuntimePatternSeedKind::Bind {
+                                        mutable: false,
+                                        local: self.local(*local)?,
+                                    },
+                                ),
+                            ));
                         }
                         HirPatternField::Rest { binding } => {
-                            rest = match binding {
-                                None => RuntimePatternRest::Ignore,
-                                Some(local) => RuntimePatternRest::Bind(self.local_name(*local)?),
-                            };
+                            rest = binding.map_or(Ok(RuntimePatternRestSeed::Ignore), |local| {
+                                self.local(local).map(RuntimePatternRestSeed::Bind)
+                            })?;
                         }
                         HirPatternField::Invalid { .. } => {
                             return Err(format!("record pattern {id:?} has an invalid field"));
                         }
                     }
                 }
-                Ok(RuntimePattern::Record {
-                    nominal_layout,
-                    fields: lowered,
+                RuntimePatternSeedKind::Record {
+                    fields: lowered.into_boxed_slice(),
                     rest,
-                })
+                }
             }
             HirPatternKind::BracketSequence { elements, rest } => {
-                let items = elements
-                    .iter()
-                    .map(|element| self.lower(*element))
-                    .collect::<Result<Vec<_>, _>>()?;
-                let rest = match rest {
-                    HirPatternSequenceRest::Absent => RuntimePatternRest::Exact,
-                    HirPatternSequenceRest::Unbound => RuntimePatternRest::Ignore,
-                    HirPatternSequenceRest::Bound(local) => {
-                        RuntimePatternRest::Bind(self.local_name(*local)?)
-                    }
-                    HirPatternSequenceRest::Recovered(_) => {
-                        return Err(format!(
-                            "bracket-sequence pattern {id:?} has a recovered rest"
-                        ));
-                    }
-                };
-                Ok(RuntimePattern::BracketSeq { items, rest })
+                RuntimePatternSeedKind::Sequence {
+                    items: elements
+                        .iter()
+                        .map(|element| self.lower(*element))
+                        .collect::<Result<Vec<_>, _>>()?
+                        .into_boxed_slice(),
+                    rest: match rest {
+                        HirPatternSequenceRest::Absent => RuntimePatternRestSeed::Exact,
+                        HirPatternSequenceRest::Unbound => RuntimePatternRestSeed::Ignore,
+                        HirPatternSequenceRest::Bound(local) => {
+                            RuntimePatternRestSeed::Bind(self.local(*local)?)
+                        }
+                        HirPatternSequenceRest::Recovered(_) => {
+                            return Err(format!(
+                                "bracket-sequence pattern {id:?} has a recovered rest"
+                            ));
+                        }
+                    },
+                }
             }
-            HirPatternKind::WholeBinding { binding, pattern } => {
-                let name = self.bound_name(binding)?;
-                Ok(RuntimePattern::Whole {
-                    name,
-                    pattern: Box::new(self.lower(*pattern)?),
-                })
+            HirPatternKind::WholeBinding { binding, pattern } => RuntimePatternSeedKind::Whole {
+                local: self.bound_local(binding)?,
+                pattern: Box::new(self.lower(*pattern)?),
+            },
+            HirPatternKind::TypedBinding { binding, .. } => RuntimePatternSeedKind::Typed {
+                local: self.bound_local(binding)?,
+            },
+            HirPatternKind::Or { .. } => {
+                return Err(format!(
+                    "or-pattern {id:?} must be expanded before runtime-plan lowering"
+                ));
             }
-            HirPatternKind::TypedBinding { binding, ty } => {
-                let name = self.bound_name(binding)?;
-                let ty = self
-                    .facts
-                    .ty(*ty)
-                    .ok_or_else(|| format!("checked type fact is missing for {ty:?}"))?;
-                Ok(RuntimePattern::Typed {
-                    name,
-                    ty: ty.checked_type().map_err(|error| error.to_string())?,
-                })
+            HirPatternKind::Error(_) => {
+                return Err(format!("error pattern {id:?} is not executable"));
             }
-            HirPatternKind::Or { .. } => Err(format!(
-                "or-pattern {id:?} must be expanded before runtime-plan lowering"
-            )),
-            HirPatternKind::Error(_) => Err(format!("error pattern {id:?} is not executable")),
-        }
+        };
+        Ok(RuntimePatternSeed::new(self.pattern_type(id)?, kind))
     }
 
     fn binding(
         &self,
         binding: &HirPatternBinding,
         mutable: bool,
-    ) -> Result<RuntimePattern, String> {
-        let name = self.bound_name(binding)?;
-        Ok(if mutable {
-            RuntimePattern::MutIdent(name)
-        } else {
-            RuntimePattern::Ident(name)
+    ) -> Result<RuntimePatternSeedKind, String> {
+        Ok(RuntimePatternSeedKind::Bind {
+            mutable,
+            local: self.bound_local(binding)?,
         })
     }
 
-    fn bound_name(&self, binding: &HirPatternBinding) -> Result<String, String> {
-        let HirPatternBinding::Bound { name, local } = binding else {
+    fn bound_local(&self, binding: &HirPatternBinding) -> Result<RuntimeLocalSeedId, String> {
+        let HirPatternBinding::Bound { local, .. } = binding else {
             return Err("recovered pattern binding cannot enter runtime lowering".to_owned());
         };
-        let resolved = self.local_name(*local)?;
-        debug_assert_eq!(resolved, name.as_str());
-        Ok(resolved)
+        self.local(*local)
     }
 
-    fn local_name(&self, local: LocalId) -> Result<String, String> {
-        self.module
-            .resolve_local(local)
-            .map(|local| local.name().as_str().to_owned())
-            .map_err(|error| format!("cannot resolve final-HIR local {local:?}: {error}"))
+    fn pattern_type(
+        &self,
+        pattern: PatternId,
+    ) -> Result<arcweft_core::pattern::RuntimeSemanticTypeId, String> {
+        self.facts
+            .pattern_type(pattern)
+            .map(crate::semantic_facts::RuntimeNormalizedType::identity)
+            .ok_or_else(|| format!("accepted type is missing for pattern {pattern:?}"))
     }
+
+    fn local_type(
+        &self,
+        local: LocalId,
+    ) -> Result<arcweft_core::pattern::RuntimeSemanticTypeId, String> {
+        self.facts
+            .local_type(local)
+            .map(crate::semantic_facts::RuntimeNormalizedType::identity)
+            .ok_or_else(|| format!("accepted type is missing for local {local:?}"))
+    }
+
+    fn local(&self, local: LocalId) -> Result<RuntimeLocalSeedId, String> {
+        self.locals.get(&local).cloned().ok_or_else(|| {
+            format!("runtime local seed handle is missing for accepted local {local:?}")
+        })
+    }
+}
+
+pub(crate) fn project_entity_reference(item: &RuntimeProjectItem) -> RuntimeEntityReference {
+    RuntimeEntityReference::Project {
+        family: item.family(),
+        public_id: item.public_id().clone(),
+    }
+}
+
+fn record_field(
+    nominal: Option<&RuntimeResolvedNominalRecord>,
+    name: &str,
+    owner: PatternId,
+) -> Result<RuntimeRecordFieldSeedId, String> {
+    let nominal = nominal.ok_or_else(|| {
+        format!("structural record pattern {owner:?} has no closed runtime field coordinate")
+    })?;
+    let (field, _) = nominal
+        .layout()
+        .field_by_name(name)
+        .ok_or_else(|| format!("accepted nominal record pattern {owner:?} lacks field {name:?}"))?;
+    Ok(RuntimeRecordFieldSeedId::from_zero_based(
+        field.zero_based(),
+    ))
 }

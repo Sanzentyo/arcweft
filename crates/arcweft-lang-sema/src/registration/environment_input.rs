@@ -19,7 +19,7 @@ use crate::{
     callable::{
         AdapterPackageId, CallableArgumentPolicy, CallableDocumentation, CallableGroupIndex,
         CallableGroupKind, CallableName, CallableOverloadIndex, CallableParameterIndex,
-        CallableParameterPassing, CallableParameterPresence, CallableParameterSource,
+        CallableParameterPassing, CallableParameterPresence, CallableParameterSource, CallablePath,
         CallableSource, CallableValidator, EnvironmentCallableKind, EnvironmentCallableOwner,
         EnvironmentDeclarationOrdinal, ProjectCallablePath, RustCallableProvenance, RustItemPath,
     },
@@ -50,6 +50,10 @@ pub enum EnvironmentPublicationItemId {
     AdapterNominal {
         owner: EnvironmentCallableOwner,
         path: arcweft_lang_syntax::types::TypePath,
+    },
+    AdapterHostCall {
+        owner: EnvironmentCallableOwner,
+        path: CallablePath,
     },
     AdapterFunction {
         owner: EnvironmentCallableOwner,
@@ -89,6 +93,7 @@ pub enum EnvironmentTypeSiteRoot {
         parameter: CallableParameterIndex,
     },
     Result,
+    HostCallDomainError,
     RustStructTupleField {
         field: u16,
     },
@@ -262,6 +267,17 @@ pub struct EnvironmentCallableSignatureInput {
     validator: CallableValidator,
 }
 
+/// One typed adapter host-call contract retained for checking authored
+/// `extern capability` signatures.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct EnvironmentHostCallContractInput {
+    item: EnvironmentPublicationItemId,
+    path: CallablePath,
+    signature: EnvironmentCallableSignatureInput,
+    domain_error: Option<EnvironmentTypeProjectionNode>,
+    source: SourceSpan,
+}
+
 /// Lookup identity awaiting receiver projection where applicable.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum EnvironmentCallableLookupInput {
@@ -305,6 +321,7 @@ pub struct SourceBackedEnvironmentRegistrationInput {
     character_dialogue_fields: Box<[CharacterDialogueCustomFieldInput]>,
     rust_metadata: Box<[RustTypeMetadataPublicationInput]>,
     callable_records: Box<[EnvironmentCallablePublicationRecordInput]>,
+    host_call_contracts: Box<[EnvironmentHostCallContractInput]>,
 }
 
 impl EnvironmentManifestDigest {
@@ -630,6 +647,44 @@ impl EnvironmentCallableSignatureInput {
     }
 }
 
+impl EnvironmentHostCallContractInput {
+    pub fn new(
+        item: EnvironmentPublicationItemId,
+        path: CallablePath,
+        signature: EnvironmentCallableSignatureInput,
+        domain_error: Option<EnvironmentTypeProjectionNode>,
+        source: SourceSpan,
+    ) -> Self {
+        Self {
+            item,
+            path,
+            signature,
+            domain_error,
+            source,
+        }
+    }
+
+    pub const fn item(&self) -> &EnvironmentPublicationItemId {
+        &self.item
+    }
+
+    pub const fn path(&self) -> &CallablePath {
+        &self.path
+    }
+
+    pub const fn signature(&self) -> &EnvironmentCallableSignatureInput {
+        &self.signature
+    }
+
+    pub const fn domain_error(&self) -> Option<&EnvironmentTypeProjectionNode> {
+        self.domain_error.as_ref()
+    }
+
+    pub const fn source(&self) -> &SourceSpan {
+        &self.source
+    }
+}
+
 impl EnvironmentCallablePublicationRecordInput {
     pub fn new(
         item: EnvironmentPublicationItemId,
@@ -723,6 +778,7 @@ impl SourceBackedEnvironmentRegistrationInput {
             character_dialogue_fields: Box::new([]),
             rust_metadata: rust_metadata.into(),
             callable_records: callable_records.into(),
+            host_call_contracts: Box::new([]),
         }
     }
 
@@ -732,6 +788,15 @@ impl SourceBackedEnvironmentRegistrationInput {
         fields: impl Into<Box<[CharacterDialogueCustomFieldInput]>>,
     ) -> Self {
         self.character_dialogue_fields = fields.into();
+        self
+    }
+
+    #[must_use]
+    pub fn with_host_call_contracts(
+        mut self,
+        contracts: impl Into<Box<[EnvironmentHostCallContractInput]>>,
+    ) -> Self {
+        self.host_call_contracts = contracts.into();
         self
     }
 
@@ -767,6 +832,10 @@ impl SourceBackedEnvironmentRegistrationInput {
         &self.callable_records
     }
 
+    pub fn host_call_contracts(&self) -> &[EnvironmentHostCallContractInput] {
+        &self.host_call_contracts
+    }
+
     pub(crate) fn source_spans(&self) -> Vec<&SourceSpan> {
         let mut spans = self
             .nominal_inventory
@@ -787,6 +856,26 @@ impl SourceBackedEnvironmentRegistrationInput {
                     .iter()
                     .map(RustTypeMetadataPublicationInput::source),
             )
+            .chain(self.host_call_contracts.iter().flat_map(|contract| {
+                let mut spans = vec![&contract.source];
+                for group in contract.signature.groups() {
+                    for parameter in group.parameters() {
+                        match parameter.ty() {
+                            EnvironmentParameterTypeInput::Exact(ty) => {
+                                append_type_spans(ty, &mut spans)
+                            }
+                            EnvironmentParameterTypeInput::Unchecked { source } => {
+                                spans.push(source)
+                            }
+                        }
+                    }
+                }
+                append_type_spans(contract.signature.result(), &mut spans);
+                if let Some(domain_error) = contract.domain_error() {
+                    append_type_spans(domain_error, &mut spans);
+                }
+                spans
+            }))
             .collect::<Vec<_>>();
         for metadata in &self.rust_metadata {
             spans.extend(

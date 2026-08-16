@@ -758,7 +758,7 @@ source = "src/main.arcw"
     }
 
     #[test]
-    fn propagation_diagnostics_project_exact_try_and_await_operators() {
+    fn propagation_diagnostics_project_exact_try_operator() {
         for (parameter_type, expression, code, utf16, utf8) in [
             (
                 "Result<i64, String>",
@@ -768,25 +768,11 @@ source = "src/main.arcw"
                 14..17,
             ),
             (
-                "Result<i64, String>",
-                "value?",
-                "sema.try.error_mismatch",
-                17..18,
-                19..20,
-            ),
-            (
                 "Need<i64, String>",
                 "try await value",
                 "sema.await.error_mismatch",
                 12..21,
                 14..23,
-            ),
-            (
-                "Need<i64, String>",
-                "await? value",
-                "sema.await.error_mismatch",
-                12..18,
-                14..20,
             ),
         ] {
             let source = format!(

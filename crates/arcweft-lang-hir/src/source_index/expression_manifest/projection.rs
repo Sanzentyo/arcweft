@@ -4,10 +4,9 @@ use std::collections::BTreeSet;
 
 use arcweft_lang_syntax::attachment::{AttachedExpressionChild, AttachedExpressionNode};
 use arcweft_lang_syntax::expressions::{
-    ExpressionComponentRole, ExpressionProjection, SyntaxAwaitPropagation, SyntaxBinaryOperator,
-    SyntaxBorrowKind, SyntaxPlaceholderKind, SyntaxPostfixBracketProjection,
-    SyntaxPostfixCandidateFailureKind, SyntaxRecordField, SyntaxSelectedMember, SyntaxTryForm,
-    SyntaxUnaryOperator,
+    ExpressionComponentRole, ExpressionProjection, SyntaxBinaryOperator, SyntaxBorrowKind,
+    SyntaxPlaceholderKind, SyntaxPostfixBracketProjection, SyntaxPostfixCandidateFailureKind,
+    SyntaxRecordField, SyntaxSelectedMember, SyntaxUnaryOperator,
 };
 use arcweft_lang_syntax::incremental::ParsedSource;
 use arcweft_lang_syntax::name::SyntaxNameIssue;
@@ -26,10 +25,10 @@ use crate::dialogue_application::{
     HirPostfixBracketCandidates, HirPostfixCandidateFailureKind, HirRichTextTagPayload,
 };
 use crate::expr::{
-    HirAwaitPropagation, HirBinaryOp, HirBorrowKind, HirComputationBlockKind, HirExpr, HirExprKind,
+    HirBinaryOp, HirBorrowKind, HirComputationBlockKind, HirExpr, HirExprKind,
     HirExpressionRecoveryIssue, HirGenericExprIssue, HirNamedBlockName, HirPlaceholderKind,
     HirPoisonState, HirRecordField, HirRecordFieldIssue, HirRecoveryIssue, HirRecoveryOperandSlot,
-    HirSelectedMember, HirThreadMode, HirTryForm, HirUnaryOp,
+    HirSelectedMember, HirThreadMode, HirUnaryOp,
 };
 use crate::identity::{ExprId, SyntheticKey, SyntheticOwner, SyntheticRole, TypeId};
 use crate::leaf::{HirIdRefValue, HirPathValue};
@@ -123,23 +122,8 @@ pub(super) fn expression_payload_matches(
             postfix_bracket_projection_matches(actual, expected)
         }
         (HirExprKind::Pipe(_), ExpressionProjection::Pipe(expected)) => expected.len() == 2,
-        (HirExprKind::Try(actual), ExpressionProjection::Try { form, .. }) => {
-            matches!(
-                (actual.form(), form),
-                (HirTryForm::PrefixTry, SyntaxTryForm::PrefixTry)
-                    | (HirTryForm::PostfixQuestion, SyntaxTryForm::PostfixQuestion)
-            )
-        }
-        (HirExprKind::Await(actual), ExpressionProjection::Await { propagation, .. }) => matches!(
-            (actual.propagation(), propagation),
-            (
-                HirAwaitPropagation::PreserveResult,
-                SyntaxAwaitPropagation::PreserveResult
-            ) | (
-                HirAwaitPropagation::PropagateError,
-                SyntaxAwaitPropagation::PropagateError
-            )
-        ),
+        (HirExprKind::Try(_), ExpressionProjection::Try { .. }) => true,
+        (HirExprKind::Await(_), ExpressionProjection::Await { .. }) => true,
         (HirExprKind::Borrow(actual), ExpressionProjection::Borrow { kind, .. }) => matches!(
             (actual.kind(), kind),
             (HirBorrowKind::Shared, SyntaxBorrowKind::Shared)

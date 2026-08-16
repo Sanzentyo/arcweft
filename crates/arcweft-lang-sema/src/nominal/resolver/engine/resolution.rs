@@ -8,6 +8,7 @@ use arcweft_lang_hir::{
         nominal::{ProjectNominalBody, ProjectNominalDeclaration, ProjectNominalDeclarationKind},
     },
 };
+use arcweft_lang_syntax::ast::module_path::ModuleSegment;
 use arcweft_lang_syntax::ast::symbol_path::SymbolPath;
 
 use crate::{
@@ -29,7 +30,7 @@ use super::{
     ProjectSelection, ResolvedAliasReference, ResolvedOpenNominal, Resolver, SelfTypeScope,
     SourceContext, TypeArgumentExpectation, TypeArgumentKind, TypeArityExpectation,
     TypeArityTarget, TypeNameResolution, TypePoisonOrigin, TypeResolutionFailure,
-    TypeResolutionInputError, TypeResolutionWorld, canonical_cycle, canonical_poisons,
+    TypeResolutionInputError, TypeResolutionWorld, canonical_cycle, canonical_poisons, direct_name,
     evidence_from_project, hir_path_matches_type_path, open_expectation, open_rule_matches_hir,
 };
 
@@ -167,10 +168,36 @@ impl Resolver<'_, '_> {
             };
             return Some(resolved);
         }
-        let (id, ty) = context.generic(path)?;
-        (actual == 0).then(|| NameResult {
-            value: NodeValue::typed(ty, child_causes.iter().copied()),
-            outcome: TypeNameResolution::Generic(id),
+        if let Some((id, ty)) = context.generic(path) {
+            return (actual == 0).then(|| NameResult {
+                value: NodeValue::typed(ty, child_causes.iter().copied()),
+                outcome: TypeNameResolution::Generic(id),
+            });
+        }
+        let associated = context.associated.as_ref()?;
+        let name = direct_name(path).and_then(|name| ModuleSegment::new(name).ok())?;
+        let TypeKind::AcceptedNominal(nominal) = associated.binding(&name)?.clone() else {
+            return None;
+        };
+        if actual != 0 {
+            return Some(self.failed_name(
+                context,
+                node,
+                TypeResolutionFailure::WrongArity {
+                    target: TypeArityTarget::Accepted(nominal.declaration().clone()),
+                    expected: TypeArityExpectation::Exact(0),
+                    actual,
+                },
+                child_causes.to_vec(),
+                Vec::new(),
+            ));
+        }
+        Some(NameResult {
+            value: NodeValue::typed(
+                TypeKind::AcceptedNominal(nominal.clone()),
+                child_causes.iter().copied(),
+            ),
+            outcome: TypeNameResolution::Accepted(nominal),
         })
     }
 
@@ -535,6 +562,7 @@ impl Resolver<'_, '_> {
                 .and_then(|project| project.module(declaration.id().module()))
                 .expect("accepted symbol declarations retain their exact HIR module"),
             generics: GenericContext::Alias(&bindings),
+            associated: use_context.associated.clone(),
             alias_target: true,
         };
         self.alias_stack.push(declaration.id().clone());
@@ -901,8 +929,7 @@ impl Resolver<'_, '_> {
             | BuiltinTypeConstructor::BTreeMap
             | BuiltinTypeConstructor::Result
             | BuiltinTypeConstructor::Need
-            | BuiltinTypeConstructor::Stream
-            | BuiltinTypeConstructor::Source => {
+            | BuiltinTypeConstructor::Stream => {
                 self.apply_binary_builtin(context, constructor, arguments, child_causes)
             }
             BuiltinTypeConstructor::Ref => self.apply_entity_family_builtin(
@@ -1050,10 +1077,6 @@ impl Resolver<'_, '_> {
                 error: Box::new(second),
             },
             BuiltinTypeConstructor::Stream => TypeKind::Stream {
-                item: Box::new(first),
-                error: Box::new(second),
-            },
-            BuiltinTypeConstructor::Source => TypeKind::Source {
                 item: Box::new(first),
                 error: Box::new(second),
             },

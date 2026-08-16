@@ -60,6 +60,7 @@ impl AwbcRuntimeType {
             producer,
             semantic_identity,
             admission,
+            arguments: _,
         } = self
         else {
             return Ok(None);
@@ -128,7 +129,7 @@ impl AwbcProgram {
                         role: "nominal record field name",
                     },
                 )?;
-                self.checked_type(field.ty, 0, &mut visiting)
+                self.checked_type_at_depth(field.ty, 0, &mut visiting)
                     .map(|checked| (name, checked))
             })
             .collect::<Result<Vec<_>, _>>()?;
@@ -164,7 +165,15 @@ impl AwbcProgram {
         clippy::too_many_lines,
         reason = "the reverse projection is the exhaustive inverse of the closed checked-type family"
     )]
-    fn checked_type(
+    /// Reifies one indexed AWBC runtime type as the shared checked-type owner.
+    pub fn checked_type(
+        &self,
+        ty: AwbcTypeId,
+    ) -> Result<RuntimeCheckedType, AwbcTypeProjectionError> {
+        self.checked_type_at_depth(ty, 0, &mut BTreeSet::new())
+    }
+
+    fn checked_type_at_depth(
         &self,
         ty: AwbcTypeId,
         depth: usize,
@@ -208,17 +217,17 @@ impl AwbcProgram {
             AwbcRuntimeType::EntityRef => Ok(RuntimeCheckedType::EntityReference),
             AwbcRuntimeType::Bytes => Ok(RuntimeCheckedType::Bytes),
             AwbcRuntimeType::Sequence(item) => self
-                .checked_type(*item, depth + 1, visiting)
+                .checked_type_at_depth(*item, depth + 1, visiting)
                 .map(Box::new)
                 .map(RuntimeCheckedType::Sequence),
             AwbcRuntimeType::Tuple(items) => items
                 .iter()
-                .map(|item| self.checked_type(*item, depth + 1, visiting))
+                .map(|item| self.checked_type_at_depth(*item, depth + 1, visiting))
                 .collect::<Result<Vec<_>, _>>()
                 .map(RuntimeCheckedType::Tuple),
             AwbcRuntimeType::Choice(alternatives) => alternatives
                 .iter()
-                .map(|item| self.checked_type(*item, depth + 1, visiting))
+                .map(|item| self.checked_type_at_depth(*item, depth + 1, visiting))
                 .collect::<Result<Vec<_>, _>>()
                 .map(RuntimeCheckedType::Choice),
             AwbcRuntimeType::Nominal {
@@ -246,7 +255,7 @@ impl AwbcProgram {
                         )?;
                         let payload = case
                             .payload
-                            .map(|payload| self.checked_type(payload, depth + 1, visiting))
+                            .map(|payload| self.checked_type_at_depth(payload, depth + 1, visiting))
                             .transpose()?
                             .map(Box::new);
                         Ok(RuntimeCheckedVariantCase { name, payload })

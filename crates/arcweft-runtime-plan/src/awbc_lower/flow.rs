@@ -2,29 +2,33 @@ use crate::awbc_lower::AwbcAudioLowerer;
 use crate::awbc_lower::AwbcTraitMethodLowerer;
 use crate::awbc_lower::expr::AwbcExprLowerer;
 use crate::awbc_lower::frame::FrameBuilder;
-use crate::awbc_lower::inventory::{AwbcInventory, AwbcLowerDiagnostic};
+use crate::awbc_lower::inventory::{AwbcInventory, AwbcLowerDiagnostic, line_cleanup};
 use crate::awbc_lower::line::AwbcLineLowerer;
-use crate::awbc_lower::pattern::{lower_pattern, pattern_binding_names};
+use crate::awbc_lower::pattern::lower_pattern;
 use crate::awbc_lower::{table_index, table_range_len};
-use arcweft_core::audio::RuntimeAudioCommand;
 use arcweft_core::awbc::schema::{
-    AwbcBindMode, AwbcBlock, AwbcBlockId, AwbcChoiceId, AwbcChoiceOption, AwbcEffectPlanId,
-    AwbcEffectSetId, AwbcFrameLayoutId, AwbcFunction, AwbcFunctionFlags, AwbcFunctionId,
-    AwbcFunctionKind, AwbcInstruction, AwbcIntrinsic, AwbcIntrinsicId, AwbcLineTaskGroupId,
-    AwbcPatternId, AwbcPureHelper, AwbcPureHelperOrigin, AwbcRegisterId, AwbcResumePoint,
-    AwbcResumePointId, AwbcSafePointKind, AwbcScopeId, AwbcTableRange, AwbcTerminator,
-    AwbcTraitMethodId, AwbcTrapCode,
+    AwbcBindMode, AwbcBlock, AwbcBlockId, AwbcChoiceId, AwbcChoiceOption, AwbcDialogueValueBinding,
+    AwbcDialogueValueRole, AwbcEffectPlanId, AwbcEffectSetId, AwbcFrameLayoutId, AwbcFunction,
+    AwbcFunctionFlags, AwbcFunctionId, AwbcFunctionKind, AwbcInstruction, AwbcIntrinsic,
+    AwbcIntrinsicId, AwbcLineCancelHandler, AwbcLineTaskGroup, AwbcLineTaskGroupId,
+    AwbcLineTaskNode, AwbcLineTaskNodeId, AwbcLineTaskTrigger, AwbcParallelPolicy, AwbcPatternId,
+    AwbcPureHelper, AwbcPureHelperOrigin, AwbcRegisterId, AwbcResumePoint, AwbcResumePointId,
+    AwbcSafePointKind, AwbcScopeId, AwbcTableRange, AwbcTerminator, AwbcTrapCode,
 };
 use arcweft_core::effect::LineEffectRequest;
+use arcweft_core::line_task::{
+    ChildCancelPolicy, ChildJoinPolicy, LineTaskGroup, LineTaskNode, LineTaskTrigger,
+    ParallelPolicy,
+};
 use arcweft_core::pattern::RuntimePattern;
 use arcweft_core::plan::{
-    ChoiceRuntimeOption, FlowOp, FlowRuntimeId, RuntimeEntryTarget, RuntimeFlow,
-    RuntimeIteratorEvidence, RuntimeIteratorIdentityWitnessCalls, RuntimeIteratorWitnessCalls,
+    ChoiceRuntimeOption, EntryRuntimeId, FlowOp, FlowRuntimeId, RuntimeDialogueValueRole,
+    RuntimeEntrySpec, RuntimeEntryTarget, RuntimeFlow, RuntimeIteratorEvidence,
     RuntimeIteratorWitnessExecutable, RuntimeMatchArm, RuntimePlan, RuntimePureHelper,
-    RuntimePureHelperOrigin,
+    RuntimePureHelperOrigin, RuntimeTraitMethodId,
 };
-use arcweft_core::value::{RuntimeAgentExpr, RuntimeExpr, RuntimeValue};
-use std::collections::BTreeSet;
+use arcweft_core::value::{RuntimeExpr, RuntimeValue};
+use std::collections::{BTreeMap, BTreeSet};
 
 /// Builds one contiguous flow body while allowing host-visible suspension
 /// terminators to split the instruction stream into verified resume blocks.
@@ -208,59 +212,85 @@ struct FlowBody {
 }
 
 /// Lowers all flow entry functions and public entries.
-pub struct AwbcFlowLowerer<'a> {
-    inventory: &'a mut AwbcInventory,
+pub struct AwbcFlowLowerer<'inventory, 'plan> {
+    inventory: &'inventory mut AwbcInventory,
+    plan: &'plan RuntimePlan,
     diagnostics: Vec<AwbcLowerDiagnostic>,
 }
 
-impl<'a> AwbcFlowLowerer<'a> {
-    pub fn new(inventory: &'a mut AwbcInventory) -> Self {
+impl<'inventory, 'plan> AwbcFlowLowerer<'inventory, 'plan> {
+    pub fn new(inventory: &'inventory mut AwbcInventory, plan: &'plan RuntimePlan) -> Self {
         Self {
             inventory,
+            plan,
             diagnostics: Vec::new(),
         }
     }
 
-    pub fn lower_plan(&mut self, plan: &RuntimePlan) {
-        for helper in &plan.pure_helpers {
+    pub fn lower_plan(&mut self) {
+        let flows = self
+            .plan
+            .flows()
+            .iter()
+            .map(|flow| flow.id.clone())
+            .collect::<BTreeSet<_>>();
+        let entries = self.plan.entries().iter().collect::<Vec<_>>();
+        self.lower_plan_selection(&flows, &entries);
+    }
+
+    /// Lowers one selected entry directly from its complete owning plan.
+    pub fn lower_entry_plan(&mut self, selected: &EntryRuntimeId) {
+        let entries = self
+            .plan
+            .entries()
+            .iter()
+            .filter(|entry| &entry.id == selected)
+            .collect::<Vec<_>>();
+        let [entry] = entries.as_slice() else {
+            self.inventory.diagnostic(AwbcLowerDiagnostic::error(
+                selected.canonical_label(),
+                if entries.is_empty() {
+                    "selected entry is missing from the accepted RuntimePlan"
+                } else {
+                    "selected entry is duplicated in the accepted RuntimePlan"
+                },
+            ));
+            return;
+        };
+        let flows = selected_flow_closure(self.plan, entry);
+        self.lower_plan_selection(&flows, &entries);
+    }
+
+    fn lower_plan_selection(
+        &mut self,
+        selected_flows: &BTreeSet<FlowRuntimeId>,
+        entries: &[&RuntimeEntrySpec],
+    ) {
+        for helper in self.plan.pure_helpers() {
             self.lower_pure_helper(helper);
         }
-        AwbcTraitMethodLowerer::new(self.inventory).lower_plan(plan);
-        for (index, group) in plan.line_task_groups.iter().enumerate() {
-            let group_id = self.inventory.lower_line_task_group(group);
-            let public_id = format!("line_task_group.{index}");
-            self.inventory
-                .intern_content_unit(&public_id, Some(group_id));
+        AwbcTraitMethodLowerer::new(self.inventory, self.plan).lower_plan();
+        for group in self.plan.line_task_groups() {
+            self.lower_line_task_group(group);
         }
 
-        for flow in &plan.flows {
+        for flow in self
+            .plan
+            .flows()
+            .iter()
+            .filter(|flow| selected_flows.contains(&flow.id))
+        {
             self.inventory.reserve_flow_function_slot(&flow.id);
         }
-        let entry_targets = entry_target_flows(plan);
-        for flow in &plan.flows {
-            let entry_parameters = plan
-                .flow_executables
-                .iter()
-                .find(|executable| executable.flow == flow.id)
-                .map_or_else(
-                    || {
-                        if entry_targets.contains(&flow.id) {
-                            infer_entry_parameter_names(&flow.ops)
-                        } else {
-                            Vec::new()
-                        }
-                    },
-                    |executable| {
-                        executable
-                            .parameters
-                            .iter()
-                            .map(|parameter| parameter.name.clone())
-                            .collect()
-                    },
-                );
-            self.lower_flow(flow, &entry_parameters);
+        for flow in self
+            .plan
+            .flows()
+            .iter()
+            .filter(|flow| selected_flows.contains(&flow.id))
+        {
+            self.lower_flow(flow);
         }
-        self.inventory.lower_entries(plan);
+        self.inventory.lower_selected_entries(self.plan, entries);
     }
 
     fn lower_pure_helper(&mut self, helper: &RuntimePureHelper) {
@@ -279,14 +309,30 @@ impl<'a> AwbcFlowLowerer<'a> {
         let owner = self.inventory.reserve_function_slot();
         let mut frame = FrameBuilder::new();
         let dynamic_ty = self.inventory.dynamic_ty();
-        for input in &helper.input_names {
-            let name = self.inventory.intern_string(input);
-            frame.parameter(input, name, dynamic_ty);
+        let mut parameter_types = Vec::with_capacity(helper.input_locals.len());
+        for input in &helper.input_locals {
+            let ty = self
+                .plan
+                .local_declarations()
+                .get(*input)
+                .map_or(dynamic_ty, |declaration| {
+                    crate::awbc_lower::pattern::plan_type(
+                        self.inventory,
+                        self.plan,
+                        declaration.ty(),
+                    )
+                });
+            frame.parameter(*input, ty);
+            parameter_types.push(ty);
         }
         let instruction_start = table_index(self.inventory.program.instructions.len());
-        let value =
-            AwbcExprLowerer::new(self.inventory, &mut frame, format!("pure.{}", helper.name))
-                .lower(&helper.expr);
+        let value = AwbcExprLowerer::new(
+            self.inventory,
+            &mut frame,
+            format!("pure.{}", helper.name),
+            self.plan,
+        )
+        .lower(&helper.expr);
         let instruction_len =
             table_range_len(instruction_start, self.inventory.program.instructions.len());
         let layout = self
@@ -300,9 +346,13 @@ impl<'a> AwbcFlowLowerer<'a> {
             source_map: None,
         });
         let public_id = self.inventory.intern_string(&helper.name);
-        let signature = self
-            .inventory
-            .intern_dynamic_value_signature(helper.input_names.len());
+        let result_type =
+            crate::awbc_lower::pattern::plan_type(self.inventory, self.plan, helper.expr.ty());
+        let signature = self.inventory.intern_signature(
+            parameter_types,
+            Some(result_type),
+            arcweft_core::awbc::schema::AwbcEffectSetId(0),
+        );
         let function = self.inventory.replace_function(
             owner,
             AwbcFunction {
@@ -327,12 +377,213 @@ impl<'a> AwbcFlowLowerer<'a> {
         });
     }
 
+    fn local_type(
+        &mut self,
+        local: arcweft_core::runtime_id::RuntimeLocalDeclarationId,
+    ) -> arcweft_core::awbc::schema::AwbcTypeId {
+        let Some(declaration) = self.plan.local_declarations().get(local) else {
+            self.inventory.diagnostic(AwbcLowerDiagnostic::error(
+                format!("local.{local}"),
+                "RuntimePlan local declaration is absent during AWBC lowering",
+            ));
+            return self.inventory.dynamic_ty();
+        };
+        crate::awbc_lower::pattern::plan_type(self.inventory, self.plan, declaration.ty())
+    }
+
     pub fn into_diagnostics(mut self) -> Vec<AwbcLowerDiagnostic> {
         self.diagnostics.extend(self.inventory.take_diagnostics());
         self.diagnostics
     }
 
-    fn lower_flow(&mut self, flow: &RuntimeFlow, entry_parameters: &[String]) -> AwbcFunctionId {
+    fn lower_line_task_group(&mut self, group: &LineTaskGroup) -> AwbcLineTaskGroupId {
+        let node_start = table_index(self.inventory.program.line_task_nodes.len());
+        let node_id = |id: arcweft_core::runtime_id::RuntimeLineTaskNodeId| {
+            AwbcLineTaskNodeId(
+                node_start.saturating_add(u32::try_from(id.index()).unwrap_or(u32::MAX)),
+            )
+        };
+        let captures = group.captures().to_vec();
+        self.lower_line_task_nodes(group, node_start, &captures);
+        let cancel_handlers = group
+            .cancel_rules()
+            .iter()
+            .enumerate()
+            .map(|(index, rule)| AwbcLineCancelHandler {
+                trigger: rule.trigger(),
+                function: self.lower_line_task_action(
+                    &captures,
+                    rule.action(),
+                    &format!("line_task.cancel.{index}"),
+                ),
+            })
+            .collect();
+        let id = AwbcLineTaskGroupId(table_index(self.inventory.program.line_task_groups.len()));
+        let completed = group
+            .cleanup()
+            .actions(arcweft_core::line_task::ScopeExit::Completed);
+        let cleanup_completed = (!completed.is_empty()).then(|| {
+            self.lower_line_task_action(&captures, completed, "line_task.cleanup.completed")
+        });
+        let cancelled = group
+            .cleanup()
+            .actions(arcweft_core::line_task::ScopeExit::Cancelled);
+        let cleanup_cancelled = (!cancelled.is_empty()).then(|| {
+            self.lower_line_task_action(&captures, cancelled, "line_task.cleanup.cancelled")
+        });
+        let failed = group
+            .cleanup()
+            .actions(arcweft_core::line_task::ScopeExit::Failed);
+        let cleanup_failed = (!failed.is_empty())
+            .then(|| self.lower_line_task_action(&captures, failed, "line_task.cleanup.failed"));
+        self.inventory
+            .program
+            .line_task_groups
+            .push(AwbcLineTaskGroup {
+                captures,
+                root: node_id(group.root()),
+                nodes: AwbcTableRange::new(
+                    node_start,
+                    table_range_len(node_start, self.inventory.program.line_task_nodes.len()),
+                ),
+                cancel_handlers,
+                cleanup_completed,
+                cleanup_cancelled,
+                cleanup_failed,
+                cleanup: line_cleanup(group.cleanup().policy()),
+            });
+        id
+    }
+
+    fn lower_line_task_nodes(
+        &mut self,
+        group: &LineTaskGroup,
+        node_start: u32,
+        captures: &[arcweft_core::runtime_id::RuntimeLocalDeclarationId],
+    ) {
+        let node_id = |id: arcweft_core::runtime_id::RuntimeLineTaskNodeId| {
+            AwbcLineTaskNodeId(
+                node_start.saturating_add(u32::try_from(id.index()).unwrap_or(u32::MAX)),
+            )
+        };
+        for (index, node) in group.nodes().iter().enumerate() {
+            let path = format!("line_task.{index}");
+            let lowered = match node {
+                LineTaskNode::Sequence(nodes) => {
+                    AwbcLineTaskNode::Sequence(nodes.iter().copied().map(node_id).collect())
+                }
+                LineTaskNode::Start(nodes) => {
+                    AwbcLineTaskNode::Start(nodes.iter().copied().map(node_id).collect())
+                }
+                LineTaskNode::Parallel { policy, children } => AwbcLineTaskNode::Parallel {
+                    policy: match policy {
+                        ParallelPolicy::JoinAll => AwbcParallelPolicy::JoinAll,
+                    },
+                    children: children.iter().copied().map(node_id).collect(),
+                },
+                LineTaskNode::Child {
+                    id,
+                    key,
+                    name,
+                    trigger,
+                    priority,
+                    join_policy,
+                    cancel_policy,
+                    scope,
+                } => AwbcLineTaskNode::Child {
+                    id: self.inventory.intern_string(&id.0),
+                    key: key.as_ref().map(|key| self.inventory.intern_string(&key.0)),
+                    name: name.as_ref().map(|name| self.inventory.intern_string(name)),
+                    trigger: match trigger {
+                        LineTaskTrigger::Immediate => AwbcLineTaskTrigger::Immediate,
+                        LineTaskTrigger::Mark(mark) => AwbcLineTaskTrigger::Mark(*mark),
+                        LineTaskTrigger::Delay(duration) => {
+                            AwbcLineTaskTrigger::DelayNanos(duration.as_nanos())
+                        }
+                    },
+                    priority: priority.0,
+                    join: match join_policy {
+                        ChildJoinPolicy::Join => {
+                            arcweft_core::awbc::schema::AwbcChildJoinPolicy::Join
+                        }
+                        ChildJoinPolicy::Detached => {
+                            arcweft_core::awbc::schema::AwbcChildJoinPolicy::Detached
+                        }
+                    },
+                    cancel: match cancel_policy {
+                        ChildCancelPolicy::CancelAndJoin => {
+                            arcweft_core::awbc::schema::AwbcChildCancelPolicy::CancelAndJoin
+                        }
+                        ChildCancelPolicy::Finish => {
+                            arcweft_core::awbc::schema::AwbcChildCancelPolicy::Finish
+                        }
+                        ChildCancelPolicy::Detach => {
+                            arcweft_core::awbc::schema::AwbcChildCancelPolicy::Detach
+                        }
+                    },
+                    scope: node_id(*scope),
+                },
+                LineTaskNode::Action(ops) => {
+                    AwbcLineTaskNode::Action(self.lower_line_task_action(captures, ops, &path))
+                }
+            };
+            self.inventory.program.line_task_nodes.push(lowered);
+        }
+    }
+
+    fn lower_line_task_action(
+        &mut self,
+        captures: &[arcweft_core::runtime_id::RuntimeLocalDeclarationId],
+        ops: &[FlowOp],
+        path: &str,
+    ) -> AwbcFunctionId {
+        let owner = self.inventory.reserve_function_slot();
+        let mut frame = FrameBuilder::new();
+        for capture in captures {
+            let ty = self.local_type(*capture);
+            frame.parameter(*capture, ty);
+        }
+        let mut body = FlowBodyBuilder::new(self.inventory, owner);
+        self.lower_ops(&mut frame, &mut body, ops, path);
+        if body.needs_value_fallthrough() {
+            self.terminate_value_fallthrough(&mut frame, &mut body);
+        }
+        let body = body.finish(self.inventory);
+        let layout = self
+            .inventory
+            .intern_frame_layout(format!("{path}:frame"), frame.finish());
+        for resume in body.resume_points {
+            if let Some(point) = self.inventory.program.resume_points.get_mut(resume.index()) {
+                point.frame_layout = layout;
+            }
+        }
+        let params = captures
+            .iter()
+            .map(|capture| self.local_type(*capture))
+            .collect();
+        let signature = self.inventory.intern_signature(
+            params,
+            body.returns_value.then(|| self.inventory.dynamic_ty()),
+            AwbcEffectSetId(0),
+        );
+        let public_id = Some(self.inventory.intern_string(path));
+        self.inventory.replace_function(
+            owner,
+            AwbcFunction {
+                public_id,
+                kind: AwbcFunctionKind::LineTask,
+                signature,
+                frame_layout: layout,
+                blocks: body.blocks,
+                entry_block: body.entry_block,
+                flags: AwbcFunctionFlags(
+                    AwbcFunctionFlags::MAY_SUSPEND | AwbcFunctionFlags::DETERMINISTIC,
+                ),
+            },
+        )
+    }
+
+    fn lower_flow(&mut self, flow: &RuntimeFlow) -> AwbcFunctionId {
         let mut frame = FrameBuilder::new();
         let public_name = flow_public_id(&flow.id);
         let canonical_name = flow.id.canonical_label();
@@ -341,9 +592,19 @@ impl<'a> AwbcFlowLowerer<'a> {
             .flow_function(&flow.id)
             .unwrap_or_else(|| self.inventory.reserve_flow_function_slot(&flow.id));
         let dynamic_ty = self.inventory.dynamic_ty();
-        for parameter in entry_parameters {
-            let name = self.inventory.intern_string(parameter);
-            frame.parameter(parameter, name, dynamic_ty);
+        for parameter in &flow.params {
+            let ty =
+                self.plan
+                    .local_declarations()
+                    .get(*parameter)
+                    .map_or(dynamic_ty, |declaration| {
+                        crate::awbc_lower::pattern::plan_type(
+                            self.inventory,
+                            self.plan,
+                            declaration.ty(),
+                        )
+                    });
+            frame.parameter(*parameter, ty);
         }
         let mut body = FlowBodyBuilder::new(self.inventory, owner);
         self.lower_ops(&mut frame, &mut body, &flow.ops, &public_name);
@@ -359,7 +620,11 @@ impl<'a> AwbcFlowLowerer<'a> {
                 point.frame_layout = layout;
             }
         }
-        let params = vec![self.inventory.dynamic_ty(); entry_parameters.len()];
+        let params = flow
+            .params
+            .iter()
+            .map(|parameter| self.local_type(*parameter))
+            .collect();
         let signature = if body.returns_value {
             self.inventory.intern_signature(
                 params,
@@ -438,8 +703,8 @@ impl<'a> AwbcFlowLowerer<'a> {
         match op {
             FlowOp::Bind(bindings) => {
                 for binding in bindings {
-                    let name_id = self.inventory.intern_string(&binding.name);
-                    let local = frame.local(&binding.name, name_id, self.inventory.dynamic_ty());
+                    let ty = self.local_type(binding.local);
+                    let local = frame.local(binding.local, ty);
                     let constant = self.inventory.constant_runtime_value(&binding.value);
                     self.inventory.push_instruction(AwbcInstruction::LoadConst {
                         dst: local,
@@ -448,8 +713,9 @@ impl<'a> AwbcFlowLowerer<'a> {
                 }
             }
             FlowOp::Let { pattern, expr } | FlowOp::ExitScopeBind { pattern, expr } => {
-                let value = AwbcExprLowerer::new(self.inventory, frame, path).lower(expr);
-                let pattern = lower_pattern(self.inventory, frame, pattern);
+                let value =
+                    AwbcExprLowerer::new(self.inventory, frame, path, self.plan).lower(expr);
+                let pattern = lower_pattern(self.inventory, self.plan, frame, pattern);
                 self.inventory
                     .push_instruction(AwbcInstruction::BindPattern {
                         pattern,
@@ -464,13 +730,81 @@ impl<'a> AwbcFlowLowerer<'a> {
             } => {
                 self.lower_let_else(frame, body, pattern, expr, else_ops, path);
             }
-            FlowOp::Dialogue { line, task_group } => {
-                let group = AwbcLineTaskGroupId(table_index(*task_group));
-                let content = AwbcLineLowerer::new(self.inventory).content_for_line(line, group);
+            FlowOp::AssignNominalField { base, field, value } => {
+                let Some(target) = frame.register_for_local(*base) else {
+                    self.inventory.diagnostic(AwbcLowerDiagnostic::error(
+                        path,
+                        format!("field assignment base `{base}` is not in the AWBC frame"),
+                    ));
+                    return;
+                };
+                let value =
+                    AwbcExprLowerer::new(self.inventory, frame, path, self.plan).lower(value);
+                self.inventory
+                    .push_instruction(AwbcInstruction::AssignRecordField {
+                        target,
+                        field: field.zero_based(),
+                        value,
+                    });
+            }
+            FlowOp::Dialogue { content } => {
+                let Some(content_plan) = self.plan.dialogue_content().get(*content) else {
+                    self.inventory.diagnostic(AwbcLowerDiagnostic::error(
+                        path,
+                        format!("dialogue content plan {content} is absent from the RuntimePlan"),
+                    ));
+                    return;
+                };
+                let group = content_plan
+                    .line_task_group()
+                    .map(|group| AwbcLineTaskGroupId(table_index(group.index())));
+                let content =
+                    AwbcLineLowerer::new(self.inventory).content_for_line(content_plan, group);
+                let group_captures = group
+                    .and_then(|group| self.inventory.program.line_task_groups.get(group.index()))
+                    .map(|group| group.captures.clone())
+                    .unwrap_or_default();
+                let line_task_captures = group_captures
+                    .iter()
+                    .map(|capture| {
+                        let ty = self.local_type(*capture);
+                        frame.local(*capture, ty)
+                    })
+                    .collect();
+                let mut values_by_function = BTreeMap::new();
+                let mut values = Vec::with_capacity(content_plan.values().len());
+                for site in content_plan.values() {
+                    let function = site.function();
+                    let value = if let Some(value) = values_by_function.get(&function) {
+                        *value
+                    } else if let Some(function_site) = self.plan.function_sites().get(function) {
+                        let value = AwbcExprLowerer::new(
+                            self.inventory,
+                            frame,
+                            format!("{path}.dialogue.{function}"),
+                            self.plan,
+                        )
+                        .lower(function_site.body());
+                        values_by_function.insert(function, value);
+                        value
+                    } else {
+                        self.inventory.diagnostic(AwbcLowerDiagnostic::error(
+                            path,
+                            format!("dialogue value function site {function} is absent from the RuntimePlan"),
+                        ));
+                        continue;
+                    };
+                    values.push(AwbcDialogueValueBinding {
+                        slot: site.slot(),
+                        role: awbc_dialogue_value_role(site.role()),
+                        value,
+                    });
+                }
                 body.suspend(self.inventory, AwbcSafePointKind::Dialogue, |resume| {
                     AwbcTerminator::Dialogue {
                         content,
-                        line_task_group: group,
+                        values,
+                        line_task_captures,
                         resume,
                     }
                 });
@@ -492,16 +826,20 @@ impl<'a> AwbcFlowLowerer<'a> {
                 pending,
             } => {
                 self.lower_pending_effects(pending);
-                let task = self.inventory.intern_host_task(
+                let task = self.inventory.intern_host_task_with_outcome(
                     &target.need.0,
                     &target.task.0,
                     &target.request,
+                    &target.outcome,
                 );
                 let args = target
                     .request
                     .args
                     .iter()
-                    .map(|arg| AwbcExprLowerer::new(self.inventory, frame, path).lower(arg.value()))
+                    .map(|arg| {
+                        AwbcExprLowerer::new(self.inventory, frame, path, self.plan)
+                            .lower(arg.value())
+                    })
                     .collect::<Vec<_>>();
                 let task_handle = frame.temp(self.inventory.dynamic_ty());
                 self.inventory.push_instruction(AwbcInstruction::StartTask {
@@ -511,7 +849,7 @@ impl<'a> AwbcFlowLowerer<'a> {
                 });
                 let binding = binding
                     .as_ref()
-                    .map(|binding| lower_pattern(self.inventory, frame, binding));
+                    .map(|binding| lower_pattern(self.inventory, self.plan, frame, binding));
                 body.suspend(self.inventory, AwbcSafePointKind::Await, |resume| {
                     AwbcTerminator::Await {
                         handle: task_handle,
@@ -526,21 +864,21 @@ impl<'a> AwbcFlowLowerer<'a> {
                 pending,
             } => {
                 self.lower_pending_effects(pending);
-                let source =
-                    AwbcExprLowerer::new(self.inventory, frame, path).lower(&target.source);
-                let task = self.inventory.intern_host_task(
+                let source = AwbcExprLowerer::new(self.inventory, frame, path, self.plan)
+                    .lower(&target.source);
+                let task = self.inventory.intern_host_task_with_outcome(
                     &target.need.0,
                     &target.task.0,
                     &target.request,
+                    &target.outcome,
                 );
-                let item_name = self.inventory.intern_string(&target.item_binding);
                 let item_binding =
-                    frame.local(&target.item_binding, item_name, self.inventory.dynamic_ty());
+                    frame.local(target.item_binding, self.local_type(target.item_binding));
                 self.inventory
                     .set_await_many_policy(task, item_binding, target.limit);
                 let binding = binding
                     .as_ref()
-                    .map(|binding| lower_pattern(self.inventory, frame, binding));
+                    .map(|binding| lower_pattern(self.inventory, self.plan, frame, binding));
                 body.suspend(self.inventory, AwbcSafePointKind::AwaitMany, |resume| {
                     AwbcTerminator::AwaitMany {
                         plan: task,
@@ -555,27 +893,32 @@ impl<'a> AwbcFlowLowerer<'a> {
                 let args = target
                     .args
                     .iter()
-                    .map(|arg| AwbcExprLowerer::new(self.inventory, frame, path).lower(arg))
+                    .map(|arg| {
+                        AwbcExprLowerer::new(self.inventory, frame, path, self.plan)
+                            .lower(arg.value())
+                    })
                     .collect::<Vec<_>>();
-                let dst = binding
-                    .as_ref()
-                    .map(|_| frame.temp(self.inventory.dynamic_ty()));
+                // Host calls always have a value result in the admitted runtime
+                // signature. Keep that result shape even when the source flow
+                // deliberately discards the value; only the pattern binding is
+                // optional.
+                let dst = frame.temp(self.inventory.dynamic_ty());
                 let pattern = binding
                     .as_ref()
-                    .map(|binding| lower_pattern(self.inventory, frame, binding));
+                    .map(|binding| lower_pattern(self.inventory, self.plan, frame, binding));
                 body.suspend(self.inventory, AwbcSafePointKind::HostCall, |resume| {
                     AwbcTerminator::HostCall {
                         call,
                         args,
-                        dst,
+                        dst: Some(dst),
                         resume,
                     }
                 });
-                if let (Some(pattern), Some(value)) = (pattern, dst) {
+                if let Some(pattern) = pattern {
                     self.inventory
                         .push_instruction(AwbcInstruction::BindPattern {
                             pattern,
-                            value,
+                            value: dst,
                             mode: AwbcBindMode::Declare,
                         });
                 }
@@ -628,13 +971,14 @@ impl<'a> AwbcFlowLowerer<'a> {
             | FlowOp::WhileNext { body: ops, .. }
             | FlowOp::WhileLetNext { body: ops, .. }
             | FlowOp::ForNext { body: ops, .. } => {
-                self.lower_ops(frame, body, ops, &format!("{path}.next"));
+                self.lower_ops(frame, body, ops.as_ref(), &format!("{path}.next"));
             }
             FlowOp::While {
                 condition,
                 body: ops,
             } => {
-                let _ = AwbcExprLowerer::new(self.inventory, frame, path).lower(condition);
+                let _ =
+                    AwbcExprLowerer::new(self.inventory, frame, path, self.plan).lower(condition);
                 self.lower_ops(frame, body, ops, &format!("{path}.body"));
             }
             FlowOp::WhileLet {
@@ -643,8 +987,9 @@ impl<'a> AwbcFlowLowerer<'a> {
                 guard,
                 body: ops,
             } => {
-                let value = AwbcExprLowerer::new(self.inventory, frame, path).lower(expr);
-                let pattern = lower_pattern(self.inventory, frame, pattern);
+                let value =
+                    AwbcExprLowerer::new(self.inventory, frame, path, self.plan).lower(expr);
+                let pattern = lower_pattern(self.inventory, self.plan, frame, pattern);
                 let matched = frame.temp(self.inventory.bool_ty());
                 self.inventory
                     .push_instruction(AwbcInstruction::TestPattern {
@@ -653,7 +998,8 @@ impl<'a> AwbcFlowLowerer<'a> {
                         value,
                     });
                 if let Some(guard) = guard {
-                    let _ = AwbcExprLowerer::new(self.inventory, frame, path).lower(guard);
+                    let _ =
+                        AwbcExprLowerer::new(self.inventory, frame, path, self.plan).lower(guard);
                 }
                 self.lower_ops(frame, body, ops, &format!("{path}.body"));
             }
@@ -693,13 +1039,15 @@ impl<'a> AwbcFlowLowerer<'a> {
             } => self.lower_let_scope(frame, body, pattern, ops, value, path),
             FlowOp::Break(value) => {
                 if let Some(value) = value {
-                    let value = AwbcExprLowerer::new(self.inventory, frame, path).lower(value);
+                    let value =
+                        AwbcExprLowerer::new(self.inventory, frame, path, self.plan).lower(value);
                     let _ = value;
                 }
                 self.push_intrinsic_call("flow.break", Vec::new());
             }
             FlowOp::ReturnExpr(value) => {
-                let value = AwbcExprLowerer::new(self.inventory, frame, path).lower(value);
+                let value =
+                    AwbcExprLowerer::new(self.inventory, frame, path, self.plan).lower(value);
                 let result = frame.return_value(self.inventory.dynamic_ty());
                 self.inventory.push_instruction(AwbcInstruction::Move {
                     dst: result,
@@ -749,7 +1097,8 @@ impl<'a> AwbcFlowLowerer<'a> {
                 }
             }
             FlowOp::GotoExpr(expr) => {
-                let target = AwbcExprLowerer::new(self.inventory, frame, path).lower(expr);
+                let target =
+                    AwbcExprLowerer::new(self.inventory, frame, path, self.plan).lower(expr);
                 let stable_target = frame.root_temp(self.inventory.dynamic_ty());
                 self.inventory.push_instruction(AwbcInstruction::Move {
                     dst: stable_target,
@@ -788,7 +1137,9 @@ impl<'a> AwbcFlowLowerer<'a> {
                 let args = effect
                     .argument_exprs()
                     .into_iter()
-                    .map(|expr| AwbcExprLowerer::new(self.inventory, frame, path).lower(expr))
+                    .map(|expr| {
+                        AwbcExprLowerer::new(self.inventory, frame, path, self.plan).lower(expr)
+                    })
                     .collect();
                 let effect = self.inventory.intern_evaluated_effect(effect);
                 self.inventory
@@ -831,7 +1182,7 @@ impl<'a> AwbcFlowLowerer<'a> {
         match effect {
             LineEffectRequest::Audio(command) => {
                 let (command, args) =
-                    AwbcAudioLowerer::new(self.inventory, frame, path).lower(command);
+                    AwbcAudioLowerer::new(self.inventory, frame, path, self.plan).lower(command);
                 let effect = self.inventory.intern_audio_effect(command, args.len());
                 (effect, args)
             }
@@ -889,8 +1240,8 @@ impl<'a> AwbcFlowLowerer<'a> {
         else_ops: &[FlowOp],
         path: &str,
     ) {
-        let value = AwbcExprLowerer::new(self.inventory, frame, path).lower(expr);
-        let pattern = lower_pattern(self.inventory, frame, pattern);
+        let value = AwbcExprLowerer::new(self.inventory, frame, path, self.plan).lower(expr);
+        let pattern = lower_pattern(self.inventory, self.plan, frame, pattern);
         let matched = frame.temp(self.inventory.bool_ty());
         self.inventory
             .push_instruction(AwbcInstruction::TestPattern {
@@ -939,7 +1290,8 @@ impl<'a> AwbcFlowLowerer<'a> {
         else_ops: &[FlowOp],
         path: &str,
     ) {
-        let condition = AwbcExprLowerer::new(self.inventory, frame, path).lower(condition);
+        let condition =
+            AwbcExprLowerer::new(self.inventory, frame, path, self.plan).lower(condition);
         let then_block = AwbcBlockId(table_index(
             self.inventory.program.blocks.len().saturating_add(1),
         ));
@@ -983,7 +1335,7 @@ impl<'a> AwbcFlowLowerer<'a> {
         else_ops: &[FlowOp],
         path: &str,
     ) {
-        let value = AwbcExprLowerer::new(self.inventory, frame, path).lower(expr);
+        let value = AwbcExprLowerer::new(self.inventory, frame, path, self.plan).lower(expr);
         let pattern = self.lower_branch_pattern(frame, pattern);
         let matched = frame.temp(self.inventory.bool_ty());
         self.inventory
@@ -1048,7 +1400,8 @@ impl<'a> AwbcFlowLowerer<'a> {
         arms: &[RuntimeMatchArm],
         path: &str,
     ) {
-        let scrutinee = AwbcExprLowerer::new(self.inventory, frame, path).lower(scrutinee);
+        let scrutinee =
+            AwbcExprLowerer::new(self.inventory, frame, path, self.plan).lower(scrutinee);
         let mut join = BranchJoin::new();
         for (index, arm) in arms.iter().enumerate() {
             let pattern = self.lower_branch_pattern(frame, &arm.pattern);
@@ -1158,7 +1511,8 @@ impl<'a> AwbcFlowLowerer<'a> {
             return;
         }
 
-        let scoped_value = AwbcExprLowerer::new(self.inventory, frame, path).lower(value);
+        let scoped_value =
+            AwbcExprLowerer::new(self.inventory, frame, path, self.plan).lower(value);
         let value = frame.root_temp(self.inventory.dynamic_ty());
         self.inventory.push_instruction(AwbcInstruction::Move {
             dst: value,
@@ -1168,7 +1522,7 @@ impl<'a> AwbcFlowLowerer<'a> {
             .push_instruction(AwbcInstruction::ExitScope { scope });
         frame.exit_scope();
 
-        let pattern = lower_pattern(self.inventory, frame, pattern);
+        let pattern = lower_pattern(self.inventory, self.plan, frame, pattern);
         self.inventory
             .push_instruction(AwbcInstruction::BindPattern {
                 pattern,
@@ -1184,7 +1538,7 @@ impl<'a> AwbcFlowLowerer<'a> {
     ) -> AwbcPatternId {
         let restored_scope_depth = frame.scope_depth();
         let _ = frame.enter_scope();
-        let pattern = lower_pattern(self.inventory, frame, pattern);
+        let pattern = lower_pattern(self.inventory, self.plan, frame, pattern);
         frame.restore_scope_depth_after_branch(restored_scope_depth);
         pattern
     }
@@ -1213,8 +1567,8 @@ impl<'a> AwbcFlowLowerer<'a> {
                 value,
                 mode: AwbcBindMode::Declare,
             });
-        let guard =
-            AwbcExprLowerer::new(self.inventory, frame, format!("{path}.guard")).lower(guard);
+        let guard = AwbcExprLowerer::new(self.inventory, frame, format!("{path}.guard"), self.plan)
+            .lower(guard);
         let body_block = AwbcBlockId(table_index(
             self.inventory.program.blocks.len().saturating_add(1),
         ));
@@ -1306,17 +1660,11 @@ impl<'a> AwbcFlowLowerer<'a> {
     ) {
         if let RuntimeIteratorEvidence::Witness(witness) = input.evidence {
             match &witness.executable {
-                RuntimeIteratorWitnessExecutable::TraitCalls(calls) => {
-                    self.lower_trait_call_for(frame, body, input, calls);
+                RuntimeIteratorWitnessExecutable::TraitCalls { into_iter, next } => {
+                    self.lower_trait_call_for(frame, body, input, *into_iter, *next);
                 }
-                RuntimeIteratorWitnessExecutable::IdentityIntoIterator(calls) => {
-                    self.lower_identity_trait_call_for(frame, body, input, *calls);
-                }
-                RuntimeIteratorWitnessExecutable::UnsupportedMethodBodyLowering => {
-                    self.inventory.diagnostic(AwbcLowerDiagnostic::error(
-                        input.path.to_owned(),
-                        "witness-backed IntoIterator evidence is not executable by AWBC trait calls",
-                    ));
+                RuntimeIteratorWitnessExecutable::IdentityIntoIterator { next } => {
+                    self.lower_identity_trait_call_for(frame, body, input, *next);
                 }
             }
             return;
@@ -1337,14 +1685,10 @@ impl<'a> AwbcFlowLowerer<'a> {
             ));
             return;
         };
-        let source = AwbcExprLowerer::new(self.inventory, frame, input.path).lower(input.source);
+        let source =
+            AwbcExprLowerer::new(self.inventory, frame, input.path, self.plan).lower(input.source);
         let evidence = self.lower_iterator_evidence_constant(frame, evidence_label);
-        let iterator_name = frame.next_runtime_state_name("flow.for.iterator");
-        let iterator = frame.runtime_state(
-            &iterator_name,
-            self.inventory.intern_string(&iterator_name),
-            self.inventory.dynamic_ty(),
-        );
+        let iterator = frame.runtime_state(self.inventory.dynamic_ty());
         let into_iter = self.intrinsic("core.iter.into_iter", 2, Some(self.inventory.dynamic_ty()));
         self.inventory
             .push_instruction(AwbcInstruction::CallIntrinsic {
@@ -1417,7 +1761,7 @@ impl<'a> AwbcFlowLowerer<'a> {
                 intrinsic: unwrap,
                 args: vec![next_value],
             });
-        let pattern = lower_pattern(self.inventory, frame, input.pattern);
+        let pattern = lower_pattern(self.inventory, self.plan, frame, input.pattern);
         self.inventory
             .push_instruction(AwbcInstruction::BindPattern {
                 pattern,
@@ -1438,24 +1782,28 @@ impl<'a> AwbcFlowLowerer<'a> {
         frame: &mut FrameBuilder,
         body: &mut FlowBodyBuilder,
         input: ForLoweringInput<'_>,
-        calls: &RuntimeIteratorWitnessCalls,
+        into_iter: RuntimeTraitMethodId,
+        next: RuntimeTraitMethodId,
     ) {
-        let source = AwbcExprLowerer::new(self.inventory, frame, input.path).lower(input.source);
-        let iterator_name = frame.next_runtime_state_name("flow.for.trait_iterator");
-        let iterator = frame.runtime_state(
-            &iterator_name,
-            self.inventory.intern_string(&iterator_name),
-            self.inventory.dynamic_ty(),
-        );
+        let Some(into_iter) = self.inventory.trait_method(into_iter) else {
+            self.inventory.diagnostic(AwbcLowerDiagnostic::error(
+                input.path.to_owned(),
+                "iterator witness refers to an unlowered IntoIterator method",
+            ));
+            return;
+        };
+        let source =
+            AwbcExprLowerer::new(self.inventory, frame, input.path, self.plan).lower(input.source);
+        let iterator = frame.runtime_state(self.inventory.dynamic_ty());
         self.inventory
             .push_instruction(AwbcInstruction::CallTraitMethod {
                 dst: iterator,
-                method: AwbcTraitMethodId(table_index(calls.into_iter.0)),
+                method: into_iter,
                 receiver: source,
                 args: Vec::new(),
                 receiver_out: None,
             });
-        self.lower_trait_iterator_loop(frame, body, input, iterator, calls.next);
+        self.lower_trait_iterator_loop(frame, body, input, iterator, next);
     }
 
     fn lower_identity_trait_call_for(
@@ -1463,20 +1811,16 @@ impl<'a> AwbcFlowLowerer<'a> {
         frame: &mut FrameBuilder,
         body: &mut FlowBodyBuilder,
         input: ForLoweringInput<'_>,
-        calls: RuntimeIteratorIdentityWitnessCalls,
+        next: RuntimeTraitMethodId,
     ) {
-        let source = AwbcExprLowerer::new(self.inventory, frame, input.path).lower(input.source);
-        let iterator_name = frame.next_runtime_state_name("flow.for.trait_iterator");
-        let iterator = frame.runtime_state(
-            &iterator_name,
-            self.inventory.intern_string(&iterator_name),
-            self.inventory.dynamic_ty(),
-        );
+        let source =
+            AwbcExprLowerer::new(self.inventory, frame, input.path, self.plan).lower(input.source);
+        let iterator = frame.runtime_state(self.inventory.dynamic_ty());
         self.inventory.push_instruction(AwbcInstruction::Move {
             dst: iterator,
             src: source,
         });
-        self.lower_trait_iterator_loop(frame, body, input, iterator, calls.next);
+        self.lower_trait_iterator_loop(frame, body, input, iterator, next);
     }
 
     fn lower_trait_iterator_loop(
@@ -1485,8 +1829,15 @@ impl<'a> AwbcFlowLowerer<'a> {
         body: &mut FlowBodyBuilder,
         input: ForLoweringInput<'_>,
         iterator: AwbcRegisterId,
-        next: arcweft_core::plan::RuntimeTraitMethodId,
+        next: RuntimeTraitMethodId,
     ) {
+        let Some(next) = self.inventory.trait_method(next) else {
+            self.inventory.diagnostic(AwbcLowerDiagnostic::error(
+                input.path.to_owned(),
+                "iterator witness refers to an unlowered Iterator::next method",
+            ));
+            return;
+        };
         let condition_block = AwbcBlockId(table_index(
             self.inventory.program.blocks.len().saturating_add(1),
         ));
@@ -1502,7 +1853,7 @@ impl<'a> AwbcFlowLowerer<'a> {
         self.inventory
             .push_instruction(AwbcInstruction::CallTraitMethod {
                 dst: next_value,
-                method: AwbcTraitMethodId(table_index(next.0)),
+                method: next,
                 receiver: iterator,
                 args: Vec::new(),
                 receiver_out: Some(iterator),
@@ -1539,7 +1890,7 @@ impl<'a> AwbcFlowLowerer<'a> {
                 intrinsic: unwrap,
                 args: vec![next_value],
             });
-        let pattern = lower_pattern(self.inventory, frame, input.pattern);
+        let pattern = lower_pattern(self.inventory, self.plan, frame, input.pattern);
         self.inventory
             .push_instruction(AwbcInstruction::BindPattern {
                 pattern,
@@ -1659,6 +2010,13 @@ impl<'a> AwbcFlowLowerer<'a> {
     }
 }
 
+fn awbc_dialogue_value_role(role: RuntimeDialogueValueRole) -> AwbcDialogueValueRole {
+    match role {
+        RuntimeDialogueValueRole::Interpolation => AwbcDialogueValueRole::Interpolation,
+        RuntimeDialogueValueRole::Condition => AwbcDialogueValueRole::Condition,
+    }
+}
+
 fn patch_branch_else_block(
     inventory: &mut AwbcInventory,
     branch_block: AwbcBlockId,
@@ -1690,9 +2048,11 @@ fn patch_jump_target(
     *target = target_block;
 }
 
-fn entry_target_flows(plan: &RuntimePlan) -> BTreeSet<FlowRuntimeId> {
+fn entry_target_flows<'a>(
+    entries: impl IntoIterator<Item = &'a RuntimeEntrySpec>,
+) -> BTreeSet<FlowRuntimeId> {
     let mut targets = BTreeSet::new();
-    for entry in &plan.entries {
+    for entry in entries {
         match &entry.target {
             RuntimeEntryTarget::Flow(flow) | RuntimeEntryTarget::Controller(flow) => {
                 targets.insert(flow.clone());
@@ -1705,486 +2065,114 @@ fn entry_target_flows(plan: &RuntimePlan) -> BTreeSet<FlowRuntimeId> {
     targets
 }
 
-fn flow_public_id(flow: &FlowRuntimeId) -> String {
-    flow.public_label().into_string()
-}
-
-fn infer_entry_parameter_names(ops: &[FlowOp]) -> Vec<String> {
-    let mut collector = EntryParameterCollector::default();
-    collector.collect_ops(ops);
-    collector.parameters
-}
-
-#[derive(Default)]
-struct EntryParameterCollector {
-    declared: BTreeSet<String>,
-    seen_parameters: BTreeSet<String>,
-    parameters: Vec<String>,
-}
-
-impl EntryParameterCollector {
-    fn collect_ops(&mut self, ops: &[FlowOp]) {
-        for op in ops {
-            self.collect_op(op);
+fn selected_flow_closure(plan: &RuntimePlan, entry: &RuntimeEntrySpec) -> BTreeSet<FlowRuntimeId> {
+    let mut selected = entry_target_flows([entry]);
+    loop {
+        let mut discovered = BTreeSet::new();
+        let mut has_dynamic_target = false;
+        for flow in plan
+            .flows()
+            .iter()
+            .filter(|flow| selected.contains(&flow.id))
+        {
+            collect_flow_dependencies(&flow.ops, &mut discovered, &mut has_dynamic_target);
+        }
+        if has_dynamic_target {
+            return plan.flows().iter().map(|flow| flow.id.clone()).collect();
+        }
+        let previous_len = selected.len();
+        selected.extend(discovered);
+        if selected.len() == previous_len {
+            return selected;
         }
     }
+}
 
-    #[allow(
-        clippy::too_many_lines,
-        reason = "FlowOp free-local discovery mirrors the enum so entry parameter inference stays in AWBC lowering."
-    )]
-    fn collect_op(&mut self, op: &FlowOp) {
-        match op {
-            FlowOp::Bind(bindings) => {
-                self.declared
-                    .extend(bindings.iter().map(|binding| binding.name.clone()));
+fn collect_flow_dependencies(
+    ops: &[FlowOp],
+    targets: &mut BTreeSet<FlowRuntimeId>,
+    has_dynamic_target: &mut bool,
+) {
+    for op in ops {
+        let terminates = match op {
+            FlowOp::Choice { options, .. } => {
+                targets.extend(options.iter().filter_map(|option| option.target.clone()));
+                false
             }
-            FlowOp::Let { pattern, expr } | FlowOp::ExitScopeBind { pattern, expr } => {
-                self.collect_expr(expr);
-                self.declare_pattern(pattern);
+            FlowOp::Goto(target) => {
+                targets.insert(target.clone());
+                true
             }
-            FlowOp::LetElse {
-                pattern,
-                expr,
-                else_ops,
-            } => {
-                self.collect_expr(expr);
-                self.collect_scoped_ops(else_ops);
-                self.declare_pattern(pattern);
+            FlowOp::GotoExpr(_) => {
+                *has_dynamic_target = true;
+                true
             }
-            FlowOp::Await {
-                binding, target, ..
-            } => {
-                target
-                    .request
-                    .args
-                    .iter()
-                    .for_each(|arg| self.collect_expr(arg.value()));
-                if let Some(binding) = binding {
-                    self.declare_pattern(binding);
-                }
-            }
-            FlowOp::AwaitMany {
-                binding, target, ..
-            } => {
-                self.collect_expr(&target.source);
-                self.collect_with_declared(std::slice::from_ref(&target.item_binding), |this| {
-                    target
-                        .request
-                        .args
-                        .iter()
-                        .for_each(|arg| this.collect_expr(arg.value()));
-                });
-                if let Some(binding) = binding {
-                    self.declare_pattern(binding);
-                }
-            }
-            FlowOp::HostCall { binding, target } => {
-                target.args.iter().for_each(|arg| self.collect_expr(arg));
-                if let Some(binding) = binding {
-                    self.declare_pattern(binding);
-                }
+            FlowOp::LetElse { else_ops, .. } => {
+                collect_flow_dependencies(else_ops, targets, has_dynamic_target);
+                false
             }
             FlowOp::If {
-                condition,
-                then_ops,
-                else_ops,
-            } => {
-                self.collect_expr(condition);
-                self.collect_scoped_ops(then_ops);
-                self.collect_scoped_ops(else_ops);
+                then_ops, else_ops, ..
             }
-            FlowOp::IfLet {
-                pattern,
-                expr,
-                guard,
-                then_ops,
-                else_ops,
+            | FlowOp::IfLet {
+                then_ops, else_ops, ..
             } => {
-                self.collect_expr(expr);
-                let names = pattern_binding_names(pattern);
-                self.collect_with_declared(&names, |this| {
-                    this.collect_optional_expr(guard.as_ref());
-                    this.collect_ops(then_ops);
-                });
-                self.collect_scoped_ops(else_ops);
+                collect_flow_dependencies(then_ops, targets, has_dynamic_target);
+                collect_flow_dependencies(else_ops, targets, has_dynamic_target);
+                false
             }
-            FlowOp::Match { scrutinee, arms } => {
-                self.collect_expr(scrutinee);
+            FlowOp::Match { arms, .. } => {
                 for arm in arms {
-                    let names = pattern_binding_names(&arm.pattern);
-                    self.collect_with_declared(&names, |this| {
-                        this.collect_optional_expr(arm.guard.as_ref());
-                        this.collect_ops(&arm.ops);
-                    });
+                    collect_flow_dependencies(&arm.ops, targets, has_dynamic_target);
                 }
+                false
             }
             FlowOp::Loop { body }
             | FlowOp::LetLoop { body, .. }
+            | FlowOp::While { body, .. }
+            | FlowOp::WhileLet { body, .. }
+            | FlowOp::For { body, .. }
             | FlowOp::Thread { body, .. }
-            | FlowOp::Scope(body) => self.collect_scoped_ops(body),
+            | FlowOp::Scope(body) => {
+                collect_flow_dependencies(body, targets, has_dynamic_target);
+                false
+            }
             FlowOp::LoopNext { body }
             | FlowOp::WhileNext { body, .. }
             | FlowOp::WhileLetNext { body, .. }
-            | FlowOp::ForNext { body, .. } => self.collect_scoped_ops(body),
-            FlowOp::While { condition, body } => {
-                self.collect_expr(condition);
-                self.collect_scoped_ops(body);
+            | FlowOp::ForNext { body, .. } => {
+                collect_flow_dependencies(body.as_ref(), targets, has_dynamic_target);
+                false
             }
-            FlowOp::WhileLet {
-                pattern,
-                expr,
-                guard,
-                body,
-            } => {
-                self.collect_expr(expr);
-                let names = pattern_binding_names(pattern);
-                self.collect_with_declared(&names, |this| {
-                    this.collect_optional_expr(guard.as_ref());
-                    this.collect_ops(body);
-                });
+            FlowOp::LetScope { ops, .. } => {
+                collect_flow_dependencies(ops, targets, has_dynamic_target);
+                false
             }
-            FlowOp::For {
-                pattern,
-                source,
-                body,
-                ..
-            } => {
-                self.collect_expr(source);
-                let names = pattern_binding_names(pattern);
-                self.collect_with_declared(&names, |this| this.collect_ops(body));
-            }
-            FlowOp::LetScope {
-                pattern,
-                ops,
-                value,
-            } => {
-                self.collect_value_scope_ops(ops, value);
-                self.declare_pattern(pattern);
-            }
-            FlowOp::Break(Some(value)) | FlowOp::GotoExpr(value) | FlowOp::ReturnExpr(value) => {
-                self.collect_expr(value);
-            }
-            FlowOp::EvaluatedEffect(effect) => {
-                effect
-                    .argument_exprs()
-                    .into_iter()
-                    .for_each(|expr| self.collect_expr(expr));
-            }
-            FlowOp::Effect(effect) | FlowOp::RegisterCleanup { effect, .. } => {
-                self.collect_effect(effect);
-            }
-            FlowOp::Dialogue { .. }
-            | FlowOp::Choice { .. }
-            | FlowOp::Break(None)
+            FlowOp::Return(_) | FlowOp::ReturnExpr(_) => true,
+            FlowOp::Bind(_)
+            | FlowOp::Let { .. }
+            | FlowOp::AssignNominalField { .. }
+            | FlowOp::Dialogue { .. }
+            | FlowOp::Await { .. }
+            | FlowOp::AwaitMany { .. }
+            | FlowOp::HostCall { .. }
+            | FlowOp::Break(_)
             | FlowOp::Continue
-            | FlowOp::Goto(_)
-            | FlowOp::Return(_)
+            | FlowOp::Effect(_)
+            | FlowOp::EvaluatedEffect(_)
+            | FlowOp::RegisterCleanup { .. }
             | FlowOp::CancelCleanup { .. }
             | FlowOp::EnterScope
             | FlowOp::ExitScope
-            | FlowOp::Noop => {}
-        }
-    }
-
-    #[allow(
-        clippy::too_many_lines,
-        reason = "Entry parameter discovery must enumerate every audio command expression field."
-    )]
-    fn collect_effect(&mut self, effect: &LineEffectRequest) {
-        let LineEffectRequest::Audio(command) = effect else {
-            return;
+            | FlowOp::ExitScopeBind { .. }
+            | FlowOp::Noop => false,
         };
-        match command.as_ref() {
-            RuntimeAudioCommand::Play {
-                voice,
-                resource,
-                bus,
-                gain_db_milli,
-                pan_milli,
-                start_frame,
-                fade_in_millis,
-                ..
-            } => {
-                self.collect_expr(voice);
-                self.collect_expr(resource);
-                self.collect_expr(bus);
-                self.collect_expr(gain_db_milli);
-                self.collect_expr(pan_milli);
-                self.collect_expr(start_frame);
-                self.collect_expr(fade_in_millis);
-            }
-            RuntimeAudioCommand::Stop {
-                voice,
-                fade_out_millis,
-            } => {
-                self.collect_expr(voice);
-                self.collect_expr(fade_out_millis);
-            }
-            RuntimeAudioCommand::StopAll { fade_out_millis } => {
-                self.collect_expr(fade_out_millis);
-            }
-            RuntimeAudioCommand::SetVoiceGain {
-                voice,
-                gain_db_milli,
-                transition_millis,
-            } => {
-                self.collect_expr(voice);
-                self.collect_expr(gain_db_milli);
-                self.collect_expr(transition_millis);
-            }
-            RuntimeAudioCommand::SetVoicePan {
-                voice,
-                pan_milli,
-                transition_millis,
-            } => {
-                self.collect_expr(voice);
-                self.collect_expr(pan_milli);
-                self.collect_expr(transition_millis);
-            }
-            RuntimeAudioCommand::SetBusGain {
-                bus,
-                gain_db_milli,
-                transition_millis,
-            } => {
-                self.collect_expr(bus);
-                self.collect_expr(gain_db_milli);
-                self.collect_expr(transition_millis);
-            }
-            RuntimeAudioCommand::SetBusMute { bus, muted } => {
-                self.collect_expr(bus);
-                self.collect_expr(muted);
-            }
-            RuntimeAudioCommand::SetEffectEnabled {
-                bus,
-                effect,
-                enabled,
-            } => {
-                self.collect_expr(bus);
-                self.collect_expr(effect);
-                self.collect_expr(enabled);
-            }
-            RuntimeAudioCommand::SetEffectParameter {
-                bus,
-                effect,
-                value,
-                transition_millis,
-                ..
-            } => {
-                self.collect_expr(bus);
-                self.collect_expr(effect);
-                self.collect_expr(value);
-                self.collect_expr(transition_millis);
-            }
-            RuntimeAudioCommand::ApplySnapshot {
-                snapshot,
-                transition_millis,
-            } => {
-                self.collect_expr(snapshot);
-                self.collect_expr(transition_millis);
-            }
-            RuntimeAudioCommand::RequestMicrophone { capture, .. }
-            | RuntimeAudioCommand::StopMicrophone { capture } => {
-                self.collect_expr(capture);
-            }
-            RuntimeAudioCommand::SetCaptureMonitor {
-                capture,
-                bus,
-                gain_db_milli,
-            } => {
-                self.collect_expr(capture);
-                self.collect_optional_expr(bus.as_ref());
-                self.collect_expr(gain_db_milli);
-            }
+        if terminates {
+            break;
         }
     }
+}
 
-    fn collect_expr(&mut self, expr: &RuntimeExpr) {
-        match expr {
-            RuntimeExpr::Local(name) => self.parameter(name),
-            RuntimeExpr::Value(_) | RuntimeExpr::EntityRef(_) => {}
-            RuntimeExpr::Let { name, expr, body } => {
-                self.collect_expr(expr);
-                self.collect_with_declared(std::slice::from_ref(name), |this| {
-                    this.collect_expr(body);
-                });
-            }
-            RuntimeExpr::AssignField {
-                target, expr, body, ..
-            } => {
-                self.collect_expr(target);
-                self.collect_expr(expr);
-                self.collect_expr(body);
-            }
-            RuntimeExpr::Tuple(items) | RuntimeExpr::BracketSeq(items) => {
-                for item in items {
-                    self.collect_expr(item);
-                }
-            }
-            RuntimeExpr::RepeatSeq { value, .. }
-            | RuntimeExpr::Field { target: value, .. }
-            | RuntimeExpr::ProjectTuple { target: value, .. }
-            | RuntimeExpr::ProjectRecord { target: value, .. }
-            | RuntimeExpr::SpreadArg(value)
-            | RuntimeExpr::Sum { source: value }
-            | RuntimeExpr::Unary { expr: value, .. } => self.collect_expr(value),
-            RuntimeExpr::Range { start, end, .. } => {
-                self.collect_optional_expr(start.as_deref());
-                self.collect_optional_expr(end.as_deref());
-            }
-            RuntimeExpr::Record(fields) => {
-                for field in fields {
-                    self.collect_expr(&field.value);
-                }
-            }
-            RuntimeExpr::Agent(agent) => self.collect_agent_expr(agent),
-            RuntimeExpr::NominalRecord(record) => {
-                for initializer in record.initializers() {
-                    self.collect_expr(initializer.value());
-                }
-            }
-            RuntimeExpr::Variant { payload, .. } => {
-                if let Some(payload) = payload {
-                    self.collect_expr(payload);
-                }
-            }
-            RuntimeExpr::Call { args, .. } | RuntimeExpr::PureCall { args, .. } => {
-                for arg in args {
-                    self.collect_expr(arg);
-                }
-            }
-            RuntimeExpr::Function { params, body } => {
-                self.collect_with_declared(params, |this| this.collect_expr(body));
-            }
-            RuntimeExpr::Apply { callee, args } => {
-                self.collect_expr(callee);
-                for arg in args {
-                    self.collect_expr(arg);
-                }
-            }
-            RuntimeExpr::MethodCall { receiver, args, .. }
-            | RuntimeExpr::TraitCall { receiver, args, .. } => {
-                self.collect_receiver_args(receiver, args);
-            }
-            RuntimeExpr::Map {
-                source,
-                param,
-                body,
-            }
-            | RuntimeExpr::Filter {
-                source,
-                param,
-                body,
-            } => self.collect_scoped_expr(source, param, body),
-            RuntimeExpr::Binary { lhs, rhs, .. } => {
-                self.collect_expr(lhs);
-                self.collect_expr(rhs);
-            }
-            RuntimeExpr::If {
-                condition,
-                then_expr,
-                else_expr,
-            } => {
-                self.collect_expr(condition);
-                self.collect_expr(then_expr);
-                self.collect_expr(else_expr);
-            }
-            RuntimeExpr::IfLet {
-                pattern,
-                expr,
-                guard,
-                then_expr,
-                else_expr,
-            } => self.collect_if_let_expr(pattern, expr, guard.as_deref(), then_expr, else_expr),
-            RuntimeExpr::Match { scrutinee, arms } => self.collect_match_expr(scrutinee, arms),
-        }
-    }
-
-    fn collect_agent_expr(&mut self, agent: &RuntimeAgentExpr) {
-        for operand in agent.operands() {
-            self.collect_expr(operand);
-        }
-    }
-
-    fn collect_if_let_expr(
-        &mut self,
-        pattern: &RuntimePattern,
-        expr: &RuntimeExpr,
-        guard: Option<&RuntimeExpr>,
-        then_expr: &RuntimeExpr,
-        else_expr: &RuntimeExpr,
-    ) {
-        self.collect_expr(expr);
-        let names = pattern_binding_names(pattern);
-        self.collect_with_declared(&names, |this| {
-            this.collect_optional_expr(guard);
-            this.collect_expr(then_expr);
-        });
-        self.collect_expr(else_expr);
-    }
-
-    fn collect_match_expr(
-        &mut self,
-        scrutinee: &RuntimeExpr,
-        arms: &[arcweft_core::value::RuntimeExprMatchArm],
-    ) {
-        self.collect_expr(scrutinee);
-        for arm in arms {
-            let names = pattern_binding_names(&arm.pattern);
-            self.collect_with_declared(&names, |this| {
-                this.collect_optional_expr(arm.guard.as_ref());
-                this.collect_expr(&arm.value);
-            });
-        }
-    }
-
-    fn collect_receiver_args(&mut self, receiver: &RuntimeExpr, args: &[RuntimeExpr]) {
-        self.collect_expr(receiver);
-        for arg in args {
-            self.collect_expr(arg);
-        }
-    }
-
-    fn collect_scoped_expr(&mut self, source: &RuntimeExpr, param: &String, body: &RuntimeExpr) {
-        self.collect_expr(source);
-        self.collect_with_declared(std::slice::from_ref(param), |this| {
-            this.collect_expr(body);
-        });
-    }
-
-    fn collect_optional_expr(&mut self, expr: Option<&RuntimeExpr>) {
-        if let Some(expr) = expr {
-            self.collect_expr(expr);
-        }
-    }
-
-    fn collect_scoped_ops(&mut self, ops: &[FlowOp]) {
-        let declared = self.declared.clone();
-        self.collect_ops(ops);
-        self.declared = declared;
-    }
-
-    fn collect_value_scope_ops(&mut self, ops: &[FlowOp], value: &RuntimeExpr) {
-        let declared = self.declared.clone();
-        self.collect_ops(ops);
-        self.collect_expr(value);
-        self.declared = declared;
-    }
-
-    fn collect_with_declared(&mut self, names: &[String], f: impl FnOnce(&mut Self)) {
-        let declared = self.declared.clone();
-        self.declared.extend(names.iter().cloned());
-        f(self);
-        self.declared = declared;
-    }
-
-    fn declare_pattern(&mut self, pattern: &RuntimePattern) {
-        self.declared.extend(pattern_binding_names(pattern));
-    }
-
-    fn parameter(&mut self, name: &str) {
-        if !self.declared.contains(name) && self.seen_parameters.insert(name.to_owned()) {
-            self.parameters.push(name.to_owned());
-        }
-    }
+fn flow_public_id(flow: &FlowRuntimeId) -> String {
+    flow.public_label().into_string()
 }

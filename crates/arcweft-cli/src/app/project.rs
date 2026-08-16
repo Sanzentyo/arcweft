@@ -1235,15 +1235,39 @@ pub(in crate::app) fn semantic_context_for_selection(
     let env = desktop.iter().fold(env, |env, manifest| {
         AdapterSemanticRegistration::new(manifest).declare_effects(env)
     });
-    let mut adapter_manifests = Vec::with_capacity(desktop.len() + 1);
-    adapter_manifests.push(manifest);
+    let registration_manifest = profile_topology
+        .as_ref()
+        .map_or_else(|| manifest.clone(), |topology| topology.adapter().clone());
+    let standard_registry = standard::standard_registry();
+    let mut selected_was_standard = false;
+    let mut adapter_manifests = standard_registry
+        .manifests()
+        .iter()
+        .map(|standard_manifest| {
+            if standard_manifest.id() == registration_manifest.id() {
+                selected_was_standard = true;
+                registration_manifest.clone()
+            } else {
+                standard_manifest.clone()
+            }
+        })
+        .collect::<Vec<_>>();
+    if !selected_was_standard {
+        adapter_manifests.push(registration_manifest);
+    }
     adapter_manifests.extend(desktop.iter().cloned());
+    let profile_registration_supplements =
+        profile_topology.as_ref().map_or_else(Vec::new, |topology| {
+            adapter_manifests
+                .iter()
+                .filter(|candidate| candidate.id() != topology.adapter().id())
+                .cloned()
+                .collect()
+        });
     Ok(SelectionSemanticContext {
         base: env,
         adapter_manifests,
-        profile_registration_supplements: profile_topology
-            .as_ref()
-            .map_or_else(Vec::new, |_| desktop),
+        profile_registration_supplements,
         profile_topology,
     })
 }

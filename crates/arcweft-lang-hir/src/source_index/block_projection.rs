@@ -1106,14 +1106,12 @@ pub(super) fn statement_matches(
             | SyntaxKind::WhileStatement
             | SyntaxKind::WhileLetStatement
             | SyntaxKind::ForStatement
-            | SyntaxKind::SelectStatement
-            | SyntaxKind::AwaitWithStatement,
+            | SyntaxKind::SelectStatement,
             kind @ (HirStmtKind::Loop(_)
             | HirStmtKind::While(_)
             | HirStmtKind::WhileLet(_)
             | HirStmtKind::For(_)
-            | HirStmtKind::Select(HirSelectStmt::Branches { .. })
-            | HirStmtKind::AwaitWith(_)),
+            | HirStmtKind::Select(HirSelectStmt::Branches { .. })),
         ) => thread_control::thread_control_statement_evidence(
             parsed, slots, arenas, owner, attached, scope, context, kind,
         ),
@@ -1376,6 +1374,38 @@ fn match_statement_matches(
                 recovery.get_or_insert(HirStmtRecoveryIssue::RecoveredChild {
                     role: HirStmtChildRole::MatchArmBody { arm: arm_ordinal },
                 });
+            }
+            (
+                MatchStatementArmBodyNode::Statement(attached_statement),
+                HirStmtMatchArmBody::Body(body),
+            ) => {
+                let [statement] = body.ordinary_statements()? else {
+                    return None;
+                };
+                let evidence = statement_matches(
+                    parsed,
+                    slots,
+                    arenas,
+                    *statement,
+                    &attached_statement,
+                    arm.scope(),
+                    &mut arm_generations,
+                    context,
+                )?;
+                let expected_locals = arm
+                    .locals()
+                    .iter()
+                    .copied()
+                    .chain(evidence.locals.iter().copied())
+                    .collect::<Vec<_>>();
+                if arm_scope.locals() != expected_locals {
+                    return None;
+                }
+                if evidence.is_poisoned() {
+                    recovery.get_or_insert(HirStmtRecoveryIssue::RecoveredChild {
+                        role: HirStmtChildRole::MatchArmBody { arm: arm_ordinal },
+                    });
+                }
             }
             (MatchStatementArmBodyNode::Block(attached_body), HirStmtMatchArmBody::Body(body))
                 if context == HirStatementContext::Thread =>

@@ -7,7 +7,9 @@ use arcweft_desktop_contract::{
     CursorIcon, DesktopError, DesktopRequest, DesktopResponse, OwnedCursorRequest,
     OwnedWindowRequest, PhysicalPosition, PhysicalRect, PhysicalSize, WindowMode, WindowTarget,
 };
-use arcweft_host_adapter::{HostCallArgs, HostCallVariantArg, HostTaskMetrics, HostTaskOutcome};
+use arcweft_host_adapter::{
+    HostCallArgs, HostCallVariantArg, HostTaskCompletion, HostTaskMetrics, HostTaskOutcome,
+};
 
 use crate::{
     DESKTOP_CAPABILITIES_CALL, DESKTOP_CURSOR_ICON_TYPE, DESKTOP_OWNED_CURSOR_SET_ICON_CALL,
@@ -185,13 +187,25 @@ pub(crate) fn outcome(
     match result {
         Ok(response) => {
             let metrics = metrics(request, &response);
-            let result = serde_json::to_string(&response)
+            let completion = serde_json::to_string(&response)
                 .map(RuntimePayload::from)
-                .map_err(|error| format!("failed to encode desktop response: {error}"));
-            HostTaskOutcome { result, metrics }
+                .map_or_else(
+                    |error| {
+                        HostTaskCompletion::Failed(format!(
+                            "failed to encode desktop response: {error}"
+                        ))
+                    },
+                    HostTaskCompletion::Ready,
+                );
+            HostTaskOutcome {
+                completion,
+                metrics,
+            }
         }
         Err(error) => HostTaskOutcome {
-            result: Err(serde_json::to_string(&error).unwrap_or_else(|_| error.to_string())),
+            completion: HostTaskCompletion::Error(RuntimePayload::from(
+                serde_json::to_string(&error).unwrap_or_else(|_| error.to_string()),
+            )),
             metrics: HostTaskMetrics::default(),
         },
     }

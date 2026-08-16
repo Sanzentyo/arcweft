@@ -9,7 +9,7 @@ use crate::app::project::{
 };
 use crate::app::shared::print_json;
 use crate::output::{
-    AotProfileStats, BytecodeProfileStats, FinalSemanticProfileStats, RuntimePlanProfileStats,
+    AotProfileStats, AwbcProfileStats, FinalSemanticProfileStats, RuntimePlanProfileStats,
     RuntimeProfileCompiler,
 };
 use arcweft_host_adapter::HostCallPolicy;
@@ -59,7 +59,6 @@ pub(in crate::app) fn script_bench_selection(
     let host_policy = native_host_policy_for_selection(selection)?;
     let file_roots = selection.native_file_roots();
     let manifest = collect_script_tests(compiled.compiled.hir_project());
-    let pure_helpers = compiled.plan.pure_helpers.clone();
     let runtime = BenchRuntimeContext {
         pure_config,
         host_policy: &host_policy,
@@ -75,7 +74,7 @@ pub(in crate::app) fn script_bench_selection(
             syntax: compiled.syntax_stats.into(),
             semantic: FinalSemanticProfileStats::from(compiled.compiled.final_analysis().as_ref()),
             runtime_plan: RuntimePlanProfileStats::from(compiled.runtime_plan_stats),
-            bytecode: BytecodeProfileStats::from(&compiled.bytecode_stats),
+            awbc: AwbcProfileStats::from(&compiled.product_awbc),
             aot: AotProfileStats::from(&compiled.aot_stats),
         },
         phases,
@@ -83,14 +82,7 @@ pub(in crate::app) fn script_bench_selection(
             .benches
             .iter()
             .map(|bench| {
-                run_script_bench(
-                    bench,
-                    &compiled.plan,
-                    &pure_helpers,
-                    selection.path(),
-                    options,
-                    runtime,
-                )
+                run_script_bench(bench, &compiled.plan, selection.path(), options, runtime)
             })
             .collect(),
     };

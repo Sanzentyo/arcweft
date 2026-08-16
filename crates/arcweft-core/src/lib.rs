@@ -1,7 +1,6 @@
 pub mod aot;
 pub mod audio;
 pub mod awbc;
-pub mod bytecode;
 pub mod effect;
 pub mod engine;
 pub mod entry;
@@ -15,7 +14,6 @@ pub mod plan;
 pub mod pure;
 pub mod root;
 pub mod runtime_id;
-pub mod source;
 pub mod step;
 pub mod stream;
 pub mod task;

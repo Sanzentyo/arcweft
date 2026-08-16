@@ -184,13 +184,13 @@ fn source_map_rejects_digest_extent_set_revision_and_schema_tampering() {
     ));
 
     let schema = mutate_transcript(&bytes, |payload| {
-        payload[..4].copy_from_slice(&1_u32.to_le_bytes());
+        payload[..4].copy_from_slice(&2_u32.to_le_bytes());
     });
     assert!(matches!(
         SourceMapSection::decode_canonical_section(&schema),
         Err(SourceMapCodecError::UnsupportedSchema {
-            actual: 1,
-            expected: 3
+            actual: 2,
+            expected: 1
         })
     ));
 

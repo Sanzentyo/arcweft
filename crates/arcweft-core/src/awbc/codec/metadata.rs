@@ -2,12 +2,12 @@ use super::AwbcCodecError;
 use super::wire::{Reader, Wire, Writer, wire_enum};
 use crate::awbc::schema::{
     AwbcBlockId, AwbcCallableExecutable, AwbcCodeLocation, AwbcContentUnit, AwbcContentUnitId,
-    AwbcDigest, AwbcDisplayMapEntry, AwbcDisplayMapId, AwbcEntry, AwbcEntryKind, AwbcEntryTarget,
-    AwbcFlowBinding, AwbcFlowExecutable, AwbcFunctionId, AwbcHeader, AwbcInstructionId,
-    AwbcLineTaskGroupId, AwbcProgram, AwbcRegisterId, AwbcResourceId, AwbcResourceRef,
-    AwbcResourceResidency, AwbcResumePointId, AwbcRoute, AwbcRouteBinding, AwbcRouteBindingSource,
-    AwbcSignatureId, AwbcSourceMapEntry, AwbcSourceMapId, AwbcStringId, AwbcTraitMethod,
-    AwbcTraitReceiverMode,
+    AwbcDialogueMark, AwbcDigest, AwbcDisplayMapEntry, AwbcDisplayMapId, AwbcEntry, AwbcEntryKind,
+    AwbcEntryTarget, AwbcFlowBinding, AwbcFlowExecutable, AwbcFunctionId, AwbcHeader,
+    AwbcInstructionId, AwbcLineTaskGroupId, AwbcProgram, AwbcRegisterId, AwbcResourceId,
+    AwbcResourceRef, AwbcResourceResidency, AwbcResumePointId, AwbcRoute, AwbcRouteBinding,
+    AwbcRouteBindingSource, AwbcSignatureId, AwbcSourceMapEntry, AwbcSourceMapId, AwbcStringId,
+    AwbcTraitMethod, AwbcTraitReceiverMode,
 };
 use crate::entry::{
     AgentBudget, AgentPolicyHash, CallableContractHash, EntryBindingIdentity, FlowContractHash,
@@ -47,7 +47,6 @@ impl Wire for AwbcProgram {
         writer.write_table(&self.line_task_groups)?;
         writer.write_table(&self.line_task_nodes)?;
         writer.write_table(&self.stream_plans)?;
-        writer.write_table(&self.source_plans)?;
         writer.write_table(&self.pure_helpers)?;
         writer.write_table(&self.trait_methods)?;
         writer.write_table(&self.display_map)?;
@@ -86,7 +85,6 @@ impl Wire for AwbcProgram {
             line_task_groups: reader.read_table("line_task_groups", budget.line_task_groups)?,
             line_task_nodes: reader.read_table("line_task_nodes", budget.line_task_nodes)?,
             stream_plans: reader.read_table("stream_plans", budget.stream_plans)?,
-            source_plans: reader.read_table("source_plans", budget.source_plans)?,
             pure_helpers: reader.read_table("pure_helpers", budget.pure_helpers)?,
             trait_methods: reader.read_table("trait_methods", budget.trait_methods)?,
             display_map: reader.read_table("display_map", budget.display_map)?,
@@ -121,6 +119,20 @@ impl Wire for AwbcTraitMethod {
     }
 }
 
+impl Wire for AwbcDialogueMark {
+    fn write_wire(&self, writer: &mut Writer) -> Result<(), AwbcCodecError> {
+        self.id.get().get().write_wire(writer)?;
+        self.label.write_wire(writer)
+    }
+
+    fn read_wire(reader: &mut Reader<'_>) -> Result<Self, AwbcCodecError> {
+        Ok(Self {
+            id: super::runtime::runtime_dialogue_mark_id(reader)?,
+            label: AwbcStringId::read_wire(reader)?,
+        })
+    }
+}
+
 wire_enum!(AwbcTraitReceiverMode, "trait receiver mode", {
     0 => AwbcTraitReceiverMode::Owned,
     1 => AwbcTraitReceiverMode::SharedRef,
@@ -130,6 +142,7 @@ wire_enum!(AwbcTraitReceiverMode, "trait receiver mode", {
 impl Wire for AwbcContentUnit {
     fn write_wire(&self, writer: &mut Writer) -> Result<(), AwbcCodecError> {
         self.public_id.write_wire(writer)?;
+        self.marks.write_wire(writer)?;
         self.line_task_group.write_wire(writer)?;
         self.display.write_wire(writer)?;
         self.source.write_wire(writer)?;
@@ -139,6 +152,7 @@ impl Wire for AwbcContentUnit {
     fn read_wire(reader: &mut Reader<'_>) -> Result<Self, AwbcCodecError> {
         Ok(Self {
             public_id: AwbcStringId::read_wire(reader)?,
+            marks: Vec::<AwbcDialogueMark>::read_wire(reader)?,
             line_task_group: Option::<AwbcLineTaskGroupId>::read_wire(reader)?,
             display: Option::<AwbcDisplayMapId>::read_wire(reader)?,
             source: Option::<AwbcSourceMapId>::read_wire(reader)?,

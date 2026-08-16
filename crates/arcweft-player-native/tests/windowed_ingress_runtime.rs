@@ -4,9 +4,10 @@ use arcweft_bundle::container::{BundleDigest, BundleView, ReadBudget};
 use arcweft_bundle::patch::{BundlePatchArtifact, decode_patch_bundle, encode_patch_bundle};
 use arcweft_bundle::resource_codec::SourceMapSection;
 use arcweft_bundle::{ArcweftBundle, BundleFormat, BundleManifest, BundleRuntimeSummary};
-use arcweft_core::bytecode::BytecodeProgram;
-use arcweft_core::line_task::LineTaskGroup;
-use arcweft_core::plan::{FlowOp, FlowRuntimeId, RuntimeFlow, RuntimeLineId, RuntimePlan};
+use arcweft_core::plan::{
+    FlowRuntimeId, RuntimeDialogueContentPlanSeed, RuntimeFlowOpSeed, RuntimeFlowSeed,
+    RuntimeLineId, RuntimePlanBuilder,
+};
 use arcweft_dialogue::{DialoguePresentationProfile, DialogueProfileRevision};
 use arcweft_id::TextKey;
 use arcweft_player_native::windowed_patch::{
@@ -196,30 +197,36 @@ fn temp_dir(label: &str) -> PathBuf {
 
 fn fixture_bundle_with(display_text: &str) -> ArcweftBundle {
     let line = RuntimeLineId::from_runtime_line_value("line.opening").expect("runtime line id");
-    let plan = RuntimePlan::new(
-        vec![RuntimeFlow {
-            id: FlowRuntimeId::from_runtime_target_value("flow.main").expect("flow runtime id"),
-            ops: vec![
-                FlowOp::Dialogue {
-                    line: line.clone(),
-                    task_group: 0,
-                },
-                FlowOp::Return("done".to_owned()),
+    let flow = FlowRuntimeId::from_runtime_target_value("flow.main").expect("flow runtime id");
+    let mut builder = RuntimePlanBuilder::new();
+    let content = builder
+        .push_dialogue_content_seed(RuntimeDialogueContentPlanSeed {
+            line: line.clone(),
+            values: Box::default(),
+            marks: Box::default(),
+        })
+        .expect("dialogue content admits");
+    builder
+        .push_flow_seed(RuntimeFlowSeed::new(
+            flow.clone(),
+            [],
+            vec![
+                RuntimeFlowOpSeed::Dialogue { content },
+                RuntimeFlowOpSeed::Return("done".to_owned()),
             ],
-        }],
-        vec![LineTaskGroup::default()],
-    )
-    .expect("runtime plan is valid")
-    .with_entries(vec![arcweft_core::plan::RuntimeEntrySpec {
-        id: arcweft_core::plan::EntryRuntimeId::from_source_entity_body("entry.main")
-            .expect("test entry ID is valid"),
-        kind: arcweft_core::plan::RuntimeEntryKind::Cli,
-        binding: arcweft_core::entry::EntryBindingIdentity::from_bytes([1; 32]),
-        target: arcweft_core::plan::RuntimeEntryTarget::Flow(
-            FlowRuntimeId::from_runtime_target_value("flow.main").expect("flow runtime id"),
-        ),
-        roles: arcweft_core::entry::RuntimeEntryRoles::None,
-    }]);
+        ))
+        .expect("flow admits");
+    builder
+        .push_entry(arcweft_core::plan::RuntimeEntrySpec {
+            id: arcweft_core::plan::EntryRuntimeId::from_source_entity_body("entry.main")
+                .expect("test entry ID is valid"),
+            kind: arcweft_core::plan::RuntimeEntryKind::Cli,
+            binding: arcweft_core::entry::EntryBindingIdentity::from_bytes([1; 32]),
+            target: arcweft_core::plan::RuntimeEntryTarget::Flow(flow),
+            roles: arcweft_core::entry::RuntimeEntryRoles::None,
+        })
+        .expect("entry admits");
+    let plan = builder.finish().expect("runtime plan is valid");
     let source_map = source_map("windowed-ingress.arcw", "flow main { ... }");
     let dialogue_content =
         DialogueContentCatalog::try_from_records(vec![DialogueContentSpec::new(
@@ -244,8 +251,6 @@ fn fixture_bundle_with(display_text: &str) -> ArcweftBundle {
         .lower()
         .expect("product AWBC lowers")
         .program;
-    let bytecode = BytecodeProgram::from_runtime_plan(plan);
-    let stats = bytecode.stats();
     ArcweftBundle::try_new(
         BundleManifest {
             profile_id: None,
@@ -257,20 +262,18 @@ fn fixture_bundle_with(display_text: &str) -> ArcweftBundle {
             runtime: BundleRuntimeSummary {
                 artifact_fingerprint: fixture_runtime_artifact_fingerprint(),
                 entry_flow: Some("flow.main".to_owned()),
-                flows: stats.flows,
-                bytecode_instructions: stats.instructions,
-                line_task_groups: stats.line_task_groups,
-                stream_plans: stats.stream_plans,
-                source_plans: stats.source_plans,
+                flows: product_awbc.flow_executables.len(),
+                bytecode_instructions: product_awbc.instructions.len(),
+                line_task_groups: product_awbc.line_task_groups.len(),
+                stream_plans: product_awbc.stream_plans.len(),
             },
         },
         source_map,
-        bytecode,
+        product_awbc,
         dialogue_content,
     )
     .expect("standard dialogue source joins source map")
     .with_character_presentation_catalog(character_support::character_catalog())
-    .with_product_awbc(product_awbc)
 }
 
 fn source_map(label: &str, text: &str) -> SourceMapSection {

@@ -70,7 +70,6 @@ define_syntax_kinds! {
     ExternCapabilityItem,
     TestItem,
     BenchItem,
-    SourceItem,
     StyleItem,
     ErrorItem,
     InnerAttribute,
@@ -237,7 +236,6 @@ define_syntax_kinds! {
     SourceLocaleStatement,
     ScopeStatement,
     IncludeStatement,
-    AwaitWithStatement,
     SelectBranch,
     AwaitWithBranch,
     BreakStatement,
@@ -492,7 +490,6 @@ impl SyntaxKind {
             | Self::ExternCapabilityItem
             | Self::TestItem
             | Self::BenchItem
-            | Self::SourceItem
             | Self::StyleItem
             | Self::ErrorItem
             | Self::InnerAttribute
@@ -658,7 +655,6 @@ impl SyntaxKind {
             | Self::SourceLocaleStatement
             | Self::ScopeStatement
             | Self::IncludeStatement
-            | Self::AwaitWithStatement
             | Self::SelectBranch
             | Self::AwaitWithBranch
             | Self::BreakStatement
@@ -800,7 +796,6 @@ impl SyntaxKind {
             | Self::ExternCapabilityItem
             | Self::TestItem
             | Self::BenchItem
-            | Self::SourceItem
             | Self::StyleItem
             | Self::ErrorItem => Some(AstTag::Item),
             Self::AssertionStatement
@@ -834,7 +829,6 @@ impl SyntaxKind {
             | Self::SourceLocaleStatement
             | Self::ScopeStatement
             | Self::IncludeStatement
-            | Self::AwaitWithStatement
             | Self::BreakStatement
             | Self::ContinueStatement
             | Self::ExpressionStatement
@@ -1133,7 +1127,6 @@ impl SyntaxKind {
                 | Self::ExternCapabilityItem
                 | Self::TestItem
                 | Self::BenchItem
-                | Self::SourceItem
                 | Self::StyleItem
                 | Self::ErrorItem
         )
@@ -1190,7 +1183,6 @@ impl SyntaxKind {
                 | Self::SourceLocaleStatement
                 | Self::ScopeStatement
                 | Self::IncludeStatement
-                | Self::AwaitWithStatement
                 | Self::BreakStatement
                 | Self::ContinueStatement
                 | Self::ExpressionStatement

@@ -160,6 +160,14 @@ pub enum FinalSemanticAnalysisError {
     LocalTypeUnavailable { owner: LocalId },
     #[error("semantic pattern {owner:?} has no admissible final type")]
     PatternTypeUnavailable { owner: PatternId },
+    #[error("break expr is allowed only in loop blocks")]
+    BreakValueRequiresLoop {
+        owner: StmtId,
+        value: ExprId,
+        target: StmtId,
+        value_source: SourceSpan,
+        target_source: SourceSpan,
+    },
     #[error("semantic value resolution failed for expression {owner:?}")]
     ValueResolutionFailed { owner: ExprId },
     #[error("shared callable resolution failed for expression {owner:?}")]
@@ -260,6 +268,7 @@ impl FinalSemanticAnalysisError {
             Self::AssertionConditionNotBool { .. } => "sema.assert.condition_not_bool",
             Self::AssertionConditionNotPure { .. } => "sema.assert.condition_not_pure",
             Self::RecursiveCallableContract { .. } => "sema.callable.recursive_contract",
+            Self::BreakValueRequiresLoop { .. } => "sema.break.value_target",
             Self::UnknownCallTarget { .. } => "sema.call.unknown_target",
             Self::PropagationErrorMismatch {
                 operator: PropagationOperator::Try,
@@ -326,9 +335,38 @@ impl FinalSemanticAnalysisError {
                 escape_span,
                 self.diagnostic_code(),
             )),
+            Self::BreakValueRequiresLoop {
+                value_source,
+                target_source,
+                ..
+            } => Some(break_value_requires_loop_diagnostic(
+                value_source,
+                target_source,
+                self.diagnostic_code(),
+            )),
             _ => character_dialogue_diagnostic(self),
         }
     }
+}
+
+fn break_value_requires_loop_diagnostic(
+    value_source: &SourceSpan,
+    target_source: &SourceSpan,
+    code: &'static str,
+) -> Diagnostic {
+    Diagnostic::new(
+        DiagnosticSeverity::Error,
+        "break expr is allowed only in loop blocks",
+    )
+    .with_code(code)
+    .with_label(DiagnosticLabel::primary(
+        value_source.clone(),
+        Some("this break carries a value".to_owned()),
+    ))
+    .with_label(DiagnosticLabel::secondary(
+        target_source.clone(),
+        Some("this target loop does not yield a value".to_owned()),
+    ))
 }
 
 fn unknown_call_diagnostic(

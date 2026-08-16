@@ -213,30 +213,155 @@ fn with_inference_host_calls(manifest: AdapterManifest) -> AdapterManifest {
 /// Host system information manifest.
 pub fn system_info_manifest() -> AdapterManifest {
     let effect = AdapterEffectCapability::new("system.read");
+    let system_error = environment_nominal_path(SYSTEM_INFO_ADAPTER_ID, ["system", "SystemError"]);
     AdapterManifest::new(SYSTEM_INFO_ADAPTER_ID, "System Info")
+        .try_with_nominal_declaration(
+            AdapterNominalDeclaration::try_new(
+                nominal_path_segments(["system", "SystemError"]),
+                0,
+                AdapterOpaqueTypeProducerId::try_new("arcweft.adapter.system-info")
+                    .expect("standard opaque producer IDs are valid"),
+                AdapterNominalVisibility::Public,
+                "system.SystemError",
+            )
+            .expect("standard SystemError declaration is valid"),
+        )
+        .expect("standard SystemError declaration is unique")
         .with_effect(effect.clone())
-        .with_host_call(AdapterHostCall::new("system.core_count", [effect.clone()]))
-        .with_host_call(AdapterHostCall::new(
-            "system.thread_count",
-            [effect.clone()],
-        ))
-        .with_host_call(AdapterHostCall::new(
-            "system.available_parallelism",
-            [effect],
-        ))
+        .with_host_call(
+            AdapterHostCall::with_signature(
+                "system.core_count",
+                signature(
+                    [],
+                    AdapterTypeKind::Need {
+                        ready: Box::new(AdapterTypeKind::String),
+                        error: Box::new(system_error.clone()),
+                    },
+                ),
+                [effect.clone()],
+            )
+            .with_domain_error(system_error.clone()),
+        )
+        .with_host_call(
+            AdapterHostCall::with_signature(
+                "system.thread_count",
+                signature(
+                    [],
+                    AdapterTypeKind::Need {
+                        ready: Box::new(AdapterTypeKind::String),
+                        error: Box::new(system_error.clone()),
+                    },
+                ),
+                [effect.clone()],
+            )
+            .with_domain_error(system_error.clone()),
+        )
+        .with_host_call(
+            AdapterHostCall::with_signature(
+                "system.available_parallelism",
+                signature(
+                    [],
+                    AdapterTypeKind::Need {
+                        ready: Box::new(AdapterTypeKind::String),
+                        error: Box::new(system_error.clone()),
+                    },
+                ),
+                [effect],
+            )
+            .with_domain_error(system_error),
+        )
 }
 
 /// Native file manifest.
 pub fn native_file_manifest() -> AdapterManifest {
     let read = AdapterEffectCapability::new("fs.read");
     let write = AdapterEffectCapability::new("fs.write");
+    let fs_error = environment_nominal_path(NATIVE_FILE_ADAPTER_ID, ["fs", "FsError"]);
+    let virtual_path = standard_nominal(["VirtualPath"]);
     AdapterManifest::new(NATIVE_FILE_ADAPTER_ID, "Native File")
+        .try_with_nominal_declaration(
+            AdapterNominalDeclaration::try_new(
+                nominal_path_segments(["fs", "FsError"]),
+                0,
+                AdapterOpaqueTypeProducerId::try_new("arcweft.adapter.native-file")
+                    .expect("standard opaque producer IDs are valid"),
+                AdapterNominalVisibility::Public,
+                "fs.FsError",
+            )
+            .expect("standard FsError declaration is valid"),
+        )
+        .expect("standard FsError declaration is unique")
         .with_effect(read.clone())
         .with_effect(write.clone())
-        .with_host_call(AdapterHostCall::new("fs.read_text", [read.clone()]))
-        .with_host_call(AdapterHostCall::new("fs.read_bytes", [read]))
-        .with_host_call(AdapterHostCall::new("fs.write_text", [write.clone()]))
-        .with_host_call(AdapterHostCall::new("fs.write_bytes", [write]))
+        .with_host_call(
+            AdapterHostCall::with_signature(
+                "fs.read_text",
+                signature(
+                    [("path", virtual_path.clone())],
+                    AdapterTypeKind::Need {
+                        ready: Box::new(AdapterTypeKind::String),
+                        error: Box::new(fs_error.clone()),
+                    },
+                ),
+                [read.clone()],
+            )
+            .with_domain_error(fs_error.clone()),
+        )
+        .with_host_call(
+            AdapterHostCall::with_signature(
+                "fs.read_bytes",
+                signature(
+                    [("path", virtual_path.clone())],
+                    AdapterTypeKind::Need {
+                        ready: Box::new(AdapterTypeKind::Vec {
+                            item: Box::new(AdapterTypeKind::U8),
+                        }),
+                        error: Box::new(fs_error.clone()),
+                    },
+                ),
+                [read],
+            )
+            .with_domain_error(fs_error.clone()),
+        )
+        .with_host_call(
+            AdapterHostCall::with_signature(
+                "fs.write_text",
+                signature(
+                    [
+                        ("path", virtual_path.clone()),
+                        ("body", AdapterTypeKind::String),
+                    ],
+                    AdapterTypeKind::Need {
+                        ready: Box::new(AdapterTypeKind::Unit),
+                        error: Box::new(fs_error.clone()),
+                    },
+                ),
+                [write.clone()],
+            )
+            .with_domain_error(fs_error.clone()),
+        )
+        .with_host_call(
+            AdapterHostCall::with_signature(
+                "fs.write_bytes",
+                signature(
+                    [
+                        ("path", virtual_path),
+                        (
+                            "body",
+                            AdapterTypeKind::Vec {
+                                item: Box::new(AdapterTypeKind::U8),
+                            },
+                        ),
+                    ],
+                    AdapterTypeKind::Need {
+                        ready: Box::new(AdapterTypeKind::Unit),
+                        error: Box::new(fs_error.clone()),
+                    },
+                ),
+                [write],
+            )
+            .with_domain_error(fs_error),
+        )
 }
 
 /// Host math accelerator manifest.
@@ -276,13 +401,20 @@ fn inference_nominal(name: &str) -> AdapterTypeKind {
 }
 
 fn environment_nominal(adapter_id: &str, name: &str) -> AdapterTypeKind {
+    environment_nominal_path(adapter_id, [name])
+}
+
+fn environment_nominal_path<const N: usize>(
+    adapter_id: &str,
+    segments: [&str; N],
+) -> AdapterTypeKind {
     let adapter = AdapterId::new(adapter_id);
     AdapterTypeKind::Nominal {
         nominal: AdapterNominalTypeRef::try_new(
             AdapterNominalOwner::Environment {
                 owner: AdapterEnvironmentOwnerId::for_adapter(&adapter),
             },
-            nominal_path(name),
+            nominal_path_segments(segments),
             [],
         )
         .expect("standard nominal references are valid"),
@@ -290,9 +422,31 @@ fn environment_nominal(adapter_id: &str, name: &str) -> AdapterTypeKind {
 }
 
 fn nominal_path(name: &str) -> AdapterNominalPath {
-    AdapterNominalPath::try_new([AdapterNominalPathSegment::try_new(name)
-        .expect("standard nominal names are valid Rust identifiers")])
-    .expect("one valid segment forms a nominal path")
+    nominal_path_segments([name])
+}
+
+fn nominal_path_segments<const N: usize>(segments: [&str; N]) -> AdapterNominalPath {
+    AdapterNominalPath::try_new(
+        segments
+            .into_iter()
+            .map(|segment| {
+                AdapterNominalPathSegment::try_new(segment)
+                    .expect("standard nominal names are valid Rust identifiers")
+            })
+            .collect::<Vec<_>>(),
+    )
+    .expect("standard nominal paths are valid")
+}
+
+fn standard_nominal<const N: usize>(segments: [&str; N]) -> AdapterTypeKind {
+    AdapterTypeKind::Nominal {
+        nominal: AdapterNominalTypeRef::try_new(
+            AdapterNominalOwner::Standard,
+            nominal_path_segments(segments),
+            [],
+        )
+        .expect("standard nominal references are valid"),
+    }
 }
 
 fn callable_name(value: &str) -> AdapterCallableName {
@@ -438,12 +592,16 @@ mod tests {
         let system = system_info_manifest();
         let file = native_file_manifest();
 
-        assert!(
-            system
-                .host_calls()
-                .iter()
-                .any(|call| call.id() == "system.core_count")
-        );
+        let core_count = system
+            .host_calls()
+            .iter()
+            .find(|call| call.id() == "system.core_count")
+            .expect("system core-count host call");
+        let AdapterTypeKind::Need { ready, error } = core_count.signature().return_type() else {
+            panic!("system core-count must return its typed Need contract");
+        };
+        assert_eq!(ready.as_ref(), &AdapterTypeKind::String);
+        assert_eq!(core_count.domain_error(), Some(error.as_ref()));
         assert!(file.host_calls().iter().any(|call| {
             call.id() == "fs.write_text"
                 && call

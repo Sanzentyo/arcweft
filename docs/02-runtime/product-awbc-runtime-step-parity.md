@@ -117,7 +117,7 @@ Await-many:
 - correlates events by stable task ID;
 - retains partial results and deterministic progress;
 - resumes only when the configured completion rule is satisfied;
-- writes the result sequence in source item order.
+- writes the result sequence in input item order.
 
 ## Host calls and effects
 
@@ -139,20 +139,15 @@ Existing line-effect variants are projected directly. Effects requiring a host
 capability but lacking a typed payload produce a typed unsupported-capability
 diagnostic; no variant is silently dropped.
 
-## Content, source, and stream state
+## Content and stream state
 
 Ensure-content observations are de-duplicated by canonical content ID and emit a
 typed request containing public content identity and resource metadata.
 
-Source behavior:
-
-- source policy is converted by an inherent method on `AwbcSourcePolicy`;
-- incoming events are normalized before application;
-- runtime source state enforces backpressure, overflow, replay, privacy, and
-  queue limits;
-- source-generated events keep deterministic per-source sequence values;
-- close is idempotent and emits at most one host close request;
-- source handler fibers are spawned from canonical handler function IDs.
+External capability operations returning `Stream<T, E>` are ordinary host-call
+requests. Capability adapters normalize permission, cancellation, queue, and
+replay behavior before returning typed stream events; the product step does not
+own a second Source state machine or handler table.
 
 Stream behavior:
 
@@ -206,13 +201,12 @@ After every step, the adapter synchronizes the shared `FlowFiber` facade:
 - status;
 - root environment;
 - observation state;
-- source states;
 - stream states;
 - line cursor.
 
 `RuntimeStepStats` reports executed operations, pending work before/after, child
-fibers, pure/backend counters, input event counts, emitted source/stream/line and
-audio counts, and diagnostics. Counts are derived after output projection so
+fibers, pure/backend counters, input event counts, emitted stream/line and audio
+counts, and diagnostics. Counts are derived after output projection so
 host-visible vectors and counters cannot disagree.
 
 ## Product safety gates

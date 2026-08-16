@@ -39,10 +39,10 @@ pub fn decode_sensor_frame(bytes: &[u8])
     -> Result<SensorFrame, UsbParseError>
 {
     let cursor = ByteCursor.new(bytes)
-    let version = cursor.read_u8()?
-    let value = cursor.read_i16_le()?
-    let flags = cursor.read_u16_le()?
-    cursor.expect_end()?
+    let version = try cursor.read_u8()
+    let value = try cursor.read_i16_le()
+    let flags = try cursor.read_u16_le()
+    try cursor.expect_end()
 
     Ok(SensorFrame { version, value, flags })
 }
@@ -54,7 +54,7 @@ JSON, TOML, YAML, CSV, and other standard formats use typed codec APIs rather
 than author-defined parser syntax:
 
 ```arcw
-let config = data.decode(bytes, .Json, data.shape<Config>())?
+let config = try data.decode(bytes, .Json, data.shape<Config>())
 ```
 
 Compiler source parsing, Agent protocol parsing, and CLI command parsing remain

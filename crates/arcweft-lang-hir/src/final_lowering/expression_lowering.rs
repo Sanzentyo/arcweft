@@ -13,40 +13,43 @@ use std::collections::BTreeSet;
 
 use arcweft_lang_syntax::attachment::node::MissingExpressionKind;
 use arcweft_lang_syntax::attachment::{
-    AstNode, AttachedExpressionChild, AttachedExpressionNode, AttachedMatchArm,
+    AstNode, AttachedAwaitBranch, AttachedAwaitBranchBody, AttachedExpressionChild,
+    AttachedExpressionNode, AttachedMatchArm,
 };
 use arcweft_lang_syntax::expressions::{
     ExpressionComponentRole, ExpressionProjection, SyntaxAssociatedCallSyntax,
-    SyntaxAssociatedReceiver, SyntaxAssociatedSeparator, SyntaxAwaitPropagation,
-    SyntaxBinaryOperator, SyntaxBorrowKind, SyntaxCallArgumentListTerminator,
-    SyntaxCallArgumentPart, SyntaxCallArgumentProjection, SyntaxCallCalleeProjection,
-    SyntaxCallProjection, SyntaxCallTypeApplicationSpelling, SyntaxCallTypeApplicationTerminator,
-    SyntaxCallTypeArgumentProjection, SyntaxCallTypeChildRole, SyntaxComputationBlockKind,
-    SyntaxExpressionSlot, SyntaxLifetimeRegistryPath, SyntaxLifetimeRegistryScope,
-    SyntaxMatchArmPart, SyntaxMatchBodyTerminator, SyntaxMatchProjection, SyntaxNumericSequence,
-    SyntaxNumericSequenceRecovery, SyntaxPlaceholderKind, SyntaxPostfixBracketProjection,
-    SyntaxRecordField, SyntaxRequiredTokenState, SyntaxSelectedMember, SyntaxTryForm,
-    SyntaxUnaryOperator,
+    SyntaxAssociatedReceiver, SyntaxAssociatedSeparator, SyntaxBinaryOperator, SyntaxBorrowKind,
+    SyntaxCallArgumentListTerminator, SyntaxCallArgumentPart, SyntaxCallArgumentProjection,
+    SyntaxCallCalleeProjection, SyntaxCallProjection, SyntaxCallTypeApplicationSpelling,
+    SyntaxCallTypeApplicationTerminator, SyntaxCallTypeArgumentProjection, SyntaxCallTypeChildRole,
+    SyntaxComputationBlockKind, SyntaxExpressionSlot, SyntaxLifetimeRegistryPath,
+    SyntaxLifetimeRegistryScope, SyntaxMatchArmPart, SyntaxMatchBodyTerminator,
+    SyntaxMatchProjection, SyntaxNumericSequence, SyntaxNumericSequenceRecovery,
+    SyntaxPlaceholderKind, SyntaxPostfixBracketProjection, SyntaxRecordField,
+    SyntaxRequiredTokenState, SyntaxSelectedMember, SyntaxUnaryOperator,
 };
+use arcweft_lang_syntax::grammar::SyntaxAwaitBranchKind;
 use arcweft_lang_syntax::name::SyntaxNameIssue;
 
 use crate::diagnostic::{HirRecoveryDiagnostic, HirRecoveryPrimary};
 use crate::expr::{
     HirArrayRepeatExpr, HirAssociatedCallSyntax, HirAssociatedReceiver, HirAssociatedSeparator,
-    HirAwaitExpr, HirAwaitPropagation, HirBinaryExpr, HirBinaryOp, HirBorrowExpr, HirBorrowKind,
-    HirBracketSequenceExpr, HirCallArgument, HirCallArgumentListTerminator, HirCallBuildError,
-    HirCallCallee, HirCallChildPoison, HirCallChildStates, HirCallExpr, HirCallTypeApplication,
-    HirCallTypeApplicationSpelling, HirCallTypeApplicationTerminator, HirCallTypeArgument,
-    HirCallTypeArgumentOrdinal, HirCallValue, HirClosureExpr, HirClosureParameter,
-    HirComputationBlockExpr, HirComputationBlockKind, HirDereferenceExpr, HirExpr, HirExprError,
-    HirExprKind, HirExpressionRecoveryIssue, HirGenericExprIssue, HirIfExpr, HirIfLetExpr,
-    HirIndexExpr, HirMatchArm, HirMatchExpr, HirMatchRecoveryIssue, HirNamedBlockExpr,
-    HirNamedBlockName, HirPipeExpr, HirPlaceholderKind, HirPoisonState, HirRangeExpr,
-    HirRecordExpr, HirRecordField, HirRecordFieldIssue, HirRecordLiteralExpr, HirRecoveredName,
-    HirRecoveryIssue, HirRequiredTokenState, HirSelectExpr, HirSelectedMember, HirTryExpr,
-    HirTryForm, HirTupleExpr, HirUnaryExpr, HirUnaryOp, literal_recovery_issue,
+    HirAwaitBranch, HirAwaitBranchKind, HirAwaitExpr, HirBinaryExpr, HirBinaryOp, HirBorrowExpr,
+    HirBorrowKind, HirBracketSequenceExpr, HirCallArgument, HirCallArgumentListTerminator,
+    HirCallBuildError, HirCallCallee, HirCallChildPoison, HirCallChildStates, HirCallExpr,
+    HirCallTypeApplication, HirCallTypeApplicationSpelling, HirCallTypeApplicationTerminator,
+    HirCallTypeArgument, HirCallTypeArgumentOrdinal, HirCallValue, HirClosureExpr,
+    HirClosureParameter, HirComputationBlockExpr, HirComputationBlockKind, HirDereferenceExpr,
+    HirExpr, HirExprError, HirExprKind, HirExpressionRecoveryIssue, HirGenericExprIssue, HirIfExpr,
+    HirIfLetExpr, HirIndexExpr, HirMatchArm, HirMatchExpr, HirMatchRecoveryIssue,
+    HirNamedBlockExpr, HirNamedBlockName, HirPipeExpr, HirPlaceholderKind, HirPoisonState,
+    HirRangeExpr, HirRecordExpr, HirRecordField, HirRecordFieldIssue, HirRecordLiteralExpr,
+    HirRecoveredName, HirRecoveryIssue, HirRequiredTokenState, HirSelectExpr, HirSelectedMember,
+    HirThreadIssue, HirTryExpr, HirTupleExpr, HirUnaryExpr, HirUnaryOp, literal_recovery_issue,
 };
-use crate::identity::{ExprId, HirLimit, ScopeId, SyntheticKey, SyntheticOwner, SyntheticRole};
+use crate::identity::{
+    ExprId, HirLimit, LocalId, ScopeId, SyntheticKey, SyntheticOwner, SyntheticRole,
+};
 use crate::leaf::{
     HirIntegerLiteral, HirLifetimePathRecovery, HirLifetimePathValue, HirLifetimeRegistryIssue,
     HirLifetimeRegistryPath, HirLifetimeRegistryScope, HirNumericSequence,
@@ -58,6 +61,7 @@ use crate::source_index::{
     HirExprSourceRole, HirMatchArmSourcePart, HirSourceQuery, HirSourceSite,
     expression_component_role,
 };
+use crate::stmt::HirContextualStmtBody;
 use crate::type_ref::HirTypeResolver;
 
 use super::id_ref_projection::id_ref;
@@ -357,27 +361,26 @@ impl StagedHirModuleTransaction<'_> {
                 };
                 (HirExprKind::Pipe(HirPipeExpr::new(*left, *right)), recovery)
             }
-            ExpressionProjection::Try { form, .. } => {
+            ExpressionProjection::Try { .. } => {
                 let (children, recovery) = self.lower_composite_children(attached, owner, scope)?;
                 let [operand] = children.as_ref() else {
                     return Err(HirInvariantFailure::InvalidArenaCommit.into());
                 };
-                (
-                    HirExprKind::Try(HirTryExpr::new(*operand, try_form(*form))),
-                    recovery,
-                )
+                (HirExprKind::Try(HirTryExpr::new(*operand)), recovery)
             }
-            ExpressionProjection::Await { propagation, .. } => {
+            ExpressionProjection::Await { .. } => {
                 let (children, recovery) = self.lower_composite_children(attached, owner, scope)?;
                 let [operand] = children.as_ref() else {
                     return Err(HirInvariantFailure::InvalidArenaCommit.into());
                 };
+                let (branches, branch_recovery) =
+                    self.lower_attached_await_expression_branches(attached, owner, scope)?;
                 (
-                    HirExprKind::Await(HirAwaitExpr::new(
-                        *operand,
-                        await_propagation(*propagation),
-                    )),
-                    recovery,
+                    HirExprKind::Await(
+                        HirAwaitExpr::try_new(*operand, branches)
+                            .map_err(|_| HirInvariantFailure::InvalidArenaCommit)?,
+                    ),
+                    recovery.or_else(|| branch_recovery.map(HirRecoveryIssue::InvalidThread)),
                 )
             }
             ExpressionProjection::Thread(thread) => {
@@ -597,6 +600,107 @@ impl StagedHirModuleTransaction<'_> {
             recovery.map_or(HirPoisonState::Clean, HirPoisonState::Poisoned),
             parent_diagnostic_required,
         ))
+    }
+
+    fn lower_attached_await_expression_branches(
+        &mut self,
+        attached: &AttachedExpressionNode,
+        owner: ExprId,
+        outer_scope: ScopeId,
+    ) -> Result<(Box<[HirAwaitBranch]>, Option<HirThreadIssue>), HirLowerFailure> {
+        let Some(body) = attached.await_branches() else {
+            return Ok((Box::new([]), None));
+        };
+
+        let mut recovery = None;
+        let mut branches = Vec::new();
+        match body {
+            AttachedAwaitBranchBody::Missing(_) => {
+                recovery = Some(HirThreadIssue::MissingBody);
+            }
+            AttachedAwaitBranchBody::Present(block) => {
+                if block.branches().is_empty() {
+                    recovery = Some(HirThreadIssue::RecoveredBodyChild { ordinal: 0 });
+                }
+                for (ordinal, attached_branch) in block.branches().iter().enumerate() {
+                    let ordinal = u32::try_from(ordinal)
+                        .map_err(|_| HirInvariantFailure::InvalidArenaCommit)?;
+                    let (branch, branch_recovery) = self.lower_attached_await_expression_branch(
+                        owner,
+                        outer_scope,
+                        ordinal,
+                        attached_branch,
+                    )?;
+                    branches.push(branch);
+                    if recovery.is_none() {
+                        recovery = branch_recovery;
+                    }
+                }
+                if block.is_unclosed() {
+                    recovery.get_or_insert(HirThreadIssue::UnclosedBody);
+                }
+            }
+        }
+        Ok((branches.into_boxed_slice(), recovery))
+    }
+
+    fn lower_attached_await_expression_branch(
+        &mut self,
+        owner: ExprId,
+        outer_scope: ScopeId,
+        ordinal: u32,
+        attached: &AttachedAwaitBranch,
+    ) -> Result<(HirAwaitBranch, Option<HirThreadIssue>), HirLowerFailure> {
+        let prepared = self.prepare_attached_nested_thread_body(
+            attached.body(),
+            HirScopeOwner::Expr(owner),
+            outer_scope,
+        )?;
+        let branch_scope = prepared.scope();
+        let (kind, pattern, locals, pattern_poisoned, head_recovery) =
+            if let Some(kind) = attached.kind() {
+                let pattern = attached
+                    .pattern()
+                    .ok_or(HirInvariantFailure::InvalidArenaCommit)?;
+                let pattern = self.lower_attached_pattern_binding(
+                    pattern,
+                    branch_scope,
+                    HirPatternBindingPolicy::PatternBinding,
+                )?;
+                let kind = match kind {
+                    SyntaxAwaitBranchKind::Pending => HirAwaitBranchKind::Pending,
+                    SyntaxAwaitBranchKind::Ready => HirAwaitBranchKind::Ready,
+                    SyntaxAwaitBranchKind::Error => HirAwaitBranchKind::Error,
+                    SyntaxAwaitBranchKind::Denied => HirAwaitBranchKind::Denied,
+                };
+                (
+                    kind,
+                    Some(pattern.owner),
+                    pattern.locals,
+                    pattern.poisoned,
+                    None,
+                )
+            } else {
+                if attached.recovery().is_none() || attached.pattern().is_some() {
+                    return Err(HirInvariantFailure::InvalidArenaCommit.into());
+                }
+                (
+                    HirAwaitBranchKind::Recovered,
+                    None,
+                    Box::<[LocalId]>::from([]),
+                    false,
+                    Some(HirThreadIssue::RecoveredBodyChild { ordinal }),
+                )
+            };
+        let lowered = self.finish_attached_nested_thread_body(prepared, locals.clone())?;
+        let body = HirContextualStmtBody::try_thread(lowered.body)
+            .map_err(|_| HirInvariantFailure::InvalidArenaCommit)?;
+        let payload = HirAwaitBranch::try_new(kind, pattern, locals, body)
+            .map_err(|_| HirInvariantFailure::InvalidArenaCommit)?;
+        let recovery = head_recovery
+            .or_else(|| pattern_poisoned.then_some(HirThreadIssue::RecoveredBodyChild { ordinal }))
+            .or(lowered.recovery);
+        Ok((payload, recovery))
     }
 
     fn preflight_expression(attached: &AttachedExpressionNode) -> Result<(), HirLowerFailure> {
@@ -2013,20 +2117,6 @@ fn recovery_diagnostic_primary(
     let site = HirSourceSite::from_attached_span(document, &source)
         .map_err(|_| HirInvariantFailure::InvalidSourceSpan)?;
     Ok((role, site))
-}
-
-const fn try_form(form: SyntaxTryForm) -> HirTryForm {
-    match form {
-        SyntaxTryForm::PrefixTry => HirTryForm::PrefixTry,
-        SyntaxTryForm::PostfixQuestion => HirTryForm::PostfixQuestion,
-    }
-}
-
-const fn await_propagation(propagation: SyntaxAwaitPropagation) -> HirAwaitPropagation {
-    match propagation {
-        SyntaxAwaitPropagation::PreserveResult => HirAwaitPropagation::PreserveResult,
-        SyntaxAwaitPropagation::PropagateError => HirAwaitPropagation::PropagateError,
-    }
 }
 
 const fn binary_operator(operator: SyntaxBinaryOperator) -> HirBinaryOp {

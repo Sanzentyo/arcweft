@@ -184,8 +184,8 @@ fn set_panel_color(
 ) -> Result<Unit, DeviceError>
 requires led < 64
 {
-    let packet = encode_light_panel_command(.SetColor { led, color })?
-    await panel.bulk_out(endpoint = 0x01, packet)?
+    let packet = try encode_light_panel_command(.SetColor { led, color })
+    try await panel.bulk_out(endpoint = 0x01, packet)
     Ok(())
 }
 ```

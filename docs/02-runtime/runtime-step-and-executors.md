@@ -187,7 +187,6 @@ pub struct RuntimeStepOutput {
 
 pub struct RuntimeEffectBatch {
     pub line: Vec<LineEffectRequest>,
-    pub source_events: Vec<RuntimeSourceEvent>,
     pub stream_events: Vec<RuntimeStreamEvent>,
 }
 ```
@@ -202,7 +201,7 @@ signal, or metric side effects outside `arcweft-core`.
 pub struct HostRequestBatch {
     pub tasks: Vec<TaskSpec>,
     pub cancel_scopes: Vec<CancelScopeId>,
-    pub source_close: Vec<SourceId>,
+    pub host_calls: Vec<RuntimeHostCallRequest>,
 }
 ```
 
@@ -212,9 +211,9 @@ pub struct HostRequestBatch {
 pub struct RuntimePayload(pub RuntimeValue);
 ```
 
-`SourceEvent<String, String>` and `StreamEvent<String, String>` are removed.
-Use `RuntimeSourceEvent` and `RuntimeStreamEvent`. Display tooling may derive a
-payload label, but the runtime boundary preserves the structured value.
+`StreamEvent<String, String>` is removed. Use `RuntimeStreamEvent` for typed
+external-capability stream events. Display tooling may derive a payload label,
+but the runtime boundary preserves the structured value.
 
 ## Product AWBC parity contract
 

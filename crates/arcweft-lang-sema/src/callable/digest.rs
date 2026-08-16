@@ -7,12 +7,12 @@ use crate::{effect_row::EffectRowTail, registration::AcceptedNominalWorldStamp};
 
 use super::{
     CallableArgumentPolicy, CallableAuthorityRank, CallableDocumentation, CallableEffectSchema,
-    CallableGroupKind, CallableLookupKey, CallableParameterPassing, CallableParameterPresence,
-    CallableParameterType, CallableProviderId, CallableSignatureSchema, CallableSource,
-    CallableValidator, DocumentationProvenance, EnvironmentCallableId, EnvironmentCallableKind,
-    EnvironmentCallableOwner, LanguageDocumentationFamily, RustCallableProvenance,
-    RustCallablePurity, RustPackageProvenance, SpreadArgumentPolicy, StandardEnvironmentId,
-    UnknownNamedArgumentPolicy,
+    CallableEvaluatedEffect, CallableGroupKind, CallableLogLevel, CallableLookupKey,
+    CallableParameterPassing, CallableParameterPresence, CallableParameterType, CallableProviderId,
+    CallableSignatureSchema, CallableSource, CallableValidator, DocumentationProvenance,
+    EnvironmentCallableId, EnvironmentCallableKind, EnvironmentCallableOwner,
+    LanguageDocumentationFamily, RustCallableProvenance, RustCallablePurity, RustPackageProvenance,
+    SpreadArgumentPolicy, StandardEnvironmentId, UnknownNamedArgumentPolicy,
 };
 
 const SCHEMA_DOMAIN: &[u8] = b"arcweft.callable-signature.semantic.v1\0";
@@ -170,6 +170,31 @@ impl CanonicalEncoder {
         self.effect_schema(schema.effects());
         self.argument_policy(schema.argument_policy());
         self.validator(schema.validator());
+        self.option(schema.evaluated_effect().as_ref(), |encoder, effect| {
+            encoder.evaluated_effect(*effect);
+        });
+    }
+
+    fn evaluated_effect(&mut self, effect: CallableEvaluatedEffect) {
+        match effect {
+            CallableEvaluatedEffect::Log(level) => {
+                self.tag(0);
+                self.tag(match level {
+                    CallableLogLevel::Trace => 0,
+                    CallableLogLevel::Debug => 1,
+                    CallableLogLevel::Info => 2,
+                    CallableLogLevel::Warn => 3,
+                    CallableLogLevel::Error => 4,
+                });
+            }
+            CallableEvaluatedEffect::SignalWrite => self.tag(1),
+            CallableEvaluatedEffect::MetricWrite => self.tag(2),
+            CallableEvaluatedEffect::EmitEvent => self.tag(3),
+            CallableEvaluatedEffect::Panic => self.tag(4),
+            CallableEvaluatedEffect::Fail => self.tag(5),
+            CallableEvaluatedEffect::Bail => self.tag(6),
+            CallableEvaluatedEffect::Ensure => self.tag(7),
+        }
     }
 
     fn effect_schema(&mut self, effects: &CallableEffectSchema) {

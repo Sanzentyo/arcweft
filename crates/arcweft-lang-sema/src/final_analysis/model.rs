@@ -5,11 +5,13 @@ use super::{
     CharacterDialogueType, CharacterId, CharacterNominalType, CheckedRichTextReport,
     DeclarationIdentityFamily, DialogueLineId, DialogueTextKey, EffectSet, EnvironmentBindingId,
     ExprId, GenericTypeOwnerId, GenericTypeParameterId, HirFlowIdentity, HirItemFamily, HirLiteral,
-    HirName, ItemId, LocalId, ProjectNominalDeclaration, ProjectNominalDeclarationId, PublicId,
-    SemanticTypeDigest, TypeKind, TypeParameterSubstitutions,
+    HirName, ItemId, LocalId, PatternId, ProjectNominalDeclaration, ProjectNominalDeclarationId,
+    PublicId, SemanticTypeDigest, TypeKind, TypeParameterSubstitutions,
 };
-use crate::callable::CharacterDialoguePatchContext;
+use crate::callable::{CallableEvaluatedEffect, CallableLogLevel, CharacterDialoguePatchContext};
+use arcweft_core::value::RuntimeAgentField;
 use arcweft_interaction_model::dialogue::CharacterDialogueCustomFieldId;
+use arcweft_lang_hir::expr::{HirAwaitBranchKind, HirCallArgument};
 use arcweft_lang_hir::symbol::ExternalDeclarationId;
 use arcweft_source::SourceSpan;
 
@@ -322,8 +324,13 @@ pub enum CheckedSelectResolution {
         projection: crate::dialogue_view::DialogueProjectionCoordinate,
         name: HirName,
     },
+    /// Closed Agent protocol record coordinate selected during type checking.
+    AgentField {
+        field: RuntimeAgentField,
+    },
     Field {
         nominal: Option<CheckedProjectNominal>,
+        ordinal: Option<u32>,
         name: HirName,
     },
     TupleElement {
@@ -436,6 +443,8 @@ pub enum CheckedExpressionResolution {
     /// Canonical effect identity selected from an authored effect-clause path.
     Effect(crate::effects::EffectId),
     Call,
+    /// Exact outcome and continuation contract owned by one Await expression.
+    Await(CheckedAwait),
     /// A call whose execution contract belongs to the retained View program,
     /// rather than to the ordinary callable catalog.
     ViewCall(CheckedViewCall),
@@ -460,6 +469,114 @@ pub enum CheckedExpressionResolution {
         rich_text: Box<CheckedRichTextReport>,
     },
     PostfixBracket(PostfixBracketResolution),
+}
+
+/// Whether one Await handler can return to the normal Result continuation.
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub enum CheckedAwaitBranchContinuation {
+    FallsThrough,
+    Terminates,
+}
+
+/// One source-ordered, typed Await lifecycle handler.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct CheckedAwaitBranch {
+    kind: HirAwaitBranchKind,
+    pattern: PatternId,
+    payload: TypeKind,
+    continuation: CheckedAwaitBranchContinuation,
+}
+
+impl CheckedAwaitBranch {
+    pub const fn new(
+        kind: HirAwaitBranchKind,
+        pattern: PatternId,
+        payload: TypeKind,
+        continuation: CheckedAwaitBranchContinuation,
+    ) -> Self {
+        Self {
+            kind,
+            pattern,
+            payload,
+            continuation,
+        }
+    }
+
+    pub const fn kind(&self) -> HirAwaitBranchKind {
+        self.kind
+    }
+
+    pub const fn pattern(&self) -> PatternId {
+        self.pattern
+    }
+
+    pub const fn payload(&self) -> &TypeKind {
+        &self.payload
+    }
+
+    pub const fn continuation(&self) -> CheckedAwaitBranchContinuation {
+        self.continuation
+    }
+}
+
+/// Typed semantics of one Await expression.
+///
+/// `physical_result` is the host completion carrier. `continuation_result`
+/// is the value observed by the enclosing expression after authored handlers
+/// have run. Exhaustive terminal Error handlers remove `E` from that normal
+/// continuation without changing the physical task ABI.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct CheckedAwait {
+    operand: ExprId,
+    ready: TypeKind,
+    error: TypeKind,
+    physical_result: TypeKind,
+    continuation_result: TypeKind,
+    branches: Box<[CheckedAwaitBranch]>,
+}
+
+impl CheckedAwait {
+    pub fn new(
+        operand: ExprId,
+        ready: TypeKind,
+        error: TypeKind,
+        physical_result: TypeKind,
+        continuation_result: TypeKind,
+        branches: impl Into<Box<[CheckedAwaitBranch]>>,
+    ) -> Self {
+        Self {
+            operand,
+            ready,
+            error,
+            physical_result,
+            continuation_result,
+            branches: branches.into(),
+        }
+    }
+
+    pub const fn operand(&self) -> ExprId {
+        self.operand
+    }
+
+    pub const fn ready(&self) -> &TypeKind {
+        &self.ready
+    }
+
+    pub const fn error(&self) -> &TypeKind {
+        &self.error
+    }
+
+    pub const fn physical_result(&self) -> &TypeKind {
+        &self.physical_result
+    }
+
+    pub const fn continuation_result(&self) -> &TypeKind {
+        &self.continuation_result
+    }
+
+    pub fn branches(&self) -> &[CheckedAwaitBranch] {
+        &self.branches
+    }
 }
 
 /// Typed runtime-value target selected for `CharacterDialogue` construction or use.
@@ -864,15 +981,288 @@ pub enum CheckedAssertionDisposition {
     OmittedDebug,
 }
 
+/// Closed writable place admitted for one final-HIR assignment.
+///
+/// Assignment never defers place interpretation to runtime lowering.  The
+/// accepted language surface is deliberately narrow: a direct local binding
+/// projected through one field of its checked project nominal record.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct CheckedAssignmentPlace {
+    local: LocalId,
+    nominal: CheckedProjectNominal,
+    field_ordinal: u32,
+    field_type: TypeKind,
+}
+
+impl CheckedAssignmentPlace {
+    pub const fn new(
+        local: LocalId,
+        nominal: CheckedProjectNominal,
+        field_ordinal: u32,
+        field_type: TypeKind,
+    ) -> Self {
+        Self {
+            local,
+            nominal,
+            field_ordinal,
+            field_type,
+        }
+    }
+
+    pub const fn local(&self) -> LocalId {
+        self.local
+    }
+
+    pub const fn nominal(&self) -> &CheckedProjectNominal {
+        &self.nominal
+    }
+
+    pub const fn field_ordinal(&self) -> u32 {
+        self.field_ordinal
+    }
+
+    pub const fn field_type(&self) -> &TypeKind {
+        &self.field_type
+    }
+}
+
+/// Complete semantic assignment fact for one final-HIR statement.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct CheckedAssignment {
+    place: CheckedAssignmentPlace,
+    value_type: TypeKind,
+}
+
+impl CheckedAssignment {
+    pub const fn new(place: CheckedAssignmentPlace, value_type: TypeKind) -> Self {
+        Self { place, value_type }
+    }
+
+    pub const fn place(&self) -> &CheckedAssignmentPlace {
+        &self.place
+    }
+
+    pub const fn value_type(&self) -> &TypeKind {
+        &self.value_type
+    }
+}
+
 /// Semantic role that changes statement lowering.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum CheckedStatementRole {
     Ordinary,
+    Assignment(Box<CheckedAssignment>),
     Assertion(CheckedAssertionDisposition),
+    EvaluatedEffect(Box<CheckedEvaluatedEffect>),
     Iteration(Box<CheckedIteration>),
-    Suspension,
+    Suspension(Box<CheckedSuspensionStatement>),
     Yield,
     UnsafeAudit,
+}
+
+/// Complete semantic disposition for one suspension statement.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum CheckedSuspensionStatement {
+    Wait,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct CheckedEffectField {
+    name: String,
+    value: ExprId,
+}
+
+impl CheckedEffectField {
+    pub fn new(name: impl Into<String>, value: ExprId) -> Self {
+        Self {
+            name: name.into(),
+            value,
+        }
+    }
+
+    pub fn name(&self) -> &str {
+        &self.name
+    }
+
+    pub const fn value(&self) -> ExprId {
+        self.value
+    }
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum CheckedEvaluatedEffect {
+    Log {
+        level: CallableLogLevel,
+        message: ExprId,
+        fields: Box<[CheckedEffectField]>,
+    },
+    SignalWrite {
+        target: ExprId,
+        value: ExprId,
+    },
+    MetricWrite {
+        target: ExprId,
+        value: ExprId,
+    },
+    EmitEvent {
+        event: ExprId,
+        fields: Box<[CheckedEffectField]>,
+    },
+    Panic {
+        message: ExprId,
+    },
+    Fail {
+        message: ExprId,
+    },
+    Bail {
+        message: ExprId,
+    },
+    Ensure {
+        condition: ExprId,
+        message: ExprId,
+    },
+}
+
+impl CheckedEvaluatedEffect {
+    pub const fn disposition(&self) -> CallableEvaluatedEffect {
+        match self {
+            Self::Log { level, .. } => CallableEvaluatedEffect::Log(*level),
+            Self::SignalWrite { .. } => CallableEvaluatedEffect::SignalWrite,
+            Self::MetricWrite { .. } => CallableEvaluatedEffect::MetricWrite,
+            Self::EmitEvent { .. } => CallableEvaluatedEffect::EmitEvent,
+            Self::Panic { .. } => CallableEvaluatedEffect::Panic,
+            Self::Fail { .. } => CallableEvaluatedEffect::Fail,
+            Self::Bail { .. } => CallableEvaluatedEffect::Bail,
+            Self::Ensure { .. } => CallableEvaluatedEffect::Ensure,
+        }
+    }
+
+    pub(crate) fn try_from_call(
+        effect: CallableEvaluatedEffect,
+        arguments: &[HirCallArgument],
+    ) -> Option<Self> {
+        match effect {
+            CallableEvaluatedEffect::Log(level) => {
+                let (message, fields) = checked_message_and_fields(arguments, "message")?;
+                Some(Self::Log {
+                    level,
+                    message,
+                    fields,
+                })
+            }
+            CallableEvaluatedEffect::EmitEvent => {
+                let (event, fields) = checked_message_and_fields(arguments, "event")?;
+                Some(Self::EmitEvent { event, fields })
+            }
+            CallableEvaluatedEffect::SignalWrite => {
+                let values = checked_fixed_effect_arguments(arguments, &["target", "value"], 2)?;
+                Some(Self::SignalWrite {
+                    target: values[0]?,
+                    value: values[1]?,
+                })
+            }
+            CallableEvaluatedEffect::MetricWrite => {
+                let values = checked_fixed_effect_arguments(arguments, &["target", "value"], 2)?;
+                Some(Self::MetricWrite {
+                    target: values[0]?,
+                    value: values[1]?,
+                })
+            }
+            CallableEvaluatedEffect::Panic
+            | CallableEvaluatedEffect::Fail
+            | CallableEvaluatedEffect::Bail => {
+                let values = checked_fixed_effect_arguments(arguments, &["message"], 1)?;
+                let message = values[0]?;
+                Some(match effect {
+                    CallableEvaluatedEffect::Panic => Self::Panic { message },
+                    CallableEvaluatedEffect::Fail => Self::Fail { message },
+                    CallableEvaluatedEffect::Bail => Self::Bail { message },
+                    _ => unreachable!("the grouped evaluated-effect family is exhaustive"),
+                })
+            }
+            CallableEvaluatedEffect::Ensure => {
+                let values =
+                    checked_fixed_effect_arguments(arguments, &["condition", "message"], 2)?;
+                Some(Self::Ensure {
+                    condition: values[0]?,
+                    message: values[1]?,
+                })
+            }
+        }
+    }
+}
+
+fn checked_message_and_fields(
+    arguments: &[HirCallArgument],
+    head_name: &str,
+) -> Option<(ExprId, Box<[CheckedEffectField]>)> {
+    let mut head = None;
+    let mut names = Vec::<String>::new();
+    let mut fields = Vec::new();
+    for (ordinal, argument) in arguments.iter().enumerate() {
+        match argument {
+            HirCallArgument::Spread { .. } => return None,
+            HirCallArgument::Named { .. }
+                if argument
+                    .resolved_name()
+                    .is_some_and(|name| name.as_str() == head_name) =>
+            {
+                if head.replace(argument.value()).is_some() {
+                    return None;
+                }
+            }
+            HirCallArgument::Positional { .. } if head.is_none() => {
+                head = Some(argument.value());
+            }
+            HirCallArgument::Named { .. } | HirCallArgument::Positional { .. } => {
+                let name = argument
+                    .resolved_name()
+                    .map_or_else(|| format!("arg{ordinal}"), |name| name.as_str().to_owned());
+                if names.contains(&name) {
+                    return None;
+                }
+                names.push(name.clone());
+                fields.push(CheckedEffectField::new(name, argument.value()));
+            }
+        }
+    }
+    Some((head?, fields.into_boxed_slice()))
+}
+
+fn checked_fixed_effect_arguments(
+    arguments: &[HirCallArgument],
+    names: &[&str],
+    required: usize,
+) -> Option<Vec<Option<ExprId>>> {
+    let mut values = vec![None; names.len()];
+    let mut next_positional = 0;
+    for argument in arguments {
+        let index = match argument {
+            HirCallArgument::Positional { .. } => {
+                while values.get(next_positional).is_some_and(Option::is_some) {
+                    next_positional += 1;
+                }
+                let index = next_positional;
+                next_positional += 1;
+                index
+            }
+            HirCallArgument::Named { .. } => names.iter().position(|candidate| {
+                argument
+                    .resolved_name()
+                    .is_some_and(|name| *candidate == name.as_str())
+            })?,
+            HirCallArgument::Spread { .. } => return None,
+        };
+        let slot = values.get_mut(index)?;
+        if slot.replace(argument.value()).is_some() {
+            return None;
+        }
+    }
+    values
+        .iter()
+        .take(required)
+        .all(Option::is_some)
+        .then_some(values)
 }
 
 /// Closed checked fact for one live statement.
@@ -945,7 +1335,6 @@ pub enum CheckedItemRole {
     ExternCapability,
     Test,
     Bench,
-    Source,
     Style,
 }
 
@@ -975,7 +1364,6 @@ impl CheckedItemRole {
             Self::ExternCapability => HirItemFamily::ExternCapability,
             Self::Test => HirItemFamily::Test,
             Self::Bench => HirItemFamily::Bench,
-            Self::Source => HirItemFamily::Source,
             Self::Style => HirItemFamily::Style,
         }
     }

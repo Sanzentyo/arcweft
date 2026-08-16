@@ -74,10 +74,14 @@ pub(crate) fn runtime_value_to_json(value: &RuntimeValue) -> serde_json::Value {
             "kind": "runtime_internal",
             "value": "iterator",
         }),
+        RuntimeValue::Reduction(_) => serde_json::json!({
+            "kind": "runtime_internal",
+            "value": "reduction",
+        }),
         RuntimeValue::Function(function) => serde_json::json!({
             "kind": "runtime_internal",
             "value": "function",
-            "arity": function.arity(),
+            "arity": function.remaining_arity().ok(),
         }),
         RuntimeValue::Duration(_)
         | RuntimeValue::MatrixF32(_)

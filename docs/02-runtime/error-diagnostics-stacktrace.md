@@ -94,7 +94,7 @@ context:
 trace:
   0: game/routes/opening.arcw:12:14
      flow.opening
-     await asset.image(@asset:.bg.room)?
+     try await asset.image(@asset:.bg.room)
 
   1: game/routes/opening.arcw:9:5
      say.opening.narration.001 / text.opening.narration.001
@@ -129,21 +129,12 @@ let bg = (await asset.image(@asset:.bg.room) with:
     pending p:
         scene.show(@scene.loading)
         progress.set(p.ratio)
-).context("while loading opening background")?
+).context("while loading opening background")
 ```
 
-Rejected:
-
-```arcw
-await asset.image(@asset:.bg.room)? with:
-    pending p:
-        scene.show(@scene.loading)
-```
-
-Use `try await asset.image(...) with:`, `await? asset.image(...) with:`, or the
-explicit parenthesized form `(await asset.image(...) with: ...)?`. Only
-`await expr? with:` is rejected because it makes the owner of `with:` visually
-ambiguous.
+Use `try await asset.image(...) with:`. Await owns its `with` handlers and
+always produces a `Result`; prefix `try` is the sole propagation operation.
+Postfix `?` and attached `await?` are not part of the language.
 
 ## Automatic source frames
 

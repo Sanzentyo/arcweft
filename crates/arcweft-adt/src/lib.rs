@@ -838,31 +838,6 @@ pub enum NeedCacheState<T, E, P = ()> {
     Cancelled,
 }
 
-/// Permissioned live source descriptor.
-///
-/// Values arrive as explicit source events at adapter boundaries; this type is
-/// only the deterministic source identity and item/error type marker.
-#[derive(Clone, Debug, Eq, PartialEq)]
-pub struct Source<T, E> {
-    key: String,
-    marker: PhantomData<fn() -> (T, E)>,
-}
-
-impl<T, E> Source<T, E> {
-    /// Creates a source descriptor from a stable key.
-    pub fn new(key: impl Into<String>) -> Self {
-        Self {
-            key: key.into(),
-            marker: PhantomData,
-        }
-    }
-
-    /// Stable source key.
-    pub fn key(&self) -> &str {
-        &self.key
-    }
-}
-
 /// Ordered stream transform descriptor.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct Stream<T, E> {

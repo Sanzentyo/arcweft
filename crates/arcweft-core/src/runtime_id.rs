@@ -121,6 +121,65 @@ runtime_u32_identity!(RuntimeMailboxLaneId);
 runtime_u32_identity!(RuntimeChildPacketId);
 runtime_u32_identity!(RuntimeTransferPacketId);
 runtime_u32_identity!(RuntimeCleanupSlotId);
+runtime_u32_identity!(RuntimeDialogueValueSlotId);
+runtime_u32_identity!(RuntimeLineTaskGroupId);
+runtime_u32_identity!(RuntimeLineTaskNodeId);
+runtime_u32_identity!(RuntimeDialogueMarkId);
+
+impl RuntimeDialogueValueSlotId {
+    /// Creates the canonical one-based identity for a document-local authored
+    /// dialogue value slot.
+    #[must_use]
+    pub fn from_zero_based(index: usize) -> Option<Self> {
+        let ordinal = u32::try_from(index).ok()?.checked_add(1)?;
+        NonZeroU32::new(ordinal).map(Self::from_accepted_ordinal)
+    }
+
+    /// Returns the document-local zero-based slot index.
+    #[must_use]
+    pub const fn index(self) -> usize {
+        (self.0.get() - 1) as usize
+    }
+}
+
+impl RuntimeLineTaskNodeId {
+    #[must_use]
+    pub fn from_zero_based(index: usize) -> Option<Self> {
+        let ordinal = u32::try_from(index).ok()?.checked_add(1)?;
+        NonZeroU32::new(ordinal).map(Self::from_accepted_ordinal)
+    }
+
+    #[must_use]
+    pub const fn index(self) -> usize {
+        (self.0.get() - 1) as usize
+    }
+}
+
+impl RuntimeLineTaskGroupId {
+    #[must_use]
+    pub(crate) fn from_zero_based(index: usize) -> Option<Self> {
+        let ordinal = u32::try_from(index).ok()?.checked_add(1)?;
+        NonZeroU32::new(ordinal).map(Self::from_accepted_ordinal)
+    }
+
+    #[must_use]
+    pub const fn index(self) -> usize {
+        (self.0.get() - 1) as usize
+    }
+}
+
+impl RuntimeDialogueMarkId {
+    #[must_use]
+    pub(crate) fn from_zero_based(index: usize) -> Option<Self> {
+        let ordinal = u32::try_from(index).ok()?.checked_add(1)?;
+        NonZeroU32::new(ordinal).map(Self::from_accepted_ordinal)
+    }
+
+    #[must_use]
+    pub const fn index(self) -> usize {
+        (self.0.get() - 1) as usize
+    }
+}
 
 /// Contiguous plan-local identity of one interned semantic type declaration.
 ///
@@ -139,6 +198,50 @@ impl RuntimePlanTypeId {
 
     pub(crate) const fn from_accepted_ordinal(raw: NonZeroU32) -> Self {
         Self(raw)
+    }
+}
+
+/// Contiguous plan-local identity of one structured function body.
+#[repr(transparent)]
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub struct RuntimeFunctionSiteId(NonZeroU32);
+
+impl RuntimeFunctionSiteId {
+    #[must_use]
+    pub const fn get(self) -> NonZeroU32 {
+        self.0
+    }
+
+    pub(crate) const fn from_accepted_ordinal(raw: NonZeroU32) -> Self {
+        Self(raw)
+    }
+}
+
+impl fmt::Display for RuntimeFunctionSiteId {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        self.0.fmt(formatter)
+    }
+}
+
+/// Contiguous plan-local identity of one dialogue content execution mapping.
+#[repr(transparent)]
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub struct RuntimeDialogueContentPlanId(NonZeroU32);
+
+impl RuntimeDialogueContentPlanId {
+    #[must_use]
+    pub const fn get(self) -> NonZeroU32 {
+        self.0
+    }
+
+    pub(crate) const fn from_accepted_ordinal(raw: NonZeroU32) -> Self {
+        Self(raw)
+    }
+}
+
+impl fmt::Display for RuntimeDialogueContentPlanId {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        self.0.fmt(formatter)
     }
 }
 

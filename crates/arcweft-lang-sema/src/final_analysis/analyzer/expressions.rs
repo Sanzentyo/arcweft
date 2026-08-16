@@ -4,20 +4,21 @@
 mod records;
 
 use super::{
-    Analyzer, ArrayLength, BTreeSet, BorrowKind, CandidateSemanticProjection,
-    CheckedEntryReference, CheckedExpression, CheckedExpressionResolution, CheckedProjectItem,
-    CheckedStyleCallee, CheckedTypeSelection, CheckedValueResolution, CheckedVariantOwner,
-    CheckedViewCall, CheckedViewCallee, EffectId, EffectSet, EntityKind, EnumVariantPayload,
-    ExprId, FinalSemanticAnalysisError, GenericTypeOwnerId, GenericTypeParameterId,
-    HirAwaitPropagation, HirBinaryOp, HirBorrowKind, HirCallArgument, HirComputationBlockKind,
-    HirExpr, HirExprKind, HirExprSourceRole, HirIdRef, HirIntegerLiteral, HirItemKind, HirLiteral,
-    HirModule, HirPathRoot, HirPathSegment, HirPostfixBracket, HirPostfixBracketCandidates,
+    Analyzer, ArrayLength, BTreeSet, BorrowKind, CandidateSemanticProjection, CheckedAwait,
+    CheckedAwaitBranch, CheckedAwaitBranchContinuation, CheckedEntryReference, CheckedExpression,
+    CheckedExpressionResolution, CheckedProjectItem, CheckedStyleCallee, CheckedTypeSelection,
+    CheckedValueResolution, CheckedVariantOwner, CheckedViewCall, CheckedViewCallee, EffectId,
+    EffectSet, EntityKind, EnumVariantPayload, ExprId, FinalSemanticAnalysisError,
+    GenericTypeOwnerId, GenericTypeParameterId, HirAwaitBranchKind, HirBinaryOp, HirBorrowKind,
+    HirCallArgument, HirComputationBlockKind, HirContextualStmtBody, HirExpr, HirExprKind,
+    HirExprSourceRole, HirIdRef, HirIntegerLiteral, HirItemKind, HirLiteral, HirModule,
+    HirPathRoot, HirPathSegment, HirPatternKind, HirPostfixBracket, HirPostfixBracketCandidates,
     HirRecordField, HirRecoveredName, HirSelectedMember, HirSourcePresence, HirSourceQuery,
-    HirSourceSite, HirTypeSourceRole, HirUnaryOp, LocalLookup, PostfixBracketResolution,
-    ProjectHirSymbolLookupError, ProjectNominalBody, ProjectNominalDeclaration, ProjectNominalType,
-    ProjectSymbolResolutionError, ProjectTypeTarget, ProjectValueLookup, PropagationOperator,
-    RegisteredSemanticValueId, ResolvedProjectSymbol, RichTextAttributeChecker, ScopeId,
-    SourceSpan, TypeKind, TypeParameterSubstitutions,
+    HirSourceSite, HirStmtKind, HirThreadFlowItem, HirTypeSourceRole, HirUnaryOp, LocalLookup,
+    PostfixBracketResolution, ProjectHirSymbolLookupError, ProjectNominalBody,
+    ProjectNominalDeclaration, ProjectNominalType, ProjectSymbolResolutionError, ProjectTypeTarget,
+    ProjectValueLookup, PropagationOperator, RegisteredSemanticValueId, ResolvedProjectSymbol,
+    RichTextAttributeChecker, ScopeId, SourceSpan, TypeKind, TypeParameterSubstitutions,
     calls::{checked_character_dialogue_target, checked_project_nominal, nominal_substitutions},
     expression_types::{
         common_type, expected_item, indexed_item, literal_type, value_resolution_type,
@@ -498,28 +499,52 @@ impl Analyzer<'_, '_, '_> {
                         });
                     }
                 };
-                Ok(structural_expression(ty, CheckedTypeSelection::Inferred))
+                Ok(CheckedExpression::new(
+                    ty,
+                    CheckedTypeSelection::Inferred,
+                    operand.effects().clone(),
+                    CheckedExpressionResolution::Structural,
+                ))
             }
             HirExprKind::Await(operation) => {
                 let operand = self.check_expression(operation.operand(), None)?;
-                let ty = match operand.ty() {
-                    TypeKind::Need { ready, error } => match operation.propagation() {
-                        HirAwaitPropagation::PreserveResult => TypeKind::Result {
-                            ok: ready.clone(),
-                            error: error.clone(),
-                        },
-                        HirAwaitPropagation::PropagateError => {
-                            self.validate_propagation_error(
-                                module,
-                                owner,
-                                expression.scope(),
-                                PropagationOperator::Await,
+                let (ty, resolution) = match operand.ty() {
+                    TypeKind::Need { ready, error } => {
+                        let ready = ready.as_ref().clone();
+                        let error = error.as_ref().clone();
+                        let physical_result = TypeKind::Result {
+                            ok: Box::new(ready.clone()),
+                            error: Box::new(error.clone()),
+                        };
+                        let (branches, error_is_terminal) = self.check_await_branches(
+                            module,
+                            operation.branches(),
+                            &ready,
+                            &error,
+                        )?;
+                        let continuation_result = TypeKind::Result {
+                            ok: Box::new(ready.clone()),
+                            error: Box::new(if error_is_terminal {
+                                TypeKind::Never
+                            } else {
+                                error.clone()
+                            }),
+                        };
+                        (
+                            continuation_result.clone(),
+                            CheckedExpressionResolution::Await(CheckedAwait::new(
+                                operation.operand(),
+                                ready,
                                 error,
-                            )?;
-                            (**ready).clone()
-                        }
-                    },
-                    TypeKind::ThreadHandle(value) => (**value).clone(),
+                                physical_result,
+                                continuation_result,
+                                branches,
+                            )),
+                        )
+                    }
+                    TypeKind::ThreadHandle(value) => {
+                        ((**value).clone(), CheckedExpressionResolution::Structural)
+                    }
                     _ => {
                         return Err(FinalSemanticAnalysisError::ExpressionTypeUnavailable {
                             owner,
@@ -531,12 +556,71 @@ impl Analyzer<'_, '_, '_> {
                     CheckedTypeSelection::Inferred,
                     EffectSet::from_labels(["control.suspend"])
                         .expect("the language-owned suspension effect is valid"),
-                    CheckedExpressionResolution::Structural,
+                    resolution,
                 ))
             }
             _ => return Ok(None),
         }
         .map(Some)
+    }
+
+    fn check_await_branches(
+        &mut self,
+        module: &HirModule,
+        branches: &[arcweft_lang_hir::expr::HirAwaitBranch],
+        ready: &TypeKind,
+        error: &TypeKind,
+    ) -> Result<(Vec<CheckedAwaitBranch>, bool), FinalSemanticAnalysisError> {
+        let mut checked = Vec::with_capacity(branches.len());
+        let mut terminal_irrefutable_error = false;
+        let mut seen_ready = false;
+        let mut seen_error = false;
+        for branch in branches {
+            let pattern = branch
+                .pattern()
+                .ok_or(FinalSemanticAnalysisError::RecoveredOwner)?;
+            let payload = match branch.kind() {
+                HirAwaitBranchKind::Ready if !seen_ready => {
+                    seen_ready = true;
+                    ready
+                }
+                HirAwaitBranchKind::Error if !seen_error => {
+                    seen_error = true;
+                    error
+                }
+                HirAwaitBranchKind::Pending | HirAwaitBranchKind::Denied => {
+                    // These handlers require their own accepted typed payload
+                    // owner. Do not admit them as Dynamic or infer a type from
+                    // their source spelling.
+                    return Err(FinalSemanticAnalysisError::WrongPayloadFamily);
+                }
+                HirAwaitBranchKind::Recovered => {
+                    return Err(FinalSemanticAnalysisError::RecoveredOwner);
+                }
+                HirAwaitBranchKind::Ready | HirAwaitBranchKind::Error => {
+                    return Err(FinalSemanticAnalysisError::WrongPayloadFamily);
+                }
+            };
+            self.seed_contextual_pattern_locals(module, pattern, payload)?;
+            let continuation = if contextual_body_terminates(module, branch.body())? {
+                CheckedAwaitBranchContinuation::Terminates
+            } else {
+                CheckedAwaitBranchContinuation::FallsThrough
+            };
+            if branch.kind() == HirAwaitBranchKind::Error
+                && continuation == CheckedAwaitBranchContinuation::Terminates
+                && pattern_is_irrefutable(module, pattern)?
+            {
+                terminal_irrefutable_error = true;
+            }
+            checked.push(CheckedAwaitBranch::new(
+                branch.kind(),
+                pattern,
+                payload.clone(),
+                continuation,
+            ));
+        }
+        Ok((checked, terminal_irrefutable_error))
     }
 
     fn validate_propagation_error(
@@ -547,6 +631,9 @@ impl Analyzer<'_, '_, '_> {
         operator: PropagationOperator,
         operand_error: &TypeKind,
     ) -> Result<(), FinalSemanticAnalysisError> {
+        if matches!(operand_error, TypeKind::Never) {
+            return Ok(());
+        }
         let item_owner = enclosing_item(module, scope)?
             .ok_or(FinalSemanticAnalysisError::ExpressionTypeUnavailable { owner })?;
         let item = module
@@ -901,14 +988,10 @@ impl Analyzer<'_, '_, '_> {
         let HirSelectedMember::Name(name) = select.member() else {
             return Err(FinalSemanticAnalysisError::RecoveredOwner);
         };
-        let (ty, resolution) = if let Some(ty) = target.ty().agent_field_type(name.as_str()) {
-            (
-                ty,
-                super::CheckedSelectResolution::Field {
-                    nominal: None,
-                    name: name.clone(),
-                },
-            )
+        let (ty, resolution) = if let Some((field, ty)) =
+            target.ty().agent_field_type(name.as_str())
+        {
+            (ty, super::CheckedSelectResolution::AgentField { field })
         } else {
             match target.ty() {
                 TypeKind::ProjectNominal(target_nominal) => {
@@ -922,10 +1005,14 @@ impl Analyzer<'_, '_, '_> {
                             owner,
                         });
                     };
-                    let field = fields
+                    let (ordinal, field) = fields
                         .iter()
-                        .find(|field| field.name().as_str() == name.as_str())
+                        .enumerate()
+                        .find(|(_, field)| field.name().as_str() == name.as_str())
                         .ok_or(FinalSemanticAnalysisError::ExpressionTypeUnavailable { owner })?;
+                    let ordinal = u32::try_from(ordinal).map_err(|_| {
+                        FinalSemanticAnalysisError::ExpressionTypeUnavailable { owner }
+                    })?;
                     let declared_ty = self.types.get(&field.ty()).ok_or(
                         FinalSemanticAnalysisError::TypeResolutionFailed { owner: field.ty() },
                     )?;
@@ -936,6 +1023,7 @@ impl Analyzer<'_, '_, '_> {
                         substitutions.apply(declared_ty),
                         super::CheckedSelectResolution::Field {
                             nominal: Some(nominal),
+                            ordinal: Some(ordinal),
                             name: name.clone(),
                         },
                     )
@@ -954,6 +1042,7 @@ impl Analyzer<'_, '_, '_> {
                         .map_or_else(
                             || super::CheckedSelectResolution::Field {
                                 nominal: None,
+                                ordinal: None,
                                 name: name.clone(),
                             },
                             |projection| super::CheckedSelectResolution::DialogueView {
@@ -1790,6 +1879,123 @@ impl Analyzer<'_, '_, '_> {
             }
         }
     }
+}
+
+fn contextual_body_terminates(
+    module: &HirModule,
+    body: &HirContextualStmtBody,
+) -> Result<bool, FinalSemanticAnalysisError> {
+    let terminal = match body {
+        HirContextualStmtBody::Ordinary { statements, .. } => statements.last().copied(),
+        HirContextualStmtBody::Thread(body) => body.items().last().and_then(|item| match item {
+            HirThreadFlowItem::Statement(statement)
+            | HirThreadFlowItem::Choice(statement)
+            | HirThreadFlowItem::If(statement)
+            | HirThreadFlowItem::IfLet(statement)
+            | HirThreadFlowItem::Match(statement)
+            | HirThreadFlowItem::Loop(statement)
+            | HirThreadFlowItem::While(statement)
+            | HirThreadFlowItem::WhileLet(statement)
+            | HirThreadFlowItem::For(statement)
+            | HirThreadFlowItem::Select(statement)
+            | HirThreadFlowItem::SourceLocale(statement)
+            | HirThreadFlowItem::Scope(statement)
+            | HirThreadFlowItem::Include(statement)
+            | HirThreadFlowItem::Error(statement) => Some(*statement),
+            HirThreadFlowItem::DialogueApplication(_) => None,
+        }),
+    };
+    terminal
+        .is_some_and(|statement| statement_terminates(module, statement).unwrap_or(false))
+        .then_some(true)
+        .map_or(Ok(false), Ok)
+}
+
+fn statement_terminates(
+    module: &HirModule,
+    owner: super::StmtId,
+) -> Result<bool, FinalSemanticAnalysisError> {
+    let statement = module
+        .resolve_stmt(owner)
+        .map_err(|_| FinalSemanticAnalysisError::InvalidOwner)?;
+    Ok(match statement.kind() {
+        HirStmtKind::Return { .. }
+        | HirStmtKind::Out { .. }
+        | HirStmtKind::Goto { .. }
+        | HirStmtKind::Break { .. }
+        | HirStmtKind::Continue { .. } => true,
+        HirStmtKind::If(statement) => {
+            contextual_body_terminates(module, statement.then_body())?
+                && statement.else_branch().is_some_and(|branch| {
+                    conditional_else_terminates(module, branch).unwrap_or(false)
+                })
+        }
+        HirStmtKind::IfLet(statement) => {
+            contextual_body_terminates(module, statement.then_body())?
+                && statement.else_branch().is_some_and(|branch| {
+                    conditional_else_terminates(module, branch).unwrap_or(false)
+                })
+        }
+        HirStmtKind::Match(statement) => {
+            !statement.arms().is_empty()
+                && statement.arms().iter().all(|arm| match arm.body() {
+                    arcweft_lang_hir::stmt::HirStmtMatchArmBody::Expression(_) => false,
+                    arcweft_lang_hir::stmt::HirStmtMatchArmBody::Body(body) => {
+                        contextual_body_terminates(module, body).unwrap_or(false)
+                    }
+                })
+        }
+        _ => false,
+    })
+}
+
+fn conditional_else_terminates(
+    module: &HirModule,
+    branch: &arcweft_lang_hir::stmt::HirConditionalElseBranch,
+) -> Result<bool, FinalSemanticAnalysisError> {
+    match branch {
+        arcweft_lang_hir::stmt::HirConditionalElseBranch::Body(body) => {
+            contextual_body_terminates(module, body)
+        }
+        arcweft_lang_hir::stmt::HirConditionalElseBranch::ElseIf(statement) => {
+            statement_terminates(module, *statement)
+        }
+    }
+}
+
+fn pattern_is_irrefutable(
+    module: &HirModule,
+    owner: super::PatternId,
+) -> Result<bool, FinalSemanticAnalysisError> {
+    let pattern = module
+        .resolve_pattern(owner)
+        .map_err(|_| FinalSemanticAnalysisError::InvalidOwner)?;
+    Ok(match pattern.kind() {
+        HirPatternKind::Binding(_)
+        | HirPatternKind::MutableBinding(_)
+        | HirPatternKind::Discard
+        | HirPatternKind::TypedBinding { .. } => true,
+        HirPatternKind::WholeBinding { pattern, .. } => pattern_is_irrefutable(module, *pattern)?,
+        HirPatternKind::Tuple { elements } => elements
+            .iter()
+            .all(|element| pattern_is_irrefutable(module, *element).unwrap_or(false)),
+        HirPatternKind::Record { fields, .. } => fields.iter().all(|field| match field {
+            arcweft_lang_hir::pattern::HirPatternField::Explicit { pattern, .. } => {
+                pattern_is_irrefutable(module, *pattern).unwrap_or(false)
+            }
+            arcweft_lang_hir::pattern::HirPatternField::Shorthand { .. }
+            | arcweft_lang_hir::pattern::HirPatternField::Rest { .. } => true,
+            arcweft_lang_hir::pattern::HirPatternField::Invalid { .. } => false,
+        }),
+        HirPatternKind::Or { alternatives } => alternatives
+            .iter()
+            .any(|alternative| pattern_is_irrefutable(module, *alternative).unwrap_or(false)),
+        HirPatternKind::Literal(_)
+        | HirPatternKind::EntityReference(_)
+        | HirPatternKind::Variant(_)
+        | HirPatternKind::BracketSequence { .. }
+        | HirPatternKind::Error(_) => false,
+    })
 }
 
 fn environment_binding_for_path(

@@ -1682,20 +1682,6 @@ fn bump_contract_trivia(parser: &mut DocumentParser<'_, '_>) -> bool {
     saw_newline
 }
 
-pub(super) fn emit_contract_clause_until(
-    parser: &mut DocumentParser<'_, '_>,
-    end: usize,
-    kind: SyntaxKind,
-    role: SyntaxRole,
-) -> CompletedNode {
-    parser.start(kind, role);
-    parser.bump();
-    parser.bump_trivia();
-    let condition = emit_contract_operand_until(parser, end, 0);
-    parser.finish();
-    condition
-}
-
 fn emit_contract_operand_until(
     parser: &mut DocumentParser<'_, '_>,
     end: usize,

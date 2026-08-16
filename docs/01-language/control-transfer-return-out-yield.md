@@ -50,7 +50,6 @@ Allowed contexts:
 seq { ... }
 stream { ... }
 fn ... -> Stream<T, E> { ... yield ... }
-source id: Source<T, E> { on item frame => yield frame }
 ```
 
 `yield` is a suspension boundary like `await` and `thread`: non-`'static`
@@ -59,19 +58,9 @@ it. `seq` blocks are pure lazy sequences, so they also reject runtime effects
 such as `await`, `thread`, signal writes, metric writes, event emission, and
 logging.
 
-Live external sources are declared with policy-backed `source` blocks rather
-than function-like generator declarations.
-
-```arcw
-pub source face_camera_frames: Source<VideoFrameHandle, CaptureError> {
-    from capture.camera(@capture.face_camera)
-    backpressure = latest
-    replay = hash_only
-    privacy = transient
-
-    on item frame => yield frame
-}
-```
+Live external inputs are ordinary external-capability operations returning
+`Stream<T, E>`. They are not declarations or roots, and they do not add a
+source-specific grammar role.
 
 Do not use `yield` in a non-generator function, flow, hook, memo function, or
 dialogue line plan. An ordinary `fn` becomes a generator only when its own
@@ -87,19 +76,8 @@ with 'line {
 }
 ```
 
-Invalid:
-
-```arcw
-source camera_frames() -> Source<VideoFrame, CameraError> {
-    loop {
-        let frame = await camera.next_frame()
-        yield frame
-    }
-}
-```
-
-This hides source policy and acquisition behavior. Use a canonical `source`
-declaration with `from`, `backpressure`, `replay`, and `privacy` headers.
+An external capability owns acquisition and host policy; a generator only
+consumes an existing stream or granted port.
 
 ## `break` and `continue`
 

@@ -425,7 +425,8 @@ alice.say(color=rgb("#ff8080"))[
 ## Profile dialogue presentation
 
 The accepted launch or project profile owns the base dialogue presentation. It
-is neither inferred from source order nor selected by a source declaration.
+is neither inferred from source order nor selected by a stream-producing
+callable.
 
 ```toml
 [profiles.mobile.dialogue]
@@ -447,7 +448,7 @@ kind = "inherit_surrounding"
 identity. The inline-failure table is the profile-wide policy for interpolation
 failures not handled by a more local line, preset, or character policy. A
 profile without a View selection uses `std.view.dialogue`; it does not search
-source declarations for a default.
+stream-producing callables for a default.
 
 The selected profile Style is the base of the dialogue cascade:
 

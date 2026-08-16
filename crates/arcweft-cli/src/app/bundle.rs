@@ -4,7 +4,7 @@ use super::project::{
     ProfileOptions, SourceSelection, adapter_manifest_for_selection, resolve_source_selection,
     semantic_context_for_selection, verify_compiled_project,
 };
-use super::runtime::options::{CliRuntimeExecutorTier, CliRuntimeStepMode};
+use super::runtime::options::CliRuntimeStepMode;
 use super::runtime::parse::parse_runtime_binding_arg;
 use super::runtime::profile::report_path;
 use super::runtime::profile::{
@@ -44,15 +44,14 @@ use arcweft_bundle::{
 use arcweft_compiler::view::CompiledViewProduct;
 use arcweft_core::{
     effect::{LineEffectRequest, RuntimeCall},
-    line_task::{LineChildTask, LineTaskGroup, LineTaskNode, LineTaskScope},
+    line_task::{LineTaskGroup, LineTaskNode, ScopeExit},
     plan::{EntryRuntimeId, FlowOp, RuntimeEntryKind, RuntimeEntryTarget, RuntimePlan},
-    value::{RuntimeBinding, RuntimeExpr, RuntimeValue},
+    value::{RuntimeBinding, RuntimeExpr, RuntimeExprKind, RuntimeValue},
 };
 use arcweft_id::{AssetId, AssetVirtualPath, DeclarationIdentityFamily, PublicId};
 use arcweft_lang_sema::project_index::ProjectSemanticIndex;
 use arcweft_launch::LaunchKind;
 use arcweft_project::layout::AuthoredResourceRoots;
-use arcweft_runtime_accelerator::RuntimePureAcceleratorConfig;
 use arcweft_runtime_host::{
     BundleRunnerError, BundleRunnerOptions, INTERNAL_SCHEDULER_ADAPTER_ID, NativeAdapterRegistrar,
     internal_scheduler_manifest, run_bundle_file_with_native_adapters,
@@ -99,8 +98,6 @@ pub(in crate::app) struct RunBundleOptions {
     patch: Option<PathBuf>,
     #[arg(long)]
     entry: Option<String>,
-    #[arg(long, value_enum, default_value_t = CliRuntimeExecutorTier::BytecodeVm)]
-    executor: CliRuntimeExecutorTier,
     #[arg(long, default_value_t = 8)]
     steps: usize,
     #[arg(long, value_enum, default_value_t = CliRuntimeStepMode::Drain)]
@@ -165,7 +162,6 @@ fn bundle_runner_options(options: &RunBundleOptions) -> Result<BundleRunnerOptio
         })?;
     Ok(BundleRunnerOptions {
         entry,
-        executor: options.executor.into(),
         steps: options.steps,
         mode: options.mode.into(),
         max_ops: options.max_ops,
@@ -173,7 +169,6 @@ fn bundle_runner_options(options: &RunBundleOptions) -> Result<BundleRunnerOptio
         engine_resource_types: std::sync::Arc::new(
             arcweft_resource_model::registry::ResourceTypeRegistry::empty(),
         ),
-        pure_config: RuntimePureAcceleratorConfig::default(),
     })
 }
 
@@ -282,7 +277,7 @@ pub(in crate::app) fn compile_bundle_from_profile_runtime_plan(
     }
     let entry_kinds = compiled
         .plan
-        .entries
+        .entries()
         .iter()
         .map(|entry| entry.kind.clone())
         .collect::<Vec<_>>();
@@ -319,14 +314,13 @@ pub(in crate::app) fn compile_bundle_from_profile_runtime_plan(
             required_host_calls,
         ),
         compiled.source_map,
-        compiled.bytecode,
+        compiled.product_awbc,
         compiled.dialogue_content_catalog,
     )
     .map_err(|error| {
         eprintln!("error: failed to reserve the standard dialogue Style source: {error}");
         ExitCode::FAILURE
     })?
-    .with_product_awbc(compiled.product_awbc)
     .with_fx_definitions(fx_definitions)
     .with_adapter_manifests(adapter_manifests)
     .with_virtual_files(virtual_files)
@@ -407,10 +401,15 @@ fn hydrate_default_view_localization(
 
 fn bundle_required_host_calls(plan: &RuntimePlan) -> Vec<String> {
     let mut required_host_calls = plan
-        .flows
+        .flows()
         .iter()
         .flat_map(|flow| flow.ops.iter())
         .flat_map(collect_flow_op_host_calls)
+        .chain(
+            plan.line_task_groups()
+                .iter()
+                .flat_map(collect_line_task_group_host_calls),
+        )
         .collect::<Vec<_>>();
     required_host_calls.sort();
     required_host_calls.dedup();
@@ -439,7 +438,7 @@ fn bundle_manifest(
             entry_flow: selection.entry().and_then(|selected| {
                 compiled
                     .plan
-                    .entries
+                    .entries()
                     .iter()
                     .find(|entry| entry.id.public_label().as_str() == selected)
                     .and_then(|entry| match &entry.target {
@@ -449,11 +448,10 @@ fn bundle_manifest(
                         RuntimeEntryTarget::Routes(_) => None,
                     })
             }),
-            flows: compiled.bytecode_stats.flows,
-            bytecode_instructions: compiled.bytecode_stats.instructions,
-            line_task_groups: compiled.bytecode_stats.line_task_groups,
-            stream_plans: compiled.bytecode_stats.stream_plans,
-            source_plans: compiled.bytecode_stats.source_plans,
+            flows: compiled.product_awbc.flow_executables.len(),
+            bytecode_instructions: compiled.product_awbc.instructions.len(),
+            line_task_groups: compiled.product_awbc.line_task_groups.len(),
+            stream_plans: compiled.product_awbc.stream_plans.len(),
         },
     }
 }
@@ -533,7 +531,7 @@ pub(super) fn run_bundle_command(
         bytecode_instructions: execution.bytecode_instructions,
         adapter_manifests: execution.adapter_manifests,
         phases: execution.phases,
-        executor: RuntimeExecutorTier::from(CliRuntimeExecutorTier::from(execution.executor)),
+        executor: RuntimeExecutorTier::AwbcProduct,
         executor_stats: execution.executor_stats,
         native_io: execution.native_io,
         steps: execution.steps,
@@ -691,9 +689,7 @@ fn bundle_runner_error_exit_code(error: &BundleRunnerError) -> ExitCode {
         | BundleRunnerError::UnsupportedBundleKind { .. }
         | BundleRunnerError::DecodeImageAsset { .. }
         | BundleRunnerError::ImageAssetMetadataMismatch { .. }
-        | BundleRunnerError::DecodeBytecode(_)
         | BundleRunnerError::ProductAwbcRuntime(_)
-        | BundleRunnerError::VerifyBytecode(_)
         | BundleRunnerError::CreateWorkspace(_)
         | BundleRunnerError::CreateSourceDirectory(_)
         | BundleRunnerError::MaterializeSource(_)
@@ -718,10 +714,7 @@ fn collect_flow_op_host_calls(op: &FlowOp) -> Vec<String> {
             target.request.operation.as_str(),
         )],
         FlowOp::HostCall { target, .. } => {
-            vec![host_call_id_for_template(
-                &target.capability,
-                &target.operation,
-            )]
+            vec![target.public_id.clone()]
         }
         FlowOp::LetElse { else_ops, .. } => collect_flow_ops_host_calls(else_ops),
         FlowOp::If {
@@ -756,6 +749,7 @@ fn collect_flow_op_host_calls(op: &FlowOp) -> Vec<String> {
         FlowOp::Scope(ops) | FlowOp::LetScope { ops, .. } => collect_flow_ops_host_calls(ops),
         FlowOp::Bind(_)
         | FlowOp::Let { .. }
+        | FlowOp::AssignNominalField { .. }
         | FlowOp::Dialogue { .. }
         | FlowOp::Choice { .. }
         | FlowOp::Break(_)
@@ -773,6 +767,36 @@ fn collect_flow_op_host_calls(op: &FlowOp) -> Vec<String> {
         | FlowOp::ExitScopeBind { .. }
         | FlowOp::Noop => Vec::new(),
     }
+}
+
+fn collect_line_task_group_host_calls(group: &LineTaskGroup) -> Vec<String> {
+    group
+        .nodes()
+        .iter()
+        .filter_map(|node| match node {
+            LineTaskNode::Action(ops) => Some(ops.as_ref()),
+            LineTaskNode::Sequence(_)
+            | LineTaskNode::Start(_)
+            | LineTaskNode::Parallel { .. }
+            | LineTaskNode::Child { .. } => None,
+        })
+        .flat_map(collect_flow_ops_host_calls)
+        .chain(
+            group
+                .cancel_rules()
+                .iter()
+                .flat_map(|rule| collect_flow_ops_host_calls(rule.action())),
+        )
+        .chain(
+            [
+                ScopeExit::Completed,
+                ScopeExit::Cancelled,
+                ScopeExit::Failed,
+            ]
+            .into_iter()
+            .flat_map(|exit| collect_flow_ops_host_calls(group.cleanup().actions(exit))),
+        )
+        .collect()
 }
 
 fn collect_flow_ops_host_calls<'a>(ops: impl IntoIterator<Item = &'a FlowOp>) -> Vec<String> {
@@ -805,12 +829,12 @@ fn validate_referenced_bundle_image_assets(
 
 fn static_image_asset_refs(plan: &RuntimePlan) -> Vec<String> {
     let mut refs = plan
-        .flows
+        .flows()
         .iter()
         .flat_map(|flow| flow.ops.iter())
         .flat_map(collect_flow_op_static_image_asset_refs)
         .chain(
-            plan.line_task_groups
+            plan.line_task_groups()
                 .iter()
                 .flat_map(collect_line_task_group_static_image_asset_refs),
         )
@@ -866,6 +890,7 @@ fn collect_flow_op_static_image_asset_refs(op: &FlowOp) -> Vec<String> {
         }
         FlowOp::Bind(_)
         | FlowOp::Let { .. }
+        | FlowOp::AssignNominalField { .. }
         | FlowOp::Dialogue { .. }
         | FlowOp::Choice { .. }
         | FlowOp::HostCall { .. }
@@ -905,83 +930,45 @@ fn static_image_asset_ref_for_template(
 }
 
 fn static_image_asset_ref_expr(expr: &RuntimeExpr) -> Option<String> {
-    match expr {
-        RuntimeExpr::EntityRef(id) => Some(id.clone()),
-        RuntimeExpr::Value(RuntimeValue::EntityRef(id) | RuntimeValue::String(id)) => {
+    match expr.kind() {
+        RuntimeExprKind::EntityRef(id) => Some(id.runtime_label()),
+        RuntimeExprKind::Value(RuntimeValue::EntityRef(id) | RuntimeValue::String(id)) => {
             Some(id.clone())
         }
-        RuntimeExpr::Value(_)
-        | RuntimeExpr::Agent(_)
-        | RuntimeExpr::Local(_)
-        | RuntimeExpr::Let { .. }
-        | RuntimeExpr::Tuple(_)
-        | RuntimeExpr::BracketSeq(_)
-        | RuntimeExpr::RepeatSeq { .. }
-        | RuntimeExpr::Range { .. }
-        | RuntimeExpr::Record(_)
-        | RuntimeExpr::NominalRecord(_)
-        | RuntimeExpr::Variant { .. }
-        | RuntimeExpr::Field { .. }
-        | RuntimeExpr::ProjectTuple { .. }
-        | RuntimeExpr::ProjectRecord { .. }
-        | RuntimeExpr::AssignField { .. }
-        | RuntimeExpr::Call { .. }
-        | RuntimeExpr::Function { .. }
-        | RuntimeExpr::Apply { .. }
-        | RuntimeExpr::TraitCall { .. }
-        | RuntimeExpr::PureCall { .. }
-        | RuntimeExpr::SpreadArg(_)
-        | RuntimeExpr::MethodCall { .. }
-        | RuntimeExpr::Map { .. }
-        | RuntimeExpr::Filter { .. }
-        | RuntimeExpr::Sum { .. }
-        | RuntimeExpr::Unary { .. }
-        | RuntimeExpr::Binary { .. }
-        | RuntimeExpr::If { .. }
-        | RuntimeExpr::IfLet { .. }
-        | RuntimeExpr::Match { .. } => None,
+        _ => None,
     }
 }
 
 fn collect_line_task_group_static_image_asset_refs(group: &LineTaskGroup) -> Vec<String> {
-    collect_line_task_scope_static_image_asset_refs(&group.root)
-}
-
-fn collect_line_task_scope_static_image_asset_refs(scope: &LineTaskScope) -> Vec<String> {
-    collect_line_task_node_static_image_asset_refs(&scope.node)
-        .into_iter()
-        .chain(collect_line_effects_static_image_asset_refs(
-            scope.defer_stack.iter().flatten(),
-        ))
-        .chain(collect_line_effects_static_image_asset_refs(
-            scope.completed_defer_stack.iter().flatten(),
-        ))
-        .chain(collect_line_effects_static_image_asset_refs(
-            scope.cancelled_defer_stack.iter().flatten(),
-        ))
-        .chain(collect_line_effects_static_image_asset_refs(
-            scope.failed_defer_stack.iter().flatten(),
-        ))
+    group
+        .nodes()
+        .iter()
+        .filter_map(|node| match node {
+            LineTaskNode::Action(ops) => Some(ops.as_ref()),
+            LineTaskNode::Sequence(_)
+            | LineTaskNode::Start(_)
+            | LineTaskNode::Parallel { .. }
+            | LineTaskNode::Child { .. } => None,
+        })
+        .flat_map(collect_flow_ops_static_image_asset_refs)
+        .chain(
+            group
+                .cancel_rules()
+                .iter()
+                .flat_map(|rule| collect_flow_ops_static_image_asset_refs(rule.action())),
+        )
+        .chain(
+            [
+                ScopeExit::Completed,
+                ScopeExit::Cancelled,
+                ScopeExit::Failed,
+            ]
+            .into_iter()
+            .flat_map(|exit| {
+                collect_flow_ops_static_image_asset_refs(group.cleanup().actions(exit))
+            }),
+        )
         .collect()
-}
-
-fn collect_line_task_node_static_image_asset_refs(node: &LineTaskNode) -> Vec<String> {
-    match node {
-        LineTaskNode::Seq(nodes) | LineTaskNode::Start(nodes) => nodes
-            .iter()
-            .flat_map(collect_line_task_node_static_image_asset_refs)
-            .collect(),
-        LineTaskNode::Parallel { children, .. } => children
-            .iter()
-            .flat_map(collect_line_task_node_static_image_asset_refs)
-            .collect(),
-        LineTaskNode::Child(child) => collect_line_child_task_static_image_asset_refs(child),
-        LineTaskNode::Effect(effect) => collect_line_effect_static_image_asset_refs(effect),
-    }
-}
-
-fn collect_line_child_task_static_image_asset_refs(child: &LineChildTask) -> Vec<String> {
-    collect_line_task_scope_static_image_asset_refs(&child.scope)
 }
 
 fn collect_line_effects_static_image_asset_refs<'a>(

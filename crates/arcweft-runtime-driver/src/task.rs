@@ -30,7 +30,8 @@ impl RuntimeTaskStatus {
     pub fn from_event_kind(kind: &TaskEventKind) -> Self {
         match kind {
             TaskEventKind::Ready(_) => Self::Completed,
-            TaskEventKind::Err(_) => Self::Failed,
+            TaskEventKind::Failed(_) => Self::Failed,
+            TaskEventKind::Error(_) => Self::Completed,
             TaskEventKind::Cancelled => Self::Cancelled,
             TaskEventKind::Progress(_) => Self::Running,
         }
@@ -238,8 +239,12 @@ impl HostTaskDispatch {
         self.into_event(TaskEventKind::Ready(value))
     }
 
+    pub fn error(self, value: RuntimePayload) -> TaskEvent {
+        self.into_event(TaskEventKind::Error(value))
+    }
+
     pub fn failed(self, message: impl Into<String>) -> TaskEvent {
-        self.into_event(TaskEventKind::Err(message.into()))
+        self.into_event(TaskEventKind::Failed(message.into()))
     }
 
     pub fn cancelled(self) -> TaskEvent {

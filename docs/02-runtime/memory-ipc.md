@@ -69,7 +69,7 @@ pub enum AccessMode {
 ```arcw
 {
     let telemetry: &'lease [TruckTelemetry] = &lease.telemetry
-    let speed = telemetry.last()?.speed
+    let speed = (try telemetry.last()).speed
     drop(telemetry)
 }
 ```

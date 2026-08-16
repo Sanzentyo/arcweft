@@ -2,17 +2,16 @@ use std::{collections::BTreeMap, sync::Arc};
 
 use arcweft_core::entry::{RuntimeNominalTypeId, TypeLayoutHash};
 use arcweft_core::pattern::{
-    RuntimeCheckedType, RuntimeOpaqueTypeAdmission, RuntimeOpaqueTypeOwner,
-    RuntimeOpaqueTypeProducerId,
+    RuntimeCheckedType, RuntimeOpaqueTypeAdmission, RuntimeOpaqueTypeProducerId,
 };
 use arcweft_core::plan::{
     FlowRuntimeId, RuntimeAgentOperationalType, RuntimeLineId, RuntimeOperationalType,
-    RuntimePlanTypeKind,
+    RuntimePlanTypeProjection,
 };
 use arcweft_core::value::{RuntimeIntrinsic, RuntimeValue};
 use arcweft_lang_hir::database::HirDatabase;
 use arcweft_lang_hir::dialogue_application::HirPostfixBracketCandidates;
-use arcweft_lang_hir::expr::HirExprKind;
+use arcweft_lang_hir::expr::{HirExprKind, HirSelectedMember};
 use arcweft_lang_hir::leaf::HirLiteral;
 use arcweft_lang_hir::lowering::{HirModuleKey, LoweringRequest};
 use arcweft_lang_hir::project::{
@@ -20,20 +19,26 @@ use arcweft_lang_hir::project::{
     HirRuntimeExpressionTypeDisposition,
 };
 use arcweft_lang_hir::proof_return::HirProofReturnSemanticFactSet;
-use arcweft_lang_hir::symbol::{CallablePackageId, ProjectSymbolRevision, ProjectSymbolWorldId};
+use arcweft_lang_hir::stmt::HirStmtKind;
+use arcweft_lang_hir::symbol::{
+    CallablePackageId, ProjectExternalDeclarations, ProjectSymbolRevision, ProjectSymbolTable,
+    ProjectSymbolWorldId,
+};
 use arcweft_lang_syntax::ast::module_path::CanonicalModulePath;
 use arcweft_lang_syntax::incremental::SyntaxDatabase;
 use arcweft_source::identity::SourceSnapshotId;
 use arcweft_source::{SourceDocument, SourceDocumentId, SourceName};
 
 use super::{
-    RuntimeAgentTypeShape, RuntimeCallResultShape, RuntimeCheckedTypeProjectionError,
-    RuntimeNormalizedVariantCase, RuntimePlanSemanticFactInput, RuntimePlanSemanticFacts,
-    RuntimeReductionConstructor, RuntimeRegisteredValueId, RuntimeResolvedCall,
-    RuntimeResolvedCallArgument, RuntimeResolvedCallTarget, RuntimeResolvedNominalError,
-    RuntimeResolvedValue, RuntimeResolvedVariant, RuntimeResolvedVariantError,
-    RuntimeSemanticFactFamily, RuntimeSemanticFactsError, RuntimeSemanticTypeId,
-    RuntimeSequenceKind, RuntimeTypeProjectionStep, RuntimeTypeShape, RuntimeUnsupportedTypeShape,
+    RuntimeAgentTypeShape, RuntimeAssignmentFact, RuntimeCallResultShape,
+    RuntimeCheckedTypeProjectionError, RuntimeNormalizedVariantCase, RuntimePlanSemanticFactInput,
+    RuntimePlanSemanticFacts, RuntimeReductionConstructor, RuntimeRegisteredValueId,
+    RuntimeResolvedCall, RuntimeResolvedCallArgument, RuntimeResolvedCallTarget,
+    RuntimeResolvedHostArgumentPassing, RuntimeResolvedHostCall, RuntimeResolvedNominal,
+    RuntimeResolvedSelect, RuntimeResolvedValue, RuntimeResolvedVariant,
+    RuntimeResolvedVariantError, RuntimeSemanticFactFamily, RuntimeSemanticFactsError,
+    RuntimeSemanticTypeId, RuntimeSequenceKind, RuntimeTypeProjectionStep, RuntimeTypeShape,
+    RuntimeUnsupportedTypeShape,
 };
 
 fn project_fixture(label: &str, source: &str) -> HirProject {
@@ -188,9 +193,7 @@ fn complete_type_input(project: &HirProject) -> RuntimePlanSemanticFactInput {
         .runtime_semantic_owner_inventory()
         .expect("runtime semantic owner inventory");
     for owner in runtime_owners.locals() {
-        input
-            .push_local_declaration(owner, unit_type())
-            .expect("fixture local identity");
+        input.push_local_declaration(owner, unit_type());
     }
     for owner in runtime_owners.patterns() {
         input.push_pattern_type(owner, unit_type());
@@ -202,6 +205,133 @@ fn complete_type_input(project: &HirProject) -> RuntimePlanSemanticFactInput {
         input.push_expression_type(owner, unit_type());
     }
     input
+}
+
+fn assignment_fact_fixture(
+    label: &str,
+) -> (
+    HirProject,
+    RuntimePlanSemanticFactInput,
+    arcweft_lang_hir::identity::StmtId,
+    arcweft_lang_hir::identity::StmtId,
+    RuntimeAssignmentFact,
+) {
+    let project = project_fixture(
+        label,
+        concat!(
+            "struct Point { x: i64, active: bool }\n",
+            "fn update(point: Point) -> bool {\n",
+            "    point.active = true\n",
+            "    return point.active\n",
+            "}\n",
+        ),
+    );
+    let executable = project.executable_view().expect("assignment fixture");
+    let (_, module) = executable.modules().next().expect("root assignment module");
+    let (statement, target, value) = module
+        .statements()
+        .find_map(|(owner, statement)| match statement.kind() {
+            HirStmtKind::Assign { target, value } => Some((owner, *target, *value)),
+            _ => None,
+        })
+        .expect("assignment fixture statement");
+    let extra_statement = module
+        .statements()
+        .find_map(|(owner, statement)| {
+            matches!(statement.kind(), HirStmtKind::Return { .. }).then_some(owner)
+        })
+        .expect("assignment fixture return statement");
+    let HirExprKind::Select(select) = module
+        .resolve_expr(target)
+        .expect("assignment target expression")
+        .kind()
+    else {
+        panic!("assignment target is a select")
+    };
+    let base = select.target();
+    let HirSelectedMember::Name(field_name) = select.member() else {
+        panic!("assignment field is resolved")
+    };
+    let runtime_owners = executable
+        .runtime_semantic_owner_inventory()
+        .expect("assignment runtime owners");
+    let local = runtime_owners
+        .locals()
+        .next()
+        .expect("assignment base local");
+
+    let resolved = assignment_nominal(&project, module, label);
+    let identity = resolved.identity();
+    let record_type = super::RuntimeNormalizedType::new(
+        identity,
+        RuntimeTypeShape::ProjectNominal {
+            nominal: resolved.clone(),
+            arguments: Box::new([]),
+        },
+    );
+    let field_type = normalized_type(0x31, RuntimeTypeShape::Bool);
+    let fact = RuntimeAssignmentFact::new(
+        local,
+        resolved.clone(),
+        1,
+        field_type.clone(),
+        field_type.clone(),
+    );
+    let mut input = complete_type_input(&project);
+    input
+        .local_declarations
+        .iter_mut()
+        .find(|(owner, _)| *owner == local)
+        .expect("assignment local type")
+        .1 = record_type.clone();
+    for (owner, ty) in &mut input.expression_types {
+        if *owner == base {
+            *ty = record_type.clone();
+        } else if *owner == target || *owner == value {
+            *ty = field_type.clone();
+        }
+    }
+    input.push_value(base, RuntimeResolvedValue::Local(local));
+    input.push_select(
+        target,
+        RuntimeResolvedSelect::Field {
+            nominal: Some(resolved),
+            ordinal: Some(1),
+            name: field_name.clone(),
+        },
+    );
+    (project, input, statement, extra_statement, fact)
+}
+
+fn assignment_nominal(
+    project: &HirProject,
+    module: &arcweft_lang_hir::module::HirModule,
+    label: &str,
+) -> RuntimeResolvedNominal {
+    let document = Arc::clone(module.provenance().document());
+    let world = ProjectSymbolWorldId::try_new(
+        project.package().clone(),
+        document.identity().id().clone(),
+        format!("{label}-assignment-facts"),
+    )
+    .expect("assignment symbol world");
+    let revision = ProjectSymbolRevision::try_for_documents([document.identity()])
+        .expect("assignment symbol revision");
+    let externals = ProjectExternalDeclarations::try_new(world, revision, Vec::new())
+        .expect("empty assignment externals");
+    let symbols = ProjectSymbolTable::link(project.view(), &externals)
+        .expect("assignment symbols link")
+        .into_table();
+    let nominal = symbols
+        .nominal_symbols()
+        .find(|nominal| nominal.id().name().as_str() == "Point")
+        .expect("Point nominal");
+    RuntimeResolvedNominal::new(
+        nominal.id().clone(),
+        nominal.owner(),
+        RuntimeSemanticTypeId::from_bytes([0x91; 32]),
+        TypeLayoutHash::from_bytes([0x92; 32]),
+    )
 }
 
 fn local_owners(project: &HirProject) -> Vec<arcweft_lang_hir::identity::LocalId> {
@@ -232,25 +362,75 @@ fn local_declarations_use_one_complete_contiguous_canonical_projection() {
     )
     .expect("complete canonical local projection");
 
-    assert_eq!(
-        usize::try_from(facts.local_declaration_table().len()).ok(),
-        Some(owners.len())
-    );
-    for (position, owner) in owners.into_iter().enumerate() {
+    let locals = facts.local_declarations().collect::<Vec<_>>();
+    assert_eq!(locals.len(), owners.len());
+    for (owner, (actual, ty)) in owners.into_iter().zip(locals) {
         assert_eq!(
-            facts
-                .local_declaration(owner)
-                .expect("every runtime-domain HIR local has one plan-local ID")
-                .get()
-                .get(),
-            u32::try_from(position).expect("bounded fixture ordinal") + 1
+            actual, owner,
+            "the canonical final-HIR local remains the sole semantic-fact key"
         );
-        assert_eq!(
-            facts.local_type(owner),
-            Some(&unit_type()),
-            "the local identity and accepted type are published by one row"
-        );
+        assert_eq!(ty, &unit_type());
+        assert_eq!(facts.local_type(owner), Some(&unit_type()));
     }
+}
+
+#[test]
+fn assignment_facts_are_complete_unique_and_bound_to_assignment_statements() {
+    let (project, mut input, statement, _, fact) =
+        assignment_fact_fixture("assignment-fact-accepted");
+    input.push_assignment(statement, fact.clone());
+    let facts = RuntimePlanSemanticFacts::try_new(
+        project.executable_view().expect("assignment fixture"),
+        input,
+    )
+    .expect("complete assignment fact");
+    let accepted = facts
+        .assignment(statement)
+        .expect("assignment accessor returns the sole fact");
+    assert_eq!(accepted, &fact);
+    assert_eq!(accepted.field_ordinal(), 1);
+    assert_eq!(accepted.field_type(), accepted.value_type());
+
+    let (project, input, statement, _, _) = assignment_fact_fixture("assignment-fact-missing");
+    assert_eq!(
+        RuntimePlanSemanticFacts::try_new(
+            project.executable_view().expect("assignment fixture"),
+            input,
+        )
+        .expect_err("every live assignment requires one fact"),
+        RuntimeSemanticFactsError::MissingAssignmentFact { statement }
+    );
+
+    let (project, mut input, statement, _, fact) =
+        assignment_fact_fixture("assignment-fact-duplicate");
+    input.push_assignment(statement, fact.clone());
+    input.push_assignment(statement, fact);
+    assert_eq!(
+        RuntimePlanSemanticFacts::try_new(
+            project.executable_view().expect("assignment fixture"),
+            input,
+        )
+        .expect_err("one assignment cannot own duplicate facts"),
+        RuntimeSemanticFactsError::DuplicateFact {
+            family: RuntimeSemanticFactFamily::Assignment,
+        }
+    );
+
+    let (project, mut input, statement, extra_statement, fact) =
+        assignment_fact_fixture("assignment-fact-extra");
+    input.push_assignment(statement, fact.clone());
+    input.push_assignment(extra_statement, fact);
+    assert_eq!(
+        RuntimePlanSemanticFacts::try_new(
+            project.executable_view().expect("assignment fixture"),
+            input,
+        )
+        .expect_err("a non-assignment statement cannot own an assignment fact"),
+        RuntimeSemanticFactsError::WrongStatementFamily {
+            statement: extra_statement,
+            expected: RuntimeSemanticFactFamily::Assignment,
+        }
+    );
 }
 
 #[test]
@@ -294,20 +474,12 @@ fn presentation_owned_facts_are_inactive_and_filtered_local_ids_remain_contiguou
 
     let facts = RuntimePlanSemanticFacts::try_new(executable, complete_type_input(&project))
         .expect("filtered runtime-domain fact set");
-    assert_eq!(facts.local_declaration(presentation_local), None);
-    assert_eq!(
-        usize::try_from(facts.local_declaration_table().len()).ok(),
-        Some(retained_locals.len())
-    );
-    for (position, owner) in retained_locals.iter().copied().enumerate() {
-        assert_eq!(
-            facts
-                .local_declaration(owner)
-                .expect("retained local identity")
-                .get()
-                .get(),
-            u32::try_from(position).expect("bounded fixture ordinal") + 1
-        );
+    assert_eq!(facts.local_type(presentation_local), None);
+    let locals = facts.local_declarations().collect::<Vec<_>>();
+    assert_eq!(locals.len(), retained_locals.len());
+    for (owner, (actual, ty)) in retained_locals.iter().copied().zip(locals) {
+        assert_eq!(actual, owner);
+        assert_eq!(ty, &unit_type());
     }
 
     let presentation_pattern = module
@@ -346,9 +518,7 @@ fn presentation_owned_facts_are_inactive_and_filtered_local_ids_remain_contiguou
         .expect("retained local path");
 
     let mut input = complete_type_input(&project);
-    input
-        .push_local_declaration(presentation_local, unit_type())
-        .expect("bounded inactive local identity");
+    input.push_local_declaration(presentation_local, unit_type());
     assert_eq!(
         RuntimePlanSemanticFacts::try_new(executable, input)
             .expect_err("a presentation local cannot extend the runtime domain"),
@@ -459,9 +629,7 @@ fn missing_extra_duplicate_and_reordered_local_projections_are_rejected() {
     let foreign = project_fixture("extra-local-declaration", "fn foreign(value: bool) {}\n");
     let foreign_owner = local_owners(&foreign)[0];
     let mut extra = complete_type_input(&project);
-    extra
-        .push_local_declaration(foreign_owner, unit_type())
-        .expect("bounded extra local identity");
+    extra.push_local_declaration(foreign_owner, unit_type());
     assert_eq!(
         RuntimePlanSemanticFacts::try_new(executable, extra)
             .expect_err("a foreign local cannot extend the plan domain"),
@@ -471,9 +639,7 @@ fn missing_extra_duplicate_and_reordered_local_projections_are_rejected() {
     );
 
     let mut duplicate = complete_type_input(&project);
-    duplicate
-        .push_local_declaration(owners[0], unit_type())
-        .expect("bounded duplicate local identity");
+    duplicate.push_local_declaration(owners[0], unit_type());
     assert_eq!(
         RuntimePlanSemanticFacts::try_new(executable, duplicate)
             .expect_err("one HIR local cannot receive two plan identities"),
@@ -702,8 +868,14 @@ fn runtime_type_completeness_uses_the_selected_call_carrier_disposition() {
         })
         .expect("fixture call expression");
     let call_fact = RuntimeResolvedCall::new(
-        RuntimeResolvedCallTarget::Agent(crate::agent::RuntimeAgentIntrinsic::Observe),
-        [RuntimeResolvedCallArgument::Authored { ordinal: 0 }],
+        RuntimeResolvedCallTarget::Host(
+            RuntimeResolvedHostCall::agent(crate::agent::RuntimeAgentIntrinsic::Observe)
+                .expect("effectful Agent intrinsic"),
+        ),
+        [RuntimeResolvedCallArgument::Authored {
+            ordinal: 0,
+            passing: RuntimeResolvedHostArgumentPassing::Positional,
+        }],
         RuntimeCallResultShape::Value,
     );
     let runtime_owners = executable
@@ -723,9 +895,7 @@ fn runtime_type_completeness_uses_the_selected_call_carrier_disposition() {
         .expect("postfix-free call-carrier inventory");
     let mut input = RuntimePlanSemanticFactInput::new();
     for owner in runtime_owners.locals() {
-        input
-            .push_local_declaration(owner, unit_type())
-            .expect("fixture local identity");
+        input.push_local_declaration(owner, unit_type());
     }
     for owner in runtime_owners.patterns() {
         input.push_pattern_type(owner, unit_type());
@@ -747,20 +917,26 @@ fn agent_call_disposition_separates_results_from_host_carriers() {
     for intrinsic in runtime_agent_intrinsics() {
         let is_host = agent_intrinsic_is_host(intrinsic);
         assert_eq!(intrinsic.host_operation().is_some(), is_host);
-        let call = RuntimeResolvedCall::new(
-            RuntimeResolvedCallTarget::Agent(intrinsic),
-            [],
-            RuntimeCallResultShape::Value,
-        );
-        let expected = if is_host {
-            HirRuntimeExpressionTypeDisposition::NonValueCallCarrier {
-                callee: HirRuntimeCallCalleeDisposition::Static,
-            }
+        let (target, expected) = if is_host {
+            (
+                RuntimeResolvedCallTarget::Host(
+                    RuntimeResolvedHostCall::agent(intrinsic)
+                        .expect("effectful Agent intrinsic has a typed host projection"),
+                ),
+                HirRuntimeExpressionTypeDisposition::NonValueCallCarrier {
+                    callee: HirRuntimeCallCalleeDisposition::Static,
+                },
+            )
         } else {
-            HirRuntimeExpressionTypeDisposition::RetainedCallResult {
-                callee: HirRuntimeCallCalleeDisposition::Static,
-            }
+            assert!(RuntimeResolvedHostCall::agent(intrinsic).is_none());
+            (
+                RuntimeResolvedCallTarget::Agent(intrinsic),
+                HirRuntimeExpressionTypeDisposition::RetainedCallResult {
+                    callee: HirRuntimeCallCalleeDisposition::Static,
+                },
+            )
         };
+        let call = RuntimeResolvedCall::new(target, [], RuntimeCallResultShape::Value);
         assert_eq!(call.expression_type_disposition(), expected);
     }
 
@@ -770,7 +946,10 @@ fn agent_call_disposition_separates_results_from_host_carriers() {
         ),
         [
             RuntimeResolvedCallArgument::Receiver,
-            RuntimeResolvedCallArgument::Authored { ordinal: 0 },
+            RuntimeResolvedCallArgument::Authored {
+                ordinal: 0,
+                passing: RuntimeResolvedHostArgumentPassing::Positional,
+            },
         ],
         RuntimeCallResultShape::Value,
     );
@@ -883,7 +1062,10 @@ fn agent_call_arguments_cannot_forge_runtime_receiver_disposition() {
             RuntimeResolvedCallTarget::Agent(crate::agent::RuntimeAgentIntrinsic::Observation),
             [
                 RuntimeResolvedCallArgument::Receiver,
-                RuntimeResolvedCallArgument::Authored { ordinal: 0 },
+                RuntimeResolvedCallArgument::Authored {
+                    ordinal: 0,
+                    passing: RuntimeResolvedHostArgumentPassing::Positional,
+                },
             ],
             RuntimeCallResultShape::Value,
         ),
@@ -891,7 +1073,10 @@ fn agent_call_arguments_cannot_forge_runtime_receiver_disposition() {
             RuntimeResolvedCallTarget::AgentProbeComparison(
                 arcweft_core::value::RuntimeAgentCompareOp::Eq,
             ),
-            [RuntimeResolvedCallArgument::Authored { ordinal: 0 }],
+            [RuntimeResolvedCallArgument::Authored {
+                ordinal: 0,
+                passing: RuntimeResolvedHostArgumentPassing::Positional,
+            }],
             RuntimeCallResultShape::Value,
         ),
         RuntimeResolvedCall::new(
@@ -900,7 +1085,10 @@ fn agent_call_arguments_cannot_forge_runtime_receiver_disposition() {
             ),
             [
                 RuntimeResolvedCallArgument::Receiver,
-                RuntimeResolvedCallArgument::Authored { ordinal: 0 },
+                RuntimeResolvedCallArgument::Authored {
+                    ordinal: 0,
+                    passing: RuntimeResolvedHostArgumentPassing::Positional,
+                },
             ],
             RuntimeCallResultShape::PartialFunction,
         ),
@@ -923,9 +1111,7 @@ fn agent_call_arguments_cannot_forge_runtime_receiver_disposition() {
             .expect("runtime semantic owner inventory");
         let mut input = RuntimePlanSemanticFactInput::new();
         for local in runtime_owners.locals() {
-            input
-                .push_local_declaration(local, unit_type())
-                .expect("fixture local identity");
+            input.push_local_declaration(local, unit_type());
         }
         for pattern in runtime_owners.patterns() {
             input.push_pattern_type(pattern, unit_type());
@@ -981,9 +1167,7 @@ fn missing_pattern_type_is_rejected_before_publication() {
         .runtime_semantic_owner_inventory()
         .expect("runtime semantic owner inventory");
     for owner in runtime_owners.locals() {
-        input
-            .push_local_declaration(owner, unit_type())
-            .expect("fixture local identity");
+        input.push_local_declaration(owner, unit_type());
     }
     for owner in runtime_owners
         .selected_expression_type_owners(|_| None, |_| HirRuntimeExpressionTypeDisposition::Retain)
@@ -1086,14 +1270,6 @@ fn every_direct_operational_shape_selects_its_closed_plan_family() {
             RuntimeOperationalType::Stream,
         ),
         (
-            RuntimeTypeShape::Source {
-                item: boxed_unit_type(),
-                error: boxed_unit_type(),
-            },
-            RuntimeUnsupportedTypeShape::Source,
-            RuntimeOperationalType::Source,
-        ),
-        (
             RuntimeTypeShape::ThreadHandle(boxed_unit_type()),
             RuntimeUnsupportedTypeShape::ThreadHandle,
             RuntimeOperationalType::ThreadHandle,
@@ -1131,8 +1307,10 @@ fn every_direct_operational_shape_selects_its_closed_plan_family() {
             })
         );
         assert_eq!(
-            normalized.runtime_plan_type_kind(),
-            Ok(RuntimePlanTypeKind::Operational(operational))
+            normalized
+                .runtime_plan_type_seed()
+                .map(|seed| seed.projection().operational_type()),
+            Ok(Some(operational))
         );
     }
 }
@@ -1283,10 +1461,10 @@ fn every_agent_shape_selects_its_closed_operational_family() {
             })
         );
         assert_eq!(
-            normalized.runtime_plan_type_kind(),
-            Ok(RuntimePlanTypeKind::Operational(
-                RuntimeOperationalType::Agent(operational,)
-            ))
+            normalized
+                .runtime_plan_type_seed()
+                .map(|seed| seed.projection().operational_type()),
+            Ok(Some(RuntimeOperationalType::Agent(operational)))
         );
     }
 }
@@ -1347,8 +1525,10 @@ fn nested_operational_descendants_select_their_outer_composite_family() {
             })
         );
         assert_eq!(
-            normalized.runtime_plan_type_kind(),
-            Ok(RuntimePlanTypeKind::Operational(operational))
+            normalized
+                .runtime_plan_type_seed()
+                .map(|seed| seed.projection().operational_type()),
+            Ok(Some(operational))
         );
     }
 }
@@ -1373,15 +1553,13 @@ fn complete_checked_composites_retain_their_exact_checked_predicate() {
     );
 
     assert_eq!(
-        normalized.runtime_plan_type_kind(),
-        Ok(RuntimePlanTypeKind::Checked(RuntimeCheckedType::Result {
-            ok: Box::new(RuntimeCheckedType::Option(Box::new(
-                RuntimeCheckedType::Unit
-            ))),
-            error: Box::new(RuntimeCheckedType::Sequence(Box::new(
-                RuntimeCheckedType::Bool
-            ))),
-        }))
+        normalized
+            .runtime_plan_type_seed()
+            .map(|seed| seed.projection().clone()),
+        Ok(RuntimePlanTypeProjection::Result {
+            value: RuntimeSemanticTypeId::from_bytes([0x91; 32]),
+            error: RuntimeSemanticTypeId::from_bytes([0x92; 32]),
+        })
     );
 }
 
@@ -1395,54 +1573,19 @@ fn opaque_and_nominal_checked_results_remain_atomic_checked_types() {
         RuntimeTypeShape::Opaque {
             producer: producer.clone(),
             admission: RuntimeOpaqueTypeAdmission::ExactIdentity,
+            arguments: Box::new([]),
         },
     );
     assert_eq!(
-        opaque.runtime_plan_type_kind(),
-        Ok(RuntimePlanTypeKind::Checked(RuntimeCheckedType::Opaque {
-            owner: RuntimeOpaqueTypeOwner::exact(producer, opaque_identity),
-        }))
+        opaque
+            .runtime_plan_type_seed()
+            .map(|seed| seed.projection().clone()),
+        Ok(RuntimePlanTypeProjection::Opaque {
+            producer,
+            admission: RuntimeOpaqueTypeAdmission::ExactIdentity,
+            arguments: Box::new([]),
+        })
     );
-
-    let nominal = RuntimeCheckedType::Nominal {
-        nominal: RuntimeNominalTypeId::try_new("fixture.runtime-plan.AtomicNominal")
-            .expect("valid fixture nominal"),
-        semantic_identity: RuntimeSemanticTypeId::from_bytes([0xa1; 32]),
-        layout: TypeLayoutHash::from_bytes([0xa2; 32]),
-    };
-    // Project nominal declaration IDs are intentionally issued outside this
-    // crate. Exercise the exact successful projection result here without
-    // adding a forgeable nominal constructor solely for a unit test.
-    assert_eq!(
-        unit_type().classify_runtime_plan_type_projection(Ok(nominal.clone())),
-        Ok(RuntimePlanTypeKind::Checked(nominal))
-    );
-}
-
-#[test]
-fn non_unsupported_projection_errors_are_returned_unchanged() {
-    let identity = RuntimeSemanticTypeId::from_bytes([0xb0; 32]);
-    let errors = [
-        RuntimeCheckedTypeProjectionError::MissingOpaqueProducerEvidence {
-            semantic_identity: identity,
-            path: super::RuntimeTypeProjectionPath::root(),
-            type_label: "fixture.missing-opaque".to_owned(),
-        },
-        RuntimeCheckedTypeProjectionError::InvalidProjectNominal {
-            semantic_identity: identity,
-            path: super::RuntimeTypeProjectionPath::root(),
-            reason: RuntimeResolvedNominalError::InvalidIdentity(
-                RuntimeNominalTypeId::try_new("").expect_err("empty nominal is invalid"),
-            ),
-        },
-    ];
-
-    for error in errors {
-        assert_eq!(
-            unit_type().classify_runtime_plan_type_projection(Err(error.clone())),
-            Err(error)
-        );
-    }
 }
 
 #[test]
@@ -1467,9 +1610,7 @@ fn nested_operational_expression_type_is_retained_without_reconstruction() {
         .runtime_semantic_owner_inventory()
         .expect("runtime semantic owner inventory");
     for local in runtime_owners.locals() {
-        input
-            .push_local_declaration(local, nested.clone())
-            .expect("fixture local identity");
+        input.push_local_declaration(local, nested.clone());
     }
     for pattern in runtime_owners.patterns() {
         input.push_pattern_type(pattern, nested.clone());
@@ -1565,9 +1706,7 @@ fn postfix_type_completeness_keeps_only_the_selected_candidate_expression_tree()
     let complete_selected_input = || {
         let mut input = RuntimePlanSemanticFactInput::new();
         for owner in runtime_owners.locals() {
-            input
-                .push_local_declaration(owner, unit_type())
-                .expect("fixture local identity");
+            input.push_local_declaration(owner, unit_type());
         }
         for owner in &accepted {
             input.push_expression_type(*owner, unit_type());
@@ -1631,7 +1770,10 @@ fn reduction_constructor_fact_requires_one_authored_value_argument() {
     let owner = call_expression(&project);
     let valid = RuntimeResolvedCall::new(
         RuntimeResolvedCallTarget::Reduction(RuntimeReductionConstructor::Unchanged),
-        [RuntimeResolvedCallArgument::Authored { ordinal: 0 }],
+        [RuntimeResolvedCallArgument::Authored {
+            ordinal: 0,
+            passing: RuntimeResolvedHostArgumentPassing::Positional,
+        }],
         RuntimeCallResultShape::Value,
     );
     let mut input = complete_type_input(&project);
@@ -1651,7 +1793,10 @@ fn reduction_constructor_fact_requires_one_authored_value_argument() {
         ),
         RuntimeResolvedCall::new(
             RuntimeResolvedCallTarget::Reduction(RuntimeReductionConstructor::Unchanged),
-            [RuntimeResolvedCallArgument::Authored { ordinal: 0 }],
+            [RuntimeResolvedCallArgument::Authored {
+                ordinal: 0,
+                passing: RuntimeResolvedHostArgumentPassing::Positional,
+            }],
             RuntimeCallResultShape::PartialFunction,
         ),
     ] {
@@ -1677,6 +1822,7 @@ fn opaque_composite_projection_preserves_complete_owner_and_first_error_path() {
         RuntimeTypeShape::Opaque {
             producer: producer.clone(),
             admission: RuntimeOpaqueTypeAdmission::ExactIdentity,
+            arguments: Box::new([]),
         },
     );
     let closed = super::RuntimeNormalizedType::new(

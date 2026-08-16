@@ -7,13 +7,13 @@ use super::AwbcCodecError;
 use super::wire::{Reader, Wire, Writer, wire_enum};
 use crate::awbc::schema::{
     AwbcBinaryOp, AwbcBindMode, AwbcBlock, AwbcBlockId, AwbcChoiceId, AwbcConstantId,
-    AwbcContentUnitId, AwbcEffectPlanId, AwbcFrameLayoutId, AwbcFunction, AwbcFunctionFlags,
-    AwbcFunctionId, AwbcFunctionKind, AwbcHostCallId, AwbcInstruction, AwbcIntrinsicId,
-    AwbcLineTaskGroupId, AwbcMatchArm, AwbcOpcode, AwbcPattern, AwbcPatternId, AwbcPatternRest,
-    AwbcPureHelperId, AwbcRecordPatternField, AwbcRegisterId, AwbcResumePoint, AwbcResumePointId,
-    AwbcSafePointKind, AwbcScopeId, AwbcSignatureId, AwbcSourceMapId, AwbcSourcePlanId,
-    AwbcStreamPlanId, AwbcStringId, AwbcTableRange, AwbcTaskPlanId, AwbcTerminator,
-    AwbcTraitMethodId, AwbcTrapCode, AwbcTypeId, AwbcUnaryOp,
+    AwbcContentUnitId, AwbcDialogueValueBinding, AwbcDialogueValueRole, AwbcEffectPlanId,
+    AwbcFrameLayoutId, AwbcFunction, AwbcFunctionFlags, AwbcFunctionId, AwbcFunctionKind,
+    AwbcHostCallId, AwbcInstruction, AwbcIntrinsicId, AwbcMatchArm, AwbcOpcode, AwbcPattern,
+    AwbcPatternId, AwbcPatternRest, AwbcPureHelperId, AwbcRecordPatternField, AwbcRegisterId,
+    AwbcResumePoint, AwbcResumePointId, AwbcSafePointKind, AwbcScopeId, AwbcSignatureId,
+    AwbcSourceMapId, AwbcStreamPlanId, AwbcStringId, AwbcTableRange, AwbcTaskPlanId,
+    AwbcTerminator, AwbcTraitMethodId, AwbcTrapCode, AwbcTypeId, AwbcUnaryOp,
 };
 use crate::value::RuntimeAgentConstructor;
 
@@ -46,11 +46,42 @@ wire_enum!(AwbcFunctionKind, "function kind", {
     1 => AwbcFunctionKind::PureHelper,
     2 => AwbcFunctionKind::TraitMethod,
     3 => AwbcFunctionKind::StreamTransform,
-    4 => AwbcFunctionKind::SourceOpen,
-    5 => AwbcFunctionKind::SourceHandler,
     6 => AwbcFunctionKind::LineTask,
     7 => AwbcFunctionKind::Synthetic,
 });
+
+wire_enum!(AwbcDialogueValueRole, "dialogue value role", {
+    0 => AwbcDialogueValueRole::Interpolation,
+    1 => AwbcDialogueValueRole::Condition,
+});
+
+impl Wire for AwbcDialogueValueBinding {
+    fn write_wire(&self, writer: &mut Writer) -> Result<(), AwbcCodecError> {
+        self.slot.get().get().write_wire(writer)?;
+        self.role.write_wire(writer)?;
+        self.value.write_wire(writer)
+    }
+
+    fn read_wire(reader: &mut Reader<'_>) -> Result<Self, AwbcCodecError> {
+        let offset = reader.offset();
+        let encoded = u32::read_wire(reader)?;
+        let slot = encoded
+            .checked_sub(1)
+            .and_then(|index| {
+                crate::runtime_id::RuntimeDialogueValueSlotId::from_zero_based(index as usize)
+            })
+            .ok_or_else(|| AwbcCodecError::InvalidMetadata {
+                kind: "dialogue value slot",
+                message: "slot identity must be nonzero".to_owned(),
+                offset,
+            })?;
+        Ok(Self {
+            slot,
+            role: AwbcDialogueValueRole::read_wire(reader)?,
+            value: AwbcRegisterId::read_wire(reader)?,
+        })
+    }
+}
 
 impl Wire for AwbcBlock {
     fn write_wire(&self, writer: &mut Writer) -> Result<(), AwbcCodecError> {
@@ -232,12 +263,7 @@ impl Wire for AwbcInstruction {
                 value.write_wire(writer)?;
             }
             Self::StreamClose { stream } => stream.write_wire(writer)?,
-            Self::SourceClose { source } => source.write_wire(writer)?,
-            Self::SourceYield { source, value } => {
-                source.write_wire(writer)?;
-                value.write_wire(writer)?;
-            }
-            Self::AssignField {
+            Self::AssignRecordField {
                 target,
                 field,
                 value,
@@ -291,6 +317,11 @@ impl Wire for AwbcInstruction {
                 dst.write_wire(writer)?;
                 constructor.write_wire(writer)?;
                 operands.write_wire(writer)?;
+            }
+            Self::MakeReductionUnchanged { dst, ty, state } => {
+                dst.write_wire(writer)?;
+                ty.write_wire(writer)?;
+                state.write_wire(writer)?;
             }
         }
         Ok(())
@@ -446,19 +477,12 @@ impl Wire for AwbcInstruction {
             AwbcOpcode::StreamClose => Self::StreamClose {
                 stream: AwbcStreamPlanId::read_wire(reader)?,
             },
-            AwbcOpcode::SourceClose => Self::SourceClose {
-                source: AwbcSourcePlanId::read_wire(reader)?,
-            },
             AwbcOpcode::Drop => Self::Drop {
                 register: AwbcRegisterId::read_wire(reader)?,
             },
-            AwbcOpcode::SourceYield => Self::SourceYield {
-                source: AwbcSourcePlanId::read_wire(reader)?,
-                value: AwbcRegisterId::read_wire(reader)?,
-            },
-            AwbcOpcode::AssignField => Self::AssignField {
+            AwbcOpcode::AssignRecordField => Self::AssignRecordField {
                 target: AwbcRegisterId::read_wire(reader)?,
-                field: AwbcStringId::read_wire(reader)?,
+                field: u32::read_wire(reader)?,
                 value: AwbcRegisterId::read_wire(reader)?,
             },
             AwbcOpcode::CallTraitMethod => Self::CallTraitMethod {
@@ -492,6 +516,11 @@ impl Wire for AwbcInstruction {
                 dst: AwbcRegisterId::read_wire(reader)?,
                 constructor: RuntimeAgentConstructor::read_wire(reader)?,
                 operands: Vec::<AwbcRegisterId>::read_wire(reader)?,
+            },
+            AwbcOpcode::MakeReductionUnchanged => Self::MakeReductionUnchanged {
+                dst: AwbcRegisterId::read_wire(reader)?,
+                ty: AwbcTypeId::read_wire(reader)?,
+                state: AwbcRegisterId::read_wire(reader)?,
             },
             AwbcOpcode::Jump
             | AwbcOpcode::Branch
@@ -556,11 +585,13 @@ impl Wire for AwbcTerminator {
             }
             Self::Dialogue {
                 content,
-                line_task_group,
+                values,
+                line_task_captures,
                 resume,
             } => {
                 content.write_wire(writer)?;
-                line_task_group.write_wire(writer)?;
+                values.write_wire(writer)?;
+                line_task_captures.write_wire(writer)?;
                 resume.write_wire(writer)?;
             }
             Self::Choice {
@@ -661,7 +692,8 @@ impl Wire for AwbcTerminator {
             },
             AwbcOpcode::Dialogue => Self::Dialogue {
                 content: AwbcContentUnitId::read_wire(reader)?,
-                line_task_group: AwbcLineTaskGroupId::read_wire(reader)?,
+                values: Vec::<AwbcDialogueValueBinding>::read_wire(reader)?,
+                line_task_captures: Vec::<AwbcRegisterId>::read_wire(reader)?,
                 resume: AwbcResumePointId::read_wire(reader)?,
             },
             AwbcOpcode::Choice => Self::Choice {
@@ -727,16 +759,17 @@ impl Wire for AwbcTerminator {
             | AwbcOpcode::SpawnFiber
             | AwbcOpcode::StreamYield
             | AwbcOpcode::StreamClose
-            | AwbcOpcode::SourceClose
             | AwbcOpcode::Drop
-            | AwbcOpcode::SourceYield
-            | AwbcOpcode::AssignField
+            | AwbcOpcode::AssignRecordField
             | AwbcOpcode::CallTraitMethod
             | AwbcOpcode::RegisterCleanup
             | AwbcOpcode::CancelCleanup
             | AwbcOpcode::MakeFunction
             | AwbcOpcode::ApplyFunction
-            | AwbcOpcode::MakeAgent => unreachable!("instruction opcode rejected above"),
+            | AwbcOpcode::MakeAgent
+            | AwbcOpcode::MakeReductionUnchanged => {
+                unreachable!("instruction opcode rejected above")
+            }
         })
     }
 }

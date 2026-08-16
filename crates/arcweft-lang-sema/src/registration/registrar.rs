@@ -205,7 +205,8 @@ impl CharacterRegistrar {
             *request.facts.symbol_revision(),
             owners,
             visibility,
-        );
+        )
+        .with_host_call_contracts(host_call_contracts(request.facts));
         let mut environment_bindings = BTreeMap::new();
         for input in request.facts.environment_inputs() {
             let projected = nominal_world
@@ -655,7 +656,8 @@ impl CharacterRegistrar {
             *request.facts.symbol_revision(),
             owners,
             visibility,
-        );
+        )
+        .with_host_call_contracts(host_call_contracts(request.facts));
         let mut environment_bindings = BTreeMap::new();
         for input in request.facts.environment_inputs() {
             let projected = nominal_world
@@ -1047,6 +1049,15 @@ fn accepted_external_environment(
         Arc::new(environment),
         AcceptedNominalVisibilityIndex::from_parts(visible, inaccessible),
     ))
+}
+
+fn host_call_contracts(
+    facts: &super::model::ProjectRegistrationFacts,
+) -> Box<[crate::registration::EnvironmentHostCallContractInput]> {
+    facts
+        .environment_inputs()
+        .flat_map(|input| input.input().host_call_contracts().iter().cloned())
+        .collect()
 }
 
 fn environment_external_alias_records(

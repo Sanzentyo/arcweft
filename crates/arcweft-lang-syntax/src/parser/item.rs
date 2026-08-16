@@ -113,7 +113,6 @@ fn declaration_kind_from_head(keyword: &str, extern_capability: bool) -> Option<
         "extern" if extern_capability => SyntaxKind::ExternCapabilityItem,
         "test" => SyntaxKind::TestItem,
         "bench" => SyntaxKind::BenchItem,
-        "source" => SyntaxKind::SourceItem,
         "style" => SyntaxKind::StyleItem,
         _ => return None,
     })
@@ -145,7 +144,6 @@ pub(super) const fn is_declaration_item_kind(kind: SyntaxKind) -> bool {
             | SyntaxKind::ExternCapabilityItem
             | SyntaxKind::TestItem
             | SyntaxKind::BenchItem
-            | SyntaxKind::SourceItem
             | SyntaxKind::StyleItem
     )
 }

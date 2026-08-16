@@ -16,9 +16,9 @@ use crate::session_save::{
     BUNDLE_SESSION_SAVE_SCHEMA_ID, BUNDLE_SESSION_SAVE_SCHEMA_VERSION,
     BundleSessionArtifactIdentity, BundleSessionCharacterPresentationSnapshot,
     BundleSessionExecutorSnapshot, BundleSessionGenerationSnapshot, BundleSessionPendingBlocker,
-    BundleSessionRuntimeSnapshot, BundleSessionSaveError, BundleSessionSnapshot, digest_label,
-    validate_presentation_runtime_status, validate_presentation_snapshot,
-    validate_product_awbc_snapshot,
+    BundleSessionRuntimeSnapshot, BundleSessionSaveError, BundleSessionSavePayload,
+    BundleSessionSnapshot, digest_label, validate_presentation_runtime_status,
+    validate_presentation_snapshot, validate_product_awbc_snapshot,
 };
 use crate::swap::{
     GenerationBuildError, GenerationId, ProgramGeneration, SwapCompatibility, SwapError,
@@ -51,17 +51,15 @@ use arcweft_core::awbc::{
     product_step::AwbcProductStepBuildError,
     schema::{AwbcEntryId, AwbcProgram},
 };
-use arcweft_core::bytecode::BytecodeVerificationError;
 use arcweft_core::effect::{LineEffectRequest, RuntimeAssertionFailure};
 use arcweft_core::engine::{FlowFiberStatus, FlowStatusLabelStyle};
 use arcweft_core::executor::{
     ArcweftRuntimeExecutor, ArcweftRuntimeExecutorSnapshot, RuntimeExecutor,
 };
 use arcweft_core::observation::RuntimeObservationState;
-use arcweft_core::plan::{EntryRuntimeId, FlowEvent, RuntimePlanError};
+use arcweft_core::plan::{EntryRuntimeId, FlowEvent};
 use arcweft_core::pure::VmRuntimePureCallBackend;
 use arcweft_core::root::{RootEventInput, RootTransitionOutcome, RuntimeCommandEnvelope};
-use arcweft_core::source::{RuntimeSourceEvent, SourceId};
 use arcweft_core::step::{
     RuntimeHostCallError, RuntimeHostCallErrorKind, RuntimeHostCallId, RuntimeHostCallRequest,
     RuntimeHostCallResult, RuntimeStepBudget, RuntimeStepInput, RuntimeStepMode,
@@ -162,7 +160,6 @@ pub struct BundleStepInput {
     pub need_states: Vec<RuntimeNeedState>,
     pub task_events: Vec<TaskEvent>,
     pub audio_events: Vec<AudioEvent>,
-    pub source_events: Vec<RuntimeSourceEvent>,
     pub host_call_results: Vec<RuntimeHostCallResult>,
 }
 
@@ -202,7 +199,6 @@ pub struct BundleSessionStep {
     pub audio_commands: Vec<AudioCommandEnvelope>,
     pub requested_tasks: Vec<HostTaskDispatch>,
     pub cancel_scopes: Vec<CancelScopeId>,
-    pub source_close: Vec<SourceId>,
     pub finished: bool,
 }
 
@@ -322,12 +318,6 @@ pub enum BundleSessionError {
     NonFlowEntry { entry: String },
     #[error(transparent)]
     RootCommandHostCatalog(#[from] RootCommandHostCallCatalogError),
-    #[error("failed to decode bundle bytecode: {0}")]
-    DecodeBytecode(#[from] RuntimePlanError),
-    #[error("failed to verify bundle bytecode: {0}")]
-    VerifyBytecode(#[from] BytecodeVerificationError),
-    #[error("product bundle is missing canonical AWBC executable payload")]
-    MissingProductAwbc,
     #[error("failed to verify product AWBC generation: {message}")]
     ProductAwbcVerification { message: String },
     #[error(transparent)]
@@ -784,7 +774,6 @@ impl BundleSession {
             audio_commands,
             requested_tasks,
             cancel_scopes,
-            source_close: output.requests.source_close,
             finished,
         }
     }
@@ -846,7 +835,6 @@ impl BundleSession {
                 need_states: input.need_states,
                 task_events,
                 audio_events: input.audio_events,
-                source_events: input.source_events,
                 host_call_results: self
                     .pending_host_call_results
                     .drain(..)

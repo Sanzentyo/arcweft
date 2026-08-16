@@ -86,33 +86,7 @@ pub(super) fn bind_startup(
 }
 
 impl AwbcProductStepExecutor {
-    pub(super) fn bind_facade_inputs_preserving_root_flow(
-        &mut self,
-        root_bindings: &[crate::value::RuntimeBinding],
-        input_bindings: &[crate::value::RuntimeBinding],
-    ) {
-        let protected = self.root_flow_binding_name.as_ref().and_then(|name| {
-            self.facade_fiber
-                .env
-                .get_cloned(name)
-                .map(|value| crate::value::RuntimeBinding {
-                    name: name.clone(),
-                    value,
-                })
-        });
-        self.facade_fiber.env.bind_all_root_ref(root_bindings);
-        self.facade_fiber.env.bind_all_root_ref(input_bindings);
-        if let Some(binding) = protected {
-            self.facade_fiber.env.set_root(binding.name, binding.value);
-        }
-    }
-
     pub(super) fn install_root_startup(&mut self, startup: RootStartup) {
-        self.facade_fiber.env.set_root(
-            startup.initial_state_binding.name.clone(),
-            startup.initial_state_binding.value,
-        );
-        self.root_flow_binding_name = Some(startup.initial_state_binding.name);
         self.root = Some(startup.root);
         self.entry_bound = true;
     }

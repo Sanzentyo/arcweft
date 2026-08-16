@@ -242,7 +242,7 @@ fn check_failure_retains_exact_session_identity() {
     assert_eq!(guards.len(), 2);
     assert_ne!(guards[0], guards[1]);
     assert!(matches!(
-        report.plan.flows[0].ops.as_slice(),
+        report.plan.flows()[0].ops.as_slice(),
         [
             FlowOp::EvaluatedEffect(RuntimeEffectExpr::Assert {
                 profile: RuntimeAssertionProfile::Always,
@@ -305,7 +305,7 @@ fn enabled_debug_failure_retains_exact_session_identity() {
     assert_eq!(report.assertion_site_count(), 2);
     assert_eq!(guards.len(), 2);
     assert!(matches!(
-        report.plan.flows[0].ops.as_slice(),
+        report.plan.flows()[0].ops.as_slice(),
         [
             FlowOp::EvaluatedEffect(RuntimeEffectExpr::Assert {
                 profile: RuntimeAssertionProfile::DebugOnly,
@@ -406,7 +406,7 @@ fn prove_has_no_runtime_mode_or_guard() {
         lower_assertion_project(&project, RuntimeAssertionAdmission::Discharged, &[true]);
     assert_eq!(report.assertion_site_count(), 0);
     assert!(guards.is_empty());
-    assert!(report.plan.flows[0].ops.is_empty());
+    assert!(report.plan.flows()[0].ops.is_empty());
 }
 
 #[test]
@@ -431,7 +431,7 @@ fn release_plan_omits_debug_evaluation_and_inventory() {
     assert_eq!(debug_guards.len(), 2);
     assert_eq!(release_report.assertion_site_count(), 0);
     assert!(release_guards.is_empty());
-    assert!(release_report.plan.flows[0].ops.is_empty());
+    assert!(release_report.plan.flows()[0].ops.is_empty());
 }
 
 #[test]
@@ -555,15 +555,13 @@ fn lower_assertion_project(
         .runtime_semantic_owner_inventory()
         .expect("runtime semantic owner inventory");
     for owner in runtime_owners.locals() {
-        input
-            .push_local_declaration(
-                owner,
-                RuntimeNormalizedType::new(
-                    RuntimeSemanticTypeId::from_bytes([0x11; 32]),
-                    RuntimeTypeShape::Unit,
-                ),
-            )
-            .expect("fixture local identity");
+        input.push_local_declaration(
+            owner,
+            RuntimeNormalizedType::new(
+                RuntimeSemanticTypeId::from_bytes([0x11; 32]),
+                RuntimeTypeShape::Unit,
+            ),
+        );
     }
     for owner in runtime_owners.patterns() {
         input.push_pattern_type(
@@ -578,11 +576,16 @@ fn lower_assertion_project(
         .selected_expression_type_owners(|_| None, |_| HirRuntimeExpressionTypeDisposition::Retain)
         .expect("postfix-free runtime expression-type fixture")
     {
+        let is_condition = conditions.contains(&owner);
         input.push_expression_type(
             owner,
             RuntimeNormalizedType::new(
-                RuntimeSemanticTypeId::from_bytes([0x11; 32]),
-                RuntimeTypeShape::Unit,
+                RuntimeSemanticTypeId::from_bytes([if is_condition { 0x12 } else { 0x11 }; 32]),
+                if is_condition {
+                    RuntimeTypeShape::Bool
+                } else {
+                    RuntimeTypeShape::Unit
+                },
             ),
         );
     }
@@ -601,13 +604,14 @@ fn lower_assertion_project(
         &RuntimeEntryLoweringInput::empty(executable),
     )
     .expect("runtime assertion fixture lowers");
-    let guards = report.plan.flows[0]
+    let guards = report.plan.flows()[0]
         .ops
         .iter()
         .filter_map(|operation| match operation {
-            FlowOp::EvaluatedEffect(RuntimeEffectExpr::Assert { guard, .. }) => Some(*guard),
+            FlowOp::EvaluatedEffect(RuntimeEffectExpr::Assert { guard, .. }) => Some(guard),
             _ => None,
         })
+        .copied()
         .collect();
     (report, statement, guards)
 }

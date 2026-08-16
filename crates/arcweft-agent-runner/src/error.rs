@@ -1,5 +1,6 @@
 use arcweft_agent_protocol::{artifact::ProjectBindingMode, protocol::AgentAssertionKind};
-use arcweft_core::{engine::EngineStartError, plan::RuntimePlanError};
+use arcweft_bundle::BundleCodecError;
+use arcweft_core::awbc::{product_step::AwbcProductStepBuildError, verify::AwbcVerifyError};
 use thiserror::Error;
 
 use crate::effect_policy::AgentEffectPolicyError;
@@ -22,16 +23,20 @@ where
     Debug(#[source] DebugError),
     #[error("Agent RAG service failed: {0}")]
     Rag(#[source] RagError),
-    #[error("Agent controller bytecode is invalid: {0}")]
-    Bytecode(#[source] RuntimePlanError),
-    #[error("Agent controller entry could not start: {0}")]
-    ControllerEntryStart(#[source] EngineStartError),
+    #[error("Agent controller Product AWBC failed verification: {0}")]
+    ProductAwbcVerification(#[source] AwbcVerifyError),
+    #[error("Agent controller Product AWBC executor could not be built: {0}")]
+    ProductAwbcExecutor(#[source] AwbcProductStepBuildError),
+    #[error("Agent controller bundle Product AWBC is invalid: {0}")]
+    BundleProductAwbc(#[source] BundleCodecError),
     #[error("Agent controller entry is invalid: {detail}")]
     InvalidControllerEntry { detail: String },
     #[error("bundle is not an Agent controller bundle")]
     NotAgentControllerBundle,
     #[error("Agent controller bundle is missing its Agent artifact manifest")]
     MissingAgentManifest,
+    #[error("Agent controller bundle is missing its Product AWBC executable")]
+    MissingProductAwbc,
     #[error("Agent controller artifact binding mismatch: {detail}")]
     AgentArtifactMismatch { detail: String },
     #[error(

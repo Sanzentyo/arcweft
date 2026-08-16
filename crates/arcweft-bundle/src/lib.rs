@@ -31,7 +31,6 @@ use arcweft_agent_protocol::artifact::AgentArtifactManifest;
 use arcweft_audio_core::graph::AudioGraph;
 use arcweft_character::presentation_name::CharacterPresentationCatalogData;
 use arcweft_core::awbc::schema::AwbcProgram;
-use arcweft_core::bytecode::BytecodeProgram;
 use arcweft_core::effect::RuntimeArtifactFingerprint;
 #[cfg(feature = "format-yaml")]
 use arcweft_data::{Number, Value};
@@ -62,9 +61,7 @@ pub struct ArcweftBundle {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub agent: Option<AgentArtifactManifest>,
     pub source_map: SourceMapSection,
-    pub bytecode: BundleBytecodeProgram,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub product_awbc: Option<BundleAwbcProgram>,
+    pub product_awbc: BundleAwbcProgram,
     pub dialogue_content: DialogueContentCatalog,
     /// Accepted Character presentation data. Its sole persisted wire is the
     /// compact AWFB `LocaleCatalog` section.
@@ -117,21 +114,9 @@ pub struct BundleManifest {
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
-pub struct BundleBytecodeProgram {
-    pub encoding: BundleBytecodeEncoding,
-    pub program: BytecodeProgram,
-}
-
-#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct BundleAwbcProgram {
     pub encoding: BundleAwbcEncoding,
     pub program: AwbcProgram,
-}
-
-#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize)]
-#[serde(rename_all = "snake_case")]
-pub enum BundleBytecodeEncoding {
-    StructuredJson,
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize)]
@@ -186,7 +171,6 @@ pub struct BundleRuntimeSummary {
     pub bytecode_instructions: usize,
     pub line_task_groups: usize,
     pub stream_plans: usize,
-    pub source_plans: usize,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
@@ -410,14 +394,10 @@ pub enum BundleCodecError {
     EncodeAwfb { message: String },
     #[error("failed to decode Arcweft AWFB bundle: {message}")]
     DecodeAwfb { message: String },
-    #[error("product AWFB is missing its canonical AWBC executable payload")]
-    MissingProductAwbcExecutable,
     #[error("product AWFB manifest is missing its required executable payload discriminator")]
     MissingProductExecutablePayload,
     #[error("product AWFB contains malformed AWBC executable payload: {message}")]
     MalformedProductAwbcExecutable { message: String },
-    #[error("product AWFB structured bytecode payload tag {encoding_tag} is no longer executable")]
-    StructuredProductBytecodeUnsupported { encoding_tag: u32 },
     #[error("unsupported product AWFB executable payload `{actual}`")]
     UnsupportedProductExecutablePayload { actual: String },
     #[error("product AWBC executable verification failed: {message}")]
@@ -574,7 +554,7 @@ impl ArcweftBundle {
     pub fn try_new(
         manifest: BundleManifest,
         source_map: SourceMapSection,
-        bytecode: BytecodeProgram,
+        product_awbc: AwbcProgram,
         dialogue_content: DialogueContentCatalog,
     ) -> Result<Self, SourceMapBuildError> {
         let standard_view_source = standard_view::dialogue_view_source_document();
@@ -588,11 +568,7 @@ impl ArcweftBundle {
             manifest,
             agent: None,
             source_map,
-            bytecode: BundleBytecodeProgram {
-                encoding: BundleBytecodeEncoding::StructuredJson,
-                program: bytecode,
-            },
-            product_awbc: None,
+            product_awbc: BundleAwbcProgram::new(product_awbc),
             dialogue_content,
             character_presentation: None,
             resource_type_manifests: None,
@@ -776,12 +752,11 @@ impl ArcweftBundle {
 
     #[must_use]
     pub fn with_view_text(mut self, resource: ViewTextResource) -> Self {
-        self.view_text = Some(standard_view::merge_text(
-            self.view_text
-                .take()
-                .unwrap_or_else(standard_view::dialogue_text),
-            resource,
-        ));
+        // The compiler publishes one complete accepted text catalog, including
+        // the standard dialogue sources. Installing that catalog directly keeps
+        // its public IDs single-owned and avoids linking the standard records a
+        // second time at the bundle boundary.
+        self.view_text = Some(resource);
         self
     }
 
@@ -804,21 +779,12 @@ impl ArcweftBundle {
         self
     }
 
-    #[must_use]
-    pub fn with_product_awbc(mut self, program: AwbcProgram) -> Self {
-        self.product_awbc = Some(BundleAwbcProgram::new(program));
-        self
+    pub const fn product_awbc(&self) -> &BundleAwbcProgram {
+        &self.product_awbc
     }
 
-    pub const fn product_awbc(&self) -> Option<&BundleAwbcProgram> {
-        self.product_awbc.as_ref()
-    }
-
-    pub fn product_awbc_program(&self) -> Result<&AwbcProgram, BundleCodecError> {
-        self.product_awbc
-            .as_ref()
-            .map(BundleAwbcProgram::program)
-            .ok_or(BundleCodecError::MissingProductAwbcExecutable)
+    pub const fn product_awbc_program(&self) -> &AwbcProgram {
+        self.product_awbc.program()
     }
 
     pub fn to_json_bytes(&self) -> Result<Vec<u8>, BundleCodecError> {
@@ -1648,11 +1614,10 @@ mod tests {
                     bytecode_instructions: 3,
                     line_task_groups: 0,
                     stream_plans: 0,
-                    source_plans: 0,
                 },
             },
             source_map("main.arcw", "flow main { return \"ok\" }"),
-            BytecodeProgram::default(),
+            minimal_awbc_program(),
             DialogueContentCatalog::new(),
         )
         .expect("standard dialogue source joins source map")
@@ -1714,7 +1679,14 @@ mod tests {
             resources: Vec::new(),
         });
         let expected_program = program.clone();
-        let bundle = empty_test_bundle().with_product_awbc(program);
+        let empty = empty_test_bundle();
+        let bundle = ArcweftBundle::try_new(
+            empty.manifest,
+            empty.source_map,
+            program,
+            empty.dialogue_content,
+        )
+        .expect("standard dialogue source joins source map");
         let expected_artifact = bundle.manifest.runtime.artifact_fingerprint;
 
         let encoded = bundle
@@ -1722,9 +1694,7 @@ mod tests {
             .expect("encode assertion AWFB");
         let decoded = ArcweftBundle::from_format_slice(BundleFormat::Awfb, &encoded)
             .expect("decode assertion AWFB");
-        let decoded_program = decoded
-            .product_awbc_program()
-            .expect("decoded bundle retains canonical AWBC");
+        let decoded_program = decoded.product_awbc_program();
         assert_eq!(
             decoded.manifest.runtime.artifact_fingerprint,
             expected_artifact
@@ -2037,20 +2007,10 @@ mod tests {
     }
 
     #[test]
-    fn awfb_decodes_runtime_types_layout_independent_from_awbc_payload() {
-        let bytes = awfb_with_runtime_types_layout_signature(
-            &empty_test_bundle(),
-            "arcweft.bytecode.runtime-layout.v0.test",
-        );
+    fn awfb_rejects_runtime_types_layout_digest_mismatch() {
+        let bytes = awfb_with_runtime_types_layout_digest(&empty_test_bundle(), [0xa6; 32]);
 
-        let decoded = ArcweftBundle::from_format_slice(BundleFormat::Awfb, &bytes)
-            .expect("AWBC product AWFB decodes");
-
-        assert_eq!(
-            decoded.bytecode.program.runtime_layout.signature,
-            "arcweft.bytecode.runtime-layout.v0.test"
-        );
-        assert!(decoded.product_awbc().is_some());
+        assert!(ArcweftBundle::from_format_slice(BundleFormat::Awfb, &bytes).is_err());
     }
 
     #[test]
@@ -2256,15 +2216,13 @@ mod tests {
                     bytecode_instructions: 0,
                     line_task_groups: 0,
                     stream_plans: 0,
-                    source_plans: 0,
                 },
             },
             source_map("main.arcw", "flow main { return \"ok\" }"),
-            BytecodeProgram::default(),
+            minimal_awbc_program(),
             DialogueContentCatalog::new(),
         )
         .expect("standard dialogue source joins source map")
-        .with_product_awbc(minimal_awbc_program())
     }
 
     fn source_map(label: &str, text: &str) -> SourceMapSection {
@@ -2334,10 +2292,7 @@ mod tests {
         }
     }
 
-    fn awfb_with_runtime_types_layout_signature(
-        bundle: &ArcweftBundle,
-        signature: &str,
-    ) -> Vec<u8> {
+    fn awfb_with_runtime_types_layout_digest(bundle: &ArcweftBundle, digest: [u8; 32]) -> Vec<u8> {
         let bytes = bundle
             .to_format_bytes(BundleFormat::Awfb)
             .expect("AWFB bundle encodes");
@@ -2349,7 +2304,7 @@ mod tests {
                 let decoded = if descriptor.kind() == ContainerSectionKind::RuntimeTypes {
                     let mut section = RuntimeTypesSection::from_bundle(bundle)
                         .expect("runtime types section builds");
-                    section.runtime_layout.signature = signature.to_owned();
+                    section.runtime_layout_digest = arcweft_core::awbc::schema::AwbcDigest(digest);
                     section
                         .encode_canonical_section()
                         .expect("runtime types section encodes")

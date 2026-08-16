@@ -1,12 +1,14 @@
 //! Private Pratt expression grammar over the shared document cursor.
 
 mod call_arguments;
+mod colon_dialogue;
 mod composite;
 mod control;
 mod operators;
 mod postfix_bracket;
 
 pub(super) use call_arguments::emit_parenthesized_call_tail;
+pub(in crate::parser) use colon_dialogue::emit_colon_dialogue_application;
 pub(in crate::parser) use composite::expression_slot;
 
 use self::operators::{binary_binding_power, is_postfix_operator, syntax_binary_operator};
@@ -29,16 +31,15 @@ use super::type_ref::{
 use crate::expressions::{
     ExpressionComponentRole, ExpressionLiteralPart, ExpressionProjection,
     PendingExpressionComponent, PendingExpressionProjection, SyntaxAssociatedCallSyntax,
-    SyntaxAssociatedReceiver, SyntaxAssociatedSeparator, SyntaxAwaitPropagation,
-    SyntaxBinaryOperator, SyntaxBorrowKind, SyntaxCallArgumentListTerminator,
-    SyntaxCallArgumentPart, SyntaxCallArgumentProjection, SyntaxCallProjection,
-    SyntaxCallTypeApplicationComponentRole, SyntaxCallTypeApplicationProjection,
-    SyntaxCallTypeApplicationSpelling, SyntaxCallTypeApplicationTerminator,
-    SyntaxCallTypeArgumentPart, SyntaxCallTypeArgumentProjection,
-    SyntaxCallbackBlockCallProjection, SyntaxClosureProjection, SyntaxClosureSyntax,
-    SyntaxClosureTerminator, SyntaxExpressionSlot, SyntaxParenthesizedCallProjection,
-    SyntaxPlaceholderKind, SyntaxRequiredTokenState, SyntaxSelectedMember, SyntaxTryForm,
-    SyntaxUnaryOperator,
+    SyntaxAssociatedReceiver, SyntaxAssociatedSeparator, SyntaxBinaryOperator, SyntaxBorrowKind,
+    SyntaxCallArgumentListTerminator, SyntaxCallArgumentPart, SyntaxCallArgumentProjection,
+    SyntaxCallProjection, SyntaxCallTypeApplicationComponentRole,
+    SyntaxCallTypeApplicationProjection, SyntaxCallTypeApplicationSpelling,
+    SyntaxCallTypeApplicationTerminator, SyntaxCallTypeArgumentPart,
+    SyntaxCallTypeArgumentProjection, SyntaxCallbackBlockCallProjection, SyntaxClosureProjection,
+    SyntaxClosureSyntax, SyntaxClosureTerminator, SyntaxExpressionSlot,
+    SyntaxParenthesizedCallProjection, SyntaxPlaceholderKind, SyntaxRequiredTokenState,
+    SyntaxSelectedMember, SyntaxUnaryOperator,
 };
 use crate::grammar::kinds::{SyntaxKind, SyntaxRole};
 use crate::name::{SyntaxName, SyntaxNameIssue};
@@ -198,6 +199,12 @@ fn parse_binding_power(
             continue;
         }
 
+        if operator == "?" {
+            bump_until(parser, operator_index);
+            left = emit_rejected_postfix_question(parser, left, role);
+            continue;
+        }
+
         if is_postfix_operator(operator) {
             bump_until(parser, operator_index);
             left = emit_postfix(parser, end, left, role, operator);
@@ -245,6 +252,32 @@ fn parse_binding_power(
         );
     }
 
+    left
+}
+
+fn emit_rejected_postfix_question(
+    parser: &mut DocumentParser<'_, '_>,
+    left: CompletedNode,
+    role: SyntaxRole,
+) -> CompletedNode {
+    let question = parser
+        .current()
+        .expect("rejected postfix question dispatch retains its token")
+        .range();
+    let owner = parser.insert_projected_start(left.start_event, SyntaxKind::ErrorExpression, role);
+    parser.set_start_role(left.start_event + 1, SyntaxRole::Operand);
+    parser.bump();
+    parser.set_expression_projection(
+        owner,
+        PendingExpressionProjection::new(
+            ExpressionProjection::Error,
+            vec![PendingExpressionComponent::new(
+                ExpressionComponentRole::Recovery,
+                question,
+            )],
+        ),
+    );
+    parser.finish();
     left
 }
 
@@ -366,15 +399,7 @@ fn parse_prefix(
         "*" => emit_prefix_operand(parser, end, SyntaxKind::DereferenceExpression, role, false),
         "!" | "-" => emit_prefix_operand(parser, end, SyntaxKind::UnaryExpression, role, false),
         ".." | "..=" => emit_prefix_range(parser, end, role, text == "..="),
-        "try" if propagating_await_spelling(parser, end) == Some(PropagatingAwait::TryAwait) => {
-            emit_propagating_await(parser, end, role, PropagatingAwait::TryAwait)
-        }
         "try" => emit_prefix_operand(parser, end, SyntaxKind::TryExpression, role, false),
-        "await"
-            if propagating_await_spelling(parser, end) == Some(PropagatingAwait::AwaitQuestion) =>
-        {
-            emit_propagating_await(parser, end, role, PropagatingAwait::AwaitQuestion)
-        }
         "await" => emit_prefix_operand(parser, end, SyntaxKind::AwaitExpression, role, false),
         "thread" if composite::has_braced_body(parser, end) => {
             composite::emit_thread_expression(parser, end, role)
@@ -455,8 +480,12 @@ fn emit_prefix_operand(
         parser.bump();
         parser.bump_trivia_before(end);
     }
-    let operand = if parser.cursor() < end {
-        parse_binding_power(parser, end, 90, SyntaxRole::Operand)
+    let await_with = (kind == SyntaxKind::AwaitExpression)
+        .then(|| top_level_with(parser, parser.cursor(), end))
+        .flatten();
+    let operand_end = await_with.unwrap_or(end);
+    let operand = if parser.cursor() < operand_end {
+        parse_binding_power(parser, operand_end, 90, SyntaxRole::Operand)
     } else {
         emit_missing_expression(parser, SyntaxRole::Operand)
     };
@@ -468,14 +497,57 @@ fn emit_prefix_operand(
         .completed_range(operand.start_event)
         .expect("completed prefix operand retains one exact source range");
     let operand_slot = completed_slot(parser, operand);
+    let branches = if kind == SyntaxKind::AwaitExpression {
+        if let Some(with) = await_with {
+            bump_until(parser, with);
+            let with_range = parser
+                .current()
+                .expect("await with dispatch retains its `with` token")
+                .range();
+            parser.bump();
+            parser.bump_trivia_before(end);
+            let branches = if parser.at("{") {
+                super::statement::emit_await_with_branch_block(
+                    parser,
+                    end,
+                    SyntaxKind::FunctionItem,
+                )
+                .into_iter()
+                .map(|branch| branch.kind())
+                .collect::<Box<[_]>>()
+            } else if parser.at(":") {
+                let interval =
+                    super::statement::await_with_indented_suite_interval(parser, with, end);
+                super::statement::emit_await_with_indented_branch_block(
+                    parser,
+                    interval,
+                    SyntaxKind::FunctionItem,
+                )
+                .into_iter()
+                .map(|branch| branch.kind())
+                .collect::<Box<[_]>>()
+            } else {
+                super::statement::emit_required_statement_body_recovery(
+                    parser,
+                    "syntax.await_with.missing_body",
+                    "missing Await branch body",
+                );
+                Box::new([])
+            };
+            Some((branches, with_range))
+        } else {
+            None
+        }
+    } else {
+        None
+    };
     let projection = match kind {
         SyntaxKind::TryExpression => ExpressionProjection::Try {
             operand: operand_slot,
-            form: SyntaxTryForm::PrefixTry,
         },
         SyntaxKind::AwaitExpression => ExpressionProjection::Await {
             operand: operand_slot,
-            propagation: SyntaxAwaitPropagation::PreserveResult,
+            branches: branches.as_ref().map(|(branches, _)| branches.clone()),
         },
         SyntaxKind::BorrowExpression => ExpressionProjection::Borrow {
             operand: operand_slot,
@@ -492,17 +564,40 @@ fn emit_prefix_operand(
     };
     parser.set_expression_projection(
         owner,
-        PendingExpressionProjection::new(
-            projection,
-            vec![
+        PendingExpressionProjection::new(projection, {
+            let mut components = vec![
                 PendingExpressionComponent::new(ExpressionComponentRole::Operator, operator_range),
                 PendingExpressionComponent::new(ExpressionComponentRole::Operand, operand_range),
-            ],
-        ),
+            ];
+            if let Some((_, range)) = branches {
+                components.push(PendingExpressionComponent::new(
+                    ExpressionComponentRole::AwaitWith,
+                    range,
+                ));
+            }
+            components
+        }),
     );
     parser.finish();
     parser.leave_prefix_expression();
     CompletedNode { start_event }
+}
+
+fn top_level_with(parser: &DocumentParser<'_, '_>, start: usize, end: usize) -> Option<usize> {
+    let mut depth = 0_usize;
+    for index in start..end {
+        let token = parser.token_at(index)?;
+        let text = parser.text_of(token);
+        if depth == 0 && text == "with" {
+            return Some(index);
+        }
+        match text {
+            "(" | "[" | "{" => depth = depth.saturating_add(1),
+            ")" | "]" | "}" => depth = depth.saturating_sub(1),
+            _ => {}
+        }
+    }
+    None
 }
 
 #[derive(Clone, Copy)]
@@ -682,92 +777,6 @@ fn emit_missing_left_binary(
         ),
     );
     parser.finish();
-    CompletedNode { start_event }
-}
-
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-enum PropagatingAwait {
-    TryAwait,
-    AwaitQuestion,
-}
-
-fn propagating_await_spelling(
-    parser: &DocumentParser<'_, '_>,
-    end: usize,
-) -> Option<PropagatingAwait> {
-    match parser.current_text()? {
-        "try" => super::shadow_recovery::first_significant(parser, parser.cursor() + 1, end)
-            .filter(|index| super::shadow_recovery::token_text(parser, *index) == Some("await"))
-            .map(|_| PropagatingAwait::TryAwait),
-        "await" => {
-            let question = parser.token_at(parser.cursor() + 1)?;
-            (parser.text_of(question) == "?"
-                && parser.current()?.range().end() == question.range().start())
-            .then_some(PropagatingAwait::AwaitQuestion)
-        }
-        _ => None,
-    }
-}
-
-fn emit_propagating_await(
-    parser: &mut DocumentParser<'_, '_>,
-    end: usize,
-    role: SyntaxRole,
-    spelling: PropagatingAwait,
-) -> CompletedNode {
-    let start_event = parser.event_position();
-    if !parser.enter_prefix_expression() {
-        bump_until(parser, end);
-        return CompletedNode { start_event };
-    }
-    let owner = parser.start_projected_owner(SyntaxKind::AwaitExpression, role);
-    let operator_start = parser
-        .bump()
-        .expect("propagating await retains its first operator token")
-        .range()
-        .start();
-    parser.bump_trivia_before(end);
-    match spelling {
-        PropagatingAwait::TryAwait => debug_assert!(parser.at("await")),
-        PropagatingAwait::AwaitQuestion => debug_assert!(parser.at("?")),
-    }
-    let operator_end = parser
-        .bump()
-        .expect("propagating await retains its second operator token")
-        .range()
-        .end();
-    parser.bump_trivia_before(end);
-    let operand = if parser.cursor() < end {
-        parse_binding_power(parser, end, 90, SyntaxRole::Operand)
-    } else {
-        emit_missing_expression(parser, SyntaxRole::Operand)
-    };
-    if parser.budget_failed() {
-        parser.leave_prefix_expression();
-        return CompletedNode { start_event };
-    }
-    let operand_range = parser
-        .completed_range(operand.start_event)
-        .expect("completed await operand retains one exact source range");
-    let operand_slot = completed_slot(parser, operand);
-    parser.set_expression_projection(
-        owner,
-        PendingExpressionProjection::new(
-            ExpressionProjection::Await {
-                operand: operand_slot,
-                propagation: SyntaxAwaitPropagation::PropagateError,
-            },
-            vec![
-                PendingExpressionComponent::new(
-                    ExpressionComponentRole::Operator,
-                    arcweft_source::SourceRange::new(operator_start, operator_end),
-                ),
-                PendingExpressionComponent::new(ExpressionComponentRole::Operand, operand_range),
-            ],
-        ),
-    );
-    parser.finish();
-    parser.leave_prefix_expression();
     CompletedNode { start_event }
 }
 
@@ -1190,7 +1199,6 @@ fn emit_postfix(
         "(" => emit_call(parser, end, left, role),
         "[" => emit_postfix_bracket(parser, end, left, role),
         "." => emit_select(parser, end, left, role),
-        "?" => emit_try(parser, left, role),
         _ => left,
     }
 }
@@ -2325,47 +2333,6 @@ fn emit_select(
                     ExpressionComponentRole::SelectedMember,
                     member_range,
                 ),
-            ],
-        ),
-    );
-    parser.finish();
-    CompletedNode {
-        start_event: left.start_event,
-    }
-}
-
-fn emit_try(
-    parser: &mut DocumentParser<'_, '_>,
-    left: CompletedNode,
-    role: SyntaxRole,
-) -> CompletedNode {
-    let operand_range = parser
-        .completed_range(left.start_event)
-        .expect("completed try operand retains one exact source range");
-    let operator_range = parser.current().map_or_else(
-        || {
-            let at = parser.current_offset();
-            arcweft_source::SourceRange::new(at, at)
-        },
-        super::lexer::LexToken::range,
-    );
-    let owner = parser.insert_projected_start(left.start_event, SyntaxKind::TryExpression, role);
-    parser.set_start_role(left.start_event + 1, SyntaxRole::Operand);
-    if parser.at("?") {
-        parser.bump();
-    } else {
-        emit_missing_delimiter(parser, SyntaxKind::MissingTokenNode, SyntaxRole::Token);
-    }
-    parser.set_expression_projection(
-        owner,
-        PendingExpressionProjection::new(
-            ExpressionProjection::Try {
-                operand: SyntaxExpressionSlot::Authored,
-                form: SyntaxTryForm::PostfixQuestion,
-            },
-            vec![
-                PendingExpressionComponent::new(ExpressionComponentRole::Operand, operand_range),
-                PendingExpressionComponent::new(ExpressionComponentRole::Operator, operator_range),
             ],
         ),
     );

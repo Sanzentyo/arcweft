@@ -6,14 +6,14 @@ use super::{
     CallableMethodRole, CheckedCallTarget, CheckedCallableCatalog,
     CheckedCallableCatalogBuildError, CheckedCallableCatalogBuilder, CheckedCallableExecution,
     CheckedCallableId, CheckedExpression, CheckedExpressionResolution, CheckedFunctionExecution,
-    CheckedItem, CheckedItemRole, CheckedSuspensionRole, CheckedValueResolution, EffectRow,
-    EffectSet, EffectSubsetError, ExprId, FinalSemanticAnalysisError, FinalSemanticAnalysisInput,
-    HirCallCallee, HirCallableSourceOwner, HirExprKind, HirFlowContractClause,
-    HirFlowContractSourcePart, HirFlowSourceRole, HirFunctionBody, HirImplMember, HirItem,
-    HirItemKind, HirItemSourceRole, HirModule, HirPathSegment, HirPredicateBody, HirProofBody,
-    HirSourceQuery, HirStmtKind, HirTraitMember, ItemId, LocalId, PendingCallAnalysis,
-    ProjectSymbolTable, STANDARD_TRAIT_CATALOG_VERSION, ScopeId, SourceSpan, StagedCallableBody,
-    StagedCheckedCallables, TypeId, TypeKind,
+    CheckedItem, CheckedItemRole, CheckedSuspensionRole, CheckedValueResolution, EffectId,
+    EffectRow, EffectSet, EffectSubsetError, ExprId, FinalSemanticAnalysisError,
+    FinalSemanticAnalysisInput, HirCallCallee, HirCallableSourceOwner, HirExprKind,
+    HirFlowContractClause, HirFlowContractSourcePart, HirFlowSourceRole, HirFunctionBody,
+    HirImplMember, HirItem, HirItemKind, HirItemSourceRole, HirModule, HirPathSegment,
+    HirPredicateBody, HirProofBody, HirSourceQuery, HirStmtKind, HirTraitMember, ItemId, LocalId,
+    PendingCallAnalysis, ProjectSymbolTable, STANDARD_TRAIT_CATALOG_VERSION, ScopeId, SourceSpan,
+    StagedCallableBody, StagedCheckedCallables, TypeId, TypeKind,
     callable_effect_graph::CallableEffectGraph,
     calls::{callable_schema_type_with_effects, final_call_effects, final_callable_effects},
     statements::{
@@ -350,11 +350,6 @@ fn binding_initializer_for_local(module: &HirModule, local: LocalId) -> Option<E
             }
             | HirStmtKind::LetLoop {
                 loop_expr: initializer,
-                locals,
-                ..
-            }
-            | HirStmtKind::LetAwait {
-                await_expr: initializer,
                 locals,
                 ..
             }
@@ -727,7 +722,7 @@ impl Analyzer<'_, '_, '_> {
                     // exactly like an omitted ordinary-function clause.
                     continue;
                 };
-                let permitted = input
+                let mut permitted = input
                     .items
                     .iter()
                     .find_map(|(candidate, checked)| {
@@ -735,9 +730,14 @@ impl Analyzer<'_, '_, '_> {
                     })
                     .ok_or(FinalSemanticAnalysisError::MissingFact {
                         family: super::SemanticFactFamily::Item,
-                    })?;
+                    })?
+                    .clone();
+                permitted.insert(
+                    EffectId::parse("control.suspend")
+                        .expect("the language-owned suspension effect is a valid effect identity"),
+                );
                 let actual = execution_effects(module, flow.body_scope(), input)?;
-                let missing = actual.difference(permitted);
+                let missing = actual.effects_not_covered_by(&permitted);
                 if missing.is_empty() {
                     continue;
                 }
@@ -1035,7 +1035,6 @@ fn item_role(
         HirItemKind::ExternCapability(_) => CheckedItemRole::ExternCapability,
         HirItemKind::Test(_) => CheckedItemRole::Test,
         HirItemKind::Bench(_) => CheckedItemRole::Bench,
-        HirItemKind::Source(_) => CheckedItemRole::Source,
         HirItemKind::Style(_) => CheckedItemRole::Style,
         HirItemKind::Error(_) => return Err(FinalSemanticAnalysisError::RecoveredOwner),
     })
@@ -1062,7 +1061,7 @@ pub(super) fn function_body_roles(
                     .ok_or(FinalSemanticAnalysisError::AccountingOverflow)?;
                 suspension = true;
             }
-            HirStmtKind::Wait { .. } | HirStmtKind::AwaitWith(_) | HirStmtKind::LetAwait { .. } => {
+            HirStmtKind::Wait { .. } => {
                 suspension = true;
             }
             _ => {}

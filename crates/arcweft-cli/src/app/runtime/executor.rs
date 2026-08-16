@@ -1,11 +1,11 @@
 use super::options::CliRuntimeExecutorTier;
-use arcweft_core::engine::EngineStartError;
 use arcweft_core::executor::{ArcweftExecutionTier, ArcweftRuntimeExecutor, RuntimeExecutor};
 use arcweft_core::plan::{EntryRuntimeId, RuntimePlan};
 use arcweft_core::step::{RuntimeStepInput, RuntimeStepOptions, RuntimeStepResult};
 use arcweft_core::value::RuntimeBinding;
 use arcweft_runtime_accelerator::{RuntimePureAccelerator, RuntimePureAcceleratorConfig};
 use arcweft_runtime_host::{RuntimeExecutorStats, runtime_executor_stats};
+use std::sync::Arc;
 
 pub(in crate::app) struct RuntimeExecutorInstance {
     executor: ArcweftRuntimeExecutor,
@@ -35,9 +35,12 @@ impl RuntimeExecutorTemplate {
         }
     }
 
-    pub(in crate::app) fn instantiate(&self) -> Result<RuntimeExecutorCore, EngineStartError> {
-        let mut executor = ArcweftRuntimeExecutor::from_runtime_plan(self.plan.clone(), self.tier);
-        executor.start_structured_entry(&self.entry)?;
+    pub(in crate::app) fn instantiate(&self) -> Result<RuntimeExecutorCore, String> {
+        let mut executor = ArcweftRuntimeExecutor::from_runtime_plan(self.plan.clone(), self.tier)
+            .map_err(|error| error.to_string())?;
+        executor
+            .start_structured_entry(&self.entry)
+            .map_err(|error| error.to_string())?;
         Ok(RuntimeExecutorCore { executor })
     }
 }
@@ -65,11 +68,17 @@ impl RuntimeExecutorInstance {
         entry: &EntryRuntimeId,
         tier: CliRuntimeExecutorTier,
         pure_config: RuntimePureAcceleratorConfig,
-    ) -> Result<Self, EngineStartError> {
-        let pure = RuntimePureAccelerator::with_config(pure_config, &plan.pure_helpers);
-        let mut executor =
-            ArcweftRuntimeExecutor::from_runtime_plan(plan, arcweft_execution_tier(tier));
-        executor.start_structured_entry(entry)?;
+    ) -> Result<Self, String> {
+        let plan = Arc::new(plan);
+        let pure = RuntimePureAccelerator::with_config(pure_config, &plan);
+        let mut executor = ArcweftRuntimeExecutor::from_runtime_plan(
+            Arc::unwrap_or_clone(plan),
+            arcweft_execution_tier(tier),
+        )
+        .map_err(|error| error.to_string())?;
+        executor
+            .start_structured_entry(entry)
+            .map_err(|error| error.to_string())?;
         Ok(Self { executor, pure })
     }
 
@@ -99,7 +108,7 @@ impl RuntimeExecutorInstance {
 const fn arcweft_execution_tier(tier: CliRuntimeExecutorTier) -> ArcweftExecutionTier {
     match tier {
         CliRuntimeExecutorTier::AwbcProduct | CliRuntimeExecutorTier::BytecodeVm => {
-            ArcweftExecutionTier::StructuredVm
+            ArcweftExecutionTier::RuntimePlanVm
         }
         CliRuntimeExecutorTier::Aot => ArcweftExecutionTier::StructuredAot,
     }

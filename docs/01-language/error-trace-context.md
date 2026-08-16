@@ -1,4 +1,4 @@
-# Error, Trace, `?`, and Context
+# Error, Trace, `try`, and Context
 
 Arcweft uses `Result<T, E>` and `Option<T>` for recoverable failure and absence. For application-level failures, the default error type is `ArcError`.
 
@@ -63,10 +63,10 @@ When an error is created in `.arcw` code, Arcweft captures:
 - current tick and state hash when runtime
 ```
 
-When the error is propagated with `?`, Arcweft appends a lightweight propagation frame at the call site.
+When an error is propagated with `try`, Arcweft appends a lightweight propagation frame at the call site.
 
 ```arcw
-let bg = load_bg()?   // Err path gets a propagation frame here
+let bg = try load_bg()   // Err path gets a propagation frame here
 ```
 
 ## Native backtrace
@@ -108,12 +108,12 @@ ids:
   tick: 182
 ```
 
-## `?` operator and trace
+## `try` operator and trace
 
 For `Result<T, E>`:
 
 ```arcw
-let image = load_image()?
+let image = try load_image()
 ```
 
 means:
@@ -130,38 +130,38 @@ The error branch has type `!`, so the expression has type `Image`.
 For `Option<T>` in an `ArcResult` context, `None` becomes `ArcError.missing_value()` with a trace frame. Use `.context(...)` for better messages.
 
 ```arcw
-let route = state.route_override
-    .context("route override is missing")?
+let route = try state.route_override
+    .context("route override is missing")
 ```
 
 ## Context helpers
 
 ```arcw
-let save = save_slot.load()
-    .context("failed to load save slot")?
+let save = try save_slot.load()
+    .context("failed to load save slot")
 ```
 
 Lazy context:
 
 ```arcw
-let bg = load_bg(id)
-    .with_context(|| "failed to load background " + fmt(id))?
+let bg = try load_bg(id)
+    .with_context(|| "failed to load background " + fmt(id))
 ```
 
 Typed context:
 
 ```arcw
-let voice = voice.load(@voice.alice.001)
+let voice = try voice.load(@voice.alice.001)
     .context("voice load failed")
     .field("speaker", @character.alice)
-    .field("line", @say.opening.001)?
+    .field("line", @say.opening.001)
 ```
 
 On `Option<T>`:
 
 ```arcw
-let route = state.route_override
-    .context("route override missing")?
+let route = try state.route_override
+    .context("route override missing")
 ```
 
 This converts `None` to `Err(ArcError)` and attaches the context.
@@ -181,27 +181,19 @@ with:
 
 This is preferred.
 
-The explicit parenthesized form is valid but not recommended for hand-written code:
+The explicit composition is equivalent:
 
 ```arcw
-let bg = (await asset.image(@asset:.bg.room) with:
+let bg = try (await asset.image(@asset:.bg.room) with:
     pending p:
         scene.show(@scene.loading)
         progress.set(p.ratio)
-).context("while loading opening background")?
+).context("while loading opening background")
 ```
 
-`await? expr with:` has the same propagation semantics as `try await expr
-with:`. Diagnostics retain the exact authored operator range, and formatters
-preserve the authored spelling rather than canonicalizing between the two.
-
-Rejected because postfix `?` groups with the expression before `with:`:
-
-```arcw
-await asset.image(@asset:.bg.room)? with:
-    pending p:
-        scene.show(@scene.loading)
-```
+There is no postfix `?` or attached `await?` spelling. Diagnostics identify the
+prefix `try` operator, and formatters preserve the ordinary `try (await ...)`
+expression structure.
 
 ## Automatic source frames
 

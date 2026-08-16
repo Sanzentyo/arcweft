@@ -2,7 +2,7 @@
 
 Arcweft は Rust 風の generics を採用するため、`trait` / `impl` / `where` を中核機能として持つ。
 
-同時に、`Option` / `Result` / `Need` / `Parser` / `Seq` / `Source` を自然に扱うため、Monad 的な抽象を標準 prelude に入れる。ただし、通常のユーザーには `Monad` という名前を前面に出さず、`map`、`and_then`、`?`、`await`、`traverse`、`seq`、`collect` として見せる。
+同時に、`Option` / `Result` / `Need` / `Parser` / `Seq` / `Source` を自然に扱うため、Monad 的な抽象を標準 prelude に入れる。ただし、通常のユーザーには `Monad` という名前を前面に出さず、`map`、`and_then`、`try`、`await`、`traverse`、`seq`、`collect` として見せる。
 
 ## Implementation status: seq08.1 trait substrate
 
@@ -145,12 +145,12 @@ Result<T, E>    map / map_err / and_then / or_else
 Need<T, E>      map / and_then, but force requires await/poll/select
 Parser<T, E>    map / and_then / alt / many / optional
 Seq<T>          map / filter / flat_map / take / collect
-Source<T, E>    map / filter / throttle / record, but live and permissioned
+Stream<T, E>    map / filter / throttle / record, with lifecycle owned by its external capability
 ```
 
-## TryLike and `?`
+## TryLike and `try`
 
-`?` は `TryLike` により支えられる。
+`try` は `TryLike` により支えられる。
 
 ```arcw
 pub trait TryLike {
@@ -165,18 +165,18 @@ pub trait TryLike {
 
 ```arcw
 fn selected_route(state: GameState) -> Result<Ref<Flow>, GameError> {
-    let route = state.route_override.ok_or(.MissingRoute)?
+    let route = try state.route_override.ok_or(.MissingRoute)
     Ok(route)
 }
 ```
 
-`Result` の error parameter は anonymous sum にできる。`?` は
+`Result` の error parameter は anonymous sum にできる。`try` は
 `FsError` や `ParseError` を期待される `FsError | ParseError` へ一意に注入する。
 
 ```arcw
 fn load_config(path: VirtualPath) -> Result<Config, FsError | ParseError> {
-    let text = read_text(path)?
-    parse_config(text)?
+    let text = try read_text(path)
+    try parse_config(text)
 }
 ```
 
@@ -289,7 +289,7 @@ Non-owning or streaming views do not implement these traits:
 ```text
 Slice<T>
 Seq<T>
-Source<T, E>
+Stream<T, E>
 TextCluster
 ```
 
@@ -378,26 +378,25 @@ The current runtime-supported form is `Vec<T>.traverse(capability.fn)
 .parallel(limit = N)`, where the function returns `Need<U, E>`. It is lowered
 to bounded fanout and returns `Vec<U>` in source order after `try await`.
 
-## Source is not Seq
+## Stream is not Seq
 
-`Source<T, E>` は live external stream であり、`Seq<T>` とは分離する。
+`Stream<T, E>` は外部 capability または別の Stream 変換が返す ordered
+stream であり、`Seq<T>` とは分離する。外部入力は通常の capability
+operation として宣言し、Source 型や `source` declaration は持たない。
 
 ```arcw
-Source<MicFrame, CaptureError>
-Source<CameraFrame, CaptureError>
-Source<UsbPacket, UsbError>
+extern capability camera {
+    fn frames() -> Stream<CameraFrame, CaptureError>
+}
 ```
 
-`Source` は permission、privacy、backpressure、cancel、record/replay を持つため、`Seq` へ暗黙変換しない。
+`Stream` は `Seq` へ暗黙変換しない。permission、privacy、backpressure、cancel、
+record/replay の方針は capability/host 境界が所有し、DSL は typed Stream
+events を消費する。
 
 ```arcw
-let frames =
-    await camera_source
-        .take(60)
-        .record()
-        .collect<Vec<CameraFrame>>() with {
-            pending p => scene.show(@scene.capture_wait); progress.set(p.ratio)
-        }
+let frames = camera.frames()
+let captured = frames.take(60).collect<Vec<CameraFrame>>()
 ```
 
 ## Computation blocks
@@ -406,16 +405,16 @@ Monad 的な処理は block で読みやすく書ける。
 
 ```arcw
 let route = result {
-    let id = parse_choice_id(raw)?
-    let route = route_for_choice(id)?
+    let id = try parse_choice_id(raw)
+    let route = try route_for_choice(id)
     Ok(route)
 }
 ```
 
 ```arcw
 let assets = task {
-    let bg = await asset.image(@asset:.bg.room)?
-    let voice = await asset.audio(@asset:.voice.alice.001)?
+    let bg = try await asset.image(@asset:.bg.room)
+    let voice = try await asset.audio(@asset:.voice.alice.001)
     Ok(OpeningAssets { bg, voice })
 }
 ```

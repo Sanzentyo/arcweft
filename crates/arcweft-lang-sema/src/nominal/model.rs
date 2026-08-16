@@ -63,7 +63,6 @@ pub enum BuiltinTypeConstructor {
     Result,
     Need,
     Stream,
-    Source,
     Ref,
 }
 
@@ -144,6 +143,7 @@ pub enum StructuralTypeNodeKind {
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct ResolvedTypeNode {
     node: TypeId,
+    contextual_alias_target: bool,
     source: TypeSourceEvidence,
     terminal_source: Option<TypeSourceEvidence>,
     reference_path: Option<HirPath>,
@@ -388,7 +388,6 @@ impl BuiltinTypeConstructor {
         Self::Result,
         Self::Need,
         Self::Stream,
-        Self::Source,
         Self::Ref,
     ];
 
@@ -433,7 +432,6 @@ impl BuiltinTypeConstructor {
             Self::Result => "Result",
             Self::Need => "Need",
             Self::Stream => "Stream",
-            Self::Source => "Source",
             Self::Ref => "Ref",
         }
     }
@@ -476,8 +474,7 @@ impl BuiltinTypeConstructor {
             | Self::BTreeMap
             | Self::Result
             | Self::Need
-            | Self::Stream
-            | Self::Source => 2,
+            | Self::Stream => 2,
         }
     }
 
@@ -635,6 +632,7 @@ impl ResolvedAliasReference {
 impl ResolvedTypeNode {
     pub(crate) const fn new(
         node: TypeId,
+        contextual_alias_target: bool,
         source: TypeSourceEvidence,
         terminal_source: Option<TypeSourceEvidence>,
         reference_path: Option<HirPath>,
@@ -643,6 +641,7 @@ impl ResolvedTypeNode {
     ) -> Self {
         Self {
             node,
+            contextual_alias_target,
             source,
             terminal_source,
             reference_path,
@@ -653,6 +652,12 @@ impl ResolvedTypeNode {
 
     pub const fn node(&self) -> TypeId {
         self.node
+    }
+
+    /// Returns whether this node was resolved inside one alias-use
+    /// substitution rather than as the declaration's own final type fact.
+    pub const fn is_contextual_alias_target(&self) -> bool {
+        self.contextual_alias_target
     }
 
     pub const fn source(&self) -> &TypeSourceEvidence {

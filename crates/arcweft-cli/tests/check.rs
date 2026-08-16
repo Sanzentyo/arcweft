@@ -42,10 +42,6 @@ fn run_agent_mcp_stdio(requests: &[serde_json::Value]) -> std::process::Output {
     run_agent_mcp_stdio_with_options(requests, &[])
 }
 
-fn run_agent_mcp_stdio_local_dev(requests: &[serde_json::Value]) -> std::process::Output {
-    run_agent_mcp_stdio_with_options(requests, &["--content-policy-mode", "local-dev"])
-}
-
 fn run_agent_mcp_stdio_with_options(
     requests: &[serde_json::Value],
     options: &[&str],
@@ -97,14 +93,6 @@ fn stable_hash(value: &str) -> StableHash {
 
 fn agent_script_cli_run_smoke_path() -> PathBuf {
     workspace_path("samples/agent-script/cli-run-smoke.awfagent")
-}
-
-fn agent_script_cli_composite_wait_smoke_path() -> PathBuf {
-    workspace_path("samples/agent-script/cli-composite-wait-smoke.awfagent")
-}
-
-fn agent_script_cli_state_wait_smoke_path() -> PathBuf {
-    workspace_path("samples/agent-script/cli-state-wait-smoke.awfagent")
 }
 
 fn agent_script_cli_capture_smoke_path() -> PathBuf {

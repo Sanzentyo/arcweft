@@ -3,12 +3,13 @@ use super::{
     AotPureI64Plan, CompiledPureI64Inputs, CraneliftPureFunctionBackend, DenseSeq,
     FlatBatchSumPolicy, FlatBatchSumShape, IndexedParallelIterator, IntoParallelIterator,
     IntoParallelRefIterator, IntoParallelRefMutIterator, ParallelIterator, ParallelSlice,
-    PureFunctionRequest, RuntimeBinding, RuntimeEvalError, RuntimeExpr, RuntimeFixedArgs,
-    RuntimeI64Args, RuntimePureAotPlan, RuntimePureBackendMode, RuntimePureCacheEntry,
-    RuntimePureCallStats, RuntimePureCompileStats, RuntimePureHelper, RuntimePureHelperId,
-    RuntimePureInputType, RuntimePureNativeKind, RuntimePureOutputType, RuntimePureScalar,
-    RuntimePureScalarInteger, RuntimePureWorkerCount, RuntimeSeq, RuntimeValue, ThreadPool,
-    ThreadPoolBuilder, VmPureFunctionScratch, helper_native_kind, native_jit_enabled,
+    PureFunctionRequest, RuntimeEvalError, RuntimeExpr, RuntimeExprKind, RuntimeFixedArgs,
+    RuntimeI64Args, RuntimeLocalDeclarationId, RuntimePureAotPlan, RuntimePureBackendMode,
+    RuntimePureCacheEntry, RuntimePureCallStats, RuntimePureCompileStats, RuntimePureHelper,
+    RuntimePureHelperId, RuntimePureHelperRef, RuntimePureInputType, RuntimePureNativeKind,
+    RuntimePureOutputType, RuntimePureScalar, RuntimePureScalarInteger, RuntimePureWorkerCount,
+    RuntimeSeq, RuntimeValue, ThreadPool, ThreadPoolBuilder, VmPureFunctionScratch,
+    helper_native_kind, native_jit_enabled,
 };
 
 pub(super) fn runtime_value_kind(value: &RuntimeValue) -> String {
@@ -57,6 +58,7 @@ pub(super) fn runtime_value_kind(value: &RuntimeValue) -> String {
         RuntimeValue::NominalRecord(_) => "nominal_record",
         RuntimeValue::Opaque(_) => "opaque",
         RuntimeValue::Agent(value) => value.label(),
+        RuntimeValue::Reduction(_) => "reduction",
         RuntimeValue::Function(_) => "function",
         RuntimeValue::Variant { .. } => "variant",
         RuntimeValue::Iterator(_) => "iterator",
@@ -66,7 +68,7 @@ pub(super) fn runtime_value_kind(value: &RuntimeValue) -> String {
 
 pub(super) fn compile_helper(
     mode: RuntimePureBackendMode,
-    helper: &RuntimePureHelper,
+    helper: RuntimePureHelperRef<'_>,
     work_units: usize,
     stats: &mut RuntimePureCompileStats,
 ) -> RuntimePureCacheEntry {
@@ -130,7 +132,7 @@ pub(super) fn exact_i64_result(value: RuntimeValue) -> Result<i64, RuntimeEvalEr
 }
 
 pub(super) fn validate_flat_batch_shape(
-    helper: &RuntimePureHelper,
+    helper: RuntimePureHelperRef<'_>,
     flat_input_len: usize,
     arity: usize,
     rows: usize,
@@ -155,7 +157,7 @@ pub(super) fn validate_flat_batch_shape(
 }
 
 pub(super) fn validate_exact_int_flat_batch_shape<T: RuntimePureScalarInteger>(
-    helper: &RuntimePureHelper,
+    helper: RuntimePureHelperRef<'_>,
     flat_input_len: usize,
     arity: usize,
     rows: usize,
@@ -168,7 +170,7 @@ pub(super) fn validate_exact_int_flat_batch_shape<T: RuntimePureScalarInteger>(
         });
     }
     if helper.output_type != T::OUTPUT_TYPE
-        || helper.input_types.len() != helper.input_names.len()
+        || helper.input_types.len() != helper.input_locals.len()
         || !helper
             .input_types
             .iter()
@@ -179,12 +181,12 @@ pub(super) fn validate_exact_int_flat_batch_shape<T: RuntimePureScalarInteger>(
             reason: "exact integer batch type does not match helper signature".to_owned(),
         });
     }
-    if arity != helper.input_names.len() {
+    if arity != helper.input_locals.len() {
         return Err(RuntimeEvalError::UnsupportedPure {
             name: helper.name.clone(),
             reason: format!(
                 "pure batch arity expected {} input value(s), got {arity}",
-                helper.input_names.len()
+                helper.input_locals.len()
             ),
         });
     }
@@ -202,7 +204,7 @@ pub(super) fn validate_exact_int_flat_batch_shape<T: RuntimePureScalarInteger>(
 }
 
 pub(super) fn validate_exact_int_slice_shape<T: RuntimePureScalarInteger>(
-    helper: &RuntimePureHelper,
+    helper: RuntimePureHelperRef<'_>,
     arg_len: usize,
 ) -> Result<(), RuntimeEvalError> {
     if arg_len > RuntimeFixedArgs::<T>::MAX {
@@ -213,7 +215,7 @@ pub(super) fn validate_exact_int_slice_shape<T: RuntimePureScalarInteger>(
         });
     }
     if helper.output_type != T::OUTPUT_TYPE
-        || helper.input_types.len() != helper.input_names.len()
+        || helper.input_types.len() != helper.input_locals.len()
         || !helper
             .input_types
             .iter()
@@ -224,12 +226,12 @@ pub(super) fn validate_exact_int_slice_shape<T: RuntimePureScalarInteger>(
             reason: "exact integer slice type does not match helper signature".to_owned(),
         });
     }
-    if arg_len != helper.input_names.len() {
+    if arg_len != helper.input_locals.len() {
         return Err(RuntimeEvalError::UnsupportedPure {
             name: helper.name.clone(),
             reason: format!(
                 "pure slice expected {} input value(s), got {arg_len}",
-                helper.input_names.len()
+                helper.input_locals.len()
             ),
         });
     }
@@ -237,7 +239,7 @@ pub(super) fn validate_exact_int_slice_shape<T: RuntimePureScalarInteger>(
 }
 
 pub(super) fn validate_float_flat_batch_shape(
-    helper: &RuntimePureHelper,
+    helper: RuntimePureHelperRef<'_>,
     input_type: RuntimePureInputType,
     output_type: RuntimePureOutputType,
     max_arity: usize,
@@ -253,7 +255,7 @@ pub(super) fn validate_float_flat_batch_shape(
         });
     }
     if helper.output_type != output_type
-        || helper.input_types.len() != helper.input_names.len()
+        || helper.input_types.len() != helper.input_locals.len()
         || !helper.input_types.iter().all(|input| *input == input_type)
     {
         return Err(RuntimeEvalError::UnsupportedPure {
@@ -276,7 +278,7 @@ pub(super) fn validate_float_flat_batch_shape(
 
 pub(super) fn compile_auto(
     request: &PureFunctionRequest,
-    helper: &RuntimePureHelper,
+    helper: RuntimePureHelperRef<'_>,
     work_units: usize,
     stats: &mut RuntimePureCompileStats,
 ) -> RuntimePureCacheEntry {
@@ -307,11 +309,14 @@ pub(super) fn compile_auto(
     }
 }
 
-pub(super) fn helper_has_native_jit_entry(helper: &RuntimePureHelper) -> bool {
+pub(super) fn helper_has_native_jit_entry(helper: RuntimePureHelperRef<'_>) -> bool {
     helper_native_kind(helper).is_some()
 }
 
-pub(super) fn auto_jit_flat_batch_threshold(helper: &RuntimePureHelper, rows: usize) -> usize {
+pub(super) fn auto_jit_flat_batch_threshold(
+    helper: RuntimePureHelperRef<'_>,
+    rows: usize,
+) -> usize {
     if helper_has_native_jit_entry(helper) && rows >= 64 {
         0
     } else {
@@ -336,7 +341,7 @@ pub(super) fn finish_native_jit_compile<T>(
 pub(super) fn compile_native_jit(
     kind: RuntimePureNativeKind,
     request: &PureFunctionRequest,
-    helper: &RuntimePureHelper,
+    helper: RuntimePureHelperRef<'_>,
     stats: &mut RuntimePureCompileStats,
 ) -> Option<RuntimePureCacheEntry> {
     if helper_native_kind(helper) != Some(kind) {
@@ -348,16 +353,16 @@ pub(super) fn compile_native_jit(
         return None;
     }
 
-    let input_names = || helper.input_names.iter().map(String::as_str);
+    let input_names = || helper.input_locals.iter().copied();
     compile_signed_native_jit(kind, request, input_names(), stats)
         .or_else(|| compile_unsigned_native_jit(kind, request, input_names(), stats))
         .or_else(|| compile_float_native_jit(kind, request, input_names(), stats))
 }
 
-pub(super) fn compile_signed_native_jit<'a>(
+pub(super) fn compile_signed_native_jit(
     kind: RuntimePureNativeKind,
     request: &PureFunctionRequest,
-    input_names: impl IntoIterator<Item = &'a str>,
+    input_names: impl IntoIterator<Item = RuntimeLocalDeclarationId>,
     stats: &mut RuntimePureCompileStats,
 ) -> Option<RuntimePureCacheEntry> {
     match kind {
@@ -404,10 +409,10 @@ pub(super) fn compile_signed_native_jit<'a>(
     }
 }
 
-pub(super) fn compile_unsigned_native_jit<'a>(
+pub(super) fn compile_unsigned_native_jit(
     kind: RuntimePureNativeKind,
     request: &PureFunctionRequest,
-    input_names: impl IntoIterator<Item = &'a str>,
+    input_names: impl IntoIterator<Item = RuntimeLocalDeclarationId>,
     stats: &mut RuntimePureCompileStats,
 ) -> Option<RuntimePureCacheEntry> {
     match kind {
@@ -454,10 +459,10 @@ pub(super) fn compile_unsigned_native_jit<'a>(
     }
 }
 
-pub(super) fn compile_float_native_jit<'a>(
+pub(super) fn compile_float_native_jit(
     kind: RuntimePureNativeKind,
     request: &PureFunctionRequest,
-    input_names: impl IntoIterator<Item = &'a str>,
+    input_names: impl IntoIterator<Item = RuntimeLocalDeclarationId>,
     stats: &mut RuntimePureCompileStats,
 ) -> Option<RuntimePureCacheEntry> {
     match kind {
@@ -481,7 +486,7 @@ pub(super) fn compile_float_native_jit<'a>(
 
 pub(super) fn compile_jit(
     request: &PureFunctionRequest,
-    helper: &RuntimePureHelper,
+    helper: RuntimePureHelperRef<'_>,
     stats: &mut RuntimePureCompileStats,
 ) -> Option<RuntimePureCacheEntry> {
     compile_native_jit(RuntimePureNativeKind::I64, request, helper, stats)
@@ -489,7 +494,7 @@ pub(super) fn compile_jit(
 
 pub(super) fn compile_auto_scalar(
     request: &PureFunctionRequest,
-    helper: &RuntimePureHelper,
+    helper: RuntimePureHelperRef<'_>,
     input_type: RuntimePureInputType,
     output_type: RuntimePureOutputType,
     stats: &mut RuntimePureCompileStats,
@@ -517,14 +522,14 @@ pub(super) fn compile_auto_scalar(
 
 pub(super) fn compile_aot_i64(
     request: &PureFunctionRequest,
-    helper: &RuntimePureHelper,
+    helper: RuntimePureHelperRef<'_>,
     stats: &mut RuntimePureCompileStats,
 ) -> Option<RuntimePureCacheEntry> {
     stats.aot_attempts += 1;
     let compiled = (helper_native_kind(helper) == Some(RuntimePureNativeKind::I64))
         .then(|| {
             AotPureFunctionBackend::new()
-                .compile_i64_with_inputs(request, helper.input_names.iter().map(String::as_str))
+                .compile_i64_with_inputs(request, helper.input_locals.iter().copied())
                 .map(RuntimePureAotPlan::I64)
                 .ok()
         })
@@ -539,7 +544,7 @@ pub(super) fn compile_aot_i64(
 
 pub(super) fn compile_aot_scalar(
     request: &PureFunctionRequest,
-    helper: &RuntimePureHelper,
+    helper: RuntimePureHelperRef<'_>,
     input_type: RuntimePureInputType,
     output_type: RuntimePureOutputType,
     stats: &mut RuntimePureCompileStats,
@@ -548,7 +553,7 @@ pub(super) fn compile_aot_scalar(
     let compiled = AotPureFunctionBackend::new()
         .compile_scalar_with_inputs(
             request,
-            helper.input_names.iter().map(String::as_str),
+            helper.input_locals.iter().copied(),
             input_type,
             output_type,
         )
@@ -564,13 +569,14 @@ pub(super) fn compile_aot_scalar(
 
 #[cfg(all(feature = "native-jit", not(target_arch = "wasm32")))]
 pub(super) fn record_aot_object_artifact_bundle(
-    helpers: &[RuntimePureHelper],
+    plan: &std::sync::Arc<super::RuntimePlan>,
     cache: &[Option<RuntimePureCacheEntry>],
     stats: &mut RuntimePureCompileStats,
 ) {
     use super::native_jit::PureObjectBundleRequest;
 
-    let prepared = helpers
+    let prepared = plan
+        .pure_helpers()
         .iter()
         .filter(|helper| {
             cache
@@ -579,9 +585,19 @@ pub(super) fn record_aot_object_artifact_bundle(
                 .is_some_and(RuntimePureCacheEntry::uses_aot_plan)
         })
         .filter_map(|helper| {
+            let request = PureFunctionRequest::try_new(
+                plan.clone(),
+                helper.id,
+                helper
+                    .input_types
+                    .iter()
+                    .map(|input| scalar_zero_for_input(*input)()),
+            )
+            .ok()?;
+            let helper = request.helper_ref().ok()?;
             let kind = helper_native_kind(helper)?;
-            let request = compile_request(helper, || kind.zero_value());
-            Some((kind, helper, request))
+            let input_locals = helper.input_locals.to_vec();
+            Some((kind, request, input_locals))
         })
         .collect::<Vec<_>>();
 
@@ -590,11 +606,11 @@ pub(super) fn record_aot_object_artifact_bundle(
     }
 
     stats.object_attempts = stats.object_attempts.saturating_add(prepared.len());
-    let requests = prepared.iter().map(|(kind, helper, request)| {
+    let requests = prepared.iter().map(|(kind, request, input_locals)| {
         PureObjectBundleRequest::new(
             request,
             kind.object_input_kind(),
-            helper.input_names.iter().map(String::as_str),
+            input_locals.iter().copied(),
         )
     });
     match CraneliftPureFunctionBackend.emit_object_bundle(requests) {
@@ -613,16 +629,16 @@ pub(super) fn record_aot_object_artifact_bundle(
 
 #[cfg(not(all(feature = "native-jit", not(target_arch = "wasm32"))))]
 pub(super) fn record_aot_object_artifact_bundle(
-    _helpers: &[RuntimePureHelper],
+    _plan: &std::sync::Arc<super::RuntimePlan>,
     _cache: &[Option<RuntimePureCacheEntry>],
     _stats: &mut RuntimePureCompileStats,
 ) {
 }
 
 pub(super) fn helper_scalar_aot_input_type(
-    helper: &RuntimePureHelper,
+    helper: RuntimePureHelperRef<'_>,
 ) -> Option<RuntimePureInputType> {
-    if helper.input_names.len() != helper.input_types.len()
+    if helper.input_locals.len() != helper.input_types.len()
         || matches!(helper.output_type, RuntimePureOutputType::Value)
     {
         return None;
@@ -657,7 +673,7 @@ const fn scalar_input_type_for_output(
     }
 }
 
-const fn scalar_zero_for_input(input: RuntimePureInputType) -> fn() -> RuntimeValue {
+pub(super) const fn scalar_zero_for_input(input: RuntimePureInputType) -> fn() -> RuntimeValue {
     match input {
         RuntimePureInputType::I8 => zero_i8,
         RuntimePureInputType::I16 => zero_i16,
@@ -784,20 +800,20 @@ pub(super) fn helper_work_unit_slots(helpers: &[RuntimePureHelper]) -> Vec<usize
 }
 
 pub(super) fn runtime_expr_work_units(expr: &RuntimeExpr) -> usize {
-    match expr {
-        RuntimeExpr::Value(_) | RuntimeExpr::Local(_) | RuntimeExpr::EntityRef(_) => 1,
-        RuntimeExpr::Agent(agent) => {
+    match expr.kind() {
+        RuntimeExprKind::Value(_) | RuntimeExprKind::Local(_) | RuntimeExprKind::EntityRef(_) => 1,
+        RuntimeExprKind::Agent(agent) => {
             1 + agent
                 .operands()
                 .into_iter()
                 .map(runtime_expr_work_units)
                 .sum::<usize>()
         }
-        RuntimeExpr::Unary { expr, .. } => 1 + runtime_expr_work_units(expr),
-        RuntimeExpr::Binary { lhs, rhs, .. } => {
+        RuntimeExprKind::Unary { expr, .. } => 1 + runtime_expr_work_units(expr),
+        RuntimeExprKind::Binary { lhs, rhs, .. } => {
             2 + runtime_expr_work_units(lhs) + runtime_expr_work_units(rhs)
         }
-        RuntimeExpr::If {
+        RuntimeExprKind::If {
             condition,
             then_expr,
             else_expr,
@@ -806,62 +822,60 @@ pub(super) fn runtime_expr_work_units(expr: &RuntimeExpr) -> usize {
                 + runtime_expr_work_units(then_expr)
                 + runtime_expr_work_units(else_expr)
         }
-        RuntimeExpr::Let { expr, body, .. } => {
+        RuntimeExprKind::Let { expr, body, .. } => {
             2 + runtime_expr_work_units(expr) + runtime_expr_work_units(body)
         }
-        RuntimeExpr::AssignField {
-            target, expr, body, ..
-        } => {
-            8 + runtime_expr_work_units(target)
-                + runtime_expr_work_units(expr)
-                + runtime_expr_work_units(body)
+        RuntimeExprKind::AssignNominalField { expr, body, .. } => {
+            8 + runtime_expr_work_units(expr) + runtime_expr_work_units(body)
         }
-        RuntimeExpr::Tuple(items) | RuntimeExpr::BracketSeq(items) => {
+        RuntimeExprKind::Tuple(items) | RuntimeExprKind::BracketSeq(items) => {
             1 + items.iter().map(runtime_expr_work_units).sum::<usize>()
         }
-        RuntimeExpr::RepeatSeq { value, .. } => 2 + runtime_expr_work_units(value),
-        RuntimeExpr::Range { start, end, .. } => {
+        RuntimeExprKind::RepeatSeq { value, .. } => 2 + runtime_expr_work_units(value),
+        RuntimeExprKind::Range { start, end, .. } => {
             1 + start.as_deref().map_or(0, runtime_expr_work_units)
                 + end.as_deref().map_or(0, runtime_expr_work_units)
         }
-        RuntimeExpr::Record(fields) => {
-            1 + fields
-                .iter()
-                .map(|field| runtime_expr_work_units(&field.value))
-                .sum::<usize>()
-        }
-        RuntimeExpr::NominalRecord(record) => {
+        RuntimeExprKind::NominalRecord(record) => {
             1 + record
                 .initializers()
                 .iter()
                 .map(|field| runtime_expr_work_units(field.value()))
                 .sum::<usize>()
         }
-        RuntimeExpr::Variant { payload, .. } => {
+        RuntimeExprKind::Variant { payload, .. } => {
             1 + payload.as_deref().map_or(0, runtime_expr_work_units)
         }
-        RuntimeExpr::SpreadArg(payload) => 1 + runtime_expr_work_units(payload),
-        RuntimeExpr::Field { target, .. }
-        | RuntimeExpr::ProjectTuple { target, .. }
-        | RuntimeExpr::ProjectRecord { target, .. } => 1 + runtime_expr_work_units(target),
-        RuntimeExpr::Call { args, .. } | RuntimeExpr::PureCall { args, .. } => {
-            8 + args.iter().map(runtime_expr_work_units).sum::<usize>()
+        RuntimeExprKind::Field { target, .. }
+        | RuntimeExprKind::ProjectTuple { target, .. }
+        | RuntimeExprKind::ProjectRecord { target, .. } => 1 + runtime_expr_work_units(target),
+        RuntimeExprKind::Call { args, .. } | RuntimeExprKind::PureCall { args, .. } => {
+            8 + args
+                .iter()
+                .map(|arg| runtime_expr_work_units(arg.value()))
+                .sum::<usize>()
         }
-        RuntimeExpr::Function { body, .. } => 2 + runtime_expr_work_units(body),
-        RuntimeExpr::Apply { callee, args } => {
+        RuntimeExprKind::Function(_) => 2,
+        RuntimeExprKind::Apply { callee, args } => {
             8 + runtime_expr_work_units(callee)
-                + args.iter().map(runtime_expr_work_units).sum::<usize>()
+                + args
+                    .iter()
+                    .map(|arg| runtime_expr_work_units(arg.value()))
+                    .sum::<usize>()
         }
-        RuntimeExpr::MethodCall { receiver, args, .. }
-        | RuntimeExpr::TraitCall { receiver, args, .. } => {
+        RuntimeExprKind::TraitCall { receiver, args, .. } => {
             8 + runtime_expr_work_units(receiver)
-                + args.iter().map(runtime_expr_work_units).sum::<usize>()
+                + args
+                    .iter()
+                    .map(|arg| runtime_expr_work_units(arg.value()))
+                    .sum::<usize>()
         }
-        RuntimeExpr::Map { source, body, .. } | RuntimeExpr::Filter { source, body, .. } => {
+        RuntimeExprKind::Map { source, body, .. }
+        | RuntimeExprKind::Filter { source, body, .. } => {
             8 + runtime_expr_work_units(source) + runtime_expr_work_units(body)
         }
-        RuntimeExpr::Sum { source } => 4 + runtime_expr_work_units(source),
-        RuntimeExpr::IfLet {
+        RuntimeExprKind::Sum { source } => 4 + runtime_expr_work_units(source),
+        RuntimeExprKind::IfLet {
             expr,
             guard,
             then_expr,
@@ -873,16 +887,17 @@ pub(super) fn runtime_expr_work_units(expr: &RuntimeExpr) -> usize {
                 + runtime_expr_work_units(then_expr)
                 + runtime_expr_work_units(else_expr)
         }
-        RuntimeExpr::Match { scrutinee, arms } => {
+        RuntimeExprKind::Match { scrutinee, arms } => {
             6 + runtime_expr_work_units(scrutinee)
                 + arms
                     .iter()
                     .map(|arm| {
-                        arm.guard.as_ref().map_or(0, runtime_expr_work_units)
-                            + runtime_expr_work_units(&arm.value)
+                        arm.guard().map_or(0, runtime_expr_work_units)
+                            + runtime_expr_work_units(arm.value())
                     })
                     .sum::<usize>()
         }
+        RuntimeExprKind::ReductionUnchanged { state } => 2 + runtime_expr_work_units(state),
     }
 }
 
@@ -897,10 +912,10 @@ pub(super) fn call_jit_batch(
     compiled: &CompiledPureI64Inputs,
     rows: &[RuntimeI64Args],
     out: &mut [i64],
-    helper: &RuntimePureHelper,
+    helper: RuntimePureHelperRef<'_>,
     flat_inputs: &mut Vec<i64>,
 ) -> Result<(), RuntimeEvalError> {
-    let arity = compiled.param_names().len();
+    let arity = compiled.input_locals().len();
     flat_inputs.clear();
     flat_inputs.reserve(rows.len().saturating_mul(arity));
     for row in rows {
@@ -916,7 +931,7 @@ pub(super) fn call_jit_batch(
 
 pub(super) fn call_jit_flat_batch_sum(
     compiled: &CompiledPureI64Inputs,
-    helper: &RuntimePureHelper,
+    helper: RuntimePureHelperRef<'_>,
     flat_inputs: &[i64],
     rows: usize,
 ) -> Result<i64, RuntimeEvalError> {
@@ -1101,20 +1116,20 @@ pub(super) fn call_aot_flat_batch_sum_with_policy(
 }
 
 pub(super) fn call_vm_batch(
-    helper: &RuntimePureHelper,
+    helper: RuntimePureHelperRef<'_>,
     rows: &[RuntimeI64Args],
     out: &mut [i64],
     scratch: &mut VmPureFunctionScratch,
 ) -> Result<(), RuntimeEvalError> {
     rows.iter().zip(out.iter_mut()).try_for_each(|(row, slot)| {
-        *slot = exact_i64_result(scratch.evaluate_i64_args(helper, *row)?)?;
+        *slot = exact_i64_result(scratch.evaluate_i64_args(helper.plan(), helper.id(), *row)?)?;
         Ok(())
     })
 }
 
 pub(super) fn call_vm_batch_parallel(
     pool: Option<&ThreadPool>,
-    helper: &RuntimePureHelper,
+    helper: RuntimePureHelperRef<'_>,
     rows: &[RuntimeI64Args],
     out: &mut [i64],
 ) -> Result<(), RuntimeEvalError> {
@@ -1122,7 +1137,11 @@ pub(super) fn call_vm_batch_parallel(
         rows.par_iter().zip(out.par_iter_mut()).try_for_each_init(
             VmPureFunctionScratch::default,
             |scratch, (row, slot)| {
-                *slot = exact_i64_result(scratch.evaluate_i64_args(helper, *row)?)?;
+                *slot = exact_i64_result(scratch.evaluate_i64_args(
+                    helper.plan(),
+                    helper.id(),
+                    *row,
+                )?)?;
                 Ok(())
             },
         )
@@ -1134,7 +1153,7 @@ pub(super) fn call_vm_batch_parallel(
 }
 
 pub(super) fn call_vm_flat_batch(
-    helper: &RuntimePureHelper,
+    helper: RuntimePureHelperRef<'_>,
     flat_inputs: &[i64],
     arity: usize,
     out: &mut [i64],
@@ -1142,7 +1161,8 @@ pub(super) fn call_vm_flat_batch(
 ) -> Result<(), RuntimeEvalError> {
     if arity == 0 {
         return out.iter_mut().try_for_each(|slot| {
-            *slot = exact_i64_result(scratch.evaluate_i64_slice(helper, &[])?)?;
+            *slot =
+                exact_i64_result(scratch.evaluate_i64_slice(helper.plan(), helper.id(), &[])?)?;
             Ok(())
         });
     }
@@ -1150,13 +1170,14 @@ pub(super) fn call_vm_flat_batch(
         .chunks_exact(arity)
         .zip(out.iter_mut())
         .try_for_each(|(row, slot)| {
-            *slot = exact_i64_result(scratch.evaluate_i64_slice(helper, row)?)?;
+            *slot =
+                exact_i64_result(scratch.evaluate_i64_slice(helper.plan(), helper.id(), row)?)?;
             Ok(())
         })
 }
 
 pub(super) fn call_vm_i32_flat_batch(
-    helper: &RuntimePureHelper,
+    helper: RuntimePureHelperRef<'_>,
     flat_inputs: &[i32],
     arity: usize,
     out: &mut [i32],
@@ -1164,7 +1185,10 @@ pub(super) fn call_vm_i32_flat_batch(
 ) -> Result<(), RuntimeEvalError> {
     if arity == 0 {
         return out.iter_mut().try_for_each(|slot| {
-            *slot = vm_i32_result(helper, scratch.evaluate_i32_slice(helper, &[])?)?;
+            *slot = vm_i32_result(
+                helper,
+                scratch.evaluate_i32_slice(helper.plan(), helper.id(), &[])?,
+            )?;
             Ok(())
         });
     }
@@ -1172,13 +1196,16 @@ pub(super) fn call_vm_i32_flat_batch(
         .chunks_exact(arity)
         .zip(out.iter_mut())
         .try_for_each(|(row, slot)| {
-            *slot = vm_i32_result(helper, scratch.evaluate_i32_slice(helper, row)?)?;
+            *slot = vm_i32_result(
+                helper,
+                scratch.evaluate_i32_slice(helper.plan(), helper.id(), row)?,
+            )?;
             Ok(())
         })
 }
 
 pub(super) fn call_vm_i32_flat_batch_sum(
-    helper: &RuntimePureHelper,
+    helper: RuntimePureHelperRef<'_>,
     flat_inputs: &[i32],
     arity: usize,
     rows: usize,
@@ -1189,7 +1216,7 @@ pub(super) fn call_vm_i32_flat_batch_sum(
         for _ in 0..rows {
             sum += i64::from(vm_i32_result(
                 helper,
-                scratch.evaluate_i32_slice(helper, &[])?,
+                scratch.evaluate_i32_slice(helper.plan(), helper.id(), &[])?,
             )?);
         }
         return Ok(sum);
@@ -1197,14 +1224,14 @@ pub(super) fn call_vm_i32_flat_batch_sum(
     for row in flat_inputs.chunks_exact(arity) {
         sum += i64::from(vm_i32_result(
             helper,
-            scratch.evaluate_i32_slice(helper, row)?,
+            scratch.evaluate_i32_slice(helper.plan(), helper.id(), row)?,
         )?);
     }
     Ok(sum)
 }
 
 pub(super) fn call_vm_exact_int_flat_batch_sum<T: RuntimePureScalarInteger>(
-    helper: &RuntimePureHelper,
+    helper: RuntimePureHelperRef<'_>,
     flat_inputs: &[T],
     arity: usize,
     rows: usize,
@@ -1213,20 +1240,20 @@ pub(super) fn call_vm_exact_int_flat_batch_sum<T: RuntimePureScalarInteger>(
     let mut sum = 0_i64;
     if arity == 0 {
         for _ in 0..rows {
-            let value = scratch.evaluate_exact_int_slice::<T>(helper, &[])?;
+            let value = scratch.evaluate_exact_int_slice::<T>(helper.plan(), helper.id(), &[])?;
             sum += T::try_from_runtime_value(&helper.name, value)?.try_sum_as_i64(&helper.name)?;
         }
         return Ok(sum);
     }
     for row in flat_inputs.chunks_exact(arity) {
-        let value = scratch.evaluate_exact_int_slice::<T>(helper, row)?;
+        let value = scratch.evaluate_exact_int_slice::<T>(helper.plan(), helper.id(), row)?;
         sum += T::try_from_runtime_value(&helper.name, value)?.try_sum_as_i64(&helper.name)?;
     }
     Ok(sum)
 }
 
 pub(super) fn call_vm_exact_int_flat_batch<T: RuntimePureScalarInteger>(
-    helper: &RuntimePureHelper,
+    helper: RuntimePureHelperRef<'_>,
     flat_inputs: &[T],
     arity: usize,
     out: &mut [T],
@@ -1234,7 +1261,7 @@ pub(super) fn call_vm_exact_int_flat_batch<T: RuntimePureScalarInteger>(
 ) -> Result<(), RuntimeEvalError> {
     if arity == 0 {
         return out.iter_mut().try_for_each(|slot| {
-            let value = scratch.evaluate_exact_int_slice::<T>(helper, &[])?;
+            let value = scratch.evaluate_exact_int_slice::<T>(helper.plan(), helper.id(), &[])?;
             *slot = T::try_from_runtime_value(&helper.name, value)?;
             Ok(())
         });
@@ -1243,7 +1270,7 @@ pub(super) fn call_vm_exact_int_flat_batch<T: RuntimePureScalarInteger>(
         .chunks_exact(arity)
         .zip(out.iter_mut())
         .try_for_each(|(row, slot)| {
-            let value = scratch.evaluate_exact_int_slice::<T>(helper, row)?;
+            let value = scratch.evaluate_exact_int_slice::<T>(helper.plan(), helper.id(), row)?;
             *slot = T::try_from_runtime_value(&helper.name, value)?;
             Ok(())
         })
@@ -1296,7 +1323,7 @@ pub(super) fn call_aot_exact_int_flat_batch_sum<T: RuntimePureScalarInteger>(
 }
 
 pub(super) fn call_vm_f32_flat_batch(
-    helper: &RuntimePureHelper,
+    helper: RuntimePureHelperRef<'_>,
     flat_inputs: &[f32],
     arity: usize,
     out: &mut [f32],
@@ -1304,7 +1331,10 @@ pub(super) fn call_vm_f32_flat_batch(
 ) -> Result<(), RuntimeEvalError> {
     if arity == 0 {
         return out.iter_mut().try_for_each(|slot| {
-            *slot = vm_f32_result(helper, scratch.evaluate_f32_slice(helper, &[])?)?;
+            *slot = vm_f32_result(
+                helper,
+                scratch.evaluate_f32_slice(helper.plan(), helper.id(), &[])?,
+            )?;
             Ok(())
         });
     }
@@ -1312,7 +1342,10 @@ pub(super) fn call_vm_f32_flat_batch(
         .chunks_exact(arity)
         .zip(out.iter_mut())
         .try_for_each(|(row, slot)| {
-            *slot = vm_f32_result(helper, scratch.evaluate_f32_slice(helper, row)?)?;
+            *slot = vm_f32_result(
+                helper,
+                scratch.evaluate_f32_slice(helper.plan(), helper.id(), row)?,
+            )?;
             Ok(())
         })
 }
@@ -1342,7 +1375,7 @@ pub(super) fn call_aot_f32_flat_batch(
 }
 
 pub(super) fn call_vm_f64_flat_batch(
-    helper: &RuntimePureHelper,
+    helper: RuntimePureHelperRef<'_>,
     flat_inputs: &[f64],
     arity: usize,
     out: &mut [f64],
@@ -1350,7 +1383,10 @@ pub(super) fn call_vm_f64_flat_batch(
 ) -> Result<(), RuntimeEvalError> {
     if arity == 0 {
         return out.iter_mut().try_for_each(|slot| {
-            *slot = vm_f64_result(helper, scratch.evaluate_f64_slice(helper, &[])?)?;
+            *slot = vm_f64_result(
+                helper,
+                scratch.evaluate_f64_slice(helper.plan(), helper.id(), &[])?,
+            )?;
             Ok(())
         });
     }
@@ -1358,7 +1394,10 @@ pub(super) fn call_vm_f64_flat_batch(
         .chunks_exact(arity)
         .zip(out.iter_mut())
         .try_for_each(|(row, slot)| {
-            *slot = vm_f64_result(helper, scratch.evaluate_f64_slice(helper, row)?)?;
+            *slot = vm_f64_result(
+                helper,
+                scratch.evaluate_f64_slice(helper.plan(), helper.id(), row)?,
+            )?;
             Ok(())
         })
 }
@@ -1388,7 +1427,7 @@ pub(super) fn call_aot_f64_flat_batch(
 }
 
 pub(super) fn vm_i32_result(
-    helper: &RuntimePureHelper,
+    helper: RuntimePureHelperRef<'_>,
     value: RuntimeValue,
 ) -> Result<i32, RuntimeEvalError> {
     match value {
@@ -1405,7 +1444,7 @@ pub(super) fn vm_i32_result(
 }
 
 pub(super) fn vm_f32_result(
-    helper: &RuntimePureHelper,
+    helper: RuntimePureHelperRef<'_>,
     value: RuntimeValue,
 ) -> Result<f32, RuntimeEvalError> {
     match value {
@@ -1421,7 +1460,7 @@ pub(super) fn vm_f32_result(
 }
 
 pub(super) fn vm_f64_result(
-    helper: &RuntimePureHelper,
+    helper: RuntimePureHelperRef<'_>,
     value: RuntimeValue,
 ) -> Result<f64, RuntimeEvalError> {
     match value {
@@ -1438,7 +1477,7 @@ pub(super) fn vm_f64_result(
 
 pub(super) fn call_vm_flat_batch_parallel(
     pool: Option<&ThreadPool>,
-    helper: &RuntimePureHelper,
+    helper: RuntimePureHelperRef<'_>,
     flat_inputs: &[i64],
     arity: usize,
     out: &mut [i64],
@@ -1448,7 +1487,11 @@ pub(super) fn call_vm_flat_batch_parallel(
             return out.par_iter_mut().try_for_each_init(
                 VmPureFunctionScratch::default,
                 |scratch, slot| {
-                    *slot = exact_i64_result(scratch.evaluate_i64_slice(helper, &[])?)?;
+                    *slot = exact_i64_result(scratch.evaluate_i64_slice(
+                        helper.plan(),
+                        helper.id(),
+                        &[],
+                    )?)?;
                     Ok(())
                 },
             );
@@ -1457,7 +1500,11 @@ pub(super) fn call_vm_flat_batch_parallel(
             .par_chunks_exact(arity)
             .zip(out.par_iter_mut())
             .try_for_each_init(VmPureFunctionScratch::default, |scratch, (row, slot)| {
-                *slot = exact_i64_result(scratch.evaluate_i64_slice(helper, row)?)?;
+                *slot = exact_i64_result(scratch.evaluate_i64_slice(
+                    helper.plan(),
+                    helper.id(),
+                    row,
+                )?)?;
                 Ok(())
             })
     };
@@ -1468,7 +1515,7 @@ pub(super) fn call_vm_flat_batch_parallel(
 }
 
 pub(super) fn call_vm_flat_batch_sum(
-    helper: &RuntimePureHelper,
+    helper: RuntimePureHelperRef<'_>,
     flat_inputs: &[i64],
     arity: usize,
     rows: usize,
@@ -1477,19 +1524,20 @@ pub(super) fn call_vm_flat_batch_sum(
     let mut sum = 0i64;
     if arity == 0 {
         for _ in 0..rows {
-            sum += exact_i64_result(scratch.evaluate_i64_slice(helper, &[])?)?;
+            sum +=
+                exact_i64_result(scratch.evaluate_i64_slice(helper.plan(), helper.id(), &[])?)?;
         }
         return Ok(sum);
     }
     for row in flat_inputs.chunks_exact(arity) {
-        sum += exact_i64_result(scratch.evaluate_i64_slice(helper, row)?)?;
+        sum += exact_i64_result(scratch.evaluate_i64_slice(helper.plan(), helper.id(), row)?)?;
     }
     Ok(sum)
 }
 
 pub(super) fn call_vm_flat_batch_sum_parallel(
     pool: Option<&ThreadPool>,
-    helper: &RuntimePureHelper,
+    helper: RuntimePureHelperRef<'_>,
     flat_inputs: &[i64],
     arity: usize,
     rows: usize,
@@ -1501,7 +1549,11 @@ pub(super) fn call_vm_flat_batch_sum_parallel(
                 .try_fold(
                     || (VmPureFunctionScratch::default(), 0i64),
                     |(mut scratch, sum), _| {
-                        let value = exact_i64_result(scratch.evaluate_i64_slice(helper, &[])?)?;
+                        let value = exact_i64_result(scratch.evaluate_i64_slice(
+                            helper.plan(),
+                            helper.id(),
+                            &[],
+                        )?)?;
                         Ok::<(VmPureFunctionScratch, i64), RuntimeEvalError>((scratch, sum + value))
                     },
                 )
@@ -1513,7 +1565,11 @@ pub(super) fn call_vm_flat_batch_sum_parallel(
             .try_fold(
                 || (VmPureFunctionScratch::default(), 0i64),
                 |(mut scratch, sum), row| {
-                    let value = exact_i64_result(scratch.evaluate_i64_slice(helper, row)?)?;
+                    let value = exact_i64_result(scratch.evaluate_i64_slice(
+                        helper.plan(),
+                        helper.id(),
+                        row,
+                    )?)?;
                     Ok::<(VmPureFunctionScratch, i64), RuntimeEvalError>((scratch, sum + value))
                 },
             )
@@ -1529,7 +1585,7 @@ pub(super) fn call_vm_flat_batch_sum_parallel(
 pub(super) fn call_vm_flat_batch_sum_with_policy(
     policy: FlatBatchSumPolicy<'_>,
     stats: &mut RuntimePureCallStats,
-    helper: &RuntimePureHelper,
+    helper: RuntimePureHelperRef<'_>,
     shape: FlatBatchSumShape<'_>,
     scratch: &mut VmPureFunctionScratch,
 ) -> Result<i64, RuntimeEvalError> {
@@ -1548,19 +1604,13 @@ pub(super) fn call_vm_flat_batch_sum_with_policy(
 }
 
 pub(super) fn compile_request(
-    helper: &RuntimePureHelper,
+    helper: RuntimePureHelperRef<'_>,
     zero: impl Fn() -> RuntimeValue + Copy,
 ) -> PureFunctionRequest {
-    PureFunctionRequest::new(
-        helper.name.clone(),
-        helper.expr.clone(),
-        helper
-            .input_names
-            .iter()
-            .cloned()
-            .map(|name| RuntimeBinding {
-                name,
-                value: zero(),
-            }),
+    PureFunctionRequest::try_new(
+        helper.plan().clone(),
+        helper.id(),
+        helper.input_locals.iter().map(|_| zero()),
     )
+    .expect("runtime plan admitted a malformed pure helper")
 }

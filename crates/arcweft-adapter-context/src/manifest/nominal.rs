@@ -42,6 +42,8 @@ pub struct AdapterNominalPathPrefix {
 #[derive(Clone, Debug, Deserialize, Eq, Hash, PartialEq, Serialize)]
 #[serde(tag = "kind", rename_all = "snake_case")]
 pub enum AdapterNominalOwner {
+    /// Nominal declared by the built-in standard environment.
+    Standard,
     /// Nominal declared by one adapter environment.
     Environment { owner: AdapterEnvironmentOwnerId },
     /// Nominal declared by one Rust ABI package.

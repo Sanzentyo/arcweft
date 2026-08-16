@@ -224,11 +224,6 @@ impl Encoder {
                 self.ty(item);
                 self.ty(error);
             }
-            TypeKind::Source { item, error } => {
-                self.tag(56);
-                self.ty(item);
-                self.ty(error);
-            }
             TypeKind::Result { ok, error } => {
                 self.tag(57);
                 self.ty(ok);
@@ -657,7 +652,6 @@ impl Encoder {
             EntityKind::Signal => 20,
             EntityKind::Metric => 21,
             EntityKind::Scene => 22,
-            EntityKind::Source => 23,
             EntityKind::Test => 24,
             EntityKind::Bench => 25,
             EntityKind::Layer => 26,

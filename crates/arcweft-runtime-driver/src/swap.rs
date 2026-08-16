@@ -7,21 +7,11 @@ use arcweft_bundle::{ArcweftBundle, BundleKind as ArcweftBundleKind, BundleVirtu
 use arcweft_core::awbc::schema::{
     AwbcBlock, AwbcFrameLayout, AwbcFunction, AwbcInstruction, AwbcProgram, AwbcSignature,
 };
-use arcweft_core::bytecode::{
-    BYTECODE_ABI_VERSION, BytecodeEntry, BytecodeProgram, BytecodeVerificationBudget,
-    BytecodeVerificationError,
-};
 use arcweft_core::entry::{
     AgentBudget, AgentPolicyHash, EntryBindingIdentity, RuntimeCallableRole, RuntimeNominalTypeId,
     RuntimeStatefulEntryRoles, TypeLayoutHash as CoreTypeLayoutHash,
 };
-use arcweft_core::line_task::LineTaskGroup;
-use arcweft_core::plan::{
-    EntryRuntimeId, RuntimeCallableExecutable, RuntimeEntryKind, RuntimeEntryRoles,
-    RuntimeFlowExecutable, RuntimePureHelper,
-};
-use arcweft_core::source::SourcePlan;
-use arcweft_core::stream::StreamPlan;
+use arcweft_core::plan::{EntryRuntimeId, RuntimeEntryKind, RuntimeEntryRoles};
 use arcweft_text_model::DialogueContentCatalog;
 use serde::{Deserialize, Serialize};
 use std::collections::{BTreeMap, BTreeSet};
@@ -58,7 +48,7 @@ pub struct ProgramGeneration {
     pub id: GenerationId,
     pub content_root: BundleDigest,
     pub dialogue_content: BundleDigest,
-    pub bytecode_abi: u32,
+    pub awbc_abi: u32,
     pub code_slots: BTreeMap<CodeSlotId, CodeSlot>,
     pub state_layouts: BTreeMap<StateId, TypeLayoutHash>,
     pub entry_compatibility: BTreeMap<EntryRuntimeId, EntryCompatibility>,
@@ -146,8 +136,6 @@ pub enum SwapError {
 pub enum GenerationBuildError {
     #[error("bundle kind `{0:?}` is not supported by the game hot-swap generation model")]
     UnsupportedBundleKind(ArcweftBundleKind),
-    #[error("failed to verify bundle bytecode: {0}")]
-    VerifyBytecode(#[from] BytecodeVerificationError),
     #[error("failed to verify product AWBC executable: {message}")]
     ProductAwbcVerification { message: String },
     #[error("failed to encode hot-swap generation fingerprint: {0}")]
@@ -189,7 +177,7 @@ impl ProgramGeneration {
             id,
             content_root,
             dialogue_content,
-            bytecode_abi: BYTECODE_ABI_VERSION,
+            awbc_abi: 1,
             code_slots: BTreeMap::new(),
             state_layouts: BTreeMap::new(),
             entry_compatibility: BTreeMap::new(),
@@ -206,51 +194,19 @@ impl ProgramGeneration {
                 bundle.bundle_kind,
             ));
         }
-        if let Some(product_awbc) = bundle.product_awbc() {
-            product_awbc.verify_product_executable().map_err(|error| {
-                GenerationBuildError::ProductAwbcVerification {
-                    message: error.to_string(),
-                }
-            })?;
-            return Self::from_verified_awbc(
-                id,
-                product_awbc.program(),
-                content_root(bundle)?,
-                adapter_requirements(bundle)?,
-                dialogue_content_digest(bundle)?,
-            );
-        }
         bundle
-            .bytecode
-            .program
-            .verify(BytecodeVerificationBudget::default())?;
-        Self::from_verified_bytecode(
+            .product_awbc()
+            .verify_product_executable()
+            .map_err(|error| GenerationBuildError::ProductAwbcVerification {
+                message: error.to_string(),
+            })?;
+        Self::from_verified_awbc(
             id,
-            &bundle.bytecode.program,
+            bundle.product_awbc().program(),
             content_root(bundle)?,
             adapter_requirements(bundle)?,
             dialogue_content_digest(bundle)?,
         )
-    }
-
-    pub fn from_verified_bytecode(
-        id: GenerationId,
-        bytecode: &BytecodeProgram,
-        content_root: BundleDigest,
-        adapter_requirements: BundleDigest,
-        dialogue_content: BundleDigest,
-    ) -> Result<Self, GenerationBuildError> {
-        let (state_layouts, entry_compatibility) = bytecode_entry_compatibility(bytecode);
-        Ok(Self {
-            id,
-            content_root,
-            dialogue_content,
-            bytecode_abi: bytecode.abi_version,
-            code_slots: code_slots(bytecode)?,
-            state_layouts,
-            entry_compatibility,
-            adapter_requirements,
-        })
     }
 
     pub fn from_verified_awbc(
@@ -265,7 +221,7 @@ impl ProgramGeneration {
             id,
             content_root,
             dialogue_content,
-            bytecode_abi: program.header.abi_version,
+            awbc_abi: program.header.abi_version,
             code_slots: awbc_code_slots(program)?,
             state_layouts,
             entry_compatibility,
@@ -279,22 +235,6 @@ impl StateId {
     pub fn for_entry_root(entry: &EntryRuntimeId) -> Self {
         Self(format!("entry-root:{}", entry.canonical_label()))
     }
-}
-
-fn bytecode_entry_compatibility(bytecode: &BytecodeProgram) -> EntryCompatibilityMaps {
-    let mut state_layouts = BTreeMap::new();
-    let mut entries = BTreeMap::new();
-    for entry in &bytecode.entries {
-        insert_entry_compatibility(
-            &mut state_layouts,
-            &mut entries,
-            entry.id.clone(),
-            entry.kind.clone(),
-            entry.binding,
-            &entry.roles,
-        );
-    }
-    (state_layouts, entries)
 }
 
 fn awbc_entry_compatibility(
@@ -409,35 +349,6 @@ fn adapter_requirements(bundle: &ArcweftBundle) -> Result<BundleDigest, Generati
                 message: error.to_string(),
             },
         )
-}
-
-fn code_slots(
-    bytecode: &BytecodeProgram,
-) -> Result<BTreeMap<CodeSlotId, CodeSlot>, GenerationBuildError> {
-    let mut slots = bytecode
-        .flows
-        .iter()
-        .map(|flow| {
-            let digest = digest_serde(flow)?;
-            Ok((
-                CodeSlotId(format!("flow:{}", flow.id.canonical_label())),
-                CodeSlot {
-                    signature: conservative_signature(digest),
-                    code_digest: digest,
-                },
-            ))
-        })
-        .collect::<Result<BTreeMap<_, _>, GenerationBuildError>>()?;
-    let tables_digest = digest_serde(&ProgramTablesFingerprint::new(bytecode));
-    let tables_digest = tables_digest?;
-    slots.insert(
-        CodeSlotId("__program_tables".to_owned()),
-        CodeSlot {
-            signature: conservative_signature(tables_digest),
-            code_digest: tables_digest,
-        },
-    );
-    Ok(slots)
 }
 
 fn awbc_code_slots(
@@ -587,31 +498,6 @@ fn awbc_function_code_slot_id(
     CodeSlotId(format!("awbc:{id}"))
 }
 
-#[derive(Serialize)]
-struct ProgramTablesFingerprint<'a> {
-    entries: &'a [BytecodeEntry],
-    callable_executables: &'a [RuntimeCallableExecutable],
-    flow_executables: &'a [RuntimeFlowExecutable],
-    pure_helpers: &'a [RuntimePureHelper],
-    line_task_groups: &'a [LineTaskGroup],
-    stream_plans: &'a [StreamPlan],
-    source_plans: &'a [SourcePlan],
-}
-
-impl<'a> ProgramTablesFingerprint<'a> {
-    fn new(bytecode: &'a BytecodeProgram) -> Self {
-        Self {
-            entries: &bytecode.entries,
-            callable_executables: &bytecode.callable_executables,
-            flow_executables: &bytecode.flow_executables,
-            pure_helpers: &bytecode.pure_helpers,
-            line_task_groups: &bytecode.line_task_groups,
-            stream_plans: &bytecode.stream_plans,
-            source_plans: &bytecode.source_plans,
-        }
-    }
-}
-
 fn conservative_signature(digest: BundleDigest) -> RuntimeSignature {
     RuntimeSignature {
         params: digest,
@@ -695,8 +581,7 @@ impl std::fmt::Display for SwapCompatibility {
 }
 
 pub fn classify_swap(active: &ProgramGeneration, next: &ProgramGeneration) -> SwapCompatibility {
-    if active.bytecode_abi != next.bytecode_abi
-        || active.adapter_requirements != next.adapter_requirements
+    if active.awbc_abi != next.awbc_abi || active.adapter_requirements != next.adapter_requirements
     {
         return SwapCompatibility::RestartRequired;
     }
@@ -866,6 +751,3 @@ impl SwapSession {
         }
     }
 }
-
-#[cfg(test)]
-mod tests;

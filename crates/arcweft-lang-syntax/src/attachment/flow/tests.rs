@@ -13,10 +13,9 @@ use super::{
 };
 use crate::attachment::node::{LetChoiceStatementKind, ThreadExpressionKind};
 use crate::attachment::{
-    AttachedAwaitWithBranchBlock, AttachedChoiceCompactAction, AttachedChoiceItem,
-    AttachedChoiceMatchArmBody, AttachedChoiceOptionField, AttachedChoicePlanItem,
-    AttachedChoiceSuiteSource, AttachedRequiredAwaitWithBranchBody, AttachedRequiredChoiceBody,
-    AttachedRequiredChoiceMatchBody, AttachedRequiredChoiceOptionBody,
+    AttachedChoiceCompactAction, AttachedChoiceItem, AttachedChoiceMatchArmBody,
+    AttachedChoiceOptionField, AttachedChoicePlanItem, AttachedChoiceSuiteSource,
+    AttachedRequiredChoiceBody, AttachedRequiredChoiceMatchBody, AttachedRequiredChoiceOptionBody,
     AttachedRequiredChoicePlanBody, AttachedRequiredChoiceViewBody, AttachedRequiredIncludeTarget,
     AttachedRequiredNestedThreadFlowBody, AttachedRequiredThreadExpressionBody,
     AttachedSelectBindingName, AttachedSelectBranch, AttachedSelectStatementForm,
@@ -24,8 +23,6 @@ use crate::attachment::{
     AttachedTriggerPattern, GrammarIdentityMap, RequiredStatementExpressionNode, SyntaxDatabaseId,
     SyntaxLineageId, SyntaxNodeId, SyntaxSnapshotData, SyntaxSnapshotId, attach_typed_tree,
 };
-use crate::expressions::SyntaxAwaitPropagation;
-use crate::grammar::SyntaxAwaitBranchKind;
 use crate::grammar::kinds::SyntaxKind;
 use crate::id_ref::SyntaxIdRefPart;
 use crate::name::SyntaxNameIssue;
@@ -424,7 +421,7 @@ fn expected_thread_flow_families() -> [AttachedThreadFlowItemFamily; 16] {
         AttachedThreadFlowItemFamily::SourceLocale,
         AttachedThreadFlowItemFamily::Scope,
         AttachedThreadFlowItemFamily::Include,
-        AttachedThreadFlowItemFamily::AwaitWith,
+        AttachedThreadFlowItemFamily::Statement,
         AttachedThreadFlowItemFamily::Error,
     ]
 }
@@ -749,138 +746,6 @@ fn select_binding_name_retains_missing_and_invalid_authored_owners() {
             && source.source_text() == "other"
     ));
     assert!(select.has_recovery());
-}
-
-#[test]
-fn await_with_statement_owns_propagation_branch_kinds_and_nested_bodies() {
-    let snapshot = attach(concat!(
-        "flow await_branches {\n",
-        "    try await task with {\n",
-        "        pending progress => { include @flow.loading }\n",
-        "        ready value => { out value }\n",
-        "        error issue => { return issue }\n",
-        "        denied reason => { goto @flow.denied }\n",
-        "    }\n",
-        "}\n",
-    ));
-    let declaration = flow(&snapshot).semantics().unwrap();
-    let AttachedRequiredFlowBody::Present(body) = declaration.body() else {
-        panic!("AwaitWith fixture requires a Flow body");
-    };
-    let AttachedThreadFlowItem::AwaitWith(await_with) = &body.items()[0] else {
-        panic!("fixture must remain AwaitWith");
-    };
-    let await_with = await_with.semantics().unwrap();
-    assert_eq!(
-        await_with.propagation(),
-        SyntaxAwaitPropagation::PropagateError
-    );
-    assert!(matches!(
-        await_with.operand(),
-        RequiredStatementExpressionNode::Expression(operand) if operand.source_text() == "task"
-    ));
-    let AttachedRequiredAwaitWithBranchBody::Present(branches) = await_with.body() else {
-        panic!("authored AwaitWith body must remain present");
-    };
-    assert_await_branch_matrix(branches);
-    assert!(!await_with.has_recovery());
-}
-
-fn assert_await_branch_matrix(branches: &AttachedAwaitWithBranchBlock) {
-    assert_eq!(branches.branches().len(), 4);
-    assert_eq!(
-        branches
-            .branches()
-            .iter()
-            .map(crate::attachment::AttachedAwaitWithBranch::kind)
-            .collect::<Vec<_>>(),
-        [
-            Some(SyntaxAwaitBranchKind::Pending),
-            Some(SyntaxAwaitBranchKind::Ready),
-            Some(SyntaxAwaitBranchKind::Error),
-            Some(SyntaxAwaitBranchKind::Denied),
-        ]
-    );
-    assert_eq!(
-        branches
-            .branches()
-            .iter()
-            .map(|branch| branch.pattern().unwrap().syntax().source_text().to_owned())
-            .collect::<Vec<_>>(),
-        ["progress", "value", "issue", "reason"]
-    );
-    assert_eq!(
-        branches
-            .branches()
-            .iter()
-            .map(|branch| match branch.body() {
-                AttachedRequiredNestedThreadFlowBody::Present(body) => body.items()[0].kind(),
-                AttachedRequiredNestedThreadFlowBody::Missing(_) => {
-                    panic!("canonical AwaitWith branches require bodies")
-                }
-            })
-            .collect::<Vec<_>>(),
-        [
-            SyntaxKind::IncludeStatement,
-            SyntaxKind::OutStatement,
-            SyntaxKind::ReturnStatement,
-            SyntaxKind::GotoStatement,
-        ]
-    );
-}
-
-#[test]
-fn await_with_recovery_distinguishes_missing_body_unknown_branch_and_error_kind() {
-    let snapshot = attach(concat!(
-        "flow await_recovery {\n",
-        "    await? task with\n",
-        "    await task with {\n",
-        "        mystery value => { out value }\n",
-        "        error issue =>\n",
-        "    }\n",
-        "}\n",
-    ));
-    let declaration = flow(&snapshot).semantics().unwrap();
-    let AttachedRequiredFlowBody::Present(body) = declaration.body() else {
-        panic!("AwaitWith recovery fixture requires a Flow body");
-    };
-
-    let AttachedThreadFlowItem::AwaitWith(missing) = &body.items()[0] else {
-        panic!("first item must be AwaitWith");
-    };
-    let missing = missing.semantics().unwrap();
-    assert_eq!(
-        missing.propagation(),
-        SyntaxAwaitPropagation::PropagateError
-    );
-    assert!(matches!(
-        missing.body(),
-        AttachedRequiredAwaitWithBranchBody::Missing(node) if node.range().is_empty()
-    ));
-
-    let AttachedThreadFlowItem::AwaitWith(recovered) = &body.items()[1] else {
-        panic!("second item must be AwaitWith");
-    };
-    let recovered = recovered.semantics().unwrap();
-    assert_eq!(
-        recovered.propagation(),
-        SyntaxAwaitPropagation::PreserveResult
-    );
-    let AttachedRequiredAwaitWithBranchBody::Present(branches) = recovered.body() else {
-        panic!("second AwaitWith body must remain present");
-    };
-    assert_eq!(branches.branches().len(), 2);
-    assert_eq!(branches.branches()[0].kind(), None);
-    assert!(branches.branches()[0].recovery().is_some());
-    assert_eq!(
-        branches.branches()[1].kind(),
-        Some(SyntaxAwaitBranchKind::Error)
-    );
-    assert!(matches!(
-        branches.branches()[1].body(),
-        AttachedRequiredNestedThreadFlowBody::Missing(node) if node.range().is_empty()
-    ));
-    assert!(recovered.has_recovery());
 }
 
 #[test]

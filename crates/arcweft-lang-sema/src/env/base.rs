@@ -4,7 +4,9 @@ use super::{
     enums::{EnumVariantPayload, normalize_enum_variant_payload},
     nominal::{AcceptedNominalCatalog, AcceptedNominalOrigin, standard_exact_record},
 };
-use crate::callable::{CallableName, CallablePath};
+use crate::callable::{
+    CallableEvaluatedEffect, CallableLogLevel, CallableName, CallablePath, CallableValidator,
+};
 use crate::dialogue_view::{
     DIALOGUE_ACTION_TYPE, DIALOGUE_CHARACTER_TYPE, DIALOGUE_CONTENT_TYPE,
     DIALOGUE_OCCURRENCE_ID_TYPE, DIALOGUE_REVEAL_TYPE, DIALOGUE_STAGE_TYPE,
@@ -69,6 +71,8 @@ pub(crate) struct StandardEnvironmentFunction {
     pub(crate) path: CallablePath,
     pub(crate) signature: FunctionSignature,
     pub(crate) effects: Vec<EffectCapability>,
+    pub(crate) validator: CallableValidator,
+    pub(crate) evaluated_effect: Option<CallableEvaluatedEffect>,
 }
 
 /// Typed standard-environment method input retained until accepted-world publication.
@@ -588,17 +592,9 @@ impl TypeCheckEnv {
     #[must_use]
     fn with_standard_runtime_callables(self) -> Self {
         let unit_callables = [
-            standard_callable_path(["log", "trace"]),
-            standard_callable_path(["log", "debug"]),
-            standard_callable_path(["log", "info"]),
-            standard_callable_path(["log", "warn"]),
-            standard_callable_path(["log", "error"]),
             standard_callable_path(["drop"]),
             standard_callable_path(["drop_optional"]),
             standard_callable_path(["on_drop"]),
-            standard_callable_path(["signal", "set"]),
-            standard_callable_path(["metric", "set"]),
-            standard_callable_path(["event", "emit"]),
             standard_callable_path(["adapter", "events"]),
             standard_callable_path(["scene", "show"]),
             standard_callable_path(["scene", "clear"]),
@@ -608,7 +604,6 @@ impl TypeCheckEnv {
             standard_callable_path(["text", "flush"]),
             standard_callable_path(["voice", "stop"]),
             standard_callable_path(["cues", "stop"]),
-            standard_callable_path(["ensure"]),
         ];
         let env = unit_callables.into_iter().fold(self, |env, path| {
             env.with_typed_standard_function(
@@ -617,10 +612,78 @@ impl TypeCheckEnv {
                 std::iter::empty::<EffectCapability>(),
             )
         });
+        let env = [
+            (
+                standard_callable_path(["log", "trace"]),
+                TypeKind::Unit,
+                CallableEvaluatedEffect::Log(CallableLogLevel::Trace),
+            ),
+            (
+                standard_callable_path(["log", "debug"]),
+                TypeKind::Unit,
+                CallableEvaluatedEffect::Log(CallableLogLevel::Debug),
+            ),
+            (
+                standard_callable_path(["log", "info"]),
+                TypeKind::Unit,
+                CallableEvaluatedEffect::Log(CallableLogLevel::Info),
+            ),
+            (
+                standard_callable_path(["log", "warn"]),
+                TypeKind::Unit,
+                CallableEvaluatedEffect::Log(CallableLogLevel::Warn),
+            ),
+            (
+                standard_callable_path(["log", "error"]),
+                TypeKind::Unit,
+                CallableEvaluatedEffect::Log(CallableLogLevel::Error),
+            ),
+            (
+                standard_callable_path(["signal", "set"]),
+                TypeKind::Unit,
+                CallableEvaluatedEffect::SignalWrite,
+            ),
+            (
+                standard_callable_path(["metric", "set"]),
+                TypeKind::Unit,
+                CallableEvaluatedEffect::MetricWrite,
+            ),
+            (
+                standard_callable_path(["event", "emit"]),
+                TypeKind::Unit,
+                CallableEvaluatedEffect::EmitEvent,
+            ),
+            (
+                standard_callable_path(["ensure"]),
+                TypeKind::Unit,
+                CallableEvaluatedEffect::Ensure,
+            ),
+            (
+                standard_callable_path(["panic"]),
+                TypeKind::Never,
+                CallableEvaluatedEffect::Panic,
+            ),
+            (
+                standard_callable_path(["fail"]),
+                TypeKind::Never,
+                CallableEvaluatedEffect::Fail,
+            ),
+            (
+                standard_callable_path(["bail"]),
+                TypeKind::Never,
+                CallableEvaluatedEffect::Bail,
+            ),
+        ]
+        .into_iter()
+        .fold(env, |env, (path, result, effect)| {
+            env.with_typed_standard_evaluated_effect_function(
+                path,
+                FunctionSignature::return_only(result),
+                std::iter::empty::<EffectCapability>(),
+                effect,
+            )
+        });
         [
-            (standard_callable_path(["panic"]), TypeKind::Never),
-            (standard_callable_path(["fail"]), TypeKind::Never),
-            (standard_callable_path(["bail"]), TypeKind::Never),
             (
                 standard_callable_path(["load_bg"]),
                 TypeKind::Need {
@@ -1008,6 +1071,11 @@ impl TypeCheckEnv {
         I: IntoIterator<Item = E>,
         E: Into<EffectCapability>,
     {
+        let validator = if signature.checks_args() {
+            CallableValidator::Ordinary
+        } else {
+            CallableValidator::Untyped
+        };
         assert!(
             self.standard_functions
                 .iter()
@@ -1018,6 +1086,41 @@ impl TypeCheckEnv {
             path,
             signature: normalize_function_signature(signature),
             effects: effects.into_iter().map(Into::into).collect(),
+            validator,
+            evaluated_effect: None,
+        });
+        self
+    }
+
+    #[must_use]
+    fn with_typed_standard_evaluated_effect_function<I, E>(
+        mut self,
+        path: CallablePath,
+        signature: FunctionSignature,
+        effects: I,
+        evaluated_effect: CallableEvaluatedEffect,
+    ) -> Self
+    where
+        I: IntoIterator<Item = E>,
+        E: Into<EffectCapability>,
+    {
+        let validator = if signature.checks_args() {
+            CallableValidator::Ordinary
+        } else {
+            CallableValidator::Untyped
+        };
+        assert!(
+            self.standard_functions
+                .iter()
+                .all(|function| function.path != path),
+            "standard callable paths are unique"
+        );
+        self.standard_functions.push(StandardEnvironmentFunction {
+            path,
+            signature: normalize_function_signature(signature),
+            effects: effects.into_iter().map(Into::into).collect(),
+            validator,
+            evaluated_effect: Some(evaluated_effect),
         });
         self
     }
@@ -1209,10 +1312,6 @@ pub(super) fn normalize_type_kind(ty: TypeKind) -> TypeKind {
             error: Box::new(normalize_type_kind(*error)),
         },
         TypeKind::Stream { item, error } => TypeKind::Stream {
-            item: Box::new(normalize_type_kind(*item)),
-            error: Box::new(normalize_type_kind(*error)),
-        },
-        TypeKind::Source { item, error } => TypeKind::Source {
             item: Box::new(normalize_type_kind(*item)),
             error: Box::new(normalize_type_kind(*error)),
         },

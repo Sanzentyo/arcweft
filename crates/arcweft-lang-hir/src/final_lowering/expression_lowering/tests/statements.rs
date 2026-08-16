@@ -108,7 +108,7 @@ fn thread_control_families_lower_in_exact_source_order() {
     ));
     assert!(matches!(
         thread.body().items()[5],
-        HirThreadFlowItem::AwaitWith(_)
+        HirThreadFlowItem::Statement(_)
     ));
 
     let HirThreadFlowItem::For(statement_owner) = thread.body().items()[3] else {
@@ -459,7 +459,7 @@ fn thread_expression_lowers_the_complete_statement_only_family_inventory_in_sour
             HirThreadFlowItem::SourceLocale(_),
             HirThreadFlowItem::Scope(_),
             HirThreadFlowItem::Include(_),
-            HirThreadFlowItem::AwaitWith(_),
+            HirThreadFlowItem::Statement(_),
             HirThreadFlowItem::Error(_),
         ]
     ));
@@ -1887,6 +1887,53 @@ fn statement_match_owns_source_ordered_arms_scopes_and_locals() {
         2
     );
     assert_ne!(first.scope(), second.scope());
+}
+
+#[test]
+fn thread_match_retains_unbraced_control_transfer_arm_statements() {
+    let parsed = parsed_source(
+        "thread-match-unbraced-return",
+        &[concat!(
+            "thread {\n",
+            "    match 1i32 {\n",
+            "        1i32 => return \"one\"\n",
+            "        _ => return \"other\"\n",
+            "    }\n",
+            "}",
+        )
+        .into()],
+    );
+    let (module, owners, _) = lower_and_publish(&parsed);
+    assert_eq!(module.status(), HirModuleStatus::Clean);
+    let HirExprKind::Thread(thread) = expression(&module, owners[0]).kind() else {
+        panic!("fixture root must remain a Thread expression");
+    };
+    let [HirThreadFlowItem::Match(match_owner)] = thread.body().items() else {
+        panic!("Thread body must retain one Match statement");
+    };
+    let statement = module.resolve_stmt(*match_owner).expect("typed Match");
+    let HirStmtKind::Match(matched) = statement.kind() else {
+        panic!("typed Match payload");
+    };
+    assert_eq!(matched.arms().len(), 2);
+    for arm in matched.arms() {
+        let HirStmtMatchArmBody::Body(body) = arm.body() else {
+            panic!("unbraced control transfer must remain one typed statement body");
+        };
+        let [return_owner] = body
+            .ordinary_statements()
+            .expect("unbraced arm owns an ordinary statement body")
+        else {
+            panic!("unbraced arm must own exactly one statement");
+        };
+        assert!(matches!(
+            module
+                .resolve_stmt(*return_owner)
+                .expect("typed Return statement")
+                .kind(),
+            HirStmtKind::Return { .. }
+        ));
+    }
 }
 
 #[test]

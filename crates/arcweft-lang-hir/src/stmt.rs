@@ -7,8 +7,8 @@
 mod thread;
 
 pub(crate) use self::thread::HirThreadStmtInvariantError;
+pub(crate) use self::thread::reject_duplicate_ids;
 pub use self::thread::{
-    HirAwaitPropagation, HirAwaitWithBranch, HirAwaitWithBranchKind, HirAwaitWithStmt,
     HirConditionalElseBranch, HirContextualStmtBody, HirForStmt, HirIfLetStmt, HirIfStmt,
     HirIncludeStmt, HirLoopStmt, HirMatchStmt, HirScopeStmt, HirSelectBindingLocal,
     HirSelectBranch, HirSelectBranchHead, HirSelectStmt, HirSourceLocaleIssue, HirSourceLocaleStmt,
@@ -264,11 +264,6 @@ fn thread_recovery_matches_kind(kind: &HirStmtKind, issue: HirThreadStmtRecovery
             }
             Child::Locale => matches!(kind, HirStmtKind::SourceLocale(_)),
             Child::IncludeTarget => matches!(kind, HirStmtKind::Include(_)),
-            Child::AwaitOperand
-            | Child::AwaitPattern { .. }
-            | Child::AwaitBranchStatement { .. } => {
-                matches!(kind, HirStmtKind::AwaitWith(_))
-            }
         },
         Issue::MissingBody { role } | Issue::UnclosedBody { role } => match role {
             Body::Then | Body::Else => matches!(kind, HirStmtKind::If(_) | HirStmtKind::IfLet(_)),
@@ -280,9 +275,6 @@ fn thread_recovery_matches_kind(kind: &HirStmtKind, issue: HirThreadStmtRecovery
             Body::Select | Body::SelectBranch { .. } => matches!(kind, HirStmtKind::Select(_)),
             Body::SourceLocale => matches!(kind, HirStmtKind::SourceLocale(_)),
             Body::Scope => matches!(kind, HirStmtKind::Scope(_)),
-            Body::AwaitWith | Body::AwaitBranch { .. } => {
-                matches!(kind, HirStmtKind::AwaitWith(_))
-            }
         },
         Issue::InvalidLoopLabel(_) => matches!(kind, HirStmtKind::Loop(_)),
         Issue::EmptyMatch => matches!(kind, HirStmtKind::Match(_)),
@@ -292,9 +284,6 @@ fn thread_recovery_matches_kind(kind: &HirStmtKind, issue: HirThreadStmtRecovery
         Issue::InvalidSourceLocale(_) => matches!(kind, HirStmtKind::SourceLocale(_)),
         Issue::InvalidScopeName(_) => matches!(kind, HirStmtKind::Scope(_)),
         Issue::InvalidIncludeTarget(_) => matches!(kind, HirStmtKind::Include(_)),
-        Issue::EmptyAwaitWith | Issue::RecoveredAwaitWithBranch { .. } => {
-            matches!(kind, HirStmtKind::AwaitWith(_))
-        }
     }
 }
 
@@ -426,11 +415,6 @@ pub enum HirStmtKind {
         loop_expr: ExprId,
         locals: Box<[LocalId]>,
     },
-    LetAwait {
-        pattern: PatternId,
-        await_expr: ExprId,
-        locals: Box<[LocalId]>,
-    },
     LetActionReceive {
         pattern: PatternId,
         action: ExprId,
@@ -495,7 +479,6 @@ pub enum HirStmtKind {
     SourceLocale(HirSourceLocaleStmt),
     Scope(HirScopeStmt),
     Include(HirIncludeStmt),
-    AwaitWith(HirAwaitWithStmt),
     Break {
         label: Option<HirName>,
         value: Option<ExprId>,
@@ -540,7 +523,6 @@ impl HirStmtKind {
             | Self::LetChoice { .. }
             | Self::LetScope { .. }
             | Self::LetLoop { .. }
-            | Self::LetAwait { .. }
             | Self::LetActionReceive { .. }
             | Self::Return { .. }
             | Self::Out { .. }
@@ -566,7 +548,6 @@ impl HirStmtKind {
             | Self::SourceLocale(_)
             | Self::Scope(_)
             | Self::Include(_)
-            | Self::AwaitWith(_)
             | Self::Break { .. }
             | Self::Continue { .. }
             | Self::Expression { .. }
@@ -589,7 +570,6 @@ impl HirStmtKind {
             | Self::LetChoice { locals, .. }
             | Self::LetScope { locals, .. }
             | Self::LetLoop { locals, .. }
-            | Self::LetAwait { locals, .. }
             | Self::LetActionReceive { locals, .. } => locals,
             _ => &[],
         }
@@ -610,7 +590,6 @@ impl HirStmtKind {
             Self::Select(statement) => statement.thread_body_for_scope(scope),
             Self::SourceLocale(statement) => statement.thread_body_for_scope(scope),
             Self::Scope(statement) => statement.thread_body_for_scope(scope),
-            Self::AwaitWith(statement) => statement.thread_body_for_scope(scope),
             _ => None,
         }
     }
@@ -669,11 +648,6 @@ impl HirStmtKind {
                 loop_expr: choice,
                 locals,
             }
-            | Self::LetAwait {
-                pattern,
-                await_expr: choice,
-                locals,
-            }
             | Self::LetActionReceive {
                 pattern,
                 action: choice,
@@ -722,7 +696,6 @@ impl HirStmtKind {
             }
             Self::Scope(statement) => statement.validate_module(expected).map_err(Into::into),
             Self::Include(_) | Self::Continue { .. } | Self::Error => Ok(()),
-            Self::AwaitWith(statement) => statement.validate_module(expected).map_err(Into::into),
             Self::Break { value, .. } => validate_optional_expr(expected, *value),
         }
     }

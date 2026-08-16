@@ -11,29 +11,37 @@ use super::compile::{
 use super::{
     AUTO_JIT_SCALAR_WORK_UNITS, CompiledPureI64Inputs, FlatBatchSumPolicy, FlatBatchSumShape,
     RuntimeBatchBackendKind, RuntimeEvalError, RuntimeI64Args, RuntimeMathPrepareCache,
-    RuntimePureAccelerator, RuntimePureAcceleratorConfig, RuntimePureBackendMode,
-    RuntimePureCacheEntry, RuntimePureCallStats, RuntimePureCompileStats, RuntimePureHelper,
-    RuntimePureHelperId, RuntimePureNativeKind, VmPureFunctionScratch, helper_native_kind,
+    RuntimePlan, RuntimePureAccelerator, RuntimePureAcceleratorConfig, RuntimePureBackendMode,
+    RuntimePureCacheEntry, RuntimePureCallStats, RuntimePureCompileStats, RuntimePureHelperId,
+    RuntimePureHelperRef, RuntimePureNativeKind, VmPureFunctionScratch, helper_native_kind,
     helper_summary_from_helpers, math, native_jit_enabled,
 };
 
 impl RuntimePureAccelerator {
-    pub fn new(mode: RuntimePureBackendMode, helpers: &[RuntimePureHelper]) -> Self {
+    /// Creates an accelerator for the selected pure-function backend.
+    pub fn new(mode: RuntimePureBackendMode, plan: &std::sync::Arc<RuntimePlan>) -> Self {
         Self::with_config(
             RuntimePureAcceleratorConfig {
                 backend: mode,
                 ..RuntimePureAcceleratorConfig::default()
             },
-            helpers,
+            plan,
         )
     }
 
+    /// Creates an accelerator and eagerly compiles the pure helpers in `plan`.
+    ///
+    /// # Panics
+    ///
+    /// Panics when a helper index admitted by `plan` cannot be resolved back
+    /// through that same plan. A sealed `RuntimePlan` guarantees this lookup.
     pub fn with_config(
         config: RuntimePureAcceleratorConfig,
-        helpers: &[RuntimePureHelper],
+        plan: &std::sync::Arc<RuntimePlan>,
     ) -> Self {
         let started = std::time::Instant::now();
         let mut compile_stats = RuntimePureCompileStats::default();
+        let helpers = plan.pure_helpers();
         let helper_summary = helper_summary_from_helpers(helpers);
         let helper_work_units = helper_work_unit_slots(helpers);
         let resolved_workers = resolve_worker_count(config.workers);
@@ -43,15 +51,17 @@ impl RuntimePureAccelerator {
                 .get(helper.id.0)
                 .copied()
                 .unwrap_or_else(|| runtime_expr_work_units(&helper.expr));
+            let helper_ref = RuntimePureHelperRef::resolve(plan, helper.id)
+                .expect("runtime plan admitted an unresolved pure helper");
             cache[helper.id.0] = Some(compile_helper(
                 config.backend,
-                helper,
+                helper_ref,
                 work_units,
                 &mut compile_stats,
             ));
         }
         if config.emit_object_artifacts {
-            record_aot_object_artifact_bundle(helpers, &cache, &mut compile_stats);
+            record_aot_object_artifact_bundle(plan, &cache, &mut compile_stats);
         }
         compile_stats.compile_elapsed_ns = started.elapsed().as_nanos();
         Self {
@@ -106,7 +116,7 @@ impl RuntimePureAccelerator {
 
     pub fn call_i64_batch(
         &mut self,
-        helper: &RuntimePureHelper,
+        helper: RuntimePureHelperRef<'_>,
         rows: &[RuntimeI64Args],
         out: &mut [i64],
     ) -> Result<(), RuntimeEvalError> {
@@ -203,7 +213,7 @@ impl RuntimePureAccelerator {
 
     pub fn call_i64_flat_batch(
         &mut self,
-        helper: &RuntimePureHelper,
+        helper: RuntimePureHelperRef<'_>,
         flat_inputs: &[i64],
         arity: usize,
         out: &mut [i64],
@@ -299,7 +309,7 @@ impl RuntimePureAccelerator {
 
     pub fn call_i64_flat_batch_sum(
         &mut self,
-        helper: &RuntimePureHelper,
+        helper: RuntimePureHelperRef<'_>,
         flat_inputs: &[i64],
         arity: usize,
         rows: usize,
@@ -400,7 +410,7 @@ impl RuntimePureAccelerator {
 
     pub fn call_i64_repeated_flat_batch_sum(
         &mut self,
-        helper: &RuntimePureHelper,
+        helper: RuntimePureHelperRef<'_>,
         row: &[i64],
         rows: usize,
     ) -> Result<i64, RuntimeEvalError> {
@@ -428,6 +438,21 @@ impl RuntimePureAccelerator {
             name: helper.name.clone(),
             reason: "pure repeated batch row count must fit i64".to_owned(),
         })?;
+        let value = self.repeated_flat_batch_value(helper, row, rows)?;
+        value
+            .checked_mul(rows_i64)
+            .ok_or_else(|| RuntimeEvalError::UnsupportedPure {
+                name: helper.name.clone(),
+                reason: "pure repeated batch sum overflowed i64".to_owned(),
+            })
+    }
+
+    fn repeated_flat_batch_value(
+        &mut self,
+        helper: RuntimePureHelperRef<'_>,
+        row: &[i64],
+        rows: usize,
+    ) -> Result<i64, RuntimeEvalError> {
         let value = match cache_entry(&self.cache, helper.id) {
             Some(RuntimePureCacheEntry::Jit(compiled)) => {
                 self.compile_stats.cache_hits += 1;
@@ -482,21 +507,24 @@ impl RuntimePureAccelerator {
                 self.compile_stats.cache_hits += 1;
                 self.stats.vm_calls += rows;
                 self.stats.fallbacks += rows;
-                exact_i64_result(self.vm_scratch.evaluate_i64_slice(helper, row)?)?
+                exact_i64_result(self.vm_scratch.evaluate_i64_slice(
+                    helper.plan(),
+                    helper.id(),
+                    row,
+                )?)?
             }
             None => {
                 self.compile_stats.cache_misses += 1;
                 self.stats.vm_calls += rows;
                 self.stats.fallbacks += rows;
-                exact_i64_result(self.vm_scratch.evaluate_i64_slice(helper, row)?)?
+                exact_i64_result(self.vm_scratch.evaluate_i64_slice(
+                    helper.plan(),
+                    helper.id(),
+                    row,
+                )?)?
             }
         };
-        value
-            .checked_mul(rows_i64)
-            .ok_or_else(|| RuntimeEvalError::UnsupportedPure {
-                name: helper.name.clone(),
-                reason: "pure repeated batch sum overflowed i64".to_owned(),
-            })
+        Ok(value)
     }
 
     pub(super) fn batch_backend_kind(&self, id: RuntimePureHelperId) -> RuntimeBatchBackendKind {
@@ -532,7 +560,7 @@ impl RuntimePureAccelerator {
 
     pub(super) fn promote_auto_jit_for_flat_batch(
         &mut self,
-        helper: &RuntimePureHelper,
+        helper: RuntimePureHelperRef<'_>,
         rows: usize,
     ) {
         if !native_jit_enabled() {
@@ -554,7 +582,7 @@ impl RuntimePureAccelerator {
         self.promote_auto_native_jit(helper, kind);
     }
 
-    pub(super) fn promote_auto_jit_for_scalar_call(&mut self, helper: &RuntimePureHelper) {
+    pub(super) fn promote_auto_jit_for_scalar_call(&mut self, helper: RuntimePureHelperRef<'_>) {
         if !native_jit_enabled() || !self.has_promotable_auto_slot(helper.id) {
             return;
         }
@@ -586,7 +614,7 @@ impl RuntimePureAccelerator {
 
     pub(super) fn promote_auto_native_jit(
         &mut self,
-        helper: &RuntimePureHelper,
+        helper: RuntimePureHelperRef<'_>,
         kind: RuntimePureNativeKind,
     ) {
         let request = compile_request(helper, || kind.zero_value());
@@ -638,7 +666,7 @@ impl RuntimePureAccelerator {
 
     pub(super) fn should_parallelize_batch(
         &mut self,
-        helper: &RuntimePureHelper,
+        helper: RuntimePureHelperRef<'_>,
         rows: usize,
         backend: RuntimeBatchBackendKind,
     ) -> bool {
@@ -671,7 +699,7 @@ impl RuntimePureAccelerator {
         true
     }
 
-    pub(super) fn helper_work_units(&self, helper: &RuntimePureHelper) -> usize {
+    pub(super) fn helper_work_units(&self, helper: RuntimePureHelperRef<'_>) -> usize {
         self.helper_work_units
             .get(helper.id.0)
             .copied()
@@ -711,7 +739,7 @@ impl RuntimePureAccelerator {
 
     pub(super) fn call_i32_slice_with_accounting(
         &mut self,
-        helper: &RuntimePureHelper,
+        helper: RuntimePureHelperRef<'_>,
         args: &[i32],
         count_borrowed_args: bool,
     ) -> Result<Option<i32>, RuntimeEvalError> {

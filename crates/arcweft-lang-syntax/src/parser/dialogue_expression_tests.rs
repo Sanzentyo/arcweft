@@ -2,8 +2,9 @@ use arcweft_source::{SourceDocument, SourceDocumentId, SourceName};
 
 use super::document::parse_document;
 use crate::expressions::{
-    ExpressionProjection, SyntaxBuiltinRichTextTag, SyntaxDialogueContentProjection,
-    SyntaxDialogueNodeProjection, SyntaxRichTextArgumentProjection, SyntaxRichTextTagIdentity,
+    ExpressionProjection, SyntaxBuiltinRichTextTag, SyntaxDialogueApplicationForm,
+    SyntaxDialogueContentProjection, SyntaxDialogueNodeProjection,
+    SyntaxRichTextArgumentProjection, SyntaxRichTextTagIdentity,
 };
 use crate::grammar::build::UnattachedGrammarEntry;
 use crate::grammar::kinds::SyntaxKind;
@@ -19,6 +20,46 @@ fn document(source: &str) -> SourceDocument {
         source,
     )
     .unwrap()
+}
+
+#[test]
+fn thread_flow_colon_dialogue_forms_are_typed_and_lossless() {
+    for source in [
+        "flow opening {\n    alice: Hello.[p]\n}\n",
+        "flow opening {\n    alice:\n        Hello.[p]\n}\n",
+    ] {
+        let built =
+            parse_document(&document(source), crate::parser::ParseOptions::default()).unwrap();
+        let applications = built
+            .index()
+            .entries()
+            .iter()
+            .filter_map(UnattachedGrammarEntry::expression_projection)
+            .filter_map(|projection| match projection.projection() {
+                ExpressionProjection::DialogueContentApplication(application) => Some(application),
+                _ => None,
+            })
+            .collect::<Vec<_>>();
+
+        assert_eq!(applications.len(), 1, "{source}: {applications:?}");
+        assert_eq!(
+            applications[0].form(),
+            &SyntaxDialogueApplicationForm::Colon
+        );
+        assert!(matches!(
+            applications[0].content(),
+            SyntaxDialogueContentProjection::Present(_)
+        ));
+        assert!(built.diagnostics().is_empty(), "{:?}", built.diagnostics());
+        assert!(
+            !built
+                .index()
+                .entries()
+                .iter()
+                .any(|entry| entry.kind() == SyntaxKind::ErrorExpression)
+        );
+        assert_eq!(built.green().to_string(), source);
+    }
 }
 
 #[test]

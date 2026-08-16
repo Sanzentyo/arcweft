@@ -8,9 +8,9 @@ use crate::awbc::schema::{
     AwbcInstructionId, AwbcIntrinsicId, AwbcLineTaskGroupId, AwbcLineTaskNodeId, AwbcMatchArmId,
     AwbcPatternId, AwbcPureHelperId, AwbcRecordField, AwbcRegisterId, AwbcResourceId,
     AwbcResumePointId, AwbcRuntimeType, AwbcScopeId, AwbcSignature, AwbcSignatureId,
-    AwbcSignedIntKind, AwbcSourceMapId, AwbcSourcePlanId, AwbcStreamPlanId, AwbcStringId,
-    AwbcTableRange, AwbcTaskPlanId, AwbcTraitMethodId, AwbcTypeId, AwbcUnsignedIntKind,
-    AwbcVariantCase, AwbcVariantIdentity,
+    AwbcSignedIntKind, AwbcSourceMapId, AwbcStreamPlanId, AwbcStringId, AwbcTableRange,
+    AwbcTaskPlanId, AwbcTraitMethodId, AwbcTypeId, AwbcUnsignedIntKind, AwbcVariantCase,
+    AwbcVariantIdentity,
 };
 use crate::pattern::RuntimeOpaqueTypeAdmission;
 use crate::plan::RuntimeAgentOperationalType;
@@ -41,7 +41,6 @@ wire_id!(
     AwbcLineTaskGroupId,
     AwbcLineTaskNodeId,
     AwbcStreamPlanId,
-    AwbcSourcePlanId,
     AwbcPureHelperId,
     AwbcTraitMethodId,
     AwbcDisplayMapId,
@@ -247,11 +246,13 @@ impl Wire for AwbcRuntimeType {
                 producer,
                 semantic_identity,
                 admission,
+                arguments,
             } => {
                 writer.write_u8(23);
                 producer.write_wire(writer)?;
                 semantic_identity.write_wire(writer)?;
                 admission.write_wire(writer)?;
+                arguments.write_wire(writer)?;
             }
             Self::NominalRecord {
                 public_id,
@@ -315,6 +316,7 @@ impl Wire for AwbcRuntimeType {
                 producer: AwbcStringId::read_wire(reader)?,
                 semantic_identity: <[u8; 32]>::read_wire(reader)?,
                 admission: RuntimeOpaqueTypeAdmission::read_wire(reader)?,
+                arguments: Vec::<AwbcTypeId>::read_wire(reader)?,
             },
             24 => Self::NominalRecord {
                 public_id: AwbcStringId::read_wire(reader)?,
@@ -663,11 +665,13 @@ mod opaque_wire_tests {
             producer: AwbcStringId(7),
             semantic_identity: [9; 32],
             admission: RuntimeOpaqueTypeAdmission::ExactIdentity,
+            arguments: vec![],
         };
         let mut writer = Writer::default();
         ty.write_wire(&mut writer).expect("encode opaque type");
         let mut expected = vec![23, 7];
         expected.extend([9; 32]);
+        expected.push(0);
         expected.push(0);
         assert_eq!(writer.finish(), expected);
 

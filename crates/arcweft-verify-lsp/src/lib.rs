@@ -1352,7 +1352,7 @@ mod tests {
         let uri = "file:///game/routes/opening.arcw"
             .parse::<Uri>()
             .expect("uri");
-        let source = "flow @.opening opening {\n    alice: [.shake amp=2px]hi[/][p]\n}\n";
+        let source = "flow opening {\n    let line = alice[[.keyword][.vertical_rl]縦[/]]\n}\n";
         let document = Arc::new(
             SourceDocument::try_new(
                 SourceDocumentId::try_new(uri.to_string()).expect("source id"),

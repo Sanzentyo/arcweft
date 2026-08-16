@@ -378,7 +378,7 @@ fn assertion_profiles(project: &CompiledProject) -> Vec<RuntimeAssertionProfile>
     project
         .runtime_plan()
         .plan
-        .flows
+        .flows()
         .iter()
         .flat_map(|flow| flow.ops.iter())
         .filter_map(|operation| match operation {
@@ -395,7 +395,7 @@ fn assertion_guards(project: &CompiledProject) -> Vec<RuntimeAssertionGuardId> {
     project
         .runtime_plan()
         .plan
-        .flows
+        .flows()
         .iter()
         .flat_map(|flow| flow.ops.iter())
         .filter_map(|operation| match operation {

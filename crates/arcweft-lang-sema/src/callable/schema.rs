@@ -389,6 +389,42 @@ pub struct CallableSignatureSchema {
     effects: CallableEffectSchema,
     argument_policy: CallableArgumentPolicy,
     validator: CallableValidator,
+    evaluated_effect: Option<CallableEvaluatedEffect>,
+}
+
+/// Runtime-observable effect produced when a selected callable is used as an
+/// expression statement.
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub enum CallableEvaluatedEffect {
+    Log(CallableLogLevel),
+    SignalWrite,
+    MetricWrite,
+    EmitEvent,
+    Panic,
+    Fail,
+    Bail,
+    Ensure,
+}
+
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub enum CallableLogLevel {
+    Trace,
+    Debug,
+    Info,
+    Warn,
+    Error,
+}
+
+impl CallableLogLevel {
+    pub const fn as_str(self) -> &'static str {
+        match self {
+            Self::Trace => "trace",
+            Self::Debug => "debug",
+            Self::Info => "info",
+            Self::Warn => "warn",
+            Self::Error => "error",
+        }
+    }
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -578,7 +614,13 @@ impl CallableSignatureSchema {
             effects,
             argument_policy,
             validator,
+            evaluated_effect: None,
         })
+    }
+
+    pub(crate) fn with_evaluated_effect(mut self, effect: CallableEvaluatedEffect) -> Self {
+        self.evaluated_effect = Some(effect);
+        self
     }
     pub fn groups(&self) -> &[CallableParameterGroup] {
         &self.groups
@@ -595,6 +637,9 @@ impl CallableSignatureSchema {
     pub const fn validator(&self) -> &CallableValidator {
         &self.validator
     }
+    pub const fn evaluated_effect(&self) -> Option<CallableEvaluatedEffect> {
+        self.evaluated_effect
+    }
     pub fn group(&self, index: CallableGroupIndex) -> Option<&CallableParameterGroup> {
         self.groups
             .get(index.get())
@@ -609,6 +654,7 @@ impl CallableSignatureSchema {
             && self.effects == other.effects
             && self.argument_policy == other.argument_policy
             && self.validator == other.validator
+            && self.evaluated_effect == other.evaluated_effect
             && self.groups.len() == other.groups.len()
             && self
                 .groups

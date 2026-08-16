@@ -1,4 +1,0 @@
-flow main {
-    let RuntimeFrame = "forbidden type/name in core docs"
-    return RuntimeFrame
-}

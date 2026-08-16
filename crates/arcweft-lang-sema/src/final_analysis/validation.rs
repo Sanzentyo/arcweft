@@ -23,18 +23,19 @@ use super::type_rules::compact_numeric_element_type;
 use super::{
     CallCalleeClassificationFact, CallPoison, CallTargetFact, CallTargetFacts,
     CallableDeclarationOwner, CallableDiagnosticSubject, CallableInstantiation, CaptureId,
-    CheckedBinding, CheckedBindingRole, CheckedCallArgumentSlotSource,
+    CheckedAssignment, CheckedBinding, CheckedBindingRole, CheckedCallArgumentSlotSource,
     CheckedCharacterDialoguePatch, CheckedCharacterDialogueTarget, CheckedEntryReference,
-    CheckedExpression, CheckedExpressionResolution, CheckedFunctionExecution, CheckedItem,
-    CheckedItemRole, CheckedIteration, CheckedPatchOperation, CheckedPattern,
-    CheckedPatternResolution, CheckedProjectCallable, CheckedProjectItem, CheckedProjectItemOwner,
-    CheckedProjectNominal, CheckedSelectResolution, CheckedStatement, CheckedStatementRole,
-    CheckedTraitConformance, CheckedValueResolution, CheckedVariantOwner, CheckedVariantResolution,
-    DeclarationIdentityFamily, ExprId, FinalSemanticAnalysisError, FinalSemanticAnalysisWork,
-    HirExecutableProjectView, HirExprKind, HirIdRef, HirItemKind, HirModule, HirModuleId,
-    HirPatternKind, HirStmtKind, ItemId, LocalId, PatternId, PhysicalCandidateArgumentEvaluation,
-    PostfixBracketResolution, ProjectNominalBody, ProjectSymbolTable, ResolvedCallable,
-    SemanticFactFamily, SignatureOrigin, StmtId, TypeId, TypeKind, TypeResolutionReport,
+    CheckedEvaluatedEffect, CheckedExpression, CheckedExpressionResolution,
+    CheckedFunctionExecution, CheckedItem, CheckedItemRole, CheckedIteration,
+    CheckedPatchOperation, CheckedPattern, CheckedPatternResolution, CheckedProjectCallable,
+    CheckedProjectItem, CheckedProjectItemOwner, CheckedProjectNominal, CheckedSelectResolution,
+    CheckedStatement, CheckedStatementRole, CheckedTraitConformance, CheckedValueResolution,
+    CheckedVariantOwner, CheckedVariantResolution, DeclarationIdentityFamily, ExprId,
+    FinalSemanticAnalysisError, FinalSemanticAnalysisWork, HirExecutableProjectView, HirExprKind,
+    HirIdRef, HirItemKind, HirModule, HirModuleId, HirPatternKind, HirStmtKind, ItemId, LocalId,
+    PatternId, PhysicalCandidateArgumentEvaluation, PostfixBracketResolution, ProjectNominalBody,
+    ProjectSymbolTable, ResolvedCallable, SemanticFactFamily, SignatureOrigin, StmtId, TypeId,
+    TypeKind, TypeResolutionReport,
 };
 
 /// Borrowed semantic fact maps validated and accounted as one generation.
@@ -200,6 +201,15 @@ pub(super) fn accepted_type_owners(
                 Some(CallCalleeClassificationFact::AssociatedType { receiver, .. })
                     if receiver == nominal_receiver => {}
                 None if !expressions.contains_key(&owner) => {
+                    remove_type_subtree(module, nominal_receiver, &mut accepted)?;
+                }
+                None if expressions.get(&owner).is_some_and(|expression| {
+                    matches!(
+                        expression.resolution(),
+                        CheckedExpressionResolution::Effect(_)
+                    )
+                }) =>
+                {
                     remove_type_subtree(module, nominal_receiver, &mut accepted)?;
                 }
                 Some(_) | None => return Err(FinalSemanticAnalysisError::CallFactMismatch),
@@ -658,7 +668,10 @@ fn expression_resolution_matches(
             HirExprKind::Path(_) | HirExprKind::ShortVariant(_),
             CheckedExpressionResolution::Variant(_),
         )
-        | (HirExprKind::Path(_) | HirExprKind::Select(_), CheckedExpressionResolution::Effect(_))
+        | (
+            HirExprKind::Path(_) | HirExprKind::Select(_) | HirExprKind::Call(_),
+            CheckedExpressionResolution::Effect(_),
+        )
         | (
             HirExprKind::EntityReference(_),
             CheckedExpressionResolution::DialogueLineReference(_)
@@ -702,6 +715,7 @@ fn expression_resolution_matches(
             ) => authored == checked,
             _ => false,
         },
+        (HirExprKind::Await(_), CheckedExpressionResolution::Await(_)) => true,
         (kind, CheckedExpressionResolution::Structural) => structural_resolution_matches(kind),
         _ => false,
     }
@@ -751,6 +765,7 @@ fn validate_expression_resolution(
         CheckedExpressionResolution::Value(value) => validate_value(symbols, modules, value),
         CheckedExpressionResolution::Select(select) => match select {
             CheckedSelectResolution::Method { .. }
+            | CheckedSelectResolution::AgentField { .. }
             | CheckedSelectResolution::TupleElement { .. } => Ok(()),
             CheckedSelectResolution::Field { nominal, .. }
             | CheckedSelectResolution::RecordElement { nominal, .. } => nominal
@@ -829,7 +844,8 @@ fn validate_expression_resolution(
             .any(|line| line.text_key() == target)
             .then_some(())
             .ok_or(FinalSemanticAnalysisError::WrongPayloadFamily),
-        CheckedExpressionResolution::PostfixBracket(_)
+        CheckedExpressionResolution::Await(_)
+        | CheckedExpressionResolution::PostfixBracket(_)
         | CheckedExpressionResolution::Effect(_)
         | CheckedExpressionResolution::ViewCall(_)
         | CheckedExpressionResolution::ViewCallee(_)
@@ -1180,7 +1196,10 @@ fn validate_project_item(
 
 pub(super) fn validate_statements(
     modules: &BTreeMap<HirModuleId, &HirModule>,
+    locals: &BTreeMap<LocalId, CheckedBinding>,
+    expressions: &BTreeMap<ExprId, CheckedExpression>,
     statements: &BTreeMap<StmtId, CheckedStatement>,
+    calls: &BTreeMap<ExprId, CallTargetFacts>,
 ) -> Result<(), FinalSemanticAnalysisError> {
     for (&owner, fact) in statements {
         let statement = resolve_module(modules, owner.module())?
@@ -1190,8 +1209,37 @@ pub(super) fn validate_statements(
             return Err(FinalSemanticAnalysisError::RecoveredOwner);
         }
         let compatible = match fact.role() {
+            CheckedStatementRole::Assignment(assignment) => {
+                let HirStmtKind::Assign { target, value } = statement.kind() else {
+                    return Err(FinalSemanticAnalysisError::WrongPayloadFamily);
+                };
+                validate_assignment(modules, locals, expressions, assignment, *target, *value)?;
+                true
+            }
             CheckedStatementRole::Assertion(_) => {
                 matches!(statement.kind(), HirStmtKind::Assertion { .. })
+            }
+            CheckedStatementRole::EvaluatedEffect(effect) => {
+                let HirStmtKind::Expression { expression } = statement.kind() else {
+                    return Err(FinalSemanticAnalysisError::WrongPayloadFamily);
+                };
+                let call = calls
+                    .get(expression)
+                    .ok_or(FinalSemanticAnalysisError::WrongPayloadFamily)?;
+                let CallTargetFact::Selected { selected, .. } = call.target() else {
+                    return Err(FinalSemanticAnalysisError::WrongPayloadFamily);
+                };
+                if selected.schema().evaluated_effect() != Some(effect.disposition()) {
+                    return Err(FinalSemanticAnalysisError::WrongPayloadFamily);
+                }
+                let expression = resolve_module(modules, expression.module())?
+                    .resolve_expr(*expression)
+                    .map_err(|_| FinalSemanticAnalysisError::InvalidOwner)?;
+                let HirExprKind::Call(call) = expression.kind() else {
+                    return Err(FinalSemanticAnalysisError::WrongPayloadFamily);
+                };
+                CheckedEvaluatedEffect::try_from_call(effect.disposition(), call.arguments())
+                    .is_some_and(|projected| projected == **effect)
             }
             CheckedStatementRole::Iteration(_) => {
                 matches!(statement.kind(), HirStmtKind::For(_))
@@ -1200,19 +1248,19 @@ pub(super) fn validate_statements(
             CheckedStatementRole::UnsafeAudit => {
                 matches!(statement.kind(), HirStmtKind::UnsafeLifetime { .. })
             }
-            CheckedStatementRole::Suspension => matches!(
-                statement.kind(),
-                HirStmtKind::Wait { .. } | HirStmtKind::AwaitWith(_) | HirStmtKind::LetAwait { .. }
-            ),
+            CheckedStatementRole::Suspension(suspension) => match suspension.as_ref() {
+                super::CheckedSuspensionStatement::Wait => {
+                    matches!(statement.kind(), HirStmtKind::Wait { .. })
+                }
+            },
             CheckedStatementRole::Ordinary => !matches!(
                 statement.kind(),
-                HirStmtKind::Assertion { .. }
+                HirStmtKind::Assign { .. }
+                    | HirStmtKind::Assertion { .. }
                     | HirStmtKind::For(_)
                     | HirStmtKind::Yield { .. }
                     | HirStmtKind::UnsafeLifetime { .. }
                     | HirStmtKind::Wait { .. }
-                    | HirStmtKind::AwaitWith(_)
-                    | HirStmtKind::LetAwait { .. }
                     | HirStmtKind::Error
             ),
         };
@@ -1222,6 +1270,82 @@ pub(super) fn validate_statements(
         if let CheckedStatementRole::Iteration(iteration) = fact.role() {
             validate_iteration(modules, iteration)?;
         }
+    }
+    Ok(())
+}
+
+fn validate_assignment(
+    modules: &BTreeMap<HirModuleId, &HirModule>,
+    locals: &BTreeMap<LocalId, CheckedBinding>,
+    expressions: &BTreeMap<ExprId, CheckedExpression>,
+    assignment: &CheckedAssignment,
+    target: ExprId,
+    value: ExprId,
+) -> Result<(), FinalSemanticAnalysisError> {
+    let target_expression = resolve_module(modules, target.module())?
+        .resolve_expr(target)
+        .map_err(|_| FinalSemanticAnalysisError::InvalidOwner)?;
+    let HirExprKind::Select(select) = target_expression.kind() else {
+        return Err(FinalSemanticAnalysisError::WrongPayloadFamily);
+    };
+    let base_expression = resolve_module(modules, select.target().module())?
+        .resolve_expr(select.target())
+        .map_err(|_| FinalSemanticAnalysisError::InvalidOwner)?;
+    if !matches!(base_expression.kind(), HirExprKind::Path(_)) {
+        return Err(FinalSemanticAnalysisError::WrongPayloadFamily);
+    }
+    let base = expressions.get(&select.target()).ok_or(
+        FinalSemanticAnalysisError::ExpressionTypeUnavailable {
+            owner: select.target(),
+        },
+    )?;
+    let CheckedExpressionResolution::Value(CheckedValueResolution::Local(local)) =
+        base.resolution()
+    else {
+        return Err(FinalSemanticAnalysisError::WrongPayloadFamily);
+    };
+    let target = expressions
+        .get(&target)
+        .ok_or(FinalSemanticAnalysisError::ExpressionTypeUnavailable { owner: target })?;
+    let CheckedExpressionResolution::Select(CheckedSelectResolution::Field {
+        nominal: Some(nominal),
+        ordinal: Some(selected_ordinal),
+        name,
+    }) = target.resolution()
+    else {
+        return Err(FinalSemanticAnalysisError::WrongPayloadFamily);
+    };
+    let value = expressions
+        .get(&value)
+        .ok_or(FinalSemanticAnalysisError::ExpressionTypeUnavailable { owner: value })?;
+    let place = assignment.place();
+    if place.local() != *local
+        || place.nominal() != nominal
+        || place.field_ordinal() != *selected_ordinal
+        || place.field_type() != target.ty()
+        || assignment.value_type() != value.ty()
+        || target.ty() != value.ty()
+        || locals.get(local).map(CheckedBinding::ty) != Some(base.ty())
+    {
+        return Err(FinalSemanticAnalysisError::WrongPayloadFamily);
+    }
+    let item = resolve_item(modules, nominal.owner())?;
+    let HirItemKind::Struct(declaration) = item.kind() else {
+        return Err(FinalSemanticAnalysisError::WrongPayloadFamily);
+    };
+    let expected_ordinal = usize::try_from(place.field_ordinal())
+        .ok()
+        .and_then(|ordinal| declaration.fields().get(ordinal))
+        .and_then(|field| {
+            field
+                .name()
+                .resolved()
+                .filter(|field_name| field_name.as_str() == name.as_str())
+                .map(|_| place.field_ordinal())
+        })
+        .ok_or(FinalSemanticAnalysisError::WrongPayloadFamily)?;
+    if expected_ordinal != place.field_ordinal() {
+        return Err(FinalSemanticAnalysisError::WrongPayloadFamily);
     }
     Ok(())
 }

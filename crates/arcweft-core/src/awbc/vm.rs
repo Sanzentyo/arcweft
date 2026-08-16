@@ -15,16 +15,16 @@ use super::schema::{
     AwbcEffectPlanId, AwbcFunctionId, AwbcInstruction, AwbcInstructionId, AwbcIntrinsicId,
     AwbcOpcode, AwbcPattern, AwbcPatternId, AwbcPatternRest, AwbcProgram, AwbcPureHelperId,
     AwbcRegisterId, AwbcResumePointId, AwbcRuntimeType, AwbcSignedIntKind, AwbcSourceMapId,
-    AwbcSourcePlanId, AwbcStreamPlanId, AwbcStringId, AwbcTaskPlanId, AwbcTerminator,
-    AwbcTraitMethodId, AwbcTraitReceiverMode, AwbcTrapCode, AwbcTypeId, AwbcUnaryOp,
-    AwbcUnsignedIntKind,
+    AwbcStreamPlanId, AwbcStringId, AwbcTaskPlanId, AwbcTerminator, AwbcTraitMethodId,
+    AwbcTraitReceiverMode, AwbcTrapCode, AwbcTypeId, AwbcUnaryOp, AwbcUnsignedIntKind,
 };
 use crate::task::NeedId;
 use crate::time::LogicalDuration;
 use crate::value::{
     RuntimeAgentValue, RuntimeBinding, RuntimeFunctionBody, RuntimeFunctionValue,
-    RuntimeNominalRecordValue, RuntimeSeq, RuntimeValue, evaluate_binary, evaluate_unary,
-    runtime_sequence_from_literal_values, runtime_sequence_repeat_value, runtime_value_label,
+    RuntimeNominalRecordValue, RuntimeReductionValue, RuntimeSeq, RuntimeValue, evaluate_binary,
+    evaluate_unary, runtime_sequence_from_literal_values, runtime_sequence_repeat_value,
+    runtime_value_label,
 };
 use thiserror::Error;
 
@@ -77,11 +77,6 @@ pub enum VmObservation {
         value: RuntimeValue,
     },
     StreamClose(AwbcStreamPlanId),
-    SourceYield {
-        source: AwbcSourcePlanId,
-        value: RuntimeValue,
-    },
-    SourceClose(AwbcSourcePlanId),
     Trap(FiberTrap),
 }
 
@@ -583,6 +578,19 @@ fn execute_instruction(
                 .map_err(|error| VmError::Runtime(error.to_string()))?;
             fiber.active_frame_mut()?.set_register(*dst, value)?;
         }
+        AwbcInstruction::MakeReductionUnchanged { dst, ty, state } => {
+            let owner = program
+                .opaque_owner(*ty)
+                .map_err(|error| VmError::Runtime(error.to_string()))?
+                .ok_or_else(|| {
+                    VmError::Runtime("Reduction requires an opaque runtime type".to_owned())
+                })?;
+            let state = register(fiber, *state)?.clone();
+            let value = RuntimeReductionValue::try_unchanged(owner, state)
+                .map(RuntimeValue::Reduction)
+                .map_err(|error| VmError::Runtime(error.to_string()))?;
+            fiber.active_frame_mut()?.set_register(*dst, value)?;
+        }
         AwbcInstruction::ProjectTuple {
             dst,
             target,
@@ -622,7 +630,7 @@ fn execute_instruction(
                     .iter()
                     .find(|item| item.name() == field)
                     .map(|field| field.value().clone()),
-                RuntimeValue::Agent(value) => value.project_field(field),
+                RuntimeValue::Agent(value) => value.project_field_label(field),
                 _ => None,
             };
             let value =
@@ -650,12 +658,11 @@ fn execute_instruction(
             let value = host.call_pure_helper(program, *helper, &args)?;
             fiber.active_frame_mut()?.set_register(*dst, value)?;
         }
-        AwbcInstruction::AssignField {
+        AwbcInstruction::AssignRecordField {
             target,
             field,
             value,
         } => {
-            let field = string(program, *field)?.to_owned();
             let value = register(fiber, *value)?.clone();
             let frame = fiber.active_frame_mut()?;
             let Some(target_value) = frame
@@ -669,7 +676,7 @@ fn execute_instruction(
                 }
                 .into());
             };
-            set_record_field_value(target_value, &field, value)?;
+            set_record_field_value(target_value, *field, value)?;
         }
         AwbcInstruction::CallTraitMethod {
             dst,
@@ -834,26 +841,6 @@ fn execute_instruction(
                 observations.push(VmObservation::StreamClose(*stream));
             }
         }
-        AwbcInstruction::SourceClose { source } => {
-            if let Some(state) = fiber.sources.iter_mut().find(|state| state.plan == *source)
-                && !state.closed
-            {
-                state.closed = true;
-                observations.push(VmObservation::SourceClose(*source));
-            }
-        }
-        AwbcInstruction::SourceYield { source, value } => {
-            let value = register(fiber, *value)?.clone();
-            observations.push(VmObservation::SourceYield {
-                source: *source,
-                value: value.clone(),
-            });
-            if let Some(state) = fiber.sources.iter_mut().find(|state| state.plan == *source)
-                && !state.closed
-            {
-                state.queue.push(value);
-            }
-        }
     }
     Ok(InstructionControl::Continue)
 }
@@ -901,26 +888,33 @@ fn apply_runtime_function(
     args: &[RuntimeValue],
     destination: AwbcRegisterId,
 ) -> Result<InstructionControl, VmError> {
-    if args.len() < function.arity() {
+    let arity = function
+        .remaining_arity()
+        .map_err(|error| VmError::Runtime(error.to_string()))?;
+    if args.len() < arity {
         fiber.active_frame_mut()?.set_register(
             destination,
-            RuntimeValue::Function(function.partially_apply(args)),
+            RuntimeValue::Function(
+                function
+                    .try_bind_prefix(args)
+                    .map_err(|error| VmError::Runtime(error.to_string()))?,
+            ),
         )?;
         return Ok(InstructionControl::Continue);
     }
-    if args.len() > function.arity() {
+    if args.len() > arity {
         return Err(VmError::FunctionArgumentCount {
-            expected: function.arity(),
+            expected: arity,
             actual: args.len(),
         });
     }
-    let RuntimeFunctionBody::Awbc(function_id) = &function.body else {
+    let RuntimeFunctionBody::Awbc(closure) = function.body() else {
         return Err(VmError::Runtime(
             "AWBC VM cannot apply structured expression function bodies".to_owned(),
         ));
     };
-    let mut values = function
-        .captures
+    let mut values = closure
+        .captures()
         .iter()
         .map(|capture| capture.value.clone())
         .collect::<Vec<_>>();
@@ -934,7 +928,7 @@ fn apply_runtime_function(
         },
         destination: Some(destination),
     };
-    fiber.push_call_frame_at(program, *function_id, return_to, &values)?;
+    fiber.push_call_frame_at(program, closure.function(), return_to, &values)?;
     Ok(InstructionControl::Transferred)
 }
 
@@ -1045,7 +1039,7 @@ fn execute_trait_method_call(
 
 fn set_record_field_value(
     target: &mut RuntimeValue,
-    field: &str,
+    field: u32,
     value: RuntimeValue,
 ) -> Result<(), VmError> {
     let RuntimeValue::Record(fields) = target else {
@@ -1054,11 +1048,10 @@ fn set_record_field_value(
             runtime_value_label(target)
         )));
     };
-    let Some(field_value) = fields
-        .iter_mut()
-        .find(|candidate| candidate.name() == field)
-    else {
-        return Err(VmError::Runtime(format!("missing field `{field}`")));
+    let Some(field_value) = fields.get_mut(field as usize) else {
+        return Err(VmError::Runtime(format!(
+            "missing record field ordinal {field}"
+        )));
     };
     *field_value.value_mut() = value;
     Ok(())
@@ -1156,16 +1149,35 @@ fn execute_terminator(
         }
         AwbcTerminator::Dialogue {
             content,
-            line_task_group,
+            values,
+            line_task_captures,
             resume,
-        } => suspend(
-            fiber,
-            *resume,
-            FiberSuspensionReason::Dialogue {
-                content: *content,
-                line_task_group: *line_task_group,
-            },
-        ),
+        } => {
+            let values = values
+                .iter()
+                .map(|binding| {
+                    Ok(crate::plan::RuntimeDialogueValueBinding {
+                        slot: binding.slot,
+                        value: register(fiber, binding.value)?.clone(),
+                    })
+                })
+                .collect::<Result<Vec<_>, VmError>>()?
+                .into_boxed_slice();
+            let line_task_captures = line_task_captures
+                .iter()
+                .map(|register_id| register(fiber, *register_id).cloned())
+                .collect::<Result<Vec<_>, VmError>>()?
+                .into_boxed_slice();
+            suspend(
+                fiber,
+                *resume,
+                FiberSuspensionReason::Dialogue {
+                    content: *content,
+                    values,
+                    line_task_captures,
+                },
+            )
+        }
         AwbcTerminator::Choice {
             choice,
             dst,

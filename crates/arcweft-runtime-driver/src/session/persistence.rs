@@ -5,10 +5,10 @@ use super::{
     BUNDLE_SESSION_SAVE_SCHEMA_VERSION, BundleEntryStart, BundleEntryStartError,
     BundlePresentationSnapshot, BundleSession, BundleSessionCharacterPresentationSnapshot,
     BundleSessionExecutorSnapshot, BundleSessionGenerationSnapshot, BundleSessionPendingBlocker,
-    BundleSessionRuntimeSnapshot, BundleSessionSaveError, BundleSessionSnapshot, BundleViewRuntime,
-    RuntimeExecutor, RuntimeTaskListOptions, RuntimeTaskRegistry, SessionRuntime,
-    StartedForegroundEntry, ViewVirtualizationRuntime, digest_label,
-    reconciled_root_handles_for_restore, validate_presentation_runtime_status,
+    BundleSessionRuntimeSnapshot, BundleSessionSaveError, BundleSessionSavePayload,
+    BundleSessionSnapshot, BundleViewRuntime, RuntimeExecutor, RuntimeTaskListOptions,
+    RuntimeTaskRegistry, SessionRuntime, StartedForegroundEntry, ViewVirtualizationRuntime,
+    digest_label, reconciled_root_handles_for_restore, validate_presentation_runtime_status,
     validate_presentation_snapshot, validate_product_awbc_snapshot,
     validate_virtual_list_scroll_owner,
 };
@@ -88,7 +88,7 @@ impl BundleSession {
                 active_generation: active.id,
                 artifact: self.active_artifact_identity,
                 dialogue_content: active.dialogue_content,
-                bytecode_abi: active.bytecode_abi,
+                awbc_abi: active.awbc_abi,
                 adapter_requirements: active.adapter_requirements,
             },
             character_presentation: self.character_presentation_snapshot(&self.presentation)?,
@@ -186,8 +186,10 @@ impl BundleSession {
 
     pub fn export_session_save_bytes(&self) -> Result<Vec<u8>, BundleSessionSaveError> {
         let snapshot = self.snapshot_session()?;
+        let payload = BundleSessionSavePayload::from_snapshot(&snapshot)
+            .map_err(|message| BundleSessionSaveError::Encode { message })?;
         arcweft_save::encode_typed_json_save(
-            &snapshot,
+            &payload,
             arcweft_save::SaveSchemaId::new(BUNDLE_SESSION_SAVE_SCHEMA_ID),
             BUNDLE_SESSION_SAVE_SCHEMA_VERSION,
         )
@@ -201,7 +203,7 @@ impl BundleSession {
         bytes: &[u8],
         options: &arcweft_save::SaveDecodeOptions,
     ) -> Result<(), BundleSessionSaveError> {
-        let snapshot = arcweft_save::decode_strict_typed_json_save::<BundleSessionSnapshot>(
+        let payload = arcweft_save::decode_strict_typed_json_save::<BundleSessionSavePayload>(
             bytes,
             &arcweft_save::SaveSchemaId::new(BUNDLE_SESSION_SAVE_SCHEMA_ID),
             BUNDLE_SESSION_SAVE_SCHEMA_VERSION,
@@ -210,6 +212,10 @@ impl BundleSession {
         .map_err(|error| BundleSessionSaveError::Decode {
             message: error.to_string(),
         })?;
+        self.validate_session_save_generation(&payload.generation)?;
+        let snapshot = payload
+            .into_snapshot()
+            .map_err(|message| BundleSessionSaveError::Decode { message })?;
         self.restore_session_snapshot(snapshot)
     }
 
@@ -445,11 +451,11 @@ impl BundleSession {
                 actual: digest_label(&active.dialogue_content),
             });
         }
-        if snapshot.bytecode_abi != active.bytecode_abi {
+        if snapshot.awbc_abi != active.awbc_abi {
             return Err(BundleSessionSaveError::GenerationMismatch {
-                field: "bytecode_abi",
-                saved: snapshot.bytecode_abi.to_string(),
-                actual: active.bytecode_abi.to_string(),
+                field: "awbc_abi",
+                saved: snapshot.awbc_abi.to_string(),
+                actual: active.awbc_abi.to_string(),
             });
         }
         if snapshot.adapter_requirements != active.adapter_requirements {

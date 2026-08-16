@@ -210,9 +210,8 @@ mod tests {
     use super::*;
     use arcweft_bundle::resource_codec::SourceMapSection;
     use arcweft_bundle::{ARCWEFT_BUNDLE_SCHEMA_VERSION, BundleManifest, BundleRuntimeSummary};
-    use arcweft_core::{
-        bytecode::BytecodeProgram,
-        plan::{FlowOp, FlowRuntimeId, RuntimeFlow, RuntimePlan},
+    use arcweft_core::plan::{
+        FlowRuntimeId, RuntimeFlowOpSeed, RuntimeFlowSeed, RuntimePlanBuilder,
     };
     use arcweft_runtime_plan::awbc_lower::AwbcLowerer;
     use arcweft_source::{SourceDocument, SourceDocumentId, SourceName};
@@ -325,30 +324,31 @@ mod tests {
     }
 
     fn minimal_bundle() -> ArcweftBundle {
-        let plan = RuntimePlan::new(
-            vec![RuntimeFlow {
-                id: FlowRuntimeId::from_runtime_target_value("flow.main").expect("flow runtime id"),
-                ops: vec![FlowOp::Return("done".to_owned())],
-            }],
-            Vec::new(),
-        )
-        .expect("runtime plan is valid")
-        .with_entries(vec![arcweft_core::plan::RuntimeEntrySpec {
-            id: arcweft_core::plan::EntryRuntimeId::from_source_entity_body("entry.main")
-                .expect("test entry ID is valid"),
-            kind: arcweft_core::plan::RuntimeEntryKind::Cli,
-            binding: arcweft_core::entry::EntryBindingIdentity::from_bytes([1; 32]),
-            target: arcweft_core::plan::RuntimeEntryTarget::Flow(
-                FlowRuntimeId::from_runtime_target_value("flow.main").expect("flow runtime id"),
-            ),
-            roles: arcweft_core::entry::RuntimeEntryRoles::None,
-        }]);
+        let flow = FlowRuntimeId::from_runtime_target_value("flow.main").expect("flow runtime id");
+        let mut builder = RuntimePlanBuilder::new();
+        builder
+            .push_flow_seed(RuntimeFlowSeed::new(
+                flow.clone(),
+                [],
+                vec![RuntimeFlowOpSeed::Return("done".to_owned())],
+            ))
+            .expect("flow admits");
+        builder
+            .push_entry(arcweft_core::plan::RuntimeEntrySpec {
+                id: arcweft_core::plan::EntryRuntimeId::from_source_entity_body("entry.main")
+                    .expect("test entry ID is valid"),
+                kind: arcweft_core::plan::RuntimeEntryKind::Cli,
+                binding: arcweft_core::entry::EntryBindingIdentity::from_bytes([1; 32]),
+                target: arcweft_core::plan::RuntimeEntryTarget::Flow(flow),
+                roles: arcweft_core::entry::RuntimeEntryRoles::None,
+            })
+            .expect("entry admits");
+        let plan = builder.finish().expect("runtime plan is valid");
         let dialogue_content = DialogueContentCatalog::new();
         let product_awbc = AwbcLowerer::new(&plan, &dialogue_content, "bundle-mode-runs.arcw")
             .lower()
             .expect("product AWBC lowers")
             .program;
-        let bytecode = BytecodeProgram::from_runtime_plan(plan);
         ArcweftBundle::try_new(
             BundleManifest {
                 profile_id: None,
@@ -364,15 +364,13 @@ mod tests {
                     bytecode_instructions: 1,
                     line_task_groups: 0,
                     stream_plans: 0,
-                    source_plans: 0,
                 },
             },
             source_map("bundle-mode-runs.arcw", "flow main { return \"done\" }"),
-            bytecode,
+            product_awbc,
             dialogue_content,
         )
         .expect("standard dialogue source joins source map")
-        .with_product_awbc(product_awbc)
     }
 
     fn source_map(label: &str, text: &str) -> SourceMapSection {

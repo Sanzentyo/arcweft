@@ -5,12 +5,14 @@ use super::{
     PendingHostCall, ProductStepError, RuntimeBinding, RuntimeDiagnostic,
     RuntimeDiagnosticCategory, RuntimeHostCallId, RuntimeHostCallMode, RuntimeHostCallRequest,
     RuntimeNeedState, RuntimePayload, RuntimeStepOutput, RuntimeStreamEvent, RuntimeValue,
-    SourceEventKind, SourceRuntimeState, TaskEvent, TaskEventKind, TaskId, TaskKey, TaskSequence,
-    VmObservation, content_request, resolved_runtime_need_state, runtime_sequence_values,
-    runtime_value_label, source_id_for, stream_id_for, task_spec,
+    TaskEvent, TaskEventKind, TaskId, TaskKey, TaskSequence, VmObservation, content_request,
+    resolved_runtime_need_state, runtime_sequence_values, runtime_value_label, stream_id_for,
+    task_spec,
 };
 use crate::awbc::vm::cancel_fiber;
-use crate::source::SourcePolicy;
+use crate::stream::StreamEventKind;
+use crate::task::NamedHostArg;
+use crate::value::runtime_value_into_sequence_values;
 use arcweft_need::Need;
 
 impl AwbcProductStepExecutor {
@@ -63,11 +65,20 @@ impl AwbcProductStepExecutor {
             .map_or_else(|| NeedId(task_id.0.clone()), |plan| self.task_need_id(plan));
         match &event.kind {
             TaskEventKind::Ready(value) => {
+                let result = RuntimeValue::result_ok(value.value().clone());
                 output.flow_events.push(FlowEvent::AwaitReady {
                     need,
-                    value: value.clone(),
+                    value: RuntimePayload::from(result.clone()),
                 });
-                self.resume_await_value(binding, resume, value.value(), output)
+                self.resume_await_value(binding, resume, &result, output)
+            }
+            TaskEventKind::Error(error) => {
+                let result = RuntimeValue::result_err(error.value().clone());
+                output.flow_events.push(FlowEvent::AwaitReady {
+                    need,
+                    value: RuntimePayload::from(result.clone()),
+                });
+                self.resume_await_value(binding, resume, &result, output)
             }
             TaskEventKind::Progress(progress) => {
                 output.flow_events.push(FlowEvent::AwaitProgress {
@@ -76,7 +87,7 @@ impl AwbcProductStepExecutor {
                 });
                 true
             }
-            TaskEventKind::Err(error) => {
+            TaskEventKind::Failed(error) => {
                 self.fail_with_trap(
                     AwbcTrapCode::HostAbiMismatch,
                     format!("await task {} failed: {error}", task_id.0),
@@ -263,12 +274,26 @@ impl AwbcProductStepExecutor {
                     });
                     progressed = true;
                 }
-                TaskEventKind::Err(error) => {
+                TaskEventKind::Error(error) => {
                     self.fail_with_trap(
                         AwbcTrapCode::HostAbiMismatch,
                         format!(
-                            "await task {} at index {} failed: {error}",
-                            event.task_id.0, state.in_flight[position].index
+                            "await task {} at index {} returned error: {}",
+                            event.task_id.0,
+                            state.in_flight[position].index,
+                            runtime_value_label(error.value())
+                        ),
+                        None,
+                        output,
+                    );
+                    return true;
+                }
+                TaskEventKind::Failed(error) => {
+                    self.fail_with_trap(
+                        AwbcTrapCode::HostAbiMismatch,
+                        format!(
+                            "await task {} at index {} failed: {}",
+                            event.task_id.0, state.in_flight[position].index, error
                         ),
                         None,
                         output,
@@ -350,6 +375,36 @@ impl AwbcProductStepExecutor {
         } else {
             format!("{public_id}.{sequence}")
         });
+        let mut positional = Vec::new();
+        let mut named_args = Vec::new();
+        for (descriptor, value) in record.arguments.iter().zip(args) {
+            if descriptor.spread {
+                let Ok(values) = runtime_value_into_sequence_values(value.clone()) else {
+                    self.record_error(
+                        ProductStepError::Host(format!(
+                            "spread host argument requires a tuple or bracket sequence, found {}",
+                            runtime_value_label(value)
+                        )),
+                        output,
+                    );
+                    return;
+                };
+                positional.extend(values.into_iter().map(RuntimePayload::from));
+            } else if let Some(name) = descriptor.name {
+                let name = self
+                    .program
+                    .strings
+                    .get(name.index())
+                    .cloned()
+                    .unwrap_or_else(|| format!("argument.{}", name.0));
+                named_args.push(NamedHostArg {
+                    name,
+                    value: RuntimePayload::from(value.clone()),
+                });
+            } else {
+                positional.push(RuntimePayload::from(value.clone()));
+            }
+        }
         output.requests.host_calls.push(RuntimeHostCallRequest {
             id: id.clone(),
             public_id,
@@ -365,7 +420,8 @@ impl AwbcProductStepExecutor {
                 .get(record.operation.index())
                 .cloned()
                 .unwrap_or_else(|| "call".to_owned()),
-            args: args.iter().cloned().map(RuntimePayload::from).collect(),
+            args: positional,
+            named_args,
             mode: match record.mode {
                 AwbcHostCallMode::Immediate => RuntimeHostCallMode::Immediate,
                 AwbcHostCallMode::Suspend => RuntimeHostCallMode::Suspend,
@@ -477,7 +533,7 @@ impl AwbcProductStepExecutor {
                     output.effects.stream_events.push(RuntimeStreamEvent {
                         stream: stream_id_for(&self.program, stream),
                         sequence: TaskSequence(*sequence),
-                        kind: SourceEventKind::Item(RuntimePayload::from(value.clone())),
+                        kind: StreamEventKind::Item(RuntimePayload::from(value.clone())),
                     });
                     *sequence = sequence.saturating_add(1);
                     if let Some(state) = self
@@ -496,28 +552,8 @@ impl AwbcProductStepExecutor {
                         output.effects.stream_events.push(RuntimeStreamEvent {
                             stream: stream_id,
                             sequence,
-                            kind: SourceEventKind::End,
+                            kind: StreamEventKind::End,
                         });
-                    }
-                }
-                VmObservation::SourceYield { source, value } => {
-                    let source_id = source_id_for(&self.program, source);
-                    let state = self
-                        .facade_fiber
-                        .source_states
-                        .entry(source_id.clone())
-                        .or_insert_with(|| {
-                            SourceRuntimeState::new(source_id, SourcePolicy::default())
-                        });
-                    if let Some(message) = state.push_item(RuntimePayload::from(value)) {
-                        output.diagnostics.push(RuntimeDiagnostic::new(message));
-                    }
-                }
-                VmObservation::SourceClose(source) => {
-                    let id = source_id_for(&self.program, source);
-                    output.requests.source_close.push(id.clone());
-                    if let Some(state) = self.facade_fiber.source_states.get_mut(&id) {
-                        state.close();
                     }
                 }
                 VmObservation::Trap(trap) => self.record_trap(&trap, output),
@@ -561,6 +597,21 @@ impl AwbcProductStepExecutor {
         args: &[RuntimeValue],
         output: &mut RuntimeStepOutput,
     ) {
+        self.spawn_owned_child(
+            super::ProductChildFiberOwner::Independent,
+            function,
+            args,
+            output,
+        );
+    }
+
+    pub(super) fn spawn_owned_child(
+        &mut self,
+        owner: super::ProductChildFiberOwner,
+        function: AwbcFunctionId,
+        args: &[RuntimeValue],
+        output: &mut RuntimeStepOutput,
+    ) {
         match FiberState::for_function(
             &self.program,
             self.fiber.entry,
@@ -574,7 +625,10 @@ impl AwbcProductStepExecutor {
                     .active_frame_mut()
                     .and_then(|frame| frame.bind_positional_arguments(&self.program, args))
                 {
-                    Ok(()) => self.child_fibers.push_back(child),
+                    Ok(()) => self.child_fibers.push_back(super::ProductChildFiber {
+                        owner,
+                        fiber: child,
+                    }),
                     Err(error) => {
                         self.record_error(ProductStepError::Type(error.to_string()), output);
                     }

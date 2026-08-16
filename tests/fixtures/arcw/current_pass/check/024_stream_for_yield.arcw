@@ -7,15 +7,6 @@ fn passthrough(frames: Stream<IteratorItem, CaptureError>) -> Stream<IteratorIte
     }
 }
 
-pub source fixture_frames: Source<IteratorItem, CaptureError> {
-    from "fixture"
-    backpressure = latest
-    replay = hash_only
-    privacy = transient
-
-    on item frame => yield frame
-}
-
 flow generation_edge() -> String {
     return "done"
 }

@@ -43,7 +43,7 @@ use arcweft_layout::{
 };
 use arcweft_text_model::{
     CharacterDialoguePresentationConfig, DialoguePresentationCharacter, LineDisplayFrame,
-    RichTextAssignOp, RichTextCascadeLayer, RichTextDisplayMap, RichTextNode,
+    ResolvedRichTextNode, RichTextAssignOp, RichTextCascadeLayer, RichTextDisplayMap,
     RichTextObjectProxyDeclaration, RichTextParam, RichTextPresentation, RichTextRange,
     RichTextSettingSource, RichTextStyleContribution, RichTextTextProxyField,
     RichTextTextProxyFieldKind, RichTextTextProxyFieldSchema, RichTextTextProxyScalar,
@@ -147,7 +147,7 @@ fn test_line_display_frame() -> LineDisplayFrame {
             active: true,
             shadowed_by: None,
         }],
-        nodes: vec![RichTextNode::Text {
+        nodes: vec![ResolvedRichTextNode::Text {
             text: "Hello".to_owned(),
         }],
         display_map: RichTextDisplayMap {

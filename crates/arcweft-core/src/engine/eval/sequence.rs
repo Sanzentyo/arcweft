@@ -2,13 +2,14 @@ use super::{
     Engine, RuntimeCallBackend, RuntimeEvalError, RuntimeExpr, RuntimeValue,
     runtime_sequence_values, runtime_value_label,
 };
+use crate::runtime_id::RuntimeLocalDeclarationId;
 use crate::value::RuntimeIterator;
 
 impl Engine {
     pub(super) fn evaluate_filter_expr(
         &mut self,
         source: &RuntimeExpr,
-        param: &str,
+        param: RuntimeLocalDeclarationId,
         body: &RuntimeExpr,
         pure_backend: &mut impl RuntimeCallBackend,
     ) -> Result<RuntimeValue, RuntimeEvalError> {

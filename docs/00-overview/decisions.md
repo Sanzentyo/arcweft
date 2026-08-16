@@ -142,9 +142,6 @@ alice(voice=auto): text  # colon content application
 
 with:
   -> with { ... }
-
-await? expr with { ... }
-  -> try await expr with { ... }
 ```
 
 Formatters preserve `with:` by default in hand-written scenario files. CLI and
@@ -279,12 +276,12 @@ If the loop must return a value, use `loop { break value }`.
 
 This is the most balanced choice after adding expression-oriented `if` / `match` / `loop`.
 
-## Await / `?` decision
+## Await / `try` decision
 
-`await expr with:` returns `Result<T, E>`. The ergonomic propagation form is `try await expr with:`.
-`await? expr with:` is accepted as syntax sugar for `try await expr with:`.
-
-`?` remains the ordinary Rust-like postfix propagation operator for `Result` and `Option`. Arcweft also reserves prefix `try expr` as a general propagation form equivalent to `expr?`; `try await` is the important readable specialization where `await` and pending handling must group before propagation.
+`await expr with:` returns `Result<T, E>`. Prefix `try` is the sole propagation
+operator for `Result` and `Option`, so `try await expr with:` is ordinary
+composition of `try` around the awaited result. Arcweft has no postfix `?` and
+no attached `await?` spelling.
 
 ```arcw
 let bg_result = await asset.image(@asset:.bg.room) with:
@@ -294,21 +291,10 @@ let bg_result = await asset.image(@asset:.bg.room) with:
 let bg = try await asset.image(@asset:.bg.room) with:
     pending p:
         scene @scene.loading
-
-let bg = await? asset.image(@asset:.bg.room) with:
-    pending p:
-        scene @scene.loading
 ```
 
-The parenthesized form `(await ... with: ...)?` is valid but not recommended for hand-written code.
-
-Rejected only for await-with grouping ambiguity:
-
-```arcw
-await expr? with: ...
-```
-
-Rationale: `?` must remain Rust-like, but pending handling makes postfix grouping unpleasant. `try await` is explicit sugar for awaiting and applying `?`.
+`with:` belongs to the Await expression. `try await` therefore parses as
+`try (await ...)`; it is not a special Await form or source-preserving sugar.
 
 ## Error/context decision
 
@@ -318,7 +304,7 @@ Rationale: `?` must remain Rust-like, but pending handling makes postfix groupin
 
 ## Never decision
 
-Arcweft has a real bottom type `!`, shown as `Never` in diagnostics/manifests. It is required for expression-oriented `if`, `match`, `loop`, `let else`, `?`, `return`, `goto`, `break`, `continue`, `panic`, and `fail`.
+Arcweft has a real bottom type `!`, shown as `Never` in diagnostics/manifests. It is required for expression-oriented `if`, `match`, `loop`, `let else`, `try`, `return`, `goto`, `break`, `continue`, `panic`, and `fail`.
 
 ## Control-transfer target decision
 

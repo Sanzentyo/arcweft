@@ -512,11 +512,29 @@ impl DomainMethodId {
 
 impl CapacityMethodId {
     pub(crate) fn signature_schema(&self) -> CallableSignatureSchema {
-        variadic_unchecked(
-            self.result_type(),
-            CallableValidator::Capacity(self.clone()),
-            &[],
-        )
+        let result = self.result_type();
+        let validator = CallableValidator::Capacity(self.clone());
+        match (self.method().as_str(), self.arity()) {
+            ("with_capacity", _) => variadic_unchecked(result, validator, &[]),
+            (
+                "trim" | "to_string" | "voice_handle" | "pop" | "pop_front" | "collect" | "shrink",
+                0,
+            ) => empty(result, &[], validator),
+            ("push" | "reserve" | "shrink_to", 1) => schema(
+                vec![parameter(
+                    0,
+                    Some("value"),
+                    CallableParameterType::Unchecked,
+                    CallableParameterPassing::PositionalOrNamed,
+                    CallableParameterPresence::Required,
+                )],
+                result,
+                &[],
+                closed(),
+                validator,
+            ),
+            _ => unreachable!("CapacityMethodId constructors retain a supported arity"),
+        }
     }
 }
 

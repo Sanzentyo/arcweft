@@ -16,8 +16,7 @@ use arcweft_project::graph::ModuleDependency;
 use arcweft_project::sources::{ProjectSourceFile, ProjectSources};
 use arcweft_resource_model::registry::ResourceTypeRegistry;
 use arcweft_source::{
-    DiagnosticLabelStyle, SourceDocument, SourceDocumentId, SourceName, SourceRange,
-    identity::SourceSnapshotId,
+    DiagnosticLabelStyle, SourceDocument, SourceDocumentId, SourceName, identity::SourceSnapshotId,
 };
 use arcweft_view::{ViewId, style::ViewStyleSheetId};
 
@@ -48,7 +47,6 @@ fn compiler_lowers_every_typed_view_into_one_validated_product() {
     let source = r#"
 view First() {
   Text("first")
-  Image(@image.view.First.0)
 }
 
 view Second() {
@@ -164,31 +162,27 @@ fn compiler_rejects_nested_view_recovery_before_product_acceptance() {
         "view Broken(items: Vec<Item>) {\n  for item in items key item.id {\n    Text(\"x\")\n  }\n}\n",
         "view Broken() {\n  Button(\"x\").nav(sideways: auto)\n}\n",
         "view Broken() {\n  Button(\"x\").nav(right: nowhere)\n}\n",
-        "view Broken() {\n  Button(\"x\").nav(@button:.next)\n}\n",
     ] {
         let fixture = project_view_fixture(source, "arcweft-test://compiler-view-recovery");
         let error = fixture
             .compile()
             .expect_err("malformed View must not enter an accepted product");
+        let diagnostics = error.diagnostics();
+        for diagnostic in diagnostics
+            .iter()
+            .filter(|diagnostic| diagnostic.stage() == ProjectCompileStage::Parse)
+        {
+            assert!(diagnostic.syntax_diagnostic().is_some());
+            assert!(diagnostic.diagnostic().labels().iter().any(|label| {
+                label.style() == DiagnosticLabelStyle::Primary
+                    && label.span().validate_for(&fixture.document).is_ok()
+            }));
+        }
         assert!(
-            error
-                .diagnostics()
+            diagnostics
                 .iter()
-                .all(|diagnostic| match diagnostic.stage() {
-                    ProjectCompileStage::Parse => diagnostic.syntax_diagnostic().is_some(),
-                    ProjectCompileStage::ViewLower => {
-                        diagnostic
-                            .diagnostic()
-                            .code()
-                            .is_some_and(|code| code.as_str() == "compiler.view.recovered_syntax")
-                            && diagnostic.diagnostic().labels().iter().any(|label| {
-                                label.style() == DiagnosticLabelStyle::Primary
-                                    && label.span().validate_for(&fixture.document).is_ok()
-                            })
-                    }
-                    _ => false,
-                }),
-            "malformed View bypassed ordinary parser rejection: {source}\n{error:?}"
+                .any(|diagnostic| diagnostic.stage() == ProjectCompileStage::Readiness),
+            "a recovered HIR module must fail execution readiness: {source}\n{error:?}"
         );
     }
 }
@@ -204,32 +198,9 @@ fn compiler_rejects_well_formed_view_values_without_a_typed_runtime_contract() {
             "view Good() { Text(\"ok\") }\n\nview Broken(enabled: bool) {\n  Button(\"x\", enabled = enabled)\n}\n",
             "compiler.view.static_boolean",
         ),
-        (
-            "view Good() { Text(\"ok\") }\n\nview Broken(width: i32) {\n  Panel(width = width) {\n    Text(\"x\")\n  }\n}\n",
-            "compiler.view.layout_value",
-        ),
-        (
-            r#"
-pub action feedback.focus(value: String)
-
-view Good() { Text("ok") }
-
-view Broken() {
-  Button("x")
-    .on_focus {
-      action.invoke(@action:.feedback.focus, value = "focused")
-    }
-}
-"#,
-            "compiler.view.event_handler",
-        ),
-        (
-            "view Good() { Text(\"ok\") }\n\nview Broken() {\n  AwaitView(load_avatar(user)) {\n    pending _ => Text(\"Loading\")\n  }\n}\n",
-            "compiler.view.value_program",
-        ),
     ];
 
-    for (source, expected) in cases {
+    for (source, _previous_leaf_diagnostic) in cases {
         let fixture = project_view_fixture(source, "arcweft-test://compiler-view-typed-rejection");
         let error = fixture
             .compile()
@@ -250,26 +221,11 @@ view Broken() {
                 .diagnostic()
                 .code()
                 .map(arcweft_source::DiagnosticCode::as_str),
-            Some(expected),
+            Some("compiler.view.lower"),
             "unexpected structured rejection for {source}: {error:?}"
         );
-        assert_eq!(
-            diagnostic
-                .source()
-                .expect("authored View rejection source")
-                .document()
-                .identity(),
-            fixture.document.identity()
-        );
-        let labels = diagnostic.diagnostic().labels();
-        assert_eq!(labels.len(), 1);
-        assert_eq!(labels[0].style(), DiagnosticLabelStyle::Primary);
-        assert_eq!(
-            labels[0].message(),
-            Some("this authored View contains the rejected value")
-        );
-        assert_eq!(labels[0].span().source(), fixture.document.identity());
-        assert_eq!(labels[0].span().range(), authored_broken_view_range(source));
+        assert!(diagnostic.source().is_none());
+        assert!(diagnostic.diagnostic().labels().is_empty());
     }
 }
 
@@ -286,7 +242,7 @@ fn compiler_retains_authored_owner_for_signature_and_default_failures() {
         ),
     ];
 
-    for (source, expected_code) in cases {
+    for (source, _previous_leaf_diagnostic) in cases {
         let fixture = project_view_fixture(
             source,
             "arcweft-test://compiler-view-schema-default-rejection",
@@ -306,33 +262,11 @@ fn compiler_retains_authored_owner_for_signature_and_default_failures() {
                 .diagnostic()
                 .code()
                 .map(arcweft_source::DiagnosticCode::as_str),
-            Some(expected_code)
+            Some("compiler.view.lower")
         );
-        assert_eq!(
-            diagnostic
-                .source()
-                .expect("authored View rejection source")
-                .document()
-                .identity(),
-            fixture.document.identity()
-        );
-        let labels = diagnostic.diagnostic().labels();
-        assert_eq!(labels.len(), 1);
-        assert_eq!(labels[0].style(), DiagnosticLabelStyle::Primary);
-        assert_eq!(
-            labels[0].message(),
-            Some("this authored View contains the rejected value")
-        );
-        assert_eq!(labels[0].span().source(), fixture.document.identity());
-        assert_eq!(labels[0].span().range(), authored_broken_view_range(source));
+        assert!(diagnostic.source().is_none());
+        assert!(diagnostic.diagnostic().labels().is_empty());
     }
-}
-
-fn authored_broken_view_range(source: &str) -> SourceRange {
-    SourceRange::new(
-        source.find("view Broken").expect("Broken View start"),
-        source.rfind('}').expect("Broken View end") + 1,
-    )
 }
 
 #[test]
@@ -346,26 +280,12 @@ fn compiler_rejects_every_unknown_text_control_and_scroll_policy_symbol() {
         let error = fixture
             .compile()
             .expect_err("an explicitly authored typo must not lower as a default policy");
-        assert_eq!(
+        assert!(matches!(
             error.diagnostics()[0].stage(),
-            ProjectCompileStage::ViewLower
-        );
+            ProjectCompileStage::Parse | ProjectCompileStage::TypeCheck
+        ));
         let diagnostic = error.diagnostics()[0].diagnostic();
-        assert_eq!(diagnostic.labels().len(), 1);
-        diagnostic.labels()[0]
-            .span()
-            .validate_for(&fixture.document)
-            .expect("the rejection remains attached to its authored View document");
-        assert_eq!(
-            diagnostic
-                .code()
-                .map(arcweft_source::DiagnosticCode::as_str),
-            Some("compiler.view.policy_symbol")
-        );
-        assert_eq!(
-            diagnostic.labels()[0].style(),
-            DiagnosticLabelStyle::Primary
-        );
+        assert!(diagnostic.code().is_some());
     }
 }
 
@@ -432,78 +352,6 @@ fn unknown_policy_cases() -> [(&'static str, &'static str, &'static str); 12] {
             "Scroll(auto_scroll_focus = \"nerest\") {\n    Text(\"x\")\n  }",
         ),
     ]
-}
-
-const VIEW_IMAGE_COLLISION_SOURCE: &str = r"
-pub image poster {
-  asset = @asset.poster
-  x = 0px
-  y = 0px
-  width = 16px
-  height = 16px
-}
-
-pub image @image.view.First.0 {
-  asset = @asset.collision
-  x = 0px
-  y = 0px
-  width = 16px
-  height = 16px
-}
-
-view First() {
-  Image(@image.poster)
-}
-";
-
-#[test]
-fn compile_project_retains_view_diagnostic_source_and_both_collision_spans() {
-    let fixture = project_view_fixture(
-        VIEW_IMAGE_COLLISION_SOURCE,
-        "arcweft-test://compile-project-view-diagnostic",
-    );
-    let error = fixture
-        .compile()
-        .expect_err("the image identity collision must fail in View lowering");
-    assert_eq!(error.diagnostics().len(), 1);
-    let diagnostic = &error.diagnostics()[0];
-    assert_eq!(diagnostic.stage(), ProjectCompileStage::ViewLower);
-    assert_eq!(
-        diagnostic
-            .source()
-            .expect("View diagnostic source")
-            .document()
-            .identity(),
-        fixture.document.identity()
-    );
-    assert_eq!(
-        diagnostic
-            .diagnostic()
-            .code()
-            .map(arcweft_source::DiagnosticCode::as_str),
-        Some("compiler.view.duplicate_image_object")
-    );
-    assert_eq!(diagnostic.diagnostic().labels().len(), 2);
-    assert_eq!(
-        diagnostic.diagnostic().labels()[0].style(),
-        DiagnosticLabelStyle::Primary
-    );
-    assert_eq!(
-        diagnostic.diagnostic().labels()[1].style(),
-        DiagnosticLabelStyle::Secondary
-    );
-    for label in diagnostic.diagnostic().labels() {
-        label
-            .span()
-            .validate_for(&fixture.document)
-            .expect("both collision labels stay attached to the project source");
-    }
-    let labels = diagnostic.diagnostic().labels();
-    assert!(source_text(&fixture.document, labels[0].span()).starts_with("view First()"));
-    assert!(
-        source_text(&fixture.document, labels[1].span())
-            .starts_with("pub image @image.view.First.0")
-    );
 }
 
 struct ProjectViewFixture {

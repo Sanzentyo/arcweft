@@ -1,7 +1,8 @@
-use arcweft_runtime_host::{BundleRunnerExecutor, BundleRunnerOptions};
+use arcweft_runtime_host::BundleRunnerOptions;
 
 #[test]
-fn bundle_runner_default_executor_is_awbc_product() {
+fn bundle_runner_defaults_are_product_safe() {
     let options = BundleRunnerOptions::default();
-    assert_eq!(options.executor, BundleRunnerExecutor::AwbcProduct);
+    assert_eq!(options.steps, 8);
+    assert_eq!(options.max_ops, 32);
 }

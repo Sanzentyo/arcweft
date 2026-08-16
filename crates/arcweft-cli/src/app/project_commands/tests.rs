@@ -9,7 +9,6 @@ use super::{
 use arcweft_bundle::{ArcweftBundle, BundleFormat};
 use arcweft_compiler::incremental::runtime_plan_artifact_key;
 use arcweft_compiler::project::InMemoryProjectCompileCache;
-use arcweft_core::plan::RuntimePlan;
 use arcweft_project::{
     artifact::{ArtifactKeyInput, RuntimePlanArtifactKey},
     fingerprint::{BuildDigest, NamedDigest},
@@ -54,12 +53,11 @@ fn compile_emit_owns_output_path_policy() {
 #[test]
 fn runtime_plan_cache_envelope_rejects_wrong_schema_and_fingerprint() {
     let key = runtime_plan_test_key("accepted");
-    let encoded = encode_runtime_plan_artifact(key, &RuntimePlan::default())
-        .expect("canonical runtime plan encodes");
+    let encoded =
+        encode_runtime_plan_artifact(key).expect("canonical runtime plan receipt encodes");
     let decoded =
         decode_runtime_plan_artifact(key, &encoded).expect("canonical runtime plan decodes");
     assert_eq!(decoded.schema_version, RUNTIME_PLAN_ARTIFACT_SCHEMA_VERSION);
-    assert_eq!(decoded.plan, RuntimePlan::default());
 
     let mut wrong_schema: serde_json::Value =
         serde_json::from_slice(&encoded).expect("runtime plan JSON");

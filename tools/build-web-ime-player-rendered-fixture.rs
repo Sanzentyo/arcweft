@@ -26,7 +26,6 @@ use arcweft_core::awbc::schema::{
     AwbcFunctionId, AwbcFunctionKind, AwbcProgram, AwbcSafePointKind, AwbcSignature,
     AwbcSignatureId, AwbcStringId, AwbcTableRange, AwbcTerminator,
 };
-use arcweft_core::bytecode::BytecodeProgram;
 use arcweft_render_text::LineDisplayCatalog;
 use arcweft_source::{SourceDocument, SourceDocumentId, SourceName};
 use std::env;
@@ -75,7 +74,6 @@ fn output_path() -> Result<PathBuf, String> {
 
 fn web_ime_player_rendered_bundle() -> ArcweftBundle {
     minimal_bundle()
-        .with_product_awbc(minimal_awbc_program())
         .with_view_text(view_text())
         .with_view_input(view_input())
         .with_view_program(view_program())
@@ -105,11 +103,10 @@ fn minimal_bundle() -> ArcweftBundle {
                 bytecode_instructions: 0,
                 line_task_groups: 0,
                 stream_plans: 0,
-                source_plans: 0,
             },
         },
         source_map,
-        BytecodeProgram::default(),
+        minimal_awbc_program(),
         LineDisplayCatalog::default(),
     )
     .expect("standard dialogue source joins source map")

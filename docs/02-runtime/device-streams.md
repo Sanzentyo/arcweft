@@ -1,6 +1,6 @@
-# Device Streams, Source Blocks, and Generator Policy
+# Device Streams and Generator Policy
 
-Arcweft supports camera, microphone, USB, HID, gamepad, touch, virtual controller, and test-fixture input through one runtime concept: a **device stream**. A device stream is not an ordinary lazy `Seq<T>` and not a raw Rust generator. It is a permissioned, cancelable, backpressure-aware source of timestamped events.
+Arcweft supports camera, microphone, USB, HID, gamepad, touch, virtual controller, and test-fixture input through one runtime concept: a **device stream**. A device stream is not an ordinary lazy `Seq<T>` and not a raw Rust generator. An external capability operation returns a typed `Stream<T, E>` handle; host adapters own permission, cancellation, queueing, and timestamp normalization.
 
 Related chapters:
 
@@ -32,12 +32,9 @@ Seq<T>
   map/filter/fold/fusion.
   No permission, no wall-clock input.
 
-Source<T, E>
-  Live device or event stream.
-  Permissioned, timestamped, cancelable, backpressure-aware.
-
 Stream<T, E>
-  Derived ordered stream transform over an existing source, stream, or granted
+  Sole asynchronous sequence abstraction. It may be returned by an external
+  capability or produced by a transform over an existing stream or granted
   port.
 
 Need<Result<T, E>, TaskError>
@@ -45,100 +42,52 @@ Need<Result<T, E>, TaskError>
   Must be awaited with pending/denied/error branches in user-visible flows.
 ```
 
-Rust implementation may use `futures::Stream`, callback adapters, or generated state machines. The DSL may expose `source` blocks, but they lower into explicit stream state machines rather than relying on unstable Rust generator internals.
+Rust implementation may use `futures::Stream`, callback adapters, or generated state machines. External capability calls lower into explicit typed stream requests; the DSL has no `source` declaration role and does not rely on unstable Rust generator internals.
 
 ## Core types
 
 ```rust
-pub struct Source<T, E> {
-    pub id: SourceId,
+pub struct Stream<T, E> {
+    pub id: StreamId,
     pub item_type: TypeId,
-    pub policy: SourcePolicy,
+    pub error_type: TypeId,
 }
 
-pub struct SourcePolicy {
-    pub backpressure: BackpressurePolicy,
-    pub replay: ReplayPolicy,
-    pub privacy: PrivacyPolicy,
-    pub max_queue: usize,
-}
-
-pub enum BackpressurePolicy {
-    LatestOnly,
-    BoundedQueue {
-        capacity: usize,
-        on_overflow: OverflowPolicy,
-    },
-    BlockingNotAllowed,
-}
-
-pub enum OverflowPolicy {
-    DropOldest,
-    DropNewest,
-    Error,
-    Coalesce,
-}
-
-pub enum ReplayPolicy {
-    Full,
-    HashOnly,
-    Summary,
-    EventOnly,
-    None,
-}
-
-pub enum PrivacyPolicy {
-    Transient,
-    Redacted,
-    Recordable,
-    Private,
-}
-
-pub struct SourceEvent<T, E> {
-    pub source: SourceId,
+pub struct StreamEvent<T, E> {
+    pub stream: StreamId,
     pub sequence: TaskSequence,
-    pub kind: SourceEventKind<T, E>,
+    pub kind: StreamEventKind<T, E>,
 }
 
-pub enum SourceEventKind<T, E> {
+pub enum StreamEventKind<T, E> {
     Item(T),
-    Progress(String),
-    Disconnected,
-    PermissionRevoked,
     Error(E),
     End,
 }
 ```
 
 Backend adapters may attach richer native timestamps while recording/replaying
-through `SourceEvent.sequence`, but runtime core stores only Sans I/O policy and
-deterministic frame-boundary event data.
+through `StreamEvent.sequence`, but runtime core stores only Sans I/O stream
+state and deterministic frame-boundary event data.
 
-## Source block syntax
+## External Stream capabilities
 
-A `source` block is allowed, but it is declarative and policy-driven.
+Live device access is an ordinary external capability operation returning a
+`Stream<T, E>` value. It is not a declaration, root, or special callable role.
 
 ```arcw
-pub source face_camera_frames: Source<VideoFrameHandle, CaptureError> {
-    from capture.camera(@capture.face_camera)
-    backpressure = latest
-    replay = hash_only
-    privacy = transient
-
-    on item frame => yield frame
-    on disconnected => signal.set(@signal.camera_connected, false)
-    on error e => log.warn("camera stream error {err:?}", err = e)
+extern capability capture {
+    fn camera(device: CaptureDevice) -> Stream<VideoFrameHandle, CaptureError>
 }
 ```
 
 This is not a free-form coroutine. The compiler enforces:
 
 - every `yield` has a typed item,
-- every source has a backpressure policy,
-- every source has replay and privacy policy,
+- every generator has a typed `Stream<T, E>` result,
 - borrowed frame data cannot cross `yield` or `await`,
-- source items are delivered only at frame boundary unless explicitly marked realtime,
-- source replay policy is explicit.
+- stream items are delivered only at frame boundary unless the capability
+  explicitly provides realtime semantics.
 
 ## Source consumption
 
@@ -155,7 +104,7 @@ let mic =
         denied _ => return Ok(FlowExit::Goto(@flow.mic_optional))
     }
 
-let frames = source.audio_frames(mic)
+let frames = capture.audio_frames(mic)
 ```
 
 Once acquired, stream items are consumed by `select`, `poll`, Activity input ports, or signals.
@@ -192,24 +141,23 @@ let reports =
         .coalesce_latest()
 ```
 
-`Source<T, E>` adapters do not become pure `Seq<T>`. They preserve timestamp, error, disconnect, and backpressure semantics.
+`Stream<T, E>` adapters do not become pure `Seq<T>`. They preserve the typed
+item/error boundary; capability-owned lifecycle and queue policy remain at the
+external boundary.
 
 ## Headless and replay
 
-Every device stream can be replaced by a fixture source.
+Every device stream can be replaced by a fixture capability returning a stream.
 
 ```rust
-pub source test_camera_frames: Source<VideoFrameHandle, CaptureError> {
-    from fixture.video("fixtures/camera/front_cam.webm")
-    backpressure = bounded(capacity = 8, overflow = error)
-    replay = full
-    privacy = recordable
-
-    on item frame => yield frame
-}
+let test_camera_frames =
+    fixture.video("fixtures/camera/front_cam.webm")
+        -> Stream<VideoFrameHandle, CaptureError>
 ```
 
-Replay records one of:
+Replay policy is selected by the fixture or host capability. The runtime records
+typed stream events and their sequence values; it does not expose a second
+Source interface.
 
 ```text
 full:
@@ -225,9 +173,6 @@ none:
   product mode for private capture
 ```
 
-`privacy = private` cannot be paired with `replay = full`; choose `hash_only`,
-`summary`, `event_only`, or `none`.
-
 ## Implementation guidance
 
 Native implementation strategy:
@@ -236,7 +181,7 @@ Native implementation strategy:
 callback device backend
   -> owned frame/audio packet
   -> bounded ring buffer
-  -> SourceEvent queue
+  -> StreamEvent queue
   -> frame-boundary normalization
 ```
 
@@ -246,8 +191,9 @@ Web implementation strategy:
 web-sys permission/bootstrap
   -> MediaStream / WebUSB / WebHID / Gamepad / Pointer events
   -> wasm bridge
-  -> SourceEvent queue
+  -> StreamEvent queue
 ```
 
-Do not expose backend callbacks directly to DSL code. Always convert to `SourceEvent` first.
+Do not expose backend callbacks directly to DSL code. Always convert them to
+typed `StreamEvent` values at the capability/host boundary first.
 

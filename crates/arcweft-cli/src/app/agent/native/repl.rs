@@ -938,7 +938,7 @@ pub(super) fn agent_repl_hir(
     }
 }
 
-pub(super) fn agent_repl_bytecode(
+pub(super) fn agent_repl_awbc(
     index: usize,
     input: &str,
     fragment_source: &str,
@@ -949,7 +949,9 @@ pub(super) fn agent_repl_bytecode(
         Ok((compiled, _)) => compiled,
         Err(message) => return agent_repl_error(index, input, "meta", message),
     };
-    let stats = compiled.bundle.bytecode.program.stats();
+    let product = compiled.bundle.product_awbc();
+    let program = product.program();
+    let stats = arcweft_runtime_plan::awbc_lower::AwbcLowerStats::from_program(program);
     agent_repl_ok(
         index,
         input,
@@ -958,15 +960,14 @@ pub(super) fn agent_repl_bytecode(
             "parse": agent_repl_classification_report(&classification),
             "entry_id": compiled.manifest.entry_id.as_str(),
             "controller_id": compiled.manifest.controller_id.as_str(),
-            "entries": &compiled.bundle.bytecode.program.entries,
+            "entries": &program.entries,
             "stats": {
-                "flows": stats.flows,
+                "flows": stats.flow_bindings,
                 "instructions": stats.instructions,
                 "line_task_groups": stats.line_task_groups,
                 "stream_plans": stats.stream_plans,
-                "source_plans": stats.source_plans,
             },
-            "program": format!("{:#?}", compiled.bundle.bytecode.program),
+            "program": format!("{program:#?}"),
         }),
     )
 }

@@ -2,7 +2,6 @@ use arcweft_bundle::resource_codec::SourceMapSection;
 use arcweft_bundle::{
     ArcweftBundle, BundleAwbcProgram, BundleCodecError, BundleFormat, BundleManifest,
     BundleRuntimeSummary,
-    container::{BundleSectionKind, BundleView, ReadBudget, SectionInput, encode_bundle},
 };
 use arcweft_core::awbc::schema::{
     AwbcBlock, AwbcBlockId, AwbcEffectSetId, AwbcEntry, AwbcEntryKind, AwbcEntryTarget,
@@ -10,36 +9,20 @@ use arcweft_core::awbc::schema::{
     AwbcFunctionId, AwbcFunctionKind, AwbcProgram, AwbcSafePointKind, AwbcSignature,
     AwbcSignatureId, AwbcStringId, AwbcTableRange, AwbcTerminator,
 };
-use arcweft_core::bytecode::BytecodeProgram;
 use arcweft_core::effect::RuntimeArtifactFingerprint;
 use arcweft_source::{SourceDocument, SourceDocumentId, SourceName};
 use arcweft_text_model::DialogueContentCatalog;
 
 #[test]
-fn product_awbc_requires_executable() {
-    let bundle = minimal_bundle();
-    let error = bundle
-        .to_format_bytes(BundleFormat::Awfb)
-        .expect_err("product encode must require AWBC");
-    assert!(matches!(
-        error,
-        BundleCodecError::MissingProductAwbcExecutable
-    ));
-}
-
-#[test]
 fn product_awbc_embeds_awbc_only_executable_section() {
-    let bundle = minimal_bundle().with_product_awbc(minimal_awbc_program());
+    let bundle = minimal_bundle();
     let bytes = bundle
         .to_format_bytes(BundleFormat::Awfb)
         .expect("AWBC-only AWFB encodes");
     let decoded = ArcweftBundle::from_format_slice(BundleFormat::Awfb, &bytes)
         .expect("AWBC-only AWFB decodes");
     assert_eq!(
-        decoded
-            .product_awbc()
-            .expect("product awbc exists")
-            .encoding,
+        decoded.product_awbc().encoding,
         arcweft_bundle::BundleAwbcEncoding::AwbcV1
     );
 }
@@ -51,52 +34,6 @@ fn product_awbc_malformed_reports_typed_diagnostic() {
     assert!(matches!(
         error,
         BundleCodecError::MalformedProductAwbcExecutable { .. }
-    ));
-}
-
-#[test]
-fn product_awbc_decode_rejects_old_structured_product_bytecode_tag() {
-    let bytes = minimal_bundle()
-        .with_product_awbc(minimal_awbc_program())
-        .to_format_bytes(BundleFormat::Awfb)
-        .expect("AWBC-only AWFB encodes");
-    let view = BundleView::parse(&bytes, ReadBudget::default()).expect("AWFB parses");
-    let mut old_payload = Vec::new();
-    old_payload.extend_from_slice(b"AWBC\r\n\x1a\n");
-    old_payload.extend_from_slice(&1_u32.to_le_bytes());
-    old_payload.extend_from_slice(&2_u32.to_le_bytes());
-    old_payload.extend_from_slice(&0_u32.to_le_bytes());
-    old_payload.extend_from_slice(&0_u32.to_le_bytes());
-    let sections = view
-        .sections()
-        .iter()
-        .map(|descriptor| {
-            let bytes = if descriptor.kind() == BundleSectionKind::ProgramBytecode {
-                old_payload.clone()
-            } else {
-                view.decoded_section(descriptor.id())
-                    .expect("section decodes")
-                    .expect("test AWFB uses embedded sections")
-            };
-            SectionInput::embedded(
-                descriptor.id(),
-                descriptor.kind(),
-                descriptor.schema_version(),
-                descriptor.residency(),
-                descriptor.required(),
-                bytes,
-            )
-        })
-        .collect::<Vec<_>>();
-    let old_structured =
-        encode_bundle(view.kind(), view.manifest(), sections).expect("AWFB re-encodes");
-
-    let error = ArcweftBundle::from_format_slice(BundleFormat::Awfb, &old_structured)
-        .expect_err("old structured product bytecode is rejected");
-
-    assert!(matches!(
-        error,
-        BundleCodecError::StructuredProductBytecodeUnsupported { encoding_tag: 2 }
     ));
 }
 
@@ -117,11 +54,10 @@ fn minimal_bundle() -> ArcweftBundle {
                 bytecode_instructions: 0,
                 line_task_groups: 0,
                 stream_plans: 0,
-                source_plans: 0,
             },
         },
         source_map("awbc-only.arcw", ""),
-        BytecodeProgram::default(),
+        minimal_awbc_program(),
         DialogueContentCatalog::new(),
     )
     .expect("standard dialogue source joins source map")

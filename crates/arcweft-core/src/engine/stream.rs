@@ -1,9 +1,10 @@
 use super::{
     Engine, RuntimeDiagnostic, RuntimeEvalError, RuntimeExpr, RuntimePattern, RuntimePayload,
-    RuntimeStepOutput, RuntimeStreamEvent, RuntimeValue, SourceEventKind, SourceId, StreamMatchArm,
-    StreamOp, StreamRuntimeId, StreamRuntimeState, match_runtime_pattern, runtime_value_label,
+    RuntimeStepOutput, RuntimeStreamEvent, RuntimeValue, StreamMatchArm, StreamOp, StreamRuntimeId,
+    StreamRuntimeState, match_runtime_pattern, runtime_value_label,
 };
 use crate::pure::RuntimeCallBackend;
+use crate::stream::StreamEventKind;
 
 #[derive(Clone, Copy, Debug)]
 pub(super) struct StreamForNext<'a> {
@@ -19,20 +20,19 @@ impl Engine {
         output: &mut RuntimeStepOutput,
         pure_backend: &mut impl RuntimeCallBackend,
     ) {
-        let stream_plans = std::mem::take(&mut self.plan.stream_plans);
-        for plan in &stream_plans {
+        let plan = std::sync::Arc::clone(&self.plan);
+        for plan in plan.stream_plans() {
             let mut budget = 64usize;
-            if !self.execute_stream_ops(&plan.id, &plan.ops, &mut budget, output, pure_backend) {
+            if !self.execute_stream_ops(plan.id(), plan.ops(), &mut budget, output, pure_backend) {
                 continue;
             }
             if budget == 0 {
                 output.diagnostics.push(RuntimeDiagnostic::new(format!(
                     "stream {} exhausted frame budget",
-                    plan.id.public_label()
+                    plan.id().public_label()
                 )));
             }
         }
-        self.plan.stream_plans = stream_plans;
     }
 
     pub(super) fn execute_stream_ops(
@@ -149,7 +149,7 @@ impl Engine {
             return true;
         };
         while let Some(item) = self.pop_queue_item(&source_key) {
-            match match_runtime_pattern(args.pattern, item.value()) {
+            match match_runtime_pattern(&self.plan, args.pattern, item.value()) {
                 Ok(Some(bindings)) => {
                     let should_continue = self.with_temp_bindings(bindings, |this| {
                         this.execute_stream_ops(
@@ -195,7 +195,7 @@ impl Engine {
                 output.effects.stream_events.push(RuntimeStreamEvent {
                     stream: stream.clone(),
                     sequence,
-                    kind: SourceEventKind::Item(item),
+                    kind: StreamEventKind::Item(item),
                 });
             }
             Err(error) => Self::diagnose_runtime_error(error, output),
@@ -220,7 +220,7 @@ impl Engine {
             }
         };
         for arm in arms {
-            let Ok(Some(bindings)) = match_runtime_pattern(&arm.pattern, &value) else {
+            let Ok(Some(bindings)) = match_runtime_pattern(&self.plan, &arm.pattern, &value) else {
                 continue;
             };
             let guard_matches = if let Some(guard) = arm.guard.as_ref() {
@@ -249,9 +249,7 @@ impl Engine {
     ) {
         match self.evaluate_queue_target(source) {
             Ok(target) => {
-                if let Some(source) = target.strip_prefix("source:") {
-                    self.close_source(&SourceId(source.to_owned()), output);
-                } else if let Some(stream) = target.strip_prefix("stream:")
+                if let Some(stream) = target.strip_prefix("stream:")
                     && let Ok(stream_id) = StreamRuntimeId::from_runtime_target_value(stream)
                     && let Some(state) = self.fiber.stream_states.get_mut(&stream_id)
                     && let Some(sequence) = state.close_with_sequence()
@@ -259,7 +257,7 @@ impl Engine {
                     output.effects.stream_events.push(RuntimeStreamEvent {
                         stream: stream_id,
                         sequence,
-                        kind: SourceEventKind::End,
+                        kind: StreamEventKind::End,
                     });
                 }
             }
@@ -282,19 +280,9 @@ impl Engine {
     ) -> Result<String, RuntimeEvalError> {
         match self.evaluate_expr_with_backend(expr, pure_backend)? {
             RuntimeValue::EntityRef(target) | RuntimeValue::String(target) => {
-                if self
-                    .fiber
-                    .source_states
-                    .contains_key(&SourceId(target.clone()))
-                {
-                    Ok(format!("source:{target}"))
-                } else if let Ok(stream) = StreamRuntimeId::from_runtime_target_value(&target)
-                    && self.fiber.stream_states.contains_key(&stream)
-                {
-                    Ok(format!("stream:{}", stream.canonical_label()))
-                } else {
-                    Ok(format!("source:{target}"))
-                }
+                let stream = StreamRuntimeId::from_runtime_target_value(&target)
+                    .map_err(|_| RuntimeEvalError::ExpectedEntityRef(target))?;
+                Ok(format!("stream:{}", stream.canonical_label()))
             }
             value => Err(RuntimeEvalError::ExpectedEntityRef(runtime_value_label(
                 &value,
@@ -303,13 +291,6 @@ impl Engine {
     }
 
     pub(super) fn pop_queue_item(&mut self, key: &str) -> Option<RuntimePayload> {
-        if let Some(source) = key.strip_prefix("source:") {
-            return self
-                .fiber
-                .source_states
-                .get_mut(&SourceId(source.to_owned()))
-                .and_then(|state| state.queue.pop_front());
-        }
         key.strip_prefix("stream:")
             .and_then(|stream| StreamRuntimeId::from_runtime_target_value(stream).ok())
             .and_then(|stream| {

@@ -14,7 +14,9 @@ use arcweft_character::presentation_name::{
     CharacterPresentationLocalePolicyDigest, CharacterPresentationSemanticDigest,
 };
 use arcweft_core::awbc::fiber::{FiberState, FiberStateError};
-use arcweft_core::awbc::product_step::AwbcProductExecutorSnapshot;
+use arcweft_core::awbc::product_step::{
+    AwbcProductExecutorSaveSnapshot, AwbcProductExecutorSnapshot,
+};
 use arcweft_core::awbc::schema::AwbcProgram;
 use arcweft_core::engine::FlowFiberStatus;
 pub use arcweft_core::entry::ActiveEntrySnapshotV1;
@@ -45,6 +47,70 @@ pub struct BundleSessionSnapshot {
     pub view_runtime: BundleViewRuntimeSnapshot,
 }
 
+/// Wire payload for the bundle-session save envelope.
+///
+/// This is intentionally separate from [`BundleSessionSnapshot`].  The
+/// latter is a live, testable in-memory state projection; this payload owns
+/// the AWBC-only recursive value DTO and never asks serde to materialize a
+/// live `RuntimeValue` function.
+#[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
+#[serde(deny_unknown_fields)]
+pub(crate) struct BundleSessionSavePayload {
+    pub generation: BundleSessionGenerationSnapshot,
+    #[serde(deserialize_with = "deserialize_required_option")]
+    pub character_presentation: Option<BundleSessionCharacterPresentationSnapshot>,
+    pub active_entry: ActiveEntrySnapshotV1,
+    pub root: Option<RootStateSnapshotV1>,
+    pub runtime: BundleSessionRuntimeSnapshot,
+    pub executor: BundleSessionExecutorSavePayload,
+    pub presentation: BundlePresentationSnapshot,
+    pub view_virtualization: ViewVirtualizationSnapshot,
+    pub view_runtime: BundleViewRuntimeSnapshot,
+}
+
+#[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
+#[serde(deny_unknown_fields)]
+pub(crate) struct BundleSessionExecutorSavePayload {
+    pub generation: GenerationId,
+    pub state: AwbcProductExecutorSaveSnapshot,
+}
+
+impl BundleSessionSavePayload {
+    pub(crate) fn from_snapshot(snapshot: &BundleSessionSnapshot) -> Result<Self, String> {
+        Ok(Self {
+            generation: snapshot.generation.clone(),
+            character_presentation: snapshot.character_presentation.clone(),
+            active_entry: snapshot.active_entry.clone(),
+            root: snapshot.root.clone(),
+            runtime: snapshot.runtime.clone(),
+            executor: BundleSessionExecutorSavePayload {
+                generation: snapshot.executor.generation,
+                state: AwbcProductExecutorSaveSnapshot::from_live(&snapshot.executor.state)?,
+            },
+            presentation: snapshot.presentation.clone(),
+            view_virtualization: snapshot.view_virtualization.clone(),
+            view_runtime: snapshot.view_runtime.clone(),
+        })
+    }
+
+    pub(crate) fn into_snapshot(self) -> Result<BundleSessionSnapshot, String> {
+        Ok(BundleSessionSnapshot {
+            generation: self.generation,
+            character_presentation: self.character_presentation,
+            active_entry: self.active_entry,
+            root: self.root,
+            runtime: self.runtime,
+            executor: BundleSessionExecutorSnapshot {
+                generation: self.executor.generation,
+                state: self.executor.state.into_live()?,
+            },
+            presentation: self.presentation,
+            view_virtualization: self.view_virtualization,
+            view_runtime: self.view_runtime,
+        })
+    }
+}
+
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 #[serde(deny_unknown_fields)]
 pub struct BundleSessionCharacterPresentationSnapshot {
@@ -58,7 +124,7 @@ pub struct BundleSessionGenerationSnapshot {
     pub active_generation: GenerationId,
     pub artifact: BundleSessionArtifactIdentity,
     pub dialogue_content: BundleDigest,
-    pub bytecode_abi: u32,
+    pub awbc_abi: u32,
     pub adapter_requirements: BundleDigest,
 }
 
@@ -339,7 +405,7 @@ pub(crate) fn validate_product_awbc_snapshot(
     for (index, fiber) in snapshot.child_fibers.iter().enumerate() {
         validate_fiber_snapshot(
             &format!("executor.product_awbc.child_fibers[{index}]"),
-            fiber,
+            &fiber.fiber,
             program,
         )?;
     }

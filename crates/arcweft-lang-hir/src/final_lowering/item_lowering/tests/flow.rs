@@ -1,5 +1,6 @@
 use super::*;
 
+use crate::arena::HirArenaPayload;
 use crate::expr::{HirExprKind, HirThreadBodyOwner, HirThreadFlowItem};
 use crate::item::{
     HirContractMode, HirFlowContractClause, HirFlowIdentity, HirFlowIssueClass, HirFlowIssueOwner,
@@ -55,6 +56,86 @@ const fn flow_source_query(
         owner,
         role: HirItemSourceRole::Flow(role),
     }
+}
+
+#[test]
+fn let_await_expression_with_inline_error_statement_lowers_cleanly() {
+    let parsed = parse(
+        "arcweft-test://proof/final-hir-let-await-with-inline",
+        concat!(
+            "extern capability fs {\n",
+            "    type FsError\n",
+            "    fn read_text(path: VirtualPath) -> Need<String, FsError> effects { fs.read }\n",
+            "}\n",
+            "extern capability path { fn save(path: String) -> VirtualPath }\n",
+            "entry cli @entry.main { goto @flow.main }\n",
+            "flow main() -> String effects { fs.read(save) } {\n",
+            "    let value = try await fs.read_text(path.save(\"profile.json\")) with {\n",
+            "        error error => return \"fallback\"\n",
+            "    }\n",
+            "    return value\n",
+            "}\n",
+        ),
+    );
+    assert!(
+        parsed.diagnostics().is_empty(),
+        "{:?}",
+        parsed.diagnostics()
+    );
+    let key = module_key(&parsed);
+    let mut database = HirDatabase::try_new().unwrap();
+    let module = lower(&mut database, &parsed, &key);
+    assert_eq!(
+        module.status(),
+        HirModuleStatus::Clean,
+        "poisoned expressions: {:#?}; statements: {:#?}; patterns: {:#?}; locals: {:#?}; types: {:#?}; scopes: {:#?}; captures: {:#?}",
+        module
+            .expressions()
+            .filter(|(_, value)| value.is_poisoned())
+            .collect::<Vec<_>>(),
+        module
+            .statements()
+            .filter(|(_, value)| value.is_poisoned())
+            .collect::<Vec<_>>(),
+        module
+            .patterns()
+            .filter(|(_, value)| value.is_poisoned())
+            .collect::<Vec<_>>(),
+        module
+            .locals()
+            .filter(|(_, value)| value.is_poisoned())
+            .collect::<Vec<_>>(),
+        module
+            .types()
+            .filter(|(_, value)| value.is_poisoned())
+            .collect::<Vec<_>>(),
+        module
+            .scopes()
+            .filter(|(_, value)| value.is_poisoned())
+            .collect::<Vec<_>>(),
+        module
+            .captures()
+            .filter(|(_, value)| value.is_poisoned())
+            .collect::<Vec<_>>()
+    );
+    let (_, item, flow) = resolve_flow(&module, 3);
+    assert_eq!(
+        item.state(),
+        &HirItemPoisonState::Clean,
+        "flow poison: {:?}; body: {:?}",
+        flow.poison(),
+        flow.body()
+    );
+    let [
+        HirThreadFlowItem::Statement(statement),
+        HirThreadFlowItem::Statement(_),
+    ] = flow.body().items()
+    else {
+        panic!("Let and Return must remain two statement items")
+    };
+    let statement = module.resolve_stmt(*statement).unwrap();
+    assert!(matches!(statement.kind(), HirStmtKind::Let { .. }));
+    assert!(!statement.is_poisoned());
 }
 
 #[test]
@@ -984,7 +1065,7 @@ fn flow_signature_recovery_uses_one_committed_trailing_ordinal_family() {
 }
 
 #[test]
-fn flow_body_projects_the_shared_sixteen_variant_inventory_without_a_tail() {
+fn flow_body_projects_the_shared_fifteen_variant_inventory_without_a_tail() {
     let source = format!("flow matrix {{\n{}}}\n", thread_flow_matrix_body());
     let parsed = parse("arcweft-test://proof/final-hir-flow-body-matrix", &source);
     let key = module_key(&parsed);
@@ -992,7 +1073,7 @@ fn flow_body_projects_the_shared_sixteen_variant_inventory_without_a_tail() {
     let module = lower(&mut database, &parsed, &key);
     let (flow_owner, item, flow) = resolve_flow(&module, 0);
     assert!(item.is_poisoned(), "the Error row is recovery-only");
-    assert_eq!(flow.body().items().len(), 16);
+    assert_eq!(flow.body().items().len(), 15);
     assert_eq!(
         flow.poison().primary().unwrap().class(),
         HirFlowIssueClass::BodyChild
@@ -1006,7 +1087,7 @@ fn flow_body_projects_the_shared_sixteen_variant_inventory_without_a_tail() {
         crate::expr::HirThreadFlowItem::DialogueApplication(_)
     ));
     assert!(matches!(
-        flow.body().items()[15],
+        flow.body().items()[14],
         crate::expr::HirThreadFlowItem::Error(_)
     ));
 
@@ -1487,7 +1568,6 @@ fn thread_flow_matrix_body() -> &'static str {
         "    source locale en-US {}\n",
         "    scope local {}\n",
         "    include @flow.shared\n",
-        "    await task with {}\n",
         "    ???\n",
     )
 }

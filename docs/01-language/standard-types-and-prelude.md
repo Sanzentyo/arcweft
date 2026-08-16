@@ -234,7 +234,6 @@ NeedCacheState<T, E, P = Unit>
 RingBuffer<T>
 Signal<T>
 SignalBus<T>
-Source<T, E>
 Stream<T, E>
 ```
 
@@ -248,9 +247,10 @@ memory, browser events, native callbacks, or another host mechanism. `Signal<T>`
 and `SignalBus<T>` model replay-visible last-value state and do not perform
 notification I/O themselves.
 
-`Source<T,E>` and `Stream<T,E>` are deterministic descriptors. Live callbacks,
-permissions, and host polling are adapter concerns; the language and runtime
-observe them through explicit events and replayable queue state.
+`Stream<T,E>` is the sole asynchronous sequence descriptor. Live callbacks,
+permissions, and host polling are external-capability concerns; an ordinary
+capability operation returning `Stream<T,E>` exposes only the typed stream to
+the language and runtime.
 
 ## Source and Tooling Data
 

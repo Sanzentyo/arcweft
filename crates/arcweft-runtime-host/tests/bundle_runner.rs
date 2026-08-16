@@ -4,20 +4,22 @@ use arcweft_bundle::{
     ArcweftBundle, BundleAdapterHostCall, BundleAdapterManifest, BundleFormat, BundleManifest,
     BundleRuntimeSummary,
 };
-use arcweft_core::bytecode::{BYTECODE_ABI_VERSION, BytecodeProgram, BytecodeVerificationError};
 use arcweft_core::entry::{EntryBindingIdentity, RuntimeEntryRoles};
+use arcweft_core::pattern::RuntimeSemanticTypeId;
 use arcweft_core::plan::{
-    EntryRuntimeId, FlowOp, FlowRuntimeId, RuntimeEntryKind, RuntimeEntrySpec, RuntimeEntryTarget,
-    RuntimeFlow, RuntimePlan,
+    EntryRuntimeId, FlowRuntimeId, RuntimeAwaitTargetSeed, RuntimeEntryKind, RuntimeEntrySpec,
+    RuntimeEntryTarget, RuntimeExprSeed, RuntimeExprSeedKind, RuntimeFlowOpSeed, RuntimeFlowSeed,
+    RuntimeHostArgumentSeed, RuntimeHostTaskRequestTemplateSeed, RuntimePlanBuilder,
+    RuntimePlanTypeProjection, RuntimePlanTypeSeed,
 };
-use arcweft_core::task::{
-    AwaitTarget, HostTaskArgTemplate, HostTaskRequest, HostTaskRequestTemplate, NeedId, TaskId,
+use arcweft_core::task::{HostCapabilityId, HostTaskRequest, NeedId, TaskId, TaskOutcomeContract};
+use arcweft_core::value::{RuntimePayload, RuntimeValue};
+use arcweft_host_adapter::{
+    HostAdapter, HostAdapterError, HostTaskCompletion, HostTaskMetrics, HostTaskOutcome,
 };
-use arcweft_core::value::{RuntimeExpr, RuntimePayload, RuntimeValue};
-use arcweft_host_adapter::{HostAdapter, HostAdapterError, HostTaskMetrics, HostTaskOutcome};
 use arcweft_runtime_host::{
-    BundleRunnerError, BundleRunnerExecutor, BundleRunnerOptions, BundleRunnerStepMode,
-    NativeAdapterRegistrar, run_bundle_file_with_native_adapters, run_bundle_with_native_adapters,
+    BundleRunnerError, BundleRunnerOptions, BundleRunnerStepMode, NativeAdapterRegistrar,
+    run_bundle_file_with_native_adapters, run_bundle_with_native_adapters,
 };
 use arcweft_runtime_plan::awbc_lower::AwbcLowerer;
 use arcweft_source::{SourceDocument, SourceDocumentId, SourceName};
@@ -92,39 +94,8 @@ fn bundle_runner_reports_custom_adapter_missing_from_host() {
 }
 
 #[test]
-fn bundle_runner_rejects_unverified_bytecode_before_execution() {
-    let mut bundle = structured_custom_echo_bundle();
-    bundle.bytecode.program.abi_version = BYTECODE_ABI_VERSION + 1;
-    let registrars: [NativeAdapterRegistrar; 1] =
-        [|_, builder| builder.register(CustomEchoAdapter::new())];
-
-    let error = run_bundle_with_native_adapters(
-        &bundle,
-        &BundleRunnerOptions {
-            steps: 8,
-            executor: BundleRunnerExecutor::BytecodeVm,
-            mode: BundleRunnerStepMode::Drain,
-            ..BundleRunnerOptions::default()
-        },
-        &registrars,
-    )
-    .expect_err("invalid bytecode is rejected before execution");
-
-    assert!(
-        matches!(
-            &error,
-            BundleRunnerError::VerifyBytecode(BytecodeVerificationError::UnsupportedAbi {
-                actual,
-                expected,
-            }) if *actual == BYTECODE_ABI_VERSION + 1 && *expected == BYTECODE_ABI_VERSION
-        ),
-        "unexpected invalid-bytecode error: {error:?}"
-    );
-}
-
-#[test]
 fn bundle_runner_rejects_missing_exact_entry_selection_before_execution() {
-    let mut bundle = structured_custom_echo_bundle();
+    let mut bundle = custom_echo_bundle();
     bundle.manifest.entry = None;
     let registrars: [NativeAdapterRegistrar; 1] =
         [|_, builder| builder.register(CustomEchoAdapter::new())];
@@ -133,7 +104,6 @@ fn bundle_runner_rejects_missing_exact_entry_selection_before_execution() {
         &bundle,
         &BundleRunnerOptions {
             steps: 8,
-            executor: BundleRunnerExecutor::BytecodeVm,
             mode: BundleRunnerStepMode::Drain,
             ..BundleRunnerOptions::default()
         },
@@ -211,7 +181,7 @@ impl HostAdapter for CustomEchoAdapter {
         matches!(&task.request, HostTaskRequest::Custom { capability, operation, .. }
             if capability.0 == "custom" && operation == "echo")
         .then(|| HostTaskOutcome {
-            result: Ok(RuntimePayload::from("echo-ok")),
+            completion: HostTaskCompletion::Ready(RuntimePayload::from("echo-ok")),
             metrics: HostTaskMetrics::default(),
         })
     }
@@ -222,50 +192,58 @@ impl HostAdapter for CustomEchoAdapter {
 }
 
 fn custom_echo_bundle() -> ArcweftBundle {
-    custom_echo_bundle_with_product_awbc(true)
-}
-
-fn structured_custom_echo_bundle() -> ArcweftBundle {
-    custom_echo_bundle_with_product_awbc(false)
-}
-
-fn custom_echo_bundle_with_product_awbc(include_product_awbc: bool) -> ArcweftBundle {
-    let plan = RuntimePlan::new(
-        vec![RuntimeFlow {
-            id: flow_id("flow.custom"),
-            ops: vec![
-                FlowOp::Await {
+    let string_ty = RuntimeSemanticTypeId::from_bytes([1; 32]);
+    let flow = flow_id("flow.custom");
+    let mut builder = RuntimePlanBuilder::new();
+    builder
+        .admit_semantic_batch(
+            [RuntimePlanTypeSeed::new(
+                string_ty,
+                RuntimePlanTypeProjection::String,
+            )],
+            [],
+            [],
+            [],
+        )
+        .expect("string type admits");
+    builder
+        .push_flow_seed(RuntimeFlowSeed::new(
+            flow,
+            [],
+            vec![
+                RuntimeFlowOpSeed::Await {
                     binding: None,
-                    target: AwaitTarget::new(
-                        NeedId("need.custom.echo".to_owned()),
-                        TaskId("task.custom.echo".to_owned()),
-                        HostTaskRequestTemplate::new(
-                            "custom",
-                            "echo",
-                            [HostTaskArgTemplate::positional(RuntimeExpr::Value(
-                                RuntimeValue::String("hello".to_owned()),
+                    target: RuntimeAwaitTargetSeed {
+                        need: NeedId("need.custom.echo".to_owned()),
+                        task: TaskId("task.custom.echo".to_owned()),
+                        outcome: TaskOutcomeContract::default(),
+                        request: RuntimeHostTaskRequestTemplateSeed {
+                            capability: HostCapabilityId("custom".to_owned()),
+                            operation: "echo".to_owned(),
+                            args: vec![RuntimeHostArgumentSeed::Positional(RuntimeExprSeed::new(
+                                string_ty,
+                                RuntimeExprSeedKind::Value(RuntimeValue::String(
+                                    "hello".to_owned(),
+                                )),
                             ))],
-                        ),
-                    ),
+                        },
+                    },
                     pending: Vec::new(),
                 },
-                FlowOp::Return("custom-done".to_owned()),
+                RuntimeFlowOpSeed::Return("custom-done".to_owned()),
             ],
-        }],
-        Vec::new(),
-    )
-    .expect("custom bundle plan is valid")
-    .with_entries(vec![cli_entry("entry.custom", "flow.custom")]);
+        ))
+        .expect("custom flow admits");
+    builder
+        .push_entry(cli_entry("entry.custom", "flow.custom"))
+        .expect("custom entry admits");
+    let plan = builder.finish().expect("custom bundle plan is valid");
     let dialogue_content = DialogueContentCatalog::new();
-    let product_awbc = include_product_awbc.then(|| {
-        AwbcLowerer::new(&plan, &dialogue_content, "custom.arcw")
-            .lower()
-            .expect("custom product AWBC lowers")
-            .program
-    });
-    let program = BytecodeProgram::from_runtime_plan(plan);
-    let stats = program.stats();
-    let bundle = ArcweftBundle::try_new(
+    let product_awbc = AwbcLowerer::new(&plan, &dialogue_content, "custom.arcw")
+        .lower()
+        .expect("custom product AWBC lowers")
+        .program;
+    ArcweftBundle::try_new(
         BundleManifest {
             profile_id: None,
             profile_kind: None,
@@ -276,18 +254,17 @@ fn custom_echo_bundle_with_product_awbc(include_product_awbc: bool) -> ArcweftBu
             runtime: BundleRuntimeSummary {
                 artifact_fingerprint: fixture_runtime_artifact_fingerprint(),
                 entry_flow: Some("flow.custom".to_owned()),
-                flows: stats.flows,
-                bytecode_instructions: stats.instructions,
-                line_task_groups: stats.line_task_groups,
-                stream_plans: stats.stream_plans,
-                source_plans: stats.source_plans,
+                flows: product_awbc.flow_bindings.len(),
+                bytecode_instructions: product_awbc.instructions.len(),
+                line_task_groups: product_awbc.line_task_groups.len(),
+                stream_plans: product_awbc.stream_plans.len(),
             },
         },
         source_map(
             "custom.arcw",
             "flow custom { await custom.echo(\"hello\") return \"custom-done\" }",
         ),
-        program,
+        product_awbc,
         dialogue_content,
     )
     .expect("standard dialogue source joins source map")
@@ -299,13 +276,7 @@ fn custom_echo_bundle_with_product_awbc(include_product_awbc: bool) -> ArcweftBu
             id: "custom.echo".to_owned(),
             effects: Vec::new(),
         }],
-    }]);
-
-    if let Some(product_awbc) = product_awbc {
-        bundle.with_product_awbc(product_awbc)
-    } else {
-        bundle
-    }
+    }])
 }
 
 fn source_map(label: &str, text: &str) -> SourceMapSection {

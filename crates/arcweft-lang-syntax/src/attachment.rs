@@ -22,7 +22,6 @@ mod pattern;
 mod resource;
 mod signal;
 mod snapshot;
-mod source;
 pub mod source_file;
 mod statement;
 mod style;
@@ -99,12 +98,12 @@ pub use entry::{
 };
 pub use error::{AttachmentFailure, SyntaxAccessError, SyntaxLookupError};
 pub use expression::{
-    AttachedCallTypeChild, AttachedCandidateAssertion, AttachedCandidateAssertionProjection,
-    AttachedCandidateAssignment, AttachedCandidateBlockTail, AttachedCandidateClosure,
-    AttachedCandidateClosureParameter, AttachedCandidateControlLabel,
-    AttachedCandidateDialogueExpression, AttachedCandidateDialogueOwner,
-    AttachedCandidateExpressionChild, AttachedCandidateGraph, AttachedCandidateIf,
-    AttachedCandidateIfElse, AttachedCandidateIfHead, AttachedCandidateIfLet,
+    AttachedAwaitBranch, AttachedAwaitBranchBlock, AttachedAwaitBranchBody, AttachedCallTypeChild,
+    AttachedCandidateAssertion, AttachedCandidateAssertionProjection, AttachedCandidateAssignment,
+    AttachedCandidateBlockTail, AttachedCandidateClosure, AttachedCandidateClosureParameter,
+    AttachedCandidateControlLabel, AttachedCandidateDialogueExpression,
+    AttachedCandidateDialogueOwner, AttachedCandidateExpressionChild, AttachedCandidateGraph,
+    AttachedCandidateIf, AttachedCandidateIfElse, AttachedCandidateIfHead, AttachedCandidateIfLet,
     AttachedCandidateKeywordStatement, AttachedCandidateMatch, AttachedCandidateMatchArm,
     AttachedCandidateMatchArmBody, AttachedCandidateMatchArmStatement, AttachedCandidateMatchBody,
     AttachedCandidateMatchStatement, AttachedCandidateNode, AttachedCandidateNominalTypeRoot,
@@ -155,7 +154,7 @@ pub use node::{
     SourceFileKind, StatementFragmentRootKind, TypeFragmentRootKind,
 };
 #[cfg(test)]
-pub(crate) use node::{BlockKind, ExpressionStatementKind, PredicateItemKind, ProofItemKind};
+pub(crate) use node::{PredicateItemKind, ProofItemKind};
 pub use nominal::{
     AttachedEnumBody, AttachedEnumDeclaration, AttachedEnumVariant, AttachedGenericParameter,
     AttachedGenericParameterGroup, AttachedNominalDeclaration, AttachedNominalFieldPrefix,
@@ -173,14 +172,6 @@ pub(crate) use snapshot::SyntaxSnapshotData;
 pub use snapshot::{
     SyntaxDatabaseId, SyntaxLanguage, SyntaxLineageId, SyntaxNode, SyntaxNodeHandle, SyntaxNodeId,
     SyntaxSnapshotId,
-};
-pub use source::{
-    AttachedSourceBackpressurePolicy, AttachedSourceBody, AttachedSourceBoundedArgument,
-    AttachedSourceContract, AttachedSourceDeclaration, AttachedSourceExpression,
-    AttachedSourceHandlerBody, AttachedSourceHandlerEvent, AttachedSourceId, AttachedSourceMember,
-    AttachedSourceName, AttachedSourceOverflowPolicy, AttachedSourcePattern,
-    AttachedSourcePrivacyPolicy, AttachedSourcePunctuation, AttachedSourceReplayPolicy,
-    AttachedSourceType,
 };
 pub use source_file::{AttachedPath, AttachedPathRoot};
 pub use statement::{
@@ -210,13 +201,12 @@ pub use thread_body::{
     AttachedThreadFlowItemFamily,
 };
 pub use thread_statement::{
-    AttachedAwaitWithBranch, AttachedAwaitWithBranchBlock, AttachedAwaitWithStatement,
     AttachedForStatement, AttachedIncludeStatement, AttachedLoopStatement,
-    AttachedRequiredAwaitWithBranchBody, AttachedRequiredIncludeTarget, AttachedScopeName,
-    AttachedScopeStatement, AttachedSelectBindingName, AttachedSelectBranch,
-    AttachedSelectBranchBlock, AttachedSelectStatement, AttachedSelectStatementForm,
-    AttachedSourceLocaleStatement, AttachedSourceLocaleValue, AttachedThreadEntityReference,
-    AttachedWhileLetStatement, AttachedWhileStatement,
+    AttachedRequiredIncludeTarget, AttachedScopeName, AttachedScopeStatement,
+    AttachedSelectBindingName, AttachedSelectBranch, AttachedSelectBranchBlock,
+    AttachedSelectStatement, AttachedSelectStatementForm, AttachedSourceLocaleStatement,
+    AttachedSourceLocaleValue, AttachedThreadEntityReference, AttachedWhileLetStatement,
+    AttachedWhileStatement,
 };
 pub use trait_impl::{
     AttachedImplAssociatedType, AttachedImplBody, AttachedImplDeclaration, AttachedImplFunction,
@@ -456,7 +446,6 @@ impl<'a> AttachmentInventoryBuilder<'a> {
             layer_projection: entry.layer_projection().cloned(),
             entry_projection: entry.entry_projection().cloned(),
             style_projection: entry.style_projection().cloned(),
-            source_declaration_projection: entry.source_declaration_projection().cloned(),
             method_receiver_projection: entry.method_receiver_projection().cloned(),
             contract_clause_projection: entry.contract_clause_projection().cloned(),
             flow_declaration_projection: entry.flow_declaration_projection().cloned(),
@@ -509,7 +498,6 @@ impl<'a> AttachmentInventoryBuilder<'a> {
                     layer_projection: node.layer_projection,
                     entry_projection: node.entry_projection,
                     style_projection: node.style_projection,
-                    source_declaration_projection: node.source_declaration_projection,
                     method_receiver_projection: node.method_receiver_projection,
                     contract_clause_projection: node.contract_clause_projection,
                     flow_declaration_projection: node.flow_declaration_projection,
@@ -565,8 +553,6 @@ struct PendingAttachment {
         Option<crate::grammar::declaration_projection::PendingLayerDeclarationProjection>,
     entry_projection: Option<crate::grammar::entry_projection::PendingEntryDeclarationProjection>,
     style_projection: Option<crate::grammar::style_projection::PendingStyleDeclarationProjection>,
-    source_declaration_projection:
-        Option<crate::grammar::source_declaration_projection::PendingSourceDeclarationProjection>,
     method_receiver_projection:
         Option<crate::grammar::callable_projection::PendingMethodReceiverProjection>,
     contract_clause_projection:
@@ -724,16 +710,17 @@ fn validate_node_lookup(
 }
 
 fn node_projection_shape_is_valid(node: &SyntaxNodeHandle) -> bool {
+    let keyword_projection = node.keyword_statement_projection();
+    let keyword_projection_is_valid =
+        crate::grammar::keyword_statement_projection::PendingKeywordStatementProjection::kind_requires_projection(
+            node.kind(),
+        ) == keyword_projection.is_some();
     (!crate::expressions::PendingExpressionProjection::kind_requires_projection(node.kind())
         || node.expression_projection().is_some())
         && ((node.kind() == SyntaxKind::AssertionStatement)
             == node.assertion_projection().is_some())
-        && (crate::grammar::keyword_statement_projection::PendingKeywordStatementProjection::kind_requires_projection(
-            node.kind(),
-        ) == node.keyword_statement_projection().is_some())
-        && node
-            .keyword_statement_projection()
-            .is_none_or(|projection| projection.accepts_kind(node.kind()))
+        && keyword_projection_is_valid
+        && keyword_projection.is_none_or(|projection| projection.accepts_kind(node.kind()))
         && node.kind().is_type_node() == node.type_projection().is_some()
         && (node.kind() == SyntaxKind::Path) == node.path_projection().is_some()
         && (node.kind() == SyntaxKind::UseDeclaration) == node.use_projection().is_some()
@@ -745,8 +732,6 @@ fn node_projection_shape_is_valid(node: &SyntaxNodeHandle) -> bool {
         && (node.kind() == SyntaxKind::TestItem) == node.test_kind_projection().is_some()
         && (node.kind() == SyntaxKind::EntryDeclarationItem) == node.entry_projection().is_some()
         && (node.kind() == SyntaxKind::StyleItem) == node.style_projection().is_some()
-        && (node.kind() == SyntaxKind::SourceItem)
-            == node.source_declaration_projection().is_some()
         && (node.kind() == SyntaxKind::Parameter || node.method_receiver_projection().is_none())
         && (!matches!(
             node.kind(),
@@ -758,9 +743,9 @@ fn node_projection_shape_is_valid(node: &SyntaxNodeHandle) -> bool {
                 | SyntaxKind::ModifiesClause
                 | SyntaxKind::DecreasesClause
         ) || node.contract_clause_projection().is_some())
-        && node.contract_clause_projection().is_none_or(|projection| {
-            projection.ranges_are_valid_for(node.kind(), node.range())
-        })
+        && node
+            .contract_clause_projection()
+            .is_none_or(|projection| projection.ranges_are_valid_for(node.kind(), node.range()))
         && (node.kind() == SyntaxKind::FlowItem) == node.flow_declaration_projection().is_some()
         && node
             .flow_declaration_projection()

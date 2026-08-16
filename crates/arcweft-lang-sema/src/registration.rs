@@ -17,11 +17,11 @@ pub use environment_input::{
     AcceptedNominalInputVisibility, AcceptedNominalInventoryInput,
     CharacterDialogueCustomFieldInput, EnvironmentCallableLookupInput,
     EnvironmentCallablePublicationMetadataInput, EnvironmentCallablePublicationRecordInput,
-    EnvironmentCallableSignatureInput, EnvironmentManifestDigest, EnvironmentParameterGroupInput,
-    EnvironmentParameterInput, EnvironmentParameterMetadataInput, EnvironmentParameterTypeInput,
-    EnvironmentPublicationItemId, EnvironmentTypeInputDigest, EnvironmentTypeProjectionKind,
-    EnvironmentTypeProjectionNode, EnvironmentTypeSite, EnvironmentTypeSiteRoot,
-    EnvironmentTypeSiteStep, EnvironmentValueBindingInput,
+    EnvironmentCallableSignatureInput, EnvironmentHostCallContractInput, EnvironmentManifestDigest,
+    EnvironmentParameterGroupInput, EnvironmentParameterInput, EnvironmentParameterMetadataInput,
+    EnvironmentParameterTypeInput, EnvironmentPublicationItemId, EnvironmentTypeInputDigest,
+    EnvironmentTypeProjectionKind, EnvironmentTypeProjectionNode, EnvironmentTypeSite,
+    EnvironmentTypeSiteRoot, EnvironmentTypeSiteStep, EnvironmentValueBindingInput,
     SourceBackedEnvironmentRegistrationInput,
 };
 pub use limits::{CharacterRegistrationLimitKind, CharacterRegistrationLimits};

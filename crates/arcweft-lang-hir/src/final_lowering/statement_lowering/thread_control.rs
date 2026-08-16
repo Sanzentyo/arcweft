@@ -1,16 +1,15 @@
 //! Direct final-HIR lowering for attached Thread/Flow control statements.
 
 use arcweft_lang_syntax::attachment::node::{
-    AwaitWithStatementKind, ForStatementKind, LoopStatementKind, SelectStatementKind,
-    WhileLetStatementKind, WhileStatementKind,
+    ForStatementKind, LoopStatementKind, SelectStatementKind, WhileLetStatementKind,
+    WhileStatementKind,
 };
 use arcweft_lang_syntax::attachment::source_file::AttachedDelimiterState;
 use arcweft_lang_syntax::attachment::{
-    AttachedRequiredAwaitWithBranchBody, AttachedRequiredNestedThreadFlowBody,
-    AttachedSelectBindingName, AttachedSelectBranch, AttachedSelectStatementForm, StatementNode,
+    AttachedRequiredNestedThreadFlowBody, AttachedSelectBindingName, AttachedSelectBranch,
+    AttachedSelectStatementForm, StatementNode,
 };
-use arcweft_lang_syntax::expressions::SyntaxAwaitPropagation as AttachedAwaitPropagation;
-use arcweft_lang_syntax::grammar::{SyntaxAwaitBranchKind, SyntaxKind};
+use arcweft_lang_syntax::grammar::SyntaxKind;
 
 use crate::expr::{
     HirExpr, HirExprKind, HirExpressionRecoveryIssue, HirForSyntheticExpr, HirPoisonState,
@@ -23,7 +22,6 @@ use crate::lowering::{HirInvariantFailure, HirLowerFailure};
 use crate::scope::{HirLocal, HirLocalKind, HirPatternBindingPolicy, HirScopeKind, HirScopeOwner};
 use crate::source_index::{HirExprSourceRole, HirInsertionPoint, HirSourceSite};
 use crate::stmt::{
-    HirAwaitPropagation, HirAwaitWithBranch, HirAwaitWithBranchKind, HirAwaitWithStmt,
     HirContextualStmtBody, HirForStmt, HirLoopStmt, HirSelectBindingLocal, HirSelectBranch,
     HirSelectBranchHead, HirSelectStmt, HirStatementContext, HirStmtChildRole, HirStmtKind,
     HirStmtRecoveryIssue, HirThreadStmtBodyRole, HirThreadStmtChildRole,
@@ -319,69 +317,6 @@ impl StagedHirModuleTransaction<'_> {
                     }
                 }
             }
-            SyntaxKind::AwaitWithStatement => {
-                Self::require_thread_statement_context(context)?;
-                let attached = attached
-                    .cast::<AwaitWithStatementKind>()
-                    .map_err(|_| HirInvariantFailure::InvalidArenaCommit)?
-                    .semantics()
-                    .map_err(|_| HirInvariantFailure::InvalidArenaCommit)?;
-                let operand = self.lower_required_statement_operand(
-                    owner,
-                    attached.operand(),
-                    outer_scope,
-                    |insertion| HirStmtRecoveryOperandSlot::AwaitWithOperand { insertion },
-                )?;
-                let mut recovery = self
-                    .staged_expression_is_poisoned(operand)?
-                    .then_some(thread_child(HirThreadStmtChildRole::AwaitOperand));
-                let mut branches = Vec::new();
-                match attached.body() {
-                    AttachedRequiredAwaitWithBranchBody::Missing(_) => {
-                        recovery.get_or_insert(HirStmtRecoveryIssue::Thread(
-                            HirThreadStmtRecoveryIssue::MissingBody {
-                                role: HirThreadStmtBodyRole::AwaitWith,
-                            },
-                        ));
-                    }
-                    AttachedRequiredAwaitWithBranchBody::Present(block) => {
-                        if block.branches().is_empty() {
-                            recovery.get_or_insert(HirStmtRecoveryIssue::Thread(
-                                HirThreadStmtRecoveryIssue::EmptyAwaitWith,
-                            ));
-                        }
-                        for (branch, attached_branch) in block.branches().iter().enumerate() {
-                            let branch = u32::try_from(branch)
-                                .map_err(|_| HirInvariantFailure::InvalidArenaCommit)?;
-                            let (lowered, branch_recovery) = self.lower_await_branch(
-                                owner,
-                                outer_scope,
-                                branch,
-                                attached_branch,
-                            )?;
-                            if let Some(branch_recovery) = branch_recovery {
-                                recovery.get_or_insert(branch_recovery);
-                            }
-                            branches.push(lowered);
-                        }
-                        if matches!(block.close_state(), AttachedDelimiterState::Missing(_)) {
-                            recovery.get_or_insert(HirStmtRecoveryIssue::Thread(
-                                HirThreadStmtRecoveryIssue::UnclosedBody {
-                                    role: HirThreadStmtBodyRole::AwaitWith,
-                                },
-                            ));
-                        }
-                    }
-                }
-                let propagation = match attached.propagation() {
-                    AttachedAwaitPropagation::PreserveResult => HirAwaitPropagation::PreserveResult,
-                    AttachedAwaitPropagation::PropagateError => HirAwaitPropagation::PropagateError,
-                };
-                let statement =
-                    HirAwaitWithStmt::try_new(operand, propagation, branches.into_boxed_slice())
-                        .map_err(|_| HirInvariantFailure::InvalidArenaCommit)?;
-                Ok((HirStmtKind::AwaitWith(statement), recovery))
-            }
             _ => Err(HirInvariantFailure::InvalidArenaCommit.into()),
         }
     }
@@ -557,73 +492,6 @@ impl StagedHirModuleTransaction<'_> {
         Ok((branch, recovery))
     }
 
-    fn lower_await_branch(
-        &mut self,
-        owner: StmtId,
-        outer_scope: ScopeId,
-        branch: u32,
-        attached: &arcweft_lang_syntax::attachment::AttachedAwaitWithBranch,
-    ) -> Result<(HirAwaitWithBranch, Option<HirStmtRecoveryIssue>), HirLowerFailure> {
-        let prepared = self.prepare_attached_nested_thread_body(
-            attached.body(),
-            HirScopeOwner::Stmt(owner),
-            outer_scope,
-        )?;
-        let branch_scope = prepared.scope();
-        let (kind, pattern, locals, pattern_poisoned, head_recovery) =
-            if let Some(kind) = attached.kind() {
-                let pattern = attached
-                    .pattern()
-                    .ok_or(HirInvariantFailure::InvalidArenaCommit)?;
-                let pattern = self.lower_attached_pattern_binding(
-                    pattern,
-                    branch_scope,
-                    HirPatternBindingPolicy::PatternBinding,
-                )?;
-                let kind = match kind {
-                    SyntaxAwaitBranchKind::Pending => HirAwaitWithBranchKind::Pending,
-                    SyntaxAwaitBranchKind::Ready => HirAwaitWithBranchKind::Ready,
-                    SyntaxAwaitBranchKind::Error => HirAwaitWithBranchKind::Error,
-                    SyntaxAwaitBranchKind::Denied => HirAwaitWithBranchKind::Denied,
-                };
-                (
-                    kind,
-                    Some(pattern.owner),
-                    pattern.locals,
-                    pattern.poisoned,
-                    false,
-                )
-            } else {
-                if attached.recovery().is_none() || attached.pattern().is_some() {
-                    return Err(HirInvariantFailure::InvalidArenaCommit.into());
-                }
-                (
-                    HirAwaitWithBranchKind::Recovered,
-                    None,
-                    Box::<[LocalId]>::from([]),
-                    false,
-                    true,
-                )
-            };
-        let lowered = self.finish_attached_nested_thread_body(prepared, locals.clone())?;
-        let body_recovery = await_branch_body_recovery(lowered.recovery.as_ref(), branch)?;
-        let body = HirContextualStmtBody::try_thread(lowered.body)
-            .map_err(|_| HirInvariantFailure::InvalidArenaCommit)?;
-        let payload = HirAwaitWithBranch::try_new(kind, pattern, locals, body)
-            .map_err(|_| HirInvariantFailure::InvalidArenaCommit)?;
-        let recovery = head_recovery
-            .then_some(HirStmtRecoveryIssue::Thread(
-                HirThreadStmtRecoveryIssue::RecoveredAwaitWithBranch { ordinal: branch },
-            ))
-            .or_else(|| {
-                pattern_poisoned.then_some(thread_child(HirThreadStmtChildRole::AwaitPattern {
-                    branch,
-                }))
-            })
-            .or(body_recovery);
-        Ok((payload, recovery))
-    }
-
     fn lower_for_synthetic_expression(
         &mut self,
         owner: StmtId,
@@ -675,17 +543,6 @@ fn select_branch_body_recovery(
         recovery,
         HirThreadStmtBodyRole::SelectBranch { ordinal: branch },
         |statement| HirThreadStmtChildRole::SelectBranchStatement { branch, statement },
-    )
-}
-
-fn await_branch_body_recovery(
-    recovery: Option<&HirThreadIssue>,
-    branch: u32,
-) -> Result<Option<HirStmtRecoveryIssue>, HirLowerFailure> {
-    branch_body_recovery(
-        recovery,
-        HirThreadStmtBodyRole::AwaitBranch { ordinal: branch },
-        |statement| HirThreadStmtChildRole::AwaitBranchStatement { branch, statement },
     )
 }
 

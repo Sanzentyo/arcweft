@@ -274,7 +274,6 @@ fn thread_item_statement(item: &HirThreadFlowItem) -> Option<StmtId> {
         | HirThreadFlowItem::SourceLocale(owner)
         | HirThreadFlowItem::Scope(owner)
         | HirThreadFlowItem::Include(owner)
-        | HirThreadFlowItem::AwaitWith(owner)
         | HirThreadFlowItem::Error(owner) => Some(*owner),
     }
 }
@@ -643,7 +642,6 @@ fn statement_name(module: &HirModule, statement: &HirStmtKind) -> String {
         | HirStmtKind::LetChoice { .. }
         | HirStmtKind::LetScope { .. }
         | HirStmtKind::LetLoop { .. }
-        | HirStmtKind::LetAwait { .. }
         | HirStmtKind::LetActionReceive { .. } => "let",
         HirStmtKind::Assign { target, .. } => {
             return expression_label(module, *target).unwrap_or_else(|| "assign".to_owned());
@@ -673,7 +671,6 @@ fn statement_name(module: &HirModule, statement: &HirStmtKind) -> String {
                 .map_or_else(|| "scope".to_owned(), |name| name.as_str().to_owned());
         }
         HirStmtKind::Include(_) => "include",
-        HirStmtKind::AwaitWith(_) => "await",
         HirStmtKind::Break { .. } => "break",
         HirStmtKind::Continue { .. } => "continue",
         HirStmtKind::Expression { expression } | HirStmtKind::ProofCall { call: expression } => {

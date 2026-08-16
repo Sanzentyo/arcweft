@@ -1,6 +1,10 @@
 use arcweft_character::id::CharacterId;
-use arcweft_core::value::{RuntimeBinding, RuntimeExpr, RuntimeValue};
-use arcweft_core::{entry::RuntimeValueDigest, plan::RuntimeLineId};
+use arcweft_core::runtime_id::RuntimeDialogueValueSlotId;
+use arcweft_core::value::RuntimeValue;
+use arcweft_core::{
+    entry::RuntimeValueDigest,
+    plan::{RuntimeDialogueValueBinding, RuntimeLineId},
+};
 use arcweft_dialogue::{FallbackStylePolicy, InlineFailurePolicy, InlineTextFailure};
 use arcweft_id::TextKey;
 use arcweft_render_text::{RuntimeLineContext, resolve_frame};
@@ -30,12 +34,23 @@ fn source_ref() -> ProductSourceRef {
     ProductSourceRef::try_for_identity(source.identity()).expect("product source identity")
 }
 
-fn context(bindings: Vec<RuntimeBinding>) -> RuntimeLineContext {
+fn slot(index: usize) -> RuntimeDialogueValueSlotId {
+    RuntimeDialogueValueSlotId::from_zero_based(index).expect("test dialogue slot is valid")
+}
+
+fn binding(index: usize, value: RuntimeValue) -> RuntimeDialogueValueBinding {
+    RuntimeDialogueValueBinding {
+        slot: slot(index),
+        value,
+    }
+}
+
+fn context(bindings: Vec<RuntimeDialogueValueBinding>) -> RuntimeLineContext {
     context_with_styles(bindings, Vec::new())
 }
 
 fn context_with_styles(
-    bindings: Vec<RuntimeBinding>,
+    bindings: Vec<RuntimeDialogueValueBinding>,
     base_styles: Vec<RichTextStyle>,
 ) -> RuntimeLineContext {
     RuntimeLineContext::new(
@@ -89,7 +104,7 @@ fn resolves_text_ruby_controls_and_interpolation() {
             text: "Hi ".to_owned(),
         },
         RichTextNode::Interpolation {
-            expr: RuntimeExpr::Local("player".to_owned()),
+            slot: slot(0),
             label: "player".to_owned(),
             on_error: InlineFailurePolicy::FailLine,
         },
@@ -109,10 +124,7 @@ fn resolves_text_ruby_controls_and_interpolation() {
     let frame = resolve_frame(
         &line,
         &context_with_styles(
-            vec![RuntimeBinding {
-                name: "player".to_owned(),
-                value: RuntimeValue::String("Aoi".to_owned()),
-            }],
+            vec![binding(0, RuntimeValue::String("Aoi".to_owned()))],
             vec![RichTextStyle::Font {
                 family: RichTextFontFamily::Monospace,
             }],
@@ -181,12 +193,12 @@ fn interpolation_failure_policy_can_discard_or_fallback() {
             text: "A".to_owned(),
         },
         RichTextNode::Interpolation {
-            expr: RuntimeExpr::Local("missing_discard".to_owned()),
+            slot: slot(0),
             label: "missing_discard".to_owned(),
             on_error: InlineFailurePolicy::Discard,
         },
         RichTextNode::Interpolation {
-            expr: RuntimeExpr::Local("missing_fallback".to_owned()),
+            slot: slot(1),
             label: "missing_fallback".to_owned(),
             on_error: InlineFailurePolicy::fallback_text("?"),
         },
@@ -221,7 +233,7 @@ fn interpolation_failure_policy_can_fail_line() {
     let line = spec_with_line(
         "say.opening.003",
         vec![RichTextNode::Interpolation {
-            expr: RuntimeExpr::Local("missing".to_owned()),
+            slot: slot(0),
             label: "missing".to_owned(),
             on_error: InlineFailurePolicy::FailLine,
         }],
@@ -237,7 +249,7 @@ fn interpolation_failure_policy_can_fail_line() {
 fn interpolation_fallback_can_render_expr_or_call_source() {
     let line = spec(vec![
         RichTextNode::Interpolation {
-            expr: RuntimeExpr::Local("missing_expr_fallback".to_owned()),
+            slot: slot(0),
             label: "score".to_owned(),
             on_error: InlineFailurePolicy::fallback_expr_source(FallbackStylePolicy::Plain),
         },
@@ -245,7 +257,7 @@ fn interpolation_fallback_can_render_expr_or_call_source() {
             text: "|".to_owned(),
         },
         RichTextNode::Interpolation {
-            expr: RuntimeExpr::Local("missing_call_fallback".to_owned()),
+            slot: slot(1),
             label: "fmt(score, style = \"number\")".to_owned(),
             on_error: InlineFailurePolicy::fallback_call_source(FallbackStylePolicy::Plain),
         },
@@ -262,69 +274,48 @@ fn local_text_conditionals_render_selected_branch_and_reject_missing_bindings() 
         RichTextNode::Text {
             text: "A".to_owned(),
         },
-        RichTextNode::HostEvent {
-            event: DialogueHostEvent::ConditionalStart {
-                condition: RuntimeExpr::Local("flag".to_owned()),
-            },
-        },
+        RichTextNode::ConditionalStart { condition: slot(0) },
         RichTextNode::Text {
             text: "yes".to_owned(),
         },
-        RichTextNode::HostEvent {
-            event: DialogueHostEvent::ConditionalElse,
-        },
+        RichTextNode::ConditionalElse,
         RichTextNode::Text {
             text: "no".to_owned(),
         },
-        RichTextNode::HostEvent {
-            event: DialogueHostEvent::ConditionalEnd,
-        },
+        RichTextNode::ConditionalEnd,
         RichTextNode::Text {
             text: "Z".to_owned(),
         },
     ]);
 
-    let true_frame = resolve_frame(
-        &line,
-        &context(vec![RuntimeBinding {
-            name: "flag".to_owned(),
-            value: RuntimeValue::Bool(true),
-        }]),
-    )
-    .expect("true branch resolves");
-    let false_frame = resolve_frame(
-        &line,
-        &context(vec![RuntimeBinding {
-            name: "flag".to_owned(),
-            value: RuntimeValue::Bool(false),
-        }]),
-    )
-    .expect("false branch resolves");
+    let true_frame = resolve_frame(&line, &context(vec![binding(0, RuntimeValue::Bool(true))]))
+        .expect("true branch resolves");
+    let false_frame = resolve_frame(&line, &context(vec![binding(0, RuntimeValue::Bool(false))]))
+        .expect("false branch resolves");
     let missing_error = resolve_frame(&line, &context(Vec::new()))
         .expect_err("missing typed condition binding is rejected");
 
     assert_eq!(true_frame.text, "AyesZ");
     assert_eq!(false_frame.text, "AnoZ");
-    assert_eq!(missing_error.expr, "flag");
-    assert_eq!(missing_error.reason, "unknown runtime binding `flag`");
-    assert_eq!(true_frame.host_events.len(), 3);
-    assert_eq!(false_frame.host_events.len(), 3);
+    assert_eq!(missing_error.expr, "slot 1");
+    assert_eq!(
+        missing_error.reason,
+        "dialogue value slot 1 was not supplied"
+    );
+    assert!(true_frame.host_events.is_empty());
+    assert!(false_frame.host_events.is_empty());
 }
 
 #[test]
 fn inactive_conditional_branch_suppresses_styles_interpolation_and_host_events() {
     let line = spec(vec![
-        RichTextNode::HostEvent {
-            event: DialogueHostEvent::ConditionalStart {
-                condition: RuntimeExpr::Local("flag".to_owned()),
-            },
-        },
+        RichTextNode::ConditionalStart { condition: slot(0) },
         RichTextNode::StyleStart {
-            style: RichTextStyle::Color {
+            style: Box::new(RichTextStyle::Color {
                 value: RichTextColor::Rgba8 {
                     value: [0xff, 0x00, 0x00, 0xff],
                 },
-            },
+            }),
         },
         RichTextNode::HostEvent {
             event: DialogueHostEvent::Voice {
@@ -334,40 +325,25 @@ fn inactive_conditional_branch_suppresses_styles_interpolation_and_host_events()
             },
         },
         RichTextNode::Interpolation {
-            expr: RuntimeExpr::Local("missing".to_owned()),
+            slot: slot(1),
             label: "missing".to_owned(),
             on_error: InlineFailurePolicy::FailLine,
         },
-        RichTextNode::HostEvent {
-            event: DialogueHostEvent::ConditionalElse,
-        },
+        RichTextNode::ConditionalElse,
         RichTextNode::Text {
             text: "shown".to_owned(),
         },
-        RichTextNode::HostEvent {
-            event: DialogueHostEvent::ConditionalEnd,
-        },
+        RichTextNode::ConditionalEnd,
         RichTextNode::Text {
             text: " plain".to_owned(),
         },
     ]);
 
-    let frame = resolve_frame(
-        &line,
-        &context(vec![RuntimeBinding {
-            name: "flag".to_owned(),
-            value: RuntimeValue::Bool(false),
-        }]),
-    )
-    .expect("inactive interpolation does not fail the line");
+    let frame = resolve_frame(&line, &context(vec![binding(0, RuntimeValue::Bool(false))]))
+        .expect("inactive interpolation does not fail the line");
 
     assert_eq!(frame.text, "shown plain");
-    assert!(frame.host_events.iter().all(|event| matches!(
-        event,
-        DialogueHostEvent::ConditionalStart { .. }
-            | DialogueHostEvent::ConditionalElse
-            | DialogueHostEvent::ConditionalEnd
-    )));
+    assert!(frame.host_events.is_empty());
     assert!(frame.inline_failures.is_empty());
     assert!(frame.unresolved.is_empty());
     assert!(frame.display_map.text_runs.iter().all(|run| {
@@ -381,11 +357,11 @@ fn inactive_conditional_branch_suppresses_styles_interpolation_and_host_events()
 fn reset_control_clears_active_inline_styles_for_following_runs() {
     let line = spec(vec![
         RichTextNode::StyleStart {
-            style: RichTextStyle::Color {
+            style: Box::new(RichTextStyle::Color {
                 value: RichTextColor::Rgba8 {
                     value: [0x80, 0xc0, 0xff, 0xff],
                 },
-            },
+            }),
         },
         RichTextNode::Text {
             text: "blue".to_owned(),

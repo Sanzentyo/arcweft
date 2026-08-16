@@ -110,7 +110,7 @@ fn dispatch_inspection(
             super::super::repl::agent_repl_hir(context.index, context.input, &command.source)
         }
         CliInspectionKind::Bytecode => {
-            super::super::repl::agent_repl_bytecode(context.index, context.input, &command.source)
+            super::super::repl::agent_repl_awbc(context.index, context.input, &command.source)
         }
     };
     result_from_report(

@@ -344,7 +344,6 @@ fn retained_header(kind: &HirItemKind) -> Option<&HirRetainedHeader> {
         | HirItemKind::ExternCapability(_)
         | HirItemKind::Test(_)
         | HirItemKind::Bench(_)
-        | HirItemKind::Source(_)
         | HirItemKind::Style(_)
         | HirItemKind::Error(_) => None,
     }

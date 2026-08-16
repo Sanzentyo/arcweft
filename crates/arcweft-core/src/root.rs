@@ -5,16 +5,18 @@
 //! command.
 
 use crate::entry::{
-    EntryBindingIdentity, RootExecutionLimits, RuntimeCallableRole, RuntimeCommandConstructorId,
-    RuntimeCommandContract, RuntimeCommandTargetId, RuntimeFlowExecutable, RuntimeSchemaError,
-    RuntimeSchemaLimits, RuntimeStatefulEntryRoles, RuntimeValueDigest, TypeLayoutHash,
-    canonical_runtime_value_bytes,
+    EntryBindingIdentity, RootExecutionLimits, RuntimeCallableRole, RuntimeCommandContract,
+    RuntimeFlowExecutable, RuntimeSchemaError, RuntimeSchemaLimits, RuntimeStatefulEntryRoles,
+    RuntimeValueDigest, TypeLayoutHash, canonical_runtime_value_bytes,
 };
 use crate::pattern::RuntimeVariantIdentity;
 use crate::plan::{
     EntryRuntimeId, FlowRuntimeId, RuntimeEntryRoles, RuntimePlan, RuntimePlanError,
 };
-use crate::value::{RuntimeAgentValue, RuntimeBinding, RuntimePayload, RuntimeValue};
+use crate::value::{
+    RuntimeAgentValue, RuntimeBinding, RuntimePayload, RuntimeReductionProducer,
+    RuntimeReductionValue, RuntimeValue,
+};
 use serde::{Deserialize, Serialize};
 use std::collections::{BTreeMap, BTreeSet, VecDeque};
 use std::fmt;
@@ -69,30 +71,7 @@ struct SequencedRootEvent {
     payload: RuntimePayload,
 }
 
-/// Opaque replay-safe command value produced by a reducer.
-#[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
-pub struct RuntimeCommand {
-    constructor: RuntimeCommandConstructorId,
-    target: RuntimeCommandTargetId,
-    payload: RuntimePayload,
-}
-
-impl RuntimeCommand {
-    #[must_use]
-    pub const fn constructor(&self) -> &RuntimeCommandConstructorId {
-        &self.constructor
-    }
-
-    #[must_use]
-    pub const fn target(&self) -> &RuntimeCommandTargetId {
-        &self.target
-    }
-
-    #[must_use]
-    pub const fn payload(&self) -> &RuntimePayload {
-        &self.payload
-    }
-}
+pub use crate::value::RuntimeCommand;
 
 #[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
 pub struct RuntimeCommandEnvelope {
@@ -334,7 +313,12 @@ impl RootRuntime {
         let initializer_state_digest = roles
             .state
             .schema
-            .validate_payload(&payload, limits.schema)
+            .validate_nominal_payload(
+                &payload,
+                &roles.state.identity,
+                roles.state.layout,
+                limits.schema,
+            )
             .map_err(RootRuntimeError::InvalidInitialValue)?;
         let active = ActiveRootState {
             entry: entry.clone(),
@@ -442,7 +426,12 @@ impl RootRuntime {
         roles
             .state
             .schema
-            .validate_payload(&snapshot.value, limits.schema)
+            .validate_nominal_payload(
+                &snapshot.value,
+                &roles.state.identity,
+                roles.state.layout,
+                limits.schema,
+            )
             .map_err(RootRuntimeError::InvalidSnapshotValue)?;
         Ok(Self {
             active: ActiveRootState {
@@ -559,7 +548,12 @@ impl RootRuntime {
             self.roles
                 .event
                 .schema
-                .validate_payload(&event.payload, self.limits.schema)
+                .validate_nominal_payload(
+                    &event.payload,
+                    &self.roles.event.identity,
+                    self.roles.event.layout,
+                    self.limits.schema,
+                )
                 .map_err(RootRuntimeError::InvalidEvent)?;
         }
         let first = match self.active.queued_events.back() {
@@ -622,8 +616,8 @@ impl RootRuntime {
             }
         };
         match parse_reducer_result(returned) {
-            Ok(ParsedReducerResult::Committed { state, commands }) => {
-                self.commit_reduction(event, state, commands)
+            Ok(ParsedReducerResult::Committed(reduction)) => {
+                self.commit_reduction(event, reduction)
             }
             Ok(ParsedReducerResult::Rejected {
                 code,
@@ -640,15 +634,21 @@ impl RootRuntime {
     fn commit_reduction(
         &mut self,
         event: &SequencedRootEvent,
-        state: RuntimeValue,
-        commands: Vec<RuntimeCommand>,
+        reduction: RuntimeReductionValue,
     ) -> Result<RootReductionDisposition, RootRuntimeFailure> {
+        let (state, commands) = reduction.into_parts();
+        let commands = commands.into_vec();
         let state = RuntimePayload(state);
         let state_digest = self
             .roles
             .state
             .schema
-            .validate_payload(&state, self.limits.schema)
+            .validate_nominal_payload(
+                &state,
+                &self.roles.state.identity,
+                self.roles.state.layout,
+                self.limits.schema,
+            )
             .map_err(|error| Self::failure_for(event.sequence, &error.to_string()))?;
         let command_digests =
             validate_commands(&commands, &self.roles.command_policy.admitted, self.limits)
@@ -746,10 +746,7 @@ enum RootReductionDisposition {
 }
 
 enum ParsedReducerResult {
-    Committed {
-        state: RuntimeValue,
-        commands: Vec<RuntimeCommand>,
-    },
+    Committed(RuntimeReductionValue),
     Rejected {
         code: String,
         message: String,
@@ -776,25 +773,13 @@ fn parse_reducer_result(value: RuntimeValue) -> Result<ParsedReducerResult, Stri
 }
 
 fn parse_reduction(value: RuntimeValue) -> Result<ParsedReducerResult, String> {
-    let value = unwrap_named_variant(value, "Reduction")?;
-    let fields = record_fields(value, "Reduction")?;
-    let state = fields
-        .get("state")
-        .cloned()
-        .ok_or_else(|| "Reduction is missing `state`".to_owned())?;
-    let commands = fields
-        .get("commands")
-        .cloned()
-        .ok_or_else(|| "Reduction is missing `commands`".to_owned())?;
-    let RuntimeValue::Seq(commands) = commands else {
-        return Err("Reduction.commands must be a sequence".to_owned());
+    let RuntimeValue::Reduction(reduction) = value else {
+        return Err("reducer Ok payload must be one admitted Reduction value".to_owned());
     };
-    let commands = commands
-        .into_values()
-        .into_iter()
-        .map(parse_command)
-        .collect::<Result<Vec<_>, _>>()?;
-    Ok(ParsedReducerResult::Committed { state, commands })
+    if !RuntimeReductionProducer::accepts_exact_owner(reduction.owner()) {
+        return Err("reducer Ok payload has a non-concrete or foreign Reduction owner".to_owned());
+    }
+    Ok(ParsedReducerResult::Committed(reduction))
 }
 
 fn parse_reducer_error(value: RuntimeValue) -> Result<ParsedReducerResult, String> {
@@ -807,33 +792,6 @@ fn parse_reducer_error(value: RuntimeValue) -> Result<ParsedReducerResult, Strin
         code,
         message,
         value: original,
-    })
-}
-
-fn parse_command(value: RuntimeValue) -> Result<RuntimeCommand, String> {
-    let value = unwrap_named_variant(value, "Command")?;
-    let fields = record_fields(value, "Command")?;
-    let constructor = match fields.get("constructor") {
-        Some(RuntimeValue::String(value) | RuntimeValue::EntityRef(value)) => {
-            RuntimeCommandConstructorId::try_new(value.clone())
-                .map_err(|error| error.to_string())?
-        }
-        _ => return Err("Command.constructor must be a non-empty stable identity".to_owned()),
-    };
-    let target = match fields.get("target") {
-        Some(RuntimeValue::String(value) | RuntimeValue::EntityRef(value)) if !value.is_empty() => {
-            RuntimeCommandTargetId::try_new(value.clone()).map_err(|error| error.to_string())?
-        }
-        _ => return Err("Command.target must be a non-empty stable identity".to_owned()),
-    };
-    let payload = fields
-        .get("payload")
-        .cloned()
-        .ok_or_else(|| "Command is missing `payload`".to_owned())?;
-    Ok(RuntimeCommand {
-        constructor,
-        target,
-        payload: RuntimePayload(payload),
     })
 }
 
@@ -892,18 +850,18 @@ fn validate_commands(
         let contract = contracts
             .iter()
             .find(|contract| {
-                contract.constructor == command.constructor && contract.target == command.target
+                &contract.constructor == command.constructor() && &contract.target == command.target()
             })
             .ok_or_else(|| {
                 format!(
                     "command constructor `{}` and target `{}` are not admitted by the selected adapter policy",
-                    command.constructor.as_str(),
-                    command.target.as_str()
+                    command.constructor().as_str(),
+                    command.target().as_str()
                 )
             })?;
         contract
             .payload_schema
-            .validate_payload(&command.payload, limits.schema)
+            .validate_payload(command.payload(), limits.schema)
             .map_err(|error| error.to_string())?;
         let encoded = canonical_command_bytes(command, limits.schema.max_encoded_bytes)?;
         encoded_bytes = encoded_bytes
@@ -923,10 +881,10 @@ fn canonical_command_bytes(
     command: &RuntimeCommand,
     max_encoded_bytes: usize,
 ) -> Result<Vec<u8>, String> {
-    let payload = canonical_runtime_value_bytes(&command.payload.0, max_encoded_bytes)
+    let payload = canonical_runtime_value_bytes(&command.payload().0, max_encoded_bytes)
         .map_err(|error| error.to_string())?;
-    let constructor = command.constructor.as_str().as_bytes();
-    let target = command.target.as_str().as_bytes();
+    let constructor = command.constructor().as_str().as_bytes();
+    let target = command.target().as_str().as_bytes();
     let constructor_len = u32::try_from(constructor.len())
         .map_err(|_| "command constructor length does not fit u32".to_owned())?;
     let target_len = u32::try_from(target.len())
@@ -1036,6 +994,9 @@ fn validate_replay_safe_value(
         RuntimeValue::Opaque(value) => {
             validate_replay_safe_value(value.payload(), limits, depth + 1, nodes)
         }
+        RuntimeValue::Reduction(value) => {
+            validate_replay_safe_reduction(value, limits, depth, nodes)
+        }
         RuntimeValue::Agent(value) => validate_replay_safe_agent_value(value, limits, depth, nodes),
         RuntimeValue::Variant { payload, .. } => {
             if let Some(payload) = payload {
@@ -1061,6 +1022,32 @@ fn validate_replay_safe_value(
         | RuntimeValue::Duration(_)
         | RuntimeValue::EntityRef(_) => Ok(()),
     }
+}
+
+fn validate_replay_safe_reduction(
+    value: &RuntimeReductionValue,
+    limits: RuntimeSchemaLimits,
+    depth: usize,
+    nodes: &mut usize,
+) -> Result<(), String> {
+    if value.owner().producer().as_str().len() > limits.max_string_bytes {
+        return Err("replay-safe Reduction producer exceeds string byte budget".to_owned());
+    }
+    if value.commands().len() > limits.max_sequence_items {
+        return Err("replay-safe Reduction exceeds command item budget".to_owned());
+    }
+    validate_replay_safe_value(value.state(), limits, depth + 1, nodes)?;
+    for command in value.commands() {
+        if command.constructor().as_str().len() > limits.max_string_bytes
+            || command.target().as_str().len() > limits.max_string_bytes
+        {
+            return Err(
+                "replay-safe Reduction command identity exceeds string byte budget".to_owned(),
+            );
+        }
+        validate_replay_safe_value(&command.payload().0, limits, depth + 2, nodes)?;
+    }
+    Ok(())
 }
 
 fn validate_replay_safe_agent_value(

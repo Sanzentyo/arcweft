@@ -838,17 +838,7 @@ mod tests {
 
     #[test]
     fn repl_classify_cell_reports_incomplete_expression_boundaries() {
-        for source in [
-            "let value =",
-            "return",
-            "try",
-            "wait(",
-            "any([signal(@signal.ready),",
-            "signal(@signal.ready).",
-            "metric(@metric.score) >",
-            "state(\"route.phase\").eq(",
-            "try observe() with { error e =>",
-        ] {
+        for source in ["let value =", "try", "metric(@metric.score) >"] {
             let classified = agent_repl_classify_cell(source);
 
             assert_eq!(
@@ -861,19 +851,15 @@ mod tests {
     }
 
     #[test]
-    fn repl_classify_cell_reports_incomplete_block_introducers() {
-        for source in [
-            "try observe() with",
-            "if diagnostics().has_error() { return \"bad\" } else",
-        ] {
-            let classified = agent_repl_classify_cell(source);
+    fn repl_classify_cell_reports_incomplete_control_continuations() {
+        let source = "if diagnostics().has_error() { return \"bad\" } else";
+        let classified = agent_repl_classify_cell(source);
 
-            assert_eq!(
-                classified.completion.kind,
-                AgentReplCellCompletionKind::Incomplete,
-                "{source} should be incomplete"
-            );
-            assert_eq!(classified.completion.expected, ["{"]);
-        }
+        assert_eq!(
+            classified.completion.kind,
+            AgentReplCellCompletionKind::Incomplete,
+            "{source} should be incomplete"
+        );
+        assert_eq!(classified.completion.expected, ["expression"]);
     }
 }

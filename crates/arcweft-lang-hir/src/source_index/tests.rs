@@ -156,7 +156,7 @@ fn parsed_type(document_id: &str, type_source: &str) -> (ParsedSource, AttachedT
             ))
             .expect("attached type document ID"),
             name.clone(),
-            format!("source values: {type_source} {{}}\n"),
+            format!("type Values = {type_source}\n"),
         )
         .expect("attached type source"),
     );
@@ -173,16 +173,15 @@ fn parsed_type(document_id: &str, type_source: &str) -> (ParsedSource, AttachedT
         .expect("attached source item inventory")
         .into_iter()
         .next()
-        .expect("source declaration");
-    let TypedItemNode::Source(source) = item else {
-        panic!("expected source item concrete family");
+        .expect("type-alias declaration");
+    let TypedItemNode::TypeAlias(alias) = item else {
+        panic!("expected type-alias item concrete family");
     };
-    let attached = source
-        .source_type()
-        .expect("source type access")
-        .expect("source declaration type")
-        .semantic()
-        .expect("attached semantic type");
+    let attached = alias
+        .semantics()
+        .expect("attached type-alias declaration")
+        .target()
+        .clone();
     (parsed, attached)
 }
 

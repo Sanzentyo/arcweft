@@ -101,8 +101,8 @@ kind = "fail_line"
 ```
 
 The profile's View is validated as a typed View identity; the optional Style is
-validated as a typed Style identity. Source declarations do not nominate a
-project-wide dialogue default.
+validated as a typed Style identity. Stream-producing capabilities do not
+nominate a project-wide dialogue default.
 
 ## Selecting another View
 

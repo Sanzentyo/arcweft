@@ -730,7 +730,15 @@ fn hir_body_facts(
         match expression.kind() {
             HirExprKind::DialogueContentApplication(_) => counts.dialogues += 1,
             HirExprKind::Choice(_) => counts.choices += 1,
-            HirExprKind::Await(_) => counts.awaits += 1,
+            HirExprKind::Await(awaited) => {
+                counts.awaits += 1;
+                let branch_flow_items = awaited
+                    .branches()
+                    .iter()
+                    .map(|branch| contextual_thread_flow_item_count(branch.body()))
+                    .sum::<usize>();
+                counts.flow_items += to_u64("Await branch flow items", branch_flow_items)?;
+            }
             HirExprKind::Thread(thread) => {
                 counts.threads += 1;
                 counts.flow_items += to_u64("thread body", thread.body().items().len())?;
@@ -753,7 +761,6 @@ fn hir_body_facts(
             | HirStmtKind::While(_)
             | HirStmtKind::WhileLet(_)
             | HirStmtKind::For(_) => counts.loops += 1,
-            HirStmtKind::AwaitWith(_) => counts.awaits += 1,
             HirStmtKind::Include(_) => counts.includes += 1,
             _ => {}
         }
@@ -1194,7 +1201,6 @@ const fn item_family_tag(family: HirItemFamily) -> &'static str {
         HirItemFamily::ExternCapability => "extern-capability",
         HirItemFamily::Test => "test",
         HirItemFamily::Bench => "bench",
-        HirItemFamily::Source => "source",
         HirItemFamily::Style => "style",
         HirItemFamily::Error => "error",
     }
@@ -1251,7 +1257,6 @@ const fn statement_kind_tag(kind: &HirStmtKind) -> &'static str {
         HirStmtKind::LetChoice { .. } => "let-choice",
         HirStmtKind::LetScope { .. } => "let-scope",
         HirStmtKind::LetLoop { .. } => "let-loop",
-        HirStmtKind::LetAwait { .. } => "let-await",
         HirStmtKind::LetActionReceive { .. } => "let-action-receive",
         HirStmtKind::Return { .. } => "return",
         HirStmtKind::Out { .. } => "out",
@@ -1277,7 +1282,6 @@ const fn statement_kind_tag(kind: &HirStmtKind) -> &'static str {
         HirStmtKind::SourceLocale(_) => "source-locale",
         HirStmtKind::Scope(_) => "scope",
         HirStmtKind::Include(_) => "include",
-        HirStmtKind::AwaitWith(_) => "await-with",
         HirStmtKind::Break { .. } => "break",
         HirStmtKind::Continue { .. } => "continue",
         HirStmtKind::Expression { .. } => "expression",
@@ -1319,11 +1323,6 @@ fn immediate_thread_flow_item_count(kind: &HirStmtKind) -> usize {
             .sum(),
         HirStmtKind::SourceLocale(statement) => contextual_thread_flow_item_count(statement.body()),
         HirStmtKind::Scope(statement) => contextual_thread_flow_item_count(statement.body()),
-        HirStmtKind::AwaitWith(statement) => statement
-            .branches()
-            .iter()
-            .map(|branch| contextual_thread_flow_item_count(branch.body()))
-            .sum(),
         _ => 0,
     }
 }

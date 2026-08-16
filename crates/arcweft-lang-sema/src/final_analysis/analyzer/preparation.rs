@@ -1,5 +1,12 @@
 //! Type resolution and local-binding preparation.
 
+use arcweft_lang_hir::item::{HirCapabilityFunction, HirCapabilityMember};
+
+use crate::{
+    callable::{CallableName, CallablePath, associated_scope_for},
+    nominal::AssociatedTypeScope,
+};
+
 use super::super::report::merge_type_resolution_fact;
 use super::{
     Analyzer, BTreeMap, BTreeSet, ExprId, FinalSemanticAnalysisError, GenericTypeScope,
@@ -39,16 +46,50 @@ fn simple_binding_source(statement: &HirStmtKind) -> Option<(PatternId, ExprId, 
         HirStmtKind::LetLoop {
             pattern, loop_expr, ..
         } => Some((*pattern, *loop_expr, None)),
-        HirStmtKind::LetAwait {
-            pattern,
-            await_expr,
-            ..
-        } => Some((*pattern, *await_expr, None)),
         HirStmtKind::LetActionReceive {
             pattern, action, ..
         } => Some((*pattern, *action, None)),
         _ => None,
     }
+}
+
+fn scope_descends_from(module: &HirModule, mut scope: ScopeId, ancestor: ScopeId) -> bool {
+    loop {
+        if scope == ancestor {
+            return true;
+        }
+        let Ok(current) = module.resolve_scope(scope) else {
+            return false;
+        };
+        let Some(parent) = current.parent() else {
+            return false;
+        };
+        scope = parent;
+    }
+}
+
+fn capability_function_owns_type(
+    module: &HirModule,
+    function: &HirCapabilityFunction,
+    target: TypeId,
+) -> bool {
+    function
+        .parameter_groups()
+        .iter()
+        .flat_map(|group| group.parameters())
+        .map(arcweft_lang_hir::item::HirParameter::ty)
+        .chain(function.return_type())
+        .any(|root| type_tree_contains(module, root, target))
+}
+
+fn type_tree_contains(module: &HirModule, root: TypeId, target: TypeId) -> bool {
+    root == target
+        || module.resolve_type(root).is_ok_and(|node| {
+            node.kind()
+                .direct_type_children()
+                .into_iter()
+                .any(|child| type_tree_contains(module, child, target))
+        })
 }
 
 /// Result of resolving a nominal type used as an associated-call receiver.
@@ -165,16 +206,31 @@ impl Analyzer<'_, '_, '_> {
         } else {
             self.self_type_scope(module, node.scope(), owner, &generic_scope)?
         };
-        let input = TypeResolutionInput::accepted(
-            owner,
-            module,
-            self.project,
-            self.symbols,
-            self.catalogs.world.environment().nominal_world(),
-            &generic_scope,
-            self_scope,
-            NominalResolutionLimits::PRODUCTION,
-        )
+        let associated = self.associated_type_scope(module, node.scope(), owner)?;
+        let input = if let Some(associated) = associated.as_ref() {
+            TypeResolutionInput::accepted_with_associated(
+                owner,
+                module,
+                self.project,
+                self.symbols,
+                self.catalogs.world.environment().nominal_world(),
+                &generic_scope,
+                self_scope,
+                associated,
+                NominalResolutionLimits::PRODUCTION,
+            )
+        } else {
+            TypeResolutionInput::accepted(
+                owner,
+                module,
+                self.project,
+                self.symbols,
+                self.catalogs.world.environment().nominal_world(),
+                &generic_scope,
+                self_scope,
+                NominalResolutionLimits::PRODUCTION,
+            )
+        }
         .map_err(|_| FinalSemanticAnalysisError::TypeResolutionInput { owner })?;
         let report = resolve_type_ref(&input)
             .map_err(|_| FinalSemanticAnalysisError::TypeResolutionFailed { owner })?;
@@ -189,6 +245,9 @@ impl Analyzer<'_, '_, '_> {
             }
         };
         for node in report.outcome().product().nodes() {
+            if node.is_contextual_alias_target() {
+                continue;
+            }
             let Some(recovered) = node.recovered() else {
                 continue;
             };
@@ -200,6 +259,59 @@ impl Analyzer<'_, '_, '_> {
         } else {
             AssociatedReceiverTypeResolution::Complete(ty)
         })
+    }
+
+    fn associated_type_scope(
+        &self,
+        module: &HirModule,
+        scope: ScopeId,
+        owner: TypeId,
+    ) -> Result<Option<AssociatedTypeScope>, FinalSemanticAnalysisError> {
+        let Some(item_id) = enclosing_item(module, scope)? else {
+            return Ok(None);
+        };
+        let item = module
+            .resolve_item(item_id)
+            .map_err(|_| FinalSemanticAnalysisError::InvalidOwner)?;
+        let HirItemKind::ExternCapability(capability) = item.kind() else {
+            return Ok(None);
+        };
+        let function = capability
+            .members()
+            .iter()
+            .filter_map(|member| match member {
+                HirCapabilityMember::Function(function) => Some(function),
+                HirCapabilityMember::AssociatedType(_) | HirCapabilityMember::Error => None,
+            })
+            .find(|function| {
+                scope_descends_from(module, scope, function.callable_scope())
+                    || capability_function_owns_type(module, function, owner)
+            })
+            .ok_or(FinalSemanticAnalysisError::InvalidOwner)?;
+        let Some(capability_name) = capability.name().resolved() else {
+            return Err(FinalSemanticAnalysisError::RecoveredOwner);
+        };
+        let Some(function_name) = function.name().resolved() else {
+            return Err(FinalSemanticAnalysisError::RecoveredOwner);
+        };
+        let path = CallablePath::try_new([
+            CallableName::try_new(capability_name.as_str())
+                .map_err(|_| FinalSemanticAnalysisError::InvalidOwner)?,
+            CallableName::try_new(function_name.as_str())
+                .map_err(|_| FinalSemanticAnalysisError::InvalidOwner)?,
+        ])
+        .map_err(|_| FinalSemanticAnalysisError::InvalidOwner)?;
+        let world = self.catalogs.world.environment().nominal_world();
+        let Some(contract) = world.host_call_contract(&path) else {
+            return Ok(None);
+        };
+        let projected = world
+            .try_project_host_call_contract(contract, NominalResolutionLimits::PRODUCTION)
+            .map_err(|_| FinalSemanticAnalysisError::TypeResolutionFailed { owner })?;
+        Ok(Some(associated_scope_for(
+            capability,
+            projected.domain_error(),
+        )))
     }
 
     fn self_type_scope(

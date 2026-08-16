@@ -61,9 +61,6 @@ mod shadow_recovery;
 mod signal_grammar;
 #[cfg(test)]
 mod signal_grammar_tests;
-mod source_grammar;
-#[cfg(test)]
-mod source_grammar_tests;
 mod statement;
 mod style_grammar;
 #[cfg(test)]

@@ -1,6 +1,6 @@
 //! Shared runtime-value nesting validation.
 
-use super::{RuntimeIterator, RuntimeSeq, RuntimeValue};
+use super::{RuntimeFunctionBody, RuntimeIterator, RuntimeSeq, RuntimeValue};
 use thiserror::Error;
 
 /// Maximum nesting accepted by the runtime value, AWBC, and persistence
@@ -36,6 +36,13 @@ fn validate_value(
             .try_for_each(|field| validate_value(field.value(), depth + 1, maximum)),
         RuntimeValue::NominalRecord(record) => validate_values(record.fields(), depth + 1, maximum),
         RuntimeValue::Opaque(value) => validate_value(value.payload(), depth + 1, maximum),
+        RuntimeValue::Reduction(value) => {
+            validate_value(value.state(), depth + 1, maximum)?;
+            value
+                .commands()
+                .iter()
+                .try_for_each(|command| validate_value(&command.payload().0, depth + 2, maximum))
+        }
         RuntimeValue::Agent(value) => {
             ensure_depth(
                 depth.saturating_add(value.structural_nesting_depth()),
@@ -48,10 +55,17 @@ fn validate_value(
                     validate_value(value, depth.saturating_add(offset), maximum)
                 })
         }
-        RuntimeValue::Function(function) => function
-            .captures
-            .iter()
-            .try_for_each(|capture| validate_value(&capture.value, depth + 1, maximum)),
+        RuntimeValue::Function(function) => match function.body() {
+            RuntimeFunctionBody::Structured(closure) => closure
+                .capture_values()
+                .iter()
+                .chain(closure.bound_args())
+                .try_for_each(|value| validate_value(value, depth + 1, maximum)),
+            RuntimeFunctionBody::Awbc(closure) => closure
+                .captures()
+                .iter()
+                .try_for_each(|capture| validate_value(&capture.value, depth + 1, maximum)),
+        },
         RuntimeValue::Iterator(RuntimeIterator::Values { items, .. }) => {
             validate_values(items, depth + 1, maximum)
         }

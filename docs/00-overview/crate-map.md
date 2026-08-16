@@ -265,13 +265,13 @@ arcweft-launch
 - Wasmtime は `arcweft-wasm-wasmtime` の native plugin/activity sandbox 用 adapter であり、Arcweft runtime の主実行系ではない。WIT ABI は `arcweft-wasm-abi`、Wasm validation/generation/inspection は `arcweft-wasm-tools` が担当する。
 
 - Capture devices are permissioned live sources; scripts and Activities consume granted ports, not raw device APIs.
-- USB/HID/Serial/Gamepad are also permissioned DevicePorts and expose typed Source streams.
+- USB/HID/Serial/Gamepad are also permissioned DevicePorts and expose typed `Stream<T, E>` values through ordinary capability operations.
 - Touch virtual controllers are Game Native View layers that emit logical input events and Agent action targets.
 
 - USB / HID devices are permissioned DeviceProfiles; scripts consume typed ports and signals, not raw handles.
 - The Device Profile Generator emits parsers, writers, signal bindings, test fixtures, and backend stubs from `.arcw` manifests.
 - Touch virtual controllers are Game Native Views attached to input layers and emit logical `ControllerEvent`s.
 
-- Device streams are `Source<T, E>` values with explicit backpressure, replay, privacy, and cancellation policy; do not expose backend callbacks directly to DSL code.
+- Device streams are typed `Stream<T, E>` values returned by ordinary external capability operations; lifecycle, backpressure, replay, privacy, and cancellation stay in the capability/host boundary rather than a DSL source declaration. Do not expose backend callbacks directly to DSL code.
 - USB/HID/Gamepad/VirtualController input emits normalized `InputAction` values into the layer-based input router.
 

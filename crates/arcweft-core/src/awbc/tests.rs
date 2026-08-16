@@ -975,6 +975,7 @@ fn opaque_program() -> (AwbcProgram, AwbcTypeId, AwbcTypeId) {
         producer: AwbcStringId(1),
         semantic_identity: [41; 32],
         admission: RuntimeOpaqueTypeAdmission::ExactIdentity,
+        arguments: vec![],
     });
     let wide = AwbcTypeId(
         u32::try_from(program.runtime_types.len()).expect("test type table fits AWBC index"),
@@ -983,6 +984,7 @@ fn opaque_program() -> (AwbcProgram, AwbcTypeId, AwbcTypeId) {
         producer: AwbcStringId(1),
         semantic_identity: [42; 32],
         admission: RuntimeOpaqueTypeAdmission::ProducerWide,
+        arguments: vec![],
     });
     (program, exact, wide)
 }
@@ -998,6 +1000,7 @@ fn opaque_codec_owner_compatibility_and_vm_materialization_share_core_authority(
         producer: AwbcStringId(2),
         semantic_identity: [41; 32],
         admission: RuntimeOpaqueTypeAdmission::ExactIdentity,
+        arguments: vec![],
     });
     let other_identity = AwbcTypeId(
         u32::try_from(program.runtime_types.len()).expect("test type table fits AWBC index"),
@@ -1006,6 +1009,7 @@ fn opaque_codec_owner_compatibility_and_vm_materialization_share_core_authority(
         producer: AwbcStringId(1),
         semantic_identity: [44; 32],
         admission: RuntimeOpaqueTypeAdmission::ExactIdentity,
+        arguments: vec![],
     });
     let payload = AwbcConstantId(
         u32::try_from(program.constants.len()).expect("test constant table fits AWBC index"),
@@ -1050,6 +1054,79 @@ fn opaque_codec_owner_compatibility_and_vm_materialization_share_core_authority(
 }
 
 #[test]
+fn reduction_unchanged_instruction_roundtrips_verifies_and_constructs_typed_value() {
+    let mut program = minimal_program();
+    program.strings.push("std.reduction".to_owned());
+    program.runtime_types = vec![
+        AwbcRuntimeType::Unit,
+        AwbcRuntimeType::Opaque {
+            producer: AwbcStringId(1),
+            semantic_identity: [93; 32],
+            admission: RuntimeOpaqueTypeAdmission::ExactIdentity,
+            arguments: vec![AwbcTypeId(0)],
+        },
+    ];
+    program.signatures[0].result = Some(AwbcTypeId(1));
+    program.frame_layouts[0] = AwbcFrameLayout {
+        slots: vec![
+            AwbcFrameSlot {
+                name: None,
+                ty: AwbcTypeId(0),
+                role: AwbcFrameSlotRole::Temporary,
+                scope_depth: 0,
+            },
+            AwbcFrameSlot {
+                name: None,
+                ty: AwbcTypeId(1),
+                role: AwbcFrameSlotRole::Temporary,
+                scope_depth: 0,
+            },
+        ],
+        max_scope_depth: 0,
+    };
+    program.constants.push(AwbcConstant::Unit);
+    program.instructions = vec![
+        AwbcInstruction::LoadConst {
+            dst: AwbcRegisterId(0),
+            constant: AwbcConstantId(0),
+        },
+        AwbcInstruction::MakeReductionUnchanged {
+            dst: AwbcRegisterId(1),
+            ty: AwbcTypeId(1),
+            state: AwbcRegisterId(0),
+        },
+    ];
+    program.blocks[0].instructions = AwbcTableRange::new(0, 2);
+    program.blocks[0].terminator = AwbcTerminator::Return {
+        value: Some(AwbcRegisterId(1)),
+    };
+
+    program
+        .verify(AwbcVerifyBudget::default(), AwbcVerifyContext::default())
+        .expect("typed Reduction.unchanged program verifies");
+    let encoded = program
+        .encode_canonical()
+        .expect("typed Reduction.unchanged program encodes");
+    let decoded = AwbcProgram::decode_canonical(&encoded, AwbcDecodeBudget::default())
+        .expect("typed Reduction.unchanged program decodes");
+    let mut fiber =
+        FiberState::for_entry(&decoded, AwbcEntryId(0), 0, 64).expect("typed fiber initializes");
+    let output = super::vm::step(
+        &decoded,
+        &mut fiber,
+        super::vm::VmStepOptions {
+            max_instructions: 8,
+        },
+    )
+    .expect("typed Reduction.unchanged program executes");
+    let super::vm::VmExit::Returned(Some(RuntimeValue::Reduction(value))) = output.exit else {
+        panic!("typed Reduction.unchanged must return a reduction value");
+    };
+    assert_eq!(value.state(), &RuntimeValue::Unit);
+    assert_eq!(value.commands(), []);
+}
+
+#[test]
 fn verifier_rejects_wide_or_cyclic_opaque_constants_and_invalid_producers() {
     let (mut program, _exact, wide) = opaque_program();
     program.constants.push(AwbcConstant::Unit);
@@ -1088,6 +1165,7 @@ fn verifier_rejects_wide_or_cyclic_opaque_constants_and_invalid_producers() {
         producer: AwbcStringId(1),
         semantic_identity: [43; 32],
         admission: RuntimeOpaqueTypeAdmission::ExactIdentity,
+        arguments: vec![],
     });
     invalid.canonicalize_string_table();
     let error = invalid
@@ -1748,9 +1826,7 @@ fn expression_apply_preserves_dynamic_call_frame_across_suspension_and_resume() 
     fiber
         .validate_for_program(&program)
         .expect("suspended dynamic call snapshot validates");
-    let encoded = serde_json::to_string(&fiber).expect("serialize suspended dynamic call");
-    let mut fiber: FiberState =
-        serde_json::from_str(&encoded).expect("deserialize suspended dynamic call");
+    let mut fiber = fiber.clone();
     fiber
         .validate_for_program(&program)
         .expect("restored dynamic call snapshot validates");
@@ -1887,6 +1963,7 @@ fn expression_apply_surfaces_host_call_from_the_dynamic_callee() {
         signature: AwbcSignatureId(1),
         mode: AwbcHostCallMode::Suspend,
         deterministic: true,
+        arguments: Vec::new(),
     });
 
     let mut fiber = FiberState::for_entry(&host_program, AwbcEntryId(0), 0, 64)
@@ -2010,8 +2087,11 @@ fn expression_apply_keeps_partial_application_as_a_value_operation() {
     let super::vm::VmExit::Returned(Some(RuntimeValue::Function(function))) = output.exit else {
         panic!("partial application must return a function value");
     };
-    assert_eq!(function.params, vec!["main".to_owned()]);
-    assert!(function.captures.is_empty());
+    assert_eq!(function.remaining_arity(), Ok(1));
+    let crate::value::RuntimeFunctionBody::Awbc(closure) = function.body() else {
+        panic!("AWBC execution must return an AWBC closure");
+    };
+    assert!(closure.captures().is_empty());
     assert_eq!(fiber.frames.len(), 1);
 }
 
@@ -2121,9 +2201,7 @@ fn budget_preemption_inside_dynamic_callee_resumes_at_the_exact_cursor() {
     fiber
         .validate_for_program(&program)
         .expect("preempted dynamic call snapshot validates");
-    let encoded = serde_json::to_string(&fiber).expect("serialize preempted dynamic call");
-    let mut fiber: FiberState =
-        serde_json::from_str(&encoded).expect("deserialize preempted dynamic call");
+    let mut fiber = fiber.clone();
     fiber
         .resume_budget_yield(&program)
         .expect("resume exact budget target");

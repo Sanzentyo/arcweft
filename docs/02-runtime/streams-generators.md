@@ -1,4 +1,4 @@
-# Streams, Generators, and Live Device Sources
+# Streams, Generators, and External Capabilities
 
 Arcweft supports live microphone, camera, USB, HID, gamepad, touch, and virtual-controller input. These sources are timing-sensitive, permissioned, and often backed by host callbacks or device queues. They must not be modelled as ordinary lazy values that can be implicitly forced.
 
@@ -26,14 +26,11 @@ Need<T, E>
 Stream<T, E>
   ordered stream transform or granted-port sequence
 
-Source<T, E>
-  live external source with permission, replay, privacy, and backpressure policy
-
 Watch<T>
   latest-value signal
 
 Generator syntax
-  optional sugar for pure sequences, stream transforms, and source handlers
+  optional sugar for pure sequences and stream transforms
 ```
 
 This keeps capture and USB handling deterministic, permission-aware, replayable, and testable.
@@ -70,13 +67,6 @@ pub struct Stream<T, E> {
     error: PhantomData<E>,
 }
 
-pub struct Source<T, E> {
-    source: SourceId,
-    policy: SourcePolicy,
-    item: PhantomData<T>,
-    error: PhantomData<E>,
-}
-
 pub struct Watch<T> {
     signal: SignalId,
     value: Option<T>,
@@ -102,8 +92,7 @@ let usb =
 
 An ordinary `fn` whose own body yields is a state machine that produces values.
 It is allowed for pure transforms and for processing a granted stream or port.
-It must return `Stream<T, E>`; `Source<T, E>` is reserved for policy-backed
-`source` declarations. An ordinary `fn` that merely returns a `Stream<T, E>`
+It must return `Stream<T, E>`. An ordinary `fn` that merely returns a `Stream<T, E>`
 without its own `yield` is a passthrough, not a generator.
 
 ```arcw
@@ -140,7 +129,7 @@ let mic =
 let level_stream = rms_level(mic.frames())
 ```
 
-## `seq`, `stream`, and `source`
+## `seq`, `stream`, and external capabilities
 
 `yield` is valid only in explicit generation contexts:
 
@@ -152,31 +141,23 @@ stream { ... yield ... }
 fn ... -> Stream<T, E> { ... yield ... }
   deterministic transform over existing values/streams
 
-source id: Source<T, E> { on item value => yield value }
-  live external source with explicit policy
+extern capability capture { fn frames() -> Stream<Frame, CaptureError> }
+  live external input exposed as an ordinary capability operation
 ```
 
-Source declarations are declarative and policy-driven:
+External capability operations are ordinary callable members. Their host
+adapter owns permission, replay, privacy, cancellation, and queue policy; the
+language sees only the typed `Stream<T, E>` result.
 
 ```arcw
-pub source face_camera_frames: Source<VideoFrameHandle, CaptureError> {
-    from capture.camera(@capture.face_camera)
-    backpressure = latest
-    replay = hash_only
-    privacy = transient
-
-    on item frame => yield frame
-    on disconnected => signal.set(@signal.camera_connected, false)
-    on error e => log.warn("camera stream error {err:?}", err = e)
+extern capability capture {
+    fn camera(device: CaptureDevice) -> Stream<VideoFrameHandle, CaptureError>
 }
 ```
 
-The required source headers are `from`, `backpressure`, `replay`, and
-`privacy`. `privacy = private` is incompatible with `replay = full`.
-Each is singular; a duplicate header is an error rather than a first/last-wins
-override. `backpressure = bounded(...)` requires both a positive integer
-`capacity` and an explicit `overflow` policy. Runtime lowering does not invent
-queue capacity or overflow defaults for recovered or incomplete source.
+The operation is not a content root and does not create a source-specific
+callable kind. Runtime lowering does not invent queue, replay, or privacy
+defaults; those policies remain in the external capability/host contract.
 
 ## `yield` is a suspension boundary
 
@@ -225,21 +206,21 @@ pub enum OverflowPolicy {
 
 Camera preview typically uses `LatestOnly`. USB protocol streams usually use `BoundedQueue` and error on overflow.
 
-## Replay and virtual sources
+## Replay and virtual streams
 
 Live sources are recorded as summaries or deterministic fixtures.
 
 ```text
-product/dev live source:
+product/dev live stream:
   device callback -> stream events
 
-test/headless source:
-  fixture stream -> same Source<T, E> interface
+test/headless stream:
+  fixture stream -> same Stream<T, E> interface
 ```
 
 A trace records:
 
-- stream source entity,
+- stream identity,
 - event timestamps/ticks,
 - hashes or selected payload summaries,
 - permission outcomes,
@@ -268,9 +249,8 @@ The block form is useful for complex stream transforms but is not required for m
 ```text
 Use Need for startup.
 Use Stream for ordered live data.
-Use Source for live external inputs with policy.
 Use Watch for latest value.
-Use generator syntax only in explicit seq/stream/source contexts.
+Use generator syntax only in explicit seq/stream contexts.
 Never let a generator open hardware directly.
 ```
 

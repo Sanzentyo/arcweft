@@ -17,7 +17,7 @@ use arcweft_debug_model::sink::NullDebugEventSink;
 use arcweft_lang_sema::project_index::ProgramHash;
 
 #[test]
-fn repl_tiering_warm_without_backend_is_deterministic_vm_fallback() {
+fn repl_tiering_warm_without_backend_is_deterministic_product_awbc_fallback() {
     let mut repl = test_repl("test.program.tiering.warm");
     let mut context = arcweft_agent_repl::command::ReplCommandContext::new(&mut repl);
     let mut handler = ReplTierCommandHandler::default();
@@ -30,7 +30,7 @@ fn repl_tiering_warm_without_backend_is_deterministic_vm_fallback() {
             assert!(outcome.requested);
             assert!(!outcome.started_background_job);
             assert_eq!(outcome.backend_status, ReplTierBackendStatus::Unsupported);
-            assert_eq!(outcome.fallback, ReplTierFallback::BytecodeVm);
+            assert_eq!(outcome.fallback, ReplTierFallback::ProductAwbc);
             assert_eq!(
                 outcome.reason,
                 Some(ReplWarmUnsupportedReason::FullScriptBackendNotAvailable)
@@ -55,7 +55,7 @@ fn repl_tiering_codegen_reports_status_only_surface() {
         ReplCommandEvidence::Codegen(status) => {
             assert!(status.requested);
             assert_eq!(status.backend_status, ReplTierBackendStatus::Unsupported);
-            assert_eq!(status.fallback, ReplTierFallback::BytecodeVm);
+            assert_eq!(status.fallback, ReplTierFallback::ProductAwbc);
             assert!(status.enabled_backends.is_empty());
             assert!(status.pending_jobs.is_empty());
             assert!(
@@ -71,17 +71,17 @@ fn repl_tiering_codegen_reports_status_only_surface() {
 }
 
 #[test]
-fn repl_tiering_immediate_vm_execution_remains_available_after_status_only_requests() {
+fn repl_tiering_immediate_product_awbc_execution_remains_available_after_status_only_requests() {
     let mut repl = test_repl("test.program.tiering.execution");
     let mut host = StaticAgentSession::new("test.program.tiering.execution");
     let mut debug = NullDebugEventSink;
     let mut rag = NoopRagService;
     let first = repl
         .evaluate_cell(
-            &ReplCellInput::statement("let before_warm = \"vm\""),
+            &ReplCellInput::statement("let before_warm = \"awbc\""),
             test_runtime(&mut host, &mut debug, &mut rag),
         )
-        .expect("first cell executes through VM");
+        .expect("first cell executes through Product AWBC");
     assert!(first.committed);
 
     {
@@ -103,10 +103,10 @@ fn repl_tiering_immediate_vm_execution_remains_available_after_status_only_reque
 
     let second = repl
         .evaluate_cell(
-            &ReplCellInput::statement("let after_warm = \"vm\""),
+            &ReplCellInput::statement("let after_warm = \"awbc\""),
             test_runtime(&mut host, &mut debug, &mut rag),
         )
-        .expect("second cell still executes through VM");
+        .expect("second cell still executes through Product AWBC");
     assert!(second.committed);
     assert_eq!(repl.cells(ReplCellFilter::default()).cells.len(), 2);
 }

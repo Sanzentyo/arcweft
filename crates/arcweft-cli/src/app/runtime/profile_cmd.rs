@@ -9,7 +9,7 @@ use crate::app::project::{
 };
 use crate::app::shared::{is_arcw_path, print_json};
 use crate::output::{
-    AotProfileStats, BytecodeProfileStats, FinalSemanticProfileStats, RuntimeExecutorTier,
+    AotProfileStats, AwbcProfileStats, FinalSemanticProfileStats, RuntimeExecutorTier,
     RuntimePlanProfileStats, RuntimeProfileCompiler, RuntimeProfileReport, RuntimeProfileRuntime,
 };
 use arcweft_core::engine::FlowStatusLabelStyle;
@@ -81,7 +81,7 @@ pub(in crate::app) fn runtime_profile_command(
             syntax: compiled.syntax_stats.into(),
             semantic: FinalSemanticProfileStats::from(compiled.compiled.final_analysis().as_ref()),
             runtime_plan: RuntimePlanProfileStats::from(compiled.runtime_plan_stats),
-            bytecode: BytecodeProfileStats::from(&compiled.bytecode_stats),
+            awbc: AwbcProfileStats::from(&compiled.product_awbc),
             aot: AotProfileStats::from(&compiled.aot_stats),
         },
         phases,

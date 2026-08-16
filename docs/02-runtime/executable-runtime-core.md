@@ -134,12 +134,11 @@ version change.
 21. `line_task_groups`
 22. `line_task_nodes`
 23. `stream_plans`
-24. `source_plans`
-25. `pure_helpers`
-26. `display_map`
-27. `source_map`
-28. `resources`
-29. `entries`
+24. `pure_helpers`
+25. `display_map`
+26. `source_map`
+27. `resources`
+28. `entries`
 
 All IDs are `u32` table indices represented by distinct Rust newtypes. A
 half-open table range is `{ start: u32, len: u32 }`; overflow and bounds are
@@ -212,8 +211,7 @@ compiled-region frame contract. A slot never changes type within a function.
 ```rust
 struct AwbcFunction {
     public_id: Option<AwbcStringId>,
-    kind: Flow | PureHelper | StreamTransform | SourceOpen |
-          SourceHandler | LineTask | Synthetic,
+    kind: Flow | PureHelper | StreamTransform | LineTask | Synthetic,
     signature: AwbcSignatureId,
     frame_layout: AwbcFrameLayoutId,
     blocks: AwbcTableRange,
@@ -286,7 +284,7 @@ terminators. `0x20..0x7f` and `0x8f..0xff` are reserved and rejected in v1.
 | `1b` | `SpawnFiber { dst?, function, args }` | spawn executor-neutral child fiber |
 | `1c` | `StreamYield { stream, value }` | enqueue deterministic stream output |
 | `1d` | `StreamClose { stream }` | close stream state |
-| `1e` | `SourceClose { source }` | close source state |
+| `1e` | reserved | rejected in v1 |
 | `1f` | `Drop { register }` | deterministic value/resource drop and uninitialize |
 
 `EmitEffect` is for already modeled Sans I/O effect requests. A call that must
@@ -403,24 +401,19 @@ join, cancellation, and nested scope. This removes the current line plan’s
 string expressions from the product boundary: executable expressions lower to
 functions/registers, while only stable display/config strings remain strings.
 
-### 5.4 Streams and sources
+### 5.4 Streams
 
 ```rust
 struct AwbcStreamPlan {
     public_id: StringId, item_type: TypeId, error_type: TypeId,
     transform: FunctionId,
 }
-struct AwbcSourcePlan {
-    public_id: StringId, item_type: TypeId, error_type: TypeId,
-    open: FunctionId, policy: AwbcSourcePolicy,
-    handlers: Vec<{ kind: SourceEventKind, function: FunctionId }>,
-}
 ```
 
-Source policy preserves backpressure (latest, bounded+overflow, or
-blocking-not-allowed), replay, privacy, and maximum queue. Handlers are unique
-per event kind and use `SourceHandler` functions. Stream transforms use
-`StreamTransform` functions and the ordinary CFG/opcode set.
+External capability operations returning `Stream<T, E>` are represented by the
+ordinary callable catalog and host-call tables. Stream transforms use the
+ordinary CFG/opcode set; there is no separate plan, handler table, or
+stream-only function kind.
 
 ### 5.5 Pure helpers, maps, resources, and entries
 
@@ -488,7 +481,7 @@ All limits are checked before allocation and are caller-overridable downward.
 | choice options | 1,000,000 |
 | content units / line task groups | 1,000,000 each |
 | line task nodes | 4,000,000 |
-| stream/source plans | 262,144 each |
+| stream plans | 262,144 |
 | pure helpers | 262,144 |
 | display-map rows | 2,000,000 |
 | source-map rows | 8,000,000 |
@@ -508,7 +501,7 @@ player. It uses four deterministic passes:
 
 1. **Inventory:** collect and sort strings, public IDs, resources, capabilities,
    runtime types, signatures, and callable identities.
-2. **Function planning:** assign every flow, pure helper, stream/source handler,
+2. **Function planning:** assign every flow, pure helper, stream transform,
    line-task helper, condition/guard, and synthetic expression body a function
    and frame layout. Allocate stable slots by parameter order, lexical local
    declaration order, then deterministic temporary order.
@@ -586,15 +579,15 @@ IDs, typed patterns reference `AwbcTypeId`, and record fields become verified
 layout ordinals. Duplicate binding names are rejected before or during AWBC
 verification.
 
-### 7.3 Line tasks, streams, sources, and pure helpers
+### 7.3 Line tasks, streams, and pure helpers
 
 Current string-valued line binding/out/assertion fragments must not be copied
 into product AWBC. The compiler lowers executable fragments into `LineTask`
-functions and typed effect plans. Source `from`, handler patterns/operations,
-and stream operations similarly become `SourceOpen`, `SourceHandler`, and
-`StreamTransform` functions. Pure helpers become `PureHelper` functions and a
-metadata row; the existing scalar evaluator/JIT may use the metadata but must
-produce the same runtime value and trap behavior as the compact VM.
+functions and typed effect plans. External capability calls use the ordinary
+host-call catalog, while stream operations become `StreamTransform` functions.
+Pure helpers become `PureHelper` functions and a metadata row; the existing
+scalar evaluator/JIT may use the metadata but must produce the same runtime
+value and trap behavior as the compact VM.
 
 ## 8. Executor-neutral `FiberState`
 
@@ -609,7 +602,6 @@ struct FiberState {
     terminal: Option<Returned(value?) | Trapped(FiberTrap)>,
     budget: { remaining, quantum },
     line_cursor: u64,
-    sources: Vec<FiberSourceState>,
     streams: Vec<FiberStreamState>,
 }
 struct FiberFrame {
@@ -625,7 +617,7 @@ struct FiberFrame {
 ```
 
 Suspension reasons are dialogue, choice, await, await-many, host call, and
-budget yield. Await-many state contains plan, optional bind pattern, source
+budget yield. Await-many state contains plan, optional bind pattern, input
 items, next launch index, in-flight `(index, task_id, need_id)` rows, and
 index-aligned optional results. This is enough to resume deterministically after
 host events, snapshot/replay, or hand-off between VM and compiled code.
@@ -638,7 +630,7 @@ Invariants:
 - running fibers have no suspension; suspended fibers have exactly one;
 - returned/trapped fibers have exactly one terminal value;
 - scope stack IDs/depths agree with verifier-proven block-entry state;
-- source/stream vectors are indexed by their AWBC table IDs;
+- stream vectors are indexed by their AWBC table IDs;
 - generation is checked before dispatch into a compiled artifact;
 - budget is charged only by the dispatcher/VM, never by host or generated code;
 - a nested return validates value/destination shape before popping the callee,
@@ -705,9 +697,9 @@ Required phases are:
    mode match catalog/digest; pure helpers and guards have no undeclared effects.
 10. **Entrypoints:** entry signature equals function/route target signature;
     route bindings reference parameter slots and compatible adapter value types.
-11. **Line/choice/source/stream:** table kind/function kind compatibility,
-    unique source handlers, valid task/cleanup links, bounded await-many limit,
-    choice targets/conditions/effects.
+11. **Line/choice/stream:** table kind/function kind compatibility, valid
+    task/cleanup links, bounded await-many limit, choice targets/conditions/
+    effects.
 12. **Maps/resources:** source span ordering/budget, location ownership,
     display/content cross-reference agreement, unique resource identity and
     resource access bounds.
@@ -865,7 +857,7 @@ all gates are green on supported profiles:
    `FlowOp` fallback;
 4. differential structured/compact tests pass for flow, dialogue, choice,
    await, await-many, static/dynamic goto, match, every loop form, scoped
-   cleanup/binding, line tasks, streams, and sources;
+   cleanup/binding, line tasks, and streams;
 5. suspend/save-in-memory/resume tests pass at every safe-point kind;
 6. runtime driver and runtime host construct executors from verified AWBC and no
    product player imports structured bytecode execution;
@@ -904,7 +896,7 @@ its execution as a second product VM.
 
 ### Cut 3 — compiler lowering with structured parity
 
-- Add `arcweft-runtime-plan/src/awbc_lower/{inventory,frame,expr,flow,line,source}.rs`.
+- Add `arcweft-runtime-plan/src/awbc_lower/{inventory,frame,expr,flow,line}.rs`.
 - Compiler emits and verifies AWBC in addition to the explicit structured parity
   artifact. Product bundle format is not switched yet.
 - Golden tests assert canonical table shapes and source-map anchors.
@@ -917,7 +909,7 @@ its execution as a second product VM.
 
 ### Cut 5 — differential fixtures
 
-- Add a shared harness that drives identical `RuntimeStepInput`/task/source
+- Add a shared harness that drives identical `RuntimeStepInput`/task/stream
   events into structured and compact executors and compares normalized outputs
   at each external boundary.
 
@@ -961,7 +953,7 @@ to isolate.
 
 - bad table/range/owner, register, branch, backedge, resume, frame, entry,
   host-call signature, capability, effect set, type, pattern cycle/depth,
-  source/display map, source policy, and resource diagnostic;
+  source/display map and resource diagnostic;
 - diamond CFG proves definite-initialization intersection;
 - scope-stack mismatch at a join fails;
 - all entry kinds/routes and result signatures pass/fail appropriately.
@@ -971,8 +963,8 @@ to isolate.
 Fixtures cover bind/let/let-else; dialogue and line cancellation/cleanup; choice
 conditions/effects/targets; await ready/error/progress/cancel; await-many limits
 and result ordering; if/if-let/match; all loop variants and break values;
-threads/scopes; static/dynamic goto; returns/traps; stream/source policies and
-handlers; pure helpers and numeric edge cases.
+threads/scopes; static/dynamic goto; returns/traps; stream transforms and
+external capability calls; pure helpers and numeric edge cases.
 
 ### Safe points and codegen
 

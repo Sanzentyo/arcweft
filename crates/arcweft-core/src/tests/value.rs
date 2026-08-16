@@ -1,14 +1,15 @@
 use crate::{
     entry::{RuntimeNominalTypeId, TypeLayoutHash},
     pattern::{RuntimeSemanticTypeId, RuntimeVariantIdentity},
-    plan::RuntimePureHelperId,
+    runtime_id::RuntimeLocalDeclarationId,
     time::LogicalDuration,
     value::{
-        DenseSeqKind, MAX_RUNTIME_VALUE_NESTING_DEPTH, RuntimeBinaryOp, RuntimeBinding, RuntimeEnv,
-        RuntimeExpr, RuntimeIntrinsic, RuntimeIterator, RuntimeNominalRecordValue, RuntimeRange,
-        RuntimeSeq, RuntimeUnaryOp, RuntimeValue, RuntimeValueNestingError,
-        evaluate_core_iter_collect_intrinsic, evaluate_std_float_intrinsic,
-        runtime_sequence_dense_bool, runtime_sequence_dense_bytes, runtime_sequence_dense_chars,
+        DenseSeqKind, MAX_RUNTIME_VALUE_NESTING_DEPTH, RuntimeBinaryOp, RuntimeEnv,
+        RuntimeIntrinsic, RuntimeIterator, RuntimeLocalBinding, RuntimeNominalRecordValue,
+        RuntimeRange, RuntimeSeq, RuntimeUnaryOp, RuntimeValue, RuntimeValueNestingError,
+        evaluate_core_iter_collect_intrinsic, evaluate_index_intrinsic,
+        evaluate_std_float_intrinsic, evaluate_string_intrinsic, runtime_sequence_dense_bool,
+        runtime_sequence_dense_bytes, runtime_sequence_dense_chars,
         runtime_sequence_dense_durations, runtime_sequence_dense_entity_refs,
         runtime_sequence_dense_f32, runtime_sequence_dense_f64, runtime_sequence_dense_i8,
         runtime_sequence_dense_i16, runtime_sequence_dense_i32, runtime_sequence_dense_i64,
@@ -19,6 +20,13 @@ use crate::{
         runtime_sequence_repeat_value, runtime_value_label,
     },
 };
+use std::num::NonZeroU32;
+
+fn local(ordinal: u32) -> RuntimeLocalDeclarationId {
+    RuntimeLocalDeclarationId::from_accepted_ordinal(
+        NonZeroU32::new(ordinal).expect("test local ordinal is non-zero"),
+    )
+}
 
 #[test]
 fn nominal_and_anonymous_records_have_distinct_identity_and_bytes() {
@@ -158,67 +166,22 @@ fn variant_canonical_bytes_retain_closed_owner_ordinal_and_semantic_identity() {
 }
 
 #[test]
-fn runtime_collection_indices_use_one_width_preserving_conversion_rule() {
-    let host_max = usize::MAX;
-    let host_max_i128 = i128::try_from(host_max).expect("supported host usize fits i128");
-
-    assert_eq!(
-        RuntimeValue::i128(host_max_i128).to_collection_index(),
-        Some(host_max)
-    );
-    assert_eq!(
-        RuntimeValue::u128(u128::try_from(host_max).expect("usize fits u128"))
-            .to_collection_index(),
-        Some(host_max)
-    );
-    assert_eq!(RuntimeValue::i8(-1).to_collection_index(), None);
-    assert_eq!(RuntimeValue::u128(u128::MAX).to_collection_index(), None);
-    assert_eq!(RuntimeValue::f64(0.0).to_collection_index(), None);
-
-    assert_eq!(
-        RuntimeValue::from_collection_len(host_max),
-        RuntimeValue::usize(u64::try_from(host_max).unwrap_or(u64::MAX))
-    );
-}
-
-#[test]
-fn runtime_sequence_index_returns_unit_for_invalid_or_out_of_bounds_values() {
-    let sequence = RuntimeSeq::values(vec![RuntimeValue::String("first".to_owned())]);
-
-    assert_eq!(
-        sequence.value_at_runtime_index(&RuntimeValue::u8(0)),
-        RuntimeValue::String("first".to_owned())
-    );
-    assert_eq!(
-        sequence.value_at_runtime_index(&RuntimeValue::u8(1)),
-        RuntimeValue::Unit
-    );
-    assert_eq!(
-        sequence.value_at_runtime_index(&RuntimeValue::i8(-1)),
-        RuntimeValue::Unit
-    );
-    assert_eq!(
-        sequence.value_at_runtime_index(&RuntimeValue::String("0".to_owned())),
-        RuntimeValue::Unit
-    );
-}
-
-#[test]
-fn root_binding_ref_updates_existing_slots() {
+fn root_local_binding_ref_updates_existing_slots() {
     let mut env = RuntimeEnv::default();
-    let first = [RuntimeBinding {
-        name: "seed".to_owned(),
+    let seed = local(1);
+    let first = [RuntimeLocalBinding {
+        local: seed,
         value: RuntimeValue::i64(1),
     }];
-    let second = [RuntimeBinding {
-        name: "seed".to_owned(),
+    let second = [RuntimeLocalBinding {
+        local: seed,
         value: RuntimeValue::i64(2),
     }];
 
     env.bind_all_root_ref(&first);
     env.bind_all_root_ref(&second);
 
-    assert_eq!(env.get("seed"), Some(&RuntimeValue::i64(2)));
+    assert_eq!(env.get(seed), Some(&RuntimeValue::i64(2)));
 }
 
 #[test]
@@ -261,25 +224,27 @@ fn core_iter_collect_materializes_range_sequence() {
 }
 
 #[test]
-fn root_binding_ref_reuses_matching_ordered_slots() {
+fn root_local_binding_ref_reuses_matching_ordered_slots() {
     let mut env = RuntimeEnv::default();
+    let lhs = local(1);
+    let rhs = local(2);
     let first = [
-        RuntimeBinding {
-            name: "lhs".to_owned(),
+        RuntimeLocalBinding {
+            local: lhs,
             value: RuntimeValue::i64(1),
         },
-        RuntimeBinding {
-            name: "rhs".to_owned(),
+        RuntimeLocalBinding {
+            local: rhs,
             value: RuntimeValue::i64(2),
         },
     ];
     let second = [
-        RuntimeBinding {
-            name: "lhs".to_owned(),
+        RuntimeLocalBinding {
+            local: lhs,
             value: RuntimeValue::i64(3),
         },
-        RuntimeBinding {
-            name: "rhs".to_owned(),
+        RuntimeLocalBinding {
+            local: rhs,
             value: RuntimeValue::i64(4),
         },
     ];
@@ -287,26 +252,28 @@ fn root_binding_ref_reuses_matching_ordered_slots() {
     env.bind_all_root_ref(&first);
     env.bind_all_root_ref(&second);
 
-    assert_eq!(env.get("lhs"), Some(&RuntimeValue::i64(3)));
-    assert_eq!(env.get("rhs"), Some(&RuntimeValue::i64(4)));
+    assert_eq!(env.get(lhs), Some(&RuntimeValue::i64(3)));
+    assert_eq!(env.get(rhs), Some(&RuntimeValue::i64(4)));
 }
 
 #[test]
 fn scoped_i64_binding_updates_without_value_input() {
     let mut env = RuntimeEnv::default();
+    let item = local(1);
 
     env.push_scope_with_capacity(1);
-    env.set("item", RuntimeValue::i64(3));
-    env.set("item", RuntimeValue::i64(5));
+    env.set(item, RuntimeValue::i64(3));
+    env.set(item, RuntimeValue::i64(5));
 
-    assert_eq!(env.get("item"), Some(&RuntimeValue::i64(5)));
+    assert_eq!(env.get(item), Some(&RuntimeValue::i64(5)));
 }
 
 #[test]
 fn spare_scopes_do_not_affect_runtime_env_semantics() {
     let mut env = RuntimeEnv::default();
+    let scoped = local(1);
     env.push_scope_with_capacity(2);
-    env.set("scoped", RuntimeValue::i64(1));
+    env.set(scoped, RuntimeValue::i64(1));
     env.pop_scope();
 
     let baseline = RuntimeEnv::default();
@@ -314,24 +281,7 @@ fn spare_scopes_do_not_affect_runtime_env_semantics() {
     assert_eq!(env.clone(), baseline);
 
     env.push_scope_with_capacity(1);
-    assert!(env.get("scoped").is_none());
-}
-
-#[test]
-fn runtime_expr_display_is_stable_diagnostic_label() {
-    assert_eq!(RuntimeExpr::Local("score".to_owned()).to_string(), "score");
-    assert_eq!(
-        RuntimeExpr::SpreadArg(Box::new(RuntimeExpr::Local("items".to_owned()))).to_string(),
-        "items..."
-    );
-    assert_eq!(
-        RuntimeExpr::PureCall {
-            helper: RuntimePureHelperId(7),
-            args: vec![RuntimeExpr::Value(RuntimeValue::i64(1))],
-        }
-        .to_string(),
-        "pure#7()"
-    );
+    assert!(env.get(scoped).is_none());
 }
 
 #[test]
@@ -1006,5 +956,48 @@ fn std_float_intrinsics_use_native_semantics_and_explicit_bit_conversion() {
         evaluate_std_float_intrinsic(RuntimeIntrinsic::StdF64ToF32, &[RuntimeValue::F64(1.5)])
             .expect("to_f32 evaluates"),
         Some(RuntimeValue::F32(1.5))
+    );
+}
+
+#[test]
+fn string_intrinsics_preserve_typed_receiver_semantics() {
+    assert_eq!(
+        evaluate_string_intrinsic(
+            RuntimeIntrinsic::StringTrim,
+            &[RuntimeValue::String(" alice \n".to_owned())]
+        )
+        .expect("trim evaluates"),
+        Some(RuntimeValue::String("alice".to_owned()))
+    );
+    assert_eq!(
+        evaluate_string_intrinsic(
+            RuntimeIntrinsic::StringToString,
+            &[RuntimeValue::String("alice".to_owned())]
+        )
+        .expect("to_string evaluates"),
+        Some(RuntimeValue::String("alice".to_owned()))
+    );
+}
+
+#[test]
+fn index_intrinsic_reads_logical_sequence_and_string_values() {
+    assert_eq!(
+        evaluate_index_intrinsic(
+            RuntimeIntrinsic::CoreIndex,
+            &[
+                runtime_sequence_dense_strings(vec!["a".to_owned(), "b".to_owned()]),
+                RuntimeValue::i64(1),
+            ],
+        )
+        .expect("sequence index evaluates"),
+        Some(RuntimeValue::String("b".to_owned()))
+    );
+    assert_eq!(
+        evaluate_index_intrinsic(
+            RuntimeIntrinsic::CoreIndex,
+            &[RuntimeValue::String("aβ".to_owned()), RuntimeValue::i64(1),],
+        )
+        .expect("String index evaluates by scalar value"),
+        Some(RuntimeValue::Char('β'))
     );
 }

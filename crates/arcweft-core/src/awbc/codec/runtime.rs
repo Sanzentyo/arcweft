@@ -2,21 +2,20 @@ use super::AwbcCodecError;
 use super::wire::{Reader, Wire, Writer, wire_enum};
 use crate::awbc::schema::{
     AwbcAudioArg, AwbcAudioCleanup, AwbcAudioCommand, AwbcAudioCommandId, AwbcAudioValueRef,
-    AwbcAwaitManyPolicy, AwbcBackpressurePolicy, AwbcChildCancelPolicy, AwbcChildCleanup,
-    AwbcChildJoinPolicy, AwbcChoice, AwbcChoiceOption, AwbcConflictPolicy, AwbcConstantId,
-    AwbcEffectKind, AwbcEffectPlan, AwbcEffectPlanId, AwbcFunctionId, AwbcHostCall,
-    AwbcHostCallMode, AwbcIntrinsic, AwbcLineCancelHandler, AwbcLineCleanupPolicy, AwbcLineOption,
-    AwbcLineTaskGroup, AwbcLineTaskNode, AwbcLineTaskNodeId, AwbcLineTaskTrigger,
-    AwbcOverflowPolicy, AwbcParallelPolicy, AwbcPatternId, AwbcPresentationCleanup,
-    AwbcPrivacyPolicy, AwbcPureHelper, AwbcPureHelperOrigin, AwbcReduceOp, AwbcRegisterId,
-    AwbcReplayPolicy, AwbcResourceAccess, AwbcResourceAccessMode, AwbcResourceId, AwbcSignatureId,
-    AwbcSourceEventKind, AwbcSourceHandler, AwbcSourcePlan, AwbcSourcePolicy, AwbcStreamPlan,
-    AwbcStringId, AwbcTableRange, AwbcTaskArgument, AwbcTaskClass, AwbcTaskPlan, AwbcTaskPlanId,
-    AwbcTaskPolicy, AwbcTypeId,
+    AwbcAwaitManyPolicy, AwbcChildCancelPolicy, AwbcChildCleanup, AwbcChildJoinPolicy, AwbcChoice,
+    AwbcChoiceOption, AwbcConflictPolicy, AwbcConstantId, AwbcEffectKind, AwbcEffectPlan,
+    AwbcEffectPlanId, AwbcFunctionId, AwbcHostArgument, AwbcHostCall, AwbcHostCallMode,
+    AwbcIntrinsic, AwbcLineCancelHandler, AwbcLineCleanupPolicy, AwbcLineTaskGroup,
+    AwbcLineTaskNode, AwbcLineTaskNodeId, AwbcLineTaskTrigger, AwbcParallelPolicy,
+    AwbcPresentationCleanup, AwbcPureHelper, AwbcPureHelperOrigin, AwbcReduceOp, AwbcRegisterId,
+    AwbcResourceAccess, AwbcResourceAccessMode, AwbcResourceId, AwbcSignatureId, AwbcStreamPlan,
+    AwbcStringId, AwbcTableRange, AwbcTaskClass, AwbcTaskPlan, AwbcTaskPolicy, AwbcTypeId,
 };
+use crate::runtime_id::{RuntimeDialogueMarkId, RuntimeLocalDeclarationId};
 use arcweft_interaction_model::audio::{
     AudioEffectParameterKind, AudioLoopMode, MicrophoneConstraints,
 };
+use std::num::NonZeroU32;
 
 impl Wire for AwbcIntrinsic {
     fn write_wire(&self, writer: &mut Writer) -> Result<(), AwbcCodecError> {
@@ -43,7 +42,8 @@ impl Wire for AwbcHostCall {
         self.operation.write_wire(writer)?;
         self.signature.write_wire(writer)?;
         self.mode.write_wire(writer)?;
-        self.deterministic.write_wire(writer)
+        self.deterministic.write_wire(writer)?;
+        self.arguments.write_wire(writer)
     }
 
     fn read_wire(reader: &mut Reader<'_>) -> Result<Self, AwbcCodecError> {
@@ -54,6 +54,7 @@ impl Wire for AwbcHostCall {
             signature: AwbcSignatureId::read_wire(reader)?,
             mode: AwbcHostCallMode::read_wire(reader)?,
             deterministic: bool::read_wire(reader)?,
+            arguments: Vec::<AwbcHostArgument>::read_wire(reader)?,
         })
     }
 }
@@ -74,6 +75,8 @@ impl Wire for AwbcTaskPlan {
         self.priority.write_wire(writer)?;
         self.cancel_scope.write_wire(writer)?;
         self.policy.write_wire(writer)?;
+        self.ready_type.write_wire(writer)?;
+        self.error_type.write_wire(writer)?;
         self.arguments.write_wire(writer)?;
         self.many.write_wire(writer)
     }
@@ -89,7 +92,9 @@ impl Wire for AwbcTaskPlan {
             priority: i32::read_wire(reader)?,
             cancel_scope: AwbcStringId::read_wire(reader)?,
             policy: AwbcTaskPolicy::read_wire(reader)?,
-            arguments: Vec::<AwbcTaskArgument>::read_wire(reader)?,
+            ready_type: AwbcTypeId::read_wire(reader)?,
+            error_type: AwbcTypeId::read_wire(reader)?,
+            arguments: Vec::<AwbcHostArgument>::read_wire(reader)?,
             many: Option::<AwbcAwaitManyPolicy>::read_wire(reader)?,
         })
     }
@@ -116,7 +121,7 @@ wire_enum!(AwbcTaskPolicy, "task policy", {
     1 => AwbcTaskPolicy::AlwaysStart,
 });
 
-impl Wire for AwbcTaskArgument {
+impl Wire for AwbcHostArgument {
     fn write_wire(&self, writer: &mut Writer) -> Result<(), AwbcCodecError> {
         self.name.write_wire(writer)?;
         self.spread.write_wire(writer)
@@ -627,49 +632,39 @@ impl Wire for AwbcChoiceOption {
 
 impl Wire for AwbcLineTaskGroup {
     fn write_wire(&self, writer: &mut Writer) -> Result<(), AwbcCodecError> {
+        self.captures.write_wire(writer)?;
         self.root.write_wire(writer)?;
-        self.options.write_wire(writer)?;
-        self.bindings.write_wire(writer)?;
-        self.out.write_wire(writer)?;
+        self.nodes.write_wire(writer)?;
         self.cancel_handlers.write_wire(writer)?;
+        self.cleanup_completed.write_wire(writer)?;
+        self.cleanup_cancelled.write_wire(writer)?;
+        self.cleanup_failed.write_wire(writer)?;
         self.cleanup.write_wire(writer)
     }
 
     fn read_wire(reader: &mut Reader<'_>) -> Result<Self, AwbcCodecError> {
         Ok(Self {
+            captures: Vec::<RuntimeLocalDeclarationId>::read_wire(reader)?,
             root: AwbcLineTaskNodeId::read_wire(reader)?,
-            options: Vec::<AwbcLineOption>::read_wire(reader)?,
-            bindings: Option::<AwbcFunctionId>::read_wire(reader)?,
-            out: Option::<AwbcFunctionId>::read_wire(reader)?,
+            nodes: AwbcTableRange::read_wire(reader)?,
             cancel_handlers: Vec::<AwbcLineCancelHandler>::read_wire(reader)?,
+            cleanup_completed: Option::<AwbcFunctionId>::read_wire(reader)?,
+            cleanup_cancelled: Option::<AwbcFunctionId>::read_wire(reader)?,
+            cleanup_failed: Option::<AwbcFunctionId>::read_wire(reader)?,
             cleanup: AwbcLineCleanupPolicy::read_wire(reader)?,
-        })
-    }
-}
-
-impl Wire for AwbcLineOption {
-    fn write_wire(&self, writer: &mut Writer) -> Result<(), AwbcCodecError> {
-        self.name.write_wire(writer)?;
-        self.value.write_wire(writer)
-    }
-
-    fn read_wire(reader: &mut Reader<'_>) -> Result<Self, AwbcCodecError> {
-        Ok(Self {
-            name: AwbcStringId::read_wire(reader)?,
-            value: AwbcConstantId::read_wire(reader)?,
         })
     }
 }
 
 impl Wire for AwbcLineCancelHandler {
     fn write_wire(&self, writer: &mut Writer) -> Result<(), AwbcCodecError> {
-        self.trigger.write_wire(writer)?;
+        self.trigger.get().get().write_wire(writer)?;
         self.function.write_wire(writer)
     }
 
     fn read_wire(reader: &mut Reader<'_>) -> Result<Self, AwbcCodecError> {
         Ok(Self {
-            trigger: AwbcStringId::read_wire(reader)?,
+            trigger: runtime_dialogue_mark_id(reader)?,
             function: AwbcFunctionId::read_wire(reader)?,
         })
     }
@@ -725,22 +720,28 @@ impl Wire for AwbcLineTaskNode {
                 children.write_wire(writer)?;
             }
             Self::Child {
-                task,
+                id,
+                key,
+                name,
                 trigger,
+                priority,
                 join,
                 cancel,
                 scope,
             } => {
                 writer.write_u8(3);
-                task.write_wire(writer)?;
+                id.write_wire(writer)?;
+                key.write_wire(writer)?;
+                name.write_wire(writer)?;
                 trigger.write_wire(writer)?;
+                priority.write_wire(writer)?;
                 join.write_wire(writer)?;
                 cancel.write_wire(writer)?;
                 scope.write_wire(writer)?;
             }
-            Self::Effect(effect) => {
+            Self::Action(function) => {
                 writer.write_u8(4);
-                effect.write_wire(writer)?;
+                function.write_wire(writer)?;
             }
         }
         Ok(())
@@ -756,13 +757,16 @@ impl Wire for AwbcLineTaskNode {
                 children: Vec::<AwbcLineTaskNodeId>::read_wire(reader)?,
             },
             3 => Self::Child {
-                task: AwbcTaskPlanId::read_wire(reader)?,
+                id: AwbcStringId::read_wire(reader)?,
+                key: Option::<AwbcStringId>::read_wire(reader)?,
+                name: Option::<AwbcStringId>::read_wire(reader)?,
                 trigger: AwbcLineTaskTrigger::read_wire(reader)?,
+                priority: i32::read_wire(reader)?,
                 join: AwbcChildJoinPolicy::read_wire(reader)?,
                 cancel: AwbcChildCancelPolicy::read_wire(reader)?,
                 scope: AwbcLineTaskNodeId::read_wire(reader)?,
             },
-            4 => Self::Effect(AwbcEffectPlanId::read_wire(reader)?),
+            4 => Self::Action(AwbcFunctionId::read_wire(reader)?),
             tag => {
                 return Err(AwbcCodecError::UnknownTag {
                     kind: "line task node",
@@ -784,7 +788,7 @@ impl Wire for AwbcLineTaskTrigger {
             Self::Immediate => writer.write_u8(0),
             Self::Mark(mark) => {
                 writer.write_u8(1);
-                mark.write_wire(writer)?;
+                mark.get().get().write_wire(writer)?;
             }
             Self::DelayNanos(nanos) => {
                 writer.write_u8(2);
@@ -798,7 +802,7 @@ impl Wire for AwbcLineTaskTrigger {
         let offset = reader.offset();
         Ok(match reader.read_u8()? {
             0 => Self::Immediate,
-            1 => Self::Mark(AwbcStringId::read_wire(reader)?),
+            1 => Self::Mark(runtime_dialogue_mark_id(reader)?),
             2 => Self::DelayNanos(u64::read_wire(reader)?),
             tag => {
                 return Err(AwbcCodecError::UnknownTag {
@@ -809,6 +813,34 @@ impl Wire for AwbcLineTaskTrigger {
             }
         })
     }
+}
+
+impl Wire for RuntimeLocalDeclarationId {
+    fn write_wire(&self, writer: &mut Writer) -> Result<(), AwbcCodecError> {
+        self.get().get().write_wire(writer)
+    }
+
+    fn read_wire(reader: &mut Reader<'_>) -> Result<Self, AwbcCodecError> {
+        NonZeroU32::new(u32::read_wire(reader)?)
+            .map(Self::from_accepted_ordinal)
+            .ok_or_else(|| AwbcCodecError::InvalidMetadata {
+                kind: "runtime local declaration identity",
+                message: "must be nonzero".to_owned(),
+                offset: reader.offset(),
+            })
+    }
+}
+
+pub(super) fn runtime_dialogue_mark_id(
+    reader: &mut Reader<'_>,
+) -> Result<RuntimeDialogueMarkId, AwbcCodecError> {
+    NonZeroU32::new(u32::read_wire(reader)?)
+        .map(RuntimeDialogueMarkId::from_accepted_ordinal)
+        .ok_or_else(|| AwbcCodecError::InvalidMetadata {
+            kind: "runtime dialogue mark identity",
+            message: "must be nonzero".to_owned(),
+            offset: reader.offset(),
+        })
 }
 
 wire_enum!(AwbcChildJoinPolicy, "child join policy", {
@@ -839,127 +871,6 @@ impl Wire for AwbcStreamPlan {
         })
     }
 }
-
-impl Wire for AwbcSourcePlan {
-    fn write_wire(&self, writer: &mut Writer) -> Result<(), AwbcCodecError> {
-        self.public_id.write_wire(writer)?;
-        self.item_type.write_wire(writer)?;
-        self.error_type.write_wire(writer)?;
-        self.open.write_wire(writer)?;
-        self.policy.write_wire(writer)?;
-        self.handlers.write_wire(writer)
-    }
-
-    fn read_wire(reader: &mut Reader<'_>) -> Result<Self, AwbcCodecError> {
-        Ok(Self {
-            public_id: AwbcStringId::read_wire(reader)?,
-            item_type: AwbcTypeId::read_wire(reader)?,
-            error_type: AwbcTypeId::read_wire(reader)?,
-            open: AwbcFunctionId::read_wire(reader)?,
-            policy: AwbcSourcePolicy::read_wire(reader)?,
-            handlers: Vec::<AwbcSourceHandler>::read_wire(reader)?,
-        })
-    }
-}
-
-impl Wire for AwbcSourceHandler {
-    fn write_wire(&self, writer: &mut Writer) -> Result<(), AwbcCodecError> {
-        self.kind.write_wire(writer)?;
-        self.pattern.write_wire(writer)?;
-        self.function.write_wire(writer)
-    }
-
-    fn read_wire(reader: &mut Reader<'_>) -> Result<Self, AwbcCodecError> {
-        Ok(Self {
-            kind: AwbcSourceEventKind::read_wire(reader)?,
-            pattern: Option::<AwbcPatternId>::read_wire(reader)?,
-            function: AwbcFunctionId::read_wire(reader)?,
-        })
-    }
-}
-
-wire_enum!(AwbcSourceEventKind, "source event kind", {
-    0 => AwbcSourceEventKind::Item,
-    1 => AwbcSourceEventKind::Error,
-    2 => AwbcSourceEventKind::Progress,
-    3 => AwbcSourceEventKind::Disconnected,
-    4 => AwbcSourceEventKind::PermissionRevoked,
-    5 => AwbcSourceEventKind::End,
-});
-
-impl Wire for AwbcSourcePolicy {
-    fn write_wire(&self, writer: &mut Writer) -> Result<(), AwbcCodecError> {
-        self.backpressure.write_wire(writer)?;
-        self.replay.write_wire(writer)?;
-        self.privacy.write_wire(writer)?;
-        self.max_queue.write_wire(writer)
-    }
-
-    fn read_wire(reader: &mut Reader<'_>) -> Result<Self, AwbcCodecError> {
-        Ok(Self {
-            backpressure: AwbcBackpressurePolicy::read_wire(reader)?,
-            replay: AwbcReplayPolicy::read_wire(reader)?,
-            privacy: AwbcPrivacyPolicy::read_wire(reader)?,
-            max_queue: u32::read_wire(reader)?,
-        })
-    }
-}
-
-impl Wire for AwbcBackpressurePolicy {
-    fn write_wire(&self, writer: &mut Writer) -> Result<(), AwbcCodecError> {
-        match self {
-            Self::LatestOnly => writer.write_u8(0),
-            Self::BoundedQueue { capacity, overflow } => {
-                writer.write_u8(1);
-                capacity.write_wire(writer)?;
-                overflow.write_wire(writer)?;
-            }
-            Self::BlockingNotAllowed => writer.write_u8(2),
-        }
-        Ok(())
-    }
-
-    fn read_wire(reader: &mut Reader<'_>) -> Result<Self, AwbcCodecError> {
-        let offset = reader.offset();
-        Ok(match reader.read_u8()? {
-            0 => Self::LatestOnly,
-            1 => Self::BoundedQueue {
-                capacity: u32::read_wire(reader)?,
-                overflow: AwbcOverflowPolicy::read_wire(reader)?,
-            },
-            2 => Self::BlockingNotAllowed,
-            tag => {
-                return Err(AwbcCodecError::UnknownTag {
-                    kind: "backpressure policy",
-                    tag,
-                    offset,
-                });
-            }
-        })
-    }
-}
-
-wire_enum!(AwbcOverflowPolicy, "overflow policy", {
-    0 => AwbcOverflowPolicy::DropOldest,
-    1 => AwbcOverflowPolicy::DropNewest,
-    2 => AwbcOverflowPolicy::Error,
-    3 => AwbcOverflowPolicy::Coalesce,
-});
-
-wire_enum!(AwbcReplayPolicy, "replay policy", {
-    0 => AwbcReplayPolicy::Full,
-    1 => AwbcReplayPolicy::HashOnly,
-    2 => AwbcReplayPolicy::Summary,
-    3 => AwbcReplayPolicy::EventOnly,
-    4 => AwbcReplayPolicy::None,
-});
-
-wire_enum!(AwbcPrivacyPolicy, "privacy policy", {
-    0 => AwbcPrivacyPolicy::Transient,
-    1 => AwbcPrivacyPolicy::Redacted,
-    2 => AwbcPrivacyPolicy::Recordable,
-    3 => AwbcPrivacyPolicy::Private,
-});
 
 impl Wire for AwbcPureHelper {
     fn write_wire(&self, writer: &mut Writer) -> Result<(), AwbcCodecError> {

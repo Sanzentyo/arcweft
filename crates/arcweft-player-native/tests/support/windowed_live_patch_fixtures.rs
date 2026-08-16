@@ -7,15 +7,13 @@ use arcweft_bundle::{
     BundleImageObjectPlayback, BundleImageObjectTransform, BundleManifest, BundleRuntimeSummary,
     BundleVirtualFile, BundleVirtualFileRef, BundleVirtualFileSpace,
 };
-use arcweft_core::bytecode::BytecodeProgram;
-use arcweft_core::line_task::LineTaskGroup;
 use arcweft_core::plan::{
-    ChoiceRuntimeOption, FlowOp, FlowRuntimeId, RuntimeFlow, RuntimeLineId, RuntimePlan,
+    FlowRuntimeId, RuntimeChoiceOptionSeed, RuntimeDialogueContentPlanSeed, RuntimeExprSeed,
+    RuntimeExprSeedKind, RuntimeFlowOpSeed, RuntimeFlowSeed, RuntimeLineId, RuntimePlan,
+    RuntimePlanBuilder, RuntimePlanTypeProjection, RuntimePlanTypeSeed,
 };
-use arcweft_core::task::{
-    AwaitTarget, HostTaskArgTemplate, HostTaskRequestTemplate, NeedId, TaskId,
-};
-use arcweft_core::value::{RuntimeExpr, RuntimePayload, RuntimeValue};
+use arcweft_core::task::{HostCapabilityId, NeedId, TaskId, TaskOutcomeContract};
+use arcweft_core::value::{RuntimePayload, RuntimeValue};
 use arcweft_dialogue::{DialoguePresentationProfile, DialogueProfileRevision};
 use arcweft_id::TextKey;
 use arcweft_player_native::windowed_patch::{
@@ -1015,7 +1013,13 @@ fn dialogue_bundle(
     let source_map = source_map(source_label, source);
     let dialogue_content = dialogue_content_catalog(line, display_text, &source_map);
     with_optional_fixture_image(
-        bundle_from_runtime_parts(source_label, source_map, plan, dialogue_content, "dialogue"),
+        bundle_from_runtime_parts(
+            source_label,
+            source_map,
+            &plan,
+            dialogue_content,
+            "dialogue",
+        ),
         image_bytes,
     )
 }
@@ -1025,39 +1029,51 @@ fn dialogue_runtime_plan(
     changed_main_code: bool,
     extra_flow: bool,
 ) -> RuntimePlan {
-    let mut flows = vec![
-        RuntimeFlow {
-            id: FlowRuntimeId::from_runtime_target_value("flow.main").expect("flow runtime id"),
-            ops: dialogue_main_ops(line, changed_main_code),
-        },
-        RuntimeFlow {
-            id: FlowRuntimeId::from_runtime_target_value("flow.done").expect("flow runtime id"),
-            ops: vec![FlowOp::Return("done".to_owned())],
-        },
-    ];
+    let main = FlowRuntimeId::from_runtime_target_value("flow.main").expect("flow runtime id");
+    let done = FlowRuntimeId::from_runtime_target_value("flow.done").expect("flow runtime id");
+    let mut builder = fixture_plan_builder();
+    let content = builder
+        .push_dialogue_content_seed(RuntimeDialogueContentPlanSeed {
+            line: line.clone(),
+            values: Box::default(),
+            marks: Box::default(),
+        })
+        .expect("dialogue content admits");
+    push_fixture_flow(
+        &mut builder,
+        main.clone(),
+        dialogue_main_ops(content, changed_main_code),
+    );
+    push_fixture_flow(
+        &mut builder,
+        done,
+        vec![RuntimeFlowOpSeed::Return("done".to_owned())],
+    );
     if extra_flow {
-        flows.push(RuntimeFlow {
-            id: FlowRuntimeId::from_runtime_target_value("flow.extra").expect("flow runtime id"),
-            ops: vec![FlowOp::Return("extra".to_owned())],
-        });
+        push_fixture_flow(
+            &mut builder,
+            FlowRuntimeId::from_runtime_target_value("flow.extra").expect("flow runtime id"),
+            vec![RuntimeFlowOpSeed::Return("extra".to_owned())],
+        );
     }
-    RuntimePlan::new(flows, vec![LineTaskGroup::default()])
+    builder.push_entry(cli_main_entry()).expect("entry admits");
+    builder
+        .finish()
         .expect("dialogue fixture runtime plan is valid")
-        .with_entries(vec![cli_main_entry()])
 }
 
-fn dialogue_main_ops(line: &RuntimeLineId, changed_main_code: bool) -> Vec<FlowOp> {
+fn dialogue_main_ops(
+    content: arcweft_core::plan::RuntimeDialogueContentPlanSeedId,
+    changed_main_code: bool,
+) -> Vec<RuntimeFlowOpSeed> {
     if changed_main_code {
-        return vec![FlowOp::Return("changed".to_owned())];
+        return vec![RuntimeFlowOpSeed::Return("changed".to_owned())];
     }
     vec![
-        FlowOp::Dialogue {
-            line: line.clone(),
-            task_group: 0,
-        },
-        FlowOp::Choice {
+        RuntimeFlowOpSeed::Dialogue { content },
+        RuntimeFlowOpSeed::Choice {
             id: Some("choice.opening".to_owned()),
-            options: vec![ChoiceRuntimeOption {
+            options: vec![RuntimeChoiceOptionSeed {
                 id: Some("choice.opening.next".to_owned()),
                 label: "Next".to_owned(),
                 target: Some(
@@ -1068,6 +1084,44 @@ fn dialogue_main_ops(line: &RuntimeLineId, changed_main_code: bool) -> Vec<FlowO
             }],
         },
     ]
+}
+
+fn fixture_plan_builder() -> RuntimePlanBuilder {
+    let string_type = fixture_string_type();
+    let mut builder = RuntimePlanBuilder::new();
+    builder
+        .admit_semantic_batch(
+            [RuntimePlanTypeSeed::new(
+                string_type,
+                RuntimePlanTypeProjection::String,
+            )],
+            [],
+            [],
+            [],
+        )
+        .expect("fixture string type admits");
+    builder
+}
+
+fn push_fixture_flow(
+    builder: &mut RuntimePlanBuilder,
+    flow: FlowRuntimeId,
+    ops: Vec<RuntimeFlowOpSeed>,
+) {
+    builder
+        .push_flow_seed(RuntimeFlowSeed::new(flow, [], ops))
+        .expect("fixture flow admits");
+}
+
+fn fixture_string_type() -> arcweft_core::pattern::RuntimeSemanticTypeId {
+    arcweft_core::pattern::RuntimeSemanticTypeId::from_bytes([1; 32])
+}
+
+fn fixture_string_value(value: &str) -> RuntimeExprSeed {
+    RuntimeExprSeed::new(
+        fixture_string_type(),
+        RuntimeExprSeedKind::Value(RuntimeValue::String(value.to_owned())),
+    )
 }
 
 fn dialogue_content_catalog(
@@ -1098,16 +1152,14 @@ fn dialogue_content_catalog(
 fn bundle_from_runtime_parts(
     source_label: &str,
     source_map: SourceMapSection,
-    plan: RuntimePlan,
+    plan: &RuntimePlan,
     dialogue_content: DialogueContentCatalog,
     fixture_name: &str,
 ) -> ArcweftBundle {
-    let product_awbc = AwbcLowerer::new(&plan, &dialogue_content, source_label)
+    let product_awbc = AwbcLowerer::new(plan, &dialogue_content, source_label)
         .lower()
         .unwrap_or_else(|error| panic!("{fixture_name} fixture product AWBC lowers: {error:?}"))
         .program;
-    let bytecode = BytecodeProgram::from_runtime_plan(plan);
-    let stats = bytecode.stats();
     ArcweftBundle::try_new(
         BundleManifest {
             profile_id: None,
@@ -1119,20 +1171,18 @@ fn bundle_from_runtime_parts(
             runtime: BundleRuntimeSummary {
                 artifact_fingerprint: fixture_runtime_artifact_fingerprint(),
                 entry_flow: Some("flow.main".to_owned()),
-                flows: stats.flows,
-                bytecode_instructions: stats.instructions,
-                line_task_groups: stats.line_task_groups,
-                stream_plans: stats.stream_plans,
-                source_plans: stats.source_plans,
+                flows: product_awbc.flow_executables.len(),
+                bytecode_instructions: product_awbc.instructions.len(),
+                line_task_groups: product_awbc.line_task_groups.len(),
+                stream_plans: product_awbc.stream_plans.len(),
             },
         },
         source_map,
-        bytecode,
+        product_awbc,
         dialogue_content,
     )
     .expect("standard dialogue source joins source map")
     .with_character_presentation_catalog(crate::character_support::character_catalog())
-    .with_product_awbc(product_awbc)
 }
 
 fn with_optional_fixture_image(bundle: ArcweftBundle, image_bytes: Option<&[u8]>) -> ArcweftBundle {
@@ -1162,39 +1212,40 @@ fn with_optional_fixture_image(bundle: ArcweftBundle, image_bytes: Option<&[u8]>
 }
 
 fn await_bundle(source_label: &str, source: &str) -> ArcweftBundle {
-    let plan = RuntimePlan::new(
-        vec![RuntimeFlow {
-            id: FlowRuntimeId::from_runtime_target_value("flow.main").expect("flow runtime id"),
-            ops: vec![
-                FlowOp::Await {
-                    binding: None,
-                    target: AwaitTarget {
-                        need: NeedId("need.bg".to_owned()),
-                        task: TaskId("task.bg".to_owned()),
-                        request: HostTaskRequestTemplate::new(
-                            "asset",
-                            "image",
-                            [HostTaskArgTemplate::positional(RuntimeExpr::Value(
-                                RuntimeValue::String("asset.bg.room".to_owned()),
-                            ))],
-                        ),
+    let main = FlowRuntimeId::from_runtime_target_value("flow.main").expect("flow runtime id");
+    let mut builder = fixture_plan_builder();
+    push_fixture_flow(
+        &mut builder,
+        main,
+        vec![
+            RuntimeFlowOpSeed::Await {
+                binding: None,
+                target: arcweft_core::plan::RuntimeAwaitTargetSeed {
+                    need: NeedId("need.bg".to_owned()),
+                    task: TaskId("task.bg".to_owned()),
+                    outcome: TaskOutcomeContract::default(),
+                    request: arcweft_core::plan::RuntimeHostTaskRequestTemplateSeed {
+                        capability: HostCapabilityId("asset".to_owned()),
+                        operation: "image".to_owned(),
+                        args: vec![arcweft_core::plan::RuntimeHostArgumentSeed::Positional(
+                            fixture_string_value("asset.bg.room"),
+                        )],
                     },
-                    pending: Vec::new(),
                 },
-                FlowOp::Return("ready".to_owned()),
-            ],
-        }],
-        Vec::new(),
-    )
-    .expect("await fixture runtime plan is valid")
-    .with_entries(vec![cli_main_entry()]);
+                pending: Vec::new(),
+            },
+            RuntimeFlowOpSeed::Return("ready".to_owned()),
+        ],
+    );
+    builder.push_entry(cli_main_entry()).expect("entry admits");
+    let plan = builder
+        .finish()
+        .expect("await fixture runtime plan is valid");
     let dialogue_content = DialogueContentCatalog::new();
     let product_awbc = AwbcLowerer::new(&plan, &dialogue_content, source_label)
         .lower()
         .expect("await fixture product AWBC lowers")
         .program;
-    let bytecode = BytecodeProgram::from_runtime_plan(plan);
-    let stats = bytecode.stats();
     ArcweftBundle::try_new(
         BundleManifest {
             profile_id: None,
@@ -1206,38 +1257,36 @@ fn await_bundle(source_label: &str, source: &str) -> ArcweftBundle {
             runtime: BundleRuntimeSummary {
                 artifact_fingerprint: fixture_runtime_artifact_fingerprint(),
                 entry_flow: Some("flow.main".to_owned()),
-                flows: stats.flows,
-                bytecode_instructions: stats.instructions,
-                line_task_groups: stats.line_task_groups,
-                stream_plans: stats.stream_plans,
-                source_plans: stats.source_plans,
+                flows: product_awbc.flow_executables.len(),
+                bytecode_instructions: product_awbc.instructions.len(),
+                line_task_groups: product_awbc.line_task_groups.len(),
+                stream_plans: product_awbc.stream_plans.len(),
             },
         },
         source_map(source_label, source),
-        bytecode,
+        product_awbc,
         dialogue_content,
     )
     .expect("standard dialogue source joins source map")
-    .with_product_awbc(product_awbc)
 }
 
 fn await_replacement_bundle(source_label: &str, source: &str) -> ArcweftBundle {
-    let plan = RuntimePlan::new(
-        vec![RuntimeFlow {
-            id: FlowRuntimeId::from_runtime_target_value("flow.main").expect("flow runtime id"),
-            ops: vec![FlowOp::Return("changed".to_owned())],
-        }],
-        Vec::new(),
-    )
-    .expect("await replacement runtime plan is valid")
-    .with_entries(vec![cli_main_entry()]);
+    let main = FlowRuntimeId::from_runtime_target_value("flow.main").expect("flow runtime id");
+    let mut builder = fixture_plan_builder();
+    push_fixture_flow(
+        &mut builder,
+        main,
+        vec![RuntimeFlowOpSeed::Return("changed".to_owned())],
+    );
+    builder.push_entry(cli_main_entry()).expect("entry admits");
+    let plan = builder
+        .finish()
+        .expect("await replacement runtime plan is valid");
     let dialogue_content = DialogueContentCatalog::new();
     let product_awbc = AwbcLowerer::new(&plan, &dialogue_content, source_label)
         .lower()
         .expect("await replacement product AWBC lowers")
         .program;
-    let bytecode = BytecodeProgram::from_runtime_plan(plan);
-    let stats = bytecode.stats();
     ArcweftBundle::try_new(
         BundleManifest {
             profile_id: None,
@@ -1249,19 +1298,17 @@ fn await_replacement_bundle(source_label: &str, source: &str) -> ArcweftBundle {
             runtime: BundleRuntimeSummary {
                 artifact_fingerprint: fixture_runtime_artifact_fingerprint(),
                 entry_flow: Some("flow.main".to_owned()),
-                flows: stats.flows,
-                bytecode_instructions: stats.instructions,
-                line_task_groups: stats.line_task_groups,
-                stream_plans: stats.stream_plans,
-                source_plans: stats.source_plans,
+                flows: product_awbc.flow_executables.len(),
+                bytecode_instructions: product_awbc.instructions.len(),
+                line_task_groups: product_awbc.line_task_groups.len(),
+                stream_plans: product_awbc.stream_plans.len(),
             },
         },
         source_map(source_label, source),
-        bytecode,
+        product_awbc,
         dialogue_content,
     )
     .expect("standard dialogue source joins source map")
-    .with_product_awbc(product_awbc)
 }
 
 fn source_map(label: &str, text: &str) -> SourceMapSection {

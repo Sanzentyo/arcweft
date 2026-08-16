@@ -13,13 +13,14 @@ use arcweft_bundle::resource_codec::runtime::{
 use arcweft_bundle::resource_codec::{
     FieldId, ResourceField, ResourceWireType, SectionCodecBudget, SectionCodecError,
 };
-use arcweft_core::bytecode::BytecodeRuntimeLayout;
+use arcweft_core::awbc::schema::{AwbcDigest, AwbcProgram};
 
 #[test]
 fn runtime_types_compact_bytes_are_deterministic_and_round_trip() {
     let left = runtime_types_section();
     let right = RuntimeTypesSection::new(
-        left.runtime_layout.clone(),
+        left.abi_version,
+        left.runtime_layout_digest,
         left.declarations.iter().cloned().rev(),
         left.function_interfaces.iter().cloned().rev(),
     );
@@ -35,6 +36,36 @@ fn runtime_types_compact_bytes_are_deterministic_and_round_trip() {
     assert_eq!(
         RuntimeTypesSection::decode_canonical_section(&left_bytes).expect("runtime types decode"),
         left
+    );
+}
+
+#[test]
+fn runtime_types_must_match_the_awbc_header_exactly() {
+    let program = AwbcProgram::default();
+    let section = RuntimeTypesSection::new(
+        program.header.abi_version,
+        program.header.runtime_layout_digest,
+        [],
+        [],
+    );
+    assert!(section.validate_awbc(&program).is_ok());
+
+    let abi_mismatch = RuntimeTypesSection::new(
+        program.header.abi_version + 1,
+        program.header.runtime_layout_digest,
+        [],
+        [],
+    );
+    assert_eq!(
+        abi_mismatch.validate_awbc(&program),
+        Err(SectionCodecError::RuntimeLayoutMismatch)
+    );
+
+    let digest_mismatch =
+        RuntimeTypesSection::new(program.header.abi_version, AwbcDigest([0xa9; 32]), [], []);
+    assert_eq!(
+        digest_mismatch.validate_awbc(&program),
+        Err(SectionCodecError::RuntimeLayoutMismatch)
     );
 }
 
@@ -166,7 +197,8 @@ fn unknown_optional_fields_are_skipped_and_unknown_required_fields_reject() {
 fn patch_compatibility_fingerprints_classify_runtime_resource_changes() {
     let base = runtime_types_section();
     let added = RuntimeTypesSection::new(
-        base.runtime_layout.clone(),
+        base.abi_version,
+        base.runtime_layout_digest,
         base.declarations
             .iter()
             .cloned()
@@ -184,7 +216,7 @@ fn patch_compatibility_fingerprints_classify_runtime_resource_changes() {
     );
 
     let mut broken = base.clone();
-    broken.runtime_layout.abi_version += 1;
+    broken.abi_version += 1;
     assert_eq!(
         base.compatibility_with(&broken),
         RuntimeResourceCompatibility::RestartRequired
@@ -200,7 +232,8 @@ fn patch_compatibility_fingerprints_classify_runtime_resource_changes() {
 fn patch_artifact_from_views_uses_compact_runtime_compatibility() {
     let base = runtime_types_section();
     let target = RuntimeTypesSection::new(
-        base.runtime_layout.clone(),
+        base.abi_version,
+        base.runtime_layout_digest,
         base.declarations
             .iter()
             .cloned()
@@ -231,7 +264,8 @@ fn patch_artifact_from_views_uses_compact_runtime_compatibility() {
 fn migrated_runtime_section_compatibility_decodes_compact_bytes() {
     let base = runtime_types_section();
     let target = RuntimeTypesSection::new(
-        base.runtime_layout.clone(),
+        base.abi_version,
+        base.runtime_layout_digest,
         base.declarations.clone(),
         base.function_interfaces
             .iter()
@@ -278,10 +312,8 @@ impl RuntimeTypesSectionTestExt for RuntimeTypesSection {
 
 fn runtime_types_section() -> RuntimeTypesSection {
     RuntimeTypesSection::new(
-        BytecodeRuntimeLayout {
-            abi_version: 1,
-            signature: "arcweft.test.runtime-layout".to_owned(),
-        },
+        1,
+        AwbcDigest([0xa8; 32]),
         [RuntimeTypeDeclaration {
             public_id: Some("type.actor".to_owned()),
             value_kind: RuntimeValueKind::Record,

@@ -9,14 +9,14 @@ enum TestEvent {
 fn initial_test_state() -> TestState
 effects {}
 {
-    initial_test_state()
+    TestState { passed = false }
 }
 
 fn reduce_test(state: &TestState, event: TestEvent)
     -> Result<Reduction<TestState>, ReducerError>
 effects {}
 {
-    reduce_test(state, event)
+    Ok(Reduction.unchanged(state))
 }
 
 entry test @entry.test {

@@ -505,10 +505,6 @@ impl<'a> EntryContractBuilder<'a> {
                 CanonicalConstructor::Stream,
                 [item.as_ref(), error.as_ref()],
             )?,
-            TypeKind::Source { item, error } => self.canonical_application(
-                CanonicalConstructor::Source,
-                [item.as_ref(), error.as_ref()],
-            )?,
             TypeKind::Probe(inner) => {
                 self.canonical_application(CanonicalConstructor::Probe, [inner.as_ref()])?
             }
@@ -751,7 +747,6 @@ fn canonical_constructor(path: &str) -> Option<CanonicalConstructor> {
         "Option" => CanonicalConstructor::Option,
         "Need" => CanonicalConstructor::Need,
         "Stream" => CanonicalConstructor::Stream,
-        "Source" => CanonicalConstructor::Source,
         "Reduction" => CanonicalConstructor::Reduction,
         "Ref" => CanonicalConstructor::Ref,
         "Probe" => CanonicalConstructor::Probe,

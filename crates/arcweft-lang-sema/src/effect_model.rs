@@ -20,7 +20,6 @@ pub enum CallableKind {
     Flow,
     Hook,
     Entry,
-    Source,
     Parser,
     Memo,
     Extern,

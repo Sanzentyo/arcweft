@@ -41,10 +41,14 @@ use super::family::{
     ExprNode, ExpressionFamily, FamilyNode, FamilySpec, PatternFamily, RecoveryFamily, RecoveryNode,
 };
 use super::node::{
-    AstNode, BlockKind, ChoiceExpressionKind, ExpressionFragmentRootKind, PathKind,
-    ThreadExpressionKind,
+    AstNode, AwaitExpressionKind, AwaitWithBranchKind, BlockKind, ChoiceExpressionKind,
+    CloseBraceKind, ErrorNodeKind, ExpressionFragmentRootKind, MissingBodyKind, OpenBraceKind,
+    PathKind, ThreadExpressionKind,
 };
-use super::source_file::{AttachedPath, AttachedPathRoot, AttachedPathSegmentKind};
+use super::source_file::{
+    AttachedDelimiterState, AttachedPath, AttachedPathRoot, AttachedPathSegmentKind,
+};
+use super::thread_body::{AttachedRequiredNestedThreadFlowBody, required_nested_thread_flow_body};
 use super::{
     AttachedPatternNode, AttachedTypeRefNode, SyntaxAccessError, SyntaxNodeHandle, SyntaxNodeId,
     SyntaxSnapshotId,
@@ -63,8 +67,9 @@ use crate::grammar::kinds::{SyntaxKind, SyntaxRole};
 use crate::grammar::source_projection::{
     PendingPathProjection, PendingPathRoot, PendingPathSegmentKind,
 };
+use crate::grammar::{SyntaxAwaitBranchKind, SyntaxRoleClass};
 use crate::name::SyntaxNameIssue;
-use crate::patterns::{PatternNodePath, PatternSyntaxNode};
+use crate::patterns::{PatternNodePath, PatternSyntaxNode, PatternSyntaxState};
 use crate::types::{TypeRef, TypeRefNodePath, TypeRefNodeStep};
 
 /// One exact revision-bound source component of an attached expression leaf.
@@ -1547,6 +1552,104 @@ pub struct AttachedExpressionNode {
     call_type_children: Box<[AttachedCallTypeChild]>,
     closure_parameters: Box<[AttachedClosureParameter]>,
     closure_result_type: Option<AttachedTypeRefNode>,
+    await_branches: Option<AttachedAwaitBranchBody>,
+}
+
+/// Present `await` branch body or its exact missing-body insertion.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum AttachedAwaitBranchBody {
+    Present(AttachedAwaitBranchBlock),
+    Missing(AstNode<MissingBodyKind>),
+}
+
+impl AttachedAwaitBranchBody {
+    pub fn has_recovery(&self) -> bool {
+        match self {
+            Self::Present(body) => body.has_recovery(),
+            Self::Missing(_) => true,
+        }
+    }
+}
+
+/// Source-ordered `await` branch container with no ordinary value tail.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct AttachedAwaitBranchBlock {
+    syntax: AstNode<BlockKind>,
+    open: AstNode<OpenBraceKind>,
+    branches: Box<[AttachedAwaitBranch]>,
+    close: AstNode<CloseBraceKind>,
+}
+
+impl AttachedAwaitBranchBlock {
+    pub const fn syntax(&self) -> &AstNode<BlockKind> {
+        &self.syntax
+    }
+
+    pub const fn open(&self) -> &AstNode<OpenBraceKind> {
+        &self.open
+    }
+
+    pub fn branches(&self) -> &[AttachedAwaitBranch] {
+        &self.branches
+    }
+
+    pub const fn close(&self) -> &AstNode<CloseBraceKind> {
+        &self.close
+    }
+
+    pub fn close_state(&self) -> AttachedDelimiterState {
+        self.close.delimiter_state()
+    }
+
+    pub fn is_unclosed(&self) -> bool {
+        !self.open.range().is_empty()
+            && matches!(self.close_state(), AttachedDelimiterState::Missing(_))
+    }
+
+    pub fn has_recovery(&self) -> bool {
+        self.is_unclosed() || self.branches.iter().any(AttachedAwaitBranch::has_recovery)
+    }
+}
+
+/// One typed wait-view branch and its nested Thread/Flow body.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct AttachedAwaitBranch {
+    syntax: AstNode<AwaitWithBranchKind>,
+    kind: Option<SyntaxAwaitBranchKind>,
+    pattern: Option<AttachedPatternNode>,
+    recovery: Option<AstNode<ErrorNodeKind>>,
+    body: AttachedRequiredNestedThreadFlowBody,
+}
+
+impl AttachedAwaitBranch {
+    pub const fn syntax(&self) -> &AstNode<AwaitWithBranchKind> {
+        &self.syntax
+    }
+
+    pub const fn kind(&self) -> Option<SyntaxAwaitBranchKind> {
+        self.kind
+    }
+
+    pub const fn pattern(&self) -> Option<&AttachedPatternNode> {
+        self.pattern.as_ref()
+    }
+
+    pub const fn recovery(&self) -> Option<&AstNode<ErrorNodeKind>> {
+        self.recovery.as_ref()
+    }
+
+    pub const fn body(&self) -> &AttachedRequiredNestedThreadFlowBody {
+        &self.body
+    }
+
+    pub fn has_recovery(&self) -> bool {
+        self.kind.is_none()
+            || self.pattern.as_ref().is_some_and(|pattern| {
+                matches!(pattern.value().state(), PatternSyntaxState::Recovered(_))
+            })
+            || self.recovery.is_some()
+            || self.body.has_recovery()
+    }
 }
 
 /// One exact type child retained by an attached Call projection.
@@ -1703,6 +1806,20 @@ impl AttachedExpressionNode {
             )),
             _ => None,
         };
+        let await_branches = match pending.projection() {
+            ExpressionProjection::Await {
+                branches: Some(branches),
+                ..
+            } => {
+                let owner = syntax
+                    .clone()
+                    .cast::<AwaitExpressionKind>()
+                    .map_err(SyntaxAccessError::from)?;
+                Some(attach_await_branch_body(&owner, branches)?)
+            }
+            ExpressionProjection::Await { branches: None, .. } => None,
+            _ => None,
+        };
         let mut components = pending
             .components()
             .iter()
@@ -1752,6 +1869,7 @@ impl AttachedExpressionNode {
             call_type_children,
             closure_parameters,
             closure_result_type,
+            await_branches,
         })
     }
 
@@ -1891,6 +2009,100 @@ impl AttachedExpressionNode {
     pub const fn closure_result_type(&self) -> Option<&AttachedTypeRefNode> {
         self.closure_result_type.as_ref()
     }
+
+    /// Exact source-ordered `with` branches owned by this Await expression.
+    pub const fn await_branches(&self) -> Option<&AttachedAwaitBranchBody> {
+        self.await_branches.as_ref()
+    }
+}
+
+fn attach_await_branch_body(
+    owner: &AstNode<AwaitExpressionKind>,
+    projections: &[Option<SyntaxAwaitBranchKind>],
+) -> Result<AttachedAwaitBranchBody, SyntaxAccessError> {
+    let body = owner
+        .syntax()
+        .optional_unique_child(SyntaxRole::Body)?
+        .ok_or_else(|| SyntaxAccessError::InvalidExpressionProjection { id: owner.id() })?;
+    match body.kind() {
+        SyntaxKind::Block => Ok(AttachedAwaitBranchBody::Present(attach_await_branch_block(
+            owner,
+            projections,
+        )?)),
+        SyntaxKind::MissingBody if projections.is_empty() && body.range().is_empty() => {
+            Ok(AttachedAwaitBranchBody::Missing(body.cast()?))
+        }
+        _ => Err(SyntaxAccessError::InvalidExpressionProjection { id: owner.id() }),
+    }
+}
+
+fn attach_await_branch_block(
+    owner: &AstNode<AwaitExpressionKind>,
+    projections: &[Option<SyntaxAwaitBranchKind>],
+) -> Result<AttachedAwaitBranchBlock, SyntaxAccessError> {
+    let syntax = owner
+        .required_exact_child::<BlockKind>(SyntaxRole::Body)
+        .map_err(SyntaxAccessError::from)?;
+    let open = syntax
+        .required_exact_child::<OpenBraceKind>(SyntaxRole::OpenDelimiter)
+        .map_err(SyntaxAccessError::from)?;
+    let close = syntax
+        .required_exact_child::<CloseBraceKind>(SyntaxRole::CloseDelimiter)
+        .map_err(SyntaxAccessError::from)?;
+    let branches = syntax.ordered_exact_children::<AwaitWithBranchKind>(SyntaxRoleClass::Branch)?;
+    if branches.len() != projections.len()
+        || syntax.syntax().children().iter().any(|child| {
+            !matches!(
+                child.role(),
+                SyntaxRole::OpenDelimiter | SyntaxRole::CloseDelimiter | SyntaxRole::Branch(_)
+            )
+        })
+    {
+        return Err(SyntaxAccessError::InvalidExpressionProjection { id: owner.id() });
+    }
+    let branches = branches
+        .into_iter()
+        .zip(projections.iter().copied())
+        .map(|(syntax, kind)| {
+            let body = required_nested_thread_flow_body(&syntax)?;
+            if kind.is_some() {
+                let pattern = syntax
+                    .required_family_child::<PatternFamily>(SyntaxRole::Pattern)?
+                    .semantic()?;
+                if syntax
+                    .syntax()
+                    .optional_unique_child(SyntaxRole::Recovery(0))?
+                    .is_some()
+                {
+                    return Err(SyntaxAccessError::InvalidExpressionProjection { id: owner.id() });
+                }
+                Ok(AttachedAwaitBranch {
+                    pattern: Some(pattern),
+                    syntax,
+                    kind,
+                    recovery: None,
+                    body,
+                })
+            } else {
+                let recovery =
+                    syntax.required_exact_child::<ErrorNodeKind>(SyntaxRole::Recovery(0))?;
+                Ok(AttachedAwaitBranch {
+                    recovery: Some(recovery),
+                    syntax,
+                    kind: None,
+                    pattern: None,
+                    body,
+                })
+            }
+        })
+        .collect::<Result<Vec<_>, SyntaxAccessError>>()?
+        .into_boxed_slice();
+    Ok(AttachedAwaitBranchBlock {
+        syntax,
+        open,
+        branches,
+        close,
+    })
 }
 
 impl FamilyNode<ExpressionFamily> {

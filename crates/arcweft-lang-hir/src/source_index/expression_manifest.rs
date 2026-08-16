@@ -1166,6 +1166,11 @@ pub(crate) fn expression_component_role(
         ExpressionComponentRole::LeftOperand => Some(HirExprSourceRole::LeftOperand),
         ExpressionComponentRole::RightOperand => Some(HirExprSourceRole::RightOperand),
         ExpressionComponentRole::Operand => Some(HirExprSourceRole::Operand),
+        // `with` owns the Await branch attachment; its delimiter/keyword is
+        // syntax identity, while each nested branch body is staged through
+        // its expression-owned scope and has no duplicate scalar role here.
+        ExpressionComponentRole::AwaitWith => None,
+        ExpressionComponentRole::AwaitBranch { .. } => None,
         ExpressionComponentRole::RangeStart => Some(HirExprSourceRole::RangeStart),
         ExpressionComponentRole::RangeEnd => Some(HirExprSourceRole::RangeEnd),
         ExpressionComponentRole::RangeInclusiveMarker => {

@@ -1,6 +1,5 @@
 use arcweft_agent_runner::effect_policy::AgentEffectRegistry;
 use arcweft_agent_runner::session::{AgentSession, RagService};
-use arcweft_core::bytecode::BytecodeVerificationBudget;
 use arcweft_debug_model::sink::DebugEventSink;
 use arcweft_lang_sema::{
     env::TypeCheckEnv,
@@ -13,8 +12,8 @@ use crate::binding::{
     live_binding_prelude,
 };
 use crate::cell::{
-    CommittedReplCell, ReplBytecodeStats, ReplCellExecutionStatus, ReplCellFilter, ReplCellId,
-    ReplCellInput, ReplCellList, ReplCellRecord, ReplEvaluateOutcome, ReplResetOptions,
+    CommittedReplCell, ReplCellExecutionStatus, ReplCellFilter, ReplCellId, ReplCellInput,
+    ReplCellList, ReplCellRecord, ReplEvaluateOutcome, ReplProgramStats, ReplResetOptions,
     ReplResetOutcome, ReplUndoOptions, ReplUndoOutcome,
 };
 use crate::compile::{CompiledReplCell, compile_repl_cell};
@@ -73,7 +72,7 @@ struct ValidatedReplCell {
     cell_id: ReplCellId,
     parsed: ParsedReplCell,
     compiled: CompiledReplCell,
-    bytecode_stats: ReplBytecodeStats,
+    program_stats: ReplProgramStats,
     verified_effects: Vec<String>,
     commit_hash: String,
 }
@@ -194,9 +193,8 @@ impl ReplSession {
         compiled
             .artifact
             .bundle
-            .bytecode
-            .program
-            .verify(BytecodeVerificationBudget::default())
+            .product_awbc()
+            .verify_product_executable()
             .map_err(|error| ReplTransactionError::Verifier {
                 message: error.to_string(),
             })?;
@@ -223,7 +221,13 @@ impl ReplSession {
                 ),
             });
         }
-        let stats = ReplBytecodeStats::from(compiled.artifact.bundle.bytecode.program.stats());
+        let runtime = &compiled.artifact.bundle.manifest.runtime;
+        let stats = ReplProgramStats {
+            flows: runtime.flows,
+            instructions: runtime.bytecode_instructions,
+            line_task_groups: runtime.line_task_groups,
+            stream_plans: runtime.stream_plans,
+        };
         let verified_effects = compiled
             .artifact
             .manifest
@@ -246,14 +250,13 @@ impl ReplSession {
             cell_id,
             parsed,
             compiled,
-            bytecode_stats: stats,
+            program_stats: stats,
             verified_effects,
             commit_hash,
         })
     }
 
     fn commit_validated_cell(&mut self, validated: ValidatedReplCell) -> usize {
-        let bytecode = validated.compiled.artifact.bundle.bytecode.program.clone();
         let entry = Some(
             arcweft_core::plan::EntryRuntimeId::from_source_entity_body(
                 validated.compiled.artifact.manifest.entry_id.as_str(),
@@ -271,12 +274,12 @@ impl ReplSession {
             self.generation,
             validated.commit_hash,
             entry,
-            validated.bytecode_stats,
+            validated.program_stats,
             validated.verified_effects,
             validated.compiled.bindings,
         );
         let bundle = validated.compiled.artifact.bundle;
-        let committed = CommittedReplCell::new(record.clone(), bytecode, bundle);
+        let committed = CommittedReplCell::new(record.clone(), bundle);
         self.cells.push(committed);
         self.bindings.extend(record.bindings.clone());
         self.next_ordinal = self.next_ordinal.saturating_add(1);
@@ -443,7 +446,6 @@ impl ReplSession {
                 source_hash: cell.record.source_hash.clone(),
                 synthetic_controller_name: cell.record.synthetic_controller_name.clone(),
                 entry: cell.record.entry.clone(),
-                bytecode: cell.bytecode.clone(),
             })
             .collect();
         ReplExecutableSnapshot {

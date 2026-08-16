@@ -1,4 +1,5 @@
-use super::{RuntimeBinding, RuntimeEnv, RuntimeExactInteger, RuntimeScope, RuntimeValue};
+use super::{RuntimeEnv, RuntimeLocalBinding, RuntimeRecordFieldId, RuntimeScope, RuntimeValue};
+use crate::runtime_id::RuntimeLocalDeclarationId;
 
 impl Default for RuntimeEnv {
     fn default() -> Self {
@@ -50,47 +51,48 @@ impl RuntimeEnv {
         }
     }
 
-    pub fn set(&mut self, name: impl Into<String>, value: RuntimeValue) {
+    pub fn set(&mut self, local: RuntimeLocalDeclarationId, value: RuntimeValue) {
         if let Some(scope) = self.scopes.last_mut() {
-            scope.set(name.into(), value);
+            scope.set(local, value);
         }
     }
 
-    pub(crate) fn set_ref(&mut self, name: &str, value: &RuntimeValue) {
+    pub(crate) fn set_ref(&mut self, local: RuntimeLocalDeclarationId, value: &RuntimeValue) {
         if let Some(scope) = self.scopes.last_mut() {
-            scope.set_ref(name, value);
+            scope.set_ref(local, value);
         }
     }
 
-    pub fn set_root(&mut self, name: impl Into<String>, value: RuntimeValue) {
+    pub fn set_root(&mut self, local: RuntimeLocalDeclarationId, value: RuntimeValue) {
+        self.ensure_root_scope();
         if let Some(scope) = self.scopes.first_mut() {
-            scope.set(name.into(), value);
+            scope.set(local, value);
         }
     }
 
-    pub fn get(&self, name: &str) -> Option<&RuntimeValue> {
-        self.scopes.iter().rev().find_map(|scope| scope.get(name))
+    pub fn get(&self, local: RuntimeLocalDeclarationId) -> Option<&RuntimeValue> {
+        self.scopes.iter().rev().find_map(|scope| scope.get(local))
     }
 
-    pub(crate) fn get_cloned(&self, name: &str) -> Option<RuntimeValue> {
-        self.get(name).cloned()
+    pub(crate) fn get_cloned(&self, local: RuntimeLocalDeclarationId) -> Option<RuntimeValue> {
+        self.get(local).cloned()
     }
 
     pub(crate) fn set_record_field(
         &mut self,
-        binding_name: &str,
-        field_name: &str,
+        local: RuntimeLocalDeclarationId,
+        field: RuntimeRecordFieldId,
         value: RuntimeValue,
     ) -> Result<(), RuntimeValue> {
         for scope in self.scopes.iter_mut().rev() {
-            if let Some(binding) = scope.binding_mut(binding_name) {
-                return set_runtime_record_field(&mut binding.value, field_name, value);
+            if let Some(binding) = scope.binding_mut(local) {
+                return set_runtime_record_field(&mut binding.value, field, value);
             }
         }
-        Err(RuntimeValue::String(binding_name.to_owned()))
+        Err(value)
     }
 
-    pub fn bindings_snapshot(&self) -> Vec<RuntimeBinding> {
+    pub fn bindings_snapshot(&self) -> Vec<RuntimeLocalBinding> {
         self.scopes
             .iter()
             .flat_map(|scope| scope.bindings.iter().cloned())
@@ -99,7 +101,7 @@ impl RuntimeEnv {
 
     pub(crate) fn replace_scopes_with_bindings(
         &mut self,
-        scopes: impl IntoIterator<Item = Vec<RuntimeBinding>>,
+        scopes: impl IntoIterator<Item = Vec<RuntimeLocalBinding>>,
     ) {
         self.spare_scopes
             .extend(self.scopes.drain(..).map(|mut scope| {
@@ -115,7 +117,7 @@ impl RuntimeEnv {
             scope.clear();
             scope.reserve_bindings(bindings.len());
             for binding in bindings {
-                scope.set(binding.name, binding.value);
+                scope.set(binding.local, binding.value);
             }
             self.scopes.push(scope);
         }
@@ -125,34 +127,34 @@ impl RuntimeEnv {
         }
     }
 
-    pub fn bind_all(&mut self, bindings: impl IntoIterator<Item = RuntimeBinding>) {
+    pub fn bind_all(&mut self, bindings: impl IntoIterator<Item = RuntimeLocalBinding>) {
         for binding in bindings {
-            self.set(binding.name, binding.value);
+            self.set(binding.local, binding.value);
         }
     }
 
-    pub(crate) fn bind_all_ref(&mut self, bindings: &[RuntimeBinding]) {
+    pub(crate) fn bind_all_ref(&mut self, bindings: &[RuntimeLocalBinding]) {
         for binding in bindings {
-            self.set_ref(&binding.name, &binding.value);
+            self.set_ref(binding.local, &binding.value);
         }
     }
 
-    pub fn bind_all_root(&mut self, bindings: impl IntoIterator<Item = RuntimeBinding>) {
+    pub fn bind_all_root(&mut self, bindings: impl IntoIterator<Item = RuntimeLocalBinding>) {
         for binding in bindings {
-            self.set_root(binding.name, binding.value);
+            self.set_root(binding.local, binding.value);
         }
     }
 
-    pub fn bind_all_root_ref(&mut self, bindings: &[RuntimeBinding]) {
+    pub fn bind_all_root_ref(&mut self, bindings: &[RuntimeLocalBinding]) {
         if self.replace_root_bindings_ref(bindings) {
             return;
         }
         for binding in bindings {
-            self.set_root_ref(&binding.name, &binding.value);
+            self.set_root_ref(binding.local, &binding.value);
         }
     }
 
-    fn replace_root_bindings_ref(&mut self, bindings: &[RuntimeBinding]) -> bool {
+    fn replace_root_bindings_ref(&mut self, bindings: &[RuntimeLocalBinding]) -> bool {
         if self.scopes.is_empty() {
             return bindings.is_empty();
         }
@@ -161,80 +163,16 @@ impl RuntimeEnv {
             .is_some_and(|scope| scope.replace_binding_values_ref(bindings))
     }
 
-    fn set_root_ref(&mut self, name: &str, value: &RuntimeValue) {
-        if self.scopes.is_empty() {
-            self.scopes.push(RuntimeScope::default());
-        }
+    fn set_root_ref(&mut self, local: RuntimeLocalDeclarationId, value: &RuntimeValue) {
+        self.ensure_root_scope();
         if let Some(scope) = self.scopes.first_mut() {
-            scope.set_ref(name, value);
+            scope.set_ref(local, value);
         }
     }
 
-    pub(crate) fn replace_root_i64_bindings(&mut self, input_names: &[String], args: &[i64]) {
+    fn ensure_root_scope(&mut self) {
         if self.scopes.is_empty() {
             self.scopes.push(RuntimeScope::default());
-        }
-        self.scopes.truncate(1);
-        if let Some(scope) = self.scopes.first_mut() {
-            scope.replace_i64_bindings(input_names, args);
-        }
-    }
-
-    pub(crate) fn replace_root_i32_bindings(&mut self, input_names: &[String], args: &[i32]) {
-        if self.scopes.is_empty() {
-            self.scopes.push(RuntimeScope::default());
-        }
-        self.scopes.truncate(1);
-        if let Some(scope) = self.scopes.first_mut() {
-            scope.replace_i32_bindings(input_names, args);
-        }
-    }
-
-    pub(crate) fn replace_root_f32_bindings(&mut self, input_names: &[String], args: &[f32]) {
-        if self.scopes.is_empty() {
-            self.scopes.push(RuntimeScope::default());
-        }
-        self.scopes.truncate(1);
-        if let Some(scope) = self.scopes.first_mut() {
-            scope.replace_f32_bindings(input_names, args);
-        }
-    }
-
-    pub(crate) fn replace_root_f64_bindings(&mut self, input_names: &[String], args: &[f64]) {
-        if self.scopes.is_empty() {
-            self.scopes.push(RuntimeScope::default());
-        }
-        self.scopes.truncate(1);
-        if let Some(scope) = self.scopes.first_mut() {
-            scope.replace_f64_bindings(input_names, args);
-        }
-    }
-
-    pub(crate) fn replace_root_exact_int_bindings<T: RuntimeExactInteger>(
-        &mut self,
-        input_names: &[String],
-        args: &[T],
-    ) {
-        if self.scopes.is_empty() {
-            self.scopes.push(RuntimeScope::default());
-        }
-        self.scopes.truncate(1);
-        if let Some(scope) = self.scopes.first_mut() {
-            scope.replace_exact_int_bindings(input_names, args);
-        }
-    }
-
-    pub(crate) fn replace_root_value_bindings_ref(
-        &mut self,
-        input_names: &[String],
-        args: &[RuntimeValue],
-    ) {
-        if self.scopes.is_empty() {
-            self.scopes.push(RuntimeScope::default());
-        }
-        self.scopes.truncate(1);
-        if let Some(scope) = self.scopes.first_mut() {
-            scope.replace_value_bindings_ref(input_names, args);
         }
     }
 }
@@ -251,230 +189,135 @@ impl RuntimeScope {
         self.bindings.reserve(additional);
     }
 
-    fn set(&mut self, name: String, value: RuntimeValue) {
-        if let Some(binding) = self
-            .bindings
-            .iter_mut()
-            .find(|binding| binding.name == name)
-        {
+    fn set(&mut self, local: RuntimeLocalDeclarationId, value: RuntimeValue) {
+        if let Some(binding) = self.binding_mut(local) {
             binding.value = value;
         } else {
-            self.bindings.push(RuntimeBinding { name, value });
+            self.bindings.push(RuntimeLocalBinding { local, value });
         }
     }
 
-    fn set_ref(&mut self, name: &str, value: &RuntimeValue) {
-        if let Some(binding) = self
-            .bindings
-            .iter_mut()
-            .find(|binding| binding.name == name)
-        {
-            binding.value = value.clone();
-        } else {
-            self.bindings.push(RuntimeBinding {
-                name: name.to_owned(),
-                value: value.clone(),
-            });
-        }
+    fn set_ref(&mut self, local: RuntimeLocalDeclarationId, value: &RuntimeValue) {
+        self.set(local, value.clone());
     }
 
-    fn get(&self, name: &str) -> Option<&RuntimeValue> {
+    fn get(&self, local: RuntimeLocalDeclarationId) -> Option<&RuntimeValue> {
         self.bindings
             .iter()
             .rev()
-            .find(|binding| binding.name == name)
+            .find(|binding| binding.local == local)
             .map(|binding| &binding.value)
     }
 
-    fn binding_mut(&mut self, name: &str) -> Option<&mut RuntimeBinding> {
+    fn binding_mut(
+        &mut self,
+        local: RuntimeLocalDeclarationId,
+    ) -> Option<&mut RuntimeLocalBinding> {
         self.bindings
             .iter_mut()
             .rev()
-            .find(|binding| binding.name == name)
+            .find(|binding| binding.local == local)
     }
 
     fn clear(&mut self) {
         self.bindings.clear();
     }
 
-    fn replace_i64_bindings(&mut self, input_names: &[String], args: &[i64]) {
-        if self.bindings.len() == input_names.len()
-            && self
+    fn replace_binding_values_ref(&mut self, bindings: &[RuntimeLocalBinding]) -> bool {
+        if self.bindings.len() != bindings.len()
+            || !self
                 .bindings
                 .iter()
-                .zip(input_names)
-                .all(|(binding, name)| binding.name == *name)
-        {
-            self.bindings
-                .iter_mut()
-                .zip(args.iter().copied())
-                .for_each(|(binding, value)| binding.value = RuntimeValue::i64(value));
-            return;
-        }
-        self.bindings.clear();
-        self.bindings.extend(
-            input_names
-                .iter()
-                .zip(args.iter().copied())
-                .map(|(name, value)| RuntimeBinding {
-                    name: name.clone(),
-                    value: RuntimeValue::i64(value),
-                }),
-        );
-    }
-
-    fn replace_i32_bindings(&mut self, input_names: &[String], args: &[i32]) {
-        if self.bindings.len() == input_names.len()
-            && self
-                .bindings
-                .iter()
-                .zip(input_names)
-                .all(|(binding, name)| binding.name == *name)
-        {
-            self.bindings
-                .iter_mut()
-                .zip(args.iter().copied())
-                .for_each(|(binding, value)| binding.value = RuntimeValue::i32(value));
-            return;
-        }
-        self.bindings.clear();
-        self.bindings.extend(
-            input_names
-                .iter()
-                .zip(args.iter().copied())
-                .map(|(name, value)| RuntimeBinding {
-                    name: name.clone(),
-                    value: RuntimeValue::i32(value),
-                }),
-        );
-    }
-
-    fn replace_f32_bindings(&mut self, input_names: &[String], args: &[f32]) {
-        self.replace_float_bindings(input_names, args, RuntimeValue::F32);
-    }
-
-    fn replace_f64_bindings(&mut self, input_names: &[String], args: &[f64]) {
-        self.replace_float_bindings(input_names, args, RuntimeValue::F64);
-    }
-
-    fn replace_float_bindings<T: Copy>(
-        &mut self,
-        input_names: &[String],
-        args: &[T],
-        wrap: impl Fn(T) -> RuntimeValue,
-    ) {
-        if self.bindings.len() == input_names.len()
-            && self
-                .bindings
-                .iter()
-                .zip(input_names)
-                .all(|(binding, name)| binding.name == *name)
-        {
-            self.bindings
-                .iter_mut()
-                .zip(args.iter().copied())
-                .for_each(|(binding, value)| binding.value = wrap(value));
-            return;
-        }
-        self.bindings.clear();
-        self.bindings.extend(
-            input_names
-                .iter()
-                .zip(args.iter().copied())
-                .map(|(name, value)| RuntimeBinding {
-                    name: name.clone(),
-                    value: wrap(value),
-                }),
-        );
-    }
-
-    fn replace_exact_int_bindings<T: RuntimeExactInteger>(
-        &mut self,
-        input_names: &[String],
-        args: &[T],
-    ) {
-        if self.bindings.len() == input_names.len()
-            && self
-                .bindings
-                .iter()
-                .zip(input_names)
-                .all(|(binding, name)| binding.name == *name)
-        {
-            self.bindings
-                .iter_mut()
-                .zip(args.iter().copied())
-                .for_each(|(binding, value)| binding.value = value.into_runtime_value());
-            return;
-        }
-        self.bindings.clear();
-        self.bindings.extend(
-            input_names
-                .iter()
-                .zip(args.iter().copied())
-                .map(|(name, value)| RuntimeBinding {
-                    name: name.clone(),
-                    value: value.into_runtime_value(),
-                }),
-        );
-    }
-
-    fn replace_value_bindings_ref(&mut self, input_names: &[String], args: &[RuntimeValue]) {
-        if self.bindings.len() == input_names.len()
-            && self
-                .bindings
-                .iter()
-                .zip(input_names)
-                .all(|(binding, name)| binding.name == *name)
-        {
-            self.bindings
-                .iter_mut()
-                .zip(args)
-                .for_each(|(binding, value)| binding.value = value.clone());
-            return;
-        }
-        self.bindings.clear();
-        self.bindings.extend(
-            input_names
-                .iter()
-                .zip(args)
-                .map(|(name, value)| RuntimeBinding {
-                    name: name.clone(),
-                    value: value.clone(),
-                }),
-        );
-    }
-
-    fn replace_binding_values_ref(&mut self, bindings: &[RuntimeBinding]) -> bool {
-        if self.bindings.len() != bindings.len() {
-            return false;
-        }
-        if !self
-            .bindings
-            .iter()
-            .zip(bindings)
-            .all(|(current, next)| current.name == next.name)
+                .zip(bindings)
+                .all(|(current, next)| current.local == next.local)
         {
             return false;
         }
-        self.bindings
-            .iter_mut()
-            .zip(bindings)
-            .for_each(|(current, next)| current.value = next.value.clone());
+        for (current, next) in self.bindings.iter_mut().zip(bindings) {
+            current.value = next.value.clone();
+        }
         true
     }
 }
 
 fn set_runtime_record_field(
     target: &mut RuntimeValue,
-    field_name: &str,
+    field: RuntimeRecordFieldId,
     value: RuntimeValue,
 ) -> Result<(), RuntimeValue> {
-    let RuntimeValue::Record(fields) = target else {
-        return Err(target.clone());
+    let RuntimeValue::NominalRecord(record) = target else {
+        return Err(value);
     };
-    let Some(field) = fields.iter_mut().find(|field| field.name() == field_name) else {
-        return Err(RuntimeValue::Record(fields.clone()));
-    };
-    *field.value_mut() = value;
-    Ok(())
+    record.replace_field(field, value)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::entry::{RuntimeNominalTypeId, TypeLayoutHash};
+    use crate::value::RuntimeNominalRecordValue;
+    use std::num::NonZeroU32;
+
+    fn local(ordinal: u32) -> RuntimeLocalDeclarationId {
+        RuntimeLocalDeclarationId::from_accepted_ordinal(NonZeroU32::new(ordinal).unwrap())
+    }
+
+    #[test]
+    fn scopes_resolve_plan_local_ids_without_names() {
+        let root = local(1);
+        let shadow = local(2);
+        let mut env = RuntimeEnv::default();
+        env.set_root(root, RuntimeValue::Bool(true));
+        env.push_scope();
+        env.set(shadow, RuntimeValue::String("inner".to_owned()));
+
+        assert_eq!(env.get(root), Some(&RuntimeValue::Bool(true)));
+        assert_eq!(
+            env.get(shadow),
+            Some(&RuntimeValue::String("inner".to_owned()))
+        );
+        assert_eq!(
+            env.bindings_snapshot(),
+            vec![
+                RuntimeLocalBinding {
+                    local: root,
+                    value: RuntimeValue::Bool(true),
+                },
+                RuntimeLocalBinding {
+                    local: shadow,
+                    value: RuntimeValue::String("inner".to_owned()),
+                },
+            ]
+        );
+    }
+
+    #[test]
+    fn field_assignment_uses_nominal_defining_order_identity() {
+        let local = local(1);
+        let field = RuntimeRecordFieldId::from_accepted_zero_based(1).unwrap();
+        let mut env = RuntimeEnv::default();
+        env.set(
+            local,
+            RuntimeValue::NominalRecord(RuntimeNominalRecordValue::new(
+                RuntimeNominalTypeId::try_new("game.Pair").unwrap(),
+                TypeLayoutHash::from_bytes([9; 32]),
+                vec![
+                    RuntimeValue::Bool(true),
+                    RuntimeValue::String("old".to_owned()),
+                ],
+            )),
+        );
+
+        assert_eq!(
+            env.set_record_field(local, field, RuntimeValue::String("new".to_owned())),
+            Ok(())
+        );
+        let Some(RuntimeValue::NominalRecord(record)) = env.get(local) else {
+            panic!("nominal record remains bound");
+        };
+        assert_eq!(
+            record.field(field),
+            Some(&RuntimeValue::String("new".to_owned()))
+        );
+    }
 }

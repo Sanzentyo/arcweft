@@ -10,7 +10,7 @@ use super::{
     DenseMatrixF32, DenseMatrixF64, DenseTensorF32, DenseTensorF64, RuntimeEvalError,
     RuntimeExactInteger, RuntimeFloat32Args, RuntimeFloat64Args, RuntimeI32Args, RuntimeI64Args,
     RuntimeIntrinsic, RuntimeMathCallBackend, RuntimePureAccelerator, RuntimePureBackendMode,
-    RuntimePureCacheEntry, RuntimePureCallBackend, RuntimePureCallStats, RuntimePureHelper,
+    RuntimePureCacheEntry, RuntimePureCallBackend, RuntimePureCallStats, RuntimePureHelperRef,
     RuntimePureInputType, RuntimePureOutputType, RuntimePureScalarInteger, RuntimeValue,
     call_jit_exact_int_flat_batch, call_jit_exact_int_flat_batch_sum, call_jit_exact_int_slice,
     inference,
@@ -19,7 +19,7 @@ use super::{
 impl RuntimePureCallBackend for RuntimePureAccelerator {
     fn call_i8_slice(
         &mut self,
-        helper: &RuntimePureHelper,
+        helper: RuntimePureHelperRef<'_>,
         args: &[i8],
     ) -> Result<Option<i8>, RuntimeEvalError> {
         if let Some(RuntimePureCacheEntry::JitI8(compiled)) = cache_entry(&self.cache, helper.id) {
@@ -40,7 +40,7 @@ impl RuntimePureCallBackend for RuntimePureAccelerator {
 
     fn call_i8_flat_batch(
         &mut self,
-        helper: &RuntimePureHelper,
+        helper: RuntimePureHelperRef<'_>,
         flat_inputs: &[i8],
         arity: usize,
         out: &mut [i8],
@@ -72,7 +72,7 @@ impl RuntimePureCallBackend for RuntimePureAccelerator {
 
     fn call_i8_flat_batch_sum(
         &mut self,
-        helper: &RuntimePureHelper,
+        helper: RuntimePureHelperRef<'_>,
         flat_inputs: &[i8],
         arity: usize,
         rows: usize,
@@ -103,7 +103,7 @@ impl RuntimePureCallBackend for RuntimePureAccelerator {
 
     fn call_i16_slice(
         &mut self,
-        helper: &RuntimePureHelper,
+        helper: RuntimePureHelperRef<'_>,
         args: &[i16],
     ) -> Result<Option<i16>, RuntimeEvalError> {
         if let Some(RuntimePureCacheEntry::JitI16(compiled)) = cache_entry(&self.cache, helper.id) {
@@ -124,7 +124,7 @@ impl RuntimePureCallBackend for RuntimePureAccelerator {
 
     fn call_i16_flat_batch(
         &mut self,
-        helper: &RuntimePureHelper,
+        helper: RuntimePureHelperRef<'_>,
         flat_inputs: &[i16],
         arity: usize,
         out: &mut [i16],
@@ -156,7 +156,7 @@ impl RuntimePureCallBackend for RuntimePureAccelerator {
 
     fn call_i16_flat_batch_sum(
         &mut self,
-        helper: &RuntimePureHelper,
+        helper: RuntimePureHelperRef<'_>,
         flat_inputs: &[i16],
         arity: usize,
         rows: usize,
@@ -187,7 +187,7 @@ impl RuntimePureCallBackend for RuntimePureAccelerator {
 
     fn call_i128_flat_batch(
         &mut self,
-        helper: &RuntimePureHelper,
+        helper: RuntimePureHelperRef<'_>,
         flat_inputs: &[i128],
         arity: usize,
         out: &mut [i128],
@@ -221,7 +221,7 @@ impl RuntimePureCallBackend for RuntimePureAccelerator {
 
     fn call_i128_flat_batch_sum(
         &mut self,
-        helper: &RuntimePureHelper,
+        helper: RuntimePureHelperRef<'_>,
         flat_inputs: &[i128],
         arity: usize,
         rows: usize,
@@ -254,7 +254,7 @@ impl RuntimePureCallBackend for RuntimePureAccelerator {
 
     fn call_i32(
         &mut self,
-        helper: &RuntimePureHelper,
+        helper: RuntimePureHelperRef<'_>,
         args: RuntimeI32Args,
     ) -> Result<Option<i32>, RuntimeEvalError> {
         self.stats.arg_stack_packs += 1;
@@ -264,7 +264,7 @@ impl RuntimePureCallBackend for RuntimePureAccelerator {
 
     fn call_i32_slice(
         &mut self,
-        helper: &RuntimePureHelper,
+        helper: RuntimePureHelperRef<'_>,
         args: &[i32],
     ) -> Result<Option<i32>, RuntimeEvalError> {
         self.call_i32_slice_with_accounting(helper, args, true)
@@ -272,7 +272,7 @@ impl RuntimePureCallBackend for RuntimePureAccelerator {
 
     fn call_i32_flat_batch(
         &mut self,
-        helper: &RuntimePureHelper,
+        helper: RuntimePureHelperRef<'_>,
         flat_inputs: &[i32],
         arity: usize,
         out: &mut [i32],
@@ -328,7 +328,7 @@ impl RuntimePureCallBackend for RuntimePureAccelerator {
 
     fn call_i32_flat_batch_sum(
         &mut self,
-        helper: &RuntimePureHelper,
+        helper: RuntimePureHelperRef<'_>,
         flat_inputs: &[i32],
         arity: usize,
         rows: usize,
@@ -384,7 +384,7 @@ impl RuntimePureCallBackend for RuntimePureAccelerator {
 
     fn call_u32_slice(
         &mut self,
-        helper: &RuntimePureHelper,
+        helper: RuntimePureHelperRef<'_>,
         args: &[u32],
     ) -> Result<Option<u32>, RuntimeEvalError> {
         validate_exact_int_slice_shape::<u32>(helper, args.len())?;
@@ -423,18 +423,22 @@ impl RuntimePureCallBackend for RuntimePureAccelerator {
                 self.compile_stats.cache_hits += 1;
                 self.stats.vm_calls += 1;
                 self.stats.fallbacks += 1;
-                let value = self
-                    .vm_scratch
-                    .evaluate_exact_int_slice::<u32>(helper, args)?;
+                let value = self.vm_scratch.evaluate_exact_int_slice::<u32>(
+                    helper.plan(),
+                    helper.id(),
+                    args,
+                )?;
                 u32::try_from_runtime_value(&helper.name, value).map(Some)
             }
             None => {
                 self.compile_stats.cache_misses += 1;
                 self.stats.vm_calls += 1;
                 self.stats.fallbacks += 1;
-                let value = self
-                    .vm_scratch
-                    .evaluate_exact_int_slice::<u32>(helper, args)?;
+                let value = self.vm_scratch.evaluate_exact_int_slice::<u32>(
+                    helper.plan(),
+                    helper.id(),
+                    args,
+                )?;
                 u32::try_from_runtime_value(&helper.name, value).map(Some)
             }
         }
@@ -442,7 +446,7 @@ impl RuntimePureCallBackend for RuntimePureAccelerator {
 
     fn call_u8_slice(
         &mut self,
-        helper: &RuntimePureHelper,
+        helper: RuntimePureHelperRef<'_>,
         args: &[u8],
     ) -> Result<Option<u8>, RuntimeEvalError> {
         if let Some(RuntimePureCacheEntry::JitU8(compiled)) = cache_entry(&self.cache, helper.id) {
@@ -463,7 +467,7 @@ impl RuntimePureCallBackend for RuntimePureAccelerator {
 
     fn call_u8_flat_batch(
         &mut self,
-        helper: &RuntimePureHelper,
+        helper: RuntimePureHelperRef<'_>,
         flat_inputs: &[u8],
         arity: usize,
         out: &mut [u8],
@@ -495,7 +499,7 @@ impl RuntimePureCallBackend for RuntimePureAccelerator {
 
     fn call_u8_flat_batch_sum(
         &mut self,
-        helper: &RuntimePureHelper,
+        helper: RuntimePureHelperRef<'_>,
         flat_inputs: &[u8],
         arity: usize,
         rows: usize,
@@ -526,7 +530,7 @@ impl RuntimePureCallBackend for RuntimePureAccelerator {
 
     fn call_u16_slice(
         &mut self,
-        helper: &RuntimePureHelper,
+        helper: RuntimePureHelperRef<'_>,
         args: &[u16],
     ) -> Result<Option<u16>, RuntimeEvalError> {
         if let Some(RuntimePureCacheEntry::JitU16(compiled)) = cache_entry(&self.cache, helper.id) {
@@ -547,7 +551,7 @@ impl RuntimePureCallBackend for RuntimePureAccelerator {
 
     fn call_u16_flat_batch(
         &mut self,
-        helper: &RuntimePureHelper,
+        helper: RuntimePureHelperRef<'_>,
         flat_inputs: &[u16],
         arity: usize,
         out: &mut [u16],
@@ -579,7 +583,7 @@ impl RuntimePureCallBackend for RuntimePureAccelerator {
 
     fn call_u16_flat_batch_sum(
         &mut self,
-        helper: &RuntimePureHelper,
+        helper: RuntimePureHelperRef<'_>,
         flat_inputs: &[u16],
         arity: usize,
         rows: usize,
@@ -610,7 +614,7 @@ impl RuntimePureCallBackend for RuntimePureAccelerator {
 
     fn call_u32_flat_batch(
         &mut self,
-        helper: &RuntimePureHelper,
+        helper: RuntimePureHelperRef<'_>,
         flat_inputs: &[u32],
         arity: usize,
         out: &mut [u32],
@@ -666,7 +670,7 @@ impl RuntimePureCallBackend for RuntimePureAccelerator {
 
     fn call_u32_flat_batch_sum(
         &mut self,
-        helper: &RuntimePureHelper,
+        helper: RuntimePureHelperRef<'_>,
         flat_inputs: &[u32],
         arity: usize,
         rows: usize,
@@ -734,7 +738,7 @@ impl RuntimePureCallBackend for RuntimePureAccelerator {
 
     fn call_u64_slice(
         &mut self,
-        helper: &RuntimePureHelper,
+        helper: RuntimePureHelperRef<'_>,
         args: &[u64],
     ) -> Result<Option<u64>, RuntimeEvalError> {
         validate_exact_int_slice_shape::<u64>(helper, args.len())?;
@@ -773,18 +777,22 @@ impl RuntimePureCallBackend for RuntimePureAccelerator {
                 self.compile_stats.cache_hits += 1;
                 self.stats.vm_calls += 1;
                 self.stats.fallbacks += 1;
-                let value = self
-                    .vm_scratch
-                    .evaluate_exact_int_slice::<u64>(helper, args)?;
+                let value = self.vm_scratch.evaluate_exact_int_slice::<u64>(
+                    helper.plan(),
+                    helper.id(),
+                    args,
+                )?;
                 u64::try_from_runtime_value(&helper.name, value).map(Some)
             }
             None => {
                 self.compile_stats.cache_misses += 1;
                 self.stats.vm_calls += 1;
                 self.stats.fallbacks += 1;
-                let value = self
-                    .vm_scratch
-                    .evaluate_exact_int_slice::<u64>(helper, args)?;
+                let value = self.vm_scratch.evaluate_exact_int_slice::<u64>(
+                    helper.plan(),
+                    helper.id(),
+                    args,
+                )?;
                 u64::try_from_runtime_value(&helper.name, value).map(Some)
             }
         }
@@ -792,7 +800,7 @@ impl RuntimePureCallBackend for RuntimePureAccelerator {
 
     fn call_u64_flat_batch(
         &mut self,
-        helper: &RuntimePureHelper,
+        helper: RuntimePureHelperRef<'_>,
         flat_inputs: &[u64],
         arity: usize,
         out: &mut [u64],
@@ -848,7 +856,7 @@ impl RuntimePureCallBackend for RuntimePureAccelerator {
 
     fn call_u64_flat_batch_sum(
         &mut self,
-        helper: &RuntimePureHelper,
+        helper: RuntimePureHelperRef<'_>,
         flat_inputs: &[u64],
         arity: usize,
         rows: usize,
@@ -916,7 +924,7 @@ impl RuntimePureCallBackend for RuntimePureAccelerator {
 
     fn call_u128_flat_batch(
         &mut self,
-        helper: &RuntimePureHelper,
+        helper: RuntimePureHelperRef<'_>,
         flat_inputs: &[u128],
         arity: usize,
         out: &mut [u128],
@@ -972,7 +980,7 @@ impl RuntimePureCallBackend for RuntimePureAccelerator {
 
     fn call_u128_flat_batch_sum(
         &mut self,
-        helper: &RuntimePureHelper,
+        helper: RuntimePureHelperRef<'_>,
         flat_inputs: &[u128],
         arity: usize,
         rows: usize,
@@ -1040,7 +1048,7 @@ impl RuntimePureCallBackend for RuntimePureAccelerator {
 
     fn call_exact_int_flat_batch_sum<T: RuntimePureScalarInteger>(
         &mut self,
-        helper: &RuntimePureHelper,
+        helper: RuntimePureHelperRef<'_>,
         flat_inputs: &[T],
         arity: usize,
         rows: usize,
@@ -1110,7 +1118,7 @@ impl RuntimePureCallBackend for RuntimePureAccelerator {
 
     fn call_exact_int_slice<T: RuntimePureScalarInteger>(
         &mut self,
-        helper: &RuntimePureHelper,
+        helper: RuntimePureHelperRef<'_>,
         args: &[T],
     ) -> Result<Option<T>, RuntimeEvalError> {
         validate_exact_int_slice_shape::<T>(helper, args.len())?;
@@ -1146,18 +1154,22 @@ impl RuntimePureCallBackend for RuntimePureAccelerator {
                 self.compile_stats.cache_hits += 1;
                 self.stats.vm_calls += 1;
                 self.stats.fallbacks += 1;
-                let value = self
-                    .vm_scratch
-                    .evaluate_exact_int_slice::<T>(helper, args)?;
+                let value = self.vm_scratch.evaluate_exact_int_slice::<T>(
+                    helper.plan(),
+                    helper.id(),
+                    args,
+                )?;
                 T::try_from_runtime_value(&helper.name, value).map(Some)
             }
             None => {
                 self.compile_stats.cache_misses += 1;
                 self.stats.vm_calls += 1;
                 self.stats.fallbacks += 1;
-                let value = self
-                    .vm_scratch
-                    .evaluate_exact_int_slice::<T>(helper, args)?;
+                let value = self.vm_scratch.evaluate_exact_int_slice::<T>(
+                    helper.plan(),
+                    helper.id(),
+                    args,
+                )?;
                 T::try_from_runtime_value(&helper.name, value).map(Some)
             }
         }
@@ -1165,7 +1177,7 @@ impl RuntimePureCallBackend for RuntimePureAccelerator {
 
     fn call_exact_int_flat_batch<T: RuntimePureScalarInteger>(
         &mut self,
-        helper: &RuntimePureHelper,
+        helper: RuntimePureHelperRef<'_>,
         flat_inputs: &[T],
         arity: usize,
         out: &mut [T],
@@ -1222,7 +1234,7 @@ impl RuntimePureCallBackend for RuntimePureAccelerator {
 
     fn call_i64(
         &mut self,
-        helper: &RuntimePureHelper,
+        helper: RuntimePureHelperRef<'_>,
         args: RuntimeI64Args,
     ) -> Result<Option<i64>, RuntimeEvalError> {
         self.stats.pure_calls += 1;
@@ -1297,7 +1309,7 @@ impl RuntimePureCallBackend for RuntimePureAccelerator {
 
     fn call_i64_slice(
         &mut self,
-        helper: &RuntimePureHelper,
+        helper: RuntimePureHelperRef<'_>,
         args: &[i64],
     ) -> Result<Option<i64>, RuntimeEvalError> {
         if args.len() > RuntimeI64Args::MAX {
@@ -1379,7 +1391,7 @@ impl RuntimePureCallBackend for RuntimePureAccelerator {
 
     fn call_i64_batch(
         &mut self,
-        helper: &RuntimePureHelper,
+        helper: RuntimePureHelperRef<'_>,
         rows: &[RuntimeI64Args],
         out: &mut [i64],
     ) -> Result<(), RuntimeEvalError> {
@@ -1388,7 +1400,7 @@ impl RuntimePureCallBackend for RuntimePureAccelerator {
 
     fn call_i64_flat_batch(
         &mut self,
-        helper: &RuntimePureHelper,
+        helper: RuntimePureHelperRef<'_>,
         flat_inputs: &[i64],
         arity: usize,
         out: &mut [i64],
@@ -1398,7 +1410,7 @@ impl RuntimePureCallBackend for RuntimePureAccelerator {
 
     fn call_i64_flat_batch_sum(
         &mut self,
-        helper: &RuntimePureHelper,
+        helper: RuntimePureHelperRef<'_>,
         flat_inputs: &[i64],
         arity: usize,
         rows: usize,
@@ -1408,7 +1420,7 @@ impl RuntimePureCallBackend for RuntimePureAccelerator {
 
     fn call_i64_repeated_flat_batch_sum(
         &mut self,
-        helper: &RuntimePureHelper,
+        helper: RuntimePureHelperRef<'_>,
         row: &[i64],
         rows: usize,
     ) -> Result<i64, RuntimeEvalError> {
@@ -1417,7 +1429,7 @@ impl RuntimePureCallBackend for RuntimePureAccelerator {
 
     fn call_f32_slice(
         &mut self,
-        helper: &RuntimePureHelper,
+        helper: RuntimePureHelperRef<'_>,
         args: &[f32],
     ) -> Result<Option<f32>, RuntimeEvalError> {
         if args.len() > RuntimeFloat32Args::MAX {
@@ -1475,7 +1487,7 @@ impl RuntimePureCallBackend for RuntimePureAccelerator {
 
     fn call_f32_flat_batch(
         &mut self,
-        helper: &RuntimePureHelper,
+        helper: RuntimePureHelperRef<'_>,
         flat_inputs: &[f32],
         arity: usize,
         out: &mut [f32],
@@ -1539,7 +1551,7 @@ impl RuntimePureCallBackend for RuntimePureAccelerator {
 
     fn call_f64_slice(
         &mut self,
-        helper: &RuntimePureHelper,
+        helper: RuntimePureHelperRef<'_>,
         args: &[f64],
     ) -> Result<Option<f64>, RuntimeEvalError> {
         if args.len() > RuntimeFloat64Args::MAX {
@@ -1597,7 +1609,7 @@ impl RuntimePureCallBackend for RuntimePureAccelerator {
 
     fn call_f64_flat_batch(
         &mut self,
-        helper: &RuntimePureHelper,
+        helper: RuntimePureHelperRef<'_>,
         flat_inputs: &[f64],
         arity: usize,
         out: &mut [f64],
@@ -1661,14 +1673,15 @@ impl RuntimePureCallBackend for RuntimePureAccelerator {
 
     fn call_values(
         &mut self,
-        helper: &RuntimePureHelper,
+        helper: RuntimePureHelperRef<'_>,
         args: &[RuntimeValue],
     ) -> Result<RuntimeValue, RuntimeEvalError> {
         self.stats.pure_calls += 1;
         self.stats.vm_calls += 1;
         self.stats.fallbacks += 1;
         self.stats.arg_bytes_borrowed += std::mem::size_of_val(args);
-        self.vm_scratch.evaluate_values(helper, args)
+        self.vm_scratch
+            .evaluate_values(helper.plan(), helper.id(), args)
     }
 
     fn stats(&self) -> RuntimePureCallStats {

@@ -1,13 +1,15 @@
 use super::lower::{
     codegen_error, jit_module, lower_expr, lower_f32_expr, lower_f64_expr, lower_i32_expr,
-    lower_small_int_expr, lower_u32_expr, lower_u64_expr, small_int_bindings, validate_param_names,
+    lower_small_int_expr, lower_u32_expr, lower_u64_expr, small_int_bindings,
+    validate_input_locals,
 };
 use super::{
     AbiParam, BTreeMap, BlockArg, CraneliftCodegenError, DefinedPureSmallIntBatchInputs,
     DefinedPureSmallIntInputs, FuncId, FunctionBuilder, FunctionBuilderContext, InstBuilder, IntCC,
     Linkage, LoweredF32Binding, LoweredF64Binding, LoweredIntBinding, LoweredSmallIntBinding,
-    MemFlags, Module, PureFunctionRequest, PureFunctionStats, RuntimeExpr, SmallIntCompiledParts,
-    SmallIntKind, UserFuncName, Value, WideIntBatchCompiledParts, types,
+    MemFlags, Module, PureFunctionRequest, PureFunctionStats, RuntimeExpr,
+    RuntimeLocalDeclarationId, SmallIntCompiledParts, SmallIntKind, UserFuncName, Value,
+    WideIntBatchCompiledParts, request_helper, types,
 };
 
 pub(super) fn small_int_arity_error(kind: SmallIntKind, arity: usize) -> CraneliftCodegenError {
@@ -19,7 +21,7 @@ pub(super) fn small_int_arity_error(kind: SmallIntKind, arity: usize) -> Craneli
 
 pub(super) fn compile_small_int_with_inputs(
     request: &PureFunctionRequest,
-    param_names: impl IntoIterator<Item = impl Into<String>>,
+    input_locals: impl IntoIterator<Item = RuntimeLocalDeclarationId>,
     kind: SmallIntKind,
 ) -> Result<SmallIntCompiledParts, CraneliftCodegenError> {
     let mut module = jit_module()?;
@@ -27,7 +29,7 @@ pub(super) fn compile_small_int_with_inputs(
         &mut module,
         &format!("arcweft_pure_{}_helper_inputs", kind.label()),
         request,
-        param_names,
+        input_locals,
         kind,
     )?;
     module.finalize_definitions().map_err(codegen_error)?;
@@ -39,14 +41,14 @@ pub(super) fn compile_small_int_with_inputs(
         code,
         batch_code,
         batch_sum_code,
-        param_names: defined.param_names,
+        input_locals: defined.input_locals,
         stats: defined.stats,
     })
 }
 
 pub(super) fn compile_wide_int_batch_with_inputs(
     request: &PureFunctionRequest,
-    param_names: impl IntoIterator<Item = impl Into<String>>,
+    input_locals: impl IntoIterator<Item = RuntimeLocalDeclarationId>,
     kind: SmallIntKind,
 ) -> Result<WideIntBatchCompiledParts, CraneliftCodegenError> {
     debug_assert!(matches!(kind, SmallIntKind::I128 | SmallIntKind::U128));
@@ -55,7 +57,7 @@ pub(super) fn compile_wide_int_batch_with_inputs(
         &mut module,
         &format!("arcweft_pure_{}_helper_inputs", kind.label()),
         request,
-        param_names,
+        input_locals,
         kind,
     )?;
     module.finalize_definitions().map_err(codegen_error)?;
@@ -65,7 +67,7 @@ pub(super) fn compile_wide_int_batch_with_inputs(
         module,
         batch_code,
         batch_sum_code,
-        param_names: defined.param_names,
+        input_locals: defined.input_locals,
         stats: defined.stats,
     })
 }
@@ -74,23 +76,22 @@ pub(super) fn define_small_int_with_inputs<M>(
     module: &mut M,
     symbol_prefix: &str,
     request: &PureFunctionRequest,
-    param_names: impl IntoIterator<Item = impl Into<String>>,
+    input_locals: impl IntoIterator<Item = RuntimeLocalDeclarationId>,
     kind: SmallIntKind,
 ) -> Result<DefinedPureSmallIntInputs, CraneliftCodegenError>
 where
     M: Module,
 {
     debug_assert!(!matches!(kind, SmallIntKind::I128 | SmallIntKind::U128));
-    let param_names = param_names
+    let input_locals = input_locals
         .into_iter()
-        .map(Into::into)
-        .collect::<Vec<String>>();
-    validate_param_names(&param_names)?;
-    if param_names.len() > 4 {
+        .collect::<Vec<RuntimeLocalDeclarationId>>();
+    validate_input_locals(&input_locals)?;
+    if input_locals.len() > 4 {
         return Err(CraneliftCodegenError::UnsupportedExpr(format!(
             "Cranelift {} helper supports at most 4 runtime inputs, got {}",
             kind.label(),
-            param_names.len()
+            input_locals.len()
         )));
     }
 
@@ -100,7 +101,7 @@ where
     let mut signature = module.make_signature();
     signature
         .params
-        .extend(param_names.iter().map(|_| AbiParam::new(ty)));
+        .extend(input_locals.iter().map(|_| AbiParam::new(ty)));
     signature.returns.push(AbiParam::new(ty));
 
     let entry_name = format!("{symbol_prefix}_entry");
@@ -110,7 +111,7 @@ where
     ctx.func.signature = signature;
     ctx.func.name = UserFuncName::user(0, entry.as_u32());
 
-    let captured_bindings = small_int_bindings(&request.bindings, kind)?;
+    let captured_bindings = small_int_bindings(request.bindings(), kind)?;
     let mut bindings = captured_bindings.clone();
     let mut stats = PureFunctionStats::default();
     {
@@ -119,10 +120,16 @@ where
         builder.append_block_params_for_function_params(block);
         builder.switch_to_block(block);
         let params = builder.block_params(block);
-        for (name, value) in param_names.iter().zip(params.iter().copied()) {
-            bindings.insert(name.clone(), LoweredSmallIntBinding::Value(value));
+        for (name, value) in input_locals.iter().zip(params.iter().copied()) {
+            bindings.insert(*name, LoweredSmallIntBinding::Value(value));
         }
-        let value = lower_small_int_expr(&mut builder, &bindings, &request.expr, &mut stats, kind)?;
+        let value = lower_small_int_expr(
+            &mut builder,
+            &bindings,
+            &request_helper(request)?.expr,
+            &mut stats,
+            kind,
+        )?;
         builder.ins().return_(&[value]);
         builder.seal_all_blocks();
         builder.finalize();
@@ -135,17 +142,17 @@ where
     let batch = define_small_int_rows_batch_function(
         module,
         &format!("{symbol_prefix}_rows_batch"),
-        &request.expr,
+        &request_helper(request)?.expr,
         &captured_bindings,
-        &param_names,
+        &input_locals,
         kind,
     )?;
     let batch_sum = define_small_int_rows_batch_sum_function(
         module,
         &format!("{symbol_prefix}_rows_batch_sum"),
-        &request.expr,
+        &request_helper(request)?.expr,
         &captured_bindings,
-        &param_names,
+        &input_locals,
         kind,
     )?;
 
@@ -153,7 +160,7 @@ where
         entry,
         batch,
         batch_sum,
-        param_names,
+        input_locals,
         stats,
     })
 }
@@ -162,48 +169,47 @@ pub(super) fn define_small_int_batch_with_inputs<M>(
     module: &mut M,
     symbol_prefix: &str,
     request: &PureFunctionRequest,
-    param_names: impl IntoIterator<Item = impl Into<String>>,
+    input_locals: impl IntoIterator<Item = RuntimeLocalDeclarationId>,
     kind: SmallIntKind,
 ) -> Result<DefinedPureSmallIntBatchInputs, CraneliftCodegenError>
 where
     M: Module,
 {
     debug_assert!(matches!(kind, SmallIntKind::I128 | SmallIntKind::U128));
-    let param_names = param_names
+    let input_locals = input_locals
         .into_iter()
-        .map(Into::into)
-        .collect::<Vec<String>>();
-    validate_param_names(&param_names)?;
-    if param_names.len() > 4 {
+        .collect::<Vec<RuntimeLocalDeclarationId>>();
+    validate_input_locals(&input_locals)?;
+    if input_locals.len() > 4 {
         return Err(CraneliftCodegenError::UnsupportedExpr(format!(
             "Cranelift {} helper supports at most 4 runtime inputs, got {}",
             kind.label(),
-            param_names.len()
+            input_locals.len()
         )));
     }
 
-    let captured_bindings = small_int_bindings(&request.bindings, kind)?;
+    let captured_bindings = small_int_bindings(request.bindings(), kind)?;
     let batch = define_small_int_rows_batch_function(
         module,
         &format!("{symbol_prefix}_rows_batch"),
-        &request.expr,
+        &request_helper(request)?.expr,
         &captured_bindings,
-        &param_names,
+        &input_locals,
         kind,
     )?;
     let batch_sum = define_small_int_rows_batch_sum_function(
         module,
         &format!("{symbol_prefix}_rows_batch_sum"),
-        &request.expr,
+        &request_helper(request)?.expr,
         &captured_bindings,
-        &param_names,
+        &input_locals,
         kind,
     )?;
 
     Ok(DefinedPureSmallIntBatchInputs {
         batch,
         batch_sum,
-        param_names,
+        input_locals,
         stats: PureFunctionStats::default(),
     })
 }
@@ -212,8 +218,8 @@ pub(super) fn define_small_int_rows_batch_function<M>(
     module: &mut M,
     symbol_name: &str,
     expr: &RuntimeExpr,
-    captured_bindings: &BTreeMap<String, LoweredSmallIntBinding>,
-    param_names: &[String],
+    captured_bindings: &BTreeMap<RuntimeLocalDeclarationId, LoweredSmallIntBinding>,
+    input_locals: &[RuntimeLocalDeclarationId],
     kind: SmallIntKind,
 ) -> Result<FuncId, CraneliftCodegenError>
 where
@@ -269,16 +275,16 @@ where
 
         builder.switch_to_block(body_block);
         let mut bindings = captured_bindings.clone();
-        for (param_index, name) in param_names.iter().enumerate() {
+        for (param_index, name) in input_locals.iter().enumerate() {
             let value = load_small_int_batch_input(
                 &mut builder,
                 inputs_ptr,
                 row,
-                param_names.len(),
+                input_locals.len(),
                 param_index,
                 kind,
             );
-            bindings.insert(name.clone(), LoweredSmallIntBinding::Value(value));
+            bindings.insert(*name, LoweredSmallIntBinding::Value(value));
         }
         let value = lower_small_int_expr(&mut builder, &bindings, expr, &mut stats, kind)?;
         store_small_int_batch_output(&mut builder, out_ptr, row, value, kind);
@@ -303,8 +309,8 @@ pub(super) fn define_small_int_rows_batch_sum_function<M>(
     module: &mut M,
     symbol_name: &str,
     expr: &RuntimeExpr,
-    captured_bindings: &BTreeMap<String, LoweredSmallIntBinding>,
-    param_names: &[String],
+    captured_bindings: &BTreeMap<RuntimeLocalDeclarationId, LoweredSmallIntBinding>,
+    input_locals: &[RuntimeLocalDeclarationId],
     kind: SmallIntKind,
 ) -> Result<FuncId, CraneliftCodegenError>
 where
@@ -362,16 +368,16 @@ where
 
         builder.switch_to_block(body_block);
         let mut bindings = captured_bindings.clone();
-        for (param_index, name) in param_names.iter().enumerate() {
+        for (param_index, name) in input_locals.iter().enumerate() {
             let value = load_small_int_batch_input(
                 &mut builder,
                 inputs_ptr,
                 row,
-                param_names.len(),
+                input_locals.len(),
                 param_index,
                 kind,
             );
-            bindings.insert(name.clone(), LoweredSmallIntBinding::Value(value));
+            bindings.insert(*name, LoweredSmallIntBinding::Value(value));
         }
         let value = lower_small_int_expr(&mut builder, &bindings, expr, &mut stats, kind)?;
         let value = if kind.cranelift_type().bits() > 64 {
@@ -406,8 +412,8 @@ pub(super) fn define_i64_rows_batch_function<M>(
     module: &mut M,
     symbol_name: &str,
     expr: &RuntimeExpr,
-    captured_bindings: &BTreeMap<String, LoweredIntBinding>,
-    param_names: &[String],
+    captured_bindings: &BTreeMap<RuntimeLocalDeclarationId, LoweredIntBinding>,
+    input_locals: &[RuntimeLocalDeclarationId],
 ) -> Result<FuncId, CraneliftCodegenError>
 where
     M: Module,
@@ -462,15 +468,15 @@ where
 
         builder.switch_to_block(body_block);
         let mut bindings = captured_bindings.clone();
-        for (param_index, name) in param_names.iter().enumerate() {
+        for (param_index, name) in input_locals.iter().enumerate() {
             let value = load_batch_input(
                 &mut builder,
                 inputs_ptr,
                 row,
-                param_names.len(),
+                input_locals.len(),
                 param_index,
             );
-            bindings.insert(name.clone(), LoweredIntBinding::Value(value));
+            bindings.insert(*name, LoweredIntBinding::Value(value));
         }
         let value = lower_expr(&mut builder, &bindings, expr, &mut stats)?;
         store_batch_output(&mut builder, out_ptr, row, value);
@@ -495,8 +501,8 @@ pub(super) fn define_i64_rows_batch_sum_function<M>(
     module: &mut M,
     symbol_name: &str,
     expr: &RuntimeExpr,
-    captured_bindings: &BTreeMap<String, LoweredIntBinding>,
-    param_names: &[String],
+    captured_bindings: &BTreeMap<RuntimeLocalDeclarationId, LoweredIntBinding>,
+    input_locals: &[RuntimeLocalDeclarationId],
 ) -> Result<FuncId, CraneliftCodegenError>
 where
     M: Module,
@@ -553,15 +559,15 @@ where
 
         builder.switch_to_block(body_block);
         let mut bindings = captured_bindings.clone();
-        for (param_index, name) in param_names.iter().enumerate() {
+        for (param_index, name) in input_locals.iter().enumerate() {
             let value = load_batch_input(
                 &mut builder,
                 inputs_ptr,
                 row,
-                param_names.len(),
+                input_locals.len(),
                 param_index,
             );
-            bindings.insert(name.clone(), LoweredIntBinding::Value(value));
+            bindings.insert(*name, LoweredIntBinding::Value(value));
         }
         let value = lower_expr(&mut builder, &bindings, expr, &mut stats)?;
         let next_accumulator = builder.ins().iadd(accumulator, value);
@@ -589,8 +595,8 @@ pub(super) fn define_i32_rows_batch_function<M>(
     module: &mut M,
     symbol_name: &str,
     expr: &RuntimeExpr,
-    captured_bindings: &BTreeMap<String, LoweredIntBinding>,
-    param_names: &[String],
+    captured_bindings: &BTreeMap<RuntimeLocalDeclarationId, LoweredIntBinding>,
+    input_locals: &[RuntimeLocalDeclarationId],
 ) -> Result<FuncId, CraneliftCodegenError>
 where
     M: Module,
@@ -645,15 +651,15 @@ where
 
         builder.switch_to_block(body_block);
         let mut bindings = captured_bindings.clone();
-        for (param_index, name) in param_names.iter().enumerate() {
+        for (param_index, name) in input_locals.iter().enumerate() {
             let value = load_i32_batch_input(
                 &mut builder,
                 inputs_ptr,
                 row,
-                param_names.len(),
+                input_locals.len(),
                 param_index,
             );
-            bindings.insert(name.clone(), LoweredIntBinding::Value(value));
+            bindings.insert(*name, LoweredIntBinding::Value(value));
         }
         let value = lower_i32_expr(&mut builder, &bindings, expr, &mut stats)?;
         store_i32_batch_output(&mut builder, out_ptr, row, value);
@@ -678,8 +684,8 @@ pub(super) fn define_i32_rows_batch_sum_function<M>(
     module: &mut M,
     symbol_name: &str,
     expr: &RuntimeExpr,
-    captured_bindings: &BTreeMap<String, LoweredIntBinding>,
-    param_names: &[String],
+    captured_bindings: &BTreeMap<RuntimeLocalDeclarationId, LoweredIntBinding>,
+    input_locals: &[RuntimeLocalDeclarationId],
 ) -> Result<FuncId, CraneliftCodegenError>
 where
     M: Module,
@@ -736,15 +742,15 @@ where
 
         builder.switch_to_block(body_block);
         let mut bindings = captured_bindings.clone();
-        for (param_index, name) in param_names.iter().enumerate() {
+        for (param_index, name) in input_locals.iter().enumerate() {
             let value = load_i32_batch_input(
                 &mut builder,
                 inputs_ptr,
                 row,
-                param_names.len(),
+                input_locals.len(),
                 param_index,
             );
-            bindings.insert(name.clone(), LoweredIntBinding::Value(value));
+            bindings.insert(*name, LoweredIntBinding::Value(value));
         }
         let value = lower_i32_expr(&mut builder, &bindings, expr, &mut stats)?;
         let value = builder.ins().sextend(types::I64, value);
@@ -773,8 +779,8 @@ pub(super) fn define_u32_rows_batch_function<M>(
     module: &mut M,
     symbol_name: &str,
     expr: &RuntimeExpr,
-    captured_bindings: &BTreeMap<String, LoweredIntBinding>,
-    param_names: &[String],
+    captured_bindings: &BTreeMap<RuntimeLocalDeclarationId, LoweredIntBinding>,
+    input_locals: &[RuntimeLocalDeclarationId],
 ) -> Result<FuncId, CraneliftCodegenError>
 where
     M: Module,
@@ -829,15 +835,15 @@ where
 
         builder.switch_to_block(body_block);
         let mut bindings = captured_bindings.clone();
-        for (param_index, name) in param_names.iter().enumerate() {
+        for (param_index, name) in input_locals.iter().enumerate() {
             let value = load_u32_batch_input(
                 &mut builder,
                 inputs_ptr,
                 row,
-                param_names.len(),
+                input_locals.len(),
                 param_index,
             );
-            bindings.insert(name.clone(), LoweredIntBinding::Value(value));
+            bindings.insert(*name, LoweredIntBinding::Value(value));
         }
         let value = lower_u32_expr(&mut builder, &bindings, expr, &mut stats)?;
         store_u32_batch_output(&mut builder, out_ptr, row, value);
@@ -862,8 +868,8 @@ pub(super) fn define_u32_rows_batch_sum_function<M>(
     module: &mut M,
     symbol_name: &str,
     expr: &RuntimeExpr,
-    captured_bindings: &BTreeMap<String, LoweredIntBinding>,
-    param_names: &[String],
+    captured_bindings: &BTreeMap<RuntimeLocalDeclarationId, LoweredIntBinding>,
+    input_locals: &[RuntimeLocalDeclarationId],
 ) -> Result<FuncId, CraneliftCodegenError>
 where
     M: Module,
@@ -920,15 +926,15 @@ where
 
         builder.switch_to_block(body_block);
         let mut bindings = captured_bindings.clone();
-        for (param_index, name) in param_names.iter().enumerate() {
+        for (param_index, name) in input_locals.iter().enumerate() {
             let value = load_u32_batch_input(
                 &mut builder,
                 inputs_ptr,
                 row,
-                param_names.len(),
+                input_locals.len(),
                 param_index,
             );
-            bindings.insert(name.clone(), LoweredIntBinding::Value(value));
+            bindings.insert(*name, LoweredIntBinding::Value(value));
         }
         let value = lower_u32_expr(&mut builder, &bindings, expr, &mut stats)?;
         let value = builder.ins().uextend(types::I64, value);
@@ -957,8 +963,8 @@ pub(super) fn define_u64_rows_batch_function<M>(
     module: &mut M,
     symbol_name: &str,
     expr: &RuntimeExpr,
-    captured_bindings: &BTreeMap<String, LoweredIntBinding>,
-    param_names: &[String],
+    captured_bindings: &BTreeMap<RuntimeLocalDeclarationId, LoweredIntBinding>,
+    input_locals: &[RuntimeLocalDeclarationId],
 ) -> Result<FuncId, CraneliftCodegenError>
 where
     M: Module,
@@ -1013,15 +1019,15 @@ where
 
         builder.switch_to_block(body_block);
         let mut bindings = captured_bindings.clone();
-        for (param_index, name) in param_names.iter().enumerate() {
+        for (param_index, name) in input_locals.iter().enumerate() {
             let value = load_u64_batch_input(
                 &mut builder,
                 inputs_ptr,
                 row,
-                param_names.len(),
+                input_locals.len(),
                 param_index,
             );
-            bindings.insert(name.clone(), LoweredIntBinding::Value(value));
+            bindings.insert(*name, LoweredIntBinding::Value(value));
         }
         let value = lower_u64_expr(&mut builder, &bindings, expr, &mut stats)?;
         store_u64_batch_output(&mut builder, out_ptr, row, value);
@@ -1046,8 +1052,8 @@ pub(super) fn define_u64_rows_batch_sum_function<M>(
     module: &mut M,
     symbol_name: &str,
     expr: &RuntimeExpr,
-    captured_bindings: &BTreeMap<String, LoweredIntBinding>,
-    param_names: &[String],
+    captured_bindings: &BTreeMap<RuntimeLocalDeclarationId, LoweredIntBinding>,
+    input_locals: &[RuntimeLocalDeclarationId],
 ) -> Result<FuncId, CraneliftCodegenError>
 where
     M: Module,
@@ -1104,15 +1110,15 @@ where
 
         builder.switch_to_block(body_block);
         let mut bindings = captured_bindings.clone();
-        for (param_index, name) in param_names.iter().enumerate() {
+        for (param_index, name) in input_locals.iter().enumerate() {
             let value = load_u64_batch_input(
                 &mut builder,
                 inputs_ptr,
                 row,
-                param_names.len(),
+                input_locals.len(),
                 param_index,
             );
-            bindings.insert(name.clone(), LoweredIntBinding::Value(value));
+            bindings.insert(*name, LoweredIntBinding::Value(value));
         }
         let value = lower_u64_expr(&mut builder, &bindings, expr, &mut stats)?;
         let next_accumulator = builder.ins().iadd(accumulator, value);
@@ -1140,8 +1146,8 @@ pub(super) fn define_f32_rows_batch_function<M>(
     module: &mut M,
     symbol_name: &str,
     expr: &RuntimeExpr,
-    captured_bindings: &BTreeMap<String, LoweredF32Binding>,
-    param_names: &[String],
+    captured_bindings: &BTreeMap<RuntimeLocalDeclarationId, LoweredF32Binding>,
+    input_locals: &[RuntimeLocalDeclarationId],
 ) -> Result<FuncId, CraneliftCodegenError>
 where
     M: Module,
@@ -1196,15 +1202,15 @@ where
 
         builder.switch_to_block(body_block);
         let mut bindings = captured_bindings.clone();
-        for (param_index, name) in param_names.iter().enumerate() {
+        for (param_index, name) in input_locals.iter().enumerate() {
             let value = load_f32_batch_input(
                 &mut builder,
                 inputs_ptr,
                 row,
-                param_names.len(),
+                input_locals.len(),
                 param_index,
             );
-            bindings.insert(name.clone(), LoweredF32Binding::Value(value));
+            bindings.insert(*name, LoweredF32Binding::Value(value));
         }
         let value = lower_f32_expr(&mut builder, &bindings, expr, &mut stats)?;
         store_f32_batch_output(&mut builder, out_ptr, row, value);
@@ -1229,8 +1235,8 @@ pub(super) fn define_f64_rows_batch_function<M>(
     module: &mut M,
     symbol_name: &str,
     expr: &RuntimeExpr,
-    captured_bindings: &BTreeMap<String, LoweredF64Binding>,
-    param_names: &[String],
+    captured_bindings: &BTreeMap<RuntimeLocalDeclarationId, LoweredF64Binding>,
+    input_locals: &[RuntimeLocalDeclarationId],
 ) -> Result<FuncId, CraneliftCodegenError>
 where
     M: Module,
@@ -1285,15 +1291,15 @@ where
 
         builder.switch_to_block(body_block);
         let mut bindings = captured_bindings.clone();
-        for (param_index, name) in param_names.iter().enumerate() {
+        for (param_index, name) in input_locals.iter().enumerate() {
             let value = load_f64_batch_input(
                 &mut builder,
                 inputs_ptr,
                 row,
-                param_names.len(),
+                input_locals.len(),
                 param_index,
             );
-            bindings.insert(name.clone(), LoweredF64Binding::Value(value));
+            bindings.insert(*name, LoweredF64Binding::Value(value));
         }
         let value = lower_f64_expr(&mut builder, &bindings, expr, &mut stats)?;
         store_f64_batch_output(&mut builder, out_ptr, row, value);

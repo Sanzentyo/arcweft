@@ -26,8 +26,7 @@ FlowFiber.frames
 external_values
 line_effects as top-level RuntimeStepOutput field
 task_requests as top-level RuntimeStepOutput field
-source_events as string-only top-level RuntimeStepOutput field
-stream_events as string-only top-level RuntimeStepOutput field
+string-only event payloads at the runtime boundary
 ```
 
 ### Use these core names instead
@@ -48,15 +47,14 @@ FlowFiber.control_stack
 RuntimeStepInput.bindings
 RuntimeStepOutput.effects
 RuntimeStepOutput.requests
-RuntimeSourceEvent
 RuntimeStreamEvent
 RuntimePayload
 ```
 
-`RuntimeSourceEvent`, `RuntimeStreamEvent`, and `RuntimePayload` now carry
-structured runtime values across the source/stream boundary. CLI reports may
-render payload labels for humans, but replay/runtime consumers should use the
-typed payload value rather than treating event contents as strings.
+`RuntimeStreamEvent` and `RuntimePayload` carry structured runtime values for
+external-capability streams. CLI reports may render payload labels for humans,
+but replay/runtime consumers should use the typed payload value rather than
+treating event contents as strings.
 
 ### Keep `Frame` only here
 
@@ -235,13 +233,11 @@ pop_scope_frames_until_loop  -> pop_scope_entries_until_loop
 pop_loop_frame               -> pop_loop_entry
 ```
 
-### `crates/arcweft-core/src/engine/source.rs` and `crates/arcweft-core/src/source.rs`
+### External capabilities and `crates/arcweft-core/src/stream.rs`
 
-Replace `SourceEvent<String, String>` with `RuntimeSourceEvent` or `SourceEvent<RuntimePayload, RuntimePayload>`.
-
-Source queues should store `RuntimePayload` or `RuntimeValue`, not `String` labels.
-
-### `crates/arcweft-core/src/engine/stream.rs` and `crates/arcweft-core/src/stream.rs`
+External capability operations returning `Stream<T, E>` remain ordinary
+callables and are represented through typed host-call requests. They are not
+runtime roots or a separate declaration family.
 
 Replace `StreamEvent<String, String>` with `RuntimeStreamEvent` or `StreamEvent<RuntimePayload, RuntimePayload>`.
 
@@ -395,7 +391,7 @@ Output JSON should separate:
   "requests": {
     "tasks": [],
     "cancels": [],
-    "source_close": []
+    "host_calls": []
   }
 }
 ```
@@ -623,7 +619,7 @@ These encode intentionally rejected constructs, such as absolute OS paths or old
 - [x] Replace top-level `line_effects` with `RuntimeEffectBatch`.
 - [x] Replace top-level `task_requests` with `HostRequestBatch`.
 - [x] Add `RuntimePayload`.
-- [x] Replace string-only source/stream events with structured payload events.
+- [x] Use structured payload events for external-capability streams.
 
 ### CLI
 

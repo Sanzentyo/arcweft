@@ -50,12 +50,6 @@ pub enum ParityEvent {
     StreamClose {
         stream: String,
     },
-    SourceYield {
-        source: String,
-    },
-    SourceClose {
-        source: String,
-    },
     Stop {
         reason: String,
     },
@@ -200,12 +194,6 @@ fn vm_observation(event: &VmObservation) -> ParityEvent {
         },
         VmObservation::StreamClose(stream) => ParityEvent::StreamClose {
             stream: format!("stream#{}", stream.0),
-        },
-        VmObservation::SourceYield { source, .. } => ParityEvent::SourceYield {
-            source: format!("source#{}", source.0),
-        },
-        VmObservation::SourceClose(source) => ParityEvent::SourceClose {
-            source: format!("source#{}", source.0),
         },
         VmObservation::Trap(trap) => ParityEvent::Trap {
             code: trap_code(trap.code).to_owned(),

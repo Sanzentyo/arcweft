@@ -6,11 +6,8 @@ use arcweft_agent_protocol::ids::{
 };
 use arcweft_bundle::resource_codec::SourceMapSection;
 use arcweft_bundle::{ArcweftBundle, BundleManifest, BundleRuntimeSummary};
-use arcweft_core::bytecode::BytecodeProgram;
-use arcweft_core::entry::{AgentBudget, RuntimeCallableExecutableCode};
-use arcweft_core::plan::{
-    EntryRuntimeId, FlowRuntimeId, RuntimeEntrySpec, RuntimeEntryTarget, RuntimePlan,
-};
+use arcweft_core::entry::AgentBudget;
+use arcweft_core::plan::{EntryRuntimeId, RuntimeEntryTarget};
 use arcweft_id::PublicId;
 use arcweft_lang_hir::{
     item::{HirFunctionItem, HirItemKind},
@@ -23,6 +20,7 @@ use arcweft_lang_sema::project_index::{
     ProjectEntryRoleKind, ProjectEntryRoleTarget, ProjectSemanticIndex,
 };
 use arcweft_project::artifact::RuntimePlanArtifactKey;
+use arcweft_runtime_plan::awbc_lower::AwbcLowerer;
 use arcweft_runtime_plan::flow::RuntimePlanLowerStats;
 use std::sync::Arc;
 
@@ -77,7 +75,7 @@ pub fn compile_checked_agent_bundle(
     let runtime_entry = compiled
         .runtime_plan()
         .plan
-        .entries
+        .entries()
         .iter()
         .find(|entry| entry.id == runtime_id)
         .cloned()
@@ -110,18 +108,20 @@ pub fn compile_checked_agent_bundle(
     }
 
     let runtime_budget = runtime_roles.budget;
-    let selected_plan =
-        selected_agent_runtime_plan(compiled, runtime_entry, &controller_flow, checked)?;
-    selected_plan
-        .verify()
-        .map_err(|error| CompileAgentError::RuntimePlanVerification(error.to_string()))?;
-    let pure_helpers = selected_plan.pure_helpers.len();
-    let bytecode = BytecodeProgram::from_runtime_plan(selected_plan);
-    let bytecode_stats = bytecode.stats();
+    let pure_helpers = compiled.runtime_plan().plan.pure_helpers().len();
     let manifest =
         agent_artifact_manifest(compiled, checked, controller_facts, project, runtime_budget)?;
     let documents = agent_bundle_source_documents(compiled)?;
     let source_map = SourceMapSection::try_from_documents(&documents)?;
+    let source_label = documents[0].identity().id().as_str();
+    let awbc = AwbcLowerer::for_entry(
+        &compiled.runtime_plan().plan,
+        &compiled.runtime_plan().dialogue_content_catalog,
+        source_label,
+        &runtime_id,
+    )
+    .lower()
+    .map_err(CompileAgentError::ProductAwbc)?;
     let mut bundle = ArcweftBundle::try_new(
         BundleManifest {
             profile_id: None,
@@ -133,15 +133,14 @@ pub fn compile_checked_agent_bundle(
             runtime: BundleRuntimeSummary {
                 artifact_fingerprint: execution_diagnostics.artifact(),
                 entry_flow: Some(controller_flow.public_label().into_string()),
-                flows: bytecode_stats.flows,
-                bytecode_instructions: bytecode_stats.instructions,
-                line_task_groups: bytecode_stats.line_task_groups,
-                stream_plans: bytecode_stats.stream_plans,
-                source_plans: bytecode_stats.source_plans,
+                flows: awbc.stats.flow_bindings,
+                bytecode_instructions: awbc.stats.instructions,
+                line_task_groups: awbc.stats.line_task_groups,
+                stream_plans: awbc.stats.stream_plans,
             },
         },
         source_map,
-        bytecode,
+        awbc.program,
         compiled.runtime_plan().dialogue_content_catalog.clone(),
     )?;
     if let Some(catalog) = &compiled.runtime_plan().character_presentation_catalog {
@@ -213,63 +212,6 @@ fn validate_checked_agent_inputs<'a>(
         .map_err(|_| CompileAgentError::MissingControllerSemanticFacts {
             controller: checked.controller().declaration().to_string(),
         })
-}
-
-fn selected_agent_runtime_plan(
-    compiled: &CompiledProject,
-    entry: RuntimeEntrySpec,
-    controller_flow: &FlowRuntimeId,
-    checked: &CheckedAgentEntry,
-) -> Result<RuntimePlan, CompileAgentError> {
-    let full = &compiled.runtime_plan().plan;
-    let mut flows = full.flows.iter().filter(|flow| &flow.id == controller_flow);
-    let selected_flow = flows.next().cloned();
-    if selected_flow.is_none() || flows.next().is_some() {
-        return Err(CompileAgentError::InvalidRuntimeEntry {
-            entry: checked.id().to_string(),
-        });
-    }
-    let runtime_roles =
-        entry
-            .roles
-            .agent()
-            .ok_or_else(|| CompileAgentError::InvalidRuntimeEntry {
-                entry: checked.id().to_string(),
-            })?;
-    let mut callables = full.callable_executables.iter().filter(|executable| {
-        executable.callable == runtime_roles.controller.callable
-            && executable.contract == runtime_roles.controller.contract
-            && matches!(
-                &executable.code,
-                RuntimeCallableExecutableCode::ControllerFlow(flow) if flow == controller_flow
-            )
-    });
-    let callable = callables.next().cloned();
-    if callable.is_none() || callables.next().is_some() {
-        return Err(CompileAgentError::InvalidRuntimeEntry {
-            entry: checked.id().to_string(),
-        });
-    }
-    let mut flow_executables = full
-        .flow_executables
-        .iter()
-        .filter(|executable| &executable.flow == controller_flow);
-    let flow_executable = flow_executables.next().cloned();
-    if flow_executable.is_none() || flow_executables.next().is_some() {
-        return Err(CompileAgentError::InvalidRuntimeEntry {
-            entry: checked.id().to_string(),
-        });
-    }
-    let plan = RuntimePlan::new(vec![selected_flow.expect("checked above")], Vec::new())
-        .map_err(|error| CompileAgentError::RuntimePlanVerification(error.to_string()))?
-        .with_entries(vec![entry])
-        .with_entry_executables(
-            vec![callable.expect("checked above")],
-            vec![flow_executable.expect("checked above")],
-        )
-        .with_pure_helpers(full.pure_helpers.clone())
-        .with_trait_methods(full.trait_methods.clone());
-    Ok(plan)
 }
 
 fn validate_project_index_entry(

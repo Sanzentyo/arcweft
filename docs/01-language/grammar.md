@@ -145,7 +145,6 @@ Item         := OuterAttr* ItemDecl
 ItemDecl     :=
     FlowDecl
   | FunctionDecl
-  | SourceDecl
   | EntryDecl
   | ViewDecl
   | AssetDecl
@@ -300,14 +299,9 @@ unless it is covered by `#[allow(style::redundant_decl_identity)]` or
 `#[generated]`. A mismatch such as `flow @flow.opening start(...)` reports
 `identity.decl_binding_mismatch`; it is not a style warning.
 
-Source and entity declarations follow the same principle. In declaration
-headers, the keyword supplies the default entity family, so authored code should
-omit that family prefix. Prefer
-`source http_requests: Source<T, E>`. The fully qualified
-`source @source.http_requests: Source<T, E>` form is retained for generated or
-explicit-identity source, while
-`source @source.http_requests http_requests: ...` is redundant and should not be
-authored. Prefer
+Entity declarations follow the same principle. In declaration headers, the
+keyword supplies the default entity family, so authored code should omit that
+family prefix. Prefer
 `pub character alice { display = "Alice" }` or
 `content chapter_two { roots = [@flow.chapter_two] }` for hand-written source.
 Fully qualified forms such as `pub character @character.alice { ... }` and
@@ -581,46 +575,10 @@ location/span identity and application ordinal.
 
 An ordinary `fn` whose own body contains `yield` is a generator and must
 declare `-> Stream<T, E>`. A function that returns `Stream<T, E>` without an
-own-scope `yield` is an ordinary stream passthrough. Hand-written stream
-transforms do not return `Source<T, E>`; live external sources use `source`
-declarations so policy, replay, and privacy remain explicit.
-
-## Source Declarations
-
-```text
-SourceDecl      := Visibility? 'source' SourceId? Ident? ':' SourceType SourceBlock
-SourceId        := EntityRef | RelativeId | FamilyRelativeEntityRef
-SourceType      := 'Source' '<' Type ',' Type '>'
-SourceBlock     := '{' SourceBlockItem* '}'
-SourceBlockItem := SourceHeader | SourceHandler | ContractClause
-
-SourceHeader :=
-    'from' Expr
-  | 'backpressure' '=' BackpressurePolicy
-  | 'replay' '=' ReplayPolicy
-  | 'privacy' '=' PrivacyPolicy
-
-BackpressurePolicy :=
-    'latest'
-  | 'bounded' '(' 'capacity' '=' IntLiteral ',' 'overflow' '=' OverflowPolicy ')'
-  | 'blocking_not_allowed'
-
-OverflowPolicy := 'drop_oldest' | 'drop_newest' | 'error' | 'coalesce'
-ReplayPolicy   := 'full' | 'hash_only' | 'summary' | 'event_only' | 'none'
-PrivacyPolicy  := 'transient' | 'redacted' | 'recordable' | 'private'
-
-SourceHandler      := 'on' SourceEventPattern '=>' SourceHandlerBody
-SourceEventPattern := 'item' Pattern
-                    | 'error' Pattern
-                    | 'progress' Pattern
-                    | 'disconnected'
-                    | 'permission_revoked'
-                    | 'end'
-SourceHandlerBody  := YieldStmt | ExprStmt | Block
-```
-
-Function-like `source name() -> Source<T, E> { ... }` is not canonical. Use
-`source id: Source<T, E> { ... }`.
+own-scope `yield` is an ordinary stream passthrough. External capability
+members returning `Stream<T, E>` are ordinary bodyless `fn` members; they are
+not declarations, roots, or a separate language role. The `source` keyword and
+`Source<T, E>` type are not part of the grammar.
 
 ## Blocks and scopes
 
@@ -747,7 +705,7 @@ entity reference.
 ## Expression operators and postfixes
 
 ```text
-PostfixExpr := PrimaryExpr ('?' | CallArgs | '.' Ident CallArgs? | '[' Expr ']')*
+PostfixExpr := PrimaryExpr (CallArgs | '.' Ident CallArgs? | '[' Expr ']')*
 PrefixExpr  := ('!' | '-') PrefixExpr | AwaitExpr | PostfixExpr
 BinaryExpr  := PrefixExpr BinaryOp PrefixExpr
 BinaryOp    := '*' | '/' | '%' | '+' | '-' | '&' | ComparisonOp | 'in' | '&&' | '||' | '|>' | '=>'
@@ -766,37 +724,20 @@ Type, module, and selector paths use dot-separated segments; public IDs use the
 ## Try operator and await
 
 ```text
-TryExpr      := Expr '?'
 TryExpr      := 'try' Expr
 AwaitExpr    := 'await' Expr AwaitPendingBlock?
-TryAwaitExpr := 'try' 'await' Expr AwaitPendingBlock?
-TryAwaitExpr := 'await?' Expr AwaitPendingBlock?
 AwaitPendingBlock := 'with' ':' Newline AwaitCase+
                    | 'with' '{' AwaitCase* '}'
 ```
 
-`expr?` is the ordinary Rust-like postfix try operator for `Result` and `Option` expressions. `await` returns `Result<T, E>`. `try await` returns `T` and propagates errors using the same semantics as `(await ...)?`.
-`await? expr with:` is sugar for `try await expr with:`.
+`await` always returns `Result<T, E>`. `try` is the sole error/option
+propagation operator and unwraps the supported `Result` or `Option` operand.
+`try await expr` is ordinary prefix nesting: it parses as
+`try (await expr)` and returns `T` after propagating the awaited error.
 The indentation form `with:` is syntax sugar for the canonical brace form `with { ... }`. Formatters may keep `with:` for scenario-like readability, but lowering should treat it as brace-block syntax.
 
-General prefix `try expr` and postfix `expr?` are both retained authored forms
-of the same Try operation. Prefix Try binds at prefix precedence `90`; postfix
-Try binds at postfix precedence `100`. Source-facing tools preserve which form
-was authored instead of rewriting one into the other.
-
-`try await expr` and `await? expr` are parsed directly as one propagating Await
-node, not as a general Try wrapped around Await. Grouping remains significant:
-`(await need)?` is Try wrapping a result-preserving Await, while `await need?`
-is a result-preserving Await whose operand is a postfix Try. A general prefix
-Try around a result-preserving Await therefore requires `try (await need)`.
-
-Only the following await grouping is rejected for ambiguity:
-
-```text
-'await' Expr '?' AwaitPendingBlock
-```
-
-Use `try await Expr AwaitPendingBlock`, `await? Expr AwaitPendingBlock`, or the explicit parenthesized form instead.
+There is no postfix `?` or attached `await?` form in the final grammar. Use
+`try Expr` explicitly when propagation is intended.
 
 ## Never
 

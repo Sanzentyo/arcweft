@@ -337,8 +337,8 @@ segments. For example, `flow @flow.opening` and `scope rain` produce
 `say.opening.alice.rain.greeting` for `alice(id=@.greeting)`.
 
 Declaration headers have a separate authored-surface rule: prefer
-`flow opening`, `proof opening`, `source events: Source<T, E>`, and the
-corresponding local-name form for other declaration families. The `@` forms in
+`flow opening`, `proof opening`, and the corresponding local-name form for
+other declaration families. The `@` forms in
 the examples above are relative-ID contracts; they remain useful for testing
 normalization and generated round trips, but are not the recommended spelling
 for ordinary authored declarations.

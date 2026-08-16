@@ -56,9 +56,10 @@ pub enum RuntimeOpaqueValueError {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::awbc::schema::AwbcFunctionId;
     use crate::entry::RuntimeSchemaError;
     use crate::pattern::{RuntimeCheckedType, RuntimeOpaqueTypeAdmission, RuntimeOpaqueTypeOwner};
-    use crate::value::{RuntimeExpr, RuntimeFunctionValue, RuntimeSeq, RuntimeValueNestingError};
+    use crate::value::{RuntimeFunctionValue, RuntimeSeq, RuntimeValueNestingError};
 
     fn producer(value: &str) -> RuntimeOpaqueTypeProducerId {
         RuntimeOpaqueTypeProducerId::try_new(value).expect("valid producer")
@@ -299,11 +300,7 @@ mod tests {
 
     #[test]
     fn opaque_wrapper_does_not_encode_runtime_only_payloads() {
-        let function = RuntimeFunctionValue::new(
-            Vec::new(),
-            RuntimeExpr::Value(RuntimeValue::Unit),
-            Vec::new(),
-        );
+        let function = RuntimeFunctionValue::new_awbc(Vec::new(), AwbcFunctionId(0), Vec::new());
         let value = exact("std.runtime_only", 4)
             .try_wrap(RuntimeValue::Function(function))
             .expect("exact owner wraps after producer validation");

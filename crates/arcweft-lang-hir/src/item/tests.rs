@@ -68,7 +68,7 @@ fn where_predicate_requires_at_least_one_typed_bound() {
 }
 
 #[test]
-fn source_item_inventory_is_exactly_the_26_attached_families() {
+fn item_inventory_is_exactly_the_25_attached_families() {
     assert_eq!(
         HirItemFamily::ALL,
         [
@@ -95,12 +95,11 @@ fn source_item_inventory_is_exactly_the_26_attached_families() {
             HirItemFamily::ExternCapability,
             HirItemFamily::Test,
             HirItemFamily::Bench,
-            HirItemFamily::Source,
             HirItemFamily::Style,
             HirItemFamily::Error,
         ]
     );
-    assert_eq!(HirItemFamily::ALL.len(), 26);
+    assert_eq!(HirItemFamily::ALL.len(), 25);
     assert!(HirItemFamily::ALL.contains(&HirItemFamily::Error));
 }
 

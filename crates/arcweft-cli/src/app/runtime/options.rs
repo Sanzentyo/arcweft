@@ -5,30 +5,10 @@ use arcweft_core::value::RuntimeBinding;
 use arcweft_runtime_accelerator::{
     RuntimePureBackendMode, RuntimePureWorkerCount, math::RuntimeMathBackend,
 };
-use arcweft_runtime_host::{BundleRunnerExecutor, BundleRunnerStepMode};
+use arcweft_runtime_host::BundleRunnerStepMode;
 use clap::{Args, ValueEnum};
 use std::net::SocketAddr;
 use std::path::PathBuf;
-
-impl From<BundleRunnerExecutor> for CliRuntimeExecutorTier {
-    fn from(value: BundleRunnerExecutor) -> Self {
-        match value {
-            BundleRunnerExecutor::AwbcProduct => Self::AwbcProduct,
-            BundleRunnerExecutor::BytecodeVm => Self::BytecodeVm,
-            BundleRunnerExecutor::Aot => Self::Aot,
-        }
-    }
-}
-
-impl From<CliRuntimeExecutorTier> for BundleRunnerExecutor {
-    fn from(value: CliRuntimeExecutorTier) -> Self {
-        match value {
-            CliRuntimeExecutorTier::AwbcProduct => Self::AwbcProduct,
-            CliRuntimeExecutorTier::BytecodeVm => Self::BytecodeVm,
-            CliRuntimeExecutorTier::Aot => Self::Aot,
-        }
-    }
-}
 
 impl From<BundleRunnerStepMode> for CliRuntimeStepMode {
     fn from(value: BundleRunnerStepMode) -> Self {

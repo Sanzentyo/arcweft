@@ -295,29 +295,6 @@ impl GrammarBudget {
         true
     }
 
-    /// Charges one direct Source body member against its owning declaration.
-    pub(crate) fn source_member(&mut self) -> bool {
-        if self.failure.is_some() {
-            return false;
-        }
-        let Some(source) = self
-            .stack
-            .iter()
-            .rposition(|frame| frame.kind == SyntaxKind::SourceItem)
-        else {
-            self.failure = Some(SyntaxLimit::DeclarationMembers);
-            return false;
-        };
-        if let Err(limit) = charge(
-            &mut self.stack[source].declaration_members,
-            SyntaxLimit::DeclarationMembers,
-        ) {
-            self.failure = Some(limit);
-            return false;
-        }
-        true
-    }
-
     /// Completes the most recently accepted node.
     pub(crate) fn finish(&mut self) -> bool {
         if self.failure.is_some() {
@@ -870,28 +847,6 @@ mod tests {
     fn grouped_use_member_budget_fails_closed_without_a_use_owner() {
         let mut budget = document_budget();
         assert!(!budget.grouped_use_member());
-        assert_eq!(budget.failure(), Some(SyntaxLimit::DeclarationMembers));
-    }
-
-    #[test]
-    fn source_member_budget_accepts_exact_limit_and_rejects_one_over() {
-        let mut budget = document_budget();
-        assert!(budget.start(SyntaxKind::SourceItem, SyntaxRole::Element(0)));
-        for _ in 0..SyntaxLimit::DeclarationMembers.maximum() {
-            assert!(budget.source_member());
-        }
-        assert!(!budget.source_member());
-        assert_eq!(budget.failure(), Some(SyntaxLimit::DeclarationMembers));
-
-        let mut fresh = document_budget();
-        assert!(fresh.start(SyntaxKind::SourceItem, SyntaxRole::Element(0)));
-        assert!(fresh.source_member());
-    }
-
-    #[test]
-    fn source_member_budget_fails_closed_without_a_source_owner() {
-        let mut budget = document_budget();
-        assert!(!budget.source_member());
         assert_eq!(budget.failure(), Some(SyntaxLimit::DeclarationMembers));
     }
 

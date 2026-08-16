@@ -2,9 +2,9 @@ use super::{
     BTreeMap, Configurable, CraneliftCodegenError, FloatCC, FunctionBuilder, InstBuilder, IntCC,
     JITBuilder, JITModule, LoweredF32Binding, LoweredF64Binding, LoweredIntBinding,
     LoweredSmallIntBinding, ModuleError, ObjectBuilder, ObjectModule, OwnedTargetIsa,
-    PureFunctionStats, RuntimeBinaryOp, RuntimeBinding, RuntimeCallTarget, RuntimeExpr, RuntimeInt,
-    RuntimeIntrinsic, RuntimeUnaryOp, RuntimeValue, SmallIntKind, SmallIntLiteral, Value,
-    default_libcall_names, settings, types,
+    PureFunctionStats, RuntimeBinaryOp, RuntimeCallTarget, RuntimeExpr, RuntimeExprKind,
+    RuntimeInt, RuntimeIntrinsic, RuntimeLocalBinding, RuntimeLocalDeclarationId, RuntimeUnaryOp,
+    RuntimeValue, SmallIntKind, SmallIntLiteral, Value, default_libcall_names, settings, types,
 };
 
 pub(super) fn lower_input_value(
@@ -46,16 +46,13 @@ pub(super) fn lower_next_input_value(
     builder.ins().select(wrapped, one, incremented)
 }
 
-pub(super) fn validate_param_names(param_names: &[String]) -> Result<(), CraneliftCodegenError> {
-    for (index, name) in param_names.iter().enumerate() {
-        if name.is_empty() {
-            return Err(CraneliftCodegenError::UnsupportedExpr(
-                "JIT runtime input names must be non-empty".to_owned(),
-            ));
-        }
-        if param_names[..index].contains(name) {
+pub(super) fn validate_input_locals(
+    input_locals: &[RuntimeLocalDeclarationId],
+) -> Result<(), CraneliftCodegenError> {
+    for (index, local) in input_locals.iter().enumerate() {
+        if input_locals[..index].contains(local) {
             return Err(CraneliftCodegenError::UnsupportedExpr(format!(
-                "JIT runtime input `{name}` is duplicated"
+                "JIT runtime input local `{local}` is duplicated"
             )));
         }
     }
@@ -127,8 +124,8 @@ pub(super) fn sanitize_symbol_component(name: &str) -> String {
 }
 
 pub(super) fn int_bindings(
-    bindings: &[RuntimeBinding],
-) -> Result<BTreeMap<String, LoweredIntBinding>, CraneliftCodegenError> {
+    bindings: &[RuntimeLocalBinding],
+) -> Result<BTreeMap<RuntimeLocalDeclarationId, LoweredIntBinding>, CraneliftCodegenError> {
     bindings
         .iter()
         .map(|binding| match binding.value {
@@ -138,34 +135,34 @@ pub(super) fn int_bindings(
                     RuntimeInt::ISize(value) => Some(value),
                     _ => None,
                 })
-                .map(|value| (binding.name.clone(), LoweredIntBinding::Const(value)))
+                .map(|value| (binding.local, LoweredIntBinding::Const(value)))
                 .ok_or_else(|| {
                     CraneliftCodegenError::UnsupportedExpr(format!(
                         "binding `{}` is not an i64-compatible integer",
-                        binding.name
+                        binding.local
                     ))
                 }),
             _ => Err(CraneliftCodegenError::UnsupportedExpr(format!(
                 "binding `{}` is not an i64-compatible integer",
-                binding.name
+                binding.local
             ))),
         })
         .collect()
 }
 
 pub(super) fn small_int_bindings(
-    bindings: &[RuntimeBinding],
+    bindings: &[RuntimeLocalBinding],
     kind: SmallIntKind,
-) -> Result<BTreeMap<String, LoweredSmallIntBinding>, CraneliftCodegenError> {
+) -> Result<BTreeMap<RuntimeLocalDeclarationId, LoweredSmallIntBinding>, CraneliftCodegenError> {
     bindings
         .iter()
         .map(|binding| {
             kind.literal(&binding.value)
-                .map(|value| (binding.name.clone(), LoweredSmallIntBinding::Const(value)))
+                .map(|value| (binding.local, LoweredSmallIntBinding::Const(value)))
                 .ok_or_else(|| {
                     CraneliftCodegenError::UnsupportedExpr(format!(
                         "binding `{}` is not an {} integer",
-                        binding.name,
+                        binding.local,
                         kind.label()
                     ))
                 })
@@ -174,98 +171,93 @@ pub(super) fn small_int_bindings(
 }
 
 pub(super) fn i32_bindings(
-    bindings: &[RuntimeBinding],
-) -> Result<BTreeMap<String, LoweredIntBinding>, CraneliftCodegenError> {
+    bindings: &[RuntimeLocalBinding],
+) -> Result<BTreeMap<RuntimeLocalDeclarationId, LoweredIntBinding>, CraneliftCodegenError> {
     bindings
         .iter()
         .map(|binding| match binding.value {
             RuntimeValue::Int(value) => value
                 .exact_i32()
-                .map(|value| {
-                    (
-                        binding.name.clone(),
-                        LoweredIntBinding::Const(i64::from(value)),
-                    )
-                })
+                .map(|value| (binding.local, LoweredIntBinding::Const(i64::from(value))))
                 .ok_or_else(|| {
                     CraneliftCodegenError::UnsupportedExpr(format!(
                         "binding `{}` is not an i32 integer",
-                        binding.name
+                        binding.local
                     ))
                 }),
             _ => Err(CraneliftCodegenError::UnsupportedExpr(format!(
                 "binding `{}` is not an i32 integer",
-                binding.name
+                binding.local
             ))),
         })
         .collect()
 }
 
 pub(super) fn u32_bindings(
-    bindings: &[RuntimeBinding],
-) -> Result<BTreeMap<String, LoweredIntBinding>, CraneliftCodegenError> {
+    bindings: &[RuntimeLocalBinding],
+) -> Result<BTreeMap<RuntimeLocalDeclarationId, LoweredIntBinding>, CraneliftCodegenError> {
     bindings
         .iter()
         .map(|binding| match binding.value {
             RuntimeValue::UInt(arcweft_core::value::RuntimeUInt::U32(value)) => Ok((
-                binding.name.clone(),
+                binding.local,
                 LoweredIntBinding::Const(u32_iconst_value(value)),
             )),
             _ => Err(CraneliftCodegenError::UnsupportedExpr(format!(
                 "binding `{}` is not an u32 integer",
-                binding.name
+                binding.local
             ))),
         })
         .collect()
 }
 
 pub(super) fn u64_bindings(
-    bindings: &[RuntimeBinding],
-) -> Result<BTreeMap<String, LoweredIntBinding>, CraneliftCodegenError> {
+    bindings: &[RuntimeLocalBinding],
+) -> Result<BTreeMap<RuntimeLocalDeclarationId, LoweredIntBinding>, CraneliftCodegenError> {
     bindings
         .iter()
         .map(|binding| match binding.value {
             RuntimeValue::UInt(arcweft_core::value::RuntimeUInt::U64(value)) => Ok((
-                binding.name.clone(),
+                binding.local,
                 LoweredIntBinding::Const(u64_iconst_value(value)),
             )),
             RuntimeValue::UInt(arcweft_core::value::RuntimeUInt::USize(value)) => Ok((
-                binding.name.clone(),
+                binding.local,
                 LoweredIntBinding::Const(u64_iconst_value(value)),
             )),
             _ => Err(CraneliftCodegenError::UnsupportedExpr(format!(
                 "binding `{}` is not an u64-compatible integer",
-                binding.name
+                binding.local
             ))),
         })
         .collect()
 }
 
 pub(super) fn f32_bindings(
-    bindings: &[RuntimeBinding],
-) -> Result<BTreeMap<String, LoweredF32Binding>, CraneliftCodegenError> {
+    bindings: &[RuntimeLocalBinding],
+) -> Result<BTreeMap<RuntimeLocalDeclarationId, LoweredF32Binding>, CraneliftCodegenError> {
     bindings
         .iter()
         .map(|binding| match binding.value {
-            RuntimeValue::F32(value) => Ok((binding.name.clone(), LoweredF32Binding::Const(value))),
+            RuntimeValue::F32(value) => Ok((binding.local, LoweredF32Binding::Const(value))),
             _ => Err(CraneliftCodegenError::UnsupportedExpr(format!(
                 "binding `{}` is not an f32 value",
-                binding.name
+                binding.local
             ))),
         })
         .collect()
 }
 
 pub(super) fn f64_bindings(
-    bindings: &[RuntimeBinding],
-) -> Result<BTreeMap<String, LoweredF64Binding>, CraneliftCodegenError> {
+    bindings: &[RuntimeLocalBinding],
+) -> Result<BTreeMap<RuntimeLocalDeclarationId, LoweredF64Binding>, CraneliftCodegenError> {
     bindings
         .iter()
         .map(|binding| match binding.value {
-            RuntimeValue::F64(value) => Ok((binding.name.clone(), LoweredF64Binding::Const(value))),
+            RuntimeValue::F64(value) => Ok((binding.local, LoweredF64Binding::Const(value))),
             _ => Err(CraneliftCodegenError::UnsupportedExpr(format!(
                 "binding `{}` is not an f64 value",
-                binding.name
+                binding.local
             ))),
         })
         .collect()
@@ -273,13 +265,13 @@ pub(super) fn f64_bindings(
 
 pub(super) fn lower_expr(
     builder: &mut FunctionBuilder<'_>,
-    bindings: &BTreeMap<String, LoweredIntBinding>,
+    bindings: &BTreeMap<RuntimeLocalDeclarationId, LoweredIntBinding>,
     expr: &RuntimeExpr,
     stats: &mut arcweft_core::pure::PureFunctionStats,
 ) -> Result<Value, CraneliftCodegenError> {
     stats.evaluated_exprs += 1;
-    match expr {
-        RuntimeExpr::Value(RuntimeValue::Int(value)) => value
+    match expr.kind() {
+        RuntimeExprKind::Value(RuntimeValue::Int(value)) => value
             .exact_i64()
             .or(match *value {
                 RuntimeInt::ISize(value) => Some(value),
@@ -291,36 +283,40 @@ pub(super) fn lower_expr(
                     "literal `{value}` is not an i64-compatible integer"
                 ))
             }),
-        RuntimeExpr::Value(value) => Err(CraneliftCodegenError::UnsupportedExpr(format!(
+        RuntimeExprKind::Value(value) => Err(CraneliftCodegenError::UnsupportedExpr(format!(
             "literal {value:?} is not an i64-compatible integer"
         ))),
-        RuntimeExpr::Local(name) => match bindings.get(name) {
+        RuntimeExprKind::Local(name) => match bindings.get(name) {
             Some(LoweredIntBinding::Const(value)) => Ok(builder.ins().iconst(types::I64, *value)),
             Some(LoweredIntBinding::Value(value)) => Ok(*value),
             None => Err(CraneliftCodegenError::UnsupportedExpr(format!(
                 "unknown integer binding `{name}`"
             ))),
         },
-        RuntimeExpr::Let { name, expr, body } => {
+        RuntimeExprKind::Let {
+            binding,
+            expr,
+            body,
+        } => {
             let value = lower_expr(builder, bindings, expr, stats)?;
             let mut scoped_bindings = bindings.clone();
-            scoped_bindings.insert(name.clone(), LoweredIntBinding::Value(value));
+            scoped_bindings.insert(*binding, LoweredIntBinding::Value(value));
             lower_expr(builder, &scoped_bindings, body, stats)
         }
-        RuntimeExpr::Unary {
+        RuntimeExprKind::Unary {
             op: RuntimeUnaryOp::Neg,
             expr,
         } => {
             let value = lower_expr(builder, bindings, expr, stats)?;
             Ok(builder.ins().ineg(value))
         }
-        RuntimeExpr::Unary {
+        RuntimeExprKind::Unary {
             op: RuntimeUnaryOp::Not,
             ..
         } => Err(CraneliftCodegenError::UnsupportedExpr(
             "boolean negation is not an i64 result".to_owned(),
         )),
-        RuntimeExpr::Binary { lhs, op, rhs } => {
+        RuntimeExprKind::Binary { lhs, op, rhs } => {
             stats.evaluated_binary_ops += 1;
             let lhs = lower_expr(builder, bindings, lhs, stats)?;
             let rhs = lower_expr(builder, bindings, rhs, stats)?;
@@ -334,37 +330,37 @@ pub(super) fn lower_expr(
                 ))),
             }
         }
-        RuntimeExpr::Call { callee, args }
+        RuntimeExprKind::Call { callee, args }
             if callee.as_intrinsic() == Some(RuntimeIntrinsic::Add) && args.len() == 2 =>
         {
             stats.evaluated_calls += 1;
-            let lhs = lower_expr(builder, bindings, &args[0], stats)?;
-            let rhs = lower_expr(builder, bindings, &args[1], stats)?;
+            let lhs = lower_expr(builder, bindings, args[0].value(), stats)?;
+            let rhs = lower_expr(builder, bindings, args[1].value(), stats)?;
             Ok(builder.ins().iadd(lhs, rhs))
         }
-        RuntimeExpr::If {
+        RuntimeExprKind::If {
             condition,
             then_expr,
             else_expr,
         } => lower_if_expr(builder, bindings, condition, then_expr, else_expr, stats),
-        RuntimeExpr::Call { callee, .. } => Err(CraneliftCodegenError::UnsupportedExpr(format!(
-            "call `{callee}` is outside the JIT subset"
-        ))),
+        RuntimeExprKind::Call { callee, .. } => Err(CraneliftCodegenError::UnsupportedExpr(
+            format!("call `{callee}` is outside the JIT subset"),
+        )),
         other => Err(CraneliftCodegenError::UnsupportedExpr(format!(
-            "expression `{other}` is outside the JIT subset"
+            "expression `{other:?}` is outside the JIT subset"
         ))),
     }
 }
 
 pub(super) fn lower_i32_expr(
     builder: &mut FunctionBuilder<'_>,
-    bindings: &BTreeMap<String, LoweredIntBinding>,
+    bindings: &BTreeMap<RuntimeLocalDeclarationId, LoweredIntBinding>,
     expr: &RuntimeExpr,
     stats: &mut PureFunctionStats,
 ) -> Result<Value, CraneliftCodegenError> {
     stats.evaluated_exprs += 1;
-    match expr {
-        RuntimeExpr::Value(RuntimeValue::Int(value)) => value
+    match expr.kind() {
+        RuntimeExprKind::Value(RuntimeValue::Int(value)) => value
             .exact_i32()
             .map(|value| builder.ins().iconst(types::I32, i64::from(value)))
             .ok_or_else(|| {
@@ -372,36 +368,40 @@ pub(super) fn lower_i32_expr(
                     "literal `{value}` is not an i32 integer"
                 ))
             }),
-        RuntimeExpr::Value(value) => Err(CraneliftCodegenError::UnsupportedExpr(format!(
+        RuntimeExprKind::Value(value) => Err(CraneliftCodegenError::UnsupportedExpr(format!(
             "literal {value:?} is not an i32 integer"
         ))),
-        RuntimeExpr::Local(name) => match bindings.get(name) {
+        RuntimeExprKind::Local(name) => match bindings.get(name) {
             Some(LoweredIntBinding::Const(value)) => Ok(builder.ins().iconst(types::I32, *value)),
             Some(LoweredIntBinding::Value(value)) => Ok(*value),
             None => Err(CraneliftCodegenError::UnsupportedExpr(format!(
                 "unknown i32 binding `{name}`"
             ))),
         },
-        RuntimeExpr::Let { name, expr, body } => {
+        RuntimeExprKind::Let {
+            binding,
+            expr,
+            body,
+        } => {
             let value = lower_i32_expr(builder, bindings, expr, stats)?;
             let mut scoped_bindings = bindings.clone();
-            scoped_bindings.insert(name.clone(), LoweredIntBinding::Value(value));
+            scoped_bindings.insert(*binding, LoweredIntBinding::Value(value));
             lower_i32_expr(builder, &scoped_bindings, body, stats)
         }
-        RuntimeExpr::Unary {
+        RuntimeExprKind::Unary {
             op: RuntimeUnaryOp::Neg,
             expr,
         } => {
             let value = lower_i32_expr(builder, bindings, expr, stats)?;
             Ok(builder.ins().ineg(value))
         }
-        RuntimeExpr::Unary {
+        RuntimeExprKind::Unary {
             op: RuntimeUnaryOp::Not,
             ..
         } => Err(CraneliftCodegenError::UnsupportedExpr(
             "boolean negation is not an i32 result".to_owned(),
         )),
-        RuntimeExpr::Binary { lhs, op, rhs } => {
+        RuntimeExprKind::Binary { lhs, op, rhs } => {
             stats.evaluated_binary_ops += 1;
             let lhs = lower_i32_expr(builder, bindings, lhs, stats)?;
             let rhs = lower_i32_expr(builder, bindings, rhs, stats)?;
@@ -415,24 +415,24 @@ pub(super) fn lower_i32_expr(
                 ))),
             }
         }
-        RuntimeExpr::Call { callee, args }
+        RuntimeExprKind::Call { callee, args }
             if callee.as_intrinsic() == Some(RuntimeIntrinsic::Add) && args.len() == 2 =>
         {
             stats.evaluated_calls += 1;
-            let lhs = lower_i32_expr(builder, bindings, &args[0], stats)?;
-            let rhs = lower_i32_expr(builder, bindings, &args[1], stats)?;
+            let lhs = lower_i32_expr(builder, bindings, args[0].value(), stats)?;
+            let rhs = lower_i32_expr(builder, bindings, args[1].value(), stats)?;
             Ok(builder.ins().iadd(lhs, rhs))
         }
-        RuntimeExpr::If {
+        RuntimeExprKind::If {
             condition,
             then_expr,
             else_expr,
         } => lower_i32_if_expr(builder, bindings, condition, then_expr, else_expr, stats),
-        RuntimeExpr::Call { callee, .. } => Err(CraneliftCodegenError::UnsupportedExpr(format!(
-            "call `{callee}` is outside the i32 JIT subset"
-        ))),
+        RuntimeExprKind::Call { callee, .. } => Err(CraneliftCodegenError::UnsupportedExpr(
+            format!("call `{callee}` is outside the i32 JIT subset"),
+        )),
         other => Err(CraneliftCodegenError::UnsupportedExpr(format!(
-            "expression `{other}` is outside the i32 JIT subset"
+            "expression `{other:?}` is outside the i32 JIT subset"
         ))),
     }
 }
@@ -447,14 +447,14 @@ pub(super) fn u64_iconst_value(value: u64) -> i64 {
 
 pub(super) fn lower_small_int_expr(
     builder: &mut FunctionBuilder<'_>,
-    bindings: &BTreeMap<String, LoweredSmallIntBinding>,
+    bindings: &BTreeMap<RuntimeLocalDeclarationId, LoweredSmallIntBinding>,
     expr: &RuntimeExpr,
     stats: &mut PureFunctionStats,
     kind: SmallIntKind,
 ) -> Result<Value, CraneliftCodegenError> {
     stats.evaluated_exprs += 1;
-    match expr {
-        RuntimeExpr::Value(value) => kind
+    match expr.kind() {
+        RuntimeExprKind::Value(value) => kind
             .literal(value)
             .map(|value| small_int_const(builder, kind, value))
             .ok_or_else(|| {
@@ -463,7 +463,7 @@ pub(super) fn lower_small_int_expr(
                     kind.label()
                 ))
             }),
-        RuntimeExpr::Local(name) => match bindings.get(name) {
+        RuntimeExprKind::Local(name) => match bindings.get(name) {
             Some(LoweredSmallIntBinding::Const(value)) => {
                 Ok(small_int_const(builder, kind, *value))
             }
@@ -473,27 +473,31 @@ pub(super) fn lower_small_int_expr(
                 kind.label()
             ))),
         },
-        RuntimeExpr::Let { name, expr, body } => {
+        RuntimeExprKind::Let {
+            binding,
+            expr,
+            body,
+        } => {
             let value = lower_small_int_expr(builder, bindings, expr, stats, kind)?;
             let mut scoped_bindings = bindings.clone();
-            scoped_bindings.insert(name.clone(), LoweredSmallIntBinding::Value(value));
+            scoped_bindings.insert(*binding, LoweredSmallIntBinding::Value(value));
             lower_small_int_expr(builder, &scoped_bindings, body, stats, kind)
         }
-        RuntimeExpr::Unary {
+        RuntimeExprKind::Unary {
             op: RuntimeUnaryOp::Neg,
             expr,
         } => {
             let value = lower_small_int_expr(builder, bindings, expr, stats, kind)?;
             Ok(builder.ins().ineg(value))
         }
-        RuntimeExpr::Unary {
+        RuntimeExprKind::Unary {
             op: RuntimeUnaryOp::Not,
             ..
         } => Err(CraneliftCodegenError::UnsupportedExpr(format!(
             "boolean negation is not an {} result",
             kind.label()
         ))),
-        RuntimeExpr::Binary { lhs, op, rhs } => {
+        RuntimeExprKind::Binary { lhs, op, rhs } => {
             stats.evaluated_binary_ops += 1;
             let lhs = lower_small_int_expr(builder, bindings, lhs, stats, kind)?;
             let rhs = lower_small_int_expr(builder, bindings, rhs, stats, kind)?;
@@ -509,27 +513,26 @@ pub(super) fn lower_small_int_expr(
                 ))),
             }
         }
-        RuntimeExpr::Call { callee, args }
+        RuntimeExprKind::Call { callee, args }
             if callee.as_intrinsic() == Some(RuntimeIntrinsic::Add) && args.len() == 2 =>
         {
             stats.evaluated_calls += 1;
-            let lhs = lower_small_int_expr(builder, bindings, &args[0], stats, kind)?;
-            let rhs = lower_small_int_expr(builder, bindings, &args[1], stats, kind)?;
+            let lhs = lower_small_int_expr(builder, bindings, args[0].value(), stats, kind)?;
+            let rhs = lower_small_int_expr(builder, bindings, args[1].value(), stats, kind)?;
             Ok(builder.ins().iadd(lhs, rhs))
         }
-        RuntimeExpr::If {
+        RuntimeExprKind::If {
             condition,
             then_expr,
             else_expr,
         } => lower_small_int_if_expr(
             builder, bindings, condition, then_expr, else_expr, stats, kind,
         ),
-        RuntimeExpr::Call { callee, .. } => Err(CraneliftCodegenError::UnsupportedExpr(format!(
-            "call `{callee}` is outside the {} JIT subset",
-            kind.label()
-        ))),
+        RuntimeExprKind::Call { callee, .. } => Err(CraneliftCodegenError::UnsupportedExpr(
+            format!("call `{callee}` is outside the {} JIT subset", kind.label()),
+        )),
         other => Err(CraneliftCodegenError::UnsupportedExpr(format!(
-            "expression `{other}` is outside the {} JIT subset",
+            "expression `{other:?}` is outside the {} JIT subset",
             kind.label()
         ))),
     }
@@ -583,45 +586,49 @@ pub(super) fn bitpattern_i64(value: u64) -> i64 {
 
 pub(super) fn lower_u32_expr(
     builder: &mut FunctionBuilder<'_>,
-    bindings: &BTreeMap<String, LoweredIntBinding>,
+    bindings: &BTreeMap<RuntimeLocalDeclarationId, LoweredIntBinding>,
     expr: &RuntimeExpr,
     stats: &mut PureFunctionStats,
 ) -> Result<Value, CraneliftCodegenError> {
     stats.evaluated_exprs += 1;
-    match expr {
-        RuntimeExpr::Value(RuntimeValue::UInt(arcweft_core::value::RuntimeUInt::U32(value))) => {
-            Ok(builder.ins().iconst(types::I32, u32_iconst_value(*value)))
-        }
-        RuntimeExpr::Value(value) => Err(CraneliftCodegenError::UnsupportedExpr(format!(
+    match expr.kind() {
+        RuntimeExprKind::Value(RuntimeValue::UInt(arcweft_core::value::RuntimeUInt::U32(
+            value,
+        ))) => Ok(builder.ins().iconst(types::I32, u32_iconst_value(*value))),
+        RuntimeExprKind::Value(value) => Err(CraneliftCodegenError::UnsupportedExpr(format!(
             "literal {value:?} is not an u32 integer"
         ))),
-        RuntimeExpr::Local(name) => match bindings.get(name) {
+        RuntimeExprKind::Local(name) => match bindings.get(name) {
             Some(LoweredIntBinding::Const(value)) => Ok(builder.ins().iconst(types::I32, *value)),
             Some(LoweredIntBinding::Value(value)) => Ok(*value),
             None => Err(CraneliftCodegenError::UnsupportedExpr(format!(
                 "unknown u32 binding `{name}`"
             ))),
         },
-        RuntimeExpr::Let { name, expr, body } => {
+        RuntimeExprKind::Let {
+            binding,
+            expr,
+            body,
+        } => {
             let value = lower_u32_expr(builder, bindings, expr, stats)?;
             let mut scoped_bindings = bindings.clone();
-            scoped_bindings.insert(name.clone(), LoweredIntBinding::Value(value));
+            scoped_bindings.insert(*binding, LoweredIntBinding::Value(value));
             lower_u32_expr(builder, &scoped_bindings, body, stats)
         }
-        RuntimeExpr::Unary {
+        RuntimeExprKind::Unary {
             op: RuntimeUnaryOp::Neg,
             expr,
         } => {
             let value = lower_u32_expr(builder, bindings, expr, stats)?;
             Ok(builder.ins().ineg(value))
         }
-        RuntimeExpr::Unary {
+        RuntimeExprKind::Unary {
             op: RuntimeUnaryOp::Not,
             ..
         } => Err(CraneliftCodegenError::UnsupportedExpr(
             "boolean negation is not an u32 result".to_owned(),
         )),
-        RuntimeExpr::Binary { lhs, op, rhs } => {
+        RuntimeExprKind::Binary { lhs, op, rhs } => {
             stats.evaluated_binary_ops += 1;
             let lhs = lower_u32_expr(builder, bindings, lhs, stats)?;
             let rhs = lower_u32_expr(builder, bindings, rhs, stats)?;
@@ -635,72 +642,76 @@ pub(super) fn lower_u32_expr(
                 ))),
             }
         }
-        RuntimeExpr::Call { callee, args }
+        RuntimeExprKind::Call { callee, args }
             if callee.as_intrinsic() == Some(RuntimeIntrinsic::Add) && args.len() == 2 =>
         {
             stats.evaluated_calls += 1;
-            let lhs = lower_u32_expr(builder, bindings, &args[0], stats)?;
-            let rhs = lower_u32_expr(builder, bindings, &args[1], stats)?;
+            let lhs = lower_u32_expr(builder, bindings, args[0].value(), stats)?;
+            let rhs = lower_u32_expr(builder, bindings, args[1].value(), stats)?;
             Ok(builder.ins().iadd(lhs, rhs))
         }
-        RuntimeExpr::If {
+        RuntimeExprKind::If {
             condition,
             then_expr,
             else_expr,
         } => lower_u32_if_expr(builder, bindings, condition, then_expr, else_expr, stats),
-        RuntimeExpr::Call { callee, .. } => Err(CraneliftCodegenError::UnsupportedExpr(format!(
-            "call `{callee}` is outside the u32 JIT subset"
-        ))),
+        RuntimeExprKind::Call { callee, .. } => Err(CraneliftCodegenError::UnsupportedExpr(
+            format!("call `{callee}` is outside the u32 JIT subset"),
+        )),
         other => Err(CraneliftCodegenError::UnsupportedExpr(format!(
-            "expression `{other}` is outside the u32 JIT subset"
+            "expression `{other:?}` is outside the u32 JIT subset"
         ))),
     }
 }
 
 pub(super) fn lower_u64_expr(
     builder: &mut FunctionBuilder<'_>,
-    bindings: &BTreeMap<String, LoweredIntBinding>,
+    bindings: &BTreeMap<RuntimeLocalDeclarationId, LoweredIntBinding>,
     expr: &RuntimeExpr,
     stats: &mut PureFunctionStats,
 ) -> Result<Value, CraneliftCodegenError> {
     stats.evaluated_exprs += 1;
-    match expr {
-        RuntimeExpr::Value(RuntimeValue::UInt(arcweft_core::value::RuntimeUInt::U64(value))) => {
-            Ok(builder.ins().iconst(types::I64, u64_iconst_value(*value)))
-        }
-        RuntimeExpr::Value(RuntimeValue::UInt(arcweft_core::value::RuntimeUInt::USize(value))) => {
-            Ok(builder.ins().iconst(types::I64, u64_iconst_value(*value)))
-        }
-        RuntimeExpr::Value(value) => Err(CraneliftCodegenError::UnsupportedExpr(format!(
+    match expr.kind() {
+        RuntimeExprKind::Value(RuntimeValue::UInt(arcweft_core::value::RuntimeUInt::U64(
+            value,
+        ))) => Ok(builder.ins().iconst(types::I64, u64_iconst_value(*value))),
+        RuntimeExprKind::Value(RuntimeValue::UInt(arcweft_core::value::RuntimeUInt::USize(
+            value,
+        ))) => Ok(builder.ins().iconst(types::I64, u64_iconst_value(*value))),
+        RuntimeExprKind::Value(value) => Err(CraneliftCodegenError::UnsupportedExpr(format!(
             "literal {value:?} is not an u64-compatible integer"
         ))),
-        RuntimeExpr::Local(name) => match bindings.get(name) {
+        RuntimeExprKind::Local(name) => match bindings.get(name) {
             Some(LoweredIntBinding::Const(value)) => Ok(builder.ins().iconst(types::I64, *value)),
             Some(LoweredIntBinding::Value(value)) => Ok(*value),
             None => Err(CraneliftCodegenError::UnsupportedExpr(format!(
                 "unknown u64 binding `{name}`"
             ))),
         },
-        RuntimeExpr::Let { name, expr, body } => {
+        RuntimeExprKind::Let {
+            binding,
+            expr,
+            body,
+        } => {
             let value = lower_u64_expr(builder, bindings, expr, stats)?;
             let mut scoped_bindings = bindings.clone();
-            scoped_bindings.insert(name.clone(), LoweredIntBinding::Value(value));
+            scoped_bindings.insert(*binding, LoweredIntBinding::Value(value));
             lower_u64_expr(builder, &scoped_bindings, body, stats)
         }
-        RuntimeExpr::Unary {
+        RuntimeExprKind::Unary {
             op: RuntimeUnaryOp::Neg,
             expr,
         } => {
             let value = lower_u64_expr(builder, bindings, expr, stats)?;
             Ok(builder.ins().ineg(value))
         }
-        RuntimeExpr::Unary {
+        RuntimeExprKind::Unary {
             op: RuntimeUnaryOp::Not,
             ..
         } => Err(CraneliftCodegenError::UnsupportedExpr(
             "boolean negation is not an u64 result".to_owned(),
         )),
-        RuntimeExpr::Binary { lhs, op, rhs } => {
+        RuntimeExprKind::Binary { lhs, op, rhs } => {
             stats.evaluated_binary_ops += 1;
             let lhs = lower_u64_expr(builder, bindings, lhs, stats)?;
             let rhs = lower_u64_expr(builder, bindings, rhs, stats)?;
@@ -714,67 +725,71 @@ pub(super) fn lower_u64_expr(
                 ))),
             }
         }
-        RuntimeExpr::Call { callee, args }
+        RuntimeExprKind::Call { callee, args }
             if callee.as_intrinsic() == Some(RuntimeIntrinsic::Add) && args.len() == 2 =>
         {
             stats.evaluated_calls += 1;
-            let lhs = lower_u64_expr(builder, bindings, &args[0], stats)?;
-            let rhs = lower_u64_expr(builder, bindings, &args[1], stats)?;
+            let lhs = lower_u64_expr(builder, bindings, args[0].value(), stats)?;
+            let rhs = lower_u64_expr(builder, bindings, args[1].value(), stats)?;
             Ok(builder.ins().iadd(lhs, rhs))
         }
-        RuntimeExpr::If {
+        RuntimeExprKind::If {
             condition,
             then_expr,
             else_expr,
         } => lower_u64_if_expr(builder, bindings, condition, then_expr, else_expr, stats),
-        RuntimeExpr::Call { callee, .. } => Err(CraneliftCodegenError::UnsupportedExpr(format!(
-            "call `{callee}` is outside the u64 JIT subset"
-        ))),
+        RuntimeExprKind::Call { callee, .. } => Err(CraneliftCodegenError::UnsupportedExpr(
+            format!("call `{callee}` is outside the u64 JIT subset"),
+        )),
         other => Err(CraneliftCodegenError::UnsupportedExpr(format!(
-            "expression `{other}` is outside the u64 JIT subset"
+            "expression `{other:?}` is outside the u64 JIT subset"
         ))),
     }
 }
 
 pub(super) fn lower_f32_expr(
     builder: &mut FunctionBuilder<'_>,
-    bindings: &BTreeMap<String, LoweredF32Binding>,
+    bindings: &BTreeMap<RuntimeLocalDeclarationId, LoweredF32Binding>,
     expr: &RuntimeExpr,
     stats: &mut PureFunctionStats,
 ) -> Result<Value, CraneliftCodegenError> {
     stats.evaluated_exprs += 1;
-    match expr {
-        RuntimeExpr::Value(RuntimeValue::F32(value)) => Ok(builder.ins().f32const(*value)),
-        RuntimeExpr::Value(value) => Err(CraneliftCodegenError::UnsupportedExpr(format!(
+    match expr.kind() {
+        RuntimeExprKind::Value(RuntimeValue::F32(value)) => Ok(builder.ins().f32const(*value)),
+        RuntimeExprKind::Value(value) => Err(CraneliftCodegenError::UnsupportedExpr(format!(
             "literal {value:?} is not an f32 value"
         ))),
-        RuntimeExpr::Local(name) => match bindings.get(name) {
+        RuntimeExprKind::Local(name) => match bindings.get(name) {
             Some(LoweredF32Binding::Const(value)) => Ok(builder.ins().f32const(*value)),
             Some(LoweredF32Binding::Value(value)) => Ok(*value),
             None => Err(CraneliftCodegenError::UnsupportedExpr(format!(
                 "unknown f32 binding `{name}`"
             ))),
         },
-        RuntimeExpr::Let { name, expr, body } => {
+        RuntimeExprKind::Let {
+            binding,
+            expr,
+            body,
+        } => {
             let value = lower_f32_expr(builder, bindings, expr, stats)?;
             let mut scoped_bindings = bindings.clone();
-            scoped_bindings.insert(name.clone(), LoweredF32Binding::Value(value));
+            scoped_bindings.insert(*binding, LoweredF32Binding::Value(value));
             lower_f32_expr(builder, &scoped_bindings, body, stats)
         }
-        RuntimeExpr::Unary {
+        RuntimeExprKind::Unary {
             op: RuntimeUnaryOp::Neg,
             expr,
         } => {
             let value = lower_f32_expr(builder, bindings, expr, stats)?;
             Ok(builder.ins().fneg(value))
         }
-        RuntimeExpr::Unary {
+        RuntimeExprKind::Unary {
             op: RuntimeUnaryOp::Not,
             ..
         } => Err(CraneliftCodegenError::UnsupportedExpr(
             "boolean negation is not an f32 result".to_owned(),
         )),
-        RuntimeExpr::Binary { lhs, op, rhs } => {
+        RuntimeExprKind::Binary { lhs, op, rhs } => {
             stats.evaluated_binary_ops += 1;
             let lhs = lower_f32_expr(builder, bindings, lhs, stats)?;
             let rhs = lower_f32_expr(builder, bindings, rhs, stats)?;
@@ -788,71 +803,75 @@ pub(super) fn lower_f32_expr(
                 ))),
             }
         }
-        RuntimeExpr::Call { callee, args }
+        RuntimeExprKind::Call { callee, args }
             if callee.as_intrinsic() == Some(RuntimeIntrinsic::Add) && args.len() == 2 =>
         {
             stats.evaluated_calls += 1;
-            let lhs = lower_f32_expr(builder, bindings, &args[0], stats)?;
-            let rhs = lower_f32_expr(builder, bindings, &args[1], stats)?;
+            let lhs = lower_f32_expr(builder, bindings, args[0].value(), stats)?;
+            let rhs = lower_f32_expr(builder, bindings, args[1].value(), stats)?;
             Ok(builder.ins().fadd(lhs, rhs))
         }
-        RuntimeExpr::Call { callee, args } => {
+        RuntimeExprKind::Call { callee, args } => {
             lower_f32_std_float_call(builder, bindings, callee, args, stats).ok_or_else(|| {
                 CraneliftCodegenError::UnsupportedExpr(format!(
                     "call `{callee}` is outside the f32 JIT subset"
                 ))
             })?
         }
-        RuntimeExpr::If {
+        RuntimeExprKind::If {
             condition,
             then_expr,
             else_expr,
         } => lower_f32_if_expr(builder, bindings, condition, then_expr, else_expr, stats),
         other => Err(CraneliftCodegenError::UnsupportedExpr(format!(
-            "expression `{other}` is outside the f32 JIT subset"
+            "expression `{other:?}` is outside the f32 JIT subset"
         ))),
     }
 }
 
 pub(super) fn lower_f64_expr(
     builder: &mut FunctionBuilder<'_>,
-    bindings: &BTreeMap<String, LoweredF64Binding>,
+    bindings: &BTreeMap<RuntimeLocalDeclarationId, LoweredF64Binding>,
     expr: &RuntimeExpr,
     stats: &mut PureFunctionStats,
 ) -> Result<Value, CraneliftCodegenError> {
     stats.evaluated_exprs += 1;
-    match expr {
-        RuntimeExpr::Value(RuntimeValue::F64(value)) => Ok(builder.ins().f64const(*value)),
-        RuntimeExpr::Value(value) => Err(CraneliftCodegenError::UnsupportedExpr(format!(
+    match expr.kind() {
+        RuntimeExprKind::Value(RuntimeValue::F64(value)) => Ok(builder.ins().f64const(*value)),
+        RuntimeExprKind::Value(value) => Err(CraneliftCodegenError::UnsupportedExpr(format!(
             "literal {value:?} is not an f64 value"
         ))),
-        RuntimeExpr::Local(name) => match bindings.get(name) {
+        RuntimeExprKind::Local(name) => match bindings.get(name) {
             Some(LoweredF64Binding::Const(value)) => Ok(builder.ins().f64const(*value)),
             Some(LoweredF64Binding::Value(value)) => Ok(*value),
             None => Err(CraneliftCodegenError::UnsupportedExpr(format!(
                 "unknown f64 binding `{name}`"
             ))),
         },
-        RuntimeExpr::Let { name, expr, body } => {
+        RuntimeExprKind::Let {
+            binding,
+            expr,
+            body,
+        } => {
             let value = lower_f64_expr(builder, bindings, expr, stats)?;
             let mut scoped_bindings = bindings.clone();
-            scoped_bindings.insert(name.clone(), LoweredF64Binding::Value(value));
+            scoped_bindings.insert(*binding, LoweredF64Binding::Value(value));
             lower_f64_expr(builder, &scoped_bindings, body, stats)
         }
-        RuntimeExpr::Unary {
+        RuntimeExprKind::Unary {
             op: RuntimeUnaryOp::Neg,
             expr,
         } => {
             let value = lower_f64_expr(builder, bindings, expr, stats)?;
             Ok(builder.ins().fneg(value))
         }
-        RuntimeExpr::Unary {
+        RuntimeExprKind::Unary {
             op: RuntimeUnaryOp::Not,
             ..
         } => Err(CraneliftCodegenError::UnsupportedExpr(
             "boolean negation is not an f64 result".to_owned(),
         )),
-        RuntimeExpr::Binary { lhs, op, rhs } => {
+        RuntimeExprKind::Binary { lhs, op, rhs } => {
             stats.evaluated_binary_ops += 1;
             let lhs = lower_f64_expr(builder, bindings, lhs, stats)?;
             let rhs = lower_f64_expr(builder, bindings, rhs, stats)?;
@@ -866,65 +885,71 @@ pub(super) fn lower_f64_expr(
                 ))),
             }
         }
-        RuntimeExpr::Call { callee, args }
+        RuntimeExprKind::Call { callee, args }
             if callee.as_intrinsic() == Some(RuntimeIntrinsic::Add) && args.len() == 2 =>
         {
             stats.evaluated_calls += 1;
-            let lhs = lower_f64_expr(builder, bindings, &args[0], stats)?;
-            let rhs = lower_f64_expr(builder, bindings, &args[1], stats)?;
+            let lhs = lower_f64_expr(builder, bindings, args[0].value(), stats)?;
+            let rhs = lower_f64_expr(builder, bindings, args[1].value(), stats)?;
             Ok(builder.ins().fadd(lhs, rhs))
         }
-        RuntimeExpr::Call { callee, args } => {
+        RuntimeExprKind::Call { callee, args } => {
             lower_f64_std_float_call(builder, bindings, callee, args, stats).ok_or_else(|| {
                 CraneliftCodegenError::UnsupportedExpr(format!(
                     "call `{callee}` is outside the f64 JIT subset"
                 ))
             })?
         }
-        RuntimeExpr::If {
+        RuntimeExprKind::If {
             condition,
             then_expr,
             else_expr,
         } => lower_f64_if_expr(builder, bindings, condition, then_expr, else_expr, stats),
         other => Err(CraneliftCodegenError::UnsupportedExpr(format!(
-            "expression `{other}` is outside the f64 JIT subset"
+            "expression `{other:?}` is outside the f64 JIT subset"
         ))),
     }
 }
 
 pub(super) fn lower_f32_std_float_call(
     builder: &mut FunctionBuilder<'_>,
-    bindings: &BTreeMap<String, LoweredF32Binding>,
+    bindings: &BTreeMap<RuntimeLocalDeclarationId, LoweredF32Binding>,
     callee: &RuntimeCallTarget,
-    args: &[RuntimeExpr],
+    args: &[arcweft_core::value::RuntimeCallArgument],
     stats: &mut PureFunctionStats,
 ) -> Option<Result<Value, CraneliftCodegenError>> {
     let intrinsic = callee.as_intrinsic()?;
     let result = match (intrinsic, args) {
         (RuntimeIntrinsic::StdF32Abs, [value]) => {
-            lower_f32_expr(builder, bindings, value, stats).map(|value| builder.ins().fabs(value))
+            lower_f32_expr(builder, bindings, value.value(), stats)
+                .map(|value| builder.ins().fabs(value))
         }
         (RuntimeIntrinsic::StdF32Floor, [value]) => {
-            lower_f32_expr(builder, bindings, value, stats).map(|value| builder.ins().floor(value))
+            lower_f32_expr(builder, bindings, value.value(), stats)
+                .map(|value| builder.ins().floor(value))
         }
         (RuntimeIntrinsic::StdF32Ceil, [value]) => {
-            lower_f32_expr(builder, bindings, value, stats).map(|value| builder.ins().ceil(value))
+            lower_f32_expr(builder, bindings, value.value(), stats)
+                .map(|value| builder.ins().ceil(value))
         }
         (RuntimeIntrinsic::StdF32Trunc, [value]) => {
-            lower_f32_expr(builder, bindings, value, stats).map(|value| builder.ins().trunc(value))
+            lower_f32_expr(builder, bindings, value.value(), stats)
+                .map(|value| builder.ins().trunc(value))
         }
-        (RuntimeIntrinsic::StdF32Fract, [value]) => lower_f32_expr(builder, bindings, value, stats)
-            .map(|value| {
+        (RuntimeIntrinsic::StdF32Fract, [value]) => {
+            lower_f32_expr(builder, bindings, value.value(), stats).map(|value| {
                 let trunc = builder.ins().trunc(value);
                 builder.ins().fsub(value, trunc)
-            }),
+            })
+        }
         (RuntimeIntrinsic::StdF32Sqrt, [value]) => {
-            lower_f32_expr(builder, bindings, value, stats).map(|value| builder.ins().sqrt(value))
+            lower_f32_expr(builder, bindings, value.value(), stats)
+                .map(|value| builder.ins().sqrt(value))
         }
         (RuntimeIntrinsic::StdF32MulAdd, [a, b, c]) => (|| {
-            let a = lower_f32_expr(builder, bindings, a, stats)?;
-            let b = lower_f32_expr(builder, bindings, b, stats)?;
-            let c = lower_f32_expr(builder, bindings, c, stats)?;
+            let a = lower_f32_expr(builder, bindings, a.value(), stats)?;
+            let b = lower_f32_expr(builder, bindings, b.value(), stats)?;
+            let c = lower_f32_expr(builder, bindings, c.value(), stats)?;
             Ok(builder.ins().fma(a, b, c))
         })(),
         _ => return None,
@@ -935,37 +960,43 @@ pub(super) fn lower_f32_std_float_call(
 
 pub(super) fn lower_f64_std_float_call(
     builder: &mut FunctionBuilder<'_>,
-    bindings: &BTreeMap<String, LoweredF64Binding>,
+    bindings: &BTreeMap<RuntimeLocalDeclarationId, LoweredF64Binding>,
     callee: &RuntimeCallTarget,
-    args: &[RuntimeExpr],
+    args: &[arcweft_core::value::RuntimeCallArgument],
     stats: &mut PureFunctionStats,
 ) -> Option<Result<Value, CraneliftCodegenError>> {
     let intrinsic = callee.as_intrinsic()?;
     let result = match (intrinsic, args) {
         (RuntimeIntrinsic::StdF64Abs, [value]) => {
-            lower_f64_expr(builder, bindings, value, stats).map(|value| builder.ins().fabs(value))
+            lower_f64_expr(builder, bindings, value.value(), stats)
+                .map(|value| builder.ins().fabs(value))
         }
         (RuntimeIntrinsic::StdF64Floor, [value]) => {
-            lower_f64_expr(builder, bindings, value, stats).map(|value| builder.ins().floor(value))
+            lower_f64_expr(builder, bindings, value.value(), stats)
+                .map(|value| builder.ins().floor(value))
         }
         (RuntimeIntrinsic::StdF64Ceil, [value]) => {
-            lower_f64_expr(builder, bindings, value, stats).map(|value| builder.ins().ceil(value))
+            lower_f64_expr(builder, bindings, value.value(), stats)
+                .map(|value| builder.ins().ceil(value))
         }
         (RuntimeIntrinsic::StdF64Trunc, [value]) => {
-            lower_f64_expr(builder, bindings, value, stats).map(|value| builder.ins().trunc(value))
+            lower_f64_expr(builder, bindings, value.value(), stats)
+                .map(|value| builder.ins().trunc(value))
         }
-        (RuntimeIntrinsic::StdF64Fract, [value]) => lower_f64_expr(builder, bindings, value, stats)
-            .map(|value| {
+        (RuntimeIntrinsic::StdF64Fract, [value]) => {
+            lower_f64_expr(builder, bindings, value.value(), stats).map(|value| {
                 let trunc = builder.ins().trunc(value);
                 builder.ins().fsub(value, trunc)
-            }),
+            })
+        }
         (RuntimeIntrinsic::StdF64Sqrt, [value]) => {
-            lower_f64_expr(builder, bindings, value, stats).map(|value| builder.ins().sqrt(value))
+            lower_f64_expr(builder, bindings, value.value(), stats)
+                .map(|value| builder.ins().sqrt(value))
         }
         (RuntimeIntrinsic::StdF64MulAdd, [a, b, c]) => (|| {
-            let a = lower_f64_expr(builder, bindings, a, stats)?;
-            let b = lower_f64_expr(builder, bindings, b, stats)?;
-            let c = lower_f64_expr(builder, bindings, c, stats)?;
+            let a = lower_f64_expr(builder, bindings, a.value(), stats)?;
+            let b = lower_f64_expr(builder, bindings, b.value(), stats)?;
+            let c = lower_f64_expr(builder, bindings, c.value(), stats)?;
             Ok(builder.ins().fma(a, b, c))
         })(),
         _ => return None,
@@ -976,7 +1007,7 @@ pub(super) fn lower_f64_std_float_call(
 
 pub(super) fn lower_if_expr(
     builder: &mut FunctionBuilder<'_>,
-    bindings: &BTreeMap<String, LoweredIntBinding>,
+    bindings: &BTreeMap<RuntimeLocalDeclarationId, LoweredIntBinding>,
     condition: &RuntimeExpr,
     then_expr: &RuntimeExpr,
     else_expr: &RuntimeExpr,
@@ -1005,7 +1036,7 @@ pub(super) fn lower_if_expr(
 
 pub(super) fn lower_i32_if_expr(
     builder: &mut FunctionBuilder<'_>,
-    bindings: &BTreeMap<String, LoweredIntBinding>,
+    bindings: &BTreeMap<RuntimeLocalDeclarationId, LoweredIntBinding>,
     condition: &RuntimeExpr,
     then_expr: &RuntimeExpr,
     else_expr: &RuntimeExpr,
@@ -1034,7 +1065,7 @@ pub(super) fn lower_i32_if_expr(
 
 pub(super) fn lower_small_int_if_expr(
     builder: &mut FunctionBuilder<'_>,
-    bindings: &BTreeMap<String, LoweredSmallIntBinding>,
+    bindings: &BTreeMap<RuntimeLocalDeclarationId, LoweredSmallIntBinding>,
     condition: &RuntimeExpr,
     then_expr: &RuntimeExpr,
     else_expr: &RuntimeExpr,
@@ -1064,7 +1095,7 @@ pub(super) fn lower_small_int_if_expr(
 
 pub(super) fn lower_u32_if_expr(
     builder: &mut FunctionBuilder<'_>,
-    bindings: &BTreeMap<String, LoweredIntBinding>,
+    bindings: &BTreeMap<RuntimeLocalDeclarationId, LoweredIntBinding>,
     condition: &RuntimeExpr,
     then_expr: &RuntimeExpr,
     else_expr: &RuntimeExpr,
@@ -1093,7 +1124,7 @@ pub(super) fn lower_u32_if_expr(
 
 pub(super) fn lower_u64_if_expr(
     builder: &mut FunctionBuilder<'_>,
-    bindings: &BTreeMap<String, LoweredIntBinding>,
+    bindings: &BTreeMap<RuntimeLocalDeclarationId, LoweredIntBinding>,
     condition: &RuntimeExpr,
     then_expr: &RuntimeExpr,
     else_expr: &RuntimeExpr,
@@ -1122,7 +1153,7 @@ pub(super) fn lower_u64_if_expr(
 
 pub(super) fn lower_f32_if_expr(
     builder: &mut FunctionBuilder<'_>,
-    bindings: &BTreeMap<String, LoweredF32Binding>,
+    bindings: &BTreeMap<RuntimeLocalDeclarationId, LoweredF32Binding>,
     condition: &RuntimeExpr,
     then_expr: &RuntimeExpr,
     else_expr: &RuntimeExpr,
@@ -1151,7 +1182,7 @@ pub(super) fn lower_f32_if_expr(
 
 pub(super) fn lower_f64_if_expr(
     builder: &mut FunctionBuilder<'_>,
-    bindings: &BTreeMap<String, LoweredF64Binding>,
+    bindings: &BTreeMap<RuntimeLocalDeclarationId, LoweredF64Binding>,
     condition: &RuntimeExpr,
     then_expr: &RuntimeExpr,
     else_expr: &RuntimeExpr,
@@ -1180,16 +1211,16 @@ pub(super) fn lower_f64_if_expr(
 
 pub(super) fn lower_condition(
     builder: &mut FunctionBuilder<'_>,
-    bindings: &BTreeMap<String, LoweredIntBinding>,
+    bindings: &BTreeMap<RuntimeLocalDeclarationId, LoweredIntBinding>,
     expr: &RuntimeExpr,
     stats: &mut PureFunctionStats,
 ) -> Result<Value, CraneliftCodegenError> {
     stats.evaluated_exprs += 1;
-    match expr {
-        RuntimeExpr::Value(RuntimeValue::Bool(value)) => {
+    match expr.kind() {
+        RuntimeExprKind::Value(RuntimeValue::Bool(value)) => {
             Ok(builder.ins().iconst(types::I8, i64::from(*value)))
         }
-        RuntimeExpr::Binary { lhs, op, rhs } => {
+        RuntimeExprKind::Binary { lhs, op, rhs } => {
             stats.evaluated_binary_ops += 1;
             let Some(condition) = int_condition(*op) else {
                 return Err(CraneliftCodegenError::UnsupportedExpr(format!(
@@ -1201,23 +1232,23 @@ pub(super) fn lower_condition(
             Ok(builder.ins().icmp(condition, lhs, rhs))
         }
         other => Err(CraneliftCodegenError::UnsupportedExpr(format!(
-            "condition `{other}` is outside the JIT subset"
+            "condition `{other:?}` is outside the JIT subset"
         ))),
     }
 }
 
 pub(super) fn lower_i32_condition(
     builder: &mut FunctionBuilder<'_>,
-    bindings: &BTreeMap<String, LoweredIntBinding>,
+    bindings: &BTreeMap<RuntimeLocalDeclarationId, LoweredIntBinding>,
     expr: &RuntimeExpr,
     stats: &mut PureFunctionStats,
 ) -> Result<Value, CraneliftCodegenError> {
     stats.evaluated_exprs += 1;
-    match expr {
-        RuntimeExpr::Value(RuntimeValue::Bool(value)) => {
+    match expr.kind() {
+        RuntimeExprKind::Value(RuntimeValue::Bool(value)) => {
             Ok(builder.ins().iconst(types::I8, i64::from(*value)))
         }
-        RuntimeExpr::Binary { lhs, op, rhs } => {
+        RuntimeExprKind::Binary { lhs, op, rhs } => {
             stats.evaluated_binary_ops += 1;
             let Some(condition) = int_condition(*op) else {
                 return Err(CraneliftCodegenError::UnsupportedExpr(format!(
@@ -1229,24 +1260,24 @@ pub(super) fn lower_i32_condition(
             Ok(builder.ins().icmp(condition, lhs, rhs))
         }
         other => Err(CraneliftCodegenError::UnsupportedExpr(format!(
-            "condition `{other}` is outside the i32 JIT subset"
+            "condition `{other:?}` is outside the i32 JIT subset"
         ))),
     }
 }
 
 pub(super) fn lower_small_int_condition(
     builder: &mut FunctionBuilder<'_>,
-    bindings: &BTreeMap<String, LoweredSmallIntBinding>,
+    bindings: &BTreeMap<RuntimeLocalDeclarationId, LoweredSmallIntBinding>,
     expr: &RuntimeExpr,
     stats: &mut PureFunctionStats,
     kind: SmallIntKind,
 ) -> Result<Value, CraneliftCodegenError> {
     stats.evaluated_exprs += 1;
-    match expr {
-        RuntimeExpr::Value(RuntimeValue::Bool(value)) => {
+    match expr.kind() {
+        RuntimeExprKind::Value(RuntimeValue::Bool(value)) => {
             Ok(builder.ins().iconst(types::I8, i64::from(*value)))
         }
-        RuntimeExpr::Binary { lhs, op, rhs } => {
+        RuntimeExprKind::Binary { lhs, op, rhs } => {
             stats.evaluated_binary_ops += 1;
             let condition = if kind.signed() {
                 int_condition(*op)
@@ -1264,7 +1295,7 @@ pub(super) fn lower_small_int_condition(
             Ok(builder.ins().icmp(condition, lhs, rhs))
         }
         other => Err(CraneliftCodegenError::UnsupportedExpr(format!(
-            "condition `{other}` is outside the {} JIT subset",
+            "condition `{other:?}` is outside the {} JIT subset",
             kind.label()
         ))),
     }
@@ -1272,16 +1303,16 @@ pub(super) fn lower_small_int_condition(
 
 pub(super) fn lower_u32_condition(
     builder: &mut FunctionBuilder<'_>,
-    bindings: &BTreeMap<String, LoweredIntBinding>,
+    bindings: &BTreeMap<RuntimeLocalDeclarationId, LoweredIntBinding>,
     expr: &RuntimeExpr,
     stats: &mut PureFunctionStats,
 ) -> Result<Value, CraneliftCodegenError> {
     stats.evaluated_exprs += 1;
-    match expr {
-        RuntimeExpr::Value(RuntimeValue::Bool(value)) => {
+    match expr.kind() {
+        RuntimeExprKind::Value(RuntimeValue::Bool(value)) => {
             Ok(builder.ins().iconst(types::I8, i64::from(*value)))
         }
-        RuntimeExpr::Binary { lhs, op, rhs } => {
+        RuntimeExprKind::Binary { lhs, op, rhs } => {
             stats.evaluated_binary_ops += 1;
             let Some(condition) = unsigned_int_condition(*op) else {
                 return Err(CraneliftCodegenError::UnsupportedExpr(format!(
@@ -1293,23 +1324,23 @@ pub(super) fn lower_u32_condition(
             Ok(builder.ins().icmp(condition, lhs, rhs))
         }
         other => Err(CraneliftCodegenError::UnsupportedExpr(format!(
-            "condition `{other}` is outside the u32 JIT subset"
+            "condition `{other:?}` is outside the u32 JIT subset"
         ))),
     }
 }
 
 pub(super) fn lower_u64_condition(
     builder: &mut FunctionBuilder<'_>,
-    bindings: &BTreeMap<String, LoweredIntBinding>,
+    bindings: &BTreeMap<RuntimeLocalDeclarationId, LoweredIntBinding>,
     expr: &RuntimeExpr,
     stats: &mut PureFunctionStats,
 ) -> Result<Value, CraneliftCodegenError> {
     stats.evaluated_exprs += 1;
-    match expr {
-        RuntimeExpr::Value(RuntimeValue::Bool(value)) => {
+    match expr.kind() {
+        RuntimeExprKind::Value(RuntimeValue::Bool(value)) => {
             Ok(builder.ins().iconst(types::I8, i64::from(*value)))
         }
-        RuntimeExpr::Binary { lhs, op, rhs } => {
+        RuntimeExprKind::Binary { lhs, op, rhs } => {
             stats.evaluated_binary_ops += 1;
             let Some(condition) = unsigned_int_condition(*op) else {
                 return Err(CraneliftCodegenError::UnsupportedExpr(format!(
@@ -1321,23 +1352,23 @@ pub(super) fn lower_u64_condition(
             Ok(builder.ins().icmp(condition, lhs, rhs))
         }
         other => Err(CraneliftCodegenError::UnsupportedExpr(format!(
-            "condition `{other}` is outside the u64 JIT subset"
+            "condition `{other:?}` is outside the u64 JIT subset"
         ))),
     }
 }
 
 pub(super) fn lower_f32_condition(
     builder: &mut FunctionBuilder<'_>,
-    bindings: &BTreeMap<String, LoweredF32Binding>,
+    bindings: &BTreeMap<RuntimeLocalDeclarationId, LoweredF32Binding>,
     expr: &RuntimeExpr,
     stats: &mut PureFunctionStats,
 ) -> Result<Value, CraneliftCodegenError> {
     stats.evaluated_exprs += 1;
-    match expr {
-        RuntimeExpr::Value(RuntimeValue::Bool(value)) => {
+    match expr.kind() {
+        RuntimeExprKind::Value(RuntimeValue::Bool(value)) => {
             Ok(builder.ins().iconst(types::I8, i64::from(*value)))
         }
-        RuntimeExpr::Binary { lhs, op, rhs } => {
+        RuntimeExprKind::Binary { lhs, op, rhs } => {
             stats.evaluated_binary_ops += 1;
             let Some(condition) = float_condition(*op) else {
                 return Err(CraneliftCodegenError::UnsupportedExpr(format!(
@@ -1349,23 +1380,23 @@ pub(super) fn lower_f32_condition(
             Ok(builder.ins().fcmp(condition, lhs, rhs))
         }
         other => Err(CraneliftCodegenError::UnsupportedExpr(format!(
-            "condition `{other}` is outside the f32 JIT subset"
+            "condition `{other:?}` is outside the f32 JIT subset"
         ))),
     }
 }
 
 pub(super) fn lower_f64_condition(
     builder: &mut FunctionBuilder<'_>,
-    bindings: &BTreeMap<String, LoweredF64Binding>,
+    bindings: &BTreeMap<RuntimeLocalDeclarationId, LoweredF64Binding>,
     expr: &RuntimeExpr,
     stats: &mut PureFunctionStats,
 ) -> Result<Value, CraneliftCodegenError> {
     stats.evaluated_exprs += 1;
-    match expr {
-        RuntimeExpr::Value(RuntimeValue::Bool(value)) => {
+    match expr.kind() {
+        RuntimeExprKind::Value(RuntimeValue::Bool(value)) => {
             Ok(builder.ins().iconst(types::I8, i64::from(*value)))
         }
-        RuntimeExpr::Binary { lhs, op, rhs } => {
+        RuntimeExprKind::Binary { lhs, op, rhs } => {
             stats.evaluated_binary_ops += 1;
             let Some(condition) = float_condition(*op) else {
                 return Err(CraneliftCodegenError::UnsupportedExpr(format!(
@@ -1377,7 +1408,7 @@ pub(super) fn lower_f64_condition(
             Ok(builder.ins().fcmp(condition, lhs, rhs))
         }
         other => Err(CraneliftCodegenError::UnsupportedExpr(format!(
-            "condition `{other}` is outside the f64 JIT subset"
+            "condition `{other:?}` is outside the f64 JIT subset"
         ))),
     }
 }

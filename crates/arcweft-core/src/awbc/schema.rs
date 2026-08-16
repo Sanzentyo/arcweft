@@ -3,6 +3,9 @@ use crate::entry::{
 };
 use crate::pattern::RuntimeOpaqueTypeAdmission;
 use crate::plan::{FlowRuntimeId, RuntimeAgentOperationalType, RuntimeFlowTargetError};
+use crate::runtime_id::{
+    RuntimeDialogueMarkId, RuntimeDialogueValueSlotId, RuntimeLocalDeclarationId,
+};
 use crate::value::RuntimeAgentConstructor;
 use arcweft_interaction_model::audio::{
     AudioEffectParameterKind, AudioLoopMode, MicrophoneConstraints,
@@ -76,7 +79,6 @@ awbc_id!(AwbcContentUnitId, "Index into the content-unit table.");
 awbc_id!(AwbcLineTaskGroupId, "Index into the line-task-group table.");
 awbc_id!(AwbcLineTaskNodeId, "Index into the line-task-node table.");
 awbc_id!(AwbcStreamPlanId, "Index into the stream-plan table.");
-awbc_id!(AwbcSourcePlanId, "Index into the source-plan table.");
 awbc_id!(AwbcPureHelperId, "Index into the pure-helper table.");
 awbc_id!(
     AwbcTraitMethodId,
@@ -141,7 +143,6 @@ pub struct AwbcProgram {
     pub line_task_groups: Vec<AwbcLineTaskGroup>,
     pub line_task_nodes: Vec<AwbcLineTaskNode>,
     pub stream_plans: Vec<AwbcStreamPlan>,
-    pub source_plans: Vec<AwbcSourcePlan>,
     pub pure_helpers: Vec<AwbcPureHelper>,
     pub trait_methods: Vec<AwbcTraitMethod>,
     pub display_map: Vec<AwbcDisplayMapEntry>,
@@ -180,7 +181,6 @@ impl Default for AwbcProgram {
             line_task_groups: Vec::new(),
             line_task_nodes: Vec::new(),
             stream_plans: Vec::new(),
-            source_plans: Vec::new(),
             pure_helpers: Vec::new(),
             trait_methods: Vec::new(),
             display_map: Vec::new(),
@@ -335,6 +335,9 @@ fn visit_program_strings(program: &mut AwbcProgram, visitor: &mut dyn FnMut(&mut
         visit_string_id(&mut call.public_id, visitor);
         visit_string_id(&mut call.capability, visitor);
         visit_string_id(&mut call.operation, visitor);
+        for argument in &mut call.arguments {
+            visit_optional_string_id(&mut argument.name, visitor);
+        }
     }
     for task in &mut program.task_plans {
         visit_string_id(&mut task.public_id, visitor);
@@ -358,13 +361,8 @@ fn visit_program_strings(program: &mut AwbcProgram, visitor: &mut dyn FnMut(&mut
     }
     for content in &mut program.content_units {
         visit_string_id(&mut content.public_id, visitor);
-    }
-    for group in &mut program.line_task_groups {
-        for option in &mut group.options {
-            visit_string_id(&mut option.name, visitor);
-        }
-        for handler in &mut group.cancel_handlers {
-            visit_string_id(&mut handler.trigger, visitor);
+        for mark in &mut content.marks {
+            visit_string_id(&mut mark.label, visitor);
         }
     }
     for node in &mut program.line_task_nodes {
@@ -372,9 +370,6 @@ fn visit_program_strings(program: &mut AwbcProgram, visitor: &mut dyn FnMut(&mut
     }
     for stream in &mut program.stream_plans {
         visit_string_id(&mut stream.public_id, visitor);
-    }
-    for source in &mut program.source_plans {
-        visit_string_id(&mut source.public_id, visitor);
     }
     for helper in &mut program.pure_helpers {
         visit_string_id(&mut helper.public_id, visitor);
@@ -495,8 +490,7 @@ fn visit_instruction_strings(
     visitor: &mut dyn FnMut(&mut AwbcStringId),
 ) {
     match instruction {
-        AwbcInstruction::ProjectField { field, .. }
-        | AwbcInstruction::AssignField { field, .. } => visit_string_id(field, visitor),
+        AwbcInstruction::ProjectField { field, .. } => visit_string_id(field, visitor),
         AwbcInstruction::RegisterCleanup { key, .. } | AwbcInstruction::CancelCleanup { key } => {
             visit_string_id(key, visitor);
         }
@@ -549,17 +543,10 @@ fn visit_line_task_node_strings(
     node: &mut AwbcLineTaskNode,
     visitor: &mut dyn FnMut(&mut AwbcStringId),
 ) {
-    if let AwbcLineTaskNode::Child { trigger, .. } = node {
-        visit_line_task_trigger_strings(trigger, visitor);
-    }
-}
-
-fn visit_line_task_trigger_strings(
-    trigger: &mut AwbcLineTaskTrigger,
-    visitor: &mut dyn FnMut(&mut AwbcStringId),
-) {
-    if let AwbcLineTaskTrigger::Mark(id) = trigger {
+    if let AwbcLineTaskNode::Child { id, key, name, .. } = node {
         visit_string_id(id, visitor);
+        visit_optional_string_id(key, visitor);
+        visit_optional_string_id(name, visitor);
     }
 }
 
@@ -658,6 +645,8 @@ pub enum AwbcRuntimeType {
         producer: AwbcStringId,
         semantic_identity: [u8; 32],
         admission: RuntimeOpaqueTypeAdmission,
+        /// Generic arguments in the exact checked type graph.
+        arguments: Vec<AwbcTypeId>,
     },
     /// Canonical byte-buffer checked type, distinct from `Sequence<U8>`.
     Bytes,
@@ -826,8 +815,6 @@ pub enum AwbcFunctionKind {
     PureHelper,
     TraitMethod,
     StreamTransform,
-    SourceOpen,
-    SourceHandler,
     LineTask,
     Synthetic,
 }
@@ -851,6 +838,22 @@ impl AwbcFunctionFlags {
     pub const fn contains(self, flag: u32) -> bool {
         self.0 & flag == flag
     }
+}
+
+/// Typed role of one value supplied to a dialogue content slot.
+#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum AwbcDialogueValueRole {
+    Interpolation,
+    Condition,
+}
+
+/// Register-backed value supplied at a dialogue safe point.
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+pub struct AwbcDialogueValueBinding {
+    pub slot: RuntimeDialogueValueSlotId,
+    pub role: AwbcDialogueValueRole,
+    pub value: AwbcRegisterId,
 }
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
@@ -895,16 +898,15 @@ pub enum AwbcOpcode {
     SpawnFiber,
     StreamYield,
     StreamClose,
-    SourceClose,
     Drop,
-    SourceYield,
-    AssignField,
+    AssignRecordField,
     CallTraitMethod,
     RegisterCleanup,
     CancelCleanup,
     MakeFunction,
     ApplyFunction,
     MakeAgent,
+    MakeReductionUnchanged,
     Jump,
     Branch,
     Match,
@@ -955,16 +957,15 @@ impl AwbcOpcode {
             Self::SpawnFiber => 0x1b,
             Self::StreamYield => 0x1c,
             Self::StreamClose => 0x1d,
-            Self::SourceClose => 0x1e,
             Self::Drop => 0x1f,
-            Self::SourceYield => 0x20,
-            Self::AssignField => 0x21,
+            Self::AssignRecordField => 0x21,
             Self::CallTraitMethod => 0x22,
             Self::RegisterCleanup => 0x23,
             Self::CancelCleanup => 0x24,
             Self::MakeFunction => 0x25,
             Self::ApplyFunction => 0x26,
             Self::MakeAgent => 0x27,
+            Self::MakeReductionUnchanged => 0x28,
             Self::Jump => 0x80,
             Self::Branch => 0x81,
             Self::Match => 0x82,
@@ -1015,16 +1016,15 @@ impl AwbcOpcode {
             0x1b => Self::SpawnFiber,
             0x1c => Self::StreamYield,
             0x1d => Self::StreamClose,
-            0x1e => Self::SourceClose,
             0x1f => Self::Drop,
-            0x20 => Self::SourceYield,
-            0x21 => Self::AssignField,
+            0x21 => Self::AssignRecordField,
             0x22 => Self::CallTraitMethod,
             0x23 => Self::RegisterCleanup,
             0x24 => Self::CancelCleanup,
             0x25 => Self::MakeFunction,
             0x26 => Self::ApplyFunction,
             0x27 => Self::MakeAgent,
+            0x28 => Self::MakeReductionUnchanged,
             0x80 => Self::Jump,
             0x81 => Self::Branch,
             0x82 => Self::Match,
@@ -1183,19 +1183,12 @@ pub enum AwbcInstruction {
     StreamClose {
         stream: AwbcStreamPlanId,
     },
-    SourceClose {
-        source: AwbcSourcePlanId,
-    },
     Drop {
         register: AwbcRegisterId,
     },
-    SourceYield {
-        source: AwbcSourcePlanId,
-        value: AwbcRegisterId,
-    },
-    AssignField {
+    AssignRecordField {
         target: AwbcRegisterId,
-        field: AwbcStringId,
+        field: u32,
         value: AwbcRegisterId,
     },
     CallTraitMethod {
@@ -1229,6 +1222,12 @@ pub enum AwbcInstruction {
         dst: AwbcRegisterId,
         constructor: RuntimeAgentConstructor,
         operands: Vec<AwbcRegisterId>,
+    },
+    /// Constructs the admitted unchanged result for `Reduction<State>`.
+    MakeReductionUnchanged {
+        dst: AwbcRegisterId,
+        ty: AwbcTypeId,
+        state: AwbcRegisterId,
     },
 }
 
@@ -1265,16 +1264,15 @@ impl AwbcInstruction {
             Self::SpawnFiber { .. } => AwbcOpcode::SpawnFiber,
             Self::StreamYield { .. } => AwbcOpcode::StreamYield,
             Self::StreamClose { .. } => AwbcOpcode::StreamClose,
-            Self::SourceClose { .. } => AwbcOpcode::SourceClose,
             Self::Drop { .. } => AwbcOpcode::Drop,
-            Self::SourceYield { .. } => AwbcOpcode::SourceYield,
-            Self::AssignField { .. } => AwbcOpcode::AssignField,
+            Self::AssignRecordField { .. } => AwbcOpcode::AssignRecordField,
             Self::CallTraitMethod { .. } => AwbcOpcode::CallTraitMethod,
             Self::RegisterCleanup { .. } => AwbcOpcode::RegisterCleanup,
             Self::CancelCleanup { .. } => AwbcOpcode::CancelCleanup,
             Self::MakeFunction { .. } => AwbcOpcode::MakeFunction,
             Self::ApplyFunction { .. } => AwbcOpcode::ApplyFunction,
             Self::MakeAgent { .. } => AwbcOpcode::MakeAgent,
+            Self::MakeReductionUnchanged { .. } => AwbcOpcode::MakeReductionUnchanged,
         }
     }
 }
@@ -1354,7 +1352,8 @@ pub enum AwbcTerminator {
     },
     Dialogue {
         content: AwbcContentUnitId,
-        line_task_group: AwbcLineTaskGroupId,
+        values: Vec<AwbcDialogueValueBinding>,
+        line_task_captures: Vec<AwbcRegisterId>,
         resume: AwbcResumePointId,
     },
     Choice {
@@ -1553,6 +1552,7 @@ pub struct AwbcHostCall {
     pub signature: AwbcSignatureId,
     pub mode: AwbcHostCallMode,
     pub deterministic: bool,
+    pub arguments: Vec<AwbcHostArgument>,
 }
 
 #[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
@@ -1573,7 +1573,11 @@ pub struct AwbcTaskPlan {
     pub priority: i32,
     pub cancel_scope: AwbcStringId,
     pub policy: AwbcTaskPolicy,
-    pub arguments: Vec<AwbcTaskArgument>,
+    /// Checked type of a normal successful completion payload.
+    pub ready_type: AwbcTypeId,
+    /// Checked type of an authored task error payload.
+    pub error_type: AwbcTypeId,
+    pub arguments: Vec<AwbcHostArgument>,
     pub many: Option<AwbcAwaitManyPolicy>,
 }
 
@@ -1601,7 +1605,7 @@ pub enum AwbcTaskPolicy {
 }
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
-pub struct AwbcTaskArgument {
+pub struct AwbcHostArgument {
     pub name: Option<AwbcStringId>,
     pub spread: bool,
 }
@@ -1874,6 +1878,7 @@ pub struct AwbcChoiceOption {
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub struct AwbcContentUnit {
     pub public_id: AwbcStringId,
+    pub marks: Vec<AwbcDialogueMark>,
     pub line_task_group: Option<AwbcLineTaskGroupId>,
     pub display: Option<AwbcDisplayMapId>,
     pub source: Option<AwbcSourceMapId>,
@@ -1881,24 +1886,26 @@ pub struct AwbcContentUnit {
 }
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+pub struct AwbcDialogueMark {
+    pub id: RuntimeDialogueMarkId,
+    pub label: AwbcStringId,
+}
+
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub struct AwbcLineTaskGroup {
+    pub captures: Vec<RuntimeLocalDeclarationId>,
     pub root: AwbcLineTaskNodeId,
-    pub options: Vec<AwbcLineOption>,
-    pub bindings: Option<AwbcFunctionId>,
-    pub out: Option<AwbcFunctionId>,
+    pub nodes: AwbcTableRange,
     pub cancel_handlers: Vec<AwbcLineCancelHandler>,
+    pub cleanup_completed: Option<AwbcFunctionId>,
+    pub cleanup_cancelled: Option<AwbcFunctionId>,
+    pub cleanup_failed: Option<AwbcFunctionId>,
     pub cleanup: AwbcLineCleanupPolicy,
 }
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
-pub struct AwbcLineOption {
-    pub name: AwbcStringId,
-    pub value: AwbcConstantId,
-}
-
-#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub struct AwbcLineCancelHandler {
-    pub trigger: AwbcStringId,
+    pub trigger: RuntimeDialogueMarkId,
     pub function: AwbcFunctionId,
 }
 
@@ -1938,13 +1945,16 @@ pub enum AwbcLineTaskNode {
         children: Vec<AwbcLineTaskNodeId>,
     },
     Child {
-        task: AwbcTaskPlanId,
+        id: AwbcStringId,
+        key: Option<AwbcStringId>,
+        name: Option<AwbcStringId>,
         trigger: AwbcLineTaskTrigger,
+        priority: i32,
         join: AwbcChildJoinPolicy,
         cancel: AwbcChildCancelPolicy,
         scope: AwbcLineTaskNodeId,
     },
-    Effect(AwbcEffectPlanId),
+    Action(AwbcFunctionId),
 }
 
 #[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
@@ -1955,7 +1965,7 @@ pub enum AwbcParallelPolicy {
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub enum AwbcLineTaskTrigger {
     Immediate,
-    Mark(AwbcStringId),
+    Mark(RuntimeDialogueMarkId),
     DelayNanos(u64),
 }
 
@@ -1978,76 +1988,6 @@ pub struct AwbcStreamPlan {
     pub item_type: AwbcTypeId,
     pub error_type: AwbcTypeId,
     pub transform: AwbcFunctionId,
-}
-
-#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
-pub struct AwbcSourcePlan {
-    pub public_id: AwbcStringId,
-    pub item_type: AwbcTypeId,
-    pub error_type: AwbcTypeId,
-    pub open: AwbcFunctionId,
-    pub policy: AwbcSourcePolicy,
-    pub handlers: Vec<AwbcSourceHandler>,
-}
-
-#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
-pub struct AwbcSourceHandler {
-    pub kind: AwbcSourceEventKind,
-    pub pattern: Option<AwbcPatternId>,
-    pub function: AwbcFunctionId,
-}
-
-#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
-pub enum AwbcSourceEventKind {
-    Item,
-    Error,
-    Progress,
-    Disconnected,
-    PermissionRevoked,
-    End,
-}
-
-#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
-pub struct AwbcSourcePolicy {
-    pub backpressure: AwbcBackpressurePolicy,
-    pub replay: AwbcReplayPolicy,
-    pub privacy: AwbcPrivacyPolicy,
-    pub max_queue: u32,
-}
-
-#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
-pub enum AwbcBackpressurePolicy {
-    LatestOnly,
-    BoundedQueue {
-        capacity: u32,
-        overflow: AwbcOverflowPolicy,
-    },
-    BlockingNotAllowed,
-}
-
-#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
-pub enum AwbcOverflowPolicy {
-    DropOldest,
-    DropNewest,
-    Error,
-    Coalesce,
-}
-
-#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
-pub enum AwbcReplayPolicy {
-    Full,
-    HashOnly,
-    Summary,
-    EventOnly,
-    None,
-}
-
-#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
-pub enum AwbcPrivacyPolicy {
-    Transient,
-    Redacted,
-    Recordable,
-    Private,
 }
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]

@@ -15,7 +15,7 @@ use arcweft_presentation::hit::HitRect;
 use arcweft_render_wgpu::geometry::{PreparedFrame, PreparedTextOwner, PreparedTextOwnerKind};
 use arcweft_text_layout::{GlyphOrientation, GlyphVerticalForm, LayoutRect, TextLayoutGlyph};
 use arcweft_text_model::{
-    RichTextControl, RichTextNode, RichTextObjectProxy, RichTextPresentation,
+    ResolvedRichTextNode, RichTextControl, RichTextObjectProxy, RichTextPresentation,
     RichTextRubyAnnotation, RichTextTextRun, RichTextTextSource,
 };
 
@@ -784,7 +784,7 @@ fn child_frame(parent: &LineDisplayFrame, text: String) -> LineDisplayFrame {
         text: text.clone(),
         base_styles: parent.base_styles.clone(),
         style_contributions: parent.style_contributions.clone(),
-        nodes: vec![RichTextNode::Text { text }],
+        nodes: vec![ResolvedRichTextNode::Text { text }],
         display_map: arcweft_text_model::RichTextDisplayMap::default(),
         host_events: Vec::new(),
         inline_failures: Vec::new(),

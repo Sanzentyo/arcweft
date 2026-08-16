@@ -5,7 +5,7 @@ use arcweft_agent_protocol::protocol::{
     CaptureFormat, CaptureRequest, ObserveRequest, PointerButton, RagRequest, WaitRequest,
 };
 use arcweft_core::{
-    task::NamedHostTaskArg,
+    task::NamedHostArg,
     value::{RuntimePayload, RuntimeValue},
 };
 
@@ -19,11 +19,14 @@ use crate::runtime_value::{
 #[derive(Debug)]
 pub(crate) struct RuntimeAgentArgs<'a> {
     positionals: &'a [RuntimePayload],
-    named: &'a [NamedHostTaskArg],
+    named: &'a [NamedHostArg<RuntimePayload>],
 }
 
 impl<'a> RuntimeAgentArgs<'a> {
-    pub(crate) fn new(args: &'a [RuntimePayload], named_args: &'a [NamedHostTaskArg]) -> Self {
+    pub(crate) fn new(
+        args: &'a [RuntimePayload],
+        named_args: &'a [NamedHostArg<RuntimePayload>],
+    ) -> Self {
         Self {
             positionals: args,
             named: named_args,

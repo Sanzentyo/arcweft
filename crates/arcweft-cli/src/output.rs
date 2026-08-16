@@ -1,13 +1,12 @@
 use crate::app::project::{CheckedModule, verify_compiled_project};
 use arcweft_core::aot::AotProgramStats;
-use arcweft_core::bytecode::BytecodeStats;
+use arcweft_core::awbc::schema::AwbcProgram;
 use arcweft_core::effect::{LineEffectRequest, RuntimeAssertionFailure};
 use arcweft_core::engine::{FlowFiber, FlowStatusLabelStyle};
-use arcweft_core::line_task::{LineTaskGroup, LineTaskNode, LineTaskScope, LineTaskTrigger};
+use arcweft_core::line_task::{LineTaskGroup, LineTaskNode, LineTaskTrigger, ScopeExit};
 use arcweft_core::plan::FlowEvent;
-use arcweft_core::source::{RuntimeSourceEvent, SourceEventKind, SourcePolicy};
 use arcweft_core::step::{RuntimePureCallStats, RuntimeStepResult, RuntimeStepStats};
-use arcweft_core::stream::{RuntimeStreamEvent, StreamOp};
+use arcweft_core::stream::{RuntimeStreamEvent, StreamEventKind, StreamOp};
 use arcweft_core::task::TaskSpec;
 use arcweft_core::value::RuntimePayload;
 use arcweft_lang_sema::final_analysis::FinalSemanticAnalysis;
@@ -30,7 +29,6 @@ pub(crate) struct RuntimePlanReport {
     pub(crate) lines: Vec<RuntimeLinePlanSummary>,
     pub(crate) dialogue_content_catalog: Vec<DialogueContentSpec>,
     pub(crate) streams: Vec<RuntimeStreamPlanSummary>,
-    pub(crate) sources: Vec<RuntimeSourcePlanSummary>,
     pub(crate) verifier_diagnostics: usize,
     pub(crate) verifier_obligations: usize,
 }
@@ -45,41 +43,19 @@ pub(crate) struct RuntimeStreamPlanSummary {
 }
 
 #[derive(serde::Serialize)]
-pub(crate) struct RuntimeSourcePlanSummary {
-    pub(crate) id: String,
-    pub(crate) item_ty: String,
-    pub(crate) error_ty: String,
-    pub(crate) policy: RuntimeSourcePolicySummary,
-    pub(crate) handlers: usize,
-}
-
-#[derive(serde::Serialize)]
-pub(crate) struct RuntimeSourcePolicySummary {
-    pub(crate) backpressure: String,
-    pub(crate) replay: String,
-    pub(crate) privacy: String,
-    pub(crate) max_queue: usize,
-}
-
-#[derive(serde::Serialize)]
 pub(crate) struct RuntimeLinePlanSummary {
     pub(crate) child_tasks: usize,
     pub(crate) effects: usize,
     pub(crate) root: RuntimeNodeSummary,
-    pub(crate) options: usize,
-    pub(crate) bindings: usize,
-    pub(crate) out: usize,
+    pub(crate) captures: usize,
+    pub(crate) nodes: usize,
     pub(crate) cancel_rules: usize,
-    pub(crate) memo: usize,
+    pub(crate) cleanup_actions: usize,
 }
 
 #[derive(serde::Serialize)]
 struct RuntimeScopeSummary {
     node: Box<RuntimeNodeSummary>,
-    defer_count: usize,
-    completed_defer_count: usize,
-    cancelled_defer_count: usize,
-    failed_defer_count: usize,
 }
 
 #[derive(serde::Serialize)]
@@ -119,33 +95,21 @@ impl RuntimePlanReport {
             lines: checked
                 .runtime_plan()
                 .plan
-                .line_task_groups
+                .line_task_groups()
                 .iter()
                 .map(RuntimeLinePlanSummary::from_lowered)
                 .collect(),
             dialogue_content_catalog: runtime_report.dialogue_content_catalog.records().to_vec(),
             streams: runtime_report
                 .plan
-                .stream_plans
+                .stream_plans()
                 .iter()
                 .map(|stream| RuntimeStreamPlanSummary {
-                    id: stream.id.public_label().into_string(),
-                    item_ty: stream.item_ty.clone(),
-                    error_ty: stream.error_ty.clone(),
-                    ops: stream.ops.len(),
-                    yields: stream.ops.iter().map(count_stream_yields).sum(),
-                })
-                .collect(),
-            sources: runtime_report
-                .plan
-                .source_plans
-                .iter()
-                .map(|source| RuntimeSourcePlanSummary {
-                    id: source.id.0.clone(),
-                    item_ty: source.item_ty.clone(),
-                    error_ty: source.error_ty.clone(),
-                    policy: source_policy_summary(&source.policy),
-                    handlers: source.handlers.len(),
+                    id: stream.id().public_label().into_string(),
+                    item_ty: stream.item_ty().to_string(),
+                    error_ty: stream.error_ty().to_string(),
+                    ops: stream.ops().len(),
+                    yields: stream.ops().iter().map(count_stream_yields).sum(),
                 })
                 .collect(),
             verifier_diagnostics: verification.diagnostics.len(),
@@ -174,74 +138,99 @@ fn count_stream_yields(op: &StreamOp) -> usize {
     }
 }
 
-fn source_policy_summary(policy: &SourcePolicy) -> RuntimeSourcePolicySummary {
-    RuntimeSourcePolicySummary {
-        backpressure: format!("{:?}", policy.backpressure),
-        replay: format!("{:?}", policy.replay),
-        privacy: format!("{:?}", policy.privacy),
-        max_queue: policy.max_queue,
-    }
-}
-
 impl RuntimeLinePlanSummary {
     fn from_lowered(group: &LineTaskGroup) -> Self {
-        let root = node_summary(&group.root.node);
+        let root = node_summary(group, group.root());
         Self {
             child_tasks: count_child_tasks(group),
             effects: count_effects(group),
             root,
-            options: group.options.len(),
-            bindings: group.bindings.len(),
-            out: group.out.len(),
-            cancel_rules: group.cancel_rules.len(),
-            memo: group.memo.len(),
+            captures: group.captures().len(),
+            nodes: group.nodes().len(),
+            cancel_rules: group.cancel_rules().len(),
+            cleanup_actions: [
+                ScopeExit::Completed,
+                ScopeExit::Cancelled,
+                ScopeExit::Failed,
+            ]
+            .into_iter()
+            .map(|exit| group.cleanup().actions(exit).len())
+            .sum(),
         }
     }
 }
 
-fn scope_summary(scope: &LineTaskScope) -> RuntimeScopeSummary {
+fn scope_summary(
+    group: &LineTaskGroup,
+    node: arcweft_core::runtime_id::RuntimeLineTaskNodeId,
+) -> RuntimeScopeSummary {
     RuntimeScopeSummary {
-        node: Box::new(node_summary(&scope.node)),
-        defer_count: scope.defer_stack.len(),
-        completed_defer_count: scope.completed_defer_stack.len(),
-        cancelled_defer_count: scope.cancelled_defer_stack.len(),
-        failed_defer_count: scope.failed_defer_stack.len(),
+        node: Box::new(node_summary(group, node)),
     }
 }
 
-fn node_summary(node: &LineTaskNode) -> RuntimeNodeSummary {
+fn node_summary(
+    group: &LineTaskGroup,
+    node: arcweft_core::runtime_id::RuntimeLineTaskNodeId,
+) -> RuntimeNodeSummary {
+    let Some(node) = group.node(node) else {
+        return RuntimeNodeSummary {
+            kind: "invalid".to_owned(),
+            children: Vec::new(),
+            task: None,
+            effect: None,
+        };
+    };
     match node {
-        LineTaskNode::Seq(children) => node_children_summary("seq", children),
-        LineTaskNode::Start(children) => node_children_summary("start", children),
-        LineTaskNode::Parallel { children, .. } => node_children_summary("parallel", children),
-        LineTaskNode::Child(task) => RuntimeNodeSummary {
+        LineTaskNode::Sequence(children) => node_children_summary(group, "sequence", children),
+        LineTaskNode::Start(children) => node_children_summary(group, "start", children),
+        LineTaskNode::Parallel { children, .. } => {
+            node_children_summary(group, "parallel", children)
+        }
+        LineTaskNode::Child {
+            id,
+            key,
+            name,
+            trigger,
+            priority,
+            join_policy,
+            cancel_policy,
+            scope,
+        } => RuntimeNodeSummary {
             kind: "child".to_owned(),
             children: Vec::new(),
             task: Some(Box::new(RuntimeTaskSummary {
-                id: task.id.0.clone(),
-                key: task.key.as_ref().map(|key| key.0.clone()),
-                name: task.name.clone(),
-                trigger: trigger_label(&task.trigger),
-                priority: task.priority.0,
-                join_policy: format!("{:?}", task.join_policy),
-                cancel_policy: format!("{:?}", task.cancel_policy),
-                scope: Box::new(scope_summary(&task.scope)),
+                id: id.0.clone(),
+                key: key.as_ref().map(|key| key.0.clone()),
+                name: name.clone(),
+                trigger: trigger_label(trigger),
+                priority: priority.0,
+                join_policy: format!("{join_policy:?}"),
+                cancel_policy: format!("{cancel_policy:?}"),
+                scope: Box::new(scope_summary(group, *scope)),
             })),
             effect: None,
         },
-        LineTaskNode::Effect(effect) => RuntimeNodeSummary {
-            kind: "effect".to_owned(),
+        LineTaskNode::Action(ops) => RuntimeNodeSummary {
+            kind: "action".to_owned(),
             children: Vec::new(),
             task: None,
-            effect: Some(effect_label(effect)),
+            effect: Some(format!("{} flow ops", ops.len())),
         },
     }
 }
 
-fn node_children_summary(kind: &str, children: &[LineTaskNode]) -> RuntimeNodeSummary {
+fn node_children_summary(
+    group: &LineTaskGroup,
+    kind: &str,
+    children: &[arcweft_core::runtime_id::RuntimeLineTaskNodeId],
+) -> RuntimeNodeSummary {
     RuntimeNodeSummary {
         kind: kind.to_owned(),
-        children: children.iter().map(node_summary).collect(),
+        children: children
+            .iter()
+            .map(|child| node_summary(group, *child))
+            .collect(),
         task: None,
         effect: None,
     }
@@ -360,7 +349,7 @@ pub(crate) struct RuntimeProfileCompiler {
     pub(crate) syntax: SyntaxProfileStats,
     pub(crate) semantic: FinalSemanticProfileStats,
     pub(crate) runtime_plan: RuntimePlanProfileStats,
-    pub(crate) bytecode: BytecodeProfileStats,
+    pub(crate) awbc: AwbcProfileStats,
     pub(crate) aot: AotProfileStats,
 }
 
@@ -477,22 +466,20 @@ impl From<&FinalSemanticAnalysis> for FinalSemanticProfileStats {
 }
 
 #[derive(serde::Serialize)]
-pub(crate) struct BytecodeProfileStats {
+pub(crate) struct AwbcProfileStats {
     flows: usize,
     instructions: usize,
     line_task_groups: usize,
     stream_plans: usize,
-    source_plans: usize,
 }
 
-impl From<&BytecodeStats> for BytecodeProfileStats {
-    fn from(stats: &BytecodeStats) -> Self {
+impl From<&AwbcProgram> for AwbcProfileStats {
+    fn from(program: &AwbcProgram) -> Self {
         Self {
-            flows: stats.flows,
-            instructions: stats.instructions,
-            line_task_groups: stats.line_task_groups,
-            stream_plans: stats.stream_plans,
-            source_plans: stats.source_plans,
+            flows: program.flow_executables.len(),
+            instructions: program.instructions.len(),
+            line_task_groups: program.line_task_groups.len(),
+            stream_plans: program.stream_plans.len(),
         }
     }
 }
@@ -744,8 +731,6 @@ pub(crate) struct ScriptBenchPureHelperStatsSummary {
     pub(crate) exprs: usize,
     #[serde(rename = "evaluated_calls")]
     pub(crate) calls: usize,
-    #[serde(rename = "evaluated_method_calls")]
-    pub(crate) method_calls: usize,
     #[serde(rename = "evaluated_binary_ops")]
     pub(crate) binary_ops: usize,
 }
@@ -792,20 +777,6 @@ impl ScriptBenchSectionRunSummary {
             diagnostics,
             measurement: Some(measurement),
             pure_helper: None,
-        }
-    }
-
-    pub(crate) fn measured_pure_helper(
-        name: impl Into<String>,
-        diagnostics: Vec<String>,
-        pure_helper: ScriptBenchPureHelperMeasurementSummary,
-    ) -> Self {
-        Self {
-            name: name.into(),
-            status: "measured".to_owned(),
-            diagnostics,
-            measurement: None,
-            pure_helper: Some(pure_helper),
         }
     }
 }
@@ -893,10 +864,7 @@ pub(crate) struct RuntimeStepRunSummary {
     pub(crate) line_effects: Vec<String>,
     pub(crate) task_requests: Vec<String>,
     pub(crate) observations: RuntimeObservationSummary,
-    pub(crate) source_events: Vec<String>,
     pub(crate) stream_events: Vec<String>,
-    pub(crate) source_close_requests: Vec<String>,
-    pub(crate) source_states: Vec<RuntimeQueueStateSummary>,
     pub(crate) stream_states: Vec<RuntimeQueueStateSummary>,
 }
 
@@ -942,8 +910,6 @@ pub(crate) struct RuntimeStepStatsSummary {
     pub(crate) child_fibers: usize,
     pub(crate) pure: RuntimePureCallStatsSummary,
     pub(crate) task_events_in: usize,
-    pub(crate) source_events_in: usize,
-    pub(crate) source_events_emitted: usize,
     pub(crate) stream_events_emitted: usize,
     pub(crate) line_effects: usize,
     pub(crate) diagnostics: usize,
@@ -1013,10 +979,6 @@ pub(crate) struct RuntimeQueueStateSummary {
 }
 
 impl RuntimeStepRunSummary {
-    #[expect(
-        clippy::too_many_lines,
-        reason = "runtime step reporting exhaustively consumes the closed event and task-request matrix"
-    )]
     pub(crate) fn from_result_and_task_requests(
         index: usize,
         result: RuntimeStepResult,
@@ -1103,33 +1065,11 @@ impl RuntimeStepRunSummary {
                     })
                     .collect(),
             },
-            source_events: output
-                .effects
-                .source_events
-                .iter()
-                .map(source_event_label)
-                .collect(),
             stream_events: output
                 .effects
                 .stream_events
                 .iter()
                 .map(stream_event_label)
-                .collect(),
-            source_close_requests: output
-                .requests
-                .source_close
-                .iter()
-                .map(|source| source.0.clone())
-                .collect(),
-            source_states: fiber
-                .source_states
-                .values()
-                .map(|state| RuntimeQueueStateSummary {
-                    id: state.id.0.clone(),
-                    queue_depth: state.queue.len(),
-                    closed: state.closed,
-                    overflow_count: state.overflow_count,
-                })
                 .collect(),
             stream_states: fiber
                 .stream_states
@@ -1155,8 +1095,6 @@ impl From<RuntimeStepStats> for RuntimeStepStatsSummary {
             child_fibers: stats.child_fibers,
             pure: RuntimePureCallStatsSummary::from(stats.pure),
             task_events_in: stats.task_events_in,
-            source_events_in: stats.source_events_in,
-            source_events_emitted: stats.source_events_emitted,
             stream_events_emitted: stats.stream_events_emitted,
             line_effects: stats.line_effects,
             diagnostics: stats.diagnostics,
@@ -1227,10 +1165,6 @@ fn task_request_label(task: &TaskSpec) -> String {
     )
 }
 
-fn source_event_label(event: &RuntimeSourceEvent) -> String {
-    format!("{} {}", event.source.0, event_kind_label(&event.kind))
-}
-
 fn stream_event_label(event: &RuntimeStreamEvent) -> String {
     format!(
         "{} {}",
@@ -1239,60 +1173,42 @@ fn stream_event_label(event: &RuntimeStreamEvent) -> String {
     )
 }
 
-fn event_kind_label(kind: &SourceEventKind<RuntimePayload, RuntimePayload>) -> String {
+fn event_kind_label(kind: &StreamEventKind<RuntimePayload, RuntimePayload>) -> String {
     match kind {
-        SourceEventKind::Item(item) => format!("item {}", item.label()),
-        SourceEventKind::Progress(progress) => format!("progress {progress}"),
-        SourceEventKind::Disconnected => "disconnected".to_owned(),
-        SourceEventKind::PermissionRevoked => "permission_revoked".to_owned(),
-        SourceEventKind::Error(error) => format!("error {}", error.label()),
-        SourceEventKind::End => "end".to_owned(),
+        StreamEventKind::Item(item) => format!("item {}", item.label()),
+        StreamEventKind::Error(error) => format!("error {}", error.label()),
+        StreamEventKind::End => "end".to_owned(),
     }
 }
 
 fn count_child_tasks(group: &LineTaskGroup) -> usize {
-    count_child_tasks_in_node(&group.root.node)
-}
-
-fn count_child_tasks_in_node(node: &LineTaskNode) -> usize {
-    match node {
-        LineTaskNode::Seq(children)
-        | LineTaskNode::Start(children)
-        | LineTaskNode::Parallel { children, .. } => {
-            children.iter().map(count_child_tasks_in_node).sum()
-        }
-        LineTaskNode::Child(task) => 1 + count_child_tasks_in_node(&task.scope.node),
-        LineTaskNode::Effect(_) => 0,
-    }
+    group
+        .nodes()
+        .iter()
+        .filter(|node| matches!(node, LineTaskNode::Child { .. }))
+        .count()
 }
 
 fn count_effects(group: &LineTaskGroup) -> usize {
-    count_effects_in_scope(&group.root)
-}
-
-fn count_effects_in_scope(scope: &LineTaskScope) -> usize {
-    count_effects_in_node(&scope.node)
-        + scope.defer_stack.iter().map(Vec::len).sum::<usize>()
-        + scope
-            .completed_defer_stack
+    group
+        .nodes()
+        .iter()
+        .filter_map(|node| match node {
+            LineTaskNode::Action(ops) => Some(ops.len()),
+            _ => None,
+        })
+        .sum::<usize>()
+        + group
+            .cancel_rules()
             .iter()
-            .map(Vec::len)
+            .map(|rule| rule.action().len())
             .sum::<usize>()
-        + scope
-            .cancelled_defer_stack
-            .iter()
-            .map(Vec::len)
-            .sum::<usize>()
-        + scope.failed_defer_stack.iter().map(Vec::len).sum::<usize>()
-}
-
-fn count_effects_in_node(node: &LineTaskNode) -> usize {
-    match node {
-        LineTaskNode::Seq(children) | LineTaskNode::Start(children) => {
-            children.iter().map(count_effects_in_node).sum()
-        }
-        LineTaskNode::Parallel { children, .. } => children.iter().map(count_effects_in_node).sum(),
-        LineTaskNode::Child(task) => count_effects_in_scope(&task.scope),
-        LineTaskNode::Effect(_) => 1,
-    }
+        + [
+            ScopeExit::Completed,
+            ScopeExit::Cancelled,
+            ScopeExit::Failed,
+        ]
+        .into_iter()
+        .map(|exit| group.cleanup().actions(exit).len())
+        .sum::<usize>()
 }

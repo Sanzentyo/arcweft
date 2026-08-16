@@ -242,7 +242,7 @@ fn callable_roles_preserve_final_item_and_inline_member_ownership() {
 }
 
 #[test]
-fn function_effect_clause_roles_preserve_omitted_empty_and_nonempty_source_states() {
+fn function_effect_clause_roles_preserve_omitted_empty_and_nonempty_presence_states() {
     let parsed = parse(
         "arcweft-test://proof/final-hir-function-effect-sources",
         concat!(

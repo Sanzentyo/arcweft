@@ -158,16 +158,6 @@ fn host_task_request_covers_sans_io_adapter_work() {
 
 #[test]
 fn host_request_serialization_contains_only_owned_runtime_fields() {
-    let template = HostTaskRequestTemplate::new("custom.capability", "read", []);
-    assert_eq!(
-        serde_json::to_value(&template).expect("host request template serializes"),
-        serde_json::json!({
-            "capability": "custom.capability",
-            "operation": "read",
-            "args": []
-        })
-    );
-
     let request = HostTaskRequest::custom("custom.capability", "read", []);
     assert_eq!(
         serde_json::to_value(&request).expect("host request serializes"),

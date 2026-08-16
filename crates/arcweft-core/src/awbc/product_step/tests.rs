@@ -124,8 +124,7 @@ fn snapshot_restore_rejects_same_label_choice_target_substitution() {
         .active_choice
         .as_mut()
         .expect("active choice")
-        .options[0]
-        .target = Some(second);
+        .option_indices[0] = 1;
 
     let error = executor
         .restore_snapshot(snapshot)
@@ -443,15 +442,11 @@ fn effect_mapping_table_covers_every_awbc_effect_kind() {
 fn assertion_effect_mapping_retains_typed_guard_and_payload() {
     let mut program = AwbcProgram::default();
     let effect = push_effect_plan(&mut program, AwbcEffectKind::Assert);
+    let message = constant_string(&mut program, "must be ready");
+    program.effect_plans[effect.index()].static_args[2] = message;
 
-    let mapped = AwbcEffectKind::Assert.map_product_effect(
-        &program,
-        effect,
-        &[
-            RuntimeValue::Bool(false),
-            RuntimeValue::String("must be ready".to_owned()),
-        ],
-    );
+    let mapped =
+        AwbcEffectKind::Assert.map_product_effect(&program, effect, &[RuntimeValue::Bool(false)]);
     let MappedEffect::Line(LineEffectRequest::Assert(assertion)) = mapped else {
         panic!("well-formed assertion effect must map to typed core assertion data");
     };
@@ -652,6 +647,7 @@ fn content_ensure_program() -> AwbcProgram {
         }],
         content_units: vec![AwbcContentUnit {
             public_id: AwbcStringId(1),
+            marks: Vec::new(),
             line_task_group: None,
             display: None,
             source: None,
@@ -723,6 +719,7 @@ fn host_call_program() -> AwbcProgram {
             signature: AwbcSignatureId(0),
             mode: AwbcHostCallMode::Suspend,
             deterministic: true,
+            arguments: Vec::new(),
         }],
         resume_points: vec![AwbcResumePoint {
             function: AwbcFunctionId(0),

@@ -452,7 +452,6 @@ mod tests {
             | HirThreadFlowItem::SourceLocale(owner)
             | HirThreadFlowItem::Scope(owner)
             | HirThreadFlowItem::Include(owner)
-            | HirThreadFlowItem::AwaitWith(owner)
             | HirThreadFlowItem::Error(owner) => *owner,
             HirThreadFlowItem::DialogueApplication(_) => panic!("assertion lowered as dialogue"),
         }

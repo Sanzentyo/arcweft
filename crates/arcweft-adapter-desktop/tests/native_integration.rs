@@ -4,7 +4,7 @@ use arcweft_core::task::{
 #[cfg(target_os = "windows")]
 use arcweft_desktop_contract::PlatformKind;
 use arcweft_desktop_contract::{DesktopFeature, DesktopResponse, SupportLevel};
-use arcweft_host_adapter::{HostAdapterRegistry, HostTaskSubmission};
+use arcweft_host_adapter::{HostAdapterRegistry, HostTaskCompletion, HostTaskSubmission};
 
 #[test]
 fn native_desktop_capabilities_complete_through_host_registry() {
@@ -22,7 +22,9 @@ fn native_desktop_capabilities_complete_through_host_registry() {
     let HostTaskSubmission::Completed(outcome) = submission else {
         panic!("capabilities should complete without a window pump");
     };
-    let payload = outcome.result.expect("capabilities request succeeds");
+    let HostTaskCompletion::Ready(payload) = outcome.completion else {
+        panic!("capabilities request succeeds");
+    };
     let response: DesktopResponse =
         serde_json::from_str(&payload.label()).expect("desktop response is JSON");
     let DesktopResponse::Capabilities(capabilities) = response else {

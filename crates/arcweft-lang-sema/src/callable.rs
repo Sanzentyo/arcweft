@@ -93,6 +93,7 @@ pub use limits::{
     SignatureQueryWorkReport, SignatureWorkReport,
 };
 pub(crate) use limits::{CallableQueryDepth, ResolverWork, SignatureQueryWorkMeter};
+pub(crate) use nominal_signature::associated_scope_for;
 pub(crate) use presentation::PresentationArgumentValuePolicy;
 pub use presentation::{PresentationCallableId, PresentationSchemaContext};
 pub use projection::{
@@ -113,10 +114,11 @@ pub use resolver::{
     UnknownCallKind, UnknownCallTarget,
 };
 pub use schema::{
-    CallableArgumentPolicy, CallableDocumentation, CallableEffectSchema, CallableGroupKind,
-    CallableMethodRole, CallableParameter, CallableParameterDocumentation, CallableParameterGroup,
-    CallableParameterPassing, CallableParameterPresence, CallableParameterSource,
-    CallableParameterType, CallableSignatureSchema, CallableSource, CallableValidator,
-    DocumentationProvenance, RustCallableProvenance, RustCallablePurity, RustPackageProvenance,
-    SpreadArgumentPolicy, UnknownNamedArgumentPolicy,
+    CallableArgumentPolicy, CallableDocumentation, CallableEffectSchema, CallableEvaluatedEffect,
+    CallableGroupKind, CallableLogLevel, CallableMethodRole, CallableParameter,
+    CallableParameterDocumentation, CallableParameterGroup, CallableParameterPassing,
+    CallableParameterPresence, CallableParameterSource, CallableParameterType,
+    CallableSignatureSchema, CallableSource, CallableValidator, DocumentationProvenance,
+    RustCallableProvenance, RustCallablePurity, RustPackageProvenance, SpreadArgumentPolicy,
+    UnknownNamedArgumentPolicy,
 };

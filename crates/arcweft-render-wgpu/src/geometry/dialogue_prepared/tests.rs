@@ -176,12 +176,12 @@ fn resolver(
 fn vertical_ruby_stage_uses_canonical_layout_and_prepared_glyphs() {
     let frame = frame(vec![
         RichTextNode::StyleStart {
-            style: RichTextStyle::Layout {
+            style: Box::new(RichTextStyle::Layout {
                 layout: RichTextLayout {
                     writing_mode: RichTextWritingMode::VerticalRl,
                     ..RichTextLayout::default()
                 },
-            },
+            }),
         },
         RichTextNode::Ruby {
             base: "漢字".to_owned(),
@@ -297,9 +297,9 @@ fn typed_sampler_uses_logical_glyph_ordinal_and_time_only_changes_paint() {
             text: "前".to_owned(),
         },
         RichTextNode::StyleStart {
-            style: RichTextStyle::Fx {
+            style: Box::new(RichTextStyle::Fx {
                 application: application.clone(),
-            },
+            }),
         },
         RichTextNode::Text {
             text: "漢字".to_owned(),
@@ -362,7 +362,7 @@ fn typed_fx_application_changes_layout_style_and_post_layout_transform() {
     };
     let frame = frame(vec![
         RichTextNode::StyleStart {
-            style: RichTextStyle::Fx { application },
+            style: Box::new(RichTextStyle::Fx { application }),
         },
         RichTextNode::Text {
             text: "typed".to_owned(),
@@ -455,7 +455,7 @@ fn typed_shader_and_mask_resolve_glyph_and_post_process_passes() {
     };
     let frame = frame(vec![
         RichTextNode::StyleStart {
-            style: RichTextStyle::Fx { application },
+            style: Box::new(RichTextStyle::Fx { application }),
         },
         RichTextNode::Text {
             text: "source".to_owned(),
@@ -517,9 +517,9 @@ fn stage_local_fx_time_reaches_dialogue_prepared_glyph_mask() {
     };
     let frame = frame(vec![
         RichTextNode::StyleStart {
-            style: RichTextStyle::Fx {
+            style: Box::new(RichTextStyle::Fx {
                 application: application.clone(),
-            },
+            }),
         },
         RichTextNode::Text {
             text: "時".to_owned(),
@@ -583,9 +583,9 @@ fn missing_typed_shader_is_a_typed_diagnostic() {
     let resolver = resolver(definition, &application, 0);
     let frame = frame(vec![
         RichTextNode::StyleStart {
-            style: RichTextStyle::Fx {
+            style: Box::new(RichTextStyle::Fx {
                 application: application.clone(),
-            },
+            }),
         },
         RichTextNode::Text {
             text: "missing".to_owned(),

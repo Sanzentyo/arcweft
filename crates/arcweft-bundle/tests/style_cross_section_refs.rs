@@ -16,7 +16,6 @@ use arcweft_core::{
         AwbcFunctionId, AwbcFunctionKind, AwbcProgram, AwbcSafePointKind, AwbcSignature,
         AwbcSignatureId, AwbcStringId, AwbcTableRange, AwbcTerminator,
     },
-    bytecode::BytecodeProgram,
     effect::RuntimeArtifactFingerprint,
 };
 use arcweft_source::{SourceDocument, SourceDocumentId, SourceName};
@@ -292,15 +291,13 @@ fn minimal_bundle() -> ArcweftBundle {
                 bytecode_instructions: 0,
                 line_task_groups: 0,
                 stream_plans: 0,
-                source_plans: 0,
             },
         },
         source_map("style-cross-section.arcw", ""),
-        BytecodeProgram::default(),
+        minimal_awbc_program(),
         DialogueContentCatalog::new(),
     )
     .expect("standard dialogue source joins source map")
-    .with_product_awbc(minimal_awbc_program())
 }
 
 fn source_map(label: &str, text: &str) -> SourceMapSection {

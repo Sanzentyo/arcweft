@@ -1119,11 +1119,8 @@ fn prefix_depth_tracks_active_ancestors_through_parentheses() {
 }
 
 #[test]
-fn propagating_await_spellings_emit_one_typed_prefix_node() {
-    for (ordinal, expression) in ["try await task()", "await? task()"]
-        .into_iter()
-        .enumerate()
-    {
+fn try_await_emits_nested_typed_prefix_nodes() {
+    for (ordinal, expression) in ["try await task()"].into_iter().enumerate() {
         let name = SourceName::path(format!("propagating-await-{ordinal}.arcw"));
         let source = format!("flow story {{\n    let value = {expression}\n}}\n");
         let mut database = syntax_database();
@@ -1143,10 +1140,12 @@ fn propagating_await_spellings_emit_one_typed_prefix_node() {
                 .count(),
             1
         );
-        assert!(
+        assert_eq!(
             nodes
                 .iter()
-                .all(|node| node.kind() != GrammarKind::TryExpression)
+                .filter(|node| node.kind() == GrammarKind::TryExpression)
+                .count(),
+            1
         );
     }
 
@@ -1178,8 +1177,8 @@ fn propagating_await_spellings_emit_one_typed_prefix_node() {
 }
 
 #[test]
-fn propagating_await_spellings_consume_one_prefix_level_per_head() {
-    for (ordinal, head) in ["try await ", "await? "].into_iter().enumerate() {
+fn prefix_await_heads_consume_one_prefix_level_per_head() {
+    for (ordinal, head) in ["try ", "await "].into_iter().enumerate() {
         let exact_name = SourceName::path(format!("await-depth-exact-{ordinal}.arcw"));
         let exact_expression = format!(
             "{}task()",
@@ -1953,8 +1952,8 @@ fn private_bound_reparse_replaces_diagnostics_without_mutating_the_old_snapshot(
 #[test]
 fn attached_expression_fragment_owns_one_fresh_lineage_and_exact_source_span() {
     let name = SourceName::path("attached-expression-fragment.arcw");
-    let source = "before value? after";
-    let fragment_text = "value?";
+    let source = "before try value after";
+    let fragment_text = "try value";
     let fragment_start = source.find(fragment_text).expect("fragment text");
     let fragment_end = fragment_start + fragment_text.len();
     let snapshot = SourceSnapshotId::initial(name.clone());
@@ -3213,67 +3212,6 @@ fn trivia_only_reparse_preserves_predicate_proof_descendant_ids_and_updates_rang
 }
 
 #[test]
-fn source_trivia_reparse_preserves_attached_header_type_and_handler_identities() {
-    let name = SourceName::path("source.arcw");
-    let source = concat!(
-        "source events: Source<Event, Error> {\n",
-        "    on item event => yield event\n",
-        "}\n",
-    );
-    let mut database = syntax_database();
-    let initial = database
-        .parse_initial(
-            SourceSnapshotId::initial(name.clone()),
-            source_document(&name, source),
-            crate::parser::ParseOptions::default(),
-        )
-        .expect("initial source declaration");
-    let retained = [
-        (GrammarKind::SourceItem, "events"),
-        (GrammarKind::DeclarationHeader, "events"),
-        (GrammarKind::GenericApplicationType, "Source<Event"),
-        (GrammarKind::OnStatement, "on item"),
-    ]
-    .map(|(kind, needle)| {
-        let id = private_id_containing(&initial, kind, needle);
-        let range = initial
-            .attached()
-            .syntax_node(id)
-            .expect("initial attached source node")
-            .range();
-        (kind, needle, id, range)
-    });
-
-    let reparsed = database
-        .reparse(
-            &initial,
-            &[source_edit(&initial, SourceRange::new(6, 6), "  ")],
-            crate::parser::ParseOptions::default(),
-        )
-        .expect("source trivia reparse");
-
-    for (kind, needle, old_id, old_range) in retained {
-        let new_id = private_id_containing(&reparsed, kind, needle);
-        let new_range = reparsed
-            .attached()
-            .syntax_node(new_id)
-            .expect("reparsed attached source node")
-            .range();
-        assert_eq!(new_id, old_id, "{kind:?} lost its reconciled identity");
-        let expected_start = if matches!(
-            kind,
-            GrammarKind::SourceItem | GrammarKind::DeclarationHeader
-        ) {
-            old_range.start()
-        } else {
-            old_range.start() + 2
-        };
-        assert_eq!(new_range.start(), expected_start);
-        assert_eq!(new_range.end(), old_range.end() + 2);
-    }
-}
-
-#[test]
 fn same_parent_unique_reorder_preserves_ids() {
     let name = SourceName::path("reordered-proof-calls.arcw");
     let source = "proof order() { first(); second(); }\n";
@@ -3859,45 +3797,4 @@ fn only_node_with_kind(source: &ParsedSource, kind: GrammarKind) -> SyntaxNodeHa
         "expected exactly one {kind:?} test node"
     );
     node
-}
-
-fn private_id_containing(
-    source: &super::ParsedSource,
-    kind: GrammarKind,
-    needle: &str,
-) -> crate::attachment::SyntaxNodeId {
-    private_ids_containing(source, kind, needle)
-        .into_iter()
-        .min_by_key(|id| {
-            let range = source
-                .attached()
-                .syntax_node(*id)
-                .expect("attached private grammar identity")
-                .range();
-            range.end() - range.start()
-        })
-        .unwrap_or_else(|| {
-            panic!(
-                "missing {kind:?} containing {needle:?}; containing nodes: {:?}",
-                source
-                    .attached()
-                    .nodes()
-                    .filter(|node| node.rowan().text().to_string().contains(needle))
-                    .map(|node| (node.kind(), node.rowan().text().to_string()))
-                    .collect::<Vec<_>>()
-            )
-        })
-}
-
-fn private_ids_containing(
-    source: &super::ParsedSource,
-    kind: GrammarKind,
-    needle: &str,
-) -> Vec<crate::attachment::SyntaxNodeId> {
-    source
-        .attached()
-        .nodes()
-        .filter(|node| node.kind() == kind && node.rowan().text().to_string().contains(needle))
-        .map(|node| node.id())
-        .collect()
 }

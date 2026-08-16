@@ -99,8 +99,8 @@ profile-aware checks for adapter-backed entries.
 lowering, `run`/`cli`/`serve`/`test`/`bench`, bundle builds, and Agent observe.
 It selects a typed View, optionally a typed base Style, and a structured
 `inline-failure` policy. When no View is selected, runtime lowering uses the
-reserved `std.view.dialogue` resource. Source declarations never supply an
-implicit project-wide dialogue owner.
+reserved `std.view.dialogue` resource. Stream-producing capabilities never
+supply an implicit project-wide dialogue owner.
 
 `[external-modules.<id>]` paths are resolved relative to the manifest directory.
 The loader verifies both the raw metadata digest and its expected
@@ -305,8 +305,8 @@ The command is still Sans I/O at the runtime layer. The CLI reads the source
 file and prints a report; `arcweft-core` only consumes `RuntimeStepInput` plus
 `RuntimeStepOptions` and returns `RuntimeStepResult`. The report includes per-step
 flow events, line effects, task
-requests, normalized source events, emitted stream events, source close
-requests, source/stream queue state, cumulative log/signal/metric/event
+requests, normalized stream events, emitted stream events, stream close
+requests, stream queue state, cumulative log/signal/metric/event
 observations, diagnostics, and the final fiber status.
 
 The CLI crate forwards the optional runtime accelerator `math-wgpu` feature.
@@ -837,10 +837,10 @@ the Phase 2.0 headless flow slice: dialogue lines, line task groups, `choice`, `
 with`, bounded `traverse(...).parallel(limit = N)` fanout, `let`, `let else`,
 `if`, `if let`, `match`, `loop`, `while`, `while let`, `for`, `scope`, dynamic
 `goto`, dynamic `return`, `out`, ordinary call-shaped effects, and line
-`cancel on` rules. The runtime also executes the first generation slice: source
-handlers can route normalized `RuntimeStepInput` source events into bounded
-source queues, and stream plans can drain source/stream queues and emit stream
-events under a deterministic per-step budget. `--value` injects pure
+`cancel on` rules. The runtime also executes the first generation slice: typed
+`RuntimeStepInput` stream events feed stream queues, and stream plans drain
+those queues and emit stream events under a deterministic per-step budget.
+External capability calls remain ordinary host-call operations. `--value` injects pure
 `RuntimeValue` bindings into `RuntimeStepInput`; this is for deterministic
 CLI/LSP inspection, not host I/O. Matrix/tensor test inputs use
 `matrix/f32/<rows>x<cols>:<csv>` and `tensor/f32/<dims>:<csv>`; for example

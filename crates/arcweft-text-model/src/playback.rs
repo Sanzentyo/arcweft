@@ -771,7 +771,7 @@ mod tests {
     use super::*;
     use crate::{
         CharacterDialoguePresentationConfig, DialogueHostEvent, DialoguePresentationCharacter,
-        RichTextNode, RichTextPresentation,
+        ResolvedRichTextNode, RichTextNode, RichTextPresentation,
     };
     use arcweft_character::id::CharacterId;
     use arcweft_core::{entry::RuntimeValueDigest, plan::RuntimeLineId};
@@ -779,9 +779,10 @@ mod tests {
     use arcweft_id::TextKey;
     use arcweft_view::ViewId;
 
-    fn frame(nodes: Vec<RichTextNode>) -> LineDisplayFrame {
+    fn frame(nodes: &[RichTextNode]) -> LineDisplayFrame {
         let mut text = String::new();
         let mut display_map = RichTextDisplayMap::default();
+        let mut resolved_nodes = Vec::with_capacity(nodes.len());
         for (node_index, node) in nodes.iter().enumerate() {
             match node {
                 RichTextNode::Text { text: value } => {
@@ -794,6 +795,9 @@ mod tests {
                         styles: Vec::new(),
                         presentation: RichTextPresentation::default(),
                     });
+                    resolved_nodes.push(ResolvedRichTextNode::Text {
+                        text: value.clone(),
+                    });
                 }
                 RichTextNode::Control { control } => {
                     display_map.controls.push(RichTextControlMarker {
@@ -801,6 +805,9 @@ mod tests {
                         text_offset: text.len(),
                         control: control.clone(),
                         range: None,
+                    });
+                    resolved_nodes.push(ResolvedRichTextNode::Control {
+                        control: control.clone(),
                     });
                 }
                 _ => panic!("playback fixture only accepts text and zero-width controls"),
@@ -830,7 +837,7 @@ mod tests {
             text,
             base_styles: Vec::new(),
             style_contributions: Vec::new(),
-            nodes,
+            nodes: resolved_nodes,
             display_map,
             host_events: Vec::new(),
             inline_failures: Vec::new(),
@@ -840,7 +847,7 @@ mod tests {
 
     #[test]
     fn page_and_line_waits_build_distinct_stage_shapes() {
-        let frame = frame(vec![
+        let frame = frame(&[
             RichTextNode::Text {
                 text: "A".to_owned(),
             },
@@ -880,7 +887,7 @@ mod tests {
 
     #[test]
     fn trailing_page_wait_does_not_create_an_empty_tail() {
-        let frame = frame(vec![
+        let frame = frame(&[
             RichTextNode::Text {
                 text: "終端".to_owned(),
             },
@@ -896,7 +903,7 @@ mod tests {
 
     #[test]
     fn leading_and_consecutive_page_waits_preserve_authored_waits() {
-        let frame = frame(vec![
+        let frame = frame(&[
             RichTextNode::Control {
                 control: RichTextControl::Page,
             },
@@ -918,7 +925,7 @@ mod tests {
 
     #[test]
     fn control_offsets_and_stage_runs_are_utf8_exact() {
-        let frame = frame(vec![
+        let frame = frame(&[
             RichTextNode::Text {
                 text: "夢".to_owned(),
             },
@@ -941,7 +948,7 @@ mod tests {
 
     #[test]
     fn line_wait_retains_the_display_origin_of_a_reached_clear() {
-        let frame = frame(vec![
+        let frame = frame(&[
             RichTextNode::Text {
                 text: "A".to_owned(),
             },
@@ -972,7 +979,7 @@ mod tests {
 
     #[test]
     fn validation_rejects_a_control_offset_inside_a_utf8_codepoint() {
-        let mut frame = frame(vec![
+        let mut frame = frame(&[
             RichTextNode::Text {
                 text: "夢".to_owned(),
             },
@@ -995,7 +1002,7 @@ mod tests {
 
     #[test]
     fn validation_rejects_authored_gate_offsets_that_regress() {
-        let mut frame = frame(vec![
+        let mut frame = frame(&[
             RichTextNode::Text {
                 text: "A".to_owned(),
             },
@@ -1024,7 +1031,7 @@ mod tests {
 
     #[test]
     fn validation_rejects_a_host_event_payload_mismatch() {
-        let mut frame = frame(vec![RichTextNode::Text {
+        let mut frame = frame(&[RichTextNode::Text {
             text: "A".to_owned(),
         }]);
         frame.host_events.push(DialogueHostEvent::Voice {
@@ -1054,7 +1061,7 @@ mod tests {
 
     #[test]
     fn frame_without_mapped_content_still_has_one_stage() {
-        let frame = frame(Vec::new());
+        let frame = frame(&[]);
 
         assert_eq!(frame.stage_count(), 1);
         assert_eq!(frame.stage(0).expect("empty stage").text(), "");

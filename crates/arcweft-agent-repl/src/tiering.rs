@@ -1,4 +1,3 @@
-use arcweft_agent_runner::runner::AgentControllerExecutorTierPolicy;
 use arcweft_core::awbc::schema::AwbcDigest;
 use arcweft_runtime_codegen::policy::{
     RuntimeCodegenPolicy, RuntimeCodegenTarget, RuntimeExecutorKind, RuntimeOptimizationLevel,
@@ -14,14 +13,13 @@ use crate::{
     ReplTierCursor, ReplTierInvalidationReason, ReplTierInvalidationToken, ReplTierStatusRecord,
 };
 
-/// REPL/dev executor and codegen policy.
+/// REPL/dev Product AWBC codegen policy.
 ///
 /// The default status-only policy does not assume a full-script executable
-/// backend. It lets `:warm` and `:codegen` return deterministic VM-fallback
-/// status while immediate cell execution remains the bytecode VM.
+/// backend. It lets `:warm` and `:codegen` return deterministic AWBC-fallback
+/// status while immediate cell execution remains canonical Product AWBC.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct ReplTierPolicy {
-    pub executor: AgentControllerExecutorTierPolicy,
     pub codegen: RuntimeCodegenPolicy,
     pub enabled_backends: Vec<RuntimeExecutorKind>,
     pub allow_background_warm: bool,
@@ -134,7 +132,7 @@ pub enum ReplWarmUnsupportedReason {
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum ReplTierFallback {
-    BytecodeVm,
+    ProductAwbc,
     None,
 }
 
@@ -181,7 +179,6 @@ impl ReplTierPolicy {
     #[must_use]
     pub fn status_only_for_target(target: RuntimeCodegenTarget) -> Self {
         Self {
-            executor: AgentControllerExecutorTierPolicy::bytecode_vm_first(),
             codegen: RuntimeCodegenPolicy {
                 preferred: RuntimeExecutorKind::CompactVm,
                 allow_vm_fallback: true,
@@ -226,8 +223,7 @@ impl ReplTierPolicy {
             .collect::<Vec<_>>()
             .join(",");
         format!(
-            "executor={};preferred={};fallback={};opt={};target={};backends={}",
-            self.executor.requested_tier().as_str(),
+            "preferred={};fallback={};opt={};target={};backends={}",
             self.codegen.preferred.as_str(),
             self.codegen.allow_vm_fallback,
             self.codegen.optimization.as_str(),
@@ -371,7 +367,7 @@ impl ReplTierFallback {
     #[must_use]
     pub const fn as_str(self) -> &'static str {
         match self {
-            Self::BytecodeVm => "bytecode_vm",
+            Self::ProductAwbc => "product_awbc",
             Self::None => "none",
         }
     }
@@ -418,7 +414,7 @@ impl ReplTierManager {
         ReplCodegenStatus {
             requested,
             backend_status: self.policy.backend_status(),
-            fallback: ReplTierFallback::BytecodeVm,
+            fallback: ReplTierFallback::ProductAwbc,
             enabled_backends: self.policy.enabled_backends.clone(),
             warmed_generations: self.warmed_generations.clone(),
             warmed_cells: self.warmed_cells.clone(),
@@ -487,7 +483,7 @@ impl ReplTierManager {
             started_background_job: true,
             target: request.target,
             backend_status: ReplTierBackendStatus::Queued,
-            fallback: ReplTierFallback::BytecodeVm,
+            fallback: ReplTierFallback::ProductAwbc,
             reason: None,
             generation: request.generation.active_generation,
             overlay_hash: request.snapshot.overlay_hash,
@@ -539,7 +535,7 @@ impl ReplTierManager {
             started_background_job: false,
             target: request.target,
             backend_status: ReplTierBackendStatus::Unsupported,
-            fallback: ReplTierFallback::BytecodeVm,
+            fallback: ReplTierFallback::ProductAwbc,
             reason: Some(reason),
             generation: request.generation.active_generation,
             overlay_hash: request.snapshot.overlay_hash,
@@ -704,7 +700,7 @@ impl<H> ReplTierCommandHandler<H> {
 fn full_script_backend_not_available() -> ReplTierDiagnostic {
     ReplTierDiagnostic::warning(
         ReplTierDiagnosticCode::FullScriptBackendNotAvailable,
-        "no full-script codegen backend is available; committed cells keep executing through bytecode VM",
+        "no full-script codegen backend is available; committed cells keep executing through Product AWBC",
     )
 }
 
@@ -739,7 +735,7 @@ fn diagnostic_for_reason(reason: ReplWarmUnsupportedReason) -> ReplTierDiagnosti
         ),
         ReplWarmUnsupportedReason::BackendFailed => ReplTierDiagnostic::error(
             ReplTierDiagnosticCode::BackendFailed,
-            "codegen backend failed; bytecode VM fallback remains active",
+            "codegen backend failed; Product AWBC fallback remains active",
         ),
     }
 }

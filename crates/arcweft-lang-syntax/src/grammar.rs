@@ -13,7 +13,6 @@ pub(crate) mod flow_projection;
 pub(crate) mod keyword_statement_projection;
 pub(crate) mod kinds;
 pub(crate) mod roles;
-pub(crate) mod source_declaration_projection;
 pub(crate) mod source_projection;
 pub(crate) mod style_projection;
 pub(crate) mod test_projection;

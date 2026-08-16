@@ -60,8 +60,8 @@ pub enum CompileAgentError {
     ProjectIndexEntryMismatch { entry: String },
     #[error("compiled project module `{module}` has no bound source document")]
     MissingSourceDocument { module: String },
-    #[error("selected Agent runtime plan failed verification: {0}")]
-    RuntimePlanVerification(String),
+    #[error("selected Agent Product AWBC lowering failed: {0}")]
+    ProductAwbc(#[source] arcweft_runtime_plan::awbc_lower::AwbcLowerError),
 }
 
 impl From<crate::runtime_diagnostics::ExecutionDiagnosticContextError> for CompileAgentError {

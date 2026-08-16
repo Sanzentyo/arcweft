@@ -151,10 +151,6 @@ pub enum SyntaxAccessError {
     MissingEntryProjection { id: SyntaxNodeId },
     #[error("syntax Entry identity {id:?} carries an invalid semantic projection")]
     InvalidEntryProjection { id: SyntaxNodeId },
-    #[error("syntax Source identity {id:?} has no parser-owned semantic projection")]
-    MissingSourceDeclarationProjection { id: SyntaxNodeId },
-    #[error("syntax Source identity {id:?} carries an invalid semantic projection")]
-    InvalidSourceDeclarationProjection { id: SyntaxNodeId },
     #[error("syntax attribute identity {id:?} has no semantic attribute projection")]
     MissingAttributeProjection { id: SyntaxNodeId },
     #[error("syntax attribute identity {id:?} carries an invalid semantic attribute projection")]

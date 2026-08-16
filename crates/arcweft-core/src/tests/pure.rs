@@ -1,1275 +1,371 @@
-use crate::math::{DenseMatrixF32, DenseMatrixF64, DenseTensorF32, DenseTensorF64};
-use crate::pattern::RuntimePattern;
+use std::sync::Arc;
+
+use crate::pattern::RuntimeSemanticTypeId;
 use crate::plan::{
-    RuntimePureHelper, RuntimePureHelperId, RuntimePureHelperOrigin, RuntimePureInputType,
-    RuntimePureOutputType,
+    RuntimeCallArgumentSeed, RuntimeExprSeed, RuntimeExprSeedKind, RuntimeLocalDeclarationSeed,
+    RuntimeLocalSeedId, RuntimePlan, RuntimePlanBuilder, RuntimePlanTypeProjection,
+    RuntimePlanTypeSeed, RuntimePureHelperId, RuntimePureHelperOrigin, RuntimePureHelperSeed,
+    RuntimePureInputType, RuntimePureOutputType,
 };
 use crate::pure::{
     AotPureFunctionBackend, PureFunctionBackend, PureFunctionBackendKind, PureFunctionRequest,
-    RuntimePureCallBackend, VmPureFunctionBackend, VmPureFunctionScratch, VmRuntimePureCallBackend,
-    compare_pure_function_backend,
+    RuntimeI64Args, RuntimePureCallBackend, RuntimePureHelperRef, VmPureFunctionBackend,
+    VmPureFunctionScratch, VmRuntimePureCallBackend, compare_pure_function_backend,
 };
 use crate::value::{
-    RuntimeBinaryOp, RuntimeBinding, RuntimeCallTarget, RuntimeEvalError, RuntimeExpr,
-    RuntimeExprMatchArm, RuntimeFieldExpr, RuntimeIntrinsic, RuntimeSeq, RuntimeValue,
-    runtime_sequence_dense_bool, runtime_sequence_dense_bytes, runtime_sequence_dense_i8,
-    runtime_sequence_dense_i16, runtime_sequence_dense_i32, runtime_sequence_dense_i64,
-    runtime_sequence_dense_i128, runtime_sequence_dense_isize, runtime_sequence_dense_u8,
-    runtime_sequence_dense_u16, runtime_sequence_dense_u32, runtime_sequence_dense_u64,
-    runtime_sequence_dense_u128, runtime_sequence_dense_usize,
-    runtime_sequence_from_literal_values, runtime_sequence_values,
-    runtime_value_into_sequence_values,
+    RuntimeBinaryOp, RuntimeCallArgumentMode, RuntimeEvalError, RuntimeSignedIntWidth, RuntimeValue,
 };
 
-fn int_binding(name: &str, value: i64) -> RuntimeBinding {
-    RuntimeBinding {
-        name: name.to_owned(),
-        value: RuntimeValue::i64(value),
-    }
+const I64_SEMANTIC_MARKER: u8 = 1;
+const BOOL_SEMANTIC_MARKER: u8 = 2;
+const FUNCTION_SEMANTIC_MARKER: u8 = 3;
+
+fn semantic_type(marker: u8) -> RuntimeSemanticTypeId {
+    RuntimeSemanticTypeId::from_bytes([marker; 32])
 }
 
-fn value_helper(expr: RuntimeExpr) -> RuntimePureHelper {
-    RuntimePureHelper {
-        id: RuntimePureHelperId(0),
-        name: "project".to_owned(),
-        input_names: vec!["row".to_owned()],
-        input_types: vec![RuntimePureInputType::Value],
-        output_type: RuntimePureOutputType::Value,
-        expr,
-        scalar_eval_supported: false,
-        origin: RuntimePureHelperOrigin::Annotated,
-    }
+fn i64_semantic_type() -> RuntimeSemanticTypeId {
+    semantic_type(I64_SEMANTIC_MARKER)
 }
 
-#[test]
-fn vm_pure_backend_applies_runtime_function_with_capture() {
-    let helper = value_helper(RuntimeExpr::Let {
-        name: "adder".to_owned(),
-        expr: Box::new(RuntimeExpr::Function {
-            params: vec!["value".to_owned()],
-            body: Box::new(RuntimeExpr::Binary {
-                lhs: Box::new(RuntimeExpr::Local("value".to_owned())),
-                op: RuntimeBinaryOp::Add,
-                rhs: Box::new(RuntimeExpr::Local("row".to_owned())),
-            }),
-        }),
-        body: Box::new(RuntimeExpr::Apply {
-            callee: Box::new(RuntimeExpr::Local("adder".to_owned())),
-            args: vec![RuntimeExpr::Value(RuntimeValue::i64(3))],
-        }),
-    });
-    let mut backend = VmRuntimePureCallBackend::default();
-
-    let value = backend
-        .call_values(&helper, &[RuntimeValue::i64(4)])
-        .expect("captured function evaluates");
-
-    assert_eq!(value, RuntimeValue::i64(7));
+fn bool_semantic_type() -> RuntimeSemanticTypeId {
+    semantic_type(BOOL_SEMANTIC_MARKER)
 }
 
-#[test]
-fn vm_pure_backend_applies_runtime_function_with_destructured_param_body() {
-    let helper = value_helper(RuntimeExpr::Apply {
-        callee: Box::new(RuntimeExpr::Function {
-            params: vec!["$arcweft.closure.arg.0".to_owned()],
-            body: Box::new(RuntimeExpr::Match {
-                scrutinee: Box::new(RuntimeExpr::Local("$arcweft.closure.arg.0".to_owned())),
-                arms: vec![RuntimeExprMatchArm {
-                    pattern: RuntimePattern::Tuple(vec![
-                        RuntimePattern::Ident("left".to_owned()),
-                        RuntimePattern::Ident("right".to_owned()),
-                    ]),
-                    guard: None,
-                    value: RuntimeExpr::Local("right".to_owned()),
-                }],
-            }),
-        }),
-        args: vec![RuntimeExpr::Tuple(vec![
-            RuntimeExpr::Value(RuntimeValue::String("head".to_owned())),
-            RuntimeExpr::Value(RuntimeValue::String("tail".to_owned())),
-        ])],
-    });
-    let mut backend = VmRuntimePureCallBackend::default();
-
-    let value = backend
-        .call_values(&helper, &[RuntimeValue::Unit])
-        .expect("destructured runtime function evaluates");
-
-    assert_eq!(value, RuntimeValue::String("tail".to_owned()));
+fn scalar_type_seeds() -> [RuntimePlanTypeSeed; 2] {
+    [
+        RuntimePlanTypeSeed::new(
+            i64_semantic_type(),
+            RuntimePlanTypeProjection::Signed(RuntimeSignedIntWidth::I64),
+        ),
+        RuntimePlanTypeSeed::new(bool_semantic_type(), RuntimePlanTypeProjection::Bool),
+    ]
 }
 
-#[test]
-fn vm_pure_backend_partially_applies_runtime_function() {
-    let helper = value_helper(RuntimeExpr::Apply {
-        callee: Box::new(RuntimeExpr::Apply {
-            callee: Box::new(RuntimeExpr::Function {
-                params: vec!["lhs".to_owned(), "rhs".to_owned()],
-                body: Box::new(RuntimeExpr::Binary {
-                    lhs: Box::new(RuntimeExpr::Local("lhs".to_owned())),
-                    op: RuntimeBinaryOp::Add,
-                    rhs: Box::new(RuntimeExpr::Local("rhs".to_owned())),
-                }),
-            }),
-            args: vec![RuntimeExpr::Value(RuntimeValue::i64(2))],
-        }),
-        args: vec![RuntimeExpr::Value(RuntimeValue::i64(5))],
-    });
-    let mut backend = VmRuntimePureCallBackend::default();
-
-    let value = backend.call_values(&helper, &[RuntimeValue::Unit]).unwrap();
-
-    assert_eq!(value, RuntimeValue::i64(7));
+fn i64_value(value: i64) -> RuntimeExprSeed {
+    RuntimeExprSeed::new(
+        i64_semantic_type(),
+        RuntimeExprSeedKind::Value(RuntimeValue::i64(value)),
+    )
 }
 
-#[test]
-fn vm_pure_backend_applies_runtime_function_with_spread_args() {
-    let helper = value_helper(RuntimeExpr::Apply {
-        callee: Box::new(RuntimeExpr::Function {
-            params: vec!["lhs".to_owned(), "rhs".to_owned()],
-            body: Box::new(RuntimeExpr::Binary {
-                lhs: Box::new(RuntimeExpr::Local("lhs".to_owned())),
-                op: RuntimeBinaryOp::Add,
-                rhs: Box::new(RuntimeExpr::Local("rhs".to_owned())),
-            }),
-        }),
-        args: vec![RuntimeExpr::SpreadArg(Box::new(RuntimeExpr::BracketSeq(
-            vec![
-                RuntimeExpr::Value(RuntimeValue::i64(2)),
-                RuntimeExpr::Value(RuntimeValue::i64(5)),
-            ],
-        )))],
-    });
-    let mut backend = VmRuntimePureCallBackend::default();
-
-    let value = backend.call_values(&helper, &[RuntimeValue::Unit]).unwrap();
-
-    assert_eq!(value, RuntimeValue::i64(7));
+fn i64_local(local: RuntimeLocalSeedId) -> RuntimeExprSeed {
+    RuntimeExprSeed::new(i64_semantic_type(), RuntimeExprSeedKind::Local(local))
 }
 
-#[test]
-fn vm_pure_backend_partially_applies_runtime_function_with_spread_prefix() {
-    let helper = value_helper(RuntimeExpr::Apply {
-        callee: Box::new(RuntimeExpr::Apply {
-            callee: Box::new(RuntimeExpr::Function {
-                params: vec!["lhs".to_owned(), "rhs".to_owned()],
-                body: Box::new(RuntimeExpr::Binary {
-                    lhs: Box::new(RuntimeExpr::Local("lhs".to_owned())),
-                    op: RuntimeBinaryOp::Add,
-                    rhs: Box::new(RuntimeExpr::Local("rhs".to_owned())),
-                }),
-            }),
-            args: vec![RuntimeExpr::SpreadArg(Box::new(RuntimeExpr::BracketSeq(
-                vec![RuntimeExpr::Value(RuntimeValue::i64(2))],
-            )))],
-        }),
-        args: vec![RuntimeExpr::Value(RuntimeValue::i64(5))],
-    });
-    let mut backend = VmRuntimePureCallBackend::default();
-
-    let value = backend.call_values(&helper, &[RuntimeValue::Unit]).unwrap();
-
-    assert_eq!(value, RuntimeValue::i64(7));
-}
-
-#[test]
-fn vm_pure_backend_applies_curried_runtime_function() {
-    let helper = value_helper(RuntimeExpr::Apply {
-        callee: Box::new(RuntimeExpr::Apply {
-            callee: Box::new(RuntimeExpr::Function {
-                params: vec!["lhs".to_owned()],
-                body: Box::new(RuntimeExpr::Function {
-                    params: vec!["rhs".to_owned()],
-                    body: Box::new(RuntimeExpr::Binary {
-                        lhs: Box::new(RuntimeExpr::Local("lhs".to_owned())),
-                        op: RuntimeBinaryOp::Add,
-                        rhs: Box::new(RuntimeExpr::Local("rhs".to_owned())),
-                    }),
-                }),
-            }),
-            args: vec![RuntimeExpr::Value(RuntimeValue::i64(2))],
-        }),
-        args: vec![RuntimeExpr::Value(RuntimeValue::i64(5))],
-    });
-    let mut backend = VmRuntimePureCallBackend::default();
-
-    let value = backend.call_values(&helper, &[RuntimeValue::Unit]).unwrap();
-
-    assert_eq!(value, RuntimeValue::i64(7));
-}
-
-#[test]
-fn vm_pure_backend_applies_curried_runtime_function_with_spread_args() {
-    let helper = value_helper(RuntimeExpr::Apply {
-        callee: Box::new(RuntimeExpr::Function {
-            params: vec!["lhs".to_owned()],
-            body: Box::new(RuntimeExpr::Function {
-                params: vec!["rhs".to_owned()],
-                body: Box::new(RuntimeExpr::Binary {
-                    lhs: Box::new(RuntimeExpr::Local("lhs".to_owned())),
-                    op: RuntimeBinaryOp::Add,
-                    rhs: Box::new(RuntimeExpr::Local("rhs".to_owned())),
-                }),
-            }),
-        }),
-        args: vec![RuntimeExpr::SpreadArg(Box::new(RuntimeExpr::BracketSeq(
-            vec![
-                RuntimeExpr::Value(RuntimeValue::i64(2)),
-                RuntimeExpr::Value(RuntimeValue::i64(5)),
-            ],
-        )))],
-    });
-    let mut backend = VmRuntimePureCallBackend::default();
-
-    let value = backend.call_values(&helper, &[RuntimeValue::Unit]).unwrap();
-
-    assert_eq!(value, RuntimeValue::i64(7));
-}
-
-#[test]
-fn vm_pure_backend_projects_record_columns_by_ordinal() {
-    let helper = value_helper(RuntimeExpr::ProjectRecord {
-        target: Box::new(RuntimeExpr::Local("row".to_owned())),
-        ordinal: 0,
-    });
-    let rows = runtime_sequence_from_literal_values(vec![
-        crate::tests::runtime_record!([RuntimeFieldValue {
-            name: "score".to_owned(),
-            value: RuntimeValue::i64(1),
-        }]),
-        crate::tests::runtime_record!([RuntimeFieldValue {
-            name: "score".to_owned(),
-            value: RuntimeValue::i64(2),
-        }]),
-    ]);
-    let mut backend = VmRuntimePureCallBackend::default();
-
-    let value = backend
-        .call_values(&helper, &[rows])
-        .expect("projection evaluates");
-
-    assert!(matches!(
-        value,
-        RuntimeValue::Seq(seq) if seq.as_i64_slice() == Some([1, 2].as_slice())
-    ));
-}
-
-#[test]
-fn vm_pure_backend_projects_tuple_columns_by_ordinal() {
-    let helper = value_helper(RuntimeExpr::ProjectTuple {
-        target: Box::new(RuntimeExpr::Local("row".to_owned())),
-        ordinal: 1,
-    });
-    let rows = runtime_sequence_from_literal_values(vec![
-        RuntimeValue::Tuple(vec![RuntimeValue::i64(1), RuntimeValue::Bool(true)]),
-        RuntimeValue::Tuple(vec![RuntimeValue::i64(2), RuntimeValue::Bool(false)]),
-    ]);
-    let mut backend = VmRuntimePureCallBackend::default();
-
-    let value = backend
-        .call_values(&helper, &[rows])
-        .expect("projection evaluates");
-
-    assert!(matches!(
-        value,
-        RuntimeValue::Seq(seq) if seq.as_bool_slice() == Some([true, false].as_slice())
-    ));
-}
-
-#[test]
-fn vm_pure_backend_evaluates_deterministic_helper_expr() {
-    let request = PureFunctionRequest::new(
-        "score",
-        RuntimeExpr::Binary {
-            lhs: Box::new(RuntimeExpr::Local("base".to_owned())),
-            op: RuntimeBinaryOp::Add,
-            rhs: Box::new(RuntimeExpr::Call {
-                callee: RuntimeCallTarget::intrinsic(RuntimeIntrinsic::Add),
-                args: vec![
-                    RuntimeExpr::Local("bonus".to_owned()),
-                    RuntimeExpr::Value(RuntimeValue::i64(2)),
-                ],
-            }),
+fn i64_binary(lhs: RuntimeExprSeed, op: RuntimeBinaryOp, rhs: RuntimeExprSeed) -> RuntimeExprSeed {
+    RuntimeExprSeed::new(
+        i64_semantic_type(),
+        RuntimeExprSeedKind::Binary {
+            lhs: Box::new(lhs),
+            op,
+            rhs: Box::new(rhs),
         },
-        [int_binding("base", 3), int_binding("bonus", 4)],
+    )
+}
+
+fn bool_binary(lhs: RuntimeExprSeed, op: RuntimeBinaryOp, rhs: RuntimeExprSeed) -> RuntimeExprSeed {
+    RuntimeExprSeed::new(
+        bool_semantic_type(),
+        RuntimeExprSeedKind::Binary {
+            lhs: Box::new(lhs),
+            op,
+            rhs: Box::new(rhs),
+        },
+    )
+}
+
+struct AdmittedHelper {
+    plan: Arc<RuntimePlan>,
+    helper: RuntimePureHelperId,
+}
+
+impl AdmittedHelper {
+    fn helper_ref(&self) -> RuntimePureHelperRef<'_> {
+        RuntimePureHelperRef::resolve(&self.plan, self.helper).expect("admitted helper")
+    }
+
+    fn request(&self, args: impl IntoIterator<Item = RuntimeValue>) -> PureFunctionRequest {
+        PureFunctionRequest::try_new(Arc::clone(&self.plan), self.helper, args)
+            .expect("well-typed helper request")
+    }
+}
+
+fn admit_i64_helper(
+    name: &str,
+    arity: usize,
+    body: impl FnOnce(&[RuntimeLocalSeedId]) -> RuntimeExprSeed,
+) -> AdmittedHelper {
+    let mut builder = RuntimePlanBuilder::new();
+    let admission = builder
+        .admit_semantic_batch(
+            scalar_type_seeds(),
+            (0..arity).map(|_| RuntimeLocalDeclarationSeed::new(i64_semantic_type())),
+            [],
+            [],
+        )
+        .expect("semantic helper inputs");
+    builder
+        .push_pure_helper_seed(RuntimePureHelperSeed {
+            name: name.to_owned(),
+            inputs: admission.local_ids().to_vec().into_boxed_slice(),
+            input_abi: vec![RuntimePureInputType::I64; arity],
+            output_abi: RuntimePureOutputType::I64,
+            body: body(admission.local_ids()),
+            scalar_eval_supported: true,
+            origin: RuntimePureHelperOrigin::Annotated,
+        })
+        .expect("typed helper admission");
+    let plan = Arc::new(builder.finish().expect("sealed helper plan"));
+    let helper = plan.pure_helpers()[0].id;
+    AdmittedHelper { plan, helper }
+}
+
+fn admitted_add_helper() -> AdmittedHelper {
+    admit_i64_helper("add", 2, |inputs| {
+        i64_binary(
+            i64_local(inputs[0].clone()),
+            RuntimeBinaryOp::Add,
+            i64_local(inputs[1].clone()),
+        )
+    })
+}
+
+#[test]
+fn pure_request_is_qualified_by_the_admitted_plan_and_helper() {
+    let helper = admitted_add_helper();
+    let request = helper.request([RuntimeValue::i64(3), RuntimeValue::i64(4)]);
+
+    assert!(Arc::ptr_eq(request.plan(), &helper.plan));
+    assert_eq!(request.helper_id(), helper.helper);
+    assert_eq!(
+        request
+            .bindings()
+            .iter()
+            .map(|binding| binding.local)
+            .collect::<Vec<_>>(),
+        helper.plan.pure_helpers()[0].input_locals.as_ref()
     );
 
     let result = VmPureFunctionBackend
         .evaluate(&request)
-        .expect("pure helper evaluates");
-
+        .expect("plan-qualified VM evaluation");
     assert_eq!(result.backend, PureFunctionBackendKind::Vm);
-    assert_eq!(result.value, RuntimeValue::i64(9));
-    assert_eq!(result.stats.evaluated_calls, 1);
-    assert_eq!(result.stats.evaluated_binary_ops, 1);
-    assert!(result.stats.evaluated_exprs >= 5);
-}
-
-#[test]
-fn vm_pure_backend_evaluates_builtin_matrix_and_tensor_calls() {
-    let lhs = DenseMatrixF32::new(2, 3, vec![1.0, 2.0, 3.0, 4.0, 5.0, 6.0]).unwrap();
-    let rhs = DenseMatrixF32::new(3, 2, vec![7.0, 8.0, 9.0, 10.0, 11.0, 12.0]).unwrap();
-    let request = PureFunctionRequest::new(
-        "matrix",
-        RuntimeExpr::Call {
-            callee: RuntimeCallTarget::intrinsic(RuntimeIntrinsic::MathMatmulF32),
-            args: vec![
-                RuntimeExpr::Value(RuntimeValue::matrix_f32(lhs)),
-                RuntimeExpr::Value(RuntimeValue::matrix_f32(rhs)),
-            ],
-        },
-        [],
-    );
-
-    let result = VmPureFunctionBackend
-        .evaluate(&request)
-        .expect("matrix call evaluates");
-
-    assert!(matches!(
-        result.value,
-        RuntimeValue::MatrixF32(matrix)
-            if matrix.shape() == crate::math::MatrixShape::new(2, 2)
-                && matrix.values() == [58.0, 64.0, 139.0, 154.0]
-    ));
-
-    let lhs = DenseTensorF32::new(vec![2, 2], vec![1.0, 2.0, 3.0, 4.0]).unwrap();
-    let rhs = DenseTensorF32::new(vec![2, 2], vec![5.0, 6.0, 7.0, 8.0]).unwrap();
-    let request = PureFunctionRequest::new(
-        "tensor",
-        RuntimeExpr::Call {
-            callee: RuntimeCallTarget::intrinsic(RuntimeIntrinsic::MathTensorAddF32),
-            args: vec![
-                RuntimeExpr::Value(RuntimeValue::tensor_f32(lhs)),
-                RuntimeExpr::Value(RuntimeValue::tensor_f32(rhs)),
-            ],
-        },
-        [],
-    );
-
-    let result = VmPureFunctionBackend
-        .evaluate(&request)
-        .expect("tensor call evaluates");
-
-    assert!(matches!(
-        result.value,
-        RuntimeValue::TensorF32(tensor)
-            if tensor.shape().dims() == [2, 2] && tensor.values() == [6.0, 8.0, 10.0, 12.0]
-    ));
-}
-
-#[test]
-fn vm_pure_backend_evaluates_builtin_f64_matrix_and_tensor_calls() {
-    let lhs = DenseMatrixF64::new(2, 2, vec![1.5, 2.0, 3.25, 4.5]).unwrap();
-    let rhs = DenseMatrixF64::new(2, 2, vec![5.0, 6.5, 7.0, 8.25]).unwrap();
-    let request = PureFunctionRequest::new(
-        "matrix_f64",
-        RuntimeExpr::Call {
-            callee: RuntimeCallTarget::intrinsic(RuntimeIntrinsic::MathMatmulF64),
-            args: vec![
-                RuntimeExpr::Value(RuntimeValue::matrix_f64(lhs)),
-                RuntimeExpr::Value(RuntimeValue::matrix_f64(rhs)),
-            ],
-        },
-        [],
-    );
-
-    let result = VmPureFunctionBackend
-        .evaluate(&request)
-        .expect("f64 matrix call evaluates");
-
-    assert!(matches!(
-        result.value,
-        RuntimeValue::MatrixF64(matrix)
-            if matrix.shape() == crate::math::MatrixShape::new(2, 2)
-                && matrix.values() == [21.5, 26.25, 47.75, 58.25]
-    ));
-
-    let lhs = DenseTensorF64::new(vec![2, 2], vec![1.5, 2.25, 3.75, 4.5]).unwrap();
-    let rhs = DenseTensorF64::new(vec![2, 2], vec![5.0, 6.25, 7.5, 8.75]).unwrap();
-    let request = PureFunctionRequest::new(
-        "tensor_f64",
-        RuntimeExpr::Call {
-            callee: RuntimeCallTarget::intrinsic(RuntimeIntrinsic::MathTensorAddF64),
-            args: vec![
-                RuntimeExpr::Value(RuntimeValue::tensor_f64(lhs)),
-                RuntimeExpr::Value(RuntimeValue::tensor_f64(rhs)),
-            ],
-        },
-        [],
-    );
-
-    let result = VmPureFunctionBackend
-        .evaluate(&request)
-        .expect("f64 tensor call evaluates");
-
-    assert!(matches!(
-        result.value,
-        RuntimeValue::TensorF64(tensor)
-            if tensor.shape().dims() == [2, 2] && tensor.values() == [6.5, 8.5, 11.25, 13.25]
-    ));
-}
-
-#[test]
-fn vm_pure_backend_evaluates_lexical_let_expr() {
-    let request = PureFunctionRequest::new(
-        "score_with_local",
-        RuntimeExpr::Let {
-            name: "boosted".to_owned(),
-            expr: Box::new(RuntimeExpr::Call {
-                callee: RuntimeCallTarget::intrinsic(RuntimeIntrinsic::Add),
-                args: vec![
-                    RuntimeExpr::Local("bonus".to_owned()),
-                    RuntimeExpr::Value(RuntimeValue::i64(2)),
-                ],
-            }),
-            body: Box::new(RuntimeExpr::Binary {
-                lhs: Box::new(RuntimeExpr::Local("base".to_owned())),
-                op: RuntimeBinaryOp::Mul,
-                rhs: Box::new(RuntimeExpr::Local("boosted".to_owned())),
-            }),
-        },
-        [int_binding("base", 3), int_binding("bonus", 4)],
-    );
-
-    let result = VmPureFunctionBackend
-        .evaluate(&request)
-        .expect("pure helper evaluates lexical let");
-
-    assert_eq!(result.value, RuntimeValue::i64(18));
-    assert_eq!(result.stats.evaluated_calls, 1);
+    assert_eq!(result.value, RuntimeValue::i64(7));
     assert_eq!(result.stats.evaluated_binary_ops, 1);
 }
 
 #[test]
-fn vm_pure_backend_sums_local_i64_sequence_by_borrow() {
-    let request = PureFunctionRequest::new(
-        "sum_scores",
-        RuntimeExpr::Sum {
-            source: Box::new(RuntimeExpr::Local("scores".to_owned())),
-        },
-        [RuntimeBinding {
-            name: "scores".to_owned(),
-            value: runtime_sequence_values(vec![
-                RuntimeValue::i64(18),
-                RuntimeValue::i64(15),
-                RuntimeValue::i64(20),
-            ]),
-        }],
-    );
-
-    let result = VmPureFunctionBackend
-        .evaluate(&request)
-        .expect("pure helper sums local sequence");
-
-    assert_eq!(result.value, RuntimeValue::i64(53));
-}
-
-#[test]
-fn vm_pure_backend_filters_sequence_values() {
-    let request = PureFunctionRequest::new(
-        "filter_scores",
-        RuntimeExpr::Filter {
-            source: Box::new(RuntimeExpr::Local("scores".to_owned())),
-            param: "score".to_owned(),
-            body: Box::new(RuntimeExpr::Binary {
-                lhs: Box::new(RuntimeExpr::Local("score".to_owned())),
-                op: RuntimeBinaryOp::Gt,
-                rhs: Box::new(RuntimeExpr::Value(RuntimeValue::i64(15))),
-            }),
-        },
-        [RuntimeBinding {
-            name: "scores".to_owned(),
-            value: runtime_sequence_values(vec![
-                RuntimeValue::i64(18),
-                RuntimeValue::i64(15),
-                RuntimeValue::i64(20),
-            ]),
-        }],
-    );
-
-    let result = VmPureFunctionBackend
-        .evaluate(&request)
-        .expect("pure helper filters sequence");
+fn pure_request_rejects_a_value_outside_the_input_local_type() {
+    let helper = admitted_add_helper();
+    let input = helper.plan.pure_helpers()[0].input_locals[0];
+    let input_ty = helper
+        .plan
+        .local_declarations()
+        .get(input)
+        .expect("input declaration")
+        .ty();
 
     assert_eq!(
-        runtime_value_into_sequence_values(result.value).expect("filter returns a sequence"),
-        [RuntimeValue::i64(18), RuntimeValue::i64(20)]
+        PureFunctionRequest::try_new(
+            Arc::clone(&helper.plan),
+            helper.helper,
+            [
+                RuntimeValue::String("wrong".to_owned()),
+                RuntimeValue::i64(1)
+            ],
+        ),
+        Err(RuntimeEvalError::InvalidExpressionType(input_ty))
     );
 }
 
 #[test]
-fn vm_pure_backend_sums_dense_i64_sequence_without_materializing_values() {
-    let request = PureFunctionRequest::new(
-        "sum_scores",
-        RuntimeExpr::Sum {
-            source: Box::new(RuntimeExpr::Local("scores".to_owned())),
-        },
-        [RuntimeBinding {
-            name: "scores".to_owned(),
-            value: runtime_sequence_dense_i64(vec![18, 15, 20]),
-        }],
-    );
-
-    let result = VmPureFunctionBackend
-        .evaluate(&request)
-        .expect("pure helper sums dense local sequence");
-
-    assert_eq!(result.value, RuntimeValue::i64(53));
-}
-
-#[test]
-fn vm_pure_backend_sums_dense_integer_sequences_without_materializing_values() {
-    let cases = [
-        runtime_sequence_dense_i8(vec![18, 15, 20]),
-        runtime_sequence_dense_i16(vec![18, 15, 20]),
-        runtime_sequence_dense_i32(vec![18, 15, 20]),
-        runtime_sequence_dense_i64(vec![18, 15, 20]),
-        runtime_sequence_dense_i128(vec![18, 15, 20]),
-        runtime_sequence_dense_isize(vec![18, 15, 20]),
-        runtime_sequence_dense_u8(vec![18, 15, 20]),
-        runtime_sequence_dense_u16(vec![18, 15, 20]),
-        runtime_sequence_dense_u32(vec![18, 15, 20]),
-        runtime_sequence_dense_u64(vec![18, 15, 20]),
-        runtime_sequence_dense_u128(vec![18, 15, 20]),
-        runtime_sequence_dense_usize(vec![18, 15, 20]),
-        runtime_sequence_dense_bytes(vec![18, 15, 20]),
-    ];
-
-    for value in cases {
-        let request = PureFunctionRequest::new(
-            "sum_scores",
-            RuntimeExpr::Sum {
-                source: Box::new(RuntimeExpr::Local("scores".to_owned())),
-            },
-            [RuntimeBinding {
-                name: "scores".to_owned(),
-                value,
-            }],
-        );
-
-        let result = VmPureFunctionBackend
-            .evaluate(&request)
-            .expect("pure helper sums dense integer-compatible sequence");
-
-        assert_eq!(result.value, RuntimeValue::i64(53));
-    }
-}
-
-#[test]
-fn vm_pure_backend_reads_dense_sequence_len_without_materializing_values() {
-    let request = PureFunctionRequest::new(
-        "flag_count",
-        RuntimeExpr::MethodCall {
-            receiver: Box::new(RuntimeExpr::Local("flags".to_owned())),
-            method: "len".to_owned(),
-            args: Vec::new(),
-        },
-        [RuntimeBinding {
-            name: "flags".to_owned(),
-            value: runtime_sequence_dense_bool(vec![true, false, true, true]),
-        }],
-    );
-
-    let result = VmPureFunctionBackend
-        .evaluate(&request)
-        .expect("pure helper reads dense sequence length");
-
-    assert_eq!(result.value, RuntimeValue::usize(4));
-    assert_eq!(result.stats.evaluated_method_calls, 1);
-}
-
-#[test]
-fn vm_pure_backend_checks_sequence_contains_and_record_get() {
-    let contains = PureFunctionRequest::new(
-        "has_choice",
-        RuntimeExpr::MethodCall {
-            receiver: Box::new(RuntimeExpr::Local("actions".to_owned())),
-            method: "contains".to_owned(),
-            args: vec![RuntimeExpr::Record(vec![RuntimeFieldExpr {
-                name: "target".to_owned(),
-                value: RuntimeExpr::Value(RuntimeValue::String("choice.opening.listen".to_owned())),
-            }])],
-        },
-        [RuntimeBinding {
-            name: "actions".to_owned(),
-            value: RuntimeValue::Seq(RuntimeSeq::values(vec![crate::tests::runtime_record!([
-                RuntimeFieldValue {
-                    name: "target".to_owned(),
-                    value: RuntimeValue::String("choice.opening.listen".to_owned()),
-                },
-            ])])),
-        }],
-    );
-    let contains = VmPureFunctionBackend
-        .evaluate(&contains)
-        .expect("pure helper evaluates contains");
-    assert_eq!(contains.value, RuntimeValue::Bool(true));
-
-    let index = PureFunctionRequest::new(
-        "first_action",
-        RuntimeExpr::MethodCall {
-            receiver: Box::new(RuntimeExpr::Local("actions".to_owned())),
-            method: "__index".to_owned(),
-            args: vec![RuntimeExpr::Value(RuntimeValue::i64(0))],
-        },
-        [RuntimeBinding {
-            name: "actions".to_owned(),
-            value: RuntimeValue::Seq(RuntimeSeq::values(vec![crate::tests::runtime_record!([
-                RuntimeFieldValue {
-                    name: "target".to_owned(),
-                    value: RuntimeValue::String("choice.opening.listen".to_owned()),
-                },
-            ])])),
-        }],
-    );
-    let index = VmPureFunctionBackend
-        .evaluate(&index)
-        .expect("pure helper evaluates sequence index");
-    assert_eq!(
-        index.value,
-        crate::tests::runtime_record!([RuntimeFieldValue {
-            name: "target".to_owned(),
-            value: RuntimeValue::String("choice.opening.listen".to_owned()),
-        }])
-    );
-
-    let get = PureFunctionRequest::new(
-        "signal_value",
-        RuntimeExpr::MethodCall {
-            receiver: Box::new(RuntimeExpr::Local("signals".to_owned())),
-            method: "get".to_owned(),
-            args: vec![RuntimeExpr::EntityRef("signal.ready".to_owned())],
-        },
-        [RuntimeBinding {
-            name: "signals".to_owned(),
-            value: crate::tests::runtime_record!([RuntimeFieldValue {
-                name: "signal.ready".to_owned(),
-                value: RuntimeValue::Bool(true),
-            }]),
-        }],
-    );
-    let get = VmPureFunctionBackend
-        .evaluate(&get)
-        .expect("pure helper evaluates record get");
-    assert_eq!(get.value, RuntimeValue::Bool(true));
-}
-
-#[test]
-fn vm_pure_backend_requires_observed_object_by_role() {
-    let request = PureFunctionRequest::new(
-        "dialogue_view",
-        RuntimeExpr::MethodCall {
-            receiver: Box::new(RuntimeExpr::Local("objects".to_owned())),
-            method: "require_role".to_owned(),
-            args: vec![RuntimeExpr::Value(RuntimeValue::String(
-                "dialogue_view".to_owned(),
-            ))],
-        },
-        [RuntimeBinding {
-            name: "objects".to_owned(),
-            value: RuntimeValue::Seq(RuntimeSeq::values(vec![
-                crate::tests::runtime_record!([
-                    RuntimeFieldValue {
-                        name: "id".to_owned(),
-                        value: RuntimeValue::String("object.background".to_owned()),
-                    },
-                    RuntimeFieldValue {
-                        name: "role".to_owned(),
-                        value: RuntimeValue::String("background".to_owned()),
-                    },
-                ]),
-                crate::tests::runtime_record!([
-                    RuntimeFieldValue {
-                        name: "id".to_owned(),
-                        value: RuntimeValue::String("object.dialogue.0.0".to_owned()),
-                    },
-                    RuntimeFieldValue {
-                        name: "role".to_owned(),
-                        value: RuntimeValue::String("dialogue_view".to_owned()),
-                    },
-                ]),
-            ])),
-        }],
-    );
-
-    let result = VmPureFunctionBackend
-        .evaluate(&request)
-        .expect("pure helper finds observed object role");
-
-    assert!(matches!(
-        result.value,
-        RuntimeValue::Record(ref fields)
-            if fields.iter().any(|field| {
-                field.name() == "id"
-                    && field.value()
-                        == &RuntimeValue::String("object.dialogue.0.0".to_owned())
-            })
-    ));
-    assert_eq!(result.stats.evaluated_method_calls, 1);
-}
-
-#[test]
-fn vm_pure_backend_projects_entity_ref_metadata_fields() {
-    for (field, expected) in [
-        ("id", "choice.opening.listen"),
-        ("family", "choice"),
-        ("name", "opening.listen"),
-    ] {
-        let helper = value_helper(RuntimeExpr::Field {
-            target: Box::new(RuntimeExpr::EntityRef("choice.opening.listen".to_owned())),
-            field: field.to_owned(),
-        });
-        let mut backend = VmRuntimePureCallBackend::default();
-
-        let value = backend
-            .call_values(&helper, &[RuntimeValue::Unit])
-            .expect("entity ref metadata field evaluates");
-
-        assert_eq!(value, RuntimeValue::String(expected.to_owned()));
-    }
-}
-
-#[test]
-fn vm_runtime_value_fallback_records_pure_call_stats() {
-    let helper = RuntimePureHelper {
-        id: RuntimePureHelperId(0),
-        name: "echo_label".to_owned(),
-        input_names: vec!["label".to_owned()],
-        input_types: vec![RuntimePureInputType::Value],
-        output_type: RuntimePureOutputType::Value,
-        expr: RuntimeExpr::Local("label".to_owned()),
-        scalar_eval_supported: false,
-        origin: RuntimePureHelperOrigin::Annotated,
-    };
+fn runtime_backend_accepts_only_a_plan_qualified_helper_handle() {
+    let helper = admitted_add_helper();
     let mut backend = VmRuntimePureCallBackend::default();
 
     let value = backend
-        .call_values(&helper, &[RuntimeValue::String("ready".to_owned())])
-        .expect("VM value fallback evaluates");
+        .call_i64(helper.helper_ref(), RuntimeI64Args::new([9, 4, 0, 0], 2))
+        .expect("runtime helper call");
 
-    assert_eq!(value, RuntimeValue::String("ready".to_owned()));
+    assert_eq!(value, Some(13));
     assert_eq!(backend.stats().pure_calls, 1);
     assert_eq!(backend.stats().vm_calls, 1);
-    assert_eq!(backend.stats().fallbacks, 1);
-    assert_eq!(backend.stats().arg_vec_allocations, 0);
-    assert_eq!(
-        backend.stats().arg_bytes_borrowed,
-        std::mem::size_of_val(&[RuntimeValue::String("ready".to_owned())])
-    );
-}
-
-#[test]
-fn vm_runtime_i64_fast_path_records_copy_bytes() {
-    let helper = RuntimePureHelper {
-        id: RuntimePureHelperId(0),
-        name: "score".to_owned(),
-        input_names: vec!["base".to_owned(), "bonus".to_owned()],
-        input_types: vec![RuntimePureInputType::I64, RuntimePureInputType::I64],
-        output_type: RuntimePureOutputType::I64,
-        expr: RuntimeExpr::Binary {
-            lhs: Box::new(RuntimeExpr::Local("base".to_owned())),
-            op: RuntimeBinaryOp::Add,
-            rhs: Box::new(RuntimeExpr::Local("bonus".to_owned())),
-        },
-        scalar_eval_supported: true,
-        origin: RuntimePureHelperOrigin::Annotated,
-    };
-    let mut backend = VmRuntimePureCallBackend::default();
-
-    let value = backend
-        .call_i64(&helper, crate::pure::RuntimeI64Args::new([3, 4, 0, 0], 2))
-        .expect("VM i64 fast path evaluates");
-
-    assert_eq!(value, Some(7));
     assert_eq!(backend.stats().arg_stack_packs, 1);
-    assert_eq!(
-        backend.stats().arg_bytes_copied,
-        2 * std::mem::size_of::<i64>()
-    );
-    assert_eq!(backend.stats().result_bytes_copied, 0);
 }
 
 #[test]
-fn vm_runtime_i64_slice_fast_path_records_borrowed_bytes() {
-    let helper = RuntimePureHelper {
-        id: RuntimePureHelperId(0),
-        name: "score".to_owned(),
-        input_names: vec!["base".to_owned(), "bonus".to_owned()],
-        input_types: vec![RuntimePureInputType::I64, RuntimePureInputType::I64],
-        output_type: RuntimePureOutputType::I64,
-        expr: RuntimeExpr::Binary {
-            lhs: Box::new(RuntimeExpr::Local("base".to_owned())),
-            op: RuntimeBinaryOp::Add,
-            rhs: Box::new(RuntimeExpr::Local("bonus".to_owned())),
-        },
-        scalar_eval_supported: true,
-        origin: RuntimePureHelperOrigin::Annotated,
-    };
+fn runtime_backend_flat_batch_reuses_the_same_plan_qualified_helper() {
+    let helper = admit_i64_helper("multiply", 2, |inputs| {
+        i64_binary(
+            i64_local(inputs[0].clone()),
+            RuntimeBinaryOp::Mul,
+            i64_local(inputs[1].clone()),
+        )
+    });
     let mut backend = VmRuntimePureCallBackend::default();
-    let args = [3, 4];
+    let mut output = [0; 3];
 
-    let value = backend
-        .call_i64_slice(&helper, &args)
-        .expect("VM i64 slice fast path evaluates");
+    backend
+        .call_i64_flat_batch(helper.helper_ref(), &[2, 3, 4, 5, 6, 7], 2, &mut output)
+        .expect("typed flat batch");
 
-    assert_eq!(value, Some(7));
-    assert_eq!(backend.stats().arg_stack_packs, 0);
-    assert_eq!(backend.stats().arg_bytes_copied, 0);
-    assert_eq!(
-        backend.stats().arg_bytes_borrowed,
-        2 * std::mem::size_of::<i64>()
-    );
-    assert_eq!(backend.stats().result_bytes_copied, 0);
+    assert_eq!(output, [6, 20, 42]);
+    assert_eq!(backend.stats().flat_batch_calls, 1);
+    assert_eq!(backend.stats().flat_batch_items, 3);
 }
 
 #[test]
-fn vm_pure_scratch_reuses_and_rebuilds_i64_root_bindings() {
-    let add = RuntimePureHelper {
-        id: RuntimePureHelperId(0),
-        name: "add".to_owned(),
-        input_names: vec!["base".to_owned(), "bonus".to_owned()],
-        input_types: vec![RuntimePureInputType::I64, RuntimePureInputType::I64],
-        output_type: RuntimePureOutputType::I64,
-        expr: RuntimeExpr::Binary {
-            lhs: Box::new(RuntimeExpr::Local("base".to_owned())),
-            op: RuntimeBinaryOp::Add,
-            rhs: Box::new(RuntimeExpr::Local("bonus".to_owned())),
-        },
-        scalar_eval_supported: true,
-        origin: RuntimePureHelperOrigin::Annotated,
-    };
-    let double = RuntimePureHelper {
-        id: RuntimePureHelperId(1),
-        name: "double".to_owned(),
-        input_names: vec!["value".to_owned()],
-        input_types: vec![RuntimePureInputType::I64],
-        output_type: RuntimePureOutputType::I64,
-        expr: RuntimeExpr::Binary {
-            lhs: Box::new(RuntimeExpr::Local("value".to_owned())),
-            op: RuntimeBinaryOp::Mul,
-            rhs: Box::new(RuntimeExpr::Value(RuntimeValue::i64(2))),
-        },
-        scalar_eval_supported: true,
-        origin: RuntimePureHelperOrigin::Annotated,
-    };
+fn vm_scratch_rebinds_plan_local_inputs_between_calls() {
+    let helper = admitted_add_helper();
     let mut scratch = VmPureFunctionScratch::default();
 
-    let first = scratch
-        .evaluate_i64_slice(&add, &[3, 4])
-        .expect("scratch evaluates first helper");
-    let second = scratch
-        .evaluate_i64_slice(&add, &[5, 6])
-        .expect("scratch reuses matching root bindings");
-    let third = scratch
-        .evaluate_i64_slice(&double, &[7])
-        .expect("scratch rebuilds when helper inputs change");
-
-    assert_eq!(first, RuntimeValue::i64(7));
-    assert_eq!(second, RuntimeValue::i64(11));
-    assert_eq!(third, RuntimeValue::i64(14));
-}
-
-#[test]
-fn vm_pure_scratch_reuses_value_root_bindings_without_request_allocation() {
-    let echo = RuntimePureHelper {
-        id: RuntimePureHelperId(0),
-        name: "echo".to_owned(),
-        input_names: vec!["label".to_owned()],
-        input_types: vec![RuntimePureInputType::Value],
-        output_type: RuntimePureOutputType::Value,
-        expr: RuntimeExpr::Local("label".to_owned()),
-        scalar_eval_supported: false,
-        origin: RuntimePureHelperOrigin::Annotated,
-    };
-    let mut scratch = VmPureFunctionScratch::default();
-
-    let first = scratch
-        .evaluate_values(&echo, &[RuntimeValue::String("ready".to_owned())])
-        .expect("scratch evaluates first value helper");
-    let second = scratch
-        .evaluate_values(&echo, &[RuntimeValue::String("done".to_owned())])
-        .expect("scratch reuses matching value root binding");
-
-    assert_eq!(first, RuntimeValue::String("ready".to_owned()));
-    assert_eq!(second, RuntimeValue::String("done".to_owned()));
-}
-
-#[test]
-fn vm_runtime_i64_batch_records_batch_stats() {
-    let helper = RuntimePureHelper {
-        id: RuntimePureHelperId(0),
-        name: "score".to_owned(),
-        input_names: vec!["base".to_owned(), "bonus".to_owned()],
-        input_types: vec![RuntimePureInputType::I64, RuntimePureInputType::I64],
-        output_type: RuntimePureOutputType::I64,
-        expr: RuntimeExpr::Binary {
-            lhs: Box::new(RuntimeExpr::Local("base".to_owned())),
-            op: RuntimeBinaryOp::Mul,
-            rhs: Box::new(RuntimeExpr::Local("bonus".to_owned())),
-        },
-        scalar_eval_supported: true,
-        origin: RuntimePureHelperOrigin::Annotated,
-    };
-    let mut backend = VmRuntimePureCallBackend::default();
-    let rows = [
-        crate::pure::RuntimeI64Args::new([3, 4, 0, 0], 2),
-        crate::pure::RuntimeI64Args::new([5, 6, 0, 0], 2),
-    ];
-    let mut out = [0; 2];
-
-    backend
-        .call_i64_batch(&helper, &rows, &mut out)
-        .expect("VM i64 batch evaluates");
-
-    assert_eq!(out, [12, 30]);
-    assert_eq!(backend.stats().batch_calls, 1);
-    assert_eq!(backend.stats().batch_items, 2);
-    assert_eq!(backend.stats().flat_batch_calls, 0);
-    assert_eq!(backend.stats().flat_batch_items, 0);
-    assert_eq!(backend.stats().flatten_materializations, 0);
-    assert_eq!(backend.stats().flatten_bytes_copied, 0);
-    assert_eq!(backend.stats().pure_calls, 2);
-    assert_eq!(backend.stats().vm_calls, 2);
-    assert_eq!(backend.stats().arg_stack_packs, 2);
-    assert_eq!(backend.stats().arg_vec_allocations, 0);
     assert_eq!(
-        backend.stats().arg_bytes_copied,
-        4 * std::mem::size_of::<i64>()
+        scratch
+            .evaluate_i64_slice(&helper.plan, helper.helper, &[1, 2])
+            .expect("first evaluation"),
+        RuntimeValue::i64(3)
     );
     assert_eq!(
-        backend.stats().result_bytes_copied,
-        2 * std::mem::size_of::<i64>()
+        scratch
+            .evaluate_i64_slice(&helper.plan, helper.helper, &[10, 20])
+            .expect("second evaluation"),
+        RuntimeValue::i64(30)
     );
 }
 
 #[test]
-fn vm_runtime_i64_flat_batch_borrows_input_slice() {
-    let helper = RuntimePureHelper {
-        id: RuntimePureHelperId(0),
-        name: "score".to_owned(),
-        input_names: vec!["base".to_owned(), "bonus".to_owned()],
-        input_types: vec![RuntimePureInputType::I64, RuntimePureInputType::I64],
-        output_type: RuntimePureOutputType::I64,
-        expr: RuntimeExpr::Binary {
-            lhs: Box::new(RuntimeExpr::Local("base".to_owned())),
-            op: RuntimeBinaryOp::Mul,
-            rhs: Box::new(RuntimeExpr::Local("bonus".to_owned())),
-        },
-        scalar_eval_supported: true,
-        origin: RuntimePureHelperOrigin::Annotated,
-    };
-    let mut backend = VmRuntimePureCallBackend::default();
-    let inputs = [3, 4, 5, 6];
-    let mut out = [0; 2];
+fn aot_plan_uses_the_helpers_plan_local_input_coordinates() {
+    let helper = admitted_add_helper();
+    let request = helper.request([RuntimeValue::i64(0), RuntimeValue::i64(0)]);
+    let input_locals = helper.plan.pure_helpers()[0].input_locals.clone();
+    let plan = AotPureFunctionBackend::new()
+        .compile_i64_with_inputs(&request, input_locals.iter().copied())
+        .expect("typed AOT compilation");
 
-    backend
-        .call_i64_flat_batch(&helper, &inputs, 2, &mut out)
-        .expect("VM flat i64 batch evaluates");
+    let (value, stats) = plan
+        .call_with_inputs(&[12, 30])
+        .expect("typed AOT invocation");
 
-    assert_eq!(out, [12, 30]);
-    assert_eq!(backend.stats().batch_calls, 1);
-    assert_eq!(backend.stats().batch_items, 2);
-    assert_eq!(backend.stats().flat_batch_calls, 1);
-    assert_eq!(backend.stats().flat_batch_items, 2);
-    assert_eq!(
-        backend.stats().flat_batch_bytes_borrowed,
-        std::mem::size_of_val(&inputs)
-    );
-    assert_eq!(backend.stats().flatten_materializations, 0);
-    assert_eq!(backend.stats().flatten_bytes_copied, 0);
-    assert_eq!(backend.stats().pure_calls, 2);
-    assert_eq!(backend.stats().vm_calls, 2);
-    assert_eq!(backend.stats().arg_stack_packs, 0);
-    assert_eq!(backend.stats().arg_vec_allocations, 0);
-    assert_eq!(backend.stats().arg_bytes_copied, 0);
-    assert_eq!(
-        backend.stats().arg_bytes_borrowed,
-        std::mem::size_of_val(&inputs)
-    );
-    assert_eq!(
-        backend.stats().result_bytes_copied,
-        std::mem::size_of_val(&out)
-    );
+    assert_eq!(value, 42);
+    assert_eq!(stats.evaluated_binary_ops, 1);
 }
 
 #[test]
-fn vm_runtime_i32_flat_batch_preserves_input_and_output_width() {
-    let helper = RuntimePureHelper {
-        id: RuntimePureHelperId(0),
-        name: "score_i32".to_owned(),
-        input_names: vec!["base".to_owned(), "bonus".to_owned()],
-        input_types: vec![RuntimePureInputType::I32, RuntimePureInputType::I32],
-        output_type: RuntimePureOutputType::I32,
-        expr: RuntimeExpr::Binary {
-            lhs: Box::new(RuntimeExpr::Local("base".to_owned())),
-            op: RuntimeBinaryOp::Mul,
-            rhs: Box::new(RuntimeExpr::Local("bonus".to_owned())),
-        },
-        scalar_eval_supported: true,
-        origin: RuntimePureHelperOrigin::Annotated,
-    };
-    let mut backend = VmRuntimePureCallBackend::default();
-    let inputs = [3_i32, 4, 5, 6];
-    let mut out = [0_i32; 2];
+fn aot_and_vm_compare_the_same_admitted_helper() {
+    let helper = admit_i64_helper("conditional", 2, |inputs| {
+        RuntimeExprSeed::new(
+            i64_semantic_type(),
+            RuntimeExprSeedKind::If {
+                condition: Box::new(bool_binary(
+                    i64_local(inputs[0].clone()),
+                    RuntimeBinaryOp::Ge,
+                    i64_local(inputs[1].clone()),
+                )),
+                then_expr: Box::new(i64_binary(
+                    i64_local(inputs[0].clone()),
+                    RuntimeBinaryOp::Mul,
+                    i64_value(2),
+                )),
+                else_expr: Box::new(i64_local(inputs[1].clone())),
+            },
+        )
+    });
+    let request = helper.request([RuntimeValue::i64(7), RuntimeValue::i64(4)]);
 
-    backend
-        .call_i32_flat_batch(&helper, &inputs, 2, &mut out)
-        .expect("VM flat i32 batch evaluates");
-
-    assert_eq!(out, [12, 30]);
-    assert_eq!(backend.stats().batch_calls, 1);
-    assert_eq!(backend.stats().batch_items, 2);
-    assert_eq!(backend.stats().flat_batch_calls, 1);
-    assert_eq!(backend.stats().flat_batch_items, 2);
-    assert_eq!(
-        backend.stats().flat_batch_bytes_borrowed,
-        std::mem::size_of_val(&inputs)
-    );
-    assert_eq!(backend.stats().arg_bytes_copied, 0);
-    assert_eq!(
-        backend.stats().arg_bytes_borrowed,
-        std::mem::size_of_val(&inputs)
-    );
-    assert_eq!(
-        backend.stats().result_bytes_copied,
-        std::mem::size_of_val(&out)
-    );
-}
-
-#[test]
-fn vm_runtime_f32_and_f64_slice_calls_preserve_float_width() {
-    let f32_helper = RuntimePureHelper {
-        id: RuntimePureHelperId(0),
-        name: "score_f32".to_owned(),
-        input_names: vec!["base".to_owned(), "gain".to_owned()],
-        input_types: vec![RuntimePureInputType::F32, RuntimePureInputType::F32],
-        output_type: RuntimePureOutputType::F32,
-        expr: RuntimeExpr::Binary {
-            lhs: Box::new(RuntimeExpr::Local("base".to_owned())),
-            op: RuntimeBinaryOp::Mul,
-            rhs: Box::new(RuntimeExpr::Local("gain".to_owned())),
-        },
-        scalar_eval_supported: true,
-        origin: RuntimePureHelperOrigin::Annotated,
-    };
-    let f64_helper = RuntimePureHelper {
-        id: RuntimePureHelperId(1),
-        name: "score_f64".to_owned(),
-        input_names: vec!["base".to_owned(), "gain".to_owned()],
-        input_types: vec![RuntimePureInputType::F64, RuntimePureInputType::F64],
-        output_type: RuntimePureOutputType::F64,
-        expr: RuntimeExpr::Binary {
-            lhs: Box::new(RuntimeExpr::Local("base".to_owned())),
-            op: RuntimeBinaryOp::Add,
-            rhs: Box::new(RuntimeExpr::Local("gain".to_owned())),
-        },
-        scalar_eval_supported: true,
-        origin: RuntimePureHelperOrigin::Annotated,
-    };
-    let mut backend = VmRuntimePureCallBackend::default();
-    let f32_args = [1.5_f32, 2.0];
-    let f64_args = [1.5_f64, 2.0];
-
-    let f32_value = backend
-        .call_f32_slice(&f32_helper, &f32_args)
-        .expect("f32 pure call evaluates")
-        .expect("f32 pure call returns a value");
-    let f64_value = backend
-        .call_f64_slice(&f64_helper, &f64_args)
-        .expect("f64 pure call evaluates")
-        .expect("f64 pure call returns a value");
-
-    assert_eq!(f32_value.to_bits(), 3.0_f32.to_bits());
-    assert_eq!(f64_value.to_bits(), 3.5_f64.to_bits());
-    assert_eq!(backend.stats().pure_calls, 2);
-    assert_eq!(backend.stats().arg_vec_allocations, 0);
-    assert_eq!(backend.stats().arg_bytes_copied, 0);
-    assert_eq!(
-        backend.stats().arg_bytes_borrowed,
-        std::mem::size_of_val(&f32_args) + std::mem::size_of_val(&f64_args)
-    );
-}
-
-#[test]
-fn aot_pure_backend_candidate_matches_vm_result() {
-    let request = PureFunctionRequest::new(
-        "score_branch",
-        RuntimeExpr::Let {
-            name: "boosted".to_owned(),
-            expr: Box::new(RuntimeExpr::Binary {
-                lhs: Box::new(RuntimeExpr::Local("bonus".to_owned())),
-                op: RuntimeBinaryOp::Add,
-                rhs: Box::new(RuntimeExpr::Value(RuntimeValue::i64(2))),
-            }),
-            body: Box::new(RuntimeExpr::If {
-                condition: Box::new(RuntimeExpr::Binary {
-                    lhs: Box::new(RuntimeExpr::Local("base".to_owned())),
-                    op: RuntimeBinaryOp::Ge,
-                    rhs: Box::new(RuntimeExpr::Value(RuntimeValue::i64(3))),
-                }),
-                then_expr: Box::new(RuntimeExpr::Binary {
-                    lhs: Box::new(RuntimeExpr::Local("base".to_owned())),
-                    op: RuntimeBinaryOp::Mul,
-                    rhs: Box::new(RuntimeExpr::Local("boosted".to_owned())),
-                }),
-                else_expr: Box::new(RuntimeExpr::Value(RuntimeValue::i64(0))),
-            }),
-        },
-        [int_binding("base", 3), int_binding("bonus", 4)],
-    );
-
-    let conformance = compare_pure_function_backend(
+    let comparison = compare_pure_function_backend(
         &VmPureFunctionBackend,
         &AotPureFunctionBackend::new(),
         &request,
     )
-    .expect("pure backends evaluate");
+    .expect("VM/AOT comparison");
 
-    assert!(conformance.matches_vm);
-    assert_eq!(conformance.vm.backend, PureFunctionBackendKind::Vm);
-    assert_eq!(conformance.candidate.backend, PureFunctionBackendKind::Aot);
-    assert_eq!(conformance.candidate.value, RuntimeValue::i64(18));
-    assert_eq!(conformance.candidate.stats.evaluated_binary_ops, 3);
+    assert!(comparison.matches_vm);
+    assert_eq!(comparison.vm.value, RuntimeValue::i64(14));
+    assert_eq!(comparison.candidate.value, RuntimeValue::i64(14));
 }
 
 #[test]
-fn aot_compiled_i64_plan_can_be_called_repeatedly() {
-    let request = PureFunctionRequest::new(
-        "score",
-        RuntimeExpr::Binary {
-            lhs: Box::new(RuntimeExpr::Value(RuntimeValue::i64(20))),
-            op: RuntimeBinaryOp::Add,
-            rhs: Box::new(RuntimeExpr::Value(RuntimeValue::i64(22))),
-        },
-        [],
-    );
-
-    let plan = AotPureFunctionBackend::new()
-        .compile_i64(&request)
-        .expect("AOT compiles i64 helper");
-
-    assert_eq!(plan.name(), "score");
-    assert_eq!(plan.call().0, 42);
-    assert_eq!(plan.call().0, 42);
-}
-
-#[test]
-fn scalar_integer_overflow_is_wrapping_in_vm_and_aot() {
-    let request = PureFunctionRequest::new(
-        "wrap_i8",
-        RuntimeExpr::Binary {
-            lhs: Box::new(RuntimeExpr::Value(RuntimeValue::i8(i8::MAX))),
-            op: RuntimeBinaryOp::Add,
-            rhs: Box::new(RuntimeExpr::Value(RuntimeValue::i8(1))),
-        },
-        [],
-    );
-
-    let vm = VmPureFunctionBackend
-        .evaluate(&request)
-        .expect("VM evaluates wrapping i8 arithmetic");
-    let mut slots = Vec::new();
-    let aot = AotPureFunctionBackend::new()
-        .compile_scalar_with_inputs(
-            &request,
-            std::iter::empty::<&str>(),
-            RuntimePureInputType::I8,
-            RuntimePureOutputType::I8,
+fn structured_closure_captures_the_exact_owning_plan() {
+    let function_semantic_type = semantic_type(FUNCTION_SEMANTIC_MARKER);
+    let mut builder = RuntimePlanBuilder::new();
+    let admission = builder
+        .admit_semantic_batch(
+            [
+                scalar_type_seeds()[0].clone(),
+                RuntimePlanTypeSeed::new(
+                    function_semantic_type,
+                    RuntimePlanTypeProjection::Function {
+                        parameters: Box::new([i64_semantic_type()]),
+                        result: i64_semantic_type(),
+                    },
+                ),
+            ],
+            [
+                RuntimeLocalDeclarationSeed::new(i64_semantic_type()),
+                RuntimeLocalDeclarationSeed::new(function_semantic_type),
+                RuntimeLocalDeclarationSeed::new(i64_semantic_type()),
+            ],
+            [],
+            [],
         )
-        .expect("scalar AOT compiles wrapping i8 arithmetic")
-        .call_exact_int_with_inputs_scratch::<i8>(&[], &mut slots)
-        .expect("scalar AOT evaluates wrapping i8 arithmetic");
-
-    assert_eq!(vm.value, RuntimeValue::i8(i8::MIN));
-    assert_eq!(aot.0, i8::MIN);
-}
-
-#[test]
-fn aot_compiled_i64_plan_accepts_runtime_inputs() {
-    let request = PureFunctionRequest::new(
-        "score_inputs",
-        RuntimeExpr::If {
-            condition: Box::new(RuntimeExpr::Binary {
-                lhs: Box::new(RuntimeExpr::Local("base".to_owned())),
-                op: RuntimeBinaryOp::Ge,
-                rhs: Box::new(RuntimeExpr::Value(RuntimeValue::i64(3))),
-            }),
-            then_expr: Box::new(RuntimeExpr::Binary {
-                lhs: Box::new(RuntimeExpr::Local("base".to_owned())),
-                op: RuntimeBinaryOp::Mul,
-                rhs: Box::new(RuntimeExpr::Local("bonus".to_owned())),
-            }),
-            else_expr: Box::new(RuntimeExpr::Value(RuntimeValue::i64(0))),
+        .expect("closure type graph");
+    let captured = admission.local_ids()[0].clone();
+    let closure_binding = admission.local_ids()[1].clone();
+    let parameter = admission.local_ids()[2].clone();
+    let site = builder
+        .push_function_site_seed(
+            [parameter.clone()],
+            [captured.clone()],
+            i64_binary(
+                i64_local(parameter),
+                RuntimeBinaryOp::Add,
+                i64_local(captured.clone()),
+            ),
+        )
+        .expect("typed closure site");
+    let closure = RuntimeExprSeed::new(function_semantic_type, RuntimeExprSeedKind::Function(site));
+    let apply = RuntimeExprSeed::new(
+        i64_semantic_type(),
+        RuntimeExprSeedKind::Apply {
+            callee: Box::new(RuntimeExprSeed::new(
+                function_semantic_type,
+                RuntimeExprSeedKind::Local(closure_binding.clone()),
+            )),
+            args: Box::new([RuntimeCallArgumentSeed::new(
+                i64_value(3),
+                RuntimeCallArgumentMode::Value,
+            )]),
         },
-        [int_binding("base", 0), int_binding("bonus", 0)],
     );
+    builder
+        .push_pure_helper_seed(RuntimePureHelperSeed {
+            name: "captured_add".to_owned(),
+            inputs: Box::new([captured]),
+            input_abi: vec![RuntimePureInputType::I64],
+            output_abi: RuntimePureOutputType::I64,
+            body: RuntimeExprSeed::new(
+                i64_semantic_type(),
+                RuntimeExprSeedKind::Let {
+                    binding: closure_binding,
+                    expr: Box::new(closure),
+                    body: Box::new(apply),
+                },
+            ),
+            scalar_eval_supported: false,
+            origin: RuntimePureHelperOrigin::Annotated,
+        })
+        .expect("closure helper admission");
+    let plan = Arc::new(builder.finish().expect("sealed closure plan"));
+    let helper = plan.pure_helpers()[0].id;
 
-    let plan = AotPureFunctionBackend::new()
-        .compile_i64_with_inputs(&request, ["base", "bonus"])
-        .expect("AOT compiles parameterized helper");
+    let value = VmPureFunctionBackend
+        .evaluate(
+            &PureFunctionRequest::try_new(Arc::clone(&plan), helper, [RuntimeValue::i64(4)])
+                .expect("closure request"),
+        )
+        .expect("closure evaluation")
+        .value;
 
-    assert_eq!(plan.call_with_inputs(&[3, 4]).expect("call succeeds").0, 12);
-    assert_eq!(plan.call_with_inputs(&[2, 99]).expect("call succeeds").0, 0);
-    let mut slots = Vec::new();
-    assert_eq!(
-        plan.call_with_inputs_scratch(&[5, 6], &mut slots)
-            .expect("scratch call succeeds")
-            .0,
-        30
-    );
-    let slot_capacity = slots.capacity();
-    let slot_len = slots.len();
-    assert_eq!(
-        plan.call_with_inputs_scratch(&[1, 9], &mut slots)
-            .expect("scratch call succeeds")
-            .0,
-        0
-    );
-    assert_eq!(slots.capacity(), slot_capacity);
-    assert_eq!(slots.len(), slot_len);
-}
-
-#[test]
-fn aot_pure_backend_rejects_non_integer_helpers() {
-    let request = PureFunctionRequest::new(
-        "trim_label",
-        RuntimeExpr::MethodCall {
-            receiver: Box::new(RuntimeExpr::Value(RuntimeValue::String(
-                "  menu item  ".to_owned(),
-            ))),
-            method: "trim".to_owned(),
-            args: Vec::new(),
-        },
-        [],
-    );
-
-    let error = AotPureFunctionBackend::new()
-        .evaluate(&request)
-        .expect_err("string-heavy helpers are outside the AOT i64 subset");
-
-    assert!(matches!(error, RuntimeEvalError::UnsupportedPure { .. }));
-}
-
-#[test]
-fn pure_backend_rejects_unregistered_effectful_calls() {
-    let request = PureFunctionRequest::new(
-        "effectful",
-        RuntimeExpr::Call {
-            callee: RuntimeCallTarget::try_from_label("play_audio")
-                .expect("typed callable identity"),
-            args: Vec::new(),
-        },
-        [],
-    );
-
-    let error = VmPureFunctionBackend
-        .evaluate(&request)
-        .expect_err("effectful call is outside the pure helper subset");
-
-    assert_eq!(
-        error,
-        RuntimeEvalError::UnsupportedPure {
-            name: "play_audio".to_owned(),
-            reason: "call is not registered as a pure helper".to_owned()
-        }
-    );
+    assert_eq!(value, RuntimeValue::i64(7));
 }

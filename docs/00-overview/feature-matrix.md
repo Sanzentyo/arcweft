@@ -27,7 +27,7 @@
 | Spatial audio |  | ✅ | feature |
 | TTS |  | ✅ | provider/capability |
 | BGM authoring/precompose |  | ✅ | build/dev |
-| Device streams / Source<T,E> | ✅ |  | always |
+| Device streams / external `fn -> Stream<T,E>` capabilities | ✅ |  | always |
 | USB raw device access |  | ✅ | capability + auth |
 | HID device access |  | ✅ | capability + auth |
 | Gamepad input | ✅ |  | always |
@@ -80,7 +80,7 @@
 | Serial | native serial backend | Web Serial | USB CDC and microcontroller-style devices. |
 | Gamepad | native gamepad abstraction | Gamepad API | Prefer high-level controller route when possible. |
 | Touch virtual controller | Game Native View | Game Native View / DOM pointer input | Agent-visible and replayable as logical events. |
-| generator `fn` / source block | yes | yes | An own-scope-`yield` `fn -> Stream<T,E>` transforms; `source id: Source<T,E>` declares live policy-backed inputs. |
+| generator `fn` / external Stream capability | yes | yes | An own-scope-`yield` `fn -> Stream<T,E>` transforms; external capability operations returning `Stream<T,E>` provide live inputs. |
 
 
 ## Device and controller features
@@ -102,4 +102,4 @@
 | HID | `hidapi`/native HID backend optional | WebHID through `web-sys` | Prefer `gilrs`/Gamepad API for standard controllers. |
 | Gamepad | `gilrs` | browser Gamepad API / `web-sys` | Normalized to `InputAction`. |
 | Virtual touch controller | Game Native View | Game Native View / DOM overlay metadata | Emits same `InputAction` as physical input. |
-| Source streams | yes | yes | Explicit backpressure and replay policy. |
+| External Stream inputs | yes | yes | Capability-owned lifecycle and queue policy; DSL consumers see only typed `Stream<T,E>`. |

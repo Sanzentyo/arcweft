@@ -6,10 +6,14 @@ use crate::output::{
     ScriptBenchPureHelperStatsSummary, ScriptBenchPureHelperTimingSamples,
     ScriptBenchPureHelperTimingSummary,
 };
+use arcweft_core::pattern::RuntimeSemanticTypeId;
+use arcweft_core::runtime_id::RuntimeLocalDeclarationId;
 use arcweft_core::{
     plan::{
-        RuntimePureHelper, RuntimePureHelperId, RuntimePureHelperOrigin, RuntimePureInputType,
-        RuntimePureOutputType,
+        RuntimeCallArgumentSeed, RuntimeExprSeed, RuntimeExprSeedKind, RuntimeLocalDeclarationSeed,
+        RuntimeLocalSeedId, RuntimePlan, RuntimePlanBuilder, RuntimePlanTypeProjection,
+        RuntimePlanTypeSeed, RuntimePureHelper, RuntimePureHelperId, RuntimePureHelperOrigin,
+        RuntimePureHelperSeed, RuntimePureInputType, RuntimePureOutputType,
     },
     pure::{
         AotPureFunctionBackend, AotPureI64Plan, PureFunctionBackendKind, PureFunctionRequest,
@@ -17,8 +21,8 @@ use arcweft_core::{
         VmPureFunctionScratch, compare_pure_function_backend,
     },
     value::{
-        DenseSeq, RuntimeBinaryOp, RuntimeBinding, RuntimeCallTarget, RuntimeExpr,
-        RuntimeIntrinsic, RuntimeSeq, RuntimeUnaryOp, RuntimeValue,
+        DenseSeq, RuntimeBinaryOp, RuntimeCallArgumentMode, RuntimeCallTarget, RuntimeExpr,
+        RuntimeExprKind, RuntimeIntrinsic, RuntimeSeq, RuntimeUnaryOp, RuntimeValue,
     },
 };
 use arcweft_lang_jit_cranelift::{
@@ -29,6 +33,7 @@ use arcweft_runtime_host::{HostSystemInfo, host_system_info};
 use clap::{Args, ValueEnum};
 use std::path::{Path, PathBuf};
 use std::process::{Command, ExitCode};
+use std::sync::Arc;
 use std::time::Instant;
 
 use super::commands::JitCommand;
@@ -248,8 +253,6 @@ pub(in crate::app) struct PureFunctionStatsReport {
     exprs: usize,
     #[serde(rename = "evaluated_calls")]
     calls: usize,
-    #[serde(rename = "evaluated_method_calls")]
-    method_calls: usize,
     #[serde(rename = "evaluated_binary_ops")]
     binary_ops: usize,
 }
@@ -259,7 +262,6 @@ impl From<&PureFunctionStatsReport> for ScriptBenchPureHelperStatsSummary {
         Self {
             exprs: stats.exprs,
             calls: stats.calls,
-            method_calls: stats.method_calls,
             binary_ops: stats.binary_ops,
         }
     }
@@ -270,7 +272,6 @@ impl PureFunctionStatsReport {
         Self {
             exprs: stats.evaluated_exprs,
             calls: stats.evaluated_calls,
-            method_calls: stats.evaluated_method_calls,
             binary_ops: stats.evaluated_binary_ops,
         }
     }
@@ -314,8 +315,14 @@ fn runtime_value_summary(value: &RuntimeValue) -> String {
             record.fields().len()
         ),
         RuntimeValue::Opaque(value) => format!("opaque/{}", value.producer().as_str()),
+        RuntimeValue::Reduction(value) => {
+            format!("reduction/{}", value.owner().producer().as_str())
+        }
         RuntimeValue::Agent(value) => value.label().to_owned(),
-        RuntimeValue::Function(function) => format!("function/{}", function.arity()),
+        RuntimeValue::Function(function) => format!(
+            "function/{}",
+            function.remaining_arity().unwrap_or_default()
+        ),
         RuntimeValue::Variant { name, payload, .. } => {
             if payload.is_some() {
                 format!(".{name}(...)")
@@ -393,8 +400,8 @@ pub(in crate::app) fn run_jit_check(
     options: &JitCheckOptions,
     target: &JitCheckTarget,
 ) -> Result<JitCheckReport, ExitCode> {
-    let first_inputs = jit_check_inputs(options.input_seed, 0, 0, target.input_names.len());
-    let request = target.request_with_inputs(&first_inputs);
+    let first_inputs = jit_check_inputs(options.input_seed, 0, 0, target.input_locals().len());
+    let request = target.request_with_inputs(&first_inputs)?;
     let conformance = collect_jit_check_conformance(&request)?;
     let compiled = compile_jit_check_helpers(&request, target)?;
     let measurement = measure_jit_check_helpers(options, target, &compiled)?;
@@ -431,11 +438,11 @@ fn jit_check_report(
         workload: JitCheckWorkloadReport {
             case: target.name.clone(),
             loop_kind: "deterministic_input_series".to_owned(),
-            inputs_per_iteration: target.input_names.len(),
+            inputs_per_iteration: target.input_locals().len(),
             batch_iterations: options.iterations,
         },
-        input_bindings: target.input_names.clone(),
-        dynamic_inputs: !target.input_names.is_empty(),
+        input_bindings: target.input_labels.clone(),
+        dynamic_inputs: !target.input_locals().is_empty(),
         input_seed: options.input_seed,
         host_system: host_system_info(),
         vm_backend: backend_label(conformance.vm.backend).to_owned(),
@@ -644,7 +651,7 @@ fn compile_jit_check_helpers(
 ) -> Result<JitCheckCompiledHelpers, ExitCode> {
     let aot_started = Instant::now();
     let aot = AotPureFunctionBackend::new()
-        .compile_i64_with_inputs(request, target.input_names.iter().map(String::as_str))
+        .compile_i64_with_inputs(request, target.input_locals().iter().copied())
         .map_err(|error| {
             eprintln!("error: failed to compile AOT helper: {error}");
             ExitCode::FAILURE
@@ -653,7 +660,7 @@ fn compile_jit_check_helpers(
 
     let jit_started = Instant::now();
     let jit = CraneliftPureFunctionBackend
-        .compile_i64_with_inputs(request, target.input_names.iter().map(String::as_str))
+        .compile_i64_with_inputs(request, target.input_locals().iter().copied())
         .map_err(|error| {
             eprintln!("error: failed to compile JIT helper: {error}");
             ExitCode::FAILURE
@@ -662,7 +669,7 @@ fn compile_jit_check_helpers(
 
     let jit_batch_started = Instant::now();
     let jit_batch = CraneliftPureFunctionBackend
-        .compile_i64_batch(request, target.input_names.iter().map(String::as_str))
+        .compile_i64_batch(request, target.input_locals().iter().copied())
         .map_err(|error| {
             eprintln!("error: failed to compile JIT batch helper: {error}");
             ExitCode::FAILURE
@@ -687,7 +694,7 @@ fn measure_jit_check_helpers(
     warmup_jit_check_jit(&compiled.jit, options.warmup, options.input_seed);
     warmup_jit_check_aot(
         &compiled.aot,
-        target.input_names.len(),
+        target.input_locals().len(),
         options.warmup,
         options.input_seed,
     )?;
@@ -696,7 +703,7 @@ fn measure_jit_check_helpers(
     Ok(JitCheckMeasurements {
         aot: measure_jit_check_aot(
             &compiled.aot,
-            target.input_names.len(),
+            target.input_locals().len(),
             options.samples,
             options.iterations,
             options.input_seed,
@@ -730,8 +737,9 @@ pub(in crate::app) struct JitCheckTarget {
     pub(in crate::app) name: String,
     source: JitCheckHelperSource,
     source_compiler: Option<JitCheckSourceCompilerReport>,
-    pub(in crate::app) input_names: Vec<String>,
-    pub(in crate::app) expr: RuntimeExpr,
+    input_labels: Vec<String>,
+    plan: Arc<RuntimePlan>,
+    helper: RuntimePureHelperId,
 }
 
 #[derive(Clone, serde::Serialize)]
@@ -767,180 +775,144 @@ impl JitCheckTarget {
     }
 
     fn builtin_score() -> Self {
-        Self {
-            name: "score".to_owned(),
-            source: JitCheckHelperSource::Builtin,
-            source_compiler: None,
-            input_names: vec!["base".to_owned(), "bonus".to_owned()],
-            expr: if_i64(
-                binary(local("base"), RuntimeBinaryOp::Ge, int(3)),
+        Self::builtin_from_seed("score", ["base", "bonus"], 0, |locals| {
+            if_i64(
+                binary(local(&locals[0]), RuntimeBinaryOp::Ge, int(3)),
                 binary(
-                    local("base"),
+                    local(&locals[0]),
                     RuntimeBinaryOp::Mul,
-                    RuntimeExpr::Call {
-                        callee: RuntimeCallTarget::intrinsic(RuntimeIntrinsic::Add),
-                        args: vec![local("bonus"), int(2)],
-                    },
+                    call_add(local(&locals[1]), int(2)),
                 ),
                 int(0),
-            ),
-        }
+            )
+        })
     }
 
     fn builtin_branch_mix() -> Self {
-        Self {
-            name: "branch_mix".to_owned(),
-            source: JitCheckHelperSource::Builtin,
-            source_compiler: None,
-            input_names: vec![
-                "base".to_owned(),
-                "bonus".to_owned(),
-                "scale".to_owned(),
-                "offset".to_owned(),
-            ],
-            expr: let_in(
-                "boosted",
-                binary(local("bonus"), RuntimeBinaryOp::Add, int(2)),
+        Self::builtin_from_seed(
+            "branch_mix",
+            ["base", "bonus", "scale", "offset"],
+            3,
+            |locals| {
                 let_in(
-                    "weighted",
-                    binary(local("base"), RuntimeBinaryOp::Mul, local("boosted")),
+                    locals[4].clone(),
+                    binary(local(&locals[1]), RuntimeBinaryOp::Add, int(2)),
                     let_in(
-                        "shifted",
-                        binary(local("weighted"), RuntimeBinaryOp::Sub, local("offset")),
-                        if_i64(
-                            binary(local("shifted"), RuntimeBinaryOp::Ge, local("scale")),
-                            binary(local("shifted"), RuntimeBinaryOp::Div, local("scale")),
-                            RuntimeExpr::Unary {
-                                op: RuntimeUnaryOp::Neg,
-                                expr: Box::new(local("shifted")),
-                            },
+                        locals[5].clone(),
+                        binary(local(&locals[0]), RuntimeBinaryOp::Mul, local(&locals[4])),
+                        let_in(
+                            locals[6].clone(),
+                            binary(local(&locals[5]), RuntimeBinaryOp::Sub, local(&locals[3])),
+                            if_i64(
+                                binary(local(&locals[6]), RuntimeBinaryOp::Ge, local(&locals[2])),
+                                binary(local(&locals[6]), RuntimeBinaryOp::Div, local(&locals[2])),
+                                unary(RuntimeUnaryOp::Neg, local(&locals[6])),
+                            ),
                         ),
                     ),
-                ),
-            ),
-        }
+                )
+            },
+        )
     }
 
     fn builtin_let_chain() -> Self {
-        Self {
-            name: "let_chain".to_owned(),
-            source: JitCheckHelperSource::Builtin,
-            source_compiler: None,
-            input_names: vec!["a".to_owned(), "b".to_owned(), "c".to_owned()],
-            expr: let_in(
-                "x",
-                binary(local("a"), RuntimeBinaryOp::Mul, local("b")),
+        Self::builtin_from_seed("let_chain", ["a", "b", "c"], 3, |locals| {
+            let_in(
+                locals[3].clone(),
+                binary(local(&locals[0]), RuntimeBinaryOp::Mul, local(&locals[1])),
                 let_in(
-                    "y",
-                    binary(local("x"), RuntimeBinaryOp::Add, local("c")),
+                    locals[4].clone(),
+                    binary(local(&locals[3]), RuntimeBinaryOp::Add, local(&locals[2])),
                     let_in(
-                        "z",
-                        binary(local("y"), RuntimeBinaryOp::Sub, local("a")),
+                        locals[5].clone(),
+                        binary(local(&locals[4]), RuntimeBinaryOp::Sub, local(&locals[0])),
                         if_i64(
-                            binary(local("z"), RuntimeBinaryOp::Gt, local("b")),
-                            binary(local("z"), RuntimeBinaryOp::Mul, int(3)),
-                            binary(local("z"), RuntimeBinaryOp::Add, local("b")),
+                            binary(local(&locals[5]), RuntimeBinaryOp::Gt, local(&locals[1])),
+                            binary(local(&locals[5]), RuntimeBinaryOp::Mul, int(3)),
+                            binary(local(&locals[5]), RuntimeBinaryOp::Add, local(&locals[1])),
                         ),
                     ),
                 ),
-            ),
-        }
+            )
+        })
     }
 
     fn builtin_four_input_mix() -> Self {
-        Self {
-            name: "four_input_mix".to_owned(),
-            source: JitCheckHelperSource::Builtin,
-            source_compiler: None,
-            input_names: vec![
-                "a".to_owned(),
-                "b".to_owned(),
-                "c".to_owned(),
-                "d".to_owned(),
-            ],
-            expr: let_in(
-                "left",
+        Self::builtin_from_seed("four_input_mix", ["a", "b", "c", "d"], 2, |locals| {
+            let_in(
+                locals[4].clone(),
                 binary(
-                    binary(local("a"), RuntimeBinaryOp::Add, local("b")),
+                    binary(local(&locals[0]), RuntimeBinaryOp::Add, local(&locals[1])),
                     RuntimeBinaryOp::Mul,
-                    binary(local("c"), RuntimeBinaryOp::Sub, local("d")),
+                    binary(local(&locals[2]), RuntimeBinaryOp::Sub, local(&locals[3])),
                 ),
                 let_in(
-                    "right",
+                    locals[5].clone(),
                     binary(
-                        binary(local("c"), RuntimeBinaryOp::Add, int(3)),
+                        binary(local(&locals[2]), RuntimeBinaryOp::Add, int(3)),
                         RuntimeBinaryOp::Mul,
-                        binary(local("d"), RuntimeBinaryOp::Add, int(1)),
+                        binary(local(&locals[3]), RuntimeBinaryOp::Add, int(1)),
                     ),
                     if_i64(
-                        binary(local("left"), RuntimeBinaryOp::Ne, local("right")),
-                        binary(local("left"), RuntimeBinaryOp::Sub, local("right")),
-                        binary(local("left"), RuntimeBinaryOp::Add, local("right")),
+                        binary(local(&locals[4]), RuntimeBinaryOp::Ne, local(&locals[5])),
+                        binary(local(&locals[4]), RuntimeBinaryOp::Sub, local(&locals[5])),
+                        binary(local(&locals[4]), RuntimeBinaryOp::Add, local(&locals[5])),
                     ),
                 ),
-            ),
-        }
+            )
+        })
     }
 
     fn builtin_accumulation_mix() -> Self {
-        let pair_ab = binary(local("a"), RuntimeBinaryOp::Mul, local("b"));
-        let pair_cd = binary(local("c"), RuntimeBinaryOp::Mul, local("d"));
-        Self {
-            name: "accumulation_mix".to_owned(),
-            source: JitCheckHelperSource::Builtin,
-            source_compiler: None,
-            input_names: vec![
-                "a".to_owned(),
-                "b".to_owned(),
-                "c".to_owned(),
-                "d".to_owned(),
-            ],
-            expr: let_in(
-                "sum0",
+        Self::builtin_from_seed("accumulation_mix", ["a", "b", "c", "d"], 4, |locals| {
+            let pair_ab = binary(local(&locals[0]), RuntimeBinaryOp::Mul, local(&locals[1]));
+            let pair_cd = binary(local(&locals[2]), RuntimeBinaryOp::Mul, local(&locals[3]));
+            let_in(
+                locals[4].clone(),
                 binary(pair_ab.clone(), RuntimeBinaryOp::Add, pair_cd.clone()),
                 let_in(
-                    "sum1",
+                    locals[5].clone(),
                     binary(
-                        binary(local("sum0"), RuntimeBinaryOp::Add, local("a")),
+                        binary(local(&locals[4]), RuntimeBinaryOp::Add, local(&locals[0])),
                         RuntimeBinaryOp::Sub,
-                        local("d"),
+                        local(&locals[3]),
                     ),
                     let_in(
-                        "sum2",
+                        locals[6].clone(),
                         binary(
-                            binary(local("sum1"), RuntimeBinaryOp::Mul, int(3)),
+                            binary(local(&locals[5]), RuntimeBinaryOp::Mul, int(3)),
                             RuntimeBinaryOp::Add,
-                            binary(local("b"), RuntimeBinaryOp::Mul, local("c")),
+                            binary(local(&locals[1]), RuntimeBinaryOp::Mul, local(&locals[2])),
                         ),
                         let_in(
-                            "sum3",
+                            locals[7].clone(),
                             binary(
-                                binary(local("sum2"), RuntimeBinaryOp::Sub, pair_ab),
+                                binary(local(&locals[6]), RuntimeBinaryOp::Sub, pair_ab),
                                 RuntimeBinaryOp::Add,
                                 pair_cd,
                             ),
                             binary(
-                                binary(local("sum3"), RuntimeBinaryOp::Add, local("sum2")),
+                                binary(local(&locals[7]), RuntimeBinaryOp::Add, local(&locals[6])),
                                 RuntimeBinaryOp::Sub,
-                                local("sum1"),
+                                local(&locals[5]),
                             ),
                         ),
                     ),
                 ),
-            ),
-        }
+            )
+        })
     }
 
     pub(in crate::app) fn from_candidate(
+        plan: Arc<RuntimePlan>,
         candidate: &RuntimePureHelper,
         source_compiler: Option<JitCheckSourceCompilerReport>,
     ) -> Result<Self, ExitCode> {
-        let input_names = candidate.input_names.clone();
-        if input_names.len() > 4 {
+        if candidate.input_locals.len() > 4 {
             eprintln!(
                 "error: pure helper `{}` has {} input(s); current JIT check supports at most 4",
                 candidate.name,
-                input_names.len()
+                candidate.input_locals.len()
             );
             return Err(ExitCode::from(2));
         }
@@ -948,37 +920,86 @@ impl JitCheckTarget {
             name: candidate.name.clone(),
             source: JitCheckHelperSource::Source,
             source_compiler,
-            input_names,
-            expr: candidate.expr.clone(),
+            input_labels: candidate
+                .input_locals
+                .iter()
+                .enumerate()
+                .map(|(index, _)| format!("arg{index}"))
+                .collect(),
+            plan,
+            helper: candidate.id,
         })
     }
 
-    fn request_with_inputs(&self, inputs: &[i64]) -> PureFunctionRequest {
-        PureFunctionRequest::new(
-            self.name.clone(),
-            self.expr.clone(),
-            self.input_names
-                .iter()
-                .cloned()
-                .zip(inputs.iter().copied())
-                .map(|(name, value)| RuntimeBinding {
-                    name,
-                    value: RuntimeValue::i64(value),
-                }),
-        )
+    fn builtin_from_seed<const N: usize>(
+        name: &str,
+        input_labels: [&str; N],
+        local_count: usize,
+        body: impl FnOnce(&[RuntimeLocalSeedId]) -> RuntimeExprSeed,
+    ) -> Self {
+        let i64_type = RuntimeSemanticTypeId::from_bytes([1; 32]);
+        let bool_type = RuntimeSemanticTypeId::from_bytes([2; 32]);
+        let mut builder = RuntimePlanBuilder::new();
+        let admission = builder
+            .admit_semantic_batch(
+                [
+                    RuntimePlanTypeSeed::new(
+                        i64_type,
+                        RuntimePlanTypeProjection::Signed(
+                            arcweft_core::value::RuntimeSignedIntWidth::I64,
+                        ),
+                    ),
+                    RuntimePlanTypeSeed::new(bool_type, RuntimePlanTypeProjection::Bool),
+                ],
+                (0..N + local_count).map(|_| RuntimeLocalDeclarationSeed::new(i64_type)),
+                [],
+                [],
+            )
+            .expect("builtin JIT helper semantic facts admit");
+        builder
+            .push_pure_helper_seed(RuntimePureHelperSeed {
+                name: name.to_owned(),
+                inputs: admission.local_ids()[..N].to_vec().into_boxed_slice(),
+                input_abi: vec![RuntimePureInputType::I64; N],
+                output_abi: RuntimePureOutputType::I64,
+                body: body(admission.local_ids()),
+                scalar_eval_supported: true,
+                origin: RuntimePureHelperOrigin::Annotated,
+            })
+            .expect("builtin JIT helper admits");
+        let plan = Arc::new(builder.finish().expect("builtin JIT helper seals"));
+        Self {
+            name: name.to_owned(),
+            source: JitCheckHelperSource::Builtin,
+            source_compiler: None,
+            input_labels: input_labels.into_iter().map(str::to_owned).collect(),
+            helper: plan.pure_helpers()[0].id,
+            plan,
+        }
     }
 
-    fn runtime_helper(&self) -> RuntimePureHelper {
-        RuntimePureHelper {
-            id: RuntimePureHelperId(0),
-            name: self.name.clone(),
-            input_names: self.input_names.clone(),
-            input_types: vec![RuntimePureInputType::I64; self.input_names.len()],
-            output_type: RuntimePureOutputType::I64,
-            expr: self.expr.clone(),
-            scalar_eval_supported: self.expr.supports_scalar_pure_eval(),
-            origin: RuntimePureHelperOrigin::Annotated,
-        }
+    fn request_with_inputs(&self, inputs: &[i64]) -> Result<PureFunctionRequest, ExitCode> {
+        PureFunctionRequest::try_new(
+            Arc::clone(&self.plan),
+            self.helper,
+            inputs.iter().copied().map(RuntimeValue::i64),
+        )
+        .map_err(|error| {
+            eprintln!("error: JIT helper request is invalid: {error}");
+            ExitCode::FAILURE
+        })
+    }
+
+    fn helper(&self) -> &RuntimePureHelper {
+        self.plan
+            .pure_helpers()
+            .get(self.helper.0)
+            .filter(|candidate| candidate.id == self.helper)
+            .expect("JIT target retains an admitted helper")
+    }
+
+    fn input_locals(&self) -> &[RuntimeLocalDeclarationId] {
+        &self.helper().input_locals
     }
 }
 
@@ -998,36 +1019,91 @@ fn jit_check_target(options: &JitCheckOptions) -> Result<JitCheckTarget, ExitCod
     )
 }
 
-fn local(name: &str) -> RuntimeExpr {
-    RuntimeExpr::Local(name.to_owned())
+fn local(local: &RuntimeLocalSeedId) -> RuntimeExprSeed {
+    RuntimeExprSeed::new(
+        RuntimeSemanticTypeId::from_bytes([1; 32]),
+        RuntimeExprSeedKind::Local(local.clone()),
+    )
 }
 
-fn int(value: i64) -> RuntimeExpr {
-    RuntimeExpr::Value(RuntimeValue::i64(value))
+fn int(value: i64) -> RuntimeExprSeed {
+    RuntimeExprSeed::new(
+        RuntimeSemanticTypeId::from_bytes([1; 32]),
+        RuntimeExprSeedKind::Value(RuntimeValue::i64(value)),
+    )
 }
 
-fn binary(lhs: RuntimeExpr, op: RuntimeBinaryOp, rhs: RuntimeExpr) -> RuntimeExpr {
-    RuntimeExpr::Binary {
-        lhs: Box::new(lhs),
-        op,
-        rhs: Box::new(rhs),
-    }
+fn binary(lhs: RuntimeExprSeed, op: RuntimeBinaryOp, rhs: RuntimeExprSeed) -> RuntimeExprSeed {
+    let ty = match op {
+        RuntimeBinaryOp::Eq
+        | RuntimeBinaryOp::Ne
+        | RuntimeBinaryOp::Lt
+        | RuntimeBinaryOp::Le
+        | RuntimeBinaryOp::Gt
+        | RuntimeBinaryOp::Ge => RuntimeSemanticTypeId::from_bytes([2; 32]),
+        _ => RuntimeSemanticTypeId::from_bytes([1; 32]),
+    };
+    RuntimeExprSeed::new(
+        ty,
+        RuntimeExprSeedKind::Binary {
+            lhs: Box::new(lhs),
+            op,
+            rhs: Box::new(rhs),
+        },
+    )
 }
 
-fn let_in(name: &str, expr: RuntimeExpr, body: RuntimeExpr) -> RuntimeExpr {
-    RuntimeExpr::Let {
-        name: name.to_owned(),
-        expr: Box::new(expr),
-        body: Box::new(body),
-    }
+fn let_in(
+    binding: RuntimeLocalSeedId,
+    expr: RuntimeExprSeed,
+    body: RuntimeExprSeed,
+) -> RuntimeExprSeed {
+    RuntimeExprSeed::new(
+        body.ty(),
+        RuntimeExprSeedKind::Let {
+            binding,
+            expr: Box::new(expr),
+            body: Box::new(body),
+        },
+    )
 }
 
-fn if_i64(condition: RuntimeExpr, then_expr: RuntimeExpr, else_expr: RuntimeExpr) -> RuntimeExpr {
-    RuntimeExpr::If {
-        condition: Box::new(condition),
-        then_expr: Box::new(then_expr),
-        else_expr: Box::new(else_expr),
-    }
+fn if_i64(
+    condition: RuntimeExprSeed,
+    then_expr: RuntimeExprSeed,
+    else_expr: RuntimeExprSeed,
+) -> RuntimeExprSeed {
+    RuntimeExprSeed::new(
+        RuntimeSemanticTypeId::from_bytes([1; 32]),
+        RuntimeExprSeedKind::If {
+            condition: Box::new(condition),
+            then_expr: Box::new(then_expr),
+            else_expr: Box::new(else_expr),
+        },
+    )
+}
+
+fn unary(op: RuntimeUnaryOp, expr: RuntimeExprSeed) -> RuntimeExprSeed {
+    RuntimeExprSeed::new(
+        expr.ty(),
+        RuntimeExprSeedKind::Unary {
+            op,
+            expr: Box::new(expr),
+        },
+    )
+}
+
+fn call_add(lhs: RuntimeExprSeed, rhs: RuntimeExprSeed) -> RuntimeExprSeed {
+    RuntimeExprSeed::new(
+        RuntimeSemanticTypeId::from_bytes([1; 32]),
+        RuntimeExprSeedKind::Call {
+            callee: RuntimeCallTarget::intrinsic(RuntimeIntrinsic::Add),
+            args: Box::new([
+                RuntimeCallArgumentSeed::new(lhs, RuntimeCallArgumentMode::Value),
+                RuntimeCallArgumentSeed::new(rhs, RuntimeCallArgumentMode::Value),
+            ]),
+        },
+    )
 }
 
 fn jit_check_source_target(
@@ -1035,11 +1111,10 @@ fn jit_check_source_target(
     helper_name: Option<&str>,
 ) -> Result<JitCheckTarget, ExitCode> {
     let checked = load_and_check_with_env(path, &TypeCheckEnv::standard(), Vec::new())?;
-    let candidate = select_jit_helper_candidate(
-        &checked.compiled.runtime_plan().plan.pure_helpers,
-        helper_name,
-    )?;
+    let plan = Arc::new(checked.compiled.runtime_plan().plan.clone());
+    let candidate = select_jit_helper_candidate(plan.pure_helpers(), helper_name)?;
     JitCheckTarget::from_candidate(
+        Arc::clone(&plan),
         candidate,
         Some(JitCheckSourceCompilerReport::from(&checked)),
     )
@@ -1072,7 +1147,7 @@ fn select_jit_helper_candidate<'a>(
 }
 
 fn warmup_jit_check_jit(compiled: &CompiledPureI64Inputs, warmup: usize, input_seed: u64) {
-    let arity = compiled.param_names().len();
+    let arity = compiled.input_locals().len();
     for index in 0..warmup {
         let inputs = jit_check_input_array(input_seed, 0, index, arity);
         let _ = compiled.call_i64_args(RuntimeI64Args::new(inputs, arity));
@@ -1085,7 +1160,7 @@ fn measure_jit_check_jit(
     iterations: usize,
     input_seed: u64,
 ) -> Result<JitRepeatedMeasurement, ExitCode> {
-    let arity = compiled.param_names().len();
+    let arity = compiled.input_locals().len();
     measure_repeated(samples, iterations, |sample, index| {
         let inputs = jit_check_input_array(input_seed, sample, index, arity);
         compiled
@@ -1157,12 +1232,15 @@ fn warmup_jit_check_vm(
     warmup: usize,
     input_seed: u64,
 ) -> Result<(), ExitCode> {
-    let helper = target.runtime_helper();
     let mut scratch = VmPureFunctionScratch::default();
     for index in 0..warmup {
-        let inputs = jit_check_input_array(input_seed, 0, index, target.input_names.len());
+        let inputs = jit_check_input_array(input_seed, 0, index, target.input_locals().len());
         let _ = scratch
-            .evaluate_i64_slice(&helper, &inputs[..target.input_names.len()])
+            .evaluate_i64_slice(
+                &target.plan,
+                target.helper,
+                &inputs[..target.input_locals().len()],
+            )
             .map_err(|error| {
                 eprintln!("error: VM warmup failed: {error}");
                 ExitCode::FAILURE
@@ -1177,12 +1255,15 @@ fn measure_jit_check_vm(
     iterations: usize,
     input_seed: u64,
 ) -> Result<JitRepeatedMeasurement, ExitCode> {
-    let helper = target.runtime_helper();
     let mut scratch = VmPureFunctionScratch::default();
     measure_repeated(samples, iterations, |sample, index| {
-        let inputs = jit_check_input_array(input_seed, sample, index, target.input_names.len());
+        let inputs = jit_check_input_array(input_seed, sample, index, target.input_locals().len());
         let value = scratch
-            .evaluate_i64_slice(&helper, &inputs[..target.input_names.len()])
+            .evaluate_i64_slice(
+                &target.plan,
+                target.helper,
+                &inputs[..target.input_locals().len()],
+            )
             .map_err(|error| {
                 eprintln!("error: VM evaluation failed: {error}");
                 ExitCode::FAILURE
@@ -1271,7 +1352,7 @@ fn julia_benchmark_source(
     options: &JitCheckOptions,
 ) -> Result<String, ExitCode> {
     let params = target
-        .input_names
+        .input_labels
         .iter()
         .map(|name| julia_identifier(name))
         .collect::<Result<Vec<_>, _>>()
@@ -1279,7 +1360,12 @@ fn julia_benchmark_source(
             eprintln!("error: {message}");
             ExitCode::from(2)
         })?;
-    let expr = julia_i64_expr(&target.expr).map_err(|message| {
+    let expr = julia_i64_expr(
+        &target.helper().expr,
+        target.input_locals(),
+        &target.input_labels,
+    )
+    .map_err(|message| {
         eprintln!(
             "error: Julia baseline cannot lower helper `{}`: {message}",
             target.name
@@ -1347,32 +1433,43 @@ println("max_ns\t", elapsed[end])
     ))
 }
 
-fn julia_i64_expr(expr: &RuntimeExpr) -> Result<String, String> {
-    match expr {
-        RuntimeExpr::Value(RuntimeValue::Int(value)) => Ok(value.to_string()),
-        RuntimeExpr::Local(name) => julia_identifier(name),
-        RuntimeExpr::Let { name, expr, body } => Ok(format!(
+fn julia_i64_expr(
+    expr: &RuntimeExpr,
+    inputs: &[RuntimeLocalDeclarationId],
+    input_labels: &[String],
+) -> Result<String, String> {
+    match expr.kind() {
+        RuntimeExprKind::Value(RuntimeValue::Int(value)) => Ok(value.to_string()),
+        RuntimeExprKind::Local(local) => julia_local_identifier(*local, inputs, input_labels),
+        RuntimeExprKind::Let {
+            binding,
+            expr,
+            body,
+        } => Ok(format!(
             "(let {} = {}; {} end)",
-            julia_identifier(name)?,
-            julia_i64_expr(expr)?,
-            julia_i64_expr(body)?
+            julia_local_identifier(*binding, inputs, input_labels)?,
+            julia_i64_expr(expr, inputs, input_labels)?,
+            julia_i64_expr(body, inputs, input_labels)?
         )),
-        RuntimeExpr::Call { callee, args }
+        RuntimeExprKind::Call { callee, args }
             if callee.as_intrinsic() == Some(RuntimeIntrinsic::Add) && args.len() == 2 =>
         {
             Ok(format!(
                 "(({}) + ({}))",
-                julia_i64_expr(&args[0])?,
-                julia_i64_expr(&args[1])?
+                julia_i64_expr(args[0].value(), inputs, input_labels)?,
+                julia_i64_expr(args[1].value(), inputs, input_labels)?
             ))
         }
-        RuntimeExpr::Unary {
+        RuntimeExprKind::Unary {
             op: RuntimeUnaryOp::Neg,
             expr,
-        } => Ok(format!("(-({}))", julia_i64_expr(expr)?)),
-        RuntimeExpr::Binary { lhs, op, rhs } => {
-            let lhs = julia_i64_expr(lhs)?;
-            let rhs = julia_i64_expr(rhs)?;
+        } => Ok(format!(
+            "(-({}))",
+            julia_i64_expr(expr, inputs, input_labels)?
+        )),
+        RuntimeExprKind::Binary { lhs, op, rhs } => {
+            let lhs = julia_i64_expr(lhs, inputs, input_labels)?;
+            let rhs = julia_i64_expr(rhs, inputs, input_labels)?;
             match op {
                 RuntimeBinaryOp::Add => Ok(format!("(({lhs}) + ({rhs}))")),
                 RuntimeBinaryOp::Sub => Ok(format!("(({lhs}) - ({rhs}))")),
@@ -1383,15 +1480,15 @@ fn julia_i64_expr(expr: &RuntimeExpr) -> Result<String, String> {
                 )),
             }
         }
-        RuntimeExpr::If {
+        RuntimeExprKind::If {
             condition,
             then_expr,
             else_expr,
         } => Ok(format!(
             "(({}) ? ({}) : ({}))",
-            julia_bool_expr(condition)?,
-            julia_i64_expr(then_expr)?,
-            julia_i64_expr(else_expr)?
+            julia_bool_expr(condition, inputs, input_labels)?,
+            julia_i64_expr(then_expr, inputs, input_labels)?,
+            julia_i64_expr(else_expr, inputs, input_labels)?
         )),
         other => Err(format!(
             "expression `{other:?}` is outside the Julia baseline subset"
@@ -1399,12 +1496,16 @@ fn julia_i64_expr(expr: &RuntimeExpr) -> Result<String, String> {
     }
 }
 
-fn julia_bool_expr(expr: &RuntimeExpr) -> Result<String, String> {
-    match expr {
-        RuntimeExpr::Value(RuntimeValue::Bool(value)) => Ok(value.to_string()),
-        RuntimeExpr::Binary { lhs, op, rhs } => {
-            let lhs = julia_i64_expr(lhs)?;
-            let rhs = julia_i64_expr(rhs)?;
+fn julia_bool_expr(
+    expr: &RuntimeExpr,
+    inputs: &[RuntimeLocalDeclarationId],
+    input_labels: &[String],
+) -> Result<String, String> {
+    match expr.kind() {
+        RuntimeExprKind::Value(RuntimeValue::Bool(value)) => Ok(value.to_string()),
+        RuntimeExprKind::Binary { lhs, op, rhs } => {
+            let lhs = julia_i64_expr(lhs, inputs, input_labels)?;
+            let rhs = julia_i64_expr(rhs, inputs, input_labels)?;
             match op {
                 RuntimeBinaryOp::Eq => Ok(format!("(({lhs}) == ({rhs}))")),
                 RuntimeBinaryOp::Ne => Ok(format!("(({lhs}) != ({rhs}))")),
@@ -1421,6 +1522,20 @@ fn julia_bool_expr(expr: &RuntimeExpr) -> Result<String, String> {
             "condition `{other:?}` is outside the Julia baseline subset"
         )),
     }
+}
+
+fn julia_local_identifier(
+    local: RuntimeLocalDeclarationId,
+    inputs: &[RuntimeLocalDeclarationId],
+    input_labels: &[String],
+) -> Result<String, String> {
+    inputs
+        .iter()
+        .position(|candidate| *candidate == local)
+        .map_or_else(
+            || Ok(format!("arcweft_local_{}", local.get().get())),
+            |index| julia_identifier(&input_labels[index]),
+        )
 }
 
 fn julia_identifier(name: &str) -> Result<String, String> {

@@ -195,6 +195,13 @@ fn hash_manifest_effects_and_host_calls(hasher: &mut blake3::Hasher, manifest: &
     for call in host_calls {
         hash_str(hasher, call.id());
         hash_signature(hasher, call.signature());
+        match call.domain_error() {
+            Some(domain_error) => {
+                hash_u8(hasher, 1);
+                hash_adapter_type(hasher, domain_error);
+            }
+            None => hash_u8(hasher, 0),
+        }
         hash_effects(hasher, call.effects());
     }
 }
@@ -499,6 +506,9 @@ fn hash_adapter_type(hasher: &mut blake3::Hasher, ty: &AdapterTypeKind) {
         }
         AdapterTypeKind::Nominal { nominal } => {
             match nominal.owner() {
+                arcweft_adapter_context::manifest::AdapterNominalOwner::Standard => {
+                    hash_u8(hasher, 2);
+                }
                 arcweft_adapter_context::manifest::AdapterNominalOwner::Environment { owner } => {
                     hash_u8(hasher, 0);
                     hash_str(hasher, owner.as_str());

@@ -1,26 +1,39 @@
-//! Canonical plan-local semantic type declaration interning.
+//! Canonical plan-local semantic type graph admission.
 
-use std::{collections::BTreeMap, num::NonZeroU32};
+use std::{
+    collections::{BTreeMap, VecDeque},
+    num::NonZeroU32,
+};
 
 use thiserror::Error;
 
-use crate::{pattern::RuntimeSemanticTypeId, runtime_id::RuntimePlanTypeId};
+use crate::pattern::RuntimeSemanticTypeId;
+use crate::runtime_id::RuntimePlanTypeId;
 
-use super::RuntimePlanTypeKind;
+use super::{RuntimePlanTypeClass, RuntimePlanTypeProjection};
 
-/// One exact semantic identity and its selected runtime representation.
+/// Maximum number of declarations on one semantic type path.
+pub const MAX_RUNTIME_PLAN_TYPE_DEPTH: usize = 64;
+
+/// One pre-admission semantic declaration.
+///
+/// Seeds are inert, non-serializable data. Only [`super::RuntimePlanBuilder`]
+/// can rewrite their semantic child references into plan-local IDs.
 #[derive(Clone, Debug, Eq, PartialEq)]
-pub struct RuntimePlanTypeDeclaration {
+pub struct RuntimePlanTypeSeed {
     semantic_identity: RuntimeSemanticTypeId,
-    kind: RuntimePlanTypeKind,
+    projection: RuntimePlanTypeProjection<RuntimeSemanticTypeId>,
 }
 
-impl RuntimePlanTypeDeclaration {
+impl RuntimePlanTypeSeed {
     #[must_use]
-    pub const fn new(semantic_identity: RuntimeSemanticTypeId, kind: RuntimePlanTypeKind) -> Self {
+    pub const fn new(
+        semantic_identity: RuntimeSemanticTypeId,
+        projection: RuntimePlanTypeProjection<RuntimeSemanticTypeId>,
+    ) -> Self {
         Self {
             semantic_identity,
-            kind,
+            projection,
         }
     }
 
@@ -30,16 +43,31 @@ impl RuntimePlanTypeDeclaration {
     }
 
     #[must_use]
-    pub const fn kind(&self) -> &RuntimePlanTypeKind {
-        &self.kind
+    pub const fn projection(&self) -> &RuntimePlanTypeProjection<RuntimeSemanticTypeId> {
+        &self.projection
+    }
+}
+
+/// One exact semantic identity and its final plan-local projection.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct RuntimePlanTypeDeclaration {
+    semantic_identity: RuntimeSemanticTypeId,
+    projection: RuntimePlanTypeProjection<RuntimePlanTypeId>,
+}
+
+impl RuntimePlanTypeDeclaration {
+    #[must_use]
+    pub const fn semantic_identity(&self) -> RuntimeSemanticTypeId {
+        self.semantic_identity
+    }
+
+    #[must_use]
+    pub const fn projection(&self) -> &RuntimePlanTypeProjection<RuntimePlanTypeId> {
+        &self.projection
     }
 }
 
 /// Immutable contiguous plan-local semantic type table.
-///
-/// ID `1` resolves the first distinct declaration interned in the accepted
-/// canonical traversal, and every later distinct declaration follows without
-/// a gap. Exact duplicates do not add rows.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct RuntimePlanTypeTable {
     declarations: Box<[RuntimePlanTypeDeclaration]>,
@@ -59,38 +87,168 @@ impl RuntimePlanTypeTable {
     /// Resolves one ID issued by this table's builder.
     #[must_use]
     pub fn get(&self, id: RuntimePlanTypeId) -> Option<&RuntimePlanTypeDeclaration> {
-        usize::try_from(id.get().get() - 1)
-            .ok()
-            .and_then(|index| self.declarations.get(index))
+        declaration_index(id).and_then(|index| self.declarations.get(index))
+    }
+
+    /// Declarations in their canonical plan-local ID order.
+    pub fn declarations(&self) -> impl ExactSizeIterator<Item = &RuntimePlanTypeDeclaration> {
+        self.declarations.iter()
+    }
+
+    /// Resolves the plan-local ID for one exact semantic identity.
+    #[must_use]
+    pub fn id_for_semantic(
+        &self,
+        semantic_identity: RuntimeSemanticTypeId,
+    ) -> Option<RuntimePlanTypeId> {
+        self.declarations
+            .iter()
+            .position(|row| row.semantic_identity == semantic_identity)
+            .and_then(|index| plan_type_id_for_index(index).ok())
+    }
+
+    pub(crate) fn is_checked(
+        &self,
+        id: RuntimePlanTypeId,
+    ) -> Result<bool, RuntimePlanTypeResolutionError> {
+        let mut memo = BTreeMap::new();
+        self.is_checked_memoized(id, &mut memo)
+    }
+
+    /// Derives the execution class without retaining a parallel kind in the
+    /// declaration row.
+    pub(crate) fn class(
+        &self,
+        id: RuntimePlanTypeId,
+    ) -> Result<RuntimePlanTypeClass, RuntimePlanTypeResolutionError> {
+        if self.is_checked(id)? {
+            return Ok(RuntimePlanTypeClass::Checked);
+        }
+        let declaration = self
+            .get(id)
+            .ok_or(RuntimePlanTypeResolutionError::UnknownType { ty: id })?;
+        declaration
+            .projection
+            .operational_type()
+            .map(RuntimePlanTypeClass::Operational)
+            .ok_or(RuntimePlanTypeResolutionError::MissingRuntimeClass { ty: id })
+    }
+
+    fn is_checked_memoized(
+        &self,
+        id: RuntimePlanTypeId,
+        memo: &mut BTreeMap<RuntimePlanTypeId, bool>,
+    ) -> Result<bool, RuntimePlanTypeResolutionError> {
+        if let Some(checked) = memo.get(&id) {
+            return Ok(*checked);
+        }
+        let declaration = self
+            .get(id)
+            .ok_or(RuntimePlanTypeResolutionError::UnknownType { ty: id })?;
+        let checked = match &declaration.projection {
+            RuntimePlanTypeProjection::Never
+            | RuntimePlanTypeProjection::Unit
+            | RuntimePlanTypeProjection::Bool
+            | RuntimePlanTypeProjection::Signed(_)
+            | RuntimePlanTypeProjection::Unsigned(_)
+            | RuntimePlanTypeProjection::F32
+            | RuntimePlanTypeProjection::F64
+            | RuntimePlanTypeProjection::String
+            | RuntimePlanTypeProjection::Char
+            | RuntimePlanTypeProjection::Bytes
+            | RuntimePlanTypeProjection::Duration
+            | RuntimePlanTypeProjection::EntityReference
+            | RuntimePlanTypeProjection::ProjectNominal { .. }
+            | RuntimePlanTypeProjection::Opaque { .. } => true,
+            RuntimePlanTypeProjection::Sequence { item, .. }
+            | RuntimePlanTypeProjection::Array { item, .. }
+            | RuntimePlanTypeProjection::Option(item) => self.is_checked_memoized(*item, memo)?,
+            RuntimePlanTypeProjection::Tuple(items) | RuntimePlanTypeProjection::Choice(items) => {
+                let mut all_checked = true;
+                for child in items {
+                    all_checked &= self.is_checked_memoized(*child, memo)?;
+                }
+                all_checked
+            }
+            RuntimePlanTypeProjection::Result { value, error } => {
+                self.is_checked_memoized(*value, memo)? && self.is_checked_memoized(*error, memo)?
+            }
+            RuntimePlanTypeProjection::Range(_)
+            | RuntimePlanTypeProjection::Iterator(_)
+            | RuntimePlanTypeProjection::Map { .. }
+            | RuntimePlanTypeProjection::Need { .. }
+            | RuntimePlanTypeProjection::Stream { .. }
+            | RuntimePlanTypeProjection::ThreadHandle(_)
+            | RuntimePlanTypeProjection::Shared(_)
+            | RuntimePlanTypeProjection::Reference(_)
+            | RuntimePlanTypeProjection::Function { .. }
+            | RuntimePlanTypeProjection::Agent(_) => false,
+        };
+        memo.insert(id, checked);
+        Ok(checked)
     }
 }
 
-/// Sole issuer for one plan's semantic type declaration identities.
-///
-/// The trusted lowerer calls [`Self::intern`] in its accepted canonical node
-/// traversal. Because IDs are returned immediately for typed nodes, the
-/// builder preserves that first-seen order rather than sorting and remapping
-/// IDs at finish. Aggregate plan construction owns and delegates to this same
-/// issuer; it does not introduce another type-ID allocator.
+/// Failure to derive a checked or operational view from a sealed table.
+#[derive(Clone, Copy, Debug, Eq, Error, Hash, Ord, PartialEq, PartialOrd)]
+pub enum RuntimePlanTypeResolutionError {
+    #[error("runtime plan type {ty} does not belong to the table")]
+    UnknownType { ty: RuntimePlanTypeId },
+    #[error("runtime plan type {ty} has neither a checked nor operational class")]
+    MissingRuntimeClass { ty: RuntimePlanTypeId },
+    #[error("checked type projection contains a recursive nominal cycle at {ty}")]
+    CheckedProjectionCycle { ty: RuntimePlanTypeId },
+}
+
+/// Sole internal issuer for one plan's semantic type declaration identities.
 #[derive(Debug)]
-pub struct RuntimePlanTypeTableBuilder {
-    by_semantic_identity: BTreeMap<RuntimeSemanticTypeId, InternedRuntimePlanType>,
-    #[cfg(test)]
+pub(crate) struct RuntimePlanTypeTableBuilder {
+    rows: Vec<RuntimePlanTypeDeclaration>,
+    by_semantic_identity: BTreeMap<RuntimeSemanticTypeId, RuntimePlanTypeId>,
     maximum: u32,
 }
 
-#[derive(Debug)]
-struct InternedRuntimePlanType {
-    id: RuntimePlanTypeId,
-    declaration: RuntimePlanTypeDeclaration,
+pub(crate) struct PreparedRuntimePlanTypeBatch {
+    result_ids: Box<[RuntimePlanTypeId]>,
+    candidate_ids: BTreeMap<RuntimeSemanticTypeId, RuntimePlanTypeId>,
+    candidate_rows: Vec<RuntimePlanTypeDeclaration>,
 }
 
-/// Failure to intern one plan-local semantic type declaration.
+impl PreparedRuntimePlanTypeBatch {
+    pub(crate) fn id_for_semantic(
+        &self,
+        semantic_identity: RuntimeSemanticTypeId,
+    ) -> Option<RuntimePlanTypeId> {
+        self.candidate_ids.get(&semantic_identity).copied()
+    }
+
+    pub(crate) fn get(&self, id: RuntimePlanTypeId) -> Option<&RuntimePlanTypeDeclaration> {
+        declaration_index(id).and_then(|index| self.candidate_rows.get(index))
+    }
+}
+
+/// Failure to admit one atomic semantic type graph batch.
 #[derive(Clone, Copy, Debug, Eq, Error, Hash, Ord, PartialEq, PartialOrd)]
 pub enum RuntimePlanTypeTableError {
-    #[error("semantic type {semantic_identity:?} has conflicting runtime plan kinds")]
-    ConflictingKind {
+    #[error("semantic type {semantic_identity:?} has conflicting projections")]
+    ConflictingProjection {
         semantic_identity: RuntimeSemanticTypeId,
+    },
+    #[error("semantic type {owner:?} references undeclared semantic type {referenced:?}")]
+    DanglingReference {
+        owner: RuntimeSemanticTypeId,
+        referenced: RuntimeSemanticTypeId,
+    },
+    #[error("runtime plan type graph contains a cycle at semantic type {semantic_identity:?}")]
+    Cycle {
+        semantic_identity: RuntimeSemanticTypeId,
+    },
+    #[error(
+        "runtime plan type graph exceeds the maximum depth of {maximum} at semantic type {semantic_identity:?}"
+    )]
+    NestingTooDeep {
+        semantic_identity: RuntimeSemanticTypeId,
+        maximum: usize,
     },
     #[error("runtime plan type identity space is exhausted")]
     IdentityExhausted,
@@ -98,74 +256,169 @@ pub enum RuntimePlanTypeTableError {
 
 impl RuntimePlanTypeTableBuilder {
     #[must_use]
-    pub const fn new() -> Self {
+    pub(crate) const fn new() -> Self {
         Self {
+            rows: Vec::new(),
             by_semantic_identity: BTreeMap::new(),
-            #[cfg(test)]
             maximum: u32::MAX,
         }
     }
 
-    /// Returns the existing ID for an exact duplicate or issues the next
-    /// contiguous ID for a new semantic identity.
-    ///
-    /// A semantic identity already paired with a different kind is rejected
-    /// without changing either the canonical row sequence or identity map.
-    pub fn intern(
-        &mut self,
-        declaration: RuntimePlanTypeDeclaration,
-    ) -> Result<RuntimePlanTypeId, RuntimePlanTypeTableError> {
-        if let Some(existing) = self
-            .by_semantic_identity
-            .get(&declaration.semantic_identity())
-        {
-            if existing.declaration.kind() == declaration.kind() {
-                return Ok(existing.id);
-            }
-            return Err(RuntimePlanTypeTableError::ConflictingKind {
-                semantic_identity: declaration.semantic_identity(),
-            });
-        }
-
-        let ordinal = self.next_ordinal()?;
-        let id = RuntimePlanTypeId::from_accepted_ordinal(ordinal);
-        self.by_semantic_identity.insert(
-            declaration.semantic_identity(),
-            InternedRuntimePlanType { id, declaration },
-        );
-        Ok(id)
+    pub(crate) fn get(&self, id: RuntimePlanTypeId) -> Option<&RuntimePlanTypeDeclaration> {
+        declaration_index(id).and_then(|index| self.rows.get(index))
     }
 
-    /// Seals the declaration rows. No mutable issuer survives finish.
     #[must_use]
-    pub fn finish(self) -> RuntimePlanTypeTable {
-        let mut rows = self
-            .by_semantic_identity
-            .into_values()
-            .collect::<Vec<InternedRuntimePlanType>>();
-        rows.sort_unstable_by_key(|row| row.id);
-        RuntimePlanTypeTable {
-            declarations: rows
-                .into_iter()
-                .map(|row| row.declaration)
-                .collect::<Vec<_>>()
-                .into_boxed_slice(),
-        }
+    pub(crate) fn id_for_semantic(
+        &self,
+        semantic_identity: RuntimeSemanticTypeId,
+    ) -> Option<RuntimePlanTypeId> {
+        self.by_semantic_identity.get(&semantic_identity).copied()
     }
 
-    fn next_ordinal(&self) -> Result<NonZeroU32, RuntimePlanTypeTableError> {
-        let next = self
-            .by_semantic_identity
-            .len()
-            .checked_add(1)
-            .and_then(|value| u32::try_from(value).ok())
-            .and_then(NonZeroU32::new)
-            .ok_or(RuntimePlanTypeTableError::IdentityExhausted)?;
-        #[cfg(test)]
-        if next.get() > self.maximum {
-            return Err(RuntimePlanTypeTableError::IdentityExhausted);
+    /// Returns the existing ID for an exact duplicate or issues the next
+    /// contiguous ID for a complete single-node graph.
+    #[cfg(test)]
+    pub(crate) fn intern(
+        &mut self,
+        seed: RuntimePlanTypeSeed,
+    ) -> Result<RuntimePlanTypeId, RuntimePlanTypeTableError> {
+        self.intern_batch([seed])?
+            .first()
+            .copied()
+            .ok_or(RuntimePlanTypeTableError::IdentityExhausted)
+    }
+
+    /// Atomically admits semantic projections in supplied canonical pre-order.
+    ///
+    /// Existing and intra-batch conflicts, the complete capacity requirement,
+    /// all child references, cycles, and maximum depth are checked before the
+    /// first new declaration becomes visible.
+    #[cfg(test)]
+    pub(crate) fn intern_batch(
+        &mut self,
+        seeds: impl IntoIterator<Item = RuntimePlanTypeSeed>,
+    ) -> Result<Box<[RuntimePlanTypeId]>, RuntimePlanTypeTableError> {
+        let prepared = self.prepare_batch(seeds)?;
+        Ok(self.commit_batch(prepared))
+    }
+
+    pub(crate) fn prepare_batch(
+        &self,
+        seeds: impl IntoIterator<Item = RuntimePlanTypeSeed>,
+    ) -> Result<PreparedRuntimePlanTypeBatch, RuntimePlanTypeTableError> {
+        let seeds = seeds.into_iter().collect::<Box<[_]>>();
+        let mut unique = Vec::<RuntimePlanTypeSeed>::new();
+        let mut unique_indices = BTreeMap::<RuntimeSemanticTypeId, usize>::new();
+
+        for seed in &seeds {
+            if let Some(index) = unique_indices.get(&seed.semantic_identity).copied() {
+                if unique[index].projection != seed.projection {
+                    return Err(RuntimePlanTypeTableError::ConflictingProjection {
+                        semantic_identity: seed.semantic_identity,
+                    });
+                }
+            } else {
+                unique_indices.insert(seed.semantic_identity, unique.len());
+                unique.push(seed.clone());
+            }
         }
-        Ok(next)
+
+        let new_count = unique
+            .iter()
+            .filter(|seed| {
+                !self
+                    .by_semantic_identity
+                    .contains_key(&seed.semantic_identity)
+            })
+            .count();
+        let final_len = self
+            .rows
+            .len()
+            .checked_add(new_count)
+            .and_then(|len| u32::try_from(len).ok())
+            .filter(|len| *len <= self.maximum)
+            .ok_or(RuntimePlanTypeTableError::IdentityExhausted)?;
+        let _ = final_len;
+
+        let mut candidate_ids = self.by_semantic_identity.clone();
+        let mut next_index = self.rows.len();
+        for seed in &unique {
+            if candidate_ids.contains_key(&seed.semantic_identity) {
+                continue;
+            }
+            let id = plan_type_id_for_index(next_index)?;
+            candidate_ids.insert(seed.semantic_identity, id);
+            next_index = next_index
+                .checked_add(1)
+                .ok_or(RuntimePlanTypeTableError::IdentityExhausted)?;
+        }
+
+        let mut staged = Vec::with_capacity(new_count);
+        for seed in unique {
+            let projection = rewrite_projection(&seed, &candidate_ids)?;
+            let declaration = RuntimePlanTypeDeclaration {
+                semantic_identity: seed.semantic_identity,
+                projection,
+            };
+            if let Some(existing_id) = self
+                .by_semantic_identity
+                .get(&seed.semantic_identity)
+                .copied()
+            {
+                let Some(existing) = self.get(existing_id) else {
+                    return Err(RuntimePlanTypeTableError::DanglingReference {
+                        owner: seed.semantic_identity,
+                        referenced: seed.semantic_identity,
+                    });
+                };
+                if existing != &declaration {
+                    return Err(RuntimePlanTypeTableError::ConflictingProjection {
+                        semantic_identity: seed.semantic_identity,
+                    });
+                }
+            } else {
+                staged.push(declaration);
+            }
+        }
+
+        let mut candidate_rows = self.rows.clone();
+        candidate_rows.extend(staged.iter().cloned());
+        validate_candidate_graph(&candidate_rows)?;
+
+        let result_ids = seeds
+            .iter()
+            .map(|seed| {
+                candidate_ids.get(&seed.semantic_identity).copied().ok_or(
+                    RuntimePlanTypeTableError::DanglingReference {
+                        owner: seed.semantic_identity,
+                        referenced: seed.semantic_identity,
+                    },
+                )
+            })
+            .collect::<Result<Vec<_>, _>>()
+            .map(Vec::into_boxed_slice)?;
+        Ok(PreparedRuntimePlanTypeBatch {
+            result_ids,
+            candidate_ids,
+            candidate_rows,
+        })
+    }
+
+    pub(crate) fn commit_batch(
+        &mut self,
+        prepared: PreparedRuntimePlanTypeBatch,
+    ) -> Box<[RuntimePlanTypeId]> {
+        self.rows = prepared.candidate_rows;
+        self.by_semantic_identity = prepared.candidate_ids;
+        prepared.result_ids
+    }
+
+    #[must_use]
+    pub(crate) fn finish(self) -> RuntimePlanTypeTable {
+        RuntimePlanTypeTable {
+            declarations: self.rows.into_boxed_slice(),
+        }
     }
 
     #[cfg(test)]
@@ -177,100 +430,217 @@ impl RuntimePlanTypeTableBuilder {
     }
 }
 
-impl Default for RuntimePlanTypeTableBuilder {
-    fn default() -> Self {
-        Self::new()
+fn rewrite_projection(
+    seed: &RuntimePlanTypeSeed,
+    ids: &BTreeMap<RuntimeSemanticTypeId, RuntimePlanTypeId>,
+) -> Result<RuntimePlanTypeProjection<RuntimePlanTypeId>, RuntimePlanTypeTableError> {
+    seed.projection.clone().try_map(|referenced| {
+        ids.get(&referenced)
+            .copied()
+            .ok_or(RuntimePlanTypeTableError::DanglingReference {
+                owner: seed.semantic_identity,
+                referenced,
+            })
+    })
+}
+
+fn validate_candidate_graph(
+    rows: &[RuntimePlanTypeDeclaration],
+) -> Result<(), RuntimePlanTypeTableError> {
+    let mut edges = vec![Vec::<usize>::new(); rows.len()];
+    let mut incoming = vec![0_usize; rows.len()];
+    for (owner, row) in rows.iter().enumerate() {
+        for child_id in row.projection.children() {
+            let child = declaration_index(*child_id).ok_or(
+                RuntimePlanTypeTableError::DanglingReference {
+                    owner: row.semantic_identity,
+                    referenced: row.semantic_identity,
+                },
+            )?;
+            if rows.get(child).is_none() {
+                return Err(RuntimePlanTypeTableError::DanglingReference {
+                    owner: row.semantic_identity,
+                    referenced: row.semantic_identity,
+                });
+            }
+            edges[owner].push(child);
+            incoming[child] = incoming[child]
+                .checked_add(1)
+                .ok_or(RuntimePlanTypeTableError::IdentityExhausted)?;
+        }
     }
+
+    let mut queue = incoming
+        .iter()
+        .enumerate()
+        .filter_map(|(index, incoming)| (*incoming == 0).then_some(index))
+        .collect::<VecDeque<_>>();
+    let mut longest_depth = vec![1_usize; rows.len()];
+    let mut visited = 0_usize;
+    while let Some(owner) = queue.pop_front() {
+        visited += 1;
+        for child in &edges[owner] {
+            let child_depth = longest_depth[owner].checked_add(1).ok_or(
+                RuntimePlanTypeTableError::NestingTooDeep {
+                    semantic_identity: rows[*child].semantic_identity,
+                    maximum: MAX_RUNTIME_PLAN_TYPE_DEPTH,
+                },
+            )?;
+            if child_depth > MAX_RUNTIME_PLAN_TYPE_DEPTH {
+                return Err(RuntimePlanTypeTableError::NestingTooDeep {
+                    semantic_identity: rows[*child].semantic_identity,
+                    maximum: MAX_RUNTIME_PLAN_TYPE_DEPTH,
+                });
+            }
+            longest_depth[*child] = longest_depth[*child].max(child_depth);
+            incoming[*child] -= 1;
+            if incoming[*child] == 0 {
+                queue.push_back(*child);
+            }
+        }
+    }
+    if visited != rows.len() {
+        let Some(semantic_identity) = incoming
+            .iter()
+            .position(|incoming| *incoming != 0)
+            .and_then(|index| rows.get(index))
+            .map(|row| row.semantic_identity)
+        else {
+            return Err(RuntimePlanTypeTableError::IdentityExhausted);
+        };
+        return Err(RuntimePlanTypeTableError::Cycle { semantic_identity });
+    }
+    Ok(())
+}
+
+fn declaration_index(id: RuntimePlanTypeId) -> Option<usize> {
+    usize::try_from(id.get().get() - 1).ok()
+}
+
+fn plan_type_id_for_index(index: usize) -> Result<RuntimePlanTypeId, RuntimePlanTypeTableError> {
+    index
+        .checked_add(1)
+        .and_then(|ordinal| u32::try_from(ordinal).ok())
+        .and_then(NonZeroU32::new)
+        .map(RuntimePlanTypeId::from_accepted_ordinal)
+        .ok_or(RuntimePlanTypeTableError::IdentityExhausted)
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::{pattern::RuntimeCheckedType, plan::RuntimeOperationalType};
+    use crate::plan::{RuntimeOperationalType, RuntimePlanSequenceKind, RuntimePlanTypeProjection};
 
     fn identity(marker: u8) -> RuntimeSemanticTypeId {
         RuntimeSemanticTypeId::from_bytes([marker; 32])
     }
 
-    fn checked(marker: u8, checked: RuntimeCheckedType) -> RuntimePlanTypeDeclaration {
-        RuntimePlanTypeDeclaration::new(identity(marker), RuntimePlanTypeKind::Checked(checked))
+    fn leaf(
+        marker: u8,
+        projection: RuntimePlanTypeProjection<RuntimeSemanticTypeId>,
+    ) -> RuntimePlanTypeSeed {
+        RuntimePlanTypeSeed::new(identity(marker), projection)
     }
 
     #[test]
-    fn distinct_declarations_follow_canonical_intern_order_without_gaps() {
-        let first = checked(1, RuntimeCheckedType::Unit);
-        let second = checked(2, RuntimeCheckedType::Bool);
-        let mut builder = RuntimePlanTypeTableBuilder::new();
-
-        let first_id = builder.intern(first.clone()).expect("first type");
-        let second_id = builder.intern(second.clone()).expect("second type");
-        assert_eq!(first_id.get(), NonZeroU32::MIN);
-        assert_eq!(second_id.get(), NonZeroU32::new(2).unwrap());
-
-        let table = builder.finish();
-        assert_eq!(table.len(), 2);
-        assert_eq!(table.get(first_id), Some(&first));
-        assert_eq!(table.get(second_id), Some(&second));
-    }
-
-    #[test]
-    fn exact_duplicates_reuse_the_first_id_and_row() {
-        let declaration = checked(3, RuntimeCheckedType::String);
-        let mut builder = RuntimePlanTypeTableBuilder::new();
-        let first = builder
-            .intern(declaration.clone())
-            .expect("first declaration");
-        let duplicate = builder
-            .intern(declaration.clone())
-            .expect("exact duplicate");
-
-        assert_eq!(duplicate, first);
-        let table = builder.finish();
-        assert_eq!(table.len(), 1);
-        assert_eq!(table.get(first), Some(&declaration));
-    }
-
-    #[test]
-    fn one_semantic_identity_cannot_change_runtime_kind() {
-        let semantic_identity = identity(4);
-        let mut builder = RuntimePlanTypeTableBuilder::new();
-        let first = RuntimePlanTypeDeclaration::new(
-            semantic_identity,
-            RuntimePlanTypeKind::Checked(RuntimeCheckedType::Unit),
+    fn batch_rewrites_semantic_edges_and_derives_checked_view() {
+        let root = leaf(
+            1,
+            RuntimePlanTypeProjection::Sequence {
+                kind: RuntimePlanSequenceKind::Vec,
+                item: identity(2),
+            },
         );
-        let conflict = RuntimePlanTypeDeclaration::new(
-            semantic_identity,
-            RuntimePlanTypeKind::Operational(RuntimeOperationalType::Range),
-        );
-        let first_id = builder.intern(first.clone()).expect("first declaration");
-
-        assert_eq!(
-            builder.intern(conflict),
-            Err(RuntimePlanTypeTableError::ConflictingKind { semantic_identity })
-        );
+        let item = leaf(2, RuntimePlanTypeProjection::Bool);
+        let mut builder = RuntimePlanTypeTableBuilder::new();
+        let ids = builder
+            .intern_batch([root, item])
+            .expect("valid semantic graph");
         let table = builder.finish();
-        assert_eq!(table.len(), 1);
-        assert_eq!(table.get(first_id), Some(&first));
+
+        assert_eq!(ids.len(), 2);
+        assert_eq!(table.class(ids[0]), Ok(RuntimePlanTypeClass::Checked));
     }
 
     #[test]
-    fn exhaustion_is_transactional_and_still_allows_exact_deduplication() {
-        let first = checked(5, RuntimeCheckedType::Unit);
-        let second = checked(6, RuntimeCheckedType::Bool);
-        let mut builder = RuntimePlanTypeTableBuilder::with_maximum_for_test(1);
-        let first_id = builder.intern(first.clone()).expect("bounded first type");
+    fn conflict_dangling_cycle_and_capacity_fail_without_mutation() {
+        let retained = leaf(3, RuntimePlanTypeProjection::Unit);
+        let mut builder = RuntimePlanTypeTableBuilder::with_maximum_for_test(3);
+        let retained_id = builder.intern(retained.clone()).expect("retained row");
 
-        assert_eq!(
-            builder.intern(second),
+        let conflict = leaf(3, RuntimePlanTypeProjection::String);
+        assert!(matches!(
+            builder.intern_batch([leaf(4, RuntimePlanTypeProjection::Bool), conflict]),
+            Err(RuntimePlanTypeTableError::ConflictingProjection { .. })
+        ));
+        assert!(matches!(
+            builder.intern(leaf(5, RuntimePlanTypeProjection::Option(identity(9)))),
+            Err(RuntimePlanTypeTableError::DanglingReference { .. })
+        ));
+        assert!(matches!(
+            builder.intern_batch([
+                leaf(6, RuntimePlanTypeProjection::Option(identity(7))),
+                leaf(7, RuntimePlanTypeProjection::Option(identity(6))),
+            ]),
+            Err(RuntimePlanTypeTableError::Cycle { .. })
+        ));
+        assert!(matches!(
+            builder.intern_batch([
+                leaf(8, RuntimePlanTypeProjection::Bool),
+                leaf(9, RuntimePlanTypeProjection::String),
+                leaf(10, RuntimePlanTypeProjection::Unit),
+            ]),
             Err(RuntimePlanTypeTableError::IdentityExhausted)
-        );
-        assert_eq!(
-            builder.intern(first.clone()),
-            Ok(first_id),
-            "capacity cannot shadow exact deduplication"
-        );
+        ));
+
+        let next = builder
+            .intern(leaf(11, RuntimePlanTypeProjection::Bool))
+            .expect("failed batches committed nothing");
+        assert_eq!(retained_id.get(), NonZeroU32::MIN);
+        assert_eq!(next.get(), NonZeroU32::new(2).unwrap());
+    }
+
+    #[test]
+    fn operational_class_is_derived_from_projection() {
+        let mut builder = RuntimePlanTypeTableBuilder::new();
+        let ids = builder
+            .intern_batch([
+                leaf(11, RuntimePlanTypeProjection::Range(identity(12))),
+                leaf(12, RuntimePlanTypeProjection::Unit),
+            ])
+            .expect("range graph");
         let table = builder.finish();
-        assert_eq!(table.len(), 1);
-        assert_eq!(table.get(first_id), Some(&first));
+
+        assert_eq!(
+            table.class(ids[0]),
+            Ok(RuntimePlanTypeClass::Operational(
+                RuntimeOperationalType::Range
+            ))
+        );
+    }
+
+    #[test]
+    fn overdeep_shared_graph_is_rejected_before_any_row_commits() {
+        let mut seeds = Vec::new();
+        for index in 0..=MAX_RUNTIME_PLAN_TYPE_DEPTH {
+            let marker = u8::try_from(index + 20).expect("test marker fits");
+            let projection = if index == MAX_RUNTIME_PLAN_TYPE_DEPTH {
+                RuntimePlanTypeProjection::Unit
+            } else {
+                let child = u8::try_from(index + 21).expect("test child marker fits");
+                RuntimePlanTypeProjection::Option(identity(child))
+            };
+            seeds.push(leaf(marker, projection));
+        }
+        let mut builder = RuntimePlanTypeTableBuilder::new();
+        assert!(matches!(
+            builder.intern_batch(seeds),
+            Err(RuntimePlanTypeTableError::NestingTooDeep { .. })
+        ));
+
+        let first = builder
+            .intern(leaf(90, RuntimePlanTypeProjection::Unit))
+            .expect("overdeep batch committed nothing");
+        assert_eq!(first.get(), NonZeroU32::MIN);
     }
 }

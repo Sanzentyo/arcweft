@@ -158,7 +158,6 @@ pub enum EntityKind {
     Signal,
     Metric,
     Scene,
-    Source,
     Test,
     Bench,
     Layer,
@@ -201,7 +200,6 @@ impl EntityKind {
         Self::Signal,
         Self::Metric,
         Self::Scene,
-        Self::Source,
         Self::Test,
         Self::Bench,
         Self::Layer,
@@ -244,7 +242,6 @@ impl EntityKind {
             Self::Signal => "Signal",
             Self::Metric => "Metric",
             Self::Scene => "Scene",
-            Self::Source => "Source",
             Self::Test => "Test",
             Self::Bench => "Bench",
             Self::Layer => "Layer",
@@ -289,7 +286,6 @@ impl EntityKind {
             Self::Signal => "signal",
             Self::Metric => "metric",
             Self::Scene => "scene",
-            Self::Source => "source",
             Self::Test => "test",
             Self::Bench => "bench",
             Self::Layer => "layer",
@@ -333,7 +329,6 @@ impl EntityKind {
             DeclarationIdentityFamily::Metric => Some(Self::Metric),
             DeclarationIdentityFamily::Layer => Some(Self::Layer),
             DeclarationIdentityFamily::Flow => Some(Self::Flow),
-            DeclarationIdentityFamily::Source => Some(Self::Source),
             DeclarationIdentityFamily::Style => Some(Self::Style),
             DeclarationIdentityFamily::Proof => None,
         }
@@ -474,10 +469,6 @@ pub enum TypeKind {
         error: Box<TypeKind>,
     },
     Stream {
-        item: Box<TypeKind>,
-        error: Box<TypeKind>,
-    },
-    Source {
         item: Box<TypeKind>,
         error: Box<TypeKind>,
     },
@@ -622,9 +613,6 @@ impl TypeKind {
             }
             Self::Stream { item, error } => {
                 format!("Stream<{}, {}>", item.source_label(), error.source_label())
-            }
-            Self::Source { item, error } => {
-                format!("Source<{}, {}>", item.source_label(), error.source_label())
             }
             Self::Result { ok, error } => {
                 format!("Result<{}, {}>", ok.source_label(), error.source_label())
@@ -1003,7 +991,6 @@ mod entity_kind_tests {
                 "signal",
                 "metric",
                 "scene",
-                "source",
                 "test",
                 "bench",
                 "layer",

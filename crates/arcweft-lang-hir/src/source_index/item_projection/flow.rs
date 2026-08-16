@@ -1379,7 +1379,6 @@ fn flow_child_is_poisoned(slots: &SlotSnapshot, item: &HirThreadFlowItem) -> boo
         | HirThreadFlowItem::SourceLocale(owner)
         | HirThreadFlowItem::Scope(owner)
         | HirThreadFlowItem::Include(owner)
-        | HirThreadFlowItem::AwaitWith(owner)
         | HirThreadFlowItem::Error(owner) => slot_is_poisoned(slots, *owner),
     }
 }
@@ -1400,7 +1399,6 @@ const fn flow_child_issue_owner(item: &HirThreadFlowItem) -> HirFlowIssueOwner {
         | HirThreadFlowItem::SourceLocale(owner)
         | HirThreadFlowItem::Scope(owner)
         | HirThreadFlowItem::Include(owner)
-        | HirThreadFlowItem::AwaitWith(owner)
         | HirThreadFlowItem::Error(owner) => HirFlowIssueOwner::Stmt(*owner),
     }
 }

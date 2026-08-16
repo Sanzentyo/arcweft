@@ -1,42 +1,37 @@
 use crate::awbc_lower::audio::constant_audio_command;
+use crate::awbc_lower::pattern::intern_runtime_type;
 use crate::awbc_lower::{AwbcLowerOptions, table_index, table_range_len};
 use arcweft_core::awbc::schema::{
-    AwbcAudioCleanup, AwbcAudioCommand, AwbcAudioCommandId, AwbcAwaitManyPolicy,
-    AwbcBackpressurePolicy, AwbcBlock, AwbcBlockId, AwbcCallableExecutable, AwbcChildCancelPolicy,
-    AwbcChildCleanup, AwbcChildJoinPolicy, AwbcChoice, AwbcChoiceId, AwbcChoiceOption,
-    AwbcConstant, AwbcConstantId, AwbcContentUnit, AwbcContentUnitId, AwbcDisplayMapEntry,
-    AwbcEffectKind, AwbcEffectPlan, AwbcEffectPlanId, AwbcEffectSet, AwbcEffectSetId, AwbcEntry,
-    AwbcEntryKind, AwbcEntryTarget, AwbcFlowBinding, AwbcFlowExecutable, AwbcFrameLayout,
-    AwbcFrameLayoutId, AwbcFunction, AwbcFunctionFlags, AwbcFunctionId, AwbcFunctionKind,
-    AwbcHostCall, AwbcHostCallId, AwbcHostCallMode, AwbcInstruction, AwbcInstructionId,
-    AwbcLineCancelHandler, AwbcLineCleanupPolicy, AwbcLineOption, AwbcLineTaskGroup,
-    AwbcLineTaskGroupId, AwbcLineTaskNode, AwbcLineTaskNodeId, AwbcLineTaskTrigger,
-    AwbcOverflowPolicy, AwbcParallelPolicy, AwbcPattern, AwbcPatternId, AwbcPresentationCleanup,
-    AwbcPrivacyPolicy, AwbcProgram, AwbcRegisterId, AwbcReplayPolicy, AwbcResumePoint,
-    AwbcResumePointId, AwbcRoute, AwbcRouteBinding, AwbcRouteBindingSource, AwbcRuntimeType,
-    AwbcSafePointKind, AwbcSignature, AwbcSignatureId, AwbcSignedIntKind, AwbcSourceEventKind,
-    AwbcSourcePlan, AwbcSourcePlanId, AwbcSourcePolicy, AwbcStreamPlan, AwbcStreamPlanId,
-    AwbcStringId, AwbcTableRange, AwbcTaskArgument, AwbcTaskClass, AwbcTaskPlan, AwbcTaskPlanId,
-    AwbcTaskPolicy, AwbcTerminator, AwbcTypeId, AwbcUnsignedIntKind,
+    AwbcAudioCleanup, AwbcAudioCommand, AwbcAudioCommandId, AwbcAwaitManyPolicy, AwbcBlock,
+    AwbcBlockId, AwbcCallableExecutable, AwbcChildCleanup, AwbcChoice, AwbcChoiceId,
+    AwbcChoiceOption, AwbcConstant, AwbcConstantId, AwbcContentUnit, AwbcContentUnitId,
+    AwbcDisplayMapEntry, AwbcEffectKind, AwbcEffectPlan, AwbcEffectPlanId, AwbcEffectSet,
+    AwbcEffectSetId, AwbcEntry, AwbcEntryKind, AwbcEntryTarget, AwbcFlowBinding,
+    AwbcFlowExecutable, AwbcFrameLayout, AwbcFrameLayoutId, AwbcFunction, AwbcFunctionFlags,
+    AwbcFunctionId, AwbcFunctionKind, AwbcHostArgument, AwbcHostCall, AwbcHostCallId,
+    AwbcHostCallMode, AwbcInstruction, AwbcInstructionId, AwbcLineCleanupPolicy,
+    AwbcLineTaskGroupId, AwbcPattern, AwbcPatternId, AwbcPresentationCleanup, AwbcProgram,
+    AwbcRegisterId, AwbcResumePoint, AwbcResumePointId, AwbcRoute, AwbcRouteBinding,
+    AwbcRouteBindingSource, AwbcRuntimeType, AwbcSafePointKind, AwbcSignature, AwbcSignatureId,
+    AwbcSignedIntKind, AwbcStreamPlan, AwbcStreamPlanId, AwbcStringId, AwbcTableRange,
+    AwbcTaskClass, AwbcTaskPlan, AwbcTaskPlanId, AwbcTaskPolicy, AwbcTerminator, AwbcTraitMethodId,
+    AwbcTypeId, AwbcUnsignedIntKind,
 };
 use arcweft_core::effect::{LineEffectRequest, RuntimeEffectExpr, RuntimeWaitTarget};
-use arcweft_core::entry::{RuntimeCallableExecutableCode, RuntimeCallableRole};
+use arcweft_core::entry::{RuntimeCallableExecutableCode, RuntimeCallableRole, RuntimeEntryRoles};
 use arcweft_core::line_task::{
-    AudioCleanup, ChildCancelPolicy, ChildJoinPolicy, ChildTaskCleanup, LineChildTask,
-    LineCleanupPolicy, LineTaskGroup, LineTaskNode, LineTaskScope, ParallelPolicy,
-    PresentationCleanup,
+    AudioCleanup, ChildTaskCleanup, LineCleanupPolicy, PresentationCleanup,
 };
 use arcweft_core::plan::{
     FlowRuntimeId, RuntimeEntryKind, RuntimeEntrySpec, RuntimeEntryTarget, RuntimeHostCallTarget,
-    RuntimePlan,
+    RuntimePlan, RuntimeTraitMethodId,
 };
-use arcweft_core::source::{
-    BackpressurePolicy, OverflowPolicy, PrivacyPolicy, ReplayPolicy, SourceHandlerPlan, SourceId,
-    SourcePolicy,
-};
+use arcweft_core::runtime_id::{RuntimeFunctionSiteId, RuntimeLocalDeclarationId};
 use arcweft_core::step::RuntimeHostCallMode;
 use arcweft_core::stream::StreamRuntimeId;
-use arcweft_core::task::{HostTaskArgTemplate, HostTaskRequestTemplate};
+use arcweft_core::task::{
+    HostTaskRequestTemplate, RuntimeHostArgumentTemplate, TaskOutcomeContract,
+};
 use arcweft_core::value::{RuntimeExpr, RuntimeInt, RuntimeRange, RuntimeUInt, RuntimeValue};
 use arcweft_text_model::DialogueContentCatalog;
 use std::collections::BTreeMap;
@@ -87,7 +82,7 @@ pub struct AwbcLowerStats {
     pub effects: usize,
     pub audio_commands: usize,
     pub task_plans: usize,
-    pub source_plans: usize,
+    pub line_task_groups: usize,
     pub stream_plans: usize,
     pub trait_methods: usize,
     pub callable_executables: usize,
@@ -108,7 +103,7 @@ impl AwbcLowerStats {
             effects: program.effect_plans.len(),
             audio_commands: program.audio_commands.len(),
             task_plans: program.task_plans.len(),
-            source_plans: program.source_plans.len(),
+            line_task_groups: program.line_task_groups.len(),
             stream_plans: program.stream_plans.len(),
             trait_methods: program.trait_methods.len(),
             callable_executables: program.callable_executables.len(),
@@ -134,18 +129,19 @@ pub struct AwbcInventory {
     audio_commands: BTreeMap<String, AwbcAudioCommandId>,
     tasks: BTreeMap<String, AwbcTaskPlanId>,
     host_calls: BTreeMap<String, AwbcHostCallId>,
-    sources: BTreeMap<SourceId, AwbcSourcePlanId>,
     streams: BTreeMap<StreamRuntimeId, AwbcStreamPlanId>,
     choices: BTreeMap<String, AwbcChoiceId>,
     flow_functions: BTreeMap<FlowRuntimeId, AwbcFunctionId>,
+    trait_methods: BTreeMap<RuntimeTraitMethodId, AwbcTraitMethodId>,
+    function_sites: BTreeMap<RuntimeFunctionSiteId, AwbcFunctionId>,
     pending_closures: Vec<PendingAwbcClosure>,
 }
 
 #[derive(Clone, Debug)]
 pub(crate) struct PendingAwbcClosure {
     pub function: AwbcFunctionId,
-    pub params: Vec<(String, AwbcStringId)>,
-    pub captures: Vec<(String, AwbcStringId)>,
+    pub params: Box<[RuntimeLocalDeclarationId]>,
+    pub captures: Box<[RuntimeLocalDeclarationId]>,
     pub body: RuntimeExpr,
     pub path: String,
 }
@@ -156,11 +152,12 @@ struct NamedTaskSpec<'a> {
     need_id: &'a str,
     capability: &'a str,
     operation: &'a str,
-    args: &'a [HostTaskArgTemplate],
+    args: &'a [RuntimeHostArgumentTemplate],
     class: AwbcTaskClass,
     priority: i32,
     cancel_scope: &'a str,
     policy: AwbcTaskPolicy,
+    outcome: &'a TaskOutcomeContract,
 }
 
 impl AwbcInventory {
@@ -177,10 +174,11 @@ impl AwbcInventory {
             audio_commands: BTreeMap::new(),
             tasks: BTreeMap::new(),
             host_calls: BTreeMap::new(),
-            sources: BTreeMap::new(),
             streams: BTreeMap::new(),
             choices: BTreeMap::new(),
             flow_functions: BTreeMap::new(),
+            trait_methods: BTreeMap::new(),
+            function_sites: BTreeMap::new(),
             pending_closures: Vec::new(),
         };
         this.intern_string(source_label);
@@ -279,6 +277,7 @@ impl AwbcInventory {
                     producer,
                     semantic_identity: *value.semantic_identity().as_bytes(),
                     admission: arcweft_core::pattern::RuntimeOpaqueTypeAdmission::ExactIdentity,
+                    arguments: Vec::new(),
                 })
             }
             _ => self.dynamic_ty(),
@@ -469,6 +468,9 @@ impl AwbcInventory {
                 let payload = self.constant_runtime_value(opaque.payload());
                 AwbcConstant::Opaque { ty, payload }
             }
+            RuntimeValue::Reduction(_) => {
+                panic!("runtime reduction state cannot be encoded as an AWBC constant")
+            }
             RuntimeValue::Agent(value) => panic!(
                 "typed Agent runtime value `{}` must be produced by AWBC MakeAgent and cannot be encoded as a constant",
                 value.label()
@@ -635,6 +637,31 @@ impl AwbcInventory {
         self.flow_functions.get(flow).copied()
     }
 
+    pub(crate) fn record_trait_method(
+        &mut self,
+        method: RuntimeTraitMethodId,
+        lowered: AwbcTraitMethodId,
+    ) {
+        self.trait_methods.insert(method, lowered);
+    }
+
+    pub(crate) fn trait_method(&self, method: RuntimeTraitMethodId) -> Option<AwbcTraitMethodId> {
+        self.trait_methods.get(&method).copied()
+    }
+
+    pub fn function_site_function(&self, site: RuntimeFunctionSiteId) -> Option<AwbcFunctionId> {
+        self.function_sites.get(&site).copied()
+    }
+
+    pub fn reserve_function_site_slot(&mut self, site: RuntimeFunctionSiteId) -> AwbcFunctionId {
+        if let Some(function) = self.function_site_function(site) {
+            return function;
+        }
+        let function = self.reserve_function_slot();
+        self.function_sites.insert(site, function);
+        function
+    }
+
     pub(crate) fn push_pending_closure(&mut self, closure: PendingAwbcClosure) {
         self.pending_closures.push(closure);
     }
@@ -677,114 +704,13 @@ impl AwbcInventory {
         let public_id = self.intern_string(public_id);
         self.program.content_units.push(AwbcContentUnit {
             public_id,
+            marks: Vec::new(),
             line_task_group: group,
             display: None,
             source: None,
             resources: Vec::new(),
         });
         id
-    }
-
-    pub fn lower_line_task_group(&mut self, group: &LineTaskGroup) -> AwbcLineTaskGroupId {
-        let root = self.lower_line_task_scope(&group.root);
-        let options = group
-            .options
-            .iter()
-            .map(|option| AwbcLineOption {
-                name: self.intern_string(&option.name),
-                value: self.constant_string(&option.value),
-            })
-            .collect();
-        let cancel_handlers = group
-            .cancel_rules
-            .iter()
-            .map(|rule| AwbcLineCancelHandler {
-                trigger: self.intern_string(&rule.trigger),
-                function: self.synthetic_empty_function("line.cancel"),
-            })
-            .collect();
-        let id = AwbcLineTaskGroupId(table_index(self.program.line_task_groups.len()));
-        self.program.line_task_groups.push(AwbcLineTaskGroup {
-            root,
-            options,
-            bindings: None,
-            out: None,
-            cancel_handlers,
-            cleanup: line_cleanup(&group.cleanup),
-        });
-        id
-    }
-
-    pub fn lower_line_task_scope(&mut self, scope: &LineTaskScope) -> AwbcLineTaskNodeId {
-        self.lower_line_task_node(&scope.node)
-    }
-
-    pub fn lower_line_task_node(&mut self, node: &LineTaskNode) -> AwbcLineTaskNodeId {
-        let lowered = match node {
-            LineTaskNode::Seq(nodes) => AwbcLineTaskNode::Sequence(
-                nodes
-                    .iter()
-                    .map(|node| self.lower_line_task_node(node))
-                    .collect(),
-            ),
-            LineTaskNode::Start(nodes) => AwbcLineTaskNode::Start(
-                nodes
-                    .iter()
-                    .map(|node| self.lower_line_task_node(node))
-                    .collect(),
-            ),
-            LineTaskNode::Parallel { policy, children } => AwbcLineTaskNode::Parallel {
-                policy: match policy {
-                    ParallelPolicy::JoinAll => AwbcParallelPolicy::JoinAll,
-                },
-                children: children
-                    .iter()
-                    .map(|node| self.lower_line_task_node(node))
-                    .collect(),
-            },
-            LineTaskNode::Child(task) => self.lower_line_child_task(task),
-            LineTaskNode::Effect(effect) => AwbcLineTaskNode::Effect(self.intern_effect(effect)),
-        };
-        let id = AwbcLineTaskNodeId(table_index(self.program.line_task_nodes.len()));
-        self.program.line_task_nodes.push(lowered);
-        id
-    }
-
-    fn lower_line_child_task(&mut self, task: &LineChildTask) -> AwbcLineTaskNode {
-        AwbcLineTaskNode::Child {
-            task: self.intern_named_task(NamedTaskSpec {
-                public_id: task.id.0.as_str(),
-                need_id: task.id.0.as_str(),
-                capability: "line_task",
-                operation: "run_child",
-                args: &[],
-                class: AwbcTaskClass::LocalView,
-                priority: task.priority.0,
-                cancel_scope: "line",
-                policy: AwbcTaskPolicy::JoinSameKey,
-            }),
-            trigger: match &task.trigger {
-                arcweft_core::line_task::LineTaskTrigger::Immediate => {
-                    AwbcLineTaskTrigger::Immediate
-                }
-                arcweft_core::line_task::LineTaskTrigger::Mark(mark) => {
-                    AwbcLineTaskTrigger::Mark(self.intern_string(mark))
-                }
-                arcweft_core::line_task::LineTaskTrigger::Delay(duration) => {
-                    AwbcLineTaskTrigger::DelayNanos(duration.as_nanos())
-                }
-            },
-            join: match task.join_policy {
-                ChildJoinPolicy::Join => AwbcChildJoinPolicy::Join,
-                ChildJoinPolicy::Detached => AwbcChildJoinPolicy::Detached,
-            },
-            cancel: match task.cancel_policy {
-                ChildCancelPolicy::CancelAndJoin => AwbcChildCancelPolicy::CancelAndJoin,
-                ChildCancelPolicy::Finish => AwbcChildCancelPolicy::Finish,
-                ChildCancelPolicy::Detach => AwbcChildCancelPolicy::Detach,
-            },
-            scope: self.lower_line_task_scope(&task.scope),
-        }
     }
 
     pub fn intern_effect(&mut self, effect: &LineEffectRequest) -> AwbcEffectPlanId {
@@ -882,6 +808,21 @@ impl AwbcInventory {
         task_id: &str,
         request: &HostTaskRequestTemplate,
     ) -> AwbcTaskPlanId {
+        self.intern_host_task_with_outcome(
+            need_id,
+            task_id,
+            request,
+            &TaskOutcomeContract::default(),
+        )
+    }
+
+    pub fn intern_host_task_with_outcome(
+        &mut self,
+        need_id: &str,
+        task_id: &str,
+        request: &HostTaskRequestTemplate,
+        outcome: &TaskOutcomeContract,
+    ) -> AwbcTaskPlanId {
         self.intern_named_task(NamedTaskSpec {
             public_id: task_id,
             need_id,
@@ -892,6 +833,7 @@ impl AwbcInventory {
             priority: 0,
             cancel_scope: "flow",
             policy: AwbcTaskPolicy::JoinSameKey,
+            outcome,
         })
     }
 
@@ -921,6 +863,7 @@ impl AwbcInventory {
         let public_id = self.intern_string(&target.public_id);
         let capability = self.intern_string(&target.capability);
         let operation = self.intern_string(&target.operation);
+        let arguments = self.intern_host_arguments(&target.args);
         self.program.host_calls.push(AwbcHostCall {
             public_id,
             capability,
@@ -928,6 +871,7 @@ impl AwbcInventory {
             signature,
             mode,
             deterministic: target.deterministic,
+            arguments,
         });
         self.host_calls.insert(key, id);
         id
@@ -944,9 +888,10 @@ impl AwbcInventory {
             priority,
             cancel_scope,
             policy,
+            outcome,
         } = spec;
         let key = format!(
-            "task:{public_id}:{need_id}:{capability}:{operation}:{args:?}:{class:?}:{priority}:{cancel_scope}:{policy:?}"
+            "task:{public_id}:{need_id}:{capability}:{operation}:{args:?}:{class:?}:{priority}:{cancel_scope}:{policy:?}:{outcome:?}"
         );
         if let Some(id) = self.tasks.get(&key).copied() {
             return id;
@@ -964,11 +909,10 @@ impl AwbcInventory {
         let cancel_scope = self.intern_string(cancel_scope);
         let arguments = args
             .iter()
-            .map(|arg| AwbcTaskArgument {
-                name: arg.name().map(|name| self.intern_string(name)),
-                spread: arg.is_spread(),
-            })
+            .map(|arg| self.intern_host_argument(arg))
             .collect();
+        let ready_type = intern_runtime_type(self, &outcome.ready);
+        let error_type = intern_runtime_type(self, &outcome.error);
         self.program.task_plans.push(AwbcTaskPlan {
             public_id,
             need_id,
@@ -979,6 +923,8 @@ impl AwbcInventory {
             priority,
             cancel_scope,
             policy,
+            ready_type,
+            error_type,
             arguments,
             many: None,
         });
@@ -986,19 +932,21 @@ impl AwbcInventory {
         id
     }
 
-    pub fn reserve_source_plan_id(&mut self, source: SourceId, id: AwbcSourcePlanId) {
-        self.sources.insert(source, id);
+    fn intern_host_arguments(
+        &mut self,
+        arguments: &[RuntimeHostArgumentTemplate],
+    ) -> Vec<AwbcHostArgument> {
+        arguments
+            .iter()
+            .map(|argument| self.intern_host_argument(argument))
+            .collect()
     }
 
-    pub fn push_source_plan(&mut self, source: SourceId, plan: AwbcSourcePlan) -> AwbcSourcePlanId {
-        let id = AwbcSourcePlanId(table_index(self.program.source_plans.len()));
-        self.program.source_plans.push(plan);
-        self.sources.entry(source).or_insert(id);
-        id
-    }
-
-    pub fn source_plan_id(&self, source: &SourceId) -> Option<AwbcSourcePlanId> {
-        self.sources.get(source).copied()
+    fn intern_host_argument(&mut self, argument: &RuntimeHostArgumentTemplate) -> AwbcHostArgument {
+        AwbcHostArgument {
+            name: argument.name().map(|name| self.intern_string(name)),
+            spread: argument.is_spread(),
+        }
     }
 
     pub fn reserve_stream_plan_id(&mut self, stream: StreamRuntimeId, id: AwbcStreamPlanId) {
@@ -1044,15 +992,34 @@ impl AwbcInventory {
     }
 
     pub fn lower_entries(&mut self, plan: &RuntimePlan) {
-        self.lower_callable_executables(plan);
-        self.lower_flow_executables(plan);
-        for entry in &plan.entries {
+        let entries = plan.entries().iter().collect::<Vec<_>>();
+        self.lower_selected_entries(plan, &entries);
+    }
+
+    pub fn lower_selected_entries(&mut self, plan: &RuntimePlan, entries: &[&RuntimeEntrySpec]) {
+        self.lower_callable_executables(plan, entries);
+        self.lower_flow_executables(plan, entries);
+        for entry in entries {
             self.lower_entry(entry);
         }
     }
 
-    fn lower_callable_executables(&mut self, plan: &RuntimePlan) {
-        for executable in &plan.callable_executables {
+    fn lower_callable_executables(&mut self, plan: &RuntimePlan, entries: &[&RuntimeEntrySpec]) {
+        for executable in plan.callable_executables().iter().filter(|executable| {
+            entries.iter().any(|entry| match &entry.roles {
+                RuntimeEntryRoles::Stateful(roles) => {
+                    (roles.initializer.callable == executable.callable
+                        && roles.initializer.contract == executable.contract)
+                        || (roles.reducer.callable == executable.callable
+                            && roles.reducer.contract == executable.contract)
+                }
+                RuntimeEntryRoles::Agent(roles) => {
+                    roles.controller.callable == executable.callable
+                        && roles.controller.contract == executable.contract
+                }
+                RuntimeEntryRoles::None => false,
+            })
+        }) {
             let function = match &executable.code {
                 RuntimeCallableExecutableCode::PureHelper(helper) => self
                     .program
@@ -1080,8 +1047,19 @@ impl AwbcInventory {
         }
     }
 
-    fn lower_flow_executables(&mut self, plan: &RuntimePlan) {
-        for executable in &plan.flow_executables {
+    fn lower_flow_executables(&mut self, plan: &RuntimePlan, entries: &[&RuntimeEntrySpec]) {
+        for executable in plan.flow_executables().iter().filter(|executable| {
+            entries.iter().any(|entry| match &entry.roles {
+                RuntimeEntryRoles::Stateful(roles) => {
+                    executable.flow == roles.initial_flow.flow
+                        && executable.contract == roles.initial_flow.contract
+                }
+                RuntimeEntryRoles::Agent(roles) => {
+                    executable.controller.as_ref() == Some(&roles.controller)
+                }
+                RuntimeEntryRoles::None => false,
+            })
+        }) {
             let Some(function) = self.flow_function(&executable.flow) else {
                 self.diagnostic(AwbcLowerDiagnostic::error(
                     executable.flow.canonical_label(),
@@ -1178,14 +1156,6 @@ impl AwbcInventory {
 
     pub fn synthetic_empty_function(&mut self, name: &str) -> AwbcFunctionId {
         self.empty_function(name, AwbcFunctionKind::Synthetic, AwbcSafePointKind::Return)
-    }
-
-    pub fn source_open_function(&mut self, name: &str) -> AwbcFunctionId {
-        self.empty_function(
-            name,
-            AwbcFunctionKind::SourceOpen,
-            AwbcSafePointKind::CallableBoundary,
-        )
     }
 
     fn empty_function(
@@ -1377,7 +1347,7 @@ fn optional_string_constant(inventory: &mut AwbcInventory, value: Option<&str>) 
     }
 }
 
-fn line_cleanup(cleanup: &LineCleanupPolicy) -> AwbcLineCleanupPolicy {
+pub(crate) fn line_cleanup(cleanup: &LineCleanupPolicy) -> AwbcLineCleanupPolicy {
     AwbcLineCleanupPolicy {
         child_tasks: match cleanup.child_tasks {
             ChildTaskCleanup::CancelAndJoin => AwbcChildCleanup::CancelAndJoin,
@@ -1393,51 +1363,5 @@ fn line_cleanup(cleanup: &LineCleanupPolicy) -> AwbcLineCleanupPolicy {
             AudioCleanup::FadeRegistered => AwbcAudioCleanup::FadeRegistered,
             AudioCleanup::KeepRegistered => AwbcAudioCleanup::KeepRegistered,
         },
-    }
-}
-
-pub(crate) fn source_policy(policy: &SourcePolicy) -> AwbcSourcePolicy {
-    AwbcSourcePolicy {
-        backpressure: match &policy.backpressure {
-            BackpressurePolicy::LatestOnly => AwbcBackpressurePolicy::LatestOnly,
-            BackpressurePolicy::BlockingNotAllowed => AwbcBackpressurePolicy::BlockingNotAllowed,
-            BackpressurePolicy::BoundedQueue {
-                capacity,
-                on_overflow,
-            } => AwbcBackpressurePolicy::BoundedQueue {
-                capacity: table_index(*capacity),
-                overflow: match on_overflow {
-                    OverflowPolicy::DropOldest => AwbcOverflowPolicy::DropOldest,
-                    OverflowPolicy::DropNewest => AwbcOverflowPolicy::DropNewest,
-                    OverflowPolicy::Error => AwbcOverflowPolicy::Error,
-                    OverflowPolicy::Coalesce => AwbcOverflowPolicy::Coalesce,
-                },
-            },
-        },
-        replay: match policy.replay {
-            ReplayPolicy::Full => AwbcReplayPolicy::Full,
-            ReplayPolicy::HashOnly => AwbcReplayPolicy::HashOnly,
-            ReplayPolicy::Summary => AwbcReplayPolicy::Summary,
-            ReplayPolicy::EventOnly => AwbcReplayPolicy::EventOnly,
-            ReplayPolicy::None => AwbcReplayPolicy::None,
-        },
-        privacy: match policy.privacy {
-            PrivacyPolicy::Transient => AwbcPrivacyPolicy::Transient,
-            PrivacyPolicy::Redacted => AwbcPrivacyPolicy::Redacted,
-            PrivacyPolicy::Recordable => AwbcPrivacyPolicy::Recordable,
-            PrivacyPolicy::Private => AwbcPrivacyPolicy::Private,
-        },
-        max_queue: table_index(policy.max_queue),
-    }
-}
-
-pub(crate) fn source_handler_kind(handler: &SourceHandlerPlan) -> AwbcSourceEventKind {
-    match handler {
-        SourceHandlerPlan::Item { .. } => AwbcSourceEventKind::Item,
-        SourceHandlerPlan::Error { .. } => AwbcSourceEventKind::Error,
-        SourceHandlerPlan::Progress { .. } => AwbcSourceEventKind::Progress,
-        SourceHandlerPlan::Disconnected { .. } => AwbcSourceEventKind::Disconnected,
-        SourceHandlerPlan::PermissionRevoked { .. } => AwbcSourceEventKind::PermissionRevoked,
-        SourceHandlerPlan::End { .. } => AwbcSourceEventKind::End,
     }
 }

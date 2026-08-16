@@ -1,3 +1,5 @@
+use std::sync::Arc;
+
 use super::*;
 #[cfg(all(feature = "native-jit", not(target_arch = "wasm32")))]
 use arcweft_core::value::runtime_sequence_dense_u32;
@@ -5,15 +7,21 @@ use arcweft_core::{
     engine::{Engine, FlowExit, FlowFiberStatus},
     entry::RuntimeNominalTypeId,
     pattern::{RuntimeSemanticTypeId, RuntimeVariantIdentity},
-    plan::{FlowOp, FlowRuntimeId, RuntimeFlow, RuntimePlan},
+    plan::{
+        FlowRuntimeId, RuntimeCallArgumentSeed, RuntimeExprSeed, RuntimeExprSeedKind,
+        RuntimeFlowOpSeed, RuntimeFlowSeed, RuntimeLocalDeclarationSeed, RuntimeLocalSeedId,
+        RuntimePlan, RuntimePlanBuilder, RuntimePlanSequenceKind, RuntimePlanTypeProjection,
+        RuntimePlanTypeSeed, RuntimePureHelperOrigin, RuntimePureHelperSeed,
+    },
+    pure::{PureFunctionRequest, RuntimePureHelperRef},
     step::{RuntimeStepInput, RuntimeStepOptions},
 };
 use arcweft_core::{
     entry::RuntimeCallableId,
     plan::RuntimePureHelperId,
     value::{
-        RuntimeBinaryOp, RuntimeCallTarget, RuntimeExpr, RuntimeISizeValue, RuntimeSeq,
-        RuntimeUSizeValue,
+        RuntimeBinaryOp, RuntimeCallArgumentMode, RuntimeCallTarget, RuntimeISizeValue, RuntimeSeq,
+        RuntimeSignedIntWidth, RuntimeUSizeValue, RuntimeUnsignedIntWidth,
     },
 };
 
@@ -24,6 +32,379 @@ fn flow_id(value: &str) -> FlowRuntimeId {
 fn callable_target(value: &str) -> RuntimeCallTarget {
     RuntimeCallTarget::callable(
         RuntimeCallableId::try_new(value).expect("test callable identity is valid"),
+    )
+}
+
+struct AdmittedHelper {
+    request: PureFunctionRequest,
+}
+
+impl AdmittedHelper {
+    fn helper_ref(&self) -> RuntimePureHelperRef<'_> {
+        self.request
+            .helper_ref()
+            .expect("admitted helper is resolved through its plan-qualified request")
+    }
+
+    fn plan(&self) -> &Arc<RuntimePlan> {
+        self.request.plan()
+    }
+
+    fn from_plan(plan: Arc<RuntimePlan>, id: RuntimePureHelperId) -> Self {
+        let args = plan.pure_helpers()[id.0]
+            .input_types
+            .iter()
+            .copied()
+            .map(default_helper_input)
+            .collect::<Vec<_>>();
+        let request = PureFunctionRequest::try_new(plan, id, args)
+            .expect("admitted helper request has well-typed default inputs");
+        Self { request }
+    }
+}
+
+fn empty_runtime_plan() -> Arc<RuntimePlan> {
+    Arc::new(
+        RuntimePlanBuilder::new()
+            .finish()
+            .expect("empty adapter plan is sealed"),
+    )
+}
+
+fn empty_plan_accelerator(config: RuntimePureAcceleratorConfig) -> RuntimePureAccelerator {
+    let plan = empty_runtime_plan();
+    RuntimePureAccelerator::with_config(config, &plan)
+}
+
+fn empty_plan_accelerator_with_mode(mode: RuntimePureBackendMode) -> RuntimePureAccelerator {
+    let plan = empty_runtime_plan();
+    RuntimePureAccelerator::new(mode, &plan)
+}
+
+fn default_helper_input(input: RuntimePureInputType) -> RuntimeValue {
+    match input {
+        RuntimePureInputType::I8 => RuntimeValue::i8(0),
+        RuntimePureInputType::I16 => RuntimeValue::i16(0),
+        RuntimePureInputType::I32 => RuntimeValue::i32(0),
+        RuntimePureInputType::I64 => RuntimeValue::i64(0),
+        RuntimePureInputType::I128 => RuntimeValue::i128(0),
+        RuntimePureInputType::ISize => RuntimeValue::isize(0),
+        RuntimePureInputType::U8 => RuntimeValue::u8(0),
+        RuntimePureInputType::U16 => RuntimeValue::u16(0),
+        RuntimePureInputType::U32 => RuntimeValue::u32(0),
+        RuntimePureInputType::U64 => RuntimeValue::u64(0),
+        RuntimePureInputType::U128 => RuntimeValue::u128(0),
+        RuntimePureInputType::USize => RuntimeValue::usize(0),
+        RuntimePureInputType::F32 => RuntimeValue::f32(0.0),
+        RuntimePureInputType::F64 => RuntimeValue::f64(0.0),
+        RuntimePureInputType::Value => RuntimeValue::String(String::new()),
+    }
+}
+
+fn helper_type_identity(abi: RuntimePureInputType) -> RuntimeSemanticTypeId {
+    let marker = match abi {
+        RuntimePureInputType::I8 => 1,
+        RuntimePureInputType::I16 => 2,
+        RuntimePureInputType::I32 => 3,
+        RuntimePureInputType::I64 => 4,
+        RuntimePureInputType::I128 => 5,
+        RuntimePureInputType::ISize => 6,
+        RuntimePureInputType::U8 => 7,
+        RuntimePureInputType::U16 => 8,
+        RuntimePureInputType::U32 => 9,
+        RuntimePureInputType::U64 => 10,
+        RuntimePureInputType::U128 => 11,
+        RuntimePureInputType::USize => 12,
+        RuntimePureInputType::F32 => 13,
+        RuntimePureInputType::F64 => 14,
+        RuntimePureInputType::Value => 15,
+    };
+    RuntimeSemanticTypeId::from_bytes([marker; 32])
+}
+
+fn helper_type_seed(abi: RuntimePureInputType) -> RuntimePlanTypeSeed {
+    let projection = match abi {
+        RuntimePureInputType::I8 => RuntimePlanTypeProjection::Signed(RuntimeSignedIntWidth::I8),
+        RuntimePureInputType::I16 => RuntimePlanTypeProjection::Signed(RuntimeSignedIntWidth::I16),
+        RuntimePureInputType::I32 => RuntimePlanTypeProjection::Signed(RuntimeSignedIntWidth::I32),
+        RuntimePureInputType::I64 => RuntimePlanTypeProjection::Signed(RuntimeSignedIntWidth::I64),
+        RuntimePureInputType::I128 => {
+            RuntimePlanTypeProjection::Signed(RuntimeSignedIntWidth::I128)
+        }
+        RuntimePureInputType::ISize => {
+            RuntimePlanTypeProjection::Signed(RuntimeSignedIntWidth::ISize)
+        }
+        RuntimePureInputType::U8 => {
+            RuntimePlanTypeProjection::Unsigned(RuntimeUnsignedIntWidth::U8)
+        }
+        RuntimePureInputType::U16 => {
+            RuntimePlanTypeProjection::Unsigned(RuntimeUnsignedIntWidth::U16)
+        }
+        RuntimePureInputType::U32 => {
+            RuntimePlanTypeProjection::Unsigned(RuntimeUnsignedIntWidth::U32)
+        }
+        RuntimePureInputType::U64 => {
+            RuntimePlanTypeProjection::Unsigned(RuntimeUnsignedIntWidth::U64)
+        }
+        RuntimePureInputType::U128 => {
+            RuntimePlanTypeProjection::Unsigned(RuntimeUnsignedIntWidth::U128)
+        }
+        RuntimePureInputType::USize => {
+            RuntimePlanTypeProjection::Unsigned(RuntimeUnsignedIntWidth::USize)
+        }
+        RuntimePureInputType::F32 => RuntimePlanTypeProjection::F32,
+        RuntimePureInputType::F64 => RuntimePlanTypeProjection::F64,
+        RuntimePureInputType::Value => RuntimePlanTypeProjection::String,
+    };
+    RuntimePlanTypeSeed::new(helper_type_identity(abi), projection)
+}
+
+fn output_input_abi(abi: RuntimePureOutputType) -> RuntimePureInputType {
+    match abi {
+        RuntimePureOutputType::Bool | RuntimePureOutputType::Value => RuntimePureInputType::Value,
+        RuntimePureOutputType::I8 => RuntimePureInputType::I8,
+        RuntimePureOutputType::I16 => RuntimePureInputType::I16,
+        RuntimePureOutputType::I32 => RuntimePureInputType::I32,
+        RuntimePureOutputType::I64 => RuntimePureInputType::I64,
+        RuntimePureOutputType::I128 => RuntimePureInputType::I128,
+        RuntimePureOutputType::ISize => RuntimePureInputType::ISize,
+        RuntimePureOutputType::U8 => RuntimePureInputType::U8,
+        RuntimePureOutputType::U16 => RuntimePureInputType::U16,
+        RuntimePureOutputType::U32 => RuntimePureInputType::U32,
+        RuntimePureOutputType::U64 => RuntimePureInputType::U64,
+        RuntimePureOutputType::U128 => RuntimePureInputType::U128,
+        RuntimePureOutputType::USize => RuntimePureInputType::USize,
+        RuntimePureOutputType::F32 => RuntimePureInputType::F32,
+        RuntimePureOutputType::F64 => RuntimePureInputType::F64,
+    }
+}
+
+fn admit_helper(
+    name: &str,
+    input_abi: Vec<RuntimePureInputType>,
+    output_abi: RuntimePureOutputType,
+    scalar_eval_supported: bool,
+    origin: RuntimePureHelperOrigin,
+    body: impl FnOnce(&[RuntimeLocalSeedId], RuntimeSemanticTypeId) -> RuntimeExprSeed,
+) -> AdmittedHelper {
+    let output_input = output_input_abi(output_abi);
+    let mut type_seeds = input_abi
+        .iter()
+        .copied()
+        .map(helper_type_seed)
+        .collect::<Vec<_>>();
+    let output_seed = helper_type_seed(output_input);
+    if !type_seeds
+        .iter()
+        .any(|seed| seed.semantic_identity() == output_seed.semantic_identity())
+    {
+        type_seeds.push(output_seed);
+    }
+    type_seeds.push(RuntimePlanTypeSeed::new(
+        RuntimeSemanticTypeId::from_bytes([16; 32]),
+        RuntimePlanTypeProjection::Bool,
+    ));
+    let mut builder = RuntimePlanBuilder::new();
+    let input_types = input_abi
+        .iter()
+        .copied()
+        .map(helper_type_identity)
+        .collect::<Vec<_>>();
+    let admission = builder
+        .admit_semantic_batch(
+            type_seeds,
+            input_types
+                .iter()
+                .copied()
+                .map(RuntimeLocalDeclarationSeed::new),
+            [],
+            [],
+        )
+        .expect("test helper semantic inputs are admitted");
+    builder
+        .push_pure_helper_seed(RuntimePureHelperSeed {
+            name: name.to_owned(),
+            inputs: admission.local_ids().to_vec().into_boxed_slice(),
+            input_abi,
+            output_abi,
+            body: body(admission.local_ids(), helper_type_identity(output_input)),
+            scalar_eval_supported,
+            origin,
+        })
+        .expect("test helper is admitted");
+    let plan = Arc::new(builder.finish().expect("test helper plan is sealed"));
+    AdmittedHelper::from_plan(Arc::clone(&plan), plan.pure_helpers()[0].id)
+}
+
+fn local_expr(ty: RuntimeSemanticTypeId, local: RuntimeLocalSeedId) -> RuntimeExprSeed {
+    RuntimeExprSeed::new(ty, RuntimeExprSeedKind::Local(local))
+}
+
+fn value_expr(ty: RuntimeSemanticTypeId, value: RuntimeValue) -> RuntimeExprSeed {
+    RuntimeExprSeed::new(ty, RuntimeExprSeedKind::Value(value))
+}
+
+fn binary_expr(
+    ty: RuntimeSemanticTypeId,
+    lhs: RuntimeExprSeed,
+    op: RuntimeBinaryOp,
+    rhs: RuntimeExprSeed,
+) -> RuntimeExprSeed {
+    RuntimeExprSeed::new(
+        ty,
+        RuntimeExprSeedKind::Binary {
+            lhs: Box::new(lhs),
+            op,
+            rhs: Box::new(rhs),
+        },
+    )
+}
+
+fn mul_add_helper(
+    name: &str,
+    input_type: RuntimePureInputType,
+    output_type: RuntimePureOutputType,
+    constant: RuntimeValue,
+    origin: RuntimePureHelperOrigin,
+) -> AdmittedHelper {
+    let ty = helper_type_identity(input_type);
+    admit_helper(
+        name,
+        vec![input_type, input_type],
+        output_type,
+        true,
+        origin,
+        move |inputs, output_ty| {
+            binary_expr(
+                output_ty,
+                local_expr(ty, inputs[0].clone()),
+                RuntimeBinaryOp::Mul,
+                binary_expr(
+                    output_ty,
+                    local_expr(ty, inputs[1].clone()),
+                    RuntimeBinaryOp::Add,
+                    value_expr(output_ty, constant),
+                ),
+            )
+        },
+    )
+}
+
+fn add_helper(
+    name: &str,
+    input_type: RuntimePureInputType,
+    output_type: RuntimePureOutputType,
+) -> AdmittedHelper {
+    admit_add_helpers(&[(name, input_type, output_type)])
+        .pop()
+        .expect("one requested helper is admitted")
+}
+
+fn admit_add_helpers(
+    helpers: &[(&str, RuntimePureInputType, RuntimePureOutputType)],
+) -> Vec<AdmittedHelper> {
+    let mut type_seeds = vec![RuntimePlanTypeSeed::new(
+        RuntimeSemanticTypeId::from_bytes([16; 32]),
+        RuntimePlanTypeProjection::Bool,
+    )];
+    for (_, input_type, output_type) in helpers {
+        for input in [*input_type, output_input_abi(*output_type)] {
+            let seed = helper_type_seed(input);
+            if !type_seeds
+                .iter()
+                .any(|existing| existing.semantic_identity() == seed.semantic_identity())
+            {
+                type_seeds.push(seed);
+            }
+        }
+    }
+    let mut builder = RuntimePlanBuilder::new();
+    let admission = builder
+        .admit_semantic_batch(
+            type_seeds,
+            helpers.iter().flat_map(|(_, input_type, _)| {
+                std::iter::repeat_n(
+                    RuntimeLocalDeclarationSeed::new(helper_type_identity(*input_type)),
+                    2,
+                )
+            }),
+            [],
+            [],
+        )
+        .expect("test helper semantic inputs are admitted");
+    let mut next_local = 0;
+    let ids = helpers
+        .iter()
+        .map(|(name, input_type, output_type)| {
+            let inputs = &admission.local_ids()[next_local..next_local + 2];
+            next_local += 2;
+            let input_ty = helper_type_identity(*input_type);
+            builder
+                .push_pure_helper_seed(RuntimePureHelperSeed {
+                    name: (*name).to_owned(),
+                    inputs: inputs.to_vec().into_boxed_slice(),
+                    input_abi: vec![*input_type; 2],
+                    output_abi: *output_type,
+                    body: binary_expr(
+                        helper_type_identity(output_input_abi(*output_type)),
+                        local_expr(input_ty, inputs[0].clone()),
+                        RuntimeBinaryOp::Add,
+                        local_expr(input_ty, inputs[1].clone()),
+                    ),
+                    scalar_eval_supported: true,
+                    origin: RuntimePureHelperOrigin::Annotated,
+                })
+                .expect("test helper is admitted")
+        })
+        .collect::<Vec<_>>();
+    let plan = Arc::new(builder.finish().expect("test helper plan is sealed"));
+    ids.into_iter()
+        .enumerate()
+        .map(|(index, _)| AdmittedHelper::from_plan(Arc::clone(&plan), RuntimePureHelperId(index)))
+        .collect()
+}
+
+fn conditional_div_helper(
+    name: &str,
+    input_type: RuntimePureInputType,
+    output_type: RuntimePureOutputType,
+    threshold: RuntimeValue,
+    one: RuntimeValue,
+    zero: RuntimeValue,
+) -> AdmittedHelper {
+    let ty = helper_type_identity(input_type);
+    let bool_ty = RuntimeSemanticTypeId::from_bytes([16; 32]);
+    admit_helper(
+        name,
+        vec![input_type, input_type],
+        output_type,
+        true,
+        RuntimePureHelperOrigin::Annotated,
+        move |inputs, output_ty| {
+            RuntimeExprSeed::new(
+                output_ty,
+                RuntimeExprSeedKind::If {
+                    condition: Box::new(binary_expr(
+                        bool_ty,
+                        local_expr(ty, inputs[0].clone()),
+                        RuntimeBinaryOp::Ge,
+                        value_expr(ty, threshold),
+                    )),
+                    then_expr: Box::new(binary_expr(
+                        output_ty,
+                        local_expr(ty, inputs[0].clone()),
+                        RuntimeBinaryOp::Div,
+                        binary_expr(
+                            output_ty,
+                            local_expr(ty, inputs[1].clone()),
+                            RuntimeBinaryOp::Add,
+                            value_expr(output_ty, one),
+                        ),
+                    )),
+                    else_expr: Box::new(value_expr(output_ty, zero)),
+                },
+            )
+        },
     )
 }
 
@@ -50,8 +431,7 @@ fn data_format_value(format: DataFormat) -> RuntimeValue {
 
 #[test]
 fn data_external_call_encodes_and_decodes_json_with_format_enum() {
-    let mut accelerator =
-        RuntimePureAccelerator::with_config(RuntimePureAcceleratorConfig::default(), &[]);
+    let mut accelerator = empty_plan_accelerator(RuntimePureAcceleratorConfig::default());
     let value = RuntimeValue::Seq(RuntimeSeq::Values(vec![RuntimeValue::String(
         "hello".to_owned(),
     )]));
@@ -79,8 +459,7 @@ fn data_external_call_encodes_and_decodes_json_with_format_enum() {
 
 #[test]
 fn data_external_call_rejects_wrong_data_format_owner_and_ordinal() {
-    let mut accelerator =
-        RuntimePureAccelerator::with_config(RuntimePureAcceleratorConfig::default(), &[]);
+    let mut accelerator = empty_plan_accelerator(RuntimePureAcceleratorConfig::default());
     let value = RuntimeValue::String("hello".to_owned());
     let wrong_owner = RuntimeValue::Variant {
         owner: RuntimeVariantIdentity::Nominal {
@@ -117,8 +496,7 @@ fn data_external_call_rejects_wrong_data_format_owner_and_ordinal() {
 
 #[test]
 fn data_external_call_round_trips_dynamic_avro() {
-    let mut accelerator =
-        RuntimePureAccelerator::with_config(RuntimePureAcceleratorConfig::default(), &[]);
+    let mut accelerator = empty_plan_accelerator(RuntimePureAcceleratorConfig::default());
     let value = RuntimeValue::try_record(vec![(
         "speaker".to_owned(),
         RuntimeValue::String("alice".to_owned()),
@@ -144,8 +522,7 @@ fn data_external_call_round_trips_dynamic_avro() {
 #[test]
 fn data_external_call_encodes_shape_required_formats_and_rejects_dynamic_decode() {
     for variant in ["Csv", "ArrowIpc", "Parquet", "ArcweftBinary"] {
-        let mut accelerator =
-            RuntimePureAccelerator::with_config(RuntimePureAcceleratorConfig::default(), &[]);
+        let mut accelerator = empty_plan_accelerator(RuntimePureAcceleratorConfig::default());
         let value = RuntimeValue::Seq(RuntimeSeq::Values(vec![
             RuntimeValue::try_record(vec![
                 ("line".to_owned(), RuntimeValue::String("hello".to_owned())),
@@ -185,8 +562,7 @@ fn data_external_call_encodes_shape_required_formats_and_rejects_dynamic_decode(
 #[test]
 fn data_external_call_decodes_shape_required_formats_with_explicit_shape() {
     for variant in ["Csv", "ArrowIpc", "Parquet", "ArcweftBinary"] {
-        let mut accelerator =
-            RuntimePureAccelerator::with_config(RuntimePureAcceleratorConfig::default(), &[]);
+        let mut accelerator = empty_plan_accelerator(RuntimePureAcceleratorConfig::default());
         let value = RuntimeValue::Seq(RuntimeSeq::Values(vec![
             RuntimeValue::try_record(vec![
                 ("line".to_owned(), RuntimeValue::String("hello".to_owned())),
@@ -221,7 +597,7 @@ fn data_external_call_decodes_shape_required_formats_with_explicit_shape() {
 }
 
 #[test]
-fn runtime_flow_external_inference_call_sequence_uses_adapter_boundary() {
+fn external_inference_call_sequence_uses_adapter_boundary() {
     let image = DenseTensorF32::new(
         vec![1, 1, 4, 4],
         vec![
@@ -236,90 +612,67 @@ fn runtime_flow_external_inference_call_sequence_uses_adapter_boundary() {
     let bias = DenseTensorF32::new(vec![2], vec![0.0, 0.0]).expect("bias tensor shape is valid");
     let conv_target = callable_target("conv2d.valid_f32");
     assert!(matches!(&conv_target, RuntimeCallTarget::Callable(_)));
-    let plan = RuntimePlan::new(
-        vec![RuntimeFlow {
-            id: flow_id("flow.infer"),
-            ops: vec![FlowOp::ReturnExpr(RuntimeExpr::Let {
-                name: "conv".to_owned(),
-                expr: Box::new(RuntimeExpr::Call {
-                    callee: conv_target,
-                    args: vec![
-                        RuntimeExpr::Value(RuntimeValue::tensor_f32(image)),
-                        RuntimeExpr::Value(RuntimeValue::tensor_f32(kernel)),
-                        RuntimeExpr::Value(RuntimeValue::usize(1)),
-                        RuntimeExpr::Value(RuntimeValue::usize(1)),
-                    ],
-                }),
-                body: Box::new(RuntimeExpr::Let {
-                    name: "pooled".to_owned(),
-                    expr: Box::new(RuntimeExpr::Call {
-                        callee: callable_target("infer.max_pool2d_f32"),
-                        args: vec![
-                            RuntimeExpr::Call {
-                                callee: callable_target("infer.relu_f32"),
-                                args: vec![RuntimeExpr::Local("conv".to_owned())],
-                            },
-                            RuntimeExpr::Value(RuntimeValue::usize(2)),
-                            RuntimeExpr::Value(RuntimeValue::usize(2)),
-                            RuntimeExpr::Value(RuntimeValue::usize(1)),
-                            RuntimeExpr::Value(RuntimeValue::usize(1)),
-                        ],
-                    }),
-                    body: Box::new(RuntimeExpr::Let {
-                        name: "logits".to_owned(),
-                        expr: Box::new(RuntimeExpr::Call {
-                            callee: callable_target("infer.matmul_bias_add_f32"),
-                            args: vec![
-                                RuntimeExpr::Call {
-                                    callee: callable_target("infer.flatten_outer_f32"),
-                                    args: vec![RuntimeExpr::Local("pooled".to_owned())],
-                                },
-                                RuntimeExpr::Value(RuntimeValue::tensor_f32(dense)),
-                                RuntimeExpr::Value(RuntimeValue::tensor_f32(bias)),
-                            ],
-                        }),
-                        body: Box::new(RuntimeExpr::Call {
-                            callee: callable_target("infer.argmax_last_dim_f32"),
-                            args: vec![RuntimeExpr::Local("logits".to_owned())],
-                        }),
-                    }),
-                }),
-            })],
-        }],
-        Vec::new(),
-    )
-    .expect("runtime plan is valid");
-    let mut engine =
-        Engine::for_flow(plan, &flow_id("flow.infer")).expect("test flow starts explicitly");
-    let mut accelerator = RuntimePureAccelerator::new(RuntimePureBackendMode::Auto, &[]);
+    let mut accelerator = empty_plan_accelerator_with_mode(RuntimePureBackendMode::Auto);
+    let conv = accelerator
+        .call_external(
+            &conv_target,
+            &[
+                RuntimeValue::tensor_f32(image),
+                RuntimeValue::tensor_f32(kernel),
+                RuntimeValue::usize(1),
+                RuntimeValue::usize(1),
+            ],
+        )
+        .expect("conv2d call is handled")
+        .expect("conv2d call succeeds");
+    let relu = accelerator
+        .call_external(&callable_target("infer.relu_f32"), &[conv])
+        .expect("relu call is handled")
+        .expect("relu call succeeds");
+    let pooled = accelerator
+        .call_external(
+            &callable_target("infer.max_pool2d_f32"),
+            &[
+                relu,
+                RuntimeValue::usize(2),
+                RuntimeValue::usize(2),
+                RuntimeValue::usize(1),
+                RuntimeValue::usize(1),
+            ],
+        )
+        .expect("max-pool call is handled")
+        .expect("max-pool call succeeds");
+    let flattened = accelerator
+        .call_external(&callable_target("infer.flatten_outer_f32"), &[pooled])
+        .expect("flatten call is handled")
+        .expect("flatten call succeeds");
+    let logits = accelerator
+        .call_external(
+            &callable_target("infer.matmul_bias_add_f32"),
+            &[
+                flattened,
+                RuntimeValue::tensor_f32(dense),
+                RuntimeValue::tensor_f32(bias),
+            ],
+        )
+        .expect("matmul-bias call is handled")
+        .expect("matmul-bias call succeeds");
+    let classified = accelerator
+        .call_external(&callable_target("infer.argmax_last_dim_f32"), &[logits])
+        .expect("argmax call is handled")
+        .expect("argmax call succeeds");
 
-    let result = engine.step_with_pure_backend(
-        RuntimeStepInput::default(),
-        RuntimeStepOptions::default(),
-        &mut accelerator,
-    );
-
-    assert_eq!(result.stats.pure.math_calls, 6);
+    assert_eq!(accelerator.stats().math_calls, 6);
     assert!(matches!(
-        result.fiber_status,
-        FlowFiberStatus::Done(FlowExit::Return(summary)) if summary == "seq/usize/1"
-    ));
-    assert!(matches!(
-        RuntimeExternalCallBackend::call_external(
-            &mut accelerator,
-            &callable_target("infer.argmax_last_dim_f32"),
-            &[RuntimeValue::tensor_f32(
-                DenseTensorF32::new(vec![1, 2], vec![0.0, 1.0]).unwrap()
-            )]
-        ),
-        Some(Ok(RuntimeValue::Seq(RuntimeSeq::Dense(DenseSeq::USize(values)))))
+        classified,
+        RuntimeValue::Seq(RuntimeSeq::Dense(DenseSeq::USize(values)))
             if values.as_slice()[0].get() == 1
     ));
 }
 
 #[cfg(feature = "math-glam")]
 #[test]
-fn runtime_flow_math_intrinsic_uses_adapter_math_accelerator() {
+fn math_intrinsic_uses_adapter_math_accelerator() {
     let lhs = DenseMatrixF32::new(
         4,
         4,
@@ -336,63 +689,25 @@ fn runtime_flow_math_intrinsic_uses_adapter_math_accelerator() {
         ],
     )
     .expect("matrix shape is valid");
-    let plan = RuntimePlan::new(
-        vec![RuntimeFlow {
-            id: flow_id("flow.math"),
-            ops: vec![FlowOp::ReturnExpr(RuntimeExpr::Call {
-                callee: RuntimeCallTarget::intrinsic(RuntimeIntrinsic::MathMatmulF32),
-                args: vec![
-                    RuntimeExpr::Value(RuntimeValue::matrix_f32(lhs)),
-                    RuntimeExpr::Value(RuntimeValue::matrix_f32(rhs)),
-                ],
-            })],
-        }],
-        Vec::new(),
-    )
-    .expect("runtime plan is valid");
-    let mut engine =
-        Engine::for_flow(plan, &flow_id("flow.math")).expect("test flow starts explicitly");
-    let mut accelerator = RuntimePureAccelerator::new(RuntimePureBackendMode::Auto, &[]);
+    let mut accelerator = empty_plan_accelerator_with_mode(RuntimePureBackendMode::Auto);
+    let result = RuntimeMathCallBackend::call_math_matmul_f32(&mut accelerator, &lhs, &rhs)
+        .expect("f32 matrix multiplication succeeds");
 
-    let result = engine.step_with_pure_backend(
-        RuntimeStepInput::default(),
-        RuntimeStepOptions::default(),
-        &mut accelerator,
-    );
-
-    assert_eq!(result.stats.pure.math_calls, 1);
-    assert_eq!(result.stats.pure.math_accelerated_calls, 1);
+    assert_eq!(result.rows(), 4);
+    assert_eq!(result.cols(), 4);
+    assert_eq!(accelerator.stats().math_calls, 1);
+    assert_eq!(accelerator.stats().math_accelerated_calls, 1);
     assert_eq!(
         accelerator.math_stats().last_backend,
         Some(math::RuntimeMathBackend::Glam)
     );
-    assert!(matches!(
-        result.fiber_status,
-        FlowFiberStatus::Done(FlowExit::Return(_))
-    ));
 }
 
 #[cfg(feature = "math-ndarray")]
 #[test]
-fn runtime_flow_f64_math_intrinsic_uses_width_preserving_adapter_backend() {
+fn f64_math_intrinsic_uses_width_preserving_adapter_backend() {
     let lhs = DenseMatrixF64::new(2, 2, vec![1.5, 2.0, 3.25, 4.5]).expect("matrix shape is valid");
     let rhs = DenseMatrixF64::new(2, 2, vec![5.0, 6.5, 7.0, 8.25]).expect("matrix shape is valid");
-    let plan = RuntimePlan::new(
-        vec![RuntimeFlow {
-            id: flow_id("flow.math_f64"),
-            ops: vec![FlowOp::ReturnExpr(RuntimeExpr::Call {
-                callee: RuntimeCallTarget::intrinsic(RuntimeIntrinsic::MathMatmulF64),
-                args: vec![
-                    RuntimeExpr::Value(RuntimeValue::matrix_f64(lhs)),
-                    RuntimeExpr::Value(RuntimeValue::matrix_f64(rhs)),
-                ],
-            })],
-        }],
-        Vec::new(),
-    )
-    .expect("runtime plan is valid");
-    let mut engine =
-        Engine::for_flow(plan, &flow_id("flow.math_f64")).expect("test flow starts explicitly");
     let mut accelerator = RuntimePureAccelerator::with_config(
         RuntimePureAcceleratorConfig {
             math: math::RuntimeMathAcceleratorConfig {
@@ -401,29 +716,24 @@ fn runtime_flow_f64_math_intrinsic_uses_width_preserving_adapter_backend() {
             },
             ..RuntimePureAcceleratorConfig::default()
         },
-        &[],
+        &empty_runtime_plan(),
     );
 
-    let result = engine.step_with_pure_backend(
-        RuntimeStepInput::default(),
-        RuntimeStepOptions::default(),
-        &mut accelerator,
-    );
+    let result = RuntimeMathCallBackend::call_math_matmul_f64(&mut accelerator, &lhs, &rhs)
+        .expect("f64 matrix multiplication succeeds");
 
-    assert_eq!(result.stats.pure.math_calls, 1);
-    assert_eq!(result.stats.pure.math_accelerated_calls, 1);
+    assert_eq!(result.rows(), 2);
+    assert_eq!(result.cols(), 2);
+    assert_eq!(accelerator.stats().math_calls, 1);
+    assert_eq!(accelerator.stats().math_accelerated_calls, 1);
     assert_eq!(
-        result.stats.pure.arg_bytes_borrowed,
+        accelerator.stats().arg_bytes_borrowed,
         8 * std::mem::size_of::<f64>()
     );
     assert_eq!(
         accelerator.math_stats().last_backend,
         Some(math::RuntimeMathBackend::Ndarray)
     );
-    assert!(matches!(
-        result.fiber_status,
-        FlowFiberStatus::Done(FlowExit::Return(summary)) if summary == "matrix/f64/2x2"
-    ));
 }
 
 #[cfg(all(feature = "math-wgpu", not(target_arch = "wasm32")))]
@@ -439,7 +749,7 @@ fn runtime_wgpu_math_cache_reuses_prepared_matmul_buffers_across_counter_reset()
             },
             ..RuntimePureAcceleratorConfig::default()
         },
-        &[],
+        &empty_runtime_plan(),
     );
 
     let Ok(first) = RuntimeMathCallBackend::call_math_matmul_f32(&mut accelerator, &lhs, &rhs)
@@ -492,7 +802,7 @@ fn runtime_wgpu_math_cache_updates_prepared_matmul_inputs_for_same_shape() {
             },
             ..RuntimePureAcceleratorConfig::default()
         },
-        &[],
+        &empty_runtime_plan(),
     );
 
     if RuntimeMathCallBackend::call_math_matmul_f32(&mut accelerator, &lhs, &rhs).is_err() {
@@ -528,7 +838,7 @@ fn runtime_external_infer_matmul_bias_add_reuses_prepared_wgpu_buffers() {
             },
             ..RuntimePureAcceleratorConfig::default()
         },
-        &[],
+        &empty_runtime_plan(),
     );
     let target = callable_target("infer.matmul_bias_add_f32");
 
@@ -598,7 +908,7 @@ fn runtime_auto_wgpu_matmul_uses_prepared_cache_when_threshold_selects_gpu() {
             },
             ..RuntimePureAcceleratorConfig::default()
         },
-        &[],
+        &empty_runtime_plan(),
     );
 
     let Ok(first) = RuntimeMathCallBackend::call_math_matmul_f32(&mut accelerator, &lhs, &rhs)
@@ -643,7 +953,7 @@ fn runtime_auto_wgpu_matmul_reuses_capacity_cache_for_smaller_shape() {
             },
             ..RuntimePureAcceleratorConfig::default()
         },
-        &[],
+        &empty_runtime_plan(),
     );
 
     if RuntimeMathCallBackend::call_math_matmul_f32(&mut accelerator, &lhs, &rhs).is_err() {
@@ -686,7 +996,7 @@ fn runtime_wgpu_math_cache_reuses_prepared_tensor_add_buffers() {
             },
             ..RuntimePureAcceleratorConfig::default()
         },
-        &[],
+        &empty_runtime_plan(),
     );
 
     let Ok(first) = RuntimeMathCallBackend::call_math_tensor_add_f32(&mut accelerator, &lhs, &rhs)
@@ -723,7 +1033,7 @@ fn runtime_auto_wgpu_matrix_add_uses_prepared_cache_when_threshold_selects_gpu()
             },
             ..RuntimePureAcceleratorConfig::default()
         },
-        &[],
+        &empty_runtime_plan(),
     );
 
     let Ok(first) = RuntimeMathCallBackend::call_math_matrix_add_f32(&mut accelerator, &lhs, &rhs)
@@ -765,7 +1075,7 @@ fn runtime_auto_wgpu_matrix_add_reuses_capacity_cache_for_smaller_shape() {
             },
             ..RuntimePureAcceleratorConfig::default()
         },
-        &[],
+        &empty_runtime_plan(),
     );
 
     if RuntimeMathCallBackend::call_math_matrix_add_f32(&mut accelerator, &lhs, &rhs).is_err() {
@@ -813,7 +1123,7 @@ fn runtime_wgpu_math_cache_updates_prepared_matrix_add_inputs_for_same_shape() {
             },
             ..RuntimePureAcceleratorConfig::default()
         },
-        &[],
+        &empty_runtime_plan(),
     );
 
     if RuntimeMathCallBackend::call_math_matrix_add_f32(&mut accelerator, &lhs, &rhs).is_err() {
@@ -851,7 +1161,7 @@ fn runtime_auto_wgpu_tensor_add_uses_prepared_cache_when_threshold_selects_gpu()
             },
             ..RuntimePureAcceleratorConfig::default()
         },
-        &[],
+        &empty_runtime_plan(),
     );
 
     let Ok(first) = RuntimeMathCallBackend::call_math_tensor_add_f32(&mut accelerator, &lhs, &rhs)
@@ -893,7 +1203,7 @@ fn runtime_auto_wgpu_tensor_add_reuses_capacity_cache_for_smaller_len() {
             },
             ..RuntimePureAcceleratorConfig::default()
         },
-        &[],
+        &empty_runtime_plan(),
     );
 
     if RuntimeMathCallBackend::call_math_tensor_add_f32(&mut accelerator, &lhs, &rhs).is_err() {
@@ -941,7 +1251,7 @@ fn runtime_wgpu_math_cache_updates_prepared_tensor_add_inputs_for_same_shape() {
             },
             ..RuntimePureAcceleratorConfig::default()
         },
-        &[],
+        &empty_runtime_plan(),
     );
 
     if RuntimeMathCallBackend::call_math_tensor_add_f32(&mut accelerator, &lhs, &rhs).is_err() {
@@ -968,29 +1278,17 @@ fn runtime_wgpu_math_cache_updates_prepared_tensor_add_inputs_for_same_shape() {
 
 #[test]
 fn auto_accelerator_uses_aot_for_cold_scalar_calls_without_value_vec_allocation() {
-    let helper = RuntimePureHelper {
-        id: RuntimePureHelperId(0),
-        name: "score".to_owned(),
-        input_names: vec!["base".to_owned(), "bonus".to_owned()],
-        input_types: vec![RuntimePureInputType::I64, RuntimePureInputType::I64],
-        output_type: RuntimePureOutputType::I64,
-        expr: RuntimeExpr::Binary {
-            lhs: Box::new(RuntimeExpr::Local("base".to_owned())),
-            op: RuntimeBinaryOp::Mul,
-            rhs: Box::new(RuntimeExpr::Binary {
-                lhs: Box::new(RuntimeExpr::Local("bonus".to_owned())),
-                op: RuntimeBinaryOp::Add,
-                rhs: Box::new(RuntimeExpr::Value(RuntimeValue::i64(2))),
-            }),
-        },
-        scalar_eval_supported: true,
-        origin: RuntimePureHelperOrigin::Annotated,
-    };
-    let mut accelerator =
-        RuntimePureAccelerator::new(RuntimePureBackendMode::Auto, std::slice::from_ref(&helper));
+    let helper = mul_add_helper(
+        "score",
+        RuntimePureInputType::I64,
+        RuntimePureOutputType::I64,
+        RuntimeValue::i64(2),
+        RuntimePureHelperOrigin::Annotated,
+    );
+    let mut accelerator = RuntimePureAccelerator::new(RuntimePureBackendMode::Auto, helper.plan());
 
     let value = accelerator
-        .call_i64(&helper, RuntimeI64Args::new([3, 4, 0, 0], 2))
+        .call_i64(helper.helper_ref(), RuntimeI64Args::new([3, 4, 0, 0], 2))
         .expect("accelerated call succeeds");
 
     assert_eq!(value, Some(18));
@@ -1014,35 +1312,27 @@ fn auto_accelerator_uses_aot_for_cold_scalar_calls_without_value_vec_allocation(
 
 #[test]
 fn aot_scalar_preserves_i32_and_f32_without_vm_fallback() {
-    let i32_helper = RuntimePureHelper {
-        id: RuntimePureHelperId(0),
-        name: "i32_score".to_owned(),
-        input_names: vec!["base".to_owned(), "bonus".to_owned()],
-        input_types: vec![RuntimePureInputType::I32, RuntimePureInputType::I32],
-        output_type: RuntimePureOutputType::I32,
-        expr: RuntimeExpr::Binary {
-            lhs: Box::new(RuntimeExpr::Local("base".to_owned())),
-            op: RuntimeBinaryOp::Add,
-            rhs: Box::new(RuntimeExpr::Local("bonus".to_owned())),
-        },
-        scalar_eval_supported: true,
-        origin: RuntimePureHelperOrigin::Annotated,
+    let i32_helper = add_helper(
+        "i32_score",
+        RuntimePureInputType::I32,
+        RuntimePureOutputType::I32,
+    );
+    let f32_helper = mul_add_helper(
+        "f32_score",
+        RuntimePureInputType::F32,
+        RuntimePureOutputType::F32,
+        RuntimeValue::f32(0.0),
+        RuntimePureHelperOrigin::Annotated,
+    );
+    let config = RuntimePureAcceleratorConfig {
+        backend: RuntimePureBackendMode::Aot,
+        workers: RuntimePureWorkerCount::Fixed(1),
+        batch_min_len: 1024,
+        emit_object_artifacts: true,
+        ..RuntimePureAcceleratorConfig::default()
     };
-    let f32_helper = RuntimePureHelper {
-        id: RuntimePureHelperId(1),
-        name: "f32_score".to_owned(),
-        input_names: vec!["base".to_owned(), "scale".to_owned()],
-        input_types: vec![RuntimePureInputType::F32, RuntimePureInputType::F32],
-        output_type: RuntimePureOutputType::F32,
-        expr: RuntimeExpr::Binary {
-            lhs: Box::new(RuntimeExpr::Local("base".to_owned())),
-            op: RuntimeBinaryOp::Mul,
-            rhs: Box::new(RuntimeExpr::Local("scale".to_owned())),
-        },
-        scalar_eval_supported: true,
-        origin: RuntimePureHelperOrigin::Annotated,
-    };
-    let mut accelerator = RuntimePureAccelerator::with_config(
+    let mut i32_accelerator = RuntimePureAccelerator::with_config(config, i32_helper.plan());
+    let mut f32_accelerator = RuntimePureAccelerator::with_config(
         RuntimePureAcceleratorConfig {
             backend: RuntimePureBackendMode::Aot,
             workers: RuntimePureWorkerCount::Fixed(1),
@@ -1050,66 +1340,77 @@ fn aot_scalar_preserves_i32_and_f32_without_vm_fallback() {
             emit_object_artifacts: true,
             ..RuntimePureAcceleratorConfig::default()
         },
-        &[i32_helper.clone(), f32_helper.clone()],
+        f32_helper.plan(),
     );
 
-    let i32_value = accelerator
-        .call_i32_slice(&i32_helper, &[7, 9])
+    let i32_value = i32_accelerator
+        .call_i32_slice(i32_helper.helper_ref(), &[7, 9])
         .expect("i32 AOT scalar succeeds");
-    let f32_value = accelerator
-        .call_f32_slice(&f32_helper, &[3.5, 2.0])
+    let f32_value = f32_accelerator
+        .call_f32_slice(f32_helper.helper_ref(), &[3.5, 2.0])
         .expect("f32 AOT scalar succeeds");
     let mut i32_out = [0; 3];
-    accelerator
-        .call_i32_flat_batch(&i32_helper, &[1, 2, 3, 4, 5, 6], 2, &mut i32_out)
+    i32_accelerator
+        .call_i32_flat_batch(
+            i32_helper.helper_ref(),
+            &[1, 2, 3, 4, 5, 6],
+            2,
+            &mut i32_out,
+        )
         .expect("i32 AOT flat batch succeeds");
-    let i32_sum = accelerator
-        .call_i32_flat_batch_sum(&i32_helper, &[1, 2, 3, 4, 5, 6], 2, 3)
+    let i32_sum = i32_accelerator
+        .call_i32_flat_batch_sum(i32_helper.helper_ref(), &[1, 2, 3, 4, 5, 6], 2, 3)
         .expect("i32 AOT flat batch sum succeeds");
 
     assert_eq!(i32_value, Some(16));
     assert_eq!(f32_value, Some(7.0));
     assert_eq!(i32_out, [3, 7, 11]);
     assert_eq!(i32_sum, 21);
-    assert_eq!(accelerator.stats().aot_calls, 8);
-    assert_eq!(accelerator.stats().vm_calls, 0);
-    assert_eq!(accelerator.stats().fallbacks, 0);
-    assert_eq!(accelerator.summary().aot, 2);
+    assert_eq!(
+        i32_accelerator.stats().aot_calls + f32_accelerator.stats().aot_calls,
+        8
+    );
+    assert_eq!(
+        i32_accelerator.stats().vm_calls + f32_accelerator.stats().vm_calls,
+        0
+    );
+    assert_eq!(
+        i32_accelerator.stats().fallbacks + f32_accelerator.stats().fallbacks,
+        0
+    );
+    assert_eq!(
+        i32_accelerator.summary().aot + f32_accelerator.summary().aot,
+        2
+    );
     #[cfg(all(feature = "native-jit", not(target_arch = "wasm32")))]
     {
-        let compile = accelerator.compile_stats();
-        assert_eq!(compile.object_attempts, 2);
-        assert_eq!(compile.object_successes, 2);
-        assert_eq!(compile.object_failures, 0);
-        assert!(compile.object_bytes > 0);
+        let i32_compile = i32_accelerator.compile_stats();
+        let f32_compile = f32_accelerator.compile_stats();
+        assert_eq!(i32_compile.object_attempts + f32_compile.object_attempts, 2);
+        assert_eq!(
+            i32_compile.object_successes + f32_compile.object_successes,
+            2
+        );
+        assert_eq!(i32_compile.object_failures + f32_compile.object_failures, 0);
+        assert!(i32_compile.object_bytes + f32_compile.object_bytes > 0);
     }
     #[cfg(not(all(feature = "native-jit", not(target_arch = "wasm32"))))]
     {
-        assert_eq!(accelerator.compile_stats().object_attempts, 0);
+        assert_eq!(i32_accelerator.compile_stats().object_attempts, 0);
+        assert_eq!(f32_accelerator.compile_stats().object_attempts, 0);
     }
 }
 
 #[cfg(all(feature = "native-jit", not(target_arch = "wasm32")))]
 #[test]
 fn explicit_jit_uses_native_i16_for_slice_and_flat_batch() {
-    let helper = RuntimePureHelper {
-        id: RuntimePureHelperId(0),
-        name: "i16_score".to_owned(),
-        input_names: vec!["base".to_owned(), "bonus".to_owned()],
-        input_types: vec![RuntimePureInputType::I16, RuntimePureInputType::I16],
-        output_type: RuntimePureOutputType::I16,
-        expr: RuntimeExpr::Binary {
-            lhs: Box::new(RuntimeExpr::Local("base".to_owned())),
-            op: RuntimeBinaryOp::Mul,
-            rhs: Box::new(RuntimeExpr::Binary {
-                lhs: Box::new(RuntimeExpr::Local("bonus".to_owned())),
-                op: RuntimeBinaryOp::Add,
-                rhs: Box::new(RuntimeExpr::Value(RuntimeValue::i16(2))),
-            }),
-        },
-        scalar_eval_supported: true,
-        origin: RuntimePureHelperOrigin::Annotated,
-    };
+    let helper = mul_add_helper(
+        "i16_score",
+        RuntimePureInputType::I16,
+        RuntimePureOutputType::I16,
+        RuntimeValue::i16(2),
+        RuntimePureHelperOrigin::Annotated,
+    );
     let mut accelerator = RuntimePureAccelerator::with_config(
         RuntimePureAcceleratorConfig {
             backend: RuntimePureBackendMode::Jit,
@@ -1117,17 +1418,17 @@ fn explicit_jit_uses_native_i16_for_slice_and_flat_batch() {
             batch_min_len: 1024,
             ..RuntimePureAcceleratorConfig::default()
         },
-        std::slice::from_ref(&helper),
+        helper.plan(),
     );
     let value = accelerator
-        .call_i16_slice(&helper, &[30, 4])
+        .call_i16_slice(helper.helper_ref(), &[30, 4])
         .expect("native i16 JIT slice call succeeds");
     let mut out = [0; 3];
     accelerator
-        .call_i16_flat_batch(&helper, &[30, 4, -20, 1, 70, 1], 2, &mut out)
+        .call_i16_flat_batch(helper.helper_ref(), &[30, 4, -20, 1, 70, 1], 2, &mut out)
         .expect("native i16 JIT flat batch succeeds");
     let sum = accelerator
-        .call_i16_flat_batch_sum(&helper, &[30, 4, -20, 1, 70, 1], 2, 3)
+        .call_i16_flat_batch_sum(helper.helper_ref(), &[30, 4, -20, 1, 70, 1], 2, 3)
         .expect("native i16 JIT flat batch sum succeeds");
 
     assert_eq!(value, Some(180));
@@ -1145,24 +1446,13 @@ fn explicit_jit_uses_native_i16_for_slice_and_flat_batch() {
 #[cfg(all(feature = "native-jit", not(target_arch = "wasm32")))]
 #[test]
 fn explicit_jit_uses_native_i32_for_slice_and_flat_batch() {
-    let helper = RuntimePureHelper {
-        id: RuntimePureHelperId(0),
-        name: "i32_score_jit".to_owned(),
-        input_names: vec!["base".to_owned(), "bonus".to_owned()],
-        input_types: vec![RuntimePureInputType::I32, RuntimePureInputType::I32],
-        output_type: RuntimePureOutputType::I32,
-        expr: RuntimeExpr::Binary {
-            lhs: Box::new(RuntimeExpr::Local("base".to_owned())),
-            op: RuntimeBinaryOp::Mul,
-            rhs: Box::new(RuntimeExpr::Binary {
-                lhs: Box::new(RuntimeExpr::Local("bonus".to_owned())),
-                op: RuntimeBinaryOp::Add,
-                rhs: Box::new(RuntimeExpr::Value(RuntimeValue::i32(2))),
-            }),
-        },
-        scalar_eval_supported: true,
-        origin: RuntimePureHelperOrigin::Annotated,
-    };
+    let helper = mul_add_helper(
+        "i32_score_jit",
+        RuntimePureInputType::I32,
+        RuntimePureOutputType::I32,
+        RuntimeValue::i32(2),
+        RuntimePureHelperOrigin::Annotated,
+    );
     let mut accelerator = RuntimePureAccelerator::with_config(
         RuntimePureAcceleratorConfig {
             backend: RuntimePureBackendMode::Jit,
@@ -1170,18 +1460,18 @@ fn explicit_jit_uses_native_i32_for_slice_and_flat_batch() {
             batch_min_len: 1024,
             ..RuntimePureAcceleratorConfig::default()
         },
-        std::slice::from_ref(&helper),
+        helper.plan(),
     );
 
     let value = accelerator
-        .call_i32_slice(&helper, &[3, 4])
+        .call_i32_slice(helper.helper_ref(), &[3, 4])
         .expect("native i32 JIT slice call succeeds");
     let mut out = [0; 3];
     accelerator
-        .call_i32_flat_batch(&helper, &[3, 4, 2, 99, 7, 1], 2, &mut out)
+        .call_i32_flat_batch(helper.helper_ref(), &[3, 4, 2, 99, 7, 1], 2, &mut out)
         .expect("native i32 JIT flat batch succeeds");
     let sum = accelerator
-        .call_i32_flat_batch_sum(&helper, &[3, 4, 2, 99, 7, 1], 2, 3)
+        .call_i32_flat_batch_sum(helper.helper_ref(), &[3, 4, 2, 99, 7, 1], 2, 3)
         .expect("native i32 JIT flat batch sum succeeds");
 
     assert_eq!(value, Some(18));
@@ -1196,32 +1486,14 @@ fn explicit_jit_uses_native_i32_for_slice_and_flat_batch() {
 #[cfg(all(feature = "native-jit", not(target_arch = "wasm32")))]
 #[test]
 fn explicit_jit_uses_native_u32_for_slice_and_flat_batch() {
-    let helper = RuntimePureHelper {
-        id: RuntimePureHelperId(0),
-        name: "u32_score_jit".to_owned(),
-        input_names: vec!["base".to_owned(), "divisor".to_owned()],
-        input_types: vec![RuntimePureInputType::U32, RuntimePureInputType::U32],
-        output_type: RuntimePureOutputType::U32,
-        expr: RuntimeExpr::If {
-            condition: Box::new(RuntimeExpr::Binary {
-                lhs: Box::new(RuntimeExpr::Local("base".to_owned())),
-                op: RuntimeBinaryOp::Ge,
-                rhs: Box::new(RuntimeExpr::Value(RuntimeValue::u32(u32::MAX - 4))),
-            }),
-            then_expr: Box::new(RuntimeExpr::Binary {
-                lhs: Box::new(RuntimeExpr::Local("base".to_owned())),
-                op: RuntimeBinaryOp::Div,
-                rhs: Box::new(RuntimeExpr::Binary {
-                    lhs: Box::new(RuntimeExpr::Local("divisor".to_owned())),
-                    op: RuntimeBinaryOp::Add,
-                    rhs: Box::new(RuntimeExpr::Value(RuntimeValue::u32(1))),
-                }),
-            }),
-            else_expr: Box::new(RuntimeExpr::Value(RuntimeValue::u32(0))),
-        },
-        scalar_eval_supported: true,
-        origin: RuntimePureHelperOrigin::Annotated,
-    };
+    let helper = conditional_div_helper(
+        "u32_score_jit",
+        RuntimePureInputType::U32,
+        RuntimePureOutputType::U32,
+        RuntimeValue::u32(u32::MAX - 4),
+        RuntimeValue::u32(1),
+        RuntimeValue::u32(0),
+    );
     let mut accelerator = RuntimePureAccelerator::with_config(
         RuntimePureAcceleratorConfig {
             backend: RuntimePureBackendMode::Jit,
@@ -1229,18 +1501,28 @@ fn explicit_jit_uses_native_u32_for_slice_and_flat_batch() {
             batch_min_len: 1024,
             ..RuntimePureAcceleratorConfig::default()
         },
-        std::slice::from_ref(&helper),
+        helper.plan(),
     );
 
     let value = accelerator
-        .call_u32_slice(&helper, &[u32::MAX - 1, 1])
+        .call_u32_slice(helper.helper_ref(), &[u32::MAX - 1, 1])
         .expect("native u32 JIT slice call succeeds");
     let mut out = [0; 3];
     accelerator
-        .call_u32_flat_batch(&helper, &[u32::MAX - 1, 1, 3, 99, u32::MAX, 4], 2, &mut out)
+        .call_u32_flat_batch(
+            helper.helper_ref(),
+            &[u32::MAX - 1, 1, 3, 99, u32::MAX, 4],
+            2,
+            &mut out,
+        )
         .expect("native u32 JIT flat batch succeeds");
     let sum = accelerator
-        .call_u32_flat_batch_sum(&helper, &[u32::MAX - 1, 1, 3, 99, u32::MAX, 4], 2, 3)
+        .call_u32_flat_batch_sum(
+            helper.helper_ref(),
+            &[u32::MAX - 1, 1, 3, 99, u32::MAX, 4],
+            2,
+            3,
+        )
         .expect("native u32 JIT flat batch sum succeeds");
 
     assert_eq!(value, Some((u32::MAX - 1) / 2));
@@ -1255,32 +1537,14 @@ fn explicit_jit_uses_native_u32_for_slice_and_flat_batch() {
 #[cfg(all(feature = "native-jit", not(target_arch = "wasm32")))]
 #[test]
 fn explicit_jit_uses_native_u64_for_slice_and_flat_batch() {
-    let helper = RuntimePureHelper {
-        id: RuntimePureHelperId(0),
-        name: "u64_score_jit".to_owned(),
-        input_names: vec!["base".to_owned(), "divisor".to_owned()],
-        input_types: vec![RuntimePureInputType::U64, RuntimePureInputType::U64],
-        output_type: RuntimePureOutputType::U64,
-        expr: RuntimeExpr::If {
-            condition: Box::new(RuntimeExpr::Binary {
-                lhs: Box::new(RuntimeExpr::Local("base".to_owned())),
-                op: RuntimeBinaryOp::Ge,
-                rhs: Box::new(RuntimeExpr::Value(RuntimeValue::u64(5))),
-            }),
-            then_expr: Box::new(RuntimeExpr::Binary {
-                lhs: Box::new(RuntimeExpr::Local("base".to_owned())),
-                op: RuntimeBinaryOp::Div,
-                rhs: Box::new(RuntimeExpr::Binary {
-                    lhs: Box::new(RuntimeExpr::Local("divisor".to_owned())),
-                    op: RuntimeBinaryOp::Add,
-                    rhs: Box::new(RuntimeExpr::Value(RuntimeValue::u64(1))),
-                }),
-            }),
-            else_expr: Box::new(RuntimeExpr::Value(RuntimeValue::u64(0))),
-        },
-        scalar_eval_supported: true,
-        origin: RuntimePureHelperOrigin::Annotated,
-    };
+    let helper = conditional_div_helper(
+        "u64_score_jit",
+        RuntimePureInputType::U64,
+        RuntimePureOutputType::U64,
+        RuntimeValue::u64(5),
+        RuntimeValue::u64(1),
+        RuntimeValue::u64(0),
+    );
     let mut accelerator = RuntimePureAccelerator::with_config(
         RuntimePureAcceleratorConfig {
             backend: RuntimePureBackendMode::Jit,
@@ -1288,18 +1552,18 @@ fn explicit_jit_uses_native_u64_for_slice_and_flat_batch() {
             batch_min_len: 1024,
             ..RuntimePureAcceleratorConfig::default()
         },
-        std::slice::from_ref(&helper),
+        helper.plan(),
     );
 
     let value = accelerator
-        .call_u64_slice(&helper, &[8, 1])
+        .call_u64_slice(helper.helper_ref(), &[8, 1])
         .expect("native u64 JIT slice call succeeds");
     let mut out = [0; 3];
     accelerator
-        .call_u64_flat_batch(&helper, &[8, 1, 3, 99, 10, 4], 2, &mut out)
+        .call_u64_flat_batch(helper.helper_ref(), &[8, 1, 3, 99, 10, 4], 2, &mut out)
         .expect("native u64 JIT flat batch succeeds");
     let sum = accelerator
-        .call_u64_flat_batch_sum(&helper, &[8, 1, 3, 99, 10, 4], 2, 3)
+        .call_u64_flat_batch_sum(helper.helper_ref(), &[8, 1, 3, 99, 10, 4], 2, 3)
         .expect("native u64 JIT flat batch sum succeeds");
 
     assert_eq!(value, Some(4));
@@ -1314,24 +1578,13 @@ fn explicit_jit_uses_native_u64_for_slice_and_flat_batch() {
 #[cfg(all(feature = "native-jit", not(target_arch = "wasm32")))]
 #[test]
 fn explicit_jit_uses_native_f32_for_slice_and_flat_batch() {
-    let helper = RuntimePureHelper {
-        id: RuntimePureHelperId(0),
-        name: "f32_score_jit".to_owned(),
-        input_names: vec!["base".to_owned(), "scale".to_owned()],
-        input_types: vec![RuntimePureInputType::F32, RuntimePureInputType::F32],
-        output_type: RuntimePureOutputType::F32,
-        expr: RuntimeExpr::Binary {
-            lhs: Box::new(RuntimeExpr::Local("base".to_owned())),
-            op: RuntimeBinaryOp::Mul,
-            rhs: Box::new(RuntimeExpr::Binary {
-                lhs: Box::new(RuntimeExpr::Local("scale".to_owned())),
-                op: RuntimeBinaryOp::Add,
-                rhs: Box::new(RuntimeExpr::Value(RuntimeValue::F32(2.0))),
-            }),
-        },
-        scalar_eval_supported: true,
-        origin: RuntimePureHelperOrigin::Annotated,
-    };
+    let helper = mul_add_helper(
+        "f32_score_jit",
+        RuntimePureInputType::F32,
+        RuntimePureOutputType::F32,
+        RuntimeValue::f32(2.0),
+        RuntimePureHelperOrigin::Annotated,
+    );
     let mut accelerator = RuntimePureAccelerator::with_config(
         RuntimePureAcceleratorConfig {
             backend: RuntimePureBackendMode::Jit,
@@ -1339,15 +1592,20 @@ fn explicit_jit_uses_native_f32_for_slice_and_flat_batch() {
             batch_min_len: 1024,
             ..RuntimePureAcceleratorConfig::default()
         },
-        std::slice::from_ref(&helper),
+        helper.plan(),
     );
 
     let value = accelerator
-        .call_f32_slice(&helper, &[3.0, 4.0])
+        .call_f32_slice(helper.helper_ref(), &[3.0, 4.0])
         .expect("native f32 JIT slice call succeeds");
     let mut out = [0.0; 3];
     accelerator
-        .call_f32_flat_batch(&helper, &[3.0, 4.0, 2.0, 99.0, 7.0, 1.0], 2, &mut out)
+        .call_f32_flat_batch(
+            helper.helper_ref(),
+            &[3.0, 4.0, 2.0, 99.0, 7.0, 1.0],
+            2,
+            &mut out,
+        )
         .expect("native f32 JIT flat batch succeeds");
 
     assert_eq!(value.map(f32::to_bits), Some(18.0f32.to_bits()));
@@ -1372,24 +1630,13 @@ fn explicit_jit_uses_native_f32_for_slice_and_flat_batch() {
 #[cfg(all(feature = "native-jit", not(target_arch = "wasm32")))]
 #[test]
 fn explicit_jit_uses_native_f64_for_slice_and_flat_batch() {
-    let helper = RuntimePureHelper {
-        id: RuntimePureHelperId(0),
-        name: "f64_score_jit".to_owned(),
-        input_names: vec!["base".to_owned(), "scale".to_owned()],
-        input_types: vec![RuntimePureInputType::F64, RuntimePureInputType::F64],
-        output_type: RuntimePureOutputType::F64,
-        expr: RuntimeExpr::Binary {
-            lhs: Box::new(RuntimeExpr::Local("base".to_owned())),
-            op: RuntimeBinaryOp::Mul,
-            rhs: Box::new(RuntimeExpr::Binary {
-                lhs: Box::new(RuntimeExpr::Local("scale".to_owned())),
-                op: RuntimeBinaryOp::Add,
-                rhs: Box::new(RuntimeExpr::Value(RuntimeValue::F64(2.0))),
-            }),
-        },
-        scalar_eval_supported: true,
-        origin: RuntimePureHelperOrigin::Annotated,
-    };
+    let helper = mul_add_helper(
+        "f64_score_jit",
+        RuntimePureInputType::F64,
+        RuntimePureOutputType::F64,
+        RuntimeValue::f64(2.0),
+        RuntimePureHelperOrigin::Annotated,
+    );
     let mut accelerator = RuntimePureAccelerator::with_config(
         RuntimePureAcceleratorConfig {
             backend: RuntimePureBackendMode::Jit,
@@ -1397,15 +1644,20 @@ fn explicit_jit_uses_native_f64_for_slice_and_flat_batch() {
             batch_min_len: 1024,
             ..RuntimePureAcceleratorConfig::default()
         },
-        std::slice::from_ref(&helper),
+        helper.plan(),
     );
 
     let value = accelerator
-        .call_f64_slice(&helper, &[3.0, 4.0])
+        .call_f64_slice(helper.helper_ref(), &[3.0, 4.0])
         .expect("native f64 JIT slice call succeeds");
     let mut out = [0.0; 3];
     accelerator
-        .call_f64_flat_batch(&helper, &[3.0, 4.0, 2.0, 99.0, 7.0, 1.0], 2, &mut out)
+        .call_f64_flat_batch(
+            helper.helper_ref(),
+            &[3.0, 4.0, 2.0, 99.0, 7.0, 1.0],
+            2,
+            &mut out,
+        )
         .expect("native f64 JIT flat batch succeeds");
 
     assert_eq!(value.map(f64::to_bits), Some(18.0f64.to_bits()));
@@ -1430,20 +1682,11 @@ fn explicit_jit_uses_native_f64_for_slice_and_flat_batch() {
 #[cfg(all(feature = "native-jit", not(target_arch = "wasm32")))]
 #[test]
 fn auto_promotes_large_i32_flat_batch_to_native_jit() {
-    let helper = RuntimePureHelper {
-        id: RuntimePureHelperId(0),
-        name: "i32_score_auto_jit".to_owned(),
-        input_names: vec!["base".to_owned(), "bonus".to_owned()],
-        input_types: vec![RuntimePureInputType::I32, RuntimePureInputType::I32],
-        output_type: RuntimePureOutputType::I32,
-        expr: RuntimeExpr::Binary {
-            lhs: Box::new(RuntimeExpr::Local("base".to_owned())),
-            op: RuntimeBinaryOp::Add,
-            rhs: Box::new(RuntimeExpr::Local("bonus".to_owned())),
-        },
-        scalar_eval_supported: true,
-        origin: RuntimePureHelperOrigin::Annotated,
-    };
+    let helper = add_helper(
+        "i32_score_auto_jit",
+        RuntimePureInputType::I32,
+        RuntimePureOutputType::I32,
+    );
     let mut accelerator = RuntimePureAccelerator::with_config(
         RuntimePureAcceleratorConfig {
             backend: RuntimePureBackendMode::Auto,
@@ -1451,13 +1694,13 @@ fn auto_promotes_large_i32_flat_batch_to_native_jit() {
             batch_min_len: 1024,
             ..RuntimePureAcceleratorConfig::default()
         },
-        std::slice::from_ref(&helper),
+        helper.plan(),
     );
     let flat_inputs = (0..128).flat_map(|value| [value, 1]).collect::<Vec<i32>>();
     let mut out = [0; 128];
 
     accelerator
-        .call_i32_flat_batch(&helper, &flat_inputs, 2, &mut out)
+        .call_i32_flat_batch(helper.helper_ref(), &flat_inputs, 2, &mut out)
         .expect("auto promotes large i32 flat batch");
 
     assert_eq!(out[0], 1);
@@ -1471,20 +1714,11 @@ fn auto_promotes_large_i32_flat_batch_to_native_jit() {
 #[cfg(all(feature = "native-jit", not(target_arch = "wasm32")))]
 #[test]
 fn auto_promotes_large_u32_flat_batch_to_native_jit() {
-    let helper = RuntimePureHelper {
-        id: RuntimePureHelperId(0),
-        name: "u32_score_auto_jit".to_owned(),
-        input_names: vec!["base".to_owned(), "bonus".to_owned()],
-        input_types: vec![RuntimePureInputType::U32, RuntimePureInputType::U32],
-        output_type: RuntimePureOutputType::U32,
-        expr: RuntimeExpr::Binary {
-            lhs: Box::new(RuntimeExpr::Local("base".to_owned())),
-            op: RuntimeBinaryOp::Add,
-            rhs: Box::new(RuntimeExpr::Local("bonus".to_owned())),
-        },
-        scalar_eval_supported: true,
-        origin: RuntimePureHelperOrigin::Annotated,
-    };
+    let helper = add_helper(
+        "u32_score_auto_jit",
+        RuntimePureInputType::U32,
+        RuntimePureOutputType::U32,
+    );
     let mut accelerator = RuntimePureAccelerator::with_config(
         RuntimePureAcceleratorConfig {
             backend: RuntimePureBackendMode::Auto,
@@ -1492,13 +1726,13 @@ fn auto_promotes_large_u32_flat_batch_to_native_jit() {
             batch_min_len: 1024,
             ..RuntimePureAcceleratorConfig::default()
         },
-        std::slice::from_ref(&helper),
+        helper.plan(),
     );
     let flat_inputs = (0..128).flat_map(|value| [value, 1]).collect::<Vec<u32>>();
     let mut out = [0; 128];
 
     accelerator
-        .call_u32_flat_batch(&helper, &flat_inputs, 2, &mut out)
+        .call_u32_flat_batch(helper.helper_ref(), &flat_inputs, 2, &mut out)
         .expect("auto promotes large u32 flat batch");
 
     assert_eq!(out[0], 1);
@@ -1515,7 +1749,7 @@ fn exact_int_add_helper(
     input_type: RuntimePureInputType,
     output_type: RuntimePureOutputType,
     one: RuntimeValue,
-) -> RuntimePureHelper {
+) -> AdmittedHelper {
     scalar_add_helper(name, input_type, output_type, one)
 }
 
@@ -1525,25 +1759,28 @@ fn scalar_add_helper(
     input_type: RuntimePureInputType,
     output_type: RuntimePureOutputType,
     one: RuntimeValue,
-) -> RuntimePureHelper {
-    RuntimePureHelper {
-        id: RuntimePureHelperId(0),
-        name: name.to_owned(),
-        input_names: vec!["base".to_owned(), "bonus".to_owned()],
-        input_types: vec![input_type, input_type],
+) -> AdmittedHelper {
+    let ty = helper_type_identity(input_type);
+    admit_helper(
+        name,
+        vec![input_type, input_type],
         output_type,
-        expr: RuntimeExpr::Binary {
-            lhs: Box::new(RuntimeExpr::Local("base".to_owned())),
-            op: RuntimeBinaryOp::Add,
-            rhs: Box::new(RuntimeExpr::Binary {
-                lhs: Box::new(RuntimeExpr::Local("bonus".to_owned())),
-                op: RuntimeBinaryOp::Add,
-                rhs: Box::new(RuntimeExpr::Value(one)),
-            }),
+        true,
+        RuntimePureHelperOrigin::Annotated,
+        move |inputs, output_ty| {
+            binary_expr(
+                output_ty,
+                local_expr(ty, inputs[0].clone()),
+                RuntimeBinaryOp::Add,
+                binary_expr(
+                    output_ty,
+                    local_expr(ty, inputs[1].clone()),
+                    RuntimeBinaryOp::Add,
+                    value_expr(output_ty, one),
+                ),
+            )
         },
-        scalar_eval_supported: true,
-        origin: RuntimePureHelperOrigin::Annotated,
-    }
+    )
 }
 
 #[cfg(all(feature = "native-jit", not(target_arch = "wasm32")))]
@@ -1557,11 +1794,10 @@ where
         T::OUTPUT_TYPE,
         one.into_runtime_value(),
     );
-    let mut accelerator =
-        RuntimePureAccelerator::new(RuntimePureBackendMode::Jit, std::slice::from_ref(&helper));
+    let mut accelerator = RuntimePureAccelerator::new(RuntimePureBackendMode::Jit, helper.plan());
 
     let value = accelerator
-        .call_exact_int_slice::<T>(&helper, args)
+        .call_exact_int_slice::<T>(helper.helper_ref(), args)
         .expect("generic exact-int call succeeds");
 
     assert_eq!(value, Some(expected));
@@ -1606,12 +1842,11 @@ fn auto_promotes_hot_scalar_exact_int_calls_to_native_jit() {
         RuntimePureOutputType::I128,
         RuntimeValue::i128(1),
     );
-    let mut accelerator =
-        RuntimePureAccelerator::new(RuntimePureBackendMode::Auto, std::slice::from_ref(&helper));
+    let mut accelerator = RuntimePureAccelerator::new(RuntimePureBackendMode::Auto, helper.plan());
 
     for value in 0..160 {
         let actual = accelerator
-            .call_exact_int_slice::<i128>(&helper, &[value, 11])
+            .call_exact_int_slice::<i128>(helper.helper_ref(), &[value, 11])
             .expect("hot scalar i128 call succeeds");
         assert_eq!(actual, Some(value + 12));
     }
@@ -1634,13 +1869,12 @@ fn auto_promotes_hot_scalar_float_calls_to_native_jit() {
         RuntimePureOutputType::F32,
         RuntimeValue::f32(1.0),
     );
-    let mut accelerator =
-        RuntimePureAccelerator::new(RuntimePureBackendMode::Auto, std::slice::from_ref(&helper));
+    let mut accelerator = RuntimePureAccelerator::new(RuntimePureBackendMode::Auto, helper.plan());
 
     for value in 0_u16..160 {
         let base = f32::from(value);
         let actual = accelerator
-            .call_f32_slice(&helper, &[base, 11.0])
+            .call_f32_slice(helper.helper_ref(), &[base, 11.0])
             .expect("hot scalar f32 call succeeds");
         assert_eq!(actual, Some(base + 12.0));
     }
@@ -1663,12 +1897,11 @@ fn auto_promotes_small_integer_flat_batches_to_native_jit() {
         RuntimePureOutputType::I8,
         RuntimeValue::i8(1),
     );
-    let mut accelerator =
-        RuntimePureAccelerator::new(RuntimePureBackendMode::Auto, std::slice::from_ref(&helper));
+    let mut accelerator = RuntimePureAccelerator::new(RuntimePureBackendMode::Auto, helper.plan());
     let flat_inputs = (0..64).flat_map(|value| [value, 1]).collect::<Vec<i8>>();
     let mut out = [0; 64];
     accelerator
-        .call_i8_flat_batch(&helper, &flat_inputs, 2, &mut out)
+        .call_i8_flat_batch(helper.helper_ref(), &flat_inputs, 2, &mut out)
         .expect("auto promotes large i8 flat batch");
     assert_eq!(out[0], 2);
     assert_eq!(out[63], 65);
@@ -1683,12 +1916,11 @@ fn auto_promotes_small_integer_flat_batches_to_native_jit() {
         RuntimePureOutputType::I16,
         RuntimeValue::i16(1),
     );
-    let mut accelerator =
-        RuntimePureAccelerator::new(RuntimePureBackendMode::Auto, std::slice::from_ref(&helper));
+    let mut accelerator = RuntimePureAccelerator::new(RuntimePureBackendMode::Auto, helper.plan());
     let flat_inputs = (0..128).flat_map(|value| [value, 1]).collect::<Vec<i16>>();
     let mut out = [0; 128];
     accelerator
-        .call_i16_flat_batch(&helper, &flat_inputs, 2, &mut out)
+        .call_i16_flat_batch(helper.helper_ref(), &flat_inputs, 2, &mut out)
         .expect("auto promotes large i16 flat batch");
     assert_eq!(out[0], 2);
     assert_eq!(out[127], 129);
@@ -1703,12 +1935,11 @@ fn auto_promotes_small_integer_flat_batches_to_native_jit() {
         RuntimePureOutputType::U8,
         RuntimeValue::u8(1),
     );
-    let mut accelerator =
-        RuntimePureAccelerator::new(RuntimePureBackendMode::Auto, std::slice::from_ref(&helper));
+    let mut accelerator = RuntimePureAccelerator::new(RuntimePureBackendMode::Auto, helper.plan());
     let flat_inputs = (0..128).flat_map(|value| [value, 1]).collect::<Vec<u8>>();
     let mut out = [0; 128];
     accelerator
-        .call_u8_flat_batch(&helper, &flat_inputs, 2, &mut out)
+        .call_u8_flat_batch(helper.helper_ref(), &flat_inputs, 2, &mut out)
         .expect("auto promotes large u8 flat batch");
     assert_eq!(out[0], 2);
     assert_eq!(out[127], 129);
@@ -1723,12 +1954,11 @@ fn auto_promotes_small_integer_flat_batches_to_native_jit() {
         RuntimePureOutputType::U16,
         RuntimeValue::u16(1),
     );
-    let mut accelerator =
-        RuntimePureAccelerator::new(RuntimePureBackendMode::Auto, std::slice::from_ref(&helper));
+    let mut accelerator = RuntimePureAccelerator::new(RuntimePureBackendMode::Auto, helper.plan());
     let flat_inputs = (0..128).flat_map(|value| [value, 1]).collect::<Vec<u16>>();
     let mut out = [0; 128];
     accelerator
-        .call_u16_flat_batch(&helper, &flat_inputs, 2, &mut out)
+        .call_u16_flat_batch(helper.helper_ref(), &flat_inputs, 2, &mut out)
         .expect("auto promotes large u16 flat batch");
     assert_eq!(out[0], 2);
     assert_eq!(out[127], 129);
@@ -1747,17 +1977,16 @@ fn auto_promotes_target_size_integer_flat_batches_to_native_jit() {
         RuntimePureOutputType::ISize,
         RuntimeValue::isize(1),
     );
-    let mut accelerator =
-        RuntimePureAccelerator::new(RuntimePureBackendMode::Auto, std::slice::from_ref(&helper));
+    let mut accelerator = RuntimePureAccelerator::new(RuntimePureBackendMode::Auto, helper.plan());
     let flat_inputs = (0..128_i64)
         .flat_map(|value| [RuntimeISizeValue::new(value), RuntimeISizeValue::new(1)])
         .collect::<Vec<_>>();
     let mut out = [RuntimeISizeValue::new(0); 128];
     accelerator
-        .call_exact_int_flat_batch(&helper, &flat_inputs, 2, &mut out)
+        .call_exact_int_flat_batch(helper.helper_ref(), &flat_inputs, 2, &mut out)
         .expect("auto promotes large isize flat batch");
     let sum = accelerator
-        .call_exact_int_flat_batch_sum(&helper, &flat_inputs, 2, 128)
+        .call_exact_int_flat_batch_sum(helper.helper_ref(), &flat_inputs, 2, 128)
         .expect("native isize flat batch sum succeeds");
     assert_eq!(out[0], RuntimeISizeValue::new(2));
     assert_eq!(out[127], RuntimeISizeValue::new(129));
@@ -1775,17 +2004,16 @@ fn auto_promotes_target_size_integer_flat_batches_to_native_jit() {
         RuntimePureOutputType::USize,
         RuntimeValue::usize(1),
     );
-    let mut accelerator =
-        RuntimePureAccelerator::new(RuntimePureBackendMode::Auto, std::slice::from_ref(&helper));
+    let mut accelerator = RuntimePureAccelerator::new(RuntimePureBackendMode::Auto, helper.plan());
     let flat_inputs = (0..128_u64)
         .flat_map(|value| [RuntimeUSizeValue::new(value), RuntimeUSizeValue::new(1)])
         .collect::<Vec<_>>();
     let mut out = [RuntimeUSizeValue::new(0); 128];
     accelerator
-        .call_exact_int_flat_batch(&helper, &flat_inputs, 2, &mut out)
+        .call_exact_int_flat_batch(helper.helper_ref(), &flat_inputs, 2, &mut out)
         .expect("auto promotes large usize flat batch");
     let sum = accelerator
-        .call_exact_int_flat_batch_sum(&helper, &flat_inputs, 2, 128)
+        .call_exact_int_flat_batch_sum(helper.helper_ref(), &flat_inputs, 2, 128)
         .expect("native usize flat batch sum succeeds");
     assert_eq!(out[0], RuntimeUSizeValue::new(2));
     assert_eq!(out[127], RuntimeUSizeValue::new(129));
@@ -1807,14 +2035,13 @@ fn auto_promotes_wide_integer_flat_batches_to_native_jit() {
         RuntimePureOutputType::I128,
         RuntimeValue::i128(1),
     );
-    let mut accelerator =
-        RuntimePureAccelerator::new(RuntimePureBackendMode::Auto, std::slice::from_ref(&helper));
+    let mut accelerator = RuntimePureAccelerator::new(RuntimePureBackendMode::Auto, helper.plan());
     let flat_inputs = (0..128)
         .flat_map(|value| [i128::from(value), 1])
         .collect::<Vec<i128>>();
     let mut out = [0; 128];
     accelerator
-        .call_i128_flat_batch(&helper, &flat_inputs, 2, &mut out)
+        .call_i128_flat_batch(helper.helper_ref(), &flat_inputs, 2, &mut out)
         .expect("auto promotes large i128 flat batch");
     assert_eq!(out[0], 2);
     assert_eq!(out[127], 129);
@@ -1829,14 +2056,13 @@ fn auto_promotes_wide_integer_flat_batches_to_native_jit() {
         RuntimePureOutputType::U128,
         RuntimeValue::u128(1),
     );
-    let mut accelerator =
-        RuntimePureAccelerator::new(RuntimePureBackendMode::Auto, std::slice::from_ref(&helper));
+    let mut accelerator = RuntimePureAccelerator::new(RuntimePureBackendMode::Auto, helper.plan());
     let flat_inputs = (0..128)
         .flat_map(|value: u16| [u128::from(value), 1])
         .collect::<Vec<u128>>();
     let mut out = [0; 128];
     accelerator
-        .call_u128_flat_batch(&helper, &flat_inputs, 2, &mut out)
+        .call_u128_flat_batch(helper.helper_ref(), &flat_inputs, 2, &mut out)
         .expect("auto promotes large u128 flat batch");
     assert_eq!(out[0], 2);
     assert_eq!(out[127], 129);
@@ -1847,47 +2073,90 @@ fn auto_promotes_wide_integer_flat_batches_to_native_jit() {
 }
 
 #[cfg(all(feature = "native-jit", not(target_arch = "wasm32")))]
+fn dense_u32_map_sum_plan() -> Arc<RuntimePlan> {
+    let u32_ty = helper_type_identity(RuntimePureInputType::U32);
+    let u32_seq_ty = RuntimeSemanticTypeId::from_bytes([17; 32]);
+    let mut builder = RuntimePlanBuilder::new();
+    let admission = builder
+        .admit_semantic_batch(
+            [
+                helper_type_seed(RuntimePureInputType::U32),
+                RuntimePlanTypeSeed::new(
+                    u32_seq_ty,
+                    RuntimePlanTypeProjection::Sequence {
+                        kind: RuntimePlanSequenceKind::Seq,
+                        item: u32_ty,
+                    },
+                ),
+            ],
+            (0..3).map(|_| RuntimeLocalDeclarationSeed::new(u32_ty)),
+            [],
+            [],
+        )
+        .expect("u32 flow semantic inputs are admitted");
+    let locals = admission.local_ids();
+    let helper = builder
+        .push_pure_helper_seed(RuntimePureHelperSeed {
+            name: "u32_flow_score".to_owned(),
+            inputs: vec![locals[1].clone(), locals[2].clone()].into_boxed_slice(),
+            input_abi: vec![RuntimePureInputType::U32, RuntimePureInputType::U32],
+            output_abi: RuntimePureOutputType::U32,
+            body: binary_expr(
+                u32_ty,
+                local_expr(u32_ty, locals[1].clone()),
+                RuntimeBinaryOp::Add,
+                local_expr(u32_ty, locals[2].clone()),
+            ),
+            scalar_eval_supported: true,
+            origin: RuntimePureHelperOrigin::Annotated,
+        })
+        .expect("u32 flow helper is admitted");
+    builder
+        .push_flow_seed(RuntimeFlowSeed::new(
+            flow_id("flow.u32"),
+            [],
+            vec![RuntimeFlowOpSeed::ReturnExpr(RuntimeExprSeed::new(
+                u32_ty,
+                RuntimeExprSeedKind::Sum {
+                    source: Box::new(RuntimeExprSeed::new(
+                        u32_seq_ty,
+                        RuntimeExprSeedKind::Map {
+                            source: Box::new(value_expr(
+                                u32_seq_ty,
+                                runtime_sequence_dense_u32((0..128).collect()),
+                            )),
+                            param: locals[0].clone(),
+                            body: Box::new(RuntimeExprSeed::new(
+                                u32_ty,
+                                RuntimeExprSeedKind::PureCall {
+                                    helper,
+                                    args: Box::new([
+                                        RuntimeCallArgumentSeed::new(
+                                            local_expr(u32_ty, locals[0].clone()),
+                                            RuntimeCallArgumentMode::Value,
+                                        ),
+                                        RuntimeCallArgumentSeed::new(
+                                            value_expr(u32_ty, RuntimeValue::u32(1)),
+                                            RuntimeCallArgumentMode::Value,
+                                        ),
+                                    ]),
+                                },
+                            )),
+                        },
+                    )),
+                },
+            ))],
+        ))
+        .expect("u32 flow is admitted");
+    Arc::new(builder.finish().expect("u32 flow plan is sealed"))
+}
+
+#[cfg(all(feature = "native-jit", not(target_arch = "wasm32")))]
 #[test]
 fn runtime_flow_dense_u32_map_sum_uses_native_jit_batch() {
-    let helper = RuntimePureHelper {
-        id: RuntimePureHelperId(0),
-        name: "u32_flow_score".to_owned(),
-        input_names: vec!["base".to_owned(), "bonus".to_owned()],
-        input_types: vec![RuntimePureInputType::U32, RuntimePureInputType::U32],
-        output_type: RuntimePureOutputType::U32,
-        expr: RuntimeExpr::Binary {
-            lhs: Box::new(RuntimeExpr::Local("base".to_owned())),
-            op: RuntimeBinaryOp::Add,
-            rhs: Box::new(RuntimeExpr::Local("bonus".to_owned())),
-        },
-        scalar_eval_supported: true,
-        origin: RuntimePureHelperOrigin::Annotated,
-    };
-    let plan = RuntimePlan::new(
-        vec![RuntimeFlow {
-            id: flow_id("flow.u32"),
-            ops: vec![FlowOp::ReturnExpr(RuntimeExpr::Sum {
-                source: Box::new(RuntimeExpr::Map {
-                    source: Box::new(RuntimeExpr::Value(runtime_sequence_dense_u32(
-                        (0..128).collect(),
-                    ))),
-                    param: "base".to_owned(),
-                    body: Box::new(RuntimeExpr::PureCall {
-                        helper: RuntimePureHelperId(0),
-                        args: vec![
-                            RuntimeExpr::Local("base".to_owned()),
-                            RuntimeExpr::Value(RuntimeValue::u32(1)),
-                        ],
-                    }),
-                }),
-            })],
-        }],
-        Vec::new(),
-    )
-    .expect("runtime plan is valid")
-    .with_pure_helpers(vec![helper.clone()]);
-    let mut engine =
-        Engine::for_flow(plan, &flow_id("flow.u32")).expect("test flow starts explicitly");
+    let plan = dense_u32_map_sum_plan();
+    let mut engine = Engine::for_flow(plan.as_ref().clone(), &flow_id("flow.u32"))
+        .expect("test flow starts explicitly");
     let mut accelerator = RuntimePureAccelerator::with_config(
         RuntimePureAcceleratorConfig {
             backend: RuntimePureBackendMode::Auto,
@@ -1895,7 +2164,7 @@ fn runtime_flow_dense_u32_map_sum_uses_native_jit_batch() {
             batch_min_len: 1024,
             ..RuntimePureAcceleratorConfig::default()
         },
-        std::slice::from_ref(&helper),
+        &plan,
     );
 
     let result = engine.step_with_pure_backend(
@@ -1920,24 +2189,13 @@ fn runtime_flow_dense_u32_map_sum_uses_native_jit_batch() {
 #[cfg(all(feature = "native-jit", not(target_arch = "wasm32")))]
 #[test]
 fn auto_promotes_large_f32_flat_batch_to_native_jit() {
-    let helper = RuntimePureHelper {
-        id: RuntimePureHelperId(0),
-        name: "f32_score_auto_jit".to_owned(),
-        input_names: vec!["base".to_owned(), "scale".to_owned()],
-        input_types: vec![RuntimePureInputType::F32, RuntimePureInputType::F32],
-        output_type: RuntimePureOutputType::F32,
-        expr: RuntimeExpr::Binary {
-            lhs: Box::new(RuntimeExpr::Local("base".to_owned())),
-            op: RuntimeBinaryOp::Mul,
-            rhs: Box::new(RuntimeExpr::Binary {
-                lhs: Box::new(RuntimeExpr::Local("scale".to_owned())),
-                op: RuntimeBinaryOp::Add,
-                rhs: Box::new(RuntimeExpr::Value(RuntimeValue::F32(2.0))),
-            }),
-        },
-        scalar_eval_supported: true,
-        origin: RuntimePureHelperOrigin::Annotated,
-    };
+    let helper = mul_add_helper(
+        "f32_score_auto_jit",
+        RuntimePureInputType::F32,
+        RuntimePureOutputType::F32,
+        RuntimeValue::f32(2.0),
+        RuntimePureHelperOrigin::Annotated,
+    );
     let mut accelerator = RuntimePureAccelerator::with_config(
         RuntimePureAcceleratorConfig {
             backend: RuntimePureBackendMode::Auto,
@@ -1945,7 +2203,7 @@ fn auto_promotes_large_f32_flat_batch_to_native_jit() {
             batch_min_len: 1024,
             ..RuntimePureAcceleratorConfig::default()
         },
-        std::slice::from_ref(&helper),
+        helper.plan(),
     );
     let flat_inputs = (1..=128)
         .flat_map(|value: u16| [f32::from(value), 2.0])
@@ -1953,7 +2211,7 @@ fn auto_promotes_large_f32_flat_batch_to_native_jit() {
     let mut out = [0.0; 128];
 
     accelerator
-        .call_f32_flat_batch(&helper, &flat_inputs, 2, &mut out)
+        .call_f32_flat_batch(helper.helper_ref(), &flat_inputs, 2, &mut out)
         .expect("auto promotes large f32 flat batch");
 
     assert_eq!(out[0].to_bits(), 4.0f32.to_bits());
@@ -1967,24 +2225,13 @@ fn auto_promotes_large_f32_flat_batch_to_native_jit() {
 #[cfg(all(feature = "native-jit", not(target_arch = "wasm32")))]
 #[test]
 fn auto_promotes_large_f64_flat_batch_to_native_jit() {
-    let helper = RuntimePureHelper {
-        id: RuntimePureHelperId(0),
-        name: "f64_score_auto_jit".to_owned(),
-        input_names: vec!["base".to_owned(), "scale".to_owned()],
-        input_types: vec![RuntimePureInputType::F64, RuntimePureInputType::F64],
-        output_type: RuntimePureOutputType::F64,
-        expr: RuntimeExpr::Binary {
-            lhs: Box::new(RuntimeExpr::Local("base".to_owned())),
-            op: RuntimeBinaryOp::Mul,
-            rhs: Box::new(RuntimeExpr::Binary {
-                lhs: Box::new(RuntimeExpr::Local("scale".to_owned())),
-                op: RuntimeBinaryOp::Add,
-                rhs: Box::new(RuntimeExpr::Value(RuntimeValue::F64(2.0))),
-            }),
-        },
-        scalar_eval_supported: true,
-        origin: RuntimePureHelperOrigin::Annotated,
-    };
+    let helper = mul_add_helper(
+        "f64_score_auto_jit",
+        RuntimePureInputType::F64,
+        RuntimePureOutputType::F64,
+        RuntimeValue::f64(2.0),
+        RuntimePureHelperOrigin::Annotated,
+    );
     let mut accelerator = RuntimePureAccelerator::with_config(
         RuntimePureAcceleratorConfig {
             backend: RuntimePureBackendMode::Auto,
@@ -1992,7 +2239,7 @@ fn auto_promotes_large_f64_flat_batch_to_native_jit() {
             batch_min_len: 1024,
             ..RuntimePureAcceleratorConfig::default()
         },
-        std::slice::from_ref(&helper),
+        helper.plan(),
     );
     let flat_inputs = (1..=128)
         .flat_map(|value: u16| [f64::from(value), 2.0])
@@ -2000,7 +2247,7 @@ fn auto_promotes_large_f64_flat_batch_to_native_jit() {
     let mut out = [0.0; 128];
 
     accelerator
-        .call_f64_flat_batch(&helper, &flat_inputs, 2, &mut out)
+        .call_f64_flat_batch(helper.helper_ref(), &flat_inputs, 2, &mut out)
         .expect("auto promotes large f64 flat batch");
 
     assert_eq!(out[0].to_bits(), 4.0f64.to_bits());
@@ -2014,24 +2261,13 @@ fn auto_promotes_large_f64_flat_batch_to_native_jit() {
 #[cfg(all(feature = "native-jit", not(target_arch = "wasm32")))]
 #[test]
 fn auto_accelerator_promotes_large_flat_batches_to_jit() {
-    let helper = RuntimePureHelper {
-        id: RuntimePureHelperId(0),
-        name: "score".to_owned(),
-        input_names: vec!["base".to_owned(), "bonus".to_owned()],
-        input_types: vec![RuntimePureInputType::I64, RuntimePureInputType::I64],
-        output_type: RuntimePureOutputType::I64,
-        expr: RuntimeExpr::Binary {
-            lhs: Box::new(RuntimeExpr::Local("base".to_owned())),
-            op: RuntimeBinaryOp::Mul,
-            rhs: Box::new(RuntimeExpr::Binary {
-                lhs: Box::new(RuntimeExpr::Local("bonus".to_owned())),
-                op: RuntimeBinaryOp::Add,
-                rhs: Box::new(RuntimeExpr::Value(RuntimeValue::i64(2))),
-            }),
-        },
-        scalar_eval_supported: true,
-        origin: RuntimePureHelperOrigin::Annotated,
-    };
+    let helper = mul_add_helper(
+        "score",
+        RuntimePureInputType::I64,
+        RuntimePureOutputType::I64,
+        RuntimeValue::i64(2),
+        RuntimePureHelperOrigin::Annotated,
+    );
     let mut accelerator = RuntimePureAccelerator::with_config(
         RuntimePureAcceleratorConfig {
             backend: RuntimePureBackendMode::Auto,
@@ -2039,7 +2275,7 @@ fn auto_accelerator_promotes_large_flat_batches_to_jit() {
             batch_min_len: 1024,
             ..RuntimePureAcceleratorConfig::default()
         },
-        std::slice::from_ref(&helper),
+        helper.plan(),
     );
     let mut flat_inputs = Vec::new();
     for value in 1..=128 {
@@ -2048,7 +2284,7 @@ fn auto_accelerator_promotes_large_flat_batches_to_jit() {
     let mut out = [0; 128];
 
     accelerator
-        .call_i64_flat_batch(&helper, &flat_inputs, 2, &mut out)
+        .call_i64_flat_batch(helper.helper_ref(), &flat_inputs, 2, &mut out)
         .expect("large auto flat batch succeeds");
 
     assert_eq!(out[0], 4);
@@ -2069,89 +2305,62 @@ fn auto_accelerator_promotes_large_flat_batches_to_jit() {
 
 #[test]
 fn aot_accelerates_exact_width_scalar_calls_without_i64_widening() {
-    fn add_helper(
-        id: usize,
-        name: &str,
-        input_type: RuntimePureInputType,
-        output_type: RuntimePureOutputType,
-    ) -> RuntimePureHelper {
-        RuntimePureHelper {
-            id: RuntimePureHelperId(id),
-            name: name.to_owned(),
-            input_names: vec!["lhs".to_owned(), "rhs".to_owned()],
-            input_types: vec![input_type, input_type],
-            output_type,
-            expr: RuntimeExpr::Binary {
-                lhs: Box::new(RuntimeExpr::Local("lhs".to_owned())),
-                op: RuntimeBinaryOp::Add,
-                rhs: Box::new(RuntimeExpr::Local("rhs".to_owned())),
-            },
-            scalar_eval_supported: true,
-            origin: RuntimePureHelperOrigin::Annotated,
-        }
-    }
-
-    let helpers = [
-        add_helper(
-            0,
+    let helpers = admit_add_helpers(&[
+        (
             "i32_add",
             RuntimePureInputType::I32,
             RuntimePureOutputType::I32,
         ),
-        add_helper(
-            1,
+        (
             "u32_add",
             RuntimePureInputType::U32,
             RuntimePureOutputType::U32,
         ),
-        add_helper(
-            2,
+        (
             "f32_add",
             RuntimePureInputType::F32,
             RuntimePureOutputType::F32,
         ),
-        add_helper(
-            3,
+        (
             "f64_add",
             RuntimePureInputType::F64,
             RuntimePureOutputType::F64,
         ),
-        add_helper(
-            4,
+        (
             "isize_add",
             RuntimePureInputType::ISize,
             RuntimePureOutputType::ISize,
         ),
-        add_helper(
-            5,
+        (
             "usize_add",
             RuntimePureInputType::USize,
             RuntimePureOutputType::USize,
         ),
-    ];
-    let mut accelerator = RuntimePureAccelerator::new(RuntimePureBackendMode::Aot, &helpers);
+    ]);
+    let mut accelerator =
+        RuntimePureAccelerator::new(RuntimePureBackendMode::Aot, helpers[0].plan());
 
     let i32_value = accelerator
-        .call_i32_slice(&helpers[0], &[7, 11])
+        .call_i32_slice(helpers[0].helper_ref(), &[7, 11])
         .expect("i32 AOT call succeeds");
     let u32_value = accelerator
-        .call_exact_int_slice::<u32>(&helpers[1], &[13, 17])
+        .call_exact_int_slice::<u32>(helpers[1].helper_ref(), &[13, 17])
         .expect("u32 AOT call succeeds");
     let f32_value = accelerator
-        .call_f32_slice(&helpers[2], &[1.25, 2.5])
+        .call_f32_slice(helpers[2].helper_ref(), &[1.25, 2.5])
         .expect("f32 AOT call succeeds");
     let f64_value = accelerator
-        .call_f64_slice(&helpers[3], &[3.0, 4.5])
+        .call_f64_slice(helpers[3].helper_ref(), &[3.0, 4.5])
         .expect("f64 AOT call succeeds");
     let isize_value = accelerator
         .call_exact_int_slice::<RuntimeISizeValue>(
-            &helpers[4],
+            helpers[4].helper_ref(),
             &[RuntimeISizeValue::new(19), RuntimeISizeValue::new(23)],
         )
         .expect("isize AOT call succeeds");
     let usize_value = accelerator
         .call_exact_int_slice::<RuntimeUSizeValue>(
-            &helpers[5],
+            helpers[5].helper_ref(),
             &[RuntimeUSizeValue::new(29), RuntimeUSizeValue::new(31)],
         )
         .expect("usize AOT call succeeds");
@@ -2170,16 +2379,14 @@ fn aot_accelerates_exact_width_scalar_calls_without_i64_widening() {
 
 #[test]
 fn value_fallback_reuses_vm_scratch_without_value_vec_allocation() {
-    let helper = RuntimePureHelper {
-        id: RuntimePureHelperId(0),
-        name: "echo".to_owned(),
-        input_names: vec!["label".to_owned()],
-        input_types: vec![RuntimePureInputType::Value],
-        output_type: RuntimePureOutputType::Value,
-        expr: RuntimeExpr::Local("label".to_owned()),
-        scalar_eval_supported: false,
-        origin: RuntimePureHelperOrigin::Annotated,
-    };
+    let helper = admit_helper(
+        "echo",
+        vec![RuntimePureInputType::Value],
+        RuntimePureOutputType::Value,
+        false,
+        RuntimePureHelperOrigin::Annotated,
+        |inputs, output_ty| local_expr(output_ty, inputs[0].clone()),
+    );
     let mut accelerator = RuntimePureAccelerator::with_config(
         RuntimePureAcceleratorConfig {
             backend: RuntimePureBackendMode::Vm,
@@ -2187,11 +2394,14 @@ fn value_fallback_reuses_vm_scratch_without_value_vec_allocation() {
             batch_min_len: 2,
             ..RuntimePureAcceleratorConfig::default()
         },
-        std::slice::from_ref(&helper),
+        helper.plan(),
     );
 
     let value = accelerator
-        .call_values(&helper, &[RuntimeValue::String("ready".to_owned())])
+        .call_values(
+            helper.helper_ref(),
+            &[RuntimeValue::String("ready".to_owned())],
+        )
         .expect("VM value fallback succeeds");
 
     assert_eq!(value, RuntimeValue::String("ready".to_owned()));
@@ -2207,24 +2417,13 @@ fn value_fallback_reuses_vm_scratch_without_value_vec_allocation() {
 
 #[test]
 fn aot_batch_matches_scalar_results_and_records_parallel_stats() {
-    let helper = RuntimePureHelper {
-        id: RuntimePureHelperId(0),
-        name: "score".to_owned(),
-        input_names: vec!["base".to_owned(), "bonus".to_owned()],
-        input_types: vec![RuntimePureInputType::I64, RuntimePureInputType::I64],
-        output_type: RuntimePureOutputType::I64,
-        expr: RuntimeExpr::Binary {
-            lhs: Box::new(RuntimeExpr::Local("base".to_owned())),
-            op: RuntimeBinaryOp::Mul,
-            rhs: Box::new(RuntimeExpr::Binary {
-                lhs: Box::new(RuntimeExpr::Local("bonus".to_owned())),
-                op: RuntimeBinaryOp::Add,
-                rhs: Box::new(RuntimeExpr::Value(RuntimeValue::i64(2))),
-            }),
-        },
-        scalar_eval_supported: true,
-        origin: RuntimePureHelperOrigin::Inferred,
-    };
+    let helper = mul_add_helper(
+        "score",
+        RuntimePureInputType::I64,
+        RuntimePureOutputType::I64,
+        RuntimeValue::i64(2),
+        RuntimePureHelperOrigin::Inferred,
+    );
     let mut accelerator = RuntimePureAccelerator::with_config(
         RuntimePureAcceleratorConfig {
             backend: RuntimePureBackendMode::Aot,
@@ -2232,7 +2431,7 @@ fn aot_batch_matches_scalar_results_and_records_parallel_stats() {
             batch_min_len: 1,
             ..RuntimePureAcceleratorConfig::default()
         },
-        std::slice::from_ref(&helper),
+        helper.plan(),
     );
     let rows = [
         RuntimeI64Args::new([3, 4, 0, 0], 2),
@@ -2243,7 +2442,7 @@ fn aot_batch_matches_scalar_results_and_records_parallel_stats() {
     let mut out = [0; 4];
 
     accelerator
-        .call_i64_batch(&helper, &rows, &mut out)
+        .call_i64_batch(helper.helper_ref(), &rows, &mut out)
         .expect("batch succeeds");
 
     assert_eq!(out, [18, 15, 20, 14]);
@@ -2263,24 +2462,13 @@ fn aot_batch_matches_scalar_results_and_records_parallel_stats() {
 
 #[test]
 fn aot_worker_pool_is_created_only_for_parallel_batches() {
-    let helper = RuntimePureHelper {
-        id: RuntimePureHelperId(0),
-        name: "score".to_owned(),
-        input_names: vec!["base".to_owned(), "bonus".to_owned()],
-        input_types: vec![RuntimePureInputType::I64, RuntimePureInputType::I64],
-        output_type: RuntimePureOutputType::I64,
-        expr: RuntimeExpr::Binary {
-            lhs: Box::new(RuntimeExpr::Local("base".to_owned())),
-            op: RuntimeBinaryOp::Mul,
-            rhs: Box::new(RuntimeExpr::Binary {
-                lhs: Box::new(RuntimeExpr::Local("bonus".to_owned())),
-                op: RuntimeBinaryOp::Add,
-                rhs: Box::new(RuntimeExpr::Value(RuntimeValue::i64(2))),
-            }),
-        },
-        scalar_eval_supported: true,
-        origin: RuntimePureHelperOrigin::Annotated,
-    };
+    let helper = mul_add_helper(
+        "score",
+        RuntimePureInputType::I64,
+        RuntimePureOutputType::I64,
+        RuntimeValue::i64(2),
+        RuntimePureHelperOrigin::Annotated,
+    );
     let mut accelerator = RuntimePureAccelerator::with_config(
         RuntimePureAcceleratorConfig {
             backend: RuntimePureBackendMode::Aot,
@@ -2288,7 +2476,7 @@ fn aot_worker_pool_is_created_only_for_parallel_batches() {
             batch_min_len: 2,
             ..RuntimePureAcceleratorConfig::default()
         },
-        std::slice::from_ref(&helper),
+        helper.plan(),
     );
     let small_rows = [
         RuntimeI64Args::new([3, 4, 0, 0], 2),
@@ -2297,7 +2485,7 @@ fn aot_worker_pool_is_created_only_for_parallel_batches() {
     let mut small_out = [0; 2];
 
     accelerator
-        .call_i64_batch(&helper, &small_rows, &mut small_out)
+        .call_i64_batch(helper.helper_ref(), &small_rows, &mut small_out)
         .expect("small AOT batch succeeds without pool");
 
     assert_eq!(small_out, [18, 15]);
@@ -2308,7 +2496,7 @@ fn aot_worker_pool_is_created_only_for_parallel_batches() {
 
     let mut small_flat_out = [0; 2];
     accelerator
-        .call_i64_flat_batch(&helper, &[3, 4, 5, 1], 2, &mut small_flat_out)
+        .call_i64_flat_batch(helper.helper_ref(), &[3, 4, 5, 1], 2, &mut small_flat_out)
         .expect("small flat AOT batch reuses sequential scratch without pool");
 
     assert_eq!(small_flat_out, [18, 15]);
@@ -2327,7 +2515,7 @@ fn aot_worker_pool_is_created_only_for_parallel_batches() {
     let mut large_out = [0; 5];
 
     accelerator
-        .call_i64_batch(&helper, &large_rows, &mut large_out)
+        .call_i64_batch(helper.helper_ref(), &large_rows, &mut large_out)
         .expect("large AOT batch creates pool");
 
     assert_eq!(large_out, [18, 15, 20, 14, 27]);
@@ -2341,24 +2529,13 @@ fn aot_worker_pool_is_created_only_for_parallel_batches() {
 #[cfg(all(feature = "native-jit", not(target_arch = "wasm32")))]
 #[test]
 fn jit_batch_matches_scalar_results_without_value_vec_allocation() {
-    let helper = RuntimePureHelper {
-        id: RuntimePureHelperId(0),
-        name: "score".to_owned(),
-        input_names: vec!["base".to_owned(), "bonus".to_owned()],
-        input_types: vec![RuntimePureInputType::I64, RuntimePureInputType::I64],
-        output_type: RuntimePureOutputType::I64,
-        expr: RuntimeExpr::Binary {
-            lhs: Box::new(RuntimeExpr::Local("base".to_owned())),
-            op: RuntimeBinaryOp::Mul,
-            rhs: Box::new(RuntimeExpr::Binary {
-                lhs: Box::new(RuntimeExpr::Local("bonus".to_owned())),
-                op: RuntimeBinaryOp::Add,
-                rhs: Box::new(RuntimeExpr::Value(RuntimeValue::i64(2))),
-            }),
-        },
-        scalar_eval_supported: true,
-        origin: RuntimePureHelperOrigin::Annotated,
-    };
+    let helper = mul_add_helper(
+        "score",
+        RuntimePureInputType::I64,
+        RuntimePureOutputType::I64,
+        RuntimeValue::i64(2),
+        RuntimePureHelperOrigin::Annotated,
+    );
     let mut accelerator = RuntimePureAccelerator::with_config(
         RuntimePureAcceleratorConfig {
             backend: RuntimePureBackendMode::Jit,
@@ -2366,7 +2543,7 @@ fn jit_batch_matches_scalar_results_without_value_vec_allocation() {
             batch_min_len: 2,
             ..RuntimePureAcceleratorConfig::default()
         },
-        std::slice::from_ref(&helper),
+        helper.plan(),
     );
     let rows = [
         RuntimeI64Args::new([3, 4, 0, 0], 2),
@@ -2375,7 +2552,7 @@ fn jit_batch_matches_scalar_results_without_value_vec_allocation() {
     ];
     let mut out = [0; 3];
 
-    RuntimePureCallBackend::call_i64_batch(&mut accelerator, &helper, &rows, &mut out)
+    RuntimePureCallBackend::call_i64_batch(&mut accelerator, helper.helper_ref(), &rows, &mut out)
         .expect("JIT batch succeeds");
 
     assert_eq!(out, [18, 15, 20]);
@@ -2400,24 +2577,13 @@ fn jit_batch_matches_scalar_results_without_value_vec_allocation() {
 #[cfg(all(feature = "native-jit", not(target_arch = "wasm32")))]
 #[test]
 fn jit_flat_batch_sum_avoids_output_copy() {
-    let helper = RuntimePureHelper {
-        id: RuntimePureHelperId(0),
-        name: "score".to_owned(),
-        input_names: vec!["base".to_owned(), "bonus".to_owned()],
-        input_types: vec![RuntimePureInputType::I64, RuntimePureInputType::I64],
-        output_type: RuntimePureOutputType::I64,
-        expr: RuntimeExpr::Binary {
-            lhs: Box::new(RuntimeExpr::Local("base".to_owned())),
-            op: RuntimeBinaryOp::Mul,
-            rhs: Box::new(RuntimeExpr::Binary {
-                lhs: Box::new(RuntimeExpr::Local("bonus".to_owned())),
-                op: RuntimeBinaryOp::Add,
-                rhs: Box::new(RuntimeExpr::Value(RuntimeValue::i64(2))),
-            }),
-        },
-        scalar_eval_supported: true,
-        origin: RuntimePureHelperOrigin::Annotated,
-    };
+    let helper = mul_add_helper(
+        "score",
+        RuntimePureInputType::I64,
+        RuntimePureOutputType::I64,
+        RuntimeValue::i64(2),
+        RuntimePureHelperOrigin::Annotated,
+    );
     let mut accelerator = RuntimePureAccelerator::with_config(
         RuntimePureAcceleratorConfig {
             backend: RuntimePureBackendMode::Jit,
@@ -2425,11 +2591,11 @@ fn jit_flat_batch_sum_avoids_output_copy() {
             batch_min_len: 2,
             ..RuntimePureAcceleratorConfig::default()
         },
-        std::slice::from_ref(&helper),
+        helper.plan(),
     );
 
     let sum = accelerator
-        .call_i64_flat_batch_sum(&helper, &[3, 4, 5, 1, 2, 8], 2, 3)
+        .call_i64_flat_batch_sum(helper.helper_ref(), &[3, 4, 5, 1, 2, 8], 2, 3)
         .expect("JIT flat batch sum succeeds");
 
     assert_eq!(sum, 53);
@@ -2454,24 +2620,13 @@ fn jit_flat_batch_sum_avoids_output_copy() {
 
 #[test]
 fn vm_batch_uses_i64_args_without_value_vec_allocation() {
-    let helper = RuntimePureHelper {
-        id: RuntimePureHelperId(0),
-        name: "score".to_owned(),
-        input_names: vec!["base".to_owned(), "bonus".to_owned()],
-        input_types: vec![RuntimePureInputType::I64, RuntimePureInputType::I64],
-        output_type: RuntimePureOutputType::I64,
-        expr: RuntimeExpr::Binary {
-            lhs: Box::new(RuntimeExpr::Local("base".to_owned())),
-            op: RuntimeBinaryOp::Mul,
-            rhs: Box::new(RuntimeExpr::Binary {
-                lhs: Box::new(RuntimeExpr::Local("bonus".to_owned())),
-                op: RuntimeBinaryOp::Add,
-                rhs: Box::new(RuntimeExpr::Value(RuntimeValue::i64(2))),
-            }),
-        },
-        scalar_eval_supported: true,
-        origin: RuntimePureHelperOrigin::Annotated,
-    };
+    let helper = mul_add_helper(
+        "score",
+        RuntimePureInputType::I64,
+        RuntimePureOutputType::I64,
+        RuntimeValue::i64(2),
+        RuntimePureHelperOrigin::Annotated,
+    );
     let mut accelerator = RuntimePureAccelerator::with_config(
         RuntimePureAcceleratorConfig {
             backend: RuntimePureBackendMode::Vm,
@@ -2479,7 +2634,7 @@ fn vm_batch_uses_i64_args_without_value_vec_allocation() {
             batch_min_len: 1,
             ..RuntimePureAcceleratorConfig::default()
         },
-        std::slice::from_ref(&helper),
+        helper.plan(),
     );
     let rows = [
         RuntimeI64Args::new([3, 4, 0, 0], 2),
@@ -2489,7 +2644,7 @@ fn vm_batch_uses_i64_args_without_value_vec_allocation() {
     let mut out = [0; 3];
 
     accelerator
-        .call_i64_batch(&helper, &rows, &mut out)
+        .call_i64_batch(helper.helper_ref(), &rows, &mut out)
         .expect("VM batch succeeds");
 
     assert_eq!(out, [18, 15, 20]);

@@ -8,18 +8,15 @@
 use std::collections::{BTreeMap, BTreeSet};
 
 use arcweft_lang_syntax::attachment::node::{
-    AwaitWithStatementKind, ForStatementKind, LoopStatementKind, SelectStatementKind,
-    WhileLetStatementKind, WhileStatementKind,
+    ForStatementKind, LoopStatementKind, SelectStatementKind, WhileLetStatementKind,
+    WhileStatementKind,
 };
 use arcweft_lang_syntax::attachment::source_file::AttachedDelimiterState;
 use arcweft_lang_syntax::attachment::{
-    AttachedAwaitWithBranch, AttachedPatternNode, AttachedRequiredAwaitWithBranchBody,
-    AttachedRequiredNestedThreadFlowBody, AttachedSelectBindingName, AttachedSelectBranch,
-    AttachedSelectStatementForm, AttachedThreadFlowItem, AttachedThreadFlowItemFamily,
-    RequiredStatementExpressionNode, StatementNode, SyntaxNodeId,
+    AttachedPatternNode, AttachedRequiredNestedThreadFlowBody, AttachedSelectBindingName,
+    AttachedSelectBranch, AttachedSelectStatementForm, AttachedThreadFlowItem,
+    AttachedThreadFlowItemFamily, RequiredStatementExpressionNode, StatementNode, SyntaxNodeId,
 };
-use arcweft_lang_syntax::expressions::SyntaxAwaitPropagation;
-use arcweft_lang_syntax::grammar::SyntaxAwaitBranchKind;
 use arcweft_lang_syntax::incremental::ParsedSource;
 use arcweft_source::SourceSpan;
 
@@ -42,10 +39,10 @@ use crate::source_index::control_projection::canonical_pattern_locals;
 use crate::source_index::pattern_projection::{BindingLocalValidation, binding_locals_match};
 use crate::source_index::{HirExprSourceRole, HirSourceSite, HirStmtRecoveryOperandSlot};
 use crate::stmt::{
-    HirAwaitPropagation, HirAwaitWithBranchKind, HirContextualStmtBody, HirForStmt, HirLoopStmt,
-    HirSelectBindingLocal, HirSelectBranchHead, HirSelectStmt, HirStatementContext,
-    HirStmtChildRole, HirStmtKind, HirStmtPoisonState, HirStmtRecoveryIssue, HirThreadStmtBodyRole,
-    HirThreadStmtChildRole, HirThreadStmtRecoveryIssue, HirWhileLetStmt, HirWhileStmt,
+    HirContextualStmtBody, HirForStmt, HirLoopStmt, HirSelectBindingLocal, HirSelectBranchHead,
+    HirSelectStmt, HirStatementContext, HirStmtChildRole, HirStmtKind, HirStmtPoisonState,
+    HirStmtRecoveryIssue, HirThreadStmtBodyRole, HirThreadStmtChildRole,
+    HirThreadStmtRecoveryIssue, HirWhileLetStmt, HirWhileStmt,
 };
 
 struct ThreadBodyGraphEvidence {
@@ -145,15 +142,6 @@ pub(super) fn thread_control_statement_evidence(
             statement,
         ),
         HirStmtKind::Select(statement @ HirSelectStmt::Branches { .. }) => select_evidence(
-            parsed,
-            slots,
-            arenas,
-            owner,
-            attached,
-            outer_scope,
-            statement,
-        ),
-        HirStmtKind::AwaitWith(statement) => await_with_evidence(
             parsed,
             slots,
             arenas,
@@ -661,194 +649,6 @@ fn select_branch_evidence(
     Some(head_recovery.or_else(|| select_branch_body_recovery(body.recovery, ordinal)))
 }
 
-fn await_with_evidence(
-    parsed: &ParsedSource,
-    slots: &SlotSnapshot,
-    arenas: &BlockValidationArenas<'_>,
-    owner: StmtId,
-    attached: &StatementNode,
-    outer_scope: ScopeId,
-    statement: &crate::stmt::HirAwaitWithStmt,
-) -> Option<StatementEvidence> {
-    let attached = attached
-        .cast::<AwaitWithStatementKind>()
-        .ok()?
-        .semantics()
-        .ok()?;
-    let operand_poisoned = required_expression_matches(
-        parsed,
-        slots,
-        arenas,
-        owner,
-        statement.operand(),
-        attached.operand(),
-        outer_scope,
-        |insertion| HirStmtRecoveryOperandSlot::AwaitWithOperand { insertion },
-    )?;
-    let propagation_matches = matches!(
-        (attached.propagation(), statement.propagation()),
-        (
-            SyntaxAwaitPropagation::PreserveResult,
-            HirAwaitPropagation::PreserveResult
-        ) | (
-            SyntaxAwaitPropagation::PropagateError,
-            HirAwaitPropagation::PropagateError
-        )
-    );
-    if !propagation_matches {
-        return None;
-    }
-
-    let mut recovery =
-        operand_poisoned.then_some(thread_child(HirThreadStmtChildRole::AwaitOperand));
-    let expected_branch_scopes = statement
-        .branches()
-        .iter()
-        .map(|branch| branch.body().scope())
-        .collect::<Vec<_>>();
-    exact_owned_child_scopes(slots, arenas, outer_scope, owner, &expected_branch_scopes)?;
-    exact_statement_scope_inventory(slots, arenas, owner, &expected_branch_scopes)?;
-    let expected_synthetics =
-        missing_operand_key(attached.operand(), statement.operand(), |insertion| {
-            HirStmtRecoveryOperandSlot::AwaitWithOperand { insertion }
-        })
-        .into_iter()
-        .collect::<Vec<_>>();
-    exact_statement_synthetic_expressions(slots, arenas, owner, &expected_synthetics)?;
-    match attached.body() {
-        AttachedRequiredAwaitWithBranchBody::Missing(_) => {
-            if !statement.branches().is_empty() {
-                return None;
-            }
-            recovery.get_or_insert(HirStmtRecoveryIssue::Thread(
-                HirThreadStmtRecoveryIssue::MissingBody {
-                    role: HirThreadStmtBodyRole::AwaitWith,
-                },
-            ));
-        }
-        AttachedRequiredAwaitWithBranchBody::Present(block) => {
-            if block.branches().len() != statement.branches().len() {
-                return None;
-            }
-            if block.branches().is_empty() {
-                recovery.get_or_insert(HirStmtRecoveryIssue::Thread(
-                    HirThreadStmtRecoveryIssue::EmptyAwaitWith,
-                ));
-            }
-            for (ordinal, (attached_branch, branch)) in block
-                .branches()
-                .iter()
-                .zip(statement.branches())
-                .enumerate()
-            {
-                let ordinal = u32::try_from(ordinal).ok()?;
-                let branch_recovery = await_branch_evidence(
-                    parsed,
-                    slots,
-                    arenas,
-                    owner,
-                    outer_scope,
-                    ordinal,
-                    attached_branch,
-                    branch,
-                )?;
-                if let Some(branch_recovery) = branch_recovery {
-                    recovery.get_or_insert(branch_recovery);
-                }
-            }
-            if matches!(block.close_state(), AttachedDelimiterState::Missing(_)) {
-                recovery.get_or_insert(HirStmtRecoveryIssue::Thread(
-                    HirThreadStmtRecoveryIssue::UnclosedBody {
-                        role: HirThreadStmtBodyRole::AwaitWith,
-                    },
-                ));
-            }
-        }
-    }
-    Some(empty_statement(recovery))
-}
-
-#[allow(
-    clippy::option_option,
-    clippy::too_many_arguments,
-    reason = "the Await branch validator returns mismatch, clean branch, or one exact typed branch issue"
-)]
-fn await_branch_evidence(
-    parsed: &ParsedSource,
-    slots: &SlotSnapshot,
-    arenas: &BlockValidationArenas<'_>,
-    owner: StmtId,
-    outer_scope: ScopeId,
-    ordinal: u32,
-    attached: &AttachedAwaitWithBranch,
-    branch: &crate::stmt::HirAwaitWithBranch,
-) -> Option<Option<HirStmtRecoveryIssue>> {
-    let body_scope = branch.body().scope();
-    let mut generations = BTreeMap::new();
-    let (prefix, head_recovery) = match (attached.kind(), branch.kind()) {
-        (Some(actual), expected) if await_branch_kind_matches(actual, expected) => {
-            let attached_pattern = attached.pattern()?;
-            let semantic_pattern = branch.pattern()?;
-            let pattern_poisoned = pattern_binding_matches(
-                slots,
-                arenas,
-                attached_pattern,
-                semantic_pattern,
-                branch.locals(),
-                body_scope,
-                &mut generations,
-            )?;
-            (
-                branch.locals().to_vec(),
-                pattern_poisoned.then_some(thread_child(HirThreadStmtChildRole::AwaitPattern {
-                    branch: ordinal,
-                })),
-            )
-        }
-        (None, HirAwaitWithBranchKind::Recovered)
-            if attached.pattern().is_none() && attached.recovery().is_some() =>
-        {
-            (
-                Vec::new(),
-                Some(HirStmtRecoveryIssue::Thread(
-                    HirThreadStmtRecoveryIssue::RecoveredAwaitWithBranch { ordinal },
-                )),
-            )
-        }
-        _ => return None,
-    };
-    let body = nested_body_evidence(
-        parsed,
-        slots,
-        arenas,
-        owner,
-        outer_scope,
-        branch.body(),
-        attached.body(),
-        &prefix,
-        &mut generations,
-    )?;
-    Some(head_recovery.or_else(|| await_branch_body_recovery(body.recovery, ordinal)))
-}
-
-const fn await_branch_kind_matches(
-    attached: SyntaxAwaitBranchKind,
-    semantic: HirAwaitWithBranchKind,
-) -> bool {
-    matches!(
-        (attached, semantic),
-        (
-            SyntaxAwaitBranchKind::Pending,
-            HirAwaitWithBranchKind::Pending
-        ) | (SyntaxAwaitBranchKind::Ready, HirAwaitWithBranchKind::Ready)
-            | (SyntaxAwaitBranchKind::Error, HirAwaitWithBranchKind::Error)
-            | (
-                SyntaxAwaitBranchKind::Denied,
-                HirAwaitWithBranchKind::Denied
-            )
-    )
-}
-
 #[allow(clippy::too_many_arguments)]
 fn nested_body_evidence(
     parsed: &ParsedSource,
@@ -871,7 +671,7 @@ fn nested_body_evidence(
             attached.syntax().id(),
             &attached.syntax().source_span(),
             attached.items(),
-            matches!(attached.close_state(), AttachedDelimiterState::Missing(_)),
+            attached.is_unclosed(),
             false,
             &HirScopeOwner::Stmt(owner),
             parent_scope,
@@ -1108,7 +908,6 @@ fn semantic_statement_owner(
         | HirThreadFlowItem::SourceLocale(owner)
         | HirThreadFlowItem::Scope(owner)
         | HirThreadFlowItem::Include(owner)
-        | HirThreadFlowItem::AwaitWith(owner)
         | HirThreadFlowItem::Error(owner) => *owner,
     };
     let statement = arenas.statements.resolve_prepared(slots, owner).ok()?;
@@ -1170,10 +969,6 @@ fn semantic_statement_owner(
             HirThreadFlowItem::Include(_),
             HirStmtKind::Include(_)
         ) | (
-            AttachedThreadFlowItemFamily::AwaitWith,
-            HirThreadFlowItem::AwaitWith(_),
-            HirStmtKind::AwaitWith(_)
-        ) | (
             AttachedThreadFlowItemFamily::Error,
             HirThreadFlowItem::Error(_),
             HirStmtKind::Error
@@ -1197,7 +992,6 @@ fn ordinary_thread_statement(kind: &HirStmtKind) -> bool {
             | HirStmtKind::SourceLocale(_)
             | HirStmtKind::Scope(_)
             | HirStmtKind::Include(_)
-            | HirStmtKind::AwaitWith(_)
             | HirStmtKind::Error
     )
 }
@@ -1546,17 +1340,6 @@ fn select_branch_body_recovery(
         recovery,
         HirThreadStmtBodyRole::SelectBranch { ordinal: branch },
         |statement| HirThreadStmtChildRole::SelectBranchStatement { branch, statement },
-    )
-}
-
-fn await_branch_body_recovery(
-    recovery: Option<HirThreadIssue>,
-    branch: u32,
-) -> Option<HirStmtRecoveryIssue> {
-    branch_body_recovery(
-        recovery,
-        HirThreadStmtBodyRole::AwaitBranch { ordinal: branch },
-        |statement| HirThreadStmtChildRole::AwaitBranchStatement { branch, statement },
     )
 }
 

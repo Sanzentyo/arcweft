@@ -807,7 +807,6 @@ mod tests {
         AwbcFunctionId, AwbcFunctionKind, AwbcProgram, AwbcSafePointKind, AwbcSignature,
         AwbcSignatureId, AwbcStringId, AwbcTableRange, AwbcTerminator,
     };
-    use arcweft_core::bytecode::BytecodeProgram;
     use arcweft_source::{SourceDocument, SourceDocumentId, SourceName};
     use arcweft_text_model::DialogueContentCatalog;
     use std::{
@@ -1439,15 +1438,13 @@ mod tests {
                     bytecode_instructions: 0,
                     line_task_groups: 0,
                     stream_plans: 0,
-                    source_plans: 0,
                 },
             },
             source_map("main.arcw", "flow main { return \"ok\" }"),
-            BytecodeProgram::default(),
+            minimal_awbc_program(),
             DialogueContentCatalog::new(),
         )
         .expect("standard dialogue source joins source map")
-        .with_product_awbc(minimal_awbc_program())
     }
 
     fn source_map(label: &str, text: &str) -> SourceMapSection {

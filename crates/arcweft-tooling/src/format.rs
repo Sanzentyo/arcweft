@@ -340,18 +340,6 @@ fn visit_thread_flow_items(
             AttachedThreadFlowItem::Scope(statement) => {
                 visit_nested_thread_body(source, statement.semantics()?.body(), context, edits)?;
             }
-            AttachedThreadFlowItem::AwaitWith(statement) => {
-                let statement = statement.semantics()?;
-                visit_required_expression(source, statement.operand(), context, edits)?;
-                if let arcweft_lang_syntax::attachment::AttachedRequiredAwaitWithBranchBody::Present(
-                    body,
-                ) = statement.body()
-                {
-                    for branch in body.branches() {
-                        visit_nested_thread_body(source, branch.body(), context, edits)?;
-                    }
-                }
-            }
             AttachedThreadFlowItem::Select(statement) => {
                 let statement = statement.semantics()?;
                 match statement.form() {
@@ -570,6 +558,9 @@ fn visit_match_statement(
             MatchStatementArmBodyNode::Expression(value) => {
                 visit_expression(source, &value.semantic()?, context, edits)?;
             }
+            MatchStatementArmBodyNode::Statement(statement) => {
+                visit_statement(source, &statement, context, edits)?;
+            }
             MatchStatementArmBodyNode::Block(block) if thread_flow_body => {
                 let body = block.thread_flow_body()?;
                 visit_thread_flow_items(source, body.items(), context, edits)?;
@@ -609,6 +600,13 @@ fn visit_expression(
     for child in expression.children() {
         if let Some(child) = child.authored_semantic()? {
             visit_expression(source, &child, context, edits)?;
+        }
+    }
+    if let Some(arcweft_lang_syntax::attachment::AttachedAwaitBranchBody::Present(body)) =
+        expression.await_branches()
+    {
+        for branch in body.branches() {
+            visit_nested_thread_body(source, branch.body(), context, edits)?;
         }
     }
     for arm in expression.match_arms() {

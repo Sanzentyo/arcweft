@@ -5,8 +5,8 @@ use std::{collections::BTreeMap, fmt::Write as _};
 use arcweft_lang_hir::symbol::CallablePackageId;
 use arcweft_lang_sema::{
     callable::{
-        AdapterPackageId, CallableGroupIndex, CallableParameterIndex, EnvironmentCallableOwner,
-        RustItemPath,
+        AdapterPackageId, CallableGroupIndex, CallableName, CallableParameterIndex, CallablePath,
+        EnvironmentCallableOwner, RustItemPath,
     },
     env::nominal::RustPackageId,
     registration::{
@@ -163,7 +163,7 @@ pub(in crate::registration) fn render(
     render_methods(&mut renderer, manifest, owner)?;
     render_functions(&mut renderer, manifest, owner, &callable_package)?;
     render_rust_functions(&mut renderer, manifest, &adapter, &callable_package)?;
-    render_effects_and_host_calls(&mut renderer, manifest);
+    render_effects_and_host_calls(&mut renderer, manifest, owner)?;
     render_tooling_docs(&mut renderer, manifest);
 
     Ok(RenderedRegistrationSource {
@@ -365,7 +365,11 @@ fn render_rust_functions(
     Ok(())
 }
 
-fn render_effects_and_host_calls(renderer: &mut Renderer, manifest: &AdapterManifest) {
+fn render_effects_and_host_calls(
+    renderer: &mut Renderer,
+    manifest: &AdapterManifest,
+    owner: &EnvironmentCallableOwner,
+) -> Result<(), AdapterRegistrationFactsError> {
     let mut effects = manifest.effects().iter().collect::<Vec<_>>();
     effects.sort();
     for effect in effects {
@@ -377,14 +381,21 @@ fn render_effects_and_host_calls(renderer: &mut Renderer, manifest: &AdapterMani
     let mut host_calls = manifest.host_calls().iter().collect::<Vec<_>>();
     host_calls.sort_by_key(|call| call.id());
     for call in host_calls {
-        renderer.line(|text| {
-            text.push_str("host-call id=");
-            scalar(text, call.id());
-            text.push_str(" signature=");
-            render_unmapped_signature(text, call.signature());
-            render_effects(text, call.effects());
-        });
+        let path = CallablePath::try_new(
+            call.id()
+                .split('.')
+                .map(|segment| CallableName::try_new(segment.to_owned()))
+                .collect::<Result<Vec<_>, _>>()?,
+        )?;
+        renderer.host_call_line(
+            EnvironmentPublicationItemId::AdapterHostCall {
+                owner: owner.clone(),
+                path,
+            },
+            call,
+        )?;
     }
+    Ok(())
 }
 
 fn render_tooling_docs(renderer: &mut Renderer, manifest: &AdapterManifest) {
@@ -509,6 +520,32 @@ impl Renderer {
         self.text.push('\n');
         self.map
             .insert_item(line.item, SourceRange::new(item_start, item_end))
+    }
+
+    fn host_call_line(
+        &mut self,
+        item: EnvironmentPublicationItemId,
+        call: &arcweft_adapter_context::manifest::AdapterHostCall,
+    ) -> Result<(), AdapterRegistrationFactsError> {
+        let item_start = self.text.len();
+        self.text.push_str("host-call id=");
+        scalar(&mut self.text, call.id());
+        self.text.push_str(" signature=");
+        self.render_signature(&item, call.signature())?;
+        if let Some(domain_error) = call.domain_error() {
+            self.text.push_str(" domain-error=");
+            self.render_adapter_type(
+                &item,
+                EnvironmentTypeSiteRoot::HostCallDomainError,
+                &mut Vec::new(),
+                domain_error,
+            )?;
+        }
+        render_effects(&mut self.text, call.effects());
+        let item_end = self.text.len();
+        self.text.push('\n');
+        self.map
+            .insert_item(item, SourceRange::new(item_start, item_end))
     }
 
     fn render_signature(
@@ -706,6 +743,7 @@ impl Renderer {
         nominal: &AdapterNominalTypeRef,
     ) -> Result<(), AdapterRegistrationFactsError> {
         match nominal.owner() {
+            AdapterNominalOwner::Standard => self.text.push_str("standard"),
             AdapterNominalOwner::Environment { owner } => {
                 self.text.push_str("environment[");
                 scalar(&mut self.text, owner.as_str());
@@ -1047,23 +1085,6 @@ impl Renderer {
         steps.pop();
         result
     }
-}
-
-fn render_unmapped_signature(text: &mut String, signature: &AdapterFunctionSignature) {
-    text.push('(');
-    for (group_index, group) in signature.groups().iter().enumerate() {
-        if group_index > 0 {
-            text.push_str(")(");
-        }
-        for (index, parameter) in group.parameters().iter().enumerate() {
-            if index > 0 {
-                text.push(',');
-            }
-            render_unmapped_adapter_type(text, parameter.ty());
-        }
-    }
-    text.push_str(")->");
-    render_unmapped_adapter_type(text, signature.return_type());
 }
 
 fn render_unmapped_adapter_type(text: &mut String, ty: &AdapterTypeKind) {

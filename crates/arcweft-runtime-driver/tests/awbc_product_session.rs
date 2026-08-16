@@ -14,15 +14,15 @@ use arcweft_core::{
             AwbcStringId, AwbcTableRange, AwbcTerminator, AwbcTypeId,
         },
     },
-    bytecode::BytecodeProgram,
-    effect::{RuntimeAssertionGuardId, RuntimeAssertionProfile, RuntimeEffectExpr},
+    effect::{RuntimeAssertionGuardId, RuntimeAssertionProfile},
     entry::{EntryBindingIdentity, RuntimeEntryRoles},
     pattern::{RuntimeOpaqueTypeOwner, RuntimeOpaqueTypeProducerId, RuntimeSemanticTypeId},
     plan::{
-        EntryRuntimeId, FlowOp, FlowRuntimeId, RuntimeEntryKind, RuntimeEntrySpec,
-        RuntimeEntryTarget, RuntimeFlow, RuntimePlan,
+        EntryRuntimeId, FlowRuntimeId, RuntimeEntryKind, RuntimeEntrySpec, RuntimeEntryTarget,
+        RuntimeEvaluatedEffectSeed, RuntimeExprSeed, RuntimeExprSeedKind, RuntimeFlowOpSeed,
+        RuntimeFlowSeed, RuntimePlanBuilder, RuntimePlanTypeProjection, RuntimePlanTypeSeed,
     },
-    value::{RuntimeBinding, RuntimeExpr, RuntimeFunctionValue, RuntimeValue},
+    value::{RuntimeBinding, RuntimeFunctionValue, RuntimeValue},
 };
 use arcweft_interaction_model::input::{
     InputEpoch, InputEventKind, InputSequence, InteractionTarget, RoutedInputEvent,
@@ -164,8 +164,7 @@ fn awbc_product_session_save_preserves_exact_same_label_flow_identity() {
         flow: second.clone(),
         function: AwbcFunctionId(2),
     });
-    let bytes = product_bundle_with_label("entry.main", "same-label-save.arcw")
-        .with_product_awbc(program)
+    let bytes = product_bundle_with_program("entry.main", "same-label-save.arcw", program)
         .to_format_bytes(BundleFormat::Awfb)
         .expect("same-label product AWFB encodes");
     let session = product_session_from_bytes(&bytes);
@@ -444,42 +443,6 @@ fn awbc_save_load_preserves_cleanup_stacks() {
             .executor,
         snapshot.executor
     );
-}
-
-#[test]
-fn session_save_rejects_structured_function_bodies() {
-    let bytes = product_awfb_bytes("entry.main");
-    let mut session = product_session_from_bytes(&bytes);
-    let mut snapshot = session.snapshot_session().expect("snapshot exports");
-    let state = &mut snapshot.executor.state;
-    let frame = state.fiber.active_frame_mut().expect("active frame");
-    frame.root_cleanups.push(FiberScopeCleanup {
-        key: "handle.function".to_owned(),
-        effect: AwbcEffectPlanId(0),
-        args: vec![structured_runtime_function_value()],
-    });
-
-    let error = session
-        .restore_session_snapshot(snapshot.clone())
-        .expect_err("structured function bodies are not valid Product AWBC state");
-    assert!(matches!(
-        error,
-        BundleSessionSaveError::InvalidRuntimeValue { path, message }
-            if path == "executor.product_awbc.fiber.frames[0].root_cleanups[0].args[0]"
-                && message.contains("structured expression function bodies")
-    ));
-
-    let save = encode_session_snapshot(&snapshot, BUNDLE_SESSION_SAVE_SCHEMA_VERSION);
-    let mut restored = product_session_from_bytes(&bytes);
-    let error = restored
-        .import_session_save_bytes(&save, &arcweft_save::SaveDecodeOptions::default())
-        .expect_err("encoded structured functions are rejected on import");
-    assert!(matches!(
-        error,
-        BundleSessionSaveError::InvalidRuntimeValue { path, message }
-            if path == "executor.product_awbc.fiber.frames[0].root_cleanups[0].args[0]"
-                && message.contains("structured expression function bodies")
-    ));
 }
 
 #[test]
@@ -866,30 +829,48 @@ fn product_awfb_bytes(entry: &str) -> Vec<u8> {
 fn assertion_product_bundle(condition: bool) -> ArcweftBundle {
     let flow = FlowRuntimeId::from_runtime_target_value("flow.assertion")
         .expect("fixture flow ID is valid");
-    let plan = RuntimePlan::new(
-        vec![RuntimeFlow {
-            id: flow.clone(),
-            ops: vec![
-                FlowOp::EvaluatedEffect(RuntimeEffectExpr::Assert {
+    let bool_ty = RuntimeSemanticTypeId::from_bytes([1; 32]);
+    let mut builder = RuntimePlanBuilder::new();
+    builder
+        .admit_semantic_batch(
+            [RuntimePlanTypeSeed::new(
+                bool_ty,
+                RuntimePlanTypeProjection::Bool,
+            )],
+            [],
+            [],
+            [],
+        )
+        .expect("bool type admits");
+    builder
+        .push_flow_seed(RuntimeFlowSeed::new(
+            flow.clone(),
+            [],
+            vec![
+                RuntimeFlowOpSeed::EvaluatedEffect(RuntimeEvaluatedEffectSeed::Assert {
                     guard: RuntimeAssertionGuardId::try_from_bytes([7; 16]).expect("fixture guard"),
-                    condition: RuntimeExpr::Value(RuntimeValue::Bool(condition)),
-                    message: RuntimeExpr::Value(RuntimeValue::String("must be ready".to_owned())),
+                    condition: RuntimeExprSeed::new(
+                        bool_ty,
+                        RuntimeExprSeedKind::Value(RuntimeValue::Bool(condition)),
+                    ),
+                    message: "must be ready".to_owned(),
                     profile: RuntimeAssertionProfile::Always,
                 }),
-                FlowOp::Return("done".to_owned()),
+                RuntimeFlowOpSeed::Return("done".to_owned()),
             ],
-        }],
-        Vec::new(),
-    )
-    .expect("assertion runtime plan is valid")
-    .with_entries(vec![RuntimeEntrySpec {
-        id: EntryRuntimeId::from_source_entity_body("entry.main")
-            .expect("fixture entry ID is valid"),
-        kind: RuntimeEntryKind::Cli,
-        binding: EntryBindingIdentity::from_bytes([1; 32]),
-        target: RuntimeEntryTarget::Flow(flow),
-        roles: RuntimeEntryRoles::None,
-    }]);
+        ))
+        .expect("assertion flow admits");
+    builder
+        .push_entry(RuntimeEntrySpec {
+            id: EntryRuntimeId::from_source_entity_body("entry.main")
+                .expect("fixture entry ID is valid"),
+            kind: RuntimeEntryKind::Cli,
+            binding: EntryBindingIdentity::from_bytes([1; 32]),
+            target: RuntimeEntryTarget::Flow(flow),
+            roles: RuntimeEntryRoles::None,
+        })
+        .expect("entry admits");
+    let plan = builder.finish().expect("assertion runtime plan is valid");
     let dialogue_content = DialogueContentCatalog::new();
     let product_awbc = AwbcLowerer::new(&plan, &dialogue_content, "assertion-session.arcw")
         .lower()
@@ -910,15 +891,13 @@ fn assertion_product_bundle(condition: bool) -> ArcweftBundle {
                 bytecode_instructions: 2,
                 line_task_groups: 0,
                 stream_plans: 0,
-                source_plans: 0,
             },
         },
         source_map("assertion-session.arcw", ""),
-        BytecodeProgram::from_runtime_plan(plan),
+        product_awbc,
         dialogue_content,
     )
     .expect("assertion bundle is valid")
-    .with_product_awbc(product_awbc)
 }
 
 fn product_awfb_bytes_with_label(entry: &str, source_label: &str) -> Vec<u8> {
@@ -936,6 +915,14 @@ fn product_awfb_bytes_with_profile(entry: &str, profile_id: &str) -> Vec<u8> {
 }
 
 fn product_bundle_with_label(entry: &str, source_label: &str) -> ArcweftBundle {
+    product_bundle_with_program(entry, source_label, minimal_awbc_program(entry))
+}
+
+fn product_bundle_with_program(
+    entry: &str,
+    source_label: &str,
+    program: AwbcProgram,
+) -> ArcweftBundle {
     ArcweftBundle::try_new(
         BundleManifest {
             profile_id: None,
@@ -951,15 +938,13 @@ fn product_bundle_with_label(entry: &str, source_label: &str) -> ArcweftBundle {
                 bytecode_instructions: 0,
                 line_task_groups: 0,
                 stream_plans: 0,
-                source_plans: 0,
             },
         },
         source_map(source_label, ""),
-        BytecodeProgram::default(),
+        program,
         DialogueContentCatalog::new(),
     )
     .expect("standard dialogue source joins source map")
-    .with_product_awbc(minimal_awbc_program(entry))
 }
 
 fn source_map(label: &str, text: &str) -> SourceMapSection {
@@ -1005,14 +990,6 @@ fn cleanup(key: &str, value: &str) -> FiberScopeCleanup {
         effect: AwbcEffectPlanId(0),
         args: vec![RuntimeValue::String(value.to_owned())],
     }
-}
-
-fn structured_runtime_function_value() -> RuntimeValue {
-    RuntimeValue::Function(RuntimeFunctionValue::new(
-        vec!["value".to_owned()],
-        RuntimeExpr::Local("value".to_owned()),
-        Vec::new(),
-    ))
 }
 
 fn awbc_runtime_function_value(function: AwbcFunctionId) -> RuntimeValue {

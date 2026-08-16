@@ -1,4 +1,3 @@
-use arcweft_core::bytecode::BytecodeProgram;
 use arcweft_core::plan::EntryRuntimeId;
 
 use crate::binding::ReplBindingRecord;
@@ -32,14 +31,13 @@ pub enum ReplCellExecutionStatus {
     Invalidated,
 }
 
-/// Deterministic bytecode counters retained in cell records and snapshots.
+/// Deterministic Product AWBC counters retained in cell records and snapshots.
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
-pub struct ReplBytecodeStats {
+pub struct ReplProgramStats {
     pub flows: usize,
     pub instructions: usize,
     pub line_task_groups: usize,
     pub stream_plans: usize,
-    pub source_plans: usize,
 }
 
 /// Public projection of one committed cell.
@@ -57,7 +55,7 @@ pub struct ReplCellRecord {
     pub commit_hash: String,
     pub overlay_hash: String,
     pub entry: Option<String>,
-    pub bytecode_stats: ReplBytecodeStats,
+    pub program_stats: ReplProgramStats,
     pub verified_effects: Vec<String>,
     pub bindings: Vec<ReplBindingRecord>,
     pub execution: ReplExecutionRecord,
@@ -113,7 +111,6 @@ pub struct ReplResetOutcome {
 #[derive(Debug)]
 pub(crate) struct CommittedReplCell {
     pub(crate) record: ReplCellRecord,
-    pub(crate) bytecode: BytecodeProgram,
     pub(crate) bundle: arcweft_bundle::ArcweftBundle,
 }
 
@@ -202,7 +199,7 @@ impl ReplCellRecord {
         generation: ReplGenerationId,
         commit_hash: String,
         entry: Option<EntryRuntimeId>,
-        bytecode_stats: ReplBytecodeStats,
+        program_stats: ReplProgramStats,
         verified_effects: Vec<String>,
         bindings: Vec<ReplBindingRecord>,
     ) -> Self {
@@ -220,7 +217,7 @@ impl ReplCellRecord {
             commit_hash,
             overlay_hash: String::new(),
             entry: entry.map(|entry| entry.public_label().into_string()),
-            bytecode_stats,
+            program_stats,
             verified_effects,
             bindings,
             execution: ReplExecutionRecord::pending(),
@@ -236,28 +233,8 @@ impl ReplCellRecord {
     }
 }
 
-impl From<arcweft_core::bytecode::BytecodeStats> for ReplBytecodeStats {
-    fn from(stats: arcweft_core::bytecode::BytecodeStats) -> Self {
-        Self {
-            flows: stats.flows,
-            instructions: stats.instructions,
-            line_task_groups: stats.line_task_groups,
-            stream_plans: stats.stream_plans,
-            source_plans: stats.source_plans,
-        }
-    }
-}
-
 impl CommittedReplCell {
-    pub(crate) fn new(
-        record: ReplCellRecord,
-        bytecode: BytecodeProgram,
-        bundle: arcweft_bundle::ArcweftBundle,
-    ) -> Self {
-        Self {
-            record,
-            bytecode,
-            bundle,
-        }
+    pub(crate) fn new(record: ReplCellRecord, bundle: arcweft_bundle::ArcweftBundle) -> Self {
+        Self { record, bundle }
     }
 }
