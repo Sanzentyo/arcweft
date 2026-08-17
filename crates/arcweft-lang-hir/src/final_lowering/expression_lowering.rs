@@ -524,8 +524,8 @@ impl StagedHirModuleTransaction<'_> {
                         HirComputationBlockKind::Result,
                         OmittedValueTail::MissingRequired,
                     ),
-                    SyntaxComputationBlockKind::Task => (
-                        HirComputationBlockKind::Task,
+                    SyntaxComputationBlockKind::Option => (
+                        HirComputationBlockKind::Option,
                         OmittedValueTail::MissingRequired,
                     ),
                     SyntaxComputationBlockKind::Seq => {

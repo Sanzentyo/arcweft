@@ -102,7 +102,7 @@ pub(super) fn computation_block_expression_matches(
     attached: &AttachedExpressionNode,
 ) -> bool {
     let omitted_tail = match block.kind() {
-        HirComputationBlockKind::Result | HirComputationBlockKind::Task => {
+        HirComputationBlockKind::Result | HirComputationBlockKind::Option => {
             OmittedTailExpectation::MissingRequired
         }
         HirComputationBlockKind::Seq | HirComputationBlockKind::Stream => {

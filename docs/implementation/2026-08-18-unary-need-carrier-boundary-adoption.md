@@ -20,6 +20,43 @@ Working tree at inspection: clean before this documentation cut.
 - Retained `Stream<T, E>` because its error is a terminal multi-item protocol,
   not a one-shot payload carrier.
 
+## Implementation checkpoint: carrier-block surface
+
+- Replaced the unreleased `task {}` computation-block family directly with
+  `option {}` across parser projection, attached syntax, final HIR, source
+  validation, dialogue candidates, and semantic analysis.
+- `option { tail }` now has the checked type `Option<T>` when `tail: T`; it does
+  not construct a Need and it does not flatten an already-carried tail.
+- Retained the existing computation-block owner for this atomic surface cut.
+  Publishing the lexical propagation boundary and consuming one checked Try
+  fact is the next cut; this checkpoint does not claim that `result {}` or
+  `option {}` already intercept nested Try residuals.
+
+### Checkpoint validation
+
+Passed:
+
+- `cargo test -p arcweft-lang-syntax --lib`
+  (`668 passed`).
+- `cargo test -p arcweft-lang-hir --lib` initially reached `829 passed`, one
+  renamed dialogue-candidate fixture failure, and `8 ignored`; the exact failed
+  test passed after its source fixture was corrected.
+- `cargo test -p arcweft-lang-sema --lib` (`197 passed` before adding the new
+  focused test), plus
+  `option_block_wraps_its_tail_without_constructing_a_need`.
+- `cargo check --workspace --all-targets --all-features`.
+- `cargo clippy --workspace --all-targets --all-features`; it completed with
+  pre-existing warnings outside this cut.
+- `just structure-audit` (`0` blocking violations).
+- `cargo fmt --all` and `git diff --check`.
+
+Failed outside this cut:
+
+- `just test-workspace` reached `arcweft-agent-runner` and failed five existing
+  controller AWBC response-field tests because runtime records lacked `uri`,
+  `body`, `semantic_hash`, `edge_count`, or `tick`. This cut changes no runner,
+  runtime payload, Agent-field, or AWBC field-projection source.
+
 ## Current source evidence
 
 The inspected production source has not implemented this public switch:
@@ -32,11 +69,9 @@ The inspected production source has not implemented this public switch:
   temporary, and dispatches authored Error handlers.
 - `RuntimeNeedState` and task completion still carry the old split completion
   contract.
-- Syntax/HIR already have `ComputationBlock(Result | Task | Seq | Stream)`.
-  `result {}` therefore exists only as a value wrapper, not yet as the final
-  checked residual boundary; `option {}` is absent; and the existing `task {}`
-  block conflicts with the decision not to expose a task/Need-construction
-  block.
+- Syntax/HIR now have `ComputationBlock(Result | Option | Seq | Stream)`.
+  `result {}` and `option {}` currently wrap their value tails, but are not yet
+  the final checked residual boundaries.
 - `_` and `^` remain typed syntax/HIR placeholders, but the checked lexical
   boundary stack and pipe-left binding required by the final contract are not
   yet published.

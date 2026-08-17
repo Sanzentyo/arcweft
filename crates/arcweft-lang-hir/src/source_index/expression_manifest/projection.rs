@@ -219,8 +219,8 @@ pub(super) fn expression_payload_matches(
                     HirComputationBlockKind::Result,
                     arcweft_lang_syntax::expressions::SyntaxComputationBlockKind::Result
                 ) | (
-                    HirComputationBlockKind::Task,
-                    arcweft_lang_syntax::expressions::SyntaxComputationBlockKind::Task
+                    HirComputationBlockKind::Option,
+                    arcweft_lang_syntax::expressions::SyntaxComputationBlockKind::Option
                 ) | (
                     HirComputationBlockKind::Seq,
                     arcweft_lang_syntax::expressions::SyntaxComputationBlockKind::Seq

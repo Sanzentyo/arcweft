@@ -136,7 +136,7 @@ fn computation_and_named_candidates_use_final_tail_policy() {
         "dialogue-candidate-block-families",
         &[
             "items[result { marker; }]".into(),
-            "items[task { marker; }]".into(),
+            "items[option { marker; }]".into(),
             "items[seq { }]".into(),
             "items[stream { }]".into(),
             "items[scope retry { marker }]".into(),
@@ -147,7 +147,7 @@ fn computation_and_named_candidates_use_final_tail_policy() {
 
     for (position, expected) in [
         HirComputationBlockKind::Result,
-        HirComputationBlockKind::Task,
+        HirComputationBlockKind::Option,
         HirComputationBlockKind::Seq,
         HirComputationBlockKind::Stream,
     ]
@@ -160,7 +160,7 @@ fn computation_and_named_candidates_use_final_tail_policy() {
         };
         assert_eq!(block.kind(), expected);
         match expected {
-            HirComputationBlockKind::Result | HirComputationBlockKind::Task => assert_eq!(
+            HirComputationBlockKind::Result | HirComputationBlockKind::Option => assert_eq!(
                 expression(&module, block.tail()).state(),
                 &HirPoisonState::Poisoned(HirRecoveryIssue::MissingRequiredTail)
             ),

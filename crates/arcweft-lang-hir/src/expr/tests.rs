@@ -1052,7 +1052,7 @@ fn expression_source_roles_cover_the_closed_thirty_six_family_matrix() {
         ),
         (
             HirExprKind::ComputationBlock(HirComputationBlockExpr::new(
-                HirComputationBlockKind::Task,
+                HirComputationBlockKind::Option,
                 scope,
                 Box::new([]),
                 first,

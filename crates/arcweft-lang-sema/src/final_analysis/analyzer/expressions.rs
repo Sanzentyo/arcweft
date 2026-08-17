@@ -704,10 +704,9 @@ impl Analyzer<'_, '_, '_> {
                         ok: Box::new(tail.ty().clone()),
                         error: Box::new(TypeKind::Unit),
                     },
-                    HirComputationBlockKind::Task => TypeKind::Need {
-                        ready: Box::new(tail.ty().clone()),
-                        error: Box::new(TypeKind::Unit),
-                    },
+                    HirComputationBlockKind::Option => {
+                        TypeKind::Option(Box::new(tail.ty().clone()))
+                    }
                     HirComputationBlockKind::Seq => TypeKind::Seq(Box::new(tail.ty().clone())),
                     HirComputationBlockKind::Stream => TypeKind::Stream {
                         item: Box::new(tail.ty().clone()),

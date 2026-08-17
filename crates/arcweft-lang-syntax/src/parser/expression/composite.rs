@@ -878,7 +878,7 @@ pub(super) fn emit_computation_block(
         .map(|token| parser.text_of(token))
     {
         Some("result") => SyntaxComputationBlockKind::Result,
-        Some("task") => SyntaxComputationBlockKind::Task,
+        Some("option") => SyntaxComputationBlockKind::Option,
         Some("seq") => SyntaxComputationBlockKind::Seq,
         Some("stream") => SyntaxComputationBlockKind::Stream,
         _ => unreachable!("computation-block emission requires a selected keyword"),

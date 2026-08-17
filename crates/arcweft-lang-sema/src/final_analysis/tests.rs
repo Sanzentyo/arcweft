@@ -1617,6 +1617,30 @@ fn nested(need: Need<i64, String>) -> Result<i64, String> {
 }
 
 #[test]
+fn option_block_wraps_its_tail_without_constructing_a_need() {
+    let fixture = fixture(
+        r"
+fn selected() -> Option<i64> {
+    option { 7i64 }
+}
+",
+        None,
+    );
+    let report = analyze(&fixture).expect("Option carrier block final analysis");
+    assert!(report.expressions().any(|(_, expression)| {
+        matches!(
+            expression.ty(),
+            TypeKind::Option(value) if **value == TypeKind::I64
+        )
+    }));
+    assert!(
+        !report
+            .expressions()
+            .any(|(_, expression)| { matches!(expression.ty(), TypeKind::Need { .. }) })
+    );
+}
+
+#[test]
 fn nested_yield_classifies_stream_factory_but_independent_owners_do_not_leak() {
     let generator = fixture(
         r"

@@ -384,7 +384,7 @@ fn parse_prefix(
             | "await"
             | "thread"
             | "result"
-            | "task"
+            | "option"
             | "seq"
             | "stream"
             | "scope"
@@ -408,7 +408,7 @@ fn parse_prefix(
         "thread" if composite::has_braced_body(parser, end) => {
             composite::emit_thread_expression(parser, end, role)
         }
-        "result" | "task" | "seq" | "stream" if composite::has_braced_body(parser, end) => {
+        "result" | "option" | "seq" | "stream" if composite::has_braced_body(parser, end) => {
             composite::emit_computation_block(parser, end, role)
         }
         "scope" if composite::has_braced_body(parser, end) => {

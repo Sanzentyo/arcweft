@@ -149,7 +149,7 @@ impl HirComputationBlockExpr {
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub enum HirComputationBlockKind {
     Result,
-    Task,
+    Option,
     Seq,
     Stream,
 }

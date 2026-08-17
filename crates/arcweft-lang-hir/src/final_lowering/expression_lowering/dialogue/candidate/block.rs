@@ -101,8 +101,8 @@ impl StagedHirModuleTransaction<'_> {
                 HirComputationBlockKind::Result,
                 CandidateOmittedTail::MissingRequired,
             ),
-            SyntaxComputationBlockKind::Task => (
-                HirComputationBlockKind::Task,
+            SyntaxComputationBlockKind::Option => (
+                HirComputationBlockKind::Option,
                 CandidateOmittedTail::MissingRequired,
             ),
             SyntaxComputationBlockKind::Seq => (

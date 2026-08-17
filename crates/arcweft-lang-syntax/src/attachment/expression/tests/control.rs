@@ -146,7 +146,7 @@ fn attached_implicit_callback_body_uses_the_central_block_projection() {
 fn attached_computation_blocks_retain_the_selected_kind_and_block_owner() {
     let cases = [
         ("result { 1 }", SyntaxComputationBlockKind::Result),
-        ("task { 1 }", SyntaxComputationBlockKind::Task),
+        ("option { 1 }", SyntaxComputationBlockKind::Option),
         ("seq { 1 }", SyntaxComputationBlockKind::Seq),
         ("stream { 1 }", SyntaxComputationBlockKind::Stream),
     ];

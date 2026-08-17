@@ -258,7 +258,7 @@ impl ExpressionProjection {
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub enum SyntaxComputationBlockKind {
     Result,
-    Task,
+    Option,
     Seq,
     Stream,
 }

@@ -949,8 +949,8 @@ impl<'a> CandidateValidationCursor<'a> {
                         HirComputationBlockKind::Result,
                         block::CandidateTailPolicy::MissingRequired,
                     ),
-                    arcweft_lang_syntax::expressions::SyntaxComputationBlockKind::Task => (
-                        HirComputationBlockKind::Task,
+                    arcweft_lang_syntax::expressions::SyntaxComputationBlockKind::Option => (
+                        HirComputationBlockKind::Option,
                         block::CandidateTailPolicy::MissingRequired,
                     ),
                     arcweft_lang_syntax::expressions::SyntaxComputationBlockKind::Seq => (

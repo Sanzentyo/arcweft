@@ -1520,7 +1520,7 @@ fn e28_computation_blocks_preserve_kind_scope_statements_and_authored_tail() {
         "computation-authored-tail",
         &[
             "result { let item = 1; item }".into(),
-            "task { let item = 1; item }".into(),
+            "option { let item = 1; item }".into(),
             "seq { let item = 1; item }".into(),
             "stream { let item = 1; item }".into(),
         ],
@@ -1530,7 +1530,7 @@ fn e28_computation_blocks_preserve_kind_scope_statements_and_authored_tail() {
 
     let expected = [
         HirComputationBlockKind::Result,
-        HirComputationBlockKind::Task,
+        HirComputationBlockKind::Option,
         HirComputationBlockKind::Seq,
         HirComputationBlockKind::Stream,
     ];
@@ -1577,7 +1577,7 @@ fn e28_computation_omission_selects_required_or_unit_tail_by_kind() {
         "computation-omitted-tail",
         &[
             "result { let item = 1; }".into(),
-            "task { let item = 1; }".into(),
+            "option { let item = 1; }".into(),
             "seq { let item = 1; }".into(),
             "stream { let item = 1; }".into(),
         ],
