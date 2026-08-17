@@ -73,7 +73,9 @@ WebUSB and WebHID are not transparent equivalents of native USB/HID:
 - device filters should be narrow,
 - product builds must surface active device indicators and audit logs.
 
-Therefore Web device access is always represented as `Need<Result<DeviceHandle, DeviceError>, TaskError>` and must use `await ... with` in player-visible flows.
+Therefore Web device access is represented as
+`Result<Need<Result<DeviceHandle, DeviceError>>, AdmissionError>`: admission,
+temporal completion, and domain failure remain distinct typed layers.
 
 ## Device declarations
 
@@ -133,17 +135,20 @@ pub device @device.primary_gamepad: Gamepad {
 ## Starting a device
 
 ```arcw
+let panel_request = match device.usb(@device.light_panel) {
+    .Ok(request) => request
+    .Err(.Denied(_)) => {
+        log.warn("USB device permission denied")
+        return Ok(FlowExit.Goto(@flow.no_usb_fallback))
+    }
+    .Err(error) => return Err(error.into())
+}
 let panel =
-    try await device.usb(@device.light_panel) with {
+    try await panel_request with {
         pending p => {
             scene.show(@scene.usb_permission_wait)
             text.show("USB ライトパネルの許可を待っています")
             progress.set(p.ratio)
-        }
-
-        denied _ => {
-            log.warn("USB device permission denied")
-            return Ok(FlowExit::Goto(@flow.no_usb_fallback))
         }
     }
 ```

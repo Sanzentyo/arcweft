@@ -20,7 +20,7 @@ Arcweft does **not** use a general-purpose language generator as the main device
 Instead:
 
 ```text
-Need<T, E>
+Need<T>
   startup / permission / realization that may take time
 
 Stream<T, E>
@@ -52,11 +52,10 @@ If a DSL generator could directly open a device, those concerns would leak into 
 ## Core types
 
 ```rust
-pub enum Need<T, E> {
+pub enum Need<T> {
     NotStarted,
     Pending(Progress),
     Ready(T),
-    Err(E),
     Cancelled,
 }
 
@@ -73,7 +72,9 @@ pub struct Watch<T> {
 }
 ```
 
-`Need<T, E>` never coerces into `T`. A visible `flow` or `view` must describe what to show while it is pending.
+`Need<T>` never coerces into `T`. A visible `flow` or `view` must describe what
+to show while it is pending. Domain failure is carried in a payload such as
+`Need<Result<T, E>>`; cancellation is a separate control outcome.
 
 ```arcw
 let usb =
@@ -83,10 +84,11 @@ let usb =
             text.show("USB デバイスの許可を待っています")
             progress.set(p.ratio)
         }
-
-        denied _ => return Ok(FlowExit::Goto(@flow.device_optional))
     }
 ```
+
+Permission denial is represented by the producer's typed admission Result,
+domain Result payload, or cancellation policy. It is not a Need state branch.
 
 ## Generator functions
 

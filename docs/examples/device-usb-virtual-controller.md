@@ -96,23 +96,24 @@ pub controller_map @controller_map.action_game {
 
 ```arcw
 pub flow enter_truck_game(state: GameState) -> Result<FlowExit, FlowError> {
-    let pad =
-        try await device.open(@device.rhythm_pad).optional() with {
+    let pad = match device.open(@device.rhythm_pad).optional() {
+        .Err(.Denied(_)) => None
+        .Err(error) => return Err(error.into())
+        .Ok(request) => await request with {
             pending p => {
                 scene.show(@scene.device_permission_wait)
                 text.show("USBコントローラーの接続を確認しています")
                 progress.set(p.ratio)
             }
-
-            denied _ => None
         }
+    }
 
     let result =
-        await @<activity.truck_game>.run({
+        try await @<activity.truck_game>.run({
             controller = @controller_map.action_game,
             optional_device = pad,
             virtual_controller = Some(@controller.mobile_default),
-        })? with {
+        }) with {
             pending p => {
                 scene.show(@scene.loading_minigame)
                 text.show("ミニゲームを準備中")

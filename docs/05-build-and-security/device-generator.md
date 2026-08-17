@@ -194,7 +194,7 @@ pub trait DeviceDriver {
     fn manifest() -> DeviceDriverManifest;
 
     fn open(&mut self, lease: DeviceLeaseRaw, config: Self::Config)
-        -> Need<Result<Self::Ports, DeviceError>, TaskError>;
+        -> Result<Need<Result<Self::Ports, DeviceError>>, AdmissionError>;
 
     fn poll(&mut self, budget: DevicePollBudget) -> Result<Vec<DeviceEvent>, DeviceError>;
 

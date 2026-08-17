@@ -6,7 +6,7 @@
 | PublicId | ユーザーが見たり DSL で書く ID。例: `flow.opening`。 |
 | SemanticHash | 内容や意味の fingerprint。RAG 更新や履歴追跡に使う。 |
 | Ref<T> | Entity への非 null 参照。`@flow.opening` は `Ref<Flow>`。 |
-| Need<T, E> | 時間がかかる可能性がある値。暗黙 force 禁止。 |
+| Need<T> | 時間的に未完了かもしれないone-shot値。domain failureはpayloadのResultが所有し、暗黙forceは禁止。 |
 | Result<T, E> | 成功/失敗。例外ではなく prefix `try` で伝播。 |
 | Option<T> | 値がない可能性。null の代替。 |
 | Flow | ノベルゲームの逐次進行。suspend/resume 可能。 |

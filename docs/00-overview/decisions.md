@@ -282,12 +282,13 @@ If the loop must return a value, use `loop { break value }`.
 
 This is the most balanced choice after adding expression-oriented `if` / `match` / `loop`.
 
-## Await / `try` decision
+## Await / `try` / carrier-block decision
 
-`await expr with:` returns `Result<T, E>`. Prefix `try` is the sole propagation
-operator for `Result` and `Option`, so `try await expr with:` is ordinary
-composition of `try` around the awaited result. Arcweft has no postfix `?` and
-no attached `await?` spelling.
+`Need<T>` is the unary temporal carrier and `await` returns exactly `T`.
+Fallible work returns `Need<Result<T, E>>`; optional work returns
+`Need<Option<T>>`. Prefix `try` is the sole propagation operator for Result and
+Option, so `try await expr with:` is ordinary composition. Arcweft has no
+postfix `?`, attached `await?`, or fused TryAwait owner.
 
 ```arcw
 let bg_result = await asset.image(@asset:.bg.room) with:
@@ -301,6 +302,10 @@ let bg = try await asset.image(@asset:.bg.room) with:
 
 `with:` belongs to the Await expression. `try await` therefore parses as
 `try (await ...)`; it is not a special Await form or source-preserving sugar.
+
+`result {}` and `option {}` create local carrier boundaries and wrap normal
+tails in Ok/Some without flattening. `try {}` is ordinary Try over a block and
+does not create a boundary. `need {}` is not introduced.
 
 ## Error/context decision
 

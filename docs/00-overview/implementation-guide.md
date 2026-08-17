@@ -45,7 +45,7 @@ TokenKind
 ```text
 Primitive: (), bool, String, explicit integer and float widths, Duration, Color, Ratio, Length, Angle
 ADT: struct, enum, newtype
-Generic: Vec<T>, OrderedMap<K,V>, OrderedSet<T>, Option<T>, Result<T,E>, Need<T,E>, Ref<T>
+Generic: Vec<T>, OrderedMap<K,V>, OrderedSet<T>, Option<T>, Result<T,E>, Need<T>, Ref<T>
 Function: A -> B, curried function groups
 Borrow: &'a T, &'a mut T
 ```
@@ -75,7 +75,7 @@ Borrow: &'a T, &'a mut T
 
 ### `arcweft-need`
 
-- `Need<T,E>` の型と lowering。
+- unary `Need<T>` とpayload-preserving Awaitの型/lowering。
 - `await with` / `poll` / `select` lowering。
 - flow 内 naked await の診断。
 

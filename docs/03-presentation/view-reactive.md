@@ -174,15 +174,16 @@ branch owner:
 ```arcw
 match load_avatar(user) {
     .pending(progress) => SkeletonCircle(progress = progress)
-    .ready(image) => Image(image)
-    .error(error) => ErrorMessage(error)
-    .denied(reason) => PermissionDenied(reason)
+    .ready(.Ok(image)) => Image(image)
+    .ready(.Err(error)) => ErrorMessage(error)
 }
 ```
 
 `AwaitView` is not a retained parser, HIR, formatter, or LSP surface. Outside a
 View context, `await` remains continuation suspension rather than reactive
-branch selection.
+branch selection. Need itself owns no domain-error or denial branch; those are
+represented by the Ready payload or by a typed admission result. Cancellation
+remains a separate control outcome.
 ```
 
 ## Retained list virtualization

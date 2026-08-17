@@ -163,7 +163,8 @@ max_in_flight
 
 ## Need handling
 
-`Need<T, E>` は `T` へ暗黙変換しない。
+unary `Need<T>` は `T` へ暗黙変換しない。domain failureは
+`Need<Result<T, E>>`のpayloadが所有する。
 
 flow:
 
@@ -176,10 +177,10 @@ let data = try await load() with {
 View:
 
 ```arcw
-AwaitView(load_avatar(user)) {
-    pending _ => SkeletonCircle()
-    ready img => Image(img)
-    error _ => Icon(@vector.avatar_fallback)
+match load_avatar(user) {
+    .pending(progress) => SkeletonCircle(progress = progress)
+    .ready(.Ok(image)) => Image(image)
+    .ready(.Err(error)) => ErrorMessage(error)
 }
 ```
 

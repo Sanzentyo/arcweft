@@ -11,7 +11,7 @@ Unit
 Never
 Option<T>
 Result<T, E>
-Need<T, E>
+Need<T>
 Progress
 Duration
 TickId

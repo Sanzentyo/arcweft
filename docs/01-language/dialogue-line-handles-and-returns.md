@@ -377,7 +377,7 @@ generic memo cache in source.
 let actor = alice.stage.acquire(scope=scene)
 ```
 
-Preload declarations are hints, not hidden blocking operations. If an asset is not ready at use time, the normal `Need<T, E>` / pending-display rules still apply.
+Preload declarations are hints, not hidden blocking operations. If an asset is not ready at use time, the normal unary `Need<T>` / pending-display rules still apply; domain failure belongs to its payload Result.
 
 ---
 

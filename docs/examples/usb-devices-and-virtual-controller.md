@@ -98,17 +98,20 @@ pub virtual_controller @controller.default_touch {
 
 ```arcw
 pub flow device_setup(state: GameState) -> Result<FlowExit, FlowError> {
+    let sensor_request = match device.open(@device.motion_sensor) {
+        .Ok(request) => request
+        .Err(.Denied(_)) => {
+            log.warn("motion sensor denied")
+            return Ok(FlowExit.Goto(@flow.opening_without_sensor))
+        }
+        .Err(error) => return Err(error.into())
+    }
     let sensor =
-        try await device.open(@device.motion_sensor) with {
+        try await sensor_request with {
             pending p => {
                 scene.show(@scene.device_wait)
                 text.show("USBセンサーの許可を待っています")
                 progress.set(p.ratio)
-            }
-
-            denied _ => {
-                log.warn("motion sensor denied")
-                return Ok(FlowExit.Goto(@flow.opening_without_sensor))
             }
         }
 

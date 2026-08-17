@@ -37,9 +37,9 @@ Stream<T, E>
   capability or produced by a transform over an existing stream or granted
   port.
 
-Need<Result<T, E>, TaskError>
-  One-shot realization or acquisition.
-  Must be awaited with pending/denied/error branches in user-visible flows.
+Result<Need<Result<T, E>>, AdmissionError>
+  A typed synchronous admission result around one-shot realization.
+  The Need has only temporal state; its Result payload owns domain completion.
 ```
 
 Rust implementation may use `futures::Stream`, callback adapters, or generated state machines. External capability calls lower into explicit typed stream requests; the DSL has no `source` declaration role and does not rely on unstable Rust generator internals.
@@ -95,13 +95,12 @@ User-visible flows must decide what to do while a source is being acquired.
 
 ```arcw
 let mic =
-    try await capture.microphone(@capture.player_microphone) with {
+    try await (try capture.microphone(@capture.player_microphone)) with {
         pending p => {
             scene.show(@scene.permission_wait)
             text.show("マイクの許可を待っています")
             progress.set(p.ratio)
         }
-        denied _ => return Ok(FlowExit::Goto(@flow.mic_optional))
     }
 
 let frames = capture.audio_frames(mic)
@@ -111,7 +110,7 @@ Once acquired, stream items are consumed by `select`, `poll`, Activity input por
 
 ```arcw
 select {
-    audio = frames.next? => {
+    audio = try frames.next() => {
         signal.set(@signal.voice_level, audio.rms)
     }
 

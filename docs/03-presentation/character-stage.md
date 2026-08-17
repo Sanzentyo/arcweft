@@ -489,7 +489,7 @@ alice.stage.show(smile, at=center)
 
 `alice.stage.show(smile, ...)` may request the same retained sprite handle
 internally. If the handle is not ready and the line/flow is visible to the
-player, `Need<T, E>` pending rules apply.
+player, unary `Need<T>` pending rules apply; fallible completion uses a Result payload.
 
 ---
 

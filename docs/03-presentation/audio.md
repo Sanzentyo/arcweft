@@ -230,7 +230,7 @@ pub bgm generated.alice_theme compose {
 }
 ```
 
-生成系は `Need<Result<AudioHandle, AudioError>, TaskError>`。
+生成系は `Result<Need<Result<AudioHandle, AudioError>>, AdmissionError>`。
 
 ```arcw
 let bgm = try await compose_bgm(@bgm.generated.alice_theme) with {

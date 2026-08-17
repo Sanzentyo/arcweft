@@ -40,22 +40,30 @@ watch signal @signal.camera_frame from capture.latest_frame(@capture.face_camera
 
 ```arcw
 pub flow capture_setup(state: GameState) -> Result<FlowExit, FlowError> {
+    let mic_request = match capture.microphone(@capture.player_microphone) {
+        .Ok(request) => request
+        .Err(.Denied(_)) => return Ok(FlowExit.Goto(@flow.no_microphone))
+        .Err(error) => return Err(error.into())
+    }
     let mic =
-        try await capture.microphone(@capture.player_microphone) with {
+        try await mic_request with {
             pending _ => {
                 scene.show(@scene.permission_wait)
                 text.show("マイクの使用を許可してください")
             }
-            denied _ => return Ok(FlowExit.Goto(@flow.no_microphone))
         }
 
+    let cam_request = match capture.camera(@capture.face_camera) {
+        .Ok(request) => request
+        .Err(.Denied(_)) => return Ok(FlowExit.Goto(@flow.no_camera))
+        .Err(error) => return Err(error.into())
+    }
     let cam =
-        try await capture.camera(@capture.face_camera) with {
+        try await cam_request with {
             pending _ => {
                 scene.show(@scene.permission_wait)
                 text.show("カメラの使用を許可してください")
             }
-            denied _ => return Ok(FlowExit.Goto(@flow.no_camera))
         }
 
     scene.show(@scene.capture_preview)
@@ -87,9 +95,9 @@ pub activity @activity.voice_minigame VoiceMinigame {
 }
 
 let result =
-    await @<activity.voice_minigame>.run({
+    try await @<activity.voice_minigame>.run({
         mic = capture.stream(@capture.player_microphone),
-    })? with {
+    }) with {
         pending p => scene.show(@scene.voice_game_loading); progress.set(p.ratio)
     }
 ```

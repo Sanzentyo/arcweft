@@ -556,10 +556,10 @@ Example:
 extern capability fs {
     type FsError
 
-    fn read_text(path: VirtualPath) -> Need<String, FsError>
+    fn read_text(path: VirtualPath) -> Need<Result<String, FsError>>
         effects { fs.read }
 
-    fn write_text(path: VirtualPath, body: String) -> Need<Unit, FsError>
+    fn write_text(path: VirtualPath, body: String) -> Need<Result<Unit, FsError>>
         effects { fs.write }
 }
 ```

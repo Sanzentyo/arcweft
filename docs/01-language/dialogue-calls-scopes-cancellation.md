@@ -418,7 +418,7 @@ with {
 }
 ```
 
-`together { ... }` is not a thread primitive. It groups effect requests on the same timeline tick. Long-running work must still use `Need<T, E>` and explicit pending handling.
+`together { ... }` is not a thread primitive. It groups effect requests on the same timeline tick. Long-running work must still use unary `Need<T>` and explicit pending handling; fallible work uses a Result payload.
 
 ---
 

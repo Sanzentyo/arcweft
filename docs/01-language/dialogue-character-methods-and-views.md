@@ -303,7 +303,7 @@ preload next @flow.alice_intro:
     bgm.prepare(@bgm.alice_theme)
 ```
 
-Preload is a hint, not a hidden blocking operation. If the resource is not ready when used, the normal `Need<T, E>` pending rules still apply.
+Preload is a hint, not a hidden blocking operation. If the resource is not ready when used, the normal unary `Need<T>` pending rules still apply; domain failure belongs to its payload Result.
 
 ---
 

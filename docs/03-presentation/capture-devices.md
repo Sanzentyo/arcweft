@@ -23,7 +23,9 @@ Related chapters:
 - Native camera input prefers `shiguredo_video_device` as the first backend because it directly targets macOS AVFoundation, Linux V4L2/PipeWire, and Windows Media Foundation.
 - `nokhwa` remains an optional compatibility backend for simple webcam capture and broader experimentation.
 - Web camera input uses `web-sys` MediaDevices / MediaStream / MediaStreamTrack, not `nokhwa` or `shiguredo_video_device`.
-- Capture frames and microphone buffers enter Arcweft as `Need<Result<CaptureHandle, CaptureError>, TaskError>` and then as live `Stream`/`Watch` signals.
+- Capture frames and microphone buffers enter Arcweft as
+  `Result<Need<Result<CaptureHandle, CaptureError>>, AdmissionError>` and then
+  as live `Stream`/`Watch` signals.
 - Raw camera/microphone data is never exposed to scripts, LLM agent tools, or product telemetry unless an explicit capability is enabled.
 
 ## Why CPAL for audio I/O
@@ -172,17 +174,20 @@ pub capture face_camera: Camera {
 Starting capture returns a `Need` and therefore must define a pending View in a player-visible `flow` or `view`.
 
 ```arcw
+let mic_request = match capture.microphone(@capture.player_microphone) {
+    .Ok(request) => request
+    .Err(.Denied(reason)) => {
+        log.warn("microphone permission denied", reason = reason)
+        return Ok(FlowExit.Goto(@flow.no_mic_fallback))
+    }
+    .Err(error) => return Err(error.into())
+}
 let mic =
-    try await capture.microphone(@capture.player_microphone) with {
+    try await mic_request with {
         pending p => {
             scene.show(@scene.permission_wait)
             text.show("マイクの許可を待っています")
             progress.set(p.ratio)
-        }
-
-        denied e => {
-            log.warn("microphone permission denied: {e:?}", e = e)
-            return Ok(FlowExit::Goto(@flow.no_mic_fallback))
         }
     }
 ```
@@ -190,15 +195,18 @@ let mic =
 Camera capture is the same:
 
 ```arcw
+let cam_request = match capture.camera(@capture.face_camera) {
+    .Ok(request) => request
+    .Err(.Denied(_)) => return Ok(FlowExit.Goto(@flow.camera_optional))
+    .Err(error) => return Err(error.into())
+}
 let cam =
-    try await capture.camera(@capture.face_camera) with {
+    try await cam_request with {
         pending p => {
             scene.show(@scene.permission_wait)
             text.show("カメラの許可を待っています")
             progress.set(p.ratio)
         }
-
-        denied _ => return Ok(FlowExit::Goto(@flow.camera_optional))
     }
 ```
 
@@ -362,7 +370,7 @@ arcweft-capture-agent
 
 ## Specialized USB capture hardware
 
-Some capture hardware appears as USB or HID devices rather than ordinary camera/microphone devices. Arcweft treats these through [Device Profiles, Generators, and USB](device-generator-and-usb.md). The device profile may expose typed signals or typed capture frames, but player-visible flows still receive `Need<Result<..., ...>, ...>` and must handle pending/denied branches.
+Some capture hardware appears as USB or HID devices rather than ordinary camera/microphone devices. Arcweft treats these through [Device Profiles, Generators, and USB](device-generator-and-usb.md). The device profile may expose typed signals or typed capture frames, while player-visible flows retain separate admission Result, unary Need pending state, and domain Result payload.
 
 ```arcw
 pub device @device.depth_camera: UsbRaw {
@@ -380,7 +388,7 @@ watch signal @signal.depth_frame from device.latest(@device.depth_camera)
 Capture devices do not require a general-purpose generator as their primary abstraction. Arcweft uses:
 
 ```text
-Need<Result<CaptureHandle, CaptureError>, TaskError>
+Result<Need<Result<CaptureHandle, CaptureError>>, AdmissionError>
   for permission/startup
 
 Stream<AudioFrame, AudioError> / Stream<VideoFrame, VideoError>

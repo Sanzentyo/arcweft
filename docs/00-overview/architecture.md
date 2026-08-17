@@ -67,11 +67,11 @@ Arcweft Typed IR と bytecode VM が実行意味論の正本になる。Cranelif
 
 Native product の基本形は AOT compiled player + embedded `.awfb` / bytecode bundle。Web product の基本形は AOT compiled Wasm player + bytecode bundle。完全 AOT の generated Rust/Wasm は後段の release backend として扱う。
 
-### 時間がかかるものは `Need<T, E>`
+### 時間がかかるものは `Need<T>`
 
-asset load、content ensure、shader compile、Activity instantiate、TTS 生成、BGM pre-render、Typeset block の組版などは `Need<T, E>` として扱う。
+asset load、content ensure、shader compile、Activity instantiate、TTS 生成、BGM pre-render、Typeset block の組版などは unary `Need<T>` として扱う。domain failureを持つ処理は`Need<Result<T, E>>`を返す。
 
-`Need<T, E>` は `T` に暗黙変換できない。Flowでは
+`Need<T>` は `T` に暗黙変換できない。Flowでは
 `await ... with { pending ... }`で継続をsuspendする。Viewではordinary
 `match Need`をchecked retained subscription/branchへprojectし、待機中の
 表示を明示する。`AwaitView`専用surfaceは残さない。

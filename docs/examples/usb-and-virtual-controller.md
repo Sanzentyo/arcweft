@@ -23,8 +23,8 @@ pub fn decode_lightgun_report(input: &[u8])
     -> Result<LightgunReport, UsbParseError>
 requires input.len() >= 6 {
     Ok(LightgunReport {
-        x = le_u16(input[0..2])?,
-        y = le_u16(input[2..4])?,
+        x = try le_u16(input[0..2]),
+        y = try le_u16(input[2..4]),
         trigger = input[4] & 0x01 != 0,
         confidence = input[5],
     })
@@ -103,21 +103,23 @@ pub virtual_controller @vc.shooter_touch: VirtualController {
 
 ```arcw
 flow @flow.shooting_gallery_intro opening(state: GameState) -> Result<FlowExit, FlowError> {
-    let gun =
-        try await usb.open(@usb.lightgun).optional() with {
+    let gun = match usb.open(@usb.lightgun).optional() {
+        .Err(.Denied(_)) => None
+        .Err(error) => return Err(error.into())
+        .Ok(request) => await request with {
             pending p => {
                 scene.show(@scene.usb_wait)
                 text.show("専用コントローラーを探しています。タッチ操作でも遊べます。")
                 progress.set(p.ratio)
             }
-            denied _ => None
         }
+    }
 
     let result =
-        await @<activity.shooting_gallery>.run({
+        try await @<activity.shooting_gallery>.run({
             usb_lightgun = gun,
             touch_controller = Some(@vc.shooter_touch),
-        })? with {
+        }) with {
             pending p => scene.show(@scene.loading_activity); progress.set(p.ratio)
         }
 

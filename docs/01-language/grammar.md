@@ -726,18 +726,24 @@ Type, module, and selector paths use dot-separated segments; public IDs use the
 ```text
 TryExpr      := 'try' Expr
 AwaitExpr    := 'await' Expr AwaitPendingBlock?
+CarrierBlockExpr := ('result' | 'option') BlockExpr
 AwaitPendingBlock := 'with' ':' Newline AwaitCase+
                    | 'with' '{' AwaitCase* '}'
 ```
 
-`await` always returns `Result<T, E>`. `try` is the sole error/option
-propagation operator and unwraps the supported `Result` or `Option` operand.
-`try await expr` is ordinary prefix nesting: it parses as
-`try (await expr)` and returns `T` after propagating the awaited error.
+`await Need<T>` always returns `T`. Domain failure is represented by a payload
+such as `Need<Result<T, E>>`; `try` is the sole Result/Option propagation
+operator. `try await expr` is ordinary prefix nesting and never creates a fused
+TryAwait owner.
 The indentation form `with:` is syntax sugar for the canonical brace form `with { ... }`. Formatters may keep `with:` for scenario-like readability, but lowering should treat it as brace-block syntax.
 
 There is no postfix `?` or attached `await?` form in the final grammar. Use
 `try Expr` explicitly when propagation is intended.
+
+At expression start, `result` or `option` followed immediately by BlockExpr is
+a carrier block. It wraps normal tails in Ok/Some and is the nearest matching
+Try boundary. `try { ... }` is ordinary Try(Block), and `need { ... }` is not a
+language form.
 
 ## Never
 

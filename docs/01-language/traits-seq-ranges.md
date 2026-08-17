@@ -142,7 +142,7 @@ Arcweft の標準 wrapper は `map` と `and_then` を持つ。
 ```text
 Option<T>       map / and_then
 Result<T, E>    map / map_err / and_then / or_else
-Need<T, E>      map / and_then, but force requires await/poll/select
+Need<T>         map / and_then, but force requires await/poll/select
 Parser<T, E>    map / and_then / alt / many / optional
 Seq<T>          map / filter / flat_map / take / collect
 Stream<T, E>    map / filter / throttle / record, with lifecycle owned by its external capability
@@ -180,7 +180,8 @@ fn load_config(path: VirtualPath) -> Result<Config, FsError | ParseError> {
 }
 ```
 
-`Need<Result<T, E>, TaskError>` は `T` に暗黙変換できない。先に `await ... with { ... }` が必要。
+`Need<Result<T, E>>` は `T` に暗黙変換できない。先に
+`await ... with { ... }`で時間層を外し、そのResultをmatch/tryする。
 
 ```arcw
 let bg =
@@ -375,7 +376,7 @@ let images =
 ```
 
 The current runtime-supported form is `Vec<T>.traverse(capability.fn)
-.parallel(limit = N)`, where the function returns `Need<U, E>`. It is lowered
+.parallel(limit = N)`, where the function returns `Need<Result<U, E>>`. It is lowered
 to bounded fanout and returns `Vec<U>` in source order after `try await`.
 
 ## Stream is not Seq

@@ -241,20 +241,26 @@ test @test.rhythm_pad_report_parse fixture {
 
 ## Runtime use
 
-Opening a device is `Need<Result<DevicePort, DeviceError>, TaskError>` and must show pending/denied View in player-visible flows.
+Opening a device is
+`Result<Need<Result<DevicePort, DeviceError>>, AdmissionError>`. Admission
+denial is handled before Await, pending is temporal, and domain failure is the
+Ready Result payload.
 
 ```arcw
+let pad_request = match device.open(@device.rhythm_pad) {
+    .Ok(request) => request
+    .Err(.Denied(reason)) => {
+        log.warn("USB device denied", reason = reason)
+        return Ok(FlowExit.Goto(@flow.device_optional))
+    }
+    .Err(error) => return Err(error.into())
+}
 let pad =
-    try await device.open(@device.rhythm_pad) with {
+    try await pad_request with {
         pending p => {
             scene.show(@scene.device_permission_wait)
             text.show("USBデバイスの接続許可を待っています")
             progress.set(p.ratio)
-        }
-
-        denied e => {
-            log.warn("USB device denied: {e:?}", e = e)
-            return Ok(FlowExit::Goto(@flow.device_optional))
         }
     }
 ```

@@ -112,28 +112,28 @@ ids:
 `.context(...)` and `.with_context(...)` append context frames without discarding the original cause.
 
 ```arcw
-let bg = try await asset.image(@asset:.bg.room)
-    .context("while loading opening background")
-with:
-    pending p:
-        scene.show(@scene.loading)
-        progress.set(p.ratio)
-```
-
-`context` can be attached before `try await`; the context is applied to the eventual error stored in `Need<T, E>`.
-
-Parenthesized whole-await context is valid but not preferred:
-
-```arcw
-let bg = (await asset.image(@asset:.bg.room) with:
+let bg = try (await asset.image(@asset:.bg.room) with:
     pending p:
         scene.show(@scene.loading)
         progress.set(p.ratio)
 ).context("while loading opening background")
 ```
 
-Use `try await asset.image(...) with:`. Await owns its `with` handlers and
-always produces a `Result`; prefix `try` is the sole propagation operation.
+`context` applies to the Result payload, not to Need itself. Attach it after
+Await (or map the producer's Result payload before wrapping it in Need):
+
+The explicit two-step form is equivalent:
+
+```arcw
+let bg_result = await asset.image(@asset:.bg.room) with:
+    pending p:
+        scene.show(@scene.loading)
+        progress.set(p.ratio)
+let bg = try bg_result.context("while loading opening background")
+```
+
+Await owns its temporal `with` observers and produces the exact Need payload.
+For `Need<Result<T,E>>`, prefix `try` is the sole propagation operation.
 Postfix `?` and attached `await?` are not part of the language.
 
 ## Automatic source frames

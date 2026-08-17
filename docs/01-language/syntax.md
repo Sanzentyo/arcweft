@@ -174,13 +174,13 @@ View semaがretained subscriptionとbranchへprojectする。
 ```arcw
 match typeset(@typeset.credits) {
     .pending(progress) => Text("組版中")
-    .ready(document) => TypesetView(document)
-    .error(error) => Text("表示できません")
-    .denied(reason) => PermissionDenied(reason)
+    .ready(.Ok(document)) => TypesetView(document)
+    .ready(.Err(error)) => Text("表示できません")
 }
 ```
 
-`AwaitView`専用syntaxは最終surfaceに残さない。
+`AwaitView`専用syntaxは最終surfaceに残さない。Needはdomain-error branchを
+持たず、fallibleなpayloadは`Result`としてReady内で処理する。
 ```
 
 

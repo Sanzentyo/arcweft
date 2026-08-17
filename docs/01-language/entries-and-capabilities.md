@@ -168,11 +168,11 @@ pub extern capability fs {
     pub type FsError
 
     /// Reads UTF-8 text from a host path.
-    pub fn read_text(path: Path) -> Need<String, FsError>
+    pub fn read_text(path: Path) -> Need<Result<String, FsError>>
         effects { fs.read }
 
     /// Writes UTF-8 text. Curried groups remain part of the function signature.
-    pub fn write_text(path: Path)(text: String) -> Need<Unit, FsError>
+    pub fn write_text(path: Path)(text: String) -> Need<Result<Unit, FsError>>
         effects { fs.write }
 }
 ```
@@ -184,7 +184,7 @@ extern capability net {
     type Request
     type Response
 
-    fn send(request: Request) -> Need<Response, NetError>
+    fn send(request: Request) -> Need<Result<Response, NetError>>
         effects { net.connect, net.send }
 }
 ```
@@ -248,7 +248,7 @@ extern capability cli {
     type IoError
 
     fn args() -> Vec<String>
-    fn stdin_text() -> Need<String, IoError>
+    fn stdin_text() -> Need<Result<String, IoError>>
 
     fn stdout(text: String)
         effects { stdio.write }
@@ -273,7 +273,7 @@ extern capability http {
     fn respond(req: RequestRef, response: HttpResponse)
         effects { http.respond }
 
-    fn fetch(req: HttpRequest) -> Need<HttpResponse, HttpError>
+    fn fetch(req: HttpRequest) -> Need<Result<HttpResponse, HttpError>>
         effects { network.http }
 }
 ```
@@ -298,11 +298,13 @@ Effects are capability facts.
 flow save_profile
  effects { fs.read(save), fs.write(save), log.write }
 {
-    let profile = try await fs.read_text(path.save("profile.json")) with {
-        error e => return "{}"
+    let profile = match await fs.read_text(path.save("profile.json")) {
+        .Ok(profile) => profile
+        .Err(error) => return "{}"
     }
-    try await fs.write_text(path.save("backup.json"), profile) with {
-        error e => log.warn("backup failed", error = e)
+    match await fs.write_text(path.save("backup.json"), profile) {
+        .Ok(()) => ()
+        .Err(error) => log.warn("backup failed", error = error)
     }
     return profile
 }

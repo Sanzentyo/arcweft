@@ -161,51 +161,67 @@ Result<Option<T>, E>.transpose_option() -> Option<Result<T, E>>
 
 The second name is intentionally `transpose_option` rather than another overload of `transpose`, to avoid confusion in diagnostics.
 
-## `try` with `await`
+## `try` with unary Need
 
-`await need with:` returns `Result<T, E>`. Apply the ordinary prefix `try`
-operator when the result should be unwrapped and its error propagated:
+`await Need<T>` returns exactly `T`. A fallible producer returns
+`Need<Result<T, E>>`, so the ordinary prefix Try unwraps the Result payload:
 
 ```arcw
-let bg = try await asset.image(@asset:.bg.room)
-    .context("opening background failed")
-with:
+let bg = try (await asset.image(@asset:.bg.room) with:
     pending p:
         scene.show(@scene.loading)
         progress.set(p.ratio)
+).context("opening background failed")
 ```
 
 Equivalent explicit form:
 
 ```arcw
-let bg_result = await asset.image(@asset:.bg.room)
-    .context("opening background failed")
-with:
+let bg_result = await asset.image(@asset:.bg.room) with:
     pending p:
         scene.show(@scene.loading)
         progress.set(p.ratio)
 
-let bg = try bg_result
+let bg = try bg_result.context("opening background failed")
 ```
 
 There is no postfix `?` or attached `await?` form. `with:` is owned by the
 Await expression, and `try await ... with:` is parsed as ordinary
 `try (await ... with:)` composition.
 
-## Try with placeholders and pipelines
+## Local carrier boundaries
 
-`try _` is parsed as an ordinary Try expression whose operand is the ordinary
-partial-abstraction placeholder. The placeholder creates its own callable
-boundary, so a common `Result<T, E> |> try _` use fails the normal checked
-propagation-boundary rule. Arcweft does not ban this spelling in syntax, create
-a special diagnostic for it, or propagate through the implicit callable into
-an outer Flow. A nested carrier may make the same expression well-typed.
-
-Use `try ^` to apply Try to the current pipe-left value while retaining the
-enclosing propagation boundary:
+`result {}` and `option {}` create the nearest local Try boundary and wrap a
+normal tail in Ok/Some without flattening an already-carried tail.
 
 ```arcw
-let value = source() |> try ^ |> transform()
+let parsed = result {
+    let text = try await read_text(path)
+    try parse(text)
+}
+
+let selected = option {
+    let item = try items.first()
+    item.name
+}
+```
+
+`try { ... }` remains ordinary Try(Block), not a carrier block. See
+[Await, unary Need, carrier blocks, and `try`](await-need-result.md) for
+boundary inference and cancellation.
+
+## Try with placeholders and pipelines
+
+`await _` creates the ordinary `Need<T> -> T` suspension callable. Bare
+`try await _` normally fails because that implicit callable has no matching
+carrier return boundary. Use `result { try await _ }` or
+`option { try await _ }` to construct a carrier-returning partial callable.
+
+`^` creates no callable boundary. Use `try await ^` to consume the current
+pipe-left Need and the nearest existing carrier boundary:
+
+```arcw
+let value = source() |> try await ^ |> transform()
 ```
 
 ## `bail`, `ensure`, and `fail`

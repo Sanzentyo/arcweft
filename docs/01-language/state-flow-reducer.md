@@ -104,8 +104,9 @@ pub view current_scene(state: GameState) -> Scene {
 }
 ```
 
-View は `await` 禁止。`Need` はordinary `match`で観測し、View semaが
-retained subscription/branchへprojectする。`AwaitView`専用surfaceや
+View は `await` 禁止。unary `Need<T>` はordinary `match`で時間状態を観測し、
+View semaがretained subscription/branchへprojectする。domain failureは
+`Ready(Result::Err(...))`としてpayload側で処理する。`AwaitView`専用surfaceや
 untyped fallbackは使わない。
 
 ## Reduction

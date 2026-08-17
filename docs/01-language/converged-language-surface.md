@@ -60,9 +60,18 @@ use `@super.name` and `@super.super.name` as the canonical spelling.
 Persistent identity must not be derived from a lexical binding name,
 `SyntaxNodeId`, HIR ID, source order, display label, or formatter output.
 
-## Prefix `try` is the only propagation surface
+## Unary Need, Await, and prefix Try
 
-`try` is an ordinary prefix expression over `Result` or `Option`:
+`Need<T>` is the one-shot temporal carrier. It owns pending/ready/cancelled
+state but no domain-error type. Await removes exactly that temporal layer:
+
+```text
+await : Need<T> -> T effects { control.suspend }
+```
+
+Fallible asynchronous work returns `Need<Result<T, E>>`; optional work returns
+`Need<Option<T>>`. `try` is an ordinary prefix expression over the Result or
+Option payload:
 
 ```arcw
 let config = try load_config()
@@ -75,12 +84,20 @@ let image = try await load_avatar(user) with:
 composition, not a special Await or Let form. Arcweft has no postfix `?`, no
 `await?`, and no `HirTryForm::PostfixQuestion` compatibility carrier.
 
-`try _` is not a syntax error. `_` constructs its ordinary implicit callable
-boundary, so most uses fail the normal type/propagation-boundary check. The
-checker must not invent a `try _`-specific diagnostic or propagate through the
-implicit callable into an outer Flow. A nested carrier may make the form
-well-typed. Inside a pipeline, `try ^` applies Try to the current pipe-left
-value while retaining the enclosing propagation boundary.
+Local carrier boundaries use `result {}` and `option {}`. Normal tails are
+wrapped in Ok/Some without flattening. `try { ... }` remains ordinary
+`Try(Block)` and creates no boundary; `need {}` is not introduced.
+
+`await _` constructs the ordinary `Need<T> -> T` implicit callable. Bare
+`try await _` normally fails because that callable has no matching carrier
+boundary. Canonical carrier-returning partials use
+`result { try await _ }` or `option { try await _ }`. Inside a pipeline,
+`await ^` reads the once-evaluated pipe-left value and `try await ^` uses the
+nearest existing carrier boundary; `^` creates no callable boundary.
+
+Cancellation is a non-returning cancellation-scope transfer, not Result Err.
+Await-specific `error` and `denied` handlers are removed; domain outcomes are
+handled through the awaited payload. Pending remains a temporal observer.
 
 ## Calls, methods, and pipelines
 
@@ -244,14 +261,14 @@ subscription owners; using shared syntax does not turn them into one-shot Flow
 execution.
 
 `AwaitView` is removed. Reactive `Need` observation uses ordinary `match` in a
-View context:
+View context. Domain Result is nested inside Ready rather than duplicated as a
+Need error state:
 
 ```arcw
 match load_avatar(user) {
     .pending(progress) => SkeletonCircle(progress = progress)
-    .ready(image) => Image(image)
-    .error(error) => ErrorMessage(error)
-    .denied(reason) => PermissionDenied(reason)
+    .ready(.Ok(image)) => Image(image)
+    .ready(.Err(error)) => ErrorMessage(error)
 }
 ```
 

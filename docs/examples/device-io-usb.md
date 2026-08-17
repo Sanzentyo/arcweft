@@ -24,14 +24,14 @@ pub device @device.usb.sensor: UsbDevice {
 pub fn decode_sensor_packet(bytes: &[u8]) -> Result<SensorFrame, UsbParseError> {
     // Sans I/O decoder for fixed-length sensor packets.
     let cursor = ByteCursor.new(bytes)
-    let value = cursor.read_i16_le()?
-    cursor.expect_end()?
+    let value = try cursor.read_i16_le()
+    try cursor.expect_end()
     Ok(SensorFrame { value })
 }
 
 fn sensor_frames(dev: DevicePort<UsbDevice>) -> Stream<SensorFrame, SensorError> {
     for await packet in dev.bulk_in(0x81) {
-        yield decode_sensor_packet(packet.bytes).map_err(.Parse)?
+        yield try decode_sensor_packet(packet.bytes).map_err(.Parse)
     }
 }
 
@@ -51,16 +51,20 @@ Use in a flow:
 
 ```arcw
 flow device_demo(state: GameState) -> Result<FlowExit, FlowError> {
+    let dev_request = match device.usb(@device.usb.sensor) {
+        .Ok(request) => request
+        .Err(.Denied(_)) => return Ok(FlowExit.Goto(@flow.device_optional))
+        .Err(error) => return Err(error.into())
+    }
     let dev =
-        try await device.usb(@device.usb.sensor) with {
+        try await dev_request with {
             pending _ => scene.show(@scene.device_wait); text.show("USBセンサーを接続してください")
-            denied _ => return Ok(FlowExit.Goto(@flow.device_optional))
         }
 
     let frames = sensor_frames(dev)
 
     select {
-        sample = frames.next? => {
+        sample = try frames.next() => {
             signal.set(@signal.sensor_value, sample.value)
         }
 

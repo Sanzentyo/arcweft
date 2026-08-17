@@ -37,19 +37,19 @@ fn parse_choice(input: String) -> Result<Ref<ChoiceOption>, ParseError> {
 ## Need
 
 ```arcw
-pub enum Need<T, E> {
+pub enum Need<T> {
     NotStarted,
     Pending(Progress),
     Ready(T),
-    Err(E),
     Cancelled,
 }
 ```
 
-暗黙 force は禁止。
+Needは時間だけを所有し、domain errorはpayloadのResultが所有する。暗黙
+forceは禁止。
 
 ```arcw
-let bg = asset.image(@asset:.bg.room) // Need<ImageHandle, AssetError>
+let bg = asset.image(@asset:.bg.room) // Need<Result<ImageHandle, AssetError>>
 ```
 
 flow で使うには:
@@ -59,6 +59,9 @@ let bg = try await asset.image(@asset:.bg.room) with {
     pending p => scene.show(@scene.loading); progress.set(p.ratio)
 }
 ```
+
+CancelledはResult Errorではなく、cancellation scopeへの非復帰control
+transferである。
 
 ## suspension boundary
 
