@@ -16,10 +16,21 @@ Progress
 Duration
 TickId
 LogicalTime
+Timeout
 ```
 
 `Never` is the canonical bottom type name. The advanced alias `!` is allowed in
 type position.
+
+The standard temporal combinator is:
+
+```arcw
+timeout<T>(source: Need<T>, after: Duration) -> Need<Result<T, Timeout>>
+```
+
+`Timeout` is the deterministic caller wait-limit value and contains the
+requested `limit: Duration`. It is not producer failure or cancellation. See
+[Deterministic Need timeout](../02-runtime/need-timeout.md).
 
 ## Numeric Standard Modules
 

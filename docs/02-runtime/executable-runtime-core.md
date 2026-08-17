@@ -284,7 +284,7 @@ terminators. `0x20..0x7f` and `0x8f..0xff` are reserved and rejected in v1.
 | `1b` | `SpawnFiber { dst?, function, args }` | spawn executor-neutral child fiber |
 | `1c` | `StreamYield { stream, value }` | enqueue deterministic stream output |
 | `1d` | `StreamClose { stream }` | close stream state |
-| `1e` | reserved | rejected in v1 |
+| `1e` | `NeedTimeout { dst, source, limit, site }` | construct a logical-time derived Need without awaiting it |
 | `1f` | `Drop { register }` | deterministic value/resource drop and uninitialize |
 
 `EmitEffect` is for already modeled Sans I/O effect requests. A call that must
@@ -303,7 +303,7 @@ string opcode”.
 | `85` | `GotoDynamic { target, args }` | verified dynamic flow/entity target; VM-capable fallback boundary |
 | `86` | `Dialogue { content, line_task_group, resume }` | suspend for presentation/input |
 | `87` | `Choice { choice, dst, resume }` | suspend; selected option is written to `dst` |
-| `88` | `Await { task, binding?, resume }` | suspend one host task; bind ready value |
+| `88` | `Await { need, binding?, resume }` | suspend one unary Need; bind its exact ready payload |
 | `89` | `AwaitMany { plan, source, binding?, resume }` | suspend deterministic bounded task fan-out |
 | `8a` | `HostCall { call, args, dst?, resume }` | structured host request; immediate mode may resume in same step |
 | `8b` | `Return { value? }` | pop frame or terminate root fiber |
@@ -316,6 +316,25 @@ Loops are CFG, not one-off opcodes. A loop header is a block entry marked
 `continue` lower to jumps selected from an explicit lowering-time loop stack.
 Match, scoped bindings, dynamic targets, return, traps, and budget yielding are
 therefore covered without embedding structured AST nodes into instructions.
+
+`NeedTimeout` constructs a derived unary Need and never suspends by itself.
+The later `Await` observes that Need through the ordinary single Await
+terminator. The verifier requires source `Need<T>`, a Duration limit, and
+destination `Need<Result<T, Timeout>>` with the exact standard Timeout nominal
+identity and one program-owned producer site.
+
+### 4.3 ConstEval execution profile
+
+`const { ... }` uses the same AWBC schema under a restricted verifier profile.
+ConstEval admits deterministic value operations, typed CFG, exact direct calls,
+and registered const intrinsics. It rejects host/effect/task/Need/stream/
+dialogue/presentation operations, runtime capabilities, dynamic call targets,
+and escaping Function values. The temporary program runs with deterministic
+fuel and value budgets and is then discarded; only its typed constant result
+enters product AWBC through `LoadConst`.
+
+ConstEval, NeedTimeout, constants, and their codecs evolve AWBC version `1` in
+place. They do not introduce a v2 domain or compatibility reader.
 
 ## 5. Remaining executable tables
 
@@ -956,7 +975,10 @@ to isolate.
   source/display map and resource diagnostic;
 - diamond CFG proves definite-initialization intersection;
 - scope-stack mismatch at a join fails;
-- all entry kinds/routes and result signatures pass/fail appropriately.
+- all entry kinds/routes and result signatures pass/fail appropriately;
+- ConstEval rejects every non-admitted operation and non-const capture;
+- NeedTimeout rejects wrong payload, Duration, Timeout identity, or producer
+  site ownership.
 
 ### VM parity
 
@@ -965,6 +987,8 @@ conditions/effects/targets; await ready/error/progress/cancel; await-many limits
 and result ordering; if/if-let/match; all loop variants and break values;
 threads/scopes; static/dynamic goto; returns/traps; stream transforms and
 external capability calls; pure helpers and numeric edge cases.
+Parity also covers const-evaluated values against runtime VM semantics and
+same-step Need timeout races, save/restore, and late source completion.
 
 ### Safe points and codegen
 

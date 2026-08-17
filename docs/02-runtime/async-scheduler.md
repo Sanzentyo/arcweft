@@ -166,6 +166,14 @@ max_in_flight
 unary `Need<T>` は `T` へ暗黙変換しない。domain failureは
 `Need<Result<T, E>>`のpayloadが所有する。
 
+Generic wait limits use the resolved standard combinator
+`timeout(Need<T>, Duration) -> Need<Result<T, Timeout>>`. Timeout is a derived
+Need producer driven only by `RuntimeStepInput.dt`; it is not an Await branch
+and does not cancel the source producer. Same-step ordering is scope
+cancellation, source terminal publication, timeout expiration, then Pending.
+See [Deterministic Need timeout](need-timeout.md) for start, race, progress,
+snapshot, and AWBC rules.
+
 flow:
 
 ```arcw

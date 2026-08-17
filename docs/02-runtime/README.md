@@ -4,6 +4,7 @@
 - [Executable Runtime Core](executable-runtime-core.md)
 - [RuntimeStep and Executors](runtime-step-and-executors.md)
 - [非同期・scheduler・Need](async-scheduler.md)
+- [Deterministic Need timeout](need-timeout.md)
 - [Device Streams / Generator Policy](device-streams.md)
 - [Streams, Generators, and Live Device Sources](streams-generators.md)
 - [Control Flow Runtime Notes](control-flow-runtime.md)

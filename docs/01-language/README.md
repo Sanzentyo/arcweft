@@ -21,6 +21,7 @@
 - [Expression control flow](expression-control-flow.md)
 - [Control transfer: return / out / yield / break / continue](control-transfer-return-out-yield.md)
 - [Await, Need, Result, and try await](await-need-result.md)
+- [Const block and compile-time phase fence](const-block.md)
 - [Never / Bottom Type](never-bottom-type.md)
 - [Result / Option, `try`, and Context](result-option-context.md)
 - [Error, Trace, `try`, and Context](error-trace-context.md)

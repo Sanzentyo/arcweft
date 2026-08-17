@@ -95,6 +95,21 @@ with:
     out voice
 ```
 
+## Carrier and phase blocks
+
+`result { ... }` and `option { ... }` reuse value-block scope and tail rules,
+but additionally create typed Result/Option propagation boundaries. Normal
+completion wraps the tail in Ok/Some; they do not flatten an already-carried
+tail.
+
+`const { ... }` also reuses the value-block shape, but is a compile-time phase
+fence rather than a carrier boundary. Runtime locals and effects cannot cross
+into it, and its admitted result is replaced by one typed constant before the
+final RuntimePlan is published.
+
+See [Await, unary Need, carrier blocks, and `try`](await-need-result.md) and
+[Const block and compile-time phase fence](const-block.md).
+
 ## Match scope ownership
 
 A `match` owns the semantic relationship between its scrutinee and ordered

@@ -131,9 +131,11 @@ match (await load_image(path) with:
 Whether a denied operation is an admission error, domain error, or cancellation
 is determined by its typed producer contract, not an Await branch label.
 
-`timeout` remains an explicit design gap until its race result, wait
-cancellation, producer cancellation, and payload projection are specified. It
-must not be retained as an untyped Await error alias.
+Timeout is the ordinary temporal combinator
+`timeout(Need<T>, Duration) -> Need<Result<T, Timeout>>`. It is not an Await
+branch. Its logical-clock race, wait-local cancellation, Progress forwarding,
+and persistence rules are specified in
+[Deterministic Need timeout](../02-runtime/need-timeout.md).
 
 ## Prefix Try
 
@@ -326,12 +328,12 @@ result / option
     local carrier construction
 ```
 
-## `const {}` is a separate future contract
+## `const {}` is a compile-time phase fence
 
-`const {}` is a compile-time phase boundary, not a carrier block. The direction
-is accepted, but implementation requires a separate contract covering const
-callables, specialization, captures, fuel, diagnostics, constant-pool/AWBC
-lowering, and `ConstValueAdmissible<T>`.
+`const {}` is a compile-time phase boundary, not a carrier block. Its checked
+capture, callable, value-admission, deterministic evaluation, cache,
+diagnostic, and typed AWBC constant rules are specified in
+[Const block and compile-time phase fence](const-block.md).
 
 Try residuals cannot cross a const phase fence. A carrier must be completed
 inside const and then handled in runtime phase:
@@ -370,4 +372,6 @@ Need, Result, and Option each own one independent layer of meaning.
 - [Result / Option, `try`, and Context](result-option-context.md)
 - [Converged Language, Content, and Presentation Surface](converged-language-surface.md)
 - [Never / Bottom Type](never-bottom-type.md)
+- [Const block and compile-time phase fence](const-block.md)
+- [Deterministic Need timeout](../02-runtime/need-timeout.md)
 - [Streams, generators, and live device sources](../02-runtime/streams-generators.md)

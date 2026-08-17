@@ -706,7 +706,7 @@ entity reference.
 
 ```text
 PostfixExpr := PrimaryExpr (CallArgs | '.' Ident CallArgs? | '[' Expr ']')*
-PrefixExpr  := ('!' | '-') PrefixExpr | AwaitExpr | PostfixExpr
+PrefixExpr  := ('!' | '-') PrefixExpr | TryExpr | AwaitExpr | CarrierBlockExpr | ConstBlockExpr | PostfixExpr
 BinaryExpr  := PrefixExpr BinaryOp PrefixExpr
 BinaryOp    := '*' | '/' | '%' | '+' | '-' | '&' | ComparisonOp | 'in' | '&&' | '||' | '|>' | '=>'
 ComparisonOp:= '==' | '!=' | '>=' | '<=' | '>' | '<'
@@ -727,6 +727,7 @@ Type, module, and selector paths use dot-separated segments; public IDs use the
 TryExpr      := 'try' Expr
 AwaitExpr    := 'await' Expr AwaitPendingBlock?
 CarrierBlockExpr := ('result' | 'option') BlockExpr
+ConstBlockExpr := 'const' BlockExpr
 AwaitPendingBlock := 'with' ':' Newline AwaitCase+
                    | 'with' '{' AwaitCase* '}'
 ```
@@ -744,6 +745,11 @@ At expression start, `result` or `option` followed immediately by BlockExpr is
 a carrier block. It wraps normal tails in Ok/Some and is the nearest matching
 Try boundary. `try { ... }` is ordinary Try(Block), and `need { ... }` is not a
 language form.
+
+`const` followed by a BlockExpr is the compile-time phase-fence expression. It
+returns the tail type directly, does not construct a carrier, and admits only
+closed deterministic values under the ConstEval contract. See
+[Const block and compile-time phase fence](const-block.md).
 
 ## Never
 

@@ -99,6 +99,16 @@ Cancellation is a non-returning cancellation-scope transfer, not Result Err.
 Await-specific `error` and `denied` handlers are removed; domain outcomes are
 handled through the awaited payload. Pending remains a temporal observer.
 
+Generic timeout is the ordinary resolved combinator
+`timeout(Need<T>, Duration) -> Need<Result<T, Timeout>>`. It uses logical
+runtime time, races deterministically, and does not grant producer-cancellation
+authority. It is not Await syntax or an Await handler.
+
+`const { ... }` is a separate compile-time phase fence. It returns the tail
+type directly, captures only admitted const values, and is replaced by one
+typed constant before final RuntimePlan publication. It is not a Result/Option
+carrier boundary and Try residuals cannot cross it into runtime phase.
+
 ## Calls, methods, and pipelines
 
 `receiver.method(args)` resolves only a real inherent or visible trait method.
