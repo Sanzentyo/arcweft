@@ -596,6 +596,7 @@ impl TypeCheckEnv {
             standard_callable_path(["drop_optional"]),
             standard_callable_path(["on_drop"]),
             standard_callable_path(["adapter", "events"]),
+            standard_callable_path(["event", "emit"]),
             standard_callable_path(["scene", "show"]),
             standard_callable_path(["scene", "clear"]),
             standard_callable_path(["progress", "set"]),
@@ -647,11 +648,6 @@ impl TypeCheckEnv {
                 standard_callable_path(["metric", "set"]),
                 TypeKind::Unit,
                 CallableEvaluatedEffect::MetricWrite,
-            ),
-            (
-                standard_callable_path(["event", "emit"]),
-                TypeKind::Unit,
-                CallableEvaluatedEffect::EmitEvent,
             ),
             (
                 standard_callable_path(["ensure"]),

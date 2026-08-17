@@ -677,8 +677,7 @@ impl StagedHirModuleTransaction<'_> {
                     self.lower_attached_required_operand_statement(attached, owner, scope)?;
                 (kind, Box::<[LocalId]>::from([]), recovery)
             }
-            SyntaxKind::LoopStatement
-            | SyntaxKind::WhileStatement
+            SyntaxKind::WhileStatement
             | SyntaxKind::WhileLetStatement
             | SyntaxKind::ForStatement
             | SyntaxKind::SelectStatement => {

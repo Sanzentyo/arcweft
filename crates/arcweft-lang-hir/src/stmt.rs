@@ -10,8 +10,8 @@ pub(crate) use self::thread::HirThreadStmtInvariantError;
 pub(crate) use self::thread::reject_duplicate_ids;
 pub use self::thread::{
     HirConditionalElseBranch, HirContextualStmtBody, HirForStmt, HirIfLetStmt, HirIfStmt,
-    HirIncludeStmt, HirLoopStmt, HirMatchStmt, HirScopeStmt, HirSelectBindingLocal,
-    HirSelectBranch, HirSelectBranchHead, HirSelectStmt, HirSourceLocaleIssue, HirSourceLocaleStmt,
+    HirIncludeStmt, HirMatchStmt, HirScopeStmt, HirSelectBindingLocal, HirSelectBranch,
+    HirSelectBranchHead, HirSelectStmt, HirSourceLocaleIssue, HirSourceLocaleStmt,
     HirSourceLocaleValue, HirStmtMatchArm, HirStmtMatchArmBody, HirThreadStmtBodyRole,
     HirThreadStmtChildRole, HirThreadStmtRecoveryIssue, HirWhileLetStmt, HirWhileStmt,
 };
@@ -268,7 +268,6 @@ fn thread_recovery_matches_kind(kind: &HirStmtKind, issue: HirThreadStmtRecovery
         Issue::MissingBody { role } | Issue::UnclosedBody { role } => match role {
             Body::Then | Body::Else => matches!(kind, HirStmtKind::If(_) | HirStmtKind::IfLet(_)),
             Body::Match | Body::MatchArm { .. } => matches!(kind, HirStmtKind::Match(_)),
-            Body::Loop => matches!(kind, HirStmtKind::Loop(_)),
             Body::While => matches!(kind, HirStmtKind::While(_)),
             Body::WhileLet => matches!(kind, HirStmtKind::WhileLet(_)),
             Body::For => matches!(kind, HirStmtKind::For(_)),
@@ -276,7 +275,6 @@ fn thread_recovery_matches_kind(kind: &HirStmtKind, issue: HirThreadStmtRecovery
             Body::SourceLocale => matches!(kind, HirStmtKind::SourceLocale(_)),
             Body::Scope => matches!(kind, HirStmtKind::Scope(_)),
         },
-        Issue::InvalidLoopLabel(_) => matches!(kind, HirStmtKind::Loop(_)),
         Issue::EmptyMatch => matches!(kind, HirStmtKind::Match(_)),
         Issue::EmptySelect | Issue::RecoveredSelectBranch { .. } => {
             matches!(kind, HirStmtKind::Select(_))
@@ -410,11 +408,6 @@ pub enum HirStmtKind {
         scope_expr: ExprId,
         locals: Box<[LocalId]>,
     },
-    LetLoop {
-        pattern: PatternId,
-        loop_expr: ExprId,
-        locals: Box<[LocalId]>,
-    },
     LetActionReceive {
         pattern: PatternId,
         action: ExprId,
@@ -468,7 +461,6 @@ pub enum HirStmtKind {
     If(HirIfStmt),
     IfLet(HirIfLetStmt),
     Match(HirMatchStmt),
-    Loop(HirLoopStmt),
     While(HirWhileStmt),
     WhileLet(HirWhileLetStmt),
     For(HirForStmt),
@@ -522,7 +514,6 @@ impl HirStmtKind {
             | Self::Assign { .. }
             | Self::LetChoice { .. }
             | Self::LetScope { .. }
-            | Self::LetLoop { .. }
             | Self::LetActionReceive { .. }
             | Self::Return { .. }
             | Self::Out { .. }
@@ -539,7 +530,6 @@ impl HirStmtKind {
             | Self::If(_)
             | Self::IfLet(_)
             | Self::Match(_)
-            | Self::Loop(_)
             | Self::While(_)
             | Self::WhileLet(_)
             | Self::For(_)
@@ -569,7 +559,6 @@ impl HirStmtKind {
             | Self::LetElse { locals, .. }
             | Self::LetChoice { locals, .. }
             | Self::LetScope { locals, .. }
-            | Self::LetLoop { locals, .. }
             | Self::LetActionReceive { locals, .. } => locals,
             _ => &[],
         }
@@ -583,7 +572,6 @@ impl HirStmtKind {
             Self::If(statement) => statement.thread_body_for_scope(scope),
             Self::IfLet(statement) => statement.thread_body_for_scope(scope),
             Self::Match(statement) => statement.thread_body_for_scope(scope),
-            Self::Loop(statement) => statement.thread_body_for_scope(scope),
             Self::While(statement) => statement.thread_body_for_scope(scope),
             Self::WhileLet(statement) => statement.thread_body_for_scope(scope),
             Self::For(statement) => statement.thread_body_for_scope(scope),
@@ -643,11 +631,6 @@ impl HirStmtKind {
                 scope_expr: choice,
                 locals,
             }
-            | Self::LetLoop {
-                pattern,
-                loop_expr: choice,
-                locals,
-            }
             | Self::LetActionReceive {
                 pattern,
                 action: choice,
@@ -686,7 +669,6 @@ impl HirStmtKind {
             Self::If(statement) => statement.validate_module(expected).map_err(Into::into),
             Self::IfLet(statement) => statement.validate_module(expected).map_err(Into::into),
             Self::Match(statement) => statement.validate_module(expected).map_err(Into::into),
-            Self::Loop(statement) => statement.validate_module(expected).map_err(Into::into),
             Self::While(statement) => statement.validate_module(expected).map_err(Into::into),
             Self::WhileLet(statement) => statement.validate_module(expected).map_err(Into::into),
             Self::For(statement) => statement.validate_module(expected).map_err(Into::into),

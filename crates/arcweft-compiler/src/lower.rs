@@ -231,11 +231,44 @@ pub fn project_runtime_semantic_facts(
     let runtime_owners = project.runtime_semantic_owner_inventory()?;
     let dialogue_application_calls =
         dialogue_application_owned_calls(project, analysis, &runtime_owners)?;
+    let mut evaluated_effect_calls = BTreeSet::new();
+    for (statement, checked) in analysis.statements() {
+        if !matches!(checked.role(), CheckedStatementRole::EvaluatedEffect(_)) {
+            continue;
+        }
+        let module = project
+            .modules()
+            .find_map(|(_, module)| {
+                (module.module_id() == statement.module()).then_some(module.as_ref())
+            })
+            .ok_or(
+                RuntimeSemanticProjectionError::InvalidEvaluatedEffectDisposition {
+                    owner: statement,
+                },
+            )?;
+        let HirStmtKind::Expression { expression } = module
+            .resolve_stmt(statement)
+            .map_err(
+                |_| RuntimeSemanticProjectionError::InvalidEvaluatedEffectDisposition {
+                    owner: statement,
+                },
+            )?
+            .kind()
+        else {
+            return Err(
+                RuntimeSemanticProjectionError::InvalidEvaluatedEffectDisposition {
+                    owner: statement,
+                },
+            );
+        };
+        evaluated_effect_calls.insert(*expression);
+    }
     let runtime_calls = analysis
         .calls()
         .filter(|(owner, _)| {
             runtime_owners.contains_expression(*owner)
                 && !dialogue_application_calls.contains(owner)
+                && !evaluated_effect_calls.contains(owner)
         })
         .map(|(owner, call)| {
             runtime_call(project, owner, call, symbols, analysis).map(|call| (owner, call))
@@ -498,7 +531,7 @@ pub fn project_runtime_semantic_facts(
             CheckedStatementRole::EvaluatedEffect(effect) => {
                 input.push_evaluated_effect(
                     owner,
-                    runtime_evaluated_effect(owner, effect, project, &runtime_calls)?,
+                    runtime_evaluated_effect(owner, effect, project)?,
                 );
             }
             CheckedStatementRole::Iteration(iteration) => {
@@ -1944,7 +1977,6 @@ fn runtime_evaluated_effect(
     owner: StmtId,
     effect: &CheckedEvaluatedEffect,
     project: HirExecutableProjectView<'_>,
-    calls: &BTreeMap<ExprId, RuntimeResolvedCall>,
 ) -> Result<RuntimeEvaluatedEffectFact, RuntimeSemanticProjectionError> {
     let module = project
         .modules()
@@ -1953,63 +1985,49 @@ fn runtime_evaluated_effect(
     let statement = module
         .resolve_stmt(owner)
         .map_err(|_| RuntimeSemanticProjectionError::InvalidEvaluatedEffectDisposition { owner })?;
-    let HirStmtKind::Expression { expression } = statement.kind() else {
+    let HirStmtKind::Expression { expression: _ } = statement.kind() else {
         return Err(RuntimeSemanticProjectionError::InvalidEvaluatedEffectDisposition { owner });
     };
-    let Some(call) = calls.get(expression) else {
-        return Err(RuntimeSemanticProjectionError::InvalidEvaluatedEffectDisposition { owner });
-    };
-    let RuntimeResolvedCallTarget::Registered(callable) = call.target() else {
-        return Err(RuntimeSemanticProjectionError::InvalidEvaluatedEffectDisposition { owner });
-    };
-
-    Ok(RuntimeEvaluatedEffectFact::new(
-        callable.clone(),
-        match effect {
-            CheckedEvaluatedEffect::Log {
-                level,
-                message,
-                fields,
-            } => RuntimeEvaluatedEffect::Log {
-                level: runtime_log_level(*level),
-                message: *message,
-                fields: runtime_effect_fields(fields),
-            },
-            CheckedEvaluatedEffect::SignalWrite { target, value } => {
-                RuntimeEvaluatedEffect::SignalWrite {
-                    target: *target,
-                    value: *value,
-                }
-            }
-            CheckedEvaluatedEffect::MetricWrite { target, value } => {
-                RuntimeEvaluatedEffect::MetricWrite {
-                    target: *target,
-                    value: *value,
-                }
-            }
-            CheckedEvaluatedEffect::EmitEvent { event, fields } => {
-                RuntimeEvaluatedEffect::EmitEvent {
-                    event: *event,
-                    fields: runtime_effect_fields(fields),
-                }
-            }
-            CheckedEvaluatedEffect::Panic { message } => {
-                RuntimeEvaluatedEffect::Panic { message: *message }
-            }
-            CheckedEvaluatedEffect::Fail { message } => {
-                RuntimeEvaluatedEffect::Fail { message: *message }
-            }
-            CheckedEvaluatedEffect::Bail { message } => {
-                RuntimeEvaluatedEffect::Bail { message: *message }
-            }
-            CheckedEvaluatedEffect::Ensure { condition, message } => {
-                RuntimeEvaluatedEffect::Ensure {
-                    condition: *condition,
-                    message: *message,
-                }
-            }
+    Ok(RuntimeEvaluatedEffectFact::new(match effect {
+        CheckedEvaluatedEffect::Log {
+            level,
+            message,
+            fields,
+        } => RuntimeEvaluatedEffect::Log {
+            level: runtime_log_level(*level),
+            message: *message,
+            fields: runtime_effect_fields(fields),
         },
-    ))
+        CheckedEvaluatedEffect::SignalWrite { target, value } => {
+            RuntimeEvaluatedEffect::SignalWrite {
+                target: *target,
+                value: *value,
+            }
+        }
+        CheckedEvaluatedEffect::MetricWrite { target, value } => {
+            RuntimeEvaluatedEffect::MetricWrite {
+                target: *target,
+                value: *value,
+            }
+        }
+        CheckedEvaluatedEffect::EmitEvent { event, fields } => RuntimeEvaluatedEffect::EmitEvent {
+            event: *event,
+            fields: runtime_effect_fields(fields),
+        },
+        CheckedEvaluatedEffect::Panic { message } => {
+            RuntimeEvaluatedEffect::Panic { message: *message }
+        }
+        CheckedEvaluatedEffect::Fail { message } => {
+            RuntimeEvaluatedEffect::Fail { message: *message }
+        }
+        CheckedEvaluatedEffect::Bail { message } => {
+            RuntimeEvaluatedEffect::Bail { message: *message }
+        }
+        CheckedEvaluatedEffect::Ensure { condition, message } => RuntimeEvaluatedEffect::Ensure {
+            condition: *condition,
+            message: *message,
+        },
+    }))
 }
 
 fn runtime_effect_fields(

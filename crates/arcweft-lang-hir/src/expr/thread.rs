@@ -146,7 +146,6 @@ pub enum HirThreadFlowItem {
     If(StmtId),
     IfLet(StmtId),
     Match(StmtId),
-    Loop(StmtId),
     While(StmtId),
     WhileLet(StmtId),
     For(StmtId),
@@ -166,7 +165,6 @@ impl HirThreadFlowItem {
             | Self::If(statement)
             | Self::IfLet(statement)
             | Self::Match(statement)
-            | Self::Loop(statement)
             | Self::While(statement)
             | Self::WhileLet(statement)
             | Self::For(statement)
@@ -186,7 +184,6 @@ impl HirThreadFlowItem {
             | Self::If(statement)
             | Self::IfLet(statement)
             | Self::Match(statement)
-            | Self::Loop(statement)
             | Self::While(statement)
             | Self::WhileLet(statement)
             | Self::For(statement)

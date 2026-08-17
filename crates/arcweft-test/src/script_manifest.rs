@@ -266,7 +266,6 @@ fn thread_item_statement(item: &HirThreadFlowItem) -> Option<StmtId> {
         | HirThreadFlowItem::If(owner)
         | HirThreadFlowItem::IfLet(owner)
         | HirThreadFlowItem::Match(owner)
-        | HirThreadFlowItem::Loop(owner)
         | HirThreadFlowItem::While(owner)
         | HirThreadFlowItem::WhileLet(owner)
         | HirThreadFlowItem::For(owner)
@@ -641,7 +640,6 @@ fn statement_name(module: &HirModule, statement: &HirStmtKind) -> String {
         | HirStmtKind::LetElse { .. }
         | HirStmtKind::LetChoice { .. }
         | HirStmtKind::LetScope { .. }
-        | HirStmtKind::LetLoop { .. }
         | HirStmtKind::LetActionReceive { .. } => "let",
         HirStmtKind::Assign { target, .. } => {
             return expression_label(module, *target).unwrap_or_else(|| "assign".to_owned());
@@ -659,7 +657,6 @@ fn statement_name(module: &HirModule, statement: &HirStmtKind) -> String {
         HirStmtKind::Choice { .. } => "choice",
         HirStmtKind::If(_) | HirStmtKind::IfLet(_) => "if",
         HirStmtKind::Match(_) => "match",
-        HirStmtKind::Loop(_) => "loop",
         HirStmtKind::While(_) | HirStmtKind::WhileLet(_) => "while",
         HirStmtKind::For(_) => "for",
         HirStmtKind::Close { .. } => "close",
@@ -696,6 +693,7 @@ fn expression_label(module: &HirModule, owner: ExprId) -> Option<String> {
         }
         HirExprKind::Call(call) => call_label(module, call.callee()),
         HirExprKind::Thread(_) => Some("thread".to_owned()),
+        HirExprKind::Loop(_) => Some("loop".to_owned()),
         HirExprKind::NamedBlock(block) => named_block_name(block),
         _ => None,
     }

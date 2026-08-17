@@ -578,7 +578,7 @@ fn loop_family_missing_bodies_retain_typed_heads_and_zero_width_body_recovery() 
     let entries = built.index().entries();
 
     for kind in [
-        SyntaxKind::LoopStatement,
+        SyntaxKind::LoopExpression,
         SyntaxKind::WhileStatement,
         SyntaxKind::WhileLetStatement,
         SyntaxKind::ForStatement,
@@ -602,7 +602,7 @@ fn loop_family_missing_bodies_retain_typed_heads_and_zero_width_body_recovery() 
             .iter()
             .filter(|diagnostic| diagnostic.code() == "syntax.statement.missing_body")
             .count(),
-        4
+        3
     );
     assert_eq!(built.green().to_string(), source);
 }

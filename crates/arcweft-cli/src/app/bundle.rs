@@ -730,8 +730,7 @@ fn collect_flow_op_host_calls(op: &FlowOp) -> Vec<String> {
             .iter()
             .flat_map(|arm| collect_flow_ops_host_calls(&arm.ops))
             .collect(),
-        FlowOp::Loop { body }
-        | FlowOp::LetLoop { body, .. }
+        FlowOp::Loop { body, .. }
         | FlowOp::While { body, .. }
         | FlowOp::WhileLet { body, .. }
         | FlowOp::For { body, .. }
@@ -872,8 +871,7 @@ fn collect_flow_op_static_image_asset_refs(op: &FlowOp) -> Vec<String> {
             .iter()
             .flat_map(|arm| collect_flow_ops_static_image_asset_refs(&arm.ops))
             .collect(),
-        FlowOp::Loop { body }
-        | FlowOp::LetLoop { body, .. }
+        FlowOp::Loop { body, .. }
         | FlowOp::While { body, .. }
         | FlowOp::WhileLet { body, .. }
         | FlowOp::For { body, .. }

@@ -1154,6 +1154,7 @@ fn candidate_semantic_child_specs(
         | ExpressionProjection::Block
         | ExpressionProjection::ComputationBlock(_)
         | ExpressionProjection::NamedBlock(_)
+        | ExpressionProjection::Loop
         | ExpressionProjection::Thread(_)
         | ExpressionProjection::Choice
         | ExpressionProjection::Error => Vec::new(),
@@ -1793,7 +1794,8 @@ impl AttachedExpressionNode {
         let block = match pending.projection() {
             ExpressionProjection::Block
             | ExpressionProjection::ComputationBlock(_)
-            | ExpressionProjection::NamedBlock(_) => Some(attached_block(&syntax)?),
+            | ExpressionProjection::NamedBlock(_)
+            | ExpressionProjection::Loop => Some(attached_block(&syntax)?),
             _ => None,
         };
         let thread = match pending.projection() {
@@ -1806,20 +1808,7 @@ impl AttachedExpressionNode {
             )),
             _ => None,
         };
-        let await_branches = match pending.projection() {
-            ExpressionProjection::Await {
-                branches: Some(branches),
-                ..
-            } => {
-                let owner = syntax
-                    .clone()
-                    .cast::<AwaitExpressionKind>()
-                    .map_err(SyntaxAccessError::from)?;
-                Some(attach_await_branch_body(&owner, branches)?)
-            }
-            ExpressionProjection::Await { branches: None, .. } => None,
-            _ => None,
-        };
+        let await_branches = attached_await_branches(&syntax, pending.projection())?;
         let mut components = pending
             .components()
             .iter()
@@ -2016,6 +2005,21 @@ impl AttachedExpressionNode {
     }
 }
 
+fn attached_await_branches(
+    syntax: &SyntaxNodeHandle,
+    projection: &ExpressionProjection,
+) -> Result<Option<AttachedAwaitBranchBody>, SyntaxAccessError> {
+    let ExpressionProjection::Await {
+        branches: Some(branches),
+        ..
+    } = projection
+    else {
+        return Ok(None);
+    };
+    let owner = syntax.clone().cast::<AwaitExpressionKind>()?;
+    attach_await_branch_body(&owner, branches).map(Some)
+}
+
 fn attach_await_branch_body(
     owner: &AstNode<AwaitExpressionKind>,
     projections: &[Option<SyntaxAwaitBranchKind>],
@@ -2040,15 +2044,9 @@ fn attach_await_branch_block(
     owner: &AstNode<AwaitExpressionKind>,
     projections: &[Option<SyntaxAwaitBranchKind>],
 ) -> Result<AttachedAwaitBranchBlock, SyntaxAccessError> {
-    let syntax = owner
-        .required_exact_child::<BlockKind>(SyntaxRole::Body)
-        .map_err(SyntaxAccessError::from)?;
-    let open = syntax
-        .required_exact_child::<OpenBraceKind>(SyntaxRole::OpenDelimiter)
-        .map_err(SyntaxAccessError::from)?;
-    let close = syntax
-        .required_exact_child::<CloseBraceKind>(SyntaxRole::CloseDelimiter)
-        .map_err(SyntaxAccessError::from)?;
+    let syntax = owner.required_exact_child::<BlockKind>(SyntaxRole::Body)?;
+    let open = syntax.required_exact_child::<OpenBraceKind>(SyntaxRole::OpenDelimiter)?;
+    let close = syntax.required_exact_child::<CloseBraceKind>(SyntaxRole::CloseDelimiter)?;
     let branches = syntax.ordered_exact_children::<AwaitWithBranchKind>(SyntaxRoleClass::Branch)?;
     if branches.len() != projections.len()
         || syntax.syntax().children().iter().any(|child| {

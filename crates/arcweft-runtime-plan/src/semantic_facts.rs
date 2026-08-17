@@ -1010,17 +1010,12 @@ pub enum RuntimeEvaluatedEffect {
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct RuntimeEvaluatedEffectFact {
-    callable: RuntimeCallableId,
     effect: RuntimeEvaluatedEffect,
 }
 
 impl RuntimeEvaluatedEffectFact {
-    pub const fn new(callable: RuntimeCallableId, effect: RuntimeEvaluatedEffect) -> Self {
-        Self { callable, effect }
-    }
-
-    pub const fn callable(&self) -> &RuntimeCallableId {
-        &self.callable
+    pub const fn new(effect: RuntimeEvaluatedEffect) -> Self {
+        Self { effect }
     }
 
     pub const fn effect(&self) -> &RuntimeEvaluatedEffect {
@@ -3973,15 +3968,7 @@ fn validate_evaluated_effect(
     let HirExprKind::Call(hir_call) = resolve_expr(modules, *expression)? else {
         return Err(RuntimeSemanticFactsError::InvalidEvaluatedEffectFact { statement });
     };
-    let Some(call) = calls.get(expression) else {
-        return Err(RuntimeSemanticFactsError::InvalidEvaluatedEffectFact { statement });
-    };
-    if !matches!(
-        call.target(),
-        RuntimeResolvedCallTarget::Registered(callable) if callable == fact.callable()
-    ) || call.result() != RuntimeCallResultShape::Value
-        || !fact.effect().fields_are_valid()
-    {
+    if calls.contains_key(expression) || !fact.effect().fields_are_valid() {
         return Err(RuntimeSemanticFactsError::InvalidEvaluatedEffectFact { statement });
     }
 

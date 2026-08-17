@@ -43,9 +43,6 @@ fn simple_binding_source(statement: &HirStmtKind) -> Option<(PatternId, ExprId, 
             scope_expr,
             ..
         } => Some((*pattern, *scope_expr, None)),
-        HirStmtKind::LetLoop {
-            pattern, loop_expr, ..
-        } => Some((*pattern, *loop_expr, None)),
         HirStmtKind::LetActionReceive {
             pattern, action, ..
         } => Some((*pattern, *action, None)),
@@ -430,6 +427,7 @@ impl Analyzer<'_, '_, '_> {
         initializer: ExprId,
         annotation: Option<TypeId>,
     ) -> Result<(), FinalSemanticAnalysisError> {
+        self.infer_nested_expression_bindings(initializer)?;
         let authored_type = match annotation {
             Some(annotation) => Some(annotation),
             None => self
@@ -459,6 +457,38 @@ impl Analyzer<'_, '_, '_> {
         };
         let module = self.module(owner.module())?;
         self.seed_contextual_pattern_locals(module, pattern, &binding)
+    }
+
+    fn infer_nested_expression_bindings(
+        &mut self,
+        owner: ExprId,
+    ) -> Result<(), FinalSemanticAnalysisError> {
+        let statements = {
+            let module = self.module(owner.module())?;
+            let expression = module
+                .resolve_expr(owner)
+                .map_err(|_| FinalSemanticAnalysisError::InvalidOwner)?;
+            match expression.kind() {
+                HirExprKind::Block(block) => block.statements().to_vec(),
+                HirExprKind::NamedBlock(block) => block.statements().to_vec(),
+                HirExprKind::Loop(loop_expression) => loop_expression.statements().to_vec(),
+                _ => return Ok(()),
+            }
+        };
+        for statement in statements {
+            let kind = self
+                .module(statement.module())?
+                .resolve_stmt(statement)
+                .map_err(|_| FinalSemanticAnalysisError::InvalidOwner)?
+                .kind()
+                .clone();
+            if let Some((pattern, initializer, annotation)) = simple_binding_source(&kind) {
+                self.infer_simple_statement_binding(statement, pattern, initializer, annotation)?;
+            } else {
+                self.infer_control_statement_bindings(statement, kind)?;
+            }
+        }
+        Ok(())
     }
 
     fn infer_control_statement_bindings(

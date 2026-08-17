@@ -60,6 +60,13 @@ struct GuardedCandidate {
     fallthrough: Option<AwbcBlockId>,
 }
 
+struct LoopLoweringTarget {
+    header: AwbcBlockId,
+    exit_jumps: Vec<AwbcBlockId>,
+    outer_scope_depth: u32,
+    result: Option<AwbcRegisterId>,
+}
+
 impl BranchJoin {
     const fn new() -> Self {
         Self {
@@ -216,6 +223,7 @@ pub struct AwbcFlowLowerer<'inventory, 'plan> {
     inventory: &'inventory mut AwbcInventory,
     plan: &'plan RuntimePlan,
     diagnostics: Vec<AwbcLowerDiagnostic>,
+    loop_targets: Vec<LoopLoweringTarget>,
 }
 
 impl<'inventory, 'plan> AwbcFlowLowerer<'inventory, 'plan> {
@@ -224,6 +232,7 @@ impl<'inventory, 'plan> AwbcFlowLowerer<'inventory, 'plan> {
             inventory,
             plan,
             diagnostics: Vec::new(),
+            loop_targets: Vec::new(),
         }
     }
 
@@ -951,9 +960,10 @@ impl<'inventory, 'plan> AwbcFlowLowerer<'inventory, 'plan> {
             FlowOp::Match { scrutinee, arms } => {
                 self.lower_match(frame, body, scrutinee, arms, path);
             }
-            FlowOp::Loop { body: ops }
-            | FlowOp::LetLoop { body: ops, .. }
-            | FlowOp::Thread { body: ops, .. } => {
+            FlowOp::Loop { result, body: ops } => {
+                self.lower_loop(frame, body, result.as_ref(), ops, path);
+            }
+            FlowOp::Thread { body: ops, .. } => {
                 let scope = frame.enter_scope();
                 self.inventory
                     .push_instruction(AwbcInstruction::EnterScope { scope });
@@ -1038,12 +1048,7 @@ impl<'inventory, 'plan> AwbcFlowLowerer<'inventory, 'plan> {
                 value,
             } => self.lower_let_scope(frame, body, pattern, ops, value, path),
             FlowOp::Break(value) => {
-                if let Some(value) = value {
-                    let value =
-                        AwbcExprLowerer::new(self.inventory, frame, path, self.plan).lower(value);
-                    let _ = value;
-                }
-                self.push_intrinsic_call("flow.break", Vec::new());
+                self.lower_break(frame, body, value.as_ref(), path);
             }
             FlowOp::ReturnExpr(value) => {
                 let value =
@@ -1063,7 +1068,7 @@ impl<'inventory, 'plan> AwbcFlowLowerer<'inventory, 'plan> {
                 );
             }
             FlowOp::Continue => {
-                self.push_intrinsic_call("flow.continue", Vec::new());
+                self.lower_continue(frame, body, path);
             }
             FlowOp::Goto(target) => {
                 if let Some(function) = self.inventory.flow_function(target) {
@@ -1529,6 +1534,184 @@ impl<'inventory, 'plan> AwbcFlowLowerer<'inventory, 'plan> {
                 value,
                 mode: AwbcBindMode::Declare,
             });
+    }
+
+    fn lower_loop(
+        &mut self,
+        frame: &mut FrameBuilder,
+        body: &mut FlowBodyBuilder,
+        result: Option<&RuntimePattern>,
+        ops: &[FlowOp],
+        path: &str,
+    ) {
+        let result_register = result.map(|pattern| {
+            let ty = crate::awbc_lower::pattern::plan_type(self.inventory, self.plan, pattern.ty());
+            frame.temp(ty)
+        });
+        let header = AwbcBlockId(table_index(
+            self.inventory.program.blocks.len().saturating_add(1),
+        ));
+        body.close_block(
+            self.inventory,
+            AwbcTerminator::Jump { target: header },
+            AwbcSafePointKind::None,
+        );
+
+        // Backedges always target this dedicated header so an arbitrary first
+        // body operation (including a suspension) cannot replace the required
+        // loop-backedge safe point.
+        let loop_body = AwbcBlockId(header.0.saturating_add(1));
+        body.close_block(
+            self.inventory,
+            AwbcTerminator::Jump { target: loop_body },
+            AwbcSafePointKind::LoopBackedge,
+        );
+
+        let outer_scope_depth = frame.scope_depth();
+        let scope = frame.enter_scope();
+        self.inventory
+            .push_instruction(AwbcInstruction::EnterScope { scope });
+        self.loop_targets.push(LoopLoweringTarget {
+            header,
+            exit_jumps: Vec::new(),
+            outer_scope_depth,
+            result: result_register,
+        });
+        self.lower_ops(frame, body, ops, &format!("{path}.body"));
+
+        if !body.terminated {
+            self.inventory
+                .push_instruction(AwbcInstruction::ExitScope { scope });
+            body.close_block(
+                self.inventory,
+                AwbcTerminator::Jump { target: header },
+                AwbcSafePointKind::LoopBackedge,
+            );
+            body.terminated = true;
+        }
+
+        let target = self
+            .loop_targets
+            .pop()
+            .expect("loop lowering target is balanced with its loop body");
+        frame.restore_scope_depth_after_branch(target.outer_scope_depth);
+        if target.exit_jumps.is_empty() {
+            return;
+        }
+
+        let exit = body.reopen_after_terminated_branch(self.inventory);
+        for jump in target.exit_jumps {
+            patch_jump_target(self.inventory, jump, exit);
+        }
+        if let (Some(pattern), Some(value)) = (result, target.result) {
+            let pattern = lower_pattern(self.inventory, self.plan, frame, pattern);
+            self.inventory
+                .push_instruction(AwbcInstruction::BindPattern {
+                    pattern,
+                    value,
+                    mode: AwbcBindMode::Declare,
+                });
+        }
+    }
+
+    fn lower_break(
+        &mut self,
+        frame: &mut FrameBuilder,
+        body: &mut FlowBodyBuilder,
+        value: Option<&RuntimeExpr>,
+        path: &str,
+    ) {
+        let Some((outer_scope_depth, result)) = self
+            .loop_targets
+            .last()
+            .map(|target| (target.outer_scope_depth, target.result))
+        else {
+            self.terminate_missing_loop_transfer(frame, body, path, "break");
+            return;
+        };
+
+        match (result, value) {
+            (Some(result), Some(value)) => {
+                let value =
+                    AwbcExprLowerer::new(self.inventory, frame, path, self.plan).lower(value);
+                self.inventory.push_instruction(AwbcInstruction::Move {
+                    dst: result,
+                    src: value,
+                });
+            }
+            (Some(result), None) => {
+                let unit = self.inventory.constant_runtime_value(&RuntimeValue::Unit);
+                self.inventory.push_instruction(AwbcInstruction::LoadConst {
+                    dst: result,
+                    constant: unit,
+                });
+            }
+            (None, Some(value)) => {
+                let _ = AwbcExprLowerer::new(self.inventory, frame, path, self.plan).lower(value);
+            }
+            (None, None) => {}
+        }
+        self.close_scopes_to_depth(frame, outer_scope_depth);
+        let jump = AwbcBlockId(table_index(self.inventory.program.blocks.len()));
+        body.terminate(
+            self.inventory,
+            AwbcTerminator::Jump {
+                target: AwbcBlockId::default(),
+            },
+            AwbcSafePointKind::None,
+        );
+        self.loop_targets
+            .last_mut()
+            .expect("break target remains active while its body lowers")
+            .exit_jumps
+            .push(jump);
+    }
+
+    fn lower_continue(&mut self, frame: &mut FrameBuilder, body: &mut FlowBodyBuilder, path: &str) {
+        let Some((header, outer_scope_depth)) = self
+            .loop_targets
+            .last()
+            .map(|target| (target.header, target.outer_scope_depth))
+        else {
+            self.terminate_missing_loop_transfer(frame, body, path, "continue");
+            return;
+        };
+        self.close_scopes_to_depth(frame, outer_scope_depth);
+        body.terminate(
+            self.inventory,
+            AwbcTerminator::Jump { target: header },
+            AwbcSafePointKind::LoopBackedge,
+        );
+    }
+
+    fn close_scopes_to_depth(&mut self, frame: &FrameBuilder, target_depth: u32) {
+        for depth in (target_depth..frame.scope_depth()).rev() {
+            self.inventory.push_instruction(AwbcInstruction::ExitScope {
+                scope: AwbcScopeId(depth),
+            });
+        }
+    }
+
+    fn terminate_missing_loop_transfer(
+        &mut self,
+        frame: &mut FrameBuilder,
+        body: &mut FlowBodyBuilder,
+        path: &str,
+        transfer: &str,
+    ) {
+        let message = format!("{transfer} has no active typed loop target");
+        self.inventory
+            .diagnostic(AwbcLowerDiagnostic::error(path, &message));
+        let message = self.inventory.intern_string(&message);
+        self.close_active_scopes_for_terminator(frame);
+        body.terminate(
+            self.inventory,
+            AwbcTerminator::Trap {
+                code: AwbcTrapCode::InternalInvariant,
+                message: Some(message),
+            },
+            AwbcSafePointKind::Trap,
+        );
     }
 
     fn lower_branch_pattern(
@@ -1998,16 +2181,6 @@ impl<'inventory, 'plan> AwbcFlowLowerer<'inventory, 'plan> {
         });
         id
     }
-
-    fn push_intrinsic_call(&mut self, label: &str, args: Vec<AwbcRegisterId>) {
-        let intrinsic = self.intrinsic(label, args.len(), None);
-        self.inventory
-            .push_instruction(AwbcInstruction::CallIntrinsic {
-                dst: None,
-                intrinsic,
-                args,
-            });
-    }
 }
 
 fn awbc_dialogue_value_role(role: RuntimeDialogueValueRole) -> AwbcDialogueValueRole {
@@ -2127,8 +2300,7 @@ fn collect_flow_dependencies(
                 }
                 false
             }
-            FlowOp::Loop { body }
-            | FlowOp::LetLoop { body, .. }
+            FlowOp::Loop { body, .. }
             | FlowOp::While { body, .. }
             | FlowOp::WhileLet { body, .. }
             | FlowOp::For { body, .. }

@@ -618,6 +618,36 @@ fn standard_environment_projects_domain_and_structural_nominals_exactly() {
     ));
     assert_eq!(reduction.arity(), 1);
 
+    for (name, expected_producer, argument) in [
+        ("Watch", "std.watch", TypeKind::Bool),
+        ("Sample", "std.sample", TypeKind::F32),
+    ] {
+        let record = environment
+            .nominal_catalog()
+            .exact(&path(name))
+            .expect("standard observable family is accepted evidence");
+        assert_eq!(record.origin(), AcceptedNominalOrigin::Domain);
+        assert_eq!(record.arity(), 1);
+        assert!(matches!(
+            record.semantics(),
+            AcceptedNominalSemantics::Opaque { producer }
+                if producer.as_str() == expected_producer
+        ));
+        assert!(matches!(
+            record.try_instantiate([argument.clone()]),
+            Ok(TypeKind::AcceptedNominal(nominal))
+                if nominal.arguments() == [argument]
+        ));
+        assert!(matches!(
+            record.try_instantiate([]),
+            Err(AcceptedNominalInstantiationError::WrongArity {
+                expected: 1,
+                actual: 0,
+                ..
+            })
+        ));
+    }
+
     let dialogue = environment
         .nominal_catalog()
         .exact(&path("DialogueContent"))

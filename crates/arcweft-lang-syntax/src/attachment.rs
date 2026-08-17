@@ -201,12 +201,11 @@ pub use thread_body::{
     AttachedThreadFlowItemFamily,
 };
 pub use thread_statement::{
-    AttachedForStatement, AttachedIncludeStatement, AttachedLoopStatement,
-    AttachedRequiredIncludeTarget, AttachedScopeName, AttachedScopeStatement,
-    AttachedSelectBindingName, AttachedSelectBranch, AttachedSelectBranchBlock,
-    AttachedSelectStatement, AttachedSelectStatementForm, AttachedSourceLocaleStatement,
-    AttachedSourceLocaleValue, AttachedThreadEntityReference, AttachedWhileLetStatement,
-    AttachedWhileStatement,
+    AttachedForStatement, AttachedIncludeStatement, AttachedRequiredIncludeTarget,
+    AttachedScopeName, AttachedScopeStatement, AttachedSelectBindingName, AttachedSelectBranch,
+    AttachedSelectBranchBlock, AttachedSelectStatement, AttachedSelectStatementForm,
+    AttachedSourceLocaleStatement, AttachedSourceLocaleValue, AttachedThreadEntityReference,
+    AttachedWhileLetStatement, AttachedWhileStatement,
 };
 pub use trait_impl::{
     AttachedImplAssociatedType, AttachedImplBody, AttachedImplDeclaration, AttachedImplFunction,

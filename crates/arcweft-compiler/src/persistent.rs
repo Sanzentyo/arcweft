@@ -743,6 +743,7 @@ fn hir_body_facts(
                 counts.threads += 1;
                 counts.flow_items += to_u64("thread body", thread.body().items().len())?;
             }
+            HirExprKind::Loop(_) => counts.loops += 1,
             _ => {}
         }
     }
@@ -756,11 +757,9 @@ fn hir_body_facts(
             immediate_thread_flow_item_count(statement.kind()),
         )?;
         match statement.kind() {
-            HirStmtKind::LetLoop { .. }
-            | HirStmtKind::Loop(_)
-            | HirStmtKind::While(_)
-            | HirStmtKind::WhileLet(_)
-            | HirStmtKind::For(_) => counts.loops += 1,
+            HirStmtKind::While(_) | HirStmtKind::WhileLet(_) | HirStmtKind::For(_) => {
+                counts.loops += 1
+            }
             HirStmtKind::Include(_) => counts.includes += 1,
             _ => {}
         }
@@ -1238,6 +1237,7 @@ const fn expression_kind_tag(kind: &HirExprKind) -> &'static str {
         HirExprKind::Block(_) => "block",
         HirExprKind::ComputationBlock(_) => "computation-block",
         HirExprKind::NamedBlock(_) => "named-block",
+        HirExprKind::Loop(_) => "loop",
         HirExprKind::If(_) => "if",
         HirExprKind::IfLet(_) => "if-let",
         HirExprKind::Match(_) => "match",
@@ -1256,7 +1256,6 @@ const fn statement_kind_tag(kind: &HirStmtKind) -> &'static str {
         HirStmtKind::LetElse { .. } => "let-else",
         HirStmtKind::LetChoice { .. } => "let-choice",
         HirStmtKind::LetScope { .. } => "let-scope",
-        HirStmtKind::LetLoop { .. } => "let-loop",
         HirStmtKind::LetActionReceive { .. } => "let-action-receive",
         HirStmtKind::Return { .. } => "return",
         HirStmtKind::Out { .. } => "out",
@@ -1273,7 +1272,6 @@ const fn statement_kind_tag(kind: &HirStmtKind) -> &'static str {
         HirStmtKind::If(_) => "if",
         HirStmtKind::IfLet(_) => "if-let",
         HirStmtKind::Match(_) => "match",
-        HirStmtKind::Loop(_) => "loop",
         HirStmtKind::While(_) => "while",
         HirStmtKind::WhileLet(_) => "while-let",
         HirStmtKind::For(_) => "for",
@@ -1312,7 +1310,6 @@ fn immediate_thread_flow_item_count(kind: &HirStmtKind) -> usize {
                 HirStmtMatchArmBody::Body(body) => contextual_thread_flow_item_count(body),
             })
             .sum(),
-        HirStmtKind::Loop(statement) => contextual_thread_flow_item_count(statement.body()),
         HirStmtKind::While(statement) => contextual_thread_flow_item_count(statement.body()),
         HirStmtKind::WhileLet(statement) => contextual_thread_flow_item_count(statement.body()),
         HirStmtKind::For(statement) => contextual_thread_flow_item_count(statement.body()),

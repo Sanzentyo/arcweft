@@ -202,6 +202,13 @@ pub(super) fn expression_payload_matches(
                     .is_ok_and(|statements| statements.len() == actual.statements().len())
             })
         }
+        (HirExprKind::Loop(actual), ExpressionProjection::Loop) => {
+            attached.block().is_some_and(|block| {
+                block
+                    .statements()
+                    .is_ok_and(|statements| statements.len() == actual.statements().len())
+            })
+        }
         (
             HirExprKind::ComputationBlock(actual),
             ExpressionProjection::ComputationBlock(expected),
@@ -618,6 +625,11 @@ pub(super) fn expression_children_match(
     }
     if let HirExprKind::NamedBlock(expression) = payload.kind() {
         return super::super::block_projection::named_block_expression_matches(
+            parsed, slots, arenas, parent, payload, expression, attached,
+        );
+    }
+    if let HirExprKind::Loop(expression) = payload.kind() {
+        return super::super::block_projection::loop_expression_matches(
             parsed, slots, arenas, parent, payload, expression, attached,
         );
     }

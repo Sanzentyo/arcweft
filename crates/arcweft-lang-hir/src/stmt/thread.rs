@@ -391,42 +391,6 @@ impl HirMatchStmt {
     }
 }
 
-/// Statement-form `loop` payload.
-#[derive(Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
-pub struct HirLoopStmt {
-    label: Option<HirName>,
-    body: HirContextualStmtBody,
-}
-
-impl HirLoopStmt {
-    pub(crate) fn try_new(
-        label: Option<HirName>,
-        body: HirContextualStmtBody,
-    ) -> Result<Self, HirThreadStmtInvariantError> {
-        body.validate_module(body.scope().module())?;
-        Ok(Self { label, body })
-    }
-
-    pub const fn label(&self) -> Option<&HirName> {
-        self.label.as_ref()
-    }
-
-    pub const fn body(&self) -> &HirContextualStmtBody {
-        &self.body
-    }
-
-    pub(crate) fn thread_body_for_scope(&self, scope: ScopeId) -> Option<&HirThreadBody> {
-        self.body.thread_body_for_scope(scope)
-    }
-
-    pub(crate) fn validate_module(
-        &self,
-        expected: HirModuleId,
-    ) -> Result<(), HirThreadStmtInvariantError> {
-        self.body.validate_module(expected)
-    }
-}
-
 /// Statement-form `while` payload.
 #[derive(Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub struct HirWhileStmt {
@@ -880,8 +844,6 @@ pub enum HirThreadStmtRecoveryIssue {
     MissingBody { role: HirThreadStmtBodyRole },
     #[error("statement body {role:?} is missing its closing delimiter")]
     UnclosedBody { role: HirThreadStmtBodyRole },
-    #[error("loop label is not one valid name")]
-    InvalidLoopLabel(HirNameInvariantError),
     #[error("Match statement has no complete arm")]
     EmptyMatch,
     #[error("Select statement has no complete branch")]
@@ -921,7 +883,6 @@ pub enum HirThreadStmtBodyRole {
     Else,
     Match,
     MatchArm { ordinal: u32 },
-    Loop,
     While,
     WhileLet,
     For,

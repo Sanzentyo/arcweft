@@ -929,7 +929,6 @@ fn thread_flow_item_source_site<'a>(
         | HirThreadFlowItem::If(statement)
         | HirThreadFlowItem::IfLet(statement)
         | HirThreadFlowItem::Match(statement)
-        | HirThreadFlowItem::Loop(statement)
         | HirThreadFlowItem::While(statement)
         | HirThreadFlowItem::WhileLet(statement)
         | HirThreadFlowItem::For(statement)
@@ -974,10 +973,6 @@ fn thread_body_families_match(
                         | (
                             AttachedThreadFlowItemFamily::Match,
                             HirThreadFlowItem::Match(_)
-                        )
-                        | (
-                            AttachedThreadFlowItemFamily::Loop,
-                            HirThreadFlowItem::Loop(_)
                         )
                         | (
                             AttachedThreadFlowItemFamily::While,
@@ -1042,9 +1037,6 @@ fn thread_body_semantic_items_match(
         HirThreadFlowItem::Match(owner) => statements
             .resolve_prepared(slots, *owner)
             .is_ok_and(|statement| matches!(statement.kind(), HirStmtKind::Match(_))),
-        HirThreadFlowItem::Loop(owner) => statements
-            .resolve_prepared(slots, *owner)
-            .is_ok_and(|statement| matches!(statement.kind(), HirStmtKind::Loop(_))),
         HirThreadFlowItem::While(owner) => statements
             .resolve_prepared(slots, *owner)
             .is_ok_and(|statement| matches!(statement.kind(), HirStmtKind::While(_))),
@@ -1079,7 +1071,6 @@ fn ordinary_thread_statement(kind: &HirStmtKind) -> bool {
             | HirStmtKind::If(_)
             | HirStmtKind::IfLet(_)
             | HirStmtKind::Match(_)
-            | HirStmtKind::Loop(_)
             | HirStmtKind::While(_)
             | HirStmtKind::WhileLet(_)
             | HirStmtKind::For(_)

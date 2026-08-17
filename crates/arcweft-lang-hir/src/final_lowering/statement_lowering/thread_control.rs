@@ -1,8 +1,7 @@
 //! Direct final-HIR lowering for attached Thread/Flow control statements.
 
 use arcweft_lang_syntax::attachment::node::{
-    ForStatementKind, LoopStatementKind, SelectStatementKind, WhileLetStatementKind,
-    WhileStatementKind,
+    ForStatementKind, SelectStatementKind, WhileLetStatementKind, WhileStatementKind,
 };
 use arcweft_lang_syntax::attachment::source_file::AttachedDelimiterState;
 use arcweft_lang_syntax::attachment::{
@@ -22,10 +21,10 @@ use crate::lowering::{HirInvariantFailure, HirLowerFailure};
 use crate::scope::{HirLocal, HirLocalKind, HirPatternBindingPolicy, HirScopeKind, HirScopeOwner};
 use crate::source_index::{HirExprSourceRole, HirInsertionPoint, HirSourceSite};
 use crate::stmt::{
-    HirContextualStmtBody, HirForStmt, HirLoopStmt, HirSelectBindingLocal, HirSelectBranch,
-    HirSelectBranchHead, HirSelectStmt, HirStatementContext, HirStmtChildRole, HirStmtKind,
-    HirStmtRecoveryIssue, HirThreadStmtBodyRole, HirThreadStmtChildRole,
-    HirThreadStmtRecoveryIssue, HirWhileLetStmt, HirWhileStmt,
+    HirContextualStmtBody, HirForStmt, HirSelectBindingLocal, HirSelectBranch, HirSelectBranchHead,
+    HirSelectStmt, HirStatementContext, HirStmtChildRole, HirStmtKind, HirStmtRecoveryIssue,
+    HirThreadStmtBodyRole, HirThreadStmtChildRole, HirThreadStmtRecoveryIssue, HirWhileLetStmt,
+    HirWhileStmt,
 };
 
 use super::super::name_projection::{name, name_issue, require_attempted_name_limit};
@@ -45,28 +44,6 @@ impl StagedHirModuleTransaction<'_> {
         context: HirStatementContext,
     ) -> Result<(HirStmtKind, Option<HirStmtRecoveryIssue>), HirLowerFailure> {
         match attached.kind() {
-            SyntaxKind::LoopStatement => {
-                Self::require_thread_statement_context(context)?;
-                let attached = attached
-                    .cast::<LoopStatementKind>()
-                    .map_err(|_| HirInvariantFailure::InvalidArenaCommit)?
-                    .semantics()
-                    .map_err(|_| HirInvariantFailure::InvalidArenaCommit)?;
-                let lowered = self.lower_attached_nested_thread_body(
-                    attached.body(),
-                    HirScopeOwner::Stmt(owner),
-                    outer_scope,
-                )?;
-                let recovery = nested_thread_body_recovery(
-                    lowered.recovery.as_ref(),
-                    HirThreadStmtBodyRole::Loop,
-                )?;
-                let body = HirContextualStmtBody::try_thread(lowered.body)
-                    .map_err(|_| HirInvariantFailure::InvalidArenaCommit)?;
-                let statement = HirLoopStmt::try_new(None, body)
-                    .map_err(|_| HirInvariantFailure::InvalidArenaCommit)?;
-                Ok((HirStmtKind::Loop(statement), recovery))
-            }
             SyntaxKind::WhileStatement => {
                 Self::require_thread_statement_context(context)?;
                 let attached = attached

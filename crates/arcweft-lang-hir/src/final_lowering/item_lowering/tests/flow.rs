@@ -571,20 +571,24 @@ fn root_and_nested_scope_kinds_are_allocated_exactly() {
         assert_eq!(scope.owner(), &HirScopeOwner::Expr(owner));
     }
 
-    let [HirThreadFlowItem::Loop(loop_owner)] = thread.body().items() else {
-        panic!("Thread fixture must retain one Loop statement");
+    let [HirThreadFlowItem::Statement(loop_owner)] = thread.body().items() else {
+        panic!("Thread fixture must retain one loop expression statement");
     };
     let loop_statement = module.resolve_stmt(*loop_owner).unwrap();
-    let HirStmtKind::Loop(loop_statement) = loop_statement.kind() else {
-        panic!("Thread Loop item must retain its statement payload");
+    let HirStmtKind::Expression { expression } = loop_statement.kind() else {
+        panic!("Thread loop item must retain an ordinary expression statement");
     };
-    let loop_scope = module.resolve_scope(loop_statement.body().scope()).unwrap();
+    let HirExprKind::Loop(loop_expression) = module.resolve_expr(*expression).unwrap().kind()
+    else {
+        panic!("Thread expression statement must retain the Loop expression payload");
+    };
+    let loop_scope = module.resolve_scope(loop_expression.scope()).unwrap();
     assert_eq!(loop_scope.kind(), HirScopeKind::Block);
     assert_eq!(loop_scope.parent(), Some(thread.scope()));
-    assert_eq!(loop_scope.owner(), &HirScopeOwner::Stmt(*loop_owner));
+    assert_eq!(loop_scope.owner(), &HirScopeOwner::Expr(*expression));
     assert_eq!(
         module.resolve_scope(thread.scope()).unwrap().children(),
-        [loop_statement.body().scope()]
+        [loop_expression.scope()]
     );
 }
 

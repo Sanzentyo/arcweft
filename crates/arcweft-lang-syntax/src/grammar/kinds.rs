@@ -179,7 +179,6 @@ define_syntax_kinds! {
     LetElseStatement,
     LetChoiceStatement,
     LetScopeStatement,
-    LetLoopStatement,
     LetActionReceiveStatement,
     ReturnStatement,
     OutStatement,
@@ -193,7 +192,7 @@ define_syntax_kinds! {
     OnStatement,
     UnsafeLifetimeStatement,
     IfStatement,
-    LoopStatement,
+    LoopExpression,
     WhileStatement,
     WhileLetStatement,
     ForStatement,
@@ -598,7 +597,6 @@ impl SyntaxKind {
             | Self::LetElseStatement
             | Self::LetChoiceStatement
             | Self::LetScopeStatement
-            | Self::LetLoopStatement
             | Self::LetActionReceiveStatement
             | Self::ReturnStatement
             | Self::OutStatement
@@ -612,7 +610,6 @@ impl SyntaxKind {
             | Self::OnStatement
             | Self::UnsafeLifetimeStatement
             | Self::IfStatement
-            | Self::LoopStatement
             | Self::WhileStatement
             | Self::WhileLetStatement
             | Self::ForStatement
@@ -721,6 +718,7 @@ impl SyntaxKind {
             | Self::BlockExpression
             | Self::ComputationBlockExpression
             | Self::NamedBlockExpression
+            | Self::LoopExpression
             | Self::IfExpression
             | Self::IfLetExpression
             | Self::MatchExpression
@@ -804,7 +802,6 @@ impl SyntaxKind {
             | Self::LetElseStatement
             | Self::LetChoiceStatement
             | Self::LetScopeStatement
-            | Self::LetLoopStatement
             | Self::LetActionReceiveStatement
             | Self::ReturnStatement
             | Self::OutStatement
@@ -818,7 +815,6 @@ impl SyntaxKind {
             | Self::OnStatement
             | Self::UnsafeLifetimeStatement
             | Self::IfStatement
-            | Self::LoopStatement
             | Self::WhileStatement
             | Self::WhileLetStatement
             | Self::ForStatement
@@ -966,6 +962,7 @@ impl SyntaxKind {
             | Self::BlockExpression
             | Self::ComputationBlockExpression
             | Self::NamedBlockExpression
+            | Self::LoopExpression
             | Self::IfExpression
             | Self::IfLetExpression
             | Self::MatchExpression
@@ -1158,7 +1155,6 @@ impl SyntaxKind {
                 | Self::LetElseStatement
                 | Self::LetChoiceStatement
                 | Self::LetScopeStatement
-                | Self::LetLoopStatement
                 | Self::LetActionReceiveStatement
                 | Self::ReturnStatement
                 | Self::OutStatement
@@ -1172,7 +1168,6 @@ impl SyntaxKind {
                 | Self::OnStatement
                 | Self::UnsafeLifetimeStatement
                 | Self::IfStatement
-                | Self::LoopStatement
                 | Self::WhileStatement
                 | Self::WhileLetStatement
                 | Self::ForStatement
@@ -1230,6 +1225,7 @@ impl SyntaxKind {
                 | Self::BlockExpression
                 | Self::ComputationBlockExpression
                 | Self::NamedBlockExpression
+                | Self::LoopExpression
                 | Self::IfExpression
                 | Self::IfLetExpression
                 | Self::MatchExpression

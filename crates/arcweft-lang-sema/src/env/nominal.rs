@@ -37,11 +37,21 @@ const STANDARD_AGENT_ERROR: StandardOpaqueNominalSpec = StandardOpaqueNominalSpe
     producer: "std.agent_error",
 };
 
-const STANDARD_OPAQUE_NOMINALS: [StandardOpaqueNominalSpec; 12] = [
+const STANDARD_OPAQUE_NOMINALS: [StandardOpaqueNominalSpec; 14] = [
     StandardOpaqueNominalSpec {
         name: "Reduction",
         arity: 1,
         producer: "std.reduction",
+    },
+    StandardOpaqueNominalSpec {
+        name: "Watch",
+        arity: 1,
+        producer: "std.watch",
+    },
+    StandardOpaqueNominalSpec {
+        name: "Sample",
+        arity: 1,
+        producer: "std.sample",
     },
     StandardOpaqueNominalSpec {
         name: "VirtualPath",

@@ -244,6 +244,9 @@ impl HirExprKind {
             Self::NamedBlock(expression) => {
                 validate_block_role(owner, role, expression.statements().len(), true)
             }
+            Self::Loop(expression) => {
+                validate_block_role(owner, role, expression.statements().len(), false)
+            }
             Self::If(_) => admit(
                 owner,
                 role,

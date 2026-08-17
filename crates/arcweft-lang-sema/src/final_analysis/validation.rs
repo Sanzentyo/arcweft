@@ -746,6 +746,7 @@ const fn structural_resolution_matches(kind: &HirExprKind) -> bool {
             | HirExprKind::Block(_)
             | HirExprKind::ComputationBlock(_)
             | HirExprKind::NamedBlock(_)
+            | HirExprKind::Loop(_)
             | HirExprKind::If(_)
             | HirExprKind::IfLet(_)
             | HirExprKind::Match(_)

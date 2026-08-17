@@ -135,6 +135,10 @@ pub enum ExpressionProjection {
     /// recovery and is never replaced with a fabricated identifier. A truly
     /// omitted name is the ordinary [`Self::Block`] projection.
     NamedBlock(Result<SyntaxName, SyntaxNameIssue>),
+    /// One value-producing `loop { ... }` expression. Its braced value block
+    /// remains a structural child of this expression owner; `break`/`continue`
+    /// are ordinary statements inside that block.
+    Loop,
     /// One attached or detached Thread with an optional typed source name.
     /// Its statement-only body is owned by the exact Thread syntax node.
     Thread(SyntaxThreadProjection),
@@ -186,14 +190,14 @@ impl ExpressionProjection {
             Self::Index(index) => index.has_recovery(),
             Self::DialogueContentApplication(application) => application.has_recovery(),
             Self::PostfixBracket(postfix) => postfix.has_recovery(),
-            Self::Try { operand, .. } => operand.is_missing(),
             Self::Await { operand, branches } => {
                 operand.is_missing()
                     || branches.as_ref().is_some_and(|branches| {
                         branches.is_empty() || branches.iter().any(Option::is_none)
                     })
             }
-            Self::Borrow { operand, .. }
+            Self::Try { operand, .. }
+            | Self::Borrow { operand, .. }
             | Self::Dereference { operand }
             | Self::Unary { operand, .. } => operand.is_missing(),
             Self::Range { start, end, .. } => start
@@ -244,6 +248,7 @@ impl ExpressionProjection {
             | Self::Placeholder(_)
             | Self::Block
             | Self::ComputationBlock(_)
+            | Self::Loop
             | Self::Choice => false,
         }
     }

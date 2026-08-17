@@ -444,7 +444,6 @@ mod tests {
             | HirThreadFlowItem::If(owner)
             | HirThreadFlowItem::IfLet(owner)
             | HirThreadFlowItem::Match(owner)
-            | HirThreadFlowItem::Loop(owner)
             | HirThreadFlowItem::While(owner)
             | HirThreadFlowItem::WhileLet(owner)
             | HirThreadFlowItem::For(owner)

@@ -379,7 +379,6 @@ fn thread_flow_statement(
         AttachedThreadFlowItemFamily::If => HirThreadFlowItem::If(owner),
         AttachedThreadFlowItemFamily::IfLet => HirThreadFlowItem::IfLet(owner),
         AttachedThreadFlowItemFamily::Match => HirThreadFlowItem::Match(owner),
-        AttachedThreadFlowItemFamily::Loop => HirThreadFlowItem::Loop(owner),
         AttachedThreadFlowItemFamily::While => HirThreadFlowItem::While(owner),
         AttachedThreadFlowItemFamily::WhileLet => HirThreadFlowItem::WhileLet(owner),
         AttachedThreadFlowItemFamily::For => HirThreadFlowItem::For(owner),

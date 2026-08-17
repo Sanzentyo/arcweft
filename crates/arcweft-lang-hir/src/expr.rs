@@ -38,7 +38,7 @@ pub use self::choice::{
 pub use self::control::{
     HirBlockExpr, HirClosureExpr, HirClosureParameter, HirComputationBlockExpr,
     HirComputationBlockKind, HirExprError, HirGenericExprIssue, HirIfExpr, HirIfLetExpr,
-    HirMatchArm, HirMatchExpr, HirNamedBlockExpr, HirNamedBlockName,
+    HirLoopExpr, HirMatchArm, HirMatchExpr, HirNamedBlockExpr, HirNamedBlockName,
 };
 pub use self::for_synthetic::HirForSyntheticExpr;
 #[cfg(test)]
@@ -162,6 +162,7 @@ pub enum HirExprKind {
     Block(HirBlockExpr),
     ComputationBlock(HirComputationBlockExpr),
     NamedBlock(HirNamedBlockExpr),
+    Loop(HirLoopExpr),
     If(HirIfExpr),
     IfLet(HirIfLetExpr),
     Match(HirMatchExpr),
@@ -240,6 +241,7 @@ impl HirExprKind {
             | Self::Block(_)
             | Self::ComputationBlock(_)
             | Self::NamedBlock(_)
+            | Self::Loop(_)
             | Self::If(_)
             | Self::IfLet(_)
             | Self::Match(_)
@@ -314,6 +316,7 @@ impl HirExprKind {
             Self::Block(expression) => children.push(expression.tail()),
             Self::ComputationBlock(expression) => children.push(expression.tail()),
             Self::NamedBlock(expression) => children.push(expression.tail()),
+            Self::Loop(expression) => children.push(expression.tail()),
             Self::If(expression) => children.extend([
                 expression.condition(),
                 expression.then_branch(),
@@ -411,6 +414,7 @@ impl HirExprKind {
             Self::Dereference(expression) => (ordinal == 0).then(|| retained(expression.operand())),
             Self::Closure(expression) => (ordinal == 0).then(|| retained(expression.body())),
             Self::Unary(expression) => (ordinal == 0).then(|| retained(expression.operand())),
+            Self::Loop(expression) => (ordinal == 0).then(|| retained(expression.tail())),
             Self::If(expression) => match ordinal {
                 0 => Some(retained(expression.condition())),
                 1 => Some(retained(expression.then_branch())),
@@ -492,6 +496,7 @@ impl HirExprKind {
             | Self::Unary(_)
             | Self::Block(_)
             | Self::ComputationBlock(_)
+            | Self::Loop(_)
             | Self::If(_)
             | Self::IfLet(_)
             | Self::Match(_)
@@ -618,6 +623,7 @@ impl HirExprKind {
                 validate_statements(expected, expression.statements())?;
                 validate_expr(expected, expression.tail())
             }
+            Self::Loop(expression) => expression.validate_module(expected),
             Self::If(expression) => {
                 validate_expr(expected, expression.condition())?;
                 validate_expr(expected, expression.then_branch())?;
@@ -944,7 +950,7 @@ fn validate_exprs(
     Ok(())
 }
 
-fn validate_statements(
+pub(super) fn validate_statements(
     expected: HirModuleId,
     statements: &[StmtId],
 ) -> Result<(), HirExprInvariantError> {

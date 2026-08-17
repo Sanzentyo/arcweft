@@ -13,8 +13,8 @@ use crate::{
 use arcweft_character::id::CharacterId;
 
 use super::{
-    CallableArgumentPolicy, CallableEffectSchema, CallableGroupKind, CallableParameter,
-    CallableParameterGroup, CallableParameterPassing, CallableParameterPresence,
+    CallableArgumentPolicy, CallableEffectSchema, CallableEvaluatedEffect, CallableGroupKind,
+    CallableParameter, CallableParameterGroup, CallableParameterPassing, CallableParameterPresence,
     CallableParameterType, CallableSignatureSchema, CallableValidator, SpreadArgumentPolicy,
     UnknownNamedArgumentPolicy,
 };
@@ -243,6 +243,7 @@ impl BuiltinCallableId {
             Self::StdFloat(id) => std_float_schema(*id, validator),
             Self::Capability(CapabilityCallableId::EventEmit) => {
                 variadic_unchecked(TypeKind::Unit, validator, &[])
+                    .with_evaluated_effect(CallableEvaluatedEffect::EmitEvent)
             }
             Self::Reduction(kind) => kind.signature_schema(),
         }
@@ -1428,6 +1429,16 @@ const fn open_unchecked() -> CallableArgumentPolicy {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn event_emit_builtin_owns_its_evaluated_effect_disposition() {
+        let schema =
+            BuiltinCallableId::Capability(CapabilityCallableId::EventEmit).signature_schema();
+        assert_eq!(
+            schema.evaluated_effect(),
+            Some(CallableEvaluatedEffect::EmitEvent)
+        );
+    }
 
     #[test]
     fn signal_and_metric_schemas_share_their_exact_payload_parameter() {

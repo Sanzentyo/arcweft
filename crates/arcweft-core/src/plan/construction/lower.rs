@@ -2228,11 +2228,10 @@ impl RuntimePlanBuilder {
                     .collect::<Result<_, _>>()?;
                 FlowOp::Match { scrutinee, arms }
             }
-            RuntimeFlowOpSeed::Loop { body } => FlowOp::Loop {
-                body: self.lower_flow_ops(body)?,
-            },
-            RuntimeFlowOpSeed::LetLoop { pattern, body } => FlowOp::LetLoop {
-                pattern: self.lower_pattern_seed(pattern)?,
+            RuntimeFlowOpSeed::Loop { result, body } => FlowOp::Loop {
+                result: result
+                    .map(|result| self.lower_pattern_seed(result))
+                    .transpose()?,
                 body: self.lower_flow_ops(body)?,
             },
             RuntimeFlowOpSeed::While { condition, body } => {
@@ -2960,12 +2959,15 @@ impl RuntimePlanBuilder {
                         self.validate_flow_operation_locals_inner(&arm.ops, &mut arm_scope, used)?;
                     }
                 }
-                FlowOp::Loop { body } | FlowOp::Thread { body, .. } | FlowOp::Scope(body) => {
+                FlowOp::Loop { result, body } => {
                     let mut nested = scope.clone();
                     self.validate_flow_operation_locals_inner(body, &mut nested, used)?;
+                    if let Some(result) = result {
+                        *scope = extend_scope(scope, pattern_binding_locals(result))?;
+                    }
                 }
-                FlowOp::LetLoop { pattern, body } => {
-                    let mut nested = extend_scope(scope, pattern_binding_locals(pattern))?;
+                FlowOp::Thread { body, .. } | FlowOp::Scope(body) => {
+                    let mut nested = scope.clone();
                     self.validate_flow_operation_locals_inner(body, &mut nested, used)?;
                 }
                 FlowOp::While { condition, body } => {

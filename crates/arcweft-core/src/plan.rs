@@ -851,10 +851,7 @@ pub enum FlowOp {
         arms: Vec<RuntimeMatchArm>,
     },
     Loop {
-        body: Vec<FlowOp>,
-    },
-    LetLoop {
-        pattern: RuntimePattern,
+        result: Option<RuntimePattern>,
         body: Vec<FlowOp>,
     },
     LoopNext {

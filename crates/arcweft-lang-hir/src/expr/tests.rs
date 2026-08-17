@@ -1400,7 +1400,7 @@ fn dialogue_and_rich_text_source_roles_validate_nested_typed_ordinals() {
 }
 
 // Keeping this match exhaustive provides typed evidence for the closed
-// 37-variant inventory without inspecting implementation source text.
+// 38-variant inventory without inspecting implementation source text.
 fn final_variant_ordinal(kind: &HirExprKind) -> u8 {
     match kind {
         HirExprKind::Unit => 0,
@@ -1433,13 +1433,14 @@ fn final_variant_ordinal(kind: &HirExprKind) -> u8 {
         HirExprKind::Block(_) => 27,
         HirExprKind::ComputationBlock(_) => 28,
         HirExprKind::NamedBlock(_) => 29,
-        HirExprKind::If(_) => 30,
-        HirExprKind::IfLet(_) => 31,
-        HirExprKind::Match(_) => 32,
-        HirExprKind::DialogueContentApplication(_) => 33,
-        HirExprKind::PostfixBracket(_) => 34,
-        HirExprKind::Error(_) => 35,
-        HirExprKind::ForSynthetic(_) => 36,
+        HirExprKind::Loop(_) => 30,
+        HirExprKind::If(_) => 31,
+        HirExprKind::IfLet(_) => 32,
+        HirExprKind::Match(_) => 33,
+        HirExprKind::DialogueContentApplication(_) => 34,
+        HirExprKind::PostfixBracket(_) => 35,
+        HirExprKind::Error(_) => 36,
+        HirExprKind::ForSynthetic(_) => 37,
     }
 }
 
@@ -1450,12 +1451,12 @@ fn expression_inventory_is_the_closed_37_variant_contract() {
         final_variant_ordinal(&HirExprKind::Error(super::HirExprError::new(
             HirGenericExprIssue::UnclassifiedSyntax,
         ))),
-        35
+        36
     );
     assert_eq!(
         final_variant_ordinal(&HirExprKind::ForSynthetic(
             super::HirForSyntheticExpr::iterator(id(module(1), 1)),
         )),
-        36
+        37
     );
 }

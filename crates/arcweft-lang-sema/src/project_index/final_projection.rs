@@ -391,11 +391,9 @@ fn summarize_flow(
             | HirStmtKind::IfLet(_)
             | HirStmtKind::Match(_)
             | HirStmtKind::LetElse { .. } => summary.record_branch(),
-            HirStmtKind::Loop(_)
-            | HirStmtKind::While(_)
-            | HirStmtKind::WhileLet(_)
-            | HirStmtKind::For(_)
-            | HirStmtKind::LetLoop { .. } => summary.record_loop(),
+            HirStmtKind::While(_) | HirStmtKind::WhileLet(_) | HirStmtKind::For(_) => {
+                summary.record_loop()
+            }
             HirStmtKind::Select(HirSelectStmt::Branches { branches, .. }) => {
                 summary.record_branch();
                 summary.add_select_branches(branches.len());
@@ -418,6 +416,7 @@ fn summarize_flow(
         match expression.kind() {
             HirExprKind::Await(_) => summary.record_await(),
             HirExprKind::Thread(_) => summary.record_thread(),
+            HirExprKind::Loop(_) => summary.record_loop(),
             HirExprKind::If(_) | HirExprKind::IfLet(_) | HirExprKind::Match(_) => {
                 summary.record_branch();
             }

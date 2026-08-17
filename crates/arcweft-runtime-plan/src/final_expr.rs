@@ -268,6 +268,7 @@ impl<'hir> FinalExprLowerer<'hir> {
             | HirExprKind::Pipe(_)
             | HirExprKind::Try(_)
             | HirExprKind::Await(_)
+            | HirExprKind::Loop(_)
             | HirExprKind::Thread(_)
             | HirExprKind::Choice(_)
             | HirExprKind::Borrow(_)

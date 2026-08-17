@@ -1,5 +1,5 @@
-extern capability http { type HttpRequest type HttpResponse fn text(status: i32, body: String) -> HttpResponse }
+extern capability http { fn respond() effects { http.respond } }
 entry server @entry.main { route GET "/health" -> @flow.health }
-flow health() -> HttpResponse effects { http.respond } {
-    return http.text(status = 200i32, body = "ok")
+flow health() -> String effects { http.respond } {
+    return "ok"
 }

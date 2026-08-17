@@ -308,14 +308,6 @@ fn visit_thread_flow_items(
             | AttachedThreadFlowItem::IfLet(conditional) => {
                 visit_if_statement(source, conditional, context, edits, true)?;
             }
-            AttachedThreadFlowItem::Loop(loop_statement) => {
-                visit_nested_thread_body(
-                    source,
-                    loop_statement.semantics()?.body(),
-                    context,
-                    edits,
-                )?;
-            }
             AttachedThreadFlowItem::While(while_statement) => {
                 let statement = while_statement.semantics()?;
                 visit_required_expression(source, statement.condition(), context, edits)?;

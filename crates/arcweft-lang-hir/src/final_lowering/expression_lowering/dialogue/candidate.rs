@@ -622,7 +622,9 @@ impl StagedHirModuleTransaction<'_> {
             // the specialized attached Thread/Choice relations required by
             // their final semantic owners. Admission is an invariant failure,
             // never a generic Error expression or detached reconstruction.
-            ExpressionProjection::Thread(_) | ExpressionProjection::Choice => {
+            ExpressionProjection::Thread(_)
+            | ExpressionProjection::Choice
+            | ExpressionProjection::Loop => {
                 return Err(HirInvariantFailure::InvalidArenaCommit.into());
             }
             ExpressionProjection::Range {

@@ -8,8 +8,7 @@
 use std::collections::{BTreeMap, BTreeSet};
 
 use arcweft_lang_syntax::attachment::node::{
-    ForStatementKind, LoopStatementKind, SelectStatementKind, WhileLetStatementKind,
-    WhileStatementKind,
+    ForStatementKind, SelectStatementKind, WhileLetStatementKind, WhileStatementKind,
 };
 use arcweft_lang_syntax::attachment::source_file::AttachedDelimiterState;
 use arcweft_lang_syntax::attachment::{
@@ -39,10 +38,10 @@ use crate::source_index::control_projection::canonical_pattern_locals;
 use crate::source_index::pattern_projection::{BindingLocalValidation, binding_locals_match};
 use crate::source_index::{HirExprSourceRole, HirSourceSite, HirStmtRecoveryOperandSlot};
 use crate::stmt::{
-    HirContextualStmtBody, HirForStmt, HirLoopStmt, HirSelectBindingLocal, HirSelectBranchHead,
-    HirSelectStmt, HirStatementContext, HirStmtChildRole, HirStmtKind, HirStmtPoisonState,
-    HirStmtRecoveryIssue, HirThreadStmtBodyRole, HirThreadStmtChildRole,
-    HirThreadStmtRecoveryIssue, HirWhileLetStmt, HirWhileStmt,
+    HirContextualStmtBody, HirForStmt, HirSelectBindingLocal, HirSelectBranchHead, HirSelectStmt,
+    HirStatementContext, HirStmtChildRole, HirStmtKind, HirStmtPoisonState, HirStmtRecoveryIssue,
+    HirThreadStmtBodyRole, HirThreadStmtChildRole, HirThreadStmtRecoveryIssue, HirWhileLetStmt,
+    HirWhileStmt,
 };
 
 struct ThreadBodyGraphEvidence {
@@ -105,15 +104,6 @@ pub(super) fn thread_control_statement_evidence(
         return None;
     }
     match kind {
-        HirStmtKind::Loop(statement) => loop_evidence(
-            parsed,
-            slots,
-            arenas,
-            owner,
-            attached,
-            outer_scope,
-            statement,
-        ),
         HirStmtKind::While(statement) => while_evidence(
             parsed,
             slots,
@@ -152,50 +142,6 @@ pub(super) fn thread_control_statement_evidence(
         ),
         _ => None,
     }
-}
-
-fn loop_evidence(
-    parsed: &ParsedSource,
-    slots: &SlotSnapshot,
-    arenas: &BlockValidationArenas<'_>,
-    owner: StmtId,
-    attached: &StatementNode,
-    outer_scope: ScopeId,
-    statement: &HirLoopStmt,
-) -> Option<StatementEvidence> {
-    let attached = attached
-        .cast::<LoopStatementKind>()
-        .ok()?
-        .semantics()
-        .ok()?;
-    if statement.label().is_some() {
-        return None;
-    }
-    let mut generations = BTreeMap::new();
-    let body = nested_body_evidence(
-        parsed,
-        slots,
-        arenas,
-        owner,
-        outer_scope,
-        statement.body(),
-        attached.body(),
-        &[],
-        &mut generations,
-    )?;
-    exact_owned_child_scopes(
-        slots,
-        arenas,
-        outer_scope,
-        owner,
-        &[statement.body().scope()],
-    )?;
-    exact_statement_scope_inventory(slots, arenas, owner, &[statement.body().scope()])?;
-    exact_statement_synthetic_expressions(slots, arenas, owner, &[])?;
-    Some(empty_statement(nested_body_recovery(
-        body.recovery,
-        HirThreadStmtBodyRole::Loop,
-    )))
 }
 
 fn while_evidence(
@@ -900,7 +846,6 @@ fn semantic_statement_owner(
         | HirThreadFlowItem::If(owner)
         | HirThreadFlowItem::IfLet(owner)
         | HirThreadFlowItem::Match(owner)
-        | HirThreadFlowItem::Loop(owner)
         | HirThreadFlowItem::While(owner)
         | HirThreadFlowItem::WhileLet(owner)
         | HirThreadFlowItem::For(owner)
@@ -936,10 +881,6 @@ fn semantic_statement_owner(
             AttachedThreadFlowItemFamily::Match,
             HirThreadFlowItem::Match(_),
             HirStmtKind::Match(_)
-        ) | (
-            AttachedThreadFlowItemFamily::Loop,
-            HirThreadFlowItem::Loop(_),
-            HirStmtKind::Loop(_)
         ) | (
             AttachedThreadFlowItemFamily::While,
             HirThreadFlowItem::While(_),
@@ -984,7 +925,6 @@ fn ordinary_thread_statement(kind: &HirStmtKind) -> bool {
             | HirStmtKind::If(_)
             | HirStmtKind::IfLet(_)
             | HirStmtKind::Match(_)
-            | HirStmtKind::Loop(_)
             | HirStmtKind::While(_)
             | HirStmtKind::WhileLet(_)
             | HirStmtKind::For(_)

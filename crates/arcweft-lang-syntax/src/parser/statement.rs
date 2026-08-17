@@ -528,7 +528,6 @@ fn emit_statement_kind(
         | SyntaxKind::LetElseStatement
         | SyntaxKind::LetChoiceStatement
         | SyntaxKind::LetScopeStatement
-        | SyntaxKind::LetLoopStatement
         | SyntaxKind::LetActionReceiveStatement => {
             emit_let_children(parser, child_end, kind, item_kind);
         }
@@ -544,7 +543,6 @@ fn emit_statement_kind(
         SyntaxKind::DeferBlockStatement
         | SyntaxKind::UnsafeLifetimeStatement
         | SyntaxKind::IfStatement
-        | SyntaxKind::LoopStatement
         | SyntaxKind::WhileStatement
         | SyntaxKind::WhileLetStatement
         | SyntaxKind::ForStatement
@@ -1022,7 +1020,11 @@ pub(super) fn emit_await_with_indented_branch_block(
                 |_, _| false,
             );
             let ordinal = u32::try_from(projections.len()).unwrap_or(u32::MAX);
-            if indent_cursor.observe(parser, start) != suite_indent {
+            if indent_cursor.observe(parser, start) == suite_indent {
+                projections.push(emit_indented_await_branch(
+                    parser, item_end, item_kind, ordinal,
+                ));
+            } else {
                 emit_invalid_await_branch(
                     parser,
                     item_end,
@@ -1031,10 +1033,6 @@ pub(super) fn emit_await_with_indented_branch_block(
                     "Await branch indentation must match the first branch",
                 );
                 projections.push(PendingAwaitBranchProjection::recovered());
-            } else {
-                projections.push(emit_indented_await_branch(
-                    parser, item_end, item_kind, ordinal,
-                ));
             }
             bump_until(parser, item_end);
         }
@@ -1312,7 +1310,7 @@ fn classify_statement(
         // dedicated statement production here would create a second source
         // owner beside `ThreadExpression` and force final HIR to special-case
         // an otherwise ordinary `HirStmtKind::Expression`.
-        Some("thread") => SyntaxKind::ExpressionStatement,
+        Some("thread" | "loop") => SyntaxKind::ExpressionStatement,
         Some("defer") if find_statement_open_brace(parser, start, end).is_some() => {
             SyntaxKind::DeferBlockStatement
         }
@@ -1337,7 +1335,6 @@ fn classify_statement(
         Some("on") => SyntaxKind::OnStatement,
         Some("unsafe") => SyntaxKind::UnsafeLifetimeStatement,
         Some("if") => SyntaxKind::IfStatement,
-        Some("loop") => SyntaxKind::LoopStatement,
         Some("while") if next_significant_text(parser, start + 1, end) == Some("let") => {
             SyntaxKind::WhileLetStatement
         }
@@ -1419,8 +1416,6 @@ fn classify_let_statement(parser: &DocumentParser<'_, '_>, end: usize) -> Syntax
     }
     match initializer {
         Some("choice") => SyntaxKind::LetChoiceStatement,
-        Some("scope") => SyntaxKind::LetScopeStatement,
-        Some("loop") => SyntaxKind::LetLoopStatement,
         Some("receive") => SyntaxKind::LetActionReceiveStatement,
         _ => SyntaxKind::LetStatement,
     }
@@ -1677,10 +1672,7 @@ fn emit_control_children(
 
     if matches!(
         kind,
-        SyntaxKind::LoopStatement
-            | SyntaxKind::WhileStatement
-            | SyntaxKind::WhileLetStatement
-            | SyntaxKind::ForStatement
+        SyntaxKind::WhileStatement | SyntaxKind::WhileLetStatement | SyntaxKind::ForStatement
     ) {
         let head_end = open.unwrap_or(end);
         match kind {
@@ -1691,8 +1683,7 @@ fn emit_control_children(
                 emit_expression_head(parser, head_end, "while", SyntaxRole::Condition);
             }
             SyntaxKind::ForStatement => emit_for_head(parser, head_end),
-            SyntaxKind::LoopStatement => bump_until(parser, head_end),
-            _ => unreachable!("the dedicated loop-family match is exhaustive"),
+            _ => unreachable!("the dedicated while/for-family match is exhaustive"),
         }
         bump_until(parser, head_end);
         if open.is_none() {

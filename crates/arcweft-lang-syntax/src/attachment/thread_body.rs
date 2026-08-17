@@ -6,9 +6,9 @@ use super::family::{FamilyNode, StatementFamily, StatementNode};
 use super::node::{
     AstNode, BlockKind, ChoiceStatementKind, CloseBraceKind,
     DialogueContentApplicationExpressionKind, ErrorStatementKind, FlowBodyKind, ForStatementKind,
-    IfStatementKind, IncludeStatementKind, LoopStatementKind, MatchStatementKind, MissingBodyKind,
-    OpenBraceKind, ScopeStatementKind, SelectStatementKind, SourceLocaleStatementKind,
-    ThreadExpressionKind, WhileLetStatementKind, WhileStatementKind,
+    IfStatementKind, IncludeStatementKind, MatchStatementKind, MissingBodyKind, OpenBraceKind,
+    ScopeStatementKind, SelectStatementKind, SourceLocaleStatementKind, ThreadExpressionKind,
+    WhileLetStatementKind, WhileStatementKind,
 };
 use super::source_file::AttachedDelimiterState;
 use super::{SyntaxAccessError, SyntaxNodeHandle};
@@ -23,7 +23,6 @@ pub enum AttachedThreadFlowItemFamily {
     If,
     IfLet,
     Match,
-    Loop,
     While,
     WhileLet,
     For,
@@ -43,7 +42,6 @@ pub enum AttachedThreadFlowItem {
     If(AstNode<IfStatementKind>),
     IfLet(AstNode<IfStatementKind>),
     Match(AstNode<MatchStatementKind>),
-    Loop(AstNode<LoopStatementKind>),
     While(AstNode<WhileStatementKind>),
     WhileLet(AstNode<WhileLetStatementKind>),
     For(AstNode<ForStatementKind>),
@@ -73,7 +71,6 @@ impl AttachedThreadFlowItem {
                 }
             }
             SyntaxKind::MatchStatement => Ok(Self::Match(syntax.cast()?)),
-            SyntaxKind::LoopStatement => Ok(Self::Loop(syntax.cast()?)),
             SyntaxKind::WhileStatement => Ok(Self::While(syntax.cast()?)),
             SyntaxKind::WhileLetStatement => Ok(Self::WhileLet(syntax.cast()?)),
             SyntaxKind::ForStatement => Ok(Self::For(syntax.cast()?)),
@@ -97,7 +94,6 @@ impl AttachedThreadFlowItem {
             Self::Choice(node) => node.syntax(),
             Self::If(node) | Self::IfLet(node) => node.syntax(),
             Self::Match(node) => node.syntax(),
-            Self::Loop(node) => node.syntax(),
             Self::While(node) => node.syntax(),
             Self::WhileLet(node) => node.syntax(),
             Self::For(node) => node.syntax(),
@@ -121,7 +117,6 @@ impl AttachedThreadFlowItem {
             Self::If(_) => AttachedThreadFlowItemFamily::If,
             Self::IfLet(_) => AttachedThreadFlowItemFamily::IfLet,
             Self::Match(_) => AttachedThreadFlowItemFamily::Match,
-            Self::Loop(_) => AttachedThreadFlowItemFamily::Loop,
             Self::While(_) => AttachedThreadFlowItemFamily::While,
             Self::WhileLet(_) => AttachedThreadFlowItemFamily::WhileLet,
             Self::For(_) => AttachedThreadFlowItemFamily::For,

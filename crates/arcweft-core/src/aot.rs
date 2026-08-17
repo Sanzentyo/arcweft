@@ -120,7 +120,6 @@ impl AotLinearOp {
             | FlowOp::IfLet { .. }
             | FlowOp::Match { .. }
             | FlowOp::Loop { .. }
-            | FlowOp::LetLoop { .. }
             | FlowOp::LoopNext { .. }
             | FlowOp::While { .. }
             | FlowOp::WhileNext { .. }
@@ -248,7 +247,6 @@ pub(crate) fn aot_linear_supported_op(op: &FlowOp) -> bool {
         | FlowOp::IfLet { .. }
         | FlowOp::Match { .. }
         | FlowOp::Loop { .. }
-        | FlowOp::LetLoop { .. }
         | FlowOp::LoopNext { .. }
         | FlowOp::While { .. }
         | FlowOp::WhileNext { .. }
@@ -300,7 +298,6 @@ impl AotOpClass {
             | FlowOp::IfLet { .. }
             | FlowOp::Match { .. }
             | FlowOp::Loop { .. }
-            | FlowOp::LetLoop { .. }
             | FlowOp::LoopNext { .. }
             | FlowOp::While { .. }
             | FlowOp::WhileNext { .. }
@@ -343,8 +340,7 @@ impl AotProgramStats {
                         self.record_ops(&arm.ops);
                     }
                 }
-                FlowOp::Loop { body }
-                | FlowOp::LetLoop { body, .. }
+                FlowOp::Loop { body, .. }
                 | FlowOp::While { body, .. }
                 | FlowOp::WhileLet { body, .. }
                 | FlowOp::For { body, .. }

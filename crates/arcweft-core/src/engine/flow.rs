@@ -302,24 +302,13 @@ impl Engine {
                     Err(error) => self.fail_eval(error, output),
                 }
             }
-            FlowOp::Loop { body } => {
+            FlowOp::Loop { result, body } => {
                 self.advance_if_needed(next_op_index);
                 let body = Arc::from(body);
                 self.fiber.control_stack.push(FlowControlStackEntry {
                     kind: FlowControlStackEntryKind::Loop {
                         body: Arc::clone(&body),
-                        result: None,
-                    },
-                });
-                self.push_loop_iteration(&body);
-            }
-            FlowOp::LetLoop { pattern, body } => {
-                self.advance_if_needed(next_op_index);
-                let body = Arc::from(body);
-                self.fiber.control_stack.push(FlowControlStackEntry {
-                    kind: FlowControlStackEntryKind::Loop {
-                        body: Arc::clone(&body),
-                        result: Some(pattern),
+                        result,
                     },
                 });
                 self.push_loop_iteration(&body);

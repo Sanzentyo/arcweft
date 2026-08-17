@@ -88,7 +88,7 @@ fn thread_control_families_lower_in_exact_source_order() {
     };
     assert!(matches!(
         thread.body().items()[0],
-        HirThreadFlowItem::Loop(_)
+        HirThreadFlowItem::Statement(_)
     ));
     assert!(matches!(
         thread.body().items()[1],
@@ -451,7 +451,7 @@ fn thread_expression_lowers_the_complete_statement_only_family_inventory_in_sour
             HirThreadFlowItem::If(_),
             HirThreadFlowItem::IfLet(_),
             HirThreadFlowItem::Match(_),
-            HirThreadFlowItem::Loop(_),
+            HirThreadFlowItem::Statement(_),
             HirThreadFlowItem::While(_),
             HirThreadFlowItem::WhileLet(_),
             HirThreadFlowItem::For(_),

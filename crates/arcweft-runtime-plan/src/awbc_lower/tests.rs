@@ -1,14 +1,17 @@
 use super::*;
 
 use arcweft_core::awbc::fiber::FiberState;
-use arcweft_core::awbc::schema::{AwbcEntryId, AwbcEntryTarget, AwbcProgram, AwbcTerminator};
+use arcweft_core::awbc::schema::{
+    AwbcEntryId, AwbcEntryTarget, AwbcProgram, AwbcSafePointKind, AwbcTerminator,
+};
 use arcweft_core::awbc::vm::{self, VmExit, VmStepOptions};
 use arcweft_core::entry::{EntryBindingIdentity, RuntimeEntryRoles};
 use arcweft_core::pattern::RuntimeSemanticTypeId;
 use arcweft_core::plan::{
     EntryRuntimeId, FlowRuntimeId, RuntimeEntryKind, RuntimeEntrySpec, RuntimeEntryTarget,
     RuntimeExprSeed, RuntimeExprSeedKind, RuntimeFlowOpSeed, RuntimeFlowSeed,
-    RuntimeHostCallTargetSeed, RuntimePlan, RuntimePlanBuilder, RuntimePlanTypeProjection,
+    RuntimeHostCallTargetSeed, RuntimeLocalDeclarationSeed, RuntimePatternSeed,
+    RuntimePatternSeedKind, RuntimePlan, RuntimePlanBuilder, RuntimePlanTypeProjection,
     RuntimePlanTypeSeed, RuntimeRouteSpec,
 };
 use arcweft_core::step::RuntimeHostCallMode;
@@ -35,6 +38,13 @@ fn string_expr(value: &str) -> RuntimeExprSeed {
 
 fn unit_expr() -> RuntimeExprSeed {
     RuntimeExprSeed::new(type_id(2), RuntimeExprSeedKind::Value(RuntimeValue::Unit))
+}
+
+fn bool_expr(value: bool) -> RuntimeExprSeed {
+    RuntimeExprSeed::new(
+        type_id(3),
+        RuntimeExprSeedKind::Value(RuntimeValue::Bool(value)),
+    )
 }
 
 fn build_plan(
@@ -254,6 +264,173 @@ fn discarded_host_call_result_still_has_an_awbc_destination() {
         dst
     });
     assert!(destination.is_some());
+}
+
+#[test]
+fn loop_break_paths_initialize_one_typed_result_before_binding() {
+    let main = flow_id("main");
+    let mut builder = RuntimePlanBuilder::new();
+    let admission = builder
+        .admit_semantic_batch(
+            [
+                RuntimePlanTypeSeed::new(type_id(1), RuntimePlanTypeProjection::String),
+                RuntimePlanTypeSeed::new(type_id(3), RuntimePlanTypeProjection::Bool),
+            ],
+            [RuntimeLocalDeclarationSeed::new(type_id(1))],
+            [],
+            [],
+        )
+        .expect("loop result facts admit");
+    let result = admission.local_ids()[0].clone();
+    builder
+        .push_flow_seed(RuntimeFlowSeed::new(
+            main.clone(),
+            [],
+            vec![
+                RuntimeFlowOpSeed::Loop {
+                    result: Some(RuntimePatternSeed::new(
+                        type_id(1),
+                        RuntimePatternSeedKind::Bind {
+                            mutable: false,
+                            local: result.clone(),
+                        },
+                    )),
+                    body: vec![RuntimeFlowOpSeed::If {
+                        condition: bool_expr(true),
+                        then_ops: vec![RuntimeFlowOpSeed::Break(Some(string_expr("then")))],
+                        else_ops: vec![RuntimeFlowOpSeed::Break(Some(string_expr("else")))],
+                    }],
+                },
+                RuntimeFlowOpSeed::ReturnExpr(RuntimeExprSeed::new(
+                    type_id(1),
+                    RuntimeExprSeedKind::Local(result),
+                )),
+            ],
+        ))
+        .expect("loop flow admits");
+    builder
+        .push_entry(flow_entry("main", main))
+        .expect("loop entry admits");
+
+    let report = lower_plan(&builder.finish().expect("loop plan seals"));
+    assert_eq!(
+        run_entry(&report.program),
+        VmExit::Returned(Some(RuntimeValue::String("then".to_owned())))
+    );
+    assert!(
+        report
+            .program
+            .blocks
+            .iter()
+            .any(|block| block.safe_point == AwbcSafePointKind::LoopBackedge)
+    );
+    assert!(!report.program.intrinsics.iter().any(|intrinsic| {
+        matches!(
+            report.program.strings[intrinsic.public_id.index()].as_str(),
+            "flow.break" | "flow.continue"
+        )
+    }));
+}
+
+#[test]
+fn nested_loops_bind_the_nearest_break_result() {
+    let main = flow_id("main");
+    let mut builder = RuntimePlanBuilder::new();
+    let admission = builder
+        .admit_semantic_batch(
+            [RuntimePlanTypeSeed::new(
+                type_id(1),
+                RuntimePlanTypeProjection::String,
+            )],
+            [
+                RuntimeLocalDeclarationSeed::new(type_id(1)),
+                RuntimeLocalDeclarationSeed::new(type_id(1)),
+            ],
+            [],
+            [],
+        )
+        .expect("nested loop result facts admit");
+    let inner_result = admission.local_ids()[0].clone();
+    let outer_result = admission.local_ids()[1].clone();
+    let binding = |local| {
+        RuntimePatternSeed::new(
+            type_id(1),
+            RuntimePatternSeedKind::Bind {
+                mutable: false,
+                local,
+            },
+        )
+    };
+    builder
+        .push_flow_seed(RuntimeFlowSeed::new(
+            main.clone(),
+            [],
+            vec![
+                RuntimeFlowOpSeed::Loop {
+                    result: Some(binding(outer_result.clone())),
+                    body: vec![
+                        RuntimeFlowOpSeed::Loop {
+                            result: Some(binding(inner_result.clone())),
+                            body: vec![RuntimeFlowOpSeed::Break(Some(string_expr("nested")))],
+                        },
+                        RuntimeFlowOpSeed::Break(Some(RuntimeExprSeed::new(
+                            type_id(1),
+                            RuntimeExprSeedKind::Local(inner_result),
+                        ))),
+                    ],
+                },
+                RuntimeFlowOpSeed::ReturnExpr(RuntimeExprSeed::new(
+                    type_id(1),
+                    RuntimeExprSeedKind::Local(outer_result),
+                )),
+            ],
+        ))
+        .expect("nested loop flow admits");
+    builder
+        .push_entry(flow_entry("main", main))
+        .expect("nested loop entry admits");
+
+    let report = lower_plan(&builder.finish().expect("nested loop plan seals"));
+    assert_eq!(
+        run_entry(&report.program),
+        VmExit::Returned(Some(RuntimeValue::String("nested".to_owned())))
+    );
+}
+
+#[test]
+fn loop_continue_targets_the_verified_backedge_header() {
+    let main = flow_id("main");
+    let plan = build_plan(
+        [(
+            main.clone(),
+            vec![RuntimeFlowOpSeed::Loop {
+                result: None,
+                body: vec![RuntimeFlowOpSeed::Continue],
+            }],
+        )],
+        [flow_entry("main", main)],
+    );
+    let report = lower_plan(&plan);
+
+    assert!(!report.program.intrinsics.iter().any(|intrinsic| {
+        report.program.strings[intrinsic.public_id.index()] == "flow.continue"
+    }));
+    assert!(
+        report
+            .program
+            .blocks
+            .iter()
+            .enumerate()
+            .any(|(index, block)| {
+                matches!(
+                    block.terminator,
+                    AwbcTerminator::Jump { target }
+                        if target.index() <= index
+                            && report.program.blocks[target.index()].safe_point
+                                == AwbcSafePointKind::LoopBackedge
+                )
+            })
+    );
 }
 
 #[test]

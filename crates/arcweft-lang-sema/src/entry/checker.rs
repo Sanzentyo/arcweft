@@ -342,7 +342,6 @@ impl<'a> EntryCheckContext<'a> {
     ) -> Vec<CheckedEntryDiagnostic> {
         let mut diagnostics = Vec::new();
         for (ordinal, member) in entry.members().iter().enumerate() {
-            let source = entry_member_source(module, owner, ordinal);
             let role = match member {
                 HirEntryMember::StateType(_) => Some(Role::State),
                 HirEntryMember::Initializer(_) => Some(Role::Initializer),
@@ -357,6 +356,7 @@ impl<'a> EntryCheckContext<'a> {
             if let Some(role) = role
                 && !entry_kind_allows_role(entry.kind(), role)
             {
+                let source = entry_member_source(module, owner, ordinal);
                 diagnostics.push(CheckedEntryDiagnostic::new(
                     "sema.entry.incompatible_role",
                     format!(
@@ -372,7 +372,7 @@ impl<'a> EntryCheckContext<'a> {
                     diagnostics.push(CheckedEntryDiagnostic::new(
                         "sema.entry.incompatible_goto",
                         "Agent entry cannot declare `goto`",
-                        source,
+                        entry_member_source(module, owner, ordinal),
                     ));
                 }
                 HirEntryMember::Route(_)
@@ -390,7 +390,7 @@ impl<'a> EntryCheckContext<'a> {
                             "entry kind `{}` cannot declare adapter routes",
                             entry_kind_label(entry.kind())
                         ),
-                        source,
+                        entry_source(module, owner, HirEntrySourcePart::Whole),
                     ));
                 }
                 _ => {}

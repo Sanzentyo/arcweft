@@ -413,7 +413,7 @@ fn expected_thread_flow_families() -> [AttachedThreadFlowItemFamily; 16] {
         AttachedThreadFlowItemFamily::If,
         AttachedThreadFlowItemFamily::IfLet,
         AttachedThreadFlowItemFamily::Match,
-        AttachedThreadFlowItemFamily::Loop,
+        AttachedThreadFlowItemFamily::Statement,
         AttachedThreadFlowItemFamily::While,
         AttachedThreadFlowItemFamily::WhileLet,
         AttachedThreadFlowItemFamily::For,

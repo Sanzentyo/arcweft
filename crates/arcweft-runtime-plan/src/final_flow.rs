@@ -2010,7 +2010,6 @@ impl<'a> FinalFlowLowerer<'a> {
             | HirThreadFlowItem::If(statement)
             | HirThreadFlowItem::IfLet(statement)
             | HirThreadFlowItem::Match(statement)
-            | HirThreadFlowItem::Loop(statement)
             | HirThreadFlowItem::While(statement)
             | HirThreadFlowItem::WhileLet(statement)
             | HirThreadFlowItem::For(statement)
@@ -2267,16 +2266,6 @@ impl<'a> FinalFlowLowerer<'a> {
                     arms,
                 }])
             }
-            HirStmtKind::Loop(loop_stmt) => {
-                if loop_stmt.label().is_some() {
-                    return Err(RuntimePlanLowerError::new(format!(
-                        "labeled loop {id:?} requires a typed runtime control-label identity"
-                    )));
-                }
-                Ok(vec![RuntimeFlowOpSeed::Loop {
-                    body: self.lower_contextual_body(loop_stmt.body())?,
-                }])
-            }
             HirStmtKind::While(while_stmt) => Ok(vec![RuntimeFlowOpSeed::While {
                 condition: expr
                     .lower(while_stmt.condition())
@@ -2373,8 +2362,10 @@ impl<'a> FinalFlowLowerer<'a> {
                 "cannot resolve flow value expression {expression:?}: {error}"
             ))
         })?;
-        Ok(matches!(expression.kind(), HirExprKind::Await(_))
-            || matches!(expression.kind(), HirExprKind::Try(operation) if self.contains_flow_value_expression(operation.operand()).unwrap_or(false)))
+        Ok(matches!(
+            expression.kind(),
+            HirExprKind::Await(_) | HirExprKind::Loop(_)
+        ) || matches!(expression.kind(), HirExprKind::Try(operation) if self.contains_flow_value_expression(operation.operand()).unwrap_or(false)))
     }
 
     fn lower_flow_value(
@@ -2394,6 +2385,33 @@ impl<'a> FinalFlowLowerer<'a> {
             ),
             HirExprKind::Await(awaited) => {
                 self.lower_await_value(expression, awaited, continuation)
+            }
+            HirExprKind::Loop(loop_expression) => {
+                let (result, tail) = match continuation {
+                    RuntimeFlowValueContinuation::Bind { pattern, tail } => (pattern, tail),
+                    RuntimeFlowValueContinuation::Ignore(tail) => {
+                        let ty = self.facts.expression_type(expression).ok_or_else(|| {
+                            RuntimePlanLowerError::new(format!(
+                                "Loop expression {expression:?} has no accepted result type"
+                            ))
+                        })?;
+                        (
+                            RuntimePatternSeed::new(ty.identity(), RuntimePatternSeedKind::Discard),
+                            tail,
+                        )
+                    }
+                    RuntimeFlowValueContinuation::Return | RuntimeFlowValueContinuation::Try(_) => {
+                        return Err(RuntimePlanLowerError::new(format!(
+                            "Loop expression {expression:?} requires a continuation result local"
+                        )));
+                    }
+                };
+                let mut ops = vec![RuntimeFlowOpSeed::Loop {
+                    result: Some(result),
+                    body: self.lower_statement_ids(loop_expression.statements())?,
+                }];
+                ops.extend(self.lower_flow_tail(tail)?);
+                Ok(ops)
             }
             _ => {
                 let value = FinalExprLowerer::new(
@@ -2983,7 +3001,6 @@ fn thread_item_matches_kind(item: &HirThreadFlowItem, kind: &HirStmtKind) -> boo
                 | HirStmtKind::If(_)
                 | HirStmtKind::IfLet(_)
                 | HirStmtKind::Match(_)
-                | HirStmtKind::Loop(_)
                 | HirStmtKind::While(_)
                 | HirStmtKind::WhileLet(_)
                 | HirStmtKind::For(_)
@@ -2997,7 +3014,6 @@ fn thread_item_matches_kind(item: &HirThreadFlowItem, kind: &HirStmtKind) -> boo
         HirThreadFlowItem::If(_) => matches!(kind, HirStmtKind::If(_)),
         HirThreadFlowItem::IfLet(_) => matches!(kind, HirStmtKind::IfLet(_)),
         HirThreadFlowItem::Match(_) => matches!(kind, HirStmtKind::Match(_)),
-        HirThreadFlowItem::Loop(_) => matches!(kind, HirStmtKind::Loop(_)),
         HirThreadFlowItem::While(_) => matches!(kind, HirStmtKind::While(_)),
         HirThreadFlowItem::WhileLet(_) => matches!(kind, HirStmtKind::WhileLet(_)),
         HirThreadFlowItem::For(_) => matches!(kind, HirStmtKind::For(_)),

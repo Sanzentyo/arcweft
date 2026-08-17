@@ -41,6 +41,9 @@ use crate::expressions::{
     SyntaxParenthesizedCallProjection, SyntaxPlaceholderKind, SyntaxRequiredTokenState,
     SyntaxSelectedMember, SyntaxUnaryOperator,
 };
+use crate::grammar::keyword_statement_projection::{
+    PendingAwaitBranchProjection, SyntaxAwaitBranchKind,
+};
 use crate::grammar::kinds::{SyntaxKind, SyntaxRole};
 use crate::name::{SyntaxName, SyntaxNameIssue};
 use crate::types::TypeRef;
@@ -385,6 +388,7 @@ fn parse_prefix(
             | "seq"
             | "stream"
             | "scope"
+            | "loop"
             | "if"
             | "match"
             | "true"
@@ -410,6 +414,7 @@ fn parse_prefix(
         "scope" if composite::has_braced_body(parser, end) => {
             composite::emit_named_block(parser, end, role)
         }
+        "loop" => control::emit_loop_expression(parser, end, role),
         "(" => composite::emit_parenthesized(parser, end, role),
         "[" => composite::emit_bracket_sequence(parser, end, role),
         "." => emit_short_variant(parser, end, role),
@@ -497,50 +502,7 @@ fn emit_prefix_operand(
         .completed_range(operand.start_event)
         .expect("completed prefix operand retains one exact source range");
     let operand_slot = completed_slot(parser, operand);
-    let branches = if kind == SyntaxKind::AwaitExpression {
-        if let Some(with) = await_with {
-            bump_until(parser, with);
-            let with_range = parser
-                .current()
-                .expect("await with dispatch retains its `with` token")
-                .range();
-            parser.bump();
-            parser.bump_trivia_before(end);
-            let branches = if parser.at("{") {
-                super::statement::emit_await_with_branch_block(
-                    parser,
-                    end,
-                    SyntaxKind::FunctionItem,
-                )
-                .into_iter()
-                .map(|branch| branch.kind())
-                .collect::<Box<[_]>>()
-            } else if parser.at(":") {
-                let interval =
-                    super::statement::await_with_indented_suite_interval(parser, with, end);
-                super::statement::emit_await_with_indented_branch_block(
-                    parser,
-                    interval,
-                    SyntaxKind::FunctionItem,
-                )
-                .into_iter()
-                .map(|branch| branch.kind())
-                .collect::<Box<[_]>>()
-            } else {
-                super::statement::emit_required_statement_body_recovery(
-                    parser,
-                    "syntax.await_with.missing_body",
-                    "missing Await branch body",
-                );
-                Box::new([])
-            };
-            Some((branches, with_range))
-        } else {
-            None
-        }
-    } else {
-        None
-    };
+    let branches = emit_await_branches(parser, end, kind, await_with);
     let projection = match kind {
         SyntaxKind::TryExpression => ExpressionProjection::Try {
             operand: operand_slot,
@@ -581,6 +543,49 @@ fn emit_prefix_operand(
     parser.finish();
     parser.leave_prefix_expression();
     CompletedNode { start_event }
+}
+
+fn emit_await_branches(
+    parser: &mut DocumentParser<'_, '_>,
+    end: usize,
+    kind: SyntaxKind,
+    await_with: Option<usize>,
+) -> Option<(Box<[Option<SyntaxAwaitBranchKind>]>, SourceRange)> {
+    if kind != SyntaxKind::AwaitExpression {
+        return None;
+    }
+    let with = await_with?;
+    bump_until(parser, with);
+    let with_range = parser
+        .current()
+        .expect("await with dispatch retains its `with` token")
+        .range();
+    parser.bump();
+    parser.bump_trivia_before(end);
+    let branches = if parser.at("{") {
+        super::statement::emit_await_with_branch_block(parser, end, SyntaxKind::FunctionItem)
+            .into_iter()
+            .map(PendingAwaitBranchProjection::kind)
+            .collect::<Box<[_]>>()
+    } else if parser.at(":") {
+        let interval = super::statement::await_with_indented_suite_interval(parser, with, end);
+        super::statement::emit_await_with_indented_branch_block(
+            parser,
+            interval,
+            SyntaxKind::FunctionItem,
+        )
+        .into_iter()
+        .map(PendingAwaitBranchProjection::kind)
+        .collect::<Box<[_]>>()
+    } else {
+        super::statement::emit_required_statement_body_recovery(
+            parser,
+            "syntax.await_with.missing_body",
+            "missing Await branch body",
+        );
+        Box::new([])
+    };
+    Some((branches, with_range))
 }
 
 fn top_level_with(parser: &DocumentParser<'_, '_>, start: usize, end: usize) -> Option<usize> {

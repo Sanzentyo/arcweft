@@ -274,7 +274,6 @@ impl Analyzer<'_, '_, '_> {
                     .resolve_stmt(*target)
                     .map_err(|_| FinalSemanticAnalysisError::InvalidOwner)?;
                 match statement.kind() {
-                    HirStmtKind::Loop(_) => return Ok(CheckedStatementRole::Ordinary),
                     HirStmtKind::While(_) | HirStmtKind::WhileLet(_) | HirStmtKind::For(_) => {
                         return Err(FinalSemanticAnalysisError::BreakValueRequiresLoop {
                             owner,
@@ -292,6 +291,17 @@ impl Analyzer<'_, '_, '_> {
                     }
                     _ => {}
                 }
+            }
+            if let HirScopeOwner::Expr(target) = current.owner()
+                && matches!(
+                    module
+                        .resolve_expr(*target)
+                        .map_err(|_| FinalSemanticAnalysisError::InvalidOwner)?
+                        .kind(),
+                    HirExprKind::Loop(_)
+                )
+            {
+                return Ok(CheckedStatementRole::Ordinary);
             }
             let Some(parent) = current.parent() else {
                 return Err(FinalSemanticAnalysisError::InvalidOwner);

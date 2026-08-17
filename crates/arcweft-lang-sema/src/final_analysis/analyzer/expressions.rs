@@ -13,9 +13,9 @@ use super::{
     HirCallArgument, HirComputationBlockKind, HirContextualStmtBody, HirExpr, HirExprKind,
     HirExprSourceRole, HirIdRef, HirIntegerLiteral, HirItemKind, HirLiteral, HirModule,
     HirPathRoot, HirPathSegment, HirPatternKind, HirPostfixBracket, HirPostfixBracketCandidates,
-    HirRecordField, HirRecoveredName, HirSelectedMember, HirSourcePresence, HirSourceQuery,
-    HirSourceSite, HirStmtKind, HirThreadFlowItem, HirTypeSourceRole, HirUnaryOp, LocalLookup,
-    PostfixBracketResolution, ProjectHirSymbolLookupError, ProjectNominalBody,
+    HirRecordField, HirRecoveredName, HirScopeOwner, HirSelectedMember, HirSourcePresence,
+    HirSourceQuery, HirSourceSite, HirStmtKind, HirThreadFlowItem, HirTypeSourceRole, HirUnaryOp,
+    LocalLookup, PostfixBracketResolution, ProjectHirSymbolLookupError, ProjectNominalBody,
     ProjectNominalDeclaration, ProjectNominalType, ProjectSymbolResolutionError, ProjectTypeTarget,
     ProjectValueLookup, PropagationOperator, RegisteredSemanticValueId, ResolvedProjectSymbol,
     RichTextAttributeChecker, ScopeId, SourceSpan, TypeKind, TypeParameterSubstitutions,
@@ -722,6 +722,34 @@ impl Analyzer<'_, '_, '_> {
                     tail.ty().clone(),
                     tail.type_selection(),
                 ))
+            }
+            HirExprKind::Loop(loop_expression) => {
+                self.check_expression(loop_expression.tail(), None)?;
+                let mut exits = Vec::new();
+                for (_, statement) in module.statements() {
+                    let HirStmtKind::Break { label: None, value } = statement.kind() else {
+                        continue;
+                    };
+                    if !break_targets_loop(module, statement.scope(), owner)? {
+                        continue;
+                    }
+                    if let Some(value) = value {
+                        exits.push(self.check_expression(*value, expected)?);
+                    } else {
+                        exits.push(structural_expression(
+                            TypeKind::Unit,
+                            CheckedTypeSelection::Inferred,
+                        ));
+                    }
+                }
+                let (ty, selection) = if exits.is_empty() {
+                    (TypeKind::Never, CheckedTypeSelection::Inferred)
+                } else {
+                    let ty = common_type(exits.iter().map(CheckedExpression::ty), expected)
+                        .ok_or(FinalSemanticAnalysisError::ExpressionTypeUnavailable { owner })?;
+                    (ty, CheckedTypeSelection::Inferred)
+                };
+                Ok(structural_expression(ty, selection))
             }
             HirExprKind::If(conditional) => {
                 self.check_expression(conditional.condition(), Some(&TypeKind::Bool))?;
@@ -1893,7 +1921,6 @@ fn contextual_body_terminates(
             | HirThreadFlowItem::If(statement)
             | HirThreadFlowItem::IfLet(statement)
             | HirThreadFlowItem::Match(statement)
-            | HirThreadFlowItem::Loop(statement)
             | HirThreadFlowItem::While(statement)
             | HirThreadFlowItem::WhileLet(statement)
             | HirThreadFlowItem::For(statement)
@@ -2024,6 +2051,47 @@ fn structural_expression(ty: TypeKind, selection: CheckedTypeSelection) -> Check
         EffectSet::new(),
         CheckedExpressionResolution::Structural,
     )
+}
+
+fn break_targets_loop(
+    module: &HirModule,
+    mut scope: ScopeId,
+    target: ExprId,
+) -> Result<bool, FinalSemanticAnalysisError> {
+    loop {
+        let current = module
+            .resolve_scope(scope)
+            .map_err(|_| FinalSemanticAnalysisError::InvalidOwner)?;
+        match current.owner() {
+            HirScopeOwner::Expr(owner)
+                if matches!(
+                    module
+                        .resolve_expr(*owner)
+                        .map_err(|_| FinalSemanticAnalysisError::InvalidOwner)?
+                        .kind(),
+                    HirExprKind::Loop(_)
+                ) =>
+            {
+                return Ok(*owner == target);
+            }
+            HirScopeOwner::Stmt(owner)
+                if matches!(
+                    module
+                        .resolve_stmt(*owner)
+                        .map_err(|_| FinalSemanticAnalysisError::InvalidOwner)?
+                        .kind(),
+                    HirStmtKind::While(_) | HirStmtKind::WhileLet(_) | HirStmtKind::For(_)
+                ) =>
+            {
+                return Ok(false);
+            }
+            _ => {}
+        }
+        let Some(parent) = current.parent() else {
+            return Ok(false);
+        };
+        scope = parent;
+    }
 }
 
 fn view_value_type() -> TypeKind {

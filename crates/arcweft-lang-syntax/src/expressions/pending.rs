@@ -125,6 +125,7 @@ impl PendingExpressionProjection {
                 | SyntaxKind::BlockExpression
                 | SyntaxKind::ComputationBlockExpression
                 | SyntaxKind::NamedBlockExpression
+                | SyntaxKind::LoopExpression
                 | SyntaxKind::IfExpression
                 | SyntaxKind::IfLetExpression
                 | SyntaxKind::MatchExpression
@@ -236,10 +237,12 @@ impl PendingExpressionProjection {
             ) | (
                 ExpressionProjection::NamedBlock(_),
                 SyntaxKind::NamedBlockExpression
-            ) | (
-                ExpressionProjection::Thread(_),
-                SyntaxKind::ThreadExpression
-            ) | (ExpressionProjection::Choice, SyntaxKind::ChoiceExpression)
+            ) | (ExpressionProjection::Loop, SyntaxKind::LoopExpression)
+                | (
+                    ExpressionProjection::Thread(_),
+                    SyntaxKind::ThreadExpression
+                )
+                | (ExpressionProjection::Choice, SyntaxKind::ChoiceExpression)
                 | (ExpressionProjection::If { .. }, SyntaxKind::IfExpression)
                 | (
                     ExpressionProjection::IfLet { .. },
@@ -337,14 +340,6 @@ fn remaining_components_validate(
                 ],
             )
         }
-        ExpressionProjection::Try { .. } => exact_component_roles(
-            roles,
-            components,
-            &[
-                ExpressionComponentRole::Operand,
-                ExpressionComponentRole::Operator,
-            ],
-        ),
         ExpressionProjection::Await { branches, .. } => {
             let mut expected = vec![
                 ExpressionComponentRole::Operand,
@@ -355,7 +350,8 @@ fn remaining_components_validate(
             }
             exact_component_roles(roles, components, &expected)
         }
-        ExpressionProjection::Borrow { .. }
+        ExpressionProjection::Try { .. }
+        | ExpressionProjection::Borrow { .. }
         | ExpressionProjection::Dereference { .. }
         | ExpressionProjection::Unary { .. } => exact_component_roles(
             roles,
@@ -406,6 +402,7 @@ fn basic_leaf_components_validate(
         | ExpressionProjection::Path
         | ExpressionProjection::Block
         | ExpressionProjection::ComputationBlock(_)
+        | ExpressionProjection::Loop
         | ExpressionProjection::Choice => Some(components.is_empty()),
         ExpressionProjection::NamedBlock(name) => Some(
             exact_component_roles(roles, components, &[ExpressionComponentRole::Name])

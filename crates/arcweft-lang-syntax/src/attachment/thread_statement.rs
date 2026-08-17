@@ -7,9 +7,9 @@ use super::expression::AttachedExpressionNode;
 use super::family::PatternFamily;
 use super::node::{
     AstNode, BlockKind, CloseBraceKind, EqualsKind, ErrorNodeKind, ForInKind, ForStatementKind,
-    IncludeStatementKind, LoopStatementKind, MissingExpressionKind, MissingNameKind,
-    NameDefinitionKind, NameReferenceKind, OpenBraceKind, ScopeStatementKind, SelectBranchKind,
-    SelectStatementKind, SourceLocaleStatementKind, WhileLetStatementKind, WhileStatementKind,
+    IncludeStatementKind, MissingExpressionKind, MissingNameKind, NameDefinitionKind,
+    NameReferenceKind, OpenBraceKind, ScopeStatementKind, SelectBranchKind, SelectStatementKind,
+    SourceLocaleStatementKind, WhileLetStatementKind, WhileStatementKind,
 };
 use super::source_file::AttachedDelimiterState;
 use super::statement::{invalid, keyword_statement_projection, optional_recovery, require_roles};
@@ -213,27 +213,6 @@ impl AttachedIncludeStatement {
 
     pub fn has_recovery(&self) -> bool {
         self.target.has_recovery() || self.trailing_recovery.is_some()
-    }
-}
-
-/// Complete typed `loop { ... }` relation.
-#[derive(Clone, Debug, Eq, PartialEq)]
-pub struct AttachedLoopStatement {
-    syntax: AstNode<LoopStatementKind>,
-    body: AttachedRequiredNestedThreadFlowBody,
-}
-
-impl AttachedLoopStatement {
-    pub const fn syntax(&self) -> &AstNode<LoopStatementKind> {
-        &self.syntax
-    }
-
-    pub const fn body(&self) -> &AttachedRequiredNestedThreadFlowBody {
-        &self.body
-    }
-
-    pub fn has_recovery(&self) -> bool {
-        self.body.has_recovery()
     }
 }
 
@@ -474,16 +453,6 @@ impl AttachedSelectBranch {
             }
             Self::Recovered { .. } => true,
         }
-    }
-}
-
-impl AstNode<LoopStatementKind> {
-    pub fn semantics(&self) -> Result<AttachedLoopStatement, SyntaxAccessError> {
-        require_roles(self, &[SyntaxRole::Body])?;
-        Ok(AttachedLoopStatement {
-            syntax: self.clone(),
-            body: required_nested_thread_flow_body(self)?,
-        })
     }
 }
 

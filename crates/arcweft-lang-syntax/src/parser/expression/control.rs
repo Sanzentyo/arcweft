@@ -2,6 +2,8 @@
 
 use arcweft_source::SourceRange;
 
+use crate::grammar::event::{PendingSyntaxDiagnostic, SyntaxEvent};
+
 use super::{
     CompletedNode, completed_slot, emit_expression, emit_expression_node, emit_missing_expression,
     expression_slot,
@@ -146,6 +148,46 @@ pub(super) fn emit_if_expression(
             ),
         );
     }
+    parser.finish();
+    CompletedNode { start_event }
+}
+
+/// Emits the value-producing `loop { ... }` expression.
+///
+/// The loop body is the ordinary value-block owner. `break` and `continue`
+/// therefore remain regular statement identities inside that block and are
+/// resolved by HIR/sema rather than by a second loop-specific syntax tree.
+pub(super) fn emit_loop_expression(
+    parser: &mut DocumentParser<'_, '_>,
+    end: usize,
+    role: SyntaxRole,
+) -> CompletedNode {
+    let start_event = parser.event_position();
+    let owner = parser.start_projected_owner(SyntaxKind::LoopExpression, role);
+    parser.bump();
+    parser.bump_trivia_before(end);
+    if parser.at("{") {
+        emit_braced_block(
+            parser,
+            SyntaxKind::FunctionItem,
+            SyntaxKind::Block,
+            SyntaxRole::Body,
+            "syntax.expression.missing_block_close",
+        );
+    } else {
+        parser.start(SyntaxKind::MissingBody, SyntaxRole::Body);
+        parser.finish();
+        let at = parser.current_offset();
+        parser.push(SyntaxEvent::Diagnostic(PendingSyntaxDiagnostic::new(
+            "syntax.expression.missing_loop_body",
+            SourceRange::new(at, at),
+            "expected a braced loop body",
+        )));
+    }
+    parser.set_expression_projection(
+        owner,
+        PendingExpressionProjection::new(ExpressionProjection::Loop, Vec::new()),
+    );
     parser.finish();
     CompletedNode { start_event }
 }

@@ -348,11 +348,6 @@ fn binding_initializer_for_local(module: &HirModule, local: LocalId) -> Option<E
                 locals,
                 ..
             }
-            | HirStmtKind::LetLoop {
-                loop_expr: initializer,
-                locals,
-                ..
-            }
             | HirStmtKind::LetActionReceive {
                 action: initializer,
                 locals,

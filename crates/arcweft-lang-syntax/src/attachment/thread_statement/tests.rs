@@ -5,17 +5,19 @@ use std::sync::Arc;
 use arcweft_source::identity::SourceSnapshotId;
 use arcweft_source::{SourceDocument, SourceDocumentId, SourceName};
 
-use super::{
-    AttachedForStatement, AttachedLoopStatement, AttachedWhileLetStatement, AttachedWhileStatement,
+use super::{AttachedForStatement, AttachedWhileLetStatement, AttachedWhileStatement};
+use crate::attachment::node::{
+    BreakStatementKind, CloseBraceKind, ExpressionStatementKind, FlowItemKind, ThreadExpressionKind,
 };
-use crate::attachment::node::{FlowItemKind, ThreadExpressionKind};
 use crate::attachment::source_file::AttachedDelimiterState;
 use crate::attachment::{
-    AttachedFlowStatementBody, AttachedRequiredFlowBody, AttachedRequiredNestedThreadFlowBody,
-    AttachedRequiredThreadExpressionBody, AttachedThreadExpressionBody, AttachedThreadFlowItem,
-    GrammarIdentityMap, RequiredStatementExpressionNode, SyntaxDatabaseId, SyntaxLineageId,
+    AttachedExpressionNode, AttachedFlowStatementBody, AttachedRequiredFlowBody,
+    AttachedRequiredNestedThreadFlowBody, AttachedRequiredThreadExpressionBody,
+    AttachedThreadExpressionBody, AttachedThreadFlowItem, GrammarIdentityMap,
+    RequiredStatementExpressionNode, StatementNode, SyntaxDatabaseId, SyntaxLineageId,
     SyntaxNodeId, SyntaxSnapshotData, SyntaxSnapshotId, attach_typed_tree,
 };
+use crate::expressions::ExpressionProjection;
 use crate::parser::{ParseOptions, parse_document};
 use crate::patterns::PatternSyntaxState;
 
@@ -100,23 +102,50 @@ fn assert_one_nested_item(body: &AttachedRequiredNestedThreadFlowBody) {
     ));
 }
 
+fn loop_expression(statement: &StatementNode) -> AttachedExpressionNode {
+    let statement = statement
+        .cast::<ExpressionStatementKind>()
+        .expect("loop item is an ordinary expression statement");
+    statement
+        .expression()
+        .expect("loop expression statement owns one initializer")
+        .semantic()
+        .expect("loop expression attaches through the shared expression owner")
+}
+
+fn assert_loop_expression_body(expression: &AttachedExpressionNode) {
+    assert!(matches!(
+        expression.projection(),
+        ExpressionProjection::Loop
+    ));
+    let block = expression
+        .block()
+        .expect("loop expression owns one structural value block");
+    let statements = block.statements().expect("loop body statements");
+    let [statement] = statements.as_slice() else {
+        panic!("loop body must retain one authored statement");
+    };
+    statement
+        .cast::<BreakStatementKind>()
+        .expect("loop body retains the typed Break statement");
+}
+
 #[test]
 fn loop_while_while_let_and_for_own_typed_heads_and_thread_flow_bodies() {
     let body = flow_body(concat!(
         "flow loops {\n",
-        "    loop { include @flow.looping }\n",
+        "    loop { break unit }\n",
         "    while ready { include @flow.while_ready }\n",
         "    while let item = source when allowed { include @flow.while_item }\n",
         "    for item in source { include @flow.for_item }\n",
         "}\n",
     ));
 
-    let AttachedThreadFlowItem::Loop(statement) = &body.items()[0] else {
-        panic!("first item must remain Loop");
+    let AttachedThreadFlowItem::Statement(statement) = &body.items()[0] else {
+        panic!("first item must remain an ordinary Statement");
     };
-    let loop_statement: AttachedLoopStatement = statement.semantics().unwrap();
-    assert_one_nested_item(loop_statement.body());
-    assert!(!loop_statement.has_recovery());
+    let loop_node = loop_expression(statement);
+    assert_loop_expression_body(&loop_node);
 
     let AttachedThreadFlowItem::While(statement) = &body.items()[1] else {
         panic!("second item must remain While");
@@ -194,9 +223,12 @@ fn thread_expression_reuses_the_same_loop_family_owners() {
         "}\n",
     ));
 
+    let AttachedThreadFlowItem::Statement(statement) = &body.items()[0] else {
+        panic!("first item must remain an ordinary Statement");
+    };
     assert!(matches!(
-        &body.items()[0],
-        AttachedThreadFlowItem::Loop(statement) if statement.semantics().is_ok()
+        loop_expression(statement).projection(),
+        ExpressionProjection::Loop
     ));
     assert!(matches!(
         &body.items()[1],
@@ -216,24 +248,14 @@ fn thread_expression_reuses_the_same_loop_family_owners() {
 fn malformed_loop_family_heads_keep_typed_slots_and_exact_missing_bodies() {
     let body = flow_body(concat!(
         "flow recovered {\n",
-        "    loop\n",
         "    while\n",
         "    while let = when\n",
         "    for in\n",
         "}\n",
     ));
 
-    let AttachedThreadFlowItem::Loop(statement) = &body.items()[0] else {
-        panic!("first recovery item must remain Loop");
-    };
-    let statement = statement.semantics().unwrap();
-    assert!(matches!(
-        statement.body(),
-        AttachedRequiredNestedThreadFlowBody::Missing(missing) if missing.range().is_empty()
-    ));
-
-    let AttachedThreadFlowItem::While(statement) = &body.items()[1] else {
-        panic!("second recovery item must remain While");
+    let AttachedThreadFlowItem::While(statement) = &body.items()[0] else {
+        panic!("first recovery item must remain While");
     };
     let statement = statement.semantics().unwrap();
     assert!(matches!(
@@ -246,8 +268,8 @@ fn malformed_loop_family_heads_keep_typed_slots_and_exact_missing_bodies() {
     ));
     assert!(statement.has_recovery());
 
-    let AttachedThreadFlowItem::WhileLet(statement) = &body.items()[2] else {
-        panic!("third recovery item must remain WhileLet");
+    let AttachedThreadFlowItem::WhileLet(statement) = &body.items()[1] else {
+        panic!("second recovery item must remain WhileLet");
     };
     let statement = statement.semantics().unwrap();
     assert!(matches!(
@@ -268,8 +290,8 @@ fn malformed_loop_family_heads_keep_typed_slots_and_exact_missing_bodies() {
     ));
     assert!(statement.has_recovery());
 
-    let AttachedThreadFlowItem::For(statement) = &body.items()[3] else {
-        panic!("fourth recovery item must remain For");
+    let AttachedThreadFlowItem::For(statement) = &body.items()[2] else {
+        panic!("third recovery item must remain For");
     };
     let statement = statement.semantics().unwrap();
     assert!(matches!(
@@ -298,26 +320,46 @@ fn loop_family_unclosed_bodies_share_the_typed_missing_close_owner() {
         let body = flow_body(&format!(
             "flow unclosed {{\n    {head} {{\n        include @flow.shared\n"
         ));
-        let nested = match &body.items()[0] {
-            AttachedThreadFlowItem::Loop(statement) => {
-                statement.semantics().unwrap().body().clone()
+        match &body.items()[0] {
+            AttachedThreadFlowItem::Statement(statement) => {
+                let loop_node = loop_expression(statement);
+                let block = loop_node
+                    .block()
+                    .expect("authored loop owns one structural block");
+                let close = block
+                    .close_delimiter()
+                    .unwrap()
+                    .cast::<CloseBraceKind>()
+                    .unwrap();
+                assert!(matches!(
+                    close.delimiter_state(),
+                    AttachedDelimiterState::Missing(missing) if missing.range().is_empty()
+                ));
             }
             AttachedThreadFlowItem::While(statement) => {
-                statement.semantics().unwrap().body().clone()
+                let nested = statement.semantics().unwrap().body().clone();
+                assert_unclosed_nested_body(&nested, head);
             }
             AttachedThreadFlowItem::WhileLet(statement) => {
-                statement.semantics().unwrap().body().clone()
+                let nested = statement.semantics().unwrap().body().clone();
+                assert_unclosed_nested_body(&nested, head);
             }
-            AttachedThreadFlowItem::For(statement) => statement.semantics().unwrap().body().clone(),
+            AttachedThreadFlowItem::For(statement) => {
+                let nested = statement.semantics().unwrap().body().clone();
+                assert_unclosed_nested_body(&nested, head);
+            }
             item => panic!("unexpected loop-family item: {:?}", item.family()),
-        };
-        let AttachedRequiredNestedThreadFlowBody::Present(nested) = nested else {
-            panic!("authored open brace must retain a present nested body for {head}");
-        };
-        assert!(matches!(
-            nested.close_state(),
-            AttachedDelimiterState::Missing(missing) if missing.range().is_empty()
-        ));
-        assert!(nested.has_recovery());
+        }
     }
+}
+
+fn assert_unclosed_nested_body(body: &AttachedRequiredNestedThreadFlowBody, head: &str) {
+    let AttachedRequiredNestedThreadFlowBody::Present(nested) = body else {
+        panic!("authored open brace must retain a present nested body for {head}");
+    };
+    assert!(matches!(
+        nested.close_state(),
+        AttachedDelimiterState::Missing(missing) if missing.range().is_empty()
+    ));
+    assert!(nested.has_recovery());
 }

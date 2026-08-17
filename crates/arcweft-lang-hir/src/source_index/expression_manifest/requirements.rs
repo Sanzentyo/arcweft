@@ -598,6 +598,9 @@ pub(super) fn expression_requirements(
         HirExprKind::Block(expression) => {
             add_value_block_requirements(&mut requirements, expression.statements().len());
         }
+        HirExprKind::Loop(expression) => {
+            add_value_block_requirements(&mut requirements, expression.statements().len());
+        }
         HirExprKind::ComputationBlock(expression) => {
             add_value_block_requirements(&mut requirements, expression.statements().len());
         }

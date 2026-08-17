@@ -41,7 +41,7 @@ use crate::expr::{
     HirCallTypeArgument, HirCallTypeArgumentOrdinal, HirCallValue, HirClosureExpr,
     HirClosureParameter, HirComputationBlockExpr, HirComputationBlockKind, HirDereferenceExpr,
     HirExpr, HirExprError, HirExprKind, HirExpressionRecoveryIssue, HirGenericExprIssue, HirIfExpr,
-    HirIfLetExpr, HirIndexExpr, HirMatchArm, HirMatchExpr, HirMatchRecoveryIssue,
+    HirIfLetExpr, HirIndexExpr, HirLoopExpr, HirMatchArm, HirMatchExpr, HirMatchRecoveryIssue,
     HirNamedBlockExpr, HirNamedBlockName, HirPipeExpr, HirPlaceholderKind, HirPoisonState,
     HirRangeExpr, HirRecordExpr, HirRecordField, HirRecordFieldIssue, HirRecordLiteralExpr,
     HirRecoveredName, HirRecoveryIssue, HirRequiredTokenState, HirSelectExpr, HirSelectedMember,
@@ -462,6 +462,18 @@ impl StagedHirModuleTransaction<'_> {
             ExpressionProjection::IfLet { .. } => {
                 let (if_let, recovery) = self.lower_if_let_expression(attached, owner, scope)?;
                 (HirExprKind::IfLet(if_let), recovery)
+            }
+            ExpressionProjection::Loop => {
+                let block = self.lower_attached_value_block_parts(
+                    attached,
+                    owner,
+                    scope,
+                    OmittedValueTail::ImplicitUnit,
+                )?;
+                (
+                    HirExprKind::Loop(HirLoopExpr::new(block.scope, block.statements, block.tail)),
+                    block.recovery,
+                )
             }
             ExpressionProjection::Match(projection) => {
                 let (match_expression, recovery) =

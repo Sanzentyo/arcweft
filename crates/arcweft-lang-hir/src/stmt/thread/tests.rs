@@ -5,8 +5,8 @@ use arcweft_id::LocaleTag;
 
 use super::{
     HirConditionalElseBranch, HirContextualStmtBody, HirForStmt, HirIfLetStmt, HirIfStmt,
-    HirIncludeStmt, HirLoopStmt, HirMatchStmt, HirScopeStmt, HirSelectBindingLocal,
-    HirSelectBranch, HirSelectBranchHead, HirSelectStmt, HirSourceLocaleIssue, HirSourceLocaleStmt,
+    HirIncludeStmt, HirMatchStmt, HirScopeStmt, HirSelectBindingLocal, HirSelectBranch,
+    HirSelectBranchHead, HirSelectStmt, HirSourceLocaleIssue, HirSourceLocaleStmt,
     HirSourceLocaleValue, HirStmtMatchArm, HirStmtMatchArmBody, HirThreadStmtInvariantError,
     HirThreadStmtRecoveryIssue, HirWhileLetStmt, HirWhileStmt,
 };
@@ -98,7 +98,6 @@ fn contextual_statement_body_is_one_typed_owner_for_both_execution_contexts() {
 fn conditional_loop_and_for_payloads_retain_only_typed_children() {
     assert_record_traits::<HirIfStmt>();
     assert_record_traits::<HirIfLetStmt>();
-    assert_record_traits::<HirLoopStmt>();
     assert_record_traits::<HirWhileStmt>();
     assert_record_traits::<HirWhileLetStmt>();
     assert_record_traits::<HirForStmt>();
@@ -131,10 +130,6 @@ fn conditional_loop_and_for_payloads_retain_only_typed_children() {
     assert_eq!(if_let.scrutinee(), scrutinee);
     assert_eq!(if_let.guard(), Some(guard));
     assert_eq!(if_let.locals(), [local]);
-
-    let loop_payload = HirLoopStmt::try_new(Some(name("retry")), thread_body(owner, 14))
-        .expect("same-module loop payload");
-    assert_eq!(loop_payload.label().unwrap().as_str(), "retry");
 
     let while_payload = HirWhileStmt::try_new(condition, ordinary_body(owner, 15))
         .expect("same-module while payload");

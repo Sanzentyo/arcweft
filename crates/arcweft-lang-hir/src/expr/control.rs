@@ -4,7 +4,7 @@ use std::collections::BTreeSet;
 
 use super::{
     HirExprInvariantError, validate_expr, validate_module, validate_optional_expr,
-    validate_optional_type, validate_pattern, validate_scope,
+    validate_optional_type, validate_pattern, validate_scope, validate_statements,
 };
 use crate::identity::{
     CaptureId, ExprId, HirModuleId, LocalId, PatternId, ScopeId, StmtId, TypeId,
@@ -161,6 +161,49 @@ pub struct HirNamedBlockExpr {
     scope: ScopeId,
     statements: Box<[StmtId]>,
     tail: ExprId,
+}
+
+/// Value-producing loop expression.
+///
+/// The loop owns one ordinary value block. Break/continue statements remain
+/// in that block's statement inventory; semantic analysis resolves their
+/// exact loop target through this expression owner.
+#[derive(Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub struct HirLoopExpr {
+    scope: ScopeId,
+    statements: Box<[StmtId]>,
+    tail: ExprId,
+}
+
+impl HirLoopExpr {
+    pub(crate) const fn new(scope: ScopeId, statements: Box<[StmtId]>, tail: ExprId) -> Self {
+        Self {
+            scope,
+            statements,
+            tail,
+        }
+    }
+
+    pub const fn scope(&self) -> ScopeId {
+        self.scope
+    }
+
+    pub fn statements(&self) -> &[StmtId] {
+        &self.statements
+    }
+
+    pub const fn tail(&self) -> ExprId {
+        self.tail
+    }
+
+    pub(super) fn validate_module(
+        &self,
+        expected: HirModuleId,
+    ) -> Result<(), HirExprInvariantError> {
+        validate_scope(expected, self.scope)?;
+        validate_statements(expected, &self.statements)?;
+        validate_expr(expected, self.tail)
+    }
 }
 
 impl HirNamedBlockExpr {

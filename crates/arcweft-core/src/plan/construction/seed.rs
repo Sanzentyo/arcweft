@@ -356,10 +356,7 @@ pub enum RuntimeFlowOpSeed {
         arms: Vec<RuntimeFlowMatchArmSeed>,
     },
     Loop {
-        body: Vec<Self>,
-    },
-    LetLoop {
-        pattern: RuntimePatternSeed,
+        result: Option<RuntimePatternSeed>,
         body: Vec<Self>,
     },
     While {
@@ -523,7 +520,7 @@ fn collect_binding_or_host_free_locals(
 
 fn collect_control_flow_free_locals(
     op: &RuntimeFlowOpSeed,
-    bound: &[RuntimeLocalSeedId],
+    bound: &mut Vec<RuntimeLocalSeedId>,
     locals: &mut Vec<RuntimeLocalSeedId>,
 ) -> bool {
     match op {
@@ -544,7 +541,7 @@ fn collect_control_flow_free_locals(
             else_ops,
         } => {
             expr.collect_free_locals(bound, locals);
-            let mut then_bound = bound.to_vec();
+            let mut then_bound = bound.clone();
             pattern.collect_binding_locals(&mut then_bound);
             if let Some(guard) = guard {
                 guard.collect_free_locals(&then_bound, locals);
@@ -555,7 +552,7 @@ fn collect_control_flow_free_locals(
         RuntimeFlowOpSeed::Match { scrutinee, arms } => {
             scrutinee.collect_free_locals(bound, locals);
             for arm in arms {
-                let mut arm_bound = bound.to_vec();
+                let mut arm_bound = bound.clone();
                 arm.pattern.collect_binding_locals(&mut arm_bound);
                 if let Some(guard) = &arm.guard {
                     guard.collect_free_locals(&arm_bound, locals);
@@ -563,13 +560,14 @@ fn collect_control_flow_free_locals(
                 collect_flow_ops_free_locals(&arm.ops, &arm_bound, locals);
             }
         }
-        RuntimeFlowOpSeed::Loop { body }
-        | RuntimeFlowOpSeed::Thread { body, .. }
-        | RuntimeFlowOpSeed::Scope(body) => collect_flow_ops_free_locals(body, bound, locals),
-        RuntimeFlowOpSeed::LetLoop { pattern, body } => {
-            let mut body_bound = bound.to_vec();
-            pattern.collect_binding_locals(&mut body_bound);
-            collect_flow_ops_free_locals(body, &body_bound, locals);
+        RuntimeFlowOpSeed::Loop { result, body } => {
+            collect_flow_ops_free_locals(body, bound, locals);
+            if let Some(result) = result {
+                result.collect_binding_locals(bound);
+            }
+        }
+        RuntimeFlowOpSeed::Thread { body, .. } | RuntimeFlowOpSeed::Scope(body) => {
+            collect_flow_ops_free_locals(body, bound, locals);
         }
         RuntimeFlowOpSeed::While { condition, body } => {
             condition.collect_free_locals(bound, locals);
@@ -582,7 +580,7 @@ fn collect_control_flow_free_locals(
             body,
         } => {
             expr.collect_free_locals(bound, locals);
-            let mut body_bound = bound.to_vec();
+            let mut body_bound = bound.clone();
             pattern.collect_binding_locals(&mut body_bound);
             if let Some(guard) = guard {
                 guard.collect_free_locals(&body_bound, locals);
@@ -596,7 +594,7 @@ fn collect_control_flow_free_locals(
             ..
         } => {
             source.collect_free_locals(bound, locals);
-            let mut body_bound = bound.to_vec();
+            let mut body_bound = bound.clone();
             pattern.collect_binding_locals(&mut body_bound);
             collect_flow_ops_free_locals(body, &body_bound, locals);
         }
@@ -650,7 +648,6 @@ fn collect_terminal_or_effect_free_locals(
         | RuntimeFlowOpSeed::IfLet { .. }
         | RuntimeFlowOpSeed::Match { .. }
         | RuntimeFlowOpSeed::Loop { .. }
-        | RuntimeFlowOpSeed::LetLoop { .. }
         | RuntimeFlowOpSeed::While { .. }
         | RuntimeFlowOpSeed::WhileLet { .. }
         | RuntimeFlowOpSeed::For { .. }

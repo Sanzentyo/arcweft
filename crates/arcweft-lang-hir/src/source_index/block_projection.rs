@@ -28,8 +28,8 @@ use super::{HirSourceSite, HirStmtRecoveryOperandSlot};
 use crate::arena::ArenaSnapshot;
 use crate::expr::{
     HirBlockExpr, HirComputationBlockExpr, HirComputationBlockKind, HirExpr, HirExprKind,
-    HirExpressionRecoveryIssue, HirGenericExprIssue, HirNamedBlockExpr, HirPoisonState,
-    HirRecoveryIssue,
+    HirExpressionRecoveryIssue, HirGenericExprIssue, HirLoopExpr, HirNamedBlockExpr,
+    HirPoisonState, HirRecoveryIssue,
 };
 use crate::identity::{
     ExprId, HirTypedId, ItemId, LocalGeneration, LocalId, PatternId, ScopeId, StmtId, SyntheticKey,
@@ -150,6 +150,32 @@ pub(super) fn named_block_expression_matches(
                 .name()
                 .recovery_issue()
                 .map(HirRecoveryIssue::InvalidName),
+        },
+        attached,
+    )
+}
+
+pub(super) fn loop_expression_matches(
+    parsed: &ParsedSource,
+    slots: &SlotSnapshot,
+    arenas: &BlockValidationArenas<'_>,
+    owner: ExprId,
+    payload: &HirExpr,
+    block: &HirLoopExpr,
+    attached: &AttachedExpressionNode,
+) -> bool {
+    value_block_expression_matches(
+        parsed,
+        slots,
+        arenas,
+        owner,
+        payload,
+        ValueBlockGraph {
+            scope: block.scope(),
+            statements: block.statements(),
+            tail: block.tail(),
+            omitted_tail: OmittedTailExpectation::ImplicitUnit,
+            initial_recovery: None,
         },
         attached,
     )
@@ -1102,13 +1128,11 @@ pub(super) fn statement_matches(
             parsed, slots, arenas, owner, attached, scope, context, statement,
         ),
         (
-            SyntaxKind::LoopStatement
-            | SyntaxKind::WhileStatement
+            SyntaxKind::WhileStatement
             | SyntaxKind::WhileLetStatement
             | SyntaxKind::ForStatement
             | SyntaxKind::SelectStatement,
-            kind @ (HirStmtKind::Loop(_)
-            | HirStmtKind::While(_)
+            kind @ (HirStmtKind::While(_)
             | HirStmtKind::WhileLet(_)
             | HirStmtKind::For(_)
             | HirStmtKind::Select(HirSelectStmt::Branches { .. })),
