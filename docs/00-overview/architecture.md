@@ -71,7 +71,10 @@ Native product の基本形は AOT compiled player + embedded `.awfb` / bytecode
 
 asset load、content ensure、shader compile、Activity instantiate、TTS 生成、BGM pre-render、Typeset block の組版などは `Need<T, E>` として扱う。
 
-`Need<T, E>` は `T` に暗黙変換できない。`flow` や View では `await ... with { pending ... }` または `AwaitView` で待機時の挙動を明示する。
+`Need<T, E>` は `T` に暗黙変換できない。Flowでは
+`await ... with { pending ... }`で継続をsuspendする。Viewではordinary
+`match Need`をchecked retained subscription/branchへprojectし、待機中の
+表示を明示する。`AwaitView`専用surfaceは残さない。
 
 ### 実行可能単位は Activity
 

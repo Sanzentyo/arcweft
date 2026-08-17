@@ -192,6 +192,22 @@ There is no postfix `?` or attached `await?` form. `with:` is owned by the
 Await expression, and `try await ... with:` is parsed as ordinary
 `try (await ... with:)` composition.
 
+## Try with placeholders and pipelines
+
+`try _` is parsed as an ordinary Try expression whose operand is the ordinary
+partial-abstraction placeholder. The placeholder creates its own callable
+boundary, so a common `Result<T, E> |> try _` use fails the normal checked
+propagation-boundary rule. Arcweft does not ban this spelling in syntax, create
+a special diagnostic for it, or propagate through the implicit callable into
+an outer Flow. A nested carrier may make the same expression well-typed.
+
+Use `try ^` to apply Try to the current pipe-left value while retaining the
+enclosing propagation boundary:
+
+```arcw
+let value = source() |> try ^ |> transform()
+```
+
 ## `bail`, `ensure`, and `fail`
 
 Arcweft standard library includes convenience helpers:

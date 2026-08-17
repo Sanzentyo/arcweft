@@ -9,12 +9,13 @@
 3. [決定事項と設計原則](00-overview/decisions.md)
 4. [Runtime Boundary Refactor Direction](00-overview/runtime-boundary-refactor.md)
 5. [DSL 概要](01-language/README.md)
-6. [Entries and Capabilities](01-language/entries-and-capabilities.md)
-7. [実行モデル](02-runtime/README.md)
-8. [RuntimeStep and Executors](02-runtime/runtime-step-and-executors.md)
-9. [描画・View・音声](03-presentation/README.md)
-10. [ツール・検証・LLM デバッグ](04-tooling/README.md)
-11. [Authored resource and local state storage](05-build-and-security/authored-resource-storage.md)
+6. [Converged Language, Content, and Presentation Surface](01-language/converged-language-surface.md)
+7. [Entries and Capabilities](01-language/entries-and-capabilities.md)
+8. [実行モデル](02-runtime/README.md)
+9. [RuntimeStep and Executors](02-runtime/runtime-step-and-executors.md)
+10. [描画・View・音声](03-presentation/README.md)
+11. [ツール・検証・LLM デバッグ](04-tooling/README.md)
+12. [Authored resource and local state storage](05-build-and-security/authored-resource-storage.md)
 
 ## Arcweft 固有の命名
 
@@ -39,6 +40,7 @@
 - [Device I/O / USB / HID / Serial / Gamepad](03-presentation/device-io-usb.md)
 - [Virtual Touch Controller](03-presentation/virtual-controller.md)
 - [Flow-Integrated Scenario Syntax / Dialogue Sugar](01-language/scenario-surface-syntax.md)
+- [Converged Language, Content, and Presentation Surface](01-language/converged-language-surface.md)
 - [CharacterDialogue authoring](01-language/character-dialogue.md)
 - [Block Scopes and `{ ... }`](01-language/block-scopes.md)
 - [mod / use / pub](01-language/modules.md)

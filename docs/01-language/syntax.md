@@ -166,16 +166,21 @@ let assets = try await load_opening_assets() with {
 }
 ```
 
-## View の AwaitView
+## View の reactive `Need` match
 
-View でも lazy 値の暗黙 force は禁止。
+View でも lazy 値の暗黙 force は禁止する。ordinary `match` grammarを使い、
+View semaがretained subscriptionとbranchへprojectする。
 
 ```arcw
-AwaitView(typeset(@typeset.credits)) {
-    pending p => Text("組版中")
-    ready doc => TypesetView(doc)
-    error e => Text("表示できません")
+match typeset(@typeset.credits) {
+    .pending(progress) => Text("組版中")
+    .ready(document) => TypesetView(document)
+    .error(error) => Text("表示できません")
+    .denied(reason) => PermissionDenied(reason)
 }
+```
+
+`AwaitView`専用syntaxは最終surfaceに残さない。
 ```
 
 

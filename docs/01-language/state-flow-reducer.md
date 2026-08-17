@@ -104,7 +104,9 @@ pub view current_scene(state: GameState) -> Scene {
 }
 ```
 
-View は `await` 禁止。`Need` は `AwaitView` や fallback を使う。
+View は `await` 禁止。`Need` はordinary `match`で観測し、View semaが
+retained subscription/branchへprojectする。`AwaitView`専用surfaceや
+untyped fallbackは使わない。
 
 ## Reduction
 

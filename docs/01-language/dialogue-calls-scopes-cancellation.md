@@ -6,6 +6,8 @@
 > `character(options)[content]`. The line-plan, cancellation, and scoped-content
 > rules remain the subject of this chapter; `.say` is not part of the final
 > language.
+> Content escapes and attached-body admission are governed by
+> [Converged Language, Content, and Presentation Surface](converged-language-surface.md).
 
 Arcweft keeps ordinary dialogue concise, but the canonical form is explicit and composable:
 

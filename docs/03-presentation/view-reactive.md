@@ -165,16 +165,24 @@ Text("聞いてみる")
     .animation(.spring, value = is_selected)
 ```
 
-## AwaitView
+## Reactive `Need` match
 
-View でも `Need` の暗黙 force は禁止。
+View does not implicitly force a `Need`. It uses the ordinary `match` grammar,
+then projects that checked expression into the retained View subscription and
+branch owner:
 
 ```arcw
-AwaitView(load_avatar(user)) {
-    pending _ => SkeletonCircle()
-    ready img => Image(img)
-    error _ => Icon(@vector.avatar_fallback)
+match load_avatar(user) {
+    .pending(progress) => SkeletonCircle(progress = progress)
+    .ready(image) => Image(image)
+    .error(error) => ErrorMessage(error)
+    .denied(reason) => PermissionDenied(reason)
 }
+```
+
+`AwaitView` is not a retained parser, HIR, formatter, or LSP surface. Outside a
+View context, `await` remains continuation suspension rather than reactive
+branch selection.
 ```
 
 ## Retained list virtualization

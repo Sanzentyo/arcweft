@@ -7,6 +7,10 @@
 > not current authoring syntax; their non-dialogue Character, View,
 > interpolation, and preload material remains applicable unless the new
 > contract says otherwise.
+>
+> Dialogue content escapes, attached-body roles, Ruby, timeline calls, marks,
+> and reactive View syntax are governed by
+> [Converged Language, Content, and Presentation Surface](converged-language-surface.md).
 
 Arcweft dialogue is written through character objects. The concise `alice:` form remains available, but it is syntax sugar over `alice.say()[ ... ]`. This keeps ordinary conversation compact while giving complex lines a typed, composable form.
 

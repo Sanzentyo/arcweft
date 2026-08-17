@@ -85,22 +85,17 @@ let <pipe-left> = threshold
 choices.filter(|choice| choice.score >= <pipe-left>)
 ```
 
-## method-chain fallback
+## Method calls do not fall back to free callables
 
-`receiver.method(args...)` は inherent method と可視 trait method を先に解決する。
-どちらも存在しない場合だけ、同名 callable による data-last fallback を試みる。
-fallback もパイプと同じ staged apply であり、call group を flatten しない。
+`receiver.method(args...)` resolves only an inherent method or a visible trait
+method. A same-named free callable is never tried as a fallback. Use the pipe
+for explicit data-last application:
 
 ```arcw
-receiver.transform(options...) // transform(options...)(receiver)
+receiver |> transform(options...)
 ```
 
-そのため `fn transform(options: Options)(value: Value) -> Output` を直接利用できる。
-named argument と固定長 literal spread は最初の call group の binding 順を保持し、
-receiver は常に独立した次 call group である。複数 callable が同じ staged shape に
-適合する場合は曖昧性診断とし、任意の候補を選ばない。ローカルに束縛した callable
-alias は元の署名の parameter group と parameter name を保持し、通常の lexical
-shadowing に従って module / environment callable より先に解決する。
+This keeps method resolution stable when an API later adds a real method.
 
 ## カリー化
 
@@ -207,7 +202,7 @@ let is_high = (_ >= 80)
 let add_alice = add_affection(@character.alice, 1)
 ```
 
-## Spread arguments in partials and data-last fallback
+## Spread arguments in partials and staged application
 
 Spread call arguments use `expr...`.
 
@@ -216,13 +211,12 @@ deterministic target. A variable-length spread may feed a rest parameter after
 the required fixed parameters have already been supplied. It is not used to
 infer how many fixed parameters should be filled.
 
-Partial-call construction and data-last method fallback accept spread only when
-the spread source has a statically known inline literal length:
+Partial-call construction accepts spread only when the spread source has a
+statically known inline literal length:
 
 ```arcw
 let add_one = add([1i64]...)
 let exact = add([1i64]..., 2i64)
-let in_range = score.between([60i64, 90i64]...)
 ```
 
 The same rule applies to function-value calls:

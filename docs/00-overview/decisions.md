@@ -1,5 +1,9 @@
 # Decisions: Control Flow, Pattern Binding, and Optional Semicolon
 
+The cross-cutting final authoring authority is
+[Converged Language, Content, and Presentation Surface](../01-language/converged-language-surface.md).
+Specialized chapters retain details but do not override that surface.
+
 ## Core decision
 
 Arcweft is still a script-friendly language, but core logic should be expression-capable enough for concise, typed, Rust-like code.
@@ -57,9 +61,11 @@ Effectful scenario operation:
   show(@character.alice, .smile, at = .center)
 ```
 
-`#` is used only as part of the `#[...]` attribute opener. Color values are not
-bare `#fff` tokens; they are string literals interpreted as `Color` only in an
-expected `Color` context.
+In ordinary source code, `#` is used only by the `#[...]` attribute opener. In
+Dialogue/RichText lexical mode it also begins the checked content-expression
+forms `#name`, `#[expr]`, `#call(...)`, and `#call(...)[content]`. Color values
+are not bare `#fff` tokens; they are string literals interpreted as `Color`
+only in an expected `Color` context.
 
 Scenario commands are ordinary effectful function calls. The parser should not
 carry migration-only branches for old `@bg`, `@show`, `@choice`, or `@memo`

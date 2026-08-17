@@ -1,5 +1,12 @@
 # Dialogue Control Tags, Ruby, Interpolation, and Line Marks
 
+> **Converged surface authority:**
+> [Converged Language, Content, and Presentation Surface](converged-language-surface.md)
+> replaces this chapter's legacy paired tags, `$(...)`, `[! ...]`, unknown-dot
+> inference, old Ruby spellings, and blanket-pure interpolation rules. This
+> chapter remains detailed inventory until those examples are migrated; it
+> does not authorize a conflicting parser or runtime success path.
+
 Arcweft supports KAG-like bracket tags inside dialogue text, but the feature is deliberately scoped. `[...]` tags are special only in dialogue text mode: speaker lines, narrator lines, indented dialogue bodies, and `Character.say(...)[ ... ]` content blocks.
 
 Related:
