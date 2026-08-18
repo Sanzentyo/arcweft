@@ -100,6 +100,10 @@ on item 2; this progress does not authorize work on the binary Need path.
 
 ## 2. Replace binary Need with unary `Need<T>`
 
+The current source owner inventory and the required compiling transaction are
+recorded in
+[Unary Need atomic boundary audit](2026-08-19-unary-need-atomic-boundary-audit.md).
+
 Perform the type and runtime carrier replacement across syntax-facing types,
 sema, accepted callable signatures, compiler facts, RuntimePlan, structured
 runtime, AWBC, codecs, snapshots, saves, adapters, and tools. Delete the binary
