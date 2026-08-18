@@ -99,6 +99,25 @@ not an acceptable checkpoint.
   tests are migration targets: unary Ready must resume with its payload
   unchanged, including when that payload is already a Result.
 
+Failed baseline outside this audit:
+
+- `cargo test -p arcweft-cli --test arcw_fixtures_check_run`: 1 passed and 4
+  failed on the clean inspected revision.
+  - `current_check_fixtures_pass` first failed at
+    `current_pass/check/008_let_else_diverge.arcw` with a HIR typed-arena
+    transaction failure.
+  - `current_run_fixtures_pass` first failed at
+    `current_pass/run/009_dialogue_line.arcw` because executable dialogue
+    projection lacked the selected profile character-name localization policy.
+  - `spec_should_pass_check_fixtures_pass_after_refactor` first failed at
+    `spec_should_pass/check/022_multiline_trait_method.arcw`.
+  - `spec_should_pass_run_fixtures_pass_after_refactor` first failed at
+    `spec_should_pass/run/011_dialogue_line_value_and_handle_discard.arcw`.
+
+These four failures predate the unary Need source transaction and must not be
+reported as regressions introduced by that cut. The directory-wide gate stays
+active; this record is evidence, not an exclusion list.
+
 ## Explicit non-goals
 
 - No Stream type migration.
