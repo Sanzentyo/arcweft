@@ -447,6 +447,18 @@ pub enum CheckedExpressionResolution {
     Await(CheckedAwait),
     /// Exact carrier and nearest lexical propagation boundary for prefix Try.
     Try(CheckedTry),
+    /// One implicit callable introduced by partial-application placeholders.
+    ImplicitCallable(Box<CheckedImplicitCallable>),
+    /// One placeholder bound by its checked implicit callable owner.
+    ImplicitParameter {
+        callable: ExprId,
+    },
+    /// One once-evaluated pipeline and its checked pipe-left uses.
+    Pipe(CheckedPipe),
+    /// One `^` placeholder bound by its checked pipeline owner.
+    PipeLeft {
+        pipe: ExprId,
+    },
     /// A call whose execution contract belongs to the retained View program,
     /// rather than to the ordinary callable catalog.
     ViewCall(CheckedViewCall),
@@ -471,6 +483,84 @@ pub enum CheckedExpressionResolution {
         rich_text: Box<CheckedRichTextReport>,
     },
     PostfixBracket(PostfixBracketResolution),
+}
+
+/// Checked implicit callable introduced by one or more `_` placeholders.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct CheckedImplicitCallable {
+    parameter: TypeKind,
+    result: TypeKind,
+    placeholders: Box<[ExprId]>,
+    captures: Box<[LocalId]>,
+    body_resolution: Box<CheckedExpressionResolution>,
+}
+
+impl CheckedImplicitCallable {
+    pub fn new(
+        parameter: TypeKind,
+        result: TypeKind,
+        placeholders: Box<[ExprId]>,
+        captures: Box<[LocalId]>,
+        body_resolution: CheckedExpressionResolution,
+    ) -> Self {
+        Self {
+            parameter,
+            result,
+            placeholders,
+            captures,
+            body_resolution: Box::new(body_resolution),
+        }
+    }
+
+    pub const fn parameter(&self) -> &TypeKind {
+        &self.parameter
+    }
+
+    pub const fn result(&self) -> &TypeKind {
+        &self.result
+    }
+
+    pub const fn placeholders(&self) -> &[ExprId] {
+        &self.placeholders
+    }
+
+    pub const fn captures(&self) -> &[LocalId] {
+        &self.captures
+    }
+
+    pub fn body_resolution(&self) -> &CheckedExpressionResolution {
+        self.body_resolution.as_ref()
+    }
+}
+
+/// Checked once-only pipe binding and every `^` use owned by it.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct CheckedPipe {
+    left: ExprId,
+    right: ExprId,
+    placeholders: Box<[ExprId]>,
+}
+
+impl CheckedPipe {
+    pub const fn new(left: ExprId, right: ExprId, placeholders: Box<[ExprId]>) -> Self {
+        Self {
+            left,
+            right,
+            placeholders,
+        }
+    }
+
+    pub const fn left(&self) -> ExprId {
+        self.left
+    }
+
+    pub const fn right(&self) -> ExprId {
+        self.right
+    }
+
+    pub const fn placeholders(&self) -> &[ExprId] {
+        &self.placeholders
+    }
 }
 
 /// Closed carrier consumed by one prefix Try expression.
@@ -505,6 +595,7 @@ impl CheckedTryCarrier {
 pub enum CheckedTryBoundary {
     Infallible,
     CarrierBlock(ExprId),
+    FunctionSite(ExprId),
     Callable(ItemId),
 }
 

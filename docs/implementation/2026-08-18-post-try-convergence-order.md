@@ -60,6 +60,33 @@ Exit evidence includes checked callable facts, one-evaluation pipe tests,
 partial-abstraction boundary tests, diagnostic source ranges, and executable
 Flow/callable parity.
 
+### Dependency correction discovered during implementation
+
+This item has two implementation faces and must not be treated as permission
+to repair the binary-Need execution path.
+
+1. The checked-expression face is independent: `_` owns one implicit callable,
+   `^` owns one pipe-left binding, and Try records the nearest carrier,
+   function-site, or callable boundary. These facts may be projected into the
+   runtime-plan fact vocabulary before unary Need lands.
+2. Pure/function execution needs a generic continuation transform that lifts
+   the surrounding pure expression into the boundary carrier. A Try node alone
+   cannot be represented as an ordinary `RuntimeExpr`, because its success arm
+   has the unwrapped type while its residual arm exits with the enclosing
+   carrier type.
+3. Await compositions cannot close on the current runtime path. The current
+   runtime-plan Await lowerer starts a direct checked host call; it cannot await
+   a local or implicit-callable parameter. Implementing `await _` or
+   `try await _` against binary `Need<T, E>` would add a success path to the
+   owner that item 2 deletes.
+
+Therefore the checked boundary and pure continuation transform proceed first,
+item 2 replaces Need and makes Await consume an ordinary unary-Need value, and
+then the Await-containing item-1 matrix closes before item 3 begins. The item-1
+exit evidence is not complete until that final composition pass is green.
+Do not add a direct-host-call exception, a binary-Need implicit callable, or a
+fused TryAwait representation as an interim solution.
+
 ## 2. Replace binary Need with unary `Need<T>`
 
 Perform the type and runtime carrier replacement across syntax-facing types,

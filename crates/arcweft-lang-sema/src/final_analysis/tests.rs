@@ -1629,6 +1629,74 @@ fn nested(need: Need<i64, String>) -> Result<i64, String> {
 }
 
 #[test]
+fn prefix_try_uses_the_checked_implicit_callable_as_its_propagation_boundary() {
+    let carrier = TypeKind::Result {
+        ok: Box::new(TypeKind::I64),
+        error: Box::new(TypeKind::String),
+    };
+    let callback = TypeKind::function([carrier.clone()], carrier);
+    let fixture = typed_overload_fixture(
+        "fn caller() { choose(try _); }\n",
+        "choose",
+        vec![TestCallableOverload::strict(
+            [callback.clone()],
+            TypeKind::Unit,
+        )],
+    );
+    let report = analyze(&fixture).expect("Try implicit-callable analysis");
+    let (_, callable) = report
+        .expressions()
+        .find(|(_, expression)| {
+            matches!(
+                expression.resolution(),
+                CheckedExpressionResolution::ImplicitCallable(_)
+            )
+        })
+        .expect("checked implicit callable");
+    assert_eq!(callable.ty(), &callback);
+    let CheckedExpressionResolution::ImplicitCallable(callable) = callable.resolution() else {
+        unreachable!("matched above")
+    };
+    assert!(matches!(
+        callable.body_resolution(),
+        CheckedExpressionResolution::Try(tried)
+            if matches!(tried.boundary(), CheckedTryBoundary::FunctionSite(_))
+    ));
+}
+
+#[test]
+fn pipe_left_uses_one_checked_pipe_owner_without_creating_a_callable() {
+    let fixture = fixture(
+        r"
+fn pipeline(input: Result<i64, String>) -> Result<i64, String> {
+    Ok(input |> try ^)
+}
+",
+        None,
+    );
+    let report = analyze(&fixture).expect("checked pipe Try analysis");
+    let (owner, pipe) = report
+        .expressions()
+        .find_map(|(owner, expression)| match expression.resolution() {
+            CheckedExpressionResolution::Pipe(pipe) => Some((owner, pipe)),
+            _ => None,
+        })
+        .expect("checked pipe fact");
+    assert_eq!(pipe.placeholders().len(), 1);
+    assert!(matches!(
+        report
+            .expression(pipe.placeholders()[0])
+            .expect("pipe-left placeholder fact")
+            .resolution(),
+        CheckedExpressionResolution::PipeLeft { pipe } if *pipe == owner
+    ));
+    assert!(!report.expressions().any(|(_, expression)| matches!(
+        expression.resolution(),
+        CheckedExpressionResolution::ImplicitCallable(_)
+    )));
+}
+
+#[test]
 fn carrier_blocks_are_the_nearest_checked_try_boundaries() {
     let fixture = fixture(
         r"

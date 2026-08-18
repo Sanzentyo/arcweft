@@ -7,8 +7,8 @@ use arcweft_core::plan::{
     RuntimeAgentExprSeed, RuntimeCallArgumentSeed, RuntimeExprMatchArmSeed, RuntimeExprSeed,
     RuntimeExprSeedKind, RuntimeFieldProjectionSeed, RuntimeFlowOpSeed, RuntimeFunctionSiteSeedId,
     RuntimeHostArgumentSeed, RuntimeHostCallTargetSeed, RuntimeLocalSeedId,
-    RuntimeNominalRecordFieldSeed, RuntimePureHelperSeedId, RuntimeRecordFieldSeedId,
-    RuntimeTraitMethodSeedId,
+    RuntimeNominalRecordFieldSeed, RuntimePatternSeed, RuntimePatternSeedKind,
+    RuntimePureHelperSeedId, RuntimeRecordFieldSeedId, RuntimeTraitMethodSeedId,
 };
 use arcweft_core::task::NamedHostArg;
 use arcweft_core::value::{
@@ -26,10 +26,12 @@ use arcweft_lang_hir::symbol::ImplMethodDeclarationId;
 
 use crate::agent::RuntimeAgentIntrinsic;
 use crate::final_pattern::{FinalPatternLowerer, project_entity_reference};
+use crate::flow::TryLocalSeeds;
 use crate::semantic_facts::{
     RuntimeNormalizedType, RuntimePlanSemanticFacts, RuntimeReductionConstructor,
     RuntimeResolvedCallArgument, RuntimeResolvedCallTarget, RuntimeResolvedHostArgumentPassing,
-    RuntimeResolvedSelect, RuntimeResolvedValue, RuntimeResolvedVariant, RuntimeTypeShape,
+    RuntimeResolvedSelect, RuntimeResolvedValue, RuntimeResolvedVariant, RuntimeTryBoundaryOwner,
+    RuntimeTryCarrierFact, RuntimeTypeShape,
 };
 
 pub(crate) struct FinalExprLowerer<'hir> {
@@ -39,6 +41,8 @@ pub(crate) struct FinalExprLowerer<'hir> {
     pure_helpers: &'hir BTreeMap<RuntimeCallableId, RuntimePureHelperSeedId>,
     trait_methods: &'hir BTreeMap<ImplMethodDeclarationId, RuntimeTraitMethodSeedId>,
     function_sites: &'hir BTreeMap<ExprId, RuntimeFunctionSiteSeedId>,
+    pipe_locals: &'hir BTreeMap<ExprId, RuntimeLocalSeedId>,
+    try_locals: &'hir BTreeMap<ExprId, TryLocalSeeds>,
     overrides: BTreeMap<ExprId, RuntimeExprSeed>,
 }
 
@@ -50,7 +54,12 @@ impl<'hir> FinalExprLowerer<'hir> {
         pure_helpers: &'hir BTreeMap<RuntimeCallableId, RuntimePureHelperSeedId>,
         trait_methods: &'hir BTreeMap<ImplMethodDeclarationId, RuntimeTraitMethodSeedId>,
         function_sites: &'hir BTreeMap<ExprId, RuntimeFunctionSiteSeedId>,
+        control_locals: (
+            &'hir BTreeMap<ExprId, RuntimeLocalSeedId>,
+            &'hir BTreeMap<ExprId, TryLocalSeeds>,
+        ),
     ) -> Self {
+        let (pipe_locals, try_locals) = control_locals;
         Self {
             module,
             facts,
@@ -58,6 +67,8 @@ impl<'hir> FinalExprLowerer<'hir> {
             pure_helpers,
             trait_methods,
             function_sites,
+            pipe_locals,
+            try_locals,
             overrides: BTreeMap::new(),
         }
     }
@@ -115,11 +126,42 @@ impl<'hir> FinalExprLowerer<'hir> {
         }))
     }
 
+    pub(crate) fn lower(&self, id: ExprId) -> Result<RuntimeExprSeed, String> {
+        if let Some(value) = self.overrides.get(&id) {
+            return Ok(value.clone());
+        }
+        if self.facts.implicit_callable(id).is_some() {
+            return Ok(RuntimeExprSeed::new(
+                self.expression_type(id)?,
+                RuntimeExprSeedKind::Function(self.function_sites.get(&id).cloned().ok_or_else(
+                    || format!("builder-issued function site seed is missing for {id:?}"),
+                )?),
+            ));
+        }
+        self.lower_body(id)
+    }
+
+    pub(crate) fn lower_function_site_body(
+        &self,
+        site_owner: ExprId,
+        body: ExprId,
+        overrides: BTreeMap<ExprId, RuntimeExprSeed>,
+    ) -> Result<RuntimeExprSeed, String> {
+        let lowerer = self.clone_with_overrides(overrides);
+        if lowerer.facts.tried(body).is_some_and(|tried| {
+            tried.boundary() == RuntimeTryBoundaryOwner::FunctionSite(site_owner)
+        }) {
+            lowerer.lower_terminal_function_site_try(body)
+        } else {
+            lowerer.lower_body(body)
+        }
+    }
+
     #[allow(
         clippy::too_many_lines,
         reason = "one closed final-HIR expression projection"
     )]
-    pub(crate) fn lower(&self, id: ExprId) -> Result<RuntimeExprSeed, String> {
+    fn lower_body(&self, id: ExprId) -> Result<RuntimeExprSeed, String> {
         if let Some(value) = self.overrides.get(&id) {
             return Ok(value.clone());
         }
@@ -274,8 +316,33 @@ impl<'hir> FinalExprLowerer<'hir> {
                 ]
                 .into_boxed_slice(),
             },
+            HirExprKind::Pipe(pipe) => {
+                let binding = self.pipe_locals.get(&id).cloned().ok_or_else(|| {
+                    format!("builder-issued once-only pipe local is missing for {id:?}")
+                })?;
+                let value = RuntimeExprSeed::new(
+                    self.expression_type(pipe.left())?,
+                    RuntimeExprSeedKind::Local(binding.clone()),
+                );
+                let overrides = self
+                    .facts
+                    .pipe(id)
+                    .ok_or_else(|| format!("checked pipe fact is missing for {id:?}"))?
+                    .placeholders()
+                    .iter()
+                    .map(|placeholder| (*placeholder, value.clone()))
+                    .collect();
+                let body = self.clone_with_overrides(overrides).lower(pipe.right())?;
+                return Ok(RuntimeExprSeed::new(
+                    self.expression_type(id)?,
+                    RuntimeExprSeedKind::Let {
+                        binding,
+                        expr: Box::new(self.lower(pipe.left())?),
+                        body: Box::new(body),
+                    },
+                ));
+            }
             HirExprKind::Placeholder(_)
-            | HirExprKind::Pipe(_)
             | HirExprKind::Try(_)
             | HirExprKind::Await(_)
             | HirExprKind::Loop(_)
@@ -294,6 +361,123 @@ impl<'hir> FinalExprLowerer<'hir> {
             }
         };
         Ok(RuntimeExprSeed::new(self.expression_type(id)?, kind))
+    }
+
+    fn clone_with_overrides(&self, overrides: BTreeMap<ExprId, RuntimeExprSeed>) -> Self {
+        let mut merged = self.overrides.clone();
+        merged.extend(overrides);
+        Self {
+            module: self.module,
+            facts: self.facts,
+            locals: self.locals,
+            pure_helpers: self.pure_helpers,
+            trait_methods: self.trait_methods,
+            function_sites: self.function_sites,
+            pipe_locals: self.pipe_locals,
+            try_locals: self.try_locals,
+            overrides: merged,
+        }
+    }
+
+    fn lower_terminal_function_site_try(&self, owner: ExprId) -> Result<RuntimeExprSeed, String> {
+        let tried = self
+            .facts
+            .tried(owner)
+            .ok_or_else(|| format!("checked Try fact is missing for {owner:?}"))?;
+        let locals = self
+            .try_locals
+            .get(&owner)
+            .ok_or_else(|| format!("admitted Try locals are missing for {owner:?}"))?;
+        let expression = self
+            .module
+            .resolve_expr(owner)
+            .map_err(|error| format!("cannot resolve Try {owner:?}: {error}"))?;
+        let HirExprKind::Try(operation) = expression.kind() else {
+            return Err(format!(
+                "function-site Try fact {owner:?} has the wrong HIR family"
+            ));
+        };
+        let success_value = RuntimeExprSeed::new(
+            tried.carrier().success().identity(),
+            RuntimeExprSeedKind::Local(locals.success.clone()),
+        );
+        let success = RuntimeExprSeed::new(
+            tried.boundary_type().identity(),
+            RuntimeExprSeedKind::Variant {
+                ordinal: 0,
+                payload: Some(Box::new(success_value)),
+            },
+        );
+        let (failure_pattern, failure_payload) = match tried.carrier() {
+            RuntimeTryCarrierFact::Result { residual, .. } => {
+                let local = locals.residual.clone().ok_or_else(|| {
+                    format!("Result Try {owner:?} has no admitted residual local")
+                })?;
+                (
+                    RuntimePatternSeed::new(
+                        tried.carrier_type().identity(),
+                        RuntimePatternSeedKind::Variant {
+                            ordinal: 1,
+                            payload: Some(Box::new(RuntimePatternSeed::new(
+                                residual.identity(),
+                                RuntimePatternSeedKind::Bind {
+                                    local: local.clone(),
+                                    mutable: false,
+                                },
+                            ))),
+                        },
+                    ),
+                    Some(Box::new(RuntimeExprSeed::new(
+                        residual.identity(),
+                        RuntimeExprSeedKind::Local(local),
+                    ))),
+                )
+            }
+            RuntimeTryCarrierFact::Option { .. } => (
+                RuntimePatternSeed::new(
+                    tried.carrier_type().identity(),
+                    RuntimePatternSeedKind::Variant {
+                        ordinal: 1,
+                        payload: None,
+                    },
+                ),
+                None,
+            ),
+        };
+        let failure = RuntimeExprSeed::new(
+            tried.boundary_type().identity(),
+            RuntimeExprSeedKind::Variant {
+                ordinal: 1,
+                payload: failure_payload,
+            },
+        );
+        Ok(RuntimeExprSeed::new(
+            tried.boundary_type().identity(),
+            RuntimeExprSeedKind::Match {
+                scrutinee: Box::new(self.lower(operation.operand())?),
+                arms: vec![
+                    RuntimeExprMatchArmSeed::new(
+                        RuntimePatternSeed::new(
+                            tried.carrier_type().identity(),
+                            RuntimePatternSeedKind::Variant {
+                                ordinal: 0,
+                                payload: Some(Box::new(RuntimePatternSeed::new(
+                                    tried.carrier().success().identity(),
+                                    RuntimePatternSeedKind::Bind {
+                                        local: locals.success.clone(),
+                                        mutable: false,
+                                    },
+                                ))),
+                            },
+                        ),
+                        None,
+                        success,
+                    ),
+                    RuntimeExprMatchArmSeed::new(failure_pattern, None, failure),
+                ]
+                .into_boxed_slice(),
+            },
+        ))
     }
 
     pub(crate) fn lower_function_body(

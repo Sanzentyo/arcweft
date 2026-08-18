@@ -257,9 +257,11 @@ pub struct RuntimePlanLowerStats {
 
 #[derive(Clone)]
 struct ReservedFunctionSiteDefinition {
+    owner: ExprId,
     module: HirModuleId,
     body: ExprId,
     site: RuntimeFunctionSiteSeedId,
+    implicit_parameter: Option<RuntimeLocalSeedId>,
 }
 
 #[derive(Clone)]
@@ -317,6 +319,7 @@ struct FinalLoweringContext<'project, 'data> {
     dialogue_content: &'data BTreeMap<ExprId, RuntimeDialogueContentPlanSeedId>,
     await_locals: &'data BTreeMap<ExprId, AwaitLocalSeeds>,
     try_locals: &'data BTreeMap<ExprId, TryLocalSeeds>,
+    pipe_locals: &'data BTreeMap<ExprId, RuntimeLocalSeedId>,
 }
 
 #[derive(Clone)]
@@ -327,9 +330,9 @@ struct AwaitLocalSeeds {
 }
 
 #[derive(Clone)]
-struct TryLocalSeeds {
-    success: RuntimeLocalSeedId,
-    residual: Option<RuntimeLocalSeedId>,
+pub(crate) struct TryLocalSeeds {
+    pub(crate) success: RuntimeLocalSeedId,
+    pub(crate) residual: Option<RuntimeLocalSeedId>,
 }
 
 impl FinalLoweringContext<'_, '_> {
@@ -341,6 +344,7 @@ impl FinalLoweringContext<'_, '_> {
             self.pure_helpers,
             self.trait_methods,
             self.function_sites,
+            (self.pipe_locals, self.try_locals),
         )
     }
 }
@@ -388,6 +392,21 @@ pub fn lower_runtime_plan_with_stats(
         if let Some(residual) = tried.carrier().residual() {
             local_seeds.push(RuntimeLocalDeclarationSeed::new(residual.identity()));
         }
+    }
+    let implicit_callable_facts = facts.implicit_callables().collect::<Vec<_>>();
+    for (_, callable) in &implicit_callable_facts {
+        local_seeds.push(RuntimeLocalDeclarationSeed::new(
+            callable.parameter().identity(),
+        ));
+    }
+    let pipe_facts = facts.pipes().collect::<Vec<_>>();
+    for (_, pipe) in &pipe_facts {
+        let left = facts.expression_type(pipe.left()).ok_or_else(|| {
+            vec![RuntimePlanLowerError::new(
+                "checked pipe left type is missing during local admission",
+            )]
+        })?;
+        local_seeds.push(RuntimeLocalDeclarationSeed::new(left.identity()));
     }
     let mut builder = RuntimePlanBuilder::new();
     let admission = builder
@@ -439,10 +458,44 @@ pub fn lower_runtime_plan_with_stats(
         };
         try_locals.insert(**expression, TryLocalSeeds { success, residual });
     }
+    let implicit_parameters = implicit_callable_facts
+        .iter()
+        .map(|(expression, _)| **expression)
+        .map(|expression| {
+            admitted_try_locals
+                .next()
+                .map(|local| (expression, local))
+                .ok_or_else(|| {
+                    vec![RuntimePlanLowerError::new(
+                        "admitted implicit-callable parameter local is missing",
+                    )]
+                })
+        })
+        .collect::<Result<BTreeMap<_, _>, _>>()?;
+    let pipe_locals = pipe_facts
+        .iter()
+        .map(|(expression, _)| **expression)
+        .map(|expression| {
+            admitted_try_locals
+                .next()
+                .map(|local| (expression, local))
+                .ok_or_else(|| {
+                    vec![RuntimePlanLowerError::new(
+                        "admitted once-only pipe local is missing",
+                    )]
+                })
+        })
+        .collect::<Result<BTreeMap<_, _>, _>>()?;
     debug_assert!(admitted_try_locals.next().is_none());
     let mut errors = Vec::new();
-    let (function_sites, function_definitions) =
-        reserve_function_sites(project, facts, &locals, &mut builder, &mut errors);
+    let (function_sites, function_definitions) = reserve_function_sites(
+        project,
+        facts,
+        &locals,
+        &implicit_parameters,
+        &mut builder,
+        &mut errors,
+    );
     let (pure_helpers, pure_definitions) = reserve_entry_pure_helpers(
         project,
         facts,
@@ -473,6 +526,7 @@ pub fn lower_runtime_plan_with_stats(
         dialogue_content: &empty_dialogue_content,
         await_locals: &await_locals,
         try_locals: &try_locals,
+        pipe_locals: &pipe_locals,
     };
 
     define_function_sites(&context, &function_definitions, &mut builder, &mut errors);
@@ -634,6 +688,7 @@ fn reserve_function_sites(
     project: HirExecutableProjectView<'_>,
     facts: &RuntimePlanSemanticFacts,
     locals: &BTreeMap<LocalId, RuntimeLocalSeedId>,
+    implicit_parameters: &BTreeMap<ExprId, RuntimeLocalSeedId>,
     builder: &mut RuntimePlanBuilder,
     errors: &mut Vec<RuntimePlanLowerError>,
 ) -> (
@@ -677,14 +732,12 @@ fn reserve_function_sites(
                 })
                 .collect::<Result<Vec<_>, _>>();
             let result = facts
-                .expression_type(closure.body())
-                .map(RuntimeNormalizedType::identity)
-                .ok_or_else(|| {
-                    format!(
-                        "closure {owner:?} body {:?} has no accepted runtime type",
-                        closure.body()
-                    )
-                });
+                .expression_type(owner)
+                .and_then(|ty| match ty.shape() {
+                    RuntimeTypeShape::Function { result, .. } => Some(result.identity()),
+                    _ => None,
+                })
+                .ok_or_else(|| format!("closure {owner:?} has no accepted function result"));
             let declaration = params.and_then(|params| {
                 captures.and_then(|captures| {
                     result.map(|result| RuntimeFunctionSiteDeclarationSeed {
@@ -705,9 +758,11 @@ fn reserve_function_sites(
                 Ok(site) => {
                     sites.insert(owner, site.clone());
                     definitions.push(ReservedFunctionSiteDefinition {
+                        owner,
                         module: module.module_id(),
                         body: closure.body(),
                         site,
+                        implicit_parameter: None,
                     });
                 }
                 Err(error) => {
@@ -717,7 +772,82 @@ fn reserve_function_sites(
             }
         }
     }
+    reserve_implicit_function_sites(
+        project,
+        facts,
+        locals,
+        implicit_parameters,
+        builder,
+        errors,
+        (&mut sites, &mut definitions),
+    );
     (sites, definitions)
+}
+
+fn reserve_implicit_function_sites(
+    project: HirExecutableProjectView<'_>,
+    facts: &RuntimePlanSemanticFacts,
+    locals: &BTreeMap<LocalId, RuntimeLocalSeedId>,
+    implicit_parameters: &BTreeMap<ExprId, RuntimeLocalSeedId>,
+    builder: &mut RuntimePlanBuilder,
+    errors: &mut Vec<RuntimePlanLowerError>,
+    output: (
+        &mut BTreeMap<ExprId, RuntimeFunctionSiteSeedId>,
+        &mut Vec<ReservedFunctionSiteDefinition>,
+    ),
+) {
+    let (sites, definitions) = output;
+    for (owner, callable) in facts.implicit_callables() {
+        let Some(module) = module_by_id(project, owner.module()) else {
+            errors.push(RuntimePlanLowerError::new(format!(
+                "implicit callable {owner:?} module is absent"
+            )));
+            continue;
+        };
+        let Some(parameter) = implicit_parameters.get(owner).cloned() else {
+            errors.push(RuntimePlanLowerError::new(format!(
+                "implicit callable {owner:?} parameter local is absent"
+            )));
+            continue;
+        };
+        let captures = callable
+            .captures()
+            .iter()
+            .map(|capture| {
+                locals.get(capture).cloned().ok_or_else(|| {
+                    format!("implicit callable {owner:?} capture {capture:?} is absent")
+                })
+            })
+            .collect::<Result<Vec<_>, _>>();
+        let declaration = captures.map(|captures| RuntimeFunctionSiteDeclarationSeed {
+            params: Box::new([parameter.clone()]),
+            captures: captures.into_boxed_slice(),
+            result: callable.result().identity(),
+        });
+        let declaration = match declaration {
+            Ok(declaration) => declaration,
+            Err(error) => {
+                errors.push(RuntimePlanLowerError::new(error));
+                continue;
+            }
+        };
+        match builder.reserve_function_site_seed(declaration) {
+            Ok(site) => {
+                sites.insert(*owner, site.clone());
+                definitions.push(ReservedFunctionSiteDefinition {
+                    owner: *owner,
+                    module: module.module_id(),
+                    body: *owner,
+                    site,
+                    implicit_parameter: Some(parameter),
+                });
+            }
+            Err(error) => {
+                errors.push(RuntimePlanLowerError::new(error.to_string()));
+                break;
+            }
+        }
+    }
 }
 
 fn reserve_entry_pure_helpers(
@@ -788,10 +918,6 @@ fn reserve_entry_pure_helpers(
     (helpers, definitions)
 }
 
-#[expect(
-    clippy::too_many_arguments,
-    reason = "the reservation transaction retains each typed authority without a detached aggregate"
-)]
 fn reserve_called_project_helpers(
     project: HirExecutableProjectView<'_>,
     facts: &RuntimePlanSemanticFacts,
@@ -1129,7 +1255,26 @@ fn define_function_sites(
             errors.push(RuntimePlanLowerError::new("closure module is absent"));
             continue;
         };
-        let body = context.expr_lowerer(module).lower(definition.body);
+        let lowerer = context.expr_lowerer(module);
+        let body = definition.implicit_parameter.as_ref().map_or_else(
+            || lowerer.lower_function_site_body(definition.owner, definition.body, BTreeMap::new()),
+            |parameter| {
+                let callable = context
+                    .facts
+                    .implicit_callable(definition.body)
+                    .ok_or_else(|| "implicit callable fact is absent".to_owned())?;
+                let value = RuntimeExprSeed::new(
+                    callable.parameter().identity(),
+                    arcweft_core::plan::RuntimeExprSeedKind::Local(parameter.clone()),
+                );
+                let overrides = callable
+                    .placeholders()
+                    .iter()
+                    .map(|placeholder| (*placeholder, value.clone()))
+                    .collect();
+                lowerer.lower_function_site_body(definition.owner, definition.body, overrides)
+            },
+        );
         match body.and_then(|body| {
             builder
                 .define_function_site_seed(&definition.site, body)
@@ -1949,6 +2094,7 @@ struct FinalFlowLowerer<'a> {
     dialogue_content: &'a BTreeMap<ExprId, RuntimeDialogueContentPlanSeedId>,
     await_locals: &'a BTreeMap<ExprId, AwaitLocalSeeds>,
     try_locals: &'a BTreeMap<ExprId, TryLocalSeeds>,
+    pipe_locals: &'a BTreeMap<ExprId, RuntimeLocalSeedId>,
     carrier_continuations: BTreeMap<ExprId, RuntimeFlowValueContinuation>,
     assertion_owner: RuntimeAssertionOwner,
     assertion_ordinal: u32,
@@ -1975,6 +2121,12 @@ enum RuntimeFlowValueContinuation {
     Compose {
         owner: ExprId,
         child: ExprId,
+        overrides: BTreeMap<ExprId, RuntimeExprSeed>,
+        outer: Box<Self>,
+    },
+    Pipe {
+        owner: ExprId,
+        right: ExprId,
         overrides: BTreeMap<ExprId, RuntimeExprSeed>,
         outer: Box<Self>,
     },
@@ -2012,6 +2164,7 @@ impl<'a> FinalFlowLowerer<'a> {
             dialogue_content: context.dialogue_content,
             await_locals: context.await_locals,
             try_locals: context.try_locals,
+            pipe_locals: context.pipe_locals,
             carrier_continuations: BTreeMap::new(),
             assertion_owner,
             assertion_ordinal: 0,
@@ -2022,6 +2175,18 @@ impl<'a> FinalFlowLowerer<'a> {
 
     fn into_assertion_sites(self) -> Vec<RuntimeAssertionSite> {
         self.assertion_sites
+    }
+
+    fn expr_lowerer(&self) -> FinalExprLowerer<'_> {
+        FinalExprLowerer::new(
+            self.module,
+            self.facts,
+            self.locals,
+            self.pure_helpers,
+            self.trait_methods,
+            self.function_sites,
+            (self.pipe_locals, self.try_locals),
+        )
     }
 
     fn trait_method(
@@ -2167,6 +2332,7 @@ impl<'a> FinalFlowLowerer<'a> {
             self.pure_helpers,
             self.trait_methods,
             self.function_sites,
+            (self.pipe_locals, self.try_locals),
         );
         let pattern = FinalPatternLowerer::new(self.module, self.facts, self.locals);
         match kind {
@@ -2432,6 +2598,9 @@ impl<'a> FinalFlowLowerer<'a> {
         &self,
         expression: ExprId,
     ) -> Result<bool, RuntimePlanLowerError> {
+        if self.facts.implicit_callable(expression).is_some() {
+            return Ok(false);
+        }
         let expression = self.module.resolve_expr(expression).map_err(|error| {
             RuntimePlanLowerError::new(format!(
                 "cannot resolve flow value expression {expression:?}: {error}"
@@ -2478,6 +2647,13 @@ impl<'a> FinalFlowLowerer<'a> {
                 "cannot resolve flow value expression {expression:?}: {error}"
             ))
         })?;
+        if self.facts.implicit_callable(expression).is_some() {
+            let value = self
+                .expr_lowerer()
+                .lower(expression)
+                .map_err(RuntimePlanLowerError::new)?;
+            return self.apply_value_continuation(value, continuation);
+        }
         match resolved.kind() {
             HirExprKind::Try(operation) => self.lower_flow_value_with_overrides(
                 operation.operand(),
@@ -2489,6 +2665,9 @@ impl<'a> FinalFlowLowerer<'a> {
             ),
             HirExprKind::Await(awaited) => {
                 self.lower_await_value(expression, awaited, &continuation)
+            }
+            HirExprKind::Pipe(pipe) => {
+                self.lower_pipe_value(expression, pipe, continuation, overrides)
             }
             HirExprKind::Block(block) => {
                 self.lower_value_block(block.statements(), block.tail(), continuation)
@@ -2506,34 +2685,7 @@ impl<'a> FinalFlowLowerer<'a> {
                 self.lower_carrier_block(expression, block, continuation)
             }
             HirExprKind::Loop(loop_expression) => {
-                let (result, tail) = match continuation {
-                    RuntimeFlowValueContinuation::Bind { pattern, tail } => (pattern, tail),
-                    RuntimeFlowValueContinuation::Ignore(tail) => {
-                        let ty = self.facts.expression_type(expression).ok_or_else(|| {
-                            RuntimePlanLowerError::new(format!(
-                                "Loop expression {expression:?} has no accepted result type"
-                            ))
-                        })?;
-                        (
-                            RuntimePatternSeed::new(ty.identity(), RuntimePatternSeedKind::Discard),
-                            tail,
-                        )
-                    }
-                    RuntimeFlowValueContinuation::Return
-                    | RuntimeFlowValueContinuation::Try { .. }
-                    | RuntimeFlowValueContinuation::WrapCarrier { .. }
-                    | RuntimeFlowValueContinuation::Compose { .. } => {
-                        return Err(RuntimePlanLowerError::new(format!(
-                            "Loop expression {expression:?} requires a continuation result local"
-                        )));
-                    }
-                };
-                let mut ops = vec![RuntimeFlowOpSeed::Loop {
-                    result: Some(result),
-                    body: self.lower_statement_ids(loop_expression.statements())?,
-                }];
-                ops.extend(self.lower_flow_tail(tail)?);
-                Ok(ops)
+                self.lower_loop_value(expression, loop_expression, continuation)
             }
             _ => {
                 let mut flow_child = None;
@@ -2564,6 +2716,7 @@ impl<'a> FinalFlowLowerer<'a> {
                     self.pure_helpers,
                     self.trait_methods,
                     self.function_sites,
+                    (self.pipe_locals, self.try_locals),
                 )
                 .with_overrides(overrides)
                 .lower(expression)
@@ -2571,6 +2724,63 @@ impl<'a> FinalFlowLowerer<'a> {
                 self.apply_value_continuation(value, continuation)
             }
         }
+    }
+
+    fn lower_pipe_value(
+        &mut self,
+        owner: ExprId,
+        pipe: &arcweft_lang_hir::expr::HirPipeExpr,
+        continuation: RuntimeFlowValueContinuation,
+        overrides: BTreeMap<ExprId, RuntimeExprSeed>,
+    ) -> Result<Vec<RuntimeFlowOpSeed>, RuntimePlanLowerError> {
+        let inherited = overrides.clone();
+        self.lower_flow_value_with_overrides(
+            pipe.left(),
+            RuntimeFlowValueContinuation::Pipe {
+                owner,
+                right: pipe.right(),
+                overrides: inherited,
+                outer: Box::new(continuation),
+            },
+            overrides,
+        )
+    }
+
+    fn lower_loop_value(
+        &mut self,
+        owner: ExprId,
+        expression: &arcweft_lang_hir::expr::HirLoopExpr,
+        continuation: RuntimeFlowValueContinuation,
+    ) -> Result<Vec<RuntimeFlowOpSeed>, RuntimePlanLowerError> {
+        let (result, tail) = match continuation {
+            RuntimeFlowValueContinuation::Bind { pattern, tail } => (pattern, tail),
+            RuntimeFlowValueContinuation::Ignore(tail) => {
+                let ty = self.facts.expression_type(owner).ok_or_else(|| {
+                    RuntimePlanLowerError::new(format!(
+                        "Loop expression {owner:?} has no accepted result type"
+                    ))
+                })?;
+                (
+                    RuntimePatternSeed::new(ty.identity(), RuntimePatternSeedKind::Discard),
+                    tail,
+                )
+            }
+            RuntimeFlowValueContinuation::Return
+            | RuntimeFlowValueContinuation::Try { .. }
+            | RuntimeFlowValueContinuation::WrapCarrier { .. }
+            | RuntimeFlowValueContinuation::Compose { .. }
+            | RuntimeFlowValueContinuation::Pipe { .. } => {
+                return Err(RuntimePlanLowerError::new(format!(
+                    "Loop expression {owner:?} requires a continuation result local"
+                )));
+            }
+        };
+        let mut ops = vec![RuntimeFlowOpSeed::Loop {
+            result: Some(result),
+            body: self.lower_statement_ids(expression.statements())?,
+        }];
+        ops.extend(self.lower_flow_tail(tail)?);
+        Ok(ops)
     }
 
     fn lower_value_block(
@@ -2707,6 +2917,7 @@ impl<'a> FinalFlowLowerer<'a> {
             self.pure_helpers,
             self.trait_methods,
             self.function_sites,
+            (self.pipe_locals, self.try_locals),
         );
         let target = lowerer
             .lower_host_call_target(awaited.operand(), call)
@@ -2831,6 +3042,40 @@ impl<'a> FinalFlowLowerer<'a> {
                 overrides.insert(child, value);
                 return self.lower_flow_value_with_overrides(owner, *outer, overrides);
             }
+            RuntimeFlowValueContinuation::Pipe {
+                owner,
+                right,
+                mut overrides,
+                outer,
+            } => {
+                let local = self.pipe_locals.get(&owner).cloned().ok_or_else(|| {
+                    RuntimePlanLowerError::new(format!(
+                        "once-only pipe {owner:?} has no admitted local"
+                    ))
+                })?;
+                let pipe = self.facts.pipe(owner).ok_or_else(|| {
+                    RuntimePlanLowerError::new(format!(
+                        "once-only pipe {owner:?} has no checked fact"
+                    ))
+                })?;
+                let local_type = self.facts.expression_type(pipe.left()).ok_or_else(|| {
+                    RuntimePlanLowerError::new(format!(
+                        "once-only pipe {owner:?} has no checked left type"
+                    ))
+                })?;
+                let replacement = local_seed(local_type, local.clone());
+                overrides.extend(
+                    pipe.placeholders()
+                        .iter()
+                        .map(|placeholder| (*placeholder, replacement.clone())),
+                );
+                let mut ops = vec![RuntimeFlowOpSeed::Let {
+                    pattern: bind_seed(local_type, local),
+                    expr: value,
+                }];
+                ops.extend(self.lower_flow_value_with_overrides(right, *outer, overrides)?);
+                return Ok(ops);
+            }
         })
     }
 
@@ -2908,6 +3153,11 @@ impl<'a> FinalFlowLowerer<'a> {
             RuntimeTryBoundaryOwner::Callable(_) => {
                 Ok(vec![RuntimeFlowOpSeed::ReturnExpr(propagated)])
             }
+            RuntimeTryBoundaryOwner::FunctionSite(boundary) => {
+                Err(RuntimePlanLowerError::new(format!(
+                    "Try residual for function site {boundary:?} reached Flow continuation lowering"
+                )))
+            }
             RuntimeTryBoundaryOwner::CarrierBlock(boundary) => {
                 let continuation = self
                     .carrier_continuations
@@ -2955,6 +3205,7 @@ impl<'a> FinalFlowLowerer<'a> {
             self.pure_helpers,
             self.trait_methods,
             self.function_sites,
+            (self.pipe_locals, self.try_locals),
         );
         lowerer
             .lower_host_call_target(call_id, call)
@@ -3110,6 +3361,7 @@ impl<'a> FinalFlowLowerer<'a> {
                 self.pure_helpers,
                 self.trait_methods,
                 self.function_sites,
+                (self.pipe_locals, self.try_locals),
             )
             .lower(condition)
             .map_err(RuntimePlanLowerError::new)?;

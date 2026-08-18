@@ -76,14 +76,15 @@ pub use model::{
     CheckedCharacterDialoguePatch, CheckedCharacterDialoguePatchField,
     CheckedCharacterDialogueReconfigure, CheckedCharacterDialogueTarget, CheckedEffectField,
     CheckedEntryReference, CheckedEvaluatedEffect, CheckedExpression, CheckedExpressionResolution,
-    CheckedFunctionExecution, CheckedItem, CheckedItemRole, CheckedIteration,
-    CheckedIteratorFamily, CheckedPatchOperation, CheckedPattern, CheckedPatternResolution,
-    CheckedProjectCallable, CheckedProjectItem, CheckedProjectItemOwner, CheckedProjectNominal,
-    CheckedSelectResolution, CheckedStatement, CheckedStatementRole, CheckedStyleCallee,
-    CheckedSuspensionRole, CheckedSuspensionStatement, CheckedTraitConformance,
-    CheckedTraitIdentity, CheckedTry, CheckedTryBoundary, CheckedTryCarrier, CheckedTypeSelection,
-    CheckedValueResolution, CheckedVariantOwner, CheckedVariantResolution, CheckedViewCall,
-    CheckedViewCallee, PostfixBracketResolution, RegisteredSemanticValueId,
+    CheckedFunctionExecution, CheckedImplicitCallable, CheckedItem, CheckedItemRole,
+    CheckedIteration, CheckedIteratorFamily, CheckedPatchOperation, CheckedPattern,
+    CheckedPatternResolution, CheckedPipe, CheckedProjectCallable, CheckedProjectItem,
+    CheckedProjectItemOwner, CheckedProjectNominal, CheckedSelectResolution, CheckedStatement,
+    CheckedStatementRole, CheckedStyleCallee, CheckedSuspensionRole, CheckedSuspensionStatement,
+    CheckedTraitConformance, CheckedTraitIdentity, CheckedTry, CheckedTryBoundary,
+    CheckedTryCarrier, CheckedTypeSelection, CheckedValueResolution, CheckedVariantOwner,
+    CheckedVariantResolution, CheckedViewCall, CheckedViewCallee, PostfixBracketResolution,
+    RegisteredSemanticValueId,
 };
 pub use nominal_schema::NominalSchemaProjectionError;
 pub use recovery_diagnostics::{

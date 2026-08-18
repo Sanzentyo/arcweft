@@ -6,13 +6,13 @@ mod records;
 use super::{
     Analyzer, ArrayLength, BTreeSet, BorrowKind, CandidateSemanticProjection, CheckedAwait,
     CheckedAwaitBranch, CheckedAwaitBranchContinuation, CheckedEntryReference, CheckedExpression,
-    CheckedExpressionResolution, CheckedProjectItem, CheckedStyleCallee, CheckedTry,
-    CheckedTryBoundary, CheckedTryCarrier, CheckedTypeSelection, CheckedValueResolution,
-    CheckedVariantOwner, CheckedViewCall, CheckedViewCallee, EffectId, EffectSet, EntityKind,
-    EnumVariantPayload, ExprId, FinalSemanticAnalysisError, GenericTypeOwnerId,
-    GenericTypeParameterId, HirAwaitBranchKind, HirBinaryOp, HirBorrowKind, HirCallArgument,
-    HirComputationBlockKind, HirContextualStmtBody, HirExpr, HirExprKind, HirIdRef,
-    HirIntegerLiteral, HirItemKind, HirLiteral, HirModule, HirPathRoot, HirPathSegment,
+    CheckedExpressionResolution, CheckedImplicitCallable, CheckedPipe, CheckedProjectItem,
+    CheckedStyleCallee, CheckedTry, CheckedTryBoundary, CheckedTryCarrier, CheckedTypeSelection,
+    CheckedValueResolution, CheckedVariantOwner, CheckedViewCall, CheckedViewCallee, EffectId,
+    EffectSet, EntityKind, EnumVariantPayload, ExprId, FinalSemanticAnalysisError,
+    GenericTypeOwnerId, GenericTypeParameterId, HirAwaitBranchKind, HirBinaryOp, HirBorrowKind,
+    HirCallArgument, HirComputationBlockKind, HirContextualStmtBody, HirExpr, HirExprKind,
+    HirIdRef, HirIntegerLiteral, HirItemKind, HirLiteral, HirModule, HirPathRoot, HirPathSegment,
     HirPatternKind, HirPostfixBracket, HirPostfixBracketCandidates, HirRecordField,
     HirRecoveredName, HirScopeKind, HirScopeOwner, HirSelectedMember, HirSourcePresence,
     HirSourceQuery, HirSourceSite, HirStmtKind, HirThreadFlowItem, HirTypeSourceRole, HirUnaryOp,
@@ -35,6 +35,7 @@ use crate::callable::{
 };
 use crate::final_analysis::type_rules::integer_suffix_type;
 use crate::registration::RegisteredExternalOwner;
+use arcweft_lang_hir::expr::HirPlaceholderKind;
 
 use super::entities::EntityReferenceResolutionError;
 
@@ -76,12 +77,167 @@ impl Analyzer<'_, '_, '_> {
                 .resolve_expr(owner)
                 .map_err(|_| FinalSemanticAnalysisError::InvalidOwner)?
                 .clone();
-            self.check_expression_kind(module, owner, &expression, expected)
+            let (members, placeholders) = expression_placeholder_members(
+                module,
+                owner,
+                HirPlaceholderKind::PartialApplication,
+            )?;
+            let inside_implicit_callable = self
+                .implicit_callable_stack
+                .iter()
+                .rev()
+                .any(|context| context.members.contains(&owner));
+            if placeholders.is_empty() || inside_implicit_callable {
+                self.check_expression_kind(module, owner, &expression, expected)
+            } else {
+                self.check_implicit_callable_expression(
+                    module,
+                    owner,
+                    &expression,
+                    expected,
+                    &members,
+                    placeholders,
+                )
+            }
         })();
         self.facts.end_expression(owner);
         let checked = checked?;
         self.facts.set_expression(owner, checked.clone());
         Ok(checked)
+    }
+
+    fn check_implicit_callable_expression(
+        &mut self,
+        module: &HirModule,
+        owner: ExprId,
+        expression: &HirExpr,
+        expected: Option<&TypeKind>,
+        members: &BTreeSet<ExprId>,
+        placeholders: BTreeSet<ExprId>,
+    ) -> Result<CheckedExpression, FinalSemanticAnalysisError> {
+        let contextual = match expected {
+            Some(TypeKind::Function {
+                params,
+                return_type,
+                ..
+            }) if params.len() == 1 => Some((params[0].clone(), return_type.as_ref().clone())),
+            Some(_) => {
+                return Err(FinalSemanticAnalysisError::ExpressionTypeUnavailable { owner });
+            }
+            None => None,
+        };
+        let parameter = contextual
+            .as_ref()
+            .map(|(parameter, _)| parameter.clone())
+            .map_or_else(
+                || self.infer_implicit_parameter(module, owner, expression, &placeholders),
+                Ok,
+            )?;
+        let expected_result = contextual.as_ref().map(|(_, result)| result);
+        self.implicit_callable_stack
+            .push(super::ImplicitCallableContext {
+                owner,
+                parameter: parameter.clone(),
+                result: expected_result.cloned(),
+                members: members.clone(),
+                placeholders: placeholders.clone(),
+            });
+        let body = self.check_expression_kind(module, owner, expression, expected_result);
+        let context = self
+            .implicit_callable_stack
+            .pop()
+            .expect("implicit callable context was just pushed");
+        let body = body?;
+        let captures = self.implicit_callable_captures(module, &context.members)?;
+        let result = if matches!(
+            body.resolution(),
+            CheckedExpressionResolution::Try(tried)
+                if tried.boundary() == CheckedTryBoundary::FunctionSite(owner)
+        ) {
+            context
+                .result
+                .clone()
+                .ok_or(FinalSemanticAnalysisError::ExpressionTypeUnavailable { owner })?
+        } else {
+            body.ty().clone()
+        };
+        let ty = TypeKind::function([parameter.clone()], result.clone());
+        if expected.is_some_and(|expected| !expected.accepts(&ty)) {
+            return Err(FinalSemanticAnalysisError::ExpressionTypeUnavailable { owner });
+        }
+        Ok(CheckedExpression::new(
+            ty,
+            if expected.is_some() {
+                CheckedTypeSelection::Expected
+            } else {
+                CheckedTypeSelection::Inferred
+            },
+            EffectSet::new(),
+            CheckedExpressionResolution::ImplicitCallable(Box::new(CheckedImplicitCallable::new(
+                parameter,
+                result,
+                placeholders.into_iter().collect(),
+                captures,
+                body.resolution().clone(),
+            ))),
+        ))
+    }
+
+    fn infer_implicit_parameter(
+        &mut self,
+        module: &HirModule,
+        owner: ExprId,
+        expression: &HirExpr,
+        placeholders: &BTreeSet<ExprId>,
+    ) -> Result<TypeKind, FinalSemanticAnalysisError> {
+        let HirExprKind::Binary(binary) = expression.kind() else {
+            return Err(FinalSemanticAnalysisError::ExpressionTypeUnavailable { owner });
+        };
+        let left_is_placeholder = placeholders.contains(&binary.left());
+        let right_is_placeholder = placeholders.contains(&binary.right());
+        if left_is_placeholder == right_is_placeholder {
+            return Err(FinalSemanticAnalysisError::ExpressionTypeUnavailable { owner });
+        }
+        let concrete_owner = if left_is_placeholder {
+            binary.right()
+        } else {
+            binary.left()
+        };
+        if !expression_placeholder_members(
+            module,
+            concrete_owner,
+            HirPlaceholderKind::PartialApplication,
+        )?
+        .1
+        .is_empty()
+        {
+            return Err(FinalSemanticAnalysisError::ExpressionTypeUnavailable { owner });
+        }
+        Ok(self.check_expression(concrete_owner, None)?.ty().clone())
+    }
+
+    fn implicit_callable_captures(
+        &self,
+        module: &HirModule,
+        members: &BTreeSet<ExprId>,
+    ) -> Result<Box<[super::LocalId]>, FinalSemanticAnalysisError> {
+        let mut captures = Vec::new();
+        for member in members {
+            let Some(CheckedExpressionResolution::Value(CheckedValueResolution::Local(local))) =
+                self.facts
+                    .expressions()
+                    .get(member)
+                    .map(CheckedExpression::resolution)
+            else {
+                continue;
+            };
+            if !local_is_owned_by_expression_members(module, *local, members)?
+                && !captures.contains(local)
+            {
+                captures.push(*local);
+            }
+        }
+        Ok(captures.into_boxed_slice())
     }
 
     fn check_expression_kind(
@@ -304,38 +460,13 @@ impl Analyzer<'_, '_, '_> {
     }
     fn check_binary_expression_kind(
         &mut self,
-        module: &HirModule,
+        _module: &HirModule,
         owner: ExprId,
         expression: &HirExpr,
         expected: Option<&TypeKind>,
     ) -> Result<Option<CheckedExpression>, FinalSemanticAnalysisError> {
         match expression.kind() {
             HirExprKind::Binary(binary) => {
-                let left_is_placeholder = matches!(
-                    module
-                        .resolve_expr(binary.left())
-                        .map_err(|_| FinalSemanticAnalysisError::InvalidOwner)?
-                        .kind(),
-                    HirExprKind::Placeholder(_)
-                );
-                let right_is_placeholder = matches!(
-                    module
-                        .resolve_expr(binary.right())
-                        .map_err(|_| FinalSemanticAnalysisError::InvalidOwner)?
-                        .kind(),
-                    HirExprKind::Placeholder(_)
-                );
-                if left_is_placeholder || right_is_placeholder {
-                    return self
-                        .check_partial_binary_expression(
-                            owner,
-                            binary,
-                            expected,
-                            left_is_placeholder,
-                            right_is_placeholder,
-                        )
-                        .map(Some);
-                }
                 let left = self.check_expression(binary.left(), None)?;
                 let right = self.check_expression(binary.right(), Some(left.ty()))?;
                 let ty = match binary.operator() {
@@ -364,74 +495,6 @@ impl Analyzer<'_, '_, '_> {
         .map(Some)
     }
 
-    fn check_partial_binary_expression(
-        &mut self,
-        owner: ExprId,
-        binary: &arcweft_lang_hir::expr::HirBinaryExpr,
-        expected: Option<&TypeKind>,
-        left_is_placeholder: bool,
-        right_is_placeholder: bool,
-    ) -> Result<CheckedExpression, FinalSemanticAnalysisError> {
-        if left_is_placeholder == right_is_placeholder {
-            return Err(FinalSemanticAnalysisError::ExpressionTypeUnavailable { owner });
-        }
-        let contextual = match expected {
-            Some(TypeKind::Function {
-                params,
-                return_type,
-                ..
-            }) if params.len() == 1 => Some((&params[0], return_type.as_ref())),
-            Some(_) => {
-                return Err(FinalSemanticAnalysisError::ExpressionTypeUnavailable { owner });
-            }
-            None => None,
-        };
-        let contextual_parameter = contextual.map(|(parameter, _)| parameter);
-        let (left, right, parameter) = if left_is_placeholder {
-            let right = self.check_expression(binary.right(), contextual_parameter)?;
-            let parameter = contextual_parameter.unwrap_or(right.ty()).clone();
-            let left = self.check_expression(binary.left(), Some(&parameter))?;
-            (left, right, parameter)
-        } else {
-            let left = self.check_expression(binary.left(), contextual_parameter)?;
-            let parameter = contextual_parameter.unwrap_or(left.ty()).clone();
-            let right = self.check_expression(binary.right(), Some(&parameter))?;
-            (left, right, parameter)
-        };
-        let result = match binary.operator() {
-            HirBinaryOp::Implies
-            | HirBinaryOp::Or
-            | HirBinaryOp::And
-            | HirBinaryOp::In
-            | HirBinaryOp::Equal
-            | HirBinaryOp::NotEqual
-            | HirBinaryOp::GreaterOrEqual
-            | HirBinaryOp::LessOrEqual
-            | HirBinaryOp::Greater
-            | HirBinaryOp::Less => TypeKind::Bool,
-            HirBinaryOp::Merge
-            | HirBinaryOp::Add
-            | HirBinaryOp::Subtract
-            | HirBinaryOp::Multiply
-            | HirBinaryOp::Divide
-            | HirBinaryOp::Remainder => common_type(
-                [left.ty(), right.ty()],
-                contextual.map(|(_, result)| result),
-            )
-            .ok_or(FinalSemanticAnalysisError::ExpressionTypeUnavailable { owner })?,
-        };
-        if contextual.is_some_and(|(_, expected)| !expected.accepts(&result)) {
-            return Err(FinalSemanticAnalysisError::ExpressionTypeUnavailable { owner });
-        }
-        Ok(structural_expression(
-            TypeKind::function([parameter], result),
-            if expected.is_some() {
-                CheckedTypeSelection::Expected
-            } else {
-                CheckedTypeSelection::Inferred
-            },
-        ))
-    }
     fn check_unary_expression_kind(
         &mut self,
         module: &HirModule,
@@ -591,7 +654,10 @@ impl Analyzer<'_, '_, '_> {
                     seen_error = true;
                     error
                 }
-                HirAwaitBranchKind::Pending | HirAwaitBranchKind::Denied => {
+                HirAwaitBranchKind::Pending
+                | HirAwaitBranchKind::Denied
+                | HirAwaitBranchKind::Ready
+                | HirAwaitBranchKind::Error => {
                     // These handlers require their own accepted typed payload
                     // owner. Do not admit them as Dynamic or infer a type from
                     // their source spelling.
@@ -599,9 +665,6 @@ impl Analyzer<'_, '_, '_> {
                 }
                 HirAwaitBranchKind::Recovered => {
                     return Err(FinalSemanticAnalysisError::RecoveredOwner);
-                }
-                HirAwaitBranchKind::Ready | HirAwaitBranchKind::Error => {
-                    return Err(FinalSemanticAnalysisError::WrongPayloadFamily);
                 }
             };
             self.seed_contextual_pattern_locals(module, pattern, payload)?;
@@ -824,50 +887,54 @@ impl Analyzer<'_, '_, '_> {
                             });
                     }
                     if current.kind() == HirScopeKind::Closure {
-                        return Err(FinalSemanticAnalysisError::ExpressionTypeUnavailable {
-                            owner,
-                        });
+                        let context = self
+                            .function_site_stack
+                            .iter()
+                            .rev()
+                            .find(|context| context.owner == *expression)
+                            .ok_or(FinalSemanticAnalysisError::ExpressionTypeUnavailable {
+                                owner,
+                            })?;
+                        let matches = match (carrier, &context.result) {
+                            (
+                                CheckedTryCarrier::Result { residual, .. },
+                                TypeKind::Result { error, .. },
+                            ) => error.accepts(residual),
+                            (CheckedTryCarrier::Option { .. }, TypeKind::Option(_)) => true,
+                            _ => false,
+                        };
+                        return matches
+                            .then_some(CheckedTryBoundary::FunctionSite(context.owner))
+                            .ok_or(FinalSemanticAnalysisError::ExpressionTypeUnavailable {
+                                owner,
+                            });
                     }
                 }
                 HirScopeOwner::Item(item) => {
-                    let item_kind = module
-                        .resolve_item(*item)
-                        .map_err(|_| FinalSemanticAnalysisError::InvalidOwner)?
-                        .kind();
-                    let return_type = match item_kind {
-                        HirItemKind::Function(function) => function.return_type(),
-                        HirItemKind::Flow(flow) => flow.result().authored_type(),
-                        _ => None,
-                    }
-                    .ok_or(FinalSemanticAnalysisError::ExpressionTypeUnavailable { owner })?;
-                    let boundary = self.types.get(&return_type).ok_or(
-                        FinalSemanticAnalysisError::TypeResolutionFailed { owner: return_type },
-                    )?;
-                    let matches = match (carrier, boundary) {
-                        (
-                            CheckedTryCarrier::Result { residual, .. },
-                            TypeKind::Result { error, .. },
-                        ) => error.accepts(residual),
-                        (CheckedTryCarrier::Option { .. }, TypeKind::Option(_)) => true,
-                        _ => false,
-                    };
-                    if let (
-                        CheckedTryCarrier::Result { residual, .. },
-                        TypeKind::Result { error, .. },
-                    ) = (carrier, boundary)
-                        && !matches
+                    if let Some(context) = self
+                        .implicit_callable_stack
+                        .iter()
+                        .rev()
+                        .find(|context| context.members.contains(&owner))
                     {
-                        return Err(self.try_error_mismatch(
-                            module,
-                            owner,
-                            return_type,
-                            residual,
-                            error,
-                        )?);
+                        let boundary = context.result.as_ref().ok_or(
+                            FinalSemanticAnalysisError::ExpressionTypeUnavailable { owner },
+                        )?;
+                        let matches = match (carrier, boundary) {
+                            (
+                                CheckedTryCarrier::Result { residual, .. },
+                                TypeKind::Result { error, .. },
+                            ) => error.accepts(residual),
+                            (CheckedTryCarrier::Option { .. }, TypeKind::Option(_)) => true,
+                            _ => false,
+                        };
+                        return matches
+                            .then_some(CheckedTryBoundary::FunctionSite(context.owner))
+                            .ok_or(FinalSemanticAnalysisError::ExpressionTypeUnavailable {
+                                owner,
+                            });
                     }
-                    return matches
-                        .then_some(CheckedTryBoundary::Callable(*item))
-                        .ok_or(FinalSemanticAnalysisError::ExpressionTypeUnavailable { owner });
+                    return self.resolve_item_try_boundary(module, owner, *item, carrier);
                 }
                 HirScopeOwner::Module(_) | HirScopeOwner::Stmt(_) => {}
             }
@@ -878,8 +945,52 @@ impl Analyzer<'_, '_, '_> {
         }
     }
 
-    fn try_error_mismatch(
+    fn resolve_item_try_boundary(
         &self,
+        module: &HirModule,
+        owner: ExprId,
+        item: super::ItemId,
+        carrier: &CheckedTryCarrier,
+    ) -> Result<CheckedTryBoundary, FinalSemanticAnalysisError> {
+        let item_kind = module
+            .resolve_item(item)
+            .map_err(|_| FinalSemanticAnalysisError::InvalidOwner)?
+            .kind();
+        let return_type = match item_kind {
+            HirItemKind::Function(function) => function.return_type(),
+            HirItemKind::Flow(flow) => flow.result().authored_type(),
+            _ => None,
+        }
+        .ok_or(FinalSemanticAnalysisError::ExpressionTypeUnavailable { owner })?;
+        let boundary = self
+            .types
+            .get(&return_type)
+            .ok_or(FinalSemanticAnalysisError::TypeResolutionFailed { owner: return_type })?;
+        let matches = match (carrier, boundary) {
+            (CheckedTryCarrier::Result { residual, .. }, TypeKind::Result { error, .. }) => {
+                error.accepts(residual)
+            }
+            (CheckedTryCarrier::Option { .. }, TypeKind::Option(_)) => true,
+            _ => false,
+        };
+        if let (CheckedTryCarrier::Result { residual, .. }, TypeKind::Result { error, .. }) =
+            (carrier, boundary)
+            && !matches
+        {
+            return Err(Self::try_error_mismatch(
+                module,
+                owner,
+                return_type,
+                residual,
+                error,
+            )?);
+        }
+        matches
+            .then_some(CheckedTryBoundary::Callable(item))
+            .ok_or(FinalSemanticAnalysisError::ExpressionTypeUnavailable { owner })
+    }
+
+    fn try_error_mismatch(
         module: &HirModule,
         owner: ExprId,
         return_type: arcweft_lang_hir::identity::TypeId,
@@ -971,8 +1082,31 @@ impl Analyzer<'_, '_, '_> {
                     return Err(FinalSemanticAnalysisError::ExpressionTypeUnavailable { owner });
                 }
                 let body_expected = declared_result.as_ref().or(contextual_result);
-                let body = self.check_expression(closure.body(), body_expected)?;
-                let ty = TypeKind::function(parameters, body.ty().clone());
+                if let Some(result) = body_expected {
+                    self.function_site_stack.push(super::FunctionSiteContext {
+                        owner,
+                        result: result.clone(),
+                    });
+                }
+                let body = self.check_expression(closure.body(), body_expected);
+                if body_expected.is_some() {
+                    self.function_site_stack
+                        .pop()
+                        .expect("function-site context was just pushed");
+                }
+                let body = body?;
+                let result = if matches!(
+                    body.resolution(),
+                    CheckedExpressionResolution::Try(tried)
+                        if tried.boundary() == CheckedTryBoundary::FunctionSite(owner)
+                ) {
+                    body_expected
+                        .cloned()
+                        .ok_or(FinalSemanticAnalysisError::ExpressionTypeUnavailable { owner })?
+                } else {
+                    body.ty().clone()
+                };
+                let ty = TypeKind::function(parameters, result);
                 if expected.is_some_and(|expected| !expected.accepts(&ty)) {
                     return Err(FinalSemanticAnalysisError::ExpressionTypeUnavailable { owner });
                 }
@@ -997,11 +1131,31 @@ impl Analyzer<'_, '_, '_> {
     ) -> Result<Option<CheckedExpression>, FinalSemanticAnalysisError> {
         match expression.kind() {
             HirExprKind::Pipe(pipe) => {
-                self.check_expression(pipe.left(), None)?;
-                let right = self.check_expression(pipe.right(), expected)?;
-                Ok(structural_expression(
+                let left = self.check_expression(pipe.left(), None)?;
+                let (_, placeholders) = expression_placeholder_members(
+                    self.module(owner.module())?,
+                    pipe.right(),
+                    HirPlaceholderKind::PipeLeft,
+                )?;
+                self.pipe_stack.push(super::PipeContext {
+                    owner,
+                    value: left.ty().clone(),
+                    placeholders: placeholders.clone(),
+                });
+                let right = self.check_expression(pipe.right(), expected);
+                self.pipe_stack.pop().expect("pipe context was just pushed");
+                let right = right?;
+                let mut effects = left.effects().clone();
+                effects.union_with(right.effects());
+                Ok(CheckedExpression::new(
                     right.ty().clone(),
                     right.type_selection(),
+                    effects,
+                    CheckedExpressionResolution::Pipe(CheckedPipe::new(
+                        pipe.left(),
+                        pipe.right(),
+                        placeholders.into_iter().collect(),
+                    )),
                 ))
             }
             HirExprKind::ForSynthetic(synthetic) => {
@@ -1051,10 +1205,44 @@ impl Analyzer<'_, '_, '_> {
         expected: Option<&TypeKind>,
     ) -> Result<Option<CheckedExpression>, FinalSemanticAnalysisError> {
         match expression.kind() {
-            HirExprKind::Placeholder(_) => expected
-                .cloned()
-                .map(|ty| structural_expression(ty, CheckedTypeSelection::Expected))
-                .ok_or(FinalSemanticAnalysisError::ExpressionTypeUnavailable { owner }),
+            HirExprKind::Placeholder(HirPlaceholderKind::PartialApplication) => {
+                let context = self
+                    .implicit_callable_stack
+                    .iter()
+                    .rev()
+                    .find(|context| context.placeholders.contains(&owner))
+                    .ok_or(FinalSemanticAnalysisError::ExpressionTypeUnavailable { owner })?;
+                if expected.is_some_and(|expected| !expected.accepts(&context.parameter)) {
+                    return Err(FinalSemanticAnalysisError::ExpressionTypeUnavailable { owner });
+                }
+                Ok(CheckedExpression::new(
+                    context.parameter.clone(),
+                    CheckedTypeSelection::Expected,
+                    EffectSet::new(),
+                    CheckedExpressionResolution::ImplicitParameter {
+                        callable: context.owner,
+                    },
+                ))
+            }
+            HirExprKind::Placeholder(HirPlaceholderKind::PipeLeft) => {
+                let context = self
+                    .pipe_stack
+                    .iter()
+                    .rev()
+                    .find(|context| context.placeholders.contains(&owner))
+                    .ok_or(FinalSemanticAnalysisError::ExpressionTypeUnavailable { owner })?;
+                if expected.is_some_and(|expected| !expected.accepts(&context.value)) {
+                    return Err(FinalSemanticAnalysisError::ExpressionTypeUnavailable { owner });
+                }
+                Ok(CheckedExpression::new(
+                    context.value.clone(),
+                    CheckedTypeSelection::Expected,
+                    EffectSet::new(),
+                    CheckedExpressionResolution::PipeLeft {
+                        pipe: context.owner,
+                    },
+                ))
+            }
             HirExprKind::Call(call) => {
                 if let Some(checked) = self.check_view_call_expression(module, expression, call)? {
                     Ok(checked)
@@ -2157,6 +2345,61 @@ fn environment_binding_for_path(
         });
     }
     crate::env::identity::EnvironmentBindingId::try_new(canonical).ok()
+}
+
+fn expression_placeholder_members(
+    module: &HirModule,
+    root: ExprId,
+    placeholder_kind: HirPlaceholderKind,
+) -> Result<(BTreeSet<ExprId>, BTreeSet<ExprId>), FinalSemanticAnalysisError> {
+    let mut members = BTreeSet::new();
+    let mut placeholders = BTreeSet::new();
+    let mut pending = vec![root];
+    while let Some(owner) = pending.pop() {
+        if !members.insert(owner) {
+            continue;
+        }
+        let expression = module
+            .resolve_expr(owner)
+            .map_err(|_| FinalSemanticAnalysisError::InvalidOwner)?;
+        if matches!(
+            expression.kind(),
+            HirExprKind::Placeholder(kind) if *kind == placeholder_kind
+        ) {
+            placeholders.insert(owner);
+        }
+        if matches!(expression.kind(), HirExprKind::Closure(_))
+            || (placeholder_kind == HirPlaceholderKind::PartialApplication
+                && matches!(expression.kind(), HirExprKind::Call(_)))
+        {
+            continue;
+        }
+        pending.extend(expression.kind().direct_expression_children());
+    }
+    Ok((members, placeholders))
+}
+
+fn local_is_owned_by_expression_members(
+    module: &HirModule,
+    local: super::LocalId,
+    members: &BTreeSet<ExprId>,
+) -> Result<bool, FinalSemanticAnalysisError> {
+    let mut scope = module
+        .resolve_local(local)
+        .map_err(|_| FinalSemanticAnalysisError::InvalidOwner)?
+        .scope();
+    loop {
+        let current = module
+            .resolve_scope(scope)
+            .map_err(|_| FinalSemanticAnalysisError::InvalidOwner)?;
+        if matches!(current.owner(), HirScopeOwner::Expr(owner) if members.contains(owner)) {
+            return Ok(true);
+        }
+        let Some(parent) = current.parent() else {
+            return Ok(false);
+        };
+        scope = parent;
+    }
 }
 
 fn structural_expression(ty: TypeKind, selection: CheckedTypeSelection) -> CheckedExpression {

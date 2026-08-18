@@ -39,7 +39,7 @@ use arcweft_core::value::{
     RuntimeUnsignedIntWidth, RuntimeValue,
 };
 use arcweft_id::{DeclarationIdentityFamily, PublicId};
-use arcweft_lang_hir::expr::{HirAwaitBranchKind, HirCallExpr, HirExprKind};
+use arcweft_lang_hir::expr::{HirAwaitBranchKind, HirCallExpr, HirExprKind, HirPlaceholderKind};
 use arcweft_lang_hir::identity::{
     CaptureId, ExprId, HirModuleId, HirSnapshotId, ItemId, LocalId, PatternId, StmtId, TypeId,
 };
@@ -962,6 +962,7 @@ impl RuntimeTryCarrierFact {
 pub enum RuntimeTryBoundaryOwner {
     Infallible,
     CarrierBlock(ExprId),
+    FunctionSite(ExprId),
     Callable(ItemId),
 }
 
@@ -973,6 +974,77 @@ pub struct RuntimeTryFact {
     carrier: RuntimeTryCarrierFact,
     boundary: RuntimeTryBoundaryOwner,
     boundary_type: RuntimeNormalizedType,
+}
+
+/// Generation-bound implicit callable projection for one `_` abstraction.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct RuntimeImplicitCallableFact {
+    parameter: RuntimeNormalizedType,
+    result: RuntimeNormalizedType,
+    placeholders: Box<[ExprId]>,
+    captures: Box<[LocalId]>,
+}
+
+impl RuntimeImplicitCallableFact {
+    pub const fn new(
+        parameter: RuntimeNormalizedType,
+        result: RuntimeNormalizedType,
+        placeholders: Box<[ExprId]>,
+        captures: Box<[LocalId]>,
+    ) -> Self {
+        Self {
+            parameter,
+            result,
+            placeholders,
+            captures,
+        }
+    }
+
+    pub const fn parameter(&self) -> &RuntimeNormalizedType {
+        &self.parameter
+    }
+
+    pub const fn result(&self) -> &RuntimeNormalizedType {
+        &self.result
+    }
+
+    pub const fn placeholders(&self) -> &[ExprId] {
+        &self.placeholders
+    }
+
+    pub const fn captures(&self) -> &[LocalId] {
+        &self.captures
+    }
+}
+
+/// Generation-bound once-only pipeline and its checked `^` uses.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct RuntimePipeFact {
+    left: ExprId,
+    right: ExprId,
+    placeholders: Box<[ExprId]>,
+}
+
+impl RuntimePipeFact {
+    pub const fn new(left: ExprId, right: ExprId, placeholders: Box<[ExprId]>) -> Self {
+        Self {
+            left,
+            right,
+            placeholders,
+        }
+    }
+
+    pub const fn left(&self) -> ExprId {
+        self.left
+    }
+
+    pub const fn right(&self) -> ExprId {
+        self.right
+    }
+
+    pub const fn placeholders(&self) -> &[ExprId] {
+        &self.placeholders
+    }
 }
 
 impl RuntimeTryFact {
@@ -2332,6 +2404,8 @@ pub struct RuntimePlanSemanticFactInput {
     evaluated_effects: Vec<(StmtId, RuntimeEvaluatedEffectFact)>,
     awaits: Vec<(ExprId, RuntimeAwaitFact)>,
     tries: Vec<(ExprId, RuntimeTryFact)>,
+    implicit_callables: Vec<(ExprId, RuntimeImplicitCallableFact)>,
+    pipes: Vec<(ExprId, RuntimePipeFact)>,
     captures: Vec<RuntimeCheckedCapture>,
 }
 
@@ -2361,6 +2435,8 @@ impl RuntimePlanSemanticFactInput {
             evaluated_effects: Vec::new(),
             awaits: Vec::new(),
             tries: Vec::new(),
+            implicit_callables: Vec::new(),
+            pipes: Vec::new(),
             captures: Vec::new(),
         }
     }
@@ -2470,6 +2546,14 @@ impl RuntimePlanSemanticFactInput {
         self.tries.push((owner, fact));
     }
 
+    pub fn push_implicit_callable(&mut self, owner: ExprId, fact: RuntimeImplicitCallableFact) {
+        self.implicit_callables.push((owner, fact));
+    }
+
+    pub fn push_pipe(&mut self, owner: ExprId, fact: RuntimePipeFact) {
+        self.pipes.push((owner, fact));
+    }
+
     pub fn push_capture(&mut self, capture: RuntimeCheckedCapture) {
         self.captures.push(capture);
     }
@@ -2509,6 +2593,8 @@ pub struct RuntimePlanSemanticFacts {
     evaluated_effects: BTreeMap<StmtId, RuntimeEvaluatedEffectFact>,
     awaits: BTreeMap<ExprId, RuntimeAwaitFact>,
     tries: BTreeMap<ExprId, RuntimeTryFact>,
+    implicit_callables: BTreeMap<ExprId, RuntimeImplicitCallableFact>,
+    pipes: BTreeMap<ExprId, RuntimePipeFact>,
     captures: BTreeMap<CaptureId, RuntimeCheckedCapture>,
     dialogue_applications: BTreeMap<ExprId, RuntimeDialogueApplication>,
     character_presentation_catalog: Option<Arc<CharacterPresentationCatalogData>>,
@@ -2855,6 +2941,97 @@ impl RuntimePlanSemanticFacts {
             }
         }
 
+        let implicit_callables = collect_unique(
+            input.implicit_callables,
+            RuntimeSemanticFactFamily::ImplicitCallable,
+        )?;
+        for (expression, fact) in &implicit_callables {
+            require_runtime_expression_owner(
+                &runtime_owners,
+                *expression,
+                RuntimeSemanticFactFamily::ImplicitCallable,
+            )?;
+            let Some(expression_type) = expression_types.get(expression) else {
+                return Err(RuntimeSemanticFactsError::InvalidImplicitCallableFact {
+                    expression: *expression,
+                });
+            };
+            let RuntimeTypeShape::Function { parameters, result } = expression_type.shape() else {
+                return Err(RuntimeSemanticFactsError::InvalidImplicitCallableFact {
+                    expression: *expression,
+                });
+            };
+            if parameters.len() != 1
+                || &parameters[0] != fact.parameter()
+                || result.as_ref() != fact.result()
+                || fact.placeholders().is_empty()
+                || !all_unique(fact.placeholders())
+                || !all_unique(fact.captures())
+            {
+                return Err(RuntimeSemanticFactsError::InvalidImplicitCallableFact {
+                    expression: *expression,
+                });
+            }
+            for placeholder in fact.placeholders() {
+                if !matches!(
+                    resolve_expr(&modules, *placeholder)?,
+                    HirExprKind::Placeholder(HirPlaceholderKind::PartialApplication)
+                ) || (*placeholder != *expression
+                    && expression_types.get(placeholder) != Some(fact.parameter()))
+                {
+                    return Err(RuntimeSemanticFactsError::InvalidImplicitCallableFact {
+                        expression: *expression,
+                    });
+                }
+            }
+            for capture in fact.captures() {
+                if !local_declarations.contains_key(capture) {
+                    return Err(RuntimeSemanticFactsError::InvalidImplicitCallableFact {
+                        expression: *expression,
+                    });
+                }
+            }
+        }
+
+        let pipes = collect_unique(input.pipes, RuntimeSemanticFactFamily::Pipe)?;
+        for (expression, fact) in &pipes {
+            require_runtime_expression_owner(
+                &runtime_owners,
+                *expression,
+                RuntimeSemanticFactFamily::Pipe,
+            )?;
+            let HirExprKind::Pipe(pipe) = resolve_expr(&modules, *expression)? else {
+                return Err(RuntimeSemanticFactsError::InvalidPipeFact {
+                    expression: *expression,
+                });
+            };
+            let Some(left_type) = expression_types.get(&fact.left()) else {
+                return Err(RuntimeSemanticFactsError::InvalidPipeFact {
+                    expression: *expression,
+                });
+            };
+            if pipe.left() != fact.left()
+                || pipe.right() != fact.right()
+                || fact.placeholders().is_empty()
+                || !all_unique(fact.placeholders())
+            {
+                return Err(RuntimeSemanticFactsError::InvalidPipeFact {
+                    expression: *expression,
+                });
+            }
+            for placeholder in fact.placeholders() {
+                if !matches!(
+                    resolve_expr(&modules, *placeholder)?,
+                    HirExprKind::Placeholder(HirPlaceholderKind::PipeLeft)
+                ) || expression_types.get(placeholder) != Some(left_type)
+                {
+                    return Err(RuntimeSemanticFactsError::InvalidPipeFact {
+                        expression: *expression,
+                    });
+                }
+            }
+        }
+
         let try_facts = collect_unique(input.tries, RuntimeSemanticFactFamily::Try)?;
         for (expression, fact) in &try_facts {
             require_runtime_expression_owner(
@@ -2867,9 +3044,11 @@ impl RuntimePlanSemanticFacts {
                     expression: *expression,
                 });
             };
-            if tried.operand() != fact.operand()
-                || expression_types.get(expression) != Some(fact.carrier().success())
-            {
+            let result_matches = implicit_callables.get(expression).map_or_else(
+                || expression_types.get(expression) == Some(fact.carrier().success()),
+                |callable| callable.result() == fact.carrier().success(),
+            );
+            if tried.operand() != fact.operand() || !result_matches {
                 return Err(RuntimeSemanticFactsError::InvalidTryFact {
                     expression: *expression,
                 });
@@ -2931,6 +3110,29 @@ impl RuntimePlanSemanticFacts {
                     if !family_matches
                         || expression_types.get(&boundary) != Some(fact.boundary_type())
                     {
+                        return Err(RuntimeSemanticFactsError::InvalidTryFact {
+                            expression: *expression,
+                        });
+                    }
+                }
+                RuntimeTryBoundaryOwner::FunctionSite(boundary) => {
+                    let kind = resolve_expr(&modules, boundary)?;
+                    let valid_owner = matches!(kind, HirExprKind::Closure(_))
+                        || implicit_callables.contains_key(&boundary);
+                    let boundary_result = implicit_callables.get(&boundary).map_or_else(
+                        || {
+                            expression_types
+                                .get(&boundary)
+                                .and_then(|ty| match ty.shape() {
+                                    RuntimeTypeShape::Function { result, .. } => {
+                                        Some(result.as_ref())
+                                    }
+                                    _ => None,
+                                })
+                        },
+                        |callable| Some(callable.result()),
+                    );
+                    if !valid_owner || boundary_result != Some(fact.boundary_type()) {
                         return Err(RuntimeSemanticFactsError::InvalidTryFact {
                             expression: *expression,
                         });
@@ -3154,6 +3356,8 @@ impl RuntimePlanSemanticFacts {
             evaluated_effects,
             awaits,
             tries: try_facts,
+            implicit_callables,
+            pipes,
             captures,
             dialogue_applications: BTreeMap::new(),
             character_presentation_catalog: None,
@@ -3432,6 +3636,9 @@ impl RuntimePlanSemanticFacts {
             ]);
             roots.extend(tried.carrier().residual());
         }
+        for callable in self.implicit_callables.values() {
+            roots.extend([callable.parameter(), callable.result()]);
+        }
         roots.extend(
             self.trait_methods
                 .values()
@@ -3547,6 +3754,24 @@ impl RuntimePlanSemanticFacts {
         self.tries.iter()
     }
 
+    pub fn implicit_callable(&self, expression: ExprId) -> Option<&RuntimeImplicitCallableFact> {
+        self.implicit_callables.get(&expression)
+    }
+
+    pub fn implicit_callables(
+        &self,
+    ) -> impl ExactSizeIterator<Item = (&ExprId, &RuntimeImplicitCallableFact)> {
+        self.implicit_callables.iter()
+    }
+
+    pub fn pipe(&self, expression: ExprId) -> Option<&RuntimePipeFact> {
+        self.pipes.get(&expression)
+    }
+
+    pub fn pipes(&self) -> impl ExactSizeIterator<Item = (&ExprId, &RuntimePipeFact)> {
+        self.pipes.iter()
+    }
+
     pub fn capture(&self, capture: CaptureId) -> Option<&RuntimeCheckedCapture> {
         self.captures.get(&capture)
     }
@@ -3602,6 +3827,10 @@ pub enum RuntimeSemanticFactsError {
     InvalidAwaitFact { expression: ExprId },
     #[error("Try fact for {expression:?} does not match its checked carrier boundary")]
     InvalidTryFact { expression: ExprId },
+    #[error("implicit callable fact for {expression:?} does not match its checked abstraction")]
+    InvalidImplicitCallableFact { expression: ExprId },
+    #[error("pipe fact for {expression:?} does not match its checked once-only pipeline")]
+    InvalidPipeFact { expression: ExprId },
     #[error("postfix expression {expression:?} has no accepted candidate fact")]
     MissingPostfixCandidate { expression: ExprId },
     #[error("runtime semantic fact references unknown HIR module {module:?}")]
@@ -3776,6 +4005,8 @@ pub enum RuntimeSemanticFactFamily {
     EvaluatedEffect,
     Await,
     Try,
+    ImplicitCallable,
+    Pipe,
     Capture,
     DialogueApplication,
 }
@@ -3948,6 +4179,10 @@ fn collect_unique<K: Ord, V>(
         }
     }
     Ok(result)
+}
+
+fn all_unique<T: Copy + Ord>(values: &[T]) -> bool {
+    values.iter().copied().collect::<BTreeSet<_>>().len() == values.len()
 }
 
 fn module_for<'project>(

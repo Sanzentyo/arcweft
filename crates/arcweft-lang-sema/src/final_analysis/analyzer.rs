@@ -96,18 +96,18 @@ use super::{
     CheckedCharacterDialoguePatch, CheckedCharacterDialoguePatchField,
     CheckedCharacterDialogueReconfigure, CheckedCharacterDialogueTarget, CheckedEntryReference,
     CheckedEvaluatedEffect, CheckedExpression, CheckedExpressionResolution,
-    CheckedFunctionExecution, CheckedItem, CheckedItemRole, CheckedIteration,
-    CheckedIteratorFamily, CheckedPatchOperation, CheckedPattern, CheckedPatternResolution,
-    CheckedProjectCallable, CheckedProjectItem, CheckedProjectNominal, CheckedSelectResolution,
-    CheckedStatement, CheckedStatementRole, CheckedStyleCallee, CheckedSuspensionRole,
-    CheckedSuspensionStatement, CheckedTraitConformance, CheckedTraitIdentity, CheckedTry,
-    CheckedTryBoundary, CheckedTryCarrier, CheckedTypeSelection, CheckedValueResolution,
-    CheckedVariantOwner, CheckedVariantResolution, CheckedViewCall, CheckedViewCallee,
-    FinalSemanticAnalysis, FinalSemanticAnalysisControl, FinalSemanticAnalysisError,
-    FinalSemanticAnalysisInput, PhysicalArgumentEvaluationKind, PhysicalCandidateArgument,
-    PhysicalCandidateArgumentEvaluation, PostfixBracketResolution, ProjectHirSymbolLookupError,
-    ProjectSymbolResolutionError, RecursiveCallableContractEdge, RegisteredSemanticValueId,
-    SemanticFactFamily,
+    CheckedFunctionExecution, CheckedImplicitCallable, CheckedItem, CheckedItemRole,
+    CheckedIteration, CheckedIteratorFamily, CheckedPatchOperation, CheckedPattern,
+    CheckedPatternResolution, CheckedPipe, CheckedProjectCallable, CheckedProjectItem,
+    CheckedProjectNominal, CheckedSelectResolution, CheckedStatement, CheckedStatementRole,
+    CheckedStyleCallee, CheckedSuspensionRole, CheckedSuspensionStatement, CheckedTraitConformance,
+    CheckedTraitIdentity, CheckedTry, CheckedTryBoundary, CheckedTryCarrier, CheckedTypeSelection,
+    CheckedValueResolution, CheckedVariantOwner, CheckedVariantResolution, CheckedViewCall,
+    CheckedViewCallee, FinalSemanticAnalysis, FinalSemanticAnalysisControl,
+    FinalSemanticAnalysisError, FinalSemanticAnalysisInput, PhysicalArgumentEvaluationKind,
+    PhysicalCandidateArgument, PhysicalCandidateArgumentEvaluation, PostfixBracketResolution,
+    ProjectHirSymbolLookupError, ProjectSymbolResolutionError, RecursiveCallableContractEdge,
+    RegisteredSemanticValueId, SemanticFactFamily,
 };
 
 /// Immutable catalogs used by the one accepted semantic pass.
@@ -219,6 +219,28 @@ struct Analyzer<'project, 'catalog, 'control> {
         BTreeMap<ExprId, Vec<PhysicalCandidateArgumentEvaluation>>,
     callable_query_depth: CallableQueryDepth,
     physical_call_stack: Vec<ExprId>,
+    implicit_callable_stack: Vec<ImplicitCallableContext>,
+    pipe_stack: Vec<PipeContext>,
+    function_site_stack: Vec<FunctionSiteContext>,
+}
+
+struct ImplicitCallableContext {
+    owner: ExprId,
+    parameter: TypeKind,
+    result: Option<TypeKind>,
+    members: BTreeSet<ExprId>,
+    placeholders: BTreeSet<ExprId>,
+}
+
+struct PipeContext {
+    owner: ExprId,
+    value: TypeKind,
+    placeholders: BTreeSet<ExprId>,
+}
+
+struct FunctionSiteContext {
+    owner: ExprId,
+    result: TypeKind,
 }
 
 struct StagedCheckedCallables {
@@ -370,6 +392,9 @@ impl<'project, 'catalog, 'control> Analyzer<'project, 'catalog, 'control> {
             physical_candidate_argument_evaluations: BTreeMap::new(),
             callable_query_depth: CallableQueryDepth::new(catalogs.callable_limits),
             physical_call_stack: Vec::new(),
+            implicit_callable_stack: Vec::new(),
+            pipe_stack: Vec::new(),
+            function_site_stack: Vec::new(),
         })
     }
 
