@@ -105,7 +105,13 @@ Failed baseline outside this audit:
   failed on the clean inspected revision.
   - `current_check_fixtures_pass` first failed at
     `current_pass/check/008_let_else_diverge.arcw` with a HIR typed-arena
-    transaction failure.
+    transaction failure. Read-only follow-up found that syntax publishes
+    `LetElseStatement`, but attached access and
+    `lower_attached_statement` have no LetElse branch; the statement falls to
+    `InvalidArenaCommit`, and `HirStmtKind::LetElse` has no production
+    constructor. Its current statement-only `else_body` is also insufficient
+    for a Flow's heterogeneous contextual body, so the final fix should reuse
+    `HirContextualStmtBody` rather than adding a fixture-specific fallback.
   - `current_run_fixtures_pass` first failed at
     `current_pass/run/009_dialogue_line.arcw` because executable dialogue
     projection lacked the selected profile character-name localization policy.
