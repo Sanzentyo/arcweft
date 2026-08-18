@@ -67,10 +67,7 @@ pub(crate) use accounting::{
 };
 pub use accounting::{FinalSemanticAnalysisControl, FinalSemanticAnalysisWork};
 pub use analyzer::{FinalSemanticCatalogs, analyze_final_project};
-pub use error::{
-    FinalSemanticAnalysisError, PropagationOperator, RecursiveCallableContractEdge,
-    SemanticFactFamily,
-};
+pub use error::{FinalSemanticAnalysisError, RecursiveCallableContractEdge, SemanticFactFamily};
 pub(crate) use input::FinalSemanticAnalysisInput;
 pub use model::{
     CharacterDialogueFieldCoordinate, CheckedAssertionDisposition, CheckedAssignment,
@@ -84,9 +81,9 @@ pub use model::{
     CheckedProjectCallable, CheckedProjectItem, CheckedProjectItemOwner, CheckedProjectNominal,
     CheckedSelectResolution, CheckedStatement, CheckedStatementRole, CheckedStyleCallee,
     CheckedSuspensionRole, CheckedSuspensionStatement, CheckedTraitConformance,
-    CheckedTraitIdentity, CheckedTypeSelection, CheckedValueResolution, CheckedVariantOwner,
-    CheckedVariantResolution, CheckedViewCall, CheckedViewCallee, PostfixBracketResolution,
-    RegisteredSemanticValueId,
+    CheckedTraitIdentity, CheckedTry, CheckedTryBoundary, CheckedTryCarrier, CheckedTypeSelection,
+    CheckedValueResolution, CheckedVariantOwner, CheckedVariantResolution, CheckedViewCall,
+    CheckedViewCallee, PostfixBracketResolution, RegisteredSemanticValueId,
 };
 pub use nominal_schema::NominalSchemaProjectionError;
 pub use recovery_diagnostics::{

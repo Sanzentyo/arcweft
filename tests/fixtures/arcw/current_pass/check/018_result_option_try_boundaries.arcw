@@ -1,0 +1,19 @@
+flow result_boundary(input: Result<i64, String>) -> Result<i64, String> {
+    return result {
+        let value = try input
+        value
+    }
+}
+
+flow option_boundary(input: Option<i64>) -> Option<i64> {
+    return option {
+        let value = try input
+        value
+    }
+}
+
+flow nested_boundary(input: Result<i64, String>) -> Result<i64, String> {
+    return result {
+        try input + 1i64
+    }
+}

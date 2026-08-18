@@ -100,13 +100,14 @@ use super::{
     CheckedIteratorFamily, CheckedPatchOperation, CheckedPattern, CheckedPatternResolution,
     CheckedProjectCallable, CheckedProjectItem, CheckedProjectNominal, CheckedSelectResolution,
     CheckedStatement, CheckedStatementRole, CheckedStyleCallee, CheckedSuspensionRole,
-    CheckedSuspensionStatement, CheckedTraitConformance, CheckedTraitIdentity,
-    CheckedTypeSelection, CheckedValueResolution, CheckedVariantOwner, CheckedVariantResolution,
-    CheckedViewCall, CheckedViewCallee, FinalSemanticAnalysis, FinalSemanticAnalysisControl,
-    FinalSemanticAnalysisError, FinalSemanticAnalysisInput, PhysicalArgumentEvaluationKind,
-    PhysicalCandidateArgument, PhysicalCandidateArgumentEvaluation, PostfixBracketResolution,
-    ProjectHirSymbolLookupError, ProjectSymbolResolutionError, PropagationOperator,
-    RecursiveCallableContractEdge, RegisteredSemanticValueId, SemanticFactFamily,
+    CheckedSuspensionStatement, CheckedTraitConformance, CheckedTraitIdentity, CheckedTry,
+    CheckedTryBoundary, CheckedTryCarrier, CheckedTypeSelection, CheckedValueResolution,
+    CheckedVariantOwner, CheckedVariantResolution, CheckedViewCall, CheckedViewCallee,
+    FinalSemanticAnalysis, FinalSemanticAnalysisControl, FinalSemanticAnalysisError,
+    FinalSemanticAnalysisInput, PhysicalArgumentEvaluationKind, PhysicalCandidateArgument,
+    PhysicalCandidateArgumentEvaluation, PostfixBracketResolution, ProjectHirSymbolLookupError,
+    ProjectSymbolResolutionError, RecursiveCallableContractEdge, RegisteredSemanticValueId,
+    SemanticFactFamily,
 };
 
 /// Immutable catalogs used by the one accepted semantic pass.

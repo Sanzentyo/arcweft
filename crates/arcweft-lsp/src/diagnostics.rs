@@ -770,9 +770,9 @@ source = "src/main.arcw"
             (
                 "Need<i64, String>",
                 "try await value",
-                "sema.await.error_mismatch",
-                12..21,
-                14..23,
+                "sema.try.error_mismatch",
+                12..15,
+                14..17,
             ),
         ] {
             let source = format!(

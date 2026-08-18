@@ -60,7 +60,8 @@ use crate::semantic_facts::{
     RuntimeDialogueApplication, RuntimeDialogueEffectTrigger, RuntimeEvaluatedEffect,
     RuntimeIteratorFact, RuntimeIteratorWitnessExecutableFact, RuntimeNormalizedType,
     RuntimePlanSemanticFacts, RuntimeResolvedCallTarget, RuntimeResolvedValue,
-    RuntimeSemanticFactsError, RuntimeTraitIdentity, RuntimeTraitMethodFact, RuntimeTypeShape,
+    RuntimeSemanticFactsError, RuntimeTraitIdentity, RuntimeTraitMethodFact,
+    RuntimeTryBoundaryOwner, RuntimeTryCarrierFact, RuntimeTryFact, RuntimeTypeShape,
 };
 use arcweft_text_model::{RichTextControl, RichTextNode};
 
@@ -315,6 +316,7 @@ struct FinalLoweringContext<'project, 'data> {
     function_sites: &'data BTreeMap<ExprId, RuntimeFunctionSiteSeedId>,
     dialogue_content: &'data BTreeMap<ExprId, RuntimeDialogueContentPlanSeedId>,
     await_locals: &'data BTreeMap<ExprId, AwaitLocalSeeds>,
+    try_locals: &'data BTreeMap<ExprId, TryLocalSeeds>,
 }
 
 #[derive(Clone)]
@@ -322,6 +324,12 @@ struct AwaitLocalSeeds {
     result: RuntimeLocalSeedId,
     ready: RuntimeLocalSeedId,
     error: RuntimeLocalSeedId,
+}
+
+#[derive(Clone)]
+struct TryLocalSeeds {
+    success: RuntimeLocalSeedId,
+    residual: Option<RuntimeLocalSeedId>,
 }
 
 impl FinalLoweringContext<'_, '_> {
@@ -372,6 +380,15 @@ pub fn lower_runtime_plan_with_stats(
             RuntimeLocalDeclarationSeed::new(awaited.error().identity()),
         ]);
     }
+    let try_facts = facts.tries().collect::<Vec<_>>();
+    for (_, tried) in &try_facts {
+        local_seeds.push(RuntimeLocalDeclarationSeed::new(
+            tried.carrier().success().identity(),
+        ));
+        if let Some(residual) = tried.carrier().residual() {
+            local_seeds.push(RuntimeLocalDeclarationSeed::new(residual.identity()));
+        }
+    }
     let mut builder = RuntimePlanBuilder::new();
     let admission = builder
         .admit_semantic_batch(
@@ -400,6 +417,29 @@ pub fn lower_runtime_plan_with_stats(
             )
         })
         .collect::<BTreeMap<_, _>>();
+    let mut admitted_try_locals = admission.local_ids()
+        [local_facts.len() + await_facts.len() * 3..]
+        .iter()
+        .cloned();
+    let mut try_locals = BTreeMap::new();
+    for (expression, tried) in &try_facts {
+        let success = admitted_try_locals.next().ok_or_else(|| {
+            vec![RuntimePlanLowerError::new(
+                "admitted Try success local is missing",
+            )]
+        })?;
+        let residual = if tried.carrier().residual().is_some() {
+            Some(admitted_try_locals.next().ok_or_else(|| {
+                vec![RuntimePlanLowerError::new(
+                    "admitted Result Try residual local is missing",
+                )]
+            })?)
+        } else {
+            None
+        };
+        try_locals.insert(**expression, TryLocalSeeds { success, residual });
+    }
+    debug_assert!(admitted_try_locals.next().is_none());
     let mut errors = Vec::new();
     let (function_sites, function_definitions) =
         reserve_function_sites(project, facts, &locals, &mut builder, &mut errors);
@@ -432,6 +472,7 @@ pub fn lower_runtime_plan_with_stats(
         function_sites: &function_sites,
         dialogue_content: &empty_dialogue_content,
         await_locals: &await_locals,
+        try_locals: &try_locals,
     };
 
     define_function_sites(&context, &function_definitions, &mut builder, &mut errors);
@@ -1581,6 +1622,16 @@ fn variant_bind_seed(
     )
 }
 
+fn variant_empty_seed(result: &RuntimeNormalizedType, ordinal: u32) -> RuntimePatternSeed {
+    RuntimePatternSeed::new(
+        result.identity(),
+        RuntimePatternSeedKind::Variant {
+            ordinal,
+            payload: None,
+        },
+    )
+}
+
 fn handler_falls_through(
     fact: &RuntimeAwaitFact,
     kind: arcweft_lang_hir::expr::HirAwaitBranchKind,
@@ -1897,6 +1948,8 @@ struct FinalFlowLowerer<'a> {
     function_sites: &'a BTreeMap<ExprId, RuntimeFunctionSiteSeedId>,
     dialogue_content: &'a BTreeMap<ExprId, RuntimeDialogueContentPlanSeedId>,
     await_locals: &'a BTreeMap<ExprId, AwaitLocalSeeds>,
+    try_locals: &'a BTreeMap<ExprId, TryLocalSeeds>,
+    carrier_continuations: BTreeMap<ExprId, RuntimeFlowValueContinuation>,
     assertion_owner: RuntimeAssertionOwner,
     assertion_ordinal: u32,
     await_ordinal: u32,
@@ -1911,15 +1964,35 @@ enum RuntimeFlowValueContinuation {
     },
     Return,
     Ignore(RuntimeFlowTail),
-    Try(Box<Self>),
+    Try {
+        owner: ExprId,
+        outer: Box<Self>,
+    },
+    WrapCarrier {
+        owner: ExprId,
+        outer: Box<Self>,
+    },
+    Compose {
+        owner: ExprId,
+        child: ExprId,
+        overrides: BTreeMap<ExprId, RuntimeExprSeed>,
+        outer: Box<Self>,
+    },
 }
 
 #[derive(Clone, Default)]
 enum RuntimeFlowTail {
     #[default]
     None,
-    Statements(Box<[StmtId]>),
+    StatementsWithTail {
+        statements: Box<[StmtId]>,
+        tail: Box<RuntimeFlowTail>,
+    },
     ThreadItems(Box<[HirThreadFlowItem]>),
+    Value {
+        expression: ExprId,
+        continuation: Box<RuntimeFlowValueContinuation>,
+    },
 }
 
 impl<'a> FinalFlowLowerer<'a> {
@@ -1938,6 +2011,8 @@ impl<'a> FinalFlowLowerer<'a> {
             function_sites: context.function_sites,
             dialogue_content: context.dialogue_content,
             await_locals: context.await_locals,
+            try_locals: context.try_locals,
+            carrier_continuations: BTreeMap::new(),
             assertion_owner,
             assertion_ordinal: 0,
             await_ordinal: 0,
@@ -2362,10 +2437,26 @@ impl<'a> FinalFlowLowerer<'a> {
                 "cannot resolve flow value expression {expression:?}: {error}"
             ))
         })?;
-        Ok(matches!(
+        if matches!(
             expression.kind(),
-            HirExprKind::Await(_) | HirExprKind::Loop(_)
-        ) || matches!(expression.kind(), HirExprKind::Try(operation) if self.contains_flow_value_expression(operation.operand()).unwrap_or(false)))
+            HirExprKind::Await(_) | HirExprKind::Loop(_) | HirExprKind::Try(_)
+        ) || matches!(
+            expression.kind(),
+            HirExprKind::ComputationBlock(block)
+                if matches!(
+                    block.kind(),
+                    arcweft_lang_hir::expr::HirComputationBlockKind::Result
+                        | arcweft_lang_hir::expr::HirComputationBlockKind::Option
+                )
+        ) {
+            return Ok(true);
+        }
+        for child in expression.kind().direct_expression_children() {
+            if self.contains_flow_value_expression(child)? {
+                return Ok(true);
+            }
+        }
+        Ok(false)
     }
 
     fn lower_flow_value(
@@ -2373,18 +2464,46 @@ impl<'a> FinalFlowLowerer<'a> {
         expression: ExprId,
         continuation: RuntimeFlowValueContinuation,
     ) -> Result<Vec<RuntimeFlowOpSeed>, RuntimePlanLowerError> {
+        self.lower_flow_value_with_overrides(expression, continuation, BTreeMap::new())
+    }
+
+    fn lower_flow_value_with_overrides(
+        &mut self,
+        expression: ExprId,
+        continuation: RuntimeFlowValueContinuation,
+        overrides: BTreeMap<ExprId, RuntimeExprSeed>,
+    ) -> Result<Vec<RuntimeFlowOpSeed>, RuntimePlanLowerError> {
         let resolved = self.module.resolve_expr(expression).map_err(|error| {
             RuntimePlanLowerError::new(format!(
                 "cannot resolve flow value expression {expression:?}: {error}"
             ))
         })?;
         match resolved.kind() {
-            HirExprKind::Try(operation) => self.lower_flow_value(
+            HirExprKind::Try(operation) => self.lower_flow_value_with_overrides(
                 operation.operand(),
-                RuntimeFlowValueContinuation::Try(Box::new(continuation)),
+                RuntimeFlowValueContinuation::Try {
+                    owner: expression,
+                    outer: Box::new(continuation),
+                },
+                overrides,
             ),
             HirExprKind::Await(awaited) => {
-                self.lower_await_value(expression, awaited, continuation)
+                self.lower_await_value(expression, awaited, &continuation)
+            }
+            HirExprKind::Block(block) => {
+                self.lower_value_block(block.statements(), block.tail(), continuation)
+            }
+            HirExprKind::NamedBlock(block) => {
+                self.lower_value_block(block.statements(), block.tail(), continuation)
+            }
+            HirExprKind::ComputationBlock(block)
+                if matches!(
+                    block.kind(),
+                    arcweft_lang_hir::expr::HirComputationBlockKind::Result
+                        | arcweft_lang_hir::expr::HirComputationBlockKind::Option
+                ) =>
+            {
+                self.lower_carrier_block(expression, block, continuation)
             }
             HirExprKind::Loop(loop_expression) => {
                 let (result, tail) = match continuation {
@@ -2400,7 +2519,10 @@ impl<'a> FinalFlowLowerer<'a> {
                             tail,
                         )
                     }
-                    RuntimeFlowValueContinuation::Return | RuntimeFlowValueContinuation::Try(_) => {
+                    RuntimeFlowValueContinuation::Return
+                    | RuntimeFlowValueContinuation::Try { .. }
+                    | RuntimeFlowValueContinuation::WrapCarrier { .. }
+                    | RuntimeFlowValueContinuation::Compose { .. } => {
                         return Err(RuntimePlanLowerError::new(format!(
                             "Loop expression {expression:?} requires a continuation result local"
                         )));
@@ -2414,6 +2536,27 @@ impl<'a> FinalFlowLowerer<'a> {
                 Ok(ops)
             }
             _ => {
+                let mut flow_child = None;
+                for child in resolved.kind().direct_expression_children() {
+                    if !overrides.contains_key(&child)
+                        && self.contains_flow_value_expression(child)?
+                    {
+                        flow_child = Some(child);
+                        break;
+                    }
+                }
+                if let Some(child) = flow_child {
+                    return self.lower_flow_value_with_overrides(
+                        child,
+                        RuntimeFlowValueContinuation::Compose {
+                            owner: expression,
+                            child,
+                            overrides,
+                            outer: Box::new(continuation),
+                        },
+                        BTreeMap::new(),
+                    );
+                }
                 let value = FinalExprLowerer::new(
                     self.module,
                     self.facts,
@@ -2422,6 +2565,7 @@ impl<'a> FinalFlowLowerer<'a> {
                     self.trait_methods,
                     self.function_sites,
                 )
+                .with_overrides(overrides)
                 .lower(expression)
                 .map_err(RuntimePlanLowerError::new)?;
                 self.apply_value_continuation(value, continuation)
@@ -2429,11 +2573,53 @@ impl<'a> FinalFlowLowerer<'a> {
         }
     }
 
+    fn lower_value_block(
+        &mut self,
+        statements: &[StmtId],
+        tail: ExprId,
+        continuation: RuntimeFlowValueContinuation,
+    ) -> Result<Vec<RuntimeFlowOpSeed>, RuntimePlanLowerError> {
+        self.lower_statement_ids_with_tail(
+            statements,
+            RuntimeFlowTail::Value {
+                expression: tail,
+                continuation: Box::new(continuation),
+            },
+        )
+    }
+
+    fn lower_carrier_block(
+        &mut self,
+        expression: ExprId,
+        block: &arcweft_lang_hir::expr::HirComputationBlockExpr,
+        continuation: RuntimeFlowValueContinuation,
+    ) -> Result<Vec<RuntimeFlowOpSeed>, RuntimePlanLowerError> {
+        if self
+            .carrier_continuations
+            .insert(expression, continuation.clone())
+            .is_some()
+        {
+            return Err(RuntimePlanLowerError::new(format!(
+                "carrier block {expression:?} was entered more than once during lowering"
+            )));
+        }
+        let tail = RuntimeFlowTail::Value {
+            expression: block.tail(),
+            continuation: Box::new(RuntimeFlowValueContinuation::WrapCarrier {
+                owner: expression,
+                outer: Box::new(continuation),
+            }),
+        };
+        let lowered = self.lower_statement_ids_with_tail(block.statements(), tail);
+        self.carrier_continuations.remove(&expression);
+        lowered
+    }
+
     fn lower_await_value(
         &mut self,
         expression: ExprId,
         awaited: &arcweft_lang_hir::expr::HirAwaitExpr,
-        continuation: RuntimeFlowValueContinuation,
+        continuation: &RuntimeFlowValueContinuation,
     ) -> Result<Vec<RuntimeFlowOpSeed>, RuntimePlanLowerError> {
         let fact = self.facts.awaited(expression).cloned().ok_or_else(|| {
             RuntimePlanLowerError::new(format!(
@@ -2445,6 +2631,60 @@ impl<'a> FinalFlowLowerer<'a> {
                 "Await expression {expression:?} has no admitted continuation locals"
             ))
         })?;
+        let await_op = self.lower_await_operation(awaited, &fact, &locals)?;
+        let ready_ops = self.lower_await_branch_continuation(
+            awaited,
+            &fact,
+            arcweft_lang_hir::expr::HirAwaitBranchKind::Ready,
+            0,
+            local_seed(fact.ready(), locals.ready.clone()),
+            continuation,
+        )?;
+        let error_ops = self.lower_await_branch_continuation(
+            awaited,
+            &fact,
+            arcweft_lang_hir::expr::HirAwaitBranchKind::Error,
+            1,
+            local_seed(fact.error(), locals.error.clone()),
+            continuation,
+        )?;
+        let physical_result = local_seed(fact.physical_result(), locals.result.clone());
+        Ok(vec![
+            await_op,
+            RuntimeFlowOpSeed::Match {
+                scrutinee: physical_result,
+                arms: vec![
+                    RuntimeFlowMatchArmSeed {
+                        pattern: variant_bind_seed(
+                            fact.physical_result(),
+                            0,
+                            fact.ready(),
+                            locals.ready,
+                        ),
+                        guard: None,
+                        ops: ready_ops,
+                    },
+                    RuntimeFlowMatchArmSeed {
+                        pattern: variant_bind_seed(
+                            fact.physical_result(),
+                            1,
+                            fact.error(),
+                            locals.error,
+                        ),
+                        guard: None,
+                        ops: error_ops,
+                    },
+                ],
+            },
+        ])
+    }
+
+    fn lower_await_operation(
+        &mut self,
+        awaited: &arcweft_lang_hir::expr::HirAwaitExpr,
+        fact: &RuntimeAwaitFact,
+        locals: &AwaitLocalSeeds,
+    ) -> Result<RuntimeFlowOpSeed, RuntimePlanLowerError> {
         let operand = self
             .module
             .resolve_expr(awaited.operand())
@@ -2485,7 +2725,7 @@ impl<'a> FinalFlowLowerer<'a> {
         let owner = self.assertion_owner.label();
         let task = TaskId(format!("{owner}.await.{ordinal}"));
         let need = NeedId(format!("{owner}.need.{ordinal}"));
-        let await_op = RuntimeFlowOpSeed::Await {
+        Ok(RuntimeFlowOpSeed::Await {
             binding: Some(bind_seed(fact.physical_result(), locals.result.clone())),
             target: arcweft_core::plan::RuntimeAwaitTargetSeed {
                 need,
@@ -2505,69 +2745,28 @@ impl<'a> FinalFlowLowerer<'a> {
                 },
             },
             pending: Vec::new(),
-        };
-        let mut ready_ops = self.lower_await_handler(
-            awaited,
-            &fact,
-            arcweft_lang_hir::expr::HirAwaitBranchKind::Ready,
-        )?;
-        let propagates = matches!(&continuation, RuntimeFlowValueContinuation::Try(_));
-        if propagates
-            && handler_falls_through(&fact, arcweft_lang_hir::expr::HirAwaitBranchKind::Ready)
-        {
-            ready_ops.extend(self.apply_await_outcome(
-                true,
-                local_seed(fact.ready(), locals.ready.clone()),
-                &fact,
-                continuation.clone(),
-            )?);
-        }
-        let mut error_ops = self.lower_await_handler(
-            awaited,
-            &fact,
-            arcweft_lang_hir::expr::HirAwaitBranchKind::Error,
-        )?;
-        if propagates
-            && handler_falls_through(&fact, arcweft_lang_hir::expr::HirAwaitBranchKind::Error)
-        {
-            error_ops.extend(self.apply_await_outcome(
-                false,
-                local_seed(fact.error(), locals.error.clone()),
-                &fact,
-                continuation.clone(),
-            )?);
-        }
-        let physical_result = local_seed(fact.physical_result(), locals.result.clone());
-        let mut ops = vec![
-            await_op,
-            RuntimeFlowOpSeed::Match {
-                scrutinee: physical_result.clone(),
-                arms: vec![
-                    RuntimeFlowMatchArmSeed {
-                        pattern: variant_bind_seed(
-                            fact.physical_result(),
-                            0,
-                            fact.ready(),
-                            locals.ready,
-                        ),
-                        guard: None,
-                        ops: ready_ops,
-                    },
-                    RuntimeFlowMatchArmSeed {
-                        pattern: variant_bind_seed(
-                            fact.physical_result(),
-                            1,
-                            fact.error(),
-                            locals.error,
-                        ),
-                        guard: None,
-                        ops: error_ops,
-                    },
-                ],
-            },
-        ];
-        if !propagates {
-            ops.extend(self.apply_value_continuation(physical_result, continuation)?);
+        })
+    }
+
+    fn lower_await_branch_continuation(
+        &mut self,
+        awaited: &arcweft_lang_hir::expr::HirAwaitExpr,
+        fact: &RuntimeAwaitFact,
+        kind: arcweft_lang_hir::expr::HirAwaitBranchKind,
+        ordinal: u32,
+        payload: RuntimeExprSeed,
+        continuation: &RuntimeFlowValueContinuation,
+    ) -> Result<Vec<RuntimeFlowOpSeed>, RuntimePlanLowerError> {
+        let mut ops = self.lower_await_handler(awaited, fact, kind)?;
+        if handler_falls_through(fact, kind) {
+            let value = RuntimeExprSeed::new(
+                fact.continuation_result().identity(),
+                arcweft_core::plan::RuntimeExprSeedKind::Variant {
+                    ordinal,
+                    payload: Some(Box::new(payload)),
+                },
+            );
+            ops.extend(self.apply_value_continuation(value, continuation.clone())?);
         }
         Ok(ops)
     }
@@ -2589,31 +2788,6 @@ impl<'a> FinalFlowLowerer<'a> {
         self.lower_contextual_body(branch.body())
     }
 
-    fn apply_await_outcome(
-        &mut self,
-        ready: bool,
-        payload: RuntimeExprSeed,
-        fact: &RuntimeAwaitFact,
-        continuation: RuntimeFlowValueContinuation,
-    ) -> Result<Vec<RuntimeFlowOpSeed>, RuntimePlanLowerError> {
-        if let RuntimeFlowValueContinuation::Try(outer) = continuation {
-            if ready {
-                return self.apply_value_continuation(payload, *outer);
-            }
-            return Err(RuntimePlanLowerError::new(
-                "fallthrough from an Await Error handler requires a typed generic Try propagation fact",
-            ));
-        }
-        let result = RuntimeExprSeed::new(
-            fact.physical_result().identity(),
-            arcweft_core::plan::RuntimeExprSeedKind::Variant {
-                ordinal: u32::from(!ready),
-                payload: Some(Box::new(payload)),
-            },
-        );
-        self.apply_value_continuation(result, continuation)
-    }
-
     fn apply_value_continuation(
         &mut self,
         value: RuntimeExprSeed,
@@ -2630,12 +2804,123 @@ impl<'a> FinalFlowLowerer<'a> {
             }
             RuntimeFlowValueContinuation::Return => vec![RuntimeFlowOpSeed::ReturnExpr(value)],
             RuntimeFlowValueContinuation::Ignore(tail) => self.lower_flow_tail(tail)?,
-            RuntimeFlowValueContinuation::Try(_) => {
-                return Err(RuntimePlanLowerError::new(
-                    "generic Try lowering requires a typed Result continuation",
-                ));
+            RuntimeFlowValueContinuation::Try { owner, outer } => {
+                return self.lower_try_continuation(owner, value, *outer);
+            }
+            RuntimeFlowValueContinuation::WrapCarrier { owner, outer } => {
+                let boundary = self.facts.expression_type(owner).ok_or_else(|| {
+                    RuntimePlanLowerError::new(format!(
+                        "carrier block {owner:?} has no accepted result type"
+                    ))
+                })?;
+                let wrapped = RuntimeExprSeed::new(
+                    boundary.identity(),
+                    arcweft_core::plan::RuntimeExprSeedKind::Variant {
+                        ordinal: 0,
+                        payload: Some(Box::new(value)),
+                    },
+                );
+                return self.apply_value_continuation(wrapped, *outer);
+            }
+            RuntimeFlowValueContinuation::Compose {
+                owner,
+                child,
+                mut overrides,
+                outer,
+            } => {
+                overrides.insert(child, value);
+                return self.lower_flow_value_with_overrides(owner, *outer, overrides);
             }
         })
+    }
+
+    fn lower_try_continuation(
+        &mut self,
+        owner: ExprId,
+        value: RuntimeExprSeed,
+        outer: RuntimeFlowValueContinuation,
+    ) -> Result<Vec<RuntimeFlowOpSeed>, RuntimePlanLowerError> {
+        let fact = self.facts.tried(owner).cloned().ok_or_else(|| {
+            RuntimePlanLowerError::new(format!(
+                "Try expression {owner:?} has no checked runtime fact"
+            ))
+        })?;
+        let locals = self.try_locals.get(&owner).cloned().ok_or_else(|| {
+            RuntimePlanLowerError::new(format!(
+                "Try expression {owner:?} has no admitted continuation locals"
+            ))
+        })?;
+        let success = local_seed(fact.carrier().success(), locals.success.clone());
+        let success_ops = self.apply_value_continuation(success, outer)?;
+        let (failure_pattern, failure_value) = match fact.carrier() {
+            RuntimeTryCarrierFact::Result { residual, .. } => {
+                let local = locals.residual.ok_or_else(|| {
+                    RuntimePlanLowerError::new(format!(
+                        "Result Try expression {owner:?} has no residual local"
+                    ))
+                })?;
+                (
+                    variant_bind_seed(fact.carrier_type(), 1, residual, local.clone()),
+                    Some(local_seed(residual, local)),
+                )
+            }
+            RuntimeTryCarrierFact::Option { .. } => {
+                (variant_empty_seed(fact.carrier_type(), 1), None)
+            }
+        };
+        let failure_ops = self.propagate_try_residual(&fact, failure_value)?;
+        Ok(vec![RuntimeFlowOpSeed::Match {
+            scrutinee: value,
+            arms: vec![
+                RuntimeFlowMatchArmSeed {
+                    pattern: variant_bind_seed(
+                        fact.carrier_type(),
+                        0,
+                        fact.carrier().success(),
+                        locals.success,
+                    ),
+                    guard: None,
+                    ops: success_ops,
+                },
+                RuntimeFlowMatchArmSeed {
+                    pattern: failure_pattern,
+                    guard: None,
+                    ops: failure_ops,
+                },
+            ],
+        }])
+    }
+
+    fn propagate_try_residual(
+        &mut self,
+        fact: &RuntimeTryFact,
+        residual: Option<RuntimeExprSeed>,
+    ) -> Result<Vec<RuntimeFlowOpSeed>, RuntimePlanLowerError> {
+        let propagated = RuntimeExprSeed::new(
+            fact.boundary_type().identity(),
+            arcweft_core::plan::RuntimeExprSeedKind::Variant {
+                ordinal: 1,
+                payload: residual.map(Box::new),
+            },
+        );
+        match fact.boundary() {
+            RuntimeTryBoundaryOwner::Infallible => Ok(Vec::new()),
+            RuntimeTryBoundaryOwner::Callable(_) => {
+                Ok(vec![RuntimeFlowOpSeed::ReturnExpr(propagated)])
+            }
+            RuntimeTryBoundaryOwner::CarrierBlock(boundary) => {
+                let continuation = self
+                    .carrier_continuations
+                    .get(&boundary)
+                    .cloned()
+                    .ok_or_else(|| {
+                        RuntimePlanLowerError::new(format!(
+                            "Try residual targets inactive carrier block {boundary:?}"
+                        ))
+                    })?;
+                self.apply_value_continuation(propagated, continuation)
+            }
+        }
     }
 
     fn lower_flow_tail(
@@ -2644,8 +2929,14 @@ impl<'a> FinalFlowLowerer<'a> {
     ) -> Result<Vec<RuntimeFlowOpSeed>, RuntimePlanLowerError> {
         match tail {
             RuntimeFlowTail::None => Ok(Vec::new()),
-            RuntimeFlowTail::Statements(statements) => self.lower_statement_ids(&statements),
+            RuntimeFlowTail::StatementsWithTail { statements, tail } => {
+                self.lower_statement_ids_with_tail(&statements, *tail)
+            }
             RuntimeFlowTail::ThreadItems(items) => self.lower_thread_items(&items),
+            RuntimeFlowTail::Value {
+                expression,
+                continuation,
+            } => self.lower_flow_value(expression, *continuation),
         }
     }
 
@@ -2877,15 +3168,27 @@ impl<'a> FinalFlowLowerer<'a> {
         &mut self,
         statements: &[StmtId],
     ) -> Result<Vec<RuntimeFlowOpSeed>, RuntimePlanLowerError> {
-        let Some((statement, tail)) = statements.split_first() else {
-            return Ok(Vec::new());
+        self.lower_statement_ids_with_tail(statements, RuntimeFlowTail::None)
+    }
+
+    fn lower_statement_ids_with_tail(
+        &mut self,
+        statements: &[StmtId],
+        tail: RuntimeFlowTail,
+    ) -> Result<Vec<RuntimeFlowOpSeed>, RuntimePlanLowerError> {
+        let Some((statement, remaining)) = statements.split_first() else {
+            return self.lower_flow_tail(tail);
         };
         let kind = self.resolve_statement(*statement)?.kind().clone();
-        self.lower_statement_with_tail(
-            *statement,
-            &kind,
-            RuntimeFlowTail::Statements(tail.to_vec().into_boxed_slice()),
-        )
+        let next = if remaining.is_empty() {
+            tail
+        } else {
+            RuntimeFlowTail::StatementsWithTail {
+                statements: remaining.to_vec().into_boxed_slice(),
+                tail: Box::new(tail),
+            }
+        };
+        self.lower_statement_with_tail(*statement, &kind, next)
     }
 
     fn lower_contextual_body(

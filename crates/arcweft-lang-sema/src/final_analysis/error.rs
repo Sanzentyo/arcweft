@@ -58,12 +58,6 @@ pub enum SemanticFactFamily {
     Call,
 }
 
-#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
-pub enum PropagationOperator {
-    Try,
-    Await,
-}
-
 /// Failure to publish final semantic facts.
 #[derive(Clone, Debug, Eq, Error, PartialEq)]
 pub enum FinalSemanticAnalysisError {
@@ -217,11 +211,10 @@ pub enum FinalSemanticAnalysisError {
         call_source: SourceSpan,
     },
     #[error(
-        "{operator:?} propagates error type {operand_error:?}, but the enclosing return boundary requires {return_error:?}"
+        "try propagates error type {operand_error:?}, but the enclosing return boundary requires {return_error:?}"
     )]
     PropagationErrorMismatch {
         owner: ExprId,
-        operator: PropagationOperator,
         operand_error: Box<TypeKind>,
         return_error: Box<TypeKind>,
         operator_source: SourceSpan,
@@ -270,14 +263,7 @@ impl FinalSemanticAnalysisError {
             Self::RecursiveCallableContract { .. } => "sema.callable.recursive_contract",
             Self::BreakValueRequiresLoop { .. } => "sema.break.value_target",
             Self::UnknownCallTarget { .. } => "sema.call.unknown_target",
-            Self::PropagationErrorMismatch {
-                operator: PropagationOperator::Try,
-                ..
-            } => "sema.try.error_mismatch",
-            Self::PropagationErrorMismatch {
-                operator: PropagationOperator::Await,
-                ..
-            } => "sema.await.error_mismatch",
+            Self::PropagationErrorMismatch { .. } => "sema.try.error_mismatch",
             Self::EffectUpperBoundExceeded { .. } => "AWF-EFX-001",
             Self::DuplicateCharacterDialogueField { .. } => "AW-CD-005",
             Self::CharacterDialogueApplicationOnlyField { .. } => "AW-CD-007",
@@ -304,14 +290,12 @@ impl FinalSemanticAnalysisError {
                 self.diagnostic_code(),
             )),
             Self::PropagationErrorMismatch {
-                operator,
                 operand_error,
                 return_error,
                 operator_source,
                 return_source,
                 ..
             } => Some(propagation_diagnostic(
-                *operator,
                 operand_error,
                 return_error,
                 operator_source,
@@ -391,7 +375,6 @@ fn unknown_call_diagnostic(
 }
 
 fn propagation_diagnostic(
-    operator: PropagationOperator,
     operand_error: &TypeKind,
     return_error: &TypeKind,
     operator_source: &SourceSpan,
@@ -401,11 +384,7 @@ fn propagation_diagnostic(
     Diagnostic::new(
         DiagnosticSeverity::Error,
         format!(
-            "{} propagates error type {}, but the enclosing return boundary requires {}",
-            match operator {
-                PropagationOperator::Try => "try",
-                PropagationOperator::Await => "await",
-            },
+            "try propagates error type {}, but the enclosing return boundary requires {}",
             operand_error.source_label(),
             return_error.source_label(),
         ),

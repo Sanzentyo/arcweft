@@ -930,6 +930,103 @@ impl RuntimeAwaitFact {
     }
 }
 
+/// Closed carrier consumed by one checked prefix Try expression.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum RuntimeTryCarrierFact {
+    Result {
+        success: RuntimeNormalizedType,
+        residual: Box<RuntimeNormalizedType>,
+    },
+    Option {
+        success: RuntimeNormalizedType,
+    },
+}
+
+impl RuntimeTryCarrierFact {
+    pub const fn success(&self) -> &RuntimeNormalizedType {
+        match self {
+            Self::Result { success, .. } | Self::Option { success } => success,
+        }
+    }
+
+    pub fn residual(&self) -> Option<&RuntimeNormalizedType> {
+        match self {
+            Self::Result { residual, .. } => Some(residual.as_ref()),
+            Self::Option { .. } => None,
+        }
+    }
+}
+
+/// Exact lexical owner that receives one checked Try residual.
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub enum RuntimeTryBoundaryOwner {
+    Infallible,
+    CarrierBlock(ExprId),
+    Callable(ItemId),
+}
+
+/// Generation-bound Try carrier and propagation-boundary fact.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct RuntimeTryFact {
+    operand: ExprId,
+    carrier_type: RuntimeNormalizedType,
+    carrier: RuntimeTryCarrierFact,
+    boundary: RuntimeTryBoundaryOwner,
+    boundary_type: RuntimeNormalizedType,
+}
+
+impl RuntimeTryFact {
+    pub const fn new(
+        operand: ExprId,
+        carrier_type: RuntimeNormalizedType,
+        carrier: RuntimeTryCarrierFact,
+        boundary: RuntimeTryBoundaryOwner,
+        boundary_type: RuntimeNormalizedType,
+    ) -> Self {
+        Self {
+            operand,
+            carrier_type,
+            carrier,
+            boundary,
+            boundary_type,
+        }
+    }
+
+    pub const fn operand(&self) -> ExprId {
+        self.operand
+    }
+
+    pub const fn carrier_type(&self) -> &RuntimeNormalizedType {
+        &self.carrier_type
+    }
+
+    pub const fn carrier(&self) -> &RuntimeTryCarrierFact {
+        &self.carrier
+    }
+
+    pub const fn boundary(&self) -> RuntimeTryBoundaryOwner {
+        self.boundary
+    }
+
+    pub const fn boundary_type(&self) -> &RuntimeNormalizedType {
+        &self.boundary_type
+    }
+}
+
+fn try_boundary_type_matches(fact: &RuntimeTryFact) -> bool {
+    match (fact.carrier(), fact.boundary_type().shape()) {
+        (
+            RuntimeTryCarrierFact::Result { residual, .. },
+            RuntimeTypeShape::Result { error, .. },
+        ) => {
+            residual.as_ref() == error.as_ref()
+                || matches!(residual.shape(), RuntimeTypeShape::Never)
+        }
+        (RuntimeTryCarrierFact::Option { .. }, RuntimeTypeShape::Option(_)) => true,
+        _ => false,
+    }
+}
+
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub enum RuntimeLogLevel {
     Trace,
@@ -2234,6 +2331,7 @@ pub struct RuntimePlanSemanticFactInput {
     assignments: Vec<(StmtId, RuntimeAssignmentFact)>,
     evaluated_effects: Vec<(StmtId, RuntimeEvaluatedEffectFact)>,
     awaits: Vec<(ExprId, RuntimeAwaitFact)>,
+    tries: Vec<(ExprId, RuntimeTryFact)>,
     captures: Vec<RuntimeCheckedCapture>,
 }
 
@@ -2262,6 +2360,7 @@ impl RuntimePlanSemanticFactInput {
             assignments: Vec::new(),
             evaluated_effects: Vec::new(),
             awaits: Vec::new(),
+            tries: Vec::new(),
             captures: Vec::new(),
         }
     }
@@ -2367,6 +2466,10 @@ impl RuntimePlanSemanticFactInput {
         self.awaits.push((owner, fact));
     }
 
+    pub fn push_try(&mut self, owner: ExprId, fact: RuntimeTryFact) {
+        self.tries.push((owner, fact));
+    }
+
     pub fn push_capture(&mut self, capture: RuntimeCheckedCapture) {
         self.captures.push(capture);
     }
@@ -2405,6 +2508,7 @@ pub struct RuntimePlanSemanticFacts {
     assignments: BTreeMap<StmtId, RuntimeAssignmentFact>,
     evaluated_effects: BTreeMap<StmtId, RuntimeEvaluatedEffectFact>,
     awaits: BTreeMap<ExprId, RuntimeAwaitFact>,
+    tries: BTreeMap<ExprId, RuntimeTryFact>,
     captures: BTreeMap<CaptureId, RuntimeCheckedCapture>,
     dialogue_applications: BTreeMap<ExprId, RuntimeDialogueApplication>,
     character_presentation_catalog: Option<Arc<CharacterPresentationCatalogData>>,
@@ -2751,6 +2855,108 @@ impl RuntimePlanSemanticFacts {
             }
         }
 
+        let try_facts = collect_unique(input.tries, RuntimeSemanticFactFamily::Try)?;
+        for (expression, fact) in &try_facts {
+            require_runtime_expression_owner(
+                &runtime_owners,
+                *expression,
+                RuntimeSemanticFactFamily::Try,
+            )?;
+            let HirExprKind::Try(tried) = resolve_expr(&modules, *expression)? else {
+                return Err(RuntimeSemanticFactsError::InvalidTryFact {
+                    expression: *expression,
+                });
+            };
+            if tried.operand() != fact.operand()
+                || expression_types.get(expression) != Some(fact.carrier().success())
+            {
+                return Err(RuntimeSemanticFactsError::InvalidTryFact {
+                    expression: *expression,
+                });
+            }
+            let Some(operand) = expression_types.get(&fact.operand()) else {
+                return Err(RuntimeSemanticFactsError::InvalidTryFact {
+                    expression: *expression,
+                });
+            };
+            if operand != fact.carrier_type() {
+                return Err(RuntimeSemanticFactsError::InvalidTryFact {
+                    expression: *expression,
+                });
+            }
+            let carrier_matches = match (fact.carrier(), operand.shape()) {
+                (
+                    RuntimeTryCarrierFact::Result { success, residual },
+                    RuntimeTypeShape::Result { value, error },
+                ) => success == value.as_ref() && residual.as_ref() == error.as_ref(),
+                (RuntimeTryCarrierFact::Option { success }, RuntimeTypeShape::Option(item)) => {
+                    success == item.as_ref()
+                }
+                _ => false,
+            };
+            if !carrier_matches || !try_boundary_type_matches(fact) {
+                return Err(RuntimeSemanticFactsError::InvalidTryFact {
+                    expression: *expression,
+                });
+            }
+            match fact.boundary() {
+                RuntimeTryBoundaryOwner::Infallible => {
+                    if !matches!(
+                        fact.carrier(),
+                            RuntimeTryCarrierFact::Result { residual, .. }
+                                if matches!(residual.shape(), RuntimeTypeShape::Never)
+                    ) {
+                        return Err(RuntimeSemanticFactsError::InvalidTryFact {
+                            expression: *expression,
+                        });
+                    }
+                }
+                RuntimeTryBoundaryOwner::CarrierBlock(boundary) => {
+                    let HirExprKind::ComputationBlock(block) = resolve_expr(&modules, boundary)?
+                    else {
+                        return Err(RuntimeSemanticFactsError::InvalidTryFact {
+                            expression: *expression,
+                        });
+                    };
+                    let family_matches = matches!(
+                        (block.kind(), fact.carrier()),
+                        (
+                            arcweft_lang_hir::expr::HirComputationBlockKind::Result,
+                            RuntimeTryCarrierFact::Result { .. }
+                        ) | (
+                            arcweft_lang_hir::expr::HirComputationBlockKind::Option,
+                            RuntimeTryCarrierFact::Option { .. }
+                        )
+                    );
+                    if !family_matches
+                        || expression_types.get(&boundary) != Some(fact.boundary_type())
+                    {
+                        return Err(RuntimeSemanticFactsError::InvalidTryFact {
+                            expression: *expression,
+                        });
+                    }
+                }
+                RuntimeTryBoundaryOwner::Callable(boundary) => {
+                    let item = module_for(&modules, boundary.module())?
+                        .resolve_item(boundary)
+                        .map_err(|_| RuntimeSemanticFactsError::InvalidTryFact {
+                            expression: *expression,
+                        })?;
+                    let return_type = match item.kind() {
+                        HirItemKind::Function(function) => function.return_type(),
+                        HirItemKind::Flow(flow) => flow.result().authored_type(),
+                        _ => None,
+                    };
+                    if return_type.and_then(|owner| types.get(&owner)) != Some(fact.boundary_type())
+                    {
+                        return Err(RuntimeSemanticFactsError::InvalidTryFact {
+                            expression: *expression,
+                        });
+                    }
+                }
+            }
+        }
+
         let postfix_candidates = collect_unique(
             input.postfix_candidates,
             RuntimeSemanticFactFamily::PostfixCandidate,
@@ -2947,6 +3153,7 @@ impl RuntimePlanSemanticFacts {
             assignments,
             evaluated_effects,
             awaits,
+            tries: try_facts,
             captures,
             dialogue_applications: BTreeMap::new(),
             character_presentation_catalog: None,
@@ -3217,6 +3424,14 @@ impl RuntimePlanSemanticFacts {
                     .map(RuntimeAwaitBranchFact::payload),
             );
         }
+        for tried in self.tries.values() {
+            roots.extend([
+                tried.carrier_type(),
+                tried.carrier().success(),
+                tried.boundary_type(),
+            ]);
+            roots.extend(tried.carrier().residual());
+        }
         roots.extend(
             self.trait_methods
                 .values()
@@ -3324,6 +3539,14 @@ impl RuntimePlanSemanticFacts {
         self.awaits.iter()
     }
 
+    pub fn tried(&self, expression: ExprId) -> Option<&RuntimeTryFact> {
+        self.tries.get(&expression)
+    }
+
+    pub fn tries(&self) -> impl ExactSizeIterator<Item = (&ExprId, &RuntimeTryFact)> {
+        self.tries.iter()
+    }
+
     pub fn capture(&self, capture: CaptureId) -> Option<&RuntimeCheckedCapture> {
         self.captures.get(&capture)
     }
@@ -3377,6 +3600,8 @@ pub enum RuntimeSemanticFactsError {
     InvalidEvaluatedEffectFact { statement: StmtId },
     #[error("Await fact for {expression:?} does not match its checked expression")]
     InvalidAwaitFact { expression: ExprId },
+    #[error("Try fact for {expression:?} does not match its checked carrier boundary")]
+    InvalidTryFact { expression: ExprId },
     #[error("postfix expression {expression:?} has no accepted candidate fact")]
     MissingPostfixCandidate { expression: ExprId },
     #[error("runtime semantic fact references unknown HIR module {module:?}")]
@@ -3550,6 +3775,7 @@ pub enum RuntimeSemanticFactFamily {
     Assignment,
     EvaluatedEffect,
     Await,
+    Try,
     Capture,
     DialogueApplication,
 }

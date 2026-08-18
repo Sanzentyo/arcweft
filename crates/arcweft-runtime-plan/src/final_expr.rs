@@ -39,6 +39,7 @@ pub(crate) struct FinalExprLowerer<'hir> {
     pure_helpers: &'hir BTreeMap<RuntimeCallableId, RuntimePureHelperSeedId>,
     trait_methods: &'hir BTreeMap<ImplMethodDeclarationId, RuntimeTraitMethodSeedId>,
     function_sites: &'hir BTreeMap<ExprId, RuntimeFunctionSiteSeedId>,
+    overrides: BTreeMap<ExprId, RuntimeExprSeed>,
 }
 
 impl<'hir> FinalExprLowerer<'hir> {
@@ -57,7 +58,13 @@ impl<'hir> FinalExprLowerer<'hir> {
             pure_helpers,
             trait_methods,
             function_sites,
+            overrides: BTreeMap::new(),
         }
+    }
+
+    pub(crate) fn with_overrides(mut self, overrides: BTreeMap<ExprId, RuntimeExprSeed>) -> Self {
+        self.overrides = overrides;
+        self
     }
 
     pub(crate) fn lower_host_call_target(
@@ -113,6 +120,9 @@ impl<'hir> FinalExprLowerer<'hir> {
         reason = "one closed final-HIR expression projection"
     )]
     pub(crate) fn lower(&self, id: ExprId) -> Result<RuntimeExprSeed, String> {
+        if let Some(value) = self.overrides.get(&id) {
+            return Ok(value.clone());
+        }
         let expression = self
             .module
             .resolve_expr(id)

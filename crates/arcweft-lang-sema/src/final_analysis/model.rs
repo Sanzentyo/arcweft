@@ -445,6 +445,8 @@ pub enum CheckedExpressionResolution {
     Call,
     /// Exact outcome and continuation contract owned by one Await expression.
     Await(CheckedAwait),
+    /// Exact carrier and nearest lexical propagation boundary for prefix Try.
+    Try(CheckedTry),
     /// A call whose execution contract belongs to the retained View program,
     /// rather than to the ordinary callable catalog.
     ViewCall(CheckedViewCall),
@@ -469,6 +471,75 @@ pub enum CheckedExpressionResolution {
         rich_text: Box<CheckedRichTextReport>,
     },
     PostfixBracket(PostfixBracketResolution),
+}
+
+/// Closed carrier consumed by one prefix Try expression.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum CheckedTryCarrier {
+    Result {
+        success: TypeKind,
+        residual: Box<TypeKind>,
+    },
+    Option {
+        success: TypeKind,
+    },
+}
+
+impl CheckedTryCarrier {
+    pub const fn success(&self) -> &TypeKind {
+        match self {
+            Self::Result { success, .. } | Self::Option { success } => success,
+        }
+    }
+
+    pub fn residual(&self) -> Option<&TypeKind> {
+        match self {
+            Self::Result { residual, .. } => Some(residual.as_ref()),
+            Self::Option { .. } => None,
+        }
+    }
+}
+
+/// Nearest typed lexical owner that receives one Try residual.
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub enum CheckedTryBoundary {
+    Infallible,
+    CarrierBlock(ExprId),
+    Callable(ItemId),
+}
+
+/// Complete checked meaning of one prefix Try expression.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct CheckedTry {
+    operand: ExprId,
+    carrier: CheckedTryCarrier,
+    boundary: CheckedTryBoundary,
+}
+
+impl CheckedTry {
+    pub const fn new(
+        operand: ExprId,
+        carrier: CheckedTryCarrier,
+        boundary: CheckedTryBoundary,
+    ) -> Self {
+        Self {
+            operand,
+            carrier,
+            boundary,
+        }
+    }
+
+    pub const fn operand(&self) -> ExprId {
+        self.operand
+    }
+
+    pub const fn carrier(&self) -> &CheckedTryCarrier {
+        &self.carrier
+    }
+
+    pub const fn boundary(&self) -> CheckedTryBoundary {
+        self.boundary
+    }
 }
 
 /// Whether one Await handler can return to the normal Result continuation.

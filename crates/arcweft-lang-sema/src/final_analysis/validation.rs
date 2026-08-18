@@ -29,13 +29,13 @@ use super::{
     CheckedFunctionExecution, CheckedItem, CheckedItemRole, CheckedIteration,
     CheckedPatchOperation, CheckedPattern, CheckedPatternResolution, CheckedProjectCallable,
     CheckedProjectItem, CheckedProjectItemOwner, CheckedProjectNominal, CheckedSelectResolution,
-    CheckedStatement, CheckedStatementRole, CheckedTraitConformance, CheckedValueResolution,
-    CheckedVariantOwner, CheckedVariantResolution, DeclarationIdentityFamily, ExprId,
-    FinalSemanticAnalysisError, FinalSemanticAnalysisWork, HirExecutableProjectView, HirExprKind,
-    HirIdRef, HirItemKind, HirModule, HirModuleId, HirPatternKind, HirStmtKind, ItemId, LocalId,
-    PatternId, PhysicalCandidateArgumentEvaluation, PostfixBracketResolution, ProjectNominalBody,
-    ProjectSymbolTable, ResolvedCallable, SemanticFactFamily, SignatureOrigin, StmtId, TypeId,
-    TypeKind, TypeResolutionReport,
+    CheckedStatement, CheckedStatementRole, CheckedTraitConformance, CheckedTryBoundary,
+    CheckedTryCarrier, CheckedValueResolution, CheckedVariantOwner, CheckedVariantResolution,
+    DeclarationIdentityFamily, ExprId, FinalSemanticAnalysisError, FinalSemanticAnalysisWork,
+    HirExecutableProjectView, HirExprKind, HirIdRef, HirItemKind, HirModule, HirModuleId,
+    HirPatternKind, HirStmtKind, ItemId, LocalId, PatternId, PhysicalCandidateArgumentEvaluation,
+    PostfixBracketResolution, ProjectNominalBody, ProjectSymbolTable, ResolvedCallable,
+    SemanticFactFamily, SignatureOrigin, StmtId, TypeId, TypeKind, TypeResolutionReport,
 };
 
 /// Borrowed semantic fact maps validated and accounted as one generation.
@@ -716,6 +716,9 @@ fn expression_resolution_matches(
             _ => false,
         },
         (HirExprKind::Await(_), CheckedExpressionResolution::Await(_)) => true,
+        (HirExprKind::Try(authored), CheckedExpressionResolution::Try(checked)) => {
+            authored.operand() == checked.operand()
+        }
         (kind, CheckedExpressionResolution::Structural) => structural_resolution_matches(kind),
         _ => false,
     }
@@ -733,7 +736,6 @@ const fn structural_resolution_matches(kind: &HirExprKind) -> bool {
             | HirExprKind::ArrayRepeat(_)
             | HirExprKind::Index(_)
             | HirExprKind::Pipe(_)
-            | HirExprKind::Try(_)
             | HirExprKind::Await(_)
             | HirExprKind::Thread(_)
             | HirExprKind::Choice(_)
@@ -845,6 +847,59 @@ fn validate_expression_resolution(
             .any(|line| line.text_key() == target)
             .then_some(())
             .ok_or(FinalSemanticAnalysisError::WrongPayloadFamily),
+        CheckedExpressionResolution::Try(tried) => {
+            let operand = expressions
+                .get(&tried.operand())
+                .ok_or(FinalSemanticAnalysisError::WrongPayloadFamily)?;
+            let carrier_matches = match (tried.carrier(), operand.ty()) {
+                (
+                    CheckedTryCarrier::Result { success, residual },
+                    TypeKind::Result { ok, error },
+                ) => success == ok.as_ref() && residual.as_ref() == error.as_ref(),
+                (CheckedTryCarrier::Option { success }, TypeKind::Option(item)) => {
+                    success == item.as_ref()
+                }
+                _ => false,
+            };
+            if !carrier_matches {
+                return Err(FinalSemanticAnalysisError::WrongPayloadFamily);
+            }
+            match tried.boundary() {
+                CheckedTryBoundary::Infallible => matches!(
+                    tried.carrier(),
+                    CheckedTryCarrier::Result { residual, .. }
+                        if matches!(residual.as_ref(), TypeKind::Never)
+                )
+                .then_some(())
+                .ok_or(FinalSemanticAnalysisError::WrongPayloadFamily),
+                CheckedTryBoundary::CarrierBlock(boundary) => {
+                    let boundary = resolve_module(modules, boundary.module())?
+                        .resolve_expr(boundary)
+                        .map_err(|_| FinalSemanticAnalysisError::InvalidOwner)?;
+                    let HirExprKind::ComputationBlock(block) = boundary.kind() else {
+                        return Err(FinalSemanticAnalysisError::WrongPayloadFamily);
+                    };
+                    matches!(
+                        (block.kind(), tried.carrier()),
+                        (
+                            arcweft_lang_hir::expr::HirComputationBlockKind::Result,
+                            CheckedTryCarrier::Result { .. }
+                        ) | (
+                            arcweft_lang_hir::expr::HirComputationBlockKind::Option,
+                            CheckedTryCarrier::Option { .. }
+                        )
+                    )
+                    .then_some(())
+                    .ok_or(FinalSemanticAnalysisError::WrongPayloadFamily)
+                }
+                CheckedTryBoundary::Callable(boundary) => {
+                    resolve_module(modules, boundary.module())?
+                        .resolve_item(boundary)
+                        .map(|_| ())
+                        .map_err(|_| FinalSemanticAnalysisError::InvalidOwner)
+                }
+            }
+        }
         CheckedExpressionResolution::Await(_)
         | CheckedExpressionResolution::PostfixBracket(_)
         | CheckedExpressionResolution::Effect(_)

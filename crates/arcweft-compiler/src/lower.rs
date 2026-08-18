@@ -82,8 +82,8 @@ use arcweft_lang_sema::{
         CheckedCharacterDialogueTarget, CheckedEvaluatedEffect, CheckedExpressionResolution,
         CheckedItemRole, CheckedIteration, CheckedIteratorFamily, CheckedPatternResolution,
         CheckedProjectItemOwner, CheckedProjectNominal, CheckedSelectResolution,
-        CheckedStatementRole, CheckedTraitConformance, CheckedTraitIdentity,
-        CheckedValueResolution, CheckedVariantOwner, CheckedVariantResolution,
+        CheckedStatementRole, CheckedTraitConformance, CheckedTraitIdentity, CheckedTryBoundary,
+        CheckedTryCarrier, CheckedValueResolution, CheckedVariantOwner, CheckedVariantResolution,
         FinalSemanticAnalysis, FinalSemanticAnalysisError, NominalSchemaProjectionError,
     },
     types::{AgentBuiltinType, ArrayLength, TypeKind},
@@ -107,7 +107,8 @@ use arcweft_runtime_plan::{
         RuntimeResolvedHostCall, RuntimeResolvedNominal, RuntimeResolvedNominalRecord,
         RuntimeResolvedSelect, RuntimeResolvedValue, RuntimeResolvedVariant,
         RuntimeSemanticFactsError, RuntimeSemanticTypeId, RuntimeSequenceKind,
-        RuntimeTraitIdentity, RuntimeTraitMethodFact, RuntimeTypeProjectionPath,
+        RuntimeTraitIdentity, RuntimeTraitMethodFact, RuntimeTryBoundaryOwner,
+        RuntimeTryCarrierFact, RuntimeTryFact, RuntimeTypeProjectionPath,
         RuntimeTypeProjectionStep, RuntimeTypeShape,
     },
 };
@@ -193,6 +194,8 @@ pub enum RuntimeSemanticProjectionError {
     InvalidAssertionDisposition { owner: StmtId },
     #[error("evaluated-effect statement {owner:?} has no matching registered runtime call")]
     InvalidEvaluatedEffectDisposition { owner: StmtId },
+    #[error("Try expression {owner:?} has no exact checked propagation boundary")]
+    InvalidTryBoundary { owner: ExprId },
     #[error("dialogue projection failed for {owner:?}: {reason}")]
     Dialogue {
         owner: Option<ExprId>,
@@ -460,6 +463,76 @@ pub fn project_runtime_semantic_facts(
                                 ))
                             })
                             .collect::<Result<Vec<_>, RuntimeSemanticProjectionError>>()?,
+                    ),
+                );
+            }
+            CheckedExpressionResolution::Try(tried) => {
+                let module = project
+                    .modules()
+                    .find_map(|(_, module)| {
+                        (module.module_id() == owner.module()).then_some(module.as_ref())
+                    })
+                    .ok_or(RuntimeSemanticProjectionError::MissingModule { owner })?;
+                let (boundary, boundary_ty) = match tried.boundary() {
+                    CheckedTryBoundary::Infallible => {
+                        let checked = analysis
+                            .expression(tried.operand())
+                            .ok_or(RuntimeSemanticProjectionError::InvalidTryBoundary { owner })?;
+                        (RuntimeTryBoundaryOwner::Infallible, checked.ty())
+                    }
+                    CheckedTryBoundary::CarrierBlock(boundary) => {
+                        let checked = analysis
+                            .expression(boundary)
+                            .ok_or(RuntimeSemanticProjectionError::InvalidTryBoundary { owner })?;
+                        (
+                            RuntimeTryBoundaryOwner::CarrierBlock(boundary),
+                            checked.ty(),
+                        )
+                    }
+                    CheckedTryBoundary::Callable(boundary) => {
+                        let item = module.resolve_item(boundary).map_err(|_| {
+                            RuntimeSemanticProjectionError::InvalidTryBoundary { owner }
+                        })?;
+                        let return_type = match item.kind() {
+                            HirItemKind::Function(function) => function.return_type(),
+                            HirItemKind::Flow(flow) => flow.result().authored_type(),
+                            _ => None,
+                        }
+                        .ok_or(RuntimeSemanticProjectionError::InvalidTryBoundary { owner })?;
+                        let checked = analysis
+                            .ty(return_type)
+                            .ok_or(RuntimeSemanticProjectionError::InvalidTryBoundary { owner })?;
+                        (RuntimeTryBoundaryOwner::Callable(boundary), checked)
+                    }
+                };
+                let carrier = match tried.carrier() {
+                    CheckedTryCarrier::Result { success, residual } => {
+                        RuntimeTryCarrierFact::Result {
+                            success: runtime_type(success, symbols, analysis)?,
+                            residual: Box::new(runtime_type(residual, symbols, analysis)?),
+                        }
+                    }
+                    CheckedTryCarrier::Option { success } => RuntimeTryCarrierFact::Option {
+                        success: runtime_type(success, symbols, analysis)?,
+                    },
+                };
+                input.push_try(
+                    owner,
+                    RuntimeTryFact::new(
+                        tried.operand(),
+                        runtime_type(
+                            analysis
+                                .expression(tried.operand())
+                                .ok_or(RuntimeSemanticProjectionError::InvalidTryBoundary {
+                                    owner,
+                                })?
+                                .ty(),
+                            symbols,
+                            analysis,
+                        )?,
+                        carrier,
+                        boundary,
+                        runtime_type(boundary_ty, symbols, analysis)?,
                     ),
                 );
             }

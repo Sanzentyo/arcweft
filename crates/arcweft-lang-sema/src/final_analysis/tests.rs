@@ -51,10 +51,11 @@ use super::{
     CheckedExpressionResolution, CheckedFunctionExecution, CheckedItem, CheckedItemRole,
     CheckedIteration, CheckedIteratorFamily, CheckedPatchOperation, CheckedPattern,
     CheckedPatternResolution, CheckedStatement, CheckedStatementRole, CheckedSuspensionRole,
-    CheckedSuspensionStatement, CheckedTypeSelection, CheckedValueResolution, CheckedVariantOwner,
-    FinalSemanticAnalysis, FinalSemanticAnalysisControl, FinalSemanticAnalysisError,
-    FinalSemanticAnalysisInput, FinalSemanticCatalogs, PhysicalArgumentEvaluationKind,
-    RegisteredSemanticValueId, ResolvedCallable, analyze_final_project,
+    CheckedSuspensionStatement, CheckedTryBoundary, CheckedTryCarrier, CheckedTypeSelection,
+    CheckedValueResolution, CheckedVariantOwner, FinalSemanticAnalysis,
+    FinalSemanticAnalysisControl, FinalSemanticAnalysisError, FinalSemanticAnalysisInput,
+    FinalSemanticCatalogs, PhysicalArgumentEvaluationKind, RegisteredSemanticValueId,
+    ResolvedCallable, analyze_final_project,
 };
 use crate::{
     assertion::{AssertionBuildProfile, AssertionContext, AssertionRuntimePolicy},
@@ -1613,6 +1614,63 @@ fn nested(need: Need<i64, String>) -> Result<i64, String> {
                 .effects()
                 .iter()
                 .any(|effect| effect.as_str() == "control.suspend")
+    }));
+    assert!(report.expressions().any(|(_, expression)| {
+        matches!(
+            expression.resolution(),
+            CheckedExpressionResolution::Try(tried)
+                if matches!(tried.carrier(), CheckedTryCarrier::Result {
+                    success: TypeKind::I64,
+                    residual,
+                } if matches!(residual.as_ref(), TypeKind::String))
+                    && matches!(tried.boundary(), CheckedTryBoundary::Callable(_))
+        )
+    }));
+}
+
+#[test]
+fn carrier_blocks_are_the_nearest_checked_try_boundaries() {
+    let fixture = fixture(
+        r"
+fn retain_result(input: Result<i64, String>) -> Result<i64, String> {
+    result {
+        let value = try input
+        value
+    }
+}
+
+fn retain_option(input: Option<i64>) -> Option<i64> {
+    option {
+        let value = try input
+        value
+    }
+}
+",
+        None,
+    );
+    let report = analyze(&fixture).expect("carrier block Try analysis");
+    let boundaries = report
+        .expressions()
+        .filter_map(|(_, expression)| match expression.resolution() {
+            CheckedExpressionResolution::Try(tried) => Some(tried.boundary()),
+            _ => None,
+        })
+        .collect::<Vec<_>>();
+    assert_eq!(boundaries.len(), 2);
+    assert!(
+        boundaries
+            .iter()
+            .all(|boundary| matches!(boundary, CheckedTryBoundary::CarrierBlock(_)))
+    );
+    assert!(report.expressions().any(|(_, expression)| {
+        matches!(
+            expression.ty(),
+            TypeKind::Result { ok, error }
+                if **ok == TypeKind::I64 && **error == TypeKind::String
+        )
+    }));
+    assert!(report.expressions().any(|(_, expression)| {
+        matches!(expression.ty(), TypeKind::Option(item) if **item == TypeKind::I64)
     }));
 }
 

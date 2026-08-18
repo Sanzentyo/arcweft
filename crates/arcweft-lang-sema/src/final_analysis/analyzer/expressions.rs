@@ -6,19 +6,20 @@ mod records;
 use super::{
     Analyzer, ArrayLength, BTreeSet, BorrowKind, CandidateSemanticProjection, CheckedAwait,
     CheckedAwaitBranch, CheckedAwaitBranchContinuation, CheckedEntryReference, CheckedExpression,
-    CheckedExpressionResolution, CheckedProjectItem, CheckedStyleCallee, CheckedTypeSelection,
-    CheckedValueResolution, CheckedVariantOwner, CheckedViewCall, CheckedViewCallee, EffectId,
-    EffectSet, EntityKind, EnumVariantPayload, ExprId, FinalSemanticAnalysisError,
-    GenericTypeOwnerId, GenericTypeParameterId, HirAwaitBranchKind, HirBinaryOp, HirBorrowKind,
-    HirCallArgument, HirComputationBlockKind, HirContextualStmtBody, HirExpr, HirExprKind,
-    HirExprSourceRole, HirIdRef, HirIntegerLiteral, HirItemKind, HirLiteral, HirModule,
-    HirPathRoot, HirPathSegment, HirPatternKind, HirPostfixBracket, HirPostfixBracketCandidates,
-    HirRecordField, HirRecoveredName, HirScopeOwner, HirSelectedMember, HirSourcePresence,
+    CheckedExpressionResolution, CheckedProjectItem, CheckedStyleCallee, CheckedTry,
+    CheckedTryBoundary, CheckedTryCarrier, CheckedTypeSelection, CheckedValueResolution,
+    CheckedVariantOwner, CheckedViewCall, CheckedViewCallee, EffectId, EffectSet, EntityKind,
+    EnumVariantPayload, ExprId, FinalSemanticAnalysisError, GenericTypeOwnerId,
+    GenericTypeParameterId, HirAwaitBranchKind, HirBinaryOp, HirBorrowKind, HirCallArgument,
+    HirComputationBlockKind, HirContextualStmtBody, HirExpr, HirExprKind, HirIdRef,
+    HirIntegerLiteral, HirItemKind, HirLiteral, HirModule, HirPathRoot, HirPathSegment,
+    HirPatternKind, HirPostfixBracket, HirPostfixBracketCandidates, HirRecordField,
+    HirRecoveredName, HirScopeKind, HirScopeOwner, HirSelectedMember, HirSourcePresence,
     HirSourceQuery, HirSourceSite, HirStmtKind, HirThreadFlowItem, HirTypeSourceRole, HirUnaryOp,
     LocalLookup, PostfixBracketResolution, ProjectHirSymbolLookupError, ProjectNominalBody,
     ProjectNominalDeclaration, ProjectNominalType, ProjectSymbolResolutionError, ProjectTypeTarget,
-    ProjectValueLookup, PropagationOperator, RegisteredSemanticValueId, ResolvedProjectSymbol,
-    RichTextAttributeChecker, ScopeId, SourceSpan, TypeKind, TypeParameterSubstitutions,
+    ProjectValueLookup, RegisteredSemanticValueId, ResolvedProjectSymbol, RichTextAttributeChecker,
+    ScopeId, SourceSpan, TypeKind, TypeParameterSubstitutions,
     calls::{checked_character_dialogue_target, checked_project_nominal, nominal_substitutions},
     expression_types::{
         common_type, expected_item, indexed_item, literal_type, value_resolution_type,
@@ -481,29 +482,31 @@ impl Analyzer<'_, '_, '_> {
             }
             HirExprKind::Try(operation) => {
                 let operand = self.check_expression(operation.operand(), None)?;
-                let ty = match operand.ty() {
-                    TypeKind::Result { ok, error } => {
-                        self.validate_propagation_error(
-                            module,
-                            owner,
-                            expression.scope(),
-                            PropagationOperator::Try,
-                            error,
-                        )?;
-                        (**ok).clone()
-                    }
-                    TypeKind::Option(value) => (**value).clone(),
+                let carrier = match operand.ty() {
+                    TypeKind::Result { ok, error } => CheckedTryCarrier::Result {
+                        success: ok.as_ref().clone(),
+                        residual: error.clone(),
+                    },
+                    TypeKind::Option(value) => CheckedTryCarrier::Option {
+                        success: value.as_ref().clone(),
+                    },
                     _ => {
                         return Err(FinalSemanticAnalysisError::ExpressionTypeUnavailable {
                             owner,
                         });
                     }
                 };
+                let boundary =
+                    self.resolve_try_boundary(module, owner, expression.scope(), &carrier)?;
                 Ok(CheckedExpression::new(
-                    ty,
+                    carrier.success().clone(),
                     CheckedTypeSelection::Inferred,
                     operand.effects().clone(),
-                    CheckedExpressionResolution::Structural,
+                    CheckedExpressionResolution::Try(CheckedTry::new(
+                        operation.operand(),
+                        carrier,
+                        boundary,
+                    )),
                 ))
             }
             HirExprKind::Await(operation) => {
@@ -623,65 +626,6 @@ impl Analyzer<'_, '_, '_> {
         Ok((checked, terminal_irrefutable_error))
     }
 
-    fn validate_propagation_error(
-        &self,
-        module: &HirModule,
-        owner: ExprId,
-        scope: ScopeId,
-        operator: PropagationOperator,
-        operand_error: &TypeKind,
-    ) -> Result<(), FinalSemanticAnalysisError> {
-        if matches!(operand_error, TypeKind::Never) {
-            return Ok(());
-        }
-        let item_owner = enclosing_item(module, scope)?
-            .ok_or(FinalSemanticAnalysisError::ExpressionTypeUnavailable { owner })?;
-        let item = module
-            .resolve_item(item_owner)
-            .map_err(|_| FinalSemanticAnalysisError::InvalidOwner)?;
-        let return_type = match item.kind() {
-            HirItemKind::Function(function) => function.return_type(),
-            HirItemKind::Flow(flow) => flow.result().authored_type(),
-            _ => None,
-        }
-        .ok_or(FinalSemanticAnalysisError::ExpressionTypeUnavailable { owner })?;
-        let return_ty = self
-            .types
-            .get(&return_type)
-            .ok_or(FinalSemanticAnalysisError::TypeResolutionFailed { owner: return_type })?;
-        let TypeKind::Result {
-            error: return_error,
-            ..
-        } = return_ty
-        else {
-            return Err(FinalSemanticAnalysisError::ExpressionTypeUnavailable { owner });
-        };
-        if return_error.accepts(operand_error) {
-            return Ok(());
-        }
-        let operator_source = source_span_for_role(
-            module,
-            HirSourceQuery::Expr {
-                owner,
-                role: HirExprSourceRole::Operator,
-            },
-        )?;
-        let return_source = source_span_for_role(
-            module,
-            HirSourceQuery::Type {
-                owner: return_type,
-                role: HirTypeSourceRole::Whole,
-            },
-        )?;
-        Err(FinalSemanticAnalysisError::PropagationErrorMismatch {
-            owner,
-            operator,
-            operand_error: Box::new(operand_error.clone()),
-            return_error: Box::new(return_error.as_ref().clone()),
-            operator_source,
-            return_source,
-        })
-    }
     fn check_control_expression_kind(
         &mut self,
         module: &HirModule,
@@ -698,12 +642,44 @@ impl Analyzer<'_, '_, '_> {
                 ))
             }
             HirExprKind::ComputationBlock(block) => {
-                let tail = self.check_expression(block.tail(), None)?;
+                self.infer_nested_expression_bindings(owner)?;
+                let expected_success = match (block.kind(), expected) {
+                    (HirComputationBlockKind::Result, Some(TypeKind::Result { ok, .. })) => {
+                        Some(ok.as_ref())
+                    }
+                    (HirComputationBlockKind::Option, Some(TypeKind::Option(item))) => {
+                        Some(item.as_ref())
+                    }
+                    _ => None,
+                };
+                let tail = self.check_expression(block.tail(), expected_success)?;
                 let ty = match block.kind() {
-                    HirComputationBlockKind::Result => TypeKind::Result {
-                        ok: Box::new(tail.ty().clone()),
-                        error: Box::new(TypeKind::Unit),
-                    },
+                    HirComputationBlockKind::Result => {
+                        let expected_error = match expected {
+                            Some(TypeKind::Result { error, .. }) => Some(error.as_ref()),
+                            _ => None,
+                        };
+                        let residuals = self.try_residuals_for_block(owner);
+                        let error = if let Some(expected) = expected_error {
+                            if residuals.iter().all(|residual| expected.accepts(residual)) {
+                                expected.clone()
+                            } else {
+                                return Err(
+                                    FinalSemanticAnalysisError::ExpressionTypeUnavailable { owner },
+                                );
+                            }
+                        } else if residuals.is_empty() {
+                            TypeKind::Never
+                        } else {
+                            common_type(residuals.iter().copied(), None).ok_or(
+                                FinalSemanticAnalysisError::ExpressionTypeUnavailable { owner },
+                            )?
+                        };
+                        TypeKind::Result {
+                            ok: Box::new(tail.ty().clone()),
+                            error: Box::new(error),
+                        }
+                    }
                     HirComputationBlockKind::Option => {
                         TypeKind::Option(Box::new(tail.ty().clone()))
                     }
@@ -789,6 +765,146 @@ impl Analyzer<'_, '_, '_> {
             _ => return Ok(None),
         }
         .map(Some)
+    }
+
+    fn try_residuals_for_block(&self, owner: ExprId) -> Vec<&TypeKind> {
+        self.facts
+            .expressions()
+            .values()
+            .filter_map(|expression| match expression.resolution() {
+                CheckedExpressionResolution::Try(tried)
+                    if tried.boundary() == CheckedTryBoundary::CarrierBlock(owner) =>
+                {
+                    tried.carrier().residual()
+                }
+                _ => None,
+            })
+            .collect()
+    }
+
+    fn resolve_try_boundary(
+        &self,
+        module: &HirModule,
+        owner: ExprId,
+        mut scope: ScopeId,
+        carrier: &CheckedTryCarrier,
+    ) -> Result<CheckedTryBoundary, FinalSemanticAnalysisError> {
+        if matches!(
+            carrier,
+            CheckedTryCarrier::Result { residual, .. }
+                if matches!(residual.as_ref(), TypeKind::Never)
+        ) {
+            return Ok(CheckedTryBoundary::Infallible);
+        }
+        loop {
+            let current = module
+                .resolve_scope(scope)
+                .map_err(|_| FinalSemanticAnalysisError::InvalidOwner)?;
+            match current.owner() {
+                HirScopeOwner::Expr(expression) => {
+                    let expression_kind = module
+                        .resolve_expr(*expression)
+                        .map_err(|_| FinalSemanticAnalysisError::InvalidOwner)?
+                        .kind();
+                    if let HirExprKind::ComputationBlock(block) = expression_kind {
+                        let matches = matches!(
+                            (block.kind(), carrier),
+                            (
+                                HirComputationBlockKind::Result,
+                                CheckedTryCarrier::Result { .. }
+                            ) | (
+                                HirComputationBlockKind::Option,
+                                CheckedTryCarrier::Option { .. }
+                            )
+                        );
+                        return matches
+                            .then_some(CheckedTryBoundary::CarrierBlock(*expression))
+                            .ok_or(FinalSemanticAnalysisError::ExpressionTypeUnavailable {
+                                owner,
+                            });
+                    }
+                    if current.kind() == HirScopeKind::Closure {
+                        return Err(FinalSemanticAnalysisError::ExpressionTypeUnavailable {
+                            owner,
+                        });
+                    }
+                }
+                HirScopeOwner::Item(item) => {
+                    let item_kind = module
+                        .resolve_item(*item)
+                        .map_err(|_| FinalSemanticAnalysisError::InvalidOwner)?
+                        .kind();
+                    let return_type = match item_kind {
+                        HirItemKind::Function(function) => function.return_type(),
+                        HirItemKind::Flow(flow) => flow.result().authored_type(),
+                        _ => None,
+                    }
+                    .ok_or(FinalSemanticAnalysisError::ExpressionTypeUnavailable { owner })?;
+                    let boundary = self.types.get(&return_type).ok_or(
+                        FinalSemanticAnalysisError::TypeResolutionFailed { owner: return_type },
+                    )?;
+                    let matches = match (carrier, boundary) {
+                        (
+                            CheckedTryCarrier::Result { residual, .. },
+                            TypeKind::Result { error, .. },
+                        ) => error.accepts(residual),
+                        (CheckedTryCarrier::Option { .. }, TypeKind::Option(_)) => true,
+                        _ => false,
+                    };
+                    if let (
+                        CheckedTryCarrier::Result { residual, .. },
+                        TypeKind::Result { error, .. },
+                    ) = (carrier, boundary)
+                        && !matches
+                    {
+                        return Err(self.try_error_mismatch(
+                            module,
+                            owner,
+                            return_type,
+                            residual,
+                            error,
+                        )?);
+                    }
+                    return matches
+                        .then_some(CheckedTryBoundary::Callable(*item))
+                        .ok_or(FinalSemanticAnalysisError::ExpressionTypeUnavailable { owner });
+                }
+                HirScopeOwner::Module(_) | HirScopeOwner::Stmt(_) => {}
+            }
+            let Some(parent) = current.parent() else {
+                return Err(FinalSemanticAnalysisError::ExpressionTypeUnavailable { owner });
+            };
+            scope = parent;
+        }
+    }
+
+    fn try_error_mismatch(
+        &self,
+        module: &HirModule,
+        owner: ExprId,
+        return_type: arcweft_lang_hir::identity::TypeId,
+        operand_error: &TypeKind,
+        return_error: &TypeKind,
+    ) -> Result<FinalSemanticAnalysisError, FinalSemanticAnalysisError> {
+        Ok(FinalSemanticAnalysisError::PropagationErrorMismatch {
+            owner,
+            operand_error: Box::new(operand_error.clone()),
+            return_error: Box::new(return_error.clone()),
+            operator_source: source_span_for_role(
+                module,
+                HirSourceQuery::Expr {
+                    owner,
+                    role: arcweft_lang_hir::source_index::HirExprSourceRole::Operator,
+                },
+            )?,
+            return_source: source_span_for_role(
+                module,
+                HirSourceQuery::Type {
+                    owner: return_type,
+                    role: HirTypeSourceRole::Whole,
+                },
+            )?,
+        })
     }
     fn check_closure_expression_kind(
         &mut self,

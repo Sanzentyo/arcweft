@@ -459,7 +459,7 @@ impl Analyzer<'_, '_, '_> {
         self.seed_contextual_pattern_locals(module, pattern, &binding)
     }
 
-    fn infer_nested_expression_bindings(
+    pub(super) fn infer_nested_expression_bindings(
         &mut self,
         owner: ExprId,
     ) -> Result<(), FinalSemanticAnalysisError> {
@@ -470,6 +470,7 @@ impl Analyzer<'_, '_, '_> {
                 .map_err(|_| FinalSemanticAnalysisError::InvalidOwner)?;
             match expression.kind() {
                 HirExprKind::Block(block) => block.statements().to_vec(),
+                HirExprKind::ComputationBlock(block) => block.statements().to_vec(),
                 HirExprKind::NamedBlock(block) => block.statements().to_vec(),
                 HirExprKind::Loop(loop_expression) => loop_expression.statements().to_vec(),
                 _ => return Ok(()),
