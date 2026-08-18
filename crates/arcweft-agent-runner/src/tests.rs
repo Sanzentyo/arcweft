@@ -53,15 +53,15 @@ use arcweft_core::{
         RuntimeAgentEntryRoles, RuntimeCallableId, RuntimeCallableRole, RuntimeEntryRoles,
         RuntimeFlowExecutable,
     },
-    pattern::RuntimeSemanticTypeId,
+    pattern::{RuntimeCheckedType, RuntimeSemanticTypeId},
     plan::{
-        EntryRuntimeId, FlowRuntimeId, RuntimeAgentTypeProjection, RuntimeAwaitTargetSeed,
-        RuntimeCallableExecutableSeed, RuntimeCallableExecutableSeedCode, RuntimeEntryKind,
-        RuntimeEntrySpec, RuntimeEntryTarget, RuntimeExprSeed, RuntimeExprSeedKind,
-        RuntimeFieldProjectionSeed, RuntimeFlowOpSeed, RuntimeFlowSeed, RuntimeHostArgumentSeed,
-        RuntimeHostCallTargetSeed, RuntimeHostTaskRequestTemplateSeed, RuntimeLocalDeclarationSeed,
-        RuntimePatternSeed, RuntimePatternSeedKind, RuntimePlanBuilder, RuntimePlanTypeProjection,
-        RuntimePlanTypeSeed,
+        EntryRuntimeId, FlowRuntimeId, RuntimeAgentOperationalType, RuntimeAgentTypeProjection,
+        RuntimeAwaitTargetSeed, RuntimeCallableExecutableSeed, RuntimeCallableExecutableSeedCode,
+        RuntimeEntryKind, RuntimeEntrySpec, RuntimeEntryTarget, RuntimeExprSeed,
+        RuntimeExprSeedKind, RuntimeFieldProjectionSeed, RuntimeFlowOpSeed, RuntimeFlowSeed,
+        RuntimeHostArgumentSeed, RuntimeHostCallTargetSeed, RuntimeHostTaskRequestTemplateSeed,
+        RuntimeLocalDeclarationSeed, RuntimePatternSeed, RuntimePatternSeedKind,
+        RuntimePlanBuilder, RuntimePlanTypeProjection, RuntimePlanTypeSeed,
     },
     step::RuntimeHostCallMode,
     task::{HostCapabilityId, HostTaskRequest, NeedId, TaskId, TaskOutcomeContract},
@@ -127,6 +127,11 @@ const PROJECT_NEIGHBORHOOD_TY: u8 = 11;
 const OBSERVATION_TY: u8 = 12;
 const PROBE_BOOL_TY: u8 = 13;
 const PREDICATE_TY: u8 = 14;
+const CAPTURE_RESULT_TY: u8 = 15;
+const RESOURCE_RESULT_TY: u8 = 16;
+const ENTITY_METADATA_RESULT_TY: u8 = 17;
+const PROJECT_NEIGHBORHOOD_RESULT_TY: u8 = 18;
+const OBSERVATION_RESULT_TY: u8 = 19;
 
 fn controller_type(marker: u8) -> RuntimeSemanticTypeId {
     RuntimeSemanticTypeId::from_bytes([marker; 32])
@@ -136,7 +141,7 @@ fn controller_expr(ty: u8, kind: RuntimeExprSeedKind) -> RuntimeExprSeed {
     RuntimeExprSeed::new(controller_type(ty), kind)
 }
 
-fn controller_agent_types() -> [RuntimePlanTypeSeed; 14] {
+fn controller_agent_types() -> [RuntimePlanTypeSeed; 19] {
     [
         RuntimePlanTypeSeed::new(
             controller_type(STRING_TY),
@@ -193,6 +198,41 @@ fn controller_agent_types() -> [RuntimePlanTypeSeed; 14] {
             controller_type(PREDICATE_TY),
             RuntimePlanTypeProjection::Agent(RuntimeAgentTypeProjection::Predicate),
         ),
+        RuntimePlanTypeSeed::new(
+            controller_type(CAPTURE_RESULT_TY),
+            RuntimePlanTypeProjection::Result {
+                value: controller_type(CAPTURE_REFERENCE_TY),
+                error: controller_type(STRING_TY),
+            },
+        ),
+        RuntimePlanTypeSeed::new(
+            controller_type(RESOURCE_RESULT_TY),
+            RuntimePlanTypeProjection::Result {
+                value: controller_type(RESOURCE_TY),
+                error: controller_type(STRING_TY),
+            },
+        ),
+        RuntimePlanTypeSeed::new(
+            controller_type(ENTITY_METADATA_RESULT_TY),
+            RuntimePlanTypeProjection::Result {
+                value: controller_type(ENTITY_METADATA_TY),
+                error: controller_type(STRING_TY),
+            },
+        ),
+        RuntimePlanTypeSeed::new(
+            controller_type(PROJECT_NEIGHBORHOOD_RESULT_TY),
+            RuntimePlanTypeProjection::Result {
+                value: controller_type(PROJECT_NEIGHBORHOOD_TY),
+                error: controller_type(STRING_TY),
+            },
+        ),
+        RuntimePlanTypeSeed::new(
+            controller_type(OBSERVATION_RESULT_TY),
+            RuntimePlanTypeProjection::Result {
+                value: controller_type(OBSERVATION_TY),
+                error: controller_type(STRING_TY),
+            },
+        ),
     ]
 }
 
@@ -207,6 +247,32 @@ fn response_binding_pattern(
             local,
         },
     )
+}
+
+fn await_response_binding_pattern(
+    result_ty: u8,
+    response_ty: u8,
+    local: arcweft_core::plan::RuntimeLocalSeedId,
+) -> RuntimePatternSeed {
+    RuntimePatternSeed::new(
+        controller_type(result_ty),
+        RuntimePatternSeedKind::Variant {
+            ordinal: 0,
+            payload: Some(Box::new(response_binding_pattern(response_ty, local))),
+        },
+    )
+}
+
+fn agent_task_outcome(response_ty: u8) -> TaskOutcomeContract {
+    let ready = match response_ty {
+        CAPTURE_REFERENCE_TY => RuntimeAgentOperationalType::CaptureReference,
+        RESOURCE_TY => RuntimeAgentOperationalType::Resource,
+        ENTITY_METADATA_TY => RuntimeAgentOperationalType::EntityMetadata,
+        PROJECT_NEIGHBORHOOD_TY => RuntimeAgentOperationalType::ProjectGraphNeighborhood,
+        OBSERVATION_TY => RuntimeAgentOperationalType::Observation,
+        _ => panic!("fixture response type {response_ty} has no Agent task outcome"),
+    };
+    TaskOutcomeContract::new(RuntimeCheckedType::Agent(ready), RuntimeCheckedType::String)
 }
 
 fn agent_controller_program_seed(
@@ -893,11 +959,15 @@ fn capture_binding_program_with_budget(budget: AgentBudget) -> AwbcProgram {
             [],
             vec![
                 RuntimeFlowOpSeed::Await {
-                    binding: Some(response_binding_pattern(CAPTURE_REFERENCE_TY, shot.clone())),
+                    binding: Some(await_response_binding_pattern(
+                        CAPTURE_RESULT_TY,
+                        CAPTURE_REFERENCE_TY,
+                        shot.clone(),
+                    )),
                     target: RuntimeAwaitTargetSeed {
                         need: NeedId("need.agent.capture".to_owned()),
                         task: TaskId("task.agent.capture".to_owned()),
-                        outcome: TaskOutcomeContract::default(),
+                        outcome: agent_task_outcome(CAPTURE_REFERENCE_TY),
                         request: RuntimeHostTaskRequestTemplateSeed {
                             capability: HostCapabilityId("agent".to_owned()),
                             operation: "capture".to_owned(),
@@ -952,11 +1022,15 @@ fn read_resource_binding_program() -> AwbcProgram {
             [],
             vec![
                 RuntimeFlowOpSeed::Await {
-                    binding: Some(response_binding_pattern(RESOURCE_TY, resource.clone())),
+                    binding: Some(await_response_binding_pattern(
+                        RESOURCE_RESULT_TY,
+                        RESOURCE_TY,
+                        resource.clone(),
+                    )),
                     target: RuntimeAwaitTargetSeed {
                         need: NeedId("need.agent.read_resource".to_owned()),
                         task: TaskId("task.agent.read_resource".to_owned()),
-                        outcome: TaskOutcomeContract::default(),
+                        outcome: agent_task_outcome(RESOURCE_TY),
                         request: RuntimeHostTaskRequestTemplateSeed {
                             capability: HostCapabilityId("agent".to_owned()),
                             operation: "read_resource".to_owned(),
@@ -1002,6 +1076,7 @@ fn single_response_field_program(
     flow: FlowRuntimeId,
     agent_id: &str,
     response_ty: u8,
+    response_result_ty: u8,
     result_ty: u8,
     field: RuntimeAgentField,
     operation: &str,
@@ -1028,11 +1103,15 @@ fn single_response_field_program(
             [],
             vec![
                 RuntimeFlowOpSeed::Await {
-                    binding: Some(response_binding_pattern(response_ty, response.clone())),
+                    binding: Some(await_response_binding_pattern(
+                        response_result_ty,
+                        response_ty,
+                        response.clone(),
+                    )),
                     target: RuntimeAwaitTargetSeed {
                         need,
                         task,
-                        outcome: TaskOutcomeContract::default(),
+                        outcome: agent_task_outcome(response_ty),
                         request: RuntimeHostTaskRequestTemplateSeed {
                             capability: HostCapabilityId("agent".to_owned()),
                             operation: operation.to_owned(),
@@ -1107,6 +1186,7 @@ fn entity_metadata_binding_program() -> AwbcProgram {
         flow_id("agent.entity_metadata_binding"),
         "agent.entity_metadata_binding",
         ENTITY_METADATA_TY,
+        ENTITY_METADATA_RESULT_TY,
         STRING_TY,
         RuntimeAgentField::EntityMetadataSemanticHash,
         "entity_meta",
@@ -1122,6 +1202,7 @@ fn project_neighbors_binding_program() -> AwbcProgram {
         flow_id("agent.project_neighbors_binding"),
         "agent.project_neighbors_binding",
         PROJECT_NEIGHBORHOOD_TY,
+        PROJECT_NEIGHBORHOOD_RESULT_TY,
         U32_TY,
         RuntimeAgentField::ProjectGraphNeighborhoodEdgeCount,
         "project_neighbors",
@@ -1164,6 +1245,7 @@ fn wait_binding_program() -> AwbcProgram {
         flow_id("agent.wait_binding"),
         "agent.wait_binding",
         OBSERVATION_TY,
+        OBSERVATION_RESULT_TY,
         U64_TY,
         RuntimeAgentField::ObservationTick,
         "wait",

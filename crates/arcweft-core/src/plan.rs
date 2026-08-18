@@ -303,6 +303,7 @@ impl RuntimePlan {
                     })
                 }
             }
+            RuntimePlanTypeProjection::Agent(agent) => checked_agent_type(agent),
             RuntimePlanTypeProjection::Range(_)
             | RuntimePlanTypeProjection::Iterator(_)
             | RuntimePlanTypeProjection::Map { .. }
@@ -311,8 +312,7 @@ impl RuntimePlan {
             | RuntimePlanTypeProjection::ThreadHandle(_)
             | RuntimePlanTypeProjection::Shared(_)
             | RuntimePlanTypeProjection::Reference(_)
-            | RuntimePlanTypeProjection::Function { .. }
-            | RuntimePlanTypeProjection::Agent(_) => None,
+            | RuntimePlanTypeProjection::Function { .. } => None,
         };
         visiting.remove(&ty);
         memo.insert(ty, checked.clone());
@@ -386,6 +386,13 @@ impl RuntimePlan {
         }
         Ok(Some(checked))
     }
+}
+
+fn checked_agent_type(
+    agent: &RuntimeAgentTypeProjection<crate::runtime_id::RuntimePlanTypeId>,
+) -> Option<RuntimeCheckedType> {
+    (!matches!(agent, RuntimeAgentTypeProjection::Probe(_)))
+        .then(|| RuntimeCheckedType::Agent(agent.operational_type()))
 }
 
 /// Runtime identifier for a lowered flow.

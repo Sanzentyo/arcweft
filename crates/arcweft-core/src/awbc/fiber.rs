@@ -2239,6 +2239,9 @@ pub(crate) fn runtime_value_matches_type(
         (RuntimeValue::Agent(value), AwbcRuntimeType::Agent(expected)) => {
             value.operational_type() == *expected
         }
+        (RuntimeValue::Record(_), AwbcRuntimeType::Agent(expected)) => {
+            expected.accepts_protocol_record()
+        }
         (RuntimeValue::Seq(values), AwbcRuntimeType::Bytes) => values
             .clone()
             .into_values()

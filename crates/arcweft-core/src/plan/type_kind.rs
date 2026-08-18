@@ -41,6 +41,33 @@ pub enum RuntimeAgentOperationalType {
     RagError,
 }
 
+impl RuntimeAgentOperationalType {
+    /// Returns whether this semantic Agent family uses the closed protocol
+    /// record carrier at host/runtime boundaries.
+    #[must_use]
+    pub const fn accepts_protocol_record(self) -> bool {
+        matches!(
+            self,
+            Self::Observation
+                | Self::ObservedObject
+                | Self::BoundingBox
+                | Self::ActionResult
+                | Self::EntityMetadata
+                | Self::SourceAnchor
+                | Self::ProjectGraphNeighborhood
+                | Self::ProjectGraphSymbol
+                | Self::ProjectGraphEdge
+                | Self::CaptureReference
+                | Self::Resource
+                | Self::ResourceBody
+                | Self::RagContextPack
+                | Self::Diagnostics
+                | Self::WaitError
+                | Self::RagError
+        )
+    }
+}
+
 /// Top-level execution family derived from a complete type projection.
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub enum RuntimeOperationalType {

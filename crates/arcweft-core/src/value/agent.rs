@@ -208,6 +208,206 @@ pub enum RuntimeAgentFieldResult {
 }
 
 impl RuntimeAgentField {
+    /// Resolves a wire-level field label against one closed Agent owner.
+    ///
+    /// AWBC stores record labels in its canonical string table. This method is
+    /// the sole boundary that turns that wire spelling back into the semantic
+    /// field coordinate; callers must not accept an owner-independent label.
+    #[must_use]
+    #[allow(
+        clippy::too_many_lines,
+        reason = "the closed Agent field vocabulary is intentionally resolved at one owner boundary"
+    )]
+    pub fn from_owner_label(owner: RuntimeAgentOperationalType, label: &str) -> Option<Self> {
+        Some(match (owner, label) {
+            (RuntimeAgentOperationalType::Observation, "tick") => Self::ObservationTick,
+            (RuntimeAgentOperationalType::Observation, "frame_id") => Self::ObservationFrameId,
+            (RuntimeAgentOperationalType::Observation, "state_hash") => Self::ObservationStateHash,
+            (RuntimeAgentOperationalType::Observation, "render_hash") => {
+                Self::ObservationRenderHash
+            }
+            (RuntimeAgentOperationalType::Observation, "actions") => Self::ObservationActions,
+            (RuntimeAgentOperationalType::Observation, "objects") => Self::ObservationObjects,
+            (RuntimeAgentOperationalType::Observation, "signals") => Self::ObservationSignals,
+            (RuntimeAgentOperationalType::ObservedObject, "id") => Self::ObservedObjectId,
+            (RuntimeAgentOperationalType::ObservedObject, "parent_id") => {
+                Self::ObservedObjectParentId
+            }
+            (RuntimeAgentOperationalType::ObservedObject, "entity") => Self::ObservedObjectEntity,
+            (RuntimeAgentOperationalType::ObservedObject, "layer") => Self::ObservedObjectLayer,
+            (RuntimeAgentOperationalType::ObservedObject, "role") => Self::ObservedObjectRole,
+            (RuntimeAgentOperationalType::ObservedObject, "text") => Self::ObservedObjectText,
+            (RuntimeAgentOperationalType::ObservedObject, "visible") => Self::ObservedObjectVisible,
+            (RuntimeAgentOperationalType::ObservedObject, "enabled") => Self::ObservedObjectEnabled,
+            (RuntimeAgentOperationalType::ObservedObject, "bbox") => {
+                Self::ObservedObjectBoundingBox
+            }
+            (RuntimeAgentOperationalType::BoundingBox, "space") => Self::BoundingBoxSpace,
+            (RuntimeAgentOperationalType::BoundingBox, "x") => Self::BoundingBoxX,
+            (RuntimeAgentOperationalType::BoundingBox, "y") => Self::BoundingBoxY,
+            (RuntimeAgentOperationalType::BoundingBox, "width") => Self::BoundingBoxWidth,
+            (RuntimeAgentOperationalType::BoundingBox, "height") => Self::BoundingBoxHeight,
+            (RuntimeAgentOperationalType::ActionTarget, "id") => Self::ActionId,
+            (RuntimeAgentOperationalType::ActionTarget, "target") => Self::ActionTarget,
+            (RuntimeAgentOperationalType::ActionTarget, "action") => Self::ActionName,
+            (RuntimeAgentOperationalType::ActionTarget, "kind") => Self::ActionKind,
+            (RuntimeAgentOperationalType::ActionTarget, "enabled") => Self::ActionEnabled,
+            (RuntimeAgentOperationalType::ActionResult, "accepted") => Self::ActionResultAccepted,
+            (RuntimeAgentOperationalType::ActionResult, "before_tick") => {
+                Self::ActionResultBeforeTick
+            }
+            (RuntimeAgentOperationalType::ActionResult, "after_tick") => {
+                Self::ActionResultAfterTick
+            }
+            (RuntimeAgentOperationalType::ActionResult, "before_state_hash") => {
+                Self::ActionResultBeforeStateHash
+            }
+            (RuntimeAgentOperationalType::ActionResult, "after_state_hash") => {
+                Self::ActionResultAfterStateHash
+            }
+            (RuntimeAgentOperationalType::CaptureReference, "uri") => Self::CaptureReferenceUri,
+            (RuntimeAgentOperationalType::CaptureReference, "content_hash") => {
+                Self::CaptureReferenceContentHash
+            }
+            (RuntimeAgentOperationalType::CaptureReference, "media_type") => {
+                Self::CaptureReferenceMediaType
+            }
+            (RuntimeAgentOperationalType::CaptureReference, "byte_len") => {
+                Self::CaptureReferenceByteLen
+            }
+            (RuntimeAgentOperationalType::Resource, "uri") => Self::ResourceUri,
+            (RuntimeAgentOperationalType::Resource, "kind") => Self::ResourceKind,
+            (RuntimeAgentOperationalType::Resource, "mime_type") => Self::ResourceMimeType,
+            (RuntimeAgentOperationalType::Resource, "hash") => Self::ResourceHash,
+            (RuntimeAgentOperationalType::Resource, "body") => Self::ResourceBody,
+            (RuntimeAgentOperationalType::ResourceBody, "kind") => Self::ResourceBodyKind,
+            (RuntimeAgentOperationalType::ResourceBody, "json") => Self::ResourceBodyJson,
+            (RuntimeAgentOperationalType::ResourceBody, "text") => Self::ResourceBodyText,
+            (RuntimeAgentOperationalType::ResourceBody, "base64") => Self::ResourceBodyBase64,
+            (RuntimeAgentOperationalType::ResourceBody, "encoding") => Self::ResourceBodyEncoding,
+            (RuntimeAgentOperationalType::ResourceBody, "value") => Self::ResourceBodyValue,
+            (RuntimeAgentOperationalType::EntityMetadata, "id") => Self::EntityMetadataId,
+            (RuntimeAgentOperationalType::EntityMetadata, "kind") => Self::EntityMetadataKind,
+            (RuntimeAgentOperationalType::EntityMetadata, "semantic_hash") => {
+                Self::EntityMetadataSemanticHash
+            }
+            (RuntimeAgentOperationalType::EntityMetadata, "source") => Self::EntityMetadataSource,
+            (RuntimeAgentOperationalType::SourceAnchor, "has_source") => {
+                Self::SourceAnchorHasSource
+            }
+            (RuntimeAgentOperationalType::SourceAnchor, "path") => Self::SourceAnchorPath,
+            (RuntimeAgentOperationalType::SourceAnchor, "start_byte") => {
+                Self::SourceAnchorStartByte
+            }
+            (RuntimeAgentOperationalType::SourceAnchor, "end_byte") => Self::SourceAnchorEndByte,
+            (RuntimeAgentOperationalType::SourceAnchor, "start_line") => {
+                Self::SourceAnchorStartLine
+            }
+            (RuntimeAgentOperationalType::SourceAnchor, "start_column") => {
+                Self::SourceAnchorStartColumn
+            }
+            (RuntimeAgentOperationalType::SourceAnchor, "end_line") => Self::SourceAnchorEndLine,
+            (RuntimeAgentOperationalType::SourceAnchor, "end_column") => {
+                Self::SourceAnchorEndColumn
+            }
+            (RuntimeAgentOperationalType::ProjectGraphNeighborhood, "root") => {
+                Self::ProjectGraphNeighborhoodRoot
+            }
+            (RuntimeAgentOperationalType::ProjectGraphNeighborhood, "node_count") => {
+                Self::ProjectGraphNeighborhoodNodeCount
+            }
+            (RuntimeAgentOperationalType::ProjectGraphNeighborhood, "edge_count") => {
+                Self::ProjectGraphNeighborhoodEdgeCount
+            }
+            (RuntimeAgentOperationalType::ProjectGraphNeighborhood, "symbols") => {
+                Self::ProjectGraphNeighborhoodSymbols
+            }
+            (RuntimeAgentOperationalType::ProjectGraphNeighborhood, "edges") => {
+                Self::ProjectGraphNeighborhoodEdges
+            }
+            (RuntimeAgentOperationalType::ProjectGraphSymbol, "symbol_id") => {
+                Self::ProjectGraphSymbolSymbolId
+            }
+            (RuntimeAgentOperationalType::ProjectGraphSymbol, "id") => Self::ProjectGraphSymbolId,
+            (RuntimeAgentOperationalType::ProjectGraphSymbol, "kind") => {
+                Self::ProjectGraphSymbolKind
+            }
+            (RuntimeAgentOperationalType::ProjectGraphSymbol, "semantic_hash") => {
+                Self::ProjectGraphSymbolSemanticHash
+            }
+            (RuntimeAgentOperationalType::ProjectGraphSymbol, "summary") => {
+                Self::ProjectGraphSymbolSummary
+            }
+            (RuntimeAgentOperationalType::ProjectGraphSymbol, "has_entity") => {
+                Self::ProjectGraphSymbolHasEntity
+            }
+            (RuntimeAgentOperationalType::ProjectGraphSymbol, "has_semantic_hash") => {
+                Self::ProjectGraphSymbolHasSemanticHash
+            }
+            (RuntimeAgentOperationalType::ProjectGraphSymbol, "has_flow_control") => {
+                Self::ProjectGraphSymbolHasFlowControl
+            }
+            (RuntimeAgentOperationalType::ProjectGraphSymbol, "has_dynamic_control") => {
+                Self::ProjectGraphSymbolHasDynamicControl
+            }
+            (RuntimeAgentOperationalType::ProjectGraphSymbol, "has_project_summary") => {
+                Self::ProjectGraphSymbolHasProjectSummary
+            }
+            (RuntimeAgentOperationalType::ProjectGraphSymbol, "entity_count") => {
+                Self::ProjectGraphSymbolEntityCount
+            }
+            (RuntimeAgentOperationalType::ProjectGraphSymbol, "agent_action_count") => {
+                Self::ProjectGraphSymbolAgentActionCount
+            }
+            (RuntimeAgentOperationalType::ProjectGraphSymbol, "project_callable_count") => {
+                Self::ProjectGraphSymbolProjectCallableCount
+            }
+            (RuntimeAgentOperationalType::ProjectGraphSymbol, "relation_count") => {
+                Self::ProjectGraphSymbolRelationCount
+            }
+            (RuntimeAgentOperationalType::ProjectGraphSymbol, "dependency_edge_count") => {
+                Self::ProjectGraphSymbolDependencyEdgeCount
+            }
+            (RuntimeAgentOperationalType::ProjectGraphSymbol, "dynamic_control_flow_count") => {
+                Self::ProjectGraphSymbolDynamicControlFlowCount
+            }
+            (RuntimeAgentOperationalType::ProjectGraphSymbol, "debug_query_count") => {
+                Self::ProjectGraphSymbolDebugQueryCount
+            }
+            (RuntimeAgentOperationalType::ProjectGraphSymbol, "static_goto_count") => {
+                Self::ProjectGraphSymbolStaticGotoCount
+            }
+            (RuntimeAgentOperationalType::ProjectGraphSymbol, "dynamic_goto_count") => {
+                Self::ProjectGraphSymbolDynamicGotoCount
+            }
+            (RuntimeAgentOperationalType::ProjectGraphSymbol, "branch_count") => {
+                Self::ProjectGraphSymbolBranchCount
+            }
+            (RuntimeAgentOperationalType::ProjectGraphSymbol, "loop_count") => {
+                Self::ProjectGraphSymbolLoopCount
+            }
+            (RuntimeAgentOperationalType::ProjectGraphSymbol, "await_count") => {
+                Self::ProjectGraphSymbolAwaitCount
+            }
+            (RuntimeAgentOperationalType::ProjectGraphSymbol, "thread_count") => {
+                Self::ProjectGraphSymbolThreadCount
+            }
+            (RuntimeAgentOperationalType::ProjectGraphSymbol, "select_branch_count") => {
+                Self::ProjectGraphSymbolSelectBranchCount
+            }
+            (RuntimeAgentOperationalType::ProjectGraphEdge, "from_symbol_id") => {
+                Self::ProjectGraphEdgeFromSymbolId
+            }
+            (RuntimeAgentOperationalType::ProjectGraphEdge, "to_symbol_id") => {
+                Self::ProjectGraphEdgeToSymbolId
+            }
+            (RuntimeAgentOperationalType::ProjectGraphEdge, "kind") => Self::ProjectGraphEdgeKind,
+            (RuntimeAgentOperationalType::ViewportPoint, "x") => Self::ViewportX,
+            (RuntimeAgentOperationalType::ViewportPoint, "y") => Self::ViewportY,
+            _ => return None,
+        })
+    }
+
     /// Whether this coordinate is represented by an admitted Agent protocol
     /// record rather than an executable Agent value.
     #[must_use]
@@ -1702,6 +1902,7 @@ const fn value_kind(value: &RuntimeValue) -> &'static str {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::pattern::RuntimeCheckedType;
 
     #[test]
     fn choice_action_materializes_one_typed_action_target() {
@@ -1766,5 +1967,47 @@ mod tests {
         assert!(field.permits_protocol_record());
         assert!(!RuntimeAgentField::ActionId.permits_protocol_record());
         assert!(!RuntimeAgentField::ViewportX.permits_protocol_record());
+    }
+
+    #[test]
+    fn checked_agent_type_accepts_only_its_owned_runtime_carriers() {
+        let protocol_record = RuntimeValue::try_record(vec![(
+            "uri".to_owned(),
+            RuntimeValue::String("agent://capture/fixture".to_owned()),
+        )])
+        .expect("fixture protocol record is valid");
+        assert!(
+            RuntimeCheckedType::Agent(RuntimeAgentOperationalType::CaptureReference)
+                .accepts_value(&protocol_record)
+        );
+        assert!(
+            !RuntimeCheckedType::Agent(RuntimeAgentOperationalType::ActionTarget)
+                .accepts_value(&protocol_record)
+        );
+
+        let viewport = RuntimeValue::Agent(RuntimeAgentValue::ViewportPoint { x: 10, y: 20 });
+        assert!(
+            RuntimeCheckedType::Agent(RuntimeAgentOperationalType::ViewportPoint)
+                .accepts_value(&viewport)
+        );
+        assert!(
+            !RuntimeCheckedType::Agent(RuntimeAgentOperationalType::Observation)
+                .accepts_value(&viewport)
+        );
+    }
+
+    #[test]
+    fn protocol_field_wire_label_requires_the_exact_owner() {
+        assert_eq!(
+            RuntimeAgentField::from_owner_label(
+                RuntimeAgentOperationalType::CaptureReference,
+                "uri"
+            ),
+            Some(RuntimeAgentField::CaptureReferenceUri)
+        );
+        assert_eq!(
+            RuntimeAgentField::from_owner_label(RuntimeAgentOperationalType::Observation, "uri"),
+            None
+        );
     }
 }

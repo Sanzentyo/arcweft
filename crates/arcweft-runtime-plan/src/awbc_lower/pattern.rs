@@ -304,6 +304,7 @@ pub(crate) fn intern_runtime_type(
                 },
             ],
         },
+        RuntimeCheckedType::Agent(agent) => AwbcRuntimeType::Agent(*agent),
     };
     inventory.intern_type(projected)
 }

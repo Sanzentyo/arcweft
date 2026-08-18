@@ -15,7 +15,7 @@ use crate::awbc::schema::{
     AwbcRuntimeType, AwbcSafePointKind, AwbcScopeId, AwbcSignatureId, AwbcTerminator,
     AwbcTraitReceiverMode, AwbcTypeId, AwbcUnaryOp, AwbcUnsignedIntKind,
 };
-use crate::value::RuntimeReductionProducer;
+use crate::value::{RuntimeAgentField, RuntimeAgentFieldResult, RuntimeReductionProducer};
 use std::collections::{BTreeSet, VecDeque};
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -605,48 +605,58 @@ fn apply_instruction(
                 }
                 Some(AwbcRuntimeType::Dynamic) => {}
                 Some(AwbcRuntimeType::Agent(agent)) => {
-                    let field = program
+                    let label = program
                         .strings
                         .get(field.index())
                         .map(String::as_str)
                         .unwrap_or_default();
-                    let destination = program.runtime_types.get(dst_ty.index());
-                    let field_exists = match agent {
-                        crate::plan::RuntimeAgentOperationalType::ActionTarget => {
-                            matches!(field, "id" | "target" | "action" | "kind" | "enabled")
-                        }
-                        crate::plan::RuntimeAgentOperationalType::ViewportPoint => {
-                            matches!(field, "x" | "y")
-                        }
-                        _ => false,
-                    };
-                    if !field_exists {
+                    let Some(field) = RuntimeAgentField::from_owner_label(*agent, label) else {
                         return Err(AwbcVerifyError::InvalidInvariant {
                             at,
                             message: "projected Agent field does not exist".to_owned(),
                         });
-                    }
-                    let destination_matches = match (agent, field) {
-                        (
-                            crate::plan::RuntimeAgentOperationalType::ActionTarget,
-                            "id" | "target" | "action" | "kind",
-                        ) => matches!(
+                    };
+                    let destination = program.runtime_types.get(dst_ty.index());
+                    let destination_matches = match field.result() {
+                        RuntimeAgentFieldResult::String => matches!(
                             destination,
                             Some(AwbcRuntimeType::String | AwbcRuntimeType::Dynamic)
                         ),
-                        (crate::plan::RuntimeAgentOperationalType::ActionTarget, "enabled") => {
+                        RuntimeAgentFieldResult::Bool => {
                             is_bool(destination)
+                                || matches!(destination, Some(AwbcRuntimeType::Dynamic))
                         }
-                        (crate::plan::RuntimeAgentOperationalType::ViewportPoint, "x" | "y") => {
+                        RuntimeAgentFieldResult::U32 => matches!(
+                            destination,
+                            Some(
+                                AwbcRuntimeType::UInt(AwbcUnsignedIntKind::U32)
+                                    | AwbcRuntimeType::Dynamic
+                            )
+                        ),
+                        RuntimeAgentFieldResult::U64 => matches!(
+                            destination,
+                            Some(
+                                AwbcRuntimeType::UInt(AwbcUnsignedIntKind::U64)
+                                    | AwbcRuntimeType::Dynamic
+                            )
+                        ),
+                        RuntimeAgentFieldResult::Agent(expected) => {
                             matches!(
                                 destination,
-                                Some(
-                                    AwbcRuntimeType::UInt(AwbcUnsignedIntKind::U32)
-                                        | AwbcRuntimeType::Dynamic
-                                )
-                            )
+                                Some(AwbcRuntimeType::Agent(actual)) if actual == &expected
+                            ) || matches!(destination, Some(AwbcRuntimeType::Dynamic))
                         }
-                        _ => false,
+                        RuntimeAgentFieldResult::VecAgent(expected) => match destination {
+                            Some(AwbcRuntimeType::Sequence(item)) => matches!(
+                                program.runtime_types.get(item.index()),
+                                Some(AwbcRuntimeType::Agent(actual)) if actual == &expected
+                            ),
+                            Some(AwbcRuntimeType::Dynamic) => true,
+                            _ => false,
+                        },
+                        RuntimeAgentFieldResult::AgentValueMap => {
+                            matches!(destination, Some(AwbcRuntimeType::Dynamic))
+                        }
                     };
                     if !destination_matches {
                         return invalid_type(&at, "Agent field projection destination");

@@ -10,7 +10,7 @@ use thiserror::Error;
 use crate::pattern::RuntimeSemanticTypeId;
 use crate::runtime_id::RuntimePlanTypeId;
 
-use super::{RuntimePlanTypeClass, RuntimePlanTypeProjection};
+use super::{RuntimeAgentTypeProjection, RuntimePlanTypeClass, RuntimePlanTypeProjection};
 
 /// Maximum number of declarations on one semantic type path.
 pub const MAX_RUNTIME_PLAN_TYPE_DEPTH: usize = 64;
@@ -173,6 +173,9 @@ impl RuntimePlanTypeTable {
             RuntimePlanTypeProjection::Result { value, error } => {
                 self.is_checked_memoized(*value, memo)? && self.is_checked_memoized(*error, memo)?
             }
+            RuntimePlanTypeProjection::Agent(agent) => {
+                !matches!(agent, RuntimeAgentTypeProjection::Probe(_))
+            }
             RuntimePlanTypeProjection::Range(_)
             | RuntimePlanTypeProjection::Iterator(_)
             | RuntimePlanTypeProjection::Map { .. }
@@ -181,8 +184,7 @@ impl RuntimePlanTypeTable {
             | RuntimePlanTypeProjection::ThreadHandle(_)
             | RuntimePlanTypeProjection::Shared(_)
             | RuntimePlanTypeProjection::Reference(_)
-            | RuntimePlanTypeProjection::Function { .. }
-            | RuntimePlanTypeProjection::Agent(_) => false,
+            | RuntimePlanTypeProjection::Function { .. } => false,
         };
         memo.insert(id, checked);
         Ok(checked)

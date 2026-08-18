@@ -381,6 +381,7 @@ pub enum RuntimeCheckedType {
         error: Box<RuntimeCheckedType>,
     },
     Option(Box<RuntimeCheckedType>),
+    Agent(crate::plan::RuntimeAgentOperationalType),
 }
 
 impl RuntimeCheckedType {
@@ -532,6 +533,10 @@ impl RuntimeCheckedType {
                     _ => false,
                 }
             }
+            (RuntimeValue::Agent(value), Self::Agent(expected)) => {
+                value.operational_type() == *expected
+            }
+            (RuntimeValue::Record(_), Self::Agent(expected)) => expected.accepts_protocol_record(),
             _ => false,
         }
     }
