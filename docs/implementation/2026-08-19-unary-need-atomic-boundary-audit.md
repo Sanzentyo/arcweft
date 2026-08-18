@@ -31,6 +31,20 @@ boundaries:
 7. adapter manifests, registration inputs, bundle codecs, topology, LSP, and
    tests still encode or display binary Need applications.
 
+The producer-facing inventory includes at least:
+
+- three standard system-info calls with `system.SystemError`;
+- four native-file calls with `fs.FsError`;
+- eight desktop owned-window/cursor source functions with `DesktopError`; and
+- the standard environment's `load_bg`, `asset.image`, `voice.load`, and
+  `content.ensure` declarations.
+
+The adapter type algebra already has a closed `Result { ok, error }` node and
+the registered system/file/desktop families already retain exact nominal error
+owners. Their unary migration can therefore construct
+`Need<Result<Success, Error>>` from typed manifest coordinates. It does not
+need a capability-name or terminal-type-name switch.
+
 One later outcome boundary is already partially present: core task events and
 host completion distinguish authored domain `Error(payload)` from
 infrastructure `Failed(message)`. That split is not unary Need by itself. In
@@ -73,7 +87,8 @@ not an acceptable checkpoint.
 
 - Read-only source and maintained-document inventory.
 - `rg` owner scans over Rust and maintained language/runtime documentation.
-- No Cargo command was run because no source was changed in this audit.
+- `cargo check --workspace --all-targets --all-features`: passed on the clean
+  inspected revision without an explicit Cargo job count.
 
 ## Explicit non-goals
 
