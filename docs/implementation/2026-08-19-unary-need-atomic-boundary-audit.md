@@ -89,6 +89,15 @@ not an acceptable checkpoint.
 - `rg` owner scans over Rust and maintained language/runtime documentation.
 - `cargo check --workspace --all-targets --all-features`: passed on the clean
   inspected revision without an explicit Cargo job count.
+- `cargo test -p arcweft-need`: 3 passed. The baseline intentionally exposes
+  the obsolete `Err` state through
+  `terminal_need_states_are_exactly_ready_err_and_cancelled`; the unary cut
+  must replace that assertion rather than preserve it.
+- `cargo test -p arcweft-core --lib`: 213 passed. The baseline includes Product
+  AWBC tests which currently materialize Ready as `Result::Ok`, Err as
+  `Result::Err`, and select the first terminal binary-Need sequence. Those
+  tests are migration targets: unary Ready must resume with its payload
+  unchanged, including when that payload is already a Result.
 
 ## Explicit non-goals
 
