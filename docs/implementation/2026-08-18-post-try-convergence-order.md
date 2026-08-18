@@ -87,6 +87,17 @@ exit evidence is not complete until that final composition pass is green.
 Do not add a direct-host-call exception, a binary-Need implicit callable, or a
 fused TryAwait representation as an interim solution.
 
+### Pure continuation progress — 2026-08-19
+
+The independent pure-expression face is now implemented and recorded in
+[Nested pure Try continuation lowering](2026-08-19-nested-pure-try-continuation-lowering.md).
+Sequential statements, strict expression composition, ordinary and carrier
+blocks, branch-local If/Match/IfLet values, and short-circuit operators lower
+through the checked carrier boundary without a new runtime expression family.
+Match/IfLet guards remain fail-closed pending a pattern-scope-local continuation
+cut. Item 1 as a whole remains open because its Await compositions still depend
+on item 2; this progress does not authorize work on the binary Need path.
+
 ## 2. Replace binary Need with unary `Need<T>`
 
 Perform the type and runtime carrier replacement across syntax-facing types,

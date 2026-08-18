@@ -3,6 +3,7 @@
 use std::collections::BTreeMap;
 
 use arcweft_core::entry::RuntimeCallableId;
+use arcweft_core::pattern::RuntimeSemanticTypeId;
 use arcweft_core::plan::{
     RuntimeAgentExprSeed, RuntimeCallArgumentSeed, RuntimeExprMatchArmSeed, RuntimeExprSeed,
     RuntimeExprSeedKind, RuntimeFieldProjectionSeed, RuntimeFlowOpSeed, RuntimeFunctionSiteSeedId,
@@ -44,6 +45,81 @@ pub(crate) struct FinalExprLowerer<'hir> {
     pipe_locals: &'hir BTreeMap<ExprId, RuntimeLocalSeedId>,
     try_locals: &'hir BTreeMap<ExprId, TryLocalSeeds>,
     overrides: BTreeMap<ExprId, RuntimeExprSeed>,
+}
+
+#[derive(Clone)]
+enum PureTryContinuation {
+    Return,
+    Try {
+        owner: ExprId,
+        outer: Box<Self>,
+    },
+    Compose {
+        owner: ExprId,
+        child: ExprId,
+        overrides: BTreeMap<ExprId, RuntimeExprSeed>,
+        outer: Box<Self>,
+    },
+    LetBlock {
+        binding: RuntimeLocalSeedId,
+        statements: Box<[StmtId]>,
+        tail: ExprId,
+        outer: Box<Self>,
+    },
+    AssignBlock {
+        statement: StmtId,
+        statements: Box<[StmtId]>,
+        tail: ExprId,
+        outer: Box<Self>,
+    },
+    WrapCarrier {
+        owner: ExprId,
+        outer: Box<Self>,
+    },
+    IfCondition {
+        then_branch: ExprId,
+        else_branch: ExprId,
+        outer: Box<Self>,
+    },
+    MatchScrutinee {
+        owner: ExprId,
+        outer: Box<Self>,
+    },
+    IfLetScrutinee {
+        owner: ExprId,
+        outer: Box<Self>,
+    },
+    ShortCircuit {
+        operator: HirBinaryOp,
+        right: ExprId,
+        outer: Box<Self>,
+    },
+    PipeLeft {
+        owner: ExprId,
+        outer: Box<Self>,
+    },
+    WrapSuccess {
+        boundary: RuntimeSemanticTypeId,
+    },
+}
+
+impl PureTryContinuation {
+    fn after_carrier(self, target: ExprId) -> Option<Self> {
+        match self {
+            Self::WrapCarrier { owner, outer } if owner == target => Some(*outer),
+            Self::Try { outer, .. }
+            | Self::Compose { outer, .. }
+            | Self::LetBlock { outer, .. }
+            | Self::AssignBlock { outer, .. }
+            | Self::WrapCarrier { outer, .. }
+            | Self::IfCondition { outer, .. }
+            | Self::MatchScrutinee { outer, .. }
+            | Self::IfLetScrutinee { outer, .. }
+            | Self::ShortCircuit { outer, .. }
+            | Self::PipeLeft { outer, .. } => outer.after_carrier(target),
+            Self::Return | Self::WrapSuccess { .. } => None,
+        }
+    }
 }
 
 impl<'hir> FinalExprLowerer<'hir> {
@@ -148,10 +224,19 @@ impl<'hir> FinalExprLowerer<'hir> {
         overrides: BTreeMap<ExprId, RuntimeExprSeed>,
     ) -> Result<RuntimeExprSeed, String> {
         let lowerer = self.clone_with_overrides(overrides);
-        if lowerer.facts.tried(body).is_some_and(|tried| {
-            tried.boundary() == RuntimeTryBoundaryOwner::FunctionSite(site_owner)
-        }) {
-            lowerer.lower_terminal_function_site_try(body)
+        if let Some(tried) = lowerer
+            .facts
+            .tried(body)
+            .filter(|tried| tried.boundary() == RuntimeTryBoundaryOwner::FunctionSite(site_owner))
+        {
+            lowerer.lower_with_try_continuation(
+                body,
+                PureTryContinuation::WrapSuccess {
+                    boundary: tried.boundary_type().identity(),
+                },
+            )
+        } else if lowerer.contains_executable_try(body)? {
+            lowerer.lower_with_try_continuation(body, PureTryContinuation::Return)
         } else {
             lowerer.lower_body(body)
         }
@@ -379,7 +464,12 @@ impl<'hir> FinalExprLowerer<'hir> {
         }
     }
 
-    fn lower_terminal_function_site_try(&self, owner: ExprId) -> Result<RuntimeExprSeed, String> {
+    fn lower_try_continuation(
+        &self,
+        owner: ExprId,
+        value: RuntimeExprSeed,
+        outer: PureTryContinuation,
+    ) -> Result<RuntimeExprSeed, String> {
         let tried = self
             .facts
             .tried(owner)
@@ -388,24 +478,33 @@ impl<'hir> FinalExprLowerer<'hir> {
             .try_locals
             .get(&owner)
             .ok_or_else(|| format!("admitted Try locals are missing for {owner:?}"))?;
-        let expression = self
-            .module
-            .resolve_expr(owner)
-            .map_err(|error| format!("cannot resolve Try {owner:?}: {error}"))?;
-        let HirExprKind::Try(operation) = expression.kind() else {
-            return Err(format!(
-                "function-site Try fact {owner:?} has the wrong HIR family"
-            ));
-        };
         let success_value = RuntimeExprSeed::new(
             tried.carrier().success().identity(),
             RuntimeExprSeedKind::Local(locals.success.clone()),
         );
-        let success = RuntimeExprSeed::new(
-            tried.boundary_type().identity(),
-            RuntimeExprSeedKind::Variant {
+        let failure_continuation = match tried.boundary() {
+            RuntimeTryBoundaryOwner::CarrierBlock(boundary) => Some(
+                outer
+                    .clone()
+                    .after_carrier(boundary)
+                    .ok_or_else(|| format!("Try {owner:?} has no active carrier continuation"))?,
+            ),
+            RuntimeTryBoundaryOwner::Infallible
+            | RuntimeTryBoundaryOwner::FunctionSite(_)
+            | RuntimeTryBoundaryOwner::Callable(_) => None,
+        };
+        let success = self.apply_try_continuation(success_value, outer)?;
+        let success_pattern = RuntimePatternSeed::new(
+            tried.carrier_type().identity(),
+            RuntimePatternSeedKind::Variant {
                 ordinal: 0,
-                payload: Some(Box::new(success_value)),
+                payload: Some(Box::new(RuntimePatternSeed::new(
+                    tried.carrier().success().identity(),
+                    RuntimePatternSeedKind::Bind {
+                        local: locals.success.clone(),
+                        mutable: false,
+                    },
+                ))),
             },
         );
         let (failure_pattern, failure_payload) = match tried.carrier() {
@@ -451,28 +550,21 @@ impl<'hir> FinalExprLowerer<'hir> {
                 payload: failure_payload,
             },
         );
+        let failure = match failure_continuation {
+            Some(continuation) => self.apply_try_continuation(failure, continuation)?,
+            None => failure,
+        };
+        if failure.ty() != success.ty() {
+            return Err(format!(
+                "Try {owner:?} branches do not produce one continuation type"
+            ));
+        }
         Ok(RuntimeExprSeed::new(
-            tried.boundary_type().identity(),
+            success.ty(),
             RuntimeExprSeedKind::Match {
-                scrutinee: Box::new(self.lower(operation.operand())?),
+                scrutinee: Box::new(value),
                 arms: vec![
-                    RuntimeExprMatchArmSeed::new(
-                        RuntimePatternSeed::new(
-                            tried.carrier_type().identity(),
-                            RuntimePatternSeedKind::Variant {
-                                ordinal: 0,
-                                payload: Some(Box::new(RuntimePatternSeed::new(
-                                    tried.carrier().success().identity(),
-                                    RuntimePatternSeedKind::Bind {
-                                        local: locals.success.clone(),
-                                        mutable: false,
-                                    },
-                                ))),
-                            },
-                        ),
-                        None,
-                        success,
-                    ),
+                    RuntimeExprMatchArmSeed::new(success_pattern, None, success),
                     RuntimeExprMatchArmSeed::new(failure_pattern, None, failure),
                 ]
                 .into_boxed_slice(),
@@ -487,17 +579,571 @@ impl<'hir> FinalExprLowerer<'hir> {
         match body {
             HirFunctionBody::Block {
                 statements, tail, ..
-            } => self.lower_block(*tail, statements, *tail),
+            } => self.lower_function_block(statements, *tail, PureTryContinuation::Return),
             HirFunctionBody::Error(expression) => Err(format!(
                 "recovered ordinary-function body {expression:?} cannot enter runtime lowering"
             )),
         }
     }
 
+    fn lower_function_block(
+        &self,
+        statements: &[StmtId],
+        tail: ExprId,
+        continuation: PureTryContinuation,
+    ) -> Result<RuntimeExprSeed, String> {
+        let Some((statement_id, remaining)) = statements.split_first() else {
+            return self.lower_with_try_continuation(tail, continuation);
+        };
+        let statement = self.module.resolve_stmt(*statement_id).map_err(|error| {
+            format!("cannot resolve function statement {statement_id:?}: {error}")
+        })?;
+        if statement.is_poisoned() {
+            return Err("recovered function statement is not executable".to_owned());
+        }
+        match statement.kind() {
+            HirStmtKind::Let {
+                pattern,
+                initializer,
+                ..
+            } => self.lower_with_try_continuation(
+                *initializer,
+                PureTryContinuation::LetBlock {
+                    binding: self.simple_binding(*pattern)?,
+                    statements: remaining.into(),
+                    tail,
+                    outer: Box::new(continuation),
+                },
+            ),
+            HirStmtKind::Assign { value, .. } => self.lower_with_try_continuation(
+                *value,
+                PureTryContinuation::AssignBlock {
+                    statement: *statement_id,
+                    statements: remaining.into(),
+                    tail,
+                    outer: Box::new(continuation),
+                },
+            ),
+            other => Err(format!(
+                "statement {other:?} cannot be embedded in a pure runtime expression block"
+            )),
+        }
+    }
+
+    fn contains_executable_try(&self, owner: ExprId) -> Result<bool, String> {
+        if self.facts.implicit_callable(owner).is_some() {
+            return Ok(false);
+        }
+        if self.facts.tried(owner).is_some() {
+            return Ok(true);
+        }
+        let expression = self.resolve_expression(owner)?;
+        if matches!(expression.kind(), HirExprKind::Closure(_)) {
+            return Ok(false);
+        }
+        match expression.kind() {
+            HirExprKind::Block(block) => {
+                return self.block_contains_executable_try(block.statements(), block.tail());
+            }
+            HirExprKind::ComputationBlock(block) => {
+                return self.block_contains_executable_try(block.statements(), block.tail());
+            }
+            HirExprKind::NamedBlock(block) => {
+                return self.block_contains_executable_try(block.statements(), block.tail());
+            }
+            _ => {}
+        }
+        for child in expression.kind().direct_expression_children() {
+            if self.contains_executable_try(child)? {
+                return Ok(true);
+            }
+        }
+        Ok(false)
+    }
+
+    fn block_contains_executable_try(
+        &self,
+        statements: &[StmtId],
+        tail: ExprId,
+    ) -> Result<bool, String> {
+        for statement in statements {
+            let statement = self.module.resolve_stmt(*statement).map_err(|error| {
+                format!("cannot resolve pure block statement {statement:?}: {error}")
+            })?;
+            let child = match statement.kind() {
+                HirStmtKind::Let { initializer, .. } => *initializer,
+                HirStmtKind::Assign { value, .. } => *value,
+                _ => continue,
+            };
+            if self.contains_executable_try(child)? {
+                return Ok(true);
+            }
+        }
+        self.contains_executable_try(tail)
+    }
+
+    fn lower_with_try_continuation(
+        &self,
+        owner: ExprId,
+        continuation: PureTryContinuation,
+    ) -> Result<RuntimeExprSeed, String> {
+        let expression = self.resolve_expression(owner)?;
+        if let HirExprKind::Try(operation) = expression.kind() {
+            return self.lower_with_try_continuation(
+                operation.operand(),
+                PureTryContinuation::Try {
+                    owner,
+                    outer: Box::new(continuation),
+                },
+            );
+        }
+        if let Some(lowered) =
+            self.lower_pipe_try_continuation(owner, expression.kind(), continuation.clone())?
+        {
+            return Ok(lowered);
+        }
+        if let Some(lowered) =
+            self.lower_block_try_continuation(owner, expression.kind(), continuation.clone())
+        {
+            return lowered;
+        }
+        if let HirExprKind::If(branch) = expression.kind() {
+            return self.lower_if_continuation(owner, branch, continuation);
+        }
+        if let HirExprKind::Match(matched) = expression.kind() {
+            if self.contains_executable_try(matched.scrutinee())? {
+                return self.lower_with_try_continuation(
+                    matched.scrutinee(),
+                    PureTryContinuation::MatchScrutinee {
+                        owner,
+                        outer: Box::new(continuation),
+                    },
+                );
+            }
+            return self.lower_match_continuation(
+                matched,
+                self.lower(matched.scrutinee())?,
+                &continuation,
+            );
+        }
+        if let HirExprKind::IfLet(branch) = expression.kind() {
+            if self.contains_executable_try(branch.scrutinee())? {
+                return self.lower_with_try_continuation(
+                    branch.scrutinee(),
+                    PureTryContinuation::IfLetScrutinee {
+                        owner,
+                        outer: Box::new(continuation),
+                    },
+                );
+            }
+            return self.lower_if_let_continuation(
+                branch,
+                self.lower(branch.scrutinee())?,
+                continuation,
+            );
+        }
+        if let HirExprKind::Binary(binary) = expression.kind()
+            && matches!(
+                binary.operator(),
+                HirBinaryOp::And | HirBinaryOp::Or | HirBinaryOp::Implies
+            )
+        {
+            if self.contains_executable_try(binary.left())? {
+                return self.lower_with_try_continuation(
+                    binary.left(),
+                    PureTryContinuation::ShortCircuit {
+                        operator: binary.operator(),
+                        right: binary.right(),
+                        outer: Box::new(continuation),
+                    },
+                );
+            }
+            return self.lower_short_circuit(
+                self.lower(binary.left())?,
+                binary.operator(),
+                binary.right(),
+                continuation,
+            );
+        }
+        for child in expression.kind().direct_expression_children() {
+            if !self.overrides.contains_key(&child) && self.contains_executable_try(child)? {
+                return self.lower_with_try_continuation(
+                    child,
+                    PureTryContinuation::Compose {
+                        owner,
+                        child,
+                        overrides: self.overrides.clone(),
+                        outer: Box::new(continuation),
+                    },
+                );
+            }
+        }
+        self.apply_try_continuation(self.lower(owner)?, continuation)
+    }
+
+    fn lower_block_try_continuation(
+        &self,
+        owner: ExprId,
+        kind: &HirExprKind,
+        continuation: PureTryContinuation,
+    ) -> Option<Result<RuntimeExprSeed, String>> {
+        match kind {
+            HirExprKind::Block(block) => {
+                Some(self.lower_function_block(block.statements(), block.tail(), continuation))
+            }
+            HirExprKind::NamedBlock(block) => {
+                Some(self.lower_function_block(block.statements(), block.tail(), continuation))
+            }
+            HirExprKind::ComputationBlock(block)
+                if matches!(
+                    block.kind(),
+                    arcweft_lang_hir::expr::HirComputationBlockKind::Result
+                        | arcweft_lang_hir::expr::HirComputationBlockKind::Option
+                ) =>
+            {
+                Some(self.lower_function_block(
+                    block.statements(),
+                    block.tail(),
+                    PureTryContinuation::WrapCarrier {
+                        owner,
+                        outer: Box::new(continuation),
+                    },
+                ))
+            }
+            _ => None,
+        }
+    }
+
+    fn lower_pipe_try_continuation(
+        &self,
+        owner: ExprId,
+        kind: &HirExprKind,
+        continuation: PureTryContinuation,
+    ) -> Result<Option<RuntimeExprSeed>, String> {
+        let HirExprKind::Pipe(pipe) = kind else {
+            return Ok(None);
+        };
+        if self.contains_executable_try(pipe.left())? {
+            return self
+                .lower_with_try_continuation(
+                    pipe.left(),
+                    PureTryContinuation::PipeLeft {
+                        owner,
+                        outer: Box::new(continuation),
+                    },
+                )
+                .map(Some);
+        }
+        self.lower_pipe_continuation(owner, pipe, self.lower(pipe.left())?, continuation)
+            .map(Some)
+    }
+
+    fn apply_try_continuation(
+        &self,
+        value: RuntimeExprSeed,
+        continuation: PureTryContinuation,
+    ) -> Result<RuntimeExprSeed, String> {
+        match continuation {
+            PureTryContinuation::Return => Ok(value),
+            PureTryContinuation::Compose {
+                owner,
+                child,
+                mut overrides,
+                outer,
+            } => {
+                overrides.insert(child, value);
+                self.clone_with_overrides(overrides)
+                    .lower_with_try_continuation(owner, *outer)
+            }
+            PureTryContinuation::Try { owner, outer } => {
+                self.lower_try_continuation(owner, value, *outer)
+            }
+            PureTryContinuation::LetBlock {
+                binding,
+                statements,
+                tail,
+                outer,
+            } => {
+                let body = self.lower_function_block(&statements, tail, *outer)?;
+                Ok(RuntimeExprSeed::new(
+                    body.ty(),
+                    RuntimeExprSeedKind::Let {
+                        binding,
+                        expr: Box::new(value),
+                        body: Box::new(body),
+                    },
+                ))
+            }
+            PureTryContinuation::AssignBlock {
+                statement,
+                statements,
+                tail,
+                outer,
+            } => {
+                let body = self.lower_function_block(&statements, tail, *outer)?;
+                self.lower_assignment_value(statement, value, body)
+            }
+            PureTryContinuation::WrapCarrier { owner, outer } => {
+                let boundary = self
+                    .facts
+                    .expression_type(owner)
+                    .ok_or_else(|| format!("carrier block {owner:?} has no checked result type"))?;
+                let wrapped = wrap_success(boundary.identity(), value);
+                self.apply_try_continuation(wrapped, *outer)
+            }
+            PureTryContinuation::IfCondition {
+                then_branch,
+                else_branch,
+                outer,
+            } => {
+                let then_expr = self.lower_with_try_continuation(then_branch, (*outer).clone())?;
+                let else_expr = self.lower_with_try_continuation(else_branch, *outer)?;
+                if then_expr.ty() != else_expr.ty() {
+                    return Err("If Try branches do not produce one continuation type".to_owned());
+                }
+                Ok(RuntimeExprSeed::new(
+                    then_expr.ty(),
+                    RuntimeExprSeedKind::If {
+                        condition: Box::new(value),
+                        then_expr: Box::new(then_expr),
+                        else_expr: Box::new(else_expr),
+                    },
+                ))
+            }
+            PureTryContinuation::MatchScrutinee { owner, outer } => {
+                let expression = self
+                    .module
+                    .resolve_expr(owner)
+                    .map_err(|error| format!("cannot resolve Match {owner:?}: {error}"))?;
+                let HirExprKind::Match(matched) = expression.kind() else {
+                    return Err(format!("Match continuation owner {owner:?} changed family"));
+                };
+                self.lower_match_continuation(matched, value, &outer)
+            }
+            PureTryContinuation::IfLetScrutinee { owner, outer } => {
+                let expression = self
+                    .module
+                    .resolve_expr(owner)
+                    .map_err(|error| format!("cannot resolve IfLet {owner:?}: {error}"))?;
+                let HirExprKind::IfLet(branch) = expression.kind() else {
+                    return Err(format!("IfLet continuation owner {owner:?} changed family"));
+                };
+                self.lower_if_let_continuation(branch, value, *outer)
+            }
+            PureTryContinuation::ShortCircuit {
+                operator,
+                right,
+                outer,
+            } => self.lower_short_circuit(value, operator, right, *outer),
+            PureTryContinuation::PipeLeft { owner, outer } => {
+                self.apply_pipe_left_continuation(owner, value, *outer)
+            }
+            PureTryContinuation::WrapSuccess { boundary } => Ok(wrap_success(boundary, value)),
+        }
+    }
+
+    fn lower_pipe_continuation(
+        &self,
+        owner: ExprId,
+        pipe: &arcweft_lang_hir::expr::HirPipeExpr,
+        left: RuntimeExprSeed,
+        continuation: PureTryContinuation,
+    ) -> Result<RuntimeExprSeed, String> {
+        let binding = self.pipe_locals.get(&owner).cloned().ok_or_else(|| {
+            format!("builder-issued once-only pipe local is missing for {owner:?}")
+        })?;
+        let local = RuntimeExprSeed::new(
+            self.expression_type(pipe.left())?,
+            RuntimeExprSeedKind::Local(binding.clone()),
+        );
+        let overrides = self
+            .facts
+            .pipe(owner)
+            .ok_or_else(|| format!("checked pipe fact is missing for {owner:?}"))?
+            .placeholders()
+            .iter()
+            .map(|placeholder| (*placeholder, local.clone()))
+            .collect();
+        let body = self
+            .clone_with_overrides(overrides)
+            .lower_with_try_continuation(pipe.right(), continuation)?;
+        Ok(RuntimeExprSeed::new(
+            body.ty(),
+            RuntimeExprSeedKind::Let {
+                binding,
+                expr: Box::new(left),
+                body: Box::new(body),
+            },
+        ))
+    }
+
+    fn apply_pipe_left_continuation(
+        &self,
+        owner: ExprId,
+        value: RuntimeExprSeed,
+        continuation: PureTryContinuation,
+    ) -> Result<RuntimeExprSeed, String> {
+        let expression = self.resolve_expression(owner)?;
+        let HirExprKind::Pipe(pipe) = expression.kind() else {
+            return Err(format!("Pipe continuation owner {owner:?} changed family"));
+        };
+        self.lower_pipe_continuation(owner, pipe, value, continuation)
+    }
+
+    fn lower_if_continuation(
+        &self,
+        owner: ExprId,
+        branch: &arcweft_lang_hir::expr::HirIfExpr,
+        continuation: PureTryContinuation,
+    ) -> Result<RuntimeExprSeed, String> {
+        if self.contains_executable_try(branch.condition())? {
+            return self.lower_with_try_continuation(
+                branch.condition(),
+                PureTryContinuation::IfCondition {
+                    then_branch: branch.then_branch(),
+                    else_branch: branch.else_branch(),
+                    outer: Box::new(continuation),
+                },
+            );
+        }
+        let condition = self.lower(branch.condition())?;
+        let then_expr =
+            self.lower_with_try_continuation(branch.then_branch(), continuation.clone())?;
+        let else_expr = self.lower_with_try_continuation(branch.else_branch(), continuation)?;
+        if then_expr.ty() != else_expr.ty() {
+            return Err(format!("If expression {owner:?} Try branches disagree"));
+        }
+        Ok(RuntimeExprSeed::new(
+            then_expr.ty(),
+            RuntimeExprSeedKind::If {
+                condition: Box::new(condition),
+                then_expr: Box::new(then_expr),
+                else_expr: Box::new(else_expr),
+            },
+        ))
+    }
+
+    fn lower_short_circuit(
+        &self,
+        condition: RuntimeExprSeed,
+        operator: HirBinaryOp,
+        right: ExprId,
+        continuation: PureTryContinuation,
+    ) -> Result<RuntimeExprSeed, String> {
+        let bool_type = self
+            .facts
+            .expression_type(right)
+            .ok_or_else(|| format!("short-circuit right operand {right:?} has no type"))?;
+        let literal = |value| {
+            RuntimeExprSeed::new(
+                bool_type.identity(),
+                RuntimeExprSeedKind::Value(RuntimeValue::Bool(value)),
+            )
+        };
+        let evaluated = self.lower_with_try_continuation(right, continuation.clone())?;
+        let skipped = self.apply_try_continuation(
+            literal(matches!(operator, HirBinaryOp::Or | HirBinaryOp::Implies)),
+            continuation,
+        )?;
+        let (then_expr, else_expr) = match operator {
+            HirBinaryOp::And | HirBinaryOp::Implies => (evaluated, skipped),
+            HirBinaryOp::Or => (skipped, evaluated),
+            _ => return Err("non-short-circuit operator reached short-circuit lowering".to_owned()),
+        };
+        if then_expr.ty() != else_expr.ty() {
+            return Err("short-circuit Try branches disagree".to_owned());
+        }
+        Ok(RuntimeExprSeed::new(
+            then_expr.ty(),
+            RuntimeExprSeedKind::If {
+                condition: Box::new(condition),
+                then_expr: Box::new(then_expr),
+                else_expr: Box::new(else_expr),
+            },
+        ))
+    }
+
+    fn lower_match_continuation(
+        &self,
+        matched: &arcweft_lang_hir::expr::HirMatchExpr,
+        scrutinee: RuntimeExprSeed,
+        continuation: &PureTryContinuation,
+    ) -> Result<RuntimeExprSeed, String> {
+        let mut arms = Vec::with_capacity(matched.arms().len());
+        let mut ty = None;
+        for arm in matched.arms() {
+            if let Some(guard) = arm.guard()
+                && self.contains_executable_try(guard)?
+            {
+                return Err("Try in a pure Match guard requires guard-local CPS".to_owned());
+            }
+            let value = self.lower_with_try_continuation(arm.value(), continuation.clone())?;
+            if ty.is_some_and(|ty| ty != value.ty()) {
+                return Err("pure Match Try arms do not produce one continuation type".to_owned());
+            }
+            ty = Some(value.ty());
+            arms.push(RuntimeExprMatchArmSeed::new(
+                self.pattern().lower(arm.pattern())?,
+                arm.guard().map(|guard| self.lower(guard)).transpose()?,
+                value,
+            ));
+        }
+        let ty = ty.ok_or_else(|| "pure Match has no checked arms".to_owned())?;
+        Ok(RuntimeExprSeed::new(
+            ty,
+            RuntimeExprSeedKind::Match {
+                scrutinee: Box::new(scrutinee),
+                arms: arms.into_boxed_slice(),
+            },
+        ))
+    }
+
+    fn lower_if_let_continuation(
+        &self,
+        branch: &arcweft_lang_hir::expr::HirIfLetExpr,
+        scrutinee: RuntimeExprSeed,
+        continuation: PureTryContinuation,
+    ) -> Result<RuntimeExprSeed, String> {
+        if let Some(guard) = branch.guard()
+            && self.contains_executable_try(guard)?
+        {
+            return Err("Try in a pure IfLet guard requires guard-local CPS".to_owned());
+        }
+        let then_expr =
+            self.lower_with_try_continuation(branch.then_branch(), continuation.clone())?;
+        let else_expr = self.lower_with_try_continuation(branch.else_branch(), continuation)?;
+        if then_expr.ty() != else_expr.ty() {
+            return Err("pure IfLet Try branches do not produce one continuation type".to_owned());
+        }
+        Ok(RuntimeExprSeed::new(
+            then_expr.ty(),
+            RuntimeExprSeedKind::IfLet {
+                pattern: self.pattern().lower(branch.pattern())?,
+                expr: Box::new(scrutinee),
+                guard: branch
+                    .guard()
+                    .map(|guard| self.lower(guard))
+                    .transpose()?
+                    .map(Box::new),
+                then_expr: Box::new(then_expr),
+                else_expr: Box::new(else_expr),
+            },
+        ))
+    }
+
     pub(crate) fn lower_assignment(
         &self,
         statement: StmtId,
         value: ExprId,
+        body: RuntimeExprSeed,
+    ) -> Result<RuntimeExprSeed, String> {
+        self.lower_assignment_value(statement, self.lower(value)?, body)
+    }
+
+    fn lower_assignment_value(
+        &self,
+        statement: StmtId,
+        value: RuntimeExprSeed,
         body: RuntimeExprSeed,
     ) -> Result<RuntimeExprSeed, String> {
         let (local, owner, field) = self.assignment_parts(statement)?;
@@ -507,7 +1153,7 @@ impl<'hir> FinalExprLowerer<'hir> {
                 base: self.local(local)?,
                 owner,
                 field,
-                expr: Box::new(self.lower(value)?),
+                expr: Box::new(value),
                 body: Box::new(body),
             },
         ))
@@ -1183,6 +1829,15 @@ impl<'hir> FinalExprLowerer<'hir> {
             .map(RuntimeNormalizedType::identity)
             .ok_or_else(|| format!("accepted type is missing for expression {id:?}"))
     }
+
+    fn resolve_expression(
+        &self,
+        owner: ExprId,
+    ) -> Result<&arcweft_lang_hir::expr::HirExpr, String> {
+        self.module
+            .resolve_expr(owner)
+            .map_err(|error| format!("cannot resolve expression {owner:?}: {error}"))
+    }
     fn local_type(
         &self,
         id: LocalId,
@@ -1200,6 +1855,16 @@ impl<'hir> FinalExprLowerer<'hir> {
     fn pattern(&self) -> FinalPatternLowerer<'hir> {
         FinalPatternLowerer::new(self.module, self.facts, self.locals)
     }
+}
+
+fn wrap_success(boundary: RuntimeSemanticTypeId, value: RuntimeExprSeed) -> RuntimeExprSeed {
+    RuntimeExprSeed::new(
+        boundary,
+        RuntimeExprSeedKind::Variant {
+            ordinal: 0,
+            payload: Some(Box::new(value)),
+        },
+    )
 }
 
 fn exact_one(id: ExprId, values: &[RuntimeExprSeed]) -> Result<RuntimeExprSeed, String> {
