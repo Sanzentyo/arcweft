@@ -40,6 +40,11 @@ Arcweft source files use the `.arcw` extension.
 - Validate through typed APIs, executable behavior, codecs, compile checks,
   lints, deterministic generated artifacts, and structured dependency graphs.
   Source spelling and file placement are review aids, not acceptance evidence.
+- Do not pass Cargo an explicit job count (`--jobs`, `-j`, or
+  `CARGO_BUILD_JOBS`) for ordinary builds, checks, lints, or a single test
+  command. Let Cargo select its normal concurrency. An explicit count is
+  permitted only when intentionally coordinating independent test commands in
+  parallel, and that parallel intent must be stated in the validation record.
 - Prefer deterministic runtime and build behavior.
 - Keep every Arcweft-owned version marker fixed at `1`. This includes schema,
   codec, wire, protocol, ABI, save, snapshot, cache, digest-domain,
