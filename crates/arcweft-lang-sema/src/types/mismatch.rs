@@ -1063,6 +1063,12 @@ impl TypeKind {
                     ))
                 }
             }
+            Self::ViewValue => {
+                let Self::ViewValue = actual else {
+                    unreachable!("equal discriminants")
+                };
+                None
+            }
             Self::Unit => {
                 let Self::Unit = actual else {
                     unreachable!("equal discriminants")

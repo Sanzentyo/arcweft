@@ -402,5 +402,6 @@ const fn type_kind_tag(kind: &TypeKind) -> u8 {
         TypeKind::Unit => 76,
         TypeKind::Never => 77,
         TypeKind::AgentBuiltin(_) => 78,
+        TypeKind::ViewValue => 79,
     }
 }

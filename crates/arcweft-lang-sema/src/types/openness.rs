@@ -101,6 +101,7 @@ impl TypeKind {
             | Self::CharacterPatch(_)
             | Self::FocusPatch
             | Self::CharacterDialogue(_)
+            | Self::ViewValue
             | Self::CharacterNominal(_)
             | Self::Named(_)
             | Self::Error(_)
@@ -208,6 +209,7 @@ impl TypeKind {
             | Self::CharacterPatch(_)
             | Self::FocusPatch
             | Self::CharacterDialogue(_)
+            | Self::ViewValue
             | Self::CharacterNominal(_)
             | Self::Named(_)
             | Self::Unit

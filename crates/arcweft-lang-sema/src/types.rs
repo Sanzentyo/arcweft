@@ -511,6 +511,8 @@ pub enum TypeKind {
     CharacterDialogue(CharacterDialogueType),
     /// Non-escaping dialogue suspension operation and its line-plan result.
     DialogueLine(Box<TypeKind>),
+    /// Retained View expression value owned by the checked View projection.
+    ViewValue,
     /// Manifest-backed character enum with structural nominal identity.
     CharacterNominal(CharacterNominalType),
     /// Internal or host-produced semantic value without an authored `TypeRef` origin.
@@ -716,6 +718,7 @@ impl TypeKind {
             Self::RagContextPack => "RagContextPack",
             Self::AgentBuiltin(builtin) => builtin.source_label(),
             Self::FocusPatch => "FocusPatch",
+            Self::ViewValue => "ViewValue",
             Self::Unit => "Unit",
             Self::Never => "Never",
             _ => return None,

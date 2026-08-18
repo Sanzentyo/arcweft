@@ -327,6 +327,7 @@ impl Encoder {
                 self.tag(79);
                 self.agent_builtin(*builtin);
             }
+            TypeKind::ViewValue => self.tag(80),
         }
     }
 

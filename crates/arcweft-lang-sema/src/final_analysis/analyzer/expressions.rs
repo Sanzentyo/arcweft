@@ -1251,7 +1251,7 @@ impl Analyzer<'_, '_, '_> {
                 ..
             } => {
                 let receiver = self.check_expression(*value_receiver, None)?;
-                if receiver.ty() != &view_value_type() {
+                if receiver.ty() != &TypeKind::ViewValue {
                     return Ok(None);
                 }
                 let HirRecoveredName::Valid(member) = member else {
@@ -1270,7 +1270,7 @@ impl Analyzer<'_, '_, '_> {
             effects.union_with(checked.effects());
         }
         Ok(Some(CheckedExpression::new(
-            view_value_type(),
+            TypeKind::ViewValue,
             super::CheckedTypeSelection::Inferred,
             effects,
             CheckedExpressionResolution::ViewCall(classification),
@@ -2207,10 +2207,6 @@ fn break_targets_loop(
         };
         scope = parent;
     }
-}
-
-fn view_value_type() -> TypeKind {
-    TypeKind::Named("ViewValue".to_owned())
 }
 
 fn style_u8_literal(module: &HirModule, owner: ExprId) -> Option<u8> {

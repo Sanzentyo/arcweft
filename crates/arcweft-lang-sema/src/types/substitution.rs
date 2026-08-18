@@ -190,6 +190,7 @@ fn atomic_contains_generic_parameter(
         | TypeKind::CharacterPatch(_)
         | TypeKind::FocusPatch
         | TypeKind::CharacterDialogue(_)
+        | TypeKind::ViewValue
         | TypeKind::CharacterNominal(_)
         | TypeKind::Named(_)
         | TypeKind::Unit
