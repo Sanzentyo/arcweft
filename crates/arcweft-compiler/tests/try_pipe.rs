@@ -85,6 +85,18 @@ flow main() -> Result<i64, String> {
 }
 
 #[test]
+fn ordinary_terminal_try_is_not_implicitly_wrapped_for_the_return_type() {
+    compile_source(
+        r#"
+fn invalid(value: Result<i64, String>) -> Result<i64, String> {
+    try value
+}
+"#,
+    )
+    .expect_err("ordinary Try returns its success type and cannot fabricate the outer carrier");
+}
+
+#[test]
 fn pure_carrier_block_catches_try_before_the_function_boundary() {
     let compiled = compile_source(
         r#"

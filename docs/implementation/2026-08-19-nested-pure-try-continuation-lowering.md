@@ -40,7 +40,9 @@ for:
 - Result and Option carrier blocks catching their nearest Try residual;
 - a Try inside an ordinary nested block;
 - Try remaining local to If branches and Match arms; and
-- the existing once-only pipe-left binding.
+- the existing once-only pipe-left binding; plus
+- a negative ordinary-function tail proving `try value: T` is not implicitly
+  wrapped into the function's `Result<T, E>` return type.
 
 The focused test also executes the admitted pure helpers through
 `VmPureFunctionScratch`: sequential success values produce `Ok(41)`, the first
@@ -61,7 +63,7 @@ frame slots.
 
 - `cargo check -p arcweft-runtime-plan --lib`.
 - `cargo clippy -p arcweft-runtime-plan --lib --all-features --no-deps -- -D warnings`.
-- `cargo test -p arcweft-compiler --test try_pipe`: 7 passed, 0 failed.
+- `cargo test -p arcweft-compiler --test try_pipe`: 8 passed, 0 failed.
 - `cargo test -p arcweft-runtime-plan --lib`: 47 passed, 0 failed.
 - `cargo test -p arcweft-compiler --lib`: 52 passed, 0 failed.
 - `cargo fmt --all -- --check`.
