@@ -116,9 +116,14 @@ Failed baseline outside this audit:
     `current_pass/run/009_dialogue_line.arcw` because executable dialogue
     projection lacked the selected profile character-name localization policy.
   - `spec_should_pass_check_fixtures_pass_after_refactor` first failed at
-    `spec_should_pass/check/022_multiline_trait_method.arcw`.
+    `spec_should_pass/check/022_multiline_trait_method.arcw`; direct execution
+    reports that nominal resolution did not produce one complete type for the
+    multiline trait method signature.
   - `spec_should_pass_run_fixtures_pass_after_refactor` first failed at
-    `spec_should_pass/run/011_dialogue_line_value_and_handle_discard.arcw`.
+    `spec_should_pass/run/011_dialogue_line_value_and_handle_discard.arcw`;
+    direct checking reports that its HIR module is recovered and therefore not
+    executable. The fixture contains the still-unconnected typed dialogue line
+    plan/handle surface, so this is not a unary Need completion signal.
 
 These four failures predate the unary Need source transaction and must not be
 reported as regressions introduced by that cut. The directory-wide gate stays
