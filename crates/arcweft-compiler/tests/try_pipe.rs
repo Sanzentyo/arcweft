@@ -2,6 +2,7 @@ use arcweft_compiler::source::compile_source;
 use arcweft_core::pure::VmPureFunctionScratch;
 use arcweft_core::value::RuntimeExprKind;
 use arcweft_core::value::RuntimeValue;
+use arcweft_runtime_plan::awbc_lower::AwbcLowerer;
 use std::sync::Arc;
 
 #[test]
@@ -30,6 +31,8 @@ flow main() -> i64 {
 fn nested_pure_try_lifts_the_surrounding_expression_into_the_carrier() {
     let compiled = compile_source(
         r#"
+entry cli @entry.main { goto @flow.main }
+
 fn retain(
     first: Result<i64, String>,
     second: Result<i64, String>,
@@ -47,6 +50,9 @@ flow main() -> Result<i64, String> {
     .expect("nested pure Try compiles through the carrier continuation");
 
     assert_eq!(compiled.plan.pure_helpers().len(), 1);
+    AwbcLowerer::new(&compiled.plan, &compiled.dialogue_content, "try_pipe.arcw")
+        .lower()
+        .expect("nested pure Try lowers to verified product AWBC");
     let helper = compiled.plan.pure_helpers()[0].id;
     let plan = Arc::new(compiled.plan);
     let mut evaluator = VmPureFunctionScratch::default();

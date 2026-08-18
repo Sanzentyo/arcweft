@@ -589,10 +589,20 @@ pub(crate) fn lower_pending_closures(inventory: &mut AwbcInventory, plan: &Runti
     while let Some(closure) = inventory.pop_pending_closure() {
         let mut frame = FrameBuilder::new();
         for local in &closure.captures {
-            frame.parameter(*local, plan_type(inventory, plan, local_type(plan, *local)));
+            let name = local_name(inventory, *local);
+            frame.named_parameter(
+                *local,
+                plan_type(inventory, plan, local_type(plan, *local)),
+                name,
+            );
         }
         for local in &closure.params {
-            frame.parameter(*local, plan_type(inventory, plan, local_type(plan, *local)));
+            let name = local_name(inventory, *local);
+            frame.named_parameter(
+                *local,
+                plan_type(inventory, plan, local_type(plan, *local)),
+                name,
+            );
         }
 
         let mut body = ExprBodyBuilder::new(inventory, closure.function);

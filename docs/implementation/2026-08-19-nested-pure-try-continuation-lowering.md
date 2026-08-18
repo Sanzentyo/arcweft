@@ -47,6 +47,16 @@ The focused test also executes the admitted pure helpers through
 residual exits unchanged, and a Try-containing pipe body produces `Ok(41)`
 after its left binding.
 
+The sequential Try plan is also lowered through `AwbcLowerer`; canonical
+Product AWBC verification accepts the resulting helper CFG without a new
+opcode or Try-specific product representation.
+
+That verification exposed and closed a pre-existing closure-frame correlation
+gap: pending AWBC closures now give each capture/parameter slot the same typed
+local-derived string identity carried by `MakeFunction`. The verifier therefore
+checks real names instead of comparing the instruction metadata with unnamed
+frame slots.
+
 ## Passed
 
 - `cargo check -p arcweft-runtime-plan --lib`.
@@ -80,9 +90,9 @@ fact maps, or expression reconstruction.
 2. The Await-containing item-1 matrix remains blocked on the unary `Need<T>`
    replacement and generic Await-value lowering. The binary Need/direct-host
    path is not repaired here.
-3. Structured/AWBC behavior parity for the new pure helper shapes remains a
-   later executable tier; this cut establishes compiler/runtime-plan admission
-   and keeps the existing RuntimeExpr/AWBC projection path unchanged.
+3. Product AWBC lowering and verification are covered. Full structured-vs-AWBC
+   execution parity for Result and Option residual paths remains a later
+   executable tier.
 
 ## Not performed
 

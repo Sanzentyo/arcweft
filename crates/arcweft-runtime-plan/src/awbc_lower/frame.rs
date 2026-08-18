@@ -1,6 +1,7 @@
 use crate::awbc_lower::table_index;
 use arcweft_core::awbc::schema::{
-    AwbcFrameLayout, AwbcFrameSlot, AwbcFrameSlotRole, AwbcRegisterId, AwbcScopeId, AwbcTypeId,
+    AwbcFrameLayout, AwbcFrameSlot, AwbcFrameSlotRole, AwbcRegisterId, AwbcScopeId, AwbcStringId,
+    AwbcTypeId,
 };
 use arcweft_core::runtime_id::RuntimeLocalDeclarationId;
 use std::collections::BTreeMap;
@@ -85,6 +86,17 @@ impl FrameBuilder {
         ty: AwbcTypeId,
     ) -> AwbcRegisterId {
         self.slot(FrameSlotKey::Local(local), ty, AwbcFrameSlotRole::Parameter)
+    }
+
+    pub fn named_parameter(
+        &mut self,
+        local: RuntimeLocalDeclarationId,
+        ty: AwbcTypeId,
+        name: AwbcStringId,
+    ) -> AwbcRegisterId {
+        let register = self.parameter(local, ty);
+        self.slots[register.index()].name = Some(name);
+        register
     }
 
     pub fn temp(&mut self, ty: AwbcTypeId) -> AwbcRegisterId {
