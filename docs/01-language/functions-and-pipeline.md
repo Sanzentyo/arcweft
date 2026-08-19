@@ -3,9 +3,9 @@
 ## 関数は data-last が標準
 
 ```arcw
-fn map<A, B>(f: A -> B)(xs: Vec<A>) -> Vec<B>
-fn filter<A>(pred: A -> bool)(xs: Vec<A>) -> Vec<A>
-fn fold<A, B>(init: B, step: (B, A) -> B)(xs: Vec<A>) -> B
+fn map<A, B>(mapping: A -> B)(self: Vec<A>) -> Vec<B>
+fn filter<A>(predicate: A -> bool)(self: Vec<A>) -> Vec<A>
+fn fold<A, B>(init: B, step: (B, A) -> B)(self: Vec<A>) -> B
 ```
 
 Function type は closed effect row を suffix として持てる。これは関数値の
@@ -85,17 +85,63 @@ let <pipe-left> = threshold
 choices.filter(|choice| choice.score >= <pipe-left>)
 ```
 
-## Method calls do not fall back to free callables
+## Explicit extension receiver
 
-`receiver.method(args...)` resolves only an inherent method or a visible trait
-method. A same-named free callable is never tried as a fallback. Use the pipe
-for explicit data-last application:
+An ordinary `fn` may opt into dot-call syntax by declaring exactly one typed
+`self` parameter. This is an explicit receiver coordinate, not a type-matched
+search over free callables:
 
 ```arcw
-receiver |> transform(options...)
+fn normalize(self: String, locale: Locale) -> String {
+    ...
+}
+
+let direct = normalize(text, locale)
+let dotted = text.normalize(locale)
 ```
 
-This keeps method resolution stable when an API later adds a real method.
+Both calls select the same declaration, body, effect row, generic
+instantiation, and callable identity. An extension declaration is still an
+ordinary function and remains available by its ordinary path. It does not
+create a wrapper method or a second runtime function.
+
+The receiver has one of two canonical positions:
+
+1. the first parameter of the first call group, for receiver-first APIs; or
+2. the sole parameter of the final call group, for curried data-last APIs.
+
+```arcw
+fn clamp(self: i64, min: i64, max: i64) -> i64
+fn map<A, B>(mapping: A -> B)(self: Vec<A>) -> Vec<B>
+```
+
+The second declaration supports all three equivalent surfaces:
+
+```arcw
+map(project)(values)
+values |> map(project)
+values.map(project)
+```
+
+`self: T`, `self: &T`, and `self: &mut T` respectively declare owned, shared,
+and mutable receiver modes. The receiver is required and positional-only in a
+free call; it cannot have a default and cannot be a rest parameter. The short
+method receiver forms `self`, `&self`, and `&mut self` remain reserved for
+trait and inherent method declarations, whose owner already supplies the
+receiver type.
+
+`receiver.method(args...)` considers inherent methods, visible trait methods,
+and visible functions that explicitly declare this receiver coordinate. It
+never scans an ordinary free callable merely because its name and one argument
+type happen to fit. If more than one distinct applicable declaration remains
+across those families, resolution reports an ambiguity instead of silently
+preferring one family. A qualified free call remains the explicit
+disambiguation for an extension function.
+
+The pipe is independent of extension lookup. With no `^`, it evaluates its RHS
+as a function value and applies the left value as the next one-argument call
+group. With `^`, it uses the explicit placeholder coordinate. Neither form
+performs a method-name fallback.
 
 ## カリー化
 
@@ -226,13 +272,14 @@ let add_one = add(1i64)
 let three = add_one([2i64]...)
 ```
 
-Variable-length spread remains rejected in partial-call construction and
-data-last fallback:
+Variable-length spread remains rejected in partial-call construction and in an
+extension call when it would be needed to infer a fixed receiver-adjacent
+arity:
 
 ```arcw
 let later = add(values...)          // error: variable-length partial spread
 let later = add(values..., 1i64)    // error: spread followed by fixed arg
-let ok = score.above(thresholds...) // error: variable-length data-last spread
+let ok = score.clamp(thresholds...) // error: receiver call cannot infer fixed arity
 ```
 
 This is a language contract, not a temporary lowering limitation. The runtime

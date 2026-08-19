@@ -497,6 +497,7 @@ GenericParam  := Lifetime | IdentPath
 ParamGroup    := '(' Param (',' Param)* ','? ')'
 Param         := DocComment* Pattern ':' Type ParamDefault?
                | DocComment* Pattern ':' '...' Type
+               | 'self' ':' Type
                | 'self' | '&self' | '&mut self' | 'mut self'
 ParamDefault  := '=' Expr
 ReturnType    := '->' Type
@@ -507,6 +508,21 @@ WherePredicate:= Type ':' Type ('+' Type)*
 Multiple `ParamGroup` entries are curried parameter groups and are preserved as
 separate syntax groups. Unexpected tokens after the return type or where clause
 are syntax errors.
+
+In an ordinary `fn`, `self: Type` declares one explicit extension receiver.
+The declaration may place it either as the first parameter of the first group
+or as the sole parameter of the final group. The former defines a
+receiver-first free call such as `normalize(value, locale)`; the latter defines
+a curried data-last call such as `map(project)(values)`. Removing the receiver
+for dot-call syntax must not leave an interior hole in a call group. An ordinary
+function may declare at most one extension receiver. It is required,
+positional-only, has no default, and is not a rest parameter.
+
+The untyped forms `self`, `&self`, `&mut self`, and `mut self` are method
+receivers. They are valid only where an inherent or trait owner supplies the
+receiver type. An ordinary extension uses `self: T`, `self: &T`, or
+`self: &mut T` so its receiver type and ownership mode are explicit in the
+function signature.
 
 `ParamDefault` is represented on the ordinary function parameter rather than
 by a second parameter AST. In the current language surface, only a simple

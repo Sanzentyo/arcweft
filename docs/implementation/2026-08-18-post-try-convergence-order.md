@@ -87,6 +87,18 @@ exit evidence is not complete until that final composition pass is green.
 Do not add a direct-host-call exception, a binary-Need implicit callable, or a
 fused TryAwait representation as an interim solution.
 
+### 1A. Replace implicit dot fallback with explicit extension receivers
+
+After the ordinary no-placeholder data-last pipe is verified as function-value
+application, implement
+[Explicit extension receiver implementation plan](2026-08-19-explicit-extension-receiver-implementation-plan.md).
+This cut is independent of binary/unary Need and may land before item 2. It
+adds the typed `self: Type` receiver coordinate to ordinary functions, indexes
+only explicitly opted-in functions for dot lookup, migrates standard
+`map`/`filter`/`fold`, and deletes the old name-and-type-matched data-last method
+fallback. The pipe remains generic Apply and does not consume the extension
+index.
+
 ### Pure continuation progress — 2026-08-19
 
 The independent pure-expression face is now implemented and recorded in

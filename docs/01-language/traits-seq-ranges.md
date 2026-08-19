@@ -84,6 +84,39 @@ associated type requirement / assignment を実装する。`map` の戻り wrapp
 を表す GAT 風の associated type constructor は将来 slice の対象であり、
 seq08.1 の sema では構文を保持したうえで拒否する。
 
+The active public `map` surface does not depend on that future GAT slice. It is
+an overload family of ordinary functions with an explicit extension receiver:
+
+```arcw
+pub fn map<A, B>(mapping: A -> B)(self: Vec<A>) -> Vec<B>
+pub fn map<A, B>(mapping: A -> B)(self: Seq<A>) -> Seq<B>
+pub fn map<A, B>(mapping: A -> B)(self: Slice<A>) -> Vec<B>
+pub fn map<A, B>(mapping: A -> B)(self: Option<A>) -> Option<B>
+pub fn map<A, B, E>(mapping: A -> B)(self: Result<A, E>) -> Result<B, E>
+pub fn map<A, B>(mapping: A -> B)(self: Need<A>) -> Need<B>
+pub fn map<A, B, E>(mapping: A -> B)(self: Parser<A, E>) -> Parser<B, E>
+pub fn map<A, B, E>(mapping: A -> B)(self: Stream<A, E>) -> Stream<B, E>
+```
+
+The name remains `map`: names such as `map_with`, `map_last`, or `map_values`
+would expose calling convention rather than operation meaning. Each overload
+supports `map(f)(value)`, `value |> map(f)`, and `value.map(f)` through the same
+callable declaration. `Slice<A>` materializes a `Vec<B>` because a borrowed
+slice cannot own a new mapped backing store. The standard callable catalog also
+preserves the checked length when mapping `Array<A, N>` to `Array<B, N>`; this
+does not introduce user-written const-generic parameter syntax. `String` is not
+a collection-map receiver; text transformation uses text-specific operations.
+`Need` and `Stream` mapping is lazy and does not await, poll, or start the
+producer. The mapping function remains pure and synchronous; effectful
+concurrent transformation is `traverse`.
+
+The following `Mappable` declaration describes the intended later trait
+abstraction, not a second simultaneously active `map` owner. When associated
+type constructors become executable, the closed overload implementation may be
+replaced atomically by a trait-backed callable catalog. It must preserve the
+same free, pipe, and dot surfaces and must remove the superseded overload rows
+rather than leave competing method and extension identities.
+
 ```arcw
 pub trait Mappable {
     type Item
