@@ -22,11 +22,11 @@ use super::family::{ExpressionFamily, NameFamily, PatternFamily, TypeFamily};
 use super::item_prefix::is_verify_trusted_attribute;
 use super::node::{
     AssertionStatementKind, AstNode, CloseBraceKind, CloseParenKind, ColonKind, EffectsClauseKind,
-    EnsuresClauseKind, EqualsKind, ErrorNodeKind, ExpressionBodyKind, FixedParameterGroupKind,
-    FunctionBodyKind, FunctionItemKind, MissingBodyKind, OpenBraceKind, OpenParenKind,
-    ParameterKind, PredicateBlockKind, PredicateBodyKind, PredicateItemKind, ProofBlockKind,
-    ProofBodyKind, ProofItemKind, RequiresClauseKind, RestParameterMarkerKind, ReturnTypeKind,
-    ThinArrowKind,
+    EnsuresClauseKind, EqualsKind, ErrorNodeKind, ExpressionBodyKind, ExtensionReceiverMarkerKind,
+    FixedParameterGroupKind, FunctionBodyKind, FunctionItemKind, MissingBodyKind, OpenBraceKind,
+    OpenParenKind, ParameterKind, PredicateBlockKind, PredicateBodyKind, PredicateItemKind,
+    ProofBlockKind, ProofBodyKind, ProofItemKind, RequiresClauseKind, RestParameterMarkerKind,
+    ReturnTypeKind, ThinArrowKind,
 };
 use super::nominal::{optional_generics, required_name, where_clauses};
 use super::source_file::AttachedDelimiterState;
@@ -123,6 +123,7 @@ pub struct AttachedCallableParameter {
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum AttachedCallableParameterKind {
     Fixed,
+    ExtensionReceiver,
     Rest {
         marker: AstNode<RestParameterMarkerKind>,
     },
@@ -1382,11 +1383,19 @@ fn attach_callable_parameter(
         pattern,
         colon,
         ty,
-        kind: parameter
-            .optional_exact_child::<RestParameterMarkerKind>(SyntaxRole::Kind)?
-            .map_or(AttachedCallableParameterKind::Fixed, |marker| {
-                AttachedCallableParameterKind::Rest { marker }
-            }),
+        kind: match (
+            parameter.optional_exact_child::<ExtensionReceiverMarkerKind>(
+                SyntaxRole::ExtensionReceiver,
+            )?,
+            parameter.optional_exact_child::<RestParameterMarkerKind>(SyntaxRole::Kind)?,
+        ) {
+            (Some(_), None) => AttachedCallableParameterKind::ExtensionReceiver,
+            (None, Some(marker)) => AttachedCallableParameterKind::Rest { marker },
+            (None, None) => AttachedCallableParameterKind::Fixed,
+            (Some(_), Some(_)) => {
+                return Err(SyntaxAccessError::InvalidItemProjection { id: parameter.id() });
+            }
+        },
         default: parameter
             .optional_exact_child::<EqualsKind>(SyntaxRole::Equals)?
             .map(|equals| {

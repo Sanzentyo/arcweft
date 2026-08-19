@@ -429,9 +429,12 @@ pub(super) fn candidate_path_matches(
                 && actual.root() == root
                 && actual.segments().len() == segments.len()
                 && actual.segments().iter().zip(segments).all(|(actual, expected)| {
-                    matches!((actual, expected.kind()),
+                    (matches!((actual, expected.kind()),
                         (HirPathSegment::Identifier(_), arcweft_lang_syntax::attachment::source_file::AttachedPathSegmentKind::Identifier)
                         | (HirPathSegment::ProjectSymbol(_), arcweft_lang_syntax::attachment::source_file::AttachedPathSegmentKind::Keyword | arcweft_lang_syntax::attachment::source_file::AttachedPathSegmentKind::ProjectSymbol))
+                        || matches!((actual, expected.kind()),
+                            (HirPathSegment::Identifier(_), arcweft_lang_syntax::attachment::source_file::AttachedPathSegmentKind::Keyword)
+                        ) && expected.source_text() == "self")
                         && match actual {
                             HirPathSegment::Identifier(actual) => actual.as_str() == expected.source_text(),
                             HirPathSegment::ProjectSymbol(actual) => actual.as_str() == expected.source_text(),

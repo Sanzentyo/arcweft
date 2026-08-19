@@ -511,11 +511,13 @@ are syntax errors.
 
 In an ordinary `fn`, `self: Type` declares one explicit extension receiver.
 The declaration may place it either as the first parameter of the first group
-or as the sole parameter of the final group. The former defines a
+or as the sole parameter of the second and final group. The former defines a
 receiver-first free call such as `normalize(value, locale)`; the latter defines
 a curried data-last call such as `map(project)(values)`. Removing the receiver
 for dot-call syntax must not leave an interior hole in a call group. An ordinary
-function may declare at most one extension receiver. It is required,
+function may declare at most one extension receiver. Additional pre-receiver
+call groups are rejected so receiver consumption never becomes a hidden
+partial-application state. The receiver is required,
 positional-only, has no default, and is not a rest parameter.
 
 The untyped forms `self`, `&self`, `&mut self`, and `mut self` are method

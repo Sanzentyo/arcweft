@@ -1,13 +1,13 @@
 //! Candidate selection and final callable semantic projections.
 
 use super::super::{
-    CallableAuthorityRank, CallableGroupIndex, CallableParameterType, CandidateExpectedType,
-    CandidateProbe, CandidateScore, CandidateSelection, CheckedCallArgumentSlotSource,
-    CheckedCallableCatalog, CheckedProjectNominal, EffectRow, EffectSet,
-    FinalSemanticAnalysisError, GenericTypeOwnerId, GenericTypeParameterId, HirCallArgument,
-    HirCallValue, MappedCallArgumentSlot, Ordering, PhysicalArgumentEvaluationKind,
-    ProjectNominalDeclaration, ProjectNominalType, ResolvedCallable, SpreadArgumentPolicy,
-    TypeKind, TypeParameterSubstitutions,
+    CallableAuthorityRank, CallableGroupIndex, CallableInstantiation, CallableParameterType,
+    CandidateExpectedType, CandidateProbe, CandidateScore, CandidateSelection,
+    CheckedCallArgumentSlotSource, CheckedCallableCatalog, CheckedProjectNominal, EffectRow,
+    EffectSet, FinalSemanticAnalysisError, GenericTypeOwnerId, GenericTypeParameterId,
+    HirCallArgument, HirCallValue, MappedCallArgumentSlot, Ordering,
+    PhysicalArgumentEvaluationKind, ProjectNominalDeclaration, ProjectNominalType,
+    ResolvedCallable, SpreadArgumentPolicy, TypeKind, TypeParameterSubstitutions,
 };
 
 pub(super) fn physical_expected_type(
@@ -95,6 +95,12 @@ pub(super) fn call_result_type(
     current_group: CallableGroupIndex,
 ) -> Option<TypeKind> {
     let next = CallableGroupIndex::try_from_usize(current_group.get().checked_add(1)?).ok()?;
+    if matches!(
+        candidate.instantiation(),
+        CallableInstantiation::Extension { group, .. } if *group == next
+    ) {
+        return Some(candidate.schema().result().clone());
+    }
     if candidate.schema().group(next).is_none() {
         return Some(candidate.schema().result().clone());
     }
@@ -133,6 +139,17 @@ pub(super) fn provisional_call_effects(
             .ok_or(FinalSemanticAnalysisError::AccountingOverflow)?,
     )
     .map_err(|_| FinalSemanticAnalysisError::AccountingOverflow)?;
+    if matches!(
+        candidate.instantiation(),
+        CallableInstantiation::Extension { group, .. } if *group == next
+    ) {
+        return Ok(candidate
+            .schema()
+            .effects()
+            .fixed_row()
+            .cloned()
+            .unwrap_or_else(|| EffectRow::closed(EffectSet::new())));
+    }
     if candidate.schema().group(next).is_some() {
         return Ok(EffectRow::closed(EffectSet::new()));
     }

@@ -316,7 +316,7 @@ fn active_parameter(
     };
     let group = candidate.schema().group(facts.current_group())?;
     let mut provided = vec![false; group.parameters().len()];
-    if let CallableInstantiation::DataLast {
+    if let CallableInstantiation::Extension {
         group: implicit_group,
         parameter,
         ..

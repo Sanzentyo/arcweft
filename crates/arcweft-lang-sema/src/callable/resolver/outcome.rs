@@ -7,10 +7,9 @@ use arcweft_character::id::CharacterId;
 use super::{
     Arc, CallableAuthorityRank, CallableCandidateId, CallableDeclarationKey, CallableGroupIndex,
     CallableId, CallableLimits, CallableName, CallableParameterIndex, CallablePath, CallableRecord,
-    CallableSignatureSchema, CheckedCallableId, CurriedCallableId, DataLastCallableId,
-    EquivalentCallableSource, FunctionValueSignatureId, LanguageCallableFamily, LocalCallableId,
-    ProjectCallablePath, PromotionCallableId, ResolveCallError, ResolvedAssociatedTypeReceiver,
-    TypeKind,
+    CallableSignatureSchema, CheckedCallableId, CurriedCallableId, EquivalentCallableSource,
+    FunctionValueSignatureId, LanguageCallableFamily, LocalCallableId, ProjectCallablePath,
+    PromotionCallableId, ResolveCallError, ResolvedAssociatedTypeReceiver, TypeKind,
 };
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -99,7 +98,7 @@ pub enum CallableInstantiation {
         base: CallableCandidateId,
         group: CallableGroupIndex,
     },
-    DataLast {
+    Extension {
         receiver: TypeKind,
         group: CallableGroupIndex,
         parameter: CallableParameterIndex,
@@ -274,9 +273,9 @@ impl ResolvedCallable {
 
     pub const fn call_group(&self) -> CallableGroupIndex {
         match &self.instantiation {
-            CallableInstantiation::Curried { group, .. }
-            | CallableInstantiation::DataLast { group, .. } => *group,
-            CallableInstantiation::None
+            CallableInstantiation::Curried { group, .. } => *group,
+            CallableInstantiation::Extension { .. }
+            | CallableInstantiation::None
             | CallableInstantiation::ExpectedEnum { .. }
             | CallableInstantiation::Result { .. }
             | CallableInstantiation::Option { .. }
@@ -293,7 +292,6 @@ impl ResolvedCallable {
     ) -> Result<Self, ResolveCallError> {
         let base = match &self.id {
             CallableCandidateId::Curried(id) => id.base().clone(),
-            CallableCandidateId::DataLast(id) => id.callable().clone(),
             id => id.clone(),
         };
         let id = CurriedCallableId::try_new(base.clone(), group).map_err(|error| match error {
@@ -315,26 +313,6 @@ impl ResolvedCallable {
             self.equivalent_sources.to_vec(),
             self.authority,
             self.family,
-            limits,
-        )
-    }
-
-    pub(crate) fn try_data_last(
-        &self,
-        id: DataLastCallableId,
-        instantiation: CallableInstantiation,
-        limits: &CallableLimits,
-    ) -> Result<Self, ResolveCallError> {
-        Self::try_new_state(
-            CallableCandidateId::DataLast(id),
-            self.origin.clone(),
-            self.checked.clone(),
-            self.record.clone(),
-            self.intrinsic_schema.clone(),
-            instantiation,
-            self.equivalent_sources.to_vec(),
-            self.authority,
-            super::CallableFamily::DataLast,
             limits,
         )
     }
@@ -371,7 +349,6 @@ impl ResolvedCallable {
 fn underlying_candidate(id: &CallableCandidateId) -> &CallableCandidateId {
     match id {
         CallableCandidateId::Curried(id) => underlying_candidate(id.base()),
-        CallableCandidateId::DataLast(id) => underlying_candidate(id.callable()),
         id => id,
     }
 }
@@ -380,9 +357,7 @@ fn expected_family(
     id: &CallableCandidateId,
     record: Option<&Arc<CallableRecord>>,
 ) -> super::CallableFamily {
-    if matches!(id, CallableCandidateId::DataLast(_)) {
-        super::CallableFamily::DataLast
-    } else if let Some(record) = record {
+    if let Some(record) = record {
         record.family()
     } else {
         underlying_candidate(id).intrinsic_family()
@@ -424,9 +399,6 @@ fn origin_matches(
 ) -> bool {
     if let CallableCandidateId::Curried(id) = id {
         return origin_matches(id.base(), origin, authority);
-    }
-    if let CallableCandidateId::DataLast(id) = id {
-        return origin_matches(id.callable(), origin, authority);
     }
     match (id, origin, authority) {
         (
@@ -532,14 +504,14 @@ fn instantiation_matches(id: &CallableCandidateId, instantiation: &CallableInsta
         (CallableCandidateId::Curried(id), CallableInstantiation::Curried { base, group }) => {
             id.base() == base && id.next_group() == *group
         }
-        (
-            CallableCandidateId::DataLast(id),
-            CallableInstantiation::DataLast {
-                group, parameter, ..
-            },
-        ) => id.receiver_group() == *group && id.receiver_parameter() == *parameter,
         (CallableCandidateId::EnumVariant(_), CallableInstantiation::ExpectedEnum { .. })
         | (CallableCandidateId::Option(_), CallableInstantiation::Option { .. })
+        | (
+            CallableCandidateId::Project(_)
+            | CallableCandidateId::Environment(_)
+            | CallableCandidateId::Standard(_),
+            CallableInstantiation::Extension { .. },
+        )
         | (
             CallableCandidateId::Presentation(_),
             CallableInstantiation::Character { .. } | CallableInstantiation::None,

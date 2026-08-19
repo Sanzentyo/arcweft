@@ -328,6 +328,9 @@ pub(super) fn parameters_match<'a, 'b>(
                         AttachedCallableParameterKind::Fixed,
                         HirParameterKind::Fixed
                     ) | (
+                        AttachedCallableParameterKind::ExtensionReceiver,
+                        HirParameterKind::ExtensionReceiver
+                    ) | (
                         AttachedCallableParameterKind::Rest { .. },
                         HirParameterKind::RestPositional
                     )

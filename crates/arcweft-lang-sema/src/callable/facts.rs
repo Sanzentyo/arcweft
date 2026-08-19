@@ -15,11 +15,11 @@ use crate::{effect_row::EffectRow, types::TypeKind};
 use super::{
     CallResolverAccountingReport, CallableArgumentSlotIndex, CallableCandidateId,
     CallableDiagnosticCode, CallableDocumentation, CallableGroupIndex, CallableGroupKind,
-    CallableLimits, CallableName, CallableParameterCoordinate, CallableParameterPassing,
-    CallableParameterPresence, CallableParameterSource, CallableParameterType,
-    CallableQueryLimitError, CallableSource, NonCallableSource, ResolvedCallable,
-    SemanticSignatureError, SignatureOrigin, SignatureQueryWorkReport, SignatureWorkReport,
-    UnknownCallKind,
+    CallableInstantiation, CallableLimits, CallableName, CallableParameterCoordinate,
+    CallableParameterPassing, CallableParameterPresence, CallableParameterSource,
+    CallableParameterType, CallableQueryLimitError, CallableSource, NonCallableSource,
+    ResolvedCallable, SemanticSignatureError, SignatureOrigin, SignatureQueryWorkReport,
+    SignatureWorkReport, UnknownCallKind,
 };
 
 /// Immutable semantic facts committed for one checked call expression.
@@ -577,7 +577,13 @@ impl CheckedCallTarget {
     ) -> Self {
         let next_group = CallableGroupIndex::try_from_usize(current_group.get() + 1)
             .ok()
-            .filter(|next| selected.schema().group(*next).is_some());
+            .filter(|next| selected.schema().group(*next).is_some())
+            .filter(|next| {
+                !matches!(
+                    selected.instantiation(),
+                    CallableInstantiation::Extension { group, .. } if group == next
+                )
+            });
         Self {
             target: CallTargetFact::Selected {
                 selected: Box::new(selected.clone()),

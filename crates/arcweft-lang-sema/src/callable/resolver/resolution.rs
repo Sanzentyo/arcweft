@@ -2,18 +2,17 @@
 
 use super::{
     AgentIntrinsicSignatureId, Arc, BuiltinCallableId, CallResolverRequest, CallableCandidateId,
-    CallableDeclarationKey, CallableGroupIndex, CallableInstantiation, CallableLookupKey,
-    CallableName, CallableParameterIndex, CallablePath, CallableRecord, CallableSignatureSchema,
-    CapacityMethodId, CollectionMethodId, DataLastCallableId, DomainMethodId, DropCallableId,
-    EnvironmentCallableOwner, EquivalentCallableSource, EvaluatedReceiver, FxCallableSignatureId,
-    FxResolution, HirCallArgument, HirExprKind, HirModule, IntegerMethodId, LanguageCallableFamily,
+    CallableDeclarationKey, CallableInstantiation, CallableLookupKey, CallableName, CallablePath,
+    CallableRecord, CallableSignatureSchema, CapacityMethodId, CollectionMethodId, DomainMethodId,
+    DropCallableId, EnvironmentCallableOwner, EquivalentCallableSource, EvaluatedReceiver,
+    FxCallableSignatureId, FxResolution, HirCallArgument, IntegerMethodId, LanguageCallableFamily,
     NonCallableSource, NonEmptyResolvedCandidates, OptionConstructorKind, Ordering,
     PreparedCallCallee, PreparedFreeCallScope, PresentationCallableId, PresentationHandleMethodId,
     ProjectCallablePath, ProjectNameBinding, PromotionCallableId, ReceiverMethodKey,
     ResolveCallError, ResolveCallOutcome, ResolvedAssociatedTypeReceiver, ResolvedCallTarget,
     ResolvedCallable, ResolvedFunctionValue, ResolvedFunctionValueSeed, ResolvedNonCallableTarget,
     ResultConstructorKind, SignatureOrigin, StageMethodId, TypeKind, TypeReceiverInstantiation,
-    TypedEnvironmentMethodCandidate, UnknownCallKind, UnknownCallTarget, call_shape_is_viable,
+    TypedEnvironmentMethodCandidate, UnknownCallKind, UnknownCallTarget,
 };
 use crate::callable::{DialogueCallableId, DialogueCalleeIdentity, DialogueSchemaContext};
 
@@ -399,15 +398,10 @@ fn resolve_selected_call(
     check_query_step(request)?;
     if let Some(target) = resolve_checked_method(
         request,
-        receiver_type,
+        receiver.ty(),
         method,
         receiver.value_instantiation(),
     )? {
-        return Ok(Some(target));
-    }
-
-    check_query_step(request)?;
-    if let Some(target) = resolve_data_last_method(request, receiver, method, arguments)? {
         return Ok(Some(target));
     }
 
@@ -435,162 +429,28 @@ fn resolve_checked_method(
         .checked
         .record(&id)
         .map_err(|_| ResolveCallError::InvalidResolvedCallable)?;
-    if record.method_role().is_none() || record.key() != &CallableLookupKey::Method(key) {
+    if record.receiver_method_key().as_ref() != Some(&key) {
         return Err(ResolveCallError::InvalidResolvedCallable);
     }
+    let instantiation = if let Some(extension) = record.schema().extension_receiver() {
+        let CallableInstantiation::Receiver { receiver } = instantiation else {
+            return Ok(None);
+        };
+        CallableInstantiation::Extension {
+            receiver,
+            group: extension.group(),
+            parameter: extension.parameter(),
+        }
+    } else if record.method_role().is_some() {
+        instantiation
+    } else {
+        return Err(ResolveCallError::InvalidResolvedCallable);
+    };
     let record = Arc::clone(record);
     let callable = resolve_catalog_record(&record, &[], None, instantiation, request)?;
     NonEmptyResolvedCandidates::try_new(vec![callable], request.limits)
         .map(ResolvedCallTarget::Candidates)
         .map(Some)
-}
-
-fn resolve_data_last_method(
-    request: &mut CallResolverRequest<'_>,
-    receiver: EvaluatedReceiver<'_>,
-    method: &CallableName,
-    arguments: &[HirCallArgument],
-) -> Result<Option<ResolvedCallTarget>, ResolveCallError> {
-    let mut bases = Vec::new();
-    let path = CallablePath::try_new([method.clone()])
-        .map_err(|_| ResolveCallError::InvalidResolvedCallable)?;
-    let (current_module, symbols, world) = request.authority.parts();
-    let project_path = ProjectCallablePath::new(
-        symbols.world().package().clone(),
-        current_module.clone(),
-        path.clone(),
-    );
-    if let Some(binding) = world
-        .environment()
-        .callable_catalog()
-        .project_binding(&project_path)
-    {
-        check_query_step(request)?;
-        match resolve_project_binding(binding, &project_path, request)? {
-            ResolvedCallTarget::Candidates(candidates) => {
-                bases.extend(candidates.as_slice().iter().cloned());
-            }
-            ResolvedCallTarget::NonCallable(_) => return Ok(None),
-            ResolvedCallTarget::FunctionValue(_) => {
-                return Err(ResolveCallError::InvalidResolvedCallable);
-            }
-        }
-    }
-
-    let catalog = world.environment().callable_catalog();
-    if let Some(candidates) = catalog
-        .validated_free(&path)
-        .map_err(|reason| corrupt(CallableLookupKey::Free(path.clone()), reason))?
-    {
-        for entry in candidates.as_slice() {
-            check_query_step(request)?;
-            bases.push(resolve_catalog_record(
-                entry.primary(),
-                entry.equivalent_sources(),
-                None,
-                CallableInstantiation::None,
-                request,
-            )?);
-        }
-    }
-    let mut seen = std::collections::HashSet::new();
-    bases.retain(|candidate| seen.insert(candidate.id().clone()));
-    finish_data_last_candidates(request, receiver, arguments, bases)
-}
-
-fn finish_data_last_candidates(
-    request: &mut CallResolverRequest<'_>,
-    receiver: EvaluatedReceiver<'_>,
-    arguments: &[HirCallArgument],
-    bases: Vec<ResolvedCallable>,
-) -> Result<Option<ResolvedCallTarget>, ResolveCallError> {
-    let receiver_type = receiver.ty();
-    let mut candidates = Vec::new();
-    for base in bases {
-        check_query_step(request)?;
-        let Some((group, parameter)) = data_last_receiver_coordinate(
-            request.authority.module(),
-            base.schema(),
-            request.call_group,
-            receiver_type,
-            arguments,
-        ) else {
-            continue;
-        };
-        let id = DataLastCallableId::try_new(base.id().clone(), group, parameter, base.schema())
-            .map_err(|_| ResolveCallError::InvalidResolvedCallable)?;
-        check_query_step(request)?;
-        candidates.push(base.try_data_last(
-            id,
-            receiver.data_last_instantiation(group, parameter),
-            request.limits,
-        )?);
-    }
-    match candidates.as_slice() {
-        [] => Ok(None),
-        [candidate] => NonEmptyResolvedCandidates::try_new(vec![candidate.clone()], request.limits)
-            .map(ResolvedCallTarget::Candidates)
-            .map(Some),
-        _ => {
-            let ids = candidates
-                .iter()
-                .filter_map(|candidate| match candidate.id() {
-                    CallableCandidateId::DataLast(id) => Some(id.clone()),
-                    _ => None,
-                })
-                .collect::<Vec<_>>();
-            Err(ResolveCallError::DataLastAmbiguity {
-                candidates: ids.into(),
-            })
-        }
-    }
-}
-
-fn data_last_receiver_coordinate(
-    request_module: &HirModule,
-    schema: &CallableSignatureSchema,
-    current_group: CallableGroupIndex,
-    receiver_type: &TypeKind,
-    arguments: &[HirCallArgument],
-) -> Option<(CallableGroupIndex, CallableParameterIndex)> {
-    if let Some(group) = schema.group(current_group)
-        && let Some(parameter) = group.parameters().last()
-        && let super::CallableParameterType::Exact(expected) = parameter.ty()
-        && expected.accepts(receiver_type)
-        && authored_argument_slot_count(request_module, arguments) + 1 == group.parameters().len()
-    {
-        return Some((current_group, parameter.index()));
-    }
-
-    let next_group = CallableGroupIndex::try_from_usize(current_group.get() + 1).ok()?;
-    let next = schema.group(next_group)?;
-    let [parameter] = next.parameters() else {
-        return None;
-    };
-    let super::CallableParameterType::Exact(expected) = parameter.ty() else {
-        return None;
-    };
-    (expected.accepts(receiver_type)
-        && call_shape_is_viable(request_module, schema, current_group, arguments))
-    .then_some((next_group, parameter.index()))
-}
-
-fn authored_argument_slot_count(module: &HirModule, arguments: &[HirCallArgument]) -> usize {
-    arguments
-        .iter()
-        .map(|argument| match argument {
-            HirCallArgument::Spread { .. } => {
-                module
-                    .resolve_expr(argument.value())
-                    .map_or(1, |value| match value.kind() {
-                        HirExprKind::BracketSequence(sequence) => sequence.elements().len(),
-                        HirExprKind::NumericBracketSequence(sequence) => sequence.elements().len(),
-                        _ => 1,
-                    })
-            }
-            HirCallArgument::Positional { .. } | HirCallArgument::Named { .. } => 1,
-        })
-        .sum()
 }
 
 fn resolved_language_method(

@@ -26,7 +26,7 @@ pub(super) enum TypedPathSegment<'source> {
 }
 
 impl<'source> TypedPathSegment<'source> {
-    pub(super) const fn from_attached_kind(
+    pub(super) fn from_attached_kind(
         kind: AttachedPathSegmentKind,
         spelling: &'source str,
     ) -> Self {
@@ -146,6 +146,31 @@ pub(super) fn project_attached_path(
     project_attached_path_with_tail(path, None)
 }
 
+/// Projects a value-expression path. In expression position, the parser-owned
+/// `self` keyword denotes the extension receiver local; other keyword segments
+/// retain their project-symbol family.
+pub(super) fn project_expression_path(
+    path: &AttachedPath,
+) -> Result<TypedPathProjection, HirLowerFailure> {
+    let root = attached_path_root(path);
+    let mut segments = path
+        .segments()
+        .iter()
+        .map(|segment| {
+            if segment.kind() == AttachedPathSegmentKind::Keyword && segment.source_text() == "self"
+            {
+                TypedPathSegment::Identifier("self")
+            } else {
+                typed_attached_path_segment(segment)
+            }
+        })
+        .collect::<Vec<_>>();
+    if path.missing_name().is_some() {
+        segments.push(TypedPathSegment::Invalid(""));
+    }
+    project_typed_path(root, &segments)
+}
+
 /// Projects one parser-validated ambiguous-candidate path from its bound
 /// revision view. The candidate graph contributes typed segment kinds and
 /// token spellings; this function never reopens or reparses source text.
@@ -182,14 +207,7 @@ fn project_attached_path_with_tail(
     path: &AttachedPath,
     tail: Option<TypedPathSegment<'_>>,
 ) -> Result<TypedPathProjection, HirLowerFailure> {
-    let root = match path.root() {
-        AttachedPathRoot::ImplicitCrate => HirPathRoot::ImplicitCrate,
-        AttachedPathRoot::Crate { .. } => HirPathRoot::Crate,
-        AttachedPathRoot::SelfModule { .. } => HirPathRoot::SelfModule,
-        AttachedPathRoot::Super { levels } => HirPathRoot::Super {
-            depth: levels.len(),
-        },
-    };
+    let root = attached_path_root(path);
     let mut segments = path
         .segments()
         .iter()
@@ -200,6 +218,17 @@ fn project_attached_path_with_tail(
     }
     segments.extend(tail);
     project_typed_path(root, &segments)
+}
+
+fn attached_path_root(path: &AttachedPath) -> HirPathRoot {
+    match path.root() {
+        AttachedPathRoot::ImplicitCrate => HirPathRoot::ImplicitCrate,
+        AttachedPathRoot::Crate { .. } => HirPathRoot::Crate,
+        AttachedPathRoot::SelfModule { .. } => HirPathRoot::SelfModule,
+        AttachedPathRoot::Super { levels } => HirPathRoot::Super {
+            depth: levels.len(),
+        },
+    }
 }
 
 pub(super) fn typed_attached_path_segment(segment: &AttachedPathSegment) -> TypedPathSegment<'_> {

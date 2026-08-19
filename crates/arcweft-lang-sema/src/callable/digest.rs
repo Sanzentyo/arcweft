@@ -173,6 +173,10 @@ impl CanonicalEncoder {
         self.option(schema.evaluated_effect().as_ref(), |encoder, effect| {
             encoder.evaluated_effect(*effect);
         });
+        self.option(schema.extension_receiver().as_ref(), |encoder, receiver| {
+            encoder.usize(receiver.group().get());
+            encoder.usize(receiver.parameter().get());
+        });
     }
 
     fn evaluated_effect(&mut self, effect: CallableEvaluatedEffect) {

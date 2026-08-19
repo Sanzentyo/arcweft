@@ -24,8 +24,8 @@ use crate::types::TypeKind;
 
 use super::{
     BuiltinIdentityError, CallableIdentityError, CallableIndexKind, CallableLimits,
-    CallablePathError, CallableScalarError, CallableScalarKind, CallableSignatureSchema,
-    PRODUCTION_CALLABLE_LIMITS, RegisteredCallableCatalogDigest,
+    CallablePathError, CallableScalarError, CallableScalarKind, PRODUCTION_CALLABLE_LIMITS,
+    RegisteredCallableCatalogDigest,
 };
 
 #[derive(Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
@@ -989,10 +989,7 @@ impl CurriedCallableId {
         base: CallableCandidateId,
         next_group: CallableGroupIndex,
     ) -> Result<Self, CallableIdentityError> {
-        if matches!(
-            base,
-            CallableCandidateId::Curried(_) | CallableCandidateId::DataLast(_)
-        ) {
+        if matches!(base, CallableCandidateId::Curried(_)) {
             return Err(CallableIdentityError::InvalidCurriedBase {
                 base: Box::new(base),
             });
@@ -1332,76 +1329,6 @@ impl StageMethodId {
             }
             _ => None,
         }
-    }
-}
-
-#[derive(Clone, Debug, Eq, Hash, PartialEq)]
-pub struct DataLastCallableId {
-    callable: Box<CallableCandidateId>,
-    receiver_parameter: CallableParameterIndex,
-    receiver_group: CallableGroupIndex,
-}
-impl DataLastCallableId {
-    pub fn try_new(
-        callable: CallableCandidateId,
-        receiver_group: CallableGroupIndex,
-        receiver_parameter: CallableParameterIndex,
-        schema: &CallableSignatureSchema,
-    ) -> Result<Self, CallableIdentityError> {
-        if !matches!(
-            callable,
-            CallableCandidateId::Project(_)
-                | CallableCandidateId::Environment(_)
-                | CallableCandidateId::Local(_)
-        ) {
-            return Err(CallableIdentityError::InvalidDataLastBase {
-                base: Box::new(callable),
-            });
-        }
-        let Some(group) = schema.group(receiver_group) else {
-            return Err(CallableIdentityError::InvalidDataLastCoordinate {
-                group: receiver_group,
-                parameter: receiver_parameter,
-            });
-        };
-        let Some(parameter) = group.parameter(receiver_parameter) else {
-            return Err(CallableIdentityError::InvalidDataLastCoordinate {
-                group: receiver_group,
-                parameter: receiver_parameter,
-            });
-        };
-        if matches!(
-            parameter.passing(),
-            super::CallableParameterPassing::RestPositional
-                | super::CallableParameterPassing::RestNamed
-        ) {
-            return Err(CallableIdentityError::DataLastReceiverIsRest {
-                group: receiver_group,
-                parameter: receiver_parameter,
-            });
-        }
-        let is_final_current = receiver_parameter.get() + 1 == group.parameters().len();
-        let is_sole_next = receiver_group.get() > 0 && group.parameters().len() == 1;
-        if !is_final_current && !is_sole_next {
-            return Err(CallableIdentityError::DataLastReceiverNotFinal {
-                group: receiver_group,
-                parameter: receiver_parameter,
-            });
-        }
-        Ok(Self {
-            callable: Box::new(callable),
-            receiver_parameter,
-            receiver_group,
-        })
-    }
-    pub const fn callable(&self) -> &CallableCandidateId {
-        &self.callable
-    }
-    pub const fn receiver_group(&self) -> CallableGroupIndex {
-        self.receiver_group
-    }
-    pub const fn receiver_parameter(&self) -> CallableParameterIndex {
-        self.receiver_parameter
     }
 }
 
@@ -1820,7 +1747,6 @@ pub enum CallableCandidateId {
     PresentationHandleMethod(PresentationHandleMethodId),
     IntegerMethod(IntegerMethodId),
     DomainMethod(DomainMethodId),
-    DataLast(DataLastCallableId),
     CapacityMethod(CapacityMethodId),
     StageMethod(StageMethodId),
     Drop(DropCallableId),
@@ -1846,7 +1772,6 @@ pub enum CallableFamily {
     IntegerMethod,
     DomainMethod,
     TraitMethod,
-    DataLast,
     CapacityMethod,
     StageMethod,
     Drop,
@@ -1855,7 +1780,7 @@ pub enum CallableFamily {
 
 impl CallableFamily {
     /// Every production callable family in stable semantic-audit order.
-    pub const ALL: [Self; 22] = [
+    pub const ALL: [Self; 21] = [
         Self::Fx,
         Self::EnumConstructor,
         Self::ResultConstructor,
@@ -1873,7 +1798,6 @@ impl CallableFamily {
         Self::IntegerMethod,
         Self::DomainMethod,
         Self::TraitMethod,
-        Self::DataLast,
         Self::CapacityMethod,
         Self::StageMethod,
         Self::Drop,
@@ -1901,7 +1825,6 @@ impl CallableCandidateId {
             Self::PresentationHandleMethod(_) => CallableFamily::PresentationHandleMethod,
             Self::IntegerMethod(_) => CallableFamily::IntegerMethod,
             Self::DomainMethod(_) => CallableFamily::DomainMethod,
-            Self::DataLast(_) => CallableFamily::DataLast,
             Self::CapacityMethod(_) => CallableFamily::CapacityMethod,
             Self::StageMethod(_) => CallableFamily::StageMethod,
             Self::Drop(_) => CallableFamily::Drop,
@@ -1926,7 +1849,6 @@ pub enum LanguageCallableFamily {
     DomainMethod,
     CapacityMethod,
     StageMethod,
-    DataLast,
     Drop,
     Promote,
     Assume,

@@ -24,8 +24,8 @@ mod schema;
 
 pub use arguments::CallableParameterCoordinate;
 pub(crate) use arguments::{
-    CallArgumentMapping, MappedCallArgument, MappedCallArgumentSlot, call_shape_is_viable,
-    map_call_arguments, map_unmapped_call_arguments,
+    CallArgumentMapping, MappedCallArgument, MappedCallArgumentSlot, map_call_arguments,
+    map_unmapped_call_arguments,
 };
 pub(crate) use builder::RegisteredCallableCatalogBuilder;
 pub use catalog::{
@@ -74,8 +74,8 @@ pub use identity::{
     CallableProviderId, CapabilityCallableId, CapacityMethodId, CheckedCallableContext,
     CheckedCallableDeclaration, CheckedCallableDigest, CheckedCallableId,
     CheckedCallableIdentityError, CheckedClosureId, CheckedEffectCallableId, CollectionMethodId,
-    CurriedCallableId, DataLastCallableId, DetachedCallableDeclarationId, DomainMethodId,
-    DropCallableId, EnumVariantSignatureId, EnvironmentCallableDigest, EnvironmentCallableId,
+    CurriedCallableId, DetachedCallableDeclarationId, DomainMethodId, DropCallableId,
+    EnumVariantSignatureId, EnvironmentCallableDigest, EnvironmentCallableId,
     EnvironmentCallableKind, EnvironmentCallableOwner, FloatWidth, FunctionValueOrdinal,
     FunctionValueSignatureId, FxCallableSignatureId, FxResolution, IntegerMethodId,
     LanguageCallableFamily, LanguageDocumentationFamily, LexicalBindingIndex, LocalCallableId,
@@ -115,10 +115,10 @@ pub use resolver::{
 };
 pub use schema::{
     CallableArgumentPolicy, CallableDocumentation, CallableEffectSchema, CallableEvaluatedEffect,
-    CallableGroupKind, CallableLogLevel, CallableMethodRole, CallableParameter,
-    CallableParameterDocumentation, CallableParameterGroup, CallableParameterPassing,
-    CallableParameterPresence, CallableParameterSource, CallableParameterType,
-    CallableSignatureSchema, CallableSource, CallableValidator, DocumentationProvenance,
-    RustCallableProvenance, RustCallablePurity, RustPackageProvenance, SpreadArgumentPolicy,
-    UnknownNamedArgumentPolicy,
+    CallableExtensionReceiver, CallableGroupKind, CallableLogLevel, CallableMethodRole,
+    CallableParameter, CallableParameterDocumentation, CallableParameterGroup,
+    CallableParameterPassing, CallableParameterPresence, CallableParameterSource,
+    CallableParameterType, CallableSignatureSchema, CallableSource, CallableValidator,
+    DocumentationProvenance, RustCallableProvenance, RustCallablePurity, RustPackageProvenance,
+    SpreadArgumentPolicy, UnknownNamedArgumentPolicy,
 };

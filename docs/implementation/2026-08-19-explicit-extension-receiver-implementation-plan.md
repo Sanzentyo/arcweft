@@ -29,7 +29,7 @@ fn map<A, B>(mapping: A -> B)(self: Vec<A>) -> Vec<B>
 ```
 
 The receiver coordinate is either the first parameter of the first call group
-or the sole parameter of the final call group. The same declaration and
+or the sole parameter of the second and final call group. The same declaration and
 callable identity own free, pipe, and dot surfaces:
 
 ```arcw
@@ -75,7 +75,8 @@ ownership mode. Validate all of the following before callable publication:
 
 - ordinary `fn` only; no `flow`, predicate, proof, Fx, or host declaration;
 - exactly one receiver;
-- first parameter of the first group or sole parameter of the final group;
+- first parameter of the first group or sole parameter of the second and final
+  group;
 - required and positional-only;
 - no default and no rest parameter;
 - owned `T`, shared `&T`, or mutable `&mut T` mode derived from the declared
@@ -93,8 +94,9 @@ Primary owners:
 ### 2. Add the receiver to the callable schema and catalog
 
 Add a closed `CallableExtensionReceiver` value to
-`CallableSignatureSchema`. It carries exact group and parameter coordinates
-plus ownership mode. It is independent of `CallableMethodRole`, because the
+`CallableSignatureSchema`. It carries exact group and parameter coordinates;
+the referenced exact parameter type remains the sole ownership-mode authority.
+It is independent of `CallableMethodRole`, because the
 function remains an ordinary free declaration rather than becoming an inherent
 or trait method.
 

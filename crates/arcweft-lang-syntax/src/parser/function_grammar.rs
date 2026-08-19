@@ -44,7 +44,7 @@ pub(super) fn emit_declaration(
     while parser.at("(") {
         emit_fixed_parameters(
             &mut parser,
-            FixedParameterGrammar::TypedPattern,
+            FixedParameterGrammar::FunctionParameter,
             "ordinary function parameters require an authored type",
             "syntax.decl.unclosed_parameters",
         );

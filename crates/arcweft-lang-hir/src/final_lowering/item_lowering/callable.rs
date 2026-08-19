@@ -174,6 +174,9 @@ impl StagedHirModuleTransaction<'_> {
                 let type_poisoned = self.staged_type_is_poisoned(ty)?;
                 let kind = match parameter.kind() {
                     AttachedCallableParameterKind::Fixed => HirParameterKind::Fixed,
+                    AttachedCallableParameterKind::ExtensionReceiver => {
+                        HirParameterKind::ExtensionReceiver
+                    }
                     AttachedCallableParameterKind::Rest { .. } => HirParameterKind::RestPositional,
                 };
                 let default = parameter

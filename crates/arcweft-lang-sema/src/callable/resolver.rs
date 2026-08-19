@@ -53,17 +53,16 @@ use super::{
     AdapterPackageId, AgentIntrinsicSignatureId, BuiltinCallableId, CallCalleeClassificationFact,
     CallTargetFact, CallTargetFacts, CallableAuthorityRank, CallableCandidateId, CallableFamily,
     CallableGroupIndex, CallableIdentityError, CallableLimits, CallableLookupKey, CallableName,
-    CallableParameterIndex, CallableParameterType, CallablePath, CallableRecord,
-    CallableSignatureSchema, CapacityMethodId, CheckedCallableDeclaration, CheckedCallableId,
-    CheckedMethodLookup, CollectionMethodId, CorruptCallableCatalogReason, CurriedCallableId,
-    DataLastCallableId, DomainMethodId, DropCallableId, EnvironmentCallableId,
-    EnvironmentCallableKind, EnvironmentCallableOwner, EquivalentCallableSource,
-    FunctionValueOrdinal, FunctionValueSignatureId, FxCallableSignatureId, FxResolution,
-    IntegerMethodId, LanguageCallableFamily, LocalCallableId, OptionConstructorKind,
-    PresentationCallableId, PresentationHandleMethodId, PresentationSchemaContext,
-    ProjectCallablePath, ProjectNameBinding, PromotionCallableId, ReceiverMethodKey,
-    ResolveCallError, ResolverWork, ResultConstructorKind, StageMethodId, StandardEnvironmentId,
-    call_shape_is_viable,
+    CallableParameterIndex, CallablePath, CallableRecord, CallableSignatureSchema,
+    CapacityMethodId, CheckedCallableDeclaration, CheckedCallableId, CheckedMethodLookup,
+    CollectionMethodId, CorruptCallableCatalogReason, CurriedCallableId, DomainMethodId,
+    DropCallableId, EnvironmentCallableId, EnvironmentCallableKind, EnvironmentCallableOwner,
+    EquivalentCallableSource, FunctionValueOrdinal, FunctionValueSignatureId,
+    FxCallableSignatureId, FxResolution, IntegerMethodId, LanguageCallableFamily, LocalCallableId,
+    OptionConstructorKind, PresentationCallableId, PresentationHandleMethodId,
+    PresentationSchemaContext, ProjectCallablePath, ProjectNameBinding, PromotionCallableId,
+    ReceiverMethodKey, ResolveCallError, ResolverWork, ResultConstructorKind, StageMethodId,
+    StandardEnvironmentId,
 };
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -270,19 +269,6 @@ impl<'a> EvaluatedReceiver<'a> {
             receiver: ty.clone(),
         }
     }
-
-    fn data_last_instantiation(
-        self,
-        group: CallableGroupIndex,
-        parameter: CallableParameterIndex,
-    ) -> CallableInstantiation {
-        let Self { ty, .. } = self;
-        CallableInstantiation::DataLast {
-            receiver: ty.clone(),
-            group,
-            parameter,
-        }
-    }
 }
 
 #[derive(Clone, Copy)]
@@ -322,7 +308,6 @@ pub(crate) struct CallResolverRequest<'a> {
     expected: Option<&'a TypeKind>,
     call: Option<&'a HirCallExpr>,
     classification: CallCalleeClassificationFact,
-    call_group: CallableGroupIndex,
     cancellation: &'a AtomicBool,
     work: &'a mut ResolverWork,
     limits: &'a CallableLimits,
@@ -337,7 +322,6 @@ pub(crate) struct CallResolverContext<'a> {
     pub(crate) authority: CallResolverAuthority<'a>,
     pub(crate) checked: CheckedCallResolverAuthority<'a>,
     pub(crate) expected: Option<&'a TypeKind>,
-    pub(crate) call_group: CallableGroupIndex,
     pub(crate) expression: ExprId,
     pub(crate) cancellation: &'a AtomicBool,
     pub(crate) limits: &'a CallableLimits,
@@ -588,7 +572,6 @@ impl<'a> CallResolverRequest<'a> {
             expected: context.expected,
             call: Some(call),
             classification,
-            call_group: context.call_group,
             cancellation: context.cancellation,
             work,
             limits: context.limits,
@@ -615,7 +598,6 @@ impl<'a> CallResolverRequest<'a> {
             expected: context.expected,
             call: None,
             classification,
-            call_group: context.call_group,
             cancellation: context.cancellation,
             work,
             limits: context.limits,

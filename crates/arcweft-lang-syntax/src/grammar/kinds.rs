@@ -89,6 +89,7 @@ define_syntax_kinds! {
     TypeParameter,
     FixedParameterGroup,
     Parameter,
+    ExtensionReceiverMarker,
     RestParameterMarker,
     WhereClause,
     WherePredicate,
@@ -507,6 +508,7 @@ impl SyntaxKind {
             | Self::TypeParameter
             | Self::FixedParameterGroup
             | Self::Parameter
+            | Self::ExtensionReceiverMarker
             | Self::RestParameterMarker
             | Self::WhereClause
             | Self::WherePredicate
@@ -1053,6 +1055,7 @@ impl SyntaxKind {
             | Self::ColonNode
             | Self::ThinArrowNode
             | Self::ForInNode
+            | Self::ExtensionReceiverMarker
             | Self::RestParameterMarker => Some(AstTag::Delimiter),
             Self::MissingBody
             | Self::MissingTokenNode

@@ -15,8 +15,8 @@ use crate::nominal::{NominalResolutionIndexError, TypeResolutionInputError};
 use super::{
     CallableAuthorityRank, CallableCandidateId, CallableFamily, CallableGroupIndex,
     CallableLookupKey, CallableMethodRole, CallableName, CallableOverloadIndex,
-    CallableParameterIndex, CallablePath, CallableProviderId, DataLastCallableId, FloatWidth,
-    ProjectCallablePath, ProjectNameBinding, StdFloatOperation,
+    CallableParameterIndex, CallablePath, CallableProviderId, FloatWidth, ProjectCallablePath,
+    ProjectNameBinding, StdFloatOperation,
 };
 
 #[derive(Clone, Debug, Eq, Error, Hash, PartialEq)]
@@ -86,23 +86,6 @@ pub enum CallableIdentityError {
     },
     #[error("callable {base:?} cannot be curried")]
     InvalidCurriedBase { base: Box<CallableCandidateId> },
-    #[error("callable {base:?} cannot be used as data-last")]
-    InvalidDataLastBase { base: Box<CallableCandidateId> },
-    #[error("invalid data-last receiver coordinate {group:?}/{parameter:?}")]
-    InvalidDataLastCoordinate {
-        group: CallableGroupIndex,
-        parameter: CallableParameterIndex,
-    },
-    #[error("data-last receiver coordinate {group:?}/{parameter:?} is a rest parameter")]
-    DataLastReceiverIsRest {
-        group: CallableGroupIndex,
-        parameter: CallableParameterIndex,
-    },
-    #[error("data-last receiver coordinate {group:?}/{parameter:?} is not final")]
-    DataLastReceiverNotFinal {
-        group: CallableGroupIndex,
-        parameter: CallableParameterIndex,
-    },
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -161,6 +144,13 @@ pub enum CallableSchemaError {
     },
     #[error("rest parameter {group:?}/{parameter:?} cannot be defaulted")]
     InvalidDefaultedRest {
+        group: CallableGroupIndex,
+        parameter: CallableParameterIndex,
+    },
+    #[error("callable schema contains more than one extension receiver")]
+    DuplicateExtensionReceiver,
+    #[error("invalid extension receiver coordinate {group:?}/{parameter:?}")]
+    InvalidExtensionReceiver {
         group: CallableGroupIndex,
         parameter: CallableParameterIndex,
     },
@@ -391,10 +381,6 @@ pub enum ResolveCallError {
     InaccessibleMethod {
         candidates: Arc<[super::CheckedCallableId]>,
     },
-    #[error("data-last call is ambiguous between {candidates:?}")]
-    DataLastAmbiguity {
-        candidates: Arc<[DataLastCallableId]>,
-    },
     #[error("callable catalog is corrupt at {key:?}: {reason:?}")]
     CorruptCatalog {
         key: Box<CallableLookupKey>,
@@ -458,8 +444,6 @@ pub enum CallableDiagnosticCode {
     ArgumentTypeMismatch,
     ResultConstructorExpectedType,
     EnumConstructorExpectedType,
-    DataLastAmbiguity,
-    DataLastShadowed,
     VirtualPathRejected,
     CorruptCallableCatalog,
     WorldMismatch,
@@ -594,7 +578,6 @@ impl ResolveCallError {
             Self::AmbiguousOverload { .. } => CallableDiagnosticCode::AmbiguousOverload,
             Self::AmbiguousTraitMethod { .. } => CallableDiagnosticCode::AmbiguousTraitMethod,
             Self::InaccessibleMethod { .. } => CallableDiagnosticCode::InaccessibleMethod,
-            Self::DataLastAmbiguity { .. } => CallableDiagnosticCode::DataLastAmbiguity,
             Self::CorruptCatalog { .. } => CallableDiagnosticCode::CorruptCallableCatalog,
             Self::InvalidCallGroup { .. } => CallableDiagnosticCode::InvalidCallGroup,
             Self::CandidateLimit { .. }

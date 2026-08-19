@@ -222,6 +222,17 @@ impl CallableRecord {
             _ => None,
         }
     }
+    pub fn receiver_method_key(&self) -> Option<super::ReceiverMethodKey> {
+        match self.key() {
+            CallableLookupKey::Method(key) if self.method_role().is_some() => Some(key.clone()),
+            CallableLookupKey::Free(path) => {
+                self.schema().extension_receiver_type().map(|receiver| {
+                    super::ReceiverMethodKey::new(receiver.clone(), path.leaf().clone())
+                })
+            }
+            CallableLookupKey::Method(_) => None,
+        }
+    }
     pub fn family(&self) -> CallableFamily {
         match self.schema().validator() {
             CallableValidator::Method(_) => CallableFamily::TraitMethod,

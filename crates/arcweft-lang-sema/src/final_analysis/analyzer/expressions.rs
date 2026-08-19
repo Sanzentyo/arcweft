@@ -2005,7 +2005,6 @@ impl Analyzer<'_, '_, '_> {
                 authority,
                 checked: (&staged.builder).into(),
                 expected,
-                call_group: CallableGroupIndex::ZERO,
                 expression: owner,
                 cancellation: self.control.cancellation(),
                 limits: &self.catalogs.callable_limits,

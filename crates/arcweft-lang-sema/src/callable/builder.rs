@@ -65,6 +65,7 @@ pub(crate) struct RegisteredCallableCatalogBuilder {
 struct ProjectParameterPublication {
     groups: Vec<CallableParameterGroup>,
     sources: Vec<CallableParameterSource>,
+    extension_receiver: Option<super::CallableExtensionReceiver>,
 }
 
 enum FinalProjectCallable<'a> {
@@ -296,7 +297,7 @@ impl RegisteredCallableCatalogBuilder {
             }
             _ => CallableValidator::Ordinary,
         };
-        let schema = Arc::new(CallableSignatureSchema::try_new(
+        let mut schema = CallableSignatureSchema::try_new(
             parameters.groups,
             resolved.return_type,
             effects,
@@ -310,7 +311,11 @@ impl RegisteredCallableCatalogBuilder {
             ),
             validator,
             &self.limits,
-        )?);
+        )?;
+        if let Some(receiver) = parameters.extension_receiver {
+            schema = schema.with_extension_receiver(receiver)?;
+        }
+        let schema = Arc::new(schema);
         let documentation = project_documentation(symbol, callable.prefix().documentation())?;
         let signature_span = project_signature_span(module, symbol, &callable)?;
         let name_span = project_name_span(module, symbol, &callable)?;
@@ -777,6 +782,7 @@ fn project_parameters(
     let parameter_groups = callable.parameter_groups();
     let mut groups = Vec::with_capacity(parameter_groups.len());
     let mut sources = Vec::new();
+    let mut extension_receiver = None;
     for (group_index, group) in parameter_groups.iter().enumerate() {
         work.charge(1)?;
         let group_id = CallableGroupIndex::try_from_usize(group_index)
@@ -801,6 +807,20 @@ fn project_parameters(
             )
             .map_err(|_| identity_mismatch(symbol))?;
             sources.push(parameter_source.clone());
+            if parameter
+                .typed()
+                .is_some_and(|parameter| parameter.kind() == HirParameterKind::ExtensionReceiver)
+                && extension_receiver
+                    .replace(super::CallableExtensionReceiver::new(
+                        group_id,
+                        parameter_id,
+                    ))
+                    .is_some()
+            {
+                return Err(CallableCatalogBuildError::InvalidSchema(
+                    super::CallableSchemaError::DuplicateExtensionReceiver,
+                ));
+            }
             parameters.push(
                 CallableParameter::try_new(
                     parameter_id,
@@ -835,7 +855,11 @@ fn project_parameters(
             limits,
         )?);
     }
-    Ok(ProjectParameterPublication { groups, sources })
+    Ok(ProjectParameterPublication {
+        groups,
+        sources,
+        extension_receiver,
+    })
 }
 
 #[allow(
@@ -1000,8 +1024,14 @@ fn parameter_passing(
     let typed = parameter
         .typed()
         .expect("non-receiver final project parameter is typed");
-    if typed.kind() == HirParameterKind::RestPositional {
-        return Ok(CallableParameterPassing::RestPositional);
+    match typed.kind() {
+        HirParameterKind::ExtensionReceiver => {
+            return Ok(CallableParameterPassing::PositionalOnly);
+        }
+        HirParameterKind::RestPositional => {
+            return Ok(CallableParameterPassing::RestPositional);
+        }
+        HirParameterKind::Fixed => {}
     }
     Ok(if parameter_name(module, parameter, symbol)?.is_some() {
         CallableParameterPassing::PositionalOrNamed

@@ -69,7 +69,9 @@ use super::literal_projection::{integer_issue, integer_literal, integer_suffix, 
 use super::name_projection::{
     attempted_name_bytes, name, name_issue, recovered_name, require_attempted_name_limit,
 };
-use super::path_projection::{TypedPathProjection, project_attached_path, project_type_path};
+use super::path_projection::{
+    TypedPathProjection, project_attached_path, project_expression_path, project_type_path,
+};
 use super::statement_lowering::OmittedValueTail;
 use super::{StagedHirModuleTransaction, require_limit};
 
@@ -233,7 +235,7 @@ impl StagedHirModuleTransaction<'_> {
             }
             ExpressionProjection::Path => {
                 let value = match (attached.path(), attached.nominal_path_type()) {
-                    (Some(path), None) => match project_attached_path(path)? {
+                    (Some(path), None) => match project_expression_path(path)? {
                         TypedPathProjection::Resolved(projected) => {
                             self.record_attached_path_capture(scope, path, &projected)?;
                             HirPathValue::Resolved(projected)

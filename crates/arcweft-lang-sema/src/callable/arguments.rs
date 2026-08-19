@@ -330,111 +330,6 @@ fn push_mapped_slot(
     Some(())
 }
 
-pub(crate) fn call_shape_is_viable(
-    module: &HirModule,
-    schema: &CallableSignatureSchema,
-    group: CallableGroupIndex,
-    arguments: &[HirCallArgument],
-) -> bool {
-    call_shape_is_viable_with_implicit(module, schema, group, arguments, None)
-}
-
-pub(crate) fn call_shape_is_viable_with_implicit(
-    module: &HirModule,
-    schema: &CallableSignatureSchema,
-    group: CallableGroupIndex,
-    arguments: &[HirCallArgument],
-    implicit: Option<CallableParameterIndex>,
-) -> bool {
-    let Some(group) = schema.group(group) else {
-        return false;
-    };
-    let parameters = group.parameters();
-    let mut provided = vec![false; parameters.len()];
-    if let Some(implicit) = implicit {
-        let Some(slot) = provided.get_mut(implicit.get()) else {
-            return false;
-        };
-        *slot = true;
-    }
-    let mut positional = 0usize;
-    for argument in arguments {
-        match argument {
-            HirCallArgument::Positional { .. } => {
-                if !mark_viable_positional(parameters, &mut provided, &mut positional) {
-                    return false;
-                }
-            }
-            HirCallArgument::Named { .. } => {
-                let Some(name) = argument.resolved_name() else {
-                    return false;
-                };
-                let Some(parameter) = named_parameter(parameters, name) else {
-                    if schema.argument_policy().unknown_named()
-                        == UnknownNamedArgumentPolicy::Reject
-                    {
-                        return false;
-                    }
-                    continue;
-                };
-                if parameter.passing() != CallableParameterPassing::RestNamed {
-                    let index = parameter.index().get();
-                    if provided[index] {
-                        return false;
-                    }
-                    provided[index] = true;
-                }
-            }
-            HirCallArgument::Spread { .. } => match schema.argument_policy().spread() {
-                SpreadArgumentPolicy::Reject => return false,
-                SpreadArgumentPolicy::Unchecked => {}
-                SpreadArgumentPolicy::FixedLiteralOnly => {
-                    let Some(count) = fixed_literal_spread_slot_count(module, argument.value())
-                    else {
-                        return false;
-                    };
-                    if (0..count).any(|_| {
-                        !mark_viable_positional(parameters, &mut provided, &mut positional)
-                    }) {
-                        return false;
-                    }
-                }
-                SpreadArgumentPolicy::TypedRest => {
-                    if let Some(count) = fixed_literal_spread_slot_count(module, argument.value()) {
-                        if (0..count).any(|_| {
-                            !mark_viable_positional(parameters, &mut provided, &mut positional)
-                        }) {
-                            return false;
-                        }
-                    } else if !parameters.iter().any(|parameter| {
-                        parameter.passing() == CallableParameterPassing::RestPositional
-                    }) || required_fixed_parameter_is_missing(parameters, &provided)
-                    {
-                        return false;
-                    }
-                }
-            },
-        }
-    }
-    !required_fixed_parameter_is_missing(parameters, &provided)
-}
-
-fn mark_viable_positional(
-    parameters: &[CallableParameter],
-    provided: &mut [bool],
-    positional: &mut usize,
-) -> bool {
-    let Some(parameter) = next_positional_parameter(parameters, provided, positional) else {
-        return false;
-    };
-    if parameter.passing() != CallableParameterPassing::RestPositional {
-        let index = parameter.index().get();
-        provided[index] = true;
-        *positional = index + 1;
-    }
-    true
-}
-
 fn next_positional_parameter<'a>(
     parameters: &'a [CallableParameter],
     provided: &[bool],
@@ -494,17 +389,6 @@ fn required_fixed_parameter_is_missing(
             )
             && !provided[parameter.index().get()]
     })
-}
-
-fn fixed_literal_spread_slot_count(
-    module: &HirModule,
-    value: arcweft_lang_hir::identity::ExprId,
-) -> Option<usize> {
-    match module.resolve_expr(value).ok()?.kind() {
-        HirExprKind::BracketSequence(sequence) => Some(sequence.elements().len()),
-        HirExprKind::NumericBracketSequence(sequence) => Some(sequence.elements().len()),
-        _ => None,
-    }
 }
 
 fn fixed_literal_spread_sources(

@@ -451,19 +451,22 @@ fn path_segment_family_and_spelling_matches(
     expected_kind: AttachedPathSegmentKind,
     expected_spelling: &str,
 ) -> bool {
-    matches!(
-        (actual, expected_kind),
-        (
-            HirPathSegment::Identifier(_),
-            AttachedPathSegmentKind::Identifier
-        ) | (
-            HirPathSegment::ProjectSymbol(_),
+    let family_matches = match actual {
+        HirPathSegment::Identifier(_) => {
+            expected_kind == AttachedPathSegmentKind::Identifier
+                || (expected_kind == AttachedPathSegmentKind::Keyword
+                    && expected_spelling == "self")
+        }
+        HirPathSegment::ProjectSymbol(_) => matches!(
+            expected_kind,
             AttachedPathSegmentKind::Keyword | AttachedPathSegmentKind::ProjectSymbol
-        )
-    ) && match actual {
-        HirPathSegment::Identifier(actual) => actual.as_str() == expected_spelling,
-        HirPathSegment::ProjectSymbol(actual) => actual.as_str() == expected_spelling,
-    }
+        ),
+    };
+    family_matches
+        && match actual {
+            HirPathSegment::Identifier(actual) => actual.as_str() == expected_spelling,
+            HirPathSegment::ProjectSymbol(actual) => actual.as_str() == expected_spelling,
+        }
 }
 
 pub(super) fn short_variant_projection_matches(

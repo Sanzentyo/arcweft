@@ -152,6 +152,25 @@ fn ordinary_function_parameters_retain_typed_fixed_default_and_rest_children() {
 }
 
 #[test]
+fn ordinary_functions_retain_typed_extension_receiver_markers_losslessly() {
+    let source = concat!(
+        "fn normalize(self: String, locale: Locale) -> String { self }\n",
+        "fn map_one(mapping: String -> String)(self: Vec<String>) -> Vec<String> { self }\n",
+    );
+    let built = parse_document(&document(source), crate::parser::ParseOptions::default()).unwrap();
+    let marker_count = built
+        .index()
+        .entries()
+        .iter()
+        .filter(|entry| entry.kind() == SyntaxKind::ExtensionReceiverMarker)
+        .count();
+
+    assert_eq!(marker_count, 2);
+    assert!(built.diagnostics().is_empty(), "{:?}", built.diagnostics());
+    assert_eq!(built.green().to_string(), source);
+}
+
+#[test]
 fn invalid_rest_shapes_remain_lossless_typed_parameter_trees() {
     for (source, parameter_count, default_count) in [
         (

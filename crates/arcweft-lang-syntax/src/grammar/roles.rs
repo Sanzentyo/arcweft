@@ -118,6 +118,7 @@ pub enum SyntaxRole {
     GenericParameter(u16),
     ParameterGroup,
     Parameter(u16),
+    ExtensionReceiver,
     ParameterPattern,
     ParameterType,
     WhereClause,
@@ -201,6 +202,7 @@ pub enum SyntaxRoleClass {
     GenericParameter,
     ParameterGroup,
     Parameter,
+    ExtensionReceiver,
     ParameterPattern,
     ParameterType,
     WhereClause,
@@ -279,6 +281,7 @@ impl SyntaxRole {
             Self::GenericParameter(_) => SyntaxRoleClass::GenericParameter,
             Self::ParameterGroup => SyntaxRoleClass::ParameterGroup,
             Self::Parameter(_) => SyntaxRoleClass::Parameter,
+            Self::ExtensionReceiver => SyntaxRoleClass::ExtensionReceiver,
             Self::ParameterPattern => SyntaxRoleClass::ParameterPattern,
             Self::ParameterType => SyntaxRoleClass::ParameterType,
             Self::WhereClause => SyntaxRoleClass::WhereClause,
@@ -387,6 +390,7 @@ impl SyntaxRole {
             | Self::Name
             | Self::GenericGroup
             | Self::ParameterGroup
+            | Self::ExtensionReceiver
             | Self::ParameterPattern
             | Self::ParameterType
             | Self::WhereClause

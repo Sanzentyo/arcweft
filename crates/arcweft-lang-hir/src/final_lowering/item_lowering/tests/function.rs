@@ -97,6 +97,37 @@ fn function(
     (owner, item, function)
 }
 
+#[test]
+fn function_retains_receiver_first_and_data_last_extension_coordinates() {
+    let parsed = parse(
+        "arcweft-test://proof/final-hir-function-extension-receivers",
+        concat!(
+            "fn normalize(self: String, locale: String) -> String { self }\n",
+            "fn map_one(mapping: String -> String)(self: Vec<String>) -> Vec<String> { self }\n",
+        ),
+    );
+    let key = module_key(&parsed);
+    let mut database = HirDatabase::try_new().expect("HIR database");
+    let module = lower(&mut database, &parsed, &key);
+    assert_eq!(
+        module.status(),
+        HirModuleStatus::Clean,
+        "{:#?}",
+        module.diagnostics()
+    );
+
+    let (_, _, receiver_first) = function(&module, 0);
+    assert_eq!(
+        receiver_first.parameter_groups()[0].parameters()[0].kind(),
+        HirParameterKind::ExtensionReceiver
+    );
+    let (_, _, data_last) = function(&module, 1);
+    assert_eq!(
+        data_last.parameter_groups()[1].parameters()[0].kind(),
+        HirParameterKind::ExtensionReceiver
+    );
+}
+
 fn assert_function_body_scope(
     module: &HirModule,
     parsed: &ParsedSource,

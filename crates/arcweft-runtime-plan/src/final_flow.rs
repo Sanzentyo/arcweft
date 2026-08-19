@@ -939,6 +939,9 @@ fn reserve_called_project_helpers(
         let RuntimeResolvedCallTarget::Declaration(callable) = call.target() else {
             continue;
         };
+        if callable.declaration().owner() != CallableDeclarationOwner::Function {
+            continue;
+        }
         match called.entry(callable.owner()) {
             std::collections::btree_map::Entry::Vacant(entry) => {
                 entry.insert((callable.runtime().clone(), callable.declaration()));
@@ -974,6 +977,16 @@ fn reserve_called_project_helpers(
             )));
             continue;
         };
+        if function
+            .effect_clauses()
+            .iter()
+            .any(|clause| !clause.operands().is_empty())
+        {
+            // Effectful ordinary functions are not pure-helper declarations.
+            // Their calls are lowered by flow/effect owners when reachable;
+            // unrelated effectful declarations must not poison plan creation.
+            continue;
+        }
         if let Err(error) = validate_project_callable_owner(
             project.package(),
             item.module_path(),

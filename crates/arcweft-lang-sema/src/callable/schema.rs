@@ -390,6 +390,31 @@ pub struct CallableSignatureSchema {
     argument_policy: CallableArgumentPolicy,
     validator: CallableValidator,
     evaluated_effect: Option<CallableEvaluatedEffect>,
+    extension_receiver: Option<CallableExtensionReceiver>,
+}
+
+/// Declaration-owned receiver coordinate for one ordinary extension function.
+///
+/// Ownership is not duplicated here: the exact parameter type at this
+/// coordinate remains the sole owned/shared/mutable authority.
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub struct CallableExtensionReceiver {
+    group: CallableGroupIndex,
+    parameter: CallableParameterIndex,
+}
+
+impl CallableExtensionReceiver {
+    pub const fn new(group: CallableGroupIndex, parameter: CallableParameterIndex) -> Self {
+        Self { group, parameter }
+    }
+
+    pub const fn group(self) -> CallableGroupIndex {
+        self.group
+    }
+
+    pub const fn parameter(self) -> CallableParameterIndex {
+        self.parameter
+    }
 }
 
 /// Runtime-observable effect produced when a selected callable is used as an
@@ -615,7 +640,48 @@ impl CallableSignatureSchema {
             argument_policy,
             validator,
             evaluated_effect: None,
+            extension_receiver: None,
         })
+    }
+
+    pub fn with_extension_receiver(
+        mut self,
+        receiver: CallableExtensionReceiver,
+    ) -> Result<Self, CallableSchemaError> {
+        if self.extension_receiver.is_some() {
+            return Err(CallableSchemaError::DuplicateExtensionReceiver);
+        }
+        let group =
+            self.group(receiver.group())
+                .ok_or(CallableSchemaError::InvalidExtensionReceiver {
+                    group: receiver.group(),
+                    parameter: receiver.parameter(),
+                })?;
+        let parameter = group.parameter(receiver.parameter()).ok_or(
+            CallableSchemaError::InvalidExtensionReceiver {
+                group: receiver.group(),
+                parameter: receiver.parameter(),
+            },
+        )?;
+        let receiver_first =
+            receiver.group() == CallableGroupIndex::ZERO && receiver.parameter().get() == 0;
+        let receiver_data_last = receiver.group().get() + 1 == self.groups.len()
+            && receiver.group().get() == 1
+            && self.groups.len() == 2
+            && group.parameters().len() == 1
+            && receiver.parameter().get() == 0;
+        if (!receiver_first && !receiver_data_last)
+            || parameter.passing() != CallableParameterPassing::PositionalOnly
+            || parameter.presence() != CallableParameterPresence::Required
+            || !matches!(parameter.ty(), CallableParameterType::Exact(_))
+        {
+            return Err(CallableSchemaError::InvalidExtensionReceiver {
+                group: receiver.group(),
+                parameter: receiver.parameter(),
+            });
+        }
+        self.extension_receiver = Some(receiver);
+        Ok(self)
     }
 
     pub(crate) fn with_evaluated_effect(mut self, effect: CallableEvaluatedEffect) -> Self {
@@ -640,6 +706,18 @@ impl CallableSignatureSchema {
     pub const fn evaluated_effect(&self) -> Option<CallableEvaluatedEffect> {
         self.evaluated_effect
     }
+    pub const fn extension_receiver(&self) -> Option<CallableExtensionReceiver> {
+        self.extension_receiver
+    }
+    pub fn extension_receiver_type(&self) -> Option<&TypeKind> {
+        let receiver = self.extension_receiver?;
+        self.group(receiver.group())
+            .and_then(|group| group.parameter(receiver.parameter()))
+            .and_then(|parameter| match parameter.ty() {
+                CallableParameterType::Exact(ty) => Some(ty),
+                CallableParameterType::Unchecked => None,
+            })
+    }
     pub fn group(&self, index: CallableGroupIndex) -> Option<&CallableParameterGroup> {
         self.groups
             .get(index.get())
@@ -655,6 +733,7 @@ impl CallableSignatureSchema {
             && self.argument_policy == other.argument_policy
             && self.validator == other.validator
             && self.evaluated_effect == other.evaluated_effect
+            && self.extension_receiver == other.extension_receiver
             && self.groups.len() == other.groups.len()
             && self
                 .groups

@@ -2,18 +2,18 @@
 
 use super::{
     Analyzer, Arc, BTreeMap, CallPoison, CallTargetFacts, CallTargetFactsInput, CallableAccess,
-    CallableCandidateId, CallableEffectContract, CallableEffectSchema, CallableLookupKey,
-    CallableMethodRole, CheckedCallTarget, CheckedCallableCatalog,
-    CheckedCallableCatalogBuildError, CheckedCallableCatalogBuilder, CheckedCallableExecution,
-    CheckedCallableId, CheckedExpression, CheckedExpressionResolution, CheckedFunctionExecution,
-    CheckedItem, CheckedItemRole, CheckedSuspensionRole, CheckedValueResolution, EffectId,
-    EffectRow, EffectSet, EffectSubsetError, ExprId, FinalSemanticAnalysisError,
-    FinalSemanticAnalysisInput, HirCallCallee, HirCallableSourceOwner, HirExprKind,
-    HirFlowContractClause, HirFlowContractSourcePart, HirFlowSourceRole, HirFunctionBody,
-    HirImplMember, HirItem, HirItemKind, HirItemSourceRole, HirModule, HirPathSegment,
-    HirPredicateBody, HirProofBody, HirSourceQuery, HirStmtKind, HirTraitMember, ItemId, LocalId,
-    PendingCallAnalysis, ProjectSymbolTable, STANDARD_TRAIT_CATALOG_VERSION, ScopeId, SourceSpan,
-    StagedCallableBody, StagedCheckedCallables, TypeId, TypeKind,
+    CallableCandidateId, CallableEffectContract, CallableEffectSchema, CallableMethodRole,
+    CheckedCallTarget, CheckedCallableCatalog, CheckedCallableCatalogBuildError,
+    CheckedCallableCatalogBuilder, CheckedCallableExecution, CheckedCallableId, CheckedExpression,
+    CheckedExpressionResolution, CheckedFunctionExecution, CheckedItem, CheckedItemRole,
+    CheckedSuspensionRole, CheckedValueResolution, EffectId, EffectRow, EffectSet,
+    EffectSubsetError, ExprId, FinalSemanticAnalysisError, FinalSemanticAnalysisInput,
+    HirCallCallee, HirCallableSourceOwner, HirExprKind, HirFlowContractClause,
+    HirFlowContractSourcePart, HirFlowSourceRole, HirFunctionBody, HirImplMember, HirItem,
+    HirItemKind, HirItemSourceRole, HirModule, HirPathSegment, HirPredicateBody, HirProofBody,
+    HirSourceQuery, HirStmtKind, HirTraitMember, ItemId, LocalId, PendingCallAnalysis,
+    ProjectSymbolTable, STANDARD_TRAIT_CATALOG_VERSION, ScopeId, SourceSpan, StagedCallableBody,
+    StagedCheckedCallables, TypeId, TypeKind,
     callable_effect_graph::CallableEffectGraph,
     calls::{callable_schema_type_with_effects, final_call_effects, final_callable_effects},
     statements::{
@@ -552,12 +552,11 @@ impl Analyzer<'_, '_, '_> {
                 }
             };
 
-            if let CallableLookupKey::Method(key) = record.key()
-                && record.method_role().is_some()
+            if let Some(key) = record.receiver_method_key()
                 && !matches!(record.access(), CallableAccess::TraitImplementation)
             {
                 builder
-                    .stage_method_candidate(key, id)
+                    .stage_method_candidate(&key, id)
                     .map_err(checked_catalog_error)?;
             }
         }

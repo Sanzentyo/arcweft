@@ -108,7 +108,8 @@ create a wrapper method or a second runtime function.
 The receiver has one of two canonical positions:
 
 1. the first parameter of the first call group, for receiver-first APIs; or
-2. the sole parameter of the final call group, for curried data-last APIs.
+2. the sole parameter of the second and final call group, for curried data-last
+   APIs.
 
 ```arcw
 fn clamp(self: i64, min: i64, max: i64) -> i64

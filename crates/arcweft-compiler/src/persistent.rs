@@ -940,6 +940,7 @@ fn record_parameters(
             bytes,
             match parameter.kind() {
                 HirParameterKind::Fixed => "fixed",
+                HirParameterKind::ExtensionReceiver => "extension-receiver",
                 HirParameterKind::RestPositional => "rest-positional",
             },
         )?;

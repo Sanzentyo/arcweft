@@ -295,6 +295,7 @@ define_ast_kinds!(DELIMITER_MARKERS, Delimiter;
     ColonKind => ColonNode,
     ThinArrowKind => ThinArrowNode,
     ForInKind => ForInNode,
+    ExtensionReceiverMarkerKind => ExtensionReceiverMarker,
     RestParameterMarkerKind => RestParameterMarker,
 );
 

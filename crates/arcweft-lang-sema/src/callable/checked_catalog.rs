@@ -1206,12 +1206,8 @@ impl CheckedCallableCatalogBuilder {
             .pending
             .get(&id)
             .ok_or(CheckedCallableCatalogBuildError::MissingMethodRecord)?;
-        let super::CallableLookupKey::Method(record_key) = pending.record.key() else {
-            return Err(CheckedCallableCatalogBuildError::MissingMethodRecord);
-        };
-        if pending.record.method_role().is_none()
-            || matches!(pending.record.access(), CallableAccess::TraitImplementation)
-            || record_key != key
+        if matches!(pending.record.access(), CallableAccess::TraitImplementation)
+            || pending.record.receiver_method_key().as_ref() != Some(key)
         {
             return Err(CheckedCallableCatalogBuildError::MissingMethodRecord);
         }
@@ -1396,7 +1392,7 @@ impl CheckedCallableCatalogBuilder {
                     .pending
                     .get(id)
                     .ok_or(CheckedCallableCatalogBuildError::CorruptIndex)?;
-                if pending.record.method_role().is_none()
+                if pending.record.receiver_method_key().is_none()
                     || matches!(pending.record.access(), CallableAccess::TraitImplementation)
                 {
                     return Err(CheckedCallableCatalogBuildError::CorruptIndex);

@@ -729,7 +729,6 @@ impl Analyzer<'_, '_, '_> {
                 authority,
                 checked: (&staged.builder).into(),
                 expected: source.expected,
-                call_group: CallableGroupIndex::ZERO,
                 expression: source.owner,
                 cancellation: self.control.cancellation(),
                 limits: &self.catalogs.callable_limits,
@@ -1562,7 +1561,7 @@ impl Analyzer<'_, '_, '_> {
             pass,
         } = request;
         let implicit = match candidate.instantiation() {
-            CallableInstantiation::DataLast {
+            CallableInstantiation::Extension {
                 group, parameter, ..
             } if *group == current_group => Some(*parameter),
             _ => None,

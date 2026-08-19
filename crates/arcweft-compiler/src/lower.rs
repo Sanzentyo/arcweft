@@ -2376,12 +2376,24 @@ fn runtime_call(
         CallableInstantiation::Receiver { .. } => {
             arguments.insert(0, RuntimeResolvedCallArgument::Receiver);
         }
-        CallableInstantiation::DataLast { parameter, .. } => {
-            let position = parameter.get();
+        CallableInstantiation::Extension {
+            group, parameter, ..
+        } => {
+            let position = selected
+                .schema()
+                .groups()
+                .iter()
+                .take(group.get())
+                .map(|group| group.parameters().len())
+                .try_fold(parameter.get(), usize::checked_add)
+                .ok_or_else(|| RuntimeSemanticProjectionError::Call {
+                    owner,
+                    reason: "extension receiver argument coordinate overflowed".to_owned(),
+                })?;
             if position > arguments.len() {
                 return Err(RuntimeSemanticProjectionError::Call {
                     owner,
-                    reason: "data-last receiver parameter is outside the resolved argument order"
+                    reason: "extension receiver parameter is outside the resolved argument order"
                         .to_owned(),
                 });
             }
@@ -2795,7 +2807,7 @@ fn runtime_variant_constructor(
         | CallableInstantiation::Receiver { .. }
         | CallableInstantiation::TypeReceiver { .. }
         | CallableInstantiation::Curried { .. }
-        | CallableInstantiation::DataLast { .. } => Ok(None),
+        | CallableInstantiation::Extension { .. } => Ok(None),
     }
 }
 
@@ -2897,9 +2909,6 @@ fn runtime_intrinsic(
         arcweft_lang_sema::callable::CallableCandidateId::Builtin(builtin) => builtin,
         arcweft_lang_sema::callable::CallableCandidateId::Curried(curried) => {
             return runtime_intrinsic(curried.base());
-        }
-        arcweft_lang_sema::callable::CallableCandidateId::DataLast(data_last) => {
-            return runtime_intrinsic(data_last.callable());
         }
         _ => return None,
     };

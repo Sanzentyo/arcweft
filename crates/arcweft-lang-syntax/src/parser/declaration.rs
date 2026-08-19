@@ -56,6 +56,9 @@ pub(super) enum FixedParameterGrammar {
     /// Every source entry is a typed pattern; a missing annotation is retained
     /// as canonical type recovery.
     TypedPattern,
+    /// Ordinary functions additionally admit one typed `self: Type` extension
+    /// receiver. Placement and uniqueness remain HIR invariants.
+    FunctionParameter,
     /// Typed patterns remain structurally available, but an authored default
     /// is retained only as typed recovery under the parameter owner.
     TypedPatternWithRecoveredDefault {
@@ -72,13 +75,17 @@ impl FixedParameterGrammar {
         matches!(self, Self::MethodReceiver)
     }
 
+    const fn admits_extension_receiver(self) -> bool {
+        matches!(self, Self::FunctionParameter)
+    }
+
     const fn recovered_default(self) -> Option<(&'static str, &'static str)> {
         match self {
             Self::TypedPatternWithRecoveredDefault {
                 diagnostic,
                 message,
             } => Some((diagnostic, message)),
-            Self::TypedPattern | Self::MethodReceiver => None,
+            Self::TypedPattern | Self::FunctionParameter | Self::MethodReceiver => None,
         }
     }
 }
@@ -1188,7 +1195,18 @@ fn emit_parameter(
         return;
     }
     let pattern_end = colon.unwrap_or(end);
-    emit_pattern(parser, pattern_end, SyntaxRole::ParameterPattern);
+    if grammar.admits_extension_receiver()
+        && let Some(receiver) = extension_receiver_projection(parser, parser.cursor(), pattern_end)
+    {
+        parser.start(
+            SyntaxKind::ExtensionReceiverMarker,
+            SyntaxRole::ExtensionReceiver,
+        );
+        parser.finish();
+        emit_method_receiver_pattern(parser, pattern_end, SyntaxRole::ParameterPattern, &receiver);
+    } else {
+        emit_pattern(parser, pattern_end, SyntaxRole::ParameterPattern);
+    }
     bump_until(parser, pattern_end);
     if let Some(colon) = colon {
         debug_assert_eq!(parser.cursor(), colon);
@@ -1350,6 +1368,21 @@ fn method_receiver_projection(
             })
         }
         _ => None,
+    }
+}
+
+fn extension_receiver_projection(
+    parser: &DocumentParser<'_, '_>,
+    start: usize,
+    end: usize,
+) -> Option<PendingMethodReceiverProjection> {
+    match method_receiver_projection(parser, start, end)? {
+        receiver @ PendingMethodReceiverProjection::Owned {
+            mut_keyword: None, ..
+        } => Some(receiver),
+        PendingMethodReceiverProjection::Owned { .. }
+        | PendingMethodReceiverProjection::SharedReference { .. }
+        | PendingMethodReceiverProjection::MutableReference { .. } => None,
     }
 }
 

@@ -1074,7 +1074,6 @@ fn resolve_single_call_directly(
             authority,
             checked: checked.as_ref().into(),
             expected: None,
-            call_group: CallableGroupIndex::ZERO,
             expression: owner,
             cancellation: &cancellation,
             limits: &PRODUCTION_CALLABLE_LIMITS,
@@ -4720,6 +4719,60 @@ fn production_analyzer_routes_single_string_preserving_value_method() {
                 && considered.len() == 1
     ));
     assert_eq!(call.result(), Some(&TypeKind::String));
+}
+
+#[test]
+fn explicit_extension_receiver_unifies_free_and_dot_callable_identity() {
+    let fixture = fixture(
+        concat!(
+            "fn normalize(self: String, suffix: String) -> String { self }\n",
+            "fn direct(value: String) -> String { normalize(value, \"!\") }\n",
+            "fn dotted(value: String) -> String { value.normalize(\"!\") }\n",
+        ),
+        None,
+    );
+    let report = analyze(&fixture).expect("typed extension receiver analysis");
+    let selected = report
+        .calls()
+        .map(|(_, facts)| match facts.target() {
+            CallTargetFact::Selected { selected, .. } => selected,
+            target => panic!("expected selected extension call, got {target:?}"),
+        })
+        .collect::<Vec<_>>();
+    assert_eq!(selected.len(), 2);
+    assert_eq!(selected[0].id(), selected[1].id());
+    assert!(matches!(
+        selected[0].instantiation(),
+        crate::callable::CallableInstantiation::None
+    ));
+    assert!(matches!(
+        selected[1].instantiation(),
+        crate::callable::CallableInstantiation::Extension { group, parameter, .. }
+            if group.get() == 0 && parameter.get() == 0
+    ));
+}
+
+#[test]
+fn data_last_extension_receiver_consumes_the_final_receiver_group() {
+    let fixture = fixture(
+        concat!(
+            "fn append(suffix: String)(self: String) -> String { self }\n",
+            "fn dotted(value: String) -> String { value.append(\"!\") }\n",
+        ),
+        None,
+    );
+    let report = analyze(&fixture).expect("typed data-last extension analysis");
+    let (_, facts) = report.calls().next().expect("one extension call");
+    let CallTargetFact::Selected { selected, .. } = facts.target() else {
+        panic!("data-last extension must select one callable")
+    };
+    assert!(matches!(
+        selected.instantiation(),
+        crate::callable::CallableInstantiation::Extension { group, parameter, .. }
+            if group.get() == 1 && parameter.get() == 0
+    ));
+    assert_eq!(facts.result(), Some(&TypeKind::String));
+    assert!(facts.next_group().is_none());
 }
 
 #[test]
