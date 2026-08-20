@@ -1575,10 +1575,8 @@ pub struct AwbcTaskPlan {
     pub priority: i32,
     pub cancel_scope: AwbcStringId,
     pub policy: AwbcTaskPolicy,
-    /// Checked type of a normal successful completion payload.
-    pub ready_type: AwbcTypeId,
-    /// Checked type of an authored task error payload.
-    pub error_type: AwbcTypeId,
+    /// Checked type of the unary temporal Ready payload.
+    pub payload_type: AwbcTypeId,
     pub arguments: Vec<AwbcHostArgument>,
     pub many: Option<AwbcAwaitManyPolicy>,
 }

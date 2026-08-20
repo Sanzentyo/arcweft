@@ -453,7 +453,7 @@ pub enum RuntimeValue {
     String(String),
     Char(char),
     Duration(LogicalDuration),
-    Progress(#[serde(with = "progress_serde")] Progress),
+    Progress(Progress),
     Range(RuntimeRange),
     Iterator(RuntimeIterator),
     EntityRef(String),
@@ -525,30 +525,6 @@ impl RuntimeValue {
             | Self::EntityRef(_)
             | Self::Variant { payload: None, .. } => false,
         }
-    }
-}
-
-mod progress_serde {
-    use super::Progress;
-    use serde::{Deserialize, Deserializer, Serialize, Serializer, de::Error as _};
-
-    pub fn serialize<S>(value: &Progress, serializer: S) -> Result<S::Ok, S::Error>
-    where
-        S: Serializer,
-    {
-        (value.ratio(), value.label()).serialize(serializer)
-    }
-
-    pub fn deserialize<'de, D>(deserializer: D) -> Result<Progress, D::Error>
-    where
-        D: Deserializer<'de>,
-    {
-        let (ratio, label): (f32, Option<String>) = Deserialize::deserialize(deserializer)?;
-        let progress = Progress::new(ratio).map_err(D::Error::custom)?;
-        Ok(match label {
-            Some(label) => progress.with_label(label),
-            None => progress,
-        })
     }
 }
 

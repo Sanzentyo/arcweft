@@ -1010,7 +1010,7 @@ pub enum FlowEvent {
     },
     AwaitProgress {
         need: NeedId,
-        progress: RuntimePayload,
+        progress: arcweft_need::Progress,
     },
     Goto {
         target: FlowRuntimeId,

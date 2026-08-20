@@ -914,8 +914,7 @@ impl AwbcInventory {
             .iter()
             .map(|arg| self.intern_host_argument(arg))
             .collect();
-        let ready_type = intern_runtime_type(self, &outcome.ready);
-        let error_type = intern_runtime_type(self, &outcome.error);
+        let payload_type = intern_runtime_type(self, outcome.payload());
         self.program.task_plans.push(AwbcTaskPlan {
             public_id,
             need_id,
@@ -926,8 +925,7 @@ impl AwbcInventory {
             priority,
             cancel_scope,
             policy,
-            ready_type,
-            error_type,
+            payload_type,
             arguments,
             many: None,
         });

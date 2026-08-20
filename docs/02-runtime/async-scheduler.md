@@ -124,9 +124,9 @@ pub struct TaskEvent {
 
 pub enum TaskEventKind {
     Ready(RuntimePayload),
-    Err(String),
+    Failed(String),
     Cancelled,
-    Progress(RuntimePayload),
+    Progress(Progress),
 }
 ```
 
@@ -216,10 +216,10 @@ bounded fanout state; actual thread pools, async runtimes, and filesystem or
 network I/O remain adapter responsibilities.
 
 ```text
-TaskEventKind::Ready(value)    -> resume the flow after the await op
-TaskEventKind::Progress(value) -> keep waiting and emit an await-progress event
-TaskEventKind::Err(error)      -> mark the fiber failed
-TaskEventKind::Cancelled       -> mark the fiber failed
+TaskEventKind::Ready(value)    -> validate and resume with the exact admitted Need payload
+TaskEventKind::Progress(value) -> keep waiting and publish canonical Progress
+TaskEventKind::Failed(error)   -> runtime fault; never fabricate a domain Result error
+TaskEventKind::Cancelled       -> non-returning cancellation transfer
 ```
 
 Actual asset loading, worker execution, clocks, renderer progress View, and audio

@@ -1,4 +1,52 @@
-use crate::{task::*, value::RuntimePayload};
+use crate::{
+    pattern::{RuntimeCheckedType, RuntimeVariantIdentity},
+    task::*,
+    value::{RuntimePayload, RuntimeValue},
+};
+
+#[test]
+fn task_outcome_contract_owns_one_exact_ready_payload() {
+    let direct = TaskOutcomeContract::new(RuntimeCheckedType::String);
+    assert_eq!(
+        direct
+            .try_payload(RuntimeValue::String("ready".to_owned()))
+            .expect("direct payload is admitted")
+            .value(),
+        &RuntimeValue::String("ready".to_owned())
+    );
+    assert!(
+        direct
+            .try_result_ok(RuntimeValue::String("ready".to_owned()))
+            .is_err()
+    );
+
+    let fallible = TaskOutcomeContract::new(RuntimeCheckedType::Result {
+        ok: Box::new(RuntimeCheckedType::String),
+        error: Box::new(RuntimeCheckedType::String),
+    });
+    let ready = fallible
+        .try_result_ok(RuntimeValue::String("ready".to_owned()))
+        .expect("Result::Ok payload is admitted");
+    assert!(matches!(
+        ready.value(),
+        RuntimeValue::Variant {
+            owner: RuntimeVariantIdentity::Result,
+            ordinal: 0,
+            ..
+        }
+    ));
+    let error = fallible
+        .try_result_err(RuntimeValue::String("domain".to_owned()))
+        .expect("Result::Err payload is admitted");
+    assert!(matches!(
+        error.value(),
+        RuntimeValue::Variant {
+            owner: RuntimeVariantIdentity::Result,
+            ordinal: 1,
+            ..
+        }
+    ));
+}
 
 #[test]
 fn normalizes_task_events_by_replay_stable_keys() {

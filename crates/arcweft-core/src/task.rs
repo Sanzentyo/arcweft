@@ -1,6 +1,6 @@
 use crate::pattern::RuntimeCheckedType;
-use crate::value::{RuntimeExpr, RuntimePayload};
-use arcweft_need::Need;
+use crate::value::{RuntimeExpr, RuntimePayload, RuntimeValue};
+use arcweft_need::{Need, Progress};
 use serde::{Deserialize, Serialize};
 
 use crate::runtime_id::RuntimeLocalDeclarationId;
@@ -42,32 +42,71 @@ pub struct RuntimeNeedState {
     state: Need<RuntimePayload>,
 }
 
-/// The typed terminal outcomes a host task may publish.
+/// The exact payload type a host task may publish through temporal `Ready`.
 ///
-/// `Ready` and `Error` are both completed task outcomes.  `Failed` is reserved
-/// for an infrastructure failure which cannot be represented by the task's
-/// authored error type and therefore cannot be resumed through the normal
-/// `Need<T>` boundary. Authored domain errors are encoded in the admitted
-/// payload type, while `Failed` remains an infrastructure fault.
+/// Fallible producers admit a `Result<T, E>` payload here. Infrastructure
+/// failures and cancellation are control outcomes and are not alternate typed
+/// payload coordinates.
 #[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
 pub struct TaskOutcomeContract {
-    pub ready: RuntimeCheckedType,
-    pub error: RuntimeCheckedType,
+    payload: RuntimeCheckedType,
 }
 
 impl TaskOutcomeContract {
     #[must_use]
-    pub const fn new(ready: RuntimeCheckedType, error: RuntimeCheckedType) -> Self {
-        Self { ready, error }
+    pub const fn new(payload: RuntimeCheckedType) -> Self {
+        Self { payload }
+    }
+
+    #[must_use]
+    pub const fn payload(&self) -> &RuntimeCheckedType {
+        &self.payload
+    }
+
+    pub fn try_payload(&self, value: RuntimeValue) -> Result<RuntimePayload, String> {
+        if self.payload.accepts_value(&value) {
+            Ok(RuntimePayload::new(value))
+        } else {
+            Err("host task payload does not satisfy its checked outcome contract".to_owned())
+        }
+    }
+
+    pub fn try_result_ok(&self, value: RuntimeValue) -> Result<RuntimePayload, String> {
+        let RuntimeCheckedType::Result { ok, .. } = &self.payload else {
+            return Err("host task outcome is not an admitted Result payload".to_owned());
+        };
+        if !ok.accepts_value(&value) {
+            return Err(
+                "host task Result::Ok payload does not satisfy its checked type".to_owned(),
+            );
+        }
+        self.try_payload(RuntimeValue::result_ok(value))
+    }
+
+    pub fn try_result_err(&self, value: RuntimeValue) -> Result<RuntimePayload, String> {
+        let RuntimeCheckedType::Result { error, .. } = &self.payload else {
+            return Err("host task outcome is not an admitted Result payload".to_owned());
+        };
+        if !error.accepts_value(&value) {
+            return Err(
+                "host task Result::Err payload does not satisfy its checked type".to_owned(),
+            );
+        }
+        self.try_payload(RuntimeValue::result_err(value))
+    }
+
+    #[must_use]
+    pub const fn result_error(&self) -> Option<&RuntimeCheckedType> {
+        match &self.payload {
+            RuntimeCheckedType::Result { error, .. } => Some(error),
+            _ => None,
+        }
     }
 }
 
 impl Default for TaskOutcomeContract {
     fn default() -> Self {
-        Self {
-            ready: RuntimeCheckedType::Unit,
-            error: RuntimeCheckedType::String,
-        }
+        Self::new(RuntimeCheckedType::Unit)
     }
 }
 
@@ -319,10 +358,9 @@ pub struct TaskEvent {
 #[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
 pub enum TaskEventKind {
     Ready(RuntimePayload),
-    Error(RuntimePayload),
     Failed(String),
     Cancelled,
-    Progress(RuntimePayload),
+    Progress(Progress),
 }
 
 pub trait TaskHost {

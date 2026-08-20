@@ -10,7 +10,11 @@ repository.workspace = true
 path = "src/lib.rs"
 
 [dependencies]
+serde.workspace = true
 thiserror.workspace = true
+
+[dev-dependencies]
+serde_json.workspace = true
 
 [lints]
 workspace = true

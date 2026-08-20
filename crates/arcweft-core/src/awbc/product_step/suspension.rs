@@ -60,25 +60,27 @@ impl AwbcProductStepExecutor {
         let Some(event) = events.iter().find(|event| event.task_id == task_id) else {
             return false;
         };
-        let need = self
-            .task_plan_for_id(&task_id.0)
-            .map_or_else(|| NeedId(task_id.0.clone()), |plan| self.task_need_id(plan));
+        let plan = self.task_plan_for_id(&task_id.0);
+        let need = plan.map_or_else(|| NeedId(task_id.0.clone()), |plan| self.task_need_id(plan));
         match &event.kind {
             TaskEventKind::Ready(value) => {
-                let result = RuntimeValue::result_ok(value.value().clone());
+                if !plan.is_some_and(|plan| self.task_payload_accepts(plan, value.value())) {
+                    self.fail_with_trap(
+                        AwbcTrapCode::HostAbiMismatch,
+                        format!(
+                            "await task {} published a payload outside its checked outcome contract",
+                            task_id.0
+                        ),
+                        None,
+                        output,
+                    );
+                    return true;
+                }
                 output.flow_events.push(FlowEvent::AwaitReady {
                     need,
-                    value: RuntimePayload::from(result.clone()),
+                    value: value.clone(),
                 });
-                self.resume_await_value(binding, resume, &result, output)
-            }
-            TaskEventKind::Error(error) => {
-                let result = RuntimeValue::result_err(error.value().clone());
-                output.flow_events.push(FlowEvent::AwaitReady {
-                    need,
-                    value: RuntimePayload::from(result.clone()),
-                });
-                self.resume_await_value(binding, resume, &result, output)
+                self.resume_await_value(binding, resume, value.value(), output)
             }
             TaskEventKind::Progress(progress) => {
                 output.flow_events.push(FlowEvent::AwaitProgress {
@@ -146,6 +148,18 @@ impl AwbcProductStepExecutor {
             return true;
         }
         self.resume_at(resume, output)
+    }
+
+    fn task_payload_accepts(
+        &self,
+        plan: crate::awbc::schema::AwbcTaskPlanId,
+        value: &RuntimeValue,
+    ) -> bool {
+        self.program
+            .task_plans
+            .get(plan.index())
+            .and_then(|record| self.program.checked_type(record.payload_type).ok())
+            .is_some_and(|payload| payload.accepts_value(value))
     }
 
     pub(super) fn fill_await_many(&mut self, output: &mut RuntimeStepOutput) {
@@ -252,6 +266,18 @@ impl AwbcProductStepExecutor {
             };
             match &event.kind {
                 TaskEventKind::Ready(value) => {
+                    if !self.task_payload_accepts(state.plan, value.value()) {
+                        self.fail_with_trap(
+                            AwbcTrapCode::HostAbiMismatch,
+                            format!(
+                                "await task {} published a payload outside its checked outcome contract",
+                                event.task_id.0
+                            ),
+                            None,
+                            output,
+                        );
+                        return true;
+                    }
                     let in_flight = state.in_flight.remove(position);
                     state.results[in_flight.index as usize] = Some(value.value().clone());
                     output.flow_events.push(FlowEvent::AwaitReady {
@@ -266,20 +292,6 @@ impl AwbcProductStepExecutor {
                         progress: progress.clone(),
                     });
                     progressed = true;
-                }
-                TaskEventKind::Error(error) => {
-                    self.fail_with_trap(
-                        AwbcTrapCode::HostAbiMismatch,
-                        format!(
-                            "await task {} at index {} returned error: {}",
-                            event.task_id.0,
-                            state.in_flight[position].index,
-                            runtime_value_label(error.value())
-                        ),
-                        None,
-                        output,
-                    );
-                    return true;
                 }
                 TaskEventKind::Failed(error) => {
                     self.fail_with_trap(

@@ -88,13 +88,13 @@ pub struct HostTaskOutcome {
 
 /// Typed terminal result of a host task.
 ///
-/// `Ready` and `Error` are normal completed outcomes and carry the payload
-/// selected by the task's [`arcweft_core::task::TaskOutcomeContract`]. `Failed` is reserved for a
-/// host or adapter failure that cannot be represented by that contract.
+/// `Ready` carries the complete payload selected by the task's
+/// [`arcweft_core::task::TaskOutcomeContract`]. A domain error is therefore a
+/// `Result::Err` value inside `Ready`. `Failed` is reserved for a host or
+/// adapter failure that cannot be represented by that contract.
 #[derive(Clone, Debug, PartialEq)]
 pub enum HostTaskCompletion {
     Ready(RuntimePayload),
-    Error(RuntimePayload),
     Failed(String),
 }
 

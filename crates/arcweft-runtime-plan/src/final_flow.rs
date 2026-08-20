@@ -2909,21 +2909,13 @@ impl<'a> FinalFlowLowerer<'a> {
                 "Await expression {expression:?} has no accepted payload type"
             ))
         })?;
-        let RuntimeTypeShape::Result { value, error } = payload.shape() else {
-            return Err(RuntimePlanLowerError::new(
-                "current host-task Await requires a Result payload",
-            ));
-        };
         Ok(RuntimeFlowOpSeed::Await {
             binding: Some(bind_seed(payload, locals.payload.clone())),
             target: arcweft_core::plan::RuntimeAwaitTargetSeed {
                 need,
                 task,
                 outcome: TaskOutcomeContract::new(
-                    value
-                        .checked_type()
-                        .map_err(|error| RuntimePlanLowerError::new(error.to_string()))?,
-                    error
+                    payload
                         .checked_type()
                         .map_err(|error| RuntimePlanLowerError::new(error.to_string()))?,
                 ),

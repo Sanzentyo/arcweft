@@ -10,7 +10,7 @@ use crate::manifest::{
     desktop_pointer_global_control_manifest, desktop_pointer_global_observe_manifest,
 };
 use arcweft_adapter_context::manifest::AdapterManifest;
-use arcweft_core::task::{HostTaskRequest, TaskId, TaskSpec};
+use arcweft_core::task::{HostTaskRequest, TaskId, TaskOutcomeContract, TaskSpec};
 use arcweft_desktop_contract::{
     DesktopRequest, ExternalWindowRequest, FileDialogMode, GlobalPointerRequest, GrantAccess,
     UserFileRequest,
@@ -45,6 +45,7 @@ enum RequestDomain {
 struct PendingTask {
     arcweft_task: TaskId,
     request: DesktopRequest,
+    outcome: TaskOutcomeContract,
 }
 
 /// Shared bridge retained by the native player so it can pump window-thread work.
@@ -165,15 +166,18 @@ impl<B: DesktopBackend> HostAdapter for DesktopArcweftAdapter<B> {
             }
         };
         match self.coordinator.host.submit(request.clone()) {
-            DesktopSubmission::Completed(result) => {
-                Some(HostTaskSubmission::Completed(outcome(&request, result)))
-            }
+            DesktopSubmission::Completed(result) => Some(HostTaskSubmission::Completed(outcome(
+                &request,
+                &task.outcome,
+                result,
+            ))),
             DesktopSubmission::Pending(desktop_task) => {
                 self.pending().insert(
                     desktop_task,
                     PendingTask {
                         arcweft_task: task.id.clone(),
                         request,
+                        outcome: task.outcome.clone(),
                     },
                 );
                 Some(HostTaskSubmission::Pending)
@@ -189,7 +193,7 @@ impl<B: DesktopBackend> HostAdapter for DesktopArcweftAdapter<B> {
                 let pending = self.pending().remove(&desktop_task)?;
                 Some(HostAdapterCompletion {
                     task_id: pending.arcweft_task,
-                    outcome: outcome(&pending.request, result),
+                    outcome: outcome(&pending.request, &pending.outcome, result),
                 })
             })
             .collect()

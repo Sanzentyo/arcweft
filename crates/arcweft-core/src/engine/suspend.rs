@@ -167,43 +167,27 @@ impl Engine {
         };
         match event.kind {
             TaskEventKind::Ready(value) => {
-                let value = RuntimePayload::from(RuntimeValue::result_ok(value.value().clone()));
-                if let Some(binding) = &state.binding {
-                    match self.try_bind_pattern(binding, value.value()) {
-                        Ok(true) => {}
-                        Ok(false) => {
-                            self.fiber.status = FlowFiberStatus::Failed(
-                                "await result did not match binding pattern".to_owned(),
-                            );
-                            output.diagnostics.push(RuntimeDiagnostic::new(
-                                "await result did not match binding pattern".to_owned(),
-                            ));
-                            return;
-                        }
-                        Err(error) => {
-                            self.fail_eval(error, output);
-                            return;
-                        }
-                    }
+                if !state.target.outcome.payload().accepts_value(value.value()) {
+                    let message = format!(
+                        "await task {} published a payload outside its checked outcome contract",
+                        state.target.task.0
+                    );
+                    self.fiber.status = FlowFiberStatus::Failed(message.clone());
+                    output.diagnostics.push(RuntimeDiagnostic::categorized(
+                        RuntimeDiagnosticCategory::Host,
+                        message,
+                    ));
+                    return;
                 }
-                output.flow_events.push(FlowEvent::AwaitReady {
-                    need: state.target.need,
-                    value,
-                });
-                self.fiber.cursor = state.resume;
-                self.fiber.status = FlowFiberStatus::Running;
-            }
-            TaskEventKind::Error(error) => {
-                let value = RuntimePayload::from(RuntimeValue::result_err(error.value().clone()));
                 if let Some(binding) = &state.binding {
                     match self.try_bind_pattern(binding, value.value()) {
                         Ok(true) => {}
                         Ok(false) => {
                             self.fiber.status = FlowFiberStatus::Failed(
-                                "await error did not match binding pattern".to_owned(),
+                                "await result did not match binding pattern".to_owned(),
                             );
                             output.diagnostics.push(RuntimeDiagnostic::new(
-                                "await error did not match binding pattern".to_owned(),
+                                "await result did not match binding pattern".to_owned(),
                             ));
                             return;
                         }
@@ -432,6 +416,19 @@ impl Engine {
             };
             match &event.kind {
                 TaskEventKind::Ready(value) => {
+                    if !state.target.outcome.payload().accepts_value(value.value()) {
+                        let in_flight = &state.in_flight[position];
+                        let message = format!(
+                            "await task {} at index {} published a payload outside its checked outcome contract",
+                            in_flight.task.0, in_flight.index
+                        );
+                        self.fiber.status = FlowFiberStatus::Failed(message.clone());
+                        output.diagnostics.push(RuntimeDiagnostic::categorized(
+                            RuntimeDiagnosticCategory::Host,
+                            message,
+                        ));
+                        return;
+                    }
                     let in_flight = state.in_flight.remove(position);
                     state.results[in_flight.index] = Some(value.clone());
                     output.flow_events.push(FlowEvent::AwaitReady {
@@ -445,21 +442,6 @@ impl Engine {
                         need: in_flight.need.clone(),
                         progress: progress.clone(),
                     });
-                }
-                TaskEventKind::Error(error) => {
-                    let in_flight = &state.in_flight[position];
-                    let message = format!(
-                        "await task {} at index {} returned error: {}",
-                        in_flight.task.0,
-                        in_flight.index,
-                        crate::value::runtime_value_label(error.value())
-                    );
-                    self.fiber.status = FlowFiberStatus::Failed(message.clone());
-                    output.diagnostics.push(RuntimeDiagnostic::categorized(
-                        RuntimeDiagnosticCategory::Host,
-                        message,
-                    ));
-                    return;
                 }
                 TaskEventKind::Failed(error) => {
                     let in_flight = &state.in_flight[position];

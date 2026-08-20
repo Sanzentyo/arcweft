@@ -585,14 +585,17 @@ where
                     .map_err(AgentRunError::UnsupportedControllerEffect)?;
                 let host_report =
                     self.handle_controller_host_request(request, budget, &mut budget_tracker)?;
+                let response = runtime_payload_from_response(&host_report.response)
+                    .map_err(AgentRunError::InvalidHostResponse)?;
+                let response = task
+                    .outcome
+                    .try_result_ok(response.value().clone())
+                    .map_err(AgentRunError::InvalidHostResponse)?;
                 task_events.push(TaskEvent {
                     logical_epoch: LogicalEpoch(0),
                     task_id: task.id.clone(),
                     sequence: TaskSequence(report.host_calls as u64),
-                    kind: TaskEventKind::Ready(
-                        runtime_payload_from_response(&host_report.response)
-                            .map_err(AgentRunError::InvalidHostResponse)?,
-                    ),
+                    kind: TaskEventKind::Ready(response),
                 });
                 report.host_calls += 1;
                 report.responses.push(host_report.response);

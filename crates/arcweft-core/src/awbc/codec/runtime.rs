@@ -75,8 +75,7 @@ impl Wire for AwbcTaskPlan {
         self.priority.write_wire(writer)?;
         self.cancel_scope.write_wire(writer)?;
         self.policy.write_wire(writer)?;
-        self.ready_type.write_wire(writer)?;
-        self.error_type.write_wire(writer)?;
+        self.payload_type.write_wire(writer)?;
         self.arguments.write_wire(writer)?;
         self.many.write_wire(writer)
     }
@@ -92,8 +91,7 @@ impl Wire for AwbcTaskPlan {
             priority: i32::read_wire(reader)?,
             cancel_scope: AwbcStringId::read_wire(reader)?,
             policy: AwbcTaskPolicy::read_wire(reader)?,
-            ready_type: AwbcTypeId::read_wire(reader)?,
-            error_type: AwbcTypeId::read_wire(reader)?,
+            payload_type: AwbcTypeId::read_wire(reader)?,
             arguments: Vec::<AwbcHostArgument>::read_wire(reader)?,
             many: Option::<AwbcAwaitManyPolicy>::read_wire(reader)?,
         })

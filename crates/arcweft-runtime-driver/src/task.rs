@@ -31,7 +31,6 @@ impl RuntimeTaskStatus {
         match kind {
             TaskEventKind::Ready(_) => Self::Completed,
             TaskEventKind::Failed(_) => Self::Failed,
-            TaskEventKind::Error(_) => Self::Completed,
             TaskEventKind::Cancelled => Self::Cancelled,
             TaskEventKind::Progress(_) => Self::Running,
         }
@@ -239,10 +238,6 @@ impl HostTaskDispatch {
         self.into_event(TaskEventKind::Ready(value))
     }
 
-    pub fn error(self, value: RuntimePayload) -> TaskEvent {
-        self.into_event(TaskEventKind::Error(value))
-    }
-
     pub fn failed(self, message: impl Into<String>) -> TaskEvent {
         self.into_event(TaskEventKind::Failed(message.into()))
     }
@@ -251,7 +246,7 @@ impl HostTaskDispatch {
         self.into_event(TaskEventKind::Cancelled)
     }
 
-    pub fn progress(self, value: RuntimePayload) -> TaskEvent {
+    pub fn progress(self, value: arcweft_core::value::Progress) -> TaskEvent {
         self.into_event(TaskEventKind::Progress(value))
     }
 

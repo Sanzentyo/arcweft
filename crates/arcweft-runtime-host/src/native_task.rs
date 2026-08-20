@@ -319,10 +319,6 @@ impl NativeTaskBridge {
                 self.stats.completed_tasks += 1;
                 TaskEventKind::Ready(value)
             }
-            HostTaskCompletion::Error(error) => {
-                self.stats.completed_tasks += 1;
-                TaskEventKind::Error(error)
-            }
             HostTaskCompletion::Failed(error) => {
                 self.stats.failed_tasks += 1;
                 TaskEventKind::Failed(error)
@@ -439,9 +435,12 @@ fn file_task_completion(
     result: Result<RuntimePayload, String>,
 ) -> HostTaskCompletion {
     match result {
-        Ok(value) => HostTaskCompletion::Ready(value),
+        Ok(value) => task
+            .outcome
+            .try_result_ok(value.value().clone())
+            .map_or_else(HostTaskCompletion::Failed, HostTaskCompletion::Ready),
         Err(error) => {
-            let RuntimeCheckedType::Opaque { owner } = &task.outcome.error else {
+            let Some(RuntimeCheckedType::Opaque { owner }) = task.outcome.result_error() else {
                 return HostTaskCompletion::Failed(
                     "native file task has no exact opaque domain-error contract".to_owned(),
                 );
@@ -453,7 +452,10 @@ fn file_task_completion(
                 ));
             }
             match owner.try_wrap(RuntimeValue::String(error)) {
-                Ok(value) => HostTaskCompletion::Error(RuntimePayload::new(value)),
+                Ok(value) => task
+                    .outcome
+                    .try_result_err(value)
+                    .map_or_else(HostTaskCompletion::Failed, HostTaskCompletion::Ready),
                 Err(error) => HostTaskCompletion::Failed(format!(
                     "native file task could not materialize its domain error: {error}"
                 )),
@@ -472,9 +474,12 @@ impl HostAdapter for NativeSystemInfoAdapter {
             return None;
         };
         Some(HostTaskOutcome {
-            completion: HostTaskCompletion::Ready(RuntimePayload::new(RuntimeValue::usize(
-                usize_to_u64(system_info_value(self.host_system, request.kind)),
-            ))),
+            completion: task
+                .outcome
+                .try_result_ok(RuntimeValue::String(
+                    system_info_value(self.host_system, request.kind).to_string(),
+                ))
+                .map_or_else(HostTaskCompletion::Failed, HostTaskCompletion::Ready),
             metrics: HostTaskMetrics {
                 system_info_ops: 1,
                 ..HostTaskMetrics::default()
@@ -672,10 +677,6 @@ fn complete_write_bytes(
     (result, stats)
 }
 
-fn usize_to_u64(value: usize) -> u64 {
-    u64::try_from(value).map_or(u64::MAX, |value| value)
-}
-
 fn is_io_task(request: &HostTaskRequest) -> bool {
     matches!(
         request,
@@ -797,9 +798,10 @@ impl From<TaskClassCounts> for NativeTaskClassCounts {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use arcweft_core::pattern::RuntimeCheckedType;
     use arcweft_core::task::{
         CancelScopeId, HostTaskRequest, SystemInfoKind, SystemInfoRequest, TaskClass, TaskId,
-        TaskKey, TaskPolicy, TaskPriority,
+        TaskKey, TaskOutcomeContract, TaskPolicy, TaskPriority,
     };
 
     #[test]
@@ -913,13 +915,17 @@ mod tests {
     }
 
     fn task(id: &str, request: HostTaskRequest) -> TaskSpec {
-        TaskSpec::new(
+        TaskSpec::new_with_outcome(
             TaskId(id.to_owned()),
             TaskKey(id.to_owned()),
             TaskClass::Cpu,
             TaskPriority(0),
             CancelScopeId("test".to_owned()),
             TaskPolicy::JoinSameKey,
+            TaskOutcomeContract::new(RuntimeCheckedType::Result {
+                ok: Box::new(RuntimeCheckedType::String),
+                error: Box::new(RuntimeCheckedType::String),
+            }),
             request,
         )
     }

@@ -381,10 +381,7 @@ pub(super) fn task_spec(
     let class = request.task_class();
     let outcome = TaskOutcomeContract::new(
         program
-            .checked_type(record.ready_type)
-            .map_err(|error| ProductStepError::Internal(error.to_string()))?,
-        program
-            .checked_type(record.error_type)
+            .checked_type(record.payload_type)
             .map_err(|error| ProductStepError::Internal(error.to_string()))?,
     );
     let spec = TaskSpec::new_with_outcome(

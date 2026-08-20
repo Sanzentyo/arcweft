@@ -1150,7 +1150,13 @@ fn flow_event_label(event: &FlowEvent) -> String {
             format!("await_ready {} {}", need.0, value.label())
         }
         FlowEvent::AwaitProgress { need, progress } => {
-            format!("await_progress {} {}", need.0, progress.label())
+            format!(
+                "await_progress {} {}",
+                need.0,
+                progress
+                    .label()
+                    .map_or_else(|| progress.ratio().to_string(), str::to_owned)
+            )
         }
         FlowEvent::Goto { target } => format!("goto {}", target.public_label()),
         FlowEvent::Return { value } => format!("return {value}"),

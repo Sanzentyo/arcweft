@@ -272,7 +272,10 @@ fn agent_task_outcome(response_ty: u8) -> TaskOutcomeContract {
         OBSERVATION_TY => RuntimeAgentOperationalType::Observation,
         _ => panic!("fixture response type {response_ty} has no Agent task outcome"),
     };
-    TaskOutcomeContract::new(RuntimeCheckedType::Agent(ready), RuntimeCheckedType::String)
+    TaskOutcomeContract::new(RuntimeCheckedType::Result {
+        ok: Box::new(RuntimeCheckedType::Agent(ready)),
+        error: Box::new(RuntimeCheckedType::String),
+    })
 }
 
 fn agent_controller_program_seed(

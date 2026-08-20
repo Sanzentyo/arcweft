@@ -205,8 +205,8 @@ fn host_call_request_and_result_resume_at_runtime_step_boundary() {
 }
 
 #[test]
-fn ready_direct_need_materializes_result_and_returns_in_the_same_step() {
-    let expected = RuntimeValue::result_ok(RuntimeValue::String("profile-ready".to_owned()));
+fn ready_direct_need_returns_its_payload_unchanged_in_the_same_step() {
+    let expected = RuntimeValue::String("profile-ready".to_owned());
     let (mut executor, input) = direct_need_executor_and_input(vec![runtime_need_state(
         0,
         Need::Ready(RuntimePayload(RuntimeValue::String(

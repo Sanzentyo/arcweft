@@ -1,5 +1,10 @@
-use arcweft_core::task::{
-    CancelScopeId, HostTaskRequest, TaskClass, TaskId, TaskKey, TaskPolicy, TaskPriority, TaskSpec,
+use arcweft_core::{
+    pattern::{RuntimeCheckedType, RuntimeVariantIdentity},
+    task::{
+        CancelScopeId, HostTaskRequest, TaskClass, TaskId, TaskKey, TaskOutcomeContract,
+        TaskPolicy, TaskPriority, TaskSpec,
+    },
+    value::RuntimeValue,
 };
 #[cfg(target_os = "windows")]
 use arcweft_desktop_contract::PlatformKind;
@@ -25,8 +30,20 @@ fn native_desktop_capabilities_complete_through_host_registry() {
     let HostTaskCompletion::Ready(payload) = outcome.completion else {
         panic!("capabilities request succeeds");
     };
+    let RuntimeValue::Variant {
+        owner: RuntimeVariantIdentity::Result,
+        ordinal: 0,
+        payload: Some(payload),
+        ..
+    } = payload.value()
+    else {
+        panic!("desktop response is a Result::Ok payload");
+    };
+    let RuntimeValue::String(payload) = payload.as_ref() else {
+        panic!("desktop response payload is JSON text");
+    };
     let response: DesktopResponse =
-        serde_json::from_str(&payload.label()).expect("desktop response is JSON");
+        serde_json::from_str(payload).expect("desktop response is JSON");
     let DesktopResponse::Capabilities(capabilities) = response else {
         panic!("expected capabilities response");
     };
@@ -44,13 +61,17 @@ fn native_desktop_capabilities_complete_through_host_registry() {
 
 fn task(capability: &str, operation: &str) -> TaskSpec {
     let id = format!("{capability}.{operation}");
-    TaskSpec::new(
+    TaskSpec::new_with_outcome(
         TaskId(id.clone()),
         TaskKey(id),
         TaskClass::Background,
         TaskPriority(0),
         CancelScopeId("desktop-test".to_owned()),
         TaskPolicy::JoinSameKey,
+        TaskOutcomeContract::new(RuntimeCheckedType::Result {
+            ok: Box::new(RuntimeCheckedType::String),
+            error: Box::new(RuntimeCheckedType::String),
+        }),
         HostTaskRequest::custom(capability, operation, []),
     )
 }

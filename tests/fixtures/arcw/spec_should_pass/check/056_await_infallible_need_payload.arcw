@@ -1,0 +1,11 @@
+extern capability clock {
+    fn label() -> Need<String> effects { clock.read }
+}
+
+entry cli @entry.main {
+    goto @flow.main
+}
+
+flow main() -> String effects { clock.read } {
+    return await clock.label()
+}

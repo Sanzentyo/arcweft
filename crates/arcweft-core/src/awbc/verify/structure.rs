@@ -931,13 +931,7 @@ fn verify_runtime_tables(verifier: &Verifier<'_, '_>) -> Result<(), AwbcVerifyEr
         )?;
         check_index(
             program.runtime_types.len(),
-            task.ready_type.0,
-            "runtime_types",
-            &at,
-        )?;
-        check_index(
-            program.runtime_types.len(),
-            task.error_type.0,
+            task.payload_type.0,
             "runtime_types",
             &at,
         )?;

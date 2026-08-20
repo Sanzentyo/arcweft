@@ -309,7 +309,7 @@ impl RuntimeScheduler {
         }
         self.stats.completed_by_class.record(&task.class);
         match event.kind {
-            TaskEventKind::Ready(_) | TaskEventKind::Error(_) | TaskEventKind::Progress(_) => {
+            TaskEventKind::Ready(_) | TaskEventKind::Progress(_) => {
                 self.stats.completed += 1;
             }
             TaskEventKind::Failed(_) => {
@@ -559,7 +559,11 @@ mod tests {
         let progress = scheduler.complete([event(
             "owner",
             1,
-            TaskEventKind::Progress(RuntimePayload::from("halfway")),
+            TaskEventKind::Progress(
+                arcweft_core::value::Progress::new(0.5)
+                    .expect("fixture progress is valid")
+                    .with_label("halfway"),
+            ),
         )]);
 
         assert_eq!(
@@ -570,7 +574,7 @@ mod tests {
             ["owner", "waiter-a"]
         );
         assert!(progress.iter().all(|event| {
-            matches!(&event.kind, TaskEventKind::Progress(value) if value.label() == "halfway")
+            matches!(&event.kind, TaskEventKind::Progress(value) if value.label() == Some("halfway"))
         }));
         assert_eq!(scheduler.stats().in_flight, 1);
         assert_eq!(scheduler.stats().completed, 0);

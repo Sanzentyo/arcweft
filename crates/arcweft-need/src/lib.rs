@@ -1,3 +1,4 @@
+use serde::{Deserialize, Deserializer, Serialize, Serializer, de::Error as _};
 use thiserror::Error;
 
 #[derive(Clone, Debug, Eq, Error, PartialEq)]
@@ -31,6 +32,29 @@ impl Progress {
 
     pub fn label(&self) -> Option<&str> {
         self.label.as_deref()
+    }
+}
+
+impl Serialize for Progress {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: Serializer,
+    {
+        (self.ratio(), self.label()).serialize(serializer)
+    }
+}
+
+impl<'de> Deserialize<'de> for Progress {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        let (ratio, label): (f32, Option<String>) = Deserialize::deserialize(deserializer)?;
+        let progress = Self::new(ratio).map_err(D::Error::custom)?;
+        Ok(match label {
+            Some(label) => progress.with_label(label),
+            None => progress,
+        })
     }
 }
 
@@ -99,5 +123,19 @@ mod tests {
         assert!(!Need::<u8>::Pending(Progress::new(0.5).expect("valid progress")).is_terminal());
         assert!(Need::<u8>::Ready(1).is_terminal());
         assert!(Need::<u8>::Cancelled.is_terminal());
+    }
+
+    #[test]
+    fn progress_codec_preserves_the_validated_owner_shape() {
+        let progress = Progress::new(0.5)
+            .expect("fixture progress is valid")
+            .with_label("loading");
+        let encoded = serde_json::to_string(&progress).expect("Progress serializes");
+        assert_eq!(encoded, "[0.5,\"loading\"]");
+        assert_eq!(
+            serde_json::from_str::<Progress>(&encoded).expect("Progress round-trips"),
+            progress
+        );
+        assert!(serde_json::from_str::<Progress>("[1.5,null]").is_err());
     }
 }
