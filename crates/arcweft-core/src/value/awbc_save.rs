@@ -58,6 +58,10 @@ pub enum AwbcRuntimeValueSnapshot {
     String(String),
     Char(char),
     Duration(crate::time::LogicalDuration),
+    Progress {
+        ratio: f32,
+        label: Option<String>,
+    },
     Range(super::RuntimeRange),
     Iterator(AwbcRuntimeIteratorSnapshot),
     EntityRef(String),
@@ -224,6 +228,10 @@ impl AwbcRuntimeValueSnapshot {
             RuntimeValue::String(value) => Self::String(value.clone()),
             RuntimeValue::Char(value) => Self::Char(*value),
             RuntimeValue::Duration(value) => Self::Duration(*value),
+            RuntimeValue::Progress(value) => Self::Progress {
+                ratio: value.ratio(),
+                label: value.label().map(str::to_owned),
+            },
             RuntimeValue::Range(value) => Self::Range(value.clone()),
             RuntimeValue::Iterator(value) => Self::Iterator(Self::iterator_from_live(value)?),
             RuntimeValue::EntityRef(value) => Self::EntityRef(value.clone()),
@@ -286,6 +294,14 @@ impl AwbcRuntimeValueSnapshot {
             Self::String(value) => RuntimeValue::String(value),
             Self::Char(value) => RuntimeValue::Char(value),
             Self::Duration(value) => RuntimeValue::Duration(value),
+            Self::Progress { ratio, label } => {
+                let progress = crate::value::Progress::new(ratio)
+                    .map_err(|error| AwbcRuntimeValueSnapshotError::new(error.to_string()))?;
+                RuntimeValue::Progress(match label {
+                    Some(label) => progress.with_label(label),
+                    None => progress,
+                })
+            }
             Self::Range(value) => RuntimeValue::Range(value),
             Self::Iterator(value) => RuntimeValue::Iterator(Self::iterator_into_live(value)?),
             Self::EntityRef(value) => RuntimeValue::EntityRef(value),

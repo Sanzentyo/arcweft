@@ -11,7 +11,7 @@ use super::{
 use crate::callable::{CallableEvaluatedEffect, CallableLogLevel, CharacterDialoguePatchContext};
 use arcweft_core::value::RuntimeAgentField;
 use arcweft_interaction_model::dialogue::CharacterDialogueCustomFieldId;
-use arcweft_lang_hir::expr::{HirAwaitBranchKind, HirCallArgument};
+use arcweft_lang_hir::expr::HirCallArgument;
 use arcweft_lang_hir::symbol::ExternalDeclarationId;
 use arcweft_source::SourceSpan;
 
@@ -328,6 +328,10 @@ pub enum CheckedSelectResolution {
     AgentField {
         field: RuntimeAgentField,
     },
+    /// Field owned by the standard `Progress` value family.
+    ProgressField {
+        field: crate::types::ProgressField,
+    },
     Field {
         nominal: Option<CheckedProjectNominal>,
         ordinal: Option<u32>,
@@ -633,86 +637,34 @@ impl CheckedTry {
     }
 }
 
-/// Whether one Await handler can return to the normal Result continuation.
-#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
-pub enum CheckedAwaitBranchContinuation {
-    FallsThrough,
-    Terminates,
-}
-
-/// One source-ordered, typed Await lifecycle handler.
+/// One typed observer for an Await's pending publications.
 #[derive(Clone, Debug, Eq, PartialEq)]
-pub struct CheckedAwaitBranch {
-    kind: HirAwaitBranchKind,
+pub struct CheckedAwaitPendingObserver {
     pattern: PatternId,
-    payload: TypeKind,
-    continuation: CheckedAwaitBranchContinuation,
 }
 
-impl CheckedAwaitBranch {
-    pub const fn new(
-        kind: HirAwaitBranchKind,
-        pattern: PatternId,
-        payload: TypeKind,
-        continuation: CheckedAwaitBranchContinuation,
-    ) -> Self {
-        Self {
-            kind,
-            pattern,
-            payload,
-            continuation,
-        }
-    }
-
-    pub const fn kind(&self) -> HirAwaitBranchKind {
-        self.kind
+impl CheckedAwaitPendingObserver {
+    pub const fn new(pattern: PatternId) -> Self {
+        Self { pattern }
     }
 
     pub const fn pattern(&self) -> PatternId {
         self.pattern
     }
-
-    pub const fn payload(&self) -> &TypeKind {
-        &self.payload
-    }
-
-    pub const fn continuation(&self) -> CheckedAwaitBranchContinuation {
-        self.continuation
-    }
 }
 
 /// Typed semantics of one Await expression.
-///
-/// `physical_result` is the host completion carrier. `continuation_result`
-/// is the value observed by the enclosing expression after authored handlers
-/// have run. Exhaustive terminal Error handlers remove `E` from that normal
-/// continuation without changing the physical task ABI.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct CheckedAwait {
     operand: ExprId,
-    ready: TypeKind,
-    error: TypeKind,
-    physical_result: TypeKind,
-    continuation_result: TypeKind,
-    branches: Box<[CheckedAwaitBranch]>,
+    observers: Box<[CheckedAwaitPendingObserver]>,
 }
 
 impl CheckedAwait {
-    pub fn new(
-        operand: ExprId,
-        ready: TypeKind,
-        error: TypeKind,
-        physical_result: TypeKind,
-        continuation_result: TypeKind,
-        branches: impl Into<Box<[CheckedAwaitBranch]>>,
-    ) -> Self {
+    pub fn new(operand: ExprId, observers: impl Into<Box<[CheckedAwaitPendingObserver]>>) -> Self {
         Self {
             operand,
-            ready,
-            error,
-            physical_result,
-            continuation_result,
-            branches: branches.into(),
+            observers: observers.into(),
         }
     }
 
@@ -720,24 +672,8 @@ impl CheckedAwait {
         self.operand
     }
 
-    pub const fn ready(&self) -> &TypeKind {
-        &self.ready
-    }
-
-    pub const fn error(&self) -> &TypeKind {
-        &self.error
-    }
-
-    pub const fn physical_result(&self) -> &TypeKind {
-        &self.physical_result
-    }
-
-    pub const fn continuation_result(&self) -> &TypeKind {
-        &self.continuation_result
-    }
-
-    pub fn branches(&self) -> &[CheckedAwaitBranch] {
-        &self.branches
+    pub fn observers(&self) -> &[CheckedAwaitPendingObserver] {
+        &self.observers
     }
 }
 

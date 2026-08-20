@@ -12,6 +12,7 @@ use crate::plan::{
 use crate::runtime_id::{RuntimeFunctionSiteId, RuntimeLocalDeclarationId, RuntimePlanTypeId};
 use crate::time::LogicalDuration;
 use arcweft_id::{DeclarationIdentityFamily, PublicId, PublicIdFamilyError};
+pub use arcweft_need::Progress;
 use serde::{Deserialize, Deserializer, Serialize, Serializer, de::Error as _, ser::Error as _};
 use std::{fmt, sync::Arc};
 use thiserror::Error;
@@ -452,6 +453,7 @@ pub enum RuntimeValue {
     String(String),
     Char(char),
     Duration(LogicalDuration),
+    Progress(#[serde(with = "progress_serde")] Progress),
     Range(RuntimeRange),
     Iterator(RuntimeIterator),
     EntityRef(String),
@@ -517,11 +519,36 @@ impl RuntimeValue {
             | Self::String(_)
             | Self::Char(_)
             | Self::Duration(_)
+            | Self::Progress(_)
             | Self::Range(_)
             | Self::Iterator(RuntimeIterator::Range(_))
             | Self::EntityRef(_)
             | Self::Variant { payload: None, .. } => false,
         }
+    }
+}
+
+mod progress_serde {
+    use super::Progress;
+    use serde::{Deserialize, Deserializer, Serialize, Serializer, de::Error as _};
+
+    pub fn serialize<S>(value: &Progress, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: Serializer,
+    {
+        (value.ratio(), value.label()).serialize(serializer)
+    }
+
+    pub fn deserialize<'de, D>(deserializer: D) -> Result<Progress, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        let (ratio, label): (f32, Option<String>) = Deserialize::deserialize(deserializer)?;
+        let progress = Progress::new(ratio).map_err(D::Error::custom)?;
+        Ok(match label {
+            Some(label) => progress.with_label(label),
+            None => progress,
+        })
     }
 }
 
@@ -1343,12 +1370,30 @@ impl RuntimeEntityReferenceField {
     }
 }
 
+/// Closed field coordinates of the standard runtime Progress value.
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub enum RuntimeProgressField {
+    Ratio,
+    Label,
+}
+
+impl RuntimeProgressField {
+    #[must_use]
+    pub const fn as_label(self) -> &'static str {
+        match self {
+            Self::Ratio => "ratio",
+            Self::Label => "label",
+        }
+    }
+}
+
 /// Checked field projection retained by a runtime expression.
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub enum RuntimeFieldProjection {
     Nominal(RuntimeRecordFieldId),
     Agent(RuntimeAgentField),
     EntityReference(RuntimeEntityReferenceField),
+    Progress(RuntimeProgressField),
 }
 
 impl RuntimeFieldProjection {
@@ -1358,6 +1403,7 @@ impl RuntimeFieldProjection {
             Self::Nominal(field) => format!("field#{}", field.zero_based()),
             Self::Agent(field) => field.as_label().to_owned(),
             Self::EntityReference(field) => field.as_label().to_owned(),
+            Self::Progress(field) => field.as_label().to_owned(),
         }
     }
 }
@@ -3170,6 +3216,9 @@ pub(crate) fn runtime_value_label(value: &RuntimeValue) -> String {
         RuntimeValue::String(value) | RuntimeValue::EntityRef(value) => value.clone(),
         RuntimeValue::Char(value) => value.to_string(),
         RuntimeValue::Duration(value) => format!("{}ns", value.as_nanos()),
+        RuntimeValue::Progress(value) => value
+            .label()
+            .map_or_else(|| format!("progress/{}", value.ratio()), str::to_owned),
         RuntimeValue::Range(value) => value.label(),
         RuntimeValue::Iterator(_) => "iterator".to_owned(),
         RuntimeValue::Tuple(values) => format!("tuple/{}", values.len()),

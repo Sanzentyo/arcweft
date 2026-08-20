@@ -418,10 +418,12 @@ fn source_backed_adapter_facts_retain_exact_recursive_type_ranges() {
         error: Box::new(AdapterTypeKind::I32),
     };
     let result_type = AdapterTypeKind::Need {
-        ready: Box::new(AdapterTypeKind::Seq {
-            item: Box::new(AdapterTypeKind::U8),
+        item: Box::new(AdapterTypeKind::Result {
+            ok: Box::new(AdapterTypeKind::Seq {
+                item: Box::new(AdapterTypeKind::U8),
+            }),
+            error: Box::new(AdapterTypeKind::String),
         }),
-        error: Box::new(AdapterTypeKind::String),
     };
     let manifest = AdapterManifest::new("fixture", "Fixture")
         .with_symbol(AdapterSymbol::new(
@@ -470,12 +472,15 @@ fn source_backed_adapter_facts_retain_exact_recursive_type_ranges() {
     let result = callable.schema().result();
     assert_eq!(
         source_text(document, result.source()),
-        "Need<Seq<u8>,String>"
+        "Need<Result<Seq<u8>,String>>"
     );
-    let EnvironmentTypeProjectionKind::Need { ready, error } = result.kind() else {
+    let EnvironmentTypeProjectionKind::Need(item) = result.kind() else {
         panic!("result root must retain Need shape");
     };
-    assert_eq!(source_text(document, ready.source()), "Seq<u8>");
+    let EnvironmentTypeProjectionKind::Result { ok, error } = item.kind() else {
+        panic!("fallible Need payload must retain Result shape");
+    };
+    assert_eq!(source_text(document, ok.source()), "Seq<u8>");
     assert_eq!(source_text(document, error.source()), "String");
 }
 

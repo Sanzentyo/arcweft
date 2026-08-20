@@ -1055,13 +1055,7 @@ fn type_kind_label(ty: &AdapterTypeKind) -> String {
                 .collect::<Vec<_>>()
                 .join(", ")
         ),
-        AdapterTypeKind::Need { ready, error } => {
-            format!(
-                "Need<{}, {}>",
-                type_kind_label(ready),
-                type_kind_label(error)
-            )
-        }
+        AdapterTypeKind::Need { item } => format!("Need<{}>", type_kind_label(item)),
         AdapterTypeKind::Nominal { nominal } => {
             let mut label = nominal
                 .path()

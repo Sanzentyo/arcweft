@@ -25,7 +25,8 @@ impl TypeKind {
                 | (Self::Seq(left), Self::Seq(right))
                 | (Self::Option(left), Self::Option(right))
                 | (Self::ThreadHandle(left), Self::ThreadHandle(right))
-                | (Self::Shared(left), Self::Shared(right)) => left.stable_ordering(right),
+                | (Self::Shared(left), Self::Shared(right))
+                | (Self::Need(left), Self::Need(right)) => left.stable_ordering(right),
                 (
                     Self::IteratorState {
                         family: left_family,
@@ -81,18 +82,6 @@ impl TypeKind {
                     .cmp(right_kind)
                     .then_with(|| left_lifetime.cmp(right_lifetime))
                     .then_with(|| left_inner.stable_ordering(right_inner)),
-                (
-                    Self::Need {
-                        ready: left_ready,
-                        error: left_error,
-                    },
-                    Self::Need {
-                        ready: right_ready,
-                        error: right_error,
-                    },
-                ) => left_ready
-                    .stable_ordering(right_ready)
-                    .then_with(|| left_error.stable_ordering(right_error)),
                 (
                     Self::Stream {
                         item: left_item,
@@ -377,7 +366,7 @@ const fn type_kind_tag(kind: &TypeKind) -> u8 {
         TypeKind::Seq(_) => 50,
         TypeKind::Map { .. } => 51,
         TypeKind::BorrowRef { .. } => 52,
-        TypeKind::Need { .. } => 53,
+        TypeKind::Need(_) => 53,
         TypeKind::Stream { .. } => 54,
         TypeKind::Result { .. } => 56,
         TypeKind::Option(_) => 57,
@@ -403,5 +392,6 @@ const fn type_kind_tag(kind: &TypeKind) -> u8 {
         TypeKind::Never => 77,
         TypeKind::AgentBuiltin(_) => 78,
         TypeKind::ViewValue => 79,
+        TypeKind::Progress => 80,
     }
 }

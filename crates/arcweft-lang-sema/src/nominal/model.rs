@@ -467,13 +467,13 @@ impl BuiltinTypeConstructor {
             | Self::Probe
             | Self::ThreadHandle
             | Self::Shared
+            | Self::Need
             | Self::Ref => 1,
             Self::Array
             | Self::OrderedMap
             | Self::SortedMap
             | Self::BTreeMap
             | Self::Result
-            | Self::Need
             | Self::Stream => 2,
         }
     }

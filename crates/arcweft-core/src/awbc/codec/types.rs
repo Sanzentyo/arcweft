@@ -272,6 +272,7 @@ impl Wire for AwbcRuntimeType {
                 writer.write_u8(27);
                 agent.write_wire(writer)?;
             }
+            Self::Progress => writer.write_u8(28),
         }
         Ok(())
     }
@@ -327,6 +328,7 @@ impl Wire for AwbcRuntimeType {
             25 => Self::Bytes,
             26 => Self::Never,
             27 => Self::Agent(RuntimeAgentOperationalType::read_wire(reader)?),
+            28 => Self::Progress,
             tag => {
                 return Err(AwbcCodecError::UnknownTag {
                     kind: "runtime type",

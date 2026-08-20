@@ -1204,7 +1204,7 @@ impl DomainMethodId {
         }
         if matches!(
             receiver,
-            TypeKind::Need { .. } | TypeKind::Option(_) | TypeKind::Result { .. }
+            TypeKind::Need(_) | TypeKind::Option(_) | TypeKind::Result { .. }
         ) {
             match name {
                 "context" => return Some(Self::Context),

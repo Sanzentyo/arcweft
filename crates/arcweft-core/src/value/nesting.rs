@@ -89,6 +89,7 @@ fn validate_value(
         | RuntimeValue::String(_)
         | RuntimeValue::Char(_)
         | RuntimeValue::Duration(_)
+        | RuntimeValue::Progress(_)
         | RuntimeValue::Range(_)
         | RuntimeValue::Iterator(RuntimeIterator::Range(_))
         | RuntimeValue::EntityRef(_)

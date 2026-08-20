@@ -232,13 +232,11 @@ fn ready_direct_need_materializes_result_and_returns_in_the_same_step() {
 }
 
 #[test]
-fn errored_direct_need_materializes_result_err_without_trapping() {
+fn ready_result_error_payload_is_resumed_without_trapping() {
     let expected = RuntimeValue::result_err(RuntimeValue::String("profile-error".to_owned()));
     let (mut executor, input) = direct_need_executor_and_input(vec![runtime_need_state(
         0,
-        Need::Err(RuntimePayload(RuntimeValue::String(
-            "profile-error".to_owned(),
-        ))),
+        Need::Ready(RuntimePayload(expected.clone())),
     )]);
 
     let result = executor.step(input, direct_need_step_options());
@@ -289,11 +287,11 @@ fn cancelled_direct_need_unwinds_to_a_terminal_fiber() {
 
 #[test]
 fn direct_need_uses_the_first_terminal_sequence() {
-    let expected = RuntimeValue::result_ok(RuntimeValue::String("first".to_owned()));
+    let expected = RuntimeValue::String("first".to_owned());
     let states = vec![
         runtime_need_state(
             2,
-            Need::Err(RuntimePayload(RuntimeValue::String("late".to_owned()))),
+            Need::Ready(RuntimePayload(RuntimeValue::String("late".to_owned()))),
         ),
         runtime_need_state(0, Need::NotStarted),
         runtime_need_state(
@@ -797,10 +795,7 @@ fn direct_need_step_options() -> RuntimeStepOptions {
     }
 }
 
-fn runtime_need_state(
-    sequence: u64,
-    state: Need<RuntimePayload, RuntimePayload>,
-) -> RuntimeNeedState {
+fn runtime_need_state(sequence: u64, state: Need<RuntimePayload>) -> RuntimeNeedState {
     RuntimeNeedState::new(
         LogicalEpoch(7),
         NeedId("need.profile".to_owned()),

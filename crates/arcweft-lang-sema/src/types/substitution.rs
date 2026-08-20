@@ -77,6 +77,7 @@ fn contains_generic_parameter_where(
         | TypeKind::Vec(inner)
         | TypeKind::Slice(inner)
         | TypeKind::Seq(inner)
+        | TypeKind::Need(inner)
         | TypeKind::Option(inner)
         | TypeKind::ThreadHandle(inner)
         | TypeKind::Shared(inner)
@@ -92,11 +93,7 @@ fn contains_generic_parameter_where(
             contains_generic_parameter_where(key, predicate)
                 || contains_generic_parameter_where(value, predicate)
         }
-        TypeKind::Need {
-            ready: left,
-            error: right,
-        }
-        | TypeKind::Result {
+        TypeKind::Result {
             ok: left,
             error: right,
         } => {
@@ -161,6 +158,7 @@ fn atomic_contains_generic_parameter(
         | TypeKind::Bytes
         | TypeKind::TextCluster
         | TypeKind::Duration
+        | TypeKind::Progress
         | TypeKind::DisplayText
         | TypeKind::DebugStatePath
         | TypeKind::ObservationFieldPath
@@ -210,7 +208,7 @@ fn atomic_contains_generic_parameter(
         | TypeKind::Array { .. }
         | TypeKind::Ref(_)
         | TypeKind::Map { .. }
-        | TypeKind::Need { .. }
+        | TypeKind::Need(_)
         | TypeKind::Result { .. }
         | TypeKind::Stream { .. }
         | TypeKind::Function { .. }
@@ -271,10 +269,9 @@ impl TypeKind {
                 family: *family,
                 item: Box::new(item.substitute_type_parameters(substitutions)),
             },
-            Self::Need { ready, error } => Self::Need {
-                ready: Box::new(ready.substitute_type_parameters(substitutions)),
-                error: Box::new(error.substitute_type_parameters(substitutions)),
-            },
+            Self::Need(value) => {
+                Self::Need(Box::new(value.substitute_type_parameters(substitutions)))
+            }
             Self::Stream { item, error } => Self::Stream {
                 item: Box::new(item.substitute_type_parameters(substitutions)),
                 error: Box::new(error.substitute_type_parameters(substitutions)),
@@ -502,12 +499,11 @@ fn observe_composite_type_parameters(
     bindings: &mut BTreeMap<GenericTypeParameterId, TypeKind>,
 ) -> Option<bool> {
     let observed = match (declared, actual) {
+        (TypeKind::Need(declared), TypeKind::Need(actual)) => {
+            observe_type_parameters(declared, actual, bindings)
+        }
         (
-            TypeKind::Need {
-                ready: declared_first,
-                error: declared_second,
-            }
-            | TypeKind::Stream {
+            TypeKind::Stream {
                 item: declared_first,
                 error: declared_second,
             }
@@ -515,11 +511,7 @@ fn observe_composite_type_parameters(
                 ok: declared_first,
                 error: declared_second,
             },
-            TypeKind::Need {
-                ready: actual_first,
-                error: actual_second,
-            }
-            | TypeKind::Stream {
+            TypeKind::Stream {
                 item: actual_first,
                 error: actual_second,
             }
@@ -576,7 +568,7 @@ fn observe_composite_type_parameters(
             observe_type_parameters(declared_subject, actual_subject, bindings)
         }
         (
-            TypeKind::Need { .. }
+            TypeKind::Need(_)
             | TypeKind::Stream { .. }
             | TypeKind::Result { .. }
             | TypeKind::Map { .. }

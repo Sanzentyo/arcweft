@@ -154,9 +154,6 @@ impl HirTryExpr {
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub enum HirAwaitBranchKind {
     Pending,
-    Ready,
-    Error,
-    Denied,
     Recovered,
 }
 
@@ -178,22 +175,19 @@ impl HirAwaitBranch {
     ) -> Result<Self, HirThreadStmtInvariantError> {
         let invalid_shape = match kind {
             HirAwaitBranchKind::Recovered => pattern.is_some() || !locals.is_empty(),
-            HirAwaitBranchKind::Pending
-            | HirAwaitBranchKind::Ready
-            | HirAwaitBranchKind::Error
-            | HirAwaitBranchKind::Denied => pattern.is_none(),
+            HirAwaitBranchKind::Pending => pattern.is_none(),
         };
         if invalid_shape {
             return Err(HirThreadStmtInvariantError::InvalidAwaitBranchShape);
         }
         body.validate_module(body.scope().module())?;
-        if let Some(pattern) = pattern {
-            if pattern.module() != body.scope().module() {
-                return Err(HirThreadStmtInvariantError::ForeignChild {
-                    expected: body.scope().module(),
-                    actual: pattern.module(),
-                });
-            }
+        if let Some(pattern) = pattern
+            && pattern.module() != body.scope().module()
+        {
+            return Err(HirThreadStmtInvariantError::ForeignChild {
+                expected: body.scope().module(),
+                actual: pattern.module(),
+            });
         }
         if locals
             .iter()
@@ -246,13 +240,13 @@ impl HirAwaitBranch {
         expected: HirModuleId,
     ) -> Result<(), HirThreadStmtInvariantError> {
         self.body.validate_module(expected)?;
-        if let Some(pattern) = self.pattern {
-            if pattern.module() != expected {
-                return Err(HirThreadStmtInvariantError::ForeignChild {
-                    expected,
-                    actual: pattern.module(),
-                });
-            }
+        if let Some(pattern) = self.pattern
+            && pattern.module() != expected
+        {
+            return Err(HirThreadStmtInvariantError::ForeignChild {
+                expected,
+                actual: pattern.module(),
+            });
         }
         for local in &self.locals {
             if local.module() != expected {

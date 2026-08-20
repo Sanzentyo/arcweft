@@ -686,6 +686,25 @@ impl RuntimePlanBuilder {
                 }
                 Ok(RuntimeFieldProjection::EntityReference(*field))
             }
+            RuntimeFieldProjectionSeed::Progress(field) => {
+                self.require_projection("Progress field target", target_ty, |projection| {
+                    matches!(projection, RuntimePlanTypeProjection::Progress)
+                })?;
+                let result_matches = match (field, self.projection(result_ty)?) {
+                    (crate::value::RuntimeProgressField::Ratio, RuntimePlanTypeProjection::F32) => {
+                        true
+                    }
+                    (
+                        crate::value::RuntimeProgressField::Label,
+                        RuntimePlanTypeProjection::Option(item),
+                    ) => self.is_string(*item)?,
+                    _ => false,
+                };
+                if !result_matches {
+                    return invalid_projection("Progress field result", result_ty);
+                }
+                Ok(RuntimeFieldProjection::Progress(*field))
+            }
         }
     }
 
@@ -3323,6 +3342,7 @@ impl RuntimePlanBuilder {
             RuntimePlanTypeProjection::Char => matches!(value, RuntimeValue::Char(_)),
             RuntimePlanTypeProjection::Bytes => bytes_value_matches(value),
             RuntimePlanTypeProjection::Duration => matches!(value, RuntimeValue::Duration(_)),
+            RuntimePlanTypeProjection::Progress => matches!(value, RuntimeValue::Progress(_)),
             RuntimePlanTypeProjection::EntityReference => {
                 matches!(value, RuntimeValue::EntityRef(_))
             }
@@ -3369,7 +3389,7 @@ impl RuntimePlanBuilder {
             },
             RuntimePlanTypeProjection::Never
             | RuntimePlanTypeProjection::Map { .. }
-            | RuntimePlanTypeProjection::Need { .. }
+            | RuntimePlanTypeProjection::Need(_)
             | RuntimePlanTypeProjection::Stream { .. }
             | RuntimePlanTypeProjection::ThreadHandle(_)
             | RuntimePlanTypeProjection::Shared(_)

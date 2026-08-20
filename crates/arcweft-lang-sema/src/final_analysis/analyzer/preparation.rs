@@ -366,33 +366,68 @@ impl Analyzer<'_, '_, '_> {
                 }
             }
             for (_, expression) in module.expressions() {
-                if let HirExprKind::Closure(closure) = expression.kind() {
-                    for parameter in closure.parameters() {
-                        let Some(ty) = parameter.ty() else { continue };
-                        let semantic = self.types.get(&ty).cloned().ok_or(
-                            FinalSemanticAnalysisError::TypeResolutionFailed { owner: ty },
-                        )?;
-                        let mut locals = BTreeMap::new();
-                        let mut patterns = BTreeMap::new();
-                        seed_pattern_locals(
-                            PatternSeedContext {
-                                module,
-                                types: &self.types,
-                                symbols: self.symbols,
-                                environment: self.catalogs.world.environment().typecheck_env(),
-                            },
-                            parameter.pattern(),
-                            &semantic,
-                            &mut locals,
-                            &mut patterns,
-                        )?;
-                        for (owner, ty) in locals {
-                            self.facts.set_local_type(owner, ty);
-                        }
-                        for (owner, ty) in patterns {
-                            self.facts.set_pattern_type(owner, ty);
+                match expression.kind() {
+                    HirExprKind::Closure(closure) => {
+                        for parameter in closure.parameters() {
+                            let Some(ty) = parameter.ty() else { continue };
+                            let semantic = self.types.get(&ty).cloned().ok_or(
+                                FinalSemanticAnalysisError::TypeResolutionFailed { owner: ty },
+                            )?;
+                            let mut locals = BTreeMap::new();
+                            let mut patterns = BTreeMap::new();
+                            seed_pattern_locals(
+                                PatternSeedContext {
+                                    module,
+                                    types: &self.types,
+                                    symbols: self.symbols,
+                                    environment: self.catalogs.world.environment().typecheck_env(),
+                                },
+                                parameter.pattern(),
+                                &semantic,
+                                &mut locals,
+                                &mut patterns,
+                            )?;
+                            for (owner, ty) in locals {
+                                self.facts.set_local_type(owner, ty);
+                            }
+                            for (owner, ty) in patterns {
+                                self.facts.set_pattern_type(owner, ty);
+                            }
                         }
                     }
+                    HirExprKind::Await(awaited) => {
+                        for observer in awaited.branches() {
+                            if observer.kind()
+                                != arcweft_lang_hir::expr::HirAwaitBranchKind::Pending
+                            {
+                                continue;
+                            }
+                            let Some(pattern) = observer.pattern() else {
+                                continue;
+                            };
+                            let mut locals = BTreeMap::new();
+                            let mut patterns = BTreeMap::new();
+                            seed_pattern_locals(
+                                PatternSeedContext {
+                                    module,
+                                    types: &self.types,
+                                    symbols: self.symbols,
+                                    environment: self.catalogs.world.environment().typecheck_env(),
+                                },
+                                pattern,
+                                &TypeKind::Progress,
+                                &mut locals,
+                                &mut patterns,
+                            )?;
+                            for (owner, ty) in locals {
+                                self.facts.set_local_type(owner, ty);
+                            }
+                            for (owner, ty) in patterns {
+                                self.facts.set_pattern_type(owner, ty);
+                            }
+                        }
+                    }
+                    _ => {}
                 }
             }
         }

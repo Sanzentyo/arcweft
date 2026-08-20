@@ -254,6 +254,14 @@ fn validate_config_strings(value: &RuntimeValue) -> Result<(), CharacterDialogue
                 maximum,
             })
         }
+        RuntimeValue::Progress(value)
+            if value.label().is_some_and(|label| label.len() > maximum) =>
+        {
+            Err(CharacterDialogueValueError::Limit {
+                limit: "config_string_bytes",
+                maximum,
+            })
+        }
         RuntimeValue::Tuple(values) => validate_config_string_values(values),
         RuntimeValue::Seq(sequence) => {
             let values = sequence.clone().into_values();
@@ -307,6 +315,7 @@ fn validate_config_strings(value: &RuntimeValue) -> Result<(), CharacterDialogue
         | RuntimeValue::String(_)
         | RuntimeValue::Char(_)
         | RuntimeValue::Duration(_)
+        | RuntimeValue::Progress(_)
         | RuntimeValue::Range(_)
         | RuntimeValue::Iterator(_)
         | RuntimeValue::Function(_)
@@ -410,6 +419,7 @@ fn count_structured_leaves(
         | RuntimeValue::MatrixF64(_)
         | RuntimeValue::TensorF32(_)
         | RuntimeValue::TensorF64(_)
+        | RuntimeValue::Progress(_)
         | RuntimeValue::Range(_) => {
             return Err(CharacterDialogueValueError::Field {
                 field: "structured_value",

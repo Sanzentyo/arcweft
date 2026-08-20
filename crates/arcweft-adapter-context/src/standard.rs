@@ -211,6 +211,11 @@ fn with_inference_host_calls(manifest: AdapterManifest) -> AdapterManifest {
 }
 
 /// Host system information manifest.
+///
+/// # Panics
+///
+/// Panics only if Arcweft's fixed standard IDs or declaration inventory violate
+/// their own checked constructors.
 pub fn system_info_manifest() -> AdapterManifest {
     let effect = AdapterEffectCapability::new("system.read");
     let system_error = environment_nominal_path(SYSTEM_INFO_ADAPTER_ID, ["system", "SystemError"]);
@@ -233,10 +238,7 @@ pub fn system_info_manifest() -> AdapterManifest {
                 "system.core_count",
                 signature(
                     [],
-                    AdapterTypeKind::Need {
-                        ready: Box::new(AdapterTypeKind::String),
-                        error: Box::new(system_error.clone()),
-                    },
+                    fallible_need(AdapterTypeKind::String, system_error.clone()),
                 ),
                 [effect.clone()],
             )
@@ -247,10 +249,7 @@ pub fn system_info_manifest() -> AdapterManifest {
                 "system.thread_count",
                 signature(
                     [],
-                    AdapterTypeKind::Need {
-                        ready: Box::new(AdapterTypeKind::String),
-                        error: Box::new(system_error.clone()),
-                    },
+                    fallible_need(AdapterTypeKind::String, system_error.clone()),
                 ),
                 [effect.clone()],
             )
@@ -261,10 +260,7 @@ pub fn system_info_manifest() -> AdapterManifest {
                 "system.available_parallelism",
                 signature(
                     [],
-                    AdapterTypeKind::Need {
-                        ready: Box::new(AdapterTypeKind::String),
-                        error: Box::new(system_error.clone()),
-                    },
+                    fallible_need(AdapterTypeKind::String, system_error.clone()),
                 ),
                 [effect],
             )
@@ -273,6 +269,11 @@ pub fn system_info_manifest() -> AdapterManifest {
 }
 
 /// Native file manifest.
+///
+/// # Panics
+///
+/// Panics only if Arcweft's fixed standard IDs or declaration inventory violate
+/// their own checked constructors.
 pub fn native_file_manifest() -> AdapterManifest {
     let read = AdapterEffectCapability::new("fs.read");
     let write = AdapterEffectCapability::new("fs.write");
@@ -298,10 +299,7 @@ pub fn native_file_manifest() -> AdapterManifest {
                 "fs.read_text",
                 signature(
                     [("path", virtual_path.clone())],
-                    AdapterTypeKind::Need {
-                        ready: Box::new(AdapterTypeKind::String),
-                        error: Box::new(fs_error.clone()),
-                    },
+                    fallible_need(AdapterTypeKind::String, fs_error.clone()),
                 ),
                 [read.clone()],
             )
@@ -312,12 +310,12 @@ pub fn native_file_manifest() -> AdapterManifest {
                 "fs.read_bytes",
                 signature(
                     [("path", virtual_path.clone())],
-                    AdapterTypeKind::Need {
-                        ready: Box::new(AdapterTypeKind::Vec {
+                    fallible_need(
+                        AdapterTypeKind::Vec {
                             item: Box::new(AdapterTypeKind::U8),
-                        }),
-                        error: Box::new(fs_error.clone()),
-                    },
+                        },
+                        fs_error.clone(),
+                    ),
                 ),
                 [read],
             )
@@ -331,10 +329,7 @@ pub fn native_file_manifest() -> AdapterManifest {
                         ("path", virtual_path.clone()),
                         ("body", AdapterTypeKind::String),
                     ],
-                    AdapterTypeKind::Need {
-                        ready: Box::new(AdapterTypeKind::Unit),
-                        error: Box::new(fs_error.clone()),
-                    },
+                    fallible_need(AdapterTypeKind::Unit, fs_error.clone()),
                 ),
                 [write.clone()],
             )
@@ -353,10 +348,7 @@ pub fn native_file_manifest() -> AdapterManifest {
                             },
                         ),
                     ],
-                    AdapterTypeKind::Need {
-                        ready: Box::new(AdapterTypeKind::Unit),
-                        error: Box::new(fs_error.clone()),
-                    },
+                    fallible_need(AdapterTypeKind::Unit, fs_error.clone()),
                 ),
                 [write],
             )
@@ -446,6 +438,15 @@ fn standard_nominal<const N: usize>(segments: [&str; N]) -> AdapterTypeKind {
             [],
         )
         .expect("standard nominal references are valid"),
+    }
+}
+
+fn fallible_need(ok: AdapterTypeKind, error: AdapterTypeKind) -> AdapterTypeKind {
+    AdapterTypeKind::Need {
+        item: Box::new(AdapterTypeKind::Result {
+            ok: Box::new(ok),
+            error: Box::new(error),
+        }),
     }
 }
 
@@ -597,10 +598,13 @@ mod tests {
             .iter()
             .find(|call| call.id() == "system.core_count")
             .expect("system core-count host call");
-        let AdapterTypeKind::Need { ready, error } = core_count.signature().return_type() else {
+        let AdapterTypeKind::Need { item } = core_count.signature().return_type() else {
             panic!("system core-count must return its typed Need contract");
         };
-        assert_eq!(ready.as_ref(), &AdapterTypeKind::String);
+        let AdapterTypeKind::Result { ok, error } = item.as_ref() else {
+            panic!("fallible system call must publish Result inside Need");
+        };
+        assert_eq!(ok.as_ref(), &AdapterTypeKind::String);
         assert_eq!(core_count.domain_error(), Some(error.as_ref()));
         assert!(file.host_calls().iter().any(|call| {
             call.id() == "fs.write_text"

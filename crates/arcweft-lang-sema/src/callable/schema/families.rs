@@ -628,7 +628,7 @@ fn collection_with_item(receiver: &TypeKind, item: TypeKind) -> TypeKind {
 
 fn context_result(receiver: &TypeKind) -> TypeKind {
     match receiver {
-        TypeKind::Need { .. } => receiver.clone(),
+        TypeKind::Need(_) => receiver.clone(),
         TypeKind::Option(inner) => TypeKind::Result {
             ok: inner.clone(),
             error: Box::new(named("ArcError")),

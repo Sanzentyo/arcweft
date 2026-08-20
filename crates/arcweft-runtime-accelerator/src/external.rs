@@ -327,6 +327,7 @@ fn runtime_value_to_data_value(value: &RuntimeValue) -> Result<Value, RuntimeEva
                 payload: payload.map(Box::new),
             }),
         RuntimeValue::Duration(_)
+        | RuntimeValue::Progress(_)
         | RuntimeValue::NominalRecord(_)
         | RuntimeValue::Opaque(_)
         | RuntimeValue::Agent(_)
@@ -1131,6 +1132,7 @@ fn runtime_value_label_for_data(value: &RuntimeValue) -> String {
             ..
         } => format!("variant/{owner:?}/#{ordinal}/{name}"),
         RuntimeValue::Duration(_)
+        | RuntimeValue::Progress(_)
         | RuntimeValue::EntityRef(_)
         | RuntimeValue::Opaque(_)
         | RuntimeValue::Reduction(_)

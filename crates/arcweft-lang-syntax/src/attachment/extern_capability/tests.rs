@@ -72,7 +72,7 @@ fn capability_attachment_preserves_interleaved_members_groups_defaults_and_effec
         "    /// Request payload\n",
         "    #[opaque]\n",
         "    pub type Request<T> = Result<T, HostError>\n",
-        "    pub fn send<T>(request: T = fallback())(retry: u32) -> Need<T, HostError>\n",
+        "    pub fn send<T>(request: T = fallback())(retry: u32) -> Need<Result<T, HostError>>\n",
         "        effects { net.connect, net.send, }\n",
         "    type Response\n",
         "}\n",

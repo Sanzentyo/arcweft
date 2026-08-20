@@ -235,6 +235,7 @@ fn verify_runtime_types(program: &AwbcProgram) -> Result<(), AwbcVerifyError> {
             | AwbcRuntimeType::String
             | AwbcRuntimeType::Char
             | AwbcRuntimeType::Duration
+            | AwbcRuntimeType::Progress
             | AwbcRuntimeType::EntityRef
             | AwbcRuntimeType::MatrixF32
             | AwbcRuntimeType::MatrixF64

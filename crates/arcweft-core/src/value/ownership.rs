@@ -69,6 +69,7 @@ impl RuntimeValue {
             | Self::String(_)
             | Self::Char(_)
             | Self::Duration(_)
+            | Self::Progress(_)
             | Self::Range(_)
             | Self::EntityRef(_) => RuntimeValueOwnership::Unrestricted,
             Self::Iterator(iterator) => iterator_ownership(iterator),

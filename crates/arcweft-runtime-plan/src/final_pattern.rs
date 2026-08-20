@@ -78,12 +78,34 @@ impl<'hir> FinalPatternLowerer<'hir> {
                 ) {
                     (HirVariantPatternPayload::Absent, None) => None,
                     (HirVariantPatternPayload::Pattern(payload), Some(expected)) => {
-                        if self.facts.pattern_type(*payload) != Some(expected) {
-                            return Err(format!(
-                                "variant payload pattern {payload:?} does not match its selected normalized payload type"
-                            ));
-                        }
-                        Some(Box::new(self.lower(*payload)?))
+                        let lowered = if self.facts.pattern_type(*payload) == Some(expected) {
+                            self.lower(*payload)?
+                        } else {
+                            let payload_pattern = self.module.resolve_pattern(*payload).map_err(
+                                |error| {
+                                    format!(
+                                        "cannot resolve variant payload pattern {payload:?}: {error}"
+                                    )
+                                },
+                            )?;
+                            let HirPatternKind::Tuple { elements } = payload_pattern.kind() else {
+                                return Err(format!(
+                                    "variant payload pattern {payload:?} does not match its selected normalized payload type"
+                                ));
+                            };
+                            let [element] = elements.as_ref() else {
+                                return Err(format!(
+                                    "variant payload pattern {payload:?} does not match its selected normalized payload type"
+                                ));
+                            };
+                            if self.facts.pattern_type(*element) != Some(expected) {
+                                return Err(format!(
+                                    "variant payload pattern {payload:?} does not match its selected normalized payload type"
+                                ));
+                            }
+                            self.lower(*element)?
+                        };
+                        Some(Box::new(lowered))
                     }
                     (HirVariantPatternPayload::Recovered { .. }, _) => {
                         return Err(format!("variant pattern {id:?} has a recovered payload"));

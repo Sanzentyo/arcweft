@@ -243,7 +243,9 @@ impl<'a, 'b, 'plan> AwbcExprLowerer<'a, 'b, 'plan> {
             }
             RuntimeExprKind::Field { target, field } => {
                 let target = self.lower(target);
-                let dst = self.frame.temp(self.inventory.dynamic_ty());
+                let dst = self
+                    .frame
+                    .temp(plan_type(self.inventory, self.plan, expr.ty()));
                 let field = self.inventory.intern_string(&field.label());
                 self.inventory
                     .push_instruction(AwbcInstruction::ProjectField { dst, target, field });

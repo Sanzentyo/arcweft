@@ -416,8 +416,10 @@ fn unit_enum_type<const N: usize>(
 
 fn need_string_desktop_error() -> AdapterTypeKind {
     AdapterTypeKind::Need {
-        ready: Box::new(AdapterTypeKind::String),
-        error: Box::new(desktop_environment_nominal(DESKTOP_ERROR_TYPE)),
+        item: Box::new(AdapterTypeKind::Result {
+            ok: Box::new(AdapterTypeKind::String),
+            error: Box::new(desktop_environment_nominal(DESKTOP_ERROR_TYPE)),
+        }),
     }
 }
 
@@ -531,8 +533,10 @@ mod tests {
         assert_eq!(
             set_bounds.signature().return_type(),
             &AdapterTypeKind::Need {
-                ready: Box::new(AdapterTypeKind::String),
-                error: Box::new(desktop_environment_nominal(DESKTOP_ERROR_TYPE)),
+                item: Box::new(AdapterTypeKind::Result {
+                    ok: Box::new(AdapterTypeKind::String),
+                    error: Box::new(desktop_environment_nominal(DESKTOP_ERROR_TYPE)),
+                }),
             }
         );
 

@@ -50,9 +50,9 @@ use super::{
     CheckedBinding, CheckedBuiltinVariantCase, CheckedCharacterDialogueTarget, CheckedExpression,
     CheckedExpressionResolution, CheckedFunctionExecution, CheckedItem, CheckedItemRole,
     CheckedIteration, CheckedIteratorFamily, CheckedPatchOperation, CheckedPattern,
-    CheckedPatternResolution, CheckedStatement, CheckedStatementRole, CheckedSuspensionRole,
-    CheckedSuspensionStatement, CheckedTryBoundary, CheckedTryCarrier, CheckedTypeSelection,
-    CheckedValueResolution, CheckedVariantOwner, FinalSemanticAnalysis,
+    CheckedPatternResolution, CheckedSelectResolution, CheckedStatement, CheckedStatementRole,
+    CheckedSuspensionRole, CheckedSuspensionStatement, CheckedTryBoundary, CheckedTryCarrier,
+    CheckedTypeSelection, CheckedValueResolution, CheckedVariantOwner, FinalSemanticAnalysis,
     FinalSemanticAnalysisControl, FinalSemanticAnalysisError, FinalSemanticAnalysisInput,
     FinalSemanticCatalogs, PhysicalArgumentEvaluationKind, RegisteredSemanticValueId,
     ResolvedCallable, analyze_final_project,
@@ -1559,7 +1559,7 @@ fn multi_module_report_is_complete_generation_bound_and_exactly_accounted() {
 fn ordinary_function_roles_walk_nested_final_hir_and_publish_suspend_effects() {
     let fixture = fixture(
         r"
-fn nested(need: Need<i64, String>) -> Result<i64, String> {
+fn nested(need: Need<Result<i64, String>>) -> Result<i64, String> {
     if true {
         await need
     } else {
@@ -1600,7 +1600,7 @@ fn nested(need: Need<i64, String>) -> Result<i64, String> {
 fn prefix_try_unwraps_the_result_of_await_inside_a_matching_result_boundary() {
     let fixture = fixture(
         r"
-fn nested(need: Need<i64, String>) -> Result<i64, String> {
+fn nested(need: Need<Result<i64, String>>) -> Result<i64, String> {
     Ok(try await need)
 }
 ",
@@ -1625,6 +1625,44 @@ fn nested(need: Need<i64, String>) -> Result<i64, String> {
                     && matches!(tried.boundary(), CheckedTryBoundary::Callable(_))
         )
     }));
+}
+
+#[test]
+fn pending_observer_uses_the_standard_progress_field_owner() {
+    let fixture = fixture(
+        r"
+fn observe(need: Need<i64>) -> i64 {
+    await need with {
+        pending progress => {
+            let ratio = progress.ratio
+            let label = progress.label
+        }
+    }
+}
+",
+        None,
+    );
+    let report = analyze(&fixture).expect("Pending Progress field analysis");
+    let mut fields = report.expressions().filter_map(|(_, expression)| {
+        let CheckedExpressionResolution::Select(CheckedSelectResolution::ProgressField { field }) =
+            expression.resolution()
+        else {
+            return None;
+        };
+        Some((*field, expression.ty().clone()))
+    });
+    assert_eq!(
+        fields.next(),
+        Some((crate::types::ProgressField::Ratio, TypeKind::F32))
+    );
+    assert_eq!(
+        fields.next(),
+        Some((
+            crate::types::ProgressField::Label,
+            TypeKind::Option(Box::new(TypeKind::String)),
+        ))
+    );
+    assert_eq!(fields.next(), None);
 }
 
 #[test]
@@ -1761,7 +1799,7 @@ fn selected() -> Option<i64> {
     assert!(
         !report
             .expressions()
-            .any(|(_, expression)| { matches!(expression.ty(), TypeKind::Need { .. }) })
+            .any(|(_, expression)| matches!(expression.ty(), TypeKind::Need(_)))
     );
 }
 

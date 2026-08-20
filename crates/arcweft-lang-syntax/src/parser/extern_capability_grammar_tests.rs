@@ -67,7 +67,7 @@ fn capability_types_functions_effects_and_curried_parameters_are_typed_and_lossl
 pub extern capability fs {
     type FsError
 
-    fn read_text(path: VirtualPath) -> Need<String, FsError>
+    fn read_text(path: VirtualPath) -> Need<Result<String, FsError>>
         effects { fs.read, log.write }
 
     fn combine<T>(left: T)(right: T) -> T

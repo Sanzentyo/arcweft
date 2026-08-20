@@ -604,6 +604,33 @@ fn apply_instruction(
                     require_compatible(program, dst_ty, field_layout.ty, "field projection")?;
                 }
                 Some(AwbcRuntimeType::Dynamic) => {}
+                Some(AwbcRuntimeType::Progress) => {
+                    let label = program
+                        .strings
+                        .get(field.index())
+                        .map(String::as_str)
+                        .unwrap_or_default();
+                    let destination = program.runtime_types.get(dst_ty.index());
+                    let destination_matches = match label {
+                        "ratio" => matches!(destination, Some(AwbcRuntimeType::F32)),
+                        "label" => matches!(
+                            destination,
+                            Some(AwbcRuntimeType::Variant {
+                                owner: crate::awbc::schema::AwbcVariantIdentity::Option,
+                                cases,
+                            }) if cases.first().and_then(|case| case.payload).is_some_and(|item| {
+                                matches!(
+                                    program.runtime_types.get(item.index()),
+                                    Some(AwbcRuntimeType::String)
+                                )
+                            })
+                        ),
+                        _ => false,
+                    };
+                    if !destination_matches {
+                        return invalid_type(&at, "Progress field projection destination");
+                    }
+                }
                 Some(AwbcRuntimeType::Agent(agent)) => {
                     let label = program
                         .strings

@@ -1,6 +1,6 @@
 extern capability fs {
     type FsError
-    fn write_text(path: VirtualPath, body: String) -> Need<Unit, FsError> effects { fs.write }
+    fn write_text(path: VirtualPath, body: String) -> Need<Result<Unit, FsError>> effects { fs.write }
 }
 extern capability path {
     fn save(path: String) -> VirtualPath
@@ -9,8 +9,9 @@ entry cli @entry.main {
     goto @flow.main
 }
 flow main() -> String effects { fs.write(save) } {
-    try await fs.write_text(path.save("profile.json"), "{}") with {
-        error e => return "failed"
+    let status = match (await fs.write_text(path.save("profile.json"), "{}")) {
+        .Ok(_) => "ok"
+        .Err(_) => "failed"
     }
-    return "ok"
+    return status
 }

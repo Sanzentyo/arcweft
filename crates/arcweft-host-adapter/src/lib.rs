@@ -465,6 +465,7 @@ fn runtime_value_kind(value: &RuntimeValue) -> &'static str {
         RuntimeValue::String(_) => "String",
         RuntimeValue::Char(_) => "Char",
         RuntimeValue::Duration(_) => "Duration",
+        RuntimeValue::Progress(_) => "Progress",
         RuntimeValue::Range(_) => "Range",
         RuntimeValue::EntityRef(_) => "Ref",
         RuntimeValue::Tuple(_) => "Tuple",

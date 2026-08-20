@@ -117,14 +117,7 @@ impl AwbcProductStepExecutor {
         };
         match state.state() {
             Need::NotStarted | Need::Pending(_) => false,
-            Need::Ready(value) => {
-                let result = RuntimeValue::result_ok(value.value().clone());
-                self.resume_await_value(binding, resume, &result, output)
-            }
-            Need::Err(error) => {
-                let result = RuntimeValue::result_err(error.value().clone());
-                self.resume_await_value(binding, resume, &result, output)
-            }
+            Need::Ready(value) => self.resume_await_value(binding, resume, value.value(), output),
             Need::Cancelled => {
                 let cancellation = cancel_fiber(&mut self.fiber);
                 self.consume_observations(cancellation.observations, output);

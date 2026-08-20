@@ -27,18 +27,19 @@ pub struct LogicalEpoch(pub u64);
 )]
 pub struct TaskSequence(pub u64);
 
-/// One producer-owned, in-memory state publication for a typed `Need<T, E>`.
+/// One producer-owned, in-memory state publication for a typed `Need<T>`.
 ///
 /// This boundary deliberately does not add a `RuntimeValue` or AWBC wire
 /// surrogate. The handle carried by a verified `NeedHandle` register names the
 /// `NeedId`; the producer publishes the typed success/error payload here for
-/// the current deterministic runtime step.
+/// the current deterministic runtime step. Fallible producers publish a
+/// `Result<T, E>` as this single payload.
 #[derive(Clone, Debug, PartialEq)]
 pub struct RuntimeNeedState {
     logical_epoch: LogicalEpoch,
     need: NeedId,
     sequence: TaskSequence,
-    state: Need<RuntimePayload, RuntimePayload>,
+    state: Need<RuntimePayload>,
 }
 
 /// The typed terminal outcomes a host task may publish.
@@ -46,7 +47,8 @@ pub struct RuntimeNeedState {
 /// `Ready` and `Error` are both completed task outcomes.  `Failed` is reserved
 /// for an infrastructure failure which cannot be represented by the task's
 /// authored error type and therefore cannot be resumed through the normal
-/// `Need<T, E>` boundary.
+/// `Need<T>` boundary. Authored domain errors are encoded in the admitted
+/// payload type, while `Failed` remains an infrastructure fault.
 #[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
 pub struct TaskOutcomeContract {
     pub ready: RuntimeCheckedType,
@@ -74,7 +76,7 @@ impl RuntimeNeedState {
         logical_epoch: LogicalEpoch,
         need: NeedId,
         sequence: TaskSequence,
-        state: Need<RuntimePayload, RuntimePayload>,
+        state: Need<RuntimePayload>,
     ) -> Self {
         Self {
             logical_epoch,
@@ -96,7 +98,7 @@ impl RuntimeNeedState {
         self.sequence
     }
 
-    pub const fn state(&self) -> &Need<RuntimePayload, RuntimePayload> {
+    pub const fn state(&self) -> &Need<RuntimePayload> {
         &self.state
     }
 }
@@ -652,8 +654,8 @@ pub fn compare_runtime_need_states(
 /// Selects the current state for one Need from a normalized publication list.
 ///
 /// Progress and `NotStarted` publications may advance until the first terminal
-/// publication. Once Ready, Error, or Cancelled is committed, later publications
-/// for the same identity cannot replace it.
+/// publication. Once Ready or Cancelled is committed, later publications for
+/// the same identity cannot replace it.
 pub fn resolved_runtime_need_state<'a>(
     states: &'a [RuntimeNeedState],
     need: &NeedId,

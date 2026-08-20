@@ -190,6 +190,7 @@ pub(super) fn runtime_scalar_text(value: &RuntimeValue) -> Option<String> {
         RuntimeValue::Char(value) => Some(value.to_string()),
         RuntimeValue::Duration(value) => Some(format_duration(value.as_nanos())),
         RuntimeValue::Unit
+        | RuntimeValue::Progress(_)
         | RuntimeValue::F32(_)
         | RuntimeValue::F64(_)
         | RuntimeValue::MatrixF32(_)
@@ -423,6 +424,7 @@ fn runtime_type_name(value: &RuntimeValue) -> &'static str {
         RuntimeValue::String(_) => "string",
         RuntimeValue::Char(_) => "char",
         RuntimeValue::Duration(_) => "duration",
+        RuntimeValue::Progress(_) => "progress",
         RuntimeValue::Range(_) => "range",
         RuntimeValue::Iterator(_) => "iterator",
         RuntimeValue::EntityRef(_) => "entity_ref",

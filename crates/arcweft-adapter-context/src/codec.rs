@@ -209,7 +209,7 @@ enum AdapterTypeKindFile {
     Option { item: Box<Self> },
     Result { ok: Box<Self>, error: Box<Self> },
     Tuple { items: Vec<Self> },
-    Need { ready: Box<Self>, error: Box<Self> },
+    Need { item: Box<Self> },
     Nominal { nominal: AdapterNominalTypeRefFile },
 }
 
@@ -865,9 +865,8 @@ impl TypeConversionBudget {
                     .map(|item| self.convert(item, environment_owner, child_depth))
                     .collect::<Result<Box<[_]>, _>>()?,
             },
-            AdapterTypeKindFile::Need { ready, error } => AdapterTypeKind::Need {
-                ready: Box::new(self.convert(*ready, environment_owner, child_depth)?),
-                error: Box::new(self.convert(*error, environment_owner, child_depth)?),
+            AdapterTypeKindFile::Need { item } => AdapterTypeKind::Need {
+                item: Box::new(self.convert(*item, environment_owner, child_depth)?),
             },
             AdapterTypeKindFile::Nominal { nominal } => {
                 let owner = match nominal.owner {

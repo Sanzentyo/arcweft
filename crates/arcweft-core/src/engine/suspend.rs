@@ -987,6 +987,9 @@ fn runtime_value_to_string(value: &RuntimeValue) -> String {
         RuntimeValue::F64(value) => value.to_string(),
         RuntimeValue::Bool(value) => value.to_string(),
         RuntimeValue::Duration(value) => format!("{}ns", value.as_nanos()),
+        RuntimeValue::Progress(value) => value
+            .label()
+            .map_or_else(|| value.ratio().to_string(), str::to_owned),
         RuntimeValue::Unit
         | RuntimeValue::Range(_)
         | RuntimeValue::Iterator(_)

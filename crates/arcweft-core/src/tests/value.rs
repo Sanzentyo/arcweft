@@ -1,10 +1,10 @@
 use crate::{
     entry::{RuntimeNominalTypeId, TypeLayoutHash},
-    pattern::{RuntimeSemanticTypeId, RuntimeVariantIdentity},
+    pattern::{RuntimeCheckedType, RuntimeSemanticTypeId, RuntimeVariantIdentity},
     runtime_id::RuntimeLocalDeclarationId,
     time::LogicalDuration,
     value::{
-        DenseSeqKind, MAX_RUNTIME_VALUE_NESTING_DEPTH, RuntimeBinaryOp, RuntimeEnv,
+        DenseSeqKind, MAX_RUNTIME_VALUE_NESTING_DEPTH, Progress, RuntimeBinaryOp, RuntimeEnv,
         RuntimeIntrinsic, RuntimeIterator, RuntimeLocalBinding, RuntimeNominalRecordValue,
         RuntimeRange, RuntimeSeq, RuntimeUnaryOp, RuntimeValue, RuntimeValueNestingError,
         evaluate_core_iter_collect_intrinsic, evaluate_index_intrinsic,
@@ -73,6 +73,48 @@ fn canonical_float_encoding_normalizes_negative_zero_and_rejects_non_finite() {
         RuntimeValue::F64(f64::INFINITY)
             .try_canonical_bytes(32)
             .is_err()
+    );
+}
+
+#[test]
+fn progress_is_typed_saveable_and_canonically_encoded() {
+    let progress = Progress::new(-0.0)
+        .expect("negative zero progress is valid")
+        .with_label("Loading");
+    let value = RuntimeValue::Progress(progress.clone());
+
+    assert_eq!(value.shape(), crate::value::RuntimeValueShape::Progress);
+    assert!(RuntimeCheckedType::Progress.accepts_value(&value));
+    assert_ne!(
+        value.try_canonical_bytes(128).expect("labeled progress"),
+        RuntimeValue::Progress(Progress::new(0.0).expect("zero progress"))
+            .try_canonical_bytes(128)
+            .expect("unlabeled progress")
+    );
+    assert_eq!(
+        value
+            .try_canonical_bytes(128)
+            .expect("negative zero progress"),
+        RuntimeValue::Progress(
+            Progress::new(0.0)
+                .expect("positive zero progress")
+                .with_label("Loading"),
+        )
+        .try_canonical_bytes(128)
+        .expect("positive zero progress")
+    );
+
+    let snapshot = crate::value::AwbcRuntimeValueSnapshot::from_runtime_value(&value)
+        .expect("progress snapshot");
+    assert_eq!(
+        snapshot.into_runtime_value().expect("restore progress"),
+        value
+    );
+    let encoded = serde_json::to_vec(&value).expect("serialize progress runtime value");
+    assert_eq!(
+        serde_json::from_slice::<RuntimeValue>(&encoded)
+            .expect("deserialize progress runtime value"),
+        value
     );
 }
 

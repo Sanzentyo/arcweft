@@ -185,6 +185,7 @@ fn is_agent_value_type(ty: &TypeKind) -> bool {
         | TypeKind::Char
         | TypeKind::Bytes
         | TypeKind::Duration
+        | TypeKind::Progress
         | TypeKind::DisplayText
         | TypeKind::ActionName
         | TypeKind::AgentValue

@@ -14,7 +14,7 @@ use arcweft_lang_hir::{
     expr::{
         HirAssociatedSeparator, HirAwaitBranchKind, HirBinaryOp, HirBorrowKind, HirCallArgument,
         HirCallCallee, HirCallExpr, HirCallValue, HirComputationBlockKind, HirExpr, HirExprKind,
-        HirRecordField, HirRecoveredName, HirSelectedMember, HirThreadFlowItem, HirUnaryOp,
+        HirRecordField, HirRecoveredName, HirSelectedMember, HirUnaryOp,
     },
     identity::{ExprId, HirModuleId, ItemId, LocalId, PatternId, ScopeId, StmtId, TypeId},
     item::{
@@ -40,7 +40,7 @@ use arcweft_lang_hir::{
         HirItemSourceRole, HirPatternSourceRole, HirScopeSourceRole, HirSourcePresence,
         HirSourceQuery, HirSourceSite, HirTypeSourceRole,
     },
-    stmt::{HirAssertionMode, HirContextualStmtBody, HirStmtKind},
+    stmt::{HirAssertionMode, HirStmtKind},
     symbol::{
         CallableDeclarationKey, CallableDeclarationOwner, ProjectSymbolTable, ProjectTypeTarget,
         ProjectValueLookup, ResolvedProjectSymbol,
@@ -91,8 +91,8 @@ use crate::{
 use super::{
     CandidateEvaluationPass, CandidateExpectedType, CharacterDialogueFieldCoordinate,
     CharacterDialoguePatchContext, CheckedAssertionDisposition, CheckedAssignment,
-    CheckedAssignmentPlace, CheckedAwait, CheckedAwaitBranch, CheckedAwaitBranchContinuation,
-    CheckedBinding, CheckedBindingRole, CheckedBuiltinVariantCase, CheckedCharacterDialogueFactory,
+    CheckedAssignmentPlace, CheckedAwait, CheckedAwaitPendingObserver, CheckedBinding,
+    CheckedBindingRole, CheckedBuiltinVariantCase, CheckedCharacterDialogueFactory,
     CheckedCharacterDialoguePatch, CheckedCharacterDialoguePatchField,
     CheckedCharacterDialogueReconfigure, CheckedCharacterDialogueTarget, CheckedEntryReference,
     CheckedEvaluatedEffect, CheckedExpression, CheckedExpressionResolution,

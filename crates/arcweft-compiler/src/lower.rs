@@ -78,14 +78,13 @@ use arcweft_lang_sema::{
     },
     effects::EffectId,
     final_analysis::{
-        CheckedAssertionDisposition, CheckedAssignment, CheckedAwaitBranchContinuation,
-        CheckedCharacterDialogueTarget, CheckedEvaluatedEffect, CheckedExpressionResolution,
-        CheckedItemRole, CheckedIteration, CheckedIteratorFamily, CheckedPatternResolution,
-        CheckedProjectItemOwner, CheckedProjectNominal, CheckedSelectResolution,
-        CheckedStatementRole, CheckedTraitConformance, CheckedTraitIdentity, CheckedTry,
-        CheckedTryBoundary, CheckedTryCarrier, CheckedValueResolution, CheckedVariantOwner,
-        CheckedVariantResolution, FinalSemanticAnalysis, FinalSemanticAnalysisError,
-        NominalSchemaProjectionError,
+        CheckedAssertionDisposition, CheckedAssignment, CheckedCharacterDialogueTarget,
+        CheckedEvaluatedEffect, CheckedExpressionResolution, CheckedItemRole, CheckedIteration,
+        CheckedIteratorFamily, CheckedPatternResolution, CheckedProjectItemOwner,
+        CheckedProjectNominal, CheckedSelectResolution, CheckedStatementRole,
+        CheckedTraitConformance, CheckedTraitIdentity, CheckedTry, CheckedTryBoundary,
+        CheckedTryCarrier, CheckedValueResolution, CheckedVariantOwner, CheckedVariantResolution,
+        FinalSemanticAnalysis, FinalSemanticAnalysisError, NominalSchemaProjectionError,
     },
     types::{AgentBuiltinType, ArrayLength, TypeKind},
 };
@@ -94,10 +93,10 @@ use arcweft_runtime_plan::{
     agent::RuntimeAgentIntrinsic,
     assertion_identity::RuntimeAssertionMode,
     semantic_facts::{
-        RuntimeAgentTypeShape, RuntimeAssertionAdmission, RuntimeAssignmentFact,
-        RuntimeAwaitBranchContinuation, RuntimeAwaitBranchFact, RuntimeAwaitFact,
-        RuntimeCallResultShape, RuntimeCheckedCapture, RuntimeCheckedTypeProjectionError,
-        RuntimeDialogueApplication, RuntimeDialogueEffectExpression, RuntimeDialogueEffectTrigger,
+        RuntimeAgentTypeShape, RuntimeAssertionAdmission, RuntimeAssignmentFact, RuntimeAwaitFact,
+        RuntimeAwaitPendingObserverFact, RuntimeCallResultShape, RuntimeCheckedCapture,
+        RuntimeCheckedTypeProjectionError, RuntimeDialogueApplication,
+        RuntimeDialogueEffectExpression, RuntimeDialogueEffectTrigger,
         RuntimeDialogueValueExpression, RuntimeEffectFieldFact, RuntimeEvaluatedEffect,
         RuntimeEvaluatedEffectFact, RuntimeImplicitCallableFact, RuntimeIteratorFact,
         RuntimeIteratorWitnessExecutableFact, RuntimeIteratorWitnessFact, RuntimeLogLevel,
@@ -441,29 +440,13 @@ pub fn project_runtime_semantic_facts(
                     owner,
                     RuntimeAwaitFact::new(
                         awaited.operand(),
-                        runtime_type(awaited.ready(), symbols, analysis)?,
-                        runtime_type(awaited.error(), symbols, analysis)?,
-                        runtime_type(awaited.physical_result(), symbols, analysis)?,
-                        runtime_type(awaited.continuation_result(), symbols, analysis)?,
                         awaited
-                            .branches()
+                            .observers()
                             .iter()
-                            .map(|branch| {
-                                Ok(RuntimeAwaitBranchFact::new(
-                                    branch.kind(),
-                                    branch.pattern(),
-                                    runtime_type(branch.payload(), symbols, analysis)?,
-                                    match branch.continuation() {
-                                        CheckedAwaitBranchContinuation::FallsThrough => {
-                                            RuntimeAwaitBranchContinuation::FallsThrough
-                                        }
-                                        CheckedAwaitBranchContinuation::Terminates => {
-                                            RuntimeAwaitBranchContinuation::Terminates
-                                        }
-                                    },
-                                ))
+                            .map(|observer| {
+                                RuntimeAwaitPendingObserverFact::new(observer.pattern())
                             })
-                            .collect::<Result<Vec<_>, RuntimeSemanticProjectionError>>()?,
+                            .collect::<Vec<_>>(),
                     ),
                 );
             }
@@ -569,8 +552,8 @@ pub fn project_runtime_semantic_facts(
                     runtime_iteration(owner, iteration, &method_declarations, symbols, analysis)?,
                 );
             }
-            CheckedStatementRole::Suspension(_) => {}
-            CheckedStatementRole::Ordinary
+            CheckedStatementRole::Suspension(_)
+            | CheckedStatementRole::Ordinary
             | CheckedStatementRole::Yield
             | CheckedStatementRole::UnsafeAudit => {}
         }
@@ -1411,6 +1394,7 @@ fn runtime_type_at(
         TypeKind::Char => RuntimeTypeShape::Char,
         TypeKind::Bytes => RuntimeTypeShape::Bytes,
         TypeKind::Duration => RuntimeTypeShape::Duration,
+        TypeKind::Progress => RuntimeTypeShape::Progress,
         TypeKind::Ref(_) => RuntimeTypeShape::EntityReference,
         TypeKind::DebugStatePath => RuntimeTypeShape::Agent(RuntimeAgentTypeShape::DebugStatePath),
         TypeKind::ObservationFieldPath => {
@@ -1477,10 +1461,7 @@ fn runtime_type_at(
             value: nested(value)?,
         },
         TypeKind::BorrowRef { inner, .. } => RuntimeTypeShape::Reference(nested(inner)?),
-        TypeKind::Need { ready, error } => RuntimeTypeShape::Need {
-            ready: nested(ready)?,
-            error: nested(error)?,
-        },
+        TypeKind::Need(item) => RuntimeTypeShape::Need(nested(item)?),
         TypeKind::Stream { item, error } => RuntimeTypeShape::Stream {
             item: nested(item)?,
             error: nested(error)?,
@@ -1852,6 +1833,16 @@ fn runtime_select(
         CheckedSelectResolution::AgentField { field } => {
             RuntimeResolvedSelect::AgentField { field: *field }
         }
+        CheckedSelectResolution::ProgressField { field } => RuntimeResolvedSelect::ProgressField {
+            field: match field {
+                arcweft_lang_sema::types::ProgressField::Ratio => {
+                    arcweft_core::value::RuntimeProgressField::Ratio
+                }
+                arcweft_lang_sema::types::ProgressField::Label => {
+                    arcweft_core::value::RuntimeProgressField::Label
+                }
+            },
+        },
         CheckedSelectResolution::Field {
             nominal,
             ordinal,

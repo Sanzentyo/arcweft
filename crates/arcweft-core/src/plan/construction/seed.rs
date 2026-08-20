@@ -1389,6 +1389,7 @@ pub enum RuntimeFieldProjectionSeed {
     },
     Agent(RuntimeAgentField),
     EntityReference(RuntimeEntityReferenceField),
+    Progress(crate::value::RuntimeProgressField),
 }
 
 /// One recursively typed expression submitted to the aggregate builder.

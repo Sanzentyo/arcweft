@@ -489,7 +489,8 @@ fn hash_adapter_type(hasher: &mut blake3::Hasher, ty: &AdapterTypeKind) {
     match ty {
         AdapterTypeKind::Vec { item }
         | AdapterTypeKind::Seq { item }
-        | AdapterTypeKind::Option { item } => hash_adapter_type(hasher, item),
+        | AdapterTypeKind::Option { item }
+        | AdapterTypeKind::Need { item } => hash_adapter_type(hasher, item),
         AdapterTypeKind::Result { ok, error } => {
             hash_adapter_type(hasher, ok);
             hash_adapter_type(hasher, error);
@@ -499,10 +500,6 @@ fn hash_adapter_type(hasher: &mut blake3::Hasher, ty: &AdapterTypeKind) {
             items
                 .iter()
                 .for_each(|item| hash_adapter_type(hasher, item));
-        }
-        AdapterTypeKind::Need { ready, error } => {
-            hash_adapter_type(hasher, ready);
-            hash_adapter_type(hasher, error);
         }
         AdapterTypeKind::Nominal { nominal } => {
             match nominal.owner() {

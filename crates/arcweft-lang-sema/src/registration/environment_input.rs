@@ -120,8 +120,7 @@ pub enum EnvironmentTypeSiteStep {
     ResultOk,
     ResultError,
     TupleItem(u16),
-    NeedReady,
-    NeedError,
+    NeedItem,
     NominalArgument(u16),
 }
 
@@ -168,10 +167,7 @@ pub enum EnvironmentTypeProjectionKind {
         error: Box<EnvironmentTypeProjectionNode>,
     },
     Tuple(Box<[EnvironmentTypeProjectionNode]>),
-    Need {
-        ready: Box<EnvironmentTypeProjectionNode>,
-        error: Box<EnvironmentTypeProjectionNode>,
-    },
+    Need(Box<EnvironmentTypeProjectionNode>),
     CharacterNominal(crate::types::CharacterNominalType),
     AcceptedNominal {
         id: AcceptedNominalId,
@@ -937,7 +933,8 @@ fn append_type_spans<'a>(root: &'a EnvironmentTypeProjectionNode, spans: &mut Ve
         match node.kind() {
             EnvironmentTypeProjectionKind::Vec(item)
             | EnvironmentTypeProjectionKind::Seq(item)
-            | EnvironmentTypeProjectionKind::Option(item) => pending.push(item),
+            | EnvironmentTypeProjectionKind::Option(item)
+            | EnvironmentTypeProjectionKind::Need(item) => pending.push(item),
             EnvironmentTypeProjectionKind::Result { ok, error } => {
                 pending.push(error);
                 pending.push(ok);
@@ -946,10 +943,6 @@ fn append_type_spans<'a>(root: &'a EnvironmentTypeProjectionNode, spans: &mut Ve
             | EnvironmentTypeProjectionKind::AcceptedNominal {
                 arguments: items, ..
             } => pending.extend(items.iter().rev()),
-            EnvironmentTypeProjectionKind::Need { ready, error } => {
-                pending.push(error);
-                pending.push(ready);
-            }
             EnvironmentTypeProjectionKind::Unit
             | EnvironmentTypeProjectionKind::Bool
             | EnvironmentTypeProjectionKind::I8

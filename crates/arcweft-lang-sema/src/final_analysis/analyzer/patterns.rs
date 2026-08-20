@@ -722,7 +722,7 @@ fn resolve_variant_pattern(
         TypeKind::Option(item) => {
             validate_builtin_variant_head(pattern.head(), BuiltinTypeConstructor::Option, owner)?;
             let (ordinal, payload) = match name.as_str() {
-                "Some" => (0, Some((**item).clone())),
+                "Some" => (0, Some(TypeKind::Tuple(vec![(**item).clone()]))),
                 "None" => (1, None),
                 _ => {
                     return Err(FinalSemanticAnalysisError::PatternTypeUnavailable { owner });
@@ -739,8 +739,8 @@ fn resolve_variant_pattern(
         TypeKind::Result { ok, error } => {
             validate_builtin_variant_head(pattern.head(), BuiltinTypeConstructor::Result, owner)?;
             let (ordinal, payload) = match name.as_str() {
-                "Ok" => (0, Some((**ok).clone())),
-                "Err" => (1, Some((**error).clone())),
+                "Ok" => (0, Some(TypeKind::Tuple(vec![(**ok).clone()]))),
+                "Err" => (1, Some(TypeKind::Tuple(vec![(**error).clone()]))),
                 _ => {
                     return Err(FinalSemanticAnalysisError::PatternTypeUnavailable { owner });
                 }
@@ -842,11 +842,8 @@ fn resolve_closed_variant_pattern(
         .ok_or(FinalSemanticAnalysisError::PatternTypeUnavailable { owner })?;
     let payload = match selected.payload() {
         EnumVariantPayload::Unit => None,
-        EnumVariantPayload::Tuple(items) => match items.as_slice() {
-            [] => None,
-            [item] => Some(item.clone()),
-            items => Some(TypeKind::Tuple(items.to_vec())),
-        },
+        EnumVariantPayload::Tuple(items) if items.is_empty() => None,
+        EnumVariantPayload::Tuple(items) => Some(TypeKind::Tuple(items.clone())),
         EnumVariantPayload::Record(_) => {
             return Err(FinalSemanticAnalysisError::PatternTypeUnavailable { owner });
         }

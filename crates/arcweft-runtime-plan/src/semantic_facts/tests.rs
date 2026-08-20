@@ -1254,10 +1254,7 @@ fn every_direct_operational_shape_selects_its_closed_plan_family() {
             RuntimeOperationalType::Map,
         ),
         (
-            RuntimeTypeShape::Need {
-                ready: boxed_unit_type(),
-                error: boxed_unit_type(),
-            },
+            RuntimeTypeShape::Need(boxed_unit_type()),
             RuntimeUnsupportedTypeShape::Need,
             RuntimeOperationalType::Need,
         ),

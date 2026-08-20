@@ -682,24 +682,24 @@ impl TypeCheckEnv {
         [
             (
                 standard_callable_path(["load_bg"]),
-                TypeKind::Need {
-                    ready: Box::new(TypeKind::Named("ImageHandle".to_owned())),
+                TypeKind::Need(Box::new(TypeKind::Result {
+                    ok: Box::new(TypeKind::Named("ImageHandle".to_owned())),
                     error: Box::new(TypeKind::Named("ArcError".to_owned())),
-                },
+                })),
             ),
             (
                 standard_callable_path(["asset", "image"]),
-                TypeKind::Need {
-                    ready: Box::new(TypeKind::Named("ImageHandle".to_owned())),
+                TypeKind::Need(Box::new(TypeKind::Result {
+                    ok: Box::new(TypeKind::Named("ImageHandle".to_owned())),
                     error: Box::new(TypeKind::Named("AssetError".to_owned())),
-                },
+                })),
             ),
             (
                 standard_callable_path(["voice", "load"]),
-                TypeKind::Need {
-                    ready: Box::new(TypeKind::Named("VoiceHandle".to_owned())),
+                TypeKind::Need(Box::new(TypeKind::Result {
+                    ok: Box::new(TypeKind::Named("VoiceHandle".to_owned())),
                     error: Box::new(TypeKind::Named("VoiceError".to_owned())),
-                },
+                })),
             ),
             (standard_callable_path(["len"]), TypeKind::I64),
         ]
@@ -861,10 +861,10 @@ impl TypeCheckEnv {
         .with_standard_function_effects(
             ["content", "ensure"],
             FunctionSignature::new(
-                TypeKind::Need {
-                    ready: Box::new(TypeKind::Unit),
+                TypeKind::Need(Box::new(TypeKind::Result {
+                    ok: Box::new(TypeKind::Unit),
                     error: Box::new(TypeKind::Named("ContentLoadError".to_owned())),
-                },
+                })),
                 [FunctionParam::required("unit", content_ref.clone())],
             ),
             ["content.load"],
@@ -1303,10 +1303,7 @@ pub(super) fn normalize_type_kind(ty: TypeKind) -> TypeKind {
             lifetime,
             inner: Box::new(normalize_type_kind(*inner)),
         },
-        TypeKind::Need { ready, error } => TypeKind::Need {
-            ready: Box::new(normalize_type_kind(*ready)),
-            error: Box::new(normalize_type_kind(*error)),
-        },
+        TypeKind::Need(item) => TypeKind::Need(Box::new(normalize_type_kind(*item))),
         TypeKind::Stream { item, error } => TypeKind::Stream {
             item: Box::new(normalize_type_kind(*item)),
             error: Box::new(normalize_type_kind(*error)),

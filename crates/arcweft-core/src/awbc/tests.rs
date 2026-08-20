@@ -937,6 +937,10 @@ fn canonical_codec_round_trips_choice_and_nominal_runtime_types() {
     program
         .runtime_types
         .push(AwbcRuntimeType::Choice(vec![string_type, nominal_type]));
+    let progress_type = AwbcTypeId(
+        u32::try_from(program.runtime_types.len()).expect("test type table fits AWBC index"),
+    );
+    program.runtime_types.push(AwbcRuntimeType::Progress);
 
     let encoded = program
         .encode_canonical()
@@ -961,6 +965,12 @@ fn canonical_codec_round_trips_choice_and_nominal_runtime_types() {
     decoded
         .verify(AwbcVerifyBudget::default(), AwbcVerifyContext::default())
         .expect("verify typed runtime type table");
+    assert_eq!(
+        decoded
+            .checked_type(progress_type)
+            .expect("project Progress type"),
+        RuntimeCheckedType::Progress
+    );
 
     assert_eq!(decoded, program);
 }

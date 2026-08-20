@@ -137,6 +137,7 @@ pub enum RuntimeTypeShape {
     Char,
     Bytes,
     Duration,
+    Progress,
     EntityReference,
     Range(Box<RuntimeNormalizedType>),
     Iterator(Box<RuntimeNormalizedType>),
@@ -152,10 +153,7 @@ pub enum RuntimeTypeShape {
         key: Box<RuntimeNormalizedType>,
         value: Box<RuntimeNormalizedType>,
     },
-    Need {
-        ready: Box<RuntimeNormalizedType>,
-        error: Box<RuntimeNormalizedType>,
-    },
+    Need(Box<RuntimeNormalizedType>),
     Stream {
         item: Box<RuntimeNormalizedType>,
         error: Box<RuntimeNormalizedType>,
@@ -325,6 +323,7 @@ impl RuntimeNormalizedType {
             RuntimeTypeShape::Char => RuntimePlanTypeProjection::Char,
             RuntimeTypeShape::Bytes => RuntimePlanTypeProjection::Bytes,
             RuntimeTypeShape::Duration => RuntimePlanTypeProjection::Duration,
+            RuntimeTypeShape::Progress => RuntimePlanTypeProjection::Progress,
             RuntimeTypeShape::EntityReference => RuntimePlanTypeProjection::EntityReference,
             RuntimeTypeShape::Range(item) => RuntimePlanTypeProjection::Range(child(item)),
             RuntimeTypeShape::Iterator(item) => RuntimePlanTypeProjection::Iterator(child(item)),
@@ -341,10 +340,7 @@ impl RuntimeNormalizedType {
                 key: child(key),
                 value: child(value),
             },
-            RuntimeTypeShape::Need { ready, error } => RuntimePlanTypeProjection::Need {
-                ready: child(ready),
-                error: child(error),
-            },
+            RuntimeTypeShape::Need(item) => RuntimePlanTypeProjection::Need(child(item)),
             RuntimeTypeShape::Stream { item, error } => RuntimePlanTypeProjection::Stream {
                 item: child(item),
                 error: child(error),
@@ -425,12 +421,9 @@ impl RuntimeNormalizedType {
             | RuntimeTypeShape::Reference(item)
             | RuntimeTypeShape::Sequence { item, .. }
             | RuntimeTypeShape::Array { item, .. }
+            | RuntimeTypeShape::Need(item)
             | RuntimeTypeShape::Agent(RuntimeAgentTypeShape::Probe(item)) => vec![item],
             RuntimeTypeShape::Map { key, value }
-            | RuntimeTypeShape::Need {
-                ready: key,
-                error: value,
-            }
             | RuntimeTypeShape::Stream {
                 item: key,
                 error: value,
@@ -458,6 +451,7 @@ impl RuntimeNormalizedType {
             | RuntimeTypeShape::Char
             | RuntimeTypeShape::Bytes
             | RuntimeTypeShape::Duration
+            | RuntimeTypeShape::Progress
             | RuntimeTypeShape::EntityReference
             | RuntimeTypeShape::Agent(_) => Vec::new(),
         }
@@ -542,11 +536,12 @@ impl RuntimeNormalizedType {
             | RuntimeTypeShape::Char
             | RuntimeTypeShape::Bytes
             | RuntimeTypeShape::Duration
+            | RuntimeTypeShape::Progress
             | RuntimeTypeShape::EntityReference
             | RuntimeTypeShape::Range(_)
             | RuntimeTypeShape::Iterator(_)
             | RuntimeTypeShape::Map { .. }
-            | RuntimeTypeShape::Need { .. }
+            | RuntimeTypeShape::Need(_)
             | RuntimeTypeShape::Stream { .. }
             | RuntimeTypeShape::ThreadHandle(_)
             | RuntimeTypeShape::Shared(_)
@@ -573,6 +568,7 @@ impl RuntimeNormalizedType {
             RuntimeTypeShape::Char => Some(RuntimeCheckedType::Char),
             RuntimeTypeShape::Bytes => Some(RuntimeCheckedType::Bytes),
             RuntimeTypeShape::Duration => Some(RuntimeCheckedType::Duration),
+            RuntimeTypeShape::Progress => Some(RuntimeCheckedType::Progress),
             RuntimeTypeShape::EntityReference => Some(RuntimeCheckedType::EntityReference),
             _ => None,
         }
@@ -600,7 +596,7 @@ fn unsupported_runtime_shape(shape: &RuntimeTypeShape) -> Option<RuntimeUnsuppor
         RuntimeTypeShape::Range(_) => Some(RuntimeUnsupportedTypeShape::Range),
         RuntimeTypeShape::Iterator(_) => Some(RuntimeUnsupportedTypeShape::Iterator),
         RuntimeTypeShape::Map { .. } => Some(RuntimeUnsupportedTypeShape::Map),
-        RuntimeTypeShape::Need { .. } => Some(RuntimeUnsupportedTypeShape::Need),
+        RuntimeTypeShape::Need(_) => Some(RuntimeUnsupportedTypeShape::Need),
         RuntimeTypeShape::Stream { .. } => Some(RuntimeUnsupportedTypeShape::Stream),
         RuntimeTypeShape::ThreadHandle(_) => Some(RuntimeUnsupportedTypeShape::ThreadHandle),
         RuntimeTypeShape::Shared(_) => Some(RuntimeUnsupportedTypeShape::Shared),
@@ -827,81 +823,37 @@ pub struct RuntimeAssignmentFact {
     value_type: RuntimeNormalizedType,
 }
 
-/// Whether an authored Await handler returns to the Result continuation.
-#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
-pub enum RuntimeAwaitBranchContinuation {
-    FallsThrough,
-    Terminates,
-}
-
-/// One source-ordered Await handler projected from checked semantics.
+/// One source-ordered Pending observer projected from checked semantics.
 #[derive(Clone, Debug, Eq, PartialEq)]
-pub struct RuntimeAwaitBranchFact {
-    kind: HirAwaitBranchKind,
+pub struct RuntimeAwaitPendingObserverFact {
     pattern: PatternId,
-    payload: RuntimeNormalizedType,
-    continuation: RuntimeAwaitBranchContinuation,
 }
 
-impl RuntimeAwaitBranchFact {
-    pub const fn new(
-        kind: HirAwaitBranchKind,
-        pattern: PatternId,
-        payload: RuntimeNormalizedType,
-        continuation: RuntimeAwaitBranchContinuation,
-    ) -> Self {
-        Self {
-            kind,
-            pattern,
-            payload,
-            continuation,
-        }
-    }
-
-    pub const fn kind(&self) -> HirAwaitBranchKind {
-        self.kind
+impl RuntimeAwaitPendingObserverFact {
+    pub const fn new(pattern: PatternId) -> Self {
+        Self { pattern }
     }
 
     pub const fn pattern(&self) -> PatternId {
         self.pattern
     }
-
-    pub const fn payload(&self) -> &RuntimeNormalizedType {
-        &self.payload
-    }
-
-    pub const fn continuation(&self) -> RuntimeAwaitBranchContinuation {
-        self.continuation
-    }
 }
 
-/// Checked physical and normal-continuation types for one Await expression.
+/// Checked temporal operand and its Pending observers for one Await expression.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct RuntimeAwaitFact {
     operand: ExprId,
-    ready: RuntimeNormalizedType,
-    error: RuntimeNormalizedType,
-    physical_result: RuntimeNormalizedType,
-    continuation_result: RuntimeNormalizedType,
-    branches: Box<[RuntimeAwaitBranchFact]>,
+    observers: Box<[RuntimeAwaitPendingObserverFact]>,
 }
 
 impl RuntimeAwaitFact {
     pub fn new(
         operand: ExprId,
-        ready: RuntimeNormalizedType,
-        error: RuntimeNormalizedType,
-        physical_result: RuntimeNormalizedType,
-        continuation_result: RuntimeNormalizedType,
-        branches: impl Into<Box<[RuntimeAwaitBranchFact]>>,
+        observers: impl Into<Box<[RuntimeAwaitPendingObserverFact]>>,
     ) -> Self {
         Self {
             operand,
-            ready,
-            error,
-            physical_result,
-            continuation_result,
-            branches: branches.into(),
+            observers: observers.into(),
         }
     }
 
@@ -909,24 +861,8 @@ impl RuntimeAwaitFact {
         self.operand
     }
 
-    pub const fn ready(&self) -> &RuntimeNormalizedType {
-        &self.ready
-    }
-
-    pub const fn error(&self) -> &RuntimeNormalizedType {
-        &self.error
-    }
-
-    pub const fn physical_result(&self) -> &RuntimeNormalizedType {
-        &self.physical_result
-    }
-
-    pub const fn continuation_result(&self) -> &RuntimeNormalizedType {
-        &self.continuation_result
-    }
-
-    pub fn branches(&self) -> &[RuntimeAwaitBranchFact] {
-        &self.branches
+    pub fn observers(&self) -> &[RuntimeAwaitPendingObserverFact] {
+        &self.observers
     }
 }
 
@@ -1559,6 +1495,9 @@ pub enum RuntimeResolvedSelect {
     },
     AgentField {
         field: RuntimeAgentField,
+    },
+    ProgressField {
+        field: arcweft_core::value::RuntimeProgressField,
     },
     TupleElement {
         ordinal: u32,
@@ -2900,8 +2839,7 @@ impl RuntimePlanSemanticFacts {
                 });
             };
             if awaited.operand() != fact.operand()
-                || expression_types.get(expression) != Some(fact.continuation_result())
-                || fact.branches().len() != awaited.branches().len()
+                || fact.observers().len() != awaited.branches().len()
             {
                 return Err(RuntimeSemanticFactsError::InvalidAwaitFact {
                     expression: *expression,
@@ -2912,27 +2850,25 @@ impl RuntimePlanSemanticFacts {
                     expression: *expression,
                 });
             };
-            let RuntimeTypeShape::Need { ready, error } = operand.shape() else {
+            let RuntimeTypeShape::Need(item) = operand.shape() else {
                 return Err(RuntimeSemanticFactsError::InvalidAwaitFact {
                     expression: *expression,
                 });
             };
-            if ready.as_ref() != fact.ready()
-                || error.as_ref() != fact.error()
-                || !matches!(
-                    fact.physical_result().shape(),
-                    RuntimeTypeShape::Result { value, error }
-                        if value.as_ref() == fact.ready() && error.as_ref() == fact.error()
-                )
-            {
+            if expression_types.get(expression) != Some(item.as_ref()) {
                 return Err(RuntimeSemanticFactsError::InvalidAwaitFact {
                     expression: *expression,
                 });
             }
-            for (authored, checked) in awaited.branches().iter().zip(fact.branches()) {
-                if authored.kind() != checked.kind()
+            for (authored, checked) in awaited.branches().iter().zip(fact.observers()) {
+                if authored.kind() != HirAwaitBranchKind::Pending
                     || authored.pattern() != Some(checked.pattern())
-                    || pattern_types.get(&checked.pattern()) != Some(checked.payload())
+                    || !matches!(
+                        pattern_types
+                            .get(&checked.pattern())
+                            .map(RuntimeNormalizedType::shape),
+                        Some(RuntimeTypeShape::Progress)
+                    )
                 {
                     return Err(RuntimeSemanticFactsError::InvalidAwaitFact {
                         expression: *expression,
@@ -3613,20 +3549,6 @@ impl RuntimePlanSemanticFacts {
         }
         for assignment in self.assignments.values() {
             roots.extend([assignment.field_type(), assignment.value_type()]);
-        }
-        for awaited in self.awaits.values() {
-            roots.extend([
-                awaited.ready(),
-                awaited.error(),
-                awaited.physical_result(),
-                awaited.continuation_result(),
-            ]);
-            roots.extend(
-                awaited
-                    .branches()
-                    .iter()
-                    .map(RuntimeAwaitBranchFact::payload),
-            );
         }
         for tried in self.tries.values() {
             roots.extend([
@@ -4458,6 +4380,7 @@ fn validate_select(
     match select {
         RuntimeResolvedSelect::Method { .. }
         | RuntimeResolvedSelect::AgentField { .. }
+        | RuntimeResolvedSelect::ProgressField { .. }
         | RuntimeResolvedSelect::TupleElement { .. } => Ok(()),
         RuntimeResolvedSelect::Field { nominal, .. }
         | RuntimeResolvedSelect::RecordElement { nominal, .. } => nominal
@@ -4593,15 +4516,12 @@ fn validate_normalized_type(
         | RuntimeTypeShape::Option(item)
         | RuntimeTypeShape::ThreadHandle(item)
         | RuntimeTypeShape::Shared(item)
-        | RuntimeTypeShape::Reference(item) => validate_normalized_type(modules, item),
+        | RuntimeTypeShape::Reference(item)
+        | RuntimeTypeShape::Need(item) => validate_normalized_type(modules, item),
         RuntimeTypeShape::Agent(RuntimeAgentTypeShape::Probe(value)) => {
             validate_normalized_type(modules, value)
         }
         RuntimeTypeShape::Map { key, value }
-        | RuntimeTypeShape::Need {
-            ready: key,
-            error: value,
-        }
         | RuntimeTypeShape::Stream {
             item: key,
             error: value,
@@ -4649,6 +4569,7 @@ fn validate_normalized_type(
         | RuntimeTypeShape::Char
         | RuntimeTypeShape::Bytes
         | RuntimeTypeShape::Duration
+        | RuntimeTypeShape::Progress
         | RuntimeTypeShape::EntityReference
         | RuntimeTypeShape::Agent(
             RuntimeAgentTypeShape::DebugStatePath

@@ -114,7 +114,7 @@ fn canonical_extern_capability_freezes_interleaved_members_and_callable_scope() 
             "    /// Request payload\n",
             "    #[opaque]\n",
             "    pub type Request<T: Format> = Result<T, HostError>\n",
-            "    pub fn send<T>(request: T = fallback())(retry: u32) -> Need<T, HostError>\n",
+            "    pub fn send<T>(request: T = fallback())(retry: u32) -> Need<Result<T, HostError>>\n",
             "        effects { net.connect, net.send, }\n",
             "    type Response\n",
             "}\n",

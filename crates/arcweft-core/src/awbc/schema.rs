@@ -443,6 +443,7 @@ fn visit_runtime_type_strings(
         | AwbcRuntimeType::String
         | AwbcRuntimeType::Char
         | AwbcRuntimeType::Duration
+        | AwbcRuntimeType::Progress
         | AwbcRuntimeType::EntityRef
         | AwbcRuntimeType::Tuple(_)
         | AwbcRuntimeType::Sequence(_)
@@ -614,6 +615,7 @@ pub enum AwbcRuntimeType {
     String,
     Char,
     Duration,
+    Progress,
     EntityRef,
     Tuple(Vec<AwbcTypeId>),
     Sequence(AwbcTypeId),

@@ -124,6 +124,7 @@ pub enum RuntimePlanTypeProjection<R> {
     Char,
     Bytes,
     Duration,
+    Progress,
     EntityReference,
     Range(R),
     Iterator(R),
@@ -139,10 +140,7 @@ pub enum RuntimePlanTypeProjection<R> {
         key: R,
         value: R,
     },
-    Need {
-        ready: R,
-        error: R,
-    },
+    Need(R),
     Stream {
         item: R,
         error: R,
@@ -220,14 +218,11 @@ impl<R> RuntimePlanTypeProjection<R> {
             | Self::ThreadHandle(child)
             | Self::Shared(child)
             | Self::Reference(child)
+            | Self::Need(child)
             | Self::Sequence { item: child, .. }
             | Self::Array { item: child, .. }
             | Self::Agent(RuntimeAgentTypeProjection::Probe(child)) => Box::new([child]),
             Self::Map { key, value }
-            | Self::Need {
-                ready: key,
-                error: value,
-            }
             | Self::Stream {
                 item: key,
                 error: value,
@@ -256,6 +251,7 @@ impl<R> RuntimePlanTypeProjection<R> {
             | Self::Char
             | Self::Bytes
             | Self::Duration
+            | Self::Progress
             | Self::EntityReference
             | Self::Agent(_) => Box::new([]),
         }
@@ -278,6 +274,7 @@ impl<R> RuntimePlanTypeProjection<R> {
             Self::Char => RuntimePlanTypeProjection::Char,
             Self::Bytes => RuntimePlanTypeProjection::Bytes,
             Self::Duration => RuntimePlanTypeProjection::Duration,
+            Self::Progress => RuntimePlanTypeProjection::Progress,
             Self::EntityReference => RuntimePlanTypeProjection::EntityReference,
             Self::Range(child) => RuntimePlanTypeProjection::Range(map(child)?),
             Self::Iterator(child) => RuntimePlanTypeProjection::Iterator(map(child)?),
@@ -293,10 +290,7 @@ impl<R> RuntimePlanTypeProjection<R> {
                 key: map(key)?,
                 value: map(value)?,
             },
-            Self::Need { ready, error } => RuntimePlanTypeProjection::Need {
-                ready: map(ready)?,
-                error: map(error)?,
-            },
+            Self::Need(item) => RuntimePlanTypeProjection::Need(map(item)?),
             Self::Stream { item, error } => RuntimePlanTypeProjection::Stream {
                 item: map(item)?,
                 error: map(error)?,
@@ -370,6 +364,7 @@ impl<R> RuntimePlanTypeProjection<R> {
             | Self::Char
             | Self::Bytes
             | Self::Duration
+            | Self::Progress
             | Self::EntityReference
             | Self::ProjectNominal { .. }
             | Self::Opaque { .. } => None,

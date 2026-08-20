@@ -8,10 +8,10 @@ fn formatter_preserves_canonical_capability_members_without_synthesizing_policy(
     let source = r"pub extern capability fs {
     pub type Path
 
-    pub fn read_text(path: Path) -> Need<String, FsError>
+    pub fn read_text(path: Path) -> Need<Result<String, FsError>>
         effects { fs.read }
 
-    pub fn write_text(path: Path)(text: String) -> Need<Unit, FsError>
+    pub fn write_text(path: Path)(text: String) -> Need<Result<Unit, FsError>>
         effects { fs.write }
 }
 ";

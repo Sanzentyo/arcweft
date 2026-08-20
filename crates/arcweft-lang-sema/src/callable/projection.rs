@@ -827,16 +827,9 @@ impl<'a> TypeProjector<'a> {
             EnvironmentTypeProjectionKind::Tuple(items) => {
                 self.project_tuple(items, next_depth).map(TypeKind::Tuple)
             }
-            EnvironmentTypeProjectionKind::Need { ready, error } => {
-                let (ready, error) = self.project_pair(
-                    ready,
-                    EnvironmentTypeSiteStep::NeedReady,
-                    error,
-                    EnvironmentTypeSiteStep::NeedError,
-                    next_depth,
-                )?;
-                Ok(TypeKind::Need { ready, error })
-            }
+            EnvironmentTypeProjectionKind::Need(item) => self
+                .boxed_child(item, EnvironmentTypeSiteStep::NeedItem, next_depth)
+                .map(TypeKind::Need),
             EnvironmentTypeProjectionKind::CharacterNominal(nominal) => {
                 Ok(TypeKind::CharacterNominal(nominal.clone()))
             }

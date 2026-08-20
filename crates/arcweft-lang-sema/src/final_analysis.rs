@@ -71,8 +71,8 @@ pub use error::{FinalSemanticAnalysisError, RecursiveCallableContractEdge, Seman
 pub(crate) use input::FinalSemanticAnalysisInput;
 pub use model::{
     CharacterDialogueFieldCoordinate, CheckedAssertionDisposition, CheckedAssignment,
-    CheckedAssignmentPlace, CheckedAwait, CheckedAwaitBranch, CheckedAwaitBranchContinuation,
-    CheckedBinding, CheckedBindingRole, CheckedBuiltinVariantCase, CheckedCharacterDialogueFactory,
+    CheckedAssignmentPlace, CheckedAwait, CheckedAwaitPendingObserver, CheckedBinding,
+    CheckedBindingRole, CheckedBuiltinVariantCase, CheckedCharacterDialogueFactory,
     CheckedCharacterDialoguePatch, CheckedCharacterDialoguePatchField,
     CheckedCharacterDialogueReconfigure, CheckedCharacterDialogueTarget, CheckedEffectField,
     CheckedEntryReference, CheckedEvaluatedEffect, CheckedExpression, CheckedExpressionResolution,

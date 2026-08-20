@@ -1884,6 +1884,7 @@ const fn value_kind(value: &RuntimeValue) -> &'static str {
         RuntimeValue::String(_) => "string",
         RuntimeValue::Char(_) => "char",
         RuntimeValue::Duration(_) => "duration",
+        RuntimeValue::Progress(_) => "progress",
         RuntimeValue::Range(_) => "range",
         RuntimeValue::Iterator(_) => "iterator",
         RuntimeValue::EntityRef(_) => "entity reference",

@@ -471,6 +471,9 @@ impl AwbcInventory {
             RuntimeValue::Reduction(_) => {
                 panic!("runtime reduction state cannot be encoded as an AWBC constant")
             }
+            RuntimeValue::Progress(_) => {
+                panic!("runtime Progress publications cannot be encoded as AWBC constants")
+            }
             RuntimeValue::Agent(value) => panic!(
                 "typed Agent runtime value `{}` must be produced by AWBC MakeAgent and cannot be encoded as a constant",
                 value.label()

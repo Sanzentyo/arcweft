@@ -214,10 +214,9 @@ impl Encoder {
                 self.option(lifetime.as_ref(), Self::lifetime);
                 self.ty(inner);
             }
-            TypeKind::Need { ready, error } => {
+            TypeKind::Need(value) => {
                 self.tag(54);
-                self.ty(ready);
-                self.ty(error);
+                self.ty(value);
             }
             TypeKind::Stream { item, error } => {
                 self.tag(55);
@@ -328,6 +327,7 @@ impl Encoder {
                 self.agent_builtin(*builtin);
             }
             TypeKind::ViewValue => self.tag(80),
+            TypeKind::Progress => self.tag(81),
         }
     }
 

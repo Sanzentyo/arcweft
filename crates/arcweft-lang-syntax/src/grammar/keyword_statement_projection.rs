@@ -36,9 +36,6 @@ impl PendingSelectBranchProjection {
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub enum SyntaxAwaitBranchKind {
     Pending,
-    Ready,
-    Error,
-    Denied,
 }
 
 /// Parser-selected semantic head of one `AwaitWith` branch.

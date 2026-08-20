@@ -88,13 +88,8 @@ pub enum AdapterTypeKind {
     },
     /// Tuple value.
     Tuple { items: Box<[AdapterTypeKind]> },
-    /// Incremental asynchronous value used by the existing await contract.
-    Need {
-        /// Ready payload.
-        ready: Box<AdapterTypeKind>,
-        /// Failure payload.
-        error: Box<AdapterTypeKind>,
-    },
+    /// One-shot temporal value. Fallible producers use a `Result` payload.
+    Need { item: Box<AdapterTypeKind> },
     /// Exact adapter or Rust-package nominal type.
     Nominal { nominal: AdapterNominalTypeRef },
 }

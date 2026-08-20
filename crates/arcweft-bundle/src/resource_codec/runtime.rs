@@ -76,6 +76,7 @@ pub enum RuntimeValueKind {
     Float,
     Text,
     Duration,
+    Progress,
     EntityRef,
     Tuple,
     Sequence,
@@ -954,6 +955,7 @@ impl RuntimeValueKind {
             Self::Nominal => 119,
             Self::Opaque => 120,
             Self::Agent => 121,
+            Self::Progress => 122,
         }
     }
 
@@ -980,6 +982,7 @@ impl RuntimeValueKind {
             119 => Some(Self::Nominal),
             120 => Some(Self::Opaque),
             121 => Some(Self::Agent),
+            122 => Some(Self::Progress),
             _ => None,
         }
     }
@@ -1116,6 +1119,7 @@ fn runtime_value_kind(ty: &AwbcRuntimeType) -> RuntimeValueKind {
         AwbcRuntimeType::F32 | AwbcRuntimeType::F64 => RuntimeValueKind::Float,
         AwbcRuntimeType::String | AwbcRuntimeType::Char => RuntimeValueKind::Text,
         AwbcRuntimeType::Duration => RuntimeValueKind::Duration,
+        AwbcRuntimeType::Progress => RuntimeValueKind::Progress,
         AwbcRuntimeType::EntityRef => RuntimeValueKind::EntityRef,
         AwbcRuntimeType::Tuple(_) => RuntimeValueKind::Tuple,
         AwbcRuntimeType::Sequence(_) | AwbcRuntimeType::Bytes => RuntimeValueKind::Sequence,

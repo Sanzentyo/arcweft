@@ -797,6 +797,7 @@ fn validate_expression_resolution(
         CheckedExpressionResolution::Select(select) => match select {
             CheckedSelectResolution::Method { .. }
             | CheckedSelectResolution::AgentField { .. }
+            | CheckedSelectResolution::ProgressField { .. }
             | CheckedSelectResolution::TupleElement { .. } => Ok(()),
             CheckedSelectResolution::Field { nominal, .. }
             | CheckedSelectResolution::RecordElement { nominal, .. } => nominal

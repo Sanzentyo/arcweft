@@ -393,6 +393,32 @@ impl AgentBuiltinType {
     }
 }
 
+/// Closed source-ordered field coordinates of the standard `Progress` value.
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub enum ProgressField {
+    Ratio,
+    Label,
+}
+
+impl ProgressField {
+    #[must_use]
+    pub fn from_name(name: &str) -> Option<Self> {
+        match name {
+            "ratio" => Some(Self::Ratio),
+            "label" => Some(Self::Label),
+            _ => None,
+        }
+    }
+
+    #[must_use]
+    pub fn ty(self) -> TypeKind {
+        match self {
+            Self::Ratio => TypeKind::F32,
+            Self::Label => TypeKind::Option(Box::new(TypeKind::String)),
+        }
+    }
+}
+
 /// Minimal semantic type used by parser/HIR contract tests.
 #[derive(Clone, Debug, Eq, Hash, PartialEq)]
 pub enum TypeKind {
@@ -416,6 +442,7 @@ pub enum TypeKind {
     Bytes,
     TextCluster,
     Duration,
+    Progress,
     Range(Box<TypeKind>),
     IteratorState {
         family: IteratorStateKind,
@@ -464,10 +491,7 @@ pub enum TypeKind {
         lifetime: Option<LifetimeScopeKind>,
         inner: Box<TypeKind>,
     },
-    Need {
-        ready: Box<TypeKind>,
-        error: Box<TypeKind>,
-    },
+    Need(Box<TypeKind>),
     Stream {
         item: Box<TypeKind>,
         error: Box<TypeKind>,
@@ -568,6 +592,15 @@ impl EntityType {
 }
 
 impl TypeKind {
+    /// Resolves a field only when this type is the standard Progress owner.
+    #[must_use]
+    pub fn progress_field(&self, name: &str) -> Option<(ProgressField, TypeKind)> {
+        if !matches!(self, Self::Progress) {
+            return None;
+        }
+        ProgressField::from_name(name).map(|field| (field, field.ty()))
+    }
+
     pub const ACTION_EVENT_TYPE_NAME: &'static str = "ActionEvent";
 
     /// Returns the canonical Arcweft surface spelling for this semantic type.
@@ -610,9 +643,7 @@ impl TypeKind {
                     inner.source_label()
                 )
             }
-            Self::Need { ready, error } => {
-                format!("Need<{}, {}>", ready.source_label(), error.source_label())
-            }
+            Self::Need(value) => format!("Need<{}>", value.source_label()),
             Self::Stream { item, error } => {
                 format!("Stream<{}, {}>", item.source_label(), error.source_label())
             }
@@ -693,6 +724,7 @@ impl TypeKind {
             Self::Bytes => "Bytes",
             Self::TextCluster => "TextCluster",
             Self::Duration => "Duration",
+            Self::Progress => "Progress",
             Self::DisplayText => "DisplayText",
             Self::DebugStatePath => "DebugStatePath",
             Self::ObservationFieldPath => "ObservationFieldPath",
@@ -928,6 +960,7 @@ impl TypeKind {
             "AgentValue" => Self::AgentValue,
             "TextCluster" => Self::TextCluster,
             "Duration" => Self::Duration,
+            "Progress" => Self::Progress,
             "DebugStatePath" => Self::DebugStatePath,
             "ObservationFieldPath" => Self::ObservationFieldPath,
             "Unit" => Self::Unit,

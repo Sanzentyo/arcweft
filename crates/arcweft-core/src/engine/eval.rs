@@ -626,6 +626,18 @@ impl Engine {
                         value: "Agent protocol record".to_owned(),
                     })
             }
+            (RuntimeFieldProjection::Progress(field), RuntimeValue::Progress(progress)) => {
+                Ok(match field {
+                    crate::value::RuntimeProgressField::Ratio => {
+                        RuntimeValue::F32(progress.ratio())
+                    }
+                    crate::value::RuntimeProgressField::Label => progress
+                        .label()
+                        .map_or_else(RuntimeValue::option_none, |label| {
+                            RuntimeValue::option_some(RuntimeValue::String(label.to_owned()))
+                        }),
+                })
+            }
             value => Err(RuntimeEvalError::MissingField {
                 field: field.label(),
                 value: runtime_value_label(&value.1),

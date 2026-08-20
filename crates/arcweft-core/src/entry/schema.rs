@@ -344,7 +344,7 @@ impl CanonicalRuntimeValueBytes {
         self.extend(value.as_bytes())
     }
 
-    fn option<T>(
+    fn option<T: ?Sized>(
         &mut self,
         value: Option<&T>,
         encode: impl FnOnce(&mut Self, &T) -> Result<(), RuntimeSchemaError>,
@@ -426,6 +426,15 @@ impl CanonicalRuntimeValueBytes {
             RuntimeValue::Duration(value) => {
                 self.u8(9)?;
                 self.u64(value.as_nanos())
+            }
+            RuntimeValue::Progress(value) => {
+                self.u8(19)?;
+                self.u32(if value.ratio() == 0.0 {
+                    0
+                } else {
+                    value.ratio().to_bits()
+                })?;
+                self.option(value.label(), Self::string)
             }
             RuntimeValue::EntityRef(value) => {
                 self.u8(10)?;
@@ -1269,6 +1278,7 @@ const fn runtime_value_type(value: &RuntimeValue) -> &'static str {
         RuntimeValue::String(_) => "string",
         RuntimeValue::Char(_) => "char",
         RuntimeValue::Duration(_) => "duration",
+        RuntimeValue::Progress(_) => "progress",
         RuntimeValue::Range(_) => "range",
         RuntimeValue::Iterator(_) => "iterator",
         RuntimeValue::EntityRef(_) => "entity reference",

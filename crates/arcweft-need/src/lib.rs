@@ -35,15 +35,14 @@ impl Progress {
 }
 
 #[derive(Clone, Debug, PartialEq)]
-pub enum Need<T, E> {
+pub enum Need<T> {
     NotStarted,
     Pending(Progress),
     Ready(T),
-    Err(E),
     Cancelled,
 }
 
-impl<T, E> Need<T, E> {
+impl<T> Need<T> {
     pub const fn is_ready(&self) -> bool {
         matches!(self, Self::Ready(_))
     }
@@ -54,32 +53,21 @@ impl<T, E> Need<T, E> {
 
     /// Whether this state has committed its single terminal outcome.
     pub const fn is_terminal(&self) -> bool {
-        matches!(self, Self::Ready(_) | Self::Err(_) | Self::Cancelled)
+        matches!(self, Self::Ready(_) | Self::Cancelled)
     }
 
     pub fn ready(self) -> Option<T> {
         match self {
             Self::Ready(value) => Some(value),
-            Self::NotStarted | Self::Pending(_) | Self::Err(_) | Self::Cancelled => None,
+            Self::NotStarted | Self::Pending(_) | Self::Cancelled => None,
         }
     }
 
-    pub fn map<U>(self, f: impl FnOnce(T) -> U) -> Need<U, E> {
+    pub fn map<U>(self, f: impl FnOnce(T) -> U) -> Need<U> {
         match self {
             Self::Ready(value) => Need::Ready(f(value)),
             Self::NotStarted => Need::NotStarted,
             Self::Pending(progress) => Need::Pending(progress),
-            Self::Err(err) => Need::Err(err),
-            Self::Cancelled => Need::Cancelled,
-        }
-    }
-
-    pub fn map_err<F>(self, f: impl FnOnce(E) -> F) -> Need<T, F> {
-        match self {
-            Self::Ready(value) => Need::Ready(value),
-            Self::NotStarted => Need::NotStarted,
-            Self::Pending(progress) => Need::Pending(progress),
-            Self::Err(err) => Need::Err(f(err)),
             Self::Cancelled => Need::Cancelled,
         }
     }
@@ -97,22 +85,19 @@ mod tests {
 
     #[test]
     fn need_maps_ready_only() {
-        let ready = Need::<u8, ()>::Ready(2).map(u16::from);
+        let ready = Need::<u8>::Ready(2).map(u16::from);
         assert_eq!(ready, Need::Ready(2_u16));
 
         let pending =
-            Need::<u8, ()>::Pending(Progress::new(0.5).expect("valid progress")).map(u16::from);
+            Need::<u8>::Pending(Progress::new(0.5).expect("valid progress")).map(u16::from);
         assert!(pending.is_pending());
     }
 
     #[test]
-    fn terminal_need_states_are_exactly_ready_err_and_cancelled() {
-        assert!(!Need::<u8, u8>::NotStarted.is_terminal());
-        assert!(
-            !Need::<u8, u8>::Pending(Progress::new(0.5).expect("valid progress")).is_terminal()
-        );
-        assert!(Need::<u8, u8>::Ready(1).is_terminal());
-        assert!(Need::<u8, u8>::Err(2).is_terminal());
-        assert!(Need::<u8, u8>::Cancelled.is_terminal());
+    fn terminal_need_states_are_exactly_ready_and_cancelled() {
+        assert!(!Need::<u8>::NotStarted.is_terminal());
+        assert!(!Need::<u8>::Pending(Progress::new(0.5).expect("valid progress")).is_terminal());
+        assert!(Need::<u8>::Ready(1).is_terminal());
+        assert!(Need::<u8>::Cancelled.is_terminal());
     }
 }

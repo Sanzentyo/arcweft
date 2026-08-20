@@ -358,6 +358,7 @@ pub enum RuntimeCheckedType {
     String,
     Char,
     Duration,
+    Progress,
     EntityReference,
     Bytes,
     Sequence(Box<RuntimeCheckedType>),
@@ -453,6 +454,7 @@ impl RuntimeCheckedType {
             | (RuntimeValue::String(_), Self::String)
             | (RuntimeValue::Char(_), Self::Char)
             | (RuntimeValue::Duration(_), Self::Duration)
+            | (RuntimeValue::Progress(_), Self::Progress)
             | (RuntimeValue::EntityRef(_), Self::EntityReference) => true,
             (RuntimeValue::Int(value), Self::Signed(width)) => value.width() == *width,
             (RuntimeValue::UInt(value), Self::Unsigned(width)) => value.width() == *width,
@@ -1164,6 +1166,7 @@ fn runtime_value_matches_type_inner(
         | (RuntimePlanTypeProjection::String, RuntimeValue::String(_))
         | (RuntimePlanTypeProjection::Char, RuntimeValue::Char(_))
         | (RuntimePlanTypeProjection::Duration, RuntimeValue::Duration(_))
+        | (RuntimePlanTypeProjection::Progress, RuntimeValue::Progress(_))
         | (RuntimePlanTypeProjection::EntityReference, RuntimeValue::EntityRef(_))
         | (RuntimePlanTypeProjection::Range(_), RuntimeValue::Range(_))
         | (RuntimePlanTypeProjection::Iterator(_), RuntimeValue::Iterator(_))

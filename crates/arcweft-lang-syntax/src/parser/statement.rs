@@ -939,22 +939,18 @@ pub(super) fn emit_await_with_branch_block(
             projections.push(PendingAwaitBranchProjection::recovered());
             continue;
         };
-        let kind = match parser.current_text() {
-            Some("pending") => SyntaxAwaitBranchKind::Pending,
-            Some("ready") => SyntaxAwaitBranchKind::Ready,
-            Some("error") => SyntaxAwaitBranchKind::Error,
-            Some("denied") => SyntaxAwaitBranchKind::Denied,
-            _ => {
-                emit_invalid_await_branch(
-                    parser,
-                    close,
-                    ordinal,
-                    "syntax.await_with.unknown_branch",
-                    "unknown Await branch kind",
-                );
-                projections.push(PendingAwaitBranchProjection::recovered());
-                continue;
-            }
+        let kind = if let Some("pending") = parser.current_text() {
+            SyntaxAwaitBranchKind::Pending
+        } else {
+            emit_invalid_await_branch(
+                parser,
+                close,
+                ordinal,
+                "syntax.await_with.unknown_branch",
+                "unknown Await branch kind",
+            );
+            projections.push(PendingAwaitBranchProjection::recovered());
+            continue;
         };
         parser.start(SyntaxKind::AwaitWithBranch, SyntaxRole::Branch(ordinal));
         parser.bump();
@@ -1076,21 +1072,17 @@ fn emit_indented_await_branch(
         );
         return PendingAwaitBranchProjection::recovered();
     };
-    let kind = match parser.current_text() {
-        Some("pending") => SyntaxAwaitBranchKind::Pending,
-        Some("ready") => SyntaxAwaitBranchKind::Ready,
-        Some("error") => SyntaxAwaitBranchKind::Error,
-        Some("denied") => SyntaxAwaitBranchKind::Denied,
-        _ => {
-            emit_invalid_await_branch(
-                parser,
-                end,
-                ordinal,
-                "syntax.await_with.unknown_branch",
-                "unknown Await branch kind",
-            );
-            return PendingAwaitBranchProjection::recovered();
-        }
+    let kind = if let Some("pending") = parser.current_text() {
+        SyntaxAwaitBranchKind::Pending
+    } else {
+        emit_invalid_await_branch(
+            parser,
+            end,
+            ordinal,
+            "syntax.await_with.unknown_branch",
+            "unknown Await branch kind",
+        );
+        return PendingAwaitBranchProjection::recovered();
     };
     parser.start(SyntaxKind::AwaitWithBranch, SyntaxRole::Branch(ordinal));
     parser.bump();

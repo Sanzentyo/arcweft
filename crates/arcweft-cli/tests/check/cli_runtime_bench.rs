@@ -1295,15 +1295,15 @@ fn profile_json_runs_native_file_tasks_without_absolute_source() {
         r#"
 extern capability fs {
     type FsError
-    fn read_text(path: VirtualPath) -> Need<String, FsError> effects { fs.read }
-    fn write_text(path: VirtualPath, body: String) -> Need<Unit, FsError> effects { fs.write }
+    fn read_text(path: VirtualPath) -> Need<Result<String, FsError>> effects { fs.read }
+    fn write_text(path: VirtualPath, body: String) -> Need<Result<Unit, FsError>> effects { fs.write }
 }
 extern capability path { fn save(path: String) -> VirtualPath }
 entry cli @entry.profile_io { goto @flow.profile_io }
 flow profile_io effects { fs.read(save), fs.write(save) } {
-    let text = try await fs.read_text(path.save("input.txt")) with { error e => return "read_failed" }
-    try await fs.write_text(path.save("output.txt"), text) with { error e => return "write_failed" }
-    return text
+    let text = match (await fs.read_text(path.save("input.txt"))) { .Ok(text) => text, .Err(_) => "read_failed" }
+    let output = match (await fs.write_text(path.save("output.txt"), text)) { .Ok(_) => text, .Err(_) => "write_failed" }
+    return output
 }
 "#,
     )
@@ -1402,15 +1402,15 @@ fn run_json_executes_native_file_tasks_through_bytecode_vm() {
         r#"
 extern capability fs {
     type FsError
-    fn read_text(path: VirtualPath) -> Need<String, FsError> effects { fs.read }
-    fn write_text(path: VirtualPath, body: String) -> Need<Unit, FsError> effects { fs.write }
+    fn read_text(path: VirtualPath) -> Need<Result<String, FsError>> effects { fs.read }
+    fn write_text(path: VirtualPath, body: String) -> Need<Result<Unit, FsError>> effects { fs.write }
 }
 extern capability path { fn save(path: String) -> VirtualPath }
 entry cli @entry.main { goto @flow.main }
 flow main effects { fs.read(save), fs.write(save) } {
-    let text = try await fs.read_text(path.save("input.txt")) with { error e => return "read_failed" }
-    try await fs.write_text(path.save("output.txt"), text) with { error e => return "write_failed" }
-    return text
+    let text = match (await fs.read_text(path.save("input.txt"))) { .Ok(text) => text, .Err(_) => "read_failed" }
+    let output = match (await fs.write_text(path.save("output.txt"), text)) { .Ok(_) => text, .Err(_) => "write_failed" }
+    return output
 }
 "#,
     )
@@ -1700,15 +1700,15 @@ fn bundle_native_file_fixture() -> BundleNativeFileFixture {
         r#"
 extern capability fs {
     type FsError
-    fn read_text(path: VirtualPath) -> Need<String, FsError> effects { fs.read }
-    fn write_text(path: VirtualPath, body: String) -> Need<Unit, FsError> effects { fs.write }
+    fn read_text(path: VirtualPath) -> Need<Result<String, FsError>> effects { fs.read }
+    fn write_text(path: VirtualPath, body: String) -> Need<Result<Unit, FsError>> effects { fs.write }
 }
 extern capability path { fn save(path: String) -> VirtualPath }
 entry cli @entry.main { goto @flow.main }
 flow main effects { fs.read(save), fs.write(save) } {
-    let text = try await fs.read_text(path.save("input.txt")) with { error e => return "read_failed" }
-    try await fs.write_text(path.save("output.txt"), text) with { error e => return "write_failed" }
-    return text
+    let text = match (await fs.read_text(path.save("input.txt"))) { .Ok(text) => text, .Err(_) => "read_failed" }
+    let output = match (await fs.write_text(path.save("output.txt"), text)) { .Ok(_) => text, .Err(_) => "write_failed" }
+    return output
 }
 "#,
     )
@@ -1897,13 +1897,13 @@ fn run_json_executes_traverse_parallel_file_tasks() {
         r#"
 extern capability fs {
     type FsError
-    fn read_text(path: VirtualPath) -> Need<String, FsError> effects { fs.read }
+    fn read_text(path: VirtualPath) -> Need<Result<String, FsError>> effects { fs.read }
 }
 extern capability path { fn save(path: String) -> VirtualPath }
 entry cli @entry.main { goto @flow.main }
 flow main effects { fs.read(save) } {
     let paths = [path.save("a.txt"), path.save("b.txt"), path.save("c.txt")]
-    let values = try await paths.traverse(fs.read_text).parallel(limit = 2) with { error e => return "read_failed" }
+    let values = match (await paths.traverse(fs.read_text).parallel(limit = 2)) { .Ok(values) => values, .Err(_) => [] }
     log.info("parallel done")
     return "done"
 }
@@ -1954,15 +1954,15 @@ fn run_json_reports_runtime_system_info_tasks() {
         r#"
 extern capability system {
     type SystemError
-    fn core_count() -> Need<String, SystemError> effects { system.read }
-    fn thread_count() -> Need<String, SystemError> effects { system.read }
-    fn available_parallelism() -> Need<String, SystemError> effects { system.read }
+    fn core_count() -> Need<Result<String, SystemError>> effects { system.read }
+    fn thread_count() -> Need<Result<String, SystemError>> effects { system.read }
+    fn available_parallelism() -> Need<Result<String, SystemError>> effects { system.read }
 }
 entry cli @entry.main { goto @flow.main }
 flow main effects { system.read } {
-    let cores = try await system.core_count() with { error e => return "core_failed" }
-    let threads = try await system.thread_count() with { error e => return "thread_failed" }
-    let available = try await system.available_parallelism() with { error e => return "available_failed" }
+    let cores = match (await system.core_count()) { .Ok(value) => value, .Err(_) => "core_failed" }
+    let threads = match (await system.thread_count()) { .Ok(value) => value, .Err(_) => "thread_failed" }
+    let available = match (await system.available_parallelism()) { .Ok(value) => value, .Err(_) => "available_failed" }
     log.info(threads)
     log.info(available)
     return cores
@@ -5917,8 +5917,8 @@ fn bench_json_measures_native_file_tasks() {
         r#"
 extern capability fs {
     type FsError
-    fn read_text(path: VirtualPath) -> Need<String, FsError> effects { fs.read }
-    fn write_text(path: VirtualPath, body: String) -> Need<Unit, FsError> effects { fs.write }
+    fn read_text(path: VirtualPath) -> Need<Result<String, FsError>> effects { fs.read }
+    fn write_text(path: VirtualPath, body: String) -> Need<Result<Unit, FsError>> effects { fs.write }
 }
 extern capability path { fn save(path: String) -> VirtualPath }
 
@@ -5928,9 +5928,9 @@ bench @bench.native_io {
 }
 
 flow bench_io effects { fs.read(save), fs.write(save) } {
-    let text = try await fs.read_text(path.save("input.txt")) with { error e => return "read_failed" }
-    try await fs.write_text(path.save("output.txt"), text) with { error e => return "write_failed" }
-    return text
+    let text = match (await fs.read_text(path.save("input.txt"))) { .Ok(text) => text, .Err(_) => "read_failed" }
+    let output = match (await fs.write_text(path.save("output.txt"), text)) { .Ok(_) => text, .Err(_) => "write_failed" }
+    return output
 }
 "#,
     )
@@ -5991,8 +5991,8 @@ fn bench_json_measures_traverse_parallel_file_tasks() {
         r#"
 extern capability fs {
     type FsError
-    fn read_text(path: VirtualPath) -> Need<String, FsError> effects { fs.read }
-    fn write_text(path: VirtualPath, body: String) -> Need<Unit, FsError> effects { fs.write }
+    fn read_text(path: VirtualPath) -> Need<Result<String, FsError>> effects { fs.read }
+    fn write_text(path: VirtualPath, body: String) -> Need<Result<Unit, FsError>> effects { fs.write }
 }
 extern capability path { fn save(path: String) -> VirtualPath }
 
@@ -6003,9 +6003,9 @@ bench @bench.parallel_io {
 
 flow parallel_io effects { fs.read(save), fs.write(save) } {
     let paths = [path.save("a.txt"), path.save("b.txt"), path.save("c.txt")]
-    let values = try await paths.traverse(fs.read_text).parallel(limit = 2) with { error e => return "read_failed" }
-    try await fs.write_text(path.save("output.txt"), "done") with { error e => return "write_failed" }
-    return "done"
+    let values = match (await paths.traverse(fs.read_text).parallel(limit = 2)) { .Ok(values) => values, .Err(_) => [] }
+    let status = match (await fs.write_text(path.save("output.txt"), "done")) { .Ok(_) => "done", .Err(_) => "write_failed" }
+    return status
 }
 "#,
     )
@@ -6065,7 +6065,7 @@ fn bench_json_measures_threaded_native_read_scheduling() {
         r#"
 extern capability fs {
     type FsError
-    fn read_text(path: VirtualPath) -> Need<String, FsError> effects { fs.read }
+    fn read_text(path: VirtualPath) -> Need<Result<String, FsError>> effects { fs.read }
 }
 extern capability path { fn save(path: String) -> VirtualPath }
 
@@ -6075,11 +6075,11 @@ bench @bench.threaded_reads {
 
 flow threaded_reads effects { fs.read(save) } {
     thread left {
-        let text = try await fs.read_text(path.save("a.txt")) with { error e => return "left_failed" }
+        let text = match (await fs.read_text(path.save("a.txt"))) { .Ok(text) => text, .Err(_) => "left_failed" }
         log.info(text)
     }
     thread right {
-        let text = try await fs.read_text(path.save("b.txt")) with { error e => return "right_failed" }
+        let text = match (await fs.read_text(path.save("b.txt"))) { .Ok(text) => text, .Err(_) => "right_failed" }
         log.info(text)
     }
     return "done"
@@ -6161,7 +6161,7 @@ fn bench_json_fails_native_file_assertions() {
         r#"
 extern capability fs {
     type FsError
-    fn write_text(path: VirtualPath, body: String) -> Need<Unit, FsError> effects { fs.write }
+    fn write_text(path: VirtualPath, body: String) -> Need<Result<Unit, FsError>> effects { fs.write }
 }
 extern capability path { fn save(path: String) -> VirtualPath }
 
@@ -6171,8 +6171,8 @@ bench @bench.native_file_assert {
 }
 
 flow write_actual effects { fs.write(save) } {
-    try await fs.write_text(path.save("output.txt"), "actual") with { error e => return "write_failed" }
-    return "done"
+    let status = match (await fs.write_text(path.save("output.txt"), "actual")) { .Ok(_) => "done", .Err(_) => "write_failed" }
+    return status
 }
 "#,
     )

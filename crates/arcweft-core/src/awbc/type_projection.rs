@@ -214,6 +214,7 @@ impl AwbcProgram {
             AwbcRuntimeType::String => Ok(RuntimeCheckedType::String),
             AwbcRuntimeType::Char => Ok(RuntimeCheckedType::Char),
             AwbcRuntimeType::Duration => Ok(RuntimeCheckedType::Duration),
+            AwbcRuntimeType::Progress => Ok(RuntimeCheckedType::Progress),
             AwbcRuntimeType::EntityRef => Ok(RuntimeCheckedType::EntityReference),
             AwbcRuntimeType::Bytes => Ok(RuntimeCheckedType::Bytes),
             AwbcRuntimeType::Sequence(item) => self

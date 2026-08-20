@@ -497,10 +497,9 @@ impl<'a> EntryContractBuilder<'a> {
             TypeKind::Option(inner) => {
                 self.canonical_application(CanonicalConstructor::Option, [inner.as_ref()])?
             }
-            TypeKind::Need { ready, error } => self.canonical_application(
-                CanonicalConstructor::Need,
-                [ready.as_ref(), error.as_ref()],
-            )?,
+            TypeKind::Need(item) => {
+                self.canonical_application(CanonicalConstructor::Need, [item.as_ref()])?
+            }
             TypeKind::Stream { item, error } => self.canonical_application(
                 CanonicalConstructor::Stream,
                 [item.as_ref(), error.as_ref()],

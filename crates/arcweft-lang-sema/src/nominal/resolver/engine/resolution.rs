@@ -918,7 +918,8 @@ impl Resolver<'_, '_> {
             | BuiltinTypeConstructor::Option
             | BuiltinTypeConstructor::Probe
             | BuiltinTypeConstructor::ThreadHandle
-            | BuiltinTypeConstructor::Shared => {
+            | BuiltinTypeConstructor::Shared
+            | BuiltinTypeConstructor::Need => {
                 self.apply_unary_builtin(context, constructor, arguments.remove(0), child_causes)
             }
             BuiltinTypeConstructor::Array => {
@@ -928,7 +929,6 @@ impl Resolver<'_, '_> {
             | BuiltinTypeConstructor::SortedMap
             | BuiltinTypeConstructor::BTreeMap
             | BuiltinTypeConstructor::Result
-            | BuiltinTypeConstructor::Need
             | BuiltinTypeConstructor::Stream => {
                 self.apply_binary_builtin(context, constructor, arguments, child_causes)
             }
@@ -987,6 +987,7 @@ impl Resolver<'_, '_> {
             BuiltinTypeConstructor::Probe => TypeKind::Probe(Box::new(inner)),
             BuiltinTypeConstructor::ThreadHandle => TypeKind::ThreadHandle(Box::new(inner)),
             BuiltinTypeConstructor::Shared => TypeKind::Shared(Box::new(inner)),
+            BuiltinTypeConstructor::Need => TypeKind::Need(Box::new(inner)),
             _ => unreachable!("unary builtin dispatch preserves constructor arity"),
         };
         NodeValue::typed(ty, child_causes)
@@ -1070,10 +1071,6 @@ impl Resolver<'_, '_> {
             },
             BuiltinTypeConstructor::Result => TypeKind::Result {
                 ok: Box::new(first),
-                error: Box::new(second),
-            },
-            BuiltinTypeConstructor::Need => TypeKind::Need {
-                ready: Box::new(first),
                 error: Box::new(second),
             },
             BuiltinTypeConstructor::Stream => TypeKind::Stream {

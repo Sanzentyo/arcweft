@@ -534,6 +534,9 @@ fn display_runtime_value(value: &RuntimeValue) -> String {
         RuntimeValue::String(value) => value.clone(),
         RuntimeValue::Char(value) => value.to_string(),
         RuntimeValue::Duration(value) => format!("{}ns", value.as_nanos()),
+        RuntimeValue::Progress(value) => value
+            .label()
+            .map_or_else(|| value.ratio().to_string(), ToOwned::to_owned),
         RuntimeValue::Range(value) => value.label(),
         RuntimeValue::Iterator(_) => "<iterator>".to_owned(),
         RuntimeValue::EntityRef(value) => format!("@{value}"),

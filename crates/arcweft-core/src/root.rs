@@ -953,6 +953,13 @@ fn validate_replay_safe_value(
         {
             Err("replay-safe payload exceeds string byte budget".to_owned())
         }
+        RuntimeValue::Progress(value)
+            if value
+                .label()
+                .is_some_and(|label| label.len() > limits.max_string_bytes) =>
+        {
+            Err("replay-safe progress label exceeds string byte budget".to_owned())
+        }
         RuntimeValue::Tuple(values) => {
             for value in values {
                 validate_replay_safe_value(value, limits, depth + 1, nodes)?;
@@ -1020,6 +1027,7 @@ fn validate_replay_safe_value(
         | RuntimeValue::String(_)
         | RuntimeValue::Char(_)
         | RuntimeValue::Duration(_)
+        | RuntimeValue::Progress(_)
         | RuntimeValue::EntityRef(_) => Ok(()),
     }
 }

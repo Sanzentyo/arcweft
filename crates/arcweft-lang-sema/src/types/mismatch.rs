@@ -32,8 +32,7 @@ pub enum TypeMismatchPathSegment {
     BorrowKind,
     BorrowLifetime,
     BorrowInner,
-    NeedReady,
-    NeedError,
+    NeedItem,
     StreamItem,
     StreamError,
     ResultOk,
@@ -272,6 +271,12 @@ impl TypeKind {
             }
             Self::Duration => {
                 let Self::Duration = actual else {
+                    unreachable!("equal discriminants")
+                };
+                None
+            }
+            Self::Progress => {
+                let Self::Progress = actual else {
                     unreachable!("equal discriminants")
                 };
                 None
@@ -592,25 +597,13 @@ impl TypeKind {
                     ))
                 }
             }
-            Self::Need {
-                ready: expected_ready,
-                error: expected_error,
-            } => {
-                let Self::Need {
-                    ready: actual_ready,
-                    error: actual_error,
-                } = actual
-                else {
+            Self::Need(expected_item) => {
+                let Self::Need(actual_item) = actual else {
                     unreachable!("equal discriminants")
                 };
-                expected_ready
-                    .first_mismatch(actual_ready)
-                    .map(|mismatch| mismatch.prepend(TypeMismatchPathSegment::NeedReady))
-                    .or_else(|| {
-                        expected_error
-                            .first_mismatch(actual_error)
-                            .map(|mismatch| mismatch.prepend(TypeMismatchPathSegment::NeedError))
-                    })
+                expected_item
+                    .first_mismatch(actual_item)
+                    .map(|mismatch| mismatch.prepend(TypeMismatchPathSegment::NeedItem))
             }
             Self::Stream {
                 item: expected_item,

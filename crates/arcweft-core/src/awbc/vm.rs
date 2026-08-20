@@ -631,6 +631,17 @@ fn execute_instruction(
                     .find(|item| item.name() == field)
                     .map(|field| field.value().clone()),
                 RuntimeValue::Agent(value) => value.project_field_label(field),
+                RuntimeValue::Progress(progress) => match field {
+                    "ratio" => Some(RuntimeValue::F32(progress.ratio())),
+                    "label" => Some(
+                        progress
+                            .label()
+                            .map_or_else(RuntimeValue::option_none, |label| {
+                                RuntimeValue::option_some(RuntimeValue::String(label.to_owned()))
+                            }),
+                    ),
+                    _ => None,
+                },
                 _ => None,
             };
             let value =

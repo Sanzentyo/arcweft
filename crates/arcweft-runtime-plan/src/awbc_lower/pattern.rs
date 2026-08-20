@@ -241,6 +241,7 @@ pub(crate) fn intern_runtime_type(
         RuntimeCheckedType::String => AwbcRuntimeType::String,
         RuntimeCheckedType::Char => AwbcRuntimeType::Char,
         RuntimeCheckedType::Duration => AwbcRuntimeType::Duration,
+        RuntimeCheckedType::Progress => AwbcRuntimeType::Progress,
         RuntimeCheckedType::EntityReference => AwbcRuntimeType::EntityRef,
         RuntimeCheckedType::Bytes => AwbcRuntimeType::Bytes,
         RuntimeCheckedType::Sequence(item) => {

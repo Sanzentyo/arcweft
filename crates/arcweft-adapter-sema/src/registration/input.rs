@@ -790,18 +790,13 @@ fn adapter_type_node(
         AdapterTypeKind::Tuple { items } => {
             adapter_tuple_node(items, expected_environment_owner, source)?
         }
-        AdapterTypeKind::Need { ready, error } => EnvironmentTypeProjectionKind::Need {
-            ready: Box::new(adapter_type_node(
-                ready,
+        AdapterTypeKind::Need { item } => {
+            EnvironmentTypeProjectionKind::Need(Box::new(adapter_type_node(
+                item,
                 expected_environment_owner,
-                &source.child(EnvironmentTypeSiteStep::NeedReady),
-            )?),
-            error: Box::new(adapter_type_node(
-                error,
-                expected_environment_owner,
-                &source.child(EnvironmentTypeSiteStep::NeedError),
-            )?),
-        },
+                &source.child(EnvironmentTypeSiteStep::NeedItem),
+            )?))
+        }
         AdapterTypeKind::Nominal { nominal } => {
             adapter_nominal_node(nominal, expected_environment_owner, source)?
         }

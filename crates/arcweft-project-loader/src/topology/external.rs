@@ -561,9 +561,8 @@ impl<'a> TypeReferenceParser<'a> {
                 ok: Box::new(ok.clone()),
                 error: Box::new(error.clone()),
             }),
-            ("Need", [ready, error]) => Ok(AdapterTypeKind::Need {
-                ready: Box::new(ready.clone()),
-                error: Box::new(error.clone()),
+            ("Need", [item]) => Ok(AdapterTypeKind::Need {
+                item: Box::new(item.clone()),
             }),
             _ => Err(TypeReferenceParseError::Invalid),
         }
@@ -647,12 +646,15 @@ mod tests {
         let error = local_types["TruckError"].clone();
 
         assert_eq!(
-            TypeReferenceParser::new("Need<Vec<TruckResult>, TruckError>", &local_types).parse(),
+            TypeReferenceParser::new("Need<Result<Vec<TruckResult>, TruckError>>", &local_types,)
+                .parse(),
             Ok(AdapterTypeKind::Need {
-                ready: Box::new(AdapterTypeKind::Vec {
-                    item: Box::new(AdapterTypeKind::Nominal { nominal: result }),
+                item: Box::new(AdapterTypeKind::Result {
+                    ok: Box::new(AdapterTypeKind::Vec {
+                        item: Box::new(AdapterTypeKind::Nominal { nominal: result }),
+                    }),
+                    error: Box::new(AdapterTypeKind::Nominal { nominal: error }),
                 }),
-                error: Box::new(AdapterTypeKind::Nominal { nominal: error }),
             })
         );
     }

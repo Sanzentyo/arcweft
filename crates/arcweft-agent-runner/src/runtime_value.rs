@@ -84,6 +84,7 @@ pub(crate) fn runtime_value_to_json(value: &RuntimeValue) -> serde_json::Value {
             "arity": function.remaining_arity().ok(),
         }),
         RuntimeValue::Duration(_)
+        | RuntimeValue::Progress(_)
         | RuntimeValue::MatrixF32(_)
         | RuntimeValue::MatrixF64(_)
         | RuntimeValue::TensorF32(_)

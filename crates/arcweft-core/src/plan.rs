@@ -243,6 +243,7 @@ impl RuntimePlan {
             RuntimePlanTypeProjection::Char => Some(RuntimeCheckedType::Char),
             RuntimePlanTypeProjection::Bytes => Some(RuntimeCheckedType::Bytes),
             RuntimePlanTypeProjection::Duration => Some(RuntimeCheckedType::Duration),
+            RuntimePlanTypeProjection::Progress => Some(RuntimeCheckedType::Progress),
             RuntimePlanTypeProjection::EntityReference => Some(RuntimeCheckedType::EntityReference),
             RuntimePlanTypeProjection::Sequence { item, .. }
             | RuntimePlanTypeProjection::Array { item, .. } => self
@@ -307,7 +308,7 @@ impl RuntimePlan {
             RuntimePlanTypeProjection::Range(_)
             | RuntimePlanTypeProjection::Iterator(_)
             | RuntimePlanTypeProjection::Map { .. }
-            | RuntimePlanTypeProjection::Need { .. }
+            | RuntimePlanTypeProjection::Need(_)
             | RuntimePlanTypeProjection::Stream { .. }
             | RuntimePlanTypeProjection::ThreadHandle(_)
             | RuntimePlanTypeProjection::Shared(_)

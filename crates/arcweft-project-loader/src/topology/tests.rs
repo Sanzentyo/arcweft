@@ -1492,7 +1492,8 @@ fn metadata_with_function() -> String {
             name: FieldName::new("request").expect("field name"),
             ty: TypeReference::new("TruckResult").expect("type reference"),
         }],
-        return_type: TypeReference::new("Need<TruckResult, TruckResult>").expect("type reference"),
+        return_type: TypeReference::new("Need<Result<TruckResult, TruckResult>>")
+            .expect("type reference"),
         purity: FunctionPurity::Pure,
         effects: Vec::new(),
     });

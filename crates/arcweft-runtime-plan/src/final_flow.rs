@@ -56,12 +56,12 @@ use crate::errors::RuntimePlanLowerError;
 use crate::final_expr::FinalExprLowerer;
 use crate::final_pattern::FinalPatternLowerer;
 use crate::semantic_facts::{
-    RuntimeAssertionAdmission, RuntimeAwaitBranchContinuation, RuntimeAwaitFact,
-    RuntimeDialogueApplication, RuntimeDialogueEffectTrigger, RuntimeEvaluatedEffect,
-    RuntimeIteratorFact, RuntimeIteratorWitnessExecutableFact, RuntimeNormalizedType,
-    RuntimePlanSemanticFacts, RuntimeResolvedCallTarget, RuntimeResolvedValue,
-    RuntimeSemanticFactsError, RuntimeTraitIdentity, RuntimeTraitMethodFact,
-    RuntimeTryBoundaryOwner, RuntimeTryCarrierFact, RuntimeTryFact, RuntimeTypeShape,
+    RuntimeAssertionAdmission, RuntimeAwaitFact, RuntimeDialogueApplication,
+    RuntimeDialogueEffectTrigger, RuntimeEvaluatedEffect, RuntimeIteratorFact,
+    RuntimeIteratorWitnessExecutableFact, RuntimeNormalizedType, RuntimePlanSemanticFacts,
+    RuntimeResolvedCallTarget, RuntimeResolvedValue, RuntimeSemanticFactsError,
+    RuntimeTraitIdentity, RuntimeTraitMethodFact, RuntimeTryBoundaryOwner, RuntimeTryCarrierFact,
+    RuntimeTryFact, RuntimeTypeShape,
 };
 use arcweft_text_model::{RichTextControl, RichTextNode};
 
@@ -324,9 +324,7 @@ struct FinalLoweringContext<'project, 'data> {
 
 #[derive(Clone)]
 struct AwaitLocalSeeds {
-    result: RuntimeLocalSeedId,
-    ready: RuntimeLocalSeedId,
-    error: RuntimeLocalSeedId,
+    payload: RuntimeLocalSeedId,
 }
 
 #[derive(Clone)]
@@ -377,12 +375,13 @@ pub fn lower_runtime_plan_with_stats(
         .map(|(_, ty)| RuntimeLocalDeclarationSeed::new(ty.identity()))
         .collect::<Vec<_>>();
     let await_facts = facts.awaits().collect::<Vec<_>>();
-    for (_, awaited) in &await_facts {
-        local_seeds.extend([
-            RuntimeLocalDeclarationSeed::new(awaited.physical_result().identity()),
-            RuntimeLocalDeclarationSeed::new(awaited.ready().identity()),
-            RuntimeLocalDeclarationSeed::new(awaited.error().identity()),
-        ]);
+    for (expression, _) in &await_facts {
+        let payload = facts.expression_type(**expression).ok_or_else(|| {
+            vec![RuntimePlanLowerError::new(format!(
+                "Await expression {expression:?} has no accepted payload type"
+            ))]
+        })?;
+        local_seeds.push(RuntimeLocalDeclarationSeed::new(payload.identity()));
     }
     let try_facts = facts.tries().collect::<Vec<_>>();
     for (_, tried) in &try_facts {
@@ -424,20 +423,17 @@ pub fn lower_runtime_plan_with_stats(
         .collect::<BTreeMap<_, _>>();
     let await_locals = await_facts
         .iter()
-        .zip(admission.local_ids()[local_facts.len()..].chunks_exact(3))
+        .zip(admission.local_ids()[local_facts.len()..].iter())
         .map(|((expression, _), locals)| {
             (
                 **expression,
                 AwaitLocalSeeds {
-                    result: locals[0].clone(),
-                    ready: locals[1].clone(),
-                    error: locals[2].clone(),
+                    payload: locals.clone(),
                 },
             )
         })
         .collect::<BTreeMap<_, _>>();
-    let mut admitted_try_locals = admission.local_ids()
-        [local_facts.len() + await_facts.len() * 3..]
+    let mut admitted_try_locals = admission.local_ids()[local_facts.len() + await_facts.len()..]
         .iter()
         .cloned();
     let mut try_locals = BTreeMap::new();
@@ -1790,16 +1786,6 @@ fn variant_empty_seed(result: &RuntimeNormalizedType, ordinal: u32) -> RuntimePa
     )
 }
 
-fn handler_falls_through(
-    fact: &RuntimeAwaitFact,
-    kind: arcweft_lang_hir::expr::HirAwaitBranchKind,
-) -> bool {
-    fact.branches()
-        .iter()
-        .find(|branch| branch.kind() == kind)
-        .is_none_or(|branch| branch.continuation() == RuntimeAwaitBranchContinuation::FallsThrough)
-}
-
 fn module_by_id(
     project: HirExecutableProjectView<'_>,
     expected: HirModuleId,
@@ -2854,58 +2840,27 @@ impl<'a> FinalFlowLowerer<'a> {
                 "Await expression {expression:?} has no admitted continuation locals"
             ))
         })?;
-        let await_op = self.lower_await_operation(awaited, &fact, &locals)?;
-        let ready_ops = self.lower_await_branch_continuation(
-            awaited,
-            &fact,
-            arcweft_lang_hir::expr::HirAwaitBranchKind::Ready,
-            0,
-            local_seed(fact.ready(), locals.ready.clone()),
-            continuation,
-        )?;
-        let error_ops = self.lower_await_branch_continuation(
-            awaited,
-            &fact,
-            arcweft_lang_hir::expr::HirAwaitBranchKind::Error,
-            1,
-            local_seed(fact.error(), locals.error.clone()),
-            continuation,
-        )?;
-        let physical_result = local_seed(fact.physical_result(), locals.result.clone());
-        Ok(vec![
-            await_op,
-            RuntimeFlowOpSeed::Match {
-                scrutinee: physical_result,
-                arms: vec![
-                    RuntimeFlowMatchArmSeed {
-                        pattern: variant_bind_seed(
-                            fact.physical_result(),
-                            0,
-                            fact.ready(),
-                            locals.ready,
-                        ),
-                        guard: None,
-                        ops: ready_ops,
-                    },
-                    RuntimeFlowMatchArmSeed {
-                        pattern: variant_bind_seed(
-                            fact.physical_result(),
-                            1,
-                            fact.error(),
-                            locals.error,
-                        ),
-                        guard: None,
-                        ops: error_ops,
-                    },
-                ],
-            },
-        ])
+        let await_op = self.lower_await_operation(expression, awaited, &fact, &locals)?;
+        let payload = self.facts.expression_type(expression).ok_or_else(|| {
+            RuntimePlanLowerError::new(format!(
+                "Await expression {expression:?} has no accepted payload type"
+            ))
+        })?;
+        let mut ops = vec![await_op];
+        ops.extend(
+            self.apply_value_continuation(
+                local_seed(payload, locals.payload),
+                continuation.clone(),
+            )?,
+        );
+        Ok(ops)
     }
 
     fn lower_await_operation(
         &mut self,
+        expression: ExprId,
         awaited: &arcweft_lang_hir::expr::HirAwaitExpr,
-        fact: &RuntimeAwaitFact,
+        _fact: &RuntimeAwaitFact,
         locals: &AwaitLocalSeeds,
     ) -> Result<RuntimeFlowOpSeed, RuntimePlanLowerError> {
         let operand = self
@@ -2949,16 +2904,26 @@ impl<'a> FinalFlowLowerer<'a> {
         let owner = self.assertion_owner.label();
         let task = TaskId(format!("{owner}.await.{ordinal}"));
         let need = NeedId(format!("{owner}.need.{ordinal}"));
+        let payload = self.facts.expression_type(expression).ok_or_else(|| {
+            RuntimePlanLowerError::new(format!(
+                "Await expression {expression:?} has no accepted payload type"
+            ))
+        })?;
+        let RuntimeTypeShape::Result { value, error } = payload.shape() else {
+            return Err(RuntimePlanLowerError::new(
+                "current host-task Await requires a Result payload",
+            ));
+        };
         Ok(RuntimeFlowOpSeed::Await {
-            binding: Some(bind_seed(fact.physical_result(), locals.result.clone())),
+            binding: Some(bind_seed(payload, locals.payload.clone())),
             target: arcweft_core::plan::RuntimeAwaitTargetSeed {
                 need,
                 task,
                 outcome: TaskOutcomeContract::new(
-                    fact.ready()
+                    value
                         .checked_type()
                         .map_err(|error| RuntimePlanLowerError::new(error.to_string()))?,
-                    fact.error()
+                    error
                         .checked_type()
                         .map_err(|error| RuntimePlanLowerError::new(error.to_string()))?,
                 ),
@@ -2970,46 +2935,6 @@ impl<'a> FinalFlowLowerer<'a> {
             },
             pending: Vec::new(),
         })
-    }
-
-    fn lower_await_branch_continuation(
-        &mut self,
-        awaited: &arcweft_lang_hir::expr::HirAwaitExpr,
-        fact: &RuntimeAwaitFact,
-        kind: arcweft_lang_hir::expr::HirAwaitBranchKind,
-        ordinal: u32,
-        payload: RuntimeExprSeed,
-        continuation: &RuntimeFlowValueContinuation,
-    ) -> Result<Vec<RuntimeFlowOpSeed>, RuntimePlanLowerError> {
-        let mut ops = self.lower_await_handler(awaited, fact, kind)?;
-        if handler_falls_through(fact, kind) {
-            let value = RuntimeExprSeed::new(
-                fact.continuation_result().identity(),
-                arcweft_core::plan::RuntimeExprSeedKind::Variant {
-                    ordinal,
-                    payload: Some(Box::new(payload)),
-                },
-            );
-            ops.extend(self.apply_value_continuation(value, continuation.clone())?);
-        }
-        Ok(ops)
-    }
-
-    fn lower_await_handler(
-        &mut self,
-        awaited: &arcweft_lang_hir::expr::HirAwaitExpr,
-        fact: &RuntimeAwaitFact,
-        kind: arcweft_lang_hir::expr::HirAwaitBranchKind,
-    ) -> Result<Vec<RuntimeFlowOpSeed>, RuntimePlanLowerError> {
-        let Some((_, branch)) = fact
-            .branches()
-            .iter()
-            .zip(awaited.branches())
-            .find(|(checked, _)| checked.kind() == kind)
-        else {
-            return Ok(Vec::new());
-        };
-        self.lower_contextual_body(branch.body())
     }
 
     fn apply_value_continuation(

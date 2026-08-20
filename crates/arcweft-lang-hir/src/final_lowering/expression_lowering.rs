@@ -683,9 +683,6 @@ impl StagedHirModuleTransaction<'_> {
                 )?;
                 let kind = match kind {
                     SyntaxAwaitBranchKind::Pending => HirAwaitBranchKind::Pending,
-                    SyntaxAwaitBranchKind::Ready => HirAwaitBranchKind::Ready,
-                    SyntaxAwaitBranchKind::Error => HirAwaitBranchKind::Error,
-                    SyntaxAwaitBranchKind::Denied => HirAwaitBranchKind::Denied,
                 };
                 (
                     kind,

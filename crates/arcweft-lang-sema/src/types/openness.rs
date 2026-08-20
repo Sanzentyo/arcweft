@@ -18,6 +18,7 @@ impl TypeKind {
             | Self::Vec(inner)
             | Self::Slice(inner)
             | Self::Seq(inner)
+            | Self::Need(inner)
             | Self::Option(inner)
             | Self::ThreadHandle(inner)
             | Self::Shared(inner)
@@ -27,9 +28,6 @@ impl TypeKind {
             }
             Self::Map { key, value, .. } => {
                 key.contains_dialogue_line_operation() || value.contains_dialogue_line_operation()
-            }
-            Self::Need { ready, error } => {
-                ready.contains_dialogue_line_operation() || error.contains_dialogue_line_operation()
             }
             Self::Stream { item, error } => {
                 item.contains_dialogue_line_operation() || error.contains_dialogue_line_operation()
@@ -72,6 +70,7 @@ impl TypeKind {
             | Self::Bytes
             | Self::TextCluster
             | Self::Duration
+            | Self::Progress
             | Self::DisplayText
             | Self::DebugStatePath
             | Self::ObservationFieldPath
@@ -124,6 +123,7 @@ impl TypeKind {
             | Self::Vec(inner)
             | Self::Slice(inner)
             | Self::Seq(inner)
+            | Self::Need(inner)
             | Self::Option(inner)
             | Self::ThreadHandle(inner)
             | Self::Shared(inner)
@@ -135,9 +135,6 @@ impl TypeKind {
             }
             Self::Map { key, value, .. } => {
                 key.contains_nominal_poison() || value.contains_nominal_poison()
-            }
-            Self::Need { ready, error } => {
-                ready.contains_nominal_poison() || error.contains_nominal_poison()
             }
             Self::Stream { item, error } => {
                 item.contains_nominal_poison() || error.contains_nominal_poison()
@@ -180,6 +177,7 @@ impl TypeKind {
             | Self::Bytes
             | Self::TextCluster
             | Self::Duration
+            | Self::Progress
             | Self::DisplayText
             | Self::DebugStatePath
             | Self::ObservationFieldPath

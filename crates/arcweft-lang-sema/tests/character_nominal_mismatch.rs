@@ -166,26 +166,9 @@ fn every_current_type_child_has_a_deterministic_path_segment() {
             TypeMismatchPathSegment::BorrowInner,
         ),
         (
-            TypeKind::Need {
-                ready: Box::new(expected.clone()),
-                error: Box::new(TypeKind::Unit),
-            },
-            TypeKind::Need {
-                ready: Box::new(actual.clone()),
-                error: Box::new(TypeKind::Unit),
-            },
-            TypeMismatchPathSegment::NeedReady,
-        ),
-        (
-            TypeKind::Need {
-                ready: Box::new(TypeKind::Unit),
-                error: Box::new(expected.clone()),
-            },
-            TypeKind::Need {
-                ready: Box::new(TypeKind::Unit),
-                error: Box::new(actual.clone()),
-            },
-            TypeMismatchPathSegment::NeedError,
+            TypeKind::Need(Box::new(expected.clone())),
+            TypeKind::Need(Box::new(actual.clone())),
+            TypeMismatchPathSegment::NeedItem,
         ),
         (
             TypeKind::Stream {

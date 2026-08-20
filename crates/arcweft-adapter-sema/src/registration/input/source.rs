@@ -669,8 +669,8 @@ impl Renderer {
             AdapterTypeKind::Tuple { items } => {
                 self.render_adapter_tuple(item, &root, steps, items)?;
             }
-            AdapterTypeKind::Need { ready, error } => {
-                self.render_adapter_need(item, &root, steps, ready, error)?;
+            AdapterTypeKind::Need { item: payload } => {
+                self.render_adapter_need(item, &root, steps, payload)?;
             }
             AdapterTypeKind::Nominal { nominal } => {
                 self.render_adapter_nominal(item, &root, steps, nominal)?;
@@ -712,24 +712,15 @@ impl Renderer {
         item: &EnvironmentPublicationItemId,
         root: &EnvironmentTypeSiteRoot,
         steps: &mut Vec<EnvironmentTypeSiteStep>,
-        ready: &AdapterTypeKind,
-        error: &AdapterTypeKind,
+        payload: &AdapterTypeKind,
     ) -> Result<(), AdapterRegistrationFactsError> {
         self.text.push_str("Need<");
         self.render_adapter_child(
             item,
             root.to_owned(),
             steps,
-            EnvironmentTypeSiteStep::NeedReady,
-            ready,
-        )?;
-        self.text.push(',');
-        self.render_adapter_child(
-            item,
-            root.to_owned(),
-            steps,
-            EnvironmentTypeSiteStep::NeedError,
-            error,
+            EnvironmentTypeSiteStep::NeedItem,
+            payload,
         )?;
         self.text.push('>');
         Ok(())

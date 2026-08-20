@@ -157,6 +157,7 @@ impl RuntimePlanTypeTable {
             | RuntimePlanTypeProjection::Char
             | RuntimePlanTypeProjection::Bytes
             | RuntimePlanTypeProjection::Duration
+            | RuntimePlanTypeProjection::Progress
             | RuntimePlanTypeProjection::EntityReference
             | RuntimePlanTypeProjection::ProjectNominal { .. }
             | RuntimePlanTypeProjection::Opaque { .. } => true,
@@ -179,7 +180,7 @@ impl RuntimePlanTypeTable {
             RuntimePlanTypeProjection::Range(_)
             | RuntimePlanTypeProjection::Iterator(_)
             | RuntimePlanTypeProjection::Map { .. }
-            | RuntimePlanTypeProjection::Need { .. }
+            | RuntimePlanTypeProjection::Need(_)
             | RuntimePlanTypeProjection::Stream { .. }
             | RuntimePlanTypeProjection::ThreadHandle(_)
             | RuntimePlanTypeProjection::Shared(_)

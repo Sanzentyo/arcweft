@@ -1440,6 +1440,10 @@ impl<'hir> FinalExprLowerer<'hir> {
                 target,
                 field: RuntimeFieldProjectionSeed::Agent(*field),
             }),
+            RuntimeResolvedSelect::ProgressField { field } => Ok(RuntimeExprSeedKind::Field {
+                target,
+                field: RuntimeFieldProjectionSeed::Progress(*field),
+            }),
             RuntimeResolvedSelect::Field {
                 nominal: Some(nominal),
                 ordinal: Some(ordinal),

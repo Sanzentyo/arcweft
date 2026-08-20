@@ -1,0 +1,12 @@
+fn observe(need: Need<i64>) -> i64 {
+    await need with {
+        pending progress => {
+            let ratio = progress.ratio
+            let label = progress.label
+        }
+    }
+}
+
+flow main() -> String {
+    return "done"
+}

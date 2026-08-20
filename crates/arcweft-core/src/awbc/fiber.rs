@@ -1620,6 +1620,7 @@ fn validate_nested_runtime_value(
         | RuntimeValue::String(_)
         | RuntimeValue::Char(_)
         | RuntimeValue::Duration(_)
+        | RuntimeValue::Progress(_)
         | RuntimeValue::Range(_)
         | RuntimeValue::Iterator(RuntimeIterator::Range(_))
         | RuntimeValue::EntityRef(_)
@@ -2231,6 +2232,7 @@ pub(crate) fn runtime_value_matches_type(
         | (RuntimeValue::F64(_), AwbcRuntimeType::F64)
         | (RuntimeValue::Char(_), AwbcRuntimeType::Char)
         | (RuntimeValue::Duration(_), AwbcRuntimeType::Duration)
+        | (RuntimeValue::Progress(_), AwbcRuntimeType::Progress)
         | (RuntimeValue::EntityRef(_), AwbcRuntimeType::EntityRef)
         | (RuntimeValue::MatrixF32(_), AwbcRuntimeType::MatrixF32)
         | (RuntimeValue::MatrixF64(_), AwbcRuntimeType::MatrixF64)
@@ -2393,6 +2395,7 @@ fn runtime_value_type_label(value: &RuntimeValue) -> String {
         RuntimeValue::String(_) => "string",
         RuntimeValue::Char(_) => "char",
         RuntimeValue::Duration(_) => "duration",
+        RuntimeValue::Progress(_) => "progress",
         RuntimeValue::Range(_) => "range",
         RuntimeValue::Iterator(_) => "iterator",
         RuntimeValue::EntityRef(_) => "entity",

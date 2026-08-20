@@ -59,19 +59,20 @@ const fn flow_source_query(
 }
 
 #[test]
-fn let_await_expression_with_inline_error_statement_lowers_cleanly() {
+fn let_await_result_match_lowers_cleanly() {
     let parsed = parse(
         "arcweft-test://proof/final-hir-let-await-with-inline",
         concat!(
             "extern capability fs {\n",
             "    type FsError\n",
-            "    fn read_text(path: VirtualPath) -> Need<String, FsError> effects { fs.read }\n",
+            "    fn read_text(path: VirtualPath) -> Need<Result<String, FsError>> effects { fs.read }\n",
             "}\n",
             "extern capability path { fn save(path: String) -> VirtualPath }\n",
             "entry cli @entry.main { goto @flow.main }\n",
             "flow main() -> String effects { fs.read(save) } {\n",
-            "    let value = try await fs.read_text(path.save(\"profile.json\")) with {\n",
-            "        error error => return \"fallback\"\n",
+            "    let value = match (await fs.read_text(path.save(\"profile.json\"))) {\n",
+            "        .Ok(value) => value\n",
+            "        .Err(_) => \"fallback\"\n",
             "    }\n",
             "    return value\n",
             "}\n",

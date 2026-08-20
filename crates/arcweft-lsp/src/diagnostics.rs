@@ -768,7 +768,7 @@ source = "src/main.arcw"
                 14..17,
             ),
             (
-                "Need<i64, String>",
+                "Need<Result<i64, String>>",
                 "try await value",
                 "sema.try.error_mismatch",
                 12..15,
@@ -1259,7 +1259,7 @@ effects { }
     #[test]
     fn diagnostics_surface_performed_effect_trace() {
         let source = r"
-fn await_avatar(avatar: Need<String, String>) -> Result<String, String>
+fn await_avatar(avatar: Need<Result<String, String>>) -> Result<String, String>
 effects { }
 {
     await avatar
