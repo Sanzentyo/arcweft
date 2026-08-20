@@ -876,6 +876,53 @@ fn let_else_publishes_success_bindings_after_a_diverging_failure_body() {
 }
 
 #[test]
+fn compact_choice_goto_owns_canonical_ids_and_exact_flow_target() {
+    let fixture = fixture(
+        r#"
+flow main {
+    scope dream {
+        choice @.first {
+            @.next "Next" -> @flow.done
+        }
+    }
+}
+
+flow done() -> String {
+    return "done"
+}
+"#,
+        None,
+    );
+    let report = analyze(&fixture).expect("static Choice goto analysis");
+    let choice = report
+        .expressions()
+        .find_map(|(_, expression)| match expression.resolution() {
+            CheckedExpressionResolution::Choice(choice) => Some((expression, choice)),
+            _ => None,
+        })
+        .expect("one checked Choice expression");
+    assert_eq!(choice.0.ty(), &TypeKind::Never);
+    assert_eq!(
+        choice.1.public_id().map(arcweft_id::PublicId::as_str),
+        Some("choice.main.dream.first")
+    );
+    assert_eq!(
+        choice
+            .1
+            .option_ids()
+            .iter()
+            .map(arcweft_id::PublicId::as_str)
+            .collect::<Vec<_>>(),
+        ["choice.main.dream.first.next"]
+    );
+    let [target] = choice.1.gotos() else {
+        panic!("one checked Choice goto")
+    };
+    assert_eq!(target.arm(), 0);
+    assert_eq!(target.target().public_id().as_str(), "flow.done");
+}
+
+#[test]
 fn assignment_semantics_admit_only_one_direct_local_nominal_field() {
     let fixture = fixture(
         concat!(

@@ -459,6 +459,8 @@ pub enum CheckedExpressionResolution {
     Call,
     /// Exact outcome and continuation contract owned by one Await expression.
     Await(CheckedAwait),
+    /// Exact project Flow targets selected for compact Choice `goto` arms.
+    Choice(CheckedChoice),
     /// Exact carrier and nearest lexical propagation boundary for prefix Try.
     Try(CheckedTry),
     /// One implicit callable introduced by partial-application placeholders.
@@ -497,6 +499,66 @@ pub enum CheckedExpressionResolution {
         rich_text: Box<CheckedRichTextReport>,
     },
     PostfixBracket(PostfixBracketResolution),
+}
+
+/// One compact Choice arm whose `goto` target was resolved against the exact
+/// accepted project-symbol generation.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct CheckedChoiceGoto {
+    arm: u32,
+    target: CheckedProjectItem,
+}
+
+impl CheckedChoiceGoto {
+    pub const fn new(arm: u32, target: CheckedProjectItem) -> Self {
+        Self { arm, target }
+    }
+
+    pub const fn arm(&self) -> u32 {
+        self.arm
+    }
+
+    pub const fn target(&self) -> &CheckedProjectItem {
+        &self.target
+    }
+}
+
+/// Checked semantic additions to one final-HIR Choice expression.
+///
+/// Candidate structure, labels, conditions, and output expressions remain
+/// owned by final HIR. Only non-expression `goto` targets need an additional
+/// semantic selection fact.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct CheckedChoice {
+    public_id: Option<PublicId>,
+    option_ids: Box<[PublicId]>,
+    gotos: Box<[CheckedChoiceGoto]>,
+}
+
+impl CheckedChoice {
+    pub fn new(
+        public_id: Option<PublicId>,
+        option_ids: impl Into<Box<[PublicId]>>,
+        gotos: impl Into<Box<[CheckedChoiceGoto]>>,
+    ) -> Self {
+        Self {
+            public_id,
+            option_ids: option_ids.into(),
+            gotos: gotos.into(),
+        }
+    }
+
+    pub const fn public_id(&self) -> Option<&PublicId> {
+        self.public_id.as_ref()
+    }
+
+    pub fn option_ids(&self) -> &[PublicId] {
+        &self.option_ids
+    }
+
+    pub fn gotos(&self) -> &[CheckedChoiceGoto] {
+        &self.gotos
+    }
 }
 
 /// Checked implicit callable introduced by one or more `_` placeholders.

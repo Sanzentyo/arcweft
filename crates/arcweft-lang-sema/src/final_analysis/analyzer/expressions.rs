@@ -4,18 +4,19 @@
 mod records;
 
 use super::{
-    Analyzer, ArrayLength, BTreeSet, BorrowKind, CandidateSemanticProjection, CheckedAwait,
-    CheckedAwaitPendingObserver, CheckedEntryReference, CheckedExpression,
-    CheckedExpressionResolution, CheckedImplicitCallable, CheckedPipe, CheckedProjectItem,
-    CheckedStyleCallee, CheckedTry, CheckedTryBoundary, CheckedTryCarrier, CheckedTypeSelection,
-    CheckedValueResolution, CheckedVariantOwner, CheckedViewCall, CheckedViewCallee, EffectId,
-    EffectSet, EntityKind, EnumVariantPayload, ExprId, FinalSemanticAnalysisError,
-    GenericTypeOwnerId, GenericTypeParameterId, HirAwaitBranchKind, HirBinaryOp, HirBorrowKind,
-    HirCallArgument, HirComputationBlockKind, HirExpr, HirExprKind, HirIdRef, HirIntegerLiteral,
-    HirItemKind, HirLiteral, HirModule, HirPathRoot, HirPathSegment, HirPostfixBracket,
-    HirPostfixBracketCandidates, HirRecordField, HirRecoveredName, HirScopeKind, HirScopeOwner,
-    HirSelectedMember, HirSourcePresence, HirSourceQuery, HirSourceSite, HirStmtKind,
-    HirTypeSourceRole, HirUnaryOp, LocalLookup, PostfixBracketResolution,
+    Analyzer, ArrayLength, BTreeSet, BorrowKind, CallableDeclarationKey,
+    CandidateSemanticProjection, CheckedAwait, CheckedAwaitPendingObserver, CheckedChoice,
+    CheckedChoiceGoto, CheckedEntryReference, CheckedExpression, CheckedExpressionResolution,
+    CheckedImplicitCallable, CheckedPipe, CheckedProjectItem, CheckedStyleCallee, CheckedTry,
+    CheckedTryBoundary, CheckedTryCarrier, CheckedTypeSelection, CheckedValueResolution,
+    CheckedVariantOwner, CheckedViewCall, CheckedViewCallee, EffectId, EffectSet, EntityKind,
+    EnumVariantPayload, ExprId, FinalSemanticAnalysisError, GenericTypeOwnerId,
+    GenericTypeParameterId, HirAwaitBranchKind, HirBinaryOp, HirBorrowKind, HirCallArgument,
+    HirChoiceCompactAction, HirChoiceItem, HirComputationBlockKind, HirExpr, HirExprKind, HirIdRef,
+    HirIntegerLiteral, HirItemKind, HirLiteral, HirModule, HirPathRoot, HirPathSegment,
+    HirPostfixBracket, HirPostfixBracketCandidates, HirRecordField, HirRecoveredName, HirScopeKind,
+    HirScopeOwner, HirSelectedMember, HirSourcePresence, HirSourceQuery, HirSourceSite,
+    HirStmtKind, HirTypeSourceRole, HirUnaryOp, LocalLookup, PostfixBracketResolution,
     ProjectHirSymbolLookupError, ProjectNominalBody, ProjectNominalDeclaration, ProjectNominalType,
     ProjectSymbolResolutionError, ProjectTypeTarget, ProjectValueLookup, RegisteredSemanticValueId,
     ResolvedProjectSymbol, RichTextAttributeChecker, ScopeId, SourceSpan, TypeKind,
@@ -281,7 +282,9 @@ impl Analyzer<'_, '_, '_> {
         {
             return Ok(checked);
         }
-        if let Some(checked) = self.check_flow_expression_kind(owner, expression, expected)? {
+        if let Some(checked) =
+            self.check_flow_expression_kind(module, owner, expression, expected)?
+        {
             return Ok(checked);
         }
         if let Some(checked) =
@@ -1067,6 +1070,7 @@ impl Analyzer<'_, '_, '_> {
     }
     fn check_flow_expression_kind(
         &mut self,
+        module: &HirModule,
         owner: ExprId,
         expression: &HirExpr,
         expected: Option<&TypeKind>,
@@ -1135,9 +1139,179 @@ impl Analyzer<'_, '_, '_> {
                     CheckedExpressionResolution::Structural,
                 ))
             }
+            HirExprKind::Choice(choice) => {
+                self.check_choice_expression(module, owner, expression, choice, expected)
+            }
             _ => return Ok(None),
         }
         .map(Some)
+    }
+
+    fn check_choice_expression(
+        &mut self,
+        module: &HirModule,
+        owner: ExprId,
+        expression: &HirExpr,
+        choice: &arcweft_lang_hir::expr::HirChoiceExpr,
+        expected: Option<&TypeKind>,
+    ) -> Result<CheckedExpression, FinalSemanticAnalysisError> {
+        let public_id = choice
+            .id()
+            .map(|id| self.resolve_choice_public_id(module, expression.scope(), id))
+            .transpose()?;
+        let mut option_ids = Vec::with_capacity(choice.body().items().len());
+        let mut gotos = Vec::new();
+        let mut outputs = Vec::new();
+        let mut effects = EffectSet::new();
+        for (arm, item) in choice.body().items().iter().enumerate() {
+            let HirChoiceItem::CompactArm(candidate) = item else {
+                return Err(FinalSemanticAnalysisError::WrongPayloadFamily);
+            };
+            option_ids.push(resolve_choice_option_public_id(
+                candidate.id(),
+                public_id.as_ref(),
+            )?);
+            let label = self.check_expression(candidate.label(), Some(&TypeKind::String))?;
+            effects.union_with(label.effects());
+            if let Some(condition) = candidate.condition() {
+                let condition = self.check_expression(condition, Some(&TypeKind::Bool))?;
+                effects.union_with(condition.effects());
+            }
+            match candidate.action() {
+                HirChoiceCompactAction::Goto(target) => {
+                    let target = target
+                        .as_resolved()
+                        .ok_or(FinalSemanticAnalysisError::RecoveredOwner)?;
+                    let target = self.resolve_choice_goto(module, owner, target)?;
+                    gotos.push(CheckedChoiceGoto::new(
+                        u32::try_from(arm)
+                            .map_err(|_| FinalSemanticAnalysisError::AccountingOverflow)?,
+                        target,
+                    ));
+                }
+                HirChoiceCompactAction::Out(value) => {
+                    let value = self.check_expression(*value, expected)?;
+                    effects.union_with(value.effects());
+                    outputs.push(value.ty().clone());
+                }
+                HirChoiceCompactAction::Missing => {
+                    return Err(FinalSemanticAnalysisError::RecoveredOwner);
+                }
+            }
+        }
+        let ty = if outputs.is_empty() {
+            TypeKind::Never
+        } else {
+            common_type(outputs.iter(), expected)
+                .ok_or(FinalSemanticAnalysisError::ExpressionTypeUnavailable { owner })?
+        };
+        if expected.is_some_and(|expected| !expected.accepts(&ty)) {
+            return Err(FinalSemanticAnalysisError::ExpressionTypeUnavailable { owner });
+        }
+        Ok(CheckedExpression::new(
+            ty,
+            if expected.is_some() {
+                CheckedTypeSelection::Expected
+            } else {
+                CheckedTypeSelection::Inferred
+            },
+            effects,
+            CheckedExpressionResolution::Choice(CheckedChoice::new(public_id, option_ids, gotos)),
+        ))
+    }
+
+    fn resolve_choice_goto(
+        &self,
+        module: &HirModule,
+        owner: ExprId,
+        target: &HirIdRef,
+    ) -> Result<CheckedProjectItem, FinalSemanticAnalysisError> {
+        let target = self
+            .resolve_checked_entity_reference(module, target, expression_span(module, owner)?)
+            .map_err(|error| match error {
+                EntityReferenceResolutionError::Lookup => {
+                    FinalSemanticAnalysisError::ValueResolutionFailed { owner }
+                }
+                EntityReferenceResolutionError::WrongFamily => {
+                    FinalSemanticAnalysisError::WrongPayloadFamily
+                }
+            })?;
+        (target.family() == arcweft_id::DeclarationIdentityFamily::Flow)
+            .then_some(target)
+            .ok_or(FinalSemanticAnalysisError::WrongPayloadFamily)
+    }
+
+    fn resolve_choice_public_id(
+        &self,
+        module: &HirModule,
+        mut scope: ScopeId,
+        value: &arcweft_lang_hir::leaf::HirIdRefValue,
+    ) -> Result<arcweft_id::PublicId, FinalSemanticAnalysisError> {
+        let reference = value
+            .as_resolved()
+            .ok_or(FinalSemanticAnalysisError::RecoveredOwner)?;
+        if let HirIdRef::Absolute(value) = reference {
+            return checked_choice_public_id(value.as_str());
+        }
+
+        let mut named_scopes = Vec::new();
+        let item = loop {
+            let node = module
+                .resolve_scope(scope)
+                .map_err(|_| FinalSemanticAnalysisError::InvalidOwner)?;
+            if let HirScopeOwner::Item(owner) = node.owner() {
+                break *owner;
+            }
+            if let HirScopeOwner::Stmt(owner) = node.owner()
+                && let HirStmtKind::Scope(statement) = module
+                    .resolve_stmt(*owner)
+                    .map_err(|_| FinalSemanticAnalysisError::InvalidOwner)?
+                    .kind()
+                && let Some(name) = statement.name()
+            {
+                named_scopes.push(name.as_str());
+            }
+            let Some(parent) = node.parent() else {
+                return Err(FinalSemanticAnalysisError::WrongPayloadFamily);
+            };
+            scope = parent;
+        };
+        named_scopes.reverse();
+
+        let symbol = self
+            .symbols
+            .flow_symbol_for_item(item)
+            .ok_or(FinalSemanticAnalysisError::WrongPayloadFamily)?;
+        let CallableDeclarationKey::Flow(flow) = symbol.declaration() else {
+            return Err(FinalSemanticAnalysisError::WrongPayloadFamily);
+        };
+        let flow_path = flow
+            .public_id()
+            .as_str()
+            .strip_prefix("flow.")
+            .ok_or(FinalSemanticAnalysisError::WrongPayloadFamily)?;
+        let relative = match reference {
+            HirIdRef::Relative(relative) => relative,
+            HirIdRef::FamilyRelative(relative) if relative.family().as_str() == "choice" => {
+                relative.relative()
+            }
+            HirIdRef::FamilyRelative(_) | HirIdRef::Absolute(_) => {
+                return Err(FinalSemanticAnalysisError::WrongPayloadFamily);
+            }
+        };
+        if relative.parent_depth() > named_scopes.len() {
+            return Err(FinalSemanticAnalysisError::WrongPayloadFamily);
+        }
+        let retained_scope_count = named_scopes.len() - relative.parent_depth();
+        let mut value = String::from("choice.");
+        value.push_str(flow_path);
+        for name in &named_scopes[..retained_scope_count] {
+            value.push('.');
+            value.push_str(name);
+        }
+        value.push('.');
+        value.push_str(relative.suffix().as_str());
+        checked_choice_public_id(&value)
     }
     fn check_aggregate_expression_kind(
         &mut self,
@@ -2305,6 +2479,45 @@ fn structural_expression(ty: TypeKind, selection: CheckedTypeSelection) -> Check
         EffectSet::new(),
         CheckedExpressionResolution::Structural,
     )
+}
+
+fn checked_choice_public_id(
+    value: &str,
+) -> Result<arcweft_id::PublicId, FinalSemanticAnalysisError> {
+    let public_id = arcweft_id::PublicId::try_new(value.to_owned())
+        .map_err(|_| FinalSemanticAnalysisError::WrongPayloadFamily)?;
+    (public_id.as_str().split('.').next() == Some("choice"))
+        .then_some(public_id)
+        .ok_or(FinalSemanticAnalysisError::WrongPayloadFamily)
+}
+
+fn resolve_choice_option_public_id(
+    value: &arcweft_lang_hir::leaf::HirIdRefValue,
+    choice: Option<&arcweft_id::PublicId>,
+) -> Result<arcweft_id::PublicId, FinalSemanticAnalysisError> {
+    let reference = value
+        .as_resolved()
+        .ok_or(FinalSemanticAnalysisError::RecoveredOwner)?;
+    if let HirIdRef::Absolute(value) = reference {
+        return checked_choice_public_id(value.as_str());
+    }
+    let relative = match reference {
+        HirIdRef::Relative(relative) => relative,
+        HirIdRef::FamilyRelative(relative) if relative.family().as_str() == "choice" => {
+            relative.relative()
+        }
+        HirIdRef::FamilyRelative(_) | HirIdRef::Absolute(_) => {
+            return Err(FinalSemanticAnalysisError::WrongPayloadFamily);
+        }
+    };
+    let choice = choice.ok_or(FinalSemanticAnalysisError::WrongPayloadFamily)?;
+    let mut base = choice.as_str().split('.').collect::<Vec<_>>();
+    if relative.parent_depth() >= base.len() {
+        return Err(FinalSemanticAnalysisError::WrongPayloadFamily);
+    }
+    base.truncate(base.len() - relative.parent_depth());
+    base.extend(relative.suffix().as_str().split('.'));
+    checked_choice_public_id(&base.join("."))
 }
 
 fn break_targets_loop(

@@ -39,7 +39,10 @@ use arcweft_core::value::{
     RuntimeUnsignedIntWidth, RuntimeValue,
 };
 use arcweft_id::{DeclarationIdentityFamily, PublicId};
-use arcweft_lang_hir::expr::{HirAwaitBranchKind, HirCallExpr, HirExprKind, HirPlaceholderKind};
+use arcweft_lang_hir::expr::{
+    HirAwaitBranchKind, HirCallExpr, HirChoiceCompactAction, HirChoiceItem, HirExprKind,
+    HirPlaceholderKind,
+};
 use arcweft_lang_hir::identity::{
     CaptureId, ExprId, HirModuleId, HirSnapshotId, ItemId, LocalId, PatternId, StmtId, TypeId,
 };
@@ -844,6 +847,68 @@ impl RuntimeAwaitPendingObserverFact {
 pub struct RuntimeAwaitFact {
     operand: ExprId,
     observers: Box<[RuntimeAwaitPendingObserverFact]>,
+}
+
+/// Exact runtime Flow selected for one compact Choice `goto` arm.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct RuntimeChoiceGotoFact {
+    arm: u32,
+    target: RuntimeProjectItem,
+}
+
+impl RuntimeChoiceGotoFact {
+    pub const fn new(arm: u32, target: RuntimeProjectItem) -> Self {
+        Self { arm, target }
+    }
+
+    pub const fn arm(&self) -> u32 {
+        self.arm
+    }
+
+    pub const fn target(&self) -> &RuntimeProjectItem {
+        &self.target
+    }
+}
+
+/// Generation-bound semantic additions consumed when lowering one Choice.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct RuntimeChoiceFact {
+    public_id: Option<PublicId>,
+    option_ids: Box<[PublicId]>,
+    gotos: Box<[RuntimeChoiceGotoFact]>,
+}
+
+impl RuntimeChoiceFact {
+    pub fn new(
+        public_id: Option<PublicId>,
+        option_ids: impl Into<Box<[PublicId]>>,
+        gotos: impl Into<Box<[RuntimeChoiceGotoFact]>>,
+    ) -> Self {
+        Self {
+            public_id,
+            option_ids: option_ids.into(),
+            gotos: gotos.into(),
+        }
+    }
+
+    pub const fn public_id(&self) -> Option<&PublicId> {
+        self.public_id.as_ref()
+    }
+
+    pub fn option_ids(&self) -> &[PublicId] {
+        &self.option_ids
+    }
+
+    pub fn gotos(&self) -> &[RuntimeChoiceGotoFact] {
+        &self.gotos
+    }
+
+    pub fn goto_for_arm(&self, arm: u32) -> Option<&RuntimeProjectItem> {
+        self.gotos
+            .binary_search_by_key(&arm, RuntimeChoiceGotoFact::arm)
+            .ok()
+            .map(|index| self.gotos[index].target())
+    }
 }
 
 impl RuntimeAwaitFact {
@@ -2341,6 +2406,7 @@ pub struct RuntimePlanSemanticFactInput {
     assertions: Vec<(StmtId, RuntimeAssertionAdmission)>,
     assignments: Vec<(StmtId, RuntimeAssignmentFact)>,
     evaluated_effects: Vec<(StmtId, RuntimeEvaluatedEffectFact)>,
+    choices: Vec<(ExprId, RuntimeChoiceFact)>,
     awaits: Vec<(ExprId, RuntimeAwaitFact)>,
     tries: Vec<(ExprId, RuntimeTryFact)>,
     implicit_callables: Vec<(ExprId, RuntimeImplicitCallableFact)>,
@@ -2372,6 +2438,7 @@ impl RuntimePlanSemanticFactInput {
             assertions: Vec::new(),
             assignments: Vec::new(),
             evaluated_effects: Vec::new(),
+            choices: Vec::new(),
             awaits: Vec::new(),
             tries: Vec::new(),
             implicit_callables: Vec::new(),
@@ -2481,6 +2548,10 @@ impl RuntimePlanSemanticFactInput {
         self.awaits.push((owner, fact));
     }
 
+    pub fn push_choice(&mut self, owner: ExprId, fact: RuntimeChoiceFact) {
+        self.choices.push((owner, fact));
+    }
+
     pub fn push_try(&mut self, owner: ExprId, fact: RuntimeTryFact) {
         self.tries.push((owner, fact));
     }
@@ -2530,6 +2601,7 @@ pub struct RuntimePlanSemanticFacts {
     assertions: BTreeMap<StmtId, RuntimeAssertionAdmission>,
     assignments: BTreeMap<StmtId, RuntimeAssignmentFact>,
     evaluated_effects: BTreeMap<StmtId, RuntimeEvaluatedEffectFact>,
+    choices: BTreeMap<ExprId, RuntimeChoiceFact>,
     awaits: BTreeMap<ExprId, RuntimeAwaitFact>,
     tries: BTreeMap<ExprId, RuntimeTryFact>,
     implicit_callables: BTreeMap<ExprId, RuntimeImplicitCallableFact>,
@@ -2824,6 +2896,70 @@ impl RuntimePlanSemanticFacts {
                 });
             };
             validate_call(&modules, hir_call, call)?;
+        }
+
+        let choices = collect_unique(input.choices, RuntimeSemanticFactFamily::Choice)?;
+        for (expression, fact) in &choices {
+            require_runtime_expression_owner(
+                &runtime_owners,
+                *expression,
+                RuntimeSemanticFactFamily::Choice,
+            )?;
+            let HirExprKind::Choice(choice) = resolve_expr(&modules, *expression)? else {
+                return Err(RuntimeSemanticFactsError::InvalidChoiceFact {
+                    expression: *expression,
+                });
+            };
+            if fact.option_ids().len() != choice.body().items().len()
+                || fact
+                    .public_id()
+                    .is_some_and(|id| id.as_str().split('.').next() != Some("choice"))
+                || fact
+                    .option_ids()
+                    .iter()
+                    .any(|id| id.as_str().split('.').next() != Some("choice"))
+            {
+                return Err(RuntimeSemanticFactsError::InvalidChoiceFact {
+                    expression: *expression,
+                });
+            }
+            let mut previous = None;
+            for goto in fact.gotos() {
+                if previous.is_some_and(|previous| previous >= goto.arm()) {
+                    return Err(RuntimeSemanticFactsError::InvalidChoiceFact {
+                        expression: *expression,
+                    });
+                }
+                let index = usize::try_from(goto.arm()).map_err(|_| {
+                    RuntimeSemanticFactsError::InvalidChoiceFact {
+                        expression: *expression,
+                    }
+                })?;
+                if !matches!(
+                    choice.body().items().get(index),
+                    Some(HirChoiceItem::CompactArm(arm))
+                        if matches!(arm.action(), HirChoiceCompactAction::Goto(_))
+                ) || goto.target().family() != DeclarationIdentityFamily::Flow
+                {
+                    return Err(RuntimeSemanticFactsError::InvalidChoiceFact {
+                        expression: *expression,
+                    });
+                }
+                validate_project_item(&modules, goto.target())?;
+                let RuntimeProjectItemOwner::StructuralFlow { owner, runtime } =
+                    goto.target().owner()
+                else {
+                    return Err(RuntimeSemanticFactsError::InvalidChoiceFact {
+                        expression: *expression,
+                    });
+                };
+                if flows.get(owner) != Some(runtime) {
+                    return Err(RuntimeSemanticFactsError::InvalidChoiceFact {
+                        expression: *expression,
+                    });
+                }
+                previous = Some(goto.arm());
+            }
         }
 
         let awaits = collect_unique(input.awaits, RuntimeSemanticFactFamily::Await)?;
@@ -3290,6 +3426,7 @@ impl RuntimePlanSemanticFacts {
             assertions,
             assignments,
             evaluated_effects,
+            choices,
             awaits,
             tries: try_facts,
             implicit_callables,
@@ -3664,6 +3801,10 @@ impl RuntimePlanSemanticFacts {
         self.awaits.get(&expression)
     }
 
+    pub fn choice(&self, expression: ExprId) -> Option<&RuntimeChoiceFact> {
+        self.choices.get(&expression)
+    }
+
     pub fn awaits(&self) -> impl ExactSizeIterator<Item = (&ExprId, &RuntimeAwaitFact)> {
         self.awaits.iter()
     }
@@ -3747,6 +3888,8 @@ pub enum RuntimeSemanticFactsError {
     InvalidEvaluatedEffectFact { statement: StmtId },
     #[error("Await fact for {expression:?} does not match its checked expression")]
     InvalidAwaitFact { expression: ExprId },
+    #[error("Choice fact for {expression:?} does not match its checked expression")]
+    InvalidChoiceFact { expression: ExprId },
     #[error("Try fact for {expression:?} does not match its checked carrier boundary")]
     InvalidTryFact { expression: ExprId },
     #[error("implicit callable fact for {expression:?} does not match its checked abstraction")]
@@ -3925,6 +4068,7 @@ pub enum RuntimeSemanticFactFamily {
     Assertion,
     Assignment,
     EvaluatedEffect,
+    Choice,
     Await,
     Try,
     ImplicitCallable,

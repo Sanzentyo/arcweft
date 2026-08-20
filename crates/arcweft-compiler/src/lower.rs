@@ -95,8 +95,8 @@ use arcweft_runtime_plan::{
     semantic_facts::{
         RuntimeAgentTypeShape, RuntimeAssertionAdmission, RuntimeAssignmentFact, RuntimeAwaitFact,
         RuntimeAwaitPendingObserverFact, RuntimeCallResultShape, RuntimeCheckedCapture,
-        RuntimeCheckedTypeProjectionError, RuntimeDialogueApplication,
-        RuntimeDialogueEffectExpression, RuntimeDialogueEffectTrigger,
+        RuntimeCheckedTypeProjectionError, RuntimeChoiceFact, RuntimeChoiceGotoFact,
+        RuntimeDialogueApplication, RuntimeDialogueEffectExpression, RuntimeDialogueEffectTrigger,
         RuntimeDialogueValueExpression, RuntimeEffectFieldFact, RuntimeEvaluatedEffect,
         RuntimeEvaluatedEffectFact, RuntimeImplicitCallableFact, RuntimeIteratorFact,
         RuntimeIteratorWitnessExecutableFact, RuntimeIteratorWitnessFact, RuntimeLogLevel,
@@ -447,6 +447,23 @@ pub fn project_runtime_semantic_facts(
                                 RuntimeAwaitPendingObserverFact::new(observer.pattern())
                             })
                             .collect::<Vec<_>>(),
+                    ),
+                );
+            }
+            CheckedExpressionResolution::Choice(choice) => {
+                input.push_choice(
+                    owner,
+                    RuntimeChoiceFact::new(
+                        choice.public_id().cloned(),
+                        choice.option_ids().to_vec(),
+                        choice
+                            .gotos()
+                            .iter()
+                            .map(|goto| {
+                                runtime_project_item(goto.target())
+                                    .map(|target| RuntimeChoiceGotoFact::new(goto.arm(), target))
+                            })
+                            .collect::<Result<Vec<_>, _>>()?,
                     ),
                 );
             }

@@ -10,10 +10,10 @@ use arcweft_core::effect::{RuntimeArtifactFingerprint, RuntimeAssertionProfile};
 use arcweft_core::entry::{RuntimeCallableId, RuntimeCallableRole, RuntimeFlowExecutable};
 use arcweft_core::line_task::{ChildCancelPolicy, ChildJoinPolicy, LineCleanupPolicy};
 use arcweft_core::plan::{
-    FlowRuntimeId, RuntimeAwaitPendingObserverSeed, RuntimeDialogueContentPlanSeedId,
-    RuntimeEffectFieldSeed, RuntimeEntryKind, RuntimeEntrySpec, RuntimeEvaluatedEffectSeed,
-    RuntimeExprSeed, RuntimeFlowMatchArmSeed, RuntimeFlowOpSeed, RuntimeFlowSeed,
-    RuntimeFunctionSiteDeclarationSeed, RuntimeFunctionSiteSeedId,
+    FlowRuntimeId, RuntimeAwaitPendingObserverSeed, RuntimeChoiceOptionSeed,
+    RuntimeDialogueContentPlanSeedId, RuntimeEffectFieldSeed, RuntimeEntryKind, RuntimeEntrySpec,
+    RuntimeEvaluatedEffectSeed, RuntimeExprSeed, RuntimeFlowMatchArmSeed, RuntimeFlowOpSeed,
+    RuntimeFlowSeed, RuntimeFunctionSiteDeclarationSeed, RuntimeFunctionSiteSeedId,
     RuntimeHostTaskRequestTemplateSeed, RuntimeIteratorEvidenceSeed,
     RuntimeIteratorWitnessEvidenceSeed, RuntimeIteratorWitnessExecutableSeed,
     RuntimeLineTaskGroupSeed, RuntimeLineTaskNodeSeed, RuntimeLineTaskTriggerSeed,
@@ -24,8 +24,11 @@ use arcweft_core::plan::{
 };
 use arcweft_core::task::{HostCapabilityId, NeedId, TaskId, TaskOutcomeContract, TaskPriority};
 use arcweft_core::time::LogicalDuration;
-use arcweft_core::value::{RuntimeSignedIntWidth, RuntimeUnsignedIntWidth};
-use arcweft_lang_hir::expr::{HirExprKind, HirThreadBody, HirThreadFlowItem, HirThreadMode};
+use arcweft_core::value::{RuntimeSignedIntWidth, RuntimeUnsignedIntWidth, RuntimeValue};
+use arcweft_lang_hir::expr::{
+    HirChoiceCompactAction, HirChoiceItem, HirExprKind, HirThreadBody, HirThreadFlowItem,
+    HirThreadMode,
+};
 use arcweft_lang_hir::identity::{ExprId, HirModuleId, HirSnapshotId, ItemId, LocalId, StmtId};
 use arcweft_lang_hir::item::{
     HirEntryDeclaration, HirEntryId, HirEntryKind, HirFunctionBody, HirFunctionItem,
@@ -2304,6 +2307,9 @@ impl<'a> FinalFlowLowerer<'a> {
             {
                 self.lower_flow_value(*expression, RuntimeFlowValueContinuation::Ignore(tail))
             }
+            HirStmtKind::Choice { choice } => {
+                self.lower_flow_value(*choice, RuntimeFlowValueContinuation::Ignore(tail))
+            }
             HirStmtKind::Return { .. }
             | HirStmtKind::Goto { .. }
             | HirStmtKind::Break { .. }
@@ -2449,6 +2455,10 @@ impl<'a> FinalFlowLowerer<'a> {
                     body: self.lower_body_as_one_error(thread_expr.body())?,
                 }])
             }
+            HirStmtKind::Choice { choice } => self.lower_flow_value(
+                *choice,
+                RuntimeFlowValueContinuation::Ignore(RuntimeFlowTail::None),
+            ),
             HirStmtKind::If(branch) => Ok(vec![RuntimeFlowOpSeed::If {
                 condition: expr
                     .lower(branch.condition())
@@ -2608,7 +2618,10 @@ impl<'a> FinalFlowLowerer<'a> {
         })?;
         if matches!(
             expression.kind(),
-            HirExprKind::Await(_) | HirExprKind::Loop(_) | HirExprKind::Try(_)
+            HirExprKind::Await(_)
+                | HirExprKind::Choice(_)
+                | HirExprKind::Loop(_)
+                | HirExprKind::Try(_)
         ) || matches!(
             expression.kind(),
             HirExprKind::ComputationBlock(block)
@@ -2665,6 +2678,9 @@ impl<'a> FinalFlowLowerer<'a> {
             ),
             HirExprKind::Await(awaited) => {
                 self.lower_await_value(expression, awaited, &continuation)
+            }
+            HirExprKind::Choice(choice) => {
+                self.lower_choice_value(expression, choice, continuation)
             }
             HirExprKind::Pipe(pipe) => {
                 self.lower_pipe_value(expression, pipe, continuation, overrides)
@@ -2744,6 +2760,93 @@ impl<'a> FinalFlowLowerer<'a> {
             },
             overrides,
         )
+    }
+
+    fn lower_choice_value(
+        &mut self,
+        owner: ExprId,
+        choice: &arcweft_lang_hir::expr::HirChoiceExpr,
+        _continuation: RuntimeFlowValueContinuation,
+    ) -> Result<Vec<RuntimeFlowOpSeed>, RuntimePlanLowerError> {
+        let result = self.facts.expression_type(owner).ok_or_else(|| {
+            RuntimePlanLowerError::new(format!(
+                "Choice expression {owner:?} has no accepted result type"
+            ))
+        })?;
+        if !matches!(result.shape(), RuntimeTypeShape::Never) {
+            return Err(RuntimePlanLowerError::new(format!(
+                "value-producing Choice expression {owner:?} requires typed runtime result ownership"
+            )));
+        }
+        if choice.plan().is_some() {
+            return Err(RuntimePlanLowerError::new(format!(
+                "Choice expression {owner:?} lifecycle plan requires typed runtime ownership"
+            )));
+        }
+        let fact = self.facts.choice(owner).ok_or_else(|| {
+            RuntimePlanLowerError::new(format!(
+                "Choice expression {owner:?} has no checked runtime fact"
+            ))
+        })?;
+        let id = fact.public_id().map(|id| id.as_str().to_owned());
+        let mut options = Vec::with_capacity(choice.body().items().len());
+        for (index, item) in choice.body().items().iter().enumerate() {
+            let HirChoiceItem::CompactArm(arm) = item else {
+                return Err(RuntimePlanLowerError::new(format!(
+                    "Choice expression {owner:?} contains a candidate family without a typed core projection"
+                )));
+            };
+            if arm.condition().is_some() {
+                return Err(RuntimePlanLowerError::new(format!(
+                    "Choice expression {owner:?} compact enabled state requires typed runtime ownership"
+                )));
+            }
+            if !matches!(arm.action(), HirChoiceCompactAction::Goto(_)) {
+                return Err(RuntimePlanLowerError::new(format!(
+                    "Choice expression {owner:?} contains a non-goto compact action"
+                )));
+            }
+            let arm_index = u32::try_from(index).map_err(|_| {
+                RuntimePlanLowerError::new(format!(
+                    "Choice expression {owner:?} contains too many compact arms"
+                ))
+            })?;
+            let target = fact
+                .goto_for_arm(arm_index)
+                .and_then(crate::semantic_facts::RuntimeProjectItem::flow_runtime_id)
+                .cloned()
+                .ok_or_else(|| {
+                    RuntimePlanLowerError::new(format!(
+                        "Choice expression {owner:?} arm {index} has no checked Flow target"
+                    ))
+                })?;
+            let label = match self.facts.expression_literal(arm.label()) {
+                Some(RuntimeValue::String(label)) => label.clone(),
+                _ => {
+                    return Err(RuntimePlanLowerError::new(format!(
+                        "Choice expression {owner:?} arm {index} label is not a checked static string"
+                    )));
+                }
+            };
+            options.push(RuntimeChoiceOptionSeed {
+                id: Some(
+                    fact.option_ids()
+                        .get(index)
+                        .ok_or_else(|| {
+                            RuntimePlanLowerError::new(format!(
+                                "Choice expression {owner:?} arm {index} has no checked option identity"
+                            ))
+                        })?
+                        .as_str()
+                        .to_owned(),
+                ),
+                label,
+                target: Some(target),
+                out: None,
+                effects: Vec::new(),
+            });
+        }
+        Ok(vec![RuntimeFlowOpSeed::Choice { id, options }])
     }
 
     fn lower_loop_value(

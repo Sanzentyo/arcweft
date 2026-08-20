@@ -24,8 +24,8 @@ use super::{
     CallCalleeClassificationFact, CallPoison, CallTargetFact, CallTargetFacts,
     CallableDeclarationOwner, CallableDiagnosticSubject, CallableInstantiation, CaptureId,
     CheckedAssignment, CheckedBinding, CheckedBindingRole, CheckedCallArgumentSlotSource,
-    CheckedCharacterDialoguePatch, CheckedCharacterDialogueTarget, CheckedEntryReference,
-    CheckedEvaluatedEffect, CheckedExpression, CheckedExpressionResolution,
+    CheckedCharacterDialoguePatch, CheckedCharacterDialogueTarget, CheckedChoice,
+    CheckedEntryReference, CheckedEvaluatedEffect, CheckedExpression, CheckedExpressionResolution,
     CheckedFunctionExecution, CheckedImplicitCallable, CheckedItem, CheckedItemRole,
     CheckedIteration, CheckedPatchOperation, CheckedPattern, CheckedPatternResolution, CheckedPipe,
     CheckedProjectCallable, CheckedProjectItem, CheckedProjectItemOwner, CheckedProjectNominal,
@@ -694,6 +694,7 @@ fn expression_resolution_matches(
             | CheckedExpressionResolution::StyleCallee(_),
         )
         | (HirExprKind::Await(_), CheckedExpressionResolution::Await(_))
+        | (HirExprKind::Choice(_), CheckedExpressionResolution::Choice(_))
         | (
             HirExprKind::Placeholder(HirPlaceholderKind::PartialApplication),
             CheckedExpressionResolution::ImplicitParameter { .. },
@@ -752,7 +753,6 @@ const fn structural_resolution_matches(kind: &HirExprKind) -> bool {
             | HirExprKind::Index(_)
             | HirExprKind::Await(_)
             | HirExprKind::Thread(_)
-            | HirExprKind::Choice(_)
             | HirExprKind::Range(_)
             | HirExprKind::Binary(_)
             | HirExprKind::Borrow(_)
@@ -944,6 +944,9 @@ fn validate_expression_resolution(
                 }
             }
         }
+        CheckedExpressionResolution::Choice(choice) => {
+            validate_choice(symbols, modules, owner, choice)
+        }
         CheckedExpressionResolution::Await(_)
         | CheckedExpressionResolution::PostfixBracket(_)
         | CheckedExpressionResolution::Effect(_)
@@ -956,6 +959,53 @@ fn validate_expression_resolution(
         | CheckedExpressionResolution::Literal(_)
         | CheckedExpressionResolution::Call => Ok(()),
     }
+}
+
+fn validate_choice(
+    symbols: &ProjectSymbolTable,
+    modules: &BTreeMap<HirModuleId, &HirModule>,
+    owner: ExprId,
+    choice: &CheckedChoice,
+) -> Result<(), FinalSemanticAnalysisError> {
+    let expression = resolve_module(modules, owner.module())?
+        .resolve_expr(owner)
+        .map_err(|_| FinalSemanticAnalysisError::InvalidOwner)?;
+    let HirExprKind::Choice(authored) = expression.kind() else {
+        return Err(FinalSemanticAnalysisError::WrongPayloadFamily);
+    };
+    if choice.option_ids().len() != authored.body().items().len()
+        || choice
+            .public_id()
+            .is_some_and(|id| id.as_str().split('.').next() != Some("choice"))
+        || choice
+            .option_ids()
+            .iter()
+            .any(|id| id.as_str().split('.').next() != Some("choice"))
+    {
+        return Err(FinalSemanticAnalysisError::WrongPayloadFamily);
+    }
+    let mut previous = None;
+    for goto in choice.gotos() {
+        if previous.is_some_and(|previous| previous >= goto.arm()) {
+            return Err(FinalSemanticAnalysisError::WrongPayloadFamily);
+        }
+        let index = usize::try_from(goto.arm())
+            .map_err(|_| FinalSemanticAnalysisError::AccountingOverflow)?;
+        if !matches!(
+            authored.body().items().get(index),
+            Some(arcweft_lang_hir::expr::HirChoiceItem::CompactArm(arm))
+                if matches!(
+                    arm.action(),
+                    arcweft_lang_hir::expr::HirChoiceCompactAction::Goto(_)
+                )
+        ) || goto.target().family() != arcweft_id::DeclarationIdentityFamily::Flow
+        {
+            return Err(FinalSemanticAnalysisError::WrongPayloadFamily);
+        }
+        validate_project_item(symbols, modules, goto.target())?;
+        previous = Some(goto.arm());
+    }
+    Ok(())
 }
 
 fn validate_implicit_callable(

@@ -236,18 +236,18 @@ LinePlan model or a raw/string statement reader to make either fixture pass.
 
 ## 7. Close the positive fixture gate directory-wide
 
-Status: `current_pass/check` rows `001` through `008` pass after the typed
-LetElse closure recorded in
-[2026-08-21-let-else-positive-fixture.md](2026-08-21-let-else-positive-fixture.md).
-The current first failure is `009_choice_static_goto.arcw` in final semantic
-expression typing.
+Status: `current_pass/check` rows `001` through `009` pass after the typed
+static Choice/goto closure recorded in
+[2026-08-21-static-choice-goto-positive-fixture.md](2026-08-21-static-choice-goto-positive-fixture.md).
+The current first failure is `010_dialogue_basic.arcw`: executable dialogue
+runtime projection has no selected `localization.character_names` policy.
 
 Run and repair the positive check/run directories in deterministic path order.
 Keep every remaining positive fixture active and unchanged unless the selected
 stable surface explicitly requires a typed migration. The currently known
-first positive blocker is
-`current_pass/check/008_let_else_diverge.arcw`; fix its owning typed
-transaction before advancing to the next failure.
+first positive blocker is `current_pass/check/010_dialogue_basic.arcw`; fix its
+owning typed profile or standard-policy transaction before advancing to the
+next failure.
 
 For each exposed failure:
 
