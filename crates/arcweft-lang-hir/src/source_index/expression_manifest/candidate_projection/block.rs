@@ -256,6 +256,69 @@ impl CandidateValidationCursor<'_> {
                     matches,
                 )
             }
+            SyntaxKind::LetElseStatement => {
+                let source = source.let_else_view()?;
+                let initializer = self.validate_statement_expression(
+                    source.initializer(),
+                    scope,
+                    HirExprSourceRole::Operand,
+                )?;
+                let generations_before_pattern = generations.clone();
+                let pattern = self.validate_pattern_binding(
+                    source.pattern(),
+                    scope,
+                    HirPatternBindingPolicy::LetElseBinding,
+                    generations,
+                )?;
+                let else_scope = self.validate_statement_scope(
+                    owner,
+                    scope,
+                    HirScopeKind::Block,
+                    &source.else_branch().node().source_span(),
+                )?;
+                let mut else_generations = generations_before_pattern;
+                let else_branch = self.validate_statement_block(
+                    source.else_branch(),
+                    else_scope,
+                    &mut else_generations,
+                )?;
+                self.finish_scope(else_scope, &else_branch.locals)?;
+                let recovery = if pattern.state.is_poisoned() {
+                    Some(HirStmtRecoveryIssue::RecoveredChild {
+                        role: HirStmtChildRole::Pattern,
+                    })
+                } else if initializer.poisoned {
+                    Some(HirStmtRecoveryIssue::RecoveredChild {
+                        role: HirStmtChildRole::Initializer,
+                    })
+                } else if else_branch.poisoned {
+                    Some(HirStmtRecoveryIssue::RecoveredChild {
+                        role: HirStmtChildRole::ElseBranch,
+                    })
+                } else {
+                    None
+                };
+                let matches = matches!(
+                    payload.kind(),
+                    HirStmtKind::LetElse {
+                        pattern: actual_pattern,
+                        annotation: None,
+                        initializer: actual_initializer,
+                        else_scope: actual_else_scope,
+                        else_body,
+                        locals,
+                    } if *actual_pattern == pattern.owner
+                        && *actual_initializer == initializer.id
+                        && *actual_else_scope == else_scope
+                        && else_body.as_ref() == else_branch.body.as_ref()
+                        && locals.as_ref() == pattern.locals.as_ref()
+                );
+                (
+                    pattern.locals,
+                    recovery.map_or(HirStmtPoisonState::Clean, HirStmtPoisonState::Poisoned),
+                    matches,
+                )
+            }
             SyntaxKind::ExpressionStatement => {
                 let expression = self.validate_statement_expression(
                     source.required_expression(SyntaxRole::Initializer)?,

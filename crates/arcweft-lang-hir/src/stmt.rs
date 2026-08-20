@@ -371,6 +371,14 @@ impl HirStatementContext {
             Self::Proof => crate::scope::HirPatternBindingPolicy::ProofLet,
         }
     }
+
+    pub(crate) const fn let_else_binding_policy(self) -> crate::scope::HirPatternBindingPolicy {
+        match self {
+            Self::Ordinary | Self::Thread => crate::scope::HirPatternBindingPolicy::LetElseBinding,
+            Self::Predicate => crate::scope::HirPatternBindingPolicy::PredicateLetElse,
+            Self::Proof => crate::scope::HirPatternBindingPolicy::ProofLetElse,
+        }
+    }
 }
 
 /// Exact base statement inventory plus the locally accepted dedicated if-let.

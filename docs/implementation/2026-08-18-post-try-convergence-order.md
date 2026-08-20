@@ -236,6 +236,12 @@ LinePlan model or a raw/string statement reader to make either fixture pass.
 
 ## 7. Close the positive fixture gate directory-wide
 
+Status: `current_pass/check` rows `001` through `008` pass after the typed
+LetElse closure recorded in
+[2026-08-21-let-else-positive-fixture.md](2026-08-21-let-else-positive-fixture.md).
+The current first failure is `009_choice_static_goto.arcw` in final semantic
+expression typing.
+
 Run and repair the positive check/run directories in deterministic path order.
 Keep every remaining positive fixture active and unchanged unless the selected
 stable surface explicitly requires a typed migration. The currently known

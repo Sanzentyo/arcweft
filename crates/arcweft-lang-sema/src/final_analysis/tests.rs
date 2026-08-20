@@ -859,6 +859,23 @@ fn dialogue_line_plan_bindings_are_inferred_in_source_order() {
 }
 
 #[test]
+fn let_else_publishes_success_bindings_after_a_diverging_failure_body() {
+    let fixture = fixture(
+        concat!(
+            "flow main() -> String {\n",
+            "    let Some(route) = Some(@flow.done) else {\n",
+            "        return \"missing\"\n",
+            "    }\n",
+            "    goto route\n",
+            "}\n",
+            "flow done() -> String { return \"done\" }\n",
+        ),
+        None,
+    );
+    analyze(&fixture).expect("typed LetElse with diverging failure body");
+}
+
+#[test]
 fn assignment_semantics_admit_only_one_direct_local_nominal_field() {
     let fixture = fixture(
         concat!(

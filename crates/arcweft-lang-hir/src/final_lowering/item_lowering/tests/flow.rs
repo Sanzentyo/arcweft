@@ -98,6 +98,62 @@ fn dialogue_line_plan_owns_typed_let_callback_and_out_items() {
     assert!(matches!(plan.items()[3], HirLinePlanItem::Out(_)));
 }
 
+#[test]
+fn let_else_owns_failure_block_and_publishes_success_bindings() {
+    let parsed = parse(
+        "arcweft-test://proof/final-hir-let-else",
+        concat!(
+            "flow main() -> String {\n",
+            "    let Some(route) = Some(@flow.done) else {\n",
+            "        return \"missing\"\n",
+            "    }\n",
+            "    goto route\n",
+            "}\n",
+            "flow done() -> String { return \"done\" }\n",
+        ),
+    );
+    assert!(
+        parsed.diagnostics().is_empty(),
+        "{:?}",
+        parsed.diagnostics()
+    );
+    let key = module_key(&parsed);
+    let mut database = HirDatabase::try_new().unwrap();
+    let module = lower(&mut database, &parsed, &key);
+    assert_eq!(
+        module.status(),
+        HirModuleStatus::Clean,
+        "diagnostics: {:#?}; statements: {:#?}; patterns: {:#?}; locals: {:#?}",
+        module.diagnostics(),
+        module.statements().collect::<Vec<_>>(),
+        module.patterns().collect::<Vec<_>>(),
+        module.locals().collect::<Vec<_>>()
+    );
+    let (_, _, flow) = resolve_flow(&module, 0);
+    let [
+        HirThreadFlowItem::Statement(binding),
+        HirThreadFlowItem::Statement(_),
+    ] = flow.body().items()
+    else {
+        panic!("LetElse and Goto must remain source-ordered statements")
+    };
+    let HirStmtKind::LetElse {
+        else_scope,
+        else_body,
+        locals,
+        ..
+    } = module.resolve_stmt(*binding).unwrap().kind()
+    else {
+        panic!("first statement must retain LetElse")
+    };
+    assert_eq!(else_body.len(), 1);
+    assert_eq!(locals.len(), 1);
+    assert_eq!(
+        module.resolve_scope(*else_scope).unwrap().owner(),
+        &crate::scope::HirScopeOwner::Stmt(*binding)
+    );
+}
+
 fn flow_query<'module>(
     module: &'module HirModule,
     parsed: &ParsedSource,

@@ -12,8 +12,8 @@ use super::node::{
     BlockKind, CallArgumentKind, CallExpressionKind, ChoiceExpressionKind, CloseParenKind,
     CloseStatementKind, DeclarationHeaderKind, DocBlockKind, ExactAstKind, ExpressionBodyKind,
     ExpressionStatementKind, FixedParameterGroupKind, FunctionBodyKind, FunctionTypeKind,
-    GenericApplicationTypeKind, IfStatementKind, LetChoiceStatementKind, LetStatementKind,
-    LifetimeSetStatementKind, MatchArmKind, MatchStatementKind, MissingBodyKind,
+    GenericApplicationTypeKind, IfStatementKind, LetChoiceStatementKind, LetElseStatementKind,
+    LetStatementKind, LifetimeSetStatementKind, MatchArmKind, MatchStatementKind, MissingBodyKind,
     MissingExpressionKind, NameReferenceKind, OmittedBlockTailKind, OpenParenKind,
     OuterAttributeKind, ParameterKind, PredicateBlockKind, PredicateBodyKind, ProofBlockKind,
     ProofBodyKind, ProofCallStatementKind, RecordPatternFieldKind, RecordPatternKind,
@@ -912,6 +912,32 @@ impl AstNode<LetStatementKind> {
         } else {
             LetInitializerNode::Expression(FamilyNode::<ExpressionFamily>::new(syntax)?)
         }))
+    }
+}
+
+impl AstNode<LetElseStatementKind> {
+    pub fn pattern(&self) -> Result<PatternNode, SyntaxAccessError> {
+        self.required_family_child::<PatternFamily>(SyntaxRole::Pattern)
+    }
+
+    pub fn initializer(&self) -> Result<LetInitializerNode, SyntaxAccessError> {
+        let syntax = self
+            .syntax()
+            .optional_unique_child(SyntaxRole::Initializer)?
+            .ok_or(SyntaxAccessError::MissingFamilyChild {
+                parent: self.id(),
+                role: SyntaxRole::Initializer,
+                expected: AstNodeFamily::Expression,
+            })?;
+        Ok(if syntax.kind() == SyntaxKind::MissingExpression {
+            LetInitializerNode::Missing(syntax.cast()?)
+        } else {
+            LetInitializerNode::Expression(FamilyNode::<ExpressionFamily>::new(syntax)?)
+        })
+    }
+
+    pub fn else_branch(&self) -> Result<AstNode<BlockKind>, SyntaxAccessError> {
+        self.required_exact_child::<BlockKind>(SyntaxRole::ElseBranch)
     }
 }
 

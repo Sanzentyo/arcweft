@@ -1049,6 +1049,7 @@ impl Analyzer<'_, '_, '_> {
             source.module,
             source.call,
             &selected,
+            &result,
             &provisional_callable_effects(&selected),
         )?;
         let expression_resolution = self
@@ -1236,6 +1237,7 @@ impl Analyzer<'_, '_, '_> {
             source.module,
             source.call,
             primary,
+            &result,
             &provisional_callable_effects(primary),
         )?;
         let checked = if ambiguous {
@@ -1621,6 +1623,7 @@ impl Analyzer<'_, '_, '_> {
             &call_result_type(candidate, current_group)
                 .ok_or(FinalSemanticAnalysisError::CallResolutionFailed { owner })?,
         );
+        let result = inferred_constructor_result(candidate, &evaluated.arguments, result);
         if let Some(expected) = expected_result {
             if expected.accepts(&result) {
                 if expected == &result {
@@ -1939,6 +1942,7 @@ impl Analyzer<'_, '_, '_> {
         module: &HirModule,
         call: &HirCallExpr,
         selected: &ResolvedCallable,
+        result: &TypeKind,
         callable_effects: &EffectRow,
     ) -> Result<Option<ExprId>, FinalSemanticAnalysisError> {
         let (value, nominal_receiver) = match call.callee() {
@@ -1986,7 +1990,7 @@ impl Analyzer<'_, '_, '_> {
                 _ => selected.schema().result().clone(),
             }
         } else {
-            callable_schema_type_with_effects(selected.schema(), callable_effects)
+            instantiated_callee_type(selected, result, callable_effects)
                 .ok_or(FinalSemanticAnalysisError::CallResolutionFailed { owner: value })?
         };
         let resolution = if let Some((receiver, name)) = &method_callee {
@@ -2032,6 +2036,48 @@ impl Analyzer<'_, '_, '_> {
         );
         Ok((!nominal_receiver).then_some(value))
     }
+}
+
+fn inferred_constructor_result(
+    candidate: &ResolvedCallable,
+    arguments: &[CheckedCallArgumentFact],
+    declared: TypeKind,
+) -> TypeKind {
+    if !matches!(
+        candidate.instantiation(),
+        CallableInstantiation::Option { expected: None }
+    ) {
+        return declared;
+    }
+    let [argument] = arguments else {
+        return declared;
+    };
+    let [slot] = argument.slots() else {
+        return declared;
+    };
+    slot.inferred()
+        .cloned()
+        .map(|item| TypeKind::Option(Box::new(item)))
+        .unwrap_or(declared)
+}
+
+pub(super) fn instantiated_callee_type(
+    selected: &ResolvedCallable,
+    result: &TypeKind,
+    effects: &EffectRow,
+) -> Option<TypeKind> {
+    if matches!(
+        selected.instantiation(),
+        CallableInstantiation::Option { expected: None }
+    ) && let TypeKind::Option(item) = result
+    {
+        return Some(TypeKind::function_with_effects(
+            [item.as_ref().clone()],
+            result.clone(),
+            effects.clone(),
+        ));
+    }
+    callable_schema_type_with_effects(selected.schema(), effects)
 }
 
 fn scope_is_dialogue_line_plan(module: &HirModule, mut scope: ScopeId) -> bool {

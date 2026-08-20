@@ -15,7 +15,7 @@ use super::{
     ProjectSymbolTable, STANDARD_TRAIT_CATALOG_VERSION, ScopeId, SourceSpan, StagedCallableBody,
     StagedCheckedCallables, TypeId, TypeKind,
     callable_effect_graph::CallableEffectGraph,
-    calls::{callable_schema_type_with_effects, final_call_effects, final_callable_effects},
+    calls::{final_call_effects, final_callable_effects, instantiated_callee_type},
     statements::{
         checked_effect_expression, closure_effect_rows, execution_effects,
         function_effect_contract, scope_executes_within, scope_span, source_span,
@@ -811,7 +811,7 @@ impl Analyzer<'_, '_, '_> {
                     FinalSemanticAnalysisError::ExpressionTypeUnavailable { owner: callee },
                 )?;
                 let effects = final_callable_effects(&call.selected, checked_callables)?;
-                let ty = callable_schema_type_with_effects(call.selected.schema(), &effects)
+                let ty = instantiated_callee_type(&call.selected, &call.result, &effects)
                     .ok_or(FinalSemanticAnalysisError::CallResolutionFailed { owner: callee })?;
                 self.facts.set_expression(
                     callee,

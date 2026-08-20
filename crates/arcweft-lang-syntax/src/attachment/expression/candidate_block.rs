@@ -398,6 +398,33 @@ pub struct AttachedCandidateStatement<'a> {
     ordinal: u32,
 }
 
+/// Complete candidate-local `let PATTERN = VALUE else { ... }` relation.
+#[derive(Clone)]
+pub struct AttachedCandidateLetElse<'a> {
+    statement: AttachedCandidateStatement<'a>,
+    pattern: AttachedCandidatePatternProjection<'a>,
+    initializer: AttachedCandidateStatementExpression<'a>,
+    else_branch: AttachedCandidateStatementBlock<'a>,
+}
+
+impl<'a> AttachedCandidateLetElse<'a> {
+    pub const fn statement(&self) -> AttachedCandidateStatement<'a> {
+        self.statement
+    }
+
+    pub const fn pattern(&self) -> AttachedCandidatePatternProjection<'a> {
+        self.pattern
+    }
+
+    pub const fn initializer(&self) -> AttachedCandidateStatementExpression<'a> {
+        self.initializer
+    }
+
+    pub const fn else_branch(&self) -> &AttachedCandidateStatementBlock<'a> {
+        &self.else_branch
+    }
+}
+
 impl<'a> AttachedCandidateStatement<'a> {
     /// Candidate-local statement node.
     pub const fn node(self) -> AttachedCandidateNode<'a> {
@@ -451,6 +478,35 @@ impl<'a> AttachedCandidateStatement<'a> {
         role: SyntaxRole,
     ) -> Option<AttachedCandidatePatternProjection<'a>> {
         exact_required_child(self.node, role)?.pattern_root()
+    }
+
+    /// Complete typed relation for one candidate-local LetElse statement.
+    pub fn let_else_view(self) -> Option<AttachedCandidateLetElse<'a>> {
+        if self.kind() != SyntaxKind::LetElseStatement {
+            return None;
+        }
+        let pattern = self.required_pattern(SyntaxRole::Pattern)?;
+        let initializer = self.required_expression(SyntaxRole::Initializer)?;
+        let else_branch = AttachedCandidateStatementBlock::from_node(exact_required_child(
+            self.node,
+            SyntaxRole::ElseBranch,
+        )?)?;
+        if !else_branch.safety_documentation().is_empty()
+            || self.node.children().any(|child| {
+                !matches!(
+                    child.role(),
+                    SyntaxRole::Pattern | SyntaxRole::Initializer | SyntaxRole::ElseBranch
+                )
+            })
+        {
+            return None;
+        }
+        Some(AttachedCandidateLetElse {
+            statement: self,
+            pattern,
+            initializer,
+            else_branch,
+        })
     }
 
     /// Complete `Assignment` or `LifetimeSet` operand relation.

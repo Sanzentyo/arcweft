@@ -405,6 +405,64 @@ impl StagedHirModuleTransaction<'_> {
                     },
                 )
             }
+            SyntaxKind::LetElseStatement => {
+                let statement = statement
+                    .let_else_view()
+                    .ok_or(HirInvariantFailure::InvalidArenaCommit)?;
+                let initializer = self.lower_candidate_statement_expression(
+                    statement.initializer(),
+                    scope,
+                    cursor,
+                    HirExprSourceRole::Operand,
+                )?;
+                let initializer_poisoned = self.staged_expression_is_poisoned(initializer)?;
+                let lowered = self.lower_candidate_pattern_binding(
+                    statement.pattern(),
+                    scope,
+                    HirPatternBindingPolicy::LetElseBinding,
+                    cursor,
+                )?;
+                let locals = lowered.locals;
+                let else_scope = self.allocate_candidate_statement_scope(
+                    owner,
+                    scope,
+                    HirScopeKind::Block,
+                    &statement.else_branch().node().source_span(),
+                    cursor,
+                )?;
+                let else_lowered = self.lower_candidate_statement_block(
+                    statement.else_branch(),
+                    else_scope,
+                    cursor,
+                )?;
+                self.close_scope_members(else_scope, else_lowered.locals)?;
+                (
+                    HirStmtKind::LetElse {
+                        pattern: lowered.owner,
+                        annotation: None,
+                        initializer,
+                        else_scope,
+                        else_body: else_lowered.body,
+                        locals: locals.clone(),
+                    },
+                    locals,
+                    if lowered.poisoned {
+                        Some(HirStmtRecoveryIssue::RecoveredChild {
+                            role: HirStmtChildRole::Pattern,
+                        })
+                    } else if initializer_poisoned {
+                        Some(HirStmtRecoveryIssue::RecoveredChild {
+                            role: HirStmtChildRole::Initializer,
+                        })
+                    } else if else_lowered.poisoned {
+                        Some(HirStmtRecoveryIssue::RecoveredChild {
+                            role: HirStmtChildRole::ElseBranch,
+                        })
+                    } else {
+                        None
+                    },
+                )
+            }
             SyntaxKind::ExpressionStatement => {
                 let expression = statement
                     .required_expression(SyntaxRole::Initializer)

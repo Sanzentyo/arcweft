@@ -131,6 +131,38 @@ fn value_block_candidate_owns_ordered_statements_locals_and_tail() {
 }
 
 #[test]
+fn candidate_let_else_owns_failure_scope_and_success_binding() {
+    let parsed = parsed_source(
+        "dialogue-candidate-let-else",
+        &["items[{ let Some(value) = Some(source) else { return fallback; }; value }]".into()],
+    );
+    let (module, owners, _) = lower_and_publish(&parsed);
+    assert_eq!(module.status(), HirModuleStatus::Clean);
+
+    let outer = owners[0];
+    let (statement_id, statement) = candidate_statement(&module, outer, 0);
+    let HirStmtKind::LetElse {
+        else_scope,
+        else_body,
+        locals,
+        ..
+    } = statement.kind()
+    else {
+        panic!("candidate statement must retain LetElse semantics")
+    };
+    assert_eq!(locals.len(), 1);
+    assert_eq!(else_body.len(), 1);
+    let scope = module
+        .arenas()
+        .scopes()
+        .resolve(module.slots(), *else_scope)
+        .expect("candidate LetElse failure scope");
+    assert_eq!(scope.kind(), HirScopeKind::Block);
+    assert_eq!(scope.owner(), &HirScopeOwner::Stmt(statement_id));
+    assert!(scope.locals().is_empty());
+}
+
+#[test]
 fn computation_and_named_candidates_use_final_tail_policy() {
     let parsed = parsed_source(
         "dialogue-candidate-block-families",

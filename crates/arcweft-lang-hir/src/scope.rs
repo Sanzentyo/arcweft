@@ -185,8 +185,11 @@ pub(crate) enum HirPatternBindingPolicy {
     PredicateParameter,
     ProofParameter,
     LetBinding,
+    LetElseBinding,
     PredicateLet,
+    PredicateLetElse,
     ProofLet,
+    ProofLetElse,
     ClosureParameter,
     MatchBinding,
 }
@@ -199,7 +202,12 @@ impl HirPatternBindingPolicy {
             | Self::FlowParameter
             | Self::PredicateParameter
             | Self::ProofParameter => HirLocalKind::Parameter,
-            Self::LetBinding | Self::PredicateLet | Self::ProofLet => HirLocalKind::LetBinding,
+            Self::LetBinding
+            | Self::LetElseBinding
+            | Self::PredicateLet
+            | Self::PredicateLetElse
+            | Self::ProofLet
+            | Self::ProofLetElse => HirLocalKind::LetBinding,
             Self::ClosureParameter => HirLocalKind::ClosureParameter,
             Self::MatchBinding => HirLocalKind::MatchBinding,
         }
@@ -219,7 +227,12 @@ impl HirPatternBindingPolicy {
     pub(crate) const fn forbids_mutable(self) -> bool {
         matches!(
             self,
-            Self::PredicateParameter | Self::ProofParameter | Self::PredicateLet | Self::ProofLet
+            Self::PredicateParameter
+                | Self::ProofParameter
+                | Self::PredicateLet
+                | Self::ProofLet
+                | Self::PredicateLetElse
+                | Self::ProofLetElse
         )
     }
 
@@ -230,7 +243,9 @@ impl HirPatternBindingPolicy {
                 | Self::PredicateParameter
                 | Self::ProofParameter
                 | Self::PredicateLet
+                | Self::PredicateLetElse
                 | Self::ProofLet
+                | Self::ProofLetElse
         )
     }
 }

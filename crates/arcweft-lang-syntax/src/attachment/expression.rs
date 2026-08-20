@@ -11,8 +11,8 @@ mod structure;
 pub use candidate_block::{
     AttachedCandidateAssertion, AttachedCandidateAssignment, AttachedCandidateBlockTail,
     AttachedCandidateControlLabel, AttachedCandidateIf, AttachedCandidateIfElse,
-    AttachedCandidateIfHead, AttachedCandidateKeywordStatement, AttachedCandidateMatchArmBody,
-    AttachedCandidateMatchArmStatement, AttachedCandidateMatchBody,
+    AttachedCandidateIfHead, AttachedCandidateKeywordStatement, AttachedCandidateLetElse,
+    AttachedCandidateMatchArmBody, AttachedCandidateMatchArmStatement, AttachedCandidateMatchBody,
     AttachedCandidateMatchStatement, AttachedCandidateRequiredOperand, AttachedCandidateStatement,
     AttachedCandidateStatementBlock, AttachedCandidateStatementExpression,
     AttachedCandidateUnsafeAuditId, AttachedCandidateUnsafeBody, AttachedCandidateUnsafeLifetime,

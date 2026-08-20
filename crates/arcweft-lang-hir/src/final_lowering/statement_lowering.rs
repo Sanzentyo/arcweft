@@ -11,9 +11,9 @@ mod thread_control;
 
 use arcweft_lang_syntax::attachment::node::{
     AssertionStatementKind, BlockKind, ChoiceStatementKind, ExpressionStatementKind,
-    IfStatementKind, IncludeStatementKind, LetStatementKind, MatchArmKind, MatchStatementKind,
-    PredicateBlockKind, ProofBlockKind, ProofCallStatementKind, ScopeStatementKind,
-    SourceLocaleStatementKind, UnsafeLifetimeStatementKind,
+    IfStatementKind, IncludeStatementKind, LetElseStatementKind, LetStatementKind, MatchArmKind,
+    MatchStatementKind, PredicateBlockKind, ProofBlockKind, ProofCallStatementKind,
+    ScopeStatementKind, SourceLocaleStatementKind, UnsafeLifetimeStatementKind,
 };
 use arcweft_lang_syntax::attachment::{
     AstKind, AstNode, AttachedAssertionMode, AttachedExpressionNode, AttachedRequiredIncludeTarget,
@@ -649,6 +649,77 @@ impl StagedHirModuleTransaction<'_> {
                     } else if initializer_poisoned {
                         Some(HirStmtRecoveryIssue::RecoveredChild {
                             role: HirStmtChildRole::Initializer,
+                        })
+                    } else {
+                        None
+                    },
+                )
+            }
+            SyntaxKind::LetElseStatement => {
+                let statement = attached
+                    .cast::<LetElseStatementKind>()
+                    .map_err(|_| HirInvariantFailure::InvalidArenaCommit)?;
+                let initializer = match statement
+                    .initializer()
+                    .map_err(|_| HirInvariantFailure::InvalidArenaCommit)?
+                {
+                    LetInitializerNode::Expression(initializer) => {
+                        let initializer = initializer
+                            .semantic()
+                            .map_err(|_| HirInvariantFailure::InvalidArenaCommit)?;
+                        self.lower_attached_expression(&initializer, scope)?
+                    }
+                    LetInitializerNode::Missing(missing) => self
+                        .lower_missing_statement_expression(
+                            owner,
+                            scope,
+                            HirStmtRecoveryOperandSlot::LetInitializer {
+                                insertion: missing.range().start(),
+                            },
+                        )?,
+                };
+                let initializer_poisoned = self.staged_expression_is_poisoned(initializer)?;
+                let pattern = statement
+                    .pattern()
+                    .map_err(|_| HirInvariantFailure::InvalidArenaCommit)?
+                    .semantic()
+                    .map_err(|_| HirInvariantFailure::InvalidArenaCommit)?;
+                let lowered = self.lower_attached_pattern_binding(
+                    &pattern,
+                    scope,
+                    context.let_else_binding_policy(),
+                )?;
+                let pattern_poisoned = lowered.poisoned;
+                let locals = lowered.locals;
+                let else_block = statement
+                    .else_branch()
+                    .map_err(|_| HirInvariantFailure::InvalidArenaCommit)?;
+                let else_scope =
+                    self.allocate_statement_scope(&else_block, owner, scope, HirScopeKind::Block)?;
+                let else_lowered =
+                    self.lower_attached_statement_block(&else_block, else_scope, context)?;
+                self.close_scope_members(else_scope, else_lowered.locals)?;
+                (
+                    HirStmtKind::LetElse {
+                        pattern: lowered.owner,
+                        annotation: None,
+                        initializer,
+                        else_scope,
+                        else_body: else_lowered.body,
+                        locals: locals.clone(),
+                    },
+                    locals,
+                    if pattern_poisoned {
+                        Some(HirStmtRecoveryIssue::RecoveredChild {
+                            role: HirStmtChildRole::Pattern,
+                        })
+                    } else if initializer_poisoned {
+                        Some(HirStmtRecoveryIssue::RecoveredChild {
+                            role: HirStmtChildRole::Initializer,
+                        })
+                    } else if else_lowered.poisoned {
+                        Some(HirStmtRecoveryIssue::RecoveredChild {
+                            role: HirStmtChildRole::ElseBranch,
                         })
                     } else {
                         None

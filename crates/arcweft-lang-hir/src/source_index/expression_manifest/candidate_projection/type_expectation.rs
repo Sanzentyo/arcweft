@@ -227,6 +227,14 @@ impl CandidateTypeExpectationCursor<'_> {
                 )?;
                 self.walk_pattern(statement.required_pattern(SyntaxRole::Pattern)?)?;
             }
+            SyntaxKind::LetElseStatement => {
+                let statement = statement.let_else_view()?;
+                self.walk_statement_expression(statement.initializer())?;
+                self.walk_pattern(statement.pattern())?;
+                for nested in statement.else_branch().statements() {
+                    self.walk_statement(*nested)?;
+                }
+            }
             SyntaxKind::ExpressionStatement => self.walk_statement_expression(
                 statement.required_expression(SyntaxRole::Initializer)?,
             )?,

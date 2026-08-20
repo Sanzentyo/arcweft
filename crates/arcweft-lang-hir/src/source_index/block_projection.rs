@@ -8,9 +8,9 @@ mod thread_control;
 use std::collections::{BTreeMap, BTreeSet};
 
 use arcweft_lang_syntax::attachment::node::{
-    AssertionStatementKind, BlockKind, ExpressionStatementKind, IfStatementKind, LetStatementKind,
-    MatchStatementKind, PredicateBlockKind, ProofBlockKind, ProofCallStatementKind,
-    UnsafeLifetimeStatementKind,
+    AssertionStatementKind, BlockKind, ExpressionStatementKind, IfStatementKind,
+    LetElseStatementKind, LetStatementKind, MatchStatementKind, PredicateBlockKind, ProofBlockKind,
+    ProofCallStatementKind, UnsafeLifetimeStatementKind,
 };
 use arcweft_lang_syntax::attachment::{
     AstNode, AttachedAssertionMode, AttachedExpressionNode, AttachedRequiredNestedThreadFlowBody,
@@ -951,6 +951,117 @@ pub(super) fn statement_matches(
                 } else if initializer_poisoned {
                     HirStmtPoisonState::Poisoned(HirStmtRecoveryIssue::RecoveredChild {
                         role: HirStmtChildRole::Initializer,
+                    })
+                } else {
+                    HirStmtPoisonState::Clean
+                },
+            })
+        }
+        (
+            SyntaxKind::LetElseStatement,
+            HirStmtKind::LetElse {
+                pattern,
+                annotation,
+                initializer,
+                else_scope,
+                else_body,
+                locals,
+            },
+        ) => {
+            let attached = attached.cast::<LetElseStatementKind>().ok()?;
+            if annotation.is_some()
+                || !let_initializer_matches(
+                    parsed,
+                    slots,
+                    arenas.expressions,
+                    owner,
+                    *initializer,
+                    Some(attached.initializer().ok()?),
+                    scope,
+                    attached.range().end(),
+                )
+            {
+                return None;
+            }
+            let generations_before_pattern = generations.clone();
+            let attached_pattern = attached.pattern().ok()?.semantic().ok()?;
+            if !source_owner_matches(
+                slots,
+                *pattern,
+                attached_pattern.id(),
+                &HirSourceSite::Span(attached_pattern.whole_source_span()),
+            ) {
+                return None;
+            }
+            let pattern_payload = arenas.patterns.resolve_prepared(slots, *pattern).ok()?;
+            let expected_locals =
+                canonical_pattern_locals(slots, arenas, *pattern, *pattern, scope)?;
+            let expected_local_ids = expected_locals
+                .iter()
+                .map(|expected| expected.local)
+                .collect::<Vec<_>>();
+            let mut local_validation = BindingLocalValidation::new(
+                scope,
+                context.let_else_binding_policy(),
+                generations,
+                slots,
+                arenas.patterns,
+                arenas.locals,
+            );
+            if pattern_payload.scope() != scope
+                || expected_local_ids.as_slice() != locals.as_ref()
+                || expected_local_ids
+                    .iter()
+                    .copied()
+                    .collect::<BTreeSet<_>>()
+                    .len()
+                    != expected_local_ids.len()
+                || !binding_locals_match(&attached_pattern, &expected_locals, &mut local_validation)
+                || expected_locals.iter().any(|expected| {
+                    !arenas
+                        .locals
+                        .resolve_prepared(slots, expected.local)
+                        .is_ok_and(|payload| {
+                            payload.scope() == scope
+                                && payload.kind() == HirLocalKind::LetBinding
+                                && payload.pattern() == Some(expected.pattern)
+                        })
+                })
+            {
+                return None;
+            }
+            let mut else_generations = generations_before_pattern;
+            let else_evidence = statement_block_matches(
+                parsed,
+                slots,
+                arenas,
+                owner,
+                &attached.else_branch().ok()?,
+                *else_scope,
+                scope,
+                else_body,
+                &[],
+                HirScopeKind::Block,
+                context,
+                &mut else_generations,
+            )?;
+            let initializer_poisoned = arenas
+                .expressions
+                .resolve_prepared(slots, *initializer)
+                .is_ok_and(HirExpr::is_poisoned);
+            Some(StatementEvidence {
+                locals: locals.clone(),
+                state: if pattern_payload.is_poisoned() || local_validation.is_poisoned() {
+                    HirStmtPoisonState::Poisoned(HirStmtRecoveryIssue::RecoveredChild {
+                        role: HirStmtChildRole::Pattern,
+                    })
+                } else if initializer_poisoned {
+                    HirStmtPoisonState::Poisoned(HirStmtRecoveryIssue::RecoveredChild {
+                        role: HirStmtChildRole::Initializer,
+                    })
+                } else if else_evidence.poisoned {
+                    HirStmtPoisonState::Poisoned(HirStmtRecoveryIssue::RecoveredChild {
+                        role: HirStmtChildRole::ElseBranch,
                     })
                 } else {
                     HirStmtPoisonState::Clean
