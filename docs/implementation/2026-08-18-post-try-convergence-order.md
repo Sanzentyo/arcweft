@@ -239,14 +239,21 @@ LinePlan model or a raw/string statement reader to make either fixture pass.
 Status: `current_pass/check` rows `001` through `012` pass after the contextual
 `choice` keyword closure recorded in
 [2026-08-21-contextual-choice-keyword-positive-fixture.md](2026-08-21-contextual-choice-keyword-positive-fixture.md).
-The current first failure is `013_task_fn_await_shape.arcw` in shared callable
-resolution during final semantic analysis.
+The shared callable-resolution failure in `013_task_fn_await_shape.arcw` is
+closed through the standard callable/accepted nominal publication cut recorded
+in
+[2026-08-21-task-fn-await-positive-fixture-sema-progress.md](2026-08-21-task-fn-await-positive-fixture-sema-progress.md).
+The current first failure remains fixture 013, now in compiler runtime semantic
+projection for `OpeningAssets`; the unresolved reachability/layout decision is
+delegated to
+[Lang-01.1.1.3.2](../reviews/requests/2026-08-21-lang-01.1.1.3.2-suspended-function-runtime-emission-and-opaque-nominal-layout-reconciliation.md).
 
 Run and repair the positive check/run directories in deterministic path order.
 Keep every remaining positive fixture active and unchanged unless the selected
 stable surface explicitly requires a typed migration. The currently known
 first positive blocker is `current_pass/check/013_task_fn_await_shape.arcw`;
-fix its callable/Need shape owner before advancing to the next failure.
+close its runtime-emission/project-nominal-layout authority before advancing to
+the next failure.
 
 For each exposed failure:
 

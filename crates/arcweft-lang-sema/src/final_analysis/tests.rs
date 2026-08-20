@@ -1713,6 +1713,46 @@ fn nested(need: Need<Result<i64, String>>) -> Result<i64, String> {
 }
 
 #[test]
+fn standard_zero_argument_need_callable_uses_accepted_nominal_results() {
+    let fixture = fixture(
+        r"
+type ArcResult<T> = Result<T, ArcError>
+
+struct OpeningAssets {
+    bg: ImageHandle
+}
+
+fn load_opening_assets() -> ArcResult<OpeningAssets> {
+    let bg = try await load_bg()
+    Ok(OpeningAssets { bg })
+}
+",
+        None,
+    );
+    let report = analyze(&fixture).expect("standard load_bg final analysis");
+    let awaited = report
+        .expressions()
+        .find_map(|(_, expression)| match expression.resolution() {
+            CheckedExpressionResolution::Await(awaited) => Some(awaited),
+            _ => None,
+        })
+        .expect("fixture retains one Await fact");
+    let operand = report
+        .expression(awaited.operand())
+        .expect("Await operand has one checked expression");
+    let TypeKind::Need(result) = operand.ty() else {
+        panic!("load_bg result is one unary Need")
+    };
+    let TypeKind::Result { ok, error } = result.as_ref() else {
+        panic!("load_bg Need payload is one Result")
+    };
+    assert!(matches!(ok.as_ref(), TypeKind::AcceptedNominal(nominal)
+        if nominal.runtime_producer().as_str() == "std.image_handle"));
+    assert!(matches!(error.as_ref(), TypeKind::AcceptedNominal(nominal)
+        if nominal.runtime_producer().as_str() == "std.arc_error"));
+}
+
+#[test]
 fn pending_observer_uses_the_standard_progress_field_owner() {
     let fixture = fixture(
         r"

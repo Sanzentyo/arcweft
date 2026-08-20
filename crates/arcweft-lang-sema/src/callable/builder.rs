@@ -1422,10 +1422,11 @@ impl TypeCheckEnv {
         functions.sort_by(|left, right| left.path.cmp(&right.path));
         for (ordinal, function) in functions.into_iter().enumerate() {
             let key = CallableLookupKey::Free(function.path.clone());
+            let signature = self.canonical_standard_callable_signature(function.signature.clone());
             records.push(environment_record_from_signature(
                 EnvironmentCallableKind::Function,
                 key,
-                &function.signature,
+                &signature,
                 Some(function.effects.as_slice()),
                 function.validator.clone(),
                 function.evaluated_effect,
@@ -1441,10 +1442,12 @@ impl TypeCheckEnv {
                 .then_with(|| left.receiver.stable_ordering(&right.receiver))
         });
         for (ordinal, method) in methods.into_iter().enumerate() {
+            let receiver = self.canonical_standard_callable_type(method.receiver.clone());
+            let signature = self.canonical_standard_callable_signature(method.signature.clone());
             let projection = StandardEnvironmentMethodProjection::try_from_signature(
-                &method.receiver,
+                &receiver,
                 &method.member,
-                &method.signature,
+                &signature,
                 limits,
             )?;
             records.push(projection.into_publication_record(offset + ordinal)?);

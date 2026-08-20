@@ -14,7 +14,7 @@ use crate::dialogue_view::{
     STANDARD_DIALOGUE_VIEW_TYPE,
 };
 use crate::effect_row::EffectRow;
-use crate::types::{CharacterNominalType, EntityType, TypeKind};
+use crate::types::{CharacterNominalType, EntityType, TypeKind, direct_type_name};
 use arcweft_data::DataFormat;
 use arcweft_lang_syntax::types::FnParamKind;
 use std::collections::{HashMap, HashSet};
@@ -714,14 +714,18 @@ impl TypeCheckEnv {
                 effect,
             )
         });
-        [
-            (
-                standard_callable_path(["load_bg"]),
+        let env = env.with_typed_standard_function(
+            standard_callable_path(["load_bg"]),
+            FunctionSignature::new(
                 TypeKind::Need(Box::new(TypeKind::Result {
                     ok: Box::new(TypeKind::Named("ImageHandle".to_owned())),
                     error: Box::new(TypeKind::Named("ArcError".to_owned())),
                 })),
+                std::iter::empty::<FunctionParam>(),
             ),
+            std::iter::empty::<EffectCapability>(),
+        );
+        [
             (
                 standard_callable_path(["asset", "image"]),
                 TypeKind::Need(Box::new(TypeKind::Result {
@@ -1234,6 +1238,61 @@ impl TypeCheckEnv {
         &self.standard_methods
     }
 
+    /// Canonicalizes one standard callable signature against this environment's
+    /// accepted nominal catalog at publication time.
+    ///
+    /// Core runtime callables are installed before the complete standard
+    /// nominal inventory exists. Publication is therefore the first boundary
+    /// where their internal `Named` atoms can be joined to the exact accepted
+    /// identities without introducing a second name-based resolver.
+    pub(crate) fn canonical_standard_callable_signature(
+        &self,
+        mut signature: FunctionSignature,
+    ) -> FunctionSignature {
+        signature.return_type = self.canonical_standard_callable_type(signature.return_type);
+        signature.params = signature
+            .params
+            .into_iter()
+            .map(|parameter| self.canonical_standard_callable_parameter(parameter))
+            .collect();
+        signature.remaining_param_groups = signature
+            .remaining_param_groups
+            .into_iter()
+            .map(|group| {
+                group
+                    .into_iter()
+                    .map(|parameter| self.canonical_standard_callable_parameter(parameter))
+                    .collect()
+            })
+            .collect();
+        signature
+    }
+
+    pub(crate) fn canonical_standard_callable_type(&self, ty: TypeKind) -> TypeKind {
+        map_named_type_kind(ty, &|name| {
+            self.nominal_catalog
+                .exact_records()
+                .find(|record| {
+                    direct_type_name(record.id().canonical_path()) == Some(name.as_str())
+                })
+                .and_then(|record| record.try_instantiate([]).ok())
+                .unwrap_or(TypeKind::Named(name))
+        })
+    }
+
+    fn canonical_standard_callable_parameter(&self, mut parameter: FunctionParam) -> FunctionParam {
+        parameter.ty = self.canonical_standard_callable_type(parameter.ty);
+        parameter.higher_order_bindings = parameter
+            .higher_order_bindings
+            .into_iter()
+            .map(|mut binding| {
+                binding.ty = self.canonical_standard_callable_type(binding.ty);
+                binding
+            })
+            .collect();
+        parameter
+    }
+
     /// Returns whether the environment grants a named effect or state capability.
     pub fn has_capability(&self, capability: &str) -> bool {
         self.capabilities
@@ -1310,24 +1369,37 @@ fn standard_callable_path<const N: usize>(segments: [&str; N]) -> CallablePath {
 }
 
 pub(super) fn normalize_type_kind(ty: TypeKind) -> TypeKind {
+    map_named_type_kind(ty, &|name| {
+        TypeKind::primitive_name(&name).unwrap_or(TypeKind::Named(name))
+    })
+}
+
+fn map_named_type_kind(ty: TypeKind, resolve_named: &impl Fn(String) -> TypeKind) -> TypeKind {
     match ty {
-        TypeKind::Named(name) => TypeKind::primitive_name(&name).unwrap_or(TypeKind::Named(name)),
+        TypeKind::Named(name) => resolve_named(name),
         TypeKind::Ref(entity) => TypeKind::Ref(EntityType::new(
             entity.kind().clone(),
-            entity.value().cloned().map(normalize_type_kind),
+            entity
+                .value()
+                .cloned()
+                .map(|value| map_named_type_kind(value, resolve_named)),
         )),
-        TypeKind::Probe(inner) => TypeKind::Probe(Box::new(normalize_type_kind(*inner))),
-        TypeKind::Vec(inner) => TypeKind::Vec(Box::new(normalize_type_kind(*inner))),
+        TypeKind::Probe(inner) => {
+            TypeKind::Probe(Box::new(map_named_type_kind(*inner, resolve_named)))
+        }
+        TypeKind::Vec(inner) => TypeKind::Vec(Box::new(map_named_type_kind(*inner, resolve_named))),
         TypeKind::Array { item, len } => TypeKind::Array {
-            item: Box::new(normalize_type_kind(*item)),
+            item: Box::new(map_named_type_kind(*item, resolve_named)),
             len,
         },
-        TypeKind::Slice(inner) => TypeKind::Slice(Box::new(normalize_type_kind(*inner))),
-        TypeKind::Seq(inner) => TypeKind::Seq(Box::new(normalize_type_kind(*inner))),
+        TypeKind::Slice(inner) => {
+            TypeKind::Slice(Box::new(map_named_type_kind(*inner, resolve_named)))
+        }
+        TypeKind::Seq(inner) => TypeKind::Seq(Box::new(map_named_type_kind(*inner, resolve_named))),
         TypeKind::Map { kind, key, value } => TypeKind::Map {
             kind,
-            key: Box::new(normalize_type_kind(*key)),
-            value: Box::new(normalize_type_kind(*value)),
+            key: Box::new(map_named_type_kind(*key, resolve_named)),
+            value: Box::new(map_named_type_kind(*value, resolve_named)),
         },
         TypeKind::BorrowRef {
             kind,
@@ -1336,18 +1408,20 @@ pub(super) fn normalize_type_kind(ty: TypeKind) -> TypeKind {
         } => TypeKind::BorrowRef {
             kind,
             lifetime,
-            inner: Box::new(normalize_type_kind(*inner)),
+            inner: Box::new(map_named_type_kind(*inner, resolve_named)),
         },
-        TypeKind::Need(item) => TypeKind::Need(Box::new(normalize_type_kind(*item))),
+        TypeKind::Need(item) => TypeKind::Need(Box::new(map_named_type_kind(*item, resolve_named))),
         TypeKind::Stream { item, error } => TypeKind::Stream {
-            item: Box::new(normalize_type_kind(*item)),
-            error: Box::new(normalize_type_kind(*error)),
+            item: Box::new(map_named_type_kind(*item, resolve_named)),
+            error: Box::new(map_named_type_kind(*error, resolve_named)),
         },
         TypeKind::Result { ok, error } => TypeKind::Result {
-            ok: Box::new(normalize_type_kind(*ok)),
-            error: Box::new(normalize_type_kind(*error)),
+            ok: Box::new(map_named_type_kind(*ok, resolve_named)),
+            error: Box::new(map_named_type_kind(*error, resolve_named)),
         },
-        TypeKind::Option(inner) => TypeKind::Option(Box::new(normalize_type_kind(*inner))),
+        TypeKind::Option(inner) => {
+            TypeKind::Option(Box::new(map_named_type_kind(*inner, resolve_named)))
+        }
         TypeKind::Handle {
             name,
             lifetime,
@@ -1360,16 +1434,20 @@ pub(super) fn normalize_type_kind(ty: TypeKind) -> TypeKind {
             must_drop,
         },
         TypeKind::ThreadHandle(inner) => {
-            TypeKind::ThreadHandle(Box::new(normalize_type_kind(*inner)))
+            TypeKind::ThreadHandle(Box::new(map_named_type_kind(*inner, resolve_named)))
         }
-        TypeKind::Shared(inner) => TypeKind::Shared(Box::new(normalize_type_kind(*inner))),
+        TypeKind::Shared(inner) => {
+            TypeKind::Shared(Box::new(map_named_type_kind(*inner, resolve_named)))
+        }
         TypeKind::Function {
             params,
             return_type,
             effects,
         } => TypeKind::function_with_effects(
-            params.into_iter().map(normalize_type_kind),
-            normalize_type_kind(*return_type),
+            params
+                .into_iter()
+                .map(|parameter| map_named_type_kind(parameter, resolve_named)),
+            map_named_type_kind(*return_type, resolve_named),
             effects,
         ),
         TypeKind::Projection {
@@ -1377,16 +1455,22 @@ pub(super) fn normalize_type_kind(ty: TypeKind) -> TypeKind {
             trait_name,
             assoc,
         } => TypeKind::Projection {
-            subject: Box::new(normalize_type_kind(*subject)),
+            subject: Box::new(map_named_type_kind(*subject, resolve_named)),
             trait_name,
             assoc,
         },
-        TypeKind::Tuple(items) => {
-            TypeKind::Tuple(items.into_iter().map(normalize_type_kind).collect())
-        }
-        TypeKind::Choice(alternatives) => {
-            TypeKind::Choice(alternatives.into_iter().map(normalize_type_kind).collect())
-        }
+        TypeKind::Tuple(items) => TypeKind::Tuple(
+            items
+                .into_iter()
+                .map(|item| map_named_type_kind(item, resolve_named))
+                .collect(),
+        ),
+        TypeKind::Choice(alternatives) => TypeKind::Choice(
+            alternatives
+                .into_iter()
+                .map(|alternative| map_named_type_kind(alternative, resolve_named))
+                .collect(),
+        ),
         other => other,
     }
 }
