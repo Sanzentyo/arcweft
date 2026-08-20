@@ -213,6 +213,10 @@ name tests, renderer reinterpretation, and source-text fallback are forbidden.
 
 ## 6. Connect the typed line-plan vertical slice
 
+Status: typed syntax/HIR/sema ownership landed at `15ad861a9`; executable
+runtime/AWBC handle and result ownership is blocked on
+[AW-AH-009.4.4.1 line-plan runtime handle/result authority reconciliation](../reviews/requests/2026-08-21-aw-ah-009.4.4.1-line-plan-runtime-handle-result-authority-reconciliation.md).
+
 Use
 `tests/fixtures/arcw/spec_should_pass/run/011_dialogue_line_value_and_handle_discard.arcw`
 as the primary end-to-end acceptance row. Preserve its typed meanings through

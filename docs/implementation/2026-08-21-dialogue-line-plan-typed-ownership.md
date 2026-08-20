@@ -43,6 +43,8 @@ changes described below; no unrelated user changes were modified.
 
 ## Remaining work
 
+- Runtime handle/result execution is blocked on
+  [AW-AH-009.4.4.1 line-plan runtime handle/result authority reconciliation](../reviews/requests/2026-08-21-aw-ah-009.4.4.1-line-plan-runtime-handle-result-authority-reconciliation.md).
 - Lower plan setup, scheduled callback work, typed handle results, and plan
   `out` through the existing `Dialogue` plus `LineTaskGroup` runtime owner.
 - Preserve native/AWBC parity and do not route the typed plan through the
