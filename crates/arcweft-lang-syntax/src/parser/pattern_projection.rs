@@ -154,7 +154,7 @@ pub(super) fn binding_syntax(
         .token_at(index)
         .expect("significant Pattern token remains in the cursor");
     let spelling = parser.text_of(token);
-    let result = if token.kind() == SyntaxKind::KeywordToken {
+    let result = if token.kind() == SyntaxKind::KeywordToken && spelling != "choice" {
         Err(PatternBindingIssue::ReservedBindingKeyword {
             spelling: spelling.into(),
         })

@@ -236,18 +236,17 @@ LinePlan model or a raw/string statement reader to make either fixture pass.
 
 ## 7. Close the positive fixture gate directory-wide
 
-Status: `current_pass/check` rows `001` through `011` pass after the dialogue
-project-default closure recorded in
-[2026-08-21-dialogue-project-default-positive-fixtures.md](2026-08-21-dialogue-project-default-positive-fixtures.md).
-The current first failure is `012_function_final_expr.arcw`: the ordinary path
-expression `choice.label` is misclassified as a malformed Choice expression.
+Status: `current_pass/check` rows `001` through `012` pass after the contextual
+`choice` keyword closure recorded in
+[2026-08-21-contextual-choice-keyword-positive-fixture.md](2026-08-21-contextual-choice-keyword-positive-fixture.md).
+The current first failure is `013_task_fn_await_shape.arcw` in shared callable
+resolution during final semantic analysis.
 
 Run and repair the positive check/run directories in deterministic path order.
 Keep every remaining positive fixture active and unchanged unless the selected
 stable surface explicitly requires a typed migration. The currently known
-first positive blocker is `current_pass/check/012_function_final_expr.arcw`;
-fix the contextual-keyword expression dispatch without weakening actual Choice
-syntax before advancing to the next failure.
+first positive blocker is `current_pass/check/013_task_fn_await_shape.arcw`;
+fix its callable/Need shape owner before advancing to the next failure.
 
 For each exposed failure:
 

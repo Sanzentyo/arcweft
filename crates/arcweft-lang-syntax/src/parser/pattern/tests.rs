@@ -8,10 +8,25 @@ use crate::literal::{
 };
 use crate::parser::lexer::DocumentLexer;
 use crate::patterns::{
-    PatternOrBindingIssue, PatternPathSegment, PatternSequenceRestIssue,
+    PatternBindingSyntax, PatternOrBindingIssue, PatternPathSegment, PatternSequenceRestIssue,
     PatternUnqualifiedVariantForm, PatternVariantHead, PatternVariantHeadSyntax,
     PatternVariantPayloadSyntax, VariantPatternPayloadPart,
 };
+
+#[test]
+fn contextual_choice_keyword_is_an_ordinary_binding_pattern() {
+    let events = pattern_events("choice");
+    let binding = projection(&events, SyntaxKind::BindingPattern);
+    assert!(matches!(
+        binding
+            .authored()
+            .value_at(binding.path())
+            .expect("binding value")
+            .kind(),
+        PatternSyntaxKind::Binding(PatternBindingSyntax::Resolved(name))
+            if name.as_str() == "choice"
+    ));
+}
 
 #[test]
 fn missing_variant_payload_close_is_a_required_parser_owned_insertion() {

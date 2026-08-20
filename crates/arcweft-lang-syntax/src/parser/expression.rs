@@ -23,7 +23,8 @@ use super::lexer::{
 use super::path::{PathSeparatorGrammar, emit_path};
 use super::shadow_recovery::{
     bump_until, emit_close_delimiter, emit_missing_delimiter, emit_open_delimiter,
-    find_matching_close, find_statement_terminator, find_top_level_boundary, trimmed_end,
+    find_matching_close, find_statement_terminator, find_top_level_boundary, first_significant,
+    trimmed_end,
 };
 use super::type_ref::{
     PreparedTypeProjection, emit_prepared_type, emit_recovered_type, prepare_type,
@@ -370,7 +371,7 @@ fn parse_prefix(
     };
     let text = parser.text_of(token);
 
-    if text == "choice" {
+    if text == "choice" && has_choice_expression_evidence(parser, end) {
         return super::statement::choice::emit_choice_expression(parser, end, role);
     }
 
@@ -448,6 +449,16 @@ fn parse_prefix(
         }
         _ => emit_error(parser, role),
     }
+}
+
+fn has_choice_expression_evidence(parser: &DocumentParser<'_, '_>, end: usize) -> bool {
+    let Some(next) = first_significant(parser, parser.cursor().saturating_add(1), end) else {
+        return false;
+    };
+    parser.token_at(next).is_some_and(|token| {
+        token.kind() == SyntaxKind::EntityReferenceToken
+            || matches!(parser.text_of(token), "{" | ":" | "with")
+    })
 }
 
 fn emit_prefix_operand(

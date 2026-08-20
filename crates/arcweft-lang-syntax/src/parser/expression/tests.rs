@@ -425,6 +425,29 @@ fn select_projection_keeps_missing_member_without_postfix_try() {
 }
 
 #[test]
+fn choice_keyword_select_requires_choice_grammar_evidence() {
+    let selected = expression_events("choice.label");
+    assert!(matches!(
+        projection(&selected, SyntaxKind::SelectExpression).projection(),
+        ExpressionProjection::Select(SyntaxSelectedMember::Name(member))
+            if member.as_str() == "label"
+    ));
+    assert!(!selected.iter().any(|event| matches!(
+        event,
+        SyntaxEvent::StartNode {
+            kind: SyntaxKind::ChoiceExpression,
+            ..
+        }
+    )));
+
+    let choice = expression_events("choice @.first { @.next \"Next\" -> @flow.done }");
+    assert!(matches!(
+        projection(&choice, SyntaxKind::ChoiceExpression).projection(),
+        ExpressionProjection::Choice
+    ));
+}
+
+#[test]
 fn numeric_select_member_keeps_the_inner_missing_select_before_generic_recovery() {
     for (source, insertion, recovery) in [
         ("target.42", 7, SourceRange::new(7, 9)),
