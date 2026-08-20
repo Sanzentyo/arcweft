@@ -39,6 +39,13 @@ fn policy(active: &str, fallbacks: &[&str]) -> CharacterNameLocalePolicy {
     .expect("locale policy")
 }
 
+#[test]
+fn engine_default_is_japanese_first_without_fallbacks() {
+    let policy = CharacterNameLocalePolicy::engine_default();
+    assert_eq!(policy.default_active().locale_tag().as_str(), "ja-JP");
+    assert!(policy.fallbacks().is_empty());
+}
+
 fn record(
     character: &str,
     source_locale: Option<&str>,

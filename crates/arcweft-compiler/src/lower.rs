@@ -766,11 +766,10 @@ fn project_dialogue_semantic_facts(
                 "an executable dialogue product requires one compiler-admitted dialogue profile"
                     .to_owned(),
         })?;
-    let policy = policy.ok_or_else(|| RuntimeSemanticProjectionError::Dialogue {
-        owner: None,
-        reason: "an executable dialogue product requires the selected profile localization.character_names policy"
-            .to_owned(),
-    })?;
+    let policy = policy
+        .map(character_name_locale_policy)
+        .transpose()?
+        .unwrap_or_else(CharacterNameLocalePolicy::engine_default);
     let catalog = Arc::new(build_character_presentation_catalog(
         project, analysis, policy,
     )?);
@@ -935,22 +934,8 @@ fn expression_belongs_to_non_product_plan(
 fn build_character_presentation_catalog(
     project: HirExecutableProjectView<'_>,
     analysis: &FinalSemanticAnalysis,
-    policy: &CharacterNameLocalePolicySpec,
+    policy: CharacterNameLocalePolicy,
 ) -> Result<CharacterPresentationCatalogData, RuntimeSemanticProjectionError> {
-    let active = CharacterNameLocale::new(policy.active().clone());
-    let fallbacks = policy
-        .fallbacks()
-        .iter()
-        .cloned()
-        .map(CharacterNameLocale::new)
-        .map(CharacterNameFallbackLocale::new)
-        .collect();
-    let policy = CharacterNameLocalePolicy::try_new(active, fallbacks).map_err(|error| {
-        RuntimeSemanticProjectionError::Dialogue {
-            owner: None,
-            reason: error.to_string(),
-        }
-    })?;
     let records = project
         .items()
         .filter(|item| matches!(item.item().kind(), HirItemKind::Character(_)))
@@ -963,6 +948,25 @@ fn build_character_presentation_catalog(
         }
     })?;
     CharacterPresentationCatalogData::try_from_inputs(input).map_err(|error| {
+        RuntimeSemanticProjectionError::Dialogue {
+            owner: None,
+            reason: error.to_string(),
+        }
+    })
+}
+
+fn character_name_locale_policy(
+    policy: &CharacterNameLocalePolicySpec,
+) -> Result<CharacterNameLocalePolicy, RuntimeSemanticProjectionError> {
+    let active = CharacterNameLocale::new(policy.active().clone());
+    let fallbacks = policy
+        .fallbacks()
+        .iter()
+        .cloned()
+        .map(CharacterNameLocale::new)
+        .map(CharacterNameFallbackLocale::new)
+        .collect();
+    CharacterNameLocalePolicy::try_new(active, fallbacks).map_err(|error| {
         RuntimeSemanticProjectionError::Dialogue {
             owner: None,
             reason: error.to_string(),

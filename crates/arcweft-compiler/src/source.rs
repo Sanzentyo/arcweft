@@ -132,6 +132,23 @@ mod tests {
     use super::{compile_source, compile_source_with_env};
 
     #[test]
+    fn single_source_dialogue_uses_the_language_owned_character_name_default() {
+        compile_source(
+            r#"
+character alice {
+    display_name = "Alice"
+}
+
+flow main() -> String {
+    alice: hello[p]
+    return "done"
+}
+"#,
+        )
+        .expect("project-default dialogue compiles with the engine locale policy");
+    }
+
+    #[test]
     fn source_compiler_entrypoints_reject_removed_role_declarations_at_parse() {
         for source in [
             "state GameState {\n    value: i32\n}\n",

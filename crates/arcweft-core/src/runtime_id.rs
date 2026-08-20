@@ -564,6 +564,19 @@ impl RuntimeIdSegment {
     pub fn as_str(&self) -> &str {
         &self.0
     }
+
+    fn from_source_payload(family: RuntimeIdFamily, value: &str) -> Result<Self, RuntimeIdError> {
+        if value.is_empty() {
+            return Err(RuntimeIdError::EmptySegment { family });
+        }
+        if matches!(value, "__agent_controller" | "__checked_flow") {
+            return Err(RuntimeIdError::ReservedFamilySegment {
+                family,
+                segment: value.to_owned(),
+            });
+        }
+        Ok(Self(value.to_owned()))
+    }
 }
 
 impl RuntimeIdPath {
@@ -624,7 +637,14 @@ impl RuntimeIdPath {
                 value: value.to_owned(),
             });
         }
-        Self::from_canonical_str(expected, suffix)
+        if suffix.is_empty() {
+            return Err(RuntimeIdError::Empty { family: expected });
+        }
+        suffix
+            .split('.')
+            .map(|segment| RuntimeIdSegment::from_source_payload(expected, segment))
+            .collect::<Result<Vec<_>, _>>()
+            .map(|segments| Self { segments })
     }
 
     pub fn from_segments(

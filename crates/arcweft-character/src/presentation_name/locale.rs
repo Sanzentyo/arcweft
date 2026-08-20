@@ -102,6 +102,24 @@ impl CharacterNameFallbackLocale {
 }
 
 impl CharacterNameLocalePolicy {
+    /// Returns the language-owned Japanese-first policy used when a selected
+    /// launch profile does not override Character-name localization.
+    ///
+    /// # Panics
+    ///
+    /// Panics only if the language-owned `ja-JP` constant stops satisfying the
+    /// shared canonical locale invariant.
+    #[must_use]
+    pub fn engine_default() -> Self {
+        let default_active = LocaleTag::try_new("ja-JP")
+            .map(CharacterNameLocale::new)
+            .expect("the language-owned Japanese locale is canonical");
+        Self {
+            default_active,
+            fallbacks: Box::new([]),
+        }
+    }
+
     pub fn try_new(
         default_active: CharacterNameLocale,
         fallbacks: Vec<CharacterNameFallbackLocale>,

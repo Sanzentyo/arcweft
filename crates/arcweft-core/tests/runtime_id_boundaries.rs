@@ -120,6 +120,32 @@ fn line_runtime_id_does_not_store_say_prefixed_string() {
 }
 
 #[test]
+fn line_source_boundary_preserves_an_opaque_flow_public_id_body() {
+    let line = RuntimeLineId::from_source_entity_body("say.flow.game.intro.scene.001")
+        .expect("checked line IDs may embed their complete Flow public ID body");
+
+    assert_eq!(line.canonical_label(), "flow.game.intro.scene.001");
+    assert_eq!(
+        line.public_label().as_str(),
+        "say.flow.game.intro.scene.001"
+    );
+}
+
+#[test]
+fn source_payload_cannot_forge_a_runtime_only_owner_segment() {
+    let error = RuntimeLineId::from_source_entity_body("say.__checked_flow.digest")
+        .expect_err("runtime-only owner segments never enter through source IDs");
+
+    assert_eq!(
+        error,
+        RuntimeIdError::ReservedFamilySegment {
+            family: RuntimeIdFamily::Line,
+            segment: "__checked_flow".to_owned(),
+        }
+    );
+}
+
+#[test]
 fn stream_runtime_id_does_not_store_stream_prefixed_string() {
     let stream = StreamRuntimeId::from_source_entity_body("stream.audio.rms")
         .expect("stream source ID lowers");

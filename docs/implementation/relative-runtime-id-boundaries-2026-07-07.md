@@ -68,7 +68,11 @@ Arcweft now treats three ID domains as separate values:
 
 1. **Source references** live in parser/HIR/lowering while relative syntax is
    still meaningful. They may include family syntax such as `@flow.main` or
-   parent/current-relative addressing.
+   parent/current-relative addressing. Once the leading source family has been
+   checked and removed, the remaining typed public-ID body is opaque: an
+   interior segment such as the `flow` in `say.flow.game.intro.001` is data,
+   not a second namespace selector. Runtime-only owner segments remain
+   forbidden.
 2. **Canonical runtime IDs** are lookup keys. The owning Rust type carries the
    family, so source `@flow.main` lowers to a `FlowRuntimeId` whose canonical
    label is `main`.
