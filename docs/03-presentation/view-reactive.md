@@ -84,10 +84,13 @@ glyph-target sampler の ordinal は Fx application ごとに最初の対象 gly
 として rebase し、文書全体の glyph index や UTF-8 byte offset を渡さない。
 reduce-motion 時は sampler time を 0 に固定する。
 
-`Await` の state discriminant は `pending = 0`、`ready = 1`、`error = 2`、
-`denied = 3` に固定する。未知の値や branch span 不整合は no-op ではなく診断に
-なる。`Branch`、keyed `Repeat`、nested `CallView`、`BindLocal`、`ApplyFx` は同じ
-frame operation/value budget の下で評価される。
+Reactive Need observation is an ordinary checked `match`, not a retained
+`Await` discriminant. The temporal owner has `NotStarted`, `Pending(Progress)`,
+`Ready(T)`, and `Cancelled`; a fallible payload is matched as
+`Ready(Result::Err(error))`. There is no Need-owned `error` or `denied` branch.
+`Branch`, `Match`, keyed `Repeat`, nested `CallView`, `BindLocal`, and `ApplyFx`
+run under the same frame operation/value budget. Unknown state, invalid pattern
+ownership, or branch span mismatch is a typed diagnostic rather than a no-op.
 
 評価結果は mount-scoped target/image、typed text source、Fx application を保持
 する。plain text 以外の localized/RichText/display-frame source を文字列へ黙って
