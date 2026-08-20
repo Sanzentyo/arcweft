@@ -30,17 +30,18 @@ pub use self::snapshot::{
     AwbcProductLineTaskJoinSnapshot, AwbcProductLineTaskLiveSnapshot,
     AwbcProductLineTaskNodeStateSnapshot, AwbcProductLineTaskPhaseSnapshot,
     AwbcProductLineTaskWorkSnapshot, AwbcProductLineTaskWorkTagSnapshot,
-    AwbcProductPendingHostCallSnapshot,
+    AwbcProductPendingHostCallSnapshot, AwbcProductTaskEventKindSaveSnapshot,
+    AwbcProductTaskEventSaveSnapshot,
 };
 use crate::awbc::fiber::{
     FiberAwaitManyInFlight, FiberAwaitManyState, FiberAwaitTarget, FiberBudget, FiberCursor,
     FiberState, FiberStatus, FiberSuspensionReason, FiberTerminalValue, FiberTrap,
 };
 use crate::awbc::schema::{
-    AwbcBlockId, AwbcChoiceId, AwbcContentUnitId, AwbcEffectPlanId, AwbcEntryId, AwbcFunctionId,
-    AwbcHostCallId, AwbcHostCallMode, AwbcLineTaskGroupId, AwbcLineTaskNode, AwbcLineTaskNodeId,
-    AwbcLineTaskTrigger, AwbcProgram, AwbcResumePointId, AwbcStreamPlanId, AwbcTaskPlanId,
-    AwbcTrapCode,
+    AwbcAwaitObserverResume, AwbcBlockId, AwbcChoiceId, AwbcContentUnitId, AwbcEffectPlanId,
+    AwbcEntryId, AwbcFunctionId, AwbcHostCallId, AwbcHostCallMode, AwbcLineTaskGroupId,
+    AwbcLineTaskNode, AwbcLineTaskNodeId, AwbcLineTaskTrigger, AwbcProgram, AwbcResumePointId,
+    AwbcStreamPlanId, AwbcTaskPlanId, AwbcTrapCode,
 };
 use crate::awbc::verify::{AwbcVerifyBudget, AwbcVerifyContext};
 use crate::awbc::vm::{VmExit, VmObservation, VmStepOptions, step_with_host};
@@ -67,8 +68,8 @@ use crate::step::{
 use crate::stream::{RuntimeStreamEvent, StreamRuntimeState};
 use crate::task::{
     AwaitTarget, HostTaskRequestTemplate, NeedId, RuntimeNeedState, TaskEvent, TaskEventKind,
-    TaskId, TaskKey, TaskSequence, normalize_runtime_need_states, normalize_task_events,
-    resolved_runtime_need_state,
+    TaskId, TaskKey, TaskPublicationCursor, TaskSequence, normalize_runtime_need_states,
+    normalize_task_events, resolved_runtime_need_state,
 };
 use crate::time::LogicalDuration;
 use crate::value::{
@@ -372,6 +373,9 @@ pub struct AwbcProductStepExecutor {
     active_choice: Option<ActiveChoice>,
     pending_host_call: Option<PendingHostCall>,
     started_tasks: BTreeSet<TaskId>,
+    task_publications: BTreeMap<TaskId, TaskPublicationCursor>,
+    need_publications: BTreeMap<NeedId, TaskPublicationCursor>,
+    queued_task_events: VecDeque<TaskEvent>,
     emitted_content: BTreeSet<AwbcContentUnitId>,
     stream_sequences: BTreeMap<AwbcStreamPlanId, u64>,
     child_fibers: VecDeque<ProductChildFiber>,
@@ -475,6 +479,7 @@ impl AwbcProductStepExecutor {
             cursor: None,
             pending_ops: VecDeque::new(),
             control_stack: Vec::new(),
+            await_observer: None,
             root_cleanups: Vec::new(),
             env: RuntimeEnv::default(),
             observations: RuntimeObservationState::default(),
@@ -505,6 +510,9 @@ impl AwbcProductStepExecutor {
             active_choice: None,
             pending_host_call: None,
             started_tasks: BTreeSet::new(),
+            task_publications: BTreeMap::new(),
+            need_publications: BTreeMap::new(),
+            queued_task_events: VecDeque::new(),
             emitted_content: BTreeSet::new(),
             stream_sequences: BTreeMap::new(),
             child_fibers: VecDeque::new(),
@@ -644,6 +652,7 @@ impl AwbcProductStepExecutor {
                 event.task_id.0, event.sequence.0
             ))
         }));
+        self.latch_task_events(&task_events);
         self.step_stream_plans(&mut output, pure_backend);
 
         if matches!(
@@ -985,11 +994,15 @@ impl AwbcProductStepExecutor {
             FiberSuspensionReason::Choice { choice, .. } => {
                 self.present_choice(choice, output, pure_backend);
             }
-            FiberSuspensionReason::Await { target, binding } => match target {
+            FiberSuspensionReason::Await {
+                target,
+                binding,
+                observer,
+            } => match target {
                 FiberAwaitTarget::Task(task) => self.ensure_await_started(&task, output),
                 FiberAwaitTarget::Need(need) => {
                     if let Some(resume) = declared_resume {
-                        self.resume_need(&need, binding, resume, need_states, output);
+                        self.resume_need(&need, binding, observer, resume, need_states, output);
                     }
                 }
             },
@@ -1034,12 +1047,16 @@ impl AwbcProductStepExecutor {
                 choice,
                 destination,
             } => self.resume_choice(choice, destination, resume, input, output, pure_backend),
-            FiberSuspensionReason::Await { target, binding } => match target {
+            FiberSuspensionReason::Await {
+                target,
+                binding,
+                observer,
+            } => match target {
                 FiberAwaitTarget::Task(task) => {
-                    self.resume_await(&task, binding, resume, task_events, output)
+                    self.resume_await(&task, binding, observer, resume, task_events, output)
                 }
                 FiberAwaitTarget::Need(need) => {
-                    self.resume_need(&need, binding, resume, need_states, output)
+                    self.resume_need(&need, binding, observer, resume, need_states, output)
                 }
             },
             FiberSuspensionReason::AwaitMany(state) => {

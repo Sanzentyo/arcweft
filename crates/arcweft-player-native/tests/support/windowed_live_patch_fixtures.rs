@@ -1232,7 +1232,7 @@ fn await_bundle(source_label: &str, source: &str) -> ArcweftBundle {
                         )],
                     },
                 },
-                pending: Vec::new(),
+                observers: Vec::new(),
             },
             RuntimeFlowOpSeed::Return("ready".to_owned()),
         ],

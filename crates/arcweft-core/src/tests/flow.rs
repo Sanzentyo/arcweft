@@ -4,12 +4,19 @@ use crate::{
     engine::{Engine, FlowFiberStatus},
     pattern::RuntimeSemanticTypeId,
     plan::{
-        FlowEvent, RuntimeExprSeed, RuntimeExprSeedKind, RuntimeFlowOpSeed, RuntimeFlowSeed,
+        FlowEvent, RuntimeAwaitPendingObserverSeed, RuntimeAwaitTargetSeed, RuntimeExprSeed,
+        RuntimeExprSeedKind, RuntimeFlowOpSeed, RuntimeFlowSeed,
+        RuntimeHostTaskRequestTemplateSeed, RuntimePatternSeed, RuntimePatternSeedKind,
         RuntimePlanBuilder, RuntimePlanTypeProjection, RuntimePlanTypeSeed,
     },
     step::{RuntimeStepInput, RuntimeStepOptions},
+    task::{
+        HostCapabilityId, LogicalEpoch, NeedId, TaskEvent, TaskEventKind, TaskId,
+        TaskOutcomeContract, TaskSequence,
+    },
     value::RuntimeValue,
 };
+use arcweft_need::Progress;
 
 const STRING_TYPE_MARKER: u8 = 1;
 
@@ -161,6 +168,94 @@ fn native_if_uses_the_admitted_bool_condition() {
         output.flow_events,
         vec![FlowEvent::Return {
             value: "then".to_owned(),
+        }]
+    );
+}
+
+#[test]
+fn await_progress_runs_only_the_first_matching_observer() {
+    let progress_type = RuntimeSemanticTypeId::from_bytes([3; 32]);
+    let entry = flow_id("flow.await_observer");
+    let mut builder = RuntimePlanBuilder::new();
+    builder
+        .admit_semantic_batch(
+            [
+                RuntimePlanTypeSeed::new(string_type(), RuntimePlanTypeProjection::String),
+                RuntimePlanTypeSeed::new(progress_type, RuntimePlanTypeProjection::Progress),
+            ],
+            [],
+            [],
+            [],
+        )
+        .expect("Await observer types admit");
+    builder
+        .push_flow_seed(RuntimeFlowSeed::new(
+            entry.clone(),
+            [],
+            vec![RuntimeFlowOpSeed::Await {
+                binding: None,
+                target: RuntimeAwaitTargetSeed {
+                    need: NeedId("need.observe".to_owned()),
+                    task: TaskId("task.observe".to_owned()),
+                    outcome: TaskOutcomeContract::new(crate::pattern::RuntimeCheckedType::String),
+                    request: RuntimeHostTaskRequestTemplateSeed {
+                        capability: HostCapabilityId("test".to_owned()),
+                        operation: "observe".to_owned(),
+                        args: Vec::new(),
+                    },
+                },
+                observers: vec![
+                    RuntimeAwaitPendingObserverSeed {
+                        pattern: RuntimePatternSeed::new(
+                            progress_type,
+                            RuntimePatternSeedKind::Discard,
+                        ),
+                        ops: vec![RuntimeFlowOpSeed::Return("first".to_owned())],
+                    },
+                    RuntimeAwaitPendingObserverSeed {
+                        pattern: RuntimePatternSeed::new(
+                            progress_type,
+                            RuntimePatternSeedKind::Discard,
+                        ),
+                        ops: vec![RuntimeFlowOpSeed::Return("second".to_owned())],
+                    },
+                ],
+            }],
+        ))
+        .expect("Await observer flow admits");
+    let plan = builder.finish().expect("valid Await observer plan");
+    let mut engine = Engine::for_flow(plan, &entry).expect("Await observer flow exists");
+    let _started = step(&mut engine);
+
+    let result = engine.step(
+        RuntimeStepInput {
+            task_events: vec![TaskEvent {
+                logical_epoch: LogicalEpoch(1),
+                task_id: TaskId("task.observe".to_owned()),
+                sequence: TaskSequence(1),
+                kind: TaskEventKind::Progress(
+                    Progress::new(0.5).expect("fixture Progress is valid"),
+                ),
+            }],
+            ..RuntimeStepInput::default()
+        },
+        RuntimeStepOptions::default(),
+    );
+
+    assert_eq!(
+        result
+            .output
+            .flow_events
+            .iter()
+            .filter(|event| matches!(event, FlowEvent::AwaitProgress { .. }))
+            .count(),
+        1
+    );
+    let output = drain(&mut engine);
+    assert_eq!(
+        output.flow_events,
+        vec![FlowEvent::Return {
+            value: "first".to_owned(),
         }]
     );
 }

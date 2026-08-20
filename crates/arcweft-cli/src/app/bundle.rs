@@ -705,10 +705,18 @@ fn bundle_runner_error_exit_code(error: &BundleRunnerError) -> ExitCode {
 
 fn collect_flow_op_host_calls(op: &FlowOp) -> Vec<String> {
     match op {
-        FlowOp::Await { target, .. } => vec![host_call_id_for_template(
+        FlowOp::Await {
+            target, observers, ..
+        } => std::iter::once(host_call_id_for_template(
             target.request.capability.0.as_str(),
             target.request.operation.as_str(),
-        )],
+        ))
+        .chain(
+            observers
+                .iter()
+                .flat_map(|observer| collect_flow_ops_host_calls(&observer.ops)),
+        )
+        .collect(),
         FlowOp::AwaitMany { target, .. } => vec![host_call_id_for_template(
             target.request.capability.0.as_str(),
             target.request.operation.as_str(),
@@ -764,6 +772,7 @@ fn collect_flow_op_host_calls(op: &FlowOp) -> Vec<String> {
         | FlowOp::EnterScope
         | FlowOp::ExitScope
         | FlowOp::ExitScopeBind { .. }
+        | FlowOp::CompleteAwaitObserver
         | FlowOp::Noop => Vec::new(),
     }
 }
@@ -846,10 +855,14 @@ fn static_image_asset_refs(plan: &RuntimePlan) -> Vec<String> {
 fn collect_flow_op_static_image_asset_refs(op: &FlowOp) -> Vec<String> {
     match op {
         FlowOp::Await {
-            target, pending, ..
+            target, observers, ..
         } => static_image_asset_ref_for_template(&target.request)
             .into_iter()
-            .chain(collect_line_effects_static_image_asset_refs(pending))
+            .chain(
+                observers
+                    .iter()
+                    .flat_map(|observer| collect_flow_ops_static_image_asset_refs(&observer.ops)),
+            )
             .collect(),
         FlowOp::AwaitMany {
             target, pending, ..
@@ -903,6 +916,7 @@ fn collect_flow_op_static_image_asset_refs(op: &FlowOp) -> Vec<String> {
         | FlowOp::EnterScope
         | FlowOp::ExitScope
         | FlowOp::ExitScopeBind { .. }
+        | FlowOp::CompleteAwaitObserver
         | FlowOp::Noop => Vec::new(),
     }
 }

@@ -3,6 +3,7 @@ use super::{
     PendingHostCall, ProductChildFiber, ProductChildFiberOwner, ProductLineTaskFiberPhase,
     stream_id_for,
 };
+mod task_publication;
 use crate::awbc::fiber::{AwbcFiberStateSnapshot, FiberState};
 use crate::awbc::schema::{
     AwbcChoiceId, AwbcContentUnitId, AwbcFlowBinding, AwbcFunctionKind, AwbcHostCallId,
@@ -16,9 +17,12 @@ use crate::observation::RuntimeObservationState;
 use crate::runtime_id::{RuntimeDialogueMarkId, RuntimeLineTaskNodeId};
 use crate::step::RuntimeHostCallId;
 use crate::stream::StreamRuntimeState;
-use crate::task::TaskId;
+use crate::task::{TaskEvent, TaskId, TaskPublicationCursor};
 use crate::value::RuntimePayload;
-use std::collections::{BTreeMap, BTreeSet};
+use std::collections::{BTreeMap, BTreeSet, VecDeque};
+pub use task_publication::{
+    AwbcProductTaskEventKindSaveSnapshot, AwbcProductTaskEventSaveSnapshot,
+};
 
 fn snapshot_exit(exit: ScopeExit) -> AwbcProductLineTaskExitSnapshot {
     match exit {
@@ -296,6 +300,9 @@ pub struct AwbcProductExecutorSnapshot {
     pub pending_host_call: Option<AwbcProductPendingHostCallSnapshot>,
     #[serde(default, skip_serializing_if = "BTreeSet::is_empty")]
     pub started_tasks: BTreeSet<TaskId>,
+    pub task_publications: BTreeMap<TaskId, TaskPublicationCursor>,
+    pub need_publications: BTreeMap<crate::task::NeedId, TaskPublicationCursor>,
+    pub queued_task_events: VecDeque<TaskEvent>,
     #[serde(default, skip_serializing_if = "BTreeSet::is_empty")]
     pub emitted_content: BTreeSet<AwbcContentUnitId>,
     #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
@@ -331,6 +338,9 @@ pub struct AwbcProductExecutorSaveSnapshot {
     pub pending_host_call: Option<AwbcProductPendingHostCallSnapshot>,
     #[serde(default, skip_serializing_if = "BTreeSet::is_empty")]
     pub started_tasks: BTreeSet<TaskId>,
+    pub task_publications: BTreeMap<TaskId, TaskPublicationCursor>,
+    pub need_publications: BTreeMap<crate::task::NeedId, TaskPublicationCursor>,
+    pub queued_task_events: VecDeque<AwbcProductTaskEventSaveSnapshot>,
     #[serde(default, skip_serializing_if = "BTreeSet::is_empty")]
     pub emitted_content: BTreeSet<AwbcContentUnitId>,
     #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
@@ -407,6 +417,13 @@ impl AwbcProductExecutorSaveSnapshot {
             active_choice: snapshot.active_choice.clone(),
             pending_host_call: snapshot.pending_host_call.clone(),
             started_tasks: snapshot.started_tasks.clone(),
+            task_publications: snapshot.task_publications.clone(),
+            need_publications: snapshot.need_publications.clone(),
+            queued_task_events: snapshot
+                .queued_task_events
+                .iter()
+                .map(AwbcProductTaskEventSaveSnapshot::from_live)
+                .collect::<Result<VecDeque<_>, _>>()?,
             emitted_content: snapshot.emitted_content.clone(),
             stream_sequences: snapshot.stream_sequences.clone(),
             next_generation: snapshot.next_generation,
@@ -458,6 +475,13 @@ impl AwbcProductExecutorSaveSnapshot {
             active_choice: self.active_choice,
             pending_host_call: self.pending_host_call,
             started_tasks: self.started_tasks,
+            task_publications: self.task_publications,
+            need_publications: self.need_publications,
+            queued_task_events: self
+                .queued_task_events
+                .into_iter()
+                .map(AwbcProductTaskEventSaveSnapshot::into_live)
+                .collect::<Result<VecDeque<_>, _>>()?,
             emitted_content: self.emitted_content,
             stream_sequences: self.stream_sequences,
             next_generation: self.next_generation,
@@ -596,6 +620,29 @@ pub struct AwbcProductPendingHostCallSnapshot {
     pub id: String,
 }
 
+fn validate_task_publications(
+    snapshot: &AwbcProductExecutorSnapshot,
+) -> Result<(), AwbcProductStepBuildError> {
+    let mut queued_through = BTreeMap::<TaskId, TaskPublicationCursor>::new();
+    for event in &snapshot.queued_task_events {
+        let cursor = TaskPublicationCursor::from_event(event);
+        if queued_through
+            .insert(event.task_id.clone(), cursor)
+            .is_some_and(|previous| cursor <= previous)
+            || snapshot
+                .task_publications
+                .get(&event.task_id)
+                .is_none_or(|observed| cursor > *observed)
+        {
+            return Err(AwbcProductStepBuildError::RestoreSnapshot {
+                message: "queued task publications are not ordered under their retained cursor"
+                    .to_owned(),
+            });
+        }
+    }
+    Ok(())
+}
+
 impl AwbcProductStepExecutor {
     #[must_use]
     pub fn snapshot(&self) -> AwbcProductExecutorSnapshot {
@@ -638,6 +685,9 @@ impl AwbcProductStepExecutor {
                 }
             }),
             started_tasks: self.started_tasks.clone(),
+            task_publications: self.task_publications.clone(),
+            need_publications: self.need_publications.clone(),
+            queued_task_events: self.queued_task_events.clone(),
             emitted_content: self.emitted_content.clone(),
             stream_sequences: self.stream_sequences.clone(),
             next_generation: self.next_generation,
@@ -677,6 +727,9 @@ impl AwbcProductStepExecutor {
             id: RuntimeHostCallId(pending.id),
         });
         self.started_tasks = snapshot.started_tasks;
+        self.task_publications = snapshot.task_publications;
+        self.need_publications = snapshot.need_publications;
+        self.queued_task_events = snapshot.queued_task_events;
         self.emitted_content = snapshot.emitted_content;
         self.stream_sequences = snapshot.stream_sequences;
         self.next_generation = snapshot.next_generation;
@@ -837,6 +890,7 @@ impl AwbcProductStepExecutor {
                     .to_owned(),
             });
         }
+        validate_task_publications(snapshot)?;
         Ok(())
     }
 

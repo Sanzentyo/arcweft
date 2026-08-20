@@ -1366,6 +1366,7 @@ pub enum AwbcTerminator {
     Await {
         handle: AwbcRegisterId,
         binding: Option<AwbcPatternId>,
+        observer: Option<AwbcAwaitObserverResume>,
         resume: AwbcResumePointId,
     },
     AwaitMany {
@@ -1391,6 +1392,13 @@ pub enum AwbcTerminator {
         resume: AwbcResumePointId,
     },
     Unreachable,
+}
+
+/// Progress destination and observer dispatcher for one AWBC Await site.
+#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
+pub struct AwbcAwaitObserverResume {
+    pub destination: AwbcRegisterId,
+    pub resume: AwbcResumePointId,
 }
 
 impl AwbcTerminator {

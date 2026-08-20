@@ -2,19 +2,21 @@ use super::*;
 
 use arcweft_core::awbc::fiber::FiberState;
 use arcweft_core::awbc::schema::{
-    AwbcEntryId, AwbcEntryTarget, AwbcProgram, AwbcSafePointKind, AwbcTerminator,
+    AwbcEntryId, AwbcEntryTarget, AwbcInstruction, AwbcProgram, AwbcSafePointKind, AwbcTerminator,
 };
 use arcweft_core::awbc::vm::{self, VmExit, VmStepOptions};
 use arcweft_core::entry::{EntryBindingIdentity, RuntimeEntryRoles};
 use arcweft_core::pattern::RuntimeSemanticTypeId;
 use arcweft_core::plan::{
-    EntryRuntimeId, FlowRuntimeId, RuntimeEntryKind, RuntimeEntrySpec, RuntimeEntryTarget,
-    RuntimeExprSeed, RuntimeExprSeedKind, RuntimeFlowOpSeed, RuntimeFlowSeed,
-    RuntimeHostCallTargetSeed, RuntimeLocalDeclarationSeed, RuntimePatternSeed,
+    EntryRuntimeId, FlowRuntimeId, RuntimeAwaitPendingObserverSeed, RuntimeAwaitTargetSeed,
+    RuntimeEntryKind, RuntimeEntrySpec, RuntimeEntryTarget, RuntimeExprSeed, RuntimeExprSeedKind,
+    RuntimeFlowOpSeed, RuntimeFlowSeed, RuntimeHostCallTargetSeed,
+    RuntimeHostTaskRequestTemplateSeed, RuntimeLocalDeclarationSeed, RuntimePatternSeed,
     RuntimePatternSeedKind, RuntimePlan, RuntimePlanBuilder, RuntimePlanTypeProjection,
     RuntimePlanTypeSeed, RuntimeRouteSpec,
 };
 use arcweft_core::step::RuntimeHostCallMode;
+use arcweft_core::task::{HostCapabilityId, NeedId, TaskId, TaskOutcomeContract};
 use arcweft_core::value::RuntimeValue;
 
 fn flow_id(value: &str) -> FlowRuntimeId {
@@ -473,4 +475,80 @@ fn typed_runtime_ids_drive_static_goto_and_server_route_targets() {
         AwbcEntryTarget::Function(_) => panic!("test entry must lower as routes"),
     };
     assert_eq!(goto_target, route_target);
+}
+
+#[test]
+fn await_observers_lower_to_progress_dispatch_and_rewait_backedge() {
+    let main = flow_id("await.observer");
+    let progress_type = type_id(4);
+    let mut builder = RuntimePlanBuilder::new();
+    builder
+        .admit_semantic_batch(
+            [
+                RuntimePlanTypeSeed::new(type_id(1), RuntimePlanTypeProjection::String),
+                RuntimePlanTypeSeed::new(progress_type, RuntimePlanTypeProjection::Progress),
+            ],
+            [],
+            [],
+            [],
+        )
+        .expect("Await observer types admit");
+    builder
+        .push_flow_seed(RuntimeFlowSeed::new(
+            main.clone(),
+            [],
+            vec![RuntimeFlowOpSeed::Await {
+                binding: None,
+                target: RuntimeAwaitTargetSeed {
+                    need: NeedId("need.observe".to_owned()),
+                    task: TaskId("task.observe".to_owned()),
+                    outcome: TaskOutcomeContract::new(
+                        arcweft_core::pattern::RuntimeCheckedType::String,
+                    ),
+                    request: RuntimeHostTaskRequestTemplateSeed {
+                        capability: HostCapabilityId("test".to_owned()),
+                        operation: "observe".to_owned(),
+                        args: Vec::new(),
+                    },
+                },
+                observers: vec![RuntimeAwaitPendingObserverSeed {
+                    pattern: RuntimePatternSeed::new(
+                        progress_type,
+                        RuntimePatternSeedKind::Discard,
+                    ),
+                    ops: vec![RuntimeFlowOpSeed::Noop],
+                }],
+            }],
+        ))
+        .expect("Await observer flow admits");
+    builder
+        .push_entry(flow_entry("await.observer", main))
+        .expect("Await observer entry admits");
+    let report = lower_plan(&builder.finish().expect("Await observer plan seals"));
+    let (await_index, observer) = report
+        .program
+        .blocks
+        .iter()
+        .enumerate()
+        .find_map(|(index, block)| match block.terminator {
+            AwbcTerminator::Await {
+                observer: Some(observer),
+                ..
+            } => Some((index, observer)),
+            _ => None,
+        })
+        .expect("Await retains a Progress observer resume");
+
+    assert!(report.program.instructions.iter().any(|instruction| {
+        matches!(
+            instruction,
+            AwbcInstruction::TestPattern { value, .. } if *value == observer.destination
+        )
+    }));
+    assert!(report.program.blocks.iter().any(|block| {
+        matches!(
+            block.terminator,
+            AwbcTerminator::Jump { target } if target.index() == await_index
+        )
+    }));
 }

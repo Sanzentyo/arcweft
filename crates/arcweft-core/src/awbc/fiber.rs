@@ -128,6 +128,7 @@ pub enum FiberSuspensionReason {
     Await {
         target: FiberAwaitTarget,
         binding: Option<AwbcPatternId>,
+        observer: Option<crate::awbc::schema::AwbcAwaitObserverResume>,
     },
     AwaitMany(FiberAwaitManyState),
     HostCall {
@@ -278,6 +279,7 @@ pub enum AwbcFiberSuspensionReasonSnapshot {
     Await {
         target: AwbcFiberAwaitTargetSnapshot,
         binding: Option<AwbcPatternId>,
+        observer: Option<crate::awbc::schema::AwbcAwaitObserverResume>,
     },
     AwaitMany(AwbcFiberAwaitManySnapshot),
     HostCall {
@@ -531,9 +533,14 @@ impl AwbcFiberSuspensionReasonSnapshot {
                 choice: *choice,
                 destination: *destination,
             },
-            FiberSuspensionReason::Await { target, binding } => Self::Await {
+            FiberSuspensionReason::Await {
+                target,
+                binding,
+                observer,
+            } => Self::Await {
                 target: AwbcFiberAwaitTargetSnapshot::from_live(target)?,
                 binding: *binding,
+                observer: *observer,
             },
             FiberSuspensionReason::AwaitMany(state) => {
                 Self::AwaitMany(AwbcFiberAwaitManySnapshot::from_live(state)?)
@@ -576,9 +583,14 @@ impl AwbcFiberSuspensionReasonSnapshot {
                 choice,
                 destination,
             },
-            Self::Await { target, binding } => FiberSuspensionReason::Await {
+            Self::Await {
+                target,
+                binding,
+                observer,
+            } => FiberSuspensionReason::Await {
                 target: target.into_live()?,
                 binding,
+                observer,
             },
             Self::AwaitMany(state) => FiberSuspensionReason::AwaitMany(state.into_live()?),
             Self::HostCall {
@@ -1115,6 +1127,32 @@ impl FiberState {
         self.status = FiberStatus::Running;
         self.suspension = None;
         Ok(())
+    }
+
+    /// Selects the verified Progress continuation retained by an Await
+    /// suspension, then resumes through the ordinary declared-point path.
+    pub fn resume_await_observer_at(
+        &mut self,
+        program: &AwbcProgram,
+        resume: AwbcResumePointId,
+    ) -> Result<(), FiberStateError> {
+        self.require_status(FiberStatus::Suspended)?;
+        let admitted = self.suspension.as_ref().is_some_and(|suspension| {
+            matches!(
+                &suspension.reason,
+                FiberSuspensionReason::Await {
+                    observer: Some(observer),
+                    ..
+                } if observer.resume == resume
+            )
+        });
+        if !admitted {
+            return Err(FiberStateError::InvalidFrame);
+        }
+        if let Some(suspension) = self.suspension.as_mut() {
+            suspension.resume = FiberResumeTarget::Declared(resume);
+        }
+        self.resume_at(program, resume)
     }
 
     /// Resumes a budget yield at its declared or exact preemption target.
@@ -1896,8 +1934,18 @@ fn validate_suspension(
                 });
             }
         }
-        FiberSuspensionReason::Await { target, binding } => {
+        FiberSuspensionReason::Await {
+            target,
+            binding,
+            observer,
+        } => {
             validate_await_suspension(program, target, *binding)?;
+            if observer.is_some_and(|observer| {
+                observer.destination.index() >= frame.registers.len()
+                    || program.resume_points.get(observer.resume.index()).is_none()
+            }) {
+                return Err(FiberStateError::InvalidFrame);
+            }
         }
         FiberSuspensionReason::AwaitMany(await_many) => {
             validate_await_many_suspension(program, await_many)?;

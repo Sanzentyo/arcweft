@@ -328,7 +328,7 @@ pub enum RuntimeFlowOpSeed {
     Await {
         binding: Option<RuntimePatternSeed>,
         target: RuntimeAwaitTargetSeed,
-        pending: Vec<RuntimeLineEffectSeed>,
+        observers: Vec<RuntimeAwaitPendingObserverSeed>,
     },
     AwaitMany {
         binding: Option<RuntimePatternSeed>,
@@ -481,11 +481,13 @@ fn collect_binding_or_host_free_locals(
         RuntimeFlowOpSeed::Await {
             binding,
             target,
-            pending,
+            observers,
         } => {
             collect_host_argument_free_locals(&target.request.args, bound, locals);
-            for effect in pending {
-                effect.collect_free_locals(bound, locals);
+            for observer in observers {
+                let mut observer_bound = bound.clone();
+                observer.pattern.collect_binding_locals(&mut observer_bound);
+                collect_flow_ops_free_locals(&observer.ops, &observer_bound, locals);
             }
             if let Some(binding) = binding {
                 binding.collect_binding_locals(bound);
@@ -752,6 +754,12 @@ pub enum RuntimeIteratorWitnessExecutableSeed {
 pub struct RuntimeFlowMatchArmSeed {
     pub pattern: RuntimePatternSeed,
     pub guard: Option<RuntimeExprSeed>,
+    pub ops: Vec<RuntimeFlowOpSeed>,
+}
+
+#[derive(Clone, Debug, PartialEq)]
+pub struct RuntimeAwaitPendingObserverSeed {
+    pub pattern: RuntimePatternSeed,
     pub ops: Vec<RuntimeFlowOpSeed>,
 }
 

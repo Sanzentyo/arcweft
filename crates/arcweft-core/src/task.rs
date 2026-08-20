@@ -27,6 +27,25 @@ pub struct LogicalEpoch(pub u64);
 )]
 pub struct TaskSequence(pub u64);
 
+/// Replay-stable position of one publication from a single task.
+#[derive(
+    Clone, Copy, Debug, Default, Deserialize, Eq, Hash, Ord, PartialEq, PartialOrd, Serialize,
+)]
+pub struct TaskPublicationCursor {
+    pub logical_epoch: LogicalEpoch,
+    pub sequence: TaskSequence,
+}
+
+impl TaskPublicationCursor {
+    #[must_use]
+    pub const fn from_event(event: &TaskEvent) -> Self {
+        Self {
+            logical_epoch: event.logical_epoch,
+            sequence: event.sequence,
+        }
+    }
+}
+
 /// One producer-owned, in-memory state publication for a typed `Need<T>`.
 ///
 /// This boundary deliberately does not add a `RuntimeValue` or AWBC wire

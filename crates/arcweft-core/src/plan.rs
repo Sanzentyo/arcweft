@@ -13,24 +13,24 @@ mod variant_domains;
 
 pub use construction::{
     RuntimeAgentExprSeed, RuntimeAudioCommandSeed, RuntimeAwaitManyTargetSeed,
-    RuntimeAwaitTargetSeed, RuntimeCallArgumentSeed, RuntimeCallableExecutableSeed,
-    RuntimeCallableExecutableSeedCode, RuntimeChoiceOptionSeed, RuntimeDialogueContentPlanSeed,
-    RuntimeDialogueContentPlanSeedId, RuntimeDialogueMarkSeedId, RuntimeDialogueValueSiteSeed,
-    RuntimeEffectFieldSeed, RuntimeEvaluatedEffectSeed, RuntimeExprMatchArmSeed, RuntimeExprSeed,
-    RuntimeExprSeedKind, RuntimeFieldProjectionSeed, RuntimeFlowMatchArmSeed, RuntimeFlowOpSeed,
-    RuntimeFlowSeed, RuntimeFunctionSiteDeclarationSeed, RuntimeFunctionSiteSeedId,
-    RuntimeHostArgumentSeed, RuntimeHostCallTargetSeed, RuntimeHostTaskRequestTemplateSeed,
-    RuntimeIteratorEvidenceSeed, RuntimeIteratorWitnessEvidenceSeed,
-    RuntimeIteratorWitnessExecutableSeed, RuntimeLineEffectSeed, RuntimeLineTaskCancelRuleSeed,
-    RuntimeLineTaskGroupSeed, RuntimeLineTaskGroupSeedId, RuntimeLineTaskNodeSeed,
-    RuntimeLineTaskTriggerSeed, RuntimeLocalDeclarationSeed, RuntimeLocalSeedId,
-    RuntimeNominalRecordFieldSeed, RuntimePatternRestSeed, RuntimePatternSeed,
-    RuntimePatternSeedKind, RuntimePlanBuildError, RuntimePlanBuilder,
-    RuntimePlanSemanticAdmission, RuntimePlanTable, RuntimePureHelperDeclarationSeed,
-    RuntimePureHelperSeed, RuntimePureHelperSeedId, RuntimeRecordFieldSeedId,
-    RuntimeRecordPatternFieldSeed, RuntimeStreamMatchArmSeed, RuntimeStreamOpSeed,
-    RuntimeStreamPlanSeed, RuntimeTraitMethodDeclarationSeed, RuntimeTraitMethodSeed,
-    RuntimeTraitMethodSeedId,
+    RuntimeAwaitPendingObserverSeed, RuntimeAwaitTargetSeed, RuntimeCallArgumentSeed,
+    RuntimeCallableExecutableSeed, RuntimeCallableExecutableSeedCode, RuntimeChoiceOptionSeed,
+    RuntimeDialogueContentPlanSeed, RuntimeDialogueContentPlanSeedId, RuntimeDialogueMarkSeedId,
+    RuntimeDialogueValueSiteSeed, RuntimeEffectFieldSeed, RuntimeEvaluatedEffectSeed,
+    RuntimeExprMatchArmSeed, RuntimeExprSeed, RuntimeExprSeedKind, RuntimeFieldProjectionSeed,
+    RuntimeFlowMatchArmSeed, RuntimeFlowOpSeed, RuntimeFlowSeed,
+    RuntimeFunctionSiteDeclarationSeed, RuntimeFunctionSiteSeedId, RuntimeHostArgumentSeed,
+    RuntimeHostCallTargetSeed, RuntimeHostTaskRequestTemplateSeed, RuntimeIteratorEvidenceSeed,
+    RuntimeIteratorWitnessEvidenceSeed, RuntimeIteratorWitnessExecutableSeed,
+    RuntimeLineEffectSeed, RuntimeLineTaskCancelRuleSeed, RuntimeLineTaskGroupSeed,
+    RuntimeLineTaskGroupSeedId, RuntimeLineTaskNodeSeed, RuntimeLineTaskTriggerSeed,
+    RuntimeLocalDeclarationSeed, RuntimeLocalSeedId, RuntimeNominalRecordFieldSeed,
+    RuntimePatternRestSeed, RuntimePatternSeed, RuntimePatternSeedKind, RuntimePlanBuildError,
+    RuntimePlanBuilder, RuntimePlanSemanticAdmission, RuntimePlanTable,
+    RuntimePureHelperDeclarationSeed, RuntimePureHelperSeed, RuntimePureHelperSeedId,
+    RuntimeRecordFieldSeedId, RuntimeRecordPatternFieldSeed, RuntimeStreamMatchArmSeed,
+    RuntimeStreamOpSeed, RuntimeStreamPlanSeed, RuntimeTraitMethodDeclarationSeed,
+    RuntimeTraitMethodSeed, RuntimeTraitMethodSeedId,
 };
 pub use dialogue_content::{
     RuntimeDialogueContentPlan, RuntimeDialogueContentPlanTable,
@@ -831,7 +831,7 @@ pub enum FlowOp {
     Await {
         binding: Option<RuntimePattern>,
         target: AwaitTarget,
-        pending: Vec<LineEffectRequest>,
+        observers: Vec<RuntimeAwaitPendingObserver>,
     },
     AwaitMany {
         binding: Option<RuntimePattern>,
@@ -924,6 +924,8 @@ pub enum FlowOp {
     },
     EnterScope,
     ExitScope,
+    /// Engine-only fallthrough marker for one Pending observer body.
+    CompleteAwaitObserver,
     ExitScopeBind {
         pattern: RuntimePattern,
         expr: RuntimeExpr,
@@ -967,6 +969,13 @@ impl RuntimeHostCallTarget {
 pub struct RuntimeMatchArm {
     pub pattern: RuntimePattern,
     pub guard: Option<RuntimeExpr>,
+    pub ops: Vec<FlowOp>,
+}
+
+/// One source-ordered typed observer for a Pending publication.
+#[derive(Clone, Debug, PartialEq)]
+pub struct RuntimeAwaitPendingObserver {
+    pub pattern: RuntimePattern,
     pub ops: Vec<FlowOp>,
 }
 

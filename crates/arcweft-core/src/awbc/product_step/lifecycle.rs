@@ -245,7 +245,10 @@ impl AwbcProductStepExecutor {
                         TaskId(self.task_public_id(state.plan)),
                         HostTaskRequestTemplate::new("awbc", "await_many", []),
                     ),
+                    observers: Vec::new(),
                     resume: None,
+                    observed_through: None,
+                    queued: std::collections::VecDeque::new(),
                 })
             }
         }
@@ -378,7 +381,10 @@ impl AwbcProductStepExecutor {
                             task,
                             HostTaskRequestTemplate::new("awbc", "await", []),
                         ),
+                        observers: Vec::new(),
                         resume: None,
+                        observed_through: None,
+                        queued: std::collections::VecDeque::new(),
                     })
                 }
                 FiberAwaitTarget::Need(need) => FlowFiberStatus::NeedWaiting(need.clone()),

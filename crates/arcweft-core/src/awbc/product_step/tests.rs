@@ -1,4 +1,7 @@
-use super::{ActiveChoice, AwbcProductStepBuildError, AwbcProductStepExecutor};
+use super::{
+    ActiveChoice, AwbcProductExecutorSaveSnapshot, AwbcProductStepBuildError,
+    AwbcProductStepExecutor,
+};
 use crate::awbc::fiber::FiberTerminalValue;
 use crate::awbc::product_step::mapping::MappedEffect;
 use crate::awbc::schema::{
@@ -17,7 +20,9 @@ use crate::step::{
     RuntimeDiagnosticCategory, RuntimeHostCallId, RuntimeHostCallMode, RuntimeHostCallResult,
     RuntimeStepInput, RuntimeStepOptions, RuntimeStepStopReason,
 };
-use crate::task::{LogicalEpoch, NeedId, RuntimeNeedState, TaskSequence};
+use crate::task::{
+    LogicalEpoch, NeedId, RuntimeNeedState, TaskEvent, TaskEventKind, TaskId, TaskSequence,
+};
 use crate::value::{RuntimeBinding, RuntimePayload, RuntimeValue};
 use arcweft_need::{Need, Progress};
 
@@ -35,6 +40,28 @@ fn minimal_return_program_finishes_without_diagnostics() {
     assert_eq!(result.stop_reason, RuntimeStepStopReason::Done);
     assert!(result.output.diagnostics.is_empty());
     assert!(matches!(result.fiber_status, FlowFiberStatus::Done(_)));
+}
+
+#[test]
+fn save_snapshot_preserves_queued_progress_publications() {
+    let mut executor = AwbcProductStepExecutor::for_entry(return_program(), AwbcEntryId(0), 64)
+        .expect("product executor starts");
+    let event = TaskEvent {
+        logical_epoch: LogicalEpoch(7),
+        task_id: TaskId("task.snapshot".to_owned()),
+        sequence: TaskSequence(3),
+        kind: TaskEventKind::Progress(Progress::new(0.25).expect("fixture Progress is valid")),
+    };
+    executor.latch_task_events(std::slice::from_ref(&event));
+
+    let saved = AwbcProductExecutorSaveSnapshot::from_live(&executor.snapshot())
+        .expect("queued Progress snapshots");
+    let restored = saved.into_live().expect("queued Progress restores");
+
+    assert_eq!(
+        restored.queued_task_events,
+        std::collections::VecDeque::from([event])
+    );
 }
 
 #[test]
@@ -850,6 +877,7 @@ fn direct_need_program() -> AwbcProgram {
                 terminator: AwbcTerminator::Await {
                     handle: AwbcRegisterId(0),
                     binding: Some(AwbcPatternId(0)),
+                    observer: None,
                     resume: AwbcResumePointId(0),
                 },
                 safe_point: AwbcSafePointKind::FlowEntry,

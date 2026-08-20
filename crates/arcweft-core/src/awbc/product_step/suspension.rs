@@ -1,8 +1,8 @@
 use super::{
-    AudioCommandEnvelope, AudioDispatchId, AwbcEffectPlanId, AwbcFunctionId, AwbcHostCallId,
-    AwbcHostCallMode, AwbcProductStepExecutor, AwbcResumePointId, AwbcTrapCode,
-    FiberAwaitManyInFlight, FiberState, FiberSuspensionReason, FlowEvent, MappedEffect, NeedId,
-    PendingHostCall, ProductStepError, RuntimeBinding, RuntimeDiagnostic,
+    AudioCommandEnvelope, AudioDispatchId, AwbcAwaitObserverResume, AwbcEffectPlanId,
+    AwbcFunctionId, AwbcHostCallId, AwbcHostCallMode, AwbcProductStepExecutor, AwbcResumePointId,
+    AwbcTrapCode, FiberAwaitManyInFlight, FiberState, FiberSuspensionReason, FlowEvent,
+    MappedEffect, NeedId, PendingHostCall, ProductStepError, RuntimeBinding, RuntimeDiagnostic,
     RuntimeDiagnosticCategory, RuntimeHostCallId, RuntimeHostCallMode, RuntimeHostCallRequest,
     RuntimeNeedState, RuntimePayload, RuntimeStepOutput, RuntimeStreamEvent, RuntimeValue,
     TaskEvent, TaskEventKind, TaskId, TaskKey, TaskSequence, VmObservation, content_request,
@@ -16,6 +16,21 @@ use crate::value::runtime_value_into_sequence_values;
 use arcweft_need::Need;
 
 impl AwbcProductStepExecutor {
+    pub(super) fn latch_task_events(&mut self, events: &[TaskEvent]) {
+        for event in events {
+            let cursor = crate::task::TaskPublicationCursor::from_event(event);
+            if self
+                .task_publications
+                .get(&event.task_id)
+                .is_some_and(|observed| cursor <= *observed)
+            {
+                continue;
+            }
+            self.task_publications.insert(event.task_id.clone(), cursor);
+            self.queued_task_events.push_back(event.clone());
+        }
+    }
+
     pub(super) fn ensure_await_started(
         &mut self,
         task: &RuntimeValue,
@@ -52,12 +67,18 @@ impl AwbcProductStepExecutor {
         &mut self,
         task: &RuntimeValue,
         binding: Option<crate::awbc::schema::AwbcPatternId>,
+        observer: Option<AwbcAwaitObserverResume>,
         resume: AwbcResumePointId,
-        events: &[TaskEvent],
+        _events: &[TaskEvent],
         output: &mut RuntimeStepOutput,
     ) -> bool {
         let task_id = TaskId(runtime_value_label(task));
-        let Some(event) = events.iter().find(|event| event.task_id == task_id) else {
+        let event = self
+            .queued_task_events
+            .iter()
+            .position(|event| event.task_id == task_id)
+            .and_then(|index| self.queued_task_events.remove(index));
+        let Some(event) = event else {
             return false;
         };
         let plan = self.task_plan_for_id(&task_id.0);
@@ -87,7 +108,9 @@ impl AwbcProductStepExecutor {
                     need,
                     progress: progress.clone(),
                 });
-                true
+                observer.is_some_and(|observer| {
+                    self.resume_await_progress(observer, progress.clone(), output)
+                })
             }
             TaskEventKind::Failed(error) => {
                 self.fail_with_trap(
@@ -110,6 +133,7 @@ impl AwbcProductStepExecutor {
         &mut self,
         need: &NeedId,
         binding: Option<crate::awbc::schema::AwbcPatternId>,
+        observer: Option<AwbcAwaitObserverResume>,
         resume: AwbcResumePointId,
         states: &[RuntimeNeedState],
         output: &mut RuntimeStepOutput,
@@ -117,13 +141,58 @@ impl AwbcProductStepExecutor {
         let Some(state) = resolved_runtime_need_state(states, need) else {
             return false;
         };
+        let cursor = crate::task::TaskPublicationCursor {
+            logical_epoch: state.logical_epoch(),
+            sequence: state.sequence(),
+        };
+        if self
+            .need_publications
+            .get(need)
+            .is_some_and(|observed| cursor <= *observed)
+        {
+            return false;
+        }
+        self.need_publications.insert(need.clone(), cursor);
         match state.state() {
-            Need::NotStarted | Need::Pending(_) => false,
+            Need::NotStarted => false,
+            Need::Pending(progress) => observer.is_some_and(|observer| {
+                self.resume_await_progress(observer, progress.clone(), output)
+            }),
             Need::Ready(value) => self.resume_await_value(binding, resume, value.value(), output),
             Need::Cancelled => {
                 let cancellation = cancel_fiber(&mut self.fiber);
                 self.consume_observations(cancellation.observations, output);
                 true
+            }
+        }
+    }
+
+    fn resume_await_progress(
+        &mut self,
+        observer: AwbcAwaitObserverResume,
+        progress: arcweft_need::Progress,
+        output: &mut RuntimeStepOutput,
+    ) -> bool {
+        let value = RuntimeValue::Progress(progress);
+        if let Ok(frame) = self.fiber.active_frame_mut()
+            && let Err(error) = frame.set_register(observer.destination, value)
+        {
+            self.fail_with_trap(AwbcTrapCode::TypeMismatch, error.to_string(), None, output);
+            return true;
+        }
+        match self
+            .fiber
+            .resume_await_observer_at(&self.program, observer.resume)
+        {
+            Ok(()) => true,
+            Err(error) => {
+                self.fail_with_trap(
+                    AwbcTrapCode::InternalInvariant,
+                    error.to_string(),
+                    None,
+                    output,
+                );
+                false
             }
         }
     }
@@ -249,14 +318,20 @@ impl AwbcProductStepExecutor {
         &mut self,
         mut state: crate::awbc::fiber::FiberAwaitManyState,
         resume: AwbcResumePointId,
-        events: &[TaskEvent],
+        _events: &[TaskEvent],
         output: &mut RuntimeStepOutput,
     ) -> bool {
         if state.results.len() != state.items.len() {
             state.results = vec![None; state.items.len()];
         }
+        let in_flight_tasks = state
+            .in_flight
+            .iter()
+            .map(|in_flight| in_flight.task_id.clone())
+            .collect::<std::collections::BTreeSet<_>>();
+        let events = self.take_await_many_task_events(&in_flight_tasks);
         let mut progressed = false;
-        for event in events {
+        for event in &events {
             let Some(position) = state
                 .in_flight
                 .iter()
@@ -493,6 +568,24 @@ impl AwbcProductStepExecutor {
                 true
             }
         }
+    }
+
+    fn take_await_many_task_events(
+        &mut self,
+        in_flight_tasks: &std::collections::BTreeSet<String>,
+    ) -> Vec<TaskEvent> {
+        let mut events = Vec::new();
+        let mut index = 0;
+        while index < self.queued_task_events.len() {
+            if in_flight_tasks.contains(&self.queued_task_events[index].task_id.0) {
+                if let Some(event) = self.queued_task_events.remove(index) {
+                    events.push(event);
+                }
+            } else {
+                index += 1;
+            }
+        }
+        events
     }
 
     pub(super) fn consume_observations(

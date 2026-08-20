@@ -228,7 +228,7 @@ fn custom_echo_bundle() -> ArcweftBundle {
                             ))],
                         },
                     },
-                    pending: Vec::new(),
+                    observers: Vec::new(),
                 },
                 RuntimeFlowOpSeed::Return("custom-done".to_owned()),
             ],

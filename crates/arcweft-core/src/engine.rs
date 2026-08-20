@@ -24,7 +24,7 @@ use crate::stream::{
 };
 use crate::task::{
     AwaitManyTarget, AwaitTarget, CancelScopeId, NeedId, TaskEvent, TaskEventKind, TaskId, TaskKey,
-    TaskPolicy, TaskPriority, TaskSpec, normalize_task_events,
+    TaskPolicy, TaskPriority, TaskPublicationCursor, TaskSpec, normalize_task_events,
 };
 use crate::value::{
     RuntimeBinding, RuntimeEnv, RuntimeEvalError, RuntimeExpr, RuntimeExprMatchArm,
@@ -54,6 +54,7 @@ pub struct Engine {
     root_flow_binding: Option<RuntimeLocalBinding>,
     fiber: FlowFiber,
     child_fibers: VecDeque<FlowFiber>,
+    task_publications: BTreeMap<TaskId, TaskPublicationCursor>,
     next_fiber_id: u64,
     next_line_task_activation: u64,
     run_child_next: bool,
@@ -79,6 +80,7 @@ pub struct FlowFiber {
     pub cursor: Option<FlowCursor>,
     pub pending_ops: VecDeque<FlowOp>,
     pub control_stack: Vec<FlowControlStackEntry>,
+    pub await_observer: Option<Box<AwaitState>>,
     pub root_cleanups: Vec<FlowScopeCleanup>,
     pub env: RuntimeEnv,
     pub observations: RuntimeObservationState,
@@ -286,7 +288,10 @@ pub enum FlowStatusLabelStyle {
 pub struct AwaitState {
     pub binding: Option<RuntimePattern>,
     pub target: AwaitTarget,
+    pub observers: Vec<crate::plan::RuntimeAwaitPendingObserver>,
     pub resume: Option<FlowCursor>,
+    pub observed_through: Option<TaskPublicationCursor>,
+    pub queued: VecDeque<TaskEvent>,
 }
 
 /// Suspended bounded fanout await state.
@@ -422,6 +427,7 @@ impl Default for FlowFiber {
             cursor: None,
             pending_ops: VecDeque::new(),
             control_stack: Vec::new(),
+            await_observer: None,
             root_cleanups: Vec::new(),
             env: RuntimeEnv::default(),
             observations: RuntimeObservationState::default(),
@@ -490,6 +496,7 @@ impl Engine {
                 cursor: None,
                 pending_ops: VecDeque::new(),
                 control_stack: Vec::new(),
+                await_observer: None,
                 root_cleanups: Vec::new(),
                 env: RuntimeEnv::default(),
                 observations: RuntimeObservationState::default(),
@@ -499,6 +506,7 @@ impl Engine {
                 status,
             },
             child_fibers: VecDeque::new(),
+            task_publications: BTreeMap::new(),
             next_fiber_id: 1,
             next_line_task_activation: 1,
             run_child_next: false,
@@ -964,6 +972,7 @@ impl Engine {
             self.step_next_child_fiber(input, events, output, pure_backend);
             return;
         }
+        self.latch_active_await_observer_events(events);
         if self.resume_suspended(input, events, output, pure_backend) {
             return;
         }
@@ -1049,6 +1058,7 @@ impl Engine {
             cursor: None,
             pending_ops,
             control_stack: Vec::new(),
+            await_observer: None,
             root_cleanups: Vec::new(),
             env: self.fiber.env.clone(),
             observations: RuntimeObservationState::default(),
@@ -1110,6 +1120,7 @@ impl Engine {
                 cursor: None,
                 pending_ops,
                 control_stack: Vec::new(),
+                await_observer: None,
                 root_cleanups: Vec::new(),
                 env,
                 observations: RuntimeObservationState::default(),
@@ -1213,6 +1224,7 @@ impl Engine {
             self.close_active_line_task_fiber(output, pure_backend);
             return;
         }
+        self.latch_active_await_observer_events(events);
         if self.resume_suspended(input, events, output, pure_backend) {
             return;
         }
@@ -1238,6 +1250,7 @@ impl Engine {
         self.drain_root_cleanups(output, pure_backend);
         self.fiber.cursor = None;
         self.fiber.pending_ops.clear();
+        self.fiber.await_observer = None;
         self.fiber.status = FlowFiberStatus::Done(FlowExit::Done);
     }
 

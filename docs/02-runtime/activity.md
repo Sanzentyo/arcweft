@@ -67,8 +67,7 @@ pub activity truck_game from rust "mini_games/truck" {
 
 ```arcw
 let result = try await @<activity.truck_game>.run({ seed = state.seed }) with {
-    pending .Realizing(p) => scene.show(@scene.loading_plugin); progress.set(p.ratio)
-    pending .Running(p) => scene.show(@scene.truck_loading); progress.set(p.ratio)
+    pending p => scene.show(@scene.truck_loading); progress.set(p.ratio)
 }
 ```
 

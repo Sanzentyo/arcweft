@@ -45,6 +45,7 @@ impl Engine {
         pure_backend: &mut impl RuntimeCallBackend,
     ) {
         self.fiber.pending_ops.clear();
+        self.fiber.await_observer = None;
         self.unwind_control_stack(output, pure_backend);
         output.flow_events.push(FlowEvent::Goto {
             target: target.clone(),
@@ -68,6 +69,7 @@ impl Engine {
         pure_backend: &mut impl RuntimeCallBackend,
     ) {
         self.fiber.pending_ops.clear();
+        self.fiber.await_observer = None;
         self.unwind_control_stack(output, pure_backend);
         output.flow_events.push(FlowEvent::Return {
             value: value.clone(),

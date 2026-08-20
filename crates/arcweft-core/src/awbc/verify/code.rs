@@ -1328,6 +1328,7 @@ fn apply_terminator(
         AwbcTerminator::Await {
             handle,
             binding,
+            observer,
             resume,
         } => {
             let handle_ty = read_register(verifier, function, block, *handle, state)?;
@@ -1356,6 +1357,35 @@ fn apply_terminator(
                 verify_resume(verifier, function, *resume, AwbcSafePointKind::Await, &at)?,
                 next,
             ));
+            if let Some(observer) = observer {
+                require_type_kind(
+                    verifier,
+                    function,
+                    block,
+                    observer.destination,
+                    is_progress,
+                    "await Progress observer",
+                    &at,
+                )?;
+                let mut pending = state.clone();
+                write_register(
+                    verifier,
+                    function,
+                    block,
+                    observer.destination,
+                    &mut pending,
+                )?;
+                successors.push((
+                    verify_resume(
+                        verifier,
+                        function,
+                        observer.resume,
+                        AwbcSafePointKind::Await,
+                        &at,
+                    )?,
+                    pending,
+                ));
+            }
         }
         AwbcTerminator::AwaitMany {
             plan,
@@ -2352,6 +2382,10 @@ fn is_await_handle(ty: Option<&AwbcRuntimeType>) -> bool {
         ty,
         Some(AwbcRuntimeType::TaskHandle | AwbcRuntimeType::NeedHandle | AwbcRuntimeType::Dynamic)
     )
+}
+
+fn is_progress(ty: Option<&AwbcRuntimeType>) -> bool {
+    matches!(ty, Some(AwbcRuntimeType::Progress))
 }
 
 fn is_task_handle(ty: Option<&AwbcRuntimeType>) -> bool {

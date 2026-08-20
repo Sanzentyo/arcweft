@@ -6,14 +6,14 @@
 use super::AwbcCodecError;
 use super::wire::{Reader, Wire, Writer, wire_enum};
 use crate::awbc::schema::{
-    AwbcBinaryOp, AwbcBindMode, AwbcBlock, AwbcBlockId, AwbcChoiceId, AwbcConstantId,
-    AwbcContentUnitId, AwbcDialogueValueBinding, AwbcDialogueValueRole, AwbcEffectPlanId,
-    AwbcFrameLayoutId, AwbcFunction, AwbcFunctionFlags, AwbcFunctionId, AwbcFunctionKind,
-    AwbcHostCallId, AwbcInstruction, AwbcIntrinsicId, AwbcMatchArm, AwbcOpcode, AwbcPattern,
-    AwbcPatternId, AwbcPatternRest, AwbcPureHelperId, AwbcRecordPatternField, AwbcRegisterId,
-    AwbcResumePoint, AwbcResumePointId, AwbcSafePointKind, AwbcScopeId, AwbcSignatureId,
-    AwbcSourceMapId, AwbcStreamPlanId, AwbcStringId, AwbcTableRange, AwbcTaskPlanId,
-    AwbcTerminator, AwbcTraitMethodId, AwbcTrapCode, AwbcTypeId, AwbcUnaryOp,
+    AwbcAwaitObserverResume, AwbcBinaryOp, AwbcBindMode, AwbcBlock, AwbcBlockId, AwbcChoiceId,
+    AwbcConstantId, AwbcContentUnitId, AwbcDialogueValueBinding, AwbcDialogueValueRole,
+    AwbcEffectPlanId, AwbcFrameLayoutId, AwbcFunction, AwbcFunctionFlags, AwbcFunctionId,
+    AwbcFunctionKind, AwbcHostCallId, AwbcInstruction, AwbcIntrinsicId, AwbcMatchArm, AwbcOpcode,
+    AwbcPattern, AwbcPatternId, AwbcPatternRest, AwbcPureHelperId, AwbcRecordPatternField,
+    AwbcRegisterId, AwbcResumePoint, AwbcResumePointId, AwbcSafePointKind, AwbcScopeId,
+    AwbcSignatureId, AwbcSourceMapId, AwbcStreamPlanId, AwbcStringId, AwbcTableRange,
+    AwbcTaskPlanId, AwbcTerminator, AwbcTraitMethodId, AwbcTrapCode, AwbcTypeId, AwbcUnaryOp,
 };
 use crate::value::RuntimeAgentConstructor;
 
@@ -606,10 +606,12 @@ impl Wire for AwbcTerminator {
             Self::Await {
                 handle,
                 binding,
+                observer,
                 resume,
             } => {
                 handle.write_wire(writer)?;
                 binding.write_wire(writer)?;
+                observer.write_wire(writer)?;
                 resume.write_wire(writer)?;
             }
             Self::AwaitMany {
@@ -704,6 +706,7 @@ impl Wire for AwbcTerminator {
             AwbcOpcode::Await => Self::Await {
                 handle: AwbcRegisterId::read_wire(reader)?,
                 binding: Option::<AwbcPatternId>::read_wire(reader)?,
+                observer: Option::<AwbcAwaitObserverResume>::read_wire(reader)?,
                 resume: AwbcResumePointId::read_wire(reader)?,
             },
             AwbcOpcode::AwaitMany => Self::AwaitMany {
@@ -770,6 +773,20 @@ impl Wire for AwbcTerminator {
             | AwbcOpcode::MakeReductionUnchanged => {
                 unreachable!("instruction opcode rejected above")
             }
+        })
+    }
+}
+
+impl Wire for AwbcAwaitObserverResume {
+    fn write_wire(&self, writer: &mut Writer) -> Result<(), AwbcCodecError> {
+        self.destination.write_wire(writer)?;
+        self.resume.write_wire(writer)
+    }
+
+    fn read_wire(reader: &mut Reader<'_>) -> Result<Self, AwbcCodecError> {
+        Ok(Self {
+            destination: AwbcRegisterId::read_wire(reader)?,
+            resume: AwbcResumePointId::read_wire(reader)?,
         })
     }
 }

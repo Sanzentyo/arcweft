@@ -1871,6 +1871,7 @@ fn expression_apply_surfaces_await_from_the_dynamic_callee() {
                 AwbcTerminator::Await {
                     handle: AwbcRegisterId(0),
                     binding: None,
+                    observer: None,
                     resume: AwbcResumePointId(0),
                 },
                 AwbcSafePointKind::CallableBoundary,
@@ -1911,6 +1912,7 @@ fn expression_apply_surfaces_await_from_the_dynamic_callee() {
         super::vm::VmExit::Suspended(FiberSuspensionReason::Await {
             target: FiberAwaitTarget::Task(RuntimeValue::String(ref task)),
             binding: None,
+            observer: None,
         }) if task == "task.dynamic"
     ));
     assert_eq!(

@@ -2152,7 +2152,7 @@ impl RuntimePlanBuilder {
             RuntimeFlowOpSeed::Await {
                 binding,
                 target,
-                pending,
+                observers,
             } => FlowOp::Await {
                 binding: binding
                     .map(|binding| self.lower_pattern_seed(binding))
@@ -2163,7 +2163,19 @@ impl RuntimePlanBuilder {
                     outcome: target.outcome,
                     request: self.lower_host_task_request(target.request)?,
                 },
-                pending: self.lower_line_effects(pending)?,
+                observers: observers
+                    .into_iter()
+                    .map(|observer| {
+                        Ok(crate::plan::RuntimeAwaitPendingObserver {
+                            pattern: self.lower_pattern_seed(observer.pattern)?,
+                            ops: observer
+                                .ops
+                                .into_iter()
+                                .map(|op| self.lower_flow_op(op))
+                                .collect::<Result<_, _>>()?,
+                        })
+                    })
+                    .collect::<Result<_, RuntimePlanBuildError>>()?,
             },
             RuntimeFlowOpSeed::AwaitMany {
                 binding,
@@ -2913,10 +2925,18 @@ impl RuntimePlanBuilder {
                 FlowOp::Await {
                     binding,
                     target,
-                    pending,
+                    observers,
                 } => {
                     self.validate_task_request_locals(&target.request, scope, used)?;
-                    self.validate_line_effect_locals(pending, scope, used)?;
+                    for observer in observers {
+                        let mut observer_scope =
+                            extend_scope(scope, pattern_binding_locals(&observer.pattern))?;
+                        self.validate_flow_operation_locals_inner(
+                            &observer.ops,
+                            &mut observer_scope,
+                            used,
+                        )?;
+                    }
                     if let Some(binding) = binding {
                         *scope = extend_scope(scope, pattern_binding_locals(binding))?;
                     }
@@ -3078,6 +3098,11 @@ impl RuntimePlanBuilder {
                 FlowOp::ExitScopeBind { .. } => {
                     return Err(RuntimePlanBuildError::NonCanonicalFlowOperation {
                         operation: "ExitScopeBind",
+                    });
+                }
+                FlowOp::CompleteAwaitObserver => {
+                    return Err(RuntimePlanBuildError::NonCanonicalFlowOperation {
+                        operation: "CompleteAwaitObserver",
                     });
                 }
             }

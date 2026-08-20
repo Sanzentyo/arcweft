@@ -1204,6 +1204,7 @@ fn execute_terminator(
         AwbcTerminator::Await {
             handle,
             binding,
+            observer,
             resume,
         } => {
             let target = await_target(program, fiber, *handle)?;
@@ -1213,6 +1214,7 @@ fn execute_terminator(
                 FiberSuspensionReason::Await {
                     target,
                     binding: *binding,
+                    observer: *observer,
                 },
             )
         }

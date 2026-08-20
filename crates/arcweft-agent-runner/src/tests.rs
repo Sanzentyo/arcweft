@@ -982,7 +982,7 @@ fn capture_binding_program_with_budget(budget: AgentBudget) -> AwbcProgram {
                             ))],
                         },
                     },
-                    pending: Vec::new(),
+                    observers: Vec::new(),
                 },
                 RuntimeFlowOpSeed::ReturnExpr(controller_expr(
                     STRING_TY,
@@ -1045,7 +1045,7 @@ fn read_resource_binding_program() -> AwbcProgram {
                             ))],
                         },
                     },
-                    pending: Vec::new(),
+                    observers: Vec::new(),
                 },
                 RuntimeFlowOpSeed::ReturnExpr(controller_expr(
                     STRING_TY,
@@ -1121,7 +1121,7 @@ fn single_response_field_program(
                             args,
                         },
                     },
-                    pending: Vec::new(),
+                    observers: Vec::new(),
                 },
                 RuntimeFlowOpSeed::ReturnExpr(controller_expr(
                     result_ty,

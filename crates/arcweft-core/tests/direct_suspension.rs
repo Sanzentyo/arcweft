@@ -78,6 +78,7 @@ fn direct_call_reaches_need_await_on_the_same_fiber() {
         VmExit::Suspended(FiberSuspensionReason::Await {
             target: FiberAwaitTarget::Need(NeedId(ref need)),
             binding: None,
+            observer: None,
         }) if need == "need.profile"
     ));
     assert_eq!(fiber.status, FiberStatus::Suspended);
@@ -433,6 +434,7 @@ fn suspended_three_frame_fiber(program: &AwbcProgram) -> FiberState {
             reason: FiberSuspensionReason::Await {
                 target: FiberAwaitTarget::Need(NeedId("need.profile".to_owned())),
                 binding: None,
+                observer: None,
             },
         })
         .expect("innermost callee suspends");
@@ -669,6 +671,7 @@ fn direct_suspension_blocks() -> Vec<AwbcBlock> {
             terminator: AwbcTerminator::Await {
                 handle: NEED_REGISTER,
                 binding: None,
+                observer: None,
                 resume: AWAIT_RESUME,
             },
             safe_point: AwbcSafePointKind::CallableBoundary,

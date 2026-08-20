@@ -7,13 +7,14 @@ use crate::awbc_lower::line::AwbcLineLowerer;
 use crate::awbc_lower::pattern::lower_pattern;
 use crate::awbc_lower::{table_index, table_range_len};
 use arcweft_core::awbc::schema::{
-    AwbcBindMode, AwbcBlock, AwbcBlockId, AwbcChoiceId, AwbcChoiceOption, AwbcDialogueValueBinding,
-    AwbcDialogueValueRole, AwbcEffectPlanId, AwbcEffectSetId, AwbcFrameLayoutId, AwbcFunction,
-    AwbcFunctionFlags, AwbcFunctionId, AwbcFunctionKind, AwbcInstruction, AwbcIntrinsic,
-    AwbcIntrinsicId, AwbcLineCancelHandler, AwbcLineTaskGroup, AwbcLineTaskGroupId,
-    AwbcLineTaskNode, AwbcLineTaskNodeId, AwbcLineTaskTrigger, AwbcParallelPolicy, AwbcPatternId,
-    AwbcPureHelper, AwbcPureHelperOrigin, AwbcRegisterId, AwbcResumePoint, AwbcResumePointId,
-    AwbcSafePointKind, AwbcScopeId, AwbcTableRange, AwbcTerminator, AwbcTrapCode,
+    AwbcAwaitObserverResume, AwbcBindMode, AwbcBlock, AwbcBlockId, AwbcChoiceId, AwbcChoiceOption,
+    AwbcDialogueValueBinding, AwbcDialogueValueRole, AwbcEffectPlanId, AwbcEffectSetId,
+    AwbcFrameLayoutId, AwbcFunction, AwbcFunctionFlags, AwbcFunctionId, AwbcFunctionKind,
+    AwbcInstruction, AwbcIntrinsic, AwbcIntrinsicId, AwbcLineCancelHandler, AwbcLineTaskGroup,
+    AwbcLineTaskGroupId, AwbcLineTaskNode, AwbcLineTaskNodeId, AwbcLineTaskTrigger,
+    AwbcParallelPolicy, AwbcPatternId, AwbcPureHelper, AwbcPureHelperOrigin, AwbcRegisterId,
+    AwbcResumePoint, AwbcResumePointId, AwbcRuntimeType, AwbcSafePointKind, AwbcScopeId,
+    AwbcTableRange, AwbcTerminator, AwbcTrapCode,
 };
 use arcweft_core::effect::LineEffectRequest;
 use arcweft_core::line_task::{
@@ -832,9 +833,8 @@ impl<'inventory, 'plan> AwbcFlowLowerer<'inventory, 'plan> {
             FlowOp::Await {
                 binding,
                 target,
-                pending,
+                observers,
             } => {
-                self.lower_pending_effects(pending);
                 let task = self.inventory.intern_host_task_with_outcome(
                     &target.need.0,
                     &target.task.0,
@@ -859,13 +859,18 @@ impl<'inventory, 'plan> AwbcFlowLowerer<'inventory, 'plan> {
                 let binding = binding
                     .as_ref()
                     .map(|binding| lower_pattern(self.inventory, self.plan, frame, binding));
-                body.suspend(self.inventory, AwbcSafePointKind::Await, |resume| {
-                    AwbcTerminator::Await {
-                        handle: task_handle,
-                        binding,
-                        resume,
-                    }
-                });
+                if observers.is_empty() {
+                    body.suspend(self.inventory, AwbcSafePointKind::Await, |resume| {
+                        AwbcTerminator::Await {
+                            handle: task_handle,
+                            binding,
+                            observer: None,
+                            resume,
+                        }
+                    });
+                } else {
+                    self.lower_await_observers(frame, body, task_handle, binding, observers, path);
+                }
             }
             FlowOp::AwaitMany {
                 binding,
@@ -1175,7 +1180,113 @@ impl<'inventory, 'plan> AwbcFlowLowerer<'inventory, 'plan> {
             FlowOp::Noop => {
                 self.inventory.push_instruction(AwbcInstruction::Nop);
             }
+            FlowOp::CompleteAwaitObserver => {
+                self.inventory.diagnostic(AwbcLowerDiagnostic::error(
+                    path,
+                    "runtime-only Await observer completion reached AWBC lowering",
+                ));
+            }
         }
+    }
+
+    fn lower_await_observers(
+        &mut self,
+        frame: &mut FrameBuilder,
+        body: &mut FlowBodyBuilder,
+        handle: AwbcRegisterId,
+        binding: Option<AwbcPatternId>,
+        observers: &[arcweft_core::plan::RuntimeAwaitPendingObserver],
+        path: &str,
+    ) {
+        let progress_ty = self.inventory.intern_type(AwbcRuntimeType::Progress);
+        let progress = frame.temp(progress_ty);
+        let await_block = AwbcBlockId(table_index(
+            self.inventory.program.blocks.len().saturating_add(1),
+        ));
+        body.close_block(
+            self.inventory,
+            AwbcTerminator::Jump {
+                target: await_block,
+            },
+            AwbcSafePointKind::None,
+        );
+        let dispatcher_block = AwbcBlockId(await_block.0.saturating_add(1));
+        let ready = self.inventory.push_resume_point(AwbcResumePoint {
+            function: body.owner,
+            block: AwbcBlockId::default(),
+            frame_layout: AwbcFrameLayoutId::default(),
+            kind: AwbcSafePointKind::Await,
+        });
+        let observer_resume = self.inventory.push_resume_point(AwbcResumePoint {
+            function: body.owner,
+            block: dispatcher_block,
+            frame_layout: AwbcFrameLayoutId::default(),
+            kind: AwbcSafePointKind::Await,
+        });
+        body.resume_points.extend([ready, observer_resume]);
+        body.close_block(
+            self.inventory,
+            AwbcTerminator::Await {
+                handle,
+                binding,
+                observer: Some(AwbcAwaitObserverResume {
+                    destination: progress,
+                    resume: observer_resume,
+                }),
+                resume: ready,
+            },
+            AwbcSafePointKind::LoopBackedge,
+        );
+
+        let mut rewait = Vec::with_capacity(observers.len().saturating_add(1));
+        for (index, observer) in observers.iter().enumerate() {
+            let pattern = self.lower_branch_pattern(frame, &observer.pattern);
+            let matched = frame.temp(self.inventory.bool_ty());
+            self.inventory
+                .push_instruction(AwbcInstruction::TestPattern {
+                    dst: matched,
+                    pattern,
+                    value: progress,
+                });
+            let candidate_block = AwbcBlockId(table_index(
+                self.inventory.program.blocks.len().saturating_add(1),
+            ));
+            let branch_block = body.close_block(
+                self.inventory,
+                AwbcTerminator::Branch {
+                    condition: matched,
+                    then_block: candidate_block,
+                    else_block: candidate_block,
+                },
+                AwbcSafePointKind::None,
+            );
+            self.lower_scoped_branch_ops(
+                frame,
+                body,
+                Some((pattern, progress)),
+                &observer.ops,
+                &format!("{path}.pending.{index}"),
+            );
+            let next_observer = if body.terminated {
+                body.reopen_after_terminated_branch(self.inventory)
+            } else {
+                rewait.push(self.close_jump_to_join(body));
+                AwbcBlockId(table_index(self.inventory.program.blocks.len()))
+            };
+            patch_branch_else_block(self.inventory, branch_block, next_observer);
+        }
+        rewait.push(body.close_block(
+            self.inventory,
+            AwbcTerminator::Jump {
+                target: await_block,
+            },
+            AwbcSafePointKind::None,
+        ));
+        for block in rewait {
+            patch_jump_target(self.inventory, block, await_block);
+        }
+        let ready_block = AwbcBlockId(table_index(self.inventory.program.blocks.len()));
+        patch_resume_block(self.inventory, ready, ready_block);
     }
 
     fn lower_effect_plan(
@@ -2207,6 +2318,16 @@ fn patch_branch_else_block(
     *target = else_block;
 }
 
+fn patch_resume_block(
+    inventory: &mut AwbcInventory,
+    resume: AwbcResumePointId,
+    block: AwbcBlockId,
+) {
+    if let Some(point) = inventory.program.resume_points.get_mut(resume.index()) {
+        point.block = block;
+    }
+}
+
 fn patch_jump_target(
     inventory: &mut AwbcInventory,
     jump_block: AwbcBlockId,
@@ -2320,12 +2441,17 @@ fn collect_flow_dependencies(
                 collect_flow_dependencies(ops, targets, has_dynamic_target);
                 false
             }
+            FlowOp::Await { observers, .. } => {
+                for observer in observers {
+                    collect_flow_dependencies(&observer.ops, targets, has_dynamic_target);
+                }
+                false
+            }
             FlowOp::Return(_) | FlowOp::ReturnExpr(_) => true,
             FlowOp::Bind(_)
             | FlowOp::Let { .. }
             | FlowOp::AssignNominalField { .. }
             | FlowOp::Dialogue { .. }
-            | FlowOp::Await { .. }
             | FlowOp::AwaitMany { .. }
             | FlowOp::HostCall { .. }
             | FlowOp::Break(_)
@@ -2337,6 +2463,7 @@ fn collect_flow_dependencies(
             | FlowOp::EnterScope
             | FlowOp::ExitScope
             | FlowOp::ExitScopeBind { .. }
+            | FlowOp::CompleteAwaitObserver
             | FlowOp::Noop => false,
         };
         if terminates {

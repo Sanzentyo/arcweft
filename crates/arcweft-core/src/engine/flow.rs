@@ -192,21 +192,24 @@ impl Engine {
             FlowOp::Await {
                 binding,
                 target,
-                pending,
+                observers,
             } => {
                 output.flow_events.push(FlowEvent::AwaitStarted {
                     need: target.need.clone(),
                     task: target.task.clone(),
                 });
-                self.emit_line_effects(pending, output, pure_backend);
                 let Some(task) = self.await_task_spec(&target, output, pure_backend) else {
                     return;
                 };
                 output.requests.tasks.push(task);
+                let observed_through = self.task_publications.get(&target.task).copied();
                 self.fiber.status = FlowFiberStatus::Waiting(AwaitState {
                     binding,
                     target,
+                    observers,
                     resume: self.resume_cursor(next_op_index),
+                    observed_through,
+                    queued: std::collections::VecDeque::new(),
                 });
             }
             FlowOp::AwaitMany {
@@ -537,6 +540,18 @@ impl Engine {
                 self.pop_scope_frame(output, pure_backend);
                 self.advance_if_needed(next_op_index);
             }
+            FlowOp::CompleteAwaitObserver => {
+                let Some(state) = self.fiber.await_observer.take() else {
+                    self.fiber.status = FlowFiberStatus::Failed(
+                        "Await observer completed without an active Await context".to_owned(),
+                    );
+                    output.diagnostics.push(RuntimeDiagnostic::new(
+                        "Await observer completed without an active Await context".to_owned(),
+                    ));
+                    return;
+                };
+                self.fiber.status = FlowFiberStatus::Waiting(*state);
+            }
             FlowOp::ExitScopeBind { pattern, expr } => {
                 let value = match self.evaluate_expr_with_backend(&expr, pure_backend) {
                     Ok(value) => value,
@@ -702,6 +717,15 @@ impl Engine {
         }
         let prefix = (!bindings.is_empty()).then_some(FlowOp::Bind(bindings));
         self.push_owned_scoped_ops(ops, prefix);
+    }
+
+    pub(super) fn push_await_observer_ops(
+        &mut self,
+        bindings: Vec<RuntimeLocalBinding>,
+        ops: &[FlowOp],
+    ) {
+        let prefix = (!bindings.is_empty()).then_some(FlowOp::Bind(bindings));
+        self.push_borrowed_scoped_ops(ops, prefix, Some(FlowOp::CompleteAwaitObserver));
     }
 
     pub(super) fn push_loop_iteration(&mut self, body: &Arc<[FlowOp]>) {
@@ -985,6 +1009,7 @@ impl Engine {
         let Some(kind) = self.pop_loop_frame(output, pure_backend) else {
             return false;
         };
+        self.fiber.await_observer = None;
         match kind {
             FlowControlStackEntryKind::Loop {
                 result: Some(pattern),
@@ -1017,6 +1042,7 @@ impl Engine {
         else {
             return false;
         };
+        self.fiber.await_observer = None;
         match kind {
             FlowControlStackEntryKind::Loop { body, .. } => self.push_loop_iteration(&body),
             FlowControlStackEntryKind::While { condition, body } => {

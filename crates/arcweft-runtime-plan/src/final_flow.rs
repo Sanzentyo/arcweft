@@ -10,10 +10,11 @@ use arcweft_core::effect::{RuntimeArtifactFingerprint, RuntimeAssertionProfile};
 use arcweft_core::entry::{RuntimeCallableId, RuntimeCallableRole, RuntimeFlowExecutable};
 use arcweft_core::line_task::{ChildCancelPolicy, ChildJoinPolicy, LineCleanupPolicy};
 use arcweft_core::plan::{
-    FlowRuntimeId, RuntimeDialogueContentPlanSeedId, RuntimeEffectFieldSeed, RuntimeEntryKind,
-    RuntimeEntrySpec, RuntimeEvaluatedEffectSeed, RuntimeExprSeed, RuntimeFlowMatchArmSeed,
-    RuntimeFlowOpSeed, RuntimeFlowSeed, RuntimeFunctionSiteDeclarationSeed,
-    RuntimeFunctionSiteSeedId, RuntimeHostTaskRequestTemplateSeed, RuntimeIteratorEvidenceSeed,
+    FlowRuntimeId, RuntimeAwaitPendingObserverSeed, RuntimeDialogueContentPlanSeedId,
+    RuntimeEffectFieldSeed, RuntimeEntryKind, RuntimeEntrySpec, RuntimeEvaluatedEffectSeed,
+    RuntimeExprSeed, RuntimeFlowMatchArmSeed, RuntimeFlowOpSeed, RuntimeFlowSeed,
+    RuntimeFunctionSiteDeclarationSeed, RuntimeFunctionSiteSeedId,
+    RuntimeHostTaskRequestTemplateSeed, RuntimeIteratorEvidenceSeed,
     RuntimeIteratorWitnessEvidenceSeed, RuntimeIteratorWitnessExecutableSeed,
     RuntimeLineTaskGroupSeed, RuntimeLineTaskNodeSeed, RuntimeLineTaskTriggerSeed,
     RuntimeLocalDeclarationSeed, RuntimeLocalSeedId, RuntimePatternSeed, RuntimePatternSeedKind,
@@ -2860,7 +2861,7 @@ impl<'a> FinalFlowLowerer<'a> {
         &mut self,
         expression: ExprId,
         awaited: &arcweft_lang_hir::expr::HirAwaitExpr,
-        _fact: &RuntimeAwaitFact,
+        fact: &RuntimeAwaitFact,
         locals: &AwaitLocalSeeds,
     ) -> Result<RuntimeFlowOpSeed, RuntimePlanLowerError> {
         let operand = self
@@ -2909,6 +2910,22 @@ impl<'a> FinalFlowLowerer<'a> {
                 "Await expression {expression:?} has no accepted payload type"
             ))
         })?;
+        if awaited.branches().len() != fact.observers().len() {
+            return Err(RuntimePlanLowerError::new(format!(
+                "Await expression {expression:?} has {} authored observers but {} checked observers",
+                awaited.branches().len(),
+                fact.observers().len()
+            )));
+        }
+        let mut observers = Vec::with_capacity(fact.observers().len());
+        for (authored, checked) in awaited.branches().iter().zip(fact.observers()) {
+            observers.push(RuntimeAwaitPendingObserverSeed {
+                pattern: FinalPatternLowerer::new(self.module, self.facts, self.locals)
+                    .lower(checked.pattern())
+                    .map_err(RuntimePlanLowerError::new)?,
+                ops: self.lower_contextual_body(authored.body())?,
+            });
+        }
         Ok(RuntimeFlowOpSeed::Await {
             binding: Some(bind_seed(payload, locals.payload.clone())),
             target: arcweft_core::plan::RuntimeAwaitTargetSeed {
@@ -2925,7 +2942,7 @@ impl<'a> FinalFlowLowerer<'a> {
                     args: target.args,
                 },
             },
-            pending: Vec::new(),
+            observers,
         })
     }
 

@@ -3,7 +3,7 @@ use super::{
     DialogueState, Engine, FlowEvent, FlowExit, FlowFiberStatus, HostCallState, LineEffectRequest,
     RuntimeDiagnostic, RuntimeEvalError, RuntimePayload, RuntimeSeq, RuntimeStepInput,
     RuntimeStepOutput, RuntimeValue, TaskEvent, TaskEventKind, TaskKey, TaskPolicy, TaskPriority,
-    TaskSpec, runtime_sequence_values, runtime_value_into_sequence_values,
+    TaskPublicationCursor, TaskSpec, runtime_sequence_values, runtime_value_into_sequence_values,
 };
 use crate::line_task::{
     cancel_live_line_task_group, finalize_live_line_task_close, finish_live_line_task_group,
@@ -153,18 +153,35 @@ impl Engine {
 
     pub(super) fn resume_await_state(
         &mut self,
-        state: AwaitState,
+        mut state: AwaitState,
         events: &[TaskEvent],
         output: &mut RuntimeStepOutput,
     ) {
-        let Some(event) = events
-            .iter()
-            .find(|event| event.task_id == state.target.task)
-            .cloned()
-        else {
+        let event = state.queued.pop_front().or_else(|| {
+            events
+                .iter()
+                .find(|event| {
+                    event.task_id == state.target.task
+                        && state
+                            .observed_through
+                            .is_none_or(|cursor| TaskPublicationCursor::from_event(event) > cursor)
+                })
+                .cloned()
+        });
+        let Some(event) = event else {
             self.fiber.status = FlowFiberStatus::Waiting(state);
             return;
         };
+        let event_cursor = TaskPublicationCursor::from_event(&event);
+        state.observed_through = Some(
+            state
+                .observed_through
+                .map_or(event_cursor, |cursor| cursor.max(event_cursor)),
+        );
+        self.task_publications.insert(
+            state.target.task.clone(),
+            state.observed_through.unwrap_or(event_cursor),
+        );
         match event.kind {
             TaskEventKind::Ready(value) => {
                 if !state.target.outcome.payload().accepts_value(value.value()) {
@@ -207,9 +224,9 @@ impl Engine {
             TaskEventKind::Progress(progress) => {
                 output.flow_events.push(FlowEvent::AwaitProgress {
                     need: state.target.need.clone(),
-                    progress,
+                    progress: progress.clone(),
                 });
-                self.fiber.status = FlowFiberStatus::Waiting(state);
+                self.start_await_pending_observer(state, progress, output);
             }
             TaskEventKind::Failed(error) => {
                 let message = format!("await task {} failed: {error}", state.target.task.0);
@@ -221,6 +238,59 @@ impl Engine {
             }
             TaskEventKind::Cancelled => {
                 self.fiber.status = FlowFiberStatus::Done(FlowExit::Done);
+            }
+        }
+    }
+
+    fn start_await_pending_observer(
+        &mut self,
+        state: AwaitState,
+        progress: arcweft_need::Progress,
+        output: &mut RuntimeStepOutput,
+    ) {
+        let value = RuntimeValue::Progress(progress);
+        for observer in &state.observers {
+            match crate::pattern::match_runtime_pattern(&self.plan, &observer.pattern, &value) {
+                Ok(Some(bindings)) => {
+                    let ops = observer.ops.clone();
+                    self.fiber.await_observer = Some(Box::new(state));
+                    self.push_await_observer_ops(bindings, &ops);
+                    self.fiber.status = FlowFiberStatus::Running;
+                    return;
+                }
+                Ok(None) => {}
+                Err(error) => {
+                    self.fail_eval(error, output);
+                    return;
+                }
+            }
+        }
+        self.fiber.status = FlowFiberStatus::Waiting(state);
+    }
+
+    pub(super) fn latch_active_await_observer_events(&mut self, events: &[TaskEvent]) {
+        let Some(state) = self.fiber.await_observer.as_mut() else {
+            return;
+        };
+        for event in events {
+            if event.task_id != state.target.task
+                || state
+                    .observed_through
+                    .is_some_and(|cursor| TaskPublicationCursor::from_event(event) <= cursor)
+            {
+                continue;
+            }
+            state.observed_through = Some(TaskPublicationCursor::from_event(event));
+            self.task_publications.insert(
+                state.target.task.clone(),
+                TaskPublicationCursor::from_event(event),
+            );
+            state.queued.push_back(event.clone());
+            if matches!(
+                event.kind,
+                TaskEventKind::Ready(_) | TaskEventKind::Failed(_) | TaskEventKind::Cancelled
+            ) {
+                break;
             }
         }
     }

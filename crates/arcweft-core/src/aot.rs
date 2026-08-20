@@ -134,6 +134,7 @@ impl AotLinearOp {
             | FlowOp::Continue
             | FlowOp::Goto(_)
             | FlowOp::GotoExpr(_)
+            | FlowOp::CompleteAwaitObserver
             | FlowOp::EvaluatedEffect(_) => None,
         }
     }
@@ -261,6 +262,7 @@ pub(crate) fn aot_linear_supported_op(op: &FlowOp) -> bool {
         | FlowOp::Continue
         | FlowOp::Goto(_)
         | FlowOp::GotoExpr(_)
+        | FlowOp::CompleteAwaitObserver
         | FlowOp::EvaluatedEffect(_) => false,
     }
 }
@@ -292,7 +294,8 @@ impl AotOpClass {
             | FlowOp::EnterScope
             | FlowOp::ExitScope
             | FlowOp::ExitScopeBind { .. }
-            | FlowOp::Noop => Self::Linear,
+            | FlowOp::Noop
+            | FlowOp::CompleteAwaitObserver => Self::Linear,
             FlowOp::LetElse { .. }
             | FlowOp::If { .. }
             | FlowOp::IfLet { .. }
@@ -350,12 +353,16 @@ impl AotProgramStats {
                 | FlowOp::WhileLetNext { body, .. }
                 | FlowOp::ForNext { body, .. } => self.record_ops(body),
                 FlowOp::Scope(ops) | FlowOp::LetScope { ops, .. } => self.record_ops(ops),
+                FlowOp::Await { observers, .. } => {
+                    for observer in observers {
+                        self.record_ops(&observer.ops);
+                    }
+                }
                 FlowOp::Bind(_)
                 | FlowOp::Let { .. }
                 | FlowOp::AssignNominalField { .. }
                 | FlowOp::Dialogue { .. }
                 | FlowOp::Choice { .. }
-                | FlowOp::Await { .. }
                 | FlowOp::AwaitMany { .. }
                 | FlowOp::HostCall { .. }
                 | FlowOp::Break(_)
@@ -371,6 +378,7 @@ impl AotProgramStats {
                 | FlowOp::EnterScope
                 | FlowOp::ExitScope
                 | FlowOp::ExitScopeBind { .. }
+                | FlowOp::CompleteAwaitObserver
                 | FlowOp::Noop => {}
             }
         }

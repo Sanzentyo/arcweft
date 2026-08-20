@@ -260,8 +260,9 @@ impl HirAwaitBranch {
     }
 }
 
-/// Await operand and source-ordered branch bodies. Await always produces a
-/// `Result`; propagation is modeled by an enclosing `HirTryExpr`.
+/// Await operand and source-ordered Pending observer bodies. Await removes only
+/// the temporal `Need` layer; propagation is modeled by an enclosing
+/// `HirTryExpr` when the payload itself is a carrier.
 #[derive(Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub struct HirAwaitExpr {
     operand: ExprId,

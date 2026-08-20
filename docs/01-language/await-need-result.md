@@ -115,6 +115,12 @@ let outcome = await load_image(path) with:
         progress_bar.set(progress.ratio)
 ```
 
+Observers are tested in source order against the canonical `Progress` value.
+At most the first matching observer body runs for one Pending publication. If
+none matches, Await remains suspended without running a body. Normal observer
+fallthrough re-enters the same Await without evaluating its operand or starting
+its producer again; non-local control transfer does not re-wait.
+
 Await-specific `error` and `denied` branches are removed. Handle domain errors
 after Await or use Try:
 
