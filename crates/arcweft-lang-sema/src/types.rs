@@ -400,6 +400,29 @@ pub enum ProgressField {
     Label,
 }
 
+/// Closed field coordinates owned by a Character reference value.
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub enum CharacterField {
+    Stage,
+}
+
+impl CharacterField {
+    #[must_use]
+    pub fn from_name(name: &str) -> Option<Self> {
+        match name {
+            "stage" => Some(Self::Stage),
+            _ => None,
+        }
+    }
+
+    #[must_use]
+    pub fn ty(self) -> TypeKind {
+        match self {
+            Self::Stage => TypeKind::Named("StageApi".to_owned()),
+        }
+    }
+}
+
 impl ProgressField {
     #[must_use]
     pub fn from_name(name: &str) -> Option<Self> {
@@ -592,6 +615,15 @@ impl EntityType {
 }
 
 impl TypeKind {
+    /// Resolves a field only when this type is a Character reference owner.
+    #[must_use]
+    pub fn character_field(&self, name: &str) -> Option<(CharacterField, TypeKind)> {
+        if !matches!(self, Self::Ref(entity) if entity.kind() == &EntityKind::Character) {
+            return None;
+        }
+        CharacterField::from_name(name).map(|field| (field, field.ty()))
+    }
+
     /// Resolves a field only when this type is the standard Progress owner.
     #[must_use]
     pub fn progress_field(&self, name: &str) -> Option<(ProgressField, TypeKind)> {

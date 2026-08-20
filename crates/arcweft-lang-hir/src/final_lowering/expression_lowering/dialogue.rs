@@ -5,6 +5,7 @@
 //! reconstructed from the accepted CST payload or source text.
 
 mod candidate;
+mod plan;
 
 pub(crate) use candidate::CandidateCursor;
 
@@ -101,12 +102,6 @@ impl StagedHirModuleTransaction<'_> {
         scope: ScopeId,
         projection: &SyntaxDialogueApplicationProjection,
     ) -> Result<(HirDialogueContentApplication, Option<HirRecoveryIssue>), HirLowerFailure> {
-        if projection.has_plan() {
-            // Line-plan lowering is switched with the ordinary Flow owner. It
-            // must not be guessed from the old detached plan carrier.
-            return Err(HirInvariantFailure::InvalidArenaCommit.into());
-        }
-
         let target_child = Self::expression_child(
             attached,
             ExpressionComponentRole::Target,
@@ -151,8 +146,13 @@ impl StagedHirModuleTransaction<'_> {
                 .map_err(|_| HirInvariantFailure::InvalidArenaCommit)?
             }
         };
+        let plan = attached
+            .dialogue_line_plan()
+            .map_err(|_| HirInvariantFailure::InvalidArenaCommit)?
+            .map(|plan| self.lower_dialogue_line_plan(&plan, owner, scope))
+            .transpose()?;
         let application =
-            HirDialogueContentApplication::try_new(owner, target, content, None, coordinates)
+            HirDialogueContentApplication::try_new(owner, target, content, plan, coordinates)
                 .map_err(|_| HirInvariantFailure::InvalidArenaCommit)?;
 
         if recovery.is_none() {

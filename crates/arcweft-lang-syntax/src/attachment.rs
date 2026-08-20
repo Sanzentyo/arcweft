@@ -6,6 +6,7 @@ mod activity;
 mod callable;
 mod choice;
 mod declaration;
+mod dialogue_plan;
 mod entry;
 mod error;
 mod expression;
@@ -90,6 +91,7 @@ pub use declaration::{
     AttachedCharacterSurfaceAlias, AttachedDeclarationIdentity, AttachedDeclarationPublicId,
     AttachedDeclarationPublicIdIssue, AttachedRetainedHeader, AttachedRetainedName,
 };
+pub use dialogue_plan::{AttachedDialogueLinePlan, AttachedDialogueLinePlanBody};
 pub use entry::{
     AttachedEntryBody, AttachedEntryDeclaration, AttachedEntryHttpMethod, AttachedEntryId,
     AttachedEntryKind, AttachedEntryMember, AttachedEntryName, AttachedEntryPunctuation,

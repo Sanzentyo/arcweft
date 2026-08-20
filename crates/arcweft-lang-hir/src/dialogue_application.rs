@@ -201,7 +201,6 @@ pub struct HirLinePlan {
 }
 
 impl HirLinePlan {
-    #[cfg(test)]
     pub(crate) fn try_new(
         root_scope: ScopeId,
         label: Option<HirName>,

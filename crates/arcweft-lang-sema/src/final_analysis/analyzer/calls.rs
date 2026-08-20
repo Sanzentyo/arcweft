@@ -33,9 +33,9 @@ use super::{
     HirModule, HirPathSegment, HirSelectedMember, HirSourcePresence, HirSourceQuery, HirSourceSite,
     PendingCallAnalysis, PhysicalCandidateArgument, PhysicalCandidateArgumentEvaluation,
     RegisteredSemanticValueId, ResolveCallOutcome, ResolvedCallTarget, ResolvedCallable,
-    ResolvedCharacterOwner, ResolverWork, TypeKind, TypeParameterSubstitutions, map_call_arguments,
-    map_unmapped_call_arguments, prepare_final_call_callee, prepare_language_free_dot_path,
-    resolve_call_target,
+    ResolvedCharacterOwner, ResolverWork, ScopeId, TypeKind, TypeParameterSubstitutions,
+    map_call_arguments, map_unmapped_call_arguments, prepare_final_call_callee,
+    prepare_language_free_dot_path, resolve_call_target,
 };
 use crate::callable::{MappedCallArgument, MappedCallArgumentSlot};
 use crate::final_analysis::type_rules::compact_numeric_element_type as infer_compact_numeric_element_type;
@@ -1394,7 +1394,21 @@ impl Analyzer<'_, '_, '_> {
                                     }
                                 }
                                 None => {
-                                    if prepare_language_free_dot_path(
+                                    let line_context = path.lexical_name() == Some("line")
+                                        && scope_is_dialogue_line_plan(module, expression.scope());
+                                    if line_context {
+                                        self.facts.set_expression(
+                                            *value_receiver,
+                                            CheckedExpression::new(
+                                                TypeKind::Named("LineContext".to_owned()),
+                                                CheckedTypeSelection::Inferred,
+                                                EffectSet::new(),
+                                                CheckedExpressionResolution::Value(
+                                                    CheckedValueResolution::LineContext,
+                                                ),
+                                            ),
+                                        );
+                                    } else if prepare_language_free_dot_path(
                                         self.catalogs.world.environment().callable_catalog(),
                                         *value_receiver,
                                         expression,
@@ -2017,5 +2031,26 @@ impl Analyzer<'_, '_, '_> {
             CheckedExpression::new(ty, CheckedTypeSelection::Inferred, effects, resolution),
         );
         Ok((!nominal_receiver).then_some(value))
+    }
+}
+
+fn scope_is_dialogue_line_plan(module: &HirModule, mut scope: ScopeId) -> bool {
+    loop {
+        if module.expressions().any(|(_, expression)| {
+            matches!(
+                expression.kind(),
+                HirExprKind::DialogueContentApplication(application)
+                    if application.plan().is_some_and(|plan| plan.root_scope() == scope)
+            )
+        }) {
+            return true;
+        }
+        let Ok(current) = module.resolve_scope(scope) else {
+            return false;
+        };
+        let Some(parent) = current.parent() else {
+            return false;
+        };
+        scope = parent;
     }
 }

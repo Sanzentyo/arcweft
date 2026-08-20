@@ -132,6 +132,20 @@ impl StagedHirModuleTransaction<'_> {
         })
     }
 
+    pub(super) fn allocate_expression_owned_block_scope<K: AstKind>(
+        &mut self,
+        block: &AstNode<K>,
+        owner: ExprId,
+        parent: ScopeId,
+    ) -> Result<ScopeId, HirLowerFailure> {
+        self.allocate_block_scope(
+            block.id(),
+            block.source_span(),
+            ValueBlockOwner::Expression(owner),
+            parent,
+        )
+    }
+
     pub(super) fn lower_attached_statement_only_block(
         &mut self,
         block: &AstNode<BlockKind>,

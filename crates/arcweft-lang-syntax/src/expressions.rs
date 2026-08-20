@@ -724,12 +724,18 @@ pub enum SyntaxClosureSyntax {
         explicit_header: bool,
         terminator: SyntaxClosureTerminator,
     },
+    /// `expr:` followed by an indentation-owned callback body.
+    IndentedCallback {
+        terminator: SyntaxClosureTerminator,
+    },
 }
 
 impl SyntaxClosureSyntax {
     pub const fn terminator(self) -> SyntaxClosureTerminator {
         match self {
-            Self::Pipe { terminator } | Self::CallbackBlock { terminator, .. } => terminator,
+            Self::Pipe { terminator }
+            | Self::CallbackBlock { terminator, .. }
+            | Self::IndentedCallback { terminator } => terminator,
         }
     }
 }

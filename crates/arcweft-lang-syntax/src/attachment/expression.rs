@@ -1891,6 +1891,13 @@ impl AttachedExpressionNode {
             .projection()
     }
 
+    /// Typed Dialogue line plan owned by this application, when present.
+    pub fn dialogue_line_plan(
+        &self,
+    ) -> Result<Option<super::AttachedDialogueLinePlan>, SyntaxAccessError> {
+        super::dialogue_plan::attached_dialogue_line_plan(self)
+    }
+
     /// Retained ordinary-index candidate for an ambiguous postfix bracket.
     ///
     /// Selected and invalid postfix brackets have no candidate graph and

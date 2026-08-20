@@ -838,6 +838,27 @@ fn analyze_with_assertion_profile(
 }
 
 #[test]
+fn dialogue_line_plan_bindings_are_inferred_in_source_order() {
+    let fixture = fixture(
+        concat!(
+            "pub character alice { display_name = \"Alice\" }\n",
+            "flow line_handles() -> String {\n",
+            "    let (_, cue) = alice(voice=auto)[聞いて。[p]]\n",
+            "    with:\n",
+            "        let actor = alice.stage.acquire(scope=line)\n",
+            "        let cue = at(0.42s):\n",
+            "            actor.look(.worried, crossfade=120ms)\n",
+            "        let voice = line.voice_handle()\n",
+            "        out (voice, cue)\n",
+            "    return \"done\"\n",
+            "}\n",
+        ),
+        None,
+    );
+    analyze(&fixture).expect("typed Dialogue line-plan bindings");
+}
+
+#[test]
 fn assignment_semantics_admit_only_one_direct_local_nominal_field() {
     let fixture = fixture(
         concat!(

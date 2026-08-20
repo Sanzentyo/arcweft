@@ -426,7 +426,9 @@ impl TypeCheckEnv {
             .with_standard_presentation_nominals()
             .with_standard_dialogue_view_types()
             .with_standard_presentation_lifetimes()
+            .with_standard_dialogue_value_enums()
             .with_standard_agent_enums()
+            .with_standard_line_plan_callables()
             .with_standard_function(
                 ["fmt"],
                 FunctionSignature::return_only(TypeKind::DisplayText),
@@ -583,6 +585,39 @@ impl TypeCheckEnv {
             ],
         )
         .expect("presentation lifetime inventory is not character nominal")
+    }
+
+    #[must_use]
+    fn with_standard_dialogue_value_enums(self) -> Self {
+        self.try_with_enum_variants(
+            EnvironmentBindingId::try_new("DialogueVoice")
+                .expect("DialogueVoice owner identity is valid"),
+            TypeKind::Named("DialogueVoice".to_owned()),
+            ["auto"],
+        )
+        .expect("DialogueVoice has one canonical source-visible enum inventory")
+    }
+
+    #[must_use]
+    fn with_standard_line_plan_callables(self) -> Self {
+        let cue = TypeKind::Named("CueHandle".to_owned());
+        let callback = TypeKind::function_with_effects(
+            std::iter::empty(),
+            cue.clone(),
+            EffectRow::closed(crate::effects::EffectSet::new()),
+        );
+        let scheduled = TypeKind::function_with_effects(
+            [callback],
+            cue,
+            EffectRow::closed(crate::effects::EffectSet::new()),
+        );
+        self.with_standard_function(
+            ["at"],
+            FunctionSignature::new(
+                scheduled,
+                [FunctionParam::required("anchor", TypeKind::Duration)],
+            ),
+        )
     }
 
     /// Installs the finite source-visible runtime callable surface.

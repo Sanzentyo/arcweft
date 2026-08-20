@@ -86,6 +86,7 @@ const fn role_class_is_ordinal(role: SyntaxRoleClass) -> bool {
             | SyntaxRoleClass::ContractOperand
             | SyntaxRoleClass::Statement
             | SyntaxRoleClass::ThreadFlowItem
+            | SyntaxRoleClass::DialogueLinePlanItem
             | SyntaxRoleClass::ChoiceItem
             | SyntaxRoleClass::ChoicePlanItem
             | SyntaxRoleClass::ChoiceOptionField

@@ -9,6 +9,7 @@ use super::{
     PublicId, SemanticTypeDigest, TypeKind, TypeParameterSubstitutions,
 };
 use crate::callable::{CallableEvaluatedEffect, CallableLogLevel, CharacterDialoguePatchContext};
+use crate::types::CharacterField;
 use arcweft_core::value::RuntimeAgentField;
 use arcweft_interaction_model::dialogue::CharacterDialogueCustomFieldId;
 use arcweft_lang_hir::expr::HirCallArgument;
@@ -300,6 +301,13 @@ impl CheckedProjectNominal {
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum CheckedValueResolution {
     Local(LocalId),
+    /// Runtime-owned line context available only inside an attached plan.
+    LineContext,
+    /// Standard Character-owned stage API projected from a typed receiver.
+    CharacterField {
+        receiver: Box<CheckedValueResolution>,
+        field: CharacterField,
+    },
     ProjectCallable(CheckedProjectCallable),
     ProjectItem(CheckedProjectItem),
     Entry(CheckedEntryReference),
@@ -444,6 +452,8 @@ pub enum CheckedExpressionResolution {
     Select(CheckedSelectResolution),
     Nominal(CheckedProjectNominal),
     Variant(CheckedVariantResolution),
+    /// Open stage-look token checked under the Stage API's typed parameter.
+    StageLook(HirName),
     /// Canonical effect identity selected from an authored effect-clause path.
     Effect(crate::effects::EffectId),
     Call,

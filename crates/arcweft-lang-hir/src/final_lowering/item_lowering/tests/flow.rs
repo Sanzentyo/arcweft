@@ -1,6 +1,7 @@
 use super::*;
 
 use crate::arena::HirArenaPayload;
+use crate::dialogue_application::HirLinePlanItem;
 use crate::expr::{HirExprKind, HirThreadBodyOwner, HirThreadFlowItem};
 use crate::item::{
     HirContractMode, HirFlowContractClause, HirFlowIdentity, HirFlowIssueClass, HirFlowIssueOwner,
@@ -28,6 +29,73 @@ fn resolve_flow(
         panic!("source-ordered item {ordinal} must be an ordinary Flow")
     };
     (owner, item, flow)
+}
+
+#[test]
+fn dialogue_line_plan_owns_typed_let_callback_and_out_items() {
+    let parsed = parse(
+        "arcweft-test://proof/dialogue-line-plan-final-hir",
+        concat!(
+            "entry cli @entry.main { goto @flow.line_handles }\n",
+            "pub character alice { display_name = \"Alice\" }\n",
+            "flow line_handles() -> String {\n",
+            "    let (_, cue) = alice(voice=auto)[聞いて。[p]]\n",
+            "    with:\n",
+            "        let actor = alice.stage.acquire(scope=line)\n",
+            "        let cue = at(0.42s):\n",
+            "            actor.look(.worried, crossfade=120ms)\n",
+            "        let voice = line.voice_handle()\n",
+            "        out (voice, cue)\n",
+            "    log.info(\"cue kept\", cue = cue)\n",
+            "    return \"done\"\n",
+            "}\n",
+        ),
+    );
+    assert!(
+        parsed.diagnostics().is_empty(),
+        "{:?}",
+        parsed.diagnostics()
+    );
+    let key = module_key(&parsed);
+    let mut database = HirDatabase::try_new().unwrap();
+    let module = lower(&mut database, &parsed, &key);
+    assert_eq!(
+        module.status(),
+        HirModuleStatus::Clean,
+        "{:#?}",
+        module.diagnostics()
+    );
+    let (_, _, flow) = resolve_flow(&module, 2);
+    let [
+        HirThreadFlowItem::Statement(binding),
+        HirThreadFlowItem::Statement(_),
+        HirThreadFlowItem::Statement(_),
+    ] = flow.body().items()
+    else {
+        panic!("line binding, log, and return must remain source-ordered statements")
+    };
+    let HirStmtKind::Let { initializer, .. } = module.resolve_stmt(*binding).unwrap().kind() else {
+        panic!("dialogue line binding must remain a Let statement")
+    };
+    let HirExprKind::DialogueContentApplication(application) =
+        module.resolve_expr(*initializer).unwrap().kind()
+    else {
+        panic!("Let initializer must be the Dialogue application")
+    };
+    let plan = application
+        .plan()
+        .expect("Dialogue application owns its line plan");
+    assert_eq!(plan.items().len(), 4);
+    assert!(matches!(plan.items()[0], HirLinePlanItem::Let { .. }));
+    let HirLinePlanItem::Let { value: cue, .. } = plan.items()[1] else {
+        panic!("timed cue binding remains a typed line-plan Let")
+    };
+    assert!(matches!(
+        module.resolve_expr(cue).unwrap().kind(),
+        HirExprKind::Call(_)
+    ));
+    assert!(matches!(plan.items()[2], HirLinePlanItem::Let { .. }));
+    assert!(matches!(plan.items()[3], HirLinePlanItem::Out(_)));
 }
 
 fn flow_query<'module>(

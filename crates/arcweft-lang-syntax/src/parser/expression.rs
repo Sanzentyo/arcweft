@@ -1041,6 +1041,125 @@ fn emit_callback_block_call(
     }
 }
 
+/// Emits the line-plan `callee:` callback sugar as the same typed Call and
+/// Closure graph as a braced callback call. The colon and dedent are retained
+/// as the closure's authored delimiters; no source substring or synthetic
+/// brace spelling is introduced.
+pub(in crate::parser) fn emit_indented_callback_call(
+    parser: &mut DocumentParser<'_, '_>,
+    colon: usize,
+    body_start: usize,
+    body_end: usize,
+    role: SyntaxRole,
+) -> CompletedNode {
+    let left = emit_expression_node(parser, colon, role);
+    let callee_range = parser
+        .completed_range(left.start_event)
+        .expect("indented callback callee retains one exact source range");
+    bump_until(parser, colon);
+    let owner = parser.insert_projected_start(left.start_event, SyntaxKind::CallExpression, role);
+    parser.set_start_role(left.start_event + 1, SyntaxRole::Callee);
+
+    let callback_start = parser.event_position();
+    let closure =
+        parser.start_projected_owner(SyntaxKind::ClosureExpression, SyntaxRole::Argument(0));
+    let colon_range = parser
+        .current()
+        .expect("indented callback retains its colon")
+        .range();
+    parser.start(SyntaxKind::ColonNode, SyntaxRole::Colon);
+    parser.bump();
+    parser.finish();
+    parser.start(SyntaxKind::ParameterList, SyntaxRole::Element(0));
+    parser.finish();
+    bump_until(parser, body_start);
+    parser.bump_trivia_before(body_end);
+    let body = if find_statement_terminator(parser, parser.cursor(), body_end).is_some() {
+        control::emit_unbraced_block_expression(parser, body_end, SyntaxRole::Body)
+    } else {
+        emit_expression_node(parser, body_end, SyntaxRole::Body)
+    };
+    bump_until(parser, body_end);
+    let body_range = parser
+        .completed_range(body.start_event)
+        .expect("indented callback retains one exact body source range");
+    let terminal_offset = parser
+        .offset_at_token_boundary(body_end)
+        .expect("indented callback ends at a lexer boundary");
+    let terminal_range = SourceRange::new(terminal_offset, terminal_offset);
+    parser.set_expression_projection(
+        closure,
+        PendingExpressionProjection::new(
+            ExpressionProjection::Closure(SyntaxClosureProjection::new(
+                Vec::new(),
+                false,
+                completed_slot(parser, body),
+                SyntaxClosureSyntax::IndentedCallback {
+                    terminator: SyntaxClosureTerminator::Closed,
+                },
+            )),
+            vec![
+                PendingExpressionComponent::new(
+                    ExpressionComponentRole::ClosureOpenDelimiter,
+                    colon_range,
+                ),
+                PendingExpressionComponent::new(
+                    ExpressionComponentRole::ClosureCloseDelimiter,
+                    terminal_range,
+                ),
+                PendingExpressionComponent::new(ExpressionComponentRole::Body, body_range),
+            ],
+        ),
+    );
+    parser.finish();
+    let callback = CompletedNode {
+        start_event: callback_start,
+    };
+    let callback_range = parser
+        .completed_range(callback.start_event)
+        .expect("indented callback Closure retains one exact source range");
+    parser.set_expression_projection(
+        owner,
+        PendingExpressionProjection::new(
+            ExpressionProjection::Call(SyntaxCallProjection::CallbackBlock(
+                SyntaxCallbackBlockCallProjection::new(
+                    SyntaxExpressionSlot::Authored,
+                    SyntaxCallArgumentListTerminator::Closed,
+                ),
+            )),
+            vec![
+                PendingExpressionComponent::new(ExpressionComponentRole::CallCallee, callee_range),
+                PendingExpressionComponent::new(
+                    ExpressionComponentRole::CallArgumentListOpen,
+                    colon_range,
+                ),
+                PendingExpressionComponent::new(
+                    ExpressionComponentRole::CallArgumentListClose,
+                    terminal_range,
+                ),
+                PendingExpressionComponent::new(
+                    ExpressionComponentRole::CallArgument {
+                        argument: 0,
+                        part: SyntaxCallArgumentPart::Whole,
+                    },
+                    callback_range,
+                ),
+                PendingExpressionComponent::new(
+                    ExpressionComponentRole::CallArgument {
+                        argument: 0,
+                        part: SyntaxCallArgumentPart::Value,
+                    },
+                    callback_range,
+                ),
+            ],
+        ),
+    );
+    parser.finish();
+    CompletedNode {
+        start_event: left.start_event,
+    }
+}
+
 struct EmittedCallbackClosure {
     slot: SyntaxExpressionSlot,
     range: SourceRange,

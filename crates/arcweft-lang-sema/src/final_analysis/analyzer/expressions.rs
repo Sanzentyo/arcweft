@@ -1535,6 +1535,14 @@ impl Analyzer<'_, '_, '_> {
                 let Some(expected) = expected else {
                     return Err(FinalSemanticAnalysisError::ExpressionTypeUnavailable { owner });
                 };
+                if matches!(expected, TypeKind::Named(name) if name == "StageLook") {
+                    return Ok(Some(CheckedExpression::new(
+                        expected.clone(),
+                        CheckedTypeSelection::Expected,
+                        EffectSet::new(),
+                        CheckedExpressionResolution::StageLook(name.clone()),
+                    )));
+                }
                 let (variant_owner, ordinal) = self.resolve_short_variant(owner, expected, name)?;
                 Ok(CheckedExpression::new(
                     expected.clone(),
@@ -1859,7 +1867,6 @@ impl Analyzer<'_, '_, '_> {
         };
         let target = checked_character_dialogue_target(target_owner, &checked_target)
             .ok_or(FinalSemanticAnalysisError::ExpressionTypeUnavailable { owner })?;
-        self.publish_dialogue_content_application_call(module, owner, &target, expected)?;
         let application_patch = match checked_target.resolution() {
             CheckedExpressionResolution::CharacterDialogueFactory(factory) => {
                 Some(factory.patch().clone())
@@ -1888,7 +1895,11 @@ impl Analyzer<'_, '_, '_> {
             }
         }
 
-        let ty = TypeKind::DialogueLine(Box::new(TypeKind::Unit));
+        let line_result = application.plan().map_or(Ok(TypeKind::Unit), |plan| {
+            self.check_dialogue_line_plan_output(plan.items())
+        })?;
+        let ty = TypeKind::DialogueLine(Box::new(line_result));
+        self.publish_dialogue_content_application_call(module, owner, &target, expected, &ty)?;
         let selection = match expected.map(|expected| expected.accepts(&ty)) {
             Some(true) => CheckedTypeSelection::Expected,
             None => CheckedTypeSelection::Inferred,
@@ -1914,6 +1925,7 @@ impl Analyzer<'_, '_, '_> {
         owner: ExprId,
         target: &super::CheckedCharacterDialogueTarget,
         expected: Option<&TypeKind>,
+        result: &TypeKind,
     ) -> Result<(), FinalSemanticAnalysisError> {
         let callee = match target {
             super::CheckedCharacterDialogueTarget::Character { character, .. } => {
@@ -1967,7 +1979,7 @@ impl Analyzer<'_, '_, '_> {
             != &crate::callable::CallableCandidateId::Dialogue(
                 DialogueCallableId::ContentApplication,
             )
-            || selected.schema().result() != &TypeKind::DialogueLine(Box::new(TypeKind::Unit))
+            || !matches!(selected.schema().result(), TypeKind::DialogueLine(_))
         {
             return Err(FinalSemanticAnalysisError::CallResolutionFailed { owner });
         }
@@ -1975,7 +1987,7 @@ impl Analyzer<'_, '_, '_> {
             selected,
             candidates.as_slice(),
             Vec::new(),
-            selected.schema().result().clone(),
+            result.clone(),
             crate::effect_row::EffectRow::closed(EffectSet::new()),
             CallableGroupIndex::ZERO,
             CallPoison::Clean,
@@ -1997,6 +2009,41 @@ impl Analyzer<'_, '_, '_> {
             return Err(FinalSemanticAnalysisError::CallResolutionFailed { owner });
         }
         Ok(())
+    }
+
+    fn check_dialogue_line_plan_output(
+        &mut self,
+        items: &[arcweft_lang_hir::dialogue_application::HirLinePlanItem],
+    ) -> Result<TypeKind, FinalSemanticAnalysisError> {
+        use arcweft_lang_hir::dialogue_application::HirLinePlanItem;
+
+        let mut output: Option<TypeKind> = None;
+        let mut pending = vec![items];
+        while let Some(items) = pending.pop() {
+            for item in items {
+                match item {
+                    HirLinePlanItem::Out(value) => {
+                        let checked = self.check_expression(*value, output.as_ref())?;
+                        match &output {
+                            Some(expected) if !expected.accepts(checked.ty()) => {
+                                return Err(
+                                    FinalSemanticAnalysisError::ExpressionTypeUnavailable {
+                                        owner: *value,
+                                    },
+                                );
+                            }
+                            Some(_) => {}
+                            None => output = Some(checked.ty().clone()),
+                        }
+                    }
+                    HirLinePlanItem::StartGroup(items) | HirLinePlanItem::TogetherGroup(items) => {
+                        pending.push(items)
+                    }
+                    _ => {}
+                }
+            }
+        }
+        Ok(output.unwrap_or(TypeKind::Unit))
     }
 
     fn publish_dialogue_coordinates(
@@ -2133,6 +2180,28 @@ impl Analyzer<'_, '_, '_> {
                     )
                     | Err(_) => {
                         return Err(FinalSemanticAnalysisError::ValueResolutionFailed { owner });
+                    }
+                }
+                if let Some((receiver_path, member)) = path.split_terminal_segment()
+                    && let Some(receiver) =
+                        self.resolve_path_value(module, owner, scope, &receiver_path)?
+                {
+                    let receiver_ty = match &receiver {
+                        CheckedValueResolution::Local(local) => {
+                            self.facts.locals().get(local).cloned()
+                        }
+                        _ => value_resolution_type(self.catalogs.world, &receiver),
+                    };
+                    let member = match &member {
+                        HirPathSegment::Identifier(name) => name.as_str(),
+                        HirPathSegment::ProjectSymbol(name) => name.as_str(),
+                    };
+                    if let Some((field, _)) = receiver_ty.and_then(|ty| ty.character_field(member))
+                    {
+                        return Ok(Some(CheckedValueResolution::CharacterField {
+                            receiver: Box::new(receiver),
+                            field,
+                        }));
                     }
                 }
                 let Some(binding) = environment_binding_for_path(path) else {

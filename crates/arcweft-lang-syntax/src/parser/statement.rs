@@ -1,6 +1,7 @@
 //! Private predicate/proof block and statement grammar over the shared cursor.
 
 pub(super) mod choice;
+pub(in crate::parser) mod dialogue_plan;
 mod indentation;
 pub(super) mod keyword;
 mod trigger;
@@ -252,7 +253,11 @@ fn emit_block_sequence(
         }
         let start = parser.cursor();
         let thread_flow = sequence_kind == BlockSequenceKind::ThreadFlow;
-        let mut terminator = thread_flow_await_terminator(parser, start, close, thread_flow)
+        let mut terminator = thread_flow
+            .then(|| dialogue_plan::dialogue_plan_end(parser, start, close))
+            .flatten()
+            .map(|end| (end, false))
+            .or_else(|| thread_flow_await_terminator(parser, start, close, thread_flow))
             .or_else(|| thread_flow_dialogue_terminator(parser, start, close, thread_flow))
             .or_else(|| find_statement_terminator(parser, start, close));
         let choice_expression_start = if sequence_kind == BlockSequenceKind::ThreadFlow

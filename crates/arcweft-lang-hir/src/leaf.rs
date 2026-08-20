@@ -145,6 +145,23 @@ impl HirPath {
             segments: segments.into_boxed_slice(),
         }
     }
+
+    /// Splits one dotted terminal segment while preserving typed root and
+    /// segment identities. Single-segment paths have no receiver prefix.
+    #[must_use]
+    pub fn split_terminal_segment(&self) -> Option<(Self, HirPathSegment)> {
+        let (terminal, prefix) = self.segments.split_last()?;
+        if prefix.is_empty() {
+            return None;
+        }
+        Some((
+            Self {
+                root: self.root,
+                segments: prefix.to_vec().into_boxed_slice(),
+            },
+            terminal.clone(),
+        ))
+    }
 }
 
 /// Root semantics retained by a HIR path.

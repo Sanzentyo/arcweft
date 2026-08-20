@@ -278,6 +278,7 @@ define_ast_kinds!(BODY_MARKERS, Body;
     ChoiceOptionBodyKind => ChoiceOptionBody,
     ChoiceViewBodyKind => ChoiceViewBody,
     ChoicePlanBodyKind => ChoicePlanBody,
+    DialogueLinePlanBodyKind => DialogueLinePlanBody,
     PredicateBlockKind => PredicateBlock,
     ProofBlockKind => ProofBlock,
 );
@@ -386,6 +387,7 @@ define_ast_kinds!(DECLARATION_PART_MARKERS, DeclarationPart;
     ChoiceGotoActionKind => ChoiceGotoAction,
     ChoiceOutActionKind => ChoiceOutAction,
     ChoicePlanKind => ChoicePlan,
+    DialogueLinePlanKind => DialogueLinePlan,
     ChoicePlanAssignmentKind => ChoicePlanAssignment,
     ChoicePlanTimeoutKind => ChoicePlanTimeout,
     ChoicePlanCancelKind => ChoicePlanCancel,

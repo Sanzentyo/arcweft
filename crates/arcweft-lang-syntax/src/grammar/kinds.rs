@@ -160,6 +160,7 @@ define_syntax_kinds! {
     ChoiceOptionBody,
     ChoiceViewBody,
     ChoicePlanBody,
+    DialogueLinePlanBody,
     PredicateBlock,
     ProofBlock,
     OpenBraceNode,
@@ -221,6 +222,7 @@ define_syntax_kinds! {
     ChoiceGotoAction,
     ChoiceOutAction,
     ChoicePlan,
+    DialogueLinePlan,
     ChoicePlanAssignment,
     ChoicePlanTimeout,
     ChoicePlanCancel,
@@ -579,6 +581,7 @@ impl SyntaxKind {
             | Self::ChoiceOptionBody
             | Self::ChoiceViewBody
             | Self::ChoicePlanBody
+            | Self::DialogueLinePlanBody
             | Self::PredicateBlock
             | Self::ProofBlock
             | Self::OpenBraceNode
@@ -639,6 +642,7 @@ impl SyntaxKind {
             | Self::ChoiceGotoAction
             | Self::ChoiceOutAction
             | Self::ChoicePlan
+            | Self::DialogueLinePlan
             | Self::ChoicePlanAssignment
             | Self::ChoicePlanTimeout
             | Self::ChoicePlanCancel
@@ -854,6 +858,7 @@ impl SyntaxKind {
             | Self::ChoiceGotoAction
             | Self::ChoiceOutAction
             | Self::ChoicePlan
+            | Self::DialogueLinePlan
             | Self::ChoicePlanAssignment
             | Self::ChoicePlanTimeout
             | Self::ChoicePlanCancel
@@ -1041,6 +1046,7 @@ impl SyntaxKind {
             | Self::ChoiceOptionBody
             | Self::ChoiceViewBody
             | Self::ChoicePlanBody
+            | Self::DialogueLinePlanBody
             | Self::PredicateBlock
             | Self::ProofBlock => Some(AstTag::Body),
             Self::OpenBraceNode

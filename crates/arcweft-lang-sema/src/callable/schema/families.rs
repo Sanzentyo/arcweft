@@ -561,7 +561,7 @@ impl StageMethodId {
                     parameter(
                         0,
                         Some("look"),
-                        CallableParameterType::Unchecked,
+                        CallableParameterType::Exact(named("StageLook")),
                         CallableParameterPassing::PositionalOrNamed,
                         CallableParameterPresence::Required,
                     ),

@@ -669,6 +669,7 @@ fn expression_resolution_matches(
             HirExprKind::Path(_) | HirExprKind::ShortVariant(_),
             CheckedExpressionResolution::Variant(_),
         )
+        | (HirExprKind::ShortVariant(_), CheckedExpressionResolution::StageLook(_))
         | (
             HirExprKind::Path(_) | HirExprKind::Select(_) | HirExprKind::Call(_),
             CheckedExpressionResolution::Effect(_),
@@ -950,6 +951,7 @@ fn validate_expression_resolution(
         | CheckedExpressionResolution::ViewCallee(_)
         | CheckedExpressionResolution::StyleValue(_)
         | CheckedExpressionResolution::StyleCallee(_)
+        | CheckedExpressionResolution::StageLook(_)
         | CheckedExpressionResolution::Structural
         | CheckedExpressionResolution::Literal(_)
         | CheckedExpressionResolution::Call => Ok(()),
@@ -1091,12 +1093,17 @@ fn validate_value(
             .resolve_local(*local)
             .map(|_| ())
             .map_err(|_| FinalSemanticAnalysisError::InvalidOwner),
+        CheckedValueResolution::CharacterField { receiver, .. } => {
+            validate_value(symbols, modules, receiver)
+        }
         CheckedValueResolution::ProjectCallable(callable) => {
             validate_callable(symbols, modules, callable)
         }
         CheckedValueResolution::ProjectItem(item) => validate_project_item(symbols, modules, item),
         CheckedValueResolution::Entry(entry) => validate_entry_reference(modules, entry),
-        CheckedValueResolution::Registered(_) | CheckedValueResolution::Constant(_) => Ok(()),
+        CheckedValueResolution::LineContext
+        | CheckedValueResolution::Registered(_)
+        | CheckedValueResolution::Constant(_) => Ok(()),
     }
 }
 
@@ -1741,10 +1748,10 @@ fn validate_dialogue_application_call_acceptance(
         || selected.id() != &CallableCandidateId::Dialogue(DialogueCallableId::ContentApplication)
         || selected.schema().validator()
             != &CallableValidator::Dialogue(DialogueCallableId::ContentApplication)
-        || selected.schema().result()
-            != call
-                .result()
-                .ok_or(FinalSemanticAnalysisError::CallFactMismatch)?
+        || !matches!(
+            (selected.schema().result(), call.result()),
+            (TypeKind::DialogueLine(_), Some(TypeKind::DialogueLine(_)))
+        )
     {
         return Err(FinalSemanticAnalysisError::UnacceptedCall);
     }

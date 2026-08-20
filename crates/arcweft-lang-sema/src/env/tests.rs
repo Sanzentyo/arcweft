@@ -153,6 +153,22 @@ fn standard_closed_enum_inventories_preserve_owner_authored_order() {
 }
 
 #[test]
+fn standard_dialogue_voice_owns_auto_variant() {
+    let environment = TypeCheckEnv::standard();
+    let schema = environment
+        .closed_enum(&TypeKind::Named("DialogueVoice".to_owned()))
+        .expect("DialogueVoice is a closed standard enum");
+    assert_eq!(
+        schema
+            .variants()
+            .iter()
+            .map(|variant| variant.name())
+            .collect::<Vec<_>>(),
+        ["auto"]
+    );
+}
+
+#[test]
 fn closed_enum_construction_rejects_duplicate_cases_and_conflicting_owners() {
     let first = identity::EnvironmentBindingId::try_new("First").expect("valid owner");
     let second = identity::EnvironmentBindingId::try_new("Second").expect("valid owner");

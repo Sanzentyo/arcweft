@@ -494,6 +494,7 @@ pub fn project_runtime_semantic_facts(
             | CheckedExpressionResolution::ViewCallee(_)
             | CheckedExpressionResolution::StyleValue(_)
             | CheckedExpressionResolution::StyleCallee(_)
+            | CheckedExpressionResolution::StageLook(_)
             | CheckedExpressionResolution::DialogueApplication { .. }
             | CheckedExpressionResolution::Effect(_) => {}
         }
@@ -1768,6 +1769,8 @@ fn runtime_value_resolution(
         // needs a typed function-value identity before it can be executable.
         CheckedValueResolution::ProjectCallable(_)
         | CheckedValueResolution::ProjectItem(_)
+        | CheckedValueResolution::LineContext
+        | CheckedValueResolution::CharacterField { .. }
         // Entry references are generation-bound tooling/selection identities;
         // they are not executable scalar values in the runtime expression VM.
         | CheckedValueResolution::Entry(_) => return Ok(None),

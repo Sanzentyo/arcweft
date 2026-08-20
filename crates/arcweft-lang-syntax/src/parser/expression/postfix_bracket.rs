@@ -90,13 +90,47 @@ pub(super) fn emit_postfix_bracket(
         payload: payload_range,
         terminator,
     };
-    let projection = select_postfix_bracket_projection(parser, interval, index, dialogue, &sources);
+    let mut projection =
+        select_postfix_bracket_projection(parser, interval, index, dialogue, &sources);
     emit_close_delimiter(
         parser,
         SyntaxKind::CloseBracketNode,
         "]",
         "syntax.expression.missing_postfix_bracket_close",
     );
+    if matches!(
+        projection.projection(),
+        ExpressionProjection::DialogueContentApplication(_)
+    ) && let Some((with, _, "with")) = parser.next_significant()
+        && with < end
+    {
+        bump_until(parser, with);
+        let plan = crate::parser::statement::dialogue_plan::emit_dialogue_line_plan(
+            parser,
+            end,
+            SyntaxKind::FlowItem,
+        );
+        let ExpressionProjection::DialogueContentApplication(application) =
+            projection.projection().clone()
+        else {
+            unreachable!("selected Dialogue projection remains Dialogue-owned")
+        };
+        let mut components = projection.components().to_vec();
+        components.push(PendingExpressionComponent::new(
+            ExpressionComponentRole::Plan,
+            plan,
+        ));
+        projection = PendingExpressionProjection::new(
+            ExpressionProjection::DialogueContentApplication(
+                SyntaxDialogueApplicationProjection::new(
+                    application.form().clone(),
+                    application.content().clone(),
+                    true,
+                ),
+            ),
+            components,
+        );
+    }
     if matches!(
         projection.projection(),
         ExpressionProjection::DialogueContentApplication(_)

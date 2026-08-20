@@ -1,5 +1,6 @@
 //! Type resolution and local-binding preparation.
 
+use arcweft_lang_hir::dialogue_application::HirLinePlanItem;
 use arcweft_lang_hir::item::{HirCapabilityFunction, HirCapabilityMember};
 
 use crate::{
@@ -48,6 +49,24 @@ fn simple_binding_source(statement: &HirStmtKind) -> Option<(PatternId, ExprId, 
         } => Some((*pattern, *action, None)),
         _ => None,
     }
+}
+
+fn dialogue_application_binding_type(
+    module: &HirModule,
+    owner: ExprId,
+    ty: &TypeKind,
+) -> Option<TypeKind> {
+    let expression = module.resolve_expr(owner).ok()?;
+    if !matches!(
+        expression.kind(),
+        HirExprKind::DialogueContentApplication(_)
+    ) {
+        return None;
+    }
+    let TypeKind::DialogueLine(result) = ty else {
+        return None;
+    };
+    Some(result.as_ref().clone())
 }
 
 fn scope_descends_from(module: &HirModule, mut scope: ScopeId, ancestor: ScopeId) -> bool {
@@ -452,7 +471,33 @@ impl Analyzer<'_, '_, '_> {
                 self.infer_control_statement_bindings(owner, statement)?;
             }
         }
+        let line_plan_bindings = self
+            .modules
+            .values()
+            .flat_map(|module| module.expressions())
+            .filter_map(|(_, expression)| {
+                let HirExprKind::DialogueContentApplication(application) = expression.kind() else {
+                    return None;
+                };
+                application.plan().map(|plan| plan.items())
+            })
+            .flat_map(line_plan_let_bindings)
+            .collect::<Vec<_>>();
+        for (pattern, initializer) in line_plan_bindings {
+            self.infer_line_plan_binding(pattern, initializer)?;
+        }
         Ok(())
+    }
+
+    fn infer_line_plan_binding(
+        &mut self,
+        pattern: PatternId,
+        initializer: ExprId,
+    ) -> Result<(), FinalSemanticAnalysisError> {
+        self.infer_nested_expression_bindings(initializer)?;
+        let actual = self.check_expression(initializer, None)?;
+        let module = self.module(pattern.module())?;
+        self.seed_contextual_pattern_locals(module, pattern, actual.ty())
     }
 
     fn infer_simple_statement_binding(
@@ -488,7 +533,12 @@ impl Analyzer<'_, '_, '_> {
                     owner: initializer,
                 });
             }
-            None => actual.ty().clone(),
+            None => dialogue_application_binding_type(
+                self.module(owner.module())?,
+                initializer,
+                actual.ty(),
+            )
+            .unwrap_or_else(|| actual.ty().clone()),
         };
         let module = self.module(owner.module())?;
         self.seed_contextual_pattern_locals(module, pattern, &binding)
@@ -498,19 +548,31 @@ impl Analyzer<'_, '_, '_> {
         &mut self,
         owner: ExprId,
     ) -> Result<(), FinalSemanticAnalysisError> {
-        let statements = {
+        let (statements, line_plan_bindings) = {
             let module = self.module(owner.module())?;
             let expression = module
                 .resolve_expr(owner)
                 .map_err(|_| FinalSemanticAnalysisError::InvalidOwner)?;
             match expression.kind() {
-                HirExprKind::Block(block) => block.statements().to_vec(),
-                HirExprKind::ComputationBlock(block) => block.statements().to_vec(),
-                HirExprKind::NamedBlock(block) => block.statements().to_vec(),
-                HirExprKind::Loop(loop_expression) => loop_expression.statements().to_vec(),
+                HirExprKind::Block(block) => (block.statements().to_vec(), Vec::new()),
+                HirExprKind::ComputationBlock(block) => (block.statements().to_vec(), Vec::new()),
+                HirExprKind::NamedBlock(block) => (block.statements().to_vec(), Vec::new()),
+                HirExprKind::Loop(loop_expression) => {
+                    (loop_expression.statements().to_vec(), Vec::new())
+                }
+                HirExprKind::DialogueContentApplication(application) => (
+                    Vec::new(),
+                    application
+                        .plan()
+                        .map(|plan| line_plan_let_bindings(plan.items()))
+                        .unwrap_or_default(),
+                ),
                 _ => return Ok(()),
             }
         };
+        for (pattern, initializer) in line_plan_bindings {
+            self.infer_line_plan_binding(pattern, initializer)?;
+        }
         for statement in statements {
             let kind = self
                 .module(statement.module())?
@@ -709,6 +771,23 @@ impl Analyzer<'_, '_, '_> {
             _ => None,
         }
     }
+}
+
+fn line_plan_let_bindings(items: &[HirLinePlanItem]) -> Vec<(PatternId, ExprId)> {
+    let mut bindings = Vec::new();
+    let mut pending = vec![items];
+    while let Some(items) = pending.pop() {
+        for item in items {
+            match item {
+                HirLinePlanItem::Let { pattern, value } => bindings.push((*pattern, *value)),
+                HirLinePlanItem::StartGroup(items) | HirLinePlanItem::TogetherGroup(items) => {
+                    pending.push(items);
+                }
+                _ => {}
+            }
+        }
+    }
+    bindings
 }
 
 fn type_report_root_has_wrong_arity(report: &super::TypeResolutionReport, owner: TypeId) -> bool {

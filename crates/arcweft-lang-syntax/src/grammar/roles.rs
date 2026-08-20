@@ -132,6 +132,7 @@ pub enum SyntaxRole {
     CloseDelimiter,
     Statement(u32),
     ThreadFlowItem(u32),
+    DialogueLinePlanItem(u32),
     ChoiceItem(u32),
     ChoicePlanItem(u32),
     ChoiceOptionField(u32),
@@ -216,6 +217,7 @@ pub enum SyntaxRoleClass {
     CloseDelimiter,
     Statement,
     ThreadFlowItem,
+    DialogueLinePlanItem,
     ChoiceItem,
     ChoicePlanItem,
     ChoiceOptionField,
@@ -295,6 +297,7 @@ impl SyntaxRole {
             Self::CloseDelimiter => SyntaxRoleClass::CloseDelimiter,
             Self::Statement(_) => SyntaxRoleClass::Statement,
             Self::ThreadFlowItem(_) => SyntaxRoleClass::ThreadFlowItem,
+            Self::DialogueLinePlanItem(_) => SyntaxRoleClass::DialogueLinePlanItem,
             Self::ChoiceItem(_) => SyntaxRoleClass::ChoiceItem,
             Self::ChoicePlanItem(_) => SyntaxRoleClass::ChoicePlanItem,
             Self::ChoiceOptionField(_) => SyntaxRoleClass::ChoiceOptionField,
@@ -370,6 +373,7 @@ impl SyntaxRole {
             | Self::RelatedReference(ordinal) => Some(ordinal as u32),
             Self::Statement(ordinal)
             | Self::ThreadFlowItem(ordinal)
+            | Self::DialogueLinePlanItem(ordinal)
             | Self::ChoiceItem(ordinal)
             | Self::ChoicePlanItem(ordinal)
             | Self::ChoiceOptionField(ordinal)
