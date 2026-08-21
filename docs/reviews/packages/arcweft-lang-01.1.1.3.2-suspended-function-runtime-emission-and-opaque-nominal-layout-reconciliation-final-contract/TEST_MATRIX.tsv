@@ -1,0 +1,79 @@
+id	layer	scenario	root_mode	expected	exact_assertion	owner
+T001	CLI/fixture	fixture 013 source unchanged	CheckAll	PASS	exact fixture bytes unchanged; arcw check exits success	arcweft-cli fixture harness
+T002	sema	fixture 013 load_bg signature	n/a	PASS	Need<Result<ImageHandle,ArcError>> exact checked signature	arcweft-lang-sema
+T003	sema	fixture 013 Await/Try and opaque identities	n/a	PASS	unary Await/Try facts and accepted producer/semantic identities retained	arcweft-lang-sema
+T004	compiler	unreachable suspending fn returning primitive	CheckAll	PASS	function absent from runtime reachability/facts	arcweft-compiler
+T005	tooling	same unreachable primitive function	CheckAll	PASS	function indexed and marked NotSelected	arcweft-lsp/index
+T006	compiler	unreachable suspending fn returning struct with one opaque field	CheckAll	PASS	no nominal schema/layout projection invoked	arcweft-compiler
+T007	compiler	fixture function called directly by Flow	CheckAll	ERROR	suspending_function_unsupported; function path; no nominal error	arcweft-compiler
+T008	compiler	fixture function bound by selected Entry	SelectedEntry	ERROR	same typed suspension error; path begins selected Entry	arcweft-compiler
+T009	compiler	Flow -> helper -> suspending function	CheckAll	ERROR	first shortest path includes both checked calls	arcweft-compiler
+T010	compiler	two roots reach same suspending function	CheckAll	ERROR	lexicographically first shortest path selected deterministically	arcweft-compiler
+T011	HIR	reachability input from stale module snapshot	CheckAll	ERROR	generation/unknown owner before closure	arcweft-lang-hir
+T012	compiler	stale symbol revision with valid-looking IDs	CheckAll	ERROR	FinalSemanticAnalysis generation mismatch first	arcweft-compiler
+T013	compiler	selected Entry from stale catalog	SelectedEntry	ERROR	missing/stale selected Entry before graph	arcweft-compiler
+T014	compiler	reached selected project call edge missing	CheckAll	ERROR	MissingCheckedEdge; callee not silently omitted	arcweft-compiler
+T015	compiler	reached project call edge points to wrong function	CheckAll	ERROR	MismatchedCheckedEdge with expected/actual typed IDs	arcweft-compiler
+T016	HIR	duplicate/conflicting edge for one call	CheckAll	ERROR	DuplicateEdge or ConflictingEdge	arcweft-lang-hir
+T017	HIR	roots inserted in reverse order	CheckAll	PASS	same roots/closure/digest	arcweft-lang-hir
+T018	HIR	edges inserted in randomized order	CheckAll	PASS	same first paths/closure/digest	arcweft-lang-hir
+T019	runtime-plan	fact insertion randomized	CheckAll	PASS	same admitted fact order and plan digest	arcweft-runtime-plan
+T020	compiler	unrelated new later-sorted root	CheckAll	PASS	existing diagnostic first path unchanged	arcweft-compiler
+T021	compiler	reachable non-suspending closed struct	CheckAll	PASS	schema and TypeLayoutHash projected	arcweft-compiler
+T022	compiler	reachable non-suspending struct with direct opaque field	CheckAll	ERROR	OpaqueProjectNominalLayout at Field(0)	arcweft-compiler
+T023	compiler	reachable non-suspending enum with opaque payload	CheckAll	ERROR	typed VariantPayload path	arcweft-compiler
+T024	compiler	selected Entry schema contains opaque project nominal	SelectedEntry	ERROR	typed opaque path after callable preflight	arcweft-compiler/entry
+T025	core	closed nominal value forged wrong TypeLayoutHash	n/a	ERROR	layout mismatch before field validation	arcweft-core nominal_record
+T026	compiler	reachable closed nominal with reordered declaration fields	CheckAll	PASS	new schema-derived layout/order used deterministically	arcweft-compiler
+T027	core	closed nominal value field order forged	n/a	ERROR	defining-order identity/count validation	arcweft-core nominal_record
+T028	runtime type	Option<ImageHandle> outside project nominal	CheckAll	PASS	recursive RuntimeCheckedType::Opaque preserved	arcweft-runtime-plan/core
+T029	runtime type	Result<ImageHandle,ArcError> outside project nominal	CheckAll	PASS	both opaque owners exact	arcweft-runtime-plan/core
+T030	runtime type	Vec<ImageHandle> outside project nominal	CheckAll	PASS	sequence item opaque owner exact	arcweft-runtime-plan/core
+T031	runtime type	tuple(ImageHandle,ArcError) outside project nominal	CheckAll	PASS	tuple children exact	arcweft-runtime-plan/core
+T032	compiler	project struct field Option<ImageHandle>	CheckAll	ERROR	Field -> OptionItem -> OpaqueLeaf path	arcweft-lang-sema/compiler
+T033	compiler	project struct field Result<ImageHandle,ArcError>	CheckAll	ERROR	Field -> result branch path deterministic	arcweft-lang-sema/compiler
+T034	compiler	project struct field Vec<ImageHandle>	CheckAll	ERROR	Field -> SequenceItem -> OpaqueLeaf	arcweft-lang-sema/compiler
+T035	compiler	project struct field tuple containing opaque	CheckAll	ERROR	Field -> tuple ordinal -> OpaqueLeaf	arcweft-lang-sema/compiler
+T036	compiler	project enum nested in Option with opaque payload	CheckAll	ERROR	typed nested nominal/variant path	arcweft-lang-sema/compiler
+T037	compiler	project nominal contains nested project nominal with opaque field	CheckAll	ERROR	both nominal declarations and exact leaf path retained	arcweft-lang-sema/compiler
+T038	core/runtime	opaque value forged producer	n/a	ERROR	producer mismatch before payload	arcweft-core pattern/value
+T039	core/runtime	closed project nominal forged semantic identity/layout catalog row	n/a	ERROR	catalog/identity/layout precedence	arcweft-core
+T040	entry	closed project nominal persistence schema	CheckAll	PASS	RuntimeTypeSchema and TypeLayoutHash exact	arcweft-compiler entry
+T041	entry	opaque-containing project nominal persistence schema	CheckAll	ERROR	same typed OpaqueLeaf; no alternate transient conversion	arcweft-compiler entry
+T042	AWBC	unreachable ordinary function inventory	CheckAll	PASS	no function/signature/frame/block/resume rows	arcweft-runtime-plan AWBC lower
+T043	AWBC/core	opaque structural composite checked type	CheckAll	PASS	producer and semantic identity match RuntimePlan	arcweft-core AWBC projection
+T044	AWBC/core	closed nominal checked type/layout	CheckAll	PASS	same nominal/semantic/TypeLayoutHash as native plan	arcweft-core AWBC projection
+T045	AWBC verifier	emitted CallFunction target removed	n/a	ERROR	dangling target rejected; no name recovery	arcweft-core verifier
+T046	native/AWBC	same reached helper set	CheckAll	PASS	exact callable IDs and order equal	native parity suite
+T047	native/AWBC	same recursive opaque/nominal checked types	CheckAll	PASS	exact structural parity	native parity suite
+T048	AWBC	randomized semantic fact insertion	CheckAll	PASS	byte-identical verified AWBC	arcweft-runtime-plan/core
+T049	native	randomized root/edge insertion	CheckAll	PASS	same native plan/code cache identity	native parity suite
+T050	tooling	unreachable suspending function navigation/hover	CheckAll	PASS	declaration and checked signature retained	arcweft-lsp
+T051	tooling	reachable function emission disposition	CheckAll	PASS	Root/Reachable path display derived from report	arcweft-lsp
+T052	compiler/entry	unselected Entry reaches unsupported function	SelectedEntry	PASS	unselected Entry not root; selected product succeeds	arcweft-compiler
+T053	workspace	old inventory symbol search	n/a	PASS	zero hits outside historical docs/package	workspace audit
+T054	workspace	old zero-arg method search	n/a	PASS	zero production hits	workspace audit
+T055	workspace	parallel root reader scan	n/a	PASS	no other all-items/call-graph emission reader	workspace audit
+T056	tooling/compiler	tooling disposition fed back as input	n/a	ERROR	API makes display projection non-authoritative	API compile test
+T057	runtime-plan	reached effectful DirectFrame supplied by forged facts	CheckAll	ERROR	defensive unsupported callable error; no continue	arcweft-runtime-plan
+T058	HIR/compiler	selected postfix non-chosen branch calls suspension	CheckAll	PASS	unselected candidate not reached	arcweft-lang-hir/compiler
+T059	HIR/compiler	runtime receiver closure calls suspension	CheckAll	ERROR	receiver/body structural reachability follows accepted disposition	arcweft-lang-hir/compiler
+T060	HIR/compiler	static callee syntax subtree names unrelated function	CheckAll	PASS	static callee subtree does not create edge	arcweft-lang-hir/compiler
+T061	workspace	dummy Bytes/empty record/Dynamic opaque nominal fallback	n/a	PASS	no added success fallback paths	workspace audit
+T062	compiler	TypeKind::Named for runtime nominal	CheckAll	ERROR	existing typed unsupported error	arcweft-compiler
+T063	workspace	name-derived nominal layout helper	n/a	PASS	no new layout hash producer	workspace audit
+T064	workspace	transient layout/witness type introduced	n/a	PASS	no such type/API exists	workspace audit
+T065	save	snapshot after fixture 013 run	CheckAll	PASS	no unreachable function frame/register metadata	runtime-driver
+T066	save/restore	opaque snapshot forged producer	n/a	ERROR	invalid runtime value path, producer first	core/runtime-driver
+T067	save/restore	opaque snapshot forged semantic identity	n/a	ERROR	semantic identity mismatch before payload publication	core/runtime-driver
+T068	save/restore	closed nominal snapshot wrong layout	n/a	ERROR	layout mismatch before fields	core/runtime-driver
+T069	save/restore	opaque-containing project nominal DTO forged manually	n/a	ERROR	no active program descriptor/admission	core/runtime-driver
+T070	save/replay	stale artifact/generation	n/a	ERROR	artifact/generation before value validation	runtime-driver
+T071	save/replay	legal structural opaque composite round trip	n/a	PASS	exact producer/semantic/payload retained	core/runtime-driver
+T072	save/replay	closed project nominal round trip	n/a	PASS	same TypeLayoutHash and field order	core/runtime-driver
+T073	save/replay	unreachable declaration added to source	CheckAll	PASS	save bytes unchanged when executable closure unchanged	runtime-driver golden
+T074	versions	all Arcweft-owned version markers	n/a	PASS	ABI/codec/save/schema constants remain 1	workspace audit
+T075	fixture gate	fixture name/source text referenced by production logic	n/a	PASS	zero production hits for fixture ID/content	workspace audit
+T076	AWBC codec	old/new compatibility branch	n/a	PASS	no dual reader or V2 type	workspace audit
+T077	bundle/save	save schema bump	n/a	PASS	BUNDLE_SESSION_SAVE_SCHEMA_VERSION == 1	runtime-driver
+T078	determinism	two complete builds from clean state	CheckAll	PASS	same RuntimePlan/AWBC/native/save golden outputs	workspace integration

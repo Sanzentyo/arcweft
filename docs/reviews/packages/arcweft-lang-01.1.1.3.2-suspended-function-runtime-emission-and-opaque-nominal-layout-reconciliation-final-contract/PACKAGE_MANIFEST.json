@@ -1,0 +1,108 @@
+{
+  "design_only": true,
+  "files": [
+    {
+      "bytes": 2513,
+      "path": "ACCEPTANCE_COMMANDS.md",
+      "sha256": "bf83b5d044559be5cdd9663f4064183d4ddcea251c07489e40c430453db3bae2"
+    },
+    {
+      "bytes": 9867,
+      "path": "CONSUMER_DELETION_INVENTORY.tsv",
+      "sha256": "b43ff43823b8001751fea6d849f0a8fe9d0c5c0f962d80303f27bd1e57f78801"
+    },
+    {
+      "bytes": 3130,
+      "path": "DECISION_TRACEABILITY.md",
+      "sha256": "215b0c83c3166a085580bd3596b2e758153abc4adce56f11843592abd18e03b4"
+    },
+    {
+      "bytes": 3939,
+      "path": "DIAGNOSTIC_PRECEDENCE.md",
+      "sha256": "6b15c4f892d632705fdc996c7a07a6943bff9f56d3d1385402fef724f86a85d3"
+    },
+    {
+      "bytes": 15054,
+      "path": "FINAL_CONTRACT.md",
+      "sha256": "271935239fcdd240c092f937714c210c4f3cba2768b48ea60ba43dea4e2c8548"
+    },
+    {
+      "bytes": 300,
+      "path": "FINAL_STATUS.md",
+      "sha256": "5088472458cb3eb39b7c79145feb55089f3ffb56d79a6d8d1ff75e7d9aea876d"
+    },
+    {
+      "bytes": 4421,
+      "path": "IMPLEMENTATION_ORDER.md",
+      "sha256": "aab8d800ffbad9b4e981074b3cc7ac20dcffe4e22d7e92687f876f33c49a6b18"
+    },
+    {
+      "bytes": 5914,
+      "path": "LAYOUT_AND_PERSISTENCE_CONTRACT.md",
+      "sha256": "8e49df59fc7a7f31fdfdb837f5a15faebed1170cc2d08840aa37d4c2022fb8f8"
+    },
+    {
+      "bytes": 254,
+      "path": "OPEN_QUESTIONS.md",
+      "sha256": "8a3f1b8784b6bc4907eb314fe399b169c957e81a1f1b9d3bf52327eada074a8a"
+    },
+    {
+      "bytes": 13443,
+      "path": "OWNER_AND_API_CONTRACT.md",
+      "sha256": "4c524e2ef6d40a4cc51a7a51509110b380abcdc8eb56a29c350de092d4def67e"
+    },
+    {
+      "bytes": 5701,
+      "path": "PIPELINE_CONSUMER_CONTRACT.md",
+      "sha256": "288256ae264337efdfd36b62a8df4b3e7f3d3f4a825c9b932b28d1c8073118fb"
+    },
+    {
+      "bytes": 7463,
+      "path": "REACHABILITY_ALGORITHM.md",
+      "sha256": "7915cc1f82e15fd4e7abbe6ecaa871f9541f0bde0b498ba9d730e003d80be95e"
+    },
+    {
+      "bytes": 2656,
+      "path": "README.md",
+      "sha256": "29cc5cfa1b9571c90fd58410c780c9635e9b7eb650bff6d5167ebf7d7985fbf7"
+    },
+    {
+      "bytes": 4411,
+      "path": "REPOSITORY_EVIDENCE.md",
+      "sha256": "7f936eab4fd729d861878d15ec3648aaf24eb2e8444c4ccdc3d9ea882f63965a"
+    },
+    {
+      "bytes": 9162,
+      "path": "RUST_SHAPES.md",
+      "sha256": "8bb1c9d884ebe2fc50e0cdbd3dee186c87c4b664908674755da7ce486b014ec8"
+    },
+    {
+      "bytes": 5974,
+      "path": "SOURCE_REQUEST.md",
+      "sha256": "e179b3617eab8ccb131d0d820fd0792e5d1d2b9728adbcb403def4f43f581087"
+    },
+    {
+      "bytes": 1238,
+      "path": "SUPERSESSION.md",
+      "sha256": "3cf042ef3fe5d7a614239f0422d17b2bef16830c0bec359c3c4b55809bd4d469"
+    },
+    {
+      "bytes": 10344,
+      "path": "TEST_MATRIX.tsv",
+      "sha256": "1d4c0329f937b67259f60130635c8f55a58ca4bace9fc157caa970947007581f"
+    },
+    {
+      "bytes": 1865,
+      "path": "VALIDATION.md",
+      "sha256": "78ace475c9ff52bd6e1c46be9c7d0e1ac744f7d7d1c49564f10db4b96cfa5297"
+    }
+  ],
+  "final_status": "READY_FOR_IMPLEMENTATION",
+  "inspected_origin_main": "9138efeeabdfca56809e8ad9c16fc85380ae18c5",
+  "open_questions": 0,
+  "package": "arcweft-lang-01.1.1.3.2-suspended-function-runtime-emission-and-opaque-nominal-layout-reconciliation-final-contract",
+  "production_overlay": false,
+  "request_date": "2026-08-21",
+  "request_observed_commit": "6e17c9fafe7c254b27e99f51af52ccc109a3a41d",
+  "version_policy": "all Arcweft-owned ABI/codec/save/schema markers remain 1"
+}
