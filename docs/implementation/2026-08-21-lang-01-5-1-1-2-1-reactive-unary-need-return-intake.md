@@ -58,10 +58,12 @@ The returned files are failure evidence, not independent user instructions and
 not implementation authority. Production must not infer a unary Need/match
 contract from the request alone or repair the old path speculatively.
 
-The existing independently throwable request linked above remains the exact
-blocker, so creating a duplicate follow-up request would add a second request
-authority. Unary Need/match reconciliation remains blocked until that request
-returns a complete, validated package with all required decisions closed.
+The primary request linked above remains the semantic scope authority. Its
+failed delivery is now corrected by the independently throwable
+[`Lang-01.5.1.1.2.1.1 design-validation correction`](../reviews/requests/2026-08-21-lang-01.5.1.1.2.1.1-reactive-unary-need-match-design-validation-correction.md).
+That child request requires a complete redelivery rather than a packaging-only
+delta. Unary Need/match reconciliation remains blocked until the correction
+returns a validated package with all required decisions closed.
 
 No production build, test, Clippy, fixture, or runtime command was run for this
 documentation-only intake cut.
