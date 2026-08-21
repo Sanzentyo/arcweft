@@ -8,10 +8,22 @@ Supersedes: `2026-08-21-lang-01-5-1-1-2-1-reactive-unary-need-return-intake.md`
 ## Intake result
 
 - Classification: `ACCEPTED_DESIGN_CONTRACT`
-- Design readiness: `READY_FOR_IMPLEMENTATION`
+- Initial design readiness: `READY_FOR_IMPLEMENTATION` (superseded by the
+  post-intake implementation reconciliation below)
 - Production implementation claim: none
 - Open questions: none
-- Previous design-validation blocker: cleared
+- Previous design-validation blocker: cleared; new ABI correction blocker open
+
+Post-intake implementation reconciliation found that product/runtime readiness
+was overstated: the returned generic-Match output schema exports a
+function-local AWBC register across a destroyed callee frame, and its typed
+Need producer claim conflicts with the current string-backed NeedHandle path.
+The language/lifecycle contract remains accepted, but product/runtime work is
+now `BLOCKED_PENDING_CORRECTION` by
+[`Lang-01.5.1.1.2.1.1.1`](../reviews/requests/2026-08-21-lang-01.5.1.1.2.1.1.1-generic-match-and-typed-need-producer-abi-correction.md).
+Only the generic checked Match semantic-authority cut is independently safe;
+see the
+[implementation blocker](2026-08-21-lang-01-5-1-1-2-1-1-1-generic-match-and-typed-need-producer-abi-blocker.md).
 
 The corrected return closes the failed package's missing design, evidence,
 traceability, matrix, implementation-order, and verification requirements. It
