@@ -137,19 +137,22 @@ for this intake cut.
 
 ## 2026-08-21 user-directed allocation preselection
 
+Decision audit baseline:
+`c49099fb154d9e3dbb587e1bcd7ee243214da0c4`, clean and equal to
+`origin/main` before this documentation update.
+
 After this intake, the user directed that opcode, function-kind, function-flag,
 and `u32` wire collisions be selected before redelivery rather than left to the
 next reviewer. A Sol-max read-only audit selected and the maintained request now
 fixes:
 
-- current executable opcode meanings unchanged;
-- `NeedTimeout=0x1e`, `CommitDialogueResult=0x20`,
-  `MakeNeedHandle=0x29`, `CopyValue=0x2a`,
-  `ExecuteLineOperation=0x2b`, Stream ordinary `0x2c..=0x2e`, and Stream
-  terminators `0x8f..=0x90`;
-- current function kinds 0..3/6/7 unchanged, removed 4/5 rejected,
-  Stream `Ordinary=8`/`GeneratorProducer=9`, and `LineActivation=10`;
-- Stream producer flag bit 4 and Need producer flag bit 5 under one typed flag
+- one full version-1 semantic renumber with value construction/projection in
+  `0x00..=0x14`, call/effect/task/Need in `0x20..=0x29`, Stream/line in
+  `0x30..=0x36`, ownership/lifecycle in `0x40..=0x48`, and terminators grouped
+  by CFG, suspension, Stream, presentation, and fault families;
+- `Flow, Ordinary, PureHelper, TraitMethod, Synthetic, GeneratorProducer,
+  StreamTransform, LineActivation, LineTask` at dense function-kind tags 0..8;
+- Need producer flag bit 4 and Stream producer flag bit 5 under one typed flag
   enum/validated bitset;
 - `#[repr(u8)]` opcode/kind/flag enums as the only numeric declarations, with
   direct numeric Serde/private Wire and allocation-free scalar decode;
@@ -158,8 +161,16 @@ fixes:
 - one final encoder buffer and direct borrowed-reader decode, with allocations
   only for final owned Vec/String values.
 
-The updated
+These replace the earlier current-value-preserving preselection; no removed
+tombstone, old numeric reader, or historical alias remains. The updated
 [`Lang-01.5.1.1.2.1.1.1.1` request](../reviews/requests/2026-08-21-lang-01.5.1.1.2.1.1.1.1-checked-match-coverage-runtime-need-identity-and-awbc-allocation-correction.md)
 makes these selections mandatory. The remaining design blockers are complete
 runtime Need/task identity, checked Match coverage, ownership admission, and
 parent-compatible stable Match product identity.
+
+Future returned archives remain byte-preserved frozen evidence. If an otherwise
+complete return repeats an allocation from before this semantic reorder, intake
+records that numeric row as superseded and projects the selected enum authority
+locally. Allocation spelling alone does not require another design round. The
+frozen ZIP/mirror is never rewritten, and no compatibility reader or old-to-new
+runtime translation table is added.

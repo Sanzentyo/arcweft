@@ -211,7 +211,8 @@ compiled-region frame contract. A slot never changes type within a function.
 ```rust
 struct AwbcFunction {
     public_id: Option<AwbcStringId>,
-    kind: Flow | PureHelper | StreamTransform | LineTask | Synthetic,
+    kind: Flow | Ordinary | PureHelper | TraitMethod | Synthetic
+        | GeneratorProducer | StreamTransform | LineActivation | LineTask,
     signature: AwbcSignatureId,
     frame_layout: AwbcFrameLayoutId,
     blocks: AwbcTableRange,
@@ -235,8 +236,32 @@ struct AwbcResumePoint {
 }
 ```
 
-Function flags are `MAY_SUSPEND`, `MAY_ALLOCATE`, `DETERMINISTIC`, and
-`HAS_DYNAMIC_TARGET`. `safe_point` describes the block **entry**. A suspending
+Function-kind tags are the dense semantic order below.
+
+| Tag | Kind |
+|---:|---|
+| `0` | `Flow` |
+| `1` | `Ordinary` |
+| `2` | `PureHelper` |
+| `3` | `TraitMethod` |
+| `4` | `Synthetic` |
+| `5` | `GeneratorProducer` |
+| `6` | `StreamTransform` |
+| `7` | `LineActivation` |
+| `8` | `LineTask` |
+
+Function-flag bit positions are `DETERMINISTIC=0`, `MAY_ALLOCATE=1`,
+`MAY_SUSPEND=2`, `HAS_DYNAMIC_TARGET=3`, `NEED_PRODUCER=4`, and
+`OWNS_STREAM_PRODUCER=5`. Unknown kinds and flag bits reject.
+
+`AwbcFunctionKind` and `AwbcFunctionFlag` are `#[repr(u8)]` closed enums.
+`AwbcFunctionFlags` is a validated private-field `u32` bitset whose masks are
+derived from `AwbcFunctionFlag`, not copied into consumers. Need producers are
+deterministic, allocating, non-suspending `Synthetic` functions with only the
+Need producer role. Stream producers are `GeneratorProducer` functions with
+only the Stream producer role.
+
+`safe_point` describes the block **entry**. A suspending
 terminator references the destination entry through a resume point. Thus a flow
 entry may immediately terminate in a host call without trying to encode two
 safe-point kinds on one block.
@@ -247,45 +272,77 @@ validate all four facts before resuming.
 
 ## 4. Complete compact opcode set
 
-Opcode bytes `0x00..0x1f` are non-terminators. Bytes `0x80..0x8e` are
-terminators. `0x20..0x7f` and `0x8f..0xff` are reserved and rejected in v1.
+Opcode bytes below are the one final version-1 allocation. The high bit still
+separates ordinary instructions from terminators, while fixed subranges group
+semantic families. Unassigned bytes are future capacity for that family and
+reject until an owning enum variant is implemented; they are not compatibility
+tombstones.
+
+This is an unreleased version-1 renumber. All earlier current/document/package
+numbers are superseded together; the decoder recognizes only the table below
+and has no old-number reader or translation map.
+
+`AwbcOpcode` is a `#[repr(u8)]` closed enum and is the sole numeric authority.
+Its discriminants contain each byte once; inherent `encoded`, `from_encoded`,
+and `family` behavior drives direct numeric Serde and the private wire codec.
+Instruction and terminator variants map only to `AwbcOpcode` variants and do
+not copy numeric values into feature-local tables.
 
 ### 4.1 Non-terminators
 
-| Code | Typed instruction | Semantics |
-|---:|---|---|
-| `00` | `Nop` | no state change |
-| `01` | `LoadConst { dst, constant }` | clone canonical constant into typed slot |
-| `02` | `Move { dst, src }` | typed value copy/move at VM policy level |
-| `03` | `Clear { register }` | mark slot uninitialized |
-| `04` | `EnterScope { scope }` | push lexical scope ID |
-| `05` | `ExitScope { scope }` | pop matching scope; clear deeper locals |
-| `06` | `BindPattern { pattern, value, mode }` | declare or assign pattern bindings |
-| `07` | `TestPattern { dst, pattern, value }` | match without committing bindings; write bool |
-| `08` | `MakeTuple { dst, items }` | construct typed tuple |
-| `09` | `MakeSequence { dst, items }` | construct homogeneous sequence |
-| `0a` | `RepeatSequence { dst, value, len }` | repeat value by integer length |
-| `0b` | `SequenceLen { dst, sequence }` | sequence length |
-| `0c` | `SequenceGet { dst, sequence, index }` | checked element access |
-| `0d` | `SequenceSlice { dst, sequence, start }` | checked tail slice |
-| `0e` | `SequencePush { sequence, value }` | append typed element |
-| `0f` | `MakeRecord { dst, ty, fields }` | construct record in layout order |
-| `10` | `MakeVariant { dst, ty, case, payload }` | construct typed variant |
-| `11` | `ProjectTuple { dst, target, ordinal }` | checked tuple projection |
-| `12` | `ProjectRecord { dst, target, ordinal }` | checked layout projection |
-| `13` | `ProjectField { dst, target, field }` | checked named record projection |
-| `14` | `Unary { dst, op, src }` | `Not` or `Neg` |
-| `15` | `Binary { dst, op, lhs, rhs }` | equality/order/arithmetic/logical operators |
-| `16` | `CallPureHelper { dst, helper, args }` | deterministic helper call |
-| `17` | `CallIntrinsic { dst?, intrinsic, args }` | typed runtime registry intrinsic |
-| `18` | `EnsureContent { content }` | stage/validate content readiness as data request |
-| `19` | `EmitEffect { effect, args }` | append typed effect request; never perform I/O |
-| `1a` | `StartTask { dst, plan, args }` | create/ensure host task handle request |
-| `1b` | `SpawnFiber { dst?, function, args }` | spawn executor-neutral child fiber |
-| `1c` | `StreamYield { stream, value }` | enqueue deterministic stream output |
-| `1d` | `StreamClose { stream }` | close stream state |
-| `1e` | `NeedTimeout { dst, source, limit, site }` | construct a logical-time derived Need without awaiting it |
-| `1f` | `Drop { register }` | deterministic value/resource drop and uninitialize |
+| Family | Code | Typed instruction | Semantics |
+|---|---:|---|---|
+| Value | `00` | `Nop` | no state change |
+|  | `01` | `LoadConst { dst, constant }` | load canonical constant |
+|  | `02` | `MakeTuple { dst, items }` | construct typed tuple |
+|  | `03` | `MakeSequence { dst, items }` | construct homogeneous sequence |
+|  | `04` | `RepeatSequence { dst, value, len }` | repeat a value |
+|  | `05` | `MakeRecord { dst, ty, fields }` | construct record in layout order |
+|  | `06` | `MakeVariant { dst, ty, case, payload }` | construct typed variant |
+|  | `07` | `MakeFunction { dst, function, captures }` | construct owning function value |
+|  | `08` | `MakeAgent { dst, plan, captures }` | construct owning Agent value |
+|  | `09` | `MakeReductionUnchanged { dst }` | construct unchanged reduction result |
+|  | `0a` | `SequenceLen { dst, sequence }` | sequence length |
+|  | `0b` | `SequenceGet { dst, sequence, index }` | checked element access |
+|  | `0c` | `SequenceSlice { dst, sequence, start }` | checked tail slice |
+|  | `0d` | `SequencePush { sequence, value }` | append typed element |
+|  | `0e` | `ProjectTuple { dst, target, ordinal }` | checked tuple projection |
+|  | `0f` | `ProjectRecord { dst, target, ordinal }` | checked layout projection |
+|  | `10` | `ProjectField { dst, target, field }` | checked named projection |
+|  | `11` | `AssignRecordField { target, field, value }` | typed field mutation |
+|  | `12` | `TestPattern { dst, pattern, value }` | test without binding |
+|  | `13` | `Unary { dst, op, src }` | `Not` or `Neg` |
+|  | `14` | `Binary { dst, op, lhs, rhs }` | typed binary operation |
+|  | `15..1f` | unassigned | reject |
+| Call/task | `20` | `CallPureHelper { dst, helper, args }` | deterministic helper call |
+|  | `21` | `CallIntrinsic { dst?, intrinsic, args }` | typed registry intrinsic |
+|  | `22` | `CallTraitMethod { dst?, method, args }` | exact trait dispatch |
+|  | `23` | `ApplyFunction { dst?, function, args }` | invoke function value |
+|  | `24` | `EnsureContent { content }` | stage content readiness |
+|  | `25` | `EmitEffect { effect, args }` | append typed effect request |
+|  | `26` | `StartTask { dst, plan, args }` | create/ensure host task request |
+|  | `27` | `SpawnFiber { dst?, function, args }` | spawn child fiber |
+|  | `28` | `MakeNeedHandle { dst, plan, site, args }` | construct typed Need handle |
+|  | `29` | `NeedTimeout { dst, source, limit, site }` | construct derived timeout Need |
+|  | `2a..2f` | unassigned | reject |
+| Stream/line | `30` | `ApplyExternalStreamGroup { ... }` | apply verified external Stream group |
+|  | `31` | `OpenStream { ... }` | open verified Stream producer |
+|  | `32` | `StreamYield { stream, value }` | enqueue deterministic output |
+|  | `33` | `FinishStream { ... }` | finish producer execution |
+|  | `34` | `StreamClose { stream }` | close Stream state |
+|  | `35` | `ExecuteLineOperation { dst, operation, args }` | execute typed line operation |
+|  | `36` | `CommitDialogueResult { source }` | commit typed dialogue result |
+|  | `37..3f` | unassigned | reject |
+| Ownership | `40` | `Move { dst, src }` | consume source into destination |
+|  | `41` | `CopyValue { dst, src }` | checked unrestricted copy |
+|  | `42` | `Clear { register }` | mark slot uninitialized |
+|  | `43` | `Drop { register }` | deterministic drop/uninitialize |
+|  | `44` | `EnterScope { scope }` | push lexical scope |
+|  | `45` | `ExitScope { scope }` | pop scope and clear deeper locals |
+|  | `46` | `BindPattern { pattern, value, mode }` | declare/assign bindings |
+|  | `47` | `RegisterCleanup { ... }` | register cleanup ownership |
+|  | `48` | `CancelCleanup { ... }` | cancel registered cleanup |
+|  | `49..7f` | unassigned | reject |
 
 `EmitEffect` is for already modeled Sans I/O effect requests. A call that must
 cross a host ABI boundary uses `HostCall` below. There is no generic “execute
@@ -293,23 +350,30 @@ string opcode”.
 
 ### 4.2 Terminators
 
-| Code | Typed terminator | Successor / exit |
-|---:|---|---|
-| `80` | `Jump { target }` | one CFG successor |
-| `81` | `Branch { condition, then_block, else_block }` | bool branch |
-| `82` | `Match { scrutinee, arms, default }` | pattern/guard dispatch |
-| `83` | `CallFunction { function, args, dst?, resume }` | push frame; return through resume point |
-| `84` | `GotoStatic { function, args }` | tail transfer, no caller continuation |
-| `85` | `GotoDynamic { target, args }` | verified dynamic flow/entity target; VM-capable fallback boundary |
-| `86` | `Dialogue { content, line_task_group, resume }` | suspend for presentation/input |
-| `87` | `Choice { choice, dst, resume }` | suspend; selected option is written to `dst` |
-| `88` | `Await { need, binding?, resume }` | suspend one unary Need; bind its exact ready payload |
-| `89` | `AwaitMany { plan, source, binding?, resume }` | suspend deterministic bounded task fan-out |
-| `8a` | `HostCall { call, args, dst?, resume }` | structured host request; immediate mode may resume in same step |
-| `8b` | `Return { value? }` | pop frame or terminate root fiber |
-| `8c` | `Trap { code, message? }` | typed terminal failure |
-| `8d` | `BudgetYield { resume }` | cooperative preemption at verified point |
-| `8e` | `Unreachable` | verifier-known dead endpoint / defensive trap |
+| Family | Code | Typed terminator | Successor / exit |
+|---|---:|---|---|
+| CFG | `80` | `Jump { target }` | one CFG successor |
+|  | `81` | `Branch { condition, then_block, else_block }` | bool branch |
+|  | `82` | `Match { scrutinee, arms, default }` | pattern dispatch |
+|  | `83` | `CallFunction { function, args, dst?, resume }` | push frame/call |
+|  | `84` | `GotoStatic { function, args }` | verified static tail transfer |
+|  | `85` | `GotoDynamic { target, args }` | verified dynamic tail transfer |
+|  | `86` | `Return { value? }` | pop frame or terminate root |
+|  | `87` | unassigned | reject |
+| Suspension | `88` | `HostCall { call, args, dst?, resume }` | structured host request |
+|  | `89` | `Await { need, binding?, resume }` | await unary Need |
+|  | `8a` | `AwaitMany { plan, source, binding?, resume }` | bounded task fan-out |
+|  | `8b` | `BudgetYield { resume }` | cooperative preemption |
+|  | `8c..8f` | unassigned | reject |
+| Stream | `90` | `NextStream { ... }` | consume next Stream item |
+|  | `91` | `YieldStream { ... }` | generator safe-point yield |
+|  | `92..97` | unassigned | reject |
+| Presentation | `98` | `Dialogue { content, line_task_group, resume }` | suspend for presentation |
+|  | `99` | `Choice { choice, dst, resume }` | suspend for selection |
+|  | `9a..9f` | unassigned | reject |
+| Fault | `a0` | `Trap { code, message? }` | typed terminal failure |
+|  | `a1` | `Unreachable` | verifier-known dead endpoint |
+|  | `a2..ff` | unassigned | reject |
 
 Loops are CFG, not one-off opcodes. A loop header is a block entry marked
 `LoopBackedge`; every backward edge targets such an entry. `break` and
@@ -430,9 +494,11 @@ struct AwbcStreamPlan {
 ```
 
 External capability operations returning `Stream<T, E>` are represented by the
-ordinary callable catalog and host-call tables. Stream transforms use the
-ordinary CFG/opcode set; there is no separate plan, handler table, or
-stream-only function kind.
+ordinary callable catalog and host-call tables. Authored/local producers use
+`GeneratorProducer`; transforms use `StreamTransform`. Both execute the shared
+CFG/value model, while the closed kinds and producer flag let the verifier
+enforce their distinct safe-point and ownership rules. There is no second
+Stream VM or string opcode path.
 
 ### 5.5 Pure helpers, maps, resources, and entries
 
@@ -459,11 +525,15 @@ function, and explicit register bindings from path parameters.
 ### 6.1 Primitive encoding
 
 - `u8`, fixed arrays, and digests are exact bytes.
-- `u16/u32/u64/i32` scalar payloads are little-endian where fixed-width is
-  specified by the schema.
-- Table counts, vector lengths, string lengths, IDs, ordinals, and ranges use
-  **minimal unsigned LEB128**. Encodings with redundant continuation bytes are
-  rejected.
+- Every ordinary `u32`—table count, vector/string length, ID, register, site,
+  ordinal, range component, source offset, tensor dimension, and Char
+  scalar—uses **minimal unsigned LEB128**. A sixth byte, overflow,
+  unterminated input, and redundant encodings such as `80 00` reject. There is
+  no fixed-little-endian `u32` integer exception.
+- Fixed widths are limited to schema-declared `u16`, `u64`, `i32`, raw
+  16/32-byte integer or digest payloads, and 4/8-byte IEEE float bit patterns.
+  Tensor shape dimensions use the ordinary `u32` varint; only tensor elements
+  remain fixed-width float bits. `usize` never enters product wire.
 - Enums use one-byte stable tags defined by their owning enum implementation.
   Unknown tags are errors; they are not skipped as extensions in v1.
 - `Option<T>` uses tag `0`/`1`; booleans use `0`/`1`; other tags are rejected.
@@ -471,6 +541,14 @@ function, and explicit register bindings from path parameters.
 - There is no padding, native alignment, serde/bincode layout, map iteration, or
   platform-width integer in product bytes.
 - A decoder must consume the declared payload exactly.
+
+The encoder writes envelope and payload directly into one final buffer and
+patches the payload length in place; it does not build a payload buffer and
+copy it into a second output. The borrowed decoder reads the input slice
+directly into final `AwbcProgram` values. Tags, opcodes, kinds, flags, IDs, and
+scalars allocate nothing; Vec/String allocate only their final owned storage.
+Serde remains a structured-data boundary and is not the canonical executable
+identity codec.
 
 The encoder emits tables in stored order. Producers canonicalize strings,
 effect sets, function/block/instruction ownership order, source/display rows,
