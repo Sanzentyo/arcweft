@@ -1,0 +1,180 @@
+{
+  "deletions": {
+    "compatibility_alias": false,
+    "compatibility_reader": false,
+    "minimum_rows": 35,
+    "required_absent_spellings": [
+      "ViewProgramInstruction::Await",
+      "ViewInstruction::Await",
+      "ViewAwait",
+      "ViewAwaitBranch",
+      "ViewAwaitBranchSpan",
+      "InvalidAwaitState",
+      "AwaitView"
+    ],
+    "strict_in_place_cut": true
+  },
+  "failure_precedence": [
+    "generation_and_catalog",
+    "semantic_type_pattern_effect_ownership",
+    "checked_catalog_completeness",
+    "authored_static_requirement",
+    "compiler_cross_section_publication",
+    "strict_bundle_decode_and_validation",
+    "runtime_generation_and_publication",
+    "ordinary_pattern_match_and_binding",
+    "restore",
+    "replacement"
+  ],
+  "forbidden_artifact_paths": [
+    "production-overlay",
+    "production_overlay",
+    "patches",
+    "src",
+    "crates",
+    ".git"
+  ],
+  "identities": {
+    "forbidden_identity_inputs": [
+      "source_text",
+      "source_spelling",
+      "source_span",
+      "source_role",
+      "ItemId_on_wire",
+      "ExprId_on_wire",
+      "RuntimeValue_handle_surrogate",
+      "copied_endpoint_table",
+      "display_string"
+    ],
+    "observer_key": [
+      "ViewMountId",
+      "ViewNeedSubscriptionId"
+    ],
+    "producer_journal_key": [
+      "GenerationId",
+      "NeedId"
+    ],
+    "product_dense_key": "ViewNeedSubscriptionId",
+    "session_subscription_key": [
+      "CheckedViewGeneration",
+      "ItemId",
+      "ExprId"
+    ],
+    "stable_contract_join": "ViewNeedSubscriptionContractDigest",
+    "stable_semantic_join": "ViewNeedSubscriptionSemanticId"
+  },
+  "limits": {
+    "max_bindings_per_arm": 256,
+    "max_diagnostics": 1024,
+    "max_invalidation_queue": 65536,
+    "max_live_need_journals": 65536,
+    "max_live_need_observers": 262144,
+    "max_match_arms": 256,
+    "max_observers_per_need": 16384,
+    "max_pattern_nodes_per_match": 4096,
+    "max_pattern_ops_per_evaluation": 65536,
+    "max_payload_bytes": 16777216,
+    "max_payload_depth": 128,
+    "max_payload_nodes": 65536,
+    "max_publications_per_batch": 65536,
+    "max_replacement_subscription_mappings": 262144,
+    "max_restore_observers": 262144,
+    "max_restore_payload_bytes": 67108864,
+    "max_restore_publications": 65536,
+    "max_restore_retained_arms": 262144,
+    "max_retained_arms_per_observer": 256,
+    "max_subscriptions_per_definition": 4096,
+    "max_subscriptions_per_mount": 1024,
+    "max_subscriptions_per_program": 65536
+  },
+  "matrix_minima": {
+    "consumer_rows": 25,
+    "deletion_rows": 35,
+    "rust_line_evidence_rows": 65,
+    "source_evidence_rows": 80,
+    "test_rows": 350,
+    "traceability_rows": 60
+  },
+  "owners": {
+    "cancellation": "existing producer task/cancel-scope owner",
+    "checked_match": "CheckedViewNeedMatch",
+    "checked_owner": "arcweft_lang_sema::final_analysis::view::CheckedViewCatalog",
+    "checked_subscription": "CheckedViewNeedSubscription",
+    "mount_occurrence": "arcweft_view::{ViewMountAllocator,ViewMountId}",
+    "pattern_match": "arcweft_core::awbc::{AwbcPattern,AwbcMatchArm}",
+    "publication_journal": "arcweft_runtime_driver::view_runtime::need::ViewNeedRuntime",
+    "replacement": "arcweft_runtime_driver::view_runtime::replacement",
+    "runtime_need_state": "arcweft_core::task::RuntimeNeedState",
+    "runtime_value": "arcweft_core::value::RuntimeValue",
+    "start_request": "arcweft_core::awbc::product_step + arcweft_runtime_driver::task::RuntimeTaskRegistry",
+    "strict_codec": "arcweft_bundle::resource_codec::view"
+  },
+  "package": "arcweft-lang-01.5.1.1.2.1.1-reactive-unary-need-match-design-validation-correction-final-contract",
+  "policies": {
+    "after_terminal": "stale_after_terminal_noop",
+    "cancellation_policy": "ProducerOwned",
+    "equal_cursor_different_digest": "hard_conflict_batch_rollback",
+    "equal_cursor_equal_digest": "duplicate_noop",
+    "first_frame": "latest_committed_or_synthetic_NotStarted",
+    "invalidation": "at_most_one_per_changed_live_observer_per_transaction",
+    "last_observer_unmount_cancels": false,
+    "lower_cursor": "stale_noop",
+    "match_execution": "generic_ViewInstruction_Match_plus_ordinary_AWBC",
+    "multiple_pending_same_batch": "highest_cursor_wins",
+    "old_await_alias": false,
+    "old_await_reader": false,
+    "pattern_execution": "AWBC_once_in_source_order",
+    "publication_cursor_order": "lexicographic(LogicalEpoch,TaskSequence)",
+    "replacement": "semantic_id_plus_contract_digest_scratch_transaction",
+    "replay": "same_publication_batch_API",
+    "runtime_value_model": "ordinary_RuntimeValue_only",
+    "same_step_pending_ready": "ready_wins",
+    "save_restore": "scratch_validate_then_atomic_swap",
+    "start_policy": "ObserveStartsNotStarted",
+    "task_dedup": "TaskPolicy::JoinSameKey"
+  },
+  "repository": {
+    "current_main_sha": "cec30b57fa734efb059d7b846b397ac7d2b0701a",
+    "full_name": "Sanzentyo/arcweft",
+    "inspected_production_baseline_sha": "0fa8a3b845b2dc966f181f450a1ca1f36e49d966",
+    "request_commit_delta": "documentation_only",
+    "rust_tree_relation": "identical_between_baseline_and_current_main"
+  },
+  "schema": "arcweft.reactive-unary-need-match-design-contract.v1",
+  "states": {
+    "admission_failure": "Result<Need<T>, AdmissionError> outside Need",
+    "domain_failure": "Ready(Result::Err(E))",
+    "need_denied_branch": false,
+    "need_error_branch": false,
+    "optional_absence": "Ready(Option::None)",
+    "temporal": [
+      "NotStarted",
+      "Pending(Progress)",
+      "Ready(T)",
+      "Cancelled"
+    ]
+  },
+  "static_certification": {
+    "authored_static_failure_path": "ordinary typed parent proof path",
+    "contaminant": "CheckedViewDynamicReason::LiveNeedSubscription",
+    "first_contaminant": "exact scrutinee ExprId/source role",
+    "live_subscription_is_dynamic": true
+  },
+  "status": {
+    "design_ready": true,
+    "implementation_claimed": false,
+    "open_questions": "none",
+    "production_gates_claimed": false
+  },
+  "versions": {
+    "awbc_abi": 1,
+    "need_contract_digest": 1,
+    "need_replacement": 1,
+    "need_replay": 1,
+    "need_semantic_digest": 1,
+    "need_snapshot": 1,
+    "need_state_digest": 1,
+    "need_subscription_wire": 1,
+    "view_program_transcript": 1
+  }
+}

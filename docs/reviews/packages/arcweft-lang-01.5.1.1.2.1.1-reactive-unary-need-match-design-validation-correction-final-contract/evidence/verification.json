@@ -1,0 +1,45 @@
+{
+  "claims": {
+    "design_ready": true,
+    "implementation_ready": false,
+    "production_gates_passed": false
+  },
+  "counts": {
+    "consumer_rows": 30,
+    "deletion_rows": 40,
+    "rust_line_evidence": 77,
+    "source_evidence": 90,
+    "test_rows": 445,
+    "traceability_rows": 72,
+    "work_limits": 22
+  },
+  "repository": {
+    "production_baseline": "0fa8a3b845b2dc966f181f450a1ca1f36e49d966",
+    "rust_delta": 0,
+    "sha": "cec30b57fa734efb059d7b846b397ac7d2b0701a"
+  },
+  "schema": "arcweft.design-package-verification.v1",
+  "status": "PASS",
+  "validation_policy": {
+    "manifest_excludes_only": [
+      "SHA256SUMS"
+    ],
+    "open_questions_exact_hex": "6e6f6e65",
+    "validator": "tools/validate_package.py",
+    "zip_timestamp": "2026-08-21T00:00:00Z-like deterministic DOS timestamp",
+    "zip_top_level": "arcweft-lang-01.5.1.1.2.1.1-reactive-unary-need-match-design-validation-correction-final-contract"
+  },
+  "verified": {
+    "agents_read": true,
+    "extracted_validator": "PASS",
+    "github_exact_ref_evidence": true,
+    "local_production_cargo_gates_run": false,
+    "manifest": "PASS",
+    "premise_read": true,
+    "production_modified": false,
+    "request_read": true,
+    "rust_skill_read_to_end": true,
+    "staging_validator": "PASS",
+    "zip_crc": "PASS"
+  }
+}

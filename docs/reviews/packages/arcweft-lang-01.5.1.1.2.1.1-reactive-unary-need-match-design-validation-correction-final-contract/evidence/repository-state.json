@@ -1,0 +1,40 @@
+{
+  "compare": {
+    "ahead_by": 1,
+    "behind_by": 0,
+    "changed_files": [
+      "docs/implementation/2026-08-21-lang-01-5-1-1-2-1-reactive-unary-need-return-intake.md",
+      "docs/reviews/requests/2026-08-21-lang-01.5.1.1.2.1.1-reactive-unary-need-match-design-validation-correction.md"
+    ],
+    "rust_files_changed": 0,
+    "status": "ahead"
+  },
+  "evidence_collection": {
+    "all_rows_exact_sha": true,
+    "local_git_clone_used": false,
+    "method": "GitHub connector against exact commit refs",
+    "production_tree_modified": false,
+    "rust_rows": 77,
+    "source_rows": 90
+  },
+  "failed_return": {
+    "repository_validator_issues": [
+      "MISSING README.md",
+      "MISSING concrete design",
+      "MISSING REQUIREMENT-TRACEABILITY.md",
+      "MISSING SOURCE-EVIDENCE.md",
+      "MISSING TEST-MATRIX.md",
+      "MISSING IMPLEMENTATION-SEQUENCE.md",
+      "MISSING VERIFICATION.md",
+      "INSUFFICIENT_RUST_LINE_EVIDENCE",
+      "TRACEABILITY_TABLE_TOO_SMALL",
+      "TEST_MATRIX_TOO_SMALL"
+    ],
+    "repository_validator_pass": false,
+    "supplied_zip_sha256": "C5857AFCFCDDC88D2F642C4B4ACB0E61A68BBC4AC0BE42755BA9C2593B20E732"
+  },
+  "repository": "Sanzentyo/arcweft",
+  "requested_baseline": "0fa8a3b845b2dc966f181f450a1ca1f36e49d966",
+  "resolved_current_main": "cec30b57fa734efb059d7b846b397ac7d2b0701a",
+  "schema": "arcweft.repository-evidence.v1"
+}
