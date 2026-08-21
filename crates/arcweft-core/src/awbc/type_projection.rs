@@ -2,12 +2,12 @@
 
 use super::schema::{
     AwbcProgram, AwbcRuntimeType, AwbcSignedIntKind, AwbcTypeId, AwbcUnsignedIntKind,
-    AwbcVariantIdentity,
+    AwbcVariantCase, AwbcVariantIdentity,
 };
 use crate::entry::{RuntimeIdentityError, RuntimeNominalTypeId, TypeLayoutHash};
 use crate::pattern::{
-    RuntimeCheckedType, RuntimeCheckedVariantCase, RuntimeOpaqueTypeAdmission,
-    RuntimeOpaqueTypeOwner, RuntimeOpaqueTypeProducerId, RuntimeSemanticTypeId,
+    RuntimeCheckedType, RuntimeCheckedVariantCase, RuntimeOpaqueTypeOwner,
+    RuntimeOpaqueTypeProducerId, RuntimeSemanticTypeId,
 };
 use crate::value::{
     RuntimeNominalRecordLayout, RuntimeNominalRecordLayoutError, RuntimeSignedIntWidth,
@@ -60,6 +60,8 @@ impl AwbcRuntimeType {
             producer,
             semantic_identity,
             admission,
+            value_class,
+            persistence,
             arguments: _,
         } = self
         else {
@@ -76,14 +78,13 @@ impl AwbcRuntimeType {
                 }
             })?;
         let semantic_identity = RuntimeSemanticTypeId::from_bytes(*semantic_identity);
-        Ok(Some(match admission {
-            RuntimeOpaqueTypeAdmission::ExactIdentity => {
-                RuntimeOpaqueTypeOwner::exact(producer, semantic_identity)
-            }
-            RuntimeOpaqueTypeAdmission::ProducerWide => {
-                RuntimeOpaqueTypeOwner::producer_wide(producer, semantic_identity)
-            }
-        }))
+        Ok(Some(RuntimeOpaqueTypeOwner::with_admission(
+            producer,
+            semantic_identity,
+            *admission,
+            *value_class,
+            *persistence,
+        )))
     }
 }
 
@@ -245,66 +246,7 @@ impl AwbcProgram {
                 .map(|owner| RuntimeCheckedType::Opaque { owner })
                 .ok_or(AwbcTypeProjectionError::UnsupportedCheckedType { index: ty.0 }),
             AwbcRuntimeType::Variant { owner, cases } => {
-                let projected = cases
-                    .iter()
-                    .map(|case| {
-                        let name = self.strings.get(case.name.index()).cloned().ok_or(
-                            AwbcTypeProjectionError::StringOutOfBounds {
-                                index: case.name.0,
-                                role: "variant case name",
-                            },
-                        )?;
-                        let payload = case
-                            .payload
-                            .map(|payload| self.checked_type_at_depth(payload, depth + 1, visiting))
-                            .transpose()?
-                            .map(Box::new);
-                        Ok(RuntimeCheckedVariantCase { name, payload })
-                    })
-                    .collect::<Result<Vec<_>, AwbcTypeProjectionError>>()?;
-                match owner {
-                    AwbcVariantIdentity::Nominal {
-                        public_id,
-                        semantic_identity,
-                    } => Ok(RuntimeCheckedType::Variant {
-                        nominal: self.nominal_identity(*public_id)?,
-                        semantic_identity: RuntimeSemanticTypeId::from_bytes(*semantic_identity),
-                        cases: projected,
-                    }),
-                    AwbcVariantIdentity::Result => match projected.as_slice() {
-                        [
-                            RuntimeCheckedVariantCase {
-                                name: ok_name,
-                                payload: Some(ok),
-                            },
-                            RuntimeCheckedVariantCase {
-                                name: error_name,
-                                payload: Some(error),
-                            },
-                        ] if ok_name == "Ok" && error_name == "Err" => {
-                            Ok(RuntimeCheckedType::Result {
-                                ok: ok.clone(),
-                                error: error.clone(),
-                            })
-                        }
-                        _ => Err(AwbcTypeProjectionError::InvalidBuiltinVariant { index: ty.0 }),
-                    },
-                    AwbcVariantIdentity::Option => match projected.as_slice() {
-                        [
-                            RuntimeCheckedVariantCase {
-                                name: some_name,
-                                payload: Some(item),
-                            },
-                            RuntimeCheckedVariantCase {
-                                name: none_name,
-                                payload: None,
-                            },
-                        ] if some_name == "Some" && none_name == "None" => {
-                            Ok(RuntimeCheckedType::Option(item.clone()))
-                        }
-                        _ => Err(AwbcTypeProjectionError::InvalidBuiltinVariant { index: ty.0 }),
-                    },
-                }
+                self.checked_variant_type(ty, owner, cases, depth, visiting)
             }
             AwbcRuntimeType::Agent(agent) => Ok(RuntimeCheckedType::Agent(*agent)),
             AwbcRuntimeType::Record { .. }
@@ -321,5 +263,73 @@ impl AwbcProgram {
         };
         visiting.remove(&ty);
         result
+    }
+
+    fn checked_variant_type(
+        &self,
+        ty: AwbcTypeId,
+        owner: &AwbcVariantIdentity,
+        cases: &[AwbcVariantCase],
+        depth: usize,
+        visiting: &mut BTreeSet<AwbcTypeId>,
+    ) -> Result<RuntimeCheckedType, AwbcTypeProjectionError> {
+        let projected = cases
+            .iter()
+            .map(|case| {
+                let name = self.strings.get(case.name.index()).cloned().ok_or(
+                    AwbcTypeProjectionError::StringOutOfBounds {
+                        index: case.name.0,
+                        role: "variant case name",
+                    },
+                )?;
+                let payload = case
+                    .payload
+                    .map(|payload| self.checked_type_at_depth(payload, depth + 1, visiting))
+                    .transpose()?
+                    .map(Box::new);
+                Ok(RuntimeCheckedVariantCase { name, payload })
+            })
+            .collect::<Result<Vec<_>, AwbcTypeProjectionError>>()?;
+        match owner {
+            AwbcVariantIdentity::Nominal {
+                public_id,
+                semantic_identity,
+            } => Ok(RuntimeCheckedType::Variant {
+                nominal: self.nominal_identity(*public_id)?,
+                semantic_identity: RuntimeSemanticTypeId::from_bytes(*semantic_identity),
+                cases: projected,
+            }),
+            AwbcVariantIdentity::Result => match projected.as_slice() {
+                [
+                    RuntimeCheckedVariantCase {
+                        name: ok_name,
+                        payload: Some(ok),
+                    },
+                    RuntimeCheckedVariantCase {
+                        name: error_name,
+                        payload: Some(error),
+                    },
+                ] if ok_name == "Ok" && error_name == "Err" => Ok(RuntimeCheckedType::Result {
+                    ok: ok.clone(),
+                    error: error.clone(),
+                }),
+                _ => Err(AwbcTypeProjectionError::InvalidBuiltinVariant { index: ty.0 }),
+            },
+            AwbcVariantIdentity::Option => match projected.as_slice() {
+                [
+                    RuntimeCheckedVariantCase {
+                        name: some_name,
+                        payload: Some(item),
+                    },
+                    RuntimeCheckedVariantCase {
+                        name: none_name,
+                        payload: None,
+                    },
+                ] if some_name == "Some" && none_name == "None" => {
+                    Ok(RuntimeCheckedType::Option(item.clone()))
+                }
+                _ => Err(AwbcTypeProjectionError::InvalidBuiltinVariant { index: ty.0 }),
+            },
+        }
     }
 }

@@ -39,7 +39,8 @@ use arcweft_core::{
     step::RuntimeHostCallMode,
     time::LogicalDuration,
     value::{
-        RuntimeInt, RuntimeIntrinsic, RuntimeNominalRecordLayout, RuntimeNominalRecordLayoutError,
+        RuntimeHandleKind, RuntimeInt, RuntimeIntrinsic, RuntimeNominalRecordLayout,
+        RuntimeNominalRecordLayoutError, RuntimeOpaquePersistence, RuntimeOpaqueValueClass,
         RuntimeSignedIntWidth, RuntimeUInt, RuntimeUnsignedIntWidth, RuntimeValue,
         runtime_sequence_from_literal_values,
     },
@@ -1428,6 +1429,34 @@ fn runtime_type_at(
         TypeKind::Bytes => RuntimeTypeShape::Bytes,
         TypeKind::Duration => RuntimeTypeShape::Duration,
         TypeKind::Progress => RuntimeTypeShape::Progress,
+        TypeKind::StageActorHandle(handle) => RuntimeTypeShape::Opaque {
+            producer: standard_line_handle_producer(RuntimeHandleKind::StageActor),
+            admission: match handle {
+                arcweft_lang_sema::types::StageActorHandleType::Exact(_) => {
+                    arcweft_core::pattern::RuntimeOpaqueTypeAdmission::ExactIdentity
+                }
+                arcweft_lang_sema::types::StageActorHandleType::Any => {
+                    arcweft_core::pattern::RuntimeOpaqueTypeAdmission::ProducerWide
+                }
+            },
+            value_class: RuntimeOpaqueValueClass::AffineHandle(RuntimeHandleKind::StageActor),
+            persistence: RuntimeOpaquePersistence::SnapshotOnly,
+            arguments: Box::new([]),
+        },
+        TypeKind::CueHandle => RuntimeTypeShape::Opaque {
+            producer: standard_line_handle_producer(RuntimeHandleKind::Cue),
+            admission: arcweft_core::pattern::RuntimeOpaqueTypeAdmission::ExactIdentity,
+            value_class: RuntimeOpaqueValueClass::AffineHandle(RuntimeHandleKind::Cue),
+            persistence: RuntimeOpaquePersistence::SnapshotOnly,
+            arguments: Box::new([]),
+        },
+        TypeKind::VoiceHandle => RuntimeTypeShape::Opaque {
+            producer: standard_line_handle_producer(RuntimeHandleKind::Voice),
+            admission: arcweft_core::pattern::RuntimeOpaqueTypeAdmission::ExactIdentity,
+            value_class: RuntimeOpaqueValueClass::AffineHandle(RuntimeHandleKind::Voice),
+            persistence: RuntimeOpaquePersistence::SnapshotOnly,
+            arguments: Box::new([]),
+        },
         TypeKind::Ref(_) => RuntimeTypeShape::EntityReference,
         TypeKind::DebugStatePath => RuntimeTypeShape::Agent(RuntimeAgentTypeShape::DebugStatePath),
         TypeKind::ObservationFieldPath => {
@@ -1595,6 +1624,8 @@ fn runtime_type_at(
             RuntimeTypeShape::Opaque {
                 producer: owner.producer().clone(),
                 admission: owner.admission(),
+                value_class: owner.value_class(),
+                persistence: owner.persistence(),
                 arguments: nominal
                     .arguments()
                     .iter()
@@ -1619,6 +1650,8 @@ fn runtime_type_at(
             RuntimeTypeShape::Opaque {
                 producer: owner.producer().clone(),
                 admission: owner.admission(),
+                value_class: owner.value_class(),
+                persistence: owner.persistence(),
                 arguments: Box::new([]),
             }
         }
@@ -1637,9 +1670,6 @@ fn runtime_type_at(
         | TypeKind::DisplayText
         | TypeKind::StageApi(_)
         | TypeKind::LineContext
-        | TypeKind::StageActorHandle(_)
-        | TypeKind::CueHandle
-        | TypeKind::VoiceHandle
         | TypeKind::Handle { .. }
         | TypeKind::GenericParam(_)
         | TypeKind::OpenNominal(_)
@@ -1657,6 +1687,11 @@ fn runtime_type_at(
         }
     };
     Ok(RuntimeNormalizedType::new(identity, shape))
+}
+
+fn standard_line_handle_producer(kind: RuntimeHandleKind) -> RuntimeOpaqueTypeProducerId {
+    kind.try_producer()
+        .expect("standard line handle producer identities are canonical")
 }
 
 const fn runtime_agent_builtin_type(builtin: AgentBuiltinType) -> RuntimeAgentTypeShape {

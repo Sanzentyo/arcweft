@@ -5,11 +5,73 @@ use crate::value::RuntimeValue;
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
 
+#[derive(Clone, Copy, Debug, Deserialize, Eq, Hash, Ord, PartialEq, PartialOrd, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum RuntimeHandleKind {
+    StageActor,
+    Cue,
+    Voice,
+}
+
+impl RuntimeHandleKind {
+    pub fn try_producer(
+        self,
+    ) -> Result<RuntimeOpaqueTypeProducerId, crate::entry::RuntimeIdentityError> {
+        RuntimeOpaqueTypeProducerId::try_new(match self {
+            Self::StageActor => "std.line.stage_actor_handle",
+            Self::Cue => "std.line.cue_handle",
+            Self::Voice => "std.line.voice_handle",
+        })
+    }
+
+    pub(crate) const fn canonical_tag(self) -> u8 {
+        match self {
+            Self::StageActor => 1,
+            Self::Cue => 2,
+            Self::Voice => 3,
+        }
+    }
+}
+
+#[derive(Clone, Copy, Debug, Deserialize, Eq, Hash, Ord, PartialEq, PartialOrd, Serialize)]
+#[serde(tag = "kind", content = "value", rename_all = "snake_case")]
+pub enum RuntimeOpaqueValueClass {
+    Plain,
+    AffineHandle(RuntimeHandleKind),
+}
+
+impl RuntimeOpaqueValueClass {
+    pub(crate) const fn canonical_tag(self) -> u8 {
+        match self {
+            Self::Plain => 0,
+            Self::AffineHandle(kind) => kind.canonical_tag(),
+        }
+    }
+}
+
+#[derive(Clone, Copy, Debug, Deserialize, Eq, Hash, Ord, PartialEq, PartialOrd, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum RuntimeOpaquePersistence {
+    ConstantAndSnapshot,
+    SnapshotOnly,
+}
+
+impl RuntimeOpaquePersistence {
+    pub(crate) const fn canonical_tag(self) -> u8 {
+        match self {
+            Self::ConstantAndSnapshot => 0,
+            Self::SnapshotOnly => 1,
+        }
+    }
+}
+
 /// Exact producer evidence and payload for one opaque runtime value.
 #[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
 pub struct RuntimeOpaqueValue {
     producer: RuntimeOpaqueTypeProducerId,
     semantic_identity: RuntimeSemanticTypeId,
+    value_class: RuntimeOpaqueValueClass,
+    persistence: RuntimeOpaquePersistence,
     payload: Box<RuntimeValue>,
 }
 
@@ -18,6 +80,8 @@ impl RuntimeOpaqueValue {
         Self {
             producer: owner.producer().clone(),
             semantic_identity: owner.semantic_identity(),
+            value_class: owner.value_class(),
+            persistence: owner.persistence(),
             payload: Box::new(payload),
         }
     }
@@ -30,6 +94,16 @@ impl RuntimeOpaqueValue {
     #[must_use]
     pub const fn semantic_identity(&self) -> RuntimeSemanticTypeId {
         self.semantic_identity
+    }
+
+    #[must_use]
+    pub const fn value_class(&self) -> RuntimeOpaqueValueClass {
+        self.value_class
+    }
+
+    #[must_use]
+    pub const fn persistence(&self) -> RuntimeOpaquePersistence {
+        self.persistence
     }
 
     #[must_use]
@@ -59,7 +133,9 @@ mod tests {
     use crate::awbc::schema::AwbcFunctionId;
     use crate::entry::RuntimeSchemaError;
     use crate::pattern::{RuntimeCheckedType, RuntimeOpaqueTypeAdmission, RuntimeOpaqueTypeOwner};
-    use crate::value::{RuntimeFunctionValue, RuntimeSeq, RuntimeValueNestingError};
+    use crate::value::{
+        AwbcRuntimeValueSnapshot, RuntimeFunctionValue, RuntimeSeq, RuntimeValueNestingError,
+    };
 
     fn producer(value: &str) -> RuntimeOpaqueTypeProducerId {
         RuntimeOpaqueTypeProducerId::try_new(value).expect("valid producer")
@@ -245,6 +321,7 @@ mod tests {
         expected.extend_from_slice(&15_u32.to_le_bytes());
         expected.extend_from_slice(b"std.agent_error");
         expected.extend_from_slice(&[7; 32]);
+        expected.extend_from_slice(&[0, 0]);
         expected.push(1);
 
         assert_eq!(
@@ -317,5 +394,56 @@ mod tests {
     fn admission_discriminants_are_stable() {
         assert_eq!(RuntimeOpaqueTypeAdmission::ExactIdentity as u8, 0);
         assert_eq!(RuntimeOpaqueTypeAdmission::ProducerWide as u8, 1);
+    }
+
+    #[test]
+    fn affine_snapshot_only_handle_is_not_a_constant_and_round_trips_in_snapshot() {
+        let owner = RuntimeOpaqueTypeOwner::exact_with(
+            producer("std.line.cue_handle"),
+            RuntimeSemanticTypeId::from_bytes([11; 32]),
+            RuntimeOpaqueValueClass::AffineHandle(RuntimeHandleKind::Cue),
+            RuntimeOpaquePersistence::SnapshotOnly,
+        );
+        let value = owner
+            .try_wrap(RuntimeValue::UInt(crate::value::RuntimeUInt::U32(9)))
+            .expect("exact handle owner wraps");
+        let wide = RuntimeOpaqueTypeOwner::producer_wide_with(
+            producer("std.line.cue_handle"),
+            RuntimeSemanticTypeId::from_bytes([12; 32]),
+            RuntimeOpaqueValueClass::AffineHandle(RuntimeHandleKind::Cue),
+            RuntimeOpaquePersistence::SnapshotOnly,
+        );
+        assert!(wide.accepts_owner(&owner));
+        assert!(!exact("std.line.cue_handle", 11).accepts_owner(&owner));
+
+        assert_eq!(
+            value.ownership(),
+            crate::value::ownership::RuntimeValueOwnership::Affine
+        );
+        assert!(value.contains_nonconstant_opaque());
+        assert!(
+            RuntimeValue::Tuple(vec![RuntimeValue::Unit, value.clone()])
+                .contains_nonconstant_opaque()
+        );
+        assert_eq!(
+            value.try_canonical_bytes(128),
+            Err(RuntimeSchemaError::Encoding {
+                message: "opaque value class/persistence is not constant-admissible".to_owned(),
+            })
+        );
+        let snapshot = AwbcRuntimeValueSnapshot::from_runtime_value(&value)
+            .expect("live handle snapshots explicitly");
+        assert_eq!(
+            snapshot
+                .into_runtime_value()
+                .expect("snapshot handle restores"),
+            value
+        );
+        assert!(
+            !exact("std.line.cue_handle", 11).accepts_opaque_value(match &value {
+                RuntimeValue::Opaque(value) => value,
+                _ => unreachable!("owner wrapped opaque value"),
+            })
+        );
     }
 }

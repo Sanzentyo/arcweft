@@ -1473,6 +1473,16 @@ pub(crate) fn constant_value(
                 .ok_or_else(|| {
                     VmError::Runtime("opaque constant references a non-opaque type".to_owned())
                 })?;
+            if owner.persistence() == crate::value::RuntimeOpaquePersistence::SnapshotOnly
+                || matches!(
+                    owner.value_class(),
+                    crate::value::RuntimeOpaqueValueClass::AffineHandle(_)
+                )
+            {
+                return Err(VmError::Runtime(
+                    "non-constant opaque type cannot materialize from a constant".to_owned(),
+                ));
+            }
             let payload = constant_value(program, *payload)?;
             owner
                 .try_wrap(payload)

@@ -2024,6 +2024,7 @@ mod opaque_runtime_type_tests {
     use arcweft_core::awbc::schema::{AwbcStringId, AwbcTypeId};
     use arcweft_core::pattern::RuntimeOpaqueTypeAdmission;
     use arcweft_core::plan::RuntimeAgentOperationalType;
+    use arcweft_core::value::{RuntimeOpaquePersistence, RuntimeOpaqueValueClass};
 
     #[test]
     fn opaque_awbc_type_projects_to_final_bundle_value_family() {
@@ -2033,6 +2034,8 @@ mod opaque_runtime_type_tests {
             producer: AwbcStringId(0),
             semantic_identity: [81; 32],
             admission: RuntimeOpaqueTypeAdmission::ExactIdentity,
+            value_class: RuntimeOpaqueValueClass::Plain,
+            persistence: RuntimeOpaquePersistence::ConstantAndSnapshot,
             arguments: vec![],
         });
         let declaration =
@@ -2072,6 +2075,11 @@ mod opaque_runtime_type_tests {
             RuntimeValueKind::from_encoded(121),
             Some(RuntimeValueKind::Agent)
         );
-        assert_eq!(RuntimeValueKind::from_encoded(122), None);
+        assert_eq!(RuntimeValueKind::Progress.encoded(), 122);
+        assert_eq!(
+            RuntimeValueKind::from_encoded(122),
+            Some(RuntimeValueKind::Progress)
+        );
+        assert_eq!(RuntimeValueKind::from_encoded(123), None);
     }
 }

@@ -147,6 +147,8 @@ pub(crate) fn plan_type(
         && let RuntimePlanTypeProjection::Opaque {
             producer,
             admission,
+            value_class,
+            persistence,
             arguments,
         } = declaration.projection()
     {
@@ -159,6 +161,8 @@ pub(crate) fn plan_type(
             producer,
             semantic_identity: *declaration.semantic_identity().as_bytes(),
             admission: *admission,
+            value_class: *value_class,
+            persistence: *persistence,
             arguments,
         });
     }
@@ -272,6 +276,8 @@ pub(crate) fn intern_runtime_type(
             producer: inventory.intern_string(owner.producer().as_str()),
             semantic_identity: *owner.semantic_identity().as_bytes(),
             admission: owner.admission(),
+            value_class: owner.value_class(),
+            persistence: owner.persistence(),
             arguments: Vec::new(),
         },
         RuntimeCheckedType::Variant {

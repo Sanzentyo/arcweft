@@ -139,6 +139,8 @@ pub struct AwbcRuntimeNominalRecordSnapshot {
 pub struct AwbcRuntimeOpaqueSnapshot {
     pub producer: crate::pattern::RuntimeOpaqueTypeProducerId,
     pub semantic_identity: crate::pattern::RuntimeSemanticTypeId,
+    pub value_class: super::RuntimeOpaqueValueClass,
+    pub persistence: super::RuntimeOpaquePersistence,
     pub payload: Box<AwbcRuntimeValueSnapshot>,
 }
 
@@ -538,6 +540,8 @@ impl AwbcRuntimeValueSnapshot {
         Ok(AwbcRuntimeOpaqueSnapshot {
             producer: value.producer().clone(),
             semantic_identity: value.semantic_identity(),
+            value_class: value.value_class(),
+            persistence: value.persistence(),
             payload: Box::new(Self::from_runtime_value(value.payload())?),
         })
     }
@@ -545,7 +549,12 @@ impl AwbcRuntimeValueSnapshot {
     fn opaque_into_live(
         value: AwbcRuntimeOpaqueSnapshot,
     ) -> Result<RuntimeValue, AwbcRuntimeValueSnapshotError> {
-        let owner = RuntimeOpaqueTypeOwner::exact(value.producer, value.semantic_identity);
+        let owner = RuntimeOpaqueTypeOwner::exact_with(
+            value.producer,
+            value.semantic_identity,
+            value.value_class,
+            value.persistence,
+        );
         owner
             .try_wrap((*value.payload).into_runtime_value()?)
             .map_err(|error| AwbcRuntimeValueSnapshotError::new(error.to_string()))

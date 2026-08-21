@@ -35,8 +35,8 @@ use arcweft_core::plan::{
 use arcweft_core::runtime_id::RuntimeDialogueValueSlotId;
 use arcweft_core::step::RuntimeHostCallMode;
 use arcweft_core::value::{
-    RuntimeAgentField, RuntimeIntrinsic, RuntimeNominalRecordLayout, RuntimeSignedIntWidth,
-    RuntimeUnsignedIntWidth, RuntimeValue,
+    RuntimeAgentField, RuntimeIntrinsic, RuntimeNominalRecordLayout, RuntimeOpaquePersistence,
+    RuntimeOpaqueValueClass, RuntimeSignedIntWidth, RuntimeUnsignedIntWidth, RuntimeValue,
 };
 use arcweft_id::{DeclarationIdentityFamily, PublicId};
 use arcweft_lang_hir::expr::{
@@ -182,6 +182,8 @@ pub enum RuntimeTypeShape {
     Opaque {
         producer: RuntimeOpaqueTypeProducerId,
         admission: RuntimeOpaqueTypeAdmission,
+        value_class: RuntimeOpaqueValueClass,
+        persistence: RuntimeOpaquePersistence,
         arguments: Box<[RuntimeNormalizedType]>,
     },
     Agent(RuntimeAgentTypeShape),
@@ -388,10 +390,14 @@ impl RuntimeNormalizedType {
             RuntimeTypeShape::Opaque {
                 producer,
                 admission,
+                value_class,
+                persistence,
                 arguments,
             } => RuntimePlanTypeProjection::Opaque {
                 producer: producer.clone(),
                 admission: *admission,
+                value_class: *value_class,
+                persistence: *persistence,
                 arguments: arguments
                     .iter()
                     .map(RuntimeNormalizedType::identity)
@@ -517,16 +523,17 @@ impl RuntimeNormalizedType {
             RuntimeTypeShape::Opaque {
                 producer,
                 admission,
+                value_class,
+                persistence,
                 ..
             } => RuntimeCheckedType::Opaque {
-                owner: match admission {
-                    RuntimeOpaqueTypeAdmission::ExactIdentity => {
-                        RuntimeOpaqueTypeOwner::exact(producer.clone(), self.identity())
-                    }
-                    RuntimeOpaqueTypeAdmission::ProducerWide => {
-                        RuntimeOpaqueTypeOwner::producer_wide(producer.clone(), self.identity())
-                    }
-                },
+                owner: RuntimeOpaqueTypeOwner::with_admission(
+                    producer.clone(),
+                    self.identity(),
+                    *admission,
+                    *value_class,
+                    *persistence,
+                ),
             },
             RuntimeTypeShape::Never
             | RuntimeTypeShape::Unit

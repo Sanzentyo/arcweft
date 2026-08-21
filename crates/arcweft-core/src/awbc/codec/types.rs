@@ -14,6 +14,7 @@ use crate::awbc::schema::{
 };
 use crate::pattern::RuntimeOpaqueTypeAdmission;
 use crate::plan::RuntimeAgentOperationalType;
+use crate::value::{RuntimeHandleKind, RuntimeOpaquePersistence, RuntimeOpaqueValueClass};
 
 wire_id!(
     AwbcStringId,
@@ -184,6 +185,43 @@ wire_enum!(RuntimeOpaqueTypeAdmission, "opaque type admission", {
     1 => RuntimeOpaqueTypeAdmission::ProducerWide,
 });
 
+wire_enum!(RuntimeHandleKind, "runtime handle kind", {
+    0 => RuntimeHandleKind::StageActor,
+    1 => RuntimeHandleKind::Cue,
+    2 => RuntimeHandleKind::Voice,
+});
+
+impl Wire for RuntimeOpaqueValueClass {
+    fn write_wire(&self, writer: &mut Writer) -> Result<(), AwbcCodecError> {
+        match self {
+            Self::Plain => writer.write_u8(0),
+            Self::AffineHandle(kind) => {
+                writer.write_u8(1);
+                kind.write_wire(writer)?;
+            }
+        }
+        Ok(())
+    }
+
+    fn read_wire(reader: &mut Reader<'_>) -> Result<Self, AwbcCodecError> {
+        let offset = reader.offset();
+        match reader.read_u8()? {
+            0 => Ok(Self::Plain),
+            1 => RuntimeHandleKind::read_wire(reader).map(Self::AffineHandle),
+            tag => Err(AwbcCodecError::UnknownTag {
+                kind: "opaque value class",
+                tag,
+                offset,
+            }),
+        }
+    }
+}
+
+wire_enum!(RuntimeOpaquePersistence, "opaque persistence", {
+    0 => RuntimeOpaquePersistence::ConstantAndSnapshot,
+    1 => RuntimeOpaquePersistence::SnapshotOnly,
+});
+
 impl Wire for AwbcRuntimeType {
     fn write_wire(&self, writer: &mut Writer) -> Result<(), AwbcCodecError> {
         match self {
@@ -246,12 +284,16 @@ impl Wire for AwbcRuntimeType {
                 producer,
                 semantic_identity,
                 admission,
+                value_class,
+                persistence,
                 arguments,
             } => {
                 writer.write_u8(23);
                 producer.write_wire(writer)?;
                 semantic_identity.write_wire(writer)?;
                 admission.write_wire(writer)?;
+                value_class.write_wire(writer)?;
+                persistence.write_wire(writer)?;
                 arguments.write_wire(writer)?;
             }
             Self::NominalRecord {
@@ -317,6 +359,8 @@ impl Wire for AwbcRuntimeType {
                 producer: AwbcStringId::read_wire(reader)?,
                 semantic_identity: <[u8; 32]>::read_wire(reader)?,
                 admission: RuntimeOpaqueTypeAdmission::read_wire(reader)?,
+                value_class: RuntimeOpaqueValueClass::read_wire(reader)?,
+                persistence: RuntimeOpaquePersistence::read_wire(reader)?,
                 arguments: Vec::<AwbcTypeId>::read_wire(reader)?,
             },
             24 => Self::NominalRecord {
@@ -667,14 +711,15 @@ mod opaque_wire_tests {
             producer: AwbcStringId(7),
             semantic_identity: [9; 32],
             admission: RuntimeOpaqueTypeAdmission::ExactIdentity,
+            value_class: RuntimeOpaqueValueClass::Plain,
+            persistence: RuntimeOpaquePersistence::ConstantAndSnapshot,
             arguments: vec![],
         };
         let mut writer = Writer::default();
         ty.write_wire(&mut writer).expect("encode opaque type");
         let mut expected = vec![23, 7];
         expected.extend([9; 32]);
-        expected.push(0);
-        expected.push(0);
+        expected.extend([0, 0, 0, 0]);
         assert_eq!(writer.finish(), expected);
 
         let constant = AwbcConstant::Opaque {

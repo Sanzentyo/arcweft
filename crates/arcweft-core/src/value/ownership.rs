@@ -5,7 +5,10 @@
 //! constructed in this cut; adding such a leaf must extend the exhaustive
 //! traversals below rather than introduce a side table.
 
-use super::{RuntimeFunctionBody, RuntimeFunctionValue, RuntimeIterator, RuntimeSeq, RuntimeValue};
+use super::{
+    RuntimeFunctionBody, RuntimeFunctionValue, RuntimeIterator, RuntimeOpaqueValueClass,
+    RuntimeSeq, RuntimeValue,
+};
 use serde::{Deserialize, Serialize};
 
 #[allow(dead_code, reason = "the canonical snapshot consumer lands in G1.2-D")]
@@ -81,7 +84,12 @@ impl RuntimeValue {
                     ownership.join(field.value().ownership())
                 }),
             Self::NominalRecord(record) => values_ownership(record.fields()),
-            Self::Opaque(value) => value.payload().ownership(),
+            Self::Opaque(value) => match value.value_class() {
+                RuntimeOpaqueValueClass::Plain => value.payload().ownership(),
+                RuntimeOpaqueValueClass::AffineHandle(_) => {
+                    RuntimeValueOwnership::Affine.join(value.payload().ownership())
+                }
+            },
             Self::Reduction(value) => value
                 .commands()
                 .iter()

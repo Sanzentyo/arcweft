@@ -560,6 +560,8 @@ impl Engine {
         let RuntimePlanTypeProjection::Opaque {
             producer,
             admission: RuntimeOpaqueTypeAdmission::ExactIdentity,
+            value_class: crate::value::RuntimeOpaqueValueClass::Plain,
+            persistence: crate::value::RuntimeOpaquePersistence::ConstantAndSnapshot,
             arguments,
         } = declaration.projection()
         else {

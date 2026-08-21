@@ -4,9 +4,9 @@ use crate::plan::{
 };
 use crate::runtime_id::{RuntimeLocalDeclarationId, RuntimePlanTypeId};
 use crate::value::{
-    RuntimeEntityReference, RuntimeLocalBinding, RuntimeNominalRecordValue, RuntimeOpaqueValue,
-    RuntimeOpaqueValueError, RuntimeRecordFieldId, RuntimeSeq, RuntimeSignedIntWidth,
-    RuntimeUnsignedIntWidth, RuntimeValue,
+    RuntimeEntityReference, RuntimeLocalBinding, RuntimeNominalRecordValue,
+    RuntimeOpaquePersistence, RuntimeOpaqueValue, RuntimeOpaqueValueClass, RuntimeOpaqueValueError,
+    RuntimeRecordFieldId, RuntimeSeq, RuntimeSignedIntWidth, RuntimeUnsignedIntWidth, RuntimeValue,
 };
 use serde::{Deserialize, Deserializer, Serialize};
 use std::collections::BTreeSet;
@@ -158,19 +158,55 @@ pub struct RuntimeOpaqueTypeOwner {
     producer: RuntimeOpaqueTypeProducerId,
     semantic_identity: RuntimeSemanticTypeId,
     admission: RuntimeOpaqueTypeAdmission,
+    value_class: RuntimeOpaqueValueClass,
+    persistence: RuntimeOpaquePersistence,
 }
 
 impl RuntimeOpaqueTypeOwner {
+    #[must_use]
+    pub const fn with_admission(
+        producer: RuntimeOpaqueTypeProducerId,
+        semantic_identity: RuntimeSemanticTypeId,
+        admission: RuntimeOpaqueTypeAdmission,
+        value_class: RuntimeOpaqueValueClass,
+        persistence: RuntimeOpaquePersistence,
+    ) -> Self {
+        Self {
+            producer,
+            semantic_identity,
+            admission,
+            value_class,
+            persistence,
+        }
+    }
+
     #[must_use]
     pub const fn exact(
         producer: RuntimeOpaqueTypeProducerId,
         semantic_identity: RuntimeSemanticTypeId,
     ) -> Self {
-        Self {
+        Self::exact_with(
             producer,
             semantic_identity,
-            admission: RuntimeOpaqueTypeAdmission::ExactIdentity,
-        }
+            RuntimeOpaqueValueClass::Plain,
+            RuntimeOpaquePersistence::ConstantAndSnapshot,
+        )
+    }
+
+    #[must_use]
+    pub const fn exact_with(
+        producer: RuntimeOpaqueTypeProducerId,
+        semantic_identity: RuntimeSemanticTypeId,
+        value_class: RuntimeOpaqueValueClass,
+        persistence: RuntimeOpaquePersistence,
+    ) -> Self {
+        Self::with_admission(
+            producer,
+            semantic_identity,
+            RuntimeOpaqueTypeAdmission::ExactIdentity,
+            value_class,
+            persistence,
+        )
     }
 
     #[must_use]
@@ -178,11 +214,28 @@ impl RuntimeOpaqueTypeOwner {
         producer: RuntimeOpaqueTypeProducerId,
         semantic_identity: RuntimeSemanticTypeId,
     ) -> Self {
-        Self {
+        Self::producer_wide_with(
             producer,
             semantic_identity,
-            admission: RuntimeOpaqueTypeAdmission::ProducerWide,
-        }
+            RuntimeOpaqueValueClass::Plain,
+            RuntimeOpaquePersistence::ConstantAndSnapshot,
+        )
+    }
+
+    #[must_use]
+    pub const fn producer_wide_with(
+        producer: RuntimeOpaqueTypeProducerId,
+        semantic_identity: RuntimeSemanticTypeId,
+        value_class: RuntimeOpaqueValueClass,
+        persistence: RuntimeOpaquePersistence,
+    ) -> Self {
+        Self::with_admission(
+            producer,
+            semantic_identity,
+            RuntimeOpaqueTypeAdmission::ProducerWide,
+            value_class,
+            persistence,
+        )
     }
 
     #[must_use]
@@ -201,16 +254,30 @@ impl RuntimeOpaqueTypeOwner {
     }
 
     #[must_use]
+    pub const fn value_class(&self) -> RuntimeOpaqueValueClass {
+        self.value_class
+    }
+
+    #[must_use]
+    pub const fn persistence(&self) -> RuntimeOpaquePersistence {
+        self.persistence
+    }
+
+    #[must_use]
     pub fn accepts_owner(&self, actual: &Self) -> bool {
         self == actual
             || (self.admission == RuntimeOpaqueTypeAdmission::ProducerWide
                 && actual.admission == RuntimeOpaqueTypeAdmission::ExactIdentity
-                && self.producer == actual.producer)
+                && self.producer == actual.producer
+                && self.value_class == actual.value_class
+                && self.persistence == actual.persistence)
     }
 
     #[must_use]
     pub fn accepts_opaque_value(&self, actual: &RuntimeOpaqueValue) -> bool {
         &self.producer == actual.producer()
+            && self.value_class == actual.value_class()
+            && self.persistence == actual.persistence()
             && (self.admission == RuntimeOpaqueTypeAdmission::ProducerWide
                 || self.semantic_identity == actual.semantic_identity())
     }

@@ -12,7 +12,10 @@ use crate::pattern::{
     RuntimeOpaqueTypeProducerId, RuntimeSemanticTypeId,
 };
 use crate::plan::{FlowRuntimeId, RuntimeAgentOperationalType, RuntimeFlowTargetError};
-use crate::value::{RuntimeFunctionValue, RuntimeValue, runtime_sequence_values};
+use crate::value::{
+    RuntimeFunctionValue, RuntimeHandleKind, RuntimeOpaquePersistence, RuntimeOpaqueValueClass,
+    RuntimeValue, runtime_sequence_values,
+};
 
 fn test_flow_binding(label: &str, function: u32) -> AwbcFlowBinding {
     AwbcFlowBinding {
@@ -985,6 +988,8 @@ fn opaque_program() -> (AwbcProgram, AwbcTypeId, AwbcTypeId) {
         producer: AwbcStringId(1),
         semantic_identity: [41; 32],
         admission: RuntimeOpaqueTypeAdmission::ExactIdentity,
+        value_class: RuntimeOpaqueValueClass::Plain,
+        persistence: RuntimeOpaquePersistence::ConstantAndSnapshot,
         arguments: vec![],
     });
     let wide = AwbcTypeId(
@@ -994,6 +999,8 @@ fn opaque_program() -> (AwbcProgram, AwbcTypeId, AwbcTypeId) {
         producer: AwbcStringId(1),
         semantic_identity: [42; 32],
         admission: RuntimeOpaqueTypeAdmission::ProducerWide,
+        value_class: RuntimeOpaqueValueClass::Plain,
+        persistence: RuntimeOpaquePersistence::ConstantAndSnapshot,
         arguments: vec![],
     });
     (program, exact, wide)
@@ -1010,6 +1017,8 @@ fn opaque_codec_owner_compatibility_and_vm_materialization_share_core_authority(
         producer: AwbcStringId(2),
         semantic_identity: [41; 32],
         admission: RuntimeOpaqueTypeAdmission::ExactIdentity,
+        value_class: RuntimeOpaqueValueClass::Plain,
+        persistence: RuntimeOpaquePersistence::ConstantAndSnapshot,
         arguments: vec![],
     });
     let other_identity = AwbcTypeId(
@@ -1019,6 +1028,8 @@ fn opaque_codec_owner_compatibility_and_vm_materialization_share_core_authority(
         producer: AwbcStringId(1),
         semantic_identity: [44; 32],
         admission: RuntimeOpaqueTypeAdmission::ExactIdentity,
+        value_class: RuntimeOpaqueValueClass::Plain,
+        persistence: RuntimeOpaquePersistence::ConstantAndSnapshot,
         arguments: vec![],
     });
     let payload = AwbcConstantId(
@@ -1073,6 +1084,8 @@ fn reduction_unchanged_instruction_roundtrips_verifies_and_constructs_typed_valu
             producer: AwbcStringId(1),
             semantic_identity: [93; 32],
             admission: RuntimeOpaqueTypeAdmission::ExactIdentity,
+            value_class: RuntimeOpaqueValueClass::Plain,
+            persistence: RuntimeOpaquePersistence::ConstantAndSnapshot,
             arguments: vec![AwbcTypeId(0)],
         },
     ];
@@ -1150,7 +1163,7 @@ fn verifier_rejects_wide_or_cyclic_opaque_constants_and_invalid_producers() {
         .expect_err("wide opaque constant must reject");
     assert!(
         matches!(&error, AwbcVerifyError::InvalidInvariant { message, .. }
-            if message == "opaque constant requires an exact opaque type row"),
+            if message == "opaque constant requires an exact constant-admissible opaque type row"),
         "{error:?}"
     );
 
@@ -1175,6 +1188,8 @@ fn verifier_rejects_wide_or_cyclic_opaque_constants_and_invalid_producers() {
         producer: AwbcStringId(1),
         semantic_identity: [43; 32],
         admission: RuntimeOpaqueTypeAdmission::ExactIdentity,
+        value_class: RuntimeOpaqueValueClass::Plain,
+        persistence: RuntimeOpaquePersistence::ConstantAndSnapshot,
         arguments: vec![],
     });
     invalid.canonicalize_string_table();
@@ -1184,6 +1199,52 @@ fn verifier_rejects_wide_or_cyclic_opaque_constants_and_invalid_producers() {
     assert!(
         matches!(&error, AwbcVerifyError::InvalidInvariant { message, .. }
             if message.contains("identity cannot be empty")),
+        "{error:?}"
+    );
+}
+
+#[test]
+fn snapshot_only_affine_opaque_type_roundtrips_but_rejects_constant_materialization() {
+    let mut program = minimal_program();
+    program.strings.push("std.line.cue_handle".to_owned());
+    let handle_ty = AwbcTypeId(
+        u32::try_from(program.runtime_types.len()).expect("test type table fits AWBC index"),
+    );
+    program.runtime_types.push(AwbcRuntimeType::Opaque {
+        producer: AwbcStringId(1),
+        semantic_identity: [55; 32],
+        admission: RuntimeOpaqueTypeAdmission::ExactIdentity,
+        value_class: RuntimeOpaqueValueClass::AffineHandle(RuntimeHandleKind::Cue),
+        persistence: RuntimeOpaquePersistence::SnapshotOnly,
+        arguments: vec![],
+    });
+    program.constants.push(AwbcConstant::Unit);
+    program.constants.push(AwbcConstant::Opaque {
+        ty: handle_ty,
+        payload: AwbcConstantId(0),
+    });
+    program.canonicalize_string_table();
+
+    let encoded = program
+        .encode_canonical()
+        .expect("snapshot-only handle type encodes");
+    let decoded = AwbcProgram::decode_canonical(&encoded, AwbcDecodeBudget::default())
+        .expect("snapshot-only handle type decodes");
+    let owner = decoded
+        .opaque_owner(handle_ty)
+        .expect("opaque owner projects")
+        .expect("handle row is opaque");
+    assert_eq!(
+        owner.value_class(),
+        RuntimeOpaqueValueClass::AffineHandle(RuntimeHandleKind::Cue)
+    );
+    assert_eq!(owner.persistence(), RuntimeOpaquePersistence::SnapshotOnly);
+    let error = decoded
+        .verify(AwbcVerifyBudget::default(), AwbcVerifyContext::default())
+        .expect_err("snapshot-only opaque constant must reject");
+    assert!(
+        matches!(&error, AwbcVerifyError::InvalidInvariant { message, .. }
+            if message == "opaque constant requires an exact constant-admissible opaque type row"),
         "{error:?}"
     );
 }
@@ -1201,7 +1262,7 @@ fn verifier_rejects_non_opaque_and_missing_opaque_constant_references() {
         .expect_err("non-opaque type reference must reject");
     assert!(
         matches!(&error, AwbcVerifyError::InvalidInvariant { message, .. }
-            if message == "opaque constant requires an exact opaque type row"),
+            if message == "opaque constant requires an exact constant-admissible opaque type row"),
         "{error:?}"
     );
 
@@ -1269,6 +1330,28 @@ fn fiber_snapshot_serde_preserves_opaque_owner_and_rejects_tampering() {
         restored
             .validate_for_program(&program)
             .expect_err("foreign opaque owner must reject on restore validation"),
+        super::fiber::FiberStateError::InvalidRuntimeValue { .. }
+    ));
+
+    let mut class_tampered: FiberState =
+        serde_json::from_slice(&encoded).expect("fiber snapshot deserializes again");
+    let affine = RuntimeOpaqueTypeOwner::exact_with(
+        RuntimeOpaqueTypeProducerId::try_new("producer.dialogue").expect("valid producer"),
+        RuntimeSemanticTypeId::from_bytes([41; 32]),
+        RuntimeOpaqueValueClass::AffineHandle(RuntimeHandleKind::Cue),
+        RuntimeOpaquePersistence::SnapshotOnly,
+    )
+    .try_wrap(RuntimeValue::String("saved".to_owned()))
+    .expect("tampered exact owner wraps");
+    class_tampered
+        .active_frame_mut()
+        .expect("active frame")
+        .set_register(AwbcRegisterId(0), affine)
+        .expect("tamper opaque class");
+    assert!(matches!(
+        class_tampered
+            .validate_for_program(&program)
+            .expect_err("opaque class/persistence tamper must reject on restore validation"),
         super::fiber::FiberStateError::InvalidRuntimeValue { .. }
     ));
 }

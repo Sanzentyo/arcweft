@@ -384,10 +384,15 @@ fn verify_constants(program: &AwbcProgram) -> Result<(), AwbcVerifyError> {
                 })?;
                 if !owner.is_some_and(|owner| {
                     owner.admission() == RuntimeOpaqueTypeAdmission::ExactIdentity
+                        && owner.value_class() == crate::value::RuntimeOpaqueValueClass::Plain
+                        && owner.persistence()
+                            == crate::value::RuntimeOpaquePersistence::ConstantAndSnapshot
                 }) {
                     return Err(AwbcVerifyError::InvalidInvariant {
                         at: format!("constant {index}"),
-                        message: "opaque constant requires an exact opaque type row".to_owned(),
+                        message:
+                            "opaque constant requires an exact constant-admissible opaque type row"
+                                .to_owned(),
                     });
                 }
             }

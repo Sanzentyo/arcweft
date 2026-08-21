@@ -454,6 +454,8 @@ impl RuntimePlanBuilder {
                     RuntimePlanTypeProjection::Opaque {
                         producer,
                         admission: RuntimeOpaqueTypeAdmission::ExactIdentity,
+                        value_class: crate::value::RuntimeOpaqueValueClass::Plain,
+                        persistence: crate::value::RuntimeOpaquePersistence::ConstantAndSnapshot,
                         arguments,
                     } if RuntimeReductionProducer::accepts(producer)
                         && arguments.as_ref() == [state_ty] => {}
@@ -3319,6 +3321,9 @@ impl RuntimePlanBuilder {
         if value.contains_function() {
             return Err(RuntimePlanBuildError::FunctionValueInPlan { context });
         }
+        if value.contains_nonconstant_opaque() {
+            return Err(RuntimePlanBuildError::NonConstantOpaqueValueInPlan { context });
+        }
         if self.value_matches_type(ty, value, 0)? {
             Ok(())
         } else {
@@ -3398,12 +3403,8 @@ impl RuntimePlanBuilder {
             RuntimePlanTypeProjection::ProjectNominal {
                 nominal, layout, ..
             } => self.project_nominal_value_matches(ty, nominal, *layout, value, depth + 1)?,
-            RuntimePlanTypeProjection::Opaque {
-                producer,
-                admission,
-                arguments,
-            } => {
-                self.opaque_value_matches(ty, producer, *admission, arguments, value, depth + 1)?
+            projection @ RuntimePlanTypeProjection::Opaque { .. } => {
+                self.opaque_value_matches(ty, projection, value, depth + 1)?
             }
             RuntimePlanTypeProjection::Agent(expected) => match value {
                 RuntimeValue::Agent(value) => {
@@ -3505,12 +3506,20 @@ impl RuntimePlanBuilder {
     fn opaque_value_matches(
         &self,
         ty: RuntimePlanTypeId,
-        producer: &crate::pattern::RuntimeOpaqueTypeProducerId,
-        admission: RuntimeOpaqueTypeAdmission,
-        arguments: &[RuntimePlanTypeId],
+        projection: &RuntimePlanTypeProjection<RuntimePlanTypeId>,
         value: &RuntimeValue,
         depth: usize,
     ) -> Result<bool, RuntimePlanBuildError> {
+        let RuntimePlanTypeProjection::Opaque {
+            producer,
+            admission,
+            value_class,
+            persistence,
+            arguments,
+        } = projection
+        else {
+            unreachable!("opaque value matching receives one opaque projection")
+        };
         let semantic_identity = self
             .types
             .get(ty)
@@ -3526,18 +3535,22 @@ impl RuntimePlanBuilder {
             };
         }
         match value {
-            RuntimeValue::Reduction(value) => Ok(admission
+            RuntimeValue::Reduction(value) => Ok(*admission
                 == RuntimeOpaqueTypeAdmission::ExactIdentity
                 && RuntimeReductionProducer::accepts(producer)
                 && value.owner().producer() == producer
                 && value.owner().admission() == RuntimeOpaqueTypeAdmission::ExactIdentity
                 && value.owner().semantic_identity() == semantic_identity
-                && match arguments {
+                && value.owner().value_class() == *value_class
+                && value.owner().persistence() == *persistence
+                && match arguments.as_ref() {
                     [state] => self.value_matches_type(*state, value.state(), depth)?,
                     _ => false,
                 }),
             RuntimeValue::Opaque(value) => Ok(producer == value.producer()
-                && match admission {
+                && *value_class == value.value_class()
+                && *persistence == value.persistence()
+                && match *admission {
                     RuntimeOpaqueTypeAdmission::ExactIdentity => {
                         semantic_identity == value.semantic_identity()
                     }

@@ -493,9 +493,22 @@ impl CanonicalRuntimeValueBytes {
                 Ok(())
             }
             RuntimeValue::Opaque(value) => {
+                if value.persistence() == crate::value::RuntimeOpaquePersistence::SnapshotOnly
+                    || matches!(
+                        value.value_class(),
+                        crate::value::RuntimeOpaqueValueClass::AffineHandle(_)
+                    )
+                {
+                    return Err(RuntimeSchemaError::Encoding {
+                        message: "opaque value class/persistence is not constant-admissible"
+                            .to_owned(),
+                    });
+                }
                 self.u8(16)?;
                 self.string(value.producer().as_str())?;
                 self.extend(value.semantic_identity().as_bytes())?;
+                self.u8(value.value_class().canonical_tag())?;
+                self.u8(value.persistence().canonical_tag())?;
                 self.value(value.payload())
             }
             RuntimeValue::Reduction(value) => {

@@ -647,6 +647,8 @@ pub enum AwbcRuntimeType {
         producer: AwbcStringId,
         semantic_identity: [u8; 32],
         admission: RuntimeOpaqueTypeAdmission,
+        value_class: crate::value::RuntimeOpaqueValueClass,
+        persistence: crate::value::RuntimeOpaquePersistence,
         /// Generic arguments in the exact checked type graph.
         arguments: Vec<AwbcTypeId>,
     },

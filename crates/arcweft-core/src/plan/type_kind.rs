@@ -2,7 +2,10 @@
 
 use crate::entry::{RuntimeNominalTypeId, TypeLayoutHash};
 use crate::pattern::{RuntimeOpaqueTypeAdmission, RuntimeOpaqueTypeProducerId};
-use crate::value::{RuntimeSignedIntWidth, RuntimeUnsignedIntWidth};
+use crate::value::{
+    RuntimeOpaquePersistence, RuntimeOpaqueValueClass, RuntimeSignedIntWidth,
+    RuntimeUnsignedIntWidth,
+};
 use serde::{Deserialize, Serialize};
 
 /// Closed top-level runtime families owned by the Agent Prelude.
@@ -167,6 +170,8 @@ pub enum RuntimePlanTypeProjection<R> {
     Opaque {
         producer: RuntimeOpaqueTypeProducerId,
         admission: RuntimeOpaqueTypeAdmission,
+        value_class: RuntimeOpaqueValueClass,
+        persistence: RuntimeOpaquePersistence,
         arguments: Box<[R]>,
     },
     Agent(RuntimeAgentTypeProjection<R>),
@@ -323,10 +328,14 @@ impl<R> RuntimePlanTypeProjection<R> {
             Self::Opaque {
                 producer,
                 admission,
+                value_class,
+                persistence,
                 arguments,
             } => RuntimePlanTypeProjection::Opaque {
                 producer,
                 admission,
+                value_class,
+                persistence,
                 arguments: try_map_boxed(arguments, &mut map)?,
             },
             Self::Agent(agent) => RuntimePlanTypeProjection::Agent(agent.try_map(map)?),

@@ -50,7 +50,10 @@ pub use nominal_record::{
     RuntimeNominalRecordLayoutField, RuntimeNominalRecordValue,
 };
 pub use nominal_record_expr::{RuntimeNominalRecordExpr, RuntimeNominalRecordFieldExpr};
-pub use opaque::{RuntimeOpaqueValue, RuntimeOpaqueValueError};
+pub use opaque::{
+    RuntimeHandleKind, RuntimeOpaquePersistence, RuntimeOpaqueValue, RuntimeOpaqueValueClass,
+    RuntimeOpaqueValueError,
+};
 pub use option_value::{
     evaluate_core_option_is_some_intrinsic, evaluate_core_option_unwrap_intrinsic,
 };
@@ -474,6 +477,72 @@ pub enum RuntimeValue {
 }
 
 impl RuntimeValue {
+    /// Returns whether this value graph contains a snapshot-only opaque leaf.
+    #[must_use]
+    pub fn contains_nonconstant_opaque(&self) -> bool {
+        match self {
+            Self::Opaque(value) => {
+                value.persistence() == RuntimeOpaquePersistence::SnapshotOnly
+                    || matches!(
+                        value.value_class(),
+                        RuntimeOpaqueValueClass::AffineHandle(_)
+                    )
+                    || value.payload().contains_nonconstant_opaque()
+            }
+            Self::Tuple(values) => values.iter().any(Self::contains_nonconstant_opaque),
+            Self::Record(fields) => fields
+                .iter()
+                .any(|field| field.value().contains_nonconstant_opaque()),
+            Self::Seq(sequence) => sequence
+                .clone()
+                .into_values()
+                .iter()
+                .any(Self::contains_nonconstant_opaque),
+            Self::NominalRecord(record) => record
+                .fields()
+                .iter()
+                .any(Self::contains_nonconstant_opaque),
+            Self::Reduction(value) => {
+                value.state().contains_nonconstant_opaque()
+                    || value
+                        .commands()
+                        .iter()
+                        .any(|command| command.payload().0.contains_nonconstant_opaque())
+            }
+            Self::Agent(value) => value
+                .nested_runtime_values_with_depth()
+                .into_iter()
+                .any(|(_, value)| value.contains_nonconstant_opaque()),
+            Self::Iterator(RuntimeIterator::Values { items, .. }) => {
+                items.iter().any(Self::contains_nonconstant_opaque)
+            }
+            Self::Iterator(RuntimeIterator::Witness { state, .. }) => {
+                state.contains_nonconstant_opaque()
+            }
+            Self::Variant { payload, .. } => payload
+                .as_deref()
+                .is_some_and(Self::contains_nonconstant_opaque),
+            Self::Unit
+            | Self::Bool(_)
+            | Self::Int(_)
+            | Self::UInt(_)
+            | Self::F32(_)
+            | Self::F64(_)
+            | Self::MatrixF32(_)
+            | Self::MatrixF64(_)
+            | Self::TensorF32(_)
+            | Self::TensorF64(_)
+            | Self::String(_)
+            | Self::Char(_)
+            | Self::Duration(_)
+            | Self::Progress(_)
+            | Self::Range(_)
+            | Self::Iterator(RuntimeIterator::Range(_))
+            | Self::EntityRef(_)
+            | Self::Function(_) => false,
+        }
+    }
+
     /// Returns whether this value graph contains executable function state.
     ///
     /// Runtime-plan constants and pattern literals use this exhaustive owner

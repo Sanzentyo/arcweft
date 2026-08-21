@@ -76,8 +76,7 @@ pub use crate::entry::{
 };
 use crate::line_task::{LineOutRequest, LineTaskGroup};
 use crate::pattern::{
-    RuntimeCheckedType, RuntimeCheckedVariantCase, RuntimeOpaqueTypeAdmission,
-    RuntimeOpaqueTypeOwner, RuntimePattern,
+    RuntimeCheckedType, RuntimeCheckedVariantCase, RuntimeOpaqueTypeOwner, RuntimePattern,
 };
 use crate::runtime_id::{
     RuntimeDialogueValueSlotId, RuntimeIdError, RuntimeIdFamily, RuntimeIdPath,
@@ -281,26 +280,21 @@ impl RuntimePlan {
             RuntimePlanTypeProjection::Opaque {
                 producer,
                 admission,
+                value_class,
+                persistence,
                 ..
             } => {
                 if self.variant_domains.get(ty).is_some() {
                     self.checked_variant(ty, declaration.semantic_identity(), memo, visiting)?
                 } else {
                     Some(RuntimeCheckedType::Opaque {
-                        owner: match admission {
-                            RuntimeOpaqueTypeAdmission::ExactIdentity => {
-                                RuntimeOpaqueTypeOwner::exact(
-                                    producer.clone(),
-                                    declaration.semantic_identity(),
-                                )
-                            }
-                            RuntimeOpaqueTypeAdmission::ProducerWide => {
-                                RuntimeOpaqueTypeOwner::producer_wide(
-                                    producer.clone(),
-                                    declaration.semantic_identity(),
-                                )
-                            }
-                        },
+                        owner: RuntimeOpaqueTypeOwner::with_admission(
+                            producer.clone(),
+                            declaration.semantic_identity(),
+                            *admission,
+                            *value_class,
+                            *persistence,
+                        ),
                     })
                 }
             }

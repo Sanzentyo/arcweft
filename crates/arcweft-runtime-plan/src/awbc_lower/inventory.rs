@@ -277,6 +277,8 @@ impl AwbcInventory {
                     producer,
                     semantic_identity: *value.semantic_identity().as_bytes(),
                     admission: arcweft_core::pattern::RuntimeOpaqueTypeAdmission::ExactIdentity,
+                    value_class: value.value_class(),
+                    persistence: value.persistence(),
                     arguments: Vec::new(),
                 })
             }
@@ -464,6 +466,16 @@ impl AwbcInventory {
                 )
             }
             RuntimeValue::Opaque(opaque) => {
+                assert_eq!(
+                    opaque.persistence(),
+                    arcweft_core::value::RuntimeOpaquePersistence::ConstantAndSnapshot,
+                    "snapshot-only opaque handles cannot enter the AWBC constant pool"
+                );
+                assert_eq!(
+                    opaque.value_class(),
+                    arcweft_core::value::RuntimeOpaqueValueClass::Plain,
+                    "affine opaque handles cannot enter the AWBC constant pool"
+                );
                 let ty = self.intern_runtime_value_type(value);
                 let payload = self.constant_runtime_value(opaque.payload());
                 AwbcConstant::Opaque { ty, payload }

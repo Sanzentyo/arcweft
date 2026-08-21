@@ -8,7 +8,10 @@ use arcweft_core::plan::{
     FlowRuntimeId, RuntimeAgentOperationalType, RuntimeLineId, RuntimeOperationalType,
     RuntimePlanTypeProjection,
 };
-use arcweft_core::value::{RuntimeIntrinsic, RuntimeValue};
+use arcweft_core::value::{
+    RuntimeHandleKind, RuntimeIntrinsic, RuntimeOpaquePersistence, RuntimeOpaqueValueClass,
+    RuntimeValue,
+};
 use arcweft_lang_hir::database::HirDatabase;
 use arcweft_lang_hir::dialogue_application::HirPostfixBracketCandidates;
 use arcweft_lang_hir::expr::{HirExprKind, HirSelectedMember};
@@ -1595,6 +1598,8 @@ fn opaque_and_nominal_checked_results_remain_atomic_checked_types() {
         RuntimeTypeShape::Opaque {
             producer: producer.clone(),
             admission: RuntimeOpaqueTypeAdmission::ExactIdentity,
+            value_class: RuntimeOpaqueValueClass::Plain,
+            persistence: RuntimeOpaquePersistence::ConstantAndSnapshot,
             arguments: Box::new([]),
         },
     );
@@ -1605,9 +1610,53 @@ fn opaque_and_nominal_checked_results_remain_atomic_checked_types() {
         Ok(RuntimePlanTypeProjection::Opaque {
             producer,
             admission: RuntimeOpaqueTypeAdmission::ExactIdentity,
+            value_class: RuntimeOpaqueValueClass::Plain,
+            persistence: RuntimeOpaquePersistence::ConstantAndSnapshot,
             arguments: Box::new([]),
         })
     );
+}
+
+#[test]
+fn affine_snapshot_only_opaque_shape_preserves_owner_through_plan_projection() {
+    let identity = RuntimeSemanticTypeId::from_bytes([0xa1; 32]);
+    let producer = RuntimeHandleKind::Cue
+        .try_producer()
+        .expect("standard cue producer");
+    let normalized = super::RuntimeNormalizedType::new(
+        identity,
+        RuntimeTypeShape::Opaque {
+            producer: producer.clone(),
+            admission: RuntimeOpaqueTypeAdmission::ExactIdentity,
+            value_class: RuntimeOpaqueValueClass::AffineHandle(RuntimeHandleKind::Cue),
+            persistence: RuntimeOpaquePersistence::SnapshotOnly,
+            arguments: Box::new([]),
+        },
+    );
+    assert_eq!(
+        normalized
+            .runtime_plan_type_seed()
+            .map(|seed| seed.projection().clone()),
+        Ok(RuntimePlanTypeProjection::Opaque {
+            producer,
+            admission: RuntimeOpaqueTypeAdmission::ExactIdentity,
+            value_class: RuntimeOpaqueValueClass::AffineHandle(RuntimeHandleKind::Cue),
+            persistence: RuntimeOpaquePersistence::SnapshotOnly,
+            arguments: Box::new([]),
+        })
+    );
+    let RuntimeCheckedType::Opaque { owner } = normalized
+        .checked_type()
+        .expect("snapshot-only opaque owner projects")
+    else {
+        panic!("snapshot-only handle remains opaque")
+    };
+    assert_eq!(owner.semantic_identity(), identity);
+    assert_eq!(
+        owner.value_class(),
+        RuntimeOpaqueValueClass::AffineHandle(RuntimeHandleKind::Cue)
+    );
+    assert_eq!(owner.persistence(), RuntimeOpaquePersistence::SnapshotOnly);
 }
 
 #[test]
@@ -1831,6 +1880,8 @@ fn opaque_composite_projection_preserves_complete_owner_and_first_error_path() {
         RuntimeTypeShape::Opaque {
             producer: producer.clone(),
             admission: RuntimeOpaqueTypeAdmission::ExactIdentity,
+            value_class: RuntimeOpaqueValueClass::Plain,
+            persistence: RuntimeOpaquePersistence::ConstantAndSnapshot,
             arguments: Box::new([]),
         },
     );

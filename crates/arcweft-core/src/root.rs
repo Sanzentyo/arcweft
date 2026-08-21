@@ -998,9 +998,7 @@ fn validate_replay_safe_value(
             }
             Ok(())
         }
-        RuntimeValue::Opaque(value) => {
-            validate_replay_safe_value(value.payload(), limits, depth + 1, nodes)
-        }
+        RuntimeValue::Opaque(value) => validate_replay_safe_opaque(value, limits, depth, nodes),
         RuntimeValue::Reduction(value) => {
             validate_replay_safe_reduction(value, limits, depth, nodes)
         }
@@ -1030,6 +1028,23 @@ fn validate_replay_safe_value(
         | RuntimeValue::Progress(_)
         | RuntimeValue::EntityRef(_) => Ok(()),
     }
+}
+
+fn validate_replay_safe_opaque(
+    value: &crate::value::RuntimeOpaqueValue,
+    limits: RuntimeSchemaLimits,
+    depth: usize,
+    nodes: &mut usize,
+) -> Result<(), String> {
+    if value.persistence() == crate::value::RuntimeOpaquePersistence::SnapshotOnly
+        || matches!(
+            value.value_class(),
+            crate::value::RuntimeOpaqueValueClass::AffineHandle(_)
+        )
+    {
+        return Err("non-constant opaque value is not replay-safe".to_owned());
+    }
+    validate_replay_safe_value(value.payload(), limits, depth + 1, nodes)
 }
 
 fn validate_replay_safe_reduction(

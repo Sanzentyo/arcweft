@@ -241,6 +241,8 @@ pub enum RuntimePlanBuildError {
     },
     #[error("runtime-plan {context} contains a live function value")]
     FunctionValueInPlan { context: &'static str },
+    #[error("runtime-plan {context} contains a non-constant opaque value")]
+    NonConstantOpaqueValueInPlan { context: &'static str },
     #[error("runtime-plan {context} contains a detached expression carrier")]
     RawExpressionCarrier { context: &'static str },
     #[error("runtime-plan contains non-canonical flow operation {operation}")]
