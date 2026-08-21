@@ -1,0 +1,44 @@
+# Producer / consumer matrix
+
+| ID | Producer | Sole owner | Consumer | Carrier | Join / validation | Failure |
+|---|---|---|---|---|---|---|
+| PC001 | HIR Match structure | arcweft-lang-hir | final sema analyzer | scope/pattern/guard/value/locals | generation-bound direct lookup | missing/stale HIR |
+| PC002 | CheckedMatch | arcweft-lang-sema | arcweft-compiler | CheckedMatchRef | ExprId + semantic digest | missing/duplicate/stale fact |
+| PC003 | Checked Match local type | arcweft-lang-sema | ownership/runtime projection | TypeKind | same final analysis | type mismatch |
+| PC004 | Ownership disposition | RegisteredSemanticWorld | checked View admission | CheckedOwnershipDisposition | total classifier | rejected reason |
+| PC005 | Resource registry | arcweft-resource-model | sema/compiler/View/bundle | borrow + digest | verify_integrity + equality | integrity/digest mismatch |
+| PC006 | View Match site | arcweft-view | compiler/bundle/driver | ViewMatchSiteId | dense site table | missing/duplicate site |
+| PC007 | View arm coordinate | arcweft-view | bundle/driver | arm ordinal + body range | dense source order | range/order mismatch |
+| PC008 | View local coordinate | arcweft-view | driver local store | ViewLocalRef | output join | unknown/duplicate local |
+| PC009 | Runtime-plan type projection | arcweft-runtime-plan | AwbcInventory | RuntimeSemanticTypeId -> RuntimePlanTypeId | single finalized type table | missing/unsupported projection |
+| PC010 | AWBC runtime type row | AwbcInventory | core verifier/VM/bundle | AwbcTypeId | canonical interning | index/type graph error |
+| PC011 | Selector function | runtime-plan | core verifier/driver | AwbcFunctionId | verified bundle binding | signature/code mismatch |
+| PC012 | Selector nominal type | runtime-plan/core | VM/driver | Variant type + digest | canonical type digest | owner/case/payload mismatch |
+| PC013 | Selector tuple | AWBC VM | driver decoder | RuntimeValue::Tuple | case payload type | missing/extra/wrong type |
+| PC014 | Selector owning result | AWBC VM/fiber | caller/driver | RuntimeValue::Variant | Return clone + frame pop | return/type error |
+| PC015 | Decoded selection | runtime-driver | LocalInstallTransaction | private scratch | verified decode | never public/persisted |
+| PC016 | Local install transaction | runtime-driver | View local store | staged values | single commit | rollback/commit conflict |
+| PC017 | Selected View body | arcweft-view | runtime-driver evaluator | ViewInstructionRange | decoded arm join | invalid body range |
+| PC018 | Need semantic type | arcweft-lang-sema/runtime-plan | AWBC lowering | TypeKind::Need / RuntimeTypeShape::Need | single projection | unsupported payload |
+| PC019 | Need AWBC type | core schema | verifier/VM/bundle | NeedHandle{payload} | tag19 strict payload | payloadless/wrong payload |
+| PC020 | NeedId | arcweft-core::task | handle/journal | 32 bytes | canonical transcript | recompute mismatch |
+| PC021 | Canonical argument digest | arcweft-core::value | NeedId/handle verification | RuntimeValueDigest | source-ordered canonical arguments | noncanonical/ownership/type failure |
+| PC022 | Producer function | runtime-plan/core | bundle/VM | flagged Synthetic function | verify_need_producer | flags/body/return mismatch |
+| PC023 | MakeNeedHandle instruction | core schema/VM | producer result | opcode 0x1e | verified plan/site/args | illegal context/args |
+| PC024 | Task plan | AwbcInventory/core schema | producer verifier/start builder | AwbcTaskPlanId | payload/signature/policy | plan mismatch |
+| PC025 | Producer contract digest | core verifier | handle/bundle/driver | 32-byte digest | canonical recomputation | tamper/duplicate binding |
+| PC026 | Payload type digest | core type digest | handle/bundle/driver | 32-byte digest | canonical graph digest | wrong payload/type graph |
+| PC027 | RuntimeNeedHandle | core VM | runtime-driver extraction/snapshot | dedicated RuntimeValue | verified constructor only | String/malformed carrier |
+| PC028 | Producer binding section | arcweft-bundle | runtime-driver | ViewNeedProducerBindingV1 | unique contract digest | missing/duplicate/stale |
+| PC029 | VerifiedNeedHandle | runtime-driver | journal/start builder | private active-generation owner | extract_need_handle | wrong generation/contract |
+| PC030 | Producer journal row | runtime-driver existing journal | observers/replay | (GenerationId,NeedId) | transactional lookup/create | illegal transition |
+| PC031 | Start intent | runtime-driver | task scheduler | verified plan + args + task key | JoinSameKey | duplicate/unverified start |
+| PC032 | Progress publication | producer journal | View observer | Progress | ordered cursor | regression/duplicate |
+| PC033 | Ready publication | producer journal | View Match selector/evaluator | T ordinary RuntimeValue | Need payload type check | wrong nested type |
+| PC034 | Cancellation | producer owner | journal/observers | Cancelled | producer-owned transition | observer-owned cancel forbidden |
+| PC035 | Need snapshot DTO | core awbc_save | restore/replay | typed version-1 DTO | recursive validation | malformed/over-limit |
+| PC036 | Selector snapshot DTO | core awbc_save | restore/driver | existing Variant/Tuple DTO | active type binding | stale/malformed result |
+| PC037 | Reactive bundle section | bundle | ProgramGeneration | schema1 bytes + digest | content-root validation | tamper/version mismatch |
+| PC038 | ProgramGeneration | runtime-driver | all runtime consumers | GenerationId + verified products | active swap authority | stale generation |
+| PC039 | Replacement transaction | runtime-driver | journal/observers | contract/type/arg/resource equality | quiescent atomic swap | retire or rollback |
+| PC040 | Manifest/validation | design package tools | review/CI | SHA256 manifest + matrices | exact file set/hash | manifest mismatch |

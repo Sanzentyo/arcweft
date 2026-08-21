@@ -1,0 +1,33 @@
+id,old,location,action,replacement,cut,proof
+DEL001,prior public ViewMatchSelection with core values,parent design/public View schema,delete,private DecodedViewMatchSelection in runtime-driver,cut 5,API/AST/generated absence
+DEL002,ViewMatchArmBinding.output_register,parent design/View schema,delete,binding output ordinal + ViewLocalRef,cut 2/5,no AwbcRegisterId in arcweft-view
+DEL003,RuntimeTypeRef placeholder,parent design,delete,TypeKind then RuntimeNormalizedType/AwbcTypeId projection,cut 1/2,schema absence
+DEL004,RuntimeBindingOwnership placeholder,parent design,delete,CheckedOwnershipDisposition,cut 1,schema absence
+DEL005,arm_expression coordinate,parent design,delete,CheckedMatchArmId + current HIR fields,cut 1,schema absence
+DEL006,Structural resolution for Match,sema model/analyzer,replace,Match(Box<CheckedMatch>),cut 1,complete Match fact search
+DEL007,duplicate Match arms in CheckedViewCatalog,checked View design/product,delete,CheckedMatchRef,cut 2/5,catalog/schema absence
+DEL008,selector register export,product/runtime design,delete,single owning Variant return,cut 3/5,no bundle/View register row
+DEL009,selector retained callee frame,runtime alternative,forbid,normal Return clone + frame pop,cut 3,frame destruction test
+DEL010,selector Choice representation,unresolved alternative,forbid,synthetic nominal Variant,design/cut3,type-shape test
+DEL011,selector multi-result ABI,unresolved alternative,forbid,one signature result,design/cut3,signature test
+DEL012,selector AWBC Match guard path,generated code alternative,forbid,explicit Test/Bind/guard/Branch,cut 3,structural code absence
+DEL013,payloadless AwbcRuntimeType::NeedHandle,core schema,replace,NeedHandle{payload},cut 3,AST/schema/codec absence
+DEL014,payloadless tag-19 reader/writer,core codec,delete,tag19 + payload type ID,cut 3,old-byte negative test
+DEL015,NeedHandle accepted as RuntimeValue::String,fiber type match,delete,RuntimeValue::NeedHandle only,cut 3/5,source/behavior absence
+DEL016,await_target String -> NeedId,VM,delete,extract_need_handle dedicated variant,cut 5,source search/negative test
+DEL017,AwbcTaskPlan.need_id,core schema/codec/bundle,delete,derived fixed-byte NeedId,cut 3,schema/generated absence
+DEL018,NamedTaskSpec.need_id,runtime-plan inventory,delete,producer site + verified plan relation,cut 3,source absence
+DEL019,NeedId public String tuple field,core task,replace,private [u8;32] + inherent accessors,cut 3,API/serde absence
+DEL020,untyped NeedHandle reverse projection,core type projection,replace,RuntimeCheckedType typed Need owner,cut 3,projection tests
+DEL021,old bundle task/Need string rows,bundle runtime codec,delete,ViewNeedProducerBindingV1,cut 4/5,codec/schema absence
+DEL022,second endpoint table/resolver,possible implementation shortcut,forbid,static bundle binding + existing journal,all cuts,structural/type absence
+DEL023,source-name producer lookup,possible implementation shortcut,forbid,contract digest lookup,all cuts,source/string lookup absence
+DEL024,generic serde live Need construction,possible implementation shortcut,forbid,verified VM constructor + typed snapshot DTO,cut 3,constructor/serde tests
+DEL025,old View Await program rows,arcweft-view/bundle,delete,reactive Match/Need section,cut 5,schema/generated absence
+DEL026,old View Await evaluator branches,runtime-driver,delete,new selector/journal consumers,cut 5,source absence
+DEL027,old View Await save/replay rows,save/runtime-driver,delete,typed Need journal/snapshot rows,cut 5,save schema absence
+DEL028,compatibility reader/alias,all layers,forbid,strict v1 only,cut 5,structural absence
+DEL029,empty checked View catalog fallback,compiler,forbid,complete catalog or typed fail-closed error,cut 2-4,negative publication test
+DEL030,core dependency in arcweft-view,Cargo graph,forbid,bundle/driver join,all cuts,cargo graph test
+DEL031,copied View type map,View/bundle alternative,forbid,AWBC type IDs only in bundle; TypeKind only in sema,all cuts,schema absence
+DEL032,GenerationId in core RuntimeValue,dependency-breaking alternative,forbid,driver VerifiedNeedHandle binds active generation,all cuts,type/dependency absence

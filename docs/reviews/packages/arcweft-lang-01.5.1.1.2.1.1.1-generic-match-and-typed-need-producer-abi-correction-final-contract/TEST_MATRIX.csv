@@ -1,0 +1,149 @@
+id,area,test_class,level,scenario,expected,evidence,platforms
+T001,selector,positive,unit,zero bindings arm returns nominal case with empty tuple,case ordinal 0; payload Tuple([]); decode/install succeeds,"D01,D02,D03",all
+T002,selector,positive,unit,one binding arm,one tuple item in HIR local order,"D01,D03",all
+T003,selector,positive,unit,multiple homogeneous bindings,all values retained after frame pop,"D01,D03",all
+T004,selector,positive,unit,heterogeneous arms with different tuple lengths/types,one nominal Variant type admits all exact cases,"D01,D02",all
+T005,selector,positive,unit,"nested Result<Option<T>,E> binding",ordinary nested variants decode recursively,"D01,D06",all
+T006,selector,positive,integration,source arm ordinal equals result case ordinal,dense exact equality,"D02,D06",all
+T007,selector,positive,integration,binding output order equals HIR locals order,tuple/output/local order exact,"D02,D06,D12",all
+T008,selector,positive,integration,callee frame destroyed before driver decode,owning Variant/Tuple survives; no register access,"D01,D03",all
+T009,guard,positive,unit,first pattern matches and guard true,first arm selected; guard called once,D17,all
+T010,guard,positive,unit,first pattern matches guard false; later arm matches,later arm selected; first scope exited,D17,all
+T011,guard,positive,unit,pattern failure skips guard,guard call count zero for failed pattern,D17,all
+T012,guard,positive,integration,all prior guards false then final unguarded arm,final arm selected in source order,D17,all
+T013,selector,negative,unit,no pattern/guard selects,typed no-match Trap; no install,"D06,D17",all
+T014,selector,negative,unit,result nominal owner wrong,decode rejects before staging,D06,all
+T015,selector,negative,unit,case ordinal out of range,decode rejects malformed case,D06,all
+T016,selector,negative,unit,case ordinal and bundle arm disagree,decode rejects exact-arm mismatch,D06,all
+T017,selector,negative,unit,variant payload missing,decode rejects absent tuple,D06,all
+T018,selector,negative,unit,variant payload not Tuple,decode rejects wrong payload kind,D06,all
+T019,selector,rollback,integration,second binding has wrong nested type,no local changed after first staged value,D06,all
+T020,selector,rollback,integration,local store revision conflict at commit,all staged values discarded,D06,all
+T021,checked-match,positive,unit,one HIR Match produces one Match resolution,complete exact fact published,"D12,D14",all
+T022,checked-match,negative,unit,live HIR Match remains Structural,final semantic publication fails,D14,all
+T023,checked-match,negative,unit,missing CheckedMatch fact,completeness failure,D14,all
+T024,checked-match,negative,unit,duplicate CheckedMatch for owner,uniqueness failure,D14,all
+T025,checked-match,negative,unit,stale HIR snapshot owner,generation mismatch,"D12,D14",all
+T026,checked-match,negative,unit,arm count differs from HIR,constructibility failure,D12,all
+T027,checked-match,negative,unit,arm order differs,source-order failure,D12,all
+T028,checked-match,negative,unit,scope differs,exact-coordinate failure,D12,all
+T029,checked-match,negative,unit,pattern differs,exact-coordinate failure,D12,all
+T030,checked-match,negative,unit,guard presence/ExprId differs,exact-coordinate failure,"D12,D17",all
+T031,checked-match,negative,unit,value ExprId differs,exact-coordinate failure,D12,all
+T032,checked-match,negative,unit,locals order/identity differs,exact-coordinate failure,D12,all
+T033,ownership,positive,unit,Copy primitive local,Copy admitted to View selector,D13,all
+T034,ownership,positive,unit,snapshot-clone Result/Option/tuple local,recursive SnapshotClone admitted,D13,all
+T035,ownership,negative,unit,borrowed local,generic Match records Borrowed; View publication rejects,D13,all
+T036,ownership,negative,unit,unique local,View publication rejects Unique,D13,all
+T037,ownership,negative,unit,affine handle local,View publication rejects Affine,D13,all
+T038,ownership,negative,unit,must-drop local,View publication rejects MustDrop,D13,all
+T039,ownership,negative,unit,frame-local function/closure local,View publication rejects FrameLocal,D13,all
+T040,ownership,negative,unit,non-snapshot opaque local,View publication rejects NonSnapshot,D13,all
+T041,selector,differential,integration,explicit branch selector vs ordinary Match evaluator across generated values,selected arm/bindings identical,"D01,D17",all
+T042,selector,differential,integration,VM vs AOT selector execution,canonical result values/digests equal,"D01,D03",all
+T043,selector,structural,schema,selector result encoded as Choice,verification rejects non-Variant result,D02,all
+T044,selector,structural,schema,selector signature has zero result,verification rejects,D01,all
+T045,selector,structural,schema,selector attempts multiple result registers,schema/verification cannot construct,D01,all
+T046,selector,negative,unit,case count differs from arms,verification rejects,D06,all
+T047,selector,negative,unit,case payload type not tuple,verification rejects,D06,all
+T048,selector,negative,unit,tuple item type differs from output row,verification rejects,D06,all
+T049,guard,structural,schema,generated selector contains AwbcTerminator::Match,structural verifier rejects,D17,all
+T050,guard,structural,schema,generated selector references AwbcMatchArm.guard,structural verifier rejects,D17,all
+T051,selector,negative,unit,missing binding value,MissingBinding error; no staging,D06,all
+T052,selector,negative,unit,extra binding value,ExtraBinding error; no staging,D06,all
+T053,selector,negative,unit,bundle output disposition not SnapshotClone,section validation rejects,"D06,D13",all
+T054,selector,negative,unit,duplicate ViewLocalRef targets,section/decode rejects before staging,D06,all
+T055,selector,tamper,integration,selector type digest bit flipped,bundle/product validation rejects,D06,all
+T056,selector,tamper,integration,checked Match digest bit flipped,same-analysis join rejects,"D06,D14",all
+T057,selector,rollback,integration,selected body range invalid after decode,product validation prevents runtime publication,D06,all
+T058,selector,rollback,integration,decode error while observer update staged,observer/local publication both unchanged,D06,all
+T059,need,positive,unit,producer returns NeedHandle<T>,dedicated RuntimeValue with exact payload digest,"D07,D08",all
+T060,need,positive,integration,two observers use same producer contract and canonical arguments,same NeedId; one JoinSameKey start,D08,all
+T061,need,positive,integration,different canonical producer arguments,different NeedId,D08,all
+T062,need,positive,integration,same logical producer across compatible replacement,NeedId stable; GenerationId coordinate changes,"D08,D09",all
+T063,need,positive,unit,"fallible producer payload Result<T,E>","NeedHandle<Result<T,E>> and Ready(Result) validate",D07,all
+T064,need,positive,unit,optional producer payload Option<T>,NeedHandle<Option<T>> validates ordinary nested value,D07,all
+T065,need,negative,unit,producer result is String,verify/extract rejects; String cannot satisfy NeedHandle,"D07,D10",all
+T066,need,negative,unit,producer result is TaskHandle String,Need extraction rejects distinct carrier,D07,all
+T067,need,negative,unit,NeedHandle payload type differs from task payload,producer verifier rejects,D08,all
+T068,need,negative,unit,MakeNeedHandle arg count differs from plan signature,producer verifier rejects,D08,all
+T069,need,negative,unit,MakeNeedHandle arg type/order differs,producer verifier rejects,D08,all
+T070,need,negative,unit,producer function lacks NEED_PRODUCER flag,verifier rejects,D08,all
+T071,need,negative,unit,producer may suspend,verifier rejects,D08,all
+T072,need,negative,unit,producer contains StartTask,verifier rejects eager start,D08,all
+T073,need,negative,unit,producer has two reachable MakeNeedHandle sites,verifier rejects non-unique relationship,D08,all
+T074,need,negative,unit,View producer task policy AlwaysStart,bundle admission rejects; JoinSameKey required,D08,all
+T075,need,negative,unit,View producer task plan has many policy,bundle admission rejects unary violation,D08,all
+T076,need,negative,integration,active generation differs from product binding,extract rejects before journal lookup,D08,all
+T077,need,negative,integration,producer contract digest wrong,extract rejects before publication,D08,all
+T078,need,negative,integration,payload type digest wrong,extract rejects before publication,D08,all
+T079,need,negative,integration,NeedId recomputation wrong,extract rejects malformed/tampered handle,D08,all
+T080,need,rollback,integration,argument validation fails after first argument,"no journal row, observer, or start intent",D08,all
+T081,dependency,structural,cargo,arcweft-view dependency graph,no arcweft-core edge,D04,all
+T082,view-schema,structural,schema,View Match rows inspected recursively,"no AwbcRegisterId, RuntimeValue, AwbcTypeId, copied type map",D04,all
+T083,view-schema,structural,api,exported symbols,no public ViewMatchSelection,D05,all
+T084,need,structural,source,runtime_value_matches_type,no NeedHandle branch on RuntimeValue::String,D10,all
+T085,need,structural,source,await_target or equivalent,no String to NeedId conversion,D10,all
+T086,need,structural,schema,AwbcTaskPlan fields,no need_id field,D10,all
+T087,need,structural,schema,AwbcRuntimeType NeedHandle,payload field mandatory,"D07,D10",all
+T088,need,negative,codec,old payloadless tag19 bytes,strict decoder rejects,"D09,D10",all
+T089,need,negative,snapshot,String snapshot supplied for expected NeedHandle,restore rejects,"D09,D10",all
+T090,need,structural,generated,generated schema/API/fixtures,no old NeedHandle String/task need field,D10,all
+T091,resource,positive,unit,canonical empty registry,sema/View/bundle digest equality,D15,all
+T092,resource,negative,unit,registry internal digest tampered,FinalSemanticCatalogs constructor fails,D15,all
+T093,resource,negative,integration,analysis registry digest differs from compiler context,View publication fails,D15,all
+T094,resource,negative,integration,reactive section registry digest stale,bundle validation fails,D15,all
+T095,resource,tamper,integration,resource registry digest byte flipped after save,restore/replacement fails,D15,all
+T096,guard,differential,integration,false/true guards with side-effect accounting in VM and AOT,same arm; guard exactly once,D17,all
+T097,type,positive,unit,TypeKind -> RuntimeNormalizedType -> RuntimePlan type table -> AwbcInventory,one stable AwbcTypeId,D11,all
+T098,type,negative,unit,attempt to use declaration TypeId for inferred local,construction API unavailable/rejects,D11,all
+T099,type,negative,unit,duplicate View-owned runtime type map fixture,schema validation rejects unknown field/type map,D11,all
+T100,checked-match,negative,integration,CheckedViewCatalog copies arm rows rather than reference,schema/structural test rejects,D14,all
+T101,selector,rollback,integration,malformed nested variant at depth 3,no local/body/observer mutation,D06,all
+T102,selector,rollback,integration,affine binding hidden in nested tuple,recursive admission rejects before commit,"D06,D13",all
+T103,resource,rollback,integration,registry mismatch after semantic staging,no checked View catalog/product published,D15,all
+T104,resource,rollback,integration,stale registry at bundle stage,no bundle generation published,D15,all
+T105,selector,rollback,integration,commit conflict during replacement,old generation/local store remains active,D06,all
+T106,need,rollback,integration,wrong contract during observation,no observer publication or start intent,D08,all
+T107,need,rollback,integration,wrong generation during replay,no journal cursor/state mutation,"D08,D09",all
+T108,need,negative,integration,duplicate producer contract bindings,bundle validation rejects ambiguity,D08,all
+T109,need,negative,integration,missing producer binding,extract rejects,D08,all
+T110,need,negative,unit,malformed fixed-byte NeedId DTO length,snapshot decoder rejects,D09,all
+T111,compile-cuts,structural,workspace,cut 1 source graph,only final sema owners; no View product placeholder,D16,all
+T112,compile-cuts,structural,workspace,cut 2 checked View catalog,complete catalog with CheckedMatchRef; product fail-closed,D16,all
+T113,compile-cuts,structural,workspace,cut 3 core ABI,typed owners compile without public View consumer,D16,all
+T114,compile-cuts,structural,workspace,cut 4 staging path,no production dual authority,D16,all
+T115,compile-cuts,structural,workspace,cut 5 final switch,only new authority remains,D16,all
+T116,absence,structural,api,old View Await and public selection APIs,absent from API/AST/schema/generated output,"D05,D10,D16",all
+T117,absence,structural,source,compatibility reader/fallback resolver,absent,"D10,D16",all
+T118,absence,structural,source,undefined normative type names,absent from final schemas,D11-D13,all
+T119,absence,structural,source,version markers for this feature,all exactly 1,"D10,D16",all
+T120,package,tamper,package,one payload byte changed,manifest validator rejects,D16,all
+T121,persistence,positive,integration,selector result snapshot before decode,restore then decode/install succeeds,D09,all
+T122,persistence,tamper,integration,selector snapshot case name/ordinal tampered,restore/type binding rejects,D09,all
+T123,persistence,positive,integration,typed Need handle save/restore,same NeedId/contract/payload/args retained,D09,all
+T124,persistence,tamper,integration,Need handle contract digest tampered,restore rejects transaction,D09,all
+T125,replay,positive,integration,NotStarted->Pending->Ready replay,ordered state and payload restored,D09,all
+T126,replay,negative,integration,publication sequence regresses,replay rejects,D09,all
+T127,replay,negative,integration,Ready payload wrong nested type,replay rejects,D09,all
+T128,replay,negative,integration,observer event before verified producer binding,replay rejects,D09,all
+T129,replacement,positive,integration,contract/type/arg/resource all equal,producer carried transactionally to new GenerationId,D09,all
+T130,replacement,negative,integration,producer contract differs,old producer retired/cancelled; no carry,D09,all
+T131,replacement,negative,integration,payload/argument digest differs,old producer retired/cancelled,D09,all
+T132,replacement,rollback,integration,new generation validation fails after staging,old generation remains active,D09,all
+T133,limits,exact-limit,unit,4096 Match arms,accepted within other limits,D06,all
+T134,limits,one-over,unit,4097 Match arms,checked View product rejects,D06,all
+T135,limits,exact-limit,unit,1024 bindings in one arm,accepted within total limit,D06,all
+T136,limits,one-over,unit,1025 bindings in one arm,checked View product rejects,D06,all
+T137,limits,exact-limit,unit,64-level nested runtime type,type verify/digest succeeds,D09,all
+T138,limits,one-over,unit,65-level nested runtime type,type verify/digest rejects,D09,all
+T139,tier2,tier-2,workspace,full selector/Need/save/replay/replacement matrix on Linux,all exact and structural rows pass,D16,linux
+T140,tier2,tier-2,workspace,full selector/Need/save/replay/replacement matrix on Windows and macOS,same canonical digests/results as Linux,D16,windows;macos
+T141,projection,positive,integration,compiler projects CheckedMatchRef to RuntimeViewMatchSelectorSeed,same digest and dense IDs; no copied coverage/effects,"D03,D11,D14",all
+T142,projection,negative,unit,selector seed has stale semantic type identity,atomic runtime semantic-fact publication rejects,"D03,D11",all
+T143,dependency,structural,cargo,runtime-plan imports sema/View/bundle,workspace dependency check rejects forbidden edge,"D04,D14,D16",all
+T144,selector,negative,unit,function input state type/digest differs from bundle,selector/bundle verification rejects before invocation,"D03,D06",all
+T145,type,positive,unit,RuntimeTypeShape::Need round-trips through RuntimeCheckedType and AWBC type,typed payload preserved; no Dynamic fallback,"D07,D11",all
+T146,type,structural,source,RuntimeUnsupportedTypeShape::Need remains after switch,structural absence fails,"D07,D10,D11",all
+T147,bundle,positive,codec,reactive section exact byte grammar round-trip,canonical bytes stable including source-map rows,"D04,D09",all
+T148,bundle,negative,codec,source-map role references missing selector/case/output/producer,section validation rejects,"D04,D06",all

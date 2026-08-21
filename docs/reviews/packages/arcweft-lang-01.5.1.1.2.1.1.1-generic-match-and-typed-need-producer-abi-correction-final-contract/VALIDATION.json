@@ -1,0 +1,64 @@
+{
+  "counts": {
+    "deletion_rows": 32,
+    "producer_consumer_rows": 40,
+    "source_evidence_rows": 48,
+    "test_classes": {
+      "differential": 3,
+      "exact-limit": 3,
+      "negative": 64,
+      "one-over": 3,
+      "positive": 30,
+      "rollback": 13,
+      "structural": 24,
+      "tamper": 6,
+      "tier-2": 2
+    },
+    "test_rows": 148,
+    "traceability_rows": 17
+  },
+  "current_git_sha": "4bda1cdcea63fdf7aac32691d756c1c0e1fc693e",
+  "inspected_production_baseline": "dec4f6c2de3be87d28a2f976b1ae51e3b40dd3fd",
+  "package": "arcweft-lang-01.5.1.1.2.1.1.1-generic-match-and-typed-need-producer-abi-correction-final-contract",
+  "package_checks": [
+    "required files present",
+    "OPEN_QUESTIONS exactly none",
+    "17 exact decisions mapped",
+    "source evidence and matrix minimums met",
+    "required test classes present",
+    "no unresolved normative placeholder in Rust schemas",
+    "selector single-result and frame-safe decision present",
+    "dedicated typed Need carrier and String rejection present",
+    "resource registry equality present",
+    "guard branch-chain decision present",
+    "strict v1 deletion and structural absence present",
+    "manifest exact-set and SHA-256 integrity"
+  ],
+  "parent_archive_sha256": "A7E146CD8F263127FE36EE29D10B24B118F8717BFC900BB88E957D3D863E30F4",
+  "production_verification": {
+    "implementation_gates_specified": true,
+    "production_code_modified": false,
+    "repository_source_inspected": true,
+    "rust_build_or_tests_run_by_this_design_return": false
+  },
+  "readiness": {
+    "design": "ready",
+    "exact_decisions_closed": 17,
+    "implementation_claimed": false,
+    "open_questions": "none"
+  },
+  "schema_version": 1,
+  "selected_abis": {
+    "make_need_handle_opcode": "0x1e",
+    "need_producer_flag_bit": 4,
+    "need_runtime_type_tag": 19,
+    "selector_result": "synthetic_nominal_variant_with_tuple_payload",
+    "view_reactive_section_schema": 1
+  },
+  "status": "pass",
+  "version_markers": {
+    "arcweft_owned": [
+      1
+    ]
+  }
+}

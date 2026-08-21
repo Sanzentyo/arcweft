@@ -86,3 +86,14 @@ remain blocked pending acceptance of
 
 No Rust, manifest, fixture, generated artifact, build, test, Clippy, or
 platform validation was changed or run for this documentation-only audit.
+
+## 2026-08-21 returned-package reconciliation
+
+The returned Lang-01.5.1.1.2.1.1.1 archive is retained and internally valid,
+but repository reconciliation found further result-changing blockers. Product,
+runtime, and generic checked-Match implementation remain blocked by
+[`Lang-01.5.1.1.2.1.1.1.1`](../reviews/requests/2026-08-21-lang-01.5.1.1.2.1.1.1.1-checked-match-coverage-runtime-need-identity-and-awbc-allocation-correction.md).
+See the
+[return intake](2026-08-21-lang-01-5-1-1-2-1-1-1-generic-match-typed-need-return-intake.md)
+for the verified archive identity and the opcode, non-View task identity,
+coverage, ownership, digest, and request-copy findings.

@@ -1,0 +1,277 @@
+# Lang-01.5.1.1.2.1.1.1 — generic Match and typed Need producer ABI correction
+
+## Sequence, inputs, and precedence
+
+This is a narrow mandatory correction to the returned
+Lang-01.5.1.1.2.1.1 reactive unary-Need design-validation contract. It does
+not reopen that contract's four-state Need semantics, journal, observer,
+start/cancellation, static-certification, persistence, replacement, or strict
+version-1 deletion decisions.
+
+Required retained inputs are:
+
+- the primary
+  [Lang-01.5.1.1.2.1 request](2026-08-21-lang-01.5.1.1.2.1-reactive-unary-need-match-reconciliation.md);
+- its first
+  [design-validation correction](2026-08-21-lang-01.5.1.1.2.1.1-reactive-unary-need-match-design-validation-correction.md);
+- the retained corrected archive
+  [`arcweft-lang-01.5.1.1.2.1.1-reactive-unary-need-match-design-validation-correction-final-contract.zip`](../packages/zips/arcweft-lang-01.5.1.1.2.1.1-reactive-unary-need-match-design-validation-correction-final-contract.zip),
+  SHA-256
+  `A7E146CD8F263127FE36EE29D10B24B118F8717BFC900BB88E957D3D863E30F4`;
+- its searchable
+  [frozen mirror](../packages/arcweft-lang-01.5.1.1.2.1.1-reactive-unary-need-match-design-validation-correction-final-contract/README.md);
+- the accepted parent
+  [Lang-01.5.1.1.2 final-HIR View package](../packages/arcweft-lang-01.5.1.1.2-final-hir-view-execution-catalog-and-static-certification-reconciliation-final-contract/README.md);
+  and
+- current production and maintained documentation.
+
+Inspected production baseline:
+`dec4f6c2de3be87d28a2f976b1ae51e3b40dd3fd`.
+
+Current source and maintained documentation take precedence over returned
+source-evidence claims. Every Arcweft-owned version marker remains exactly `1`.
+
+## Why another correction is required
+
+The accepted return closes the language and lifecycle decisions, but its
+generic-Match output and producer-binding schemas cannot be constructed over
+the current AWBC ABI without choosing new result-changing contracts.
+
+### 1. Function-local Match registers cannot escape AWBC
+
+The return requires `arcweft-view` to remain independent of `arcweft-core`,
+yet sketches `ViewMatchArmBinding.output_register: AwbcRegisterId` and a public
+`ViewMatchSelection` containing core-owned `RuntimeValue` values.
+
+Current production proves that this is not merely a placement typo:
+
+- `AwbcFunctionSignature.result` is one `Option<AwbcTypeId>` in
+  `crates/arcweft-core/src/awbc/schema.rs`;
+- `AwbcTerminator::Return` names at most one register;
+- `crates/arcweft-core/src/awbc/vm.rs` clones that one register value before
+  returning; and
+- `FiberState::finish_return` in `crates/arcweft-core/src/awbc/fiber.rs` pops
+  the callee frame, destroying its function-local register file.
+
+An `AwbcRegisterId` therefore cannot serve as a runtime output coordinate
+after selector return. Adding a core dependency to `arcweft-view`, retaining
+the callee frame, or reading it through a side channel would violate accepted
+dependency, lifetime, and single-authority rules.
+
+### 2. The claimed typed Need producer carrier does not exist
+
+The return requires a verified `NeedHandle(T)`, direct extraction of `NeedId`,
+and no RuntimeValue/string surrogate. Current production instead has:
+
+- unparameterized `AwbcRuntimeType::NeedHandle`;
+- the same `RuntimeValue::String` carrier admitted for `String`, `TaskHandle`,
+  and `NeedHandle`; and
+- `await_target` converting a nonempty string into `NeedId`.
+
+The returned `SOURCE_EVIDENCE.md` claim that this path is already typed and
+not a RuntimeValue string is false at the inspected baseline. A View producer
+binder cannot implement the returned contract until one typed carrier and
+extraction boundary is selected.
+
+### 3. Several exact Rust-shaped rows lack a constructible current owner
+
+The returned schemas use `TypeId` for inferred expression/local types even
+though current final semantic expression and local type authority is
+`TypeKind`, and not every inferred type has a source-declaration `TypeId`.
+They also name an `arm_expression: ExprId` that current HIR match arms do not
+own, plus undefined `RuntimeTypeRef`, `RuntimeBindingOwnership`, and checked
+ownership rows. Implementers cannot decide whether these are aliases, new
+authorities, or projections.
+
+These are observable ABI, type-identity, persistence, and dependency choices.
+They may not be filled in by implementation convention.
+
+## Accepted decisions that remain fixed
+
+Do not redesign the following without a concrete current-source defect:
+
+- unary `Need<T>` is the only reactive source in this scope;
+- state is exactly NotStarted, Pending(Progress), Ready(T), or Cancelled;
+- Result and Option remain ordinary values nested inside Ready;
+- producer journal identity is `(GenerationId, NeedId)` and observer identity
+  is `(ViewMountId, ViewNeedSubscriptionId)`;
+- observing NotStarted emits a transactional start intent, deduplicated under
+  the verified producer task key with `JoinSameKey`;
+- cancellation is producer-owned;
+- pattern, guard, and binding execution uses ordinary AWBC/RuntimeValue
+  machinery, not a View VM or presentation value fallback;
+- any live Need subscription is a `LiveNeedSubscription` static contaminant;
+- ownership and snapshot admission reject affine, borrowed, unique,
+  must-drop, frame-local, non-cloneable, or non-snapshot values;
+- save, replay, restoration, publication, and replacement remain bounded and
+  transactional; and
+- the old View Await authority is deleted through one strict version-1 cut,
+  with no alias, compatibility reader, dual model, or source reconstruction.
+
+## Required exact decisions
+
+### A. One selector-result ABI
+
+1. Select one single-value AWBC result representation for the selected source
+   arm and all of that arm's typed bindings. It must support heterogeneous arm
+   binding counts and types, survive callee-frame removal, use ordinary closed
+   AWBC/RuntimeValue types, and have a deterministic version-1 type/digest
+   representation.
+2. The preferred candidate to validate or replace explicitly is one synthetic
+   nominal closed variant whose case ordinal is the source arm ordinal and
+   whose case payload is a tuple of source-ordered binding values. Do not leave
+   a choice between this, `Choice`, nested tuples, multiple function results,
+   retained registers, or an out-of-band register export.
+3. Define exact Rust-shaped owners and APIs for:
+   selector construction, function signature, return assembly, verified
+   selector result type, selected-arm decode, binding extraction, and
+   transactional local installation.
+4. Keep `arcweft-view` core-independent. Its retained Match rows may contain
+   lightweight View coordinates such as `ViewLocalRef` and a binding output
+   ordinal, but not `AwbcRegisterId`, `RuntimeValue`, or a copied AWBC type
+   table. Define the exact core/bundle/runtime-driver join that resolves those
+   coordinates.
+5. State whether `ViewMatchSelection` is private runtime-driver scratch or is
+   deleted/replaced. It must not be a public `arcweft-view` type containing
+   core-owned values.
+6. Define exact validation for dense/source order, arm/result-case equality,
+   binding ordinal and count, binding type, ownership, missing/extra values,
+   malformed nested values, no-match, guard failure, and rollback.
+
+### B. One typed Need producer ABI
+
+7. Select the sole typed Need-handle carrier. Define whether
+   `AwbcRuntimeType::NeedHandle` becomes payload-typed, what runtime value
+   carries its `NeedId`, and how that carrier differs from String and
+   TaskHandle. Do not retain a stringly fallback or a second endpoint table.
+8. Define the exact producer function result and task-plan relationship, the
+   verified extraction API that obtains `NeedId`, and the generation/contract
+   checks before observer publication or start intent construction.
+9. Define construction, verifier, VM, runtime-value ownership, canonical
+   digest, private wire, bundle cross-section, snapshot/fiber, restore/replay,
+   and replacement behavior for the chosen typed carrier.
+10. Inventory and delete the existing `NeedHandle`-as-String admission and
+    `await_target` string conversion when the new authority is switched on.
+    TaskHandle/String behavior outside this exact scope must remain explicit.
+
+### C. Constructible semantic and product schemas
+
+11. Reconcile every returned `TypeId`/`RuntimeTypeRef`/ownership field with
+    current owners. Use the accepted normalized `TypeKind` authority for
+    inferred semantic facts unless an exact total projection to another
+    identity is defined. Define the single runtime type projection and do not
+    copy a second type map.
+12. Replace nonexistent HIR coordinates such as `arm_expression` with exact
+    current match-arm identities: scope, pattern, optional guard, value, and
+    locals. Define ordering, uniqueness, lookup, and source-role ownership.
+13. Define `RuntimeBindingOwnership` and every checked ownership disposition
+    used by normative schemas, or replace them with one existing owner and an
+    exact projection. No undefined normative type may remain.
+14. Make generic match checking one authority. The preferred current-safe
+    shape is a generic `CheckedMatch` fact directly replacing
+    `CheckedExpressionResolution::Structural` for all Match expressions. It
+    retains scrutinee, source-ordered arms, exact HIR IDs, normalized types,
+    effects, and coverage once. `CheckedViewCatalog` references it rather than
+    copying arms/bindings into a second authority. Validate or explicitly
+    replace this shape.
+
+### D. Catalog generation input and compile-clean order
+
+15. Define the exact `ResourceTypeRegistryDigest` input to checked View
+    catalog generation. The layer-correct candidate is an
+    `arcweft-lang-sema -> arcweft-resource-model` dependency,
+    `FinalSemanticCatalogs` borrowing `ResourceTypeRegistry`, and compiler
+    construction passing its existing `context.resource_types()` registry.
+    Select exact constructors, lifetime, equality check, and error behavior.
+16. Replace the implementation sequence with compile-clean cuts. A safe
+    minimum is:
+
+    - generic `CheckedMatch` authority only;
+    - complete parent `CheckedViewCatalog` publication plus lightweight View
+      coordinates, still fail-closed for product construction;
+    - selector-result and typed-Need carrier owners plus focused verifier/VM
+      tests;
+    - checked unary-Need facts and runtime journal/product projection; and
+    - atomic consumer switch and old Await/string-surrogate deletion.
+
+    If a different order is selected, prove every cut constructs only final
+    owners and compiles without empty catalogs, dual authorities, or
+    unreachable compatibility scaffolding.
+
+## Required repository evidence and tests
+
+Reconcile against current source, including at minimum:
+
+- AWBC runtime types, function signatures, frame layouts, terminators,
+  verifier, VM call/return, frame pop, Match/guard behavior, codecs, digests,
+  snapshots, AOT/parity, and product-step task publication;
+- RuntimeValue closed variant/tuple/type matching, ownership, limits, and
+  canonical persistence;
+- HIR Match arm structure and final semantic expression/local type authority;
+- `FinalSemanticAnalysis`, `FinalSemanticCatalogs`, resource registry owner,
+  and compiler call sites;
+- `arcweft-view` dependency graph, program/local/mount/static owners;
+- bundle cross-section model/codec/validation/merge/digest/source-map rows;
+- runtime-driver View catalog/evaluator/save/replay/replacement consumers; and
+- all old NeedHandle string and View Await consumers scheduled for deletion.
+
+The returned matrix must include executable positive, negative, tamper,
+exact-limit/one-over, rollback, differential, structural-absence, and Tier-2
+coverage for at least:
+
+- zero, one, and multiple bindings; heterogeneous arms; nested Result/Option;
+- exact arm ordinal and binding output order/type;
+- failed guard followed by a later arm, no match, malformed result case,
+  missing/extra binding, wrong tuple/type, and affine binding rejection;
+- callee-frame destruction with successful selector result retention;
+- typed NeedId production, wrong payload type, wrong generation/contract,
+  malformed carrier, and proof that String cannot satisfy NeedHandle;
+- save/restore/replay/replacement and digest tampering for selector results and
+  Need handles;
+- resource-registry digest mismatch and stale registry input;
+- completeness/duplicate/stale-world checks for generic checked Match and the
+  complete checked View catalog; and
+- API/AST/schema/generated absence of exported AWBC registers in View rows,
+  `NeedHandle` string admission, old View Await, duplicate checked Match arms,
+  and every undefined normative placeholder replaced by the answer.
+
+## Required artifacts and validation
+
+Return one independently usable design archive containing at minimum:
+
+- `README.md`, reading order, current full Git SHA, and final readiness;
+- `OPEN_QUESTIONS.md` containing exactly `none`;
+- final contract, exact Rust-shaped schemas, owners/APIs, dependency graph,
+  type/ABI/wire/digest allocation tables, and compile-clean sequence;
+- current source evidence with exact paths and line ranges;
+- requirement traceability, producer/consumer and deletion matrices;
+- positive/negative/tamper/limit/structural/Tier-2 test matrix; and
+- machine-readable and human-readable validation plus an internal SHA-256
+  manifest covering every payload.
+
+Validation must reject unresolved alternatives, undefined normative types,
+dependency cycles, function-local register escape, a string NeedHandle
+surrogate, incomplete current-source evidence, undersized traceability/tests,
+or any manifest mismatch.
+
+## Constraints and non-goals
+
+- This is design-only. Do not edit production code, tests, fixtures,
+  manifests, branches, patches, or implementation overlays.
+- Do not implement a multi-result AWBC ABI, View VM, presentation value
+  algebra, retained callee-frame side channel, core dependency in
+  `arcweft-view`, source/string identity, copied endpoint/type table, extension
+  trait, fallback resolver, compatibility reader, dual authority, or version
+  bump.
+- Do not reopen Need timeout, Stream/Watch, Dialogue/RichText, line-plan,
+  Choice, CSS, Takumi, or unrelated producer outcome classification.
+- It is valid to authorize the generic checked Match sema-only cut separately,
+  but product/runtime Match and unary-Need producer publication remain blocked
+  until this ABI correction is accepted.
+
+## Expected output
+
+Return one archive named
+`arcweft-lang-01.5.1.1.2.1.1.1-generic-match-and-typed-need-producer-abi-correction-final-contract.zip`.
+It must be a complete corrected design answer, not a delta, pointer, patch,
+code overlay, or validation-only package.
