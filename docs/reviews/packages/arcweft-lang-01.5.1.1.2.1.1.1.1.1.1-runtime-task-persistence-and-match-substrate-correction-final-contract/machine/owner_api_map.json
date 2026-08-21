@@ -1,0 +1,186 @@
+{
+  "rows": [
+    {
+      "owner": "arcweft_core::entry::RuntimeValueDigest",
+      "path": "crates/arcweft-core/src/entry/identity.rs + entry/schema.rs",
+      "api": "RuntimeValue::try_digest / try_canonical_bytes share write_canonical(&mut impl CanonicalRuntimeValueSink)",
+      "borrowing": "&RuntimeValue + &mut sink; no allocation required for Blake3Sink",
+      "cut": 4,
+      "dependencies": [
+        "RuntimeValue",
+        "CanonicalRuntimeValueSink"
+      ],
+      "notes": "sole identity grammar; no producer-only digest"
+    },
+    {
+      "owner": "arcweft_core::value::RuntimeValue",
+      "path": "crates/arcweft-core/src/value.rs",
+      "api": "validate_constant_admission; final NeedHandle enum arm in original enum",
+      "borrowing": "recursive immutable visitor; bounded work counter",
+      "cut": 5,
+      "dependencies": [
+        "RuntimeNeedHandle",
+        "RuntimeOpaqueValue"
+      ],
+      "notes": "all exhaustive visitors update in one protected commit"
+    },
+    {
+      "owner": "arcweft_core::task::RuntimeNeedHandle",
+      "path": "crates/arcweft-core/src/task.rs",
+      "api": "try_new; validate_structure; validate_use; rebind_for_replacement; semantic_key",
+      "borrowing": "owned descriptor; validation borrows scheduler generation/spec",
+      "cut": 5,
+      "dependencies": [
+        "TaskCorrelation",
+        "NeedProducerSpec",
+        "TaskOutcomeContract"
+      ],
+      "notes": "manual Eq/Hash/Ord by NeedId only"
+    },
+    {
+      "owner": "arcweft_core::task::TaskSpec",
+      "path": "crates/arcweft-core/src/task.rs",
+      "api": "try_new; validate; producer_instance_key; structurally_eq_for_join",
+      "borrowing": "owned spec enters scheduler transaction; no IDs supplied by caller",
+      "cut": 5,
+      "dependencies": [
+        "NeedProducerSpec",
+        "TaskExecution",
+        "TaskPolicy",
+        "TaskOutcomeContract"
+      ],
+      "notes": "one execution field"
+    },
+    {
+      "owner": "arcweft_runtime_scheduler::RuntimeTaskScheduler<A>",
+      "path": "crates/arcweft-runtime-scheduler/src/lib.rs",
+      "api": "ensure_task; ingest_host_events; step_runtime_tasks; register_observer; cancel_scope; snapshot; restore; replay; prepare_replacement; commit_replacement",
+      "borrowing": "all mutating methods require &mut self; private deltas avoid overlapping borrows; no unsafe/global state",
+      "cut": 5,
+      "dependencies": [
+        "RuntimeTaskJournal",
+        "RuntimeTaskState",
+        "TaskLaunchAdapter",
+        "RuntimeSchedulerConfig"
+      ],
+      "notes": "sole journal/counter/adapter/runtime-task owner"
+    },
+    {
+      "owner": "arcweft_runtime_scheduler::RuntimeTaskJournal",
+      "path": "crates/arcweft-runtime-scheduler/src/journal.rs",
+      "api": "inspect_ensure; validate_delta; apply_delta; validate_event; apply_event; snapshot_projection; restore_from_validated",
+      "borrowing": "private to scheduler; BTreeMap staging in temporary values",
+      "cut": 5,
+      "dependencies": [
+        "TaskGroup",
+        "TaskLaunch",
+        "RuntimeNeedCell",
+        "TaskObserver"
+      ],
+      "notes": "not separately owned by driver"
+    },
+    {
+      "owner": "arcweft_runtime_scheduler::RuntimeTaskState",
+      "path": "crates/arcweft-runtime-scheduler/src/runtime_task.rs",
+      "api": "stage; select_step_batch; apply_step_result; snapshot_projection",
+      "borrowing": "select keys first, remove or clone bounded state, call scheduler internal ensure, then reinsert/update",
+      "cut": 5,
+      "dependencies": [
+        "RuntimeAwaitManyAggregateTask",
+        "RuntimeTimeoutNeed"
+      ],
+      "notes": "runtime tasks never reach adapter"
+    },
+    {
+      "owner": "arcweft_host_adapter::TaskLaunchAdapter",
+      "path": "crates/arcweft-host-adapter/src/lib.rs",
+      "api": "prepare_launch/commit_launch/rollback_launch; prepare_restore/commit_restore/rollback_restore; prepare_rebind/commit_rebind/rollback_rebind",
+      "borrowing": "owned prepared tokens; prepare fallible; commit/rollback infallible",
+      "cut": 5,
+      "dependencies": [
+        "HostTaskLaunchRequest",
+        "HostTaskRestoreBatch",
+        "HostTaskRebindBatch"
+      ],
+      "notes": "accepts Host execution rows only"
+    },
+    {
+      "owner": "arcweft_lang_sema::FinalSemanticAnalysis",
+      "path": "crates/arcweft-lang-sema/src/final_analysis/report.rs",
+      "api": "checked_match_ref; checked_match; write_expression_semantic_v1; write_pattern_semantic_v1",
+      "borrowing": "exact report/module/symbol generation borrowed during construction",
+      "cut": 1,
+      "dependencies": [
+        "HirSnapshotId",
+        "ExprId",
+        "CheckedExpressionResolution",
+        "CheckedPatternResolution"
+      ],
+      "notes": "current snapshot owner; no AcceptedSemanticGeneration"
+    },
+    {
+      "owner": "arcweft_lang_sema::CheckedExpressionSemanticEncoderV1",
+      "path": "crates/arcweft-lang-sema/src/final_analysis/semantic_transcript.rs",
+      "api": "write_expression; write_literal; stable_coordinate; declaration_semantic_id",
+      "borrowing": "raw arena IDs only for lookup; emitted transcript uses stable roles/accepted identities",
+      "cut": 1,
+      "dependencies": [
+        "FinalSemanticAnalysis",
+        "HirExecutableProjectView",
+        "ProjectSymbolTable"
+      ],
+      "notes": "purpose-built, no generic Serde"
+    },
+    {
+      "owner": "arcweft_lang_sema::OwnershipClassifier",
+      "path": "crates/arcweft-lang-sema/src/ownership.rs",
+      "api": "classify(TypeId); evidence_digest; need_producer_admission",
+      "borrowing": "memoized bounded traversal over accepted TypeKind graph",
+      "cut": 2,
+      "dependencies": [
+        "TypeKind",
+        "AcceptedOpaqueRuntimeEvidence",
+        "RuntimeCarrierProjection"
+      ],
+      "notes": "85 exhaustive variants; Predicate leaf; Shared reject"
+    },
+    {
+      "owner": "arcweft_compiler::CompilerLocalViewMatchCatalogRow",
+      "path": "crates/arcweft-compiler/src/view.rs",
+      "api": "publish after exact CheckedMatchRef + View admission validation",
+      "borrowing": "compiler-generation-local; never serialized",
+      "cut": 3,
+      "dependencies": [
+        "CheckedMatchRef",
+        "ViewProgramId",
+        "AcceptedViewProgramRevision",
+        "ViewMatchSiteId"
+      ],
+      "notes": "contains no task types"
+    },
+    {
+      "owner": "arcweft_bundle::AcceptedViewMatchBundleRowV1",
+      "path": "crates/arcweft-bundle/src/product.rs",
+      "api": "project_from_joined_products; validate_against",
+      "borrowing": "owned strict projection; joins compiler/AWBC/current revision products",
+      "cut": 5,
+      "dependencies": [
+        "View identity projections",
+        "checked/admission/ownership/task digests"
+      ],
+      "notes": "no compiler-local IDs"
+    },
+    {
+      "owner": "arcweft_runtime_scheduler::RuntimeTaskSnapshotCodecV1",
+      "path": "crates/arcweft-runtime-scheduler/src/snapshot.rs",
+      "api": "encode; decode_private; validate_private; publish_restore",
+      "borrowing": "direct borrowed reader; private temporary maps; final mem::replace",
+      "cut": 5,
+      "dependencies": [
+        "all persistence rows",
+        "TaskLaunchAdapter restore transaction"
+      ],
+      "notes": "strict v1 only"
+    }
+  ]
+}

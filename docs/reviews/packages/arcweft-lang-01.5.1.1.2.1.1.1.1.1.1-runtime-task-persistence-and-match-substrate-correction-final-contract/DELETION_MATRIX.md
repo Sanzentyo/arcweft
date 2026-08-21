@@ -1,0 +1,80 @@
+# Compile-clean source deletion and migration matrix
+
+Every row names one current repository path. “Delete” includes deleting old
+constructors, fields, helper routes, generated fixtures and tests after the
+final owner is available; it does not mean deleting the whole file unless
+explicitly stated.
+
+| Current path | Obsolete authority/route | Final action | Cut | Proof |
+|---|---|---|---:|---|
+| `crates/arcweft-core/src/task.rs` | String-backed NeedId/TaskKey/TaskId and caller-supplied identity | replace original owners with fixed private-field newtypes and inherent derivation; delete String constructors/accessors | 5 | API compile-fail; fixed-byte codec tamper; no String fallback |
+| `crates/arcweft-core/src/task.rs` | TaskSpec.id, TaskSpec.key, unconditional TaskSpec.request | replace the original struct with producer/class/priority/cancel_scope/policy/outcome/execution/debug; no parallel Option request | 5 | structural API test and package validator |
+| `crates/arcweft-core/src/task.rs` | TaskHandle/Need state without complete correlation | replace with RuntimeNeedHandle and TaskCorrelation; implement Eq/Hash/Ord by NeedId only in the original impl | 5 | semantic-equality, stale-generation and tamper tests |
+| `crates/arcweft-core/src/task.rs` | partial TaskEvent and String infrastructure failure | replace with complete correlation/cursor and typed RuntimeTaskFailure | 5 | event digest/replay/tamper tests |
+| `crates/arcweft-core/src/value.rs` | derived structural PartialEq for final RuntimeValue::NeedHandle carrier | add NeedHandle in the original RuntimeValue enum and ensure contained RuntimeNeedHandle implements semantic equality manually | 5 | same NeedId/different debug/spec equality tests |
+| `crates/arcweft-core/src/value.rs` | contains_nonconstant_opaque used as identity policy | retain only as a compatibility-free internal refactor target and replace constant callers with validate_constant_admission | 4/5 | Plain+SnapshotOnly paired tests |
+| `crates/arcweft-core/src/value/opaque.rs` | implicit coupling of persistence and canonical identity | keep the original enums; add inherent identity/constant-admission behavior without extension traits or side helpers | 4 | exhaustive enum tests |
+| `crates/arcweft-core/src/entry/schema.rs` | opaque SnapshotOnly rejection inside the sole canonical visitor and byte-only allocation path | make the original exhaustive visitor sink-parametric; admit Plain SnapshotOnly; add direct BLAKE3 sink | 4/5 | byte/digest differential and first-error property tests |
+| `crates/arcweft-core/src/value/awbc_save.rs` | AWBC-only duplicate RuntimeValue snapshot authority | move/generalize the original codec to core RuntimeValueSnapshotV1 and make AWBC save consume it; add NeedHandle row | 5 | exhaustive RuntimeValue round-trip and structural absence |
+| `crates/arcweft-core/src/plan/construction/lower.rs` | runtime-plan expression constants relying on canonical encoder rejection | call the explicit constant-admission fence before canonicalization/publication | 4/5 | SnapshotOnly constant negative |
+| `crates/arcweft-dialogue/src/character_dialogue/typed_value.rs` | typed dialogue constant canonicalization without explicit fence | route through try_constant_canonical_bytes/validate_constant_admission | 5 | dialogue SnapshotOnly negative |
+| `crates/arcweft-dialogue/src/character_dialogue.rs` | dialogue/config constant validation coupled to canonical identity | insert explicit recursive constant-admission fence | 5 | dialogue/config constant tests |
+| `crates/arcweft-dialogue/src/character_dialogue/schema.rs` | schema constant encoding coupled to canonical identity | insert explicit constant-admission fence; no second serializer | 5 | schema encode negative |
+| `crates/arcweft-core/src/engine/suspend.rs` | String NeedId and direct Await surrogate | consume RuntimeNeedHandle, validate active generation before registering observer | 5 | cross-generation Await rejection before mutation |
+| `crates/arcweft-core/src/engine/flow.rs` | Await/AwaitMany host-request-only construction | emit final TaskSpec with explicit TaskExecution; aggregate base is Runtime execution | 5 | host/runtime execution differential |
+| `crates/arcweft-core/src/awbc/vm.rs` | NeedHandle represented as RuntimeValue::String and String await target | construct/consume RuntimeValue::NeedHandle and final TaskSpec | 5 | AWBC value-shape and String absence tests |
+| `crates/arcweft-core/src/awbc/fiber.rs` | old Await/AwaitMany String snapshot fields | replace atomically with RuntimeNeedHandle, observer and runtime aggregate snapshots | 5 | snapshot/replay exactness |
+| `crates/arcweft-core/src/awbc/product_step/lifecycle.rs` | String NeedId lifecycle mapping | map typed correlation and NeedHandle only | 5 | product-step parity |
+| `crates/arcweft-core/src/awbc/product_step/suspension.rs` | String suspension identity and host-only request | use TaskExecution and complete handle/correlation | 5 | suspension parity |
+| `crates/arcweft-core/src/awbc/product_step/mapping.rs` | String Need/task projection | replace with fixed projections and rederived identity | 5 | mapping tamper |
+| `crates/arcweft-core/src/awbc/schema.rs` | task plan Need String/self-digest or host-only assumptions | publish only final producer/execution rows; do not reopen retained numeric allocation | 5 | schema/API absence and semantic digest recomputation |
+| `crates/arcweft-core/src/awbc/verifier` | NeedHandle admitted as Dynamic/String and task family inferred indirectly | verify typed payload, family/execution/policy truth table and explicit runtime variants | 5 | negative verifier corpus |
+| `crates/arcweft-runtime-plan/src/final_flow.rs` | indexed String suffix Need identity and host-only AwaitMany | build canonical child arguments and exact child TaskSpec rows; base uses Runtime AwaitMany | 5 | index boundary/determinism tests |
+| `crates/arcweft-runtime-plan/src/semantic_facts.rs` | ownership rows without the corrected carrier matrix | consume exact 85-row classifier; Predicate leaf and Shared rejection | 2 | machine/prose/classifier parity |
+| `crates/arcweft-runtime-scheduler/src/lib.rs` | separate lightweight RuntimeScheduler without journal/adapter/runtime task ownership | replace original owner with RuntimeTaskScheduler<A> and move all task state into it | 5 | single-owner dependency test; transaction tests |
+| `crates/arcweft-runtime-driver/src/task.rs` | second RuntimeTaskRegistry, String DTOs and HostTaskDispatch authority | delete registry/journal behavior; driver only calls RuntimeTaskScheduler APIs and transports typed events | 5 | type/API absence; no duplicate counter/journal |
+| `crates/arcweft-runtime-driver/src/swap.rs` | driver-local GenerationId | delete original definition after every consumer imports arcweft_core::task::GenerationId | 4/5 | single-definition search plus compile |
+| `crates/arcweft-runtime-driver/src/generation_runtime.rs` | consumer of driver-local GenerationId | import the core owner and delegate replacement task rebind to scheduler | 5 | replacement integration |
+| `crates/arcweft-host-adapter/src/lib.rs` | host adapter boundary accepting whole TaskSpec/implicit host request | implement TaskLaunchAdapter only for TaskExecution::Host prepared tokens | 5 | runtime rows rejected before adapter call |
+| `crates/arcweft-runtime-host/src/native_task.rs` | native task completion with partial identity | accept HostTaskLaunchRequest and emit complete TaskEvent correlation/cursor | 5 | native event parity |
+| `crates/arcweft-adapter-desktop/src/adapter.rs` | desktop dispatch keyed by String task id | use prepared typed launch/rebind tokens and infallible commit | 5 | prepare rollback and replacement tests |
+| `crates/arcweft-adapter-desktop/src/codec.rs` | desktop partial task/event DTO codec | replace with strict v1 projections; reject legacy/unknown/duplicate/trailing | 5 | codec negative corpus |
+| `crates/arcweft-player-web/src/host.rs` | web host dispatch keyed by partial task identity | use HostTaskLaunchRequest and complete typed TaskEvent | 5 | web parity and tamper tests |
+| `crates/arcweft-agent-runner/src/host_request.rs` | agent runner host request route with partial identity | consume Host TaskExecution only and preserve correlation | 5 | agent host parity |
+| `crates/arcweft-agent-runner/src/runtime_payload.rs` | runtime payload conversions missing NeedHandle and corrected Agent carrier proof | add final exhaustive NeedHandle and exact carrier projections in the original match | 5 | exhaustive conversion tests |
+| `crates/arcweft-bundle/src/product.rs` | persistent View/task row embedding compiler-local or partial identities | publish AcceptedViewMatchBundleRowV1 projection only in Cut 5 | 5 | forbidden-field structural inspection |
+| `crates/arcweft-bundle/src/container.rs` | bundle container/product codec routes that would accept old String/Serde task/Need shapes | add strict purpose-built v1 task/View projection sections through the existing container owner; no translation path | 5 | old bytes/unknown tag/duplicate/trailing rejection |
+| `crates/arcweft-view/src/view/identity.rs` | temptation to invent ViewProgramSemanticDigest or numeric revision | retain original ViewProgramId and AcceptedViewProgramRevision([u8;32]) roles | 3/5 | type/API absence |
+| `crates/arcweft-compiler/src/view.rs` | compiler-local Match row copied into persistent product | keep CheckedMatchRef only in CompilerLocalViewMatchCatalogRow; project digests in Cut 5 | 3/5 | bundle forbidden-field test |
+| `crates/arcweft-lang-sema/src/final_analysis/model.rs` | session-local semantic facts lacking stable transcript projections | add inherent/same-module semantic transcript implementation over exact current variants; no generic Serde | 1 | variant exhaustiveness and allocation/span differential |
+| `crates/arcweft-lang-sema/src/final_analysis/report.rs` | lookup by ExprId without exact snapshot-bound Match reference | construct CheckedMatchRef from the report's exact HirSnapshotId plus ExprId; do not mint AcceptedSemanticGeneration | 1 | stale snapshot negative |
+| `crates/arcweft-lang-sema/src/types.rs` | ownership classifier with Predicate child recursion or optimistic Shared | regenerate exhaustive 85-variant match; Predicate leaf; Shared MissingRuntimeSnapshotOwner | 2 | classifier/machine/prose parity |
+| `crates/arcweft-core/src/tests/flow.rs` | String Need/task fixtures | replace with typed transcript builders and host/runtime execution rows | 5 | workspace test compile |
+| `crates/arcweft-core/tests/direct_suspension.rs` | String direct-Await fixtures | replace with RuntimeNeedHandle and active-generation validation | 5 | negative stale generation |
+| `crates/arcweft-agent-runner/src/tests.rs` | partial host task/Need fixture shapes | replace with complete TaskCorrelation and event envelopes | 5 | agent parity |
+
+## Cross-cut deletion rule
+
+Cut 1–4 may add only the owners explicitly listed for those cuts. They do not leave a public dual route. Cut 5 is a protected workspace-wide switch that changes every exhaustive RuntimeValue/task consumer, adapters, snapshots, bundles, generated artifacts and tests together.
+
+## Required repository searches after Cut 5
+
+All of these searches must have only intentionally retained diagnostic/domain strings, never identity/carrier routes:
+
+```text
+TaskSpec { request:
+Option<HostTaskRequest>
+struct RuntimeTaskRegistry
+pub struct GenerationId            # exactly one core definition
+NeedId(String
+TaskId(String
+TaskKey(String
+format!(...need...index...)        # identity suffix construction
+RuntimeValue::String(...)          # when used as Need/task handle
+AdapterCommit
+CheckedMatchRef                    # under persistent bundle/snapshot modules
+HirSnapshotId / ExprId / SourceSpan # under persistent bundle projections
+legacy / compat / translate_v0 / V2 # task snapshot/bundle routes
+```
+
+Any positive identity/carrier match is an implementation blocker until assigned to a real deletion row.

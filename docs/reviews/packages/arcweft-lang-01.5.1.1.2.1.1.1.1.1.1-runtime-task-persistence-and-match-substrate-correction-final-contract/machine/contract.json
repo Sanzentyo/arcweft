@@ -1,0 +1,238 @@
+{
+  "package": "arcweft-lang-01.5.1.1.2.1.1.1.1.1.1-runtime-task-persistence-and-match-substrate-correction-final-contract",
+  "status": "READY_FOR_IMPLEMENTATION",
+  "open_questions": 0,
+  "repository": "Sanzentyo/arcweft",
+  "inspected_main": "3670625a02b9e7e8578b57fc7b148a1758a17dba",
+  "request_stated_production": "17b384a36e1412cc7e7d9f13073d8dd33dcb5cbc",
+  "request_blob_sha": "6b3d614e7813fa6552e84f15610175633470227d",
+  "all_arcweft_version_markers": [
+    1
+  ],
+  "parent_zip_expected_sha256": "2B9B55043E8168D99838C81048E13F752A75B03F48293010BB36B5401043DB0B",
+  "frozen_decisions": {
+    "producer_instance_fields": [
+      "family",
+      "contract",
+      "plan",
+      "producer_site",
+      "payload_type",
+      "arguments"
+    ],
+    "join_ordinal": 0,
+    "always_start_first_ordinal": 1,
+    "task_key_includes_ordinal": false,
+    "task_id_includes_ordinal_count": 1,
+    "reusable_handles": [
+      "JoinSameKey"
+    ],
+    "generation_owner": "arcweft-core",
+    "fixed_ids_reject_zero": [
+      "NeedProducerInstanceKey",
+      "NeedId",
+      "TaskKey",
+      "TaskId"
+    ],
+    "semantic_digests_zero_is_valid": true,
+    "view_identity": "ViewProgramId",
+    "view_revision": "AcceptedViewProgramRevision([u8; 32])",
+    "domain_failure": "Ready payload",
+    "infrastructure_failure": "typed RuntimeTaskFailure",
+    "cancellation": "nonreturning cancellation"
+  },
+  "canonical_value": {
+    "sole_owner": "arcweft_core::entry canonical RuntimeValue visitor",
+    "byte_and_blake3_sinks_share_visitor": true,
+    "opaque_plain_persistence_admitted": [
+      "ConstantAndSnapshot",
+      "SnapshotOnly"
+    ],
+    "opaque_affine_identity": "reject",
+    "need_handle_tag": 20,
+    "need_handle_payload": [
+      "NeedId"
+    ],
+    "constant_fence": "RuntimeValue::validate_constant_admission / try_constant_canonical_bytes",
+    "plain_snapshot_only_pair": {
+      "canonical_bytes": "success",
+      "direct_digest": "success and equals BLAKE3(canonical_bytes)",
+      "producer_admission": "success",
+      "snapshot_roundtrip": "success",
+      "constant_publication": "ConstantAdmissionError::SnapshotOnlyOpaque"
+    }
+  },
+  "task_spec": {
+    "owner": "arcweft_core::task::TaskSpec",
+    "fields": [
+      "producer",
+      "class",
+      "priority",
+      "cancel_scope",
+      "policy",
+      "outcome",
+      "execution",
+      "debug"
+    ],
+    "execution_field": "TaskExecution",
+    "forbidden_fields": [
+      "request",
+      "host_request",
+      "runtime_request"
+    ],
+    "no_parallel_option_pair": true
+  },
+  "task_execution": {
+    "variants": {
+      "Host": "HostTaskRequest",
+      "Runtime": "RuntimeTaskRequest"
+    },
+    "runtime_variants": {
+      "AwaitManyAggregate": "RuntimeAwaitManyAggregateRequest",
+      "Timeout": "RuntimeTimeoutRequest"
+    }
+  },
+  "scheduler_owner": {
+    "type": "arcweft_runtime_scheduler::RuntimeTaskScheduler<A: TaskLaunchAdapter>",
+    "sole_owners": [
+      "generation journals",
+      "AlwaysStart counters",
+      "TaskKey groups",
+      "TaskId launches",
+      "Need cells",
+      "observers",
+      "identity derivation",
+      "host adapter prepare/commit/rollback",
+      "runtime task staging/stepping",
+      "event normalization/application",
+      "terminal publication",
+      "cancellation",
+      "snapshot/restore/replay",
+      "replacement rebind"
+    ],
+    "driver_role": "consumer only",
+    "unsafe": false,
+    "interior_global_state": false,
+    "fallible_after_irreversible_commit": false
+  },
+  "adapter": {
+    "prepare_launch_rows": [
+      "Host"
+    ],
+    "runtime_rows_reach_adapter": false,
+    "commit_return": "()",
+    "rollback_return": "()",
+    "error_variants": [
+      "InvalidSpec",
+      "InvalidProducer",
+      "FamilyExecutionMismatch",
+      "PolicyMismatch",
+      "JournalLimit",
+      "JoinSpecConflict",
+      "OrdinalOverflow",
+      "IdentityDerivation",
+      "AdapterPrepare",
+      "StagingInvariant"
+    ],
+    "forbidden_error_variants": [
+      "AdapterCommit"
+    ]
+  },
+  "need_handle": {
+    "semantic_key": "NeedId",
+    "manual_eq_hash_ord": true,
+    "canonical_identity_fields": [
+      "NeedId"
+    ],
+    "structural_validation_boundaries": [
+      "construction",
+      "snapshot_restore",
+      "await",
+      "timeout",
+      "replacement"
+    ],
+    "ordinary_use_requires_active_generation": true,
+    "replacement_may_rebind_generation": true
+  },
+  "persistence": {
+    "format": "purpose-built RuntimeTaskSnapshotCodecV1",
+    "version": 1,
+    "compatibility_reader": false,
+    "string_fallback": false,
+    "unknown_rejection": true,
+    "duplicate_rejection": true,
+    "trailing_rejection": true,
+    "restore_publish": "one atomic scheduler-state swap",
+    "prepared_adapter_tokens_persisted": false
+  },
+  "match_substrate": {
+    "compiler_local_ref": [
+      "HirSnapshotId",
+      "ExprId"
+    ],
+    "persistent_bundle_contains_compiler_local_ids": false,
+    "expression_resolution_variant_count": 27,
+    "pattern_resolution_variant_count": 5,
+    "hir_pattern_family_count": 13,
+    "literal_variant_count": 7,
+    "forbidden_transcript_inputs": [
+      "raw HIR allocation number",
+      "SourceSpan",
+      "source spelling",
+      "debug name",
+      "hash-map iteration order",
+      "generic Serde"
+    ]
+  },
+  "ownership": {
+    "type_kind_count": 85,
+    "predicate_recursion": "none",
+    "shared": {
+      "disposition": "Reject",
+      "reason": "MissingRuntimeSnapshotOwner"
+    },
+    "snapshot_clone_required_evidence": [
+      "runtime_projection",
+      "live_carrier",
+      "canonical_identity",
+      "snapshot_codec"
+    ]
+  },
+  "bundle": {
+    "type": "AcceptedViewMatchBundleRowV1",
+    "fields": [
+      "version",
+      "program",
+      "accepted_revision",
+      "site",
+      "checked_match",
+      "view_admission",
+      "need_admission",
+      "ownership",
+      "producer_contract",
+      "payload_type",
+      "plan",
+      "arguments",
+      "resource_dependency"
+    ],
+    "forbidden_fields": [
+      "CheckedMatchRef",
+      "ExprId",
+      "HirSnapshotId",
+      "SourceSpan",
+      "compiler_certificate"
+    ]
+  },
+  "compile_cuts": 5,
+  "corrections_closed": [
+    "mandatory_correction_1",
+    "mandatory_correction_2",
+    "mandatory_correction_3",
+    "mandatory_correction_4",
+    "mandatory_correction_5",
+    "mandatory_correction_6",
+    "mandatory_correction_7",
+    "mandatory_correction_8",
+    "mandatory_correction_9",
+    "mandatory_correction_10"
+  ]
+}

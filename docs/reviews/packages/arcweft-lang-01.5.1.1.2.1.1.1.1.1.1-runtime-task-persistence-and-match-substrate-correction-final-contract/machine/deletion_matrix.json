@@ -1,0 +1,319 @@
+{
+  "rows": [
+    {
+      "path": "crates/arcweft-core/src/task.rs",
+      "old_authority": "String-backed NeedId/TaskKey/TaskId and caller-supplied identity",
+      "final_action": "replace original owners with fixed private-field newtypes and inherent derivation; delete String constructors/accessors",
+      "cut": "5",
+      "proof": "API compile-fail; fixed-byte codec tamper; no String fallback"
+    },
+    {
+      "path": "crates/arcweft-core/src/task.rs",
+      "old_authority": "TaskSpec.id, TaskSpec.key, unconditional TaskSpec.request",
+      "final_action": "replace the original struct with producer/class/priority/cancel_scope/policy/outcome/execution/debug; no parallel Option request",
+      "cut": "5",
+      "proof": "structural API test and package validator"
+    },
+    {
+      "path": "crates/arcweft-core/src/task.rs",
+      "old_authority": "TaskHandle/Need state without complete correlation",
+      "final_action": "replace with RuntimeNeedHandle and TaskCorrelation; implement Eq/Hash/Ord by NeedId only in the original impl",
+      "cut": "5",
+      "proof": "semantic-equality, stale-generation and tamper tests"
+    },
+    {
+      "path": "crates/arcweft-core/src/task.rs",
+      "old_authority": "partial TaskEvent and String infrastructure failure",
+      "final_action": "replace with complete correlation/cursor and typed RuntimeTaskFailure",
+      "cut": "5",
+      "proof": "event digest/replay/tamper tests"
+    },
+    {
+      "path": "crates/arcweft-core/src/value.rs",
+      "old_authority": "derived structural PartialEq for final RuntimeValue::NeedHandle carrier",
+      "final_action": "add NeedHandle in the original RuntimeValue enum and ensure contained RuntimeNeedHandle implements semantic equality manually",
+      "cut": "5",
+      "proof": "same NeedId/different debug/spec equality tests"
+    },
+    {
+      "path": "crates/arcweft-core/src/value.rs",
+      "old_authority": "contains_nonconstant_opaque used as identity policy",
+      "final_action": "retain only as a compatibility-free internal refactor target and replace constant callers with validate_constant_admission",
+      "cut": "4/5",
+      "proof": "Plain+SnapshotOnly paired tests"
+    },
+    {
+      "path": "crates/arcweft-core/src/value/opaque.rs",
+      "old_authority": "implicit coupling of persistence and canonical identity",
+      "final_action": "keep the original enums; add inherent identity/constant-admission behavior without extension traits or side helpers",
+      "cut": "4",
+      "proof": "exhaustive enum tests"
+    },
+    {
+      "path": "crates/arcweft-core/src/entry/schema.rs",
+      "old_authority": "opaque SnapshotOnly rejection inside the sole canonical visitor and byte-only allocation path",
+      "final_action": "make the original exhaustive visitor sink-parametric; admit Plain SnapshotOnly; add direct BLAKE3 sink",
+      "cut": "4/5",
+      "proof": "byte/digest differential and first-error property tests"
+    },
+    {
+      "path": "crates/arcweft-core/src/value/awbc_save.rs",
+      "old_authority": "AWBC-only duplicate RuntimeValue snapshot authority",
+      "final_action": "move/generalize the original codec to core RuntimeValueSnapshotV1 and make AWBC save consume it; add NeedHandle row",
+      "cut": "5",
+      "proof": "exhaustive RuntimeValue round-trip and structural absence"
+    },
+    {
+      "path": "crates/arcweft-core/src/plan/construction/lower.rs",
+      "old_authority": "runtime-plan expression constants relying on canonical encoder rejection",
+      "final_action": "call the explicit constant-admission fence before canonicalization/publication",
+      "cut": "4/5",
+      "proof": "SnapshotOnly constant negative"
+    },
+    {
+      "path": "crates/arcweft-dialogue/src/character_dialogue/typed_value.rs",
+      "old_authority": "typed dialogue constant canonicalization without explicit fence",
+      "final_action": "route through try_constant_canonical_bytes/validate_constant_admission",
+      "cut": "5",
+      "proof": "dialogue SnapshotOnly negative"
+    },
+    {
+      "path": "crates/arcweft-dialogue/src/character_dialogue.rs",
+      "old_authority": "dialogue/config constant validation coupled to canonical identity",
+      "final_action": "insert explicit recursive constant-admission fence",
+      "cut": "5",
+      "proof": "dialogue/config constant tests"
+    },
+    {
+      "path": "crates/arcweft-dialogue/src/character_dialogue/schema.rs",
+      "old_authority": "schema constant encoding coupled to canonical identity",
+      "final_action": "insert explicit constant-admission fence; no second serializer",
+      "cut": "5",
+      "proof": "schema encode negative"
+    },
+    {
+      "path": "crates/arcweft-core/src/engine/suspend.rs",
+      "old_authority": "String NeedId and direct Await surrogate",
+      "final_action": "consume RuntimeNeedHandle, validate active generation before registering observer",
+      "cut": "5",
+      "proof": "cross-generation Await rejection before mutation"
+    },
+    {
+      "path": "crates/arcweft-core/src/engine/flow.rs",
+      "old_authority": "Await/AwaitMany host-request-only construction",
+      "final_action": "emit final TaskSpec with explicit TaskExecution; aggregate base is Runtime execution",
+      "cut": "5",
+      "proof": "host/runtime execution differential"
+    },
+    {
+      "path": "crates/arcweft-core/src/awbc/vm.rs",
+      "old_authority": "NeedHandle represented as RuntimeValue::String and String await target",
+      "final_action": "construct/consume RuntimeValue::NeedHandle and final TaskSpec",
+      "cut": "5",
+      "proof": "AWBC value-shape and String absence tests"
+    },
+    {
+      "path": "crates/arcweft-core/src/awbc/fiber.rs",
+      "old_authority": "old Await/AwaitMany String snapshot fields",
+      "final_action": "replace atomically with RuntimeNeedHandle, observer and runtime aggregate snapshots",
+      "cut": "5",
+      "proof": "snapshot/replay exactness"
+    },
+    {
+      "path": "crates/arcweft-core/src/awbc/product_step/lifecycle.rs",
+      "old_authority": "String NeedId lifecycle mapping",
+      "final_action": "map typed correlation and NeedHandle only",
+      "cut": "5",
+      "proof": "product-step parity"
+    },
+    {
+      "path": "crates/arcweft-core/src/awbc/product_step/suspension.rs",
+      "old_authority": "String suspension identity and host-only request",
+      "final_action": "use TaskExecution and complete handle/correlation",
+      "cut": "5",
+      "proof": "suspension parity"
+    },
+    {
+      "path": "crates/arcweft-core/src/awbc/product_step/mapping.rs",
+      "old_authority": "String Need/task projection",
+      "final_action": "replace with fixed projections and rederived identity",
+      "cut": "5",
+      "proof": "mapping tamper"
+    },
+    {
+      "path": "crates/arcweft-core/src/awbc/schema.rs",
+      "old_authority": "task plan Need String/self-digest or host-only assumptions",
+      "final_action": "publish only final producer/execution rows; do not reopen retained numeric allocation",
+      "cut": "5",
+      "proof": "schema/API absence and semantic digest recomputation"
+    },
+    {
+      "path": "crates/arcweft-core/src/awbc/verifier",
+      "old_authority": "NeedHandle admitted as Dynamic/String and task family inferred indirectly",
+      "final_action": "verify typed payload, family/execution/policy truth table and explicit runtime variants",
+      "cut": "5",
+      "proof": "negative verifier corpus"
+    },
+    {
+      "path": "crates/arcweft-runtime-plan/src/final_flow.rs",
+      "old_authority": "indexed String suffix Need identity and host-only AwaitMany",
+      "final_action": "build canonical child arguments and exact child TaskSpec rows; base uses Runtime AwaitMany",
+      "cut": "5",
+      "proof": "index boundary/determinism tests"
+    },
+    {
+      "path": "crates/arcweft-runtime-plan/src/semantic_facts.rs",
+      "old_authority": "ownership rows without the corrected carrier matrix",
+      "final_action": "consume exact 85-row classifier; Predicate leaf and Shared rejection",
+      "cut": "2",
+      "proof": "machine/prose/classifier parity"
+    },
+    {
+      "path": "crates/arcweft-runtime-scheduler/src/lib.rs",
+      "old_authority": "separate lightweight RuntimeScheduler without journal/adapter/runtime task ownership",
+      "final_action": "replace original owner with RuntimeTaskScheduler<A> and move all task state into it",
+      "cut": "5",
+      "proof": "single-owner dependency test; transaction tests"
+    },
+    {
+      "path": "crates/arcweft-runtime-driver/src/task.rs",
+      "old_authority": "second RuntimeTaskRegistry, String DTOs and HostTaskDispatch authority",
+      "final_action": "delete registry/journal behavior; driver only calls RuntimeTaskScheduler APIs and transports typed events",
+      "cut": "5",
+      "proof": "type/API absence; no duplicate counter/journal"
+    },
+    {
+      "path": "crates/arcweft-runtime-driver/src/swap.rs",
+      "old_authority": "driver-local GenerationId",
+      "final_action": "delete original definition after every consumer imports arcweft_core::task::GenerationId",
+      "cut": "4/5",
+      "proof": "single-definition search plus compile"
+    },
+    {
+      "path": "crates/arcweft-runtime-driver/src/generation_runtime.rs",
+      "old_authority": "consumer of driver-local GenerationId",
+      "final_action": "import the core owner and delegate replacement task rebind to scheduler",
+      "cut": "5",
+      "proof": "replacement integration"
+    },
+    {
+      "path": "crates/arcweft-host-adapter/src/lib.rs",
+      "old_authority": "host adapter boundary accepting whole TaskSpec/implicit host request",
+      "final_action": "implement TaskLaunchAdapter only for TaskExecution::Host prepared tokens",
+      "cut": "5",
+      "proof": "runtime rows rejected before adapter call"
+    },
+    {
+      "path": "crates/arcweft-runtime-host/src/native_task.rs",
+      "old_authority": "native task completion with partial identity",
+      "final_action": "accept HostTaskLaunchRequest and emit complete TaskEvent correlation/cursor",
+      "cut": "5",
+      "proof": "native event parity"
+    },
+    {
+      "path": "crates/arcweft-adapter-desktop/src/adapter.rs",
+      "old_authority": "desktop dispatch keyed by String task id",
+      "final_action": "use prepared typed launch/rebind tokens and infallible commit",
+      "cut": "5",
+      "proof": "prepare rollback and replacement tests"
+    },
+    {
+      "path": "crates/arcweft-adapter-desktop/src/codec.rs",
+      "old_authority": "desktop partial task/event DTO codec",
+      "final_action": "replace with strict v1 projections; reject legacy/unknown/duplicate/trailing",
+      "cut": "5",
+      "proof": "codec negative corpus"
+    },
+    {
+      "path": "crates/arcweft-player-web/src/host.rs",
+      "old_authority": "web host dispatch keyed by partial task identity",
+      "final_action": "use HostTaskLaunchRequest and complete typed TaskEvent",
+      "cut": "5",
+      "proof": "web parity and tamper tests"
+    },
+    {
+      "path": "crates/arcweft-agent-runner/src/host_request.rs",
+      "old_authority": "agent runner host request route with partial identity",
+      "final_action": "consume Host TaskExecution only and preserve correlation",
+      "cut": "5",
+      "proof": "agent host parity"
+    },
+    {
+      "path": "crates/arcweft-agent-runner/src/runtime_payload.rs",
+      "old_authority": "runtime payload conversions missing NeedHandle and corrected Agent carrier proof",
+      "final_action": "add final exhaustive NeedHandle and exact carrier projections in the original match",
+      "cut": "5",
+      "proof": "exhaustive conversion tests"
+    },
+    {
+      "path": "crates/arcweft-bundle/src/product.rs",
+      "old_authority": "persistent View/task row embedding compiler-local or partial identities",
+      "final_action": "publish AcceptedViewMatchBundleRowV1 projection only in Cut 5",
+      "cut": "5",
+      "proof": "forbidden-field structural inspection"
+    },
+    {
+      "path": "crates/arcweft-bundle/src/container.rs",
+      "old_authority": "bundle container/product codec routes that would accept old String/Serde task/Need shapes",
+      "final_action": "add strict purpose-built v1 task/View projection sections through the existing container owner; no translation path",
+      "cut": "5",
+      "proof": "old bytes/unknown tag/duplicate/trailing rejection"
+    },
+    {
+      "path": "crates/arcweft-view/src/view/identity.rs",
+      "old_authority": "temptation to invent ViewProgramSemanticDigest or numeric revision",
+      "final_action": "retain original ViewProgramId and AcceptedViewProgramRevision([u8;32]) roles",
+      "cut": "3/5",
+      "proof": "type/API absence"
+    },
+    {
+      "path": "crates/arcweft-compiler/src/view.rs",
+      "old_authority": "compiler-local Match row copied into persistent product",
+      "final_action": "keep CheckedMatchRef only in CompilerLocalViewMatchCatalogRow; project digests in Cut 5",
+      "cut": "3/5",
+      "proof": "bundle forbidden-field test"
+    },
+    {
+      "path": "crates/arcweft-lang-sema/src/final_analysis/model.rs",
+      "old_authority": "session-local semantic facts lacking stable transcript projections",
+      "final_action": "add inherent/same-module semantic transcript implementation over exact current variants; no generic Serde",
+      "cut": "1",
+      "proof": "variant exhaustiveness and allocation/span differential"
+    },
+    {
+      "path": "crates/arcweft-lang-sema/src/final_analysis/report.rs",
+      "old_authority": "lookup by ExprId without exact snapshot-bound Match reference",
+      "final_action": "construct CheckedMatchRef from the report's exact HirSnapshotId plus ExprId; do not mint AcceptedSemanticGeneration",
+      "cut": "1",
+      "proof": "stale snapshot negative"
+    },
+    {
+      "path": "crates/arcweft-lang-sema/src/types.rs",
+      "old_authority": "ownership classifier with Predicate child recursion or optimistic Shared",
+      "final_action": "regenerate exhaustive 85-variant match; Predicate leaf; Shared MissingRuntimeSnapshotOwner",
+      "cut": "2",
+      "proof": "classifier/machine/prose parity"
+    },
+    {
+      "path": "crates/arcweft-core/src/tests/flow.rs",
+      "old_authority": "String Need/task fixtures",
+      "final_action": "replace with typed transcript builders and host/runtime execution rows",
+      "cut": "5",
+      "proof": "workspace test compile"
+    },
+    {
+      "path": "crates/arcweft-core/tests/direct_suspension.rs",
+      "old_authority": "String direct-Await fixtures",
+      "final_action": "replace with RuntimeNeedHandle and active-generation validation",
+      "cut": "5",
+      "proof": "negative stale generation"
+    },
+    {
+      "path": "crates/arcweft-agent-runner/src/tests.rs",
+      "old_authority": "partial host task/Need fixture shapes",
+      "final_action": "replace with complete TaskCorrelation and event envelopes",
+      "cut": "5",
+      "proof": "agent parity"
+    }
+  ]
+}

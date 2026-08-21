@@ -1,0 +1,17 @@
+PACKAGE=arcweft-lang-01.5.1.1.2.1.1.1.1.1.1-runtime-task-persistence-and-match-substrate-correction-final-contract
+MANIFEST_CHECK=enabled
+PRODUCER_FAMILIES=9
+PERSISTENCE_SCHEMAS=72
+TYPE_KIND_ROWS=85
+TEST_ROWS=94
+NEGATIVE_SELF_TEST adapter_commit=PASS :: AdapterCommit must not be a reachable error variant
+NEGATIVE_SELF_TEST unconditional_host_request=PASS :: TaskSpec fields must contain exactly one execution field and no request field
+NEGATIVE_SELF_TEST undefined_snapshot=PASS :: RuntimeTaskSchedulerSnapshotV1: undefined schema reference UndefinedSnapshotV1
+NEGATIVE_SELF_TEST compiler_local_bundle_id=PASS :: AcceptedViewMatchBundleRowV1 field set/order mismatch
+NEGATIVE_SELF_TEST shared_without_carrier=PASS :: Shared must reject as MissingRuntimeSnapshotOwner without invented carrier evidence
+NEGATIVE_SELF_TEST predicate_recursion=PASS :: Predicate TypeKind row must have no child recursion
+NEGATIVE_SELF_TEST private_runtime_value_variant=PASS :: cut 4 claims a private/public RuntimeValue::NeedHandle variant
+NEGATIVE_SELF_TEST cut3_depends_on_cut4=PASS :: cut 3 depends on cut 4 task types: ['NeedProducerContractDigest']
+NEGATIVE_SELF_TEST missing_producer_family=PASS :: producer family inventory/order must contain exactly the nine current families
+NEGATIVE_SELF_TEST version_two=PASS :: all Arcweft-owned version markers must be exactly [1]
+RESULT=PASS

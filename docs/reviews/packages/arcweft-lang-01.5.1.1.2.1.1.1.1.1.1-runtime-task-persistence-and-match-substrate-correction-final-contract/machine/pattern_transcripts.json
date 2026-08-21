@@ -1,0 +1,78 @@
+{
+  "checked_pattern_resolution": [
+    {
+      "variant": "Structural",
+      "transcript": "HirPatternKind transcript plus child pattern digests"
+    },
+    {
+      "variant": "Literal",
+      "transcript": "CheckedLiteralSemanticV1"
+    },
+    {
+      "variant": "Entity",
+      "transcript": "AcceptedDeclarationSemanticId of the resolved project item"
+    },
+    {
+      "variant": "Nominal",
+      "transcript": "accepted nominal semantic identity and layout digest"
+    },
+    {
+      "variant": "Variant",
+      "transcript": "accepted nominal semantic identity/layout and accepted case ordinal/identity"
+    }
+  ],
+  "hir_pattern_families": [
+    {
+      "variant": "Binding",
+      "transcript": "stable binding coordinate; checked type digest; mutability=false"
+    },
+    {
+      "variant": "MutableBinding",
+      "transcript": "stable binding coordinate; checked type digest; mutability=true"
+    },
+    {
+      "variant": "Literal",
+      "transcript": "CheckedLiteralSemanticV1"
+    },
+    {
+      "variant": "EntityReference",
+      "transcript": "AcceptedDeclarationSemanticId"
+    },
+    {
+      "variant": "Variant",
+      "transcript": "accepted owner/layout/case identity; optional payload child role"
+    },
+    {
+      "variant": "Discard",
+      "transcript": "no payload"
+    },
+    {
+      "variant": "Tuple",
+      "transcript": "arity; source-order child digests"
+    },
+    {
+      "variant": "Record",
+      "transcript": "accepted owner/layout; accepted field identities in source order; rest semantic; child digests"
+    },
+    {
+      "variant": "BracketSequence",
+      "transcript": "source-order item digests; rest semantic"
+    },
+    {
+      "variant": "WholeBinding",
+      "transcript": "stable binding coordinate; nested pattern digest"
+    },
+    {
+      "variant": "Or",
+      "transcript": "source-order alternatives; equal binding-shape certificate"
+    },
+    {
+      "variant": "TypedBinding",
+      "transcript": "stable binding coordinate; explicit checked type digest"
+    },
+    {
+      "variant": "Error",
+      "transcript": "not encodable; generic Match construction fails before publication"
+    }
+  ]
+}

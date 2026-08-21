@@ -1,0 +1,3150 @@
+{
+  "schemas": [
+    {
+      "name": "RuntimeTaskSchedulerSnapshotV1",
+      "kind": "struct",
+      "versioned": true,
+      "version": 1,
+      "fields": [
+        [
+          "version",
+          "RuntimeTaskSchedulerSnapshotVersion"
+        ],
+        [
+          "journal",
+          "RuntimeTaskJournalSnapshotV1"
+        ],
+        [
+          "runtime_tasks",
+          "RuntimeTaskStateSnapshotV1"
+        ],
+        [
+          "pending_events",
+          "Vec<TaskEventSnapshotV1>"
+        ],
+        [
+          "replacement",
+          "ReplacementStateSnapshotV1"
+        ]
+      ],
+      "variants": [],
+      "key": [
+        "journal.active_generation"
+      ],
+      "order": "fields above; pending_events sorted by event ordering key",
+      "bound": "RuntimeSnapshotLimits owner",
+      "invariants": [
+        "version exactly 1",
+        "no adapter transaction may be prepared while snapshotting",
+        "pending events normalized and unique"
+      ],
+      "references": [
+        "RuntimeTaskJournalSnapshotV1",
+        "RuntimeTaskStateSnapshotV1",
+        "TaskEventSnapshotV1",
+        "ReplacementStateSnapshotV1"
+      ],
+      "unknown_fields": "reject",
+      "duplicate_fields": "reject",
+      "trailing_bytes": "reject"
+    },
+    {
+      "name": "RuntimeTaskJournalSnapshotV1",
+      "kind": "struct",
+      "versioned": true,
+      "version": 1,
+      "fields": [
+        [
+          "version",
+          "RuntimeTaskJournalSnapshotVersion"
+        ],
+        [
+          "active_generation",
+          "GenerationId"
+        ],
+        [
+          "generations",
+          "Vec<RuntimeTaskGenerationSnapshotV1>"
+        ]
+      ],
+      "variants": [],
+      "key": [
+        "active_generation"
+      ],
+      "order": "generations ascending GenerationId",
+      "bound": "RuntimeSnapshotLimits owner",
+      "invariants": [
+        "exactly one generation row matches active_generation",
+        "generation keys unique"
+      ],
+      "references": [
+        "RuntimeTaskGenerationSnapshotV1"
+      ],
+      "unknown_fields": "reject",
+      "duplicate_fields": "reject",
+      "trailing_bytes": "reject"
+    },
+    {
+      "name": "RuntimeTaskGenerationSnapshotV1",
+      "kind": "struct",
+      "versioned": true,
+      "version": 1,
+      "fields": [
+        [
+          "version",
+          "RuntimeTaskGenerationSnapshotVersion"
+        ],
+        [
+          "generation",
+          "GenerationId"
+        ],
+        [
+          "ordinal_counters",
+          "Vec<AlwaysStartOrdinalCounterSnapshotV1>"
+        ],
+        [
+          "groups",
+          "Vec<TaskGroupSnapshotV1>"
+        ],
+        [
+          "launches",
+          "Vec<TaskLaunchSnapshotV1>"
+        ],
+        [
+          "needs",
+          "Vec<NeedCellSnapshotV1>"
+        ],
+        [
+          "observers",
+          "Vec<TaskObserverSnapshotV1>"
+        ],
+        [
+          "replay",
+          "TaskReplayStateSnapshotV1"
+        ]
+      ],
+      "variants": [],
+      "key": [
+        "generation"
+      ],
+      "order": "counters by producer; groups by TaskKey; launches by TaskId; needs by NeedId; observers by ObserverId",
+      "bound": "RuntimeSnapshotLimits owner",
+      "invariants": [
+        "all joins stay within this generation except NeedId identity",
+        "every cross-reference resolves exactly once"
+      ],
+      "references": [
+        "AlwaysStartOrdinalCounterSnapshotV1",
+        "TaskGroupSnapshotV1",
+        "TaskLaunchSnapshotV1",
+        "NeedCellSnapshotV1",
+        "TaskObserverSnapshotV1",
+        "TaskReplayStateSnapshotV1"
+      ],
+      "unknown_fields": "reject",
+      "duplicate_fields": "reject",
+      "trailing_bytes": "reject"
+    },
+    {
+      "name": "AlwaysStartOrdinalCounterSnapshotV1",
+      "kind": "struct",
+      "versioned": true,
+      "version": 1,
+      "fields": [
+        [
+          "version",
+          "AlwaysStartOrdinalCounterSnapshotVersion"
+        ],
+        [
+          "producer",
+          "NeedProducerInstanceKey"
+        ],
+        [
+          "next_ordinal",
+          "TaskLaunchOrdinal"
+        ]
+      ],
+      "variants": [],
+      "key": [
+        "producer"
+      ],
+      "order": "producer byte order",
+      "bound": "RuntimeSnapshotLimits owner",
+      "invariants": [
+        "next_ordinal is at least 1",
+        "next_ordinal is strictly greater than every persisted launch ordinal for this producer",
+        "Join rows have no counter"
+      ],
+      "references": [],
+      "unknown_fields": "reject",
+      "duplicate_fields": "reject",
+      "trailing_bytes": "reject"
+    },
+    {
+      "name": "TaskGroupSnapshotV1",
+      "kind": "struct",
+      "versioned": true,
+      "version": 1,
+      "fields": [
+        [
+          "version",
+          "TaskGroupSnapshotVersion"
+        ],
+        [
+          "task_key",
+          "TaskKey"
+        ],
+        [
+          "producer",
+          "NeedProducerInstanceKey"
+        ],
+        [
+          "policy",
+          "TaskPolicy"
+        ],
+        [
+          "launches",
+          "Vec<TaskLaunchMappingSnapshotV1>"
+        ]
+      ],
+      "variants": [],
+      "key": [
+        "task_key"
+      ],
+      "order": "launches by ascending ordinal",
+      "bound": "RuntimeSnapshotLimits owner",
+      "invariants": [
+        "TaskKey rederives from generation, producer and policy",
+        "Join has exactly ordinal 0 and at most one launch",
+        "AlwaysStart has no ordinal 0 and unique positive ordinals"
+      ],
+      "references": [
+        "TaskLaunchMappingSnapshotV1"
+      ],
+      "unknown_fields": "reject",
+      "duplicate_fields": "reject",
+      "trailing_bytes": "reject"
+    },
+    {
+      "name": "TaskLaunchMappingSnapshotV1",
+      "kind": "struct",
+      "versioned": true,
+      "version": 1,
+      "fields": [
+        [
+          "version",
+          "TaskLaunchMappingSnapshotVersion"
+        ],
+        [
+          "ordinal",
+          "TaskLaunchOrdinal"
+        ],
+        [
+          "task_id",
+          "TaskId"
+        ],
+        [
+          "need_id",
+          "NeedId"
+        ]
+      ],
+      "variants": [],
+      "key": [
+        "ordinal"
+      ],
+      "order": "ascending ordinal",
+      "bound": "RuntimeSnapshotLimits owner",
+      "invariants": [
+        "TaskId/NeedId rederive from group producer/policy/ordinal",
+        "task and need rows exist"
+      ],
+      "references": [],
+      "unknown_fields": "reject",
+      "duplicate_fields": "reject",
+      "trailing_bytes": "reject"
+    },
+    {
+      "name": "TaskLaunchSnapshotV1",
+      "kind": "struct",
+      "versioned": true,
+      "version": 1,
+      "fields": [
+        [
+          "version",
+          "TaskLaunchSnapshotVersion"
+        ],
+        [
+          "correlation",
+          "TaskCorrelationSnapshotV1"
+        ],
+        [
+          "spec",
+          "TaskSpecSnapshotV1"
+        ],
+        [
+          "lifecycle",
+          "TaskLifecycleSnapshotV1"
+        ],
+        [
+          "last_publication",
+          "Option<TaskPublicationCursorSnapshotV1>"
+        ],
+        [
+          "last_event_digest",
+          "Option<TaskEventDigest>"
+        ],
+        [
+          "host_state",
+          "Option<HostTaskStateSnapshotV1>"
+        ]
+      ],
+      "variants": [],
+      "key": [
+        "correlation.task_id"
+      ],
+      "order": "TaskId byte order",
+      "bound": "RuntimeSnapshotLimits owner",
+      "invariants": [
+        "correlation rederives from spec and generation",
+        "host_state present iff TaskExecution::Host",
+        "runtime state is stored only in RuntimeTaskStateSnapshotV1"
+      ],
+      "references": [
+        "TaskCorrelationSnapshotV1",
+        "TaskSpecSnapshotV1",
+        "TaskLifecycleSnapshotV1",
+        "TaskPublicationCursorSnapshotV1",
+        "HostTaskStateSnapshotV1"
+      ],
+      "unknown_fields": "reject",
+      "duplicate_fields": "reject",
+      "trailing_bytes": "reject"
+    },
+    {
+      "name": "TaskSpecSnapshotV1",
+      "kind": "struct",
+      "versioned": true,
+      "version": 1,
+      "fields": [
+        [
+          "version",
+          "TaskSpecSnapshotVersion"
+        ],
+        [
+          "producer",
+          "NeedProducerSpecSnapshotV1"
+        ],
+        [
+          "class",
+          "TaskClass"
+        ],
+        [
+          "priority",
+          "TaskPriority"
+        ],
+        [
+          "cancel_scope",
+          "CancelScopeId"
+        ],
+        [
+          "policy",
+          "TaskPolicy"
+        ],
+        [
+          "outcome",
+          "TaskOutcomeContractSnapshotV1"
+        ],
+        [
+          "execution",
+          "TaskExecutionSnapshotV1"
+        ],
+        [
+          "debug",
+          "TaskDebugMetadataSnapshotV1"
+        ]
+      ],
+      "variants": [],
+      "key": [],
+      "order": "fields above",
+      "bound": "RuntimeSnapshotLimits owner",
+      "invariants": [
+        "exactly one execution row",
+        "family/execution/policy truth table validates",
+        "debug is excluded from identity"
+      ],
+      "references": [
+        "NeedProducerSpecSnapshotV1",
+        "TaskOutcomeContractSnapshotV1",
+        "TaskExecutionSnapshotV1",
+        "TaskDebugMetadataSnapshotV1"
+      ],
+      "unknown_fields": "reject",
+      "duplicate_fields": "reject",
+      "trailing_bytes": "reject"
+    },
+    {
+      "name": "NeedProducerSpecSnapshotV1",
+      "kind": "struct",
+      "versioned": true,
+      "version": 1,
+      "fields": [
+        [
+          "version",
+          "NeedProducerSpecSnapshotVersion"
+        ],
+        [
+          "family",
+          "NeedProducerFamily"
+        ],
+        [
+          "contract",
+          "NeedProducerContractDigest"
+        ],
+        [
+          "plan",
+          "TaskPlanSemanticDigest"
+        ],
+        [
+          "producer_site",
+          "u32"
+        ],
+        [
+          "payload_type",
+          "RuntimeTypeSemanticDigest"
+        ],
+        [
+          "arguments",
+          "RuntimeValueDigest"
+        ]
+      ],
+      "variants": [],
+      "key": [],
+      "order": "fields above",
+      "bound": "RuntimeSnapshotLimits owner",
+      "invariants": [
+        "NeedProducerInstanceKey is recomputed; stored key is never authoritative",
+        "arguments is never RuntimeValueDigest::ZERO as an absence sentinel"
+      ],
+      "references": [],
+      "unknown_fields": "reject",
+      "duplicate_fields": "reject",
+      "trailing_bytes": "reject"
+    },
+    {
+      "name": "TaskCorrelationSnapshotV1",
+      "kind": "struct",
+      "versioned": true,
+      "version": 1,
+      "fields": [
+        [
+          "version",
+          "TaskCorrelationSnapshotVersion"
+        ],
+        [
+          "generation",
+          "GenerationId"
+        ],
+        [
+          "producer",
+          "NeedProducerInstanceKey"
+        ],
+        [
+          "policy",
+          "TaskPolicy"
+        ],
+        [
+          "ordinal",
+          "TaskLaunchOrdinal"
+        ],
+        [
+          "need_id",
+          "NeedId"
+        ],
+        [
+          "task_key",
+          "TaskKey"
+        ],
+        [
+          "task_id",
+          "TaskId"
+        ]
+      ],
+      "variants": [],
+      "key": [],
+      "order": "fields above",
+      "bound": "RuntimeSnapshotLimits owner",
+      "invariants": [
+        "all fixed IDs nonzero",
+        "Join ordinal exactly 0; AlwaysStart ordinal at least 1",
+        "all three IDs are rederived and compared"
+      ],
+      "references": [],
+      "unknown_fields": "reject",
+      "duplicate_fields": "reject",
+      "trailing_bytes": "reject"
+    },
+    {
+      "name": "TaskLifecycleSnapshotV1",
+      "kind": "enum",
+      "versioned": false,
+      "version": null,
+      "fields": [],
+      "variants": [
+        [
+          "Accepted",
+          []
+        ],
+        [
+          "Running",
+          []
+        ],
+        [
+          "Ready",
+          []
+        ],
+        [
+          "InfrastructureFailed",
+          []
+        ],
+        [
+          "Cancelled",
+          []
+        ]
+      ],
+      "key": [],
+      "order": "declaration order",
+      "bound": "RuntimeSnapshotLimits owner",
+      "invariants": [
+        "terminal variants agree with Need state"
+      ],
+      "references": [],
+      "unknown_fields": "reject",
+      "duplicate_fields": "reject",
+      "trailing_bytes": "reject"
+    },
+    {
+      "name": "TaskOutcomeContractSnapshotV1",
+      "kind": "struct",
+      "versioned": true,
+      "version": 1,
+      "fields": [
+        [
+          "version",
+          "TaskOutcomeContractSnapshotVersion"
+        ],
+        [
+          "payload_type",
+          "RuntimeTypeSemanticDigest"
+        ],
+        [
+          "runtime_checked_type",
+          "RuntimeCheckedTypeSnapshotV1"
+        ]
+      ],
+      "variants": [],
+      "key": [],
+      "order": "declaration order",
+      "bound": "RuntimeSnapshotLimits owner",
+      "invariants": [
+        "runtime_checked_type semantic digest equals payload_type"
+      ],
+      "references": [
+        "RuntimeCheckedTypeSnapshotV1"
+      ],
+      "unknown_fields": "reject",
+      "duplicate_fields": "reject",
+      "trailing_bytes": "reject"
+    },
+    {
+      "name": "TaskDebugMetadataSnapshotV1",
+      "kind": "struct",
+      "versioned": true,
+      "version": 1,
+      "fields": [
+        [
+          "version",
+          "TaskDebugMetadataSnapshotVersion"
+        ],
+        [
+          "label",
+          "Option<BoundedUtf8>"
+        ],
+        [
+          "origin",
+          "Option<BoundedUtf8>"
+        ]
+      ],
+      "variants": [],
+      "key": [],
+      "order": "declaration order",
+      "bound": "RuntimeSnapshotLimits owner",
+      "invariants": [
+        "diagnostic only; never read by identity/execution selection"
+      ],
+      "references": [],
+      "unknown_fields": "reject",
+      "duplicate_fields": "reject",
+      "trailing_bytes": "reject"
+    },
+    {
+      "name": "TaskExecutionSnapshotV1",
+      "kind": "enum",
+      "versioned": false,
+      "version": null,
+      "fields": [],
+      "variants": [
+        [
+          "Host",
+          [
+            [
+              "request",
+              "HostTaskRequestSnapshotV1"
+            ]
+          ]
+        ],
+        [
+          "Runtime",
+          [
+            [
+              "request",
+              "RuntimeTaskRequestSnapshotV1"
+            ]
+          ]
+        ]
+      ],
+      "key": [],
+      "order": "declaration order",
+      "bound": "RuntimeSnapshotLimits owner",
+      "invariants": [
+        "one closed discriminant; no parallel Option fields"
+      ],
+      "references": [
+        "HostTaskRequestSnapshotV1",
+        "RuntimeTaskRequestSnapshotV1"
+      ],
+      "unknown_fields": "reject",
+      "duplicate_fields": "reject",
+      "trailing_bytes": "reject"
+    },
+    {
+      "name": "HostTaskRequestSnapshotV1",
+      "kind": "enum",
+      "versioned": false,
+      "version": null,
+      "fields": [],
+      "variants": [
+        [
+          "FileReadText",
+          [
+            [
+              "path",
+              "BoundedUtf8"
+            ]
+          ]
+        ],
+        [
+          "FileReadBytes",
+          [
+            [
+              "path",
+              "BoundedUtf8"
+            ]
+          ]
+        ],
+        [
+          "FileWriteText",
+          [
+            [
+              "path",
+              "BoundedUtf8"
+            ],
+            [
+              "text",
+              "BoundedUtf8"
+            ]
+          ]
+        ],
+        [
+          "FileWriteBytes",
+          [
+            [
+              "path",
+              "BoundedUtf8"
+            ],
+            [
+              "bytes",
+              "BoundedBytes"
+            ]
+          ]
+        ],
+        [
+          "HttpFetch",
+          [
+            [
+              "url",
+              "BoundedUtf8"
+            ],
+            [
+              "method",
+              "BoundedUtf8"
+            ],
+            [
+              "headers",
+              "Vec<HeaderSnapshotV1>"
+            ],
+            [
+              "body",
+              "Option<RuntimePayloadSnapshotV1>"
+            ]
+          ]
+        ],
+        [
+          "HttpRespond",
+          [
+            [
+              "request_id",
+              "BoundedUtf8"
+            ],
+            [
+              "status",
+              "u16"
+            ],
+            [
+              "headers",
+              "Vec<HeaderSnapshotV1>"
+            ],
+            [
+              "body",
+              "Option<RuntimePayloadSnapshotV1>"
+            ]
+          ]
+        ],
+        [
+          "ProcessRun",
+          [
+            [
+              "program",
+              "BoundedUtf8"
+            ],
+            [
+              "args",
+              "Vec<BoundedUtf8>"
+            ],
+            [
+              "env",
+              "Vec<EnvPairSnapshotV1>"
+            ]
+          ]
+        ],
+        [
+          "AssetLoad",
+          [
+            [
+              "id",
+              "BoundedUtf8"
+            ],
+            [
+              "kind",
+              "BoundedUtf8"
+            ]
+          ]
+        ],
+        [
+          "ShaderCompile",
+          [
+            [
+              "id",
+              "BoundedUtf8"
+            ],
+            [
+              "entry",
+              "Option<BoundedUtf8>"
+            ]
+          ]
+        ],
+        [
+          "AudioDecode",
+          [
+            [
+              "id",
+              "BoundedUtf8"
+            ]
+          ]
+        ],
+        [
+          "TtsSynthesis",
+          [
+            [
+              "voice",
+              "Option<BoundedUtf8>"
+            ],
+            [
+              "text",
+              "BoundedUtf8"
+            ]
+          ]
+        ],
+        [
+          "WasmCall",
+          [
+            [
+              "module",
+              "BoundedUtf8"
+            ],
+            [
+              "function",
+              "BoundedUtf8"
+            ],
+            [
+              "args",
+              "Vec<RuntimePayloadSnapshotV1>"
+            ]
+          ]
+        ],
+        [
+          "SystemInfo",
+          [
+            [
+              "kind",
+              "SystemInfoKind"
+            ]
+          ]
+        ],
+        [
+          "Custom",
+          [
+            [
+              "capability",
+              "HostCapabilityId"
+            ],
+            [
+              "operation",
+              "RuntimeHostOperationId"
+            ],
+            [
+              "args",
+              "Vec<RuntimePayloadSnapshotV1>"
+            ],
+            [
+              "named_args",
+              "Vec<NamedRuntimePayloadSnapshotV1>"
+            ]
+          ]
+        ]
+      ],
+      "key": [],
+      "order": "declaration order",
+      "bound": "RuntimeSnapshotLimits owner",
+      "invariants": [
+        "variant matches accepted HostOperation contract",
+        "all lists bounded; headers/env/named args retain source order unless owner contract requires canonical unique order"
+      ],
+      "references": [
+        "HeaderSnapshotV1",
+        "EnvPairSnapshotV1",
+        "RuntimePayloadSnapshotV1",
+        "NamedRuntimePayloadSnapshotV1"
+      ],
+      "unknown_fields": "reject",
+      "duplicate_fields": "reject",
+      "trailing_bytes": "reject"
+    },
+    {
+      "name": "HeaderSnapshotV1",
+      "kind": "struct",
+      "versioned": false,
+      "version": null,
+      "fields": [
+        [
+          "name",
+          "BoundedUtf8"
+        ],
+        [
+          "value",
+          "BoundedUtf8"
+        ]
+      ],
+      "variants": [],
+      "key": [],
+      "order": "declaration order",
+      "bound": "RuntimeSnapshotLimits owner",
+      "invariants": [],
+      "references": [],
+      "unknown_fields": "reject",
+      "duplicate_fields": "reject",
+      "trailing_bytes": "reject"
+    },
+    {
+      "name": "EnvPairSnapshotV1",
+      "kind": "struct",
+      "versioned": false,
+      "version": null,
+      "fields": [
+        [
+          "name",
+          "BoundedUtf8"
+        ],
+        [
+          "value",
+          "BoundedUtf8"
+        ]
+      ],
+      "variants": [],
+      "key": [],
+      "order": "declaration order",
+      "bound": "RuntimeSnapshotLimits owner",
+      "invariants": [],
+      "references": [],
+      "unknown_fields": "reject",
+      "duplicate_fields": "reject",
+      "trailing_bytes": "reject"
+    },
+    {
+      "name": "NamedRuntimePayloadSnapshotV1",
+      "kind": "struct",
+      "versioned": false,
+      "version": null,
+      "fields": [
+        [
+          "name",
+          "BoundedUtf8"
+        ],
+        [
+          "value",
+          "RuntimePayloadSnapshotV1"
+        ]
+      ],
+      "variants": [],
+      "key": [],
+      "order": "declaration order",
+      "bound": "RuntimeSnapshotLimits owner",
+      "invariants": [],
+      "references": [
+        "RuntimePayloadSnapshotV1"
+      ],
+      "unknown_fields": "reject",
+      "duplicate_fields": "reject",
+      "trailing_bytes": "reject"
+    },
+    {
+      "name": "HostTaskStateSnapshotV1",
+      "kind": "struct",
+      "versioned": true,
+      "version": 1,
+      "fields": [
+        [
+          "version",
+          "HostTaskStateSnapshotVersion"
+        ],
+        [
+          "correlation",
+          "TaskCorrelationSnapshotV1"
+        ],
+        [
+          "request",
+          "HostTaskRequestSnapshotV1"
+        ],
+        [
+          "phase",
+          "HostTaskPhaseSnapshotV1"
+        ],
+        [
+          "restore_policy",
+          "HostTaskRestorePolicySnapshotV1"
+        ]
+      ],
+      "variants": [],
+      "key": [
+        "correlation.task_id"
+      ],
+      "order": "declaration order",
+      "bound": "RuntimeSnapshotLimits owner",
+      "invariants": [
+        "request equals TaskSpec Host row",
+        "in-flight MustBeQuiescent rows make snapshot fail",
+        "Restartable rows are re-prepared by adapter on restore; no adapter-private token is serialized"
+      ],
+      "references": [
+        "TaskCorrelationSnapshotV1",
+        "HostTaskRequestSnapshotV1",
+        "HostTaskPhaseSnapshotV1",
+        "HostTaskRestorePolicySnapshotV1"
+      ],
+      "unknown_fields": "reject",
+      "duplicate_fields": "reject",
+      "trailing_bytes": "reject"
+    },
+    {
+      "name": "HostTaskPhaseSnapshotV1",
+      "kind": "enum",
+      "versioned": false,
+      "version": null,
+      "fields": [],
+      "variants": [
+        [
+          "Accepted",
+          []
+        ],
+        [
+          "Dispatched",
+          []
+        ],
+        [
+          "Terminal",
+          []
+        ]
+      ],
+      "key": [],
+      "order": "declaration order",
+      "bound": "RuntimeSnapshotLimits owner",
+      "invariants": [],
+      "references": [],
+      "unknown_fields": "reject",
+      "duplicate_fields": "reject",
+      "trailing_bytes": "reject"
+    },
+    {
+      "name": "HostTaskRestorePolicySnapshotV1",
+      "kind": "enum",
+      "versioned": false,
+      "version": null,
+      "fields": [],
+      "variants": [
+        [
+          "Restartable",
+          []
+        ],
+        [
+          "MustBeQuiescent",
+          []
+        ]
+      ],
+      "key": [],
+      "order": "declaration order",
+      "bound": "RuntimeSnapshotLimits owner",
+      "invariants": [],
+      "references": [],
+      "unknown_fields": "reject",
+      "duplicate_fields": "reject",
+      "trailing_bytes": "reject"
+    },
+    {
+      "name": "RuntimeTaskRequestSnapshotV1",
+      "kind": "enum",
+      "versioned": false,
+      "version": null,
+      "fields": [],
+      "variants": [
+        [
+          "AwaitManyAggregate",
+          [
+            [
+              "request",
+              "RuntimeAwaitManyAggregateRequestSnapshotV1"
+            ]
+          ]
+        ],
+        [
+          "Timeout",
+          [
+            [
+              "request",
+              "RuntimeTimeoutRequestSnapshotV1"
+            ]
+          ]
+        ]
+      ],
+      "key": [],
+      "order": "declaration order",
+      "bound": "RuntimeSnapshotLimits owner",
+      "invariants": [],
+      "references": [
+        "RuntimeAwaitManyAggregateRequestSnapshotV1",
+        "RuntimeTimeoutRequestSnapshotV1"
+      ],
+      "unknown_fields": "reject",
+      "duplicate_fields": "reject",
+      "trailing_bytes": "reject"
+    },
+    {
+      "name": "RuntimeAwaitManyAggregateRequestSnapshotV1",
+      "kind": "struct",
+      "versioned": true,
+      "version": 1,
+      "fields": [
+        [
+          "version",
+          "RuntimeAwaitManyAggregateRequestSnapshotVersion"
+        ],
+        [
+          "source_items",
+          "Vec<RuntimeValueSnapshotV1>"
+        ],
+        [
+          "children",
+          "Vec<TaskSpecSnapshotV1>"
+        ],
+        [
+          "limit",
+          "NonZeroU32"
+        ]
+      ],
+      "variants": [],
+      "key": [],
+      "order": "declaration order",
+      "bound": "RuntimeSnapshotLimits owner",
+      "invariants": [
+        "source_items.len equals children.len",
+        "each child family is AwaitManyChild",
+        "each child producer arguments rehash from captured arguments, exact source index and item",
+        "limit bounded"
+      ],
+      "references": [
+        "RuntimeValueSnapshotV1",
+        "TaskSpecSnapshotV1"
+      ],
+      "unknown_fields": "reject",
+      "duplicate_fields": "reject",
+      "trailing_bytes": "reject"
+    },
+    {
+      "name": "RuntimeTimeoutRequestSnapshotV1",
+      "kind": "struct",
+      "versioned": true,
+      "version": 1,
+      "fields": [
+        [
+          "version",
+          "RuntimeTimeoutRequestSnapshotVersion"
+        ],
+        [
+          "source",
+          "RuntimeNeedHandleSnapshotV1"
+        ],
+        [
+          "requested_limit",
+          "LogicalDurationSnapshotV1"
+        ],
+        [
+          "contract",
+          "NeedTimeoutContractDigest"
+        ]
+      ],
+      "variants": [],
+      "key": [],
+      "order": "declaration order",
+      "bound": "RuntimeSnapshotLimits owner",
+      "invariants": [
+        "source handle structurally validates",
+        "requested limit is the exact accepted duration",
+        "family is Timeout and policy JoinSameKey"
+      ],
+      "references": [
+        "RuntimeNeedHandleSnapshotV1",
+        "LogicalDurationSnapshotV1"
+      ],
+      "unknown_fields": "reject",
+      "duplicate_fields": "reject",
+      "trailing_bytes": "reject"
+    },
+    {
+      "name": "RuntimeTaskStateSnapshotV1",
+      "kind": "struct",
+      "versioned": true,
+      "version": 1,
+      "fields": [
+        [
+          "version",
+          "RuntimeTaskStateSnapshotVersion"
+        ],
+        [
+          "tasks",
+          "Vec<RuntimeTaskRowSnapshotV1>"
+        ]
+      ],
+      "variants": [],
+      "key": [],
+      "order": "tasks ascending TaskId",
+      "bound": "RuntimeSnapshotLimits owner",
+      "invariants": [
+        "one runtime row for every active Runtime execution launch and no Host launch"
+      ],
+      "references": [
+        "RuntimeTaskRowSnapshotV1"
+      ],
+      "unknown_fields": "reject",
+      "duplicate_fields": "reject",
+      "trailing_bytes": "reject"
+    },
+    {
+      "name": "RuntimeTaskRowSnapshotV1",
+      "kind": "struct",
+      "versioned": true,
+      "version": 1,
+      "fields": [
+        [
+          "version",
+          "RuntimeTaskRowSnapshotVersion"
+        ],
+        [
+          "correlation",
+          "TaskCorrelationSnapshotV1"
+        ],
+        [
+          "state",
+          "RuntimeTaskRequestStateSnapshotV1"
+        ]
+      ],
+      "variants": [],
+      "key": [
+        "correlation.task_id"
+      ],
+      "order": "declaration order",
+      "bound": "RuntimeSnapshotLimits owner",
+      "invariants": [],
+      "references": [
+        "TaskCorrelationSnapshotV1",
+        "RuntimeTaskRequestStateSnapshotV1"
+      ],
+      "unknown_fields": "reject",
+      "duplicate_fields": "reject",
+      "trailing_bytes": "reject"
+    },
+    {
+      "name": "RuntimeTaskRequestStateSnapshotV1",
+      "kind": "enum",
+      "versioned": false,
+      "version": null,
+      "fields": [],
+      "variants": [
+        [
+          "AwaitManyAggregate",
+          [
+            [
+              "state",
+              "RuntimeAwaitManyAggregateTaskSnapshotV1"
+            ]
+          ]
+        ],
+        [
+          "Timeout",
+          [
+            [
+              "state",
+              "RuntimeTimeoutNeedSnapshotV1"
+            ]
+          ]
+        ]
+      ],
+      "key": [],
+      "order": "declaration order",
+      "bound": "RuntimeSnapshotLimits owner",
+      "invariants": [],
+      "references": [
+        "RuntimeAwaitManyAggregateTaskSnapshotV1",
+        "RuntimeTimeoutNeedSnapshotV1"
+      ],
+      "unknown_fields": "reject",
+      "duplicate_fields": "reject",
+      "trailing_bytes": "reject"
+    },
+    {
+      "name": "RuntimeAwaitManyAggregateTaskSnapshotV1",
+      "kind": "struct",
+      "versioned": true,
+      "version": 1,
+      "fields": [
+        [
+          "version",
+          "RuntimeAwaitManyAggregateTaskSnapshotVersion"
+        ],
+        [
+          "aggregate",
+          "TaskCorrelationSnapshotV1"
+        ],
+        [
+          "source_count",
+          "u32"
+        ],
+        [
+          "source_items",
+          "Vec<RuntimeValueSnapshotV1>"
+        ],
+        [
+          "child_specs",
+          "Vec<TaskSpecSnapshotV1>"
+        ],
+        [
+          "children",
+          "Vec<RuntimeAwaitManyChildSnapshotV1>"
+        ],
+        [
+          "limit",
+          "NonZeroU32"
+        ],
+        [
+          "launch_cursor",
+          "u32"
+        ],
+        [
+          "in_flight",
+          "u32"
+        ],
+        [
+          "outputs",
+          "Vec<Option<RuntimePayloadSnapshotV1>>"
+        ],
+        [
+          "publication_cursor",
+          "TaskPublicationCursorSnapshotV1"
+        ],
+        [
+          "terminal",
+          "Option<RuntimeAwaitManyTerminalSnapshotV1>"
+        ]
+      ],
+      "variants": [],
+      "key": [],
+      "order": "declaration order",
+      "bound": "RuntimeSnapshotLimits owner",
+      "invariants": [
+        "all source-indexed vectors have source_count length",
+        "children keyed by exact source index and ordered ascending",
+        "launch_cursor <= source_count",
+        "in_flight equals active child count and <= limit",
+        "outputs only for Ready child rows",
+        "terminal only after precedence rules"
+      ],
+      "references": [
+        "TaskCorrelationSnapshotV1",
+        "RuntimeValueSnapshotV1",
+        "TaskSpecSnapshotV1",
+        "RuntimeAwaitManyChildSnapshotV1",
+        "RuntimePayloadSnapshotV1",
+        "TaskPublicationCursorSnapshotV1",
+        "RuntimeAwaitManyTerminalSnapshotV1"
+      ],
+      "unknown_fields": "reject",
+      "duplicate_fields": "reject",
+      "trailing_bytes": "reject"
+    },
+    {
+      "name": "RuntimeAwaitManyChildSnapshotV1",
+      "kind": "struct",
+      "versioned": true,
+      "version": 1,
+      "fields": [
+        [
+          "version",
+          "RuntimeAwaitManyChildSnapshotVersion"
+        ],
+        [
+          "source_index",
+          "u32"
+        ],
+        [
+          "observer",
+          "Option<TaskObserverId>"
+        ],
+        [
+          "handle",
+          "Option<RuntimeNeedHandleSnapshotV1>"
+        ],
+        [
+          "status",
+          "RuntimeAwaitManyChildStatusSnapshotV1"
+        ],
+        [
+          "last_cursor",
+          "Option<TaskPublicationCursorSnapshotV1>"
+        ]
+      ],
+      "variants": [],
+      "key": [
+        "source_index"
+      ],
+      "order": "declaration order",
+      "bound": "RuntimeSnapshotLimits owner",
+      "invariants": [
+        "handle and observer absent only before launch",
+        "Ready status has corresponding aggregate output",
+        "source index is unique and in range"
+      ],
+      "references": [
+        "RuntimeNeedHandleSnapshotV1",
+        "RuntimeAwaitManyChildStatusSnapshotV1",
+        "TaskPublicationCursorSnapshotV1"
+      ],
+      "unknown_fields": "reject",
+      "duplicate_fields": "reject",
+      "trailing_bytes": "reject"
+    },
+    {
+      "name": "RuntimeAwaitManyChildStatusSnapshotV1",
+      "kind": "enum",
+      "versioned": false,
+      "version": null,
+      "fields": [],
+      "variants": [
+        [
+          "NotLaunched",
+          []
+        ],
+        [
+          "Waiting",
+          []
+        ],
+        [
+          "Ready",
+          []
+        ],
+        [
+          "InfrastructureFailed",
+          [
+            [
+              "failure",
+              "RuntimeTaskFailureSnapshotV1"
+            ]
+          ]
+        ],
+        [
+          "Cancelled",
+          []
+        ]
+      ],
+      "key": [],
+      "order": "declaration order",
+      "bound": "RuntimeSnapshotLimits owner",
+      "invariants": [],
+      "references": [
+        "RuntimeTaskFailureSnapshotV1"
+      ],
+      "unknown_fields": "reject",
+      "duplicate_fields": "reject",
+      "trailing_bytes": "reject"
+    },
+    {
+      "name": "RuntimeAwaitManyTerminalSnapshotV1",
+      "kind": "enum",
+      "versioned": false,
+      "version": null,
+      "fields": [],
+      "variants": [
+        [
+          "Ready",
+          []
+        ],
+        [
+          "InfrastructureFailed",
+          [
+            [
+              "failure",
+              "RuntimeTaskFailureSnapshotV1"
+            ]
+          ]
+        ],
+        [
+          "Cancelled",
+          []
+        ]
+      ],
+      "key": [],
+      "order": "declaration order",
+      "bound": "RuntimeSnapshotLimits owner",
+      "invariants": [],
+      "references": [
+        "RuntimeTaskFailureSnapshotV1"
+      ],
+      "unknown_fields": "reject",
+      "duplicate_fields": "reject",
+      "trailing_bytes": "reject"
+    },
+    {
+      "name": "RuntimeTimeoutNeedSnapshotV1",
+      "kind": "struct",
+      "versioned": true,
+      "version": 1,
+      "fields": [
+        [
+          "version",
+          "RuntimeTimeoutNeedSnapshotVersion"
+        ],
+        [
+          "output",
+          "TaskCorrelationSnapshotV1"
+        ],
+        [
+          "source",
+          "RuntimeNeedHandleSnapshotV1"
+        ],
+        [
+          "requested_limit",
+          "LogicalDurationSnapshotV1"
+        ],
+        [
+          "remaining",
+          "LogicalDurationSnapshotV1"
+        ],
+        [
+          "phase",
+          "RuntimeTimeoutPhaseSnapshotV1"
+        ],
+        [
+          "source_observer",
+          "Option<TaskObserverId>"
+        ],
+        [
+          "source_cursor",
+          "Option<TaskPublicationCursorSnapshotV1>"
+        ],
+        [
+          "publication_cursor",
+          "TaskPublicationCursorSnapshotV1"
+        ],
+        [
+          "terminal",
+          "Option<RuntimeTimeoutTerminalSnapshotV1>"
+        ]
+      ],
+      "variants": [],
+      "key": [],
+      "order": "declaration order",
+      "bound": "RuntimeSnapshotLimits owner",
+      "invariants": [
+        "remaining <= requested_limit",
+        "NotStarted has no observer/source cursor/terminal",
+        "Waiting has observer and no terminal",
+        "Resolved has terminal",
+        "output/source identities and payload types validate"
+      ],
+      "references": [
+        "TaskCorrelationSnapshotV1",
+        "RuntimeNeedHandleSnapshotV1",
+        "LogicalDurationSnapshotV1",
+        "RuntimeTimeoutPhaseSnapshotV1",
+        "TaskPublicationCursorSnapshotV1",
+        "RuntimeTimeoutTerminalSnapshotV1"
+      ],
+      "unknown_fields": "reject",
+      "duplicate_fields": "reject",
+      "trailing_bytes": "reject"
+    },
+    {
+      "name": "RuntimeTimeoutPhaseSnapshotV1",
+      "kind": "enum",
+      "versioned": false,
+      "version": null,
+      "fields": [],
+      "variants": [
+        [
+          "NotStarted",
+          []
+        ],
+        [
+          "Waiting",
+          []
+        ],
+        [
+          "Resolved",
+          []
+        ]
+      ],
+      "key": [],
+      "order": "declaration order",
+      "bound": "RuntimeSnapshotLimits owner",
+      "invariants": [],
+      "references": [],
+      "unknown_fields": "reject",
+      "duplicate_fields": "reject",
+      "trailing_bytes": "reject"
+    },
+    {
+      "name": "RuntimeTimeoutTerminalSnapshotV1",
+      "kind": "enum",
+      "versioned": false,
+      "version": null,
+      "fields": [],
+      "variants": [
+        [
+          "SourceReady",
+          [
+            [
+              "payload",
+              "RuntimePayloadSnapshotV1"
+            ]
+          ]
+        ],
+        [
+          "SourceInfrastructureFailed",
+          [
+            [
+              "failure",
+              "RuntimeTaskFailureSnapshotV1"
+            ]
+          ]
+        ],
+        [
+          "Expired",
+          []
+        ],
+        [
+          "Cancelled",
+          []
+        ]
+      ],
+      "key": [],
+      "order": "declaration order",
+      "bound": "RuntimeSnapshotLimits owner",
+      "invariants": [],
+      "references": [
+        "RuntimePayloadSnapshotV1",
+        "RuntimeTaskFailureSnapshotV1"
+      ],
+      "unknown_fields": "reject",
+      "duplicate_fields": "reject",
+      "trailing_bytes": "reject"
+    },
+    {
+      "name": "NeedCellSnapshotV1",
+      "kind": "struct",
+      "versioned": true,
+      "version": 1,
+      "fields": [
+        [
+          "version",
+          "NeedCellSnapshotVersion"
+        ],
+        [
+          "need_id",
+          "NeedId"
+        ],
+        [
+          "producer",
+          "NeedProducerInstanceKey"
+        ],
+        [
+          "outcome",
+          "TaskOutcomeContractSnapshotV1"
+        ],
+        [
+          "state",
+          "NeedStateSnapshotV1"
+        ],
+        [
+          "last_publication",
+          "Option<TaskPublicationCursorSnapshotV1>"
+        ],
+        [
+          "observers",
+          "Vec<TaskObserverId>"
+        ]
+      ],
+      "variants": [],
+      "key": [
+        "need_id"
+      ],
+      "order": "observers ascending ObserverId",
+      "bound": "RuntimeSnapshotLimits owner",
+      "invariants": [
+        "NeedId rederives from producer/policy/ordinal through owning launch",
+        "observer ids unique and reverse links exact",
+        "terminal state agrees with launch lifecycle"
+      ],
+      "references": [
+        "TaskOutcomeContractSnapshotV1",
+        "NeedStateSnapshotV1",
+        "TaskPublicationCursorSnapshotV1"
+      ],
+      "unknown_fields": "reject",
+      "duplicate_fields": "reject",
+      "trailing_bytes": "reject"
+    },
+    {
+      "name": "NeedStateSnapshotV1",
+      "kind": "enum",
+      "versioned": false,
+      "version": null,
+      "fields": [],
+      "variants": [
+        [
+          "NotStarted",
+          []
+        ],
+        [
+          "Pending",
+          [
+            [
+              "progress",
+              "ProgressSnapshotV1"
+            ]
+          ]
+        ],
+        [
+          "Ready",
+          [
+            [
+              "outcome",
+              "RuntimeNeedOutcomeSnapshotV1"
+            ]
+          ]
+        ],
+        [
+          "Cancelled",
+          []
+        ]
+      ],
+      "key": [],
+      "order": "declaration order",
+      "bound": "RuntimeSnapshotLimits owner",
+      "invariants": [],
+      "references": [
+        "ProgressSnapshotV1",
+        "RuntimeNeedOutcomeSnapshotV1"
+      ],
+      "unknown_fields": "reject",
+      "duplicate_fields": "reject",
+      "trailing_bytes": "reject"
+    },
+    {
+      "name": "RuntimeNeedOutcomeSnapshotV1",
+      "kind": "enum",
+      "versioned": false,
+      "version": null,
+      "fields": [],
+      "variants": [
+        [
+          "Payload",
+          [
+            [
+              "payload",
+              "RuntimePayloadSnapshotV1"
+            ]
+          ]
+        ],
+        [
+          "InfrastructureFailure",
+          [
+            [
+              "failure",
+              "RuntimeTaskFailureSnapshotV1"
+            ]
+          ]
+        ]
+      ],
+      "key": [],
+      "order": "declaration order",
+      "bound": "RuntimeSnapshotLimits owner",
+      "invariants": [],
+      "references": [
+        "RuntimePayloadSnapshotV1",
+        "RuntimeTaskFailureSnapshotV1"
+      ],
+      "unknown_fields": "reject",
+      "duplicate_fields": "reject",
+      "trailing_bytes": "reject"
+    },
+    {
+      "name": "RuntimeTaskFailureSnapshotV1",
+      "kind": "struct",
+      "versioned": true,
+      "version": 1,
+      "fields": [
+        [
+          "version",
+          "RuntimeTaskFailureSnapshotVersion"
+        ],
+        [
+          "kind",
+          "RuntimeTaskFailureKind"
+        ],
+        [
+          "diagnostic",
+          "BoundedUtf8"
+        ]
+      ],
+      "variants": [],
+      "key": [],
+      "order": "declaration order",
+      "bound": "RuntimeSnapshotLimits owner",
+      "invariants": [
+        "closed failure kind",
+        "diagnostic bounded and nonidentity"
+      ],
+      "references": [],
+      "unknown_fields": "reject",
+      "duplicate_fields": "reject",
+      "trailing_bytes": "reject"
+    },
+    {
+      "name": "TaskObserverSnapshotV1",
+      "kind": "struct",
+      "versioned": true,
+      "version": 1,
+      "fields": [
+        [
+          "version",
+          "TaskObserverSnapshotVersion"
+        ],
+        [
+          "observer_id",
+          "TaskObserverId"
+        ],
+        [
+          "generation",
+          "GenerationId"
+        ],
+        [
+          "need_id",
+          "NeedId"
+        ],
+        [
+          "kind",
+          "TaskObserverKindSnapshotV1"
+        ],
+        [
+          "last_seen",
+          "Option<TaskPublicationCursorSnapshotV1>"
+        ],
+        [
+          "active",
+          "bool"
+        ]
+      ],
+      "variants": [],
+      "key": [
+        "observer_id"
+      ],
+      "order": "ObserverId byte order",
+      "bound": "RuntimeSnapshotLimits owner",
+      "invariants": [
+        "generation equals active use generation",
+        "need exists",
+        "reverse Need observer list contains id",
+        "inactive observer cannot advance"
+      ],
+      "references": [
+        "TaskObserverKindSnapshotV1",
+        "TaskPublicationCursorSnapshotV1"
+      ],
+      "unknown_fields": "reject",
+      "duplicate_fields": "reject",
+      "trailing_bytes": "reject"
+    },
+    {
+      "name": "TaskObserverKindSnapshotV1",
+      "kind": "enum",
+      "versioned": false,
+      "version": null,
+      "fields": [],
+      "variants": [
+        [
+          "Await",
+          [
+            [
+              "fiber",
+              "RuntimeFiberId"
+            ]
+          ]
+        ],
+        [
+          "AwaitManyChild",
+          [
+            [
+              "aggregate_task",
+              "TaskId"
+            ],
+            [
+              "source_index",
+              "u32"
+            ]
+          ]
+        ],
+        [
+          "TimeoutSource",
+          [
+            [
+              "timeout_task",
+              "TaskId"
+            ]
+          ]
+        ],
+        [
+          "ViewMatch",
+          [
+            [
+              "view_instance",
+              "ViewInstanceIdProjection"
+            ],
+            [
+              "site",
+              "ViewMatchSiteIdProjection"
+            ]
+          ]
+        ]
+      ],
+      "key": [],
+      "order": "declaration order",
+      "bound": "RuntimeSnapshotLimits owner",
+      "invariants": [],
+      "references": [],
+      "unknown_fields": "reject",
+      "duplicate_fields": "reject",
+      "trailing_bytes": "reject"
+    },
+    {
+      "name": "RuntimeNeedHandleSnapshotV1",
+      "kind": "struct",
+      "versioned": true,
+      "version": 1,
+      "fields": [
+        [
+          "version",
+          "RuntimeNeedHandleSnapshotVersion"
+        ],
+        [
+          "correlation",
+          "TaskCorrelationSnapshotV1"
+        ],
+        [
+          "producer",
+          "NeedProducerSpecSnapshotV1"
+        ],
+        [
+          "outcome",
+          "TaskOutcomeContractSnapshotV1"
+        ],
+        [
+          "origin",
+          "NeedHandleOriginSnapshotV1"
+        ]
+      ],
+      "variants": [],
+      "key": [],
+      "order": "declaration order",
+      "bound": "RuntimeSnapshotLimits owner",
+      "invariants": [
+        "semantic Eq/Hash/Ord remains NeedId-only",
+        "full structure validates at construction/restore/use boundaries",
+        "ordinary use generation must match active scheduler generation"
+      ],
+      "references": [
+        "TaskCorrelationSnapshotV1",
+        "NeedProducerSpecSnapshotV1",
+        "TaskOutcomeContractSnapshotV1",
+        "NeedHandleOriginSnapshotV1"
+      ],
+      "unknown_fields": "reject",
+      "duplicate_fields": "reject",
+      "trailing_bytes": "reject"
+    },
+    {
+      "name": "NeedHandleOriginSnapshotV1",
+      "kind": "struct",
+      "versioned": true,
+      "version": 1,
+      "fields": [
+        [
+          "version",
+          "NeedHandleOriginSnapshotVersion"
+        ],
+        [
+          "accepted_site",
+          "Option<StableProducerSiteProjection>"
+        ],
+        [
+          "debug_label",
+          "Option<BoundedUtf8>"
+        ]
+      ],
+      "variants": [],
+      "key": [],
+      "order": "declaration order",
+      "bound": "RuntimeSnapshotLimits owner",
+      "invariants": [
+        "diagnostic/provenance only and excluded from canonical RuntimeValue identity"
+      ],
+      "references": [],
+      "unknown_fields": "reject",
+      "duplicate_fields": "reject",
+      "trailing_bytes": "reject"
+    },
+    {
+      "name": "TaskPublicationCursorSnapshotV1",
+      "kind": "struct",
+      "versioned": true,
+      "version": 1,
+      "fields": [
+        [
+          "version",
+          "TaskPublicationCursorSnapshotVersion"
+        ],
+        [
+          "logical_epoch",
+          "u64"
+        ],
+        [
+          "sequence",
+          "u64"
+        ]
+      ],
+      "variants": [],
+      "key": [],
+      "order": "declaration order",
+      "bound": "RuntimeSnapshotLimits owner",
+      "invariants": [
+        "monotonic per task; gaps rejected according to replay policy"
+      ],
+      "references": [],
+      "unknown_fields": "reject",
+      "duplicate_fields": "reject",
+      "trailing_bytes": "reject"
+    },
+    {
+      "name": "TaskEventSnapshotV1",
+      "kind": "struct",
+      "versioned": true,
+      "version": 1,
+      "fields": [
+        [
+          "version",
+          "TaskEventSnapshotVersion"
+        ],
+        [
+          "correlation",
+          "TaskCorrelationSnapshotV1"
+        ],
+        [
+          "cursor",
+          "TaskPublicationCursorSnapshotV1"
+        ],
+        [
+          "kind",
+          "TaskEventKindSnapshotV1"
+        ],
+        [
+          "digest",
+          "TaskEventDigest"
+        ]
+      ],
+      "variants": [],
+      "key": [],
+      "order": "fields above",
+      "bound": "RuntimeSnapshotLimits owner",
+      "invariants": [
+        "digest recomputed before state transition",
+        "event ordering key is generation, logical_epoch, sequence, task_id"
+      ],
+      "references": [
+        "TaskCorrelationSnapshotV1",
+        "TaskPublicationCursorSnapshotV1",
+        "TaskEventKindSnapshotV1"
+      ],
+      "unknown_fields": "reject",
+      "duplicate_fields": "reject",
+      "trailing_bytes": "reject"
+    },
+    {
+      "name": "TaskEventKindSnapshotV1",
+      "kind": "enum",
+      "versioned": false,
+      "version": null,
+      "fields": [],
+      "variants": [
+        [
+          "Progress",
+          [
+            [
+              "progress",
+              "ProgressSnapshotV1"
+            ]
+          ]
+        ],
+        [
+          "Ready",
+          [
+            [
+              "payload",
+              "RuntimePayloadSnapshotV1"
+            ]
+          ]
+        ],
+        [
+          "InfrastructureFailure",
+          [
+            [
+              "failure",
+              "RuntimeTaskFailureSnapshotV1"
+            ]
+          ]
+        ],
+        [
+          "Cancelled",
+          []
+        ]
+      ],
+      "key": [],
+      "order": "declaration order",
+      "bound": "RuntimeSnapshotLimits owner",
+      "invariants": [],
+      "references": [
+        "ProgressSnapshotV1",
+        "RuntimePayloadSnapshotV1",
+        "RuntimeTaskFailureSnapshotV1"
+      ],
+      "unknown_fields": "reject",
+      "duplicate_fields": "reject",
+      "trailing_bytes": "reject"
+    },
+    {
+      "name": "TaskReplayStateSnapshotV1",
+      "kind": "struct",
+      "versioned": true,
+      "version": 1,
+      "fields": [
+        [
+          "version",
+          "TaskReplayStateSnapshotVersion"
+        ],
+        [
+          "last_applied",
+          "Vec<TaskReplayCursorSnapshotV1>"
+        ],
+        [
+          "accepted_event_digests",
+          "Vec<TaskReplayDigestSnapshotV1>"
+        ]
+      ],
+      "variants": [],
+      "key": [],
+      "order": "both vectors ascending TaskId",
+      "bound": "RuntimeSnapshotLimits owner",
+      "invariants": [
+        "keys unique; cursor/digest joins exact"
+      ],
+      "references": [
+        "TaskReplayCursorSnapshotV1",
+        "TaskReplayDigestSnapshotV1"
+      ],
+      "unknown_fields": "reject",
+      "duplicate_fields": "reject",
+      "trailing_bytes": "reject"
+    },
+    {
+      "name": "TaskReplayCursorSnapshotV1",
+      "kind": "struct",
+      "versioned": true,
+      "version": 1,
+      "fields": [
+        [
+          "version",
+          "TaskReplayCursorSnapshotVersion"
+        ],
+        [
+          "task_id",
+          "TaskId"
+        ],
+        [
+          "cursor",
+          "TaskPublicationCursorSnapshotV1"
+        ]
+      ],
+      "variants": [],
+      "key": [
+        "task_id"
+      ],
+      "order": "declaration order",
+      "bound": "RuntimeSnapshotLimits owner",
+      "invariants": [],
+      "references": [
+        "TaskPublicationCursorSnapshotV1"
+      ],
+      "unknown_fields": "reject",
+      "duplicate_fields": "reject",
+      "trailing_bytes": "reject"
+    },
+    {
+      "name": "TaskReplayDigestSnapshotV1",
+      "kind": "struct",
+      "versioned": true,
+      "version": 1,
+      "fields": [
+        [
+          "version",
+          "TaskReplayDigestSnapshotVersion"
+        ],
+        [
+          "task_id",
+          "TaskId"
+        ],
+        [
+          "cursor",
+          "TaskPublicationCursorSnapshotV1"
+        ],
+        [
+          "digest",
+          "TaskEventDigest"
+        ]
+      ],
+      "variants": [],
+      "key": [
+        "task_id",
+        "cursor"
+      ],
+      "order": "declaration order",
+      "bound": "RuntimeSnapshotLimits owner",
+      "invariants": [],
+      "references": [
+        "TaskPublicationCursorSnapshotV1"
+      ],
+      "unknown_fields": "reject",
+      "duplicate_fields": "reject",
+      "trailing_bytes": "reject"
+    },
+    {
+      "name": "TaskReplayEnvelopeV1",
+      "kind": "struct",
+      "versioned": true,
+      "version": 1,
+      "fields": [
+        [
+          "version",
+          "TaskReplayEnvelopeVersion"
+        ],
+        [
+          "generation",
+          "GenerationId"
+        ],
+        [
+          "events",
+          "Vec<TaskEventSnapshotV1>"
+        ]
+      ],
+      "variants": [],
+      "key": [],
+      "order": "events normalized by event ordering key",
+      "bound": "RuntimeSnapshotLimits owner",
+      "invariants": [
+        "generation matches every event",
+        "duplicates only allowed if exact digest matches"
+      ],
+      "references": [
+        "TaskEventSnapshotV1"
+      ],
+      "unknown_fields": "reject",
+      "duplicate_fields": "reject",
+      "trailing_bytes": "reject"
+    },
+    {
+      "name": "ReplacementStateSnapshotV1",
+      "kind": "enum",
+      "versioned": false,
+      "version": null,
+      "fields": [],
+      "variants": [
+        [
+          "Idle",
+          []
+        ],
+        [
+          "Validated",
+          [
+            [
+              "plan",
+              "ReplacementPlanSnapshotV1"
+            ]
+          ]
+        ]
+      ],
+      "key": [],
+      "order": "declaration order",
+      "bound": "RuntimeSnapshotLimits owner",
+      "invariants": [
+        "Prepared adapter tokens are never persistable; snapshot fails while adapter prepare/commit is in flight"
+      ],
+      "references": [
+        "ReplacementPlanSnapshotV1"
+      ],
+      "unknown_fields": "reject",
+      "duplicate_fields": "reject",
+      "trailing_bytes": "reject"
+    },
+    {
+      "name": "ReplacementPlanSnapshotV1",
+      "kind": "struct",
+      "versioned": true,
+      "version": 1,
+      "fields": [
+        [
+          "version",
+          "ReplacementPlanSnapshotVersion"
+        ],
+        [
+          "from_generation",
+          "GenerationId"
+        ],
+        [
+          "to_generation",
+          "GenerationId"
+        ],
+        [
+          "view_mappings",
+          "Vec<ReplacementViewMappingSnapshotV1>"
+        ],
+        [
+          "task_mappings",
+          "Vec<ReplacementTaskMappingSnapshotV1>"
+        ]
+      ],
+      "variants": [],
+      "key": [],
+      "order": "view mappings by old site; task mappings by old TaskId",
+      "bound": "RuntimeSnapshotLimits owner",
+      "invariants": [
+        "to_generation differs from from_generation",
+        "mappings unique",
+        "NeedId and ordinal preserved; TaskKey/TaskId rederived for to_generation"
+      ],
+      "references": [
+        "ReplacementViewMappingSnapshotV1",
+        "ReplacementTaskMappingSnapshotV1"
+      ],
+      "unknown_fields": "reject",
+      "duplicate_fields": "reject",
+      "trailing_bytes": "reject"
+    },
+    {
+      "name": "ReplacementViewMappingSnapshotV1",
+      "kind": "struct",
+      "versioned": true,
+      "version": 1,
+      "fields": [
+        [
+          "version",
+          "ReplacementViewMappingSnapshotVersion"
+        ],
+        [
+          "old_program",
+          "ViewProgramIdProjection"
+        ],
+        [
+          "old_revision",
+          "AcceptedViewProgramRevisionProjection"
+        ],
+        [
+          "old_site",
+          "ViewMatchSiteIdProjection"
+        ],
+        [
+          "new_program",
+          "ViewProgramIdProjection"
+        ],
+        [
+          "new_revision",
+          "AcceptedViewProgramRevisionProjection"
+        ],
+        [
+          "new_site",
+          "ViewMatchSiteIdProjection"
+        ]
+      ],
+      "variants": [],
+      "key": [
+        "old_program",
+        "old_site"
+      ],
+      "order": "declaration order",
+      "bound": "RuntimeSnapshotLimits owner",
+      "invariants": [],
+      "references": [],
+      "unknown_fields": "reject",
+      "duplicate_fields": "reject",
+      "trailing_bytes": "reject"
+    },
+    {
+      "name": "ReplacementTaskMappingSnapshotV1",
+      "kind": "struct",
+      "versioned": true,
+      "version": 1,
+      "fields": [
+        [
+          "version",
+          "ReplacementTaskMappingSnapshotVersion"
+        ],
+        [
+          "old",
+          "TaskCorrelationSnapshotV1"
+        ],
+        [
+          "new",
+          "TaskCorrelationSnapshotV1"
+        ],
+        [
+          "need_handle",
+          "RuntimeNeedHandleSnapshotV1"
+        ]
+      ],
+      "variants": [],
+      "key": [
+        "old.task_id"
+      ],
+      "order": "declaration order",
+      "bound": "RuntimeSnapshotLimits owner",
+      "invariants": [
+        "NeedId, producer, policy, ordinal equal old/new",
+        "generation, TaskKey and TaskId change consistently",
+        "handle rebound only by explicit replacement"
+      ],
+      "references": [
+        "TaskCorrelationSnapshotV1",
+        "RuntimeNeedHandleSnapshotV1"
+      ],
+      "unknown_fields": "reject",
+      "duplicate_fields": "reject",
+      "trailing_bytes": "reject"
+    },
+    {
+      "name": "RuntimePayloadSnapshotV1",
+      "kind": "struct",
+      "versioned": true,
+      "version": 1,
+      "fields": [
+        [
+          "version",
+          "RuntimePayloadSnapshotVersion"
+        ],
+        [
+          "value",
+          "RuntimeValueSnapshotV1"
+        ]
+      ],
+      "variants": [],
+      "key": [],
+      "order": "declaration order",
+      "bound": "RuntimeSnapshotLimits owner",
+      "invariants": [],
+      "references": [
+        "RuntimeValueSnapshotV1"
+      ],
+      "unknown_fields": "reject",
+      "duplicate_fields": "reject",
+      "trailing_bytes": "reject"
+    },
+    {
+      "name": "RuntimeValueSnapshotV1",
+      "kind": "enum",
+      "versioned": false,
+      "version": null,
+      "fields": [],
+      "variants": [
+        [
+          "Unit",
+          []
+        ],
+        [
+          "Bool",
+          [
+            [
+              "value",
+              "bool"
+            ]
+          ]
+        ],
+        [
+          "Int",
+          [
+            [
+              "value",
+              "RuntimeIntSnapshotV1"
+            ]
+          ]
+        ],
+        [
+          "UInt",
+          [
+            [
+              "value",
+              "RuntimeUIntSnapshotV1"
+            ]
+          ]
+        ],
+        [
+          "F32",
+          [
+            [
+              "bits",
+              "u32"
+            ]
+          ]
+        ],
+        [
+          "F64",
+          [
+            [
+              "bits",
+              "u64"
+            ]
+          ]
+        ],
+        [
+          "Matrix",
+          [
+            [
+              "value",
+              "RuntimeMatrixSnapshotV1"
+            ]
+          ]
+        ],
+        [
+          "Tensor",
+          [
+            [
+              "value",
+              "RuntimeTensorSnapshotV1"
+            ]
+          ]
+        ],
+        [
+          "String",
+          [
+            [
+              "value",
+              "BoundedUtf8"
+            ]
+          ]
+        ],
+        [
+          "Char",
+          [
+            [
+              "scalar",
+              "u32"
+            ]
+          ]
+        ],
+        [
+          "Duration",
+          [
+            [
+              "value",
+              "LogicalDurationSnapshotV1"
+            ]
+          ]
+        ],
+        [
+          "Progress",
+          [
+            [
+              "value",
+              "ProgressSnapshotV1"
+            ]
+          ]
+        ],
+        [
+          "Range",
+          [
+            [
+              "value",
+              "RuntimeRangeSnapshotV1"
+            ]
+          ]
+        ],
+        [
+          "Iterator",
+          [
+            [
+              "value",
+              "RuntimeIteratorSnapshotV1"
+            ]
+          ]
+        ],
+        [
+          "EntityRef",
+          [
+            [
+              "value",
+              "BoundedUtf8"
+            ]
+          ]
+        ],
+        [
+          "Tuple",
+          [
+            [
+              "items",
+              "Vec<RuntimeValueSnapshotV1>"
+            ]
+          ]
+        ],
+        [
+          "Seq",
+          [
+            [
+              "value",
+              "RuntimeSeqSnapshotV1"
+            ]
+          ]
+        ],
+        [
+          "Record",
+          [
+            [
+              "fields",
+              "Vec<RuntimeFieldSnapshotV1>"
+            ]
+          ]
+        ],
+        [
+          "NominalRecord",
+          [
+            [
+              "value",
+              "RuntimeNominalRecordSnapshotV1"
+            ]
+          ]
+        ],
+        [
+          "Opaque",
+          [
+            [
+              "value",
+              "RuntimeOpaqueValueSnapshotV1"
+            ]
+          ]
+        ],
+        [
+          "Reduction",
+          [
+            [
+              "value",
+              "RuntimeReductionSnapshotV1"
+            ]
+          ]
+        ],
+        [
+          "Agent",
+          [
+            [
+              "value",
+              "RuntimeAgentSnapshotV1"
+            ]
+          ]
+        ],
+        [
+          "Function",
+          [
+            [
+              "value",
+              "RuntimeFunctionSnapshotV1"
+            ]
+          ]
+        ],
+        [
+          "Variant",
+          [
+            [
+              "value",
+              "RuntimeVariantSnapshotV1"
+            ]
+          ]
+        ],
+        [
+          "NeedHandle",
+          [
+            [
+              "value",
+              "RuntimeNeedHandleSnapshotV1"
+            ]
+          ]
+        ]
+      ],
+      "key": [],
+      "order": "declaration order",
+      "bound": "RuntimeSnapshotLimits owner",
+      "invariants": [
+        "exhaustive over final public RuntimeValue in Cut 5",
+        "NeedHandle is published only in the atomic public switch"
+      ],
+      "references": [
+        "RuntimeNeedHandleSnapshotV1"
+      ],
+      "unknown_fields": "reject",
+      "duplicate_fields": "reject",
+      "trailing_bytes": "reject"
+    },
+    {
+      "name": "RuntimeCheckedTypeSnapshotV1",
+      "kind": "struct",
+      "versioned": true,
+      "version": 1,
+      "fields": [
+        [
+          "version",
+          "RuntimeCheckedTypeSnapshotVersion"
+        ],
+        [
+          "semantic_digest",
+          "RuntimeTypeSemanticDigest"
+        ],
+        [
+          "projection",
+          "RuntimeCheckedTypeProjectionV1"
+        ]
+      ],
+      "variants": [],
+      "key": [],
+      "order": "declaration order",
+      "bound": "RuntimeSnapshotLimits owner",
+      "invariants": [
+        "projection encodes the closed runtime checked-type algebra; digest is recomputed"
+      ],
+      "references": [],
+      "unknown_fields": "reject",
+      "duplicate_fields": "reject",
+      "trailing_bytes": "reject"
+    },
+    {
+      "name": "ProgressSnapshotV1",
+      "kind": "struct",
+      "versioned": true,
+      "version": 1,
+      "fields": [
+        [
+          "ratio_bits",
+          "u32"
+        ],
+        [
+          "label",
+          "Option<BoundedUtf8>"
+        ]
+      ],
+      "variants": [],
+      "key": [],
+      "order": "declaration order",
+      "bound": "RuntimeSnapshotLimits owner",
+      "invariants": [],
+      "references": [],
+      "unknown_fields": "reject",
+      "duplicate_fields": "reject",
+      "trailing_bytes": "reject"
+    },
+    {
+      "name": "LogicalDurationSnapshotV1",
+      "kind": "struct",
+      "versioned": true,
+      "version": 1,
+      "fields": [
+        [
+          "nanoseconds",
+          "u128"
+        ]
+      ],
+      "variants": [],
+      "key": [],
+      "order": "declaration order",
+      "bound": "RuntimeSnapshotLimits owner",
+      "invariants": [],
+      "references": [],
+      "unknown_fields": "reject",
+      "duplicate_fields": "reject",
+      "trailing_bytes": "reject"
+    },
+    {
+      "name": "RuntimeIntSnapshotV1",
+      "kind": "struct",
+      "versioned": true,
+      "version": 1,
+      "fields": [
+        [
+          "width",
+          "RuntimeSignedIntWidth"
+        ],
+        [
+          "bits",
+          "u128"
+        ]
+      ],
+      "variants": [],
+      "key": [],
+      "order": "declaration order",
+      "bound": "RuntimeSnapshotLimits owner",
+      "invariants": [],
+      "references": [],
+      "unknown_fields": "reject",
+      "duplicate_fields": "reject",
+      "trailing_bytes": "reject"
+    },
+    {
+      "name": "RuntimeUIntSnapshotV1",
+      "kind": "struct",
+      "versioned": true,
+      "version": 1,
+      "fields": [
+        [
+          "width",
+          "RuntimeUnsignedIntWidth"
+        ],
+        [
+          "bits",
+          "u128"
+        ]
+      ],
+      "variants": [],
+      "key": [],
+      "order": "declaration order",
+      "bound": "RuntimeSnapshotLimits owner",
+      "invariants": [],
+      "references": [],
+      "unknown_fields": "reject",
+      "duplicate_fields": "reject",
+      "trailing_bytes": "reject"
+    },
+    {
+      "name": "RuntimeMatrixSnapshotV1",
+      "kind": "struct",
+      "versioned": true,
+      "version": 1,
+      "fields": [
+        [
+          "kind",
+          "RuntimeMatrixKind"
+        ],
+        [
+          "dimensions",
+          "Vec<u32>"
+        ],
+        [
+          "scalar_bits",
+          "BoundedBytes"
+        ]
+      ],
+      "variants": [],
+      "key": [],
+      "order": "declaration order",
+      "bound": "RuntimeSnapshotLimits owner",
+      "invariants": [],
+      "references": [],
+      "unknown_fields": "reject",
+      "duplicate_fields": "reject",
+      "trailing_bytes": "reject"
+    },
+    {
+      "name": "RuntimeTensorSnapshotV1",
+      "kind": "struct",
+      "versioned": true,
+      "version": 1,
+      "fields": [
+        [
+          "kind",
+          "RuntimeTensorKind"
+        ],
+        [
+          "shape",
+          "Vec<u32>"
+        ],
+        [
+          "scalar_bits",
+          "BoundedBytes"
+        ]
+      ],
+      "variants": [],
+      "key": [],
+      "order": "declaration order",
+      "bound": "RuntimeSnapshotLimits owner",
+      "invariants": [],
+      "references": [],
+      "unknown_fields": "reject",
+      "duplicate_fields": "reject",
+      "trailing_bytes": "reject"
+    },
+    {
+      "name": "RuntimeRangeSnapshotV1",
+      "kind": "struct",
+      "versioned": true,
+      "version": 1,
+      "fields": [
+        [
+          "start",
+          "Option<RuntimeValueSnapshotV1>"
+        ],
+        [
+          "end",
+          "Option<RuntimeValueSnapshotV1>"
+        ],
+        [
+          "inclusive",
+          "bool"
+        ]
+      ],
+      "variants": [],
+      "key": [],
+      "order": "declaration order",
+      "bound": "RuntimeSnapshotLimits owner",
+      "invariants": [],
+      "references": [
+        "RuntimeValueSnapshotV1"
+      ],
+      "unknown_fields": "reject",
+      "duplicate_fields": "reject",
+      "trailing_bytes": "reject"
+    },
+    {
+      "name": "RuntimeIteratorSnapshotV1",
+      "kind": "struct",
+      "versioned": true,
+      "version": 1,
+      "fields": [
+        [
+          "source",
+          "RuntimeValueSnapshotV1"
+        ],
+        [
+          "cursor",
+          "u64"
+        ]
+      ],
+      "variants": [],
+      "key": [],
+      "order": "declaration order",
+      "bound": "RuntimeSnapshotLimits owner",
+      "invariants": [],
+      "references": [
+        "RuntimeValueSnapshotV1"
+      ],
+      "unknown_fields": "reject",
+      "duplicate_fields": "reject",
+      "trailing_bytes": "reject"
+    },
+    {
+      "name": "RuntimeSeqSnapshotV1",
+      "kind": "struct",
+      "versioned": true,
+      "version": 1,
+      "fields": [
+        [
+          "kind",
+          "RuntimeSeqKind"
+        ],
+        [
+          "items",
+          "Vec<RuntimeValueSnapshotV1>"
+        ]
+      ],
+      "variants": [],
+      "key": [],
+      "order": "declaration order",
+      "bound": "RuntimeSnapshotLimits owner",
+      "invariants": [],
+      "references": [
+        "RuntimeValueSnapshotV1"
+      ],
+      "unknown_fields": "reject",
+      "duplicate_fields": "reject",
+      "trailing_bytes": "reject"
+    },
+    {
+      "name": "RuntimeFieldSnapshotV1",
+      "kind": "struct",
+      "versioned": true,
+      "version": 1,
+      "fields": [
+        [
+          "field",
+          "AcceptedFieldIdentityProjection"
+        ],
+        [
+          "value",
+          "RuntimeValueSnapshotV1"
+        ]
+      ],
+      "variants": [],
+      "key": [],
+      "order": "declaration order",
+      "bound": "RuntimeSnapshotLimits owner",
+      "invariants": [],
+      "references": [
+        "RuntimeValueSnapshotV1"
+      ],
+      "unknown_fields": "reject",
+      "duplicate_fields": "reject",
+      "trailing_bytes": "reject"
+    },
+    {
+      "name": "RuntimeNominalRecordSnapshotV1",
+      "kind": "struct",
+      "versioned": true,
+      "version": 1,
+      "fields": [
+        [
+          "owner",
+          "RuntimeNominalTypeId"
+        ],
+        [
+          "layout",
+          "TypeLayoutHash"
+        ],
+        [
+          "fields",
+          "Vec<RuntimeFieldSnapshotV1>"
+        ]
+      ],
+      "variants": [],
+      "key": [],
+      "order": "declaration order",
+      "bound": "RuntimeSnapshotLimits owner",
+      "invariants": [],
+      "references": [
+        "RuntimeFieldSnapshotV1"
+      ],
+      "unknown_fields": "reject",
+      "duplicate_fields": "reject",
+      "trailing_bytes": "reject"
+    },
+    {
+      "name": "RuntimeOpaqueValueSnapshotV1",
+      "kind": "struct",
+      "versioned": true,
+      "version": 1,
+      "fields": [
+        [
+          "producer",
+          "RuntimeOpaqueTypeProducerId"
+        ],
+        [
+          "semantic_identity",
+          "AcceptedNominalSemanticIdentity"
+        ],
+        [
+          "class",
+          "RuntimeOpaqueValueClass"
+        ],
+        [
+          "persistence",
+          "RuntimeOpaquePersistence"
+        ],
+        [
+          "payload",
+          "BoundedBytes"
+        ]
+      ],
+      "variants": [],
+      "key": [],
+      "order": "declaration order",
+      "bound": "RuntimeSnapshotLimits owner",
+      "invariants": [],
+      "references": [],
+      "unknown_fields": "reject",
+      "duplicate_fields": "reject",
+      "trailing_bytes": "reject"
+    },
+    {
+      "name": "RuntimeReductionSnapshotV1",
+      "kind": "struct",
+      "versioned": true,
+      "version": 1,
+      "fields": [
+        [
+          "kind",
+          "RuntimeReductionKind"
+        ],
+        [
+          "value",
+          "Option<RuntimeValueSnapshotV1>"
+        ]
+      ],
+      "variants": [],
+      "key": [],
+      "order": "declaration order",
+      "bound": "RuntimeSnapshotLimits owner",
+      "invariants": [],
+      "references": [
+        "RuntimeValueSnapshotV1"
+      ],
+      "unknown_fields": "reject",
+      "duplicate_fields": "reject",
+      "trailing_bytes": "reject"
+    },
+    {
+      "name": "RuntimeAgentSnapshotV1",
+      "kind": "struct",
+      "versioned": true,
+      "version": 1,
+      "fields": [
+        [
+          "variant",
+          "RuntimeAgentValueProjectionV1"
+        ]
+      ],
+      "variants": [],
+      "key": [],
+      "order": "declaration order",
+      "bound": "RuntimeSnapshotLimits owner",
+      "invariants": [],
+      "references": [],
+      "unknown_fields": "reject",
+      "duplicate_fields": "reject",
+      "trailing_bytes": "reject"
+    },
+    {
+      "name": "RuntimeFunctionSnapshotV1",
+      "kind": "struct",
+      "versioned": true,
+      "version": 1,
+      "fields": [
+        [
+          "callable",
+          "RuntimeCallableId"
+        ],
+        [
+          "contract",
+          "CallableContractHash"
+        ],
+        [
+          "captures",
+          "Vec<RuntimeValueSnapshotV1>"
+        ]
+      ],
+      "variants": [],
+      "key": [],
+      "order": "declaration order",
+      "bound": "RuntimeSnapshotLimits owner",
+      "invariants": [],
+      "references": [
+        "RuntimeValueSnapshotV1"
+      ],
+      "unknown_fields": "reject",
+      "duplicate_fields": "reject",
+      "trailing_bytes": "reject"
+    },
+    {
+      "name": "RuntimeVariantSnapshotV1",
+      "kind": "struct",
+      "versioned": true,
+      "version": 1,
+      "fields": [
+        [
+          "owner",
+          "RuntimeVariantIdentity"
+        ],
+        [
+          "case_ordinal",
+          "u32"
+        ],
+        [
+          "payload",
+          "Option<RuntimeValueSnapshotV1>"
+        ]
+      ],
+      "variants": [],
+      "key": [],
+      "order": "declaration order",
+      "bound": "RuntimeSnapshotLimits owner",
+      "invariants": [],
+      "references": [
+        "RuntimeValueSnapshotV1"
+      ],
+      "unknown_fields": "reject",
+      "duplicate_fields": "reject",
+      "trailing_bytes": "reject"
+    }
+  ]
+}

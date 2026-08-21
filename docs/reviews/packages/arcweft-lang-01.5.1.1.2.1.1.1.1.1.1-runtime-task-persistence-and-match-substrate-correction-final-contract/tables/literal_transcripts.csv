@@ -1,0 +1,8 @@
+inventory,variant,accepted_payload,transcript,excluded,invalid
+HirLiteral,String,decoded Unicode scalar sequence,tag || utf8_byte_len:u32-le || exact validated UTF-8 bytes,"source quotes, escapes, raw spelling, span",HirStringLiteral::Invalid rejects
+HirLiteral,Character,one Unicode scalar,tag || scalar_value:u32-le,source quote/escape spelling,HirCharacterLiteral::Invalid rejects
+HirLiteral,Integer,checked sign/width plus canonical non-negative HirBigUint magnitude,tag || signedness_width_tag || limb_count:u32-le || canonical little-endian u32 limbs,"authored radix, separators, source suffix spelling; the checked type owns width",invalid literal or type overflow rejects
+HirLiteral,Float,checker-admitted HirFloatBits,tag || width_tag || exact IEEE-754 bit pattern (u32-le or u64-le),"decimal source spelling, exponent spelling, redundant zeroes",invalid/unrepresentable literal rejects; exact signed zero bits are retained
+HirLiteral,UnitNumber,canonical HirDecimal plus closed HirUnitNumberUnit,tag || unit_tag || coefficient_digit_count:u32-le || digits || scale:u32-le || exponent10:i32-le,source separators and equivalent decimal spelling,HirUnitNumberLiteral::Invalid rejects
+HirLiteral,Boolean,bool,tag || 0x00(false) or 0x01(true),source span,no recovery value
+HirLiteral,Duration,canonical whole-nanosecond HirDurationSemanticValue,tag || limb_count:u32-le || canonical little-endian u32 limbs,authored duration unit and source spelling,HirDurationLiteral::Invalid rejects

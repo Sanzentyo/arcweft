@@ -1,0 +1,95 @@
+id,category,owner,assertion,kind,cut
+VAL-001,focused,arcweft-core canonical RuntimeValue visitor,Plain+SnapshotOnly opaque canonical bytes succeed and preserve the existing opaque transcript,implementation,4
+VAL-002,differential,arcweft-core canonical RuntimeValue visitor,direct BLAKE3 sink equals BLAKE3(bytes sink output) for every RuntimeValue variant and limit edge,implementation,4
+VAL-003,focused,Need producer admission,the same Plain+SnapshotOnly value passes argument admission and producer-instance construction,implementation,5
+VAL-004,snapshot,RuntimeValueSnapshotV1,the same Plain+SnapshotOnly value round-trips save/restore exactly,implementation,5
+VAL-005,negative,runtime-plan constant lowering,the same Plain+SnapshotOnly value fails at ConstantAdmissionError::SnapshotOnlyOpaque,implementation,5
+VAL-006,property,canonical sink pair,byte sink and hash sink have identical recursion/node/byte limit and first-error precedence,implementation,4
+VAL-007,negative,canonical RuntimeValue identity,AffineHandle fails even in non-producer diagnostic RuntimeValueDigest; snapshot codec does not mint identity,implementation,4
+VAL-008,structural-absence,workspace,no producer-argument-only serializer or second RuntimeValueDigest grammar exists,implementation,5
+VAL-009,migration,dialogue/config/command/runtime-plan constants,every current constant publisher calls explicit constant admission before publication,implementation,5
+EXE-001,exhaustive,NeedProducerFamily policy,all nine families have at least one explicit execution route,implementation,5
+EXE-002,negative,TaskSpec,unconditional request field and parallel host/runtime Option fields do not compile,implementation,5
+EXE-003,negative,TaskLaunchAdapter,Runtime AwaitMany/Timeout rows are rejected before prepare_launch,implementation,5
+EXE-004,differential,family execution validation,debug label and host operation spelling changes cannot change family/execution selection,implementation,5
+EXE-005,focused,AwaitMany base,aggregate TaskSpec accepts Runtime::AwaitManyAggregate and rejects Host,implementation,5
+EXE-006,focused,Timeout family,Timeout accepts Runtime::Timeout+Join only and never reaches adapter,implementation,5
+EXE-007,focused,LineTask,LineTask accepts Host+AlwaysStart only,implementation,5
+EXE-008,focused,ViewMatchSubscription,View Match subscription accepts Host+Join only,implementation,5
+EXE-009,focused,AwaitMany child,host and both runtime child execution variants are accepted when their complete child TaskSpec validates,implementation,5
+SCH-001,rollback,RuntimeTaskScheduler::ensure_task,adapter prepare failure leaves group/task/Need and ordinal counter unchanged,implementation,5
+SCH-002,rollback,RuntimeTaskScheduler::ensure_task,post-prepare staging invariant failure calls rollback and consumes no ordinal,implementation,5
+SCH-003,structural-absence,TaskEnsureError,AdapterCommit variant is absent,implementation,5
+SCH-004,focused,TaskLaunchAdapter,commit_launch and rollback_launch return unit and are infallible by trait contract,implementation,5
+SCH-005,property,AlwaysStart counter,successful launches use distinct positive ordinals beginning at one; failures create no gaps,implementation,5
+SCH-006,property,Join,same generation+instance returns one NeedId/TaskKey/TaskId and never invokes adapter twice,implementation,5
+SCH-007,negative,Join,same TaskKey with structurally different spec returns JoinSpecConflict without mutation,implementation,5
+SCH-008,structural-absence,runtime-driver,"no second journal, AlwaysStart counter or RuntimeTaskRegistry remains",implementation,5
+SCH-009,borrow-flow,RuntimeTaskScheduler,ensure/event/step/observer/snapshot/restore/rebind APIs compile without unsafe or global interior state,implementation,5
+SCH-010,rollback,replacement rebind,prepare_rebind failure preserves old generation and adapter state,implementation,5
+SCH-011,rollback,replacement rebind,precommit validation failure rolls back prepared rebind and publishes no new correlation,implementation,5
+HND-001,focused,RuntimeNeedHandle,"same NeedId with different debug/origin/spec labels compares, hashes and orders equal",implementation,5
+HND-002,focused,RuntimeValue::NeedHandle,canonical bytes are exactly tag 20 plus NeedId,implementation,5
+HND-003,negative,Await boundary,stale-generation handle has equal value identity but fails before observer/task mutation,implementation,5
+HND-004,negative,timeout boundary,stale-generation source handle fails before runtime timeout staging,implementation,5
+HND-005,replacement,replacement rebind,valid explicit rebind preserves NeedId/ordinal and rederives TaskKey/TaskId for new generation,implementation,5
+HND-006,tamper,handle construction/restore,tampered producer/spec/correlation fails structural validation,implementation,5
+AM-001,focused,RuntimeAwaitManyAggregateTask,source order and output order are identical even when children complete out of order,implementation,5
+AM-002,property,AwaitMany launch cursor,at most limit children are active and launch_cursor never exceeds source_count,implementation,5
+AM-003,rollback,AwaitMany child batch,failed child ensure publishes none of the selected batch and leaks no AlwaysStart ordinal,implementation,5
+AM-004,focused,AwaitMany terminal precedence,aggregate cancellation beats child terminal; infrastructure failure beats all-ready; otherwise all-ready publishes once,implementation,5
+AM-005,snapshot,AwaitMany,mid-flight source/item/spec/child/output/cursor state round-trips exactly,implementation,5
+TO-001,focused,RuntimeTimeoutNeed,first demand starts remaining=requested_limit and registers one source observer,implementation,5
+TO-002,differential,RuntimeTimeoutNeed,only RuntimeStepInput.dt changes remaining; wall/monotonic clocks are never read,implementation,5
+TO-003,focused,RuntimeTimeoutNeed,same-step precedence is cancellation then normalized source terminal then expiration then Pending,implementation,5
+TO-004,focused,RuntimeTimeoutNeed,zero duration snapshots source first and only then expires,implementation,5
+TO-005,focused,RuntimeTimeoutNeed,cancelling wrapper does not cancel source Need,implementation,5
+TO-006,snapshot,RuntimeTimeoutNeed,remaining/phase/source subscription/publication cursor round-trip exactly,implementation,5
+EVT-001,tamper,host event ingestion,wrong generation/task/producer/Need correlation rejects before cursor duplicate logic,implementation,5
+EVT-002,replay,event application,same cursor+same digest is duplicate success; same cursor+different digest is conflict,implementation,5
+EVT-003,negative,event application,"gap, epoch regression and post-terminal publication reject without mutation",implementation,5
+EVT-004,focused,failure categories,domain Result/Option error remains payload; infrastructure failure remains typed RuntimeTaskFailure; cancellation is Need::Cancelled,implementation,5
+PER-001,snapshot,RuntimeTaskSchedulerSnapshotV1,complete scheduler snapshot round-trips all generation/group/launch/Need/observer/runtime-task rows,implementation,5
+PER-002,tamper,strict decoder,unknown field/tag rejects,implementation,5
+PER-003,tamper,strict decoder,duplicate map key/field rejects before publication,implementation,5
+PER-004,tamper,strict decoder,trailing bytes and nonminimal u32 varints reject,implementation,5
+PER-005,tamper,identity restore,stored NeedProducerInstanceKey/NeedId/TaskKey/TaskId mismatches rederived values reject,implementation,5
+PER-006,rollback,restore,any join/invariant/adapter prepare failure leaves the old scheduler state untouched,implementation,5
+PER-007,negative,restore,in-flight MustBeQuiescent host row makes snapshot/restore fail rather than serialize adapter-private state,implementation,5
+PER-008,negative,snapshot,snapshot while adapter launch/rebind token is prepared is rejected,implementation,5
+PER-009,structural-absence,codec,"no V2, legacy reader, String fallback, translation table or zero sentinel exists",implementation,5
+PER-010,replay,TaskReplayEnvelopeV1,strict generation/event-digest/correlation/cursor validation matches live event path,implementation,5
+MAT-001,exhaustive,CheckedExpressionResolution transcript,all 27 current variants have one semantic transcript arm,implementation,1
+MAT-002,exhaustive,CheckedValueResolution transcript,all 8 current variants have one semantic transcript arm,implementation,1
+MAT-003,exhaustive,CheckedSelectResolution transcript,all 7 current variants have one semantic transcript arm,implementation,1
+MAT-004,exhaustive,CheckedPatternResolution transcript,all 5 current variants have one semantic transcript arm,implementation,1
+MAT-005,exhaustive,HirPatternKind transcript,all 13 current families are covered; Error returns typed failure,implementation,1
+MAT-006,exhaustive,HirLiteral transcript,all 7 current literal families use exact semantic payload rules,implementation,1
+MAT-007,differential,CheckedMatchSemanticDigest,renumber ExprId/PatternId/LocalId and change SourceSpan while preserving semantics leaves digest unchanged,implementation,1
+MAT-008,differential,CheckedMatchSemanticDigest,semantic field/case/callable/layout changes alter digest,implementation,1
+MAT-009,negative,semantic transcript,"raw HIR ids, spans, source spelling, debug names, hash-map order and generic Serde are absent",implementation,1
+MAT-010,focused,guard classification,only exact Boolean literals become ConstantTrue/ConstantFalse; all other checked Boolean expressions are Dynamic,implementation,1
+MAT-011,property,stable coordinates,every checked child/binding resolves to one declaration-rooted role path; duplicate coordinate construction rejects,implementation,1
+MAT-012,focused,coverage,bounded constructor matrix publishes exhaustive witness and sorted unreachable evidence,implementation,1
+MAT-013,negative,CheckedMatchRef,stale or foreign HirSnapshotId rejects exact lookup,implementation,1
+BND-001,structural-absence,AcceptedViewMatchBundleRowV1,"no CheckedMatchRef, ExprId, HirSnapshotId, SourceSpan or compiler certificate field",implementation,5
+BND-002,focused,bundle validation,joins compiler/AWBC/current revision products without minting a new semantic identity,implementation,5
+BND-003,tamper,bundle validation,any checked-match/view/need/ownership/contract/type/plan/arguments mismatch rejects,implementation,5
+OWN-001,exhaustive,TypeKind classifier,all 85 current variants have one machine/prose/classifier row,implementation,2
+OWN-002,focused,TypeKind::Predicate,classifier has no child recursion edge,implementation,2
+OWN-003,negative,TypeKind::Shared,returns MissingRuntimeSnapshotOwner and no Shared carrier/side table exists,implementation,2
+OWN-004,property,SnapshotClone evidence,"every successful row names projection, live carrier, canonical identity and snapshot codec",implementation,2
+CUT-001,dependency,Cut 3,type dependency set contains no Cut 4 task/digest types,implementation,3
+CUT-002,structural-absence,Cut 4,no public RuntimeValue variant or final TaskSpec schema is claimed,implementation,4
+CUT-003,compile-clean,all cuts,each cut lists exact crates/features and compiles using same/earlier cut types only,implementation,5
+CUT-004,structural-absence,Cut 5,"old String/dual route and copied View row are absent in production, tests, fixtures and generated surfaces",implementation,5
+SELF-001,validator-negative,tools/validate_package.py,validator rejects reintroduced AdapterCommit,package,0
+SELF-002,validator-negative,tools/validate_package.py,validator rejects TaskSpec.request,package,0
+SELF-003,validator-negative,tools/validate_package.py,validator rejects missing schema owner,package,0
+SELF-004,validator-negative,tools/validate_package.py,validator rejects ExprId/HirSnapshotId/CheckedMatchRef,package,0
+SELF-005,validator-negative,tools/validate_package.py,validator rejects accepted Shared,package,0
+SELF-006,validator-negative,tools/validate_package.py,validator rejects a child edge,package,0
+SELF-007,validator-negative,tools/validate_package.py,validator rejects Cut 4/public-private variant wording,package,0
+SELF-008,validator-negative,tools/validate_package.py,validator rejects NeedProducerContractDigest in Cut 3,package,0
+SELF-009,validator-negative,tools/validate_package.py,validator rejects fewer than nine family rows,package,0
+SELF-010,validator-negative,tools/validate_package.py,validator rejects any Arcweft marker other than 1,package,0

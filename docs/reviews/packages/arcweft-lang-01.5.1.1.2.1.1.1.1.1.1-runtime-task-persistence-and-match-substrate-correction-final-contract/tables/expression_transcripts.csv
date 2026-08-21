@@ -1,0 +1,43 @@
+inventory,variant,transcript
+CheckedExpressionResolution,Structural,expression family tag; runtime type digest; effect digest; ordered child-role-path plus child expression digest
+CheckedExpressionResolution,Literal,CheckedLiteralSemanticV1
+CheckedExpressionResolution,Value,CheckedValueResolutionSemanticV1
+CheckedExpressionResolution,Select,CheckedSelectResolutionSemanticV1
+CheckedExpressionResolution,Nominal,accepted nominal semantic identity; accepted layout digest; ordered type arguments
+CheckedExpressionResolution,Variant,accepted nominal semantic identity; accepted layout digest; accepted case ordinal/identity; optional payload type
+CheckedExpressionResolution,StageLook,accepted Stage schema field identity; raw HirName is lookup-only and never emitted
+CheckedExpressionResolution,Effect,accepted effect semantic identity and checked effect contract digest; raw EffectId is lookup-only
+CheckedExpressionResolution,Call,accepted RuntimeCallableId; CallableContractHash; checked receiver mode; source-order argument role/digest rows
+CheckedExpressionResolution,Await,await mode; checked Need payload type; source child digest; pending-effect semantic digest; no task/runtime identity
+CheckedExpressionResolution,Choice,accepted choice semantic identity; source-order option semantic rows; result type digest
+CheckedExpressionResolution,Try,carrier kind Result|Option; source child digest; propagated type/effect contract
+CheckedExpressionResolution,ImplicitCallable,accepted RuntimeCallableId and CallableContractHash; ordered capture coordinates and type digests
+CheckedExpressionResolution,ImplicitParameter,stable coordinate of owning implicit callable; parameter ordinal and type digest
+CheckedExpressionResolution,Pipe,source and target child-role digests; closed placeholder-routing transcript
+CheckedExpressionResolution,PipeLeft,stable coordinate of owning Pipe plus left-value role; raw ExprId excluded
+CheckedExpressionResolution,ViewCall,ViewProgramId; accepted view callable contract; source-order argument role/digests
+CheckedExpressionResolution,ViewCallee,ViewProgramId; accepted view callable contract
+CheckedExpressionResolution,StyleValue,accepted style property semantic identity; canonical specified-value transcript
+CheckedExpressionResolution,StyleCallee,accepted style callable semantic identity and contract
+CheckedExpressionResolution,DialogueLineReference,typed DialogueLineId semantic bytes
+CheckedExpressionResolution,DialogueLineCoordinate,typed DialogueLineId semantic bytes plus coordinate role
+CheckedExpressionResolution,DialogueTextKeyCoordinate,typed DialogueTextKey semantic bytes plus coordinate role
+CheckedExpressionResolution,CharacterDialogueFactory,accepted character/dialogue contract identity; source-order argument role/digests
+CheckedExpressionResolution,CharacterDialogueReconfigure,accepted character/dialogue contract identity; source-order patch field identity/digests
+CheckedExpressionResolution,DialogueApplication,target child digest; application-patch digest; rich-text digest
+CheckedExpressionResolution,PostfixBracket,closed PostfixBracketResolution semantic tag; target child digest; source-order index/slice child digests
+CheckedValueResolution,Local,StableCheckedValueCoordinate for the resolved local; checked type digest
+CheckedValueResolution,LineContext,accepted line-context semantic owner; no source spelling
+CheckedValueResolution,CharacterField,receiver child digest; accepted character semantic identity; accepted field identity
+CheckedValueResolution,ProjectCallable,accepted RuntimeCallableId; CallableContractHash
+CheckedValueResolution,ProjectItem,AcceptedDeclarationSemanticId; accepted item semantic digest
+CheckedValueResolution,Entry,accepted entry semantic identity and contract
+CheckedValueResolution,Registered,registered semantic value identity and accepted catalog digest
+CheckedValueResolution,Constant,CheckedLiteralSemanticV1; checked runtime type digest
+CheckedSelectResolution,Method,accepted method RuntimeCallableId; CallableContractHash; receiver mode
+CheckedSelectResolution,DialogueView,accepted dialogue projection identity; accepted field identity
+CheckedSelectResolution,AgentField,RuntimeAgentField inherent semantic identity and owner
+CheckedSelectResolution,ProgressField,closed Progress field semantic identity
+CheckedSelectResolution,Field,accepted nominal semantic identity/layout; accepted field ordinal/identity
+CheckedSelectResolution,TupleElement,checked tuple arity; source-order ordinal
+CheckedSelectResolution,RecordElement,accepted nominal semantic identity/layout; accepted record-field ordinal/identity

@@ -1,0 +1,756 @@
+{
+  "tests": [
+    {
+      "id": "VAL-001",
+      "category": "focused",
+      "owner": "arcweft-core canonical RuntimeValue visitor",
+      "assertion": "Plain+SnapshotOnly opaque canonical bytes succeed and preserve the existing opaque transcript",
+      "kind": "implementation",
+      "cut": 4
+    },
+    {
+      "id": "VAL-002",
+      "category": "differential",
+      "owner": "arcweft-core canonical RuntimeValue visitor",
+      "assertion": "direct BLAKE3 sink equals BLAKE3(bytes sink output) for every RuntimeValue variant and limit edge",
+      "kind": "implementation",
+      "cut": 4
+    },
+    {
+      "id": "VAL-003",
+      "category": "focused",
+      "owner": "Need producer admission",
+      "assertion": "the same Plain+SnapshotOnly value passes argument admission and producer-instance construction",
+      "kind": "implementation",
+      "cut": 5
+    },
+    {
+      "id": "VAL-004",
+      "category": "snapshot",
+      "owner": "RuntimeValueSnapshotV1",
+      "assertion": "the same Plain+SnapshotOnly value round-trips save/restore exactly",
+      "kind": "implementation",
+      "cut": 5
+    },
+    {
+      "id": "VAL-005",
+      "category": "negative",
+      "owner": "runtime-plan constant lowering",
+      "assertion": "the same Plain+SnapshotOnly value fails at ConstantAdmissionError::SnapshotOnlyOpaque",
+      "kind": "implementation",
+      "cut": 5
+    },
+    {
+      "id": "VAL-006",
+      "category": "property",
+      "owner": "canonical sink pair",
+      "assertion": "byte sink and hash sink have identical recursion/node/byte limit and first-error precedence",
+      "kind": "implementation",
+      "cut": 4
+    },
+    {
+      "id": "VAL-007",
+      "category": "negative",
+      "owner": "canonical RuntimeValue identity",
+      "assertion": "AffineHandle fails even in non-producer diagnostic RuntimeValueDigest; snapshot codec does not mint identity",
+      "kind": "implementation",
+      "cut": 4
+    },
+    {
+      "id": "VAL-008",
+      "category": "structural-absence",
+      "owner": "workspace",
+      "assertion": "no producer-argument-only serializer or second RuntimeValueDigest grammar exists",
+      "kind": "implementation",
+      "cut": 5
+    },
+    {
+      "id": "VAL-009",
+      "category": "migration",
+      "owner": "dialogue/config/command/runtime-plan constants",
+      "assertion": "every current constant publisher calls explicit constant admission before publication",
+      "kind": "implementation",
+      "cut": 5
+    },
+    {
+      "id": "EXE-001",
+      "category": "exhaustive",
+      "owner": "NeedProducerFamily policy",
+      "assertion": "all nine families have at least one explicit execution route",
+      "kind": "implementation",
+      "cut": 5
+    },
+    {
+      "id": "EXE-002",
+      "category": "negative",
+      "owner": "TaskSpec",
+      "assertion": "unconditional request field and parallel host/runtime Option fields do not compile",
+      "kind": "implementation",
+      "cut": 5
+    },
+    {
+      "id": "EXE-003",
+      "category": "negative",
+      "owner": "TaskLaunchAdapter",
+      "assertion": "Runtime AwaitMany/Timeout rows are rejected before prepare_launch",
+      "kind": "implementation",
+      "cut": 5
+    },
+    {
+      "id": "EXE-004",
+      "category": "differential",
+      "owner": "family execution validation",
+      "assertion": "debug label and host operation spelling changes cannot change family/execution selection",
+      "kind": "implementation",
+      "cut": 5
+    },
+    {
+      "id": "EXE-005",
+      "category": "focused",
+      "owner": "AwaitMany base",
+      "assertion": "aggregate TaskSpec accepts Runtime::AwaitManyAggregate and rejects Host",
+      "kind": "implementation",
+      "cut": 5
+    },
+    {
+      "id": "EXE-006",
+      "category": "focused",
+      "owner": "Timeout family",
+      "assertion": "Timeout accepts Runtime::Timeout+Join only and never reaches adapter",
+      "kind": "implementation",
+      "cut": 5
+    },
+    {
+      "id": "EXE-007",
+      "category": "focused",
+      "owner": "LineTask",
+      "assertion": "LineTask accepts Host+AlwaysStart only",
+      "kind": "implementation",
+      "cut": 5
+    },
+    {
+      "id": "EXE-008",
+      "category": "focused",
+      "owner": "ViewMatchSubscription",
+      "assertion": "View Match subscription accepts Host+Join only",
+      "kind": "implementation",
+      "cut": 5
+    },
+    {
+      "id": "EXE-009",
+      "category": "focused",
+      "owner": "AwaitMany child",
+      "assertion": "host and both runtime child execution variants are accepted when their complete child TaskSpec validates",
+      "kind": "implementation",
+      "cut": 5
+    },
+    {
+      "id": "SCH-001",
+      "category": "rollback",
+      "owner": "RuntimeTaskScheduler::ensure_task",
+      "assertion": "adapter prepare failure leaves group/task/Need and ordinal counter unchanged",
+      "kind": "implementation",
+      "cut": 5
+    },
+    {
+      "id": "SCH-002",
+      "category": "rollback",
+      "owner": "RuntimeTaskScheduler::ensure_task",
+      "assertion": "post-prepare staging invariant failure calls rollback and consumes no ordinal",
+      "kind": "implementation",
+      "cut": 5
+    },
+    {
+      "id": "SCH-003",
+      "category": "structural-absence",
+      "owner": "TaskEnsureError",
+      "assertion": "AdapterCommit variant is absent",
+      "kind": "implementation",
+      "cut": 5
+    },
+    {
+      "id": "SCH-004",
+      "category": "focused",
+      "owner": "TaskLaunchAdapter",
+      "assertion": "commit_launch and rollback_launch return unit and are infallible by trait contract",
+      "kind": "implementation",
+      "cut": 5
+    },
+    {
+      "id": "SCH-005",
+      "category": "property",
+      "owner": "AlwaysStart counter",
+      "assertion": "successful launches use distinct positive ordinals beginning at one; failures create no gaps",
+      "kind": "implementation",
+      "cut": 5
+    },
+    {
+      "id": "SCH-006",
+      "category": "property",
+      "owner": "Join",
+      "assertion": "same generation+instance returns one NeedId/TaskKey/TaskId and never invokes adapter twice",
+      "kind": "implementation",
+      "cut": 5
+    },
+    {
+      "id": "SCH-007",
+      "category": "negative",
+      "owner": "Join",
+      "assertion": "same TaskKey with structurally different spec returns JoinSpecConflict without mutation",
+      "kind": "implementation",
+      "cut": 5
+    },
+    {
+      "id": "SCH-008",
+      "category": "structural-absence",
+      "owner": "runtime-driver",
+      "assertion": "no second journal, AlwaysStart counter or RuntimeTaskRegistry remains",
+      "kind": "implementation",
+      "cut": 5
+    },
+    {
+      "id": "SCH-009",
+      "category": "borrow-flow",
+      "owner": "RuntimeTaskScheduler",
+      "assertion": "ensure/event/step/observer/snapshot/restore/rebind APIs compile without unsafe or global interior state",
+      "kind": "implementation",
+      "cut": 5
+    },
+    {
+      "id": "SCH-010",
+      "category": "rollback",
+      "owner": "replacement rebind",
+      "assertion": "prepare_rebind failure preserves old generation and adapter state",
+      "kind": "implementation",
+      "cut": 5
+    },
+    {
+      "id": "SCH-011",
+      "category": "rollback",
+      "owner": "replacement rebind",
+      "assertion": "precommit validation failure rolls back prepared rebind and publishes no new correlation",
+      "kind": "implementation",
+      "cut": 5
+    },
+    {
+      "id": "HND-001",
+      "category": "focused",
+      "owner": "RuntimeNeedHandle",
+      "assertion": "same NeedId with different debug/origin/spec labels compares, hashes and orders equal",
+      "kind": "implementation",
+      "cut": 5
+    },
+    {
+      "id": "HND-002",
+      "category": "focused",
+      "owner": "RuntimeValue::NeedHandle",
+      "assertion": "canonical bytes are exactly tag 20 plus NeedId",
+      "kind": "implementation",
+      "cut": 5
+    },
+    {
+      "id": "HND-003",
+      "category": "negative",
+      "owner": "Await boundary",
+      "assertion": "stale-generation handle has equal value identity but fails before observer/task mutation",
+      "kind": "implementation",
+      "cut": 5
+    },
+    {
+      "id": "HND-004",
+      "category": "negative",
+      "owner": "timeout boundary",
+      "assertion": "stale-generation source handle fails before runtime timeout staging",
+      "kind": "implementation",
+      "cut": 5
+    },
+    {
+      "id": "HND-005",
+      "category": "replacement",
+      "owner": "replacement rebind",
+      "assertion": "valid explicit rebind preserves NeedId/ordinal and rederives TaskKey/TaskId for new generation",
+      "kind": "implementation",
+      "cut": 5
+    },
+    {
+      "id": "HND-006",
+      "category": "tamper",
+      "owner": "handle construction/restore",
+      "assertion": "tampered producer/spec/correlation fails structural validation",
+      "kind": "implementation",
+      "cut": 5
+    },
+    {
+      "id": "AM-001",
+      "category": "focused",
+      "owner": "RuntimeAwaitManyAggregateTask",
+      "assertion": "source order and output order are identical even when children complete out of order",
+      "kind": "implementation",
+      "cut": 5
+    },
+    {
+      "id": "AM-002",
+      "category": "property",
+      "owner": "AwaitMany launch cursor",
+      "assertion": "at most limit children are active and launch_cursor never exceeds source_count",
+      "kind": "implementation",
+      "cut": 5
+    },
+    {
+      "id": "AM-003",
+      "category": "rollback",
+      "owner": "AwaitMany child batch",
+      "assertion": "failed child ensure publishes none of the selected batch and leaks no AlwaysStart ordinal",
+      "kind": "implementation",
+      "cut": 5
+    },
+    {
+      "id": "AM-004",
+      "category": "focused",
+      "owner": "AwaitMany terminal precedence",
+      "assertion": "aggregate cancellation beats child terminal; infrastructure failure beats all-ready; otherwise all-ready publishes once",
+      "kind": "implementation",
+      "cut": 5
+    },
+    {
+      "id": "AM-005",
+      "category": "snapshot",
+      "owner": "AwaitMany",
+      "assertion": "mid-flight source/item/spec/child/output/cursor state round-trips exactly",
+      "kind": "implementation",
+      "cut": 5
+    },
+    {
+      "id": "TO-001",
+      "category": "focused",
+      "owner": "RuntimeTimeoutNeed",
+      "assertion": "first demand starts remaining=requested_limit and registers one source observer",
+      "kind": "implementation",
+      "cut": 5
+    },
+    {
+      "id": "TO-002",
+      "category": "differential",
+      "owner": "RuntimeTimeoutNeed",
+      "assertion": "only RuntimeStepInput.dt changes remaining; wall/monotonic clocks are never read",
+      "kind": "implementation",
+      "cut": 5
+    },
+    {
+      "id": "TO-003",
+      "category": "focused",
+      "owner": "RuntimeTimeoutNeed",
+      "assertion": "same-step precedence is cancellation then normalized source terminal then expiration then Pending",
+      "kind": "implementation",
+      "cut": 5
+    },
+    {
+      "id": "TO-004",
+      "category": "focused",
+      "owner": "RuntimeTimeoutNeed",
+      "assertion": "zero duration snapshots source first and only then expires",
+      "kind": "implementation",
+      "cut": 5
+    },
+    {
+      "id": "TO-005",
+      "category": "focused",
+      "owner": "RuntimeTimeoutNeed",
+      "assertion": "cancelling wrapper does not cancel source Need",
+      "kind": "implementation",
+      "cut": 5
+    },
+    {
+      "id": "TO-006",
+      "category": "snapshot",
+      "owner": "RuntimeTimeoutNeed",
+      "assertion": "remaining/phase/source subscription/publication cursor round-trip exactly",
+      "kind": "implementation",
+      "cut": 5
+    },
+    {
+      "id": "EVT-001",
+      "category": "tamper",
+      "owner": "host event ingestion",
+      "assertion": "wrong generation/task/producer/Need correlation rejects before cursor duplicate logic",
+      "kind": "implementation",
+      "cut": 5
+    },
+    {
+      "id": "EVT-002",
+      "category": "replay",
+      "owner": "event application",
+      "assertion": "same cursor+same digest is duplicate success; same cursor+different digest is conflict",
+      "kind": "implementation",
+      "cut": 5
+    },
+    {
+      "id": "EVT-003",
+      "category": "negative",
+      "owner": "event application",
+      "assertion": "gap, epoch regression and post-terminal publication reject without mutation",
+      "kind": "implementation",
+      "cut": 5
+    },
+    {
+      "id": "EVT-004",
+      "category": "focused",
+      "owner": "failure categories",
+      "assertion": "domain Result/Option error remains payload; infrastructure failure remains typed RuntimeTaskFailure; cancellation is Need::Cancelled",
+      "kind": "implementation",
+      "cut": 5
+    },
+    {
+      "id": "PER-001",
+      "category": "snapshot",
+      "owner": "RuntimeTaskSchedulerSnapshotV1",
+      "assertion": "complete scheduler snapshot round-trips all generation/group/launch/Need/observer/runtime-task rows",
+      "kind": "implementation",
+      "cut": 5
+    },
+    {
+      "id": "PER-002",
+      "category": "tamper",
+      "owner": "strict decoder",
+      "assertion": "unknown field/tag rejects",
+      "kind": "implementation",
+      "cut": 5
+    },
+    {
+      "id": "PER-003",
+      "category": "tamper",
+      "owner": "strict decoder",
+      "assertion": "duplicate map key/field rejects before publication",
+      "kind": "implementation",
+      "cut": 5
+    },
+    {
+      "id": "PER-004",
+      "category": "tamper",
+      "owner": "strict decoder",
+      "assertion": "trailing bytes and nonminimal u32 varints reject",
+      "kind": "implementation",
+      "cut": 5
+    },
+    {
+      "id": "PER-005",
+      "category": "tamper",
+      "owner": "identity restore",
+      "assertion": "stored NeedProducerInstanceKey/NeedId/TaskKey/TaskId mismatches rederived values reject",
+      "kind": "implementation",
+      "cut": 5
+    },
+    {
+      "id": "PER-006",
+      "category": "rollback",
+      "owner": "restore",
+      "assertion": "any join/invariant/adapter prepare failure leaves the old scheduler state untouched",
+      "kind": "implementation",
+      "cut": 5
+    },
+    {
+      "id": "PER-007",
+      "category": "negative",
+      "owner": "restore",
+      "assertion": "in-flight MustBeQuiescent host row makes snapshot/restore fail rather than serialize adapter-private state",
+      "kind": "implementation",
+      "cut": 5
+    },
+    {
+      "id": "PER-008",
+      "category": "negative",
+      "owner": "snapshot",
+      "assertion": "snapshot while adapter launch/rebind token is prepared is rejected",
+      "kind": "implementation",
+      "cut": 5
+    },
+    {
+      "id": "PER-009",
+      "category": "structural-absence",
+      "owner": "codec",
+      "assertion": "no V2, legacy reader, String fallback, translation table or zero sentinel exists",
+      "kind": "implementation",
+      "cut": 5
+    },
+    {
+      "id": "PER-010",
+      "category": "replay",
+      "owner": "TaskReplayEnvelopeV1",
+      "assertion": "strict generation/event-digest/correlation/cursor validation matches live event path",
+      "kind": "implementation",
+      "cut": 5
+    },
+    {
+      "id": "MAT-001",
+      "category": "exhaustive",
+      "owner": "CheckedExpressionResolution transcript",
+      "assertion": "all 27 current variants have one semantic transcript arm",
+      "kind": "implementation",
+      "cut": 1
+    },
+    {
+      "id": "MAT-002",
+      "category": "exhaustive",
+      "owner": "CheckedValueResolution transcript",
+      "assertion": "all 8 current variants have one semantic transcript arm",
+      "kind": "implementation",
+      "cut": 1
+    },
+    {
+      "id": "MAT-003",
+      "category": "exhaustive",
+      "owner": "CheckedSelectResolution transcript",
+      "assertion": "all 7 current variants have one semantic transcript arm",
+      "kind": "implementation",
+      "cut": 1
+    },
+    {
+      "id": "MAT-004",
+      "category": "exhaustive",
+      "owner": "CheckedPatternResolution transcript",
+      "assertion": "all 5 current variants have one semantic transcript arm",
+      "kind": "implementation",
+      "cut": 1
+    },
+    {
+      "id": "MAT-005",
+      "category": "exhaustive",
+      "owner": "HirPatternKind transcript",
+      "assertion": "all 13 current families are covered; Error returns typed failure",
+      "kind": "implementation",
+      "cut": 1
+    },
+    {
+      "id": "MAT-006",
+      "category": "exhaustive",
+      "owner": "HirLiteral transcript",
+      "assertion": "all 7 current literal families use exact semantic payload rules",
+      "kind": "implementation",
+      "cut": 1
+    },
+    {
+      "id": "MAT-007",
+      "category": "differential",
+      "owner": "CheckedMatchSemanticDigest",
+      "assertion": "renumber ExprId/PatternId/LocalId and change SourceSpan while preserving semantics leaves digest unchanged",
+      "kind": "implementation",
+      "cut": 1
+    },
+    {
+      "id": "MAT-008",
+      "category": "differential",
+      "owner": "CheckedMatchSemanticDigest",
+      "assertion": "semantic field/case/callable/layout changes alter digest",
+      "kind": "implementation",
+      "cut": 1
+    },
+    {
+      "id": "MAT-009",
+      "category": "negative",
+      "owner": "semantic transcript",
+      "assertion": "raw HIR ids, spans, source spelling, debug names, hash-map order and generic Serde are absent",
+      "kind": "implementation",
+      "cut": 1
+    },
+    {
+      "id": "MAT-010",
+      "category": "focused",
+      "owner": "guard classification",
+      "assertion": "only exact Boolean literals become ConstantTrue/ConstantFalse; all other checked Boolean expressions are Dynamic",
+      "kind": "implementation",
+      "cut": 1
+    },
+    {
+      "id": "MAT-011",
+      "category": "property",
+      "owner": "stable coordinates",
+      "assertion": "every checked child/binding resolves to one declaration-rooted role path; duplicate coordinate construction rejects",
+      "kind": "implementation",
+      "cut": 1
+    },
+    {
+      "id": "MAT-012",
+      "category": "focused",
+      "owner": "coverage",
+      "assertion": "bounded constructor matrix publishes exhaustive witness and sorted unreachable evidence",
+      "kind": "implementation",
+      "cut": 1
+    },
+    {
+      "id": "MAT-013",
+      "category": "negative",
+      "owner": "CheckedMatchRef",
+      "assertion": "stale or foreign HirSnapshotId rejects exact lookup",
+      "kind": "implementation",
+      "cut": 1
+    },
+    {
+      "id": "BND-001",
+      "category": "structural-absence",
+      "owner": "AcceptedViewMatchBundleRowV1",
+      "assertion": "no CheckedMatchRef, ExprId, HirSnapshotId, SourceSpan or compiler certificate field",
+      "kind": "implementation",
+      "cut": 5
+    },
+    {
+      "id": "BND-002",
+      "category": "focused",
+      "owner": "bundle validation",
+      "assertion": "joins compiler/AWBC/current revision products without minting a new semantic identity",
+      "kind": "implementation",
+      "cut": 5
+    },
+    {
+      "id": "BND-003",
+      "category": "tamper",
+      "owner": "bundle validation",
+      "assertion": "any checked-match/view/need/ownership/contract/type/plan/arguments mismatch rejects",
+      "kind": "implementation",
+      "cut": 5
+    },
+    {
+      "id": "OWN-001",
+      "category": "exhaustive",
+      "owner": "TypeKind classifier",
+      "assertion": "all 85 current variants have one machine/prose/classifier row",
+      "kind": "implementation",
+      "cut": 2
+    },
+    {
+      "id": "OWN-002",
+      "category": "focused",
+      "owner": "TypeKind::Predicate",
+      "assertion": "classifier has no child recursion edge",
+      "kind": "implementation",
+      "cut": 2
+    },
+    {
+      "id": "OWN-003",
+      "category": "negative",
+      "owner": "TypeKind::Shared",
+      "assertion": "returns MissingRuntimeSnapshotOwner and no Shared carrier/side table exists",
+      "kind": "implementation",
+      "cut": 2
+    },
+    {
+      "id": "OWN-004",
+      "category": "property",
+      "owner": "SnapshotClone evidence",
+      "assertion": "every successful row names projection, live carrier, canonical identity and snapshot codec",
+      "kind": "implementation",
+      "cut": 2
+    },
+    {
+      "id": "CUT-001",
+      "category": "dependency",
+      "owner": "Cut 3",
+      "assertion": "type dependency set contains no Cut 4 task/digest types",
+      "kind": "implementation",
+      "cut": 3
+    },
+    {
+      "id": "CUT-002",
+      "category": "structural-absence",
+      "owner": "Cut 4",
+      "assertion": "no public RuntimeValue variant or final TaskSpec schema is claimed",
+      "kind": "implementation",
+      "cut": 4
+    },
+    {
+      "id": "CUT-003",
+      "category": "compile-clean",
+      "owner": "all cuts",
+      "assertion": "each cut lists exact crates/features and compiles using same/earlier cut types only",
+      "kind": "implementation",
+      "cut": 5
+    },
+    {
+      "id": "CUT-004",
+      "category": "structural-absence",
+      "owner": "Cut 5",
+      "assertion": "old String/dual route and copied View row are absent in production, tests, fixtures and generated surfaces",
+      "kind": "implementation",
+      "cut": 5
+    },
+    {
+      "id": "SELF-001",
+      "category": "validator-negative",
+      "owner": "tools/validate_package.py",
+      "assertion": "validator rejects reintroduced AdapterCommit",
+      "kind": "package",
+      "cut": 0
+    },
+    {
+      "id": "SELF-002",
+      "category": "validator-negative",
+      "owner": "tools/validate_package.py",
+      "assertion": "validator rejects TaskSpec.request",
+      "kind": "package",
+      "cut": 0
+    },
+    {
+      "id": "SELF-003",
+      "category": "validator-negative",
+      "owner": "tools/validate_package.py",
+      "assertion": "validator rejects missing schema owner",
+      "kind": "package",
+      "cut": 0
+    },
+    {
+      "id": "SELF-004",
+      "category": "validator-negative",
+      "owner": "tools/validate_package.py",
+      "assertion": "validator rejects ExprId/HirSnapshotId/CheckedMatchRef",
+      "kind": "package",
+      "cut": 0
+    },
+    {
+      "id": "SELF-005",
+      "category": "validator-negative",
+      "owner": "tools/validate_package.py",
+      "assertion": "validator rejects accepted Shared",
+      "kind": "package",
+      "cut": 0
+    },
+    {
+      "id": "SELF-006",
+      "category": "validator-negative",
+      "owner": "tools/validate_package.py",
+      "assertion": "validator rejects a child edge",
+      "kind": "package",
+      "cut": 0
+    },
+    {
+      "id": "SELF-007",
+      "category": "validator-negative",
+      "owner": "tools/validate_package.py",
+      "assertion": "validator rejects Cut 4/public-private variant wording",
+      "kind": "package",
+      "cut": 0
+    },
+    {
+      "id": "SELF-008",
+      "category": "validator-negative",
+      "owner": "tools/validate_package.py",
+      "assertion": "validator rejects NeedProducerContractDigest in Cut 3",
+      "kind": "package",
+      "cut": 0
+    },
+    {
+      "id": "SELF-009",
+      "category": "validator-negative",
+      "owner": "tools/validate_package.py",
+      "assertion": "validator rejects fewer than nine family rows",
+      "kind": "package",
+      "cut": 0
+    },
+    {
+      "id": "SELF-010",
+      "category": "validator-negative",
+      "owner": "tools/validate_package.py",
+      "assertion": "validator rejects any Arcweft marker other than 1",
+      "kind": "package",
+      "cut": 0
+    }
+  ]
+}

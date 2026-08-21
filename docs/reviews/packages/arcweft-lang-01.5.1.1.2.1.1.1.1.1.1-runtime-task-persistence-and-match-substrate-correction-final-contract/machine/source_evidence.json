@@ -1,0 +1,224 @@
+{
+  "repository": "Sanzentyo/arcweft",
+  "inspected_main": "3670625a02b9e7e8578b57fc7b148a1758a17dba",
+  "request_stated_production": "17b384a36e1412cc7e7d9f13073d8dd33dcb5cbc",
+  "head_delta": "one documentation-only audit commit; production crates unchanged",
+  "rows": [
+    {
+      "path": "AGENTS.md",
+      "blob": "connector-inspected at current SHA",
+      "owner": "repository-wide working contract",
+      "observation": "one typed authority, deletion-driven migrations, design-only package boundaries, and compile-clean cut expectations",
+      "verification": "authenticated GitHub connector; complete file read"
+    },
+    {
+      "path": "docs/AGENTS.md",
+      "blob": "connector-inspected at current SHA",
+      "owner": "documentation contract",
+      "observation": "documentation/package ownership and review artifact requirements",
+      "verification": "authenticated GitHub connector; complete file read"
+    },
+    {
+      "path": "docs/reviews/AGENTS.md",
+      "blob": "connector-inspected at current SHA",
+      "owner": "review/package contract",
+      "observation": "independently throwable final-contract ZIP, no generic CLOSED placeholders, validator and source evidence requirements",
+      "verification": "authenticated GitHub connector; complete file read"
+    },
+    {
+      "path": "docs/implementation/AGENTS.md",
+      "blob": "connector-inspected at current SHA",
+      "owner": "implementation evidence and source-reconciliation contract",
+      "observation": "implementation reports must distinguish verified source evidence from specified future production work and must not treat absent paths as targets",
+      "verification": "authenticated GitHub connector; complete file read"
+    },
+    {
+      "path": "crates/AGENTS.md",
+      "blob": "connector-inspected at current SHA",
+      "owner": "Rust crate policy",
+      "observation": "original enum owners receive inherent behavior; no ad-hoc extension traits or unsafe shortcuts",
+      "verification": "authenticated GitHub connector; complete file read"
+    },
+    {
+      "path": "docs/reviews/requests/2026-08-22-lang-01.5.1.1.2.1.1.1.1.1.1-runtime-task-persistence-and-match-substrate-correction.md",
+      "blob": "6b3d614e7813fa6552e84f15610175633470227d",
+      "owner": "current correction request",
+      "observation": "ten mandatory corrections, 14 package categories, negative validator crossings and READY gate",
+      "verification": "repository file and 415-line attached input read completely; attached SHA-256 804f68c052640fe3964e70bfe011cad2c4429873a70b790c3a0526b5f46c7e6e"
+    },
+    {
+      "path": "docs/implementation/2026-08-22-lang-01-5-1-1-2-1-1-1-1-1-runtime-need-view-return-intake.md",
+      "blob": "connector-inspected at current SHA",
+      "owner": "repository intake/reconciliation",
+      "observation": "nine repository crossings that invalidate the predecessor return despite internal package consistency",
+      "verification": "authenticated GitHub connector; complete file read"
+    },
+    {
+      "path": "docs/reviews/packages/arcweft-lang-01.5.1.1.2.1.1.1.1.1-runtime-need-instance-view-match-admission-correction-final-contract/IDENTITY_AND_DIGESTS.md",
+      "blob": "connector-inspected at current SHA",
+      "owner": "retained identity transcript",
+      "observation": "producer/Need/task ID transcripts, policy ordinals, family set, RuntimeValue tag 20 and View identity exclusions",
+      "verification": "authenticated GitHub connector; retained sections inspected; frozen without renumbering"
+    },
+    {
+      "path": "crates/arcweft-core/src/task.rs",
+      "blob": "130256a8a8efb2fe6c7028c68357cb707f975eb9",
+      "owner": "current task/Need data",
+      "observation": "String-backed NeedId/TaskKey/TaskId, unconditional TaskSpec.request and incomplete correlation/events",
+      "verification": "authenticated GitHub connector at inspected SHA; production unchanged by docs-only head commit"
+    },
+    {
+      "path": "crates/arcweft-runtime-scheduler/src/lib.rs",
+      "blob": "connector-inspected at current SHA",
+      "owner": "current deterministic scheduler",
+      "observation": "separate lightweight pending/in-flight scheduler with no generation journal, adapter transaction, runtime task state or snapshot owner",
+      "verification": "authenticated GitHub connector; relevant file read"
+    },
+    {
+      "path": "crates/arcweft-runtime-driver/src/task.rs",
+      "blob": "22aabea946be7645afcebe65415bcea3cd786eb9",
+      "owner": "current driver task registry",
+      "observation": "second RuntimeTaskRegistry and partial String/Option DTO authority",
+      "verification": "authenticated GitHub connector; complete relevant range"
+    },
+    {
+      "path": "crates/arcweft-runtime-driver/src/swap.rs",
+      "blob": "39ecdfad33abfe4a55e20f8e7501878152ef797e",
+      "owner": "current generation type",
+      "observation": "driver-local GenerationId proves the required move to arcweft-core",
+      "verification": "authenticated GitHub connector"
+    },
+    {
+      "path": "crates/arcweft-core/src/value.rs",
+      "blob": "6370e9bee5594bf3ec5835b5ab00405570a27a8f",
+      "owner": "current RuntimeValue",
+      "observation": "closed enum lacks NeedHandle and derives structural PartialEq; contains_nonconstant_opaque couples constant policy",
+      "verification": "authenticated GitHub connector; relevant ranges inspected"
+    },
+    {
+      "path": "crates/arcweft-core/src/value/opaque.rs",
+      "blob": "connector-inspected at current SHA",
+      "owner": "current opaque carrier",
+      "observation": "RuntimeOpaqueValueClass Plain/AffineHandle and RuntimeOpaquePersistence ConstantAndSnapshot/SnapshotOnly are current exact owners",
+      "verification": "authenticated GitHub connector; complete file read"
+    },
+    {
+      "path": "crates/arcweft-core/src/entry/schema.rs",
+      "blob": "24e5bbc3cd3409f3f06ea08a81108574babb4626",
+      "owner": "sole canonical RuntimeValue grammar",
+      "observation": "one exhaustive canonical visitor currently rejects SnapshotOnly opaque identity and materializes bytes before hashing",
+      "verification": "authenticated GitHub connector; canonical writer inspected"
+    },
+    {
+      "path": "crates/arcweft-core/src/value/awbc_save.rs",
+      "blob": "connector-inspected at current SHA",
+      "owner": "current RuntimeValue save projection",
+      "observation": "complete AWBC-specific value snapshot shape provides the concrete base to generalize to core RuntimeValueSnapshotV1",
+      "verification": "authenticated GitHub connector; complete relevant range"
+    },
+    {
+      "path": "crates/arcweft-core/src/value/agent.rs",
+      "blob": "61ef48b8b74c80120bf3f6777c708597b851bff5",
+      "owner": "current Agent value carrier",
+      "observation": "exact RuntimeAgentValue variants include ActionTarget, CaptureTarget, DebugStatePath, ObservationFieldPath, Probe, Diagnostics, Predicate and ViewportPoint",
+      "verification": "authenticated GitHub connector; enum and payloads inspected"
+    },
+    {
+      "path": "crates/arcweft-core/src/plan/type_kind.rs",
+      "blob": "connector-inspected at current SHA",
+      "owner": "runtime-plan type projection",
+      "observation": "closed RuntimePlanTypeProjection and RuntimeAgentTypeProjection; Predicate is a leaf while Probe alone carries a child",
+      "verification": "authenticated GitHub connector; exhaustive children() inspected"
+    },
+    {
+      "path": "crates/arcweft-lang-sema/src/types.rs",
+      "blob": "528d32482865aae4bf8dd8f456468b061ecdedc7",
+      "owner": "current TypeKind",
+      "observation": "85 exact current variants used to regenerate the carrier-backed matrix",
+      "verification": "authenticated GitHub connector; full enum range inspected"
+    },
+    {
+      "path": "crates/arcweft-lang-sema/src/final_analysis/model.rs",
+      "blob": "a415ac5e8ae90533a6983e1c934185bd15395848",
+      "owner": "current checked semantic variants",
+      "observation": "27 CheckedExpressionResolution variants, 8 CheckedValueResolution variants, 7 CheckedSelectResolution variants and 5 CheckedPatternResolution variants",
+      "verification": "authenticated GitHub connector; exhaustive definitions inspected"
+    },
+    {
+      "path": "crates/arcweft-lang-sema/src/final_analysis/report.rs",
+      "blob": "31a587463d8f035b4d753c0fcbc7fcfcf75d3876",
+      "owner": "accepted semantic generation",
+      "observation": "FinalSemanticAnalysis owns exact per-module HirSnapshotId and expression/pattern maps; no AcceptedSemanticGeneration owner exists",
+      "verification": "authenticated GitHub connector; report construction and generation validation inspected"
+    },
+    {
+      "path": "crates/arcweft-lang-hir/src/pattern.rs",
+      "blob": "e35576238711d9a331d267fbfac4af52d32eea7f",
+      "owner": "current HIR pattern family",
+      "observation": "13 exact HirPatternKind variants including Error recovery",
+      "verification": "authenticated GitHub connector; full enum inspected"
+    },
+    {
+      "path": "crates/arcweft-lang-hir/src/leaf.rs",
+      "blob": "6011efa3dbaa20b5964e3b83b9b1eabf8c20df42",
+      "owner": "current semantic literal values",
+      "observation": "7 exact literal families and canonical big integer, decimal, float-bit and duration semantic values",
+      "verification": "authenticated GitHub connector; literal definitions inspected"
+    },
+    {
+      "path": "crates/arcweft-need/src/lib.rs",
+      "blob": "05446a144a25aaf55e65cd1319d8fe5ad1123f03",
+      "owner": "Need state",
+      "observation": "Need<T> is NotStarted/Pending/Ready/Cancelled and Progress validates finite 0..=1",
+      "verification": "authenticated GitHub connector; complete file read"
+    },
+    {
+      "path": "docs/02-runtime/need-timeout.md",
+      "blob": "connector-inspected at current SHA",
+      "owner": "maintained timeout contract",
+      "observation": "RuntimeStepInput.dt-only clock, first-demand start, cancellation/source/expiration/Pending precedence and source non-cancellation",
+      "verification": "authenticated GitHub connector; complete document read"
+    },
+    {
+      "path": "docs/02-runtime/async-scheduler.md",
+      "blob": "e070aa843839be76654df6c61b2ccf4c237d249e",
+      "owner": "maintained scheduler/Need contract",
+      "observation": "Sans-I/O TaskHost, JoinSameKey, AwaitMany source-order outputs and domain/infrastructure/cancellation separation",
+      "verification": "authenticated GitHub connector; complete document read"
+    },
+    {
+      "path": "crates/arcweft-view/src/view/identity.rs",
+      "blob": "153fa4450cc676e7f6b860c9700dfc7bb95e4315",
+      "owner": "current View identity",
+      "observation": "ViewProgramId and AcceptedViewProgramRevision([u8;32]) are the existing final roles",
+      "verification": "authenticated GitHub connector"
+    },
+    {
+      "path": "crates/arcweft-compiler/src/view.rs",
+      "blob": "6bba13ab04869dddf95dc6198522820f5d09da99",
+      "owner": "compiler View publication",
+      "observation": "real compiler View product path for compiler-local row migration",
+      "verification": "authenticated GitHub connector; path and owner confirmed"
+    },
+    {
+      "path": "crates/arcweft-bundle/src/product.rs",
+      "blob": "e110bfdb7245fb475827c003e261dfe221e0e768",
+      "owner": "bundle product",
+      "observation": "real product owner for persistent digest projection",
+      "verification": "authenticated GitHub connector; path confirmed"
+    },
+    {
+      "path": "crates/arcweft-bundle/src/container.rs",
+      "blob": "c9a52c99c4ac4c59c402f31b62038111e84682ff",
+      "owner": "bundle container codec",
+      "observation": "real strict product/container codec owner; no nonexistent codec.rs target is named",
+      "verification": "authenticated GitHub connector; directory listing confirmed"
+    }
+  ],
+  "verification_boundary": {
+    "production_checkout": "not created locally",
+    "production_build_test": "not run; design-only return",
+    "parent_zip_binary": "expected SHA retained from request; frozen mirror/intake inspected; binary not independently streamed and rehashed",
+    "package_validator": "run locally against this return including negative self-tests"
+  }
+}

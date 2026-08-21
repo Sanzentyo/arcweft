@@ -1,0 +1,10 @@
+family,allowed_execution,allowed_policies,restriction
+StructuredTaskPlan,"[""Host""]","[""JoinSameKey"",""AlwaysStart""]",The accepted structured RuntimeTaskPlan owns the host request. The scheduler validates family from the producer descriptor; request spelling and debug labels are non-authoritative.
+AwbcTaskPlan,"[""Host""]","[""JoinSameKey"",""AlwaysStart""]",The accepted AWBC task-plan row owns the host request and task-plan semantic digest. No RuntimeTaskRequest is admitted for this family.
+ViewMatchSubscription,"[""Host""]","[""JoinSameKey""]",A retained View Match subscription is reusable and generation-scoped. AlwaysStart is rejected because View subscriptions must share one Need cell per producer instance.
+AwaitManyBase,"[""RuntimeAwaitManyAggregate""]","[""JoinSameKey""]",The aggregate is scheduler-owned and is never prepared by a host adapter. Its child TaskSpec rows may independently select Host or Runtime execution.
+AwaitManyChild,"[""Host"",""RuntimeAwaitManyAggregate"",""RuntimeTimeout""]","[""JoinSameKey"",""AlwaysStart""]",Each child is a complete TaskSpec whose family is fixed to AwaitManyChild. Runtime execution is explicit in TaskExecution; it is not inferred from the child operation.
+Timeout,"[""RuntimeTimeout""]","[""JoinSameKey""]",Timeout is a reusable derived Need driven only by RuntimeStepInput.dt. It never reaches TaskLaunchAdapter.
+LineTask,"[""Host""]","[""AlwaysStart""]",Every accepted line activation launches distinct work and receives a journal-owned ordinal beginning at one.
+HostAdapterTask,"[""Host""]","[""JoinSameKey"",""AlwaysStart""]",The accepted host/adaptor contract is explicit in NeedProducerContractDigest. Runtime request variants are rejected.
+MakeNeedHandle,"[""Host""]","[""JoinSameKey""]",This family creates only reusable Join handles. It cannot fabricate an AlwaysStart pre-launch handle.

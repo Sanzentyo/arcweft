@@ -1,0 +1,227 @@
+{
+  "checked_expression_resolution": [
+    {
+      "variant": "Structural",
+      "transcript": "expression family tag; runtime type digest; effect digest; ordered child-role-path plus child expression digest"
+    },
+    {
+      "variant": "Literal",
+      "transcript": "CheckedLiteralSemanticV1"
+    },
+    {
+      "variant": "Value",
+      "transcript": "CheckedValueResolutionSemanticV1"
+    },
+    {
+      "variant": "Select",
+      "transcript": "CheckedSelectResolutionSemanticV1"
+    },
+    {
+      "variant": "Nominal",
+      "transcript": "accepted nominal semantic identity; accepted layout digest; ordered type arguments"
+    },
+    {
+      "variant": "Variant",
+      "transcript": "accepted nominal semantic identity; accepted layout digest; accepted case ordinal/identity; optional payload type"
+    },
+    {
+      "variant": "StageLook",
+      "transcript": "accepted Stage schema field identity; raw HirName is lookup-only and never emitted"
+    },
+    {
+      "variant": "Effect",
+      "transcript": "accepted effect semantic identity and checked effect contract digest; raw EffectId is lookup-only"
+    },
+    {
+      "variant": "Call",
+      "transcript": "accepted RuntimeCallableId; CallableContractHash; checked receiver mode; source-order argument role/digest rows"
+    },
+    {
+      "variant": "Await",
+      "transcript": "await mode; checked Need payload type; source child digest; pending-effect semantic digest; no task/runtime identity"
+    },
+    {
+      "variant": "Choice",
+      "transcript": "accepted choice semantic identity; source-order option semantic rows; result type digest"
+    },
+    {
+      "variant": "Try",
+      "transcript": "carrier kind Result|Option; source child digest; propagated type/effect contract"
+    },
+    {
+      "variant": "ImplicitCallable",
+      "transcript": "accepted RuntimeCallableId and CallableContractHash; ordered capture coordinates and type digests"
+    },
+    {
+      "variant": "ImplicitParameter",
+      "transcript": "stable coordinate of owning implicit callable; parameter ordinal and type digest"
+    },
+    {
+      "variant": "Pipe",
+      "transcript": "source and target child-role digests; closed placeholder-routing transcript"
+    },
+    {
+      "variant": "PipeLeft",
+      "transcript": "stable coordinate of owning Pipe plus left-value role; raw ExprId excluded"
+    },
+    {
+      "variant": "ViewCall",
+      "transcript": "ViewProgramId; accepted view callable contract; source-order argument role/digests"
+    },
+    {
+      "variant": "ViewCallee",
+      "transcript": "ViewProgramId; accepted view callable contract"
+    },
+    {
+      "variant": "StyleValue",
+      "transcript": "accepted style property semantic identity; canonical specified-value transcript"
+    },
+    {
+      "variant": "StyleCallee",
+      "transcript": "accepted style callable semantic identity and contract"
+    },
+    {
+      "variant": "DialogueLineReference",
+      "transcript": "typed DialogueLineId semantic bytes"
+    },
+    {
+      "variant": "DialogueLineCoordinate",
+      "transcript": "typed DialogueLineId semantic bytes plus coordinate role"
+    },
+    {
+      "variant": "DialogueTextKeyCoordinate",
+      "transcript": "typed DialogueTextKey semantic bytes plus coordinate role"
+    },
+    {
+      "variant": "CharacterDialogueFactory",
+      "transcript": "accepted character/dialogue contract identity; source-order argument role/digests"
+    },
+    {
+      "variant": "CharacterDialogueReconfigure",
+      "transcript": "accepted character/dialogue contract identity; source-order patch field identity/digests"
+    },
+    {
+      "variant": "DialogueApplication",
+      "transcript": "target child digest; application-patch digest; rich-text digest"
+    },
+    {
+      "variant": "PostfixBracket",
+      "transcript": "closed PostfixBracketResolution semantic tag; target child digest; source-order index/slice child digests"
+    }
+  ],
+  "checked_value_resolution": [
+    {
+      "variant": "Local",
+      "transcript": "StableCheckedValueCoordinate for the resolved local; checked type digest"
+    },
+    {
+      "variant": "LineContext",
+      "transcript": "accepted line-context semantic owner; no source spelling"
+    },
+    {
+      "variant": "CharacterField",
+      "transcript": "receiver child digest; accepted character semantic identity; accepted field identity"
+    },
+    {
+      "variant": "ProjectCallable",
+      "transcript": "accepted RuntimeCallableId; CallableContractHash"
+    },
+    {
+      "variant": "ProjectItem",
+      "transcript": "AcceptedDeclarationSemanticId; accepted item semantic digest"
+    },
+    {
+      "variant": "Entry",
+      "transcript": "accepted entry semantic identity and contract"
+    },
+    {
+      "variant": "Registered",
+      "transcript": "registered semantic value identity and accepted catalog digest"
+    },
+    {
+      "variant": "Constant",
+      "transcript": "CheckedLiteralSemanticV1; checked runtime type digest"
+    }
+  ],
+  "checked_select_resolution": [
+    {
+      "variant": "Method",
+      "transcript": "accepted method RuntimeCallableId; CallableContractHash; receiver mode"
+    },
+    {
+      "variant": "DialogueView",
+      "transcript": "accepted dialogue projection identity; accepted field identity"
+    },
+    {
+      "variant": "AgentField",
+      "transcript": "RuntimeAgentField inherent semantic identity and owner"
+    },
+    {
+      "variant": "ProgressField",
+      "transcript": "closed Progress field semantic identity"
+    },
+    {
+      "variant": "Field",
+      "transcript": "accepted nominal semantic identity/layout; accepted field ordinal/identity"
+    },
+    {
+      "variant": "TupleElement",
+      "transcript": "checked tuple arity; source-order ordinal"
+    },
+    {
+      "variant": "RecordElement",
+      "transcript": "accepted nominal semantic identity/layout; accepted record-field ordinal/identity"
+    }
+  ],
+  "literals": [
+    {
+      "variant": "String",
+      "accepted_payload": "decoded Unicode scalar sequence",
+      "transcript": "tag || utf8_byte_len:u32-le || exact validated UTF-8 bytes",
+      "excluded": "source quotes, escapes, raw spelling, span",
+      "invalid": "HirStringLiteral::Invalid rejects"
+    },
+    {
+      "variant": "Character",
+      "accepted_payload": "one Unicode scalar",
+      "transcript": "tag || scalar_value:u32-le",
+      "excluded": "source quote/escape spelling",
+      "invalid": "HirCharacterLiteral::Invalid rejects"
+    },
+    {
+      "variant": "Integer",
+      "accepted_payload": "checked sign/width plus canonical non-negative HirBigUint magnitude",
+      "transcript": "tag || signedness_width_tag || limb_count:u32-le || canonical little-endian u32 limbs",
+      "excluded": "authored radix, separators, source suffix spelling; the checked type owns width",
+      "invalid": "invalid literal or type overflow rejects"
+    },
+    {
+      "variant": "Float",
+      "accepted_payload": "checker-admitted HirFloatBits",
+      "transcript": "tag || width_tag || exact IEEE-754 bit pattern (u32-le or u64-le)",
+      "excluded": "decimal source spelling, exponent spelling, redundant zeroes",
+      "invalid": "invalid/unrepresentable literal rejects; exact signed zero bits are retained"
+    },
+    {
+      "variant": "UnitNumber",
+      "accepted_payload": "canonical HirDecimal plus closed HirUnitNumberUnit",
+      "transcript": "tag || unit_tag || coefficient_digit_count:u32-le || digits || scale:u32-le || exponent10:i32-le",
+      "excluded": "source separators and equivalent decimal spelling",
+      "invalid": "HirUnitNumberLiteral::Invalid rejects"
+    },
+    {
+      "variant": "Boolean",
+      "accepted_payload": "bool",
+      "transcript": "tag || 0x00(false) or 0x01(true)",
+      "excluded": "source span",
+      "invalid": "no recovery value"
+    },
+    {
+      "variant": "Duration",
+      "accepted_payload": "canonical whole-nanosecond HirDurationSemanticValue",
+      "transcript": "tag || limb_count:u32-le || canonical little-endian u32 limbs",
+      "excluded": "authored duration unit and source spelling",
+      "invalid": "HirDurationLiteral::Invalid rejects"
+    }
+  ]
+}

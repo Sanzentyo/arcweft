@@ -1,0 +1,19 @@
+inventory,variant,transcript
+CheckedPatternResolution,Structural,HirPatternKind transcript plus child pattern digests
+CheckedPatternResolution,Literal,CheckedLiteralSemanticV1
+CheckedPatternResolution,Entity,AcceptedDeclarationSemanticId of the resolved project item
+CheckedPatternResolution,Nominal,accepted nominal semantic identity and layout digest
+CheckedPatternResolution,Variant,accepted nominal semantic identity/layout and accepted case ordinal/identity
+HirPatternKind,Binding,stable binding coordinate; checked type digest; mutability=false
+HirPatternKind,MutableBinding,stable binding coordinate; checked type digest; mutability=true
+HirPatternKind,Literal,CheckedLiteralSemanticV1
+HirPatternKind,EntityReference,AcceptedDeclarationSemanticId
+HirPatternKind,Variant,accepted owner/layout/case identity; optional payload child role
+HirPatternKind,Discard,no payload
+HirPatternKind,Tuple,arity; source-order child digests
+HirPatternKind,Record,accepted owner/layout; accepted field identities in source order; rest semantic; child digests
+HirPatternKind,BracketSequence,source-order item digests; rest semantic
+HirPatternKind,WholeBinding,stable binding coordinate; nested pattern digest
+HirPatternKind,Or,source-order alternatives; equal binding-shape certificate
+HirPatternKind,TypedBinding,stable binding coordinate; explicit checked type digest
+HirPatternKind,Error,not encodable; generic Match construction fails before publication
