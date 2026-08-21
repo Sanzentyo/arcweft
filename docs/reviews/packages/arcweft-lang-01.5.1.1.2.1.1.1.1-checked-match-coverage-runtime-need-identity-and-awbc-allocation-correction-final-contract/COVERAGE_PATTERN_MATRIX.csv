@@ -1,0 +1,16 @@
+family,model,rule
+discard,wildcard,covers whole admitted domain
+binding,wildcard,binding/mutable binding do not narrow
+whole_binding,child,whole binding delegates to child
+typed_binding,type_intersection,checked exact type; mismatch is earlier hard error
+literal,singleton_plus_other,canonical literal bits/bytes; infinite domains retain Other
+entity_reference,singleton_plus_other,stable checked entity identity; open residual remains
+closed_variant,finite_constructor_set,"project enum, builtin closed enum, Result, Option, Choice"
+tuple,product,single arity constructor with nested columns
+record,product,declaration-order fields; omitted rest fields become wildcards
+array,fixed_product,constant length only; unresolved length is hard error
+vec_slice_seq_exact,length_partition,exact prefix length without rest
+vec_slice_seq_rest,length_interval,"[prefix, infinity), rest binding does not narrow"
+or,ordered_union,lazy union; duplicate alternatives do not fabricate arm reachability
+open_opaque_future,residual_open,only wildcard can close; unsupported decomposition is hard error
+poisoned,hard_error,never enters coverage matrix

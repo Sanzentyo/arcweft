@@ -1,0 +1,15 @@
+{
+  "compatibility_readers": 0,
+  "markers": {
+    "AWBC_ABI_VERSION": 1,
+    "AWBC_CODEC_VERSION": 1,
+    "bundle_schema": 1,
+    "checked_match_digest_schema": 1,
+    "journal_schema": 1,
+    "need_identity_schema": 1,
+    "save_schema": 1,
+    "task_snapshot_schema": 1,
+    "view_awbc_join_schema": 1
+  },
+  "schema_version": 1
+}

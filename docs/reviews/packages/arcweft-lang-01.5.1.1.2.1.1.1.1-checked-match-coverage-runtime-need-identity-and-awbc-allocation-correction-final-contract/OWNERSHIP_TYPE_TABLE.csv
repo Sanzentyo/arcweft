@@ -1,0 +1,86 @@
+type_kind,disposition,owner,rejection
+Bool,Copy,primitive value,none
+I8,Copy,primitive value,none
+I16,Copy,primitive value,none
+I32,Copy,primitive value,none
+I64,Copy,primitive value,none
+I128,Copy,primitive value,none
+ISize,Copy,semantic scalar; never encoded as platform usize,none
+U8,Copy,primitive value,none
+U16,Copy,primitive value,none
+U32,Copy,primitive value,none
+U64,Copy,primitive value,none
+U128,Copy,primitive value,none
+USize,Copy,semantic scalar; never encoded as platform usize,none
+F32,Copy,raw IEEE-754 bits,none
+F64,Copy,raw IEEE-754 bits,none
+String,SnapshotClone,RuntimeValue::String,none
+Char,Copy,Unicode scalar,none
+Bytes,SnapshotClone,RuntimeValue::Bytes,none
+TextCluster,SnapshotClone,text-model immutable value,none
+Duration,Copy,LogicalDuration,none
+Progress,SnapshotClone,standard record ratio + optional label,none
+StageApi,Rejected,compile-time capability,FrameLocalCapability
+LineContext,Rejected,line activation capability,FrameLocalCapability
+StageActorHandle,Rejected,RuntimeOpaqueValueClass::AffineHandle(StageActor),AffineHandle
+CueHandle,Rejected,RuntimeOpaqueValueClass::AffineHandle(Cue),AffineHandle
+VoiceHandle,Rejected,RuntimeOpaqueValueClass::AffineHandle(Voice),AffineHandle
+Range,RecursiveJoin,range bounds through element TypeKind,first child rejection
+IteratorState,Rejected,frame-local iterator cursor,FrameLocalIterator
+DisplayText,SnapshotClone,immutable display text,none
+DebugStatePath,SnapshotClone,Agent value owner,none
+ObservationFieldPath,SnapshotClone,Agent value owner,none
+Ref,Copy,"semantic entity identity; payload parameter is metadata, not contained value",none
+Probe,RecursiveJoin,Agent probe wrapper,first child rejection
+Predicate,SnapshotClone,Agent immutable DTO,none
+Observation,SnapshotClone,Agent immutable DTO,none
+ObservedObject,SnapshotClone,Agent immutable DTO,none
+AgentBBox,SnapshotClone,Agent immutable DTO,none
+ActionName,SnapshotClone,Agent immutable DTO,none
+ActionTarget,SnapshotClone,Agent immutable DTO,none
+ActionResult,SnapshotClone,Agent immutable DTO,none
+AgentValue,SnapshotClone,Agent immutable DTO,none
+DataFormat,SnapshotClone,Agent immutable DTO,none
+DataShape,SnapshotClone,Agent immutable DTO,none
+AgentEntityMetadata,SnapshotClone,Agent immutable DTO,none
+AgentSourceAnchor,SnapshotClone,Agent immutable DTO,none
+AgentProjectGraphNeighborhood,SnapshotClone,Agent immutable DTO,none
+AgentProjectGraphSymbol,SnapshotClone,Agent immutable DTO,none
+AgentProjectGraphEdge,SnapshotClone,Agent immutable DTO,none
+CaptureTarget,SnapshotClone,Agent immutable DTO,none
+CaptureRef,SnapshotClone,"Agent immutable reference value, not language borrow",none
+AgentResource,RegistryRecursive,ResourceTypeRegistry descriptor/schema,MissingResourceEvidence
+AgentResourceBody,RegistryRecursive,ResourceTypeRegistry descriptor/schema,MissingResourceEvidence
+RagContextPack,SnapshotClone,Agent immutable DTO,none
+AgentBuiltin,Rejected,runtime capability/procedure owner,FrameLocalCapability
+Vec,RecursiveJoin,sequence element,first child rejection
+Array,RecursiveJoin,constant length + element; generic/error/inferred length rejects,UnresolvedArrayLength
+Slice,RecursiveJoin,owning runtime sequence projection,first child rejection
+Seq,RecursiveJoin,owning runtime sequence projection,first child rejection
+Map,RecursiveJoin,key then value in canonical order,first child rejection
+BorrowRef,Rejected,BorrowKind + lifetime,BorrowedOrMutableBorrow
+Need,Copy,immutable typed RuntimeNeedHandle identity,producer arguments certified separately
+Stream,Rejected,affine live producer/consumer state,StreamHandle
+Result,RecursiveJoin,ok then error,first child rejection
+Option,RecursiveJoin,item,first child rejection
+Handle,Rejected,lifetime/state/must_drop runtime handle,RuntimeHandle
+ThreadHandle,Rejected,live task/thread owner,ThreadHandle
+Shared,RecursiveSnapshot,shared snapshot owner; breaks nominal recursion,first child rejection
+Function,Rejected,type alone lacks exact capture/value evidence,CallableNeedsValueEvidence
+GenericParam,Rejected,unsubstituted generic,UnresolvedGeneric
+ProjectNominal,ProjectRecursive,ProjectSymbolTable declaration fields/cases with substitutions,MissingNominalEvidence
+AcceptedNominal,CatalogRecursive,AcceptedNominalRecord semantics + opaque value class/persistence,MissingOpaqueEvidence
+OpenNominal,Rejected,open rule has no closed layout/persistence fact,OpenNominal
+Error,Rejected,poisoned semantic type,PoisonedType
+Projection,Rejected,unresolved associated projection,UnresolvedProjection
+CharacterPatch,SnapshotClone,character patch value owner,none
+FocusPatch,SnapshotClone,focus patch value owner,none
+CharacterDialogue,SnapshotClone,dialogue immutable presentation value,none
+DialogueLine,Rejected,non-escaping suspension operation,FrameLocalOperation
+ViewValue,SnapshotClone,checked View persisted value owner,none
+CharacterNominal,SnapshotClone,manifest-backed closed character value,none
+Named,Rejected,internal/host value without exact accepted owner,MissingRegisteredEvidence
+Tuple,RecursiveJoin,source-order elements,first child rejection
+Choice,RecursiveJoin,source-order alternatives,first child rejection
+Unit,Copy,unit,none
+Never,Copy,empty value domain,none

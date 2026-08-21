@@ -1,0 +1,38 @@
+{
+  "domain": "arcweft.checked-match.semantic.v1\\0",
+  "forbidden_persisted_fields": [
+    "ExprId",
+    "ScopeId",
+    "PatternId",
+    "LocalId",
+    "HirSnapshotId",
+    "arena ordinal",
+    "source spelling",
+    "debug formatting",
+    "usize"
+  ],
+  "hash": "BLAKE3-256",
+  "one_way_projection": "session checked facts -> program/revision/site/arm/output coordinates",
+  "persisted_fields": [
+    "ViewProgramSemanticDigest",
+    "ViewProgramRevision",
+    "ViewMatchSiteId",
+    "scrutinee_type_digest",
+    "result_type_digest",
+    "effect_digest",
+    "ResourceTypeRegistryDigest",
+    "coverage",
+    "source_ordered_arm_semantics",
+    "source_ordered_binding_outputs",
+    "ownership_dispositions",
+    "selector_result_schema"
+  ],
+  "scalar_grammar": {
+    "bool": "u8 0/1",
+    "bytes": "u32-le length+bytes",
+    "digest": "32 bytes",
+    "tag": "u8",
+    "u32": "u32-le"
+  },
+  "schema_version": 1
+}

@@ -1,0 +1,57 @@
+{
+  "collection_length": "checked u32 varint",
+  "fixed_width": [
+    "u8 tags",
+    "u16-le envelope version/reserved",
+    "u16-le stream group/parameter/audio-channel coordinates",
+    "u64-le envelope length/duration/frame/feature/budget",
+    "i32-le priority",
+    "16/32-byte digests or integer bit patterns",
+    "f32 raw bits/tensor element u32-le",
+    "f64 raw bits/tensor element u64-le"
+  ],
+  "instruction_grammars": {
+    "ApplyExternalStreamGroup": "2e dst:varu32 callee:varu32 definition:varu32 signature:varu32 group:u16-le coordinates_count:varu32 coordinates[count]:(group:u16-le,parameter:u16-le) operands_count:varu32 operands[count]:external-stream-operand",
+    "CommitDialogueResult": "20 source:varu32",
+    "CopyValue": "2a dst:varu32 source:varu32",
+    "ExecuteLineOperation": "2b dst:varu32 operation:varu32 argc:varu32 args[argc]:varu32",
+    "FinishStream": "2d stream:varu32 outcome:u8",
+    "MakeNeedHandle": "29 dst:varu32 plan:varu32 site:varu32 argc:varu32 args[argc]:varu32",
+    "NeedTimeout": "1e dst:varu32 source:varu32 limit:varu32 producer_site:varu32",
+    "NextStream": "8f stream:varu32 item_dst:varu32 error_dst:varu32 resume:varu32",
+    "OpenStream": "2c dst:varu32 callee:varu32 definition:varu32 signature:varu32 group:u16-le coordinates_count:varu32 coordinates[count]:(group:u16-le,parameter:u16-le) operands_count:varu32 operands[count]:external-stream-operand",
+    "YieldStream": "90 stream:varu32 value:varu32 resume:varu32"
+  },
+  "ordinary_u32": {
+    "applies_to": [
+      "id",
+      "register",
+      "table_index",
+      "site",
+      "ordinal",
+      "revision",
+      "source_offset",
+      "count",
+      "length",
+      "tensor_dimension",
+      "char_scalar"
+    ],
+    "encoding": "shortest unsigned base-128 varint",
+    "maximum_bytes": 5,
+    "reject": [
+      "overflow",
+      "sixth byte",
+      "unterminated",
+      "redundant encoding"
+    ]
+  },
+  "schema_version": 1,
+  "single_buffer": {
+    "enabled": true,
+    "patch": "u64-le payload length at bytes 12..20",
+    "reserve_envelope": 20,
+    "rollback": "truncate to pre-call length"
+  },
+  "tensor_shape": "Vec<u32>::Wire using ordinary varints on write and read",
+  "usize_on_wire": false
+}

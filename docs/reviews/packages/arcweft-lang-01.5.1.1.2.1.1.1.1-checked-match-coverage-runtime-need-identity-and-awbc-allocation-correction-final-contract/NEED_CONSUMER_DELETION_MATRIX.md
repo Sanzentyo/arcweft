@@ -1,0 +1,46 @@
+# Need/task consumer and deletion matrix
+
+A legacy row is removed only in the same compile-clean cut that makes its typed
+replacement executable.
+
+| ID | Current owner | Superseded route | Final route | Cut | Atomic rule |
+|---|---|---|---|---|---|
+| `C001` | `crates/arcweft-core/src/task.rs` | NeedId(String) | NeedId([u8;32]) | `identity-substrate` | replace type, constructors, serde and Display; no parser |
+| `C002` | `crates/arcweft-core/src/task.rs` | TaskId(String) | TaskId([u8;32]) | `identity-substrate` | derive from TaskKey and launch ordinal |
+| `C003` | `crates/arcweft-core/src/task.rs` | TaskKey(String) | TaskKey([u8;32]) | `identity-substrate` | derive from generation, NeedId and policy |
+| `C004` | `crates/arcweft-core/src/awbc/schema.rs` | AwbcTaskPlan.need_id: AwbcStringId | AwbcTaskProducer | `identity-substrate` | replace in same schema/codec/verifier cut |
+| `C005` | `crates/arcweft-core/src/awbc/codec/runtime.rs` | task plan string field codec | typed producer row codec | `identity-substrate` | fixed bytes + varints |
+| `C006` | `crates/arcweft-runtime-plan/src/awbc_lower/inventory.rs` | NamedTaskSpec.need_id: &str | RuntimeTaskProducerSeed | `identity-substrate` | intern by typed plan digest |
+| `C007` | `crates/arcweft-core/src/awbc/product_step/mapping.rs` | NeedId(plan string) | verified NeedId derivation | `identity-substrate` | no display lookup |
+| `C008` | `crates/arcweft-core/src/awbc/product_step/lifecycle.rs` | fallback NeedId(task_id string) | required correlated NeedId | `identity-substrate` | missing correlation is hard error |
+| `C009` | `crates/arcweft-core/src/awbc/product_step/suspension.rs` | format base.index | NeedId::derive_await_many_child | `identity-substrate` | u32 source index in transcript |
+| `C010` | `crates/arcweft-core/src/awbc/fiber.rs` | String task_id/need_id in-flight | typed IDs + contract + generation | `snapshot-cut` | restore recomputes all identities |
+| `C011` | `crates/arcweft-core/src/awbc/fiber.rs` | String snapshot fields | fixed 32-byte fields | `snapshot-cut` | version remains 1; old shape rejected |
+| `C012` | `crates/arcweft-runtime-driver/src/task.rs` | String scheduler map keys | (GenerationId, NeedId)/TaskKey | `runtime-cut` | one typed map authority |
+| `C013` | `crates/arcweft-runtime-driver/src/task.rs` | display parsing | typed event correlation | `runtime-cut` | events carry TaskId+NeedId+generation |
+| `C014` | `crates/arcweft-core/src/awbc/vm.rs` | String await_target | RuntimeNeedHandle extraction | `need-carrier` | direct Await reuses embedded NeedId |
+| `C015` | `crates/arcweft-core/src/value` | payloadless/string NeedHandle | RuntimeValue::NeedHandle(RuntimeNeedHandle) | `need-carrier` | payload type and verified arguments retained |
+| `C016` | `crates/arcweft-core/src/awbc/schema.rs` | AwbcRuntimeType::NeedHandle | NeedHandle { payload: AwbcTypeId } | `need-carrier` | replace in place |
+| `C017` | `crates/arcweft-core/src/awbc/verifier` | untyped producer acceptance | kind/flag/contract verifier | `need-carrier` | bit 5 and exact Synthetic rules |
+| `C018` | `crates/arcweft-compiler` | View-specific string producer seed | checked producer admission | `selector-cut` | use CheckedMatchDigest + arguments digest |
+| `C019` | `crates/arcweft-runtime-plan/src/semantic_facts.rs` | copied caller coverage | digest-only RuntimeViewMatchSelectorSeed | `selector-cut` | RuntimePlanSemanticFactInput construction |
+| `C020` | `crates/arcweft-lang-sema/src/final_analysis` | Structural Match resolution | CheckedExpressionResolution::Match | `sema-cut` | all live Match rows complete |
+| `C021` | `crates/arcweft-lang-sema/src/final_analysis` | caller-supplied coverage | MatchCoverageAnalyzer | `sema-cut` | private constructor only |
+| `C022` | `crates/arcweft-lang-sema/src/final_analysis` | partial ownership classifier | CheckedOwnershipContext | `sema-cut` | symbols+world+resources |
+| `C023` | `crates/arcweft-lang-sema/src/env/nominal.rs` | opaque producer without value/persistence | opaque semantics with value_class+persistence | `sema-cut` | modify original enum variant |
+| `C024` | `crates/arcweft-core/src/awbc/schema.rs` | duplicate numeric opcode matches | repr AwbcOpcode discriminants | `awbc-primitive` | ALL-derived compile-time decode table |
+| `C025` | `crates/arcweft-core/src/awbc/codec/code.rs` | wire_enum function kind table | inherent kind decode | `awbc-primitive` | removed tombstones 4/5 reject |
+| `C026` | `crates/arcweft-core/src/awbc/schema.rs` | public AwbcFunctionFlags(pub u32) | private typed flag set | `awbc-primitive` | try_from_bits rejects unknown |
+| `C027` | `crates/arcweft-core/src/awbc/codec/types.rs` | write_u32_slice fixed LE shape | Vec<u32>::Wire varints | `awbc-primitive` | writer/reader symmetry |
+| `C028` | `crates/arcweft-core/src/awbc/codec/wire.rs` | usize::Wire | checked u32 collection lengths | `awbc-primitive` | usize cannot enter wire |
+| `C029` | `crates/arcweft-core/src/awbc/codec.rs` | payload temporary Vec | single final Vec with length patch | `awbc-primitive` | rollback truncates on failure |
+| `C030` | `generated opcode fixtures` | feature-local numeric tables | AwbcOpcode::ALL generated rows | `feature-cut` | delete in each owning cut |
+| `C031` | `bundle mapping` | string need identity | typed NeedId/contract/digests | `bundle-cut` | content root commits exact identities |
+| `C032` | `journal/save/replay` | in-flight String identity | typed snapshots | `snapshot-cut` | malformed restore is atomic failure |
+| `C033` | `hot replacement` | site/string equivalence | semantic digest/contract equality | `replacement-cut` | explicit revision mapping only |
+| `C034` | `desktop/native/web adapters` | string DTO identity | shared typed task events | `adapter-cut` | no endpoint conversion |
+| `C035` | `tests and fixtures` | suffix and string golden rows | fixed-byte transcript goldens | `test-cut` | old fixtures removed same cut |
+
+Generated consumers and fixtures are not exempt: every old string golden,
+feature-local numeric table, suffix parser, and copied DTO is deleted with its
+producer cut. The final switch is blocked while any matrix row is incomplete.

@@ -1,0 +1,104 @@
+{
+  "authority": "arcweft_lang_sema::final_analysis::MatchCoverageAnalyzer",
+  "caller_supplied_coverage": false,
+  "constructor_visibility": "crate-private",
+  "families": [
+    {
+      "family": "discard",
+      "model": "wildcard",
+      "rule": "covers whole admitted domain"
+    },
+    {
+      "family": "binding",
+      "model": "wildcard",
+      "rule": "binding/mutable binding do not narrow"
+    },
+    {
+      "family": "whole_binding",
+      "model": "child",
+      "rule": "whole binding delegates to child"
+    },
+    {
+      "family": "typed_binding",
+      "model": "type_intersection",
+      "rule": "checked exact type; mismatch is earlier hard error"
+    },
+    {
+      "family": "literal",
+      "model": "singleton_plus_other",
+      "rule": "canonical literal bits/bytes; infinite domains retain Other"
+    },
+    {
+      "family": "entity_reference",
+      "model": "singleton_plus_other",
+      "rule": "stable checked entity identity; open residual remains"
+    },
+    {
+      "family": "closed_variant",
+      "model": "finite_constructor_set",
+      "rule": "project enum, builtin closed enum, Result, Option, Choice"
+    },
+    {
+      "family": "tuple",
+      "model": "product",
+      "rule": "single arity constructor with nested columns"
+    },
+    {
+      "family": "record",
+      "model": "product",
+      "rule": "declaration-order fields; omitted rest fields become wildcards"
+    },
+    {
+      "family": "array",
+      "model": "fixed_product",
+      "rule": "constant length only; unresolved length is hard error"
+    },
+    {
+      "family": "vec_slice_seq_exact",
+      "model": "length_partition",
+      "rule": "exact prefix length without rest"
+    },
+    {
+      "family": "vec_slice_seq_rest",
+      "model": "length_interval",
+      "rule": "[prefix, infinity), rest binding does not narrow"
+    },
+    {
+      "family": "or",
+      "model": "ordered_union",
+      "rule": "lazy union; duplicate alternatives do not fabricate arm reachability"
+    },
+    {
+      "family": "open_opaque_future",
+      "model": "residual_open",
+      "rule": "only wildcard can close; unsupported decomposition is hard error"
+    },
+    {
+      "family": "poisoned",
+      "model": "hard_error",
+      "rule": "never enters coverage matrix"
+    }
+  ],
+  "guard_contributors": [
+    "Absent",
+    "ConstantTrue"
+  ],
+  "guard_noncontributors": [
+    "ConstantFalse",
+    "Dynamic"
+  ],
+  "limits": {
+    "max_arms": 4096,
+    "max_matrix_rows": 8192,
+    "max_or_alternatives": 4096,
+    "max_pattern_nodes": 65536,
+    "max_recursion_depth": 64,
+    "max_sequence_partitions": 2048,
+    "max_specializations": 32768,
+    "max_unreachable_rows": 4096,
+    "max_witness_nodes": 1024
+  },
+  "non_exhaustive": "hard error and no publication",
+  "schema_version": 1,
+  "unreachable": "warning plus retained sorted unique evidence after full success"
+}

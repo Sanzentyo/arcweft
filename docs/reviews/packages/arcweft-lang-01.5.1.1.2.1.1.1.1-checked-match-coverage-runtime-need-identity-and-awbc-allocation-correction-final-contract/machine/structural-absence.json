@@ -1,0 +1,28 @@
+{
+  "forbidden": [
+    "caller-supplied CheckedMatchCoverage",
+    "String NeedId/TaskId/TaskKey",
+    "NeedId parser",
+    "payloadless NeedHandle",
+    "Dynamic or String NeedHandle surrogate",
+    "feature-local opcode numeric table",
+    "raw opcode DTO",
+    "opcode String tag",
+    "unsafe opcode decode",
+    "transmute opcode decode",
+    "fixed-le ordinary u32",
+    "usize Wire",
+    "legacy compatibility reader",
+    "dual carrier",
+    "fallback resolver",
+    "source reconstruction",
+    "persisted HIR identity",
+    "RuntimeSemanticFactInput",
+    "AwbcVm",
+    "View VM",
+    "multi-result AWBC",
+    "register escape",
+    "extension trait for Arcweft-owned enum behavior"
+  ],
+  "schema_version": 1
+}

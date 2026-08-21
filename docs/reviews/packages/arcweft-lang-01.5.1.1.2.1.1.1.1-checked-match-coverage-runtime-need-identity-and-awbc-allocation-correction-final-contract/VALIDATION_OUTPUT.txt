@@ -1,0 +1,8 @@
+PASS directory: python tools/validate_package.py arcweft-lang-01.5.1.1.2.1.1.1.1-checked-match-coverage-runtime-need-identity-and-awbc-allocation-correction-final-contract
+PASS archive: python tools/validate_package.py arcweft-lang-01.5.1.1.2.1.1.1.1-checked-match-coverage-runtime-need-identity-and-awbc-allocation-correction-final-contract.zip
+PASS zip-integrity: unzip -t arcweft-lang-01.5.1.1.2.1.1.1.1-checked-match-coverage-runtime-need-identity-and-awbc-allocation-correction-final-contract.zip
+PASS independent-manifest-recheck: every payload SHA-256 and SHA256SUMS entry
+BASELINE c49099fb154d9e3dbb587e1bcd7ee243214da0c4
+REQUEST_SHA256 8bf22dbee57a94ee178e25d0004be7a18694a8b801ef79189da3f9e1a3741299
+OPEN_QUESTIONS 0
+PRODUCTION_CHANGES none (design-only)

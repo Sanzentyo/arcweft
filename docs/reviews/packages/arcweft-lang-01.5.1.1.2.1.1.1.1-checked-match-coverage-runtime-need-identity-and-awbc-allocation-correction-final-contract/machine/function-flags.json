@@ -1,0 +1,74 @@
+{
+  "constraints": {
+    "GeneratorProducer": {
+      "forbids": [
+        "NeedProducer"
+      ],
+      "requires": [
+        "OwnsStreamProducer"
+      ]
+    },
+    "NeedProducer": {
+      "forbids": [
+        "OwnsStreamProducer",
+        "MaySuspend"
+      ],
+      "kind": "Synthetic",
+      "requires": [
+        "NeedProducer",
+        "Deterministic",
+        "MayAllocate"
+      ]
+    },
+    "forbid_both_producer_bits": true,
+    "forbid_producer_bits_for": [
+      "LineActivation",
+      "LineTask",
+      "Ordinary",
+      "StreamTransform"
+    ],
+    "synthetic_selector_without_need_bit": "accepted"
+  },
+  "enum_authority": "AwbcFunctionFlag",
+  "known_mask": 63,
+  "rows": [
+    {
+      "bit": 0,
+      "mask": 1,
+      "name": "MaySuspend",
+      "status": "implemented"
+    },
+    {
+      "bit": 1,
+      "mask": 2,
+      "name": "MayAllocate",
+      "status": "implemented"
+    },
+    {
+      "bit": 2,
+      "mask": 4,
+      "name": "Deterministic",
+      "status": "implemented"
+    },
+    {
+      "bit": 3,
+      "mask": 8,
+      "name": "HasDynamicTarget",
+      "status": "implemented"
+    },
+    {
+      "bit": 4,
+      "mask": 16,
+      "name": "OwnsStreamProducer",
+      "status": "allocated_pending_stream_cut"
+    },
+    {
+      "bit": 5,
+      "mask": 32,
+      "name": "NeedProducer",
+      "status": "allocated_pending_need_cut"
+    }
+  ],
+  "schema_version": 1,
+  "set_authority": "AwbcFunctionFlags"
+}

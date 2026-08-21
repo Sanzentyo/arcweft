@@ -1,0 +1,475 @@
+{
+  "authority": "arcweft_core::awbc::schema::AwbcOpcode",
+  "decode_table": {
+    "allocation_free": true,
+    "length": 256,
+    "source": "AwbcOpcode::ALL"
+  },
+  "numeric_literals_allowed_only_at": "AwbcOpcode discriminants",
+  "opcodes": [
+    {
+      "byte": 0,
+      "class": "instruction",
+      "hex": "0x00",
+      "name": "Nop",
+      "status": "implemented"
+    },
+    {
+      "byte": 1,
+      "class": "instruction",
+      "hex": "0x01",
+      "name": "LoadConst",
+      "status": "implemented"
+    },
+    {
+      "byte": 2,
+      "class": "instruction",
+      "hex": "0x02",
+      "name": "Move",
+      "status": "implemented"
+    },
+    {
+      "byte": 3,
+      "class": "instruction",
+      "hex": "0x03",
+      "name": "Clear",
+      "status": "implemented"
+    },
+    {
+      "byte": 4,
+      "class": "instruction",
+      "hex": "0x04",
+      "name": "EnterScope",
+      "status": "implemented"
+    },
+    {
+      "byte": 5,
+      "class": "instruction",
+      "hex": "0x05",
+      "name": "ExitScope",
+      "status": "implemented"
+    },
+    {
+      "byte": 6,
+      "class": "instruction",
+      "hex": "0x06",
+      "name": "BindPattern",
+      "status": "implemented"
+    },
+    {
+      "byte": 7,
+      "class": "instruction",
+      "hex": "0x07",
+      "name": "TestPattern",
+      "status": "implemented"
+    },
+    {
+      "byte": 8,
+      "class": "instruction",
+      "hex": "0x08",
+      "name": "MakeTuple",
+      "status": "implemented"
+    },
+    {
+      "byte": 9,
+      "class": "instruction",
+      "hex": "0x09",
+      "name": "MakeSequence",
+      "status": "implemented"
+    },
+    {
+      "byte": 10,
+      "class": "instruction",
+      "hex": "0x0a",
+      "name": "RepeatSequence",
+      "status": "implemented"
+    },
+    {
+      "byte": 11,
+      "class": "instruction",
+      "hex": "0x0b",
+      "name": "SequenceLen",
+      "status": "implemented"
+    },
+    {
+      "byte": 12,
+      "class": "instruction",
+      "hex": "0x0c",
+      "name": "SequenceGet",
+      "status": "implemented"
+    },
+    {
+      "byte": 13,
+      "class": "instruction",
+      "hex": "0x0d",
+      "name": "SequenceSlice",
+      "status": "implemented"
+    },
+    {
+      "byte": 14,
+      "class": "instruction",
+      "hex": "0x0e",
+      "name": "SequencePush",
+      "status": "implemented"
+    },
+    {
+      "byte": 15,
+      "class": "instruction",
+      "hex": "0x0f",
+      "name": "MakeRecord",
+      "status": "implemented"
+    },
+    {
+      "byte": 16,
+      "class": "instruction",
+      "hex": "0x10",
+      "name": "MakeVariant",
+      "status": "implemented"
+    },
+    {
+      "byte": 17,
+      "class": "instruction",
+      "hex": "0x11",
+      "name": "ProjectTuple",
+      "status": "implemented"
+    },
+    {
+      "byte": 18,
+      "class": "instruction",
+      "hex": "0x12",
+      "name": "ProjectRecord",
+      "status": "implemented"
+    },
+    {
+      "byte": 19,
+      "class": "instruction",
+      "hex": "0x13",
+      "name": "ProjectField",
+      "status": "implemented"
+    },
+    {
+      "byte": 20,
+      "class": "instruction",
+      "hex": "0x14",
+      "name": "Unary",
+      "status": "implemented"
+    },
+    {
+      "byte": 21,
+      "class": "instruction",
+      "hex": "0x15",
+      "name": "Binary",
+      "status": "implemented"
+    },
+    {
+      "byte": 22,
+      "class": "instruction",
+      "hex": "0x16",
+      "name": "CallPureHelper",
+      "status": "implemented"
+    },
+    {
+      "byte": 23,
+      "class": "instruction",
+      "hex": "0x17",
+      "name": "CallIntrinsic",
+      "status": "implemented"
+    },
+    {
+      "byte": 24,
+      "class": "instruction",
+      "hex": "0x18",
+      "name": "EnsureContent",
+      "status": "implemented"
+    },
+    {
+      "byte": 25,
+      "class": "instruction",
+      "hex": "0x19",
+      "name": "EmitEffect",
+      "status": "implemented"
+    },
+    {
+      "byte": 26,
+      "class": "instruction",
+      "hex": "0x1a",
+      "name": "StartTask",
+      "status": "implemented"
+    },
+    {
+      "byte": 27,
+      "class": "instruction",
+      "hex": "0x1b",
+      "name": "SpawnFiber",
+      "status": "implemented"
+    },
+    {
+      "byte": 28,
+      "class": "instruction",
+      "hex": "0x1c",
+      "name": "StreamYield",
+      "status": "implemented"
+    },
+    {
+      "byte": 29,
+      "class": "instruction",
+      "hex": "0x1d",
+      "name": "StreamClose",
+      "status": "implemented"
+    },
+    {
+      "byte": 30,
+      "class": "instruction",
+      "hex": "0x1e",
+      "name": "NeedTimeout",
+      "status": "allocated_pending_feature_cut"
+    },
+    {
+      "byte": 31,
+      "class": "instruction",
+      "hex": "0x1f",
+      "name": "Drop",
+      "status": "implemented"
+    },
+    {
+      "byte": 32,
+      "class": "instruction",
+      "hex": "0x20",
+      "name": "CommitDialogueResult",
+      "status": "allocated_pending_feature_cut"
+    },
+    {
+      "byte": 33,
+      "class": "instruction",
+      "hex": "0x21",
+      "name": "AssignRecordField",
+      "status": "implemented"
+    },
+    {
+      "byte": 34,
+      "class": "instruction",
+      "hex": "0x22",
+      "name": "CallTraitMethod",
+      "status": "implemented"
+    },
+    {
+      "byte": 35,
+      "class": "instruction",
+      "hex": "0x23",
+      "name": "RegisterCleanup",
+      "status": "implemented"
+    },
+    {
+      "byte": 36,
+      "class": "instruction",
+      "hex": "0x24",
+      "name": "CancelCleanup",
+      "status": "implemented"
+    },
+    {
+      "byte": 37,
+      "class": "instruction",
+      "hex": "0x25",
+      "name": "MakeFunction",
+      "status": "implemented"
+    },
+    {
+      "byte": 38,
+      "class": "instruction",
+      "hex": "0x26",
+      "name": "ApplyFunction",
+      "status": "implemented"
+    },
+    {
+      "byte": 39,
+      "class": "instruction",
+      "hex": "0x27",
+      "name": "MakeAgent",
+      "status": "implemented"
+    },
+    {
+      "byte": 40,
+      "class": "instruction",
+      "hex": "0x28",
+      "name": "MakeReductionUnchanged",
+      "status": "implemented"
+    },
+    {
+      "byte": 41,
+      "class": "instruction",
+      "hex": "0x29",
+      "name": "MakeNeedHandle",
+      "status": "allocated_pending_feature_cut"
+    },
+    {
+      "byte": 42,
+      "class": "instruction",
+      "hex": "0x2a",
+      "name": "CopyValue",
+      "status": "allocated_pending_feature_cut"
+    },
+    {
+      "byte": 43,
+      "class": "instruction",
+      "hex": "0x2b",
+      "name": "ExecuteLineOperation",
+      "status": "allocated_pending_feature_cut"
+    },
+    {
+      "byte": 44,
+      "class": "instruction",
+      "hex": "0x2c",
+      "name": "OpenStream",
+      "status": "allocated_pending_feature_cut"
+    },
+    {
+      "byte": 45,
+      "class": "instruction",
+      "hex": "0x2d",
+      "name": "FinishStream",
+      "status": "allocated_pending_feature_cut"
+    },
+    {
+      "byte": 46,
+      "class": "instruction",
+      "hex": "0x2e",
+      "name": "ApplyExternalStreamGroup",
+      "status": "allocated_pending_feature_cut"
+    },
+    {
+      "byte": 128,
+      "class": "terminator",
+      "hex": "0x80",
+      "name": "Jump",
+      "status": "implemented"
+    },
+    {
+      "byte": 129,
+      "class": "terminator",
+      "hex": "0x81",
+      "name": "Branch",
+      "status": "implemented"
+    },
+    {
+      "byte": 130,
+      "class": "terminator",
+      "hex": "0x82",
+      "name": "Match",
+      "status": "implemented"
+    },
+    {
+      "byte": 131,
+      "class": "terminator",
+      "hex": "0x83",
+      "name": "CallFunction",
+      "status": "implemented"
+    },
+    {
+      "byte": 132,
+      "class": "terminator",
+      "hex": "0x84",
+      "name": "GotoStatic",
+      "status": "implemented"
+    },
+    {
+      "byte": 133,
+      "class": "terminator",
+      "hex": "0x85",
+      "name": "GotoDynamic",
+      "status": "implemented"
+    },
+    {
+      "byte": 134,
+      "class": "terminator",
+      "hex": "0x86",
+      "name": "Dialogue",
+      "status": "implemented"
+    },
+    {
+      "byte": 135,
+      "class": "terminator",
+      "hex": "0x87",
+      "name": "Choice",
+      "status": "implemented"
+    },
+    {
+      "byte": 136,
+      "class": "terminator",
+      "hex": "0x88",
+      "name": "Await",
+      "status": "implemented"
+    },
+    {
+      "byte": 137,
+      "class": "terminator",
+      "hex": "0x89",
+      "name": "AwaitMany",
+      "status": "implemented"
+    },
+    {
+      "byte": 138,
+      "class": "terminator",
+      "hex": "0x8a",
+      "name": "HostCall",
+      "status": "implemented"
+    },
+    {
+      "byte": 139,
+      "class": "terminator",
+      "hex": "0x8b",
+      "name": "Return",
+      "status": "implemented"
+    },
+    {
+      "byte": 140,
+      "class": "terminator",
+      "hex": "0x8c",
+      "name": "Trap",
+      "status": "implemented"
+    },
+    {
+      "byte": 141,
+      "class": "terminator",
+      "hex": "0x8d",
+      "name": "BudgetYield",
+      "status": "implemented"
+    },
+    {
+      "byte": 142,
+      "class": "terminator",
+      "hex": "0x8e",
+      "name": "Unreachable",
+      "status": "implemented"
+    },
+    {
+      "byte": 143,
+      "class": "terminator",
+      "hex": "0x8f",
+      "name": "NextStream",
+      "status": "allocated_pending_feature_cut"
+    },
+    {
+      "byte": 144,
+      "class": "terminator",
+      "hex": "0x90",
+      "name": "YieldStream",
+      "status": "allocated_pending_feature_cut"
+    }
+  ],
+  "repr": "u8",
+  "reserved": [
+    {
+      "action": "reject",
+      "class": "unknown",
+      "end": 127,
+      "start": 47
+    },
+    {
+      "action": "reject",
+      "class": "unknown",
+      "end": 255,
+      "start": 145
+    }
+  ],
+  "schema_version": 1
+}

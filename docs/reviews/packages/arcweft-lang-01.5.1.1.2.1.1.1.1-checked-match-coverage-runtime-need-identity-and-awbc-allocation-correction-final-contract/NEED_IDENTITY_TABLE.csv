@@ -1,0 +1,10 @@
+family,domain,inputs,result,generation_rule
+ordinary StartTask/HostTask,arcweft.need.host-task.v1\0,contract|plan_digest|site:u32le|arguments_digest,NeedId,logical ID independent; active key includes generation
+verified View producer,arcweft.need.view-producer.v1\0,contract|checked_match_digest|view_program_digest|revision:u32le|site:u32le|arguments_digest,NeedId,replacement requires explicit compatible revision mapping
+line task,arcweft.need.line-task.v1\0,contract|plan_digest|line_group_digest|site:u32le|arguments_digest,NeedId,shared task/publication substrate
+direct Await,none,RuntimeNeedHandle.need,same NeedId,no derivation or fallback
+AwaitMany base,arcweft.need.await-many-base.v1\0,parent_contract|plan_digest|site:u32le|count:u32le|ordered_source_digest,base NeedId,source order committed
+AwaitMany child,arcweft.need.await-many-child.v1\0,base_need_id|index:u32le|item_digest,child NeedId,duplicate values at distinct indexes remain distinct
+NeedTimeout output,arcweft.need.timeout.v1\0,timeout_contract|producer_site:u32le|source_need_id|limit_value_digest,output NeedId,source NeedId retained separately
+JoinSameKey task,arcweft.task.key.v1\0,generation:u64le|NeedId|policy=0|launch=0,TaskKey then TaskId,duplicate observers share launch
+AlwaysStart task,arcweft.task.key.v1\0,generation:u64le|NeedId|policy=1|launch_ordinal:u64le,TaskKey then TaskId,journaled launch ordinal distinguishes launches

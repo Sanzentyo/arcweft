@@ -1,0 +1,48 @@
+{
+  "baseline": "c49099fb154d9e3dbb587e1bcd7ee243214da0c4",
+  "chain": [
+    {
+      "expected_bytes": 7719,
+      "expected_sha256": "993802106745fc9adb57829af67b1bb4379a6999286edaa4f110e3039c181304",
+      "git_blob_sha1": "37bbf3d5c799a3b4dbae6ade9fe14bda737aa476",
+      "path": "docs/reviews/requests/2026-08-21-lang-01.5.1.1.2.1-reactive-unary-need-match-reconciliation.md",
+      "role": "primary retained request",
+      "sequence": 1,
+      "validation": "Git blob verified; SHA-256/length imported from the retained primary package manifest"
+    },
+    {
+      "expected_bytes": 10995,
+      "expected_sha256": "fb1b21bf038346c5f742ef1a25ee1bf4b59b1573b489dad054ff051b0b970607",
+      "git_blob_sha1": "b98cc4a22ed07fa4373d9e9112bf0c005f12d9a3",
+      "path": "docs/reviews/requests/2026-08-21-lang-01.5.1.1.2.1.1-reactive-unary-need-match-design-validation-correction.md",
+      "role": "design-validation correction",
+      "sequence": 2,
+      "validation": "Git blob verified; SHA-256/length imported from the retained correction package SHA256SUMS"
+    },
+    {
+      "expected_bytes": 14785,
+      "expected_sha256": "097611701bfb13d5a43317b65302fcb209d62b7bce9c47afe28b29ff934285c3",
+      "git_blob_sha1": "6d2acd931c430c5787a05fd4661009266903db69",
+      "path": "docs/reviews/requests/2026-08-21-lang-01.5.1.1.2.1.1.1-generic-match-and-typed-need-producer-abi-correction.md",
+      "role": "immediate predecessor request",
+      "sequence": 3,
+      "validation": "Git blob verified; SHA-256/length imported from retained package MANIFEST.json"
+    },
+    {
+      "expected_bytes": 27962,
+      "expected_sha256": "8bf22dbee57a94ee178e25d0004be7a18694a8b801ef79189da3f9e1a3741299",
+      "git_blob_sha1": "a1411adcf7f2c9651f250d9db3302d3ab61ddfa7",
+      "package_copy": "inputs/CURRENT_REQUEST.md",
+      "path": "docs/reviews/requests/2026-08-21-lang-01.5.1.1.2.1.1.1.1-checked-match-coverage-runtime-need-identity-and-awbc-allocation-correction.md",
+      "role": "current correction",
+      "sequence": 4,
+      "validation": "package copy byte-rehashed and Git blob verified"
+    }
+  ],
+  "repository": "Sanzentyo/arcweft",
+  "retained_archive": {
+    "expected_sha256": "96f4f84be1b7b2bbec9d2ba564418f00f453870f4ea331566a1f51258cc1ef8d",
+    "name": "arcweft-lang-01.5.1.1.2.1.1.1-generic-match-and-typed-need-producer-abi-correction-final-contract.zip"
+  },
+  "schema_version": 1
+}

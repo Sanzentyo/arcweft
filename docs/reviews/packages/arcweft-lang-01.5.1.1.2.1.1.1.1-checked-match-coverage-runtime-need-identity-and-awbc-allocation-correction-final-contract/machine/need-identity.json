@@ -1,0 +1,88 @@
+{
+  "digest_scalar_grammar": {
+    "bytes": "u32-le length then bytes",
+    "digest": "32 raw bytes",
+    "tag": "u8",
+    "u32": "u32-le",
+    "u64": "u64-le"
+  },
+  "display": "lowercase hex only; never parsed",
+  "domains": {
+    "await_many_base": "arcweft.need.await-many-base.v1\\0",
+    "await_many_child": "arcweft.need.await-many-child.v1\\0",
+    "host_task": "arcweft.need.host-task.v1\\0",
+    "line_task": "arcweft.need.line-task.v1\\0",
+    "producer_contract": "arcweft.need.producer-contract.v1\\0",
+    "runtime_value": "arcweft.runtime-value.v1\\0",
+    "task_id": "arcweft.task.id.v1\\0",
+    "task_key": "arcweft.task.key.v1\\0",
+    "task_plan": "arcweft.task.plan.v1\\0",
+    "timeout": "arcweft.need.timeout.v1\\0",
+    "view_producer": "arcweft.need.view-producer.v1\\0"
+  },
+  "families": {
+    "await_many_base": [
+      "parent_contract",
+      "plan_digest",
+      "site:u32-le",
+      "source_count:u32-le",
+      "ordered_source_digest"
+    ],
+    "await_many_child": [
+      "base_need_id",
+      "source_index:u32-le",
+      "item_digest"
+    ],
+    "direct_await": [
+      "embedded NeedId; no derivation"
+    ],
+    "line_task": [
+      "contract",
+      "plan_digest",
+      "line_group_digest",
+      "site:u32-le",
+      "arguments_digest"
+    ],
+    "ordinary_host_task": [
+      "contract",
+      "plan_digest",
+      "site:u32-le",
+      "arguments_digest"
+    ],
+    "timeout": [
+      "timeout_contract",
+      "producer_site:u32-le",
+      "source_need_id",
+      "limit_value_digest"
+    ],
+    "view_producer": [
+      "contract",
+      "checked_match_digest",
+      "view_program_digest",
+      "revision:u32-le",
+      "site:u32-le",
+      "arguments_digest"
+    ]
+  },
+  "fixed_types": [
+    "NeedId",
+    "TaskKey",
+    "TaskId",
+    "NeedProducerContractDigest",
+    "TaskPlanSemanticDigest",
+    "RuntimeValueDigest"
+  ],
+  "hash": "BLAKE3-256",
+  "legacy_string_fallback": false,
+  "schema_version": 1,
+  "task_relation": {
+    "AlwaysStart": "TaskKey(domain,generation,NeedId,policy=1,launch_ordinal); each launch differs",
+    "JoinSameKey": "TaskKey(domain,generation,NeedId,policy=0,launch=0); duplicate observers share TaskId",
+    "TaskId": "hash(task-id domain, TaskKey, launch_ordinal:u64-le)",
+    "active_need_key": [
+      "GenerationId",
+      "NeedId"
+    ]
+  },
+  "zero_value": "reserved and rejected"
+}

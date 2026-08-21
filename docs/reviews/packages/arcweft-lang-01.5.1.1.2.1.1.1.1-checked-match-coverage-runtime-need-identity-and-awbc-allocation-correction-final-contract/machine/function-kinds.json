@@ -1,0 +1,61 @@
+{
+  "authority": "arcweft_core::awbc::schema::AwbcFunctionKind",
+  "repr": "u8",
+  "rows": [
+    {
+      "name": "Flow",
+      "status": "implemented",
+      "tag": 0
+    },
+    {
+      "name": "PureHelper",
+      "status": "implemented",
+      "tag": 1
+    },
+    {
+      "name": "TraitMethod",
+      "status": "implemented",
+      "tag": 2
+    },
+    {
+      "name": "StreamTransform",
+      "status": "implemented",
+      "tag": 3
+    },
+    {
+      "name": "LineTask",
+      "status": "implemented",
+      "tag": 6
+    },
+    {
+      "name": "Synthetic",
+      "status": "implemented",
+      "tag": 7
+    },
+    {
+      "name": "Ordinary",
+      "status": "allocated_pending_stream_cut",
+      "tag": 8
+    },
+    {
+      "name": "GeneratorProducer",
+      "status": "allocated_pending_stream_cut",
+      "tag": 9
+    },
+    {
+      "name": "LineActivation",
+      "status": "allocated_pending_line_cut",
+      "tag": 10
+    }
+  ],
+  "schema_version": 1,
+  "tombstones": [
+    4,
+    5
+  ],
+  "unknown": {
+    "action": "reject",
+    "end": 255,
+    "start": 11
+  }
+}

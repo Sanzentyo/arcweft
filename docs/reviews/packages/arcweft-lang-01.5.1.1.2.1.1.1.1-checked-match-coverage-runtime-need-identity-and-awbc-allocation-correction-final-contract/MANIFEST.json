@@ -1,0 +1,233 @@
+{
+  "algorithm": "sha256",
+  "baseline": "c49099fb154d9e3dbb587e1bcd7ee243214da0c4",
+  "files": [
+    {
+      "bytes": 8416,
+      "path": "AWBC_ALLOCATION_AND_WIRE.md",
+      "sha256": "30a669642daeacc6595e91ce362502939bdf517d542202ccbdc0daab0e07c385"
+    },
+    {
+      "bytes": 2990,
+      "path": "AWBC_OPCODE_TABLE.csv",
+      "sha256": "045a16937266bbc9ac76780ca48c3474d402bb9b5d0744549367ea85eec83d4b"
+    },
+    {
+      "bytes": 7014,
+      "path": "CHECKED_MATCH_COVERAGE.md",
+      "sha256": "ffc144cc5eccb13ad8d847c556d10d616969f7522775e9f659ba1ef3fd8fb54c"
+    },
+    {
+      "bytes": 3994,
+      "path": "CHECKED_MATCH_DIGEST.md",
+      "sha256": "0fce35f53c5ae8dcf02b3dbc283458c8b141ccfce22b4238ca16e89430837bf2"
+    },
+    {
+      "bytes": 4912,
+      "path": "COMPILE_CLEAN_SEQUENCE.md",
+      "sha256": "ea5a70a0f98c5d4e11371a207d268b8907fef6394627234b8887edd9a9bdff90"
+    },
+    {
+      "bytes": 1134,
+      "path": "COVERAGE_PATTERN_MATRIX.csv",
+      "sha256": "e6becd79738f97868d62d6b70e750fe4fe9a95afe5aed2a15762245ecba0876a"
+    },
+    {
+      "bytes": 3390,
+      "path": "DECISION_REGISTER.md",
+      "sha256": "b4c1f9a5dc188d669c62cf65180f3ac004ca4b3cf315583e58933857eefdc494"
+    },
+    {
+      "bytes": 1696,
+      "path": "DEPENDENCY_GRAPH.md",
+      "sha256": "68f776ec0435279e0ae390b1b6828719fbed72f7fdb5173793d3f17b15dae0bb"
+    },
+    {
+      "bytes": 1590,
+      "path": "FAILURE_PRECEDENCE_AND_ATOMICITY.md",
+      "sha256": "afcca4f30497d79fa9f96c78c839776abbacbeac0043ea329ca2b31225988b9f"
+    },
+    {
+      "bytes": 8086,
+      "path": "FINAL_CONTRACT.md",
+      "sha256": "3f60956844c11a8f1e7ace9896cbbff97f138c07335a2f58a5b094203d21c4c7"
+    },
+    {
+      "bytes": 5049,
+      "path": "NEED_CONSUMER_DELETION_MATRIX.csv",
+      "sha256": "0a24befdaa2b026a5f76f4e4bacb50aead3f52b49238b72210abd1c8e014a9f9"
+    },
+    {
+      "bytes": 6181,
+      "path": "NEED_CONSUMER_DELETION_MATRIX.md",
+      "sha256": "d46df2513cd9e8be385f18650c009d65d6cf36527fd82a230472eca3cebcce7d"
+    },
+    {
+      "bytes": 1419,
+      "path": "NEED_IDENTITY_TABLE.csv",
+      "sha256": "8cb68b969bd5ccf10ce31e1e0a5b52e614b6da4c82a02d705ec8b0c83abc90e0"
+    },
+    {
+      "bytes": 5644,
+      "path": "NEED_TASK_IDENTITY.md",
+      "sha256": "7803c261d4faf65d018e9bbe54aea7ed8219b8254129d951c798f274670b9e20"
+    },
+    {
+      "bytes": 5,
+      "path": "OPEN_QUESTIONS.md",
+      "sha256": "fcf33dfbe13c2354bf0e1b063f9fb422747a46cee00b7420bceff2b81457b345"
+    },
+    {
+      "bytes": 11233,
+      "path": "OWNERSHIP_AND_PERSISTENCE.md",
+      "sha256": "7a41ba2db198cce33789d8f58211f06d119f5276754cb88d5f636dd6cf0087a8"
+    },
+    {
+      "bytes": 5190,
+      "path": "OWNERSHIP_TYPE_TABLE.csv",
+      "sha256": "9d9eb61ece01b76785900020eb6b51ff51f4711dce484986a97f1da61f028722"
+    },
+    {
+      "bytes": 3636,
+      "path": "OWNER_API_MAP.md",
+      "sha256": "f3311ed28380edaf90f585739aeea9b2c2992eb6b603b54ca1d180249bfa9b0e"
+    },
+    {
+      "bytes": 2218,
+      "path": "PERSISTENCE_REPLAY_REPLACEMENT.md",
+      "sha256": "f631facd570e25fc881890900908b5d5c893cc39dc0f35e46a639cb7ed685015"
+    },
+    {
+      "bytes": 4201,
+      "path": "README.md",
+      "sha256": "43d56750411901033422b6754c0d8a8adeb2d1e145098477fda4d54698ac0e59"
+    },
+    {
+      "bytes": 2875,
+      "path": "REQUIREMENT_TRACEABILITY.csv",
+      "sha256": "e3319be455d5715f4535700bfc570f1f54067a045b0175a325401a84b7f74604"
+    },
+    {
+      "bytes": 3362,
+      "path": "REQUIREMENT_TRACEABILITY.md",
+      "sha256": "39cd1918005aa4e993172b78cdbe12234447d57c0065fdbf06292c32c4cd0654"
+    },
+    {
+      "bytes": 18437,
+      "path": "RUST_SCHEMAS.md",
+      "sha256": "41b2c46bac6449fb7bef466697899cfdb2cb18f9ed86ef20606f8ddb94bf26f4"
+    },
+    {
+      "bytes": 6026,
+      "path": "SOURCE_EVIDENCE.csv",
+      "sha256": "ea856983afa9b386ba3e34ca44f45bdb8c84439bd908773e5730cc35a4bd3efc"
+    },
+    {
+      "bytes": 5558,
+      "path": "SOURCE_EVIDENCE.md",
+      "sha256": "20a9e5d0b8f234b89097215c9f891e00776f41eb4907050cafa5f26d68546323"
+    },
+    {
+      "bytes": 1641,
+      "path": "STRUCTURAL_ABSENCE.md",
+      "sha256": "c544ee61be1f7729482af68211c13e6f9cc71fc96d07b68bc8cc61fc58d87a74"
+    },
+    {
+      "bytes": 11688,
+      "path": "TEST_MATRIX.csv",
+      "sha256": "b21cf90b4f40a6daa9f3be5902b3d31fd47c00a46da35c696455231e53a69240"
+    },
+    {
+      "bytes": 14200,
+      "path": "TEST_MATRIX.md",
+      "sha256": "230ec8d21dea242cc33886723d4c8217986cd81b60d962f39e614cf62ff2e52c"
+    },
+    {
+      "bytes": 462,
+      "path": "VALIDATION.json",
+      "sha256": "741e945cbea8cbea5405121de4c58c42c7855b4b70da5959dd6f0f11ca50e737"
+    },
+    {
+      "bytes": 1466,
+      "path": "VALIDATION.md",
+      "sha256": "7914272da6d31e8ec23660f191545389d2b71ae2d0cdaa831d0523c53a057d99"
+    },
+    {
+      "bytes": 765,
+      "path": "VALIDATION_OUTPUT.txt",
+      "sha256": "c853c872fb4586c4392b78344b45b8cfbc0dbaff73ead9b5b816338f42e97fb2"
+    },
+    {
+      "bytes": 1916,
+      "path": "VERIFICATION_SCOPE.md",
+      "sha256": "d8267247b2cd395bc7aec4944d21fda0a94a8a0cd95ff1f0f59147c5a967fae0"
+    },
+    {
+      "bytes": 27962,
+      "path": "inputs/CURRENT_REQUEST.md",
+      "sha256": "8bf22dbee57a94ee178e25d0004be7a18694a8b801ef79189da3f9e1a3741299"
+    },
+    {
+      "bytes": 9683,
+      "path": "machine/awbc-allocation.json",
+      "sha256": "785fa9d71ac84d26ca3e29b86f6ecac919e6bb8c07b6b16216eeb8369287a568"
+    },
+    {
+      "bytes": 2876,
+      "path": "machine/coverage-pattern-families.json",
+      "sha256": "5249e4c090166f46940be290ff97e390ec82ab7aea0ecf0cf1992768be06db59"
+    },
+    {
+      "bytes": 919,
+      "path": "machine/digest-grammar.json",
+      "sha256": "13440f6eb2afdb2aa135f70f3bc6aa740e7c101ddf7109bef4f6434c0f9c283c"
+    },
+    {
+      "bytes": 1438,
+      "path": "machine/function-flags.json",
+      "sha256": "8353bffce9ec4ed8bef5f4b0b3cf98e21d0d5132ff79135d87cb085549dba992"
+    },
+    {
+      "bytes": 1072,
+      "path": "machine/function-kinds.json",
+      "sha256": "524b0ca8755d86def0762cf784659191c4503979a7dba6c6cf15b4fc00268db2"
+    },
+    {
+      "bytes": 2370,
+      "path": "machine/need-identity.json",
+      "sha256": "49500b63163014243ebdea9c32e2768724292a7d068c901aed555c4a979659bb"
+    },
+    {
+      "bytes": 14047,
+      "path": "machine/ownership-disposition.json",
+      "sha256": "988fb37ac289ffc61a29cd06c0b98991157b10dd8c016a951f8277e4639590e2"
+    },
+    {
+      "bytes": 2409,
+      "path": "machine/request-chain.json",
+      "sha256": "d94f943e0765c5f0ee86913053bdbdc289139fe14471eea664f8ffd8d426f07d"
+    },
+    {
+      "bytes": 722,
+      "path": "machine/structural-absence.json",
+      "sha256": "3be16b94a73d3c54b2986d503c7c0a0f98cc9dcd75506d6549f57d74c994c0c8"
+    },
+    {
+      "bytes": 334,
+      "path": "machine/version-markers.json",
+      "sha256": "37f22a7c60445729b5f957d7d8233dfbcc3119d88ff8a4df5d318380d537ef01"
+    },
+    {
+      "bytes": 2228,
+      "path": "machine/wire-primitives.json",
+      "sha256": "4ea9b3316cfdbf13f8b61cd37ce4937c8748cf5f785fe0e205eab63ed7341b7b"
+    },
+    {
+      "bytes": 25838,
+      "path": "tools/validate_package.py",
+      "sha256": "27768c833e046e9d72167711f72ec529b72c918a797a6d8798918bbc10fe7636"
+    }
+  ],
+  "package": "arcweft-lang-01.5.1.1.2.1.1.1.1-checked-match-coverage-runtime-need-identity-and-awbc-allocation-correction-final-contract",
+  "schema_version": 1
+}

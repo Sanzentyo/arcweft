@@ -1,0 +1,533 @@
+{
+  "authority": "arcweft_lang_sema::final_analysis::CheckedOwnershipContext",
+  "inputs": [
+    "ProjectSymbolTable",
+    "RegisteredSemanticWorld",
+    "ResourceTypeRegistry",
+    "CheckedOwnershipLimits"
+  ],
+  "limits": {
+    "max_depth": 64,
+    "max_nodes": 65536,
+    "max_nominal_expansions": 4096
+  },
+  "need_rule": "Need<T> handle is Copy; exact producer captures and constructor arguments require separate checked admission",
+  "rejections_are_errors": true,
+  "schema_version": 1,
+  "success": [
+    "Copy",
+    "SnapshotClone"
+  ],
+  "type_kinds": [
+    {
+      "disposition": "Copy",
+      "owner": "primitive value",
+      "rejection": "none",
+      "type_kind": "Bool"
+    },
+    {
+      "disposition": "Copy",
+      "owner": "primitive value",
+      "rejection": "none",
+      "type_kind": "I8"
+    },
+    {
+      "disposition": "Copy",
+      "owner": "primitive value",
+      "rejection": "none",
+      "type_kind": "I16"
+    },
+    {
+      "disposition": "Copy",
+      "owner": "primitive value",
+      "rejection": "none",
+      "type_kind": "I32"
+    },
+    {
+      "disposition": "Copy",
+      "owner": "primitive value",
+      "rejection": "none",
+      "type_kind": "I64"
+    },
+    {
+      "disposition": "Copy",
+      "owner": "primitive value",
+      "rejection": "none",
+      "type_kind": "I128"
+    },
+    {
+      "disposition": "Copy",
+      "owner": "semantic scalar; never encoded as platform usize",
+      "rejection": "none",
+      "type_kind": "ISize"
+    },
+    {
+      "disposition": "Copy",
+      "owner": "primitive value",
+      "rejection": "none",
+      "type_kind": "U8"
+    },
+    {
+      "disposition": "Copy",
+      "owner": "primitive value",
+      "rejection": "none",
+      "type_kind": "U16"
+    },
+    {
+      "disposition": "Copy",
+      "owner": "primitive value",
+      "rejection": "none",
+      "type_kind": "U32"
+    },
+    {
+      "disposition": "Copy",
+      "owner": "primitive value",
+      "rejection": "none",
+      "type_kind": "U64"
+    },
+    {
+      "disposition": "Copy",
+      "owner": "primitive value",
+      "rejection": "none",
+      "type_kind": "U128"
+    },
+    {
+      "disposition": "Copy",
+      "owner": "semantic scalar; never encoded as platform usize",
+      "rejection": "none",
+      "type_kind": "USize"
+    },
+    {
+      "disposition": "Copy",
+      "owner": "raw IEEE-754 bits",
+      "rejection": "none",
+      "type_kind": "F32"
+    },
+    {
+      "disposition": "Copy",
+      "owner": "raw IEEE-754 bits",
+      "rejection": "none",
+      "type_kind": "F64"
+    },
+    {
+      "disposition": "SnapshotClone",
+      "owner": "RuntimeValue::String",
+      "rejection": "none",
+      "type_kind": "String"
+    },
+    {
+      "disposition": "Copy",
+      "owner": "Unicode scalar",
+      "rejection": "none",
+      "type_kind": "Char"
+    },
+    {
+      "disposition": "SnapshotClone",
+      "owner": "RuntimeValue::Bytes",
+      "rejection": "none",
+      "type_kind": "Bytes"
+    },
+    {
+      "disposition": "SnapshotClone",
+      "owner": "text-model immutable value",
+      "rejection": "none",
+      "type_kind": "TextCluster"
+    },
+    {
+      "disposition": "Copy",
+      "owner": "LogicalDuration",
+      "rejection": "none",
+      "type_kind": "Duration"
+    },
+    {
+      "disposition": "SnapshotClone",
+      "owner": "standard record ratio + optional label",
+      "rejection": "none",
+      "type_kind": "Progress"
+    },
+    {
+      "disposition": "Rejected",
+      "owner": "compile-time capability",
+      "rejection": "FrameLocalCapability",
+      "type_kind": "StageApi"
+    },
+    {
+      "disposition": "Rejected",
+      "owner": "line activation capability",
+      "rejection": "FrameLocalCapability",
+      "type_kind": "LineContext"
+    },
+    {
+      "disposition": "Rejected",
+      "owner": "RuntimeOpaqueValueClass::AffineHandle(StageActor)",
+      "rejection": "AffineHandle",
+      "type_kind": "StageActorHandle"
+    },
+    {
+      "disposition": "Rejected",
+      "owner": "RuntimeOpaqueValueClass::AffineHandle(Cue)",
+      "rejection": "AffineHandle",
+      "type_kind": "CueHandle"
+    },
+    {
+      "disposition": "Rejected",
+      "owner": "RuntimeOpaqueValueClass::AffineHandle(Voice)",
+      "rejection": "AffineHandle",
+      "type_kind": "VoiceHandle"
+    },
+    {
+      "disposition": "RecursiveJoin",
+      "owner": "range bounds through element TypeKind",
+      "rejection": "first child rejection",
+      "type_kind": "Range"
+    },
+    {
+      "disposition": "Rejected",
+      "owner": "frame-local iterator cursor",
+      "rejection": "FrameLocalIterator",
+      "type_kind": "IteratorState"
+    },
+    {
+      "disposition": "SnapshotClone",
+      "owner": "immutable display text",
+      "rejection": "none",
+      "type_kind": "DisplayText"
+    },
+    {
+      "disposition": "SnapshotClone",
+      "owner": "Agent value owner",
+      "rejection": "none",
+      "type_kind": "DebugStatePath"
+    },
+    {
+      "disposition": "SnapshotClone",
+      "owner": "Agent value owner",
+      "rejection": "none",
+      "type_kind": "ObservationFieldPath"
+    },
+    {
+      "disposition": "Copy",
+      "owner": "semantic entity identity; payload parameter is metadata, not contained value",
+      "rejection": "none",
+      "type_kind": "Ref"
+    },
+    {
+      "disposition": "RecursiveJoin",
+      "owner": "Agent probe wrapper",
+      "rejection": "first child rejection",
+      "type_kind": "Probe"
+    },
+    {
+      "disposition": "SnapshotClone",
+      "owner": "Agent immutable DTO",
+      "rejection": "none",
+      "type_kind": "Predicate"
+    },
+    {
+      "disposition": "SnapshotClone",
+      "owner": "Agent immutable DTO",
+      "rejection": "none",
+      "type_kind": "Observation"
+    },
+    {
+      "disposition": "SnapshotClone",
+      "owner": "Agent immutable DTO",
+      "rejection": "none",
+      "type_kind": "ObservedObject"
+    },
+    {
+      "disposition": "SnapshotClone",
+      "owner": "Agent immutable DTO",
+      "rejection": "none",
+      "type_kind": "AgentBBox"
+    },
+    {
+      "disposition": "SnapshotClone",
+      "owner": "Agent immutable DTO",
+      "rejection": "none",
+      "type_kind": "ActionName"
+    },
+    {
+      "disposition": "SnapshotClone",
+      "owner": "Agent immutable DTO",
+      "rejection": "none",
+      "type_kind": "ActionTarget"
+    },
+    {
+      "disposition": "SnapshotClone",
+      "owner": "Agent immutable DTO",
+      "rejection": "none",
+      "type_kind": "ActionResult"
+    },
+    {
+      "disposition": "SnapshotClone",
+      "owner": "Agent immutable DTO",
+      "rejection": "none",
+      "type_kind": "AgentValue"
+    },
+    {
+      "disposition": "SnapshotClone",
+      "owner": "Agent immutable DTO",
+      "rejection": "none",
+      "type_kind": "DataFormat"
+    },
+    {
+      "disposition": "SnapshotClone",
+      "owner": "Agent immutable DTO",
+      "rejection": "none",
+      "type_kind": "DataShape"
+    },
+    {
+      "disposition": "SnapshotClone",
+      "owner": "Agent immutable DTO",
+      "rejection": "none",
+      "type_kind": "AgentEntityMetadata"
+    },
+    {
+      "disposition": "SnapshotClone",
+      "owner": "Agent immutable DTO",
+      "rejection": "none",
+      "type_kind": "AgentSourceAnchor"
+    },
+    {
+      "disposition": "SnapshotClone",
+      "owner": "Agent immutable DTO",
+      "rejection": "none",
+      "type_kind": "AgentProjectGraphNeighborhood"
+    },
+    {
+      "disposition": "SnapshotClone",
+      "owner": "Agent immutable DTO",
+      "rejection": "none",
+      "type_kind": "AgentProjectGraphSymbol"
+    },
+    {
+      "disposition": "SnapshotClone",
+      "owner": "Agent immutable DTO",
+      "rejection": "none",
+      "type_kind": "AgentProjectGraphEdge"
+    },
+    {
+      "disposition": "SnapshotClone",
+      "owner": "Agent immutable DTO",
+      "rejection": "none",
+      "type_kind": "CaptureTarget"
+    },
+    {
+      "disposition": "SnapshotClone",
+      "owner": "Agent immutable reference value, not language borrow",
+      "rejection": "none",
+      "type_kind": "CaptureRef"
+    },
+    {
+      "disposition": "RegistryRecursive",
+      "owner": "ResourceTypeRegistry descriptor/schema",
+      "rejection": "MissingResourceEvidence",
+      "type_kind": "AgentResource"
+    },
+    {
+      "disposition": "RegistryRecursive",
+      "owner": "ResourceTypeRegistry descriptor/schema",
+      "rejection": "MissingResourceEvidence",
+      "type_kind": "AgentResourceBody"
+    },
+    {
+      "disposition": "SnapshotClone",
+      "owner": "Agent immutable DTO",
+      "rejection": "none",
+      "type_kind": "RagContextPack"
+    },
+    {
+      "disposition": "Rejected",
+      "owner": "runtime capability/procedure owner",
+      "rejection": "FrameLocalCapability",
+      "type_kind": "AgentBuiltin"
+    },
+    {
+      "disposition": "RecursiveJoin",
+      "owner": "sequence element",
+      "rejection": "first child rejection",
+      "type_kind": "Vec"
+    },
+    {
+      "disposition": "RecursiveJoin",
+      "owner": "constant length + element; generic/error/inferred length rejects",
+      "rejection": "UnresolvedArrayLength",
+      "type_kind": "Array"
+    },
+    {
+      "disposition": "RecursiveJoin",
+      "owner": "owning runtime sequence projection",
+      "rejection": "first child rejection",
+      "type_kind": "Slice"
+    },
+    {
+      "disposition": "RecursiveJoin",
+      "owner": "owning runtime sequence projection",
+      "rejection": "first child rejection",
+      "type_kind": "Seq"
+    },
+    {
+      "disposition": "RecursiveJoin",
+      "owner": "key then value in canonical order",
+      "rejection": "first child rejection",
+      "type_kind": "Map"
+    },
+    {
+      "disposition": "Rejected",
+      "owner": "BorrowKind + lifetime",
+      "rejection": "BorrowedOrMutableBorrow",
+      "type_kind": "BorrowRef"
+    },
+    {
+      "disposition": "Copy",
+      "owner": "immutable typed RuntimeNeedHandle identity",
+      "rejection": "producer arguments certified separately",
+      "type_kind": "Need"
+    },
+    {
+      "disposition": "Rejected",
+      "owner": "affine live producer/consumer state",
+      "rejection": "StreamHandle",
+      "type_kind": "Stream"
+    },
+    {
+      "disposition": "RecursiveJoin",
+      "owner": "ok then error",
+      "rejection": "first child rejection",
+      "type_kind": "Result"
+    },
+    {
+      "disposition": "RecursiveJoin",
+      "owner": "item",
+      "rejection": "first child rejection",
+      "type_kind": "Option"
+    },
+    {
+      "disposition": "Rejected",
+      "owner": "lifetime/state/must_drop runtime handle",
+      "rejection": "RuntimeHandle",
+      "type_kind": "Handle"
+    },
+    {
+      "disposition": "Rejected",
+      "owner": "live task/thread owner",
+      "rejection": "ThreadHandle",
+      "type_kind": "ThreadHandle"
+    },
+    {
+      "disposition": "RecursiveSnapshot",
+      "owner": "shared snapshot owner; breaks nominal recursion",
+      "rejection": "first child rejection",
+      "type_kind": "Shared"
+    },
+    {
+      "disposition": "Rejected",
+      "owner": "type alone lacks exact capture/value evidence",
+      "rejection": "CallableNeedsValueEvidence",
+      "type_kind": "Function"
+    },
+    {
+      "disposition": "Rejected",
+      "owner": "unsubstituted generic",
+      "rejection": "UnresolvedGeneric",
+      "type_kind": "GenericParam"
+    },
+    {
+      "disposition": "ProjectRecursive",
+      "owner": "ProjectSymbolTable declaration fields/cases with substitutions",
+      "rejection": "MissingNominalEvidence",
+      "type_kind": "ProjectNominal"
+    },
+    {
+      "disposition": "CatalogRecursive",
+      "owner": "AcceptedNominalRecord semantics + opaque value class/persistence",
+      "rejection": "MissingOpaqueEvidence",
+      "type_kind": "AcceptedNominal"
+    },
+    {
+      "disposition": "Rejected",
+      "owner": "open rule has no closed layout/persistence fact",
+      "rejection": "OpenNominal",
+      "type_kind": "OpenNominal"
+    },
+    {
+      "disposition": "Rejected",
+      "owner": "poisoned semantic type",
+      "rejection": "PoisonedType",
+      "type_kind": "Error"
+    },
+    {
+      "disposition": "Rejected",
+      "owner": "unresolved associated projection",
+      "rejection": "UnresolvedProjection",
+      "type_kind": "Projection"
+    },
+    {
+      "disposition": "SnapshotClone",
+      "owner": "character patch value owner",
+      "rejection": "none",
+      "type_kind": "CharacterPatch"
+    },
+    {
+      "disposition": "SnapshotClone",
+      "owner": "focus patch value owner",
+      "rejection": "none",
+      "type_kind": "FocusPatch"
+    },
+    {
+      "disposition": "SnapshotClone",
+      "owner": "dialogue immutable presentation value",
+      "rejection": "none",
+      "type_kind": "CharacterDialogue"
+    },
+    {
+      "disposition": "Rejected",
+      "owner": "non-escaping suspension operation",
+      "rejection": "FrameLocalOperation",
+      "type_kind": "DialogueLine"
+    },
+    {
+      "disposition": "SnapshotClone",
+      "owner": "checked View persisted value owner",
+      "rejection": "none",
+      "type_kind": "ViewValue"
+    },
+    {
+      "disposition": "SnapshotClone",
+      "owner": "manifest-backed closed character value",
+      "rejection": "none",
+      "type_kind": "CharacterNominal"
+    },
+    {
+      "disposition": "Rejected",
+      "owner": "internal/host value without exact accepted owner",
+      "rejection": "MissingRegisteredEvidence",
+      "type_kind": "Named"
+    },
+    {
+      "disposition": "RecursiveJoin",
+      "owner": "source-order elements",
+      "rejection": "first child rejection",
+      "type_kind": "Tuple"
+    },
+    {
+      "disposition": "RecursiveJoin",
+      "owner": "source-order alternatives",
+      "rejection": "first child rejection",
+      "type_kind": "Choice"
+    },
+    {
+      "disposition": "Copy",
+      "owner": "unit",
+      "rejection": "none",
+      "type_kind": "Unit"
+    },
+    {
+      "disposition": "Copy",
+      "owner": "empty value domain",
+      "rejection": "none",
+      "type_kind": "Never"
+    }
+  ]
+}

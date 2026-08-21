@@ -1,0 +1,12 @@
+{
+  "archive_validation": "PASS",
+  "baseline": "c49099fb154d9e3dbb587e1bcd7ee243214da0c4",
+  "design_only": true,
+  "directory_validation": "PASS",
+  "independent_manifest_recheck": "PASS",
+  "open_questions": 0,
+  "package": "arcweft-lang-01.5.1.1.2.1.1.1.1-checked-match-coverage-runtime-need-identity-and-awbc-allocation-correction-final-contract",
+  "production_compilation": "not_applicable_design_only",
+  "schema_version": 1,
+  "zip_integrity": "PASS"
+}
