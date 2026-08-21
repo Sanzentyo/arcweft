@@ -1,0 +1,106 @@
+{
+  "cuts": [
+    {
+      "cut": 1,
+      "depends_on_cuts": [],
+      "name": "semantic Match identity and role authority",
+      "private_until_complete": [
+        "any digest whose callable catalog join or role inventory is incomplete"
+      ],
+      "publishes": [
+        "CheckedExpressionChildRole and stable tags",
+        "all 38 current HirExprKind semantic tags and ordered direct-child role grammars",
+        "expression/value/select/pattern/literal/guard/coverage transcript tags",
+        "CheckedCallableCatalogV1 joins and RuntimeCallableProjectionV1 constructor"
+      ],
+      "task_types": false
+    },
+    {
+      "cut": 2,
+      "depends_on_cuts": [
+        1
+      ],
+      "name": "ownership classification and same-cut projections",
+      "private_until_complete": [
+        "Need ownership certificate until Cut 5",
+        "all rows lacking current/same-cut nominal/case/field owners"
+      ],
+      "publishes": [
+        "85-row exhaustive ownership classifier",
+        "RuntimeCheckedTypeProjectionV1",
+        "RuntimeAgentValueProjectionV1 for the current concrete Agent value algebra",
+        "RuntimeTextProjectionV1",
+        "exact signed Int and unsigned UInt carriers"
+      ],
+      "task_types": false
+    },
+    {
+      "cut": 3,
+      "depends_on_cuts": [
+        1,
+        2
+      ],
+      "name": "compiler-local Match lookup and role paths",
+      "private_until_complete": [],
+      "publishes": [
+        "HirSnapshotId+ExprId lookup",
+        "compiler-local role-path construction and differential checks"
+      ],
+      "task_types": false
+    },
+    {
+      "cut": 4,
+      "depends_on_cuts": [
+        1,
+        2,
+        3
+      ],
+      "name": "standalone identity, digest and sink infrastructure",
+      "private_until_complete": [],
+      "publishes": [
+        "retained Need/task identity newtypes and inherent constructors",
+        "canonical RuntimeValue sink infrastructure",
+        "HostOperationCatalogDigest/HostOperationId standalone typed catalog owner",
+        "HostCancelCommandId canonical constructor"
+      ],
+      "task_types": false
+    },
+    {
+      "atomic": true,
+      "cut": 5,
+      "deletes": [
+        "NeedHandleOrigin",
+        "AwaitMany source_items+finished-child-spec-only request",
+        "per-child committed aggregate ensure path",
+        "ephemeral observer ID allocation",
+        "HostAdapter::submit immediate-launch path",
+        "HostAdapter::cancel(&TaskId)->bool path",
+        "lossy/parallel runtime snapshot owners",
+        "IntOrUInt ownership row",
+        "sequence-before-TaskId order keys",
+        "blanket active-Host snapshot rejection"
+      ],
+      "depends_on_cuts": [
+        1,
+        2,
+        3,
+        4
+      ],
+      "name": "atomic runtime task, adapter and persistence publication",
+      "publishes": [
+        "RuntimeNeedHandle ReusableJoin/AcceptedLaunch states and both constructors",
+        "rederivable AwaitMany captured/template request",
+        "whole-child batch ensure transaction",
+        "persistent observer allocator",
+        "core-owned launch/restore/rebind/cancel adapter protocol",
+        "restartable Host snapshot policy",
+        "in-place isomorphic AwbcRuntimeValueSnapshot codec including NeedHandle",
+        "final ownership carriers held private before this cut",
+        "maintained event ordering"
+      ],
+      "task_types": true
+    }
+  ],
+  "rule": "a public row may reference only owners published in the same or an earlier cut; private rows may be held and published atomically later",
+  "version": 1
+}

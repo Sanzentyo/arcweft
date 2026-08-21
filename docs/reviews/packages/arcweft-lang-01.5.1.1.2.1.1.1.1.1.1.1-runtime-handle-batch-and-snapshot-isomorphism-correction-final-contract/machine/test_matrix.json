@@ -1,0 +1,831 @@
+{
+  "summary": {
+    "categories": [
+      "cut",
+      "differential",
+      "focused",
+      "inventory",
+      "layering",
+      "migration",
+      "negative",
+      "property",
+      "restore",
+      "rollback",
+      "structural absence",
+      "tamper"
+    ],
+    "count": 100,
+    "required_families": [
+      "focused",
+      "property",
+      "differential",
+      "tamper",
+      "rollback",
+      "restore",
+      "negative"
+    ]
+  },
+  "tests": [
+    {
+      "assertion": "constructs ReusableJoin with exact boxed spec; no scheduler/adapter mutation",
+      "category": "focused",
+      "id": "H01",
+      "notes": "",
+      "owner": "RuntimeNeedHandle::try_reusable_join",
+      "setup": "complete Host JoinSameKey TaskSpec; active generation"
+    },
+    {
+      "assertion": "constructs ReusableJoin and derives ordinal-zero correlation",
+      "category": "focused",
+      "id": "H02",
+      "notes": "",
+      "owner": "RuntimeNeedHandle::try_reusable_join",
+      "setup": "complete Runtime JoinSameKey TaskSpec"
+    },
+    {
+      "assertion": "rejects ReusableRequiresJoinSameKey before mutation",
+      "category": "negative",
+      "id": "H03",
+      "notes": "",
+      "owner": "RuntimeNeedHandle::try_reusable_join",
+      "setup": "AlwaysStart TaskSpec"
+    },
+    {
+      "assertion": "rejects exact relationship mismatch",
+      "category": "negative",
+      "id": "H04",
+      "notes": "",
+      "owner": "RuntimeNeedHandle::try_reusable_join",
+      "setup": "producer or outcome differs from TaskSpec"
+    },
+    {
+      "assertion": "constructs AcceptedLaunch without retaining TaskSpec",
+      "category": "focused",
+      "id": "H05",
+      "notes": "",
+      "owner": "RuntimeNeedHandle::try_from_accepted_launch",
+      "setup": "sealed committed Join launch proof"
+    },
+    {
+      "assertion": "constructs AcceptedLaunch and retains committed correlation",
+      "category": "focused",
+      "id": "H06",
+      "notes": "",
+      "owner": "RuntimeNeedHandle::try_from_accepted_launch",
+      "setup": "sealed committed AlwaysStart proof with positive ordinal"
+    },
+    {
+      "assertion": "rejects before publishing RuntimeValue",
+      "category": "tamper",
+      "id": "H07",
+      "notes": "",
+      "owner": "RuntimeNeedHandle restore",
+      "setup": "ReusableJoin snapshot with missing/changed TaskSpec field"
+    },
+    {
+      "assertion": "rejects MissingAcceptedLaunch",
+      "category": "tamper",
+      "id": "H08",
+      "notes": "",
+      "owner": "RuntimeNeedHandle restore",
+      "setup": "AcceptedLaunch snapshot whose correlation is absent from journal"
+    },
+    {
+      "assertion": "semantic Eq/Hash/Ord depends only on NeedId",
+      "category": "property",
+      "id": "H09",
+      "notes": "",
+      "owner": "RuntimeNeedHandle Eq/Hash/Ord",
+      "setup": "same NeedId with different structural metadata and different NeedId with same metadata"
+    },
+    {
+      "assertion": "scheduler returns exact correlation then observer is registered",
+      "category": "focused",
+      "id": "H10",
+      "notes": "",
+      "owner": "await ReusableJoin",
+      "setup": "stored spec joins existing row"
+    },
+    {
+      "assertion": "rejects CorrelationMismatch; no observer ID consumed",
+      "category": "tamper",
+      "id": "H11",
+      "notes": "",
+      "owner": "await ReusableJoin",
+      "setup": "scheduler returns a structurally different correlation"
+    },
+    {
+      "assertion": "registers directly without ensure/relaunch/rederivation",
+      "category": "focused",
+      "id": "H12",
+      "notes": "",
+      "owner": "await AcceptedLaunch",
+      "setup": "active generation and committed row"
+    },
+    {
+      "assertion": "constructs ReusableJoin and adapter prepare count remains zero",
+      "category": "focused",
+      "id": "H13",
+      "notes": "",
+      "owner": "AWBC MakeNeedHandle Host+Join",
+      "setup": "verified MakeNeedHandle instruction"
+    },
+    {
+      "assertion": "routes through ensure and returns AcceptedLaunch only",
+      "category": "focused",
+      "id": "H14",
+      "notes": "",
+      "owner": "AWBC MakeNeedHandle AlwaysStart",
+      "setup": "Host or Runtime AlwaysStart plan"
+    },
+    {
+      "assertion": "same NeedId, state choice, correlation and launch behavior",
+      "category": "differential",
+      "id": "H15",
+      "notes": "",
+      "owner": "structured/AWBC Need handle",
+      "setup": "same accepted plan/site/arguments"
+    },
+    {
+      "assertion": "retains exact evidence and computes source-order aggregate base transcript",
+      "category": "focused",
+      "id": "A01",
+      "notes": "",
+      "owner": "RuntimeAwaitManyAggregateRequest::try_new",
+      "setup": "captured tuple, source items, typed child template, nonzero limit"
+    },
+    {
+      "assertion": "argument is Tuple([Tuple(captured), UInt(U32(i)), source_items[i]]) and template owns final execution",
+      "category": "property",
+      "id": "A02",
+      "notes": "",
+      "owner": "RuntimeAwaitManyAggregateRequest::child_spec",
+      "setup": "arbitrary accepted captured/source arrays and every valid source index"
+    },
+    {
+      "assertion": "rejects before digest/spec construction",
+      "category": "negative",
+      "id": "A03",
+      "notes": "",
+      "owner": "RuntimeAwaitManyAggregateRequest::child_spec",
+      "setup": "index outside source_items or index not representable as u32"
+    },
+    {
+      "assertion": "regeneration detects mismatch and rejects whole aggregate",
+      "category": "tamper",
+      "id": "A04",
+      "notes": "",
+      "owner": "AwaitMany restore",
+      "setup": "persisted derived child digest/spec differs in one field"
+    },
+    {
+      "assertion": "derived child semantic digest is unchanged",
+      "category": "differential",
+      "id": "A05",
+      "notes": "",
+      "owner": "AwaitMany construction",
+      "setup": "caller-supplied debug labels or source spelling vary"
+    },
+    {
+      "assertion": "derived child semantic digest changes",
+      "category": "differential",
+      "id": "A06",
+      "notes": "",
+      "owner": "AwaitMany construction",
+      "setup": "captured value, source item, index, or accepted template changes"
+    },
+    {
+      "assertion": "one plan stages all rows, prepares all, atomically applies, commits, then publishes child state",
+      "category": "focused",
+      "id": "B01",
+      "notes": "",
+      "owner": "RuntimeTaskScheduler::ensure_task_batch",
+      "setup": "all new Host child rows succeed"
+    },
+    {
+      "assertion": "existing Join remains nonmutating; new rows share one transaction",
+      "category": "focused",
+      "id": "B02",
+      "notes": "",
+      "owner": "RuntimeTaskScheduler::ensure_task_batch",
+      "setup": "mix of existing Join, new Host, and new Runtime children"
+    },
+    {
+      "assertion": "prepared tokens 0..n-1 rollback in reverse order; all deltas discarded",
+      "category": "rollback",
+      "id": "B03",
+      "notes": "",
+      "owner": "RuntimeTaskScheduler::ensure_task_batch",
+      "setup": "nth Host prepare refuses"
+    },
+    {
+      "assertion": "all prepared tokens rollback in reverse order; no IDs/counters consumed",
+      "category": "rollback",
+      "id": "B04",
+      "notes": "",
+      "owner": "RuntimeTaskScheduler::ensure_task_batch",
+      "setup": "cross-reference validation fails after all prepares"
+    },
+    {
+      "assertion": "no scheduler state or adapter-visible command changes",
+      "category": "rollback",
+      "id": "B05",
+      "notes": "",
+      "owner": "RuntimeTaskScheduler::ensure_task_batch",
+      "setup": "work limit fails during staging"
+    },
+    {
+      "assertion": "failed batch consumes no task ordinal or observer ID and exposes no worker work",
+      "category": "property",
+      "id": "B06",
+      "notes": "",
+      "owner": "RuntimeTaskScheduler::ensure_task_batch",
+      "setup": "arbitrary failure point across derive/inspect/ordinal/observer/prepare/validate stages"
+    },
+    {
+      "assertion": "per-child public ensure_task commit count is zero",
+      "category": "negative",
+      "id": "B07",
+      "notes": "",
+      "owner": "aggregate implementation",
+      "setup": "instrument every internal call"
+    },
+    {
+      "assertion": "results and staged IDs are byte-for-byte equal in source-index order",
+      "category": "property",
+      "id": "B08",
+      "notes": "",
+      "owner": "batch determinism",
+      "setup": "same generation/journal/input with adapter reservations returning same route facts"
+    },
+    {
+      "assertion": "next_observer_id starts at NonZeroU64(1)",
+      "category": "focused",
+      "id": "O01",
+      "notes": "",
+      "owner": "RuntimeGenerationJournal observer allocator",
+      "setup": "fresh generation"
+    },
+    {
+      "assertion": "issues current ID and advances next only with atomic commit",
+      "category": "focused",
+      "id": "O02",
+      "notes": "",
+      "owner": "observer registration",
+      "setup": "successful single registration"
+    },
+    {
+      "assertion": "next_observer_id remains unchanged",
+      "category": "rollback",
+      "id": "O03",
+      "notes": "",
+      "owner": "observer registration",
+      "setup": "validation or adapter preparation fails"
+    },
+    {
+      "assertion": "none of the staged observer IDs are consumed",
+      "category": "rollback",
+      "id": "O04",
+      "notes": "",
+      "owner": "batch observer registration",
+      "setup": "any child fails"
+    },
+    {
+      "assertion": "restore succeeds and next registration is monotonic",
+      "category": "restore",
+      "id": "O05",
+      "notes": "",
+      "owner": "generation snapshot",
+      "setup": "next id strictly greater than all stored/referenced IDs"
+    },
+    {
+      "assertion": "restore rejects ObserverAllocatorNotStrictlyGreater",
+      "category": "tamper",
+      "id": "O06",
+      "notes": "",
+      "owner": "generation snapshot",
+      "setup": "next id equals or is below a persisted/reference ID"
+    },
+    {
+      "assertion": "ObserverIdOverflow before mutation; u64::MAX is never issued",
+      "category": "negative",
+      "id": "O07",
+      "notes": "",
+      "owner": "observer allocator",
+      "setup": "next_observer_id == u64::MAX"
+    },
+    {
+      "assertion": "allocator never rewinds and no ID is reused",
+      "category": "property",
+      "id": "O08",
+      "notes": "",
+      "owner": "observer removal",
+      "setup": "remove any subset in any order"
+    },
+    {
+      "assertion": "prepare reserves unpublished slots only; commit makes commands visible and cannot fail",
+      "category": "focused",
+      "id": "C01",
+      "notes": "",
+      "owner": "TaskLaunchAdapter prepare/commit",
+      "setup": "valid Host launch batch"
+    },
+    {
+      "assertion": "all counts remain zero during prepare",
+      "category": "negative",
+      "id": "C02",
+      "notes": "",
+      "owner": "TaskLaunchAdapter prepare",
+      "setup": "instrument filesystem/network/audio/worker-start calls"
+    },
+    {
+      "assertion": "drops reservation only and is infallible",
+      "category": "rollback",
+      "id": "C03",
+      "notes": "",
+      "owner": "TaskLaunchAdapter rollback",
+      "setup": "prepared launch/restore/rebind/cancel token"
+    },
+    {
+      "assertion": "publishes TaskEvent::InfrastructureFailure, never domain Result/Option payload",
+      "category": "focused",
+      "id": "C04",
+      "notes": "",
+      "owner": "post-commit worker failure",
+      "setup": "worker reports I/O failure after committed launch"
+    },
+    {
+      "assertion": "stages adapter/launch/Need/observer/runtime/scope/events then atomically applies and commits",
+      "category": "focused",
+      "id": "C05",
+      "notes": "",
+      "owner": "RuntimeTaskScheduler::cancel_tasks",
+      "setup": "active cancellable Host rows"
+    },
+    {
+      "assertion": "all prepared cancel tokens rollback; every scheduler owner remains unchanged",
+      "category": "rollback",
+      "id": "C06",
+      "notes": "",
+      "owner": "RuntimeTaskScheduler::cancel_tasks",
+      "setup": "adapter prepare_cancel refuses one route group"
+    },
+    {
+      "assertion": "second call returns AlreadyRequested and does not call adapter",
+      "category": "focused",
+      "id": "C07",
+      "notes": "",
+      "owner": "Host cancellation idempotence",
+      "setup": "same committed correlation cancelled twice"
+    },
+    {
+      "assertion": "rejects before prepare and changes nothing",
+      "category": "negative",
+      "id": "C08",
+      "notes": "",
+      "owner": "HostTaskCancelBatch",
+      "setup": "duplicate correlation in one input batch"
+    },
+    {
+      "assertion": "returns AlreadyTerminal or NotFound without adapter call",
+      "category": "focused",
+      "id": "C09",
+      "notes": "",
+      "owner": "Host cancellation terminal/absent",
+      "setup": "terminal or unknown correlation"
+    },
+    {
+      "assertion": "same correlation gives same ID; any semantic correlation change gives different ID",
+      "category": "property",
+      "id": "C10",
+      "notes": "",
+      "owner": "HostCancelCommandId",
+      "setup": "same canonical correlation and altered correlation"
+    },
+    {
+      "assertion": "scheduler depends on core and never arcweft-host-adapter/host/native/web/headless",
+      "category": "layering",
+      "id": "C11",
+      "notes": "",
+      "owner": "Cargo dependency graph",
+      "setup": "scan scheduler direct/transitive product dependencies"
+    },
+    {
+      "assertion": "HostAdapter::submit and cancel(&TaskId)->bool symbols/call sites are absent",
+      "category": "migration",
+      "id": "C12",
+      "notes": "",
+      "owner": "legacy adapter routes",
+      "setup": "source inventory after Cut 5"
+    },
+    {
+      "assertion": "restore(snapshot(value)) is structurally equal and revalidates identities",
+      "category": "property",
+      "id": "S01",
+      "notes": "",
+      "owner": "AwbcRuntimeValueSnapshot round trip",
+      "setup": "generated values for every accepted final RuntimeValue variant and nested combinations"
+    },
+    {
+      "assertion": "all fields survive round trip",
+      "category": "focused",
+      "id": "S02",
+      "notes": "",
+      "owner": "RuntimeIterator snapshot",
+      "setup": "Values, exact Range iterator, Witness state+next"
+    },
+    {
+      "assertion": "variant and all shape/field/length data survive round trip",
+      "category": "focused",
+      "id": "S03",
+      "notes": "",
+      "owner": "RuntimeSeq snapshot",
+      "setup": "Values, every DenseSeq case, TupleColumns, RecordColumns"
+    },
+    {
+      "assertion": "restore rejects before constructing live sequence",
+      "category": "tamper",
+      "id": "S04",
+      "notes": "",
+      "owner": "RuntimeSeq RecordColumns",
+      "setup": "wrong field ordinal, duplicate name, or column length mismatch"
+    },
+    {
+      "assertion": "owner is reconstructed and payload acceptance rechecked",
+      "category": "focused",
+      "id": "S05",
+      "notes": "",
+      "owner": "RuntimeOpaqueValue snapshot",
+      "setup": "producer, semantic identity, class, persistence, recursive payload"
+    },
+    {
+      "assertion": "constructor/target/payload order is preserved exactly",
+      "category": "focused",
+      "id": "S06",
+      "notes": "",
+      "owner": "RuntimeReductionValue snapshot",
+      "setup": "owner/state and ordered commands"
+    },
+    {
+      "assertion": "exact operands and nested predicate order survive",
+      "category": "focused",
+      "id": "S07",
+      "notes": "",
+      "owner": "RuntimeAgentValue snapshot",
+      "setup": "all eight current variants and recursive predicate variants"
+    },
+    {
+      "assertion": "returns UnrebindableStructuredFunction before bytes are emitted",
+      "category": "negative",
+      "id": "S08",
+      "notes": "",
+      "owner": "RuntimeFunctionBody::Structured snapshot",
+      "setup": "live structured closure"
+    },
+    {
+      "assertion": "restores only when authority join succeeds",
+      "category": "restore",
+      "id": "S09",
+      "notes": "",
+      "owner": "RuntimeFunctionBody::Awbc snapshot",
+      "setup": "exact program generation/digest/function authority"
+    },
+    {
+      "assertion": "restore rejects authority mismatch",
+      "category": "tamper",
+      "id": "S10",
+      "notes": "",
+      "owner": "AWBC function snapshot",
+      "setup": "changed generation/program digest/function"
+    },
+    {
+      "assertion": "closed state projects isomorphically and revalidates state-specific invariants",
+      "category": "focused",
+      "id": "S11",
+      "notes": "",
+      "owner": "RuntimeNeedHandle snapshot",
+      "setup": "both ReusableJoin and AcceptedLaunch states"
+    },
+    {
+      "assertion": "package/source inventory validator rejects",
+      "category": "inventory",
+      "id": "S12",
+      "notes": "",
+      "owner": "live/snapshot validator",
+      "setup": "add/remove/change a live enum variant or field shape without matching snapshot row"
+    },
+    {
+      "assertion": "version-1 decoder rejects; no compatibility reader runs",
+      "category": "tamper",
+      "id": "S13",
+      "notes": "",
+      "owner": "snapshot codec",
+      "setup": "unknown enum tag, nonminimal length, or trailing bytes"
+    },
+    {
+      "assertion": "forbidden lossy form check fails",
+      "category": "negative",
+      "id": "S14",
+      "notes": "",
+      "owner": "snapshot source scan",
+      "setup": "generic {kind,items}, {source,cursor}, opaque bytes, or callable summary form"
+    },
+    {
+      "assertion": "exactly 38 rows; unique stable tags; no wildcard success",
+      "category": "inventory",
+      "id": "M01",
+      "notes": "",
+      "owner": "Match expression tags",
+      "setup": "all current HirExprKind variants"
+    },
+    {
+      "assertion": "exactly 13 rows; unique stable tags",
+      "category": "inventory",
+      "id": "M02",
+      "notes": "",
+      "owner": "Match pattern tags",
+      "setup": "all current HirPatternKind variants"
+    },
+    {
+      "assertion": "role sequence matches semantic owner direct-child order exactly",
+      "category": "property",
+      "id": "M03",
+      "notes": "",
+      "owner": "CheckedExpressionChildRole path",
+      "setup": "arbitrary accepted HIR expression tree within limits"
+    },
+    {
+      "assertion": "first limit breach is returned; no partial transcript",
+      "category": "negative",
+      "id": "M04",
+      "notes": "",
+      "owner": "role-path construction",
+      "setup": "depth/node/child/byte limit exceeded"
+    },
+    {
+      "assertion": "digest is equal",
+      "category": "differential",
+      "id": "M05",
+      "notes": "",
+      "owner": "expression transcript",
+      "setup": "source spelling and arena IDs differ, accepted semantic facts/catalog equal"
+    },
+    {
+      "assertion": "digest changes",
+      "category": "differential",
+      "id": "M06",
+      "notes": "",
+      "owner": "callable transcript",
+      "setup": "accepted CheckedCallableDigest changes with other facts constant"
+    },
+    {
+      "assertion": "rejects MissingCheckedCallableJoin before transcript emission",
+      "category": "negative",
+      "id": "M07",
+      "notes": "",
+      "owner": "Call resolution",
+      "setup": "missing checked callable catalog row"
+    },
+    {
+      "assertion": "rejects MissingSelectedMethodJoin before transcript emission",
+      "category": "negative",
+      "id": "M08",
+      "notes": "",
+      "owner": "selected Method resolution",
+      "setup": "HirName cannot join receiver+checked callable catalog"
+    },
+    {
+      "assertion": "emits callable identity/digest payload in defined order",
+      "category": "focused",
+      "id": "M09",
+      "notes": "",
+      "owner": "unit Call",
+      "setup": "separate current call-target fact plus callable catalog row"
+    },
+    {
+      "assertion": "depth-first/source-order child roles exactly match table",
+      "category": "focused",
+      "id": "M10",
+      "notes": "",
+      "owner": "Choice traversal",
+      "setup": "nested If/For/Match/Option/OptionFor/CompactArm and plan items"
+    },
+    {
+      "assertion": "ordered roles exactly match table",
+      "category": "focused",
+      "id": "M11",
+      "notes": "",
+      "owner": "Dialogue traversal",
+      "setup": "target, coordinates, interpolation, tag payload, line plan"
+    },
+    {
+      "assertion": "validator rejects before accepting Match digest grammar",
+      "category": "tamper",
+      "id": "M12",
+      "notes": "",
+      "owner": "constructor table",
+      "setup": "duplicate tag, missing role enum row, or payload order drift"
+    },
+    {
+      "assertion": "exactly 85 rows and every TypeKind appears once",
+      "category": "inventory",
+      "id": "P01",
+      "notes": "",
+      "owner": "ownership classifier",
+      "setup": "current TypeKind algebra"
+    },
+    {
+      "assertion": "exact RuntimeValue::Int width and snapshot Int",
+      "category": "focused",
+      "id": "P02",
+      "notes": "",
+      "owner": "signed numeric ownership",
+      "setup": "I8/I16/I32/I64/I128/ISize"
+    },
+    {
+      "assertion": "exact RuntimeValue::UInt width and snapshot UInt",
+      "category": "focused",
+      "id": "P03",
+      "notes": "",
+      "owner": "unsigned numeric ownership",
+      "setup": "U8/U16/U32/U64/U128/USize"
+    },
+    {
+      "assertion": "validator rejects ambiguous carrier",
+      "category": "negative",
+      "id": "P04",
+      "notes": "",
+      "owner": "ownership matrix",
+      "setup": "any IntOrUInt carrier"
+    },
+    {
+      "assertion": "exact RuntimeValue::Variant owner/ordinal/payload and snapshot Variant",
+      "category": "focused",
+      "id": "P05",
+      "notes": "",
+      "owner": "Result/Option ownership",
+      "setup": "accepted checked projection"
+    },
+    {
+      "assertion": "outer carriers are exactly Tuple and Seq",
+      "category": "focused",
+      "id": "P06",
+      "notes": "",
+      "owner": "Tuple/sequence ownership",
+      "setup": "accepted tuple and Vec/Array/Slice/Seq projections"
+    },
+    {
+      "assertion": "rejects MissingRuntimeSnapshotOwner rather than selecting Tuple/Variant ad hoc",
+      "category": "negative",
+      "id": "P07",
+      "notes": "",
+      "owner": "Choice ownership",
+      "setup": "current projection lacks one closed accepted carrier"
+    },
+    {
+      "assertion": "rejects MissingRuntimeSnapshotOwner",
+      "category": "negative",
+      "id": "P08",
+      "notes": "",
+      "owner": "Agent/dialogue/character ownership",
+      "setup": "exact nominal/case/field catalog owner missing"
+    },
+    {
+      "assertion": "uses RuntimeValue::String and snapshot String after projection validation",
+      "category": "focused",
+      "id": "P09",
+      "notes": "",
+      "owner": "TextCluster/DisplayText",
+      "setup": "exact accepted nominal semantic identity and UTF-8 projection"
+    },
+    {
+      "assertion": "Predicate has no TypeKind child edge; Shared rejects before child recursion",
+      "category": "focused",
+      "id": "P10",
+      "notes": "",
+      "owner": "Predicate/Shared",
+      "setup": "Predicate and Shared rows"
+    },
+    {
+      "assertion": "certificate remains private; becomes public only in atomic Cut 5",
+      "category": "cut",
+      "id": "P11",
+      "notes": "",
+      "owner": "Need ownership certificate",
+      "setup": "Cut 2 before Cut 5 owner publication"
+    },
+    {
+      "assertion": "restore rejects and never reconstructs from source spelling",
+      "category": "tamper",
+      "id": "P12",
+      "notes": "",
+      "owner": "ownership restore",
+      "setup": "nominal/case/field identity differs from catalog"
+    },
+    {
+      "assertion": "orders by logical_epoch, TaskId, then sequence",
+      "category": "focused",
+      "id": "E01",
+      "notes": "",
+      "owner": "event normalization",
+      "setup": "same logical epoch and varied TaskId/sequence"
+    },
+    {
+      "assertion": "orders generation, logical_epoch, TaskId, sequence",
+      "category": "focused",
+      "id": "E02",
+      "notes": "",
+      "owner": "retained generation event normalization",
+      "setup": "events from retained generations"
+    },
+    {
+      "assertion": "validator rejects E_EVENT_ORDER",
+      "category": "negative",
+      "id": "E03",
+      "notes": "",
+      "owner": "event order inventory",
+      "setup": "sequence precedes TaskId"
+    },
+    {
+      "assertion": "snapshot blocks",
+      "category": "negative",
+      "id": "R01",
+      "notes": "",
+      "owner": "snapshot admission",
+      "setup": "any prepared adapter transaction"
+    },
+    {
+      "assertion": "snapshot blocks",
+      "category": "negative",
+      "id": "R02",
+      "notes": "",
+      "owner": "snapshot admission",
+      "setup": "active MustBeQuiescent Host row"
+    },
+    {
+      "assertion": "snapshot succeeds and persists exact row",
+      "category": "focused",
+      "id": "R03",
+      "notes": "",
+      "owner": "snapshot admission",
+      "setup": "active Restartable Host row with complete request/correlation/capability"
+    },
+    {
+      "assertion": "prepare_restore, atomic state install, infallible commit_restore",
+      "category": "restore",
+      "id": "R04",
+      "notes": "",
+      "owner": "restartable Host task",
+      "setup": "valid persisted row and adapter capacity"
+    },
+    {
+      "assertion": "state remains unpublished; all tokens rollback",
+      "category": "rollback",
+      "id": "R05",
+      "notes": "",
+      "owner": "restartable Host restore",
+      "setup": "prepare_restore refusal or state validation failure"
+    },
+    {
+      "assertion": "validator rejects blanket policy",
+      "category": "negative",
+      "id": "R06",
+      "notes": "",
+      "owner": "snapshot policy",
+      "setup": "implementation rejects all active/nonterminal Host rows"
+    },
+    {
+      "assertion": "every public reference targets same/earlier cut",
+      "category": "cut",
+      "id": "K01",
+      "notes": "",
+      "owner": "compile sequence",
+      "setup": "public owner dependency graph"
+    },
+    {
+      "assertion": "all publish atomically and superseded routes delete in same cut",
+      "category": "cut",
+      "id": "K02",
+      "notes": "",
+      "owner": "Cut 5 publication",
+      "setup": "handle/batch/allocator/adapter/snapshot/final ownership/event rows"
+    },
+    {
+      "assertion": "validator rejects forward reference unless row is private until Cut 5",
+      "category": "negative",
+      "id": "K03",
+      "notes": "",
+      "owner": "compile sequence",
+      "setup": "Cut 2 public certificate cites Cut 5 owner"
+    },
+    {
+      "assertion": "no compatibility reader, identity alias, dual carrier, second digest grammar, source-string reconstruction, AdapterCommit error, or blanket Host rejection",
+      "category": "structural absence",
+      "id": "K04",
+      "notes": "",
+      "owner": "whole package",
+      "setup": "scan prose/machine/Rust schema"
+    }
+  ],
+  "version": 1
+}

@@ -1,0 +1,1707 @@
+{
+  "callable_join": {
+    "arena_id_is_identity": false,
+    "call_resolution": "read the separate current call-target fact, then require exact CheckedCallableCatalogV1 row",
+    "hir_name_is_identity": false,
+    "method_resolution": "resolve selected HirName through receiver semantic type + checked receiver/callable catalog before emitting any bytes",
+    "missing_join": "MissingCheckedCallableJoin",
+    "required": true,
+    "same_cut_runtime_projection": "RuntimeCallableProjectionV1::try_from_checked_join validates exact id+digest+signature+receiver row",
+    "source_catalog": "CheckedCallableCatalogV1",
+    "source_key": [
+      "CheckedCallableId",
+      "CheckedCallableDigest"
+    ],
+    "source_spelling_is_identity": false
+  },
+  "child_role_enum": [
+    {
+      "name": "Element",
+      "payload_fields": [
+        "ordinal"
+      ],
+      "tag": 4096
+    },
+    {
+      "name": "RepeatedValue",
+      "payload_fields": [],
+      "tag": 4097
+    },
+    {
+      "name": "RepeatLength",
+      "payload_fields": [],
+      "tag": 4098
+    },
+    {
+      "name": "Callee",
+      "payload_fields": [],
+      "tag": 4099
+    },
+    {
+      "name": "Argument",
+      "payload_fields": [
+        "ordinal"
+      ],
+      "tag": 4100
+    },
+    {
+      "name": "Target",
+      "payload_fields": [],
+      "tag": 4101
+    },
+    {
+      "name": "Index",
+      "payload_fields": [],
+      "tag": 4102
+    },
+    {
+      "name": "PipeLeft",
+      "payload_fields": [],
+      "tag": 4103
+    },
+    {
+      "name": "PipeRight",
+      "payload_fields": [],
+      "tag": 4104
+    },
+    {
+      "name": "Operand",
+      "payload_fields": [],
+      "tag": 4105
+    },
+    {
+      "name": "RangeStart",
+      "payload_fields": [],
+      "tag": 4106
+    },
+    {
+      "name": "RangeEnd",
+      "payload_fields": [],
+      "tag": 4107
+    },
+    {
+      "name": "RecordField",
+      "payload_fields": [
+        "source_ordinal",
+        "accepted_field"
+      ],
+      "tag": 4108
+    },
+    {
+      "name": "BinaryLeft",
+      "payload_fields": [],
+      "tag": 4109
+    },
+    {
+      "name": "BinaryRight",
+      "payload_fields": [],
+      "tag": 4110
+    },
+    {
+      "name": "ClosureBody",
+      "payload_fields": [],
+      "tag": 4111
+    },
+    {
+      "name": "BlockTail",
+      "payload_fields": [],
+      "tag": 4112
+    },
+    {
+      "name": "LoopTail",
+      "payload_fields": [],
+      "tag": 4113
+    },
+    {
+      "name": "Condition",
+      "payload_fields": [],
+      "tag": 4114
+    },
+    {
+      "name": "ThenBranch",
+      "payload_fields": [],
+      "tag": 4115
+    },
+    {
+      "name": "ElseBranch",
+      "payload_fields": [],
+      "tag": 4116
+    },
+    {
+      "name": "Scrutinee",
+      "payload_fields": [],
+      "tag": 4117
+    },
+    {
+      "name": "Guard",
+      "payload_fields": [
+        "arm"
+      ],
+      "tag": 4118
+    },
+    {
+      "name": "ArmValue",
+      "payload_fields": [
+        "arm"
+      ],
+      "tag": 4119
+    },
+    {
+      "name": "IfLetGuard",
+      "payload_fields": [],
+      "tag": 4120
+    },
+    {
+      "name": "DialogueTarget",
+      "payload_fields": [],
+      "tag": 4121
+    },
+    {
+      "name": "DialogueCoordinate",
+      "payload_fields": [
+        "ordinal"
+      ],
+      "tag": 4122
+    },
+    {
+      "name": "DialogueInterpolation",
+      "payload_fields": [
+        "ordinal"
+      ],
+      "tag": 4123
+    },
+    {
+      "name": "DialogueTagPayload",
+      "payload_fields": [
+        "ordinal"
+      ],
+      "tag": 4124
+    },
+    {
+      "name": "LinePlanOptionValue",
+      "payload_fields": [
+        "path"
+      ],
+      "tag": 4125
+    },
+    {
+      "name": "LinePlanLetValue",
+      "payload_fields": [
+        "path"
+      ],
+      "tag": 4126
+    },
+    {
+      "name": "LinePlanOut",
+      "payload_fields": [
+        "path"
+      ],
+      "tag": 4127
+    },
+    {
+      "name": "LinePlanTimelineAssert",
+      "payload_fields": [
+        "path"
+      ],
+      "tag": 4128
+    },
+    {
+      "name": "LinePlanExpression",
+      "payload_fields": [
+        "path"
+      ],
+      "tag": 4129
+    },
+    {
+      "name": "LinePlanTimedCueAnchor",
+      "payload_fields": [
+        "path"
+      ],
+      "tag": 4130
+    },
+    {
+      "name": "LinePlanTimedCueBody",
+      "payload_fields": [
+        "path"
+      ],
+      "tag": 4131
+    },
+    {
+      "name": "PostfixIndexCandidate",
+      "payload_fields": [],
+      "tag": 4132
+    },
+    {
+      "name": "PostfixDialogueCandidate",
+      "payload_fields": [],
+      "tag": 4133
+    },
+    {
+      "name": "ForInput",
+      "payload_fields": [],
+      "tag": 4134
+    },
+    {
+      "name": "ChoiceIfCondition",
+      "payload_fields": [
+        "path",
+        "branch"
+      ],
+      "tag": 4135
+    },
+    {
+      "name": "ChoiceForSource",
+      "payload_fields": [
+        "path"
+      ],
+      "tag": 4136
+    },
+    {
+      "name": "ChoiceMatchScrutinee",
+      "payload_fields": [
+        "path"
+      ],
+      "tag": 4137
+    },
+    {
+      "name": "ChoiceMatchGuard",
+      "payload_fields": [
+        "path",
+        "arm"
+      ],
+      "tag": 4138
+    },
+    {
+      "name": "ChoiceOptionId",
+      "payload_fields": [
+        "path"
+      ],
+      "tag": 4139
+    },
+    {
+      "name": "ChoiceOptionForSource",
+      "payload_fields": [
+        "path"
+      ],
+      "tag": 4140
+    },
+    {
+      "name": "ChoiceCompactLabel",
+      "payload_fields": [
+        "path"
+      ],
+      "tag": 4141
+    },
+    {
+      "name": "ChoiceCompactCondition",
+      "payload_fields": [
+        "path"
+      ],
+      "tag": 4142
+    },
+    {
+      "name": "ChoiceCompactOut",
+      "payload_fields": [
+        "path"
+      ],
+      "tag": 4143
+    },
+    {
+      "name": "ChoiceOptionLabel",
+      "payload_fields": [
+        "path",
+        "field"
+      ],
+      "tag": 4144
+    },
+    {
+      "name": "ChoiceOptionFieldId",
+      "payload_fields": [
+        "path",
+        "field"
+      ],
+      "tag": 4145
+    },
+    {
+      "name": "ChoiceOptionValue",
+      "payload_fields": [
+        "path",
+        "field"
+      ],
+      "tag": 4146
+    },
+    {
+      "name": "ChoiceOptionVisible",
+      "payload_fields": [
+        "path",
+        "field"
+      ],
+      "tag": 4147
+    },
+    {
+      "name": "ChoiceOptionEnabled",
+      "payload_fields": [
+        "path",
+        "field"
+      ],
+      "tag": 4148
+    },
+    {
+      "name": "ChoiceOptionOrder",
+      "payload_fields": [
+        "path",
+        "field"
+      ],
+      "tag": 4149
+    },
+    {
+      "name": "ChoiceOptionHotkey",
+      "payload_fields": [
+        "path",
+        "field"
+      ],
+      "tag": 4150
+    },
+    {
+      "name": "ChoiceOptionViewKey",
+      "payload_fields": [
+        "path",
+        "field",
+        "entry"
+      ],
+      "tag": 4151
+    },
+    {
+      "name": "ChoiceOptionViewValue",
+      "payload_fields": [
+        "path",
+        "field",
+        "entry"
+      ],
+      "tag": 4152
+    },
+    {
+      "name": "ChoicePlanAssignment",
+      "payload_fields": [
+        "item"
+      ],
+      "tag": 4153
+    },
+    {
+      "name": "ChoicePlanTimeout",
+      "payload_fields": [
+        "item"
+      ],
+      "tag": 4154
+    },
+    {
+      "name": "ChoicePlanCancelSignal",
+      "payload_fields": [
+        "item"
+      ],
+      "tag": 4155
+    },
+    {
+      "name": "ChoicePlanCancelTimeout",
+      "payload_fields": [
+        "item"
+      ],
+      "tag": 4156
+    },
+    {
+      "name": "ChoicePlanCancelExpr",
+      "payload_fields": [
+        "item"
+      ],
+      "tag": 4157
+    }
+  ],
+  "choice_walk": {
+    "body_order": "depth-first using the current LIFO pending-body stack; expression-bearing items are emitted in item order",
+    "items": [
+      {
+        "kind": "Let",
+        "roles": []
+      },
+      {
+        "kind": "Error",
+        "roles": []
+      },
+      {
+        "kind": "If",
+        "pending": [
+          "branch bodies in encounter order",
+          "else body"
+        ],
+        "roles": [
+          "ChoiceIfCondition[branch-source-order]"
+        ]
+      },
+      {
+        "kind": "For",
+        "pending": [
+          "body"
+        ],
+        "roles": [
+          "ChoiceForSource"
+        ]
+      },
+      {
+        "kind": "Match",
+        "pending": [
+          "arm bodies in encounter order"
+        ],
+        "roles": [
+          "ChoiceMatchScrutinee",
+          "ChoiceMatchGuard?[arm-source-order]"
+        ]
+      },
+      {
+        "kind": "Option",
+        "roles": [
+          "ChoiceOptionId",
+          "ChoiceOptionBodyFields"
+        ]
+      },
+      {
+        "kind": "OptionFor",
+        "roles": [
+          "ChoiceOptionForSource",
+          "ChoiceOptionBodyFields"
+        ]
+      },
+      {
+        "kind": "CompactArm",
+        "roles": [
+          "ChoiceCompactLabel",
+          "ChoiceCompactCondition?",
+          "ChoiceCompactOut?"
+        ]
+      }
+    ],
+    "option_fields": [
+      {
+        "kind": "Label",
+        "roles": [
+          "ChoiceOptionLabel"
+        ]
+      },
+      {
+        "kind": "Id",
+        "roles": [
+          "ChoiceOptionFieldId"
+        ]
+      },
+      {
+        "kind": "Value",
+        "roles": [
+          "ChoiceOptionValue"
+        ]
+      },
+      {
+        "kind": "Visible",
+        "roles": [
+          "ChoiceOptionVisible"
+        ]
+      },
+      {
+        "kind": "Enabled",
+        "roles": [
+          "ChoiceOptionEnabled"
+        ]
+      },
+      {
+        "kind": "Order",
+        "roles": [
+          "ChoiceOptionOrder"
+        ]
+      },
+      {
+        "kind": "Hotkey",
+        "roles": [
+          "ChoiceOptionHotkey"
+        ]
+      },
+      {
+        "kind": "View",
+        "roles": [
+          "(ChoiceOptionViewKey,ChoiceOptionViewValue)[entry-source-order]"
+        ]
+      },
+      {
+        "kind": "Select",
+        "roles": []
+      },
+      {
+        "kind": "Let",
+        "roles": []
+      },
+      {
+        "kind": "Error",
+        "roles": []
+      }
+    ],
+    "plan_items": [
+      {
+        "kind": "Assignment",
+        "roles": [
+          "ChoicePlanAssignment"
+        ]
+      },
+      {
+        "kind": "Timeout",
+        "roles": [
+          "ChoicePlanTimeout"
+        ]
+      },
+      {
+        "kind": "Cancel.Signal",
+        "roles": [
+          "ChoicePlanCancelSignal"
+        ]
+      },
+      {
+        "kind": "Cancel.Timeout",
+        "roles": [
+          "ChoicePlanCancelTimeout"
+        ]
+      },
+      {
+        "kind": "Cancel.Expr",
+        "roles": [
+          "ChoicePlanCancelExpr"
+        ]
+      },
+      {
+        "kind": "Cancel.Input/Event/Mark/Select/Task/Scope",
+        "roles": []
+      },
+      {
+        "kind": "OnSelect",
+        "roles": []
+      },
+      {
+        "kind": "Error",
+        "roles": []
+      }
+    ]
+  },
+  "constructor_tables": {
+    "CheckedExpressionResolution": [
+      {
+        "name": "Structural",
+        "payload_order": [
+          "HirExprKind semantic tag",
+          "accepted result type digest",
+          "ordered role+child digest sequence"
+        ],
+        "tag": 512
+      },
+      {
+        "name": "Literal",
+        "payload_order": [
+          "literal constructor transcript",
+          "accepted result type digest"
+        ],
+        "tag": 513
+      },
+      {
+        "name": "Value",
+        "payload_order": [
+          "CheckedValueResolution tag+payload",
+          "accepted result type digest"
+        ],
+        "tag": 514
+      },
+      {
+        "name": "Select",
+        "payload_order": [
+          "CheckedSelectResolution tag+payload",
+          "accepted result type digest"
+        ],
+        "tag": 515
+      },
+      {
+        "name": "Nominal",
+        "payload_order": [
+          "accepted nominal identity",
+          "semantic type digest",
+          "layout digest"
+        ],
+        "tag": 516
+      },
+      {
+        "name": "Variant",
+        "payload_order": [
+          "accepted variant owner",
+          "source-order case ordinal",
+          "case contract digest"
+        ],
+        "tag": 517
+      },
+      {
+        "name": "StageLook",
+        "payload_order": [
+          "accepted stage-look catalog row digest"
+        ],
+        "tag": 518
+      },
+      {
+        "name": "Effect",
+        "payload_order": [
+          "accepted effect identity",
+          "effect contract digest"
+        ],
+        "tag": 519
+      },
+      {
+        "name": "Call",
+        "payload_order": [
+          "separate call-target fact digest",
+          "CheckedCallableId",
+          "CheckedCallableDigest",
+          "argument mode/type transcript"
+        ],
+        "tag": 520
+      },
+      {
+        "name": "Await",
+        "payload_order": [
+          "source Need type digest",
+          "payload type digest",
+          "await contract digest"
+        ],
+        "tag": 521
+      },
+      {
+        "name": "Choice",
+        "payload_order": [
+          "accepted choice fact digest",
+          "result type digest"
+        ],
+        "tag": 522
+      },
+      {
+        "name": "Try",
+        "payload_order": [
+          "carrier kind",
+          "carrier type digest",
+          "boundary fact digest"
+        ],
+        "tag": 523
+      },
+      {
+        "name": "ImplicitCallable",
+        "payload_order": [
+          "CheckedCallableId",
+          "CheckedCallableDigest"
+        ],
+        "tag": 524
+      },
+      {
+        "name": "ImplicitParameter",
+        "payload_order": [
+          "accepted parameter identity",
+          "type digest"
+        ],
+        "tag": 525
+      },
+      {
+        "name": "Pipe",
+        "payload_order": [
+          "left type digest",
+          "right callable join",
+          "placeholder contract"
+        ],
+        "tag": 526
+      },
+      {
+        "name": "PipeLeft",
+        "payload_order": [
+          "left role contract",
+          "type digest"
+        ],
+        "tag": 527
+      },
+      {
+        "name": "ViewCall",
+        "payload_order": [
+          "accepted view callable identity",
+          "view contract digest"
+        ],
+        "tag": 528
+      },
+      {
+        "name": "ViewCallee",
+        "payload_order": [
+          "accepted view identity",
+          "callee contract digest"
+        ],
+        "tag": 529
+      },
+      {
+        "name": "StyleValue",
+        "payload_order": [
+          "accepted style value identity",
+          "type digest"
+        ],
+        "tag": 530
+      },
+      {
+        "name": "StyleCallee",
+        "payload_order": [
+          "accepted style callable identity",
+          "callable digest"
+        ],
+        "tag": 531
+      },
+      {
+        "name": "DialogueLineReference",
+        "payload_order": [
+          "accepted line identity",
+          "line contract digest"
+        ],
+        "tag": 532
+      },
+      {
+        "name": "DialogueLineCoordinate",
+        "payload_order": [
+          "accepted coordinate identity",
+          "coordinate contract digest"
+        ],
+        "tag": 533
+      },
+      {
+        "name": "DialogueTextKeyCoordinate",
+        "payload_order": [
+          "accepted text-key coordinate identity",
+          "contract digest"
+        ],
+        "tag": 534
+      },
+      {
+        "name": "CharacterDialogueFactory",
+        "payload_order": [
+          "accepted character/dialogue catalog join"
+        ],
+        "tag": 535
+      },
+      {
+        "name": "CharacterDialogueReconfigure",
+        "payload_order": [
+          "accepted character/dialogue catalog join",
+          "patch contract digest"
+        ],
+        "tag": 536
+      },
+      {
+        "name": "DialogueApplication",
+        "payload_order": [
+          "accepted dialogue application fact digest"
+        ],
+        "tag": 537
+      },
+      {
+        "name": "PostfixBracket",
+        "payload_order": [
+          "accepted branch: index or dialogue",
+          "selected branch contract digest"
+        ],
+        "tag": 538
+      }
+    ],
+    "CheckedPatternResolution": [
+      {
+        "name": "Structural",
+        "payload_order": [
+          "HirPatternKind tag",
+          "ordered child pattern digests"
+        ],
+        "tag": 1536
+      },
+      {
+        "name": "Literal",
+        "payload_order": [
+          "literal transcript"
+        ],
+        "tag": 1537
+      },
+      {
+        "name": "Entity",
+        "payload_order": [
+          "accepted entity identity"
+        ],
+        "tag": 1538
+      },
+      {
+        "name": "Nominal",
+        "payload_order": [
+          "accepted nominal identity",
+          "semantic type digest",
+          "layout digest"
+        ],
+        "tag": 1539
+      },
+      {
+        "name": "Variant",
+        "payload_order": [
+          "accepted variant owner",
+          "case ordinal",
+          "case contract digest"
+        ],
+        "tag": 1540
+      }
+    ],
+    "CheckedSelectResolution": [
+      {
+        "name": "Method",
+        "payload_order": [
+          "receiver type digest",
+          "CheckedCallableId",
+          "CheckedCallableDigest",
+          "receiver mode"
+        ],
+        "tag": 1024
+      },
+      {
+        "name": "DialogueView",
+        "payload_order": [
+          "accepted dialogue view identity",
+          "view contract digest"
+        ],
+        "tag": 1025
+      },
+      {
+        "name": "AgentField",
+        "payload_order": [
+          "RuntimeAgentOperationalType",
+          "accepted field ordinal",
+          "field contract digest"
+        ],
+        "tag": 1026
+      },
+      {
+        "name": "ProgressField",
+        "payload_order": [
+          "closed progress field tag"
+        ],
+        "tag": 1027
+      },
+      {
+        "name": "Field",
+        "payload_order": [
+          "accepted nominal/layout digest",
+          "field ordinal",
+          "field type digest"
+        ],
+        "tag": 1028
+      },
+      {
+        "name": "TupleElement",
+        "payload_order": [
+          "tuple arity",
+          "element ordinal",
+          "element type digest"
+        ],
+        "tag": 1029
+      },
+      {
+        "name": "RecordElement",
+        "payload_order": [
+          "accepted record layout digest",
+          "field ordinal",
+          "field type digest"
+        ],
+        "tag": 1030
+      }
+    ],
+    "CheckedValueResolution": [
+      {
+        "name": "Local",
+        "payload_order": [
+          "accepted local semantic identity",
+          "type digest"
+        ],
+        "tag": 768
+      },
+      {
+        "name": "LineContext",
+        "payload_order": [
+          "accepted line-context capability identity"
+        ],
+        "tag": 769
+      },
+      {
+        "name": "CharacterField",
+        "payload_order": [
+          "accepted character nominal",
+          "field ordinal",
+          "field contract digest"
+        ],
+        "tag": 770
+      },
+      {
+        "name": "ProjectCallable",
+        "payload_order": [
+          "CheckedCallableId",
+          "CheckedCallableDigest"
+        ],
+        "tag": 771
+      },
+      {
+        "name": "ProjectItem",
+        "payload_order": [
+          "accepted project item identity",
+          "item contract digest"
+        ],
+        "tag": 772
+      },
+      {
+        "name": "Entry",
+        "payload_order": [
+          "accepted entry identity",
+          "entry contract digest"
+        ],
+        "tag": 773
+      },
+      {
+        "name": "Registered",
+        "payload_order": [
+          "registry identity",
+          "catalog digest"
+        ],
+        "tag": 774
+      },
+      {
+        "name": "Constant",
+        "payload_order": [
+          "RuntimeValueDigest",
+          "type digest"
+        ],
+        "tag": 775
+      }
+    ],
+    "Coverage": [
+      {
+        "name": "Unit",
+        "payload_order": [],
+        "tag": 2304
+      },
+      {
+        "name": "Boolean",
+        "payload_order": [
+          "covered false bit",
+          "covered true bit"
+        ],
+        "tag": 2305
+      },
+      {
+        "name": "Tuple",
+        "payload_order": [
+          "arity",
+          "ordered child coverage digests"
+        ],
+        "tag": 2306
+      },
+      {
+        "name": "AcceptedVariant",
+        "payload_order": [
+          "owner",
+          "covered case ordinals in ascending order",
+          "payload coverage"
+        ],
+        "tag": 2307
+      },
+      {
+        "name": "AcceptedRecord",
+        "payload_order": [
+          "layout digest",
+          "ordered field coverage"
+        ],
+        "tag": 2308
+      },
+      {
+        "name": "SequenceLength",
+        "payload_order": [
+          "exact|min length",
+          "ordered item coverage"
+        ],
+        "tag": 2309
+      },
+      {
+        "name": "Literal",
+        "payload_order": [
+          "literal semantic digest"
+        ],
+        "tag": 2310
+      },
+      {
+        "name": "InfiniteDomain",
+        "payload_order": [
+          "checked type digest",
+          "proof class"
+        ],
+        "tag": 2311
+      }
+    ],
+    "Guard": [
+      {
+        "name": "ConstantTrue",
+        "payload_order": [],
+        "tag": 2048
+      },
+      {
+        "name": "ConstantFalse",
+        "payload_order": [],
+        "tag": 2049
+      },
+      {
+        "name": "Dynamic",
+        "payload_order": [
+          "guard expression digest",
+          "accepted bool type digest"
+        ],
+        "tag": 2050
+      }
+    ],
+    "HirPatternKind": [
+      {
+        "name": "Binding",
+        "payload_order": [
+          "accepted local identity",
+          "mutable=false"
+        ],
+        "tag": 1280
+      },
+      {
+        "name": "MutableBinding",
+        "payload_order": [
+          "accepted local identity",
+          "mutable=true"
+        ],
+        "tag": 1281
+      },
+      {
+        "name": "Literal",
+        "payload_order": [
+          "literal transcript"
+        ],
+        "tag": 1282
+      },
+      {
+        "name": "EntityReference",
+        "payload_order": [
+          "accepted entity identity"
+        ],
+        "tag": 1283
+      },
+      {
+        "name": "Variant",
+        "payload_order": [
+          "accepted owner",
+          "case ordinal",
+          "payload presence",
+          "payload child digest?"
+        ],
+        "tag": 1284
+      },
+      {
+        "name": "Discard",
+        "payload_order": [],
+        "tag": 1285
+      },
+      {
+        "name": "Tuple",
+        "payload_order": [
+          "arity",
+          "ordered child pattern digests"
+        ],
+        "tag": 1286
+      },
+      {
+        "name": "Record",
+        "payload_order": [
+          "accepted field identities in source order",
+          "ordered child digests",
+          "rest mode"
+        ],
+        "tag": 1287
+      },
+      {
+        "name": "BracketSequence",
+        "payload_order": [
+          "ordered child digests",
+          "rest mode"
+        ],
+        "tag": 1288
+      },
+      {
+        "name": "WholeBinding",
+        "payload_order": [
+          "accepted local identity",
+          "child pattern digest"
+        ],
+        "tag": 1289
+      },
+      {
+        "name": "Or",
+        "payload_order": [
+          "ordered alternative digests",
+          "binding-set equivalence digest"
+        ],
+        "tag": 1290
+      },
+      {
+        "name": "TypedBinding",
+        "payload_order": [
+          "accepted local identity",
+          "checked type projection digest"
+        ],
+        "tag": 1291
+      },
+      {
+        "name": "Error",
+        "payload_order": [
+          "rejected before transcript emission"
+        ],
+        "tag": 1292
+      }
+    ],
+    "Literal": [
+      {
+        "name": "String",
+        "payload_order": [
+          "UTF-8 byte length",
+          "UTF-8 bytes"
+        ],
+        "tag": 1792
+      },
+      {
+        "name": "Character",
+        "payload_order": [
+          "Unicode scalar u32"
+        ],
+        "tag": 1793
+      },
+      {
+        "name": "Integer",
+        "payload_order": [
+          "signedness",
+          "width",
+          "little-endian value bits"
+        ],
+        "tag": 1794
+      },
+      {
+        "name": "Float",
+        "payload_order": [
+          "width",
+          "IEEE bits"
+        ],
+        "tag": 1795
+      },
+      {
+        "name": "UnitNumber",
+        "payload_order": [
+          "unit catalog identity",
+          "numeric literal transcript"
+        ],
+        "tag": 1796
+      },
+      {
+        "name": "Boolean",
+        "payload_order": [
+          "0|1"
+        ],
+        "tag": 1797
+      },
+      {
+        "name": "Duration",
+        "payload_order": [
+          "logical duration canonical units"
+        ],
+        "tag": 1798
+      }
+    ]
+  },
+  "domain": "arcweft.match.semantic-transcript.v1",
+  "first_error": "preorder by owner, then the exact ordered child-role sequence; first error terminates construction and emits no digest",
+  "hir_expr_inventory": [
+    {
+      "name": "Unit",
+      "ordered_child_roles": [],
+      "payload_order": [],
+      "tag": 256
+    },
+    {
+      "name": "Literal",
+      "ordered_child_roles": [],
+      "payload_order": [
+        "literal semantic transcript"
+      ],
+      "tag": 257
+    },
+    {
+      "name": "EntityReference",
+      "ordered_child_roles": [],
+      "payload_order": [
+        "accepted entity identity"
+      ],
+      "tag": 258
+    },
+    {
+      "name": "LifetimePath",
+      "ordered_child_roles": [],
+      "payload_order": [
+        "accepted lifetime semantic identity"
+      ],
+      "tag": 259
+    },
+    {
+      "name": "Path",
+      "ordered_child_roles": [],
+      "payload_order": [
+        "accepted resolved path identity"
+      ],
+      "tag": 260
+    },
+    {
+      "name": "ShortVariant",
+      "ordered_child_roles": [],
+      "payload_order": [
+        "accepted variant owner",
+        "case ordinal"
+      ],
+      "tag": 261
+    },
+    {
+      "name": "Placeholder",
+      "ordered_child_roles": [],
+      "payload_order": [
+        "placeholder role"
+      ],
+      "tag": 262
+    },
+    {
+      "name": "Tuple",
+      "ordered_child_roles": [
+        "Element[*]"
+      ],
+      "payload_order": [
+        "ordered child-role transcript"
+      ],
+      "tag": 263
+    },
+    {
+      "name": "BracketSequence",
+      "ordered_child_roles": [
+        "Element[*]"
+      ],
+      "payload_order": [
+        "ordered child-role transcript"
+      ],
+      "tag": 264
+    },
+    {
+      "name": "NumericBracketSequence",
+      "ordered_child_roles": [],
+      "payload_order": [
+        "numeric element type",
+        "canonical range payload"
+      ],
+      "tag": 265
+    },
+    {
+      "name": "ArrayRepeat",
+      "ordered_child_roles": [
+        "RepeatedValue",
+        "RepeatLength"
+      ],
+      "payload_order": [
+        "ordered child-role transcript"
+      ],
+      "tag": 266
+    },
+    {
+      "name": "Call",
+      "ordered_child_roles": [
+        "Callee?",
+        "Argument[*]"
+      ],
+      "payload_order": [
+        "callee form",
+        "ordered call argument modes",
+        "ordered child-role transcript"
+      ],
+      "tag": 267
+    },
+    {
+      "name": "Select",
+      "ordered_child_roles": [
+        "Target"
+      ],
+      "payload_order": [
+        "accepted selected-member class",
+        "ordered child-role transcript"
+      ],
+      "tag": 268
+    },
+    {
+      "name": "Index",
+      "ordered_child_roles": [
+        "Target",
+        "Index"
+      ],
+      "payload_order": [
+        "ordered child-role transcript"
+      ],
+      "tag": 269
+    },
+    {
+      "name": "Pipe",
+      "ordered_child_roles": [
+        "PipeLeft",
+        "PipeRight"
+      ],
+      "payload_order": [
+        "ordered child-role transcript"
+      ],
+      "tag": 270
+    },
+    {
+      "name": "Try",
+      "ordered_child_roles": [
+        "Operand"
+      ],
+      "payload_order": [
+        "ordered child-role transcript"
+      ],
+      "tag": 271
+    },
+    {
+      "name": "Await",
+      "ordered_child_roles": [
+        "Operand"
+      ],
+      "payload_order": [
+        "ordered child-role transcript"
+      ],
+      "tag": 272
+    },
+    {
+      "name": "Thread",
+      "ordered_child_roles": [],
+      "payload_order": [
+        "typed thread-body owner digest"
+      ],
+      "tag": 273
+    },
+    {
+      "name": "Choice",
+      "ordered_child_roles": [
+        "ChoiceBodyDepthFirst",
+        "ChoicePlanSourceOrder"
+      ],
+      "payload_order": [
+        "choice body owner digest",
+        "ordered flattened child-role transcript",
+        "optional plan owner digest"
+      ],
+      "tag": 274
+    },
+    {
+      "name": "Range",
+      "ordered_child_roles": [
+        "RangeStart?",
+        "RangeEnd?"
+      ],
+      "payload_order": [
+        "ordered child-role transcript"
+      ],
+      "tag": 275
+    },
+    {
+      "name": "Record",
+      "ordered_child_roles": [
+        "RecordField[explicit-source-order]"
+      ],
+      "payload_order": [
+        "accepted field identities in source order",
+        "ordered explicit field child digests",
+        "shorthand local identities"
+      ],
+      "tag": 276
+    },
+    {
+      "name": "RecordLiteral",
+      "ordered_child_roles": [
+        "RecordField[explicit-source-order]"
+      ],
+      "payload_order": [
+        "accepted field identities in source order",
+        "ordered explicit field child digests",
+        "shorthand local identities"
+      ],
+      "tag": 277
+    },
+    {
+      "name": "Binary",
+      "ordered_child_roles": [
+        "BinaryLeft",
+        "BinaryRight"
+      ],
+      "payload_order": [
+        "ordered child-role transcript"
+      ],
+      "tag": 278
+    },
+    {
+      "name": "Borrow",
+      "ordered_child_roles": [
+        "Operand"
+      ],
+      "payload_order": [
+        "ordered child-role transcript"
+      ],
+      "tag": 279
+    },
+    {
+      "name": "Dereference",
+      "ordered_child_roles": [
+        "Operand"
+      ],
+      "payload_order": [
+        "ordered child-role transcript"
+      ],
+      "tag": 280
+    },
+    {
+      "name": "Closure",
+      "ordered_child_roles": [
+        "ClosureBody"
+      ],
+      "payload_order": [
+        "parameter semantic types",
+        "result semantic type",
+        "capture contract",
+        "body digest"
+      ],
+      "tag": 281
+    },
+    {
+      "name": "Unary",
+      "ordered_child_roles": [
+        "Operand"
+      ],
+      "payload_order": [
+        "ordered child-role transcript"
+      ],
+      "tag": 282
+    },
+    {
+      "name": "Block",
+      "ordered_child_roles": [
+        "BlockTail"
+      ],
+      "payload_order": [
+        "typed statement-owner digest list",
+        "tail digest"
+      ],
+      "tag": 283
+    },
+    {
+      "name": "ComputationBlock",
+      "ordered_child_roles": [
+        "BlockTail"
+      ],
+      "payload_order": [
+        "typed statement-owner digest list",
+        "tail digest"
+      ],
+      "tag": 284
+    },
+    {
+      "name": "NamedBlock",
+      "ordered_child_roles": [
+        "BlockTail"
+      ],
+      "payload_order": [
+        "accepted block identity",
+        "typed statement-owner digest list",
+        "tail digest"
+      ],
+      "tag": 285
+    },
+    {
+      "name": "Loop",
+      "ordered_child_roles": [
+        "LoopTail"
+      ],
+      "payload_order": [
+        "typed loop statement-owner digest list",
+        "tail digest"
+      ],
+      "tag": 286
+    },
+    {
+      "name": "If",
+      "ordered_child_roles": [
+        "Condition",
+        "ThenBranch",
+        "ElseBranch"
+      ],
+      "payload_order": [
+        "ordered child-role transcript"
+      ],
+      "tag": 287
+    },
+    {
+      "name": "IfLet",
+      "ordered_child_roles": [
+        "Scrutinee",
+        "IfLetGuard?",
+        "ThenBranch",
+        "ElseBranch"
+      ],
+      "payload_order": [
+        "pattern digest",
+        "scrutinee digest",
+        "guard presence+digest",
+        "then digest",
+        "else digest"
+      ],
+      "tag": 288
+    },
+    {
+      "name": "Match",
+      "ordered_child_roles": [
+        "Scrutinee",
+        "(Guard?,ArmValue)[arm-source-order]"
+      ],
+      "payload_order": [
+        "scrutinee digest",
+        "arms in source order: pattern, guard presence+digest, value digest"
+      ],
+      "tag": 289
+    },
+    {
+      "name": "DialogueContentApplication",
+      "ordered_child_roles": [
+        "DialogueTarget",
+        "DialogueCoordinate[*]",
+        "DialogueInterpolation[*]",
+        "DialogueTagPayload[*]",
+        "LinePlanDepthFirst"
+      ],
+      "payload_order": [
+        "target",
+        "coordinates",
+        "interpolations",
+        "tag payloads",
+        "line-plan owner digest"
+      ],
+      "tag": 290
+    },
+    {
+      "name": "PostfixBracket",
+      "ordered_child_roles": [
+        "Target",
+        "(PostfixIndexCandidate,PostfixDialogueCandidate)?"
+      ],
+      "payload_order": [
+        "target",
+        "candidate shape",
+        "index candidate?",
+        "dialogue candidate?"
+      ],
+      "tag": 291
+    },
+    {
+      "name": "Error",
+      "ordered_child_roles": [],
+      "payload_order": [
+        "rejected before transcript emission"
+      ],
+      "tag": 292
+    },
+    {
+      "name": "ForSynthetic",
+      "ordered_child_roles": [
+        "ForInput"
+      ],
+      "payload_order": [
+        "synthetic provenance",
+        "input digest"
+      ],
+      "tag": 293
+    }
+  ],
+  "hir_expr_inventory_count": 38,
+  "line_plan_walk": {
+    "items": [
+      {
+        "kind": "Option",
+        "roles": [
+          "LinePlanOptionValue"
+        ]
+      },
+      {
+        "kind": "Let",
+        "roles": [
+          "LinePlanLetValue"
+        ]
+      },
+      {
+        "kind": "Out",
+        "roles": [
+          "LinePlanOut"
+        ]
+      },
+      {
+        "kind": "TimelineAssert",
+        "roles": [
+          "LinePlanTimelineAssert"
+        ]
+      },
+      {
+        "kind": "Expression",
+        "roles": [
+          "LinePlanExpression"
+        ]
+      },
+      {
+        "kind": "TimedCue",
+        "roles": [
+          "LinePlanTimedCueAnchor",
+          "LinePlanTimedCueBody"
+        ]
+      },
+      {
+        "kind": "StartGroup",
+        "pending": "group items",
+        "roles": []
+      },
+      {
+        "kind": "TogetherGroup",
+        "pending": "group items",
+        "roles": []
+      },
+      {
+        "kind": "Init/Thread/On/Statement/CancelRule/Error",
+        "roles": []
+      }
+    ],
+    "order": "depth-first using the current LIFO pending-group stack; items in each slice retain source order"
+  },
+  "lookup_key": "compiler-local HirSnapshotId + ExprId",
+  "persistent_compiler_ids": false,
+  "version": 1,
+  "work_limits": {
+    "max_catalog_lookups": 262144,
+    "max_direct_children_per_owner": 65536,
+    "max_expression_nodes": 65536,
+    "max_pattern_nodes": 65536,
+    "max_role_depth": 256,
+    "max_transcript_bytes": 16777216
+  }
+}

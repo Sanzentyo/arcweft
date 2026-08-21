@@ -1,0 +1,77 @@
+{
+  "blockers": [
+    {
+      "expected_error": "E_HANDLE_REUSABLE_SPEC",
+      "id": "B01",
+      "name": "reusable handle missing complete TaskSpec",
+      "negative_test": "remove ReusableJoin.spec"
+    },
+    {
+      "expected_error": "E_AWAIT_MANY_EVIDENCE",
+      "id": "B02",
+      "name": "AwaitMany missing captured/template evidence",
+      "negative_test": "remove captured or child field"
+    },
+    {
+      "expected_error": "E_BATCH_PER_CHILD_COMMIT",
+      "id": "B03",
+      "name": "per-child committed aggregate batch",
+      "negative_test": "set per_child_ensure_task_commits=true"
+    },
+    {
+      "expected_error": "E_OBSERVER_ALLOCATOR",
+      "id": "B04",
+      "name": "missing persistent observer allocator",
+      "negative_test": "remove observer_allocator"
+    },
+    {
+      "expected_error": "E_ADAPTER_CANCEL_METHOD",
+      "id": "B05",
+      "name": "missing cancel adapter protocol",
+      "negative_test": "remove prepare_cancel"
+    },
+    {
+      "expected_error": "E_SANS_IO_DEPENDENCY",
+      "id": "B06",
+      "name": "scheduler depends on host adapter",
+      "negative_test": "add arcweft-host-adapter dependency"
+    },
+    {
+      "expected_error": "E_SNAPSHOT_LOSSY",
+      "id": "B07",
+      "name": "lossy snapshot carrier",
+      "negative_test": "replace Seq role fields with generic kind/items"
+    },
+    {
+      "expected_error": "E_UNDEFINED_PROJECTION",
+      "id": "B08",
+      "name": "undefined projection",
+      "negative_test": "delete RuntimeCheckedTypeProjectionV1 definition"
+    },
+    {
+      "expected_error": "E_MATCH_CALLABLE_JOIN",
+      "id": "B09",
+      "name": "missing Match role/tag/callable join",
+      "negative_test": "disable callable join"
+    },
+    {
+      "expected_error": "E_OWNERSHIP_AMBIGUOUS",
+      "id": "B10",
+      "name": "ambiguous ownership carrier",
+      "negative_test": "change I8 carrier to IntOrUInt"
+    },
+    {
+      "expected_error": "E_EVENT_ORDER",
+      "id": "B11",
+      "name": "sequence precedes TaskId",
+      "negative_test": "event order logical_epoch,sequence,task_id"
+    },
+    {
+      "expected_error": "E_SNAPSHOT_BLANKET_HOST_REJECT",
+      "id": "B12",
+      "name": "blanket active Host rejection",
+      "negative_test": "set blanket_active_host_rejection=true"
+    }
+  ],
+  "count": 12
+}

@@ -1,0 +1,51 @@
+# Actual package validation output
+
+Environment used for package assembly:
+
+- Python: `3.13.5`
+- Rust `rustc` / `cargo`: not installed in the assembly environment; no production compile claim is made.
+- Local Arcweft checkout: unavailable; repository evidence was read through the private GitHub connector.
+- Parent retained ZIP: repository intake/hash evidence was checked; parent bytes were not locally rehashed.
+
+## Python syntax check
+
+```text
+$ python3 -S -m py_compile tools/validate_package.py
+PASS
+```
+
+## Extracted-directory validation
+
+```text
+$ python3 -S tools/validate_package.py . --self-test
+PASS package=arcweft-lang-01.5.1.1.2.1.1.1.1.1.1.1-runtime-handle-batch-and-snapshot-isomorphism-correction-final-contract
+source_kind=directory
+manifest_entries=38
+normative_test_rows=100
+blocker_rows=12
+negative_self_tests=12/12 PASS
+status=READY_FOR_IMPLEMENTATION
+open_questions=0
+```
+
+## Independently throwable ZIP validation
+
+```text
+$ python3 -S tools/validate_package.py arcweft-lang-01.5.1.1.2.1.1.1.1.1.1.1-runtime-handle-batch-and-snapshot-isomorphism-correction-final-contract.zip --self-test
+PASS package=arcweft-lang-01.5.1.1.2.1.1.1.1.1.1.1-runtime-handle-batch-and-snapshot-isomorphism-correction-final-contract
+source_kind=zip
+manifest_entries=38
+normative_test_rows=100
+blocker_rows=12
+negative_self_tests=12/12 PASS
+status=READY_FOR_IMPLEMENTATION
+open_questions=0
+```
+
+## Additional assembly checks
+
+- manifest SHA-256 and every listed member hash/size: verified by the validator;
+- ZIP has exactly one top-level root named `arcweft-lang-01.5.1.1.2.1.1.1.1.1.1.1-runtime-handle-batch-and-snapshot-isomorphism-correction-final-contract`;
+- package Markdown links outside `inputs/REQUEST.md`: all relative targets resolve;
+- the seven unresolved relative links in `inputs/REQUEST.md` are intentionally preserved repository-relative source links from the original request, not package navigation links;
+- no production source or patch is included.

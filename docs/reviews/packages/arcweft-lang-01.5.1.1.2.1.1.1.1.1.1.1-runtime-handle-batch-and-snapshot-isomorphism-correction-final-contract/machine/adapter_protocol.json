@@ -1,0 +1,162 @@
+{
+  "associated_types": [
+    "PreparedLaunch",
+    "PrepareLaunchError",
+    "PreparedRestore",
+    "PrepareRestoreError",
+    "PreparedRebind",
+    "PrepareRebindError",
+    "PreparedCancel",
+    "PrepareCancelError"
+  ],
+  "cancel": {
+    "adapter_worker_dedup": "exact HostCancelCommandId",
+    "batch": "HostTaskCancelBatch { generation, rows }",
+    "command_id": "BLAKE3('arcweft.host.cancel-command.v1\\0' || canonical TaskCorrelation)",
+    "commit_fallible": false,
+    "domain_error_payload": false,
+    "input_duplicates": "reject DuplicateCancelCorrelation before prepare; no mutation",
+    "prepare_refusal": "leave adapter, launch, Need, observer, runtime-task and scope state unchanged",
+    "repeated_after_commit": "return AlreadyRequested; do not call adapter",
+    "row": [
+      "command: HostCancelCommandId",
+      "correlation: TaskCorrelation",
+      "operation: HostOperationIdentityV1",
+      "launch: HostLaunchCapability",
+      "cancel: HostCancellationCapability",
+      "reason: TaskCancelReason"
+    ],
+    "terminal_or_absent": "return AlreadyTerminal or NotFound; do not call adapter"
+  },
+  "cancel_transaction": {
+    "boundary": [
+      "validate/deduplicate input",
+      "construct complete cancel rows",
+      "prepare every adapter route group",
+      "validate after-images and work limits",
+      "atomically install all scheduler after-images",
+      "infallibly commit prepared cancel tokens"
+    ],
+    "owner": "RuntimeTaskScheduler::cancel_tasks",
+    "staged_deltas": [
+      "adapter reservations",
+      "launch row state",
+      "Need cancellation state",
+      "observer detach/removal state",
+      "runtime-task state",
+      "scope ownership state",
+      "pending event rows"
+    ]
+  },
+  "commit_contract": {
+    "effect": "make already-reserved command visible to the worker queue only",
+    "fallible": false
+  },
+  "implementer_crates": [
+    "arcweft-host-adapter",
+    "arcweft-runtime-host",
+    "arcweft-adapter-desktop",
+    "native host",
+    "web host",
+    "headless host"
+  ],
+  "launch": {
+    "batch": "HostTaskLaunchBatch { generation, rows }",
+    "reservation": [
+      "route: HostRouteId",
+      "operation: HostOperationIdentityV1",
+      "correlations: Box<[TaskCorrelation]>",
+      "launch_capabilities: Box<[HostLaunchCapability]>"
+    ],
+    "row": [
+      "source_index: u32",
+      "correlation: TaskCorrelation",
+      "operation: HostOperationIdentityV1",
+      "request: HostTaskRequest",
+      "outcome: TaskOutcomeContract",
+      "restart: HostRestartPolicy"
+    ]
+  },
+  "methods": [
+    "prepare_launch",
+    "commit_launch",
+    "rollback_launch",
+    "prepare_restore",
+    "commit_restore",
+    "rollback_restore",
+    "prepare_rebind",
+    "commit_rebind",
+    "rollback_rebind",
+    "prepare_cancel",
+    "commit_cancel",
+    "rollback_cancel"
+  ],
+  "migration": {
+    "delete": [
+      "arcweft_host_adapter::HostAdapter::submit(&TaskSpec)",
+      "arcweft_host_adapter::HostAdapter::cancel(&TaskId) -> bool",
+      "HostAdapterRegistry immediate submit forwarding",
+      "HostAdapterRegistry cancel loop returning bool",
+      "all native/web/headless direct worker-start code reachable from prepare"
+    ],
+    "replace_with": [
+      "core-owned TaskLaunchAdapter protocol",
+      "adapter-local unpublished reservation queue",
+      "worker-visible commit queue",
+      "typed post-commit infrastructure events"
+    ],
+    "wrapping_old_timing_is_accepted": false
+  },
+  "module": "arcweft_core::task",
+  "operation_identity": {
+    "catalog_constructor": "HostOperationCatalogV1::try_new validates nonzero dense IDs, unique rows, exact capability/request/restart/cancel contracts and canonical digest",
+    "source_string_identity": false,
+    "type": "HostOperationIdentityV1",
+    "variants": [
+      "Builtin(BuiltinHostOperationIdV1)",
+      "Catalog { catalog_digest: HostOperationCatalogDigest, operation: HostOperationId }"
+    ]
+  },
+  "owner_crate": "arcweft-core",
+  "post_commit_failure": "TaskEvent::InfrastructureFailure",
+  "prepare_contract": {
+    "allowed": [
+      "route and capability validation",
+      "capacity validation",
+      "adapter-local allocation",
+      "reservation of unpublished queue slots"
+    ],
+    "audio_io": false,
+    "filesystem_io": false,
+    "network_io": false,
+    "other_external_side_effect": false,
+    "worker_start": false
+  },
+  "rebind": {
+    "batch": "HostTaskRebindBatch { old_generation, new_generation, rows }",
+    "row": [
+      "old_correlation: TaskCorrelation",
+      "new_correlation: TaskCorrelation",
+      "operation: HostOperationIdentityV1",
+      "launch_capability: HostLaunchCapability"
+    ]
+  },
+  "restore": {
+    "batch": "HostTaskRestoreBatch { generation, rows }",
+    "row": [
+      "correlation: TaskCorrelation",
+      "complete_spec: TaskSpec",
+      "operation: HostOperationIdentityV1",
+      "prior_launch_capability: HostLaunchCapability"
+    ]
+  },
+  "rollback_contract": {
+    "effect": "drop unpublished reservation only",
+    "fallible": false
+  },
+  "scheduler_crate": "arcweft-runtime-scheduler",
+  "scheduler_dependencies": [
+    "arcweft-core"
+  ],
+  "trait": "TaskLaunchAdapter"
+}

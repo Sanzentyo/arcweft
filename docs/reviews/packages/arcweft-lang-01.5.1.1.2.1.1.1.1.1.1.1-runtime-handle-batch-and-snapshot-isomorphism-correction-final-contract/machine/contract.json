@@ -1,0 +1,200 @@
+{
+  "await_many": {
+    "aggregate_base_argument_formula": "RuntimeValue::Tuple(source_items in source order)",
+    "caller_supplies_child_digest": false,
+    "child_argument_formula": "RuntimeValue::Tuple([RuntimeValue::Tuple(captured), RuntimeValue::u32(i), source_items[i]])",
+    "constructor_owner": "RuntimeAwaitManyAggregateRequest::try_new and child_spec",
+    "fields": [
+      "captured: Box<[RuntimeValue]>",
+      "source_items: Box<[RuntimeValue]>",
+      "child: Box<NeedProducerTemplate>",
+      "limit: NonZeroU32"
+    ],
+    "limits": {
+      "canonical_value_depth": 256,
+      "captured_values": 4096,
+      "source_items": 65536,
+      "template_instantiation_bytes": 16777216
+    },
+    "restore": "regenerate every child TaskSpec and digest from captured/template/source item/index; compare every persisted derived child row",
+    "type": "RuntimeAwaitManyAggregateRequest"
+  },
+  "batch": {
+    "apply_order": [
+      "validate all cross-references and work limits",
+      "atomically install journal/runtime/observer/counter after-images",
+      "infallibly commit all Host prepared tokens in preparation order",
+      "publish aggregate child handles/statuses as one aggregate state replacement"
+    ],
+    "derive_order": "source index ascending",
+    "existing_join": "nonmutating task result plus staged observer only",
+    "failure_consumes_observer_id": false,
+    "failure_consumes_task_ordinal": false,
+    "failure_launches_worker_visible_work": false,
+    "owner": "RuntimeTaskScheduler::ensure_task_batch",
+    "per_child_ensure_task_commits": false,
+    "plan_fields": [
+      "journal: RuntimeJournalBatchDelta",
+      "runtime: RuntimeTaskBatchDelta",
+      "observers: RuntimeObserverBatchDelta",
+      "prepared_host: Vec<PreparedLaunch>",
+      "results: Vec<(u32, RuntimeNeedHandle, TaskObserverId)>"
+    ],
+    "prepare_order": "source index ascending after route-stable grouping",
+    "rollback_order": "reverse preparation order",
+    "whole_batch": true
+  },
+  "event_order": {
+    "retained_generations": [
+      "generation",
+      "logical_epoch",
+      "task_id",
+      "sequence"
+    ],
+    "sequence_precedes_task_id": false,
+    "single_generation": [
+      "logical_epoch",
+      "task_id",
+      "sequence"
+    ]
+  },
+  "need_handle": {
+    "always_start_state": "AcceptedLaunch only",
+    "await": {
+      "AcceptedLaunch": [
+        "validate_use(active_generation)",
+        "validate exact committed journal/Need row",
+        "register observer without correlation rederivation or task relaunch"
+      ],
+      "ReusableJoin": [
+        "validate_use(active_generation)",
+        "submit stored final TaskSpec through the sole scheduler ensure transaction",
+        "require returned correlation == handle.correlation",
+        "register observer with staged persistent observer allocator"
+      ]
+    },
+    "constructors": {
+      "try_from_accepted_launch": {
+        "accepts": "sealed journal proof of a completely committed launch/correlation",
+        "input": "accepted: AcceptedTaskLaunch<'_>",
+        "retains_spec": false,
+        "validates": [
+          "accepted generation is active",
+          "correlation, producer and outcome equal the committed journal row",
+          "AlwaysStart ordinal is positive; JoinSameKey ordinal is zero"
+        ],
+        "visibility": "pub(crate)"
+      },
+      "try_reusable_join": {
+        "accepts": "complete TaskSpec with policy JoinSameKey",
+        "correlation": "TaskCorrelation::derive(active_generation, producer.instance_key(), JoinSameKey, TaskLaunchOrdinal::ZERO)",
+        "inputs": [
+          "active_generation: GenerationId",
+          "producer: NeedProducerSpec",
+          "outcome: TaskOutcomeContract",
+          "spec: TaskSpec",
+          "catalog: &TaskContractCatalogV1"
+        ],
+        "mutates_adapter": false,
+        "mutates_scheduler": false,
+        "validates": [
+          "producer == spec.producer",
+          "outcome == spec.outcome",
+          "spec.policy == JoinSameKey",
+          "spec.execution validates exact producer family and policy",
+          "spec key/request/execution/outcome transcript matches the accepted catalog",
+          "derived correlation validates and has ordinal zero"
+        ],
+        "visibility": "pub"
+      }
+    },
+    "identity": "NeedId-only",
+    "live_fields": [
+      "correlation: TaskCorrelation",
+      "producer: NeedProducerSpec",
+      "outcome: TaskOutcomeContract",
+      "state: RuntimeNeedHandleState"
+    ],
+    "snapshot_states": [
+      "ReusableJoin { complete TaskSpecSnapshotV1 }",
+      "AcceptedLaunch"
+    ],
+    "states": [
+      {
+        "fields": [
+          "spec: Box<TaskSpec>"
+        ],
+        "name": "ReusableJoin",
+        "tag": 0
+      },
+      {
+        "fields": [],
+        "name": "AcceptedLaunch",
+        "tag": 1
+      }
+    ]
+  },
+  "observer_allocator": {
+    "domain": "per generation",
+    "failed_batch_consumes": false,
+    "failed_registration_consumes": false,
+    "field": "next_observer_id: NonZeroU64",
+    "global_key": "TaskObserverKey { generation: GenerationId, id: TaskObserverId }",
+    "id_type": "TaskObserverId(NonZeroU64)",
+    "largest_issuable": 18446744073709551614,
+    "ordering": "numeric TaskObserverId inside generation; TaskObserverKey orders generation then id",
+    "overflow_rule": "when next_observer_id == u64::MAX, allocation fails ObserverIdOverflow before mutation",
+    "owner": "RuntimeGenerationJournal",
+    "present": true,
+    "removal_rewinds": false,
+    "restore_rule": "persisted next_observer_id must be strictly greater than every stored or referenced observer id",
+    "start": 1
+  },
+  "package": {
+    "design_only": true,
+    "latest_main": "f42157fc4c8ca890eeaacec6dde3bb3e3af5d009",
+    "name": "arcweft-lang-01.5.1.1.2.1.1.1.1.1.1.1-runtime-handle-batch-and-snapshot-isomorphism-correction-final-contract",
+    "open_questions": [],
+    "parent_archive_sha256": "034A2EEAB2D083B5BB4496F4EE63040B2F93B30ABDDA1B18E93138E28B65391B",
+    "production_source_cut": "3670625a02b9e7e8578b57fc7b148a1758a17dba",
+    "repository": "Sanzentyo/arcweft",
+    "request": "2026-08-22-lang-01.5.1.1.2.1.1.1.1.1.1.1-runtime-handle-batch-and-snapshot-isomorphism-correction.md",
+    "status": "READY_FOR_IMPLEMENTATION"
+  },
+  "retained_decisions": [
+    "Plain+SnapshotOnly has canonical value identity; constant publication is a separate explicit fence",
+    "TaskSpec has exactly one TaskExecution::Host|Runtime field",
+    "Timeout and AwaitManyAggregate are runtime-owned TaskExecution variants",
+    "adapter commit operations are infallible; TaskEnsureError::AdapterCommit does not exist",
+    "RuntimeNeedHandle semantic Eq/Hash/Ord is NeedId-only; active generation is checked on use",
+    "Match lookup is compiler-local HirSnapshotId+ExprId",
+    "persistent View rows contain no compiler-local IDs",
+    "Predicate is a TypeKind leaf; Shared rejects MissingRuntimeSnapshotOwner before recursion",
+    "RuntimeValue/Task/persistence publication is atomic Cut 5",
+    "retained Need/task identities and AWBC numeric opcode allocation are unchanged"
+  ],
+  "snapshot_policy": {
+    "blanket_active_host_rejection": false,
+    "must_be_quiescent_active_host_blocks": true,
+    "prepared_adapter_transactions_block_snapshot": true,
+    "restartable_active_host_persisted": true,
+    "restartable_fields": [
+      "complete original TaskSpec",
+      "TaskCorrelation",
+      "launch capability/catalog join",
+      "Need/observer references"
+    ],
+    "restartable_restore": "adapter prepare_restore then atomic state install then infallible commit_restore"
+  },
+  "versions": {
+    "awbc_abi": 1,
+    "awbc_codec": 1,
+    "host_protocol": 1,
+    "match_transcript": 1,
+    "need_identity": 1,
+    "observer_snapshot": 1,
+    "ownership_projection": 1,
+    "runtime_snapshot": 1,
+    "task_identity": 1
+  }
+}

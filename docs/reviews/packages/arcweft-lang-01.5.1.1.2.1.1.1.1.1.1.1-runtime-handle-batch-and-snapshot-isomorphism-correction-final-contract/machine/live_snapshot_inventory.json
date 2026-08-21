@@ -1,0 +1,828 @@
+{
+  "accepted_projection_rule": "for every accepted row, restore(snapshot(live)) is structurally equal and revalidates every catalog/correlation/field identity",
+  "codec": {
+    "compatibility_reader": false,
+    "enum_tag_width": "u8",
+    "envelope_version": 1,
+    "float_encoding": "IEEE bits",
+    "generic_serde_reader": false,
+    "integer_encoding": "exact existing width+little-endian bits",
+    "length_encoding": "minimal ULEB128 with u64 work-limit preflight",
+    "opaque_bytes_summary": false,
+    "string_fallback": false,
+    "trailing_bytes": "reject",
+    "unknown_tags": "reject"
+  },
+  "current_source_variants": [
+    "Unit",
+    "Bool",
+    "Int",
+    "UInt",
+    "F32",
+    "F64",
+    "MatrixF32",
+    "MatrixF64",
+    "TensorF32",
+    "TensorF64",
+    "String",
+    "Char",
+    "Duration",
+    "Progress",
+    "Range",
+    "Iterator",
+    "EntityRef",
+    "Tuple",
+    "Seq",
+    "Record",
+    "NominalRecord",
+    "Opaque",
+    "Reduction",
+    "Agent",
+    "Function",
+    "Variant"
+  ],
+  "dense_seq_cases": [
+    "Units",
+    "Bools",
+    "I8",
+    "I16",
+    "I32",
+    "I64",
+    "I128",
+    "ISize",
+    "U8",
+    "U16",
+    "U32",
+    "U64",
+    "U128",
+    "USize",
+    "F32",
+    "F64",
+    "Strings",
+    "Chars",
+    "Durations",
+    "EntityRefs",
+    "Bytes"
+  ],
+  "final_live_variants": [
+    "Unit",
+    "Bool",
+    "Int",
+    "UInt",
+    "F32",
+    "F64",
+    "MatrixF32",
+    "MatrixF64",
+    "TensorF32",
+    "TensorF64",
+    "String",
+    "Char",
+    "Duration",
+    "Progress",
+    "Range",
+    "Iterator",
+    "EntityRef",
+    "Tuple",
+    "Seq",
+    "Record",
+    "NominalRecord",
+    "Opaque",
+    "Reduction",
+    "Agent",
+    "Function",
+    "Variant",
+    "NeedHandle"
+  ],
+  "forbidden_lossy_forms": [
+    "{ kind, items }",
+    "{ source, cursor }",
+    "opaque bytes",
+    "callable/captures summary",
+    "IntOrUInt"
+  ],
+  "function_admission": {
+    "Awbc": {
+      "authority": "AwbcExecutableAuthorityRefV1 exact generation/program/function join",
+      "live_shape": [
+        "function: AwbcFunctionId",
+        "remaining_params: Vec<String>",
+        "captures: Vec<RuntimeBinding>"
+      ],
+      "snapshot": "AwbcRuntimeFunctionSnapshot::Awbc"
+    },
+    "Structured": {
+      "error": "UnrebindableStructuredFunction",
+      "live_shape": [
+        "plan: Arc<RuntimePlan>",
+        "site: RuntimeFunctionSiteId",
+        "capture_values: Box<[RuntimeValue]>",
+        "bound_args: Box<[RuntimeValue]>"
+      ],
+      "reason": "current restore has no accepted executable-authority rebind for the owning RuntimePlan",
+      "snapshot": "reject"
+    }
+  },
+  "live_variant_shapes": {
+    "Agent": [
+      "agent_value"
+    ],
+    "Bool": [
+      "value"
+    ],
+    "Char": [
+      "scalar"
+    ],
+    "Duration": [
+      "logical_duration"
+    ],
+    "EntityRef": [
+      "entity_reference"
+    ],
+    "F32": [
+      "value_bits"
+    ],
+    "F64": [
+      "value_bits"
+    ],
+    "Function": [
+      "function_body"
+    ],
+    "Int": [
+      "value"
+    ],
+    "Iterator": [
+      "iterator"
+    ],
+    "MatrixF32": [
+      "value"
+    ],
+    "MatrixF64": [
+      "value"
+    ],
+    "NeedHandle": [
+      "correlation",
+      "producer",
+      "outcome",
+      "state"
+    ],
+    "NominalRecord": [
+      "type_id",
+      "layout",
+      "fields"
+    ],
+    "Opaque": [
+      "producer",
+      "semantic_identity",
+      "value_class",
+      "persistence",
+      "payload"
+    ],
+    "Progress": [
+      "ratio_bits",
+      "label"
+    ],
+    "Range": [
+      "range"
+    ],
+    "Record": [
+      "fields"
+    ],
+    "Reduction": [
+      "owner",
+      "state",
+      "commands"
+    ],
+    "Seq": [
+      "sequence"
+    ],
+    "String": [
+      "utf8"
+    ],
+    "TensorF32": [
+      "value"
+    ],
+    "TensorF64": [
+      "value"
+    ],
+    "Tuple": [
+      "items"
+    ],
+    "UInt": [
+      "value"
+    ],
+    "Unit": [],
+    "Variant": [
+      "owner",
+      "ordinal",
+      "name",
+      "payload"
+    ]
+  },
+  "nested_invariants": [
+    "Iterator.Values index <= items.len and fits usize on restore",
+    "TupleColumns every column length equals len",
+    "RecordColumns field identities equal accepted zero-based ordinals, names are unique, and every column length equals len",
+    "Opaque owner reconstructed from producer+semantic identity+class+persistence and must accept recursive payload",
+    "Reduction command order is preserved; constructor, target and payload are all restored",
+    "Variant display name must match accepted owner+ordinal catalog even though identity is owner+ordinal",
+    "NeedHandle ReusableJoin revalidates complete TaskSpec and ordinal-zero correlation; AcceptedLaunch resolves exact persisted journal row"
+  ],
+  "owner": "arcweft_core::value::awbc_save::AwbcRuntimeValueSnapshot",
+  "projection_definitions": {
+    "AwbcExecutableAuthorityRefV1": [
+      "Program { generation, program_digest, function }"
+    ],
+    "HostCancelCommandId": [
+      "digest of canonical TaskCorrelation"
+    ],
+    "HostOperationCatalogDigest": [
+      "[u8; 32]"
+    ],
+    "HostOperationId": [
+      "NonZeroU32"
+    ],
+    "HostOperationIdentityV1": [
+      "Builtin(BuiltinHostOperationIdV1)",
+      "Catalog { catalog_digest, operation }"
+    ],
+    "NeedProducerTemplateSnapshotV1": [
+      "CompleteNeedProducerTemplate"
+    ],
+    "RuntimeAcceptedNominalProjectionV1": [
+      "ExactRecord",
+      "ExactVariant",
+      "ExactOpaque",
+      "Character"
+    ],
+    "RuntimeAgentValueProjectionV1": [
+      "ActionTarget",
+      "CaptureTarget",
+      "DebugStatePath",
+      "ObservationFieldPath",
+      "Probe",
+      "Diagnostics",
+      "Predicate",
+      "ViewportPoint"
+    ],
+    "RuntimeCheckedTypeProjectionV1": [
+      "Never",
+      "Unit",
+      "Bool",
+      "Signed(RuntimeSignedIntWidth)",
+      "Unsigned(RuntimeUnsignedIntWidth)",
+      "F32",
+      "F64",
+      "String",
+      "Char",
+      "Duration",
+      "Progress",
+      "EntityReference",
+      "Bytes",
+      "Sequence(Box<RuntimeCheckedTypeProjectionV1>)",
+      "Tuple(Box<[RuntimeCheckedTypeProjectionV1]>)",
+      "Choice(Box<[RuntimeCheckedTypeProjectionV1]>)",
+      "Nominal { nominal, semantic_identity, layout }",
+      "Opaque { owner }",
+      "Variant { nominal, semantic_identity, cases }",
+      "Result { ok, error }",
+      "Option(Box<RuntimeCheckedTypeProjectionV1>)",
+      "Agent(RuntimeAgentOperationalType)"
+    ],
+    "RuntimeDenseSeqProjectionV1": [
+      "Units",
+      "Bools",
+      "I8",
+      "I16",
+      "I32",
+      "I64",
+      "I128",
+      "ISize",
+      "U8",
+      "U16",
+      "U32",
+      "U64",
+      "U128",
+      "USize",
+      "F32",
+      "F64",
+      "Strings",
+      "Chars",
+      "Durations",
+      "EntityRefs",
+      "Bytes"
+    ],
+    "RuntimeNominalRecordProjectionV1": [
+      "Exact { nominal, semantic_identity, layout, fields }"
+    ],
+    "RuntimeOwnershipTypeProjectionV1": [
+      "Range",
+      "IteratorState",
+      "Map",
+      "Need",
+      "Stream",
+      "ThreadHandle",
+      "Shared",
+      "Function"
+    ],
+    "RuntimeSequenceProjectionV1": [
+      "Vec",
+      "Array { length }",
+      "Slice",
+      "Seq"
+    ],
+    "RuntimeTextProjectionV1": [
+      "TextClusterUtf8 { nominal, semantic_identity }",
+      "DisplayTextUtf8 { nominal, semantic_identity }"
+    ],
+    "RuntimeValueCanonicalIdentityV1": [
+      "Unit",
+      "Bool",
+      "Int",
+      "UInt",
+      "F32",
+      "F64",
+      "MatrixF32",
+      "MatrixF64",
+      "TensorF32",
+      "TensorF64",
+      "String",
+      "Char",
+      "Duration",
+      "Progress",
+      "Range",
+      "Iterator",
+      "EntityRef",
+      "Tuple",
+      "Seq",
+      "Record",
+      "NominalRecord",
+      "Opaque",
+      "Reduction",
+      "Agent",
+      "Function",
+      "Variant",
+      "NeedHandle"
+    ],
+    "TaskObserverId": [
+      "NonZeroU64"
+    ],
+    "TaskObserverKey": [
+      "{ generation, id }"
+    ],
+    "TaskSpecSnapshotV1": [
+      "CompleteTaskSpec"
+    ]
+  },
+  "projection_references": [
+    "AwbcExecutableAuthorityRefV1",
+    "HostCancelCommandId",
+    "HostOperationCatalogDigest",
+    "HostOperationId",
+    "HostOperationIdentityV1",
+    "NeedProducerTemplateSnapshotV1",
+    "RuntimeAcceptedNominalProjectionV1",
+    "RuntimeAgentValueProjectionV1",
+    "RuntimeCheckedTypeProjectionV1",
+    "RuntimeDenseSeqProjectionV1",
+    "RuntimeNominalRecordProjectionV1",
+    "RuntimeOwnershipTypeProjectionV1",
+    "RuntimeSequenceProjectionV1",
+    "RuntimeTextProjectionV1",
+    "RuntimeValueCanonicalIdentityV1",
+    "TaskObserverId",
+    "TaskObserverKey",
+    "TaskSpecSnapshotV1"
+  ],
+  "rejected_projection_rule": "the constructor matches the live variant explicitly and returns a typed error before writing bytes",
+  "replacement_policy": "evolve the existing owner in place and atomically replace its codec; no second reader",
+  "snapshot_role_fields": {
+    "Agent": [
+      "agent_value"
+    ],
+    "Bool": [
+      "value"
+    ],
+    "Char": [
+      "scalar"
+    ],
+    "Duration": [
+      "logical_duration"
+    ],
+    "EntityRef": [
+      "entity_reference"
+    ],
+    "F32": [
+      "value_bits"
+    ],
+    "F64": [
+      "value_bits"
+    ],
+    "Function": [
+      "function_body"
+    ],
+    "Int": [
+      "value"
+    ],
+    "Iterator": [
+      "iterator"
+    ],
+    "MatrixF32": [
+      "value"
+    ],
+    "MatrixF64": [
+      "value"
+    ],
+    "NeedHandle": [
+      "correlation",
+      "producer",
+      "outcome",
+      "state"
+    ],
+    "NominalRecord": [
+      "type_id",
+      "layout",
+      "fields"
+    ],
+    "Opaque": [
+      "producer",
+      "semantic_identity",
+      "value_class",
+      "persistence",
+      "payload"
+    ],
+    "Progress": [
+      "ratio_bits",
+      "label"
+    ],
+    "Range": [
+      "range"
+    ],
+    "Record": [
+      "fields"
+    ],
+    "Reduction": [
+      "owner",
+      "state",
+      "commands"
+    ],
+    "Seq": [
+      "Values recursive items",
+      "Dense exact DenseSeq variant and storage",
+      "TupleColumns len + recursive columns",
+      "RecordColumns len + field identity/name/recursive values"
+    ],
+    "String": [
+      "utf8"
+    ],
+    "TensorF32": [
+      "value"
+    ],
+    "TensorF64": [
+      "value"
+    ],
+    "Tuple": [
+      "items"
+    ],
+    "UInt": [
+      "value"
+    ],
+    "Unit": [],
+    "Variant": [
+      "owner",
+      "ordinal",
+      "name",
+      "payload"
+    ]
+  },
+  "snapshot_tags": {
+    "Agent": 23,
+    "Bool": 1,
+    "Char": 11,
+    "Duration": 12,
+    "EntityRef": 16,
+    "F32": 4,
+    "F64": 5,
+    "Function": 24,
+    "Int": 2,
+    "Iterator": 15,
+    "MatrixF32": 6,
+    "MatrixF64": 7,
+    "NeedHandle": 26,
+    "NominalRecord": 20,
+    "Opaque": 21,
+    "Progress": 13,
+    "Range": 14,
+    "Record": 19,
+    "Reduction": 22,
+    "Seq": 18,
+    "String": 10,
+    "TensorF32": 8,
+    "TensorF64": 9,
+    "Tuple": 17,
+    "UInt": 3,
+    "Unit": 0,
+    "Variant": 25
+  },
+  "snapshot_variant_shapes": {
+    "Agent": [
+      "value: AwbcRuntimeAgentSnapshot"
+    ],
+    "Bool": [
+      "value: bool"
+    ],
+    "Char": [
+      "value: char"
+    ],
+    "Duration": [
+      "value: LogicalDuration"
+    ],
+    "EntityRef": [
+      "value: String"
+    ],
+    "F32": [
+      "value: f32 (exact IEEE bits)"
+    ],
+    "F64": [
+      "value: f64 (exact IEEE bits)"
+    ],
+    "Function": [
+      "value: AwbcRuntimeFunctionSnapshot (AWBC only; Structured rejects)"
+    ],
+    "Int": [
+      "value: RuntimeInt"
+    ],
+    "Iterator": [
+      "value: AwbcRuntimeIteratorSnapshot"
+    ],
+    "MatrixF32": [
+      "value: DenseMatrixF32"
+    ],
+    "MatrixF64": [
+      "value: DenseMatrixF64"
+    ],
+    "NeedHandle": [
+      "value: RuntimeNeedHandleSnapshotV1"
+    ],
+    "NominalRecord": [
+      "value: AwbcRuntimeNominalRecordSnapshot"
+    ],
+    "Opaque": [
+      "value: AwbcRuntimeOpaqueSnapshot"
+    ],
+    "Progress": [
+      "ratio: f32 (exact bits)",
+      "label: Option<String>"
+    ],
+    "Range": [
+      "value: RuntimeRange"
+    ],
+    "Record": [
+      "fields: Box<[AwbcRuntimeFieldSnapshot]>"
+    ],
+    "Reduction": [
+      "value: AwbcRuntimeReductionSnapshot"
+    ],
+    "Seq": [
+      "value: AwbcRuntimeSeqSnapshot"
+    ],
+    "String": [
+      "value: String"
+    ],
+    "TensorF32": [
+      "value: DenseTensorF32"
+    ],
+    "TensorF64": [
+      "value: DenseTensorF64"
+    ],
+    "Tuple": [
+      "items: Box<[AwbcRuntimeValueSnapshot]>"
+    ],
+    "UInt": [
+      "value: RuntimeUInt"
+    ],
+    "Unit": [],
+    "Variant": [
+      "owner: RuntimeVariantIdentity",
+      "ordinal: u32",
+      "name: String",
+      "payload: Option<Box<AwbcRuntimeValueSnapshot>>"
+    ]
+  },
+  "subschemas": {
+    "AwbcRuntimeAgentPredicateSnapshot": {
+      "ActionEnabled": [
+        "target: RuntimeCommandTargetId"
+      ],
+      "All": [
+        "predicates: Box<[AwbcRuntimeAgentPredicateSnapshot]>"
+      ],
+      "Any": [
+        "predicates: Box<[AwbcRuntimeAgentPredicateSnapshot]>"
+      ],
+      "Compare": [
+        "probe: RuntimeAgentProbe",
+        "op: RuntimeAgentCompareOp",
+        "value: Box<AwbcRuntimeValueSnapshot>"
+      ],
+      "DiagnosticsHasError": [],
+      "Exists": [
+        "probe: RuntimeAgentProbe"
+      ],
+      "Not": [
+        "predicate: Box<AwbcRuntimeAgentPredicateSnapshot>"
+      ]
+    },
+    "AwbcRuntimeAgentSnapshot": {
+      "ActionTarget": [
+        "value: RuntimeAgentActionTarget"
+      ],
+      "CaptureTarget": [
+        "value: RuntimeAgentCaptureTarget"
+      ],
+      "DebugStatePath": [
+        "value: RuntimeAgentPath"
+      ],
+      "Diagnostics": [],
+      "ObservationFieldPath": [
+        "value: RuntimeAgentPath"
+      ],
+      "Predicate": [
+        "value: AwbcRuntimeAgentPredicateSnapshot"
+      ],
+      "Probe": [
+        "value: RuntimeAgentProbe"
+      ],
+      "ViewportPoint": [
+        "x: u32",
+        "y: u32"
+      ]
+    },
+    "AwbcRuntimeBindingSnapshot": {
+      "fields": [
+        "name: String",
+        "value: Box<AwbcRuntimeValueSnapshot>"
+      ]
+    },
+    "AwbcRuntimeCommandSnapshot": {
+      "fields": [
+        "constructor: RuntimeCommandConstructorId",
+        "target: RuntimeCommandTargetId",
+        "payload: Box<AwbcRuntimeValueSnapshot>"
+      ]
+    },
+    "AwbcRuntimeFieldSnapshot": {
+      "fields": [
+        "field: RuntimeRecordFieldId",
+        "name: String",
+        "value: AwbcRuntimeValueSnapshot"
+      ]
+    },
+    "AwbcRuntimeFunctionSnapshot": {
+      "Awbc": [
+        "function: AwbcFunctionId",
+        "remaining_params: Box<[String]>",
+        "captures: Box<[AwbcRuntimeBindingSnapshot]>",
+        "authority: AwbcExecutableAuthorityRefV1"
+      ]
+    },
+    "AwbcRuntimeIteratorSnapshot": {
+      "Range": [
+        "value: RuntimeRangeIterator"
+      ],
+      "Values": [
+        "items: Box<[AwbcRuntimeValueSnapshot]>",
+        "index: u64"
+      ],
+      "Witness": [
+        "state: Box<AwbcRuntimeValueSnapshot>",
+        "next: RuntimeTraitMethodId"
+      ]
+    },
+    "AwbcRuntimeNominalRecordSnapshot": {
+      "fields": [
+        "type_id: RuntimeNominalTypeId",
+        "layout: TypeLayoutHash",
+        "fields: Box<[AwbcRuntimeValueSnapshot]>"
+      ]
+    },
+    "AwbcRuntimeOpaqueSnapshot": {
+      "fields": [
+        "producer: RuntimeOpaqueTypeProducerId",
+        "semantic_identity: RuntimeSemanticTypeId",
+        "value_class: RuntimeOpaqueValueClass",
+        "persistence: RuntimeOpaquePersistence",
+        "payload: Box<AwbcRuntimeValueSnapshot>"
+      ]
+    },
+    "AwbcRuntimeRecordSeqFieldSnapshot": {
+      "fields": [
+        "field: RuntimeRecordFieldId",
+        "name: String",
+        "values: AwbcRuntimeSeqSnapshot"
+      ]
+    },
+    "AwbcRuntimeReductionSnapshot": {
+      "fields": [
+        "owner: RuntimeOpaqueTypeOwner",
+        "state: Box<AwbcRuntimeValueSnapshot>",
+        "commands: Box<[AwbcRuntimeCommandSnapshot]>"
+      ]
+    },
+    "AwbcRuntimeSeqSnapshot": {
+      "Dense": [
+        "value: DenseSeq"
+      ],
+      "RecordColumns": [
+        "len: u64",
+        "fields: Box<[AwbcRuntimeRecordSeqFieldSnapshot]>"
+      ],
+      "TupleColumns": [
+        "len: u64",
+        "columns: Box<[AwbcRuntimeSeqSnapshot]>"
+      ],
+      "Values": [
+        "items: Box<[AwbcRuntimeValueSnapshot]>"
+      ]
+    },
+    "DenseSeq": {
+      "Bools": [
+        "values: DenseSeqStorage<Bools>"
+      ],
+      "Bytes": [
+        "values: DenseSeqStorage<Bytes>"
+      ],
+      "Chars": [
+        "values: DenseSeqStorage<Chars>"
+      ],
+      "Durations": [
+        "values: DenseSeqStorage<Durations>"
+      ],
+      "EntityRefs": [
+        "values: DenseSeqStorage<EntityRefs>"
+      ],
+      "F32": [
+        "values: DenseSeqStorage<F32>"
+      ],
+      "F64": [
+        "values: DenseSeqStorage<F64>"
+      ],
+      "I128": [
+        "values: DenseSeqStorage<I128>"
+      ],
+      "I16": [
+        "values: DenseSeqStorage<I16>"
+      ],
+      "I32": [
+        "values: DenseSeqStorage<I32>"
+      ],
+      "I64": [
+        "values: DenseSeqStorage<I64>"
+      ],
+      "I8": [
+        "values: DenseSeqStorage<I8>"
+      ],
+      "ISize": [
+        "values: DenseSeqStorage<ISize>"
+      ],
+      "Strings": [
+        "values: DenseSeqStorage<Strings>"
+      ],
+      "U128": [
+        "values: DenseSeqStorage<U128>"
+      ],
+      "U16": [
+        "values: DenseSeqStorage<U16>"
+      ],
+      "U32": [
+        "values: DenseSeqStorage<U32>"
+      ],
+      "U64": [
+        "values: DenseSeqStorage<U64>"
+      ],
+      "U8": [
+        "values: DenseSeqStorage<U8>"
+      ],
+      "USize": [
+        "values: DenseSeqStorage<USize>"
+      ],
+      "Units": [
+        "values: DenseSeqStorage<Units>"
+      ]
+    },
+    "RuntimeNeedHandleSnapshotV1": {
+      "fields": [
+        "correlation: TaskCorrelation",
+        "producer: NeedProducerSpec",
+        "outcome: TaskOutcomeContract",
+        "state: RuntimeNeedHandleStateSnapshotV1"
+      ]
+    },
+    "RuntimeNeedHandleStateSnapshotV1": {
+      "AcceptedLaunch": [],
+      "ReusableJoin": [
+        "spec: Box<TaskSpecSnapshotV1>"
+      ]
+    }
+  },
+  "version": 1
+}

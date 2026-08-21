@@ -1,0 +1,203 @@
+{
+  "files": [
+    {
+      "bytes": 4071,
+      "path": "BATCH_OBSERVER_AND_CANCEL.md",
+      "sha256": "1659f4fae1dacc9c4f498cc57a4588937ba8479e14b341fa083af9165bb04655"
+    },
+    {
+      "bytes": 3076,
+      "path": "DECISION_REGISTER.md",
+      "sha256": "f25dc35493e3d5cfe0265f6fd93bf5e06dbe8bb06ed6acdcffbfbe67609df298"
+    },
+    {
+      "bytes": 2370,
+      "path": "EVENT_ORDER_AND_SNAPSHOT_POLICY.md",
+      "sha256": "33a6e3e3293ffb3da3538428c796639b25742c12c5ce617219bb087820896b11"
+    },
+    {
+      "bytes": 9800,
+      "path": "FINAL_CONTRACT.md",
+      "sha256": "a4c1a770fffa762c626ca2b670af642264e556d557e111bcd6cb6cc626aab206"
+    },
+    {
+      "bytes": 1358,
+      "path": "FINAL_STATUS.md",
+      "sha256": "d06a28253c3b25fb1c280c6df47be2a7724ac87a1abd7aaa23c8ee351d9e88d0"
+    },
+    {
+      "bytes": 2970,
+      "path": "HOST_ADAPTER_AND_LAYERING.md",
+      "sha256": "5213f7c36ce4a0decd7d3fbe85dcaf0e578c1f121dbe7b8d185a5289dccf8d46"
+    },
+    {
+      "bytes": 1487,
+      "path": "INPUTS_AND_PRECEDENCE.md",
+      "sha256": "ea64390fcb839d709c85dd16bfa0fff3bdc63762097e01f3b5dc1c0c21c3d359"
+    },
+    {
+      "bytes": 17701,
+      "path": "MATCH_ROLE_TAG_CALLABLE.md",
+      "sha256": "f7ab36d6f44ea8940a8d89ef1adf366aa8b8139df4d671a5c8ff91e25defccb9"
+    },
+    {
+      "bytes": 3534,
+      "path": "NEED_HANDLE_AND_AWAIT_MANY.md",
+      "sha256": "78f4a5e1033a977b0613cd11133332ae72cb7be52463c01ed56d848685a26581"
+    },
+    {
+      "bytes": 46,
+      "path": "OPEN_QUESTIONS.md",
+      "sha256": "eee4f98ff0d66be8696ce07c748d6e9c854abdd718e90d20d36375e0ce65ae8f"
+    },
+    {
+      "bytes": 19468,
+      "path": "OWNERSHIP_PROJECTION_MATRIX.md",
+      "sha256": "da3977d172fa919c0f910b3b02d21f93d51620f8cc34fdcaedfbea2f5ee12423"
+    },
+    {
+      "bytes": 3843,
+      "path": "PROJECTION_REGISTRY.md",
+      "sha256": "097a06d5b3f0732b03a57af723179b152c69c0772d03f1fc6eec200b379fb8b1"
+    },
+    {
+      "bytes": 3025,
+      "path": "README.md",
+      "sha256": "eeff10a724197a20d6d4cfce0bf1a67a90dfeda6f1b1760cd2e88c2d9312f0cc"
+    },
+    {
+      "bytes": 2243,
+      "path": "REQUIREMENT_TRACEABILITY.md",
+      "sha256": "76e8df86528227b175452b6649964045dbfd175f619f6dc57db2942b971d5cbc"
+    },
+    {
+      "bytes": 3780,
+      "path": "RUST_LIVE_SCHEMAS.md",
+      "sha256": "44df2304e1bae4a89d97a6e0e52cf03ef9e28027238d41aaa95053310ae571a7"
+    },
+    {
+      "bytes": 6567,
+      "path": "SNAPSHOT_ISOMORPHISM.md",
+      "sha256": "73beecd1455e8435c719671895aa64007613ff53ecb30461c3b43613d1da6439"
+    },
+    {
+      "bytes": 9883,
+      "path": "SOURCE_DELETION_AND_CUTS.md",
+      "sha256": "48c3e8efe89d3fe2f3c901991839bfb21643c635363ed9da1be08b1ef62a1d43"
+    },
+    {
+      "bytes": 5374,
+      "path": "SOURCE_EVIDENCE.md",
+      "sha256": "3675b9cd495dc7beec901d353e2f14341fb92997ff800a725352f161979263fb"
+    },
+    {
+      "bytes": 2265,
+      "path": "STRUCTURAL_ABSENCE.md",
+      "sha256": "809a1f78608b356d96c96dca1d030b4e74325265c797510a57f27b8fbb7ce289"
+    },
+    {
+      "bytes": 17553,
+      "path": "TEST_MATRIX.md",
+      "sha256": "c67c5ac432b8eb9be5fd073d1a396ec95c68a56880252a627eacc4f04e548bf2"
+    },
+    {
+      "bytes": 1195,
+      "path": "VALIDATION_GUIDE.md",
+      "sha256": "805a1abaa9a6a4f412bbe1f436b65433a306d5bd1c07883a348c0c3f1a573ad9"
+    },
+    {
+      "bytes": 1973,
+      "path": "VALIDATION_OUTPUT.txt",
+      "sha256": "025ea501a21970f446f7cbb533519850e4b7b343fffa89d60ffc294d1764cb76"
+    },
+    {
+      "bytes": 2431,
+      "path": "VERIFICATION_SCOPE.md",
+      "sha256": "4ed81207f2e275bb9aee7d44d4ec037a4aa738ab8df53bc9fb801e7909d9df8f"
+    },
+    {
+      "bytes": 250,
+      "path": "inputs/PROJECT_PREMISE.txt",
+      "sha256": "cfa897a0ad93deb92fd454079df0a789edbbd40d85c8377324da703c8aefe0a1"
+    },
+    {
+      "bytes": 16574,
+      "path": "inputs/REQUEST.md",
+      "sha256": "f3adc4b80f21822237d813b9a27eb327f2f6cd4a243efdf733e722489342cf76"
+    },
+    {
+      "bytes": 5045,
+      "path": "inputs/RUST_SKILL.txt",
+      "sha256": "1a28f552adf5efde95205bee8d56590aeb82346c48ebdf3fdbbaff5deca33665"
+    },
+    {
+      "bytes": 5187,
+      "path": "machine/adapter_protocol.json",
+      "sha256": "0d6150d808e5cc70766800403581ca27d44c6fbeb4a1d4aa4d914b95d29e1fd1"
+    },
+    {
+      "bytes": 2317,
+      "path": "machine/blockers.json",
+      "sha256": "e00b3513f1d1dafaa31c4e1246ae5581feabcb15c09398d089f46a3e728bff9b"
+    },
+    {
+      "bytes": 3586,
+      "path": "machine/compile_cuts.json",
+      "sha256": "a1038845b78d5e1930f8a98ce515a8cef6f9a5eed38e845c48ae866874594335"
+    },
+    {
+      "bytes": 7894,
+      "path": "machine/contract.json",
+      "sha256": "b3c250d92688b1183926d6d7c781ca6425a50eb8aaa6d859a6e680b05d8caf4b"
+    },
+    {
+      "bytes": 18044,
+      "path": "machine/live_snapshot_inventory.json",
+      "sha256": "89d4d3b6a7caf7259d0ad9a79c9fe51b77fbf19f36f0bdba419d99aa9b417302"
+    },
+    {
+      "bytes": 34787,
+      "path": "machine/match_roles.json",
+      "sha256": "4ab4b9fa9632516a32c2d15624208995be60f940d2680f82fe927aa51c6b948d"
+    },
+    {
+      "bytes": 44930,
+      "path": "machine/ownership_matrix.json",
+      "sha256": "9c528cbd2d7ecbe96931466c7e78a7b02e9d33616d55a70d588e6d3530805331"
+    },
+    {
+      "bytes": 5003,
+      "path": "machine/source_inventory.json",
+      "sha256": "be1548ae992969fe7e642f80f12117351cedf3a5443666a53c7158f227cb0f05"
+    },
+    {
+      "bytes": 27132,
+      "path": "machine/test_matrix.json",
+      "sha256": "065f2bb1a9355a7d414f3dfb192a300459c72f4e41ce79debe328f5151af0a97"
+    },
+    {
+      "bytes": 21636,
+      "path": "schemas/final_contract.rs",
+      "sha256": "6d4c80002fa4b22858d802a215e819f0d0b1d9c55f93ea05c1b4403463ba32d1"
+    },
+    {
+      "bytes": 206,
+      "path": "tools/run_validator.sh",
+      "sha256": "9ea94a6f9001fc19c3ad10c120c85f3310c763e67933cfef075968e25d0bed3c"
+    },
+    {
+      "bytes": 38113,
+      "path": "tools/validate_package.py",
+      "sha256": "4df95e50d9f9d75a3a45fa9b72da615465363feffd70789a35cea32c40ddc0cc"
+    }
+  ],
+  "open_questions": 0,
+  "package": "arcweft-lang-01.5.1.1.2.1.1.1.1.1.1.1-runtime-handle-batch-and-snapshot-isomorphism-correction-final-contract",
+  "repository_basis": {
+    "latest_main": "f42157fc4c8ca890eeaacec6dde3bb3e3af5d009",
+    "parent_archive_sha256": "034A2EEAB2D083B5BB4496F4EE63040B2F93B30ABDDA1B18E93138E28B65391B",
+    "production_source_cut": "3670625a02b9e7e8578b57fc7b148a1758a17dba"
+  },
+  "status": "READY_FOR_IMPLEMENTATION",
+  "version": 1
+}

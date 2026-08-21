@@ -1,0 +1,124 @@
+{
+  "latest_main": "f42157fc4c8ca890eeaacec6dde3bb3e3af5d009",
+  "not_locally_retrieved": [
+    {
+      "artifact": "parent retained ZIP bytes",
+      "reason": "GitHub connector exposed repository content but the execution container had no network route; no claim of local rehash is made",
+      "repository_intake_evidence": "intake records 197,348 bytes, 61 members and matching SHA-256",
+      "sha256": "034A2EEAB2D083B5BB4496F4EE63040B2F93B30ABDDA1B18E93138E28B65391B"
+    }
+  ],
+  "observations": [
+    {
+      "path": "AGENTS.md",
+      "ref": "f42157fc4c8ca890eeaacec6dde3bb3e3af5d009",
+      "role": "root repository constraints and validation expectations"
+    },
+    {
+      "path": "docs/AGENTS.md",
+      "ref": "f42157fc4c8ca890eeaacec6dde3bb3e3af5d009",
+      "role": "documentation evidence and authority rules"
+    },
+    {
+      "path": "docs/reviews/AGENTS.md",
+      "ref": "f42157fc4c8ca890eeaacec6dde3bb3e3af5d009",
+      "role": "review-package requirements"
+    },
+    {
+      "path": "crates/AGENTS.md",
+      "ref": "f42157fc4c8ca890eeaacec6dde3bb3e3af5d009",
+      "role": "crate layering and Sans-I/O boundaries"
+    },
+    {
+      "path": "docs/implementation/2026-08-22-lang-01-5-1-1-2-1-1-1-1-1-1-task-substrate-return-intake.md",
+      "ref": "f42157fc4c8ca890eeaacec6dde3bb3e3af5d009",
+      "role": "parent-return intake; records parent ZIP hash/size/member count and reconciliation blockers"
+    },
+    {
+      "path": "crates/arcweft-core/src/value.rs",
+      "ref": "3670625a02b9e7e8578b57fc7b148a1758a17dba",
+      "role": "RuntimeValue, RuntimeFunctionBody Structured/Awbc, RuntimeSeq/DenseSeq live algebra"
+    },
+    {
+      "path": "crates/arcweft-core/src/value/awbc_save.rs",
+      "ref": "3670625a02b9e7e8578b57fc7b148a1758a17dba",
+      "role": "existing sole typed AWBC snapshot owner and exact current nested schemas"
+    },
+    {
+      "path": "crates/arcweft-core/src/value/agent.rs",
+      "ref": "3670625a02b9e7e8578b57fc7b148a1758a17dba",
+      "role": "current RuntimeAgentValue and RuntimeAgentPredicate variants"
+    },
+    {
+      "path": "crates/arcweft-core/src/pattern.rs",
+      "ref": "3670625a02b9e7e8578b57fc7b148a1758a17dba",
+      "role": "current RuntimeCheckedType and RuntimeVariantIdentity"
+    },
+    {
+      "path": "crates/arcweft-core/src/plan/type_kind.rs",
+      "ref": "3670625a02b9e7e8578b57fc7b148a1758a17dba",
+      "role": "RuntimeAgentOperationalType and runtime-plan projection graph"
+    },
+    {
+      "path": "crates/arcweft-core/src/task.rs",
+      "ref": "3670625a02b9e7e8578b57fc7b148a1758a17dba",
+      "role": "current TaskSpec/HostTaskRequest/event source and migration inventory"
+    },
+    {
+      "path": "crates/arcweft-runtime-scheduler/src/lib.rs",
+      "ref": "3670625a02b9e7e8578b57fc7b148a1758a17dba",
+      "role": "current deterministic scheduler and absence of batch/observer/cancel protocol"
+    },
+    {
+      "path": "crates/arcweft-runtime-scheduler/Cargo.toml",
+      "ref": "3670625a02b9e7e8578b57fc7b148a1758a17dba",
+      "role": "current scheduler depends only on arcweft-core"
+    },
+    {
+      "path": "crates/arcweft-host-adapter/src/lib.rs",
+      "ref": "3670625a02b9e7e8578b57fc7b148a1758a17dba",
+      "role": "current immediate submit and cancel->bool paths that must be replaced"
+    },
+    {
+      "path": "crates/arcweft-host-adapter/Cargo.toml",
+      "ref": "3670625a02b9e7e8578b57fc7b148a1758a17dba",
+      "role": "host adapter is an upward implementation layer"
+    },
+    {
+      "path": "crates/arcweft-lang-hir/src/expr.rs",
+      "ref": "3670625a02b9e7e8578b57fc7b148a1758a17dba",
+      "role": "38 current HirExprKind families and exact direct_expression_children order"
+    },
+    {
+      "path": "crates/arcweft-lang-hir/src/pattern.rs",
+      "ref": "3670625a02b9e7e8578b57fc7b148a1758a17dba",
+      "role": "13 current HirPatternKind families"
+    },
+    {
+      "path": "crates/arcweft-lang-sema/src/final_analysis/model.rs",
+      "ref": "3670625a02b9e7e8578b57fc7b148a1758a17dba",
+      "role": "current CheckedExpressionResolution/value/select facts"
+    },
+    {
+      "path": "crates/arcweft-lang-sema/src/callable/identity.rs",
+      "ref": "3670625a02b9e7e8578b57fc7b148a1758a17dba",
+      "role": "CheckedCallableId/CheckedCallableDigest and accepted callable authority"
+    },
+    {
+      "path": "docs/02-runtime/async-scheduler.md",
+      "ref": "f42157fc4c8ca890eeaacec6dde3bb3e3af5d009",
+      "role": "maintained scheduler contract and accepted epoch/task/sequence event order"
+    },
+    {
+      "path": "docs/02-runtime/need-timeout.md",
+      "ref": "f42157fc4c8ca890eeaacec6dde3bb3e3af5d009",
+      "role": "maintained timeout semantics"
+    },
+    {
+      "path": "docs/02-runtime/executable-runtime-core.md",
+      "ref": "f42157fc4c8ca890eeaacec6dde3bb3e3af5d009",
+      "role": "AWBC v1 and retained opcode allocation including MakeNeedHandle/NeedTimeout"
+    }
+  ],
+  "production_source_cut": "3670625a02b9e7e8578b57fc7b148a1758a17dba"
+}
