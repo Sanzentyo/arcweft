@@ -23,7 +23,9 @@ use arcweft_lang_hir::{
         HirHttpMethod, HirHttpMethodValue, HirItemKind, HirRoutePathValue,
     },
     module::HirModule,
-    project::HirExecutableProjectView,
+    project::{
+        HirExecutableProjectView, HirRuntimeExecutableOwner, HirRuntimeSemanticReachability,
+    },
     source_index::{
         HirEntrySourcePart, HirItemSourceRole, HirSourcePresence, HirSourceQuery, HirSourceSite,
     },
@@ -116,6 +118,7 @@ pub(super) fn runtime_entry_lowering_input(
     symbols: &ProjectSymbolTable,
     analysis: &FinalSemanticAnalysis,
     catalog: &CheckedEntryCatalog,
+    reachability: &HirRuntimeSemanticReachability<'_>,
     command_policy: Option<&RuntimeCommandPolicy>,
 ) -> Result<RuntimeEntryLoweringInput, EntryRuntimeProjectionError> {
     let mut entries = Vec::with_capacity(catalog.len());
@@ -124,6 +127,9 @@ pub(super) fn runtime_entry_lowering_input(
 
     for binding in catalog.entries() {
         let owner = binding.source_item();
+        if !reachability.contains_runtime_owner(&HirRuntimeExecutableOwner::Item(owner)) {
+            continue;
+        }
         let Some(item) = project.items().find(|item| item.id() == owner) else {
             return Err(EntryRuntimeProjectionError::MissingEntryOwner { owner });
         };

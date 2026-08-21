@@ -1,4 +1,8 @@
-use std::{collections::BTreeMap, path::PathBuf, sync::Arc};
+use std::{
+    collections::{BTreeMap, BTreeSet},
+    path::PathBuf,
+    sync::Arc,
+};
 
 use arcweft_agent_protocol::{
     ids::{SessionId, StableHash},
@@ -282,6 +286,42 @@ entry cli @entry.cli.main {
 }
 
 #[test]
+fn selected_entry_reaches_choice_goto_flow_without_rooting_unrelated_flows() {
+    let source = r#"
+entry cli @entry.cli.main { goto @flow.main }
+
+flow main {
+    choice @.first {
+        @.next "Continue" -> @flow.done
+    }
+}
+
+flow done() -> String {
+    return "done"
+}
+
+flow unrelated() -> String {
+    return "unrelated"
+}
+"#;
+    let (project, context) =
+        entry_project(source, "entry.cli.main", ProjectEntrySelectionKind::Cli);
+    let compiled = compile_attached_project(&project, &context)
+        .expect("selected Choice target closes over its exact Flow");
+    let labels = compiled
+        .runtime_plan()
+        .plan
+        .flows()
+        .iter()
+        .map(|flow| flow.id.public_label().into_string())
+        .collect::<BTreeSet<_>>();
+
+    assert!(labels.contains("flow.main"));
+    assert!(labels.contains("flow.done"));
+    assert!(!labels.contains("flow.unrelated"));
+}
+
+#[test]
 fn stateful_project_lowering_requires_explicit_adapter_command_policy() {
     let (project, context) = entry_project(
         ENTRY_SOURCE,
@@ -359,7 +399,7 @@ entry agent @entry.agent.smoke {
         "the generated owner segment must be unavailable to authored flow IDs"
     );
     assert!(
-        compiled
+        !compiled
             .runtime_plan()
             .plan
             .flows()
@@ -473,25 +513,30 @@ entry agent @entry.agent.beta {
     controller = shared
 }
 ";
-    let (project, context) = entry_project(
+    let (alpha_project, alpha_context) = entry_project(
         source,
         "entry.agent.alpha",
         ProjectEntrySelectionKind::Agent,
     );
-    let compiled = compile_attached_project(&project, &context)
+    let alpha_compiled = compile_attached_project(&alpha_project, &alpha_context)
         .expect("shared ordinary Agent controller compiles");
-    let index = checked_project_index(&compiled);
+    let alpha_index = checked_project_index(&alpha_compiled);
     let alpha = compile_agent_project_bundle(
-        &compiled,
+        &alpha_compiled,
         &PublicId::try_new("entry.agent.alpha").unwrap(),
-        &index,
+        &alpha_index,
         test_runtime_plan_artifact_key(),
     )
     .expect("alpha entry compiles");
+    let (beta_project, beta_context) =
+        entry_project(source, "entry.agent.beta", ProjectEntrySelectionKind::Agent);
+    let beta_compiled = compile_attached_project(&beta_project, &beta_context)
+        .expect("shared ordinary Agent controller compiles for beta selection");
+    let beta_index = checked_project_index(&beta_compiled);
     let beta = compile_agent_project_bundle(
-        &compiled,
+        &beta_compiled,
         &PublicId::try_new("entry.agent.beta").unwrap(),
-        &index,
+        &beta_index,
         test_runtime_plan_artifact_key(),
     )
     .expect("beta entry compiles");
@@ -838,18 +883,13 @@ entry agent @entry.agent.second {
     controller = second
 }
 ";
-    let (project, context) = entry_project(
-        source,
-        "entry.agent.second",
-        ProjectEntrySelectionKind::Agent,
-    );
-    let compiled = compile_attached_project(&project, &context)
-        .expect("multiple exact ordinary Agent controllers compile");
-
     for (entry_id, expected) in [
         ("entry.agent.first", RuntimeUInt::U16(1)),
         ("entry.agent.second", RuntimeUInt::U64(1)),
     ] {
+        let (project, context) = entry_project(source, entry_id, ProjectEntrySelectionKind::Agent);
+        let compiled = compile_attached_project(&project, &context)
+            .expect("the exact selected ordinary Agent controller compiles");
         let entry = compiled
             .runtime_plan()
             .plan

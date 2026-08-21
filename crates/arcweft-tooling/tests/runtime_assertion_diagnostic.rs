@@ -13,7 +13,11 @@ use arcweft_lang_hir::{
     expr::HirThreadFlowItem,
     item::HirItemKind,
     lowering::{HirModuleKey, LoweringRequest},
-    project::{HirProjectBuilder, HirProjectModule},
+    project::{
+        HirProjectBuilder, HirProjectModule, HirRuntimeEmissionMode, HirRuntimeExecutableOwner,
+        HirRuntimeExpressionTypeDisposition, HirRuntimeReachabilityRoot,
+        HirRuntimeReachabilityRootKind, HirRuntimeSemanticReachabilityInput,
+    },
     proof_return::HirProofReturnSemanticFactSet,
     stmt::HirStmtKind,
     symbol::{CallablePackageId, ProjectSymbolRevision, ProjectSymbolWorldId},
@@ -108,7 +112,7 @@ fn runtime_projection_emits_stable_diagnostic_without_message_parsing() {
     let transaction = hir
         .stage_proof_return_project(
             [LoweringRequest::try_new(key, &parsed).expect("lower request")],
-            world,
+            world.clone(),
             revision,
             [parsed.document().identity()],
             arcweft_lang_hir::lowering::HirLoweringControl::new(),
@@ -198,8 +202,26 @@ fn runtime_projection_emits_stable_diagnostic_without_message_parsing() {
         statement,
         RuntimeAssertionAdmission::Runtime(RuntimeAssertionMode::Check),
     );
-    let facts =
-        RuntimePlanSemanticFacts::try_new(executable, input).expect("checked runtime facts");
+    let reachability_input = HirRuntimeSemanticReachabilityInput::try_new(
+        HirRuntimeEmissionMode::CheckAll,
+        world,
+        revision,
+        vec![HirRuntimeReachabilityRoot::new(
+            HirRuntimeReachabilityRootKind::CheckedFlow,
+            HirRuntimeExecutableOwner::Item(flow_owner),
+        )],
+        Vec::new(),
+    )
+    .expect("runtime reachability input");
+    let reachability = executable
+        .runtime_semantic_reachability(
+            reachability_input,
+            |_| None,
+            |_| HirRuntimeExpressionTypeDisposition::Retain,
+        )
+        .expect("runtime reachability");
+    let facts = RuntimePlanSemanticFacts::try_new(executable, &reachability, input)
+        .expect("checked runtime facts");
     let report = lower_runtime_plan_with_stats(
         executable,
         &facts,

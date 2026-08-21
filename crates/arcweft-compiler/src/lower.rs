@@ -5,6 +5,14 @@
 //! final-HIR generation and never opens source text, rebuilds a detached HIR,
 //! or consults the removed `TypeCheckReport` sidecar.
 
+#[path = "lower/reachability.rs"]
+mod reachability;
+
+pub use reachability::{
+    RuntimeEmissionMode, RuntimeReachabilityProjectionError, project_runtime_reachability,
+    validate_reachable_runtime_callables,
+};
+
 use std::{
     collections::{BTreeMap, BTreeSet},
     sync::Arc,
@@ -22,6 +30,7 @@ use arcweft_character::{
 };
 use arcweft_core::{
     entry::{RuntimeNominalTypeId, RuntimeSchemaError},
+    pattern::RuntimeOpaqueTypeProducerId,
     plan::{
         FlowRuntimeId, RuntimeBuiltinIteratorEvidence, RuntimeDialogueValueRole, RuntimeLineId,
         RuntimeLocalDeclarationTableError,
@@ -50,12 +59,10 @@ use arcweft_lang_hir::{
         HirIntegerLiteral, HirLiteral, HirStringLiteral, HirUnitNumberLiteral,
     },
     project::{
-        HirExecutableProjectView, HirProjectItemRef, HirRuntimeExpressionTypeDisposition,
-        HirRuntimeSemanticOwnerInventory, HirRuntimeSemanticOwnerInventoryError,
-        HirSelectedExpressionInventoryError,
+        HirExecutableProjectView, HirProjectItemRef, HirRuntimeReachabilityError,
+        HirRuntimeSemanticReachability, HirSelectedExpressionInventoryError,
     },
     scope::HirScopeOwner,
-    source_index::HirCallableSourceOwner,
     stmt::HirStmtKind,
     symbol::{
         CallableDeclarationKey, ImplMethodDeclarationId, ProjectSymbolTable,
@@ -84,9 +91,10 @@ use arcweft_lang_sema::{
         CheckedProjectNominal, CheckedSelectResolution, CheckedStatementRole,
         CheckedTraitConformance, CheckedTraitIdentity, CheckedTry, CheckedTryBoundary,
         CheckedTryCarrier, CheckedValueResolution, CheckedVariantOwner, CheckedVariantResolution,
-        FinalSemanticAnalysis, FinalSemanticAnalysisError, NominalSchemaProjectionError,
+        FinalSemanticAnalysis, FinalSemanticAnalysisError, NominalSchemaPath,
+        NominalSchemaProjectionError,
     },
-    types::{AgentBuiltinType, ArrayLength, TypeKind},
+    types::{AgentBuiltinType, ArrayLength, SemanticTypeDigest, TypeKind},
 };
 use arcweft_manifest_model::CharacterNameLocalePolicySpec;
 use arcweft_runtime_plan::{
@@ -135,7 +143,7 @@ pub enum RuntimeSemanticProjectionError {
     #[error(transparent)]
     ExpressionTypeInventory(#[from] HirSelectedExpressionInventoryError),
     #[error(transparent)]
-    RuntimeSemanticOwnerInventory(#[from] HirRuntimeSemanticOwnerInventoryError),
+    RuntimeReachability(#[from] HirRuntimeReachabilityError),
     #[error("final semantic analysis omits runtime-domain HIR local {local:?}")]
     MissingLocalSemanticFact { local: LocalId },
     #[error("final semantic owner {owner:?} belongs to no executable HIR module")]
@@ -149,6 +157,13 @@ pub enum RuntimeSemanticProjectionError {
         nominal: String,
         #[source]
         source: NominalSchemaProjectionError,
+    },
+    #[error("project nominal contains an opaque leaf without a schema-derived layout")]
+    OpaqueProjectNominalLayout {
+        nominal: Box<ProjectNominalDeclarationId>,
+        path: Box<NominalSchemaPath>,
+        producer: Box<RuntimeOpaqueTypeProducerId>,
+        semantic_identity: SemanticTypeDigest,
     },
     #[error("runtime schema for nominal `{nominal}` cannot be canonically encoded")]
     NominalLayoutHash {
@@ -184,10 +199,6 @@ pub enum RuntimeSemanticProjectionError {
     Call { owner: ExprId, reason: String },
     #[error("iteration statement {owner:?} references an unbound runtime trait method")]
     MissingIterationMethod { owner: StmtId },
-    #[error(
-        "iterator conformance on {implementation:?} member {member} has no structural Impl method declaration"
-    )]
-    MissingIterationMethodDeclaration { implementation: ItemId, member: u16 },
     #[error("one checked iterator conformance was assigned conflicting self types")]
     InconsistentIterationConformance,
     #[error("assertion statement {owner:?} has an invalid runtime disposition")]
@@ -201,6 +212,18 @@ pub enum RuntimeSemanticProjectionError {
         owner: Option<ExprId>,
         reason: String,
     },
+}
+
+impl RuntimeSemanticProjectionError {
+    /// Stable compiler diagnostic identity for this projection failure.
+    pub const fn diagnostic_code(&self) -> &'static str {
+        match self {
+            Self::OpaqueProjectNominalLayout { .. } => {
+                "compiler.runtime_nominal.opaque_leaf_has_no_schema_layout"
+            }
+            _ => "compiler.runtime_semantic_projection",
+        }
+    }
 }
 
 impl From<FinalSemanticAnalysisError> for RuntimeSemanticProjectionError {
@@ -227,13 +250,13 @@ pub fn project_runtime_semantic_facts(
     project: HirExecutableProjectView<'_>,
     symbols: &ProjectSymbolTable,
     analysis: &FinalSemanticAnalysis,
+    runtime_owners: &HirRuntimeSemanticReachability<'_>,
     dialogue_profile: Option<(&DialoguePresentationProfile, &DialogueProfileRevision)>,
     character_name_policy: Option<&CharacterNameLocalePolicySpec>,
 ) -> Result<RuntimePlanSemanticFacts, RuntimeSemanticProjectionError> {
     analysis.validate_generation(project, symbols)?;
-    let runtime_owners = project.runtime_semantic_owner_inventory()?;
     let dialogue_application_calls =
-        dialogue_application_owned_calls(project, analysis, &runtime_owners)?;
+        dialogue_application_owned_calls(project, analysis, runtime_owners)?;
     let mut evaluated_effect_calls = BTreeSet::new();
     for (statement, checked) in analysis.statements() {
         if !matches!(checked.role(), CheckedStatementRole::EvaluatedEffect(_)) {
@@ -277,23 +300,7 @@ pub fn project_runtime_semantic_facts(
             runtime_call(project, owner, call, symbols, analysis).map(|call| (owner, call))
         })
         .collect::<Result<BTreeMap<_, _>, _>>()?;
-    let runtime_expression_type_owners = runtime_owners.selected_expression_type_owners(
-        |owner| {
-            let expression = analysis.expression(owner)?;
-            let CheckedExpressionResolution::PostfixBracket(resolution) = expression.resolution()
-            else {
-                return None;
-            };
-            Some(resolution.candidate())
-        },
-        |owner| {
-            runtime_calls
-                .get(&owner)
-                .map_or(HirRuntimeExpressionTypeDisposition::Retain, |call| {
-                    call.expression_type_disposition()
-                })
-        },
-    )?;
+    let runtime_expression_type_owners = runtime_owners.selected_expression_type_owners()?;
     let mut input = RuntimePlanSemanticFactInput::new();
 
     for owner in runtime_owners.locals() {
@@ -303,10 +310,10 @@ pub fn project_runtime_semantic_facts(
         input.push_local_declaration(owner, runtime_type(local.ty(), symbols, analysis)?);
     }
 
-    let iteration_methods = runtime_iteration_methods(analysis, &runtime_owners)?;
+    let iteration_methods = runtime_iteration_methods(analysis, runtime_owners)?;
     let mut method_declarations = BTreeMap::new();
     for (conformance, self_type) in &iteration_methods {
-        let declaration = runtime_iteration_method_declaration(conformance, symbols)?;
+        let declaration = conformance.declaration().clone();
         method_declarations.insert(conformance.clone(), declaration.clone());
         input.push_trait_method(RuntimeTraitMethodFact::new(
             declaration,
@@ -318,7 +325,11 @@ pub fn project_runtime_semantic_facts(
     }
 
     for (owner, item) in analysis.items() {
-        if matches!(item.role(), CheckedItemRole::Flow { .. }) {
+        if matches!(item.role(), CheckedItemRole::Flow { .. })
+            && runtime_owners.contains_runtime_owner(
+                &arcweft_lang_hir::project::HirRuntimeExecutableOwner::Item(owner),
+            )
+        {
             let symbol = symbols
                 .flow_symbol_for_item(owner)
                 .ok_or(RuntimeSemanticProjectionError::InvalidFlowIdentity { owner })?;
@@ -591,13 +602,13 @@ pub fn project_runtime_semantic_facts(
         input.push_call(owner, call);
     }
 
-    let facts = RuntimePlanSemanticFacts::try_new(project, input)?;
+    let facts = RuntimePlanSemanticFacts::try_new(project, runtime_owners, input)?;
     project_dialogue_semantic_facts(
         project,
         analysis,
         dialogue_profile,
         character_name_policy,
-        &runtime_owners,
+        runtime_owners,
         facts,
     )
 }
@@ -705,7 +716,7 @@ fn runtime_assignment(
 fn dialogue_application_owned_calls(
     project: HirExecutableProjectView<'_>,
     analysis: &FinalSemanticAnalysis,
-    runtime_owners: &HirRuntimeSemanticOwnerInventory<'_>,
+    runtime_owners: &HirRuntimeSemanticReachability<'_>,
 ) -> Result<BTreeSet<ExprId>, RuntimeSemanticProjectionError> {
     analysis
         .expressions()
@@ -750,13 +761,13 @@ fn project_dialogue_semantic_facts(
     analysis: &FinalSemanticAnalysis,
     dialogue_profile: Option<(&DialoguePresentationProfile, &DialogueProfileRevision)>,
     policy: Option<&CharacterNameLocalePolicySpec>,
-    runtime_owners: &HirRuntimeSemanticOwnerInventory<'_>,
+    runtime_owners: &HirRuntimeSemanticReachability<'_>,
     facts: RuntimePlanSemanticFacts,
 ) -> Result<RuntimePlanSemanticFacts, RuntimeSemanticProjectionError> {
     let applications = executable_dialogue_applications(project, analysis, runtime_owners)?;
     if applications.is_empty() {
         return facts
-            .with_dialogue_projection(project, None, [])
+            .with_dialogue_projection(project, runtime_owners, None, [])
             .map_err(Into::into);
     }
     let (dialogue_profile, dialogue_profile_revision) =
@@ -794,7 +805,7 @@ fn project_dialogue_semantic_facts(
         )?);
     }
     facts
-        .with_dialogue_projection(project, Some(catalog), projected)
+        .with_dialogue_projection(project, runtime_owners, Some(catalog), projected)
         .map_err(Into::into)
 }
 
@@ -807,7 +818,7 @@ type CheckedDialogueApplication<'analysis> = (
 fn executable_dialogue_applications<'analysis>(
     project: HirExecutableProjectView<'_>,
     analysis: &'analysis FinalSemanticAnalysis,
-    runtime_owners: &HirRuntimeSemanticOwnerInventory<'_>,
+    runtime_owners: &HirRuntimeSemanticReachability<'_>,
 ) -> Result<Vec<CheckedDialogueApplication<'analysis>>, RuntimeSemanticProjectionError> {
     analysis
         .expressions()
@@ -1903,14 +1914,25 @@ fn runtime_nominal(
     analysis: &FinalSemanticAnalysis,
 ) -> Result<RuntimeResolvedNominal, RuntimeSemanticProjectionError> {
     let name = nominal.declaration().qualified_name();
-    let shape = analysis
-        .project_nominal_schema(symbols, nominal)
-        .map_err(
-            |source| RuntimeSemanticProjectionError::NominalSchemaProjection {
-                nominal: name.clone(),
-                source,
-            },
-        )?;
+    let shape =
+        analysis
+            .project_nominal_schema(symbols, nominal)
+            .map_err(|source| match source {
+                NominalSchemaProjectionError::OpaqueLeaf {
+                    path,
+                    producer,
+                    semantic_identity,
+                } => RuntimeSemanticProjectionError::OpaqueProjectNominalLayout {
+                    nominal: Box::new(nominal.declaration().clone()),
+                    path: Box::new(path),
+                    producer: Box::new(producer),
+                    semantic_identity,
+                },
+                source => RuntimeSemanticProjectionError::NominalSchemaProjection {
+                    nominal: name.clone(),
+                    source,
+                },
+            })?;
     let schema = RuntimeSchemaProjection::schema(&shape);
     let layout = RuntimeSchemaProjection::layout_hash(&name, &schema).map_err(|error| {
         let EntryRuntimeProjectionError::NominalLayoutHash { source, .. } = error else {
@@ -2258,37 +2280,9 @@ fn runtime_iteration(
     }
 }
 
-fn runtime_iteration_method_declaration(
-    conformance: &CheckedTraitConformance,
-    symbols: &ProjectSymbolTable,
-) -> Result<ImplMethodDeclarationId, RuntimeSemanticProjectionError> {
-    symbols
-        .callable_symbols()
-        .find_map(|symbol| {
-            if symbol.source_item() != conformance.implementation()
-                || symbol.source_owner()
-                    != (HirCallableSourceOwner::ImplFunction {
-                        member: conformance.method(),
-                    })
-            {
-                return None;
-            }
-            let CallableDeclarationKey::ImplMethod(declaration) = symbol.declaration() else {
-                return None;
-            };
-            Some(declaration.clone())
-        })
-        .ok_or(
-            RuntimeSemanticProjectionError::MissingIterationMethodDeclaration {
-                implementation: conformance.implementation(),
-                member: conformance.method(),
-            },
-        )
-}
-
 fn runtime_iteration_methods(
     analysis: &FinalSemanticAnalysis,
-    runtime_owners: &HirRuntimeSemanticOwnerInventory<'_>,
+    runtime_owners: &HirRuntimeSemanticReachability<'_>,
 ) -> Result<BTreeMap<CheckedTraitConformance, TypeKind>, RuntimeSemanticProjectionError> {
     let mut methods = BTreeMap::new();
     let mut insert = |conformance: &CheckedTraitConformance, self_type: &TypeKind| match methods
@@ -2309,18 +2303,20 @@ fn runtime_iteration_methods(
         match iteration.as_ref() {
             CheckedIteration::Builtin { .. } => {}
             CheckedIteration::Witness {
-                source,
-                into_iter,
-                into_iterator,
-                iterator,
-                ..
+                source, into_iter, ..
             } => {
+                let [Some(into_iterator), Some(iterator)] = iteration.trait_dispatches() else {
+                    unreachable!("checked witness owns both exact conformances")
+                };
                 insert(into_iterator, source)?;
                 insert(iterator, into_iter)?;
             }
-            CheckedIteration::IteratorWitness {
-                source, iterator, ..
-            } => insert(iterator, source)?,
+            CheckedIteration::IteratorWitness { source, .. } => {
+                let [Some(iterator), None] = iteration.trait_dispatches() else {
+                    unreachable!("checked iterator witness owns one exact conformance")
+                };
+                insert(iterator, source)?;
+            }
         }
     }
     Ok(methods)

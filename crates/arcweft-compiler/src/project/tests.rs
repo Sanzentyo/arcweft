@@ -972,6 +972,44 @@ fn registration_failure_discards_project() {
 }
 
 #[test]
+fn reached_suspending_function_fails_before_opaque_project_nominal_layout() {
+    let (project, context) = removed_role_project(concat!(
+        "type ArcResult<T> = Result<T, ArcError>\n",
+        "struct OpeningAssets { bg: ImageHandle }\n",
+        "fn load_opening_assets() -> ArcResult<OpeningAssets> {\n",
+        "    let bg = try await load_bg()\n",
+        "    Ok(OpeningAssets { bg })\n",
+        "}\n",
+        "flow main() -> String {\n",
+        "    let assets = load_opening_assets()\n",
+        "    return \"done\"\n",
+        "}\n",
+    ));
+    let mut cache = InMemoryProjectCompileCache::default();
+    let (mut compiler, parsed_sources) = compilation_state(&project);
+    let error = compile_project_with_cache(
+        &mut compiler,
+        &project,
+        &parsed_sources,
+        &context,
+        &mut cache,
+    )
+    .expect_err("reached authored suspension is not runtime-emittable in this cut");
+    let codes = error
+        .diagnostics()
+        .iter()
+        .filter_map(|diagnostic| {
+            diagnostic
+                .diagnostic()
+                .code()
+                .map(arcweft_source::DiagnosticCode::as_str)
+        })
+        .collect::<Vec<_>>();
+    assert!(codes.contains(&"compiler.runtime_emission.suspending_function_unsupported"));
+    assert!(!codes.contains(&"compiler.runtime_nominal.opaque_leaf_has_no_schema_layout"));
+}
+
+#[test]
 fn agent_project_graph_preserves_same_public_flow_label_across_modules() {
     let child = CanonicalModulePath::crate_root()
         .join(ModuleSegment::new("child").expect("module segment"));

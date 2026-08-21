@@ -108,6 +108,14 @@ impl HirSnapshotId {
     pub const fn revision(self) -> HirRevision {
         self.revision
     }
+
+    pub(crate) fn cache_fingerprint_input(self) -> [u8; 16] {
+        let mut bytes = [0; 16];
+        bytes[..8].copy_from_slice(&self.module.database.0.get().to_le_bytes());
+        bytes[8..12].copy_from_slice(&self.module.slot.get().to_le_bytes());
+        bytes[12..].copy_from_slice(&self.revision.get().to_le_bytes());
+        bytes
+    }
 }
 
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]

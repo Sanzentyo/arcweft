@@ -13,7 +13,7 @@ use crate::types::CharacterField;
 use arcweft_core::value::RuntimeAgentField;
 use arcweft_interaction_model::dialogue::CharacterDialogueCustomFieldId;
 use arcweft_lang_hir::expr::HirCallArgument;
-use arcweft_lang_hir::symbol::ExternalDeclarationId;
+use arcweft_lang_hir::symbol::{ExternalDeclarationId, ImplMethodDeclarationId};
 use arcweft_source::SourceSpan;
 
 #[derive(Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
@@ -1092,18 +1092,21 @@ pub struct CheckedTraitConformance {
     implementation: ItemId,
     trait_identity: CheckedTraitIdentity,
     method: u16,
+    declaration: Box<ImplMethodDeclarationId>,
 }
 
 impl CheckedTraitConformance {
-    pub const fn new(
+    pub fn new(
         implementation: ItemId,
         trait_identity: CheckedTraitIdentity,
         method: u16,
+        declaration: ImplMethodDeclarationId,
     ) -> Self {
         Self {
             implementation,
             trait_identity,
             method,
+            declaration: Box::new(declaration),
         }
     }
 
@@ -1117,6 +1120,10 @@ impl CheckedTraitConformance {
 
     pub const fn method(&self) -> u16 {
         self.method
+    }
+
+    pub const fn declaration(&self) -> &ImplMethodDeclarationId {
+        &self.declaration
     }
 }
 
@@ -1139,6 +1146,21 @@ pub enum CheckedIteration {
         item: TypeKind,
         iterator: CheckedTraitConformance,
     },
+}
+
+impl CheckedIteration {
+    /// Returns the exact checked trait dispatches required by this iteration.
+    pub const fn trait_dispatches(&self) -> [Option<&CheckedTraitConformance>; 2] {
+        match self {
+            Self::Builtin { .. } => [None, None],
+            Self::Witness {
+                into_iterator,
+                iterator,
+                ..
+            } => [Some(into_iterator), Some(iterator)],
+            Self::IteratorWitness { iterator, .. } => [Some(iterator), None],
+        }
+    }
 }
 
 /// Final assertion disposition after proof/debug policy admission.
@@ -1474,6 +1496,31 @@ pub enum CheckedSuspensionRole {
     MaySuspend,
 }
 
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub enum CheckedOrdinaryFunctionEmission {
+    PureDirectFrame,
+    EffectfulDirectFrameUnsupported,
+    SuspendingDirectFrameUnsupported,
+    StreamFactoryUnsupported,
+}
+
+impl CheckedOrdinaryFunctionEmission {
+    pub const fn diagnostic_code(self) -> &'static str {
+        match self {
+            Self::PureDirectFrame => "compiler.runtime_emission.pure_direct_frame",
+            Self::EffectfulDirectFrameUnsupported => {
+                "compiler.runtime_emission.effectful_function_unsupported"
+            }
+            Self::SuspendingDirectFrameUnsupported => {
+                "compiler.runtime_emission.suspending_function_unsupported"
+            }
+            Self::StreamFactoryUnsupported => {
+                "compiler.runtime_emission.stream_factory_unsupported"
+            }
+        }
+    }
+}
+
 /// Exact semantic role for every executable final-HIR item family.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum CheckedItemRole {
@@ -1509,6 +1556,35 @@ pub enum CheckedItemRole {
 }
 
 impl CheckedItemRole {
+    pub fn ordinary_function_emission(
+        &self,
+        effects: &EffectSet,
+    ) -> Option<CheckedOrdinaryFunctionEmission> {
+        let Self::Function {
+            execution,
+            suspension,
+        } = self
+        else {
+            return None;
+        };
+        Some(match (execution, suspension, effects.is_empty()) {
+            (CheckedFunctionExecution::DirectFrame, CheckedSuspensionRole::NonSuspending, true) => {
+                CheckedOrdinaryFunctionEmission::PureDirectFrame
+            }
+            (
+                CheckedFunctionExecution::DirectFrame,
+                CheckedSuspensionRole::NonSuspending,
+                false,
+            ) => CheckedOrdinaryFunctionEmission::EffectfulDirectFrameUnsupported,
+            (CheckedFunctionExecution::DirectFrame, CheckedSuspensionRole::MaySuspend, _) => {
+                CheckedOrdinaryFunctionEmission::SuspendingDirectFrameUnsupported
+            }
+            (CheckedFunctionExecution::StreamFactory { .. }, _, _) => {
+                CheckedOrdinaryFunctionEmission::StreamFactoryUnsupported
+            }
+        })
+    }
+
     pub const fn family(&self) -> HirItemFamily {
         match self {
             Self::Module => HirItemFamily::Module,

@@ -185,29 +185,15 @@ fn profile_admission_requires_the_exact_resource_registry_arc() {
 }
 
 #[test]
-fn dialogue_view_outside_a_view_remains_rejected_by_runtime_projection() {
+fn unreachable_dialogue_view_function_does_not_enter_runtime_projection() {
     let fixture = Fixture::new("fn bad(value: DialogueView) { () }\n", "", true);
-    let error = fixture
+    let compiled = fixture
         .compile()
-        .expect_err("DialogueView is a presentation role, not an ordinary runtime value");
+        .expect("an unreachable ordinary function publishes no runtime type facts");
 
-    assert_eq!(error.diagnostics().len(), 1, "{error:?}");
-    let diagnostic = &error.diagnostics()[0];
-    assert_eq!(diagnostic.stage(), ProjectCompileStage::RuntimePlanLower);
-    assert!(
-        diagnostic
-            .diagnostic()
-            .message()
-            .contains("runtime type `DialogueView` has no opaque producer evidence"),
-        "{diagnostic:?}"
-    );
-    assert_eq!(
-        diagnostic
-            .diagnostic()
-            .code()
-            .map(arcweft_source::DiagnosticCode::as_str),
-        Some("compiler.runtime_semantic_projection")
-    );
+    assert!(compiled.runtime_plan().plan.flows().is_empty());
+    assert!(compiled.runtime_plan().plan.entries().is_empty());
+    assert_eq!(compiled.final_analysis().items().count(), 1);
 }
 
 struct Fixture {

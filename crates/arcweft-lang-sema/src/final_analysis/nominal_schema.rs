@@ -1,6 +1,7 @@
 use std::collections::{BTreeMap, BTreeSet};
 use thiserror::Error;
 
+use arcweft_core::pattern::RuntimeOpaqueTypeProducerId;
 use arcweft_data::{BytesFormat, FieldShape, TypeShape, VariantShape};
 use arcweft_lang_hir::{
     identity::TypeId,
@@ -12,11 +13,55 @@ use arcweft_lang_hir::{
         },
     },
 };
+use arcweft_lang_syntax::ast::module_path::ModuleSegment;
 
 use crate::{
     final_analysis::{CheckedProjectNominal, FinalSemanticAnalysis},
-    types::{GenericTypeOwnerId, GenericTypeParameterId, MapKind, TypeKind},
+    types::{GenericTypeOwnerId, GenericTypeParameterId, MapKind, SemanticTypeDigest, TypeKind},
 };
+
+#[derive(Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub enum NominalSchemaPathStep {
+    Field {
+        ordinal: u32,
+        name: ModuleSegment,
+    },
+    VariantPayload {
+        ordinal: u32,
+        name: ModuleSegment,
+    },
+    OptionItem,
+    SequenceItem,
+    MapKey,
+    MapValue,
+    ResultOk,
+    ResultError,
+    TupleItem {
+        ordinal: u32,
+    },
+    GenericArgument {
+        ordinal: u32,
+    },
+    NestedNominal {
+        declaration: ProjectNominalDeclarationId,
+    },
+}
+
+#[derive(Clone, Debug, Default, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub struct NominalSchemaPath(Box<[NominalSchemaPathStep]>);
+
+impl NominalSchemaPath {
+    pub const fn steps(&self) -> &[NominalSchemaPathStep] {
+        &self.0
+    }
+
+    fn prepended(&self, step: NominalSchemaPathStep) -> Self {
+        let mut steps = Vec::with_capacity(self.0.len() + 1);
+        steps.push(step);
+        steps.extend_from_slice(&self.0);
+        Self(steps.into_boxed_slice())
+    }
+}
 
 /// Generation-bound data-shape projection over already checked nominal types.
 ///
@@ -49,6 +94,22 @@ pub enum NominalSchemaProjectionError {
     },
     #[error("accepted final semantic analysis has no type fact for {ty:?}")]
     MissingTypeFact { ty: TypeId },
+    #[error("accepted opaque type has no closed project-nominal schema layout")]
+    OpaqueLeaf {
+        path: NominalSchemaPath,
+        producer: RuntimeOpaqueTypeProducerId,
+        semantic_identity: SemanticTypeDigest,
+    },
+    #[error("checked type is not a supported closed project-nominal schema leaf")]
+    UnsupportedLeaf {
+        path: NominalSchemaPath,
+        ty: Box<TypeKind>,
+    },
+    #[error("project-nominal schema contains a cyclic generic substitution")]
+    CyclicGenericSubstitution {
+        path: NominalSchemaPath,
+        parameter: GenericTypeParameterId,
+    },
     #[error("{path}: {reason}")]
     InvalidShape { path: String, reason: String },
 }
@@ -61,12 +122,27 @@ impl NominalSchemaProjectionError {
         }
     }
 
-    fn within(self, segment: impl Into<String>) -> Self {
+    fn within_step(self, step: NominalSchemaPathStep) -> Self {
         match self {
-            Self::InvalidShape { path, reason } => Self::InvalidShape {
-                path: format!("{} -> {path}", segment.into()),
-                reason,
+            Self::OpaqueLeaf {
+                path,
+                producer,
+                semantic_identity,
+            } => Self::OpaqueLeaf {
+                path: path.prepended(step),
+                producer,
+                semantic_identity,
             },
+            Self::UnsupportedLeaf { path, ty } => Self::UnsupportedLeaf {
+                path: path.prepended(step),
+                ty,
+            },
+            Self::CyclicGenericSubstitution { path, parameter } => {
+                Self::CyclicGenericSubstitution {
+                    path: path.prepended(step),
+                    parameter,
+                }
+            }
             other => other,
         }
     }
@@ -159,9 +235,15 @@ impl<'a> NominalSchemaExpander<'a> {
         let result = match declaration.body() {
             ProjectNominalBody::Struct { fields } => fields
                 .iter()
-                .map(|field| {
+                .enumerate()
+                .map(|(ordinal, field)| {
                     self.resolved_shape(field.ty(), &substitutions, stack)
-                        .map_err(|error| error.within(format!("field `{}`", field.name())))
+                        .map_err(|error| {
+                            error.within_step(NominalSchemaPathStep::Field {
+                                ordinal: u32::try_from(ordinal).unwrap_or(u32::MAX),
+                                name: field.name().clone(),
+                            })
+                        })
                         .map(|shape| {
                             FieldShape::new(field.name().as_str(), field.name().as_str(), shape)
                         })
@@ -170,14 +252,18 @@ impl<'a> NominalSchemaExpander<'a> {
                 .map(|fields| TypeShape::record(canonical_nominal_name(declaration.id()), fields)),
             ProjectNominalBody::Enum { variants } => variants
                 .iter()
-                .map(|variant| {
+                .enumerate()
+                .map(|(ordinal, variant)| {
                     let unit = VariantShape::unit(variant.name().as_str(), variant.name().as_str());
                     let Some(payload) = variant.payload() else {
                         return Ok(unit);
                     };
                     self.resolved_shape(payload, &substitutions, stack)
                         .map_err(|error| {
-                            error.within(format!("variant `{}` payload", variant.name()))
+                            error.within_step(NominalSchemaPathStep::VariantPayload {
+                                ordinal: u32::try_from(ordinal).unwrap_or(u32::MAX),
+                                name: variant.name().clone(),
+                            })
                         })
                         .map(|shape| unit.with_payload(shape))
                 })
@@ -207,6 +293,10 @@ impl<'a> NominalSchemaExpander<'a> {
         self.type_shape(ty, substitutions, stack, &mut BTreeSet::new())
     }
 
+    #[expect(
+        clippy::too_many_lines,
+        reason = "schema projection exhaustively maps the closed checked type vocabulary"
+    )]
     fn type_shape(
         &self,
         ty: &TypeKind,
@@ -242,17 +332,23 @@ impl<'a> NominalSchemaExpander<'a> {
             TypeKind::Bytes => TypeShape::Bytes {
                 format: BytesFormat::Binary,
             },
-            TypeKind::Option(inner) => TypeShape::option(recurse(inner, generic_stack)?),
-            TypeKind::Vec(inner) | TypeKind::Seq(inner) => {
-                TypeShape::seq(recurse(inner, generic_stack)?)
-            }
+            TypeKind::Option(inner) => TypeShape::option(
+                recurse(inner, generic_stack)
+                    .map_err(|error| error.within_step(NominalSchemaPathStep::OptionItem))?,
+            ),
+            TypeKind::Vec(inner) | TypeKind::Seq(inner) => TypeShape::seq(
+                recurse(inner, generic_stack)
+                    .map_err(|error| error.within_step(NominalSchemaPathStep::SequenceItem))?,
+            ),
             TypeKind::Map {
                 kind: MapKind::Ordered | MapKind::Sorted | MapKind::BTree,
                 key,
                 value,
             } => TypeShape::map(
-                recurse(key, generic_stack).map_err(|error| error.within("map key"))?,
-                recurse(value, generic_stack).map_err(|error| error.within("map value"))?,
+                recurse(key, generic_stack)
+                    .map_err(|error| error.within_step(NominalSchemaPathStep::MapKey))?,
+                recurse(value, generic_stack)
+                    .map_err(|error| error.within_step(NominalSchemaPathStep::MapValue))?,
             ),
             TypeKind::ProjectNominal(nominal) => {
                 let declaration = self.symbols.nominal(nominal.declaration()).ok_or_else(|| {
@@ -260,14 +356,26 @@ impl<'a> NominalSchemaExpander<'a> {
                         nominal: nominal.declaration().qualified_name(),
                     }
                 })?;
-                self.schema_with_stack(declaration, nominal.arguments(), substitutions, stack)?
+                self.schema_with_stack(declaration, nominal.arguments(), substitutions, stack)
+                    .map_err(|error| {
+                        error.within_step(NominalSchemaPathStep::NestedNominal {
+                            declaration: nominal.declaration().clone(),
+                        })
+                    })?
+            }
+            TypeKind::AcceptedNominal(nominal) => {
+                return Err(NominalSchemaProjectionError::OpaqueLeaf {
+                    path: NominalSchemaPath::default(),
+                    producer: nominal.runtime_producer().clone(),
+                    semantic_identity: ty.semantic_identity_digest(),
+                });
             }
             TypeKind::GenericParam(parameter) => {
                 if !generic_stack.insert(parameter.clone()) {
-                    return Err(NominalSchemaProjectionError::new(format!(
-                        "cyclic generic substitution for parameter #{}",
-                        parameter.ordinal()
-                    )));
+                    return Err(NominalSchemaProjectionError::CyclicGenericSubstitution {
+                        path: NominalSchemaPath::default(),
+                        parameter: parameter.clone(),
+                    });
                 }
                 let replacement = substitutions.get(parameter).ok_or_else(|| {
                     NominalSchemaProjectionError::new(format!(
@@ -285,11 +393,42 @@ impl<'a> NominalSchemaExpander<'a> {
                     poison.index()
                 )));
             }
+            TypeKind::Result { ok, error } => {
+                recurse(ok, generic_stack)
+                    .map_err(|error| error.within_step(NominalSchemaPathStep::ResultOk))?;
+                recurse(error, generic_stack)
+                    .map_err(|error| error.within_step(NominalSchemaPathStep::ResultError))?;
+                return Err(NominalSchemaProjectionError::UnsupportedLeaf {
+                    path: NominalSchemaPath::default(),
+                    ty: Box::new(ty.clone()),
+                });
+            }
+            TypeKind::Tuple(items) => {
+                for (ordinal, item) in items.iter().enumerate() {
+                    recurse(item, generic_stack).map_err(|error| {
+                        error.within_step(NominalSchemaPathStep::TupleItem {
+                            ordinal: u32::try_from(ordinal).unwrap_or(u32::MAX),
+                        })
+                    })?;
+                }
+                return Err(NominalSchemaProjectionError::UnsupportedLeaf {
+                    path: NominalSchemaPath::default(),
+                    ty: Box::new(ty.clone()),
+                });
+            }
+            TypeKind::Array { item, .. } | TypeKind::Slice(item) => {
+                recurse(item, generic_stack)
+                    .map_err(|error| error.within_step(NominalSchemaPathStep::SequenceItem))?;
+                return Err(NominalSchemaProjectionError::UnsupportedLeaf {
+                    path: NominalSchemaPath::default(),
+                    ty: Box::new(ty.clone()),
+                });
+            }
             unsupported => {
-                return Err(NominalSchemaProjectionError::new(format!(
-                    "checked type `{}` is not a canonical persisted data shape",
-                    unsupported.source_label()
-                )));
+                return Err(NominalSchemaProjectionError::UnsupportedLeaf {
+                    path: NominalSchemaPath::default(),
+                    ty: Box::new(unsupported.clone()),
+                });
             }
         })
     }

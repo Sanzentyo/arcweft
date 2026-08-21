@@ -9,7 +9,12 @@ use crate::expr::{HirCallArgument, HirExprKind};
 use crate::identity::{ExprId, HirModuleId};
 use crate::module::HirModule;
 
-use super::{HirExecutableProjectView, HirRuntimeSemanticOwnerInventory};
+use super::{HirExecutableProjectView, HirRuntimeSemanticReachability};
+
+pub(super) struct HirSelectedRuntimeExpressionOwners {
+    pub(super) reached: BTreeSet<ExprId>,
+    pub(super) typed: BTreeSet<ExprId>,
+}
 
 /// Failure to resolve the expression owners selected by a higher-layer
 /// postfix decision.
@@ -79,15 +84,34 @@ impl HirExecutableProjectView<'_> {
             selected_postfix,
             |_| HirRuntimeExpressionTypeDisposition::Retain,
         )
+        .map(|owners| owners.typed)
     }
 
+    pub(super) fn selected_runtime_expression_owners(
+        self,
+        outer_owners: &BTreeSet<ExprId>,
+        selected_postfix: impl FnMut(ExprId) -> Option<ExprId>,
+        expression_disposition: impl FnMut(ExprId) -> HirRuntimeExpressionTypeDisposition,
+    ) -> Result<HirSelectedRuntimeExpressionOwners, HirSelectedExpressionInventoryError> {
+        self.selected_expression_owners_in_domain(
+            SelectedExpressionDomain::RuntimeType,
+            Some(outer_owners),
+            selected_postfix,
+            expression_disposition,
+        )
+    }
+
+    #[expect(
+        clippy::too_many_lines,
+        reason = "selection applies one exhaustive typed expression-family admission matrix"
+    )]
     fn selected_expression_owners_in_domain(
         self,
         domain: SelectedExpressionDomain,
         outer_owners: Option<&BTreeSet<ExprId>>,
         mut selected_postfix: impl FnMut(ExprId) -> Option<ExprId>,
         mut expression_disposition: impl FnMut(ExprId) -> HirRuntimeExpressionTypeDisposition,
-    ) -> Result<BTreeSet<ExprId>, HirSelectedExpressionInventoryError> {
+    ) -> Result<HirSelectedRuntimeExpressionOwners, HirSelectedExpressionInventoryError> {
         let modules = self
             .modules()
             .map(|(_, module)| (module.module_id(), module.as_ref()))
@@ -117,9 +141,9 @@ impl HirExecutableProjectView<'_> {
         let mut selected = BTreeSet::new();
 
         while let Some(owner) = pending.pop() {
-            if !visited.insert(owner)
-                || excluded_roots.contains(&owner)
+            if excluded_roots.contains(&owner)
                 || outer_owners.is_some_and(|outer| !outer.contains(&owner))
+                || !visited.insert(owner)
             {
                 continue;
             }
@@ -188,11 +212,14 @@ impl HirExecutableProjectView<'_> {
                 }
             }
         }
-        Ok(selected)
+        Ok(HirSelectedRuntimeExpressionOwners {
+            reached: visited,
+            typed: selected,
+        })
     }
 }
 
-impl HirRuntimeSemanticOwnerInventory<'_> {
+impl HirRuntimeSemanticReachability<'_> {
     /// Returns the exact retained expression owners whose accepted types enter
     /// runtime lowering after bounded postfix ambiguity has been resolved.
     ///
@@ -203,15 +230,8 @@ impl HirRuntimeSemanticOwnerInventory<'_> {
     /// HIR validates that a call-only disposition cannot hide another family.
     pub fn selected_expression_type_owners(
         &self,
-        selected_postfix: impl FnMut(ExprId) -> Option<ExprId>,
-        expression_disposition: impl FnMut(ExprId) -> HirRuntimeExpressionTypeDisposition,
     ) -> Result<BTreeSet<ExprId>, HirSelectedExpressionInventoryError> {
-        self.project.selected_expression_owners_in_domain(
-            SelectedExpressionDomain::RuntimeType,
-            Some(self.expression_owners()),
-            selected_postfix,
-            expression_disposition,
-        )
+        Ok(self.expression_type_owners().clone())
     }
 }
 

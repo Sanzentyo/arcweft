@@ -1682,6 +1682,15 @@ fn validate_conformance(
     let Some(arcweft_lang_hir::item::HirImplMember::Function(method)) = method else {
         return Err(FinalSemanticAnalysisError::WrongPayloadFamily);
     };
+    if conformance.declaration().kind() != arcweft_lang_hir::symbol::ImplMethodKind::Trait
+        || method
+            .name()
+            .resolved()
+            .map(arcweft_lang_hir::leaf::HirName::as_str)
+            != Some(conformance.declaration().method().as_str())
+    {
+        return Err(FinalSemanticAnalysisError::WrongPayloadFamily);
+    }
     let expected_method = match conformance.trait_identity() {
         super::CheckedTraitIdentity::Project(trait_item) => {
             if !matches!(

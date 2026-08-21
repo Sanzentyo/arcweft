@@ -10,16 +10,16 @@ use arcweft_adapter_context::manifest::{
 };
 use arcweft_adapter_sema::registration::AdapterSemanticRegistration;
 use arcweft_compiler::incremental::{BuildSnapshotRequest, snapshot_compiled_project};
-use arcweft_compiler::lower::project_runtime_semantic_facts;
+use arcweft_compiler::lower::{
+    RuntimeEmissionMode, project_runtime_reachability, project_runtime_semantic_facts,
+};
 use arcweft_compiler::project::{
     CompiledProject, CompiledProjectModule, ProjectCompilationContext, ProjectCompilationSession,
     ProjectCompileCache, ProjectCompileCacheStatus, ProjectCompileError,
     ProjectCompileUnitFingerprint, compile_project_with_cache,
 };
 use arcweft_lang_hir::symbol::{CallablePackageId, ProjectSymbolWorldId};
-use arcweft_lang_hir::{
-    item::HirItemKind, project::HirRuntimeExpressionTypeDisposition, stmt::HirStmtKind,
-};
+use arcweft_lang_hir::{item::HirItemKind, stmt::HirStmtKind};
 use arcweft_lang_sema::{
     env::TypeCheckEnv,
     final_analysis::CheckedStatementRole,
@@ -559,10 +559,19 @@ fn runtime_plan_consumes_project_view_without_flattening() {
         .hir_project()
         .executable_view()
         .expect("accepted project is executable");
+    let runtime_owners = project_runtime_reachability(
+        executable,
+        compiled.project_symbols(),
+        compiled.final_analysis(),
+        compiled.checked_entries(),
+        RuntimeEmissionMode::CheckAll,
+    )
+    .expect("runtime reachability projects from the accepted project view");
     let runtime_facts = project_runtime_semantic_facts(
         executable,
         compiled.project_symbols(),
         compiled.final_analysis(),
+        &runtime_owners,
         None,
         None,
     )
@@ -628,6 +637,7 @@ fn runtime_semantic_facts_retain_exact_runtime_domain_types_and_omit_presentatio
             "fn main(flag: bool) -> i64 {\n",
             "    match flag { true => 1i64, false => 2i64 }\n",
             "}\n",
+            "flow start() -> i64 { return main(true) }\n",
             "pub view Mobile(dialogue: DialogueView) {\n",
             "    RichText(dialogue.content)\n",
             "}\n",
@@ -651,27 +661,25 @@ fn runtime_semantic_facts_retain_exact_runtime_domain_types_and_omit_presentatio
         .hir_project()
         .executable_view()
         .expect("accepted project is executable");
+    let runtime_owners = project_runtime_reachability(
+        executable,
+        compiled.project_symbols(),
+        compiled.final_analysis(),
+        compiled.checked_entries(),
+        RuntimeEmissionMode::CheckAll,
+    )
+    .expect("accepted runtime reachability");
     let runtime_facts = project_runtime_semantic_facts(
         executable,
         compiled.project_symbols(),
         compiled.final_analysis(),
+        &runtime_owners,
         None,
         None,
     )
     .expect("accepted types project through the compiler boundary");
-    let runtime_owners = executable
-        .runtime_semantic_owner_inventory()
-        .expect("runtime semantic owner inventory");
     let expression_type_owners = runtime_owners
-        .selected_expression_type_owners(
-            |owner| runtime_facts.postfix_candidate(owner),
-            |owner| {
-                runtime_facts.call(owner).map_or(
-                    HirRuntimeExpressionTypeDisposition::Retain,
-                    arcweft_runtime_plan::semantic_facts::RuntimeResolvedCall::expression_type_disposition,
-                )
-            },
-        )
+        .selected_expression_type_owners()
         .expect("accepted runtime expression type owners");
 
     let mut saw_bool_local = false;
@@ -779,7 +787,7 @@ fn runtime_semantic_facts_retain_exact_runtime_domain_types_and_omit_presentatio
 }
 
 #[test]
-fn runtime_assignment_projection_retains_exact_checked_place_and_types() {
+fn unreachable_assignment_retains_checked_place_but_publishes_no_runtime_fact() {
     let (project, facts) = fixture(
         concat!(
             "struct Point { x: i64, active: bool }\n",
@@ -817,55 +825,33 @@ fn runtime_assignment_projection_retains_exact_checked_place_and_types() {
     let CheckedStatementRole::Assignment(checked) = checked.role() else {
         panic!("assignment owns its checked semantic role")
     };
+    let runtime_owners = project_runtime_reachability(
+        executable,
+        compiled.project_symbols(),
+        compiled.final_analysis(),
+        compiled.checked_entries(),
+        RuntimeEmissionMode::CheckAll,
+    )
+    .expect("accepted assignment reachability");
     let runtime = project_runtime_semantic_facts(
         executable,
         compiled.project_symbols(),
         compiled.final_analysis(),
+        &runtime_owners,
         None,
         None,
     )
     .expect("assignment projects through the compiler boundary");
-    let assignment = runtime
-        .assignment(statement)
-        .expect("assignment has one runtime fact");
-
-    assert_eq!(assignment.base(), checked.place().local());
-    assert_eq!(assignment.field_ordinal(), checked.place().field_ordinal());
-    assert_eq!(assignment.field_ordinal(), 1);
+    assert!(runtime.assignment(statement).is_none());
+    assert!(!runtime_owners.contains_statement(statement));
     assert_eq!(checked.place().field_type(), &TypeKind::Bool);
     assert_eq!(checked.value_type(), &TypeKind::Bool);
-    assert_eq!(
-        assignment.nominal().identity().as_bytes(),
-        checked.place().nominal().identity().as_bytes()
-    );
-    assert_eq!(
-        assignment.field_type().identity().as_bytes(),
-        checked
-            .place()
-            .field_type()
-            .semantic_identity_digest()
-            .as_bytes()
-    );
-    assert_eq!(
-        assignment.value_type().identity().as_bytes(),
-        checked.value_type().semantic_identity_digest().as_bytes()
-    );
-    assert_eq!(assignment.field_type(), assignment.value_type());
-    let RuntimeTypeShape::ProjectNominal { nominal, .. } = runtime
-        .local_type(assignment.base())
-        .expect("assignment base local type")
-        .shape()
-    else {
-        panic!("assignment base retains its project nominal shape")
-    };
-    assert_eq!(nominal, assignment.nominal());
-    assert_eq!(nominal.layout(), assignment.nominal().layout());
 }
 
 #[test]
 fn runtime_variant_facts_retain_the_complete_normalized_project_case_table() {
     let (project, facts) = fixture(
-        "enum Event {\n    Unit,\n    Text String,\n}\n\nfn event() -> Event { .Unit }\n\nflow main() -> String { return \"done\" }\n",
+        "enum Event {\n    Unit,\n    Text String,\n}\n\nfn event() -> Event { .Unit }\n\nflow main() -> String { let current = event(); return \"done\" }\n",
         "runtime-normalized-variant-cases",
     );
     let mut cache = RecordingCache::default();
@@ -881,10 +867,19 @@ fn runtime_variant_facts_retain_the_complete_normalized_project_case_table() {
         .hir_project()
         .executable_view()
         .expect("accepted project is executable");
+    let runtime_owners = project_runtime_reachability(
+        executable,
+        compiled.project_symbols(),
+        compiled.final_analysis(),
+        compiled.checked_entries(),
+        RuntimeEmissionMode::CheckAll,
+    )
+    .expect("accepted project enum reachability");
     let runtime_facts = project_runtime_semantic_facts(
         executable,
         compiled.project_symbols(),
         compiled.final_analysis(),
+        &runtime_owners,
         None,
         None,
     )

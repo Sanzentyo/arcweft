@@ -1,4 +1,7 @@
-use std::{collections::BTreeSet, sync::Arc};
+use std::{
+    collections::{BTreeMap, BTreeSet},
+    sync::Arc,
+};
 
 use arcweft_id::dialogue::DialogueLineId;
 use arcweft_lang_syntax::ast::module_path::{CanonicalModulePath, ModuleSegment};
@@ -9,19 +12,23 @@ use arcweft_source::{SourceDocument, SourceDocumentId, SourceEdit, SourceName, S
 use super::{
     HirExecutableProjectView, HirPackageModuleKey, HirProject, HirProjectBuildError,
     HirProjectBuilder, HirProjectExecutionError, HirProjectModule, HirProjectModuleError,
-    HirRuntimeCallCalleeDisposition, HirRuntimeExpressionTypeDisposition,
-    HirSelectedExpressionInventoryError, exported_parts, styles,
+    HirRuntimeCallCalleeDisposition, HirRuntimeEmissionMode, HirRuntimeExecutableOwner,
+    HirRuntimeExpressionTypeDisposition, HirRuntimeReachabilityEdge, HirRuntimeReachabilityError,
+    HirRuntimeReachabilityRoot, HirRuntimeReachabilityRootKind, HirRuntimeSemanticReachability,
+    HirRuntimeSemanticReachabilityInput, HirSelectedExpressionInventoryError, exported_parts,
+    styles,
 };
 use crate::database::HirDatabase;
 use crate::dialogue_application::HirPostfixBracketCandidates;
-use crate::expr::HirExprKind;
+use crate::expr::{HirExprKind, HirThreadFlowItem};
 use crate::final_lowering::stage_unpublished_module_for_invariant_test;
 use crate::identity::ExprId;
 use crate::item::{HirDeclarationMemberKind, HirItemKind};
 use crate::line_identity::{DialogueLineDiagnostic, DialogueLineIdOrigin, DialogueTextKeyOrigin};
 use crate::lowering::{HirModuleKey, LoweringRequest};
 use crate::module::HirModule;
-use crate::symbol::CallablePackageId;
+use crate::symbol::{CallableDeclarationId, CallableDeclarationKey, CallableDeclarationOwner};
+use crate::symbol::{CallablePackageId, ProjectSymbolRevision, ProjectSymbolWorldId};
 
 fn package() -> CallablePackageId {
     CallablePackageId::try_new("proof-final-project-tests").unwrap()
@@ -103,6 +110,56 @@ fn build_project_with_limit(
         builder.insert_module(module)?;
     }
     builder.finish()
+}
+
+fn runtime_reachability(
+    executable: HirExecutableProjectView<'_>,
+    selected_postfix: impl FnMut(ExprId) -> Option<ExprId>,
+    call_disposition: impl FnMut(ExprId) -> HirRuntimeExpressionTypeDisposition,
+) -> Result<HirRuntimeSemanticReachability<'_>, HirRuntimeReachabilityError> {
+    let root_document = executable
+        .modules()
+        .next()
+        .expect("test project has one module")
+        .1
+        .provenance()
+        .source_identity()
+        .id()
+        .clone();
+    let world = ProjectSymbolWorldId::try_new(
+        executable.package().clone(),
+        root_document,
+        "final-project-tests",
+    )
+    .unwrap();
+    let revision = ProjectSymbolRevision::try_for_documents(
+        executable
+            .modules()
+            .map(|(_, module)| module.provenance().source_identity()),
+    )
+    .unwrap();
+    let roots = executable
+        .items()
+        .filter_map(|item| {
+            let kind = match item.item().kind() {
+                HirItemKind::Flow(_) => HirRuntimeReachabilityRootKind::CheckedFlow,
+                HirItemKind::Entry(_) => HirRuntimeReachabilityRootKind::CheckedEntry,
+                _ => return None,
+            };
+            Some(HirRuntimeReachabilityRoot::new(
+                kind,
+                HirRuntimeExecutableOwner::Item(item.id()),
+            ))
+        })
+        .collect();
+    let input = HirRuntimeSemanticReachabilityInput::try_new(
+        HirRuntimeEmissionMode::CheckAll,
+        world,
+        revision,
+        roots,
+        Vec::new(),
+    )?;
+    executable.runtime_semantic_reachability(input, selected_postfix, call_disposition)
 }
 
 fn root_module_fixture(
@@ -361,7 +418,7 @@ fn selected_expression_inventory_validates_and_projects_one_postfix_graph() {
         &mut root_syntax,
         "arcweft-test://proof/final-project/selected-expression-root",
         "selected-expression-root.arcw",
-        "fn root(items: Vec<i64>, key: i64) { items[key] }\n",
+        "flow root(items: Vec<i64>, key: i64) { items[key] }\n",
     );
     let mut child_syntax = SyntaxDatabase::try_new().unwrap();
     let child_source = parse_initial(
@@ -467,22 +524,24 @@ fn assert_runtime_postfix_expression_type_inventory(
     index_children: &[ExprId],
     dialogue_children: &[ExprId],
 ) {
-    let runtime_owners = executable
-        .runtime_semantic_owner_inventory()
-        .expect("runtime semantic owner inventory");
-    assert_eq!(
-        runtime_owners.selected_expression_type_owners(
+    assert!(matches!(
+        runtime_reachability(
+            executable,
             |_| None,
             |_| HirRuntimeExpressionTypeDisposition::Retain,
         ),
-        Err(HirSelectedExpressionInventoryError::MissingPostfixSelection { expression: owner })
-    );
-    let runtime_index = runtime_owners
-        .selected_expression_type_owners(
-            |candidate_owner| (candidate_owner == owner).then_some(index),
-            |_| HirRuntimeExpressionTypeDisposition::Retain,
-        )
-        .expect("selected runtime index type graph");
+        Err(HirRuntimeReachabilityError::SelectedExpressions(
+            HirSelectedExpressionInventoryError::MissingPostfixSelection { expression }
+        )) if expression == owner
+    ));
+    let runtime_index = runtime_reachability(
+        executable,
+        |candidate_owner| (candidate_owner == owner).then_some(index),
+        |_| HirRuntimeExpressionTypeDisposition::Retain,
+    )
+    .expect("selected runtime index reachability")
+    .selected_expression_type_owners()
+    .expect("selected runtime index type graph");
     assert!(runtime_index.contains(&owner));
     assert!(runtime_index.contains(&target));
     assert!(runtime_index.contains(&index));
@@ -494,12 +553,14 @@ fn assert_runtime_postfix_expression_type_inventory(
         "the complete runtime index graph remains reachable"
     );
 
-    let runtime_dialogue = runtime_owners
-        .selected_expression_type_owners(
-            |candidate_owner| (candidate_owner == owner).then_some(dialogue),
-            |_| HirRuntimeExpressionTypeDisposition::Retain,
-        )
-        .expect("selected runtime dialogue operand graph");
+    let runtime_dialogue = runtime_reachability(
+        executable,
+        |candidate_owner| (candidate_owner == owner).then_some(dialogue),
+        |_| HirRuntimeExpressionTypeDisposition::Retain,
+    )
+    .expect("selected runtime dialogue reachability")
+    .selected_expression_type_owners()
+    .expect("selected runtime dialogue operand graph");
     assert!(!runtime_dialogue.contains(&owner));
     assert!(!runtime_dialogue.contains(&dialogue));
     assert!(!runtime_dialogue.contains(&index));
@@ -521,7 +582,7 @@ fn runtime_expression_type_inventory_excludes_effect_metadata_subtrees() {
         &mut syntax,
         "arcweft-test://proof/final-project/runtime-expression-types",
         "runtime-expression-types.arcw",
-        "fn root() effects { fs.read } { true }\n",
+        "flow root() effects { fs.read } { true }\n",
     );
     let mut database = HirDatabase::try_new().unwrap();
     let module = lower(&mut database, &parsed, &package, &root_path);
@@ -557,11 +618,14 @@ fn runtime_expression_type_inventory_excludes_effect_metadata_subtrees() {
         "semantic analysis retains the complete effect expression subtree"
     );
 
-    let runtime_owners = executable
-        .runtime_semantic_owner_inventory()
-        .expect("runtime semantic owner inventory");
+    let runtime_owners = runtime_reachability(
+        executable,
+        |_| None,
+        |_| HirRuntimeExpressionTypeDisposition::Retain,
+    )
+    .expect("runtime semantic reachability");
     let runtime = runtime_owners
-        .selected_expression_type_owners(|_| None, |_| HirRuntimeExpressionTypeDisposition::Retain)
+        .selected_expression_type_owners()
         .expect("postfix-free runtime type inventory");
     assert!(!runtime.contains(&effect_root));
     assert!(
@@ -572,94 +636,108 @@ fn runtime_expression_type_inventory_excludes_effect_metadata_subtrees() {
 }
 
 #[test]
+#[expect(
+    clippy::too_many_lines,
+    reason = "the fixture asserts every non-value call-carrier disposition in one matrix"
+)]
 fn runtime_expression_type_inventory_applies_typed_non_value_call_carriers() {
     let (project, call, callee, argument, _, _, _, _) = runtime_call_inventory_fixture();
     let executable = project.executable_view().unwrap();
-    let runtime_owners = executable
-        .runtime_semantic_owner_inventory()
-        .expect("runtime semantic owner inventory");
-
-    let retained = runtime_owners
-        .selected_expression_type_owners(|_| None, |_| HirRuntimeExpressionTypeDisposition::Retain)
-        .expect("postfix-free retained call inventory");
+    let retained = runtime_reachability(
+        executable,
+        |_| None,
+        |_| HirRuntimeExpressionTypeDisposition::Retain,
+    )
+    .expect("retained reachability")
+    .selected_expression_type_owners()
+    .expect("postfix-free retained call inventory");
     assert!(retained.contains(&call));
     assert!(retained.contains(&callee));
     assert!(retained.contains(&argument));
 
-    let retained_static_call = runtime_owners
-        .selected_expression_type_owners(
-            |_| None,
-            |owner| {
-                if owner == call {
-                    HirRuntimeExpressionTypeDisposition::RetainedCallResult {
-                        callee: HirRuntimeCallCalleeDisposition::Static,
-                    }
-                } else {
-                    HirRuntimeExpressionTypeDisposition::Retain
+    let retained_static_call = runtime_reachability(
+        executable,
+        |_| None,
+        |owner| {
+            if owner == call {
+                HirRuntimeExpressionTypeDisposition::RetainedCallResult {
+                    callee: HirRuntimeCallCalleeDisposition::Static,
                 }
-            },
-        )
-        .expect("retained static call result inventory");
+            } else {
+                HirRuntimeExpressionTypeDisposition::Retain
+            }
+        },
+    )
+    .expect("retained static-call reachability")
+    .selected_expression_type_owners()
+    .expect("retained static call result inventory");
     assert!(retained_static_call.contains(&call));
     assert!(!retained_static_call.contains(&callee));
     assert!(retained_static_call.contains(&argument));
 
-    let retained_receiver_call = runtime_owners
-        .selected_expression_type_owners(
-            |_| None,
-            |owner| {
-                if owner == call {
-                    HirRuntimeExpressionTypeDisposition::RetainedCallResult {
-                        callee: HirRuntimeCallCalleeDisposition::RuntimeReceiver,
-                    }
-                } else {
-                    HirRuntimeExpressionTypeDisposition::Retain
+    let retained_receiver_call = runtime_reachability(
+        executable,
+        |_| None,
+        |owner| {
+            if owner == call {
+                HirRuntimeExpressionTypeDisposition::RetainedCallResult {
+                    callee: HirRuntimeCallCalleeDisposition::RuntimeReceiver,
                 }
-            },
-        )
-        .expect("retained runtime-receiver call result inventory");
+            } else {
+                HirRuntimeExpressionTypeDisposition::Retain
+            }
+        },
+    )
+    .expect("retained receiver-call reachability")
+    .selected_expression_type_owners()
+    .expect("retained runtime-receiver call result inventory");
     assert!(retained_receiver_call.contains(&call));
     assert!(retained_receiver_call.contains(&callee));
     assert!(retained_receiver_call.contains(&argument));
 
-    let carrier = runtime_owners
-        .selected_expression_type_owners(
-            |_| None,
-            |owner| {
-                if owner == call {
-                    HirRuntimeExpressionTypeDisposition::NonValueCallCarrier {
-                        callee: HirRuntimeCallCalleeDisposition::Static,
-                    }
-                } else {
-                    HirRuntimeExpressionTypeDisposition::Retain
+    let carrier = runtime_reachability(
+        executable,
+        |_| None,
+        |owner| {
+            if owner == call {
+                HirRuntimeExpressionTypeDisposition::NonValueCallCarrier {
+                    callee: HirRuntimeCallCalleeDisposition::Static,
                 }
-            },
-        )
-        .expect("postfix-free carrier inventory");
+            } else {
+                HirRuntimeExpressionTypeDisposition::Retain
+            }
+        },
+    )
+    .expect("static carrier reachability")
+    .selected_expression_type_owners()
+    .expect("postfix-free carrier inventory");
     assert!(!carrier.contains(&call));
     assert!(!carrier.contains(&callee));
     assert!(carrier.contains(&argument));
 
-    let receiver = runtime_owners
-        .selected_expression_type_owners(
-            |_| None,
-            |owner| {
-                if owner == call {
-                    HirRuntimeExpressionTypeDisposition::NonValueCallCarrier {
-                        callee: HirRuntimeCallCalleeDisposition::RuntimeReceiver,
-                    }
-                } else {
-                    HirRuntimeExpressionTypeDisposition::Retain
+    let receiver = runtime_reachability(
+        executable,
+        |_| None,
+        |owner| {
+            if owner == call {
+                HirRuntimeExpressionTypeDisposition::NonValueCallCarrier {
+                    callee: HirRuntimeCallCalleeDisposition::RuntimeReceiver,
                 }
-            },
-        )
-        .expect("runtime-receiver call carrier inventory");
+            } else {
+                HirRuntimeExpressionTypeDisposition::Retain
+            }
+        },
+    )
+    .expect("receiver carrier reachability")
+    .selected_expression_type_owners()
+    .expect("runtime-receiver call carrier inventory");
     assert!(!receiver.contains(&call));
     assert!(receiver.contains(&callee));
     assert!(receiver.contains(&argument));
 
-    assert_eq!(
-        runtime_owners.selected_expression_type_owners(
+    assert!(matches!(
+        runtime_reachability(
+            executable,
             |_| None,
             |owner| {
                 if owner == argument {
@@ -671,35 +749,34 @@ fn runtime_expression_type_inventory_applies_typed_non_value_call_carriers() {
                 }
             },
         ),
-        Err(
+        Err(HirRuntimeReachabilityError::SelectedExpressions(
             HirSelectedExpressionInventoryError::InvalidRuntimeCallDisposition {
-                expression: argument,
+                expression,
             }
-        )
-    );
+        )) if expression == argument
+    ));
 }
 
 #[test]
 fn retained_member_call_result_keeps_receiver_and_omits_select_callee() {
     let (project, _, _, _, call, callee, receiver, argument) = runtime_call_inventory_fixture();
     let executable = project.executable_view().expect("executable fixture");
-    let runtime_owners = executable
-        .runtime_semantic_owner_inventory()
-        .expect("runtime semantic owner inventory");
-    let retained = runtime_owners
-        .selected_expression_type_owners(
-            |_| None,
-            |owner| {
-                if owner == call {
-                    HirRuntimeExpressionTypeDisposition::RetainedCallResult {
-                        callee: HirRuntimeCallCalleeDisposition::RuntimeReceiver,
-                    }
-                } else {
-                    HirRuntimeExpressionTypeDisposition::Retain
+    let retained = runtime_reachability(
+        executable,
+        |_| None,
+        |owner| {
+            if owner == call {
+                HirRuntimeExpressionTypeDisposition::RetainedCallResult {
+                    callee: HirRuntimeCallCalleeDisposition::RuntimeReceiver,
                 }
-            },
-        )
-        .expect("retained member-call result inventory");
+            } else {
+                HirRuntimeExpressionTypeDisposition::Retain
+            }
+        },
+    )
+    .expect("retained member-call reachability")
+    .selected_expression_type_owners()
+    .expect("retained member-call result inventory");
     assert!(retained.contains(&call));
     assert!(!retained.contains(&callee));
     assert!(retained.contains(&receiver));
@@ -725,8 +802,8 @@ fn runtime_call_inventory_fixture() -> (
         "runtime-expression-carrier.arcw",
         concat!(
             "fn helper(value: bool) -> bool { value }\n",
-            "fn root(value: bool) { helper(value) }\n",
-            "fn compare(value: bool) { (value.eq)(false) }\n",
+            "flow root(value: bool) { helper(value) }\n",
+            "flow compare(value: bool) { (value.eq)(false) }\n",
         ),
     );
     let mut database = HirDatabase::try_new().unwrap();
@@ -781,7 +858,7 @@ fn runtime_call_inventory_fixture() -> (
     clippy::too_many_lines,
     reason = "one mixed View, Style, and runtime fixture proves the complete owner-domain boundary and canonical local filtering"
 )]
-fn runtime_semantic_owner_inventory_excludes_complete_view_and_style_products() {
+fn runtime_semantic_reachability_excludes_presentation_and_unreachable_functions() {
     let package = package();
     let root_path = CanonicalModulePath::crate_root();
     let mut syntax = SyntaxDatabase::try_new().unwrap();
@@ -790,7 +867,7 @@ fn runtime_semantic_owner_inventory_excludes_complete_view_and_style_products() 
         "arcweft-test://proof/final-project/runtime-owner-domain",
         "runtime-owner-domain.arcw",
         concat!(
-            "fn runtime(first: bool) {\n",
+            "flow runtime(first: bool) {\n",
             "    let second: bool = first\n",
             "    second\n",
             "}\n",
@@ -823,26 +900,17 @@ fn runtime_semantic_owner_inventory_excludes_complete_view_and_style_products() 
     )
     .unwrap();
     let executable = project.executable_view().unwrap();
-    let inventory = executable
-        .runtime_semantic_owner_inventory()
-        .expect("runtime semantic owner inventory");
+    let inventory = runtime_reachability(
+        executable,
+        |_| None,
+        |_| HirRuntimeExpressionTypeDisposition::Retain,
+    )
+    .expect("runtime semantic reachability");
 
     let mut presentation_locals = BTreeSet::new();
     for (_, item) in module.items() {
         match item.kind() {
             HirItemKind::View(view) => {
-                let roots = item
-                    .presentation_semantic_roots()
-                    .expect("View presentation roots");
-                assert_eq!(roots.scope(), Some(view.callable_scope()));
-                let attribute_roots = roots.expressions().collect::<Vec<_>>();
-                assert_eq!(attribute_roots.len(), 1);
-                assert!(
-                    attribute_roots
-                        .iter()
-                        .all(|owner| !inventory.contains_expression(*owner)),
-                    "View attribute operands stay with the View product"
-                );
                 for parameter in view.parameters() {
                     assert!(!inventory.contains_pattern(parameter.pattern()));
                     assert!(!inventory.contains_type(parameter.ty()));
@@ -863,35 +931,17 @@ fn runtime_semantic_owner_inventory_excludes_complete_view_and_style_products() 
                 );
             }
             HirItemKind::Style(style) => {
-                let roots = item
-                    .presentation_semantic_roots()
-                    .expect("Style presentation roots");
-                assert_eq!(roots.scope(), None);
-                let expression_roots = roots.expressions().collect::<Vec<_>>();
-                assert_eq!(
-                    expression_roots.len(),
-                    style.value_expression_roots().len() + 1,
-                    "one prefix attribute operand precedes every Style value root"
-                );
                 assert!(
-                    expression_roots
+                    style
+                        .value_expression_roots()
                         .iter()
                         .all(|owner| !inventory.contains_expression(*owner)),
-                    "Style attributes and recursively nested values stay with the Style product"
-                );
-                assert!(
-                    roots.types().all(|owner| !inventory.contains_type(owner)),
-                    "Style token annotations stay with the Style product"
+                    "Style values stay with the Style product"
                 );
                 assert!(style.value_expression_roots().len() >= 4);
             }
-            HirItemKind::Function(function) => {
-                assert!(item.presentation_semantic_roots().is_none());
-                for parameter in function
-                    .parameter_groups()
-                    .iter()
-                    .flat_map(crate::item::HirFunctionParameterGroup::parameters)
-                {
+            HirItemKind::Flow(flow) => {
+                for parameter in flow.parameters() {
                     assert!(inventory.contains_pattern(parameter.pattern()));
                     assert!(inventory.contains_type(parameter.ty()));
                     assert!(
@@ -901,22 +951,57 @@ fn runtime_semantic_owner_inventory_excludes_complete_view_and_style_products() 
                             .all(|local| inventory.contains_local(*local))
                     );
                 }
+                assert!(flow.body().items().iter().all(|item| match item {
+                    HirThreadFlowItem::DialogueApplication(expression) => {
+                        inventory.contains_expression(*expression)
+                    }
+                    HirThreadFlowItem::Statement(statement)
+                    | HirThreadFlowItem::Choice(statement)
+                    | HirThreadFlowItem::If(statement)
+                    | HirThreadFlowItem::IfLet(statement)
+                    | HirThreadFlowItem::Match(statement)
+                    | HirThreadFlowItem::While(statement)
+                    | HirThreadFlowItem::WhileLet(statement)
+                    | HirThreadFlowItem::For(statement)
+                    | HirThreadFlowItem::Select(statement)
+                    | HirThreadFlowItem::SourceLocale(statement)
+                    | HirThreadFlowItem::Scope(statement)
+                    | HirThreadFlowItem::Include(statement)
+                    | HirThreadFlowItem::Error(statement) => {
+                        inventory.contains_statement(*statement)
+                    }
+                }));
+            }
+            HirItemKind::Function(function) => {
+                for parameter in function
+                    .parameter_groups()
+                    .iter()
+                    .flat_map(crate::item::HirFunctionParameterGroup::parameters)
+                {
+                    assert!(!inventory.contains_pattern(parameter.pattern()));
+                    assert!(!inventory.contains_type(parameter.ty()));
+                    assert!(
+                        parameter
+                            .locals()
+                            .iter()
+                            .all(|local| !inventory.contains_local(*local))
+                    );
+                }
                 let crate::item::HirFunctionBody::Block {
                     statements, tail, ..
                 } = function.body()
                 else {
-                    panic!("runtime fixture has a block body")
+                    panic!("unreachable function fixture has a block body")
                 };
                 assert!(
                     statements
                         .iter()
-                        .all(|statement| inventory.contains_statement(*statement))
+                        .all(|statement| !inventory.contains_statement(*statement))
                 );
-                assert!(inventory.contains_expression(*tail));
+                assert!(!inventory.contains_expression(*tail));
             }
             HirItemKind::Module(_)
             | HirItemKind::Use(_)
-            | HirItemKind::Flow(_)
             | HirItemKind::Predicate(_)
             | HirItemKind::Proof(_)
             | HirItemKind::Trait(_)
@@ -939,22 +1024,130 @@ fn runtime_semantic_owner_inventory_excludes_complete_view_and_style_products() 
         }
     }
 
-    let expected_locals = module
-        .locals()
-        .map(|(owner, _)| owner)
-        .filter(|owner| !presentation_locals.contains(owner))
-        .collect::<Vec<_>>();
     assert!(!presentation_locals.is_empty());
-    assert_eq!(expected_locals.len(), 3);
-    assert_eq!(inventory.locals().collect::<Vec<_>>(), expected_locals);
+    assert_eq!(inventory.locals().count(), 2);
     let selected = inventory
-        .selected_expression_type_owners(|_| None, |_| HirRuntimeExpressionTypeDisposition::Retain)
+        .selected_expression_type_owners()
         .expect("postfix-free runtime type inventory");
     assert!(
         selected
             .iter()
             .all(|owner| inventory.contains_expression(*owner))
     );
+}
+
+#[test]
+#[expect(
+    clippy::too_many_lines,
+    reason = "the determinism proof constructs and compares both complete edge orderings"
+)]
+fn runtime_reachability_is_edge_order_independent_and_records_shortest_paths() {
+    let package = package();
+    let root_path = CanonicalModulePath::crate_root();
+    let mut syntax = SyntaxDatabase::try_new().unwrap();
+    let parsed = parse_initial(
+        &mut syntax,
+        "arcweft-test://proof/final-project/runtime-reachability-order",
+        "runtime-reachability-order.arcw",
+        concat!(
+            "fn first() -> bool { true }\n",
+            "fn second() -> bool { false }\n",
+            "flow root() { first() }\n",
+        ),
+    );
+    let mut database = HirDatabase::try_new().unwrap();
+    let module = lower(&mut database, &parsed, &package, &root_path);
+    let project = build_project(
+        &database,
+        package.clone(),
+        [bind(&database, &package, &root_path, Arc::clone(&module))],
+    )
+    .unwrap();
+    let executable = project.executable_view().unwrap();
+    let flow = executable
+        .items()
+        .find(|item| matches!(item.item().kind(), HirItemKind::Flow(_)))
+        .map(super::HirProjectItemRef::id)
+        .unwrap();
+    let functions = executable
+        .items()
+        .filter_map(|item| {
+            let HirItemKind::Function(function) = item.item().kind() else {
+                return None;
+            };
+            Some((function.name().resolved()?.as_str().to_owned(), item.id()))
+        })
+        .collect::<BTreeMap<_, _>>();
+    let call = module
+        .expressions()
+        .find_map(|(owner, expression)| {
+            matches!(expression.kind(), HirExprKind::Call(_)).then_some(owner)
+        })
+        .unwrap();
+    let root = HirRuntimeReachabilityRoot::new(
+        HirRuntimeReachabilityRootKind::CheckedFlow,
+        HirRuntimeExecutableOwner::Item(flow),
+    );
+    let edges = functions
+        .iter()
+        .map(|(name, owner)| {
+            let declaration = CallableDeclarationKey::Existing(
+                CallableDeclarationId::try_new(
+                    package.clone(),
+                    root_path.clone(),
+                    CallableDeclarationOwner::Function,
+                    name,
+                )
+                .unwrap(),
+            );
+            HirRuntimeReachabilityEdge::new(
+                super::HirRuntimeReachabilitySite::Expression(call),
+                HirRuntimeExecutableOwner::Item(*owner),
+                super::HirRuntimeReachabilityEdgeKind::CheckedProjectCall { call, declaration },
+            )
+        })
+        .collect::<Vec<_>>();
+    let world = ProjectSymbolWorldId::try_new(
+        package,
+        parsed.document().identity().id().clone(),
+        "final-project-tests",
+    )
+    .unwrap();
+    let revision =
+        ProjectSymbolRevision::try_for_documents([parsed.document().identity()]).unwrap();
+    let build = |edges: Vec<HirRuntimeReachabilityEdge>| {
+        let input = HirRuntimeSemanticReachabilityInput::try_new(
+            HirRuntimeEmissionMode::CheckAll,
+            world.clone(),
+            revision,
+            vec![root.clone()],
+            edges,
+        )
+        .unwrap();
+        executable
+            .runtime_semantic_reachability(
+                input,
+                |_| None,
+                |owner| {
+                    if owner == call {
+                        HirRuntimeExpressionTypeDisposition::RetainedCallResult {
+                            callee: HirRuntimeCallCalleeDisposition::Static,
+                        }
+                    } else {
+                        HirRuntimeExpressionTypeDisposition::Retain
+                    }
+                },
+            )
+            .unwrap()
+    };
+    let forward = build(edges.clone());
+    let reverse = build(edges.into_iter().rev().collect());
+    assert_eq!(forward.identity().digest(), reverse.identity().digest());
+    assert_eq!(forward.reachable_executables().count(), 3);
+    for owner in functions.values().copied() {
+        let executable = HirRuntimeExecutableOwner::Item(owner);
+        assert_eq!(forward.first_path(&executable).unwrap().steps().len(), 1);
+    }
 }
 
 #[test]

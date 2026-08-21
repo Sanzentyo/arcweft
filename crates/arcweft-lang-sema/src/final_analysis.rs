@@ -78,15 +78,16 @@ pub use model::{
     CheckedChoiceGoto, CheckedEffectField, CheckedEntryReference, CheckedEvaluatedEffect,
     CheckedExpression, CheckedExpressionResolution, CheckedFunctionExecution,
     CheckedImplicitCallable, CheckedItem, CheckedItemRole, CheckedIteration, CheckedIteratorFamily,
-    CheckedPatchOperation, CheckedPattern, CheckedPatternResolution, CheckedPipe,
-    CheckedProjectCallable, CheckedProjectItem, CheckedProjectItemOwner, CheckedProjectNominal,
-    CheckedSelectResolution, CheckedStatement, CheckedStatementRole, CheckedStyleCallee,
-    CheckedSuspensionRole, CheckedSuspensionStatement, CheckedTraitConformance,
-    CheckedTraitIdentity, CheckedTry, CheckedTryBoundary, CheckedTryCarrier, CheckedTypeSelection,
-    CheckedValueResolution, CheckedVariantOwner, CheckedVariantResolution, CheckedViewCall,
-    CheckedViewCallee, PostfixBracketResolution, RegisteredSemanticValueId,
+    CheckedOrdinaryFunctionEmission, CheckedPatchOperation, CheckedPattern,
+    CheckedPatternResolution, CheckedPipe, CheckedProjectCallable, CheckedProjectItem,
+    CheckedProjectItemOwner, CheckedProjectNominal, CheckedSelectResolution, CheckedStatement,
+    CheckedStatementRole, CheckedStyleCallee, CheckedSuspensionRole, CheckedSuspensionStatement,
+    CheckedTraitConformance, CheckedTraitIdentity, CheckedTry, CheckedTryBoundary,
+    CheckedTryCarrier, CheckedTypeSelection, CheckedValueResolution, CheckedVariantOwner,
+    CheckedVariantResolution, CheckedViewCall, CheckedViewCallee, PostfixBracketResolution,
+    RegisteredSemanticValueId,
 };
-pub use nominal_schema::NominalSchemaProjectionError;
+pub use nominal_schema::{NominalSchemaPath, NominalSchemaPathStep, NominalSchemaProjectionError};
 pub use recovery_diagnostics::{
     CallableTailRecoveryDiagnostic, CallableTailRecoveryProjectionError,
     project_callable_tail_recovery_diagnostics,

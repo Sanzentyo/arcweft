@@ -16,13 +16,16 @@ use arcweft_lang_hir::leaf::HirLiteral;
 use arcweft_lang_hir::lowering::{HirModuleKey, LoweringRequest};
 use arcweft_lang_hir::project::{
     HirProject, HirProjectBuilder, HirProjectModule, HirRuntimeCallCalleeDisposition,
-    HirRuntimeExpressionTypeDisposition,
+    HirRuntimeEmissionMode, HirRuntimeExecutableOwner, HirRuntimeExpressionTypeDisposition,
+    HirRuntimeReachabilityEdge, HirRuntimeReachabilityEdgeKind, HirRuntimeReachabilityRoot,
+    HirRuntimeReachabilityRootKind, HirRuntimeReachabilitySite, HirRuntimeSemanticReachability,
+    HirRuntimeSemanticReachabilityInput,
 };
 use arcweft_lang_hir::proof_return::HirProofReturnSemanticFactSet;
 use arcweft_lang_hir::stmt::HirStmtKind;
 use arcweft_lang_hir::symbol::{
-    CallablePackageId, ProjectExternalDeclarations, ProjectSymbolRevision, ProjectSymbolTable,
-    ProjectSymbolWorldId,
+    CallableDeclarationId, CallableDeclarationKey, CallableDeclarationOwner, CallablePackageId,
+    ProjectExternalDeclarations, ProjectSymbolRevision, ProjectSymbolTable, ProjectSymbolWorldId,
 };
 use arcweft_lang_syntax::ast::module_path::CanonicalModulePath;
 use arcweft_lang_syntax::incremental::SyntaxDatabase;
@@ -46,12 +49,14 @@ fn project_fixture(label: &str, source: &str) -> HirProject {
         .expect("fixture package");
     let path = CanonicalModulePath::crate_root();
     let source_name = SourceName::path(format!("runtime-plan-semantic-facts-{label}.arcw"));
+    let source =
+        format!("{source}\nflow __runtime_plan_test_root {{ __runtime_plan_test_probe() }}\n");
     let document = Arc::new(
         SourceDocument::try_new(
             SourceDocumentId::try_new(format!("arcweft-test://runtime-plan/{label}"))
                 .expect("fixture document ID"),
             source_name.clone(),
-            source,
+            source.as_str(),
         )
         .expect("fixture document"),
     );
@@ -113,6 +118,108 @@ fn project_fixture(label: &str, source: &str) -> HirProject {
         .insert_module(project_module)
         .expect("module insertion");
     builder.finish().expect("fixture project")
+}
+
+fn runtime_reachability_with(
+    project: &HirProject,
+    selected_postfix: impl FnMut(
+        arcweft_lang_hir::identity::ExprId,
+    ) -> Option<arcweft_lang_hir::identity::ExprId>,
+    call_disposition: impl FnMut(
+        arcweft_lang_hir::identity::ExprId,
+    ) -> HirRuntimeExpressionTypeDisposition,
+) -> HirRuntimeSemanticReachability<'_> {
+    let executable = project.executable_view().expect("clean fixture");
+    let (_, first_module) = executable.modules().next().expect("fixture module");
+    let world = ProjectSymbolWorldId::try_new(
+        executable.package().clone(),
+        first_module.provenance().source_identity().id().clone(),
+        "runtime-plan-semantic-facts-test",
+    )
+    .expect("fixture reachability world");
+    let revision = ProjectSymbolRevision::try_for_documents(
+        executable
+            .modules()
+            .map(|(_, module)| module.provenance().source_identity()),
+    )
+    .expect("fixture reachability revision");
+    let roots = executable
+        .items()
+        .filter(|item| {
+            matches!(
+                item.item().kind(),
+                arcweft_lang_hir::item::HirItemKind::Flow(_)
+            )
+        })
+        .map(|item| {
+            HirRuntimeReachabilityRoot::new(
+                HirRuntimeReachabilityRootKind::CheckedFlow,
+                HirRuntimeExecutableOwner::Item(item.id()),
+            )
+        })
+        .collect::<Vec<_>>();
+    let probe = executable
+        .modules()
+        .flat_map(|(_, module)| module.expressions())
+        .filter_map(|(owner, expression)| {
+            matches!(expression.kind(), HirExprKind::Call(_)).then_some(owner)
+        })
+        .last()
+        .expect("fixture probe call");
+    let edges = executable
+        .items()
+        .filter_map(|item| {
+            let arcweft_lang_hir::item::HirItemKind::Function(function) = item.item().kind() else {
+                return None;
+            };
+            let name = function.name().resolved()?;
+            let declaration = CallableDeclarationKey::Existing(
+                CallableDeclarationId::try_new(
+                    executable.package().clone(),
+                    item.module_path().clone(),
+                    CallableDeclarationOwner::Function,
+                    name.as_str(),
+                )
+                .expect("fixture function declaration"),
+            );
+            Some(HirRuntimeReachabilityEdge::new(
+                HirRuntimeReachabilitySite::Expression(probe),
+                HirRuntimeExecutableOwner::Item(item.id()),
+                HirRuntimeReachabilityEdgeKind::CheckedProjectCall {
+                    call: probe,
+                    declaration,
+                },
+            ))
+        })
+        .collect::<Vec<_>>();
+    let input = HirRuntimeSemanticReachabilityInput::try_new(
+        HirRuntimeEmissionMode::CheckAll,
+        world,
+        revision,
+        roots,
+        edges,
+    )
+    .expect("fixture reachability input");
+    executable
+        .runtime_semantic_reachability(input, selected_postfix, call_disposition)
+        .expect("fixture reachability")
+}
+
+fn runtime_reachability(project: &HirProject) -> HirRuntimeSemanticReachability<'_> {
+    runtime_reachability_with(
+        project,
+        |_| None,
+        |_| HirRuntimeExpressionTypeDisposition::Retain,
+    )
+}
+
+fn runtime_facts(
+    project: &HirProject,
+    input: RuntimePlanSemanticFactInput,
+) -> Result<RuntimePlanSemanticFacts, RuntimeSemanticFactsError> {
+    let executable = project.executable_view().expect("clean fixture");
+    let reachability = runtime_reachability(project);
+    RuntimePlanSemanticFacts::try_new(executable, &reachability, input)
 }
 
 fn boolean_literal(project: &HirProject) -> arcweft_lang_hir::identity::ExprId {
@@ -188,10 +295,7 @@ fn unsupported_range_type() -> super::RuntimeNormalizedType {
 
 fn complete_type_input(project: &HirProject) -> RuntimePlanSemanticFactInput {
     let mut input = RuntimePlanSemanticFactInput::new();
-    let executable = project.executable_view().expect("executable type fixture");
-    let runtime_owners = executable
-        .runtime_semantic_owner_inventory()
-        .expect("runtime semantic owner inventory");
+    let runtime_owners = runtime_reachability(project);
     for owner in runtime_owners.locals() {
         input.push_local_declaration(owner, unit_type());
     }
@@ -199,7 +303,7 @@ fn complete_type_input(project: &HirProject) -> RuntimePlanSemanticFactInput {
         input.push_pattern_type(owner, unit_type());
     }
     for owner in runtime_owners
-        .selected_expression_type_owners(|_| None, |_| HirRuntimeExpressionTypeDisposition::Retain)
+        .selected_expression_type_owners()
         .expect("postfix-free runtime expression-type fixture")
     {
         input.push_expression_type(owner, unit_type());
@@ -252,9 +356,7 @@ fn assignment_fact_fixture(
     let HirSelectedMember::Name(field_name) = select.member() else {
         panic!("assignment field is resolved")
     };
-    let runtime_owners = executable
-        .runtime_semantic_owner_inventory()
-        .expect("assignment runtime owners");
+    let runtime_owners = runtime_reachability(&project);
     let local = runtime_owners
         .locals()
         .next()
@@ -335,13 +437,7 @@ fn assignment_nominal(
 }
 
 fn local_owners(project: &HirProject) -> Vec<arcweft_lang_hir::identity::LocalId> {
-    project
-        .executable_view()
-        .expect("executable local fixture")
-        .runtime_semantic_owner_inventory()
-        .expect("runtime semantic owner inventory")
-        .locals()
-        .collect()
+    runtime_reachability(project).locals().collect()
 }
 
 #[test]
@@ -356,11 +452,8 @@ fn local_declarations_use_one_complete_contiguous_canonical_projection() {
         "fixture retains parameters and let binding"
     );
 
-    let facts = RuntimePlanSemanticFacts::try_new(
-        project.executable_view().expect("executable fixture"),
-        complete_type_input(&project),
-    )
-    .expect("complete canonical local projection");
+    let facts = runtime_facts(&project, complete_type_input(&project))
+        .expect("complete canonical local projection");
 
     let locals = facts.local_declarations().collect::<Vec<_>>();
     assert_eq!(locals.len(), owners.len());
@@ -379,11 +472,7 @@ fn assignment_facts_are_complete_unique_and_bound_to_assignment_statements() {
     let (project, mut input, statement, _, fact) =
         assignment_fact_fixture("assignment-fact-accepted");
     input.push_assignment(statement, fact.clone());
-    let facts = RuntimePlanSemanticFacts::try_new(
-        project.executable_view().expect("assignment fixture"),
-        input,
-    )
-    .expect("complete assignment fact");
+    let facts = runtime_facts(&project, input).expect("complete assignment fact");
     let accepted = facts
         .assignment(statement)
         .expect("assignment accessor returns the sole fact");
@@ -393,11 +482,7 @@ fn assignment_facts_are_complete_unique_and_bound_to_assignment_statements() {
 
     let (project, input, statement, _, _) = assignment_fact_fixture("assignment-fact-missing");
     assert_eq!(
-        RuntimePlanSemanticFacts::try_new(
-            project.executable_view().expect("assignment fixture"),
-            input,
-        )
-        .expect_err("every live assignment requires one fact"),
+        runtime_facts(&project, input).expect_err("every live assignment requires one fact"),
         RuntimeSemanticFactsError::MissingAssignmentFact { statement }
     );
 
@@ -406,11 +491,7 @@ fn assignment_facts_are_complete_unique_and_bound_to_assignment_statements() {
     input.push_assignment(statement, fact.clone());
     input.push_assignment(statement, fact);
     assert_eq!(
-        RuntimePlanSemanticFacts::try_new(
-            project.executable_view().expect("assignment fixture"),
-            input,
-        )
-        .expect_err("one assignment cannot own duplicate facts"),
+        runtime_facts(&project, input).expect_err("one assignment cannot own duplicate facts"),
         RuntimeSemanticFactsError::DuplicateFact {
             family: RuntimeSemanticFactFamily::Assignment,
         }
@@ -421,11 +502,8 @@ fn assignment_facts_are_complete_unique_and_bound_to_assignment_statements() {
     input.push_assignment(statement, fact.clone());
     input.push_assignment(extra_statement, fact);
     assert_eq!(
-        RuntimePlanSemanticFacts::try_new(
-            project.executable_view().expect("assignment fixture"),
-            input,
-        )
-        .expect_err("a non-assignment statement cannot own an assignment fact"),
+        runtime_facts(&project, input)
+            .expect_err("a non-assignment statement cannot own an assignment fact"),
         RuntimeSemanticFactsError::WrongStatementFamily {
             statement: extra_statement,
             expected: RuntimeSemanticFactFamily::Assignment,
@@ -455,9 +533,7 @@ fn presentation_owned_facts_are_inactive_and_filtered_local_ids_remain_contiguou
         ),
     );
     let executable = project.executable_view().expect("executable fixture");
-    let runtime_owners = executable
-        .runtime_semantic_owner_inventory()
-        .expect("runtime semantic owner inventory");
+    let runtime_owners = runtime_reachability(&project);
     let module = executable.modules().next().expect("one fixture module").1;
     let all_locals = module.locals().map(|(owner, _)| owner).collect::<Vec<_>>();
     let retained_locals = runtime_owners.locals().collect::<Vec<_>>();
@@ -472,7 +548,7 @@ fn presentation_owned_facts_are_inactive_and_filtered_local_ids_remain_contiguou
         .expect("presentation local position");
     assert!(removed_position > 0 && removed_position + 1 < all_locals.len());
 
-    let facts = RuntimePlanSemanticFacts::try_new(executable, complete_type_input(&project))
+    let facts = runtime_facts(&project, complete_type_input(&project))
         .expect("filtered runtime-domain fact set");
     assert_eq!(facts.local_type(presentation_local), None);
     let locals = facts.local_declarations().collect::<Vec<_>>();
@@ -520,7 +596,7 @@ fn presentation_owned_facts_are_inactive_and_filtered_local_ids_remain_contiguou
     let mut input = complete_type_input(&project);
     input.push_local_declaration(presentation_local, unit_type());
     assert_eq!(
-        RuntimePlanSemanticFacts::try_new(executable, input)
+        runtime_facts(&project, input)
             .expect_err("a presentation local cannot extend the runtime domain"),
         RuntimeSemanticFactsError::ExtraLocalDeclaration {
             local: presentation_local,
@@ -530,7 +606,7 @@ fn presentation_owned_facts_are_inactive_and_filtered_local_ids_remain_contiguou
     let mut input = complete_type_input(&project);
     input.push_expression_type(presentation_literal, unit_type());
     assert_eq!(
-        RuntimePlanSemanticFacts::try_new(executable, input)
+        runtime_facts(&project, input)
             .expect_err("a presentation expression cannot publish a runtime type"),
         RuntimeSemanticFactsError::InactiveExpressionFact {
             expression: presentation_literal,
@@ -541,7 +617,7 @@ fn presentation_owned_facts_are_inactive_and_filtered_local_ids_remain_contiguou
     let mut input = complete_type_input(&project);
     input.push_pattern_literal(presentation_pattern, RuntimeValue::Unit);
     assert_eq!(
-        RuntimePlanSemanticFacts::try_new(executable, input)
+        runtime_facts(&project, input)
             .expect_err("a presentation pattern cannot publish an operational fact"),
         RuntimeSemanticFactsError::InactivePatternFact {
             pattern: presentation_pattern,
@@ -552,7 +628,7 @@ fn presentation_owned_facts_are_inactive_and_filtered_local_ids_remain_contiguou
     let mut input = complete_type_input(&project);
     input.push_expression_literal(presentation_literal, RuntimeValue::Unit);
     assert_eq!(
-        RuntimePlanSemanticFacts::try_new(executable, input)
+        runtime_facts(&project, input)
             .expect_err("a presentation expression cannot publish a literal fact"),
         RuntimeSemanticFactsError::InactiveExpressionFact {
             expression: presentation_literal,
@@ -563,7 +639,7 @@ fn presentation_owned_facts_are_inactive_and_filtered_local_ids_remain_contiguou
     let mut input = complete_type_input(&project);
     input.push_type(presentation_type, unit_type());
     assert_eq!(
-        RuntimePlanSemanticFacts::try_new(executable, input)
+        runtime_facts(&project, input)
             .expect_err("a presentation type cannot publish a runtime type fact"),
         RuntimeSemanticFactsError::InactiveTypeFact {
             ty: presentation_type,
@@ -580,7 +656,7 @@ fn presentation_owned_facts_are_inactive_and_filtered_local_ids_remain_contiguou
         ),
     );
     assert_eq!(
-        RuntimePlanSemanticFacts::try_new(executable, input)
+        runtime_facts(&project, input)
             .expect_err("a presentation call cannot publish a runtime call fact"),
         RuntimeSemanticFactsError::InactiveExpressionFact {
             expression: presentation_call,
@@ -594,7 +670,7 @@ fn presentation_owned_facts_are_inactive_and_filtered_local_ids_remain_contiguou
         RuntimeResolvedValue::Local(presentation_local),
     );
     assert_eq!(
-        RuntimePlanSemanticFacts::try_new(executable, input)
+        runtime_facts(&project, input)
             .expect_err("a retained value cannot reference a presentation local"),
         RuntimeSemanticFactsError::InactiveLocalReference {
             local: presentation_local,
@@ -610,8 +686,6 @@ fn missing_extra_duplicate_and_reordered_local_projections_are_rejected() {
     );
     let owners = local_owners(&project);
     assert!(owners.len() >= 2, "fixture retains both parameters");
-    let executable = project.executable_view().expect("executable fixture");
-
     let mut missing = complete_type_input(&project);
     let missing_owner = missing
         .local_declarations
@@ -619,8 +693,7 @@ fn missing_extra_duplicate_and_reordered_local_projections_are_rejected() {
         .expect("fixture local declaration")
         .0;
     assert_eq!(
-        RuntimePlanSemanticFacts::try_new(executable, missing)
-            .expect_err("a local cannot be omitted"),
+        runtime_facts(&project, missing).expect_err("a local cannot be omitted"),
         RuntimeSemanticFactsError::MissingLocalDeclaration {
             local: missing_owner,
         }
@@ -631,8 +704,7 @@ fn missing_extra_duplicate_and_reordered_local_projections_are_rejected() {
     let mut extra = complete_type_input(&project);
     extra.push_local_declaration(foreign_owner, unit_type());
     assert_eq!(
-        RuntimePlanSemanticFacts::try_new(executable, extra)
-            .expect_err("a foreign local cannot extend the plan domain"),
+        runtime_facts(&project, extra).expect_err("a foreign local cannot extend the plan domain"),
         RuntimeSemanticFactsError::ExtraLocalDeclaration {
             local: foreign_owner,
         }
@@ -641,7 +713,7 @@ fn missing_extra_duplicate_and_reordered_local_projections_are_rejected() {
     let mut duplicate = complete_type_input(&project);
     duplicate.push_local_declaration(owners[0], unit_type());
     assert_eq!(
-        RuntimePlanSemanticFacts::try_new(executable, duplicate)
+        runtime_facts(&project, duplicate)
             .expect_err("one HIR local cannot receive two plan identities"),
         RuntimeSemanticFactsError::DuplicateFact {
             family: RuntimeSemanticFactFamily::LocalDeclaration,
@@ -651,7 +723,7 @@ fn missing_extra_duplicate_and_reordered_local_projections_are_rejected() {
     let mut reordered = complete_type_input(&project);
     reordered.local_declarations.swap(0, 1);
     assert_eq!(
-        RuntimePlanSemanticFacts::try_new(executable, reordered)
+        runtime_facts(&project, reordered)
             .expect_err("the same local set in a noncanonical order is invalid"),
         RuntimeSemanticFactsError::NonCanonicalLocalDeclarationOrder {
             expected: owners[0],
@@ -664,11 +736,8 @@ fn missing_extra_duplicate_and_reordered_local_projections_are_rejected() {
 fn semantic_facts_are_bound_to_the_exact_accepted_generation() {
     let first = project_fixture("generation-first", "fn root() {}\n");
     let second = project_fixture("generation-second", "fn root() {}\n");
-    let facts = RuntimePlanSemanticFacts::try_new(
-        first.executable_view().expect("first executable view"),
-        complete_type_input(&first),
-    )
-    .expect("complete checked fact set");
+    let facts =
+        runtime_facts(&first, complete_type_input(&first)).expect("complete checked fact set");
 
     assert_eq!(
         facts.validate_generation(first.executable_view().expect("same generation")),
@@ -687,11 +756,7 @@ fn checked_literal_fact_uses_the_qualified_expression_owner() {
     let mut input = complete_type_input(&project);
     input.push_expression_literal(owner, RuntimeValue::Bool(true));
 
-    let facts = RuntimePlanSemanticFacts::try_new(
-        project.executable_view().expect("executable fixture"),
-        input,
-    )
-    .expect("literal fact");
+    let facts = runtime_facts(&project, input).expect("literal fact");
     assert_eq!(
         facts.expression_literal(owner),
         Some(&RuntimeValue::Bool(true))
@@ -706,11 +771,7 @@ fn checked_flow_identity_uses_the_qualified_item_owner() {
     let mut input = complete_type_input(&project);
     input.push_flow(owner, identity.clone());
 
-    let facts = RuntimePlanSemanticFacts::try_new(
-        project.executable_view().expect("executable fixture"),
-        input,
-    )
-    .expect("Flow identity fact");
+    let facts = runtime_facts(&project, input).expect("Flow identity fact");
     assert_eq!(facts.flow(owner), Some(&identity));
 }
 
@@ -725,11 +786,7 @@ fn wrong_expression_family_is_not_reinterpreted() {
     );
 
     assert_eq!(
-        RuntimePlanSemanticFacts::try_new(
-            project.executable_view().expect("executable fixture"),
-            input,
-        )
-        .expect_err("literal cannot masquerade as a resolved path"),
+        runtime_facts(&project, input).expect_err("literal cannot masquerade as a resolved path"),
         RuntimeSemanticFactsError::WrongExpressionFamily {
             expression: owner,
             expected: RuntimeSemanticFactFamily::Value,
@@ -749,11 +806,7 @@ fn dialogue_line_fact_owns_the_checked_path_only_runtime_identity() {
     let mut input = complete_type_input(&project);
     input.push_value(owner, RuntimeResolvedValue::DialogueLine(line.clone()));
 
-    let facts = RuntimePlanSemanticFacts::try_new(
-        project.executable_view().expect("executable fixture"),
-        input,
-    )
-    .expect("typed dialogue-line runtime fact");
+    let facts = runtime_facts(&project, input).expect("typed dialogue-line runtime fact");
     assert_eq!(line.canonical_label(), "story.greeting");
     assert_eq!(
         facts.value(owner),
@@ -770,11 +823,7 @@ fn duplicate_facts_are_rejected_before_publication() {
     input.push_expression_literal(owner, RuntimeValue::Bool(false));
 
     assert_eq!(
-        RuntimePlanSemanticFacts::try_new(
-            project.executable_view().expect("executable fixture"),
-            input,
-        )
-        .expect_err("duplicate fact must fail atomically"),
+        runtime_facts(&project, input).expect_err("duplicate fact must fail atomically"),
         RuntimeSemanticFactsError::DuplicateFact {
             family: RuntimeSemanticFactFamily::ExpressionLiteral,
         }
@@ -788,18 +837,11 @@ fn accepted_expression_and_pattern_types_are_complete_and_exact() {
         "fn root(value: bool) {\n    match value { true => (), false => () }\n}\n",
     );
     let input = complete_type_input(&project);
-    let facts = RuntimePlanSemanticFacts::try_new(
-        project.executable_view().expect("executable fixture"),
-        input,
-    )
-    .expect("complete type facts");
+    let facts = runtime_facts(&project, input).expect("complete type facts");
 
-    let executable = project.executable_view().expect("executable fixture");
-    let runtime_owners = executable
-        .runtime_semantic_owner_inventory()
-        .expect("runtime semantic owner inventory");
+    let runtime_owners = runtime_reachability(&project);
     for owner in runtime_owners
-        .selected_expression_type_owners(|_| None, |_| HirRuntimeExpressionTypeDisposition::Retain)
+        .selected_expression_type_owners()
         .expect("postfix-free runtime expression-type fixture")
     {
         assert_eq!(facts.expression_type(owner), Some(&unit_type()));
@@ -827,7 +869,7 @@ fn runtime_type_completeness_excludes_effect_metadata_owners() {
         })
         .expect("fixture effect expression");
     let body = boolean_literal(&project);
-    let facts = RuntimePlanSemanticFacts::try_new(executable, complete_type_input(&project))
+    let facts = runtime_facts(&project, complete_type_input(&project))
         .expect("effect metadata requires no runtime expression type");
     assert!(facts.expression_type(effect).is_none());
     assert_eq!(facts.expression_type(body), Some(&unit_type()));
@@ -835,7 +877,7 @@ fn runtime_type_completeness_excludes_effect_metadata_owners() {
     let mut input = complete_type_input(&project);
     input.push_expression_type(effect, unit_type());
     assert_eq!(
-        RuntimePlanSemanticFacts::try_new(executable, input)
+        runtime_facts(&project, input)
             .expect_err("effect metadata cannot publish a runtime expression type"),
         RuntimeSemanticFactsError::InactiveExpressionFact {
             expression: effect,
@@ -878,20 +920,19 @@ fn runtime_type_completeness_uses_the_selected_call_carrier_disposition() {
         }],
         RuntimeCallResultShape::Value,
     );
-    let runtime_owners = executable
-        .runtime_semantic_owner_inventory()
-        .expect("runtime semantic owner inventory");
+    let runtime_owners = runtime_reachability_with(
+        &project,
+        |_| None,
+        |owner| {
+            if owner == call {
+                call_fact.expression_type_disposition()
+            } else {
+                HirRuntimeExpressionTypeDisposition::Retain
+            }
+        },
+    );
     let accepted = runtime_owners
-        .selected_expression_type_owners(
-            |_| None,
-            |owner| {
-                if owner == call {
-                    call_fact.expression_type_disposition()
-                } else {
-                    HirRuntimeExpressionTypeDisposition::Retain
-                }
-            },
-        )
+        .selected_expression_type_owners()
         .expect("postfix-free call-carrier inventory");
     let mut input = RuntimePlanSemanticFactInput::new();
     for owner in runtime_owners.locals() {
@@ -905,7 +946,7 @@ fn runtime_type_completeness_uses_the_selected_call_carrier_disposition() {
     }
     input.push_call(call, call_fact);
 
-    let facts = RuntimePlanSemanticFacts::try_new(executable, input)
+    let facts = RuntimePlanSemanticFacts::try_new(executable, &runtime_owners, input)
         .expect("selected Agent carrier requires only operand types");
     assert!(facts.expression_type(call).is_none());
     assert!(facts.expression_type(callee).is_none());
@@ -1106,9 +1147,17 @@ fn agent_call_arguments_cannot_forge_runtime_receiver_disposition() {
 
     for call in invalid {
         let executable = project.executable_view().expect("executable fixture");
-        let runtime_owners = executable
-            .runtime_semantic_owner_inventory()
-            .expect("runtime semantic owner inventory");
+        let runtime_owners = runtime_reachability_with(
+            &project,
+            |_| None,
+            |candidate| {
+                if candidate == owner {
+                    call.expression_type_disposition()
+                } else {
+                    HirRuntimeExpressionTypeDisposition::Retain
+                }
+            },
+        );
         let mut input = RuntimePlanSemanticFactInput::new();
         for local in runtime_owners.locals() {
             input.push_local_declaration(local, unit_type());
@@ -1117,23 +1166,14 @@ fn agent_call_arguments_cannot_forge_runtime_receiver_disposition() {
             input.push_pattern_type(pattern, unit_type());
         }
         for expression in runtime_owners
-            .selected_expression_type_owners(
-                |_| None,
-                |candidate| {
-                    if candidate == owner {
-                        call.expression_type_disposition()
-                    } else {
-                        HirRuntimeExpressionTypeDisposition::Retain
-                    }
-                },
-            )
+            .selected_expression_type_owners()
             .expect("invalid call still has one deterministic owner inventory")
         {
             input.push_expression_type(expression, unit_type());
         }
         input.push_call(owner, call);
         assert_eq!(
-            RuntimePlanSemanticFacts::try_new(executable, input)
+            RuntimePlanSemanticFacts::try_new(executable, &runtime_owners, input)
                 .expect_err("Agent receiver disposition must follow the selected call family"),
             RuntimeSemanticFactsError::InvalidAgentCallArguments,
         );
@@ -1146,11 +1186,8 @@ fn missing_expression_type_is_rejected_before_publication() {
     let owner = boolean_literal(&project);
 
     assert_eq!(
-        RuntimePlanSemanticFacts::try_new(
-            project.executable_view().expect("executable fixture"),
-            RuntimePlanSemanticFactInput::new(),
-        )
-        .expect_err("an accepted expression cannot omit its type"),
+        runtime_facts(&project, RuntimePlanSemanticFactInput::new())
+            .expect_err("an accepted expression cannot omit its type"),
         RuntimeSemanticFactsError::MissingExpressionType { expression: owner },
     );
 }
@@ -1162,15 +1199,12 @@ fn missing_pattern_type_is_rejected_before_publication() {
         "fn root(value: bool) {\n    match value { true => (), false => () }\n}\n",
     );
     let mut input = RuntimePlanSemanticFactInput::new();
-    let executable = project.executable_view().expect("executable fixture");
-    let runtime_owners = executable
-        .runtime_semantic_owner_inventory()
-        .expect("runtime semantic owner inventory");
+    let runtime_owners = runtime_reachability(&project);
     for owner in runtime_owners.locals() {
         input.push_local_declaration(owner, unit_type());
     }
     for owner in runtime_owners
-        .selected_expression_type_owners(|_| None, |_| HirRuntimeExpressionTypeDisposition::Retain)
+        .selected_expression_type_owners()
         .expect("postfix-free runtime expression-type fixture")
     {
         input.push_expression_type(owner, unit_type());
@@ -1178,8 +1212,7 @@ fn missing_pattern_type_is_rejected_before_publication() {
     let pattern = runtime_owners.patterns().next().expect("pattern fixture");
 
     assert_eq!(
-        RuntimePlanSemanticFacts::try_new(executable, input)
-            .expect_err("an accepted pattern cannot omit its type"),
+        runtime_facts(&project, input).expect_err("an accepted pattern cannot omit its type"),
         RuntimeSemanticFactsError::MissingPatternType { pattern },
     );
 }
@@ -1192,11 +1225,7 @@ fn duplicate_expression_types_are_rejected_before_publication() {
     input.push_expression_type(owner, unit_type());
 
     assert_eq!(
-        RuntimePlanSemanticFacts::try_new(
-            project.executable_view().expect("executable fixture"),
-            input,
-        )
-        .expect_err("one expression cannot own two accepted types"),
+        runtime_facts(&project, input).expect_err("one expression cannot own two accepted types"),
         RuntimeSemanticFactsError::DuplicateFact {
             family: RuntimeSemanticFactFamily::ExpressionType,
         },
@@ -1221,11 +1250,7 @@ fn duplicate_pattern_types_are_rejected_before_publication() {
     input.push_pattern_type(pattern, unit_type());
 
     assert_eq!(
-        RuntimePlanSemanticFacts::try_new(
-            project.executable_view().expect("executable fixture"),
-            input,
-        )
-        .expect_err("one pattern cannot own two accepted types"),
+        runtime_facts(&project, input).expect_err("one pattern cannot own two accepted types"),
         RuntimeSemanticFactsError::DuplicateFact {
             family: RuntimeSemanticFactFamily::PatternType,
         },
@@ -1602,10 +1627,7 @@ fn nested_operational_expression_type_is_retained_without_reconstruction() {
         RuntimeTypeShape::Option(Box::new(range)),
     );
     let mut input = RuntimePlanSemanticFactInput::new();
-    let executable = project.executable_view().expect("executable fixture");
-    let runtime_owners = executable
-        .runtime_semantic_owner_inventory()
-        .expect("runtime semantic owner inventory");
+    let runtime_owners = runtime_reachability(&project);
     for local in runtime_owners.locals() {
         input.push_local_declaration(local, nested.clone());
     }
@@ -1613,16 +1635,13 @@ fn nested_operational_expression_type_is_retained_without_reconstruction() {
         input.push_pattern_type(pattern, nested.clone());
     }
     for expression in runtime_owners
-        .selected_expression_type_owners(|_| None, |_| HirRuntimeExpressionTypeDisposition::Retain)
+        .selected_expression_type_owners()
         .expect("postfix-free runtime expression-type fixture")
     {
         input.push_expression_type(expression, nested.clone());
     }
-    let facts = RuntimePlanSemanticFacts::try_new(
-        project.executable_view().expect("executable fixture"),
-        input,
-    )
-    .expect("nested operational fact remains accepted semantic data");
+    let facts = runtime_facts(&project, input)
+        .expect("nested operational fact remains accepted semantic data");
 
     assert_eq!(facts.expression_type(owner), Some(&nested));
     let local = local_owners(&project)
@@ -1686,14 +1705,13 @@ fn postfix_type_completeness_keeps_only_the_selected_candidate_expression_tree()
     assert!(semantic.contains(&target));
     assert!(semantic.contains(&dialogue));
     assert!(!semantic.contains(&index));
-    let runtime_owners = executable
-        .runtime_semantic_owner_inventory()
-        .expect("runtime semantic owner inventory");
+    let runtime_owners = runtime_reachability_with(
+        &project,
+        |owner| postfix_candidates.get(&owner).copied(),
+        |_| HirRuntimeExpressionTypeDisposition::Retain,
+    );
     let accepted = runtime_owners
-        .selected_expression_type_owners(
-            |owner| postfix_candidates.get(&owner).copied(),
-            |_| HirRuntimeExpressionTypeDisposition::Retain,
-        )
+        .selected_expression_type_owners()
         .expect("selected runtime expression-type inventory");
     assert!(!accepted.contains(&postfix_owner));
     assert!(accepted.contains(&target));
@@ -1714,8 +1732,9 @@ fn postfix_type_completeness_keeps_only_the_selected_candidate_expression_tree()
         input.push_postfix_candidate(postfix_owner, dialogue);
         input
     };
-    let facts = RuntimePlanSemanticFacts::try_new(executable, complete_selected_input())
-        .expect("the rolled-back expression candidate needs no type fact");
+    let facts =
+        RuntimePlanSemanticFacts::try_new(executable, &runtime_owners, complete_selected_input())
+            .expect("the rolled-back expression candidate needs no type fact");
     assert!(facts.expression_type(postfix_owner).is_none());
     assert!(facts.expression_type(target).is_some());
     assert!(facts.expression_type(dialogue).is_none());
@@ -1724,7 +1743,7 @@ fn postfix_type_completeness_keeps_only_the_selected_candidate_expression_tree()
     let mut input = complete_selected_input();
     input.push_expression_type(dialogue, unit_type());
     assert_eq!(
-        RuntimePlanSemanticFacts::try_new(executable, input)
+        RuntimePlanSemanticFacts::try_new(executable, &runtime_owners, input)
             .expect_err("a selected dialogue carrier cannot publish an expression type"),
         RuntimeSemanticFactsError::InactiveExpressionFact {
             expression: dialogue,
@@ -1735,7 +1754,7 @@ fn postfix_type_completeness_keeps_only_the_selected_candidate_expression_tree()
     let mut input = complete_selected_input();
     input.push_expression_type(index, unit_type());
     assert_eq!(
-        RuntimePlanSemanticFacts::try_new(executable, input)
+        RuntimePlanSemanticFacts::try_new(executable, &runtime_owners, input)
             .expect_err("an unselected candidate cannot publish an expression type"),
         RuntimeSemanticFactsError::InactiveExpressionFact {
             expression: index,
@@ -1775,11 +1794,7 @@ fn reduction_constructor_fact_requires_one_authored_value_argument() {
     );
     let mut input = complete_type_input(&project);
     input.push_call(owner, valid.clone());
-    let facts = RuntimePlanSemanticFacts::try_new(
-        project.executable_view().expect("executable fixture"),
-        input,
-    )
-    .expect("typed Reduction constructor fact");
+    let facts = runtime_facts(&project, input).expect("typed Reduction constructor fact");
     assert_eq!(facts.call(owner), Some(&valid));
 
     for invalid in [
@@ -1800,11 +1815,8 @@ fn reduction_constructor_fact_requires_one_authored_value_argument() {
         let mut input = complete_type_input(&project);
         input.push_call(owner, invalid);
         assert_eq!(
-            RuntimePlanSemanticFacts::try_new(
-                project.executable_view().expect("executable fixture"),
-                input,
-            )
-            .expect_err("fabricated Reduction constructor fact must fail"),
+            runtime_facts(&project, input)
+                .expect_err("fabricated Reduction constructor fact must fail"),
             RuntimeSemanticFactsError::InvalidReductionConstructorCall,
         );
     }

@@ -832,6 +832,28 @@ where
             )
         })?;
         validate_entry_selection(&checked_entries, context.entry_selection())?;
+        let runtime_reachability = lower::project_runtime_reachability(
+            executable,
+            registered_world.symbols(),
+            final_analysis.as_ref(),
+            &checked_entries,
+            context.entry_selection().map_or(
+                lower::RuntimeEmissionMode::CheckAll,
+                lower::RuntimeEmissionMode::SelectedEntry,
+            ),
+        )
+        .and_then(|reachability| {
+            lower::validate_reachable_runtime_callables(final_analysis.as_ref(), &reachability)?;
+            Ok(reachability)
+        })
+        .map_err(|error| {
+            let code = error.diagnostic_code();
+            linked_error(
+                ProjectCompileStage::RuntimePlanLower,
+                [Diagnostic::new(DiagnosticSeverity::Error, error.to_string())
+                    .with_code(code)],
+            )
+        })?;
         let semantic_index = Arc::new(
             ProjectSemanticIndex::try_from_final_project(
                 project_program_hash(project.package().id.as_str(), tooling.compile_units()),
@@ -925,6 +947,7 @@ where
             executable,
             registered_world.symbols(),
             &final_analysis,
+            &runtime_reachability,
             Some((dialogue_profile.presentation(), dialogue_profile.revision())),
             context.accepted_launch_profile().and_then(|input| {
                 input
@@ -938,7 +961,7 @@ where
                 ProjectCompileStage::RuntimePlanLower,
                 [
                     Diagnostic::new(DiagnosticSeverity::Error, error.to_string())
-                        .with_code("compiler.runtime_semantic_projection"),
+                        .with_code(error.diagnostic_code()),
                 ],
             )
         })?;
@@ -947,6 +970,7 @@ where
             registered_world.symbols(),
             &final_analysis,
             &checked_entries,
+            &runtime_reachability,
             context.command_policy(),
         )
         .map_err(|error| {

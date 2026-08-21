@@ -51,9 +51,9 @@ use arcweft_lang_hir::leaf::{HirName, HirPathSegment};
 use arcweft_lang_hir::module::HirModule;
 use arcweft_lang_hir::pattern::HirPatternKind;
 use arcweft_lang_hir::project::{
-    HirExecutableProjectView, HirRuntimeCallCalleeDisposition, HirRuntimeExpressionTypeDisposition,
-    HirRuntimeSemanticOwnerInventory, HirRuntimeSemanticOwnerInventoryError,
-    HirSelectedExpressionInventoryError,
+    HirExecutableProjectView, HirRuntimeCallCalleeDisposition, HirRuntimeExecutableOwner,
+    HirRuntimeExpressionTypeDisposition, HirRuntimeReachabilityError,
+    HirRuntimeReachabilityIdentity, HirRuntimeSemanticReachability,
 };
 use arcweft_lang_hir::stmt::HirStmtKind;
 use arcweft_lang_hir::symbol::ImplMethodDeclarationId;
@@ -2578,6 +2578,8 @@ impl Default for RuntimePlanSemanticFactInput {
 /// Immutable semantic fact set bound to one exact executable project generation.
 #[derive(Clone, Debug)]
 pub struct RuntimePlanSemanticFacts {
+    reachability: HirRuntimeReachabilityIdentity,
+    runtime_owners: BTreeSet<HirRuntimeExecutableOwner>,
     snapshots: BTreeMap<HirModuleId, HirSnapshotId>,
     local_declaration_order: Box<[LocalId]>,
     local_declarations: BTreeMap<LocalId, RuntimeNormalizedType>,
@@ -2612,6 +2614,16 @@ pub struct RuntimePlanSemanticFacts {
 }
 
 impl RuntimePlanSemanticFacts {
+    pub const fn reachability(&self) -> &HirRuntimeReachabilityIdentity {
+        &self.reachability
+    }
+
+    /// Reports whether one executable owner was admitted by the sole checked
+    /// reachability closure used to construct these facts.
+    pub fn contains_runtime_owner(&self, owner: &HirRuntimeExecutableOwner) -> bool {
+        self.runtime_owners.contains(owner)
+    }
+
     /// Validates every staged fact against the exact accepted executable module leases.
     #[allow(
         clippy::too_many_lines,
@@ -2619,9 +2631,16 @@ impl RuntimePlanSemanticFacts {
     )]
     pub fn try_new(
         project: HirExecutableProjectView<'_>,
+        runtime_owners: &HirRuntimeSemanticReachability<'_>,
         input: RuntimePlanSemanticFactInput,
     ) -> Result<Self, RuntimeSemanticFactsError> {
-        let runtime_owners = project.runtime_semantic_owner_inventory()?;
+        let supplied_snapshots = project
+            .modules()
+            .map(|(_, module)| (module.module_id(), module.snapshot_id()))
+            .collect::<Box<[_]>>();
+        if supplied_snapshots.as_ref() != runtime_owners.identity().module_snapshots() {
+            return Err(RuntimeSemanticFactsError::ReachabilityMismatch);
+        }
         let expected_local_declarations = runtime_owners.locals().collect::<Vec<_>>();
         let modules = project
             .modules()
@@ -2639,7 +2658,7 @@ impl RuntimePlanSemanticFacts {
         for (owner, ty) in &expression_types {
             resolve_expr(&modules, *owner)?;
             require_runtime_expression_owner(
-                &runtime_owners,
+                runtime_owners,
                 *owner,
                 RuntimeSemanticFactFamily::ExpressionType,
             )?;
@@ -2651,7 +2670,7 @@ impl RuntimePlanSemanticFacts {
         for (owner, ty) in &pattern_types {
             resolve_pattern(&modules, *owner)?;
             require_runtime_pattern_owner(
-                &runtime_owners,
+                runtime_owners,
                 *owner,
                 RuntimeSemanticFactFamily::PatternType,
             )?;
@@ -2704,6 +2723,11 @@ impl RuntimePlanSemanticFacts {
                     actual: resolved.kind().family(),
                 });
             }
+            if !runtime_owners.contains_runtime_owner(&HirRuntimeExecutableOwner::Item(*item)) {
+                return Err(RuntimeSemanticFactsError::OwnerOutsideReachability {
+                    owner: HirRuntimeExecutableOwner::Item(*item),
+                });
+            }
         }
 
         let expression_literals = collect_unique(
@@ -2713,7 +2737,7 @@ impl RuntimePlanSemanticFacts {
         for expression in expression_literals.keys() {
             require_expr_family(
                 &modules,
-                &runtime_owners,
+                runtime_owners,
                 *expression,
                 RuntimeSemanticFactFamily::ExpressionLiteral,
                 |kind| {
@@ -2732,7 +2756,7 @@ impl RuntimePlanSemanticFacts {
         for pattern in pattern_literals.keys() {
             require_pattern_family(
                 &modules,
-                &runtime_owners,
+                runtime_owners,
                 *pattern,
                 RuntimeSemanticFactFamily::PatternLiteral,
                 |kind| matches!(kind, HirPatternKind::Literal(_)),
@@ -2744,7 +2768,7 @@ impl RuntimePlanSemanticFacts {
         for (pattern, item) in &pattern_items {
             require_pattern_family(
                 &modules,
-                &runtime_owners,
+                runtime_owners,
                 *pattern,
                 RuntimeSemanticFactFamily::PatternItem,
                 |kind| matches!(kind, HirPatternKind::EntityReference(_)),
@@ -2756,12 +2780,12 @@ impl RuntimePlanSemanticFacts {
         for (expression, value) in &values {
             require_expr_family(
                 &modules,
-                &runtime_owners,
+                runtime_owners,
                 *expression,
                 RuntimeSemanticFactFamily::Value,
                 |kind| matches!(kind, HirExprKind::Path(_) | HirExprKind::EntityReference(_)),
             )?;
-            validate_resolved_value(&modules, &runtime_owners, value)?;
+            validate_resolved_value(&modules, runtime_owners, value)?;
             match (resolve_expr(&modules, *expression)?, value) {
                 (
                     HirExprKind::Path(_),
@@ -2793,7 +2817,7 @@ impl RuntimePlanSemanticFacts {
         for (expression, select) in &selects {
             require_expr_family(
                 &modules,
-                &runtime_owners,
+                runtime_owners,
                 *expression,
                 RuntimeSemanticFactFamily::Select,
                 |kind| matches!(kind, HirExprKind::Select(_)),
@@ -2808,7 +2832,7 @@ impl RuntimePlanSemanticFacts {
         for (expression, nominal) in &nominal_records {
             require_expr_family(
                 &modules,
-                &runtime_owners,
+                runtime_owners,
                 *expression,
                 RuntimeSemanticFactFamily::NominalRecord,
                 |kind| matches!(kind, HirExprKind::Record(_)),
@@ -2823,7 +2847,7 @@ impl RuntimePlanSemanticFacts {
         for (pattern, nominal) in &pattern_nominal_records {
             require_pattern_family(
                 &modules,
-                &runtime_owners,
+                runtime_owners,
                 *pattern,
                 RuntimeSemanticFactFamily::PatternNominalRecord,
                 |kind| matches!(kind, HirPatternKind::Record { .. }),
@@ -2846,7 +2870,7 @@ impl RuntimePlanSemanticFacts {
         for (expression, variant) in &expression_variants {
             require_expr_family(
                 &modules,
-                &runtime_owners,
+                runtime_owners,
                 *expression,
                 RuntimeSemanticFactFamily::ExpressionVariant,
                 |kind| matches!(kind, HirExprKind::ShortVariant(_) | HirExprKind::Path(_)),
@@ -2861,7 +2885,7 @@ impl RuntimePlanSemanticFacts {
         for (pattern, variant) in &pattern_variants {
             require_pattern_family(
                 &modules,
-                &runtime_owners,
+                runtime_owners,
                 *pattern,
                 RuntimeSemanticFactFamily::PatternVariant,
                 |kind| matches!(kind, HirPatternKind::Variant(_)),
@@ -2874,7 +2898,7 @@ impl RuntimePlanSemanticFacts {
             let hir_type = module_for(&modules, owner.module())?
                 .resolve_type(*owner)
                 .map_err(|_| RuntimeSemanticFactsError::UnresolvedType { ty: *owner })?;
-            require_runtime_type_owner(&runtime_owners, *owner)?;
+            require_runtime_type_owner(runtime_owners, *owner)?;
             if hir_type.is_poisoned() {
                 return Err(RuntimeSemanticFactsError::PoisonedType { ty: *owner });
             }
@@ -2885,7 +2909,7 @@ impl RuntimePlanSemanticFacts {
         for (expression, call) in &calls {
             let kind = resolve_expr(&modules, *expression)?;
             require_runtime_expression_owner(
-                &runtime_owners,
+                runtime_owners,
                 *expression,
                 RuntimeSemanticFactFamily::Call,
             )?;
@@ -2896,12 +2920,34 @@ impl RuntimePlanSemanticFacts {
                 });
             };
             validate_call(&modules, hir_call, call)?;
+            let executable = match call.target() {
+                RuntimeResolvedCallTarget::Declaration(callable) => {
+                    Some(HirRuntimeExecutableOwner::Item(callable.owner()))
+                }
+                RuntimeResolvedCallTarget::TraitMethod { method, .. } => {
+                    Some(HirRuntimeExecutableOwner::ImplMethod(method.clone()))
+                }
+                RuntimeResolvedCallTarget::Intrinsic(_)
+                | RuntimeResolvedCallTarget::Agent(_)
+                | RuntimeResolvedCallTarget::AgentProbeComparison(_)
+                | RuntimeResolvedCallTarget::AgentDiagnosticsHasError
+                | RuntimeResolvedCallTarget::Variant(_)
+                | RuntimeResolvedCallTarget::Reduction(_)
+                | RuntimeResolvedCallTarget::FunctionValue
+                | RuntimeResolvedCallTarget::Registered(_)
+                | RuntimeResolvedCallTarget::Host(_) => None,
+            };
+            if let Some(owner) = executable
+                && !runtime_owners.contains_runtime_owner(&owner)
+            {
+                return Err(RuntimeSemanticFactsError::OwnerOutsideReachability { owner });
+            }
         }
 
         let choices = collect_unique(input.choices, RuntimeSemanticFactFamily::Choice)?;
         for (expression, fact) in &choices {
             require_runtime_expression_owner(
-                &runtime_owners,
+                runtime_owners,
                 *expression,
                 RuntimeSemanticFactFamily::Choice,
             )?;
@@ -2965,7 +3011,7 @@ impl RuntimePlanSemanticFacts {
         let awaits = collect_unique(input.awaits, RuntimeSemanticFactFamily::Await)?;
         for (expression, fact) in &awaits {
             require_runtime_expression_owner(
-                &runtime_owners,
+                runtime_owners,
                 *expression,
                 RuntimeSemanticFactFamily::Await,
             )?;
@@ -3019,7 +3065,7 @@ impl RuntimePlanSemanticFacts {
         )?;
         for (expression, fact) in &implicit_callables {
             require_runtime_expression_owner(
-                &runtime_owners,
+                runtime_owners,
                 *expression,
                 RuntimeSemanticFactFamily::ImplicitCallable,
             )?;
@@ -3068,7 +3114,7 @@ impl RuntimePlanSemanticFacts {
         let pipes = collect_unique(input.pipes, RuntimeSemanticFactFamily::Pipe)?;
         for (expression, fact) in &pipes {
             require_runtime_expression_owner(
-                &runtime_owners,
+                runtime_owners,
                 *expression,
                 RuntimeSemanticFactFamily::Pipe,
             )?;
@@ -3107,7 +3153,7 @@ impl RuntimePlanSemanticFacts {
         let try_facts = collect_unique(input.tries, RuntimeSemanticFactFamily::Try)?;
         for (expression, fact) in &try_facts {
             require_runtime_expression_owner(
-                &runtime_owners,
+                runtime_owners,
                 *expression,
                 RuntimeSemanticFactFamily::Try,
             )?;
@@ -3238,13 +3284,13 @@ impl RuntimePlanSemanticFacts {
         for (expression, candidate) in &postfix_candidates {
             let kind = resolve_expr(&modules, *expression)?;
             require_runtime_expression_owner(
-                &runtime_owners,
+                runtime_owners,
                 *expression,
                 RuntimeSemanticFactFamily::PostfixCandidate,
             )?;
             resolve_expr(&modules, *candidate)?;
             require_runtime_expression_owner(
-                &runtime_owners,
+                runtime_owners,
                 *candidate,
                 RuntimeSemanticFactFamily::PostfixCandidate,
             )?;
@@ -3273,12 +3319,12 @@ impl RuntimePlanSemanticFacts {
         }
 
         validate_complete_expression_types(
-            &runtime_owners,
+            runtime_owners,
             &postfix_candidates,
             &calls,
             &expression_types,
         )?;
-        validate_complete_pattern_types(&runtime_owners, &pattern_types)?;
+        validate_complete_pattern_types(runtime_owners, &pattern_types)?;
 
         let trait_methods = collect_unique(
             input
@@ -3295,7 +3341,7 @@ impl RuntimePlanSemanticFacts {
         for (statement, evidence) in &iterations {
             require_stmt_family(
                 &modules,
-                &runtime_owners,
+                runtime_owners,
                 *statement,
                 RuntimeSemanticFactFamily::Iteration,
                 |kind| matches!(kind, HirStmtKind::For(_)),
@@ -3320,7 +3366,7 @@ impl RuntimePlanSemanticFacts {
         for statement in assertions.keys() {
             require_stmt_family(
                 &modules,
-                &runtime_owners,
+                runtime_owners,
                 *statement,
                 RuntimeSemanticFactFamily::Assertion,
                 |kind| matches!(kind, HirStmtKind::Assertion { .. }),
@@ -3334,7 +3380,7 @@ impl RuntimePlanSemanticFacts {
         for (statement, effect) in &evaluated_effects {
             require_stmt_family(
                 &modules,
-                &runtime_owners,
+                runtime_owners,
                 *statement,
                 RuntimeSemanticFactFamily::EvaluatedEffect,
                 |kind| matches!(kind, HirStmtKind::Expression { .. }),
@@ -3365,7 +3411,7 @@ impl RuntimePlanSemanticFacts {
         for (statement, assignment) in &assignments {
             require_stmt_family(
                 &modules,
-                &runtime_owners,
+                runtime_owners,
                 *statement,
                 RuntimeSemanticFactFamily::Assignment,
                 |kind| matches!(kind, HirStmtKind::Assign { .. }),
@@ -3387,13 +3433,13 @@ impl RuntimePlanSemanticFacts {
             let capture = module_for(&modules, id.module())?
                 .resolve_capture(id)
                 .map_err(|_| RuntimeSemanticFactsError::UnresolvedCapture { capture: id })?;
-            require_runtime_capture_owner(&runtime_owners, id)?;
+            require_runtime_capture_owner(runtime_owners, id)?;
             module_for(&modules, capture.local().module())?
                 .resolve_local(capture.local())
                 .map_err(|_| RuntimeSemanticFactsError::UnresolvedLocal {
                     local: capture.local(),
                 })?;
-            require_runtime_local_reference(&runtime_owners, capture.local())?;
+            require_runtime_local_reference(runtime_owners, capture.local())?;
             validate_normalized_type(&modules, checked.ty())?;
             if captures.insert(id, checked).is_some() {
                 return Err(RuntimeSemanticFactsError::DuplicateFact {
@@ -3403,6 +3449,8 @@ impl RuntimePlanSemanticFacts {
         }
 
         Ok(Self {
+            reachability: runtime_owners.identity().clone(),
+            runtime_owners: runtime_owners.reachable_executables().cloned().collect(),
             snapshots,
             local_declaration_order: expected_local_declarations.into_boxed_slice(),
             local_declarations,
@@ -3441,11 +3489,14 @@ impl RuntimePlanSemanticFacts {
     pub fn with_dialogue_projection(
         mut self,
         project: HirExecutableProjectView<'_>,
+        runtime_owners: &HirRuntimeSemanticReachability<'_>,
         catalog: Option<Arc<CharacterPresentationCatalogData>>,
         applications: impl IntoIterator<Item = (ExprId, RuntimeDialogueApplication)>,
     ) -> Result<Self, RuntimeSemanticFactsError> {
         self.validate_generation(project)?;
-        let runtime_owners = project.runtime_semantic_owner_inventory()?;
+        if self.reachability != *runtime_owners.identity() {
+            return Err(RuntimeSemanticFactsError::ReachabilityMismatch);
+        }
         let applications =
             collect_unique(applications, RuntimeSemanticFactFamily::DialogueApplication)?;
         if applications.is_empty() != catalog.is_none() {
@@ -3460,7 +3511,7 @@ impl RuntimePlanSemanticFacts {
                 self.validate_dialogue_application(
                     project,
                     &modules,
-                    &runtime_owners,
+                    runtime_owners,
                     catalog_data,
                     *owner,
                     application,
@@ -3476,7 +3527,7 @@ impl RuntimePlanSemanticFacts {
         &self,
         project: HirExecutableProjectView<'_>,
         modules: &BTreeMap<HirModuleId, &HirModule>,
-        runtime_owners: &HirRuntimeSemanticOwnerInventory<'_>,
+        runtime_owners: &HirRuntimeSemanticReachability<'_>,
         catalog: &CharacterPresentationCatalogData,
         owner: ExprId,
         application: &RuntimeDialogueApplication,
@@ -3858,6 +3909,10 @@ impl RuntimePlanSemanticFacts {
 
 #[derive(Clone, Debug, Eq, Error, PartialEq)]
 pub enum RuntimeSemanticFactsError {
+    #[error("runtime semantic facts and reachability belong to different generations")]
+    ReachabilityMismatch,
+    #[error("runtime semantic fact owner is outside the accepted reachability closure")]
+    OwnerOutsideReachability { owner: HirRuntimeExecutableOwner },
     #[error("runtime semantic facts are bound to a different accepted HIR generation")]
     WrongProjectGeneration,
     #[error("runtime semantic facts contain more than one {family:?} fact for the same HIR ID")]
@@ -3938,7 +3993,7 @@ pub enum RuntimeSemanticFactsError {
     #[error("accepted runtime semantic facts contain a fact for inactive capture {capture:?}")]
     InactiveCaptureFact { capture: CaptureId },
     #[error(transparent)]
-    RuntimeSemanticOwnerInventory(#[from] HirRuntimeSemanticOwnerInventoryError),
+    RuntimeReachability(#[from] HirRuntimeReachabilityError),
     #[error("expression {expression:?} cannot own a {expected:?} runtime semantic fact")]
     WrongExpressionFamily {
         expression: ExprId,
@@ -4078,45 +4133,15 @@ pub enum RuntimeSemanticFactFamily {
 }
 
 fn validate_complete_expression_types(
-    runtime_owners: &HirRuntimeSemanticOwnerInventory<'_>,
-    postfix_candidates: &BTreeMap<ExprId, ExprId>,
-    calls: &BTreeMap<ExprId, RuntimeResolvedCall>,
+    runtime_owners: &HirRuntimeSemanticReachability<'_>,
+    _postfix_candidates: &BTreeMap<ExprId, ExprId>,
+    _calls: &BTreeMap<ExprId, RuntimeResolvedCall>,
     expression_types: &BTreeMap<ExprId, RuntimeNormalizedType>,
 ) -> Result<(), RuntimeSemanticFactsError> {
     let accepted = runtime_owners
-        .selected_expression_type_owners(
-            |owner| postfix_candidates.get(&owner).copied(),
-            |owner| {
-                calls
-                    .get(&owner)
-                    .map_or(HirRuntimeExpressionTypeDisposition::Retain, |call| {
-                        call.expression_type_disposition()
-                    })
-            },
-        )
-        .map_err(|error| match error {
-            HirSelectedExpressionInventoryError::UnknownModule { module } => {
-                RuntimeSemanticFactsError::UnknownModule { module }
-            }
-            HirSelectedExpressionInventoryError::UnresolvedExpression { expression } => {
-                RuntimeSemanticFactsError::UnresolvedExpression { expression }
-            }
-            HirSelectedExpressionInventoryError::MissingPostfixSelection { expression } => {
-                RuntimeSemanticFactsError::MissingPostfixCandidate { expression }
-            }
-            HirSelectedExpressionInventoryError::InvalidPostfixSelection {
-                expression,
-                candidate,
-            } => RuntimeSemanticFactsError::WrongPostfixCandidate {
-                expression,
-                candidate,
-            },
-            HirSelectedExpressionInventoryError::InvalidRuntimeCallDisposition { expression } => {
-                RuntimeSemanticFactsError::InvalidRuntimeCallDisposition { expression }
-            }
-            HirSelectedExpressionInventoryError::MissingRuntimeCallReceiver { expression } => {
-                RuntimeSemanticFactsError::MissingRuntimeCallReceiver { expression }
-            }
+        .selected_expression_type_owners()
+        .map_err(|error| {
+            RuntimeSemanticFactsError::RuntimeReachability(HirRuntimeReachabilityError::from(error))
         })?;
 
     if let Some(expression) = accepted
@@ -4145,7 +4170,7 @@ fn validate_complete_expression_types(
 /// before this projection can be constructed. Presentation-owned patterns do
 /// not enter this table.
 fn validate_complete_pattern_types(
-    runtime_owners: &HirRuntimeSemanticOwnerInventory<'_>,
+    runtime_owners: &HirRuntimeSemanticReachability<'_>,
     pattern_types: &BTreeMap<PatternId, RuntimeNormalizedType>,
 ) -> Result<(), RuntimeSemanticFactsError> {
     for pattern in runtime_owners.patterns() {
@@ -4166,7 +4191,7 @@ fn validate_complete_pattern_types(
 }
 
 fn require_runtime_expression_owner(
-    runtime_owners: &HirRuntimeSemanticOwnerInventory<'_>,
+    runtime_owners: &HirRuntimeSemanticReachability<'_>,
     expression: ExprId,
     family: RuntimeSemanticFactFamily,
 ) -> Result<(), RuntimeSemanticFactsError> {
@@ -4178,7 +4203,7 @@ fn require_runtime_expression_owner(
 }
 
 fn require_runtime_statement_owner(
-    runtime_owners: &HirRuntimeSemanticOwnerInventory<'_>,
+    runtime_owners: &HirRuntimeSemanticReachability<'_>,
     statement: StmtId,
     family: RuntimeSemanticFactFamily,
 ) -> Result<(), RuntimeSemanticFactsError> {
@@ -4190,7 +4215,7 @@ fn require_runtime_statement_owner(
 }
 
 fn require_runtime_pattern_owner(
-    runtime_owners: &HirRuntimeSemanticOwnerInventory<'_>,
+    runtime_owners: &HirRuntimeSemanticReachability<'_>,
     pattern: PatternId,
     family: RuntimeSemanticFactFamily,
 ) -> Result<(), RuntimeSemanticFactsError> {
@@ -4202,7 +4227,7 @@ fn require_runtime_pattern_owner(
 }
 
 fn require_runtime_type_owner(
-    runtime_owners: &HirRuntimeSemanticOwnerInventory<'_>,
+    runtime_owners: &HirRuntimeSemanticReachability<'_>,
     ty: TypeId,
 ) -> Result<(), RuntimeSemanticFactsError> {
     if runtime_owners.contains_type(ty) {
@@ -4213,7 +4238,7 @@ fn require_runtime_type_owner(
 }
 
 fn require_runtime_capture_owner(
-    runtime_owners: &HirRuntimeSemanticOwnerInventory<'_>,
+    runtime_owners: &HirRuntimeSemanticReachability<'_>,
     capture: CaptureId,
 ) -> Result<(), RuntimeSemanticFactsError> {
     if runtime_owners.contains_capture(capture) {
@@ -4224,7 +4249,7 @@ fn require_runtime_capture_owner(
 }
 
 fn require_runtime_local_reference(
-    runtime_owners: &HirRuntimeSemanticOwnerInventory<'_>,
+    runtime_owners: &HirRuntimeSemanticReachability<'_>,
     local: LocalId,
 ) -> Result<(), RuntimeSemanticFactsError> {
     if runtime_owners.contains_local(local) {
@@ -4293,7 +4318,7 @@ fn resolve_pattern<'project>(
 
 fn require_expr_family(
     modules: &BTreeMap<HirModuleId, &HirModule>,
-    runtime_owners: &HirRuntimeSemanticOwnerInventory<'_>,
+    runtime_owners: &HirRuntimeSemanticReachability<'_>,
     expression: ExprId,
     expected: RuntimeSemanticFactFamily,
     predicate: impl FnOnce(&HirExprKind) -> bool,
@@ -4312,7 +4337,7 @@ fn require_expr_family(
 
 fn require_stmt_family(
     modules: &BTreeMap<HirModuleId, &HirModule>,
-    runtime_owners: &HirRuntimeSemanticOwnerInventory<'_>,
+    runtime_owners: &HirRuntimeSemanticReachability<'_>,
     statement: StmtId,
     expected: RuntimeSemanticFactFamily,
     predicate: impl FnOnce(&HirStmtKind) -> bool,
@@ -4331,7 +4356,7 @@ fn require_stmt_family(
 
 fn require_pattern_family(
     modules: &BTreeMap<HirModuleId, &HirModule>,
-    runtime_owners: &HirRuntimeSemanticOwnerInventory<'_>,
+    runtime_owners: &HirRuntimeSemanticReachability<'_>,
     pattern: PatternId,
     expected: RuntimeSemanticFactFamily,
     predicate: impl FnOnce(&HirPatternKind) -> bool,
@@ -4347,7 +4372,7 @@ fn require_pattern_family(
 
 fn validate_resolved_value(
     modules: &BTreeMap<HirModuleId, &HirModule>,
-    runtime_owners: &HirRuntimeSemanticOwnerInventory<'_>,
+    runtime_owners: &HirRuntimeSemanticReachability<'_>,
     value: &RuntimeResolvedValue,
 ) -> Result<(), RuntimeSemanticFactsError> {
     match value {

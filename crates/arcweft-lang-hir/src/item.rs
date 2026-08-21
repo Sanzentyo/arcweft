@@ -220,74 +220,6 @@ impl HirItem {
     pub const fn is_poisoned(&self) -> bool {
         self.state.is_poisoned()
     }
-
-    /// Returns the typed roots whose descendants belong to a presentation
-    /// product rather than runtime semantic fact publication.
-    ///
-    /// This match is intentionally exhaustive. Adding an item family must
-    /// reconsider whether its typed owners enter runtime lowering.
-    pub(crate) fn presentation_semantic_roots(&self) -> Option<HirPresentationSemanticRoots> {
-        let mut attribute_expressions = self.prefix.attribute_expression_roots();
-        match &self.kind {
-            HirItemKind::View(view) => Some(HirPresentationSemanticRoots {
-                scope: Some(view.callable_scope()),
-                expressions: attribute_expressions,
-                types: Vec::new(),
-            }),
-            HirItemKind::Style(style) => {
-                attribute_expressions.extend(style.value_expression_roots());
-                Some(HirPresentationSemanticRoots {
-                    scope: None,
-                    expressions: attribute_expressions,
-                    types: style.value_type_roots(),
-                })
-            }
-            HirItemKind::Module(_)
-            | HirItemKind::Use(_)
-            | HirItemKind::Flow(_)
-            | HirItemKind::Function(_)
-            | HirItemKind::Predicate(_)
-            | HirItemKind::Proof(_)
-            | HirItemKind::Trait(_)
-            | HirItemKind::Impl(_)
-            | HirItemKind::Enum(_)
-            | HirItemKind::Struct(_)
-            | HirItemKind::TypeAlias(_)
-            | HirItemKind::Resource(_)
-            | HirItemKind::Character(_)
-            | HirItemKind::Action(_)
-            | HirItemKind::Activity(_)
-            | HirItemKind::Signal(_)
-            | HirItemKind::Metric(_)
-            | HirItemKind::Layer(_)
-            | HirItemKind::Entry(_)
-            | HirItemKind::ExternCapability(_)
-            | HirItemKind::Test(_)
-            | HirItemKind::Bench(_)
-            | HirItemKind::Error(_) => None,
-        }
-    }
-}
-
-/// Typed entry roots for one presentation-owned item product.
-pub(crate) struct HirPresentationSemanticRoots {
-    scope: Option<ScopeId>,
-    expressions: Vec<ExprId>,
-    types: Vec<TypeId>,
-}
-
-impl HirPresentationSemanticRoots {
-    pub(crate) const fn scope(&self) -> Option<ScopeId> {
-        self.scope
-    }
-
-    pub(crate) fn expressions(&self) -> impl Iterator<Item = ExprId> + '_ {
-        self.expressions.iter().copied()
-    }
-
-    pub(crate) fn types(&self) -> impl Iterator<Item = TypeId> + '_ {
-        self.types.iter().copied()
-    }
 }
 
 fn item_state_matches_kind(kind: &HirItemKind, state: HirItemPoisonState) -> bool {
@@ -383,14 +315,6 @@ impl HirItemPrefix {
 
     pub const fn visibility(&self) -> Option<HirVisibility> {
         self.visibility
-    }
-
-    fn attribute_expression_roots(&self) -> Vec<ExprId> {
-        self.attributes
-            .iter()
-            .flat_map(HirAttribute::arguments)
-            .map(HirCallArgument::value)
-            .collect()
     }
 
     fn validate_module(&self, expected: HirModuleId) -> Result<(), HirItemInvariantError> {

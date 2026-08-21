@@ -134,6 +134,42 @@ pub enum HirPatternKind {
 }
 
 impl HirPatternKind {
+    pub(crate) fn direct_pattern_children(&self) -> Vec<PatternId> {
+        match self {
+            Self::Tuple { elements }
+            | Self::BracketSequence { elements, .. }
+            | Self::Or {
+                alternatives: elements,
+            } => elements.to_vec(),
+            Self::Record { fields, .. } => fields
+                .iter()
+                .filter_map(|field| match field {
+                    HirPatternField::Explicit { pattern, .. } => Some(*pattern),
+                    HirPatternField::Shorthand { .. }
+                    | HirPatternField::Rest { .. }
+                    | HirPatternField::Invalid { .. } => None,
+                })
+                .collect(),
+            Self::WholeBinding { pattern, .. } => vec![*pattern],
+            Self::Variant(pattern) => match pattern.payload() {
+                HirVariantPatternPayload::Pattern(pattern)
+                | HirVariantPatternPayload::Recovered {
+                    pattern: Some(pattern),
+                    ..
+                } => vec![*pattern],
+                HirVariantPatternPayload::Absent
+                | HirVariantPatternPayload::Recovered { pattern: None, .. } => Vec::new(),
+            },
+            Self::Binding(_)
+            | Self::MutableBinding(_)
+            | Self::Literal(_)
+            | Self::EntityReference(_)
+            | Self::Discard
+            | Self::TypedBinding { .. }
+            | Self::Error(_) => Vec::new(),
+        }
+    }
+
     /// Returns the exact type node authored by this pattern, when the pattern
     /// itself owns the annotation.
     ///

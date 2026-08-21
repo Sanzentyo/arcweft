@@ -15,7 +15,9 @@ use arcweft_lang_hir::{
     item::HirItemKind,
     lowering::{HirModuleKey, LoweringRequest},
     project::{
-        HirProject, HirProjectBuilder, HirProjectModule, HirRuntimeExpressionTypeDisposition,
+        HirProject, HirProjectBuilder, HirProjectModule, HirRuntimeEmissionMode,
+        HirRuntimeExecutableOwner, HirRuntimeExpressionTypeDisposition, HirRuntimeReachabilityRoot,
+        HirRuntimeReachabilityRootKind, HirRuntimeSemanticReachabilityInput,
     },
     proof_return::HirProofReturnSemanticFactSet,
     stmt::HirStmtKind,
@@ -521,6 +523,10 @@ fn failure(
     ))
 }
 
+#[expect(
+    clippy::too_many_lines,
+    reason = "the assertion fixture constructs one complete generation-bound lowering input"
+)]
 fn lower_assertion_project(
     project: &HirProject,
     admission: RuntimeAssertionAdmission,
@@ -551,9 +557,44 @@ fn lower_assertion_project(
     assert_eq!(conditions.len(), values.len());
 
     let mut input = RuntimePlanSemanticFactInput::new();
+    let (_, module) = executable.modules().next().expect("fixture module");
+    let world = ProjectSymbolWorldId::try_new(
+        executable.package().clone(),
+        module.provenance().source_identity().id().clone(),
+        "runtime-plan-assertion-test",
+    )
+    .expect("fixture reachability world");
+    let revision = ProjectSymbolRevision::try_for_documents(
+        executable
+            .modules()
+            .map(|(_, module)| module.provenance().source_identity()),
+    )
+    .expect("fixture reachability revision");
+    let roots = executable
+        .items()
+        .filter(|item| matches!(item.item().kind(), HirItemKind::Flow(_)))
+        .map(|item| {
+            HirRuntimeReachabilityRoot::new(
+                HirRuntimeReachabilityRootKind::CheckedFlow,
+                HirRuntimeExecutableOwner::Item(item.id()),
+            )
+        })
+        .collect();
+    let reachability_input = HirRuntimeSemanticReachabilityInput::try_new(
+        HirRuntimeEmissionMode::CheckAll,
+        world,
+        revision,
+        roots,
+        Vec::new(),
+    )
+    .expect("fixture reachability input");
     let runtime_owners = executable
-        .runtime_semantic_owner_inventory()
-        .expect("runtime semantic owner inventory");
+        .runtime_semantic_reachability(
+            reachability_input,
+            |_| None,
+            |_| HirRuntimeExpressionTypeDisposition::Retain,
+        )
+        .expect("runtime semantic reachability");
     for owner in runtime_owners.locals() {
         input.push_local_declaration(
             owner,
@@ -573,7 +614,7 @@ fn lower_assertion_project(
         );
     }
     for owner in runtime_owners
-        .selected_expression_type_owners(|_| None, |_| HirRuntimeExpressionTypeDisposition::Retain)
+        .selected_expression_type_owners()
         .expect("postfix-free runtime expression-type fixture")
     {
         let is_condition = conditions.contains(&owner);
@@ -597,7 +638,8 @@ fn lower_assertion_project(
         input.push_expression_literal(condition, RuntimeValue::Bool(value));
     }
     input.push_assertion(statement, admission);
-    let facts = RuntimePlanSemanticFacts::try_new(executable, input).expect("checked facts");
+    let facts = RuntimePlanSemanticFacts::try_new(executable, &runtime_owners, input)
+        .expect("checked facts");
     let report = lower_runtime_plan_with_stats(
         executable,
         &facts,

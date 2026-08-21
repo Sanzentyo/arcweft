@@ -366,14 +366,6 @@ impl HirStyleItem {
         roots
     }
 
-    /// Returns every authored type root attached directly to a Style value.
-    pub(crate) fn value_type_roots(&self) -> Vec<TypeId> {
-        self.tokens
-            .iter()
-            .filter_map(HirStyleToken::value_type)
-            .collect()
-    }
-
     pub(crate) fn has_recovery(&self) -> bool {
         self.id.is_recovered()
             || self.tokens.iter().any(HirStyleToken::has_recovery)

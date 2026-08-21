@@ -1,45 +1,412 @@
-//! Runtime semantic owner domain for one executable final-HIR project.
-//!
-//! View and Style values are accepted presentation products, not runtime-plan
-//! semantic facts. This module derives their complete typed owner closure from
-//! final HIR and publishes the complementary runtime domain in canonical
-//! project order.
+//! Generation-bound runtime reachability for one executable final-HIR project.
 
 use std::collections::{BTreeMap, BTreeSet, VecDeque};
 
 use thiserror::Error;
 
-use super::HirExecutableProjectView;
-use crate::identity::{CaptureId, ExprId, LocalId, PatternId, ScopeId, StmtId, TypeId};
-use crate::scope::HirScopeOwner;
+#[path = "runtime_semantic_owners/digest.rs"]
+mod digest;
+#[path = "runtime_semantic_owners/validation.rs"]
+mod validation;
 
-/// Exact final-HIR owners admitted to runtime semantic fact publication.
-///
-/// The embedded executable view binds this inventory to one accepted project
-/// generation. Callers cannot combine owner sets from another project lease.
-pub struct HirRuntimeSemanticOwnerInventory<'project> {
+use self::digest::reachability_digest;
+use self::validation::validate_roots_and_edges;
+
+use super::{HirExecutableProjectView, selected_expressions::HirSelectedRuntimeExpressionOwners};
+use crate::expr::HirExprKind;
+use crate::identity::{
+    CaptureId, ExprId, HirModuleId, HirSnapshotId, ItemId, LocalId, PatternId, ScopeId, StmtId,
+    TypeId,
+};
+use crate::item::{HirEntryMember, HirImplMember, HirItemKind};
+use crate::scope::HirScopeOwner;
+use crate::symbol::{
+    CallableDeclarationKey, ImplMethodDeclarationId, ProjectSymbolRevision, ProjectSymbolWorldId,
+};
+
+use super::{HirRuntimeExpressionTypeDisposition, HirSelectedExpressionInventoryError};
+
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub enum HirRuntimeEmissionMode {
+    CheckAll,
+    SelectedEntry,
+}
+
+#[derive(Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub enum HirRuntimeExecutableOwner {
+    Item(ItemId),
+    ImplMethod(ImplMethodDeclarationId),
+    Closure(ExprId),
+}
+
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub enum HirRuntimeReachabilitySite {
+    Item(ItemId),
+    Expression(ExprId),
+    Statement(StmtId),
+}
+
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub enum HirRuntimeReachabilityRootKind {
+    CheckedFlow,
+    CheckedEntry,
+    SelectedEntry,
+}
+
+#[derive(Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub struct HirRuntimeReachabilityRoot {
+    kind: HirRuntimeReachabilityRootKind,
+    owner: HirRuntimeExecutableOwner,
+}
+
+impl HirRuntimeReachabilityRoot {
+    pub const fn new(
+        kind: HirRuntimeReachabilityRootKind,
+        owner: HirRuntimeExecutableOwner,
+    ) -> Self {
+        Self { kind, owner }
+    }
+
+    pub const fn kind(&self) -> HirRuntimeReachabilityRootKind {
+        self.kind
+    }
+
+    pub const fn owner(&self) -> &HirRuntimeExecutableOwner {
+        &self.owner
+    }
+}
+
+#[derive(Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub enum HirRuntimeReachabilityEdgeKind {
+    CheckedProjectCall {
+        call: ExprId,
+        declaration: CallableDeclarationKey,
+    },
+    CheckedTraitDispatch {
+        source: HirRuntimeReachabilitySite,
+        implementation: ItemId,
+        method: ImplMethodDeclarationId,
+    },
+    CheckedFlowTransfer {
+        source: HirRuntimeReachabilitySite,
+        declaration: CallableDeclarationKey,
+    },
+    CheckedEntryBinding {
+        entry: ItemId,
+        declaration: CallableDeclarationKey,
+    },
+}
+
+#[derive(Clone, Debug, Eq, Ord, PartialEq, PartialOrd)]
+enum HirRuntimeReachabilityEdgeAuthority {
+    ProjectCall(CallableDeclarationKey),
+    TraitDispatch(ImplMethodDeclarationId),
+    FlowTransfer(CallableDeclarationKey),
+    EntryBinding(CallableDeclarationKey),
+}
+
+#[derive(Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub struct HirRuntimeReachabilityEdge {
+    source: HirRuntimeReachabilitySite,
+    target: HirRuntimeExecutableOwner,
+    kind: HirRuntimeReachabilityEdgeKind,
+}
+
+impl HirRuntimeReachabilityEdge {
+    pub const fn new(
+        source: HirRuntimeReachabilitySite,
+        target: HirRuntimeExecutableOwner,
+        kind: HirRuntimeReachabilityEdgeKind,
+    ) -> Self {
+        Self {
+            source,
+            target,
+            kind,
+        }
+    }
+
+    pub const fn source(&self) -> HirRuntimeReachabilitySite {
+        self.source
+    }
+
+    pub const fn target(&self) -> &HirRuntimeExecutableOwner {
+        &self.target
+    }
+
+    pub const fn kind(&self) -> &HirRuntimeReachabilityEdgeKind {
+        &self.kind
+    }
+}
+
+#[derive(Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub struct HirRuntimeReachabilityPath {
+    root: HirRuntimeReachabilityRoot,
+    steps: Box<[HirRuntimeReachabilityEdge]>,
+}
+
+impl HirRuntimeReachabilityPath {
+    pub const fn root(&self) -> &HirRuntimeReachabilityRoot {
+        &self.root
+    }
+
+    pub const fn steps(&self) -> &[HirRuntimeReachabilityEdge] {
+        &self.steps
+    }
+}
+
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub struct HirRuntimeReachabilityDigest([u8; 32]);
+
+impl HirRuntimeReachabilityDigest {
+    pub const fn as_bytes(&self) -> &[u8; 32] {
+        &self.0
+    }
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct HirRuntimeReachabilityIdentity {
+    module_snapshots: Box<[(HirModuleId, HirSnapshotId)]>,
+    symbol_world: ProjectSymbolWorldId,
+    symbol_revision: ProjectSymbolRevision,
+    mode: HirRuntimeEmissionMode,
+    digest: HirRuntimeReachabilityDigest,
+}
+
+impl HirRuntimeReachabilityIdentity {
+    pub const fn module_snapshots(&self) -> &[(HirModuleId, HirSnapshotId)] {
+        &self.module_snapshots
+    }
+
+    pub const fn symbol_world(&self) -> &ProjectSymbolWorldId {
+        &self.symbol_world
+    }
+
+    pub const fn symbol_revision(&self) -> ProjectSymbolRevision {
+        self.symbol_revision
+    }
+
+    pub const fn mode(&self) -> HirRuntimeEmissionMode {
+        self.mode
+    }
+
+    pub const fn digest(&self) -> HirRuntimeReachabilityDigest {
+        self.digest
+    }
+}
+
+pub struct HirRuntimeSemanticReachabilityInput {
+    mode: HirRuntimeEmissionMode,
+    symbol_world: ProjectSymbolWorldId,
+    symbol_revision: ProjectSymbolRevision,
+    roots: Vec<HirRuntimeReachabilityRoot>,
+    edges: Vec<HirRuntimeReachabilityEdge>,
+}
+
+impl HirRuntimeSemanticReachabilityInput {
+    pub fn try_new(
+        mode: HirRuntimeEmissionMode,
+        symbol_world: ProjectSymbolWorldId,
+        symbol_revision: ProjectSymbolRevision,
+        mut roots: Vec<HirRuntimeReachabilityRoot>,
+        mut edges: Vec<HirRuntimeReachabilityEdge>,
+    ) -> Result<Self, HirRuntimeReachabilityError> {
+        roots.sort();
+        if let Some(root) = roots
+            .windows(2)
+            .find_map(|pair| (pair[0] == pair[1]).then(|| pair[0].clone()))
+        {
+            return Err(HirRuntimeReachabilityError::DuplicateRoot { root });
+        }
+        edges.sort();
+        if let Some(edge) = edges
+            .windows(2)
+            .find_map(|pair| (pair[0] == pair[1]).then(|| pair[0].clone()))
+        {
+            return Err(HirRuntimeReachabilityError::DuplicateEdge {
+                edge: Box::new(edge),
+            });
+        }
+        let mut authority_targets = BTreeMap::new();
+        for edge in &edges {
+            let key = (edge.source, edge_authority(&edge.kind));
+            if let Some(first) = authority_targets.insert(key, edge.target.clone())
+                && first != edge.target
+            {
+                return Err(HirRuntimeReachabilityError::ConflictingEdge {
+                    site: edge.source,
+                    first: Box::new(first),
+                    second: Box::new(edge.target.clone()),
+                });
+            }
+        }
+        for edge in &edges {
+            if !edge_kind_matches_source(edge) {
+                return Err(HirRuntimeReachabilityError::InvalidEdgeKind {
+                    site: edge.source,
+                    kind: Box::new(edge.kind.clone()),
+                });
+            }
+        }
+        if roots.len() > u32::MAX as usize {
+            return Err(HirRuntimeReachabilityError::LimitExceeded {
+                family: HirRuntimeReachabilityLimitFamily::Roots,
+                actual: roots.len(),
+                limit: u32::MAX as usize,
+            });
+        }
+        if edges.len() > u32::MAX as usize {
+            return Err(HirRuntimeReachabilityError::LimitExceeded {
+                family: HirRuntimeReachabilityLimitFamily::Edges,
+                actual: edges.len(),
+                limit: u32::MAX as usize,
+            });
+        }
+        Ok(Self {
+            mode,
+            symbol_world,
+            symbol_revision,
+            roots,
+            edges,
+        })
+    }
+}
+
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub enum HirRuntimeReachabilityLimitFamily {
+    Roots,
+    Edges,
+    Executables,
+}
+
+#[derive(Clone, Debug, Eq, Error, PartialEq)]
+pub enum HirRuntimeReachabilityError {
+    #[error("runtime reachability symbol world does not match the executable project")]
+    SymbolWorldMismatch,
+    #[error("runtime reachability root references an unknown executable owner")]
+    UnknownRoot { owner: HirRuntimeExecutableOwner },
+    #[error("runtime reachability root kind does not match its executable owner")]
+    InvalidRootKind { root: HirRuntimeReachabilityRoot },
+    #[error("runtime reachability edge source is unresolved")]
+    UnknownEdgeSource { site: HirRuntimeReachabilitySite },
+    #[error("runtime reachability edge target is unresolved")]
+    UnknownEdgeTarget { target: HirRuntimeExecutableOwner },
+    #[error("runtime reachability edge targets a presentation product")]
+    PresentationTarget { target: HirRuntimeExecutableOwner },
+    #[error("runtime reachability contains a duplicate root")]
+    DuplicateRoot { root: HirRuntimeReachabilityRoot },
+    #[error("runtime reachability contains a duplicate edge")]
+    DuplicateEdge {
+        edge: Box<HirRuntimeReachabilityEdge>,
+    },
+    #[error("runtime reachability contains conflicting edges for one checked source")]
+    ConflictingEdge {
+        site: HirRuntimeReachabilitySite,
+        first: Box<HirRuntimeExecutableOwner>,
+        second: Box<HirRuntimeExecutableOwner>,
+    },
+    #[error("runtime reachability source does not match its edge kind")]
+    InvalidEdgeKind {
+        site: HirRuntimeReachabilitySite,
+        kind: Box<HirRuntimeReachabilityEdgeKind>,
+    },
+    #[error("runtime reachability edge kind does not match its executable target")]
+    InvalidEdgeTarget {
+        edge: Box<HirRuntimeReachabilityEdge>,
+    },
+    #[error("runtime reachability references an unresolved scope")]
+    UnresolvedScope { scope: ScopeId },
+    #[error("runtime reachability references an unresolved local")]
+    UnresolvedLocal { local: LocalId },
+    #[error("runtime reachability references an unresolved expression")]
+    UnresolvedExpression { expression: ExprId },
+    #[error("runtime reachability references an unresolved statement")]
+    UnresolvedStatement { statement: StmtId },
+    #[error("runtime reachability references an unresolved type")]
+    UnresolvedType { ty: TypeId },
+    #[error("runtime reachability references an unresolved pattern")]
+    UnresolvedPattern { pattern: PatternId },
+    #[error("runtime reachability exceeds the accepted graph limit")]
+    LimitExceeded {
+        family: HirRuntimeReachabilityLimitFamily,
+        actual: usize,
+        limit: usize,
+    },
+    #[error(transparent)]
+    SelectedExpressions(#[from] HirSelectedExpressionInventoryError),
+}
+
+pub struct HirRuntimeSemanticReachability<'project> {
     pub(super) project: HirExecutableProjectView<'project>,
+    mode: HirRuntimeEmissionMode,
+    roots: Box<[HirRuntimeReachabilityRoot]>,
+    edges: Box<[HirRuntimeReachabilityEdge]>,
+    reachable_executables: BTreeSet<HirRuntimeExecutableOwner>,
+    first_paths: BTreeMap<HirRuntimeExecutableOwner, HirRuntimeReachabilityPath>,
     locals: Box<[LocalId]>,
     expressions: BTreeSet<ExprId>,
+    expression_type_owners: BTreeSet<ExprId>,
     statements: BTreeSet<StmtId>,
     types: BTreeSet<TypeId>,
     patterns: BTreeSet<PatternId>,
     captures: BTreeSet<CaptureId>,
+    identity: HirRuntimeReachabilityIdentity,
 }
 
-impl HirRuntimeSemanticOwnerInventory<'_> {
-    /// Runtime locals in canonical executable-module and local-arena order.
+impl HirRuntimeSemanticReachability<'_> {
+    pub const fn project(&self) -> HirExecutableProjectView<'_> {
+        self.project
+    }
+
+    pub const fn mode(&self) -> HirRuntimeEmissionMode {
+        self.mode
+    }
+
+    pub const fn identity(&self) -> &HirRuntimeReachabilityIdentity {
+        &self.identity
+    }
+
+    pub fn roots(&self) -> impl ExactSizeIterator<Item = &HirRuntimeReachabilityRoot> {
+        self.roots.iter()
+    }
+
+    pub fn edges(&self) -> impl ExactSizeIterator<Item = &HirRuntimeReachabilityEdge> {
+        self.edges.iter()
+    }
+
+    pub fn reachable_executables(
+        &self,
+    ) -> impl ExactSizeIterator<Item = &HirRuntimeExecutableOwner> {
+        self.reachable_executables.iter()
+    }
+
+    pub fn first_path(
+        &self,
+        owner: &HirRuntimeExecutableOwner,
+    ) -> Option<&HirRuntimeReachabilityPath> {
+        self.first_paths.get(owner)
+    }
+
+    pub fn edge_from(
+        &self,
+        source: HirRuntimeReachabilitySite,
+    ) -> impl Iterator<Item = &HirRuntimeReachabilityEdge> {
+        self.edges.iter().filter(move |edge| edge.source == source)
+    }
+
     pub fn locals(&self) -> impl ExactSizeIterator<Item = LocalId> + '_ {
         self.locals.iter().copied()
     }
 
-    /// Runtime patterns in qualified-ID order.
     pub fn patterns(&self) -> impl ExactSizeIterator<Item = PatternId> + '_ {
         self.patterns.iter().copied()
     }
 
+    pub fn contains_runtime_owner(&self, owner: &HirRuntimeExecutableOwner) -> bool {
+        self.reachable_executables.contains(owner)
+    }
+
     pub fn contains_local(&self, owner: LocalId) -> bool {
-        self.locals.contains(&owner)
+        self.locals.binary_search(&owner).is_ok()
     }
 
     pub fn contains_expression(&self, owner: ExprId) -> bool {
@@ -62,30 +429,14 @@ impl HirRuntimeSemanticOwnerInventory<'_> {
         self.captures.contains(&owner)
     }
 
-    pub(super) const fn expression_owners(&self) -> &BTreeSet<ExprId> {
-        &self.expressions
+    pub(super) const fn expression_type_owners(&self) -> &BTreeSet<ExprId> {
+        &self.expression_type_owners
     }
-}
-
-/// Failure to close presentation-owned typed HIR roots in an accepted project.
-#[derive(Clone, Copy, Debug, Eq, Error, PartialEq)]
-pub enum HirRuntimeSemanticOwnerInventoryError {
-    #[error("presentation owner inventory references unresolved scope {scope:?}")]
-    UnresolvedScope { scope: ScopeId },
-    #[error("presentation owner inventory references unresolved local {local:?}")]
-    UnresolvedLocal { local: LocalId },
-    #[error("presentation owner inventory references unresolved expression {expression:?}")]
-    UnresolvedExpression { expression: ExprId },
-    #[error("presentation owner inventory references unresolved statement {statement:?}")]
-    UnresolvedStatement { statement: StmtId },
-    #[error("presentation owner inventory references unresolved type {ty:?}")]
-    UnresolvedType { ty: TypeId },
-    #[error("presentation owner inventory references unresolved pattern {pattern:?}")]
-    UnresolvedPattern { pattern: PatternId },
 }
 
 #[derive(Clone)]
 struct ScopeEdges {
+    owner: HirScopeOwner,
     children: Box<[ScopeId]>,
     locals: Box<[LocalId]>,
 }
@@ -98,8 +449,30 @@ struct ScopedOwners {
     patterns: Vec<PatternId>,
 }
 
+struct StructuralIndex {
+    scopes: BTreeMap<ScopeId, ScopeEdges>,
+    scope_members: BTreeMap<ScopeId, ScopedOwners>,
+    local_types: BTreeMap<LocalId, Option<TypeId>>,
+    expression_edges: BTreeMap<ExprId, (Vec<ExprId>, Vec<TypeId>, bool)>,
+    statement_types: BTreeMap<StmtId, Vec<TypeId>>,
+    type_edges: BTreeMap<TypeId, Vec<TypeId>>,
+    pattern_edges: BTreeMap<PatternId, (Option<TypeId>, Vec<PatternId>)>,
+    owned_scopes: BTreeMap<HirScopeOwner, Vec<ScopeId>>,
+    capture_closures: BTreeMap<CaptureId, ExprId>,
+}
+
+#[derive(Default)]
+struct StructuralOwners {
+    locals: BTreeSet<LocalId>,
+    expressions: BTreeSet<ExprId>,
+    statements: BTreeSet<StmtId>,
+    types: BTreeSet<TypeId>,
+    patterns: BTreeSet<PatternId>,
+    captures: BTreeSet<CaptureId>,
+}
+
 #[derive(Clone, Copy)]
-enum PendingPresentationOwner {
+enum PendingOwner {
     Scope(ScopeId),
     Local(LocalId),
     Expression(ExprId),
@@ -108,279 +481,614 @@ enum PendingPresentationOwner {
     Pattern(PatternId),
 }
 
+#[derive(Default)]
+struct HirRuntimeExecutionRoots {
+    scopes: Vec<ScopeId>,
+    expressions: Vec<ExprId>,
+    types: Vec<TypeId>,
+}
+
+impl HirItemKind {
+    fn runtime_execution_roots(&self) -> Option<HirRuntimeExecutionRoots> {
+        match self {
+            Self::Flow(flow) => Some(HirRuntimeExecutionRoots {
+                scopes: vec![flow.callable_scope()],
+                types: flow.result().authored_type().into_iter().collect(),
+                ..HirRuntimeExecutionRoots::default()
+            }),
+            Self::Function(function) => Some(HirRuntimeExecutionRoots {
+                scopes: vec![function.callable_scope()],
+                types: function.return_type().into_iter().collect(),
+                ..HirRuntimeExecutionRoots::default()
+            }),
+            Self::Entry(entry) => {
+                let mut roots = HirRuntimeExecutionRoots::default();
+                for member in entry.members() {
+                    match member {
+                        HirEntryMember::StateType(binding) | HirEntryMember::EventType(binding) => {
+                            roots.types.push(binding.ty());
+                        }
+                        HirEntryMember::Option(option) => {
+                            roots.expressions.extend(option.value().expression());
+                        }
+                        HirEntryMember::Initializer(_)
+                        | HirEntryMember::Reducer(_)
+                        | HirEntryMember::Controller(_)
+                        | HirEntryMember::Goto(_)
+                        | HirEntryMember::Route(_)
+                        | HirEntryMember::Error => {}
+                    }
+                }
+                Some(roots)
+            }
+            Self::Module(_)
+            | Self::Use(_)
+            | Self::Predicate(_)
+            | Self::Proof(_)
+            | Self::Trait(_)
+            | Self::Impl(_)
+            | Self::Enum(_)
+            | Self::Struct(_)
+            | Self::TypeAlias(_)
+            | Self::Resource(_)
+            | Self::Character(_)
+            | Self::View(_)
+            | Self::Action(_)
+            | Self::Activity(_)
+            | Self::Signal(_)
+            | Self::Metric(_)
+            | Self::Layer(_)
+            | Self::ExternCapability(_)
+            | Self::Test(_)
+            | Self::Bench(_)
+            | Self::Style(_)
+            | Self::Error(_) => None,
+        }
+    }
+}
+
 impl<'project> HirExecutableProjectView<'project> {
-    /// Derives the sole runtime semantic owner domain from accepted final HIR.
-    ///
-    /// A View's complete callable-scope subtree and every Style value subtree
-    /// belong to presentation products. Their typed descendants are excluded
-    /// together so local IDs, normalized types, and operational facts cannot
-    /// cross the product boundary independently.
     #[expect(
         clippy::too_many_lines,
-        reason = "one fixed-point transaction indexes and closes every typed HIR owner family without exposing a partial owner graph"
+        reason = "one atomic transaction validates the generation, closes structural owners, and records deterministic paths"
     )]
-    pub fn runtime_semantic_owner_inventory(
+    pub fn runtime_semantic_reachability(
         self,
-    ) -> Result<HirRuntimeSemanticOwnerInventory<'project>, HirRuntimeSemanticOwnerInventoryError>
-    {
-        let mut all_locals = Vec::new();
-        let mut all_expressions = BTreeSet::new();
-        let mut all_statements = BTreeSet::new();
-        let mut all_types = BTreeSet::new();
-        let mut all_patterns = BTreeSet::new();
-        let mut all_captures = BTreeMap::new();
-        let mut scopes = BTreeMap::new();
-        let mut scope_members = BTreeMap::<ScopeId, ScopedOwners>::new();
-        let mut local_types = BTreeMap::new();
-        let mut expression_edges = BTreeMap::new();
-        let mut statement_types = BTreeMap::new();
-        let mut type_edges = BTreeMap::new();
-        let mut pattern_types = BTreeMap::new();
-        let mut owned_scopes = BTreeMap::<HirScopeOwner, Vec<ScopeId>>::new();
+        input: HirRuntimeSemanticReachabilityInput,
+        mut selected_postfix: impl FnMut(ExprId) -> Option<ExprId>,
+        mut call_disposition: impl FnMut(ExprId) -> HirRuntimeExpressionTypeDisposition,
+    ) -> Result<HirRuntimeSemanticReachability<'project>, HirRuntimeReachabilityError> {
+        self.validate_reachability_generation(&input)?;
+        validate_roots_and_edges(self, &input)?;
+        let index = StructuralIndex::new(self);
+        let mut reachable_executables = BTreeSet::new();
+        let mut first_paths = BTreeMap::new();
+        let mut accepted = StructuralOwners::default();
+        let mut expression_type_owners = BTreeSet::new();
+        let mut pending = input
+            .roots
+            .iter()
+            .cloned()
+            .map(|root| {
+                let owner = root.owner.clone();
+                let path = HirRuntimeReachabilityPath {
+                    root,
+                    steps: Box::new([]),
+                };
+                (owner, path)
+            })
+            .collect::<VecDeque<_>>();
 
-        for (_, module) in self.modules() {
+        while let Some((owner, path)) = pending.pop_front() {
+            if !reachable_executables.insert(owner.clone()) {
+                continue;
+            }
+            first_paths.insert(owner.clone(), path.clone());
+            let structural = self.close_executable(&index, &owner)?;
+            let HirSelectedRuntimeExpressionOwners { reached, typed } = self
+                .selected_runtime_expression_owners(
+                    &structural.expressions,
+                    &mut selected_postfix,
+                    &mut call_disposition,
+                )?;
+            expression_type_owners.extend(typed);
+            accepted.locals.extend(structural.locals);
+            accepted.expressions.extend(reached.iter().copied());
+            accepted
+                .statements
+                .extend(structural.statements.iter().copied());
+            accepted.types.extend(structural.types);
+            accepted.patterns.extend(structural.patterns);
+            accepted.captures.extend(structural.captures);
+
+            for edge in input.edges.iter().filter(|edge| {
+                edge_reached_by(&owner, edge.source, &reached, &structural.statements)
+            }) {
+                let mut steps = path.steps.to_vec();
+                steps.push(edge.clone());
+                pending.push_back((
+                    edge.target.clone(),
+                    HirRuntimeReachabilityPath {
+                        root: path.root.clone(),
+                        steps: steps.into_boxed_slice(),
+                    },
+                ));
+            }
+        }
+
+        if reachable_executables.len() > u32::MAX as usize {
+            return Err(HirRuntimeReachabilityError::LimitExceeded {
+                family: HirRuntimeReachabilityLimitFamily::Executables,
+                actual: reachable_executables.len(),
+                limit: u32::MAX as usize,
+            });
+        }
+
+        let module_snapshots = self
+            .modules()
+            .map(|(_, module)| (module.module_id(), module.snapshot_id()))
+            .collect::<Box<[_]>>();
+        let locals = accepted.locals.iter().copied().collect::<Box<[_]>>();
+        let digest = reachability_digest(
+            input.mode,
+            &module_snapshots,
+            &input.symbol_world,
+            input.symbol_revision,
+            &input.roots,
+            &input.edges,
+            &reachable_executables,
+            &locals,
+            &accepted,
+        );
+        let identity = HirRuntimeReachabilityIdentity {
+            module_snapshots,
+            symbol_world: input.symbol_world,
+            symbol_revision: input.symbol_revision,
+            mode: input.mode,
+            digest,
+        };
+        Ok(HirRuntimeSemanticReachability {
+            project: self,
+            mode: input.mode,
+            roots: input.roots.into_boxed_slice(),
+            edges: input.edges.into_boxed_slice(),
+            reachable_executables,
+            first_paths,
+            locals,
+            expressions: accepted.expressions,
+            expression_type_owners,
+            statements: accepted.statements,
+            types: accepted.types,
+            patterns: accepted.patterns,
+            captures: accepted.captures,
+            identity,
+        })
+    }
+
+    fn validate_reachability_generation(
+        self,
+        input: &HirRuntimeSemanticReachabilityInput,
+    ) -> Result<(), HirRuntimeReachabilityError> {
+        if input.symbol_world.package() != self.package() {
+            return Err(HirRuntimeReachabilityError::SymbolWorldMismatch);
+        }
+        Ok(())
+    }
+
+    fn close_executable(
+        self,
+        index: &StructuralIndex,
+        owner: &HirRuntimeExecutableOwner,
+    ) -> Result<StructuralOwners, HirRuntimeReachabilityError> {
+        let roots = execution_roots(self, owner)?;
+        let active_closure = match owner {
+            HirRuntimeExecutableOwner::Closure(expression) => Some(*expression),
+            HirRuntimeExecutableOwner::Item(_) | HirRuntimeExecutableOwner::ImplMethod(_) => None,
+        };
+        index.close(roots, active_closure)
+    }
+}
+
+impl StructuralIndex {
+    fn new(project: HirExecutableProjectView<'_>) -> Self {
+        let mut index = Self {
+            scopes: BTreeMap::new(),
+            scope_members: BTreeMap::new(),
+            local_types: BTreeMap::new(),
+            expression_edges: BTreeMap::new(),
+            statement_types: BTreeMap::new(),
+            type_edges: BTreeMap::new(),
+            pattern_edges: BTreeMap::new(),
+            owned_scopes: BTreeMap::new(),
+            capture_closures: BTreeMap::new(),
+        };
+        for (_, module) in project.modules() {
             for (owner, scope) in module.scopes() {
-                scopes.insert(
+                index.scopes.insert(
                     owner,
                     ScopeEdges {
+                        owner: *scope.owner(),
                         children: scope.children().into(),
                         locals: scope.locals().into(),
                     },
                 );
-                owned_scopes.entry(*scope.owner()).or_default().push(owner);
+                index
+                    .owned_scopes
+                    .entry(*scope.owner())
+                    .or_default()
+                    .push(owner);
             }
             for (owner, local) in module.locals() {
-                all_locals.push(owner);
-                local_types.insert(owner, local.annotation());
+                index.local_types.insert(owner, local.annotation());
             }
             for (owner, expression) in module.expressions() {
-                all_expressions.insert(owner);
-                scope_members
+                index
+                    .scope_members
                     .entry(expression.scope())
                     .or_default()
                     .expressions
                     .push(owner);
-                expression_edges.insert(
+                index.expression_edges.insert(
                     owner,
                     (
                         expression.kind().direct_expression_children(),
                         expression.kind().direct_type_roots(),
+                        matches!(expression.kind(), HirExprKind::Closure(_)),
                     ),
                 );
             }
             for (owner, statement) in module.statements() {
-                all_statements.insert(owner);
-                scope_members
+                index
+                    .scope_members
                     .entry(statement.scope())
                     .or_default()
                     .statements
                     .push(owner);
-                statement_types.insert(owner, statement.kind().direct_type_roots());
+                index
+                    .statement_types
+                    .insert(owner, statement.kind().direct_type_roots());
             }
             for (owner, ty) in module.types() {
-                all_types.insert(owner);
-                scope_members
+                index
+                    .scope_members
                     .entry(ty.scope())
                     .or_default()
                     .types
                     .push(owner);
-                type_edges.insert(owner, ty.kind().direct_type_children());
+                index
+                    .type_edges
+                    .insert(owner, ty.kind().direct_type_children());
             }
             for (owner, pattern) in module.patterns() {
-                all_patterns.insert(owner);
-                scope_members
+                index
+                    .scope_members
                     .entry(pattern.scope())
                     .or_default()
                     .patterns
                     .push(owner);
-                pattern_types.insert(owner, pattern.kind().authored_type());
+                index.pattern_edges.insert(
+                    owner,
+                    (
+                        pattern.kind().authored_type(),
+                        pattern.kind().direct_pattern_children(),
+                    ),
+                );
             }
             for (owner, capture) in module.captures() {
-                all_captures.insert(owner, capture.closure());
+                index.capture_closures.insert(owner, capture.closure());
             }
         }
+        index
+    }
 
+    #[expect(
+        clippy::too_many_lines,
+        reason = "the structural closure exhaustively walks every typed final-HIR owner family"
+    )]
+    fn close(
+        &self,
+        roots: HirRuntimeExecutionRoots,
+        active_closure: Option<ExprId>,
+    ) -> Result<StructuralOwners, HirRuntimeReachabilityError> {
         let mut pending = VecDeque::new();
-        for item in self.items() {
-            let Some(roots) = item.item().presentation_semantic_roots() else {
-                continue;
-            };
-            pending.extend(roots.scope().map(PendingPresentationOwner::Scope));
-            pending.extend(
-                roots
-                    .expressions()
-                    .map(PendingPresentationOwner::Expression),
-            );
-            pending.extend(roots.types().map(PendingPresentationOwner::Type));
-        }
-
-        let mut presentation_scopes = BTreeSet::new();
-        let mut presentation_locals = BTreeSet::new();
-        let mut presentation_expressions = BTreeSet::new();
-        let mut presentation_statements = BTreeSet::new();
-        let mut presentation_types = BTreeSet::new();
-        let mut presentation_patterns = BTreeSet::new();
+        pending.extend(roots.scopes.into_iter().map(PendingOwner::Scope));
+        pending.extend(roots.expressions.into_iter().map(PendingOwner::Expression));
+        pending.extend(roots.types.into_iter().map(PendingOwner::Type));
+        let mut owners = StructuralOwners::default();
+        let mut scopes = BTreeSet::new();
 
         while let Some(owner) = pending.pop_front() {
             match owner {
-                PendingPresentationOwner::Scope(owner) => {
-                    if !presentation_scopes.insert(owner) {
+                PendingOwner::Scope(owner) => {
+                    if !scopes.insert(owner) {
                         continue;
                     }
-                    let edges = scopes.get(&owner).ok_or(
-                        HirRuntimeSemanticOwnerInventoryError::UnresolvedScope { scope: owner },
-                    )?;
-                    pending.extend(
-                        edges
-                            .children
-                            .iter()
-                            .copied()
-                            .map(PendingPresentationOwner::Scope),
-                    );
-                    pending.extend(
-                        edges
-                            .locals
-                            .iter()
-                            .copied()
-                            .map(PendingPresentationOwner::Local),
-                    );
-                    if let Some(members) = scope_members.get(&owner) {
+                    let edges = self
+                        .scopes
+                        .get(&owner)
+                        .ok_or(HirRuntimeReachabilityError::UnresolvedScope { scope: owner })?;
+                    for child in edges.children.iter().copied() {
+                        if self.scope_is_inactive_closure(child, active_closure) {
+                            continue;
+                        }
+                        pending.push_back(PendingOwner::Scope(child));
+                    }
+                    pending.extend(edges.locals.iter().copied().map(PendingOwner::Local));
+                    if let Some(members) = self.scope_members.get(&owner) {
                         pending.extend(
                             members
                                 .expressions
                                 .iter()
                                 .copied()
-                                .map(PendingPresentationOwner::Expression),
+                                .map(PendingOwner::Expression),
                         );
                         pending.extend(
                             members
                                 .statements
                                 .iter()
                                 .copied()
-                                .map(PendingPresentationOwner::Statement),
+                                .map(PendingOwner::Statement),
                         );
+                        pending.extend(members.types.iter().copied().map(PendingOwner::Type));
+                        pending.extend(members.patterns.iter().copied().map(PendingOwner::Pattern));
+                    }
+                }
+                PendingOwner::Local(owner) => {
+                    if !owners.locals.insert(owner) {
+                        continue;
+                    }
+                    let ty = self
+                        .local_types
+                        .get(&owner)
+                        .ok_or(HirRuntimeReachabilityError::UnresolvedLocal { local: owner })?;
+                    pending.extend(ty.iter().copied().map(PendingOwner::Type));
+                }
+                PendingOwner::Expression(owner) => {
+                    if !owners.expressions.insert(owner) {
+                        continue;
+                    }
+                    let (expressions, types, is_closure) =
+                        self.expression_edges.get(&owner).ok_or(
+                            HirRuntimeReachabilityError::UnresolvedExpression { expression: owner },
+                        )?;
+                    if !*is_closure || active_closure == Some(owner) {
+                        pending.extend(expressions.iter().copied().map(PendingOwner::Expression));
                         pending.extend(
-                            members
-                                .types
-                                .iter()
+                            self.owned_scopes
+                                .get(&HirScopeOwner::Expr(owner))
+                                .into_iter()
+                                .flatten()
                                 .copied()
-                                .map(PendingPresentationOwner::Type),
-                        );
-                        pending.extend(
-                            members
-                                .patterns
-                                .iter()
-                                .copied()
-                                .map(PendingPresentationOwner::Pattern),
+                                .map(PendingOwner::Scope),
                         );
                     }
+                    pending.extend(types.iter().copied().map(PendingOwner::Type));
                 }
-                PendingPresentationOwner::Local(owner) => {
-                    if !presentation_locals.insert(owner) {
+                PendingOwner::Statement(owner) => {
+                    if !owners.statements.insert(owner) {
                         continue;
                     }
-                    let ty = local_types.get(&owner).ok_or(
-                        HirRuntimeSemanticOwnerInventoryError::UnresolvedLocal { local: owner },
+                    let types = self.statement_types.get(&owner).ok_or(
+                        HirRuntimeReachabilityError::UnresolvedStatement { statement: owner },
                     )?;
-                    pending.extend(ty.iter().copied().map(PendingPresentationOwner::Type));
-                }
-                PendingPresentationOwner::Expression(owner) => {
-                    if !presentation_expressions.insert(owner) {
-                        continue;
-                    }
-                    let (expressions, types) = expression_edges.get(&owner).ok_or(
-                        HirRuntimeSemanticOwnerInventoryError::UnresolvedExpression {
-                            expression: owner,
-                        },
-                    )?;
+                    pending.extend(types.iter().copied().map(PendingOwner::Type));
                     pending.extend(
-                        expressions
-                            .iter()
-                            .copied()
-                            .map(PendingPresentationOwner::Expression),
-                    );
-                    pending.extend(types.iter().copied().map(PendingPresentationOwner::Type));
-                    pending.extend(
-                        owned_scopes
-                            .get(&HirScopeOwner::Expr(owner))
-                            .into_iter()
-                            .flatten()
-                            .copied()
-                            .map(PendingPresentationOwner::Scope),
-                    );
-                }
-                PendingPresentationOwner::Statement(owner) => {
-                    if !presentation_statements.insert(owner) {
-                        continue;
-                    }
-                    let types = statement_types.get(&owner).ok_or(
-                        HirRuntimeSemanticOwnerInventoryError::UnresolvedStatement {
-                            statement: owner,
-                        },
-                    )?;
-                    pending.extend(types.iter().copied().map(PendingPresentationOwner::Type));
-                    pending.extend(
-                        owned_scopes
+                        self.owned_scopes
                             .get(&HirScopeOwner::Stmt(owner))
                             .into_iter()
                             .flatten()
                             .copied()
-                            .map(PendingPresentationOwner::Scope),
+                            .map(PendingOwner::Scope),
                     );
                 }
-                PendingPresentationOwner::Type(owner) => {
-                    if !presentation_types.insert(owner) {
+                PendingOwner::Type(owner) => {
+                    if !owners.types.insert(owner) {
                         continue;
                     }
-                    let children = type_edges.get(&owner).ok_or(
-                        HirRuntimeSemanticOwnerInventoryError::UnresolvedType { ty: owner },
-                    )?;
-                    pending.extend(children.iter().copied().map(PendingPresentationOwner::Type));
+                    let children = self
+                        .type_edges
+                        .get(&owner)
+                        .ok_or(HirRuntimeReachabilityError::UnresolvedType { ty: owner })?;
+                    pending.extend(children.iter().copied().map(PendingOwner::Type));
                 }
-                PendingPresentationOwner::Pattern(owner) => {
-                    if !presentation_patterns.insert(owner) {
+                PendingOwner::Pattern(owner) => {
+                    if !owners.patterns.insert(owner) {
                         continue;
                     }
-                    let ty = pattern_types.get(&owner).ok_or(
-                        HirRuntimeSemanticOwnerInventoryError::UnresolvedPattern { pattern: owner },
-                    )?;
-                    pending.extend(ty.iter().copied().map(PendingPresentationOwner::Type));
+                    let (ty, children) = self
+                        .pattern_edges
+                        .get(&owner)
+                        .ok_or(HirRuntimeReachabilityError::UnresolvedPattern { pattern: owner })?;
+                    pending.extend(ty.iter().copied().map(PendingOwner::Type));
+                    pending.extend(children.iter().copied().map(PendingOwner::Pattern));
                 }
             }
         }
+        owners.captures.extend(
+            self.capture_closures
+                .iter()
+                .filter_map(|(capture, closure)| {
+                    owners.expressions.contains(closure).then_some(*capture)
+                }),
+        );
+        Ok(owners)
+    }
 
-        let locals = all_locals
-            .into_iter()
-            .filter(|owner| !presentation_locals.contains(owner))
-            .collect();
-        let expressions = all_expressions
-            .difference(&presentation_expressions)
-            .copied()
-            .collect();
-        let statements = all_statements
-            .difference(&presentation_statements)
-            .copied()
-            .collect();
-        let types = all_types.difference(&presentation_types).copied().collect();
-        let patterns = all_patterns
-            .difference(&presentation_patterns)
-            .copied()
-            .collect();
-        let captures = all_captures
-            .into_iter()
-            .filter_map(|(owner, closure)| {
-                (!presentation_expressions.contains(&closure)).then_some(owner)
+    fn scope_is_inactive_closure(&self, scope: ScopeId, active_closure: Option<ExprId>) -> bool {
+        let Some(edges) = self.scopes.get(&scope) else {
+            return false;
+        };
+        let HirScopeOwner::Expr(owner) = edges.owner else {
+            return false;
+        };
+        self.expression_edges
+            .get(&owner)
+            .is_some_and(|(_, _, is_closure)| *is_closure && active_closure != Some(owner))
+    }
+}
+
+fn execution_roots(
+    project: HirExecutableProjectView<'_>,
+    owner: &HirRuntimeExecutableOwner,
+) -> Result<HirRuntimeExecutionRoots, HirRuntimeReachabilityError> {
+    match owner {
+        HirRuntimeExecutableOwner::Item(owner) => {
+            let kind = resolve_item_kind(project, *owner).ok_or({
+                HirRuntimeReachabilityError::UnknownRoot {
+                    owner: HirRuntimeExecutableOwner::Item(*owner),
+                }
+            })?;
+            if matches!(kind, HirItemKind::View(_) | HirItemKind::Style(_)) {
+                return Err(HirRuntimeReachabilityError::PresentationTarget {
+                    target: HirRuntimeExecutableOwner::Item(*owner),
+                });
+            }
+            kind.runtime_execution_roots()
+                .ok_or(HirRuntimeReachabilityError::UnknownRoot {
+                    owner: HirRuntimeExecutableOwner::Item(*owner),
+                })
+        }
+        HirRuntimeExecutableOwner::Closure(owner) => {
+            let module = project
+                .modules()
+                .find_map(|(_, module)| {
+                    (module.module_id() == owner.module()).then_some(module.as_ref())
+                })
+                .ok_or(HirRuntimeReachabilityError::UnresolvedExpression { expression: *owner })?;
+            let expression = module.resolve_expr(*owner).map_err(|_| {
+                HirRuntimeReachabilityError::UnresolvedExpression { expression: *owner }
+            })?;
+            if !matches!(expression.kind(), HirExprKind::Closure(_)) {
+                return Err(HirRuntimeReachabilityError::UnknownRoot {
+                    owner: HirRuntimeExecutableOwner::Closure(*owner),
+                });
+            }
+            Ok(HirRuntimeExecutionRoots {
+                expressions: vec![*owner],
+                ..HirRuntimeExecutionRoots::default()
             })
-            .collect();
+        }
+        HirRuntimeExecutableOwner::ImplMethod(method) => impl_method_roots(project, method),
+    }
+}
 
-        Ok(HirRuntimeSemanticOwnerInventory {
-            project: self,
-            locals,
-            expressions,
-            statements,
-            types,
-            patterns,
-            captures,
-        })
+fn impl_method_roots(
+    project: HirExecutableProjectView<'_>,
+    method: &ImplMethodDeclarationId,
+) -> Result<HirRuntimeExecutionRoots, HirRuntimeReachabilityError> {
+    let implementation = method.implementation();
+    let module = project
+        .modules()
+        .find_map(|(path, module)| (path == implementation.module()).then_some(module.as_ref()))
+        .ok_or_else(|| HirRuntimeReachabilityError::UnknownRoot {
+            owner: HirRuntimeExecutableOwner::ImplMethod(method.clone()),
+        })?;
+    let source_ordinal = usize::try_from(implementation.source_ordinal()).ok();
+    let Some(implementation) = source_ordinal.and_then(|ordinal| {
+        module
+            .items()
+            .filter_map(|(_, item)| match item.kind() {
+                HirItemKind::Impl(implementation) => Some(implementation),
+                _ => None,
+            })
+            .nth(ordinal)
+    }) else {
+        return Err(HirRuntimeReachabilityError::UnknownRoot {
+            owner: HirRuntimeExecutableOwner::ImplMethod(method.clone()),
+        });
+    };
+    let function = implementation
+        .members()
+        .iter()
+        .find_map(|member| match member {
+            HirImplMember::Function(function)
+                if function
+                    .name()
+                    .resolved()
+                    .is_some_and(|name| name.as_str() == method.method().as_str()) =>
+            {
+                Some(function)
+            }
+            HirImplMember::AssociatedType(_)
+            | HirImplMember::Function(_)
+            | HirImplMember::Error => None,
+        });
+    let Some(function) = function else {
+        return Err(HirRuntimeReachabilityError::UnknownRoot {
+            owner: HirRuntimeExecutableOwner::ImplMethod(method.clone()),
+        });
+    };
+    Ok(HirRuntimeExecutionRoots {
+        scopes: vec![function.callable_scope()],
+        types: function.return_type().into_iter().collect(),
+        ..HirRuntimeExecutionRoots::default()
+    })
+}
+
+fn resolve_item_kind(project: HirExecutableProjectView<'_>, owner: ItemId) -> Option<&HirItemKind> {
+    project
+        .modules()
+        .find_map(|(_, module)| (module.module_id() == owner.module()).then_some(module.as_ref()))?
+        .resolve_item(owner)
+        .ok()
+        .map(crate::item::HirItem::kind)
+}
+
+fn edge_kind_matches_source(edge: &HirRuntimeReachabilityEdge) -> bool {
+    match (&edge.source, &edge.kind) {
+        (
+            HirRuntimeReachabilitySite::Expression(source),
+            HirRuntimeReachabilityEdgeKind::CheckedProjectCall { call, .. },
+        ) => source == call,
+        (
+            source,
+            HirRuntimeReachabilityEdgeKind::CheckedTraitDispatch {
+                source: dispatch_source,
+                ..
+            },
+        ) => source == dispatch_source,
+        (
+            source,
+            HirRuntimeReachabilityEdgeKind::CheckedFlowTransfer {
+                source: transfer, ..
+            },
+        ) => source == transfer,
+        (
+            HirRuntimeReachabilitySite::Item(owner),
+            HirRuntimeReachabilityEdgeKind::CheckedEntryBinding { entry, .. },
+        ) => owner == entry,
+        _ => false,
+    }
+}
+
+fn edge_authority(kind: &HirRuntimeReachabilityEdgeKind) -> HirRuntimeReachabilityEdgeAuthority {
+    match kind {
+        HirRuntimeReachabilityEdgeKind::CheckedProjectCall { declaration, .. } => {
+            HirRuntimeReachabilityEdgeAuthority::ProjectCall(declaration.clone())
+        }
+        HirRuntimeReachabilityEdgeKind::CheckedTraitDispatch { method, .. } => {
+            HirRuntimeReachabilityEdgeAuthority::TraitDispatch(method.clone())
+        }
+        HirRuntimeReachabilityEdgeKind::CheckedFlowTransfer { declaration, .. } => {
+            HirRuntimeReachabilityEdgeAuthority::FlowTransfer(declaration.clone())
+        }
+        HirRuntimeReachabilityEdgeKind::CheckedEntryBinding { declaration, .. } => {
+            HirRuntimeReachabilityEdgeAuthority::EntryBinding(declaration.clone())
+        }
+    }
+}
+
+fn edge_reached_by(
+    owner: &HirRuntimeExecutableOwner,
+    source: HirRuntimeReachabilitySite,
+    expressions: &BTreeSet<ExprId>,
+    statements: &BTreeSet<StmtId>,
+) -> bool {
+    match source {
+        HirRuntimeReachabilitySite::Item(item) => {
+            matches!(owner, HirRuntimeExecutableOwner::Item(owner) if *owner == item)
+        }
+        HirRuntimeReachabilitySite::Expression(expression) => expressions.contains(&expression),
+        HirRuntimeReachabilitySite::Statement(statement) => statements.contains(&statement),
     }
 }

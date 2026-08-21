@@ -1,8 +1,8 @@
 //! Statement roles, effect contracts, scopes, and source evidence.
 
 use super::{
-    Analyzer, AssertionContext, BTreeMap, BTreeSet, CallPoison, CallableEffectContract,
-    CheckedAssertionDisposition, CheckedAssignment, CheckedAssignmentPlace,
+    Analyzer, AssertionContext, BTreeMap, BTreeSet, CallPoison, CallableDeclarationKey,
+    CallableEffectContract, CheckedAssertionDisposition, CheckedAssignment, CheckedAssignmentPlace,
     CheckedCallableExecution, CheckedCallableId, CheckedClosureId, CheckedEvaluatedEffect,
     CheckedExpression, CheckedExpressionResolution, CheckedIteration, CheckedIteratorFamily,
     CheckedStatement, CheckedStatementRole, CheckedSuspensionStatement, CheckedTraitConformance,
@@ -172,11 +172,29 @@ impl Analyzer<'_, '_, '_> {
                     }
                 }
                 let method = method.ok_or(FinalSemanticAnalysisError::WrongPayloadFamily)?;
+                let declaration = self
+                    .symbols
+                    .callable_symbols()
+                    .find_map(|symbol| {
+                        if symbol.source_item() != owner
+                            || symbol.source_owner()
+                                != (HirCallableSourceOwner::ImplFunction { member: method })
+                        {
+                            return None;
+                        }
+                        let CallableDeclarationKey::ImplMethod(declaration) = symbol.declaration()
+                        else {
+                            return None;
+                        };
+                        Some(declaration.clone())
+                    })
+                    .ok_or(FinalSemanticAnalysisError::WrongPayloadFamily)?;
                 let candidate = SelectedStandardIteratorImpl {
                     conformance: CheckedTraitConformance::new(
                         owner,
                         trait_identity.clone(),
                         method,
+                        declaration,
                     ),
                     associated,
                 };

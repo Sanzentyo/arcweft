@@ -37,7 +37,7 @@ use arcweft_lang_hir::item::{
 };
 use arcweft_lang_hir::leaf::HirIdRef;
 use arcweft_lang_hir::module::HirModule;
-use arcweft_lang_hir::project::HirExecutableProjectView;
+use arcweft_lang_hir::project::{HirExecutableProjectView, HirRuntimeExecutableOwner};
 use arcweft_lang_hir::source_index::{
     HirExprSourceRole, HirSourcePresence, HirSourceQuery, HirSourceSite, HirStmtSourceRole,
 };
@@ -542,6 +542,13 @@ pub fn lower_runtime_plan_with_stats(
     let mut flow_seeds = Vec::new();
     let mut assertion_sites = Vec::new();
     for item in project.items() {
+        if matches!(
+            item.item().kind(),
+            HirItemKind::Flow(_) | HirItemKind::Entry(_)
+        ) && !facts.contains_runtime_owner(&HirRuntimeExecutableOwner::Item(item.id()))
+        {
+            continue;
+        }
         match item.item().kind() {
             HirItemKind::Flow(flow) => {
                 let Some(identity) = facts.flow(item.id()).cloned() else {
@@ -3645,7 +3652,10 @@ mod tests {
     use arcweft_lang_hir::item::HirItemKind;
     use arcweft_lang_hir::lowering::{HirModuleKey, LoweringRequest};
     use arcweft_lang_hir::project::{
-        HirProject, HirProjectBuilder, HirProjectModule, HirRuntimeExpressionTypeDisposition,
+        HirProject, HirProjectBuilder, HirProjectModule, HirRuntimeEmissionMode,
+        HirRuntimeExecutableOwner, HirRuntimeExpressionTypeDisposition, HirRuntimeReachabilityRoot,
+        HirRuntimeReachabilityRootKind, HirRuntimeSemanticReachability,
+        HirRuntimeSemanticReachabilityInput,
     };
     use arcweft_lang_hir::proof_return::HirProofReturnSemanticFactSet;
     use arcweft_lang_hir::symbol::{
@@ -3674,9 +3684,9 @@ mod tests {
             .map(arcweft_lang_hir::project::HirProjectItemRef::id)
             .expect("Flow item");
         let identity = FlowRuntimeId::canonical("opening").expect("runtime Flow identity");
-        let mut input = complete_type_input(executable);
+        let mut input = complete_type_input(&project);
         input.push_flow(owner, identity.clone());
-        let facts = RuntimePlanSemanticFacts::try_new(executable, input).expect("checked facts");
+        let facts = runtime_facts(&project, input).expect("checked facts");
         let entry_input = RuntimeEntryLoweringInput::empty(executable);
         let report = lower_runtime_plan_with_stats(executable, &facts, &entry_input)
             .expect("empty Flow lowers");
@@ -3698,9 +3708,9 @@ mod tests {
             .map(arcweft_lang_hir::project::HirProjectItemRef::id)
             .expect("Flow item");
         let identity = FlowRuntimeId::canonical("opening").expect("runtime Flow identity");
-        let mut input = complete_type_input(executable);
+        let mut input = complete_type_input(&project);
         input.push_flow(owner, identity);
-        let facts = RuntimePlanSemanticFacts::try_new(executable, input).expect("checked facts");
+        let facts = runtime_facts(&project, input).expect("checked facts");
         let report = lower_runtime_plan_with_stats(
             executable,
             &facts,
@@ -3734,10 +3744,9 @@ mod tests {
             .expect("Entry item");
         let flow =
             FlowRuntimeId::from_source_entity_body("flow.main").expect("runtime Flow identity");
-        let mut fact_input = complete_type_input(executable);
+        let mut fact_input = complete_type_input(&project);
         fact_input.push_flow(flow_owner, flow.clone());
-        let facts =
-            RuntimePlanSemanticFacts::try_new(executable, fact_input).expect("checked facts");
+        let facts = runtime_facts(&project, fact_input).expect("checked facts");
 
         let missing = RuntimeEntryLoweringInput::empty(executable);
         let errors = lower_runtime_plan_with_stats(executable, &facts, &missing)
@@ -3842,13 +3851,64 @@ mod tests {
         builder.finish().expect("fixture project")
     }
 
-    fn complete_type_input(
-        project: arcweft_lang_hir::project::HirExecutableProjectView<'_>,
-    ) -> RuntimePlanSemanticFactInput {
+    fn runtime_reachability(project: &HirProject) -> HirRuntimeSemanticReachability<'_> {
+        let executable = project.executable_view().expect("executable fixture");
+        let (_, module) = executable.modules().next().expect("fixture module");
+        let world = ProjectSymbolWorldId::try_new(
+            executable.package().clone(),
+            module.provenance().source_identity().id().clone(),
+            "runtime-plan-final-flow-test",
+        )
+        .expect("fixture reachability world");
+        let revision = ProjectSymbolRevision::try_for_documents(
+            executable
+                .modules()
+                .map(|(_, module)| module.provenance().source_identity()),
+        )
+        .expect("fixture reachability revision");
+        let roots = executable
+            .items()
+            .filter_map(|item| {
+                let kind = match item.item().kind() {
+                    HirItemKind::Flow(_) => HirRuntimeReachabilityRootKind::CheckedFlow,
+                    HirItemKind::Entry(_) => HirRuntimeReachabilityRootKind::CheckedEntry,
+                    _ => return None,
+                };
+                Some(HirRuntimeReachabilityRoot::new(
+                    kind,
+                    HirRuntimeExecutableOwner::Item(item.id()),
+                ))
+            })
+            .collect();
+        let input = HirRuntimeSemanticReachabilityInput::try_new(
+            HirRuntimeEmissionMode::CheckAll,
+            world,
+            revision,
+            roots,
+            Vec::new(),
+        )
+        .expect("fixture reachability input");
+        executable
+            .runtime_semantic_reachability(
+                input,
+                |_| None,
+                |_| HirRuntimeExpressionTypeDisposition::Retain,
+            )
+            .expect("fixture reachability")
+    }
+
+    fn runtime_facts(
+        project: &HirProject,
+        input: RuntimePlanSemanticFactInput,
+    ) -> Result<RuntimePlanSemanticFacts, crate::semantic_facts::RuntimeSemanticFactsError> {
+        let executable = project.executable_view().expect("executable fixture");
+        let reachability = runtime_reachability(project);
+        RuntimePlanSemanticFacts::try_new(executable, &reachability, input)
+    }
+
+    fn complete_type_input(project: &HirProject) -> RuntimePlanSemanticFactInput {
         let mut input = RuntimePlanSemanticFactInput::new();
-        let runtime_owners = project
-            .runtime_semantic_owner_inventory()
-            .expect("runtime semantic owner inventory");
+        let runtime_owners = runtime_reachability(project);
         for owner in runtime_owners.locals() {
             input.push_local_declaration(
                 owner,
@@ -3868,10 +3928,7 @@ mod tests {
             );
         }
         for owner in runtime_owners
-            .selected_expression_type_owners(
-                |_| None,
-                |_| HirRuntimeExpressionTypeDisposition::Retain,
-            )
+            .selected_expression_type_owners()
             .expect("postfix-free runtime expression-type fixture")
         {
             input.push_expression_type(
