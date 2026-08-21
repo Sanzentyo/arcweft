@@ -416,9 +416,9 @@ impl CharacterField {
     }
 
     #[must_use]
-    pub fn ty(self) -> TypeKind {
+    pub fn ty(self, character: CharacterId) -> TypeKind {
         match self {
-            Self::Stage => TypeKind::Named("StageApi".to_owned()),
+            Self::Stage => TypeKind::StageApi(character),
         }
     }
 }
@@ -440,6 +440,13 @@ impl ProgressField {
             Self::Label => TypeKind::Option(Box::new(TypeKind::String)),
         }
     }
+}
+
+/// Minimal semantic type used by parser/HIR contract tests.
+#[derive(Clone, Debug, Eq, Hash, PartialEq)]
+pub enum StageActorHandleType {
+    Exact(CharacterId),
+    Any,
 }
 
 /// Minimal semantic type used by parser/HIR contract tests.
@@ -466,6 +473,16 @@ pub enum TypeKind {
     TextCluster,
     Duration,
     Progress,
+    /// Compile-time capability projected from one exact Character.
+    StageApi(CharacterId),
+    /// Compile-time capability available only inside one line activation.
+    LineContext,
+    /// Affine stage-actor handle retaining exact Character precision when known.
+    StageActorHandle(StageActorHandleType),
+    /// Affine handle for a scheduled or stage-transition cue.
+    CueHandle,
+    /// Affine handle for the active dialogue voice lease.
+    VoiceHandle,
     Range(Box<TypeKind>),
     IteratorState {
         family: IteratorStateKind,
@@ -615,15 +632,6 @@ impl EntityType {
 }
 
 impl TypeKind {
-    /// Resolves a field only when this type is a Character reference owner.
-    #[must_use]
-    pub fn character_field(&self, name: &str) -> Option<(CharacterField, TypeKind)> {
-        if !matches!(self, Self::Ref(entity) if entity.kind() == &EntityKind::Character) {
-            return None;
-        }
-        CharacterField::from_name(name).map(|field| (field, field.ty()))
-    }
-
     /// Resolves a field only when this type is the standard Progress owner.
     #[must_use]
     pub fn progress_field(&self, name: &str) -> Option<(ProgressField, TypeKind)> {
@@ -650,6 +658,11 @@ impl TypeKind {
             Self::Ref(entity) => entity.source_label(),
             Self::Probe(inner) => format!("Probe<{}>", inner.source_label()),
             Self::Range(inner) => format!("Range<{}>", inner.source_label()),
+            Self::StageApi(character) => format!("StageApi<{character}>"),
+            Self::StageActorHandle(StageActorHandleType::Exact(character)) => {
+                format!("StageActorHandle<{character}>")
+            }
+            Self::StageActorHandle(StageActorHandleType::Any) => "StageActorHandle".to_owned(),
             Self::IteratorState { family, item } => {
                 format!("{family:?}IteratorState<{}>", item.source_label())
             }
@@ -757,6 +770,9 @@ impl TypeKind {
             Self::TextCluster => "TextCluster",
             Self::Duration => "Duration",
             Self::Progress => "Progress",
+            Self::LineContext => "LineContext",
+            Self::CueHandle => "CueHandle",
+            Self::VoiceHandle => "VoiceHandle",
             Self::DisplayText => "DisplayText",
             Self::DebugStatePath => "DebugStatePath",
             Self::ObservationFieldPath => "ObservationFieldPath",
@@ -993,6 +1009,9 @@ impl TypeKind {
             "TextCluster" => Self::TextCluster,
             "Duration" => Self::Duration,
             "Progress" => Self::Progress,
+            "StageActorHandle" => Self::StageActorHandle(StageActorHandleType::Any),
+            "CueHandle" => Self::CueHandle,
+            "VoiceHandle" => Self::VoiceHandle,
             "DebugStatePath" => Self::DebugStatePath,
             "ObservationFieldPath" => Self::ObservationFieldPath,
             "Unit" => Self::Unit,

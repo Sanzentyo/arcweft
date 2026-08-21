@@ -1709,7 +1709,13 @@ impl Analyzer<'_, '_, '_> {
                 let Some(expected) = expected else {
                     return Err(FinalSemanticAnalysisError::ExpressionTypeUnavailable { owner });
                 };
-                if matches!(expected, TypeKind::Named(name) if name == "StageLook") {
+                let resolved_variant = self.resolve_short_variant(owner, expected, name);
+                if resolved_variant.is_err()
+                    && matches!(
+                        expected,
+                        TypeKind::CharacterNominal(crate::types::CharacterNominalType::Look { .. })
+                    )
+                {
                     return Ok(Some(CheckedExpression::new(
                         expected.clone(),
                         CheckedTypeSelection::Expected,
@@ -1717,7 +1723,7 @@ impl Analyzer<'_, '_, '_> {
                         CheckedExpressionResolution::StageLook(name.clone()),
                     )));
                 }
-                let (variant_owner, ordinal) = self.resolve_short_variant(owner, expected, name)?;
+                let (variant_owner, ordinal) = resolved_variant?;
                 Ok(CheckedExpression::new(
                     expected.clone(),
                     CheckedTypeSelection::Expected,
@@ -2370,10 +2376,14 @@ impl Analyzer<'_, '_, '_> {
                         HirPathSegment::Identifier(name) => name.as_str(),
                         HirPathSegment::ProjectSymbol(name) => name.as_str(),
                     };
-                    if let Some((field, _)) = receiver_ty.and_then(|ty| ty.character_field(member))
+                    if receiver_ty.is_some_and(|ty| {
+                        matches!(ty, TypeKind::Ref(entity) if entity.kind() == &EntityKind::Character)
+                    }) && let Some(character) = receiver.character()
+                        && let Some(field) = crate::types::CharacterField::from_name(member)
                     {
                         return Ok(Some(CheckedValueResolution::CharacterField {
                             receiver: Box::new(receiver),
+                            character,
                             field,
                         }));
                     }

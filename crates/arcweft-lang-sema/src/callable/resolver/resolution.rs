@@ -6,13 +6,14 @@ use super::{
     CallableRecord, CallableSignatureSchema, CapacityMethodId, CollectionMethodId, DomainMethodId,
     DropCallableId, EnvironmentCallableOwner, EquivalentCallableSource, EvaluatedReceiver,
     FxCallableSignatureId, FxResolution, HirCallArgument, IntegerMethodId, LanguageCallableFamily,
-    NonCallableSource, NonEmptyResolvedCandidates, OptionConstructorKind, Ordering,
-    PreparedCallCallee, PreparedFreeCallScope, PresentationCallableId, PresentationHandleMethodId,
-    ProjectCallablePath, ProjectNameBinding, PromotionCallableId, ReceiverMethodKey,
-    ResolveCallError, ResolveCallOutcome, ResolvedAssociatedTypeReceiver, ResolvedCallTarget,
-    ResolvedCallable, ResolvedFunctionValue, ResolvedFunctionValueSeed, ResolvedNonCallableTarget,
-    ResultConstructorKind, SignatureOrigin, StageMethodId, TypeKind, TypeReceiverInstantiation,
-    TypedEnvironmentMethodCandidate, UnknownCallKind, UnknownCallTarget,
+    LineContextMethodId, LineScheduleCallableId, NonCallableSource, NonEmptyResolvedCandidates,
+    OptionConstructorKind, Ordering, PreparedCallCallee, PreparedFreeCallScope,
+    PresentationCallableId, PresentationHandleMethodId, ProjectCallablePath, ProjectNameBinding,
+    PromotionCallableId, ReceiverMethodKey, ResolveCallError, ResolveCallOutcome,
+    ResolvedAssociatedTypeReceiver, ResolvedCallTarget, ResolvedCallable, ResolvedFunctionValue,
+    ResolvedFunctionValueSeed, ResolvedNonCallableTarget, ResultConstructorKind, SignatureOrigin,
+    StageMethodId, TypeKind, TypeReceiverInstantiation, TypedEnvironmentMethodCandidate,
+    UnknownCallKind, UnknownCallTarget,
 };
 use crate::callable::{DialogueCallableId, DialogueCalleeIdentity, DialogueSchemaContext};
 
@@ -301,6 +302,18 @@ fn resolve_selected_call(
     }
 
     check_query_step(request)?;
+    if let Some(id) = LineContextMethodId::resolve(receiver_type, method, arguments.len()) {
+        return resolved_language_method(
+            request,
+            CallableCandidateId::LineContextMethod(id),
+            LanguageCallableFamily::LineContextMethod,
+            id.signature_schema(),
+            receiver.value_instantiation(),
+        )
+        .map(Some);
+    }
+
+    check_query_step(request)?;
     if let Some(id @ (DomainMethodId::Traverse | DomainMethodId::Parallel)) =
         DomainMethodId::resolve(receiver_type, method)
     {
@@ -376,7 +389,7 @@ fn resolve_selected_call(
             request,
             CallableCandidateId::StageMethod(id),
             LanguageCallableFamily::StageMethod,
-            id.signature_schema(),
+            id.signature_schema(receiver_type),
             receiver.value_instantiation(),
         )
         .map(Some);
@@ -642,6 +655,24 @@ fn resolve_free_call(
                 family: LanguageCallableFamily::Agent,
             },
             schema,
+            CallableInstantiation::None,
+            Vec::new(),
+            request.limits,
+        )?;
+        return NonEmptyResolvedCandidates::try_new(vec![callable], request.limits)
+            .map(ResolvedCallTarget::Candidates)
+            .map(Some);
+    }
+
+    check_query_step(request)?;
+    if let Some(id) = LineScheduleCallableId::resolve(path) {
+        check_query_step(request)?;
+        let callable = ResolvedCallable::try_from_intrinsic(
+            CallableCandidateId::LineSchedule(id),
+            SignatureOrigin::Language {
+                family: LanguageCallableFamily::LineSchedule,
+            },
+            Arc::new(id.signature_schema()),
             CallableInstantiation::None,
             Vec::new(),
             request.limits,

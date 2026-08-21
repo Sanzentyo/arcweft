@@ -1635,6 +1635,11 @@ fn runtime_type_at(
         TypeKind::Array { .. }
         | TypeKind::TextCluster
         | TypeKind::DisplayText
+        | TypeKind::StageApi(_)
+        | TypeKind::LineContext
+        | TypeKind::StageActorHandle(_)
+        | TypeKind::CueHandle
+        | TypeKind::VoiceHandle
         | TypeKind::Handle { .. }
         | TypeKind::GenericParam(_)
         | TypeKind::OpenNominal(_)

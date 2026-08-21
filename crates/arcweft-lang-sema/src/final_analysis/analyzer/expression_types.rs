@@ -134,8 +134,10 @@ pub(super) fn value_resolution_type(
 ) -> Option<TypeKind> {
     match resolution {
         CheckedValueResolution::Local(_) => None,
-        CheckedValueResolution::LineContext => Some(TypeKind::Named("LineContext".to_owned())),
-        CheckedValueResolution::CharacterField { field, .. } => Some(field.ty()),
+        CheckedValueResolution::LineContext => Some(TypeKind::LineContext),
+        CheckedValueResolution::CharacterField {
+            character, field, ..
+        } => Some(field.ty(character.clone())),
         CheckedValueResolution::Registered(registered) => registered
             .environment_binding()
             .and_then(|binding| world.environment().environment_binding(binding))

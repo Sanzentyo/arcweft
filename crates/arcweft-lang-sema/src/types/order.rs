@@ -2,7 +2,9 @@ use core::cmp::Ordering;
 
 use crate::effect_row::{EffectRow, EffectRowTail};
 
-use super::{EntityKind, EntityType, HandleState, IteratorStateKind, MapKind, TypeKind};
+use super::{
+    EntityKind, EntityType, HandleState, IteratorStateKind, MapKind, StageActorHandleType, TypeKind,
+};
 
 impl TypeKind {
     /// Compares semantic types structurally for deterministic in-memory indexes.
@@ -40,6 +42,10 @@ impl TypeKind {
                     .cmp(&iterator_state_tag(*right_family))
                     .then_with(|| left_item.stable_ordering(right_item)),
                 (Self::Ref(left), Self::Ref(right)) => entity_type_ordering(left, right),
+                (Self::StageApi(left), Self::StageApi(right)) => left.as_str().cmp(right.as_str()),
+                (Self::StageActorHandle(left), Self::StageActorHandle(right)) => {
+                    stage_actor_handle_ordering(left, right)
+                }
                 (
                     Self::Array {
                         item: left_item,
@@ -184,6 +190,20 @@ impl TypeKind {
                 | (Self::Choice(left), Self::Choice(right)) => type_slice_ordering(left, right),
                 _ => Ordering::Equal,
             })
+    }
+}
+
+fn stage_actor_handle_ordering(
+    left: &StageActorHandleType,
+    right: &StageActorHandleType,
+) -> Ordering {
+    match (left, right) {
+        (StageActorHandleType::Any, StageActorHandleType::Any) => Ordering::Equal,
+        (StageActorHandleType::Any, StageActorHandleType::Exact(_)) => Ordering::Less,
+        (StageActorHandleType::Exact(_), StageActorHandleType::Any) => Ordering::Greater,
+        (StageActorHandleType::Exact(left), StageActorHandleType::Exact(right)) => {
+            left.as_str().cmp(right.as_str())
+        }
     }
 }
 
@@ -393,5 +413,10 @@ const fn type_kind_tag(kind: &TypeKind) -> u8 {
         TypeKind::AgentBuiltin(_) => 78,
         TypeKind::ViewValue => 79,
         TypeKind::Progress => 80,
+        TypeKind::StageApi(_) => 81,
+        TypeKind::LineContext => 82,
+        TypeKind::StageActorHandle(_) => 83,
+        TypeKind::CueHandle => 84,
+        TypeKind::VoiceHandle => 85,
     }
 }

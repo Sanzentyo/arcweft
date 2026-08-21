@@ -267,6 +267,7 @@ impl CanonicalEncoder {
             CallableValidator::Stage(_) => 18,
             CallableValidator::Drop => 19,
             CallableValidator::Promotion(_) => 20,
+            CallableValidator::LineContext(_) => 21,
         });
         if let CallableValidator::Method(role) = validator {
             self.tag(match role {

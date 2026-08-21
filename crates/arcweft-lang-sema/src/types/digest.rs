@@ -23,7 +23,7 @@ use crate::{
 use super::{
     AcceptedNominalType, ArrayLength, CharacterNominalType, EntityKind, GenericTypeOwnerId,
     GenericTypeParameterId, HandleState, IteratorStateKind, LifetimeScopeKind, MapKind,
-    OpenNominalType, ProjectNominalType, TypeKind,
+    OpenNominalType, ProjectNominalType, StageActorHandleType, TypeKind,
 };
 
 /// Stable semantic identity of one complete checked type.
@@ -328,6 +328,23 @@ impl Encoder {
             }
             TypeKind::ViewValue => self.tag(80),
             TypeKind::Progress => self.tag(81),
+            TypeKind::StageApi(character) => {
+                self.tag(82);
+                self.string(character.as_str());
+            }
+            TypeKind::LineContext => self.tag(83),
+            TypeKind::StageActorHandle(handle) => {
+                self.tag(84);
+                match handle {
+                    StageActorHandleType::Any => self.byte(0),
+                    StageActorHandleType::Exact(character) => {
+                        self.byte(1);
+                        self.string(character.as_str());
+                    }
+                }
+            }
+            TypeKind::CueHandle => self.tag(85),
+            TypeKind::VoiceHandle => self.tag(86),
         }
     }
 

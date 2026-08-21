@@ -49,6 +49,9 @@ pub enum BuiltinTypeConstructor {
     Unit,
     Never,
     CharacterDialogue,
+    StageActorHandle,
+    CueHandle,
+    VoiceHandle,
     Vec,
     Slice,
     Seq,
@@ -374,6 +377,9 @@ impl BuiltinTypeConstructor {
         Self::Unit,
         Self::Never,
         Self::CharacterDialogue,
+        Self::StageActorHandle,
+        Self::CueHandle,
+        Self::VoiceHandle,
         Self::Vec,
         Self::Slice,
         Self::Seq,
@@ -418,6 +424,9 @@ impl BuiltinTypeConstructor {
             Self::Unit => "Unit",
             Self::Never => "Never",
             Self::CharacterDialogue => "CharacterDialogue",
+            Self::StageActorHandle => "StageActorHandle",
+            Self::CueHandle => "CueHandle",
+            Self::VoiceHandle => "VoiceHandle",
             Self::Vec => "Vec",
             Self::Slice => "Slice",
             Self::Seq => "Seq",
@@ -459,7 +468,10 @@ impl BuiltinTypeConstructor {
             | Self::Bytes
             | Self::Unit
             | Self::Never
-            | Self::CharacterDialogue => 0,
+            | Self::CharacterDialogue
+            | Self::StageActorHandle
+            | Self::CueHandle
+            | Self::VoiceHandle => 0,
             Self::Vec
             | Self::Slice
             | Self::Seq
@@ -1000,6 +1012,12 @@ mod tests {
             "CharacterDialogue"
         );
         assert_eq!(BuiltinTypeConstructor::CharacterDialogue.arity(), 0);
+        assert_eq!(BuiltinTypeConstructor::StageActorHandle.arity(), 0);
+        assert_eq!(BuiltinTypeConstructor::CueHandle.spelling(), "CueHandle");
+        assert_eq!(
+            BuiltinTypeConstructor::VoiceHandle.spelling(),
+            "VoiceHandle"
+        );
         assert_eq!(BuiltinTypeConstructor::Vec.arity(), 1);
         assert_eq!(BuiltinTypeConstructor::Array.arity(), 2);
         assert_eq!(BuiltinTypeConstructor::Ref.spelling(), "Ref");

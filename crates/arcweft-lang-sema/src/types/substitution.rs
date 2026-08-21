@@ -159,6 +159,11 @@ fn atomic_contains_generic_parameter(
         | TypeKind::TextCluster
         | TypeKind::Duration
         | TypeKind::Progress
+        | TypeKind::StageApi(_)
+        | TypeKind::LineContext
+        | TypeKind::StageActorHandle(_)
+        | TypeKind::CueHandle
+        | TypeKind::VoiceHandle
         | TypeKind::DisplayText
         | TypeKind::DebugStatePath
         | TypeKind::ObservationFieldPath

@@ -2,6 +2,72 @@
 
 use super::TypeKind;
 
+macro_rules! atomic_type_kind_pattern {
+    ($($extra:pat_param)?) => {
+        Self::Bool
+            | Self::I8
+            | Self::I16
+            | Self::I32
+            | Self::I64
+            | Self::I128
+            | Self::ISize
+            | Self::U8
+            | Self::U16
+            | Self::U32
+            | Self::U64
+            | Self::U128
+            | Self::USize
+            | Self::F32
+            | Self::F64
+            | Self::String
+            | Self::Char
+            | Self::Bytes
+            | Self::TextCluster
+            | Self::Duration
+            | Self::Progress
+            | Self::StageApi(_)
+            | Self::LineContext
+            | Self::StageActorHandle(_)
+            | Self::CueHandle
+            | Self::VoiceHandle
+            | Self::DisplayText
+            | Self::DebugStatePath
+            | Self::ObservationFieldPath
+            | Self::Predicate
+            | Self::Observation
+            | Self::ObservedObject
+            | Self::AgentBBox
+            | Self::ActionName
+            | Self::ActionTarget
+            | Self::ActionResult
+            | Self::AgentValue
+            | Self::DataFormat
+            | Self::DataShape
+            | Self::AgentEntityMetadata
+            | Self::AgentSourceAnchor
+            | Self::AgentProjectGraphNeighborhood
+            | Self::AgentProjectGraphSymbol
+            | Self::AgentProjectGraphEdge
+            | Self::CaptureTarget
+            | Self::CaptureRef
+            | Self::AgentResource
+            | Self::AgentResourceBody
+            | Self::RagContextPack
+            | Self::AgentBuiltin(_)
+            | Self::GenericParam(_)
+            | Self::Handle { .. }
+            | Self::CharacterPatch(_)
+            | Self::FocusPatch
+            | Self::CharacterDialogue(_)
+            | Self::ViewValue
+            | Self::CharacterNominal(_)
+            | Self::Named(_)
+            | Self::Unit
+            | Self::Never
+            $(| $extra)?
+    };
+}
+
 impl TypeKind {
     /// Reports whether this type contains the non-escaping line-execution
     /// operation. A `DialogueLine<R>` may be consumed by line lowering, but it
@@ -50,62 +116,7 @@ impl TypeKind {
             Self::Tuple(items) | Self::Choice(items) => {
                 items.iter().any(Self::contains_dialogue_line_operation)
             }
-            Self::Bool
-            | Self::I8
-            | Self::I16
-            | Self::I32
-            | Self::I64
-            | Self::I128
-            | Self::ISize
-            | Self::U8
-            | Self::U16
-            | Self::U32
-            | Self::U64
-            | Self::U128
-            | Self::USize
-            | Self::F32
-            | Self::F64
-            | Self::String
-            | Self::Char
-            | Self::Bytes
-            | Self::TextCluster
-            | Self::Duration
-            | Self::Progress
-            | Self::DisplayText
-            | Self::DebugStatePath
-            | Self::ObservationFieldPath
-            | Self::Predicate
-            | Self::Observation
-            | Self::ObservedObject
-            | Self::AgentBBox
-            | Self::ActionName
-            | Self::ActionTarget
-            | Self::ActionResult
-            | Self::AgentValue
-            | Self::DataFormat
-            | Self::DataShape
-            | Self::AgentEntityMetadata
-            | Self::AgentSourceAnchor
-            | Self::AgentProjectGraphNeighborhood
-            | Self::AgentProjectGraphSymbol
-            | Self::AgentProjectGraphEdge
-            | Self::CaptureTarget
-            | Self::CaptureRef
-            | Self::AgentResource
-            | Self::AgentResourceBody
-            | Self::RagContextPack
-            | Self::AgentBuiltin(_)
-            | Self::GenericParam(_)
-            | Self::Handle { .. }
-            | Self::CharacterPatch(_)
-            | Self::FocusPatch
-            | Self::CharacterDialogue(_)
-            | Self::ViewValue
-            | Self::CharacterNominal(_)
-            | Self::Named(_)
-            | Self::Error(_)
-            | Self::Unit
-            | Self::Never => false,
+            atomic_type_kind_pattern!(Self::Error(_)) => false,
         }
     }
 
@@ -157,61 +168,7 @@ impl TypeKind {
             Self::Tuple(items) | Self::Choice(items) => {
                 items.iter().any(Self::contains_nominal_poison)
             }
-            Self::Bool
-            | Self::I8
-            | Self::I16
-            | Self::I32
-            | Self::I64
-            | Self::I128
-            | Self::ISize
-            | Self::U8
-            | Self::U16
-            | Self::U32
-            | Self::U64
-            | Self::U128
-            | Self::USize
-            | Self::F32
-            | Self::F64
-            | Self::String
-            | Self::Char
-            | Self::Bytes
-            | Self::TextCluster
-            | Self::Duration
-            | Self::Progress
-            | Self::DisplayText
-            | Self::DebugStatePath
-            | Self::ObservationFieldPath
-            | Self::Predicate
-            | Self::Observation
-            | Self::ObservedObject
-            | Self::AgentBBox
-            | Self::ActionName
-            | Self::ActionTarget
-            | Self::ActionResult
-            | Self::AgentValue
-            | Self::DataFormat
-            | Self::DataShape
-            | Self::AgentEntityMetadata
-            | Self::AgentSourceAnchor
-            | Self::AgentProjectGraphNeighborhood
-            | Self::AgentProjectGraphSymbol
-            | Self::AgentProjectGraphEdge
-            | Self::CaptureTarget
-            | Self::CaptureRef
-            | Self::AgentResource
-            | Self::AgentResourceBody
-            | Self::RagContextPack
-            | Self::AgentBuiltin(_)
-            | Self::GenericParam(_)
-            | Self::Handle { .. }
-            | Self::CharacterPatch(_)
-            | Self::FocusPatch
-            | Self::CharacterDialogue(_)
-            | Self::ViewValue
-            | Self::CharacterNominal(_)
-            | Self::Named(_)
-            | Self::Unit
-            | Self::Never => false,
+            atomic_type_kind_pattern!() => false,
         }
     }
 }

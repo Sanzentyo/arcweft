@@ -1269,9 +1269,6 @@ impl CapacityMethodId {
             && matches!((method.as_str(), arity), ("trim" | "to_string", 0))
         {
             // String-preserving instance method.
-        } else if matches!(receiver, TypeKind::Named(name) if name == "LineContext")
-            && matches!((method.as_str(), arity), ("voice_handle", 0))
-        {
         } else if let TypeKind::Vec(_) = receiver
             && matches!((method.as_str(), arity), ("pop" | "pop_front", 0))
         {
@@ -1296,9 +1293,6 @@ impl CapacityMethodId {
         match (self.receiver(), self.method().as_str()) {
             (receiver, "with_capacity") => receiver.clone(),
             (TypeKind::String, "trim" | "to_string") => TypeKind::String,
-            (TypeKind::Named(name), "voice_handle") if name == "LineContext" => {
-                TypeKind::Named("VoiceHandle".to_owned())
-            }
             (TypeKind::Vec(item), "pop" | "pop_front") => TypeKind::Option(item.clone()),
             (TypeKind::Vec(item), "collect") => TypeKind::Vec(item.clone()),
             (
@@ -1323,12 +1317,40 @@ pub enum StageMethodId {
 impl StageMethodId {
     pub fn resolve(receiver: &TypeKind, method: &CallableName, arity: usize) -> Option<Self> {
         match (receiver, method.as_str(), arity) {
-            (TypeKind::Named(name), "acquire", 1) if name == "StageApi" => Some(Self::Acquire),
-            (TypeKind::Named(name), "look", 1 | 2) if name == "StageActorHandle" => {
-                Some(Self::Look)
-            }
+            (TypeKind::StageApi(_), "acquire", 1) => Some(Self::Acquire),
+            (
+                TypeKind::StageActorHandle(crate::types::StageActorHandleType::Exact(_)),
+                "look",
+                1 | 2,
+            ) => Some(Self::Look),
             _ => None,
         }
+    }
+}
+
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub enum LineContextMethodId {
+    VoiceHandle,
+}
+
+impl LineContextMethodId {
+    pub fn resolve(receiver: &TypeKind, method: &CallableName, arity: usize) -> Option<Self> {
+        matches!(
+            (receiver, method.as_str(), arity),
+            (TypeKind::LineContext, "voice_handle", 0)
+        )
+        .then_some(Self::VoiceHandle)
+    }
+}
+
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub enum LineScheduleCallableId {
+    At,
+}
+
+impl LineScheduleCallableId {
+    pub fn resolve(path: &CallablePath) -> Option<Self> {
+        path.matches(&["at"]).then_some(Self::At)
     }
 }
 
@@ -1749,6 +1771,8 @@ pub enum CallableCandidateId {
     DomainMethod(DomainMethodId),
     CapacityMethod(CapacityMethodId),
     StageMethod(StageMethodId),
+    LineContextMethod(LineContextMethodId),
+    LineSchedule(LineScheduleCallableId),
     Drop(DropCallableId),
     Promotion(PromotionCallableId),
 }
@@ -1774,13 +1798,15 @@ pub enum CallableFamily {
     TraitMethod,
     CapacityMethod,
     StageMethod,
+    LineContextMethod,
+    LineSchedule,
     Drop,
     Promotion,
 }
 
 impl CallableFamily {
     /// Every production callable family in stable semantic-audit order.
-    pub const ALL: [Self; 21] = [
+    pub const ALL: [Self; 23] = [
         Self::Fx,
         Self::EnumConstructor,
         Self::ResultConstructor,
@@ -1800,6 +1826,8 @@ impl CallableFamily {
         Self::TraitMethod,
         Self::CapacityMethod,
         Self::StageMethod,
+        Self::LineContextMethod,
+        Self::LineSchedule,
         Self::Drop,
         Self::Promotion,
     ];
@@ -1827,6 +1855,8 @@ impl CallableCandidateId {
             Self::DomainMethod(_) => CallableFamily::DomainMethod,
             Self::CapacityMethod(_) => CallableFamily::CapacityMethod,
             Self::StageMethod(_) => CallableFamily::StageMethod,
+            Self::LineContextMethod(_) => CallableFamily::LineContextMethod,
+            Self::LineSchedule(_) => CallableFamily::LineSchedule,
             Self::Drop(_) => CallableFamily::Drop,
             Self::Promotion(_) => CallableFamily::Promotion,
         }
@@ -1849,6 +1879,8 @@ pub enum LanguageCallableFamily {
     DomainMethod,
     CapacityMethod,
     StageMethod,
+    LineContextMethod,
+    LineSchedule,
     Drop,
     Promote,
     Assume,

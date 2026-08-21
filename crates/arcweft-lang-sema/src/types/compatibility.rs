@@ -43,9 +43,7 @@ impl TypeKind {
             (Self::ActionName, Self::String | Self::Named(_)) => true,
             (Self::AgentValue, actual) => is_agent_value_type(actual),
             (Self::Ref(expected), Self::Ref(actual)) if expected.kind() == actual.kind() => {
-                // A payload-free reference is a family constraint used by
-                // shared callable schemas. It accepts a retained payload
-                // specialization without erasing that payload from `actual`.
+                // A payload-free family constraint accepts a retained specialization.
                 expected.value().is_none()
             }
             (Self::Choice(alternatives), Self::Choice(actual_alternatives)) => actual_alternatives
@@ -232,11 +230,28 @@ fn choice_injection_target<'a>(
 
 #[cfg(test)]
 mod tests {
+    use arcweft_character::id::CharacterId;
+
     use super::TypeKind;
     use crate::types::{
         ArrayLength, DetachedTypeOwnerId, EntityKind, GenericTypeOwnerId, GenericTypeParameterId,
-        TypePoisonId,
+        StageActorHandleType, TypePoisonId,
     };
+
+    #[test]
+    fn erased_stage_actor_handle_accepts_exact_without_erasing_exact_expectations() {
+        let alice = TypeKind::StageActorHandle(StageActorHandleType::Exact(
+            CharacterId::try_new("character.alice").expect("Character identity"),
+        ));
+        let bob = TypeKind::StageActorHandle(StageActorHandleType::Exact(
+            CharacterId::try_new("character.bob").expect("Character identity"),
+        ));
+        let any = TypeKind::StageActorHandle(StageActorHandleType::Any);
+
+        assert!(any.accepts(&alice));
+        assert!(!alice.accepts(&any));
+        assert!(!alice.accepts(&bob));
+    }
 
     #[test]
     fn family_entity_reference_accepts_payload_specialization() {

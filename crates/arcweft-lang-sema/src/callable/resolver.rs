@@ -58,11 +58,11 @@ use super::{
     CollectionMethodId, CorruptCallableCatalogReason, CurriedCallableId, DomainMethodId,
     DropCallableId, EnvironmentCallableId, EnvironmentCallableKind, EnvironmentCallableOwner,
     EquivalentCallableSource, FunctionValueOrdinal, FunctionValueSignatureId,
-    FxCallableSignatureId, FxResolution, IntegerMethodId, LanguageCallableFamily, LocalCallableId,
-    OptionConstructorKind, PresentationCallableId, PresentationHandleMethodId,
-    PresentationSchemaContext, ProjectCallablePath, ProjectNameBinding, PromotionCallableId,
-    ReceiverMethodKey, ResolveCallError, ResolverWork, ResultConstructorKind, StageMethodId,
-    StandardEnvironmentId,
+    FxCallableSignatureId, FxResolution, IntegerMethodId, LanguageCallableFamily,
+    LineContextMethodId, LineScheduleCallableId, LocalCallableId, OptionConstructorKind,
+    PresentationCallableId, PresentationHandleMethodId, PresentationSchemaContext,
+    ProjectCallablePath, ProjectNameBinding, PromotionCallableId, ReceiverMethodKey,
+    ResolveCallError, ResolverWork, ResultConstructorKind, StageMethodId, StandardEnvironmentId,
 };
 
 #[derive(Clone, Debug, Eq, PartialEq)]

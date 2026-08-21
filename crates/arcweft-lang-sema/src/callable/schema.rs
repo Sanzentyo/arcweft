@@ -16,9 +16,10 @@ use super::{
     CallableGroupIndex, CallableLimits, CallableName, CallableParameterIndex, CallableSchemaError,
     CallableSourceError, CapacityMethodId, CollectionMethodId, DetachedCallableDeclarationId,
     DialogueCallableId, DomainMethodId, EnumVariantSignatureId, FxCallableSignatureId,
-    IntegerMethodId, LanguageDocumentationFamily, OptionConstructorKind, PresentationCallableId,
-    PresentationHandleMethodId, PromotionCallableId, ReductionConstructorKind,
-    ResultConstructorKind, RustItemPath, RustProvenanceError, RustProvenanceField, StageMethodId,
+    IntegerMethodId, LanguageDocumentationFamily, LineContextMethodId, OptionConstructorKind,
+    PresentationCallableId, PresentationHandleMethodId, PromotionCallableId,
+    ReductionConstructorKind, ResultConstructorKind, RustItemPath, RustProvenanceError,
+    RustProvenanceField, StageMethodId,
 };
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -547,6 +548,7 @@ pub enum CallableValidator {
     Method(CallableMethodRole),
     Capacity(CapacityMethodId),
     Stage(StageMethodId),
+    LineContext(LineContextMethodId),
     Drop,
     Promotion(PromotionCallableId),
 }

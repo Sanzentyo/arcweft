@@ -482,6 +482,14 @@ const fn language_origin_matches(id: &CallableCandidateId, family: LanguageCalla
                 CallableCandidateId::StageMethod(_),
                 LanguageCallableFamily::StageMethod
             )
+            | (
+                CallableCandidateId::LineContextMethod(_),
+                LanguageCallableFamily::LineContextMethod
+            )
+            | (
+                CallableCandidateId::LineSchedule(_),
+                LanguageCallableFamily::LineSchedule
+            )
             | (CallableCandidateId::Drop(_), LanguageCallableFamily::Drop)
             | (
                 CallableCandidateId::Promotion(
@@ -525,7 +533,8 @@ fn instantiation_matches(id: &CallableCandidateId, instantiation: &CallableInsta
             | CallableCandidateId::PresentationHandleMethod(_)
             | CallableCandidateId::IntegerMethod(_)
             | CallableCandidateId::DomainMethod(_)
-            | CallableCandidateId::StageMethod(_),
+            | CallableCandidateId::StageMethod(_)
+            | CallableCandidateId::LineContextMethod(_),
             CallableInstantiation::Receiver { .. },
         )
         | (CallableCandidateId::Environment(_), CallableInstantiation::TypeReceiver { .. })
@@ -539,6 +548,7 @@ fn instantiation_matches(id: &CallableCandidateId, instantiation: &CallableInsta
             | CallableCandidateId::Standard(_)
             | CallableCandidateId::Local(_)
             | CallableCandidateId::FunctionValue(_)
+            | CallableCandidateId::LineSchedule(_)
             | CallableCandidateId::Drop(_)
             | CallableCandidateId::Promotion(_),
             CallableInstantiation::None,

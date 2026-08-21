@@ -281,6 +281,44 @@ impl TypeKind {
                 };
                 None
             }
+            Self::StageApi(expected) => {
+                let Self::StageApi(actual_character) = actual else {
+                    unreachable!("equal discriminants")
+                };
+                (expected != actual_character).then(|| TypeMismatch::outer(self, actual))
+            }
+            Self::LineContext => {
+                let Self::LineContext = actual else {
+                    unreachable!("equal discriminants")
+                };
+                None
+            }
+            Self::StageActorHandle(expected) => {
+                let Self::StageActorHandle(actual_handle) = actual else {
+                    unreachable!("equal discriminants")
+                };
+                let compatible = expected == actual_handle
+                    || matches!(
+                        (expected, actual_handle),
+                        (
+                            super::StageActorHandleType::Any,
+                            super::StageActorHandleType::Exact(_)
+                        )
+                    );
+                (!compatible).then(|| TypeMismatch::outer(self, actual))
+            }
+            Self::CueHandle => {
+                let Self::CueHandle = actual else {
+                    unreachable!("equal discriminants")
+                };
+                None
+            }
+            Self::VoiceHandle => {
+                let Self::VoiceHandle = actual else {
+                    unreachable!("equal discriminants")
+                };
+                None
+            }
             Self::Range(expected) => {
                 let Self::Range(actual) = actual else {
                     unreachable!("equal discriminants")

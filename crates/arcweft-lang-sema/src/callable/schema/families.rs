@@ -23,11 +23,11 @@ use crate::callable::{
     AgentIntrinsicSignatureId, BuiltinCallableId, CallableName, CallableParameterIndex,
     CallableSchemaError, CapabilityCallableId, CapacityMethodId, CollectionMethodId,
     DialogueCallableId, DialogueCalleeIdentity, DialogueSchemaContext, DomainMethodId,
-    DropCallableId, FloatWidth, FxCallableSignatureId, IntegerMethodId, MathCallableId,
-    OptionConstructorKind, PRODUCTION_CALLABLE_LIMITS, PresentationArgumentValuePolicy,
-    PresentationCallableId, PresentationHandleMethodId, ReductionConstructorKind,
-    ResolvedCharacterOwner, ResultConstructorKind, StageMethodId, StdFloatCallableId,
-    StdFloatOperation, VectorDimensions,
+    DropCallableId, FloatWidth, FxCallableSignatureId, IntegerMethodId, LineContextMethodId,
+    LineScheduleCallableId, MathCallableId, OptionConstructorKind, PRODUCTION_CALLABLE_LIMITS,
+    PresentationArgumentValuePolicy, PresentationCallableId, PresentationHandleMethodId,
+    ReductionConstructorKind, ResolvedCharacterOwner, ResultConstructorKind, StageMethodId,
+    StdFloatCallableId, StdFloatOperation, VectorDimensions,
 };
 
 pub(in crate::callable) fn dialogue_schema(
@@ -517,10 +517,9 @@ impl CapacityMethodId {
         let validator = CallableValidator::Capacity(self.clone());
         match (self.method().as_str(), self.arity()) {
             ("with_capacity", _) => variadic_unchecked(result, validator, &[]),
-            (
-                "trim" | "to_string" | "voice_handle" | "pop" | "pop_front" | "collect" | "shrink",
-                0,
-            ) => empty(result, &[], validator),
+            ("trim" | "to_string" | "pop" | "pop_front" | "collect" | "shrink", 0) => {
+                empty(result, &[], validator)
+            }
             ("push" | "reserve" | "shrink_to", 1) => schema(
                 vec![parameter(
                     0,
@@ -540,45 +539,93 @@ impl CapacityMethodId {
 }
 
 impl StageMethodId {
-    pub(crate) fn signature_schema(self) -> CallableSignatureSchema {
+    pub(crate) fn signature_schema(self, receiver: &TypeKind) -> CallableSignatureSchema {
         let validator = CallableValidator::Stage(self);
         match self {
-            Self::Acquire => schema(
-                vec![parameter(
-                    0,
-                    Some("scope"),
-                    CallableParameterType::Exact(named("PresentationLifetime")),
-                    CallableParameterPassing::PositionalOrNamed,
-                    CallableParameterPresence::Required,
-                )],
-                named("StageActorHandle"),
-                &[],
-                closed(),
-                validator,
-            ),
-            Self::Look => schema(
-                vec![
-                    parameter(
+            Self::Acquire => {
+                let TypeKind::StageApi(character) = receiver else {
+                    unreachable!("Stage acquire retains an exact StageApi receiver")
+                };
+                schema(
+                    vec![parameter(
                         0,
-                        Some("look"),
-                        CallableParameterType::Exact(named("StageLook")),
+                        Some("scope"),
+                        CallableParameterType::Exact(named("PresentationLifetime")),
                         CallableParameterPassing::PositionalOrNamed,
                         CallableParameterPresence::Required,
-                    ),
-                    parameter(
-                        1,
-                        Some("crossfade"),
-                        CallableParameterType::Exact(TypeKind::Duration),
-                        CallableParameterPassing::PositionalOrNamed,
-                        CallableParameterPresence::Optional,
-                    ),
-                ],
-                named("CueHandle"),
-                &[],
-                closed(),
-                validator,
-            ),
+                    )],
+                    TypeKind::StageActorHandle(crate::types::StageActorHandleType::Exact(
+                        character.clone(),
+                    )),
+                    &[],
+                    closed(),
+                    validator,
+                )
+            }
+            Self::Look => {
+                let TypeKind::StageActorHandle(crate::types::StageActorHandleType::Exact(
+                    character,
+                )) = receiver
+                else {
+                    unreachable!("Stage look retains an exact StageActorHandle receiver")
+                };
+                schema(
+                    vec![
+                        parameter(
+                            0,
+                            Some("look"),
+                            CallableParameterType::Exact(TypeKind::character_look(
+                                character.clone(),
+                            )),
+                            CallableParameterPassing::PositionalOrNamed,
+                            CallableParameterPresence::Required,
+                        ),
+                        parameter(
+                            1,
+                            Some("crossfade"),
+                            CallableParameterType::Exact(TypeKind::Duration),
+                            CallableParameterPassing::PositionalOrNamed,
+                            CallableParameterPresence::Optional,
+                        ),
+                    ],
+                    TypeKind::CueHandle,
+                    &[],
+                    closed(),
+                    validator,
+                )
+            }
         }
+    }
+}
+
+impl LineContextMethodId {
+    pub(crate) fn signature_schema(self) -> CallableSignatureSchema {
+        empty(
+            TypeKind::VoiceHandle,
+            &["dialogue.voice"],
+            CallableValidator::LineContext(self),
+        )
+    }
+}
+
+impl LineScheduleCallableId {
+    pub fn signature_schema(self) -> CallableSignatureSchema {
+        let callback = TypeKind::function_with_effects(
+            std::iter::empty(),
+            TypeKind::CueHandle,
+            EffectRow::closed(EffectSet::new()),
+        );
+        one_positional(
+            "anchor",
+            TypeKind::Duration,
+            TypeKind::function_with_effects(
+                [callback],
+                TypeKind::CueHandle,
+                EffectRow::closed(EffectSet::new()),
+            ),
+            &["dialogue.schedule"],
+            CallableValidator::Ordinary,
+        )
     }
 }
 

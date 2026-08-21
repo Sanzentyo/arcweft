@@ -1402,7 +1402,7 @@ impl Analyzer<'_, '_, '_> {
                                         self.facts.set_expression(
                                             *value_receiver,
                                             CheckedExpression::new(
-                                                TypeKind::Named("LineContext".to_owned()),
+                                                TypeKind::LineContext,
                                                 CheckedTypeSelection::Inferred,
                                                 EffectSet::new(),
                                                 CheckedExpressionResolution::Value(

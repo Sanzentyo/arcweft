@@ -909,7 +909,10 @@ impl Resolver<'_, '_> {
             | BuiltinTypeConstructor::Bytes
             | BuiltinTypeConstructor::Unit
             | BuiltinTypeConstructor::Never
-            | BuiltinTypeConstructor::CharacterDialogue => {
+            | BuiltinTypeConstructor::CharacterDialogue
+            | BuiltinTypeConstructor::StageActorHandle
+            | BuiltinTypeConstructor::CueHandle
+            | BuiltinTypeConstructor::VoiceHandle => {
                 unreachable!("scalar constructors returned above")
             }
             BuiltinTypeConstructor::Vec
@@ -967,6 +970,11 @@ impl Resolver<'_, '_> {
             BuiltinTypeConstructor::CharacterDialogue => {
                 TypeKind::CharacterDialogue(crate::types::CharacterDialogueType::any())
             }
+            BuiltinTypeConstructor::StageActorHandle => {
+                TypeKind::StageActorHandle(crate::types::StageActorHandleType::Any)
+            }
+            BuiltinTypeConstructor::CueHandle => TypeKind::CueHandle,
+            BuiltinTypeConstructor::VoiceHandle => TypeKind::VoiceHandle,
             _ => return None,
         })
     }

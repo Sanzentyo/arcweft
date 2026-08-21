@@ -428,7 +428,6 @@ impl TypeCheckEnv {
             .with_standard_presentation_lifetimes()
             .with_standard_dialogue_value_enums()
             .with_standard_agent_enums()
-            .with_standard_line_plan_callables()
             .with_standard_function(
                 ["fmt"],
                 FunctionSignature::return_only(TypeKind::DisplayText),
@@ -598,28 +597,6 @@ impl TypeCheckEnv {
         .expect("DialogueVoice has one canonical source-visible enum inventory")
     }
 
-    #[must_use]
-    fn with_standard_line_plan_callables(self) -> Self {
-        let cue = TypeKind::Named("CueHandle".to_owned());
-        let callback = TypeKind::function_with_effects(
-            std::iter::empty(),
-            cue.clone(),
-            EffectRow::closed(crate::effects::EffectSet::new()),
-        );
-        let scheduled = TypeKind::function_with_effects(
-            [callback],
-            cue,
-            EffectRow::closed(crate::effects::EffectSet::new()),
-        );
-        self.with_standard_function(
-            ["at"],
-            FunctionSignature::new(
-                scheduled,
-                [FunctionParam::required("anchor", TypeKind::Duration)],
-            ),
-        )
-    }
-
     /// Installs the finite source-visible runtime callable surface.
     ///
     /// These records are the single source for both standalone type checking
@@ -736,7 +713,7 @@ impl TypeCheckEnv {
             (
                 standard_callable_path(["voice", "load"]),
                 TypeKind::Need(Box::new(TypeKind::Result {
-                    ok: Box::new(TypeKind::Named("VoiceHandle".to_owned())),
+                    ok: Box::new(TypeKind::VoiceHandle),
                     error: Box::new(TypeKind::Named("VoiceError".to_owned())),
                 })),
             ),
@@ -751,7 +728,7 @@ impl TypeCheckEnv {
             )
         })
         .with_standard_method(
-            TypeKind::Named("VoiceHandle".to_owned()),
+            TypeKind::VoiceHandle,
             "stop",
             FunctionSignature::return_only(TypeKind::Unit),
         )

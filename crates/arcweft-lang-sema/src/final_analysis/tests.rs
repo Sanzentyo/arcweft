@@ -71,11 +71,12 @@ use crate::{
         CheckedCallArgumentSlotSource, CheckedClosureId, DialogueCallableId, DomainMethodId,
         EffectContractOrigin, EnvironmentCallableCatalog, EnvironmentCallableId,
         EnvironmentCallableKind, EnvironmentCallableOwner, EnvironmentCallablePublicationDigest,
-        EnvironmentDeclarationOrdinal, FinalCallCalleeFacts, NonEmptyCallableSet,
-        PRODUCTION_CALLABLE_LIMITS, PresentationCallableId, ProjectCallablePath,
-        RegisteredCallableCatalog, ResolveCallError, ResolveCallOutcome, ResolverWork,
-        SemanticSignatureSurface, SpreadArgumentPolicy, UnknownCallKind,
-        UnknownNamedArgumentPolicy, prepare_final_call_callee, resolve_call_target,
+        EnvironmentDeclarationOrdinal, FinalCallCalleeFacts, LineContextMethodId,
+        LineScheduleCallableId, NonEmptyCallableSet, PRODUCTION_CALLABLE_LIMITS,
+        PresentationCallableId, ProjectCallablePath, RegisteredCallableCatalog, ResolveCallError,
+        ResolveCallOutcome, ResolverWork, SemanticSignatureSurface, SpreadArgumentPolicy,
+        StageMethodId, UnknownCallKind, UnknownNamedArgumentPolicy, prepare_final_call_callee,
+        resolve_call_target,
     },
     character_dialogue::CharacterDialogueCustomFieldBinding,
     effect_row::EffectRow,
@@ -100,7 +101,7 @@ use crate::{
     },
     types::{
         AgentBuiltinType, DetachedTypeOwnerId, EntityKind, GenericTypeOwnerId,
-        GenericTypeParameterId, TypeKind,
+        GenericTypeParameterId, StageActorHandleType, TypeKind,
     },
 };
 
@@ -855,7 +856,63 @@ fn dialogue_line_plan_bindings_are_inferred_in_source_order() {
         ),
         None,
     );
-    analyze(&fixture).expect("typed Dialogue line-plan bindings");
+    let report = analyze(&fixture).expect("typed Dialogue line-plan bindings");
+    let character = CharacterId::try_new("character.alice").expect("Character identity");
+    let acquire = report
+        .calls()
+        .find(|(_, call)| {
+            matches!(
+                call.target(),
+                CallTargetFact::Selected { selected, .. }
+                    if selected.id()
+                        == &CallableCandidateId::StageMethod(StageMethodId::Acquire)
+            )
+        })
+        .map(|(_, call)| call)
+        .expect("exact stage acquire call");
+    assert_eq!(
+        acquire.result(),
+        Some(&TypeKind::StageActorHandle(StageActorHandleType::Exact(
+            character.clone()
+        )))
+    );
+    let look = report
+        .calls()
+        .find(|(_, call)| {
+            matches!(
+                call.target(),
+                CallTargetFact::Selected { selected, .. }
+                    if selected.id() == &CallableCandidateId::StageMethod(StageMethodId::Look)
+            )
+        })
+        .map(|(_, call)| call)
+        .expect("exact stage look call");
+    assert_eq!(look.result(), Some(&TypeKind::CueHandle));
+    assert!(report.calls().any(|(_, call)| {
+        matches!(
+            call.target(),
+            CallTargetFact::Selected { selected, .. }
+                if selected.id() == &CallableCandidateId::LineContextMethod(
+                    LineContextMethodId::VoiceHandle
+                ) && call.result() == Some(&TypeKind::VoiceHandle)
+        )
+    }));
+    assert!(report.calls().any(|(_, call)| {
+        matches!(
+            call.target(),
+            CallTargetFact::Selected { selected, .. }
+                if selected.id()
+                    == &CallableCandidateId::LineSchedule(LineScheduleCallableId::At)
+        )
+    }));
+    assert!(!report.calls().any(|(_, call)| {
+        matches!(
+            call.target(),
+            CallTargetFact::Selected { selected, .. }
+                if matches!(selected.id(), CallableCandidateId::CapacityMethod(_))
+                    && call.result() == Some(&TypeKind::VoiceHandle)
+        )
+    }));
 }
 
 #[test]

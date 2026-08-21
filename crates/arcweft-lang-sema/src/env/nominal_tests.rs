@@ -592,7 +592,6 @@ fn standard_environment_projects_domain_and_structural_nominals_exactly() {
         ("ImageHandle", "std.image_handle"),
         ("PresentationLifetime", "std.presentation_lifetime"),
         ("VoiceError", "std.voice_error"),
-        ("VoiceHandle", "std.voice_handle"),
     ] {
         let record = environment
             .nominal_catalog()
@@ -605,6 +604,13 @@ fn standard_environment_projects_domain_and_structural_nominals_exactly() {
         ));
         assert_eq!(record.arity(), 0);
     }
+    assert!(
+        environment
+            .nominal_catalog()
+            .exact(&path("VoiceHandle"))
+            .is_none(),
+        "VoiceHandle is a direct language type, not a parallel accepted nominal"
+    );
 
     let reduction = environment
         .nominal_catalog()

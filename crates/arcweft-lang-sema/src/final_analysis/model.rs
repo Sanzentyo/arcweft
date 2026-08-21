@@ -306,6 +306,7 @@ pub enum CheckedValueResolution {
     /// Standard Character-owned stage API projected from a typed receiver.
     CharacterField {
         receiver: Box<CheckedValueResolution>,
+        character: CharacterId,
         field: CharacterField,
     },
     ProjectCallable(CheckedProjectCallable),
@@ -313,6 +314,22 @@ pub enum CheckedValueResolution {
     Entry(CheckedEntryReference),
     Registered(RegisteredSemanticValueId),
     Constant(HirLiteral),
+}
+
+impl CheckedValueResolution {
+    /// Exact Character identity retained by a checked Character value.
+    pub fn character(&self) -> Option<CharacterId> {
+        match self {
+            Self::ProjectItem(item) => item.character(),
+            Self::Local(_)
+            | Self::LineContext
+            | Self::CharacterField { .. }
+            | Self::ProjectCallable(_)
+            | Self::Entry(_)
+            | Self::Registered(_)
+            | Self::Constant(_) => None,
+        }
+    }
 }
 
 /// Checked projection selected for one member expression.
