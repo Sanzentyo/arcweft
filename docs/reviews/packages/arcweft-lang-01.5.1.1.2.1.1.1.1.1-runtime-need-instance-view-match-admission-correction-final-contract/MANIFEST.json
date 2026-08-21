@@ -1,0 +1,220 @@
+{
+  "schema_version": 1,
+  "package": "arcweft-lang-01.5.1.1.2.1.1.1.1.1-runtime-need-instance-view-match-admission-correction-final-contract",
+  "inspected_sha": "17b384a36e1412cc7e7d9f13073d8dd33dcb5cbc",
+  "algorithm": "SHA-256",
+  "coverage": "every payload except MANIFEST.json and MANIFEST.sha256; MANIFEST.sha256 covers MANIFEST.json",
+  "payload_count": 42,
+  "payloads": [
+    {
+      "path": "CHECKED_MATCH_AND_VIEW_ADMISSION.md",
+      "bytes": 14444,
+      "sha256": "954b9eaab0cb21bfe648779e2956abe9752555cbcbd7e366db294d6385673e17"
+    },
+    {
+      "path": "COMPILE_CLEAN_SEQUENCE.md",
+      "bytes": 8219,
+      "sha256": "ae4dbd0becc20a0ea9cc3400ca172153a2892994c60df593dd3b76f37af2b1b9"
+    },
+    {
+      "path": "DECISION_REGISTER.md",
+      "bytes": 9023,
+      "sha256": "a38f61a1571e150868e71401cf0c6b29abb1a6ddc5ce4aa7b6d5fc021c27cedd"
+    },
+    {
+      "path": "DELETION_MATRIX.md",
+      "bytes": 7042,
+      "sha256": "8797fd3240ec813e45d18c4203e17700111e3442c29f624a577eaaaab1680d66"
+    },
+    {
+      "path": "DEPENDENCY_GRAPH.md",
+      "bytes": 3668,
+      "sha256": "2be3519bf0660909ab126fb620128edf1d3646b981cd44bec9689434de5976d0"
+    },
+    {
+      "path": "FAILURE_PRECEDENCE_AND_ATOMICITY.md",
+      "bytes": 7300,
+      "sha256": "0d0d70f7451249f853436542e153686487b2fbc1ae77c5995c894ea84d053996"
+    },
+    {
+      "path": "FINAL_CONTRACT.md",
+      "bytes": 10293,
+      "sha256": "5a1c36c0c16a457fbf1de57cb19c9001951f9f2e5edc8e5ab81ea220966a5ba7"
+    },
+    {
+      "path": "FINAL_STATUS.md",
+      "bytes": 1159,
+      "sha256": "de9d44f36c678807c37c8501d63d850315a17b41a4a588edea91aeee3d420825"
+    },
+    {
+      "path": "IDENTITY_AND_DIGESTS.md",
+      "bytes": 15550,
+      "sha256": "bc09248a0ffa3487c35260205f429f285771845430193a666a866ec09fd104cd"
+    },
+    {
+      "path": "OPEN_QUESTIONS.md",
+      "bytes": 4,
+      "sha256": "140bedbf9c3f6d56a9846d2ba7088798683f4da0c248231336e6a05679e4fdfe"
+    },
+    {
+      "path": "OWNERSHIP_EVIDENCE.md",
+      "bytes": 18786,
+      "sha256": "24a036831ee3d164a827b8266174e7e8b520db339f34b3a8bafd79f0445be3f4"
+    },
+    {
+      "path": "OWNER_API_MAP.md",
+      "bytes": 5112,
+      "sha256": "f69277c18727d7579ddbf096e788b5f72e7af7fd083ec5f66dec6705a25b75f0"
+    },
+    {
+      "path": "README.md",
+      "bytes": 5862,
+      "sha256": "826216ef8029114e0e7768b29467e47efbdd6aa0ca96e28c78f40fab7169c0c0"
+    },
+    {
+      "path": "REQUIREMENT_TRACEABILITY.md",
+      "bytes": 12157,
+      "sha256": "93902f0f1be68c62e035de985160cb4ee493a15ca6390d07a7c01ebc316208a0"
+    },
+    {
+      "path": "RUST_SCHEMAS.md",
+      "bytes": 37138,
+      "sha256": "9801a9acda4f829a44649f86d69084db409c694f7dafd3521c452b86fb135170"
+    },
+    {
+      "path": "SOURCE_EVIDENCE.md",
+      "bytes": 8204,
+      "sha256": "f5fd01fc06b8a7678bf37dacb8332dbd1c5e94f3cb16349d35bcfe85625c4727"
+    },
+    {
+      "path": "STRUCTURAL_ABSENCE.md",
+      "bytes": 5416,
+      "sha256": "703427e114d0db8d99652f48a2683529622d9660de435533bb1ffeb9130aec59"
+    },
+    {
+      "path": "TASK_LIFECYCLE_AND_PERSISTENCE.md",
+      "bytes": 14806,
+      "sha256": "25c750f857c26ddcd79f65bd39c0964114270821aa1a6cb9fc7ba0c8afa3e3ce"
+    },
+    {
+      "path": "TEST_MATRIX.md",
+      "bytes": 47100,
+      "sha256": "2f6b47977eb6a054d7eb63ac3a01b8c603826a97324ff71d5c6dbe96b5a6a4e4"
+    },
+    {
+      "path": "VALIDATION.md",
+      "bytes": 3314,
+      "sha256": "62dc5b8f9a4e072604495fc1171cfb92db9b3fe70b432959365d8028be30def8"
+    },
+    {
+      "path": "VALIDATION_OUTPUT.txt",
+      "bytes": 504,
+      "sha256": "f643aaff183805c72e4bbc92e63bdf29549ed361abdefabc67db8d876698a6e5"
+    },
+    {
+      "path": "VALIDATION_SCOPE.md",
+      "bytes": 3292,
+      "sha256": "4607025cc0a56b2458b2b23c2d7893dee32d192a448d82b1a674e1518a08a8d0"
+    },
+    {
+      "path": "inputs/CURRENT_REQUEST.md",
+      "bytes": 26729,
+      "sha256": "0152f1dd5f6fd315722f729700d3b94d1b0daa596a59445313e7796bddde8322"
+    },
+    {
+      "path": "inputs/PROJECT_PREMISE.txt",
+      "bytes": 250,
+      "sha256": "cfa897a0ad93deb92fd454079df0a789edbbd40d85c8377324da703c8aefe0a1"
+    },
+    {
+      "path": "inputs/RUST_SKILL.txt",
+      "bytes": 5045,
+      "sha256": "1a28f552adf5efde95205bee8d56590aeb82346c48ebdf3fdbbaff5deca33665"
+    },
+    {
+      "path": "machine/contract.json",
+      "bytes": 3077,
+      "sha256": "ec7f972360524306df89e45f47fc2f549bf2c81469b9238229f28b26c5f06e12"
+    },
+    {
+      "path": "machine/decisions.json",
+      "bytes": 13967,
+      "sha256": "116541de0502767627ee3bd2f71846fb476fc77ac81accf036f190d86817f46d"
+    },
+    {
+      "path": "machine/deletion_matrix.json",
+      "bytes": 10941,
+      "sha256": "6387e524363c9b584649ff03b1240faa1bf6c09ae023b5d6fbee92f772da59a1"
+    },
+    {
+      "path": "machine/limits.json",
+      "bytes": 1494,
+      "sha256": "1240f3bedca145e1486196f473a5f945c66e37f80743e5fe30d2d85554f78537"
+    },
+    {
+      "path": "machine/ownership_matrix.json",
+      "bytes": 18802,
+      "sha256": "cbfc7d359b079bccda4a9d78c510022f7a92b6f23f1530e22c0b97f8253b5123"
+    },
+    {
+      "path": "machine/producer_families.json",
+      "bytes": 578,
+      "sha256": "aa59fb3273f5bd9bd09b3a584c0a01b2e91440be160a1b52876b745c595680b1"
+    },
+    {
+      "path": "machine/request_hashes.json",
+      "bytes": 869,
+      "sha256": "b0cfa9df9bd0b940eb986047fe142e014f0faa2edb6af5fe79c2f629e68f5323"
+    },
+    {
+      "path": "machine/source_evidence.json",
+      "bytes": 8426,
+      "sha256": "fb912d864f66f984c26fb07c8bf9da63e9f82f9d9d20553d199b4c2a3b670291"
+    },
+    {
+      "path": "machine/task_policy.json",
+      "bytes": 849,
+      "sha256": "a55f7fbed293a6eb4432df39a99aea9beb879ec609dfb53a75775a8d2d29a14b"
+    },
+    {
+      "path": "machine/tests.json",
+      "bytes": 72948,
+      "sha256": "64f783c2deedf09a5cd78b1a9c9725862d98849d6b4ce99e4c1fdf9d7eded42b"
+    },
+    {
+      "path": "machine/traceability.json",
+      "bytes": 21763,
+      "sha256": "4ca4a3b7ccc54e1f528c25a845c72302dc92faf9f4b1edd5ae10f988d9d955f0"
+    },
+    {
+      "path": "machine/validation.json",
+      "bytes": 844,
+      "sha256": "fbb414ca36cbef002af2810a658a5799cdd46ad3fa317b69f760005ee569bf35"
+    },
+    {
+      "path": "tables/deletion_matrix.csv",
+      "bytes": 5878,
+      "sha256": "c2e559e4b6a7511d261b1a43731f66fb1cc67c59d90705652a1361114d07f3f7"
+    },
+    {
+      "path": "tables/ownership_matrix.csv",
+      "bytes": 8622,
+      "sha256": "3901bc7349c3aee4407e04e14fd499c15f8d23affa4b89317244265713292432"
+    },
+    {
+      "path": "tables/task_policy_truth_table.csv",
+      "bytes": 391,
+      "sha256": "a336e562dc3ad4be06e80ec52257e4e5337f252fd6a0e4d8630ac7b78056afc3"
+    },
+    {
+      "path": "tables/tests.csv",
+      "bytes": 40515,
+      "sha256": "ddfdb2adb2b5bf222df130191b4d036e95b20ff78b8efed6fd7df7dfcca7b871"
+    },
+    {
+      "path": "tools/validate_package.py",
+      "bytes": 28866,
+      "sha256": "1096d207f1f0bf0829192f8e7eb287b25ef84e5ccb6a8f695f60b44401d361c1"
+    }
+  ]
+}

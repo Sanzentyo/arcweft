@@ -1,0 +1,27 @@
+{
+  "schema_version": 1,
+  "rows": [
+    {
+      "policy": "JoinSameKey",
+      "tag": 0,
+      "ordinal_source": "constant",
+      "first_ordinal": 0,
+      "reusable_prelaunch_handle": true,
+      "same_generation_instance_need": "same",
+      "same_generation_instance_task_key": "same",
+      "same_generation_instance_task_id": "same",
+      "adapter_launches_for_duplicates": 1
+    },
+    {
+      "policy": "AlwaysStart",
+      "tag": 1,
+      "ordinal_source": "journal counter (GenerationId, NeedProducerInstanceKey)",
+      "first_ordinal": 1,
+      "reusable_prelaunch_handle": false,
+      "same_generation_instance_need": "distinct per ordinal",
+      "same_generation_instance_task_key": "same group",
+      "same_generation_instance_task_id": "distinct per ordinal",
+      "adapter_launches_for_duplicates": "one per call"
+    }
+  ]
+}

@@ -1,0 +1,880 @@
+{
+  "schema_version": 1,
+  "rows": [
+    {
+      "requirement_id": "A1",
+      "requirement": "Add NeedProducerInstanceKey/TaskLaunchOrdinal and exact instance transcript.",
+      "artifacts": [
+        "RUST_SCHEMAS.md §1-2",
+        "IDENTITY_AND_DIGESTS.md §2,§6"
+      ],
+      "tests": [
+        "ID-FAM-01A..ID-FAM-09B",
+        "ID-007"
+      ],
+      "status": "CLOSED"
+    },
+    {
+      "requirement_id": "A2",
+      "requirement": "Keep fixed NeedId/TaskKey/TaskId with terminal/coalescing/launch roles.",
+      "artifacts": [
+        "FINAL_CONTRACT.md §2",
+        "IDENTITY_AND_DIGESTS.md §7"
+      ],
+      "tests": [
+        "ID-001..ID-006"
+      ],
+      "status": "CLOSED"
+    },
+    {
+      "requirement_id": "A3",
+      "requirement": "Exact Need/Task transcripts, policy tags, Join zero, Always journal transaction.",
+      "artifacts": [
+        "IDENTITY_AND_DIGESTS.md §7-8",
+        "TASK_LIFECYCLE_AND_PERSISTENCE.md §1"
+      ],
+      "tests": [
+        "TASK-001..TASK-008",
+        "ID-012..ID-015"
+      ],
+      "status": "CLOSED"
+    },
+    {
+      "requirement_id": "A4",
+      "requirement": "Reusable handle/MakeNeedHandle Join only; Always handle after accepted launch.",
+      "artifacts": [
+        "RUST_SCHEMAS.md §4",
+        "TASK_LIFECYCLE_AND_PERSISTENCE.md §2"
+      ],
+      "tests": [
+        "TASK-009..TASK-013"
+      ],
+      "status": "CLOSED"
+    },
+    {
+      "requirement_id": "A5",
+      "requirement": "AwaitMany source-order base/child instances; duplicate indexes distinct; direct Await reads handle.",
+      "artifacts": [
+        "RUST_SCHEMAS.md §5",
+        "TASK_LIFECYCLE_AND_PERSISTENCE.md §2,§6"
+      ],
+      "tests": [
+        "AWAIT-001..AWAIT-014"
+      ],
+      "status": "CLOSED"
+    },
+    {
+      "requirement_id": "A6",
+      "requirement": "Timeout derives distinct Join instance from source NeedId, contract/site/limit.",
+      "artifacts": [
+        "RUST_SCHEMAS.md §6",
+        "TASK_LIFECYCLE_AND_PERSISTENCE.md §7"
+      ],
+      "tests": [
+        "AWAIT-015..AWAIT-020"
+      ],
+      "status": "CLOSED"
+    },
+    {
+      "requirement_id": "A7",
+      "requirement": "Terminal conflict exact generation/Need/contract/cursor and observer separation.",
+      "artifacts": [
+        "TASK_LIFECYCLE_AND_PERSISTENCE.md §3-5",
+        "FAILURE_PRECEDENCE_AND_ATOMICITY.md §5-6"
+      ],
+      "tests": [
+        "EVT-001..EVT-020",
+        "TASK-002",
+        "TASK-004"
+      ],
+      "status": "CLOSED"
+    },
+    {
+      "requirement_id": "B1",
+      "requirement": "Reuse existing RuntimeValueDigest for all admitted values/items.",
+      "artifacts": [
+        "FINAL_CONTRACT.md §3",
+        "IDENTITY_AND_DIGESTS.md §9"
+      ],
+      "tests": [
+        "DIG-001..DIG-012"
+      ],
+      "status": "CLOSED"
+    },
+    {
+      "requirement_id": "B2",
+      "requirement": "Tuple grammar for empty/source-order values; no ZERO/map/Serde grammar.",
+      "artifacts": [
+        "IDENTITY_AND_DIGESTS.md §9"
+      ],
+      "tests": [
+        "DIG-001",
+        "DIG-002",
+        "DIG-011",
+        "DIG-012",
+        "AWAIT-005..AWAIT-010"
+      ],
+      "status": "CLOSED"
+    },
+    {
+      "requirement_id": "B3",
+      "requirement": "Sink-parametric existing canonical encoder and RuntimeValue::NeedHandle.",
+      "artifacts": [
+        "RUST_SCHEMAS.md §4,§11",
+        "IDENTITY_AND_DIGESTS.md §9"
+      ],
+      "tests": [
+        "DIG-003..DIG-010"
+      ],
+      "status": "CLOSED"
+    },
+    {
+      "requirement_id": "B4",
+      "requirement": "Fixed ID zero rejection/no rehash; Generation/Join zero valid; Option absence.",
+      "artifacts": [
+        "RUST_SCHEMAS.md §1",
+        "IDENTITY_AND_DIGESTS.md §6-8"
+      ],
+      "tests": [
+        "ID-007..ID-016"
+      ],
+      "status": "CLOSED"
+    },
+    {
+      "requirement_id": "B5",
+      "requirement": "Exact producer-contract/plan ordered inputs and nonduplication proof.",
+      "artifacts": [
+        "IDENTITY_AND_DIGESTS.md §3-5,§17",
+        "DEPENDENCY_GRAPH.md"
+      ],
+      "tests": [
+        "ID-FAM-01A..ID-FAM-09B",
+        "VIEW-007"
+      ],
+      "status": "CLOSED"
+    },
+    {
+      "requirement_id": "C1",
+      "requirement": "Move one GenerationId to arcweft_core::task; delete driver duplicate.",
+      "artifacts": [
+        "RUST_SCHEMAS.md §1",
+        "OWNER_API_MAP.md",
+        "COMPILE_CLEAN_SEQUENCE.md Cut 4-5"
+      ],
+      "tests": [
+        "ID-011",
+        "STR-017"
+      ],
+      "status": "CLOSED"
+    },
+    {
+      "requirement_id": "C2",
+      "requirement": "Exact final TaskSpec/correlation/handle/event/Need outcome plus Await/journal/save/host shapes.",
+      "artifacts": [
+        "RUST_SCHEMAS.md §3-10",
+        "TASK_LIFECYCLE_AND_PERSISTENCE.md"
+      ],
+      "tests": [
+        "TASK-001..TASK-020",
+        "EVT-001..EVT-020",
+        "AWAIT-001..AWAIT-020"
+      ],
+      "status": "CLOSED"
+    },
+    {
+      "requirement_id": "C3",
+      "requirement": "TaskSpec has no IDs; ensure_task derives/allocates correlation.",
+      "artifacts": [
+        "RUST_SCHEMAS.md §3,§7-8",
+        "TASK_LIFECYCLE_AND_PERSISTENCE.md §1"
+      ],
+      "tests": [
+        "TASK-001..TASK-008",
+        "TASK-017"
+      ],
+      "status": "CLOSED"
+    },
+    {
+      "requirement_id": "C4",
+      "requirement": "One event stream; validation/cursor/duplicate/stale/conflict/cancel/journal rollback.",
+      "artifacts": [
+        "TASK_LIFECYCLE_AND_PERSISTENCE.md §3-5",
+        "FAILURE_PRECEDENCE_AND_ATOMICITY.md"
+      ],
+      "tests": [
+        "EVT-001..EVT-020"
+      ],
+      "status": "CLOSED"
+    },
+    {
+      "requirement_id": "C5",
+      "requirement": "Domain errors stay Ready(Result::Err); infrastructure/cancellation separate.",
+      "artifacts": [
+        "FINAL_CONTRACT.md §4",
+        "TASK_LIFECYCLE_AND_PERSISTENCE.md §4"
+      ],
+      "tests": [
+        "EVT-015..EVT-017"
+      ],
+      "status": "CLOSED"
+    },
+    {
+      "requirement_id": "C6",
+      "requirement": "AwbcTaskPlan producer row, no self digest, recomputation at verifier/restore.",
+      "artifacts": [
+        "RUST_SCHEMAS.md §10",
+        "IDENTITY_AND_DIGESTS.md §4",
+        "DELETION_MATRIX.md"
+      ],
+      "tests": [
+        "STR-006",
+        "STR-007",
+        "ID-FAM-02A",
+        "ID-FAM-02B"
+      ],
+      "status": "CLOSED"
+    },
+    {
+      "requirement_id": "D1",
+      "requirement": "Exact generic CheckedMatchSemanticDigest include/exclude set.",
+      "artifacts": [
+        "IDENTITY_AND_DIGESTS.md §10",
+        "CHECKED_MATCH_AND_VIEW_ADMISSION.md §7"
+      ],
+      "tests": [
+        "MATCH-001..MATCH-003"
+      ],
+      "status": "CLOSED"
+    },
+    {
+      "requirement_id": "D2",
+      "requirement": "Separate CheckedViewMatchAdmissionDigest with exact retained/evidence/producer inputs.",
+      "artifacts": [
+        "IDENTITY_AND_DIGESTS.md §11-13",
+        "CHECKED_MATCH_AND_VIEW_ADMISSION.md §8-9"
+      ],
+      "tests": [
+        "VIEW-001..VIEW-003",
+        "VIEW-010..VIEW-016"
+      ],
+      "status": "CLOSED"
+    },
+    {
+      "requirement_id": "D3",
+      "requirement": "Exact CheckedViewMatchCoordinate and stable ViewMatchSiteId derivation.",
+      "artifacts": [
+        "RUST_SCHEMAS.md §13-14",
+        "IDENTITY_AND_DIGESTS.md §14"
+      ],
+      "tests": [
+        "VIEW-004..VIEW-006"
+      ],
+      "status": "CLOSED"
+    },
+    {
+      "requirement_id": "D4",
+      "requirement": "Use current ViewProgramId and AcceptedViewProgramRevision([u8;32]); no invented owner/u32.",
+      "artifacts": [
+        "FINAL_CONTRACT.md §8",
+        "CHECKED_MATCH_AND_VIEW_ADMISSION.md §10-13"
+      ],
+      "tests": [
+        "STR-001",
+        "STR-002"
+      ],
+      "status": "CLOSED"
+    },
+    {
+      "requirement_id": "D5",
+      "requirement": "View plan/producer commits program/site/admission and excludes revision.",
+      "artifacts": [
+        "IDENTITY_AND_DIGESTS.md §4,§15"
+      ],
+      "tests": [
+        "VIEW-007",
+        "VIEW-008"
+      ],
+      "status": "CLOSED"
+    },
+    {
+      "requirement_id": "D6",
+      "requirement": "Bundle/replacement carry revision and explicit full-evidence rebind; no NeedId translation.",
+      "artifacts": [
+        "TASK_LIFECYCLE_AND_PERSISTENCE.md §11",
+        "CHECKED_MATCH_AND_VIEW_ADMISSION.md §11-13"
+      ],
+      "tests": [
+        "VIEW-008..VIEW-018"
+      ],
+      "status": "CLOSED"
+    },
+    {
+      "requirement_id": "E1",
+      "requirement": "Generic CheckedMatch validates only generic semantics/coverage/digest.",
+      "artifacts": [
+        "CHECKED_MATCH_AND_VIEW_ADMISSION.md §1-2"
+      ],
+      "tests": [
+        "MATCH-018..MATCH-020",
+        "OWN-021"
+      ],
+      "status": "CLOSED"
+    },
+    {
+      "requirement_id": "E2",
+      "requirement": "Bounded Maranget retained with exact literal-only guard correction/FalseGuard precedence.",
+      "artifacts": [
+        "CHECKED_MATCH_AND_VIEW_ADMISSION.md §3-6"
+      ],
+      "tests": [
+        "MATCH-004..MATCH-017"
+      ],
+      "status": "CLOSED"
+    },
+    {
+      "requirement_id": "E3",
+      "requirement": "Separate CheckedViewMatchAdmission blocks only View row.",
+      "artifacts": [
+        "CHECKED_MATCH_AND_VIEW_ADMISSION.md §8-9"
+      ],
+      "tests": [
+        "VIEW-001",
+        "MATCH-018",
+        "OWN-021"
+      ],
+      "status": "CLOSED"
+    },
+    {
+      "requirement_id": "E4",
+      "requirement": "Separate producer argument/capture certificate does not construct contract identity.",
+      "artifacts": [
+        "CHECKED_MATCH_AND_VIEW_ADMISSION.md §8",
+        "IDENTITY_AND_DIGESTS.md §12"
+      ],
+      "tests": [
+        "OWN-022",
+        "VIEW-012"
+      ],
+      "status": "CLOSED"
+    },
+    {
+      "requirement_id": "F1",
+      "requirement": "Mandatory opaque input value_class/persistence through catalog digest; constructors require both.",
+      "artifacts": [
+        "RUST_SCHEMAS.md §15",
+        "OWNERSHIP_EVIDENCE.md §1-2,§11"
+      ],
+      "tests": [
+        "OWN-001..OWN-005"
+      ],
+      "status": "CLOSED"
+    },
+    {
+      "requirement_id": "F2",
+      "requirement": "AgentResource/Body use current Agent DTO and no unkeyed registry.",
+      "artifacts": [
+        "OWNERSHIP_EVIDENCE.md §3,§9,§13"
+      ],
+      "tests": [
+        "OWN-009",
+        "OWN-010",
+        "STR-004",
+        "STR-005"
+      ],
+      "status": "CLOSED"
+    },
+    {
+      "requirement_id": "F3",
+      "requirement": "Ownership context exactly ProjectSymbolTable + RegisteredSemanticWorld.",
+      "artifacts": [
+        "RUST_SCHEMAS.md §13",
+        "OWNERSHIP_EVIDENCE.md §3"
+      ],
+      "tests": [
+        "STR-004",
+        "STR-005"
+      ],
+      "status": "CLOSED"
+    },
+    {
+      "requirement_id": "F4",
+      "requirement": "Correct Need/Ref/ViewValue/Function/Shared/opaque/affine rows.",
+      "artifacts": [
+        "OWNERSHIP_EVIDENCE.md §6-9",
+        "tables/ownership_matrix.csv"
+      ],
+      "tests": [
+        "OWN-006..OWN-018",
+        "VIEW-001..VIEW-003"
+      ],
+      "status": "CLOSED"
+    },
+    {
+      "requirement_id": "F5",
+      "requirement": "Classifier applied only to retained View and producer arguments, not generic Match.",
+      "artifacts": [
+        "OWNERSHIP_EVIDENCE.md §10",
+        "CHECKED_MATCH_AND_VIEW_ADMISSION.md §1"
+      ],
+      "tests": [
+        "MATCH-018",
+        "OWN-021"
+      ],
+      "status": "CLOSED"
+    },
+    {
+      "requirement_id": "F6",
+      "requirement": "Every current TypeKind has exact owner/recursion/cycle/limit/first error.",
+      "artifacts": [
+        "OWNERSHIP_EVIDENCE.md §4-9",
+        "machine/ownership_matrix.json"
+      ],
+      "tests": [
+        "OWN-018",
+        "LIM-04A",
+        "LIM-04B",
+        "LIM-05A",
+        "LIM-05B"
+      ],
+      "status": "CLOSED"
+    },
+    {
+      "requirement_id": "CUT1",
+      "requirement": "Required compile-clean dependency cut 1.",
+      "artifacts": [
+        "COMPILE_CLEAN_SEQUENCE.md Cut 1",
+        "DELETION_MATRIX.md"
+      ],
+      "tests": [
+        "STR-001",
+        "STR-002",
+        "STR-003",
+        "STR-004",
+        "STR-005",
+        "STR-006",
+        "STR-007",
+        "STR-008",
+        "STR-009",
+        "STR-010",
+        "STR-011",
+        "STR-012",
+        "STR-013",
+        "STR-014",
+        "STR-015",
+        "STR-016",
+        "STR-017",
+        "STR-018",
+        "STR-019",
+        "STR-020"
+      ],
+      "status": "CLOSED"
+    },
+    {
+      "requirement_id": "CUT2",
+      "requirement": "Required compile-clean dependency cut 2.",
+      "artifacts": [
+        "COMPILE_CLEAN_SEQUENCE.md Cut 2",
+        "DELETION_MATRIX.md"
+      ],
+      "tests": [
+        "STR-001",
+        "STR-002",
+        "STR-003",
+        "STR-004",
+        "STR-005",
+        "STR-006",
+        "STR-007",
+        "STR-008",
+        "STR-009",
+        "STR-010",
+        "STR-011",
+        "STR-012",
+        "STR-013",
+        "STR-014",
+        "STR-015",
+        "STR-016",
+        "STR-017",
+        "STR-018",
+        "STR-019",
+        "STR-020"
+      ],
+      "status": "CLOSED"
+    },
+    {
+      "requirement_id": "CUT3",
+      "requirement": "Required compile-clean dependency cut 3.",
+      "artifacts": [
+        "COMPILE_CLEAN_SEQUENCE.md Cut 3",
+        "DELETION_MATRIX.md"
+      ],
+      "tests": [
+        "STR-001",
+        "STR-002",
+        "STR-003",
+        "STR-004",
+        "STR-005",
+        "STR-006",
+        "STR-007",
+        "STR-008",
+        "STR-009",
+        "STR-010",
+        "STR-011",
+        "STR-012",
+        "STR-013",
+        "STR-014",
+        "STR-015",
+        "STR-016",
+        "STR-017",
+        "STR-018",
+        "STR-019",
+        "STR-020"
+      ],
+      "status": "CLOSED"
+    },
+    {
+      "requirement_id": "CUT4",
+      "requirement": "Required compile-clean dependency cut 4.",
+      "artifacts": [
+        "COMPILE_CLEAN_SEQUENCE.md Cut 4",
+        "DELETION_MATRIX.md"
+      ],
+      "tests": [
+        "STR-001",
+        "STR-002",
+        "STR-003",
+        "STR-004",
+        "STR-005",
+        "STR-006",
+        "STR-007",
+        "STR-008",
+        "STR-009",
+        "STR-010",
+        "STR-011",
+        "STR-012",
+        "STR-013",
+        "STR-014",
+        "STR-015",
+        "STR-016",
+        "STR-017",
+        "STR-018",
+        "STR-019",
+        "STR-020"
+      ],
+      "status": "CLOSED"
+    },
+    {
+      "requirement_id": "CUT5",
+      "requirement": "Required compile-clean dependency cut 5.",
+      "artifacts": [
+        "COMPILE_CLEAN_SEQUENCE.md Cut 5",
+        "DELETION_MATRIX.md"
+      ],
+      "tests": [
+        "STR-001",
+        "STR-002",
+        "STR-003",
+        "STR-004",
+        "STR-005",
+        "STR-006",
+        "STR-007",
+        "STR-008",
+        "STR-009",
+        "STR-010",
+        "STR-011",
+        "STR-012",
+        "STR-013",
+        "STR-014",
+        "STR-015",
+        "STR-016",
+        "STR-017",
+        "STR-018",
+        "STR-019",
+        "STR-020"
+      ],
+      "status": "CLOSED"
+    },
+    {
+      "requirement_id": "ART1",
+      "requirement": "README, exact reading order, full SHA, final status",
+      "artifacts": [
+        "README.md",
+        "FINAL_STATUS.md"
+      ],
+      "tests": [
+        "PKG-VALIDATE"
+      ],
+      "status": "CLOSED"
+    },
+    {
+      "requirement_id": "ART2",
+      "requirement": "OPEN_QUESTIONS exactly none",
+      "artifacts": [
+        "OPEN_QUESTIONS.md"
+      ],
+      "tests": [
+        "PKG-VALIDATE"
+      ],
+      "status": "CLOSED"
+    },
+    {
+      "requirement_id": "ART3",
+      "requirement": "complete final contract and decision register",
+      "artifacts": [
+        "FINAL_CONTRACT.md",
+        "DECISION_REGISTER.md"
+      ],
+      "tests": [
+        "PKG-VALIDATE"
+      ],
+      "status": "CLOSED"
+    },
+    {
+      "requirement_id": "ART4",
+      "requirement": "Rust schemas and owner/API map",
+      "artifacts": [
+        "RUST_SCHEMAS.md",
+        "OWNER_API_MAP.md"
+      ],
+      "tests": [
+        "PKG-VALIDATE"
+      ],
+      "status": "CLOSED"
+    },
+    {
+      "requirement_id": "ART5",
+      "requirement": "dependency graph",
+      "artifacts": [
+        "DEPENDENCY_GRAPH.md"
+      ],
+      "tests": [
+        "PKG-VALIDATE"
+      ],
+      "status": "CLOSED"
+    },
+    {
+      "requirement_id": "ART6",
+      "requirement": "identity domains and policy truth table",
+      "artifacts": [
+        "IDENTITY_AND_DIGESTS.md",
+        "tables/task_policy_truth_table.csv"
+      ],
+      "tests": [
+        "PKG-VALIDATE"
+      ],
+      "status": "CLOSED"
+    },
+    {
+      "requirement_id": "ART7",
+      "requirement": "sink canonical owner and all digest grammars",
+      "artifacts": [
+        "IDENTITY_AND_DIGESTS.md",
+        "RUST_SCHEMAS.md"
+      ],
+      "tests": [
+        "PKG-VALIDATE"
+      ],
+      "status": "CLOSED"
+    },
+    {
+      "requirement_id": "ART8",
+      "requirement": "final task/journal/snapshot/replay/replacement schemas",
+      "artifacts": [
+        "TASK_LIFECYCLE_AND_PERSISTENCE.md",
+        "RUST_SCHEMAS.md"
+      ],
+      "tests": [
+        "PKG-VALIDATE"
+      ],
+      "status": "CLOSED"
+    },
+    {
+      "requirement_id": "ART9",
+      "requirement": "coverage and View admission matrices",
+      "artifacts": [
+        "CHECKED_MATCH_AND_VIEW_ADMISSION.md"
+      ],
+      "tests": [
+        "PKG-VALIDATE"
+      ],
+      "status": "CLOSED"
+    },
+    {
+      "requirement_id": "ART10",
+      "requirement": "opaque evidence publication chain",
+      "artifacts": [
+        "OWNERSHIP_EVIDENCE.md"
+      ],
+      "tests": [
+        "PKG-VALIDATE"
+      ],
+      "status": "CLOSED"
+    },
+    {
+      "requirement_id": "ART11",
+      "requirement": "deletion matrix and compile sequence",
+      "artifacts": [
+        "DELETION_MATRIX.md",
+        "COMPILE_CLEAN_SEQUENCE.md"
+      ],
+      "tests": [
+        "PKG-VALIDATE"
+      ],
+      "status": "CLOSED"
+    },
+    {
+      "requirement_id": "ART12",
+      "requirement": "source evidence with line ranges",
+      "artifacts": [
+        "SOURCE_EVIDENCE.md",
+        "machine/source_evidence.json"
+      ],
+      "tests": [
+        "PKG-VALIDATE"
+      ],
+      "status": "CLOSED"
+    },
+    {
+      "requirement_id": "ART13",
+      "requirement": "full test matrix",
+      "artifacts": [
+        "TEST_MATRIX.md",
+        "machine/tests.json",
+        "tables/tests.csv"
+      ],
+      "tests": [
+        "PKG-VALIDATE"
+      ],
+      "status": "CLOSED"
+    },
+    {
+      "requirement_id": "ART14",
+      "requirement": "machine/human validation",
+      "artifacts": [
+        "VALIDATION.md",
+        "VALIDATION_OUTPUT.txt",
+        "machine/validation.json"
+      ],
+      "tests": [
+        "PKG-VALIDATE"
+      ],
+      "status": "CLOSED"
+    },
+    {
+      "requirement_id": "ART15",
+      "requirement": "internal SHA-256 manifest and exact request hashes",
+      "artifacts": [
+        "MANIFEST.json",
+        "MANIFEST.sha256",
+        "machine/request_hashes.json"
+      ],
+      "tests": [
+        "PKG-VALIDATE"
+      ],
+      "status": "CLOSED"
+    },
+    {
+      "requirement_id": "CON-01",
+      "requirement": "Design-only; no production patch/overlay.",
+      "artifacts": [
+        "FINAL_CONTRACT.md",
+        "STRUCTURAL_ABSENCE.md",
+        "DELETION_MATRIX.md"
+      ],
+      "tests": [
+        "STR-001..STR-020"
+      ],
+      "status": "CLOSED"
+    },
+    {
+      "requirement_id": "CON-02",
+      "requirement": "No AWBC numeric table/reallocation.",
+      "artifacts": [
+        "FINAL_CONTRACT.md",
+        "STRUCTURAL_ABSENCE.md",
+        "DELETION_MATRIX.md"
+      ],
+      "tests": [
+        "STR-001..STR-020"
+      ],
+      "status": "CLOSED"
+    },
+    {
+      "requirement_id": "CON-03",
+      "requirement": "No second producer identity/String/source/HIR identity.",
+      "artifacts": [
+        "FINAL_CONTRACT.md",
+        "STRUCTURAL_ABSENCE.md",
+        "DELETION_MATRIX.md"
+      ],
+      "tests": [
+        "STR-001..STR-020"
+      ],
+      "status": "CLOSED"
+    },
+    {
+      "requirement_id": "CON-04",
+      "requirement": "No extension trait/copied registry/default opaque evidence.",
+      "artifacts": [
+        "FINAL_CONTRACT.md",
+        "STRUCTURAL_ABSENCE.md",
+        "DELETION_MATRIX.md"
+      ],
+      "tests": [
+        "STR-001..STR-020"
+      ],
+      "status": "CLOSED"
+    },
+    {
+      "requirement_id": "CON-05",
+      "requirement": "No compatibility reader/dual carrier.",
+      "artifacts": [
+        "FINAL_CONTRACT.md",
+        "STRUCTURAL_ABSENCE.md",
+        "DELETION_MATRIX.md"
+      ],
+      "tests": [
+        "STR-001..STR-020"
+      ],
+      "status": "CLOSED"
+    },
+    {
+      "requirement_id": "CON-06",
+      "requirement": "No redesign of selector ABI/guard Branch/View-core independence.",
+      "artifacts": [
+        "FINAL_CONTRACT.md",
+        "STRUCTURAL_ABSENCE.md",
+        "DELETION_MATRIX.md"
+      ],
+      "tests": [
+        "STR-001..STR-020"
+      ],
+      "status": "CLOSED"
+    },
+    {
+      "requirement_id": "CON-07",
+      "requirement": "No redesign of parent lifecycle/timeout order/line/Stream.",
+      "artifacts": [
+        "FINAL_CONTRACT.md",
+        "STRUCTURAL_ABSENCE.md",
+        "DELETION_MATRIX.md"
+      ],
+      "tests": [
+        "STR-001..STR-020"
+      ],
+      "status": "CLOSED"
+    },
+    {
+      "requirement_id": "CON-08",
+      "requirement": "No unrelated Dialogue/RichText/Stream/CSS/Takumi/outcome/map/receiver work.",
+      "artifacts": [
+        "FINAL_CONTRACT.md",
+        "STRUCTURAL_ABSENCE.md",
+        "DELETION_MATRIX.md"
+      ],
+      "tests": [
+        "STR-001..STR-020"
+      ],
+      "status": "CLOSED"
+    }
+  ]
+}

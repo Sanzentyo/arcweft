@@ -1,0 +1,349 @@
+{
+  "schema_version": 1,
+  "rows": [
+    {
+      "path": "crates/arcweft-core/src/task.rs",
+      "old": "String-backed NeedId/TaskKey/TaskId",
+      "action": "replace with fixed private-field newtypes; delete String constructors/accessors",
+      "cut": 5,
+      "cut_text": "5",
+      "proof": "type/API absence + wire tamper"
+    },
+    {
+      "path": "crates/arcweft-core/src/task.rs",
+      "old": "TaskSpec.id / TaskSpec.key",
+      "action": "delete; TaskSpec carries producer instance and generation",
+      "cut": 5,
+      "cut_text": "5",
+      "proof": "struct field compile-fail"
+    },
+    {
+      "path": "crates/arcweft-core/src/task.rs",
+      "old": "TaskHandle.id / TaskHandle.key",
+      "action": "replace with one TaskCorrelation field",
+      "cut": 5,
+      "cut_text": "5",
+      "proof": "struct field compile-fail"
+    },
+    {
+      "path": "crates/arcweft-core/src/task.rs",
+      "old": "TaskEvent logical/task-only envelope",
+      "action": "replace with complete correlation + cursor",
+      "cut": 5,
+      "cut_text": "5",
+      "proof": "event tamper tests"
+    },
+    {
+      "path": "crates/arcweft-core/src/task.rs",
+      "old": "uncorrelated RuntimeNeedState",
+      "action": "replace with complete correlation",
+      "cut": 5,
+      "cut_text": "5",
+      "proof": "restore/journal tests"
+    },
+    {
+      "path": "crates/arcweft-runtime-driver/src/swap.rs",
+      "old": "driver-local GenerationId",
+      "action": "delete after consumers import arcweft_core::task::GenerationId",
+      "cut": 4,
+      "cut_text": "4/5",
+      "proof": "single-definition dependency test"
+    },
+    {
+      "path": "crates/arcweft-runtime-driver/src/task.rs",
+      "old": "String task/Need DTO fields and Option<String>",
+      "action": "replace with final typed correlation/Option",
+      "cut": 5,
+      "cut_text": "5",
+      "proof": "API + snapshot tests"
+    },
+    {
+      "path": "crates/arcweft-runtime-scheduler",
+      "old": "caller identity acceptance",
+      "action": "scheduler accepts final TaskSpec and uses TaskHost-derived correlation",
+      "cut": 5,
+      "cut_text": "5",
+      "proof": "join/always transaction tests"
+    },
+    {
+      "path": "crates/arcweft-core/src/awbc/schema.rs",
+      "old": "AwbcTaskPlan.need_id",
+      "action": "replace with mandatory AwbcNeedProducerRow",
+      "cut": 5,
+      "cut_text": "5",
+      "proof": "schema/API absence"
+    },
+    {
+      "path": "crates/arcweft-core/src/awbc/schema.rs",
+      "old": "plan_digest stored in task plan",
+      "action": "delete; use semantic_digest(&AwbcProgram)",
+      "cut": 4,
+      "cut_text": "4/5",
+      "proof": "structural absence + tamper"
+    },
+    {
+      "path": "crates/arcweft-core/src/awbc/verifier",
+      "old": "NeedHandle as String/Dynamic type admission",
+      "action": "require payload-typed NeedHandle and policy validation",
+      "cut": 5,
+      "cut_text": "5",
+      "proof": "negative verifier test"
+    },
+    {
+      "path": "crates/arcweft-core/src/awbc/vm.rs",
+      "old": "NeedHandle RuntimeValue::String construction",
+      "action": "construct RuntimeValue::NeedHandle",
+      "cut": 5,
+      "cut_text": "5",
+      "proof": "value-shape differential"
+    },
+    {
+      "path": "crates/arcweft-core/src/awbc/vm.rs",
+      "old": "await_target nonempty String -> NeedId",
+      "action": "delete; read concrete RuntimeNeedHandle",
+      "cut": 5,
+      "cut_text": "5",
+      "proof": "compile-fail/String negative"
+    },
+    {
+      "path": "crates/arcweft-core/src/awbc/fiber.rs",
+      "old": "old Await/AwaitMany String snapshot fields",
+      "action": "replace with correlated handles/in-flight rows",
+      "cut": 5,
+      "cut_text": "5",
+      "proof": "restore exactness"
+    },
+    {
+      "path": "crates/arcweft-runtime-plan",
+      "old": "task interning keyed by String need_id",
+      "action": "key by final plan/producer rows",
+      "cut": 5,
+      "cut_text": "5",
+      "proof": "deterministic interning test"
+    },
+    {
+      "path": "crates/arcweft-runtime-plan",
+      "old": "indexed NeedId suffix generation",
+      "action": "delete; index is canonical child argument",
+      "cut": 5,
+      "cut_text": "5",
+      "proof": "index-boundary tests"
+    },
+    {
+      "path": "crates/arcweft-runtime-driver",
+      "old": "direct-Await surrogate identity",
+      "action": "delete; AwaitTarget owns RuntimeNeedHandle",
+      "cut": 5,
+      "cut_text": "5",
+      "proof": "API absence"
+    },
+    {
+      "path": "crates/arcweft-runtime-driver",
+      "old": "journal rows lacking producer contract/correlation",
+      "action": "replace atomically with final journal",
+      "cut": 5,
+      "cut_text": "5",
+      "proof": "journal tamper tests"
+    },
+    {
+      "path": "crates/arcweft-runtime-driver",
+      "old": "old save/replay String readers",
+      "action": "delete, no compatibility branch",
+      "cut": 5,
+      "cut_text": "5",
+      "proof": "old snapshot strict rejection"
+    },
+    {
+      "path": "crates/arcweft-runtime-driver",
+      "old": "revision-to-Need identity translation",
+      "action": "delete/forbid; replacement rederives generation task correlation only",
+      "cut": 3,
+      "cut_text": "3/5",
+      "proof": "revision-only replacement"
+    },
+    {
+      "path": "crates/arcweft-native-adapter",
+      "old": "adapter-supplied task identity",
+      "action": "accept HostTaskLaunchRequest with derived correlation",
+      "cut": 5,
+      "cut_text": "5",
+      "proof": "adapter envelope tests"
+    },
+    {
+      "path": "crates/arcweft-web-adapter",
+      "old": "adapter-supplied task identity",
+      "action": "accept HostTaskLaunchRequest with derived correlation",
+      "cut": 5,
+      "cut_text": "5",
+      "proof": "Web parity"
+    },
+    {
+      "path": "crates/arcweft-headless",
+      "old": "task-id-only events",
+      "action": "emit complete TaskEvent",
+      "cut": 5,
+      "cut_text": "5",
+      "proof": "headless parity"
+    },
+    {
+      "path": "crates/arcweft-agent-runner",
+      "old": "task-id-only/Need String observation",
+      "action": "consume complete correlation/handle",
+      "cut": 5,
+      "cut_text": "5",
+      "proof": "Agent parity"
+    },
+    {
+      "path": "crates/arcweft-bundle",
+      "old": "old task/Need String codec",
+      "action": "strict v1 fixed-byte final schema",
+      "cut": 5,
+      "cut_text": "5",
+      "proof": "codec tamper + old bytes rejection"
+    },
+    {
+      "path": "crates/arcweft-bundle",
+      "old": "plan self-digest field",
+      "action": "store expected digest only in binding/snapshot envelope",
+      "cut": 5,
+      "cut_text": "5",
+      "proof": "recompute mismatch test"
+    },
+    {
+      "path": "crates/arcweft-view",
+      "old": "invented ViewProgramSemanticDigest",
+      "action": "do not add; retain ViewProgramId",
+      "cut": 3,
+      "cut_text": "3",
+      "proof": "type/API absence"
+    },
+    {
+      "path": "crates/arcweft-view",
+      "old": "u32 accepted View revision",
+      "action": "do not add; retain [u8;32] revision owner",
+      "cut": 3,
+      "cut_text": "3",
+      "proof": "schema absence"
+    },
+    {
+      "path": "crates/arcweft-lang-sema",
+      "old": "caller-provided CheckedMatchCoverage/exhaustive",
+      "action": "delete/forbid; private analyzer only",
+      "cut": 1,
+      "cut_text": "1",
+      "proof": "constructor signature test"
+    },
+    {
+      "path": "crates/arcweft-lang-sema",
+      "old": "generic Match ownership gate",
+      "action": "delete/forbid; separate View admission",
+      "cut": 1,
+      "cut_text": "1/3",
+      "proof": "ordinary affine Match test"
+    },
+    {
+      "path": "crates/arcweft-lang-sema",
+      "old": "nonliteral checked constant guard folding",
+      "action": "delete; only Boolean literal rows",
+      "cut": 1,
+      "cut_text": "1",
+      "proof": "guard coverage differential"
+    },
+    {
+      "path": "crates/arcweft-lang-sema",
+      "old": "AcceptedNominalInventoryInput without value_class/persistence",
+      "action": "delete old constructor",
+      "cut": 2,
+      "cut_text": "2",
+      "proof": "compile-fail + missing evidence"
+    },
+    {
+      "path": "crates/arcweft-lang-sema",
+      "old": "AcceptedNominalSemantics::Opaque { producer }",
+      "action": "replace original variant fields",
+      "cut": 2,
+      "cut_text": "2",
+      "proof": "exhaustive compile/test"
+    },
+    {
+      "path": "crates/arcweft-lang-sema",
+      "old": "opaque evidence default/name inference",
+      "action": "delete/forbid",
+      "cut": 2,
+      "cut_text": "2",
+      "proof": "negative input tests"
+    },
+    {
+      "path": "crates/arcweft-lang-sema",
+      "old": "ResourceTypeRegistry in current ownership context",
+      "action": "delete route until exact typed key exists",
+      "cut": 2,
+      "cut_text": "2",
+      "proof": "dependency/API absence"
+    },
+    {
+      "path": "crates/arcweft-lang-sema",
+      "old": "whole unrelated catalog digest in View admission",
+      "action": "replace with consulted OwnershipEvidenceDigest",
+      "cut": 3,
+      "cut_text": "3",
+      "proof": "unrelated catalog invariance"
+    },
+    {
+      "path": "crates/arcweft-compiler",
+      "old": "copied Match arms/coverage in View catalog",
+      "action": "retain CheckedMatchRef and admission only",
+      "cut": 3,
+      "cut_text": "3",
+      "proof": "structural absence"
+    },
+    {
+      "path": "crates/arcweft-compiler",
+      "old": "revision included in task-plan digest",
+      "action": "delete; use program/site/admission",
+      "cut": 3,
+      "cut_text": "3",
+      "proof": "revision-only identity property"
+    },
+    {
+      "path": "all task/Need codecs",
+      "old": "hex/String fallback or old numeric reader",
+      "action": "delete",
+      "cut": 5,
+      "cut_text": "5",
+      "proof": "strict negative decode"
+    },
+    {
+      "path": "all task/Need fixtures",
+      "old": "hard-coded String/suffix identities",
+      "action": "replace with transcript builders/final owners",
+      "cut": 5,
+      "cut_text": "5",
+      "proof": "workspace compile"
+    },
+    {
+      "path": "parent View product",
+      "old": "ViewProgramInstruction::Await / ViewAwait / ViewAwaitBranchSpan",
+      "action": "delete in atomic final consumer cut where still present",
+      "cut": 5,
+      "cut_text": "5",
+      "proof": "API/schema/generated absence"
+    },
+    {
+      "path": "parent View evaluator",
+      "old": "four-way Await evaluator / InvalidAwaitState",
+      "action": "delete; generic Match over Need states",
+      "cut": 5,
+      "cut_text": "5",
+      "proof": "runtime differential"
+    },
+    {
+      "path": "parser/formatter/LSP/generated surfaces",
+      "old": "AwaitView spelling or stale old Await product vocabulary",
+      "action": "delete/unavailable",
+      "cut": 5,
+      "cut_text": "5",
+      "proof": "structural/API tests"
+    }
+  ]
+}

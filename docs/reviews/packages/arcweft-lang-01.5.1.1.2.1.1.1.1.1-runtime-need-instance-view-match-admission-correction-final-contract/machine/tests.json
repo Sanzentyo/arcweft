@@ -1,0 +1,2116 @@
+{
+  "schema_version": 1,
+  "count": 231,
+  "kind_counts": {
+    "boundary": 1,
+    "differential": 5,
+    "exact_limit": 15,
+    "integration": 6,
+    "negative": 47,
+    "one_over": 15,
+    "positive": 45,
+    "precedence": 1,
+    "property": 36,
+    "rollback": 8,
+    "structural": 20,
+    "tamper": 14,
+    "tier2": 15,
+    "unit": 3
+  },
+  "category_counts": {
+    "await": 4,
+    "await_many": 10,
+    "event": 20,
+    "identity": 36,
+    "limits": 26,
+    "match": 20,
+    "ownership": 22,
+    "runtime_value_digest": 12,
+    "structural": 20,
+    "task_policy": 20,
+    "tier2": 15,
+    "timeout": 6,
+    "view": 20
+  },
+  "tests": [
+    {
+      "id": "ID-FAM-01A",
+      "category": "identity",
+      "kind": "property",
+      "owner": "NeedProducerInstanceKey",
+      "input": "two separately constructed StructuredTaskPlan inputs with identical contract/plan/site/payload/canonical argument digest",
+      "expected": "byte-identical nonzero NeedProducerInstanceKey",
+      "gate": "cargo test -p arcweft-core task_identity"
+    },
+    {
+      "id": "ID-FAM-01B",
+      "category": "identity",
+      "kind": "property",
+      "owner": "NeedProducerInstanceKey",
+      "input": "StructuredTaskPlan input varied one field at a time: contract, plan, site, payload, arguments",
+      "expected": "each variation changes the key; family variation also changes the key",
+      "gate": "cargo test -p arcweft-core task_identity"
+    },
+    {
+      "id": "ID-FAM-02A",
+      "category": "identity",
+      "kind": "property",
+      "owner": "NeedProducerInstanceKey",
+      "input": "two separately constructed AwbcTaskPlan inputs with identical contract/plan/site/payload/canonical argument digest",
+      "expected": "byte-identical nonzero NeedProducerInstanceKey",
+      "gate": "cargo test -p arcweft-core task_identity"
+    },
+    {
+      "id": "ID-FAM-02B",
+      "category": "identity",
+      "kind": "property",
+      "owner": "NeedProducerInstanceKey",
+      "input": "AwbcTaskPlan input varied one field at a time: contract, plan, site, payload, arguments",
+      "expected": "each variation changes the key; family variation also changes the key",
+      "gate": "cargo test -p arcweft-core task_identity"
+    },
+    {
+      "id": "ID-FAM-03A",
+      "category": "identity",
+      "kind": "property",
+      "owner": "NeedProducerInstanceKey",
+      "input": "two separately constructed ViewMatchSubscription inputs with identical contract/plan/site/payload/canonical argument digest",
+      "expected": "byte-identical nonzero NeedProducerInstanceKey",
+      "gate": "cargo test -p arcweft-core task_identity"
+    },
+    {
+      "id": "ID-FAM-03B",
+      "category": "identity",
+      "kind": "property",
+      "owner": "NeedProducerInstanceKey",
+      "input": "ViewMatchSubscription input varied one field at a time: contract, plan, site, payload, arguments",
+      "expected": "each variation changes the key; family variation also changes the key",
+      "gate": "cargo test -p arcweft-core task_identity"
+    },
+    {
+      "id": "ID-FAM-04A",
+      "category": "identity",
+      "kind": "property",
+      "owner": "NeedProducerInstanceKey",
+      "input": "two separately constructed AwaitManyBase inputs with identical contract/plan/site/payload/canonical argument digest",
+      "expected": "byte-identical nonzero NeedProducerInstanceKey",
+      "gate": "cargo test -p arcweft-core task_identity"
+    },
+    {
+      "id": "ID-FAM-04B",
+      "category": "identity",
+      "kind": "property",
+      "owner": "NeedProducerInstanceKey",
+      "input": "AwaitManyBase input varied one field at a time: contract, plan, site, payload, arguments",
+      "expected": "each variation changes the key; family variation also changes the key",
+      "gate": "cargo test -p arcweft-core task_identity"
+    },
+    {
+      "id": "ID-FAM-05A",
+      "category": "identity",
+      "kind": "property",
+      "owner": "NeedProducerInstanceKey",
+      "input": "two separately constructed AwaitManyChild inputs with identical contract/plan/site/payload/canonical argument digest",
+      "expected": "byte-identical nonzero NeedProducerInstanceKey",
+      "gate": "cargo test -p arcweft-core task_identity"
+    },
+    {
+      "id": "ID-FAM-05B",
+      "category": "identity",
+      "kind": "property",
+      "owner": "NeedProducerInstanceKey",
+      "input": "AwaitManyChild input varied one field at a time: contract, plan, site, payload, arguments",
+      "expected": "each variation changes the key; family variation also changes the key",
+      "gate": "cargo test -p arcweft-core task_identity"
+    },
+    {
+      "id": "ID-FAM-06A",
+      "category": "identity",
+      "kind": "property",
+      "owner": "NeedProducerInstanceKey",
+      "input": "two separately constructed Timeout inputs with identical contract/plan/site/payload/canonical argument digest",
+      "expected": "byte-identical nonzero NeedProducerInstanceKey",
+      "gate": "cargo test -p arcweft-core task_identity"
+    },
+    {
+      "id": "ID-FAM-06B",
+      "category": "identity",
+      "kind": "property",
+      "owner": "NeedProducerInstanceKey",
+      "input": "Timeout input varied one field at a time: contract, plan, site, payload, arguments",
+      "expected": "each variation changes the key; family variation also changes the key",
+      "gate": "cargo test -p arcweft-core task_identity"
+    },
+    {
+      "id": "ID-FAM-07A",
+      "category": "identity",
+      "kind": "property",
+      "owner": "NeedProducerInstanceKey",
+      "input": "two separately constructed LineTask inputs with identical contract/plan/site/payload/canonical argument digest",
+      "expected": "byte-identical nonzero NeedProducerInstanceKey",
+      "gate": "cargo test -p arcweft-core task_identity"
+    },
+    {
+      "id": "ID-FAM-07B",
+      "category": "identity",
+      "kind": "property",
+      "owner": "NeedProducerInstanceKey",
+      "input": "LineTask input varied one field at a time: contract, plan, site, payload, arguments",
+      "expected": "each variation changes the key; family variation also changes the key",
+      "gate": "cargo test -p arcweft-core task_identity"
+    },
+    {
+      "id": "ID-FAM-08A",
+      "category": "identity",
+      "kind": "property",
+      "owner": "NeedProducerInstanceKey",
+      "input": "two separately constructed HostAdapterTask inputs with identical contract/plan/site/payload/canonical argument digest",
+      "expected": "byte-identical nonzero NeedProducerInstanceKey",
+      "gate": "cargo test -p arcweft-core task_identity"
+    },
+    {
+      "id": "ID-FAM-08B",
+      "category": "identity",
+      "kind": "property",
+      "owner": "NeedProducerInstanceKey",
+      "input": "HostAdapterTask input varied one field at a time: contract, plan, site, payload, arguments",
+      "expected": "each variation changes the key; family variation also changes the key",
+      "gate": "cargo test -p arcweft-core task_identity"
+    },
+    {
+      "id": "ID-FAM-09A",
+      "category": "identity",
+      "kind": "property",
+      "owner": "NeedProducerInstanceKey",
+      "input": "two separately constructed MakeNeedHandle inputs with identical contract/plan/site/payload/canonical argument digest",
+      "expected": "byte-identical nonzero NeedProducerInstanceKey",
+      "gate": "cargo test -p arcweft-core task_identity"
+    },
+    {
+      "id": "ID-FAM-09B",
+      "category": "identity",
+      "kind": "property",
+      "owner": "NeedProducerInstanceKey",
+      "input": "MakeNeedHandle input varied one field at a time: contract, plan, site, payload, arguments",
+      "expected": "each variation changes the key; family variation also changes the key",
+      "gate": "cargo test -p arcweft-core task_identity"
+    },
+    {
+      "id": "ID-001",
+      "category": "identity",
+      "kind": "unit",
+      "owner": "NeedId",
+      "input": "same producer, Join policy, ordinal 0",
+      "expected": "same nonzero NeedId",
+      "gate": "cargo test -p arcweft-core task_identity"
+    },
+    {
+      "id": "ID-002",
+      "category": "identity",
+      "kind": "unit",
+      "owner": "TaskKey",
+      "input": "same generation+producer+policy across calls",
+      "expected": "same TaskKey",
+      "gate": "cargo test -p arcweft-core task_identity"
+    },
+    {
+      "id": "ID-003",
+      "category": "identity",
+      "kind": "unit",
+      "owner": "TaskId",
+      "input": "same TaskKey+ordinal",
+      "expected": "same TaskId",
+      "gate": "cargo test -p arcweft-core task_identity"
+    },
+    {
+      "id": "ID-004",
+      "category": "identity",
+      "kind": "property",
+      "owner": "TaskKey",
+      "input": "vary only launch ordinal in a reference transcript harness",
+      "expected": "TaskKey bytes remain unchanged; production API has no ordinal parameter",
+      "gate": "cargo test -p arcweft-core task_identity"
+    },
+    {
+      "id": "ID-005",
+      "category": "identity",
+      "kind": "property",
+      "owner": "TaskId",
+      "input": "vary ordinal once while TaskKey constant",
+      "expected": "TaskId changes exactly once; no double-inclusion path",
+      "gate": "cargo test -p arcweft-core task_identity"
+    },
+    {
+      "id": "ID-006",
+      "category": "identity",
+      "kind": "property",
+      "owner": "NeedId",
+      "input": "vary ordinal once while producer/policy constant",
+      "expected": "NeedId changes exactly once",
+      "gate": "cargo test -p arcweft-core task_identity"
+    },
+    {
+      "id": "ID-007",
+      "category": "identity",
+      "kind": "negative",
+      "owner": "NeedProducerInstanceKey",
+      "input": "try_from_bytes([0;32])",
+      "expected": "typed Zero(NeedProducerInstance), no rehash",
+      "gate": "cargo test -p arcweft-core task_identity"
+    },
+    {
+      "id": "ID-008",
+      "category": "identity",
+      "kind": "negative",
+      "owner": "NeedId",
+      "input": "try_from_bytes([0;32])",
+      "expected": "typed Zero(Need), no rehash",
+      "gate": "cargo test -p arcweft-core task_identity"
+    },
+    {
+      "id": "ID-009",
+      "category": "identity",
+      "kind": "negative",
+      "owner": "TaskKey",
+      "input": "try_from_bytes([0;32])",
+      "expected": "typed Zero(TaskKey), no rehash",
+      "gate": "cargo test -p arcweft-core task_identity"
+    },
+    {
+      "id": "ID-010",
+      "category": "identity",
+      "kind": "negative",
+      "owner": "TaskId",
+      "input": "try_from_bytes([0;32])",
+      "expected": "typed Zero(Task), no rehash",
+      "gate": "cargo test -p arcweft-core task_identity"
+    },
+    {
+      "id": "ID-011",
+      "category": "identity",
+      "kind": "positive",
+      "owner": "GenerationId",
+      "input": "GenerationId::new(0)",
+      "expected": "accepted and round-trips",
+      "gate": "cargo test -p arcweft-core task_identity"
+    },
+    {
+      "id": "ID-012",
+      "category": "identity",
+      "kind": "positive",
+      "owner": "TaskLaunchOrdinal",
+      "input": "JoinSameKey with 0",
+      "expected": "accepted as JOIN",
+      "gate": "cargo test -p arcweft-core task_identity"
+    },
+    {
+      "id": "ID-013",
+      "category": "identity",
+      "kind": "negative",
+      "owner": "TaskLaunchOrdinal",
+      "input": "JoinSameKey with 1",
+      "expected": "NonZeroJoinOrdinal",
+      "gate": "cargo test -p arcweft-core task_identity"
+    },
+    {
+      "id": "ID-014",
+      "category": "identity",
+      "kind": "negative",
+      "owner": "TaskLaunchOrdinal",
+      "input": "AlwaysStart with 0",
+      "expected": "ZeroAlwaysStartOrdinal",
+      "gate": "cargo test -p arcweft-core task_identity"
+    },
+    {
+      "id": "ID-015",
+      "category": "identity",
+      "kind": "positive",
+      "owner": "TaskLaunchOrdinal",
+      "input": "AlwaysStart with 1",
+      "expected": "accepted",
+      "gate": "cargo test -p arcweft-core task_identity"
+    },
+    {
+      "id": "ID-016",
+      "category": "identity",
+      "kind": "negative",
+      "owner": "snapshot Option fields",
+      "input": "missing cursor encoded as zero digest rather than Option::None",
+      "expected": "strict decode rejects malformed/missing Option representation",
+      "gate": "cargo test -p arcweft-bundle task_codec"
+    },
+    {
+      "id": "ID-017",
+      "category": "identity",
+      "kind": "property",
+      "owner": "correlation",
+      "input": "same producer+ordinal across GenerationId 0 and 1",
+      "expected": "same NeedId, different TaskKey and TaskId",
+      "gate": "cargo test -p arcweft-core task_identity"
+    },
+    {
+      "id": "ID-018",
+      "category": "identity",
+      "kind": "tamper",
+      "owner": "NeedProducerInstance",
+      "input": "stored key changed without fields",
+      "expected": "recompute mismatch and no TaskSpec publication",
+      "gate": "cargo test -p arcweft-core task_identity"
+    },
+    {
+      "id": "TASK-001",
+      "category": "task_policy",
+      "kind": "integration",
+      "owner": "TaskHost::ensure_task",
+      "input": "two identical JoinSameKey starts",
+      "expected": "one adapter launch; same handle/correlation",
+      "gate": "cargo test -p arcweft-runtime-scheduler ensure_task"
+    },
+    {
+      "id": "TASK-002",
+      "category": "task_policy",
+      "kind": "integration",
+      "owner": "observer table",
+      "input": "two View mounts + two fiber observers on same Join handle",
+      "expected": "one task/event stream/Need publication; four observer states",
+      "gate": "cargo test -p arcweft-runtime-driver need_observers"
+    },
+    {
+      "id": "TASK-003",
+      "category": "task_policy",
+      "kind": "integration",
+      "owner": "TaskHost::ensure_task",
+      "input": "two equal-input AlwaysStart calls",
+      "expected": "same TaskKey, ordinals 1/2, distinct NeedId/TaskId",
+      "gate": "cargo test -p arcweft-runtime-scheduler ensure_task"
+    },
+    {
+      "id": "TASK-004",
+      "category": "task_policy",
+      "kind": "integration",
+      "owner": "RuntimeNeedState",
+      "input": "two equal-input AlwaysStart launches publish different Ready values",
+      "expected": "both accepted; no terminal conflict",
+      "gate": "cargo test -p arcweft-runtime-driver need_journal"
+    },
+    {
+      "id": "TASK-005",
+      "category": "task_policy",
+      "kind": "rollback",
+      "owner": "ensure_task transaction",
+      "input": "AlwaysStart adapter prepare fails before commit",
+      "expected": "no task/group/Need; ordinal counter absent/unchanged",
+      "gate": "cargo test -p arcweft-runtime-scheduler ensure_task_rollback"
+    },
+    {
+      "id": "TASK-006",
+      "category": "task_policy",
+      "kind": "rollback",
+      "owner": "ensure_task transaction",
+      "input": "staged journal limit fails after adapter prepare",
+      "expected": "adapter rollback called; ordinal not consumed",
+      "gate": "cargo test -p arcweft-runtime-scheduler ensure_task_rollback"
+    },
+    {
+      "id": "TASK-007",
+      "category": "task_policy",
+      "kind": "positive",
+      "owner": "snapshot replay",
+      "input": "AlwaysStart committed ordinals 1,2; save/restore; launch again",
+      "expected": "restored next ordinal is 3",
+      "gate": "cargo test -p arcweft-runtime-driver task_restore"
+    },
+    {
+      "id": "TASK-008",
+      "category": "task_policy",
+      "kind": "negative",
+      "owner": "Join group",
+      "input": "same TaskKey but changed request/outcome",
+      "expected": "JoinSpecificationConflict, existing task unchanged",
+      "gate": "cargo test -p arcweft-runtime-scheduler ensure_task"
+    },
+    {
+      "id": "TASK-009",
+      "category": "task_policy",
+      "kind": "positive",
+      "owner": "MakeNeedHandle",
+      "input": "JoinSameKey plan",
+      "expected": "reusable RuntimeNeedHandle with ordinal 0",
+      "gate": "cargo test -p arcweft-core awbc_need_handle"
+    },
+    {
+      "id": "TASK-010",
+      "category": "task_policy",
+      "kind": "negative",
+      "owner": "AWBC verifier",
+      "input": "MakeNeedHandle plan with AlwaysStart",
+      "expected": "verification rejection before runtime",
+      "gate": "cargo test -p arcweft-core awbc_verifier"
+    },
+    {
+      "id": "TASK-011",
+      "category": "task_policy",
+      "kind": "negative",
+      "owner": "RuntimeNeedHandle",
+      "input": "try_reusable_join with AlwaysStart spec",
+      "expected": "ReusableAlwaysStart",
+      "gate": "cargo test -p arcweft-core runtime_need_handle"
+    },
+    {
+      "id": "TASK-012",
+      "category": "task_policy",
+      "kind": "positive",
+      "owner": "RuntimeNeedHandle",
+      "input": "accepted AlwaysStart TaskHandle + exact spec",
+      "expected": "AcceptedLaunch handle may be awaited",
+      "gate": "cargo test -p arcweft-core runtime_need_handle"
+    },
+    {
+      "id": "TASK-013",
+      "category": "task_policy",
+      "kind": "negative",
+      "owner": "RuntimeNeedHandle",
+      "input": "accepted TaskHandle with different spec generation/producer",
+      "expected": "CorrelationMismatch",
+      "gate": "cargo test -p arcweft-core runtime_need_handle"
+    },
+    {
+      "id": "TASK-014",
+      "category": "task_policy",
+      "kind": "property",
+      "owner": "TaskHost",
+      "input": "debug label changes on second Join submission",
+      "expected": "identity unchanged; stored semantic task not replaced",
+      "gate": "cargo test -p arcweft-runtime-scheduler ensure_task"
+    },
+    {
+      "id": "TASK-015",
+      "category": "task_policy",
+      "kind": "exact_limit",
+      "owner": "RuntimeTaskJournal",
+      "input": "exact max task groups/tasks/Need cells",
+      "expected": "last admissible transaction succeeds",
+      "gate": "cargo test -p arcweft-runtime-driver journal_limits"
+    },
+    {
+      "id": "TASK-016",
+      "category": "task_policy",
+      "kind": "one_over",
+      "owner": "RuntimeTaskJournal",
+      "input": "one task group over limit",
+      "expected": "typed JournalLimit; no ordinal/task leak",
+      "gate": "cargo test -p arcweft-runtime-driver journal_limits"
+    },
+    {
+      "id": "TASK-017",
+      "category": "task_policy",
+      "kind": "negative",
+      "owner": "TaskHost",
+      "input": "caller attempts to supply NeedId/TaskKey/TaskId fields",
+      "expected": "compile-fail because fields/API do not exist",
+      "gate": "cargo test -p arcweft-core --test api_absence"
+    },
+    {
+      "id": "TASK-018",
+      "category": "task_policy",
+      "kind": "differential",
+      "owner": "scheduler",
+      "input": "single-thread and multithread adapters process same TaskSpecs/events",
+      "expected": "identical normalized correlations/state/metrics semantic subset",
+      "gate": "cargo test -p arcweft-runtime-scheduler scheduler_differential"
+    },
+    {
+      "id": "TASK-019",
+      "category": "task_policy",
+      "kind": "rollback",
+      "owner": "observer registration",
+      "input": "same observer key attempts different correlation",
+      "expected": "conflict; original observer unchanged",
+      "gate": "cargo test -p arcweft-runtime-driver need_observers"
+    },
+    {
+      "id": "TASK-020",
+      "category": "task_policy",
+      "kind": "positive",
+      "owner": "observer registration",
+      "input": "duplicate same observer/correlation",
+      "expected": "idempotent no new launch/publication",
+      "gate": "cargo test -p arcweft-runtime-driver need_observers"
+    },
+    {
+      "id": "DIG-001",
+      "category": "runtime_value_digest",
+      "kind": "positive",
+      "owner": "RuntimeValueDigest",
+      "input": "RuntimeValue::Tuple([])",
+      "expected": "stable canonical non-ZERO digest",
+      "gate": "cargo test -p arcweft-core runtime_value_digest"
+    },
+    {
+      "id": "DIG-002",
+      "category": "runtime_value_digest",
+      "kind": "negative",
+      "owner": "producer arguments",
+      "input": "RuntimeValueDigest::ZERO supplied as empty arguments",
+      "expected": "producer construction rejects mismatch with canonical Tuple([]) digest",
+      "gate": "cargo test -p arcweft-core task_identity"
+    },
+    {
+      "id": "DIG-003",
+      "category": "runtime_value_digest",
+      "kind": "differential",
+      "owner": "canonical sinks",
+      "input": "all admitted RuntimeValue variants through byte sink and BLAKE3 sink",
+      "expected": "hash(bytes)==direct digest and identical errors/budgets",
+      "gate": "cargo test -p arcweft-core runtime_value_digest_differential"
+    },
+    {
+      "id": "DIG-004",
+      "category": "runtime_value_digest",
+      "kind": "property",
+      "owner": "canonical sinks",
+      "input": "random bounded nested RuntimeValue corpus",
+      "expected": "direct digest equals canonical-bytes digest",
+      "gate": "cargo test -p arcweft-core runtime_value_digest_proptest"
+    },
+    {
+      "id": "DIG-005",
+      "category": "runtime_value_digest",
+      "kind": "positive",
+      "owner": "RuntimeValue::NeedHandle",
+      "input": "valid Join handle",
+      "expected": "canonical bytes are tag 20 + exact NeedId",
+      "gate": "cargo test -p arcweft-core runtime_value_digest"
+    },
+    {
+      "id": "DIG-006",
+      "category": "runtime_value_digest",
+      "kind": "property",
+      "owner": "RuntimeValue::NeedHandle",
+      "input": "same NeedId with differing nonidentity debug labels in otherwise valid equivalent spec",
+      "expected": "same canonical value digest",
+      "gate": "cargo test -p arcweft-core runtime_value_digest"
+    },
+    {
+      "id": "DIG-007",
+      "category": "runtime_value_digest",
+      "kind": "tamper",
+      "owner": "NeedHandle snapshot",
+      "input": "NeedId changed but spec/correlation unchanged",
+      "expected": "restore rederivation rejects",
+      "gate": "cargo test -p arcweft-runtime-driver task_restore"
+    },
+    {
+      "id": "DIG-008",
+      "category": "runtime_value_digest",
+      "kind": "tamper",
+      "owner": "NeedHandle snapshot",
+      "input": "origin changed ReusableJoin->AcceptedLaunch or reverse without invariant",
+      "expected": "restore rejects",
+      "gate": "cargo test -p arcweft-runtime-driver task_restore"
+    },
+    {
+      "id": "DIG-009",
+      "category": "runtime_value_digest",
+      "kind": "exact_limit",
+      "owner": "canonical value encoder",
+      "input": "value exactly max nodes/depth/encoded bytes",
+      "expected": "byte and hash sinks both succeed",
+      "gate": "cargo test -p arcweft-core runtime_value_digest_limits"
+    },
+    {
+      "id": "DIG-010",
+      "category": "runtime_value_digest",
+      "kind": "one_over",
+      "owner": "canonical value encoder",
+      "input": "one node/depth/byte over each limit",
+      "expected": "both sinks return same first error; no partial digest",
+      "gate": "cargo test -p arcweft-core runtime_value_digest_limits"
+    },
+    {
+      "id": "DIG-011",
+      "category": "runtime_value_digest",
+      "kind": "negative",
+      "owner": "canonical value encoder",
+      "input": "map iteration order differs for record source",
+      "expected": "canonical field identity sort yields same digest",
+      "gate": "cargo test -p arcweft-core runtime_value_digest"
+    },
+    {
+      "id": "DIG-012",
+      "category": "runtime_value_digest",
+      "kind": "negative",
+      "owner": "identity construction",
+      "input": "generic Serde output used as arguments digest",
+      "expected": "test oracle differs/rejected; sole canonical owner used",
+      "gate": "cargo test -p arcweft-core runtime_value_digest"
+    },
+    {
+      "id": "AWAIT-001",
+      "category": "await",
+      "kind": "positive",
+      "owner": "AwaitTarget",
+      "input": "direct Await valid RuntimeNeedHandle",
+      "expected": "uses exact correlation/NeedId; no rederive",
+      "gate": "cargo test -p arcweft-core await_target"
+    },
+    {
+      "id": "AWAIT-002",
+      "category": "await",
+      "kind": "negative",
+      "owner": "AwaitTarget",
+      "input": "RuntimeValue::String containing hex/nonempty ID",
+      "expected": "type mismatch; cannot satisfy NeedHandle",
+      "gate": "cargo test -p arcweft-core awbc_await"
+    },
+    {
+      "id": "AWAIT-003",
+      "category": "await",
+      "kind": "positive",
+      "owner": "reusable Join handle",
+      "input": "NotStarted observation",
+      "expected": "ensure_task once then subscribe",
+      "gate": "cargo test -p arcweft-runtime-driver await_runtime"
+    },
+    {
+      "id": "AWAIT-004",
+      "category": "await",
+      "kind": "positive",
+      "owner": "accepted AlwaysStart handle",
+      "input": "direct Await after accepted launch",
+      "expected": "subscribes without relaunch",
+      "gate": "cargo test -p arcweft-runtime-driver await_runtime"
+    },
+    {
+      "id": "AWAIT-005",
+      "category": "await_many",
+      "kind": "property",
+      "owner": "AwaitMany base",
+      "input": "same captured/source tuple",
+      "expected": "same base producer key",
+      "gate": "cargo test -p arcweft-core await_many_identity"
+    },
+    {
+      "id": "AWAIT-006",
+      "category": "await_many",
+      "kind": "property",
+      "owner": "AwaitMany base",
+      "input": "reorder source items",
+      "expected": "base arguments digest/key change",
+      "gate": "cargo test -p arcweft-core await_many_identity"
+    },
+    {
+      "id": "AWAIT-007",
+      "category": "await_many",
+      "kind": "positive",
+      "owner": "AwaitMany child",
+      "input": "duplicate item values at indexes 0 and 1",
+      "expected": "different argument digest/instance key",
+      "gate": "cargo test -p arcweft-core await_many_identity"
+    },
+    {
+      "id": "AWAIT-008",
+      "category": "await_many",
+      "kind": "property",
+      "owner": "AwaitMany child",
+      "input": "same item/index/captures constructed independently",
+      "expected": "same key",
+      "gate": "cargo test -p arcweft-core await_many_identity"
+    },
+    {
+      "id": "AWAIT-009",
+      "category": "await_many",
+      "kind": "boundary",
+      "owner": "AwaitMany child",
+      "input": "source index u32::MAX",
+      "expected": "exact index encodes and is accepted if source model admits length",
+      "gate": "cargo test -p arcweft-core await_many_identity"
+    },
+    {
+      "id": "AWAIT-010",
+      "category": "await_many",
+      "kind": "negative",
+      "owner": "AwaitMany target",
+      "input": "source length u32::MAX + 1",
+      "expected": "reject before digest/launch/ordinal",
+      "gate": "cargo test -p arcweft-runtime-driver await_many"
+    },
+    {
+      "id": "AWAIT-011",
+      "category": "await_many",
+      "kind": "differential",
+      "owner": "AwaitMany runtime",
+      "input": "children complete reverse/random order",
+      "expected": "final result remains source order",
+      "gate": "cargo test -p arcweft-runtime-driver await_many_differential"
+    },
+    {
+      "id": "AWAIT-012",
+      "category": "await_many",
+      "kind": "rollback",
+      "owner": "AwaitMany start",
+      "input": "one child adapter prepare fails in staged batch",
+      "expected": "no partial batch/ordinal/fiber mutation",
+      "gate": "cargo test -p arcweft-runtime-driver await_many_rollback"
+    },
+    {
+      "id": "AWAIT-013",
+      "category": "await_many",
+      "kind": "positive",
+      "owner": "AwaitMany snapshot",
+      "input": "mixed pending/ready children saved/restored",
+      "expected": "exact handles/cursors/indexes restored",
+      "gate": "cargo test -p arcweft-runtime-driver await_many_restore"
+    },
+    {
+      "id": "AWAIT-014",
+      "category": "await_many",
+      "kind": "tamper",
+      "owner": "AwaitMany snapshot",
+      "input": "child stored under wrong source index",
+      "expected": "restore rejects cross-reference",
+      "gate": "cargo test -p arcweft-runtime-driver await_many_restore"
+    },
+    {
+      "id": "AWAIT-015",
+      "category": "timeout",
+      "kind": "positive",
+      "owner": "NeedTimeoutTarget",
+      "input": "same source NeedId/site/contract/limit",
+      "expected": "same timeout producer instance/output NeedId",
+      "gate": "cargo test -p arcweft-core need_timeout_identity"
+    },
+    {
+      "id": "AWAIT-016",
+      "category": "timeout",
+      "kind": "property",
+      "owner": "NeedTimeoutTarget",
+      "input": "change source NeedId only",
+      "expected": "timeout producer/output NeedId changes; source unchanged",
+      "gate": "cargo test -p arcweft-core need_timeout_identity"
+    },
+    {
+      "id": "AWAIT-017",
+      "category": "timeout",
+      "kind": "property",
+      "owner": "NeedTimeoutTarget",
+      "input": "change limit value only",
+      "expected": "timeout producer/output changes",
+      "gate": "cargo test -p arcweft-core need_timeout_identity"
+    },
+    {
+      "id": "AWAIT-018",
+      "category": "timeout",
+      "kind": "integration",
+      "owner": "timeout race",
+      "input": "source Ready and limit expires same step",
+      "expected": "source terminal wins per retained ordering",
+      "gate": "cargo test -p arcweft-runtime-driver need_timeout"
+    },
+    {
+      "id": "AWAIT-019",
+      "category": "timeout",
+      "kind": "integration",
+      "owner": "timeout cancellation",
+      "input": "scope cancellation/source/expiry same step",
+      "expected": "cancellation precedence; source not mutated by timeout",
+      "gate": "cargo test -p arcweft-runtime-driver need_timeout"
+    },
+    {
+      "id": "AWAIT-020",
+      "category": "timeout",
+      "kind": "tamper",
+      "owner": "timeout restore",
+      "input": "output handle claims different source relationship",
+      "expected": "restore rejects both-row publication",
+      "gate": "cargo test -p arcweft-runtime-driver need_timeout_restore"
+    },
+    {
+      "id": "EVT-001",
+      "category": "event",
+      "kind": "positive",
+      "owner": "TaskEvent",
+      "input": "first Progress cursor (epoch,0)",
+      "expected": "Pending and cursor installed",
+      "gate": "cargo test -p arcweft-runtime-driver task_events"
+    },
+    {
+      "id": "EVT-002",
+      "category": "event",
+      "kind": "positive",
+      "owner": "TaskEvent",
+      "input": "duplicate exact cursor/event",
+      "expected": "idempotent no-op",
+      "gate": "cargo test -p arcweft-runtime-driver task_events"
+    },
+    {
+      "id": "EVT-003",
+      "category": "event",
+      "kind": "negative",
+      "owner": "TaskEvent",
+      "input": "same cursor different Progress/Ready value",
+      "expected": "conflict rollback",
+      "gate": "cargo test -p arcweft-runtime-driver task_events"
+    },
+    {
+      "id": "EVT-004",
+      "category": "event",
+      "kind": "positive",
+      "owner": "TaskEvent",
+      "input": "lower cursor",
+      "expected": "stale no-op with bounded audit",
+      "gate": "cargo test -p arcweft-runtime-driver task_events"
+    },
+    {
+      "id": "EVT-005",
+      "category": "event",
+      "kind": "negative",
+      "owner": "TaskEvent",
+      "input": "sequence gap",
+      "expected": "CursorGap rollback",
+      "gate": "cargo test -p arcweft-runtime-driver task_events"
+    },
+    {
+      "id": "EVT-006",
+      "category": "event",
+      "kind": "negative",
+      "owner": "TaskEvent",
+      "input": "logical epoch regression",
+      "expected": "EpochRegression rollback",
+      "gate": "cargo test -p arcweft-runtime-driver task_events"
+    },
+    {
+      "id": "EVT-007",
+      "category": "event",
+      "kind": "positive",
+      "owner": "TaskEvent",
+      "input": "same-step Progress seq0 then Ready seq1",
+      "expected": "both accepted; final Ready",
+      "gate": "cargo test -p arcweft-runtime-driver task_events"
+    },
+    {
+      "id": "EVT-008",
+      "category": "event",
+      "kind": "negative",
+      "owner": "TaskEvent",
+      "input": "Progress after Ready terminal",
+      "expected": "PostTerminalPublication",
+      "gate": "cargo test -p arcweft-runtime-driver task_events"
+    },
+    {
+      "id": "EVT-009",
+      "category": "event",
+      "kind": "tamper",
+      "owner": "TaskEvent",
+      "input": "generation changed",
+      "expected": "correlation error before cursor",
+      "gate": "cargo test -p arcweft-runtime-driver task_event_tamper"
+    },
+    {
+      "id": "EVT-010",
+      "category": "event",
+      "kind": "tamper",
+      "owner": "TaskEvent",
+      "input": "producer key/contract changed",
+      "expected": "correlation/contract error",
+      "gate": "cargo test -p arcweft-runtime-driver task_event_tamper"
+    },
+    {
+      "id": "EVT-011",
+      "category": "event",
+      "kind": "tamper",
+      "owner": "TaskEvent",
+      "input": "NeedId changed",
+      "expected": "journal correlation mismatch",
+      "gate": "cargo test -p arcweft-runtime-driver task_event_tamper"
+    },
+    {
+      "id": "EVT-012",
+      "category": "event",
+      "kind": "tamper",
+      "owner": "TaskEvent",
+      "input": "TaskKey changed",
+      "expected": "journal correlation mismatch",
+      "gate": "cargo test -p arcweft-runtime-driver task_event_tamper"
+    },
+    {
+      "id": "EVT-013",
+      "category": "event",
+      "kind": "tamper",
+      "owner": "TaskEvent",
+      "input": "TaskId changed",
+      "expected": "task lookup/correlation mismatch",
+      "gate": "cargo test -p arcweft-runtime-driver task_event_tamper"
+    },
+    {
+      "id": "EVT-014",
+      "category": "event",
+      "kind": "tamper",
+      "owner": "TaskEvent",
+      "input": "launch ordinal changed",
+      "expected": "correlation mismatch",
+      "gate": "cargo test -p arcweft-runtime-driver task_event_tamper"
+    },
+    {
+      "id": "EVT-015",
+      "category": "event",
+      "kind": "positive",
+      "owner": "RuntimeNeedOutcome",
+      "input": "Ready typed Result::Err payload",
+      "expected": "Ready(Value(Result::Err)); not infrastructure failure",
+      "gate": "cargo test -p arcweft-runtime-driver task_events"
+    },
+    {
+      "id": "EVT-016",
+      "category": "event",
+      "kind": "positive",
+      "owner": "RuntimeNeedOutcome",
+      "input": "adapter worker failure",
+      "expected": "Ready(InfrastructureFailure)",
+      "gate": "cargo test -p arcweft-runtime-driver task_events"
+    },
+    {
+      "id": "EVT-017",
+      "category": "event",
+      "kind": "positive",
+      "owner": "Need cancellation",
+      "input": "Cancelled event",
+      "expected": "Need::Cancelled, no payload",
+      "gate": "cargo test -p arcweft-runtime-driver task_events"
+    },
+    {
+      "id": "EVT-018",
+      "category": "event",
+      "kind": "differential",
+      "owner": "live/replay",
+      "input": "same ordered event sequence through live and replay",
+      "expected": "identical journal/observer state",
+      "gate": "cargo test -p arcweft-runtime-driver task_replay_differential"
+    },
+    {
+      "id": "EVT-019",
+      "category": "event",
+      "kind": "tamper",
+      "owner": "replay envelope",
+      "input": "event bytes changed without digest",
+      "expected": "digest failure before state",
+      "gate": "cargo test -p arcweft-runtime-driver task_replay"
+    },
+    {
+      "id": "EVT-020",
+      "category": "event",
+      "kind": "rollback",
+      "owner": "event fanout",
+      "input": "observer limit exceeded during event apply",
+      "expected": "task/Need/observers all unchanged",
+      "gate": "cargo test -p arcweft-runtime-driver task_event_rollback"
+    },
+    {
+      "id": "MATCH-001",
+      "category": "match",
+      "kind": "positive",
+      "owner": "CheckedMatch",
+      "input": "same semantics built in two HIR allocation orders/IDs",
+      "expected": "same CheckedMatchSemanticDigest",
+      "gate": "cargo test -p arcweft-lang-sema checked_match_digest"
+    },
+    {
+      "id": "MATCH-002",
+      "category": "match",
+      "kind": "property",
+      "owner": "CheckedMatch",
+      "input": "change only SourceSpan/debug spelling",
+      "expected": "same digest",
+      "gate": "cargo test -p arcweft-lang-sema checked_match_digest"
+    },
+    {
+      "id": "MATCH-003",
+      "category": "match",
+      "kind": "property",
+      "owner": "CheckedMatch",
+      "input": "change pattern/body/binding type",
+      "expected": "digest changes",
+      "gate": "cargo test -p arcweft-lang-sema checked_match_digest"
+    },
+    {
+      "id": "MATCH-004",
+      "category": "match",
+      "kind": "positive",
+      "owner": "guard classifier",
+      "input": "exact checked Boolean literal true",
+      "expected": "ConstantTrue and contributes",
+      "gate": "cargo test -p arcweft-lang-sema match_coverage"
+    },
+    {
+      "id": "MATCH-005",
+      "category": "match",
+      "kind": "positive",
+      "owner": "guard classifier",
+      "input": "exact checked Boolean literal false",
+      "expected": "ConstantFalse; FalseGuard",
+      "gate": "cargo test -p arcweft-lang-sema match_coverage"
+    },
+    {
+      "id": "MATCH-006",
+      "category": "match",
+      "kind": "positive",
+      "owner": "guard classifier",
+      "input": "local initialized true",
+      "expected": "Dynamic; no constant fold",
+      "gate": "cargo test -p arcweft-lang-sema match_coverage"
+    },
+    {
+      "id": "MATCH-007",
+      "category": "match",
+      "kind": "positive",
+      "owner": "guard classifier",
+      "input": "!false, 1==1, const call",
+      "expected": "all Dynamic",
+      "gate": "cargo test -p arcweft-lang-sema match_coverage"
+    },
+    {
+      "id": "MATCH-008",
+      "category": "match",
+      "kind": "precedence",
+      "owner": "coverage",
+      "input": "false guard whose pattern already covered",
+      "expected": "FalseGuard reason retained",
+      "gate": "cargo test -p arcweft-lang-sema match_coverage"
+    },
+    {
+      "id": "MATCH-009",
+      "category": "match",
+      "kind": "positive",
+      "owner": "coverage",
+      "input": "dynamic guarded wildcard + later wildcard",
+      "expected": "later wildcard reachable and Match exhaustive",
+      "gate": "cargo test -p arcweft-lang-sema match_coverage"
+    },
+    {
+      "id": "MATCH-010",
+      "category": "match",
+      "kind": "negative",
+      "owner": "coverage",
+      "input": "only dynamic guarded wildcard over Bool",
+      "expected": "non-exhaustive",
+      "gate": "cargo test -p arcweft-lang-sema match_coverage"
+    },
+    {
+      "id": "MATCH-011",
+      "category": "match",
+      "kind": "positive",
+      "owner": "coverage",
+      "input": "Bool false/true arms",
+      "expected": "exhaustive",
+      "gate": "cargo test -p arcweft-lang-sema match_coverage"
+    },
+    {
+      "id": "MATCH-012",
+      "category": "match",
+      "kind": "negative",
+      "owner": "coverage",
+      "input": "Bool only true arm",
+      "expected": "witness false",
+      "gate": "cargo test -p arcweft-lang-sema match_coverage"
+    },
+    {
+      "id": "MATCH-013",
+      "category": "match",
+      "kind": "positive",
+      "owner": "coverage",
+      "input": "nested Result<Option<T>,E> patterns",
+      "expected": "accepted constructor order/exhaustiveness",
+      "gate": "cargo test -p arcweft-lang-sema match_coverage"
+    },
+    {
+      "id": "MATCH-014",
+      "category": "match",
+      "kind": "positive",
+      "owner": "coverage",
+      "input": "Vec exact/rest symbolic partitions",
+      "expected": "correct usefulness without length enumeration",
+      "gate": "cargo test -p arcweft-lang-sema match_coverage"
+    },
+    {
+      "id": "MATCH-015",
+      "category": "match",
+      "kind": "negative",
+      "owner": "coverage",
+      "input": "generic/inferred array length",
+      "expected": "hard error before matrix",
+      "gate": "cargo test -p arcweft-lang-sema match_coverage"
+    },
+    {
+      "id": "MATCH-016",
+      "category": "match",
+      "kind": "positive",
+      "owner": "coverage",
+      "input": "open opaque domain + wildcard",
+      "expected": "exhaustive",
+      "gate": "cargo test -p arcweft-lang-sema match_coverage"
+    },
+    {
+      "id": "MATCH-017",
+      "category": "match",
+      "kind": "negative",
+      "owner": "coverage",
+      "input": "open opaque constructors without wildcard",
+      "expected": "non-exhaustive/open residual",
+      "gate": "cargo test -p arcweft-lang-sema match_coverage"
+    },
+    {
+      "id": "MATCH-018",
+      "category": "match",
+      "kind": "positive",
+      "owner": "generic/View separation",
+      "input": "ordinary Match moves/destructures affine handle",
+      "expected": "generic CheckedMatch accepted when ordinary type rules allow",
+      "gate": "cargo test -p arcweft-lang-sema checked_match"
+    },
+    {
+      "id": "MATCH-019",
+      "category": "match",
+      "kind": "negative",
+      "owner": "CheckedMatch API",
+      "input": "caller attempts to pass coverage/exhaustive/unreachable",
+      "expected": "compile-fail: constructor has no fields/arguments",
+      "gate": "cargo test -p arcweft-lang-sema --test api_absence"
+    },
+    {
+      "id": "MATCH-020",
+      "category": "match",
+      "kind": "rollback",
+      "owner": "CheckedMatch",
+      "input": "non-exhaustive after unreachable candidates",
+      "expected": "no Match/digest/warnings/View row published",
+      "gate": "cargo test -p arcweft-lang-sema checked_match_atomicity"
+    },
+    {
+      "id": "VIEW-001",
+      "category": "view",
+      "kind": "negative",
+      "owner": "CheckedViewMatchAdmission",
+      "input": "retained affine output from otherwise legal Match",
+      "expected": "View admission rejects; generic Match remains",
+      "gate": "cargo test -p arcweft-compiler checked_view_match"
+    },
+    {
+      "id": "VIEW-002",
+      "category": "view",
+      "kind": "negative",
+      "owner": "CheckedViewMatchAdmission",
+      "input": "retained Stream/borrow/frame-local",
+      "expected": "typed rejection at View boundary",
+      "gate": "cargo test -p arcweft-compiler checked_view_match"
+    },
+    {
+      "id": "VIEW-003",
+      "category": "view",
+      "kind": "negative",
+      "owner": "CheckedViewMatchAdmission",
+      "input": "retained ViewValue",
+      "expected": "MissingViewPersistenceEvidence",
+      "gate": "cargo test -p arcweft-compiler checked_view_match"
+    },
+    {
+      "id": "VIEW-004",
+      "category": "view",
+      "kind": "positive",
+      "owner": "ViewMatchSiteId",
+      "input": "same program/declaration/child-role path across HIR reallocation",
+      "expected": "same site",
+      "gate": "cargo test -p arcweft-lang-sema view_match_site"
+    },
+    {
+      "id": "VIEW-005",
+      "category": "view",
+      "kind": "property",
+      "owner": "ViewMatchSiteId",
+      "input": "change child-role path or declaration",
+      "expected": "site changes",
+      "gate": "cargo test -p arcweft-lang-sema view_match_site"
+    },
+    {
+      "id": "VIEW-006",
+      "category": "view",
+      "kind": "property",
+      "owner": "ViewMatchSiteId",
+      "input": "change SourceSpan or accepted revision only",
+      "expected": "site unchanged",
+      "gate": "cargo test -p arcweft-lang-sema view_match_site"
+    },
+    {
+      "id": "VIEW-007",
+      "category": "view",
+      "kind": "positive",
+      "owner": "TaskPlanSemanticDigest",
+      "input": "same View program/site/admission, different accepted revision",
+      "expected": "same plan/producer instance/NeedId",
+      "gate": "cargo test -p arcweft-compiler view_task_identity"
+    },
+    {
+      "id": "VIEW-008",
+      "category": "view",
+      "kind": "positive",
+      "owner": "replacement",
+      "input": "valid explicit mapping, revision only changed",
+      "expected": "live state retained; NeedId stable; TaskKey/TaskId rederived for generation",
+      "gate": "cargo test -p arcweft-runtime-driver view_replacement"
+    },
+    {
+      "id": "VIEW-009",
+      "category": "view",
+      "kind": "negative",
+      "owner": "replacement",
+      "input": "accepted revision bytes invalid or mismatch registry/bundle cross-section",
+      "expected": "strict bundle/replacement rejection or prescribed cancellation; no identity rehash",
+      "gate": "cargo test -p arcweft-runtime-driver view_replacement"
+    },
+    {
+      "id": "VIEW-010",
+      "category": "view",
+      "kind": "negative",
+      "owner": "replacement",
+      "input": "CheckedMatchSemanticDigest differs",
+      "expected": "affected state cancelled transactionally",
+      "gate": "cargo test -p arcweft-runtime-driver view_replacement"
+    },
+    {
+      "id": "VIEW-011",
+      "category": "view",
+      "kind": "negative",
+      "owner": "replacement",
+      "input": "CheckedViewMatchAdmissionDigest differs",
+      "expected": "cancel",
+      "gate": "cargo test -p arcweft-runtime-driver view_replacement"
+    },
+    {
+      "id": "VIEW-012",
+      "category": "view",
+      "kind": "negative",
+      "owner": "replacement",
+      "input": "CheckedNeedProducerAdmissionDigest differs",
+      "expected": "cancel",
+      "gate": "cargo test -p arcweft-runtime-driver view_replacement"
+    },
+    {
+      "id": "VIEW-013",
+      "category": "view",
+      "kind": "negative",
+      "owner": "replacement",
+      "input": "producer family/contract differs",
+      "expected": "cancel",
+      "gate": "cargo test -p arcweft-runtime-driver view_replacement"
+    },
+    {
+      "id": "VIEW-014",
+      "category": "view",
+      "kind": "negative",
+      "owner": "replacement",
+      "input": "payload or plan differs",
+      "expected": "cancel",
+      "gate": "cargo test -p arcweft-runtime-driver view_replacement"
+    },
+    {
+      "id": "VIEW-015",
+      "category": "view",
+      "kind": "negative",
+      "owner": "replacement",
+      "input": "ownership evidence differs",
+      "expected": "cancel",
+      "gate": "cargo test -p arcweft-runtime-driver view_replacement"
+    },
+    {
+      "id": "VIEW-016",
+      "category": "view",
+      "kind": "negative",
+      "owner": "replacement",
+      "input": "resource dependency or arguments digest differs",
+      "expected": "cancel",
+      "gate": "cargo test -p arcweft-runtime-driver view_replacement"
+    },
+    {
+      "id": "VIEW-017",
+      "category": "view",
+      "kind": "negative",
+      "owner": "replacement",
+      "input": "explicit mapping missing",
+      "expected": "cancel; no implicit site search",
+      "gate": "cargo test -p arcweft-runtime-driver view_replacement"
+    },
+    {
+      "id": "VIEW-018",
+      "category": "view",
+      "kind": "rollback",
+      "owner": "replacement",
+      "input": "adapter rebind prepare fails",
+      "expected": "no partial new correlation; prescribed cancellation transaction",
+      "gate": "cargo test -p arcweft-runtime-driver view_replacement_rollback"
+    },
+    {
+      "id": "VIEW-019",
+      "category": "view",
+      "kind": "differential",
+      "owner": "View evaluation",
+      "input": "product/AWBC selector over NotStarted/Pending/Ready/Cancelled",
+      "expected": "same arm/bindings; ordinary Match owner",
+      "gate": "cargo test -p arcweft-runtime-driver view_match_differential"
+    },
+    {
+      "id": "VIEW-020",
+      "category": "view",
+      "kind": "positive",
+      "owner": "View observers",
+      "input": "two mounts observe same Join Need",
+      "expected": "one publication; independent mount state/invalidation",
+      "gate": "cargo test -p arcweft-runtime-driver view_need_observers"
+    },
+    {
+      "id": "OWN-001",
+      "category": "ownership",
+      "kind": "negative",
+      "owner": "AcceptedNominalInventoryInput",
+      "input": "omit value_class",
+      "expected": "constructor unavailable/strict decode rejects",
+      "gate": "cargo test -p arcweft-lang-sema accepted_nominal"
+    },
+    {
+      "id": "OWN-002",
+      "category": "ownership",
+      "kind": "negative",
+      "owner": "AcceptedNominalInventoryInput",
+      "input": "omit persistence",
+      "expected": "constructor unavailable/strict decode rejects",
+      "gate": "cargo test -p arcweft-lang-sema accepted_nominal"
+    },
+    {
+      "id": "OWN-003",
+      "category": "ownership",
+      "kind": "tamper",
+      "owner": "AcceptedNominalCatalogDigest",
+      "input": "change value_class without digest",
+      "expected": "catalog mismatch",
+      "gate": "cargo test -p arcweft-lang-sema accepted_nominal"
+    },
+    {
+      "id": "OWN-004",
+      "category": "ownership",
+      "kind": "tamper",
+      "owner": "AcceptedNominalCatalogDigest",
+      "input": "change persistence without digest",
+      "expected": "catalog mismatch",
+      "gate": "cargo test -p arcweft-lang-sema accepted_nominal"
+    },
+    {
+      "id": "OWN-005",
+      "category": "ownership",
+      "kind": "negative",
+      "owner": "registrar",
+      "input": "producer/type name suggests default evidence",
+      "expected": "no inference; missing evidence rejects",
+      "gate": "cargo test -p arcweft-lang-sema accepted_nominal"
+    },
+    {
+      "id": "OWN-006",
+      "category": "ownership",
+      "kind": "positive",
+      "owner": "opaque Plain",
+      "input": "constant-admissible persistence",
+      "expected": "SnapshotClone with exact evidence",
+      "gate": "cargo test -p arcweft-lang-sema checked_ownership"
+    },
+    {
+      "id": "OWN-007",
+      "category": "ownership",
+      "kind": "positive",
+      "owner": "opaque Plain",
+      "input": "snapshot-only persistence",
+      "expected": "SnapshotClone with exact evidence",
+      "gate": "cargo test -p arcweft-lang-sema checked_ownership"
+    },
+    {
+      "id": "OWN-008",
+      "category": "ownership",
+      "kind": "negative",
+      "owner": "opaque AffineHandle",
+      "input": "either persistence",
+      "expected": "AffineValue",
+      "gate": "cargo test -p arcweft-lang-sema checked_ownership"
+    },
+    {
+      "id": "OWN-009",
+      "category": "ownership",
+      "kind": "positive",
+      "owner": "AgentResource",
+      "input": "current core Agent DTO",
+      "expected": "SnapshotClone without ResourceTypeRegistry",
+      "gate": "cargo test -p arcweft-lang-sema checked_ownership"
+    },
+    {
+      "id": "OWN-010",
+      "category": "ownership",
+      "kind": "positive",
+      "owner": "AgentResourceBody",
+      "input": "current core Agent DTO",
+      "expected": "SnapshotClone without ResourceTypeRegistry",
+      "gate": "cargo test -p arcweft-lang-sema checked_ownership"
+    },
+    {
+      "id": "OWN-011",
+      "category": "ownership",
+      "kind": "positive",
+      "owner": "Ref",
+      "input": "EntityRef(String) carrier",
+      "expected": "SnapshotClone",
+      "gate": "cargo test -p arcweft-lang-sema checked_ownership"
+    },
+    {
+      "id": "OWN-012",
+      "category": "ownership",
+      "kind": "positive",
+      "owner": "Need<T>",
+      "input": "valid handle and producer argument certificate",
+      "expected": "SnapshotClone independent of T retained binding",
+      "gate": "cargo test -p arcweft-lang-sema checked_ownership"
+    },
+    {
+      "id": "OWN-013",
+      "category": "ownership",
+      "kind": "positive",
+      "owner": "Shared<T>",
+      "input": "child SnapshotClone",
+      "expected": "SnapshotClone",
+      "gate": "cargo test -p arcweft-lang-sema checked_ownership"
+    },
+    {
+      "id": "OWN-014",
+      "category": "ownership",
+      "kind": "negative",
+      "owner": "Shared<T>",
+      "input": "child affine/rejected",
+      "expected": "first child error",
+      "gate": "cargo test -p arcweft-lang-sema checked_ownership"
+    },
+    {
+      "id": "OWN-015",
+      "category": "ownership",
+      "kind": "negative",
+      "owner": "Function type",
+      "input": "no value certificate",
+      "expected": "FunctionValueRequiresCertificate",
+      "gate": "cargo test -p arcweft-lang-sema checked_ownership"
+    },
+    {
+      "id": "OWN-016",
+      "category": "ownership",
+      "kind": "positive",
+      "owner": "Function value",
+      "input": "capture-free accepted stable callable certificate",
+      "expected": "SnapshotClone",
+      "gate": "cargo test -p arcweft-lang-sema checked_value_ownership"
+    },
+    {
+      "id": "OWN-017",
+      "category": "ownership",
+      "kind": "negative",
+      "owner": "Function value",
+      "input": "closure/nonempty capture or missing callable identity",
+      "expected": "reject",
+      "gate": "cargo test -p arcweft-lang-sema checked_value_ownership"
+    },
+    {
+      "id": "OWN-018",
+      "category": "ownership",
+      "kind": "negative",
+      "owner": "project nominal",
+      "input": "recursive active cycle",
+      "expected": "RecursiveRetentionCycle with stable first path",
+      "gate": "cargo test -p arcweft-lang-sema checked_ownership"
+    },
+    {
+      "id": "OWN-019",
+      "category": "ownership",
+      "kind": "property",
+      "owner": "OwnershipEvidenceDigest",
+      "input": "add unrelated accepted nominal catalog row",
+      "expected": "consulted evidence digest unchanged",
+      "gate": "cargo test -p arcweft-lang-sema ownership_evidence_digest"
+    },
+    {
+      "id": "OWN-020",
+      "category": "ownership",
+      "kind": "property",
+      "owner": "OwnershipEvidenceDigest",
+      "input": "change one consulted opaque evidence row",
+      "expected": "digest changes",
+      "gate": "cargo test -p arcweft-lang-sema ownership_evidence_digest"
+    },
+    {
+      "id": "OWN-021",
+      "category": "ownership",
+      "kind": "negative",
+      "owner": "generic Match",
+      "input": "ownership classifier set to fail for affine scrutinee",
+      "expected": "generic Match still constructs; classifier not called",
+      "gate": "cargo test -p arcweft-lang-sema checked_match"
+    },
+    {
+      "id": "OWN-022",
+      "category": "ownership",
+      "kind": "rollback",
+      "owner": "producer admission",
+      "input": "later argument fails after earlier accepted",
+      "expected": "no partial certificate/evidence/digest",
+      "gate": "cargo test -p arcweft-lang-sema checked_need_producer_admission"
+    },
+    {
+      "id": "LIM-01A",
+      "category": "limits",
+      "kind": "exact_limit",
+      "owner": "max_arms",
+      "input": "coverage arms exactly at configured limit",
+      "expected": "success when all other inputs valid",
+      "gate": "cargo test -p arcweft-lang-sema match_coverage"
+    },
+    {
+      "id": "LIM-01B",
+      "category": "limits",
+      "kind": "one_over",
+      "owner": "max_arms",
+      "input": "coverage arms one over configured limit",
+      "expected": "typed first limit error and complete rollback",
+      "gate": "cargo test -p arcweft-lang-sema match_coverage"
+    },
+    {
+      "id": "LIM-02A",
+      "category": "limits",
+      "kind": "exact_limit",
+      "owner": "max_matrix_rows",
+      "input": "coverage matrix rows exactly at configured limit",
+      "expected": "success when all other inputs valid",
+      "gate": "cargo test -p arcweft-lang-sema match_coverage"
+    },
+    {
+      "id": "LIM-02B",
+      "category": "limits",
+      "kind": "one_over",
+      "owner": "max_matrix_rows",
+      "input": "coverage matrix rows one over configured limit",
+      "expected": "typed first limit error and complete rollback",
+      "gate": "cargo test -p arcweft-lang-sema match_coverage"
+    },
+    {
+      "id": "LIM-03A",
+      "category": "limits",
+      "kind": "exact_limit",
+      "owner": "max_specializations",
+      "input": "coverage specializations exactly at configured limit",
+      "expected": "success when all other inputs valid",
+      "gate": "cargo test -p arcweft-lang-sema match_coverage"
+    },
+    {
+      "id": "LIM-03B",
+      "category": "limits",
+      "kind": "one_over",
+      "owner": "max_specializations",
+      "input": "coverage specializations one over configured limit",
+      "expected": "typed first limit error and complete rollback",
+      "gate": "cargo test -p arcweft-lang-sema match_coverage"
+    },
+    {
+      "id": "LIM-04A",
+      "category": "limits",
+      "kind": "exact_limit",
+      "owner": "max_type_nodes",
+      "input": "ownership type nodes exactly at configured limit",
+      "expected": "success when all other inputs valid",
+      "gate": "cargo test -p arcweft-lang-sema checked_ownership"
+    },
+    {
+      "id": "LIM-04B",
+      "category": "limits",
+      "kind": "one_over",
+      "owner": "max_type_nodes",
+      "input": "ownership type nodes one over configured limit",
+      "expected": "typed first limit error and complete rollback",
+      "gate": "cargo test -p arcweft-lang-sema checked_ownership"
+    },
+    {
+      "id": "LIM-05A",
+      "category": "limits",
+      "kind": "exact_limit",
+      "owner": "max_evidence_rows",
+      "input": "ownership evidence rows exactly at configured limit",
+      "expected": "success when all other inputs valid",
+      "gate": "cargo test -p arcweft-lang-sema checked_ownership"
+    },
+    {
+      "id": "LIM-05B",
+      "category": "limits",
+      "kind": "one_over",
+      "owner": "max_evidence_rows",
+      "input": "ownership evidence rows one over configured limit",
+      "expected": "typed first limit error and complete rollback",
+      "gate": "cargo test -p arcweft-lang-sema checked_ownership"
+    },
+    {
+      "id": "LIM-06A",
+      "category": "limits",
+      "kind": "exact_limit",
+      "owner": "max_observers_per_need",
+      "input": "observers per Need exactly at configured limit",
+      "expected": "success when all other inputs valid",
+      "gate": "cargo test -p arcweft-runtime-driver need_observers"
+    },
+    {
+      "id": "LIM-06B",
+      "category": "limits",
+      "kind": "one_over",
+      "owner": "max_observers_per_need",
+      "input": "observers per Need one over configured limit",
+      "expected": "typed first limit error and complete rollback",
+      "gate": "cargo test -p arcweft-runtime-driver need_observers"
+    },
+    {
+      "id": "LIM-07A",
+      "category": "limits",
+      "kind": "exact_limit",
+      "owner": "max_queued_invalidations",
+      "input": "queued invalidations exactly at configured limit",
+      "expected": "success when all other inputs valid",
+      "gate": "cargo test -p arcweft-runtime-driver need_observers"
+    },
+    {
+      "id": "LIM-07B",
+      "category": "limits",
+      "kind": "one_over",
+      "owner": "max_queued_invalidations",
+      "input": "queued invalidations one over configured limit",
+      "expected": "typed first limit error and complete rollback",
+      "gate": "cargo test -p arcweft-runtime-driver need_observers"
+    },
+    {
+      "id": "LIM-08A",
+      "category": "limits",
+      "kind": "exact_limit",
+      "owner": "max_tasks_per_generation",
+      "input": "journal tasks exactly at configured limit",
+      "expected": "success when all other inputs valid",
+      "gate": "cargo test -p arcweft-runtime-driver journal_limits"
+    },
+    {
+      "id": "LIM-08B",
+      "category": "limits",
+      "kind": "one_over",
+      "owner": "max_tasks_per_generation",
+      "input": "journal tasks one over configured limit",
+      "expected": "typed first limit error and complete rollback",
+      "gate": "cargo test -p arcweft-runtime-driver journal_limits"
+    },
+    {
+      "id": "LIM-09A",
+      "category": "limits",
+      "kind": "exact_limit",
+      "owner": "max_need_cells_per_generation",
+      "input": "journal Need cells exactly at configured limit",
+      "expected": "success when all other inputs valid",
+      "gate": "cargo test -p arcweft-runtime-driver journal_limits"
+    },
+    {
+      "id": "LIM-09B",
+      "category": "limits",
+      "kind": "one_over",
+      "owner": "max_need_cells_per_generation",
+      "input": "journal Need cells one over configured limit",
+      "expected": "typed first limit error and complete rollback",
+      "gate": "cargo test -p arcweft-runtime-driver journal_limits"
+    },
+    {
+      "id": "LIM-10A",
+      "category": "limits",
+      "kind": "exact_limit",
+      "owner": "max_restore_tasks",
+      "input": "restore tasks exactly at configured limit",
+      "expected": "success when all other inputs valid",
+      "gate": "cargo test -p arcweft-runtime-driver task_restore_limits"
+    },
+    {
+      "id": "LIM-10B",
+      "category": "limits",
+      "kind": "one_over",
+      "owner": "max_restore_tasks",
+      "input": "restore tasks one over configured limit",
+      "expected": "typed first limit error and complete rollback",
+      "gate": "cargo test -p arcweft-runtime-driver task_restore_limits"
+    },
+    {
+      "id": "LIM-11A",
+      "category": "limits",
+      "kind": "exact_limit",
+      "owner": "max_restore_bytes",
+      "input": "restore bytes exactly at configured limit",
+      "expected": "success when all other inputs valid",
+      "gate": "cargo test -p arcweft-runtime-driver task_restore_limits"
+    },
+    {
+      "id": "LIM-11B",
+      "category": "limits",
+      "kind": "one_over",
+      "owner": "max_restore_bytes",
+      "input": "restore bytes one over configured limit",
+      "expected": "typed first limit error and complete rollback",
+      "gate": "cargo test -p arcweft-runtime-driver task_restore_limits"
+    },
+    {
+      "id": "LIM-12A",
+      "category": "limits",
+      "kind": "exact_limit",
+      "owner": "max_nodes",
+      "input": "runtime value nodes exactly at configured limit",
+      "expected": "success when all other inputs valid",
+      "gate": "cargo test -p arcweft-core runtime_value_digest_limits"
+    },
+    {
+      "id": "LIM-12B",
+      "category": "limits",
+      "kind": "one_over",
+      "owner": "max_nodes",
+      "input": "runtime value nodes one over configured limit",
+      "expected": "typed first limit error and complete rollback",
+      "gate": "cargo test -p arcweft-core runtime_value_digest_limits"
+    },
+    {
+      "id": "LIM-13A",
+      "category": "limits",
+      "kind": "exact_limit",
+      "owner": "max_encoded_bytes",
+      "input": "runtime value encoded bytes exactly at configured limit",
+      "expected": "success when all other inputs valid",
+      "gate": "cargo test -p arcweft-core runtime_value_digest_limits"
+    },
+    {
+      "id": "LIM-13B",
+      "category": "limits",
+      "kind": "one_over",
+      "owner": "max_encoded_bytes",
+      "input": "runtime value encoded bytes one over configured limit",
+      "expected": "typed first limit error and complete rollback",
+      "gate": "cargo test -p arcweft-core runtime_value_digest_limits"
+    },
+    {
+      "id": "STR-001",
+      "category": "structural",
+      "kind": "structural",
+      "owner": "workspace API/schema",
+      "input": "ViewProgramSemanticDigest type/name",
+      "expected": "no production/API/schema/generated occurrence",
+      "gate": "cargo test --workspace structural_absence && cargo check --workspace --all-targets"
+    },
+    {
+      "id": "STR-002",
+      "category": "structural",
+      "kind": "structural",
+      "owner": "workspace API/schema",
+      "input": "u32 View revision",
+      "expected": "only AcceptedViewProgramRevision([u8;32]) remains",
+      "gate": "cargo test --workspace structural_absence && cargo check --workspace --all-targets"
+    },
+    {
+      "id": "STR-003",
+      "category": "structural",
+      "kind": "structural",
+      "owner": "workspace API/schema",
+      "input": "duplicate RuntimeValueDigest declaration",
+      "expected": "only arcweft_core::entry owner",
+      "gate": "cargo test --workspace structural_absence && cargo check --workspace --all-targets"
+    },
+    {
+      "id": "STR-004",
+      "category": "structural",
+      "kind": "structural",
+      "owner": "workspace API/schema",
+      "input": "ResourceTypeRegistry in CheckedOwnershipContext",
+      "expected": "absent",
+      "gate": "cargo test --workspace structural_absence && cargo check --workspace --all-targets"
+    },
+    {
+      "id": "STR-005",
+      "category": "structural",
+      "kind": "structural",
+      "owner": "workspace API/schema",
+      "input": "unkeyed Agent resource registry lookup",
+      "expected": "absent",
+      "gate": "cargo test --workspace structural_absence && cargo check --workspace --all-targets"
+    },
+    {
+      "id": "STR-006",
+      "category": "structural",
+      "kind": "structural",
+      "owner": "workspace API/schema",
+      "input": "AwbcTaskPlan.plan_digest field",
+      "expected": "absent",
+      "gate": "cargo test --workspace structural_absence && cargo check --workspace --all-targets"
+    },
+    {
+      "id": "STR-007",
+      "category": "structural",
+      "kind": "structural",
+      "owner": "workspace API/schema",
+      "input": "AwbcTaskPlan.need_id field",
+      "expected": "absent",
+      "gate": "cargo test --workspace structural_absence && cargo check --workspace --all-targets"
+    },
+    {
+      "id": "STR-008",
+      "category": "structural",
+      "kind": "structural",
+      "owner": "workspace API/schema",
+      "input": "String NeedId/TaskKey/TaskId public carrier",
+      "expected": "absent",
+      "gate": "cargo test --workspace structural_absence && cargo check --workspace --all-targets"
+    },
+    {
+      "id": "STR-009",
+      "category": "structural",
+      "kind": "structural",
+      "owner": "workspace API/schema",
+      "input": "NeedHandle-as-String verifier/VM route",
+      "expected": "absent",
+      "gate": "cargo test --workspace structural_absence && cargo check --workspace --all-targets"
+    },
+    {
+      "id": "STR-010",
+      "category": "structural",
+      "kind": "structural",
+      "owner": "workspace API/schema",
+      "input": "await_target String parse",
+      "expected": "absent",
+      "gate": "cargo test --workspace structural_absence && cargo check --workspace --all-targets"
+    },
+    {
+      "id": "STR-011",
+      "category": "structural",
+      "kind": "structural",
+      "owner": "workspace API/schema",
+      "input": "indexed String/suffix identity",
+      "expected": "absent",
+      "gate": "cargo test --workspace structural_absence && cargo check --workspace --all-targets"
+    },
+    {
+      "id": "STR-012",
+      "category": "structural",
+      "kind": "structural",
+      "owner": "workspace API/schema",
+      "input": "caller-supplied TaskSpec IDs/ordinal",
+      "expected": "absent",
+      "gate": "cargo test --workspace structural_absence && cargo check --workspace --all-targets"
+    },
+    {
+      "id": "STR-013",
+      "category": "structural",
+      "kind": "structural",
+      "owner": "workspace API/schema",
+      "input": "copied View coverage/Match arm authority",
+      "expected": "absent",
+      "gate": "cargo test --workspace structural_absence && cargo check --workspace --all-targets"
+    },
+    {
+      "id": "STR-014",
+      "category": "structural",
+      "kind": "structural",
+      "owner": "workspace API/schema",
+      "input": "generic Match ownership/persistence call",
+      "expected": "absent",
+      "gate": "cargo test --workspace structural_absence && cargo check --workspace --all-targets"
+    },
+    {
+      "id": "STR-015",
+      "category": "structural",
+      "kind": "structural",
+      "owner": "workspace API/schema",
+      "input": "opaque evidence default/omitting constructor",
+      "expected": "absent",
+      "gate": "cargo test --workspace structural_absence && cargo check --workspace --all-targets"
+    },
+    {
+      "id": "STR-016",
+      "category": "structural",
+      "kind": "structural",
+      "owner": "workspace API/schema",
+      "input": "identity translation/compatibility reader",
+      "expected": "absent",
+      "gate": "cargo test --workspace structural_absence && cargo check --workspace --all-targets"
+    },
+    {
+      "id": "STR-017",
+      "category": "structural",
+      "kind": "structural",
+      "owner": "workspace API/schema",
+      "input": "driver-local GenerationId",
+      "expected": "absent",
+      "gate": "cargo test --workspace structural_absence && cargo check --workspace --all-targets"
+    },
+    {
+      "id": "STR-018",
+      "category": "structural",
+      "kind": "structural",
+      "owner": "workspace API/schema",
+      "input": "extension trait for Arcweft-owned enum behavior",
+      "expected": "absent",
+      "gate": "cargo test --workspace structural_absence && cargo check --workspace --all-targets"
+    },
+    {
+      "id": "STR-019",
+      "category": "structural",
+      "kind": "structural",
+      "owner": "workspace API/schema",
+      "input": "numeric AWBC reallocation in this feature cut",
+      "expected": "maintained allocation files unchanged except required consumers",
+      "gate": "cargo test --workspace structural_absence && cargo check --workspace --all-targets"
+    },
+    {
+      "id": "STR-020",
+      "category": "structural",
+      "kind": "structural",
+      "owner": "workspace API/schema",
+      "input": "old View Await types/variants/evaluator/AwaitView spelling",
+      "expected": "absent from API/schema/generated/runtime",
+      "gate": "cargo test --workspace structural_absence && cargo check --workspace --all-targets"
+    },
+    {
+      "id": "T2-001",
+      "category": "tier2",
+      "kind": "tier2",
+      "owner": "workspace",
+      "input": "workspace check",
+      "expected": "must pass before implementation readiness is reported",
+      "gate": "cargo check --workspace --all-targets"
+    },
+    {
+      "id": "T2-002",
+      "category": "tier2",
+      "kind": "tier2",
+      "owner": "workspace",
+      "input": "workspace tests",
+      "expected": "must pass before implementation readiness is reported",
+      "gate": "cargo test --workspace --all-targets"
+    },
+    {
+      "id": "T2-003",
+      "category": "tier2",
+      "kind": "tier2",
+      "owner": "workspace",
+      "input": "Clippy",
+      "expected": "must pass before implementation readiness is reported",
+      "gate": "cargo clippy --workspace --all-targets -- -D warnings"
+    },
+    {
+      "id": "T2-004",
+      "category": "tier2",
+      "kind": "tier2",
+      "owner": "workspace",
+      "input": "rustdoc",
+      "expected": "must pass before implementation readiness is reported",
+      "gate": "RUSTDOCFLAGS='-D warnings' cargo doc --workspace --no-deps"
+    },
+    {
+      "id": "T2-005",
+      "category": "tier2",
+      "kind": "tier2",
+      "owner": "workspace",
+      "input": "format",
+      "expected": "must pass before implementation readiness is reported",
+      "gate": "cargo fmt --all -- --check"
+    },
+    {
+      "id": "T2-006",
+      "category": "tier2",
+      "kind": "tier2",
+      "owner": "workspace",
+      "input": "native adapter parity",
+      "expected": "must pass before implementation readiness is reported",
+      "gate": "cargo test -p arcweft-cli -p arcweft-native-adapter task_need_parity"
+    },
+    {
+      "id": "T2-007",
+      "category": "tier2",
+      "kind": "tier2",
+      "owner": "workspace",
+      "input": "Web adapter parity",
+      "expected": "must pass before implementation readiness is reported",
+      "gate": "cargo test -p arcweft-web task_need_parity"
+    },
+    {
+      "id": "T2-008",
+      "category": "tier2",
+      "kind": "tier2",
+      "owner": "workspace",
+      "input": "headless parity",
+      "expected": "must pass before implementation readiness is reported",
+      "gate": "cargo test -p arcweft-headless task_need_parity"
+    },
+    {
+      "id": "T2-009",
+      "category": "tier2",
+      "kind": "tier2",
+      "owner": "workspace",
+      "input": "Agent parity",
+      "expected": "must pass before implementation readiness is reported",
+      "gate": "cargo test -p arcweft-agent-runner task_need_parity"
+    },
+    {
+      "id": "T2-010",
+      "category": "tier2",
+      "kind": "tier2",
+      "owner": "workspace",
+      "input": "bundle codecs",
+      "expected": "must pass before implementation readiness is reported",
+      "gate": "cargo test -p arcweft-bundle task_need_view_codec"
+    },
+    {
+      "id": "T2-011",
+      "category": "tier2",
+      "kind": "tier2",
+      "owner": "workspace",
+      "input": "save/replay",
+      "expected": "must pass before implementation readiness is reported",
+      "gate": "cargo test -p arcweft-runtime-driver task_save_replay"
+    },
+    {
+      "id": "T2-012",
+      "category": "tier2",
+      "kind": "tier2",
+      "owner": "workspace",
+      "input": "generated artifacts",
+      "expected": "must pass before implementation readiness is reported",
+      "gate": "repository generation/check command for AWBC/bundle schemas"
+    },
+    {
+      "id": "T2-013",
+      "category": "tier2",
+      "kind": "tier2",
+      "owner": "workspace",
+      "input": "AOT/VM/product differential",
+      "expected": "must pass before implementation readiness is reported",
+      "gate": "cargo test --workspace awbc_product_runtime_step_parity"
+    },
+    {
+      "id": "T2-014",
+      "category": "tier2",
+      "kind": "tier2",
+      "owner": "workspace",
+      "input": "replacement matrix",
+      "expected": "must pass before implementation readiness is reported",
+      "gate": "cargo test -p arcweft-runtime-driver view_replacement_matrix"
+    },
+    {
+      "id": "T2-015",
+      "category": "tier2",
+      "kind": "tier2",
+      "owner": "workspace",
+      "input": "Miri/loom targeted transaction tests",
+      "expected": "must pass before implementation readiness is reported",
+      "gate": "project-supported deterministic concurrency gate where configured"
+    }
+  ]
+}

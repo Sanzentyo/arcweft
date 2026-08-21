@@ -1,0 +1,369 @@
+{
+  "schema_version": 1,
+  "decisions": [
+    {
+      "id": "A1",
+      "owner": "arcweft_core::task::NeedProducerInstanceKey",
+      "selected": "One fully bound producer request is hashed from the exact version-1 producer-instance transcript.",
+      "rejected": "No second producer identity, source key, or generation/ordinal input.",
+      "status": "CLOSED"
+    },
+    {
+      "id": "A2",
+      "owner": "arcweft_core::task::{NeedId,TaskKey,TaskId}",
+      "selected": "NeedId owns one terminal cell, TaskKey one generation-bound coalescing group, TaskId one actual launch.",
+      "rejected": "No role sharing or String/suffix identity.",
+      "status": "CLOSED"
+    },
+    {
+      "id": "A3",
+      "owner": "TaskPolicy",
+      "selected": "JoinSameKey tag is 0 and ordinal is exactly 0; AlwaysStart tag is 1 and journal ordinals begin at 1.",
+      "rejected": "No caller-supplied ordinal or random ID.",
+      "status": "CLOSED"
+    },
+    {
+      "id": "A4",
+      "owner": "RuntimeTaskJournal",
+      "selected": "AlwaysStart allocation, insertion, adapter prepare/accept, and visibility are one rollback-capable transaction.",
+      "rejected": "No consumed ordinal on failure.",
+      "status": "CLOSED"
+    },
+    {
+      "id": "A5",
+      "owner": "RuntimeNeedHandle",
+      "selected": "Reusable handles and MakeNeedHandle are JoinSameKey only; AlwaysStart handle is launch output only.",
+      "rejected": "No reusable AlwaysStart descriptor.",
+      "status": "CLOSED"
+    },
+    {
+      "id": "A6",
+      "owner": "AwaitManyTarget",
+      "selected": "Base and children use canonical source-order tuples; child tuple includes exact source index.",
+      "rejected": "No indexed string suffix or map iteration.",
+      "status": "CLOSED"
+    },
+    {
+      "id": "A7",
+      "owner": "Timeout producer",
+      "selected": "Timeout hashes exact source NeedId via canonical NeedHandle plus limit and publishes a distinct Join cell.",
+      "rejected": "No source mutation, parsing, or cancellation coupling.",
+      "status": "CLOSED"
+    },
+    {
+      "id": "A8",
+      "owner": "RuntimeNeedJournal",
+      "selected": "Terminal idempotence/conflict is keyed by generation, NeedId, producer contract, and cursor.",
+      "rejected": "No false conflict across AlwaysStart NeedIds.",
+      "status": "CLOSED"
+    },
+    {
+      "id": "B1",
+      "owner": "arcweft_core::entry::RuntimeValueDigest",
+      "selected": "The existing digest type is reused everywhere.",
+      "rejected": "No duplicate RuntimeValueDigest.",
+      "status": "CLOSED"
+    },
+    {
+      "id": "B2",
+      "owner": "RuntimeValue::Tuple",
+      "selected": "Argument and AwaitMany lists are canonical Tuple values; empty is Tuple([]) digest.",
+      "rejected": "No ZERO sentinel or ordered_source_digest grammar.",
+      "status": "CLOSED"
+    },
+    {
+      "id": "B3",
+      "owner": "RuntimeValue canonical visitor",
+      "selected": "One sink-parametric visitor writes bytes or BLAKE3 with identical budgets and grammar.",
+      "rejected": "No duplicate encoder or intermediate digest buffer.",
+      "status": "CLOSED"
+    },
+    {
+      "id": "B4",
+      "owner": "RuntimeValue::NeedHandle",
+      "selected": "NeedHandle is a canonical RuntimeValue variant whose value identity is exact NeedId.",
+      "rejected": "No String or Dynamic carrier.",
+      "status": "CLOSED"
+    },
+    {
+      "id": "B5",
+      "owner": "Fixed identity constructors",
+      "selected": "Producer-instance/Need/task IDs reject zero hash with typed error and no rehash.",
+      "rejected": "No ZERO default for fixed identity types.",
+      "status": "CLOSED"
+    },
+    {
+      "id": "B6",
+      "owner": "Semantic digests",
+      "selected": "Semantic digest wrappers accept all hash outputs; absence is Option.",
+      "rejected": "No reserved-zero absence.",
+      "status": "CLOSED"
+    },
+    {
+      "id": "B7",
+      "owner": "NeedProducerContractDigest",
+      "selected": "Contract transcript contains only accepted callable/host/builtin contract evidence.",
+      "rejected": "No plan, site, payload, arguments, generation, policy, or debug fields.",
+      "status": "CLOSED"
+    },
+    {
+      "id": "B8",
+      "owner": "TaskPlanSemanticDigest",
+      "selected": "Plan transcript contains executable and static task-plan semantics; View rows include program/site/admission and exclude revision.",
+      "rejected": "No plan self-digest field.",
+      "status": "CLOSED"
+    },
+    {
+      "id": "C1",
+      "owner": "arcweft_core::task::GenerationId",
+      "selected": "GenerationId moves to core as the one shared typed owner; zero is valid.",
+      "rejected": "No runtime-driver duplicate or conversion DTO.",
+      "status": "CLOSED"
+    },
+    {
+      "id": "C2",
+      "owner": "TaskSpec",
+      "selected": "TaskSpec carries generation, producer instance, scheduling, policy, outcome, request, and debug label only.",
+      "rejected": "No caller NeedId/TaskKey/TaskId/ordinal.",
+      "status": "CLOSED"
+    },
+    {
+      "id": "C3",
+      "owner": "TaskHost::ensure_task",
+      "selected": "ensure_task derives or allocates correlation and returns Result<TaskHandle, TaskEnsureError>.",
+      "rejected": "No identity injection by caller/adapter.",
+      "status": "CLOSED"
+    },
+    {
+      "id": "C4",
+      "owner": "TaskCorrelation",
+      "selected": "Every handle, event, Need state, journal row, host envelope, save row, and replay row carries the same complete correlation.",
+      "rejected": "No partial event schema.",
+      "status": "CLOSED"
+    },
+    {
+      "id": "C5",
+      "owner": "TaskEvent stream",
+      "selected": "One launch has one cursor-ordered event stream; Join fanout is observer-table state.",
+      "rejected": "No observer-specific terminal publications.",
+      "status": "CLOSED"
+    },
+    {
+      "id": "C6",
+      "owner": "RuntimeNeedOutcome",
+      "selected": "Ready payload values and infrastructure failure are distinct; cancellation remains Need::Cancelled.",
+      "rejected": "No domain-error fabrication from host failure.",
+      "status": "CLOSED"
+    },
+    {
+      "id": "C7",
+      "owner": "AwbcTaskPlan",
+      "selected": "need_id becomes a mandatory typed producer row; semantic_digest(&AwbcProgram) recomputes and is not stored in the plan.",
+      "rejected": "No self-digest or delayed consumer switch.",
+      "status": "CLOSED"
+    },
+    {
+      "id": "D1",
+      "owner": "CheckedMatchSemanticDigest",
+      "selected": "Digest commits checked semantic Match meaning, bindings, guard class, bodies, and coverage only.",
+      "rejected": "No View, ownership, HIR/session, source/debug, or counters.",
+      "status": "CLOSED"
+    },
+    {
+      "id": "D2",
+      "owner": "CheckedViewMatchAdmissionDigest",
+      "selected": "Digest commits Match digest, retained outputs/captures, exact dispositions/evidence, and Need-producer admission.",
+      "rejected": "No program, revision, site, or whole unrelated catalog digest.",
+      "status": "CLOSED"
+    },
+    {
+      "id": "D3",
+      "owner": "ViewMatchSiteId",
+      "selected": "Site hashes ViewProgramId, accepted enclosing declaration identity, and closed child-role path.",
+      "rejected": "No HIR ID, SourceSpan, spelling, or revision.",
+      "status": "CLOSED"
+    },
+    {
+      "id": "D4",
+      "owner": "CheckedViewMatchCoordinate",
+      "selected": "Coordinate is exactly program + site + admission.",
+      "rejected": "No invented ViewProgramSemanticDigest.",
+      "status": "CLOSED"
+    },
+    {
+      "id": "D5",
+      "owner": "AcceptedViewProgramRevision",
+      "selected": "Current [u8;32] accepted revision is retained only for catalog/bundle/registry/replacement.",
+      "rejected": "No u32 revision or identity input.",
+      "status": "CLOSED"
+    },
+    {
+      "id": "D6",
+      "owner": "View replacement",
+      "selected": "Explicit mapping may rebind only after all semantic/producer/argument/evidence checks; revision-only change is allowed.",
+      "rejected": "No NeedId translation table or implicit mapping.",
+      "status": "CLOSED"
+    },
+    {
+      "id": "E1",
+      "owner": "CheckedMatch::try_from_hir",
+      "selected": "Generic construction performs structure/type/pattern/guard/coverage/reachability/digest checks only.",
+      "rejected": "No retained View or producer admission.",
+      "status": "CLOSED"
+    },
+    {
+      "id": "E2",
+      "owner": "MatchCoverageAnalyzer",
+      "selected": "Only exact checked Boolean literals are constant; every other guard is Dynamic.",
+      "rejected": "No source evaluation or string folding.",
+      "status": "CLOSED"
+    },
+    {
+      "id": "E3",
+      "owner": "FalseGuard precedence",
+      "selected": "ConstantFalse owns FalseGuard independent of earlier pattern coverage.",
+      "rejected": "No coverage-first masking of FalseGuard.",
+      "status": "CLOSED"
+    },
+    {
+      "id": "E4",
+      "owner": "CheckedViewMatchAdmission",
+      "selected": "Separate admission blocks only View publication.",
+      "rejected": "No loss of legal ordinary affine Match.",
+      "status": "CLOSED"
+    },
+    {
+      "id": "E5",
+      "owner": "CheckedNeedProducerAdmission",
+      "selected": "Producer argument/capture admission is a separate certificate and digest.",
+      "rejected": "No construction of producer contract identity.",
+      "status": "CLOSED"
+    },
+    {
+      "id": "F1",
+      "owner": "AcceptedNominalInventoryInput",
+      "selected": "value_class and persistence become mandatory constructor fields.",
+      "rejected": "No defaults or name inference.",
+      "status": "CLOSED"
+    },
+    {
+      "id": "F2",
+      "owner": "AcceptedNominalSemantics::Opaque",
+      "selected": "Original enum variant gains producer, value_class, and persistence and owns inherent behavior.",
+      "rejected": "No extension trait/helper side table.",
+      "status": "CLOSED"
+    },
+    {
+      "id": "F3",
+      "owner": "AcceptedNominalCatalogDigest",
+      "selected": "Opaque evidence is included in the accepted catalog transcript.",
+      "rejected": "No uncommitted evidence.",
+      "status": "CLOSED"
+    },
+    {
+      "id": "F4",
+      "owner": "CheckedOwnershipContext",
+      "selected": "Context is exactly ProjectSymbolTable plus RegisteredSemanticWorld.",
+      "rejected": "No ResourceTypeRegistry without typed key.",
+      "status": "CLOSED"
+    },
+    {
+      "id": "F5",
+      "owner": "AgentResource/AgentResourceBody",
+      "selected": "Current core Agent DTO owner classifies SnapshotClone.",
+      "rejected": "No unkeyed registry query.",
+      "status": "CLOSED"
+    },
+    {
+      "id": "F6",
+      "owner": "TypeKind::Need",
+      "selected": "Need itself is SnapshotClone after exact producer-argument certificate; payload bindings are classified independently.",
+      "rejected": "No generic Match rejection.",
+      "status": "CLOSED"
+    },
+    {
+      "id": "F7",
+      "owner": "TypeKind::Ref",
+      "selected": "Ref is SnapshotClone because runtime carrier is EntityRef(String).",
+      "rejected": "No affine classification.",
+      "status": "CLOSED"
+    },
+    {
+      "id": "F8",
+      "owner": "TypeKind::ViewValue",
+      "selected": "ViewValue rejects with MissingViewPersistenceEvidence.",
+      "rejected": "No inferred snapshot layout.",
+      "status": "CLOSED"
+    },
+    {
+      "id": "F9",
+      "owner": "TypeKind::Function",
+      "selected": "Type-level classification rejects; only an exact value-level stable callable certificate may admit a value.",
+      "rejected": "No closure inference from type.",
+      "status": "CLOSED"
+    },
+    {
+      "id": "F10",
+      "owner": "TypeKind::Shared",
+      "selected": "Shared<T> is SnapshotClone after child admission.",
+      "rejected": "No blind unconditional admission.",
+      "status": "CLOSED"
+    },
+    {
+      "id": "F11",
+      "owner": "Opaque Plain/AffineHandle",
+      "selected": "Plain is SnapshotClone under either admitted persistence mode; AffineHandle rejects.",
+      "rejected": "No producer-name inference.",
+      "status": "CLOSED"
+    },
+    {
+      "id": "F12",
+      "owner": "CheckedOwnershipClassifier",
+      "selected": "All current TypeKind rows have exact recursion, limits, cycle, and first-error behavior.",
+      "rejected": "No default wildcard branch.",
+      "status": "CLOSED"
+    },
+    {
+      "id": "CUT1",
+      "owner": "Generic Match cut",
+      "selected": "Land semantic encoders, bounded coverage, CheckedMatch, and digest without View/ownership/runtime changes.",
+      "rejected": "No mixed cut.",
+      "status": "CLOSED"
+    },
+    {
+      "id": "CUT2",
+      "owner": "Ownership cut",
+      "selected": "Change input-through-catalog evidence and every constructor/fixture in one cut, then add total classifier/certificates.",
+      "rejected": "No partial default-bearing chain.",
+      "status": "CLOSED"
+    },
+    {
+      "id": "CUT3",
+      "owner": "View admission cut",
+      "selected": "Land admission/site/catalog/compiler/bundle/runtime/replacement together.",
+      "rejected": "No copied Match authority.",
+      "status": "CLOSED"
+    },
+    {
+      "id": "CUT4",
+      "owner": "Private identity preparation cut",
+      "selected": "Land private fixed types, transcripts, sink encoder, and core GenerationId without public switch.",
+      "rejected": "No public dual schema.",
+      "status": "CLOSED"
+    },
+    {
+      "id": "CUT5",
+      "owner": "Atomic carrier cut",
+      "selected": "Switch all public task/Need/Await/persistence/host consumers and delete every old path in one protected commit.",
+      "rejected": "No delayed snapshot or fallback.",
+      "status": "CLOSED"
+    },
+    {
+      "id": "NUMERIC",
+      "owner": "Maintained AWBC authority",
+      "selected": "Numeric allocation is a frozen external prerequisite and is not restated or changed.",
+      "rejected": "No second numeric table.",
+      "status": "CLOSED"
+    }
+  ]
+}

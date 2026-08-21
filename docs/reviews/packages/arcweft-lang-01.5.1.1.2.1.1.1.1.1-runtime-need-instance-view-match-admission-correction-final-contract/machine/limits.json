@@ -1,0 +1,54 @@
+{
+  "schema_version": 1,
+  "coverage": {
+    "max_arms": 4096,
+    "max_matrix_rows": 8192,
+    "max_or_alternatives": 4096,
+    "max_pattern_nodes": 65536,
+    "max_recursion_depth": 64,
+    "max_sequence_partitions": 2048,
+    "max_specializations": 32768,
+    "max_unreachable_rows": 4096,
+    "max_witness_nodes": 1024
+  },
+  "ownership": {
+    "max_type_nodes": 65536,
+    "max_recursion_depth": 64,
+    "max_nominal_edges": 16384,
+    "max_active_nominal_depth": 64,
+    "max_evidence_rows": 16384,
+    "max_value_certificate_nodes": 65536,
+    "max_function_captures": 4096,
+    "max_producer_arguments": 4096
+  },
+  "runtime_value": {
+    "max_depth": 128,
+    "max_nodes": 262144,
+    "max_sequence_items": 65536,
+    "max_string_bytes": 1048576,
+    "max_encoded_bytes": 8388608
+  },
+  "task_journal": {
+    "max_generations": 64,
+    "max_ordinal_counters_per_generation": 65536,
+    "max_task_groups_per_generation": 65536,
+    "max_tasks_per_generation": 262144,
+    "max_need_cells_per_generation": 262144,
+    "max_observers_per_need": 4096,
+    "max_observers_per_generation": 1048576,
+    "max_queued_invalidations": 65536,
+    "max_events_per_poll": 65536,
+    "max_debug_label_bytes": 4096
+  },
+  "await_many": {
+    "max_source_items": 65536,
+    "max_in_flight": 4096
+  },
+  "restore": {
+    "max_restore_bytes": 268435456,
+    "max_restore_generations": 64,
+    "max_restore_tasks": 262144,
+    "max_restore_need_cells": 262144,
+    "max_restore_observers": 1048576
+  }
+}

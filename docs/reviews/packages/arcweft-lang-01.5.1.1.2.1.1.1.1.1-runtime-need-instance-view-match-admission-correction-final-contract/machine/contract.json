@@ -1,0 +1,95 @@
+{
+  "schema_version": 1,
+  "package": "arcweft-lang-01.5.1.1.2.1.1.1.1.1-runtime-need-instance-view-match-admission-correction-final-contract",
+  "status": "READY_FOR_IMPLEMENTATION_DESIGN_ONLY",
+  "open_questions": 0,
+  "repository": "Sanzentyo/arcweft",
+  "inspected_sha": "17b384a36e1412cc7e7d9f13073d8dd33dcb5cbc",
+  "arcweft_version_markers": [
+    1
+  ],
+  "numeric_awbc_allocation_emitted": false,
+  "production_modified": false,
+  "identity_domains": {
+    "producer_instance": "arcweft.need.producer-instance.v1\u0000",
+    "need": "arcweft.need.id.v1\u0000",
+    "task_key": "arcweft.task.key.v1\u0000",
+    "task_id": "arcweft.task.id.v1\u0000",
+    "producer_contract": "arcweft.need.producer-contract.v1\u0000",
+    "task_plan": "arcweft.task.plan-semantic.v1\u0000",
+    "checked_match": "arcweft.lang.checked-match-semantic.v1\u0000",
+    "ownership_evidence": "arcweft.lang.ownership-evidence.v1\u0000",
+    "producer_admission": "arcweft.lang.need-producer-admission.v1\u0000",
+    "view_admission": "arcweft.view.checked-match-admission.v1\u0000",
+    "view_site": "arcweft.view.match-site.v1\u0000",
+    "task_event": "arcweft.task.event.v1\u0000"
+  },
+  "fixed_identity_zero_invalid": [
+    "NeedProducerInstanceKey",
+    "NeedId",
+    "TaskKey",
+    "TaskId"
+  ],
+  "zero_valid": [
+    "GenerationId(0)",
+    "TaskLaunchOrdinal::JOIN(0)"
+  ],
+  "sole_runtime_value_digest": "arcweft_core::entry::RuntimeValueDigest",
+  "empty_arguments": "digest(RuntimeValue::Tuple([]))",
+  "runtime_value_need_handle_tag": 20,
+  "current_view_owners": {
+    "program": "ViewProgramId",
+    "revision": "AcceptedViewProgramRevision([u8;32])"
+  },
+  "ownership_context": [
+    "ProjectSymbolTable",
+    "RegisteredSemanticWorld"
+  ],
+  "cuts": [
+    "generic_match",
+    "ownership_evidence",
+    "view_admission",
+    "private_identity_preparation",
+    "atomic_task_need_carrier"
+  ],
+  "cut5_indivisible": true,
+  "forbidden": [
+    "unresolved_alternative",
+    "policy_identity_conflation",
+    "ViewProgramSemanticDigest",
+    "u32_view_revision",
+    "duplicate_RuntimeValueDigest",
+    "ResourceTypeRegistry_without_typed_key",
+    "plan_self_digest",
+    "String_need_task_identity",
+    "suffix_identity",
+    "copied_view_coverage",
+    "generic_view_admission_conflation",
+    "opaque_evidence_default",
+    "compatibility_reader",
+    "dual_carrier",
+    "numeric_reallocation_in_this_return"
+  ],
+  "validation_minima": {
+    "decisions": 50,
+    "tests": 180,
+    "source_evidence_rows": 15,
+    "traceability_rows": 50,
+    "ownership_rows": 80,
+    "deletion_rows": 35
+  },
+  "architecture_flags": {
+    "unresolved_alternatives": false,
+    "policy_identity_conflation": false,
+    "current_view_owner_mismatch": false,
+    "generic_view_admission_conflation": false,
+    "unconstructible_opaque_evidence": false,
+    "incomplete_event_schema": false,
+    "delayed_persistence_switch": false,
+    "compatibility_reader": false,
+    "dual_carrier": false,
+    "string_identity": false,
+    "suffix_identity": false,
+    "numeric_reallocation": false
+  }
+}

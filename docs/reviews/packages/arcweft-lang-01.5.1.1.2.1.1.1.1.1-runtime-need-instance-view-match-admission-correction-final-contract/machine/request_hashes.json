@@ -1,0 +1,26 @@
+{
+  "schema_version": 1,
+  "current_request": {
+    "path": "inputs/CURRENT_REQUEST.md",
+    "sha256": "0152f1dd5f6fd315722f729700d3b94d1b0daa596a59445313e7796bddde8322",
+    "git_blob_sha1": "7ed008dec6eddb820e228ea0803bf97a1ead2c36",
+    "bytes": 26729
+  },
+  "rust_skill": {
+    "path": "inputs/RUST_SKILL.txt",
+    "sha256": "1a28f552adf5efde95205bee8d56590aeb82346c48ebdf3fdbbaff5deca33665",
+    "bytes": 5045,
+    "read_full": true
+  },
+  "project_premise": {
+    "path": "inputs/PROJECT_PREMISE.txt",
+    "sha256": "cfa897a0ad93deb92fd454079df0a789edbbd40d85c8377324da703c8aefe0a1",
+    "bytes": 250,
+    "read_full": true
+  },
+  "predecessor_zip": {
+    "expected_sha256": "DDD097E8057A8D45018528431790C20A2DE665CDE40F0329B82CB0366CF95D32",
+    "independently_rehashed_in_this_return": false,
+    "evidence": "current repository intake and frozen mirror"
+  }
+}

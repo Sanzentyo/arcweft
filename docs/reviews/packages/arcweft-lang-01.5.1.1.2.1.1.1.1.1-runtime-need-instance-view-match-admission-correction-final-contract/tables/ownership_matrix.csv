@@ -1,0 +1,86 @@
+variant,disposition,recursion,evidence,rejection
+Bool,Copy,none,existing scalar RuntimeValue carrier,
+I8,Copy,none,existing scalar RuntimeValue carrier,
+I16,Copy,none,existing scalar RuntimeValue carrier,
+I32,Copy,none,existing scalar RuntimeValue carrier,
+I64,Copy,none,existing scalar RuntimeValue carrier,
+I128,Copy,none,existing scalar RuntimeValue carrier,
+ISize,Copy,none,existing scalar RuntimeValue carrier,
+U8,Copy,none,existing scalar RuntimeValue carrier,
+U16,Copy,none,existing scalar RuntimeValue carrier,
+U32,Copy,none,existing scalar RuntimeValue carrier,
+U64,Copy,none,existing scalar RuntimeValue carrier,
+U128,Copy,none,existing scalar RuntimeValue carrier,
+USize,Copy,none,existing scalar RuntimeValue carrier,
+F32,Copy,none,existing scalar RuntimeValue carrier,
+F64,Copy,none,existing scalar RuntimeValue carrier,
+Char,Copy,none,existing scalar RuntimeValue carrier,
+Duration,Copy,none,existing scalar RuntimeValue carrier,
+Unit,Copy,none,existing scalar RuntimeValue carrier,
+Never,Copy,none,existing scalar RuntimeValue carrier,
+String,SnapshotClone,none,owned current runtime/string/progress snapshot owner,
+Bytes,SnapshotClone,none,owned current runtime/string/progress snapshot owner,
+TextCluster,SnapshotClone,none,owned current runtime/string/progress snapshot owner,
+DisplayText,SnapshotClone,none,owned current runtime/string/progress snapshot owner,
+DebugStatePath,SnapshotClone,none,owned current runtime/string/progress snapshot owner,
+ObservationFieldPath,SnapshotClone,none,owned current runtime/string/progress snapshot owner,
+Progress,SnapshotClone,none,owned current runtime/string/progress snapshot owner,
+StageApi,Reject,none,compile-time capability only,FrameLocalValue
+LineContext,Reject,none,line activation context,FrameLocalValue
+StageActorHandle,Reject,none,affine handle semantics,AffineValue
+CueHandle,Reject,none,affine handle semantics,AffineValue
+VoiceHandle,Reject,none,affine handle semantics,AffineValue
+Handle,Reject,none,affine handle semantics,AffineValue
+ThreadHandle,Reject,none,affine handle semantics,AffineValue
+Range,Reject,none,current RuntimeValue canonical owner has no range replay/save row,MissingRuntimeSnapshotOwner
+IteratorState,Reject,none,stateful/frame-local iterator,FrameLocalValue
+Ref,SnapshotClone,do not recurse associated payload type,RuntimeValue::EntityRef(String),
+Probe,SnapshotClone,recurse checked probe value type where present,current core RuntimeAgentValue canonical owner,
+Predicate,SnapshotClone,recurse checked probe value type where present,current core RuntimeAgentValue canonical owner,
+Observation,SnapshotClone,closed DTO children in declaration order,current core Agent DTO snapshot owner; no ResourceTypeRegistry lookup,
+ObservedObject,SnapshotClone,closed DTO children in declaration order,current core Agent DTO snapshot owner; no ResourceTypeRegistry lookup,
+AgentBBox,SnapshotClone,closed DTO children in declaration order,current core Agent DTO snapshot owner; no ResourceTypeRegistry lookup,
+ActionName,SnapshotClone,closed DTO children in declaration order,current core Agent DTO snapshot owner; no ResourceTypeRegistry lookup,
+ActionTarget,SnapshotClone,closed DTO children in declaration order,current core Agent DTO snapshot owner; no ResourceTypeRegistry lookup,
+ActionResult,SnapshotClone,closed DTO children in declaration order,current core Agent DTO snapshot owner; no ResourceTypeRegistry lookup,
+AgentValue,SnapshotClone,closed DTO children in declaration order,current core Agent DTO snapshot owner; no ResourceTypeRegistry lookup,
+DataFormat,SnapshotClone,closed DTO children in declaration order,current core Agent DTO snapshot owner; no ResourceTypeRegistry lookup,
+DataShape,SnapshotClone,closed DTO children in declaration order,current core Agent DTO snapshot owner; no ResourceTypeRegistry lookup,
+AgentEntityMetadata,SnapshotClone,closed DTO children in declaration order,current core Agent DTO snapshot owner; no ResourceTypeRegistry lookup,
+AgentSourceAnchor,SnapshotClone,closed DTO children in declaration order,current core Agent DTO snapshot owner; no ResourceTypeRegistry lookup,
+AgentProjectGraphNeighborhood,SnapshotClone,closed DTO children in declaration order,current core Agent DTO snapshot owner; no ResourceTypeRegistry lookup,
+AgentProjectGraphSymbol,SnapshotClone,closed DTO children in declaration order,current core Agent DTO snapshot owner; no ResourceTypeRegistry lookup,
+AgentProjectGraphEdge,SnapshotClone,closed DTO children in declaration order,current core Agent DTO snapshot owner; no ResourceTypeRegistry lookup,
+CaptureTarget,SnapshotClone,closed DTO children in declaration order,current core Agent DTO snapshot owner; no ResourceTypeRegistry lookup,
+CaptureRef,SnapshotClone,closed DTO children in declaration order,current core Agent DTO snapshot owner; no ResourceTypeRegistry lookup,
+AgentResource,SnapshotClone,closed DTO children in declaration order,current core Agent DTO snapshot owner; no ResourceTypeRegistry lookup,
+AgentResourceBody,SnapshotClone,closed DTO children in declaration order,current core Agent DTO snapshot owner; no ResourceTypeRegistry lookup,
+RagContextPack,SnapshotClone,closed DTO children in declaration order,current core Agent DTO snapshot owner; no ResourceTypeRegistry lookup,
+AgentBuiltin,SnapshotClone,closed DTO children in declaration order,current core Agent DTO snapshot owner; no ResourceTypeRegistry lookup,
+Vec,SnapshotClone,classify item; array validates concrete accepted length,existing RuntimeValue::Seq snapshot owner,
+Array,SnapshotClone,classify item; array validates concrete accepted length,existing RuntimeValue::Seq snapshot owner,
+Seq,SnapshotClone,classify item; array validates concrete accepted length,existing RuntimeValue::Seq snapshot owner,
+Slice,SnapshotClone,classify item,"accepted runtime projection owns a copied RuntimeValue::Seq, not BorrowRef",
+Map,Reject,validate key/value type closure for diagnostics only,current RuntimeValue has no unconditional Map snapshot owner,MissingRuntimeSnapshotOwner
+BorrowRef,Reject,none,borrow kind/lifetime retained exactly,BorrowedValue
+Need,SnapshotClone,do not require payload ownership; require payload runtime type identity and exact producer-argument value certificate,new RuntimeNeedHandle snapshot owner,
+Stream,Reject,none,protected affine stream owner,StreamValue
+Result,"max(Copy, SnapshotClone)",classify children in semantic/source order,existing closed aggregate RuntimeValue owner,
+Option,"max(Copy, SnapshotClone)",classify children in semantic/source order,existing closed aggregate RuntimeValue owner,
+Tuple,"max(Copy, SnapshotClone)",classify children in semantic/source order,existing closed aggregate RuntimeValue owner,
+Choice,"max(Copy, SnapshotClone)",classify children in semantic/source order,existing closed aggregate RuntimeValue owner,
+Shared,SnapshotClone,classify child; cycle checked,accepted Shared snapshot owner introduced by the ownership/carrier cuts,
+Function,Reject at type level,value-level certificate only,capture-free stable callable may receive SnapshotClone certificate; closures/captures reject,FunctionValueRequiresCertificate
+GenericParam,Reject,none,must be substituted before admission,UnresolvedType
+ProjectNominal,"max(Copy, SnapshotClone)",walk fields/cases in accepted declaration order with semantic-id cycle guard,ProjectSymbolTable exact declaration/layout evidence,
+AcceptedNominal,delegate,Exact -> child; Opaque -> class/persistence; Character -> character owner,RegisteredSemanticWorld accepted nominal record,
+OpenNominal,Reject,none,open rule has no exact persistent runtime owner,UnresolvedType
+Error,Reject,none,poison/recovery fact,UnresolvedType
+Projection,Reject,none,associated projection must be resolved first,UnresolvedType
+CharacterPatch,SnapshotClone,walk owned fields/cases in accepted order,current owned Character/dialogue DTO snapshot owner,
+FocusPatch,SnapshotClone,walk owned fields/cases in accepted order,current owned Character/dialogue DTO snapshot owner,
+CharacterDialogue,SnapshotClone,walk owned fields/cases in accepted order,current owned Character/dialogue DTO snapshot owner,
+CharacterNominal,SnapshotClone,walk owned fields/cases in accepted order,current owned Character/dialogue DTO snapshot owner,
+DialogueLine,Reject,none,non-escaping suspension operation/line-plan result,FrameLocalValue
+ViewValue,Reject,none,no published exact runtime View projection/snapshot owner,MissingViewPersistenceEvidence
+Named,Reject,none,internal/host type lacks accepted closed owner,UnresolvedType

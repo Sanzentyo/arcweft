@@ -1,0 +1,154 @@
+{
+  "schema_version": 1,
+  "repository": "Sanzentyo/arcweft",
+  "inspected_sha": "17b384a36e1412cc7e7d9f13073d8dd33dcb5cbc",
+  "older_request_sha": "cbf0acedb98de260d8ecaab70a39933c39f30708",
+  "rows": [
+    {
+      "path": "docs/reviews/requests/2026-08-22-lang-01.5.1.1.2.1.1.1.1.1-runtime-need-instance-view-match-admission-correction.md",
+      "lines": "1-548",
+      "blob": "7ed008dec6eddb820e228ea0803bf97a1ead2c36",
+      "owner": "current correction request",
+      "observation": "Exact mandatory decisions A-F, five compile-clean cuts, required tests/artifacts, exact ZIP name.",
+      "verification": "GitHub connector at inspected SHA; byte-equal to inputs/CURRENT_REQUEST.md by Git blob and SHA-256"
+    },
+    {
+      "path": "docs/implementation/2026-08-22-lang-01-5-1-1-2-1-1-1-1-checked-match-need-identity-return-intake.md",
+      "lines": "1-260",
+      "blob": "aaf81e16d2b566c411ed97804c86f860f87bf7c9",
+      "owner": "repository intake/reconciliation",
+      "observation": "Predecessor archive integrity passed but repository reconciliation failed and classified DESIGN_NOT_READY; records nonnumeric contradictions.",
+      "verification": "GitHub connector full file"
+    },
+    {
+      "path": "crates/arcweft-core/src/task.rs",
+      "lines": "1-360",
+      "blob": "130256a8a8efb2fe6c7028c68357cb707f975eb9",
+      "owner": "current task/Need data",
+      "observation": "Current NeedId/TaskKey/TaskId are String-backed; TaskSpec caller supplies id/key; TaskEvent and RuntimeNeedState lack final complete correlation.",
+      "verification": "GitHub connector inspected definitions and consumers"
+    },
+    {
+      "path": "crates/arcweft-runtime-driver/src/task.rs",
+      "lines": "1-250",
+      "blob": "22aabea946be7645afcebe65415bcea3cd786eb9",
+      "owner": "runtime task journal/dispatch",
+      "observation": "Consumes driver-local GenerationId and current partial TaskEvent/TaskSpec shapes; uses BTreeMap task records and host dispatch envelopes.",
+      "verification": "GitHub connector full relevant range"
+    },
+    {
+      "path": "crates/arcweft-runtime-driver/src/swap.rs",
+      "lines": "1-180",
+      "blob": "39ecdfad33abfe4a55e20f8e7501878152ef797e",
+      "owner": "current generation owner",
+      "observation": "Defines runtime-driver-local GenerationId(pub u64), proving the required move to core and duplicate deletion.",
+      "verification": "GitHub connector range including lines 20-22"
+    },
+    {
+      "path": "crates/arcweft-runtime-driver/src/generation_runtime.rs",
+      "lines": "1-140",
+      "blob": "22ec3c7d02908333fb44c5990061feeaff736ed8",
+      "owner": "generation runtime consumers",
+      "observation": "Generation-local runtime image code consumes the swap-owned generation type and must import the final core owner.",
+      "verification": "GitHub connector"
+    },
+    {
+      "path": "crates/arcweft-view/src/view/identity.rs",
+      "lines": "20-223",
+      "blob": "153fa4450cc676e7f6b860c9700dfc7bb95e4315",
+      "owner": "current View identity",
+      "observation": "Current stable owner is ViewProgramId; current accepted semantic revision is AcceptedViewProgramRevision([u8;32]) with validation. No ViewProgramSemanticDigest/u32 revision.",
+      "verification": "GitHub connector full identity range"
+    },
+    {
+      "path": "crates/arcweft-lang-sema/src/registration/environment_input.rs",
+      "lines": "190-409",
+      "blob": "0f1bb0d1d2b2221e60bb564550cf6d9fb4e9af7a",
+      "owner": "accepted nominal inventory input",
+      "observation": "AcceptedNominalInventoryInput currently carries runtime_producer but no value_class or persistence, making predecessor ownership evidence unconstructible.",
+      "verification": "GitHub connector constructor/field range"
+    },
+    {
+      "path": "crates/arcweft-lang-sema/src/env/nominal.rs",
+      "lines": "1-260",
+      "blob": "820da68e99b0971d4ceb195eb46436e7aaf6d869",
+      "owner": "accepted nominal semantics/catalog",
+      "observation": "AcceptedNominalSemantics::Opaque currently contains only producer; AcceptedNominalCatalogDigest is the accepted catalog root.",
+      "verification": "GitHub connector"
+    },
+    {
+      "path": "crates/arcweft-lang-sema/src/types.rs",
+      "lines": "300-700",
+      "blob": "528d32482865aae4bf8dd8f456468b061ecdedc7",
+      "owner": "current TypeKind",
+      "observation": "Enumerates the exact current semantic type variants reconciled by the total ownership matrix, including Need, Ref, Stream, Function, Shared, AgentResource/Body, ViewValue, and nominal forms.",
+      "verification": "GitHub connector full enum range"
+    },
+    {
+      "path": "crates/arcweft-core/src/entry/identity.rs",
+      "lines": "1-160",
+      "blob": "dabe45e0cf5ddae15ddcc741e83d6b1a8ee0bfcf",
+      "owner": "existing RuntimeValueDigest",
+      "observation": "Existing digest macro owns RuntimeValueDigest and provides ZERO; this design reuses the type but forbids interpreting ZERO as empty arguments.",
+      "verification": "GitHub connector"
+    },
+    {
+      "path": "crates/arcweft-core/src/value.rs",
+      "lines": "430-520",
+      "blob": "6370e9bee5594bf3ec5835b5ab00405570a27a8f",
+      "owner": "current RuntimeValue",
+      "observation": "Current closed RuntimeValue variants include String/EntityRef/Tuple/etc. and no NeedHandle; the original enum must gain the new variant and inherent behavior.",
+      "verification": "GitHub connector"
+    },
+    {
+      "path": "crates/arcweft-core/src/value.rs",
+      "lines": "1000-1030",
+      "blob": "6370e9bee5594bf3ec5835b5ab00405570a27a8f",
+      "owner": "current canonical value API",
+      "observation": "RuntimeValue::try_digest currently obtains canonical bytes then hashes, proving the intermediate allocation replaced by one sink-parametric visitor.",
+      "verification": "GitHub connector"
+    },
+    {
+      "path": "crates/arcweft-core/src/entry/schema.rs",
+      "lines": "1-650",
+      "blob": "24e5bbc3cd3409f3f06ea08a81108574babb4626",
+      "owner": "canonical RuntimeValue byte grammar",
+      "observation": "One exhaustive CanonicalRuntimeValueBytes encoder owns stable value tags/order; tag 20 is available for NeedHandle and current Range/Iterator/Function lack replay/save encoding.",
+      "verification": "GitHub connector, including canonical writer lines 360-650"
+    },
+    {
+      "path": "crates/arcweft-runtime-plan/src/semantic_facts.rs",
+      "lines": "1-360",
+      "blob": "6e984a9a0c166c134d8e724b99261ac380852bf2",
+      "owner": "runtime normalized type projection",
+      "observation": "Current normalized type owner already carries exact opaque producer/admission/value_class/persistence in runtime projection and preserves accepted semantic type identity.",
+      "verification": "GitHub connector"
+    },
+    {
+      "path": "docs/02-runtime/async-scheduler.md",
+      "lines": "1-260",
+      "blob": "e070aa843839be76654df6c61b2ccf4c237d249e",
+      "owner": "maintained scheduler/Need contract",
+      "observation": "Maintains JoinSameKey task boundary, Sans-I/O TaskHost, Need<Result> domain-failure rule, Await/AwaitMany behavior, and timeout ordering.",
+      "verification": "GitHub connector"
+    },
+    {
+      "path": "docs/reviews/packages/arcweft-lang-01.5.1.1.2.1.1.1.1-checked-match-coverage-runtime-need-identity-and-awbc-allocation-correction-final-contract/CHECKED_MATCH_COVERAGE.md",
+      "lines": "1-160",
+      "blob": "4f73f785b229d7e3d34785ab472b94970dcd880a",
+      "owner": "retained predecessor coverage design",
+      "observation": "Provides bounded typed Maranget pattern matrix and exact limits retained here, subject to the request's corrected literal-only guard authority.",
+      "verification": "GitHub connector frozen mirror"
+    },
+    {
+      "path": "docs/reviews/packages/arcweft-lang-01.5.1.1.2.1.1.1.1-checked-match-coverage-runtime-need-identity-and-awbc-allocation-correction-final-contract/README.md",
+      "lines": "1-120",
+      "blob": "ef1b0b26aab7ab57d2247406bf7fda9011297441",
+      "owner": "predecessor frozen mirror index",
+      "observation": "Records predecessor claimed readiness, SHA/request identity, reading order, and prior owner selections superseded where intake/current request identify contradictions.",
+      "verification": "GitHub connector frozen mirror"
+    }
+  ],
+  "production_commands_run": [],
+  "predecessor_binary_independently_rehashed": false
+}

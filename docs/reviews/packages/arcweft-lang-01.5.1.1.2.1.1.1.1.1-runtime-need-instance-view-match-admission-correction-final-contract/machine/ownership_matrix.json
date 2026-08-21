@@ -1,0 +1,600 @@
+{
+  "schema_version": 1,
+  "rows": [
+    {
+      "variant": "Bool",
+      "disposition": "Copy",
+      "recursion": "none",
+      "evidence": "existing scalar RuntimeValue carrier",
+      "rejection": ""
+    },
+    {
+      "variant": "I8",
+      "disposition": "Copy",
+      "recursion": "none",
+      "evidence": "existing scalar RuntimeValue carrier",
+      "rejection": ""
+    },
+    {
+      "variant": "I16",
+      "disposition": "Copy",
+      "recursion": "none",
+      "evidence": "existing scalar RuntimeValue carrier",
+      "rejection": ""
+    },
+    {
+      "variant": "I32",
+      "disposition": "Copy",
+      "recursion": "none",
+      "evidence": "existing scalar RuntimeValue carrier",
+      "rejection": ""
+    },
+    {
+      "variant": "I64",
+      "disposition": "Copy",
+      "recursion": "none",
+      "evidence": "existing scalar RuntimeValue carrier",
+      "rejection": ""
+    },
+    {
+      "variant": "I128",
+      "disposition": "Copy",
+      "recursion": "none",
+      "evidence": "existing scalar RuntimeValue carrier",
+      "rejection": ""
+    },
+    {
+      "variant": "ISize",
+      "disposition": "Copy",
+      "recursion": "none",
+      "evidence": "existing scalar RuntimeValue carrier",
+      "rejection": ""
+    },
+    {
+      "variant": "U8",
+      "disposition": "Copy",
+      "recursion": "none",
+      "evidence": "existing scalar RuntimeValue carrier",
+      "rejection": ""
+    },
+    {
+      "variant": "U16",
+      "disposition": "Copy",
+      "recursion": "none",
+      "evidence": "existing scalar RuntimeValue carrier",
+      "rejection": ""
+    },
+    {
+      "variant": "U32",
+      "disposition": "Copy",
+      "recursion": "none",
+      "evidence": "existing scalar RuntimeValue carrier",
+      "rejection": ""
+    },
+    {
+      "variant": "U64",
+      "disposition": "Copy",
+      "recursion": "none",
+      "evidence": "existing scalar RuntimeValue carrier",
+      "rejection": ""
+    },
+    {
+      "variant": "U128",
+      "disposition": "Copy",
+      "recursion": "none",
+      "evidence": "existing scalar RuntimeValue carrier",
+      "rejection": ""
+    },
+    {
+      "variant": "USize",
+      "disposition": "Copy",
+      "recursion": "none",
+      "evidence": "existing scalar RuntimeValue carrier",
+      "rejection": ""
+    },
+    {
+      "variant": "F32",
+      "disposition": "Copy",
+      "recursion": "none",
+      "evidence": "existing scalar RuntimeValue carrier",
+      "rejection": ""
+    },
+    {
+      "variant": "F64",
+      "disposition": "Copy",
+      "recursion": "none",
+      "evidence": "existing scalar RuntimeValue carrier",
+      "rejection": ""
+    },
+    {
+      "variant": "Char",
+      "disposition": "Copy",
+      "recursion": "none",
+      "evidence": "existing scalar RuntimeValue carrier",
+      "rejection": ""
+    },
+    {
+      "variant": "Duration",
+      "disposition": "Copy",
+      "recursion": "none",
+      "evidence": "existing scalar RuntimeValue carrier",
+      "rejection": ""
+    },
+    {
+      "variant": "Unit",
+      "disposition": "Copy",
+      "recursion": "none",
+      "evidence": "existing scalar RuntimeValue carrier",
+      "rejection": ""
+    },
+    {
+      "variant": "Never",
+      "disposition": "Copy",
+      "recursion": "none",
+      "evidence": "existing scalar RuntimeValue carrier",
+      "rejection": ""
+    },
+    {
+      "variant": "String",
+      "disposition": "SnapshotClone",
+      "recursion": "none",
+      "evidence": "owned current runtime/string/progress snapshot owner",
+      "rejection": ""
+    },
+    {
+      "variant": "Bytes",
+      "disposition": "SnapshotClone",
+      "recursion": "none",
+      "evidence": "owned current runtime/string/progress snapshot owner",
+      "rejection": ""
+    },
+    {
+      "variant": "TextCluster",
+      "disposition": "SnapshotClone",
+      "recursion": "none",
+      "evidence": "owned current runtime/string/progress snapshot owner",
+      "rejection": ""
+    },
+    {
+      "variant": "DisplayText",
+      "disposition": "SnapshotClone",
+      "recursion": "none",
+      "evidence": "owned current runtime/string/progress snapshot owner",
+      "rejection": ""
+    },
+    {
+      "variant": "DebugStatePath",
+      "disposition": "SnapshotClone",
+      "recursion": "none",
+      "evidence": "owned current runtime/string/progress snapshot owner",
+      "rejection": ""
+    },
+    {
+      "variant": "ObservationFieldPath",
+      "disposition": "SnapshotClone",
+      "recursion": "none",
+      "evidence": "owned current runtime/string/progress snapshot owner",
+      "rejection": ""
+    },
+    {
+      "variant": "Progress",
+      "disposition": "SnapshotClone",
+      "recursion": "none",
+      "evidence": "owned current runtime/string/progress snapshot owner",
+      "rejection": ""
+    },
+    {
+      "variant": "StageApi",
+      "disposition": "Reject",
+      "recursion": "none",
+      "evidence": "compile-time capability only",
+      "rejection": "FrameLocalValue"
+    },
+    {
+      "variant": "LineContext",
+      "disposition": "Reject",
+      "recursion": "none",
+      "evidence": "line activation context",
+      "rejection": "FrameLocalValue"
+    },
+    {
+      "variant": "StageActorHandle",
+      "disposition": "Reject",
+      "recursion": "none",
+      "evidence": "affine handle semantics",
+      "rejection": "AffineValue"
+    },
+    {
+      "variant": "CueHandle",
+      "disposition": "Reject",
+      "recursion": "none",
+      "evidence": "affine handle semantics",
+      "rejection": "AffineValue"
+    },
+    {
+      "variant": "VoiceHandle",
+      "disposition": "Reject",
+      "recursion": "none",
+      "evidence": "affine handle semantics",
+      "rejection": "AffineValue"
+    },
+    {
+      "variant": "Handle",
+      "disposition": "Reject",
+      "recursion": "none",
+      "evidence": "affine handle semantics",
+      "rejection": "AffineValue"
+    },
+    {
+      "variant": "ThreadHandle",
+      "disposition": "Reject",
+      "recursion": "none",
+      "evidence": "affine handle semantics",
+      "rejection": "AffineValue"
+    },
+    {
+      "variant": "Range",
+      "disposition": "Reject",
+      "recursion": "none",
+      "evidence": "current RuntimeValue canonical owner has no range replay/save row",
+      "rejection": "MissingRuntimeSnapshotOwner"
+    },
+    {
+      "variant": "IteratorState",
+      "disposition": "Reject",
+      "recursion": "none",
+      "evidence": "stateful/frame-local iterator",
+      "rejection": "FrameLocalValue"
+    },
+    {
+      "variant": "Ref",
+      "disposition": "SnapshotClone",
+      "recursion": "do not recurse associated payload type",
+      "evidence": "RuntimeValue::EntityRef(String)",
+      "rejection": ""
+    },
+    {
+      "variant": "Probe",
+      "disposition": "SnapshotClone",
+      "recursion": "recurse checked probe value type where present",
+      "evidence": "current core RuntimeAgentValue canonical owner",
+      "rejection": ""
+    },
+    {
+      "variant": "Predicate",
+      "disposition": "SnapshotClone",
+      "recursion": "recurse checked probe value type where present",
+      "evidence": "current core RuntimeAgentValue canonical owner",
+      "rejection": ""
+    },
+    {
+      "variant": "Observation",
+      "disposition": "SnapshotClone",
+      "recursion": "closed DTO children in declaration order",
+      "evidence": "current core Agent DTO snapshot owner; no ResourceTypeRegistry lookup",
+      "rejection": ""
+    },
+    {
+      "variant": "ObservedObject",
+      "disposition": "SnapshotClone",
+      "recursion": "closed DTO children in declaration order",
+      "evidence": "current core Agent DTO snapshot owner; no ResourceTypeRegistry lookup",
+      "rejection": ""
+    },
+    {
+      "variant": "AgentBBox",
+      "disposition": "SnapshotClone",
+      "recursion": "closed DTO children in declaration order",
+      "evidence": "current core Agent DTO snapshot owner; no ResourceTypeRegistry lookup",
+      "rejection": ""
+    },
+    {
+      "variant": "ActionName",
+      "disposition": "SnapshotClone",
+      "recursion": "closed DTO children in declaration order",
+      "evidence": "current core Agent DTO snapshot owner; no ResourceTypeRegistry lookup",
+      "rejection": ""
+    },
+    {
+      "variant": "ActionTarget",
+      "disposition": "SnapshotClone",
+      "recursion": "closed DTO children in declaration order",
+      "evidence": "current core Agent DTO snapshot owner; no ResourceTypeRegistry lookup",
+      "rejection": ""
+    },
+    {
+      "variant": "ActionResult",
+      "disposition": "SnapshotClone",
+      "recursion": "closed DTO children in declaration order",
+      "evidence": "current core Agent DTO snapshot owner; no ResourceTypeRegistry lookup",
+      "rejection": ""
+    },
+    {
+      "variant": "AgentValue",
+      "disposition": "SnapshotClone",
+      "recursion": "closed DTO children in declaration order",
+      "evidence": "current core Agent DTO snapshot owner; no ResourceTypeRegistry lookup",
+      "rejection": ""
+    },
+    {
+      "variant": "DataFormat",
+      "disposition": "SnapshotClone",
+      "recursion": "closed DTO children in declaration order",
+      "evidence": "current core Agent DTO snapshot owner; no ResourceTypeRegistry lookup",
+      "rejection": ""
+    },
+    {
+      "variant": "DataShape",
+      "disposition": "SnapshotClone",
+      "recursion": "closed DTO children in declaration order",
+      "evidence": "current core Agent DTO snapshot owner; no ResourceTypeRegistry lookup",
+      "rejection": ""
+    },
+    {
+      "variant": "AgentEntityMetadata",
+      "disposition": "SnapshotClone",
+      "recursion": "closed DTO children in declaration order",
+      "evidence": "current core Agent DTO snapshot owner; no ResourceTypeRegistry lookup",
+      "rejection": ""
+    },
+    {
+      "variant": "AgentSourceAnchor",
+      "disposition": "SnapshotClone",
+      "recursion": "closed DTO children in declaration order",
+      "evidence": "current core Agent DTO snapshot owner; no ResourceTypeRegistry lookup",
+      "rejection": ""
+    },
+    {
+      "variant": "AgentProjectGraphNeighborhood",
+      "disposition": "SnapshotClone",
+      "recursion": "closed DTO children in declaration order",
+      "evidence": "current core Agent DTO snapshot owner; no ResourceTypeRegistry lookup",
+      "rejection": ""
+    },
+    {
+      "variant": "AgentProjectGraphSymbol",
+      "disposition": "SnapshotClone",
+      "recursion": "closed DTO children in declaration order",
+      "evidence": "current core Agent DTO snapshot owner; no ResourceTypeRegistry lookup",
+      "rejection": ""
+    },
+    {
+      "variant": "AgentProjectGraphEdge",
+      "disposition": "SnapshotClone",
+      "recursion": "closed DTO children in declaration order",
+      "evidence": "current core Agent DTO snapshot owner; no ResourceTypeRegistry lookup",
+      "rejection": ""
+    },
+    {
+      "variant": "CaptureTarget",
+      "disposition": "SnapshotClone",
+      "recursion": "closed DTO children in declaration order",
+      "evidence": "current core Agent DTO snapshot owner; no ResourceTypeRegistry lookup",
+      "rejection": ""
+    },
+    {
+      "variant": "CaptureRef",
+      "disposition": "SnapshotClone",
+      "recursion": "closed DTO children in declaration order",
+      "evidence": "current core Agent DTO snapshot owner; no ResourceTypeRegistry lookup",
+      "rejection": ""
+    },
+    {
+      "variant": "AgentResource",
+      "disposition": "SnapshotClone",
+      "recursion": "closed DTO children in declaration order",
+      "evidence": "current core Agent DTO snapshot owner; no ResourceTypeRegistry lookup",
+      "rejection": ""
+    },
+    {
+      "variant": "AgentResourceBody",
+      "disposition": "SnapshotClone",
+      "recursion": "closed DTO children in declaration order",
+      "evidence": "current core Agent DTO snapshot owner; no ResourceTypeRegistry lookup",
+      "rejection": ""
+    },
+    {
+      "variant": "RagContextPack",
+      "disposition": "SnapshotClone",
+      "recursion": "closed DTO children in declaration order",
+      "evidence": "current core Agent DTO snapshot owner; no ResourceTypeRegistry lookup",
+      "rejection": ""
+    },
+    {
+      "variant": "AgentBuiltin",
+      "disposition": "SnapshotClone",
+      "recursion": "closed DTO children in declaration order",
+      "evidence": "current core Agent DTO snapshot owner; no ResourceTypeRegistry lookup",
+      "rejection": ""
+    },
+    {
+      "variant": "Vec",
+      "disposition": "SnapshotClone",
+      "recursion": "classify item; array validates concrete accepted length",
+      "evidence": "existing RuntimeValue::Seq snapshot owner",
+      "rejection": ""
+    },
+    {
+      "variant": "Array",
+      "disposition": "SnapshotClone",
+      "recursion": "classify item; array validates concrete accepted length",
+      "evidence": "existing RuntimeValue::Seq snapshot owner",
+      "rejection": ""
+    },
+    {
+      "variant": "Seq",
+      "disposition": "SnapshotClone",
+      "recursion": "classify item; array validates concrete accepted length",
+      "evidence": "existing RuntimeValue::Seq snapshot owner",
+      "rejection": ""
+    },
+    {
+      "variant": "Slice",
+      "disposition": "SnapshotClone",
+      "recursion": "classify item",
+      "evidence": "accepted runtime projection owns a copied RuntimeValue::Seq, not BorrowRef",
+      "rejection": ""
+    },
+    {
+      "variant": "Map",
+      "disposition": "Reject",
+      "recursion": "validate key/value type closure for diagnostics only",
+      "evidence": "current RuntimeValue has no unconditional Map snapshot owner",
+      "rejection": "MissingRuntimeSnapshotOwner"
+    },
+    {
+      "variant": "BorrowRef",
+      "disposition": "Reject",
+      "recursion": "none",
+      "evidence": "borrow kind/lifetime retained exactly",
+      "rejection": "BorrowedValue"
+    },
+    {
+      "variant": "Need",
+      "disposition": "SnapshotClone",
+      "recursion": "do not require payload ownership; require payload runtime type identity and exact producer-argument value certificate",
+      "evidence": "new RuntimeNeedHandle snapshot owner",
+      "rejection": ""
+    },
+    {
+      "variant": "Stream",
+      "disposition": "Reject",
+      "recursion": "none",
+      "evidence": "protected affine stream owner",
+      "rejection": "StreamValue"
+    },
+    {
+      "variant": "Result",
+      "disposition": "max(Copy, SnapshotClone)",
+      "recursion": "classify children in semantic/source order",
+      "evidence": "existing closed aggregate RuntimeValue owner",
+      "rejection": ""
+    },
+    {
+      "variant": "Option",
+      "disposition": "max(Copy, SnapshotClone)",
+      "recursion": "classify children in semantic/source order",
+      "evidence": "existing closed aggregate RuntimeValue owner",
+      "rejection": ""
+    },
+    {
+      "variant": "Tuple",
+      "disposition": "max(Copy, SnapshotClone)",
+      "recursion": "classify children in semantic/source order",
+      "evidence": "existing closed aggregate RuntimeValue owner",
+      "rejection": ""
+    },
+    {
+      "variant": "Choice",
+      "disposition": "max(Copy, SnapshotClone)",
+      "recursion": "classify children in semantic/source order",
+      "evidence": "existing closed aggregate RuntimeValue owner",
+      "rejection": ""
+    },
+    {
+      "variant": "Shared",
+      "disposition": "SnapshotClone",
+      "recursion": "classify child; cycle checked",
+      "evidence": "accepted Shared snapshot owner introduced by the ownership/carrier cuts",
+      "rejection": ""
+    },
+    {
+      "variant": "Function",
+      "disposition": "Reject at type level",
+      "recursion": "value-level certificate only",
+      "evidence": "capture-free stable callable may receive SnapshotClone certificate; closures/captures reject",
+      "rejection": "FunctionValueRequiresCertificate"
+    },
+    {
+      "variant": "GenericParam",
+      "disposition": "Reject",
+      "recursion": "none",
+      "evidence": "must be substituted before admission",
+      "rejection": "UnresolvedType"
+    },
+    {
+      "variant": "ProjectNominal",
+      "disposition": "max(Copy, SnapshotClone)",
+      "recursion": "walk fields/cases in accepted declaration order with semantic-id cycle guard",
+      "evidence": "ProjectSymbolTable exact declaration/layout evidence",
+      "rejection": ""
+    },
+    {
+      "variant": "AcceptedNominal",
+      "disposition": "delegate",
+      "recursion": "Exact -> child; Opaque -> class/persistence; Character -> character owner",
+      "evidence": "RegisteredSemanticWorld accepted nominal record",
+      "rejection": ""
+    },
+    {
+      "variant": "OpenNominal",
+      "disposition": "Reject",
+      "recursion": "none",
+      "evidence": "open rule has no exact persistent runtime owner",
+      "rejection": "UnresolvedType"
+    },
+    {
+      "variant": "Error",
+      "disposition": "Reject",
+      "recursion": "none",
+      "evidence": "poison/recovery fact",
+      "rejection": "UnresolvedType"
+    },
+    {
+      "variant": "Projection",
+      "disposition": "Reject",
+      "recursion": "none",
+      "evidence": "associated projection must be resolved first",
+      "rejection": "UnresolvedType"
+    },
+    {
+      "variant": "CharacterPatch",
+      "disposition": "SnapshotClone",
+      "recursion": "walk owned fields/cases in accepted order",
+      "evidence": "current owned Character/dialogue DTO snapshot owner",
+      "rejection": ""
+    },
+    {
+      "variant": "FocusPatch",
+      "disposition": "SnapshotClone",
+      "recursion": "walk owned fields/cases in accepted order",
+      "evidence": "current owned Character/dialogue DTO snapshot owner",
+      "rejection": ""
+    },
+    {
+      "variant": "CharacterDialogue",
+      "disposition": "SnapshotClone",
+      "recursion": "walk owned fields/cases in accepted order",
+      "evidence": "current owned Character/dialogue DTO snapshot owner",
+      "rejection": ""
+    },
+    {
+      "variant": "CharacterNominal",
+      "disposition": "SnapshotClone",
+      "recursion": "walk owned fields/cases in accepted order",
+      "evidence": "current owned Character/dialogue DTO snapshot owner",
+      "rejection": ""
+    },
+    {
+      "variant": "DialogueLine",
+      "disposition": "Reject",
+      "recursion": "none",
+      "evidence": "non-escaping suspension operation/line-plan result",
+      "rejection": "FrameLocalValue"
+    },
+    {
+      "variant": "ViewValue",
+      "disposition": "Reject",
+      "recursion": "none",
+      "evidence": "no published exact runtime View projection/snapshot owner",
+      "rejection": "MissingViewPersistenceEvidence"
+    },
+    {
+      "variant": "Named",
+      "disposition": "Reject",
+      "recursion": "none",
+      "evidence": "internal/host type lacks accepted closed owner",
+      "rejection": "UnresolvedType"
+    }
+  ]
+}

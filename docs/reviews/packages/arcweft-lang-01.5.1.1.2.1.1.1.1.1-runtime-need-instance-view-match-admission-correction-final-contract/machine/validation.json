@@ -1,0 +1,17 @@
+{
+  "schema_version": 1,
+  "status": "PASS",
+  "package": "arcweft-lang-01.5.1.1.2.1.1.1.1.1-runtime-need-instance-view-match-admission-correction-final-contract",
+  "inspected_sha": "17b384a36e1412cc7e7d9f13073d8dd33dcb5cbc",
+  "commands_recorded": [
+    "python -m py_compile tools/validate_package.py",
+    "python tools/validate_package.py . --self-test",
+    "python tools/validate_package.py ../arcweft-lang-01.5.1.1.2.1.1.1.1.1-runtime-need-instance-view-match-admission-correction-final-contract.zip --self-test"
+  ],
+  "negative_self_tests": 16,
+  "production_commands_run": [],
+  "production_modified": false,
+  "predecessor_binary_independently_rehashed": false,
+  "final_zip_sha256_self_embedded": false,
+  "note": "This model is delivered only after all recorded package commands pass; final ZIP SHA-256 is reported externally."
+}

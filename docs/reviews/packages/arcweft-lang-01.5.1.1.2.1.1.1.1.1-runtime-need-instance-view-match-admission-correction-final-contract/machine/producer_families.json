@@ -1,0 +1,41 @@
+{
+  "schema_version": 1,
+  "rows": [
+    {
+      "tag": 0,
+      "name": "StructuredTaskPlan"
+    },
+    {
+      "tag": 1,
+      "name": "AwbcTaskPlan"
+    },
+    {
+      "tag": 2,
+      "name": "ViewMatchSubscription"
+    },
+    {
+      "tag": 3,
+      "name": "AwaitManyBase"
+    },
+    {
+      "tag": 4,
+      "name": "AwaitManyChild"
+    },
+    {
+      "tag": 5,
+      "name": "Timeout"
+    },
+    {
+      "tag": 6,
+      "name": "LineTask"
+    },
+    {
+      "tag": 7,
+      "name": "HostAdapterTask"
+    },
+    {
+      "tag": 8,
+      "name": "MakeNeedHandle"
+    }
+  ]
+}
