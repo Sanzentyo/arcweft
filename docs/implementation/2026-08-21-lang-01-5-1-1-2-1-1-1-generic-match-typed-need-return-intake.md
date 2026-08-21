@@ -134,3 +134,32 @@ primitives, and constructible current APIs.
 No Rust, Cargo manifest, production test, fixture, generated artifact, stable
 chapter, build, Clippy, platform, AOT, or runtime validation was changed or run
 for this intake cut.
+
+## 2026-08-21 user-directed allocation preselection
+
+After this intake, the user directed that opcode, function-kind, function-flag,
+and `u32` wire collisions be selected before redelivery rather than left to the
+next reviewer. A Sol-max read-only audit selected and the maintained request now
+fixes:
+
+- current executable opcode meanings unchanged;
+- `NeedTimeout=0x1e`, `CommitDialogueResult=0x20`,
+  `MakeNeedHandle=0x29`, `CopyValue=0x2a`,
+  `ExecuteLineOperation=0x2b`, Stream ordinary `0x2c..=0x2e`, and Stream
+  terminators `0x8f..=0x90`;
+- current function kinds 0..3/6/7 unchanged, removed 4/5 rejected,
+  Stream `Ordinary=8`/`GeneratorProducer=9`, and `LineActivation=10`;
+- Stream producer flag bit 4 and Need producer flag bit 5 under one typed flag
+  enum/validated bitset;
+- `#[repr(u8)]` opcode/kind/flag enums as the only numeric declarations, with
+  direct numeric Serde/private Wire and allocation-free scalar decode;
+- one shortest canonical base-128 varint owner for all ordinary `u32` values,
+  including tensor dimensions; and
+- one final encoder buffer and direct borrowed-reader decode, with allocations
+  only for final owned Vec/String values.
+
+The updated
+[`Lang-01.5.1.1.2.1.1.1.1` request](../reviews/requests/2026-08-21-lang-01.5.1.1.2.1.1.1.1-checked-match-coverage-runtime-need-identity-and-awbc-allocation-correction.md)
+makes these selections mandatory. The remaining design blockers are complete
+runtime Need/task identity, checked Match coverage, ownership admission, and
+parent-compatible stable Match product identity.
