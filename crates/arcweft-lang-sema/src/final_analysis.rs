@@ -91,11 +91,11 @@ pub use model::{
     CheckedExpressionChildRoleStep, CheckedExpressionResolution, CheckedExpressionSemanticDigest,
     CheckedFunctionExecution, CheckedImplicitCallable, CheckedItem, CheckedItemRole,
     CheckedIteration, CheckedIteratorFamily, CheckedMatchArmFact, CheckedMatchFact,
-    CheckedMatchSemanticDigest, CheckedOrdinaryFunctionEmission, CheckedPatchOperation,
-    CheckedPattern, CheckedPatternResolution, CheckedPatternSemanticDigest, CheckedPipe,
-    CheckedProjectCallable, CheckedProjectItem, CheckedProjectItemOwner, CheckedProjectNominal,
-    CheckedSelectResolution, CheckedStatement, CheckedStatementRole, CheckedStyleCallee,
-    CheckedSuspensionRole, CheckedSuspensionStatement, CheckedTraitConformance,
+    CheckedMatchRef, CheckedMatchSemanticDigest, CheckedOrdinaryFunctionEmission,
+    CheckedPatchOperation, CheckedPattern, CheckedPatternResolution, CheckedPatternSemanticDigest,
+    CheckedPipe, CheckedProjectCallable, CheckedProjectItem, CheckedProjectItemOwner,
+    CheckedProjectNominal, CheckedSelectResolution, CheckedStatement, CheckedStatementRole,
+    CheckedStyleCallee, CheckedSuspensionRole, CheckedSuspensionStatement, CheckedTraitConformance,
     CheckedTraitIdentity, CheckedTry, CheckedTryBoundary, CheckedTryCarrier, CheckedTypeSelection,
     CheckedValueResolution, CheckedVariantOwner, CheckedVariantResolution, CheckedViewCall,
     CheckedViewCallee, PostfixBracketResolution, RegisteredSemanticValueId,
@@ -114,6 +114,10 @@ pub use semantic_transcript::{
     CheckedCoverageWitness, CheckedGuardClass, CheckedMatch, CheckedMatchArm, CheckedMatchBinding,
     CheckedMatchCoverage, CheckedMatchLimits, CheckedUnreachableArm, CheckedUnreachableReason,
     SemanticTranscriptError,
+};
+pub(crate) use semantic_transcript::{
+    TranscriptHasher, accepted_declaration_id, checked_expression_path, write_len,
+    write_value_coordinate,
 };
 
 #[cfg(test)]

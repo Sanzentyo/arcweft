@@ -65,6 +65,7 @@ use super::{
     StableCheckedValueCoordinate, analyze_final_project,
 };
 use crate::{
+    CheckedNeedProducerAdmissionError,
     assertion::{AssertionBuildProfile, AssertionContext, AssertionRuntimePolicy},
     callable::{
         AdapterPackageId, AgentIntrinsicSignatureId, CallCalleeClassificationFact,
@@ -2250,6 +2251,225 @@ fn public_ownership_evidence_row_limit_is_exact_and_fails_one_over() {
     );
 }
 
+fn selected_call_owner(report: &FinalSemanticAnalysis) -> arcweft_lang_hir::identity::ExprId {
+    report
+        .calls()
+        .find_map(|(owner, facts)| {
+            matches!(facts.target(), CallTargetFact::Selected { .. }).then_some(owner)
+        })
+        .expect("fixture retains one selected call")
+}
+
+#[test]
+fn selected_direct_call_derives_source_order_producer_admission_without_caller_rows() {
+    let build = |source: &str| {
+        let fixture = fixture(source, None);
+        let report = analyze(&fixture).expect("selected producer call final analysis");
+        let project = fixture.project.executable_view().expect("executable HIR");
+        let declaration = fixture
+            .symbols
+            .callable_symbols()
+            .find(|symbol| symbol.declaration().name() == "root")
+            .expect("root callable")
+            .declaration();
+        report
+            .checked_need_producer_admission_for_call(
+                project,
+                &fixture.symbols,
+                &fixture.registered,
+                declaration,
+                selected_call_owner(&report),
+                CheckedOwnershipLimits::PRODUCTION,
+            )
+            .expect("direct selected call has an exact expression-backed argument inventory")
+    };
+
+    let source = concat!(
+        "fn consume(number: i64, label: String) -> i64 { number }\n",
+        "fn root() -> i64 { consume(1i64, \"stable\") }\n",
+    );
+    let first = build(source);
+    let reallocated = build(source);
+    let changed_type = build(concat!(
+        "fn consume(number: i64, label: bool) -> i64 { number }\n",
+        "fn root() -> i64 { consume(1i64, true) }\n",
+    ));
+
+    assert_eq!(first.arguments().len(), 2);
+    assert_eq!(
+        first.arguments()[0].disposition(),
+        RetainedValueDisposition::Copy
+    );
+    assert_eq!(
+        first.arguments()[1].disposition(),
+        RetainedValueDisposition::SnapshotClone
+    );
+    assert_eq!(first.digest(), reallocated.digest());
+    assert_ne!(first.digest(), changed_type.digest());
+}
+
+#[test]
+fn producer_admission_fails_closed_for_need_and_argument_limit() {
+    let fixture = fixture(
+        concat!(
+            "fn consume(value: Need<i64>) {}\n",
+            "fn root(value: Need<i64>) { consume(value) }\n",
+        ),
+        None,
+    );
+    let report = analyze(&fixture).expect("Need producer call final analysis");
+    let project = fixture.project.executable_view().expect("executable HIR");
+    let declaration = fixture
+        .symbols
+        .callable_symbols()
+        .find(|symbol| symbol.declaration().name() == "root")
+        .expect("root callable")
+        .declaration();
+    let owner = selected_call_owner(&report);
+
+    assert!(matches!(
+        report.checked_need_producer_admission_for_call(
+            project,
+            &fixture.symbols,
+            &fixture.registered,
+            declaration,
+            owner,
+            CheckedOwnershipLimits::PRODUCTION,
+        ),
+        Err(CheckedNeedProducerAdmissionError::Ownership(
+            CheckedOwnershipError::Rejected
+        ))
+    ));
+    assert_eq!(
+        report.checked_need_producer_admission_for_call(
+            project,
+            &fixture.symbols,
+            &fixture.registered,
+            declaration,
+            owner,
+            CheckedOwnershipLimits {
+                max_producer_arguments: 0,
+                ..CheckedOwnershipLimits::PRODUCTION
+            },
+        ),
+        Err(CheckedNeedProducerAdmissionError::WorkLimit)
+    );
+}
+
+#[test]
+fn producer_admission_rejects_an_explicit_extension_receiver_capture() {
+    let fixture = fixture(
+        concat!(
+            "fn normalize(self: String, suffix: String) -> String { self }\n",
+            "fn dotted(value: String) -> String { value.normalize(\"!\") }\n",
+        ),
+        None,
+    );
+    let report = analyze(&fixture).expect("extension receiver final analysis");
+    let project = fixture.project.executable_view().expect("executable HIR");
+    let module = project
+        .module(&CanonicalModulePath::crate_root())
+        .expect("root HIR module");
+    let owner = report
+        .calls()
+        .find_map(|(owner, _)| {
+            module
+                .resolve_expr(owner)
+                .ok()
+                .is_some_and(|expression| {
+                    matches!(
+                        expression.kind(),
+                        HirExprKind::Call(call)
+                            if matches!(call.callee(), HirCallCallee::UnresolvedDot { .. })
+                    )
+                })
+                .then_some(owner)
+        })
+        .expect("dotted extension call");
+    let declaration = fixture
+        .symbols
+        .callable_symbols()
+        .find(|symbol| symbol.declaration().name() == "dotted")
+        .expect("dotted callable")
+        .declaration();
+
+    assert_eq!(
+        report.checked_need_producer_admission_for_call(
+            project,
+            &fixture.symbols,
+            &fixture.registered,
+            declaration,
+            owner,
+            CheckedOwnershipLimits::PRODUCTION,
+        ),
+        Err(CheckedNeedProducerAdmissionError::UnsupportedCapture)
+    );
+}
+
+#[test]
+fn producer_admission_rejects_compact_spread_slots() {
+    let fixture = fixture(
+        concat!(
+            "fn add(left: i64, right: i64) -> i64 { left + right }\n",
+            "fn root() -> i64 { add([1i64, 2i64]...) }\n",
+        ),
+        None,
+    );
+    let report = analyze(&fixture).expect("compact spread final analysis");
+    let project = fixture.project.executable_view().expect("executable HIR");
+    let declaration = fixture
+        .symbols
+        .callable_symbols()
+        .find(|symbol| symbol.declaration().name() == "root")
+        .expect("root callable")
+        .declaration();
+
+    assert_eq!(
+        report.checked_need_producer_admission_for_call(
+            project,
+            &fixture.symbols,
+            &fixture.registered,
+            declaration,
+            selected_call_owner(&report),
+            CheckedOwnershipLimits::PRODUCTION,
+        ),
+        Err(CheckedNeedProducerAdmissionError::UnsupportedArgumentInventory)
+    );
+}
+
+#[test]
+fn producer_admission_rejects_a_type_level_function_argument() {
+    let fixture = fixture(
+        concat!(
+            "fn consume(callback: i64 -> i64) {}\n",
+            "fn root(callback: i64 -> i64) { consume(callback) }\n",
+        ),
+        None,
+    );
+    let report = analyze(&fixture).expect("function argument final analysis");
+    let project = fixture.project.executable_view().expect("executable HIR");
+    let declaration = fixture
+        .symbols
+        .callable_symbols()
+        .find(|symbol| symbol.declaration().name() == "root")
+        .expect("root callable")
+        .declaration();
+
+    assert!(matches!(
+        report.checked_need_producer_admission_for_call(
+            project,
+            &fixture.symbols,
+            &fixture.registered,
+            declaration,
+            selected_call_owner(&report),
+            CheckedOwnershipLimits::PRODUCTION,
+        ),
+        Err(CheckedNeedProducerAdmissionError::Ownership(
+            CheckedOwnershipError::Rejected
+        ))
+    ));
+}
+
 #[test]
 fn pending_observer_uses_the_standard_progress_field_owner() {
     let fixture = fixture(
@@ -2890,6 +3110,65 @@ fn checked_record_fields_use_declaration_ordinals_not_authored_order() {
     assert_eq!(accepted_ordinals, [(0, 1), (1, 0)]);
 }
 
+fn checked_match_reference(
+    report: &FinalSemanticAnalysis,
+    module: &HirModule,
+    symbols: &ProjectSymbolTable,
+    owner: arcweft_lang_hir::identity::ExprId,
+) -> super::CheckedMatchRef {
+    report
+        .checked_match_ref(module, symbols, owner)
+        .expect("Match reference belongs to the exact accepted module snapshot")
+}
+
+#[test]
+fn checked_match_reference_rejects_a_foreign_snapshot_before_transcription() {
+    let source = concat!(
+        "fn root(flag: bool) -> i64 {\n",
+        "    match flag {\n",
+        "        true => 1i64\n",
+        "        false => 2i64\n",
+        "    }\n",
+        "}\n",
+    );
+    let fixture = fixture(source, None);
+    let report = analyze(&fixture).expect("checked Match final analysis");
+    let project = fixture.project.executable_view().expect("executable HIR");
+    let module = project
+        .module(&CanonicalModulePath::crate_root())
+        .expect("root HIR module");
+    let owner = module
+        .expressions()
+        .find_map(|(owner, expression)| {
+            matches!(expression.kind(), HirExprKind::Match(_)).then_some(owner)
+        })
+        .expect("Match expression");
+    let declaration = fixture
+        .symbols
+        .callable_symbols()
+        .find(|symbol| symbol.declaration().name() == "root")
+        .expect("root callable")
+        .declaration();
+    let foreign = self::fixture(source, None);
+    let foreign_project = foreign.project.executable_view().expect("foreign HIR");
+    let foreign_snapshot = foreign_project
+        .module(&CanonicalModulePath::crate_root())
+        .expect("foreign root HIR module")
+        .snapshot_id();
+    let stale = super::CheckedMatchRef::new(foreign_snapshot, owner);
+
+    assert_eq!(
+        report.build_checked_match_for_ref(
+            project,
+            &fixture.symbols,
+            declaration,
+            stale,
+            CheckedMatchLimits::PRODUCTION,
+        ),
+        Err(SemanticTranscriptError::StaleMatchReference)
+    );
+}
+
 #[test]
 fn checked_match_fact_and_edges_retain_exact_guard_presence_and_children() {
     let fixture = fixture(
@@ -2952,11 +3231,11 @@ fn checked_match_fact_and_edges_retain_exact_guard_presence_and_children() {
         .expect("root function callable")
         .declaration();
     let product = report
-        .build_checked_match(
+        .build_checked_match_for_ref(
             fixture.project.executable_view().expect("executable HIR"),
             &fixture.symbols,
             declaration,
-            owner,
+            checked_match_reference(&report, module, &fixture.symbols, owner),
             super::CheckedMatchLimits::PRODUCTION,
         )
         .expect("generic Match semantic product");
@@ -2999,11 +3278,11 @@ fn checked_match_semantic_path_crosses_the_typed_statement_root() {
         .expect("root function callable")
         .declaration();
     let product = report
-        .build_checked_match(
+        .build_checked_match_for_ref(
             project,
             &fixture.symbols,
             declaration,
-            owner,
+            checked_match_reference(&report, module, &fixture.symbols, owner),
             super::CheckedMatchLimits::PRODUCTION,
         )
         .expect("statement-origin path is HIR-owned and semantically enriched");
@@ -3044,11 +3323,11 @@ fn root(value: Option<i64>) -> i64 {
         .expect("root function callable")
         .declaration();
     let product = report
-        .build_checked_match(
+        .build_checked_match_for_ref(
             project,
             &fixture.symbols,
             declaration,
-            owner,
+            checked_match_reference(&report, module, &fixture.symbols, owner),
             CheckedMatchLimits::PRODUCTION,
         )
         .expect("Option Match semantic product");
@@ -3092,11 +3371,11 @@ fn checked_match_transcript_rejects_non_exhaustive_and_enforces_limits() {
         })
         .expect("root function callable")
         .declaration();
-    let non_exhaustive = report.build_checked_match(
+    let non_exhaustive = report.build_checked_match_for_ref(
         project,
         &fixture.symbols,
         declaration,
-        owner,
+        checked_match_reference(&report, module, &fixture.symbols, owner),
         CheckedMatchLimits::PRODUCTION,
     );
     assert!(matches!(
@@ -3106,11 +3385,11 @@ fn checked_match_transcript_rejects_non_exhaustive_and_enforces_limits() {
         })
     ));
 
-    let byte_limited = report.build_checked_match(
+    let byte_limited = report.build_checked_match_for_ref(
         project,
         &fixture.symbols,
         declaration,
-        owner,
+        checked_match_reference(&report, module, &fixture.symbols, owner),
         CheckedMatchLimits::new(4_096, 65_536, 65_536, 0, 4_096, 256, 65_536),
     );
     assert!(matches!(
@@ -3153,11 +3432,11 @@ fn root(flag: bool, ready: bool) -> i64 {
         .expect("root function callable")
         .declaration();
     let product = report
-        .build_checked_match(
+        .build_checked_match_for_ref(
             project,
             &fixture.symbols,
             declaration,
-            owner,
+            checked_match_reference(&report, module, &fixture.symbols, owner),
             CheckedMatchLimits::PRODUCTION,
         )
         .expect("guarded Match semantic product");
@@ -3269,11 +3548,11 @@ fn root(route: Route) -> i64 {
         .expect("root function callable")
         .declaration();
     let product = report
-        .build_checked_match(
+        .build_checked_match_for_ref(
             project,
             &fixture.symbols,
             declaration,
-            owner,
+            checked_match_reference(&report, module, &fixture.symbols, owner),
             CheckedMatchLimits::PRODUCTION,
         )
         .expect("project enum Match semantic product");
@@ -3307,11 +3586,11 @@ fn checked_match_transcript_changes_when_source_arm_order_changes() {
             .expect("root callable")
             .declaration();
         let product = report
-            .build_checked_match(
+            .build_checked_match_for_ref(
                 project,
                 &fixture.symbols,
                 declaration,
-                owner,
+                checked_match_reference(&report, module, &fixture.symbols, owner),
                 CheckedMatchLimits::PRODUCTION,
             )
             .expect("ordered Match semantic product");
@@ -3377,11 +3656,11 @@ fn root(flag: bool) -> i64 {{
             .expect("root callable")
             .declaration();
         let product = report
-            .build_checked_match(
+            .build_checked_match_for_ref(
                 project,
                 &fixture.symbols,
                 declaration,
-                owner,
+                checked_match_reference(&report, module, &fixture.symbols, owner),
                 CheckedMatchLimits::PRODUCTION,
             )
             .expect("call-contract Match semantic product");
@@ -3422,11 +3701,11 @@ fn root(pair: (bool, bool)) -> i64 {
         .expect("root callable")
         .declaration();
     assert!(matches!(
-        report.build_checked_match(
+        report.build_checked_match_for_ref(
             project,
             &fixture.symbols,
             declaration,
-            owner,
+            checked_match_reference(&report, module, &fixture.symbols, owner),
             CheckedMatchLimits::PRODUCTION,
         ),
         Err(SemanticTranscriptError::UnsupportedCoverage)

@@ -62,3 +62,9 @@ fn detached_source_expression_effect_reader_is_unavailable() {
     let cases = trybuild::TestCases::new();
     cases.compile_fail("tests/ui/removed_source_string_effect.rs");
 }
+
+#[test]
+fn checked_match_reference_is_an_opaque_nonserializable_compiler_certificate() {
+    let cases = trybuild::TestCases::new();
+    cases.compile_fail("tests/ui/checked_match_ref_*.rs");
+}

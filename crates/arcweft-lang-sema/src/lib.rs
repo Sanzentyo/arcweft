@@ -22,8 +22,13 @@ pub mod final_analysis;
 pub mod nominal;
 pub mod ownership;
 pub use ownership::{
-    CheckedNeedProducerAdmissionDigest, CheckedOwnershipCertificate, CheckedOwnershipError,
-    CheckedOwnershipLimits, OwnershipEvidenceDigest, RetainedValueDisposition,
+    CheckedOwnershipCertificate, CheckedOwnershipError, CheckedOwnershipLimits,
+    OwnershipEvidenceDigest, RetainedValueDisposition,
+};
+mod producer_admission;
+pub use producer_admission::{
+    CheckedNeedProducerAdmission, CheckedNeedProducerAdmissionDigest,
+    CheckedNeedProducerAdmissionError, CheckedProducerArgumentAdmission,
 };
 pub mod project_index;
 pub mod proof_return;

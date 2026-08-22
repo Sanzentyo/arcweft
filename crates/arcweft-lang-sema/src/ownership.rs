@@ -149,25 +149,21 @@ fn write_evidence_string(hasher: &mut blake3::Hasher, value: &str) {
     hasher.update(value.as_bytes());
 }
 
-/// Stable digest proving that the exact source-ordered Need producer values
-/// are retainable.  Producer identity and task identity deliberately do not
-/// participate in this admission digest.
-#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
-pub struct CheckedNeedProducerAdmissionDigest([u8; 32]);
-
-impl CheckedNeedProducerAdmissionDigest {
-    #[must_use]
-    pub const fn as_bytes(&self) -> &[u8; 32] {
-        &self.0
-    }
-}
-
 /// Runtime retention disposition established by semantic ownership checking.
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 #[repr(u8)]
 pub enum RetainedValueDisposition {
     Copy = 0,
     SnapshotClone = 1,
+}
+
+impl RetainedValueDisposition {
+    pub const fn semantic_tag(self) -> u8 {
+        match self {
+            Self::Copy => 0,
+            Self::SnapshotClone => 1,
+        }
+    }
 }
 
 /// Complete public result of type-directed ownership checking.
@@ -881,6 +877,43 @@ impl<'a> RuntimeProducerArgumentClassifier<'a> {
         let mut traversal = OwnershipTraversal::new(limits);
         let admission = self.classify_at(ty, &RuntimeOwnershipPath::root(), 0, &mut traversal)?;
         Ok((admission, traversal.evidence))
+    }
+
+    fn classify_batch_with_evidence(
+        &self,
+        types: &[&TypeKind],
+        limits: CheckedOwnershipLimits,
+    ) -> Result<(Vec<RetainedValueDisposition>, CheckedOwnershipCertificate), RuntimeOwnershipError>
+    {
+        let mut traversal = OwnershipTraversal::new(limits);
+        let mut dispositions = Vec::with_capacity(types.len());
+        let mut aggregate = RetainedValueDisposition::Copy;
+        for ty in types {
+            let admission =
+                self.classify_at(ty, &RuntimeOwnershipPath::root(), 0, &mut traversal)?;
+            if matches!(admission.projection(), RuntimeOwnershipProjection::Need(_)) {
+                return Err(RuntimeOwnershipError::rejected(
+                    &RuntimeOwnershipPath::root(),
+                    RuntimeOwnershipRejection::MissingRuntimeSnapshotOwner,
+                ));
+            }
+            let disposition = if admission.permits_copy() {
+                RetainedValueDisposition::Copy
+            } else {
+                RetainedValueDisposition::SnapshotClone
+            };
+            if disposition == RetainedValueDisposition::SnapshotClone {
+                aggregate = RetainedValueDisposition::SnapshotClone;
+            }
+            dispositions.push(disposition);
+        }
+        Ok((
+            dispositions,
+            CheckedOwnershipCertificate {
+                disposition: aggregate,
+                evidence: OwnershipEvidenceDigest::from_consulted(traversal.evidence),
+            },
+        ))
     }
 
     #[allow(
@@ -1649,6 +1682,18 @@ impl<'a> RuntimeProducerArgumentClassifier<'a> {
             )),
         }
     }
+}
+
+pub(crate) fn classify_checked_producer_arguments(
+    analysis: &FinalSemanticAnalysis,
+    world: &RegisteredSemanticWorld,
+    types: &[&TypeKind],
+    limits: CheckedOwnershipLimits,
+) -> Result<(Vec<RetainedValueDisposition>, CheckedOwnershipCertificate), CheckedOwnershipError> {
+    RuntimeProducerArgumentClassifier::try_new(analysis, world)
+        .map_err(CheckedOwnershipError::from)?
+        .classify_batch_with_evidence(types, limits)
+        .map_err(CheckedOwnershipError::from)
 }
 
 impl RegisteredSemanticWorld {

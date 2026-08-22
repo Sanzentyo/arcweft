@@ -7,8 +7,9 @@ use super::{
     CharacterDialogueType, CharacterId, CharacterNominalType, CheckedRichTextReport,
     DeclarationIdentityFamily, DialogueLineId, DialogueTextKey, EffectSet, EnvironmentBindingId,
     ExprId, GenericTypeOwnerId, GenericTypeParameterId, HirFlowIdentity, HirItemFamily, HirLiteral,
-    HirName, ItemId, LocalId, PatternId, ProjectNominalDeclaration, ProjectNominalDeclarationId,
-    PublicId, SemanticTypeDigest, TypeKind, TypeParameterSubstitutions,
+    HirName, HirSnapshotId, ItemId, LocalId, PatternId, ProjectNominalDeclaration,
+    ProjectNominalDeclarationId, PublicId, SemanticTypeDigest, TypeKind,
+    TypeParameterSubstitutions,
 };
 use crate::callable::{CallableEvaluatedEffect, CallableLogLevel, CharacterDialoguePatchContext};
 use crate::types::CharacterField;
@@ -1929,5 +1930,33 @@ impl CheckedMatchSemanticDigest {
 
     pub const fn as_bytes(&self) -> &[u8; 32] {
         &self.0
+    }
+}
+
+/// Compiler-local lookup evidence for one Match in an exact accepted HIR
+/// module snapshot.
+///
+/// The raw expression identity is deliberately retained only for session
+/// lookup. Neither field participates in persistent or semantic identity.
+#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
+pub struct CheckedMatchRef {
+    snapshot: HirSnapshotId,
+    expression: ExprId,
+}
+
+impl CheckedMatchRef {
+    pub(crate) const fn new(snapshot: HirSnapshotId, expression: ExprId) -> Self {
+        Self {
+            snapshot,
+            expression,
+        }
+    }
+
+    pub const fn snapshot(self) -> HirSnapshotId {
+        self.snapshot
+    }
+
+    pub const fn expression(self) -> ExprId {
+        self.expression
     }
 }

@@ -5,8 +5,8 @@ use std::collections::{BTreeMap, BTreeSet};
 use super::{
     AcceptedDeclarationSemanticId, CheckedCoverageDomainDigest, CheckedExpressionChildRolePath,
     CheckedExpressionChildRoleStep, CheckedExpressionResolution, CheckedExpressionSemanticDigest,
-    CheckedMatchSemanticDigest, CheckedPatternSemanticDigest, CheckedSelectResolution,
-    CheckedValueResolution, CheckedVariantOwner, FinalSemanticAnalysis,
+    CheckedMatchRef, CheckedMatchSemanticDigest, CheckedPatternSemanticDigest,
+    CheckedSelectResolution, CheckedValueResolution, CheckedVariantOwner, FinalSemanticAnalysis,
     StableCheckedValueCoordinate, StablePatternCoordinate, StablePatternCoordinateStep,
 };
 use crate::types::{SemanticTypeDigest, TypeKind};
@@ -94,6 +94,8 @@ pub enum SemanticTranscriptError {
     NotMatch,
     #[error("checked Match evidence is missing or stale")]
     MissingMatchFact,
+    #[error("checked Match reference does not belong to the exact accepted HIR snapshot")]
+    StaleMatchReference,
     #[error("checked expression evidence is missing")]
     MissingExpression,
     #[error("checked pattern evidence is missing")]
@@ -121,7 +123,7 @@ pub enum SemanticTranscriptError {
 /// The byte ceiling is checked at the digest boundary.  Hashing is kept
 /// private to this module so callers receive a typed rejection rather than a
 /// partial digest when a transcript exceeds its admission policy.
-struct TranscriptHasher<'a> {
+pub(crate) struct TranscriptHasher<'a> {
     hasher: blake3::Hasher,
     used: &'a mut u64,
     limit: u64,
@@ -129,7 +131,7 @@ struct TranscriptHasher<'a> {
 }
 
 impl<'a> TranscriptHasher<'a> {
-    fn new(used: &'a mut u64, limit: u64) -> Self {
+    pub(crate) fn new(used: &'a mut u64, limit: u64) -> Self {
         Self {
             hasher: blake3::Hasher::new(),
             used,
@@ -138,7 +140,7 @@ impl<'a> TranscriptHasher<'a> {
         }
     }
 
-    fn update(&mut self, bytes: &[u8]) {
+    pub(crate) fn update(&mut self, bytes: &[u8]) {
         let next = self.used.saturating_add(bytes.len() as u64);
         if next > self.limit {
             self.exceeded = true;
@@ -148,7 +150,7 @@ impl<'a> TranscriptHasher<'a> {
         self.hasher.update(bytes);
     }
 
-    fn finalize(self) -> Result<[u8; 32], SemanticTranscriptError> {
+    pub(crate) fn finalize(self) -> Result<[u8; 32], SemanticTranscriptError> {
         if self.exceeded {
             Err(SemanticTranscriptError::WorkLimit)
         } else {
@@ -295,21 +297,53 @@ impl CheckedMatch {
 }
 
 impl FinalSemanticAnalysis {
-    pub fn build_checked_match(
+    /// Binds one checked Match lookup to this report's exact module snapshot.
+    pub fn checked_match_ref(
+        &self,
+        module: &HirModule,
+        symbols: &ProjectSymbolTable,
+        expression: ExprId,
+    ) -> Result<CheckedMatchRef, SemanticTranscriptError> {
+        self.validate_module_generation(module, symbols)?;
+        if expression.module() != module.module_id() {
+            return Err(SemanticTranscriptError::StaleMatchReference);
+        }
+        let owner = module
+            .resolve_expr(expression)
+            .map_err(|_| SemanticTranscriptError::MissingExpression)?;
+        if !matches!(owner.kind(), HirExprKind::Match(_)) {
+            return Err(SemanticTranscriptError::NotMatch);
+        }
+        let checked = self
+            .expression(expression)
+            .ok_or(SemanticTranscriptError::MissingExpression)?;
+        if checked.match_fact().is_none() {
+            return Err(SemanticTranscriptError::MissingMatchFact);
+        }
+        Ok(CheckedMatchRef::new(module.snapshot_id(), expression))
+    }
+
+    /// Revalidates a compiler-local Match reference before constructing its
+    /// stable generic semantic product.
+    pub fn build_checked_match_for_ref(
         &self,
         project: HirExecutableProjectView<'_>,
         symbols: &ProjectSymbolTable,
         declaration: &CallableDeclarationKey,
-        expression: ExprId,
+        reference: CheckedMatchRef,
         limits: CheckedMatchLimits,
     ) -> Result<CheckedMatch, SemanticTranscriptError> {
         self.validate_generation(project, symbols)?;
+        let expression = reference.expression();
         let module = project
             .modules()
             .find_map(|(_, module)| {
                 (module.module_id() == expression.module()).then_some(module.as_ref())
             })
             .ok_or(SemanticTranscriptError::MissingExpression)?;
+        if module.snapshot_id() != reference.snapshot() {
+            return Err(SemanticTranscriptError::StaleMatchReference);
+        }
         let owner = module
             .resolve_expr(expression)
             .map_err(|_| SemanticTranscriptError::MissingExpression)?;
@@ -638,7 +672,7 @@ impl MatchTranscriptBuilder<'_> {
     }
 }
 
-fn checked_expression_path(
+pub(crate) fn checked_expression_path(
     analysis: &FinalSemanticAnalysis,
     paths: &HirDeclarationSemanticPathIndex,
     declaration: AcceptedDeclarationSemanticId,
@@ -700,7 +734,7 @@ fn checked_expression_path(
     Ok(CheckedExpressionChildRolePath::new(declaration, steps))
 }
 
-fn accepted_declaration_id(
+pub(crate) fn accepted_declaration_id(
     analysis: &FinalSemanticAnalysis,
     declaration: &CallableDeclarationKey,
 ) -> Result<AcceptedDeclarationSemanticId, SemanticTranscriptError> {
@@ -1181,7 +1215,7 @@ fn write_checked_path(hasher: &mut TranscriptHasher<'_>, path: &CheckedExpressio
     }
 }
 
-fn write_value_coordinate(
+pub(crate) fn write_value_coordinate(
     hasher: &mut TranscriptHasher<'_>,
     coordinate: &StableCheckedValueCoordinate,
 ) {
@@ -1656,7 +1690,7 @@ fn write_effects(hasher: &mut TranscriptHasher<'_>, effects: &crate::effects::Ef
     }
 }
 
-fn write_len(hasher: &mut TranscriptHasher<'_>, value: usize) {
+pub(crate) fn write_len(hasher: &mut TranscriptHasher<'_>, value: usize) {
     hasher.update(
         &u32::try_from(value)
             .expect("accepted transcript sequences fit checked u32 limits")
