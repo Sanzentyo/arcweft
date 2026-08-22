@@ -220,10 +220,7 @@ impl RuntimeTypeSchema {
             }
             _ => state.validate(self, &payload.0, "$", 0)?,
         }
-        let encoded = canonical_runtime_value_bytes(&payload.0, limits.max_encoded_bytes)?;
-        Ok(RuntimeValueDigest::from_bytes(
-            blake3::hash(&encoded).into(),
-        ))
+        canonical_runtime_value_digest(&payload.0, limits.max_encoded_bytes)
     }
 
     pub fn validate_value(
@@ -238,10 +235,7 @@ impl RuntimeTypeSchema {
             definitions,
         };
         state.validate(self, value, "$", 0)?;
-        let encoded = canonical_runtime_value_bytes(value, limits.max_encoded_bytes)?;
-        Ok(RuntimeValueDigest::from_bytes(
-            blake3::hash(&encoded).into(),
-        ))
+        canonical_runtime_value_digest(value, limits.max_encoded_bytes)
     }
 
     fn canonical_bytes(&self) -> Option<Vec<u8>> {
@@ -275,30 +269,123 @@ pub fn canonical_runtime_value_bytes(
     value: &RuntimeValue,
     max_encoded_bytes: usize,
 ) -> Result<Vec<u8>, RuntimeSchemaError> {
-    let mut bytes = CanonicalRuntimeValueBytes::new(max_encoded_bytes);
-    bytes.value(value)?;
-    Ok(bytes.finish())
+    let mut sink = CanonicalBytesSink::default();
+    visit_runtime_value(value, max_encoded_bytes, &mut sink)?;
+    Ok(sink.finish())
 }
 
-struct CanonicalRuntimeValueBytes {
-    bytes: Vec<u8>,
+pub(crate) fn canonical_runtime_value_digest(
+    value: &RuntimeValue,
     max_encoded_bytes: usize,
+) -> Result<RuntimeValueDigest, RuntimeSchemaError> {
+    let mut sink = CanonicalBlake3Sink::default();
+    visit_runtime_value(value, max_encoded_bytes, &mut sink)?;
+    Ok(RuntimeValueDigest::from_bytes(sink.finish()))
 }
 
-impl CanonicalRuntimeValueBytes {
-    fn new(max_encoded_bytes: usize) -> Self {
-        Self {
-            bytes: Vec::with_capacity(max_encoded_bytes.min(4096)),
-            max_encoded_bytes,
-        }
-    }
+/// Private sink boundary for the one canonical `RuntimeValue` transcript.
+/// Bytes and direct BLAKE3 consumers share the same exhaustive visitor and
+/// bounded write accounting.
+trait CanonicalRuntimeValueSink {
+    fn write(&mut self, bytes: &[u8]) -> Result<(), RuntimeSchemaError>;
+    fn bytes_written(&self) -> u64;
+}
 
+#[derive(Default)]
+struct CanonicalBytesSink {
+    bytes: Vec<u8>,
+    bytes_written: u64,
+}
+
+impl CanonicalBytesSink {
     fn finish(self) -> Vec<u8> {
         self.bytes
     }
+}
 
+impl CanonicalRuntimeValueSink for CanonicalBytesSink {
+    fn write(&mut self, bytes: &[u8]) -> Result<(), RuntimeSchemaError> {
+        self.bytes.extend_from_slice(bytes);
+        self.bytes_written = self
+            .bytes_written
+            .checked_add(u64::try_from(bytes.len()).map_err(|_| {
+                RuntimeSchemaError::BudgetExceeded {
+                    budget: "encoded_bytes",
+                }
+            })?)
+            .ok_or(RuntimeSchemaError::BudgetExceeded {
+                budget: "encoded_bytes",
+            })?;
+        Ok(())
+    }
+
+    fn bytes_written(&self) -> u64 {
+        self.bytes_written
+    }
+}
+
+#[derive(Default)]
+struct CanonicalBlake3Sink {
+    hasher: blake3::Hasher,
+    bytes_written: u64,
+}
+
+impl CanonicalBlake3Sink {
+    fn finish(self) -> [u8; 32] {
+        *self.hasher.finalize().as_bytes()
+    }
+}
+
+impl CanonicalRuntimeValueSink for CanonicalBlake3Sink {
+    fn write(&mut self, bytes: &[u8]) -> Result<(), RuntimeSchemaError> {
+        self.hasher.update(bytes);
+        self.bytes_written = self
+            .bytes_written
+            .checked_add(u64::try_from(bytes.len()).map_err(|_| {
+                RuntimeSchemaError::BudgetExceeded {
+                    budget: "encoded_bytes",
+                }
+            })?)
+            .ok_or(RuntimeSchemaError::BudgetExceeded {
+                budget: "encoded_bytes",
+            })?;
+        Ok(())
+    }
+
+    fn bytes_written(&self) -> u64 {
+        self.bytes_written
+    }
+}
+
+/// Visits one `RuntimeValue` through the canonical, bounded encoder and writes
+/// the resulting transcript to a caller-owned private sink.
+fn visit_runtime_value<S: CanonicalRuntimeValueSink + ?Sized>(
+    value: &RuntimeValue,
+    max_encoded_bytes: usize,
+    sink: &mut S,
+) -> Result<(), RuntimeSchemaError> {
+    let mut visitor = CanonicalRuntimeValueVisitor {
+        sink,
+        max_encoded_bytes: u64::try_from(max_encoded_bytes).map_err(|_| {
+            RuntimeSchemaError::BudgetExceeded {
+                budget: "encoded_bytes",
+            }
+        })?,
+    };
+    visitor.value(value)
+}
+
+struct CanonicalRuntimeValueVisitor<'a, S: CanonicalRuntimeValueSink + ?Sized> {
+    sink: &'a mut S,
+    max_encoded_bytes: u64,
+}
+
+impl<S: CanonicalRuntimeValueSink + ?Sized> CanonicalRuntimeValueVisitor<'_, S> {
     fn extend(&mut self, bytes: &[u8]) -> Result<(), RuntimeSchemaError> {
-        let next = self.bytes.len().checked_add(bytes.len()).ok_or(
+        let len = u64::try_from(bytes.len()).map_err(|_| RuntimeSchemaError::BudgetExceeded {
+            budget: "encoded_bytes",
+        })?;
+        let next = self.sink.bytes_written().checked_add(len).ok_or(
             RuntimeSchemaError::BudgetExceeded {
                 budget: "encoded_bytes",
             },
@@ -308,8 +395,7 @@ impl CanonicalRuntimeValueBytes {
                 budget: "encoded_bytes",
             });
         }
-        self.bytes.extend_from_slice(bytes);
-        Ok(())
+        self.sink.write(bytes)
     }
 
     fn u8(&mut self, value: u8) -> Result<(), RuntimeSchemaError> {
@@ -1304,5 +1390,55 @@ const fn runtime_value_type(value: &RuntimeValue) -> &'static str {
         RuntimeValue::Agent(_) => "Agent value",
         RuntimeValue::Function(_) => "function",
         RuntimeValue::Variant { .. } => "variant",
+    }
+}
+
+#[cfg(test)]
+mod visitor_tests {
+    use super::{
+        CanonicalRuntimeValueSink, canonical_runtime_value_bytes, canonical_runtime_value_digest,
+        visit_runtime_value,
+    };
+    use crate::value::RuntimeValue;
+
+    struct DigestSink {
+        hasher: blake3::Hasher,
+        bytes_written: u64,
+    }
+
+    impl CanonicalRuntimeValueSink for DigestSink {
+        fn write(&mut self, bytes: &[u8]) -> Result<(), super::RuntimeSchemaError> {
+            self.hasher.update(bytes);
+            self.bytes_written += u64::try_from(bytes.len()).expect("test bytes fit u64");
+            Ok(())
+        }
+
+        fn bytes_written(&self) -> u64 {
+            self.bytes_written
+        }
+    }
+
+    #[test]
+    fn visitor_uses_the_same_canonical_bytes_for_a_custom_sink() {
+        let value = RuntimeValue::Tuple(vec![
+            RuntimeValue::Bool(true),
+            RuntimeValue::String("ok".to_owned()),
+        ]);
+        let bytes = canonical_runtime_value_bytes(&value, 1024).expect("canonical bytes");
+        let mut sink = DigestSink {
+            hasher: blake3::Hasher::new(),
+            bytes_written: 0,
+        };
+        visit_runtime_value(&value, 1024, &mut sink).expect("sink visit");
+        assert_eq!(
+            *sink.hasher.finalize().as_bytes(),
+            *blake3::hash(&bytes).as_bytes()
+        );
+        assert_eq!(
+            canonical_runtime_value_digest(&value, 1024)
+                .expect("direct digest")
+                .as_bytes(),
+            blake3::hash(&bytes).as_bytes()
+        );
     }
 }

@@ -205,7 +205,7 @@ impl NativeTextInputTraceWriter {
         self.records.push(NativeTextInputTraceRecord::Focus {
             backend,
             reason: focus_reason_label(reason),
-            generation: generation.0,
+            generation: generation.get(),
             secure_redacted: security == TextInputSecurityPolicy::SecureRedacted,
             snapshot: TraceSnapshot::from_snapshot(snapshot, security),
         });
@@ -222,7 +222,7 @@ impl NativeTextInputTraceWriter {
         self.records.push(NativeTextInputTraceRecord::Snapshot {
             backend,
             phase,
-            generation: generation.0,
+            generation: generation.get(),
             secure_redacted: security == TextInputSecurityPolicy::SecureRedacted,
             snapshot: TraceSnapshot::from_snapshot(snapshot, security),
         });

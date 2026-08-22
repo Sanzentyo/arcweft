@@ -180,7 +180,7 @@ impl BundleSession {
 }
 
 fn initial_generation(bundle: &ArcweftBundle) -> Result<ProgramGeneration, BundleSessionError> {
-    ProgramGeneration::from_bundle(GenerationId(0), bundle).map_err(|error| match error {
+    ProgramGeneration::from_bundle(GenerationId::new(0), bundle).map_err(|error| match error {
         GenerationBuildError::UnsupportedBundleKind(kind) => {
             BundleSessionError::UnsupportedBundleKind(kind)
         }

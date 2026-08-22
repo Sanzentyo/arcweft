@@ -5,7 +5,6 @@
 //! binding; it deliberately has no nested schema marker or legacy identity.
 
 use crate::display::{ActiveSessionLocale, BundlePresentationSnapshot};
-use crate::swap::GenerationId;
 use crate::view_runtime::BundleViewRuntimeSnapshot;
 use arcweft_bundle::container::{ArtifactIdentity, BundleDigest};
 use arcweft_bundle::fx_definitions::FxDefinitions;
@@ -22,6 +21,7 @@ use arcweft_core::engine::FlowFiberStatus;
 pub use arcweft_core::entry::ActiveEntrySnapshotV1;
 use arcweft_core::executor::ArcweftRuntimeExecutorSnapshotError;
 pub use arcweft_core::root::RootStateSnapshotV1;
+use arcweft_core::task::GenerationId;
 use arcweft_presentation::fx::FxDiagnostic;
 use arcweft_view::{ViewId, virtualization::ViewVirtualizationSnapshot};
 use serde::{Deserialize, Deserializer, Serialize};

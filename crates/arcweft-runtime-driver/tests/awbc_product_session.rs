@@ -2,6 +2,7 @@ use arcweft_bundle::container::{BundleView, ReadBudget};
 use arcweft_bundle::fx_definitions::FxDefinitions;
 use arcweft_bundle::resource_codec::SourceMapSection;
 use arcweft_bundle::{ArcweftBundle, BundleFormat, BundleManifest, BundleRuntimeSummary};
+use arcweft_core::task::GenerationId;
 use arcweft_core::{
     awbc::{
         fiber::{FiberScope, FiberScopeCleanup},
@@ -43,7 +44,6 @@ use arcweft_runtime_driver::{
         BundleSessionArtifactIdentity, BundleSessionPendingBlocker, BundleSessionSaveError,
         BundleSessionSnapshot,
     },
-    swap::GenerationId,
 };
 use arcweft_runtime_plan::awbc_lower::AwbcLowerer;
 use arcweft_source::{SourceDocument, SourceDocumentId, SourceName};
@@ -302,8 +302,8 @@ fn rejected_session_restore_does_not_partially_mutate_the_live_session() {
     let mut invalid = before.clone();
     invalid.runtime.source_label = "invalid restore must not leak".to_owned();
     invalid.runtime.next_step_index = invalid.runtime.next_step_index.saturating_add(99);
-    invalid.runtime.runtime_generation_pin = Some(GenerationId(
-        invalid.generation.active_generation.0.saturating_add(1),
+    invalid.runtime.runtime_generation_pin = Some(GenerationId::new(
+        invalid.generation.active_generation.get().saturating_add(1),
     ));
 
     let error = session

@@ -13,7 +13,7 @@ use arcweft_adapter_desktop::DesktopAdapterSet;
 use arcweft_bundle::container::BundleDigest;
 use arcweft_bundle::patch::PatchCompatibility;
 use arcweft_bundle::{ArcweftBundle, BundleAdapterManifest, BundleFormat, BundleVirtualFile};
-use arcweft_core::task::TaskEvent;
+use arcweft_core::task::{GenerationId, TaskEvent};
 use arcweft_desktop_native::NativeDesktopBackend;
 use arcweft_host_adapter::{HostAdapterError, HostAdapterRegistryBuilder, HostCallPolicy};
 use arcweft_interaction_model::audio::AudioEvent;
@@ -22,7 +22,6 @@ use arcweft_runtime_driver::clock::RuntimeClockStep;
 use arcweft_runtime_driver::session::{
     BundleSession, BundleSessionOptions, BundleSessionStep, BundleStepInput,
 };
-use arcweft_runtime_driver::swap::GenerationId;
 use arcweft_runtime_driver::task::HostTaskDispatch;
 use arcweft_runtime_host::NativeTaskBridge;
 use std::fs;

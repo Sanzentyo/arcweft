@@ -5,11 +5,11 @@ use arcweft_bundle::patch::{
     PatchBundleError, PatchCompatibility, PatchMaterializedTarget, apply_patch_bundle,
     decode_patch_bundle,
 };
+use arcweft_core::task::GenerationId;
 use arcweft_runtime_driver::session::{
     BundleHotSwapError, BundleHotSwapReport, BundlePatchReadiness, BundlePatchReadinessReport,
     BundleSession, BundleSessionError, BundleSessionOptions,
 };
-use arcweft_runtime_driver::swap::GenerationId;
 use serde::Deserialize;
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -697,7 +697,7 @@ mod tests {
             outcome,
             NativePatchOutcome::Applied {
                 report: BundleHotSwapReport {
-                    generation: GenerationId(1),
+                    generation: GenerationId::new(1),
                     compatibility: SwapCompatibility::ContentOnly,
                 },
                 content_root,
@@ -736,7 +736,7 @@ mod tests {
             outcome,
             NativePatchOutcome::Applied {
                 report: BundleHotSwapReport {
-                    generation: GenerationId(1),
+                    generation: GenerationId::new(1),
                     compatibility: SwapCompatibility::CodeCompatible,
                 },
                 content_root,

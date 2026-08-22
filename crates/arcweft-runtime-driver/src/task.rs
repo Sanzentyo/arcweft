@@ -1,4 +1,4 @@
-use crate::swap::GenerationId;
+use arcweft_core::task::GenerationId;
 use arcweft_core::task::{LogicalEpoch, TaskEvent, TaskEventKind, TaskId, TaskSequence, TaskSpec};
 use arcweft_core::value::RuntimePayload;
 use serde::{Deserialize, Serialize};
@@ -54,7 +54,7 @@ impl RuntimeTaskRecord {
         Self {
             id: dispatch.task.id.0.clone(),
             status: RuntimeTaskStatus::Pending,
-            generation: Some(dispatch.generation.0),
+            generation: Some(dispatch.generation.get()),
             logical_epoch: Some(dispatch.logical_epoch.0),
             sequence: Some(dispatch.sequence.0),
             cancel_scope: Some(dispatch.task.cancel_scope.0.clone()),
@@ -275,7 +275,7 @@ mod tests {
     #[test]
     fn completion_preserves_request_epoch_and_sequence() {
         let dispatch = HostTaskDispatch {
-            generation: GenerationId(4),
+            generation: GenerationId::new(4),
             logical_epoch: LogicalEpoch(12),
             sequence: TaskSequence(7),
             task: TaskSpec::new(
@@ -288,7 +288,7 @@ mod tests {
                 HostTaskRequest::custom("test", "unit", []),
             ),
         };
-        assert_eq!(dispatch.generation, GenerationId(4));
+        assert_eq!(dispatch.generation, GenerationId::new(4));
 
         let event = dispatch.ready(RuntimePayload::new(RuntimeValue::Unit));
         assert_eq!(event.logical_epoch, LogicalEpoch(12));
@@ -430,7 +430,7 @@ mod tests {
 
     fn task_dispatch(id: &str, scope: &str, sequence: u64) -> HostTaskDispatch {
         HostTaskDispatch {
-            generation: GenerationId(4),
+            generation: GenerationId::new(4),
             logical_epoch: LogicalEpoch(12 + sequence),
             sequence: TaskSequence(sequence),
             task: TaskSpec::new(

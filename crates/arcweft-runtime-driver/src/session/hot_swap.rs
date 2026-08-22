@@ -38,7 +38,7 @@ impl BundleSession {
         next_artifact_identity: BundleSessionArtifactIdentity,
         compatibility_floor: SwapCompatibility,
     ) -> Result<BundleHotSwapReport, BundleHotSwapError> {
-        let next_id = GenerationId(self.next_generation_id);
+        let next_id = GenerationId::new(self.next_generation_id);
         let next_generation = Arc::new(ProgramGeneration::from_bundle(next_id, bundle)?);
         let active_entry = self
             .executor

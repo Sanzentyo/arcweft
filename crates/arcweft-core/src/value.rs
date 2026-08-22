@@ -1010,8 +1010,7 @@ impl RuntimeValue {
         &self,
         max_encoded_bytes: usize,
     ) -> Result<RuntimeValueDigest, RuntimeSchemaError> {
-        let bytes = self.try_canonical_bytes(max_encoded_bytes)?;
-        Ok(RuntimeValueDigest::from_bytes(blake3::hash(&bytes).into()))
+        crate::entry::canonical_runtime_value_digest(self, max_encoded_bytes)
     }
 
     pub const fn i8(value: i8) -> Self {

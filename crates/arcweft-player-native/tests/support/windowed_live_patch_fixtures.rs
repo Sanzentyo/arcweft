@@ -12,7 +12,7 @@ use arcweft_core::plan::{
     RuntimeExprSeedKind, RuntimeFlowOpSeed, RuntimeFlowSeed, RuntimeLineId, RuntimePlan,
     RuntimePlanBuilder, RuntimePlanTypeProjection, RuntimePlanTypeSeed,
 };
-use arcweft_core::task::{HostCapabilityId, NeedId, TaskId, TaskOutcomeContract};
+use arcweft_core::task::{GenerationId, HostCapabilityId, NeedId, TaskId, TaskOutcomeContract};
 use arcweft_core::value::{RuntimePayload, RuntimeValue};
 use arcweft_dialogue::{DialoguePresentationProfile, DialogueProfileRevision};
 use arcweft_id::TextKey;
@@ -25,7 +25,6 @@ use arcweft_render_wgpu::geometry::RenderViewport;
 use arcweft_resource_model::registry::ResourceTypeRegistry;
 use arcweft_runtime_driver::clock::RuntimeClockStep;
 use arcweft_runtime_driver::session::{BundleEntryStart, BundleSessionOptions, BundleStepInput};
-use arcweft_runtime_driver::swap::GenerationId;
 use arcweft_runtime_plan::awbc_lower::AwbcLowerer;
 use arcweft_source::{SourceDocument, SourceDocumentId, SourceName, SourceSetRevision};
 use arcweft_text_model::{
@@ -682,7 +681,7 @@ impl SmokeObservation {
     }
 
     fn generation(key: impl Into<String>, generation: GenerationId) -> Self {
-        Self::new(key, generation.0.to_string())
+        Self::new(key, generation.get().to_string())
     }
 }
 
@@ -777,12 +776,12 @@ impl WindowedSmokeHarness {
                 prepared_frame_valid: self.prepared_frame_valid,
             },
             runtime: SmokeRuntimeSnapshot {
-                active_generation: self.runtime.session().active_generation().id.0,
+                active_generation: self.runtime.session().active_generation().id.get(),
                 current_fiber_generation: self
                     .runtime
                     .session()
                     .current_fiber_generation()
-                    .map(|generation| generation.0),
+                    .map(GenerationId::get),
                 retired_generation_count: self.runtime.session().retired_generation_count(),
                 active_content_root: self
                     .runtime
@@ -1438,7 +1437,7 @@ fn outcome_snapshots(outcomes: &[WindowedRuntimeOutcome]) -> Vec<WindowedRuntime
 fn outcome_snapshot(outcome: &WindowedRuntimeOutcome) -> WindowedRuntimeOutcomeSnapshot {
     WindowedRuntimeOutcomeSnapshot {
         kind: outcome.kind_label().to_owned(),
-        generation: outcome.generation().map(|generation| generation.0),
+        generation: outcome.generation().map(GenerationId::get),
         compatibility: outcome
             .compatibility()
             .map(|compatibility| compatibility.label().to_owned()),
@@ -1471,7 +1470,10 @@ fn digest_string(digest: BundleDigest) -> String {
 }
 
 fn optional_generation(generation: Option<GenerationId>) -> String {
-    generation.map_or_else(|| "none".to_owned(), |generation| generation.0.to_string())
+    generation.map_or_else(
+        || "none".to_owned(),
+        |generation| generation.get().to_string(),
+    )
 }
 
 pub fn summarize_report(report: &SmokeReport) -> String {

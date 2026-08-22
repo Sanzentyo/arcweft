@@ -6,7 +6,9 @@
 //! into an executor/cache container and lets adapters choose VM, AOT, or future
 //! generated images without changing swap fingerprints.
 
-use crate::swap::{GenerationId, ProgramGeneration};
+use arcweft_core::task::GenerationId;
+
+use crate::swap::ProgramGeneration;
 use std::collections::{BTreeMap, BTreeSet};
 use std::sync::Arc;
 use thiserror::Error;
@@ -165,7 +167,7 @@ mod tests {
 
     fn generation(id: u64) -> Arc<ProgramGeneration> {
         Arc::new(ProgramGeneration::empty(
-            GenerationId(id),
+            GenerationId::new(id),
             BundleDigest::of(&id.to_le_bytes()),
             BundleDigest::of(&id.to_le_bytes()),
         ))
@@ -180,10 +182,13 @@ mod tests {
             .expect("next generation inserts");
 
         assert_eq!(
-            table.get(GenerationId(0)).expect("active").runtime(),
+            table.get(GenerationId::new(0)).expect("active").runtime(),
             &"active"
         );
-        assert_eq!(table.get(GenerationId(1)).expect("next").runtime(), &"next");
+        assert_eq!(
+            table.get(GenerationId::new(1)).expect("next").runtime(),
+            &"next"
+        );
         assert_eq!(table.len(), 2);
     }
 
@@ -193,12 +198,12 @@ mod tests {
         table
             .insert(GenerationRuntimeImage::new(generation(1), 1))
             .expect("next generation inserts");
-        let live = BTreeSet::from([GenerationId(1)]);
+        let live = BTreeSet::from([GenerationId::new(1)]);
 
         table.retain_generations(&live);
 
-        assert!(!table.contains_generation(GenerationId(0)));
-        assert!(table.contains_generation(GenerationId(1)));
+        assert!(!table.contains_generation(GenerationId::new(0)));
+        assert!(table.contains_generation(GenerationId::new(1)));
     }
 
     #[test]
@@ -206,13 +211,13 @@ mod tests {
         let table = GenerationRuntimeTable::new(GenerationRuntimeImage::new(generation(0), 0));
 
         let error = table
-            .get(GenerationId(7))
+            .get(GenerationId::new(7))
             .expect_err("missing generation is typed");
 
         assert_eq!(
             error,
             GenerationRuntimeError::MissingGeneration {
-                generation: GenerationId(7)
+                generation: GenerationId::new(7)
             }
         );
     }

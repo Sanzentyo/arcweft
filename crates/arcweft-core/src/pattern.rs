@@ -453,6 +453,16 @@ pub enum RuntimeCheckedType {
 }
 
 impl RuntimeCheckedType {
+    /// Returns the canonical, source-independent digest of this checked type.
+    /// The encoder is structural and deliberately ignores debug/display
+    /// formatting so producers can share one semantic identity boundary.
+    #[must_use]
+    pub fn semantic_identity_digest(&self) -> RuntimeSemanticTypeId {
+        let mut encoder = RuntimeSemanticTypeIdentityEncoder::new();
+        write_checked_type_identity(&mut encoder, self);
+        encoder.finish()
+    }
+
     #[must_use]
     pub fn variant_identity(&self) -> Option<RuntimeVariantIdentity> {
         match self {
@@ -647,6 +657,154 @@ impl RuntimeCheckedType {
                         (None, Some(_)) | (Some(_), None) => false,
                     }
             })
+    }
+}
+
+#[allow(
+    clippy::too_many_lines,
+    reason = "the closed checked-type algebra has one canonical transcript owner"
+)]
+fn write_checked_type_identity(
+    encoder: &mut RuntimeSemanticTypeIdentityEncoder,
+    ty: &RuntimeCheckedType,
+) {
+    match ty {
+        RuntimeCheckedType::Never => encoder.write_tag(0),
+        RuntimeCheckedType::Unit => encoder.write_tag(1),
+        RuntimeCheckedType::Bool => encoder.write_tag(2),
+        RuntimeCheckedType::Signed(width) => {
+            encoder.write_tag(3);
+            encoder.write_u8(match width {
+                RuntimeSignedIntWidth::I8 => 0,
+                RuntimeSignedIntWidth::I16 => 1,
+                RuntimeSignedIntWidth::I32 => 2,
+                RuntimeSignedIntWidth::I64 => 3,
+                RuntimeSignedIntWidth::I128 => 4,
+                RuntimeSignedIntWidth::ISize => 5,
+            });
+        }
+        RuntimeCheckedType::Unsigned(width) => {
+            encoder.write_tag(4);
+            encoder.write_u8(match width {
+                RuntimeUnsignedIntWidth::U8 => 0,
+                RuntimeUnsignedIntWidth::U16 => 1,
+                RuntimeUnsignedIntWidth::U32 => 2,
+                RuntimeUnsignedIntWidth::U64 => 3,
+                RuntimeUnsignedIntWidth::U128 => 4,
+                RuntimeUnsignedIntWidth::USize => 5,
+            });
+        }
+        RuntimeCheckedType::F32 => encoder.write_tag(5),
+        RuntimeCheckedType::F64 => encoder.write_tag(6),
+        RuntimeCheckedType::String => encoder.write_tag(7),
+        RuntimeCheckedType::Char => encoder.write_tag(8),
+        RuntimeCheckedType::Duration => encoder.write_tag(9),
+        RuntimeCheckedType::Progress => encoder.write_tag(10),
+        RuntimeCheckedType::EntityReference => encoder.write_tag(11),
+        RuntimeCheckedType::Bytes => encoder.write_tag(12),
+        RuntimeCheckedType::Sequence(inner) => {
+            encoder.write_tag(13);
+            write_checked_type_identity(encoder, inner);
+        }
+        RuntimeCheckedType::Tuple(items) => {
+            encoder.write_tag(14);
+            encoder.write_len(items.len());
+            for item in items {
+                write_checked_type_identity(encoder, item);
+            }
+        }
+        RuntimeCheckedType::Choice(items) => {
+            encoder.write_tag(15);
+            encoder.write_len(items.len());
+            for item in items {
+                write_checked_type_identity(encoder, item);
+            }
+        }
+        RuntimeCheckedType::Nominal {
+            semantic_identity,
+            layout,
+            ..
+        } => {
+            encoder.write_tag(16);
+            encoder.write_bytes(semantic_identity.as_bytes());
+            encoder.write_bytes(layout.as_bytes());
+        }
+        RuntimeCheckedType::Opaque { owner } => {
+            encoder.write_tag(17);
+            encoder.write_str(owner.producer().as_str());
+            encoder.write_bytes(owner.semantic_identity().as_bytes());
+            encoder.write_u8(owner.admission() as u8);
+            encoder.write_u8(owner.value_class().semantic_tag());
+            encoder.write_u8(owner.persistence().semantic_tag());
+        }
+        RuntimeCheckedType::Variant {
+            semantic_identity,
+            cases,
+            ..
+        } => {
+            encoder.write_tag(18);
+            encoder.write_bytes(semantic_identity.as_bytes());
+            encoder.write_len(cases.len());
+            for case in cases {
+                encoder.write_str(&case.name);
+                match &case.payload {
+                    Some(payload) => {
+                        encoder.write_u8(1);
+                        write_checked_type_identity(encoder, payload);
+                    }
+                    None => encoder.write_u8(0),
+                }
+            }
+        }
+        RuntimeCheckedType::Result { ok, error } => {
+            encoder.write_tag(19);
+            write_checked_type_identity(encoder, ok);
+            write_checked_type_identity(encoder, error);
+        }
+        RuntimeCheckedType::Option(inner) => {
+            encoder.write_tag(20);
+            write_checked_type_identity(encoder, inner);
+        }
+        RuntimeCheckedType::Agent(agent) => {
+            encoder.write_tag(21);
+            encoder.write_u8(agent_semantic_tag(*agent));
+        }
+    }
+}
+
+const fn agent_semantic_tag(agent: crate::plan::RuntimeAgentOperationalType) -> u8 {
+    match agent {
+        crate::plan::RuntimeAgentOperationalType::DebugStatePath => 0,
+        crate::plan::RuntimeAgentOperationalType::ObservationFieldPath => 1,
+        crate::plan::RuntimeAgentOperationalType::Probe => 2,
+        crate::plan::RuntimeAgentOperationalType::Predicate => 3,
+        crate::plan::RuntimeAgentOperationalType::Observation => 4,
+        crate::plan::RuntimeAgentOperationalType::ObservedObject => 5,
+        crate::plan::RuntimeAgentOperationalType::BoundingBox => 6,
+        crate::plan::RuntimeAgentOperationalType::ActionName => 7,
+        crate::plan::RuntimeAgentOperationalType::ActionTarget => 8,
+        crate::plan::RuntimeAgentOperationalType::ActionResult => 9,
+        crate::plan::RuntimeAgentOperationalType::AgentValue => 10,
+        crate::plan::RuntimeAgentOperationalType::DataFormat => 11,
+        crate::plan::RuntimeAgentOperationalType::DataShape => 12,
+        crate::plan::RuntimeAgentOperationalType::EntityMetadata => 13,
+        crate::plan::RuntimeAgentOperationalType::SourceAnchor => 14,
+        crate::plan::RuntimeAgentOperationalType::ProjectGraphNeighborhood => 15,
+        crate::plan::RuntimeAgentOperationalType::ProjectGraphSymbol => 16,
+        crate::plan::RuntimeAgentOperationalType::ProjectGraphEdge => 17,
+        crate::plan::RuntimeAgentOperationalType::CaptureTarget => 18,
+        crate::plan::RuntimeAgentOperationalType::CaptureReference => 19,
+        crate::plan::RuntimeAgentOperationalType::Resource => 20,
+        crate::plan::RuntimeAgentOperationalType::ResourceBody => 21,
+        crate::plan::RuntimeAgentOperationalType::RagContextPack => 22,
+        crate::plan::RuntimeAgentOperationalType::ObservedObjectId => 23,
+        crate::plan::RuntimeAgentOperationalType::CaptureFormat => 24,
+        crate::plan::RuntimeAgentOperationalType::CaptureKind => 25,
+        crate::plan::RuntimeAgentOperationalType::Diagnostics => 26,
+        crate::plan::RuntimeAgentOperationalType::WaitError => 27,
+        crate::plan::RuntimeAgentOperationalType::ViewportPoint => 28,
+        crate::plan::RuntimeAgentOperationalType::PointerButton => 29,
+        crate::plan::RuntimeAgentOperationalType::RagError => 30,
     }
 }
 

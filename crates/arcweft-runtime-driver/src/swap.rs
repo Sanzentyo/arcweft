@@ -12,14 +12,12 @@ use arcweft_core::entry::{
     RuntimeStatefulEntryRoles, TypeLayoutHash as CoreTypeLayoutHash,
 };
 use arcweft_core::plan::{EntryRuntimeId, RuntimeEntryKind, RuntimeEntryRoles};
+use arcweft_core::task::GenerationId;
 use arcweft_text_model::DialogueContentCatalog;
-use serde::{Deserialize, Serialize};
+use serde::Serialize;
 use std::collections::{BTreeMap, BTreeSet};
 use std::sync::Arc;
 use thiserror::Error;
-
-#[derive(Clone, Copy, Debug, Deserialize, Eq, Hash, Ord, PartialEq, PartialOrd, Serialize)]
-pub struct GenerationId(pub u64);
 
 #[derive(Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub struct CodeSlotId(pub String);

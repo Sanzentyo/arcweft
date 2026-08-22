@@ -345,7 +345,7 @@ mod windows_sample {
                 control: control.name,
                 kind: kind.to_owned(),
                 session: control.editor.session().0,
-                generation: self.generation.0,
+                generation: self.generation.get(),
                 serial,
                 revision: control.editor.revision().0,
                 redacted: control.secure,

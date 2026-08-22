@@ -21,8 +21,8 @@ use crate::session_save::{
     validate_presentation_snapshot, validate_product_awbc_snapshot,
 };
 use crate::swap::{
-    GenerationBuildError, GenerationId, ProgramGeneration, SwapCompatibility, SwapError,
-    SwapSession, classify_swap_for_entry,
+    GenerationBuildError, ProgramGeneration, SwapCompatibility, SwapError, SwapSession,
+    classify_swap_for_entry,
 };
 use crate::task::{
     HostTaskDispatch, RuntimeTaskCancelOutcome, RuntimeTaskCancelTarget, RuntimeTaskListOptions,
@@ -65,6 +65,7 @@ use arcweft_core::step::{
     RuntimeHostCallResult, RuntimeStepBudget, RuntimeStepInput, RuntimeStepMode,
     RuntimeStepOptions, RuntimeStepStats, RuntimeStepStopReason,
 };
+use arcweft_core::task::GenerationId;
 use arcweft_core::task::{
     CancelScopeId, LogicalEpoch, RuntimeNeedState, TaskEvent, TaskEventKind, TaskSequence,
 };
