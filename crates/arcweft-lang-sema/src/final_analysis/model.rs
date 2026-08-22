@@ -1,5 +1,6 @@
 //! Generation-bound checked semantic fact model.
 
+use super::match_edges::CheckedExpressionChildRole;
 use super::match_edges::NestedPathEvidence;
 use super::{
     AssertionRuntimePolicy, CallableDeclarationKey, CharacterDialogueCharacterType,
@@ -1763,5 +1764,170 @@ impl CheckedBinding {
 
     pub const fn role(&self) -> CheckedBindingRole {
         self.role
+    }
+}
+
+/// Stable semantic identity of one accepted declaration root.
+///
+/// The bytes are produced by the final-analysis transcript owner.  HIR arena
+/// identifiers, source spans, and retained display names are deliberately not
+/// part of this value.
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub struct AcceptedDeclarationSemanticId([u8; 32]);
+
+impl AcceptedDeclarationSemanticId {
+    pub(crate) const fn from_bytes(bytes: [u8; 32]) -> Self {
+        Self(bytes)
+    }
+
+    pub const fn as_bytes(&self) -> &[u8; 32] {
+        &self.0
+    }
+}
+
+/// One structural step in a declaration-rooted checked expression path.
+#[derive(Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub enum CheckedExpressionChildRoleStep {
+    Body(arcweft_lang_hir::body_edges::HirBodyChildRole),
+    Statement(arcweft_lang_hir::stmt::HirStatementChildRole),
+    ThreadBody(arcweft_lang_hir::stmt::HirStatementBodyRole),
+    Expression(CheckedExpressionChildRole),
+    MatchPattern { arm: u32 },
+    Pattern(arcweft_lang_hir::pattern::HirPatternChildRole),
+    ParameterPattern { group: u32, parameter: u32 },
+    ParameterDefault { group: u32, parameter: u32 },
+}
+
+/// Stable declaration-rooted path for a checked expression.
+#[derive(Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub struct CheckedExpressionChildRolePath {
+    declaration: AcceptedDeclarationSemanticId,
+    steps: Box<[CheckedExpressionChildRoleStep]>,
+}
+
+impl CheckedExpressionChildRolePath {
+    pub(crate) fn new(
+        declaration: AcceptedDeclarationSemanticId,
+        steps: impl Into<Box<[CheckedExpressionChildRoleStep]>>,
+    ) -> Self {
+        Self {
+            declaration,
+            steps: steps.into(),
+        }
+    }
+
+    pub const fn declaration(&self) -> AcceptedDeclarationSemanticId {
+        self.declaration
+    }
+
+    pub fn steps(&self) -> &[CheckedExpressionChildRoleStep] {
+        &self.steps
+    }
+}
+
+/// One stable structural coordinate inside a checked pattern.
+#[derive(Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub enum StablePatternCoordinateStep {
+    TupleElement(u32),
+    RecordField {
+        field: arcweft_core::value::RuntimeRecordFieldId,
+        source_ordinal: u32,
+    },
+    SequenceElement(u32),
+    VariantPayload,
+    WholeBindingInner,
+    OrAlternative(u32),
+    TypedBindingInner,
+}
+
+/// Declaration-independent pattern coordinate made only from structural
+/// roles and accepted field identities.
+#[derive(Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub struct StablePatternCoordinate(Box<[StablePatternCoordinateStep]>);
+
+impl StablePatternCoordinate {
+    pub(crate) fn new(steps: impl Into<Box<[StablePatternCoordinateStep]>>) -> Self {
+        Self(steps.into())
+    }
+
+    pub fn steps(&self) -> &[StablePatternCoordinateStep] {
+        &self.0
+    }
+}
+
+/// Stable coordinate for a checked value retained by Match semantics.
+#[derive(Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub enum StableCheckedValueCoordinate {
+    Expression {
+        declaration: AcceptedDeclarationSemanticId,
+        path: CheckedExpressionChildRolePath,
+    },
+    PatternBinding {
+        declaration: AcceptedDeclarationSemanticId,
+        match_path: CheckedExpressionChildRolePath,
+        arm_ordinal: u32,
+        pattern: StablePatternCoordinate,
+        binding_ordinal: u32,
+    },
+    Capture {
+        callable: AcceptedDeclarationSemanticId,
+        capture_ordinal: u32,
+        origin: Box<StableCheckedValueCoordinate>,
+    },
+}
+
+/// Stable digest of one checked expression semantic transcript.
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub struct CheckedExpressionSemanticDigest([u8; 32]);
+
+impl CheckedExpressionSemanticDigest {
+    pub(crate) const fn from_bytes(bytes: [u8; 32]) -> Self {
+        Self(bytes)
+    }
+
+    pub const fn as_bytes(&self) -> &[u8; 32] {
+        &self.0
+    }
+}
+
+/// Stable digest of one checked pattern semantic transcript.
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub struct CheckedPatternSemanticDigest([u8; 32]);
+
+impl CheckedPatternSemanticDigest {
+    pub(crate) const fn from_bytes(bytes: [u8; 32]) -> Self {
+        Self(bytes)
+    }
+
+    pub const fn as_bytes(&self) -> &[u8; 32] {
+        &self.0
+    }
+}
+
+/// Stable constructor-domain evidence used by exact Match coverage.
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub struct CheckedCoverageDomainDigest([u8; 32]);
+
+impl CheckedCoverageDomainDigest {
+    pub(crate) const fn from_bytes(bytes: [u8; 32]) -> Self {
+        Self(bytes)
+    }
+
+    pub const fn as_bytes(&self) -> &[u8; 32] {
+        &self.0
+    }
+}
+
+/// Stable digest of one complete generic Match product.
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub struct CheckedMatchSemanticDigest([u8; 32]);
+
+impl CheckedMatchSemanticDigest {
+    pub(crate) const fn from_bytes(bytes: [u8; 32]) -> Self {
+        Self(bytes)
+    }
+
+    pub const fn as_bytes(&self) -> &[u8; 32] {
+        &self.0
     }
 }

@@ -5,6 +5,7 @@
 //! this crate instead of reaching into parser internals.
 
 mod arena;
+pub mod body_edges;
 pub mod database;
 pub mod diagnostic;
 pub mod dialogue_application;

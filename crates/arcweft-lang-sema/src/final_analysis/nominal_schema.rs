@@ -1,7 +1,13 @@
 use std::collections::{BTreeMap, BTreeSet};
 use thiserror::Error;
 
-use arcweft_core::pattern::RuntimeOpaqueTypeProducerId;
+use arcweft_core::{
+    entry::{
+        RuntimeBytesFormat, RuntimeEnumRepr, RuntimeEnumTagStyle, RuntimeSchemaError,
+        RuntimeSchemaField, RuntimeSchemaVariant, RuntimeTypeSchema, TypeLayoutHash,
+    },
+    pattern::RuntimeOpaqueTypeProducerId,
+};
 use arcweft_data::{BytesFormat, FieldShape, TypeShape, VariantShape};
 use arcweft_lang_hir::{
     identity::TypeId,
@@ -112,6 +118,11 @@ pub enum NominalSchemaProjectionError {
     },
     #[error("{path}: {reason}")]
     InvalidShape { path: String, reason: String },
+    #[error("project-nominal runtime schema layout hash failed: {source}")]
+    RuntimeLayout {
+        #[source]
+        source: RuntimeSchemaError,
+    },
 }
 
 impl NominalSchemaProjectionError {
@@ -180,6 +191,32 @@ impl FinalSemanticAnalysis {
             });
         }
         NominalSchemaExpander::new(symbols, self).schema_checked(declaration, nominal.arguments())
+    }
+
+    /// Projects one checked project nominal into the runtime schema authority.
+    ///
+    /// The data-shape projection above remains the semantic source for the
+    /// accepted nominal fields and variants. This adapter only translates that
+    /// typed product into the core runtime schema; canonical layout bytes and
+    /// the resulting hash remain owned by [`RuntimeTypeSchema`].
+    pub fn project_runtime_nominal(
+        &self,
+        symbols: &ProjectSymbolTable,
+        nominal: &CheckedProjectNominal,
+    ) -> Result<RuntimeTypeSchema, NominalSchemaProjectionError> {
+        self.project_nominal_schema(symbols, nominal)
+            .map(|shape| runtime_schema(&shape))
+    }
+
+    /// Returns the canonical core layout hash for one accepted project nominal.
+    pub fn project_runtime_nominal_layout(
+        &self,
+        symbols: &ProjectSymbolTable,
+        nominal: &CheckedProjectNominal,
+    ) -> Result<TypeLayoutHash, NominalSchemaProjectionError> {
+        self.project_runtime_nominal(symbols, nominal)?
+            .try_layout_hash()
+            .map_err(|source| NominalSchemaProjectionError::RuntimeLayout { source })
     }
 }
 
@@ -446,4 +483,112 @@ fn canonical_nominal_name(id: &ProjectNominalDeclarationId) -> String {
         id.module(),
         id.name()
     )
+}
+
+fn runtime_schema(shape: &TypeShape) -> RuntimeTypeSchema {
+    match shape {
+        TypeShape::Unit => RuntimeTypeSchema::Unit,
+        TypeShape::Bool => RuntimeTypeSchema::Bool,
+        TypeShape::I8 => RuntimeTypeSchema::I8,
+        TypeShape::I16 => RuntimeTypeSchema::I16,
+        TypeShape::I32 => RuntimeTypeSchema::I32,
+        TypeShape::I64 => RuntimeTypeSchema::I64,
+        TypeShape::I128 => RuntimeTypeSchema::I128,
+        TypeShape::Isize => RuntimeTypeSchema::ISize,
+        TypeShape::U8 => RuntimeTypeSchema::U8,
+        TypeShape::U16 => RuntimeTypeSchema::U16,
+        TypeShape::U32 => RuntimeTypeSchema::U32,
+        TypeShape::U64 => RuntimeTypeSchema::U64,
+        TypeShape::U128 => RuntimeTypeSchema::U128,
+        TypeShape::Usize => RuntimeTypeSchema::USize,
+        TypeShape::F32 => RuntimeTypeSchema::F32,
+        TypeShape::F64 => RuntimeTypeSchema::F64,
+        TypeShape::String => RuntimeTypeSchema::String,
+        TypeShape::Char => RuntimeTypeSchema::Char,
+        TypeShape::Bytes { format } => RuntimeTypeSchema::Bytes {
+            format: runtime_bytes_format(*format),
+        },
+        TypeShape::Option(inner) => RuntimeTypeSchema::Option(Box::new(runtime_schema(inner))),
+        TypeShape::Seq(inner) => RuntimeTypeSchema::Seq(Box::new(runtime_schema(inner))),
+        TypeShape::Map { key, value } => RuntimeTypeSchema::Map {
+            key: Box::new(runtime_schema(key)),
+            value: Box::new(runtime_schema(value)),
+        },
+        TypeShape::Record {
+            name,
+            fields,
+            policy,
+        } => RuntimeTypeSchema::Record {
+            name: name.clone(),
+            fields: fields
+                .iter()
+                .map(|field| RuntimeSchemaField {
+                    rust_name: field.rust_name.clone(),
+                    wire_name: field.wire_name.clone(),
+                    schema: runtime_schema(&field.shape),
+                    has_default: field.has_default,
+                    skip: field.skip,
+                    bytes_format: field.bytes_format.map(runtime_bytes_format),
+                })
+                .collect(),
+            deny_unknown_fields: policy.deny_unknown_fields,
+        },
+        TypeShape::Enum {
+            name,
+            variants,
+            tag,
+            repr,
+        } => RuntimeTypeSchema::Enum {
+            name: name.clone(),
+            variants: variants
+                .iter()
+                .map(|variant| RuntimeSchemaVariant {
+                    rust_name: variant.rust_name.clone(),
+                    wire_name: variant.wire_name.clone(),
+                    payload: variant.payload.as_ref().map(runtime_schema),
+                    discriminant: variant.discriminant,
+                })
+                .collect(),
+            tag: match tag {
+                arcweft_data::EnumTagStyle::External => RuntimeEnumTagStyle::External,
+                arcweft_data::EnumTagStyle::Internal { tag } => {
+                    RuntimeEnumTagStyle::Internal { tag: tag.clone() }
+                }
+                arcweft_data::EnumTagStyle::Adjacent { tag, content } => {
+                    RuntimeEnumTagStyle::Adjacent {
+                        tag: tag.clone(),
+                        content: content.clone(),
+                    }
+                }
+            },
+            repr: repr.map(runtime_enum_repr),
+        },
+        TypeShape::Named(name) => RuntimeTypeSchema::Named(name.clone()),
+    }
+}
+
+const fn runtime_bytes_format(format: BytesFormat) -> RuntimeBytesFormat {
+    match format {
+        BytesFormat::Binary => RuntimeBytesFormat::Binary,
+        BytesFormat::Base64 => RuntimeBytesFormat::Base64,
+        BytesFormat::Hex => RuntimeBytesFormat::Hex,
+        BytesFormat::Array => RuntimeBytesFormat::Array,
+    }
+}
+
+const fn runtime_enum_repr(repr: arcweft_data::EnumRepr) -> RuntimeEnumRepr {
+    match repr {
+        arcweft_data::EnumRepr::I8 => RuntimeEnumRepr::I8,
+        arcweft_data::EnumRepr::I16 => RuntimeEnumRepr::I16,
+        arcweft_data::EnumRepr::I32 => RuntimeEnumRepr::I32,
+        arcweft_data::EnumRepr::I64 => RuntimeEnumRepr::I64,
+        arcweft_data::EnumRepr::I128 => RuntimeEnumRepr::I128,
+        arcweft_data::EnumRepr::Isize => RuntimeEnumRepr::ISize,
+        arcweft_data::EnumRepr::U8 => RuntimeEnumRepr::U8,
+        arcweft_data::EnumRepr::U16 => RuntimeEnumRepr::U16,
+        arcweft_data::EnumRepr::U32 => RuntimeEnumRepr::U32,
+        arcweft_data::EnumRepr::U64 => RuntimeEnumRepr::U64,
+        arcweft_data::EnumRepr::U128 => RuntimeEnumRepr::U128,
+        arcweft_data::EnumRepr::Usize => RuntimeEnumRepr::USize,
+    }
 }

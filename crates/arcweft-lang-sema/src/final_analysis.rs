@@ -58,6 +58,7 @@ mod model;
 mod nominal_schema;
 mod recovery_diagnostics;
 mod report;
+mod semantic_transcript;
 mod type_rules;
 mod validation;
 
@@ -80,22 +81,25 @@ pub use match_edges::{
     CheckedNestedPathSegmentV1, CheckedNestedPathV1, NestedPathEvidence,
 };
 pub use model::{
-    CharacterDialogueFieldCoordinate, CheckedAssertionDisposition, CheckedAssignment,
-    CheckedAssignmentPlace, CheckedAwait, CheckedAwaitPendingObserver, CheckedBinding,
-    CheckedBindingRole, CheckedBuiltinVariantCase, CheckedCharacterDialogueFactory,
+    AcceptedDeclarationSemanticId, CharacterDialogueFieldCoordinate, CheckedAssertionDisposition,
+    CheckedAssignment, CheckedAssignmentPlace, CheckedAwait, CheckedAwaitPendingObserver,
+    CheckedBinding, CheckedBindingRole, CheckedBuiltinVariantCase, CheckedCharacterDialogueFactory,
     CheckedCharacterDialoguePatch, CheckedCharacterDialoguePatchField,
     CheckedCharacterDialogueReconfigure, CheckedCharacterDialogueTarget, CheckedChoice,
-    CheckedChoiceGoto, CheckedEffectField, CheckedEntryReference, CheckedEvaluatedEffect,
-    CheckedExpression, CheckedExpressionResolution, CheckedFunctionExecution,
-    CheckedImplicitCallable, CheckedItem, CheckedItemRole, CheckedIteration, CheckedIteratorFamily,
-    CheckedMatchArmFact, CheckedMatchFact, CheckedOrdinaryFunctionEmission, CheckedPatchOperation,
-    CheckedPattern, CheckedPatternResolution, CheckedPipe, CheckedProjectCallable,
-    CheckedProjectItem, CheckedProjectItemOwner, CheckedProjectNominal, CheckedSelectResolution,
-    CheckedStatement, CheckedStatementRole, CheckedStyleCallee, CheckedSuspensionRole,
-    CheckedSuspensionStatement, CheckedTraitConformance, CheckedTraitIdentity, CheckedTry,
-    CheckedTryBoundary, CheckedTryCarrier, CheckedTypeSelection, CheckedValueResolution,
-    CheckedVariantOwner, CheckedVariantResolution, CheckedViewCall, CheckedViewCallee,
-    PostfixBracketResolution, RegisteredSemanticValueId,
+    CheckedChoiceGoto, CheckedCoverageDomainDigest, CheckedEffectField, CheckedEntryReference,
+    CheckedEvaluatedEffect, CheckedExpression, CheckedExpressionChildRolePath,
+    CheckedExpressionChildRoleStep, CheckedExpressionResolution, CheckedExpressionSemanticDigest,
+    CheckedFunctionExecution, CheckedImplicitCallable, CheckedItem, CheckedItemRole,
+    CheckedIteration, CheckedIteratorFamily, CheckedMatchArmFact, CheckedMatchFact,
+    CheckedMatchSemanticDigest, CheckedOrdinaryFunctionEmission, CheckedPatchOperation,
+    CheckedPattern, CheckedPatternResolution, CheckedPatternSemanticDigest, CheckedPipe,
+    CheckedProjectCallable, CheckedProjectItem, CheckedProjectItemOwner, CheckedProjectNominal,
+    CheckedSelectResolution, CheckedStatement, CheckedStatementRole, CheckedStyleCallee,
+    CheckedSuspensionRole, CheckedSuspensionStatement, CheckedTraitConformance,
+    CheckedTraitIdentity, CheckedTry, CheckedTryBoundary, CheckedTryCarrier, CheckedTypeSelection,
+    CheckedValueResolution, CheckedVariantOwner, CheckedVariantResolution, CheckedViewCall,
+    CheckedViewCallee, PostfixBracketResolution, RegisteredSemanticValueId,
+    StableCheckedValueCoordinate, StablePatternCoordinate, StablePatternCoordinateStep,
 };
 pub use nominal_schema::{NominalSchemaPath, NominalSchemaPathStep, NominalSchemaProjectionError};
 pub use recovery_diagnostics::{
@@ -103,6 +107,11 @@ pub use recovery_diagnostics::{
     project_callable_tail_recovery_diagnostics,
 };
 pub use report::FinalSemanticAnalysis;
+pub use semantic_transcript::{
+    CheckedCoverageWitness, CheckedGuardClass, CheckedMatch, CheckedMatchArm, CheckedMatchBinding,
+    CheckedMatchCoverage, CheckedMatchLimits, CheckedUnreachableArm, CheckedUnreachableReason,
+    SemanticTranscriptError,
+};
 
 #[cfg(test)]
 #[path = "final_analysis/tests.rs"]

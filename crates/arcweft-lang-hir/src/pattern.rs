@@ -4,6 +4,10 @@
 //! The lowering transaction supplies the resolver used here so construction
 //! proves liveness and lexical visibility without reopening source text.
 
+mod child_edges;
+
+pub use child_edges::{HirPatternChild, HirPatternChildEdge};
+
 use thiserror::Error;
 
 use crate::expr::{HirPoisonState, HirRecoveryIssue, literal_recovery_issue};
@@ -134,40 +138,18 @@ pub enum HirPatternKind {
 }
 
 impl HirPatternKind {
+    #[allow(
+        dead_code,
+        reason = "retained only as the differential projection of typed pattern child edges"
+    )]
     pub(crate) fn direct_pattern_children(&self) -> Vec<PatternId> {
-        match self {
-            Self::Tuple { elements }
-            | Self::BracketSequence { elements, .. }
-            | Self::Or {
-                alternatives: elements,
-            } => elements.to_vec(),
-            Self::Record { fields, .. } => fields
-                .iter()
-                .filter_map(|field| match field {
-                    HirPatternField::Explicit { pattern, .. } => Some(*pattern),
-                    HirPatternField::Shorthand { .. }
-                    | HirPatternField::Rest { .. }
-                    | HirPatternField::Invalid { .. } => None,
-                })
-                .collect(),
-            Self::WholeBinding { pattern, .. } => vec![*pattern],
-            Self::Variant(pattern) => match pattern.payload() {
-                HirVariantPatternPayload::Pattern(pattern)
-                | HirVariantPatternPayload::Recovered {
-                    pattern: Some(pattern),
-                    ..
-                } => vec![*pattern],
-                HirVariantPatternPayload::Absent
-                | HirVariantPatternPayload::Recovered { pattern: None, .. } => Vec::new(),
-            },
-            Self::Binding(_)
-            | Self::MutableBinding(_)
-            | Self::Literal(_)
-            | Self::EntityReference(_)
-            | Self::Discard
-            | Self::TypedBinding { .. }
-            | Self::Error(_) => Vec::new(),
-        }
+        self.child_edges()
+            .into_iter()
+            .filter_map(|edge| match edge.child() {
+                HirPatternChild::Pattern(pattern) => Some(pattern),
+                HirPatternChild::Type(_) | HirPatternChild::Local(_) => None,
+            })
+            .collect()
     }
 
     /// Returns the exact type node authored by this pattern, when the pattern
@@ -577,10 +559,18 @@ pub enum HirPatternFieldIssue {
 /// Deterministic relation of a recovered Pattern child to its parent family.
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub enum HirPatternChildRole {
+    BindingLocal,
+    MutableBindingLocal,
     VariantPayload,
     Element { ordinal: u32 },
     RecordField { field: u32 },
+    RecordShorthandLocal { field: u32 },
+    RecordRestLocal { field: u32 },
+    SequenceRestLocal,
+    WholeBindingLocal,
     NestedPattern,
+    OrAlternative { ordinal: u32 },
+    TypedBindingLocal,
     TypedBindingType,
 }
 

@@ -19,7 +19,9 @@ use crate::identity::{
     TypeId,
 };
 use crate::item::{HirEntryMember, HirImplMember, HirItemKind};
+use crate::pattern::HirPatternChild;
 use crate::scope::HirScopeOwner;
+use crate::stmt::HirStatementChild;
 use crate::symbol::{
     CallableDeclarationKey, ImplMethodDeclarationId, ProjectSymbolRevision, ProjectSymbolWorldId,
 };
@@ -454,9 +456,9 @@ struct StructuralIndex {
     scope_members: BTreeMap<ScopeId, ScopedOwners>,
     local_types: BTreeMap<LocalId, Option<TypeId>>,
     expression_edges: BTreeMap<ExprId, (Vec<ExprId>, Vec<TypeId>, bool)>,
-    statement_types: BTreeMap<StmtId, Vec<TypeId>>,
+    statement_edges: BTreeMap<StmtId, Vec<HirStatementChild>>,
     type_edges: BTreeMap<TypeId, Vec<TypeId>>,
-    pattern_edges: BTreeMap<PatternId, (Option<TypeId>, Vec<PatternId>)>,
+    pattern_edges: BTreeMap<PatternId, Vec<HirPatternChild>>,
     owned_scopes: BTreeMap<HirScopeOwner, Vec<ScopeId>>,
     capture_closures: BTreeMap<CaptureId, ExprId>,
 }
@@ -479,6 +481,28 @@ enum PendingOwner {
     Statement(StmtId),
     Type(TypeId),
     Pattern(PatternId),
+}
+
+impl From<HirStatementChild> for PendingOwner {
+    fn from(child: HirStatementChild) -> Self {
+        match child {
+            HirStatementChild::Expression(owner) => Self::Expression(owner),
+            HirStatementChild::Statement(owner) => Self::Statement(owner),
+            HirStatementChild::Pattern(owner) => Self::Pattern(owner),
+            HirStatementChild::Type(owner) => Self::Type(owner),
+            HirStatementChild::Local(owner) => Self::Local(owner),
+        }
+    }
+}
+
+impl From<HirPatternChild> for PendingOwner {
+    fn from(child: HirPatternChild) -> Self {
+        match child {
+            HirPatternChild::Pattern(owner) => Self::Pattern(owner),
+            HirPatternChild::Type(owner) => Self::Type(owner),
+            HirPatternChild::Local(owner) => Self::Local(owner),
+        }
+    }
 }
 
 #[derive(Default)]
@@ -696,7 +720,7 @@ impl StructuralIndex {
             scope_members: BTreeMap::new(),
             local_types: BTreeMap::new(),
             expression_edges: BTreeMap::new(),
-            statement_types: BTreeMap::new(),
+            statement_edges: BTreeMap::new(),
             type_edges: BTreeMap::new(),
             pattern_edges: BTreeMap::new(),
             owned_scopes: BTreeMap::new(),
@@ -744,9 +768,15 @@ impl StructuralIndex {
                     .or_default()
                     .statements
                     .push(owner);
-                index
-                    .statement_types
-                    .insert(owner, statement.kind().direct_type_roots());
+                index.statement_edges.insert(
+                    owner,
+                    statement
+                        .kind()
+                        .child_edges()
+                        .into_iter()
+                        .map(|edge| edge.child())
+                        .collect(),
+                );
             }
             for (owner, ty) in module.types() {
                 index
@@ -768,10 +798,12 @@ impl StructuralIndex {
                     .push(owner);
                 index.pattern_edges.insert(
                     owner,
-                    (
-                        pattern.kind().authored_type(),
-                        pattern.kind().direct_pattern_children(),
-                    ),
+                    pattern
+                        .kind()
+                        .child_edges()
+                        .into_iter()
+                        .map(|edge| edge.child())
+                        .collect(),
                 );
             }
             for (owner, capture) in module.captures() {
@@ -868,10 +900,10 @@ impl StructuralIndex {
                     if !owners.statements.insert(owner) {
                         continue;
                     }
-                    let types = self.statement_types.get(&owner).ok_or(
+                    let children = self.statement_edges.get(&owner).ok_or(
                         HirRuntimeReachabilityError::UnresolvedStatement { statement: owner },
                     )?;
-                    pending.extend(types.iter().copied().map(PendingOwner::Type));
+                    pending.extend(children.iter().copied().map(PendingOwner::from));
                     pending.extend(
                         self.owned_scopes
                             .get(&HirScopeOwner::Stmt(owner))
@@ -895,12 +927,11 @@ impl StructuralIndex {
                     if !owners.patterns.insert(owner) {
                         continue;
                     }
-                    let (ty, children) = self
+                    let children = self
                         .pattern_edges
                         .get(&owner)
                         .ok_or(HirRuntimeReachabilityError::UnresolvedPattern { pattern: owner })?;
-                    pending.extend(ty.iter().copied().map(PendingOwner::Type));
-                    pending.extend(children.iter().copied().map(PendingOwner::Pattern));
+                    pending.extend(children.iter().copied().map(PendingOwner::from));
                 }
             }
         }

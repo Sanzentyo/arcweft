@@ -22,6 +22,8 @@ mod dialogue_lines;
 mod runtime_semantic_owners;
 #[path = "final_project/selected_expressions.rs"]
 mod selected_expressions;
+#[path = "final_project/semantic_paths.rs"]
+mod semantic_paths;
 
 pub use self::dialogue_lines::{
     AcceptedDialogueLine, AcceptedDialogueLineInventory, AcceptedDialogueLineSource,
@@ -37,6 +39,10 @@ pub use self::runtime_semantic_owners::{
 pub use self::selected_expressions::{
     HirRuntimeCallCalleeDisposition, HirRuntimeExpressionTypeDisposition,
     HirSelectedExpressionInventoryError,
+};
+pub use self::semantic_paths::{
+    HirDeclarationSemanticPathIndex, HirExpressionSemanticHop, HirSemanticPathError,
+    HirSemanticPathStep,
 };
 
 /// Package-qualified canonical key for one project module.

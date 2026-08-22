@@ -4,7 +4,12 @@
 //! Revision-bound source components, including `UnsafeAuditInsertion`, belong
 //! to the HIR source index rather than these records.
 
+mod child_edges;
 mod thread;
+
+pub use child_edges::{
+    HirStatementBodyRole, HirStatementChild, HirStatementChildEdge, HirStatementChildRole,
+};
 
 pub(crate) use self::thread::HirThreadStmtInvariantError;
 pub(crate) use self::thread::reject_duplicate_ids;
@@ -513,45 +518,21 @@ impl HirAssertionMode {
 
 impl HirStmtKind {
     /// Returns every type-arena root attached directly to this statement.
+    #[allow(
+        dead_code,
+        reason = "retained only as the differential projection of typed statement child edges"
+    )]
     pub(crate) fn direct_type_roots(&self) -> Vec<TypeId> {
-        match self {
-            Self::Let { annotation, .. } | Self::LetElse { annotation, .. } => {
-                annotation.iter().copied().collect()
-            }
-            Self::Assertion { .. }
-            | Self::Assign { .. }
-            | Self::LetChoice { .. }
-            | Self::LetScope { .. }
-            | Self::LetActionReceive { .. }
-            | Self::Return { .. }
-            | Self::Out { .. }
-            | Self::Goto { .. }
-            | Self::DeferBlock { .. }
-            | Self::Defer { .. }
-            | Self::Yield { .. }
-            | Self::Signal { .. }
-            | Self::LifetimeSet { .. }
-            | Self::Wait { .. }
-            | Self::On { .. }
-            | Self::UnsafeLifetime { .. }
-            | Self::Choice { .. }
-            | Self::If(_)
-            | Self::IfLet(_)
-            | Self::Match(_)
-            | Self::While(_)
-            | Self::WhileLet(_)
-            | Self::For(_)
-            | Self::Close { .. }
-            | Self::Select(_)
-            | Self::SourceLocale(_)
-            | Self::Scope(_)
-            | Self::Include(_)
-            | Self::Break { .. }
-            | Self::Continue { .. }
-            | Self::Expression { .. }
-            | Self::ProofCall { .. }
-            | Self::Error => Vec::new(),
-        }
+        self.child_edges()
+            .into_iter()
+            .filter_map(|edge| match edge.child() {
+                HirStatementChild::Type(ty) => Some(ty),
+                HirStatementChild::Expression(_)
+                | HirStatementChild::Statement(_)
+                | HirStatementChild::Pattern(_)
+                | HirStatementChild::Local(_) => None,
+            })
+            .collect()
     }
 
     /// Returns locals whose names become visible only after this complete

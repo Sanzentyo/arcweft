@@ -20,7 +20,7 @@ use arcweft_lang_hir::{
     lowering::{HirModuleKey, LoweringRequest},
     module::HirModule,
     pattern::HirPatternKind,
-    project::{HirProject, HirProjectBuilder, HirProjectModule},
+    project::{HirProject, HirProjectBuilder, HirProjectModule, HirSemanticPathStep},
     proof_return::HirProofReturnSemanticFactSet,
     source_index::{
         HirExprSourceRole, HirSourcePresence, HirSourceQuery, HirSourceSite, HirStmtSourceRole,
@@ -47,15 +47,17 @@ use arcweft_source::{
 use super::{
     CallTargetFacts, CandidateEvaluationPass, CandidateExpectedType,
     CharacterDialogueFieldCoordinate, CharacterDialoguePatchContext, CheckedAssertionDisposition,
-    CheckedBinding, CheckedBuiltinVariantCase, CheckedCharacterDialogueTarget, CheckedExpression,
-    CheckedExpressionResolution, CheckedFunctionExecution, CheckedItem, CheckedItemRole,
-    CheckedIteration, CheckedIteratorFamily, CheckedPatchOperation, CheckedPattern,
+    CheckedBinding, CheckedBuiltinVariantCase, CheckedCharacterDialogueTarget,
+    CheckedCoverageWitness, CheckedExpression, CheckedExpressionResolution,
+    CheckedFunctionExecution, CheckedItem, CheckedItemRole, CheckedIteration,
+    CheckedIteratorFamily, CheckedMatchLimits, CheckedPatchOperation, CheckedPattern,
     CheckedPatternResolution, CheckedSelectResolution, CheckedStatement, CheckedStatementRole,
     CheckedSuspensionRole, CheckedSuspensionStatement, CheckedTryBoundary, CheckedTryCarrier,
-    CheckedTypeSelection, CheckedValueResolution, CheckedVariantOwner, FinalSemanticAnalysis,
-    FinalSemanticAnalysisControl, FinalSemanticAnalysisError, FinalSemanticAnalysisInput,
-    FinalSemanticCatalogs, PhysicalArgumentEvaluationKind, RegisteredSemanticValueId,
-    ResolvedCallable, analyze_final_project,
+    CheckedTypeSelection, CheckedUnreachableReason, CheckedValueResolution, CheckedVariantOwner,
+    FinalSemanticAnalysis, FinalSemanticAnalysisControl, FinalSemanticAnalysisError,
+    FinalSemanticAnalysisInput, FinalSemanticCatalogs, PhysicalArgumentEvaluationKind,
+    RegisteredSemanticValueId, ResolvedCallable, SemanticTranscriptError,
+    StableCheckedValueCoordinate, analyze_final_project,
 };
 use crate::{
     assertion::{AssertionBuildProfile, AssertionContext, AssertionRuntimePolicy},
@@ -2565,6 +2567,553 @@ fn checked_match_fact_and_edges_retain_exact_guard_presence_and_children() {
             super::CheckedExpressionChildRole::ArmValue { arm: 1 }
         ))
     );
+    let declaration = fixture
+        .symbols
+        .callable_symbols()
+        .find(|symbol| {
+            symbol.owner() == arcweft_lang_hir::symbol::CallableDeclarationOwner::Function
+        })
+        .expect("root function callable")
+        .declaration();
+    let product = report
+        .build_checked_match(
+            fixture.project.executable_view().expect("executable HIR"),
+            &fixture.symbols,
+            declaration,
+            owner,
+            super::CheckedMatchLimits::PRODUCTION,
+        )
+        .expect("generic Match semantic product");
+    assert_eq!(product.arms().len(), 2);
+    assert!(product.coverage().exhaustive());
+    assert_ne!(product.semantic_digest().as_bytes(), &[0; 32]);
+}
+
+#[test]
+fn checked_match_semantic_path_crosses_the_typed_statement_root() {
+    let fixture = fixture(
+        concat!(
+            "fn root(flag: bool) -> i64 {\n",
+            "    let selected = match flag {\n",
+            "        true => 1i64\n",
+            "        false => 2i64\n",
+            "    }\n",
+            "    selected\n",
+            "}\n",
+        ),
+        None,
+    );
+    let report = analyze(&fixture).expect("statement-root Match final analysis");
+    let project = fixture.project.executable_view().expect("executable HIR");
+    let module = project
+        .module(&CanonicalModulePath::crate_root())
+        .expect("root HIR module");
+    let owner = module
+        .expressions()
+        .find_map(|(owner, expression)| {
+            matches!(expression.kind(), HirExprKind::Match(_)).then_some(owner)
+        })
+        .expect("statement initializer Match");
+    let declaration = fixture
+        .symbols
+        .callable_symbols()
+        .find(|symbol| {
+            symbol.owner() == arcweft_lang_hir::symbol::CallableDeclarationOwner::Function
+        })
+        .expect("root function callable")
+        .declaration();
+    let product = report
+        .build_checked_match(
+            project,
+            &fixture.symbols,
+            declaration,
+            owner,
+            super::CheckedMatchLimits::PRODUCTION,
+        )
+        .expect("statement-origin path is HIR-owned and semantically enriched");
+    assert!(product.coverage().exhaustive());
+    assert_eq!(product.arms().len(), 2);
+}
+
+#[test]
+fn checked_match_transcript_retains_stable_option_binding_rows() {
+    let fixture = fixture(
+        r#"
+fn root(value: Option<i64>) -> i64 {
+    match value {
+        .Some(item) => item
+        .None => 0i64
+    }
+}
+"#,
+        None,
+    );
+    let report = analyze(&fixture).expect("Option Match final analysis");
+    let project = fixture.project.executable_view().expect("executable HIR");
+    let module = project
+        .module(&CanonicalModulePath::crate_root())
+        .expect("root HIR module");
+    let owner = module
+        .expressions()
+        .find_map(|(owner, expression)| {
+            matches!(expression.kind(), HirExprKind::Match(_)).then_some(owner)
+        })
+        .expect("Option Match expression");
+    let declaration = fixture
+        .symbols
+        .callable_symbols()
+        .find(|symbol| {
+            symbol.owner() == arcweft_lang_hir::symbol::CallableDeclarationOwner::Function
+        })
+        .expect("root function callable")
+        .declaration();
+    let product = report
+        .build_checked_match(
+            project,
+            &fixture.symbols,
+            declaration,
+            owner,
+            CheckedMatchLimits::PRODUCTION,
+        )
+        .expect("Option Match semantic product");
+    assert!(product.coverage().exhaustive());
+    assert!(product.coverage().unreachable().is_empty());
+    let some = product.arms().first().expect("Some arm");
+    assert_eq!(some.bindings().len(), 1);
+    assert_ne!(some.bindings()[0].ty().as_bytes(), &[0; 32]);
+    assert!(matches!(
+        some.bindings()[0].coordinate(),
+        StableCheckedValueCoordinate::PatternBinding {
+            arm_ordinal: 0,
+            binding_ordinal: 0,
+            ..
+        }
+    ));
+}
+
+#[test]
+fn checked_match_transcript_rejects_non_exhaustive_and_enforces_limits() {
+    let fixture = fixture(
+        "fn root(flag: bool) -> i64 { match flag { true => 1i64 } }\n",
+        None,
+    );
+    let report = analyze(&fixture).expect("non-exhaustive Match final analysis");
+    let project = fixture.project.executable_view().expect("executable HIR");
+    let module = project
+        .module(&CanonicalModulePath::crate_root())
+        .expect("root HIR module");
+    let owner = module
+        .expressions()
+        .find_map(|(owner, expression)| {
+            matches!(expression.kind(), HirExprKind::Match(_)).then_some(owner)
+        })
+        .expect("non-exhaustive Match expression");
+    let declaration = fixture
+        .symbols
+        .callable_symbols()
+        .find(|symbol| {
+            symbol.owner() == arcweft_lang_hir::symbol::CallableDeclarationOwner::Function
+        })
+        .expect("root function callable")
+        .declaration();
+    let non_exhaustive = report.build_checked_match(
+        project,
+        &fixture.symbols,
+        declaration,
+        owner,
+        CheckedMatchLimits::PRODUCTION,
+    );
+    assert!(matches!(
+        non_exhaustive,
+        Err(SemanticTranscriptError::NonExhaustive {
+            witness: CheckedCoverageWitness::BooleanFalse
+        })
+    ));
+
+    let byte_limited = report.build_checked_match(
+        project,
+        &fixture.symbols,
+        declaration,
+        owner,
+        CheckedMatchLimits::new(4_096, 65_536, 65_536, 0, 4_096, 256, 65_536),
+    );
+    assert!(matches!(
+        byte_limited,
+        Err(SemanticTranscriptError::WorkLimit)
+    ));
+}
+
+#[test]
+fn checked_match_coverage_reports_guarded_rows_redundant_after_prior_coverage() {
+    let fixture = fixture(
+        r#"
+fn root(flag: bool, ready: bool) -> i64 {
+    match flag {
+        true => 1i64
+        true when ready => 2i64
+        false => 3i64
+    }
+}
+"#,
+        None,
+    );
+    let report = analyze(&fixture).expect("guarded Match final analysis");
+    let project = fixture.project.executable_view().expect("executable HIR");
+    let module = project
+        .module(&CanonicalModulePath::crate_root())
+        .expect("root HIR module");
+    let owner = module
+        .expressions()
+        .find_map(|(owner, expression)| {
+            matches!(expression.kind(), HirExprKind::Match(_)).then_some(owner)
+        })
+        .expect("guarded Match expression");
+    let declaration = fixture
+        .symbols
+        .callable_symbols()
+        .find(|symbol| {
+            symbol.owner() == arcweft_lang_hir::symbol::CallableDeclarationOwner::Function
+        })
+        .expect("root function callable")
+        .declaration();
+    let product = report
+        .build_checked_match(
+            project,
+            &fixture.symbols,
+            declaration,
+            owner,
+            CheckedMatchLimits::PRODUCTION,
+        )
+        .expect("guarded Match semantic product");
+    assert!(product.coverage().exhaustive());
+    let unreachable = product.coverage().unreachable();
+    assert_eq!(unreachable.len(), 1);
+    assert_eq!(unreachable[0].arm(), 1);
+    assert_eq!(
+        unreachable[0].reason(),
+        CheckedUnreachableReason::CoveredByPriorRows
+    );
+}
+
+#[test]
+fn declaration_paths_retain_nested_thread_body_coordinates() {
+    let fixture = fixture(
+        r#"
+flow main(flag: bool) {
+    thread {
+        if flag {
+            match flag {
+                true => {}
+                false => {}
+            }
+        }
+    }
+}
+"#,
+        None,
+    );
+    let report = analyze(&fixture).expect("nested Thread path final analysis");
+    let project = fixture.project.executable_view().expect("executable HIR");
+    let declaration = fixture
+        .symbols
+        .callable_symbols()
+        .find(|symbol| symbol.owner() == arcweft_lang_hir::symbol::CallableDeclarationOwner::Flow)
+        .expect("root flow callable")
+        .declaration();
+    let paths = project
+        .declaration_semantic_paths(&fixture.symbols, declaration)
+        .expect("nested Thread semantic paths");
+    let module = project
+        .module(&CanonicalModulePath::crate_root())
+        .expect("root HIR module");
+    let match_scrutinee = module
+        .statements()
+        .find_map(|(_, statement)| match statement.kind() {
+            HirStmtKind::Match(matched) => Some(matched.scrutinee()),
+            _ => None,
+        })
+        .expect("Thread Match scrutinee path expression");
+    let path = paths
+        .expression(match_scrutinee)
+        .expect("Thread Match scrutinee semantic path");
+    assert!(
+        path.iter()
+            .any(|step| matches!(step, HirSemanticPathStep::ThreadBody(_)))
+    );
+    assert!(path.iter().any(|step| {
+        matches!(
+            step,
+            HirSemanticPathStep::Body(
+                arcweft_lang_hir::body_edges::HirBodyChildRole::ThreadItem { .. }
+            )
+        )
+    }));
+    assert!(
+        report
+            .expressions()
+            .any(|(owner, _)| paths.expression(owner).is_some())
+    );
+}
+
+#[test]
+fn checked_match_project_enum_commits_constructor_layout_evidence() {
+    let fixture = fixture(
+        r#"
+enum Route {
+    Opening,
+    Closing,
+}
+
+fn root(route: Route) -> i64 {
+    match route {
+        .Opening => 1i64
+        .Closing => 2i64
+    }
+}
+"#,
+        None,
+    );
+    let report = analyze(&fixture).expect("project enum Match final analysis");
+    let project = fixture.project.executable_view().expect("executable HIR");
+    let module = project
+        .module(&CanonicalModulePath::crate_root())
+        .expect("root HIR module");
+    let owner = module
+        .expressions()
+        .find_map(|(owner, expression)| {
+            matches!(expression.kind(), HirExprKind::Match(_)).then_some(owner)
+        })
+        .expect("project enum Match expression");
+    let declaration = fixture
+        .symbols
+        .callable_symbols()
+        .find(|symbol| {
+            symbol.owner() == arcweft_lang_hir::symbol::CallableDeclarationOwner::Function
+        })
+        .expect("root function callable")
+        .declaration();
+    let product = report
+        .build_checked_match(
+            project,
+            &fixture.symbols,
+            declaration,
+            owner,
+            CheckedMatchLimits::PRODUCTION,
+        )
+        .expect("project enum Match semantic product");
+    assert!(product.coverage().exhaustive());
+    assert_ne!(product.coverage().domain_digest().as_bytes(), &[0; 32]);
+    assert_ne!(
+        product.arms()[0].pattern().as_bytes(),
+        product.arms()[1].pattern().as_bytes()
+    );
+}
+
+#[test]
+fn checked_match_transcript_changes_when_source_arm_order_changes() {
+    let build = |source: &str| {
+        let fixture = fixture(source, None);
+        let report = analyze(&fixture).expect("ordered Match final analysis");
+        let project = fixture.project.executable_view().expect("executable HIR");
+        let module = project
+            .module(&CanonicalModulePath::crate_root())
+            .expect("root HIR module");
+        let owner = module
+            .expressions()
+            .find_map(|(owner, expression)| {
+                matches!(expression.kind(), HirExprKind::Match(_)).then_some(owner)
+            })
+            .expect("Match expression");
+        let declaration = fixture
+            .symbols
+            .callable_symbols()
+            .find(|symbol| symbol.declaration().name() == "root")
+            .expect("root callable")
+            .declaration();
+        let product = report
+            .build_checked_match(
+                project,
+                &fixture.symbols,
+                declaration,
+                owner,
+                CheckedMatchLimits::PRODUCTION,
+            )
+            .expect("ordered Match semantic product");
+        *product.semantic_digest().as_bytes()
+    };
+
+    let first = build(
+        r#"
+fn root(flag: bool) -> i64 {
+    match flag {
+        true => 1i64
+        false => 2i64
+    }
+}
+"#,
+    );
+    let reordered = build(
+        r#"
+fn root(flag: bool) -> i64 {
+    match flag {
+        false => 2i64
+        true => 1i64
+    }
+}
+"#,
+    );
+    assert_ne!(first, reordered);
+}
+
+#[test]
+fn checked_match_transcript_commits_checked_callable_contract() {
+    let build = |effect: &str| {
+        let source = format!(
+            r#"
+fn callee() -> i64 effects {{ {effect} }} {{
+    1i64
+}}
+
+fn root(flag: bool) -> i64 {{
+    match flag {{
+        true => callee()
+        false => 0i64
+    }}
+}}
+"#
+        );
+        let fixture = fixture(&source, None);
+        let report = analyze(&fixture).expect("call-contract Match final analysis");
+        let project = fixture.project.executable_view().expect("executable HIR");
+        let module = project
+            .module(&CanonicalModulePath::crate_root())
+            .expect("root HIR module");
+        let owner = module
+            .expressions()
+            .find_map(|(owner, expression)| {
+                matches!(expression.kind(), HirExprKind::Match(_)).then_some(owner)
+            })
+            .expect("Match expression");
+        let declaration = fixture
+            .symbols
+            .callable_symbols()
+            .find(|symbol| symbol.declaration().name() == "root")
+            .expect("root callable")
+            .declaration();
+        let product = report
+            .build_checked_match(
+                project,
+                &fixture.symbols,
+                declaration,
+                owner,
+                CheckedMatchLimits::PRODUCTION,
+            )
+            .expect("call-contract Match semantic product");
+        *product.semantic_digest().as_bytes()
+    };
+
+    assert_ne!(build("fs.read"), build("fs.write"));
+}
+
+#[test]
+fn checked_match_transcript_rejects_tuple_coverage_until_product_authority_exists() {
+    let fixture = fixture(
+        r#"
+fn root(pair: (bool, bool)) -> i64 {
+    match pair {
+        (true, true) => 1i64
+        _ => 0i64
+    }
+}
+"#,
+        None,
+    );
+    let report = analyze(&fixture).expect("tuple Match final analysis");
+    let project = fixture.project.executable_view().expect("executable HIR");
+    let module = project
+        .module(&CanonicalModulePath::crate_root())
+        .expect("root HIR module");
+    let owner = module
+        .expressions()
+        .find_map(|(owner, expression)| {
+            matches!(expression.kind(), HirExprKind::Match(_)).then_some(owner)
+        })
+        .expect("tuple Match expression");
+    let declaration = fixture
+        .symbols
+        .callable_symbols()
+        .find(|symbol| symbol.declaration().name() == "root")
+        .expect("root callable")
+        .declaration();
+    assert!(matches!(
+        report.build_checked_match(
+            project,
+            &fixture.symbols,
+            declaration,
+            owner,
+            CheckedMatchLimits::PRODUCTION,
+        ),
+        Err(SemanticTranscriptError::UnsupportedCoverage)
+            | Err(SemanticTranscriptError::UnsupportedIdentity)
+    ));
+}
+
+#[test]
+fn declaration_paths_retain_for_body_and_closure_match_coordinates() {
+    let fixture = fixture(
+        r#"
+flow root {
+    let values: Vec<bool> = [true, false]
+    for value in values {
+        let handler = |item: bool| -> i64 {
+            match item {
+                true => 1i64
+                false => 2i64
+            }
+        }
+    }
+}
+"#,
+        None,
+    );
+    let report = analyze(&fixture).expect("For/closure Match final analysis");
+    let project = fixture.project.executable_view().expect("executable HIR");
+    let declaration = fixture
+        .symbols
+        .callable_symbols()
+        .find(|symbol| symbol.declaration().name() == "root")
+        .expect("root flow callable")
+        .declaration();
+    let paths = project
+        .declaration_semantic_paths(&fixture.symbols, declaration)
+        .expect("For/closure semantic paths");
+    let module = project
+        .module(&CanonicalModulePath::crate_root())
+        .expect("root HIR module");
+    let match_owner = module
+        .expressions()
+        .find_map(|(owner, expression)| {
+            matches!(expression.kind(), HirExprKind::Match(_)).then_some(owner)
+        })
+        .expect("closure Match expression");
+    let path = paths
+        .expression(match_owner)
+        .expect("closure Match semantic path");
+    assert!(path.iter().any(|step| {
+        matches!(
+            step,
+            HirSemanticPathStep::ThreadBody(arcweft_lang_hir::stmt::HirStatementBodyRole::For)
+        )
+    }));
+    assert!(path.iter().any(|step| {
+        matches!(
+            step,
+            HirSemanticPathStep::Expression(
+                arcweft_lang_hir::expr::HirExpressionChildRole::ClosureBody
+            )
+        )
+    }));
+    assert!(report.expression(match_owner).is_some());
 }
 
 #[test]
