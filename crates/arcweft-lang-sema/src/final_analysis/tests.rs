@@ -2172,6 +2172,25 @@ fn project_nominal_ownership_classifies_variant_payloads_in_declaration_order() 
 }
 
 #[test]
+fn need_payload_identity_does_not_require_project_nominal_snapshot_layout() {
+    let fixture = fixture(
+        concat!(
+            "struct DeferredPayload { stream: Stream<i64, String> }\n",
+            "fn retain(value: DeferredPayload) -> DeferredPayload { value }\n",
+        ),
+        None,
+    );
+    let report = analyze(&fixture).expect("project nominal identity fixture final analysis");
+    let payload = project_nominal_expression_type(&report, "DeferredPayload");
+    let classifier = RuntimeProducerArgumentClassifier::try_new(&report, &fixture.registered)
+        .expect("final analysis and registered world share one symbol lease");
+
+    classifier
+        .classify(&TypeKind::Need(Box::new(payload)))
+        .expect("Need identity admission does not imply payload snapshot ownership");
+}
+
+#[test]
 fn public_ownership_nominal_edge_and_active_depth_limits_are_exact_and_fail_one_over() {
     let fixture = fixture(
         concat!(

@@ -29,7 +29,7 @@ use crate::{
         RegisteredSemanticWorld,
         nominal::{AcceptedNominalOwnerId, AcceptedNominalSemantics},
     },
-    final_analysis::{CheckedProjectNominal, FinalSemanticAnalysis, RuntimeProjectNominalKind},
+    final_analysis::{FinalSemanticAnalysis, RuntimeProjectNominalKind},
     types::{
         AcceptedNominalType, AgentBuiltinType, ArrayLength, CharacterNominalFamily,
         CharacterNominalType, EntityKind, HandleState, IteratorStateKind, LifetimeScopeKind,
@@ -817,8 +817,10 @@ impl<'a> RuntimeProducerArgumentClassifier<'a> {
                     ));
                 };
                 analysis
-                    .project_runtime_nominal(symbols, nominal)
-                    .map(|projection| projection.semantic_identity())
+                    .checked_project_nominal(symbols, nominal)
+                    .map(|checked| {
+                        RuntimeSemanticTypeId::from_bytes(*checked.identity().as_bytes())
+                    })
                     .map_err(|_| {
                         RuntimeOwnershipError::rejected(
                             path,
@@ -1307,12 +1309,14 @@ impl<'a> RuntimeProducerArgumentClassifier<'a> {
                     RuntimeOwnershipRejection::MissingRuntimeSnapshotOwner,
                 )
             })?;
-            let owner = CheckedProjectNominal::new(
-                nominal.declaration().clone(),
-                declaration.owner(),
-                TypeKind::ProjectNominal(nominal.clone()).semantic_identity_digest(),
-                nominal.arguments().to_vec(),
-            );
+            let owner = analysis
+                .checked_project_nominal(symbols, nominal)
+                .map_err(|_| {
+                    RuntimeOwnershipError::rejected(
+                        path,
+                        RuntimeOwnershipRejection::MissingRuntimeSnapshotOwner,
+                    )
+                })?;
             let (checked, projected) = match declaration.body() {
                 ProjectNominalBody::Struct { fields } => {
                     for (ordinal, field) in fields.iter().enumerate() {
@@ -1339,15 +1343,14 @@ impl<'a> RuntimeProducerArgumentClassifier<'a> {
                             traversal,
                         )?;
                     }
-                    let projected =
-                        analysis
-                            .project_runtime_nominal(symbols, nominal)
-                            .map_err(|_| {
-                                RuntimeOwnershipError::rejected(
-                                    path,
-                                    RuntimeOwnershipRejection::MissingRuntimeSnapshotOwner,
-                                )
-                            })?;
+                    let projected = analysis
+                        .project_checked_runtime_nominal(symbols, &owner)
+                        .map_err(|_| {
+                            RuntimeOwnershipError::rejected(
+                                path,
+                                RuntimeOwnershipRejection::MissingRuntimeSnapshotOwner,
+                            )
+                        })?;
                     if projected.kind() != RuntimeProjectNominalKind::Record {
                         return Err(RuntimeOwnershipError::rejected(
                             path,
@@ -1403,15 +1406,14 @@ impl<'a> RuntimeProducerArgumentClassifier<'a> {
                             payload,
                         });
                     }
-                    let projected =
-                        analysis
-                            .project_runtime_nominal(symbols, nominal)
-                            .map_err(|_| {
-                                RuntimeOwnershipError::rejected(
-                                    path,
-                                    RuntimeOwnershipRejection::MissingRuntimeSnapshotOwner,
-                                )
-                            })?;
+                    let projected = analysis
+                        .project_checked_runtime_nominal(symbols, &owner)
+                        .map_err(|_| {
+                            RuntimeOwnershipError::rejected(
+                                path,
+                                RuntimeOwnershipRejection::MissingRuntimeSnapshotOwner,
+                            )
+                        })?;
                     if projected.kind() != RuntimeProjectNominalKind::Variant {
                         return Err(RuntimeOwnershipError::rejected(
                             path,

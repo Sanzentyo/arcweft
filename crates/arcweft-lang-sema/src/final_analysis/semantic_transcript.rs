@@ -1660,7 +1660,8 @@ fn nominal_layout_hash(
     nominal: &super::CheckedProjectNominal,
 ) -> Result<TypeLayoutHash, SemanticTranscriptError> {
     analysis
-        .project_runtime_nominal_layout(symbols, nominal)
+        .project_checked_runtime_nominal(symbols, nominal)
+        .map(|projection| projection.layout())
         .map_err(|_| SemanticTranscriptError::UnsupportedIdentity)
 }
 

@@ -202,6 +202,39 @@ impl NominalSchemaProjectionError {
 }
 
 impl FinalSemanticAnalysis {
+    /// Re-admits one resolved project nominal against this exact semantic and
+    /// symbol generation without requiring an executable runtime layout.
+    pub(crate) fn checked_project_nominal(
+        &self,
+        symbols: &ProjectSymbolTable,
+        nominal: &crate::types::ProjectNominalType,
+    ) -> Result<CheckedProjectNominal, NominalSchemaProjectionError> {
+        if !self.matches_symbol_lease(symbols)
+            || nominal.declaration().world() != symbols.world()
+            || nominal.declaration().revision() != *symbols.revision()
+        {
+            return Err(NominalSchemaProjectionError::GenerationMismatch);
+        }
+        let declaration = symbols.nominal(nominal.declaration()).ok_or_else(|| {
+            NominalSchemaProjectionError::MissingDeclaration {
+                nominal: nominal.declaration().qualified_name(),
+            }
+        })?;
+        if declaration.type_parameters().len() != nominal.arguments().len() {
+            return Err(NominalSchemaProjectionError::WrongArity {
+                nominal: nominal.declaration().qualified_name(),
+                expected: declaration.type_parameters().len(),
+                actual: nominal.arguments().len(),
+            });
+        }
+        Ok(CheckedProjectNominal::new(
+            nominal.declaration().clone(),
+            declaration.owner(),
+            TypeKind::ProjectNominal(nominal.clone()).semantic_identity_digest(),
+            nominal.arguments().to_vec(),
+        ))
+    }
+
     /// Projects one checked project nominal into its canonical data shape.
     pub fn project_nominal_schema(
         &self,
@@ -242,17 +275,7 @@ impl FinalSemanticAnalysis {
         symbols: &ProjectSymbolTable,
         nominal: &crate::types::ProjectNominalType,
     ) -> Result<RuntimeProjectNominalProjection, NominalSchemaProjectionError> {
-        let declaration = symbols.nominal(nominal.declaration()).ok_or_else(|| {
-            NominalSchemaProjectionError::MissingDeclaration {
-                nominal: nominal.declaration().qualified_name(),
-            }
-        })?;
-        let checked = CheckedProjectNominal::new(
-            nominal.declaration().clone(),
-            declaration.owner(),
-            TypeKind::ProjectNominal(nominal.clone()).semantic_identity_digest(),
-            nominal.arguments().to_vec(),
-        );
+        let checked = self.checked_project_nominal(symbols, nominal)?;
         self.project_checked_runtime_nominal(symbols, &checked)
     }
 
@@ -301,17 +324,6 @@ impl FinalSemanticAnalysis {
             schema,
             kind,
         })
-    }
-
-    /// Returns the canonical core layout hash for an exact checked nominal
-    /// fact without publishing a second layout transcript.
-    pub fn project_runtime_nominal_layout(
-        &self,
-        symbols: &ProjectSymbolTable,
-        nominal: &CheckedProjectNominal,
-    ) -> Result<TypeLayoutHash, NominalSchemaProjectionError> {
-        self.project_checked_runtime_nominal(symbols, nominal)
-            .map(|projection| projection.layout())
     }
 }
 
