@@ -43,7 +43,7 @@ fn accepted_anonymous_record_field_id(
     ordinal: usize,
     name: &str,
 ) -> Result<RuntimeRecordFieldId, RuntimeRecordAdmissionError> {
-    RuntimeRecordFieldId::from_accepted_zero_based(ordinal).map_err(|source| {
+    RuntimeRecordFieldId::try_from_zero_based_ordinal(ordinal).map_err(|source| {
         RuntimeRecordAdmissionError::InvalidFieldIdentity {
             name: name.to_owned(),
             source,
@@ -249,7 +249,7 @@ fn accepted_record_sequence_field_id(
     ordinal: usize,
     name: &str,
 ) -> Result<RuntimeRecordFieldId, RuntimeSeqError> {
-    RuntimeRecordFieldId::from_accepted_zero_based(ordinal).map_err(|source| {
+    RuntimeRecordFieldId::try_from_zero_based_ordinal(ordinal).map_err(|source| {
         RuntimeSeqError::InvalidRecordFieldIdentity {
             ordinal,
             field: name.to_owned(),
@@ -341,8 +341,8 @@ mod record_admission_boundary_tests {
 
     #[test]
     fn columnarization_does_not_repair_rows_with_different_field_identities() {
-        let first = RuntimeRecordFieldId::from_accepted_zero_based(0).unwrap();
-        let second = RuntimeRecordFieldId::from_accepted_zero_based(1).unwrap();
+        let first = RuntimeRecordFieldId::try_from_zero_based_ordinal(0).unwrap();
+        let second = RuntimeRecordFieldId::try_from_zero_based_ordinal(1).unwrap();
         let rows = vec![
             vec![RuntimeFieldValue::new_accepted(
                 first,

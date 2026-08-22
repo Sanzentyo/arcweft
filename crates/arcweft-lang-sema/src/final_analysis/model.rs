@@ -1,5 +1,6 @@
 //! Generation-bound checked semantic fact model.
 
+use super::match_edges::NestedPathEvidence;
 use super::{
     AssertionRuntimePolicy, CallableDeclarationKey, CharacterDialogueCharacterType,
     CharacterDialogueType, CharacterId, CharacterNominalType, CheckedRichTextReport,
@@ -998,6 +999,51 @@ pub enum CheckedTypeSelection {
     DefaultNumericFallback,
 }
 
+/// One accepted ordinary-Match arm coordinate.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct CheckedMatchArmFact {
+    guard: Option<ExprId>,
+    value: ExprId,
+}
+
+impl CheckedMatchArmFact {
+    pub const fn new(guard: Option<ExprId>, value: ExprId) -> Self {
+        Self { guard, value }
+    }
+
+    pub const fn guard(&self) -> Option<ExprId> {
+        self.guard
+    }
+
+    pub const fn value(&self) -> ExprId {
+        self.value
+    }
+}
+
+/// Complete checked evidence for one ordinary Match expression.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct CheckedMatchFact {
+    scrutinee: ExprId,
+    arms: Box<[CheckedMatchArmFact]>,
+}
+
+impl CheckedMatchFact {
+    pub fn new(scrutinee: ExprId, arms: impl Into<Box<[CheckedMatchArmFact]>>) -> Self {
+        Self {
+            scrutinee,
+            arms: arms.into(),
+        }
+    }
+
+    pub const fn scrutinee(&self) -> ExprId {
+        self.scrutinee
+    }
+
+    pub fn arms(&self) -> &[CheckedMatchArmFact] {
+        &self.arms
+    }
+}
+
 /// Closed checked fact for one live expression.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct CheckedExpression {
@@ -1005,6 +1051,8 @@ pub struct CheckedExpression {
     type_selection: CheckedTypeSelection,
     effects: EffectSet,
     resolution: CheckedExpressionResolution,
+    match_fact: Option<CheckedMatchFact>,
+    nested_path_evidence: Option<Result<NestedPathEvidence, super::CheckedChildEdgeError>>,
 }
 
 impl CheckedExpression {
@@ -1019,6 +1067,8 @@ impl CheckedExpression {
             type_selection,
             effects,
             resolution,
+            match_fact: None,
+            nested_path_evidence: None,
         }
     }
 
@@ -1036,6 +1086,34 @@ impl CheckedExpression {
 
     pub const fn resolution(&self) -> &CheckedExpressionResolution {
         &self.resolution
+    }
+
+    /// Adds the checker-owned ordinary Match evidence to this expression.
+    #[must_use]
+    pub(crate) fn with_match_fact(mut self, fact: CheckedMatchFact) -> Self {
+        self.match_fact = Some(fact);
+        self
+    }
+
+    /// Returns the exact checked Match evidence, when this owner is a Match.
+    pub const fn match_fact(&self) -> Option<&CheckedMatchFact> {
+        self.match_fact.as_ref()
+    }
+
+    /// Returns accepted path-keyed nested child evidence for this owner.
+    pub fn nested_path_evidence(
+        &self,
+    ) -> Option<&Result<NestedPathEvidence, super::CheckedChildEdgeError>> {
+        self.nested_path_evidence.as_ref()
+    }
+
+    #[must_use]
+    pub(crate) fn with_nested_path_evidence(
+        mut self,
+        evidence: Result<NestedPathEvidence, super::CheckedChildEdgeError>,
+    ) -> Self {
+        self.nested_path_evidence = Some(evidence);
+        self
     }
 
     /// Returns whether this fact is an application-owned semantic coordinate

@@ -67,9 +67,9 @@ use crate::{
         CallableLimits, CallableLookupKey, CallableName, CallableOverloadIndex, CallableParameter,
         CallableParameterGroup, CallableParameterIndex, CallableParameterPassing,
         CallableParameterPresence, CallableParameterType, CallablePath, CallableProviderId,
-        CallableRecord, CallableSignatureSchema, CallableValidator, CatalogCallableEntry,
-        CheckedCallArgumentSlotSource, CheckedClosureId, DialogueCallableId, DomainMethodId,
-        EffectContractOrigin, EnvironmentCallableCatalog, EnvironmentCallableId,
+        CallableReceiverMode, CallableRecord, CallableSignatureSchema, CallableValidator,
+        CatalogCallableEntry, CheckedCallArgumentSlotSource, CheckedClosureId, DialogueCallableId,
+        DomainMethodId, EffectContractOrigin, EnvironmentCallableCatalog, EnvironmentCallableId,
         EnvironmentCallableKind, EnvironmentCallableOwner, EnvironmentCallablePublicationDigest,
         EnvironmentDeclarationOrdinal, FinalCallCalleeFacts, LineContextMethodId,
         LineScheduleCallableId, NonEmptyCallableSet, PRODUCTION_CALLABLE_LIMITS,
@@ -913,6 +913,40 @@ fn dialogue_line_plan_bindings_are_inferred_in_source_order() {
                     && call.result() == Some(&TypeKind::VoiceHandle)
         )
     }));
+    let module = fixture
+        .project
+        .executable_view()
+        .expect("executable HIR")
+        .module(&CanonicalModulePath::crate_root())
+        .expect("root HIR module");
+    assert_dialogue_line_plan_edges(&report, module);
+}
+
+fn assert_dialogue_line_plan_edges(report: &FinalSemanticAnalysis, module: &HirModule) {
+    let (dialogue_owner, _) = module
+        .expressions()
+        .find(|(_, expression)| {
+            matches!(
+                expression.kind(),
+                HirExprKind::DialogueContentApplication(_)
+            )
+        })
+        .expect("DialogueContentApplication owner");
+    let dialogue_edges = report
+        .checked_child_edges(dialogue_owner)
+        .expect("Dialogue line-plan child edges have checked evidence");
+    assert!(dialogue_edges.iter().any(|(_, role)| {
+        matches!(
+            role,
+            super::CheckedExpressionChildRole::LinePlanOptionValue { .. }
+                | super::CheckedExpressionChildRole::LinePlanLetValue { .. }
+                | super::CheckedExpressionChildRole::LinePlanOut { .. }
+                | super::CheckedExpressionChildRole::LinePlanTimelineAssert { .. }
+                | super::CheckedExpressionChildRole::LinePlanExpression { .. }
+                | super::CheckedExpressionChildRole::LinePlanTimedCueAnchor { .. }
+                | super::CheckedExpressionChildRole::LinePlanTimedCueBody { .. }
+        )
+    }));
 }
 
 #[test]
@@ -1245,6 +1279,35 @@ fn set_expression_effect(
         fact.resolution().clone(),
     );
     effects
+}
+
+fn input_from_report(report: &FinalSemanticAnalysis) -> FinalSemanticAnalysisInput {
+    let mut input = FinalSemanticAnalysisInput::new();
+    for (owner, fact) in report.types() {
+        input.push_type(owner, fact.clone());
+    }
+    for (owner, fact) in report.locals() {
+        input.push_local(owner, fact.clone());
+    }
+    for (owner, fact) in report.captures() {
+        input.push_capture(owner, fact.clone());
+    }
+    for (owner, fact) in report.expressions() {
+        input.push_expression(owner, fact.clone());
+    }
+    for (owner, fact) in report.patterns() {
+        input.push_pattern(owner, fact.clone());
+    }
+    for (owner, fact) in report.statements() {
+        input.push_statement(owner, fact.clone());
+    }
+    for (owner, fact) in report.items() {
+        input.push_item(owner, fact.clone());
+    }
+    for (_, fact) in report.calls() {
+        input.push_call(fact.clone());
+    }
+    input
 }
 
 fn complete_input(fixture: &Fixture) -> FinalSemanticAnalysisInput {
@@ -2330,6 +2393,332 @@ fn production_analyzer_selects_project_call_through_shared_resolver_once() {
     assert_eq!(report.work().call_facts(), 1);
     assert_eq!(report.work().resolver_invocations(), 1);
     assert_eq!(report.physical_candidate_argument_evaluations().count(), 0);
+}
+
+#[test]
+fn checked_callable_join_uses_the_current_catalog_row_and_digest() {
+    let fixture = fixture("fn target() {}\nfn caller() { target(); }\n", None);
+    let report = analyze(&fixture).expect("project call final analysis");
+    let (owner, _) = report.calls().next().expect("one call fact");
+    let join = report
+        .checked_callable_join(owner)
+        .expect("selected project callable joins the current catalog");
+    let id = join
+        .checked_id()
+        .expect("project call has a checked callable ID");
+    assert_eq!(join.digest(), Some(id.semantic_digest()));
+    assert_ne!(join.semantic_digest(), [0; 32]);
+}
+
+#[test]
+fn intrinsic_callable_join_keeps_typed_candidate_authority_without_a_catalog_row() {
+    let fixture = fixture("fn caller() { String.with_capacity(8); }\n", None);
+    let report = analyze(&fixture).expect("typed intrinsic call final analysis");
+    let (owner, _) = report.calls().next().expect("one call fact");
+    let join = report
+        .checked_callable_join(owner)
+        .expect("typed intrinsic joins without fabricating a checked catalog row");
+    assert!(join.checked_id().is_none());
+    assert!(join.digest().is_none());
+    assert_ne!(join.semantic_digest(), [0; 32]);
+}
+
+#[test]
+fn checked_callable_join_rejects_missing_call_evidence() {
+    let fixture = fixture("fn root() {}\n", None);
+    let report = analyze(&fixture).expect("root final analysis");
+    let owner = report
+        .expressions()
+        .next()
+        .map(|(owner, _)| owner)
+        .expect("root expression fact");
+    assert_eq!(
+        report.checked_callable_join(owner),
+        Err(super::CheckedExpressionEdgeError::Callable(
+            super::CheckedCallableJoinError::NotSelected,
+        ))
+    );
+}
+
+#[test]
+fn checked_child_edges_preserve_hir_order_and_role_ordinals() {
+    let fixture = fixture("fn root() -> (i64, i64) { (1i64, 2i64) }\n", None);
+    let report = analyze(&fixture).expect("tuple final analysis");
+    let module = fixture
+        .project
+        .executable_view()
+        .expect("executable HIR")
+        .module(&CanonicalModulePath::crate_root())
+        .expect("root HIR module");
+    let (owner, expression) = module
+        .expressions()
+        .find(|(_, expression)| matches!(expression.kind(), HirExprKind::Tuple(_)))
+        .expect("tuple expression");
+    let expected = expression.kind().direct_expression_children();
+    let checked = report
+        .checked_child_edges(owner)
+        .expect("tuple children have checked facts");
+    assert_eq!(
+        checked.iter().map(|(child, _)| *child).collect::<Vec<_>>(),
+        expected
+    );
+    assert_eq!(
+        checked
+            .iter()
+            .map(|(_, role)| role.semantic_tag())
+            .collect::<Vec<_>>(),
+        [0x1000, 0x1000]
+    );
+}
+
+#[test]
+fn checked_record_fields_use_declaration_ordinals_not_authored_order() {
+    let fixture = fixture(
+        concat!(
+            "struct Pair { first: i64, second: bool }\n",
+            "fn root() -> Pair { Pair { second = true, first = 1i64 } }\n",
+        ),
+        None,
+    );
+    let report = analyze(&fixture).expect("record literal final analysis");
+    let module = fixture
+        .project
+        .executable_view()
+        .expect("executable HIR")
+        .module(&CanonicalModulePath::crate_root())
+        .expect("root HIR module");
+    let (owner, expression) = module
+        .expressions()
+        .find(|(_, expression)| matches!(expression.kind(), HirExprKind::Record(_)))
+        .expect("record expression");
+    let expected = expression.kind().direct_expression_children();
+    let edges = report
+        .checked_child_edges(owner)
+        .expect("record fields have checked evidence");
+    assert_eq!(
+        edges.iter().map(|(child, _)| *child).collect::<Vec<_>>(),
+        expected
+    );
+    let accepted_ordinals = edges
+        .iter()
+        .map(|(_, role)| match role {
+            super::CheckedExpressionChildRole::RecordField {
+                source_ordinal,
+                accepted_field,
+            } => (*source_ordinal, accepted_field.zero_based()),
+            other => panic!("unexpected record child role: {other:?}"),
+        })
+        .collect::<Vec<_>>();
+    assert_eq!(accepted_ordinals, [(0, 1), (1, 0)]);
+}
+
+#[test]
+fn checked_match_fact_and_edges_retain_exact_guard_presence_and_children() {
+    let fixture = fixture(
+        concat!(
+            "fn root(flag: bool) -> i64 {\n",
+            "    match flag {\n",
+            "        true when true => 1i64\n",
+            "        _ => 2i64\n",
+            "    }\n",
+            "}\n",
+        ),
+        None,
+    );
+    let report = analyze(&fixture).expect("ordinary Match final analysis");
+    let module = fixture
+        .project
+        .executable_view()
+        .expect("executable HIR")
+        .module(&CanonicalModulePath::crate_root())
+        .expect("root HIR module");
+    let (owner, expression) = module
+        .expressions()
+        .find(|(_, expression)| matches!(expression.kind(), HirExprKind::Match(_)))
+        .expect("ordinary Match expression");
+    let HirExprKind::Match(authored) = expression.kind() else {
+        unreachable!("filtered Match expression")
+    };
+    let checked = report.expression(owner).expect("checked Match owner");
+    let match_fact = checked.match_fact().expect("checked Match fact");
+    assert_eq!(match_fact.scrutinee(), authored.scrutinee());
+    assert_eq!(match_fact.arms().len(), authored.arms().len());
+    for (authored, accepted) in authored.arms().iter().zip(match_fact.arms()) {
+        assert_eq!(accepted.guard(), authored.guard());
+        assert_eq!(accepted.value(), authored.value());
+    }
+    let edges = report
+        .checked_child_edges(owner)
+        .expect("Match child edges have complete checked evidence");
+    assert_eq!(
+        edges.iter().map(|(child, _)| *child).collect::<Vec<_>>(),
+        expression.kind().direct_expression_children()
+    );
+    assert!(
+        edges
+            .iter()
+            .any(|(_, role)| matches!(role, super::CheckedExpressionChildRole::Guard { arm: 0 }))
+    );
+    assert!(
+        edges.iter().any(|(_, role)| matches!(
+            role,
+            super::CheckedExpressionChildRole::ArmValue { arm: 1 }
+        ))
+    );
+}
+
+#[test]
+fn checked_choice_path_evidence_is_published_with_hir_child_order() {
+    let fixture = fixture(
+        r#"
+flow main {
+    choice @.first {
+        @.next "Next" -> @flow.done
+    }
+}
+
+flow done() -> String {
+    return "done"
+}
+"#,
+        None,
+    );
+    let report = analyze(&fixture).expect("Choice path final analysis");
+    let module = fixture
+        .project
+        .executable_view()
+        .expect("executable HIR")
+        .module(&CanonicalModulePath::crate_root())
+        .expect("root HIR module");
+    let (owner, expression) = module
+        .expressions()
+        .find(|(_, expression)| matches!(expression.kind(), HirExprKind::Choice(_)))
+        .expect("Choice expression");
+    let checked = report.expression(owner).expect("checked Choice owner");
+    assert!(checked.nested_path_evidence().is_some_and(Result::is_ok));
+    let edges = report
+        .checked_child_edges(owner)
+        .expect("Choice nested path edges have accepted evidence");
+    assert_eq!(
+        edges.iter().map(|(child, _)| *child).collect::<Vec<_>>(),
+        expression.kind().direct_expression_children()
+    );
+}
+
+#[test]
+fn missing_checker_owned_choice_path_evidence_rejects_only_the_edge_fact() {
+    let fixture = fixture(
+        r#"
+flow main {
+    choice @.first {
+        @.next "Next" -> @flow.done
+    }
+}
+
+flow done() -> String {
+    return "done"
+}
+"#,
+        None,
+    );
+    let accepted = analyze(&fixture).expect("Choice path final analysis");
+    let module = fixture
+        .project
+        .executable_view()
+        .expect("executable HIR")
+        .module(&CanonicalModulePath::crate_root())
+        .expect("root HIR module");
+    let (owner, _) = module
+        .expressions()
+        .find(|(_, expression)| matches!(expression.kind(), HirExprKind::Choice(_)))
+        .expect("Choice expression");
+    let mut input = input_from_report(&accepted);
+    let (_, checked) = input
+        .expressions
+        .iter_mut()
+        .find(|(candidate, _)| *candidate == owner)
+        .expect("checked Choice input fact");
+    *checked = CheckedExpression::new(
+        checked.ty().clone(),
+        checked.type_selection(),
+        checked.effects().clone(),
+        checked.resolution().clone(),
+    );
+    let report = FinalSemanticAnalysis::try_new(
+        fixture.project.executable_view().expect("executable HIR"),
+        &fixture.symbols,
+        accepted.checked_callables().clone(),
+        input,
+    )
+    .expect("missing nested evidence remains a recoverable owner fact");
+    assert_eq!(
+        report.checked_child_edges(owner),
+        Err(super::CheckedExpressionEdgeError::Child(
+            super::CheckedChildEdgeError::MissingNestedPath,
+        ))
+    );
+    assert!(report.checked_expression_edge_fact(owner).is_err());
+    assert_eq!(
+        report.checked_callable_join(owner),
+        Err(super::CheckedExpressionEdgeError::Child(
+            super::CheckedChildEdgeError::MissingNestedPath,
+        ))
+    );
+}
+
+#[test]
+fn checker_nested_path_error_is_retained_as_the_publication_edge_error() {
+    let fixture = fixture(
+        r#"
+flow main {
+    choice @.first {
+        @.next "Next" -> @flow.done
+    }
+}
+
+flow done() -> String {
+    return "done"
+}
+"#,
+        None,
+    );
+    let accepted = analyze(&fixture).expect("Choice path final analysis");
+    let module = fixture
+        .project
+        .executable_view()
+        .expect("executable HIR")
+        .module(&CanonicalModulePath::crate_root())
+        .expect("root HIR module");
+    let (owner, _) = module
+        .expressions()
+        .find(|(_, expression)| matches!(expression.kind(), HirExprKind::Choice(_)))
+        .expect("Choice expression");
+    let mut input = input_from_report(&accepted);
+    let (_, checked) = input
+        .expressions
+        .iter_mut()
+        .find(|(candidate, _)| *candidate == owner)
+        .expect("checked Choice input fact");
+    *checked = CheckedExpression::new(
+        checked.ty().clone(),
+        checked.type_selection(),
+        checked.effects().clone(),
+        checked.resolution().clone(),
+    )
+    .with_nested_path_evidence(Err(super::CheckedChildEdgeError::StaleNestedPath));
+    let report = FinalSemanticAnalysis::try_new(
+        fixture.project.executable_view().expect("executable HIR"),
+        &fixture.symbols,
+        accepted.checked_callables().clone(),
+        input,
+    )
+    .expect("checker error remains a recoverable owner fact");
+    assert_eq!(
+        report.checked_child_edges(owner),
+        Err(super::CheckedExpressionEdgeError::Child(
+            super::CheckedChildEdgeError::StaleNestedPath,
+        ))
+    );
 }
 
 #[test]
@@ -4961,6 +5350,53 @@ fn explicit_extension_receiver_unifies_free_and_dot_callable_identity() {
         .collect::<Vec<_>>();
     assert_eq!(selected.len(), 2);
     assert_eq!(selected[0].id(), selected[1].id());
+    let module = fixture
+        .project
+        .executable_view()
+        .expect("executable HIR")
+        .module(&CanonicalModulePath::crate_root())
+        .expect("root HIR module");
+    let mut direct_join = None;
+    let mut dotted_join = None;
+    for (owner, _) in report.calls() {
+        let expression = module.resolve_expr(owner).expect("extension call owner");
+        let HirExprKind::Call(call) = expression.kind() else {
+            panic!("call inventory owner must be a HIR Call")
+        };
+        match call.callee() {
+            HirCallCallee::Value { .. } => {
+                direct_join = Some(report.checked_callable_join(owner));
+            }
+            HirCallCallee::UnresolvedDot { .. } => {
+                dotted_join = Some(report.checked_callable_join(owner));
+            }
+            HirCallCallee::Associated { .. } => panic!("unexpected associated extension call"),
+        }
+    }
+    let direct_join = direct_join
+        .expect("direct extension call")
+        .expect("direct extension join");
+    assert!(matches!(
+        direct_join,
+        &super::CheckedCallableJoin::Catalog {
+            receiver: CallableReceiverMode::None,
+            ..
+        }
+    ));
+    let dotted_join = dotted_join
+        .expect("dotted extension call")
+        .expect("dotted extension join");
+    assert!(matches!(
+        dotted_join,
+        &super::CheckedCallableJoin::Catalog {
+            receiver: CallableReceiverMode::Extension {
+                receiver: TypeKind::String,
+                group,
+                parameter,
+            },
+            ..
+        } if group.get() == 0 && parameter.get() == 0
+    ));
     assert!(matches!(
         selected[0].instantiation(),
         crate::callable::CallableInstantiation::None

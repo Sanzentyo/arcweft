@@ -4,6 +4,8 @@ use std::num::NonZeroU32;
 
 use arcweft_character::id::CharacterId;
 
+use crate::callable::CallableParameterType;
+
 use super::{
     Arc, CallableAuthorityRank, CallableCandidateId, CallableDeclarationKey, CallableGroupIndex,
     CallableId, CallableLimits, CallableName, CallableParameterIndex, CallablePath, CallableRecord,
@@ -283,6 +285,71 @@ impl ResolvedCallable {
             | CallableInstantiation::Receiver { .. }
             | CallableInstantiation::TypeReceiver { .. } => CallableGroupIndex::ZERO,
         }
+    }
+
+    /// Returns the exact next curried group accepted by this callable for a
+    /// call at `current_group`.
+    ///
+    /// The extension-receiver group is consumed by the dot receiver itself;
+    /// it is therefore not exposed as a curried continuation.  This is the
+    /// same group rule used while committing [`CallTargetFacts`], kept on the
+    /// callable owner so later consumers cannot invent a second projection.
+    pub(crate) fn next_group_for(
+        &self,
+        current_group: CallableGroupIndex,
+    ) -> Option<CallableGroupIndex> {
+        let next = CallableGroupIndex::try_from_usize(current_group.get().checked_add(1)?).ok()?;
+        self.schema()
+            .group(next)
+            .is_some()
+            .then_some(next)
+            .filter(|next| {
+                !matches!(
+                    self.instantiation(),
+                    CallableInstantiation::Extension { group, .. } if group == next
+                )
+            })
+    }
+
+    /// Projects the result owned by one exact selected group.
+    ///
+    /// A non-final group returns the typed function for all remaining groups;
+    /// a final group returns the callable's declared result.  Unknown effect
+    /// tails remain unknown in the projected function type, matching the
+    /// existing resolver's typed partial-call rule.
+    pub(crate) fn result_type_for_group(
+        &self,
+        current_group: CallableGroupIndex,
+    ) -> Option<TypeKind> {
+        let next = CallableGroupIndex::try_from_usize(current_group.get().checked_add(1)?).ok()?;
+        if matches!(
+            self.instantiation(),
+            CallableInstantiation::Extension { group, .. } if *group == next
+        ) || self.schema().group(next).is_none()
+        {
+            return Some(self.schema().result().clone());
+        }
+        let mut result = self.schema().result().clone();
+        for group in self.schema().groups().iter().skip(next.get()).rev() {
+            let parameters = group
+                .parameters()
+                .iter()
+                .map(|parameter| match parameter.ty() {
+                    CallableParameterType::Exact(ty) => Some(ty.clone()),
+                    CallableParameterType::Unchecked => None,
+                })
+                .collect::<Option<Vec<_>>>()?;
+            result = TypeKind::function_with_effects(
+                parameters,
+                result,
+                self.schema()
+                    .effects()
+                    .fixed_row()
+                    .cloned()
+                    .unwrap_or_else(crate::effect_row::EffectRow::unknown),
+            );
+        }
+        Some(result)
     }
 
     pub(crate) fn try_curried(

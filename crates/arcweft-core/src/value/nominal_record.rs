@@ -66,7 +66,7 @@ impl RuntimeNominalRecordLayout {
         }
 
         for (ordinal, (name, _)) in fields_in_layout_order.iter().enumerate() {
-            RuntimeRecordFieldId::from_accepted_zero_based(ordinal).map_err(|source| {
+            RuntimeRecordFieldId::try_from_zero_based_ordinal(ordinal).map_err(|source| {
                 RuntimeNominalRecordLayoutError::InvalidFieldIdentity {
                     ordinal,
                     name: name.clone(),
@@ -126,7 +126,7 @@ impl RuntimeNominalRecordLayout {
         if zero_based_ordinal >= self.fields.len() {
             return None;
         }
-        RuntimeRecordFieldId::from_accepted_zero_based(zero_based_ordinal).ok()
+        RuntimeRecordFieldId::try_from_zero_based_ordinal(zero_based_ordinal).ok()
     }
 
     #[must_use]
@@ -272,7 +272,7 @@ impl RuntimeNominalRecordValue {
         if zero_based_ordinal >= self.fields.len() {
             return None;
         }
-        RuntimeRecordFieldId::from_accepted_zero_based(zero_based_ordinal).ok()
+        RuntimeRecordFieldId::try_from_zero_based_ordinal(zero_based_ordinal).ok()
     }
 
     /// Reads a stored field by its accepted one-based identity.
@@ -362,9 +362,10 @@ fn validate_layout_fields(
         });
     }
     for (ordinal, (field_layout, value)) in layout.fields().iter().zip(fields).enumerate() {
-        let field = RuntimeRecordFieldId::from_accepted_zero_based(ordinal).map_err(|source| {
-            RuntimeNominalRecordError::InvalidFieldIdentity { ordinal, source }
-        })?;
+        let field =
+            RuntimeRecordFieldId::try_from_zero_based_ordinal(ordinal).map_err(|source| {
+                RuntimeNominalRecordError::InvalidFieldIdentity { ordinal, source }
+            })?;
         if !field_layout.checked_type().accepts_value(value) {
             return Err(RuntimeNominalRecordError::FieldType {
                 field,

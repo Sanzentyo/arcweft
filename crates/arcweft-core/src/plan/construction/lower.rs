@@ -622,7 +622,7 @@ impl RuntimePlanBuilder {
             lowered.push((field, value));
         }
         for ordinal in 0..domain.fields().len() {
-            let field = RuntimeRecordFieldId::from_accepted_zero_based(ordinal)?;
+            let field = RuntimeRecordFieldId::try_from_zero_based_ordinal(ordinal)?;
             if !seen.contains(&field) {
                 return Err(RuntimePlanBuildError::MissingRecordField { owner, field });
             }
@@ -642,7 +642,7 @@ impl RuntimePlanBuilder {
         let ordinal = usize::try_from(field.zero_based()).map_err(|_| {
             RuntimePlanBuildError::RecordFieldIdentity(RuntimeRecordFieldIdError::OrdinalOverflow)
         })?;
-        let admitted = RuntimeRecordFieldId::from_accepted_zero_based(ordinal)?;
+        let admitted = RuntimeRecordFieldId::try_from_zero_based_ordinal(ordinal)?;
         let field_ty = domain
             .fields()
             .get(ordinal)
@@ -1554,7 +1554,7 @@ impl RuntimePlanBuilder {
                 }
                 if exact && admitted_fields.len() != field_count {
                     for ordinal in 0..field_count {
-                        let field = RuntimeRecordFieldId::from_accepted_zero_based(ordinal)?;
+                        let field = RuntimeRecordFieldId::try_from_zero_based_ordinal(ordinal)?;
                         if !admitted_fields.contains(&field) {
                             return Err(RuntimePlanBuildError::MissingRecordField {
                                 owner: ty,

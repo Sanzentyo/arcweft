@@ -53,6 +53,7 @@ mod accounting;
 mod analyzer;
 mod error;
 mod input;
+mod match_edges;
 mod model;
 mod nominal_schema;
 mod recovery_diagnostics;
@@ -61,6 +62,10 @@ mod type_rules;
 mod validation;
 
 pub use crate::callable::CharacterDialoguePatchContext;
+pub use crate::callable::{
+    CallableInstantiationDigest, CheckedCallableJoin, CheckedCallableJoinError,
+    IntrinsicCallableCandidateTag,
+};
 pub(crate) use accounting::{
     CandidateEvaluationPass, CandidateExpectedType, PhysicalArgumentEvaluationKind,
     PhysicalCandidateArgument, PhysicalCandidateArgumentEvaluation,
@@ -69,6 +74,11 @@ pub use accounting::{FinalSemanticAnalysisControl, FinalSemanticAnalysisWork};
 pub use analyzer::{FinalSemanticCatalogs, analyze_final_project};
 pub use error::{FinalSemanticAnalysisError, RecursiveCallableContractEdge, SemanticFactFamily};
 pub(crate) use input::FinalSemanticAnalysisInput;
+pub use match_edges::{
+    CheckedChildEdgeError, CheckedExpressionChildRole, CheckedExpressionEdgeError,
+    CheckedExpressionEdgeFact, CheckedNestedEvidenceRole, CheckedNestedPathError,
+    CheckedNestedPathSegmentV1, CheckedNestedPathV1, NestedPathEvidence,
+};
 pub use model::{
     CharacterDialogueFieldCoordinate, CheckedAssertionDisposition, CheckedAssignment,
     CheckedAssignmentPlace, CheckedAwait, CheckedAwaitPendingObserver, CheckedBinding,
@@ -78,14 +88,14 @@ pub use model::{
     CheckedChoiceGoto, CheckedEffectField, CheckedEntryReference, CheckedEvaluatedEffect,
     CheckedExpression, CheckedExpressionResolution, CheckedFunctionExecution,
     CheckedImplicitCallable, CheckedItem, CheckedItemRole, CheckedIteration, CheckedIteratorFamily,
-    CheckedOrdinaryFunctionEmission, CheckedPatchOperation, CheckedPattern,
-    CheckedPatternResolution, CheckedPipe, CheckedProjectCallable, CheckedProjectItem,
-    CheckedProjectItemOwner, CheckedProjectNominal, CheckedSelectResolution, CheckedStatement,
-    CheckedStatementRole, CheckedStyleCallee, CheckedSuspensionRole, CheckedSuspensionStatement,
-    CheckedTraitConformance, CheckedTraitIdentity, CheckedTry, CheckedTryBoundary,
-    CheckedTryCarrier, CheckedTypeSelection, CheckedValueResolution, CheckedVariantOwner,
-    CheckedVariantResolution, CheckedViewCall, CheckedViewCallee, PostfixBracketResolution,
-    RegisteredSemanticValueId,
+    CheckedMatchArmFact, CheckedMatchFact, CheckedOrdinaryFunctionEmission, CheckedPatchOperation,
+    CheckedPattern, CheckedPatternResolution, CheckedPipe, CheckedProjectCallable,
+    CheckedProjectItem, CheckedProjectItemOwner, CheckedProjectNominal, CheckedSelectResolution,
+    CheckedStatement, CheckedStatementRole, CheckedStyleCallee, CheckedSuspensionRole,
+    CheckedSuspensionStatement, CheckedTraitConformance, CheckedTraitIdentity, CheckedTry,
+    CheckedTryBoundary, CheckedTryCarrier, CheckedTypeSelection, CheckedValueResolution,
+    CheckedVariantOwner, CheckedVariantResolution, CheckedViewCall, CheckedViewCallee,
+    PostfixBracketResolution, RegisteredSemanticValueId,
 };
 pub use nominal_schema::{NominalSchemaPath, NominalSchemaPathStep, NominalSchemaProjectionError};
 pub use recovery_diagnostics::{

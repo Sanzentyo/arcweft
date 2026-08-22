@@ -62,7 +62,7 @@ mod tests {
     }
 
     fn field(ordinal: usize) -> RuntimeRecordFieldId {
-        RuntimeRecordFieldId::from_accepted_zero_based(ordinal).unwrap()
+        RuntimeRecordFieldId::try_from_zero_based_ordinal(ordinal).unwrap()
     }
 
     #[test]

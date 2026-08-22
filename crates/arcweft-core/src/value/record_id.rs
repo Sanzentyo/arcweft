@@ -18,9 +18,11 @@ pub enum RuntimeRecordFieldIdError {
 }
 
 impl RuntimeRecordFieldId {
-    pub(crate) fn from_accepted_zero_based(
-        ordinal: usize,
-    ) -> Result<Self, RuntimeRecordFieldIdError> {
+    /// Converts a representable zero-based ordinal into the one-based field-ID
+    /// space. This numeric constructor does not prove membership in any
+    /// record layout; callers must establish that through the owning
+    /// declaration join, never from source spelling or authored position.
+    pub fn try_from_zero_based_ordinal(ordinal: usize) -> Result<Self, RuntimeRecordFieldIdError> {
         u32::try_from(ordinal)
             .ok()
             .and_then(|ordinal| ordinal.checked_add(1))
@@ -100,13 +102,13 @@ mod tests {
 
     #[test]
     fn accepted_ordinals_are_one_based_and_checked() {
-        let first = RuntimeRecordFieldId::from_accepted_zero_based(0).unwrap();
+        let first = RuntimeRecordFieldId::try_from_zero_based_ordinal(0).unwrap();
         assert_eq!(first.get().get(), 1);
         assert_eq!(first.zero_based(), 0);
 
         if usize::BITS > u32::BITS {
             assert_eq!(
-                RuntimeRecordFieldId::from_accepted_zero_based(u32::MAX as usize),
+                RuntimeRecordFieldId::try_from_zero_based_ordinal(u32::MAX as usize),
                 Err(RuntimeRecordFieldIdError::OrdinalOverflow)
             );
         }
@@ -114,7 +116,7 @@ mod tests {
 
     #[test]
     fn serde_uses_nonzero_json_integer() {
-        let field = RuntimeRecordFieldId::from_accepted_zero_based(1).unwrap();
+        let field = RuntimeRecordFieldId::try_from_zero_based_ordinal(1).unwrap();
         assert_eq!(serde_json::to_string(&field).unwrap(), "2");
         assert_eq!(
             serde_json::from_str::<RuntimeRecordFieldId>("2").unwrap(),

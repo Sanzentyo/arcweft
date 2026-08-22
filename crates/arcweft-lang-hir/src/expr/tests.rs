@@ -3,20 +3,24 @@ use super::{
     HirAwaitExpr, HirBinaryExpr, HirBinaryOp, HirBlockExpr, HirBorrowExpr, HirBorrowKind,
     HirBracketSequenceExpr, HirCallArgument, HirCallArgumentListTerminator, HirCallArgumentOrdinal,
     HirCallBuildError, HirCallCallee, HirCallChildPoison, HirCallChildStates, HirCallExpr,
-    HirCallIssue, HirCallTypeApplication, HirChoiceBody, HirChoiceExpr, HirChoiceItem,
+    HirCallIssue, HirCallTypeApplication, HirChoiceBody, HirChoiceCompactAction,
+    HirChoiceCompactArm, HirChoiceExpr, HirChoiceIf, HirChoiceIfBranch, HirChoiceItem,
+    HirChoiceMatch, HirChoiceMatchArm, HirChoicePlan, HirChoicePlanError, HirChoicePlanItem,
     HirClosureExpr, HirClosureParameter, HirComputationBlockExpr, HirComputationBlockKind,
-    HirDereferenceExpr, HirExpr, HirExprInvariantError, HirExprKind, HirExpressionRecoveryIssue,
-    HirGenericExprIssue, HirIfExpr, HirIfLetExpr, HirIndexExpr, HirMatchArm, HirMatchExpr,
-    HirNamedBlockExpr, HirNamedBlockName, HirPipeExpr, HirPlaceholderKind, HirPoisonState,
-    HirRangeExpr, HirRecordExpr, HirRecordField, HirRecordLiteralExpr, HirRecoveredName,
-    HirRecoveryIssue, HirSelectExpr, HirSelectedMember, HirThreadBody, HirThreadBodyInvariantError,
-    HirThreadBodyOwner, HirThreadExpr, HirThreadFlowItem, HirThreadMode, HirTryExpr, HirTupleExpr,
-    HirUnaryExpr, HirUnaryOp,
+    HirDereferenceExpr, HirExpr, HirExprInvariantError, HirExprKind, HirExpressionChildEdge,
+    HirExpressionChildRole, HirExpressionRecoveryIssue, HirGenericExprIssue, HirIfExpr,
+    HirIfLetExpr, HirIndexExpr, HirLoopExpr, HirMatchArm, HirMatchExpr, HirNamedBlockExpr,
+    HirNamedBlockName, HirNestedExpressionPath, HirNestedExpressionPathSegment, HirPipeExpr,
+    HirPlaceholderKind, HirPoisonState, HirRangeExpr, HirRecordExpr, HirRecordField,
+    HirRecordFieldIssue, HirRecordLiteralExpr, HirRecoveredName, HirRecoveryIssue,
+    HirRecoveryOperandSlot, HirSelectExpr, HirSelectedMember, HirThreadBody,
+    HirThreadBodyInvariantError, HirThreadBodyOwner, HirThreadExpr, HirThreadFlowItem,
+    HirThreadMode, HirTryExpr, HirTupleExpr, HirUnaryExpr, HirUnaryOp,
 };
 use crate::dialogue_application::{
     HirBuiltinRichTextTag, HirDialogueContent, HirDialogueContentApplication, HirDialogueContentId,
-    HirDialogueCoordinate, HirDialogueNode, HirDialogueNodeId, HirDialogueNodeKind,
-    HirPostfixBracket, HirPostfixBracketCandidates, HirPostfixCandidateFailure,
+    HirDialogueCoordinate, HirDialogueNode, HirDialogueNodeId, HirDialogueNodeKind, HirLinePlan,
+    HirLinePlanItem, HirPostfixBracket, HirPostfixBracketCandidates, HirPostfixCandidateFailure,
     HirPostfixCandidateFailureKind, HirRichTextArgument, HirRichTextArgumentId,
     HirRichTextDirectStyle, HirRichTextTag, HirRichTextTagId, HirRichTextTagIdentity,
     HirRichTextTagPayload, HirRichTextValue, HirTextFragment,
@@ -134,6 +138,131 @@ fn direct_child_inventory_is_source_independent_for_synthetic_chain() {
 
     assert_eq!(into_iterator.direct_expression_children(), [source]);
     assert_eq!(next_value.direct_expression_children(), [iterator]);
+}
+
+#[test]
+fn child_edges_project_direct_children_and_preserve_recovery_source_gaps() {
+    let module = module(22);
+    let first = id::<ExprId>(module, 2);
+    let second = id::<ExprId>(module, 3);
+    let third = id::<ExprId>(module, 4);
+
+    let assert_projection = |kind: HirExprKind, expected: &[ExprId]| {
+        let edges = kind.child_edges();
+        assert_eq!(
+            edges
+                .iter()
+                .map(HirExpressionChildEdge::child)
+                .collect::<Vec<_>>(),
+            expected,
+            "edge projection drifted for {kind:?}"
+        );
+        assert_eq!(kind.direct_expression_children(), expected);
+    };
+
+    assert_projection(
+        HirExprKind::Tuple(HirTupleExpr::new(Box::new([first, second]))),
+        &[first, second],
+    );
+    assert_projection(
+        HirExprKind::ArrayRepeat(HirArrayRepeatExpr::new(first, second)),
+        &[first, second],
+    );
+    assert_projection(
+        HirExprKind::If(HirIfExpr::new(first, second, third)),
+        &[first, second, third],
+    );
+
+    let associated = HirExprKind::Call(clean_call(
+        HirCallCallee::associated(
+            HirAssociatedReceiver::resolved(id::<TypeId>(module, 5)),
+            HirAssociatedSeparator::Present(HirAssociatedCallSyntax::ExplicitDoubleColon),
+            HirRecoveredName::Valid(name("run")),
+        ),
+        Box::new([
+            HirCallArgument::positional(first),
+            HirCallArgument::positional(second),
+        ]),
+    ));
+    assert_projection(associated.clone(), &[first, second]);
+    assert_eq!(
+        associated.recovery_operand_slot(0),
+        None,
+        "an associated call keeps its absent callee recovery slot"
+    );
+    assert_eq!(
+        associated.recovery_operand_slot(1),
+        Some(HirRecoveryOperandSlot::Retained(first))
+    );
+    assert_eq!(
+        associated.recovery_operand_slot(2),
+        Some(HirRecoveryOperandSlot::Retained(second))
+    );
+
+    let range_end_only = HirExprKind::Range(HirRangeExpr::new(None, Some(second), false));
+    assert_projection(range_end_only.clone(), &[second]);
+    assert_eq!(
+        range_end_only.recovery_operand_slot(0),
+        None,
+        "an end-only range keeps its source ordinal 1"
+    );
+    assert_eq!(
+        range_end_only.recovery_operand_slot(1),
+        Some(HirRecoveryOperandSlot::Retained(second))
+    );
+
+    let if_let_without_guard = HirExprKind::IfLet(HirIfLetExpr::new(
+        id::<ScopeId>(module, 6),
+        id::<PatternId>(module, 7),
+        first,
+        None,
+        second,
+        third,
+    ));
+    assert_projection(if_let_without_guard.clone(), &[first, second, third]);
+    assert_eq!(
+        if_let_without_guard.recovery_operand_slot(1),
+        None,
+        "the omitted guard remains an absent semantic slot"
+    );
+    assert_eq!(
+        if_let_without_guard.recovery_operand_slot(2),
+        Some(HirRecoveryOperandSlot::Retained(second))
+    );
+    assert_eq!(
+        if_let_without_guard.recovery_operand_slot(3),
+        Some(HirRecoveryOperandSlot::Retained(third))
+    );
+
+    let record = HirExprKind::RecordLiteral(HirRecordLiteralExpr::new(Box::new([
+        HirRecordField::invalid(HirRecordFieldIssue::MissingValue),
+        HirRecordField::explicit(name("value"), second),
+    ])));
+    assert_projection(record.clone(), &[second]);
+    assert_eq!(
+        record.recovery_operand_slot(0),
+        Some(HirRecoveryOperandSlot::SyntheticOnly)
+    );
+    assert_eq!(
+        record.recovery_operand_slot(1),
+        Some(HirRecoveryOperandSlot::Retained(second))
+    );
+}
+
+#[test]
+fn choice_invalid_assignment_has_no_expression_recovery_slot() {
+    let module = module(23);
+    let scope = id::<ScopeId>(module, 1);
+    let choice = HirExprKind::Choice(HirChoiceExpr::new(
+        None,
+        HirChoiceBody::new(scope, Box::new([])),
+        Some(HirChoicePlan::new(Box::new([HirChoicePlanItem::Error(
+            HirChoicePlanError::InvalidAssignmentKey,
+        )]))),
+    ));
+
+    assert_eq!(choice.recovery_operand_slot(0), None);
+    assert!(choice.child_edges().is_empty());
 }
 
 #[test]
@@ -1399,8 +1528,684 @@ fn dialogue_and_rich_text_source_roles_validate_nested_typed_ordinals() {
     );
 }
 
-// Keeping this match exhaustive provides typed evidence for the closed
-// 38-variant inventory without inspecting implementation source text.
+fn edge_role_tag(role: &HirExpressionChildRole) -> u8 {
+    match role {
+        HirExpressionChildRole::Element { .. } => 0,
+        HirExpressionChildRole::RepeatedValue => 1,
+        HirExpressionChildRole::RepeatLength => 2,
+        HirExpressionChildRole::Callee => 3,
+        HirExpressionChildRole::Argument { .. } => 4,
+        HirExpressionChildRole::Target => 5,
+        HirExpressionChildRole::Index => 6,
+        HirExpressionChildRole::PipeLeft => 7,
+        HirExpressionChildRole::PipeRight => 8,
+        HirExpressionChildRole::Operand => 9,
+        HirExpressionChildRole::RangeStart => 10,
+        HirExpressionChildRole::RangeEnd => 11,
+        HirExpressionChildRole::RecordField { .. } => 12,
+        HirExpressionChildRole::BinaryLeft => 13,
+        HirExpressionChildRole::BinaryRight => 14,
+        HirExpressionChildRole::ClosureBody => 15,
+        HirExpressionChildRole::BlockTail => 16,
+        HirExpressionChildRole::LoopTail => 17,
+        HirExpressionChildRole::Condition => 18,
+        HirExpressionChildRole::ThenBranch => 19,
+        HirExpressionChildRole::ElseBranch => 20,
+        HirExpressionChildRole::Scrutinee => 21,
+        HirExpressionChildRole::Guard { .. } => 22,
+        HirExpressionChildRole::ArmValue { .. } => 23,
+        HirExpressionChildRole::IfLetGuard => 24,
+        HirExpressionChildRole::DialogueTarget => 25,
+        HirExpressionChildRole::DialogueCoordinate { .. } => 26,
+        HirExpressionChildRole::DialogueInterpolation { .. } => 27,
+        HirExpressionChildRole::DialogueTagPayload { .. } => 28,
+        HirExpressionChildRole::LinePlanOptionValue { .. } => 29,
+        HirExpressionChildRole::LinePlanLetValue { .. } => 30,
+        HirExpressionChildRole::LinePlanOut { .. } => 31,
+        HirExpressionChildRole::LinePlanTimelineAssert { .. } => 32,
+        HirExpressionChildRole::LinePlanExpression { .. } => 33,
+        HirExpressionChildRole::LinePlanTimedCueAnchor { .. } => 34,
+        HirExpressionChildRole::LinePlanTimedCueBody { .. } => 35,
+        HirExpressionChildRole::PostfixIndexCandidate => 36,
+        HirExpressionChildRole::PostfixDialogueCandidate => 37,
+        HirExpressionChildRole::ForInput => 38,
+        HirExpressionChildRole::ChoiceIfCondition { .. } => 39,
+        HirExpressionChildRole::ChoiceForSource { .. } => 40,
+        HirExpressionChildRole::ChoiceMatchScrutinee { .. } => 41,
+        HirExpressionChildRole::ChoiceMatchGuard { .. } => 42,
+        HirExpressionChildRole::ChoiceOptionId { .. } => 43,
+        HirExpressionChildRole::ChoiceOptionForSource { .. } => 44,
+        HirExpressionChildRole::ChoiceCompactLabel { .. } => 45,
+        HirExpressionChildRole::ChoiceCompactCondition { .. } => 46,
+        HirExpressionChildRole::ChoiceCompactOut { .. } => 47,
+        HirExpressionChildRole::ChoiceOptionLabel { .. } => 48,
+        HirExpressionChildRole::ChoiceOptionFieldId { .. } => 49,
+        HirExpressionChildRole::ChoiceOptionValue { .. } => 50,
+        HirExpressionChildRole::ChoiceOptionVisible { .. } => 51,
+        HirExpressionChildRole::ChoiceOptionEnabled { .. } => 52,
+        HirExpressionChildRole::ChoiceOptionOrder { .. } => 53,
+        HirExpressionChildRole::ChoiceOptionHotkey { .. } => 54,
+        HirExpressionChildRole::ChoiceOptionViewKey { .. } => 55,
+        HirExpressionChildRole::ChoiceOptionViewValue { .. } => 56,
+        HirExpressionChildRole::ChoicePlanAssignment { .. } => 57,
+        HirExpressionChildRole::ChoicePlanTimeout { .. } => 58,
+        HirExpressionChildRole::ChoicePlanCancelSignal { .. } => 59,
+        HirExpressionChildRole::ChoicePlanCancelTimeout { .. } => 60,
+        HirExpressionChildRole::ChoicePlanCancelExpr { .. } => 61,
+    }
+}
+
+fn assert_edge_contract(kind: &HirExprKind, expected_children: &[ExprId], expected_roles: &[u8]) {
+    let edges = kind.child_edges();
+    assert_eq!(
+        edges
+            .iter()
+            .map(HirExpressionChildEdge::child)
+            .collect::<Vec<_>>(),
+        expected_children,
+        "child edge IDs drifted for {kind:?}"
+    );
+    assert_eq!(
+        edges
+            .iter()
+            .map(|edge| edge_role_tag(edge.role()))
+            .collect::<Vec<_>>(),
+        expected_roles,
+        "child edge roles drifted for {kind:?}"
+    );
+}
+
+fn nested_path(segments: Vec<HirNestedExpressionPathSegment>) -> HirNestedExpressionPath {
+    HirNestedExpressionPath::try_from_segments(segments.into_boxed_slice())
+        .expect("nested edge paths are nonempty")
+}
+
+#[test]
+#[allow(
+    clippy::too_many_lines,
+    reason = "the independent expected vectors are the differential contract for all 38 HIR families"
+)]
+fn child_edges_have_independent_expected_children_and_role_families_for_all_38_variants() {
+    let module = module(150);
+    let scope = id::<ScopeId>(module, 1);
+    let scope_two = id::<ScopeId>(module, 2);
+    let pattern = id::<PatternId>(module, 3);
+    let statement = id::<StmtId>(module, 4);
+    let first = id::<ExprId>(module, 10);
+    let second = id::<ExprId>(module, 11);
+    let third = id::<ExprId>(module, 12);
+    let fourth = id::<ExprId>(module, 13);
+    let callee = id::<ExprId>(module, 14);
+    let entity = HirIdRefValue::Resolved(HirIdRef::absolute(
+        HirEntityReference::try_new("scene.entry".into()).expect("test entity reference"),
+    ));
+    let lifetime = HirLifetimePathValue::Resolved(HirLifetimeRegistryPath::try_new(
+        HirLifetimeRegistryScope::Frame,
+        Box::new([name("value")]),
+        false,
+    ));
+    let path = HirPathValue::Resolved(
+        HirPath::try_new(
+            HirPathRoot::ImplicitCrate,
+            Box::new([HirPathSegment::Identifier(name("Value"))]),
+        )
+        .expect("test path"),
+    );
+    let thread = HirThreadExpr::new(
+        None,
+        HirThreadMode::Attached,
+        HirThreadBody::try_new(
+            HirThreadBodyOwner::ThreadExpression(first),
+            scope,
+            Box::new([HirThreadFlowItem::Statement(statement)]),
+        )
+        .expect("test thread body"),
+    );
+    let call = HirExprKind::Call(clean_call(
+        HirCallCallee::value(callee),
+        Box::new([
+            HirCallArgument::positional(first),
+            HirCallArgument::positional(second),
+        ]),
+    ));
+    let match_arm_zero = HirMatchArm::try_new(scope, pattern, Some(second), third, Box::new([]))
+        .expect("test match arm");
+    let match_arm_one = HirMatchArm::try_new(scope_two, pattern, None, fourth, Box::new([]))
+        .expect("test second match arm");
+    let content_owner = id::<ExprId>(module, 20);
+    let content = HirDialogueContent::try_new(
+        HirDialogueContentId::new(content_owner),
+        Box::new([]),
+        Box::new([]),
+    )
+    .expect("empty dialogue content");
+    let dialogue =
+        HirDialogueContentApplication::try_new(content_owner, first, content, None, Box::new([]))
+            .expect("dialogue application");
+    let postfix = HirPostfixBracket::try_new(
+        first,
+        HirPostfixBracketCandidates::Ambiguous {
+            index: second,
+            dialogue: third,
+        },
+    )
+    .expect("ambiguous postfix bracket");
+    let numeric =
+        HirNumericSequence::try_new(Box::new([]), None, HirNumericSequenceRecovery::Complete)
+            .expect("empty numeric sequence");
+    let record_path = HirPath::try_new(
+        HirPathRoot::ImplicitCrate,
+        Box::new([HirPathSegment::Identifier(name("Record"))]),
+    )
+    .expect("record path");
+
+    let cases = vec![
+        (HirExprKind::Unit, vec![], vec![]),
+        (
+            HirExprKind::Literal(HirLiteral::Boolean(true)),
+            vec![],
+            vec![],
+        ),
+        (HirExprKind::EntityReference(entity), vec![], vec![]),
+        (HirExprKind::LifetimePath(lifetime), vec![], vec![]),
+        (HirExprKind::Path(path), vec![], vec![]),
+        (
+            HirExprKind::ShortVariant(HirShortVariantName::Resolved(name("Ready"))),
+            vec![],
+            vec![],
+        ),
+        (
+            HirExprKind::Placeholder(HirPlaceholderKind::PartialApplication),
+            vec![],
+            vec![],
+        ),
+        (
+            HirExprKind::Tuple(HirTupleExpr::new(Box::new([first, second]))),
+            vec![first, second],
+            vec![0, 0],
+        ),
+        (
+            HirExprKind::BracketSequence(HirBracketSequenceExpr::new(Box::new([first, second]))),
+            vec![first, second],
+            vec![0, 0],
+        ),
+        (HirExprKind::NumericBracketSequence(numeric), vec![], vec![]),
+        (
+            HirExprKind::ArrayRepeat(HirArrayRepeatExpr::new(first, second)),
+            vec![first, second],
+            vec![1, 2],
+        ),
+        (call, vec![callee, first, second], vec![3, 4, 4]),
+        (
+            HirExprKind::Select(HirSelectExpr::new(first, HirSelectedMember::Missing)),
+            vec![first],
+            vec![5],
+        ),
+        (
+            HirExprKind::Index(HirIndexExpr::new(first, second)),
+            vec![first, second],
+            vec![5, 6],
+        ),
+        (
+            HirExprKind::Pipe(HirPipeExpr::new(first, second)),
+            vec![first, second],
+            vec![7, 8],
+        ),
+        (
+            HirExprKind::Try(HirTryExpr::new(first)),
+            vec![first],
+            vec![9],
+        ),
+        (
+            HirExprKind::Await(
+                HirAwaitExpr::try_new(first, Box::new([])).expect("empty await branches"),
+            ),
+            vec![first],
+            vec![9],
+        ),
+        (HirExprKind::Thread(thread), vec![], vec![]),
+        (
+            HirExprKind::Choice(HirChoiceExpr::new(
+                None,
+                HirChoiceBody::new(scope, Box::new([])),
+                None,
+            )),
+            vec![],
+            vec![],
+        ),
+        (
+            HirExprKind::Range(HirRangeExpr::new(Some(first), Some(second), false)),
+            vec![first, second],
+            vec![10, 11],
+        ),
+        (
+            HirExprKind::Record(HirRecordExpr::new(
+                record_path,
+                Box::new([HirRecordField::explicit(name("field"), first)]),
+            )),
+            vec![first],
+            vec![12],
+        ),
+        (
+            HirExprKind::RecordLiteral(HirRecordLiteralExpr::new(Box::new([
+                HirRecordField::explicit(name("field"), second),
+            ]))),
+            vec![second],
+            vec![12],
+        ),
+        (
+            HirExprKind::Binary(HirBinaryExpr::new(first, HirBinaryOp::Add, second)),
+            vec![first, second],
+            vec![13, 14],
+        ),
+        (
+            HirExprKind::Borrow(HirBorrowExpr::new(HirBorrowKind::Shared, first)),
+            vec![first],
+            vec![9],
+        ),
+        (
+            HirExprKind::Dereference(HirDereferenceExpr::new(first)),
+            vec![first],
+            vec![9],
+        ),
+        (
+            HirExprKind::Closure(HirClosureExpr::new(
+                scope,
+                Box::new([]),
+                None,
+                first,
+                Box::new([]),
+            )),
+            vec![first],
+            vec![15],
+        ),
+        (
+            HirExprKind::Unary(HirUnaryExpr::new(HirUnaryOp::Not, first)),
+            vec![first],
+            vec![9],
+        ),
+        (
+            HirExprKind::Block(HirBlockExpr::new(scope, Box::new([]), first)),
+            vec![first],
+            vec![16],
+        ),
+        (
+            HirExprKind::ComputationBlock(HirComputationBlockExpr::new(
+                HirComputationBlockKind::Option,
+                scope,
+                Box::new([]),
+                first,
+            )),
+            vec![first],
+            vec![16],
+        ),
+        (
+            HirExprKind::NamedBlock(HirNamedBlockExpr::new(
+                HirNamedBlockName::Resolved(name("retry")),
+                scope,
+                Box::new([]),
+                first,
+            )),
+            vec![first],
+            vec![16],
+        ),
+        (
+            HirExprKind::Loop(HirLoopExpr::new(scope, Box::new([]), first)),
+            vec![first],
+            vec![17],
+        ),
+        (
+            HirExprKind::If(HirIfExpr::new(first, second, third)),
+            vec![first, second, third],
+            vec![18, 19, 20],
+        ),
+        (
+            HirExprKind::IfLet(HirIfLetExpr::new(
+                scope,
+                pattern,
+                first,
+                Some(second),
+                third,
+                fourth,
+            )),
+            vec![first, second, third, fourth],
+            vec![21, 24, 19, 20],
+        ),
+        (
+            HirExprKind::Match(
+                HirMatchExpr::try_new(first, Box::new([match_arm_zero, match_arm_one]))
+                    .expect("same-module match expression"),
+            ),
+            vec![first, second, third, fourth],
+            vec![21, 22, 23, 23],
+        ),
+        (
+            HirExprKind::DialogueContentApplication(dialogue),
+            vec![first],
+            vec![25],
+        ),
+        (
+            HirExprKind::PostfixBracket(postfix),
+            vec![first, second, third],
+            vec![5, 36, 37],
+        ),
+        (
+            HirExprKind::Error(super::HirExprError::new(
+                HirGenericExprIssue::UnclassifiedSyntax,
+            )),
+            vec![],
+            vec![],
+        ),
+        (
+            HirExprKind::ForSynthetic(super::HirForSyntheticExpr::iterator(first)),
+            vec![first],
+            vec![38],
+        ),
+    ];
+
+    assert_eq!(cases.len(), 38);
+    for (kind, expected_children, expected_roles) in cases {
+        assert_edge_contract(&kind, &expected_children, &expected_roles);
+    }
+}
+
+#[allow(
+    clippy::too_many_lines,
+    reason = "the exhaustive nested-choice differential keeps every expected order and path visible"
+)]
+#[test]
+fn choice_child_edges_keep_multi_branch_else_and_match_arm_lifo_paths() {
+    let module = module(151);
+    let scope = id::<ScopeId>(module, 1);
+    let pattern = id::<PatternId>(module, 2);
+    let if_condition_zero = id::<ExprId>(module, 10);
+    let if_condition_one = id::<ExprId>(module, 11);
+    let match_scrutinee = id::<ExprId>(module, 12);
+    let match_guard = id::<ExprId>(module, 13);
+    let branch_zero_label = id::<ExprId>(module, 20);
+    let branch_zero_out = id::<ExprId>(module, 21);
+    let branch_one_label = id::<ExprId>(module, 22);
+    let branch_one_out = id::<ExprId>(module, 23);
+    let else_label = id::<ExprId>(module, 24);
+    let else_out = id::<ExprId>(module, 25);
+    let arm_zero_label = id::<ExprId>(module, 26);
+    let arm_zero_out = id::<ExprId>(module, 27);
+    let arm_one_label = id::<ExprId>(module, 28);
+    let arm_one_out = id::<ExprId>(module, 29);
+    let identity = HirIdRefValue::Resolved(HirIdRef::absolute(
+        HirEntityReference::try_new("choice.option".into()).expect("choice identity"),
+    ));
+    let compact = |label, output| {
+        HirChoiceItem::CompactArm(HirChoiceCompactArm::new(
+            identity.clone(),
+            label,
+            None,
+            HirChoiceCompactAction::Out(output),
+        ))
+    };
+    let branch_zero = HirChoiceBody::new(
+        scope,
+        Box::new([compact(branch_zero_label, branch_zero_out)]),
+    );
+    let branch_one =
+        HirChoiceBody::new(scope, Box::new([compact(branch_one_label, branch_one_out)]));
+    let else_body = HirChoiceBody::new(scope, Box::new([compact(else_label, else_out)]));
+    let arm_zero = HirChoiceBody::new(scope, Box::new([compact(arm_zero_label, arm_zero_out)]));
+    let arm_one = HirChoiceBody::new(scope, Box::new([compact(arm_one_label, arm_one_out)]));
+    let choice = HirExprKind::Choice(HirChoiceExpr::new(
+        None,
+        HirChoiceBody::new(
+            scope,
+            Box::new([
+                HirChoiceItem::If(HirChoiceIf::new(
+                    Box::new([
+                        HirChoiceIfBranch::new(if_condition_zero, branch_zero),
+                        HirChoiceIfBranch::new(if_condition_one, branch_one),
+                    ]),
+                    Some(else_body),
+                )),
+                HirChoiceItem::Match(HirChoiceMatch::new(
+                    match_scrutinee,
+                    Box::new([
+                        HirChoiceMatchArm::new(pattern, Some(match_guard), arm_zero, Box::new([])),
+                        HirChoiceMatchArm::new(pattern, None, arm_one, Box::new([])),
+                    ]),
+                )),
+            ]),
+        ),
+        None,
+    ));
+
+    let edges = choice.child_edges();
+    assert_eq!(
+        edges
+            .iter()
+            .map(HirExpressionChildEdge::child)
+            .collect::<Vec<_>>(),
+        [
+            if_condition_zero,
+            if_condition_one,
+            match_scrutinee,
+            match_guard,
+            arm_one_label,
+            arm_one_out,
+            arm_zero_label,
+            arm_zero_out,
+            else_label,
+            else_out,
+            branch_one_label,
+            branch_one_out,
+            branch_zero_label,
+            branch_zero_out,
+        ]
+    );
+    let p = |segments| nested_path(segments);
+    let expected_roles = vec![
+        HirExpressionChildRole::ChoiceIfCondition {
+            path: p(vec![
+                HirNestedExpressionPathSegment::ChoiceBodyItem { ordinal: 0 },
+                HirNestedExpressionPathSegment::ChoiceIfBranch { ordinal: 0 },
+            ]),
+            branch: 0,
+        },
+        HirExpressionChildRole::ChoiceIfCondition {
+            path: p(vec![
+                HirNestedExpressionPathSegment::ChoiceBodyItem { ordinal: 0 },
+                HirNestedExpressionPathSegment::ChoiceIfBranch { ordinal: 1 },
+            ]),
+            branch: 1,
+        },
+        HirExpressionChildRole::ChoiceMatchScrutinee {
+            path: p(vec![HirNestedExpressionPathSegment::ChoiceBodyItem {
+                ordinal: 1,
+            }]),
+        },
+        HirExpressionChildRole::ChoiceMatchGuard {
+            path: p(vec![
+                HirNestedExpressionPathSegment::ChoiceBodyItem { ordinal: 1 },
+                HirNestedExpressionPathSegment::ChoiceMatchArm { ordinal: 0 },
+            ]),
+            arm: 0,
+        },
+        HirExpressionChildRole::ChoiceCompactLabel {
+            path: p(vec![
+                HirNestedExpressionPathSegment::ChoiceBodyItem { ordinal: 1 },
+                HirNestedExpressionPathSegment::ChoiceMatchArm { ordinal: 1 },
+                HirNestedExpressionPathSegment::ChoiceBodyItem { ordinal: 0 },
+            ]),
+        },
+        HirExpressionChildRole::ChoiceCompactOut {
+            path: p(vec![
+                HirNestedExpressionPathSegment::ChoiceBodyItem { ordinal: 1 },
+                HirNestedExpressionPathSegment::ChoiceMatchArm { ordinal: 1 },
+                HirNestedExpressionPathSegment::ChoiceBodyItem { ordinal: 0 },
+            ]),
+        },
+        HirExpressionChildRole::ChoiceCompactLabel {
+            path: p(vec![
+                HirNestedExpressionPathSegment::ChoiceBodyItem { ordinal: 1 },
+                HirNestedExpressionPathSegment::ChoiceMatchArm { ordinal: 0 },
+                HirNestedExpressionPathSegment::ChoiceBodyItem { ordinal: 0 },
+            ]),
+        },
+        HirExpressionChildRole::ChoiceCompactOut {
+            path: p(vec![
+                HirNestedExpressionPathSegment::ChoiceBodyItem { ordinal: 1 },
+                HirNestedExpressionPathSegment::ChoiceMatchArm { ordinal: 0 },
+                HirNestedExpressionPathSegment::ChoiceBodyItem { ordinal: 0 },
+            ]),
+        },
+        HirExpressionChildRole::ChoiceCompactLabel {
+            path: p(vec![
+                HirNestedExpressionPathSegment::ChoiceBodyItem { ordinal: 0 },
+                HirNestedExpressionPathSegment::ChoiceIfElse,
+                HirNestedExpressionPathSegment::ChoiceBodyItem { ordinal: 0 },
+            ]),
+        },
+        HirExpressionChildRole::ChoiceCompactOut {
+            path: p(vec![
+                HirNestedExpressionPathSegment::ChoiceBodyItem { ordinal: 0 },
+                HirNestedExpressionPathSegment::ChoiceIfElse,
+                HirNestedExpressionPathSegment::ChoiceBodyItem { ordinal: 0 },
+            ]),
+        },
+        HirExpressionChildRole::ChoiceCompactLabel {
+            path: p(vec![
+                HirNestedExpressionPathSegment::ChoiceBodyItem { ordinal: 0 },
+                HirNestedExpressionPathSegment::ChoiceIfBranch { ordinal: 1 },
+                HirNestedExpressionPathSegment::ChoiceBodyItem { ordinal: 0 },
+            ]),
+        },
+        HirExpressionChildRole::ChoiceCompactOut {
+            path: p(vec![
+                HirNestedExpressionPathSegment::ChoiceBodyItem { ordinal: 0 },
+                HirNestedExpressionPathSegment::ChoiceIfBranch { ordinal: 1 },
+                HirNestedExpressionPathSegment::ChoiceBodyItem { ordinal: 0 },
+            ]),
+        },
+        HirExpressionChildRole::ChoiceCompactLabel {
+            path: p(vec![
+                HirNestedExpressionPathSegment::ChoiceBodyItem { ordinal: 0 },
+                HirNestedExpressionPathSegment::ChoiceIfBranch { ordinal: 0 },
+                HirNestedExpressionPathSegment::ChoiceBodyItem { ordinal: 0 },
+            ]),
+        },
+        HirExpressionChildRole::ChoiceCompactOut {
+            path: p(vec![
+                HirNestedExpressionPathSegment::ChoiceBodyItem { ordinal: 0 },
+                HirNestedExpressionPathSegment::ChoiceIfBranch { ordinal: 0 },
+                HirNestedExpressionPathSegment::ChoiceBodyItem { ordinal: 0 },
+            ]),
+        },
+    ];
+    assert_eq!(
+        edges
+            .iter()
+            .map(|edge| edge.role().clone())
+            .collect::<Vec<_>>(),
+        expected_roles
+    );
+}
+
+#[test]
+fn dialogue_line_plan_edges_keep_sibling_group_deep_lifo_order_and_paths() {
+    let module = module(152);
+    let scope = id::<ScopeId>(module, 1);
+    let owner = id::<ExprId>(module, 2);
+    let target = id::<ExprId>(module, 3);
+    let first = id::<ExprId>(module, 10);
+    let second = id::<ExprId>(module, 11);
+    let third = id::<ExprId>(module, 12);
+    let fourth = id::<ExprId>(module, 13);
+    let fifth = id::<ExprId>(module, 14);
+    let sixth = id::<ExprId>(module, 15);
+    let plan = HirLinePlan::try_new(
+        scope,
+        None,
+        Box::new([
+            HirLinePlanItem::StartGroup(Box::new([
+                HirLinePlanItem::Expression(first),
+                HirLinePlanItem::TogetherGroup(Box::new([
+                    HirLinePlanItem::StartGroup(Box::new([HirLinePlanItem::Expression(second)])),
+                    HirLinePlanItem::Expression(third),
+                ])),
+            ])),
+            HirLinePlanItem::TogetherGroup(Box::new([
+                HirLinePlanItem::Expression(fourth),
+                HirLinePlanItem::StartGroup(Box::new([HirLinePlanItem::Expression(fifth)])),
+            ])),
+            HirLinePlanItem::Expression(sixth),
+        ]),
+    )
+    .expect("line plan");
+    let content =
+        HirDialogueContent::try_new(HirDialogueContentId::new(owner), Box::new([]), Box::new([]))
+            .expect("empty dialogue content");
+    let kind = HirExprKind::DialogueContentApplication(
+        HirDialogueContentApplication::try_new(owner, target, content, Some(plan), Box::new([]))
+            .expect("dialogue line plan application"),
+    );
+
+    let edges = kind.child_edges();
+    assert_eq!(
+        edges
+            .iter()
+            .map(HirExpressionChildEdge::child)
+            .collect::<Vec<_>>(),
+        [target, sixth, fourth, fifth, first, third, second]
+    );
+    let p = |segments| nested_path(segments);
+    let expected_roles = vec![
+        HirExpressionChildRole::DialogueTarget,
+        HirExpressionChildRole::LinePlanExpression {
+            path: p(vec![HirNestedExpressionPathSegment::LinePlanItem {
+                ordinal: 2,
+            }]),
+        },
+        HirExpressionChildRole::LinePlanExpression {
+            path: p(vec![
+                HirNestedExpressionPathSegment::LinePlanItem { ordinal: 1 },
+                HirNestedExpressionPathSegment::LinePlanTogetherGroupItem { ordinal: 0 },
+            ]),
+        },
+        HirExpressionChildRole::LinePlanExpression {
+            path: p(vec![
+                HirNestedExpressionPathSegment::LinePlanItem { ordinal: 1 },
+                HirNestedExpressionPathSegment::LinePlanTogetherGroupItem { ordinal: 1 },
+                HirNestedExpressionPathSegment::LinePlanStartGroupItem { ordinal: 0 },
+            ]),
+        },
+        HirExpressionChildRole::LinePlanExpression {
+            path: p(vec![
+                HirNestedExpressionPathSegment::LinePlanItem { ordinal: 0 },
+                HirNestedExpressionPathSegment::LinePlanStartGroupItem { ordinal: 0 },
+            ]),
+        },
+        HirExpressionChildRole::LinePlanExpression {
+            path: p(vec![
+                HirNestedExpressionPathSegment::LinePlanItem { ordinal: 0 },
+                HirNestedExpressionPathSegment::LinePlanStartGroupItem { ordinal: 1 },
+                HirNestedExpressionPathSegment::LinePlanTogetherGroupItem { ordinal: 1 },
+            ]),
+        },
+        HirExpressionChildRole::LinePlanExpression {
+            path: p(vec![
+                HirNestedExpressionPathSegment::LinePlanItem { ordinal: 0 },
+                HirNestedExpressionPathSegment::LinePlanStartGroupItem { ordinal: 1 },
+                HirNestedExpressionPathSegment::LinePlanTogetherGroupItem { ordinal: 0 },
+                HirNestedExpressionPathSegment::LinePlanStartGroupItem { ordinal: 0 },
+            ]),
+        },
+    ];
+    assert_eq!(
+        edges
+            .iter()
+            .map(|edge| edge.role().clone())
+            .collect::<Vec<_>>(),
+        expected_roles
+    );
+}
+
 fn final_variant_ordinal(kind: &HirExprKind) -> u8 {
     match kind {
         HirExprKind::Unit => 0,
@@ -1445,7 +2250,7 @@ fn final_variant_ordinal(kind: &HirExprKind) -> u8 {
 }
 
 #[test]
-fn expression_inventory_is_the_closed_37_variant_contract() {
+fn expression_inventory_is_the_closed_38_variant_contract() {
     assert_eq!(final_variant_ordinal(&HirExprKind::Unit), 0);
     assert_eq!(
         final_variant_ordinal(&HirExprKind::Error(super::HirExprError::new(

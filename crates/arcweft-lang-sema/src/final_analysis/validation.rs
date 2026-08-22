@@ -495,6 +495,22 @@ pub(super) fn validate_expressions(
         if expression.is_poisoned() {
             return Err(FinalSemanticAnalysisError::RecoveredOwner);
         }
+        if !matches!(expression.kind(), HirExprKind::Match(_)) && fact.match_fact().is_some() {
+            return Err(FinalSemanticAnalysisError::WrongPayloadFamily);
+        }
+        let accepts_nested_path_evidence = matches!(
+            (expression.kind(), fact.resolution()),
+            (
+                HirExprKind::Choice(_),
+                CheckedExpressionResolution::Choice(_)
+            ) | (
+                HirExprKind::DialogueContentApplication(_),
+                CheckedExpressionResolution::DialogueApplication { .. }
+            )
+        );
+        if !accepts_nested_path_evidence && fact.nested_path_evidence().is_some() {
+            return Err(FinalSemanticAnalysisError::WrongPayloadFamily);
+        }
         let associated_wrong_arity = calls.get(&owner).is_some_and(|call| {
             let HirExprKind::Call(hir_call) = expression.kind() else {
                 return false;

@@ -3209,7 +3209,7 @@ fn record_rows_to_columnar(
 
 fn record_field_order_is_accepted(row: &[RuntimeFieldValue]) -> bool {
     row.iter().enumerate().all(|(ordinal, field)| {
-        RuntimeRecordFieldId::from_accepted_zero_based(ordinal)
+        RuntimeRecordFieldId::try_from_zero_based_ordinal(ordinal)
             .is_ok_and(|expected| expected == field.field())
             && !row[..ordinal]
                 .iter()

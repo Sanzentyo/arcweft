@@ -294,7 +294,7 @@ mod tests {
     #[test]
     fn field_assignment_uses_nominal_defining_order_identity() {
         let local = local(1);
-        let field = RuntimeRecordFieldId::from_accepted_zero_based(1).unwrap();
+        let field = RuntimeRecordFieldId::try_from_zero_based_ordinal(1).unwrap();
         let mut env = RuntimeEnv::default();
         env.set(
             local,

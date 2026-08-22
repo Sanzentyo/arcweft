@@ -244,7 +244,7 @@ pub(super) fn decode_value_path(
 fn record_field(raw: NonZeroU32) -> Result<RuntimeRecordFieldId, RuntimeOwnershipBinaryError> {
     let zero_based = usize::try_from(raw.get() - 1)
         .expect("u32 record field ordinals fit every supported target");
-    RuntimeRecordFieldId::from_accepted_zero_based(zero_based)
+    RuntimeRecordFieldId::try_from_zero_based_ordinal(zero_based)
         .map_err(|_| RuntimeValuePathError::InvalidRecordFieldIdentity.into())
 }
 

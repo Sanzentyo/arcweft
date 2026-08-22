@@ -3,13 +3,13 @@
 #[path = "calls/semantics.rs"]
 mod semantics;
 
-use semantics::{
-    call_result_type, physical_evaluation_kind, physical_expected_type, provisional_call_effects,
-    provisional_callable_effects, select_candidate_probes,
-};
 pub(super) use semantics::{
     callable_schema_type, callable_schema_type_with_effects, checked_project_nominal,
     final_call_effects, final_callable_effects, nominal_substitutions,
+};
+use semantics::{
+    physical_evaluation_kind, physical_expected_type, provisional_call_effects,
+    provisional_callable_effects, select_candidate_probes,
 };
 
 use super::expression_types::value_resolution_type;
@@ -1620,7 +1620,8 @@ impl Analyzer<'_, '_, '_> {
             .checked_add(evaluated.hard_errors)
             .ok_or(FinalSemanticAnalysisError::AccountingOverflow)?;
         let result = evaluated.substitutions.apply(
-            &call_result_type(candidate, current_group)
+            &candidate
+                .result_type_for_group(current_group)
                 .ok_or(FinalSemanticAnalysisError::CallResolutionFailed { owner })?,
         );
         let result = inferred_constructor_result(candidate, &evaluated.arguments, result);

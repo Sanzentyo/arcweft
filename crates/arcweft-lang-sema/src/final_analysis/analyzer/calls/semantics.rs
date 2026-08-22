@@ -90,44 +90,6 @@ pub(in super::super) fn callable_schema_type_with_effects(
     Some(result)
 }
 
-pub(super) fn call_result_type(
-    candidate: &ResolvedCallable,
-    current_group: CallableGroupIndex,
-) -> Option<TypeKind> {
-    let next = CallableGroupIndex::try_from_usize(current_group.get().checked_add(1)?).ok()?;
-    if matches!(
-        candidate.instantiation(),
-        CallableInstantiation::Extension { group, .. } if *group == next
-    ) {
-        return Some(candidate.schema().result().clone());
-    }
-    if candidate.schema().group(next).is_none() {
-        return Some(candidate.schema().result().clone());
-    }
-    let mut result = candidate.schema().result().clone();
-    for group in candidate.schema().groups().iter().skip(next.get()).rev() {
-        let parameters = group
-            .parameters()
-            .iter()
-            .map(|parameter| match parameter.ty() {
-                CallableParameterType::Exact(ty) => Some(ty.clone()),
-                CallableParameterType::Unchecked => None,
-            })
-            .collect::<Option<Vec<_>>>()?;
-        result = TypeKind::function_with_effects(
-            parameters,
-            result,
-            candidate
-                .schema()
-                .effects()
-                .fixed_row()
-                .cloned()
-                .unwrap_or_else(EffectRow::unknown),
-        );
-    }
-    Some(result)
-}
-
 pub(super) fn provisional_call_effects(
     candidate: &ResolvedCallable,
     current_group: CallableGroupIndex,

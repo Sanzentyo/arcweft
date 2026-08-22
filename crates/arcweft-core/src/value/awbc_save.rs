@@ -320,7 +320,7 @@ impl AwbcRuntimeValueSnapshot {
                     .enumerate()
                     .map(|(ordinal, field)| {
                         let expected =
-                            super::RuntimeRecordFieldId::from_accepted_zero_based(ordinal)
+                            super::RuntimeRecordFieldId::try_from_zero_based_ordinal(ordinal)
                                 .map_err(|error| {
                                     AwbcRuntimeValueSnapshotError::new(error.to_string())
                                 })?;
@@ -486,7 +486,7 @@ impl AwbcRuntimeValueSnapshot {
                         .into_iter()
                         .enumerate()
                         .map(|(ordinal, field)| {
-                            let expected = super::RuntimeRecordFieldId::from_accepted_zero_based(
+                            let expected = super::RuntimeRecordFieldId::try_from_zero_based_ordinal(
                                 ordinal,
                             )
                             .map_err(|error| {

@@ -14,6 +14,7 @@ mod digest;
 mod error;
 mod facts;
 mod identity;
+mod join;
 mod limits;
 mod nominal_signature;
 mod presentation;
@@ -85,6 +86,11 @@ pub use identity::{
     ReductionConstructorKind, ResultConstructorKind, RustItemPath, STANDARD_TRAIT_CATALOG_VERSION,
     SemanticScopeId, StageMethodId, StandardCallableDeclarationId, StandardEnvironmentId,
     StandardTraitCatalogVersion, StdFloatCallableId, StdFloatOperation, VectorDimensions,
+};
+pub use join::{
+    CallableInstantiationDigest, CallableReceiverMode, CheckedCallableArgument,
+    CheckedCallableArgumentSlot, CheckedCallableJoin, CheckedCallableJoinError,
+    IntrinsicCallableCandidateTag, validate_selected_call,
 };
 pub use limits::{
     CallResolverAccountingReport, CallableLimits, PRODUCTION_CALLABLE_LIMITS,

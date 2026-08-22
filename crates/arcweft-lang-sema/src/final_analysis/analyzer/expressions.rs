@@ -103,8 +103,30 @@ impl Analyzer<'_, '_, '_> {
         })();
         self.facts.end_expression(owner);
         let checked = checked?;
+        let checked = self.attach_nested_path_evidence(owner, checked)?;
         self.facts.set_expression(owner, checked.clone());
         Ok(checked)
+    }
+
+    fn attach_nested_path_evidence(
+        &self,
+        owner: ExprId,
+        checked: CheckedExpression,
+    ) -> Result<CheckedExpression, FinalSemanticAnalysisError> {
+        let module = self.module(owner.module())?;
+        let expression = module
+            .resolve_expr(owner)
+            .map_err(|_| FinalSemanticAnalysisError::InvalidOwner)?;
+        let edges = expression.kind().child_edges();
+        let Some(evidence) = crate::final_analysis::match_edges::build_nested_path_evidence(
+            expression.kind(),
+            &checked,
+            &edges,
+            self.facts.expressions(),
+        ) else {
+            return Ok(checked);
+        };
+        Ok(checked.with_nested_path_evidence(evidence))
     }
 
     fn check_implicit_callable_expression(
@@ -759,16 +781,28 @@ impl Analyzer<'_, '_, '_> {
             HirExprKind::Match(match_expr) => {
                 let scrutinee = self.check_expression(match_expr.scrutinee(), None)?;
                 let mut values = Vec::new();
+                let mut arms = Vec::with_capacity(match_expr.arms().len());
                 for arm in match_expr.arms() {
                     self.seed_contextual_pattern_locals(module, arm.pattern(), scrutinee.ty())?;
                     if let Some(guard) = arm.guard() {
                         self.check_expression(guard, Some(&TypeKind::Bool))?;
                     }
                     values.push(self.check_expression(arm.value(), expected)?);
+                    arms.push(crate::final_analysis::CheckedMatchArmFact::new(
+                        arm.guard(),
+                        arm.value(),
+                    ));
                 }
                 let ty = common_type(values.iter().map(CheckedExpression::ty), expected)
                     .ok_or(FinalSemanticAnalysisError::ExpressionTypeUnavailable { owner })?;
-                Ok(structural_expression(ty, CheckedTypeSelection::Inferred))
+                Ok(
+                    structural_expression(ty, CheckedTypeSelection::Inferred).with_match_fact(
+                        crate::final_analysis::CheckedMatchFact::new(
+                            match_expr.scrutinee(),
+                            arms.into_boxed_slice(),
+                        ),
+                    ),
+                )
             }
             _ => return Ok(None),
         }

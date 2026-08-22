@@ -1779,7 +1779,7 @@ impl<'a> PureEvaluator<'a> {
             .enumerate()
             .map(|(ordinal, field)| {
                 let field_id =
-                    crate::value::RuntimeRecordFieldId::from_accepted_zero_based(ordinal)
+                    crate::value::RuntimeRecordFieldId::try_from_zero_based_ordinal(ordinal)
                         .map_err(|_| RuntimeEvalError::InvalidExpressionType(ty))?;
                 field.ok_or(RuntimeEvalError::MissingRecordInitializer {
                     ty,

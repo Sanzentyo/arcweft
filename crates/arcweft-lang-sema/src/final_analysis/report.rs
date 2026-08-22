@@ -18,6 +18,9 @@ use arcweft_source::{Diagnostic, DiagnosticLabel, DiagnosticSeverity, SourceSpan
 #[cfg(test)]
 use std::sync::atomic::AtomicBool;
 
+#[cfg(test)]
+use super::PhysicalCandidateArgumentEvaluation;
+use super::match_edges;
 use super::{
     CallTargetFacts, CaptureId, CheckedBinding, CheckedCallableCatalog, CheckedExpression,
     CheckedItem, CheckedPattern, CheckedStatement, ExprId, FinalSemanticAnalysisControl,
@@ -32,9 +35,6 @@ use super::{
         validate_statements, validate_symbol_generation, validate_types,
     },
 };
-
-#[cfg(test)]
-use super::PhysicalCandidateArgumentEvaluation;
 
 /// Immutable semantic analysis bound to one exact accepted HIR generation.
 #[derive(Clone, Debug)]
@@ -52,6 +52,10 @@ pub struct FinalSemanticAnalysis {
     statements: BTreeMap<StmtId, CheckedStatement>,
     items: BTreeMap<ItemId, CheckedItem>,
     calls: BTreeMap<ExprId, CallTargetFacts>,
+    pub(super) edge_facts: BTreeMap<
+        ExprId,
+        Result<super::CheckedExpressionEdgeFact, super::CheckedExpressionEdgeError>,
+    >,
     diagnostics: Arc<[Diagnostic]>,
     #[cfg(test)]
     physical_candidate_argument_evaluations:
@@ -116,6 +120,7 @@ impl FinalSemanticAnalysis {
             .validate_project_generation(symbols.world(), *symbols.revision())
             .map_err(|_| FinalSemanticAnalysisError::CatalogGenerationMismatch)?;
         let (modules, snapshots) = project_generation_maps(project);
+        let raw_child_edges = match_edges::collect_child_edges(&modules);
         let dialogue_lines = project.dialogue_lines();
 
         let types = collect_unique(input.types, SemanticFactFamily::Type)?;
@@ -192,6 +197,15 @@ impl FinalSemanticAnalysis {
         )?;
         let work = collect_work(inventory)?;
         let diagnostics = collect_final_diagnostics(&modules, &types, &expressions, &items)?;
+        let edge_facts = match_edges::collect_checked_edges(
+            &modules,
+            symbols,
+            &types,
+            &expressions,
+            &calls,
+            &checked_callables,
+            raw_child_edges,
+        );
         control.check()?;
         Ok(Self {
             snapshots,
@@ -207,6 +221,7 @@ impl FinalSemanticAnalysis {
             statements,
             items,
             calls,
+            edge_facts,
             diagnostics: diagnostics.into(),
             #[cfg(test)]
             physical_candidate_argument_evaluations,

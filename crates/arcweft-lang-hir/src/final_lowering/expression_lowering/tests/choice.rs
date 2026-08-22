@@ -90,7 +90,7 @@ fn attached_choice_compact_arm_lowers_to_the_sole_choice_expression_owner() {
 
 #[test]
 fn missing_choice_body_keeps_choice_payload_and_poisoned_outer_owner() {
-    let parsed = parsed_source("choice-missing-body", &["choice".into()]);
+    let parsed = parsed_source("choice-missing-body", &["choice @choice.missing".into()]);
     let (module, owners, _) = lower_and_publish(&parsed);
     let [owner] = owners.as_slice() else {
         panic!("fixture must publish one recovered Choice expression")
