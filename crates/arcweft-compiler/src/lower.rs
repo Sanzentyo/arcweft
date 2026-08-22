@@ -29,7 +29,7 @@ use arcweft_character::{
     },
 };
 use arcweft_core::{
-    entry::{RuntimeNominalTypeId, RuntimeSchemaError},
+    entry::RuntimeNominalTypeId,
     pattern::RuntimeOpaqueTypeProducerId,
     plan::{
         FlowRuntimeId, RuntimeBuiltinIteratorEvidence, RuntimeDialogueValueRole, RuntimeLineId,
@@ -85,6 +85,8 @@ use arcweft_lang_sema::{
         LengthUnit,
     },
     effects::EffectId,
+    env::nominal::AcceptedNominalId,
+    env::nominal::AcceptedNominalSemantics,
     final_analysis::{
         CheckedAssertionDisposition, CheckedAssignment, CheckedCharacterDialogueTarget,
         CheckedEvaluatedEffect, CheckedExpressionResolution, CheckedItemRole, CheckedIteration,
@@ -95,6 +97,7 @@ use arcweft_lang_sema::{
         FinalSemanticAnalysis, FinalSemanticAnalysisError, NominalSchemaPath,
         NominalSchemaProjectionError,
     },
+    registration::RegisteredSemanticWorld,
     types::{AgentBuiltinType, ArrayLength, SemanticTypeDigest, TypeKind},
 };
 use arcweft_manifest_model::CharacterNameLocalePolicySpec;
@@ -129,8 +132,6 @@ use arcweft_text_model::{
 };
 use thiserror::Error;
 
-use crate::project::{EntryRuntimeProjectionError, RuntimeSchemaProjection};
-
 /// Failure to project one accepted semantic generation into the closed runtime
 /// fact vocabulary.
 #[derive(Debug, Error)]
@@ -163,14 +164,8 @@ pub enum RuntimeSemanticProjectionError {
     OpaqueProjectNominalLayout {
         nominal: Box<ProjectNominalDeclarationId>,
         path: Box<NominalSchemaPath>,
-        producer: Box<RuntimeOpaqueTypeProducerId>,
+        accepted_nominal: Box<AcceptedNominalId>,
         semantic_identity: SemanticTypeDigest,
-    },
-    #[error("runtime schema for nominal `{nominal}` cannot be canonically encoded")]
-    NominalLayoutHash {
-        nominal: String,
-        #[source]
-        source: RuntimeSchemaError,
     },
     #[error("runtime nominal-record layout projection failed for `{nominal}`")]
     NominalRecordLayout {
@@ -250,6 +245,7 @@ impl From<RuntimeSemanticFactsError> for RuntimeSemanticProjectionError {
 pub fn project_runtime_semantic_facts(
     project: HirExecutableProjectView<'_>,
     symbols: &ProjectSymbolTable,
+    world: &RegisteredSemanticWorld,
     analysis: &FinalSemanticAnalysis,
     runtime_owners: &HirRuntimeSemanticReachability<'_>,
     dialogue_profile: Option<(&DialoguePresentationProfile, &DialogueProfileRevision)>,
@@ -298,7 +294,7 @@ pub fn project_runtime_semantic_facts(
                 && !evaluated_effect_calls.contains(owner)
         })
         .map(|(owner, call)| {
-            runtime_call(project, owner, call, symbols, analysis).map(|call| (owner, call))
+            runtime_call(project, owner, call, symbols, world, analysis).map(|call| (owner, call))
         })
         .collect::<Result<BTreeMap<_, _>, _>>()?;
     let runtime_expression_type_owners = runtime_owners.selected_expression_type_owners()?;
@@ -308,7 +304,7 @@ pub fn project_runtime_semantic_facts(
         let local = analysis
             .local(owner)
             .ok_or(RuntimeSemanticProjectionError::MissingLocalSemanticFact { local: owner })?;
-        input.push_local_declaration(owner, runtime_type(local.ty(), symbols, analysis)?);
+        input.push_local_declaration(owner, runtime_type(local.ty(), symbols, world, analysis)?);
     }
 
     let iteration_methods = runtime_iteration_methods(analysis, runtime_owners)?;
@@ -321,7 +317,7 @@ pub fn project_runtime_semantic_facts(
             conformance.implementation(),
             conformance.method(),
             runtime_trait_identity(conformance.trait_identity()),
-            runtime_type(self_type, symbols, analysis)?,
+            runtime_type(self_type, symbols, world, analysis)?,
         ));
     }
 
@@ -345,7 +341,7 @@ pub fn project_runtime_semantic_facts(
 
     for (owner, ty) in analysis.types() {
         if runtime_owners.contains_type(owner) {
-            input.push_type(owner, runtime_type(ty, symbols, analysis)?);
+            input.push_type(owner, runtime_type(ty, symbols, world, analysis)?);
         }
     }
 
@@ -354,7 +350,10 @@ pub fn project_runtime_semantic_facts(
             continue;
         }
         if runtime_expression_type_owners.contains(&owner) {
-            input.push_expression_type(owner, runtime_type(expression.ty(), symbols, analysis)?);
+            input.push_expression_type(
+                owner,
+                runtime_type(expression.ty(), symbols, world, analysis)?,
+            );
         }
         match expression.resolution() {
             CheckedExpressionResolution::Structural => {
@@ -438,11 +437,14 @@ pub fn project_runtime_semantic_facts(
             CheckedExpressionResolution::Nominal(nominal) => {
                 input.push_nominal_record(
                     owner,
-                    runtime_nominal_record(nominal, symbols, analysis)?,
+                    runtime_nominal_record(nominal, symbols, world, analysis)?,
                 );
             }
             CheckedExpressionResolution::Variant(variant) => {
-                input.push_expression_variant(owner, runtime_variant(variant, symbols, analysis)?);
+                input.push_expression_variant(
+                    owner,
+                    runtime_variant(variant, symbols, world, analysis)?,
+                );
             }
             CheckedExpressionResolution::PostfixBracket(resolution) => {
                 input.push_postfix_candidate(owner, resolution.candidate());
@@ -480,20 +482,22 @@ pub fn project_runtime_semantic_facts(
                 );
             }
             CheckedExpressionResolution::Try(tried) => {
-                push_runtime_try_fact(&mut input, owner, tried, project, symbols, analysis)?;
+                push_runtime_try_fact(&mut input, owner, tried, project, symbols, world, analysis)?;
             }
             CheckedExpressionResolution::ImplicitCallable(callable) => {
                 input.push_implicit_callable(
                     owner,
                     RuntimeImplicitCallableFact::new(
-                        runtime_type(callable.parameter(), symbols, analysis)?,
-                        runtime_type(callable.result(), symbols, analysis)?,
+                        runtime_type(callable.parameter(), symbols, world, analysis)?,
+                        runtime_type(callable.result(), symbols, world, analysis)?,
                         callable.placeholders().into(),
                         callable.captures().into(),
                     ),
                 );
                 if let CheckedExpressionResolution::Try(tried) = callable.body_resolution() {
-                    push_runtime_try_fact(&mut input, owner, tried, project, symbols, analysis)?;
+                    push_runtime_try_fact(
+                        &mut input, owner, tried, project, symbols, world, analysis,
+                    )?;
                 }
             }
             CheckedExpressionResolution::Pipe(pipe) => {
@@ -533,7 +537,7 @@ pub fn project_runtime_semantic_facts(
         if !runtime_owners.contains_pattern(owner) {
             continue;
         }
-        input.push_pattern_type(owner, runtime_type(pattern.ty(), symbols, analysis)?);
+        input.push_pattern_type(owner, runtime_type(pattern.ty(), symbols, world, analysis)?);
         match pattern.resolution() {
             CheckedPatternResolution::Literal(literal) => {
                 input.push_pattern_literal(
@@ -546,11 +550,14 @@ pub fn project_runtime_semantic_facts(
             CheckedPatternResolution::Nominal(nominal) => {
                 input.push_pattern_nominal_record(
                     owner,
-                    runtime_nominal_record(nominal, symbols, analysis)?,
+                    runtime_nominal_record(nominal, symbols, world, analysis)?,
                 );
             }
             CheckedPatternResolution::Variant(variant) => {
-                input.push_pattern_variant(owner, runtime_variant(variant, symbols, analysis)?);
+                input.push_pattern_variant(
+                    owner,
+                    runtime_variant(variant, symbols, world, analysis)?,
+                );
             }
             CheckedPatternResolution::Entity(item) => {
                 input.push_pattern_item(owner, runtime_project_item(item)?);
@@ -565,7 +572,10 @@ pub fn project_runtime_semantic_facts(
         }
         match statement.role() {
             CheckedStatementRole::Assignment(assignment) => {
-                input.push_assignment(owner, runtime_assignment(assignment, symbols, analysis)?);
+                input.push_assignment(
+                    owner,
+                    runtime_assignment(assignment, symbols, world, analysis)?,
+                );
             }
             CheckedStatementRole::Assertion(disposition) => {
                 input.push_assertion(owner, runtime_assertion(owner, *disposition)?);
@@ -579,7 +589,14 @@ pub fn project_runtime_semantic_facts(
             CheckedStatementRole::Iteration(iteration) => {
                 input.push_iteration(
                     owner,
-                    runtime_iteration(owner, iteration, &method_declarations, symbols, analysis)?,
+                    runtime_iteration(
+                        owner,
+                        iteration,
+                        &method_declarations,
+                        symbols,
+                        world,
+                        analysis,
+                    )?,
                 );
             }
             CheckedStatementRole::Suspension(_)
@@ -595,7 +612,7 @@ pub fn project_runtime_semantic_facts(
         }
         input.push_capture(RuntimeCheckedCapture::new(
             owner,
-            runtime_type(capture.ty(), symbols, analysis)?,
+            runtime_type(capture.ty(), symbols, world, analysis)?,
         ));
     }
 
@@ -620,6 +637,7 @@ fn push_runtime_try_fact(
     tried: &CheckedTry,
     project: HirExecutableProjectView<'_>,
     symbols: &ProjectSymbolTable,
+    world: &RegisteredSemanticWorld,
     analysis: &FinalSemanticAnalysis,
 ) -> Result<(), RuntimeSemanticProjectionError> {
     let module = project
@@ -672,11 +690,11 @@ fn push_runtime_try_fact(
     };
     let carrier = match tried.carrier() {
         CheckedTryCarrier::Result { success, residual } => RuntimeTryCarrierFact::Result {
-            success: runtime_type(success, symbols, analysis)?,
-            residual: Box::new(runtime_type(residual, symbols, analysis)?),
+            success: runtime_type(success, symbols, world, analysis)?,
+            residual: Box::new(runtime_type(residual, symbols, world, analysis)?),
         },
         CheckedTryCarrier::Option { success } => RuntimeTryCarrierFact::Option {
-            success: runtime_type(success, symbols, analysis)?,
+            success: runtime_type(success, symbols, world, analysis)?,
         },
     };
     input.push_try(
@@ -689,11 +707,12 @@ fn push_runtime_try_fact(
                     .ok_or(RuntimeSemanticProjectionError::InvalidTryBoundary { owner })?
                     .ty(),
                 symbols,
+                world,
                 analysis,
             )?,
             carrier,
             boundary,
-            runtime_type(boundary_ty, symbols, analysis)?,
+            runtime_type(boundary_ty, symbols, world, analysis)?,
         ),
     );
     Ok(())
@@ -702,6 +721,7 @@ fn push_runtime_try_fact(
 fn runtime_assignment(
     assignment: &CheckedAssignment,
     symbols: &ProjectSymbolTable,
+    world: &RegisteredSemanticWorld,
     analysis: &FinalSemanticAnalysis,
 ) -> Result<RuntimeAssignmentFact, RuntimeSemanticProjectionError> {
     let place = assignment.place();
@@ -709,8 +729,8 @@ fn runtime_assignment(
         place.local(),
         runtime_nominal(place.nominal(), symbols, analysis)?,
         place.field_ordinal(),
-        runtime_type(place.field_type(), symbols, analysis)?,
-        runtime_type(assignment.value_type(), symbols, analysis)?,
+        runtime_type(place.field_type(), symbols, world, analysis)?,
+        runtime_type(assignment.value_type(), symbols, world, analysis)?,
     ))
 }
 
@@ -1386,9 +1406,16 @@ fn lower_dialogue_host_action(
 fn runtime_type(
     ty: &TypeKind,
     symbols: &ProjectSymbolTable,
+    world: &RegisteredSemanticWorld,
     analysis: &FinalSemanticAnalysis,
 ) -> Result<RuntimeNormalizedType, RuntimeSemanticProjectionError> {
-    runtime_type_at(ty, symbols, analysis, &RuntimeTypeProjectionPath::root())
+    runtime_type_at(
+        ty,
+        symbols,
+        world,
+        analysis,
+        &RuntimeTypeProjectionPath::root(),
+    )
 }
 
 #[expect(
@@ -1398,13 +1425,14 @@ fn runtime_type(
 fn runtime_type_at(
     ty: &TypeKind,
     symbols: &ProjectSymbolTable,
+    world: &RegisteredSemanticWorld,
     analysis: &FinalSemanticAnalysis,
     path: &RuntimeTypeProjectionPath,
 ) -> Result<RuntimeNormalizedType, RuntimeSemanticProjectionError> {
     let identity = RuntimeSemanticTypeId::from_bytes(*ty.semantic_identity_digest().as_bytes());
-    let nested = |ty: &TypeKind| runtime_type_at(ty, symbols, analysis, path).map(Box::new);
+    let nested = |ty: &TypeKind| runtime_type_at(ty, symbols, world, analysis, path).map(Box::new);
     let nested_at = |ty: &TypeKind, step| {
-        runtime_type_at(ty, symbols, analysis, &path.pushed(step)).map(Box::new)
+        runtime_type_at(ty, symbols, world, analysis, &path.pushed(step)).map(Box::new)
     };
     let shape = match ty {
         TypeKind::Unit => RuntimeTypeShape::Unit,
@@ -1544,7 +1572,7 @@ fn runtime_type_at(
         } => RuntimeTypeShape::Function {
             parameters: params
                 .iter()
-                .map(|parameter| runtime_type(parameter, symbols, analysis))
+                .map(|parameter| runtime_type(parameter, symbols, world, analysis))
                 .collect::<Result<Vec<_>, _>>()?
                 .into_boxed_slice(),
             result: nested(return_type)?,
@@ -1566,7 +1594,7 @@ fn runtime_type_at(
                 arguments: nominal
                     .arguments()
                     .iter()
-                    .map(|argument| runtime_type(argument, symbols, analysis))
+                    .map(|argument| runtime_type(argument, symbols, world, analysis))
                     .collect::<Result<Vec<_>, _>>()?
                     .into_boxed_slice(),
             }
@@ -1585,6 +1613,7 @@ fn runtime_type_at(
                     runtime_type_at(
                         item,
                         symbols,
+                        world,
                         analysis,
                         &path.pushed(RuntimeTypeProjectionStep::TupleItem(projection_index(
                             index,
@@ -1602,6 +1631,7 @@ fn runtime_type_at(
                     runtime_type_at(
                         item,
                         symbols,
+                        world,
                         analysis,
                         &path.pushed(RuntimeTypeProjectionStep::ChoiceAlternative(
                             projection_index(index),
@@ -1620,12 +1650,27 @@ fn runtime_type_at(
             });
         }
         TypeKind::AcceptedNominal(nominal) => {
-            let owner = nominal.runtime_opaque_owner(identity);
+            let record = world
+                .environment()
+                .nominal_catalog()
+                .exact(nominal.declaration().canonical_path())
+                .filter(|record| {
+                    record.id() == nominal.declaration()
+                        && usize::from(record.arity()) == nominal.arguments().len()
+                })
+                .ok_or_else(|| RuntimeSemanticProjectionError::Type {
+                    reason: "accepted nominal runtime carrier is absent or stale".to_owned(),
+                })?;
+            let AcceptedNominalSemantics::Opaque(carrier) = record.semantics() else {
+                return Err(RuntimeSemanticProjectionError::Type {
+                    reason: "accepted nominal has no opaque runtime-plan carrier".to_owned(),
+                });
+            };
             RuntimeTypeShape::Opaque {
-                producer: owner.producer().clone(),
-                admission: owner.admission(),
-                value_class: owner.value_class(),
-                persistence: owner.persistence(),
+                producer: carrier.producer().clone(),
+                admission: arcweft_core::pattern::RuntimeOpaqueTypeAdmission::ExactIdentity,
+                value_class: carrier.value_class(),
+                persistence: carrier.persistence(),
                 arguments: nominal
                     .arguments()
                     .iter()
@@ -1634,6 +1679,7 @@ fn runtime_type_at(
                         runtime_type_at(
                             argument,
                             symbols,
+                            world,
                             analysis,
                             &path.pushed(RuntimeTypeProjectionStep::OpaqueArgument(
                                 projection_index(index),
@@ -1954,46 +2000,37 @@ fn runtime_nominal(
     analysis: &FinalSemanticAnalysis,
 ) -> Result<RuntimeResolvedNominal, RuntimeSemanticProjectionError> {
     let name = nominal.declaration().qualified_name();
-    let shape =
-        analysis
-            .project_nominal_schema(symbols, nominal)
-            .map_err(|source| match source {
-                NominalSchemaProjectionError::OpaqueLeaf {
-                    path,
-                    producer,
-                    semantic_identity,
-                } => RuntimeSemanticProjectionError::OpaqueProjectNominalLayout {
-                    nominal: Box::new(nominal.declaration().clone()),
-                    path: Box::new(path),
-                    producer: Box::new(producer),
-                    semantic_identity,
-                },
-                source => RuntimeSemanticProjectionError::NominalSchemaProjection {
-                    nominal: name.clone(),
-                    source,
-                },
-            })?;
-    let schema = RuntimeSchemaProjection::schema(&shape);
-    let layout = RuntimeSchemaProjection::layout_hash(&name, &schema).map_err(|error| {
-        let EntryRuntimeProjectionError::NominalLayoutHash { source, .. } = error else {
-            unreachable!("layout_hash returns only NominalLayoutHash")
-        };
-        RuntimeSemanticProjectionError::NominalLayoutHash {
-            nominal: name,
-            source,
-        }
-    })?;
+    let projected = analysis
+        .project_checked_runtime_nominal(symbols, nominal)
+        .map_err(|source| match source {
+            NominalSchemaProjectionError::OpaqueLeaf {
+                path,
+                nominal: accepted_nominal,
+                semantic_identity,
+            } => RuntimeSemanticProjectionError::OpaqueProjectNominalLayout {
+                nominal: Box::new(nominal.declaration().clone()),
+                path: Box::new(path),
+                accepted_nominal: Box::new(accepted_nominal),
+                semantic_identity,
+            },
+            source => RuntimeSemanticProjectionError::NominalSchemaProjection {
+                nominal: name,
+                source,
+            },
+        })?;
     Ok(RuntimeResolvedNominal::new(
         nominal.declaration().clone(),
         nominal.owner(),
-        RuntimeSemanticTypeId::from_bytes(*nominal.identity().as_bytes()),
-        layout,
+        projected.nominal().clone(),
+        projected.semantic_identity(),
+        projected.layout(),
     ))
 }
 
 fn runtime_nominal_record(
     nominal: &CheckedProjectNominal,
     symbols: &ProjectSymbolTable,
+    world: &RegisteredSemanticWorld,
     analysis: &FinalSemanticAnalysis,
 ) -> Result<RuntimeResolvedNominalRecord, RuntimeSemanticProjectionError> {
     let name = nominal.declaration().qualified_name();
@@ -2030,7 +2067,7 @@ fn runtime_nominal_record(
                         field.name()
                     ),
                 })?;
-            let normalized = runtime_type(&ty, symbols, analysis)?;
+            let normalized = runtime_type(&ty, symbols, world, analysis)?;
             let checked_type = normalized.checked_type().map_err(|reason| {
                 RuntimeSemanticProjectionError::Type {
                     reason: reason.to_string(),
@@ -2071,6 +2108,7 @@ fn runtime_nominal_record(
 fn runtime_variant(
     variant: &CheckedVariantResolution,
     symbols: &ProjectSymbolTable,
+    world: &RegisteredSemanticWorld,
     analysis: &FinalSemanticAnalysis,
 ) -> Result<
     arcweft_runtime_plan::semantic_facts::RuntimeResolvedVariant,
@@ -2094,7 +2132,7 @@ fn runtime_variant(
                 runtime_nominal(nominal, symbols, analysis)?,
                 variant.ordinal(),
                 variant.name().as_str(),
-                runtime_project_variant_cases(declaration, nominal, symbols, analysis)?,
+                runtime_project_variant_cases(declaration, nominal, symbols, world, analysis)?,
             )
             .map_err(|error| runtime_variant_projection_error(&error))?
         }
@@ -2126,7 +2164,7 @@ fn runtime_variant(
                     let payload = case
                         .payload()
                         .map(|payload| {
-                            let payload = runtime_type(payload, symbols, analysis)?;
+                            let payload = runtime_type(payload, symbols, world, analysis)?;
                             retain_checked_variant_payload(payload)
                         })
                         .transpose()?;
@@ -2150,14 +2188,14 @@ fn runtime_variant(
             .map_err(|error| runtime_variant_projection_error(&error))?
         }
         CheckedVariantOwner::Option { item } => RuntimeResolvedVariant::option(
-            runtime_type(item, symbols, analysis)?,
+            runtime_type(item, symbols, world, analysis)?,
             variant.ordinal(),
             variant.name().as_str(),
         )
         .map_err(|error| runtime_variant_projection_error(&error))?,
         CheckedVariantOwner::Result { ok, error } => {
-            let ok = runtime_type(ok, symbols, analysis)?;
-            let error = runtime_type(error, symbols, analysis)?;
+            let ok = runtime_type(ok, symbols, world, analysis)?;
+            let error = runtime_type(error, symbols, world, analysis)?;
             RuntimeResolvedVariant::result(ok, error, variant.ordinal(), variant.name().as_str())
                 .map_err(|error| runtime_variant_projection_error(&error))?
         }
@@ -2266,6 +2304,7 @@ fn runtime_iteration(
     iteration: &CheckedIteration,
     methods: &BTreeMap<CheckedTraitConformance, ImplMethodDeclarationId>,
     symbols: &ProjectSymbolTable,
+    world: &RegisteredSemanticWorld,
     analysis: &FinalSemanticAnalysis,
 ) -> Result<RuntimeIteratorFact, RuntimeSemanticProjectionError> {
     match iteration {
@@ -2288,8 +2327,8 @@ fn runtime_iteration(
         } => {
             Ok(RuntimeIteratorFact::Witness(Box::new(
                 RuntimeIteratorWitnessFact::new(
-                    runtime_type(item, symbols, analysis)?,
-                    runtime_type(into_iter, symbols, analysis)?,
+                    runtime_type(item, symbols, world, analysis)?,
+                    runtime_type(into_iter, symbols, world, analysis)?,
                     RuntimeIteratorWitnessExecutableFact::TraitCalls {
                         into_iter: methods.get(into_iterator).cloned().ok_or(
                             RuntimeSemanticProjectionError::MissingIterationMethod { owner },
@@ -2307,8 +2346,8 @@ fn runtime_iteration(
             iterator,
         } => Ok(RuntimeIteratorFact::Witness(Box::new(
             RuntimeIteratorWitnessFact::new(
-                runtime_type(item, symbols, analysis)?,
-                runtime_type(source, symbols, analysis)?,
+                runtime_type(item, symbols, world, analysis)?,
+                runtime_type(source, symbols, world, analysis)?,
                 RuntimeIteratorWitnessExecutableFact::IdentityIntoIterator {
                     next: methods
                         .get(iterator)
@@ -2375,6 +2414,7 @@ fn runtime_call(
     owner: ExprId,
     facts: &arcweft_lang_sema::callable::CallTargetFacts,
     symbols: &ProjectSymbolTable,
+    world: &RegisteredSemanticWorld,
     analysis: &FinalSemanticAnalysis,
 ) -> Result<RuntimeResolvedCall, RuntimeSemanticProjectionError> {
     if facts.poison() != CallPoison::Clean {
@@ -2389,7 +2429,7 @@ fn runtime_call(
             reason: "call target is not uniquely selected".to_owned(),
         });
     };
-    let target = runtime_call_target(owner, facts, selected, symbols, analysis)?;
+    let target = runtime_call_target(owner, facts, selected, symbols, world, analysis)?;
     let module = project
         .modules()
         .find_map(|(_, module)| (module.module_id() == owner.module()).then_some(module.as_ref()))
@@ -2542,9 +2582,12 @@ fn runtime_call_target(
     facts: &arcweft_lang_sema::callable::CallTargetFacts,
     selected: &ResolvedCallable,
     symbols: &ProjectSymbolTable,
+    world: &RegisteredSemanticWorld,
     analysis: &FinalSemanticAnalysis,
 ) -> Result<RuntimeResolvedCallTarget, RuntimeSemanticProjectionError> {
-    if let Some(variant) = runtime_variant_constructor(owner, facts, selected, symbols, analysis)? {
+    if let Some(variant) =
+        runtime_variant_constructor(owner, facts, selected, symbols, world, analysis)?
+    {
         return Ok(RuntimeResolvedCallTarget::Variant(variant));
     }
     if let arcweft_lang_sema::callable::CallableCandidateId::Presentation(presentation) =
@@ -2741,6 +2784,7 @@ fn runtime_variant_constructor(
     facts: &arcweft_lang_sema::callable::CallTargetFacts,
     selected: &ResolvedCallable,
     symbols: &ProjectSymbolTable,
+    world: &RegisteredSemanticWorld,
     analysis: &FinalSemanticAnalysis,
 ) -> Result<Option<RuntimeResolvedVariant>, RuntimeSemanticProjectionError> {
     let invalid = |reason: &str| RuntimeSemanticProjectionError::Call {
@@ -2754,8 +2798,8 @@ fn runtime_variant_constructor(
                     "Result constructor did not retain its exact checked Result type",
                 ));
             };
-            let ok = runtime_type(ok, symbols, analysis)?;
-            let error = runtime_type(error, symbols, analysis)?;
+            let ok = runtime_type(ok, symbols, world, analysis)?;
+            let error = runtime_type(error, symbols, world, analysis)?;
             let (ordinal, name) = match kind {
                 arcweft_lang_sema::callable::ResultConstructorKind::Ok => (0, "Ok"),
                 arcweft_lang_sema::callable::ResultConstructorKind::Err => (1, "Err"),
@@ -2780,7 +2824,7 @@ fn runtime_variant_constructor(
                     "Option constructor instantiation has a non-Option candidate identity",
                 ));
             }
-            RuntimeResolvedVariant::option(runtime_type(item, symbols, analysis)?, 0, "Some")
+            RuntimeResolvedVariant::option(runtime_type(item, symbols, world, analysis)?, 0, "Some")
                 .map(Some)
                 .map_err(|error| invalid(&error.to_string()))
         }
@@ -2847,6 +2891,7 @@ fn runtime_variant_constructor(
                         declaration,
                         &checked_nominal,
                         symbols,
+                        world,
                         analysis,
                     )?,
                 )
@@ -2866,6 +2911,7 @@ fn runtime_project_variant_cases(
     declaration: &arcweft_lang_hir::symbol::nominal::ProjectNominalDeclaration,
     nominal: &CheckedProjectNominal,
     symbols: &ProjectSymbolTable,
+    world: &RegisteredSemanticWorld,
     analysis: &FinalSemanticAnalysis,
 ) -> Result<Box<[RuntimeNormalizedVariantCase]>, RuntimeSemanticProjectionError> {
     let arcweft_lang_hir::symbol::nominal::ProjectNominalBody::Enum { variants } =
@@ -2895,7 +2941,7 @@ fn runtime_project_variant_cases(
                                 "project enum payload {owner:?} cannot apply its checked nominal arguments"
                             ),
                         })?;
-                    let payload = runtime_type(&ty, symbols, analysis)?;
+                    let payload = runtime_type(&ty, symbols, world, analysis)?;
                     retain_checked_variant_payload(payload)
                 })
                 .transpose()?;

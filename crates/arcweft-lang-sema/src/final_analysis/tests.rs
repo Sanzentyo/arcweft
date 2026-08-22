@@ -11,7 +11,11 @@ use arcweft_character::{
     },
     registration_catalog::SourceBackedCharacterCatalog,
 };
-use arcweft_core::entry::TypeLayoutHash;
+use arcweft_core::{
+    entry::TypeLayoutHash,
+    pattern::{RuntimeCheckedType, RuntimeOpaqueTypeProducerId},
+    value::{RuntimeOpaquePersistence, RuntimeOpaqueValueClass, RuntimeValue},
+};
 use arcweft_interaction_model::dialogue::CharacterDialogueCustomFieldId;
 use arcweft_lang_hir::{
     database::HirDatabase,
@@ -39,6 +43,7 @@ use arcweft_lang_syntax::{
         symbol_path::{ProjectSymbolPath, ProjectSymbolSegment, SymbolPath},
     },
     incremental::{ParsedSource, SyntaxDatabase},
+    types::TypePath,
 };
 use arcweft_source::{
     SourceDocument, SourceDocumentId, SourceName, SourceRange, identity::SourceSnapshotId,
@@ -84,8 +89,19 @@ use crate::{
     effect_row::EffectRow,
     effects::{EffectId, EffectSet},
     entry::CheckedEntryCatalog,
-    env::TypeCheckEnv,
+    env::{
+        TypeCheckEnv,
+        nominal::{
+            AcceptedNominalId, AcceptedNominalOrigin, AcceptedNominalOwnerId,
+            AcceptedNominalRecord, AcceptedNominalSemantics,
+        },
+    },
     nominal::{ResolvedTypeRefOutcome, TypeNameResolution, TypeResolutionFailure},
+    ownership::{
+        CheckedOwnershipCertificate, CheckedOwnershipError, CheckedOwnershipLimits,
+        RetainedValueDisposition, RuntimeOwnershipPathSegment, RuntimeOwnershipProjection,
+        RuntimeOwnershipRejection, RuntimeProducerArgumentClassifier,
+    },
     project_index::{ProgramHash, ProjectEntityId, ProjectSemanticIndex},
     registration::{
         CharacterDialogueCustomFieldInput, CharacterRegistrar, CharacterRegistrationRequest,
@@ -1868,10 +1884,370 @@ fn load_opening_assets() -> ArcResult<OpeningAssets> {
     let TypeKind::Result { ok, error } = result.as_ref() else {
         panic!("load_bg Need payload is one Result")
     };
-    assert!(matches!(ok.as_ref(), TypeKind::AcceptedNominal(nominal)
-        if nominal.runtime_producer().as_str() == "std.image_handle"));
-    assert!(matches!(error.as_ref(), TypeKind::AcceptedNominal(nominal)
-        if nominal.runtime_producer().as_str() == "std.arc_error"));
+    assert!(matches!(
+        ok.as_ref(),
+        TypeKind::AcceptedNominal(nominal)
+            if fixture
+                .registered
+                .environment()
+                .nominal_world()
+                .nominal_catalog()
+                .exact(nominal.declaration().canonical_path())
+                .is_some_and(|record| matches!(
+                    record.semantics(),
+                    AcceptedNominalSemantics::Opaque(carrier)
+                        if carrier.producer().as_str() == "std.image_handle"
+                ))
+    ));
+    assert!(matches!(
+        error.as_ref(),
+        TypeKind::AcceptedNominal(nominal)
+            if fixture
+                .registered
+                .environment()
+                .nominal_world()
+                .nominal_catalog()
+                .exact(nominal.declaration().canonical_path())
+                .is_some_and(|record| matches!(
+                    record.semantics(),
+                    AcceptedNominalSemantics::Opaque(carrier)
+                        if carrier.producer().as_str() == "std.arc_error"
+                ))
+    ));
+
+    let classifier = RuntimeProducerArgumentClassifier::try_new(&report, &fixture.registered)
+        .expect("final analysis and accepted world share one symbol lease");
+    let public = fixture
+        .registered
+        .checked_ownership(&report, ok, CheckedOwnershipLimits::PRODUCTION)
+        .expect("public ownership summary uses the exact accepted opaque row");
+    assert_eq!(
+        public.disposition(),
+        RetainedValueDisposition::SnapshotClone
+    );
+    let admission = classifier
+        .classify(ok)
+        .expect("the exact accepted opaque catalog row admits ImageHandle");
+    let RuntimeOwnershipProjection::Checked(RuntimeCheckedType::Opaque { owner }) =
+        admission.projection()
+    else {
+        panic!("accepted ImageHandle uses the exact core opaque owner")
+    };
+    let value = owner
+        .try_wrap(RuntimeValue::Unit)
+        .expect("an exact opaque owner constructs its value");
+    admission
+        .validate_live_value(&value)
+        .expect("the exact accepted opaque carrier accepts its live value");
+    admission
+        .try_digest(&value, 1_024)
+        .expect("the exact accepted opaque value has canonical identity");
+    let restored = admission
+        .try_snapshot(&value)
+        .expect("the exact accepted opaque value snapshots")
+        .into_runtime_value()
+        .expect("the core snapshot restores the opaque value");
+    admission
+        .validate_live_value(&restored)
+        .expect("restored opaque evidence remains exact");
+
+    let foreign = self::fixture("fn foreign() {}", None);
+    let stale = RuntimeProducerArgumentClassifier::try_new(&report, &foreign.registered)
+        .expect_err("a foreign registered world cannot reuse ownership evidence");
+    assert_eq!(
+        stale.rejection(),
+        Some(RuntimeOwnershipRejection::StaleAuthority)
+    );
+}
+
+fn ownership_test_type_path(name: &str) -> TypePath {
+    TypePath::from(
+        ProjectSymbolPath::new(
+            ModulePathRoot::ImplicitCrate,
+            [ProjectSymbolSegment::try_new(name).expect("ownership test type segment")],
+        )
+        .expect("ownership test type path"),
+    )
+}
+
+fn image_handle_ownership_certificate(base: TypeCheckEnv) -> CheckedOwnershipCertificate {
+    let fixture = fixture_with_base_environment("fn stable() {}", None, base);
+    let report = analyze(&fixture).expect("ownership fixture final analysis");
+    let image = fixture
+        .registered
+        .environment()
+        .nominal_world()
+        .nominal_catalog()
+        .exact(&ownership_test_type_path("ImageHandle"))
+        .expect("standard ImageHandle row")
+        .try_instantiate([])
+        .expect("zero-arity ImageHandle");
+    fixture
+        .registered
+        .checked_ownership(&report, &image, CheckedOwnershipLimits::PRODUCTION)
+        .expect("ImageHandle ownership")
+}
+
+#[test]
+fn ownership_evidence_ignores_unrelated_accepted_catalog_rows() {
+    let baseline = image_handle_ownership_certificate(TypeCheckEnv::standard());
+    let unrelated = AcceptedNominalRecord::try_new_opaque(
+        AcceptedNominalId::new(
+            AcceptedNominalOwnerId::Standard,
+            ownership_test_type_path("UnrelatedOpaque"),
+        ),
+        0,
+        RuntimeOpaqueTypeProducerId::try_new("test.unrelated")
+            .expect("unrelated producer identity"),
+        RuntimeOpaqueValueClass::Plain,
+        RuntimeOpaquePersistence::SnapshotOnly,
+        AcceptedNominalOrigin::Test,
+        None,
+    )
+    .expect("unrelated accepted opaque row");
+    let with_unrelated = image_handle_ownership_certificate(
+        TypeCheckEnv::standard()
+            .try_with_nominal_record(unrelated)
+            .expect("extend accepted catalog"),
+    );
+
+    assert_eq!(baseline.evidence(), with_unrelated.evidence());
+}
+
+#[test]
+fn public_ownership_summary_keeps_need_fail_closed_until_live_carrier_cut() {
+    let fixture = fixture("fn pending() {}", None);
+    let report = analyze(&fixture).expect("Need payload has an exact semantic identity");
+    let need = TypeKind::Need(Box::new(TypeKind::Stream {
+        item: Box::new(TypeKind::I64),
+        error: Box::new(TypeKind::String),
+    }));
+
+    fixture
+        .registered
+        .checked_ownership(&report, &need, CheckedOwnershipLimits::PRODUCTION)
+        .expect_err("public Need ownership remains unavailable before Cut 5");
+}
+
+#[test]
+fn public_ownership_type_node_limit_is_exact_and_fails_one_over() {
+    let fixture = fixture("fn stable() {}", None);
+    let report = analyze(&fixture).expect("ownership limits fixture final analysis");
+    let ty = TypeKind::Tuple(vec![TypeKind::I32, TypeKind::Bool]);
+    let exact = CheckedOwnershipLimits {
+        max_type_nodes: 3,
+        max_recursion_depth: 1,
+        ..CheckedOwnershipLimits::PRODUCTION
+    };
+
+    fixture
+        .registered
+        .checked_ownership(&report, &ty, exact)
+        .expect("the root and two children exactly consume three type nodes");
+    assert_eq!(
+        fixture.registered.checked_ownership(
+            &report,
+            &ty,
+            CheckedOwnershipLimits {
+                max_type_nodes: 2,
+                ..exact
+            },
+        ),
+        Err(CheckedOwnershipError::WorkLimit)
+    );
+}
+
+#[test]
+fn public_ownership_recursion_limit_is_exact_and_fails_one_over() {
+    let fixture = fixture("fn stable() {}", None);
+    let report = analyze(&fixture).expect("ownership limits fixture final analysis");
+    let ty = TypeKind::Tuple(vec![TypeKind::Option(Box::new(TypeKind::I32))]);
+    let exact = CheckedOwnershipLimits {
+        max_recursion_depth: 2,
+        ..CheckedOwnershipLimits::PRODUCTION
+    };
+
+    fixture
+        .registered
+        .checked_ownership(&report, &ty, exact)
+        .expect("the grandchild exactly consumes recursion depth two");
+    assert_eq!(
+        fixture.registered.checked_ownership(
+            &report,
+            &ty,
+            CheckedOwnershipLimits {
+                max_recursion_depth: 1,
+                ..exact
+            },
+        ),
+        Err(CheckedOwnershipError::WorkLimit)
+    );
+}
+
+fn project_nominal_expression_type(report: &FinalSemanticAnalysis, name: &str) -> TypeKind {
+    report
+        .expressions()
+        .find_map(|(_, expression)| match expression.ty() {
+            TypeKind::ProjectNominal(nominal) if nominal.declaration().name().as_str() == name => {
+                Some(expression.ty().clone())
+            }
+            _ => None,
+        })
+        .unwrap_or_else(|| panic!("missing checked expression of project nominal `{name}`"))
+}
+
+#[test]
+fn project_nominal_ownership_rejects_an_affine_struct_field() {
+    let fixture = fixture(
+        concat!(
+            "struct Retained { stable: i64, handle: CueHandle }\n",
+            "fn retain(value: Retained) -> Retained { value }\n",
+        ),
+        None,
+    );
+    let report = analyze(&fixture).expect("project nominal ownership fixture final analysis");
+    let ty = project_nominal_expression_type(&report, "Retained");
+
+    assert_eq!(
+        fixture
+            .registered
+            .checked_ownership(&report, &ty, CheckedOwnershipLimits::PRODUCTION,),
+        Err(CheckedOwnershipError::Rejected)
+    );
+}
+
+#[test]
+fn project_nominal_ownership_reports_the_first_rejected_field_in_declaration_order() {
+    let fixture = fixture(
+        concat!(
+            "struct Ordered { first: CueHandle, second: Stream<i64, String> }\n",
+            "fn retain(value: Ordered) -> Ordered { value }\n",
+        ),
+        None,
+    );
+    let report = analyze(&fixture).expect("ordered nominal ownership fixture final analysis");
+    let ty = project_nominal_expression_type(&report, "Ordered");
+    let classifier = RuntimeProducerArgumentClassifier::try_new(&report, &fixture.registered)
+        .expect("final analysis and registered world share one symbol lease");
+    let error = classifier
+        .classify(&ty)
+        .expect_err("the first affine declaration field rejects ownership");
+
+    assert_eq!(
+        error.rejection(),
+        Some(RuntimeOwnershipRejection::AffineValue)
+    );
+    assert_eq!(
+        error.path().segments(),
+        &[RuntimeOwnershipPathSegment::ProjectNominalMember(0)]
+    );
+}
+
+#[test]
+fn project_nominal_ownership_classifies_variant_payloads_in_declaration_order() {
+    let fixture = fixture(
+        concat!(
+            "enum RetainedChoice { Stable i64, Live CueHandle }\n",
+            "fn retain(value: RetainedChoice) -> RetainedChoice { value }\n",
+        ),
+        None,
+    );
+    let report = analyze(&fixture).expect("variant ownership fixture final analysis");
+    let ty = project_nominal_expression_type(&report, "RetainedChoice");
+    let classifier = RuntimeProducerArgumentClassifier::try_new(&report, &fixture.registered)
+        .expect("final analysis and registered world share one symbol lease");
+    let error = classifier
+        .classify(&ty)
+        .expect_err("the second variant payload is affine");
+
+    assert_eq!(
+        error.rejection(),
+        Some(RuntimeOwnershipRejection::AffineValue)
+    );
+    assert_eq!(
+        error.path().segments(),
+        &[RuntimeOwnershipPathSegment::ProjectNominalMember(1)]
+    );
+}
+
+#[test]
+fn public_ownership_nominal_edge_and_active_depth_limits_are_exact_and_fail_one_over() {
+    let fixture = fixture(
+        concat!(
+            "struct StableRecord { value: i64 }\n",
+            "fn retain(value: StableRecord) -> StableRecord { value }\n",
+        ),
+        None,
+    );
+    let report = analyze(&fixture).expect("nominal work-limit fixture final analysis");
+    let ty = project_nominal_expression_type(&report, "StableRecord");
+    let exact = CheckedOwnershipLimits {
+        max_nominal_edges: 1,
+        max_active_nominal_depth: 1,
+        ..CheckedOwnershipLimits::PRODUCTION
+    };
+
+    fixture
+        .registered
+        .checked_ownership(&report, &ty, exact)
+        .expect("one project nominal exactly consumes one edge and active depth");
+    assert_eq!(
+        fixture.registered.checked_ownership(
+            &report,
+            &ty,
+            CheckedOwnershipLimits {
+                max_nominal_edges: 0,
+                ..exact
+            },
+        ),
+        Err(CheckedOwnershipError::WorkLimit)
+    );
+    assert_eq!(
+        fixture.registered.checked_ownership(
+            &report,
+            &ty,
+            CheckedOwnershipLimits {
+                max_active_nominal_depth: 0,
+                ..exact
+            },
+        ),
+        Err(CheckedOwnershipError::WorkLimit)
+    );
+}
+
+#[test]
+fn public_ownership_evidence_row_limit_is_exact_and_fails_one_over() {
+    let fixture = fixture("fn stable() {}", None);
+    let report = analyze(&fixture).expect("evidence work-limit fixture final analysis");
+    let image = fixture
+        .registered
+        .environment()
+        .nominal_world()
+        .nominal_catalog()
+        .exact(&ownership_test_type_path("ImageHandle"))
+        .expect("standard ImageHandle row")
+        .try_instantiate([])
+        .expect("zero-arity ImageHandle");
+    let exact = CheckedOwnershipLimits {
+        max_evidence_rows: 1,
+        ..CheckedOwnershipLimits::PRODUCTION
+    };
+
+    fixture
+        .registered
+        .checked_ownership(&report, &image, exact)
+        .expect("one consulted opaque row exactly consumes one evidence row");
+    assert_eq!(
+        fixture.registered.checked_ownership(
+            &report,
+            &image,
+            CheckedOwnershipLimits {
+                max_evidence_rows: 0,
+                ..exact
+            },
+        ),
+        Err(CheckedOwnershipError::WorkLimit)
+    );
 }
 
 #[test]

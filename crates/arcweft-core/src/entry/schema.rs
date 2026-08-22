@@ -507,8 +507,8 @@ impl CanonicalRuntimeValueBytes {
                 self.u8(16)?;
                 self.string(value.producer().as_str())?;
                 self.extend(value.semantic_identity().as_bytes())?;
-                self.u8(value.value_class().canonical_tag())?;
-                self.u8(value.persistence().canonical_tag())?;
+                self.u8(value.value_class().semantic_tag())?;
+                self.u8(value.persistence().semantic_tag())?;
                 self.value(value.payload())
             }
             RuntimeValue::Reduction(value) => {

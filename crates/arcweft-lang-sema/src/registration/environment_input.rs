@@ -5,10 +5,7 @@
 
 use std::collections::BTreeSet;
 
-use arcweft_core::{
-    entry::{RuntimeNominalTypeId, TypeLayoutHash},
-    pattern::RuntimeOpaqueTypeProducerId,
-};
+use arcweft_core::entry::{RuntimeNominalTypeId, TypeLayoutHash};
 use arcweft_interaction_model::dialogue::CharacterDialogueCustomFieldId;
 use arcweft_lang_hir::symbol::ProjectSymbolWorldId;
 use arcweft_rust_abi::ArcweftRustTypeParameterIndex;
@@ -27,7 +24,9 @@ use crate::{
     effect_row::EffectRow,
     env::{
         identity::EnvironmentBindingId,
-        nominal::{AcceptedNominalId, AcceptedNominalOrigin, RustPackageId},
+        nominal::{
+            AcceptedNominalId, AcceptedNominalOrigin, AcceptedOpaqueRuntimeCarrier, RustPackageId,
+        },
         rust_metadata::RustTypeMetadataPublicationInput,
     },
 };
@@ -190,7 +189,7 @@ pub enum AcceptedNominalInputVisibility {
 pub struct AcceptedNominalInventoryInput {
     id: AcceptedNominalId,
     arity: u16,
-    runtime_producer: RuntimeOpaqueTypeProducerId,
+    runtime_carrier: AcceptedOpaqueRuntimeCarrier,
     visibility: AcceptedNominalInputVisibility,
     origin: AcceptedNominalOrigin,
     source: SourceSpan,
@@ -378,7 +377,7 @@ impl AcceptedNominalInventoryInput {
     pub fn new(
         id: AcceptedNominalId,
         arity: u16,
-        runtime_producer: RuntimeOpaqueTypeProducerId,
+        runtime_carrier: AcceptedOpaqueRuntimeCarrier,
         visibility: AcceptedNominalInputVisibility,
         origin: AcceptedNominalOrigin,
         source: SourceSpan,
@@ -387,7 +386,7 @@ impl AcceptedNominalInventoryInput {
         Self {
             id,
             arity,
-            runtime_producer,
+            runtime_carrier,
             visibility,
             origin,
             source,
@@ -403,8 +402,8 @@ impl AcceptedNominalInventoryInput {
         self.arity
     }
 
-    pub const fn runtime_producer(&self) -> &RuntimeOpaqueTypeProducerId {
-        &self.runtime_producer
+    pub const fn runtime_carrier(&self) -> &AcceptedOpaqueRuntimeCarrier {
+        &self.runtime_carrier
     }
 
     pub const fn visibility(&self) -> AcceptedNominalInputVisibility {

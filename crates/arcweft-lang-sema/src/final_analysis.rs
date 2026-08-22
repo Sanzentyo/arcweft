@@ -101,7 +101,10 @@ pub use model::{
     CheckedViewCallee, PostfixBracketResolution, RegisteredSemanticValueId,
     StableCheckedValueCoordinate, StablePatternCoordinate, StablePatternCoordinateStep,
 };
-pub use nominal_schema::{NominalSchemaPath, NominalSchemaPathStep, NominalSchemaProjectionError};
+pub use nominal_schema::{
+    NominalSchemaPath, NominalSchemaPathStep, NominalSchemaProjectionError,
+    RuntimeProjectNominalKind, RuntimeProjectNominalProjection, project_runtime_type_schema,
+};
 pub use recovery_diagnostics::{
     CallableTailRecoveryDiagnostic, CallableTailRecoveryProjectionError,
     project_callable_tail_recovery_diagnostics,

@@ -64,6 +64,19 @@ pub struct FinalSemanticAnalysis {
 }
 
 impl FinalSemanticAnalysis {
+    #[allow(
+        dead_code,
+        reason = "used only by the crate-private Cut 2 ownership classifier until Cut 5 publication"
+    )]
+    pub(crate) fn matches_symbol_lease(&self, symbols: &ProjectSymbolTable) -> bool {
+        symbols.world() == &self.symbol_world
+            && symbols.revision() == &self.symbol_revision
+            && self
+                .checked_callables
+                .validate_project_generation(symbols.world(), *symbols.revision())
+                .is_ok()
+    }
+
     /// Validates and publishes a complete semantic generation.
     #[cfg(test)]
     pub(crate) fn try_new(

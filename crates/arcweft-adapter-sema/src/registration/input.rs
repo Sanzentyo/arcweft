@@ -5,7 +5,10 @@ pub(super) mod source;
 
 use std::sync::Arc;
 
-use arcweft_core::pattern::RuntimeOpaqueTypeProducerId;
+use arcweft_core::{
+    pattern::RuntimeOpaqueTypeProducerId,
+    value::{RuntimeOpaquePersistence, RuntimeOpaqueValueClass},
+};
 use arcweft_lang_hir::symbol::CallablePackageId;
 use arcweft_lang_sema::{
     callable::{
@@ -22,7 +25,8 @@ use arcweft_lang_sema::{
     env::{
         identity::EnvironmentBindingId,
         nominal::{
-            AcceptedNominalId, AcceptedNominalOrigin, AcceptedNominalOwnerId, RustPackageId,
+            AcceptedNominalId, AcceptedNominalOrigin, AcceptedNominalOwnerId,
+            AcceptedOpaqueRuntimeCarrier, RustPackageId,
         },
         rust_metadata::{
             RustStructMetadataInput, RustTypeMetadataPublicationIdentity,
@@ -266,8 +270,12 @@ impl<'a> EnvironmentInputProjector<'a> {
                         path,
                     ),
                     declaration.arity(),
-                    ExternalOpaqueProducer::Adapter(declaration.opaque_producer())
-                        .project(producer_source)?,
+                    AcceptedOpaqueRuntimeCarrier::new(
+                        ExternalOpaqueProducer::Adapter(declaration.opaque_producer())
+                            .project(producer_source)?,
+                        RuntimeOpaqueValueClass::Plain,
+                        RuntimeOpaquePersistence::ConstantAndSnapshot,
+                    ),
                     match declaration.visibility() {
                         AdapterNominalVisibility::Public => AcceptedNominalInputVisibility::Visible,
                         AdapterNominalVisibility::Private => {
@@ -410,8 +418,12 @@ impl<'a> EnvironmentInputProjector<'a> {
                     value: rust_type.decl().parameters.len(),
                 }
             })?,
-            ExternalOpaqueProducer::Rust(rust_type.decl().opaque_producer())
-                .project(producer_source)?,
+            AcceptedOpaqueRuntimeCarrier::new(
+                ExternalOpaqueProducer::Rust(rust_type.decl().opaque_producer())
+                    .project(producer_source)?,
+                RuntimeOpaqueValueClass::Plain,
+                RuntimeOpaquePersistence::ConstantAndSnapshot,
+            ),
             AcceptedNominalInputVisibility::Visible,
             AcceptedNominalOrigin::RustExport,
             source.clone(),

@@ -1,6 +1,6 @@
 //! Accepted-world projection of source-backed environment inputs.
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 
 use arcweft_rust_abi::ArcweftRustTypeParameterIndex;
 use arcweft_source::SourceSpan;
@@ -473,14 +473,12 @@ impl AcceptedNominalWorld {
         variants: &[RustVariantMetadataInput],
         binder: &MetadataBinder,
         limits: NominalResolutionLimits,
-    ) -> Result<BTreeMap<String, EnumVariantPayload>, EnvironmentPublicationProjectionReport> {
-        let mut projected = BTreeMap::new();
+    ) -> Result<Box<[(String, EnumVariantPayload)]>, EnvironmentPublicationProjectionReport> {
+        let mut names = BTreeSet::new();
+        let mut projected = Vec::with_capacity(variants.len());
         for variant in variants {
             let payload = self.project_rust_variant_payload(input, variant, binder, limits)?;
-            if projected
-                .insert(variant.name().to_owned(), payload)
-                .is_some()
-            {
+            if !names.insert(variant.name().to_owned()) {
                 return Err(EnvironmentPublicationProjectionReport::one(
                     type_diagnostic(
                         input.item(),
@@ -496,8 +494,9 @@ impl AcceptedNominalWorld {
                     ),
                 ));
             }
+            projected.push((variant.name().to_owned(), payload));
         }
-        Ok(projected)
+        Ok(projected.into_boxed_slice())
     }
 
     fn project_rust_variant_payload(

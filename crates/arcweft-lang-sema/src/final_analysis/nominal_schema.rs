@@ -3,12 +3,12 @@ use thiserror::Error;
 
 use arcweft_core::{
     entry::{
-        RuntimeBytesFormat, RuntimeEnumRepr, RuntimeEnumTagStyle, RuntimeSchemaError,
+        RuntimeBytesFormat, RuntimeEnumRepr, RuntimeEnumTagStyle, RuntimeNominalTypeId,
         RuntimeSchemaField, RuntimeSchemaVariant, RuntimeTypeSchema, TypeLayoutHash,
     },
-    pattern::RuntimeOpaqueTypeProducerId,
+    pattern::RuntimeSemanticTypeId,
 };
-use arcweft_data::{BytesFormat, FieldShape, TypeShape, VariantShape};
+use arcweft_data::{BytesFormat, EnumRepr, EnumTagStyle, FieldShape, TypeShape, VariantShape};
 use arcweft_lang_hir::{
     identity::TypeId,
     symbol::{
@@ -22,6 +22,7 @@ use arcweft_lang_hir::{
 use arcweft_lang_syntax::ast::module_path::ModuleSegment;
 
 use crate::{
+    env::nominal::AcceptedNominalId,
     final_analysis::{CheckedProjectNominal, FinalSemanticAnalysis},
     types::{GenericTypeOwnerId, GenericTypeParameterId, MapKind, SemanticTypeDigest, TypeKind},
 };
@@ -103,7 +104,7 @@ pub enum NominalSchemaProjectionError {
     #[error("accepted opaque type has no closed project-nominal schema layout")]
     OpaqueLeaf {
         path: NominalSchemaPath,
-        producer: RuntimeOpaqueTypeProducerId,
+        nominal: AcceptedNominalId,
         semantic_identity: SemanticTypeDigest,
     },
     #[error("checked type is not a supported closed project-nominal schema leaf")]
@@ -116,13 +117,54 @@ pub enum NominalSchemaProjectionError {
         path: NominalSchemaPath,
         parameter: GenericTypeParameterId,
     },
+    #[error("project nominal `{nominal}` is not a runtime struct or enum")]
+    UnsupportedDeclaration { nominal: String },
+    #[error("project nominal `{nominal}` has an invalid runtime identity: {reason}")]
+    InvalidRuntimeIdentity { nominal: String, reason: String },
+    #[error("project nominal `{nominal}` has an invalid canonical runtime schema: {reason}")]
+    InvalidRuntimeSchema { nominal: String, reason: String },
     #[error("{path}: {reason}")]
     InvalidShape { path: String, reason: String },
-    #[error("project-nominal runtime schema layout hash failed: {source}")]
-    RuntimeLayout {
-        #[source]
-        source: RuntimeSchemaError,
-    },
+}
+
+/// Closed declaration family retained with one checked runtime nominal schema.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum RuntimeProjectNominalKind {
+    Record,
+    Variant,
+}
+
+/// Sole semantic projection of one checked project nominal into its stable
+/// runtime identity and canonical layout schema.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct RuntimeProjectNominalProjection {
+    nominal: RuntimeNominalTypeId,
+    semantic_identity: RuntimeSemanticTypeId,
+    layout: TypeLayoutHash,
+    schema: RuntimeTypeSchema,
+    kind: RuntimeProjectNominalKind,
+}
+
+impl RuntimeProjectNominalProjection {
+    pub const fn nominal(&self) -> &RuntimeNominalTypeId {
+        &self.nominal
+    }
+
+    pub const fn semantic_identity(&self) -> RuntimeSemanticTypeId {
+        self.semantic_identity
+    }
+
+    pub const fn layout(&self) -> TypeLayoutHash {
+        self.layout
+    }
+
+    pub const fn schema(&self) -> &RuntimeTypeSchema {
+        &self.schema
+    }
+
+    pub const fn kind(&self) -> RuntimeProjectNominalKind {
+        self.kind
+    }
 }
 
 impl NominalSchemaProjectionError {
@@ -137,11 +179,11 @@ impl NominalSchemaProjectionError {
         match self {
             Self::OpaqueLeaf {
                 path,
-                producer,
+                nominal,
                 semantic_identity,
             } => Self::OpaqueLeaf {
                 path: path.prepended(step),
-                producer,
+                nominal,
                 semantic_identity,
             },
             Self::UnsupportedLeaf { path, ty } => Self::UnsupportedLeaf {
@@ -193,30 +235,215 @@ impl FinalSemanticAnalysis {
         NominalSchemaExpander::new(symbols, self).schema_checked(declaration, nominal.arguments())
     }
 
-    /// Projects one checked project nominal into the runtime schema authority.
-    ///
-    /// The data-shape projection above remains the semantic source for the
-    /// accepted nominal fields and variants. This adapter only translates that
-    /// typed product into the core runtime schema; canonical layout bytes and
-    /// the resulting hash remain owned by [`RuntimeTypeSchema`].
+    /// Projects one already resolved project nominal through the same schema
+    /// owner used by Entry and runtime lowering.
     pub fn project_runtime_nominal(
         &self,
         symbols: &ProjectSymbolTable,
-        nominal: &CheckedProjectNominal,
-    ) -> Result<RuntimeTypeSchema, NominalSchemaProjectionError> {
-        self.project_nominal_schema(symbols, nominal)
-            .map(|shape| runtime_schema(&shape))
+        nominal: &crate::types::ProjectNominalType,
+    ) -> Result<RuntimeProjectNominalProjection, NominalSchemaProjectionError> {
+        let declaration = symbols.nominal(nominal.declaration()).ok_or_else(|| {
+            NominalSchemaProjectionError::MissingDeclaration {
+                nominal: nominal.declaration().qualified_name(),
+            }
+        })?;
+        let checked = CheckedProjectNominal::new(
+            nominal.declaration().clone(),
+            declaration.owner(),
+            TypeKind::ProjectNominal(nominal.clone()).semantic_identity_digest(),
+            nominal.arguments().to_vec(),
+        );
+        self.project_checked_runtime_nominal(symbols, &checked)
     }
 
-    /// Returns the canonical core layout hash for one accepted project nominal.
+    /// Projects an exact checked nominal fact without rebuilding its retained
+    /// semantic identity or final-HIR owner.
+    pub fn project_checked_runtime_nominal(
+        &self,
+        symbols: &ProjectSymbolTable,
+        checked: &CheckedProjectNominal,
+    ) -> Result<RuntimeProjectNominalProjection, NominalSchemaProjectionError> {
+        let declaration = symbols.nominal(checked.declaration()).ok_or_else(|| {
+            NominalSchemaProjectionError::MissingDeclaration {
+                nominal: checked.declaration().qualified_name(),
+            }
+        })?;
+        let kind = match declaration.body() {
+            ProjectNominalBody::Struct { .. } => RuntimeProjectNominalKind::Record,
+            ProjectNominalBody::Enum { .. } => RuntimeProjectNominalKind::Variant,
+            ProjectNominalBody::TypeAlias { .. } => {
+                return Err(NominalSchemaProjectionError::UnsupportedDeclaration {
+                    nominal: checked.declaration().qualified_name(),
+                });
+            }
+        };
+        let semantic_identity = RuntimeSemanticTypeId::from_bytes(*checked.identity().as_bytes());
+        let shape = self.project_nominal_schema(symbols, checked)?;
+        let schema = project_runtime_type_schema(&shape);
+        let runtime_name = runtime_project_nominal_name(checked.declaration());
+        let runtime_nominal =
+            RuntimeNominalTypeId::try_new(runtime_name.clone()).map_err(|error| {
+                NominalSchemaProjectionError::InvalidRuntimeIdentity {
+                    nominal: runtime_name.clone(),
+                    reason: error.to_string(),
+                }
+            })?;
+        let layout = schema.try_layout_hash().map_err(|error| {
+            NominalSchemaProjectionError::InvalidRuntimeSchema {
+                nominal: runtime_name,
+                reason: error.to_string(),
+            }
+        })?;
+        Ok(RuntimeProjectNominalProjection {
+            nominal: runtime_nominal,
+            semantic_identity,
+            layout,
+            schema,
+            kind,
+        })
+    }
+
+    /// Returns the canonical core layout hash for an exact checked nominal
+    /// fact without publishing a second layout transcript.
     pub fn project_runtime_nominal_layout(
         &self,
         symbols: &ProjectSymbolTable,
         nominal: &CheckedProjectNominal,
     ) -> Result<TypeLayoutHash, NominalSchemaProjectionError> {
-        self.project_runtime_nominal(symbols, nominal)?
-            .try_layout_hash()
-            .map_err(|source| NominalSchemaProjectionError::RuntimeLayout { source })
+        self.project_checked_runtime_nominal(symbols, nominal)
+            .map(|projection| projection.layout())
+    }
+}
+
+fn runtime_project_nominal_name(id: &ProjectNominalDeclarationId) -> String {
+    let local = id
+        .owner_path()
+        .iter()
+        .map(ModuleSegment::as_str)
+        .chain(std::iter::once(id.name().as_str()))
+        .collect::<Vec<_>>()
+        .join(".");
+    format!(
+        "{}::{}::{local}",
+        id.world().package().as_str(),
+        id.module()
+    )
+}
+
+/// Projects the accepted semantic data-shape algebra into the canonical core
+/// runtime schema algebra.
+///
+/// This is the sole cross-layer projection used by Entry and nominal runtime
+/// layout construction. Callers must not retain a second shape-to-schema
+/// mapping or derive layout identity from presentation text.
+#[must_use]
+pub fn project_runtime_type_schema(shape: &TypeShape) -> RuntimeTypeSchema {
+    match shape {
+        TypeShape::Unit => RuntimeTypeSchema::Unit,
+        TypeShape::Bool => RuntimeTypeSchema::Bool,
+        TypeShape::I8 => RuntimeTypeSchema::I8,
+        TypeShape::I16 => RuntimeTypeSchema::I16,
+        TypeShape::I32 => RuntimeTypeSchema::I32,
+        TypeShape::I64 => RuntimeTypeSchema::I64,
+        TypeShape::I128 => RuntimeTypeSchema::I128,
+        TypeShape::Isize => RuntimeTypeSchema::ISize,
+        TypeShape::U8 => RuntimeTypeSchema::U8,
+        TypeShape::U16 => RuntimeTypeSchema::U16,
+        TypeShape::U32 => RuntimeTypeSchema::U32,
+        TypeShape::U64 => RuntimeTypeSchema::U64,
+        TypeShape::U128 => RuntimeTypeSchema::U128,
+        TypeShape::Usize => RuntimeTypeSchema::USize,
+        TypeShape::F32 => RuntimeTypeSchema::F32,
+        TypeShape::F64 => RuntimeTypeSchema::F64,
+        TypeShape::String => RuntimeTypeSchema::String,
+        TypeShape::Char => RuntimeTypeSchema::Char,
+        TypeShape::Bytes { format } => RuntimeTypeSchema::Bytes {
+            format: project_bytes_format(*format),
+        },
+        TypeShape::Option(inner) => {
+            RuntimeTypeSchema::Option(Box::new(project_runtime_type_schema(inner)))
+        }
+        TypeShape::Seq(inner) => {
+            RuntimeTypeSchema::Seq(Box::new(project_runtime_type_schema(inner)))
+        }
+        TypeShape::Map { key, value } => RuntimeTypeSchema::Map {
+            key: Box::new(project_runtime_type_schema(key)),
+            value: Box::new(project_runtime_type_schema(value)),
+        },
+        TypeShape::Record {
+            name,
+            fields,
+            policy,
+        } => RuntimeTypeSchema::Record {
+            name: name.clone(),
+            fields: fields
+                .iter()
+                .map(|field| RuntimeSchemaField {
+                    rust_name: field.rust_name.clone(),
+                    wire_name: field.wire_name.clone(),
+                    schema: project_runtime_type_schema(&field.shape),
+                    has_default: field.has_default,
+                    skip: field.skip,
+                    bytes_format: field.bytes_format.map(project_bytes_format),
+                })
+                .collect(),
+            deny_unknown_fields: policy.deny_unknown_fields,
+        },
+        TypeShape::Enum {
+            name,
+            variants,
+            tag,
+            repr,
+        } => RuntimeTypeSchema::Enum {
+            name: name.clone(),
+            variants: variants
+                .iter()
+                .map(|variant| RuntimeSchemaVariant {
+                    rust_name: variant.rust_name.clone(),
+                    wire_name: variant.wire_name.clone(),
+                    payload: variant.payload.as_ref().map(project_runtime_type_schema),
+                    discriminant: variant.discriminant,
+                })
+                .collect(),
+            tag: match tag {
+                EnumTagStyle::External => RuntimeEnumTagStyle::External,
+                EnumTagStyle::Internal { tag } => {
+                    RuntimeEnumTagStyle::Internal { tag: tag.clone() }
+                }
+                EnumTagStyle::Adjacent { tag, content } => RuntimeEnumTagStyle::Adjacent {
+                    tag: tag.clone(),
+                    content: content.clone(),
+                },
+            },
+            repr: repr.map(project_enum_repr),
+        },
+        TypeShape::Named(name) => RuntimeTypeSchema::Named(name.clone()),
+    }
+}
+
+const fn project_bytes_format(format: BytesFormat) -> RuntimeBytesFormat {
+    match format {
+        BytesFormat::Binary => RuntimeBytesFormat::Binary,
+        BytesFormat::Base64 => RuntimeBytesFormat::Base64,
+        BytesFormat::Hex => RuntimeBytesFormat::Hex,
+        BytesFormat::Array => RuntimeBytesFormat::Array,
+    }
+}
+
+const fn project_enum_repr(repr: EnumRepr) -> RuntimeEnumRepr {
+    match repr {
+        EnumRepr::I8 => RuntimeEnumRepr::I8,
+        EnumRepr::I16 => RuntimeEnumRepr::I16,
+        EnumRepr::I32 => RuntimeEnumRepr::I32,
+        EnumRepr::I64 => RuntimeEnumRepr::I64,
+        EnumRepr::I128 => RuntimeEnumRepr::I128,
+        EnumRepr::Isize => RuntimeEnumRepr::ISize,
+        EnumRepr::U8 => RuntimeEnumRepr::U8,
+        EnumRepr::U16 => RuntimeEnumRepr::U16,
+        EnumRepr::U32 => RuntimeEnumRepr::U32,
+        EnumRepr::U64 => RuntimeEnumRepr::U64,
+        EnumRepr::U128 => RuntimeEnumRepr::U128,
+        EnumRepr::Usize => RuntimeEnumRepr::USize,
     }
 }
 
@@ -403,7 +630,7 @@ impl<'a> NominalSchemaExpander<'a> {
             TypeKind::AcceptedNominal(nominal) => {
                 return Err(NominalSchemaProjectionError::OpaqueLeaf {
                     path: NominalSchemaPath::default(),
-                    producer: nominal.runtime_producer().clone(),
+                    nominal: nominal.declaration().clone(),
                     semantic_identity: ty.semantic_identity_digest(),
                 });
             }
@@ -483,112 +710,4 @@ fn canonical_nominal_name(id: &ProjectNominalDeclarationId) -> String {
         id.module(),
         id.name()
     )
-}
-
-fn runtime_schema(shape: &TypeShape) -> RuntimeTypeSchema {
-    match shape {
-        TypeShape::Unit => RuntimeTypeSchema::Unit,
-        TypeShape::Bool => RuntimeTypeSchema::Bool,
-        TypeShape::I8 => RuntimeTypeSchema::I8,
-        TypeShape::I16 => RuntimeTypeSchema::I16,
-        TypeShape::I32 => RuntimeTypeSchema::I32,
-        TypeShape::I64 => RuntimeTypeSchema::I64,
-        TypeShape::I128 => RuntimeTypeSchema::I128,
-        TypeShape::Isize => RuntimeTypeSchema::ISize,
-        TypeShape::U8 => RuntimeTypeSchema::U8,
-        TypeShape::U16 => RuntimeTypeSchema::U16,
-        TypeShape::U32 => RuntimeTypeSchema::U32,
-        TypeShape::U64 => RuntimeTypeSchema::U64,
-        TypeShape::U128 => RuntimeTypeSchema::U128,
-        TypeShape::Usize => RuntimeTypeSchema::USize,
-        TypeShape::F32 => RuntimeTypeSchema::F32,
-        TypeShape::F64 => RuntimeTypeSchema::F64,
-        TypeShape::String => RuntimeTypeSchema::String,
-        TypeShape::Char => RuntimeTypeSchema::Char,
-        TypeShape::Bytes { format } => RuntimeTypeSchema::Bytes {
-            format: runtime_bytes_format(*format),
-        },
-        TypeShape::Option(inner) => RuntimeTypeSchema::Option(Box::new(runtime_schema(inner))),
-        TypeShape::Seq(inner) => RuntimeTypeSchema::Seq(Box::new(runtime_schema(inner))),
-        TypeShape::Map { key, value } => RuntimeTypeSchema::Map {
-            key: Box::new(runtime_schema(key)),
-            value: Box::new(runtime_schema(value)),
-        },
-        TypeShape::Record {
-            name,
-            fields,
-            policy,
-        } => RuntimeTypeSchema::Record {
-            name: name.clone(),
-            fields: fields
-                .iter()
-                .map(|field| RuntimeSchemaField {
-                    rust_name: field.rust_name.clone(),
-                    wire_name: field.wire_name.clone(),
-                    schema: runtime_schema(&field.shape),
-                    has_default: field.has_default,
-                    skip: field.skip,
-                    bytes_format: field.bytes_format.map(runtime_bytes_format),
-                })
-                .collect(),
-            deny_unknown_fields: policy.deny_unknown_fields,
-        },
-        TypeShape::Enum {
-            name,
-            variants,
-            tag,
-            repr,
-        } => RuntimeTypeSchema::Enum {
-            name: name.clone(),
-            variants: variants
-                .iter()
-                .map(|variant| RuntimeSchemaVariant {
-                    rust_name: variant.rust_name.clone(),
-                    wire_name: variant.wire_name.clone(),
-                    payload: variant.payload.as_ref().map(runtime_schema),
-                    discriminant: variant.discriminant,
-                })
-                .collect(),
-            tag: match tag {
-                arcweft_data::EnumTagStyle::External => RuntimeEnumTagStyle::External,
-                arcweft_data::EnumTagStyle::Internal { tag } => {
-                    RuntimeEnumTagStyle::Internal { tag: tag.clone() }
-                }
-                arcweft_data::EnumTagStyle::Adjacent { tag, content } => {
-                    RuntimeEnumTagStyle::Adjacent {
-                        tag: tag.clone(),
-                        content: content.clone(),
-                    }
-                }
-            },
-            repr: repr.map(runtime_enum_repr),
-        },
-        TypeShape::Named(name) => RuntimeTypeSchema::Named(name.clone()),
-    }
-}
-
-const fn runtime_bytes_format(format: BytesFormat) -> RuntimeBytesFormat {
-    match format {
-        BytesFormat::Binary => RuntimeBytesFormat::Binary,
-        BytesFormat::Base64 => RuntimeBytesFormat::Base64,
-        BytesFormat::Hex => RuntimeBytesFormat::Hex,
-        BytesFormat::Array => RuntimeBytesFormat::Array,
-    }
-}
-
-const fn runtime_enum_repr(repr: arcweft_data::EnumRepr) -> RuntimeEnumRepr {
-    match repr {
-        arcweft_data::EnumRepr::I8 => RuntimeEnumRepr::I8,
-        arcweft_data::EnumRepr::I16 => RuntimeEnumRepr::I16,
-        arcweft_data::EnumRepr::I32 => RuntimeEnumRepr::I32,
-        arcweft_data::EnumRepr::I64 => RuntimeEnumRepr::I64,
-        arcweft_data::EnumRepr::I128 => RuntimeEnumRepr::I128,
-        arcweft_data::EnumRepr::Isize => RuntimeEnumRepr::ISize,
-        arcweft_data::EnumRepr::U8 => RuntimeEnumRepr::U8,
-        arcweft_data::EnumRepr::U16 => RuntimeEnumRepr::U16,
-        arcweft_data::EnumRepr::U32 => RuntimeEnumRepr::U32,
-        arcweft_data::EnumRepr::U64 => RuntimeEnumRepr::U64,
-        arcweft_data::EnumRepr::U128 => RuntimeEnumRepr::U128,
-        arcweft_data::EnumRepr::Usize => RuntimeEnumRepr::USize,
-    }
 }

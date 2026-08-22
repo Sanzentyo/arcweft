@@ -4,7 +4,10 @@ use core::{fmt, hash::Hasher};
 use std::{collections::BTreeMap, hash::Hash};
 
 use arcweft_character::id::CharacterId;
-use arcweft_core::pattern::RuntimeOpaqueTypeProducerId;
+use arcweft_core::{
+    pattern::RuntimeOpaqueTypeProducerId,
+    value::{RuntimeOpaquePersistence, RuntimeOpaqueValueClass},
+};
 use arcweft_lang_syntax::{
     ast::{
         module_path::{CanonicalModulePath, ModulePathRoot},
@@ -147,10 +150,49 @@ pub enum AcceptedNominalOrigin {
 #[derive(Clone, Debug, Eq, Hash, PartialEq)]
 pub enum AcceptedNominalSemantics {
     Exact(TypeKind),
-    Opaque {
-        producer: RuntimeOpaqueTypeProducerId,
-    },
+    Opaque(AcceptedOpaqueRuntimeCarrier),
     Character(CharacterNominalType),
+}
+
+/// Concrete runtime carrier admitted for one accepted nominal declaration.
+///
+/// The carrier is catalog evidence rather than a property copied into every
+/// instantiated [`AcceptedNominalType`](crate::types::AcceptedNominalType).
+#[derive(Clone, Debug, Eq, Hash, PartialEq)]
+pub struct AcceptedOpaqueRuntimeCarrier {
+    producer: RuntimeOpaqueTypeProducerId,
+    value_class: RuntimeOpaqueValueClass,
+    persistence: RuntimeOpaquePersistence,
+}
+
+impl AcceptedOpaqueRuntimeCarrier {
+    #[must_use]
+    pub const fn new(
+        producer: RuntimeOpaqueTypeProducerId,
+        value_class: RuntimeOpaqueValueClass,
+        persistence: RuntimeOpaquePersistence,
+    ) -> Self {
+        Self {
+            producer,
+            value_class,
+            persistence,
+        }
+    }
+
+    #[must_use]
+    pub const fn producer(&self) -> &RuntimeOpaqueTypeProducerId {
+        &self.producer
+    }
+
+    #[must_use]
+    pub const fn value_class(&self) -> RuntimeOpaqueValueClass {
+        self.value_class
+    }
+
+    #[must_use]
+    pub const fn persistence(&self) -> RuntimeOpaquePersistence {
+        self.persistence
+    }
 }
 
 /// One exact accepted source-visible nominal declaration.
@@ -399,18 +441,24 @@ impl AcceptedNominalRecord {
         })
     }
 
-    /// Validates and creates one producer-bearing opaque accepted record.
+    /// Validates and creates one opaque accepted runtime-carrier record.
     pub fn try_new_opaque(
         id: AcceptedNominalId,
         arity: u16,
         producer: RuntimeOpaqueTypeProducerId,
+        value_class: RuntimeOpaqueValueClass,
+        persistence: RuntimeOpaquePersistence,
         origin: AcceptedNominalOrigin,
         source: Option<SourceSpan>,
     ) -> Result<Self, AcceptedNominalCatalogError> {
         Self::try_new(
             id,
             arity,
-            AcceptedNominalSemantics::Opaque { producer },
+            AcceptedNominalSemantics::Opaque(AcceptedOpaqueRuntimeCarrier::new(
+                producer,
+                value_class,
+                persistence,
+            )),
             origin,
             source,
         )
@@ -451,12 +499,8 @@ impl AcceptedNominalRecord {
         }
         match &self.semantics {
             AcceptedNominalSemantics::Exact(ty) if arguments.is_empty() => Ok(ty.clone()),
-            AcceptedNominalSemantics::Opaque { producer } => Ok(TypeKind::AcceptedNominal(
-                crate::types::AcceptedNominalType::new(
-                    self.id.clone(),
-                    arguments,
-                    producer.clone(),
-                ),
+            AcceptedNominalSemantics::Opaque(_) => Ok(TypeKind::AcceptedNominal(
+                crate::types::AcceptedNominalType::new(self.id.clone(), arguments),
             )),
             AcceptedNominalSemantics::Character(character) if arguments.is_empty() => {
                 Ok(TypeKind::CharacterNominal(character.clone()))
@@ -897,6 +941,8 @@ fn standard_opaque_record(
         spec.arity,
         RuntimeOpaqueTypeProducerId::try_new(spec.producer)
             .expect("fixed standard opaque producer IDs are valid"),
+        RuntimeOpaqueValueClass::Plain,
+        RuntimeOpaquePersistence::ConstantAndSnapshot,
         origin,
         None,
     )

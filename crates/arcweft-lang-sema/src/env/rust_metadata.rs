@@ -126,7 +126,10 @@ pub enum AcceptedRustTypeMetadataKind {
         shape: AcceptedRustStructShape,
     },
     Enum {
-        variants: BTreeMap<String, EnumVariantPayload>,
+        /// Variants retain the declaration order supplied by the Rust
+        /// metadata producer.  Variant ordinals are semantic, so this must
+        /// not be normalized through a key-sorting map.
+        variants: Box<[(String, EnumVariantPayload)]>,
     },
     Newtype {
         inner: TypeKind,
@@ -422,7 +425,8 @@ impl AcceptedRustTypeMetadataKind {
                     .map(|(name, payload)| {
                         (name.clone(), substitute_variant(payload, substitutions))
                     })
-                    .collect(),
+                    .collect::<Vec<_>>()
+                    .into_boxed_slice(),
             },
             Self::Newtype { inner } => Self::Newtype {
                 inner: inner.substitute_type_parameters(substitutions),
@@ -629,7 +633,6 @@ fn hash_len(hasher: &mut blake3::Hasher, value: usize) {
 
 #[cfg(test)]
 mod tests {
-    use arcweft_core::pattern::RuntimeOpaqueTypeProducerId;
     use arcweft_lang_syntax::ast::module_path::ModulePathRoot;
     use arcweft_lang_syntax::ast::symbol_path::{ProjectSymbolPath, ProjectSymbolSegment};
     use arcweft_lang_syntax::types::TypePath;
@@ -640,6 +643,38 @@ mod tests {
         env::nominal::AcceptedNominalOwnerId,
         types::{GenericTypeOwnerId, GenericTypeParameterId},
     };
+
+    #[test]
+    fn enum_metadata_preserves_declaration_order_for_digest_and_case_ordinals() {
+        let id = accepted_id("tooling", "Rank");
+        let forward = enum_metadata(&id, ["Bronze", "Custom"]);
+        let reverse = enum_metadata(&id, ["Custom", "Bronze"]);
+        let forward_catalog = AcceptedRustTypeMetadataCatalog::try_new([forward])
+            .expect("forward enum metadata catalog");
+        let reverse_catalog = AcceptedRustTypeMetadataCatalog::try_new([reverse])
+            .expect("reverse enum metadata catalog");
+
+        let AcceptedRustTypeMetadataKind::Enum { variants } = forward_catalog
+            .get(&id)
+            .expect("forward enum metadata")
+            .kind()
+        else {
+            panic!("metadata remains an enum");
+        };
+        assert_eq!(
+            variants
+                .iter()
+                .map(|(name, _)| name.as_str())
+                .collect::<Vec<_>>(),
+            ["Bronze", "Custom"]
+        );
+        assert_eq!(
+            variants.iter().position(|(name, _)| name == "Custom"),
+            Some(1),
+            "the ordinal is the source declaration ordinal"
+        );
+        assert_ne!(forward_catalog.digest(), reverse_catalog.digest());
+    }
 
     #[test]
     fn metadata_catalog_digest_is_order_independent_and_identity_complete() {
@@ -706,12 +741,7 @@ mod tests {
             AcceptedRustTypeMetadataCatalog::try_new([record]).expect("generic metadata catalog");
         let before = catalog.digest();
         let instantiated = catalog
-            .instantiate(&AcceptedNominalType::new(
-                id,
-                [TypeKind::I32],
-                RuntimeOpaqueTypeProducerId::try_new("fixture.lang-sema.metadata")
-                    .expect("valid producer"),
-            ))
+            .instantiate(&AcceptedNominalType::new(id, [TypeKind::I32]))
             .expect("generic metadata instantiation");
         assert!(matches!(
             instantiated.kind(),
@@ -752,6 +782,39 @@ mod tests {
                 &format!("{rust_item} {version}"),
             ),
         )
+    }
+
+    fn metadata_with_kind(
+        id: &AcceptedNominalId,
+        kind: AcceptedRustTypeMetadataKind,
+        parameters: impl Into<Box<[GenericTypeParameterId]>>,
+    ) -> AcceptedRustTypeMetadata {
+        let package = match id.owner() {
+            AcceptedNominalOwnerId::RustPackage(package) => package.clone(),
+            _ => panic!("test metadata owner is a Rust package"),
+        };
+        AcceptedRustTypeMetadata::new(
+            id.clone(),
+            package.clone(),
+            RustPackageProvenance::try_new(package.as_str(), "1.0.0", None).expect("provenance"),
+            RustItemPath::try_new(format!("{}::{}", package, id.canonical_path()))
+                .expect("Rust item"),
+            parameters,
+            kind,
+            source("metadata://tooling/type", "type metadata"),
+        )
+    }
+
+    fn enum_metadata(
+        id: &AcceptedNominalId,
+        names: impl IntoIterator<Item = &'static str>,
+    ) -> AcceptedRustTypeMetadata {
+        let variants = names
+            .into_iter()
+            .map(|name| (name.to_owned(), EnumVariantPayload::Unit))
+            .collect::<Vec<_>>()
+            .into_boxed_slice();
+        metadata_with_kind(id, AcceptedRustTypeMetadataKind::Enum { variants }, [])
     }
 
     fn accepted_id(package: &str, name: &str) -> AcceptedNominalId {

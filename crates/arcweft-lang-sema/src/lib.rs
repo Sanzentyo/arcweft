@@ -20,6 +20,11 @@ pub mod entry;
 pub mod env;
 pub mod final_analysis;
 pub mod nominal;
+pub mod ownership;
+pub use ownership::{
+    CheckedNeedProducerAdmissionDigest, CheckedOwnershipCertificate, CheckedOwnershipError,
+    CheckedOwnershipLimits, OwnershipEvidenceDigest, RetainedValueDisposition,
+};
 pub mod project_index;
 pub mod proof_return;
 pub mod registration;

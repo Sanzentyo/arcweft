@@ -20,10 +20,8 @@ pub use cache_batch::{InMemoryProjectCompileCache, NoProjectCompileCache, Projec
 pub use dialogue_profile::{
     CheckedDialogueProfile, DialogueProfileAdmissionError, DialogueProfileOwner,
 };
+pub(crate) use entry_runtime::EntryRuntimeProjection;
 use entry_runtime::runtime_entry_lowering_input;
-pub(crate) use entry_runtime::{
-    EntryRuntimeProjection, EntryRuntimeProjectionError, RuntimeSchemaProjection,
-};
 pub use registration::{
     AcceptedLaunchProfileInput, ProjectCompilationContext, ProjectEntrySelection,
     ProjectEntrySelectionKind,
@@ -946,6 +944,7 @@ where
         let runtime_facts = lower::project_runtime_semantic_facts(
             executable,
             registered_world.symbols(),
+            &registered_world,
             &final_analysis,
             &runtime_reachability,
             Some((dialogue_profile.presentation(), dialogue_profile.revision())),

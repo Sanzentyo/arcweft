@@ -45,6 +45,53 @@ pub enum RuntimeAgentOperationalType {
 }
 
 impl RuntimeAgentOperationalType {
+    /// Stable kind tag shared by Agent DTO type and snapshot evidence.
+    #[must_use]
+    pub const fn semantic_tag(self) -> u8 {
+        match self {
+            Self::DebugStatePath => 0,
+            Self::ObservationFieldPath => 1,
+            Self::Probe => 2,
+            Self::Predicate => 3,
+            Self::Observation => 4,
+            Self::ObservedObject => 5,
+            Self::BoundingBox => 6,
+            Self::ActionName => 7,
+            Self::ActionTarget => 8,
+            Self::ActionResult => 9,
+            Self::AgentValue => 10,
+            Self::DataFormat => 11,
+            Self::DataShape => 12,
+            Self::EntityMetadata => 13,
+            Self::SourceAnchor => 14,
+            Self::ProjectGraphNeighborhood => 15,
+            Self::ProjectGraphSymbol => 16,
+            Self::ProjectGraphEdge => 17,
+            Self::CaptureTarget => 18,
+            Self::CaptureReference => 19,
+            Self::Resource => 20,
+            Self::ResourceBody => 21,
+            Self::RagContextPack => 22,
+            Self::ObservedObjectId => 23,
+            Self::CaptureFormat => 24,
+            Self::CaptureKind => 25,
+            Self::Diagnostics => 26,
+            Self::WaitError => 27,
+            Self::ViewportPoint => 28,
+            Self::PointerButton => 29,
+            Self::RagError => 30,
+        }
+    }
+
+    /// Digest of the core-owned DTO snapshot contract for this closed kind.
+    #[must_use]
+    pub fn snapshot_contract_digest(self) -> [u8; 32] {
+        let mut hasher = blake3::Hasher::new();
+        hasher.update(b"arcweft.agent.dto-snapshot-contract.v1\0");
+        hasher.update(&[self.semantic_tag()]);
+        *hasher.finalize().as_bytes()
+    }
+
     /// Returns whether this semantic Agent family uses the closed protocol
     /// record carrier at host/runtime boundaries.
     #[must_use]

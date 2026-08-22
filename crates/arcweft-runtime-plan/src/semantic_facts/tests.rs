@@ -434,6 +434,8 @@ fn assignment_nominal(
     RuntimeResolvedNominal::new(
         nominal.id().clone(),
         nominal.owner(),
+        RuntimeNominalTypeId::try_new("test::assignment::Point")
+            .expect("fixture runtime nominal identity"),
         RuntimeSemanticTypeId::from_bytes([0x91; 32]),
         TypeLayoutHash::from_bytes([0x92; 32]),
     )

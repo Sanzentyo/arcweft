@@ -41,7 +41,9 @@ pub enum RuntimeOpaqueValueClass {
 }
 
 impl RuntimeOpaqueValueClass {
-    pub(crate) const fn canonical_tag(self) -> u8 {
+    /// Stable semantic transcript tag used by catalog and ownership digests.
+    #[must_use]
+    pub const fn semantic_tag(self) -> u8 {
         match self {
             Self::Plain => 0,
             Self::AffineHandle(kind) => kind.canonical_tag(),
@@ -57,7 +59,9 @@ pub enum RuntimeOpaquePersistence {
 }
 
 impl RuntimeOpaquePersistence {
-    pub(crate) const fn canonical_tag(self) -> u8 {
+    /// Stable semantic tag used by catalog and ownership digests.
+    #[must_use]
+    pub const fn semantic_tag(self) -> u8 {
         match self {
             Self::ConstantAndSnapshot => 0,
             Self::SnapshotOnly => 1,

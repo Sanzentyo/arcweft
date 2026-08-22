@@ -9,6 +9,7 @@ use arcweft_adapter_context::manifest::{
     AdapterSymbolPath, AdapterSymbolSegment, AdapterToolingDoc, AdapterToolingParameterDoc,
     AdapterToolingSubject, AdapterTypeKind,
 };
+use arcweft_core::value::{RuntimeOpaquePersistence, RuntimeOpaqueValueClass};
 use arcweft_lang_sema::{
     env::{EffectCapability, TypeCheckEnv},
     registration::RegisteredExternalOwner,
@@ -386,8 +387,16 @@ fn opaque_producer_is_source_backed_and_changes_manifest_identity() {
     );
     let nominal = &left.environment().nominal_inventory()[0];
     assert_eq!(
-        nominal.runtime_producer().as_str(),
+        nominal.runtime_carrier().producer().as_str(),
         "fixture.adapter-sema.left"
+    );
+    assert_eq!(
+        nominal.runtime_carrier().value_class(),
+        RuntimeOpaqueValueClass::Plain
+    );
+    assert_eq!(
+        nominal.runtime_carrier().persistence(),
+        RuntimeOpaquePersistence::ConstantAndSnapshot
     );
     assert!(
         left.document()

@@ -1,8 +1,5 @@
 //! Typed semantic identities produced by nominal type resolution.
 
-use arcweft_core::pattern::{
-    RuntimeOpaqueTypeOwner, RuntimeOpaqueTypeProducerId, RuntimeSemanticTypeId,
-};
 use arcweft_lang_hir::{
     leaf::{HirPath, HirPathRoot, HirPathSegment},
     symbol::{CallableDeclarationKey, nominal::ProjectNominalDeclarationId},
@@ -59,7 +56,6 @@ pub struct ProjectNominalType {
 pub struct AcceptedNominalType {
     declaration: Arc<AcceptedNominalId>,
     arguments: Box<[TypeKind]>,
-    producer: RuntimeOpaqueTypeProducerId,
 }
 
 /// Instantiation admitted by one explicit open-nominal rule.
@@ -172,12 +168,10 @@ impl AcceptedNominalType {
     pub(crate) fn new(
         declaration: AcceptedNominalId,
         arguments: impl Into<Box<[TypeKind]>>,
-        producer: RuntimeOpaqueTypeProducerId,
     ) -> Self {
         Self {
             declaration: Arc::new(declaration),
             arguments: arguments.into(),
-            producer,
         }
     }
 
@@ -189,20 +183,6 @@ impl AcceptedNominalType {
     /// Checked type arguments in authored order.
     pub fn arguments(&self) -> &[TypeKind] {
         &self.arguments
-    }
-
-    /// Exact runtime producer retained from the accepted declaration.
-    pub const fn runtime_producer(&self) -> &RuntimeOpaqueTypeProducerId {
-        &self.producer
-    }
-
-    /// Exact runtime owner for this accepted opaque instantiation.
-    #[must_use]
-    pub fn runtime_opaque_owner(
-        &self,
-        semantic_identity: RuntimeSemanticTypeId,
-    ) -> RuntimeOpaqueTypeOwner {
-        RuntimeOpaqueTypeOwner::exact(self.producer.clone(), semantic_identity)
     }
 
     pub(super) fn source_label(&self) -> String {

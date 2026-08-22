@@ -846,7 +846,7 @@ impl Resolver<'_, '_> {
             .try_instantiate(arguments)
             .expect("accepted catalog records retain valid semantics and checked arity");
         match record.semantics() {
-            AcceptedNominalSemantics::Opaque { .. } => {
+            AcceptedNominalSemantics::Opaque(_) => {
                 let TypeKind::AcceptedNominal(accepted) = &instantiated else {
                     unreachable!("opaque accepted records instantiate as accepted nominals")
                 };

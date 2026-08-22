@@ -691,7 +691,6 @@ impl Encoder {
 #[cfg(test)]
 mod tests {
     use arcweft_character::id::CharacterId;
-    use arcweft_core::pattern::RuntimeOpaqueTypeProducerId;
     use arcweft_lang_syntax::{
         ast::{
             module_path::ModulePathRoot,
@@ -717,10 +716,6 @@ mod tests {
         .into()
     }
 
-    fn producer() -> RuntimeOpaqueTypeProducerId {
-        RuntimeOpaqueTypeProducerId::try_new("fixture.lang-sema.digest").expect("valid producer")
-    }
-
     #[test]
     fn accepted_owner_and_nested_arguments_participate_in_identity() {
         let first = TypeKind::AcceptedNominal(AcceptedNominalType::new(
@@ -731,7 +726,6 @@ mod tests {
                 path("Value"),
             ),
             [TypeKind::Vec(Box::new(TypeKind::I32))],
-            producer(),
         ));
         let owner_changed = TypeKind::AcceptedNominal(AcceptedNominalType::new(
             AcceptedNominalId::new(
@@ -741,7 +735,6 @@ mod tests {
                 path("Value"),
             ),
             [TypeKind::Vec(Box::new(TypeKind::I32))],
-            producer(),
         ));
         let argument_changed = TypeKind::AcceptedNominal(AcceptedNominalType::new(
             AcceptedNominalId::new(
@@ -751,7 +744,6 @@ mod tests {
                 path("Value"),
             ),
             [TypeKind::Vec(Box::new(TypeKind::I64))],
-            producer(),
         ));
 
         assert_eq!(

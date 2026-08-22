@@ -1,4 +1,7 @@
-use arcweft_core::pattern::RuntimeOpaqueTypeProducerId;
+use arcweft_core::{
+    pattern::RuntimeOpaqueTypeProducerId,
+    value::{RuntimeHandleKind, RuntimeOpaquePersistence, RuntimeOpaqueValueClass},
+};
 use arcweft_lang_syntax::{
     ast::{
         module_path::{CanonicalModulePath, ModulePathRoot, ModuleSegment},
@@ -14,9 +17,9 @@ use super::{
     nominal::{
         AcceptedNominalCatalog, AcceptedNominalCatalogError, AcceptedNominalId,
         AcceptedNominalInstantiationError, AcceptedNominalOrigin, AcceptedNominalOwnerId,
-        AcceptedNominalRecord, AcceptedNominalSemantics, OpenNominalArity, OpenNominalEnvironment,
-        OpenNominalPattern, OpenNominalPatternError, OpenNominalRule, OpenNominalRuleId,
-        OpenNominalScope, RustPackageId,
+        AcceptedNominalRecord, AcceptedNominalSemantics, AcceptedOpaqueRuntimeCarrier,
+        OpenNominalArity, OpenNominalEnvironment, OpenNominalPattern, OpenNominalPatternError,
+        OpenNominalRule, OpenNominalRuleId, OpenNominalScope, RustPackageId,
     },
 };
 use crate::nominal::{AcceptedNominalCatalogLimitKind, AcceptedNominalCatalogLimits};
@@ -27,9 +30,11 @@ fn producer(value: &str) -> RuntimeOpaqueTypeProducerId {
 }
 
 fn opaque_semantics(value: &str) -> AcceptedNominalSemantics {
-    AcceptedNominalSemantics::Opaque {
-        producer: producer(value),
-    }
+    AcceptedNominalSemantics::Opaque(AcceptedOpaqueRuntimeCarrier::new(
+        producer(value),
+        RuntimeOpaqueValueClass::Plain,
+        RuntimeOpaquePersistence::ConstantAndSnapshot,
+    ))
 }
 
 fn path(source: &str) -> TypePath {
@@ -44,19 +49,8 @@ fn path(source: &str) -> TypePath {
 
 fn standard_record(source: &str, semantics: AcceptedNominalSemantics) -> AcceptedNominalRecord {
     let id = AcceptedNominalId::new(AcceptedNominalOwnerId::Standard, path(source));
-    match semantics {
-        AcceptedNominalSemantics::Opaque { producer } => AcceptedNominalRecord::try_new_opaque(
-            id,
-            0,
-            producer,
-            AcceptedNominalOrigin::Domain,
-            None,
-        ),
-        semantics => {
-            AcceptedNominalRecord::try_new(id, 0, semantics, AcceptedNominalOrigin::Domain, None)
-        }
-    }
-    .expect("test accepted nominal record")
+    AcceptedNominalRecord::try_new(id, 0, semantics, AcceptedNominalOrigin::Domain, None)
+        .expect("test accepted nominal record")
 }
 
 fn rule(
@@ -107,7 +101,6 @@ fn accepted_nominal_display_is_owner_independent_but_identity_is_not() {
             path.clone(),
         ),
         [],
-        producer("fixture.lang-sema.alpha"),
     ));
     let beta = TypeKind::AcceptedNominal(AcceptedNominalType::new(
         AcceptedNominalId::new(
@@ -115,7 +108,6 @@ fn accepted_nominal_display_is_owner_independent_but_identity_is_not() {
             path,
         ),
         [],
-        producer("fixture.lang-sema.beta"),
     ));
 
     assert_eq!(alpha.source_label(), "vendor.Rank");
@@ -177,6 +169,8 @@ fn catalog_digest_tracks_producer_but_excludes_source_span() {
             AcceptedNominalId::new(AcceptedNominalOwnerId::Standard, path("domain.Opaque")),
             0,
             producer(producer_id),
+            RuntimeOpaqueValueClass::Plain,
+            RuntimeOpaquePersistence::ConstantAndSnapshot,
             AcceptedNominalOrigin::Domain,
             Some(source(source_id)),
         )
@@ -190,6 +184,41 @@ fn catalog_digest_tracks_producer_but_excludes_source_span() {
     let changed = catalog("fixture.lang-sema.changed", "generated://first");
     assert_eq!(first.digest(), moved.digest());
     assert_ne!(first.digest(), changed.digest());
+}
+
+#[test]
+fn catalog_digest_tracks_every_runtime_carrier_field() {
+    fn catalog(carrier: AcceptedOpaqueRuntimeCarrier) -> AcceptedNominalCatalog {
+        let record = AcceptedNominalRecord::try_new(
+            AcceptedNominalId::new(AcceptedNominalOwnerId::Standard, path("domain.Carrier")),
+            0,
+            AcceptedNominalSemantics::Opaque(carrier),
+            AcceptedNominalOrigin::Test,
+            None,
+        )
+        .expect("runtime carrier record");
+        AcceptedNominalCatalog::try_new([record], [], AcceptedNominalCatalogLimits::PRODUCTION)
+            .expect("catalog")
+    }
+
+    let producer = producer("fixture.lang-sema.carrier");
+    let opaque = catalog(AcceptedOpaqueRuntimeCarrier::new(
+        producer.clone(),
+        RuntimeOpaqueValueClass::Plain,
+        RuntimeOpaquePersistence::ConstantAndSnapshot,
+    ));
+    let affine = catalog(AcceptedOpaqueRuntimeCarrier::new(
+        producer.clone(),
+        RuntimeOpaqueValueClass::AffineHandle(RuntimeHandleKind::Cue),
+        RuntimeOpaquePersistence::ConstantAndSnapshot,
+    ));
+    let snapshot_only = catalog(AcceptedOpaqueRuntimeCarrier::new(
+        producer,
+        RuntimeOpaqueValueClass::Plain,
+        RuntimeOpaquePersistence::SnapshotOnly,
+    ));
+    assert_ne!(opaque.digest(), affine.digest());
+    assert_ne!(opaque.digest(), snapshot_only.digest());
 }
 
 #[test]
@@ -599,8 +628,8 @@ fn standard_environment_projects_domain_and_structural_nominals_exactly() {
             .expect("standard opaque atom is accepted evidence");
         assert!(matches!(
             record.semantics(),
-            AcceptedNominalSemantics::Opaque { producer }
-                if producer.as_str() == expected_producer
+            AcceptedNominalSemantics::Opaque(carrier)
+                if carrier.producer().as_str() == expected_producer
         ));
         assert_eq!(record.arity(), 0);
     }
@@ -619,8 +648,8 @@ fn standard_environment_projects_domain_and_structural_nominals_exactly() {
     assert_eq!(reduction.origin(), AcceptedNominalOrigin::Domain);
     assert!(matches!(
         reduction.semantics(),
-        AcceptedNominalSemantics::Opaque { producer }
-            if producer.as_str() == "std.reduction"
+        AcceptedNominalSemantics::Opaque(carrier)
+            if carrier.producer().as_str() == "std.reduction"
     ));
     assert_eq!(reduction.arity(), 1);
 
@@ -636,8 +665,8 @@ fn standard_environment_projects_domain_and_structural_nominals_exactly() {
         assert_eq!(record.arity(), 1);
         assert!(matches!(
             record.semantics(),
-            AcceptedNominalSemantics::Opaque { producer }
-                if producer.as_str() == expected_producer
+            AcceptedNominalSemantics::Opaque(carrier)
+                if carrier.producer().as_str() == expected_producer
         ));
         assert!(matches!(
             record.try_instantiate([argument.clone()]),
@@ -769,8 +798,8 @@ fn rust_export_publishes_typed_package_and_exact_path_atomically() {
     assert_eq!(record.origin(), AcceptedNominalOrigin::RustExport);
     assert!(matches!(
         record.semantics(),
-        AcceptedNominalSemantics::Opaque { producer }
-            if producer.as_str() == "fixture.lang-sema.reduction"
+        AcceptedNominalSemantics::Opaque(carrier)
+            if carrier.producer().as_str() == "fixture.lang-sema.reduction"
     ));
 }
 

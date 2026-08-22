@@ -570,6 +570,7 @@ fn runtime_plan_consumes_project_view_without_flattening() {
     let runtime_facts = project_runtime_semantic_facts(
         executable,
         compiled.project_symbols(),
+        compiled.registered_world(),
         compiled.final_analysis(),
         &runtime_owners,
         None,
@@ -672,6 +673,7 @@ fn runtime_semantic_facts_retain_exact_runtime_domain_types_and_omit_presentatio
     let runtime_facts = project_runtime_semantic_facts(
         executable,
         compiled.project_symbols(),
+        compiled.registered_world(),
         compiled.final_analysis(),
         &runtime_owners,
         None,
@@ -836,6 +838,7 @@ fn unreachable_assignment_retains_checked_place_but_publishes_no_runtime_fact() 
     let runtime = project_runtime_semantic_facts(
         executable,
         compiled.project_symbols(),
+        compiled.registered_world(),
         compiled.final_analysis(),
         &runtime_owners,
         None,
@@ -878,6 +881,7 @@ fn runtime_variant_facts_retain_the_complete_normalized_project_case_table() {
     let runtime_facts = project_runtime_semantic_facts(
         executable,
         compiled.project_symbols(),
+        compiled.registered_world(),
         compiled.final_analysis(),
         &runtime_owners,
         None,

@@ -743,6 +743,7 @@ impl RuntimeProjectCallable {
 pub struct RuntimeResolvedNominal {
     declaration: ProjectNominalDeclarationId,
     owner: ItemId,
+    runtime_nominal: RuntimeNominalTypeId,
     identity: RuntimeSemanticTypeId,
     layout: TypeLayoutHash,
 }
@@ -751,12 +752,14 @@ impl RuntimeResolvedNominal {
     pub const fn new(
         declaration: ProjectNominalDeclarationId,
         owner: ItemId,
+        runtime_nominal: RuntimeNominalTypeId,
         identity: RuntimeSemanticTypeId,
         layout: TypeLayoutHash,
     ) -> Self {
         Self {
             declaration,
             owner,
+            runtime_nominal,
             identity,
             layout,
         }
@@ -778,29 +781,9 @@ impl RuntimeResolvedNominal {
         self.layout
     }
 
-    /// Stable package/module-qualified nominal identity shared by entry and
-    /// runtime-plan projections.
-    ///
-    /// # Panics
-    ///
-    /// Panics only if an accepted project declaration violates the invariant
-    /// that its qualified name is a valid runtime nominal identity.
     #[must_use]
     pub fn runtime_nominal_id(&self) -> RuntimeNominalTypeId {
-        let local = self
-            .declaration
-            .owner_path()
-            .iter()
-            .map(arcweft_lang_syntax::ast::module_path::ModuleSegment::as_str)
-            .chain(std::iter::once(self.declaration.name().as_str()))
-            .collect::<Vec<_>>()
-            .join(".");
-        RuntimeNominalTypeId::try_new(format!(
-            "{}::{}::{local}",
-            self.declaration.world().package().as_str(),
-            self.declaration.module()
-        ))
-        .expect("an accepted project nominal has a valid runtime identity")
+        self.runtime_nominal.clone()
     }
 
     #[must_use]

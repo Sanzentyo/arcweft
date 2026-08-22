@@ -351,7 +351,6 @@ impl TypeKind {
             Self::AcceptedNominal(nominal) => Self::AcceptedNominal(AcceptedNominalType::new(
                 nominal.declaration().clone(),
                 substitute_arguments(nominal.arguments()),
-                nominal.runtime_producer().clone(),
             )),
             Self::OpenNominal(nominal) => Self::OpenNominal(OpenNominalType::new(
                 nominal.rule().clone(),

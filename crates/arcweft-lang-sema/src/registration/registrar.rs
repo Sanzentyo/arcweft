@@ -1000,7 +1000,9 @@ fn accepted_external_environment(
             environment.try_insert_nominal_record(AcceptedNominalRecord::try_new_opaque(
                 nominal.id().clone(),
                 nominal.arity(),
-                nominal.runtime_producer().clone(),
+                nominal.runtime_carrier().producer().clone(),
+                nominal.runtime_carrier().value_class(),
+                nominal.runtime_carrier().persistence(),
                 nominal.origin(),
                 Some(nominal.source().clone()),
             )?)?;
