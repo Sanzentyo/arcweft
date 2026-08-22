@@ -12,7 +12,8 @@ Working tree before the three-package intake: clean; `main` matched
 - Repository/source reconciliation: `FAIL`
 - Classification: `DESIGN_NOT_READY`
 - Production implementation: blocked
-- Next action: resend the maintained request with current repository access
+- Next action: dispatch the in-place hardened request with current repository
+  access and this rejection evidence
 
 The archive proposes a new carrier around an invented runtime crate and type
 catalog without inspecting current Arcweft owners. It does not close the eight
@@ -44,7 +45,9 @@ at
 - all ten `07-package-manifest.sha256` rows match; and
 - `REQUEST.md` SHA-256
   `CBE6A1F1F20F2C5C11DF678B8098165CE8931820ECE459C7BF1CF203BE7BC5A4`
-  exactly matches the maintained request.
+  exactly matches the pre-hardening maintained request revision at the
+  inspected commit. This historical hash is not the next-return acceptance
+  hash.
 
 ## Required package failures
 
@@ -104,11 +107,24 @@ No golden bytes exist because no tag or current identity codec was verified.
 ## Correct resend
 
 Do not implement this return and do not create a compatibility carrier around
-it. Resend the unchanged maintained request
+it. Do not create a new child request and do not resend the rejected request
+bytes. Dispatch the same request lineage, revised in place at
 [`Lang-01.5.1.1.2.1.1.1.1.1.1.1.1.1`](../reviews/requests/2026-08-22-lang-01.5.1.1.2.1.1.1.1.1.1.1.1.1-accepted-structural-nominal-runtime-carrier-correction.md)
-with repository access to current `main` and this intake as rejection evidence.
-The next return must begin from the actual sema/core/runtime-plan/AWBC owners
-and either enrich that one model or remain fail-closed.
+with:
+
+- byte length `10,571` and SHA-256
+  `E9EAD183B2BFD4D3019E8C3E51DA79136BDAE64D38AA5FE63EC4C92C1C948269`;
+- a clean current `main == origin/main` checkout whose full dispatch SHA is
+  frozen in the response evidence; and
+- this intake as mandatory rejection evidence.
+
+The next archive's `REQUEST.md` must match those hardened bytes. It must begin
+from the actual sema/core/runtime-plan/AWBC owners and either enrich the one
+legitimate model or remain fail-closed. The responder must withhold the named
+final-contract ZIP if repository preflight, any required member, traceability,
+manifest, wrapper, repository-aware validation, negative self-test, or
+reopened-ZIP validation fails. A blocker report is correct; a known-failed
+“final contract” is not.
 
 No Rust, Cargo, generated artifact, fixture, or runtime test was changed or run
 for this design-only intake.

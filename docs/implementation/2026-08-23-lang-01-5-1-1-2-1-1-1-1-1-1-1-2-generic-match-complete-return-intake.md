@@ -10,7 +10,7 @@ Working tree before intake: clean; `main` matched `origin/main`
 - Package's own mechanical validation: `FAIL`
 - Repository/source reconciliation: `NOT PERFORMABLE BY THE RETURN`
 - Classification: `RETURN_REJECTED / DESIGN_NOT_READY`
-- Next action: `RESEND THE SAME MAINTAINED .1.2 REQUEST`
+- Next action: `DISPATCH THE IN-PLACE HARDENED .1.2 REQUEST`
 - `.1.4` dispatch: `BLOCKED`
 - Production implementation: not authorized
 
@@ -42,8 +42,9 @@ Its eight-file frozen mirror is retained under
 - all seven `manifest.json` file rows match byte length and SHA-256; and
 - the manifest-declared input request SHA-256
   `13BF986389054755B9C669E61D089E93C936726EEB7DDE2FDF36684BB087F600`
-  and byte length exactly match the maintained `.1.2` request, although the
-  request copy itself is absent from the ZIP.
+  and byte length exactly match the pre-hardening `.1.2` request revision at
+  the inspected commit, although the request copy itself is absent from the
+  ZIP. This historical hash is not the next-return acceptance hash.
 - After all three external intakes and the locally validated runtime
   correction package, the 63 retained review ZIPs' sorted
   `name<TAB>length<TAB>sha256<LF>` transcript hashes to
@@ -90,11 +91,23 @@ The return therefore provides no evidence for:
 
 ## Correct resend
 
-Do not create a new design correction for this delivery failure. Resend the
-unchanged maintained request
+Do not create a new design correction for this delivery failure, and do not
+resend the rejected request bytes. Dispatch the same request lineage, revised
+in place at
 [`Lang-01.5.1.1.2.1.1.1.1.1.1.1.2`](../reviews/requests/2026-08-22-lang-01.5.1.1.2.1.1.1.1.1.1.1.2-generic-match-complete-transcript-and-coverage-closure-correction.md)
-with repository access to current `main` and this intake record as rejection
-evidence. A responder must not return a ZIP while its own validator fails.
+with:
+
+- byte length `9,780` and SHA-256
+  `981158FD20AFCC41E737604F7C94EA2D56E455F7DF2026D1A16A8C7994AC9628`;
+- a clean current `main == origin/main` checkout whose full dispatch SHA is
+  frozen in the response evidence; and
+- this intake record as mandatory rejection evidence.
+
+The next archive's `REQUEST.md` must match those hardened bytes. The responder
+must withhold the named final-contract ZIP if repository preflight, any required
+member, traceability, manifest, wrapper, repository-aware validation, negative
+self-test, or reopened-ZIP validation fails. A blocker report is correct; a
+known-failed “final contract” is not.
 
 Only after a replacement `.1.2` is accepted and implemented may `.1.4` be
 dispatched. No Rust, Cargo, generated artifact, fixture, or runtime test was
