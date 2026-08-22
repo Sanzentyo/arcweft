@@ -1,0 +1,16 @@
+tag,name,order
+0,type_declarations,dense_type_ordinal
+1,local_declarations,declaration_source_ordinal
+2,nominal_record_domains,accepted_domain_source_order
+3,variant_domains,accepted_domain_source_order
+4,function_sites,function_semantic_order
+5,dialogue_content_plans,content_source_order
+6,entries,accepted_entry_order
+7,callable_executables,accepted_callable_order
+8,flow_executables,accepted_flow_order
+9,flows,flow_source_order
+10,pure_helpers,helper_source_order
+11,trait_methods,accepted_method_order
+12,line_task_groups,group_source_order
+13,stream_plans,stream_source_order
+14,runtime_task_plan_bases,task_declaration_source_order

@@ -1,0 +1,318 @@
+{
+  "binding_tags": {
+    "AwaitManyBase": 2,
+    "AwaitManyChild": 3,
+    "Line": 5,
+    "Ordinary": 0,
+    "Timeout": 4,
+    "View": 1
+  },
+  "core_view_copy": false,
+  "cut_publication": 5,
+  "design_only": true,
+  "digest_public_api": {
+    "as_bytes": true,
+    "default": false,
+    "from_bytes": false,
+    "owner_only_hash_construction": true,
+    "serde": false,
+    "try_from_bytes": false,
+    "view_completion_requires_one_use_request": true,
+    "zero": false
+  },
+  "domains": {
+    "control_effect": "arcweft.task.control-effect-contract.v1\\0",
+    "executable_row": "arcweft.runtime-plan.executable-row.v1\\0",
+    "producer_function": "arcweft.runtime-plan.producer-function-semantic.v1\\0",
+    "request_template": "arcweft.task.request-template.v1\\0",
+    "runtime_executable": "arcweft.runtime-plan.executable-semantic.v1\\0",
+    "task_plan": "arcweft.task.plan-semantic.v1\\0"
+  },
+  "duplicate_scope": "global_across_all_structured_families_and_bindings",
+  "error_precedence": [
+    "envelope_version_canonical_decode",
+    "arithmetic_then_preflight_limits",
+    "core_structural_and_family_binding",
+    "validated_view_product_and_freshness",
+    "non_task_executable_rows",
+    "producer_function_request_control_children",
+    "missing_stale_missing_binding_mismatch_view_authority",
+    "dynamic_work_and_byte_limit",
+    "expected_key_mismatch",
+    "global_duplicate_second_row",
+    "final_cross_reference",
+    "publication"
+  ],
+  "executable_tables": [
+    {
+      "name": "type_declarations",
+      "order": "dense_type_ordinal",
+      "tag": 0
+    },
+    {
+      "name": "local_declarations",
+      "order": "declaration_source_ordinal",
+      "tag": 1
+    },
+    {
+      "name": "nominal_record_domains",
+      "order": "accepted_domain_source_order",
+      "tag": 2
+    },
+    {
+      "name": "variant_domains",
+      "order": "accepted_domain_source_order",
+      "tag": 3
+    },
+    {
+      "name": "function_sites",
+      "order": "function_semantic_order",
+      "tag": 4
+    },
+    {
+      "name": "dialogue_content_plans",
+      "order": "content_source_order",
+      "tag": 5
+    },
+    {
+      "name": "entries",
+      "order": "accepted_entry_order",
+      "tag": 6
+    },
+    {
+      "name": "callable_executables",
+      "order": "accepted_callable_order",
+      "tag": 7
+    },
+    {
+      "name": "flow_executables",
+      "order": "accepted_flow_order",
+      "tag": 8
+    },
+    {
+      "name": "flows",
+      "order": "flow_source_order",
+      "tag": 9
+    },
+    {
+      "name": "pure_helpers",
+      "order": "helper_source_order",
+      "tag": 10
+    },
+    {
+      "name": "trait_methods",
+      "order": "accepted_method_order",
+      "tag": 11
+    },
+    {
+      "name": "line_task_groups",
+      "order": "group_source_order",
+      "tag": 12
+    },
+    {
+      "name": "stream_plans",
+      "order": "stream_source_order",
+      "tag": 13
+    },
+    {
+      "name": "runtime_task_plan_bases",
+      "order": "task_declaration_source_order",
+      "tag": 14
+    }
+  ],
+  "expected_key": {
+    "compare_before_duplicate": true,
+    "hash_input": false,
+    "private_raw_bytes": true,
+    "typed_constructor": false
+  },
+  "family_binding": {
+    "AwaitManyBase": [
+      "AwaitManyBase"
+    ],
+    "AwaitManyChild": [
+      "AwaitManyChild"
+    ],
+    "AwbcTaskPlan": [],
+    "HostAdapterTask": [
+      "Ordinary"
+    ],
+    "LineTask": [
+      "Line"
+    ],
+    "MakeNeedHandle": [
+      "Ordinary"
+    ],
+    "StructuredTaskPlan": [
+      "Ordinary"
+    ],
+    "Timeout": [
+      "Timeout"
+    ],
+    "ViewMatchSubscription": [
+      "View"
+    ]
+  },
+  "family_tags": {
+    "AwaitManyBase": 3,
+    "AwaitManyChild": 4,
+    "AwbcTaskPlan": 1,
+    "HostAdapterTask": 7,
+    "LineTask": 6,
+    "MakeNeedHandle": 8,
+    "StructuredTaskPlan": 0,
+    "Timeout": 5,
+    "ViewMatchSubscription": 2
+  },
+  "final_status": "READY_FOR_IMPLEMENTATION",
+  "limits": {
+    "max_children_per_row": 65536,
+    "max_control_effect_rows": 65536,
+    "max_executable_rows": 1048576,
+    "max_function_roles": 65536,
+    "max_request_roles": 65536,
+    "max_semantic_work": 4194304,
+    "max_task_plan_rows": 65536,
+    "max_transcript_bytes": 67108864,
+    "max_view_bindings": 65536
+  },
+  "opaque_digest_types": [
+    "TaskPlanSemanticDigest",
+    "RuntimeExecutableSemanticDigest",
+    "ProducerFunctionSemanticDigest",
+    "TaskRequestTemplateDigest",
+    "ControlEffectContractDigest"
+  ],
+  "open_decisions": [],
+  "open_questions": "none",
+  "production_patch": false,
+  "publication_states": [
+    "MutableBuilder",
+    "ConsumedCandidate",
+    "StructurallyVerified",
+    "ChildrenResolved",
+    "ExecutableSealed",
+    "RowsSealing",
+    "ExpectedVerified",
+    "Unique",
+    "FinalCrossReferencesVerified",
+    "Published"
+  ],
+  "repository": {
+    "commit": "515bb071437c3af053f1560c3119906dc8002efc",
+    "inspection": "GitHub connector pinned to full commit",
+    "name": "Sanzentyo/arcweft",
+    "ref": "main",
+    "working_tree_observed": false
+  },
+  "request_id": "Lang-01.5.1.1.2.1.1.1.1.1.1.1.3",
+  "runtime_task_plan": {
+    "fields": [
+      "producer_function",
+      "family",
+      "class",
+      "request_template",
+      "control_effect",
+      "binding"
+    ],
+    "forbidden_fields": [
+      "semantic_digest",
+      "expected_digest",
+      "producer_contract",
+      "producer_site",
+      "payload_type",
+      "arguments",
+      "generation",
+      "policy",
+      "launch_ordinal",
+      "priority",
+      "cancel_scope",
+      "debug_label",
+      "view_program",
+      "view_site",
+      "view_admission",
+      "accepted_view_revision"
+    ],
+    "parallel_table": false,
+    "table_shape": [
+      "source_order_rows",
+      "digest_to_index"
+    ]
+  },
+  "schema_version": 1,
+  "task_class_tags": {
+    "AssetDecode": 6,
+    "AudioDecode": 7,
+    "AudioRender": 8,
+    "Background": 12,
+    "BgmPrecompose": 10,
+    "Cpu": 2,
+    "GpuPrepare": 3,
+    "Io": 1,
+    "LocalView": 0,
+    "Lsp": 11,
+    "ShaderCompile": 4,
+    "TtsSynthesis": 9,
+    "WasmCall": 5
+  },
+  "task_plan_excluded_roles": [
+    "producer_contract",
+    "producer_site",
+    "payload_type",
+    "actual_arguments",
+    "generation",
+    "policy",
+    "launch_ordinal",
+    "priority",
+    "cancellation_scope",
+    "debug_label",
+    "expected_stored_digest",
+    "accepted_view_revision"
+  ],
+  "task_plan_included_roles": [
+    "runtime_executable",
+    "producer_function",
+    "family",
+    "task_class",
+    "request_template",
+    "control_effect_contract",
+    "semantic_binding"
+  ],
+  "title": "task-plan semantic child encoder and seal correction",
+  "version_markers": {
+    "control_effect_contract": 1,
+    "producer_function_semantic": 1,
+    "request_template": 1,
+    "runtime_executable_semantic": 1,
+    "runtime_plan_codec": 1,
+    "task_plan_semantic": 1,
+    "view_binding_codec": 1
+  },
+  "view_authority": {
+    "actual_fields": [
+      "RuntimeTaskPlanBuildCoordinate",
+      "ViewProgramId",
+      "AcceptedViewProgramRevision",
+      "ViewMatchSiteId",
+      "CheckedViewMatchAdmissionDigest"
+    ],
+    "actual_owner": "ValidatedViewProgramResource",
+    "base": "RuntimeTaskPlanDigestBase",
+    "base_clone": false,
+    "base_serialized": false,
+    "binding_owner": "ValidatedViewTaskPlanBinding",
+    "caller_digest_fields": false,
+    "general_byte_sink": false,
+    "hashed_fields": [
+      "ViewProgramId",
+      "ViewMatchSiteId",
+      "CheckedViewMatchAdmissionDigest"
+    ],
+    "method": "task_plan_semantic_digest",
+    "request": "ViewTaskPlanDigestRequest",
+    "trait": "ViewTaskPlanAuthority",
+    "validation_only_fields": [
+      "AcceptedViewProgramRevision"
+    ]
+  }
+}

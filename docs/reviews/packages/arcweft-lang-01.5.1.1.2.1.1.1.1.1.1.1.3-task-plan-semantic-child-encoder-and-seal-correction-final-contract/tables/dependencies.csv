@@ -1,0 +1,8 @@
+from,to,allowed,purpose
+arcweft-core,arcweft-view,False,forbidden reverse dependency
+arcweft-core,arcweft-bundle,False,forbidden reverse dependency
+arcweft-runtime-plan,arcweft-core,True,lower checked products into RuntimePlanBuilder
+arcweft-bundle,arcweft-core,True,private plan decode and authority protocol
+arcweft-bundle,arcweft-view,True,actual validated View identities/resources
+compiler-sema,arcweft-view,True,Cut 3 actual program/site/admission
+runtime-consumers,arcweft-core,True,sealed immutable plan lookup

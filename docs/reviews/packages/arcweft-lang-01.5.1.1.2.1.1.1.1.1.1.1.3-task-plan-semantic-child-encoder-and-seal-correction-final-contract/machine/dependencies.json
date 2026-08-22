@@ -1,0 +1,56 @@
+{
+  "edges": [
+    {
+      "allowed": false,
+      "from": "arcweft-core",
+      "purpose": "forbidden reverse dependency",
+      "to": "arcweft-view"
+    },
+    {
+      "allowed": false,
+      "from": "arcweft-core",
+      "purpose": "forbidden reverse dependency",
+      "to": "arcweft-bundle"
+    },
+    {
+      "allowed": true,
+      "from": "arcweft-runtime-plan",
+      "purpose": "lower checked products into RuntimePlanBuilder",
+      "to": "arcweft-core"
+    },
+    {
+      "allowed": true,
+      "from": "arcweft-bundle",
+      "purpose": "private plan decode and authority protocol",
+      "to": "arcweft-core"
+    },
+    {
+      "allowed": true,
+      "from": "arcweft-bundle",
+      "purpose": "actual validated View identities/resources",
+      "to": "arcweft-view"
+    },
+    {
+      "allowed": true,
+      "from": "compiler-sema",
+      "purpose": "Cut 3 actual program/site/admission",
+      "to": "arcweft-view"
+    },
+    {
+      "allowed": true,
+      "from": "runtime-consumers",
+      "purpose": "sealed immutable plan lookup",
+      "to": "arcweft-core"
+    }
+  ],
+  "forbidden_types_in_core": [
+    "ViewProgramIdProjection",
+    "ViewMatchSiteIdProjection",
+    "CheckedViewMatchAdmissionDigestProjection",
+    "RawViewTaskPlanBinding"
+  ],
+  "repository_commit": "515bb071437c3af053f1560c3119906dc8002efc",
+  "schema_version": 1,
+  "sole_cross_layer_protocol": "arcweft_core::plan::ViewTaskPlanAuthority",
+  "upper_owner": "arcweft_bundle::resource_codec::view::validated::ValidatedViewProgramResource"
+}

@@ -1,0 +1,13 @@
+ordinal,error_class
+1,envelope_version_canonical_decode
+2,arithmetic_then_preflight_limits
+3,core_structural_and_family_binding
+4,validated_view_product_and_freshness
+5,non_task_executable_rows
+6,producer_function_request_control_children
+7,missing_stale_missing_binding_mismatch_view_authority
+8,dynamic_work_and_byte_limit
+9,expected_key_mismatch
+10,global_duplicate_second_row
+11,final_cross_reference
+12,publication

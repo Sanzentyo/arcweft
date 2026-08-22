@@ -1,0 +1,9 @@
+concern,owner,creator,consumers,forbidden_duplicate
+RuntimeTaskPlan,arcweft-core RuntimePlan,RuntimePlanBuilder,runtime lookup/lowering,self digest and compiler copy
+RuntimeTaskPlanTable,arcweft-core RuntimePlan,common private sealer,Need/snapshot/runtime consumers,parallel catalog
+RuntimeExecutableSemanticDigest,RuntimePlanSemanticEncoder,private encoder,opaque base only,caller hash
+ProducerFunctionSemanticDigest,resolved RuntimeFunctionSite owner,private encoder,opaque base only,compiler digest
+TaskRequestTemplateDigest,RuntimeHostTaskRequestTemplate,inherent semantic method,opaque base only,extension helper
+ControlEffectContractDigest,RuntimeControlEffectContract,inherent semantic method,opaque base only,side table hash
+ValidatedViewTaskPlanBinding,ValidatedViewProgramResource,bundle complete-product validator,ViewTaskPlanAuthority,core raw projection
+ExpectedTaskPlanKey,private codec image,strict decoder,common sealer comparison,public expected field

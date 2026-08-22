@@ -1,0 +1,159 @@
+{
+  "categories": {
+    "atomicity": [
+      "ATM-01",
+      "ATM-02",
+      "ATM-03",
+      "ATM-04",
+      "ATM-05",
+      "ATM-06",
+      "ATM-07",
+      "ATM-08",
+      "ATM-09",
+      "ATM-10"
+    ],
+    "bindings": [
+      "BND-01",
+      "BND-02",
+      "BND-03",
+      "BND-04",
+      "BND-05",
+      "BND-06",
+      "BND-07",
+      "BND-08",
+      "BND-09"
+    ],
+    "children": [
+      "CHD-01",
+      "CHD-02",
+      "CHD-03",
+      "CHD-04",
+      "CHD-05",
+      "CHD-06",
+      "CHD-07",
+      "CHD-08"
+    ],
+    "compile_fail": [
+      "NEG-01",
+      "NEG-02",
+      "NEG-03",
+      "NEG-04",
+      "NEG-05",
+      "NEG-06",
+      "NEG-07",
+      "NEG-08",
+      "NEG-09",
+      "NEG-10",
+      "NEG-11",
+      "NEG-12"
+    ],
+    "duplicates": [
+      "DUP-01",
+      "DUP-02",
+      "DUP-03",
+      "DUP-04"
+    ],
+    "excluded": [
+      "EXC-01",
+      "EXC-02",
+      "EXC-03",
+      "EXC-04",
+      "EXC-05",
+      "EXC-06",
+      "EXC-07",
+      "EXC-08",
+      "EXC-09",
+      "EXC-10",
+      "EXC-11",
+      "EXC-12",
+      "EXC-13",
+      "EXC-14"
+    ],
+    "executable": [
+      "EXE-01",
+      "EXE-02",
+      "EXE-03",
+      "EXE-04",
+      "EXE-05",
+      "EXE-06",
+      "EXE-07",
+      "EXE-08",
+      "EXE-09",
+      "EXE-10"
+    ],
+    "included": [
+      "INC-01",
+      "INC-02",
+      "INC-03",
+      "INC-04",
+      "INC-05",
+      "INC-06",
+      "INC-07",
+      "INC-08",
+      "INC-09"
+    ],
+    "keys": [
+      "KEY-01",
+      "KEY-02",
+      "KEY-03",
+      "KEY-04",
+      "KEY-05"
+    ],
+    "limits": [
+      "LIM-01",
+      "LIM-02",
+      "LIM-03",
+      "LIM-04",
+      "LIM-05",
+      "LIM-06",
+      "LIM-07",
+      "LIM-08",
+      "LIM-09",
+      "LIM-10",
+      "LIM-11"
+    ],
+    "package": [
+      "PKG-01",
+      "PKG-02",
+      "PKG-03",
+      "PKG-04",
+      "PKG-05",
+      "PKG-06",
+      "PKG-07",
+      "PKG-08",
+      "PKG-09",
+      "PKG-10",
+      "PKG-11",
+      "PKG-12",
+      "PKG-13",
+      "PKG-14"
+    ],
+    "view": [
+      "VIEW-01",
+      "VIEW-02",
+      "VIEW-03",
+      "VIEW-04",
+      "VIEW-05",
+      "VIEW-06",
+      "VIEW-07",
+      "VIEW-08",
+      "VIEW-09",
+      "VIEW-10",
+      "VIEW-11",
+      "VIEW-12"
+    ]
+  },
+  "package_status": "PACKAGE_PASS",
+  "production_status": "IMPLEMENTATION_REQUIRED",
+  "required_commands": [
+    "cargo fmt --all -- --check",
+    "cargo test -p arcweft-core task_plan_semantic",
+    "cargo test -p arcweft-runtime-plan task_plan_semantic",
+    "cargo test -p arcweft-compiler view_match_admission",
+    "cargo test -p arcweft-bundle validated_view_task_plan",
+    "cargo test -p arcweft-bundle runtime_plan_expected_key",
+    "cargo metadata --format-version 1 --no-deps",
+    "cargo clippy --all-targets --all-features -- -D warnings"
+  ],
+  "schema_version": 1
+}

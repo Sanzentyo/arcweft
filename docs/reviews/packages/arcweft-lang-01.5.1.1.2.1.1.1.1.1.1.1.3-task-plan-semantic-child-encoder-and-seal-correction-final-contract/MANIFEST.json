@@ -1,0 +1,176 @@
+{
+  "files": [
+    {
+      "bytes": 6868,
+      "path": "COMPILE_CLEAN_SEQUENCE.md",
+      "sha256": "39989f2da8002abbaedac5b591040711e85e56e2d52b58ee50f37ecea6701c8a"
+    },
+    {
+      "bytes": 3711,
+      "path": "CYCLE_PROOF.md",
+      "sha256": "49ea9521d3f7089b697c4b36e5699ed008f76122dabfb478d356726335de52e1"
+    },
+    {
+      "bytes": 3193,
+      "path": "DECISION_REGISTER.md",
+      "sha256": "1babe618261b985c86a3eab5f3770110c9993ac6238e34ca9243121a46aeca5a"
+    },
+    {
+      "bytes": 3682,
+      "path": "DEPENDENCY_MATRIX.md",
+      "sha256": "b780150f71b8ea170ea3697d0111aac55c3517089991b0f919b3b7ad24901f56"
+    },
+    {
+      "bytes": 6837,
+      "path": "ERROR_PRECEDENCE_AND_LIMITS.md",
+      "sha256": "32a4e876a5ab5e55cef1d3b194c78468fab4de77e70be9304ab8bd16c0f0aaf8"
+    },
+    {
+      "bytes": 7356,
+      "path": "EXECUTABLE_TRANSCRIPT.md",
+      "sha256": "38e9072ff546b3340151d30f0a6c4837bed685e27ceefa3248a7bcf44ce07579"
+    },
+    {
+      "bytes": 15280,
+      "path": "FINAL_CONTRACT.md",
+      "sha256": "b189992af915cc86cba1fe0f729774abbd3db6fa7f492f0c6f9300a72695d1e1"
+    },
+    {
+      "bytes": 25,
+      "path": "FINAL_STATUS",
+      "sha256": "9cfe844241b3057b5b9744ad7fd94d42b90b31f9c96c35dad40a7afb94ed395c"
+    },
+    {
+      "bytes": 5,
+      "path": "OPEN_QUESTIONS",
+      "sha256": "fcf33dfbe13c2354bf0e1b063f9fb422747a46cee00b7420bceff2b81457b345"
+    },
+    {
+      "bytes": 7394,
+      "path": "OWNER_CONSUMER_MATRIX.md",
+      "sha256": "5896051c701430444bf368bb4bc203b8d4dd6c9507479052f38d52ac059e1437"
+    },
+    {
+      "bytes": 5062,
+      "path": "PRIVATE_CODEC_AND_EXPECTED_KEYS.md",
+      "sha256": "8fbb29f05cf33b98fa227cc7591127abdd48a4e6d1222492c2357bdb27a890a0"
+    },
+    {
+      "bytes": 4003,
+      "path": "README.md",
+      "sha256": "3fda1d2fcb91514cc55e424e41d8a0a6101fb35053391a2430fa6ed0674f1190"
+    },
+    {
+      "bytes": 5162,
+      "path": "RUST_SCHEMAS.md",
+      "sha256": "04e52e1501d5dbcdec28717e651e8d66ca3d23ce4af54a979831363080eb794f"
+    },
+    {
+      "bytes": 6781,
+      "path": "SEAL_STATE_MACHINES.md",
+      "sha256": "8f2e39e04b43a1a01e774a3abb6ae672aa862c5085aae6d0cc72da20a23a5c1d"
+    },
+    {
+      "bytes": 6287,
+      "path": "SOURCE_INVENTORY.md",
+      "sha256": "cdfd4f94395c7d82e8dba7b9dfdf366765190d714d601129f8ed259b0f4dd992"
+    },
+    {
+      "bytes": 14120,
+      "path": "TEST_MATRIX.md",
+      "sha256": "e5c47aae095cd6ca9de7f6a219f57951ca5f7867eb5aa1efb9ee208c8aabf06c"
+    },
+    {
+      "bytes": 11265,
+      "path": "TRANSCRIPTS.md",
+      "sha256": "5c66767bb44edaa7e83b4802dc7420f68ef76976f84fced62a595c3d348b9920"
+    },
+    {
+      "bytes": 2679,
+      "path": "VALIDATION_REPORT.md",
+      "sha256": "e39bc721578cba96ade37187b313e26f80dcb9e82c7be093b93bc8a213a111ed"
+    },
+    {
+      "bytes": 8170,
+      "path": "inputs/CURRENT_REQUEST.md",
+      "sha256": "95525f7e29afa995b08a3457ef3a79ed3100398c10bddb6985232245feffb3bc"
+    },
+    {
+      "bytes": 250,
+      "path": "inputs/PROJECT_PREMISE.txt",
+      "sha256": "cfa897a0ad93deb92fd454079df0a789edbbd40d85c8377324da703c8aefe0a1"
+    },
+    {
+      "bytes": 5045,
+      "path": "inputs/RUST_SKILL.md",
+      "sha256": "1a28f552adf5efde95205bee8d56590aeb82346c48ebdf3fdbbaff5deca33665"
+    },
+    {
+      "bytes": 7678,
+      "path": "machine/contract.json",
+      "sha256": "ae995bdde93408755b1749fe0d88a6592a6b28b8ad23d621f641a4a6fadbf0c5"
+    },
+    {
+      "bytes": 1531,
+      "path": "machine/dependencies.json",
+      "sha256": "953d799f26f264e6d1c574a1ff578b8c16bdcc4c39361d3c6569f19537d657a7"
+    },
+    {
+      "bytes": 814,
+      "path": "machine/limits.json",
+      "sha256": "56c0c1d664807e653c3b4189036c830075f7051062ceec67f117402e2ad3b896"
+    },
+    {
+      "bytes": 2794,
+      "path": "machine/tests.json",
+      "sha256": "435b9c9cdb513dee53d805217452e9dd0573cb08928432f46a9658a7aa0ca07c"
+    },
+    {
+      "bytes": 30167,
+      "path": "schemas/final_contract.rs",
+      "sha256": "6a4f37593ef140aac558f2e6b6517346321bebbbd0ad93db6f840c5f9a8399fe"
+    },
+    {
+      "bytes": 527,
+      "path": "tables/dependencies.csv",
+      "sha256": "26e035fb06319078b459c9045e6d2be7d8e14e1ca9a3d967095309bcb0de9efe"
+    },
+    {
+      "bytes": 433,
+      "path": "tables/error_precedence.csv",
+      "sha256": "3a5e05a2e5fc9b090cce9daa23b1c9ee1b4833bfe7aee071fc4a7a4d507b1c3b"
+    },
+    {
+      "bytes": 978,
+      "path": "tables/owner_consumer.csv",
+      "sha256": "020c2c4cce7241c63a2e14679350df4f9804d8efb8b8fc46babe43175e2abb6f"
+    },
+    {
+      "bytes": 4703,
+      "path": "tables/tests.csv",
+      "sha256": "64bcddc0c255a2c9692c14830c40217a8a11caf633ace8e2516f73e5ef9a2720"
+    },
+    {
+      "bytes": 656,
+      "path": "tables/transcript_rows.csv",
+      "sha256": "182e1bbeff97839a9e51a83cc4f9022667998b5680b95e35f334fedc87fb2341"
+    },
+    {
+      "bytes": 8767,
+      "path": "tools/negative_self_tests.py",
+      "sha256": "bbfefa7920fb849eb3393c22117ca846ce21af7ff43176ad55358b810987f844"
+    },
+    {
+      "bytes": 183,
+      "path": "tools/run_validation.sh",
+      "sha256": "ede51e5b3adcb4015a06618f3fe329671f842baaf2bb56263c378865c50b9b63"
+    },
+    {
+      "bytes": 19192,
+      "path": "tools/validate_contract.py",
+      "sha256": "9448296ce1fd5a46279fa1012bf9db898d584284ceba3b98385febdf6c092403"
+    }
+  ],
+  "root": "arcweft-lang-01.5.1.1.2.1.1.1.1.1.1.1.3-task-plan-semantic-child-encoder-and-seal-correction-final-contract",
+  "schema_version": 1
+}
