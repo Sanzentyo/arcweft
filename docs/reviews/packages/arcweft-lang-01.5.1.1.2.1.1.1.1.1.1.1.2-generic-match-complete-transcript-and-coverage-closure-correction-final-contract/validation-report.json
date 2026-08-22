@@ -1,0 +1,194 @@
+{
+  "passed": false,
+  "error_count": 10,
+  "warning_count": 0,
+  "errors": [
+    "required-file:README.md: exists=False size=0",
+    "required-file:requirement-traceability.md: exists=False size=0",
+    "required-file:source-evidence.md: exists=True size=180",
+    "required-file:implementation-plan.md: exists=False size=0",
+    "required-file:verification.md: exists=False size=0",
+    "minimum-design-text-volume: 20583",
+    "concrete-test-density: 1",
+    "source-path-density: 0",
+    "numbered-request-ids-in-traceability: missing=[1, 2, 3, 4, 5, 6, 7]; total=7",
+    "git baseline check failed: Command '['git', '-C', '/mnt/data/arcweft-current', 'rev-parse', 'HEAD']' returned non-zero exit status 128."
+  ],
+  "warnings": [],
+  "checks": [
+    {
+      "name": "output-directory-exists",
+      "passed": true,
+      "detail": "/mnt/data/arcweft-design-work"
+    },
+    {
+      "name": "minimum-deliverable-file-count",
+      "passed": true,
+      "detail": "8"
+    },
+    {
+      "name": "required-file:README.md",
+      "passed": false,
+      "detail": "exists=False size=0"
+    },
+    {
+      "name": "required-file:requirement-traceability.md",
+      "passed": false,
+      "detail": "exists=False size=0"
+    },
+    {
+      "name": "required-file:source-evidence.md",
+      "passed": false,
+      "detail": "exists=True size=180"
+    },
+    {
+      "name": "required-file:implementation-plan.md",
+      "passed": false,
+      "detail": "exists=False size=0"
+    },
+    {
+      "name": "required-file:test-plan.md",
+      "passed": true,
+      "detail": "exists=True size=15774"
+    },
+    {
+      "name": "required-file:verification.md",
+      "passed": false,
+      "detail": "exists=False size=0"
+    },
+    {
+      "name": "required-file:manifest.json",
+      "passed": true,
+      "detail": "exists=True size=1764"
+    },
+    {
+      "name": "open-questions-zero-marker",
+      "passed": true,
+      "detail": ""
+    },
+    {
+      "name": "no-placeholder:TBD",
+      "passed": true,
+      "detail": ""
+    },
+    {
+      "name": "no-placeholder:TO BE DETERMINED",
+      "passed": true,
+      "detail": ""
+    },
+    {
+      "name": "no-placeholder:PLACEHOLDER",
+      "passed": true,
+      "detail": ""
+    },
+    {
+      "name": "no-placeholder:lorem ipsum",
+      "passed": true,
+      "detail": ""
+    },
+    {
+      "name": "minimum-design-text-volume",
+      "passed": false,
+      "detail": "20583"
+    },
+    {
+      "name": "rust-api-code-blocks",
+      "passed": true,
+      "detail": "9"
+    },
+    {
+      "name": "concept-depth:transcript",
+      "passed": true,
+      "detail": "128"
+    },
+    {
+      "name": "concept-depth:coverage",
+      "passed": true,
+      "detail": "137"
+    },
+    {
+      "name": "concept-depth:digest",
+      "passed": true,
+      "detail": "12"
+    },
+    {
+      "name": "concept-depth:restore",
+      "passed": true,
+      "detail": "123"
+    },
+    {
+      "name": "concept-depth:seal",
+      "passed": true,
+      "detail": "135"
+    },
+    {
+      "name": "concept-depth:admission",
+      "passed": true,
+      "detail": "9"
+    },
+    {
+      "name": "concept-depth:canonical",
+      "passed": true,
+      "detail": "123"
+    },
+    {
+      "name": "concrete-test-density",
+      "passed": false,
+      "detail": "1"
+    },
+    {
+      "name": "source-path-density",
+      "passed": false,
+      "detail": "0"
+    },
+    {
+      "name": "numbered-request-ids-in-traceability",
+      "passed": false,
+      "detail": "missing=[1, 2, 3, 4, 5, 6, 7]; total=7"
+    },
+    {
+      "name": "manifest-json-valid-after-normalization",
+      "passed": true,
+      "detail": ""
+    }
+  ],
+  "request_headings": [
+    "Lang-01.5.1.1.2.1.1.1.1.1.1.1.2 — generic Match complete transcript and coverage closure correction",
+    "Parent and split reason",
+    "Decisions required",
+    "Current safe substrate to preserve",
+    "Required tests",
+    "Non-goals",
+    "Required returned archive"
+  ],
+  "numbered_candidates": [
+    {
+      "id": 1,
+      "text": "The stable payload transcript for every current"
+    },
+    {
+      "id": 2,
+      "text": "The exact accepted semantic identity for Entity patterns and"
+    },
+    {
+      "id": 3,
+      "text": "A checked record-pattern field row owned by sema, mapping each authored"
+    },
+    {
+      "id": 4,
+      "text": "The private bounded Maranget matrix types and specialization algorithm for"
+    },
+    {
+      "id": 5,
+      "text": "Exact constructor-domain and witness transcripts for nested products and"
+    },
+    {
+      "id": 6,
+      "text": "The stable declaration/body path bridge for every executable current body"
+    },
+    {
+      "id": 7,
+      "text": "The compile-clean/deletion order that replaces Cut 1b's typed unsupported"
+    }
+  ]
+}

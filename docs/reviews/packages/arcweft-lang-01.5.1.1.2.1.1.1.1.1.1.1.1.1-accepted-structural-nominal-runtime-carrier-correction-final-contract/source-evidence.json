@@ -1,0 +1,42 @@
+{
+  "repository": {
+    "remote": "UNAVAILABLE",
+    "sha": "UNAVAILABLE",
+    "branch": "UNAVAILABLE",
+    "repo_ok": false
+  },
+  "inputs": {
+    "2026-08-22-lang-01.5.1.1.2.1.1.1.1.1.1.1.1.1-accepted-structural-nominal-runtime-carrier-correction.md": "cbe6a1f1f20f2c5c11df678b8098165ce8931820ece459c7bf1cf203be7bc5a4",
+    "Rust Skill.txt": "1a28f552adf5efde95205bee8d56590aeb82346c48ebdf3fdbbaff5deca33665",
+    "前提(Sanzentyo-arcweft).txt": "cfa897a0ad93deb92fd454079df0a789edbbd40d85c8377324da703c8aefe0a1"
+  },
+  "agents": [],
+  "requirements": [
+    {
+      "line": 75,
+      "section": "Required implementation order",
+      "text": "The design must provide a compile-clean dependency order beginning with the"
+    },
+    {
+      "line": 88,
+      "section": "Required tests",
+      "text": "exact live carrier acceptance plus wrong owner, field, ordinal, name,"
+    },
+    {
+      "line": 105,
+      "section": "Required returned archive",
+      "text": "The archive must contain the complete final contract, Rust-shaped schemas,"
+    }
+  ],
+  "symbols": [],
+  "relevant_files": [],
+  "predecessors": [
+    {
+      "path": "../designs/lang-01.5.1.1.2.1.1.1.1.1.1.1.1-runtime-launch-receipt-keyed-ordinal-and-current-owner/OWNERSHIP_MATRIX.md",
+      "exists": false,
+      "sha256": "",
+      "size": 0
+    }
+  ],
+  "commands": []
+}

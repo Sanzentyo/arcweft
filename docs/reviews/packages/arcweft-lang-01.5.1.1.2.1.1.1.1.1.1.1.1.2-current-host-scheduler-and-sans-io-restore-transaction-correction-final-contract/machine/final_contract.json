@@ -1,0 +1,290 @@
+{
+  "schema_version": 1,
+  "sequence": "Lang-01.5.1.1.2.1.1.1.1.1.1.1.1.2",
+  "status": "READY_FOR_IMPLEMENTATION",
+  "open_questions": 0,
+  "production_head": "9168c8ac7285c6b44f29018626a0e7c1b0059796",
+  "request": {
+    "repository_path": "docs/reviews/requests/2026-08-23-lang-01.5.1.1.2.1.1.1.1.1.1.1.1.2-current-host-scheduler-and-sans-io-restore-transaction-correction.md",
+    "mirror": "REQUEST.md",
+    "sha256": "9a67fa8c606831a251d9203ae416def2c24fdd99e5eac1e152962b891160d0ab",
+    "status": "RESOLVED_BY_ACCEPTED_DESIGN"
+  },
+  "owners": {
+    "adapter_protocol": "arcweft-core::task::TaskLaunchAdapter",
+    "driver_protocol": "arcweft-core::task::TaskHost",
+    "journal": "arcweft-core::task::RuntimeGenerationJournal",
+    "journal_transaction": "arcweft-core::task::JournalTransaction",
+    "journal_after_image": "arcweft-core::task::SealedJournalAfterImage",
+    "applied_restore": "arcweft-core::task::AppliedRuntimeTaskRestore",
+    "scheduler": "arcweft-runtime-scheduler::RuntimeTaskScheduler<A>",
+    "scheduler_after_image": "arcweft-runtime-scheduler::SchedulerRuntimeAfterImage",
+    "native_composition": "arcweft-runtime-host::native_task::NativeTaskBridge",
+    "headless_composition": "arcweft-runtime-host::bundle_runner::session::BundleRunnerSession -> NativeTaskBridge",
+    "web_composition": "arcweft-player-web::host::BrowserTaskBroker",
+    "persistence_io": "outer application/session/save owner"
+  },
+  "task_host": {
+    "stored_adapter_type": false,
+    "driver_session_generic_over_adapter": false,
+    "step_method": "BundleSession::step_with_task_host<H: TaskHost>",
+    "step_tasks_semantics": "ingest_adapter_completions_advance_and_enqueue_only",
+    "step_output": [
+      "accepted_adapter_events",
+      "advanced_runtime_tasks"
+    ],
+    "event_queue_owner": "RuntimeTaskScheduler::SchedulerRuntimeState::pending_events",
+    "sole_event_drain": "TaskHost::poll_frame",
+    "driver_order": [
+      "step_tasks",
+      "poll_frame_once",
+      "runtime_step",
+      "ensure_observe_cancel_in_source_order"
+    ]
+  },
+  "restore_typestate": [
+    "DecodedRuntimeTaskSnapshotV1",
+    "PreparedRuntimeTaskRestore<'scheduler, A>",
+    "AppliedRuntimeTaskRestore"
+  ],
+  "prepared_restore": {
+    "exclusive_scheduler_borrow": true,
+    "token": "PreparedRestoreBatch<A::PreparedRestoreToken>",
+    "core_after_image": "SealedJournalAfterImage",
+    "runtime_after_image": "SchedulerRuntimeAfterImage",
+    "clone": false,
+    "copy": false,
+    "serialized": false,
+    "drop": "reverse_adapter_rollback_exactly_once",
+    "live_handle": false,
+    "accepted_receipt": false,
+    "restored_runtime_value": false,
+    "applied_result": false
+  },
+  "apply_order": [
+    "RuntimeGenerationJournal::apply_after_image:last_fallible",
+    "RuntimeTaskScheduler::apply_runtime_after_image:infallible",
+    "TaskLaunchAdapter::commit_operation:infallible_canonical_order",
+    "move_core_owned_applied_result:infallible"
+  ],
+  "post_apply": {
+    "allocation": false,
+    "validation": false,
+    "lookup": false,
+    "callback": false,
+    "logging_or_formatting": false,
+    "persistence_io": false,
+    "result_edge": false,
+    "panic_capable_hook": false
+  },
+  "operations": {
+    "ensure": {
+      "planner": "JournalTransaction::ensure_task",
+      "token": "PreparedLaunchBatch<A::PreparedLaunchToken>"
+    },
+    "restore": {
+      "planner": "JournalTransaction::plan_restore",
+      "token": "PreparedRestoreBatch<A::PreparedRestoreToken>"
+    },
+    "rebind": {
+      "planner": "JournalTransaction::plan_rebind",
+      "token": "PreparedRebindBatch<A::PreparedRebindToken>"
+    },
+    "cancel": {
+      "planner": "JournalTransaction::plan_cancel",
+      "token": "PreparedCancelBatch<A::PreparedCancelToken>"
+    }
+  },
+  "concrete_adapters": {
+    "registry": {
+      "type": "RegistryTaskLaunchAdapter",
+      "restore_token": "RegistryPreparedRestoreToken",
+      "error": "RegistryTaskPrepareError",
+      "allocator_after_image": true,
+      "unpublished_reservations": true
+    },
+    "browser": {
+      "type": "BrowserTaskLaunchAdapter",
+      "restore_token": "BrowserPreparedRestoreToken",
+      "error": "BrowserTaskPrepareError",
+      "prepared_resource_after_image": false,
+      "prepared_output_value": false,
+      "work_queue_slot_preallocated": true
+    }
+  },
+  "outcome_projection": [
+    "Progress",
+    "Ready",
+    "InfrastructureFailure",
+    "Cancelled"
+  ],
+  "lifecycle_stages": [
+    "Accepted",
+    "Running",
+    "Terminal"
+  ],
+  "need_cell_states": [
+    "Pending",
+    "Progress",
+    "Ready",
+    "InfrastructureFailure",
+    "CancellationRequested",
+    "Cancelled"
+  ],
+  "event_order": "(logical_epoch, task_id, sequence)",
+  "restore_prepare_error_precedence": [
+    "configuration_and_scalar_limits",
+    "active_generation_and_authority",
+    "canonical_order_and_duplicate_identity",
+    "producer_policy_ordinal",
+    "correlation_joins",
+    "plan_and_argument_digests",
+    "view_admission_and_revision",
+    "host_catalog_route_restart_cancellation",
+    "payload_outcome_runtime_value",
+    "cross_references",
+    "lifecycle_outcome_pending_event",
+    "quiescence_and_restart_completeness",
+    "scheduler_after_image_and_capacity",
+    "adapter_prepare_source_order",
+    "adapter_receipt_source_order",
+    "journal_seal",
+    "journal_apply_generation_revision"
+  ],
+  "decode_error_precedence": [
+    "outer_byte_limit",
+    "version_equals_1",
+    "canonical_framing_and_shortest_varints",
+    "integer_conversion_and_field_lengths",
+    "work_limits",
+    "unknown_fields_or_tags",
+    "duplicate_fields",
+    "trailing_bytes"
+  ],
+  "wire": {
+    "version": 1,
+    "old_reader": false,
+    "migration": false,
+    "fixed_width_private_integer": false,
+    "ordinary_integer": "shortest_base_128_varint"
+  },
+  "persistence": {
+    "core_sans_io": true,
+    "scheduler_sans_io": true,
+    "outer_complete_bytes": true,
+    "durable_prepared_record": false,
+    "durable_committed_record": false,
+    "wal": false,
+    "crash_publication_replay": false
+  },
+  "crate_dependencies": {
+    "arcweft-runtime-scheduler": [
+      "arcweft-core"
+    ],
+    "arcweft-runtime-driver": [
+      "arcweft-core"
+    ],
+    "forbidden_scheduler": [
+      "arcweft-host-adapter",
+      "arcweft-runtime-driver",
+      "arcweft-save"
+    ],
+    "forbidden_driver": [
+      "arcweft-runtime-scheduler",
+      "arcweft-host-adapter",
+      "arcweft-runtime-host"
+    ]
+  },
+  "predecessor_order": [
+    ".1.2 accepted_and_implemented",
+    ".1.4 accepted_and_implemented",
+    ".1.3.1 finalized_and_implemented",
+    ".1.1.1.1 structural_nominal_accepted_and_implemented",
+    "task_validation_and_snapshot_authorities",
+    "this_cut"
+  ],
+  "source_blobs": {
+    "crates/arcweft-core/src/task.rs": "c0a8ca5fb2fc4f184f3f494281883c1878d5ddc6",
+    "crates/arcweft-core/Cargo.toml": "22091bfdea72b6168576181b2cc62fdd25a75ada",
+    "crates/arcweft-runtime-scheduler/src/lib.rs": "c80e120ef922f3178de3d78501e0ce9c0ccc9fe4",
+    "crates/arcweft-runtime-scheduler/Cargo.toml": "28068bdb0ac30304abeb57e76661225deaee0a9a",
+    "crates/arcweft-host-adapter/src/lib.rs": "5367620b6062d9e1b9beec9f5c6f63ef4190cfb5",
+    "crates/arcweft-host-adapter/Cargo.toml": "04ff7503e718035252ba1764af1436024bfda494",
+    "crates/arcweft-runtime-host/src/native_task.rs": "89a88445188e7f9a348779c4b00f8d73c72c4532",
+    "crates/arcweft-runtime-host/src/bundle_runner/session.rs": "8f4333d7fd6c126255b149939243882f8bc53354",
+    "crates/arcweft-runtime-host/Cargo.toml": "fb6bd1c3b0f4c6eb34a5a8ca7842f2cecd867717",
+    "crates/arcweft-runtime-driver/src/task.rs": "928601cee0dc24cc636db9187159332c85fedd3e",
+    "crates/arcweft-runtime-driver/src/session.rs": "10572c7226948075d03725b6a80841ab94130d64",
+    "crates/arcweft-runtime-driver/src/session/persistence.rs": "7e484089e5b49b8798e0b8f06dd511eb0bf25ade",
+    "crates/arcweft-runtime-driver/Cargo.toml": "4cac7e66512b8d652e72e2ceef5ae92fd673e3dc",
+    "crates/arcweft-player-web/src/host.rs": "fe57dc4f3258fbf059802ff85b2b24d1afdeae6a",
+    "crates/arcweft-player-web/Cargo.toml": "fc4d39a13014df2e5fe20c0b625d363b1d600644"
+  },
+  "decision_ids": [
+    "HSRT-001",
+    "HSRT-002",
+    "HSRT-003",
+    "HSRT-004",
+    "HSRT-005",
+    "HSRT-006",
+    "HSRT-007",
+    "HSRT-008",
+    "HSRT-009",
+    "HSRT-010",
+    "HSRT-011",
+    "HSRT-012",
+    "HSRT-013",
+    "HSRT-014",
+    "HSRT-015",
+    "HSRT-016",
+    "HSRT-017",
+    "HSRT-018",
+    "HSRT-019",
+    "HSRT-020",
+    "HSRT-021",
+    "HSRT-022",
+    "HSRT-023",
+    "HSRT-024",
+    "HSRT-025",
+    "HSRT-026",
+    "HSRT-027",
+    "HSRT-028"
+  ],
+  "schema_tokens": [
+    "pub trait TaskLaunchAdapter",
+    "pub trait TaskHost",
+    "pub struct RuntimeTaskScheduler<A: TaskLaunchAdapter>",
+    "pending_events: Vec<TaskEvent>",
+    "pub struct DecodedRuntimeTaskSnapshotV1",
+    "pub struct PreparedRuntimeTaskRestore<'scheduler, A: TaskLaunchAdapter>",
+    "transaction: Option<PreparedRestoreTransaction<A::PreparedRestoreToken>>",
+    "pub struct AppliedRuntimeTaskRestore",
+    "pub(crate) fn into_restore(self) -> AppliedRuntimeTaskRestore",
+    "pub struct RegistryPreparedRestoreToken",
+    "pub struct BrowserPreparedRestoreToken",
+    "pub fn step_with_task_host<H: TaskHost>",
+    "pub enum TaskEventKind",
+    "InfrastructureFailure(RuntimeTaskFailure)",
+    "pub enum RuntimeNeedCellState",
+    "pub enum RuntimeTaskRestorePrepareError<E>"
+  ],
+  "required_files": [
+    "README.md",
+    "REQUEST.md",
+    "FINAL_DESIGN.md",
+    "SCHEMAS.md",
+    "TRANSACTION_AND_STATE_PROJECTION.md",
+    "DEPENDENCIES.md",
+    "CUTS_TESTS_AND_DELETION.md",
+    "SOURCE_EVIDENCE.md",
+    "DECISION_REGISTER.md",
+    "FINAL_STATUS.md",
+    "OPEN_QUESTIONS.md",
+    "VALIDATION_REPORT.md",
+    "MANIFEST.sha256",
+    "machine/final_contract.json",
+    "tools/validation_support.rs",
+    "tools/validate_design.rs",
+    "tools/negative_self_tests.rs"
+  ]
+}

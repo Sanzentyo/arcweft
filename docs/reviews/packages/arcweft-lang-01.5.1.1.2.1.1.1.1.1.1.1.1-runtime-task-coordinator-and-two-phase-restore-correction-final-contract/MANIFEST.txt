@@ -1,0 +1,14 @@
+01-request-coverage.md	request-to-decision/API/test traceability
+02-current-source-evidence.md	repository, AGENTS, file, and symbol evidence
+03-normative-design.md	authoritative coordinator and restore contract
+04-rust-api-and-data-model.md	concrete Rust ownership, APIs, types, and errors
+05-state-machine-and-persistence.md	state machine, canonical journal, crash and recovery protocol
+06-concurrency-and-lifecycle.md	lock ordering, atomic visibility, cancellation and shutdown
+07-implementation-plan.md	ordered file-by-file implementation tasks and gates
+08-test-plan.md	named tests and acceptance matrix
+09-compatibility-migration-rollout.md	compatibility, migration, rollout, rollback and observability
+10-verification.md	actual verification scope, commands, evidence and limitations
+11-self-audit.md	final completeness and contradiction audit
+98-input-premise.txt	provided premise copied verbatim
+99-input-request.md	original request copied verbatim
+README.md	package verdict and reading order

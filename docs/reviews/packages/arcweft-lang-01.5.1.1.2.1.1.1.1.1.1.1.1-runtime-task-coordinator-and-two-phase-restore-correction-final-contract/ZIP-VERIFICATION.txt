@@ -1,0 +1,17 @@
+ZIP verification status: PASS
+
+Staging directory: design-only documents; no production source or patch is included.
+Required-file/nonempty checks: PASS
+OPEN_QUESTIONS=0 marker checks: PASS
+Crash matrix CP-00..CP-11 checks: PASS
+Named crash-test coverage through RTR-CRASH-011: PASS
+Balanced Markdown fence checks: PASS
+Unresolved authored TODO/TBD/FIXME markers: NONE
+Internal SHA-256 manifest: SHA256SUMS.txt
+Archive integrity checks performed after creation:
+- zip -T
+- unzip -t
+- Python zipfile.ZipFile.testzip()
+
+Repository/source verification scope is stated in 10-verification.md; this file does not expand that claim.
+Generated UTC: 2026-08-22T14:46:14Z

@@ -1,0 +1,56 @@
+{
+  "baseline_full_git_sha": "unknown",
+  "open_questions": 0,
+  "design_only": true,
+  "inputs": {
+    "2026-08-22-lang-01.5.1.1.2.1.1.1.1.1.1.1.2-generic-match-complete-transcript-and-coverage-closure-correction.md": {
+      "sha256": "13bf986389054755b9c669e61d089e93c936726eeb7dde2fdf36684bb087f600",
+      "bytes": 5408
+    },
+    "Rust Skill.txt": {
+      "sha256": "1a28f552adf5efde95205bee8d56590aeb82346c48ebdf3fdbbaff5deca33665",
+      "bytes": 5045
+    },
+    "前提(Sanzentyo-arcweft).txt": {
+      "sha256": "cfa897a0ad93deb92fd454079df0a789edbbd40d85c8377324da703c8aefe0a1",
+      "bytes": 250
+    }
+  },
+  "files": [
+    {
+      "path": "DELIVERY-STATUS.md",
+      "sha256": "70383af7065a1cbbfb22fe55722f6b476a2a5b8e9f0cf9482b2273fc09810198",
+      "bytes": 285
+    },
+    {
+      "path": "generic-match-complete-transcript-and-coverage-closure-final-contract.md",
+      "sha256": "b706dfd86c10bdc7919cca26d4fcd7bfa08ee0d30ca85355b8ddbd9282d941bc",
+      "bytes": 4344
+    },
+    {
+      "path": "request-inventory.md",
+      "sha256": "867caad1ff022a35ab988b95ec519b86fc2e9d1a1784578ee9be2bd58e7eeff9",
+      "bytes": 1013
+    },
+    {
+      "path": "source-evidence.md",
+      "sha256": "a8bfefd83415ca977c12520381a57b779df30fa296847bcbe6a9b40ae8c450a0",
+      "bytes": 180
+    },
+    {
+      "path": "test-plan.md",
+      "sha256": "ac83efa9f662ef9b1f686d35f8734021d093bfe6a0c7108b9cbe5aa278149cde",
+      "bytes": 15774
+    },
+    {
+      "path": "validation-report.json",
+      "sha256": "efcd1ce5e3157cca45fb159fe12b53aeb8f018055cc09171f721ecbd5f4d9270",
+      "bytes": 4772
+    },
+    {
+      "path": "validation-report.md",
+      "sha256": "6392f4438c2ed13d24ec7e59610db5af5bd28b548233fb8a52e6bdd199a91404",
+      "bytes": 2034
+    }
+  ]
+}
