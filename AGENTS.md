@@ -67,14 +67,16 @@ Git is the sole version-control authority for this repository.
 - Use `git status`, `git diff`, `git log`, `git show`, and related Git commands.
   Do not use Jujutsu, record Jujutsu change IDs, or require matching Git and
   Jujutsu identities. Repository evidence uses the full Git commit SHA.
-- Keep a small, fully isolated change directly on `main` when that is safe.
-  Stage explicit paths or hunks and inspect `git diff --cached` before commit.
-- For independent, parallel, risky, or long-running work, or when the primary
-  checkout contains protected WIP, use a separate Git worktree and a short-lived
-  task branch named `codex/<topic>`.
-- Keep task branches local by default. After validation, update them onto the
-  latest `main`, integrate with a fast-forward when practical, push `main`, and
-  remove the temporary worktree and branch when safe.
+- Work only in the existing repository checkout on `main`. Stage explicit
+  paths or hunks and inspect `git diff --cached` before commit.
+- Do not create an additional Git worktree, workspace checkout, task branch,
+  or other branch, and do not switch away from `main`, unless the user
+  explicitly requests that exact operation. Independent, parallel, risky, or
+  long-running work and protected WIP do not by themselves authorize a
+  worktree or branch.
+- If existing dirty state cannot be preserved while working directly on
+  `main`, stop and ask the user for direction instead of creating a worktree or
+  branch.
 - Do not push speculative WIP refs. Do not mix unrelated goals in one commit or
   carry an independently completed policy, request, or implementation cut into
   the next goal.
