@@ -214,3 +214,12 @@ live/snapshot carriers, Option convention, and existing callable authority.
 
 No Rust, Cargo manifest, production fixture, generated artifact, Clippy, AOT,
 platform, browser, or runtime test was changed or run for this intake cut.
+
+## Subsequent accepted resolution
+
+The blocking correction was closed on current `main` at
+`61779d1432b902efc2d19041a7326f3c1319828a` by the
+[repository-native accepted final design](../reviews/designs/lang-01.5.1.1.2.1.1.1.1.1.1.1.1-runtime-launch-receipt-keyed-ordinal-and-current-owner/README.md).
+That later design supersedes only this intake's `BLOCKED` next action; it does
+not rewrite the historical `DESIGN_NOT_READY` adjudication of the retained
+package. Production implementation remains not performed in the design cut.
