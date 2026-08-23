@@ -23,6 +23,17 @@ Arcweft source files use the `.arcw` extension.
   higher layers, and Sans-I/O crates must remain Sans I/O.
 - Prefer one final typed authority. Do not add parallel models, dual readers,
   fallback resolvers, source-string reconstruction, or copied side tables.
+- Select the coherent final architecture from domain ownership, layer
+  direction, invariants, and complete consumer needs. Diff size,
+  implementation cost, migration effort, and short-term speed are not reasons
+  to choose a narrower local patch. A "minimal fix" is acceptable only when it
+  is demonstrably the same final authority with no ad hoc exception, deferred
+  ownership decision, or foreseeable replacement path.
+- When one defect exposes a missing general boundary, repair that boundary and
+  migrate all affected producers and consumers. Do not accumulate
+  case-specific flags, enum variants, helper branches, or validation rules for
+  examples that belong to one typed schema, algebra, registry, state machine,
+  or sealed evidence model.
 - Replace unreleased internal contracts directly with the selected final
   model. Compatibility requires evidence of a released artifact, persisted
   user data, an external consumer, or an explicit user requirement.
@@ -95,6 +106,10 @@ Git is the sole version-control authority for this repository.
 - If a required boundary remains underdesigned, do not guess it. Record the
   exact non-goal or blocker in `docs/implementation/` and create an independently
   throwable request under `docs/reviews/requests/` when design work is needed.
+- Do not define a subcut around the smallest compilable subset when that would
+  freeze temporary scaffolding or split one semantic authority across cuts.
+  Cut boundaries must remain reviewable, but architecture and acceptance are
+  determined by the complete final model.
 - Keep transient progress and task-specific checklists out of this file and out
   of stable design chapters.
 - Do not hide failures. Distinguish passed, failed, blocked, and not-run

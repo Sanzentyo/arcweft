@@ -64,8 +64,10 @@ the review inbox.
 - Preserve the parent sequence when assigning a child number. Include the split
   reason, exact decisions required, precedence, non-goals, consumer inventory,
   implementation order, required tests, constraints, and exact output archive.
-- Group topics only when they must be designed together to avoid incompatible
-  contracts. Otherwise keep requests small and sequential.
+- Group topics whenever they share one result-changing authority or must be
+  designed together to avoid incompatible contracts. Split only after proving
+  semantic independence; request size and implementation convenience do not
+  justify separating mutually constraining decisions.
 - State that accepted and validated substrate must not be redesigned without a
   concrete repository-evidenced flaw.
 - Link every blocker request from the relevant implementation intake or status
