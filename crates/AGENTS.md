@@ -35,10 +35,13 @@ the whole workspace when referenced by the root `AGENTS.md`.
   `mod.rs` files.
 - Keep public API deliberate, documented, and no wider than its consumers
   require.
-- Prefer the simplest complete domain model, not the smallest edit. When
-  several special cases are projections of one rule, express the rule on the
-  owning schema or typed context and delete the special-case paths even when
-  that requires a broad producer/consumer migration.
+- Select a coherent complete domain model before comparing simplicity. Treat
+  simplicity as a tie-breaker only between models that express the same full
+  domain, ownership, invariants, and consumer needs; do not minimize the type,
+  variant, module, or migration count by collapsing distinct domain roles.
+  When several special cases are projections of one rule, express the rule on
+  the owning schema or typed context and delete the special-case paths even
+  when that requires a broad producer/consumer migration.
 - Do not leave workspace-external directories that look like active crates,
   tests, or fixtures. Remove obsolete migration scratch; retain historical
   material under documentation only when explicitly useful.

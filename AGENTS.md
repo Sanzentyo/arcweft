@@ -24,11 +24,12 @@ Arcweft source files use the `.arcw` extension.
 - Prefer one final typed authority. Do not add parallel models, dual readers,
   fallback resolvers, source-string reconstruction, or copied side tables.
 - Select the coherent final architecture from domain ownership, layer
-  direction, invariants, and complete consumer needs. Diff size,
-  implementation cost, migration effort, and short-term speed are not reasons
-  to choose a narrower local patch. A "minimal fix" is acceptable only when it
-  is demonstrably the same final authority with no ad hoc exception, deferred
-  ownership decision, or foreseeable replacement path.
+  direction, invariants, and complete consumer needs. Do not use minimum patch
+  size, minimum type count, minimum migration, implementation cost, or
+  short-term speed as an architecture-selection criterion. A small change is
+  acceptable only as a consequence of already selecting the complete final
+  authority; it must not leave an ad hoc exception, deferred ownership
+  decision, or foreseeable replacement path.
 - When one defect exposes a missing general boundary, repair that boundary and
   migrate all affected producers and consumers. Do not accumulate
   case-specific flags, enum variants, helper branches, or validation rules for

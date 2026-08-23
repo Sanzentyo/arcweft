@@ -51,8 +51,11 @@ the review inbox.
   can resolve. Reserve `NOT_READY` for a genuinely external unresolved
   authority and identify it exactly.
 - A broad sequence request is not implementation-ready design by itself. Split
-  underdesigned topics into follow-up requests and keep them out of the active
-  implementation acceptance criteria.
+  underdesigned topics into follow-up requests only after identifying their
+  final authority boundaries. Topics that can change one another's production
+  result must be designed and adjudicated together even when that produces a
+  larger request; do not make an easiest subset implementation-ready by
+  excluding a mutually constraining decision.
 - Do not introduce compatibility aliases, wrappers, dual readers, migration
   maps, source-string reparsing, source gates, removed-syntax diagnostics, or
   implementation overlays for unreleased contracts.
