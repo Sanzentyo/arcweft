@@ -1,9 +1,64 @@
 use super::*;
+use arcweft_id::DeclarationIdentityFamily;
+
+use crate::source_index::HirCallableSourceOwner;
 
 fn absolute_entity_reference(value: &str) -> HirIdRef {
     HirIdRef::absolute(
         HirEntityReference::try_new(value.into()).expect("valid absolute entity reference"),
     )
+}
+
+#[test]
+fn view_has_one_retained_binding_and_one_nonbinding_callable_row() {
+    let source_text = "view Main() {\n    Panel {}\n}\n";
+    let (document, project) = project(source_text);
+    let table = ProjectSymbolTable::link(
+        project.view(),
+        &empty_declarations(std::slice::from_ref(&document), "view-callable-row"),
+    )
+    .expect("View symbol rows link")
+    .into_table();
+
+    let retained = table
+        .retained_symbols()
+        .filter(|symbol| symbol.family() == DeclarationIdentityFamily::View)
+        .collect::<Vec<_>>();
+    let callables = table
+        .callable_symbols()
+        .filter(|symbol| symbol.owner() == CallableDeclarationOwner::View)
+        .collect::<Vec<_>>();
+    assert_eq!(retained.len(), 1);
+    assert_eq!(callables.len(), 1);
+    assert_eq!(
+        callables[0].source_owner(),
+        HirCallableSourceOwner::ViewItem
+    );
+    assert_eq!(callables[0].source_item(), retained[0].owner());
+
+    let bindings = table
+        .scope_bindings()
+        .filter(|(_, path, _)| path.to_string() == "Main")
+        .collect::<Vec<_>>();
+    assert_eq!(bindings.len(), 1);
+    assert!(matches!(
+        bindings[0].2,
+        ProjectSymbolTargetId::Retained(public_id) if public_id == retained[0].public_id()
+    ));
+    let source = document
+        .span(SourceRange::new(5, 9))
+        .expect("View name source");
+    assert!(matches!(
+        table.resolve_callable(
+            &CanonicalModulePath::crate_root(),
+            &symbol_path("Main"),
+            &source,
+        ),
+        Err(ProjectSymbolResolutionError::NotCallable {
+            actual: ProjectSymbolTargetId::Retained(_),
+            ..
+        })
+    ));
 }
 
 #[test]

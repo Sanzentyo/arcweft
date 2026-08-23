@@ -10,25 +10,30 @@ use arcweft_source::identity::SourceSnapshotId;
 use arcweft_source::{SourceDocument, SourceDocumentId, SourceEdit, SourceName, SourceRange};
 
 use super::{
-    HirExecutableProjectView, HirPackageModuleKey, HirProject, HirProjectBuildError,
-    HirProjectBuilder, HirProjectExecutionError, HirProjectModule, HirProjectModuleError,
-    HirRuntimeCallCalleeDisposition, HirRuntimeEmissionMode, HirRuntimeExecutableOwner,
-    HirRuntimeExpressionTypeDisposition, HirRuntimeReachabilityEdge, HirRuntimeReachabilityError,
-    HirRuntimeReachabilityRoot, HirRuntimeReachabilityRootKind, HirRuntimeSemanticReachability,
-    HirRuntimeSemanticReachabilityInput, HirSelectedExpressionInventoryError, exported_parts,
+    HirDeclarationBodyRootRole, HirExecutableProjectView, HirPackageModuleKey, HirProject,
+    HirProjectBuildError, HirProjectBuilder, HirProjectExecutionError, HirProjectModule,
+    HirProjectModuleError, HirRuntimeCallCalleeDisposition, HirRuntimeEmissionMode,
+    HirRuntimeExecutableOwner, HirRuntimeExpressionTypeDisposition, HirRuntimeReachabilityEdge,
+    HirRuntimeReachabilityError, HirRuntimeReachabilityRoot, HirRuntimeReachabilityRootKind,
+    HirRuntimeSemanticReachability, HirRuntimeSemanticReachabilityInput,
+    HirSelectedExpressionInventoryError, HirSemanticPathError, HirSemanticPathStep, exported_parts,
     styles,
 };
+use crate::body_edges::HirBodyChild;
 use crate::database::HirDatabase;
 use crate::dialogue_application::HirPostfixBracketCandidates;
-use crate::expr::{HirExprKind, HirThreadFlowItem};
+use crate::expr::{HirExprKind, HirExpressionOwnedChild, HirThreadFlowItem};
 use crate::final_lowering::stage_unpublished_module_for_invariant_test;
 use crate::identity::ExprId;
 use crate::item::{HirDeclarationMemberKind, HirItemKind};
 use crate::line_identity::{DialogueLineDiagnostic, DialogueLineIdOrigin, DialogueTextKeyOrigin};
 use crate::lowering::{HirModuleKey, LoweringRequest};
 use crate::module::HirModule;
-use crate::symbol::{CallableDeclarationId, CallableDeclarationKey, CallableDeclarationOwner};
-use crate::symbol::{CallablePackageId, ProjectSymbolRevision, ProjectSymbolWorldId};
+use crate::source_index::HirCallableSourceOwner;
+use crate::symbol::{
+    CallableDeclarationId, CallableDeclarationKey, CallableDeclarationOwner, CallablePackageId,
+    ProjectExternalDeclarations, ProjectSymbolRevision, ProjectSymbolTable, ProjectSymbolWorldId,
+};
 
 fn package() -> CallablePackageId {
     CallablePackageId::try_new("proof-final-project-tests").unwrap()
@@ -162,7 +167,7 @@ fn runtime_reachability(
     executable.runtime_semantic_reachability(input, selected_postfix, call_disposition)
 }
 
-fn root_module_fixture(
+pub(super) fn root_module_fixture(
     label: &str,
 ) -> (
     HirDatabase,
@@ -177,11 +182,552 @@ fn root_module_fixture(
         &mut syntax,
         &format!("arcweft-test://proof/final-project/{label}"),
         &format!("{label}.arcw"),
-        "fn accepted() {}\n",
+        "fn accepted() { let value = 1 }\n",
     );
     let mut database = HirDatabase::try_new().unwrap();
     let module = lower(&mut database, &parsed, &package, &root_path);
     (database, package, root_path, module)
+}
+
+fn symbols_for_project(
+    project: &HirProject,
+    root_document: &SourceDocument,
+    profile: &str,
+) -> ProjectSymbolTable {
+    let world = ProjectSymbolWorldId::try_new(
+        project.package().clone(),
+        root_document.identity().id().clone(),
+        profile,
+    )
+    .expect("symbol world");
+    let revision = ProjectSymbolRevision::try_for_documents(
+        project
+            .view()
+            .modules()
+            .map(|(_, module)| module.provenance().source_identity()),
+    )
+    .expect("symbol revision");
+    let externals = ProjectExternalDeclarations::try_new(world, revision, Vec::new())
+        .expect("empty external declarations");
+    ProjectSymbolTable::link(project.view(), &externals)
+        .expect("linked project symbols")
+        .into_table()
+}
+
+fn assert_expression_owned_edges_have_semantic_paths(
+    module: &HirModule,
+    paths: &super::HirDeclarationSemanticPathIndex,
+    owner: ExprId,
+) {
+    let expression = module.resolve_expr(owner).expect("owned expression");
+    let edges = expression
+        .kind()
+        .expression_owned_child_edges()
+        .expect("bounded owned topology");
+    assert!(!edges.is_empty(), "fixture must contain owned roots");
+    for edge in edges {
+        let path = match edge.child() {
+            HirExpressionOwnedChild::Pattern(owner) => paths.pattern(owner),
+            HirExpressionOwnedChild::Statement(owner) => paths.statement(owner),
+            HirExpressionOwnedChild::Body(body) => match body.child() {
+                HirBodyChild::Expression(owner) => paths.expression(owner),
+                HirBodyChild::Statement(owner) => paths.statement(owner),
+            },
+        }
+        .expect("owned child semantic path");
+        assert!(path.contains(&HirSemanticPathStep::ExpressionOwned(edge.role().clone())));
+    }
+}
+
+fn assert_source_expression_owned_paths(
+    label: &str,
+    source: &str,
+    select: impl Fn(&HirExprKind) -> bool,
+) {
+    let package = package();
+    let root_path = CanonicalModulePath::crate_root();
+    let mut syntax = SyntaxDatabase::try_new().unwrap();
+    let parsed = parse_initial(
+        &mut syntax,
+        &format!("arcweft-test://proof/final-project/{label}"),
+        &format!("{label}.arcw"),
+        source,
+    );
+    assert!(
+        parsed.diagnostics().is_empty(),
+        "{:?}",
+        parsed.diagnostics()
+    );
+    let mut database = HirDatabase::try_new().unwrap();
+    let module = lower(&mut database, &parsed, &package, &root_path);
+    assert!(
+        module.diagnostics().is_empty(),
+        "{:?}",
+        module.diagnostics()
+    );
+    let retained_module = Arc::clone(&module);
+    let project = build_project(
+        &database,
+        package.clone(),
+        [bind(&database, &package, &root_path, module)],
+    )
+    .expect("executable project");
+    let symbols = symbols_for_project(&project, parsed.document(), label);
+    let declaration = symbols
+        .callable_symbols()
+        .find(|symbol| symbol.source_owner() == HirCallableSourceOwner::Item)
+        .expect("fixture callable")
+        .declaration()
+        .clone();
+    let paths = project
+        .executable_view()
+        .expect("executable HIR")
+        .declaration_semantic_paths(&symbols, &declaration)
+        .expect("semantic paths");
+    let owner = retained_module
+        .expressions()
+        .find_map(|(owner, expression)| select(expression.kind()).then_some(owner))
+        .expect("selected owned expression");
+    assert_expression_owned_edges_have_semantic_paths(&retained_module, &paths, owner);
+}
+
+#[test]
+fn semantic_paths_consume_await_owned_roots() {
+    assert_source_expression_owned_paths(
+        "await-owned-paths",
+        concat!(
+            "flow line_handles {\n",
+            "    try await task with {\n",
+            "        pending progress => { let value = 1 }\n",
+            "    }\n",
+            "}\n",
+        ),
+        |kind| matches!(kind, HirExprKind::Await(_)),
+    );
+}
+
+#[test]
+fn semantic_paths_consume_dialogue_owned_roots() {
+    assert_source_expression_owned_paths(
+        "dialogue-owned-paths",
+        concat!(
+            "pub character alice { display_name = \"Alice\" }\n",
+            "flow line_handles() -> String {\n",
+            "    let (_, cue) = alice(voice=auto)[聞いて。[p]]\n",
+            "    with:\n",
+            "        let actor = alice.stage.acquire(scope=line)\n",
+            "        let cue = at(0.42s):\n",
+            "            actor.look(.worried, crossfade=120ms)\n",
+            "        let voice = line.voice_handle()\n",
+            "        out (voice, cue)\n",
+            "    log.info(\"cue kept\", cue = cue)\n",
+            "    return \"done\"\n",
+            "}\n",
+        ),
+        |kind| matches!(kind, HirExprKind::DialogueContentApplication(_)),
+    );
+}
+
+#[test]
+fn view_semantic_paths_cover_parameters_and_source_ordered_values() {
+    let package = package();
+    let root_path = CanonicalModulePath::crate_root();
+    let mut syntax = SyntaxDatabase::try_new().unwrap();
+    let parsed = parse_initial(
+        &mut syntax,
+        "arcweft-test://proof/final-project/view-semantic-paths",
+        "view-semantic-paths.arcw",
+        "view Main(count: u32 = 1) {\n    Panel {}\n    Text(count)\n}\n",
+    );
+    assert!(
+        parsed.diagnostics().is_empty(),
+        "{:?}",
+        parsed.diagnostics()
+    );
+    let mut database = HirDatabase::try_new().unwrap();
+    let module = lower(&mut database, &parsed, &package, &root_path);
+    let retained_module = Arc::clone(&module);
+    let project = build_project(
+        &database,
+        package.clone(),
+        [bind(&database, &package, &root_path, module)],
+    )
+    .unwrap();
+    let symbols = symbols_for_project(&project, parsed.document(), "view-semantic-paths");
+    let symbol = symbols
+        .callable_symbols()
+        .find(|symbol| symbol.source_owner() == HirCallableSourceOwner::ViewItem)
+        .expect("View callable symbol");
+    let declaration = symbol.declaration().clone();
+    let item = retained_module.resolve_item(symbol.source_item()).unwrap();
+    let HirItemKind::View(view) = item.kind() else {
+        panic!("View item");
+    };
+    let parameter = &view.parameters()[0];
+    let values = view.values();
+
+    let paths = project
+        .executable_view()
+        .unwrap()
+        .declaration_semantic_paths(&symbols, &declaration)
+        .expect("View has executable semantic roots");
+    assert_eq!(paths.declaration(), &declaration);
+    assert_eq!(
+        paths.pattern(parameter.pattern()),
+        Some(
+            [HirSemanticPathStep::ParameterPattern {
+                group: 0,
+                parameter: 0,
+            }]
+            .as_slice()
+        )
+    );
+    assert_eq!(
+        paths.expression(parameter.default().expect("default")),
+        Some(
+            [HirSemanticPathStep::ParameterDefault {
+                group: 0,
+                parameter: 0,
+            }]
+            .as_slice()
+        )
+    );
+    assert_eq!(values.len(), 2);
+    for (ordinal, value) in values.iter().copied().enumerate() {
+        assert_eq!(
+            paths.expression(value),
+            Some(
+                [HirSemanticPathStep::DeclarationBody(
+                    HirDeclarationBodyRootRole::ViewValue {
+                        ordinal: u32::try_from(ordinal).unwrap(),
+                    },
+                )]
+                .as_slice()
+            )
+        );
+    }
+    assert_eq!(
+        paths,
+        project
+            .executable_view()
+            .unwrap()
+            .declaration_semantic_paths(&symbols, &declaration)
+            .expect("deterministic View paths")
+    );
+}
+
+#[test]
+fn empty_view_has_an_empty_but_valid_semantic_path_index() {
+    let package = package();
+    let root_path = CanonicalModulePath::crate_root();
+    let mut syntax = SyntaxDatabase::try_new().unwrap();
+    let parsed = parse_initial(
+        &mut syntax,
+        "arcweft-test://proof/final-project/empty-view-semantic-paths",
+        "empty-view-semantic-paths.arcw",
+        "view Empty() {}\n",
+    );
+    let mut database = HirDatabase::try_new().unwrap();
+    let module = lower(&mut database, &parsed, &package, &root_path);
+    let project = build_project(
+        &database,
+        package.clone(),
+        [bind(&database, &package, &root_path, module)],
+    )
+    .expect("empty View project");
+    let symbols = symbols_for_project(&project, parsed.document(), "empty-view-semantic-paths");
+    let declaration = symbols
+        .callable_symbols()
+        .find(|symbol| symbol.source_owner() == HirCallableSourceOwner::ViewItem)
+        .expect("empty View callable")
+        .declaration();
+    let paths = project
+        .executable_view()
+        .expect("executable empty View")
+        .declaration_semantic_paths(&symbols, declaration)
+        .expect("empty View path index");
+    assert_eq!(paths.declaration(), declaration);
+}
+
+#[test]
+fn poisoned_view_callable_row_is_not_executable() {
+    let package = package();
+    let root_path = CanonicalModulePath::crate_root();
+    let mut syntax = SyntaxDatabase::try_new().unwrap();
+    let parsed = parse_initial(
+        &mut syntax,
+        "arcweft-test://proof/final-project/poisoned-view-callable",
+        "poisoned-view-callable.arcw",
+        concat!(
+            "view Broken() {\n",
+            "    Panel {}\n",
+            "    export late\n",
+            "}\n",
+        ),
+    );
+    let mut database = HirDatabase::try_new().unwrap();
+    let module = lower(&mut database, &parsed, &package, &root_path);
+    assert!(!module.diagnostics().is_empty());
+    let project = build_project(
+        &database,
+        package.clone(),
+        [bind(&database, &package, &root_path, module)],
+    )
+    .expect("recovered View project remains inspectable");
+    let symbols = symbols_for_project(&project, parsed.document(), "poisoned-view-callable");
+    let symbol = symbols
+        .callable_symbols()
+        .find(|symbol| symbol.source_owner() == HirCallableSourceOwner::ViewItem)
+        .expect("poisoned View callable row");
+    assert!(!symbol.is_executable());
+}
+
+#[test]
+fn semantic_paths_reject_symbols_from_a_foreign_snapshot() {
+    let package = package();
+    let root_path = CanonicalModulePath::crate_root();
+    let mut syntax = SyntaxDatabase::try_new().unwrap();
+    let first = parse_initial(
+        &mut syntax,
+        "arcweft-test://proof/final-project/foreign-semantic-path-snapshot",
+        "foreign-semantic-path-snapshot.arcw",
+        "view Main() {\n    Panel {}\n}\n",
+    );
+    let mut database = HirDatabase::try_new().unwrap();
+    let first_module = lower(&mut database, &first, &package, &root_path);
+    let first_project = build_project(
+        &database,
+        package.clone(),
+        [bind(
+            &database,
+            &package,
+            &root_path,
+            Arc::clone(&first_module),
+        )],
+    )
+    .unwrap();
+    let first_symbols = symbols_for_project(&first_project, first.document(), "foreign-snapshot");
+    let declaration = first_symbols
+        .callable_symbols()
+        .find(|symbol| symbol.source_owner() == HirCallableSourceOwner::ViewItem)
+        .expect("View callable symbol")
+        .declaration()
+        .clone();
+
+    let second = syntax
+        .reparse(
+            &first,
+            &[SourceEdit::new(
+                first.document().span(SourceRange::new(0, 0)).unwrap(),
+                "/// revised\n",
+            )],
+            arcweft_lang_syntax::parser::ParseOptions::default(),
+        )
+        .unwrap();
+    let second_module = lower(&mut database, &second, &package, &root_path);
+    assert_eq!(first_module.module_id(), second_module.module_id());
+    assert_ne!(first_module.snapshot_id(), second_module.snapshot_id());
+    let second_project = build_project(
+        &database,
+        package.clone(),
+        [bind(&database, &package, &root_path, second_module)],
+    )
+    .unwrap();
+
+    assert_eq!(
+        second_project
+            .executable_view()
+            .unwrap()
+            .declaration_semantic_paths(&first_symbols, &declaration),
+        Err(HirSemanticPathError::ForeignSnapshot)
+    );
+}
+
+#[test]
+fn semantic_paths_keep_extern_and_trait_requirements_bodyless() {
+    let package = package();
+    let root_path = CanonicalModulePath::crate_root();
+    let mut syntax = SyntaxDatabase::try_new().unwrap();
+    let parsed = parse_initial(
+        &mut syntax,
+        "arcweft-test://proof/final-project/bodyless-semantic-paths",
+        "bodyless-semantic-paths.arcw",
+        concat!(
+            "extern capability host { fn read() -> Unit }\n",
+            "trait Readable { fn read(&self) -> Self }\n",
+        ),
+    );
+    assert!(
+        parsed.diagnostics().is_empty(),
+        "{:?}",
+        parsed.diagnostics()
+    );
+    let mut database = HirDatabase::try_new().unwrap();
+    let module = lower(&mut database, &parsed, &package, &root_path);
+    assert!(
+        module.diagnostics().is_empty(),
+        "{:?}",
+        module.diagnostics()
+    );
+    let project = build_project(
+        &database,
+        package.clone(),
+        [bind(&database, &package, &root_path, module)],
+    )
+    .expect("bodyless project");
+    let symbols = symbols_for_project(&project, parsed.document(), "bodyless-semantic-paths");
+    let bodyless = symbols
+        .callable_symbols()
+        .filter(|symbol| {
+            matches!(
+                symbol.source_owner(),
+                HirCallableSourceOwner::ExternCapabilityFunction { .. }
+                    | HirCallableSourceOwner::TraitFunction { .. }
+            )
+        })
+        .collect::<Vec<_>>();
+    assert_eq!(bodyless.len(), 2);
+    for symbol in bodyless {
+        assert_eq!(
+            project
+                .executable_view()
+                .expect("executable HIR")
+                .declaration_semantic_paths(&symbols, symbol.declaration()),
+            Err(HirSemanticPathError::MissingBody)
+        );
+    }
+}
+
+#[test]
+fn declaration_root_matrix_is_exact_and_deterministic() {
+    let package = package();
+    let root_path = CanonicalModulePath::crate_root();
+    let mut syntax = SyntaxDatabase::try_new().unwrap();
+    let parsed = parse_initial(
+        &mut syntax,
+        "arcweft-test://proof/final-project/declaration-root-matrix",
+        "declaration-root-matrix.arcw",
+        concat!(
+            "fn ordinary(value: Int = 1) { value }\n",
+            "predicate logical(value: Bool) = value\n",
+            "proof evidence(value: Int) = ()\n",
+            "flow directed(value: Int) { value }\n",
+            "struct Target {}\n",
+            "trait Base { fn run(self) -> Int }\n",
+            "impl Base for Target { fn run(self) -> Int { 1 } }\n",
+            "impl Target { fn own(self) -> Int { 2 } }\n",
+            "view Screen(value: Int = 1) { Text(value) }\n",
+        ),
+    );
+    assert!(
+        parsed.diagnostics().is_empty(),
+        "{:?}",
+        parsed.diagnostics()
+    );
+    let mut database = HirDatabase::try_new().unwrap();
+    let module = lower(&mut database, &parsed, &package, &root_path);
+    assert!(
+        module.diagnostics().is_empty(),
+        "{:?}",
+        module.diagnostics()
+    );
+    let retained_module = Arc::clone(&module);
+    let project = build_project(
+        &database,
+        package.clone(),
+        [bind(&database, &package, &root_path, module)],
+    )
+    .expect("declaration-root matrix project");
+    let symbols = symbols_for_project(&project, parsed.document(), "declaration-root-matrix");
+    let expected = [
+        (
+            CallableDeclarationOwner::Function,
+            HirDeclarationBodyRootRole::FunctionBody,
+            1_usize,
+        ),
+        (
+            CallableDeclarationOwner::Predicate,
+            HirDeclarationBodyRootRole::PredicateBody,
+            1,
+        ),
+        (
+            CallableDeclarationOwner::Proof,
+            HirDeclarationBodyRootRole::ProofBody,
+            1,
+        ),
+        (
+            CallableDeclarationOwner::Flow,
+            HirDeclarationBodyRootRole::FlowBody,
+            1,
+        ),
+        (
+            CallableDeclarationOwner::TraitImplementation,
+            HirDeclarationBodyRootRole::ImplFunctionBody,
+            1,
+        ),
+        (
+            CallableDeclarationOwner::InherentMethod,
+            HirDeclarationBodyRootRole::ImplFunctionBody,
+            1,
+        ),
+        (
+            CallableDeclarationOwner::View,
+            HirDeclarationBodyRootRole::ViewValue { ordinal: 0 },
+            1,
+        ),
+    ];
+    for (owner, root, expected_count) in expected {
+        let rows = symbols
+            .callable_symbols()
+            .filter(|symbol| symbol.owner() == owner)
+            .collect::<Vec<_>>();
+        assert_eq!(rows.len(), expected_count, "{owner:?}");
+        for symbol in rows {
+            let paths = project
+                .executable_view()
+                .expect("executable HIR")
+                .declaration_semantic_paths(&symbols, symbol.declaration())
+                .expect("declaration semantic paths");
+            let rooted = retained_module.expressions().any(|(expression, _)| {
+                paths.expression(expression).is_some_and(|path| {
+                    path.first() == Some(&HirSemanticPathStep::DeclarationBody(root))
+                })
+            });
+            assert!(rooted, "missing {owner:?} declaration root");
+            assert!(retained_module.patterns().any(|(pattern, _)| matches!(
+                paths.pattern(pattern),
+                Some([HirSemanticPathStep::ParameterPattern {
+                    group: 0,
+                    parameter: 0
+                }])
+            )));
+            let has_default = retained_module.expressions().any(|(expression, _)| {
+                matches!(
+                    paths.expression(expression),
+                    Some([HirSemanticPathStep::ParameterDefault {
+                        group: 0,
+                        parameter: 0
+                    }])
+                )
+            });
+            assert_eq!(
+                has_default,
+                matches!(
+                    owner,
+                    CallableDeclarationOwner::Function | CallableDeclarationOwner::View
+                ),
+                "{owner:?} default path policy"
+            );
+            assert_eq!(
+                paths,
+                project
+                    .executable_view()
+                    .unwrap()
+                    .declaration_semantic_paths(&symbols, symbol.declaration())
+                    .expect("deterministic declaration semantic paths")
+            );
+        }
+    }
 }
 
 #[test]

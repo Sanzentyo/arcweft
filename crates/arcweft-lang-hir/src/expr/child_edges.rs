@@ -15,6 +15,13 @@ use crate::dialogue_application::{
 };
 use crate::identity::ExprId;
 use crate::stmt::HirTriggerPattern;
+use thiserror::Error;
+
+#[derive(Clone, Copy, Debug, Eq, Error, PartialEq)]
+pub enum HirExpressionChildEdgeError {
+    #[error("an expression child ordinal does not fit u32")]
+    OrdinalOverflow,
+}
 
 /// One ordered expression-to-expression edge owned by a HIR expression.
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -40,7 +47,7 @@ impl HirExpressionChildEdge {
 }
 
 /// A nonempty structural path into a nested Choice or line-plan owner.
-#[derive(Clone, Debug, Eq, PartialEq)]
+#[derive(Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub struct HirNestedExpressionPath(Box<[HirNestedExpressionPathSegment]>);
 
 impl HirNestedExpressionPath {
@@ -71,7 +78,7 @@ pub enum HirNestedExpressionPathError {
 }
 
 /// Typed coordinates for nested Choice and line-plan expression children.
-#[derive(Clone, Debug, Eq, PartialEq)]
+#[derive(Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub enum HirNestedExpressionPathSegment {
     ChoiceBodyItem { ordinal: u32 },
     ChoiceIfBranch { ordinal: u32 },
@@ -264,7 +271,24 @@ impl HirExprKind {
         clippy::too_many_lines,
         reason = "the exhaustive 38-variant projection is the single child-order authority"
     )]
+    ///
+    /// # Panics
+    ///
+    /// Panics if an unrejected HIR sequence exceeds the accepted `u32`
+    /// ordinal space. Fallible semantic consumers must use
+    /// [`Self::try_child_edges`].
     pub fn child_edges(&self) -> Vec<HirExpressionChildEdge> {
+        self.try_child_edges()
+            .expect("accepted HIR expression children fit checked u32 limits")
+    }
+
+    #[allow(
+        clippy::too_many_lines,
+        reason = "the exhaustive 38-variant projection is the single child-order authority"
+    )]
+    pub fn try_child_edges(
+        &self,
+    ) -> Result<Vec<HirExpressionChildEdge>, HirExpressionChildEdgeError> {
         let mut edges = Vec::new();
         match self {
             Self::Unit
@@ -283,7 +307,7 @@ impl HirExprKind {
                         &mut edges,
                         child,
                         HirExpressionChildRole::Element {
-                            ordinal: ordinal_u32(ordinal),
+                            ordinal: ordinal_u32(ordinal)?,
                         },
                     );
                 }
@@ -294,7 +318,7 @@ impl HirExprKind {
                         &mut edges,
                         child,
                         HirExpressionChildRole::Element {
-                            ordinal: ordinal_u32(ordinal),
+                            ordinal: ordinal_u32(ordinal)?,
                         },
                     );
                 }
@@ -320,7 +344,7 @@ impl HirExprKind {
                         &mut edges,
                         argument.value(),
                         HirExpressionChildRole::Argument {
-                            ordinal: ordinal_u32(ordinal),
+                            ordinal: ordinal_u32(ordinal)?,
                         },
                     );
                 }
@@ -370,7 +394,7 @@ impl HirExprKind {
                     HirExpressionChildRole::Operand,
                 );
             }
-            Self::Choice(expression) => append_choice_expression_edges(expression, &mut edges),
+            Self::Choice(expression) => append_choice_expression_edges(expression, &mut edges)?,
             Self::Range(expression) => {
                 if let Some(start) = expression.start() {
                     push_edge(&mut edges, start, HirExpressionChildRole::RangeStart);
@@ -379,8 +403,10 @@ impl HirExprKind {
                     push_edge(&mut edges, end, HirExpressionChildRole::RangeEnd);
                 }
             }
-            Self::Record(expression) => append_record_edges(expression.fields(), &mut edges),
-            Self::RecordLiteral(expression) => append_record_edges(expression.fields(), &mut edges),
+            Self::Record(expression) => append_record_edges(expression.fields(), &mut edges)?,
+            Self::RecordLiteral(expression) => {
+                append_record_edges(expression.fields(), &mut edges)?;
+            }
             Self::Binary(expression) => {
                 push_edge(
                     &mut edges,
@@ -493,7 +519,7 @@ impl HirExprKind {
                     HirExpressionChildRole::Scrutinee,
                 );
                 for (arm, value) in expression.arms().iter().enumerate() {
-                    let arm = ordinal_u32(arm);
+                    let arm = ordinal_u32(arm)?;
                     if let Some(guard) = value.guard() {
                         push_edge(&mut edges, guard, HirExpressionChildRole::Guard { arm });
                     }
@@ -505,7 +531,7 @@ impl HirExprKind {
                 }
             }
             Self::DialogueContentApplication(expression) => {
-                append_dialogue_application_edges(expression, &mut edges);
+                append_dialogue_application_edges(expression, &mut edges)?;
             }
             Self::PostfixBracket(expression) => {
                 push_edge(
@@ -536,7 +562,7 @@ impl HirExprKind {
                 );
             }
         }
-        edges
+        Ok(edges)
     }
 
     /// Projects the one edge authority to the legacy child-ID view.
@@ -583,24 +609,28 @@ impl HirExprKind {
     }
 }
 
-fn append_record_edges(fields: &[HirRecordField], edges: &mut Vec<HirExpressionChildEdge>) {
+fn append_record_edges(
+    fields: &[HirRecordField],
+    edges: &mut Vec<HirExpressionChildEdge>,
+) -> Result<(), HirExpressionChildEdgeError> {
     for (source_ordinal, field) in fields.iter().enumerate() {
         if let Some(child) = field.value() {
             push_edge(
                 edges,
                 child,
                 HirExpressionChildRole::RecordField {
-                    source_ordinal: ordinal_u32(source_ordinal),
+                    source_ordinal: ordinal_u32(source_ordinal)?,
                 },
             );
         }
     }
+    Ok(())
 }
 
 fn append_dialogue_application_edges(
     application: &HirDialogueContentApplication,
     edges: &mut Vec<HirExpressionChildEdge>,
-) {
+) -> Result<(), HirExpressionChildEdgeError> {
     push_edge(
         edges,
         application.target(),
@@ -638,11 +668,15 @@ fn append_dialogue_application_edges(
         }
     }
     if let Some(plan) = application.plan() {
-        append_line_plan_edges(plan.items(), edges);
+        append_line_plan_edges(plan.items(), edges)?;
     }
+    Ok(())
 }
 
-fn append_line_plan_edges(items: &[HirLinePlanItem], edges: &mut Vec<HirExpressionChildEdge>) {
+fn append_line_plan_edges(
+    items: &[HirLinePlanItem],
+    edges: &mut Vec<HirExpressionChildEdge>,
+) -> Result<(), HirExpressionChildEdgeError> {
     #[derive(Clone, Copy)]
     enum GroupKind {
         Start,
@@ -656,19 +690,19 @@ fn append_line_plan_edges(items: &[HirLinePlanItem], edges: &mut Vec<HirExpressi
                 None => extend_path(
                     &prefix,
                     HirNestedExpressionPathSegment::LinePlanItem {
-                        ordinal: ordinal_u32(ordinal),
+                        ordinal: ordinal_u32(ordinal)?,
                     },
                 ),
                 Some(GroupKind::Start) => extend_path(
                     &prefix,
                     HirNestedExpressionPathSegment::LinePlanStartGroupItem {
-                        ordinal: ordinal_u32(ordinal),
+                        ordinal: ordinal_u32(ordinal)?,
                     },
                 ),
                 Some(GroupKind::Together) => extend_path(
                     &prefix,
                     HirNestedExpressionPathSegment::LinePlanTogetherGroupItem {
-                        ordinal: ordinal_u32(ordinal),
+                        ordinal: ordinal_u32(ordinal)?,
                     },
                 ),
             };
@@ -726,16 +760,17 @@ fn append_line_plan_edges(items: &[HirLinePlanItem], edges: &mut Vec<HirExpressi
             }
         }
     }
+    Ok(())
 }
 
 fn append_choice_expression_edges(
     expression: &super::HirChoiceExpr,
     edges: &mut Vec<HirExpressionChildEdge>,
-) {
-    append_choice_body_edges(expression.body(), edges);
+) -> Result<(), HirExpressionChildEdgeError> {
+    append_choice_body_edges(expression.body(), edges)?;
     if let Some(plan) = expression.plan() {
         for (item, plan_item) in plan.items().iter().enumerate() {
-            let item = ordinal_u32(item);
+            let item = ordinal_u32(item)?;
             match plan_item {
                 HirChoicePlanItem::Assignment { value, .. } => push_edge(
                     edges,
@@ -754,27 +789,31 @@ fn append_choice_expression_edges(
             }
         }
     }
+    Ok(())
 }
 
 #[allow(
     clippy::too_many_lines,
     reason = "the explicit choice-body walk preserves deep LIFO source order and typed paths"
 )]
-fn append_choice_body_edges(body: &super::HirChoiceBody, edges: &mut Vec<HirExpressionChildEdge>) {
+fn append_choice_body_edges(
+    body: &super::HirChoiceBody,
+    edges: &mut Vec<HirExpressionChildEdge>,
+) -> Result<(), HirExpressionChildEdgeError> {
     let mut pending = vec![(body, Vec::new())];
     while let Some((body, prefix)) = pending.pop() {
         for (ordinal, item) in body.items().iter().enumerate() {
             let item_path = extend_path(
                 &prefix,
                 HirNestedExpressionPathSegment::ChoiceBodyItem {
-                    ordinal: ordinal_u32(ordinal),
+                    ordinal: ordinal_u32(ordinal)?,
                 },
             );
             match item {
                 HirChoiceItem::Let(_) | HirChoiceItem::Error => {}
                 HirChoiceItem::If(value) => {
                     for (branch, branch_value) in value.branches().iter().enumerate() {
-                        let branch = ordinal_u32(branch);
+                        let branch = ordinal_u32(branch)?;
                         let branch_path = extend_path(
                             &item_path,
                             HirNestedExpressionPathSegment::ChoiceIfBranch { ordinal: branch },
@@ -815,7 +854,7 @@ fn append_choice_body_edges(body: &super::HirChoiceBody, edges: &mut Vec<HirExpr
                         },
                     );
                     for (arm, arm_value) in value.arms().iter().enumerate() {
-                        let arm = ordinal_u32(arm);
+                        let arm = ordinal_u32(arm)?;
                         let arm_path = extend_path(
                             &item_path,
                             HirNestedExpressionPathSegment::ChoiceMatchArm { ordinal: arm },
@@ -845,7 +884,7 @@ fn append_choice_body_edges(body: &super::HirChoiceBody, edges: &mut Vec<HirExpr
                         value.body(),
                         &extend_path(&item_path, HirNestedExpressionPathSegment::ChoiceOptionBody),
                         edges,
-                    );
+                    )?;
                 }
                 HirChoiceItem::OptionFor(value) => {
                     push_edge(
@@ -859,7 +898,7 @@ fn append_choice_body_edges(body: &super::HirChoiceBody, edges: &mut Vec<HirExpr
                         value.body(),
                         &extend_path(&item_path, HirNestedExpressionPathSegment::ChoiceOptionBody),
                         edges,
-                    );
+                    )?;
                 }
                 HirChoiceItem::CompactArm(value) => {
                     push_edge(
@@ -891,15 +930,16 @@ fn append_choice_body_edges(body: &super::HirChoiceBody, edges: &mut Vec<HirExpr
             }
         }
     }
+    Ok(())
 }
 
 fn append_choice_option_edges(
     body: &super::HirChoiceOptionBody,
     prefix: &[HirNestedExpressionPathSegment],
     edges: &mut Vec<HirExpressionChildEdge>,
-) {
+) -> Result<(), HirExpressionChildEdgeError> {
     for (field, value) in body.fields().iter().enumerate() {
-        let field = ordinal_u32(field);
+        let field = ordinal_u32(field)?;
         let field_path = extend_path(
             prefix,
             HirNestedExpressionPathSegment::ChoiceOptionField { ordinal: field },
@@ -964,7 +1004,7 @@ fn append_choice_option_edges(
             ),
             HirChoiceOptionField::View(view) => {
                 for (entry, value) in view.entries().iter().enumerate() {
-                    let entry = ordinal_u32(entry);
+                    let entry = ordinal_u32(entry)?;
                     let entry_path = extend_path(
                         &field_path,
                         HirNestedExpressionPathSegment::ChoiceViewEntry { ordinal: entry },
@@ -994,6 +1034,7 @@ fn append_choice_option_edges(
             | HirChoiceOptionField::Error => {}
         }
     }
+    Ok(())
 }
 
 fn append_choice_trigger_edge(
@@ -1111,7 +1152,7 @@ fn push_edge(edges: &mut Vec<HirExpressionChildEdge>, child: ExprId, role: HirEx
     edges.push(HirExpressionChildEdge::new(child, role));
 }
 
-fn extend_path(
+pub(super) fn extend_path(
     prefix: &[HirNestedExpressionPathSegment],
     segment: HirNestedExpressionPathSegment,
 ) -> Vec<HirNestedExpressionPathSegment> {
@@ -1120,6 +1161,23 @@ fn extend_path(
     path
 }
 
-fn ordinal_u32(ordinal: usize) -> u32 {
-    u32::try_from(ordinal).expect("HIR child ordinal exceeds u32")
+fn ordinal_u32(ordinal: usize) -> Result<u32, HirExpressionChildEdgeError> {
+    u32::try_from(ordinal).map_err(|_| HirExpressionChildEdgeError::OrdinalOverflow)
+}
+
+#[cfg(test)]
+mod ordinal_tests {
+    use super::*;
+
+    #[test]
+    fn expression_child_ordinal_is_exact_and_rejects_one_over() {
+        let exact = usize::try_from(u32::MAX).unwrap();
+        assert_eq!(ordinal_u32(exact), Ok(u32::MAX));
+        if let Ok(one_over) = usize::try_from(u64::from(u32::MAX) + 1) {
+            assert_eq!(
+                ordinal_u32(one_over),
+                Err(HirExpressionChildEdgeError::OrdinalOverflow)
+            );
+        }
+    }
 }

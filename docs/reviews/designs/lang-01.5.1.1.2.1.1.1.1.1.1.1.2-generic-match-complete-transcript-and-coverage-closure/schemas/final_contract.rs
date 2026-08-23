@@ -8,6 +8,10 @@ pub struct SemanticTypeDigest(pub Digest32);
 pub struct StableExpressionCoordinate(pub Digest32);
 pub struct StablePatternCoordinate(pub Digest32);
 pub struct StableMatchArmCoordinate(pub Digest32);
+pub struct HirNestedExpressionPath;
+pub struct HirBodyChildEdge;
+pub struct PatternId;
+pub struct StmtId;
 
 pub struct AcceptedProjectItemSemanticId(pub Digest32);
 pub struct AcceptedVariantCaseSemanticId(pub Digest32);
@@ -149,19 +153,76 @@ pub enum HirDeclarationBodyRootRole {
     ViewValue { ordinal: u32 },
 }
 
+pub enum HirSemanticPathStep {
+    DeclarationBody(HirDeclarationBodyRootRole),
+    ExpressionOwned(HirExpressionOwnedBodyRole),
+}
+
 pub enum HirExpressionOwnedBodyRole {
-    AwaitBranchPattern { branch: u32 },
-    AwaitBranchBody { branch: u32 },
-    ChoiceLetStatement { item: u32 },
-    ChoiceForPattern { item: u32 },
-    ChoiceMatchArmPattern { item: u32, arm: u32 },
-    ChoiceOptionForPattern { item: u32 },
-    ChoiceOptionSelectBody { item: u32, field: u32 },
-    ChoiceOptionLetStatement { item: u32, field: u32 },
-    ChoicePlanTimeoutBody { item: u32 },
-    ChoicePlanCancelBody { item: u32 },
-    ChoicePlanOnSelectPattern { item: u32 },
-    ChoicePlanOnSelectBody { item: u32 },
-    DialogueLinePlanStatement { group_path: Box<[u32]>, item: u32 },
-    DialogueLinePlanLetPattern { group_path: Box<[u32]>, item: u32 },
+    AwaitBranchPattern {
+        branch: u32,
+    },
+    AwaitBranchBody {
+        branch: u32,
+    },
+    ChoiceLetStatement {
+        path: HirNestedExpressionPath,
+    },
+    ChoiceForPattern {
+        path: HirNestedExpressionPath,
+    },
+    ChoiceMatchArmPattern {
+        path: HirNestedExpressionPath,
+        arm: u32,
+    },
+    ChoiceOptionForPattern {
+        path: HirNestedExpressionPath,
+    },
+    ChoiceOptionSelectBody {
+        path: HirNestedExpressionPath,
+        field: u32,
+    },
+    ChoiceOptionLetStatement {
+        path: HirNestedExpressionPath,
+        field: u32,
+    },
+    ChoicePlanTimeoutBody {
+        path: HirNestedExpressionPath,
+    },
+    ChoicePlanCancelBody {
+        path: HirNestedExpressionPath,
+    },
+    ChoicePlanOnSelectPattern {
+        path: HirNestedExpressionPath,
+    },
+    ChoicePlanOnSelectBody {
+        path: HirNestedExpressionPath,
+    },
+    DialogueLinePlanStatement {
+        path: HirNestedExpressionPath,
+        role: HirLinePlanStatementRole,
+    },
+    DialogueLinePlanLetPattern {
+        path: HirNestedExpressionPath,
+    },
+}
+
+pub enum HirLinePlanStatementRole {
+    Init { statement: u32 },
+    Thread,
+    On,
+    Statement,
+    CancelRule,
+    Error,
+}
+
+pub enum HirExpressionOwnedChild {
+    Pattern(PatternId),
+    Statement(StmtId),
+    Body(HirBodyChildEdge),
+}
+
+pub struct HirExpressionOwnedChildEdge {
+    pub child: HirExpressionOwnedChild,
+    pub role: HirExpressionOwnedBodyRole,
 }

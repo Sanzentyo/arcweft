@@ -8,7 +8,8 @@ mod child_edges;
 mod thread;
 
 pub use child_edges::{
-    HirStatementBodyRole, HirStatementChild, HirStatementChildEdge, HirStatementChildRole,
+    HirStatementBodyRole, HirStatementChild, HirStatementChildEdge, HirStatementChildEdgeError,
+    HirStatementChildRole,
 };
 
 pub(crate) use self::thread::HirThreadStmtInvariantError;

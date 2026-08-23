@@ -6,7 +6,7 @@
 
 mod child_edges;
 
-pub use child_edges::{HirPatternChild, HirPatternChildEdge};
+pub use child_edges::{HirPatternChild, HirPatternChildEdge, HirPatternChildEdgeError};
 
 use thiserror::Error;
 

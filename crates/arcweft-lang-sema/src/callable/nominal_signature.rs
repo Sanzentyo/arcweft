@@ -4,7 +4,7 @@ use arcweft_lang_hir::{
     identity::TypeId,
     item::{
         HirCapabilityMember, HirExternCapabilityItem, HirGenericParameter, HirImplMember,
-        HirItemKind, HirMethodParameter, HirTraitMember, HirWherePredicate,
+        HirItemKind, HirMethodParameter, HirParameter, HirTraitMember, HirWherePredicate,
     },
     module::HirModule,
     project::HirProjectView,
@@ -169,6 +169,23 @@ impl<'a> ProjectSignatureResolver<'a> {
                 Some(proof.return_type()),
                 &owner,
             ),
+            (
+                CallableDeclarationOwner::View,
+                HirCallableSourceOwner::ViewItem,
+                HirItemKind::View(view),
+            ) => {
+                let mut signature = self.resolve_signature_types(
+                    module,
+                    symbol.declaration_span(),
+                    &[],
+                    &[],
+                    vec![view.parameters().iter().map(HirParameter::ty).collect()],
+                    None,
+                    &owner,
+                )?;
+                signature.return_type = TypeKind::ViewValue;
+                Ok(signature)
+            }
             (
                 CallableDeclarationOwner::ExternCapability,
                 HirCallableSourceOwner::ExternCapabilityFunction { member },

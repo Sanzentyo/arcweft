@@ -26,14 +26,22 @@ fn main() {
 }
 
 fn run() -> Result<(), Box<dyn std::error::Error>> {
-    let root = std::env::args_os()
-        .nth(1)
-        .map(PathBuf::from)
-        .unwrap_or_else(|| PathBuf::from(DESIGN_REL));
+    let mut design_only = false;
+    let mut root = None;
+    for argument in std::env::args_os().skip(1) {
+        if argument == "--design-only" {
+            design_only = true;
+        } else if root.replace(PathBuf::from(argument)).is_some() {
+            return Err("more than one design path supplied".into());
+        }
+    }
+    let root = root.unwrap_or_else(|| PathBuf::from(DESIGN_REL));
     let baseline = load_bundle(&root)?;
     validate_semantic(&baseline)?;
     validate_manifest(&baseline)?;
-    validate_repository(&baseline)?;
+    if !design_only {
+        validate_repository(&baseline)?;
+    }
     let corpus: Value = serde_json::from_slice(
         baseline
             .files
@@ -64,9 +72,10 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
         }
     }
     println!(
-        "PASS design={} negative_cases={}",
+        "PASS design={} negative_cases={} repository={}",
         baseline.root.display(),
-        cases.len()
+        cases.len(),
+        if design_only { "NOT_RUN" } else { "PASS" }
     );
     Ok(())
 }
@@ -95,6 +104,34 @@ fn apply_mutation(bundle: &mut Bundle, mutation: &str) -> Result<(), Box<dyn std
         "drop_declaration_owner" => pop_inventory(bundle, "match_bearing_declaration_owners")?,
         "drop_declaration_root" => pop_inventory(bundle, "declaration_roots")?,
         "drop_body_root" => pop_inventory(bundle, "expression_owned_non_expression_roots")?,
+        "enable_raw_group_path" => {
+            bundle.contract["hir_path_contract"]["raw_group_path_authority"] = json!(true)
+        }
+        "drop_line_plan_statement_role" => {
+            bundle.contract["hir_path_contract"]["line_plan_statement_roles"]
+                .as_array_mut()
+                .ok_or("line-plan statement roles missing")?
+                .pop()
+                .ok_or("line-plan statement roles empty")?;
+        }
+        "drift_hir_path_schema_mirror" => {
+            let text = String::from_utf8(
+                bundle
+                    .files
+                    .get("schemas/final_contract.rs")
+                    .ok_or("schema mirror missing")?
+                    .clone(),
+            )?;
+            replace_file(
+                bundle,
+                "schemas/final_contract.rs",
+                text.replace(
+                    "ChoiceLetStatement {\n        path: HirNestedExpressionPath,\n    },",
+                    "ChoiceLetStatement { item: u32 }",
+                )
+                .into_bytes(),
+            );
+        }
         mutation if mutation.starts_with("drop_decision_") => {
             let id: u64 = mutation.trim_start_matches("drop_decision_").parse()?;
             bundle.contract["decisions"]

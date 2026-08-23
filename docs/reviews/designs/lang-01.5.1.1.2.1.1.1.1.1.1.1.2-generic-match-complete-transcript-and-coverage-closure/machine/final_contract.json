@@ -98,6 +98,24 @@
     "bodyless_owners_remain": ["ExternCapability", "TraitRequirement"],
     "persistent_match_site_identity": false
   },
+  "hir_path_contract": {
+    "declaration_body_role_variant_count": 6,
+    "expression_owned_role_variant_count": 14,
+    "expression_owned_logical_root_family_count": 19,
+    "line_plan_statement_role_count": 6,
+    "line_plan_statement_roles": ["Init", "Thread", "On", "Statement", "CancelRule", "Error"],
+    "nested_path_authority": "HirNestedExpressionPath",
+    "raw_group_path_authority": false,
+    "arbitrary_role_construction": false,
+    "choice_plan_cancel_shared_role_for_trigger_pattern_and_body": true,
+    "line_plan_group_kind_segments_preserved": true,
+    "expression_owned_body_appends_existing_body_child_role": true,
+    "view_callable_entry": "CallableDeclarationKey::Existing through existing nonbinding callable pipeline",
+    "view_callable_baseline_row_exists": false,
+    "view_callable_same_cut_pipeline_completion": true,
+    "view_retained_binding_remains_sole": true,
+    "view_retained_and_callable_join_by_item_module_snapshot": true
+  },
   "publication": {
     "compiler_local": true,
     "exhaustive_only": true,

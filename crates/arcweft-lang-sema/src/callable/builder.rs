@@ -9,6 +9,7 @@ use arcweft_lang_hir::{
         HirCapabilityFunction, HirCapabilityMember, HirFlowItem, HirFunctionItem, HirImplFunction,
         HirImplMember, HirItem, HirItemPrefix, HirMethodParameter, HirMethodParameterGroup,
         HirParameter, HirParameterKind, HirPredicate, HirProof, HirTraitFunction, HirTraitMember,
+        HirViewDeclaration,
     },
     module::HirModule,
     pattern::{HirPatternBinding, HirPatternKind},
@@ -84,6 +85,10 @@ enum FinalProjectCallable<'a> {
     Proof {
         item: &'a HirItem,
         callable: &'a HirProof,
+    },
+    View {
+        item: &'a HirItem,
+        callable: &'a HirViewDeclaration,
     },
     ExternCapability {
         callable: &'a HirCapabilityFunction,
@@ -458,6 +463,7 @@ impl FinalProjectCallable<'_> {
             | Self::Function { item, .. }
             | Self::Predicate { item, .. }
             | Self::Proof { item, .. }
+            | Self::View { item, .. }
             | Self::TraitMethod { item, .. }
             | Self::ImplMethod { item, .. } => item.prefix(),
             Self::ExternCapability { callable } => callable.prefix(),
@@ -492,6 +498,13 @@ impl FinalProjectCallable<'_> {
                     .collect(),
             ],
             Self::Proof { callable, .. } => vec![
+                callable
+                    .parameters()
+                    .iter()
+                    .map(FinalProjectParameter::Ordinary)
+                    .collect(),
+            ],
+            Self::View { callable, .. } => vec![
                 callable
                     .parameters()
                     .iter()
@@ -571,6 +584,9 @@ fn final_project_callable<'a>(
         ) => Ok(FinalProjectCallable::Predicate { item, callable }),
         (HirCallableSourceOwner::Item, arcweft_lang_hir::item::HirItemKind::Proof(callable)) => {
             Ok(FinalProjectCallable::Proof { item, callable })
+        }
+        (HirCallableSourceOwner::ViewItem, arcweft_lang_hir::item::HirItemKind::View(callable)) => {
+            Ok(FinalProjectCallable::View { item, callable })
         }
         (
             HirCallableSourceOwner::ExternCapabilityFunction { member },

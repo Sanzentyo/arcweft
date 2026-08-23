@@ -12,7 +12,10 @@ use super::{
 use crate::types::{SemanticTypeDigest, TypeKind};
 use arcweft_core::entry::TypeLayoutHash;
 use arcweft_lang_hir::{
-    expr::{HirExprKind, HirMatchExpr},
+    expr::{
+        HirExprKind, HirExpressionOwnedBodyRole, HirLinePlanStatementRole, HirMatchExpr,
+        HirNestedExpressionPath, HirNestedExpressionPathSegment,
+    },
     identity::{ExprId, PatternId},
     leaf::{
         HirCharacterLiteral, HirDurationLiteral, HirFloatLiteral, HirIntegerLiteral, HirLiteral,
@@ -20,7 +23,10 @@ use arcweft_lang_hir::{
     },
     module::HirModule,
     pattern::{HirPatternChild, HirPatternChildRole, HirPatternKind, HirVariantPatternPayload},
-    project::{HirDeclarationSemanticPathIndex, HirExecutableProjectView, HirSemanticPathStep},
+    project::{
+        HirDeclarationBodyRootRole, HirDeclarationSemanticPathIndex, HirExecutableProjectView,
+        HirSemanticPathStep,
+    },
     stmt::{HirStatementBodyRole, HirStatementChildRole},
     symbol::{CallableDeclarationKey, ProjectSymbolTable, nominal::ProjectNominalBody},
 };
@@ -688,6 +694,12 @@ pub(crate) fn checked_expression_path(
     let mut steps = Vec::with_capacity(raw.len());
     for step in raw {
         steps.push(match step {
+            HirSemanticPathStep::DeclarationBody(role) => {
+                CheckedExpressionChildRoleStep::DeclarationBody(*role)
+            }
+            HirSemanticPathStep::ExpressionOwned(role) => {
+                CheckedExpressionChildRoleStep::ExpressionOwned(role.clone())
+            }
             HirSemanticPathStep::Body(role) => CheckedExpressionChildRoleStep::Body(*role),
             HirSemanticPathStep::Statement(role) => {
                 CheckedExpressionChildRoleStep::Statement(*role)
@@ -1172,11 +1184,24 @@ fn match_digest(
     Ok(CheckedMatchSemanticDigest::from_bytes(hasher.finalize()?))
 }
 
+const CHECKED_DECLARATION_BODY_STEP_TAG: u8 = 8;
+const CHECKED_EXPRESSION_OWNED_STEP_TAG: u8 = 9;
+const HIR_LOCAL_DECLARATION_BODY_STEP_TAG: u8 = 7;
+const HIR_LOCAL_EXPRESSION_OWNED_STEP_TAG: u8 = 8;
+
 fn write_checked_path(hasher: &mut TranscriptHasher<'_>, path: &CheckedExpressionChildRolePath) {
     hasher.update(path.declaration().as_bytes());
     write_len(hasher, path.steps().len());
     for step in path.steps() {
         match step {
+            CheckedExpressionChildRoleStep::DeclarationBody(role) => {
+                hasher.update(&[CHECKED_DECLARATION_BODY_STEP_TAG]);
+                write_declaration_body_role(hasher, *role);
+            }
+            CheckedExpressionChildRoleStep::ExpressionOwned(role) => {
+                hasher.update(&[CHECKED_EXPRESSION_OWNED_STEP_TAG]);
+                write_expression_owned_role(hasher, role);
+            }
             CheckedExpressionChildRoleStep::Body(role) => {
                 hasher.update(&[0, body_role_tag(*role)]);
                 write_body_role_payload(hasher, *role);
@@ -1259,6 +1284,14 @@ fn write_hir_local_path(
     write_len(hasher, path.len());
     for step in path {
         match step {
+            HirSemanticPathStep::DeclarationBody(role) => {
+                hasher.update(&[HIR_LOCAL_DECLARATION_BODY_STEP_TAG]);
+                write_declaration_body_role(hasher, *role);
+            }
+            HirSemanticPathStep::ExpressionOwned(role) => {
+                hasher.update(&[HIR_LOCAL_EXPRESSION_OWNED_STEP_TAG]);
+                write_expression_owned_role(hasher, role);
+            }
             HirSemanticPathStep::Body(role) => {
                 hasher.update(&[0, body_role_tag(*role)]);
                 write_body_role_payload(hasher, *role);
@@ -1295,6 +1328,155 @@ fn write_hir_local_path(
         }
     }
     Ok(())
+}
+
+fn write_declaration_body_role(
+    hasher: &mut TranscriptHasher<'_>,
+    role: HirDeclarationBodyRootRole,
+) {
+    match role {
+        HirDeclarationBodyRootRole::FunctionBody => hasher.update(&[0]),
+        HirDeclarationBodyRootRole::PredicateBody => hasher.update(&[1]),
+        HirDeclarationBodyRootRole::ProofBody => hasher.update(&[2]),
+        HirDeclarationBodyRootRole::FlowBody => hasher.update(&[3]),
+        HirDeclarationBodyRootRole::ImplFunctionBody => hasher.update(&[4]),
+        HirDeclarationBodyRootRole::ViewValue { ordinal } => {
+            hasher.update(&[5]);
+            hasher.update(&ordinal.to_le_bytes());
+        }
+    }
+}
+
+fn write_expression_owned_role(
+    hasher: &mut TranscriptHasher<'_>,
+    role: &HirExpressionOwnedBodyRole,
+) {
+    match role {
+        HirExpressionOwnedBodyRole::AwaitBranchPattern { branch } => {
+            hasher.update(&[0]);
+            hasher.update(&branch.to_le_bytes());
+        }
+        HirExpressionOwnedBodyRole::AwaitBranchBody { branch } => {
+            hasher.update(&[1]);
+            hasher.update(&branch.to_le_bytes());
+        }
+        HirExpressionOwnedBodyRole::ChoiceLetStatement { path } => {
+            hasher.update(&[2]);
+            write_hir_nested_path(hasher, path);
+        }
+        HirExpressionOwnedBodyRole::ChoiceForPattern { path } => {
+            hasher.update(&[3]);
+            write_hir_nested_path(hasher, path);
+        }
+        HirExpressionOwnedBodyRole::ChoiceMatchArmPattern { path, arm } => {
+            hasher.update(&[4]);
+            write_hir_nested_path(hasher, path);
+            hasher.update(&arm.to_le_bytes());
+        }
+        HirExpressionOwnedBodyRole::ChoiceOptionForPattern { path } => {
+            hasher.update(&[5]);
+            write_hir_nested_path(hasher, path);
+        }
+        HirExpressionOwnedBodyRole::ChoiceOptionSelectBody { path, field } => {
+            hasher.update(&[6]);
+            write_hir_nested_path(hasher, path);
+            hasher.update(&field.to_le_bytes());
+        }
+        HirExpressionOwnedBodyRole::ChoiceOptionLetStatement { path, field } => {
+            hasher.update(&[7]);
+            write_hir_nested_path(hasher, path);
+            hasher.update(&field.to_le_bytes());
+        }
+        HirExpressionOwnedBodyRole::ChoicePlanTimeoutBody { path } => {
+            hasher.update(&[8]);
+            write_hir_nested_path(hasher, path);
+        }
+        HirExpressionOwnedBodyRole::ChoicePlanCancelBody { path } => {
+            hasher.update(&[9]);
+            write_hir_nested_path(hasher, path);
+        }
+        HirExpressionOwnedBodyRole::ChoicePlanOnSelectPattern { path } => {
+            hasher.update(&[10]);
+            write_hir_nested_path(hasher, path);
+        }
+        HirExpressionOwnedBodyRole::ChoicePlanOnSelectBody { path } => {
+            hasher.update(&[11]);
+            write_hir_nested_path(hasher, path);
+        }
+        HirExpressionOwnedBodyRole::DialogueLinePlanStatement { path, role } => {
+            hasher.update(&[12]);
+            write_hir_nested_path(hasher, path);
+            write_line_plan_statement_role(hasher, *role);
+        }
+        HirExpressionOwnedBodyRole::DialogueLinePlanLetPattern { path } => {
+            hasher.update(&[13]);
+            write_hir_nested_path(hasher, path);
+        }
+    }
+}
+
+fn write_line_plan_statement_role(
+    hasher: &mut TranscriptHasher<'_>,
+    role: HirLinePlanStatementRole,
+) {
+    match role {
+        HirLinePlanStatementRole::Init { statement } => {
+            hasher.update(&[0]);
+            hasher.update(&statement.to_le_bytes());
+        }
+        HirLinePlanStatementRole::Thread => hasher.update(&[1]),
+        HirLinePlanStatementRole::On => hasher.update(&[2]),
+        HirLinePlanStatementRole::Statement => hasher.update(&[3]),
+        HirLinePlanStatementRole::CancelRule => hasher.update(&[4]),
+        HirLinePlanStatementRole::Error => hasher.update(&[5]),
+    }
+}
+
+fn write_hir_nested_path(hasher: &mut TranscriptHasher<'_>, path: &HirNestedExpressionPath) {
+    write_len(hasher, path.segments().len());
+    for segment in path.segments() {
+        match segment {
+            HirNestedExpressionPathSegment::ChoiceBodyItem { ordinal } => {
+                hasher.update(&[0]);
+                hasher.update(&ordinal.to_le_bytes());
+            }
+            HirNestedExpressionPathSegment::ChoiceIfBranch { ordinal } => {
+                hasher.update(&[1]);
+                hasher.update(&ordinal.to_le_bytes());
+            }
+            HirNestedExpressionPathSegment::ChoiceIfElse => hasher.update(&[2]),
+            HirNestedExpressionPathSegment::ChoiceForBody => hasher.update(&[3]),
+            HirNestedExpressionPathSegment::ChoiceMatchArm { ordinal } => {
+                hasher.update(&[4]);
+                hasher.update(&ordinal.to_le_bytes());
+            }
+            HirNestedExpressionPathSegment::ChoiceOptionBody => hasher.update(&[5]),
+            HirNestedExpressionPathSegment::ChoiceOptionField { ordinal } => {
+                hasher.update(&[6]);
+                hasher.update(&ordinal.to_le_bytes());
+            }
+            HirNestedExpressionPathSegment::ChoiceViewEntry { ordinal } => {
+                hasher.update(&[7]);
+                hasher.update(&ordinal.to_le_bytes());
+            }
+            HirNestedExpressionPathSegment::ChoicePlanItem { ordinal } => {
+                hasher.update(&[8]);
+                hasher.update(&ordinal.to_le_bytes());
+            }
+            HirNestedExpressionPathSegment::LinePlanItem { ordinal } => {
+                hasher.update(&[9]);
+                hasher.update(&ordinal.to_le_bytes());
+            }
+            HirNestedExpressionPathSegment::LinePlanStartGroupItem { ordinal } => {
+                hasher.update(&[10]);
+                hasher.update(&ordinal.to_le_bytes());
+            }
+            HirNestedExpressionPathSegment::LinePlanTogetherGroupItem { ordinal } => {
+                hasher.update(&[11]);
+                hasher.update(&ordinal.to_le_bytes());
+            }
+        }
+    }
 }
 
 fn write_pattern_coordinate(hasher: &mut TranscriptHasher<'_>, path: &StablePatternCoordinate) {
@@ -1882,3 +2064,7 @@ fn write_pattern_role_payload(hasher: &mut TranscriptHasher<'_>, role: HirPatter
         _ => {}
     }
 }
+
+#[cfg(test)]
+#[path = "semantic_transcript/tests.rs"]
+mod tests;

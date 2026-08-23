@@ -13,7 +13,7 @@ use arcweft_source::SourceSpan;
 use crate::identity::ItemId;
 use crate::item::{
     HirCapabilityMember, HirFlowIdentity, HirImplMember, HirItem, HirItemKind, HirItemPrefix,
-    HirTraitMember, HirVisibility,
+    HirRetainedName, HirTraitMember, HirVisibility,
 };
 use crate::module::HirModuleStatus;
 use crate::project::HirProjectView;
@@ -179,6 +179,48 @@ impl ProjectSymbolTable {
             }
         }
 
+        if let HirItemKind::View(view) = item.kind()
+            && let HirRetainedName::Resolved(name) = view.header().name()
+        {
+            let source_owner = HirCallableSourceOwner::ViewItem;
+            let declaration = CallableDeclarationId::try_new(
+                self.world.package().clone(),
+                module_path.clone(),
+                CallableDeclarationOwner::View,
+                name.as_str(),
+            )
+            .map(CallableDeclarationKey::Existing)
+            .expect("resolved View names are valid semantic callable identities");
+            if !self.insert_nonbinding_callable_symbol(
+                module_path,
+                module,
+                source_item,
+                source_owner,
+                declaration,
+                visibility(item),
+                false,
+                callable_span(
+                    module,
+                    source_item,
+                    HirCallableSourceRole::Signature {
+                        owner: source_owner,
+                    },
+                ),
+                callable_span(
+                    module,
+                    source_item,
+                    HirCallableSourceRole::Name {
+                        owner: source_owner,
+                    },
+                ),
+                executable_module && !item.is_poisoned(),
+                diagnostics,
+                work,
+            ) {
+                return false;
+            }
+        }
+
         match item.kind() {
             HirItemKind::Trait(declaration) => {
                 if let Some(name) = declaration.name().resolved() {
@@ -206,7 +248,7 @@ impl ProjectSymbolTable {
                                     .expect("resolved Trait method names are module segments"),
                             ),
                         );
-                        if !self.insert_method_callable_symbol(
+                        if !self.insert_nonbinding_callable_symbol(
                             module_path,
                             module,
                             source_item,
@@ -269,7 +311,7 @@ impl ProjectSymbolTable {
                         ModuleSegment::new(method.as_str())
                             .expect("resolved Impl method names are module segments"),
                     ));
-                    if !self.insert_method_callable_symbol(
+                    if !self.insert_nonbinding_callable_symbol(
                         module_path,
                         module,
                         source_item,
@@ -570,9 +612,9 @@ impl ProjectSymbolTable {
 
     #[allow(
         clippy::too_many_arguments,
-        reason = "method publication binds structural identity and exact final-HIR source atomically"
+        reason = "nonbinding callable publication binds semantic identity and exact final-HIR source atomically"
     )]
-    fn insert_method_callable_symbol(
+    fn insert_nonbinding_callable_symbol(
         &mut self,
         module_path: &CanonicalModulePath,
         module: ProjectSymbolModuleView<'_, '_>,

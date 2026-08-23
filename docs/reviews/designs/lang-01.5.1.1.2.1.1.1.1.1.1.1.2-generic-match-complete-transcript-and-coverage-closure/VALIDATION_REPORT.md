@@ -69,3 +69,62 @@ C1–C5 implementation and are enumerated in `CUTS_TESTS_AND_DELETION.md`.
 
 No archive or ZIP validation was run or claimed: this repository-local accepted
 design was explicitly scoped not to create or modify packages/ZIPs.
+
+## C1 schema erratum validation addendum
+
+Added on 2026-08-23 (Asia/Tokyo). This addendum corrects only the Rust-shaped
+C1 declaration/expression-owned path schema. It does not replace or restate the
+historical validation above, change the accepted request mirror, or claim that
+the in-progress C1 production implementation has passed review.
+
+The correction makes `HirNestedExpressionPath` the sole nested Choice and
+line-plan coordinate authority, defines all six `HirLinePlanStatementRole`
+cases, mirrors the `role` field on dialogue statement roots, and records how 14
+Rust role variants represent the 19 logical root families. Validator gates and
+negative mutations now reject the former raw `group_path` parallel authority,
+a missing line-plan role, and drift between `SCHEMAS.md` and the Rust-shaped
+mirror.
+
+Repository inspection during the erratum also established that the baseline
+does not publish a View row from `ProjectSymbolTable::callable_symbols()`.
+Although the existing callable key/owner, `ViewItem` source roles, sema
+validation, and downstream project-callable family already represent View,
+the linker and registered/checked callable builders omit it. The corrected C1
+contract therefore requires same-cut completion of that existing nonbinding
+callable pipeline. It does not authorize a retained-symbol fallback, synthetic
+site/key, second name binding, or parallel catalog.
+
+| Erratum gate | Result |
+|---|---|
+| JSON parse for `machine/final_contract.json` and `machine/negative_corpus.json` | PASS |
+| `rustfmt +nightly --check` for the Rust-shaped schema and validator files | PASS, no output |
+| manifest member/hash verification | PASS, 20 covered members plus the self-excluded manifest |
+| semantic validator over the amended design bundle | PASS: `files=21 repository=NOT_RUN` |
+| negative schema self-tests | PASS: `negative_cases=40 repository=NOT_RUN` |
+| historical repository/source gate | NOT RUN — the shared production scope contains the in-progress C1 implementation diff |
+| workspace compile/test | NOT RUN — outside this documentation-only erratum task |
+
+The historical baseline/source evidence remains pinned to
+`9a5d30d25620541c3f2975d31e04e04e3bc9514c`. No current dirty production byte
+is represented as clean baseline evidence.
+
+Erratum-only commands, run from `D:\git\arcweft`:
+
+```text
+rustfmt +nightly --check <schemas/final_contract.rs and three validator Rust files>
+cargo +nightly -Zscript <design>/tools/validate_design.rs --design-only
+cargo +nightly -Zscript <design>/tools/negative_self_tests.rs --design-only
+```
+
+Final erratum-only outputs:
+
+```text
+PASS design=\\?\D:\git\arcweft\docs\reviews\designs\lang-01.5.1.1.2.1.1.1.1.1.1.1.2-generic-match-complete-transcript-and-coverage-closure files=21 repository=NOT_RUN inventories=27/8/7/5/38/13/35/5/13 decisions=1-7
+PASS design=\\?\D:\git\arcweft\docs\reviews\designs\lang-01.5.1.1.2.1.1.1.1.1.1.1.2-generic-match-complete-transcript-and-coverage-closure negative_cases=40 repository=NOT_RUN
+```
+
+Two preliminary invocations placed `--` before `--design-only`; the scripts
+therefore treated `--` as a design path and failed `required_files`. After the
+documented argument form was used, the first semantic run correctly rejected
+the old raw-group spelling still quoted in erratum prose. That obsolete quote
+was removed, the manifest was refreshed, and both erratum-only gates passed.

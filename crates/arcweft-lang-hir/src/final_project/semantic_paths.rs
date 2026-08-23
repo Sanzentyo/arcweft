@@ -7,7 +7,10 @@ use thiserror::Error;
 use super::HirExecutableProjectView;
 use crate::{
     body_edges::{HirBodyChild, HirBodyChildEdge, HirBodyChildRole},
-    expr::{HirExprKind, HirExpressionChildRole},
+    expr::{
+        HirExprKind, HirExpressionChildRole, HirExpressionOwnedBodyRole, HirExpressionOwnedChild,
+        HirExpressionOwnedChildEdgeError,
+    },
     identity::{ExprId, LocalId, PatternId, StmtId},
     item::{HirImplMember, HirItemKind, HirMethodParameter, HirParameter},
     module::HirModule,
@@ -17,8 +20,21 @@ use crate::{
     symbol::{CallableDeclarationKey, ProjectSymbolTable},
 };
 
+/// Closed declaration roots for executable callable bodies.
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub enum HirDeclarationBodyRootRole {
+    FunctionBody,
+    PredicateBody,
+    ProofBody,
+    FlowBody,
+    ImplFunctionBody,
+    ViewValue { ordinal: u32 },
+}
+
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum HirSemanticPathStep {
+    DeclarationBody(HirDeclarationBodyRootRole),
+    ExpressionOwned(HirExpressionOwnedBodyRole),
     Body(HirBodyChildRole),
     Statement(HirStatementChildRole),
     ThreadBody(HirStatementBodyRole),
@@ -104,6 +120,10 @@ pub enum HirSemanticPathError {
     DuplicatePath,
     #[error("semantic path recursion is cyclic")]
     CyclicPath,
+    #[error("a semantic path child ordinal does not fit u32")]
+    OrdinalOverflow,
+    #[error("an expression-owned semantic path lacks a structural coordinate")]
+    InvalidOwnedPath,
 }
 
 impl HirExecutableProjectView<'_> {
@@ -133,15 +153,15 @@ impl HirExecutableProjectView<'_> {
         if module.snapshot_id() != symbol.source_snapshot() {
             return Err(HirSemanticPathError::ForeignSnapshot);
         }
-        let roots = declaration_body_edges(module, symbol.source_item(), symbol.source_owner())?;
+        let roots = declaration_body_roots(module, symbol.source_item(), symbol.source_owner())?;
         let mut builder = PathBuilder::new(module, declaration.clone());
         for root in
             declaration_parameter_roots(module, symbol.source_item(), symbol.source_owner())?
         {
             builder.walk_parameter(root)?;
         }
-        for edge in roots {
-            builder.walk_body(edge, &[])?;
+        for root in roots {
+            builder.walk_declaration_body(root)?;
         }
         Ok(builder.finish())
     }
@@ -170,14 +190,14 @@ fn declaration_parameter_roots(
         HirCallableSourceOwner::Item => match item.kind() {
             HirItemKind::Function(function) => {
                 for (group, parameters) in function.parameter_groups().iter().enumerate() {
-                    push_parameters(&mut roots, checked_ordinal(group), parameters.parameters());
+                    push_parameters(&mut roots, checked_ordinal(group)?, parameters.parameters())?;
                 }
             }
             HirItemKind::Predicate(predicate) => {
-                push_parameters(&mut roots, 0, predicate.parameters())
+                push_parameters(&mut roots, 0, predicate.parameters())?;
             }
-            HirItemKind::Proof(proof) => push_parameters(&mut roots, 0, proof.parameters()),
-            HirItemKind::Flow(flow) => push_parameters(&mut roots, 0, flow.parameters()),
+            HirItemKind::Proof(proof) => push_parameters(&mut roots, 0, proof.parameters())?,
+            HirItemKind::Flow(flow) => push_parameters(&mut roots, 0, flow.parameters())?,
             _ => {}
         },
         HirCallableSourceOwner::ImplFunction { member } => {
@@ -191,8 +211,8 @@ fn declaration_parameter_roots(
             };
             for (group, parameters) in function.parameter_groups().iter().enumerate() {
                 for (parameter, value) in parameters.parameters().iter().enumerate() {
-                    let group = checked_ordinal(group);
-                    let parameter = checked_ordinal(parameter);
+                    let group = checked_ordinal(group)?;
+                    let parameter = checked_ordinal(parameter)?;
                     match value {
                         HirMethodParameter::Receiver(receiver) => roots.push(HirParameterRoot {
                             child: HirParameterRootChild::Pattern(receiver.pattern()),
@@ -205,17 +225,27 @@ fn declaration_parameter_roots(
                 }
             }
         }
-        HirCallableSourceOwner::ViewItem
-        | HirCallableSourceOwner::ExternCapabilityFunction { .. }
+        HirCallableSourceOwner::ViewItem => {
+            let HirItemKind::View(view) = item.kind() else {
+                return Err(HirSemanticPathError::MissingBody);
+            };
+            push_parameters(&mut roots, 0, view.parameters())?;
+        }
+        HirCallableSourceOwner::ExternCapabilityFunction { .. }
         | HirCallableSourceOwner::TraitFunction { .. } => {}
     }
     Ok(roots)
 }
 
-fn push_parameters(roots: &mut Vec<HirParameterRoot>, group: u32, parameters: &[HirParameter]) {
+fn push_parameters(
+    roots: &mut Vec<HirParameterRoot>,
+    group: u32,
+    parameters: &[HirParameter],
+) -> Result<(), HirSemanticPathError> {
     for (parameter, value) in parameters.iter().enumerate() {
-        push_parameter(roots, group, checked_ordinal(parameter), value);
+        push_parameter(roots, group, checked_ordinal(parameter)?, value);
     }
+    Ok(())
 }
 
 fn push_parameter(
@@ -236,24 +266,57 @@ fn push_parameter(
     }
 }
 
-fn checked_ordinal(value: usize) -> u32 {
-    u32::try_from(value).expect("accepted declaration child sequences fit checked u32 limits")
+fn checked_ordinal(value: usize) -> Result<u32, HirSemanticPathError> {
+    u32::try_from(value).map_err(|_| HirSemanticPathError::OrdinalOverflow)
 }
 
-fn declaration_body_edges(
+enum HirDeclarationBodyRootChild {
+    Body(Vec<HirBodyChildEdge>),
+    Expression(ExprId),
+}
+
+struct HirDeclarationBodyRoot {
+    role: HirDeclarationBodyRootRole,
+    child: HirDeclarationBodyRootChild,
+}
+
+fn declaration_body_roots(
     module: &HirModule,
     item: crate::identity::ItemId,
     owner: HirCallableSourceOwner,
-) -> Result<Vec<HirBodyChildEdge>, HirSemanticPathError> {
+) -> Result<Vec<HirDeclarationBodyRoot>, HirSemanticPathError> {
     let item = module
         .resolve_item(item)
         .map_err(|_| HirSemanticPathError::UnresolvedOwner)?;
     match owner {
         HirCallableSourceOwner::Item => match item.kind() {
-            HirItemKind::Function(function) => Ok(function.body().child_edges()),
-            HirItemKind::Predicate(predicate) => Ok(predicate.body().child_edges()),
-            HirItemKind::Proof(proof) => Ok(proof.body().child_edges()),
-            HirItemKind::Flow(flow) => Ok(flow.body().child_edges()),
+            HirItemKind::Function(function) => Ok(vec![declaration_body(
+                HirDeclarationBodyRootRole::FunctionBody,
+                function
+                    .body()
+                    .try_child_edges()
+                    .map_err(|_| HirSemanticPathError::OrdinalOverflow)?,
+            )]),
+            HirItemKind::Predicate(predicate) => Ok(vec![declaration_body(
+                HirDeclarationBodyRootRole::PredicateBody,
+                predicate
+                    .body()
+                    .try_child_edges()
+                    .map_err(|_| HirSemanticPathError::OrdinalOverflow)?,
+            )]),
+            HirItemKind::Proof(proof) => Ok(vec![declaration_body(
+                HirDeclarationBodyRootRole::ProofBody,
+                proof
+                    .body()
+                    .try_child_edges()
+                    .map_err(|_| HirSemanticPathError::OrdinalOverflow)?,
+            )]),
+            HirItemKind::Flow(flow) => Ok(vec![declaration_body(
+                HirDeclarationBodyRootRole::FlowBody,
+                flow.body()
+                    .try_child_edges()
+                    .map_err(|_| HirSemanticPathError::OrdinalOverflow)?,
+            )]),
             _ => Err(HirSemanticPathError::MissingBody),
         },
         HirCallableSourceOwner::ImplFunction { member } => {
@@ -265,14 +328,45 @@ fn declaration_body_edges(
             else {
                 return Err(HirSemanticPathError::MissingBody);
             };
-            function
-                .body()
-                .map(crate::item::HirFunctionBody::child_edges)
-                .ok_or(HirSemanticPathError::MissingBody)
+            Ok(vec![declaration_body(
+                HirDeclarationBodyRootRole::ImplFunctionBody,
+                function
+                    .body()
+                    .ok_or(HirSemanticPathError::MissingBody)?
+                    .try_child_edges()
+                    .map_err(|_| HirSemanticPathError::OrdinalOverflow)?,
+            )])
         }
-        HirCallableSourceOwner::ViewItem
-        | HirCallableSourceOwner::ExternCapabilityFunction { .. }
+        HirCallableSourceOwner::ViewItem => {
+            let HirItemKind::View(view) = item.kind() else {
+                return Err(HirSemanticPathError::MissingBody);
+            };
+            view.values()
+                .iter()
+                .copied()
+                .enumerate()
+                .map(|(ordinal, expression)| {
+                    Ok(HirDeclarationBodyRoot {
+                        role: HirDeclarationBodyRootRole::ViewValue {
+                            ordinal: checked_ordinal(ordinal)?,
+                        },
+                        child: HirDeclarationBodyRootChild::Expression(expression),
+                    })
+                })
+                .collect()
+        }
+        HirCallableSourceOwner::ExternCapabilityFunction { .. }
         | HirCallableSourceOwner::TraitFunction { .. } => Err(HirSemanticPathError::MissingBody),
+    }
+}
+
+fn declaration_body(
+    role: HirDeclarationBodyRootRole,
+    edges: Vec<HirBodyChildEdge>,
+) -> HirDeclarationBodyRoot {
+    HirDeclarationBodyRoot {
+        role,
+        child: HirDeclarationBodyRootChild::Body(edges),
     }
 }
 
@@ -316,6 +410,24 @@ impl<'module> PathBuilder<'module> {
         }
     }
 
+    fn walk_declaration_body(
+        &mut self,
+        root: HirDeclarationBodyRoot,
+    ) -> Result<(), HirSemanticPathError> {
+        let path = [HirSemanticPathStep::DeclarationBody(root.role)];
+        match root.child {
+            HirDeclarationBodyRootChild::Body(edges) => {
+                for edge in edges {
+                    self.walk_body(edge, &path)?;
+                }
+                Ok(())
+            }
+            HirDeclarationBodyRootChild::Expression(owner) => {
+                self.walk_expression(owner, &path, &[])
+            }
+        }
+    }
+
     fn walk_body(
         &mut self,
         edge: HirBodyChildEdge,
@@ -342,19 +454,24 @@ impl<'module> PathBuilder<'module> {
         path: &[HirSemanticPathStep],
         hops: &[HirExpressionSemanticHop],
     ) -> Result<(), HirSemanticPathError> {
+        if self.active_expressions.contains(&owner) {
+            return Err(HirSemanticPathError::CyclicPath);
+        }
         insert_unique(&mut self.expressions, owner, path)?;
         if self.expression_hops.insert(owner, hops.into()).is_some() {
             return Err(HirSemanticPathError::DuplicatePath);
         }
-        if !self.active_expressions.insert(owner) {
-            return Err(HirSemanticPathError::CyclicPath);
-        }
+        self.active_expressions.insert(owner);
         let expression = self
             .module
             .resolve_expr(owner)
             .map_err(|_| HirSemanticPathError::UnresolvedOwner)?;
         if let HirExprKind::Thread(thread) = expression.kind() {
-            for edge in thread.body().child_edges() {
+            for edge in thread
+                .body()
+                .try_child_edges()
+                .map_err(|_| HirSemanticPathError::OrdinalOverflow)?
+            {
                 self.walk_body(edge, path)?;
             }
         }
@@ -365,21 +482,37 @@ impl<'module> PathBuilder<'module> {
                     &pushed(
                         path,
                         HirSemanticPathStep::MatchPattern {
-                            arm: u32::try_from(arm)
-                                .expect("accepted Match arms fit checked u32 limits"),
+                            arm: checked_ordinal(arm)?,
                         },
                     ),
                 )?;
             }
         }
+        let owned_edges = expression
+            .kind()
+            .expression_owned_child_edges()
+            .map_err(|error| match error {
+                HirExpressionOwnedChildEdgeError::OrdinalOverflow => {
+                    HirSemanticPathError::OrdinalOverflow
+                }
+                HirExpressionOwnedChildEdgeError::EmptyNestedPath => {
+                    HirSemanticPathError::InvalidOwnedPath
+                }
+            })?;
+        for edge in owned_edges {
+            self.walk_expression_owned_edge(&edge, path)?;
+        }
         for (ordinal, statement) in expression_statements(expression.kind()).iter().enumerate() {
             let role = HirBodyChildRole::Statement {
-                ordinal: u32::try_from(ordinal)
-                    .expect("accepted expression statement bodies fit checked u32 limits"),
+                ordinal: checked_ordinal(ordinal)?,
             };
             self.walk_statement(*statement, &pushed(path, HirSemanticPathStep::Body(role)))?;
         }
-        for edge in expression.kind().child_edges() {
+        for edge in expression
+            .kind()
+            .try_child_edges()
+            .map_err(|_| HirSemanticPathError::OrdinalOverflow)?
+        {
             // For lowering publishes source, iterator, and next-value roots
             // directly on the owning statement. Following a synthetic
             // `ForInput` edge would reach the same source expression through
@@ -410,20 +543,41 @@ impl<'module> PathBuilder<'module> {
         Ok(())
     }
 
+    fn walk_expression_owned_edge(
+        &mut self,
+        edge: &crate::expr::HirExpressionOwnedChildEdge,
+        parent: &[HirSemanticPathStep],
+    ) -> Result<(), HirSemanticPathError> {
+        let path = pushed(
+            parent,
+            HirSemanticPathStep::ExpressionOwned(edge.role().clone()),
+        );
+        match edge.child() {
+            HirExpressionOwnedChild::Pattern(owner) => self.walk_pattern(owner, &path),
+            HirExpressionOwnedChild::Statement(owner) => self.walk_statement(owner, &path),
+            HirExpressionOwnedChild::Body(edge) => self.walk_body(edge, &path),
+        }
+    }
+
     fn walk_statement(
         &mut self,
         owner: StmtId,
         path: &[HirSemanticPathStep],
     ) -> Result<(), HirSemanticPathError> {
-        insert_unique(&mut self.statements, owner, path)?;
-        if !self.active_statements.insert(owner) {
+        if self.active_statements.contains(&owner) {
             return Err(HirSemanticPathError::CyclicPath);
         }
+        insert_unique(&mut self.statements, owner, path)?;
+        self.active_statements.insert(owner);
         let statement = self
             .module
             .resolve_stmt(owner)
             .map_err(|_| HirSemanticPathError::UnresolvedOwner)?;
-        for edge in statement.kind().child_edges() {
+        for edge in statement
+            .kind()
+            .try_child_edges()
+            .map_err(|_| HirSemanticPathError::OrdinalOverflow)?
+        {
             let path = pushed(path, HirSemanticPathStep::Statement(edge.role()));
             match edge.child() {
                 HirStatementChild::Expression(owner) => self.walk_expression(owner, &path, &[])?,
@@ -435,7 +589,11 @@ impl<'module> PathBuilder<'module> {
                 }
             }
         }
-        for (role, edges) in statement.kind().thread_body_edges() {
+        for (role, edges) in statement
+            .kind()
+            .try_thread_body_edges()
+            .map_err(|_| HirSemanticPathError::OrdinalOverflow)?
+        {
             let body_path = pushed(path, HirSemanticPathStep::ThreadBody(role));
             for edge in edges {
                 self.walk_body(edge, &body_path)?;
@@ -450,15 +608,20 @@ impl<'module> PathBuilder<'module> {
         owner: PatternId,
         path: &[HirSemanticPathStep],
     ) -> Result<(), HirSemanticPathError> {
-        insert_unique(&mut self.patterns, owner, path)?;
-        if !self.active_patterns.insert(owner) {
+        if self.active_patterns.contains(&owner) {
             return Err(HirSemanticPathError::CyclicPath);
         }
+        insert_unique(&mut self.patterns, owner, path)?;
+        self.active_patterns.insert(owner);
         let pattern = self
             .module
             .resolve_pattern(owner)
             .map_err(|_| HirSemanticPathError::UnresolvedOwner)?;
-        for edge in pattern.kind().child_edges() {
+        for edge in pattern
+            .kind()
+            .try_child_edges()
+            .map_err(|_| HirSemanticPathError::OrdinalOverflow)?
+        {
             let path = pushed(path, HirSemanticPathStep::Pattern(edge.role()));
             match edge.child() {
                 HirPatternChild::Pattern(owner) => self.walk_pattern(owner, &path)?,
@@ -501,3 +664,7 @@ fn insert_unique<K: Ord + Copy + std::fmt::Debug>(
         Ok(())
     }
 }
+
+#[cfg(test)]
+#[path = "semantic_paths/tests.rs"]
+mod tests;

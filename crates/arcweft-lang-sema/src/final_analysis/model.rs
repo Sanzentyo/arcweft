@@ -1789,6 +1789,8 @@ impl AcceptedDeclarationSemanticId {
 /// One structural step in a declaration-rooted checked expression path.
 #[derive(Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub enum CheckedExpressionChildRoleStep {
+    DeclarationBody(arcweft_lang_hir::project::HirDeclarationBodyRootRole),
+    ExpressionOwned(arcweft_lang_hir::expr::HirExpressionOwnedBodyRole),
     Body(arcweft_lang_hir::body_edges::HirBodyChildRole),
     Statement(arcweft_lang_hir::stmt::HirStatementChildRole),
     ThreadBody(arcweft_lang_hir::stmt::HirStatementBodyRole),

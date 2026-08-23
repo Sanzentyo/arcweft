@@ -6,6 +6,13 @@ use crate::{
     item::{HirFunctionBody, HirPredicateBody, HirProofBody},
     stmt::HirContextualStmtBody,
 };
+use thiserror::Error;
+
+#[derive(Clone, Copy, Debug, Eq, Error, PartialEq)]
+pub enum HirBodyChildEdgeError {
+    #[error("a HIR body child ordinal does not fit u32")]
+    OrdinalOverflow,
+}
 
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub enum HirBodyChild {
@@ -43,22 +50,42 @@ impl HirBodyChildEdge {
 }
 
 impl HirFunctionBody {
+    /// Returns the accepted body children in semantic order.
+    ///
+    /// # Panics
+    ///
+    /// Panics if an unrejected body exceeds the accepted `u32` ordinal space.
     pub fn child_edges(&self) -> Vec<HirBodyChildEdge> {
+        self.try_child_edges()
+            .expect("accepted HIR function bodies fit checked u32 limits")
+    }
+
+    pub fn try_child_edges(&self) -> Result<Vec<HirBodyChildEdge>, HirBodyChildEdgeError> {
         match self {
             Self::Block {
                 statements, tail, ..
-            } => block_edges(statements, *tail),
-            Self::Error(expression) => vec![HirBodyChildEdge::new(
+            } => try_block_edges(statements, *tail),
+            Self::Error(expression) => Ok(vec![HirBodyChildEdge::new(
                 HirBodyChild::Expression(*expression),
                 HirBodyChildRole::RecoveryExpression,
-            )],
+            )]),
         }
     }
 }
 
 impl HirPredicateBody {
+    /// Returns the accepted body children in semantic order.
+    ///
+    /// # Panics
+    ///
+    /// Panics if an unrejected body exceeds the accepted `u32` ordinal space.
     pub fn child_edges(&self) -> Vec<HirBodyChildEdge> {
-        logical_body_edges(
+        self.try_child_edges()
+            .expect("accepted HIR predicate bodies fit checked u32 limits")
+    }
+
+    pub fn try_child_edges(&self) -> Result<Vec<HirBodyChildEdge>, HirBodyChildEdgeError> {
+        try_logical_body_edges(
             self,
             |body| match body {
                 Self::Expression { expression, .. } => Some((*expression, false)),
@@ -76,8 +103,18 @@ impl HirPredicateBody {
 }
 
 impl HirProofBody {
+    /// Returns the accepted body children in semantic order.
+    ///
+    /// # Panics
+    ///
+    /// Panics if an unrejected body exceeds the accepted `u32` ordinal space.
     pub fn child_edges(&self) -> Vec<HirBodyChildEdge> {
-        logical_body_edges(
+        self.try_child_edges()
+            .expect("accepted HIR proof bodies fit checked u32 limits")
+    }
+
+    pub fn try_child_edges(&self) -> Result<Vec<HirBodyChildEdge>, HirBodyChildEdgeError> {
+        try_logical_body_edges(
             self,
             |body| match body {
                 Self::Expression { expression, .. } => Some((*expression, false)),
@@ -102,16 +139,36 @@ impl HirContextualStmtBody {
         self.ordinary_statements().map(statement_edges)
     }
 
+    /// Returns the accepted contextual body children in semantic order.
+    ///
+    /// # Panics
+    ///
+    /// Panics if an unrejected body exceeds the accepted `u32` ordinal space.
     pub fn child_edges(&self) -> Vec<HirBodyChildEdge> {
+        self.try_child_edges()
+            .expect("accepted contextual bodies fit checked u32 limits")
+    }
+
+    pub fn try_child_edges(&self) -> Result<Vec<HirBodyChildEdge>, HirBodyChildEdgeError> {
         match self {
-            Self::Ordinary { statements, .. } => statement_edges(statements),
-            Self::Thread(body) => body.child_edges(),
+            Self::Ordinary { statements, .. } => try_statement_edges(statements),
+            Self::Thread(body) => body.try_child_edges(),
         }
     }
 }
 
 impl HirThreadBody {
+    /// Returns the accepted Thread body children in semantic order.
+    ///
+    /// # Panics
+    ///
+    /// Panics if an unrejected body exceeds the accepted `u32` ordinal space.
     pub fn child_edges(&self) -> Vec<HirBodyChildEdge> {
+        self.try_child_edges()
+            .expect("accepted Thread body items fit checked u32 limits")
+    }
+
+    pub fn try_child_edges(&self) -> Result<Vec<HirBodyChildEdge>, HirBodyChildEdgeError> {
         self.items()
             .iter()
             .enumerate()
@@ -134,58 +191,69 @@ impl HirThreadBody {
                     | HirThreadFlowItem::Include(statement)
                     | HirThreadFlowItem::Error(statement) => HirBodyChild::Statement(*statement),
                 };
-                HirBodyChildEdge::new(
+                Ok(HirBodyChildEdge::new(
                     child,
                     HirBodyChildRole::ThreadItem {
-                        ordinal: u32::try_from(ordinal)
-                            .expect("accepted Thread body items fit checked u32 limits"),
+                        ordinal: checked_ordinal(ordinal)?,
                     },
-                )
+                ))
             })
             .collect()
     }
 }
 
-fn logical_body_edges<T>(
+fn try_logical_body_edges<T>(
     body: &T,
     expression: impl FnOnce(&T) -> Option<(ExprId, bool)>,
     block: impl FnOnce(&T) -> Option<(&[StmtId], ExprId)>,
-) -> Vec<HirBodyChildEdge> {
+) -> Result<Vec<HirBodyChildEdge>, HirBodyChildEdgeError> {
     if let Some((expression, recovery)) = expression(body) {
-        return vec![HirBodyChildEdge::new(
+        return Ok(vec![HirBodyChildEdge::new(
             HirBodyChild::Expression(expression),
             if recovery {
                 HirBodyChildRole::RecoveryExpression
             } else {
                 HirBodyChildRole::Expression
             },
-        )];
+        )]);
     }
     let (statements, tail) = block(body).expect("closed logical body family has one projection");
-    block_edges(statements, tail)
+    try_block_edges(statements, tail)
 }
 
-fn block_edges(statements: &[StmtId], tail: ExprId) -> Vec<HirBodyChildEdge> {
-    let mut edges = statement_edges(statements);
+fn try_block_edges(
+    statements: &[StmtId],
+    tail: ExprId,
+) -> Result<Vec<HirBodyChildEdge>, HirBodyChildEdgeError> {
+    let mut edges = try_statement_edges(statements)?;
     edges.push(HirBodyChildEdge::new(
         HirBodyChild::Expression(tail),
         HirBodyChildRole::Tail,
     ));
-    edges
+    Ok(edges)
 }
 
 fn statement_edges(statements: &[StmtId]) -> Vec<HirBodyChildEdge> {
+    try_statement_edges(statements).expect("accepted HIR statement body fits checked u32 limits")
+}
+
+fn try_statement_edges(
+    statements: &[StmtId],
+) -> Result<Vec<HirBodyChildEdge>, HirBodyChildEdgeError> {
     statements
         .iter()
         .enumerate()
         .map(|(ordinal, statement)| {
-            HirBodyChildEdge::new(
+            Ok(HirBodyChildEdge::new(
                 HirBodyChild::Statement(*statement),
                 HirBodyChildRole::Statement {
-                    ordinal: u32::try_from(ordinal)
-                        .expect("accepted HIR statement bodies fit checked u32 limits"),
+                    ordinal: checked_ordinal(ordinal)?,
                 },
-            )
+            ))
         })
         .collect()
+}
+
+fn checked_ordinal(value: usize) -> Result<u32, HirBodyChildEdgeError> {
+    u32::try_from(value).map_err(|_| HirBodyChildEdgeError::OrdinalOverflow)
 }

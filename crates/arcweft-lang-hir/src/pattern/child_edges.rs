@@ -1,6 +1,13 @@
 //! Typed direct-child authority for final HIR patterns.
 
 use crate::identity::{LocalId, PatternId, TypeId};
+use thiserror::Error;
+
+#[derive(Clone, Copy, Debug, Eq, Error, PartialEq)]
+pub enum HirPatternChildEdgeError {
+    #[error("a pattern child ordinal does not fit u32")]
+    OrdinalOverflow,
+}
 
 use super::{
     HirPatternBinding, HirPatternChildRole, HirPatternField, HirPatternKind,
@@ -36,7 +43,18 @@ impl HirPatternChildEdge {
 
 impl HirPatternKind {
     /// Returns every directly owned pattern/type/local child in semantic order.
+    ///
+    /// # Panics
+    ///
+    /// Panics if an unrejected HIR sequence exceeds the accepted `u32`
+    /// ordinal space. Fallible semantic consumers must use
+    /// [`Self::try_child_edges`].
     pub fn child_edges(&self) -> Vec<HirPatternChildEdge> {
+        self.try_child_edges()
+            .expect("accepted HIR pattern children fit checked u32 limits")
+    }
+
+    pub fn try_child_edges(&self) -> Result<Vec<HirPatternChildEdge>, HirPatternChildEdgeError> {
         let mut edges = Vec::new();
         match self {
             Self::Binding(binding) => {
@@ -66,7 +84,7 @@ impl HirPatternKind {
                     edges.push(HirPatternChildEdge::new(
                         HirPatternChild::Pattern(*pattern),
                         HirPatternChildRole::Element {
-                            ordinal: checked_ordinal(ordinal),
+                            ordinal: checked_ordinal(ordinal)?,
                         },
                     ));
                 }
@@ -83,7 +101,7 @@ impl HirPatternKind {
             }
             Self::Record { fields, .. } => {
                 for (field, payload) in fields.iter().enumerate() {
-                    let field = checked_ordinal(field);
+                    let field = checked_ordinal(field)?;
                     match payload {
                         HirPatternField::Explicit { pattern, .. } => {
                             edges.push(HirPatternChildEdge::new(
@@ -120,7 +138,7 @@ impl HirPatternKind {
                     edges.push(HirPatternChildEdge::new(
                         HirPatternChild::Pattern(*pattern),
                         HirPatternChildRole::OrAlternative {
-                            ordinal: checked_ordinal(ordinal),
+                            ordinal: checked_ordinal(ordinal)?,
                         },
                     ));
                 }
@@ -134,7 +152,7 @@ impl HirPatternKind {
             }
             Self::Literal(_) | Self::EntityReference(_) | Self::Discard | Self::Error(_) => {}
         }
-        edges
+        Ok(edges)
     }
 }
 
@@ -151,6 +169,23 @@ fn push_binding(
     }
 }
 
-fn checked_ordinal(value: usize) -> u32 {
-    u32::try_from(value).expect("accepted HIR pattern child sequences fit checked u32 limits")
+fn checked_ordinal(value: usize) -> Result<u32, HirPatternChildEdgeError> {
+    u32::try_from(value).map_err(|_| HirPatternChildEdgeError::OrdinalOverflow)
+}
+
+#[cfg(test)]
+mod ordinal_tests {
+    use super::*;
+
+    #[test]
+    fn pattern_child_ordinal_is_exact_and_rejects_one_over() {
+        let exact = usize::try_from(u32::MAX).unwrap();
+        assert_eq!(checked_ordinal(exact), Ok(u32::MAX));
+        if let Ok(one_over) = usize::try_from(u64::from(u32::MAX) + 1) {
+            assert_eq!(
+                checked_ordinal(one_over),
+                Err(HirPatternChildEdgeError::OrdinalOverflow)
+            );
+        }
+    }
 }

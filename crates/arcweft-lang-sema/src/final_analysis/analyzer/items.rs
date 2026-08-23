@@ -902,6 +902,9 @@ fn source_callable_shell(
             contract: Box::new(contract),
         })
     };
+    if symbol.owner() == arcweft_lang_hir::symbol::CallableDeclarationOwner::View {
+        return view_source_callable_shell(module, symbol, item);
+    }
     match (symbol.source_owner(), item.kind()) {
         (HirCallableSourceOwner::Item, HirItemKind::Flow(flow)) => inferred_body(
             flow.body_scope(),
@@ -983,6 +986,26 @@ fn source_callable_shell(
         }
         _ => Err(FinalSemanticAnalysisError::InvalidCallableOwner),
     }
+}
+
+fn view_source_callable_shell(
+    module: &HirModule,
+    symbol: &arcweft_lang_hir::symbol::CallableSymbol,
+    item: &HirItem,
+) -> Result<SourceCallableShell, FinalSemanticAnalysisError> {
+    let (HirCallableSourceOwner::ViewItem, HirItemKind::View(view)) =
+        (symbol.source_owner(), item.kind())
+    else {
+        return Err(FinalSemanticAnalysisError::InvalidCallableOwner);
+    };
+    let anchor = scope_span(module, view.callable_scope())?;
+    let contract = CallableEffectContract::body_inference(anchor, EffectSet::new(), Box::new([]))
+        .map_err(checked_catalog_error)?;
+    Ok(SourceCallableShell::Body {
+        scope: view.callable_scope(),
+        execution: CheckedCallableExecution::Runtime(CheckedFunctionExecution::DirectFrame),
+        contract: Box::new(contract),
+    })
 }
 
 fn item_role(

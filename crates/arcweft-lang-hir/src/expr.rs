@@ -10,6 +10,7 @@ mod child_edges;
 mod choice;
 mod control;
 mod for_synthetic;
+mod owned_body_edges;
 mod thread;
 
 pub use self::basic::{
@@ -31,8 +32,8 @@ pub(crate) use self::call::{
 };
 pub(crate) use self::child_edges::HirRecoveryOperandSlot;
 pub use self::child_edges::{
-    HirExpressionChildEdge, HirExpressionChildRole, HirNestedExpressionPath,
-    HirNestedExpressionPathError, HirNestedExpressionPathSegment,
+    HirExpressionChildEdge, HirExpressionChildEdgeError, HirExpressionChildRole,
+    HirNestedExpressionPath, HirNestedExpressionPathError, HirNestedExpressionPathSegment,
 };
 pub(crate) use self::choice::HirChoiceRequiredExpressionSlot;
 pub use self::choice::{
@@ -47,6 +48,10 @@ pub use self::control::{
     HirLoopExpr, HirMatchArm, HirMatchExpr, HirNamedBlockExpr, HirNamedBlockName,
 };
 pub use self::for_synthetic::HirForSyntheticExpr;
+pub use self::owned_body_edges::{
+    HirExpressionOwnedBodyRole, HirExpressionOwnedChild, HirExpressionOwnedChildEdge,
+    HirExpressionOwnedChildEdgeError, HirLinePlanStatementRole,
+};
 #[cfg(test)]
 pub(crate) use self::thread::HirThreadBodyInvariantError;
 pub use self::thread::{

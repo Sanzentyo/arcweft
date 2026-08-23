@@ -229,6 +229,9 @@ const BODY_ROOTS: &[&str] = &[
     "DialogueLinePlanErrorStatement",
 ];
 
+const LINE_PLAN_STATEMENT_ROLES: &[&str] =
+    &["Init", "Thread", "On", "Statement", "CancelRule", "Error"];
+
 const LIMITS: &[&str] = &[
     "max_arms",
     "max_matrix_rows",
@@ -441,6 +444,7 @@ pub fn validate_semantic(bundle: &Bundle) -> GateResult {
     validate_transcript_contract(bundle)?;
     validate_coverage_contract(bundle)?;
     validate_declaration_bridge(bundle)?;
+    validate_hir_path_contract(bundle)?;
     validate_publication(bundle)?;
     validate_non_goals(bundle)?;
     validate_required_files(bundle)
@@ -755,7 +759,40 @@ fn validate_schema_anchors(bundle: &Bundle) -> GateResult {
             "CheckedRichTextSemanticDigest",
             "CheckedMatchLimits",
             "ViewValue { ordinal",
+            "HirSemanticPathStep",
+            "ExpressionOwned(HirExpressionOwnedBodyRole)",
+            "ChoiceLetStatement { path: HirNestedExpressionPath }",
+            "DialogueLinePlanStatement",
+            "role: HirLinePlanStatementRole",
+            "Init { statement: u32 }",
+            "HirExpressionOwnedChildEdge",
         ],
+        "schema_anchors",
+    )?;
+    forbid_anchors(
+        bundle,
+        "SCHEMAS.md",
+        &["group_path: Box<[u32]>", "ChoiceLetStatement { item: u32 }"],
+        "schema_anchors",
+    )?;
+    require_anchors(
+        bundle,
+        "schemas/final_contract.rs",
+        &[
+            "HirSemanticPathStep",
+            "ExpressionOwned(HirExpressionOwnedBodyRole)",
+            "ChoiceLetStatement",
+            "path: HirNestedExpressionPath",
+            "role: HirLinePlanStatementRole",
+            "Init { statement: u32 }",
+            "HirExpressionOwnedChildEdge",
+        ],
+        "schema_anchors",
+    )?;
+    forbid_anchors(
+        bundle,
+        "schemas/final_contract.rs",
+        &["group_path: Box<[u32]>", "ChoiceLetStatement { item: u32 }"],
         "schema_anchors",
     )?;
     require_anchors(
@@ -791,6 +828,81 @@ fn validate_schema_anchors(bundle: &Bundle) -> GateResult {
         &["C1", "C2", "C3", "C4", "C5", "T07_DELETION_CLEAN"],
         "schema_anchors",
     )
+}
+
+fn validate_hir_path_contract(bundle: &Bundle) -> GateResult {
+    let contract = &bundle.contract;
+    require_u64(
+        contract,
+        "/hir_path_contract/declaration_body_role_variant_count",
+        6,
+        "hir_path_schema",
+    )?;
+    require_u64(
+        contract,
+        "/hir_path_contract/expression_owned_role_variant_count",
+        14,
+        "hir_path_schema",
+    )?;
+    require_u64(
+        contract,
+        "/hir_path_contract/expression_owned_logical_root_family_count",
+        19,
+        "hir_path_schema",
+    )?;
+    require_u64(
+        contract,
+        "/hir_path_contract/line_plan_statement_role_count",
+        u64::try_from(LINE_PLAN_STATEMENT_ROLES.len())
+            .map_err(|_| GateError::new("hir_path_schema", "role count overflow"))?,
+        "hir_path_schema",
+    )?;
+    require_string_array(
+        contract,
+        "/hir_path_contract/line_plan_statement_roles",
+        LINE_PLAN_STATEMENT_ROLES,
+        "hir_path_schema",
+    )?;
+    require_str(
+        contract,
+        "/hir_path_contract/nested_path_authority",
+        "HirNestedExpressionPath",
+        "hir_path_schema",
+    )?;
+    for (field, expected) in [
+        ("raw_group_path_authority", false),
+        ("arbitrary_role_construction", false),
+        (
+            "choice_plan_cancel_shared_role_for_trigger_pattern_and_body",
+            true,
+        ),
+        ("line_plan_group_kind_segments_preserved", true),
+        (
+            "expression_owned_body_appends_existing_body_child_role",
+            true,
+        ),
+        ("view_callable_baseline_row_exists", false),
+        ("view_callable_same_cut_pipeline_completion", true),
+        ("view_retained_binding_remains_sole", true),
+        (
+            "view_retained_and_callable_join_by_item_module_snapshot",
+            true,
+        ),
+    ] {
+        require_bool(
+            contract,
+            &format!("/hir_path_contract/{field}"),
+            expected,
+            "hir_path_schema",
+        )?;
+    }
+    require_str(
+        contract,
+        "/hir_path_contract/view_callable_entry",
+        "CallableDeclarationKey::Existing through existing nonbinding callable pipeline",
+        "hir_path_schema",
+    )?;
+    Ok(())
 }
 
 fn validate_transcript_contract(bundle: &Bundle) -> GateResult {
@@ -1210,6 +1322,20 @@ fn require_anchors(
                 gate,
                 format!("{path} missing anchor {anchor}"),
             ))
+        }
+    })
+}
+
+fn forbid_anchors(bundle: &Bundle, path: &str, anchors: &[&str], gate: &'static str) -> GateResult {
+    let text = text_file(bundle, path, gate)?;
+    anchors.iter().try_for_each(|anchor| {
+        if text.contains(anchor) {
+            Err(GateError::new(
+                gate,
+                format!("{path} retains forbidden anchor {anchor}"),
+            ))
+        } else {
+            Ok(())
         }
     })
 }

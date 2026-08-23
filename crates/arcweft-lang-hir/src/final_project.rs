@@ -41,8 +41,8 @@ pub use self::selected_expressions::{
     HirSelectedExpressionInventoryError,
 };
 pub use self::semantic_paths::{
-    HirDeclarationSemanticPathIndex, HirExpressionSemanticHop, HirSemanticPathError,
-    HirSemanticPathStep,
+    HirDeclarationBodyRootRole, HirDeclarationSemanticPathIndex, HirExpressionSemanticHop,
+    HirSemanticPathError, HirSemanticPathStep,
 };
 
 /// Package-qualified canonical key for one project module.

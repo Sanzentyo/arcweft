@@ -103,7 +103,7 @@ use crate::{
         RetainedValueDisposition, RuntimeOwnershipPathSegment, RuntimeOwnershipProjection,
         RuntimeOwnershipRejection, RuntimeProducerArgumentClassifier,
     },
-    project_index::{ProgramHash, ProjectEntityId, ProjectSemanticIndex},
+    project_index::{ProgramHash, ProjectCallableKind, ProjectEntityId, ProjectSemanticIndex},
     registration::{
         CharacterDialogueCustomFieldInput, CharacterRegistrar, CharacterRegistrationRequest,
         EnvironmentCallableLookupInput, EnvironmentCallablePublicationMetadataInput,
@@ -7310,4 +7310,36 @@ fn project_index_preserves_same_named_module_scoped_flows() {
         relation.from() == relation.to()
             && matches!(relation.from(), ProjectEntityId::StructuralFlow(_))
     }));
+}
+
+#[test]
+fn view_has_checked_callable_and_project_index_rows_without_a_call_binding() {
+    let fixture = fixture("view Main(count: u32 = 1) {\n    Text(count)\n}\n", None);
+    let analysis = analyze(&fixture).expect("View checked callable analysis");
+    let symbol = fixture
+        .symbols
+        .callable_symbols()
+        .find(|symbol| symbol.owner() == arcweft_lang_hir::symbol::CallableDeclarationOwner::View)
+        .expect("View callable symbol");
+    let facts = analysis
+        .checked_callables()
+        .project_callable(symbol.declaration())
+        .expect("View checked callable facts");
+    assert_eq!(facts.record().schema().result(), &TypeKind::ViewValue);
+    assert_eq!(facts.record().schema().groups().len(), 1);
+    assert_eq!(facts.record().schema().groups()[0].parameters().len(), 1);
+
+    let index = ProjectSemanticIndex::try_from_final_project(
+        ProgramHash::new("checked-view-callable"),
+        fixture.project.executable_view().expect("executable HIR"),
+        &fixture.symbols,
+        &analysis,
+        &CheckedEntryCatalog::default(),
+    )
+    .expect("View project index");
+    let indexed = index
+        .project_callable_by_declaration(symbol.declaration())
+        .expect("View callable index row");
+    assert_eq!(indexed.kind(), ProjectCallableKind::View);
+    assert_eq!(indexed.checked(), facts.id());
 }

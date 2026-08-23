@@ -293,30 +293,102 @@ pub enum HirDeclarationBodyRootRole {
     ViewValue { ordinal: u32 },
 }
 
+pub enum HirSemanticPathStep {
+    DeclarationBody(HirDeclarationBodyRootRole),
+    ExpressionOwned(HirExpressionOwnedBodyRole),
+    // Existing Body, Statement, ThreadBody, Expression, MatchPattern,
+    // Pattern, ParameterPattern, and ParameterDefault variants remain.
+}
+
 pub enum HirExpressionOwnedBodyRole {
     AwaitBranchPattern { branch: u32 },
     AwaitBranchBody { branch: u32 },
-    ChoiceLetStatement { item: u32 },
-    ChoiceForPattern { item: u32 },
-    ChoiceMatchArmPattern { item: u32, arm: u32 },
-    ChoiceOptionForPattern { item: u32 },
-    ChoiceOptionSelectBody { item: u32, field: u32 },
-    ChoiceOptionLetStatement { item: u32, field: u32 },
-    ChoicePlanTimeoutBody { item: u32 },
-    ChoicePlanCancelBody { item: u32 },
-    ChoicePlanOnSelectPattern { item: u32 },
-    ChoicePlanOnSelectBody { item: u32 },
-    DialogueLinePlanStatement { group_path: Box<[u32]>, item: u32, role: HirLinePlanStatementRole },
-    DialogueLinePlanLetPattern { group_path: Box<[u32]>, item: u32 },
+    ChoiceLetStatement { path: HirNestedExpressionPath },
+    ChoiceForPattern { path: HirNestedExpressionPath },
+    ChoiceMatchArmPattern { path: HirNestedExpressionPath, arm: u32 },
+    ChoiceOptionForPattern { path: HirNestedExpressionPath },
+    ChoiceOptionSelectBody { path: HirNestedExpressionPath, field: u32 },
+    ChoiceOptionLetStatement { path: HirNestedExpressionPath, field: u32 },
+    ChoicePlanTimeoutBody { path: HirNestedExpressionPath },
+    ChoicePlanCancelBody { path: HirNestedExpressionPath },
+    ChoicePlanOnSelectPattern { path: HirNestedExpressionPath },
+    ChoicePlanOnSelectBody { path: HirNestedExpressionPath },
+    DialogueLinePlanStatement {
+        path: HirNestedExpressionPath,
+        role: HirLinePlanStatementRole,
+    },
+    DialogueLinePlanLetPattern { path: HirNestedExpressionPath },
+}
+
+pub enum HirLinePlanStatementRole {
+    Init { statement: u32 },
+    Thread,
+    On,
+    Statement,
+    CancelRule,
+    Error,
+}
+
+pub enum HirExpressionOwnedChild {
+    Pattern(PatternId),
+    Statement(StmtId),
+    Body(HirBodyChildEdge),
+}
+
+pub struct HirExpressionOwnedChildEdge {
+    child: HirExpressionOwnedChild,
+    role: HirExpressionOwnedBodyRole,
 }
 ```
 
+This is a schema correction to the accepted C1 intent. The former raw
+`group_path`/`item` sketches are not an alternative coordinate
+format and must not be implemented. `HirNestedExpressionPath` is the one
+Choice/line-plan nesting authority. It is nonempty and retains
+`StartGroup`/`TogetherGroup` segment kinds. Edge constructors are HIR-private;
+callers cannot pair an arbitrary role with an unrelated child or path.
+
+There are 14 `HirExpressionOwnedBodyRole` variants but 19 logical root
+families. The last two variants represent seven dialogue families:
+`DialogueLinePlanLetPattern` plus the six closed
+`HirLinePlanStatementRole` cases. `Init { statement }` selects one statement
+inside the source-ordered Init row. The logical-family count is neither a Rust
+variant count nor a produced-edge count.
+
+`ChoicePlanCancelBody` may produce the accepted trigger Pattern, when the
+trigger owns one, followed by the heterogeneous body children at the same
+Choice-plan path. The child kind and the following Pattern/Body path step keep
+those coordinates distinct; this does not introduce a fifteenth role or a
+twentieth logical family.
+
+Every role/path pair obeys these invariants:
+
+- a Choice role carries a nonempty path whose terminal segment agrees with
+  its item, arm, option field, or plan-item owner;
+- duplicated `arm` and `field` payloads equal their corresponding typed path
+  segments;
+- a dialogue path begins with `LinePlanItem` and preserves every nested
+  Start/Together group-kind segment;
+- an expression-owned Body child appends its existing `HirBodyChildRole`
+  after `ExpressionOwned(role)`; and
+- the same live HIR child reached through two complete paths is rejected as a
+  duplicate rather than deduplicated.
+
 All ordinals use checked conversion under the same `u64` admission budget.
-`ViewValue { ordinal }` is joined to the View's existing
-`CallableDeclarationKey` and checked callable row. `ViewItem` ceases to return
-`MissingBody`; extern capability and trait requirement still do. No
-`ViewMatchSiteId`, parallel declaration index, or copied callable catalog is
-permitted.
+`ViewValue { ordinal }` is joined to
+`CallableDeclarationKey::Existing(CallableDeclarationId { owner: View, .. })`.
+The baseline types, View source owner, source-index roles, validation matrix,
+and downstream project-callable kind already admit that row, but the baseline
+linker does not publish it. C1 completes the existing nonbinding callable
+publication and registered/checked callable pipeline in place. The retained
+View public-ID symbol remains the sole source-name binding; callable
+publication must not add a second binding for that name. The retained and
+callable rows join through the same `ItemId`, module, and snapshot.
+
+`ViewItem` then ceases to return `MissingBody`; extern capability and trait
+requirement still do. No `ViewMatchSiteId`, retained-symbol fallback,
+synthetic key, parallel declaration index, copied callable catalog, or module
+scan is permitted.
 
 Statement and body semantic digests are private memoized projections over
 existing checked facts and typed HIR child roles. A minimal

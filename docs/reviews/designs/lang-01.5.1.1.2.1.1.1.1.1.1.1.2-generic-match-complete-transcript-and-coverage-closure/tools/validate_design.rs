@@ -25,18 +25,27 @@ fn main() {
 }
 
 fn run() -> Result<(), Box<dyn std::error::Error>> {
-    let root = std::env::args_os()
-        .nth(1)
-        .map(PathBuf::from)
-        .unwrap_or_else(|| PathBuf::from(DESIGN_REL));
+    let mut design_only = false;
+    let mut root = None;
+    for argument in std::env::args_os().skip(1) {
+        if argument == "--design-only" {
+            design_only = true;
+        } else if root.replace(PathBuf::from(argument)).is_some() {
+            return Err("more than one design path supplied".into());
+        }
+    }
+    let root = root.unwrap_or_else(|| PathBuf::from(DESIGN_REL));
     let bundle = load_bundle(&root)?;
     validate_semantic(&bundle)?;
     validate_manifest(&bundle)?;
-    validate_repository(&bundle)?;
+    if !design_only {
+        validate_repository(&bundle)?;
+    }
     println!(
-        "PASS design={} files={} head=9a5d30d25620541c3f2975d31e04e04e3bc9514c inventories=27/8/7/5/38/13/35/5/13 decisions=1-7",
+        "PASS design={} files={} repository={} inventories=27/8/7/5/38/13/35/5/13 decisions=1-7",
         bundle.root.display(),
-        bundle.files.len()
+        bundle.files.len(),
+        if design_only { "NOT_RUN" } else { "PASS" }
     );
     Ok(())
 }
