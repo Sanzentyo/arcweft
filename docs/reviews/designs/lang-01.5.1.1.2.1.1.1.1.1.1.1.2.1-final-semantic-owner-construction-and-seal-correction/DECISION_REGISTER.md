@@ -7,9 +7,9 @@
 | D2a | prepared expressions | one private `PreparedExpressionFact` map with Complete/Entry rows and shared candidate journaling | pending side map, Structural placeholder, public pending variant |
 | D3 | verification precedence | Entry binding precedes verification; Entry selection remains after | exposing draft to verifier, reverse dependency |
 | D4 | Entry checker input | concrete narrow prepared authority | `&FinalSemanticAnalysis`, public trait |
-| D5 | nominal projection | one context over symbols + accepted type map, sealed catalog | duplicate projector, reader recomputation |
-| D6 | nominal limits | reuse `NominalResolutionLimits`, checked work before descent | new arbitrary constants, saturation |
-| D7 | environment fields | ordered typed schema replaces nested maps in place | sorted map, side table, scope removal |
+| D5 | nominal projection | one exhaustive typed request visitor/context over symbols + accepted type map, sealed complete catalog retaining `TypeShape` | demand-only seeds, duplicate projector, reader recomputation |
+| D6 | nominal limits | fresh `NominalResolutionLimits` budget per root plus non-resetting `NominalAggregationLimits` project budget | one global root budget, new constants, saturation |
+| D7 | environment fields | ordered typed Record semantics inside existing accepted nominal record/catalog/world digest | TypeCheckEnv map/index, public raw record/field mint, scope removal |
 | D8 | environment patterns | admit exact accepted named record using same rows | reader name reconstruction |
 | D9 | View modifier | delete success and fail closed | invented registry, name hash |
 | D10 | shared types | reuse `DeclarationIdentityFamily`, `CallableReceiverMode`, one field-ID enum | parallel enums |

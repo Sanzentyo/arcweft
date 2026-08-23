@@ -13,10 +13,11 @@ The selected design is:
   its exact typed facts, seal every pending Entry reference, and publish one
   `FinalSemanticAnalysis` that owns the `CheckedEntryCatalog`;
 - extract the existing nominal projection into one private context over the
-  accepted symbol generation and type map, then seal its projection catalog
-  into final analysis;
-- replace the environment's nested field maps in place with one ordered typed
-  record schema;
+  accepted symbol generation and type map, seed it exhaustively under per-root
+  and project budgets, retain canonical `TypeShape`, then seal its complete
+  projection catalog into final analysis;
+- delete the environment's nested field maps and place ordered Record semantics
+  inside the existing accepted nominal record/catalog/world authority;
 - delete unchecked View modifier success, `TupleElement`, and `RecordElement`,
   while permanently reserving select tags `0x0405` and `0x0406`;
 - retain exact C2 facts while leaving recursive RichText and Postfix digests to

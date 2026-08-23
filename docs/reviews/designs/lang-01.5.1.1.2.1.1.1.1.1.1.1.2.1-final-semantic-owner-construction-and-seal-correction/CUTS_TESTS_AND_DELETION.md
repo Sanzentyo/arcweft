@@ -26,20 +26,29 @@ Tests:
 
 Refactor `NominalSchemaExpander` onto
 `RuntimeNominalProjectionContext`, build the sealed catalog, and make existing
-public projection APIs delegate to it. Replace nested environment field maps
-with `AcceptedEnvironmentRecord` in place.
+public projection APIs delegate to it. Add the exhaustive typed projection
+request visitor. Move ordered environment fields into
+`AcceptedNominalSemantics::Record` and delete every separate TypeCheckEnv
+record map.
 
 Delete in this subcut:
 
 - the `FinalSemanticAnalysis` dependency inside the expander;
 - every second project shape/layout projection; and
-- `HashMap<String, HashMap<String, TypeKind>>` plus reader-side iteration.
+- `HashMap<String, HashMap<String, TypeKind>>`, every replacement name/index
+  map, and reader-side iteration outside the accepted Record row.
 
-Tests cover exact-limit/one-over work, depth, node and generic-argument limits;
-cache hit; project generation/owner/arity mismatch; legal recursive named
-schema; illegal generic cycle; layout sensitivity; environment duplicate,
-unknown, order, lookup-iteration invariance, ordinal overflow, and typed
-runtime-plan rejection without diagnostic-name lookup.
+Tests cover per-root reset across two maximum-work roots; project aggregate
+exact-limit/one-over across roots and cache hits; arithmetic overflow;
+cancellation before charge/descent; depth, node, generic-argument and work
+limits; cache hit; every prepared/published visitor family; nested/generic
+nominals reachable only through each family; missing cached projection at
+final seal; borrowed post-seal lookup and zero post-seal expansion; retained
+canonical `TypeShape`; project generation/owner/arity/identity mismatch; legal
+recursive named schema; illegal generic cycle; layout sensitivity; environment
+duplicate, unknown, declaration order, catalog/world digest sensitivity,
+ordinal overflow, cloned-Record identity mismatch, raw constructor privacy,
+and typed runtime-plan rejection without diagnostic-name lookup.
 
 ## C2.3 — exact project/case/field/look rows
 

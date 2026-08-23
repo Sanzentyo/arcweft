@@ -104,11 +104,15 @@ The new top-level first-error order is fixed:
    current validation order; and
 9. final cancellation check immediately before returning the sealed value.
 
-Checked arithmetic occurs before allocation/descent. Nominal projection reuses
-`NominalResolutionLimits::PRODUCTION`: type nodes, recursive depth, generic
-arguments, and work are charged with checked `u64`; tests inject a smaller
-valid limit set through crate-private constructors. Limit failure precedes the
-allocation or recursive step it would authorize.
+Checked arithmetic occurs before allocation/descent. Each projection root gets
+a fresh `ProjectionBudget` charged against
+`NominalResolutionLimits::PRODUCTION` for nodes, recursive depth, generic
+arguments, and per-root work. The context separately charges every root/cache
+request to `NominalAggregationLimits::PRODUCTION.work_per_project`; a cache hit
+still charges one aggregate request but does not charge recursive root work.
+Both counters use checked `u64`. Tests inject smaller valid per-root and
+aggregate limits through crate-private constructors. Limit failure precedes
+the allocation or recursive step it would authorize.
 
 The compiler then runs proof verification. Consequently Entry binding failure
 now precedes proof-verification diagnostics when both exist. This is the one
@@ -128,36 +132,64 @@ full sealing path; a manual fixture cannot bypass Entry completeness.
 
 - the exact `ProjectSymbolTable` generation;
 - the accepted `BTreeMap<TypeId, TypeKind>`;
-- `NominalResolutionLimits`; and
+- `NominalResolutionLimits` and `NominalAggregationLimits`; and
 - checked cancellation.
 
 `NominalSchemaExpander` consumes this context instead of a published analysis.
-The context walks all accepted project nominal instantiations reachable from
-the type map and exact C2 rows, memoizes by `SemanticTypeDigest`, detects a
-visiting-key cycle before descent, and produces one
-`RuntimeNominalProjectionCatalog`. The catalog is moved into final analysis.
-Entry checking and C2 field/case construction borrow the same context/cache;
-post-seal public projection methods only look up the sealed catalog and never
-re-expand a schema.
+A single exhaustive typed visitor walks every prepared type, local, capture,
+expression (both prepared variants), pattern, statement, item, call, callable,
+Entry role, and C2 owner row. It recursively visits every `TypeKind` child and
+emits a typed `RuntimeNominalProjectionRequest` for every
+`CheckedProjectNominal`; raw names and source scans are forbidden. Requests are
+deduplicated and processed in `SemanticTypeDigest` order.
+
+Each root resets its per-root `ProjectionBudget`; project aggregate work is
+never reset. The context memoizes by `SemanticTypeDigest`, detects a visiting
+key cycle before descent, and produces one `RuntimeNominalProjectionCatalog`.
+Every `RuntimeProjectNominalProjection` retains the canonical `TypeShape` as
+well as runtime identity/schema/layout/kind. Entry checking and C2 field/case
+construction borrow the same context/cache. The final seal reruns the typed
+request inventory over the final facts and rejects the first absent cache row
+with `MissingCachedProjection`; post-seal methods are borrowed catalog lookups
+and never expand a schema.
 
 Recursive project declarations continue to use the existing named-schema
 projection where legal. A cyclic generic substitution remains an error. Cache
 entries are inserted only after a complete projection succeeds; failures do
 not leave negative or partial cache rows.
 
+One projection request uses this exact order: symbol/type identity validation;
+cancellation; checked aggregate-work increment; aggregate limit; cache lookup;
+fresh root-budget creation on a miss; cancellation; checked root charge; root
+limit; visiting-cycle check; expansion; canonical shape/schema/layout identity
+cross-check; cache insertion. Final completeness uses: cancellation; checked
+request-inventory accounting; request/catalog identity comparison; first
+digest-ordered missing projection. A borrowed post-seal lookup checks requested
+versus row identity before reporting `MissingCachedProjection`.
+
 ## 6. Ordered environment record authority
 
-The environment-record option is selected. `TypeCheckEnv::nominal_records`
-changes in place from nested `HashMap`s to
-`HashMap<String, AcceptedEnvironmentRecord>`. Each record owns a boxed,
-declaration-ordered field vector and a derived name-to-ordinal lookup index.
-The index is private, rebuilt by the constructor, and is not semantic state.
+The environment-record option is selected without a second record catalog.
+`TypeCheckEnv::nominal_records` and its nested maps are deleted.
+`AcceptedNominalSemantics` in `env/nominal.rs` gains a declaration-ordered
+`Record { ty, semantic_type, fields }` variant. The existing
+`AcceptedNominalRecord`, `AcceptedNominalCatalog`, catalog digest, and
+registered-world stamp remain the one accepted authority.
 
-Each field is assigned an ordinal with checked `u32`, normalized exactly once,
-and receives an `AcceptedEnvironmentFieldSemanticId` during record
-construction. Duplicate names and ordinal overflow reject construction. Field
-selection and record-pattern checking borrow the same row. No reader sorts a
-map or hashes a field name.
+The standard-record constructor creates the accepted ID/path, exact `TypeKind`,
+semantic type digest, and complete field vector atomically. Each field gets a
+checked `u32` ordinal and private semantic ID from owner semantic type,
+ordinal, and field type digest. Duplicate names and overflow reject the whole
+record before catalog insertion. `AcceptedNominalCatalog::exact(path)` selects
+the row; a borrowed linear `field(name)` lookup over its bounded ordered vector
+is the sole name-to-row boundary. There is no stored name index, raw public
+record constructor, or public field-ID mint.
+
+`AcceptedNominalRecord::try_instantiate` returns the Record row's `ty` for an
+empty argument list. The catalog digest hashes the ordered typed fields through
+the existing `AcceptedNominalSemantics` hash, so the registered semantic-world
+stamp changes with owner, order, or field type. Field selection and
+record-pattern checking borrow that same exact catalog row.
 
 Environment record patterns are admitted for `TypeKind::Named` only when the
 resolved/omitted pattern head selects that exact accepted record. Project and

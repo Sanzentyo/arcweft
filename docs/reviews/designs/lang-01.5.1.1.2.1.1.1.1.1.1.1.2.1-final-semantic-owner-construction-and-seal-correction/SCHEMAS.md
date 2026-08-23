@@ -125,11 +125,53 @@ cannot supply the digest or type independently. Construction proves
 pub(crate) struct RuntimeNominalProjectionContext<'a> {
     symbols: &'a ProjectSymbolTable,
     types: &'a BTreeMap<TypeId, TypeKind>,
-    limits: NominalResolutionLimits,
-    work: u64,
+    root_limits: NominalResolutionLimits,
+    aggregate_limits: NominalAggregationLimits,
+    aggregate_work: u64,
     visiting: BTreeSet<SemanticTypeDigest>,
     accepted: BTreeMap<SemanticTypeDigest, RuntimeProjectNominalProjection>,
     control: FinalSemanticAnalysisControl<'a>,
+}
+
+pub(crate) struct ProjectionBudget {
+    limits: NominalResolutionLimits,
+    nodes: u64,
+    depth: u16,
+    generic_arguments: u64,
+    work: u64,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub(crate) struct RuntimeNominalProjectionRequest {
+    semantic_type: SemanticTypeDigest,
+    nominal: CheckedProjectNominal,
+}
+
+pub(crate) struct FinalSemanticPartsView<'a> {
+    types: &'a BTreeMap<TypeId, TypeKind>,
+    locals: &'a BTreeMap<LocalId, CheckedBinding>,
+    captures: &'a BTreeMap<CaptureId, CheckedBinding>,
+    expressions: &'a BTreeMap<ExprId, CheckedExpression>,
+    patterns: &'a BTreeMap<PatternId, CheckedPattern>,
+    statements: &'a BTreeMap<StmtId, CheckedStatement>,
+    items: &'a BTreeMap<ItemId, CheckedItem>,
+    calls: &'a BTreeMap<ExprId, CallTargetFacts>,
+    checked_callables: &'a CheckedCallableCatalog,
+    checked_entries: &'a CheckedEntryCatalog,
+}
+
+#[derive(Clone, Debug, Default, Eq, PartialEq)]
+pub(crate) struct RuntimeNominalProjectionRequestInventory {
+    by_semantic_type: BTreeMap<SemanticTypeDigest, CheckedProjectNominal>,
+}
+
+impl RuntimeNominalProjectionRequestInventory {
+    pub(crate) fn from_prepared(
+        draft: &FinalSemanticAnalysisDraft,
+    ) -> Result<Self, NominalSchemaProjectionError>;
+    pub(crate) fn from_final_parts(
+        parts: FinalSemanticPartsView<'_>,
+    ) -> Result<Self, NominalSchemaProjectionError>;
 }
 
 #[derive(Clone, Debug, Default, Eq, PartialEq)]
@@ -142,26 +184,81 @@ impl RuntimeNominalProjectionCatalog {
     pub(crate) fn get(
         &self,
         nominal: &CheckedProjectNominal,
-    ) -> Option<&RuntimeProjectNominalProjection>;
+    ) -> Result<&RuntimeProjectNominalProjection, NominalSchemaProjectionError>;
+}
+
+pub struct RuntimeProjectNominalProjection {
+    nominal: RuntimeNominalTypeId,
+    semantic_identity: RuntimeSemanticTypeId,
+    shape: TypeShape,
+    layout: TypeLayoutHash,
+    schema: RuntimeTypeSchema,
+    kind: RuntimeProjectNominalKind,
+}
+
+impl RuntimeProjectNominalProjection {
+    pub const fn shape(&self) -> &TypeShape;
+    // existing borrowed identity/layout/schema/kind accessors remain
+}
+
+pub enum NominalProjectionLimitKind {
+    Root(NominalResolutionLimitKind),
+    Project(NominalAggregationLimitKind),
+}
+
+pub enum NominalSchemaProjectionError {
+    // existing generation/owner/arity/shape/schema errors remain
+    Cancelled,
+    LimitExceeded {
+        kind: NominalProjectionLimitKind,
+        observed: u64,
+        maximum: u64,
+    },
+    ArithmeticOverflow,
+    IdentityMismatch {
+        requested: SemanticTypeDigest,
+        projected: SemanticTypeDigest,
+    },
+    MissingCachedProjection { semantic_type: SemanticTypeDigest },
 }
 ```
 
-`RuntimeProjectNominalProjection` remains the existing schema. Its record
-fields use `RuntimeRecordFieldId::try_from_zero_based_ordinal`; its variants use
-checked source `u32` ordinals. The existing public
+Each request starts a fresh `ProjectionBudget`. Context aggregate work is
+charged before request lookup; a cache miss then charges its root budget before
+allocation/descent. Cancellation precedes the next charge; checked-add
+overflow precedes limit comparison; limit failure precedes lookup/allocation.
+`RuntimeProjectNominalProjection` retains the canonical `TypeShape` returned by
+the sole expander. Its record fields use
+`RuntimeRecordFieldId::try_from_zero_based_ordinal`; its variants use checked
+source `u32` ordinals. The existing public
 `FinalSemanticAnalysis::project_checked_runtime_nominal` becomes a sealed
-catalog lookup returning a borrowed projection. `project_runtime_type_schema`
-remains the sole pure `TypeShape -> RuntimeTypeSchema` projection.
+catalog lookup returning a borrowed projection. It reports identity mismatch
+before missing cache. `project_runtime_type_schema` remains the sole pure
+`TypeShape -> RuntimeTypeSchema` projection.
+
+The exhaustive request visitor has explicit arms for every prepared/published
+fact family and every `TypeKind` variant that can contain a project nominal.
+The final seal repeats the request set over final facts, compares it with the
+catalog key set, and reports the first digest-ordered
+`MissingCachedProjection`; extra cache rows are harmless accepted reachable
+dependencies, while missing rows reject. No post-seal API owns a context or
+expander.
 
 ## 3. Ordered environment records
 
 ```rust
-// arcweft-lang-sema::env
-pub struct AcceptedEnvironmentRecord {
-    name: String,
+// arcweft-lang-sema::env::nominal
+pub enum AcceptedNominalSemantics {
+    Exact(TypeKind),
+    Opaque(AcceptedOpaqueRuntimeCarrier),
+    Character(CharacterNominalType),
+    Record(AcceptedEnvironmentRecordSemantics),
+}
+
+pub struct AcceptedEnvironmentRecordSemantics {
+    ty: TypeKind,
     semantic_type: SemanticTypeDigest,
     fields: Box<[AcceptedEnvironmentRecordField]>,
-    field_lookup: HashMap<String, u32>, // derived, nonsemantic
 }
 
 pub struct AcceptedEnvironmentRecordField {
@@ -172,19 +269,56 @@ pub struct AcceptedEnvironmentRecordField {
     semantic_id: AcceptedEnvironmentFieldSemanticId,
 }
 
-#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
-pub struct AcceptedEnvironmentFieldSemanticId([u8; 32]);
+impl AcceptedEnvironmentRecordField {
+    pub fn diagnostic_name(&self) -> &str;
+    pub const fn ordinal(&self) -> u32;
+    pub const fn ty(&self) -> &TypeKind;
+    pub const fn type_digest(&self) -> SemanticTypeDigest;
+    pub(crate) const fn semantic_id(&self) -> AcceptedEnvironmentFieldSemanticId;
+}
 
-impl AcceptedEnvironmentRecord {
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub(crate) struct AcceptedEnvironmentFieldSemanticId([u8; 32]);
+
+impl AcceptedEnvironmentRecordSemantics {
+    pub const fn ty(&self) -> &TypeKind;
     pub fn fields(&self) -> &[AcceptedEnvironmentRecordField];
     pub fn field(&self, name: &str) -> Option<&AcceptedEnvironmentRecordField>;
     pub const fn semantic_type(&self) -> SemanticTypeDigest;
 }
+
+impl AcceptedNominalRecord {
+    pub(crate) fn try_new_record(
+        id: AcceptedNominalId,
+        ty: TypeKind,
+        fields: impl IntoIterator<Item = (String, TypeKind)>,
+        origin: AcceptedNominalOrigin,
+        source: Option<SourceSpan>,
+    ) -> Result<Self, AcceptedNominalCatalogError>;
+}
 ```
 
-`TypeCheckEnv::nominal_records()` returns
-`&HashMap<String, AcceptedEnvironmentRecord>`. The old nested map is deleted in
-the same compile-clean cut.
+`AcceptedEnvironmentRecordSemantics` and its fields derive `Clone`, `Debug`,
+`Eq`, `Hash`, and `PartialEq`, so the existing catalog digest includes field
+order and type. All fields are private. `try_new_record` is the only mint; the
+existing public `try_new` validates any cloned `Record` semantics against the
+supplied accepted ID, exact type identity, every ordinal, and every field ID,
+and returns `IdentityMismatch` on disagreement. It cannot mint or reorder raw
+rows. `try_instantiate([])` returns `Record.ty`; nonempty arguments reject.
+
+`AcceptedNominalCatalogError` gains
+`RecordIdentityMismatch { id, expected, actual }`,
+`DuplicateRecordField { id, field }`, and `RecordFieldOrdinalOverflow { id }`.
+For a Record passed through public `try_new`, validation order is accepted ID/
+path and arity, exact `ty` semantic identity, field count/ordinal, duplicate
+diagnostic name, field type digest, then private field semantic ID. The first
+disagreement rejects before catalog digest construction.
+
+`TypeCheckEnv::nominal_records` and its name map are deleted. Lookup resolves a
+`TypePath`, calls `AcceptedNominalCatalog::exact`, matches
+`AcceptedNominalSemantics::Record`, then performs a borrowed bounded linear
+field lookup. The catalog/world digest is the generation stamp; no second
+environment-record stamp exists.
 
 ## 4. Opaque identity atoms
 

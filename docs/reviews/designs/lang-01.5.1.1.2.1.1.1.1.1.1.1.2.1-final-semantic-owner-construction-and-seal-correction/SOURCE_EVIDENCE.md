@@ -34,9 +34,25 @@
   `RuntimeProjectNominalProjection` and the only
   `TypeShape -> RuntimeTypeSchema` mapping, but its expander currently borrows
   `FinalSemanticAnalysis`.
+- `RuntimeProjectNominalProjection` currently drops the canonical `TypeShape`
+  after deriving schema/layout, and projection entry points are demand-driven;
+  no exhaustive final fact visitor proves cache completeness.
+- `NominalResolutionLimits` is per reference/root, while
+  `NominalAggregationLimits` owns project-wide work; using one counter for both
+  would either leak root work or reset aggregate work.
 - `crates/arcweft-lang-sema/src/env/base.rs` stores nominal record fields in
   nested `HashMap`s, losing declaration order after its ordered constructor
   input.
+- `crates/arcweft-lang-sema/src/env/nominal.rs` already owns exact accepted
+  records, `AcceptedNominalSemantics`, the ordered `BTreeMap` catalog, catalog
+  digest, `exact(path)`, and instantiation. It is the legitimate owner for the
+  new ordered Record semantics and world stamp; a second environment record
+  map would be parallel authority.
+- `AcceptedNominalRecord::try_new` is public. Exposing a freely constructible
+  Record payload or public field-ID constructor through it would allow an
+  owner/type/field mismatch; the selected private Record wrapper plus mandatory
+  identity revalidation closes that route without removing existing public
+  Exact/Opaque/Character construction.
 - project record-pattern seeding in
   `final_analysis/analyzer/patterns.rs` uses source declarations and names;
   environment record patterns are not admitted.

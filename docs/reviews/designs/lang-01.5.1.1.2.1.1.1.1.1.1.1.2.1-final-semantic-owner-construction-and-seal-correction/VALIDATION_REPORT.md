@@ -18,6 +18,16 @@ created or changed.
 - checked Markdown whitespace with `git diff --check`/new-file checks;
 - checked every relative Markdown link in the design and updated request; and
 - audited each proposed new domain byte literal for exact repository equality.
+- reconciled the nominal projection budget split with existing
+  `NominalResolutionLimits` and `NominalAggregationLimits`;
+- audited every current prepared/published fact-family owner required by the
+  exhaustive projection request visitor; and
+- confirmed `env/nominal.rs`, not a TypeCheckEnv map, owns accepted exact
+  records, catalog digest, lookup, and instantiation.
+- confirmed the amended schemas define cancellation, per-root/project limits,
+  arithmetic overflow, identity mismatch, missing-cache failure, retained
+  `TypeShape`, exhaustive request inventories, borrowed post-seal lookup, and
+  private environment field construction.
 
 The proposed domains are:
 

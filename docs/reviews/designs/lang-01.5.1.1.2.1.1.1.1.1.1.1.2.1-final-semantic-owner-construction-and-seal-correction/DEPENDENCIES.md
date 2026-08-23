@@ -23,7 +23,7 @@ consume only sealed `FinalSemanticAnalysis`.
 |---|---|---|---|---|
 | Entry catalog and Entry reference | sealed `FinalSemanticAnalysis` | private draft + Entry checker | compiler selection, lowering, tooling | compiler-owned catalog field; HIR-only reference |
 | project runtime nominal projection | sema `RuntimeNominalProjectionCatalog` | symbols + accepted type map | Entry, field/case rows, compiler | post-seal re-expansion |
-| environment record/field | `TypeCheckEnv::AcceptedEnvironmentRecord` | declaration-ordered registration input | selection, patterns | nested field `HashMap` |
+| environment record/field | `AcceptedNominalRecord` + `AcceptedNominalSemantics::Record` | accepted ID/path/type + ordered fields | type lookup, selection, patterns, catalog/world digest | all `TypeCheckEnv::nominal_records` maps |
 | project item ID | sema checked project item | PublicId/declaration digest + family/type | value/entity transcript and coverage | public spelling/raw item as identity |
 | variant case | sema owner case table | typed owner/projection/catalog | expression, pattern, coverage | name vector and selected clone |
 | record field | shared sema field-ID enum | project projection or environment row | selection, patterns | reader-side name lookup |
@@ -57,6 +57,16 @@ schema; no compiler reader may reinterpret the diagnostic name as a runtime
 coordinate. Runtime-plan lowering rejects that owner through a typed
 owner/ordinal error until a separate accepted runtime structural-record
 authority exists; defining such an algebra is outside this C2 request.
+
+Environment field lookup goes only through
+`TypeCheckEnv.nominal_catalog().exact(path)` and the borrowed Record semantics
+row. The catalog digest already participates in registered-world identity, so
+field changes cannot leave a stale world stamp with new field semantics.
+
+Nominal projection consumes a typed request inventory spanning all prepared
+and published sema fact families. The context owns both per-root and aggregate
+budgets; the sealed final analysis owns only the completed projection catalog,
+never an expander or mutable cache.
 
 ## C1 predecessor
 
