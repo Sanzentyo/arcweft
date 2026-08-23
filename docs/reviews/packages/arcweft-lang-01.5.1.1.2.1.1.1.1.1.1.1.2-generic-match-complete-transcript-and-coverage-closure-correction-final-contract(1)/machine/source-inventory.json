@@ -1,0 +1,171 @@
+{
+  "repo": "/mnt/data/arcweft-current",
+  "repo_ok": false,
+  "source_ok": false,
+  "head": "",
+  "origin_main": "",
+  "source_rows": [],
+  "symbols": [],
+  "request_paths": [
+    "../../implementation/2026-08-23-lang-01-5-1-1-2-1-1-1-1-1-1-1-2-generic-match-complete-return-intake.md",
+    "Bool/Unit/Option/Result/project-enum",
+    "Character/Builtin",
+    "Method/DialogueView/AgentField",
+    "Need/View",
+    "Option/Result/Choice/project/Character/Builtin",
+    "ProjectItem/Entry",
+    "Vec/Slice/Seq",
+    "allocation/descent",
+    "arena/ID/span/source-format",
+    "arm/child",
+    "callable/parameter",
+    "clean/dirty",
+    "compile-clean/deletion",
+    "compile/structure",
+    "compiler/runtime",
+    "constructor/reader",
+    "debug/display",
+    "declaration/body",
+    "display/debug",
+    "entity/open",
+    "exact-limit/one-over",
+    "expression/pattern",
+    "expression/statement/pattern/body",
+    "field/case",
+    "hashes/request",
+    "item/arena",
+    "line-plan/Choice/View",
+    "nominal/case/field/layout",
+    "origin/main",
+    "overlap/redundancy",
+    "owner/consumer",
+    "producer/consumer",
+    "product/sequence",
+    "retention/ownership",
+    "schema/layout",
+    "tuple/record/array",
+    "wrapper/member"
+  ],
+  "request_backticks": [
+    ".zip",
+    "1",
+    "AGENTS.md",
+    "CheckedExpressionResolution",
+    "FINAL_STATUS",
+    "OPEN_DESIGN_REQUEST",
+    "OPEN_QUESTIONS",
+    "READY_FOR_IMPLEMENTATION",
+    "RuntimeRecordFieldId",
+    "TypeLayoutHash",
+    "UnsupportedCoverage",
+    "UnsupportedIdentity",
+    "arcweft-lang-01.5.1.1.2.1.1.1.1.1.1.1.2-generic-match-complete-transcript-and-coverage-closure-correction-final-contract.zip",
+    "git rev-parse HEAD",
+    "git rev-parse origin/main",
+    "git status --short --branch",
+    "main",
+    "main == origin/main",
+    "none",
+    "nonexhaustive",
+    "u64"
+  ],
+  "request_headings": [
+    {
+      "line": 1,
+      "level": 1,
+      "title": "Lang-01.5.1.1.2.1.1.1.1.1.1.1.2 — generic Match complete transcript and coverage closure correction"
+    },
+    {
+      "line": 5,
+      "level": 2,
+      "title": "Parent and split reason"
+    },
+    {
+      "line": 19,
+      "level": 2,
+      "title": "Mandatory redispatch inputs and repository preflight"
+    },
+    {
+      "line": 68,
+      "level": 2,
+      "title": "Decisions required"
+    },
+    {
+      "line": 102,
+      "level": 2,
+      "title": "Current safe substrate to preserve"
+    },
+    {
+      "line": 113,
+      "level": 2,
+      "title": "Required tests"
+    },
+    {
+      "line": 131,
+      "level": 2,
+      "title": "Non-goals"
+    },
+    {
+      "line": 141,
+      "level": 2,
+      "title": "Required returned archive"
+    }
+  ],
+  "numbered_items": [
+    {
+      "number": 1,
+      "line": 40,
+      "text": "`git rev-parse HEAD`, `git rev-parse origin/main`, `git status --short --branch`, and Cargo workspace metadata; the frozen production baseline must be clean `main == origin/main` before output files are created, while later design-output dirt is reported separately;"
+    },
+    {
+      "number": 2,
+      "line": 44,
+      "text": "the actual crate, path, symbol, visibility, dependency direction, and Git blob identity for every proposed current owner;"
+    },
+    {
+      "number": 3,
+      "line": 46,
+      "text": "a complete current producer/consumer inventory for decisions 1–7; and"
+    },
+    {
+      "number": 4,
+      "line": 47,
+      "text": "the accepted predecessor documents and production APIs that each proposed join preserves or replaces. If the checkout, required source, or predecessor evidence is unavailable, stop and report that exact blocker. Do not infer owners from this request, invent a crate, repeat a template, or emit the required final-contract ZIP. Every cited type or function must either exist at the inspected SHA or be explicitly introduced in a compile-clean cut with its one owner, dependency direction, constructor, consumers, tests, and superseded deletion target. For this request specifically, the preflight must enumerate every live `CheckedExpressionResolution`, statement, pattern, and executable-body family; the current accepted nominal/case/field/layout authorities; all Match-bearing declaration roots; and every compiler/runtime consumer of the resulting transcript and coverage result. The machine inventory and validator must prove that zero current variants or affected constructor/reader families were omitted. A task-plan seal, persisted Match DTO, accepted identity, coverage success, or catalog may not be introduced merely because a similarly named current owner was not found. View and line-plan paths consume only current or accepted lower roles; they do not invent persistent Match-site identities."
+    },
+    {
+      "number": 1,
+      "line": 72,
+      "text": "The stable payload transcript for every current `CheckedExpressionResolution` family, including ProjectItem/Entry, Method/DialogueView/AgentField, StageLook, Await, Choice, Try, implicit callable/parameter, Pipe, View, Style, dialogue, and postfix-bracket facts. Each row must name its existing accepted owner or define the same-cut final owner and deletion of the superseded lookup-only evidence."
+    },
+    {
+      "number": 2,
+      "line": 78,
+      "text": "The exact accepted semantic identity for Entity patterns and Character/Builtin closed variant owners, including source-order case identity and payload type without raw item IDs or source names."
+    },
+    {
+      "number": 3,
+      "line": 81,
+      "text": "A checked record-pattern field row owned by sema, mapping each authored source child to its accepted `RuntimeRecordFieldId`, field semantic identity, field type, nominal semantic identity, and canonical `TypeLayoutHash`. Transcript construction must consume this row rather than resolving names."
+    },
+    {
+      "number": 4,
+      "line": 85,
+      "text": "The private bounded Maranget matrix types and specialization algorithm for tuple and record products, constant arrays, symbolic Vec/Slice/Seq exact and rest length partitions, Or alternatives, literals plus Other, entity/open residuals, Never, Choice, and every accepted closed variant family."
+    },
+    {
+      "number": 5,
+      "line": 89,
+      "text": "Exact constructor-domain and witness transcripts for nested products and sequences. Work counters remain diagnostic-only and all limits use checked `u64` accounting before allocation/descent."
+    },
+    {
+      "number": 6,
+      "line": 92,
+      "text": "The stable declaration/body path bridge for every executable current body family still absent from HIR authority, including any line-plan/Choice/View declaration rows that can contain Match."
+    },
+    {
+      "number": 7,
+      "line": 95,
+      "text": "The compile-clean/deletion order that replaces Cut 1b's typed unsupported branches only when each final authority is constructible. No temporary source resolver, parallel coverage algebra, or whole-catalog digest is permitted. Every Arcweft-owned version marker remains exactly `1`."
+    }
+  ]
+}

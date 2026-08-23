@@ -128,3 +128,14 @@ reopened-ZIP validation fails. A blocker report is correct; a known-failed
 
 No Rust, Cargo, generated artifact, fixture, or runtime test was changed or run
 for this design-only intake.
+
+## Redispatch outcome
+
+The hardened request was dispatched, but the responder again returned a named
+final-contract ZIP after its own repository acquisition failed. That second
+return is rejected in the
+[redispatch intake](2026-08-23-lang-01-5-1-1-2-1-1-1-1-1-1-1-1-structural-nominal-redispatch-return-intake.md).
+Do not redispatch this request to the same repository-inaccessible executor;
+the remaining design was instead completed from the repository-local current
+source and accepted at the
+[structural nominal design](../reviews/designs/lang-01.5.1.1.2.1.1.1.1.1.1.1.1.1-accepted-structural-nominal-runtime-carrier/README.md).

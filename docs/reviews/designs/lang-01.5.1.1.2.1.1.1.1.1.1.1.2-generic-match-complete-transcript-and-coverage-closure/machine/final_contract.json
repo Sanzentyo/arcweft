@@ -1,0 +1,130 @@
+{
+  "contract_version": 1,
+  "contract_id": "lang-01.5.1.1.2.1.1.1.1.1.1.1.2-generic-match-complete-transcript-and-coverage-closure",
+  "status": "READY_FOR_IMPLEMENTATION",
+  "open_questions": "none",
+  "baseline": {
+    "head": "9a5d30d25620541c3f2975d31e04e04e3bc9514c",
+    "origin_main": "9a5d30d25620541c3f2975d31e04e04e3bc9514c",
+    "branch": "main",
+    "head_equals_origin_main": true,
+    "production_scope_clean": true,
+    "initial_worktree_clean": false,
+    "initial_dirt_scope": "review intake/design documentation outside production Rust/Cargo/tests/fixtures"
+  },
+  "request": {
+    "source": "docs/reviews/requests/2026-08-22-lang-01.5.1.1.2.1.1.1.1.1.1.1.2-generic-match-complete-transcript-and-coverage-closure-correction.md",
+    "mirror": "REQUEST.md",
+    "bytes": 10032,
+    "sha256": "7250743e386ce404664c4c211d109094c9f40031211edc70847688754922aa9c"
+  },
+  "source_inventory": {
+    "file": "machine/source_inventory.json",
+    "checked_expression_resolution_count": 27,
+    "checked_value_resolution_count": 8,
+    "checked_select_resolution_count": 7,
+    "checked_pattern_resolution_count": 5,
+    "hir_expression_family_count": 38,
+    "hir_pattern_family_count": 13,
+    "hir_statement_family_count": 35,
+    "hir_body_child_role_count": 5,
+    "hir_statement_body_role_count": 13,
+    "match_bearing_declaration_owner_count": 7,
+    "declaration_root_count": 8,
+    "expression_owned_non_expression_root_count": 19,
+    "rust_ast_verified": true,
+    "source_blob_verified": true
+  },
+  "source_blobs": {
+    "crates/arcweft-lang-sema/src/final_analysis/model.rs": "836295b1c58ce1a08d06a302643b2a265e8b9cd3",
+    "crates/arcweft-lang-sema/src/final_analysis/semantic_transcript.rs": "91b764e625f9582acc3ea0dcf646951cb42a7cd1",
+    "crates/arcweft-lang-sema/src/final_analysis/match_edges.rs": "d7426bce4818bba25d3f64aa5e1c5f628a027283",
+    "crates/arcweft-lang-sema/src/final_analysis/match_edges/model.rs": "055ad0f01e4c29d97bb3f1734c4c9574ffe800e2",
+    "crates/arcweft-lang-sema/src/final_analysis/analyzer/patterns.rs": "736d2be8bf6521042fc93bca9b592ce0ef81e255",
+    "crates/arcweft-lang-sema/src/final_analysis/analyzer/expressions.rs": "4d70d5dde6f7920c2af83d268b8dc9d38cbf7282",
+    "crates/arcweft-lang-sema/src/final_analysis/analyzer/calls.rs": "a7df1895471661b168db0eddaf900661c42f2625",
+    "crates/arcweft-lang-hir/src/final_project/semantic_paths.rs": "78a68bc9d8dd8679a6f7d0514111f9bbb046ca98",
+    "crates/arcweft-lang-hir/src/final_project.rs": "5069669226a22f65b4b4d89654715166e53d7227",
+    "crates/arcweft-lang-hir/src/body_edges.rs": "e08f25b5ed1c74160b542837151eb33e86e5d6ad",
+    "crates/arcweft-lang-hir/src/expr.rs": "b9e2c3e9117ba61e5c428064a5b7f0af973adcd5",
+    "crates/arcweft-lang-hir/src/pattern.rs": "1a7adf00f7caeee6aa517dfe2c7873dff86145bc",
+    "crates/arcweft-lang-hir/src/pattern/child_edges.rs": "7e3972887daa16b7f2a2b914d0d51a7f637de2c9",
+    "crates/arcweft-lang-hir/src/stmt.rs": "061c97afb6367413d60ca8bcdb271f578dd7d379",
+    "crates/arcweft-lang-hir/src/stmt/child_edges.rs": "9b6bf0d0a30aca2296f63a514245cbf237f7401d",
+    "crates/arcweft-lang-hir/src/item.rs": "67c9ed2d12b00c4d8e42009c3e19f51772d8bfb5",
+    "crates/arcweft-lang-hir/src/item/retained.rs": "eb7e2a04c3ca8d54b58c153c1b43464de0873b8a",
+    "crates/arcweft-lang-hir/src/symbol/identity.rs": "7f06f1093c74942b06923ebc4663ce56609c54d1",
+    "crates/arcweft-lang-sema/src/nominal/model.rs": "b8f6c605d5f471de4fd0deb52592572ca44b91bd",
+    "crates/arcweft-lang-sema/src/callable/checked_catalog.rs": "593028b11a4197ce085be3c58be3be820c44471f",
+    "crates/arcweft-lang-sema/src/dialogue_view.rs": "eb55dfa79639b85256fd4b1440bfbbc70ab9467a"
+  },
+  "decisions": [
+    {"id": 1, "owner": "checked joins plus exact same-cut resolution atoms", "schema": "CheckedExpressionResolution exact atom table", "consumer": "expression/body transcript", "positive_test": "T01_ALL_RESOLUTIONS", "negative_mutation": "N01_DROP_RESOLUTION_FAMILY", "deletion_cut": "C2/C3"},
+    {"id": 2, "owner": "AcceptedProjectItemSemanticId and AcceptedVariantCaseSemanticId", "schema": "CheckedProjectItem and CheckedVariantCase", "consumer": "pattern transcript and coverage", "positive_test": "T02_ENTITY_CASE_IDENTITY", "negative_mutation": "N02_CASE_NAME_AUTHORITY", "deletion_cut": "C2"},
+    {"id": 3, "owner": "sema CheckedRecordPatternField joined to canonical nominal projection", "schema": "CheckedRecordPatternField", "consumer": "pattern transcript and product coverage", "positive_test": "T03_RECORD_FIELD_JOIN", "negative_mutation": "N03_DROP_LAYOUT_OR_FIELD_ID", "deletion_cut": "C2"},
+    {"id": 4, "owner": "private sema MatchCoverageAnalyzer", "schema": "Matrix PatternVector CoverageTypeDomain", "consumer": "coverage publication and diagnostics", "positive_test": "T04_MATRIX_DIFFERENTIAL", "negative_mutation": "N04_ENABLE_BASIC_COVERAGE", "deletion_cut": "C4"},
+    {"id": 5, "owner": "coverage domain/witness transcript and checked-u64 transaction", "schema": "CheckedCoverageWitness and CheckedMatchLimits", "consumer": "Match payload and non-exhaustive error", "positive_test": "T05_WITNESS_AND_LIMITS", "negative_mutation": "N05_UNCHECKED_OR_U32_LIMIT", "deletion_cut": "C3/C4"},
+    {"id": 6, "owner": "HIR declaration and expression-owned body path authority", "schema": "HirDeclarationBodyRootRole and HirExpressionOwnedBodyRole", "consumer": "sema coordinates and body digests", "positive_test": "T06_ALL_BODY_ROOTS", "negative_mutation": "N06_VIEW_MISSING_BODY", "deletion_cut": "C1"},
+    {"id": 7, "owner": "ordered C1-C5 replacement", "schema": "compile-clean cut graph", "consumer": "all constructors readers and tests", "positive_test": "T07_DELETION_CLEAN", "negative_mutation": "N07_RETAIN_PARALLEL_OR_VERSION_BUMP", "deletion_cut": "C1-C5"}
+  ],
+  "transcript": {
+    "algorithm": "BLAKE3 purpose-built canonical grammar",
+    "domain_version": 1,
+    "all_expression_resolutions_exact": true,
+    "all_expression_shapes_exact": true,
+    "all_pattern_shapes_exact": true,
+    "all_statement_shapes_exact": true,
+    "nested_match_payload_included": true,
+    "statement_and_body_digests_included": true,
+    "raw_ids": false,
+    "spans": false,
+    "source_spelling": false,
+    "serde_transcript": false,
+    "wildcard_success": false
+  },
+  "coverage": {
+    "owner": "arcweft-lang-sema::final_analysis private MatchCoverageAnalyzer",
+    "algorithm": "bounded Maranget Matrix specialization default usefulness witness",
+    "private": true,
+    "checked_u64": true,
+    "preallocation_accounting": true,
+    "domains": ["products", "constant_arrays", "symbolic_sequences", "Or", "literal_Other", "entity_open_Other", "Never", "Choice", "closed_variants"],
+    "limits": ["max_arms", "max_matrix_rows", "max_or_alternatives", "max_pattern_nodes", "max_expression_nodes", "max_depth", "max_sequence_partitions", "max_specializations", "max_unreachable_rows", "max_witness_nodes", "max_transcript_bytes"]
+  },
+  "declaration_bridge": {
+    "view_uses_existing_callable_declaration_key": true,
+    "view_value_role": "ViewValue { ordinal }",
+    "view_missing_body_deleted": true,
+    "bodyless_owners_remain": ["ExternCapability", "TraitRequirement"],
+    "persistent_match_site_identity": false
+  },
+  "publication": {
+    "compiler_local": true,
+    "exhaustive_only": true,
+    "atomic_on_error": true,
+    "checked_match_ref_private": true,
+    "checked_match_ref_serde": false
+  },
+  "non_goals": {
+    "production_patch": false,
+    "runtime_wire": false,
+    "persistence": false,
+    "task_plan_seal": false,
+    "whole_catalog_digest": false,
+    "legacy_reader": false,
+    "compatibility_alias": false,
+    "version_other_than_one": false,
+    "returned_zip_emitted_by_repository_design": false
+  },
+  "cuts": ["C1_HIR_PATHS", "C2_EXACT_OWNERS", "C3_TRANSCRIPT", "C4_COVERAGE", "C5_PUBLICATION_DELETION"],
+  "required_files": [
+    "README.md", "FINAL_DESIGN.md", "SCHEMAS.md", "COVERAGE_ALGORITHM.md",
+    "TRANSCRIPT_GRAMMAR.md", "DEPENDENCIES.md", "CUTS_TESTS_AND_DELETION.md",
+    "SOURCE_EVIDENCE.md", "DECISION_REGISTER.md", "FINAL_STATUS.md",
+    "OPEN_QUESTIONS.md", "REQUEST.md", "VALIDATION_REPORT.md",
+    "schemas/final_contract.rs", "machine/final_contract.json",
+    "machine/source_inventory.json", "machine/negative_corpus.json",
+    "tools/validation_support.rs", "tools/validate_design.rs",
+    "tools/negative_self_tests.rs", "MANIFEST.sha256"
+  ]
+}

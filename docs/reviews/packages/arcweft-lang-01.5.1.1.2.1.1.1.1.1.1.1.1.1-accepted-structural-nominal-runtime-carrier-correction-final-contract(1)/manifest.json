@@ -1,0 +1,35 @@
+{
+  "package": "arcweft-lang-01.5.1.1.2.1.1.1.1.1.1.1.1.1-accepted-structural-nominal-runtime-carrier-correction-final-contract",
+  "design_only": true,
+  "open_questions": 0,
+  "repository": "Sanzentyo/arcweft",
+  "basis_ref": "origin/main",
+  "basis_sha": "UNAVAILABLE",
+  "repo_available": false,
+  "input_sha256": {
+    "2026-08-22-lang-01.5.1.1.2.1.1.1.1.1.1.1.1.1-accepted-structural-nominal-runtime-carrier-correction(1).md": "e9ead183b2bfd4d3019e8c3e51da79136bdae64d38aa5fe63ec4c92c1c948269",
+    "前提(Sanzentyo-arcweft).txt": "cfa897a0ad93deb92fd454079df0a789edbbd40d85c8377324da703c8aefe0a1",
+    "Rust Skill.txt": "1a28f552adf5efde95205bee8d56590aeb82346c48ebdf3fdbbaff5deca33665"
+  },
+  "agents_paths": [],
+  "owner_anchors": {
+    "carrier": "crates/<runtime-owner>/src/value.rs (new module only if no owning enum exists)",
+    "checked": "crates/<language-owner>/src/checked/type.rs",
+    "match": "crates/<runtime-owner>/src/match_exec.rs",
+    "snapshot": "crates/<runtime-owner>/src/snapshot.rs",
+    "task": "crates/<runtime-owner>/src/task.rs"
+  },
+  "requirements_extracted": [
+    {
+      "id": "8",
+      "text": "the deletion and compile-clean order that replaces the current fail-closed"
+    }
+  ],
+  "baseline_validation": [
+    {
+      "command": "(repository acquisition)",
+      "exit": 255,
+      "seconds": 0
+    }
+  ]
+}

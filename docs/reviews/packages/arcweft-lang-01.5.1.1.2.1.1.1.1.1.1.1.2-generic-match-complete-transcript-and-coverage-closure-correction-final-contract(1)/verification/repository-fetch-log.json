@@ -1,0 +1,16 @@
+[
+  {
+    "cmd": [
+      "git",
+      "clone",
+      "--depth=1",
+      "--branch",
+      "main",
+      "https://github.com/Sanzentyo/arcweft.git",
+      "/mnt/data/arcweft-current"
+    ],
+    "cwd": null,
+    "returncode": 128,
+    "output": "Cloning into '/mnt/data/arcweft-current'...\nfatal: unable to access 'https://github.com/Sanzentyo/arcweft.git/': Could not resolve host: github.com\n"
+  }
+]

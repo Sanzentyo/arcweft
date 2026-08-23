@@ -1,0 +1,257 @@
+{
+  "schema_version": 1,
+  "sequence": "Lang-01.5.1.1.2.1.1.1.1.1.1.1.1.1",
+  "status": "READY_FOR_IMPLEMENTATION",
+  "open_questions": 0,
+  "production_head": "9a5d30d25620541c3f2975d31e04e04e3bc9514c",
+  "request": {
+    "repository_path": "docs/reviews/requests/2026-08-22-lang-01.5.1.1.2.1.1.1.1.1.1.1.1.1-accepted-structural-nominal-runtime-carrier-correction.md",
+    "mirror": "REQUEST.md",
+    "sha256": "90ca32e38481fdf152b9ff5aaf145b4514b15ece7a92e989588adaa9b9481fbf",
+    "status": "RESOLVED_BY_ACCEPTED_DESIGN"
+  },
+  "selected_model": {
+    "accepted_runtime_carrier": false,
+    "live_record": "arcweft-core::RuntimeValue::NominalRecord",
+    "live_variant": "arcweft-core::RuntimeValue::Variant",
+    "tuple_payload": "arcweft-core::RuntimeValue::Tuple",
+    "record_payload": "arcweft-core::RuntimeValue::Record",
+    "schema_graph": "arcweft-core::entry::RuntimeNominalSchemaGraph",
+    "schema_graph_persisted_in_runtime_plan": false,
+    "source_reconstruction": false,
+    "copied_runtime_catalog": false
+  },
+  "catalog_join": {
+    "semantic_role": "AcceptedNominalSemantics::RustAdt",
+    "role_is_carrier": false,
+    "shape_owner": "AcceptedRustTypeMetadataCatalog",
+    "join": [
+      "AcceptedNominalId",
+      "EnvironmentPublicationItemId",
+      "RustPackage owner",
+      "RustExport origin",
+      "arity",
+      "same registration transaction"
+    ],
+    "bijection": true,
+    "metadata_only_success": false,
+    "opaque_plus_metadata_success": false
+  },
+  "record_shapes": {
+    "unit": "NominalRecord fields=[] shape=Unit",
+    "tuple": "NominalRecord names=None shape=Tuple",
+    "record": "NominalRecord names=Some source-order shape=Record",
+    "newtype": "NominalRecord one unnamed field shape=Newtype",
+    "field_identity": "RuntimeRecordFieldId one-based source ordinal"
+  },
+  "enum_payloads": {
+    "unit": "None",
+    "tuple_zero": "Some(Tuple([]))",
+    "tuple_one": "Some(Tuple([value]))",
+    "tuple_many": "Some(Tuple(values))",
+    "record_zero": "Some(Record([]))",
+    "record_many": "Some(Record(fields))",
+    "one_tuple_flattened": false
+  },
+  "recursive_projection": {
+    "key": "RuntimeSemanticTypeId of exact AcceptedNominal instantiation",
+    "states": ["Unseen", "Visiting", "Complete"],
+    "back_edge": "RuntimeTypeSchema::NominalRef",
+    "reachable_only": true,
+    "definitions_sorted_by": "semantic_identity",
+    "local_order_preserved": true,
+    "derived_layout_is_input": false,
+    "whole_catalog_digest_is_layout_input": false
+  },
+  "checked_predicates": {
+    "record": "RuntimeCheckedType::Record",
+    "variant_layout": true,
+    "option": {"Some": 0, "None": 1},
+    "result": {"Ok": 0, "Err": 1},
+    "recursive_owner": "RuntimePlan::accepts_value and AwbcProgram inverse walk"
+  },
+  "runtime_plan": {
+    "type_projection": "RuntimePlanTypeProjection::Nominal",
+    "record_domain": "RuntimeNominalRecordDomainTable",
+    "variant_domain": "RuntimeVariantDomainTable",
+    "atomic_graph_admission": true,
+    "retains_schema_side_table": false
+  },
+  "wire": {
+    "version": 1,
+    "old_reader": false,
+    "migration": false,
+    "per_value_version": false,
+    "ordinary_u32": "shortest_base_128_varint",
+    "new_runtime_type_tags": 0,
+    "new_constant_tags": 0,
+    "runtime_type_tags": {
+      "Tuple": 10,
+      "Record": 12,
+      "Variant": 13,
+      "Nominal": 22,
+      "Opaque": 23,
+      "NominalRecord": 24
+    },
+    "constant_tags": {
+      "Unit": 0,
+      "Tuple": 10,
+      "Record": 12,
+      "Variant": 13,
+      "Opaque": 18
+    },
+    "schema_transcript_tags": {
+      "Tuple": 26,
+      "Result": 27,
+      "RecordValue": 28,
+      "ExactOpaque": 29,
+      "NominalRef": 30
+    },
+    "checked_type_transcript_tags": {
+      "Record": 22
+    },
+    "record_shape_tags": {
+      "Unit": 0,
+      "Tuple": 1,
+      "Record": 2,
+      "Newtype": 3
+    },
+    "canonical_value_tags": {
+      "Tuple": 11,
+      "Record": 13,
+      "Variant": 14,
+      "NominalRecord": 15
+    },
+    "goldens": [
+      "18 00 S L 00 00",
+      "18 00 S L 01 01 01 00 02",
+      "18 00 S L 02 01 01 01 03 02",
+      "18 00 S L 03 01 01 00 02",
+      "0a 01 02",
+      "0c 00 01 01 01 03 02",
+      "0d 00 00 S L 01 01 00",
+      "0d 00 00 S L 01 01 01 02",
+      "0c 03 01 02",
+      "0d 04 00 00",
+      "0d 04 00 01 05",
+      "ac 02"
+    ]
+  },
+  "snapshot_restore": {
+    "snapshot_owner": "AwbcRuntimeValueSnapshot",
+    "type_authority": "current AwbcProgram",
+    "context_free_conversion": false,
+    "candidate_before_swap": true,
+    "post_swap_validation": false,
+    "outer_format": "strict typed JSON",
+    "outer_version": 1
+  },
+  "error_precedence": [
+    "work_and_scalar_limits",
+    "analysis_symbol_world_environment_generation",
+    "nominal_visibility_owner_origin_arity",
+    "nominal_metadata_item_catalog_join",
+    "generic_substitution_unresolved_type",
+    "field_case_shape_order_duplicates",
+    "child_retention_exact_opaque",
+    "graph_conflict_dangling_illegal_cycle",
+    "schema_canonicalization_layout",
+    "compiler_plan_awbc_isomorphism"
+  ],
+  "decision_ids": ["D1", "D2", "D3", "D4", "D5", "D6", "D7", "D8"],
+  "cuts": ["C1", "C2", "C3", "C4", "C5", "C6"],
+  "schema_tokens": [
+    "pub enum AcceptedNominalSemantics",
+    "RustAdt",
+    "pub enum EnumVariantPayload",
+    "Record(Box<[(String, TypeKind)]>)",
+    "pub struct RuntimeNominalSchemaGraph",
+    "NominalRef(RuntimeNominalSchemaIdentity)",
+    "pub struct RuntimeAcceptedRustNominalProjection",
+    "pub enum RuntimeNominalRecordShape",
+    "Record(Box<[RuntimeCheckedRecordField]>)",
+    "layout: TypeLayoutHash",
+    "pub struct RuntimeVariantValue",
+    "RuntimePlanTypeProjection::Nominal",
+    "pub(crate) fn restore_runtime_value"
+  ],
+  "forbidden_models": [
+    "AcceptedRuntimeCarrier",
+    "RuntimeValueHandle",
+    "RuntimeTypeCatalog",
+    "crates/arcweft-runtime/src/value.rs",
+    "V2",
+    "V3",
+    "legacy reader",
+    "compatibility decoder"
+  ],
+  "crate_dependencies": {
+    "arcweft-lang-sema": ["arcweft-core"],
+    "arcweft-runtime-plan": ["arcweft-core"],
+    "arcweft-compiler": ["arcweft-core", "arcweft-lang-sema", "arcweft-runtime-plan"],
+    "forbidden_core": ["arcweft-lang-sema", "arcweft-runtime-plan", "arcweft-compiler"],
+    "forbidden_runtime_plan": ["arcweft-lang-sema", "arcweft-compiler"]
+  },
+  "source_blobs": {
+    "Cargo.toml": "5545e64710263085a959aa2fc024f4e7d72bf3f3",
+    "crates/arcweft-core/Cargo.toml": "22091bfdea72b6168576181b2cc62fdd25a75ada",
+    "crates/arcweft-core/src/value.rs": "5ba6bf6a1e2b800f72fbca1fec013e7ff387031a",
+    "crates/arcweft-core/src/value/nominal_record.rs": "b14815895681bcb146d99352fe7e6e40dcbfe242",
+    "crates/arcweft-core/src/value/record_id.rs": "8edc08d59c6c927da486b4b487fd8b2e8c50e5e9",
+    "crates/arcweft-core/src/value/awbc_save.rs": "9e7cb04c910c73ee17b38ac7571c64e3be3804ad",
+    "crates/arcweft-core/src/pattern.rs": "19a0b8a6e1f35babe9ecdddebe7402b3c73a9fdb",
+    "crates/arcweft-core/src/entry/schema.rs": "81f6cf0a98549e7efd6068425cae40963dfe889a",
+    "crates/arcweft-core/src/entry/identity.rs": "dabe45e0cf5ddae15ddcc741e83d6b1a8ee0bfcf",
+    "crates/arcweft-core/src/plan/type_kind.rs": "d10e1da9969fa8dbe5ab61f40be6f971fb2ac74a",
+    "crates/arcweft-core/src/plan/type_table.rs": "41cb23f4d5518753b588f3a20f0e7855104cd32b",
+    "crates/arcweft-core/src/plan/nominal_record_domains.rs": "92e4f6e14afdeb9e5702536fe8eeb84db2a939c0",
+    "crates/arcweft-core/src/plan/variant_domains.rs": "87a50126150d1aca64bdcdb8767317fd91e5115d",
+    "crates/arcweft-core/src/plan.rs": "298c58952d320ed688635d0d62cc9ba4f2393fc6",
+    "crates/arcweft-core/src/awbc/schema.rs": "825470354b16cdcb4354087287aad94dfb707b2f",
+    "crates/arcweft-core/src/awbc/codec/types.rs": "1830e672f67c9ff88247b1e53f843e8d74109580",
+    "crates/arcweft-core/src/awbc/codec/wire.rs": "bbdf6f2dc3c624b23f78f8d92730a64d76946440",
+    "crates/arcweft-core/src/awbc/type_projection.rs": "4db73763ac82b6abcbb0066bb8e1bf9187bd2635",
+    "crates/arcweft-core/src/awbc/fiber.rs": "3d3355654235e2f42ff28f4e08d681bbecbf9acf",
+    "crates/arcweft-lang-sema/Cargo.toml": "f3f9c9a87370dae7060fde4f34f34f9107268e66",
+    "crates/arcweft-lang-sema/src/env/nominal.rs": "a7fa3bf959f805d5b1a6280347cb8bf3a9ab87dd",
+    "crates/arcweft-lang-sema/src/env/enums.rs": "3f3a42267d5f1f98e093b949b697e47aa484bde7",
+    "crates/arcweft-lang-sema/src/env/rust_metadata.rs": "4d1b6aba5a4abd78e8afe83461382d7483a68f2d",
+    "crates/arcweft-lang-sema/src/registration/environment_input.rs": "8c6415c981892e7ee90b0cf4f97965775fde0434",
+    "crates/arcweft-lang-sema/src/registration/model.rs": "ebc85dae7379de643b50caf453208eb6496d5ad5",
+    "crates/arcweft-lang-sema/src/registration/registrar.rs": "48532ea695297fc445d3d79f8301ec4f63ccc254",
+    "crates/arcweft-lang-sema/src/registration/environment_digest.rs": "ad2e2ad5f330f9bdc16cf967643b24f5dcb690df",
+    "crates/arcweft-lang-sema/src/callable/projection.rs": "109bf95513cf1e4e776155f000e009b0c3ccc067",
+    "crates/arcweft-lang-sema/src/types/digest.rs": "8ee1d3cbe090a52bbacc361d8ee223c899b675f8",
+    "crates/arcweft-lang-sema/src/final_analysis/nominal_schema.rs": "9a554e2801847c73cfb5db56b12a3e39c756c8a0",
+    "crates/arcweft-lang-sema/src/final_analysis/report.rs": "ac4fafc7c029c7821b4d73a315e744bb55533dc1",
+    "crates/arcweft-lang-sema/src/ownership.rs": "81268cd65cded080e61424d5e53539a85b34f31b",
+    "crates/arcweft-adapter-sema/Cargo.toml": "806aa0462f177957475e0135cb3e34803becef36",
+    "crates/arcweft-adapter-sema/src/registration/input.rs": "6327adddac472e754197a61c614d57166f45578f",
+    "crates/arcweft-runtime-plan/Cargo.toml": "01df432260abac7f75ec2ac023d7ae41c559e62a",
+    "crates/arcweft-runtime-plan/src/semantic_facts.rs": "4cfec588efd4d14cabbde3eb3b84490878eb83c4",
+    "crates/arcweft-runtime-plan/src/awbc_lower.rs": "6079d987c65630399a51d842880b2a4455c22f5f",
+    "crates/arcweft-compiler/Cargo.toml": "650854ec1aef06e7c05ddce9ccc8c9e302f46868",
+    "crates/arcweft-compiler/src/lower.rs": "8aa20063dea7e0186b54f745de803560072d2f07",
+    "crates/arcweft-runtime-driver/Cargo.toml": "4cac7e66512b8d652e72e2ceef5ae92fd673e3dc",
+    "crates/arcweft-runtime-driver/src/session/persistence.rs": "7e484089e5b49b8798e0b8f06dd511eb0bf25ade"
+  },
+  "required_files": [
+    "README.md",
+    "REQUEST.md",
+    "FINAL_DESIGN.md",
+    "SCHEMAS.md",
+    "DEPENDENCIES.md",
+    "WIRE_AND_RESTORE.md",
+    "CUTS_TESTS_AND_DELETION.md",
+    "SOURCE_EVIDENCE.md",
+    "DECISION_REGISTER.md",
+    "FINAL_STATUS.md",
+    "OPEN_QUESTIONS.md",
+    "VALIDATION_REPORT.md",
+    "MANIFEST.sha256",
+    "machine/final_contract.json",
+    "tools/validation_support.rs",
+    "tools/validate_design.rs",
+    "tools/negative_self_tests.rs"
+  ]
+}

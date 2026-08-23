@@ -1,11 +1,6 @@
 # Lang-01.5.1.1.2.1.1.1.1.1.1.1.1.1 — accepted structural nominal runtime carrier correction
 
-Status: `RESOLVED_BY_ACCEPTED_DESIGN`
-
-Accepted resolution:
-[repository-local final design](../designs/lang-01.5.1.1.2.1.1.1.1.1.1.1.1.1-accepted-structural-nominal-runtime-carrier/README.md),
-validated against production commit
-`9a5d30d25620541c3f2975d31e04e04e3bc9514c`.
+Status: `OPEN_DESIGN_REQUEST`
 
 ## Parent, split reason, and precedence
 

@@ -1,0 +1,9 @@
+{
+  "errors": [],
+  "valid": true,
+  "decision_count": 28,
+  "test_count": 40,
+  "request_item_count": 11,
+  "repo_verification_tier": "V3_REQUEST_AND_CONTRACT_ONLY",
+  "source_ok": false
+}

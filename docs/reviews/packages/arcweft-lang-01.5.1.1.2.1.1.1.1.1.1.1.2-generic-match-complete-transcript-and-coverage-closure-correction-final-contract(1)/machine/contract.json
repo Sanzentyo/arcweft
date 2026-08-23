@@ -1,0 +1,840 @@
+{
+  "schema": "arcweft.design.generic-match-transcript-coverage/v1",
+  "request": "2026-08-22-lang-01.5.1.1.2.1.1.1.1.1.1.1.2-generic-match-complete-transcript-and-coverage-closure-correction(1).md",
+  "package": "arcweft-lang-01.5.1.1.2.1.1.1.1.1.1.1.2-generic-match-complete-transcript-and-coverage-closure-correction-final-contract",
+  "mode": "design-only",
+  "open_questions": 0,
+  "baseline": {
+    "head": null,
+    "origin_main": null,
+    "verification_tier": "V3_REQUEST_AND_CONTRACT_ONLY",
+    "repo_ok": false,
+    "source_ok": false
+  },
+  "decisions": [
+    {
+      "id": "D01",
+      "title": "Single authoritative owner",
+      "contract": "The checked generic-match certifier is the only producer of a complete transcript. Parser, HIR lowering, runtime planner, persistence, and restore may carry or verify the sealed artifact but may not reconstruct it."
+    },
+    {
+      "id": "D02",
+      "title": "No partial transcript crosses the certification boundary",
+      "contract": "Construction uses `MatchTranscriptBuilder`; only `seal(self, ...) -> Result<CompleteMatchTranscript, MatchClosureError>` creates the admitted type. The builder and all open coverage states remain crate-private."
+    },
+    {
+      "id": "D03",
+      "title": "Every source arm has exactly one transcript row",
+      "contract": "Rows are keyed by stable `MatchArmId` derived from source owner plus arm ordinal. Wildcards, guarded arms, syntactically unreachable arms, and recovery arms are present; omission is a hard internal error."
+    },
+    {
+      "id": "D04",
+      "title": "Every normalized pattern alternative has a row",
+      "contract": "An arm row contains a non-empty ordered `PatternAlternativeTranscript` list. Or-pattern expansion is represented explicitly and retains a reversible source path; alternatives are never silently coalesced."
+    },
+    {
+      "id": "D05",
+      "title": "Generic substitutions are closed before coverage",
+      "contract": "Coverage is evaluated against a `GenericMatchUniverseKey` containing the checked scrutinee type and canonical substitutions. Unresolved inference variables make sealing fail with `UnresolvedGenericUniverse`."
+    },
+    {
+      "id": "D06",
+      "title": "Coverage closure is a typed result, not a boolean",
+      "contract": "`CoverageClosure` distinguishes `Closed`, `Open`, and `Poisoned`. Only `ClosedCoverage` can be embedded in `CompleteMatchTranscript`; gaps and redundancy witnesses remain structured diagnostics."
+    },
+    {
+      "id": "D07",
+      "title": "Guards do not falsely close coverage",
+      "contract": "Only a statically proven always-true guard contributes unconditional coverage. Unknown/runtime guards retain reachability metadata but contribute no closing coverage. Always-false guards are represented and diagnosed."
+    },
+    {
+      "id": "D08",
+      "title": "Runtime Need identity is preserved exactly",
+      "contract": "A pattern observation that references a Need/runtime value records the existing canonical Need identity and view/instance discriminator. Equality and serialization delegate to the owning enum/type impl, not a helper trait or ad-hoc encoding."
+    },
+    {
+      "id": "D09",
+      "title": "Deterministic ordering is normative",
+      "contract": "Arms use source order; alternatives use normalized left-to-right order; constructor atoms use the checked type owner’s canonical order; maps are sorted before serialization. Hash iteration order is forbidden in digest input."
+    },
+    {
+      "id": "D10",
+      "title": "Digest grammar is versioned and domain-separated",
+      "contract": "Transcript and closure digests use the byte grammar in this package with explicit tags, lengths, enum discriminants, and schema version. Debug text, Rust layout, serde defaults, and pointer identity are forbidden inputs."
+    },
+    {
+      "id": "D11",
+      "title": "HIR and runtime admission are capability-typed",
+      "contract": "Post-check HIR stores `CompleteMatchTranscriptId` and `ClosedCoverageId`; runtime plan construction requires `&CompleteMatchTranscript`. APIs accepting optional/bare transcript data are removed or kept only as private migration shims."
+    },
+    {
+      "id": "D12",
+      "title": "Persistence is two-phase",
+      "contract": "Restore decodes a candidate, validates schema/digest/references/row completeness, rechecks closure identity, and only then publishes the runtime handle. No partially restored match task becomes observable."
+    },
+    {
+      "id": "D13",
+      "title": "Diagnostics are lossless and stable",
+      "contract": "Coverage gaps, redundant alternatives, guard dispositions, unresolved generic substitutions, row omissions, and digest mismatch each have distinct error variants with source anchors and stable diagnostic codes."
+    },
+    {
+      "id": "D14",
+      "title": "Existing enums own new behavior",
+      "contract": "When `Coverage`, `NeedId`, runtime handle, or match-result enums already exist in arcweft, canonical ordering, encoding, and validation methods are added to their original `impl` blocks. No extension trait, duplicate helper enum, or switch-at-call-site is admitted."
+    },
+    {
+      "id": "D15",
+      "title": "Transcript completeness is checked in O(rows + atoms)",
+      "contract": "Sealing performs one pass over source arms, one pass over normalized alternatives, and set-algebra operations over canonical constructor indices. The runtime hot path only dereferences a sealed ID and never recomputes coverage."
+    },
+    {
+      "id": "D16",
+      "title": "Cache keys include semantic closure",
+      "contract": "Any generic match cache key includes owner identity, canonical substitutions, scrutinee checked type digest, transcript schema version, and closed-coverage digest. Source span and debug text are excluded."
+    },
+    {
+      "id": "D17",
+      "title": "Invalidation is explicit",
+      "contract": "A change to pattern normalization, constructor universe, generic substitutions, guard proof, Need identity encoding, or schema version invalidates the transcript/cache entry. Pure source relocation does not, unless source identity is part of the repository’s existing stable owner key."
+    },
+    {
+      "id": "D18",
+      "title": "Recovery cannot be admitted",
+      "contract": "Error-recovery patterns may produce a poisoned builder for diagnostics, but `PoisonedCoverage` has no conversion to `ClosedCoverage`; lowering/runtime construction must stop before plan emission."
+    },
+    {
+      "id": "D19",
+      "title": "Test closure is row-addressable",
+      "contract": "Every normative decision maps to named unit/integration/golden/property rows. Golden transcript tests assert all fields and byte digests, not only pass/fail diagnostics."
+    },
+    {
+      "id": "D20",
+      "title": "Migration is fail-closed",
+      "contract": "Old snapshots/cache entries without schema-versioned complete transcripts are rejected and regenerated. No default empty transcript, inferred wildcard closure, or legacy “assume exhaustive” compatibility path is allowed."
+    },
+    {
+      "id": "D21",
+      "title": "Typed Need producer ABI is transcript-bound",
+      "contract": "An alternative that invokes or observes a typed Need producer records the checked producer ID, exact output checked-type digest, canonical Need identity, runtime instance identity, runtime view identity, and AWBC allocation binding as one indivisible row. Runtime code may not re-infer any member."
+    },
+    {
+      "id": "D22",
+      "title": "AWBC allocation authority remains canonical",
+      "contract": "The transcript stores the existing `AwbcAllocationId`, generation, lane, and storage class issued by the canonical allocator. Encoding/order methods are added to the original AWBC enum/ID impl. Match lowering and restore validate the binding; they never allocate a substitute slot."
+    },
+    {
+      "id": "D23",
+      "title": "Need instance and view are distinct identities",
+      "contract": "`NeedIdentity`, `RuntimeNeedInstanceIdentity`, and `RuntimeNeedViewIdentity` are carried and checked separately. Equality of one does not imply equality of the others; transcript verification rejects mixed-instance or wrong-view bindings."
+    },
+    {
+      "id": "D24",
+      "title": "Nominal and structural pattern carriers remain distinguishable",
+      "contract": "Coverage atoms preserve the checked carrier kind and owner identity. A structural shape cannot close a nominal constructor universe merely because fields match, and nominal tags are never reconstructed from runtime layout."
+    },
+    {
+      "id": "D25",
+      "title": "Semantic provenance is complete",
+      "contract": "Each row retains source arm/alternative identity, normalized pattern ID/path, checked type, generic universe, binding slots, producer/Need/AWBC identities, guard proof, reachability, and coverage atoms. Any consumer needing another semantic fact extends the owning row/schema rather than opening a side channel."
+    },
+    {
+      "id": "D26",
+      "title": "Snapshot isomorphism includes transcript-bound runtime identities",
+      "contract": "Compile → persist → restore yields the same transcript digest, closed-coverage digest, Need/instance/view identities, producer binding, and AWBC allocation binding. Restore remapping is allowed only through the repository’s explicit canonical relocation table and is included in verification."
+    },
+    {
+      "id": "D27",
+      "title": "Coverage certification is authoritative",
+      "contract": "Runtime dispatch, task coordination, and restore never perform a fallback exhaustiveness check or assume wildcard closure. They verify the checked certificate identity and fail closed on absence/mismatch."
+    },
+    {
+      "id": "D28",
+      "title": "Independent generations cannot alias",
+      "contract": "Generation identity participates in producer/AWBC bindings and cache validation. Two independently generated plans with equal source syntax cannot share mutable/runtime allocation state unless the existing catalog explicitly proves the complete semantic key identical."
+    }
+  ],
+  "owners": [
+    {
+      "concern": "checked generic-match certification owner",
+      "existing_path": "(not materialized)",
+      "status": "NOT_MATERIALIZED",
+      "proposed_change": "extend the existing match checker/certifier owner; no sidecar helper trait"
+    },
+    {
+      "concern": "coverage algebra and closure owner",
+      "existing_path": "(not materialized)",
+      "status": "NOT_MATERIALIZED",
+      "proposed_change": "add closure variants/methods to the original coverage enum/impl"
+    },
+    {
+      "concern": "HIR carrier owner",
+      "existing_path": "(not materialized)",
+      "status": "NOT_MATERIALIZED",
+      "proposed_change": "carry only CompleteMatchTranscriptId/ClosedCoverageId after admission"
+    },
+    {
+      "concern": "runtime match admission owner",
+      "existing_path": "(not materialized)",
+      "status": "NOT_MATERIALIZED",
+      "proposed_change": "reject plans without a complete sealed transcript before execution/persistence"
+    },
+    {
+      "concern": "Need identity mapping owner",
+      "existing_path": "(not materialized)",
+      "status": "NOT_MATERIALIZED",
+      "proposed_change": "reuse existing Need identity type; transcript stores identity, never an ad-hoc integer"
+    }
+  ],
+  "tests": [
+    {
+      "id": "GM-T001",
+      "covers": [
+        "D03",
+        "D04"
+      ],
+      "layer": "unit",
+      "fixture": "three source arms including an or-pattern",
+      "oracle": "exactly three arm rows; alternatives 1/2/1; stable IDs and source paths"
+    },
+    {
+      "id": "GM-T002",
+      "covers": [
+        "D02",
+        "D18"
+      ],
+      "layer": "negative unit",
+      "fixture": "builder missing middle arm",
+      "oracle": "`MissingArmRow { ordinal: 1 }`; no complete carrier"
+    },
+    {
+      "id": "GM-T003",
+      "covers": [
+        "D05"
+      ],
+      "layer": "negative compile/check",
+      "fixture": "generic substitution retains inference variable",
+      "oracle": "`UnresolvedGenericUniverse`; no HIR match"
+    },
+    {
+      "id": "GM-T004",
+      "covers": [
+        "D06"
+      ],
+      "layer": "negative compile/check",
+      "fixture": "finite enum leaves one constructor uncovered",
+      "oracle": "structured `CoverageGapWitness`; `Open` cannot convert to complete"
+    },
+    {
+      "id": "GM-T005",
+      "covers": [
+        "D06",
+        "D19"
+      ],
+      "layer": "golden",
+      "fixture": "finite enum fully covered without wildcard",
+      "oracle": "closed bitset, witnesses and transcript digest match golden bytes"
+    },
+    {
+      "id": "GM-T006",
+      "covers": [
+        "D07"
+      ],
+      "layer": "unit",
+      "fixture": "only guarded arm for a constructor, guard unknown",
+      "oracle": "constructor remains uncovered"
+    },
+    {
+      "id": "GM-T007",
+      "covers": [
+        "D07"
+      ],
+      "layer": "unit",
+      "fixture": "guard proven true",
+      "oracle": "constructor closes coverage"
+    },
+    {
+      "id": "GM-T008",
+      "covers": [
+        "D07",
+        "D13"
+      ],
+      "layer": "negative",
+      "fixture": "guard proven false",
+      "oracle": "alternative retained as unreachable/redundant with stable diagnostic code"
+    },
+    {
+      "id": "GM-T009",
+      "covers": [
+        "D09",
+        "D10"
+      ],
+      "layer": "property",
+      "fixture": "same semantic arms inserted through permuted temporary map order",
+      "oracle": "identical canonical bytes and digest"
+    },
+    {
+      "id": "GM-T010",
+      "covers": [
+        "D10"
+      ],
+      "layer": "negative decode",
+      "fixture": "unknown schema version",
+      "oracle": "decode fails before catalog insertion"
+    },
+    {
+      "id": "GM-T011",
+      "covers": [
+        "D10",
+        "D12"
+      ],
+      "layer": "negative restore",
+      "fixture": "single bit flipped in body",
+      "oracle": "digest mismatch; no runtime handle published"
+    },
+    {
+      "id": "GM-T012",
+      "covers": [
+        "D08",
+        "D14"
+      ],
+      "layer": "unit",
+      "fixture": "runtime Need atom and view identity round trip",
+      "oracle": "original owner impl ordering/encoding is used; identity is exact"
+    },
+    {
+      "id": "GM-T013",
+      "covers": [
+        "D08",
+        "D12"
+      ],
+      "layer": "negative restore",
+      "fixture": "Need identity absent from restored catalog",
+      "oracle": "dangling identity error; no partial task"
+    },
+    {
+      "id": "GM-T014",
+      "covers": [
+        "D11"
+      ],
+      "layer": "compile-fail/API",
+      "fixture": "call lowering with builder/open coverage",
+      "oracle": "type mismatch; only `&CompleteMatchTranscript` accepted"
+    },
+    {
+      "id": "GM-T015",
+      "covers": [
+        "D13"
+      ],
+      "layer": "golden diagnostics",
+      "fixture": "two missing constructors and one redundant alternative",
+      "oracle": "stable codes, anchors, witness order"
+    },
+    {
+      "id": "GM-T016",
+      "covers": [
+        "D15"
+      ],
+      "layer": "benchmark",
+      "fixture": "10k alternatives over finite canonical universe",
+      "oracle": "sealing linear in rows/atoms; runtime dispatch unchanged"
+    },
+    {
+      "id": "GM-T017",
+      "covers": [
+        "D16",
+        "D17"
+      ],
+      "layer": "cache",
+      "fixture": "same owner with two generic substitutions",
+      "oracle": "distinct keys/transcripts; no cross-instantiation reuse"
+    },
+    {
+      "id": "GM-T018",
+      "covers": [
+        "D16",
+        "D17"
+      ],
+      "layer": "cache",
+      "fixture": "source span changes only",
+      "oracle": "semantic digest unchanged when existing stable owner policy allows"
+    },
+    {
+      "id": "GM-T019",
+      "covers": [
+        "D20"
+      ],
+      "layer": "migration",
+      "fixture": "legacy snapshot has no transcript schema tag",
+      "oracle": "fail-closed rejection and regeneration path"
+    },
+    {
+      "id": "GM-T020",
+      "covers": [
+        "D03",
+        "D04",
+        "D19"
+      ],
+      "layer": "property",
+      "fixture": "generated well-typed match AST",
+      "oracle": "every source arm/normalized alternative has one unique transcript row"
+    },
+    {
+      "id": "GM-T021",
+      "covers": [
+        "D06",
+        "D19"
+      ],
+      "layer": "property",
+      "fixture": "generated finite constructor universes",
+      "oracle": "closed iff covered set equals canonical universe"
+    },
+    {
+      "id": "GM-T022",
+      "covers": [
+        "D09",
+        "D10"
+      ],
+      "layer": "cross-platform golden",
+      "fixture": "encode on all supported targets",
+      "oracle": "byte-for-byte identical transcript and closure digests"
+    },
+    {
+      "id": "GM-T023",
+      "covers": [
+        "D12"
+      ],
+      "layer": "integration",
+      "fixture": "decode succeeds but closure universe digest differs from checked catalog",
+      "oracle": "candidate rejected before task visibility"
+    },
+    {
+      "id": "GM-T024",
+      "covers": [
+        "D14"
+      ],
+      "layer": "source structure lint/review",
+      "fixture": "search for extension traits/ad-hoc Need encoders introduced by change",
+      "oracle": "zero; behavior lives on original enum impl"
+    },
+    {
+      "id": "GM-T025",
+      "covers": [
+        "D01",
+        "D11"
+      ],
+      "layer": "integration",
+      "fixture": "attempt runtime reconstruction without checker transcript",
+      "oracle": "no public API exists; admission error at internal boundary"
+    },
+    {
+      "id": "GM-T026",
+      "covers": [
+        "D03",
+        "D13"
+      ],
+      "layer": "negative internal invariant",
+      "fixture": "duplicate arm ID or duplicate normalized ordinal",
+      "oracle": "distinct invariant error; decode/seal rejection"
+    },
+    {
+      "id": "GM-T027",
+      "covers": [
+        "D04"
+      ],
+      "layer": "unit",
+      "fixture": "nested or-pattern with bindings",
+      "oracle": "reversible canonical pattern paths and binding slots preserved"
+    },
+    {
+      "id": "GM-T028",
+      "covers": [
+        "D06",
+        "D13"
+      ],
+      "layer": "unit",
+      "fixture": "wildcard after complete constructor coverage",
+      "oracle": "closed coverage plus redundancy witness for wildcard"
+    },
+    {
+      "id": "GM-T029",
+      "covers": [
+        "D18"
+      ],
+      "layer": "negative",
+      "fixture": "parser recovery arm reaches checker",
+      "oracle": "poisoned transcript; no digest, HIR, or runtime plan"
+    },
+    {
+      "id": "GM-T030",
+      "covers": [
+        "D11",
+        "D12",
+        "D20"
+      ],
+      "layer": "end-to-end",
+      "fixture": "compile, persist, restore, dispatch generic match",
+      "oracle": "same transcript ID/coverage digest before and after restore"
+    },
+    {
+      "id": "GM-T031",
+      "covers": [
+        "D21"
+      ],
+      "layer": "unit/golden",
+      "fixture": "alternative binds a typed Need producer",
+      "oracle": "all six semantic identities and exact output type appear in row and golden bytes"
+    },
+    {
+      "id": "GM-T032",
+      "covers": [
+        "D21",
+        "D23"
+      ],
+      "layer": "negative verify",
+      "fixture": "producer output type or runtime view differs from checked row",
+      "oracle": "distinct producer/type/view mismatch; no HIR/runtime plan"
+    },
+    {
+      "id": "GM-T033",
+      "covers": [
+        "D22"
+      ],
+      "layer": "unit/golden",
+      "fixture": "two AWBC lanes in one generic match",
+      "oracle": "canonical allocation IDs, generation, lanes, and storage tags remain distinct and ordered"
+    },
+    {
+      "id": "GM-T034",
+      "covers": [
+        "D22",
+        "D26"
+      ],
+      "layer": "negative restore",
+      "fixture": "restore substitutes a fresh AWBC allocation for persisted binding",
+      "oracle": "verification rejects substitution before handle publication"
+    },
+    {
+      "id": "GM-T035",
+      "covers": [
+        "D23"
+      ],
+      "layer": "negative unit",
+      "fixture": "same Need identity paired with wrong instance",
+      "oracle": "instance mismatch diagnostic and fail-closed admission"
+    },
+    {
+      "id": "GM-T036",
+      "covers": [
+        "D24"
+      ],
+      "layer": "coverage",
+      "fixture": "structural record shape equals fields of nominal constructor",
+      "oracle": "does not close nominal universe without nominal carrier atom"
+    },
+    {
+      "id": "GM-T037",
+      "covers": [
+        "D25"
+      ],
+      "layer": "completeness audit",
+      "fixture": "delete each transcript field in a mutation fixture",
+      "oracle": "corresponding completeness/digest/reference test fails; no side-channel reconstruction"
+    },
+    {
+      "id": "GM-T038",
+      "covers": [
+        "D26"
+      ],
+      "layer": "end-to-end isomorphism",
+      "fixture": "compile/persist/restore typed producer match",
+      "oracle": "all transcript-bound runtime identities and digests are identical"
+    },
+    {
+      "id": "GM-T039",
+      "covers": [
+        "D27"
+      ],
+      "layer": "API/source audit",
+      "fixture": "remove coverage certificate and attempt runtime fallback",
+      "oracle": "no fallback API/path; explicit certificate-missing failure"
+    },
+    {
+      "id": "GM-T040",
+      "covers": [
+        "D28"
+      ],
+      "layer": "concurrency/generation",
+      "fixture": "same generic source compiled in two generations",
+      "oracle": "no mutable allocation alias; cache reuse only under complete key equality"
+    }
+  ],
+  "request_mapping": [
+    {
+      "request_number": 1,
+      "request_line": 40,
+      "request_text": "`git rev-parse HEAD`, `git rev-parse origin/main`, `git status --short --branch`, and Cargo workspace metadata; the frozen production baseline must be clean `main == origin/main` before output files are created, while later design-output dirt is reported separately;",
+      "decisions": [
+        "D02",
+        "D19"
+      ],
+      "tests": [
+        "GM-T002",
+        "GM-T020"
+      ],
+      "implementation_closure": "Implemented by the cited typed API/state transition and accepted only when all cited test rows pass."
+    },
+    {
+      "request_number": 2,
+      "request_line": 44,
+      "request_text": "the actual crate, path, symbol, visibility, dependency direction, and Git blob identity for every proposed current owner;",
+      "decisions": [
+        "D08",
+        "D14"
+      ],
+      "tests": [
+        "GM-T012",
+        "GM-T024"
+      ],
+      "implementation_closure": "Implemented by the cited typed API/state transition and accepted only when all cited test rows pass."
+    },
+    {
+      "request_number": 3,
+      "request_line": 46,
+      "request_text": "a complete current producer/consumer inventory for decisions 1–7; and",
+      "decisions": [
+        "D21",
+        "D25"
+      ],
+      "tests": [
+        "GM-T031",
+        "GM-T037"
+      ],
+      "implementation_closure": "Implemented by the cited typed API/state transition and accepted only when all cited test rows pass."
+    },
+    {
+      "request_number": 4,
+      "request_line": 47,
+      "request_text": "the accepted predecessor documents and production APIs that each proposed join preserves or replaces. If the checkout, required source, or predecessor evidence is unavailable, stop and report that exact blocker. Do not infer owners from this request, invent a crate, repeat a template, or emit the required final-contract ZIP. Every cited type or function must either exist at the inspected SHA or be explicitly introduced in a compile-clean cut with its one owner, dependency direction, constructor, consumers, tests, and superseded deletion target. For this request specifically, the preflight must enumerate every live `CheckedExpressionResolution`, statement, pattern, and executable-body family; the current accepted nominal/case/field/layout authorities; all Match-bearing declaration roots; and every compiler/runtime consumer of the resulting transcript and coverage result. The machine inventory and validator must prove that zero current variants or affected constructor/reader families were omitted. A task-plan seal, persisted Match DTO, accepted identity, coverage success, or catalog may not be introduced merely because a similarly named current owner was not found. View and line-plan paths consume only current or accepted lower roles; they do not invent persistent Match-site identities.",
+      "decisions": [
+        "D01",
+        "D03",
+        "D04",
+        "D06",
+        "D07",
+        "D19",
+        "D08",
+        "D14",
+        "D11",
+        "D12",
+        "D20",
+        "D24"
+      ],
+      "tests": [
+        "GM-T001",
+        "GM-T002",
+        "GM-T027",
+        "GM-T004",
+        "GM-T006",
+        "GM-T021",
+        "GM-T012",
+        "GM-T024",
+        "GM-T014",
+        "GM-T025",
+        "GM-T011",
+        "GM-T030",
+        "GM-T020",
+        "GM-T036"
+      ],
+      "implementation_closure": "Implemented by the cited typed API/state transition and accepted only when all cited test rows pass."
+    },
+    {
+      "request_number": 1,
+      "request_line": 72,
+      "request_text": "The stable payload transcript for every current `CheckedExpressionResolution` family, including ProjectItem/Entry, Method/DialogueView/AgentField, StageLook, Await, Choice, Try, implicit callable/parameter, Pipe, View, Style, dialogue, and postfix-bracket facts. Each row must name its existing accepted owner or define the same-cut final owner and deletion of the superseded lookup-only evidence.",
+      "decisions": [
+        "D01",
+        "D03",
+        "D04",
+        "D08",
+        "D14",
+        "D09",
+        "D10",
+        "D19"
+      ],
+      "tests": [
+        "GM-T001",
+        "GM-T002",
+        "GM-T027",
+        "GM-T012",
+        "GM-T024",
+        "GM-T009",
+        "GM-T022",
+        "GM-T020"
+      ],
+      "implementation_closure": "Implemented by the cited typed API/state transition and accepted only when all cited test rows pass."
+    },
+    {
+      "request_number": 2,
+      "request_line": 78,
+      "request_text": "The exact accepted semantic identity for Entity patterns and Character/Builtin closed variant owners, including source-order case identity and payload type without raw item IDs or source names.",
+      "decisions": [
+        "D06",
+        "D07",
+        "D19",
+        "D08",
+        "D14",
+        "D09",
+        "D10"
+      ],
+      "tests": [
+        "GM-T004",
+        "GM-T006",
+        "GM-T021",
+        "GM-T012",
+        "GM-T024",
+        "GM-T009",
+        "GM-T022",
+        "GM-T020"
+      ],
+      "implementation_closure": "Implemented by the cited typed API/state transition and accepted only when all cited test rows pass."
+    },
+    {
+      "request_number": 3,
+      "request_line": 81,
+      "request_text": "A checked record-pattern field row owned by sema, mapping each authored source child to its accepted `RuntimeRecordFieldId`, field semantic identity, field type, nominal semantic identity, and canonical `TypeLayoutHash`. Transcript construction must consume this row rather than resolving names.",
+      "decisions": [
+        "D01",
+        "D03",
+        "D04",
+        "D08",
+        "D14",
+        "D11",
+        "D09",
+        "D10",
+        "D19",
+        "D24"
+      ],
+      "tests": [
+        "GM-T001",
+        "GM-T002",
+        "GM-T027",
+        "GM-T012",
+        "GM-T024",
+        "GM-T014",
+        "GM-T025",
+        "GM-T009",
+        "GM-T022",
+        "GM-T020",
+        "GM-T036"
+      ],
+      "implementation_closure": "Implemented by the cited typed API/state transition and accepted only when all cited test rows pass."
+    },
+    {
+      "request_number": 4,
+      "request_line": 85,
+      "request_text": "The private bounded Maranget matrix types and specialization algorithm for tuple and record products, constant arrays, symbolic Vec/Slice/Seq exact and rest length partitions, Or alternatives, literals plus Other, entity/open residuals, Never, Choice, and every accepted closed variant family.",
+      "decisions": [
+        "D01",
+        "D03",
+        "D04",
+        "D06",
+        "D07",
+        "D19"
+      ],
+      "tests": [
+        "GM-T001",
+        "GM-T002",
+        "GM-T027",
+        "GM-T004",
+        "GM-T006",
+        "GM-T021",
+        "GM-T020"
+      ],
+      "implementation_closure": "Implemented by the cited typed API/state transition and accepted only when all cited test rows pass."
+    },
+    {
+      "request_number": 5,
+      "request_line": 89,
+      "request_text": "Exact constructor-domain and witness transcripts for nested products and sequences. Work counters remain diagnostic-only and all limits use checked `u64` accounting before allocation/descent.",
+      "decisions": [
+        "D01",
+        "D03",
+        "D04",
+        "D13",
+        "D18",
+        "D22",
+        "D26"
+      ],
+      "tests": [
+        "GM-T001",
+        "GM-T002",
+        "GM-T027",
+        "GM-T015",
+        "GM-T029",
+        "GM-T033",
+        "GM-T034"
+      ],
+      "implementation_closure": "Implemented by the cited typed API/state transition and accepted only when all cited test rows pass."
+    },
+    {
+      "request_number": 6,
+      "request_line": 92,
+      "request_text": "The stable declaration/body path bridge for every executable current body family still absent from HIR authority, including any line-plan/Choice/View declaration rows that can contain Match.",
+      "decisions": [
+        "D01",
+        "D03",
+        "D04",
+        "D08",
+        "D14",
+        "D11",
+        "D09",
+        "D10"
+      ],
+      "tests": [
+        "GM-T001",
+        "GM-T002",
+        "GM-T027",
+        "GM-T012",
+        "GM-T024",
+        "GM-T014",
+        "GM-T025",
+        "GM-T009",
+        "GM-T022"
+      ],
+      "implementation_closure": "Implemented by the cited typed API/state transition and accepted only when all cited test rows pass."
+    },
+    {
+      "request_number": 7,
+      "request_line": 95,
+      "request_text": "The compile-clean/deletion order that replaces Cut 1b's typed unsupported branches only when each final authority is constructible. No temporary source resolver, parallel coverage algebra, or whole-catalog digest is permitted. Every Arcweft-owned version marker remains exactly `1`.",
+      "decisions": [
+        "D06",
+        "D07",
+        "D19",
+        "D09",
+        "D10"
+      ],
+      "tests": [
+        "GM-T004",
+        "GM-T006",
+        "GM-T021",
+        "GM-T009",
+        "GM-T022"
+      ],
+      "implementation_closure": "Implemented by the cited typed API/state transition and accepted only when all cited test rows pass."
+    }
+  ],
+  "byte_schema_version": 1,
+  "admission": {
+    "producer": "checked generic-match certifier",
+    "carrier": "CompleteMatchTranscript",
+    "closure": "ClosedCoverage",
+    "consumer_types": [
+      "HIR lowerer",
+      "runtime match plan builder",
+      "snapshot writer",
+      "restore verifier"
+    ],
+    "fail_closed": true
+  }
+}

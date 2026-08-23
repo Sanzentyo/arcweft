@@ -112,3 +112,15 @@ known-failed “final contract” is not.
 Only after a replacement `.1.2` is accepted and implemented may `.1.4` be
 dispatched. No Rust, Cargo, generated artifact, fixture, or runtime test was
 changed or run for this rejected design-only delivery.
+
+## Redispatch outcome
+
+The hardened request was dispatched, but the responder again returned a named
+final-contract ZIP after its own repository acquisition failed. That second
+return is rejected in the
+[redispatch intake](2026-08-23-lang-01-5-1-1-2-1-1-1-1-1-1-1-2-generic-match-redispatch-return-intake.md).
+Do not redispatch this request to the same repository-inaccessible executor;
+the remaining design was instead completed from the repository-local current
+source and accepted at the
+[generic Match design](../reviews/designs/lang-01.5.1.1.2.1.1.1.1.1.1.1.2-generic-match-complete-transcript-and-coverage-closure/README.md).
+`.1.4` remains blocked until that design is implemented.

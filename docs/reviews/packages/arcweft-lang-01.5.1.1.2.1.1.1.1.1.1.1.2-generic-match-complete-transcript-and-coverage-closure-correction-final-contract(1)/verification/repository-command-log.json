@@ -1,0 +1,7 @@
+[
+  {
+    "command": "repository materialization",
+    "exit_code": 1,
+    "output": "No local .git worktree available; design generated from the complete uploaded request/premise and any raw AGENTS fallback."
+  }
+]

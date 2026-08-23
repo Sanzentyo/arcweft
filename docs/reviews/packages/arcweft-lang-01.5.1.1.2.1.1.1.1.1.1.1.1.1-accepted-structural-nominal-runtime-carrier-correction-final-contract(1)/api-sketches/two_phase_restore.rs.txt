@@ -1,0 +1,18 @@
+// DESIGN SKETCH ONLY — two-phase restore, no publication during resolution.
+
+pub fn restore_batch(
+    bytes: &[u8],
+    catalogs: &RuntimeTypeCatalogs,
+    live: &RuntimeWorld,
+) -> Result<PublishedBatch, RestoreError> {
+    let unresolved = SnapshotDecoder::new(bytes).decode_batch()?; // phase A
+    let mut staged = StagedRuntimeBatch::with_limits(unresolved.limits());
+
+    staged.resolve_values(&unresolved.values, catalogs, live)?;
+    staged.resolve_carriers(&unresolved.carriers, catalogs, live)?;
+    staged.resolve_match_plans(&unresolved.match_plans, catalogs, live)?;
+    staged.resolve_tasks(&unresolved.tasks, catalogs, live)?;
+    staged.validate_cross_references()?;
+
+    live.coordinator().publish(staged) // sole atomic publication point
+}

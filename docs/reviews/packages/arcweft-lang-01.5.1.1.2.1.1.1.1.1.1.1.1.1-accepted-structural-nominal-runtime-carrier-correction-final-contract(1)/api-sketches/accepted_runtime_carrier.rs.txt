@@ -1,0 +1,29 @@
+// DESIGN SKETCH ONLY — not a production overlay.
+// Reuse current-main ID/handle names and extend the existing owner enum when present.
+
+pub enum AcceptedRuntimeCarrier {
+    Structural(StructuralRuntimeCarrier),
+    Nominal(NominalRuntimeCarrier),
+}
+
+impl AcceptedRuntimeCarrier {
+    pub fn admit(
+        &self,
+        constraint: &AcceptedCarrierConstraint,
+        catalog: &RuntimeTypeCatalog,
+    ) -> Result<CarrierAdmission, CarrierInvariantError> {
+        match (self, constraint) {
+            (Self::Structural(actual), AcceptedCarrierConstraint::Structural { target, projection: StructuralProjectionPolicy::Direct })
+                if actual.shape == *target => Ok(CarrierAdmission::Accepted(AcceptedProjection::Identity(actual.payload))),
+            (Self::Structural(_), AcceptedCarrierConstraint::Structural { .. }) => Ok(CarrierAdmission::Rejected(CarrierMismatch::StructuralShape)),
+            (Self::Structural(_), AcceptedCarrierConstraint::Nominal { .. }) => Ok(CarrierAdmission::Rejected(CarrierMismatch::MissingNominalIdentity)),
+            (Self::Nominal(actual), AcceptedCarrierConstraint::Nominal { target })
+                if actual.instance == *target => Ok(CarrierAdmission::Accepted(AcceptedProjection::Identity(actual.payload))),
+            (Self::Nominal(_), AcceptedCarrierConstraint::Nominal { .. }) => Ok(CarrierAdmission::Rejected(CarrierMismatch::NominalInstance)),
+            (Self::Nominal(_), AcceptedCarrierConstraint::Structural { projection: StructuralProjectionPolicy::Direct, .. }) =>
+                Ok(CarrierAdmission::Rejected(CarrierMismatch::ProjectionWitnessRequired)),
+            (Self::Nominal(actual), AcceptedCarrierConstraint::Structural { target, projection: StructuralProjectionPolicy::FromNominal(witness) }) =>
+                catalog.admit_nominal_projection(actual, *target, *witness),
+        }
+    }
+}

@@ -1,0 +1,6 @@
+# DESIGN SKETCH ONLY — canonical byte vectors to instantiate after implementation
+
+structural_v1 := 01 00 | 00 | 00 | <body-len> | <shape-key> <payload-key>
+nominal_v1    := 01 00 | 01 | 00 | <body-len> | <catalog-key> <nominal-key> <argc> <args...> <repr-shape-key> <payload-key>
+
+Reject: unknown version/tag/flags; nonminimal varint; duplicate field; unsorted keyed extension; trailing body bytes; unresolved identity; representation mismatch.

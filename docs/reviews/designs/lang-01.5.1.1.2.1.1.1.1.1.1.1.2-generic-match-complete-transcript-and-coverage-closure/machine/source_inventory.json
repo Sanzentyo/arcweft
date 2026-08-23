@@ -1,0 +1,90 @@
+{
+  "contract_version": 1,
+  "baseline_commit": "9a5d30d25620541c3f2975d31e04e04e3bc9514c",
+  "checked_expression_resolution": [
+    "Structural", "Literal", "Value", "Select", "Nominal", "Variant",
+    "StageLook", "Effect", "Call", "Await", "Choice", "Try",
+    "ImplicitCallable", "ImplicitParameter", "Pipe", "PipeLeft",
+    "ViewCall", "ViewCallee", "StyleValue", "StyleCallee",
+    "DialogueLineReference", "DialogueLineCoordinate",
+    "DialogueTextKeyCoordinate", "CharacterDialogueFactory",
+    "CharacterDialogueReconfigure", "DialogueApplication", "PostfixBracket"
+  ],
+  "checked_value_resolution": [
+    "Local", "LineContext", "CharacterField", "ProjectCallable",
+    "ProjectItem", "Entry", "Registered", "Constant"
+  ],
+  "checked_select_resolution": [
+    "Method", "DialogueView", "AgentField", "ProgressField", "Field",
+    "TupleElement", "RecordElement"
+  ],
+  "checked_pattern_resolution": [
+    "Structural", "Literal", "Entity", "Nominal", "Variant"
+  ],
+  "hir_expression_families": [
+    "Unit", "Literal", "EntityReference", "LifetimePath", "Path",
+    "ShortVariant", "Placeholder", "Tuple", "BracketSequence",
+    "NumericBracketSequence", "ArrayRepeat", "Call", "Select", "Index",
+    "Pipe", "Try", "Await", "Thread", "Choice", "Range", "Record",
+    "RecordLiteral", "Binary", "Borrow", "Dereference", "Closure", "Unary",
+    "Block", "ComputationBlock", "NamedBlock", "Loop", "If", "IfLet",
+    "Match", "DialogueContentApplication", "PostfixBracket", "Error",
+    "ForSynthetic"
+  ],
+  "hir_pattern_families": [
+    "Binding", "MutableBinding", "Literal", "EntityReference", "Variant",
+    "Discard", "Tuple", "Record", "BracketSequence", "WholeBinding", "Or",
+    "TypedBinding", "Error"
+  ],
+  "hir_statement_families": [
+    "Assertion", "Let", "Assign", "LetElse", "LetChoice", "LetScope",
+    "LetActionReceive", "Return", "Out", "Goto", "DeferBlock", "Defer",
+    "Yield", "Signal", "LifetimeSet", "Wait", "On", "UnsafeLifetime",
+    "Choice", "If", "IfLet", "Match", "While", "WhileLet", "For", "Close",
+    "Select", "SourceLocale", "Scope", "Include", "Break", "Continue",
+    "Expression", "ProofCall", "Error"
+  ],
+  "hir_body_child_roles": [
+    "Expression", "Statement", "Tail", "RecoveryExpression", "ThreadItem"
+  ],
+  "hir_statement_body_roles": [
+    "LetElse", "Defer", "On", "UnsafeLifetime", "Then", "Else",
+    "MatchArm", "While", "WhileLet", "For", "SelectBranch", "SourceLocale",
+    "Scope"
+  ],
+  "match_bearing_declaration_owners": [
+    "Function", "Predicate", "Proof", "Flow", "TraitImplementation",
+    "InherentMethod", "View"
+  ],
+  "declaration_roots": [
+    "ParameterPattern", "ParameterDefault", "FunctionBody", "PredicateBody",
+    "ProofBody", "FlowBody", "ImplFunctionBody", "ViewValue"
+  ],
+  "expression_owned_non_expression_roots": [
+    "AwaitBranchPattern", "AwaitBranchBody", "ChoiceLetStatement",
+    "ChoiceForPattern", "ChoiceMatchArmPattern", "ChoiceOptionForPattern",
+    "ChoiceOptionSelectBody", "ChoiceOptionLetStatement",
+    "ChoicePlanTimeoutBody", "ChoicePlanCancelBody",
+    "ChoicePlanOnSelectPattern", "ChoicePlanOnSelectBody",
+    "DialogueLinePlanInitStatement", "DialogueLinePlanThreadStatement",
+    "DialogueLinePlanOnStatement", "DialogueLinePlanLetPattern",
+    "DialogueLinePlanStatement", "DialogueLinePlanCancelRuleStatement",
+    "DialogueLinePlanErrorStatement"
+  ],
+  "bodyless_declaration_owners": ["ExternCapability", "TraitRequirement"],
+  "deletion_only_current_families": ["CheckedSelectResolution::RecordElement"],
+  "counts": {
+    "checked_expression_resolution": 27,
+    "checked_value_resolution": 8,
+    "checked_select_resolution": 7,
+    "checked_pattern_resolution": 5,
+    "hir_expression_families": 38,
+    "hir_pattern_families": 13,
+    "hir_statement_families": 35,
+    "hir_body_child_roles": 5,
+    "hir_statement_body_roles": 13,
+    "match_bearing_declaration_owners": 7,
+    "declaration_roots": 8,
+    "expression_owned_non_expression_roots": 19
+  }
+}
