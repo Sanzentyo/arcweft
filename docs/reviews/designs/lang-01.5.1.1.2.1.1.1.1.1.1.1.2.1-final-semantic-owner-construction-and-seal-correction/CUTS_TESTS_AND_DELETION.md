@@ -2,6 +2,9 @@
 
 All subcuts belong to one C2 reviewable commit. Each subcut must compile and
 pass its focused tests before the next; no intermediate commit/push is made.
+An internal compile-clean checkpoint is not a reviewable cut, accepted
+completion, or publishable authority. Only the completed C2.6 state may be
+committed and pushed.
 
 ## C2.1 — lower-owner semantic behavior
 
@@ -22,39 +25,60 @@ Tests:
 - every field/payload mutation changes the digest; and
 - no literal `26` gate or Serde/debug golden is used.
 
-## C2.2 — nominal and environment owners
+## C2.2a — projection context and expander foundation
 
-Refactor `NominalSchemaExpander` onto
-`RuntimeNominalProjectionContext`, build the sealed catalog, and make existing
-public projection APIs delegate to it. Add the exhaustive typed projection
-request visitor. Move ordered environment fields into
-`AcceptedNominalSemantics::Record` and delete every separate TypeCheckEnv
-record map.
+Extract `NominalSchemaExpander` onto the single
+`RuntimeNominalProjectionContext`. Give the context fresh per-root
+`ProjectionBudget`s, one non-resetting project aggregate budget, the accepted
+cache, and retained canonical `TypeShape`. Existing
+`FinalSemanticAnalysis::project_*` wrappers temporarily delegate to that
+context so this development state remains compile-clean.
+
+This checkpoint does not yet construct the exhaustive request inventory or a
+sealed final catalog because the exact C2.3 fact families do not yet exist. The
+delegating wrappers are compile-only scaffolding: they may not be committed,
+pushed, described as accepted completion, or retained as a second authority.
+They are consumed and deleted by C2.4 before C2 publication.
 
 Delete in this subcut:
 
-- the `FinalSemanticAnalysis` dependency inside the expander;
-- every second project shape/layout projection; and
-- `HashMap<String, HashMap<String, TypeKind>>`, every replacement name/index
-  map, and reader-side iteration outside the accepted Record row.
+- the `FinalSemanticAnalysis` dependency inside the expander; and
+- every second project shape/layout projection below the temporary delegating
+  wrappers.
 
 Tests cover per-root reset across two maximum-work roots; project aggregate
 exact-limit/one-over across roots and cache hits; arithmetic overflow;
 cancellation before charge/descent; depth, node, generic-argument and work
-limits; cache hit; every prepared/published visitor family; nested/generic
-nominals reachable only through each family; missing cached projection at
-final seal; borrowed post-seal lookup and zero post-seal expansion; retained
-canonical `TypeShape`; project generation/owner/arity/identity mismatch; legal
-recursive named schema; illegal generic cycle; layout sensitivity; environment
-duplicate, unknown, declaration order, catalog/world digest sensitivity,
-ordinal overflow, cloned-Record identity mismatch, raw constructor privacy,
-and typed runtime-plan rejection without diagnostic-name lookup.
+limits; cache hit; retained canonical `TypeShape`; project generation,
+owner/arity/identity mismatch; legal recursive named schema; illegal generic
+cycle; and layout sensitivity through the existing projection callers.
+
+## C2.2b — accepted environment Record authority
+
+Move ordered environment fields into
+`AcceptedNominalSemantics::Record` and delete every separate TypeCheckEnv
+record map. The standard Record constructor atomically creates the accepted
+type and ordered field rows; catalog/world digest and borrowed lookup remain
+under the existing accepted nominal authority.
+
+Delete in this subcut:
+
+- `HashMap<String, HashMap<String, TypeKind>>` and every replacement name/index
+  map; and
+- reader-side iteration outside the accepted Record row.
+
+Tests cover environment duplicate and unknown fields, declaration order,
+catalog/world digest sensitivity, ordinal overflow, cloned-Record identity
+mismatch, raw constructor privacy, exact catalog lookup, instantiation, and
+typed runtime-plan rejection without diagnostic-name lookup.
 
 ## C2.3 — exact project/case/field/look rows
 
 Add private ID constructors, project item rows, one owner case table, selected
 ordinal access, project/environment record pattern rows, typed-binding facts,
-field/method selection rows, and manifest-joined StageLook.
+field/method selection rows, and manifest-joined StageLook. Every nominal row
+producer uses the single C2.2a projection context; no row owns another
+projector or projection cache.
 
 The checked-call join builder produces `CheckedCallableJoinDigest` once. A
 private call-join staging map is moved into final edge facts after method/View
@@ -77,12 +101,21 @@ order, project/environment field selection and record patterns, typed Choice
 binding annotations, stale world/revision, opaque-constructor privacy, and
 Character look selection-order invariance with selection-payload sensitivity.
 
-## C2.4 — private Entry seal
+## C2.4 — private Entry seal and complete nominal publication
 
 Introduce the draft, narrow Entry authority, prepared Entry references, and
-sealed Entry catalog ownership. Change `analyze_final_project` error handling
-and compiler phase mapping. Remove the public late Entry checker and compiler
-catalog storage.
+sealed Entry catalog ownership. Now that the exact C2.3 families exist, add the
+exhaustive typed projection request visitor over every prepared and final fact
+family, finish the complete projection catalog, and publish both catalogs only
+through `FinalSemanticAnalysis`. Change `analyze_final_project` error handling
+and compiler phase mapping.
+
+Delete in this subcut:
+
+- the C2.2a temporary `FinalSemanticAnalysis::project_*` delegating wrappers
+  and every post-seal expansion/recomputation path;
+- the public late Entry checker and compiler-owned Entry catalog storage; and
+- any `CompiledProject` duplicate of either final-analysis catalog.
 
 Tests cover:
 
@@ -99,6 +132,10 @@ Tests cover:
 - draft drop and every error publishing neither analysis nor catalog;
 - exact seal precedence: checked ID/public ID, source item, value type, then
   binding digest copy;
+- every actual C2.3 prepared/published projection visitor family, including a
+  nested/generic nominal reachable only through each family;
+- first digest-ordered missing cached projection at final seal, borrowed
+  post-seal lookup, and zero post-seal expansion;
 - compile-fail/private API evidence for draft construction and unsealed
   publication; and
 - the selected Entry-before-verification precedence differential.

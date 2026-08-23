@@ -30,6 +30,16 @@ Neither the draft nor its query view is public. There is no `Arc`, callback,
 tooling lease, compiler field, or query API that can observe it. The draft has
 no `Clone`; its seal consumes `self`. Dropping it publishes nothing.
 
+This is the final phase model, not the source-edit order. The compile-clean
+implementation order is C2.1 lower owners, C2.2a projection context/expander
+foundation, C2.2b accepted environment Record authority, C2.3 exact owner rows,
+then C2.4 draft/Entry seal and exhaustive nominal catalog publication. The
+typed projection visitor is introduced only in C2.4, after every C2.3 row type
+and producer exists. During C2.2a, existing final-analysis projection wrappers
+may delegate to the context solely as an uncommitted compile scaffold; that
+state is neither accepted completion nor a parallel authority, and C2.4
+deletes it before the single C2 commit/push.
+
 ## 2. Prepared Entry facts are staging, not parallel authority
 
 `check_entry_reference` inserts a private
@@ -136,7 +146,8 @@ full sealing path; a manual fixture cannot bypass Entry completeness.
 - checked cancellation.
 
 `NominalSchemaExpander` consumes this context instead of a published analysis.
-A single exhaustive typed visitor walks every prepared type, local, capture,
+In the final C2 architecture, implemented in C2.4 after the C2.3 owner rows, a
+single exhaustive typed visitor walks every prepared type, local, capture,
 expression (both prepared variants), pattern, statement, item, call, callable,
 Entry role, and C2 owner row. It recursively visits every `TypeKind` child and
 emits a typed `RuntimeNominalProjectionRequest` for every

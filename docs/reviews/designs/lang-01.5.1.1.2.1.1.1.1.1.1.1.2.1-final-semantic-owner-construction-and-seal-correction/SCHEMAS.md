@@ -5,6 +5,10 @@ module for cohesion but may not change ownership or add a second model.
 
 ## 1. Final-analysis draft and seal
 
+The types in this section are placed in C2.4. They are not forward-declared or
+approximated during C2.2; their prepared/final inventories are defined only
+after the exact C2.3 owner-row types exist.
+
 ```rust
 // arcweft-lang-sema::final_analysis
 pub enum FinalSemanticProjectError {
@@ -120,6 +124,17 @@ cannot supply the digest or type independently. Construction proves
 `value_type == ty().semantic_identity_digest()`.
 
 ## 2. Runtime nominal projection
+
+`RuntimeNominalProjectionContext`, `ProjectionBudget`, and retained
+`RuntimeProjectNominalProjection::shape` are placed in C2.2a. The existing
+final-analysis projection wrappers may delegate to the context only as an
+internal compile-clean bridge. That bridge is not a published API, accepted
+completion, or second projection authority and is deleted in C2.4.
+
+`FinalSemanticPartsView`, `RuntimeNominalProjectionRequestInventory`, complete
+catalog sealing, and the final borrowed lookup are placed in C2.4, after C2.3
+has supplied the exact owner-row families the visitor must enumerate. No
+placeholder row family or partial visitor is legal in C2.2a.
 
 ```rust
 pub(crate) struct RuntimeNominalProjectionContext<'a> {
@@ -245,6 +260,10 @@ dependencies, while missing rows reject. No post-seal API owns a context or
 expander.
 
 ## 3. Ordered environment records
+
+This section is placed in C2.2b. It can be implemented and tested against the
+existing accepted nominal catalog before C2.3 adds consumers; it does not own
+or complete the runtime nominal request visitor.
 
 ```rust
 // arcweft-lang-sema::env::nominal

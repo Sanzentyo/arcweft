@@ -28,6 +28,13 @@ created or changed.
   arithmetic overflow, identity mismatch, missing-cache failure, retained
   `TypeShape`, exhaustive request inventories, borrowed post-seal lookup, and
   private environment field construction.
+- reconciled the implementation dependency so C2.2a extracts only the
+  context/expander foundation, C2.2b establishes Record authority, C2.3 creates
+  the exact owner rows, and C2.4 alone adds the exhaustive visitor and seals the
+  catalogs; and
+- confirmed the temporary C2.2a delegating wrappers are explicitly forbidden
+  as accepted completion, parallel authority, intermediate commit, or push and
+  are deleted before final C2 publication.
 
 The proposed domains are:
 
@@ -63,4 +70,6 @@ None. All result-changing choices in the request are closed.
   design task.
 - Production implementation tests listed in
   `CUTS_TESTS_AND_DELETION.md` remain implementation acceptance criteria, not
-design validation evidence.
+  design validation evidence.
+- No Cargo or production test command was run for this documentation-only
+  cut-order amendment.

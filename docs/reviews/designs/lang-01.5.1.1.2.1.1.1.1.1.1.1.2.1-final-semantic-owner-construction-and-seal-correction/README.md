@@ -25,6 +25,12 @@ The selected design is:
 - put exhaustive semantic behavior on the legitimate Effect, Agent, Progress,
   View, and Style owners.
 
+Implementation remains one uncommitted sequence through C2.6: the projection
+context foundation precedes C2.3 rows, while the exhaustive prepared/final
+visitor and catalog seal follow those rows in C2.4. Temporary C2.2a
+final-analysis delegates are compile-only scaffolding and are deleted before
+the single reviewable C2 commit/push.
+
 Accepted C1 HIR topology, child roles, semantic paths, and View callable
 publication are unchanged.
 

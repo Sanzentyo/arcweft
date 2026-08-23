@@ -17,6 +17,25 @@ No lower crate depends on sema. Lower owners expose only their own exhaustive
 tags/digests. Sema composes those values into C2 facts. Compiler and verifier
 consume only sealed `FinalSemanticAnalysis`.
 
+## Compile-clean construction dependency
+
+```text
+C2.1 lower owners
+  -> C2.2a projection context/expander foundation
+  -> C2.2b accepted environment Record authority
+  -> C2.3 exact C2 owner rows and producers
+  -> C2.4 draft/Entry seal + exhaustive visitor + sealed catalogs
+  -> C2.5 deletions
+  -> C2.6 gates and one reviewable commit/push
+```
+
+The exhaustive visitor has a real type dependency on every C2.3 owner row and
+therefore belongs to C2.4, not C2.2a. The C2.2a final-analysis wrappers are
+temporary delegates used only to keep development compiling while the context
+is extracted. They confer no ownership, are not an independently acceptable
+cut, and must be deleted before C2.4 publishes the single catalog. No
+intermediate C2 state is committed or pushed.
+
 ## Owner matrix
 
 | Authority | Final owner | Construction input | Consumers | Deleted parallel input |
@@ -63,10 +82,11 @@ Environment field lookup goes only through
 row. The catalog digest already participates in registered-world identity, so
 field changes cannot leave a stale world stamp with new field semantics.
 
-Nominal projection consumes a typed request inventory spanning all prepared
-and published sema fact families. The context owns both per-root and aggregate
-budgets; the sealed final analysis owns only the completed projection catalog,
-never an expander or mutable cache.
+In the final C2 state, nominal projection consumes a typed request inventory
+spanning all prepared and published sema fact families. The context owns both
+per-root and aggregate budgets during construction; the sealed final analysis
+owns only the completed projection catalog, never an expander, mutable cache,
+or the temporary C2.2a delegate wrappers.
 
 ## C1 predecessor
 
