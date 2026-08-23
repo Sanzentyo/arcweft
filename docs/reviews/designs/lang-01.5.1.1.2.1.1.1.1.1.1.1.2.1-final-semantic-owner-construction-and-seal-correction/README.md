@@ -29,7 +29,11 @@ The call-side correction is governed by the
 [sealed call application authority amendment](CALL_APPLICATION_AUTHORITY_AMENDMENT.md).
 It replaces provisional/final call duplication, discarded generic solutions,
 join-side inference, raw curried continuation reconstruction, and compiler
-schema/HIR reconstruction with one post-catalog/effect application seal.
+schema/HIR reconstruction with one post-catalog/effect application seal. Its
+version-1 call typing authority uses one policy-driven compatibility engine,
+one exclusively borrowed candidate work session, correlated binding/source
+traces, and baseline-isolated source-order final materialization before the
+lower bindings and higher continuation rows can be sealed.
 
 Implementation remains one uncommitted sequence through C2.6. C2.3 introduces
 the exact final row types and private consumable producer seeds, but project

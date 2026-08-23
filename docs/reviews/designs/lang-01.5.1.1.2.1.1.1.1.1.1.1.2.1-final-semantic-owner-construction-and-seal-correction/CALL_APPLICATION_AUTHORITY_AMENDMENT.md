@@ -170,121 +170,372 @@ not receive an unchecked look/clear success path.
 
 ## 3. Candidate-wide type solution
 
-One private candidate transaction owns all constraints:
+### 3.1 One compatibility engine
+
+The types layer owns one recursive compatibility engine. Its behavior is
+selected by a closed typed policy rather than by separate structural,
+diagnostic, checker, and call-solver match trees:
 
 ```rust
+pub(crate) enum CompatibilityPolicy {
+    Recovery,
+    SelectedCall,
+    Invariant,
+}
+
+pub(crate) enum CompatibilityOutcome {
+    Exact,
+    Compatible(CompatibilityEvidence),
+    Mismatch(TypeMismatch),
+    Unresolved(UnresolvedCompatibilityCause),
+}
+```
+
+`Recovery` is the normal checker policy. It preserves deterministic cascade
+suppression for an already diagnosed `TypeKind::Error`, checker-local
+`Named("_")`, and recovered or inferred array lengths. It also owns the normal
+directional language relations: `Never`, unique Choice injection, erased
+families, Ref payload specialization, Agent values, Bytes, ActionName,
+nominals, functions, and effect rows.
+
+`SelectedCall` owns the same directional language relation only after generic
+normalization. It rejects every error, poison, checker-local `_`, inferred
+array length, unresolved projection, unclosed generic, and unknown effect tail.
+Non-recovered array lengths are exact: constants must be equal and generic
+lengths must have the same declaration-owned identity. A generic type parameter
+is never treated as a wildcard by this policy; binding is exclusively the
+constraint transaction's responsibility. Only a parameter classified as
+bindable or future-eligible by the candidate scope can be unclosed. A rigid
+enclosing generic is compared by its exact identity and is not rejected merely
+for remaining generic.
+
+`Invariant` is the fail-closed final-fact validation policy. It rejects
+recovery and unresolved values but preserves the normal directional language
+relation, including StageActor family widening, unique Choice injection, Ref
+payload specialization, and effect-row admission. A rigid enclosing generic is
+a checked atom under this policy: the same declaration-owned generic identity
+is compatible with itself and is not an unclosed call parameter. No final
+validator calls the recovery wrapper.
+
+`TypeKind::accepts` is only the convenience entry for `Recovery`. It does not
+own recursion. `TypeKind::first_mismatch` is a strict structural diagnostic
+projection that compares constructor, payload, owner, arity, and child
+identity without directional widening. Its mismatch is independent of every
+acceptance verdict: two types may have a structural mismatch while Recovery or
+Invariant still accepts the directional relation. The standalone array-length
+acceptance helper is deleted; array-length comparison is a node of the one
+engine. `mismatch.rs` retains the typed mismatch path/reason values but no
+recursive type algebra. The duplicate nominal, Choice, Agent-value,
+function/effect, and terminal acceptance match trees in the checker and
+constraint solver are deleted.
+
+The engine accepts a lower traversal observer. A normal check uses the no-op
+observer; a candidate run supplies its `TypeConstraintContext`, so every
+compatibility descent is charged and cancellation-checked by the same run.
+Calling the unmetered recovery convenience entry from a selected-call seal is
+forbidden.
+
+### 3.2 Lower solution and parameter scope
+
+One private candidate transaction owns all constraints. The types layer owns
+the complete parameter scope and the only solution representation:
+
+```rust
+pub(crate) struct TypeConstraintParameterScope {
+    // exact declaration-owned parameter inventory and eligibility
+}
+
+pub(crate) enum TypeConstraintParameterEligibility {
+    Rigid,
+    Bindable,
+    FutureEligible,
+}
+
+pub(crate) struct TypeConstraintSolution {
+    // normalized binding rows only
+}
+
 struct PreparedCallConstraintSet {
     issuer: CheckedCallSite,
     inherited: Option<Arc<FrozenCallTypeSolution>>,
+    parameter_scope: TypeConstraintParameterScope,
     receiver: Option<PreparedReceiverConstraint>,
     arguments: Box<[PreparedArgumentConstraint]>,
     expected_result: Option<TypeKind>,
 }
-
-pub(crate) struct FrozenCallTypeSolution {
-    bindings: Box<[CheckedTypeArgumentBinding]>,
-    deferred: Box<[DeferredContinuationParameter]>,
-    digest: FrozenCallTypeSolutionDigest,
-}
 ```
 
-The deterministic solver order is inherited continuation, candidate
-instantiation, receiver, authored arguments in source order, expected result,
-occurs/unicity checks, final slot reprojection, result closure, then candidate
-score. It produces a most-general unifier. Multiple semantic solutions reject
-as `AmbiguousInstantiation`, cycles as `CyclicInstantiation`, and a terminal
-unclosed result as `IncompleteInstantiation`.
+`TypeConstraintSolution` is opaque and does not implement `Clone`. A completed
+solution is shared only as `Arc<TypeConstraintSolution>`; callable code cannot
+construct a binding, copy a binding map, merge solutions, or observe a
+transaction frontier. The lower owner supplies consume-only projection and
+one sorted binding iterator on a completed solution. It owns no callable group,
+first-remaining-group, continuation, or deferred-parameter row. No
+pre-normalization, pre-merge, or provisional binding getter exists.
 
-The solver is an exhaustive bounded relation owned by `TypeKind`, not the old
-per-slot observer:
+`TypeConstraintParameterScope` enumerates every exact
+`GenericTypeParameterId` visible to the candidate and classifies it as rigid,
+bindable now, or eligible to remain for a future prefix. The lower scope can
+therefore reject an out-of-scope binding, an attempt to bind a rigid enclosing
+generic, or an unbound parameter that is not future-eligible. It does not know
+or store a callable group index. The higher callable sealer alone proves which
+future group first owns an eligible parameter and constructs the corresponding
+`DeferredContinuationParameter`. A terminal call permits no such higher-owned
+deferred row.
+
+An inherited solution is admitted only from the exact previous continuation.
+Before the lower run, the higher layer validates its base/schema identity,
+current group, and higher-owned deferred rows against that continuation and
+derives the new lower parameter scope. The lower layer then verifies that every
+inherited binding is normalized, in scope, and complete under `SelectedCall`.
+Inherited bindings are immutable seeds: a later group may consume or extend
+them but cannot replace them. An invalid inherited contract is the first
+candidate failure and never falls back to a fresh empty scope.
+
+### 3.3 One reserved work session
+
+The callable layer creates one `CandidateConstraintWorkSession<'a>` with an
+exclusive `&'a mut ResolverWork` borrow per candidate run:
 
 ```rust
-pub struct TypeConstraintContext<'a> {
-    limits: TypeConstraintLimits,
-    cancellation: &'a AtomicBool,
-    work: TypeConstraintWorkReport,
-}
-
-pub struct TypeConstraintRun {
-    outcome: Result<TypeConstraintPaths, TypeConstraintError>,
-    report: TypeConstraintWorkReport,
-}
-
-impl TypeKind {
-    pub(crate) fn call_constraint_paths(
-        pattern: &TypeKind,
-        actual: &TypeKind,
-        context: TypeConstraintContext<'_>,
-    ) -> TypeConstraintRun;
+pub(crate) struct CandidateConstraintWorkSession<'a> {
+    work: &'a mut ResolverWork,
+    reservation: PendingCandidateConstraintReport,
 }
 ```
 
-`TypeConstraintContext` and its report are lower types-owned values. The
-callable layer projects `CallableLimits`, the exact remaining resolver-work
-budget, and its cancellation token into one context per candidate. The public
-entry consumes the context and always returns the outcome together with its
-final checked work/nodes/paths/bindings report, including on cancellation or
-failure. The callable layer checked-merges that report into resolver accounting
-exactly once before inspecting the outcome; the lower counters are observations
-of the one projected remaining budget, not a second budget. Cancellation loads
-use `Ordering::Acquire`.
+The pending reservation retains the exact `previous` full accounting report
+and the only checked `proposed` full report. While the session or its completed
+run exists, Rust's exclusive borrow prevents every other observation or update
+of that `ResolverWork`. The lower solver never receives it, and source
+callbacks receive only the narrow session methods required to charge their
+work.
 
-The context exposes the only methods that can
-enter a node, fork/merge a path, or add a binding. Each method performs, in
-order, cancellation load, checked work charge, arithmetic-overflow check,
-configured-limit check, and only then allocation/descent. Recursive code cannot
-increment counters or allocate a branch directly.
+The session projects the exact remaining limits and cancellation token into
+one lower `TypeConstraintContext`. Its context is the sole authority that may
+enter a node, fork or prune a branch, record a source callback, or add a
+binding. Every such operation performs, in order, an `Acquire` cancellation
+load, checked work charge, arithmetic-overflow check, configured-limit check,
+and only then allocation or descent. The context records each accepted delta
+directly in the session's `proposed` full report through its narrow observer;
+there is no detached lower report waiting for a caller merge.
 
-`TypeKind::call_constraint_paths`
-uses these rules:
+`finish` consumes the transaction and moves the session reservation into one
+`TypeConstraintRun`. The run owns its outcome but has no outcome getter while
+the reservation is pending. `complete(self)` infallibly commits the checked
+`previous -> proposed` full report, disarms the drop guard, releases the
+exclusive borrow, and only then returns the outcome. Dropping either an
+unfinished session or an uncompleted run performs the same infallible commit
+exactly once and releases the borrow; it never exposes the outcome. Success,
+mismatch, source failure, ambiguity, cancellation, overflow, configured-limit
+failure, and early return therefore account through the same path. There is no
+caller-side report merge, raw-work return, pending getter, or second completion
+operation.
 
-- a generic parameter either reuses an equal binding or binds to the actual
-  type; binding it to itself is a no-op and occurrence inside the actual type
-  is `CyclicInstantiation`;
-- equal unary/composite constructors recurse; project, accepted, and open
-  nominals require the same typed owner/rule and arity; arrays require the same
-  length, maps the same kind, borrow references the same kind/lifetime,
-  iterator states the same family, and Ref payloads recurse only for equal
-  entity kinds with compatible payload presence;
-- functions recurse over equal-arity parameter positions and result in the
-  existing expected-to-actual compatibility direction; effects are checked by
-  final `TypeKind::accepts` after substitution;
-- an expected `Choice` explores every alternative whose recursive constraint
-  relation yields at least one path; it does not call `accepts` while generics
-  are unbound. Choice-to-Choice explores bounded assignments covering every
-  actual alternative and merges compatible bindings. Substituted final types
-  then pass `accepts`. Zero paths is mismatch and more than one distinct
-  canonical binding map is ambiguous;
-- actual `Never` contributes no binding and proceeds to final acceptance;
-- exact nodes without generic descendants contribute no binding and are
-  checked only by final acceptance;
-- unchecked/open slots contribute no constraint; and
-- `TypeKind::Error`, poison, inference-bearing `Named("_")`, or any unresolved
-  compatibility placeholder rejects a selected seal.
+The limits are version-1 lower values and include explicit bounded nodes,
+branches, source probes/materializations, and solution bindings. They are
+projections of the one resolver reservation, not a second budget. Every
+checked update needed by the eventual full report occurs before work or
+allocation, so the drop-time commit itself cannot fail.
 
-`TypeConstraintLimits`, `TypeConstraintContext`, and
-`TypeConstraintWorkReport` are lower types-owned values; the types module does
-not depend on callable policy. Each
-candidate path is canonicalized by `GenericTypeParameterId`, deduplicated,
-then subjected to occurs checking. `CallableLimits` gains explicit
-`max_call_constraint_paths`, `max_call_constraint_nodes`, and
-`max_call_solution_bindings`. At each branch the order is cancellation check,
-checked work charge, arithmetic-overflow check, configured-limit check, then
-branch allocation/descent. Candidate failure
-precedence is invalid inherited solution, instantiation, receiver, first
-source-order argument, expected result, cycle, distinct-solution ambiguity,
-incomplete terminal/deferred closure, final expected acceptance, then score.
-Expected-result inference unifies the declared result pattern with context and
-then requires `context.accepts(projected_result)`.
+### 3.4 Callback-only source authority
 
-Physical probe traces may retain prefix hints. Published slot facts contain
-only final types reprojected from the frozen solution. `TypeParameterSubstitutions`
-may remain for nominal-only paths, but call selection, join, continuation, and
-execution consumers do not use it or re-run `observe`.
+The callable-owned candidate driver is generic over a
+`TypeConstraintClient`. The client is the only bridge to expression checking
+and semantic facts; the lower types transaction receives only types-owned
+constraints, projected callback results, and its traversal context:
 
-Singleton selection moves its sealed candidate transaction. Multi-candidate
-selection rolls probes back and moves a freshly sealed selected replay. No
-probe solution is cloned into publication.
+```rust
+pub(crate) enum ExpectedHint<'h> {
+    Unchecked,
+    Complete(&'h TypeKind),
+    Parametric {
+        expected: &'h TypeKind,
+        unbound: &'h [GenericTypeParameterId],
+    },
+}
+
+pub(crate) enum SourcePhase {
+    Probe,
+    Materialize,
+}
+
+pub(crate) struct SourceError<S, C> {
+    source: S,
+    phase: SourcePhase,
+    cause: C,
+}
+
+pub(crate) struct SourceProbeResult<B> {
+    actual: TypeKind,
+    canonical_branch: B,
+}
+
+pub(crate) enum MaterializedSourceRequest<'h, S, B> {
+    Unchecked {
+        source: S,
+        canonical_branch: &'h B,
+    },
+    Checked {
+        source: S,
+        expected: &'h TypeKind,
+        canonical_branch: &'h B,
+    },
+}
+
+pub(crate) trait TypeConstraintClient {
+    type Source: Copy + Ord;
+    type ProbeSemanticBranch: Eq + Ord;
+    type SealedBranchValue: Eq + Ord;
+    type SourceErrorCause;
+
+    fn probe_source<'h>(
+        &mut self,
+        source: Self::Source,
+        hint: ExpectedHint<'h>,
+        work: &mut CandidateConstraintWorkSession<'_>,
+    ) -> Result<
+        SourceProbeResult<Self::ProbeSemanticBranch>,
+        SourceError<Self::Source, Self::SourceErrorCause>,
+    >;
+
+    fn materialize_sources<'h>(
+        &mut self,
+        sources: &[MaterializedSourceRequest<'h, Self::Source, Self::ProbeSemanticBranch>],
+        work: &mut CandidateConstraintWorkSession<'_>,
+    ) -> Result<
+        Self::SealedBranchValue,
+        SourceError<Self::Source, Self::SourceErrorCause>,
+    >;
+}
+```
+
+The candidate driver creates the hint from the solver-owned projected expected
+type. `Complete(expected)` means that projection contains no bindable unbound
+parameter. `Parametric { expected, unbound }` carries the exact projected type
+and sorted declaration-owned parameters whose later binding can change the
+source result. `Unchecked` has no expected constraint and cannot later acquire
+one. The callback borrows these values only for its invocation and cannot
+retain or rewrite them. There is no reverse source-to-solver hint query.
+
+The callback result is a separate value containing the checked actual type and
+canonical semantic branch, or a typed `SourceError`; it is never encoded into
+the hint. Both callbacks receive only the narrow mutable candidate work session
+needed to charge expression/source work. They cannot access the underlying
+`ResolverWork` or any pending accounting report.
+
+Every source probe executes in a fresh client-owned semantic checkpoint;
+parametric alternatives each receive a distinct checkpoint. The callback
+returns only its actual type and canonical
+`ProbeSemanticBranch`; its facts are rolled back before another branch is
+visited. It cannot publish an expression, argument fact, alternative, or
+application and cannot inspect the solver frontier. A failure is a typed
+`SourceError` carrying exact source identity, `Probe`/`Materialize` phase, and
+the client's typed cause. Source errors are not flattened into a boolean
+mismatch or a string diagnostic.
+
+### 3.5 Correlated frontier and final materialization
+
+The deterministic constraint order is:
+
+1. validate and seed the inherited continuation solution;
+2. constrain the complete base instantiation;
+3. constrain the receiver;
+4. constrain arguments by authored argument ordinal and then physical slot
+   ordinal;
+5. constrain the expected result in the reverse direction required by
+   `context` accepting the projected result; and
+6. close and materialize the whole candidate before computing its score.
+
+Each frontier row retains both its binding state and the ordered canonical
+probe-semantic branch trace. Rows with equal bindings but different semantic
+branches are not deduplicated. A Choice is explored inside the current row;
+failure prunes only that branch. It never discards another row, resets the
+frontier for the next equation, or merges source evidence by binding alone.
+Choice-to-Choice covers every actual alternative under the same correlated
+row. Actual `Never` contributes no binding. Unchecked/open supplies contribute
+neither a constraint nor a semantic Choice branch.
+
+After every constraint has been added, the transaction performs these phases
+in exactly this order:
+
+1. normalize each complete binding environment to a fixed point;
+2. perform occurs checking and reject cyclic instantiation;
+3. prune every remaining Choice branch with the metered `SelectedCall`
+   compatibility engine, including exact array-length and closed-effect checks;
+4. canonicalize binding environments while retaining the complete ordered set
+   of correlated probe traces for each binding;
+5. for every correlated trace inside each canonical binding, reset the client
+   to the same pre-probe semantic baseline and invoke `materialize_sources`,
+   checking that trace's exact source list in authored argument/slot order with
+   the final projected expectations;
+6. prune a trace that semantically no longer satisfies final materialization,
+   retain a typed source error as an error, seal every successful private
+   branch value, and coalesce equal sealed values within that binding by their
+   canonical typed identity;
+7. discard a binding with no surviving value, reject semantic-branch ambiguity
+   when one binding has more than one distinct final sealed value, then require
+   unicity of the surviving `(canonical binding, sealed branch value)` pair
+   across bindings;
+8. project every checked slot, receiver, result, and future-eligible parameter
+   from that unique pair for the higher callable sealer; and
+9. `finish`, followed by the exactly-once `run.complete()` accounting commit.
+
+Two Choice paths that reach the same binding are not represented by one
+optional branch token. That binding retains every correlated trace through
+materialization. Traces that produce the same sealed final value coalesce;
+only different final values for that binding create semantic-branch ambiguity.
+Different canonical bindings remain distinct even if their source facts look
+the same. Zero pairs is mismatch, more than one surviving pair is
+`AmbiguousInstantiation`, a cycle is `CyclicInstantiation`, and a bindable
+terminal parameter that remains unclosed is `IncompleteInstantiation`.
+
+Failure precedence is invalid inherited contract, base instantiation,
+receiver, first authored argument/slot, expected result, normalization or
+cycle, final Choice rejection, first source-order materialization error,
+pair ambiguity, incomplete terminal/deferred closure, projection validation,
+then score. A later source error cannot replace an earlier source error, and a
+source error retains its phase/cause instead of becoming a generic candidate
+mismatch.
+
+`materialize_sources` is not a speculative shortcut. Every correlated trace
+of each canonical binding is re-evaluated from the identical client baseline
+in an isolated transaction, in exact source order, and may produce a move-only
+private prepared branch. Nonselected materializations are rolled back. This
+preserves first-source failure precedence and prevents facts from one binding
+or Choice path leaking into another. Final public slot facts contain only types
+and evidence projected after this phase; prefix probe hints are diagnostic
+evidence only.
+
+### 3.6 B3 ownership and replay sequence
+
+The B3 integration sequence is one candidate-wide operation:
+
+1. prepare mapper destinations, schema alternatives, typed evidence, and
+   source projections without publishing facts;
+2. create the exact parameter scope and inherited seed;
+3. exclusively borrow `ResolverWork` into one candidate work session;
+4. add base, receiver, source-ordered argument, and expected-result
+   constraints to one transaction;
+5. complete the correlated solve and ordered materialization once;
+6. move the unique `Arc<TypeConstraintSolution>`, coalesced sealed branch
+   value, final projections, and score into `PreparedCandidateTransaction`; and
+7. keep that transaction private until the C sealer can consume it.
+
+`TypeParameterSubstitutions` may remain for nominal-only paths, but call
+selection, join, continuation, and execution never use it or re-run `observe`.
+There is no per-equation run, caller-side binding merge, expected-dependent
+Option/Result schema, result override, or join-side inference.
+
+For a singleton candidate, the selected path moves its complete prepared
+transaction and retained semantic checkpoint; no solution, source branch, or
+argument vector is cloned into publication. For multiple candidates, every
+probe is isolated and rolled back. Selection starts a fresh checkpoint and
+performs the entire candidate transaction again in `SelectedReplay`, including
+one new reserved work session, all constraints, source materialization, final
+projection, and scoring. Replaying only the arguments is forbidden. The replay
+transaction is then moved to the private call analysis and later consumed by
+the C sealer.
 
 ## 4. Language intrinsic generic ownership
 
@@ -388,6 +639,12 @@ pub struct CheckedCandidateInventory {
     digest: CheckedCallCandidateInventoryDigest,
 }
 
+pub struct FrozenCallTypeSolution {
+    solution: Arc<TypeConstraintSolution>,
+    deferred: Box<[DeferredContinuationParameter]>,
+    digest: FrozenCallTypeSolutionDigest,
+}
+
 pub struct CheckedCallApplicationCore {
     site: CheckedCallSite,
     current_group: CallableGroupIndex,
@@ -405,6 +662,18 @@ pub struct CheckedCallApplication {
     digest: CheckedCallApplicationDigest,
 }
 ```
+
+`FrozenCallTypeSolution` is the callable-sealed handle to the sole lower
+solution. It owns an `Arc<TypeConstraintSolution>` whose pointee is opaque and
+non-`Clone`; it does not copy its normalized bindings into a callable-owned
+collection. Deferred continuation parameters are deliberately higher-owned:
+the callable sealer derives and sorts `deferred` after proving each row's exact
+first remaining group from the schema. It computes the version-1 digest from
+the lower solution's sorted completed binding iterator followed by those
+sorted deferred rows. Sharing a frozen solution between an application core
+and its continuation clones only the sealed `Arc` handle. Probe publication
+cannot clone or reconstruct the underlying solution: the first frozen handle
+is created by consuming the completed candidate transaction.
 
 `PreparedResolvedCallable` is an issuer-only resolver object. It may contain
 raw lookup IDs, origin, schema pointers, probe state, and base instantiation,
@@ -1115,18 +1384,47 @@ decode/restore path validates through the same sealer rather than deriving
 These are compile-clean checkpoints inside the single C2 reviewable result,
 not independently accepted authorities:
 
-1. sema-root semantic-coordinate ownership, lower intrinsic generic owners,
-   value/source projection algebras, schema validation, and canonical digests;
-2. mapping source projections and the candidate-wide constraint solver with
-   its lower cancellation/work context;
-3. Option, Result, Agent, Collection, Reduction, and Fx schema migration with
-   no inference placeholders, plus fail-closed Traverse/Parallel deletion;
-4. dialogue fixed/custom rules and typed variant evidence;
-5. private prepared transaction and one post-catalog/effect publication;
-6. cumulative continuation and prepared callee migration;
-7. execution projection and compiler/runtime-plan/other consumer migration;
-8. validation-only join and Method/edge handoff; and
-9. deletion of every old authority followed by full C2 gates.
+1. replace the recursive compatibility copies with the sole types-owned
+   Recovery/SelectedCall/Invariant directional engine, make
+   `first_mismatch` an independent strict structural diagnostic, delete the
+   standalone array-length acceptance helper, and establish exact array,
+   rigid-generic, and unresolved policy matrices;
+2. establish the opaque non-`Clone` `TypeConstraintSolution`, exact
+   rigid/bindable/future-eligible `TypeConstraintParameterScope`, lower
+   traversal observer, and sorted completed binding iterator, with no lower
+   callable-group or deferred ownership;
+3. replace resolver accounting handoff with the exclusively borrowed
+   `CandidateConstraintWorkSession<'_>`, pending previous/proposed full-report
+   reservation, exactly-once infallible complete/drop commit, and
+   cancellation/limit accounting;
+4. add the callable-owned generic `TypeConstraintClient`, callback-lifetime
+   `ExpectedHint::{Unchecked, Complete, Parametric}`, typed source result and
+   phase/cause errors, narrow work-session access, isolated semantic probes,
+   and correlated binding/probe-trace frontier;
+5. implement branch-local Choice pruning followed by all-constraint
+   normalization, occurs checking, final Choice pruning, exact source-order
+   materialization of every correlated trace from one baseline per canonical
+   binding, sealed-value coalescing/pruning, pair unicity, final projection,
+   and run completion;
+6. migrate mapping source projections, parameter alternatives, typed evidence,
+   and the complete B3 base/receiver/argument/expected-result transaction;
+7. migrate Option, Result, Agent, Collection, Reduction, and Fx schemas with no
+   inference placeholders, plus fail-closed Traverse/Parallel deletion;
+8. migrate dialogue fixed/custom rules and typed variant evidence, and route
+   synthetic Dialogue through the same source callbacks and transaction;
+9. replace candidate probes with one move-only prepared transaction, singleton
+   move, multi-candidate full replay, and one private post-catalog/effect call
+   analysis;
+10. establish sema-root semantic-coordinate ownership, lower intrinsic generic
+    owners, canonical digests, higher-owned sorted deferred rows on
+    `FrozenCallTypeSolution`, cumulative continuation, and prepared-callee
+    sealing;
+11. publish the one final application, migrate execution projection and
+    compiler/runtime-plan/tooling consumers, then reduce join to validation,
+    Method enrichment, and move-only edge handoff; and
+12. delete every old substitution, provisional call fact, solver relation,
+    source reconstruction, and compatibility authority before running the full
+    C2 gates.
 
 No checkpoint may commit a public pending variant, fallback reader, dual call
 fact, incomplete witness/form enum, or compiler reconstruction path.
@@ -1137,7 +1435,8 @@ Implementation must cover:
 
 - ordinary optional generic `Option<i64>` versus clearable `None`, including
   equal final expected types but different alternative/solution/application
-  identity and both source orders;
+  identity and both authored source orders (`None` then `T`, and `T` then
+  `None`), with identical failure precedence and no order-selected binding;
 - illegal/aliased/local `None`, overlapping evidence, multiple fallback rows,
   custom clearable/non-clearable fields, and clear-capable rest rejection;
 - Reject/OpenSupply unknown-name admission, schema/name-sensitive
@@ -1147,7 +1446,25 @@ Implementation must cover:
   array-length, map-key, alternative, evidence, and solution tampering;
 - receiver-only inference, expected-result inference, terminal incomplete
   rejection, and continuation-owned deferred parameters;
+- a spurious-Choice matrix where equal intermediate bindings carry different
+  probe semantic branches, proving that a failed local Choice branch cannot
+  prune another row or survive final SelectedCall pruning;
+- callback-lifetime Complete, Parametric, and Unchecked expected hints,
+  including exact sorted Parametric unbound identities and an
+  expected-dependent probe whose final public facts come only from ordered
+  materialization and never from its speculative checkpoint;
+- every correlated trace for one canonical binding re-materialized from the
+  same baseline in both source orders, equal final sealed values coalescing,
+  different final sealed values remaining ambiguous, semantic failures
+  pruning only their trace, and typed materialization errors retaining their
+  source phase/cause;
+- different bindings remaining distinct even when their visible source types
+  match;
 - group-zero bindings consumed by later groups and exact curried base tamper;
+- inherited-solution rejection for wrong base/schema/scope, unknown or
+  duplicate parameter, non-normalized binding, changed inherited binding, and
+  incorrect deferred first-group ownership, plus legal immutable extension in
+  a later group;
 - every base-instantiation variant and payload-order/scalar/tag tamper;
 - singleton/replay application-core and final-application digest equality;
 - candidate producer-order invariance, canonical selected-index rewriting,
@@ -1169,6 +1486,15 @@ Implementation must cover:
   raw HIR/schema/name reread;
 - recursive solver cancellation at every node/path/binding boundary, checked
   counter overflow, exact report accounting, and unchanged error precedence;
+- CandidateConstraintWorkSession accounting on success and every failure,
+  previous/proposed full-report reservation, attempted double completion,
+  exclusive-borrow enforcement, and pending session/run drop infallibly
+  committing exactly once while exposing no outcome;
+- Recovery/SelectedCall/Invariant matrices for Error, `_`, Never, Choice,
+  StageActor and other erased families, rigid enclosing generics,
+  functions/effects, and arrays; strict structural `first_mismatch` versus
+  directional Invariant acceptance; and exact constant/generic array lengths
+  with recovered/inferred lengths accepted only by Recovery;
 - compile-direction evidence that callable/final-analysis share the sole
   sema-root coordinate types and no callable-to-final-analysis dependency;
   and
