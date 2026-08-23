@@ -23,14 +23,18 @@ consume only sealed `FinalSemanticAnalysis`.
 C2.1 lower owners
   -> C2.2a projection context/expander foundation
   -> C2.2b accepted environment Record authority
-  -> C2.3 exact C2 owner rows and producers
-  -> C2.4 draft/Entry seal + exhaustive visitor + sealed catalogs
+  -> C2.3 exact final row types + projection-independent rows + prepared seeds
+  -> finalized call joins + Method enrichment
+  -> C2.4 exhaustive visitor + digest-order projection + seed/Entry seal
   -> C2.5 deletions
   -> C2.6 gates and one reviewable commit/push
 ```
 
-The exhaustive visitor has a real type dependency on every C2.3 owner row and
-therefore belongs to C2.4, not C2.2a. The C2.2a final-analysis wrappers are
+The exhaustive visitor has a real type dependency on every C2.3 final row and
+prepared seed family and therefore belongs to C2.4, not C2.2a. A C2.3 producer
+must not project during source traversal because that would change aggregate
+budget and first-error precedence from semantic-digest order to source order.
+The C2.2a final-analysis wrappers are
 temporary delegates used only to keep development compiling while the context
 is extracted. They confer no ownership, are not an independently acceptable
 cut, and must be deleted before C2.4 publishes the single catalog. No
@@ -41,13 +45,13 @@ intermediate C2 state is committed or pushed.
 | Authority | Final owner | Construction input | Consumers | Deleted parallel input |
 |---|---|---|---|---|
 | Entry catalog and Entry reference | sealed `FinalSemanticAnalysis` | private draft + Entry checker | compiler selection, lowering, tooling | compiler-owned catalog field; HIR-only reference |
-| project runtime nominal projection | sema `RuntimeNominalProjectionCatalog` | symbols + accepted type map | Entry, field/case rows, compiler | post-seal re-expansion |
+| project runtime nominal projection | sema `RuntimeNominalProjectionCatalog` | complete prepared inventory + symbols + moved accepted type map | Entry, field/case rows, compiler | source-order/per-producer projection; post-seal re-expansion |
 | environment record/field | `AcceptedNominalRecord` + `AcceptedNominalSemantics::Record` | accepted ID/path/type + ordered fields | type lookup, selection, patterns, catalog/world digest | all `TypeCheckEnv::nominal_records` maps |
 | project item ID | sema checked project item | PublicId/declaration digest + family/type | value/entity transcript and coverage | public spelling/raw item as identity |
-| variant case | sema owner case table | typed owner/projection/catalog | expression, pattern, coverage | name vector and selected clone |
-| record field | shared sema field-ID enum | project projection or environment row | selection, patterns | reader-side name lookup |
+| variant case | sema owner case table | projection-independent owner or consumed project seed + cached row | expression, pattern, coverage | name vector and selected clone |
+| record field | shared sema field-ID enum | consumed project seed + cached row or exact environment row | selection, edge facts, patterns, lowering | reader-side name lookup |
 | Character look | sema checked StageLook | accepted manifest row | StageLook transcript | open HirName fallback |
-| callable method | callable join + sema selection | checked call join | select transcript | method name authority |
+| callable method | callable join + sema selection | one post-finalization join map, moved to edge facts | select transcript | method name authority; edge-time rejoin |
 | Effect | `EffectId` | canonical parsed identity | expression transcript | display/source spelling |
 | Agent field | core `RuntimeAgentField` | closed owner enum | select transcript | scattered match helper |
 | Progress field | sema `ProgressField` | closed owner enum | select transcript | name mapping at transcript |
@@ -69,13 +73,15 @@ and passes that borrowed catalog to reachability/lowering. The
 `CompiledProject.checked_entries` storage field is deleted; its accessor
 delegates to the analysis so downstream APIs do not gain a second catalog.
 
-Project field lowering migrates to the checked nominal projection plus its
-accepted runtime field ordinal and deletes semantic use of the diagnostic
-name. Environment field rows remain owned by their accepted environment
-schema; no compiler reader may reinterpret the diagnostic name as a runtime
-coordinate. Runtime-plan lowering rejects that owner through a typed
-owner/ordinal error until a separate accepted runtime structural-record
-authority exists; defining such an algebra is outside this C2 request.
+Project field lowering consumes the sealed selection/record row's runtime
+semantic owner, runtime field ID, and field type identity and deletes semantic
+use of the diagnostic name. Project record-expression fields move into checked
+child-edge facts; project record-pattern fields retain their typed runtime
+coordinate. Runtime-plan expression/pattern readers no longer call a
+name-to-field resolver. Environment field rows remain owned by their accepted
+environment schema and reject executable lowering through
+`UnrepresentableEnvironmentRecordField { owner, ordinal }`; defining a runtime
+structural-record algebra is outside this C2 request.
 
 Environment field lookup goes only through
 `TypeCheckEnv.nominal_catalog().exact(path)` and the borrowed Record semantics

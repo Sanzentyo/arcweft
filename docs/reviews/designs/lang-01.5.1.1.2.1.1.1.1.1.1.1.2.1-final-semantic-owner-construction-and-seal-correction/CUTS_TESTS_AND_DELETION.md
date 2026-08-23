@@ -72,17 +72,21 @@ catalog/world digest sensitivity, ordinal overflow, cloned-Record identity
 mismatch, raw constructor privacy, exact catalog lookup, instantiation, and
 typed runtime-plan rejection without diagnostic-name lookup.
 
-## C2.3 — exact project/case/field/look rows
+## C2.3 — exact row types and prepared owner seeds
 
 Add private ID constructors, project item rows, one owner case table, selected
-ordinal access, project/environment record pattern rows, typed-binding facts,
-field/method selection rows, and manifest-joined StageLook. Every nominal row
-producer uses the single C2.2a projection context; no row owns another
-projector or projection cache.
+ordinal access, project/environment record pattern row types, typed-binding
+facts, field/method selection row types, and manifest-joined StageLook.
+Projection-independent families construct exact rows immediately. Project
+variant, field-selection, record-expression, and record-pattern producers
+construct private consumable seeds with no layout, semantic-ID, or runtime-field
+placeholder. They do not call the C2.2a delegate/context during source
+traversal.
 
-The checked-call join builder produces `CheckedCallableJoinDigest` once. A
-private call-join staging map is moved into final edge facts after method/View
-callee enrichment; it is not retained beside them.
+After checked callables and final call facts complete, the checked-call join
+composer produces `CheckedCallableJoinDigest` once. A private call-join map is
+used for Method callee enrichment and moved into final edge facts; it is not
+retained beside them and edge publication does not rejoin.
 
 Delete in this subcut:
 
@@ -95,20 +99,26 @@ Delete in this subcut:
 - `CheckedProjectItemFamily`/`CheckedReceiverMode` sketches or any equivalent
   duplicate types.
 
-Tests cover every owner family, generic/project layout changes, payload
+This checkpoint is not commit-ready: its projection-dependent seeds and the
+temporary C2.2a delegates must be consumed/deleted by C2.4.
+
+Tests cover every projection-independent owner family, payload
 presence, selected ordinal mismatch, Character/Builtin/Option/Result case
-order, project/environment field selection and record patterns, typed Choice
+order, typed Choice
 binding annotations, stale world/revision, opaque-constructor privacy, and
 Character look selection-order invariance with selection-payload sensitivity.
 
 ## C2.4 — private Entry seal and complete nominal publication
 
 Introduce the draft, narrow Entry authority, prepared Entry references, and
-sealed Entry catalog ownership. Now that the exact C2.3 families exist, add the
-exhaustive typed projection request visitor over every prepared and final fact
-family, finish the complete projection catalog, and publish both catalogs only
-through `FinalSemanticAnalysis`. Change `analyze_final_project` error handling
-and compiler phase mapping.
+sealed Entry catalog ownership. Consume the draft into disjoint parts, create
+one context borrowing the moved type-map part, and add the exhaustive typed
+projection request visitor over every prepared and final fact family. Project
+the deduplicated inventory in semantic-digest order, consume every C2 seed from
+cached rows, check Entry through cached lookups, finish the complete projection
+catalog, and publish both catalogs only through `FinalSemanticAnalysis`.
+Consume the prepared call-join map into final edge facts without rejoining.
+Change `analyze_final_project` error handling and compiler phase mapping.
 
 Delete in this subcut:
 
@@ -134,6 +144,14 @@ Tests cover:
   binding digest copy;
 - every actual C2.3 prepared/published projection visitor family, including a
   nested/generic nominal reachable only through each family;
+- a source-order/digest-order differential proving projection error precedence;
+- seed consumption leaves no prepared/final parallel row and performs zero
+  projection after inventory processing;
+- one callable join composition per selected call, Method enrichment from that
+  join, and move-only edge publication without a second join;
+- project record-expression edge fields and record-pattern runtime fields lower
+  without diagnostic-name lookup, while environment rows fail with the typed
+  owner/ordinal error;
 - first digest-ordered missing cached projection at final seal, borrowed
   post-seal lookup, and zero post-seal expansion;
 - compile-fail/private API evidence for draft construction and unsealed

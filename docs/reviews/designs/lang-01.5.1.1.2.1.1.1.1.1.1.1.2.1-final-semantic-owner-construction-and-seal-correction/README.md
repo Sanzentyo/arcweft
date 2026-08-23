@@ -25,11 +25,15 @@ The selected design is:
 - put exhaustive semantic behavior on the legitimate Effect, Agent, Progress,
   View, and Style owners.
 
-Implementation remains one uncommitted sequence through C2.6: the projection
-context foundation precedes C2.3 rows, while the exhaustive prepared/final
-visitor and catalog seal follow those rows in C2.4. Temporary C2.2a
+Implementation remains one uncommitted sequence through C2.6. C2.3 introduces
+the exact final row types and private consumable producer seeds, but project
+case/field/record rows are constructed only by the C2.4 global seal after its
+exhaustive request visitor has projected requests in semantic-digest order.
+Checked callable joins are likewise composed once after callable finalization,
+used to enrich Method rows, and moved into final edge facts. Temporary C2.2a
 final-analysis delegates are compile-only scaffolding and are deleted before
-the single reviewable C2 commit/push.
+the single reviewable C2 commit/push; no source-order projection bridge is an
+accepted intermediate cut.
 
 Accepted C1 HIR topology, child roles, semantic paths, and View callable
 publication are unchanged.

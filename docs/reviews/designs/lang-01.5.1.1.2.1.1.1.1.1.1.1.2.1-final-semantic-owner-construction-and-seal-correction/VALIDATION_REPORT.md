@@ -30,11 +30,24 @@ created or changed.
   private environment field construction.
 - reconciled the implementation dependency so C2.2a extracts only the
   context/expander foundation, C2.2b establishes Record authority, C2.3 creates
-  the exact owner rows, and C2.4 alone adds the exhaustive visitor and seals the
-  catalogs; and
+  exact final types plus projection-independent rows and consumable seeds, and
+  C2.4 alone adds the exhaustive visitor, constructs projection-dependent rows,
+  and seals the catalogs; and
 - confirmed the temporary C2.2a delegating wrappers are explicitly forbidden
   as accepted completion, parallel authority, intermediate commit, or push and
   are deleted before final C2 publication.
+- re-audited the in-progress C2 implementation with Sol max and rejected
+  source-traversal projection because it changes aggregate-budget and
+  first-error precedence;
+- selected a post-Analyzer disjoint-parts seal so one borrowed context can
+  process the complete request inventory in semantic-digest order without an
+  `Arc` type-map authority or self-referential Analyzer;
+- closed Method ownership by composing one post-finalization join map, using it
+  for exact selection enrichment, and moving it into edge facts without a
+  second join; and
+- closed compiler/runtime-plan field ownership with typed project runtime
+  coordinates, move-only record-expression edge rows, typed pattern rows, and
+  owner/ordinal environment rejection.
 
 The proposed domains are:
 
@@ -71,5 +84,7 @@ None. All result-changing choices in the request are closed.
 - Production implementation tests listed in
   `CUTS_TESTS_AND_DELETION.md` remain implementation acceptance criteria, not
   design validation evidence.
-- No Cargo or production test command was run for this documentation-only
-  cut-order amendment.
+- No additional Cargo or production test command was run for this
+  documentation-only phase-boundary amendment. Focused callable-join tests run
+  against the concurrent implementation are recorded with that implementation
+  cut, not as design validation.

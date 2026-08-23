@@ -146,13 +146,31 @@ full sealing path; a manual fixture cannot bypass Entry completeness.
 - checked cancellation.
 
 `NominalSchemaExpander` consumes this context instead of a published analysis.
-In the final C2 architecture, implemented in C2.4 after the C2.3 owner rows, a
-single exhaustive typed visitor walks every prepared type, local, capture,
-expression (both prepared variants), pattern, statement, item, call, callable,
+Analyzer never owns this context and no C2.3 producer projects during source
+traversal. Analyzer first moves its resolved type map and private consumable C2
+owner seeds into `FinalSemanticAnalysisDraft`. The visitor borrows the complete
+draft to produce an owned ordered inventory; the draft is then consumed into
+disjoint parts and one local context borrows the moved type-map part. This
+avoids both a self-referential Analyzer and an unnecessary `Arc` authority.
+
+In the final C2 architecture, implemented in C2.4 after the C2.3 final row
+types and prepared seed types exist, a single exhaustive typed visitor walks
+every prepared type, local, capture, expression/pattern typestate variant,
+statement, item, call, callable,
 Entry role, and C2 owner row. It recursively visits every `TypeKind` child and
 emits a typed `RuntimeNominalProjectionRequest` for every
 `CheckedProjectNominal`; raw names and source scans are forbidden. Requests are
 deduplicated and processed in `SemanticTypeDigest` order.
+
+Project variant, field selection, record-expression field, and record-pattern
+producers emit private seeds containing only already checked owner, ordinal,
+payload/type, target, and diagnostic evidence. A seed contains no layout,
+semantic-ID, runtime-field, or other final-row placeholder. After the complete
+inventory is projected, the seeds are consumed exactly once using cached
+lookups to construct the exact C2 final rows. Entry checking is also
+cached-lookup-only. `RuntimeNominalProjectionContext::finish` ends the borrow
+of the type-map part before the draft is reconstructed and consumed by final
+publication. No prepared seed coexists with its final row.
 
 Each root resets its per-root `ProjectionBudget`; project aggregate work is
 never reset. The context memoizes by `SemanticTypeDigest`, detects a visiting
@@ -178,7 +196,20 @@ request-inventory accounting; request/catalog identity comparison; first
 digest-ordered missing projection. A borrowed post-seal lookup checks requested
 versus row identity before reporting `MissingCachedProjection`.
 
-## 6. Ordered environment record authority
+## 6. Callable join and Method handoff
+
+Checked callable construction and final call effects complete before any
+Method selection becomes a final C2 row. One private composer runs after
+`finish_checked_callables` and `finalize_call_facts`, reusing the sole
+`method_key_for_call`/`validate_selected_call` seam to create
+`BTreeMap<ExprId, Result<CheckedCallableJoin, CheckedCallableJoinError>>` once.
+The accepted join supplies `CheckedCallableJoinDigest`, receiver semantic type,
+and `CallableReceiverMode` to enrich the exact callee Select row. The same map
+is moved through the draft/input and consumed into checked edge facts;
+`collect_checked_edges` never resolves or joins again and no join side map is
+published. Runtime-plan Method selection retains no method-name authority.
+
+## 7. Ordered environment record authority
 
 The environment-record option is selected without a second record catalog.
 `TypeCheckEnv::nominal_records` and its nested maps are deleted.
@@ -216,7 +247,19 @@ through their existing runtime nominal/layout authority. Environment rows are
 complete semantic transcript/coverage facts; they do not fabricate runtime
 representation.
 
-## 7. View modifier fails closed
+Project field and record seeds are sealed from the cached runtime nominal row.
+Project selections expose typed runtime owner/field/type coordinates; project
+record-expression field rows are moved into the atomic
+`CheckedExpressionEdgeFact` without changing the existing RecordField child
+role or its bytes, and project record-pattern rows retain their runtime field
+coordinate for lowering.
+Environment rows never fabricate a runtime layout. Executable lowering of an
+environment field or record pattern returns a typed
+`UnrepresentableEnvironmentRecordField { owner, ordinal }` error. Compiler and
+runtime-plan readers never reconstruct an owner or coordinate from a diagnostic
+name.
+
+## 8. View modifier fails closed
 
 There is no accepted View modifier catalog at the inspected revision. The
 `CheckedViewCall::Modifier` variant and `AcceptedViewModifierSemanticId` sketch
@@ -228,7 +271,7 @@ This does not reserve a modifier digest domain and does not create a successor
 request: there is no accepted executable modifier behavior to implement in
 this Match cut.
 
-## 8. C2/C3 boundary
+## 9. C2/C3 boundary
 
 C2 constructs exact typed owner rows and owner-defined leaf digests. It does
 not construct recursive expression, statement, body, RichText, Postfix child,
@@ -244,7 +287,7 @@ in order, maps accepted opens to checked `u32` token ordinals, maps closes to
 those ordinals, rejects missing/duplicate/foreign pairing, and hashes the
 stable ordinal—not `HirRichTextTagId`.
 
-## 9. Removed Select variants
+## 10. Removed Select variants
 
 Neither `TupleElement` nor `RecordElement` has a producer. Both variants and
 all validation/transcript/compiler readers are deleted in C2. Their existing

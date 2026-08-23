@@ -33,9 +33,23 @@ impl FinalSemanticAnalysis {
     pub const fn checked_entries(&self) -> &CheckedEntryCatalog;
 }
 
+pub struct CheckedExpressionRecordField {
+    source_ordinal: u32,
+    semantic_id: AcceptedRecordFieldSemanticId,
+}
+
+pub struct CheckedExpressionEdgeFact {
+    edges: Box<[(ExprId, CheckedExpressionChildRole)]>,
+    record_fields: Box<[CheckedExpressionRecordField]>,
+    callable: Option<CheckedCallableJoin>,
+}
+
 pub(crate) struct FinalSemanticAnalysisDraft {
     // collected existing maps, callables, type reports and work
     expressions: BTreeMap<ExprId, PreparedExpressionFact>,
+    patterns: BTreeMap<PatternId, PreparedPatternFact>,
+    callable_joins:
+        BTreeMap<ExprId, Result<CheckedCallableJoin, CheckedCallableJoinError>>,
 }
 
 pub(crate) struct PreparedEntryReference {
@@ -54,6 +68,9 @@ pub(crate) struct PreparedEntryExpression {
 pub(crate) enum PreparedExpressionFact {
     Complete(CheckedExpression),
     Entry(PreparedEntryExpression),
+    ProjectVariant(PreparedProjectVariantExpression),
+    ProjectField(PreparedProjectFieldExpression),
+    ProjectRecord(PreparedProjectRecordExpression),
 }
 
 impl PreparedExpressionFact {
@@ -75,15 +92,97 @@ pub(crate) struct PreparedEntrySemanticAuthority<'draft, 'project> {
     types: &'draft BTreeMap<TypeId, TypeKind>,
     items: &'draft BTreeMap<ItemId, CheckedItem>,
     calls: &'draft BTreeMap<ExprId, CallTargetFacts>,
-    nominal: &'draft mut RuntimeNominalProjectionContext<'draft>,
+    nominal: &'draft RuntimeNominalProjectionContext<'draft>,
+}
+
+pub(crate) struct PreparedExpressionShell {
+    ty: TypeKind,
+    type_selection: CheckedTypeSelection,
+    effects: EffectSet,
+}
+
+pub(crate) struct PreparedVariantCaseSeed {
+    ordinal: u32,
+    payload: Option<TypeKind>,
+    diagnostic_name: Option<String>,
+}
+
+pub(crate) struct PreparedProjectVariantOwnerSeed {
+    nominal: CheckedProjectNominal,
+    cases: Box<[PreparedVariantCaseSeed]>,
+}
+
+pub(crate) struct PreparedProjectVariantExpression {
+    shell: PreparedExpressionShell,
+    owner: PreparedProjectVariantOwnerSeed,
+    selected_ordinal: u32,
+}
+
+pub(crate) struct PreparedProjectFieldExpression {
+    shell: PreparedExpressionShell,
+    nominal: CheckedProjectNominal,
+    declaration_ordinal: u32,
+    field_type: TypeKind,
+    diagnostic_name: Option<HirName>,
+}
+
+pub(crate) struct PreparedProjectRecordExpressionField {
+    source_ordinal: u32,
+    declaration_ordinal: u32,
+    field_type: TypeKind,
+    target: ExprId,
+}
+
+pub(crate) struct PreparedProjectRecordExpression {
+    shell: PreparedExpressionShell,
+    nominal: CheckedProjectNominal,
+    fields: Box<[PreparedProjectRecordExpressionField]>,
+}
+
+pub(crate) enum PreparedPatternFact {
+    Complete(CheckedPattern),
+    ProjectVariant(PreparedProjectVariantPattern),
+    ProjectRecord(PreparedProjectRecordPattern),
+}
+
+pub(crate) struct PreparedProjectVariantPattern {
+    ty: TypeKind,
+    owner: PreparedProjectVariantOwnerSeed,
+    selected_ordinal: u32,
+}
+
+pub(crate) struct PreparedProjectRecordPatternField {
+    source_ordinal: u32,
+    declaration_ordinal: u32,
+    field_type: TypeKind,
+    target: PatternId,
+}
+
+pub(crate) struct PreparedProjectRecordPattern {
+    ty: TypeKind,
+    nominal: CheckedProjectNominal,
+    fields: Box<[PreparedProjectRecordPatternField]>,
+    has_rest: bool,
 }
 ```
 
-After Entry checking, `RuntimeNominalProjectionContext::finish` consumes the
-context and returns its catalog. `FinalSemanticAnalysisDraft::seal(self,
-CheckedEntryCatalog, RuntimeNominalProjectionCatalog, control)` is crate-private
-and consuming. It checks that `Entry` variants equal the exact Entry-reference
-expression inventory before creating the final expression map.
+Analyzer performs no projection. It first creates the complete draft. The
+exhaustive visitor borrows that draft once to produce an owned ordered request
+inventory, then `FinalSemanticAnalysisDraft::into_parts` consumes the draft so
+`types`, prepared expressions/patterns, joins, and all other maps can be
+borrowed or mutated as disjoint locals. One context borrows the moved `types`
+local and projects the owned inventory in `SemanticTypeDigest` order. Every
+project seed is then consumed through a cached lookup into its exact final row;
+Entry checking also uses cached lookup only.
+`RuntimeNominalProjectionContext::finish` consumes the context and ends the
+borrow before `FinalSemanticAnalysisDraft::from_sealed_parts` reconstructs the
+draft. No `Arc` type-map authority and no prepared/final parallel row is
+retained.
+
+`FinalSemanticAnalysisDraft::seal(self, CheckedEntryCatalog,
+RuntimeNominalProjectionCatalog, control)` is crate-private and consuming. It
+checks that `Entry` variants equal the exact Entry-reference expression
+inventory before creating the final expression map.
 
 `SemanticFactState::set_expression`, candidate capture, commit, and rollback
 operate on `PreparedExpressionFact`. Their journal stores the prior enum row,
@@ -96,8 +195,20 @@ match prepared {
     PreparedExpressionFact::Entry(entry) => {
         seal_entry_expression(entry, checked_entries)?
     }
+    PreparedExpressionFact::ProjectVariant(_)
+    | PreparedExpressionFact::ProjectField(_)
+    | PreparedExpressionFact::ProjectRecord(_) => {
+        return Err(FinalSemanticAnalysisError::UnsealedPreparedC2Owner)
+    }
 }
 ```
+
+The C2 seed types carry no layout, semantic ID, runtime field ID, or final row.
+Their raw `ExprId`/`PatternId` targets are lookup coordinates consumed while
+building stable checked edge/pattern rows and are never transcript bytes.
+Project declaration-order cases/fields are validated before seed construction;
+the seal repeats ordinal and cached projection identity checks before minting
+private semantic IDs.
 
 `seal_entry_expression` performs checked ID/public ID, source item, value type,
 then binding-digest-copy validation in that exact order.
@@ -237,6 +348,13 @@ pub enum NominalSchemaProjectionError {
     MissingCachedProjection { semantic_type: SemanticTypeDigest },
 }
 ```
+
+`from_prepared` includes every `PreparedExpressionFact` and
+`PreparedPatternFact` variant above. Projection-dependent seeds are request
+sources, not demand-order projection calls. `project_inventory` iterates only
+the inventory's ordered `by_semantic_type` map. Once it returns, C2 row sealing
+and Entry checking may call cached lookup but may not expand or charge another
+root.
 
 Each request starts a fresh `ProjectionBudget`. Context aggregate work is
 charged before request lookup; a cache miss then charges its root budget before
@@ -546,6 +664,33 @@ pub struct CheckedFieldSelection {
     diagnostic_name: Option<HirName>,
 }
 
+impl CheckedFieldSelection {
+    pub const fn owner_type(&self) -> SemanticTypeDigest;
+    pub const fn field(&self) -> CheckedFieldSemanticId;
+    pub const fn declaration_ordinal(&self) -> u32;
+    pub const fn field_type(&self) -> SemanticTypeDigest;
+    pub fn project_runtime_field(&self) -> Option<RuntimeRecordFieldId>;
+}
+
+pub struct RuntimeProjectFieldProjection<'analysis> {
+    owner: &'analysis RuntimeProjectNominalProjection,
+    field: RuntimeRecordFieldId,
+    field_type: SemanticTypeDigest,
+}
+
+impl RuntimeProjectFieldProjection<'_> {
+    pub const fn owner(&self) -> &RuntimeProjectNominalProjection;
+    pub const fn field(&self) -> RuntimeRecordFieldId;
+    pub const fn field_type(&self) -> SemanticTypeDigest;
+}
+
+impl FinalSemanticAnalysis {
+    pub fn project_runtime_field(
+        &self,
+        selection: &CheckedFieldSelection,
+    ) -> Result<Option<RuntimeProjectFieldProjection<'_>>, NominalSchemaProjectionError>;
+}
+
 pub enum CheckedSelectResolution {
     Method(CheckedMethodSelection),
     DialogueView {
@@ -575,6 +720,23 @@ not fabricate project nominal identity. Project rows continue to retain their
 accepted runtime field separately for compiler/runtime lowering. Existing C1
 `HirPatternChildRole` values remain unchanged; the checker joins their source
 field ordinal to the C2 row before constructing this sema-private coordinate.
+`FinalSemanticAnalysis::project_runtime_field` is a sealed-catalog lookup. It
+returns `None` only for an exact environment field row and validates project
+owner, field ordinal/runtime ID, and field type against the cached projection
+before returning a borrowed owner plus typed coordinate. It never projects or
+uses `diagnostic_name`.
+
+Existing `CheckedExpressionChildRole::RecordField { source_ordinal,
+accepted_field }` and all of its C1 transcript bytes remain unchanged. The
+atomic `CheckedExpressionEdgeFact` constructor requires exactly one
+`CheckedExpressionRecordField` for each such role and no extras. It validates
+equal source ordinals, declaration ordinal equal to
+`accepted_field.zero_based()`, child field-type digest, and the semantic ID
+derived from owner semantic type, layout, the role-owned runtime field ID,
+declaration ordinal, and field type. The role remains the only runtime
+coordinate owner; the adjacent row remains the only semantic field-ID owner.
+C3 hashes the unchanged role bytes followed by the atom from the same edge
+fact. No side table or duplicated runtime coordinate is retained.
 
 ## 7. Call joins, Effect, StageLook, View, and Style
 
@@ -585,6 +747,14 @@ pub struct CheckedCallableJoinDigest([u8; 32]);
 impl CheckedCallableJoin {
     pub fn semantic_digest(&self) -> CheckedCallableJoinDigest;
 }
+
+pub(crate) fn prepare_checked_callable_joins(
+    modules: &BTreeMap<HirModuleId, &HirModule>,
+    types: &BTreeMap<TypeId, TypeKind>,
+    expressions: &mut BTreeMap<ExprId, PreparedExpressionFact>,
+    calls: &BTreeMap<ExprId, CallTargetFacts>,
+    checked_callables: &CheckedCallableCatalog,
+) -> BTreeMap<ExprId, Result<CheckedCallableJoin, CheckedCallableJoinError>>;
 
 // effects.rs
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
@@ -611,6 +781,16 @@ pub struct CheckedViewCallee {
     kind: CheckedViewCalleeKind,
 }
 ```
+
+`prepare_checked_callable_joins` runs exactly once after
+`finish_checked_callables` and `finalize_call_facts`. Its sole private composer
+owns method-key construction plus `validate_selected_call`. Every successful
+join enriches the corresponding explicit Method callee with join digest,
+receiver type digest, and cloned `CallableReceiverMode`. The returned map moves
+through `FinalSemanticAnalysisInput`/draft and is consumed by
+`collect_checked_edges`; edge collection cannot call the composer or callable
+catalog again. Recovery errors move into the corresponding atomic edge error.
+No callable-join map is stored in `FinalSemanticAnalysis`.
 
 `EffectSemanticDigest` is:
 
