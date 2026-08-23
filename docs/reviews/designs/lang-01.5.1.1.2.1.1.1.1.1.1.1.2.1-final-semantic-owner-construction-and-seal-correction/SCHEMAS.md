@@ -714,7 +714,7 @@ pub enum CheckedSelectResolution {
 
 The source field name is used once to select a project/environment row, then
 retained only in `diagnostic_name`. `TupleElement` and `RecordElement` are
-absent. The sema-private stable pattern coordinate uses the shared semantic
+absent. The sema-root shared stable pattern coordinate uses the shared semantic
 field identity rather than `RuntimeRecordFieldId`, because environment rows do
 not fabricate project nominal identity. Project rows continue to retain their
 accepted runtime field separately for compiler/runtime lowering. Existing C1
@@ -739,6 +739,14 @@ C3 hashes the unchanged role bytes followed by the atom from the same edge
 fact. No side table or duplicated runtime coordinate is retained.
 
 ## 7. Call joins, Effect, StageLook, View, and Style
+
+The call shapes and phase boundary in this section are superseded and expanded
+by [CALL_APPLICATION_AUTHORITY_AMENDMENT.md](CALL_APPLICATION_AUTHORITY_AMENDMENT.md).
+In particular, `finalize_call_facts` means consuming the sole private prepared
+transaction through the unpublished core/continuation boundary into one sealed
+`CheckedCallApplication`; it does not rebuild a previously public selected
+fact. `prepare_checked_callable_joins` accepts only
+sealed applications and performs no type inference or result reconstruction.
 
 ```rust
 // callable/join.rs
@@ -782,8 +790,21 @@ pub struct CheckedViewCallee {
 }
 ```
 
+The exact order is:
+
+```text
+private prepared calls
+-> checked callable/effect catalogs
+-> stable candidate + application-core seal
+-> continuation/result + final application seal and sole publication
+-> inference-free join construction
+-> Method enrichment
+-> join-map move into edge facts
+```
+
 `prepare_checked_callable_joins` runs exactly once after
-`finish_checked_callables` and `finalize_call_facts`. Its sole private composer
+`finish_checked_callables` and the single final call-application publication.
+Its sole private composer
 owns method-key construction plus `validate_selected_call`. Every successful
 join enriches the corresponding explicit Method callee with join digest,
 receiver type digest, and cloned `CallableReceiverMode`. The returned map moves

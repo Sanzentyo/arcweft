@@ -24,7 +24,7 @@ C2.1 lower owners
   -> C2.2a projection context/expander foundation
   -> C2.2b accepted environment Record authority
   -> C2.3 exact final row types + projection-independent rows + prepared seeds
-  -> finalized call joins + Method enrichment
+  -> sealed call application authority + inference-free joins + Method enrichment
   -> C2.4 exhaustive visitor + digest-order projection + seed/Entry seal
   -> C2.5 deletions
   -> C2.6 gates and one reviewable commit/push
@@ -52,6 +52,8 @@ intermediate C2 state is committed or pushed.
 | record field | shared sema field-ID enum | consumed project seed + cached row or exact environment row | selection, edge facts, patterns, lowering | reader-side name lookup |
 | Character look | sema checked StageLook | accepted manifest row | StageLook transcript | open HirName fallback |
 | callable method | callable join + sema selection | one post-finalization join map, moved to edge facts | select transcript | method name authority; edge-time rejoin |
+| selected call application | sealed `CheckedCallApplication` over an unpublished acyclic core | one private candidate transaction + checked callable/effect catalogs + sole sema-root coordinate owner | compiler, runtime-plan projection, Need admission, verifier, Entry, LSP, project index, signature help, call join | provisional fact, common callee fact, `PendingCallAnalysis`, final rebuild, join/compiler inference |
+| call continuation | `CheckedCallResult::Continuation` | exact stable callable/schema + cumulative frozen solution + prefix application core | prepared function-value callee and next group solver seed | raw base clone and all duplicated `next_group` fields |
 | Effect | `EffectId` | canonical parsed identity | expression transcript | display/source spelling |
 | Agent field | core `RuntimeAgentField` | closed owner enum | select transcript | scattered match helper |
 | Progress field | sema `ProgressField` | closed owner enum | select transcript | name mapping at transcript |

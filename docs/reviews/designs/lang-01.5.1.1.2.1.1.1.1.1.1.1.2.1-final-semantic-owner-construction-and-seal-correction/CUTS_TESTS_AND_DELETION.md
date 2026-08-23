@@ -74,6 +74,13 @@ typed runtime-plan rejection without diagnostic-name lookup.
 
 ## C2.3 — exact row types and prepared owner seeds
 
+Before Method enrichment, complete the internal sealed-call sequence in
+[CALL_APPLICATION_AUTHORITY_AMENDMENT.md](CALL_APPLICATION_AUTHORITY_AMENDMENT.md):
+schema/source projection algebras, candidate-wide frozen solutions, language
+intrinsic generic schemas, dialogue typed actions, single call publication,
+cumulative continuation, compiler execution projection, and inference-free
+join. These checkpoints are part of C2.3 and are not independently commit-ready.
+
 Add private ID constructors, project item rows, one owner case table, selected
 ordinal access, project/environment record pattern row types, typed-binding
 facts, field/method selection row types, and manifest-joined StageLook.
@@ -98,6 +105,17 @@ Delete in this subcut:
 - runtime-plan/project-field semantic use of diagnostic field names; and
 - `CheckedProjectItemFamily`/`CheckedReceiverMode` sketches or any equivalent
   duplicate types.
+- provisional selected `CallTargetFacts`, common `CallTargetFacts.callee`,
+  `PendingCallAnalysis`, and final selected fact rebuild;
+- join-side substitution/optional/rest/receiver/result inference;
+- raw `None` spelling checks and duplicate dialogue clear classification;
+- `OpenChecked`/`OpenUnchecked`, raw open-name success, and any copied
+  execution-slot action;
+- contextual Option/Result schema rebuilding, inference-bearing `Named("_")`,
+  and constructor result overrides;
+- raw continuation base plus duplicated next-group authorities; and
+- compiler reconstruction of selected dispatch, callee/receiver sources,
+  receiver placement, operand binding, argument action, and partial-call shape.
 
 This checkpoint is not commit-ready: its projection-dependent seeds and the
 temporary C2.2a delegates must be consumed/deleted by C2.4.
@@ -107,6 +125,12 @@ presence, selected ordinal mismatch, Character/Builtin/Option/Result case
 order, typed Choice
 binding annotations, stale world/revision, opaque-constructor privacy, and
 Character look selection-order invariance with selection-payload sensitivity.
+Call tests additionally cover every differential and tamper case in the sealed
+call application amendment, including singleton/replay core and final identity,
+acyclic core/continuation/final sealing, raw-HIR-allocation invariance,
+direct/value callee and receiver source sealing, recursive cancellation/work
+accounting, terminal closure, deferred continuation, typed-rest composition,
+and compiler parity without raw reconstruction.
 
 ## C2.4 — private Entry seal and complete nominal publication
 

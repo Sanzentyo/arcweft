@@ -26,5 +26,13 @@
 | D18 | C1 | consume unchanged | topology/path redesign |
 | D19 | callable join handoff | compose one private call-owner join map after callable/call finalization, enrich Method from it, then move the same joins into edge facts | call-resolution-time digest, edge-time recomputation, final side map |
 | D20 | runtime field handoff | project rows expose typed runtime field coordinates; record expression rows move into child-edge facts and record pattern rows lower directly | restoring `CheckedProjectNominal`, source-name lookup, fabricated environment runtime layout |
+| D21 | call publication | one private prepared transaction, then an acyclic post-callable/effect core/continuation/final `CheckedCallApplication` seal; only the complete application publishes, and selected execution and unselected diagnostics are distinct | provisional public fact plus pending duplicate, final rebuild, execution API on recovery |
+| D22 | call typing | one candidate-wide MGU/frozen solution over inherited continuation, instantiation, receiver, arguments, and expected result | join inference, sequential retained witness, optional `T`/`Option<T>` search |
+| D23 | argument meaning | mapping-owned source projection composed with schema-owned typed value alternatives | one enum bag for declared/clear/rest/unchecked/unmapped, source spelling tests |
+| D24 | intrinsic generics | lower exhaustive language-intrinsic generic owners and closed terminal solutions | Option-only special case, `Named("_")`, unchecked/context-rebuilt schema, implicit `Never` defaults |
+| D25 | continuation | `CheckedCallResult::Continuation` is the only group/solution owner and creates curried candidates opaquely | raw base plus duplicated `next_group`, function-type schema reconstruction |
+| D26 | execution lowering | sealed sema execution projection owns generation-local callee/receiver/argument sources while the selected candidate owns dispatch | common callee fact; compiler HIR/name/schema reconstruction of dispatch, sources, receiver, operands, actions, or partial shape |
+| D27 | stable coordinates | move the C1 coordinate/path atom algebra and encoder into one sema-root lower owner shared by callable and final analysis | callable-to-final-analysis dependency, copied coordinate enum, raw local/function IDs in stable identity |
+| D28 | constraint control | one mutable lower `TypeConstraintContext` owns cancellation, checked work, node/path/binding limits, and report accounting at every recursive branch | limits-only recursion, callable-owned type traversal, unchecked side counters |
 
 All decisions are closed.

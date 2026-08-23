@@ -1,5 +1,37 @@
 # Source evidence
 
+## 2026-08-24 call-application amendment audit
+
+The amendment was audited at Git HEAD
+`958242ba4d6236fe37475a090bfadbe636de6594` with an intentionally dirty C2
+implementation. The earlier clean baseline below remains the evidence for the
+original package; this section records only the newly discovered call boundary.
+
+The audit found:
+
+- candidate evaluation created and discarded `TypeParameterSubstitutions`,
+  while the join separately inferred receiver/argument bindings;
+- provisional selected `CallTargetFacts` and `PendingCallAnalysis` duplicated
+  selected/result/argument state before final effect rebuilding;
+- dialogue clear re-read raw `None` spelling and typed rest lost its source
+  projection until join reconstruction;
+- curried continuation duplicated the group coordinate across call facts,
+  seeds, IDs, instantiation, schema projection, and compiler checks;
+- compiler re-read HIR/schema/names to reconstruct dispatch, receiver order,
+  named passing, and partial result;
+- the first sealed-row draft omitted callee-value and receiver-expression
+  sources, which would have forced compiler fallback to the common callee fact;
+- stable local/function callable identity needs C1 coordinates currently owned
+  under final analysis, requiring those atoms and their encoder to move to one
+  sema-root lower owner; and
+- bounded generic traversal had limits but no mutable lower cancellation/work
+  context, making branch-level cancellation/accounting unenforceable; and
+- `DomainMethodId::{Traverse, Parallel}` exposed pseudo schemas despite no
+  semantic Traversal type, accepted nominal, or runtime carrier.
+
+These findings require the sealed application authority in
+[CALL_APPLICATION_AUTHORITY_AMENDMENT.md](CALL_APPLICATION_AUTHORITY_AMENDMENT.md).
+
 ## Repository state
 
 - inspected date: 2026-08-23

@@ -1,5 +1,15 @@
 # Final design
 
+## Call application authority amendment
+
+The selected call-side authority is the complete model in
+[CALL_APPLICATION_AUTHORITY_AMENDMENT.md](CALL_APPLICATION_AUTHORITY_AMENDMENT.md).
+It is normative over earlier references to provisional call publication,
+retained sequential substitutions, reader-side expected/result projection,
+raw continuation pairs, or compiler reconstruction. D19's move-only callable
+join remains, but its input is a sealed application and it performs validation
+only.
+
 ## 1. One final publication owner
 
 `FinalSemanticAnalysis` remains the only published semantic fact product. It
@@ -208,6 +218,14 @@ and `CallableReceiverMode` to enrich the exact callee Select row. The same map
 is moved through the draft/input and consumed into checked edge facts;
 `collect_checked_edges` never resolves or joins again and no join side map is
 published. Runtime-plan Method selection retains no method-name authority.
+
+`finalize_call_facts` consumes issuer-only prepared candidates, resolves their
+stable identities through the sole sema-root semantic-coordinate owner, seals
+the unpublished application core, then continuation/result and the final
+application. Only that final application publishes. It owns generation-local
+callee/receiver/argument execution sources while its selected candidate remains
+the sole dispatch identity; compiler lowering reads neither a common callee fact
+nor raw HIR/schema/name data.
 
 ## 7. Ordered environment record authority
 

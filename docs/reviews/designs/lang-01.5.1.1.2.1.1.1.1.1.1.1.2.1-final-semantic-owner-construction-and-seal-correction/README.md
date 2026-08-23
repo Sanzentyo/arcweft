@@ -25,6 +25,12 @@ The selected design is:
 - put exhaustive semantic behavior on the legitimate Effect, Agent, Progress,
   View, and Style owners.
 
+The call-side correction is governed by the
+[sealed call application authority amendment](CALL_APPLICATION_AUTHORITY_AMENDMENT.md).
+It replaces provisional/final call duplication, discarded generic solutions,
+join-side inference, raw curried continuation reconstruction, and compiler
+schema/HIR reconstruction with one post-catalog/effect application seal.
+
 Implementation remains one uncommitted sequence through C2.6. C2.3 introduces
 the exact final row types and private consumable producer seeds, but project
 case/field/record rows are constructed only by the C2.4 global seal after its
@@ -42,6 +48,7 @@ The detailed authorities are:
 
 - [final design and state machine](FINAL_DESIGN.md)
 - [exact Rust-shaped schemas and transcript atoms](SCHEMAS.md)
+- [sealed call application authority amendment](CALL_APPLICATION_AUTHORITY_AMENDMENT.md)
 - [dependency and consumer ownership](DEPENDENCIES.md)
 - [compile-clean cuts, tests, and deletion](CUTS_TESTS_AND_DELETION.md)
 - [current source evidence](SOURCE_EVIDENCE.md)
