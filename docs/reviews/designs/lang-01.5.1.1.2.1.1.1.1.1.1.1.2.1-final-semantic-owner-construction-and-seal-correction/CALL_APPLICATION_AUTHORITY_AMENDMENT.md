@@ -317,7 +317,7 @@ imports `PreparedCallGraph`:
 
 ```rust
 pub(crate) fn validate_and_prepare_call_constraints(
-    graph: &PreparedCallGraph<AnalyzerPreparedCallPrefix>,
+    graph: &mut PreparedCallGraph<AnalyzerPreparedCallPrefix>,
     site: CheckedCallSite,
     candidate: PreparedResolvedCallable,
     mapping: PreparedCallArgumentMapping,
@@ -343,9 +343,28 @@ enum PreparedCallConstraintSeed {
     Frozen(Arc<FrozenCallTypeSolution>),
 }
 
-struct PreparedConstraintInitialization {
+pub(crate) struct PreparedConstraintInitialization {
+    issuer: Arc<PreparedCallGraphIssuer>,
     parameter_scope: TypeConstraintParameterScope,
     continuation_seed: PreparedCallConstraintSeed,
+}
+
+impl<P: PreparedCallPrefixPayload> PreparedCallGraph<P> {
+    pub(crate) fn validate_and_issue_constraint_initialization(
+        &mut self,
+        candidate: &PreparedResolvedCallable,
+        inventory: &CallableGenericParameterInventory,
+        enclosing: &EnclosingGenericParameterScope,
+    ) -> Result<PreparedConstraintInitialization, CallConstraintInvariant>;
+}
+
+impl PreparedConstraintInitialization {
+    pub(super) fn into_lower_parts(
+        self,
+    ) -> (
+        TypeConstraintParameterScope,
+        Option<Arc<TypeConstraintSolution>>,
+    );
 }
 
 enum CallConstraintPreparationError {
@@ -388,16 +407,48 @@ enum CallConstraintInvariant {
 }
 ```
 
-`PreparedCallConstraintSeed` and `PreparedConstraintInitialization` are owned
-by `callable/constraints.rs`, not by final analysis. The integration gate holds
-the resulting token inside `PreparedCallConstraintSet` but cannot construct or
-open its fields; after completing all higher validation it invokes the one
-callable-owned issuer method to pair the already sealed lower scope and exact
-callable seed. Consequently `CandidateConstraintWorkSession::start` imports no
-final-analysis type, and the token introduces no reverse layer dependency.
+`PreparedCallConstraintSeed` and `PreparedConstraintInitialization` live beside
+`PreparedCallGraph` in `callable/continuation.rs`, not in final analysis. Token
+fields and its constructor are private to that module. The only constructor
+call is inside
+`PreparedCallGraph::validate_and_issue_constraint_initialization`, reached by
+the production `validate_and_prepare_call_constraints` gate for all
+None/Prepared/Frozen states. That graph method resolves the candidate state,
+derives the exact required-inherited-key proof from the sealed schema inventory
+and deferred continuation proof, derives the separately ordered exact type rows
+and rigid-only const rows, asks types to seal that complete parameter scope,
+and atomically pairs scope, exact seed, and graph issuer. The integration
+gate may hold and move the result inside `PreparedCallConstraintSet` but cannot
+construct, inspect, or repair it.
 
-The entry point derives the group and optional seed from the candidate state;
-the analyzer may not pass raw group/solution pieces. For a base candidate it
+The graph issuer method is `pub(crate)` only because the analyzer-integration
+gate is a sibling module; it is a complete validating issuer, not a raw
+constructor. Its arguments are the sealed candidate/schema inventory,
+and enclosing scope; it derives current group and terminal/continuation state
+internally from the sealed schema plus candidate state, then derives the lower
+scope/key contract and seed. A caller-supplied terminal boolean or private
+terminal override capability does not exist, and every failure is typed before
+token construction.
+Repository source/privacy validation fixes the gate as its sole production call
+site. The token constructor itself remains module-private.
+
+The sole opener is the consume-only `pub(super) into_lower_parts`, called only
+by `CandidateConstraintWorkSession::start` from the sibling callable driver
+module. There is no `new`, `from_parts`, `for_tests`, `Default`, raw scope/seed
+constructor, or cfg-gated alternate issuer. A static API/privacy gate proves the
+single constructor and opener call sites. Driver, accounting, and lower
+integration tests live at the sema-root integration boundary and use a private
+production-issuer fixture that constructs a minimal real schema inventory,
+candidate state, mapper result, enclosing scope, and `PreparedCallGraph`, calls
+`validate_and_prepare_call_constraints`, and moves its real token into `start`;
+the fixture never exposes token fields or a raw constructor. Lower-only unit
+tests may exercise types-owned validators/accounting primitives directly but
+do not pretend to start the production driver. Consequently `start` imports no
+final-analysis type and the token introduces no reverse production dependency.
+
+Through the entry point, the graph issuer derives the group, terminality, and
+optional seed from sealed candidate/graph/schema state; the analyzer and entry
+point may not pass raw group/solution pieces or terminal state. For a base candidate it
 requires group zero and `None`. A pre-seal continuation candidate must contain
 an issuer-bound `PreparedCallContinuationRef`; the entry point resolves it only
 through the supplied graph and validates strict earlier-node dependency,
@@ -408,14 +459,19 @@ continuation must contain the exact `Frozen` handle and additionally validates
 prefix core and frozen-solution digest. Every foreign, stale, wrong-state,
 wrong-order, wrong-scope, or impossible prepared/frozen condition above is a
 `CallConstraintInvariant`; it is not a semantic candidate rejection. Neither
-route exposes a raw solution pair. The entry point then joins
-the schema inventory, exact base instantiation,
-receiver, enclosing rigid inventory, mapping, and terminal/continuation state
-to construct the only lower parameter scope. Candidate parameters first owned
-by the current or an already consumed group are bindable or immutable inherited
-bindings; a later-group or result-only parameter is future-eligible only while
-a continuation still exists; every foreign/enclosing parameter and every const
-is rigid. Terminal preparation emits no future-eligible row.
+route exposes a raw solution pair. The entry point separately validates the
+exact base instantiation, receiver, and mapping, and calls the graph issuer with
+the sealed candidate/schema inventory and enclosing rigid inventory shown in
+the signature. The graph issuer alone joins those arguments to its internally
+derived current-group/terminal/continuation state and constructs the only lower
+parameter scope. Candidate
+parameters first owned by an already completed prefix become exact required
+inherited keys; parameters first owned by the current group are bindable; a
+later-group or result-only parameter is future-eligible only while a
+continuation still exists; every foreign/enclosing parameter and every const is
+rigid. Terminal preparation emits no future-eligible row. These classifications
+and keys are consumed into the scope/token and are not retained as a higher
+side table.
 
 The same operation validates and consumes the mapper result and constructs all
 types-owned prepared source constraints described below. The mapper's closed
@@ -423,8 +479,9 @@ authored arity/name incompatibility algebra is `CallConstraintRejection`; type
 incompatibility later enters `TypeConstraintRejection`. Malformed mapper/schema
 evidence is an invariant because only sealed in-process producers can supply
 it. Its returned value is the only way to start the callable constraint driver.
-The gate pairs the derived scope and exact none/prepared/frozen seed into one
-move-only, field-private `PreparedConstraintInitialization`. It has no `Clone`,
+The gate obtains from the graph issuer one derived scope and exact
+none/prepared/frozen seed paired inside a move-only, field-private
+`PreparedConstraintInitialization`. It has no `Clone`,
 scope getter, seed getter, or public constructor. Starting a prepared-seed run
 consumes this token and shares the carrier's exact
 `Arc<TypeConstraintSolution>` only into lower initialization; a frozen-seed run
@@ -441,7 +498,23 @@ the complete parameter scope and the only solution representation:
 
 ```rust
 pub(crate) struct TypeConstraintParameterScope {
-    // exact declaration-owned parameter inventory and eligibility
+    type_parameters: Box<[TypeConstraintTypeParameterScopeRow]>,
+    const_parameters: Box<[TypeConstraintConstParameterScopeRow]>,
+    required_inherited: RequiredInheritedBindingKeys,
+}
+
+pub(crate) struct RequiredInheritedBindingKeys {
+    keys: Box<[GenericTypeParameterId]>,
+}
+
+pub(crate) struct TypeConstraintTypeParameterScopeRow {
+    parameter: GenericTypeParameterId,
+    eligibility: TypeConstraintParameterEligibility,
+}
+
+pub(crate) struct TypeConstraintConstParameterScopeRow {
+    parameter: GenericConstParameterId,
+    eligibility: TypeConstraintConstParameterEligibility,
 }
 
 pub(crate) enum TypeConstraintParameterEligibility {
@@ -450,8 +523,24 @@ pub(crate) enum TypeConstraintParameterEligibility {
     FutureEligible,
 }
 
+pub(crate) enum TypeConstraintConstParameterEligibility {
+    Rigid,
+}
+
+impl TypeConstraintParameterScope {
+    pub(crate) fn seal_call_scope<T, C, R>(
+        type_parameters: T,
+        const_parameters: C,
+        required_inherited_keys: R,
+    ) -> Result<Self, TypeConstraintInvariant>
+    where
+        T: IntoIterator<Item = TypeConstraintTypeParameterScopeRow>,
+        C: IntoIterator<Item = TypeConstraintConstParameterScopeRow>,
+        R: IntoIterator<Item = GenericTypeParameterId>;
+}
+
 pub(crate) struct TypeConstraintSolution {
-    // normalized binding rows only
+    // normalized GenericTypeParameterId -> TypeKind rows only; no const rows
 }
 ```
 
@@ -463,17 +552,48 @@ one sorted binding iterator on a completed solution. It owns no callable group,
 first-remaining-group, continuation, or deferred-parameter row. No
 pre-normalization, pre-merge, or provisional binding getter exists.
 
-`TypeConstraintParameterScope` enumerates every exact
-`GenericTypeParameterId` visible to the candidate and classifies it as rigid,
-bindable now, or eligible to remain for a future prefix. The lower scope can
-therefore return a typed `ParameterScope` invariant for an out-of-scope binding
-or impossible binding attempt. A well-formed relation against a rigid enclosing
-generic remains ordinary mismatch when the exact identities differ. The lower
-scope does not know or store a callable group index. The higher callable sealer
-alone proves which
-future group first owns an eligible parameter and constructs the corresponding
+`TypeConstraintParameterScope` enumerates every exact visible generic identity
+in two non-interchangeable, strictly ordered inventories. Type rows contain
+only `GenericTypeParameterId` and classify each type parameter as rigid,
+bindable now, or eligible to remain for a future prefix. Const rows contain
+only `GenericConstParameterId` and admit only the explicit `Rigid` state until
+the lower algebra owns const inference. The scope sealer rejects duplicate or
+unordered rows independently within each kind, any kind-confused identity, and
+any non-rigid const row; it never coalesces type and const namespaces or
+silently omits a const. Thus an inferable candidate const is rejected at schema
+construction, while a visible enclosing or candidate const is preserved as an
+exact rigid row and cannot become a solution binding. The lower scope can
+return a typed `ParameterScope` invariant for an out-of-scope type/const
+identity or impossible rigid binding attempt. A well-formed relation against a
+rigid enclosing generic remains ordinary mismatch when the exact identities
+differ. The lower scope does not know or store a callable group index. The
+higher callable sealer alone proves which future group first owns an eligible
+type parameter and constructs the corresponding
 `DeferredContinuationParameter`. A terminal call permits no such higher-owned
 deferred row.
+
+`RequiredInheritedBindingKeys` is a types-owned, field-private, sorted unique
+contract over type-parameter identities only. A const identity cannot be
+represented in this contract. Higher preparation derives its keys
+from the schema-sealed generic inventory plus the exact completed/deferred
+continuation proof: it contains every inferable candidate type parameter first
+owned by an already completed prefix and no enclosing rigid, const, current-
+first-use, or future-first-use parameter. The types-owned scope sealer validates
+strict parameter-identity order and uniqueness without sorting/repair, and that
+each key occurs exactly once as a candidate type row with `Bindable`
+eligibility; every const inventory row is separately present and rigid. The
+required contract, not another eligibility variant, makes its type seed row
+mandatory and immutable while still permitting monotonic closure. The sealer
+then moves both exact kind-separated inventories and the type-only contract
+into `TypeConstraintParameterScope`.
+Neither the contract nor the scope stores a callable group, first-use row,
+deferred row, or binding value, and callable code retains no copied key list.
+`seal_call_scope` is the sole constructor for both the scope and embedded key
+contract; `RequiredInheritedBindingKeys` has no constructor or getter outside
+its types module and no `for_tests`/codec constructor. The only production call
+is the graph initialization issuer after schema/deferred proof. Types-only tests
+exercise its private validation helper; production driver tests use the graph
+gate.
 
 An inherited solution is admitted only through the validated prepared or
 frozen seed of the exact previous continuation. The single preparation gate
@@ -488,6 +608,43 @@ current or a future group, such as `T -> U`, is closed for that prefix; an
 unresolved placeholder or a missing required prior-group binding is not.
 Callable preparation validates only carrier coordinates and metadata; it never
 rescans, normalizes, copies, or repairs binding rows.
+
+Lower initialization uses one validator with a fixed four-stage precedence:
+
+1. validate the inherited row representation's strict structural order and
+   uniqueness, returning `DuplicateOrUnordered` before interpreting a key or
+   value;
+2. validate every generic identity in each key and value against the matching
+   kind-separated sealed inventory, then validate each type binding key's role,
+   returning `OutOfScope` or `RigidBinding` before canonicality. Const IDs are
+   not binding-key inhabitants, and every admitted const inventory row is
+   rigid;
+3. perform the sole whole-seed normalization, self-binding,
+   occurs/cycle, and forbidden-form canonicality pass over all structurally and
+   role-valid rows; and
+4. merge-walk the sorted required type keys and actual eligible seed keys.
+
+At stage four every required key must have exactly one seed row;
+the first missing required key is
+`InheritedSolutionInvariantKind::Unclosed`, including a nonempty required
+contract paired with `None`. A seed key absent from the required contract is
+`InheritedSolutionInvariantKind::UnexpectedKey`; duplicate/unordered rows keep
+their existing kind. After exact key agreement, a nonrecursive role/closure
+check proves each admitted value belongs to its immutable required key. Required
+`{T}` with seed `{T -> U}` is legal when `U` is
+current-bindable or future-eligible; the required contract does not demand a
+seed row for `U`. This makes `Unclosed` behavioral and reachable without adding
+callable group metadata or duplicating bindings in lower.
+
+The precedence is exact, including when defects coexist. Structural disorder
+or duplication wins first. An extra rigid key is `RigidBinding`, even if its
+value would also be noncanonical. Required `{T}` with an otherwise eligible
+completed seed `{T -> U, U -> i32}` is `NonCanonical` because the stage-three
+whole-seed pass observes that `T` is not normalized to `i32`; it is not
+downgraded to `UnexpectedKey` merely because `U` is not required for this
+prefix. Only a canonical eligible extra row reaches stage four and becomes
+`UnexpectedKey`; only after the same earlier stages pass can a missing required
+key become `Unclosed`. No stage repairs or drops a row before the next stage.
 
 Inherited bindings are immutable canonical seeds: a later group may close or
 extend them but cannot replace their meaning. Canonical inherited `{T -> U}`
@@ -561,12 +718,15 @@ accounting or retry path exists.
 
 The session projects the exact remaining limits and cancellation token into
 one lower `TypeConstraintContext`. Its context is the sole authority that may
-enter a node, fork or prune a branch, record a source callback, or add a
-binding. Every such operation performs, in order, an `Acquire` cancellation
+enter a node, fork or prune a branch, or add a binding. The session's private
+driver-only ticket-mint methods are the sole authority that may increment a
+source-probe or materialization count; lower context/enqueue APIs cannot reach
+those methods. Every operation performs, in order, an `Acquire` cancellation
 load, checked work charge, arithmetic-overflow check, configured-limit check,
-and only then allocation or descent. The context records each accepted delta
-directly in the session's `proposed` full report through its narrow observer;
-there is no detached lower report waiting for a caller merge.
+and only then allocation, callback-count increment, or descent. The context or
+ticket issuer records each accepted delta directly in the session's `proposed`
+full report through its narrow observer; there is no detached lower report
+waiting for a caller merge.
 
 `finish` consumes the transaction and moves the session reservation into one
 `TypeConstraintRun`. The run owns its outcome but has no outcome getter while
@@ -688,6 +848,11 @@ pub(crate) enum TypeConstraintFailureInvariant<D: ConstraintDomain> {
     Client(D::ClientInvariant),
 }
 
+pub(crate) enum MaterializationImmediateFailure<D: ConstraintDomain> {
+    Abort(TypeConstraintAbort),
+    Invariant(TypeConstraintFailureInvariant<D>),
+}
+
 pub(crate) enum TypeConstraintCandidateFailure<D: ConstraintDomain> {
     Constraint(TypeConstraintRejection),
     Source(SourceError<D::Source, Box<[D::SourceErrorCause]>>),
@@ -729,6 +894,7 @@ pub(crate) enum InheritedSolutionInvariantKind {
     OutOfScope,
     RigidBinding,
     DuplicateOrUnordered,
+    UnexpectedKey,
     SelfBinding,
     Forbidden,
     OccursOrCycle,
@@ -757,6 +923,95 @@ pub(crate) enum MaterializationOutcome<S, V, C> {
     Rejected { source: S, cause: C },
 }
 
+pub(crate) enum ClosedMaterializationSubmission<D: ConstraintDomain> {
+    Sealed(D::SealedBranchValue),
+    Rejected {
+        source: D::Source,
+        cause: D::SourceErrorCause,
+    },
+    Fatal(SourceError<D::Source, D::SourceErrorCause>),
+}
+
+#[derive(Clone, Copy, Eq, Ord, PartialEq, PartialOrd)]
+pub(crate) struct PreparedSourceOrdinal(u32);
+
+pub(crate) struct MaterializationTicket<D: ConstraintDomain> {
+    identity: MaterializationTicketIdentity,
+    correlation: MaterializationCorrelationOrdinal,
+    requests: Box<[ClosedMaterializationRequest<D>]>,
+    phase: MaterializationTicketPhase,
+}
+
+enum MaterializationTicketPhase {
+    Ready,
+    CallbackBound,
+    Closed,
+}
+
+pub(crate) struct MaterializationCallbackBinding<D: ConstraintDomain> {
+    identity: MaterializationTicketIdentity,
+    sources: Box<[D::Source]>,
+}
+
+struct ClosedMaterializationRequest<D: ConstraintDomain> {
+    source: D::Source,
+    source_ordinal: PreparedSourceOrdinal,
+    row: ClosedMaterializationRequestRow<D>,
+}
+
+enum ClosedMaterializationRequestRow<D: ConstraintDomain> {
+    Unchecked {
+        canonical_branch: Arc<D::ProbeSemanticBranch>,
+    },
+    Checked {
+        alternative: D::AlternativeIndex,
+        evidence: Arc<D::CheckedEvidence>,
+        source_projection: CheckedConstraintSourceProjection,
+        expected: TypeKind,
+        canonical_branch: Arc<D::ProbeSemanticBranch>,
+    },
+}
+
+#[derive(Clone)]
+struct MaterializationTicketIdentity {
+    issuer: Arc<MaterializationTicketIssuer>,
+    ordinal: u64,
+}
+
+struct MaterializationTicketIssuer;
+struct MaterializationCorrelationOrdinal(u32);
+
+impl<D: ConstraintDomain> MaterializationTicket<D> {
+    pub(crate) fn requests(
+        &self,
+    ) -> impl ExactSizeIterator<Item = MaterializedSourceRequest<'_, D>>;
+
+    pub(crate) fn bind_callback(
+        &mut self,
+    ) -> Result<MaterializationCallbackBinding<D>, TypeConstraintSourceProtocolInvariant>;
+
+    pub(crate) fn validate_callback_binding(
+        &self,
+        binding: &MaterializationCallbackBinding<D>,
+    ) -> Result<(), TypeConstraintSourceProtocolInvariant>;
+
+    pub(crate) fn bind_closed_submission(
+        &mut self,
+        submission: ClosedMaterializationSubmission<D>,
+    ) -> Result<ClosedMaterialization<D>, TypeConstraintSourceProtocolInvariant>;
+}
+
+pub(crate) struct ClosedMaterialization<D: ConstraintDomain> {
+    identity: MaterializationTicketIdentity,
+    submission: ClosedMaterializationSubmission<D>,
+}
+
+pub(crate) struct MaterializationFatalRecord<D: ConstraintDomain> {
+    source_ordinal: PreparedSourceOrdinal,
+    correlation: MaterializationCorrelationOrdinal,
+    error: SourceError<D::Source, D::SourceErrorCause>,
+}
+
 pub(crate) struct SourceCallbackTicket<D: ConstraintDomain> {
     identity: SourceCallbackTicketIdentity,
     authority: SourceCallbackAuthority<D>,
@@ -772,7 +1027,9 @@ struct SourceCallbackTicketIssuer;
 
 pub(crate) enum SourceCallbackAuthority<D: ConstraintDomain> {
     Probe { source: D::Source },
-    Materialize { sources: Box<[D::Source]> },
+    Materialize {
+        binding: MaterializationCallbackBinding<D>,
+    },
 }
 
 pub(crate) struct BoundSourceCheckpoint<C> {
@@ -865,17 +1122,18 @@ where
 
     fn begin_materialization_callback(
         &mut self,
-        sources: Box<[D::Source]>,
+        materialization: &mut MaterializationTicket<D>,
     ) -> Result<
         (
             SourceCallbackTicket<D>,
             BoundSourceCheckpoint<C::MaterializationCheckpoint>,
         ),
-        TypeConstraintFailure<D>,
+        MaterializationImmediateFailure<D>,
     >;
 
     fn close_materialization_callback(
         &mut self,
+        materialization: &mut MaterializationTicket<D>,
         ticket: SourceCallbackTicket<D>,
         checkpoint: BoundSourceCheckpoint<C::MaterializationCheckpoint>,
         attempt: Result<
@@ -887,9 +1145,26 @@ where
             SourceCallbackFailure<D>,
         >,
     ) -> Result<
-        MaterializationOutcome<D::Source, D::SealedBranchValue, D::SourceErrorCause>,
-        TypeConstraintFailure<D>,
+        ClosedMaterialization<D>,
+        MaterializationImmediateFailure<D>,
     >;
+}
+
+impl<D: ConstraintDomain> TypeConstraintTransaction<D> {
+    fn next_materialization_ticket(
+        &mut self,
+    ) -> Result<Option<MaterializationTicket<D>>, MaterializationImmediateFailure<D>>;
+
+    fn validate_materialization_callback_begin(
+        &self,
+        ticket: &MaterializationTicket<D>,
+    ) -> Result<(), TypeConstraintSourceProtocolInvariant>;
+
+    fn submit_closed_materialization(
+        &mut self,
+        ticket: MaterializationTicket<D>,
+        closed: ClosedMaterialization<D>,
+    ) -> Result<(), MaterializationImmediateFailure<D>>;
 }
 ```
 
@@ -917,15 +1192,24 @@ the two are distinguished by `TypeConstraintFailureInvariant::Constraint` and
 A lower `TypeConstraintError::Invariant` converts only to the `Constraint`
 branch; only `SourceCallbackFailure::Invariant(D::ClientInvariant)` can create
 the `Client` branch.
+`MaterializationImmediateFailure::{Abort, Invariant}` is the closed error type
+for ticket mint/open/close and lower submission during correlation traversal.
+`Rejected` and materialization `Fatal` exist only in
+`ClosedMaterializationSubmission`, so neither can stop traversal through an
+error return. The enclosing driver converts an eventual immediate failure or
+globally selected Fatal record into the four-way `TypeConstraintFailure` once.
 
 The nested invariant owners are closed typed algebras. `ParameterScope` owns
 foreign type/const IDs, rigid or unsupported binding attempts, and duplicate
 scope rows; `PreparedSource` owns empty, unordered, duplicate-coordinate,
 fallback, and spread-plan violations; `SourceProtocol` owns wrong source/phase,
-unknown alternative, invalid evidence, and ticket violations; and `Projection`
+unknown alternative, invalid evidence, callback-ticket/checkpoint violations,
+lower materialization-ticket phase/issuer/active-correlation mismatch, and cross-attached closed
+submissions; and `Projection`
 owns duplicate or mismatched projection keys. The current inherited kinds move
-unchanged into `InheritedSolutionInvariantKind`; they are not retained as a
-variant of `TypeConstraintRejection`.
+unchanged into `InheritedSolutionInvariantKind`, with `UnexpectedKey` added for
+the exact required/actual-key contract; none is retained as a variant of
+`TypeConstraintRejection`.
 
 There is no lower `SourceFailureCause::{Rejected, Fatal}` wrapper. An ordinary
 source rejection is stored directly as the boxed cause list in
@@ -934,64 +1218,121 @@ the closed `SourceCallbackFailure::{Fatal, Abort, Invariant}` channel. It
 contains no `Rejected`, so semantic rejection remains an outcome; its
 `Invariant(D::ClientInvariant)` is the sole typed escape for an invariant raised
 inside the full expression boundary, while ticket/checkpoint protocol
-validation remains driver-owned. The driver maps a validated `Fatal` directly
-to `TypeConstraintFailure::FatalSource`, `Abort` directly to
-`TypeConstraintFailure::Abort`, and client invariant directly to
+validation remains driver-owned. The driver maps a validated probe `Fatal`
+directly to `TypeConstraintFailure::FatalSource`; a validated materialization
+`Fatal` becomes `ClosedMaterializationSubmission::Fatal` for lower global
+precedence selection. It maps `Abort` directly to
+`TypeConstraintFailure::Abort` and client invariant directly to
 `TypeConstraintFailure::Invariant(TypeConstraintFailureInvariant::Client(..))`.
 None is inferred from a cause, side state, or panic, and none is flattened into
 another disposition.
 
+Lower enqueue/preparation does not charge a source probe or materialization.
+It may validate a prepared source, advance/fork lower rows, charge ordinary
+node/branch/binding work, and construct the next borrowed hint or exact closed
+materialization request set. For materialization, lower assigns the next checked
+private correlation ordinal and moves that exact ordered request set into one
+non-`Clone` `MaterializationTicket`; the ticket, not an ordinal or callback
+result, is the sole lower submission authority. If lower preparation fails or
+produces no callback ticket, no source-callback count is charged and no
+checkpoint opens; all lower work already performed remains in accounting.
+Delete every lower enqueue/start
+`record_source_probe`/`record_materialization` call. The driver receives a ready
+probe request or borrows a ready lower `MaterializationTicket` first and only
+then may mint its distinct callback ticket.
+
 For every callback the driver checks/charges work, mints one non-`Clone`
 `SourceCallbackTicket`, asks the client to open its raw checkpoint, and
 immediately wraps that checkpoint in `BoundSourceCheckpoint` with the ticket's
-private issuer/ordinal. A probe ticket authorizes `Probe` for exactly one source
-coordinate. A materialization ticket authorizes `Materialize` for the exact
-ordered source-coordinate list projected from that closed trace; the same list
-drives the request iterator. Ticket identities and bound checkpoints are
-generation-local affine capabilities with no encoder, getter, or semantic
-identity role. Ticket minting is the sole source-probe/materialization count
-charge; callback expression work uses the same session but cannot charge or
-mint a second source callback. Cancellation, overflow, or a limit while minting
-returns `Abort` before a checkpoint opens; failure of the client's private open
-hook is `Invariant(SourceProtocol(..))` before the callback executes.
+private issuer/ordinal. A probe callback ticket authorizes `Probe` for exactly
+one source coordinate. For materialization,
+`begin_materialization_callback(&mut MaterializationTicket)` first calls the
+transaction's types-owned `validate_materialization_callback_begin` so wrong
+issuer/active-correlation/phase is an invariant before accounting. It derives
+the exact ordered source list from the lower ticket, performs the driver
+cancellation/limit/overflow check,
+and, at the one accepted callback-ticket mint, charges once and calls
+`MaterializationTicket::bind_callback` to atomically move `Ready` to
+`CallbackBound`. The returned sealed `MaterializationCallbackBinding` becomes
+the callback ticket's private authority, and the same lower rows drive the
+request iterator. No caller supplies a source list, correlation
+ordinal, phase, or binding identity. Callback-ticket identities, lower-ticket
+identities/bindings, and bound checkpoints are generation-local affine
+capabilities with no encoder, public getter, or semantic identity role. The
+sealed binding inside `SourceCallbackAuthority::Materialize` is only callback
+binding evidence; it is not submission authority and cannot replace the
+move-only lower ticket. Driver callback-ticket minting is the sole source-
+probe/materialization count charge; yielding a lower materialization ticket and
+callback expression work charge none. Cancellation, overflow, or a limit while
+minting returns `Abort` before a checkpoint opens; failure of the client's
+private open hook is `Invariant(SourceProtocol(..))` before the callback
+executes.
 
-`SourceCallbackFailure`, the ticket issuer/authority, bound checkpoint, and
-client hooks live with the callable driver in `callable/constraints.rs`. The
-types transaction neither imports them nor stores a parallel callback plan; it
-continues to own prepared source rows and receives only the driver's validated
-typed submission/failure. `ConstraintDomain::ClientInvariant` is an associated
-type with no analyzer-independent behavior or `Clone`/`Eq`/`Ord` requirement,
-so the generic types layer can move it without importing or interpreting an
-analyzer type.
+The mint operation checks cancellation, checked arithmetic, and the applicable
+probe/materialization limit, then increments the accepted callback count
+exactly once before calling the open hook. Hint failure, lower request closure
+failure, lower ticket-ordinal overflow, and a lower ticket that is never handed
+to the driver therefore charge zero. Open-hook failure, callback `Abort`, and
+close invariant retain the one accepted charge. With materialization limit 1
+and multiple correlated traces, lower may yield the first move-only ticket;
+the first driver callback-ticket mint charges/opens normally, while the second
+mint from the next lower ticket returns `Abort` before open, so total
+materialization count remains 1. The enclosing rollback consumes or destroys
+the unsubmitted lower ticket. No close, replay, lower-ticket yield, or lower
+submission increments either callback counter.
 
-The driver-owned close operation consumes the ticket, bound checkpoint, and
-raw callback attempt together. Before delegating rollback/extraction to the
-client closer it validates the ticket issuer/ordinal, phase, full ordered
-materialization authority, every returned rejection/error/client-invariant
-coordinate through its domain owner, and the checkpoint binding. Probe `Fatal`
-or client invariant must name the ticket's sole source; materialization `Fatal`,
-`Rejected`, or client invariant must name one coordinate in the ticket's exact
-ordered set. A mismatch is `Invariant(SourceProtocol(..))` and the
-callback output is never trusted by itself. When the checkpoint binding is
-valid but the attempt is malformed, the driver first uses the rollback-only
-client close and then returns the invariant; when the binding itself is invalid,
-the enclosing candidate rollback owns cleanup.
+`SourceCallbackFailure`, the callback-ticket issuer/authority, bound checkpoint,
+and client hooks live with the callable driver in
+`callable/constraints.rs`. `MaterializationTicket`, its identity and private
+correlation, the closed request rows, `ClosedMaterialization`, and submission
+validation live with the types transaction. The types layer does not import a
+driver ticket or client hook and the driver cannot inspect or reconstruct the
+lower correlation. Lower continues to own prepared source rows and receives
+back only the exact move-only lower ticket paired with the driver's validated
+closed result. `ConstraintDomain::ClientInvariant` is an associated type with
+no analyzer-independent behavior or `Clone`/`Eq`/`Ord` requirement, so the
+generic types layer can move it without importing or interpreting an analyzer
+type.
+
+The driver-owned close operation consumes the callback ticket, bound
+checkpoint, and raw callback attempt together. A materialization close also
+exclusively borrows the still-live lower `MaterializationTicket`, requires its
+`CallbackBound` phase, and moves it to `Closed` only after validated client
+closure. Before delegating
+rollback/extraction to the client closer it validates callback-ticket
+issuer/ordinal, phase, its bound lower-ticket identity, the full ordered source
+authority re-derived from that lower ticket, every returned
+rejection/error/client-invariant coordinate through its domain owner, and the
+checkpoint binding. Probe `Fatal` or client invariant must name the callback
+ticket's sole source; materialization `Fatal`, `Rejected`, or client invariant
+must name one coordinate in the lower ticket's exact ordered set. A mismatch is
+`Invariant(SourceProtocol(..))` and the callback output is never trusted by
+itself. When the checkpoint binding is valid but the attempt is malformed, the
+driver first uses the rollback-only client close and then returns the
+invariant; when callback-ticket/checkpoint authority itself is invalid, the
+enclosing candidate rollback owns cleanup. A valid close returns a move-only
+`ClosedMaterialization` carrying the lower identity it validated; it does not
+return or expose the correlation ordinal.
 
 The client hooks cannot reclassify an attempt. Probe close receives only the
 inner checkpoint and returns `()` after rollback. Materialization close
 receives `Some(prepared)` only for a validated `Sealed(prepared)` outcome and
 returns the extracted sealed value; every Rejected/Fatal/Abort/client-Invariant
-path passes `None` and performs rollback. The driver retains the original validated
-disposition and returns it only after successful close. A foreign, stale,
+path passes `None` and performs rollback. The driver retains the original
+validated disposition and acts on it only after successful close. A foreign,
+stale,
 already-consumed, non-LIFO, or outcome/close-shape mismatch returns the closed
 `TypeConstraintSourceProtocolInvariant`, which the driver wraps in
 `TypeConstraintFailureInvariant::Constraint` under
 `TypeConstraintInvariant::SourceProtocol`.
 Close-authority invariant has precedence over the raw attempt, including a
-client invariant. Otherwise a ticket-matching `Fatal` alone becomes
-`FatalSource`, callback `Abort` remains `Abort`, and the exact moved client
-invariant becomes `TypeConstraintFailureInvariant::Client` through closer and
-driver propagation by construction.
+client invariant. Otherwise a ticket-matching probe `Fatal` becomes immediate
+`FatalSource`; a ticket-matching materialization `Fatal` becomes a typed closed
+submission, not an immediate driver failure. Callback `Abort` remains `Abort`,
+and the exact moved client invariant becomes
+`TypeConstraintFailureInvariant::Client` through closer and driver propagation
+by construction. Thus only `Abort` or either invariant branch stops
+materialization correlation iteration immediately.
 
 `PreparedSourceConstraint` is a types-owned input, not an analyzer hint object.
 The callable preparation gate moves into it the exact schema-keyed alternatives
@@ -1052,21 +1393,84 @@ client invariant. Valid fatal becomes `FatalSource`, callback work abort remains
 ticket/checkpoint violation becomes `Invariant(Constraint(SourceProtocol(..)))`.
 
 Every materialization similarly starts from one baseline. The driver derives
-the exact ordered source-coordinate list from the closed request rows, mints
-the materialization ticket, opens and binds one affine checkpoint, and consumes
-ticket, checkpoint, and raw attempt in `close_materialization_callback`. Only
-then does `close_materialization_checkpoint` receive `Some(prepared)` for a
-validated sealed outcome or `None` for a rollback-only outcome.
+the exact ordered source-coordinate list only by borrowing the move-only lower
+`MaterializationTicket` returned by `next_materialization_ticket`, then mints a
+distinct callback ticket bound to that lower ticket identity, opens and binds
+one affine checkpoint, and consumes the callback ticket, checkpoint, and raw
+attempt in `close_materialization_callback(&mut lower_ticket, ..)`. Only then does
+`close_materialization_checkpoint` receive `Some(prepared)` for a validated
+sealed outcome or `None` for a rollback-only outcome.
 On `Sealed(prepared)`, the analyzer performs
 `SemanticFactState::extract_and_rollback`, combines the move-only semantic
 projection with the prepared source rows, and returns the final sealed value.
-On ordinary rejection, valid `Fatal`, callback `Abort`, or client `Invariant`
-it performs rollback and forwards the typed `Rejected`, `FatalSource`, `Abort`,
-or information-preserving client-invariant disposition; on a ticket/checkpoint
-violation it returns the constraint `SourceProtocol` invariant with precedence
-and the enclosing candidate rollback owns cleanup. There is no unconditional
-driver rollback after a successful extract, no commit path, and no reusable
-ticket or checkpoint.
+On ordinary rejection or valid materialization `Fatal` it performs rollback and
+returns a `ClosedMaterialization` containing the validated lower-ticket identity
+and `ClosedMaterializationSubmission::Rejected` or `Fatal`; Sealed is wrapped
+the same way. The driver then calls
+`submit_closed_materialization(lower_ticket, closed)` so lower consumes both
+affine values exactly once and continues. Callback `Abort` or client
+`Invariant` performs rollback and returns the immediate typed failure, after
+which candidate rollback destroys the still-live lower ticket. A callback-
+ticket/checkpoint violation returns the
+constraint `SourceProtocol` invariant with precedence and the enclosing
+candidate rollback owns cleanup. There is no unconditional driver rollback
+after a successful extract, no commit path, bare-correlation submit API, or
+reusable ticket/checkpoint.
+
+Lower owns `MaterializationTicket`, `MaterializationTicketIdentity`,
+`MaterializationCallbackBinding`, `ClosedMaterializationRequest`,
+`ClosedMaterialization`,
+`ClosedMaterializationSubmission`, `PreparedSourceOrdinal`, the private
+non-`Clone`/non-`Copy` `MaterializationCorrelationOrdinal`, and
+`MaterializationFatalRecord`; ticket/identity/correlation/record constructors,
+request iteration, and source-to-ordinal lookup are types-owned operations.
+`bind_callback` is called only by driver callback-ticket mint, and
+`bind_closed_submission` only by the validated successful closer; a static
+source/privacy gate fixes those sole call sites and rejects any alternate
+constructor or caller. Neither binding method exposes the private identity or
+correlation. Their private `Ready -> CallbackBound -> Closed` transition rejects
+double bind/close before lower still validates the pair and `Closed` phase at
+submit.
+Neither the ticket nor closed result implements `Clone`, and no bare
+correlation value crosses the lower boundary. Submission first validates that
+the move-only ticket belongs to this transaction and active correlation and
+that the closed result carries that ticket's exact identity and source
+authority. Foreign/stale tickets, ticket A paired with closed result B,
+cross-correlation source attachment, or an already submitted identity are
+`Invariant(SourceProtocol(..))`. Rust ownership makes a second close or submit
+unrepresentable; runtime identity validation covers restored/tampered internal
+DTO inputs before any capability is minted. Only after this check does lower
+destructure the ticket and move its private correlation into success,
+rejection, or Fatal state. A validated Fatal submission is resolved against
+that ticket's closed source rows and stored as one typed record.
+Any ticket/closed-result/active-correlation invariant takes precedence over the
+enclosed Sealed/Rejected/Fatal payload and every previously accumulated Fatal
+record; it stops traversal immediately and cannot be reclassified as candidate
+rejection.
+It does not set the transaction's immediate `first_failure`, discard another
+correlation, or permit success to mask it. The driver continues every remaining
+canonical binding/trace correlation, subject to ordinary metering, so a later
+correlation can reveal an earlier authored failing source.
+
+Source ordinals are sealed with prepared source order. Correlation ordinals are
+assigned with checked arithmetic when lower closes the next canonical
+binding/trace request and issues its `MaterializationTicket`; overflow is
+`Abort` before lower-ticket issue and therefore before driver callback-ticket
+mint or checkpoint open. `PreparedSourceOrdinal` may remain a copyable internal
+sort key, but it is not submission authority. The correlation ordinal is
+field-private and move-only inside the lower ticket/record. Neither ordinal can
+be supplied by the analyzer client, passed separately to submission, or
+reconstructed from a returned `SourceError`.
+
+After all correlations close, lower selects the minimum fatal record by exact
+borrowed `(PreparedSourceOrdinal, private correlation ordinal)` comparison. The
+source
+ordinal is authored argument then physical-slot order; the correlation ordinal
+is the checked canonical-binding order followed by retained trace derivation
+order. That one record becomes `TypeConstraintFailure::FatalSource` before
+semantic-value ambiguity, pair unicity, or score. `Abort` or either invariant
+branch encountered while continuing stops immediately and takes precedence
+over all accumulated Fatal records; ordinary rejected traces remain pruned.
 
 `SealedBranchValue` deliberately requires `Eq`, not `Ord`: lower coalescing
 needs exact equality but never semantic ordering. The analyzer implementation
@@ -1187,8 +1591,9 @@ the exact `TypeConstraintAbort`; callback code must forward cancellation,
 overflow, and every limit as `SourceCallbackFailure::Abort`. A `SourceError`
 inside `SourceCallbackFailure::Fatal` retains the claimed source,
 `Probe`/`Materialize` phase, and typed cause; the driver validates that claim
-against the ticket before it can become `FatalSource`. Neither channel is
-flattened into a boolean mismatch or string diagnostic.
+against the ticket before it can become immediate probe `FatalSource` or a
+stored materialization Fatal record. Neither channel is flattened into a
+boolean mismatch or string diagnostic.
 
 ### 3.6 Correlated frontier and final materialization
 
@@ -1231,25 +1636,31 @@ in exactly this order:
    if current work replaced rather than monotonically closed an inherited
    meaning;
 7. for every correlated trace inside each canonical binding, reset the client
-   to the same pre-probe semantic baseline, derive and charge one affine
-   materialization ticket for that trace's exact closed source list in authored
-   argument/slot order, bind the opened checkpoint to it, and invoke
-   `materialize_sources` with those same coordinates and lower-derived final
-   expectations;
-8. consume the ticket, bound checkpoint, and attempt in the driver-owned close,
-   validate their authority, then close the client checkpoint; prune a trace
-   that semantically no longer satisfies final materialization,
-   retain a typed source error as an error, seal every successful private
-   branch value, and coalesce equal sealed values within that binding by their
-   exact equality;
-9. discard a binding with no surviving value, reject semantic-branch ambiguity
+   to the same pre-probe semantic baseline, let lower derive that trace's exact
+   closed source list in authored argument/slot order, allocate its private
+   checked correlation, and yield one move-only `MaterializationTicket` without
+   charging a callback;
+8. borrow that lower ticket to charge and mint one driver callback ticket bound
+   to its identity and exact source set, open and bind the client checkpoint,
+   and invoke `materialize_sources` with the same lower-owned coordinates and
+   final expectations;
+9. consume the callback ticket, bound checkpoint, and attempt in the driver-
+   owned close, validate them against the still-live lower ticket, then close
+   the client checkpoint. Consume the exact lower ticket plus returned
+   `ClosedMaterialization` once in lower submission; prune an ordinarily
+   rejected trace, move the ticket's private correlation into a typed Fatal
+   record and continue all correlations, or seal/coalesce equal successful
+   private branch values. Only Abort or Invariant exits immediately;
+10. after all correlations, select the minimum Fatal record by authored source
+   ordinal then correlation ordinal and return that `FatalSource` if present;
+11. discard a binding with no surviving value, reject semantic-branch ambiguity
    when one binding has more than one distinct final sealed value, then require
    unicity of the surviving `(canonical binding, sealed branch value)` pair
    across bindings;
-10. project every checked slot, receiver, result, and future-eligible parameter,
+12. project every checked slot, receiver, result, and future-eligible parameter,
    together with each closed source alternative/evidence/projection/type row,
    from that unique pair for the higher callable sealer; and
-11. `finish`, followed by the exactly-once `run.complete()` accounting commit.
+13. `finish`, followed by the exactly-once `run.complete()` accounting commit.
 
 Step 6 is not a second inherited-carrier validator. Initialization already
 validated the seed's own rows exactly once before any source callback; step 6
@@ -1271,11 +1682,12 @@ project those typed lower rejections, but do not change their disposition.
 Failure precedence is callable carrier preparation invariant, lower inherited
 initialization invariant/abort, base instantiation, receiver, first authored
 argument/slot, expected result, normalization or cycle, final Choice rejection,
-post-extension inherited immutability invariant, first source-order
-materialization failure, pair ambiguity, incomplete terminal/deferred closure,
-projection validation, then score. Mandatory cancellation and metering checks
-still abort at the operation boundary where they are observed. A later source
-failure cannot replace an earlier source failure. Within a ticketed close,
+post-extension inherited immutability invariant, globally minimum
+authored-source/correlation materialization Fatal, pair ambiguity, incomplete
+terminal/deferred closure, projection validation, then score. Mandatory
+cancellation and metering checks still abort at the operation boundary where
+they are observed, and any invariant does the same; either takes precedence
+over accumulated materialization Fatal records. Within a ticketed close,
 invalid ticket/checkpoint authority takes `SourceProtocol` invariant precedence;
 otherwise a source result retains its exact `Rejected`, `FatalSource`, `Abort`,
 or client-invariant disposition instead of becoming a generic mismatch.
@@ -1284,10 +1696,11 @@ or client-invariant disposition instead of becoming a generic mismatch.
 of each canonical binding is re-evaluated from the identical client baseline
 in an isolated transaction, in exact source order, and may produce a move-only
 private prepared branch. Nonselected materializations are rolled back. This
-preserves first-source failure precedence and prevents facts from one binding
-or Choice path leaking into another. Final public slot facts contain only types
-and evidence projected after this phase; prefix probe hints are diagnostic
-evidence only.
+preserves global authored-source/correlation Fatal precedence by continuing
+after valid Fatal submissions, and prevents facts from one binding or Choice
+path leaking into another. Final public slot facts contain only types and
+evidence projected after this phase; prefix probe hints are diagnostic evidence
+only.
 
 ### 3.7 B3 ownership and replay sequence
 
@@ -1296,9 +1709,11 @@ The B3 integration sequence is one candidate-wide operation:
 1. consume the mapper result through
    `validate_and_prepare_call_constraints`, which validates the schema generic
    inventory and continuation and creates every types-owned source plan, the
-   exact parameter scope paired with exactly one none/prepared/frozen
-   continuation seed inside one move-only
-   `PreparedConstraintInitialization`, without publishing facts;
+   exact parameter scope/required-inherited-key contract paired by the graph's
+   sole production issuer with exactly one none/prepared/frozen continuation
+   seed inside one move-only `PreparedConstraintInitialization`; the issuer
+   derives current-group terminality internally and accepts no caller terminal
+   control, and nothing publishes facts;
 2. exclusively borrow the query-local `ResolverWork` into one candidate work
    session and call fallible `CandidateConstraintWorkSession::start` with only
    that initialization token and the analyzer client, returning its closed
@@ -1306,7 +1721,10 @@ The B3 integration sequence is one candidate-wide operation:
 3. through the returned driver, add base, receiver, source-ordered argument,
    and expected-result
    constraints to one transaction;
-4. complete the correlated solve and affine ordered materialization once;
+4. complete the correlated solve and affine ordered materialization once,
+   consuming for each correlation one lower `MaterializationTicket`, one bound
+   driver callback ticket/checkpoint, and one matching
+   `ClosedMaterialization` without exposing its private ordinal;
 5. move the unique `Arc<TypeConstraintSolution>`, exact coalesced sealed branch
    value, closed source rows, final projections, and score into
    `PreparedCandidateTransaction`; and
@@ -2458,16 +2876,32 @@ decode/restore path first decodes untrusted private DTO rows, never an owned
 solution, prepared reference, frozen handle, or checked application via direct
 `Deserialize`. Restore enters the same callable sealer used for in-process
 freezing. That sealer first resolves base/schema/group coordinates from their
-authorities and derives the exact parameter scope, invokes the same types-owned
-canonical inherited-row validator used by initialization to construct the
-opaque solution, then validates deferred rows, recomputes every digest, and
-compares the stored version-1 bytes before constructing a handle or candidate.
-The callable layer never walks binding contents, and the types layer never
-reconstructs callable coordinates.
+authorities, re-derives the exact separately ordered type and const inventory
+rows plus type-only required-inherited keys from the sealed schema inventory,
+completed prefix, and deferred proof, and invokes the same types-owned
+parameter-scope sealer used by production preparation. Every restored const is
+checked in the distinct const namespace and can be admitted only as rigid; a
+const cannot decode as a type binding key or required key. The sealer then
+passes that scope and decoded binding DTO rows through the same four-stage
+inherited validator used by initialization: structural order/duplicates, scope
+and rigid-key admission, whole-seed canonicality, then required/actual eligible
+key merge. Only after that validator constructs the opaque solution does
+callable validate deferred rows, recompute every digest, and compare the stored
+version-1 bytes before constructing a handle or candidate. A DTO does not
+supply an authoritative required-key list, terminal bit, lower ticket identity,
+or materialization correlation. Generation-local materialization tickets and
+closed submissions are never serialized or restored. The callable layer never
+walks binding contents, and the types layer never reconstructs callable
+coordinates.
 
-Restore rejects foreign, stale, wrong-scope, unordered, incomplete, cyclic, or
-noncanonical rows without sorting, normalizing, dropping, completing, or
-otherwise repairing them. In particular, restored `{T -> U, U -> i32}` is
+Restore rejects foreign, stale, wrong-scope, kind-confused, non-rigid-const,
+unordered, missing-required, unexpected-key, cyclic, or noncanonical rows
+without sorting, normalizing, dropping, completing, or otherwise repairing
+them. The shared precedence means a rigid extra is `RigidBinding`, an eligible
+noncanonical chain is `NonCanonical`, only a canonical eligible extra is
+`UnexpectedKey`, and only an otherwise valid missing required `T` is
+`Unclosed`. Required `{T}` with `{T -> U}` remains legal when `U` is
+current/future eligible, and restored `{T -> U, U -> i32}` is
 `InheritedSolutionInvariantKind::NonCanonical`; restore does not rewrite it to
 `{T -> i32, U -> i32}`. Restore failure is returned as typed seal/invariant
 failure before analyzer selection and therefore cannot produce rejected-call
@@ -2479,14 +2913,29 @@ keeps version `1`; there is no legacy reader or version-dispatch path.
 These are compile-clean checkpoints inside the single C2 reviewable result,
 not independently accepted authorities:
 
+Steps 2-7 establish lower/callable owners in isolation only. No validation
+record may call the lower driver production-connected until step 8 first lands
+the operational `validate_and_prepare_call_constraints` plus
+`PreparedCallGraph` issuer and then switches `start` to consume its token. Unit
+tests before that point test private owner behavior, not a fabricated production
+connection.
+
 1. replace the recursive compatibility copies with the sole types-owned
    Recovery/SelectedCall/Invariant directional engine, make
    `first_mismatch` an independent strict structural diagnostic, delete the
    standalone array-length acceptance helper, and establish exact array,
    rigid-generic, and unresolved policy matrices;
 2. establish the opaque non-`Clone` `TypeConstraintSolution`, exact
-   rigid/bindable/future-eligible `TypeConstraintParameterScope`, lower
-   traversal observer, and sorted completed binding iterator. Replace the flat
+   kind-separated `TypeConstraintParameterScope` with exact rigid/bindable/
+   future-eligible type rows, distinct rigid-only const rows, lower traversal
+   observer, sorted completed type-binding iterator, and embedded sorted exact
+   type-only `RequiredInheritedBindingKeys` contract with its sole types-owned
+   scope sealer. Make initialization use the exact structural-order/duplicate,
+   scope-and-rigid-key, whole-seed-canonicality, then required/actual-eligible-
+   key precedence. Thus rigid extras remain `RigidBinding`, completed eligible
+   `{T -> U, U -> i32}` remains `NonCanonical`, and only later classify a
+   missing key as `Unclosed` or a canonical eligible extra as `UnexpectedKey`,
+   without kind confusion or group/deferred/binding-row copies. Replace the flat
    lower error enum with the exact `Rejected`/`Abort`/`Invariant` error algebra
    and `Rejected`/`FatalSource`/`Abort`/`Invariant` failure algebra, moving all
    inherited kinds under `TypeConstraintInvariant` and splitting failure
@@ -2502,7 +2951,8 @@ not independently accepted authorities:
    cancellation/limit accounting. Make lower initialization return only the
    closed `TypeConstraintInitializationFailure::{Abort, Invariant}` and prove
    that early initialization failure invokes no callback while drop commits
-   accounting once;
+   accounting once. Keep this an isolated lower/session checkpoint; do not add
+   a raw token constructor or claim the production driver is connected yet;
 5. install the types-owned prepared source constraint, keyed alternative hints,
    checked source projection constructor, selected alternative/evidence source
    equation, closed trace, and final materialization request. At this point
@@ -2511,35 +2961,56 @@ not independently accepted authorities:
 6. extend the callable driver with the domain-owned `ClientInvariant` associated
    type/source capability and affine
    `SourceCallbackFailure::{Fatal, Abort, Invariant}`, driver-owned ticket
-   issuer, one-source probe authority, exact-ordered materialization authority,
-   bound checkpoints, and validated affine closers. Replace the unconditional
+   issuer, one-source probe authority, callback authority bound to the exact
+   lower-issued move-only `MaterializationTicket`, bound checkpoints, and
+   validated affine closers. Add the lower private ticket identity/correlation,
+   exact closed request rows, and move-only `ClosedMaterialization`, and make
+   `submit_closed_materialization` consume the exact lower ticket plus its
+   identity-bound closed result with no ordinal parameter. Replace the unconditional
    materialization rollback in the same compiling switch, then delete the old
    unticketed begin/callback/rollback protocol and the lower
+   enqueue/start source-callback count charge. Make accepted driver ticket mint,
+   after successful lower hint/request preparation and before checkpoint open,
+   the sole counter increment. Delete the lower
    `SourceFailureCause::{Rejected, Fatal}` wrapper. Map ordinary rejected
-   outcomes, validated fatal callback error, callback abort, client/nested
-   invariant, and ticket/checkpoint protocol violation directly to `Rejected`,
-   `FatalSource`, `Abort`, `Invariant(Client(..))`, and precedence-taking
-   `Invariant(Constraint(SourceProtocol(..)))`;
+   outcomes, validated probe Fatal, validated materialization Fatal, callback
+   abort, client/nested invariant, and ticket/checkpoint protocol violation to
+   `Rejected`, immediate `FatalSource`, typed closed Fatal submission, `Abort`,
+   `Invariant(Client(..))`, and precedence-taking
+   `Invariant(Constraint(SourceProtocol(..)))`, respectively;
 7. implement branch-local Choice pruning followed by all-constraint
    normalization, occurs checking, final Choice pruning, exact source-order
    materialization of every correlated trace from one baseline per canonical
    binding, the distinct post-extension inherited immutability check before
-   materialization callbacks, exact sealed-value equality/coalescing, pair
-   unicity, final keyed projection, and run completion;
+   materialization callbacks, lower-ticket-bound typed Sealed/Rejected/Fatal
+   submissions, single-use ticket/closed-result consumption,
+   continued correlation traversal after Fatal, global authored-source then
+   correlation Fatal selection, exact sealed-value equality/coalescing, pair
+   unicity, final keyed projection, and run completion. Only Abort/Invariant
+   exits correlation traversal immediately;
 8. establish `PreparedCallGraph`, its issuer/node/ref algebra, the move-only
    `PreparedCallContinuation` that consumes a prefix transaction, its affine
    one-run seed, the base/schema/group-bound `FrozenCallTypeSolution`, and the
    one `validate_and_prepare_call_constraints` entry. Migrate mapping, source
    alternatives/evidence, parameter scope, prepared/frozen inherited seed,
    base, receiver, arguments, and expected result together. Establish the
-   move-only `PreparedConstraintInitialization` that seals the derived scope
-   with its exact seed, and atomically replace callable `start` with the
+   operational
+   `PreparedCallGraph::validate_and_issue_constraint_initialization` for every
+   None/Prepared/Frozen path. It derives current-group terminality and
+   continuation availability from the sealed schema/candidate/graph state; its
+   signature has no terminal boolean or caller-mintable override capability. It
+   alone calls the private move-only
+   `PreparedConstraintInitialization` constructor and pairs the graph issuer,
+   derived scope/required-key contract, and exact seed. Only after that issuer
+   exists, atomically replace callable `start` with the
    token-plus-client-only fallible signature; delete the raw
    scope-plus-`Option<Arc<TypeConstraintSolution>>` signature. Establish the
    closed `CallConstraintInvariant` algebra for every foreign/stale/wrong-state
    prepared reference and wrong prepared/frozen identity, order, scope, group,
-   deferred, function, or digest condition; delete every analyzer scope scan
-   and empty/raw inherited-solution constructor immediately;
+   deferred, function, or digest condition; delete every analyzer scope scan,
+   empty/raw inherited-solution constructor, test-only token constructor, and
+   direct driver-test start immediately. Move driver/accounting integration
+   tests to the real private production-gate fixture;
 9. implement `final_analysis/analyzer/calls/constraints.rs`, exact move-only
    `CandidateSemanticProjection` equality, the analyzer client, query-local
    graph/work/analyzer borrow split, prepared-graph checkpoint journaling,
@@ -2578,11 +3049,16 @@ not independently accepted authorities:
     `publish_selected_call`, `publish_selected_call_in_transaction`, final
     selected rebuild, join-side substitutions, result overrides, and compiler
     reconstruction. Establish the version-1 private DTO restore gate through
-    the same types canonical-row validator and callable sealer, with digest
-    recomputation and fail-without-repair semantics; and
+    schema-derived required keys, the same types scope/canonical-row validators,
+    and callable sealer, re-deriving distinct exact type and rigid-const scope
+    rows and applying the same four-stage inherited precedence, with digest
+    recomputation and fail-without-repair semantics. Never encode/restore a
+    materialization ticket, private correlation, or closed submission; and
 14. prove there is no remaining call consumer of `TypeParameterSubstitutions`,
     old solver relations, flat constraint failures, `SourceFailureCause`,
-    unticketed callback hooks, raw scope/solution driver initialization,
+    lower enqueue callback counting, unticketed callback hooks, a bare/copyable
+    materialization correlation or ordinal-taking submission API, raw
+    scope/solution driver initialization, `for_tests` initialization issuers,
     nested-invariant side state/panic conversion, source reconstruction, or
     recovery compatibility, delete their now-unused
     call-only APIs and reexports, and run the full C2 gates. Nominal-only
@@ -2612,19 +3088,37 @@ Implementation must cover:
 - types-owned generic-use collection over every `TypeKind` and `ArrayLength`
   constructor, schema inventory role/first-use derivation for group zero,
   later groups, and result-only use, and rejection of omitted/duplicate/wrong
-  first-use rows and inferable const generics;
+  first-use rows and inferable const generics, plus exact kind-separated lower
+  scope rows proving all admitted consts are distinct rigid identities and can
+  never enter a type binding or `RequiredInheritedBindingKeys`;
+- parameter-scope sealing over None/Prepared/Frozen candidates with complete
+  exact sorted type rows and separately sorted const rows, duplicate/unordered
+  rejection within either kind, same numeric payload in the two typed ID
+  namespaces remaining distinct, and any bindable/future const eligibility or
+  const binding attempt failing as a typed scope/rigid invariant;
 - the single preparation gate returning `CallConstraintInvariant` for a
   malformed mapper/schema seal, missing/unexpected continuation seed, wrong
   prepared-graph issuer/node/state/order, wrong base/schema/completed/next
   group, wrong frozen prefix core or digest, incorrect projected function type,
   and terminal future-eligible inventory before the first source callback,
-  plus compile evidence that no raw seed can be supplied;
+  plus base/partial/final-group tests proving terminality is derived from sealed
+  graph/schema/candidate state and compile evidence that neither a terminal
+  boolean/override nor a raw seed can be supplied;
 - `PreparedConstraintInitialization` pairing the exact derived scope with each
   None/Prepared/Frozen seed, affine prepared-seed consumption, absence of
   `Clone`/getters/public constructors, and compile-fail evidence that
   `CandidateConstraintWorkSession::start` accepts neither a raw scope nor an
   `Option<Arc<TypeConstraintSolution>>` and cannot mix a scope with another
   candidate's seed;
+- static privacy/source evidence that
+  `PreparedCallGraph::validate_and_issue_constraint_initialization` contains the
+  sole token constructor call and is called in production only by
+  `validate_and_prepare_call_constraints`, `start` contains the sole opener
+  call, final analysis can hold/move but cannot open token fields, no
+  `for_tests`/`from_parts`/cfg-gated constructor exists, and
+  None/Prepared/Frozen driver/accounting integration tests all obtain tokens
+  from the real `validate_and_prepare_call_constraints` fixture rather than raw
+  parts;
 - an inner partial call seeding its immediately enclosing call before
   `finish_checked_callables`/effect closure, two- and three-group chains, a
   partial result retained without immediate use, and multiple outer uses of one
@@ -2646,13 +3140,28 @@ Implementation must cover:
   `Invariant(SourceProtocol(..))`, and an expected-dependent probe whose final
   public facts and final expected come only from lower closure and ordered
   materialization, never from its speculative checkpoint;
-- driver-minted affine probe tickets authorizing exactly one `Probe` source,
-  driver-minted materialization tickets authorizing the exact ordered
-  `Materialize` source list, checkpoint binding to ticket issuer/ordinal, and
-  compile evidence that tickets/bound checkpoints are not `Clone`, encodable,
-  constructible by the callback, or retained in semantic facts;
+- driver-minted affine probe callback tickets authorizing exactly one `Probe`
+  source, lower-minted move-only `MaterializationTicket`s containing the private
+  correlation and exact ordered request rows, driver materialization callback
+  tickets bound to that exact lower identity/source list, checkpoint binding to
+  callback-ticket issuer/ordinal, and compile evidence that lower tickets,
+  callback tickets, closed submissions, and bound checkpoints are not `Clone`,
+  encodable, constructible by the callback, or retained in semantic facts;
+- static source/privacy evidence that lower alone issues
+  `MaterializationTicket`, driver begin is the sole `bind_callback` caller,
+  validated driver close is the sole `bind_closed_submission` caller, and the
+  only lower submit signature consumes `(MaterializationTicket,
+  ClosedMaterialization)` with no ordinal/source-list escape;
+- lower hint/preparation failure charging zero callback count while retaining
+  exact lower node/branch/binding work, lower materialization-ticket issue and
+  private correlation allocation charging zero, open-hook failure retaining one
+  accepted driver callback-ticket-mint charge, multi-correlation
+  materialization limit 1 opening only the first callback, and callback
+  Abort/close/submit invariant committing exact accounting without a second
+  charge;
 - callback `SourceCallbackFailure::Fatal` with the exact authorized source and
-  phase becoming `FatalSource`, callback work cancellation/overflow and every
+  phase becoming immediate probe `FatalSource` or typed materialization Fatal
+  submission, callback work cancellation/overflow and every
   work/node/branch/binding/source/materialization limit remaining `Abort`, and
   open-hook failure or wrong phase/source/set/order/ticket/checkpoint becoming
   `Invariant` even when the callback claims a plausible `SourceError`;
@@ -2682,15 +3191,35 @@ Implementation must cover:
   different final sealed values remaining ambiguous, semantic failures
   pruning only their trace, and typed materialization errors retaining their
   source phase/cause;
+- materialization Fatal in one correlation not stopping later correlations,
+  later-correlation failure at an earlier authored source winning globally,
+  equal-source failures choosing the earlier canonical correlation, producer
+  iteration changes leaving the result unchanged, and a later Abort or
+  constraint/client invariant immediately overriding every accumulated Fatal,
+  with every Fatal record obtaining its private correlation only by consuming
+  the matching lower ticket;
+- exhaustive compile matches proving
+  `MaterializationImmediateFailure` has only Abort/Invariant and
+  Sealed/Rejected/Fatal are submission variants, so no validated
+  materialization Fatal can escape through an immediate error arm;
+- Fatal-plus-success and multiple-Fatal correlation sets returning the selected
+  `FatalSource` before semantic-branch ambiguity, pair unicity, or score, while
+  ordinary rejected correlations remain pruned and never become Fatal records;
 - affine materialization closure on sealed, rejected, callback-Fatal,
   callback-Abort, callback-Invariant, foreign, stale, and non-LIFO checkpoints:
   sealed performs exactly one
   `extract_and_rollback`, ordinary rejection, valid callback `Fatal`, and
   callback `Abort`/`Invariant` perform exactly one rollback and become
-  `Rejected`/`FatalSource`/`Abort`/`Invariant(Client(..))`, wrong or foreign
-  ticket binding and
+  `ClosedMaterializationSubmission::Rejected`/`Fatal`, immediate `Abort`, or
+  immediate `Invariant(Client(..))`; wrong or foreign ticket binding and
   stale/non-LIFO closure become `Invariant(SourceProtocol(..))`, and no outcome
-  can trigger a second close or leave a live token;
+  can trigger a second close or leave a live token, plus cross-attachment of
+  callback ticket A/lower ticket B and lower ticket A/closed result B failing as
+  `SourceProtocol` before transaction state mutation, double callback binding
+  or closing failing the private `Ready -> CallbackBound -> Closed` phase, and
+  compile-fail proof that no bare
+  correlation can be submitted and that lower ticket/closed result cannot be
+  double-closed or double-submitted;
 - exact `CandidateSemanticProjection` equality over issuer and every typed map
   entry, semantically equal move payload coalescing, any result-changing
   payload difference remaining distinct, digest-collision fallback to full
@@ -2706,12 +3235,23 @@ Implementation must cover:
   match;
 - group-zero bindings consumed by later groups and exact curried base tamper;
 - every `InheritedSolutionInvariantKind`: wrong scope/rigid binding, unknown or
-  duplicate/unordered parameter, self binding, forbidden form, occurs/cycle,
-  unclosed row, and noncanonical row, plus callable invariants for wrong
+  duplicate/unordered parameter, unexpected key, self binding, forbidden form,
+  occurs/cycle, unclosed required row, and noncanonical row, plus callable invariants for wrong
   base/schema/group and incorrect deferred first-group ownership;
+- exact sorted required-inherited-key derivation for base, two-group, and
+  three-group schemas; empty base contract, missing required prior key returning
+  `Unclosed`, canonical extra current/future key returning `UnexpectedKey`, a
+  rigid extra retaining `RigidBinding` even when its value is noncanonical, an
+  eligible noncanonical extra chain returning `NonCanonical` before
+  `UnexpectedKey`, duplicate/unordered rows winning before all later failures,
+  duplicate/unordered/malformed required contracts failing scope sealing
+  without repair, and compile/codec evidence that the contract is type-only,
+  contains no const/group/deferred/binding row, and has no caller-supplied or
+  test-only constructor;
 - completed inherited `{T -> U, U -> i32}` returning `NonCanonical` without
   repair, canonical inherited `{T -> U}` plus current `U -> i32` succeeding
-  with final `{T -> i32, U -> i32}`, and a canonical inherited binding that
+  when required keys are `{T}` with final `{T -> i32, U -> i32}`, missing `T`
+  returning `Unclosed`, and a canonical inherited binding that
   conflicts with a current constraint remaining ordinary `Rejected(Mismatch)`;
 - every base-instantiation variant and payload-order/scalar/tag tamper;
 - singleton/replay application-core and final-application digest equality, with
@@ -2740,10 +3280,14 @@ Implementation must cover:
   projection publication, prepared/frozen seed solution parity, and proof that
   no prepared issuer/node/ref enters a final fact or digest;
 - version-1 restore DTO round trip through the common lower row validator and
-  callable sealer, with foreign/stale/wrong-scope, row-order, noncanonical,
-  coordinate, deferred, and digest tamper failing before handle/candidate
-  construction, no input normalization/sorting/row dropping, no direct
-  `Deserialize` for opaque carriers, and no legacy/version-dispatch reader;
+  callable sealer, re-derived required keys rather than a DTO authority, with
+  exact type/rigid-const scope re-derivation and the same structural, scope/
+  rigid, canonical, then required/actual precedence; foreign/stale/wrong-scope,
+  type/const-kind confusion, non-rigid const, missing-required/extra-key,
+  row-order, noncanonical, coordinate, deferred, and digest tamper failing before
+  handle/candidate construction, no input normalization/sorting/row dropping,
+  no direct `Deserialize` for opaque carriers or generation-local
+  materialization capabilities, and no legacy/version-dispatch reader;
 - equivalent HIR allocated in different raw ID orders producing identical
   lexical/function-value/resolved-callable/core/application/continuation
   digests, while a stable path, ordinal, schema, type, effect, or capture change
@@ -2756,8 +3300,9 @@ Implementation must cover:
   compiler parity from the sealed execution row without an outer callee fact or
   raw HIR/schema/name reread;
 - exact error-disposition tests proving candidate mismatch/ambiguity/current
-  cycle/incomplete/source rejection are `Rejected`, only validated callback
-  `Fatal` is `FatalSource`, solver/ticket/callback cancellation, checked
+  cycle/incomplete/source rejection are `Rejected`, only validated probe Fatal
+  or globally selected validated materialization Fatal is `FatalSource`,
+  solver/ticket/callback cancellation, checked
   overflow, and every configured limit are `Abort`, carrier/scope/source-plan/
   protocol/projection impossibilities are `Invariant(Constraint(..))`, and
   domain client/nested failures are `Invariant(Client(..))` without later
