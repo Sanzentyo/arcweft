@@ -2,6 +2,8 @@
 
 Status: `READY_FOR_IMPLEMENTATION`
 
+Implementation verdict: `IMPLEMENTABLE`
+
 This amendment replaces the call-side assumptions in the original C2 design.
 Implementation evidence showed that the checker discarded the selected
 generic solution, published provisional `CallTargetFacts` beside a duplicated
@@ -13,7 +15,10 @@ The selected final model is a single sealed call application. Diff size and
 implementation cost are not design inputs. Optional arguments, dialogue clear,
 typed rest, receiver inference, intrinsic constructors, curried continuation,
 join validation, and compiler execution projection are all projections of the
-same schema and frozen constraint solution.
+same schema and lower constraint solution. Before catalogs/effects can seal it,
+that exact solution is owned by one prepared graph node, with a partial node
+using the move-only continuation carrier; afterward it is shared only through
+the frozen solution handle.
 
 ## 1. Orthogonal schema and source algebras
 
@@ -46,7 +51,10 @@ pub struct CallableParameterValueRule {
     alternatives: Arc<[CallableParameterValueAlternative]>,
 }
 
+pub struct CallableParameterAlternativeIndex(u32);
+
 pub struct CallableParameterValueAlternative {
+    index: CallableParameterAlternativeIndex,
     evidence: CallableSemanticValueEvidenceRule,
     expected: ParameterExpectedTypeProjection,
     action: CallableArgumentSemanticAction,
@@ -88,13 +96,16 @@ pub enum UnknownNamedArgumentPolicy {
 }
 ```
 
-`Any` occurs exactly once and last. Earlier evidence rows are pairwise
-exclusive. The checker selects an alternative through final typed semantic
-evidence, never through first successful type inference, source spelling, or
-parameter optionality. A checked slot retains a schema-relative
-`CallableParameterAlternativeIndex`, the evidence that selected it, and the
-composed final expected type. It does not retain a parallel `Supply`/`Clear`
-flag; consumers obtain the action from the selected schema alternative.
+`CallableParameterValueRule` construction assigns contiguous alternative
+indexes in source-independent schema order and rejects a supplied row whose
+index is not its exact position. `Any` occurs exactly once and last. Earlier
+evidence rows are pairwise exclusive. The checker selects an alternative
+through final typed semantic evidence, never through first successful type
+inference, source spelling, or parameter optionality. A checked slot retains a
+schema-relative `CallableParameterAlternativeIndex`, the evidence that
+selected it, and the composed final expected type. It does not retain a
+parallel `Supply`/`Clear` flag; consumers obtain the action from the selected
+schema alternative.
 `Clear` is legal only when the same parameter owns a `DialoguePatch` consumer.
 The fixed and custom dialogue coordinates move from `final_analysis` to the
 shared `character_dialogue` owner so schema construction and final patch rows
@@ -103,21 +114,26 @@ use the same typed identity.
 and always has action `Supply`; it cannot own a Clear alternative or a
 non-Value consumer.
 
-The argument mapper separately owns how one source value supplies a logical
-slot:
+The argument mapper chooses how one source value supplies a logical slot, but
+the types layer owns the projection algebra and its only constructor. This is
+the same typed projection stored by lower equations, materialization requests,
+and the final execution slot; callable code does not retain a parallel
+projection enum or repeat the container match:
 
 ```rust
-enum PreparedArgumentSourceProjection {
+pub(crate) enum PreparedConstraintSourceProjection {
     Scalar,
-    InferSpreadContainer { policy: CallableRestContainerPolicy },
+    InferSpreadContainer { policy: ConstraintSourceContainerPolicy },
 }
 
-pub enum CheckedArgumentSourceProjection {
+pub(crate) enum ConstraintSourceContainerPolicy { Positional, Named }
+
+pub(crate) enum CheckedConstraintSourceProjection {
     Scalar,
-    SpreadContainer(CheckedContainerConstructor),
+    SpreadContainer(CheckedConstraintContainerConstructor),
 }
 
-pub enum CheckedContainerConstructor {
+pub(crate) enum CheckedConstraintContainerConstructor {
     Vec,
     Seq,
     Slice,
@@ -125,6 +141,14 @@ pub enum CheckedContainerConstructor {
     MapValue { kind: MapKind, key: Box<TypeKind> },
 }
 ```
+
+`CheckedConstraintSourceProjection::derive` is the sole exhaustive
+`(prepared projection, checked actual type)` match. `Scalar` accepts only the
+identity projection. `Positional` admits exactly Vec, Seq, Slice, and Array and
+retains the exact array length; `Named` admits exactly Map and retains its exact
+kind and key. Its `compose_expected` owner method wraps a selected value
+expected with that checked constructor. There is no callable-side
+`from_prepared`, header reconstruction, or fallback to the item type.
 
 For declared type `D`, selected value alternative `A`, and checked source
 projection `S`, the only final expected constraint is `S(A(D))`. Fixed literal
@@ -235,7 +259,122 @@ compatibility descent is charged and cancellation-checked by the same run.
 Calling the unmetered recovery convenience entry from a selected-call seal is
 forbidden.
 
-### 3.2 Lower solution and parameter scope
+### 3.2 Callable schema inventory and the single preparation gate
+
+The types layer owns one exhaustive, metered-free schema-construction visitor
+for generic occurrences. `TypeGenericUseCollector` walks every `TypeKind`
+constructor, function parameter/result child, nominal argument, projection,
+map key/value, and `ArrayLength`. It returns distinct sorted type-parameter and
+const-parameter identities, coalesces repeated occurrences of the same
+identity, and rejects a malformed identity. Callable schema code does not own
+another recursive type walker.
+
+`CallableSignatureSchema::try_new` invokes that collector for every checked
+parameter in group order and then for the result. It seals the following
+derived inventory beside the groups; callers cannot supply first-use rows:
+
+```rust
+pub(crate) struct CallableGenericParameterInventory {
+    types: Arc<[CallableGenericTypeUse]>,
+    rigid_consts: Arc<[CallableRigidConstUse]>,
+}
+
+pub(crate) struct CallableGenericTypeUse {
+    parameter: GenericTypeParameterId,
+    role: CallableSchemaGenericRole,
+    first_use: CallableGenericFirstUse,
+}
+
+pub(crate) struct CallableRigidConstUse {
+    parameter: GenericConstParameterId,
+    first_use: CallableGenericFirstUse,
+}
+
+pub(crate) enum CallableSchemaGenericRole { Candidate, RigidReference }
+
+pub(crate) enum CallableGenericFirstUse {
+    Group(CallableGroupIndex),
+    Result,
+}
+```
+
+The schema constructor receives the declaration- or intrinsic-owned candidate
+parameter inventory from the same typed schema issuer that creates the generic
+IDs. Every declared candidate parameter must occur, every occurrence must be
+classified exactly once, and all remaining foreign/enclosing occurrences are
+`RigidReference`. A duplicate ID, a candidate declaration absent from the
+schema, a result inconsistent with the recomputed first use, or an inferable
+const parameter rejects schema construction. Const occurrences are retained
+only as exact rigid references until the lower algebra has a real const-binding
+authority. The inventory is derivable from and cross-checked against the
+schema, while the schema digest continues to commit the owning parameter and
+result types; no caller-supplied side table is trusted.
+
+There is one analyzer-integration validation and preparation entry point in
+`final_analysis/analyzer/calls/constraints.rs`. It orchestrates callable-owned
+schema validation and types-owned plan construction; neither lower layer
+imports `PreparedCallGraph`:
+
+```rust
+pub(crate) fn validate_and_prepare_call_constraints(
+    graph: &PreparedCallGraph<AnalyzerPreparedCallPrefix>,
+    site: CheckedCallSite,
+    candidate: PreparedResolvedCallable,
+    mapping: PreparedCallArgumentMapping,
+    enclosing: &EnclosingGenericParameterScope,
+    context_expected: Option<&TypeKind>,
+) -> Result<PreparedCallConstraintSet, CallConstraintPreparationError>;
+
+struct PreparedCallConstraintSet {
+    issuer: CheckedCallSite,
+    candidate: PreparedResolvedCallable,
+    schema: CallableSignatureSchemaDigest,
+    current_group: CallableGroupIndex,
+    continuation_seed: PreparedCallConstraintSeed,
+    parameter_scope: TypeConstraintParameterScope,
+    base_constraint: Option<PreparedTypeConstraint>,
+    receiver: Option<PreparedReceiverConstraint>,
+    arguments: Box<[PreparedArgumentConstraint]>,
+    expected_result: Option<TypeKind>,
+}
+
+enum PreparedCallConstraintSeed {
+    None,
+    Prepared(PreparedCallContinuationSeed),
+    Frozen(Arc<FrozenCallTypeSolution>),
+}
+```
+
+The entry point derives the group and optional seed from the candidate state;
+the analyzer may not pass raw group/solution pieces. For a base candidate it
+requires group zero and `None`. A pre-seal continuation candidate must contain
+an issuer-bound `PreparedCallContinuationRef`; the entry point resolves it only
+through the supplied graph and validates strict earlier-node dependency,
+base/schema identity, completed/next group adjacency, deferred rows, and
+projected function type, then mints one move-only
+`PreparedCallContinuationSeed` for this run. A post-seal or restored
+continuation must contain the exact `Frozen` handle and additionally validates
+prefix core and frozen-solution digest. Neither route exposes a raw solution
+pair. The entry point then joins
+the schema inventory, exact base instantiation,
+receiver, enclosing rigid inventory, mapping, and terminal/continuation state
+to construct the only lower parameter scope. Candidate parameters first owned
+by the current or an already consumed group are bindable or immutable inherited
+bindings; a later-group or result-only parameter is future-eligible only while
+a continuation still exists; every foreign/enclosing parameter and every const
+is rigid. Terminal preparation emits no future-eligible row.
+
+The same operation validates and consumes the mapper result and constructs all
+types-owned prepared source constraints described below. Its returned value is
+the only way to start the callable constraint driver. Starting a prepared-seed
+run consumes the validated token and shares the carrier's exact
+`Arc<TypeConstraintSolution>` only into lower initialization; a frozen-seed run
+borrows the same field through `FrozenCallTypeSolution`. The graph borrow ends
+before `AnalyzerCallConstraintClient` takes `&mut Analyzer`. No analyzer scan,
+empty-seed fallback, `call_group()` recomputation, raw solution getter, or
+independent scope/inherited pair constructor exists.
+
+### 3.3 Lower solution and parameter scope
 
 One private candidate transaction owns all constraints. The types layer owns
 the complete parameter scope and the only solution representation:
@@ -253,15 +392,6 @@ pub(crate) enum TypeConstraintParameterEligibility {
 
 pub(crate) struct TypeConstraintSolution {
     // normalized binding rows only
-}
-
-struct PreparedCallConstraintSet {
-    issuer: CheckedCallSite,
-    inherited: Option<Arc<FrozenCallTypeSolution>>,
-    parameter_scope: TypeConstraintParameterScope,
-    receiver: Option<PreparedReceiverConstraint>,
-    arguments: Box<[PreparedArgumentConstraint]>,
-    expected_result: Option<TypeKind>,
 }
 ```
 
@@ -283,16 +413,19 @@ future group first owns an eligible parameter and constructs the corresponding
 `DeferredContinuationParameter`. A terminal call permits no such higher-owned
 deferred row.
 
-An inherited solution is admitted only from the exact previous continuation.
-Before the lower run, the higher layer validates its base/schema identity,
-current group, and higher-owned deferred rows against that continuation and
-derives the new lower parameter scope. The lower layer then verifies that every
-inherited binding is normalized, in scope, and complete under `SelectedCall`.
+An inherited solution is admitted only through the validated prepared or
+frozen seed of the exact previous continuation. The single preparation gate
+above validates its issuer/base/schema/group identity and higher-owned deferred
+rows and derives the new lower parameter scope. The callable driver borrows the
+opaque carrier's `Arc<TypeConstraintSolution>` only while initializing lower;
+the analyzer never extracts or stores it independently. The lower layer then
+verifies that every inherited binding is normalized, in scope, and complete
+under `SelectedCall`.
 Inherited bindings are immutable seeds: a later group may consume or extend
 them but cannot replace them. An invalid inherited contract is the first
 candidate failure and never falls back to a fresh empty scope.
 
-### 3.3 One reserved work session
+### 3.4 One reserved work session
 
 The callable layer creates one `CandidateConstraintWorkSession<'a>` with an
 exclusive `&'a mut ResolverWork` borrow per candidate run:
@@ -338,7 +471,7 @@ projections of the one resolver reservation, not a second budget. Every
 checked update needed by the eventual full report occurs before work or
 allocation, so the drop-time commit itself cannot fail.
 
-### 3.4 Callback-only source authority
+### 3.5 Callback-only source authority
 
 The callable-owned candidate driver is generic over a
 `TypeConstraintClient`. The client is the only bridge to expression checking
@@ -346,13 +479,58 @@ and semantic facts; the lower types transaction receives only types-owned
 constraints, projected callback results, and its traversal context:
 
 ```rust
-pub(crate) enum ExpectedHint<'h> {
-    Unchecked,
+pub(crate) trait ConstraintDomain {
+    type Source: Copy + Ord;
+    type AlternativeIndex: Copy + Eq + Ord;
+    type EvidenceRule: Eq;
+    type CheckedEvidence: Eq;
+    type ProbeSemanticBranch: Eq;
+    type SealedBranchValue: Eq;
+    type Projection: Eq + Ord;
+    type SourceErrorCause;
+
+    fn evidence_accepts(
+        rule: &Self::EvidenceRule,
+        checked: &Self::CheckedEvidence,
+    ) -> bool;
+    fn empty_sealed_branch() -> Self::SealedBranchValue;
+}
+
+pub(crate) enum PreparedSourceConstraint<D: ConstraintDomain> {
+    Unchecked {
+        source: D::Source,
+    },
+    Checked {
+        source: D::Source,
+        source_projection: PreparedConstraintSourceProjection,
+        alternatives: Box<[PreparedSourceAlternative<D>]>,
+    },
+}
+
+pub(crate) struct PreparedSourceAlternative<D: ConstraintDomain> {
+    alternative: D::AlternativeIndex,
+    evidence: D::EvidenceRule,
+    value_expected: TypeKind,
+}
+
+pub(crate) enum ProjectedExpectedHint<'h> {
     Complete(&'h TypeKind),
     Parametric {
         expected: &'h TypeKind,
         unbound: &'h [GenericTypeParameterId],
     },
+}
+
+pub(crate) struct SourceAlternativeHint<'h, D: ConstraintDomain> {
+    alternative: D::AlternativeIndex,
+    evidence: &'h D::EvidenceRule,
+    value_expected: ProjectedExpectedHint<'h>,
+    source_projection: PreparedConstraintSourceProjection,
+}
+
+pub(crate) enum ExpectedHint<'h, D: ConstraintDomain> {
+    Unchecked,
+    Alternatives(&'h [SourceAlternativeHint<'h, D>]),
 }
 
 pub(crate) enum SourcePhase {
@@ -366,75 +544,246 @@ pub(crate) struct SourceError<S, C> {
     cause: C,
 }
 
-pub(crate) struct SourceProbeResult<B> {
-    actual: TypeKind,
-    canonical_branch: B,
+pub(crate) enum SourceProbeSelection<A, E> {
+    Unchecked,
+    Checked { alternative: A, evidence: E },
 }
 
-pub(crate) enum MaterializedSourceRequest<'h, S, B> {
+pub(crate) struct SourceProbeResult<D: ConstraintDomain> {
+    actual: TypeKind,
+    canonical_branch: D::ProbeSemanticBranch,
+    selection: SourceProbeSelection<D::AlternativeIndex, D::CheckedEvidence>,
+}
+
+pub(crate) enum SourceProbeOutcome<D: ConstraintDomain> {
+    Accepted(SourceProbeResult<D>),
+    Rejected(D::SourceErrorCause),
+}
+
+pub(crate) enum MaterializationOutcome<S, V, C> {
+    Sealed(V),
+    Rejected { source: S, cause: C },
+}
+
+pub(crate) enum MaterializedSourceRequest<'h, D: ConstraintDomain> {
     Unchecked {
-        source: S,
-        canonical_branch: &'h B,
+        source: D::Source,
+        canonical_branch: &'h D::ProbeSemanticBranch,
     },
     Checked {
-        source: S,
+        source: D::Source,
+        alternative: D::AlternativeIndex,
+        evidence: &'h D::CheckedEvidence,
+        source_projection: &'h CheckedConstraintSourceProjection,
         expected: &'h TypeKind,
-        canonical_branch: &'h B,
+        canonical_branch: &'h D::ProbeSemanticBranch,
     },
 }
 
-pub(crate) trait TypeConstraintClient {
-    type Source: Copy + Ord;
-    type ProbeSemanticBranch: Eq + Ord;
-    type SealedBranchValue: Eq + Ord;
-    type SourceErrorCause;
+pub(crate) trait TypeConstraintClient<D: ConstraintDomain> {
+    type ProbeCheckpoint;
+    type MaterializationCheckpoint;
+    type PreparedSealedBranchValue;
 
     fn probe_source<'h>(
         &mut self,
-        source: Self::Source,
-        hint: ExpectedHint<'h>,
+        source: D::Source,
+        hint: ExpectedHint<'h, D>,
+        checkpoint: &mut Self::ProbeCheckpoint,
         work: &mut CandidateConstraintWorkSession<'_>,
     ) -> Result<
-        SourceProbeResult<Self::ProbeSemanticBranch>,
-        SourceError<Self::Source, Self::SourceErrorCause>,
+        SourceProbeOutcome<D>,
+        SourceError<D::Source, D::SourceErrorCause>,
     >;
 
-    fn materialize_sources<'h>(
+    fn begin_probe_checkpoint(&mut self) -> Self::ProbeCheckpoint;
+
+    fn close_probe_checkpoint(
         &mut self,
-        sources: &[MaterializedSourceRequest<'h, Self::Source, Self::ProbeSemanticBranch>],
+        checkpoint: Self::ProbeCheckpoint,
+        attempt: Result<SourceProbeOutcome<D>, SourceError<D::Source, D::SourceErrorCause>>,
+    ) -> Result<SourceProbeOutcome<D>, SourceError<D::Source, D::SourceErrorCause>>;
+
+    fn begin_materialization_checkpoint(&mut self) -> Self::MaterializationCheckpoint;
+
+    fn materialize_sources<'h, I>(
+        &mut self,
+        sources: I,
+        checkpoint: &mut Self::MaterializationCheckpoint,
         work: &mut CandidateConstraintWorkSession<'_>,
     ) -> Result<
-        Self::SealedBranchValue,
-        SourceError<Self::Source, Self::SourceErrorCause>,
+        MaterializationOutcome<D::Source, Self::PreparedSealedBranchValue, D::SourceErrorCause>,
+        SourceError<D::Source, D::SourceErrorCause>,
+    >
+    where
+        I: IntoIterator<Item = MaterializedSourceRequest<'h, D>>;
+
+    fn close_materialization_checkpoint(
+        &mut self,
+        checkpoint: Self::MaterializationCheckpoint,
+        attempt: Result<
+            MaterializationOutcome<
+                D::Source,
+                Self::PreparedSealedBranchValue,
+                D::SourceErrorCause,
+            >,
+            SourceError<D::Source, D::SourceErrorCause>,
+        >,
+    ) -> Result<
+        MaterializationOutcome<D::Source, D::SealedBranchValue, D::SourceErrorCause>,
+        SourceError<D::Source, D::SourceErrorCause>,
     >;
 }
 ```
 
-The candidate driver creates the hint from the solver-owned projected expected
-type. `Complete(expected)` means that projection contains no bindable unbound
-parameter. `Parametric { expected, unbound }` carries the exact projected type
-and sorted declaration-owned parameters whose later binding can change the
-source result. `Unchecked` has no expected constraint and cannot later acquire
-one. The callback borrows these values only for its invocation and cannot
-retain or rewrite them. There is no reverse source-to-solver hint query.
+`PreparedSourceConstraint` is a types-owned input, not an analyzer hint object.
+The callable preparation gate moves into it the exact schema-keyed alternatives
+and value-expected templates. It validates strict alternative-index order,
+unique keys, one terminal fallback, and the mapper's one source projection.
+Prepared sources are in strict authored argument/physical-slot order and their
+typed source coordinates are unique; a duplicate is rejected before the first
+callback and is rejected again if a sealed materialization submission violates
+the ticket.
+The lower owner moves accepted checked evidence and probe-semantic branches
+into private `Arc` cells before a frontier can fork. Domain values therefore do
+not need `Clone`, `Copy`, or `Ord`; path copies share the exact issuer-sealed
+value and trace order remains the deterministic source/branch-derivation order.
+The lower transaction alone substitutes a frontier binding into those
+templates and constructs the borrowed hints. `Complete` and `Parametric` have
+their prior meanings, but now exist per keyed alternative. The callback may
+select only one supplied key and return checked evidence for that key; it never
+returns, composes, or rewrites an expected type. The lower domain hook validates
+that issuer-sealed complete evidence against every rule and requires the
+returned key to be the first accepting nonfallback row, or the terminal `Any`
+row only when no earlier row accepts. Unknown keys, an `Any` shortcut around an
+earlier match, inconsistent evidence, and more than one nonfallback match are
+source protocol violations.
 
-The callback result is a separate value containing the checked actual type and
-canonical semantic branch, or a typed `SourceError`; it is never encoded into
-the hint. Both callbacks receive only the narrow mutable candidate work session
-needed to charge expression/source work. They cannot access the underlying
-`ResolverWork` or any pending accounting report.
+For `Scalar`, the selected value expected is also the source expected. For
+`InferSpreadContainer`, the current contract admits only the single
+`Any + Identity + Supply` alternative. The client probes its actual container
+without inventing a container expected; after receiving the actual type the
+lower owner derives the exact checked source projection and composes the
+expected container, including array length or map kind/key. A malformed
+container is a lower mismatch. No callback can return a projected expected or
+choose a container constructor.
+
+An accepted checked probe is converted inside the lower transaction into one
+source equation and one correlated trace row containing the selected
+alternative, checked evidence, checked source projection, expected template,
+actual type, and canonical semantic branch. At final closure the lower owner
+normalizes the template through the unique candidate solution, composes the
+source projection, rechecks the whole equation, and moves a
+`ClosedConstraintProbe` with its `final_expected` into the materialization
+ticket. `MaterializedSourceRequest::Checked` is only a borrowed view of that
+closed row. The final keyed projection returned to callable sealing retains the
+same alternative, evidence, projection, actual, and final expected; none is
+re-derived by the analyzer or callable layer. Unchecked sources remain
+`Unchecked` through every phase and cannot acquire an alternative or expected.
 
 Every source probe executes in a fresh client-owned semantic checkpoint;
-parametric alternatives each receive a distinct checkpoint. The callback
-returns only its actual type and canonical
-`ProbeSemanticBranch`; its facts are rolled back before another branch is
-visited. It cannot publish an expression, argument fact, alternative, or
-application and cannot inspect the solver frontier. A failure is a typed
-`SourceError` carrying exact source identity, `Probe`/`Materialize` phase, and
-the client's typed cause. Source errors are not flattened into a boolean
-mismatch or a string diagnostic.
+evidence alternatives attempted inside a probe use nested checkpoints and are
+all closed before return. `close_probe_checkpoint` consumes the outer token,
+rolls it back on accepted, rejected, and fatal outcomes, and only then exposes
+the result to the driver. Every materialization similarly starts from one
+baseline, but its checkpoint is affine: the driver passes the callback attempt
+to `close_materialization_checkpoint`, which consumes the token exactly once.
+On `Sealed(prepared)`, the analyzer performs
+`SemanticFactState::extract_and_rollback`, combines the move-only semantic
+projection with the prepared source rows, and returns the final sealed value.
+On rejection or fatal error it performs ordinary rollback and forwards the
+typed outcome. There is no unconditional driver rollback after a successful
+extract, no commit path, and no reusable checkpoint token.
 
-### 3.5 Correlated frontier and final materialization
+`SealedBranchValue` deliberately requires `Eq`, not `Ord`: lower coalescing
+needs exact equality but never semantic ordering. The analyzer implementation
+owns `AnalyzerCallConstraintDomain`, `AnalyzerCallConstraintSource`,
+`AnalyzerProbeSemanticBranch`, `AnalyzerCallSealedBranch`,
+`AnalyzerCallProjectionKey`, and `AnalyzerCallSourceFailureCause` in
+`final_analysis/analyzer/calls/constraints.rs`. Common callable coordinates are
+imported from their existing owners; the types layer never imports an analyzer
+type. `AnalyzerCallSealedBranch` is move-only and compares an ordered list of
+client-owned materialization outcomes plus exact `CandidateSemanticProjection`
+equality.
+That projection implements manual `PartialEq/Eq` by issuer identity and every
+typed map key and optional value. Prepared-graph deltas use exact
+dependency-preserving isomorphism: nodes are compared in call-site/topological
+order, references to nodes inside the delta are rewritten to that local
+ordinal for comparison, references to an existing baseline node compare their
+same-issuer coordinate, and every payload field is compared by its owner.
+Allocation-only node IDs do not affect equality. This is a borrowed comparison
+view over the move payload, not a second stored graph or digest identity. The
+projection has no `Clone` or `Ord`. A cached digest or ordering key may
+accelerate candidate lookup, but it is only a comparison candidate and must be
+followed by this full equality; it never replaces or copies the move payload.
+
+The analyzer domain mapping is closed and local:
+
+```rust
+pub(super) enum AnalyzerCallConstraintSource {
+    Receiver { source: ExprId },
+    Argument {
+        argument: HirCallArgumentOrdinal,
+        slot: CallableArgumentSlotIndex,
+        source: CheckedCallArgumentSlotSource,
+    },
+}
+
+pub(super) struct AnalyzerProbeSemanticBranch {
+    decisions: Arc<[AnalyzerProbeSemanticDecision]>,
+}
+
+pub(super) enum AnalyzerCallProjectionKey {
+    BaseInstantiation,
+    Receiver,
+    Argument {
+        argument: HirCallArgumentOrdinal,
+        slot: CallableArgumentSlotIndex,
+    },
+    Result,
+    Future(GenericTypeParameterId),
+}
+
+pub(super) struct AnalyzerCallSealedBranch {
+    outcomes: Box<[AnalyzerMaterializedSourceOutcome]>,
+    projection: CandidateSemanticProjection,
+}
+
+impl ConstraintDomain for AnalyzerCallConstraintDomain {
+    type Source = AnalyzerCallConstraintSource;
+    type AlternativeIndex = CallableParameterAlternativeIndex;
+    type EvidenceRule = CallableSemanticValueEvidenceRule;
+    type CheckedEvidence = CheckedSemanticValueEvidence;
+    type ProbeSemanticBranch = AnalyzerProbeSemanticBranch;
+    type SealedBranchValue = AnalyzerCallSealedBranch;
+    type Projection = AnalyzerCallProjectionKey;
+    type SourceErrorCause = AnalyzerCallSourceFailureCause;
+    // evidence_accepts and empty_sealed_branch are exhaustive owner methods.
+}
+```
+
+`AnalyzerProbeSemanticDecision` is the expression checker's canonical ordered
+typed decision transcript for one generation; it is not a semantic-fact copy,
+source spelling, or digest-only identity. The source enum is the complete set
+of expression callbacks: base instantiation and expected result are ordinary
+lower equations, while receiver and physical argument slots are source
+constraints. `AnalyzerCallSourceFailureCause` has distinct expression,
+evidence, checkpoint, and projection violations and retains the existing typed
+analysis cause as a payload. `AnalyzerMaterializedSourceOutcome` is constructed
+one-for-one in request order and retains only the client-owned semantic outcome;
+it does not copy the lower alternative, evidence, source projection, actual, or
+final expected. Those remain on the closed lower trace and are paired with the
+sealed value in the materialized record and final keyed projection. Empty-source
+candidates use the domain's one empty sealed branch with an empty exact
+semantic projection.
+
+Both callbacks receive only the narrow mutable candidate work session needed
+to charge expression/source work. They cannot access the underlying
+`ResolverWork` or pending accounting report. A `SourceError` retains the exact
+source, `Probe`/`Materialize` phase, and typed cause; it is never flattened into
+a boolean mismatch or string diagnostic.
+
+### 3.6 Correlated frontier and final materialization
 
 The deterministic constraint order is:
 
@@ -465,21 +814,25 @@ in exactly this order:
    compatibility engine, including exact array-length and closed-effect checks;
 4. canonicalize binding environments while retaining the complete ordered set
    of correlated probe traces for each binding;
-5. for every correlated trace inside each canonical binding, reset the client
+5. close every retained source equation, preserving its selected alternative,
+   evidence, checked source projection, actual, and normalized final expected;
+6. for every correlated trace inside each canonical binding, reset the client
    to the same pre-probe semantic baseline and invoke `materialize_sources`,
-   checking that trace's exact source list in authored argument/slot order with
-   the final projected expectations;
-6. prune a trace that semantically no longer satisfies final materialization,
+   checking that trace's exact closed source list in authored argument/slot
+   order with those lower-derived final expectations;
+7. close the affine materialization checkpoint, prune a trace that semantically
+   no longer satisfies final materialization,
    retain a typed source error as an error, seal every successful private
    branch value, and coalesce equal sealed values within that binding by their
-   canonical typed identity;
-7. discard a binding with no surviving value, reject semantic-branch ambiguity
+   exact equality;
+8. discard a binding with no surviving value, reject semantic-branch ambiguity
    when one binding has more than one distinct final sealed value, then require
    unicity of the surviving `(canonical binding, sealed branch value)` pair
    across bindings;
-8. project every checked slot, receiver, result, and future-eligible parameter
+9. project every checked slot, receiver, result, and future-eligible parameter,
+   together with each closed source alternative/evidence/projection/type row,
    from that unique pair for the higher callable sealer; and
-9. `finish`, followed by the exactly-once `run.complete()` accounting commit.
+10. `finish`, followed by the exactly-once `run.complete()` accounting commit.
 
 Two Choice paths that reach the same binding are not represented by one
 optional branch token. That binding retains every correlated trace through
@@ -507,20 +860,40 @@ or Choice path leaking into another. Final public slot facts contain only types
 and evidence projected after this phase; prefix probe hints are diagnostic
 evidence only.
 
-### 3.6 B3 ownership and replay sequence
+### 3.7 B3 ownership and replay sequence
 
 The B3 integration sequence is one candidate-wide operation:
 
-1. prepare mapper destinations, schema alternatives, typed evidence, and
-   source projections without publishing facts;
-2. create the exact parameter scope and inherited seed;
-3. exclusively borrow `ResolverWork` into one candidate work session;
-4. add base, receiver, source-ordered argument, and expected-result
+1. consume the mapper result through
+   `validate_and_prepare_call_constraints`, which validates the schema generic
+   inventory and continuation and creates every types-owned source plan, the
+   exact parameter scope, and exactly one none/prepared/frozen continuation
+   seed without publishing facts;
+2. exclusively borrow the query-local `ResolverWork` into one candidate work
+   session;
+3. add base, receiver, source-ordered argument, and expected-result
    constraints to one transaction;
-5. complete the correlated solve and ordered materialization once;
-6. move the unique `Arc<TypeConstraintSolution>`, coalesced sealed branch
-   value, final projections, and score into `PreparedCandidateTransaction`; and
-7. keep that transaction private until the C sealer can consume it.
+4. complete the correlated solve and affine ordered materialization once;
+5. move the unique `Arc<TypeConstraintSolution>`, exact coalesced sealed branch
+   value, closed source rows, final projections, and score into
+   `PreparedCandidateTransaction`; and
+6. consume that transaction into one prepared graph node; a partial result is
+   wrapped by the move-only `PreparedCallContinuation` and immediately exposes
+   only its issuer-bound reference, while a terminal result remains a selected
+   value node. Keep the graph private until the C sealer consumes it.
+
+`analyze_call` first destructures `ResolvedCallQuery`, so `ResolverWork` is a
+local value rather than a field behind the analyzer borrow. Mapping and the
+single preparation gate, including prepared-graph reference resolution and
+one-run seed minting, finish before a session starts and release the graph
+borrow. The driver then owns
+the exclusive session while `AnalyzerCallConstraintClient` separately borrows
+`&mut Analyzer`; callbacks cannot reach the local work except through the
+narrow callback capability. `driver.finish()` consumes and drops the client,
+ending the analyzer borrow while the returned run still owns the work
+reservation. `run.complete()` then commits and releases the local work. No
+`RefCell`, raw pointer, split analyzer facade, copied resolver report, or
+re-entrant resolver borrow is permitted.
 
 `TypeParameterSubstitutions` may remain for nominal-only paths, but call
 selection, join, continuation, and execution never use it or re-run `observe`.
@@ -528,27 +901,35 @@ There is no per-equation run, caller-side binding merge, expected-dependent
 Option/Result schema, result override, or join-side inference.
 
 For a singleton candidate, the selected path moves its complete prepared
-transaction and retained semantic checkpoint; no solution, source branch, or
-argument vector is cloned into publication. For multiple candidates, every
-probe is isolated and rolled back. Selection starts a fresh checkpoint and
-performs the entire candidate transaction again in `SelectedReplay`, including
-one new reserved work session, all constraints, source materialization, final
-projection, and scoring. Replaying only the arguments is forbidden. The replay
-transaction is then moved to the private call analysis and later consumed by
-the C sealer.
+transaction and move-only sealed semantic projection into private call
+analysis; no checkpoint, solution, source branch, or argument vector is cloned
+into publication. Prepared graph insertion splits and applies that projection
+exactly once inside its atomic private-publication transaction, then stores only
+the projection-free selected record. For multiple candidates,
+every full `Probe` run includes base,
+receiver, every source, result, closure, materialization, final projection, and
+score, then leaves the analyzer at the common rolled-back baseline. Selection
+retains only the immutable prepared descriptor and diagnostic score. It starts
+a fresh checkpoint and new reserved work session and performs that same entire
+operation in `SelectedReplay`. The replay must produce the same application
+core inputs and score before its one semantic projection is applied during
+prepared graph insertion. Replaying
+only arguments, reusing a probe projection, or mixing a probe solution with a
+replayed source vector is forbidden. The replay transaction is moved to the
+private call analysis and later consumed by the C sealer.
 
 ## 4. Language intrinsic generic ownership
 
-`GenericTypeOwnerId::AgentIntrinsic` is replaced by the general lower-layer
+`GenericParameterOwnerId::AgentIntrinsic` is replaced by the general lower-layer
 owner:
 
 ```rust
-pub enum GenericTypeOwnerId {
+pub enum GenericParameterOwnerId {
     Callable(CallableDeclarationKey),
     Nominal(ProjectNominalDeclarationId),
     AcceptedNominal(AcceptedNominalId),
     AcceptedSource(SourceSpan),
-    Detached(DetachedTypeOwnerId),
+    Detached(DetachedGenericOwnerId),
     LanguageIntrinsic(LanguageIntrinsicGenericOwner),
 }
 
@@ -579,7 +960,7 @@ exists<T>(Probe<T>) -> Predicate
 ```
 
 `Reduction::unchanged` uses the exact accepted `Reduction<S>` nominal owner and
-its existing `GenericTypeOwnerId::AcceptedNominal`, obtained from the accepted
+its existing `GenericParameterOwnerId::AcceptedNominal`, obtained from the accepted
 world. It is not a second language-intrinsic generic owner. Collection method
 candidates are emitted only for a supported concrete container constructor;
 invalid-receiver `_` fallbacks reject.
@@ -604,13 +985,78 @@ continuation schema and is owned by `DeferredContinuationParameter`.
 
 ## 5. One application and one continuation
 
-Analysis owns only a private prepared row until checked callables and final
-effects are ready:
+The callable layer owns one generic issuer-bound prepared call graph in
+`callable/continuation.rs`; it depends only on a narrow
+`PreparedCallPrefixPayload` contract and callable/sema-root coordinates.
+Analysis instantiates it with `AnalyzerPreparedCallPrefix` until checked
+callables and final effects are ready. That instance replaces the
+`pending_calls` side map and is part of `SemanticFactState`, so candidate
+checkpoint journaling also rolls back graph node insertion:
 
 ```rust
-struct PreparedCallAnalysis {
+trait PreparedCallPrefixPayload {
+    type Unselected;
+
+    fn selected(&self) -> &PreparedResolvedCallable;
+    fn schema(&self) -> CallableSignatureSchemaDigest;
+    fn completed_group(&self) -> CallableGroupIndex;
+    fn solution(&self) -> &Arc<TypeConstraintSolution>;
+}
+
+struct PreparedCallGraph<P: PreparedCallPrefixPayload> {
+    issuer: Arc<PreparedCallGraphIssuer>,
+    next_node: u64,
+    nodes: BTreeMap<PreparedCallNodeId, PreparedCallNode<P>>,
+}
+
+struct PreparedCallNode<P: PreparedCallPrefixPayload> {
+    site: CheckedCallSite,
+    dependencies: Box<[PreparedCallContinuationRef]>,
+    payload: PreparedCallNodePayload<P>,
+}
+
+enum PreparedCallNodePayload<P: PreparedCallPrefixPayload> {
+    SelectedValue {
+        prefix: P,
+        result: TypeKind,
+    },
+    SelectedContinuation(PreparedCallContinuation<P>),
+    Unselected(P::Unselected),
+}
+
+struct AnalyzerPreparedCallPrefix {
     candidates: Box<[PreparedResolvedCallable]>,
-    // candidate transaction and diagnostics
+    selected: AnalyzerPreparedCandidateRecord,
+    diagnostics: Arc<[CallableDiagnostic]>,
+    accounting: CallResolverAccountingReport,
+}
+
+struct PreparedCallContinuation<P: PreparedCallPrefixPayload> {
+    coordinate: PreparedCallContinuationCoordinate,
+    prefix: P,
+    next_group: CallableGroupIndex,
+    deferred: Box<[DeferredContinuationParameter]>,
+    function_type: TypeKind,
+}
+
+#[derive(Clone)]
+struct PreparedCallContinuationCoordinate {
+    issuer: Arc<PreparedCallGraphIssuer>,
+    node: PreparedCallNodeId,
+}
+
+#[derive(Clone)]
+struct PreparedCallContinuationRef(PreparedCallContinuationCoordinate);
+
+struct PreparedCallContinuationSeed {
+    coordinate: PreparedCallContinuationCoordinate,
+    solution: Arc<TypeConstraintSolution>,
+}
+
+enum PreparedResolvedCallableState {
+    Base,
+    PreparedContinuation(PreparedCallContinuationRef),
+    CheckedContinuation(Arc<CheckedCallContinuation>),
 }
 
 pub enum CheckedCallSite {
@@ -640,6 +1086,9 @@ pub struct CheckedCandidateInventory {
 }
 
 pub struct FrozenCallTypeSolution {
+    base: ResolvedCallableDigest,
+    schema: CallableSignatureSchemaDigest,
+    completed_group: CallableGroupIndex,
     solution: Arc<TypeConstraintSolution>,
     deferred: Box<[DeferredContinuationParameter]>,
     digest: FrozenCallTypeSolutionDigest,
@@ -663,17 +1112,79 @@ pub struct CheckedCallApplication {
 }
 ```
 
+`PreparedCallContinuation` is the single pre-seal continuation carrier. It does
+not implement `Clone`. The analyzer-domain publication operation consumes the
+prefix `PreparedCandidateTransaction` into `AnalyzerPreparedCallPrefix`; graph
+insertion consumes that prefix into the carrier, assigns a fresh issuer-bound
+node, and returns an opaque reference. The reference may be shared
+as generation-local dependency evidence, but exposes no base/group/solution or
+transaction getter. Only `PreparedCallGraph` can resolve it to a borrow. This
+supports an immediately enclosing call and multiple uses of the same partial
+function value without copying the carrier or its lower solution.
+`PreparedCallContinuationSeed` is not a second carrier: it is an affine,
+non-`Clone` run capability minted only after resolving one reference, contains
+only the issuer coordinate and an `Arc` to the carrier's exact opaque solution,
+and is consumed by driver initialization. It cannot create a continuation,
+survive a candidate run, or enter final identity.
+
+The carrier's owner methods derive completed group, base/schema identity, and
+the exact lower solution through the sealed prefix-payload methods; only next group, sorted
+deferred rows, and the already checked projected function type are stored.
+Construction proves adjacency, schema first-use ownership, and the function
+projection before the node becomes observable. A ref from another issuer, a
+missing/rolled-back node, a node that is not a continuation, or a node at the
+same or later insertion ordinal rejects. Dependency rows are strict node order,
+sorted, and unique, so the prepared graph is acyclic by construction.
+Node IDs are monotonic and never reused after rollback. Only a
+`CandidateSemanticProjection` minted by the same graph may restore extracted
+nodes with their original IDs, and it restores them in dependency order after
+checking that every baseline or earlier-delta dependency exists.
+
+`AnalyzerPreparedCandidateRecord` is the post-probe, pre-seal remainder of one
+selected transaction. The analyzer-domain owner consumes
+`PreparedCandidateTransaction<AnalyzerCallConstraintDomain>` exactly once and
+splits its `AnalyzerCallSealedBranch` into the move-only
+`CandidateSemanticProjection` and a record containing the exact lower solution,
+closed source rows, client-owned materialization outcomes, keyed projections,
+score, and prepared execution inputs. The record contains no semantic
+projection and has no public constructor. It implements
+`PreparedCallPrefixPayload::solution` by borrowing that sole solution handle.
+Its associated unselected payload is the analyzer-owned typed ambiguous/
+rejected/non-callable/missing evidence, so the callable graph imports no
+final-analysis type.
+
+Prepared publication is one atomic `SemanticFactState` operation: first apply
+the selected semantic projection, including any nested prepared-graph node
+deltas, then insert the current value or continuation node with the record. A
+failure rolls the whole operation back. This private publication is required
+during body analysis so later expressions can observe nested expression facts
+and continuation references; it is not a provisional `CallTargetFacts` success.
+When an enclosing candidate checkpoint later extracts and rolls back these
+facts, `CandidateSemanticProjection` moves the affected prepared graph nodes as
+part of its exact payload. Applying the selected outer projection restores the
+nested nodes before inserting the outer node. No graph node retains another
+`CandidateSemanticProjection`, so this ownership is acyclic rather than a
+recursive projection copy.
+
 `FrozenCallTypeSolution` is the callable-sealed handle to the sole lower
 solution. It owns an `Arc<TypeConstraintSolution>` whose pointee is opaque and
 non-`Clone`; it does not copy its normalized bindings into a callable-owned
 collection. Deferred continuation parameters are deliberately higher-owned:
-the callable sealer derives and sorts `deferred` after proving each row's exact
-first remaining group from the schema. It computes the version-1 digest from
-the lower solution's sorted completed binding iterator followed by those
-sorted deferred rows. Sharing a frozen solution between an application core
-and its continuation clones only the sealed `Arc` handle. Probe publication
-cannot clone or reconstruct the underlying solution: the first frozen handle
-is created by consuming the completed candidate transaction.
+the callable sealer derives and sorts `deferred` from the schema-sealed generic
+inventory after proving each row's exact first remaining group. The frozen
+handle also owns the exact resolved base digest, schema digest, and completed
+group that produced the lower solution. Its version-1 digest commits those
+coordinates before the lower solution's sorted completed binding iterator and
+the sorted deferred rows. Sharing a frozen solution between an application
+core and its continuation clones only the sealed `Arc` handle. Probe
+publication cannot clone or reconstruct the underlying solution: the first
+frozen handle is created only when the graph sealer consumes the prefix
+transaction from its selected value node or move-only continuation carrier.
+The next call can obtain a lower inherited seed only through
+`validate_and_prepare_call_constraints`, using either the issuer-bound prepared
+reference before that consumption or the frozen handle afterward. A
+digest-equal solution with a wrong base/schema/group, a hand-built deferred
+list, or an empty replacement seed is rejected before a callback executes.
 
 `PreparedResolvedCallable` is an issuer-only resolver object. It may contain
 raw lookup IDs, origin, schema pointers, probe state, and base instantiation,
@@ -691,6 +1202,42 @@ roles in the draft. Method join enrichment occurs later and cannot change those
 C1 path bytes. The call sealer borrows this index, consumes prepared candidates,
 and then the index is consumed by the remaining transcript/coordinate owners;
 it is not stored as a second final-analysis side table.
+
+The phase order remains explicit: body expression analysis builds only the
+prepared graph; `finish_checked_callables` seals callable definitions;
+effect closure consumes the graph's typed selected-candidate/effect dependencies
+without requiring a final application digest; C1 seals semantic coordinates;
+then `finalize_call_facts` consumes the entire graph. There is no attempt to
+create a `CheckedCallContinuation` during early expression analysis and no need
+to move catalog/effect sealing before bodies.
+
+Graph consumption is deterministic node order and performs one reconciliation:
+
+1. require every dependency reference to name an already consumed earlier node
+   from the same issuer;
+2. convert each base prepared candidate through the checked catalogs and each
+   `PreparedContinuation` candidate through the earlier node's one
+   `Arc<CheckedCallContinuation>`; an already checked continuation is validated
+   directly;
+3. consume the node's projection-free prepared candidate record, seal the
+   canonical candidate inventory, and create the base/schema/group-bound
+   `FrozenCallTypeSolution` from its exact lower solution;
+4. for a continuation carrier, recompute and compare next group, deferred rows,
+   and function type, seal the prefix application core, then create exactly one
+   `CheckedCallContinuation`, retain only its final `Arc` for later dependent
+   nodes, and replace every exact prepared function-value seed owned by that
+   node with the checked handle;
+5. seal the complete application outcome, validate its already published
+   private prepared facts, and write the final fact in the final-publication
+   checkpoint; and
+6. consume the carrier/node. No prepared reference, node ID, issuer, or graph
+   table survives finalization.
+
+The sealer's earlier-node result vector is an affine local of this consuming
+operation, not a published side map. A shared prepared reference therefore
+reuses the one final `Arc<CheckedCallContinuation>` without resealing the prefix.
+Failure rolls back the publication transaction and consumes no final facts; it
+never falls back to reconstructing `base + group + solution`.
 
 The candidate inventory consumes resolver rows, sorts them by the full
 `ResolvedCallableDigest`, requires strict digest order, and rewrites the
@@ -716,6 +1263,13 @@ selected `CallTargetFacts`, `PendingCallAnalysis`, final selected rebuild, and
 duplicated selected candidate ownership. Delete the common
 `CallTargetFacts.callee` and every compiler fallback that rediscovers
 callee/receiver sources.
+The C sealer alone opens the final-fact publication checkpoint and writes the
+one complete application fact. It receives a projection-free prepared record:
+the selected `CandidateSemanticProjection` was already consumed exactly once by
+private prepared-graph publication during body analysis. Any final seal or
+write failure rolls the final-fact checkpoint back. Probe paths never apply a
+projection; singleton or selected replay may apply one only while atomically
+publishing its private prepared node, never as `CallTargetFacts`.
 
 The result owns the only continuation coordinate:
 
@@ -778,13 +1332,16 @@ second state row. The base owns the exact non-Curried instantiation; the
 authority owns one stable identity plus checked record/schema, diagnostic
 origin, equivalent sources, family, and authority rank.
 The continuation shares that exact authority; it never reconstructs it from a
-dispatch or digest. `ResolvedFunctionValueSeed` carries this opaque
-continuation. `ResolvedCallable` creates a curried candidate only through
-`try_from_continuation`; raw
-`continuation_base + next_group`, independent next-group recomputation, and
-function-type schema reconstruction are deleted. The continuation digest binds
-the exact catalog/intrinsic base, schema, group, prefix application core, and
-inherited solution.
+dispatch or digest. During body analysis, `ResolvedFunctionValueSeed` carries
+only `PreparedCallContinuationRef` (or an already checked continuation supplied
+by a prior accepted authority). `PreparedResolvedCallable` creates its private
+continuation state only through `try_from_prepared_continuation(graph, reference)`.
+During graph consumption that state is reconciled to `ResolvedCallable` through
+`try_from_continuation(Arc<CheckedCallContinuation>)`. Raw
+`continuation_base + next_group`, independent next-group recomputation,
+solution extraction, and function-type schema reconstruction are deleted. The
+continuation digest binds the exact catalog/intrinsic base, schema, group,
+prefix application core, and inherited solution.
 
 Every deferred parameter belongs to the base schema, first appears at its
 recorded remaining group or later, and occurs only in remaining groups/result.
@@ -844,7 +1401,7 @@ pub struct CheckedCallExecutionSlot {
     source: CheckedCallArgumentSlotSource,
     abi_position: u32,
     destination: CheckedCallOperandDestination,
-    source_projection: CheckedArgumentSourceProjection,
+    source_projection: CheckedConstraintSourceProjection,
     alternative: Option<CallableParameterAlternativeIndex>,
     evidence: CheckedSemanticValueEvidence,
     inferred: TypeKind,
@@ -1040,7 +1597,8 @@ base-instantiation =
   | Extension || receiver-type-digest32 || u32(group) || u32(parameter)
 
 call-type-solution =
-  domain || u32(bound-count) ||
+  domain || resolved-base-callable-digest32 || schema-digest32 ||
+  u32(completed-group) || u32(bound-count) ||
   (Bound || generic-parameter-type-digest32 || bound-type-digest32)* ||
   u32(deferred-count) ||
   (Deferred || generic-parameter-type-digest32 || u32(first-group))*
@@ -1288,10 +1846,18 @@ Raw `ExprId`, `ItemId`, `LocalId`, `PatternId`, `StmtId`, `TypeId`, `ScopeId`,
 presence in issuer structures is not a serialization exception. A tamper gate
 reissues equivalent HIR with different allocation order and requires identical
 stable digests.
+`PreparedCallGraphIssuer`, `PreparedCallNodeId`,
+`PreparedCallContinuationCoordinate`, its reference, and its affine seed are
+also generation-local pre-seal capabilities. They have no encoder and are
+forbidden in every checked fact, snapshot, cache key, or digest. Graph
+reconciliation replaces them with the exact checked continuation digest before
+canonical identity is computed.
 
-Bound rows sort by generic parameter identity. Deferred rows sort by parameter
-identity then first group. Counts precede their rows exactly as shown. The
-generic parameter identity is encoded as the semantic digest of its exact
+The frozen base/schema/completed-group prefix is validated against the selected
+resolved base and schema before any bound row is exposed. Bound rows sort by
+generic parameter identity. Deferred rows sort by parameter identity then first
+group. Counts precede their rows exactly as shown. The generic parameter
+identity is encoded as the semantic digest of its exact
 `TypeKind::GenericParam` owner/ordinal, never a display label.
 
 Execution rows are:
@@ -1393,38 +1959,73 @@ not independently accepted authorities:
    rigid/bindable/future-eligible `TypeConstraintParameterScope`, lower
    traversal observer, and sorted completed binding iterator, with no lower
    callable-group or deferred ownership;
-3. replace resolver accounting handoff with the exclusively borrowed
+3. add the exhaustive types-owned `TypeGenericUseCollector`, seal the callable
+   generic inventory/role/first-use rows in every schema constructor, and
+   reject inferable const generics rather than omitting them;
+4. replace resolver accounting handoff with the exclusively borrowed
    `CandidateConstraintWorkSession<'_>`, pending previous/proposed full-report
    reservation, exactly-once infallible complete/drop commit, and
    cancellation/limit accounting;
-4. add the callable-owned generic `TypeConstraintClient`, callback-lifetime
-   `ExpectedHint::{Unchecked, Complete, Parametric}`, typed source result and
-   phase/cause errors, narrow work-session access, isolated semantic probes,
-   and correlated binding/probe-trace frontier;
-5. implement branch-local Choice pruning followed by all-constraint
+5. install the types-owned prepared source constraint, keyed alternative hints,
+   checked source projection constructor, selected alternative/evidence source
+   equation, closed trace, and final materialization request. At this point
+   delete the callable-owned prepared/checked source projection enums and their
+   alternate container match;
+6. extend the callable driver with the domain/client vocabulary and affine
+   probe/materialization checkpoint closers. Replace the unconditional
+   materialization rollback in the same compiling switch, then delete the old
+   begin/callback/rollback protocol;
+7. implement branch-local Choice pruning followed by all-constraint
    normalization, occurs checking, final Choice pruning, exact source-order
    materialization of every correlated trace from one baseline per canonical
-   binding, sealed-value coalescing/pruning, pair unicity, final projection,
-   and run completion;
-6. migrate mapping source projections, parameter alternatives, typed evidence,
-   and the complete B3 base/receiver/argument/expected-result transaction;
-7. migrate Option, Result, Agent, Collection, Reduction, and Fx schemas with no
-   inference placeholders, plus fail-closed Traverse/Parallel deletion;
-8. migrate dialogue fixed/custom rules and typed variant evidence, and route
-   synthetic Dialogue through the same source callbacks and transaction;
-9. replace candidate probes with one move-only prepared transaction, singleton
-   move, multi-candidate full replay, and one private post-catalog/effect call
-   analysis;
-10. establish sema-root semantic-coordinate ownership, lower intrinsic generic
-    owners, canonical digests, higher-owned sorted deferred rows on
-    `FrozenCallTypeSolution`, cumulative continuation, and prepared-callee
-    sealing;
-11. publish the one final application, migrate execution projection and
-    compiler/runtime-plan/tooling consumers, then reduce join to validation,
-    Method enrichment, and move-only edge handoff; and
-12. delete every old substitution, provisional call fact, solver relation,
-    source reconstruction, and compatibility authority before running the full
-    C2 gates.
+   binding, exact sealed-value equality/coalescing, pair unicity, final keyed
+   projection, and run completion;
+8. establish `PreparedCallGraph`, its issuer/node/ref algebra, the move-only
+   `PreparedCallContinuation` that consumes a prefix transaction, its affine
+   one-run seed, the base/schema/group-bound `FrozenCallTypeSolution`, and the
+   one `validate_and_prepare_call_constraints` entry. Migrate mapping, source
+   alternatives/evidence, parameter scope, prepared/frozen inherited seed,
+   base, receiver, arguments, and expected result together; delete every
+   analyzer scope scan and empty/raw inherited-solution constructor
+   immediately;
+9. implement `final_analysis/analyzer/calls/constraints.rs`, exact move-only
+   `CandidateSemanticProjection` equality, the analyzer client, query-local
+   graph/work/analyzer borrow split, prepared-graph checkpoint journaling, and
+   affine extract-and-rollback sealing;
+10. migrate Option, Result, Agent, Collection, Reduction, Fx, dialogue
+    fixed/custom, and synthetic Dialogue schemas through the same preparation,
+    callback, and typed evidence route, with no inference placeholder and
+    fail-closed Traverse/Parallel deletion;
+11. atomically replace `CandidateProbeBatch`, `CandidateProbeRequest`,
+    `CandidateProbe`, `probe_resolved_call`, `probe_call_candidate`,
+    `evaluate_call_arguments`, `evaluate_mapped_call_argument`, and
+    `evaluate_mapped_call_slot` with one move-only prepared transaction,
+    singleton move, and multi-candidate full `SelectedReplay`. Once the new
+    selected route inserts its value/continuation graph node, delete
+    `PendingCallAnalysis`, the `pending_calls` map, `commit_call_arguments`, and
+    `replay_rejected_call_arguments`; no adapter may call either route. Replace
+    prepared `try_curried` and raw `Curried { base, group }` with
+    `try_from_prepared_continuation(graph, reference)`, and replace every raw
+    function-value continuation pair with `PreparedCallContinuationRef`, in
+    this same switch;
+12. establish sema-root semantic-coordinate ownership, lower intrinsic generic
+    owners, canonical digests, higher-owned sorted deferred rows, cumulative
+    continuation, and prepared-callee sealing;
+13. after `finish_checked_callables`, effect closure, and C1 coordinates,
+    consume the prepared graph in dependency order, reconcile every prepared
+    continuation exactly once into `FrozenCallTypeSolution` plus
+    `CheckedCallContinuation`, and publish the one final application. Migrate
+    execution projection and compiler/runtime-plan/tooling consumers, then
+    reduce join to validation, Method enrichment, and move-only edge handoff.
+    In this switch delete provisional selected `CallTargetFacts`,
+    `publish_selected_call`, `publish_selected_call_in_transaction`, final
+    selected rebuild, join-side substitutions, result overrides, and compiler
+    reconstruction; and
+14. prove there is no remaining call consumer of `TypeParameterSubstitutions`,
+    old solver relations, source reconstruction, or recovery compatibility,
+    delete their now-unused call-only APIs and reexports, and run the full C2
+    gates. Nominal-only substitution APIs remain only when an enumerated
+    nominal consumer still requires them.
 
 No checkpoint may commit a public pending variant, fallback reader, dual call
 fact, incomplete witness/form enum, or compiler reconstruction path.
@@ -1443,21 +2044,63 @@ Implementation must cover:
   `OpenArgumentId`, impossible open/unchecked/checked slot combinations, and
   action derivation with no copied slot field;
 - fixed spread versus typed rest, every container constructor, and constructor,
-  array-length, map-key, alternative, evidence, and solution tampering;
+  array-length, map-kind, map-key, alternative, evidence, source projection,
+  final expected, and solution tampering; the callback must be unable to return
+  an expected type or container constructor;
+- types-owned generic-use collection over every `TypeKind` and `ArrayLength`
+  constructor, schema inventory role/first-use derivation for group zero,
+  later groups, and result-only use, and rejection of omitted/duplicate/wrong
+  first-use rows and inferable const generics;
+- the single preparation gate rejecting a mapper/schema mismatch, raw or empty
+  continuation seed, wrong prepared-graph issuer/node/state/order,
+  wrong base/schema/completed/next group, wrong frozen prefix core, incorrect
+  projected function type, and terminal future-eligible inventory before the
+  first source callback;
+- an inner partial call seeding its immediately enclosing call before
+  `finish_checked_callables`/effect closure, two- and three-group chains, a
+  partial result retained without immediate use, and multiple outer uses of one
+  prepared reference sharing one carrier and later one checked continuation;
+- prepared-graph checkpoint rollback producing a typed stale reference,
+  cross-issuer/forward/self/cycle rejection, strict unique dependency order,
+  affine one-run seed consumption, and absence of a raw solution accessor;
 - receiver-only inference, expected-result inference, terminal incomplete
   rejection, and continuation-owned deferred parameters;
 - a spurious-Choice matrix where equal intermediate bindings carry different
   probe semantic branches, proving that a failed local Choice branch cannot
   prune another row or survive final SelectedCall pruning;
-- callback-lifetime Complete, Parametric, and Unchecked expected hints,
-  including exact sorted Parametric unbound identities and an
-  expected-dependent probe whose final public facts come only from ordered
-  materialization and never from its speculative checkpoint;
+- callback-lifetime Unchecked and keyed Alternatives hints, per-alternative
+  Complete/Parametric values, exact sorted Parametric unbound identities,
+  duplicate/unknown alternative and mismatched evidence rejection, and an
+  expected-dependent probe whose final public facts and final expected come
+  only from lower closure and ordered materialization, never from its
+  speculative checkpoint;
+- duplicate prepared and sealed source coordinates rejecting before any
+  binding/value publication, including duplicate-source tamper of an otherwise
+  valid sealed branch;
+- dynamic typed-rest probing with no container expected, lower-only derivation
+  of Vec/Seq/Slice/Array/Map projections, exact header retention, whole final
+  equation recheck, and the same selected alternative/evidence/projection/final
+  expected present in the closed equation, trace, materialization request,
+  keyed solution projection, and execution slot;
 - every correlated trace for one canonical binding re-materialized from the
   same baseline in both source orders, equal final sealed values coalescing,
   different final sealed values remaining ambiguous, semantic failures
   pruning only their trace, and typed materialization errors retaining their
   source phase/cause;
+- affine materialization closure on sealed, rejected, fatal, foreign, stale,
+  and non-LIFO checkpoints: sealed performs exactly one
+  `extract_and_rollback`, rejection/fatal perform exactly one rollback, and no
+  outcome can trigger a second close or leave a live token;
+- exact `CandidateSemanticProjection` equality over issuer and every typed map
+  entry, semantically equal move payload coalescing, any result-changing
+  payload difference remaining distinct, digest-collision fallback to full
+  equality, and compile evidence that the projection and sealed branch are
+  neither `Clone` nor `Ord`;
+- two semantically identical probe graph deltas allocated with different raw
+  node IDs comparing equal through exact dependency isomorphism, while a
+  changed site, dependency edge, continuation payload, solution, or nested fact
+  compares unequal; same-issuer baseline refs remain exact and foreign refs
+  reject;
 - different bindings remaining distinct even when their visible source types
   match;
 - group-zero bindings consumed by later groups and exact curried base tamper;
@@ -1466,13 +2109,23 @@ Implementation must cover:
   incorrect deferred first-group ownership, plus legal immutable extension in
   a later group;
 - every base-instantiation variant and payload-order/scalar/tag tamper;
-- singleton/replay application-core and final-application digest equality;
+- singleton/replay application-core and final-application digest equality, with
+  full base/receiver/argument/result/materialization/score replay and no probe
+  solution or semantic projection reuse;
+- compile/runtime evidence for the query-local `ResolverWork` plus independent
+  `&mut Analyzer` borrow split, including callback access only through the
+  narrow work capability and analyzer borrow release before `run.complete()`;
 - candidate producer-order invariance, canonical selected-index rewriting,
   equivalent duplicate coalescing, and digest-equal authority mismatch
   rejection;
 - acyclic continuation sealing: prefix-core digest first, continuation digest
   second, and final application digest last, with tamper rejection at each
   boundary;
+- prepared-graph reconciliation after callable/effect/C1 sealing, including
+  exact prepared-versus-recomputed base/schema/group/deferred/function checks,
+  one carrier consumption despite shared references, dependency-first semantic
+  projection publication, prepared/frozen seed solution parity, and proof that
+  no prepared issuer/node/ref enters a final fact or digest;
 - equivalent HIR allocated in different raw ID orders producing identical
   lexical/function-value/resolved-callable/core/application/continuation
   digests, while a stable path, ordinal, schema, type, effect, or capture change
@@ -1500,3 +2153,14 @@ Implementation must cover:
   and
 - one inference-free callable join, Method enrichment, and move-only edge
   publication.
+
+For the recorded 351-pass/16-failure pre-B3 baseline used to validate this
+amendment, the fifteen call-bearing failures are one closure group, not fifteen
+exception paths. Ordinary, receiver/extension, optional/default, typed spread,
+generic intrinsic, overload/Choice, dialogue, expected-result, and curried
+fixtures close through steps 5-13 above and must pass without fixture-specific
+branches. `checked_match_project_enum_commits_constructor_layout_evidence` is
+the sole non-call failure; its `InvalidNominalOwner` belongs to the independent
+Match/nominal seal and is neither masked nor accepted by B3. The full library
+gate is complete only when both groups pass, but that Match repair is not an
+authorization to add a call-side fallback.
