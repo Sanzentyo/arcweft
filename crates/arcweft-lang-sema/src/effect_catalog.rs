@@ -10,7 +10,6 @@ pub enum EffectScopeArity {
     Forbidden,
     OptionalOne,
     Exactly(usize),
-    Any,
 }
 
 /// Catalog entry for one declared/builtin effect path.
@@ -105,7 +104,6 @@ impl EffectCatalog {
             EffectScopeArity::Forbidden => actual == 0,
             EffectScopeArity::OptionalOne => actual <= 1,
             EffectScopeArity::Exactly(expected) => actual == expected,
-            EffectScopeArity::Any => true,
         };
         if valid {
             Ok(())
@@ -127,7 +125,6 @@ impl EffectScopeArity {
             Self::OptionalOne => "zero or one scope argument",
             Self::Exactly(1) => "exactly one scope argument",
             Self::Exactly(_) => "an exact declared number of scope arguments",
-            Self::Any => "any number of scope arguments",
         }
     }
 }
