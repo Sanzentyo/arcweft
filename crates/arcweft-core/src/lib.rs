@@ -1,6 +1,7 @@
 pub mod aot;
 pub mod audio;
 pub mod awbc;
+mod canonical_varint;
 pub mod effect;
 pub mod engine;
 pub mod entry;

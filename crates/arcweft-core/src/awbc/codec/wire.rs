@@ -1,4 +1,5 @@
 use super::{AwbcCodecError, AwbcDecodeBudget};
+use crate::canonical_varint::{CanonicalU32VarintError, decode_u32, encode_u32};
 
 pub(super) trait Wire: Sized {
     fn write_wire(&self, writer: &mut Writer) -> Result<(), AwbcCodecError>;
@@ -43,13 +44,9 @@ impl Writer {
         self.write_bytes(&value.to_le_bytes());
     }
 
-    pub(super) fn write_u32_var(&mut self, mut value: u32) {
-        while value >= 0x80 {
-            let low_bits = u8::try_from(value & 0x7f).expect("varint low 7 bits always fit in u8");
-            self.write_u8(low_bits | 0x80);
-            value >>= 7;
-        }
-        self.write_u8(u8::try_from(value).expect("final varint byte is below 0x80"));
+    pub(super) fn write_u32_var(&mut self, value: u32) {
+        let (encoded, length) = encode_u32(value);
+        self.write_bytes(&encoded[..length]);
     }
 
     pub(super) fn write_len(&mut self, len: usize) -> Result<(), AwbcCodecError> {
@@ -175,26 +172,22 @@ impl<'a> Reader<'a> {
 
     pub(super) fn read_u32_var(&mut self) -> Result<u32, AwbcCodecError> {
         let start = self.offset;
-        let mut value = 0_u32;
-        for shift in (0..35).step_by(7) {
-            let byte = self.read_u8()?;
-            if shift == 28 && byte > 0x0f {
+        let (value, consumed) = match decode_u32(&self.bytes[start..]) {
+            Ok(value) => value,
+            Err(CanonicalU32VarintError::Truncated { consumed }) => {
+                return Err(AwbcCodecError::Truncated {
+                    offset: start + consumed,
+                });
+            }
+            Err(CanonicalU32VarintError::NonCanonical) => {
                 return Err(AwbcCodecError::NonCanonicalVarint { offset: start });
             }
-            value |= u32::from(byte & 0x7f) << shift;
-            if byte & 0x80 == 0 {
-                let canonical_len = if value == 0 {
-                    1
-                } else {
-                    ((32 - value.leading_zeros()) as usize).div_ceil(7)
-                };
-                if self.offset - start != canonical_len {
-                    return Err(AwbcCodecError::NonCanonicalVarint { offset: start });
-                }
-                return Ok(value);
-            }
-        }
-        Err(AwbcCodecError::NonCanonicalVarint { offset: start })
+        };
+        self.offset = self
+            .offset
+            .checked_add(consumed)
+            .ok_or(AwbcCodecError::LengthOverflow)?;
+        Ok(value)
     }
 
     pub(super) fn read_len(&mut self) -> Result<usize, AwbcCodecError> {
@@ -504,3 +497,53 @@ macro_rules! wire_enum {
 
 pub(super) use wire_enum;
 pub(super) use wire_id;
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn writer_uses_only_the_canonical_encoded_prefix() {
+        let mut writer = Writer::default();
+        writer.write_u32_var(128);
+        writer.write_u8(0xaa);
+
+        assert_eq!(writer.finish(), vec![0x80, 0x01, 0xaa]);
+    }
+
+    #[test]
+    fn reader_maps_truncation_to_the_consumed_byte_offset() {
+        let mut reader = Reader::new(&[0xaa, 0x80], &AwbcDecodeBudget::default());
+
+        assert_eq!(reader.read_u8(), Ok(0xaa));
+
+        assert_eq!(
+            reader.read_u32_var(),
+            Err(AwbcCodecError::Truncated { offset: 2 })
+        );
+    }
+
+    #[test]
+    fn reader_maps_fifth_byte_overflow_and_sixth_byte_continuation() {
+        for bytes in [
+            [0xff, 0xff, 0xff, 0xff, 0x10, 0],
+            [0x80, 0x80, 0x80, 0x80, 0x80, 0],
+        ] {
+            let mut reader = Reader::new(&bytes, &AwbcDecodeBudget::default());
+            assert_eq!(
+                reader.read_u32_var(),
+                Err(AwbcCodecError::NonCanonicalVarint { offset: 0 })
+            );
+        }
+    }
+
+    #[test]
+    fn reader_consumes_only_the_canonical_prefix_before_trailing_bytes() {
+        let mut reader = Reader::new(&[0x80, 0x01, 0xaa], &AwbcDecodeBudget::default());
+
+        assert_eq!(reader.read_u32_var(), Ok(128));
+        assert_eq!(reader.offset(), 2);
+        assert_eq!(reader.read_u8(), Ok(0xaa));
+        assert_eq!(reader.offset(), 3);
+    }
+}
