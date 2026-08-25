@@ -1139,6 +1139,10 @@ pub struct TextInputGeometrySnapshotParts {
 }
 
 impl TextInputFocusGeneration {
+    pub const fn get(self) -> u64 {
+        self.0
+    }
+
     #[must_use]
     pub fn next(self) -> Self {
         Self(self.0.saturating_add(1))
