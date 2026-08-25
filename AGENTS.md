@@ -99,6 +99,14 @@ Git is the sole version-control authority for this repository.
   checkout to dispose of changes unless the user explicitly requests that exact
   operation and the targets have been verified.
 
+## Agent model assignment
+
+- Delegate mechanically bounded edits and repetitive consumer migration to
+  `gpt-5.6-luna` with `max` reasoning by default; do not use Terra for those
+  tasks.
+- Use `gpt-5.6-sol` with `max` reasoning for difficult semantic design,
+  authority placement, contract reconciliation, and architecture audits.
+
 ## Scope and completion
 
 - For package- or brief-driven work, derive acceptance criteria from the full
