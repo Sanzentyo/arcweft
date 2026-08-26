@@ -52,6 +52,7 @@ pub struct AdapterManifestFile {
 }
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq)]
+#[serde(deny_unknown_fields)]
 struct AdapterManifestWire {
     schema_version: u32,
     id: String,
@@ -75,6 +76,7 @@ struct AdapterManifestWire {
 }
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(deny_unknown_fields)]
 struct AdapterNominalDeclarationFile {
     path: Vec<String>,
     arity: u16,
@@ -84,6 +86,7 @@ struct AdapterNominalDeclarationFile {
 }
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq)]
+#[serde(deny_unknown_fields)]
 struct AdapterNominalDeclarationWire {
     path: Vec<String>,
     arity: u16,
@@ -93,12 +96,14 @@ struct AdapterNominalDeclarationWire {
 }
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(deny_unknown_fields)]
 struct AdapterRustPackageMountFile {
     package: String,
     prefix: Vec<String>,
 }
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(deny_unknown_fields)]
 struct AdapterSymbolFile {
     name: String,
     #[serde(rename = "type")]
@@ -106,6 +111,7 @@ struct AdapterSymbolFile {
 }
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(deny_unknown_fields)]
 struct AdapterMethodFile {
     receiver: AdapterTypeKindFile,
     name: String,
@@ -117,6 +123,7 @@ struct AdapterMethodFile {
 }
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(deny_unknown_fields)]
 struct AdapterFunctionFile {
     name: String,
     signature: AdapterFunctionSignatureFile,
@@ -127,12 +134,14 @@ struct AdapterFunctionFile {
 }
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(deny_unknown_fields)]
 struct AdapterFunctionSignatureFile {
     groups: Vec<AdapterParameterGroupFile>,
     result: AdapterTypeKindFile,
 }
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(deny_unknown_fields)]
 struct AdapterParameterGroupFile {
     index: u16,
     #[serde(default)]
@@ -140,6 +149,7 @@ struct AdapterParameterGroupFile {
 }
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(deny_unknown_fields)]
 struct AdapterParamFile {
     index: u16,
     #[serde(default)]
@@ -168,6 +178,7 @@ enum AdapterParameterPresenceFile {
 }
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(deny_unknown_fields)]
 struct AdapterHostCallFile {
     id: String,
     signature: AdapterFunctionSignatureFile,
@@ -178,32 +189,33 @@ struct AdapterHostCallFile {
 }
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(deny_unknown_fields)]
 struct AdapterToolingDocFile {
     subject: String,
     docs: String,
 }
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
-#[serde(tag = "kind", rename_all = "snake_case")]
+#[serde(tag = "kind", rename_all = "snake_case", deny_unknown_fields)]
 enum AdapterTypeKindFile {
-    Unit,
-    Bool,
-    I8,
-    I16,
-    I32,
-    I64,
-    I128,
-    ISize,
-    U8,
-    U16,
-    U32,
-    U64,
-    U128,
-    USize,
-    F32,
-    F64,
-    String,
-    Char,
+    Unit {},
+    Bool {},
+    I8 {},
+    I16 {},
+    I32 {},
+    I64 {},
+    I128 {},
+    ISize {},
+    U8 {},
+    U16 {},
+    U32 {},
+    U64 {},
+    U128 {},
+    USize {},
+    F32 {},
+    F64 {},
+    String {},
+    Char {},
     Vec { item: Box<Self> },
     Seq { item: Box<Self> },
     Option { item: Box<Self> },
@@ -214,6 +226,7 @@ enum AdapterTypeKindFile {
 }
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(deny_unknown_fields)]
 struct AdapterNominalTypeRefFile {
     owner: AdapterNominalOwnerFile,
     path: Vec<String>,
@@ -222,9 +235,9 @@ struct AdapterNominalTypeRefFile {
 }
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
-#[serde(tag = "kind", rename_all = "snake_case")]
+#[serde(tag = "kind", rename_all = "snake_case", deny_unknown_fields)]
 enum AdapterNominalOwnerFile {
-    Standard,
+    Standard {},
     Environment { owner: String },
     RustPackage { package: String },
 }
@@ -828,24 +841,24 @@ impl TypeConversionBudget {
 
         let child_depth = depth.saturating_add(1);
         Ok(match ty {
-            AdapterTypeKindFile::Unit => AdapterTypeKind::Unit,
-            AdapterTypeKindFile::Bool => AdapterTypeKind::Bool,
-            AdapterTypeKindFile::I8 => AdapterTypeKind::I8,
-            AdapterTypeKindFile::I16 => AdapterTypeKind::I16,
-            AdapterTypeKindFile::I32 => AdapterTypeKind::I32,
-            AdapterTypeKindFile::I64 => AdapterTypeKind::I64,
-            AdapterTypeKindFile::I128 => AdapterTypeKind::I128,
-            AdapterTypeKindFile::ISize => AdapterTypeKind::ISize,
-            AdapterTypeKindFile::U8 => AdapterTypeKind::U8,
-            AdapterTypeKindFile::U16 => AdapterTypeKind::U16,
-            AdapterTypeKindFile::U32 => AdapterTypeKind::U32,
-            AdapterTypeKindFile::U64 => AdapterTypeKind::U64,
-            AdapterTypeKindFile::U128 => AdapterTypeKind::U128,
-            AdapterTypeKindFile::USize => AdapterTypeKind::USize,
-            AdapterTypeKindFile::F32 => AdapterTypeKind::F32,
-            AdapterTypeKindFile::F64 => AdapterTypeKind::F64,
-            AdapterTypeKindFile::String => AdapterTypeKind::String,
-            AdapterTypeKindFile::Char => AdapterTypeKind::Char,
+            AdapterTypeKindFile::Unit {} => AdapterTypeKind::Unit,
+            AdapterTypeKindFile::Bool {} => AdapterTypeKind::Bool,
+            AdapterTypeKindFile::I8 {} => AdapterTypeKind::I8,
+            AdapterTypeKindFile::I16 {} => AdapterTypeKind::I16,
+            AdapterTypeKindFile::I32 {} => AdapterTypeKind::I32,
+            AdapterTypeKindFile::I64 {} => AdapterTypeKind::I64,
+            AdapterTypeKindFile::I128 {} => AdapterTypeKind::I128,
+            AdapterTypeKindFile::ISize {} => AdapterTypeKind::ISize,
+            AdapterTypeKindFile::U8 {} => AdapterTypeKind::U8,
+            AdapterTypeKindFile::U16 {} => AdapterTypeKind::U16,
+            AdapterTypeKindFile::U32 {} => AdapterTypeKind::U32,
+            AdapterTypeKindFile::U64 {} => AdapterTypeKind::U64,
+            AdapterTypeKindFile::U128 {} => AdapterTypeKind::U128,
+            AdapterTypeKindFile::USize {} => AdapterTypeKind::USize,
+            AdapterTypeKindFile::F32 {} => AdapterTypeKind::F32,
+            AdapterTypeKindFile::F64 {} => AdapterTypeKind::F64,
+            AdapterTypeKindFile::String {} => AdapterTypeKind::String,
+            AdapterTypeKindFile::Char {} => AdapterTypeKind::Char,
             AdapterTypeKindFile::Vec { item } => AdapterTypeKind::Vec {
                 item: Box::new(self.convert(*item, environment_owner, child_depth)?),
             },
@@ -870,7 +883,7 @@ impl TypeConversionBudget {
             },
             AdapterTypeKindFile::Nominal { nominal } => {
                 let owner = match nominal.owner {
-                    AdapterNominalOwnerFile::Standard => AdapterNominalOwner::Standard,
+                    AdapterNominalOwnerFile::Standard {} => AdapterNominalOwner::Standard,
                     AdapterNominalOwnerFile::Environment { owner } => {
                         if owner != environment_owner.as_str() {
                             return Err(AdapterManifestCodecError::EnvironmentOwnerMismatch {
@@ -1048,6 +1061,79 @@ docs = "Read custom content."
         .expect_err("string type carriers are not part of schema v1");
 
         assert!(matches!(error, AdapterManifestCodecError::Json(_)));
+    }
+
+    #[test]
+    fn rejects_unknown_fields_at_json_manifest_and_nested_levels() {
+        let top_level = AdapterManifestFile::from_json(
+            r#"{
+  "schema_version": 1,
+  "id": "fixture",
+  "display_name": "Fixture",
+  "unexpected": true
+}"#,
+        )
+        .expect_err("unknown manifest fields are rejected");
+        assert!(matches!(
+            top_level,
+            AdapterManifestCodecError::Json(error)
+                if error.to_string().contains("unknown field")
+        ));
+
+        let nested = AdapterManifestFile::from_json(
+            r#"{
+  "schema_version": 1,
+  "id": "fixture",
+  "display_name": "Fixture",
+  "symbols": [{
+    "name": "value",
+    "type": {"kind": "string", "unexpected": true}
+  }]
+}"#,
+        )
+        .expect_err("unknown nested fields are rejected");
+        assert!(matches!(
+            nested,
+            AdapterManifestCodecError::Json(error)
+                if error.to_string().contains("unknown field")
+        ));
+    }
+
+    #[test]
+    fn rejects_unknown_fields_at_toml_manifest_and_nested_levels() {
+        let top_level = AdapterManifestFile::from_toml(
+            r#"
+schema_version = 1
+id = "fixture"
+display_name = "Fixture"
+unexpected = true
+"#,
+        )
+        .expect_err("unknown manifest fields are rejected");
+        assert!(matches!(
+            top_level,
+            AdapterManifestCodecError::Toml(error)
+                if error.to_string().contains("unknown field")
+        ));
+
+        let nested = AdapterManifestFile::from_toml(
+            r#"
+schema_version = 1
+id = "fixture"
+display_name = "Fixture"
+
+[[host_calls]]
+id = "fixture.call"
+unexpected = true
+signature = { groups = [{ index = 0, parameters = [] }], result = { kind = "unit" } }
+"#,
+        )
+        .expect_err("unknown nested fields are rejected");
+        assert!(matches!(
+            nested,
+            AdapterManifestCodecError::Toml(error)
+                if error.to_string().contains("unknown field")
+        ));
     }
 
     #[test]

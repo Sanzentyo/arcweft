@@ -255,3 +255,91 @@ fn json_schema_and_producer_precedence_are_closed() {
         })
     ));
 }
+
+#[test]
+fn json_rejects_unknown_fields_at_manifest_and_nested_levels() {
+    let top_level = r#"{
+  "schema_version": 1,
+  "package": {"id": "game", "version": "1.0.0"},
+  "types": [],
+  "functions": [],
+  "unexpected": true
+}"#;
+    assert!(matches!(
+        ArcweftRustManifest::from_json(top_level),
+        Err(ArcweftRustAbiError::Json(error))
+            if error.to_string().contains("unknown field")
+    ));
+
+    let nested_package = r#"{
+  "schema_version": 1,
+  "package": {"id": "game", "version": "1.0.0", "unexpected": true},
+  "types": [],
+  "functions": []
+}"#;
+    assert!(matches!(
+        ArcweftRustManifest::from_json(nested_package),
+        Err(ArcweftRustAbiError::Json(error))
+            if error.to_string().contains("unknown field")
+    ));
+
+    let nested_declaration = r#"{
+  "schema_version": 1,
+  "package": {"id": "game", "version": "1.0.0"},
+  "types": [{
+    "path": {"segments": ["Rank"]},
+    "rust_path": "game::Rank",
+    "opaque_producer": "fixture.rust-abi.rank",
+    "parameters": [],
+    "kind": {"kind": "enum", "variants": []},
+    "unexpected": true
+  }],
+  "functions": []
+}"#;
+    let nested_declaration_result = ArcweftRustManifest::from_json(nested_declaration);
+    assert!(
+        matches!(
+            &nested_declaration_result,
+            Err(ArcweftRustAbiError::Json(error))
+                if error.to_string().contains("unknown field")
+        ),
+        "unexpected nested declaration result: {nested_declaration_result:?}"
+    );
+
+    let nested_type_reference = r#"{
+  "schema_version": 1,
+  "package": {"id": "game", "version": "1.0.0"},
+  "types": [],
+  "functions": [{
+    "name": "game.read",
+    "rust_path": "game::read",
+    "params": [],
+    "return_type": {"kind": "string", "unexpected": true},
+    "purity": "pure",
+    "effects": []
+  }]
+}"#;
+    assert!(matches!(
+        ArcweftRustManifest::from_json(nested_type_reference),
+        Err(ArcweftRustAbiError::Json(error))
+            if error.to_string().contains("unknown field")
+    ));
+
+    let nested_unit_shape = r#"{
+  "schema_version": 1,
+  "package": {"id": "game", "version": "1.0.0"},
+  "types": [{
+    "path": {"segments": ["Marker"]},
+    "rust_path": "game::Marker",
+    "opaque_producer": "fixture.rust-abi.marker",
+    "parameters": [],
+    "kind": {"kind": "struct", "shape": {"kind": "unit", "unexpected": true}}
+  }],
+  "functions": []
+}"#;
+    assert!(matches!(
+        ArcweftRustManifest::from_json(nested_unit_shape),
+        Err(ArcweftRustAbiError::Json(error))
+            if error.to_string().contains("unknown field")
+    ));
+}

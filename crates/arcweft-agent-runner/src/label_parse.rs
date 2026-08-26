@@ -212,7 +212,7 @@ fn parse_viewport_point_label(value: &str) -> Result<(u32, u32), String> {
         .strip_prefix("viewport_point(")
         .and_then(|value| value.strip_suffix(')'))
         .unwrap_or(value);
-    let parts = split_top_level_args(body);
+    let parts = split_top_level_args(body)?;
     let [x, y] = parts.as_slice() else {
         return Err("viewport point requires x and y".to_owned());
     };
@@ -248,21 +248,13 @@ fn parse_predicate_label(value: &str) -> Result<Predicate, String> {
         .strip_prefix("all(")
         .and_then(|value| value.strip_suffix(')'))
     {
-        return split_top_level_args(body)
-            .into_iter()
-            .map(parse_predicate_label)
-            .collect::<Result<Vec<_>, _>>()
-            .map(|predicates| Predicate::All { predicates });
+        return parse_predicate_collection(body, false);
     }
     if let Some(body) = value
         .strip_prefix("any(")
         .and_then(|value| value.strip_suffix(')'))
     {
-        return split_top_level_args(body)
-            .into_iter()
-            .map(parse_predicate_label)
-            .collect::<Result<Vec<_>, _>>()
-            .map(|predicates| Predicate::Any { predicates });
+        return parse_predicate_collection(body, true);
     }
     if let Some(body) = value
         .strip_prefix("not(")
@@ -372,7 +364,7 @@ fn parse_agent_value_map_label(value: &str) -> Result<BTreeMap<String, AgentValu
     else {
         return Err(format!("expected invoke args record, got `{value}`"));
     };
-    split_top_level_args(body)
+    split_top_level_args(body)?
         .into_iter()
         .map(|field| {
             record_field_arg(field)
@@ -442,7 +434,25 @@ fn parse_u32_label(value: &str) -> Result<u32, String> {
         .map_err(|_| format!("expected u32 literal, got `{value}`"))
 }
 
-fn split_top_level_args(value: &str) -> Vec<&str> {
+fn parse_predicate_collection(body: &str, any: bool) -> Result<Predicate, String> {
+    let predicates = split_top_level_args(body)?
+        .into_iter()
+        .map(parse_predicate_label)
+        .collect::<Result<Vec<_>, _>>()?;
+    if predicates.is_empty() {
+        return Err(format!(
+            "{} requires at least one predicate",
+            if any { "any" } else { "all" }
+        ));
+    }
+    Ok(if any {
+        Predicate::Any { predicates }
+    } else {
+        Predicate::All { predicates }
+    })
+}
+
+fn split_top_level_args(value: &str) -> Result<Vec<&str>, String> {
     let mut args = Vec::new();
     let mut start = 0usize;
     let mut depth = 0u32;
@@ -465,19 +475,23 @@ fn split_top_level_args(value: &str) -> Vec<&str> {
             ')' | ']' | '}' => depth = depth.saturating_sub(1),
             ',' if depth == 0 => {
                 let arg = value[start..index].trim();
-                if !arg.is_empty() {
-                    args.push(arg);
+                if arg.is_empty() {
+                    return Err("empty argument is not allowed".to_owned());
                 }
+                args.push(arg);
                 start = index + ch.len_utf8();
             }
             _ => {}
         }
     }
     let arg = value[start..].trim();
+    if arg.is_empty() && !args.is_empty() {
+        return Err("empty argument is not allowed".to_owned());
+    }
     if !arg.is_empty() {
         args.push(arg);
     }
-    args
+    Ok(args)
 }
 
 fn named_arg(arg: &str) -> Option<(&str, &str)> {
@@ -558,5 +572,26 @@ pub(crate) fn parse_capture_format(value: &str) -> Result<CaptureFormat, String>
         "png" => Ok(CaptureFormat::Png),
         "raw_rgba" | "raw" => Ok(CaptureFormat::RawRgba),
         _ => Err(format!("unsupported capture format `{value}`")),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::parse_predicate_label;
+
+    #[test]
+    fn composite_predicates_reject_empty_operands() {
+        for predicate in [
+            "any()",
+            "any(,)",
+            "any(exists(signal(@signal.ready)),)",
+            "all()",
+            "all(exists(signal(@signal.ready)),)",
+        ] {
+            assert!(
+                parse_predicate_label(predicate).is_err(),
+                "`{predicate}` must not become a successful empty predicate"
+            );
+        }
     }
 }

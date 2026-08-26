@@ -110,6 +110,17 @@ private final class JsonLineChannel {
     }
 }
 
+private enum TextInputBridgeError: Error, CustomStringConvertible {
+    case unsupportedTextInputValue
+
+    var description: String {
+        switch self {
+        case .unsupportedTextInputValue:
+            return "unsupported_text_input_value"
+        }
+    }
+}
+
 final class ArcweftTextInputClientView: NSView, NSTextInputClient {
     private var bridgeState: BridgeState
     private let channel: JsonLineChannel
@@ -187,17 +198,31 @@ final class ArcweftTextInputClientView: NSView, NSTextInputClient {
     }
 
     func insertText(_ string: Any, replacementRange: NSRange) {
+        guard case let .success(text) = Self.plainString(from: string) else {
+            channel.send([
+                "event": "bridge_error",
+                "message": TextInputBridgeError.unsupportedTextInputValue.description,
+            ])
+            return
+        }
         channel.send([
             "event": "insert_text",
-            "text": Self.plainString(from: string),
+            "text": text,
             "replacement_range": Self.jsonRange(replacementRange),
         ])
     }
 
     func setMarkedText(_ string: Any, selectedRange: NSRange, replacementRange: NSRange) {
+        guard case let .success(text) = Self.plainString(from: string) else {
+            channel.send([
+                "event": "bridge_error",
+                "message": TextInputBridgeError.unsupportedTextInputValue.description,
+            ])
+            return
+        }
         channel.send([
             "event": "set_marked_text",
-            "text": Self.plainString(from: string),
+            "text": text,
             "selected_range": Self.jsonRange(selectedRange),
             "replacement_range": Self.jsonRange(replacementRange),
         ])
@@ -292,14 +317,14 @@ final class ArcweftTextInputClientView: NSView, NSTextInputClient {
         ])
     }
 
-    private static func plainString(from value: Any) -> String {
+    private static func plainString(from value: Any) -> Result<String, TextInputBridgeError> {
         if let attributed = value as? NSAttributedString {
-            return attributed.string
+            return .success(attributed.string)
         }
         if let text = value as? String {
-            return text
+            return .success(text)
         }
-        return String(describing: value)
+        return .failure(.unsupportedTextInputValue)
     }
 
     private static func jsonRange(_ range: NSRange) -> [String: Any] {

@@ -2,7 +2,7 @@ use crate::identity::{
     ArcweftRustPackageId, ArcweftRustTypeParameterIndex, ArcweftRustTypeParameterName,
     ArcweftRustTypePath,
 };
-use serde::{Deserialize, Serialize};
+use serde::{Deserialize, Deserializer, Serialize};
 
 /// Current Rust ABI metadata schema version.
 pub const ARCWEFT_RUST_ABI_SCHEMA_VERSION: u32 = 1;
@@ -26,6 +26,7 @@ pub struct ArcweftRustManifestBuilder {
 
 /// Provenance for one Rust package that publishes Arcweft metadata.
 #[derive(Clone, Debug, Deserialize, Eq, Hash, PartialEq, Serialize)]
+#[serde(deny_unknown_fields)]
 pub struct ArcweftRustPackage {
     pub id: ArcweftRustPackageId,
     pub version: String,
@@ -35,6 +36,7 @@ pub struct ArcweftRustPackage {
 
 /// A Rust function exported into Arcweft's callable value space.
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(deny_unknown_fields)]
 pub struct ArcweftRustFunction {
     pub name: String,
     pub rust_path: String,
@@ -49,6 +51,7 @@ pub struct ArcweftRustFunction {
 
 /// One exported function parameter.
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(deny_unknown_fields)]
 pub struct ArcweftRustParam {
     pub name: String,
     pub ty: ArcweftRustTypeRef,
@@ -66,6 +69,7 @@ pub enum ArcweftRustPurity {
 
 /// One generic type parameter owned by an exported Rust ADT.
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(deny_unknown_fields)]
 pub struct ArcweftRustTypeParameter {
     pub index: ArcweftRustTypeParameterIndex,
     pub name: ArcweftRustTypeParameterName,
@@ -90,7 +94,7 @@ impl ArcweftRustTypeDecl {
 
 /// Shape of an exported Rust ADT.
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
-#[serde(tag = "kind", rename_all = "snake_case")]
+#[serde(tag = "kind", rename_all = "snake_case", deny_unknown_fields)]
 pub enum ArcweftRustTypeKind {
     Struct { shape: ArcweftRustStructShape },
     Enum { variants: Vec<ArcweftRustVariant> },
@@ -98,8 +102,8 @@ pub enum ArcweftRustTypeKind {
 }
 
 /// Unit, tuple, or named-field shape of an exported Rust struct.
-#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
-#[serde(tag = "kind", rename_all = "snake_case")]
+#[derive(Clone, Debug, Eq, PartialEq, Serialize)]
+#[serde(tag = "kind", rename_all = "snake_case", deny_unknown_fields)]
 pub enum ArcweftRustStructShape {
     Unit,
     Tuple { fields: Vec<ArcweftRustTypeRef> },
@@ -108,6 +112,7 @@ pub enum ArcweftRustStructShape {
 
 /// One exported record field.
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(deny_unknown_fields)]
 pub struct ArcweftRustField {
     pub name: String,
     pub ty: ArcweftRustTypeRef,
@@ -115,14 +120,15 @@ pub struct ArcweftRustField {
 
 /// One exported enum variant.
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(deny_unknown_fields)]
 pub struct ArcweftRustVariant {
     pub name: String,
     pub payload: ArcweftRustVariantPayload,
 }
 
 /// Unit, tuple, or named-field payload of an exported Rust enum variant.
-#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
-#[serde(tag = "kind", rename_all = "snake_case")]
+#[derive(Clone, Debug, Eq, PartialEq, Serialize)]
+#[serde(tag = "kind", rename_all = "snake_case", deny_unknown_fields)]
 pub enum ArcweftRustVariantPayload {
     Unit,
     Tuple { fields: Vec<ArcweftRustTypeRef> },
@@ -130,8 +136,8 @@ pub enum ArcweftRustVariantPayload {
 }
 
 /// Arcweft type metadata generated from a Rust type.
-#[derive(Clone, Debug, Deserialize, Eq, Hash, PartialEq, Serialize)]
-#[serde(tag = "kind", rename_all = "snake_case")]
+#[derive(Clone, Debug, Eq, Hash, PartialEq, Serialize)]
+#[serde(tag = "kind", rename_all = "snake_case", deny_unknown_fields)]
 pub enum ArcweftRustTypeRef {
     Unit,
     Bool,
@@ -176,6 +182,143 @@ pub enum ArcweftRustTypeRef {
     TypeParameter {
         index: ArcweftRustTypeParameterIndex,
     },
+}
+
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq)]
+#[serde(tag = "kind", rename_all = "snake_case", deny_unknown_fields)]
+enum ArcweftRustStructShapeWire {
+    Unit {},
+    Tuple { fields: Vec<ArcweftRustTypeRef> },
+    Record { fields: Vec<ArcweftRustField> },
+}
+
+impl<'de> Deserialize<'de> for ArcweftRustStructShape {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        Ok(
+            match ArcweftRustStructShapeWire::deserialize(deserializer)? {
+                ArcweftRustStructShapeWire::Unit {} => Self::Unit,
+                ArcweftRustStructShapeWire::Tuple { fields } => Self::Tuple { fields },
+                ArcweftRustStructShapeWire::Record { fields } => Self::Record { fields },
+            },
+        )
+    }
+}
+
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq)]
+#[serde(tag = "kind", rename_all = "snake_case", deny_unknown_fields)]
+enum ArcweftRustVariantPayloadWire {
+    Unit {},
+    Tuple { fields: Vec<ArcweftRustTypeRef> },
+    Record { fields: Vec<ArcweftRustField> },
+}
+
+impl<'de> Deserialize<'de> for ArcweftRustVariantPayload {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        Ok(
+            match ArcweftRustVariantPayloadWire::deserialize(deserializer)? {
+                ArcweftRustVariantPayloadWire::Unit {} => Self::Unit,
+                ArcweftRustVariantPayloadWire::Tuple { fields } => Self::Tuple { fields },
+                ArcweftRustVariantPayloadWire::Record { fields } => Self::Record { fields },
+            },
+        )
+    }
+}
+
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq)]
+#[serde(tag = "kind", rename_all = "snake_case", deny_unknown_fields)]
+enum ArcweftRustTypeRefWire {
+    Unit {},
+    Bool {},
+    I8 {},
+    I16 {},
+    I32 {},
+    I64 {},
+    I128 {},
+    ISize {},
+    U8 {},
+    U16 {},
+    U32 {},
+    U64 {},
+    U128 {},
+    USize {},
+    F32 {},
+    F64 {},
+    String {},
+    Char {},
+    Vec {
+        item: Box<ArcweftRustTypeRef>,
+    },
+    Seq {
+        item: Box<ArcweftRustTypeRef>,
+    },
+    Option {
+        item: Box<ArcweftRustTypeRef>,
+    },
+    Result {
+        ok: Box<ArcweftRustTypeRef>,
+        error: Box<ArcweftRustTypeRef>,
+    },
+    Tuple {
+        items: Vec<ArcweftRustTypeRef>,
+    },
+    Nominal {
+        package: ArcweftRustPackageId,
+        path: ArcweftRustTypePath,
+        #[serde(default)]
+        arguments: Vec<ArcweftRustTypeRef>,
+    },
+    TypeParameter {
+        index: ArcweftRustTypeParameterIndex,
+    },
+}
+
+impl<'de> Deserialize<'de> for ArcweftRustTypeRef {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        Ok(match ArcweftRustTypeRefWire::deserialize(deserializer)? {
+            ArcweftRustTypeRefWire::Unit {} => Self::Unit,
+            ArcweftRustTypeRefWire::Bool {} => Self::Bool,
+            ArcweftRustTypeRefWire::I8 {} => Self::I8,
+            ArcweftRustTypeRefWire::I16 {} => Self::I16,
+            ArcweftRustTypeRefWire::I32 {} => Self::I32,
+            ArcweftRustTypeRefWire::I64 {} => Self::I64,
+            ArcweftRustTypeRefWire::I128 {} => Self::I128,
+            ArcweftRustTypeRefWire::ISize {} => Self::ISize,
+            ArcweftRustTypeRefWire::U8 {} => Self::U8,
+            ArcweftRustTypeRefWire::U16 {} => Self::U16,
+            ArcweftRustTypeRefWire::U32 {} => Self::U32,
+            ArcweftRustTypeRefWire::U64 {} => Self::U64,
+            ArcweftRustTypeRefWire::U128 {} => Self::U128,
+            ArcweftRustTypeRefWire::USize {} => Self::USize,
+            ArcweftRustTypeRefWire::F32 {} => Self::F32,
+            ArcweftRustTypeRefWire::F64 {} => Self::F64,
+            ArcweftRustTypeRefWire::String {} => Self::String,
+            ArcweftRustTypeRefWire::Char {} => Self::Char,
+            ArcweftRustTypeRefWire::Vec { item } => Self::Vec { item },
+            ArcweftRustTypeRefWire::Seq { item } => Self::Seq { item },
+            ArcweftRustTypeRefWire::Option { item } => Self::Option { item },
+            ArcweftRustTypeRefWire::Result { ok, error } => Self::Result { ok, error },
+            ArcweftRustTypeRefWire::Tuple { items } => Self::Tuple { items },
+            ArcweftRustTypeRefWire::Nominal {
+                package,
+                path,
+                arguments,
+            } => Self::Nominal {
+                package,
+                path,
+                arguments,
+            },
+            ArcweftRustTypeRefWire::TypeParameter { index } => Self::TypeParameter { index },
+        })
+    }
 }
 
 /// Trait implemented by `#[derive(ArcweftType)]`.

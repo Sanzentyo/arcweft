@@ -15,6 +15,7 @@ pub struct ArcweftRustTypePathSegment(String);
 
 /// A validated, non-empty package-local Rust type path.
 #[derive(Clone, Debug, Deserialize, Eq, Hash, Ord, PartialEq, PartialOrd, Serialize)]
+#[serde(deny_unknown_fields)]
 pub struct ArcweftRustTypePath {
     segments: Vec<ArcweftRustTypePathSegment>,
 }

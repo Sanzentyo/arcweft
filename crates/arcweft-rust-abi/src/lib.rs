@@ -184,6 +184,7 @@ impl ArcweftRustTypeFieldSite {
 }
 
 #[derive(serde::Deserialize)]
+#[serde(deny_unknown_fields)]
 struct RustManifestDto {
     schema_version: u32,
     package: ArcweftRustPackage,
@@ -194,6 +195,7 @@ struct RustManifestDto {
 }
 
 #[derive(serde::Deserialize)]
+#[serde(deny_unknown_fields)]
 struct RustTypeDeclDto {
     path: ArcweftRustTypePath,
     rust_path: String,
