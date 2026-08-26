@@ -8,13 +8,14 @@ use super::{
     FxCallableSignatureId, FxResolution, HirCallArgument, IntegerMethodId, LanguageCallableFamily,
     LineContextMethodId, LineScheduleCallableId, NonCallableSource, NonEmptyResolvedCandidates,
     OptionConstructorKind, Ordering, PreparedCallCallee, PreparedFreeCallScope,
+    PreparedFunctionValueCallee, PreparedFunctionValueOriginProducer, PreparedResolvedCallable,
     PresentationCallableId, PresentationHandleMethodId, ProjectCallablePath, ProjectNameBinding,
     PromotionCallableId, ReceiverMethodKey, ResolveCallError, ResolveCallOutcome,
-    ResolvedAssociatedTypeReceiver, ResolvedCallTarget, ResolvedCallable, ResolvedFunctionValue,
-    ResolvedFunctionValueSeed, ResolvedNonCallableTarget, ResultConstructorKind, SignatureOrigin,
-    StageMethodId, TypeKind, TypeReceiverInstantiation, TypedEnvironmentMethodCandidate,
-    UnknownCallKind, UnknownCallTarget,
+    ResolvedAssociatedTypeReceiver, ResolvedCallTarget, ResolvedFunctionValueSeed,
+    ResolvedNonCallableTarget, ResultConstructorKind, SignatureOrigin, StageMethodId, TypeKind,
+    TypeReceiverInstantiation, TypedEnvironmentMethodCandidate, UnknownCallKind, UnknownCallTarget,
 };
+use crate::callable::CallConstraintInvariant;
 use crate::callable::{DialogueCallableId, DialogueCalleeIdentity, DialogueSchemaContext};
 
 pub(crate) fn resolve_call_target(mut request: CallResolverRequest<'_>) -> ResolveCallOutcome {
@@ -99,14 +100,20 @@ pub(crate) fn resolve_call_target(mut request: CallResolverRequest<'_>) -> Resol
             id,
             callee,
             patch_context,
-        } => match resolve_dialogue_call(&mut request, id, callee, patch_context) {
+            result,
+        } => match resolve_dialogue_call(&mut request, id, callee, patch_context, result) {
             Ok(target) => ResolveCallOutcome::Resolved(target),
             Err(error) => ResolveCallOutcome::Rejected(error),
         },
         PreparedCallCallee::FunctionValue { value } => {
             match resolve_function_value(value, &mut request) {
                 Ok(target) => ResolveCallOutcome::Resolved(target),
-                Err(error) => ResolveCallOutcome::Rejected(error),
+                Err(ResolveFunctionValueError::Invariant(error)) => {
+                    ResolveCallOutcome::Invariant(error)
+                }
+                Err(ResolveFunctionValueError::Resolver(error)) => {
+                    ResolveCallOutcome::Rejected(error)
+                }
             }
         }
         PreparedCallCallee::NonCallableValue { ty, .. } => {
@@ -122,6 +129,7 @@ fn resolve_dialogue_call(
     id: DialogueCallableId,
     callee: &DialogueCalleeIdentity,
     patch_context: super::CharacterDialoguePatchContext,
+    result: crate::callable::DialogueCallableResultContext<'_>,
 ) -> Result<ResolvedCallTarget, ResolveCallError> {
     if !id.supports_callee(callee) {
         return Err(ResolveCallError::InvalidResolvedCallable);
@@ -136,6 +144,7 @@ fn resolve_dialogue_call(
                 .environment()
                 .character_dialogue_fields(),
             patch_context,
+            result,
         })
         .map_err(|_| ResolveCallError::InvalidResolvedCallable)?;
     let instantiation = match callee {
@@ -154,10 +163,14 @@ fn resolve_dialogue_call(
         DialogueCalleeIdentity::Content { .. } => CallableInstantiation::None,
     };
     check_query_step(request)?;
-    let callable = ResolvedCallable::try_from_intrinsic(
+    let callable = PreparedResolvedCallable::try_from_intrinsic(
         CallableCandidateId::Dialogue(id),
-        SignatureOrigin::Language {
-            family: LanguageCallableFamily::Dialogue,
+        SignatureOrigin::LanguageDialogue {
+            operation: id,
+            callee: Arc::new(super::super::ResolvedDialogueCalleeIdentity::from_callee(
+                callee,
+                request.authority.module().key().path(),
+            )),
         },
         Arc::new(schema),
         instantiation,
@@ -234,7 +247,7 @@ fn materialize_typed_environment_method(
     seed: &TypedEnvironmentMethodCandidate<'_>,
     receiver: &ResolvedAssociatedTypeReceiver<'_>,
     request: &mut CallResolverRequest<'_>,
-) -> Result<ResolvedCallable, ResolveCallError> {
+) -> Result<PreparedResolvedCallable, ResolveCallError> {
     let instantiation = CallableInstantiation::TypeReceiver {
         receiver: TypeReceiverInstantiation::from_resolved(*receiver),
     };
@@ -247,35 +260,71 @@ fn materialize_typed_environment_method(
     )
 }
 
-fn resolve_function_value(
-    seed: &ResolvedFunctionValueSeed,
-    request: &mut CallResolverRequest<'_>,
-) -> Result<ResolvedCallTarget, ResolveCallError> {
-    check_query_step(request)?;
-    if let Some(base) = &seed.continuation_base {
-        let candidate = base.try_curried(seed.next_group, request.limits)?;
-        return NonEmptyResolvedCandidates::try_new(vec![candidate], request.limits)
-            .map(ResolvedCallTarget::Candidates);
+enum ResolveFunctionValueError {
+    Resolver(ResolveCallError),
+    Invariant(CallConstraintInvariant),
+}
+
+impl From<ResolveCallError> for ResolveFunctionValueError {
+    fn from(error: ResolveCallError) -> Self {
+        Self::Resolver(error)
     }
-    let callable = ResolvedCallable::try_from_intrinsic(
-        CallableCandidateId::FunctionValue(seed.id.clone()),
-        SignatureOrigin::FunctionValue {
-            id: seed.id.clone(),
-        },
-        Arc::new(seed.schema.clone()),
+}
+
+fn resolve_function_value(
+    value: &PreparedFunctionValueCallee,
+    request: &mut CallResolverRequest<'_>,
+) -> Result<ResolvedCallTarget, ResolveFunctionValueError> {
+    check_query_step(request)?;
+    let (id, schema) = match value.seed() {
+        ResolvedFunctionValueSeed::Lexical {
+            id,
+            schema,
+            effect_callable: _,
+        } => {
+            let PreparedFunctionValueOriginProducer::Lexical { local } = value.origin().producer()
+            else {
+                return Err(ResolveFunctionValueError::Resolver(
+                    ResolveCallError::InvalidResolvedCallable,
+                ));
+            };
+            let callable = PreparedResolvedCallable::try_from_intrinsic_with_lexical(
+                id.clone(),
+                *local,
+                Arc::new(schema.clone()),
+                request.limits,
+            )?;
+            return NonEmptyResolvedCandidates::try_new(vec![callable], request.limits)
+                .map(ResolvedCallTarget::Candidates)
+                .map_err(ResolveFunctionValueError::Resolver);
+        }
+        ResolvedFunctionValueSeed::Independent {
+            id,
+            schema,
+            effect_callable: _,
+        } => (id, schema),
+        ResolvedFunctionValueSeed::PreparedContinuation { reference } => {
+            let candidate = request
+                .prepared_continuations
+                .resolve_prepared_continuation(reference, value.actual())
+                .map_err(ResolveFunctionValueError::Invariant)?;
+            return NonEmptyResolvedCandidates::try_new_prepared(vec![candidate], request.limits)
+                .map(ResolvedCallTarget::Candidates)
+                .map_err(ResolveFunctionValueError::Resolver);
+        }
+    };
+    let callable = PreparedResolvedCallable::try_from_intrinsic_with_function_value(
+        CallableCandidateId::FunctionValue(id.clone()),
+        SignatureOrigin::FunctionValue { id: id.clone() },
+        value.origin(),
+        Arc::new(schema.clone()),
         CallableInstantiation::None,
         Vec::new(),
         request.limits,
     )?;
-    ResolvedFunctionValue::try_new(
-        seed.id.clone(),
-        callable,
-        seed.ty.clone(),
-        seed.effect_callable.clone(),
-        None,
-        seed.next_group,
-    )
-    .map(|value| ResolvedCallTarget::FunctionValue(Box::new(value)))
+    NonEmptyResolvedCandidates::try_new(vec![callable], request.limits)
+        .map(ResolvedCallTarget::Candidates)
+        .map_err(ResolveFunctionValueError::Resolver)
 }
 
 #[allow(
@@ -313,28 +362,15 @@ fn resolve_selected_call(
         .map(Some);
     }
 
-    check_query_step(request)?;
-    if let Some(id @ (DomainMethodId::Traverse | DomainMethodId::Parallel)) =
-        DomainMethodId::resolve(receiver_type, method)
-    {
-        let schema = id.signature_schema(receiver_type);
-        return resolved_language_method(
-            request,
-            CallableCandidateId::DomainMethod(id),
-            LanguageCallableFamily::DomainMethod,
-            schema,
-            receiver.value_instantiation(),
-        )
-        .map(Some);
-    }
-
     if let Some(target) = resolve_selected_environment_method(request, receiver_type, method)? {
         return Ok(Some(target));
     }
 
     check_query_step(request)?;
     if let Some(id) = CollectionMethodId::resolve(method) {
-        let schema = id.signature_schema(receiver_type);
+        let Some(schema) = id.signature_schema(receiver_type) else {
+            return Ok(None);
+        };
         return resolved_language_method(
             request,
             CallableCandidateId::CollectionMethod(id),
@@ -372,7 +408,9 @@ fn resolve_selected_call(
 
     check_query_step(request)?;
     if let Some(id) = DomainMethodId::resolve(receiver_type, method) {
-        let schema = id.signature_schema(receiver_type);
+        let Some(schema) = id.signature_schema(receiver_type) else {
+            return Ok(None);
+        };
         return resolved_language_method(
             request,
             CallableCandidateId::DomainMethod(id),
@@ -474,7 +512,7 @@ fn resolved_language_method(
     instantiation: CallableInstantiation,
 ) -> Result<ResolvedCallTarget, ResolveCallError> {
     check_query_step(request)?;
-    let callable = ResolvedCallable::try_from_intrinsic(
+    let callable = PreparedResolvedCallable::try_from_intrinsic(
         id,
         SignatureOrigin::Language { family },
         Arc::new(schema),
@@ -508,7 +546,9 @@ fn resolve_selected_environment_method(
             entry.primary(),
             entry.equivalent_sources(),
             None,
-            CallableInstantiation::None,
+            CallableInstantiation::Receiver {
+                receiver: receiver_type.clone(),
+            },
             request,
         )?);
     }
@@ -535,7 +575,7 @@ fn resolve_free_call(
     check_query_step(request)?;
     if let FxResolution::Known(id) = FxCallableSignatureId::resolve(path) {
         check_query_step(request)?;
-        let callable = ResolvedCallable::try_from_intrinsic(
+        let callable = PreparedResolvedCallable::try_from_intrinsic(
             CallableCandidateId::Fx(id),
             SignatureOrigin::Language {
                 family: LanguageCallableFamily::Fx,
@@ -555,16 +595,17 @@ fn resolve_free_call(
         PreparedCallCallee::Free {
             enum_variant: Some(seed),
             ..
-        } => Some((*seed).clone()),
+        } => Some(*seed),
         _ => None,
     };
     if let Some(seed) = enum_variant {
         check_query_step(request)?;
-        let callable = ResolvedCallable::try_from_intrinsic(
+        let callable = PreparedResolvedCallable::try_from_intrinsic_with_enum_seed(
             CallableCandidateId::EnumVariant(seed.id.clone()),
             SignatureOrigin::Language {
                 family: LanguageCallableFamily::EnumConstructor,
             },
+            &seed,
             Arc::new(seed.schema.clone()),
             CallableInstantiation::ExpectedEnum {
                 expected: seed.expected.clone(),
@@ -579,18 +620,14 @@ fn resolve_free_call(
 
     check_query_step(request)?;
     if let Some(kind) = ResultConstructorKind::resolve(path) {
-        let expected = request
-            .expected
-            .filter(|expected| matches!(expected, TypeKind::Result { .. }))
-            .cloned();
         check_query_step(request)?;
-        let callable = ResolvedCallable::try_from_intrinsic(
+        let callable = PreparedResolvedCallable::try_from_intrinsic(
             CallableCandidateId::Result(kind),
             SignatureOrigin::Language {
                 family: LanguageCallableFamily::ResultConstructor,
             },
-            Arc::new(kind.instantiated_signature_schema(expected.as_ref())),
-            CallableInstantiation::Result { kind, expected },
+            Arc::new(kind.signature_schema()),
+            CallableInstantiation::Result { kind },
             Vec::new(),
             request.limits,
         )?;
@@ -601,18 +638,14 @@ fn resolve_free_call(
 
     check_query_step(request)?;
     if let Some(kind) = OptionConstructorKind::resolve(path) {
-        let expected = request
-            .expected
-            .filter(|expected| matches!(expected, TypeKind::Option(_)))
-            .cloned();
         check_query_step(request)?;
-        let callable = ResolvedCallable::try_from_intrinsic(
+        let callable = PreparedResolvedCallable::try_from_intrinsic(
             CallableCandidateId::Option(kind),
             SignatureOrigin::Language {
                 family: LanguageCallableFamily::OptionConstructor,
             },
-            Arc::new(kind.instantiated_signature_schema(expected.as_ref())),
-            CallableInstantiation::Option { expected },
+            Arc::new(kind.signature_schema()),
+            CallableInstantiation::Option,
             Vec::new(),
             request.limits,
         )?;
@@ -624,13 +657,17 @@ fn resolve_free_call(
     check_query_step(request)?;
     if let Some(id) = BuiltinCallableId::resolve(path) {
         let schema = Arc::new(match id {
-            BuiltinCallableId::Reduction(kind) => {
-                kind.instantiated_signature_schema(request.expected)
-            }
-            _ => id.signature_schema(),
+            BuiltinCallableId::Reduction(kind) => kind
+                .accepted_signature_schema(
+                    request.authority.world().environment().nominal_catalog(),
+                )
+                .ok_or(ResolveCallError::InvalidResolvedCallable)?,
+            _ => id
+                .closed_signature_schema()
+                .ok_or(ResolveCallError::InvalidResolvedCallable)?,
         });
         check_query_step(request)?;
-        let callable = ResolvedCallable::try_from_intrinsic(
+        let callable = PreparedResolvedCallable::try_from_intrinsic(
             CallableCandidateId::Builtin(id),
             SignatureOrigin::Language {
                 family: LanguageCallableFamily::Builtin,
@@ -649,7 +686,7 @@ fn resolve_free_call(
     if let Some(id) = AgentIntrinsicSignatureId::resolve(path) {
         let schema = Arc::new(id.signature_schema());
         check_query_step(request)?;
-        let callable = ResolvedCallable::try_from_intrinsic(
+        let callable = PreparedResolvedCallable::try_from_intrinsic(
             CallableCandidateId::Agent(id),
             SignatureOrigin::Language {
                 family: LanguageCallableFamily::Agent,
@@ -667,7 +704,7 @@ fn resolve_free_call(
     check_query_step(request)?;
     if let Some(id) = LineScheduleCallableId::resolve(path) {
         check_query_step(request)?;
-        let callable = ResolvedCallable::try_from_intrinsic(
+        let callable = PreparedResolvedCallable::try_from_intrinsic(
             CallableCandidateId::LineSchedule(id),
             SignatureOrigin::Language {
                 family: LanguageCallableFamily::LineSchedule,
@@ -684,17 +721,26 @@ fn resolve_free_call(
 
     check_query_step(request)?;
     if let Some(id) = PresentationCallableId::resolve(path) {
+        let (_, _, world) = request.authority.parts();
         let schema = id
-            .checker_signature_schema()
+            .signature_schema(super::PresentationSchemaContext {
+                owner: request.presentation_character_owner,
+                environment: world.environment(),
+            })
             .map_err(|_| ResolveCallError::InvalidResolvedCallable)?;
+        let instantiation = request
+            .presentation_character_owner
+            .cloned()
+            .map(|owner| CallableInstantiation::Character { owner })
+            .unwrap_or(CallableInstantiation::None);
         check_query_step(request)?;
-        let callable = ResolvedCallable::try_from_intrinsic(
+        let callable = PreparedResolvedCallable::try_from_intrinsic(
             CallableCandidateId::Presentation(id),
             SignatureOrigin::Language {
                 family: LanguageCallableFamily::Presentation,
             },
             Arc::new(schema),
-            CallableInstantiation::None,
+            instantiation,
             Vec::new(),
             request.limits,
         )?;
@@ -747,7 +793,7 @@ fn resolve_free_call(
     check_query_step(request)?;
     if let Some(id) = PromotionCallableId::resolve(path) {
         check_query_step(request)?;
-        let callable = ResolvedCallable::try_from_intrinsic(
+        let callable = PreparedResolvedCallable::try_from_intrinsic(
             CallableCandidateId::Promotion(id),
             SignatureOrigin::Language {
                 family: match id {
@@ -885,7 +931,7 @@ fn resolve_catalog_record(
     project_path: Option<&ProjectCallablePath>,
     instantiation: CallableInstantiation,
     request: &mut CallResolverRequest<'_>,
-) -> Result<ResolvedCallable, ResolveCallError> {
+) -> Result<PreparedResolvedCallable, ResolveCallError> {
     check_query_step(request)?;
     let checked_id = request
         .checked
@@ -935,7 +981,7 @@ fn resolve_catalog_record(
             super::CorruptCallableCatalogReason::MissingRecord,
         ));
     }
-    ResolvedCallable::try_from_checked_record(
+    PreparedResolvedCallable::try_from_checked_record(
         checked_id.clone(),
         Arc::clone(record),
         origin,

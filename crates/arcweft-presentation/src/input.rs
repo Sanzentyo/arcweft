@@ -1,11 +1,12 @@
 use crate::text_input::TextInput;
 use arcweft_id::PublicId;
+use serde::{Deserialize, Deserializer, Serialize, Serializer, de::Error as _};
 
 /// Stable target produced by `LayerTree` routing.
 ///
 /// Runtime and Agent code must use this target instead of frame-local hit-test
 /// IDs so replay, modal policy, focus, and capture decisions can be audited.
-#[derive(Clone, Debug, Eq, Hash, PartialEq)]
+#[derive(Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub struct InteractionTarget {
     id: PublicId,
 }
@@ -150,6 +151,27 @@ impl InteractionTarget {
 
     pub const fn id(&self) -> &PublicId {
         &self.id
+    }
+}
+
+impl Serialize for InteractionTarget {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: Serializer,
+    {
+        serializer.serialize_str(self.id.as_str())
+    }
+}
+
+impl<'de> Deserialize<'de> for InteractionTarget {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        let value = String::deserialize(deserializer)?;
+        PublicId::try_new_engine_owned(value)
+            .map(Self::new)
+            .map_err(D::Error::custom)
     }
 }
 
@@ -341,5 +363,25 @@ impl HostEventBatch {
 
     pub fn into_vec(self) -> Vec<HostEvent> {
         self.events
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::InteractionTarget;
+    use arcweft_id::PublicId;
+
+    #[test]
+    fn interaction_target_wire_round_trips_engine_owned_ids_and_rejects_invalid_text() {
+        let target = InteractionTarget::new(
+            PublicId::try_new_engine_owned("std.view.primary_action").expect("engine-owned target"),
+        );
+        let encoded = serde_json::to_string(&target).expect("target encodes");
+
+        assert_eq!(
+            serde_json::from_str::<InteractionTarget>(&encoded).expect("target decodes"),
+            target
+        );
+        assert!(serde_json::from_str::<InteractionTarget>(r#""bad target""#).is_err());
     }
 }

@@ -9,15 +9,22 @@ use arcweft_core::{
         schema::{
             AwbcBlock, AwbcBlockId, AwbcConstant, AwbcConstantId, AwbcEffectKind, AwbcEffectPlan,
             AwbcEffectPlanId, AwbcEffectSetId, AwbcEntry, AwbcEntryKind, AwbcEntryTarget,
-            AwbcFlowBinding, AwbcFrameLayout, AwbcFrameLayoutId, AwbcFrameSlot, AwbcFrameSlotRole,
-            AwbcFunction, AwbcFunctionFlags, AwbcFunctionId, AwbcFunctionKind, AwbcProgram,
-            AwbcRuntimeType, AwbcSafePointKind, AwbcScopeId, AwbcSignature, AwbcSignatureId,
-            AwbcStringId, AwbcTableRange, AwbcTerminator, AwbcTypeId,
+            AwbcFlowBinding, AwbcFlowExecutable, AwbcFrameLayout, AwbcFrameLayoutId, AwbcFrameSlot,
+            AwbcFrameSlotRole, AwbcFunction, AwbcFunctionFlags, AwbcFunctionId, AwbcFunctionKind,
+            AwbcProgram, AwbcRuntimeType, AwbcRuntimeTypeShape, AwbcSafePointKind, AwbcScopeId,
+            AwbcSignature, AwbcSignatureId, AwbcStringId, AwbcTableRange, AwbcTerminator,
+            AwbcTypeId,
         },
     },
     effect::{RuntimeAssertionGuardId, RuntimeAssertionProfile},
-    entry::{EntryBindingIdentity, RuntimeEntryRoles},
-    pattern::{RuntimeOpaqueTypeOwner, RuntimeOpaqueTypeProducerId, RuntimeSemanticTypeId},
+    entry::{
+        EntryBindingIdentity, FlowContractHash, RuntimeEntryRoles, RuntimeFlowExecutable,
+        RuntimeFlowSchema,
+    },
+    pattern::{
+        RuntimeCheckedType, RuntimeOpaqueTypeOwner, RuntimeOpaqueTypeProducerId,
+        RuntimeSemanticTypeId,
+    },
     plan::{
         EntryRuntimeId, FlowRuntimeId, RuntimeEntryKind, RuntimeEntrySpec, RuntimeEntryTarget,
         RuntimeEvaluatedEffectSeed, RuntimeExprSeed, RuntimeExprSeedKind, RuntimeFlowOpSeed,
@@ -38,7 +45,7 @@ use arcweft_runtime_driver::{
         PresentationHandleId, PresentationHandleKind, PresentationHandleRecord,
         PresentationResourceState,
     },
-    session::{BundleSession, BundleSessionOptions, BundleStepInput},
+    session::{BundleSession, BundleSessionError, BundleSessionOptions, BundleStepInput},
     session_save::{
         BUNDLE_SESSION_SAVE_SCHEMA_ID, BUNDLE_SESSION_SAVE_SCHEMA_VERSION,
         BundleSessionArtifactIdentity, BundleSessionPendingBlocker, BundleSessionSaveError,
@@ -67,6 +74,130 @@ fn awbc_product_bundle_session_from_awfb_requires_and_uses_product_awbc() {
         "unexpected diagnostics: {:?}",
         step.diagnostics
     );
+}
+
+#[test]
+fn typed_entry_override_precedes_bundle_default_and_is_catalog_checked() {
+    let bundle = entry_selection_product_bundle();
+
+    let default_session = BundleSession::new(&bundle, BundleSessionOptions::default())
+        .expect("bundle default entry starts");
+    assert_eq!(
+        default_session
+            .snapshot_session()
+            .expect("default session snapshots")
+            .active_entry
+            .id,
+        EntryRuntimeId::from_source_entity_body("entry.main").expect("default entry ID")
+    );
+
+    let alternate_id =
+        EntryRuntimeId::from_source_entity_body("entry.secondary").expect("alternate entry ID");
+    let override_session = BundleSession::new(
+        &bundle,
+        BundleSessionOptions {
+            entry: Some(alternate_id.clone()),
+            ..BundleSessionOptions::default()
+        },
+    )
+    .expect("typed override entry starts");
+    assert_eq!(
+        override_session
+            .snapshot_session()
+            .expect("override session snapshots")
+            .active_entry
+            .id,
+        alternate_id
+    );
+
+    let unknown = EntryRuntimeId::from_source_entity_body("entry.missing")
+        .expect("unknown but canonical entry ID");
+    let error = BundleSession::new(
+        &bundle,
+        BundleSessionOptions {
+            entry: Some(unknown.clone()),
+            ..BundleSessionOptions::default()
+        },
+    )
+    .expect_err("unknown typed override must fail closed");
+    assert!(matches!(
+        error,
+        BundleSessionError::ProductAwbcEntry { entry }
+            if entry == unknown.public_label().into_string()
+    ));
+}
+
+fn entry_selection_product_bundle() -> ArcweftBundle {
+    let mut builder = RuntimePlanBuilder::new();
+    for (ordinal, (entry_label, flow_label)) in [
+        ("entry.main", "flow.main"),
+        ("entry.secondary", "flow.secondary"),
+    ]
+    .into_iter()
+    .enumerate()
+    {
+        let byte = u8::try_from(ordinal + 1).expect("fixture ordinal fits u8");
+        let flow = FlowRuntimeId::from_checked_declaration_digest([byte; 32], flow_label)
+            .expect("fixture checked Flow identity");
+        builder
+            .push_flow_seed(RuntimeFlowSeed::new(
+                flow.clone(),
+                [],
+                vec![RuntimeFlowOpSeed::Return(entry_label.to_owned())],
+            ))
+            .expect("fixture Flow admits");
+        builder
+            .push_flow_schema(RuntimeFlowSchema {
+                flow: flow.clone(),
+                parameters: Vec::new(),
+            })
+            .expect("fixture Flow schema admits");
+        builder
+            .push_flow_executable(RuntimeFlowExecutable {
+                flow: flow.clone(),
+                contract: FlowContractHash::from_bytes([byte; 32]),
+                controller: None,
+            })
+            .expect("fixture Flow executable admits");
+        builder
+            .push_entry(RuntimeEntrySpec {
+                id: EntryRuntimeId::from_source_entity_body(entry_label)
+                    .expect("fixture Entry identity"),
+                kind: RuntimeEntryKind::Cli,
+                binding: EntryBindingIdentity::from_bytes([byte; 32]),
+                target: RuntimeEntryTarget::Flow(flow),
+                roles: RuntimeEntryRoles::None,
+            })
+            .expect("fixture Entry admits");
+    }
+    let plan = builder.finish().expect("entry selection plan seals");
+    let dialogue_content = DialogueContentCatalog::new();
+    let product_awbc = AwbcLowerer::new(&plan, &dialogue_content, "entry-selection.arcw")
+        .lower()
+        .expect("entry selection AWBC lowers")
+        .program;
+    ArcweftBundle::try_new(
+        BundleManifest {
+            profile_id: None,
+            profile_kind: None,
+            entry: Some("entry.main".to_owned()),
+            adapter: None,
+            adapter_manifest_ids: Vec::new(),
+            required_host_calls: Vec::new(),
+            runtime: BundleRuntimeSummary {
+                artifact_fingerprint: fixture_runtime_artifact_fingerprint(),
+                entry_flow: None,
+                flows: 2,
+                bytecode_instructions: 2,
+                line_task_groups: 0,
+                stream_plans: 0,
+            },
+        },
+        source_map("entry-selection.arcw", ""),
+        product_awbc,
+        dialogue_content,
+    )
+    .expect("entry selection bundle is valid")
 }
 
 #[test]
@@ -153,6 +284,7 @@ fn awbc_product_session_save_preserves_exact_same_label_flow_identity() {
         .expect("second checked Flow identity");
     let mut program = minimal_awbc_program("entry.main");
     program.flow_bindings[0].flow = first.clone();
+    program.flow_executables[0].metadata.flow = first.clone();
     let mut second_function = program.functions[0].clone();
     second_function.blocks = AwbcTableRange::new(2, 1);
     second_function.entry_block = AwbcBlockId(2);
@@ -861,6 +993,19 @@ fn assertion_product_bundle(condition: bool) -> ArcweftBundle {
         ))
         .expect("assertion flow admits");
     builder
+        .push_flow_schema(RuntimeFlowSchema {
+            flow: flow.clone(),
+            parameters: Vec::new(),
+        })
+        .expect("assertion Flow schema admits");
+    builder
+        .push_flow_executable(RuntimeFlowExecutable {
+            flow: flow.clone(),
+            contract: FlowContractHash::from_bytes([0x73; 32]),
+            controller: None,
+        })
+        .expect("assertion Flow executable admits");
+    builder
         .push_entry(RuntimeEntrySpec {
             id: EntryRuntimeId::from_source_entity_body("entry.main")
                 .expect("fixture entry ID is valid"),
@@ -1021,6 +1166,8 @@ fn opaque_runtime_value() -> RuntimeValue {
 }
 
 fn minimal_awbc_program(entry: &str) -> AwbcProgram {
+    let flow = FlowRuntimeId::from_checked_declaration_digest([0x71; 32], "flow.main")
+        .expect("test checked Flow identity");
     AwbcProgram {
         strings: vec![
             "captured".to_owned(),
@@ -1032,7 +1179,13 @@ fn minimal_awbc_program(entry: &str) -> AwbcProgram {
             AwbcConstant::String(AwbcStringId(2)),
             AwbcConstant::String(AwbcStringId(3)),
         ],
-        runtime_types: vec![AwbcRuntimeType::String, AwbcRuntimeType::Dynamic],
+        runtime_types: vec![
+            AwbcRuntimeType::new(
+                RuntimeCheckedType::String.semantic_identity_digest(),
+                AwbcRuntimeTypeShape::String,
+            ),
+            AwbcRuntimeType::dynamic(),
+        ],
         signatures: vec![
             AwbcSignature {
                 params: Vec::new(),
@@ -1086,8 +1239,15 @@ fn minimal_awbc_program(entry: &str) -> AwbcProgram {
             },
         ],
         flow_bindings: vec![AwbcFlowBinding {
-            flow: FlowRuntimeId::from_checked_declaration_digest([0x71; 32], "flow.main")
-                .expect("test checked Flow identity"),
+            flow: flow.clone(),
+            function: AwbcFunctionId(0),
+        }],
+        flow_executables: vec![AwbcFlowExecutable {
+            metadata: RuntimeFlowExecutable {
+                flow,
+                contract: FlowContractHash::from_bytes([0x71; 32]),
+                controller: None,
+            },
             function: AwbcFunctionId(0),
         }],
         blocks: vec![
@@ -1127,8 +1287,9 @@ fn minimal_awbc_entry(entry: &str) -> AwbcEntry {
         binding: EntryBindingIdentity::from_bytes([1; 32]),
         public_id: AwbcStringId(1),
         kind: AwbcEntryKind::Cli,
-        signature: AwbcSignatureId(0),
-        target: AwbcEntryTarget::Function(AwbcFunctionId(0)),
+        target: AwbcEntryTarget::Function {
+            function: AwbcFunctionId(0),
+        },
         roles: RuntimeEntryRoles::None,
     }
 }

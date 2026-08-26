@@ -5,6 +5,7 @@ use crate::ViewElementKind;
 use serde::{Deserialize, Serialize};
 
 mod geometry;
+mod semantic;
 
 /// Closed value family accepted by a source-authored View style property.
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd, Serialize, Deserialize)]
@@ -66,6 +67,37 @@ impl ViewStyleValueKind {
         Self::Transition,
         Self::Resource,
     ];
+
+    /// Stable semantic tag in declaration order.
+    pub const fn semantic_tag(self) -> u8 {
+        match self {
+            Self::BoxAxes => 0,
+            Self::Bool => 1,
+            Self::Integer => 2,
+            Self::Ratio => 3,
+            Self::Scalar => 4,
+            Self::Length => 5,
+            Self::Angle => 6,
+            Self::Color => 7,
+            Self::FontFamilyList => 8,
+            Self::FontWeight => 9,
+            Self::FontStyle => 10,
+            Self::Display => 11,
+            Self::Position => 12,
+            Self::Overflow => 13,
+            Self::FlexDirection => 14,
+            Self::FlexWrap => 15,
+            Self::Alignment => 16,
+            Self::BorderRadii => 17,
+            Self::ShadowList => 18,
+            Self::FilterList => 19,
+            Self::Clip => 20,
+            Self::Mask => 21,
+            Self::BlendMode => 22,
+            Self::Transition => 23,
+            Self::Resource => 24,
+        }
+    }
 
     /// Canonical case-sensitive spelling in native Style type annotations.
     pub const fn source_name(self) -> &'static str {

@@ -8,6 +8,7 @@ use crate::value::{
     RuntimeOpaquePersistence, RuntimeOpaqueValue, RuntimeOpaqueValueClass, RuntimeOpaqueValueError,
     RuntimeRecordFieldId, RuntimeSeq, RuntimeSignedIntWidth, RuntimeUnsignedIntWidth, RuntimeValue,
 };
+pub use arcweft_id::RuntimeSemanticTypeId;
 use serde::{Deserialize, Deserializer, Serialize};
 use std::collections::BTreeSet;
 use thiserror::Error;
@@ -19,27 +20,6 @@ pub use binding::{
     RuntimePatternBindingCoordinateError, RuntimePatternBindingPath,
     RuntimePatternBindingPathError, RuntimePatternBindingStep, RuntimePatternBindingWireError,
 };
-
-/// Stable semantic identity for a checked type after alias and projection
-/// normalization.
-///
-/// This identity is owned by core because native runtime patterns and AWBC
-/// projection consume the same checked type boundary.
-#[derive(Clone, Copy, Debug, Deserialize, Eq, Hash, Ord, PartialEq, PartialOrd, Serialize)]
-#[repr(transparent)]
-pub struct RuntimeSemanticTypeId([u8; 32]);
-
-impl RuntimeSemanticTypeId {
-    #[must_use]
-    pub const fn from_bytes(bytes: [u8; 32]) -> Self {
-        Self(bytes)
-    }
-
-    #[must_use]
-    pub const fn as_bytes(&self) -> &[u8; 32] {
-        &self.0
-    }
-}
 
 /// Canonical semantic-type identity encoder shared by semantic producers.
 ///
@@ -142,6 +122,87 @@ impl<'de> Deserialize<'de> for RuntimeOpaqueTypeProducerId {
         let value = String::deserialize(deserializer)?;
         Self::try_new(value).map_err(serde::de::Error::custom)
     }
+}
+
+/// One language-standard opaque runtime carrier shared by semantic checking
+/// and host-manifest projection.
+///
+/// The source-visible path and runtime producer are one closed relation. A
+/// consumer must not reconstruct the producer from a display name.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct RuntimeStandardOpaqueTypeSpec {
+    path: &'static [&'static str],
+    arity: u16,
+    producer: &'static str,
+}
+
+impl RuntimeStandardOpaqueTypeSpec {
+    const fn new(path: &'static [&'static str], arity: u16, producer: &'static str) -> Self {
+        Self {
+            path,
+            arity,
+            producer,
+        }
+    }
+
+    #[must_use]
+    pub const fn path(&self) -> &'static [&'static str] {
+        self.path
+    }
+
+    #[must_use]
+    pub const fn arity(&self) -> u16 {
+        self.arity
+    }
+
+    #[must_use]
+    pub const fn producer(&self) -> &'static str {
+        self.producer
+    }
+
+    #[must_use]
+    pub const fn value_class(&self) -> RuntimeOpaqueValueClass {
+        RuntimeOpaqueValueClass::Plain
+    }
+
+    #[must_use]
+    pub const fn persistence(&self) -> RuntimeOpaquePersistence {
+        RuntimeOpaquePersistence::ConstantAndSnapshot
+    }
+}
+
+pub const RUNTIME_STANDARD_REDUCTION: RuntimeStandardOpaqueTypeSpec =
+    RuntimeStandardOpaqueTypeSpec::new(&["Reduction"], 1, "std.reduction");
+pub const RUNTIME_STANDARD_AGENT_ERROR: RuntimeStandardOpaqueTypeSpec =
+    RuntimeStandardOpaqueTypeSpec::new(&["AgentError"], 0, "std.agent_error");
+
+/// Closed standard opaque inventory. Both semantic catalogs and external
+/// adapter references consume this inventory, so producer identity cannot
+/// diverge between those boundaries.
+pub const RUNTIME_STANDARD_OPAQUE_TYPES: [RuntimeStandardOpaqueTypeSpec; 13] = [
+    RUNTIME_STANDARD_REDUCTION,
+    RuntimeStandardOpaqueTypeSpec::new(&["Watch"], 1, "std.watch"),
+    RuntimeStandardOpaqueTypeSpec::new(&["Sample"], 1, "std.sample"),
+    RuntimeStandardOpaqueTypeSpec::new(&["VirtualPath"], 0, "std.virtual_path"),
+    RuntimeStandardOpaqueTypeSpec::new(&["ArcError"], 0, "std.arc_error"),
+    RuntimeStandardOpaqueTypeSpec::new(&["ReducerError"], 0, "std.reducer_error"),
+    RUNTIME_STANDARD_AGENT_ERROR,
+    RuntimeStandardOpaqueTypeSpec::new(&["AssetError"], 0, "std.asset_error"),
+    RuntimeStandardOpaqueTypeSpec::new(&["ContentLoadError"], 0, "std.content_load_error"),
+    RuntimeStandardOpaqueTypeSpec::new(&["DialogueText"], 0, "std.dialogue_text"),
+    RuntimeStandardOpaqueTypeSpec::new(&["ImageHandle"], 0, "std.image_handle"),
+    RuntimeStandardOpaqueTypeSpec::new(&["PresentationLifetime"], 0, "std.presentation_lifetime"),
+    RuntimeStandardOpaqueTypeSpec::new(&["VoiceError"], 0, "std.voice_error"),
+];
+
+/// Resolves one exact standard opaque source path.
+#[must_use]
+pub fn runtime_standard_opaque_type(
+    path: &[&str],
+) -> Option<&'static RuntimeStandardOpaqueTypeSpec> {
+    RUNTIME_STANDARD_OPAQUE_TYPES
+        .iter()
+        .find(|spec| spec.path() == path)
 }
 
 /// Whether an opaque checked owner names one exact type or a producer-defined top.
@@ -435,6 +496,7 @@ pub enum RuntimeCheckedType {
         nominal: RuntimeNominalTypeId,
         semantic_identity: RuntimeSemanticTypeId,
         layout: TypeLayoutHash,
+        arguments: Vec<RuntimeCheckedType>,
     },
     Opaque {
         owner: RuntimeOpaqueTypeOwner,
@@ -442,6 +504,7 @@ pub enum RuntimeCheckedType {
     Variant {
         nominal: RuntimeNominalTypeId,
         semantic_identity: RuntimeSemanticTypeId,
+        arguments: Vec<RuntimeCheckedType>,
         cases: Vec<RuntimeCheckedVariantCase>,
     },
     Result {
@@ -453,13 +516,24 @@ pub enum RuntimeCheckedType {
 }
 
 impl RuntimeCheckedType {
+    /// Appends this checked type's canonical structural transcript to an
+    /// enclosing semantic-type identity.
+    ///
+    /// This is the single transcript authority for checked runtime types.
+    /// Higher-layer semantic owners use it when a checked type is either the
+    /// complete identity or one structural child; they must not duplicate the
+    /// checked-type tag grammar.
+    pub fn encode_semantic_identity(&self, encoder: &mut RuntimeSemanticTypeIdentityEncoder) {
+        write_checked_type_identity(encoder, self);
+    }
+
     /// Returns the canonical, source-independent digest of this checked type.
     /// The encoder is structural and deliberately ignores debug/display
     /// formatting so producers can share one semantic identity boundary.
     #[must_use]
     pub fn semantic_identity_digest(&self) -> RuntimeSemanticTypeId {
         let mut encoder = RuntimeSemanticTypeIdentityEncoder::new();
-        write_checked_type_identity(&mut encoder, self);
+        self.encode_semantic_identity(&mut encoder);
         encoder.finish()
     }
 
@@ -632,6 +706,7 @@ impl RuntimeCheckedType {
             nominal,
             semantic_identity,
             cases,
+            ..
         } = self
         else {
             return false;
@@ -723,11 +798,16 @@ fn write_checked_type_identity(
         RuntimeCheckedType::Nominal {
             semantic_identity,
             layout,
+            arguments,
             ..
         } => {
             encoder.write_tag(16);
             encoder.write_bytes(semantic_identity.as_bytes());
             encoder.write_bytes(layout.as_bytes());
+            encoder.write_len(arguments.len());
+            for argument in arguments {
+                write_checked_type_identity(encoder, argument);
+            }
         }
         RuntimeCheckedType::Opaque { owner } => {
             encoder.write_tag(17);
@@ -739,11 +819,16 @@ fn write_checked_type_identity(
         }
         RuntimeCheckedType::Variant {
             semantic_identity,
+            arguments,
             cases,
             ..
         } => {
             encoder.write_tag(18);
             encoder.write_bytes(semantic_identity.as_bytes());
+            encoder.write_len(arguments.len());
+            for argument in arguments {
+                write_checked_type_identity(encoder, argument);
+            }
             encoder.write_len(cases.len());
             for case in cases {
                 encoder.write_str(&case.name);
@@ -1639,10 +1724,69 @@ mod tests {
         RuntimePlanBuildError, RuntimePlanBuilder, RuntimePlanTypeProjection, RuntimePlanTypeSeed,
         RuntimeRecordFieldSeedId, RuntimeRecordPatternFieldSeed,
     };
-    use crate::value::RuntimeNominalRecordValue;
+    use crate::value::{RuntimeNominalRecordValue, runtime_sequence_values};
 
     fn identity(marker: u8) -> RuntimeSemanticTypeId {
         RuntimeSemanticTypeId::from_bytes([marker; 32])
+    }
+
+    #[test]
+    fn checked_runtime_type_recursively_validates_host_payload_shape() {
+        let owner = RuntimeOpaqueTypeOwner::exact(
+            RuntimeOpaqueTypeProducerId::try_new("fixture.host-result")
+                .expect("fixture producer identity"),
+            identity(90),
+        );
+        let expected = RuntimeCheckedType::Result {
+            ok: Box::new(RuntimeCheckedType::Tuple(vec![
+                RuntimeCheckedType::Sequence(Box::new(RuntimeCheckedType::Option(Box::new(
+                    RuntimeCheckedType::Unsigned(RuntimeUnsignedIntWidth::U16),
+                )))),
+                RuntimeCheckedType::Opaque {
+                    owner: owner.clone(),
+                },
+            ])),
+            error: Box::new(RuntimeCheckedType::String),
+        };
+        let opaque = owner
+            .try_wrap(RuntimeValue::String("opaque".to_owned()))
+            .expect("exact owner wraps its payload");
+        let valid = RuntimeValue::result_ok(RuntimeValue::Tuple(vec![
+            runtime_sequence_values(vec![
+                RuntimeValue::option_some(RuntimeValue::u16(7)),
+                RuntimeValue::option_none(),
+            ]),
+            opaque,
+        ]));
+
+        assert!(expected.accepts_value(&valid));
+        assert!(
+            expected.accepts_value(&RuntimeValue::result_err(RuntimeValue::String(
+                "domain error".to_owned(),
+            )))
+        );
+
+        let wrong_nested_width = RuntimeValue::result_ok(RuntimeValue::Tuple(vec![
+            runtime_sequence_values(vec![RuntimeValue::option_some(RuntimeValue::u32(7))]),
+            owner
+                .try_wrap(RuntimeValue::String("opaque".to_owned()))
+                .expect("exact owner wraps its payload"),
+        ]));
+        assert!(!expected.accepts_value(&wrong_nested_width));
+
+        let foreign_owner = RuntimeOpaqueTypeOwner::exact(
+            RuntimeOpaqueTypeProducerId::try_new("fixture.foreign-result")
+                .expect("foreign fixture producer identity"),
+            identity(90),
+        );
+        let wrong_opaque_owner = RuntimeValue::result_ok(RuntimeValue::Tuple(vec![
+            runtime_sequence_values(vec![RuntimeValue::option_none()]),
+            foreign_owner
+                .try_wrap(RuntimeValue::String("opaque".to_owned()))
+                .expect("foreign owner wraps its own payload"),
+        ]));
+        assert!(!expected.accepts_value(&wrong_opaque_owner));
+        assert!(!expected.accepts_value(&RuntimeValue::result_err(RuntimeValue::Bool(false))));
     }
 
     #[test]

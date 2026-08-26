@@ -1,9 +1,22 @@
 use std::{collections::BTreeMap, path::PathBuf, sync::Arc};
 
+use arcweft_bundle::{
+    ArcweftBundle, BundleFormat, BundleManifest, BundleRuntimeSummary,
+    resource_codec::{
+        SourceMapSection, ValidatedViewProduct, ViewProductValidationLimits,
+        view::{EventKind, ViewProgramInstruction, ViewProgramResource},
+    },
+};
+use arcweft_character::id::CharacterId;
 use arcweft_compiler::project::{
     CompiledProject, ProjectCompilationContext, ProjectCompilationSession, ProjectCompileError,
-    ProjectCompileStage, compile_project,
+    ProjectCompileStage, ProjectEntrySelection, ProjectEntrySelectionKind, compile_project,
 };
+use arcweft_core::{
+    effect::RuntimeArtifactFingerprint, entry::RuntimeValueDigest, plan::RuntimeLineId,
+};
+use arcweft_dialogue::InlineFailurePolicy;
+use arcweft_id::{PublicId, TextKey};
 use arcweft_lang_hir::symbol::{CallablePackageId, ProjectSymbolWorldId};
 use arcweft_lang_sema::{env::TypeCheckEnv, registration::ProjectRegistrationFacts};
 use arcweft_lang_syntax::{
@@ -12,13 +25,31 @@ use arcweft_lang_syntax::{
     parser::ParseOptions,
 };
 use arcweft_manifest_model::{BuildSpec, PackageId, PackageSpec, PackageVersion};
+use arcweft_presentation::input::{InputEpoch, InputEvent};
 use arcweft_project::graph::ModuleDependency;
 use arcweft_project::sources::{ProjectSourceFile, ProjectSources};
 use arcweft_resource_model::registry::ResourceTypeRegistry;
+use arcweft_runtime_driver::{
+    dialogue::{
+        DialoguePageIndex, DialogueViewInput, DialogueViewOccurrence, DialogueViewPrimaryAction,
+        DialogueViewReveal, DialogueViewStage, DialogueViewState,
+    },
+    presentation_handles::PresentationHandleId,
+    view_runtime::BundleViewRuntime,
+};
+use arcweft_runtime_plan::awbc_lower::AwbcLowerer;
 use arcweft_source::{
     DiagnosticLabelStyle, SourceDocument, SourceDocumentId, SourceName, identity::SourceSnapshotId,
 };
-use arcweft_view::{ViewId, style::ViewStyleSheetId};
+use arcweft_text_model::{
+    CharacterDialoguePresentationConfig, DialoguePresentationCharacter, LineDisplayFrame,
+    RichTextDisplayMap,
+};
+use arcweft_view::{
+    DialogueAdvanceTarget, DialogueEntryId, DialogueInstanceId, DialoguePresentationId,
+    DialogueRevision, DialogueStageIndex, ViewHandlerInvocation, ViewHandlerResultRole, ViewId,
+    style::ViewStyleSheetId,
+};
 
 fn compile_attached_project(
     project: &ProjectSources,
@@ -99,6 +130,228 @@ style Primary {
     assert_eq!(
         product.resource_type_registry_digest(),
         ResourceTypeRegistry::empty().digest()
+    );
+}
+
+#[test]
+fn compiler_lowers_checked_on_click_to_typed_bundle_handler_without_fx_conflation() {
+    let fixture = project_view_fixture_with_entry(
+        "entry cli @entry.main { goto @flow.main }\n\
+         flow main() -> String { return \"done\" }\n\
+         view Main(dialogue: DialogueView) {\n  Button().on_click { dialogue.primary_action }\n}\n",
+        "arcweft-test://compiler-view-on-click",
+    );
+    let compiled = fixture.compile().expect("typed on_click View product");
+    let program = compiled
+        .view_product()
+        .product()
+        .program()
+        .expect("View program")
+        .resource();
+    let definition = program
+        .definitions
+        .iter()
+        .find(|definition| definition.public_id.as_str() == "view.Main")
+        .expect("authored View definition");
+    let body = &program.instructions
+        [definition.body.start_instruction as usize..definition.body.end_instruction as usize];
+    let handler = match body {
+        [
+            ViewProgramInstruction::OpenElement { .. },
+            ViewProgramInstruction::CloseElement,
+            ViewProgramInstruction::BindHandler {
+                event: EventKind::Activate,
+                handler,
+                ..
+            },
+        ] => *handler,
+        other => panic!("unexpected typed on_click body: {other:?}"),
+    };
+    let specification = program
+        .handler_ref(handler)
+        .expect("typed handler specification");
+    assert!(matches!(
+        specification.result.role(),
+        ViewHandlerResultRole::DialogueAction
+    ));
+    assert_eq!(specification.captures.len(), 1);
+    assert_eq!(specification.captures[0].parameter().value(), 0);
+    let binding = compiled
+        .runtime_plan()
+        .plan
+        .pure_programs()
+        .iter()
+        .find(|binding| binding.program() == handler)
+        .expect("mount-only runtime pure-program binding");
+    let helper = &compiled.runtime_plan().plan.pure_helpers()[binding.helper().0];
+    assert_eq!(helper.input_locals.len(), 1);
+    assert!(matches!(
+        helper.origin,
+        arcweft_core::plan::RuntimePureHelperOrigin::Inferred
+    ));
+    assert!(
+        !body
+            .iter()
+            .any(|instruction| matches!(instruction, ViewProgramInstruction::ApplyFx { .. }))
+    );
+
+    let encoded = program
+        .encode_canonical_section()
+        .expect("typed View codec");
+    let decoded = ViewProgramResource::decode_canonical_section(&encoded)
+        .expect("typed View codec round trip");
+    assert!(decoded.instructions.iter().any(|instruction| matches!(
+        instruction,
+        ViewProgramInstruction::BindHandler {
+            event: EventKind::Activate,
+            ..
+        }
+    )));
+
+    let awbc = AwbcLowerer::new(
+        &compiled.runtime_plan().plan,
+        &compiled.runtime_plan().dialogue_content_catalog,
+        "main.arcw",
+    )
+    .lower()
+    .expect("typed project lowers to verified Product AWBC")
+    .program;
+    let instruction_count = awbc.instructions.len();
+    let bundle = ArcweftBundle::try_new(
+        BundleManifest {
+            profile_id: None,
+            profile_kind: None,
+            entry: Some("entry.main".to_owned()),
+            adapter: None,
+            adapter_manifest_ids: Vec::new(),
+            required_host_calls: Vec::new(),
+            runtime: BundleRuntimeSummary {
+                artifact_fingerprint: RuntimeArtifactFingerprint::try_from_bytes([0x7d; 32])
+                    .expect("fixture artifact fingerprint is non-zero"),
+                entry_flow: Some("flow.main".to_owned()),
+                flows: compiled.runtime_plan().plan.flows().len(),
+                bytecode_instructions: instruction_count,
+                line_task_groups: 0,
+                stream_plans: 0,
+            },
+        },
+        SourceMapSection::try_from_documents(&[fixture.document.as_ref()])
+            .expect("authored project source map"),
+        awbc,
+        compiled.runtime_plan().dialogue_content_catalog.clone(),
+    )
+    .expect("standard handler merges into compiled Product AWBC")
+    .try_with_validated_view_product(compiled.view_product().product())
+    .expect("compiler View product joins its exact Product AWBC");
+    let bundle = if let Some(text) = compiled.view_product().text() {
+        bundle.with_view_text(text.clone())
+    } else {
+        bundle
+    };
+    let encoded = bundle
+        .to_format_bytes(BundleFormat::Awfb)
+        .expect("compiled View product encodes as validated AWFB");
+    let decoded = ArcweftBundle::from_format_slice(BundleFormat::Awfb, &encoded)
+        .expect("compiled View product decodes with exact handler cross-sections");
+    let runtime_product = ValidatedViewProduct::try_new(
+        Some(decoded.source_map.clone()),
+        decoded.view_program.clone(),
+        decoded.view_style.clone(),
+        ViewProductValidationLimits::default(),
+    )
+    .expect("decoded View product validates");
+    let mut runtime = BundleViewRuntime::try_new_with_awbc(
+        runtime_product,
+        decoded.view_text.clone(),
+        Arc::new(decoded.product_awbc_program().clone()),
+    )
+    .expect("decoded handler catalog joins Product AWBC");
+    let authored_view = ViewId::try_new("view.Main").expect("authored View ID");
+    let display_frame = minimal_dialogue_frame(authored_view.clone());
+    let advance_target = DialogueAdvanceTarget::new(
+        DialoguePresentationId::new(11),
+        DialogueEntryId::new(12),
+        DialogueInstanceId::new(13),
+        DialogueStageIndex::new(0),
+        DialogueRevision::new(1),
+    );
+    let dialogue_input = DialogueViewInput {
+        handle: PresentationHandleId::try_new("dialogue.compiler.e2e")
+            .expect("dialogue presentation handle"),
+        view: &authored_view,
+        frame: &display_frame,
+        state: DialogueViewState {
+            occurrence: DialogueViewOccurrence {
+                presentation: DialoguePresentationId::new(11),
+                entry: DialogueEntryId::new(12),
+                instance: DialogueInstanceId::new(13),
+            },
+            stage: DialogueViewStage {
+                index: DialogueStageIndex::new(0),
+                page: DialoguePageIndex::new(0),
+                stage_count: 1,
+                page_count: 1,
+            },
+            reveal: DialogueViewReveal::complete(),
+            primary_action: DialogueViewPrimaryAction {
+                target: Some(advance_target),
+            },
+        },
+    };
+    let mounted = runtime.evaluate_with_dialogue(&[], &[dialogue_input], &[], false);
+    assert!(mounted.diagnostics.is_empty(), "{mounted:#?}");
+    let [mount] = mounted.mounts.as_slice() else {
+        panic!("compiled handler must publish exactly one View mount")
+    };
+    let [binding] = mount.events.as_slice() else {
+        panic!("compiled handler must publish exactly one typed event binding")
+    };
+    let invocation = ViewHandlerInvocation::from_input(
+        &InputEvent::activate(InputEpoch(1), binding.target().clone()),
+        binding.event(),
+        binding.route(),
+    )
+    .expect("presentation Activate forms the accepted typed invocation");
+    assert_eq!(
+        runtime
+            .dispatch_invocation(&invocation)
+            .expect("sealed handler token dispatches"),
+        Some(
+            arcweft_runtime_driver::dialogue::BundlePresentationInput::advance_dialogue(
+                advance_target,
+            ),
+        )
+    );
+}
+
+#[test]
+fn compiler_rejects_affine_view_handler_capture_before_bundle_publication() {
+    let fixture = project_view_fixture(
+        "view Main(dialogue: DialogueView, pending: Need<i64>) {\n\
+           Button().on_click { let observed = pending; dialogue.primary_action }\n\
+         }\n",
+        "arcweft-test://compiler-view-affine-handler-capture",
+    );
+    let error = fixture
+        .compile()
+        .expect_err("an affine Need capture cannot enter a retained View handler snapshot");
+    let [diagnostic] = error.diagnostics() else {
+        panic!("affine handler capture must have one owning diagnostic: {error:?}")
+    };
+    assert_eq!(diagnostic.stage(), ProjectCompileStage::ViewLower);
+    assert_eq!(
+        diagnostic
+            .diagnostic()
+            .code()
+            .map(arcweft_source::DiagnosticCode::as_str),
+        Some("compiler.view.lower")
+    );
+    assert!(
+        diagnostic
+            .diagnostic()
+            .message()
+            .contains("is not snapshot-retainable"),
+        "the final compiler ownership boundary must own this rejection: {error:?}"
     );
 }
 
@@ -367,6 +620,25 @@ impl ProjectViewFixture {
 }
 
 fn project_view_fixture(source: &str, source_id: &str) -> ProjectViewFixture {
+    project_view_fixture_with_selection(source, source_id, None)
+}
+
+fn project_view_fixture_with_entry(source: &str, source_id: &str) -> ProjectViewFixture {
+    project_view_fixture_with_selection(
+        source,
+        source_id,
+        Some(ProjectEntrySelection::new(
+            PublicId::try_new("entry.main").expect("fixture Entry ID"),
+            ProjectEntrySelectionKind::Cli,
+        )),
+    )
+}
+
+fn project_view_fixture_with_selection(
+    source: &str,
+    source_id: &str,
+    entry_selection: Option<ProjectEntrySelection>,
+) -> ProjectViewFixture {
     let document = Arc::new(
         SourceDocument::try_new(
             SourceDocumentId::try_new(source_id).expect("source ID"),
@@ -422,12 +694,46 @@ fn project_view_fixture(source: &str, source_id: &str) -> ProjectViewFixture {
         Arc::new(facts),
         Arc::new(ResourceTypeRegistry::empty()),
         None,
-        None,
+        entry_selection,
     );
     ProjectViewFixture {
         project,
         document,
         context,
+    }
+}
+
+fn minimal_dialogue_frame(view: ViewId) -> LineDisplayFrame {
+    LineDisplayFrame {
+        line: RuntimeLineId::from_runtime_line_value("say.compiler.view.handler")
+            .expect("runtime line identity"),
+        character: DialoguePresentationCharacter {
+            id: CharacterId::try_new("character.compiler").expect("dialogue character identity"),
+            display_name: "Compiler".to_owned(),
+        },
+        text_key: TextKey::try_new("text.compiler.view.handler").expect("dialogue text key"),
+        effective: CharacterDialoguePresentationConfig {
+            view,
+            voice: None,
+            look: None,
+            stage: None,
+            portrait: None,
+            focus: None,
+            cleanup: None,
+            source_locale: None,
+            hooks: Vec::new(),
+            inline_failure: InlineFailurePolicy::FailLine,
+            custom: BTreeMap::new(),
+            config_digest: RuntimeValueDigest::ZERO,
+        },
+        text: String::new(),
+        base_styles: Vec::new(),
+        style_contributions: Vec::new(),
+        nodes: Vec::new(),
+        display_map: RichTextDisplayMap::default(),
+        host_events: Vec::new(),
+        inline_failures: Vec::new(),
+        unresolved: Vec::new(),
     }
 }
 

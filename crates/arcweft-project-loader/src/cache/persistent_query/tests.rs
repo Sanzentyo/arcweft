@@ -5,12 +5,13 @@ use super::{
 use crate::cache::{record::CacheRecord, store::FilesystemCacheStore};
 use arcweft_core::awbc::schema::{
     AwbcBlock, AwbcBlockId, AwbcConstant, AwbcConstantId, AwbcEffectKind, AwbcEffectPlan,
-    AwbcEffectSetId, AwbcEntry, AwbcEntryKind, AwbcEntryTarget, AwbcFlowBinding, AwbcFrameLayout,
-    AwbcFrameLayoutId, AwbcFunction, AwbcFunctionFlags, AwbcFunctionId, AwbcFunctionKind,
-    AwbcProgram, AwbcSafePointKind, AwbcSignature, AwbcSignatureId, AwbcStringId, AwbcTableRange,
-    AwbcTerminator,
+    AwbcEffectSetId, AwbcEntry, AwbcEntryKind, AwbcEntryTarget, AwbcFlowBinding,
+    AwbcFlowExecutable, AwbcFrameLayout, AwbcFrameLayoutId, AwbcFunction, AwbcFunctionFlags,
+    AwbcFunctionId, AwbcFunctionKind, AwbcProgram, AwbcSafePointKind, AwbcSignature,
+    AwbcSignatureId, AwbcStringId, AwbcTableRange, AwbcTerminator,
 };
 use arcweft_core::effect::RuntimeAssertionGuardId;
+use arcweft_core::entry::{FlowContractHash, RuntimeFlowExecutable};
 use arcweft_project::{
     artifact::{ArtifactKey, ArtifactKeyInput, ArtifactKind},
     fingerprint::{BuildDigest, NamedDigest},
@@ -365,6 +366,9 @@ fn feature_set_digest_for(features: &[String]) -> BuildDigest {
 fn minimal_awbc_bytes() -> Vec<u8> {
     let guard =
         RuntimeAssertionGuardId::try_from_bytes([0xa7; 16]).expect("non-zero assertion guard");
+    let flow =
+        arcweft_core::plan::FlowRuntimeId::from_checked_declaration_digest([0x33; 32], "flow.main")
+            .expect("test checked Flow identity");
     let program = AwbcProgram {
         strings: vec![
             "always".to_owned(),
@@ -397,11 +401,15 @@ fn minimal_awbc_bytes() -> Vec<u8> {
             flags: AwbcFunctionFlags(AwbcFunctionFlags::DETERMINISTIC),
         }],
         flow_bindings: vec![AwbcFlowBinding {
-            flow: arcweft_core::plan::FlowRuntimeId::from_checked_declaration_digest(
-                [0x33; 32],
-                "flow.main",
-            )
-            .expect("test checked Flow identity"),
+            flow: flow.clone(),
+            function: AwbcFunctionId(0),
+        }],
+        flow_executables: vec![AwbcFlowExecutable {
+            metadata: RuntimeFlowExecutable {
+                flow,
+                contract: FlowContractHash::from_bytes([0x33; 32]),
+                controller: None,
+            },
             function: AwbcFunctionId(0),
         }],
         blocks: vec![AwbcBlock {
@@ -417,8 +425,9 @@ fn minimal_awbc_bytes() -> Vec<u8> {
             binding: arcweft_core::entry::EntryBindingIdentity::from_bytes([1; 32]),
             public_id: AwbcStringId(3),
             kind: AwbcEntryKind::Cli,
-            signature: AwbcSignatureId(0),
-            target: AwbcEntryTarget::Function(AwbcFunctionId(0)),
+            target: AwbcEntryTarget::Function {
+                function: AwbcFunctionId(0),
+            },
             roles: arcweft_core::entry::RuntimeEntryRoles::None,
         }],
         effect_plans: vec![AwbcEffectPlan {

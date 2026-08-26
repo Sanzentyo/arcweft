@@ -4,21 +4,21 @@ use crate::awbc::schema::{
     AwbcBlockId, AwbcCallableExecutable, AwbcCodeLocation, AwbcContentUnit, AwbcContentUnitId,
     AwbcDialogueMark, AwbcDigest, AwbcDisplayMapEntry, AwbcDisplayMapId, AwbcEntry, AwbcEntryKind,
     AwbcEntryTarget, AwbcFlowBinding, AwbcFlowExecutable, AwbcFunctionId, AwbcHeader,
-    AwbcInstructionId, AwbcLineTaskGroupId, AwbcProgram, AwbcRegisterId, AwbcResourceId,
-    AwbcResourceRef, AwbcResourceResidency, AwbcResumePointId, AwbcRoute, AwbcRouteBinding,
-    AwbcRouteBindingSource, AwbcSignatureId, AwbcSourceMapEntry, AwbcSourceMapId, AwbcStringId,
-    AwbcTraitMethod, AwbcTraitReceiverMode,
+    AwbcInstructionId, AwbcLineTaskGroupId, AwbcProgram, AwbcPureProgramBinding, AwbcRegisterId,
+    AwbcResourceId, AwbcResourceRef, AwbcResourceResidency, AwbcResumePointId, AwbcRoute,
+    AwbcRouteBinding, AwbcRouteBindingSource, AwbcRouteSegment, AwbcSignatureId,
+    AwbcSourceMapEntry, AwbcSourceMapId, AwbcStringId, AwbcTraitMethod, AwbcTraitReceiverMode,
 };
 use crate::entry::{
     AgentBudget, AgentPolicyHash, CallableContractHash, EntryBindingIdentity, FlowContractHash,
-    RootExecutionLimits, RuntimeAgentEntryRoles, RuntimeBytesFormat, RuntimeCallableId,
-    RuntimeCallableRole, RuntimeCommandConstructorId, RuntimeCommandContract, RuntimeCommandPolicy,
-    RuntimeCommandTargetId, RuntimeEntryRoles, RuntimeEnumRepr, RuntimeEnumTagStyle,
-    RuntimeFlowExecutable, RuntimeFlowExecutableParameter, RuntimeFlowParameterMode,
-    RuntimeFlowRole, RuntimeNominalRole, RuntimeNominalTypeId, RuntimeSchemaField,
-    RuntimeSchemaLimits, RuntimeSchemaVariant, RuntimeStatefulEntryRoles, RuntimeTypeSchema,
-    TypeLayoutHash,
+    FlowParameterCoordinate, RootExecutionLimits, RuntimeAgentEntryRoles, RuntimeBytesFormat,
+    RuntimeCallableId, RuntimeCallableRole, RuntimeCommandConstructorId, RuntimeCommandContract,
+    RuntimeCommandPolicy, RuntimeCommandTargetId, RuntimeEntryRoles, RuntimeEnumRepr,
+    RuntimeEnumTagStyle, RuntimeFlowExecutable, RuntimeFlowRole, RuntimeNominalRole,
+    RuntimeNominalTypeId, RuntimeSchemaField, RuntimeSchemaLimits, RuntimeSchemaVariant,
+    RuntimeStatefulEntryRoles, RuntimeTypeSchema, TypeLayoutHash,
 };
+use crate::pattern::RuntimeSemanticTypeId;
 use crate::plan::{EntryRuntimeId, FlowRuntimeId};
 
 impl Wire for AwbcProgram {
@@ -48,6 +48,7 @@ impl Wire for AwbcProgram {
         writer.write_table(&self.line_task_nodes)?;
         writer.write_table(&self.stream_plans)?;
         writer.write_table(&self.pure_helpers)?;
+        writer.write_table(&self.pure_programs)?;
         writer.write_table(&self.trait_methods)?;
         writer.write_table(&self.display_map)?;
         writer.write_table(&self.source_map)?;
@@ -86,6 +87,7 @@ impl Wire for AwbcProgram {
             line_task_nodes: reader.read_table("line_task_nodes", budget.line_task_nodes)?,
             stream_plans: reader.read_table("stream_plans", budget.stream_plans)?,
             pure_helpers: reader.read_table("pure_helpers", budget.pure_helpers)?,
+            pure_programs: reader.read_table("pure_programs", budget.pure_programs)?,
             trait_methods: reader.read_table("trait_methods", budget.trait_methods)?,
             display_map: reader.read_table("display_map", budget.display_map)?,
             source_map: reader.read_table("source_map", budget.source_map)?,
@@ -96,6 +98,34 @@ impl Wire for AwbcProgram {
             flow_executables: reader.read_table("flow_executables", budget.flow_executables)?,
             entries: reader.read_table("entries", budget.entries)?,
         })
+    }
+}
+
+impl Wire for AwbcPureProgramBinding {
+    fn write_wire(&self, writer: &mut Writer) -> Result<(), AwbcCodecError> {
+        self.program.write_wire(writer)?;
+        self.helper.write_wire(writer)?;
+        self.input_types.write_wire(writer)?;
+        self.result_type.write_wire(writer)
+    }
+
+    fn read_wire(reader: &mut Reader<'_>) -> Result<Self, AwbcCodecError> {
+        Ok(Self {
+            program: arcweft_id::runtime_program::RuntimePureProgramId::read_wire(reader)?,
+            helper: crate::awbc::schema::AwbcPureHelperId::read_wire(reader)?,
+            input_types: Vec::<RuntimeSemanticTypeId>::read_wire(reader)?,
+            result_type: RuntimeSemanticTypeId::read_wire(reader)?,
+        })
+    }
+}
+
+impl Wire for arcweft_id::runtime_program::RuntimePureProgramId {
+    fn write_wire(&self, writer: &mut Writer) -> Result<(), AwbcCodecError> {
+        self.as_bytes().write_wire(writer)
+    }
+
+    fn read_wire(reader: &mut Reader<'_>) -> Result<Self, AwbcCodecError> {
+        <[u8; 32]>::read_wire(reader).map(Self::from_checked_digest)
     }
 }
 
@@ -263,7 +293,6 @@ impl Wire for AwbcEntry {
         self.binding.write_wire(writer)?;
         self.public_id.write_wire(writer)?;
         self.kind.write_wire(writer)?;
-        self.signature.write_wire(writer)?;
         self.target.write_wire(writer)?;
         self.roles.write_wire(writer)
     }
@@ -274,7 +303,6 @@ impl Wire for AwbcEntry {
             binding: EntryBindingIdentity::read_wire(reader)?,
             public_id: AwbcStringId::read_wire(reader)?,
             kind: AwbcEntryKind::read_wire(reader)?,
-            signature: AwbcSignatureId::read_wire(reader)?,
             target: AwbcEntryTarget::read_wire(reader)?,
             roles: RuntimeEntryRoles::read_wire(reader)?,
         })
@@ -345,6 +373,7 @@ wire_digest!(
     CallableContractHash,
     FlowContractHash,
     AgentPolicyHash,
+    RuntimeSemanticTypeId,
 );
 
 impl Wire for RuntimeNominalTypeId {
@@ -475,37 +504,10 @@ impl Wire for RuntimeFlowRole {
     }
 }
 
-impl Wire for RuntimeFlowExecutableParameter {
-    fn write_wire(&self, writer: &mut Writer) -> Result<(), AwbcCodecError> {
-        self.position.write_wire(writer)?;
-        self.name.write_wire(writer)?;
-        self.mode.write_wire(writer)?;
-        self.nominal.write_wire(writer)?;
-        self.layout.write_wire(writer)
-    }
-
-    fn read_wire(reader: &mut Reader<'_>) -> Result<Self, AwbcCodecError> {
-        Ok(Self {
-            position: u32::read_wire(reader)?,
-            name: String::read_wire(reader)?,
-            mode: RuntimeFlowParameterMode::read_wire(reader)?,
-            nominal: RuntimeNominalTypeId::read_wire(reader)?,
-            layout: TypeLayoutHash::read_wire(reader)?,
-        })
-    }
-}
-
-wire_enum!(RuntimeFlowParameterMode, "runtime flow parameter mode", {
-    0 => RuntimeFlowParameterMode::Owned,
-    1 => RuntimeFlowParameterMode::Shared,
-    2 => RuntimeFlowParameterMode::Mutable,
-});
-
 impl Wire for RuntimeFlowExecutable {
     fn write_wire(&self, writer: &mut Writer) -> Result<(), AwbcCodecError> {
         self.flow.write_wire(writer)?;
         self.contract.write_wire(writer)?;
-        self.parameters.write_wire(writer)?;
         self.controller.write_wire(writer)
     }
 
@@ -513,7 +515,6 @@ impl Wire for RuntimeFlowExecutable {
         Ok(Self {
             flow: FlowRuntimeId::read_wire(reader)?,
             contract: FlowContractHash::read_wire(reader)?,
-            parameters: Vec::<RuntimeFlowExecutableParameter>::read_wire(reader)?,
             controller: Option::<RuntimeCallableRole>::read_wire(reader)?,
         })
     }
@@ -522,6 +523,7 @@ impl Wire for RuntimeFlowExecutable {
 impl Wire for RuntimeNominalRole {
     fn write_wire(&self, writer: &mut Writer) -> Result<(), AwbcCodecError> {
         self.identity.write_wire(writer)?;
+        self.semantic_identity.write_wire(writer)?;
         self.layout.write_wire(writer)?;
         self.schema.write_wire(writer)
     }
@@ -529,6 +531,7 @@ impl Wire for RuntimeNominalRole {
     fn read_wire(reader: &mut Reader<'_>) -> Result<Self, AwbcCodecError> {
         Ok(Self {
             identity: RuntimeNominalTypeId::read_wire(reader)?,
+            semantic_identity: RuntimeSemanticTypeId::read_wire(reader)?,
             layout: TypeLayoutHash::read_wire(reader)?,
             schema: RuntimeTypeSchema::read_wire(reader)?,
         })
@@ -975,7 +978,7 @@ impl Wire for AwbcEntryKind {
 impl Wire for AwbcEntryTarget {
     fn write_wire(&self, writer: &mut Writer) -> Result<(), AwbcCodecError> {
         match self {
-            Self::Function(function) => {
+            Self::Function { function } => {
                 writer.write_u8(0);
                 function.write_wire(writer)?;
             }
@@ -990,7 +993,9 @@ impl Wire for AwbcEntryTarget {
     fn read_wire(reader: &mut Reader<'_>) -> Result<Self, AwbcCodecError> {
         let offset = reader.offset();
         Ok(match reader.read_u8()? {
-            0 => Self::Function(AwbcFunctionId::read_wire(reader)?),
+            0 => Self::Function {
+                function: AwbcFunctionId::read_wire(reader)?,
+            },
             1 => Self::Routes(Vec::<AwbcRoute>::read_wire(reader)?),
             tag => {
                 return Err(AwbcCodecError::UnknownTag {
@@ -1006,41 +1011,64 @@ impl Wire for AwbcEntryTarget {
 impl Wire for AwbcRoute {
     fn write_wire(&self, writer: &mut Writer) -> Result<(), AwbcCodecError> {
         self.method.write_wire(writer)?;
-        self.path.write_wire(writer)?;
+        self.segments.write_wire(writer)?;
         self.target.write_wire(writer)?;
         self.bindings.write_wire(writer)
     }
 
     fn read_wire(reader: &mut Reader<'_>) -> Result<Self, AwbcCodecError> {
         Ok(Self {
-            method: AwbcStringId::read_wire(reader)?,
-            path: AwbcStringId::read_wire(reader)?,
+            method: crate::plan::RuntimeHttpMethod::read_wire(reader)?,
+            segments: Vec::<AwbcRouteSegment>::read_wire(reader)?,
             target: AwbcFunctionId::read_wire(reader)?,
             bindings: Vec::<AwbcRouteBinding>::read_wire(reader)?,
         })
     }
 }
 
-impl Wire for AwbcRouteBinding {
+impl Wire for crate::plan::RuntimeHttpMethod {
     fn write_wire(&self, writer: &mut Writer) -> Result<(), AwbcCodecError> {
-        self.register.write_wire(writer)?;
-        self.source.write_wire(writer)
+        writer.write_u8(match self {
+            Self::Get => 0,
+            Self::Post => 1,
+            Self::Put => 2,
+            Self::Patch => 3,
+            Self::Delete => 4,
+            Self::Head => 5,
+            Self::Options => 6,
+        });
+        Ok(())
     }
 
     fn read_wire(reader: &mut Reader<'_>) -> Result<Self, AwbcCodecError> {
-        Ok(Self {
-            register: AwbcRegisterId::read_wire(reader)?,
-            source: AwbcRouteBindingSource::read_wire(reader)?,
-        })
+        let offset = reader.offset();
+        match reader.read_u8()? {
+            0 => Ok(Self::Get),
+            1 => Ok(Self::Post),
+            2 => Ok(Self::Put),
+            3 => Ok(Self::Patch),
+            4 => Ok(Self::Delete),
+            5 => Ok(Self::Head),
+            6 => Ok(Self::Options),
+            tag => Err(AwbcCodecError::UnknownTag {
+                kind: "HTTP method",
+                tag,
+                offset,
+            }),
+        }
     }
 }
 
-impl Wire for AwbcRouteBindingSource {
+impl Wire for AwbcRouteSegment {
     fn write_wire(&self, writer: &mut Writer) -> Result<(), AwbcCodecError> {
         match self {
-            Self::PathParameter(name) => {
+            Self::Literal(literal) => {
                 writer.write_u8(0);
-                name.write_wire(writer)?;
+                literal.write_wire(writer)?;
+            }
+            Self::Capture(capture) => {
+                writer.write_u8(1);
+                capture.position().write_wire(writer)?;
             }
         }
         Ok(())
@@ -1049,7 +1077,50 @@ impl Wire for AwbcRouteBindingSource {
     fn read_wire(reader: &mut Reader<'_>) -> Result<Self, AwbcCodecError> {
         let offset = reader.offset();
         match reader.read_u8()? {
-            0 => Ok(Self::PathParameter(AwbcStringId::read_wire(reader)?)),
+            0 => Ok(Self::Literal(AwbcStringId::read_wire(reader)?)),
+            1 => Ok(Self::Capture(
+                crate::plan::RouteCaptureCoordinate::from_position(u32::read_wire(reader)?),
+            )),
+            tag => Err(AwbcCodecError::UnknownTag {
+                kind: "route segment",
+                tag,
+                offset,
+            }),
+        }
+    }
+}
+
+impl Wire for AwbcRouteBinding {
+    fn write_wire(&self, writer: &mut Writer) -> Result<(), AwbcCodecError> {
+        self.parameter.position().write_wire(writer)?;
+        self.source.write_wire(writer)
+    }
+
+    fn read_wire(reader: &mut Reader<'_>) -> Result<Self, AwbcCodecError> {
+        Ok(Self {
+            parameter: FlowParameterCoordinate::from_position(u32::read_wire(reader)?),
+            source: AwbcRouteBindingSource::read_wire(reader)?,
+        })
+    }
+}
+
+impl Wire for AwbcRouteBindingSource {
+    fn write_wire(&self, writer: &mut Writer) -> Result<(), AwbcCodecError> {
+        match self {
+            Self::PathCapture(capture) => {
+                writer.write_u8(0);
+                capture.position().write_wire(writer)?;
+            }
+        }
+        Ok(())
+    }
+
+    fn read_wire(reader: &mut Reader<'_>) -> Result<Self, AwbcCodecError> {
+        let offset = reader.offset();
+        match reader.read_u8()? {
+            0 => Ok(Self::PathCapture(
+                crate::plan::RouteCaptureCoordinate::from_position(u32::read_wire(reader)?),
+            )),
             tag => Err(AwbcCodecError::UnknownTag {
                 kind: "route binding source",
                 tag,

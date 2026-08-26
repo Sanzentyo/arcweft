@@ -10,7 +10,7 @@ use super::runtime::options::{
     CliRuntimeExecutorTier, CliRuntimeMathBackend, CliRuntimePureBackend, CliRuntimePureWorkers,
     CliRuntimeStepMode,
 };
-use super::runtime::parse::{parse_runtime_binding_arg, parse_runtime_pure_workers};
+use super::runtime::parse::parse_runtime_pure_workers;
 use super::runtime::profile::report_path;
 use super::runtime::profile::run_profile_phase;
 use super::runtime::steps::{NativeRunHost, NativeRunSource, run_runtime_steps_with_executor};
@@ -22,7 +22,6 @@ use crate::output::{
 use arcweft_core::{
     engine::{FlowFiberStatus, FlowStatusLabelStyle},
     plan::{EntryRuntimeId, RuntimePlan},
-    value::RuntimeBinding,
 };
 use arcweft_runtime_host::NativeAdapterRegistrar;
 use arcweft_verify::{
@@ -211,11 +210,11 @@ fn verify_types_runtime_self_check(
                 source: Some(NativeRunSource::new(selection.path(), &file_roots)),
                 policy: &host_policy,
                 adapter_registrars,
+                cli_args: &[],
             },
             options.steps,
             options.runtime_mode,
             options.max_ops,
-            &options.values,
             &checked.execution_diagnostics,
         )
     })?;
@@ -323,8 +322,6 @@ pub(in crate::app) struct VerifyTypesOptions {
     math_backend: Option<CliRuntimeMathBackend>,
     #[arg(long)]
     math_wgpu_min_elements: Option<usize>,
-    #[arg(long = "value", value_parser = parse_runtime_binding_arg)]
-    values: Vec<RuntimeBinding>,
     #[arg(long)]
     json: bool,
 }

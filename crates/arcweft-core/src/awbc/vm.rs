@@ -14,9 +14,10 @@ use super::schema::{
     AwbcBinaryOp, AwbcBlockId, AwbcCodeLocation, AwbcConstant, AwbcConstantId, AwbcContentUnitId,
     AwbcEffectPlanId, AwbcFunctionId, AwbcInstruction, AwbcInstructionId, AwbcIntrinsicId,
     AwbcOpcode, AwbcPattern, AwbcPatternId, AwbcPatternRest, AwbcProgram, AwbcPureHelperId,
-    AwbcRegisterId, AwbcResumePointId, AwbcRuntimeType, AwbcSignedIntKind, AwbcSourceMapId,
-    AwbcStreamPlanId, AwbcStringId, AwbcTaskPlanId, AwbcTerminator, AwbcTraitMethodId,
-    AwbcTraitReceiverMode, AwbcTrapCode, AwbcTypeId, AwbcUnaryOp, AwbcUnsignedIntKind,
+    AwbcRegisterId, AwbcResumePointId, AwbcRuntimeType, AwbcRuntimeTypeShape, AwbcSignedIntKind,
+    AwbcSourceMapId, AwbcStreamPlanId, AwbcStringId, AwbcTaskPlanId, AwbcTerminator,
+    AwbcTraitMethodId, AwbcTraitReceiverMode, AwbcTrapCode, AwbcTypeId, AwbcUnaryOp,
+    AwbcUnsignedIntKind,
 };
 use crate::task::NeedId;
 use crate::time::LogicalDuration;
@@ -506,8 +507,12 @@ fn execute_instruction(
             field_names,
             fields,
         } => {
-            let value = match program.runtime_types.get(ty.index()) {
-                Some(AwbcRuntimeType::NominalRecord { .. }) => {
+            let value = match program
+                .runtime_types
+                .get(ty.index())
+                .map(AwbcRuntimeType::shape)
+            {
+                Some(AwbcRuntimeTypeShape::NominalRecord { .. }) => {
                     let layout = program
                         .nominal_record_layout(*ty)
                         .map_err(|error| VmError::Runtime(error.to_string()))?
@@ -520,7 +525,7 @@ fn execute_instruction(
                         .map(RuntimeValue::NominalRecord)
                         .map_err(|error| VmError::Runtime(error.to_string()))?
                 }
-                Some(AwbcRuntimeType::Record { .. } | AwbcRuntimeType::Dynamic) => {
+                Some(AwbcRuntimeTypeShape::Record { .. } | AwbcRuntimeTypeShape::Dynamic) => {
                     let fields = fields
                         .iter()
                         .zip(field_names)
@@ -646,6 +651,46 @@ fn execute_instruction(
             };
             let value =
                 value.ok_or_else(|| VmError::Runtime(format!("missing field `{field}`")))?;
+            fiber.active_frame_mut()?.set_register(*dst, value)?;
+        }
+        AwbcInstruction::ProjectOpaqueRecordField {
+            dst,
+            target,
+            owner,
+            field,
+            field_type,
+        } => {
+            let owner = program
+                .opaque_owner(*owner)
+                .map_err(|error| VmError::Runtime(error.to_string()))?
+                .ok_or_else(|| {
+                    VmError::Runtime(
+                        "opaque-record projection requires an opaque owner type".to_owned(),
+                    )
+                })?;
+            let RuntimeValue::Opaque(value) = register(fiber, *target)? else {
+                return Err(VmError::Runtime(
+                    "opaque-record projection expected an opaque value".to_owned(),
+                ));
+            };
+            if !owner.accepts_opaque_value(value) {
+                return Err(VmError::Runtime(
+                    "opaque-record projection rejected the target owner".to_owned(),
+                ));
+            }
+            let RuntimeValue::Tuple(fields) = value.payload() else {
+                return Err(VmError::Runtime(
+                    "opaque-record projection expected a tuple payload".to_owned(),
+                ));
+            };
+            let value = fields.get(*field as usize).cloned().ok_or_else(|| {
+                VmError::Runtime("opaque-record projection out of bounds".to_owned())
+            })?;
+            if !runtime_value_matches_type(program, &value, *field_type, 0) {
+                return Err(VmError::Runtime(
+                    "opaque-record projection rejected the field value type".to_owned(),
+                ));
+            }
             fiber.active_frame_mut()?.set_register(*dst, value)?;
         }
         AwbcInstruction::Unary { dst, op, src } => {
@@ -1328,8 +1373,8 @@ fn await_target(
         .and_then(|slot| program.runtime_types.get(slot.ty.index()))
         .ok_or_else(|| VmError::Runtime("await handle register has no runtime type".to_owned()))?;
     let value = register(fiber, register_id)?.clone();
-    match runtime_type {
-        AwbcRuntimeType::NeedHandle => match value {
+    match runtime_type.shape() {
+        AwbcRuntimeTypeShape::Need(_) => match value {
             RuntimeValue::String(need) if !need.is_empty() => {
                 Ok(FiberAwaitTarget::Need(NeedId(need)))
             }
@@ -1338,7 +1383,9 @@ fn await_target(
                 runtime_value_label(&value)
             ))),
         },
-        AwbcRuntimeType::TaskHandle | AwbcRuntimeType::Dynamic => Ok(FiberAwaitTarget::Task(value)),
+        AwbcRuntimeTypeShape::Task(_) | AwbcRuntimeTypeShape::Dynamic => {
+            Ok(FiberAwaitTarget::Task(value))
+        }
         _ => Err(VmError::Runtime(
             "await register is neither a task handle nor a Need handle".to_owned(),
         )),
@@ -1425,8 +1472,12 @@ pub(crate) fn constant_value(
                 .iter()
                 .map(|field| constant_value(program, *field))
                 .collect::<Result<Vec<_>, VmError>>()?;
-            match program.runtime_types.get(ty.index()) {
-                Some(AwbcRuntimeType::NominalRecord { .. }) => {
+            match program
+                .runtime_types
+                .get(ty.index())
+                .map(AwbcRuntimeType::shape)
+            {
+                Some(AwbcRuntimeTypeShape::NominalRecord { .. }) => {
                     let layout = program
                         .nominal_record_layout(*ty)
                         .map_err(|error| VmError::Runtime(error.to_string()))?
@@ -1435,7 +1486,7 @@ pub(crate) fn constant_value(
                         .map(RuntimeValue::NominalRecord)
                         .map_err(|error| VmError::Runtime(error.to_string()))
                 }
-                Some(AwbcRuntimeType::Record { .. } | AwbcRuntimeType::Dynamic) => {
+                Some(AwbcRuntimeTypeShape::Record { .. } | AwbcRuntimeTypeShape::Dynamic) => {
                     let fields = values
                         .into_iter()
                         .zip(field_names)
@@ -1590,11 +1641,15 @@ fn variant_identity_for_type(
     ty: AwbcTypeId,
 ) -> Result<crate::pattern::RuntimeVariantIdentity, VmError> {
     match program.runtime_types.get(ty.index()) {
-        Some(AwbcRuntimeType::Variant { owner, .. }) => runtime_variant_identity(program, owner)
-            .ok_or_else(|| VmError::Runtime("variant owner identity is invalid".to_owned())),
-        Some(_) => Err(VmError::Runtime(
-            "variant value references a non-variant runtime type".to_owned(),
-        )),
+        Some(runtime_type) => match runtime_type.shape() {
+            AwbcRuntimeTypeShape::Variant { owner, .. } => {
+                runtime_variant_identity(program, runtime_type.semantic_identity(), owner)
+                    .ok_or_else(|| VmError::Runtime("variant owner identity is invalid".to_owned()))
+            }
+            _ => Err(VmError::Runtime(
+                "variant value references a non-variant runtime type".to_owned(),
+            )),
+        },
         None => Err(VmError::MissingType(ty)),
     }
 }
@@ -1842,7 +1897,7 @@ impl VmError {
                 Some(AwbcTrapCode::UninitializedRegister)
             }
             Self::Fiber(
-                FiberStateError::ReturnValueMismatch | FiberStateError::EntryArgumentType { .. },
+                FiberStateError::ReturnValueMismatch | FiberStateError::ArgumentType { .. },
             )
             | Self::FunctionArgumentCount { .. } => Some(AwbcTrapCode::TypeMismatch),
             Self::MissingIntrinsic(_) => Some(AwbcTrapCode::HostAbiMismatch),

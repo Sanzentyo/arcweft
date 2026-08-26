@@ -2,7 +2,10 @@
 
 use arcweft_core::awbc::{codec::AwbcDecodeBudget, schema::AwbcEntryId};
 use arcweft_core::engine::FlowFiberStatus;
-use arcweft_core::entry::{EntryBindingIdentity, RuntimeEntryRoles};
+use arcweft_core::entry::{
+    EntryBindingIdentity, FlowContractHash, RuntimeEntryRoles, RuntimeFlowExecutable,
+    RuntimeFlowSchema,
+};
 use arcweft_core::executor::{ArcweftExecutionTier, ArcweftRuntimeExecutor, RuntimeExecutor};
 use arcweft_core::pattern::RuntimeSemanticTypeId;
 use arcweft_core::plan::{
@@ -41,6 +44,22 @@ fn string(value: &str) -> RuntimeExprSeed {
     )
 }
 
+fn admit_flow_authority(builder: &mut RuntimePlanBuilder, flow: &FlowRuntimeId) {
+    builder
+        .push_flow_executable(RuntimeFlowExecutable {
+            flow: flow.clone(),
+            contract: FlowContractHash::from_bytes([0xf1; 32]),
+            controller: None,
+        })
+        .expect("flow executable admits");
+    builder
+        .push_flow_schema(RuntimeFlowSchema {
+            flow: flow.clone(),
+            parameters: Vec::new(),
+        })
+        .expect("flow schema admits");
+}
+
 fn plan_with_return(value: &str) -> RuntimePlan {
     let flow = flow_id("parity.main");
     let mut builder = RuntimePlanBuilder::new();
@@ -55,6 +74,7 @@ fn plan_with_return(value: &str) -> RuntimePlan {
             [],
         )
         .expect("semantic facts admit");
+    admit_flow_authority(&mut builder, &flow);
     builder
         .push_flow_seed(RuntimeFlowSeed::new(
             flow.clone(),
@@ -89,6 +109,7 @@ fn plan_with_await_observer() -> RuntimePlan {
             [],
         )
         .expect("Await observer facts admit");
+    admit_flow_authority(&mut builder, &flow);
     builder
         .push_flow_seed(RuntimeFlowSeed::new(
             flow.clone(),
@@ -171,15 +192,10 @@ fn typed_runtime_plan_and_product_awbc_return_the_same_value() {
     let mut native_backend = VmRuntimePureCallBackend::default();
     let mut product_backend = VmRuntimePureCallBackend::default();
 
-    let native_result = native.step_with_root_bindings_and_pure_backend(
+    let native_result =
+        native.step_with_pure_backend(RuntimeStepInput::default(), options(), &mut native_backend);
+    let product_result = product.step_with_pure_backend(
         RuntimeStepInput::default(),
-        &[],
-        options(),
-        &mut native_backend,
-    );
-    let product_result = product.step_with_root_bindings_and_pure_backend(
-        RuntimeStepInput::default(),
-        &[],
         options(),
         &mut product_backend,
     );

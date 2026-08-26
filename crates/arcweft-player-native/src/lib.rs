@@ -277,6 +277,7 @@ mod tests {
     #[test]
     fn bundle_headless_rejects_dialogue_without_checked_presentation_projection() {
         use arcweft_bundle::{BundleManifest, BundleRuntimeSummary};
+        use arcweft_core::entry::{FlowContractHash, RuntimeFlowExecutable, RuntimeFlowSchema};
         use arcweft_core::plan::{
             FlowRuntimeId, RuntimeDialogueContentPlanSeed, RuntimeFlowOpSeed, RuntimeFlowSeed,
             RuntimeLineId, RuntimePlanBuilder,
@@ -300,7 +301,7 @@ mod tests {
             .expect("dialogue content admits");
         builder
             .push_flow_seed(RuntimeFlowSeed::new(
-                flow,
+                flow.clone(),
                 [],
                 vec![
                     RuntimeFlowOpSeed::Dialogue { content },
@@ -308,6 +309,19 @@ mod tests {
                 ],
             ))
             .expect("flow admits");
+        builder
+            .push_flow_schema(RuntimeFlowSchema {
+                flow: flow.clone(),
+                parameters: Vec::new(),
+            })
+            .expect("flow schema admits");
+        builder
+            .push_flow_executable(RuntimeFlowExecutable {
+                flow: flow.clone(),
+                contract: FlowContractHash::from_bytes([0x71; 32]),
+                controller: None,
+            })
+            .expect("flow executable admits");
         builder.push_entry(cli_main_entry()).expect("entry admits");
         let plan = builder.finish().expect("runtime plan is valid");
         let source_map = source_map("bundle-display.arcw", "flow main { dialogue }");
@@ -378,6 +392,7 @@ mod tests {
     #[cfg(not(feature = "dev-capture"))]
     fn return_only_bundle() -> ArcweftBundle {
         use arcweft_bundle::{BundleManifest, BundleRuntimeSummary};
+        use arcweft_core::entry::{FlowContractHash, RuntimeFlowExecutable, RuntimeFlowSchema};
         use arcweft_core::plan::{
             FlowRuntimeId, RuntimeFlowOpSeed, RuntimeFlowSeed, RuntimePlanBuilder,
         };
@@ -387,11 +402,24 @@ mod tests {
         let mut builder = RuntimePlanBuilder::new();
         builder
             .push_flow_seed(RuntimeFlowSeed::new(
-                flow,
+                flow.clone(),
                 [],
                 vec![RuntimeFlowOpSeed::Return("done".to_owned())],
             ))
             .expect("flow admits");
+        builder
+            .push_flow_schema(RuntimeFlowSchema {
+                flow: flow.clone(),
+                parameters: Vec::new(),
+            })
+            .expect("flow schema admits");
+        builder
+            .push_flow_executable(RuntimeFlowExecutable {
+                flow: flow.clone(),
+                contract: FlowContractHash::from_bytes([0x72; 32]),
+                controller: None,
+            })
+            .expect("flow executable admits");
         builder.push_entry(cli_main_entry()).expect("entry admits");
         let plan = builder.finish().expect("runtime plan is valid");
         let dialogue_content = arcweft_text_model::DialogueContentCatalog::new();

@@ -6,15 +6,15 @@
 
 use crate::entry::{
     EntryBindingIdentity, RootExecutionLimits, RuntimeCallableRole, RuntimeCommandContract,
-    RuntimeFlowExecutable, RuntimeSchemaError, RuntimeSchemaLimits, RuntimeStatefulEntryRoles,
-    RuntimeValueDigest, TypeLayoutHash, canonical_runtime_value_bytes,
+    RuntimeSchemaError, RuntimeSchemaLimits, RuntimeStatefulEntryRoles, RuntimeValueDigest,
+    TypeLayoutHash, canonical_runtime_value_bytes,
 };
 use crate::pattern::RuntimeVariantIdentity;
 use crate::plan::{
     EntryRuntimeId, FlowRuntimeId, RuntimeEntryRoles, RuntimePlan, RuntimePlanError,
 };
 use crate::value::{
-    RuntimeAgentValue, RuntimeBinding, RuntimePayload, RuntimeReductionProducer,
+    RuntimeAgentValue, RuntimeFlowParameterBinding, RuntimePayload, RuntimeReductionProducer,
     RuntimeReductionValue, RuntimeValue,
 };
 use serde::{Deserialize, Serialize};
@@ -161,14 +161,15 @@ pub struct RootRuntime {
 pub struct RootStartupContract {
     pub entry: EntryRuntimeId,
     pub roles: RuntimeStatefulEntryRoles,
-    pub initial_flow: RuntimeFlowExecutable,
+    pub initial_flow: FlowRuntimeId,
+    pub initial_state_parameter: crate::entry::FlowParameterCoordinate,
 }
 
 #[derive(Clone, Debug)]
 pub struct RootStartup {
     pub root: RootRuntime,
     pub initial_flow: FlowRuntimeId,
-    pub initial_state_binding: RuntimeBinding,
+    pub initial_state_binding: RuntimeFlowParameterBinding,
     pub initializer_state_digest: RuntimeValueDigest,
 }
 
@@ -268,20 +269,32 @@ impl RootStartupContract {
         let RuntimeEntryRoles::Stateful(roles) = &entry.roles else {
             return Err(RootRuntimeError::NotStateful(entry.id.canonical_label()));
         };
-        let initial_flow = plan
-            .flow_executables
+        plan.flow_executables
             .iter()
             .find(|flow| {
                 flow.flow == roles.initial_flow.flow && flow.contract == roles.initial_flow.contract
             })
+            .ok_or_else(|| {
+                RootRuntimeError::MissingInitialFlowExecutable(entry.id.canonical_label())
+            })?;
+        let initial_flow = plan
+            .flow_schemas
+            .iter()
+            .find(|schema| schema.flow == roles.initial_flow.flow)
             .cloned()
             .ok_or_else(|| {
                 RootRuntimeError::MissingInitialFlowExecutable(entry.id.canonical_label())
             })?;
+        let [state_parameter] = initial_flow.parameters.as_slice() else {
+            return Err(RootRuntimeError::MissingInitialFlowExecutable(
+                entry.id.canonical_label(),
+            ));
+        };
         Ok(Self {
             entry: entry.id.clone(),
             roles: roles.as_ref().clone(),
-            initial_flow,
+            initial_flow: initial_flow.flow,
+            initial_state_parameter: state_parameter.coordinate,
         })
     }
 }
@@ -299,12 +312,8 @@ impl RootRuntime {
             entry,
             roles,
             initial_flow,
+            initial_state_parameter,
         } = contract;
-        let [state_parameter] = initial_flow.parameters.as_slice() else {
-            return Err(RootRuntimeError::MissingInitialFlowExecutable(
-                entry.canonical_label(),
-            ));
-        };
         let value = evaluator
             .evaluate_root_callable(&roles.initializer, &[])
             .map_err(RootRuntimeError::Initializer)?;
@@ -341,9 +350,9 @@ impl RootRuntime {
             failure: None,
         };
         Ok(RootStartup {
-            initial_flow: initial_flow.flow,
-            initial_state_binding: RuntimeBinding {
-                name: state_parameter.name.clone(),
+            initial_flow,
+            initial_state_binding: RuntimeFlowParameterBinding {
+                parameter: initial_state_parameter,
                 value: payload.0.clone(),
             },
             root,
@@ -397,21 +406,9 @@ impl RootRuntime {
         let RootStartupContract {
             entry,
             roles,
-            initial_flow,
+            initial_flow: _,
+            initial_state_parameter: _,
         } = contract;
-        let [state_parameter] = initial_flow.parameters.as_slice() else {
-            return Err(RootRuntimeError::MissingInitialFlowExecutable(
-                entry.canonical_label(),
-            ));
-        };
-        if state_parameter.mode != crate::entry::RuntimeFlowParameterMode::Owned
-            || state_parameter.nominal != roles.state.identity
-            || state_parameter.layout != roles.state.layout
-        {
-            return Err(RootRuntimeError::MissingInitialFlowExecutable(
-                entry.canonical_label(),
-            ));
-        }
         if snapshot.state_identity != roles.state.identity
             || snapshot.state_layout != roles.state.layout
         {
@@ -1131,8 +1128,7 @@ mod save_blocker_tests {
     use super::*;
     use crate::entry::{
         CallableContractHash, FlowContractHash, RootExecutionLimits, RuntimeCallableId,
-        RuntimeCommandPolicy, RuntimeFlowExecutableParameter, RuntimeFlowParameterMode,
-        RuntimeFlowRole, RuntimeNominalRole, RuntimeTypeSchema,
+        RuntimeCommandPolicy, RuntimeFlowRole, RuntimeNominalRole, RuntimeTypeSchema,
     };
 
     struct Initializer;
@@ -1156,6 +1152,8 @@ mod save_blocker_tests {
         let event_schema = RuntimeTypeSchema::I64;
         let state_layout = state_schema.try_layout_hash().expect("state layout");
         let event_layout = event_schema.try_layout_hash().expect("event layout");
+        let state_semantic = crate::pattern::RuntimeSemanticTypeId::from_bytes([5; 32]);
+        let event_semantic = crate::pattern::RuntimeSemanticTypeId::from_bytes([6; 32]);
         let initializer = RuntimeCallableRole {
             callable: RuntimeCallableId::try_new("save_blocker.initial").expect("callable ID"),
             contract: CallableContractHash::from_bytes([1; 32]),
@@ -1175,6 +1173,7 @@ mod save_blocker_tests {
                 state: RuntimeNominalRole {
                     identity: crate::entry::RuntimeNominalTypeId::try_new("SaveState")
                         .expect("state ID"),
+                    semantic_identity: state_semantic,
                     layout: state_layout,
                     schema: state_schema,
                 },
@@ -1182,6 +1181,7 @@ mod save_blocker_tests {
                 event: RuntimeNominalRole {
                     identity: crate::entry::RuntimeNominalTypeId::try_new("SaveEvent")
                         .expect("event ID"),
+                    semantic_identity: event_semantic,
                     layout: event_layout,
                     schema: event_schema,
                 },
@@ -1191,19 +1191,8 @@ mod save_blocker_tests {
                     RootExecutionLimits::engine_default(),
                 ),
             },
-            initial_flow: RuntimeFlowExecutable {
-                flow,
-                contract: initial_flow.contract,
-                parameters: vec![RuntimeFlowExecutableParameter {
-                    position: 0,
-                    name: "state".to_owned(),
-                    mode: RuntimeFlowParameterMode::Owned,
-                    nominal: crate::entry::RuntimeNominalTypeId::try_new("SaveState")
-                        .expect("state ID"),
-                    layout: state_layout,
-                }],
-                controller: None,
-            },
+            initial_flow: flow,
+            initial_state_parameter: crate::entry::FlowParameterCoordinate::from_position(0),
         };
         let mut root = RootRuntime::start(contract, &mut Initializer)
             .expect("root starts")

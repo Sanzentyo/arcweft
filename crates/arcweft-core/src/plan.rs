@@ -13,12 +13,12 @@ mod variant_domains;
 
 pub use construction::{
     RuntimeAgentExprSeed, RuntimeAudioCommandSeed, RuntimeAwaitManyTargetSeed,
-    RuntimeAwaitPendingObserverSeed, RuntimeAwaitTargetSeed, RuntimeCallArgumentSeed,
-    RuntimeCallableExecutableSeed, RuntimeCallableExecutableSeedCode, RuntimeChoiceOptionSeed,
-    RuntimeDialogueContentPlanSeed, RuntimeDialogueContentPlanSeedId, RuntimeDialogueMarkSeedId,
-    RuntimeDialogueValueSiteSeed, RuntimeEffectFieldSeed, RuntimeEvaluatedEffectSeed,
-    RuntimeExprMatchArmSeed, RuntimeExprSeed, RuntimeExprSeedKind, RuntimeFieldProjectionSeed,
-    RuntimeFlowMatchArmSeed, RuntimeFlowOpSeed, RuntimeFlowSeed,
+    RuntimeAwaitPendingObserverSeed, RuntimeAwaitTargetSeed, RuntimeBuiltinIteratorEvidenceSeed,
+    RuntimeCallArgumentSeed, RuntimeCallableExecutableSeed, RuntimeCallableExecutableSeedCode,
+    RuntimeChoiceOptionSeed, RuntimeDialogueContentPlanSeed, RuntimeDialogueContentPlanSeedId,
+    RuntimeDialogueMarkSeedId, RuntimeDialogueValueSiteSeed, RuntimeEffectFieldSeed,
+    RuntimeEvaluatedEffectSeed, RuntimeExprMatchArmSeed, RuntimeExprSeed, RuntimeExprSeedKind,
+    RuntimeFieldProjectionSeed, RuntimeFlowMatchArmSeed, RuntimeFlowOpSeed, RuntimeFlowSeed,
     RuntimeFunctionSiteDeclarationSeed, RuntimeFunctionSiteSeedId, RuntimeHostArgumentSeed,
     RuntimeHostCallTargetSeed, RuntimeHostTaskRequestTemplateSeed, RuntimeIteratorEvidenceSeed,
     RuntimeIteratorWitnessEvidenceSeed, RuntimeIteratorWitnessExecutableSeed,
@@ -28,9 +28,9 @@ pub use construction::{
     RuntimePatternRestSeed, RuntimePatternSeed, RuntimePatternSeedKind, RuntimePlanBuildError,
     RuntimePlanBuilder, RuntimePlanSemanticAdmission, RuntimePlanTable,
     RuntimePureHelperDeclarationSeed, RuntimePureHelperSeed, RuntimePureHelperSeedId,
-    RuntimeRecordFieldSeedId, RuntimeRecordPatternFieldSeed, RuntimeStreamMatchArmSeed,
-    RuntimeStreamOpSeed, RuntimeStreamPlanSeed, RuntimeTraitMethodDeclarationSeed,
-    RuntimeTraitMethodSeed, RuntimeTraitMethodSeedId,
+    RuntimePureProgramBindingSeed, RuntimeRecordFieldSeedId, RuntimeRecordPatternFieldSeed,
+    RuntimeStreamMatchArmSeed, RuntimeStreamOpSeed, RuntimeStreamPlanSeed,
+    RuntimeTraitMethodDeclarationSeed, RuntimeTraitMethodSeed, RuntimeTraitMethodSeedId,
 };
 pub use dialogue_content::{
     RuntimeDialogueContentPlan, RuntimeDialogueContentPlanTable,
@@ -67,16 +67,19 @@ pub use variant_domains::{
 use crate::effect::{LineEffectRequest, RuntimeEffectExpr};
 pub use crate::entry::{
     AgentBudget, AgentPolicyHash, CallableContractHash, EntryBindingIdentity, FlowContractHash,
-    RuntimeAgentEntryRoles, RuntimeCallableExecutable, RuntimeCallableExecutableCode,
-    RuntimeCallableId, RuntimeCallableRole, RuntimeCommandConstructorId, RuntimeCommandContract,
-    RuntimeCommandPolicy, RuntimeCommandTargetId, RuntimeEntryRoles, RuntimeFlowExecutable,
-    RuntimeFlowExecutableParameter, RuntimeFlowParameterMode, RuntimeFlowRole, RuntimeNominalRole,
-    RuntimeNominalTypeId, RuntimeSchemaField, RuntimeSchemaLimits, RuntimeSchemaVariant,
-    RuntimeStatefulEntryRoles, RuntimeTypeSchema, RuntimeValueDigest, TypeLayoutHash,
+    FlowParameterCoordinate, RuntimeAgentEntryRoles, RuntimeCallableExecutable,
+    RuntimeCallableExecutableCode, RuntimeCallableId, RuntimeCallableRole,
+    RuntimeCommandConstructorId, RuntimeCommandContract, RuntimeCommandPolicy,
+    RuntimeCommandTargetId, RuntimeEntryRoles, RuntimeFlowExecutable,
+    RuntimeFlowExecutableParameter, RuntimeFlowParameterMode, RuntimeFlowRole, RuntimeFlowSchema,
+    RuntimeNominalRole, RuntimeNominalTypeId, RuntimeSchemaField, RuntimeSchemaLimits,
+    RuntimeSchemaVariant, RuntimeStatefulEntryRoles, RuntimeTypeSchema, RuntimeValueDigest,
+    TypeLayoutHash,
 };
 use crate::line_task::{LineOutRequest, LineTaskGroup};
 use crate::pattern::{
     RuntimeCheckedType, RuntimeCheckedVariantCase, RuntimeOpaqueTypeOwner, RuntimePattern,
+    RuntimeSemanticTypeId,
 };
 use crate::runtime_id::{
     RuntimeDialogueValueSlotId, RuntimeIdError, RuntimeIdFamily, RuntimeIdPath,
@@ -85,10 +88,17 @@ use crate::runtime_id::{
 use crate::step::RuntimeHostCallMode;
 use crate::stream::StreamPlan;
 use crate::task::{AwaitManyTarget, AwaitTarget, NeedId, RuntimeHostArgumentTemplate, TaskId};
+
+struct CheckedTypeTraversal<'a> {
+    memo: &'a mut BTreeMap<RuntimePlanTypeId, Option<RuntimeCheckedType>>,
+    visiting: &'a mut BTreeSet<RuntimePlanTypeId>,
+}
 use crate::value::{RuntimeExpr, RuntimeIterator, RuntimeLocalBinding, RuntimePayload};
 pub use entry_inventory::{
-    EntryRuntimeId, RuntimeEntryKind, RuntimeEntrySpec, RuntimeEntryTarget, RuntimePlanError,
-    RuntimeRouteBinding, RuntimeRouteBindingSource, RuntimeRouteSpec,
+    EntryRuntimeId, RouteCaptureCoordinate, RuntimeEntryKind, RuntimeEntrySpec, RuntimeEntryTarget,
+    RuntimeFlowInvocation, RuntimeFlowInvocationError, RuntimeHttpMethod, RuntimePlanError,
+    RuntimeRouteBinding, RuntimeRouteBindingSource, RuntimeRoutePath, RuntimeRoutePathError,
+    RuntimeRoutePathSegment, RuntimeRouteSpec,
 };
 use serde::{Deserialize, Serialize};
 use std::collections::{BTreeMap, BTreeSet};
@@ -106,9 +116,11 @@ pub struct RuntimePlan {
     pub(crate) dialogue_content: RuntimeDialogueContentPlanTable,
     pub(crate) entries: Vec<RuntimeEntrySpec>,
     pub(crate) callable_executables: Vec<RuntimeCallableExecutable>,
+    pub(crate) flow_schemas: Vec<RuntimeFlowSchema>,
     pub(crate) flow_executables: Vec<RuntimeFlowExecutable>,
     pub(crate) flows: Vec<RuntimeFlow>,
     pub(crate) pure_helpers: Vec<RuntimePureHelper>,
+    pub(crate) pure_programs: Vec<RuntimePureProgramBinding>,
     pub(crate) trait_methods: Vec<RuntimeTraitMethod>,
     pub(crate) line_task_groups: Vec<LineTaskGroup>,
     pub(crate) stream_plans: Vec<StreamPlan>,
@@ -170,6 +182,11 @@ impl RuntimePlan {
     }
 
     #[must_use]
+    pub fn flow_schemas(&self) -> &[RuntimeFlowSchema] {
+        &self.flow_schemas
+    }
+
+    #[must_use]
     pub fn flows(&self) -> &[RuntimeFlow] {
         &self.flows
     }
@@ -177,6 +194,11 @@ impl RuntimePlan {
     #[must_use]
     pub fn pure_helpers(&self) -> &[RuntimePureHelper] {
         &self.pure_helpers
+    }
+
+    #[must_use]
+    pub fn pure_programs(&self) -> &[RuntimePureProgramBinding] {
+        &self.pure_programs
     }
 
     #[must_use]
@@ -249,14 +271,16 @@ impl RuntimePlan {
                 .checked_type_inner(*item, memo, visiting)?
                 .map(|item| RuntimeCheckedType::Sequence(Box::new(item))),
             RuntimePlanTypeProjection::ProjectNominal {
-                nominal, layout, ..
+                nominal,
+                layout,
+                arguments,
             } => self.checked_nominal_or_variant(
                 ty,
                 nominal,
                 declaration.semantic_identity(),
                 *layout,
-                memo,
-                visiting,
+                arguments,
+                CheckedTypeTraversal { memo, visiting },
             )?,
             RuntimePlanTypeProjection::Tuple(items) => self
                 .checked_children(items, memo, visiting)?
@@ -264,16 +288,9 @@ impl RuntimePlan {
             RuntimePlanTypeProjection::Choice(items) => self
                 .checked_children(items, memo, visiting)?
                 .map(RuntimeCheckedType::Choice),
-            RuntimePlanTypeProjection::Result { value, error } => match (
-                self.checked_type_inner(*value, memo, visiting)?,
-                self.checked_type_inner(*error, memo, visiting)?,
-            ) {
-                (Some(ok), Some(error)) => Some(RuntimeCheckedType::Result {
-                    ok: Box::new(ok),
-                    error: Box::new(error),
-                }),
-                _ => None,
-            },
+            RuntimePlanTypeProjection::Result { value, error } => {
+                self.checked_result_type(*value, *error, memo, visiting)?
+            }
             RuntimePlanTypeProjection::Option(item) => self
                 .checked_type_inner(*item, memo, visiting)?
                 .map(|item| RuntimeCheckedType::Option(Box::new(item))),
@@ -282,10 +299,16 @@ impl RuntimePlan {
                 admission,
                 value_class,
                 persistence,
-                ..
+                arguments,
             } => {
                 if self.variant_domains.get(ty).is_some() {
-                    self.checked_variant(ty, declaration.semantic_identity(), memo, visiting)?
+                    self.checked_variant(
+                        ty,
+                        declaration.semantic_identity(),
+                        arguments,
+                        memo,
+                        visiting,
+                    )?
                 } else {
                     Some(RuntimeCheckedType::Opaque {
                         owner: RuntimeOpaqueTypeOwner::with_admission(
@@ -314,22 +337,46 @@ impl RuntimePlan {
         Ok(checked)
     }
 
+    fn checked_result_type(
+        &self,
+        value: RuntimePlanTypeId,
+        error: RuntimePlanTypeId,
+        memo: &mut BTreeMap<RuntimePlanTypeId, Option<RuntimeCheckedType>>,
+        visiting: &mut BTreeSet<RuntimePlanTypeId>,
+    ) -> Result<Option<RuntimeCheckedType>, RuntimePlanTypeResolutionError> {
+        match (
+            self.checked_type_inner(value, memo, visiting)?,
+            self.checked_type_inner(error, memo, visiting)?,
+        ) {
+            (Some(ok), Some(error)) => Ok(Some(RuntimeCheckedType::Result {
+                ok: Box::new(ok),
+                error: Box::new(error),
+            })),
+            _ => Ok(None),
+        }
+    }
+
     fn checked_nominal_or_variant(
         &self,
         ty: crate::runtime_id::RuntimePlanTypeId,
         nominal: &RuntimeNominalTypeId,
         semantic_identity: crate::pattern::RuntimeSemanticTypeId,
         layout: TypeLayoutHash,
-        memo: &mut BTreeMap<crate::runtime_id::RuntimePlanTypeId, Option<RuntimeCheckedType>>,
-        visiting: &mut BTreeSet<crate::runtime_id::RuntimePlanTypeId>,
+        arguments: &[crate::runtime_id::RuntimePlanTypeId],
+        traversal: CheckedTypeTraversal<'_>,
     ) -> Result<Option<RuntimeCheckedType>, RuntimePlanTypeResolutionError> {
+        let CheckedTypeTraversal { memo, visiting } = traversal;
         if self.variant_domains.get(ty).is_some() {
-            return self.checked_variant(ty, semantic_identity, memo, visiting);
+            return self.checked_variant(ty, semantic_identity, arguments, memo, visiting);
         }
+        let Some(arguments) = self.checked_children(arguments, memo, visiting)? else {
+            return Ok(None);
+        };
         Ok(Some(RuntimeCheckedType::Nominal {
             nominal: nominal.clone(),
             semantic_identity,
             layout,
+            arguments,
         }))
     }
 
@@ -337,10 +384,14 @@ impl RuntimePlan {
         &self,
         ty: crate::runtime_id::RuntimePlanTypeId,
         semantic_identity: crate::pattern::RuntimeSemanticTypeId,
+        arguments: &[crate::runtime_id::RuntimePlanTypeId],
         memo: &mut BTreeMap<crate::runtime_id::RuntimePlanTypeId, Option<RuntimeCheckedType>>,
         visiting: &mut BTreeSet<crate::runtime_id::RuntimePlanTypeId>,
     ) -> Result<Option<RuntimeCheckedType>, RuntimePlanTypeResolutionError> {
         let Some(domain) = self.variant_domains.get(ty) else {
+            return Ok(None);
+        };
+        let Some(arguments) = self.checked_children(arguments, memo, visiting)? else {
             return Ok(None);
         };
         let mut cases = Vec::with_capacity(domain.cases().len());
@@ -362,6 +413,7 @@ impl RuntimePlan {
         Ok(Some(RuntimeCheckedType::Variant {
             nominal: domain.nominal().clone(),
             semantic_identity,
+            arguments,
             cases,
         }))
     }
@@ -601,6 +653,54 @@ pub struct RuntimePureHelper {
     pub origin: RuntimePureHelperOrigin,
 }
 
+/// Exact stable program identity mapped to its deterministic runtime helper.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct RuntimePureProgramBinding {
+    program: arcweft_id::runtime_program::RuntimePureProgramId,
+    helper: RuntimePureHelperId,
+    input_types: Box<[RuntimeSemanticTypeId]>,
+    result_type: RuntimeSemanticTypeId,
+}
+
+impl RuntimePureProgramBinding {
+    #[must_use]
+    pub(crate) fn new(
+        program: arcweft_id::runtime_program::RuntimePureProgramId,
+        helper: RuntimePureHelperId,
+        input_types: impl Into<Box<[RuntimeSemanticTypeId]>>,
+        result_type: RuntimeSemanticTypeId,
+    ) -> Self {
+        Self {
+            program,
+            helper,
+            input_types: input_types.into(),
+            result_type,
+        }
+    }
+
+    #[must_use]
+    pub const fn program(&self) -> arcweft_id::runtime_program::RuntimePureProgramId {
+        self.program
+    }
+
+    #[must_use]
+    pub const fn helper(&self) -> RuntimePureHelperId {
+        self.helper
+    }
+
+    /// Ordered semantic input identities retained across the Value ABI.
+    #[must_use]
+    pub const fn input_types(&self) -> &[RuntimeSemanticTypeId] {
+        &self.input_types
+    }
+
+    /// Exact semantic result identity retained across the Value ABI.
+    #[must_use]
+    pub const fn result_type(&self) -> RuntimeSemanticTypeId {
+        self.result_type
+    }
+}
+
 /// Runtime identifier for a lowered trait/impl method body.
 #[derive(
     Clone, Copy, Debug, Default, Deserialize, Eq, Hash, Ord, PartialEq, PartialOrd, Serialize,
@@ -695,9 +795,9 @@ pub enum RuntimeIteratorEvidence {
     Witness(RuntimeIteratorWitnessEvidence),
 }
 
-/// Built-in iterator families that lower directly to runtime iterator state.
+/// Built-in iterator family selected by checked language semantics.
 #[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
-pub enum RuntimeBuiltinIteratorEvidence {
+pub enum RuntimeBuiltinIteratorFamily {
     Range,
     Seq,
     Stream,
@@ -705,6 +805,16 @@ pub enum RuntimeBuiltinIteratorEvidence {
     Array,
     Slice,
     TupleHomogeneous,
+}
+
+/// Plan-owned ABI rows for one built-in iterator execution.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct RuntimeBuiltinIteratorEvidence {
+    pub family: RuntimeBuiltinIteratorFamily,
+    pub item: RuntimePlanTypeId,
+    pub iterator: RuntimePlanTypeId,
+    pub next_value: RuntimePlanTypeId,
+    pub step: RuntimePlanTypeId,
 }
 
 /// Lowered witness-backed iterator evidence.
@@ -731,68 +841,8 @@ pub enum RuntimeIteratorWitnessExecutable {
 
 impl RuntimeIteratorEvidence {
     #[must_use]
-    pub const fn builtin_range() -> Self {
-        Self::Builtin(RuntimeBuiltinIteratorEvidence::Range)
-    }
-
-    #[must_use]
-    pub const fn builtin_seq() -> Self {
-        Self::Builtin(RuntimeBuiltinIteratorEvidence::Seq)
-    }
-
-    #[must_use]
-    pub const fn builtin_stream() -> Self {
-        Self::Builtin(RuntimeBuiltinIteratorEvidence::Stream)
-    }
-
-    #[must_use]
-    pub const fn builtin_vec() -> Self {
-        Self::Builtin(RuntimeBuiltinIteratorEvidence::Vec)
-    }
-
-    #[must_use]
-    pub const fn builtin_array() -> Self {
-        Self::Builtin(RuntimeBuiltinIteratorEvidence::Array)
-    }
-
-    #[must_use]
-    pub const fn builtin_slice() -> Self {
-        Self::Builtin(RuntimeBuiltinIteratorEvidence::Slice)
-    }
-
-    #[must_use]
-    pub const fn builtin_tuple_homogeneous() -> Self {
-        Self::Builtin(RuntimeBuiltinIteratorEvidence::TupleHomogeneous)
-    }
-
-    #[must_use]
-    pub const fn awbc_label(&self) -> Option<&'static str> {
-        match self {
-            Self::Builtin(RuntimeBuiltinIteratorEvidence::Range) => Some("range"),
-            Self::Builtin(RuntimeBuiltinIteratorEvidence::Seq) => Some("seq"),
-            Self::Builtin(RuntimeBuiltinIteratorEvidence::Stream) => Some("stream"),
-            Self::Builtin(RuntimeBuiltinIteratorEvidence::Vec) => Some("vec"),
-            Self::Builtin(RuntimeBuiltinIteratorEvidence::Array) => Some("array"),
-            Self::Builtin(RuntimeBuiltinIteratorEvidence::Slice) => Some("slice"),
-            Self::Builtin(RuntimeBuiltinIteratorEvidence::TupleHomogeneous) => {
-                Some("tuple_homogeneous")
-            }
-            Self::Witness(_) => None,
-        }
-    }
-
-    #[must_use]
-    pub fn from_awbc_label(label: &str) -> Option<Self> {
-        match label {
-            "range" => Some(Self::builtin_range()),
-            "seq" => Some(Self::builtin_seq()),
-            "stream" => Some(Self::builtin_stream()),
-            "vec" => Some(Self::builtin_vec()),
-            "array" => Some(Self::builtin_array()),
-            "slice" => Some(Self::builtin_slice()),
-            "tuple_homogeneous" => Some(Self::builtin_tuple_homogeneous()),
-            _ => None,
-        }
+    pub const fn builtin(evidence: RuntimeBuiltinIteratorEvidence) -> Self {
+        Self::Builtin(evidence)
     }
 }
 
@@ -933,29 +983,11 @@ pub struct RuntimeHostCallTarget {
     pub public_id: String,
     pub capability: String,
     pub operation: String,
+    pub contract: Option<crate::step::HostCallContractDigest>,
     pub args: Vec<RuntimeHostArgumentTemplate>,
+    pub result: RuntimePlanTypeId,
     pub mode: RuntimeHostCallMode,
     pub deterministic: bool,
-}
-
-impl RuntimeHostCallTarget {
-    pub fn new(
-        public_id: impl Into<String>,
-        capability: impl Into<String>,
-        operation: impl Into<String>,
-        args: impl IntoIterator<Item = RuntimeHostArgumentTemplate>,
-        mode: RuntimeHostCallMode,
-        deterministic: bool,
-    ) -> Self {
-        Self {
-            public_id: public_id.into(),
-            capability: capability.into(),
-            operation: operation.into(),
-            args: args.into_iter().collect(),
-            mode,
-            deterministic,
-        }
-    }
 }
 
 /// One executable `match` arm in the runtime flow model.

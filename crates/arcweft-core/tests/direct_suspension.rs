@@ -8,16 +8,18 @@ use arcweft_core::{
         schema::{
             AwbcBlock, AwbcBlockId, AwbcConstant, AwbcConstantId, AwbcEffectKind, AwbcEffectPlan,
             AwbcEffectPlanId, AwbcEffectSetId, AwbcEntry, AwbcEntryId, AwbcEntryKind,
-            AwbcEntryTarget, AwbcFlowBinding, AwbcFrameLayout, AwbcFrameLayoutId, AwbcFrameSlot,
-            AwbcFrameSlotRole, AwbcFunction, AwbcFunctionFlags, AwbcFunctionId, AwbcFunctionKind,
-            AwbcInstruction, AwbcProgram, AwbcRegisterId, AwbcResumePoint, AwbcResumePointId,
-            AwbcRuntimeType, AwbcSafePointKind, AwbcScopeId, AwbcSignature, AwbcSignatureId,
-            AwbcStringId, AwbcTableRange, AwbcTerminator, AwbcTrapCode, AwbcTypeId,
+            AwbcEntryTarget, AwbcFlowBinding, AwbcFlowExecutable, AwbcFrameLayout,
+            AwbcFrameLayoutId, AwbcFrameSlot, AwbcFrameSlotRole, AwbcFunction, AwbcFunctionFlags,
+            AwbcFunctionId, AwbcFunctionKind, AwbcInstruction, AwbcProgram, AwbcRegisterId,
+            AwbcResumePoint, AwbcResumePointId, AwbcRuntimeType, AwbcRuntimeTypeShape,
+            AwbcSafePointKind, AwbcScopeId, AwbcSignature, AwbcSignatureId, AwbcStringId,
+            AwbcTableRange, AwbcTerminator, AwbcTrapCode, AwbcTypeId,
         },
         verify::{AwbcVerifyBudget, AwbcVerifyContext},
         vm::{self, VmExit, VmObservation, VmStepOptions},
     },
-    entry::{EntryBindingIdentity, RuntimeEntryRoles},
+    entry::{EntryBindingIdentity, FlowContractHash, RuntimeEntryRoles, RuntimeFlowExecutable},
+    pattern::RuntimeSemanticTypeId,
     plan::{EntryRuntimeId, FlowRuntimeId},
     task::NeedId,
     value::RuntimeValue,
@@ -575,9 +577,12 @@ fn direct_suspension_program() -> AwbcProgram {
             "zz.message".to_owned(),
         ],
         runtime_types: vec![
-            AwbcRuntimeType::Unit,
-            AwbcRuntimeType::Dynamic,
-            AwbcRuntimeType::NeedHandle,
+            AwbcRuntimeType::unit(),
+            AwbcRuntimeType::dynamic(),
+            AwbcRuntimeType::new(
+                RuntimeSemanticTypeId::from_bytes([91; 32]),
+                AwbcRuntimeTypeShape::Need(AwbcTypeId(1)),
+            ),
         ],
         constants: vec![
             AwbcConstant::String(AwbcStringId(2)),
@@ -587,8 +592,15 @@ fn direct_suspension_program() -> AwbcProgram {
         frame_layouts: vec![need_frame_layout(need_ty), need_frame_layout(need_ty)],
         functions: direct_suspension_functions(),
         flow_bindings: vec![AwbcFlowBinding {
-            flow: FlowRuntimeId::from_checked_declaration_digest([0xa6; 32], "flow.main")
-                .expect("test checked Flow identity"),
+            flow: direct_suspension_flow(),
+            function: CALLER,
+        }],
+        flow_executables: vec![AwbcFlowExecutable {
+            metadata: RuntimeFlowExecutable {
+                flow: direct_suspension_flow(),
+                contract: FlowContractHash::from_bytes([0x5a; 32]),
+                controller: None,
+            },
             function: CALLER,
         }],
         blocks: direct_suspension_blocks(),
@@ -597,6 +609,11 @@ fn direct_suspension_program() -> AwbcProgram {
         entries: vec![direct_suspension_entry()],
         ..AwbcProgram::default()
     }
+}
+
+fn direct_suspension_flow() -> FlowRuntimeId {
+    FlowRuntimeId::from_checked_declaration_digest([0xa6; 32], "flow.main")
+        .expect("test checked Flow identity")
 }
 
 fn direct_suspension_signatures(need_ty: AwbcTypeId) -> Vec<AwbcSignature> {
@@ -732,8 +749,7 @@ fn direct_suspension_entry() -> AwbcEntry {
         binding: EntryBindingIdentity::from_bytes([1; 32]),
         public_id: AwbcStringId(0),
         kind: AwbcEntryKind::Cli,
-        signature: AwbcSignatureId(0),
-        target: AwbcEntryTarget::Function(CALLER),
+        target: AwbcEntryTarget::Function { function: CALLER },
         roles: RuntimeEntryRoles::None,
     }
 }

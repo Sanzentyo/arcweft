@@ -113,6 +113,7 @@ impl InputController {
         );
         Ok(InputOutcome {
             actions: Vec::new(),
+            view_handler_invocations: Vec::new(),
             text_control_write_backs,
             clipboard_requests,
             diagnostics: Vec::new(),
@@ -172,6 +173,7 @@ impl InputController {
 
         Ok(InputOutcome {
             actions: Vec::new(),
+            view_handler_invocations: Vec::new(),
             text_control_write_backs,
             clipboard_requests: Vec::new(),
             diagnostics: Vec::new(),

@@ -16,9 +16,7 @@ use arcweft_core::value::{
     RuntimeAgentCompareOp, RuntimeBinaryOp, RuntimeCallArgumentMode, RuntimeCallTarget,
     RuntimeUnaryOp, RuntimeValue,
 };
-use arcweft_lang_hir::expr::{
-    HirBinaryOp, HirCallArgument, HirExprKind, HirRecordField, HirUnaryOp,
-};
+use arcweft_lang_hir::expr::{HirBinaryOp, HirExprKind, HirUnaryOp};
 use arcweft_lang_hir::identity::{ExprId, LocalId, StmtId};
 use arcweft_lang_hir::item::HirFunctionBody;
 use arcweft_lang_hir::module::HirModule;
@@ -29,10 +27,13 @@ use crate::agent::RuntimeAgentIntrinsic;
 use crate::final_pattern::{FinalPatternLowerer, project_entity_reference};
 use crate::flow::TryLocalSeeds;
 use crate::semantic_facts::{
-    RuntimeNormalizedType, RuntimePlanSemanticFacts, RuntimeReductionConstructor,
-    RuntimeResolvedCallArgument, RuntimeResolvedCallTarget, RuntimeResolvedHostArgumentPassing,
-    RuntimeResolvedSelect, RuntimeResolvedValue, RuntimeResolvedVariant, RuntimeTryBoundaryOwner,
-    RuntimeTryCarrierFact, RuntimeTypeShape,
+    RuntimeNormalizedType, RuntimePlanSemanticFacts, RuntimeRecordExpressionSource,
+    RuntimeReductionConstructor, RuntimeResolvedCall, RuntimeResolvedCallDispatch,
+    RuntimeResolvedCallOperand, RuntimeResolvedCallOperandBinding,
+    RuntimeResolvedCallOperandOrigin, RuntimeResolvedCallOperandProjection,
+    RuntimeResolvedCallOperandSource, RuntimeResolvedSelect, RuntimeResolvedStaticCallTarget,
+    RuntimeResolvedValue, RuntimeResolvedVariant, RuntimeTryBoundaryOwner, RuntimeTryCarrierFact,
+    RuntimeTypeShape,
 };
 
 pub(crate) struct FinalExprLowerer<'hir> {
@@ -157,46 +158,56 @@ impl<'hir> FinalExprLowerer<'hir> {
     pub(crate) fn lower_host_call_target(
         &self,
         id: ExprId,
-        call: &arcweft_lang_hir::expr::HirCallExpr,
+        _call: &arcweft_lang_hir::expr::HirCallExpr,
     ) -> Result<Option<RuntimeHostCallTargetSeed>, String> {
-        let selected = self
+        let call = self
             .facts
             .call(id)
             .ok_or_else(|| format!("checked call fact is missing for expression {id:?}"))?;
-        let RuntimeResolvedCallTarget::Host(host) = selected.target() else {
+        let RuntimeResolvedCallDispatch::Static(RuntimeResolvedStaticCallTarget::Host(host)) =
+            call.dispatch()
+        else {
             return Ok(None);
         };
-        let args = selected
-            .arguments()
-            .iter()
-            .map(|argument| match argument {
-                RuntimeResolvedCallArgument::Authored { passing, .. } => {
-                    let (value, _) = self.resolved_argument(call, id, argument)?;
-                    Ok(match passing {
-                        RuntimeResolvedHostArgumentPassing::Positional => {
-                            RuntimeHostArgumentSeed::Positional(value)
-                        }
-                        RuntimeResolvedHostArgumentPassing::Named(name) => {
-                            RuntimeHostArgumentSeed::Named(NamedHostArg {
-                                name: name.clone(),
-                                value,
-                            })
-                        }
-                        RuntimeResolvedHostArgumentPassing::Spread => {
-                            RuntimeHostArgumentSeed::Spread(value)
-                        }
-                    })
+        let args = self
+            .lower_call_operands(id, call)?
+            .into_iter()
+            .zip(call.operands())
+            .map(|((value, _), operand)| {
+                if matches!(operand.origin(), RuntimeResolvedCallOperandOrigin::Receiver) {
+                    return Err(format!(
+                        "host call {id:?} cannot project a receiver argument"
+                    ));
                 }
-                RuntimeResolvedCallArgument::Receiver => Err(format!(
-                    "host call {id:?} cannot project a receiver argument"
-                )),
+                match (operand.projection(), operand.binding()) {
+                    (
+                        RuntimeResolvedCallOperandProjection::Scalar,
+                        RuntimeResolvedCallOperandBinding::Positional,
+                    ) => Ok(RuntimeHostArgumentSeed::Positional(value)),
+                    (
+                        RuntimeResolvedCallOperandProjection::Scalar,
+                        RuntimeResolvedCallOperandBinding::Named(name),
+                    ) => Ok(RuntimeHostArgumentSeed::Named(NamedHostArg {
+                        name: name.clone(),
+                        value,
+                    })),
+                    (
+                        RuntimeResolvedCallOperandProjection::SpreadContainer(_),
+                        RuntimeResolvedCallOperandBinding::Positional,
+                    ) => Ok(RuntimeHostArgumentSeed::Spread(value)),
+                    _ => Err(format!(
+                        "host call {id:?} has an unsupported operand binding/projection"
+                    )),
+                }
             })
             .collect::<Result<Vec<_>, _>>()?;
         Ok(Some(RuntimeHostCallTargetSeed {
             public_id: host.public_id().to_owned(),
             capability: host.capability().to_owned(),
             operation: host.operation().to_owned(),
+            contract: host.contract(),
             args,
+            result: self.expression_type(id)?,
             mode: host.mode(),
             deterministic: host.deterministic(),
         }))
@@ -309,15 +320,11 @@ impl<'hir> FinalExprLowerer<'hir> {
                     .map(Box::new),
                 inclusive: range.inclusive(),
             },
-            HirExprKind::RecordLiteral(_) => {
-                return Err(format!(
-                    "structural record expression {id:?} has no closed runtime seed variant"
-                ));
+            HirExprKind::RecordLiteral(_) | HirExprKind::Record(_) => {
+                RuntimeExprSeedKind::NominalRecord(
+                    self.lower_nominal_fields(id)?.into_boxed_slice(),
+                )
             }
-            HirExprKind::Record(record) => RuntimeExprSeedKind::NominalRecord(
-                self.lower_nominal_fields(id, record.fields())?
-                    .into_boxed_slice(),
-            ),
             HirExprKind::Binary(binary) => RuntimeExprSeedKind::Binary {
                 lhs: Box::new(self.lower(binary.left())?),
                 op: runtime_binary(binary.operator()).ok_or_else(|| {
@@ -1190,7 +1197,7 @@ impl<'hir> FinalExprLowerer<'hir> {
         Ok((
             assignment.base(),
             assignment.nominal().identity(),
-            RuntimeRecordFieldSeedId::from_zero_based(assignment.field_ordinal()),
+            RuntimeRecordFieldSeedId::from_zero_based(assignment.field().zero_based()),
         ))
     }
 
@@ -1250,32 +1257,39 @@ impl<'hir> FinalExprLowerer<'hir> {
             .facts
             .call(id)
             .ok_or_else(|| format!("checked call fact is missing for expression {id:?}"))?;
-        let arguments = selected
-            .arguments()
+        let operands = selected.operands();
+        let lowered = self.lower_call_operands(id, selected)?;
+        let values = lowered
             .iter()
-            .map(|argument| self.lower_call_argument(call, id, argument))
-            .collect::<Result<Vec<_>, _>>()?;
-        match selected.target() {
-            RuntimeResolvedCallTarget::Intrinsic(intrinsic) => Ok(RuntimeExprSeedKind::Call {
+            .map(|(value, mode)| (value.clone(), *mode))
+            .collect::<Vec<_>>();
+        let arguments = values
+            .iter()
+            .map(|(value, mode)| RuntimeCallArgumentSeed::new(value.clone(), *mode))
+            .collect::<Vec<_>>();
+        match selected.dispatch() {
+            RuntimeResolvedCallDispatch::Static(RuntimeResolvedStaticCallTarget::Intrinsic(
+                intrinsic,
+            )) => Ok(RuntimeExprSeedKind::Call {
                 callee: RuntimeCallTarget::intrinsic(*intrinsic),
                 args: arguments.into_boxed_slice(),
             }),
-            RuntimeResolvedCallTarget::Agent(intrinsic) => {
-                self.lower_agent_intrinsic(id, call, *intrinsic)
-            }
-            RuntimeResolvedCallTarget::AgentProbeComparison(operation) => {
-                self.lower_agent_compare(id, call, *operation)
-            }
-            RuntimeResolvedCallTarget::AgentDiagnosticsHasError => Ok(RuntimeExprSeedKind::Agent(
+            RuntimeResolvedCallDispatch::Static(RuntimeResolvedStaticCallTarget::Agent(
+                intrinsic,
+            )) => self.lower_agent_intrinsic(id, *intrinsic, &values, operands),
+            RuntimeResolvedCallDispatch::Static(
+                RuntimeResolvedStaticCallTarget::AgentProbeComparison(operation),
+            ) => self.lower_agent_compare(id, *operation, &values),
+            RuntimeResolvedCallDispatch::Static(
+                RuntimeResolvedStaticCallTarget::AgentDiagnosticsHasError,
+            ) => Ok(RuntimeExprSeedKind::Agent(
                 RuntimeAgentExprSeed::PredicateDiagnosticsHasError {
-                    diagnostics: Box::new(
-                        self.value_arguments(call, id, 1)?
-                            .pop()
-                            .expect("one argument"),
-                    ),
+                    diagnostics: Box::new(exact_one(id, &self.scalar_values(id, &values)?)?),
                 },
             )),
-            RuntimeResolvedCallTarget::Declaration(callable) => Ok(RuntimeExprSeedKind::PureCall {
+            RuntimeResolvedCallDispatch::Static(RuntimeResolvedStaticCallTarget::Declaration(
+                callable,
+            )) => Ok(RuntimeExprSeedKind::PureCall {
                 helper: self
                     .pure_helpers
                     .get(callable.runtime())
@@ -1288,21 +1302,17 @@ impl<'hir> FinalExprLowerer<'hir> {
                     })?,
                 args: arguments.into_boxed_slice(),
             }),
-            RuntimeResolvedCallTarget::Variant(variant) => {
-                self.validate_variant_call_payload(id, call, selected.arguments(), variant)?;
-                let payload = match arguments.len() {
+            RuntimeResolvedCallDispatch::Static(RuntimeResolvedStaticCallTarget::Variant(
+                variant,
+            )) => {
+                self.validate_variant_call_payload(id, operands, variant)?;
+                let scalar_values = self.scalar_values(id, &values)?;
+                let payload = match scalar_values.len() {
                     0 => None,
-                    1 => Some(Box::new(
-                        self.value_arguments(call, id, 1)?
-                            .pop()
-                            .expect("one argument"),
-                    )),
+                    1 => Some(Box::new(scalar_values[0].clone())),
                     _ => Some(Box::new(RuntimeExprSeed::new(
                         self.expression_type(id)?,
-                        RuntimeExprSeedKind::Tuple(
-                            self.value_arguments(call, id, arguments.len())?
-                                .into_boxed_slice(),
-                        ),
+                        RuntimeExprSeedKind::Tuple(scalar_values.into_boxed_slice()),
                     ))),
                 };
                 Ok(RuntimeExprSeedKind::Variant {
@@ -1313,118 +1323,143 @@ impl<'hir> FinalExprLowerer<'hir> {
                     payload,
                 })
             }
-            RuntimeResolvedCallTarget::Reduction(RuntimeReductionConstructor::Unchanged) => {
-                Ok(RuntimeExprSeedKind::ReductionUnchanged {
-                    state: Box::new(
-                        self.value_arguments(call, id, 1)?
-                            .pop()
-                            .expect("one argument"),
-                    ),
-                })
-            }
-            RuntimeResolvedCallTarget::Registered(registered) => Ok(RuntimeExprSeedKind::Call {
+            RuntimeResolvedCallDispatch::Static(RuntimeResolvedStaticCallTarget::Reduction(
+                RuntimeReductionConstructor::Unchanged,
+            )) => Ok(RuntimeExprSeedKind::ReductionUnchanged {
+                state: Box::new(exact_one(id, &self.scalar_values(id, &values)?)?),
+            }),
+            RuntimeResolvedCallDispatch::Static(RuntimeResolvedStaticCallTarget::Registered(
+                registered,
+            )) => Ok(RuntimeExprSeedKind::Call {
                 callee: RuntimeCallTarget::callable(registered.clone()),
                 args: arguments.into_boxed_slice(),
             }),
-            RuntimeResolvedCallTarget::FunctionValue => Ok(RuntimeExprSeedKind::Apply {
-                callee: Box::new(self.lower(call.callee().value_expression().ok_or_else(
-                    || format!("function-value call {id:?} has no final-HIR value callee"),
-                )?)?),
-                args: arguments.into_boxed_slice(),
-            }),
-            RuntimeResolvedCallTarget::TraitMethod { method, .. } => {
-                let receiver_index = selected
-                    .arguments()
+            RuntimeResolvedCallDispatch::Value { callee } => {
+                if call.callee().value_expression() != Some(*callee) {
+                    return Err(format!(
+                        "value callee projection for {id:?} does not match final HIR"
+                    ));
+                }
+                Ok(RuntimeExprSeedKind::Apply {
+                    callee: Box::new(self.lower(*callee)?),
+                    args: arguments.into_boxed_slice(),
+                })
+            }
+            RuntimeResolvedCallDispatch::Static(RuntimeResolvedStaticCallTarget::TraitMethod {
+                method,
+                ..
+            }) => {
+                let receiver_index = operands
                     .iter()
-                    .position(|argument| matches!(argument, RuntimeResolvedCallArgument::Receiver))
+                    .position(|operand| {
+                        matches!(operand.origin(), RuntimeResolvedCallOperandOrigin::Receiver)
+                    })
                     .ok_or_else(|| format!("trait call {id:?} has no receiver projection"))?;
-                let mut values = self.value_arguments(call, id, arguments.len())?;
-                let receiver = values.remove(receiver_index);
+                let scalar_values = self.scalar_values(id, &values)?;
+                let receiver = scalar_values
+                    .get(receiver_index)
+                    .cloned()
+                    .ok_or_else(|| format!("trait call {id:?} receiver is not a scalar operand"))?;
+                let args = scalar_values
+                    .into_iter()
+                    .enumerate()
+                    .filter_map(|(index, value)| (index != receiver_index).then_some(value))
+                    .map(|value| {
+                        RuntimeCallArgumentSeed::new(value, RuntimeCallArgumentMode::Value)
+                    })
+                    .collect::<Vec<_>>()
+                    .into_boxed_slice();
                 Ok(RuntimeExprSeedKind::TraitCall {
                     callable: self.trait_methods.get(method).cloned().ok_or_else(|| {
                         format!("builder-issued trait-method seed is missing for {method:?}")
                     })?,
                     receiver: Box::new(receiver),
-                    args: values
-                        .into_iter()
-                        .map(|value| {
-                            RuntimeCallArgumentSeed::new(value, RuntimeCallArgumentMode::Value)
-                        })
-                        .collect::<Vec<_>>()
-                        .into_boxed_slice(),
+                    args,
                 })
             }
-            RuntimeResolvedCallTarget::Host(_) => Err(format!(
-                "host call {id:?} is effectful and cannot enter pure expression lowering"
-            )),
+            RuntimeResolvedCallDispatch::Static(RuntimeResolvedStaticCallTarget::Host(_)) => Err(
+                format!("host call {id:?} is effectful and cannot enter pure expression lowering"),
+            ),
         }
     }
 
-    fn lower_call_argument(
+    fn lower_call_operands(
         &self,
-        call: &arcweft_lang_hir::expr::HirCallExpr,
-        id: ExprId,
-        resolved: &RuntimeResolvedCallArgument,
-    ) -> Result<RuntimeCallArgumentSeed, String> {
-        let (value, mode) = self.resolved_argument(call, id, resolved)?;
-        Ok(RuntimeCallArgumentSeed::new(value, mode))
-    }
-
-    fn resolved_argument(
-        &self,
-        call: &arcweft_lang_hir::expr::HirCallExpr,
-        id: ExprId,
-        resolved: &RuntimeResolvedCallArgument,
-    ) -> Result<(RuntimeExprSeed, RuntimeCallArgumentMode), String> {
-        match resolved {
-            RuntimeResolvedCallArgument::Authored { ordinal, .. } => {
-                let ordinal = usize::try_from(*ordinal)
-                    .map_err(|_| format!("call argument ordinal {ordinal} does not fit usize"))?;
-                let argument = call.arguments().get(ordinal).ok_or_else(|| {
-                    format!("call argument ordinal {ordinal} is absent at {id:?}")
-                })?;
-                Ok((
-                    self.lower(argument.value())?,
-                    if matches!(argument, HirCallArgument::Spread { .. }) {
-                        RuntimeCallArgumentMode::Spread
-                    } else {
-                        RuntimeCallArgumentMode::Value
-                    },
-                ))
-            }
-            RuntimeResolvedCallArgument::Receiver => Ok((
-                self.lower_call_receiver(call, id)?,
-                RuntimeCallArgumentMode::Value,
-            )),
-        }
-    }
-
-    fn value_arguments(
-        &self,
-        call: &arcweft_lang_hir::expr::HirCallExpr,
-        id: ExprId,
-        expected: usize,
-    ) -> Result<Vec<RuntimeExprSeed>, String> {
-        let selected = self
-            .facts
-            .call(id)
-            .ok_or_else(|| format!("checked call fact is missing for expression {id:?}"))?;
-        let values = selected
-            .arguments()
+        _id: ExprId,
+        call: &RuntimeResolvedCall,
+    ) -> Result<Vec<(RuntimeExprSeed, RuntimeCallArgumentMode)>, String> {
+        call.operands()
             .iter()
-            .map(|resolved| self.resolved_argument(call, id, resolved))
-            .collect::<Result<Vec<_>, _>>()?;
-        if values.len() != expected
-            || values
-                .iter()
-                .any(|(_, mode)| *mode != RuntimeCallArgumentMode::Value)
+            .map(|operand| {
+                let value = match operand.source() {
+                    RuntimeResolvedCallOperandSource::Expression(source) => {
+                        let value = self.lower(source)?;
+                        if value.ty() != operand.ty().identity() {
+                            return Err(format!(
+                                "call operand source {source:?} has type {:?}, expected {:?}",
+                                value.ty(),
+                                operand.ty().identity()
+                            ));
+                        }
+                        value
+                    }
+                    RuntimeResolvedCallOperandSource::CompactNumericElement {
+                        sequence,
+                        ordinal,
+                    } => {
+                        let literal = self.facts.expression_literal(sequence).ok_or_else(|| {
+                            format!(
+                                "compact call operand sequence {sequence:?} has no checked literal"
+                            )
+                        })?;
+                        let RuntimeValue::Seq(values) = literal else {
+                            return Err(format!(
+                                "compact call operand sequence {sequence:?} is not a checked sequence"
+                            ));
+                        };
+                        let ordinal = usize::try_from(ordinal).map_err(|_| {
+                            format!("compact call operand ordinal {ordinal} does not fit usize")
+                        })?;
+                        if ordinal >= values.len() {
+                            return Err(format!(
+                                "compact call operand ordinal {ordinal} is out of range for {sequence:?}"
+                            ));
+                        }
+                        RuntimeExprSeed::new(operand.ty().identity(), RuntimeExprSeedKind::Value(values.value_at(ordinal)))
+                    }
+                };
+                let mode = match operand.projection() {
+                    RuntimeResolvedCallOperandProjection::Scalar => RuntimeCallArgumentMode::Value,
+                    RuntimeResolvedCallOperandProjection::SpreadContainer(_) => {
+                        RuntimeCallArgumentMode::Spread
+                    }
+                };
+                Ok((value, mode))
+            })
+            .collect()
+    }
+
+    fn scalar_values(
+        &self,
+        id: ExprId,
+        values: &[(RuntimeExprSeed, RuntimeCallArgumentMode)],
+    ) -> Result<Vec<RuntimeExprSeed>, String> {
+        if values
+            .iter()
+            .any(|(_, mode)| *mode != RuntimeCallArgumentMode::Value)
         {
             return Err(format!(
-                "typed call {id:?} requires {expected} non-spread arguments"
+                "typed call {id:?} requires non-spread runtime operands"
             ));
         }
-        Ok(values.into_iter().map(|(value, _)| value).collect())
+        Ok(values.iter().map(|(value, _)| value.clone()).collect())
     }
+
+    /*
+     * Call operand lowering is intentionally driven only by the sealed
+     * runtime carrier above.  The old authored-ordinal recovery helpers were
+     * deleted so runtime projection cannot re-search HIR arguments.
+     */
 
     fn lower_select(&self, id: ExprId, target_id: ExprId) -> Result<RuntimeExprSeedKind, String> {
         let target = Box::new(self.lower(target_id)?);
@@ -1433,7 +1468,7 @@ impl<'hir> FinalExprLowerer<'hir> {
             .select(id)
             .ok_or_else(|| format!("checked member fact is missing for expression {id:?}"))?
         {
-            RuntimeResolvedSelect::Method { .. } => Err(format!(
+            RuntimeResolvedSelect::Method => Err(format!(
                 "bound method at {id:?} cannot execute outside its checked Call"
             )),
             RuntimeResolvedSelect::AgentField { field } => Ok(RuntimeExprSeedKind::Field {
@@ -1444,76 +1479,54 @@ impl<'hir> FinalExprLowerer<'hir> {
                 target,
                 field: RuntimeFieldProjectionSeed::Progress(*field),
             }),
-            RuntimeResolvedSelect::Field {
-                nominal: Some(nominal),
-                ordinal: Some(ordinal),
-                ..
-            } => Ok(RuntimeExprSeedKind::Field {
+            RuntimeResolvedSelect::Field { owner, field } => Ok(RuntimeExprSeedKind::Field {
                 target,
                 field: RuntimeFieldProjectionSeed::Nominal {
-                    owner: nominal.identity(),
-                    field: RuntimeRecordFieldSeedId::from_zero_based(*ordinal),
+                    owner: *owner,
+                    field: RuntimeRecordFieldSeedId::from_zero_based(field.zero_based()),
                 },
             }),
-            RuntimeResolvedSelect::Field {
-                nominal: Some(_),
-                ordinal: None,
-                ..
-            } => Err(format!(
-                "nominal field selection {id:?} has no accepted defining-order coordinate"
-            )),
-            RuntimeResolvedSelect::Field { nominal: None, .. } => Err(format!(
-                "field selection {id:?} has no closed Agent/entity field coordinate in semantic facts"
-            )),
-            RuntimeResolvedSelect::TupleElement { ordinal } => {
-                Ok(RuntimeExprSeedKind::ProjectTuple {
-                    target,
-                    ordinal: *ordinal,
-                })
-            }
-            RuntimeResolvedSelect::RecordElement {
-                nominal: Some(_),
-                ordinal,
-                ..
-            } => Ok(RuntimeExprSeedKind::ProjectRecord {
+            RuntimeResolvedSelect::OpaqueRecord {
+                owner,
+                producer,
+                field,
+                field_type,
+            } => Ok(RuntimeExprSeedKind::Field {
                 target,
-                field: RuntimeRecordFieldSeedId::from_zero_based(*ordinal),
+                field: RuntimeFieldProjectionSeed::OpaqueRecord {
+                    owner: *owner,
+                    producer: producer.clone(),
+                    field: RuntimeRecordFieldSeedId::from_zero_based(field.zero_based()),
+                    field_type: *field_type,
+                },
             }),
-            RuntimeResolvedSelect::RecordElement { nominal: None, .. } => Err(format!(
-                "record selection {id:?} has no accepted nominal field coordinate"
-            )),
         }
     }
 
     fn lower_nominal_fields(
         &self,
         id: ExprId,
-        fields: &[HirRecordField],
     ) -> Result<Vec<RuntimeNominalRecordFieldSeed>, String> {
-        let nominal = self.facts.nominal_record(id).ok_or_else(|| {
+        let record = self.facts.nominal_record(id).ok_or_else(|| {
             format!(
                 "nominal record expression {id:?} requires a typed runtime nominal-expression owner"
             )
         })?;
-        fields
+        record
+            .fields()
             .iter()
-            .map(|field| match field {
-                HirRecordField::Explicit { name, value } => Ok(RuntimeNominalRecordFieldSeed::new(
-                    Self::nominal_record_field(nominal, name.as_str(), id)?,
-                    self.lower(*value)?,
-                )),
-                HirRecordField::Shorthand { name, local } => {
-                    Ok(RuntimeNominalRecordFieldSeed::new(
-                        Self::nominal_record_field(nominal, name.as_str(), id)?,
-                        RuntimeExprSeed::new(
-                            self.local_type(*local)?,
-                            RuntimeExprSeedKind::Local(self.local(*local)?),
-                        ),
-                    ))
-                }
-                HirRecordField::Invalid { .. } => {
-                    Err(format!("record expression {id:?} has an invalid field"))
-                }
+            .map(|field| {
+                let value = match field.source() {
+                    RuntimeRecordExpressionSource::Expression(value) => self.lower(value)?,
+                    RuntimeRecordExpressionSource::Binding(local) => RuntimeExprSeed::new(
+                        self.local_type(local)?,
+                        RuntimeExprSeedKind::Local(self.local(local)?),
+                    ),
+                };
+                Ok(RuntimeNominalRecordFieldSeed::new(
+                    RuntimeRecordFieldSeedId::from_zero_based(field.field().zero_based()),
+                    value,
+                ))
             })
             .collect()
     }
@@ -1565,23 +1578,16 @@ impl<'hir> FinalExprLowerer<'hir> {
     fn lower_agent_intrinsic(
         &self,
         id: ExprId,
-        call: &arcweft_lang_hir::expr::HirCallExpr,
         intrinsic: RuntimeAgentIntrinsic,
+        values: &[(RuntimeExprSeed, RuntimeCallArgumentMode)],
+        operands: &[RuntimeResolvedCallOperand],
     ) -> Result<RuntimeExprSeedKind, String> {
         if let Some(operation) = intrinsic.host_operation() {
             return Err(format!(
                 "Agent host call {operation} at {id:?} cannot enter pure expression lowering"
             ));
         }
-        let values = self.value_arguments(
-            call,
-            id,
-            self.facts
-                .call(id)
-                .expect("selected call")
-                .arguments()
-                .len(),
-        )?;
+        let values = self.scalar_values(id, values)?;
         let one = |values: &Vec<RuntimeExprSeed>| exact_one(id, values);
         Ok(RuntimeExprSeedKind::Agent(match intrinsic {
             RuntimeAgentIntrinsic::StatePath => RuntimeAgentExprSeed::StatePath {
@@ -1632,7 +1638,7 @@ impl<'hir> FinalExprLowerer<'hir> {
                 predicate: Box::new(one(&values)?),
             },
             RuntimeAgentIntrinsic::ChoiceAction => RuntimeAgentExprSeed::ChoiceAction {
-                choice: self.choice_target(call, id)?,
+                choice: self.choice_target(operands, id)?,
             },
             RuntimeAgentIntrinsic::ViewportPoint => {
                 let mut values = values;
@@ -1670,10 +1676,10 @@ impl<'hir> FinalExprLowerer<'hir> {
     fn lower_agent_compare(
         &self,
         id: ExprId,
-        call: &arcweft_lang_hir::expr::HirCallExpr,
         op: RuntimeAgentCompareOp,
+        values: &[(RuntimeExprSeed, RuntimeCallArgumentMode)],
     ) -> Result<RuntimeExprSeedKind, String> {
-        let mut values = self.value_arguments(call, id, 2)?;
+        let mut values = self.scalar_values(id, values)?;
         Ok(RuntimeExprSeedKind::Agent(
             RuntimeAgentExprSeed::PredicateCompare {
                 probe: Box::new(values.remove(0)),
@@ -1685,14 +1691,17 @@ impl<'hir> FinalExprLowerer<'hir> {
 
     fn choice_target(
         &self,
-        call: &arcweft_lang_hir::expr::HirCallExpr,
+        operands: &[RuntimeResolvedCallOperand],
         id: ExprId,
     ) -> Result<arcweft_core::entry::RuntimeCommandTargetId, String> {
-        let expression = call
-            .arguments()
+        let operand = operands
             .first()
-            .ok_or_else(|| format!("choice_action at {id:?} has no authored argument"))?
-            .value();
+            .ok_or_else(|| format!("choice_action at {id:?} has no accepted operand"))?;
+        let RuntimeResolvedCallOperandSource::Expression(expression) = operand.source() else {
+            return Err(format!(
+                "choice_action at {id:?} requires an expression operand"
+            ));
+        };
         arcweft_core::entry::RuntimeCommandTargetId::try_new(
             self.entity_reference(expression)?.runtime_label(),
         )
@@ -1714,55 +1723,35 @@ impl<'hir> FinalExprLowerer<'hir> {
         }
     }
 
-    fn lower_call_receiver(
-        &self,
-        call: &arcweft_lang_hir::expr::HirCallExpr,
-        id: ExprId,
-    ) -> Result<RuntimeExprSeed, String> {
-        self.lower(
-            self.module
-                .resolve_call_value_receiver(call)
-                .map_err(|error| format!("cannot resolve call receiver at {id:?}: {error}"))?
-                .ok_or_else(|| format!("call {id:?} has no receiver-bearing value callee"))?,
-        )
-    }
-
     fn validate_variant_call_payload(
         &self,
         id: ExprId,
-        call: &arcweft_lang_hir::expr::HirCallExpr,
-        arguments: &[RuntimeResolvedCallArgument],
+        operands: &[RuntimeResolvedCallOperand],
         variant: &RuntimeResolvedVariant,
     ) -> Result<(), String> {
-        let types = arguments
+        let types = operands
             .iter()
-            .map(|argument| match argument {
-                RuntimeResolvedCallArgument::Authored { ordinal, .. } => {
-                    let ordinal = usize::try_from(*ordinal).map_err(|_| {
-                        format!("call argument ordinal {ordinal} does not fit usize")
-                    })?;
-                    let value = call
-                        .arguments()
-                        .get(ordinal)
-                        .ok_or_else(|| {
-                            format!("call argument ordinal {ordinal} is absent at {id:?}")
-                        })?
-                        .value();
-                    self.facts.expression_type(value).ok_or_else(|| {
-                        format!(
-                            "accepted type is missing for variant constructor argument {value:?}"
-                        )
-                    })
+            .map(|operand| {
+                if matches!(operand.origin(), RuntimeResolvedCallOperandOrigin::Receiver) {
+                    return Err(format!(
+                        "variant constructor {id:?} has an invalid receiver"
+                    ));
                 }
-                RuntimeResolvedCallArgument::Receiver => Err(format!(
-                    "variant constructor {id:?} has an invalid receiver"
-                )),
+                if !matches!(
+                    operand.projection(),
+                    RuntimeResolvedCallOperandProjection::Scalar
+                ) {
+                    return Err(format!(
+                        "variant constructor {id:?} cannot consume a spread container"
+                    ));
+                }
+                Ok(operand.ty())
             })
             .collect::<Result<Vec<_>, _>>()?;
         let payload = variant
             .selected_payload_type()
             .map_err(|error| error.to_string())?;
-        (payload.is_some() != arguments.is_empty()
+        (payload.is_some() == !operands.is_empty()
             && variant_payload_accepts_argument_types(payload, &types))
         .then_some(())
         .ok_or_else(|| {
@@ -1770,18 +1759,6 @@ impl<'hir> FinalExprLowerer<'hir> {
                 "variant constructor at {id:?} does not match its selected normalized payload type"
             )
         })
-    }
-
-    fn nominal_record_field(
-        nominal: &crate::semantic_facts::RuntimeResolvedNominalRecord,
-        name: &str,
-        owner: ExprId,
-    ) -> Result<RuntimeRecordFieldSeedId, String> {
-        nominal
-            .layout()
-            .field_by_name(name)
-            .map(|(field, _)| RuntimeRecordFieldSeedId::from_zero_based(field.zero_based()))
-            .ok_or_else(|| format!("accepted nominal record {owner:?} lacks field {name:?}"))
     }
 
     fn lower_constant_length(&self, id: ExprId) -> Result<usize, String> {

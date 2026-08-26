@@ -31,8 +31,8 @@ use crate::task::{
 use crate::text_control_writeback::RuntimeTextControlWriteBack;
 use crate::view_projection::{ViewProjectionInput, project_view_resources};
 use crate::view_runtime::{
-    BundleViewDiagnostic, BundleViewDiagnosticCode, BundleViewRuntime, BundleViewRuntimeError,
-    reconciled_root_handles_for_restore,
+    BundleViewDiagnostic, BundleViewDiagnosticCode, BundleViewEventDispatchError,
+    BundleViewRuntime, BundleViewRuntimeError, reconciled_root_handles_for_restore,
 };
 use arcweft_bundle::container::{ArtifactIdentity, BundleDigest, BundleView, ReadBudget};
 use arcweft_bundle::fx_definitions::FxDefinitions;
@@ -58,7 +58,7 @@ use arcweft_core::executor::{
 };
 use arcweft_core::observation::RuntimeObservationState;
 use arcweft_core::plan::{EntryRuntimeId, FlowEvent};
-use arcweft_core::pure::VmRuntimePureCallBackend;
+use arcweft_core::pure::{RuntimePureCallBackend, VmRuntimePureCallBackend};
 use arcweft_core::root::{RootEventInput, RootTransitionOutcome, RuntimeCommandEnvelope};
 use arcweft_core::step::{
     RuntimeHostCallError, RuntimeHostCallErrorKind, RuntimeHostCallId, RuntimeHostCallRequest,
@@ -84,6 +84,7 @@ use arcweft_presentation::input::Action;
 use arcweft_presentation::text_input::TextControlWriteBack;
 use arcweft_resource_model::registry::ResourceTypeRegistry;
 use arcweft_text_model::DialogueContentCatalog;
+use arcweft_view::ViewHandlerInvocation;
 use arcweft_view::{ViewStyleProgram, virtualization::ViewVirtualizationRuntime};
 use std::collections::BTreeMap;
 use std::sync::Arc;
@@ -126,7 +127,7 @@ pub struct BundleSessionOptions {
     pub entry: Option<EntryRuntimeId>,
     pub mode: RuntimeStepMode,
     pub max_ops: usize,
-    pub root_bindings: Vec<RuntimeBinding>,
+    pub view_root_bindings: Vec<RuntimeBinding>,
     pub root_command_host_calls: RootCommandHostCallCatalog,
     /// Immutable engine-owned resource types used as the base when an AWFB
     /// publishes extension manifests.
@@ -141,7 +142,7 @@ impl Default for BundleSessionOptions {
             entry: None,
             mode: RuntimeStepMode::Game,
             max_ops: 64,
-            root_bindings: Vec::new(),
+            view_root_bindings: Vec::new(),
             root_command_host_calls: RootCommandHostCallCatalog::default(),
             engine_resource_types: Arc::new(ResourceTypeRegistry::empty()),
             presentation_environment: None,
@@ -152,7 +153,7 @@ impl Default for BundleSessionOptions {
 /// Host data supplied to one portable runtime step, excluding logical time.
 #[derive(Clone, Debug, Default, PartialEq)]
 pub struct BundleStepInput {
-    pub bindings: Vec<RuntimeBinding>,
+    pub view_bindings: Vec<RuntimeBinding>,
     pub root_events: Vec<RootEventInput>,
     /// Typed later-phase/Agent events that become root ingress next step.
     pub deferred_root_events: Vec<RootEventInput>,
@@ -568,6 +569,17 @@ impl BundleSession {
             .push(BundlePresentationInput::advance_dialogue(target));
     }
 
+    /// Queues the typed presentation action sealed for one routed View invocation.
+    pub fn queue_view_handler_invocation(
+        &mut self,
+        invocation: &ViewHandlerInvocation,
+    ) -> Result<(), BundleViewEventDispatchError> {
+        if let Some(input) = self.view_runtime.dispatch_invocation(invocation)? {
+            self.pending_presentation_inputs.push(input);
+        }
+        Ok(())
+    }
+
     pub fn queue_text_control_write_back(
         &mut self,
         write_back: &TextControlWriteBack,
@@ -592,7 +604,6 @@ impl BundleSession {
                 .clone_into(&mut source_control.value);
             source_control.selection = runtime_write_back.selection();
         }
-        self.resolve_text_control_submit_action(&runtime_write_back);
         self.pending_text_control_write_backs
             .push(runtime_write_back);
         Ok(())
@@ -612,21 +623,6 @@ impl BundleSession {
 
     pub fn pending_text_control_write_backs(&self) -> &[RuntimeTextControlWriteBack] {
         &self.pending_text_control_write_backs
-    }
-
-    fn resolve_text_control_submit_action(&mut self, write_back: &RuntimeTextControlWriteBack) {
-        if !write_back.is_submit() {
-            return;
-        }
-        let Some(handler) = write_back.handler() else {
-            return;
-        };
-        if handler.handler_id.starts_with("action.") {
-            self.resolve_waiting_action_receive_calls(
-                &handler.handler_id,
-                Some(write_back.value().as_str()),
-            );
-        }
     }
 
     fn resolve_waiting_action_receive_calls(&mut self, action_id: &str, payload: Option<&str>) {
@@ -654,8 +650,8 @@ impl BundleSession {
         clock: RuntimeClockStep,
         input: BundleStepInput,
     ) -> BundleSessionStep {
-        let mut view_bindings = self.options.root_bindings.clone();
-        view_bindings.extend(input.bindings.iter().cloned());
+        let mut view_bindings = self.options.view_root_bindings.clone();
+        view_bindings.extend(input.view_bindings.iter().cloned());
         self.presentation.advance_fx_clock(clock.dt_millis());
         let view_clock_error = self.view_runtime.advance_millis(clock.dt_millis()).err();
         self.swap.enter_runtime_step();
@@ -667,9 +663,8 @@ impl BundleSession {
             diagnostics: input_diagnostics,
         } = self.prepare_step_input(clock, input);
         let mut pure_backend = VmRuntimePureCallBackend::default();
-        let result = self.executor.step_with_root_bindings_and_pure_backend(
+        let result = self.executor.step_with_pure_backend(
             runtime,
-            &self.options.root_bindings,
             RuntimeStepOptions {
                 mode: self.options.mode,
                 budget: RuntimeStepBudget {
@@ -680,6 +675,7 @@ impl BundleSession {
         );
         self.swap.finish_runtime_step();
 
+        let mut stats = result.stats.clone();
         let mut output = result.output;
         let root_transitions = std::mem::take(&mut output.root_transitions);
         let root_commands = std::mem::take(&mut output.root_commands);
@@ -730,21 +726,23 @@ impl BundleSession {
             &line_effects,
             &mut diagnostics,
         );
+        let view_pure_before = pure_backend.stats();
         self.update_view_presentation(
             &view_bindings,
             &previous_text_inputs,
             view_clock_error,
             &mut diagnostics,
+            &mut pure_backend,
         );
+        stats.pure = stats
+            .pure
+            .saturating_add(pure_backend.stats().saturating_delta(view_pure_before));
         self.append_fx_diagnostics(&mut diagnostics);
         let observations = self.executor.fiber().observations.clone();
 
         let requested_tasks = self.dispatch_requested_tasks(clock, output.requests.tasks);
-        requested_host_calls.extend(self.capture_view_host_calls(
-            output.requests.host_calls,
-            &routed_input_events,
-            &text_control_write_backs,
-        ));
+        requested_host_calls
+            .extend(self.capture_view_host_calls(output.requests.host_calls, &routed_input_events));
         let cancel_scopes = output.requests.cancel_scopes;
         self.apply_task_cancellations(&cancel_scopes);
         let audio_commands = output.requests.audio;
@@ -759,7 +757,7 @@ impl BundleSession {
                 .fiber_status
                 .status_label(FlowStatusLabelStyle::Runtime),
             fiber_status: result.fiber_status,
-            stats: result.stats,
+            stats,
             diagnostics,
             assertion_failures,
             observations,
@@ -829,7 +827,6 @@ impl BundleSession {
             runtime: RuntimeStepInput {
                 tick: clock.tick(),
                 dt: clock.dt(),
-                bindings: input.bindings,
                 root_events: input.root_events,
                 deferred_root_events: input.deferred_root_events,
                 input_events: input.input_events,
@@ -986,6 +983,7 @@ impl BundleSession {
         previous_text_inputs: &[ViewRuntimeTextControl],
         clock_error: Option<BundleViewRuntimeError>,
         diagnostics: &mut Vec<String>,
+        pure_backend: &mut impl arcweft_core::pure::RuntimeCallBackend,
     ) {
         let previous_fx = self
             .presentation
@@ -994,11 +992,12 @@ impl BundleSession {
             .iter()
             .flat_map(|mount| mount.fx.iter().map(|application| application.instance))
             .collect::<std::collections::BTreeSet<_>>();
-        let mut frame = self.view_runtime.evaluate_with_dialogue(
+        let mut frame = self.view_runtime.evaluate_with_dialogue_and_backend(
             &self.presentation.presentation_handles,
             &self.presentation.dialogue.view_inputs(),
             bindings,
             self.environment.effective().reduced_motion(),
+            pure_backend,
         );
         if let Some(error) = clock_error {
             frame.diagnostics.push(BundleViewDiagnostic {
@@ -1127,18 +1126,15 @@ impl BundleSession {
         &mut self,
         requests: Vec<RuntimeHostCallRequest>,
         step_input_events: &[RoutedInputEvent],
-        text_control_write_backs: &[RuntimeTextControlWriteBack],
     ) -> Vec<RuntimeHostCallRequest> {
         let mut external = Vec::new();
         for request in requests {
             if request.capability == "view.action" && request.operation == "await" {
                 match action_receive_action_id(&request) {
                     Some(action_id) => {
-                        if let Some(invocation) = action_invocation_from_step_inputs(
-                            &action_id,
-                            step_input_events,
-                            text_control_write_backs,
-                        ) {
+                        if let Some(invocation) =
+                            action_invocation_from_step_inputs(&action_id, step_input_events)
+                        {
                             self.pending_host_call_results.push(RuntimeHostCallResult {
                                 id: request.id,
                                 outcome: action_receive_payload(
@@ -1198,21 +1194,10 @@ struct ActionInvocation {
 fn action_invocation_from_step_inputs(
     action_id: &str,
     step_input_events: &[RoutedInputEvent],
-    text_control_write_backs: &[RuntimeTextControlWriteBack],
 ) -> Option<ActionInvocation> {
-    text_control_write_backs
+    step_input_events
         .iter()
-        .find_map(|write_back| {
-            let handler = write_back.handler()?;
-            (write_back.is_submit() && handler.handler_id == action_id).then(|| ActionInvocation {
-                payload: Some(write_back.value().as_str().to_owned()),
-            })
-        })
-        .or_else(|| {
-            step_input_events
-                .iter()
-                .find_map(|event| action_invocation_from_input_event(action_id, event))
-        })
+        .find_map(|event| action_invocation_from_input_event(action_id, event))
 }
 
 fn action_invocation_from_input_event(
@@ -1281,4 +1266,201 @@ fn presentation_transition_diagnostic(transition: &BundlePresentationTransition)
     Some(format!(
         "dialogue advance rejected for {target:?}: {reason:?}"
     ))
+}
+
+#[cfg(test)]
+mod view_handler_queue_tests {
+    use super::*;
+    use arcweft_bundle::resource_codec::SourceMapSection;
+    use arcweft_bundle::{BundleManifest, BundleRuntimeSummary};
+    use arcweft_character::id::CharacterId;
+    use arcweft_core::effect::RuntimeArtifactFingerprint;
+    use arcweft_core::entry::{
+        EntryBindingIdentity, FlowContractHash, RuntimeEntryRoles, RuntimeFlowExecutable,
+        RuntimeFlowSchema,
+    };
+    use arcweft_core::plan::{
+        EntryRuntimeId, FlowRuntimeId, RuntimeEntryKind, RuntimeEntrySpec, RuntimeEntryTarget,
+        RuntimeFlowOpSeed, RuntimeFlowSeed, RuntimePlanBuilder,
+    };
+    use arcweft_dialogue::InlineFailurePolicy;
+    use arcweft_id::TextKey;
+    use arcweft_presentation::input::{InputEpoch, InputEvent};
+    use arcweft_runtime_plan::awbc_lower::AwbcLowerer;
+    use arcweft_source::{SourceDocument, SourceDocumentId, SourceName};
+    use arcweft_text_model::{
+        CharacterDialoguePresentationConfig, DialoguePresentationCharacter, LineDisplayFrame,
+        RichTextDisplayMap,
+    };
+    use arcweft_view::{
+        DialogueEntryId, DialogueInstanceId, DialoguePresentationId, DialogueRevision,
+        DialogueStageIndex, ViewId,
+    };
+
+    #[test]
+    fn session_queues_the_exact_token_selected_by_the_player_invocation() {
+        let bundle = session_bundle();
+        let mut session = BundleSession::new(&bundle, BundleSessionOptions::default())
+            .expect("handler-capable bundle session");
+        let view = ViewId::standard_dialogue();
+        let frame = dialogue_frame(view.clone());
+        let target = DialogueAdvanceTarget::new(
+            DialoguePresentationId::new(31),
+            DialogueEntryId::new(32),
+            DialogueInstanceId::new(33),
+            DialogueStageIndex::new(0),
+            DialogueRevision::new(1),
+        );
+        let input = crate::dialogue::DialogueViewInput {
+            handle: crate::presentation_handles::PresentationHandleId::try_new(
+                "dialogue.session.handler",
+            )
+            .expect("dialogue handle"),
+            view: &view,
+            frame: &frame,
+            state: crate::dialogue::DialogueViewState {
+                occurrence: crate::dialogue::DialogueViewOccurrence {
+                    presentation: DialoguePresentationId::new(31),
+                    entry: DialogueEntryId::new(32),
+                    instance: DialogueInstanceId::new(33),
+                },
+                stage: crate::dialogue::DialogueViewStage {
+                    index: DialogueStageIndex::new(0),
+                    page: crate::dialogue::DialoguePageIndex::new(0),
+                    stage_count: 1,
+                    page_count: 1,
+                },
+                reveal: crate::dialogue::DialogueViewReveal::complete(),
+                primary_action: crate::dialogue::DialogueViewPrimaryAction {
+                    target: Some(target),
+                },
+            },
+        };
+        let view_frame = session
+            .view_runtime
+            .evaluate_with_dialogue(&[], &[input], &[], false);
+        assert!(view_frame.diagnostics.is_empty(), "{view_frame:#?}");
+        let binding = &view_frame.mounts[0].events[0];
+        let invocation = ViewHandlerInvocation::from_input(
+            &InputEvent::activate(InputEpoch(1), binding.target().clone()),
+            binding.event(),
+            binding.route(),
+        )
+        .expect("player semantic Activate invocation");
+
+        session
+            .queue_view_handler_invocation(&invocation)
+            .expect("exact mounted token queues");
+
+        assert_eq!(
+            session.pending_presentation_inputs,
+            vec![BundlePresentationInput::advance_dialogue(target)]
+        );
+    }
+
+    fn session_bundle() -> ArcweftBundle {
+        let mut builder = RuntimePlanBuilder::new();
+        let flow = FlowRuntimeId::from_checked_declaration_digest([0x61; 32], "flow.main")
+            .expect("checked Flow identity");
+        builder
+            .push_flow_seed(RuntimeFlowSeed::new(
+                flow.clone(),
+                [],
+                vec![RuntimeFlowOpSeed::Return("done".to_owned())],
+            ))
+            .expect("Flow admits");
+        builder
+            .push_flow_schema(RuntimeFlowSchema {
+                flow: flow.clone(),
+                parameters: Vec::new(),
+            })
+            .expect("Flow schema admits");
+        builder
+            .push_flow_executable(RuntimeFlowExecutable {
+                flow: flow.clone(),
+                contract: FlowContractHash::from_bytes([0x62; 32]),
+                controller: None,
+            })
+            .expect("Flow executable admits");
+        builder
+            .push_entry(RuntimeEntrySpec {
+                id: EntryRuntimeId::from_source_entity_body("entry.main").expect("Entry identity"),
+                kind: RuntimeEntryKind::Cli,
+                binding: EntryBindingIdentity::from_bytes([0x63; 32]),
+                target: RuntimeEntryTarget::Flow(flow),
+                roles: RuntimeEntryRoles::None,
+            })
+            .expect("Entry admits");
+        let plan = builder.finish().expect("runtime plan seals");
+        let dialogue = arcweft_text_model::DialogueContentCatalog::new();
+        let awbc = AwbcLowerer::new(&plan, &dialogue, "session-view-handler.arcw")
+            .lower()
+            .expect("runtime plan lowers")
+            .program;
+        let source = SourceDocument::try_new(
+            SourceDocumentId::try_new("runtime-driver-session-view-handler").expect("source ID"),
+            SourceName::Memory,
+            "flow main { return \"done\" }",
+        )
+        .expect("source document");
+        ArcweftBundle::try_new(
+            BundleManifest {
+                profile_id: None,
+                profile_kind: None,
+                entry: Some("entry.main".to_owned()),
+                adapter: None,
+                adapter_manifest_ids: Vec::new(),
+                required_host_calls: Vec::new(),
+                runtime: BundleRuntimeSummary {
+                    artifact_fingerprint: RuntimeArtifactFingerprint::try_from_bytes([0x64; 32])
+                        .expect("artifact fingerprint"),
+                    entry_flow: Some("flow.main".to_owned()),
+                    flows: 1,
+                    bytecode_instructions: awbc.instructions.len(),
+                    line_task_groups: 0,
+                    stream_plans: 0,
+                },
+            },
+            SourceMapSection::try_from_documents(&[&source]).expect("source map"),
+            awbc,
+            dialogue,
+        )
+        .expect("standard handler bundle")
+    }
+
+    fn dialogue_frame(view: ViewId) -> LineDisplayFrame {
+        LineDisplayFrame {
+            line: arcweft_core::plan::RuntimeLineId::from_runtime_line_value(
+                "say.session.view.handler",
+            )
+            .expect("line identity"),
+            character: DialoguePresentationCharacter {
+                id: CharacterId::try_new("character.session").expect("character identity"),
+                display_name: "Session".to_owned(),
+            },
+            text_key: TextKey::try_new("text.session.view.handler").expect("text key"),
+            effective: CharacterDialoguePresentationConfig {
+                view,
+                voice: None,
+                look: None,
+                stage: None,
+                portrait: None,
+                focus: None,
+                cleanup: None,
+                source_locale: None,
+                hooks: Vec::new(),
+                inline_failure: InlineFailurePolicy::FailLine,
+                custom: BTreeMap::new(),
+                config_digest: arcweft_core::entry::RuntimeValueDigest::ZERO,
+            },
+            text: String::new(),
+            base_styles: Vec::new(),
+            style_contributions: Vec::new(),
+            nodes: Vec::new(),
+            display_map: RichTextDisplayMap::default(),
+            host_events: Vec::new(),
+            inline_failures: Vec::new(),
+            unresolved: Vec::new(),
+        }
+    }
 }

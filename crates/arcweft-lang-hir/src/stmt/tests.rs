@@ -4,12 +4,20 @@ use core::fmt::Debug;
 use core::num::{NonZeroU32, NonZeroU64};
 
 use super::{
-    HirAssertionMode, HirConditionalElseBranch, HirContextualStmtBody, HirIfLetStmt, HirIfStmt,
-    HirMatchStmt, HirStmt, HirStmtChildRole, HirStmtInvariantError, HirStmtKind, HirStmtMatchArm,
-    HirStmtMatchArmBody, HirStmtPoisonState, HirStmtRecoveryIssue, HirThreadStmtChildRole,
-    HirThreadStmtInvariantError, HirThreadStmtRecoveryIssue, HirTriggerPattern, HirUnsafeAudit,
-    HirUnsafeLifetimeBody,
+    HirAssertionMode, HirConditionalElseBranch, HirContextualStmtBody, HirForStmt, HirIfLetStmt,
+    HirIfStmt, HirIncludeStmt, HirMatchStmt, HirScopeStmt, HirSelectBindingLocal, HirSelectBranch,
+    HirSelectBranchHead, HirSelectStmt, HirSourceLocaleIssue, HirSourceLocaleStmt,
+    HirSourceLocaleValue, HirStatementChildRole, HirStmt, HirStmtBindingPlanKind,
+    HirStmtBranchPublicationKind, HirStmtChildRole, HirStmtDeferredBodyPlanKind,
+    HirStmtEvaluationPlan, HirStmtEvaluationPublicationRole, HirStmtEvaluationStep,
+    HirStmtInvariantError, HirStmtKind, HirStmtMatchArm, HirStmtMatchArmBody,
+    HirStmtOrderedPairPlanKind, HirStmtPoisonState, HirStmtRecoveryIssue,
+    HirStmtSelectEvaluationPlan, HirStmtSelectHeadEvaluation, HirStmtTriggerEvaluationPlan,
+    HirStmtValuePlanKind, HirThreadStmtChildRole, HirThreadStmtInvariantError,
+    HirThreadStmtRecoveryIssue, HirTriggerPattern, HirUnsafeAudit, HirUnsafeLifetimeBody,
+    HirWhileLetStmt, HirWhileStmt,
 };
+use crate::expr::{HirThreadBody, HirThreadBodyOwner, HirThreadFlowItem};
 use crate::identity::{
     ExprId, HirDatabaseId, HirModuleId, HirTypedId, LocalId, PatternId, RawHirId, ScopeId, StmtId,
     TypeId,
@@ -298,6 +306,12 @@ fn ordered_statement_bodies_arms_conditions_and_locals_are_not_reordered() {
     };
     assert_eq!(mode.resolved(), Some(AssertionMode::Check));
     assert_eq!(conditions.as_ref(), [second_expr, first_expr]);
+    let HirStmtEvaluationPlan::Assertion { mode, conditions } = assertion.kind().evaluation_plan()
+    else {
+        panic!("assertion evaluation plan");
+    };
+    assert_eq!(mode.resolved(), Some(AssertionMode::Check));
+    assert_eq!(conditions, [second_expr, first_expr]);
 
     let first_arm = HirStmtMatchArm::try_new(
         owner_scope,
@@ -344,6 +358,1096 @@ fn ordered_statement_bodies_arms_conditions_and_locals_are_not_reordered() {
         arms[1].body(),
         &HirStmtMatchArmBody::Expression(second_expr)
     );
+}
+
+#[test]
+fn evaluation_plan_preserves_binding_visibility_and_statement_metadata() {
+    let owner_module = module(14);
+    let owner_scope = id::<ScopeId>(owner_module, 1);
+    let else_scope = id::<ScopeId>(owner_module, 2);
+    let pattern = id::<PatternId>(owner_module, 3);
+    let initializer = id::<ExprId>(owner_module, 4);
+    let success_local = id::<LocalId>(owner_module, 5);
+    let else_statement = id::<StmtId>(owner_module, 6);
+    let let_else = HirStmtKind::LetElse {
+        pattern,
+        annotation: None,
+        initializer,
+        else_scope,
+        else_body: Box::new([else_statement]),
+        locals: Box::new([success_local]),
+    };
+    let HirStmtEvaluationPlan::LetElse {
+        initializer: planned_initializer,
+        else_body,
+        success_locals,
+        ..
+    } = let_else.evaluation_plan()
+    else {
+        panic!("let-else evaluation plan");
+    };
+    assert_eq!(planned_initializer, initializer);
+    assert_eq!(else_body, [else_statement]);
+    assert_eq!(success_locals, [success_local]);
+
+    let locale = HirStmtKind::SourceLocale(
+        HirSourceLocaleStmt::try_new(
+            HirSourceLocaleValue::Recovered(HirSourceLocaleIssue::Missing),
+            ordinary_body(owner_scope, Box::new([])),
+        )
+        .expect("source locale statement"),
+    );
+    let HirStmtEvaluationPlan::SourceLocale { locale, .. } = locale.evaluation_plan() else {
+        panic!("source locale evaluation plan");
+    };
+    assert_eq!(
+        locale,
+        &HirSourceLocaleValue::Recovered(HirSourceLocaleIssue::Missing)
+    );
+
+    let scope = HirStmtKind::Scope(
+        HirScopeStmt::try_new(
+            Some(name("named")),
+            ordinary_body(owner_scope, Box::new([])),
+        )
+        .expect("scope statement"),
+    );
+    let HirStmtEvaluationPlan::Scope {
+        name: planned_name, ..
+    } = scope.evaluation_plan()
+    else {
+        panic!("scope evaluation plan");
+    };
+    assert_eq!(planned_name.map(HirName::as_str), Some("named"));
+
+    let select = HirStmtKind::Select(HirSelectStmt::operand(initializer));
+    let HirStmtEvaluationPlan::Select { scope, plan } = select.evaluation_plan() else {
+        panic!("select evaluation plan");
+    };
+    assert_eq!(scope, None);
+    assert_eq!(
+        plan,
+        HirStmtSelectEvaluationPlan::Operand {
+            expression: initializer
+        }
+    );
+}
+
+#[test]
+#[allow(
+    clippy::too_many_lines,
+    reason = "the 35-family matrix keeps every plan payload and visibility boundary auditable"
+)]
+fn evaluation_plan_matrix_covers_all_thirty_five_statement_families() {
+    let owner_module = module(16);
+    let scope = id::<ScopeId>(owner_module, 1);
+    let body_scope = id::<ScopeId>(owner_module, 2);
+    let branch_scope = id::<ScopeId>(owner_module, 3);
+    let select_scope = id::<ScopeId>(owner_module, 4);
+    let select_body_scope = id::<ScopeId>(owner_module, 5);
+    let first_expr = id::<ExprId>(owner_module, 6);
+    let second_expr = id::<ExprId>(owner_module, 7);
+    let third_expr = id::<ExprId>(owner_module, 8);
+    let fourth_expr = id::<ExprId>(owner_module, 9);
+    let first_pattern = id::<PatternId>(owner_module, 10);
+    let first_local = id::<LocalId>(owner_module, 12);
+    let first_statement = id::<StmtId>(owner_module, 14);
+    let second_statement = id::<StmtId>(owner_module, 15);
+    let first_type = id::<TypeId>(owner_module, 16);
+    let include_target = audit_id();
+
+    let if_statement = HirIfStmt::try_new(
+        first_expr,
+        ordinary_body(body_scope, Box::new([first_statement])),
+        None,
+    )
+    .expect("if payload");
+    let if_let_statement = HirIfLetStmt::try_new(
+        first_pattern,
+        first_expr,
+        Some(second_expr),
+        ordinary_body(body_scope, Box::new([first_statement])),
+        Box::new([first_local]),
+        None,
+    )
+    .expect("if-let payload");
+    let match_arm = HirStmtMatchArm::try_new(
+        body_scope,
+        first_pattern,
+        Some(second_expr),
+        HirStmtMatchArmBody::Expression(third_expr),
+        Box::new([first_local]),
+    )
+    .expect("match arm payload");
+    let match_statement =
+        HirMatchStmt::try_new(first_expr, Box::new([match_arm])).expect("match payload");
+    let while_statement = HirWhileStmt::try_new(
+        first_expr,
+        ordinary_body(body_scope, Box::new([first_statement])),
+    )
+    .expect("while payload");
+    let while_let_statement = HirWhileLetStmt::try_new(
+        first_pattern,
+        first_expr,
+        Some(second_expr),
+        Box::new([first_local]),
+        ordinary_body(body_scope, Box::new([first_statement])),
+    )
+    .expect("while-let payload");
+    let for_statement = HirForStmt::try_new(
+        first_expr,
+        second_expr,
+        third_expr,
+        first_pattern,
+        Box::new([first_local]),
+        ordinary_body(body_scope, Box::new([first_statement])),
+    )
+    .expect("for payload");
+    let select_branch = HirSelectBranch::try_new(
+        HirSelectBranchHead::Bind {
+            binding: HirSelectBindingLocal::Resolved(first_local),
+            source: first_expr,
+            propagates_error: true,
+        },
+        ordinary_body(select_body_scope, Box::new([second_statement])),
+    )
+    .expect("select branch payload");
+    let select_statement = HirSelectStmt::try_branches(select_scope, Box::new([select_branch]))
+        .expect("select payload");
+
+    let rows = vec![
+        (
+            "Assertion",
+            HirStmtKind::Assertion {
+                mode: HirAssertionMode::Resolved(AssertionMode::Check),
+                conditions: Box::new([first_expr, second_expr]),
+            },
+        ),
+        (
+            "Let",
+            HirStmtKind::Let {
+                pattern: first_pattern,
+                annotation: Some(first_type),
+                initializer: first_expr,
+                locals: Box::new([first_local]),
+            },
+        ),
+        (
+            "Assign",
+            HirStmtKind::Assign {
+                target: first_expr,
+                value: second_expr,
+            },
+        ),
+        (
+            "LetElse",
+            HirStmtKind::LetElse {
+                pattern: first_pattern,
+                annotation: Some(first_type),
+                initializer: first_expr,
+                else_scope: branch_scope,
+                else_body: Box::new([first_statement]),
+                locals: Box::new([first_local]),
+            },
+        ),
+        (
+            "LetChoice",
+            HirStmtKind::LetChoice {
+                pattern: first_pattern,
+                choice: first_expr,
+                locals: Box::new([first_local]),
+            },
+        ),
+        (
+            "LetScope",
+            HirStmtKind::LetScope {
+                pattern: first_pattern,
+                scope_expr: first_expr,
+                locals: Box::new([first_local]),
+            },
+        ),
+        (
+            "LetActionReceive",
+            HirStmtKind::LetActionReceive {
+                pattern: first_pattern,
+                action: first_expr,
+                locals: Box::new([first_local]),
+            },
+        ),
+        ("Return", HirStmtKind::Return { value: first_expr }),
+        (
+            "Out",
+            HirStmtKind::Out {
+                label: Some(name("out_label")),
+                value: second_expr,
+            },
+        ),
+        ("Goto", HirStmtKind::Goto { target: first_expr }),
+        (
+            "DeferBlock",
+            HirStmtKind::DeferBlock {
+                outcome: DeferOutcome::Failed,
+                scope: body_scope,
+                body: Box::new([first_statement, second_statement]),
+            },
+        ),
+        (
+            "Defer",
+            HirStmtKind::Defer {
+                outcome: DeferOutcome::Cancelled,
+                expression: first_expr,
+            },
+        ),
+        (
+            "Yield",
+            HirStmtKind::Yield {
+                expression: first_expr,
+            },
+        ),
+        (
+            "Signal",
+            HirStmtKind::Signal {
+                target: first_expr,
+                value: second_expr,
+            },
+        ),
+        (
+            "LifetimeSet",
+            HirStmtKind::LifetimeSet {
+                target: first_expr,
+                value: second_expr,
+            },
+        ),
+        ("Wait", HirStmtKind::Wait { target: first_expr }),
+        (
+            "On",
+            HirStmtKind::On {
+                trigger: HirTriggerPattern::Signal {
+                    target: first_expr,
+                    value: Some(first_pattern),
+                },
+                scope: body_scope,
+                body: Box::new([first_statement]),
+            },
+        ),
+        (
+            "UnsafeLifetime",
+            HirStmtKind::UnsafeLifetime {
+                audit: HirUnsafeAudit::new(audit_id(), Some(second_expr), true),
+                body: HirUnsafeLifetimeBody::Block {
+                    scope: body_scope,
+                    statements: Box::new([first_statement]),
+                },
+            },
+        ),
+        ("Choice", HirStmtKind::Choice { choice: first_expr }),
+        ("If", HirStmtKind::If(if_statement)),
+        ("IfLet", HirStmtKind::IfLet(if_let_statement)),
+        ("Match", HirStmtKind::Match(match_statement)),
+        ("While", HirStmtKind::While(while_statement)),
+        ("WhileLet", HirStmtKind::WhileLet(while_let_statement)),
+        ("For", HirStmtKind::For(for_statement)),
+        ("Close", HirStmtKind::Close { target: first_expr }),
+        ("Select", HirStmtKind::Select(select_statement)),
+        (
+            "SourceLocale",
+            HirStmtKind::SourceLocale(
+                HirSourceLocaleStmt::try_new(
+                    HirSourceLocaleValue::Recovered(HirSourceLocaleIssue::Missing),
+                    ordinary_body(scope, Box::new([first_statement])),
+                )
+                .expect("source locale payload"),
+            ),
+        ),
+        (
+            "Scope",
+            HirStmtKind::Scope(
+                HirScopeStmt::try_new(
+                    Some(name("scope_name")),
+                    ordinary_body(scope, Box::new([first_statement])),
+                )
+                .expect("scope payload"),
+            ),
+        ),
+        (
+            "Include",
+            HirStmtKind::Include(HirIncludeStmt::new(include_target.clone())),
+        ),
+        (
+            "Break",
+            HirStmtKind::Break {
+                label: Some(name("break_label")),
+                value: Some(third_expr),
+            },
+        ),
+        (
+            "Continue",
+            HirStmtKind::Continue {
+                label: Some(name("continue_label")),
+            },
+        ),
+        (
+            "Expression",
+            HirStmtKind::Expression {
+                expression: fourth_expr,
+            },
+        ),
+        ("ProofCall", HirStmtKind::ProofCall { call: first_expr }),
+        ("Error", HirStmtKind::Error),
+    ];
+
+    assert_eq!(rows.len(), 35);
+    for (ordinal, (family, statement)) in rows.into_iter().enumerate() {
+        let plan = statement.evaluation_plan();
+        let mut steps = Vec::new();
+        plan.try_visit_evaluation_steps(|step| steps.push(step))
+            .expect("evaluation step stream");
+        let expected_expression_steps = match ordinal {
+            0 => vec![
+                (
+                    HirStatementChildRole::AssertionCondition { ordinal: 0 },
+                    first_expr,
+                ),
+                (
+                    HirStatementChildRole::AssertionCondition { ordinal: 1 },
+                    second_expr,
+                ),
+            ],
+            1 | 3 => vec![(HirStatementChildRole::Initializer, first_expr)],
+            2 | 13 | 14 => vec![
+                (HirStatementChildRole::Target, first_expr),
+                (HirStatementChildRole::Value, second_expr),
+            ],
+            4..=6 | 18 => vec![(HirStatementChildRole::Input, first_expr)],
+            7 | 11 | 12 | 30 | 32 | 33 => {
+                let expression = if ordinal == 30 {
+                    third_expr
+                } else if ordinal == 32 {
+                    fourth_expr
+                } else {
+                    first_expr
+                };
+                vec![(HirStatementChildRole::Value, expression)]
+            }
+            8 => vec![(HirStatementChildRole::Value, second_expr)],
+            9 | 15 | 25 => vec![(HirStatementChildRole::Target, first_expr)],
+            16 => vec![(HirStatementChildRole::TriggerSignalTarget, first_expr)],
+            17 => vec![(HirStatementChildRole::UnsafeReason, second_expr)],
+            19 | 22 => vec![(HirStatementChildRole::Condition, first_expr)],
+            20 | 23 => vec![
+                (HirStatementChildRole::Scrutinee, first_expr),
+                (HirStatementChildRole::Guard, second_expr),
+            ],
+            21 => vec![
+                (HirStatementChildRole::Scrutinee, first_expr),
+                (HirStatementChildRole::MatchGuard { arm: 0 }, second_expr),
+                (HirStatementChildRole::MatchValue { arm: 0 }, third_expr),
+            ],
+            24 => vec![
+                (HirStatementChildRole::ForSource, first_expr),
+                (HirStatementChildRole::ForIterator, second_expr),
+                (HirStatementChildRole::ForNextValue, third_expr),
+            ],
+            26 => vec![(
+                HirStatementChildRole::SelectSource { branch: 0 },
+                first_expr,
+            )],
+            10 | 27..=29 | 31 | 34 => Vec::new(),
+            _ => unreachable!("all statement family ordinals are covered"),
+        };
+        let actual_expression_steps = steps
+            .iter()
+            .filter_map(|step| match step {
+                HirStmtEvaluationStep::Expression { role, expression } => {
+                    Some((*role, *expression))
+                }
+                _ => None,
+            })
+            .collect::<Vec<_>>();
+        assert_eq!(
+            actual_expression_steps, expected_expression_steps,
+            "{family} expression evaluation roles"
+        );
+        match ordinal {
+            1 => assert!(matches!(
+                steps.as_slice(),
+                [
+                    HirStmtEvaluationStep::Type { ty, .. },
+                    HirStmtEvaluationStep::Expression {
+                        role: HirStatementChildRole::Initializer,
+                        expression,
+                    },
+                    HirStmtEvaluationStep::Pattern { pattern, .. },
+                    HirStmtEvaluationStep::Publication {
+                        role: HirStmtEvaluationPublicationRole::Binding {
+                            kind: HirStmtBindingPlanKind::Let,
+                        },
+                        locals,
+                    },
+                ] if *ty == first_type
+                    && *expression == first_expr
+                    && *pattern == first_pattern
+                    && *locals == [first_local]
+            )),
+            3 => assert!(matches!(
+                steps.as_slice(),
+                [
+                    HirStmtEvaluationStep::Type { ty, .. },
+                    HirStmtEvaluationStep::Expression {
+                        role: HirStatementChildRole::Initializer,
+                        expression,
+                    },
+                    HirStmtEvaluationStep::Pattern { pattern, .. },
+                    HirStmtEvaluationStep::Statement { statement, .. },
+                    HirStmtEvaluationStep::Publication {
+                        role: HirStmtEvaluationPublicationRole::LetElseSuccess,
+                        locals,
+                    },
+                ] if *ty == first_type
+                    && *expression == first_expr
+                    && *pattern == first_pattern
+                    && *statement == first_statement
+                    && *locals == [first_local]
+            )),
+            16 => assert!(matches!(
+                steps.as_slice(),
+                [
+                    HirStmtEvaluationStep::Expression {
+                        role: HirStatementChildRole::TriggerSignalTarget,
+                        expression: target,
+                    },
+                    HirStmtEvaluationStep::Pattern { pattern, .. },
+                    HirStmtEvaluationStep::Publication {
+                        role: HirStmtEvaluationPublicationRole::TriggerPattern {
+                            pattern: published,
+                        },
+                        locals,
+                    },
+                    HirStmtEvaluationStep::Statement { .. },
+                ] if *target == first_expr
+                    && *pattern == first_pattern
+                    && *published == first_pattern
+                    && locals.is_empty()
+            )),
+            20 => assert!(matches!(
+                    steps.as_slice(),
+                    [
+                        HirStmtEvaluationStep::Expression {
+                            role: HirStatementChildRole::Scrutinee,
+                            expression: scrutinee,
+                        },
+                        HirStmtEvaluationStep::Pattern { pattern, .. },
+                        HirStmtEvaluationStep::Publication {
+                            role: HirStmtEvaluationPublicationRole::Branch {
+                                kind: HirStmtBranchPublicationKind::IfLet,
+                            },
+                            locals,
+                        },
+                        HirStmtEvaluationStep::Expression {
+                            role: HirStatementChildRole::Guard,
+                            expression: guard,
+                        },
+                        HirStmtEvaluationStep::Statement { .. },
+                    ] if *scrutinee == first_expr
+                        && *pattern == first_pattern
+                        && *locals == [first_local]
+                        && *guard == second_expr
+            )),
+            21 => assert!(matches!(
+                steps.as_slice(),
+                [
+                    HirStmtEvaluationStep::Expression {
+                        role: HirStatementChildRole::Scrutinee,
+                        expression: scrutinee,
+                    },
+                    HirStmtEvaluationStep::Pattern { pattern, .. },
+                    HirStmtEvaluationStep::Publication {
+                        role: HirStmtEvaluationPublicationRole::Branch {
+                            kind: HirStmtBranchPublicationKind::MatchArm { arm: 0 },
+                        },
+                        locals,
+                    },
+                    HirStmtEvaluationStep::Expression {
+                        role: HirStatementChildRole::MatchGuard { arm: 0 },
+                        expression: guard,
+                    },
+                    HirStmtEvaluationStep::Expression {
+                        role: HirStatementChildRole::MatchValue { arm: 0 },
+                        expression: value,
+                    },
+                ] if *scrutinee == first_expr
+                    && *pattern == first_pattern
+                    && *locals == [first_local]
+                    && *guard == second_expr
+                    && *value == third_expr
+            )),
+            23 => assert!(matches!(
+                steps.as_slice(),
+                [
+                    HirStmtEvaluationStep::Expression {
+                        role: HirStatementChildRole::Scrutinee,
+                        expression: scrutinee,
+                    },
+                    HirStmtEvaluationStep::Pattern { pattern, .. },
+                    HirStmtEvaluationStep::Publication {
+                        role: HirStmtEvaluationPublicationRole::Branch {
+                            kind: HirStmtBranchPublicationKind::WhileLet,
+                        },
+                        locals,
+                    },
+                    HirStmtEvaluationStep::Expression {
+                        role: HirStatementChildRole::Guard,
+                        expression: guard,
+                    },
+                    HirStmtEvaluationStep::Statement { .. },
+                ] if *scrutinee == first_expr
+                    && *pattern == first_pattern
+                    && *locals == [first_local]
+                    && *guard == second_expr
+            )),
+            26 => assert!(matches!(
+                steps.as_slice(),
+                [
+                    HirStmtEvaluationStep::Expression {
+                        role: HirStatementChildRole::SelectSource { branch: 0 },
+                        expression: source,
+                    },
+                    HirStmtEvaluationStep::Local { local, .. },
+                    HirStmtEvaluationStep::Publication {
+                        role: HirStmtEvaluationPublicationRole::Branch {
+                            kind: HirStmtBranchPublicationKind::SelectBranch { branch: 0 },
+                        },
+                        ..
+                    },
+                    HirStmtEvaluationStep::Statement { statement, .. },
+                ] if *source == first_expr
+                    && *local == first_local
+                    && *statement == second_statement
+            )),
+            _ => {}
+        }
+        match (ordinal, plan) {
+            (0, HirStmtEvaluationPlan::Assertion { mode, conditions }) => {
+                assert_eq!(mode.resolved(), Some(AssertionMode::Check));
+                assert_eq!(conditions, [first_expr, second_expr]);
+            }
+            (
+                1,
+                HirStmtEvaluationPlan::Binding {
+                    kind: HirStmtBindingPlanKind::Let,
+                    pattern,
+                    annotation,
+                    input,
+                    locals,
+                },
+            ) => {
+                assert_eq!(pattern, first_pattern);
+                assert_eq!(annotation, Some(first_type));
+                assert_eq!(input, first_expr);
+                assert_eq!(locals, [first_local]);
+            }
+            (
+                2,
+                HirStmtEvaluationPlan::OrderedPair {
+                    kind: HirStmtOrderedPairPlanKind::Assign,
+                    first,
+                    second,
+                },
+            )
+            | (
+                13,
+                HirStmtEvaluationPlan::OrderedPair {
+                    kind: HirStmtOrderedPairPlanKind::Signal,
+                    first,
+                    second,
+                },
+            )
+            | (
+                14,
+                HirStmtEvaluationPlan::OrderedPair {
+                    kind: HirStmtOrderedPairPlanKind::LifetimeSet,
+                    first,
+                    second,
+                },
+            ) => assert_eq!((first, second), (first_expr, second_expr)),
+            (
+                3,
+                HirStmtEvaluationPlan::LetElse {
+                    pattern,
+                    annotation,
+                    initializer,
+                    else_scope,
+                    else_body,
+                    success_locals,
+                },
+            ) => {
+                assert_eq!(pattern, first_pattern);
+                assert_eq!(annotation, Some(first_type));
+                assert_eq!(initializer, first_expr);
+                assert_eq!(else_scope, branch_scope);
+                assert_eq!(else_body, [first_statement]);
+                assert_eq!(success_locals, [first_local]);
+            }
+            (
+                4..=6,
+                HirStmtEvaluationPlan::Binding {
+                    kind,
+                    pattern,
+                    annotation: None,
+                    input,
+                    locals,
+                },
+            ) => {
+                let expected = match ordinal {
+                    4 => HirStmtBindingPlanKind::LetChoice,
+                    5 => HirStmtBindingPlanKind::LetScope,
+                    6 => HirStmtBindingPlanKind::LetActionReceive,
+                    _ => unreachable!(),
+                };
+                assert_eq!(kind, expected);
+                assert_eq!(pattern, first_pattern);
+                assert_eq!(input, first_expr);
+                assert_eq!(locals, [first_local]);
+            }
+            (
+                7,
+                HirStmtEvaluationPlan::Value {
+                    kind: HirStmtValuePlanKind::Return,
+                    expression: Some(value),
+                    label: None,
+                    outcome: None,
+                },
+            )
+            | (
+                9,
+                HirStmtEvaluationPlan::Value {
+                    kind: HirStmtValuePlanKind::Goto,
+                    expression: Some(value),
+                    label: None,
+                    outcome: None,
+                },
+            )
+            | (
+                11,
+                HirStmtEvaluationPlan::Value {
+                    kind: HirStmtValuePlanKind::Defer,
+                    expression: Some(value),
+                    label: None,
+                    outcome: Some(DeferOutcome::Cancelled),
+                },
+            )
+            | (
+                12,
+                HirStmtEvaluationPlan::Value {
+                    kind: HirStmtValuePlanKind::Yield,
+                    expression: Some(value),
+                    label: None,
+                    outcome: None,
+                },
+            )
+            | (
+                15,
+                HirStmtEvaluationPlan::Value {
+                    kind: HirStmtValuePlanKind::Wait,
+                    expression: Some(value),
+                    label: None,
+                    outcome: None,
+                },
+            )
+            | (
+                18,
+                HirStmtEvaluationPlan::Value {
+                    kind: HirStmtValuePlanKind::Choice,
+                    expression: Some(value),
+                    label: None,
+                    outcome: None,
+                },
+            )
+            | (
+                25,
+                HirStmtEvaluationPlan::Value {
+                    kind: HirStmtValuePlanKind::Close,
+                    expression: Some(value),
+                    label: None,
+                    outcome: None,
+                },
+            )
+            | (
+                33,
+                HirStmtEvaluationPlan::Value {
+                    kind: HirStmtValuePlanKind::ProofCall,
+                    expression: Some(value),
+                    label: None,
+                    outcome: None,
+                },
+            ) => assert_eq!(value, first_expr),
+            (
+                8,
+                HirStmtEvaluationPlan::Value {
+                    kind: HirStmtValuePlanKind::Out,
+                    expression: Some(value),
+                    label: Some(label),
+                    outcome: None,
+                },
+            ) => {
+                assert_eq!(value, second_expr);
+                assert_eq!(label.as_str(), "out_label");
+            }
+            (
+                10,
+                HirStmtEvaluationPlan::DeferredBody {
+                    kind: HirStmtDeferredBodyPlanKind::DeferBlock,
+                    scope,
+                    body,
+                    outcome: DeferOutcome::Failed,
+                },
+            ) => {
+                assert_eq!(scope, body_scope);
+                assert_eq!(body, [first_statement, second_statement]);
+            }
+            (
+                16,
+                HirStmtEvaluationPlan::EventBody {
+                    trigger:
+                        HirStmtTriggerEvaluationPlan::Signal {
+                            target,
+                            value: Some(value),
+                        },
+                    scope,
+                    body,
+                },
+            ) => {
+                assert_eq!(target, first_expr);
+                assert_eq!(value, first_pattern);
+                assert_eq!(scope, body_scope);
+                assert_eq!(body, [first_statement]);
+            }
+            (17, HirStmtEvaluationPlan::UnsafeLifetime { audit, body }) => {
+                assert_eq!(audit.reason(), Some(second_expr));
+                assert!(audit.has_safety_doc());
+                assert_eq!(body.scope(), Some(body_scope));
+                assert_eq!(body.statements(), [first_statement]);
+            }
+            (
+                19,
+                HirStmtEvaluationPlan::If {
+                    condition,
+                    then_body,
+                    else_branch: None,
+                },
+            ) => {
+                assert_eq!(condition, first_expr);
+                assert_eq!(then_body.scope(), body_scope);
+            }
+            (
+                20,
+                HirStmtEvaluationPlan::IfLet {
+                    pattern,
+                    scrutinee,
+                    guard,
+                    branch_locals,
+                    then_body,
+                    else_branch: None,
+                },
+            ) => {
+                assert_eq!(pattern, first_pattern);
+                assert_eq!(scrutinee, first_expr);
+                assert_eq!(guard, Some(second_expr));
+                assert_eq!(branch_locals, [first_local]);
+                assert_eq!(then_body.scope(), body_scope);
+            }
+            (21, HirStmtEvaluationPlan::Match { scrutinee, arms }) => {
+                assert_eq!(scrutinee, first_expr);
+                assert_eq!(arms.len(), 1);
+                assert_eq!(arms[0].pattern(), first_pattern);
+                assert_eq!(arms[0].guard(), Some(second_expr));
+            }
+            (22, HirStmtEvaluationPlan::While { condition, body }) => {
+                assert_eq!(condition, first_expr);
+                assert_eq!(body.scope(), body_scope);
+            }
+            (
+                23,
+                HirStmtEvaluationPlan::WhileLet {
+                    pattern,
+                    scrutinee,
+                    guard,
+                    branch_locals,
+                    body,
+                },
+            ) => {
+                assert_eq!(pattern, first_pattern);
+                assert_eq!(scrutinee, first_expr);
+                assert_eq!(guard, Some(second_expr));
+                assert_eq!(branch_locals, [first_local]);
+                assert_eq!(body.scope(), body_scope);
+            }
+            (
+                24,
+                HirStmtEvaluationPlan::For {
+                    source,
+                    iterator,
+                    next_value,
+                    pattern,
+                    branch_locals,
+                    body,
+                },
+            ) => {
+                assert_eq!(
+                    (source, iterator, next_value),
+                    (first_expr, second_expr, third_expr)
+                );
+                assert_eq!(pattern, first_pattern);
+                assert_eq!(branch_locals, [first_local]);
+                assert_eq!(body.scope(), body_scope);
+            }
+            (
+                26,
+                HirStmtEvaluationPlan::Select {
+                    scope: Some(scope),
+                    plan: HirStmtSelectEvaluationPlan::Branches { branches },
+                },
+            ) => {
+                assert_eq!(scope, select_scope);
+                assert_eq!(branches.len(), 1);
+                let mut entries = branches.entries();
+                let branch = entries.next().expect("select branch");
+                match branch.head() {
+                    HirStmtSelectHeadEvaluation::Bind {
+                        binding,
+                        source,
+                        propagates_error,
+                    } => {
+                        assert_eq!(binding.resolved(), Some(first_local));
+                        assert_eq!(source, first_expr);
+                        assert!(propagates_error);
+                    }
+                    other => panic!("unexpected select head: {other:?}"),
+                }
+                assert_eq!(branch.body().scope(), select_body_scope);
+                assert!(entries.next().is_none());
+            }
+            (27, HirStmtEvaluationPlan::SourceLocale { locale, body }) => {
+                assert_eq!(
+                    locale,
+                    &HirSourceLocaleValue::Recovered(HirSourceLocaleIssue::Missing)
+                );
+                assert_eq!(body.scope(), scope);
+            }
+            (28, HirStmtEvaluationPlan::Scope { name, body }) => {
+                assert_eq!(name.map(HirName::as_str), Some("scope_name"));
+                assert_eq!(body.scope(), scope);
+            }
+            (29, HirStmtEvaluationPlan::Include { target }) => {
+                assert_eq!(target, &include_target);
+            }
+            (
+                30,
+                HirStmtEvaluationPlan::Value {
+                    kind: HirStmtValuePlanKind::Break,
+                    expression: Some(value),
+                    label: Some(label),
+                    outcome: None,
+                },
+            ) => {
+                assert_eq!(value, third_expr);
+                assert_eq!(label.as_str(), "break_label");
+            }
+            (31, HirStmtEvaluationPlan::Continue { label: Some(label) }) => {
+                assert_eq!(label.as_str(), "continue_label");
+            }
+            (
+                32,
+                HirStmtEvaluationPlan::Value {
+                    kind: HirStmtValuePlanKind::Expression,
+                    expression: Some(value),
+                    label: None,
+                    outcome: None,
+                },
+            ) => assert_eq!(value, fourth_expr),
+            (34, HirStmtEvaluationPlan::Recovered) => {}
+            _ => panic!("{family} did not project its typed evaluation plan"),
+        }
+    }
+}
+
+#[test]
+fn evaluation_steps_interleave_thread_else_if_match_and_select_bodies() {
+    let owner_module = module(17);
+    let thread_scope = id::<ScopeId>(owner_module, 2);
+    let match_scope = id::<ScopeId>(owner_module, 3);
+    let select_scope = id::<ScopeId>(owner_module, 4);
+    let select_body_scope = id::<ScopeId>(owner_module, 5);
+    let condition = id::<ExprId>(owner_module, 6);
+    let scrutinee = id::<ExprId>(owner_module, 7);
+    let guard = id::<ExprId>(owner_module, 8);
+    let arm_value = id::<ExprId>(owner_module, 9);
+    let source = id::<ExprId>(owner_module, 10);
+    let pattern = id::<PatternId>(owner_module, 11);
+    let local = id::<LocalId>(owner_module, 12);
+    let thread_statement = id::<StmtId>(owner_module, 13);
+    let else_if_statement = id::<StmtId>(owner_module, 14);
+
+    assert_if_evaluation_steps(thread_scope, condition, thread_statement, else_if_statement);
+    assert_match_evaluation_steps(
+        match_scope,
+        scrutinee,
+        pattern,
+        guard,
+        arm_value,
+        local,
+        thread_statement,
+    );
+    assert_select_evaluation_steps(
+        select_scope,
+        select_body_scope,
+        source,
+        local,
+        thread_statement,
+    );
+}
+
+fn assert_if_evaluation_steps(
+    thread_scope: ScopeId,
+    condition: ExprId,
+    thread_statement: StmtId,
+    else_if_statement: StmtId,
+) {
+    let thread_body = HirThreadBody::try_new(
+        HirThreadBodyOwner::NestedScope(thread_scope),
+        thread_scope,
+        Box::new([HirThreadFlowItem::Statement(thread_statement)]),
+    )
+    .expect("thread body");
+    let if_statement = HirIfStmt::try_new(
+        condition,
+        HirContextualStmtBody::try_thread(thread_body).expect("thread body context"),
+        Some(HirConditionalElseBranch::else_if(else_if_statement)),
+    )
+    .expect("thread if");
+    let if_kind = HirStmtKind::If(if_statement);
+    let if_steps = collect_evaluation_steps(&if_kind);
+    assert!(matches!(
+        if_steps.as_slice(),
+        [
+            HirStmtEvaluationStep::Expression { expression, .. },
+            HirStmtEvaluationStep::ThreadBody { edge, .. },
+            HirStmtEvaluationStep::Statement { role: HirStatementChildRole::ElseIf, statement },
+        ] if *expression == condition
+            && edge.child() == crate::body_edges::HirBodyChild::Statement(thread_statement)
+            && *statement == else_if_statement
+    ));
+}
+
+fn assert_match_evaluation_steps(
+    match_scope: ScopeId,
+    scrutinee: ExprId,
+    pattern: PatternId,
+    guard: ExprId,
+    arm_value: ExprId,
+    local: LocalId,
+    thread_statement: StmtId,
+) {
+    let first_arm = HirStmtMatchArm::try_new(
+        match_scope,
+        pattern,
+        Some(guard),
+        HirStmtMatchArmBody::Body(
+            HirContextualStmtBody::try_thread(
+                HirThreadBody::try_new(
+                    HirThreadBodyOwner::NestedScope(match_scope),
+                    match_scope,
+                    Box::new([HirThreadFlowItem::Statement(thread_statement)]),
+                )
+                .expect("match thread body"),
+            )
+            .expect("match thread body context"),
+        ),
+        Box::new([local]),
+    )
+    .expect("thread match arm");
+    let second_pattern = id::<PatternId>(match_scope.module(), 16);
+    let second_arm = HirStmtMatchArm::try_new(
+        id::<ScopeId>(match_scope.module(), 15),
+        second_pattern,
+        None,
+        HirStmtMatchArmBody::Expression(arm_value),
+        Box::new([]),
+    )
+    .expect("ordinary match arm");
+    let match_statement =
+        HirMatchStmt::try_new(scrutinee, Box::new([first_arm, second_arm])).expect("mixed match");
+    let match_kind = HirStmtKind::Match(match_statement);
+    let match_steps = collect_evaluation_steps(&match_kind);
+    assert!(matches!(
+        match_steps.as_slice(),
+        [
+            HirStmtEvaluationStep::Expression { expression: first, .. },
+            HirStmtEvaluationStep::Pattern { .. },
+            HirStmtEvaluationStep::Publication {
+                role: HirStmtEvaluationPublicationRole::Branch {
+                    kind: HirStmtBranchPublicationKind::MatchArm { arm: 0 },
+                },
+                ..
+            },
+            HirStmtEvaluationStep::Expression { expression: first_guard, .. },
+            HirStmtEvaluationStep::ThreadBody { .. },
+            HirStmtEvaluationStep::Pattern { .. },
+            HirStmtEvaluationStep::Publication {
+                role: HirStmtEvaluationPublicationRole::Branch {
+                    kind: HirStmtBranchPublicationKind::MatchArm { arm: 1 },
+                },
+                ..
+            },
+            HirStmtEvaluationStep::Expression { expression: second, .. },
+        ] if *first == scrutinee && *first_guard == guard && *second == arm_value
+    ));
+}
+
+fn assert_select_evaluation_steps(
+    select_scope: ScopeId,
+    select_body_scope: ScopeId,
+    source: ExprId,
+    local: LocalId,
+    thread_statement: StmtId,
+) {
+    let select_branch = HirSelectBranch::try_new(
+        HirSelectBranchHead::Bind {
+            binding: HirSelectBindingLocal::Resolved(local),
+            source,
+            propagates_error: true,
+        },
+        ordinary_body(select_body_scope, Box::new([thread_statement])),
+    )
+    .expect("select branch");
+    let select = HirStmtKind::Select(
+        HirSelectStmt::try_branches(select_scope, Box::new([select_branch]))
+            .expect("select statement"),
+    );
+    let select_steps = collect_evaluation_steps(&select);
+    assert!(matches!(
+        select_steps.as_slice(),
+        [
+            HirStmtEvaluationStep::Expression { expression, .. },
+            HirStmtEvaluationStep::Local { local: published, .. },
+            HirStmtEvaluationStep::Publication {
+                role: HirStmtEvaluationPublicationRole::Branch {
+                    kind: HirStmtBranchPublicationKind::SelectBranch { branch: 0 },
+                },
+                ..
+            },
+            HirStmtEvaluationStep::Statement { statement, .. },
+        ] if *expression == source && *published == local && *statement == thread_statement
+    ));
+}
+
+fn collect_evaluation_steps(statement: &HirStmtKind) -> Vec<HirStmtEvaluationStep<'_>> {
+    let mut steps = Vec::new();
+    statement
+        .evaluation_plan()
+        .try_visit_evaluation_steps(|step| steps.push(step))
+        .expect("evaluation steps");
+    steps
 }
 
 #[test]

@@ -1,6 +1,9 @@
 use core::num::{NonZeroU32, NonZeroU64};
 
-use super::{HirExpressionOwnedBodyRole, HirExpressionOwnedChild, HirLinePlanStatementRole};
+use super::{
+    HirExpressionOwnedBodyRole, HirExpressionOwnedChild, HirExpressionOwnedChildEdge,
+    HirLinePlanStatementRole,
+};
 use crate::body_edges::{HirBodyChild, HirBodyChildRole};
 use crate::dialogue_application::{
     HirDialogueContent, HirDialogueContentApplication, HirDialogueContentId, HirLinePlan,
@@ -71,6 +74,57 @@ fn await_edges_keep_pattern_and_body_source_order() {
         edges[1].role(),
         &HirExpressionOwnedBodyRole::AwaitBranchBody { branch: 0 }
     );
+}
+
+#[test]
+fn closure_and_if_let_patterns_are_expression_owned_edges() {
+    let module = module(156);
+    let scope = id::<ScopeId>(module, 1);
+    let pattern = id::<PatternId>(module, 2);
+    let body = id::<ExprId>(module, 3);
+    let closure = HirExprKind::Closure(crate::expr::HirClosureExpr::new(
+        scope,
+        Box::new([
+            crate::expr::HirClosureParameter::try_new(pattern, None, scope)
+                .expect("closure parameter"),
+        ]),
+        None,
+        body,
+        Box::new([]),
+    ));
+    let closure_edges = closure
+        .expression_owned_child_edges()
+        .expect("closure owned topology");
+    assert!(matches!(
+        closure_edges.first(),
+        Some(edge)
+            if edge.child() == HirExpressionOwnedChild::Pattern(pattern)
+                && matches!(
+                    edge.role(),
+                    HirExpressionOwnedBodyRole::ClosureParameterPattern { parameter: 0 }
+                )
+    ));
+
+    let scrutinee = id::<ExprId>(module, 4);
+    let then_branch = id::<ExprId>(module, 5);
+    let else_branch = id::<ExprId>(module, 6);
+    let if_let = HirExprKind::IfLet(crate::expr::HirIfLetExpr::new(
+        scope,
+        pattern,
+        scrutinee,
+        None,
+        then_branch,
+        else_branch,
+    ));
+    let if_let_edges = if_let
+        .expression_owned_child_edges()
+        .expect("if-let owned topology");
+    assert!(matches!(
+        if_let_edges.first(),
+        Some(edge)
+            if edge.child() == HirExpressionOwnedChild::Pattern(pattern)
+                && matches!(edge.role(), HirExpressionOwnedBodyRole::IfLetPattern)
+    ));
 }
 
 #[test]
@@ -189,7 +243,7 @@ fn choice_edges_cover_ten_logical_roles_with_typed_nested_paths() {
     ));
     assert!(matches!(
         edges[7].role(),
-        HirExpressionOwnedBodyRole::ChoicePlanCancelBody { .. }
+        HirExpressionOwnedBodyRole::ChoicePlanCancelTrigger { .. }
     ));
     assert_eq!(
         edges[7].child(),
@@ -217,13 +271,14 @@ fn choice_edges_cover_ten_logical_roles_with_typed_nested_paths() {
             HirExpressionOwnedBodyRole::ChoiceOptionSelectBody { .. } => 4,
             HirExpressionOwnedBodyRole::ChoiceOptionLetStatement { .. } => 5,
             HirExpressionOwnedBodyRole::ChoicePlanTimeoutBody { .. } => 6,
-            HirExpressionOwnedBodyRole::ChoicePlanCancelBody { .. } => 7,
-            HirExpressionOwnedBodyRole::ChoicePlanOnSelectPattern { .. } => 8,
-            HirExpressionOwnedBodyRole::ChoicePlanOnSelectBody { .. } => 9,
+            HirExpressionOwnedBodyRole::ChoicePlanCancelTrigger { .. } => 7,
+            HirExpressionOwnedBodyRole::ChoicePlanCancelBody { .. } => 8,
+            HirExpressionOwnedBodyRole::ChoicePlanOnSelectPattern { .. } => 9,
+            HirExpressionOwnedBodyRole::ChoicePlanOnSelectBody { .. } => 10,
             _ => u8::MAX,
         })
         .collect::<Vec<_>>();
-    assert_eq!(golden, [0, 1, 2, 3, 4, 5, 6, 7, 7, 8, 9]);
+    assert_eq!(golden, [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10]);
 }
 
 #[test]
@@ -246,7 +301,11 @@ fn dialogue_edges_keep_six_statement_roles_and_group_kinds() {
                 HirLinePlanItem::Thread(statements[2]),
                 HirLinePlanItem::TogetherGroup(Box::new([
                     HirLinePlanItem::On(statements[3]),
-                    HirLinePlanItem::Let { pattern, value },
+                    HirLinePlanItem::Let {
+                        pattern,
+                        value,
+                        statement: statements[4],
+                    },
                     HirLinePlanItem::Statement(statements[4]),
                     HirLinePlanItem::CancelRule(statements[5]),
                     HirLinePlanItem::Error(statements[6]),
@@ -266,7 +325,12 @@ fn dialogue_edges_keep_six_statement_roles_and_group_kinds() {
     let edges = dialogue
         .expression_owned_child_edges()
         .expect("checked dialogue topology");
-    assert_eq!(edges.len(), 8);
+    assert_dialogue_edge_prefix(&edges);
+    assert_dialogue_edge_suffix(&edges);
+}
+
+fn assert_dialogue_edge_prefix(edges: &[HirExpressionOwnedChildEdge]) {
+    assert_eq!(edges.len(), 9);
     assert!(matches!(
         edges[0].role(),
         HirExpressionOwnedBodyRole::DialogueLinePlanStatement {
@@ -304,8 +368,11 @@ fn dialogue_edges_keep_six_statement_roles_and_group_kinds() {
     ));
     assert!(matches!(
         edges[4].role(),
-        HirExpressionOwnedBodyRole::DialogueLinePlanLetPattern { .. }
+        HirExpressionOwnedBodyRole::DialogueLinePlanLet { .. }
     ));
+}
+
+fn assert_dialogue_edge_suffix(edges: &[HirExpressionOwnedChildEdge]) {
     assert!(matches!(
         edges[5].role(),
         HirExpressionOwnedBodyRole::DialogueLinePlanStatement {
@@ -316,12 +383,19 @@ fn dialogue_edges_keep_six_statement_roles_and_group_kinds() {
     assert!(matches!(
         edges[6].role(),
         HirExpressionOwnedBodyRole::DialogueLinePlanStatement {
-            role: HirLinePlanStatementRole::CancelRule,
+            role: HirLinePlanStatementRole::Statement,
             ..
         }
     ));
     assert!(matches!(
         edges[7].role(),
+        HirExpressionOwnedBodyRole::DialogueLinePlanStatement {
+            role: HirLinePlanStatementRole::CancelRule,
+            ..
+        }
+    ));
+    assert!(matches!(
+        edges[8].role(),
         HirExpressionOwnedBodyRole::DialogueLinePlanStatement {
             role: HirLinePlanStatementRole::Error,
             ..
@@ -342,7 +416,7 @@ fn dialogue_edges_keep_six_statement_roles_and_group_kinds() {
                 role: HirLinePlanStatementRole::On,
                 ..
             } => 2,
-            HirExpressionOwnedBodyRole::DialogueLinePlanLetPattern { .. } => 3,
+            HirExpressionOwnedBodyRole::DialogueLinePlanLet { .. } => 3,
             HirExpressionOwnedBodyRole::DialogueLinePlanStatement {
                 role: HirLinePlanStatementRole::Statement,
                 ..
@@ -358,5 +432,5 @@ fn dialogue_edges_keep_six_statement_roles_and_group_kinds() {
             _ => u8::MAX,
         })
         .collect::<Vec<_>>();
-    assert_eq!(golden, [0, 0, 1, 2, 3, 4, 5, 6]);
+    assert_eq!(golden, [0, 0, 1, 2, 3, 4, 4, 5, 6]);
 }

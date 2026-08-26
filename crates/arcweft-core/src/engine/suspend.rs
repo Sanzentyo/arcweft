@@ -34,7 +34,7 @@ impl Engine {
                 true
             }
             FlowFiberStatus::Waiting(state) => {
-                self.resume_await_state(state, events, output);
+                self.resume_await_state(*state, events, output);
                 true
             }
             FlowFiberStatus::NeedWaiting(need) => {
@@ -169,7 +169,7 @@ impl Engine {
                 .cloned()
         });
         let Some(event) = event else {
-            self.fiber.status = FlowFiberStatus::Waiting(state);
+            self.fiber.status = FlowFiberStatus::Waiting(Box::new(state));
             return;
         };
         let event_cursor = TaskPublicationCursor::from_event(&event);
@@ -265,7 +265,7 @@ impl Engine {
                 }
             }
         }
-        self.fiber.status = FlowFiberStatus::Waiting(state);
+        self.fiber.status = FlowFiberStatus::Waiting(Box::new(state));
     }
 
     pub(super) fn latch_active_await_observer_events(&mut self, events: &[TaskEvent]) {
@@ -419,16 +419,18 @@ impl Engine {
                 return None;
             }
         };
-        Some(TaskSpec::new_with_outcome(
-            target.task.clone(),
-            TaskKey(target.task.0.clone()),
-            request.task_class(),
-            TaskPriority(0),
-            CancelScopeId("flow".to_owned()),
-            TaskPolicy::JoinSameKey,
-            target.outcome.clone(),
-            request,
-        ))
+        Some(
+            TaskSpec::new(
+                target.task.clone(),
+                TaskKey(target.task.0.clone()),
+                request.task_class(),
+                TaskPriority(0),
+                CancelScopeId("flow".to_owned()),
+                TaskPolicy::JoinSameKey,
+                request,
+            )
+            .with_outcome(target.outcome.clone()),
+        )
     }
 
     pub(super) fn start_await_many_state(
@@ -621,16 +623,18 @@ impl Engine {
                 return None;
             }
         };
-        Some(TaskSpec::new_with_outcome(
-            task.clone(),
-            TaskKey(request.debug_label()),
-            request.task_class(),
-            TaskPriority(0),
-            CancelScopeId("flow".to_owned()),
-            TaskPolicy::JoinSameKey,
-            target.outcome.clone(),
-            request,
-        ))
+        Some(
+            TaskSpec::new(
+                task.clone(),
+                TaskKey(request.debug_label()),
+                request.task_class(),
+                TaskPriority(0),
+                CancelScopeId("flow".to_owned()),
+                TaskPolicy::JoinSameKey,
+                request,
+            )
+            .with_outcome(target.outcome.clone()),
+        )
     }
 
     fn evaluate_host_task_request(

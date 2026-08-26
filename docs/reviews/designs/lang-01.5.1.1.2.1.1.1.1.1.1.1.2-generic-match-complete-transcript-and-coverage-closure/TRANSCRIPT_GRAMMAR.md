@@ -57,10 +57,17 @@ does not hash a digest's display form.
 ## Stable coordinate grammar
 
 Every expression, statement, pattern, local, and Match arm is reached from one
-`AcceptedDeclarationSemanticId`. A coordinate is:
+accepted semantic root. The root prefix is closed and carries the root kind:
 
 ```text
-coordinate := accepted_declaration_digest || seq<path_step>
+semantic_root := 0x00 || accepted_declaration_semantic_id
+               | 0x01 || accepted_item_semantic_id
+```
+
+The canonical coordinate is:
+
+```text
+coordinate := semantic_root || u64_le(step_count) || path_step...
 path_step  := closed_step_tag || typed_role_payload
 ```
 
@@ -72,9 +79,11 @@ appended for `ViewValue { ordinal }` and the non-expression roots enumerated in
 accepted field ID, or nested closed-role path. Raw arena IDs, snapshot IDs,
 scope/local IDs, spans, offsets, names, and file paths are forbidden.
 
-`ViewValue { ordinal }` is rooted in the existing View
-`CallableDeclarationKey`. A View therefore produces the same coordinate form
-as every other executable declaration.
+`ViewValue { ordinal }` is rooted in the existing View `CallableDeclarationKey`
+and uses the declaration root. Item-owned attributes, resources, entries,
+styles, tests, benches, and inline members use the item root and their checked
+source-order entry/member role. A coordinate never omits its root tag or
+collapses an item root into a declaration root.
 
 ## Expression transcript
 
@@ -165,7 +174,7 @@ tag has exactly these owner atoms:
 | Call | exact current `CheckedCallableJoin` semantic digest |
 | Await | checked outcome/continuation type digests, branch kind, pattern digest, body digest in source order |
 | Choice | exact accepted project-item IDs for compact goto arms plus checked Choice structural/body atoms |
-| Try | carrier/result type digests, declaration-rooted propagation-boundary coordinate, optional exact accepted callable declaration digest |
+| Try | carrier/result type digests, accepted-rooted propagation-boundary coordinate, optional exact accepted callable declaration digest |
 | ImplicitCallable | owner coordinate, parameter type/coordinate rows, capture origin/type rows, checked body resolution/digest |
 | ImplicitParameter | owning implicit-callable coordinate and checked parameter ordinal/type |
 | Pipe | pipe owner coordinate, left/right evaluation contract, source-order placeholder-use coordinates/types |
@@ -191,7 +200,7 @@ the checked child edge, and then exclude them.
 
 Existing value tags `0x0300..0x0307` encode:
 
-- Local: declaration-rooted binding coordinate plus type digest;
+- Local: accepted-rooted binding coordinate plus type digest;
 - LineContext: tag only;
 - CharacterField: receiver value digest, checked Character identity, and
   owner-defined Character-field tag;
@@ -253,7 +262,7 @@ assignments.
 
 Statement tags are `0x0700..0x0722` in the exact 35-family source order listed
 in `SOURCE_EVIDENCE.md`; `Error=0x0722` rejects. A statement record contains
-its declaration-rooted coordinate, tag, minimal checked semantic payload, and
+its accepted-rooted coordinate, tag, minimal checked semantic payload, and
 all typed HIR child roles paired with expression/pattern/statement/body/type/
 binding semantic digests. Closed assertion/defer/trigger/control/thread/
 select/include/source-locale tags are encoded by their owning types. Accepted

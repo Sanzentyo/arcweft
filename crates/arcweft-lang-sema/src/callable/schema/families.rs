@@ -2,32 +2,39 @@
 
 use crate::{
     callable::CharacterDialoguePatchContext,
+    character_dialogue::CharacterDialogueFieldCoordinate,
     effect_row::EffectRow,
     effects::EffectSet,
-    env::nominal::standard_agent_error_type,
+    env::{
+        RegisteredTypeCheckEnv,
+        nominal::{AcceptedNominalCatalog, standard_agent_error_type, standard_reduction_record},
+    },
     types::{
-        AgentIntrinsicGenericOwner, CharacterDialogueCharacterType, CharacterDialogueType,
-        EntityKind, GenericTypeOwnerId, GenericTypeParameterId, MapKind, TypeKind,
+        CharacterDialogueCharacterType, CharacterDialogueType, EntityKind, GenericParameterOwnerId,
+        GenericTypeParameterId, LanguageIntrinsicGenericOwner, MapKind, TypeKind,
     },
 };
 use arcweft_character::id::CharacterId;
+use arcweft_lang_syntax::reference::BorrowKind;
 
 use super::{
-    CallableArgumentPolicy, CallableEffectSchema, CallableEvaluatedEffect, CallableGroupKind,
-    CallableParameter, CallableParameterGroup, CallableParameterPassing, CallableParameterPresence,
-    CallableParameterType, CallableSignatureSchema, CallableValidator, SpreadArgumentPolicy,
-    UnknownNamedArgumentPolicy,
+    CallableArgumentPolicy, CallableEffectSchema, CallableEvaluatedEffect,
+    CallableGenericParameterIssuer, CallableGroupKind, CallableParameter,
+    CallableParameterAdmission, CallableParameterConsumer, CallableParameterGroup,
+    CallableParameterPassing, CallableParameterPresence, CallableParameterValueRule,
+    CallableSignatureSchema, CallableValidator, SpreadArgumentPolicy, UnknownNamedArgumentPolicy,
 };
 use crate::callable::PromotionCallableId;
 use crate::callable::{
     AgentIntrinsicSignatureId, BuiltinCallableId, CallableName, CallableParameterIndex,
     CallableSchemaError, CapabilityCallableId, CapacityMethodId, CollectionMethodId,
-    DialogueCallableId, DialogueCalleeIdentity, DialogueSchemaContext, DomainMethodId,
-    DropCallableId, FloatWidth, FxCallableSignatureId, IntegerMethodId, LineContextMethodId,
-    LineScheduleCallableId, MathCallableId, OptionConstructorKind, PRODUCTION_CALLABLE_LIMITS,
-    PresentationArgumentValuePolicy, PresentationCallableId, PresentationHandleMethodId,
-    ReductionConstructorKind, ResolvedCharacterOwner, ResultConstructorKind, StageMethodId,
-    StdFloatCallableId, StdFloatOperation, VectorDimensions,
+    DialogueCallableId, DialogueCallableResultContext, DialogueCalleeIdentity,
+    DialogueSchemaContext, DomainMethodId, DropCallableId, FloatWidth, FxCallableSignatureId,
+    IntegerMethodId, LineContextMethodId, LineScheduleCallableId, MathCallableId,
+    OptionConstructorKind, PRODUCTION_CALLABLE_LIMITS, PresentationArgumentValuePolicy,
+    PresentationCallableId, PresentationHandleMethodId, ReductionConstructorKind,
+    ResolvedCharacterOwner, ResultConstructorKind, StageMethodId, StdFloatCallableId,
+    StdFloatOperation, VectorDimensions,
 };
 
 pub(in crate::callable) fn dialogue_schema(
@@ -40,53 +47,97 @@ pub(in crate::callable) fn dialogue_schema(
             code: crate::callable::CallableFamilyInvariantCode::InvalidOwner,
         });
     }
-    let character = match context.callee {
-        DialogueCalleeIdentity::Character { character }
-        | DialogueCalleeIdentity::CharacterDialogue { character } => Some(character),
-        DialogueCalleeIdentity::Content { .. } => None,
-    };
-    let dialogue_type = CharacterDialogueType::new(
-        character
-            .cloned()
-            .unwrap_or(CharacterDialogueCharacterType::Any),
-    );
-    let (parameters, result, policy) = match id {
-        DialogueCallableId::CharacterFactory | DialogueCallableId::CharacterReconfigure => {
+    match (id, context.result) {
+        (
+            DialogueCallableId::ContentApplication,
+            DialogueCallableResultContext::ContentApplication { .. },
+        )
+        | (
+            DialogueCallableId::CharacterFactory
+            | DialogueCallableId::CharacterReconfigure
+            | DialogueCallableId::ContentCall,
+            DialogueCallableResultContext::Declared,
+        ) => {}
+        _ => {
+            return Err(CallableSchemaError::FamilyInvariant {
+                family: crate::callable::CallableFamily::Dialogue,
+                code: crate::callable::CallableFamilyInvariantCode::InvalidOwner,
+            });
+        }
+    }
+    let (parameters, result, policy) = match (id, context.callee) {
+        (DialogueCallableId::CharacterFactory, DialogueCalleeIdentity::Character { character })
+        | (
+            DialogueCallableId::CharacterReconfigure,
+            DialogueCalleeIdentity::CharacterDialogue { character },
+        ) => {
             let mut parameters = character_dialogue_patch_parameters(character);
             if context.patch_context == CharacterDialoguePatchContext::ImmediateContentApplication {
                 let next = parameters.len();
-                parameters.push(optional_named(
+                parameters.push(parameter_with_consumer(
                     next,
-                    "id",
-                    TypeKind::entity_ref(EntityKind::DialogueLine),
+                    Some("id"),
+                    CallableParameterAdmission::checked(TypeKind::entity_ref(
+                        EntityKind::DialogueLine,
+                    )),
+                    CallableParameterPassing::NamedOnly,
+                    CallableParameterPresence::Optional,
+                    CallableParameterConsumer::DialogueApplicationMetadata(
+                        super::DialogueApplicationMetadataCoordinate::Id,
+                    ),
                 ));
-                parameters.push(optional_named(
+                parameters.push(parameter_with_consumer(
                     next + 1,
-                    "text_key",
-                    TypeKind::entity_ref(EntityKind::Text),
+                    Some("text_key"),
+                    CallableParameterAdmission::checked(TypeKind::entity_ref(EntityKind::Text)),
+                    CallableParameterPassing::NamedOnly,
+                    CallableParameterPresence::Optional,
+                    CallableParameterConsumer::DialogueApplicationMetadata(
+                        super::DialogueApplicationMetadataCoordinate::TextKey,
+                    ),
                 ));
             }
             for (name, descriptor) in context.custom_fields.visible_bindings(context.module) {
                 let index = parameters.len();
-                parameters.push(optional_named(index, name, descriptor.value_type().clone()));
+                parameters.push(dialogue_patch(
+                    index,
+                    name,
+                    descriptor.value_type().clone(),
+                    CharacterDialogueFieldCoordinate::Custom(descriptor.id().clone()),
+                    descriptor.clearable(),
+                ));
             }
             (
                 parameters,
-                TypeKind::CharacterDialogue(dialogue_type),
-                open_checked(),
+                TypeKind::CharacterDialogue(CharacterDialogueType::new(character.clone())),
+                closed(),
             )
         }
-        DialogueCallableId::ContentApplication => {
+        (DialogueCallableId::ContentApplication, DialogueCalleeIdentity::Character { .. })
+        | (
+            DialogueCallableId::ContentApplication,
+            DialogueCalleeIdentity::CharacterDialogue { .. },
+        ) => {
             let target = match context.callee {
                 DialogueCalleeIdentity::Character { .. } => {
                     TypeKind::entity_ref(EntityKind::Character)
                 }
-                DialogueCalleeIdentity::CharacterDialogue { .. } => {
-                    TypeKind::CharacterDialogue(dialogue_type)
+                DialogueCalleeIdentity::CharacterDialogue { character } => {
+                    TypeKind::CharacterDialogue(CharacterDialogueType::new(character.clone()))
                 }
                 DialogueCalleeIdentity::Content { .. } => {
-                    unreachable!("content-application owner was validated above")
+                    return Err(CallableSchemaError::FamilyInvariant {
+                        family: crate::callable::CallableFamily::Dialogue,
+                        code: crate::callable::CallableFamilyInvariantCode::InvalidOwner,
+                    });
                 }
+            };
+            let DialogueCallableResultContext::ContentApplication { line_result } = context.result
+            else {
+                return Err(CallableSchemaError::FamilyInvariant {
+                    family: crate::callable::CallableFamily::Dialogue,
+                    code: crate::callable::CallableFamilyInvariantCode::InvalidOwner,
+                });
             };
             (
                 vec![
@@ -99,20 +150,24 @@ pub(in crate::callable) fn dialogue_schema(
                     parameter(
                         2,
                         Some("line_plan"),
-                        CallableParameterType::Exact(TypeKind::Named("LinePlan".to_owned())),
+                        CallableParameterAdmission::checked(TypeKind::Named("LinePlan".to_owned())),
                         CallableParameterPassing::PositionalOnly,
                         CallableParameterPresence::Optional,
                     ),
                 ],
-                TypeKind::DialogueLine(Box::new(TypeKind::Unit)),
+                TypeKind::DialogueLine(Box::new(line_result.clone())),
                 closed(),
             )
         }
-        DialogueCallableId::ContentCall => (
-            character_dialogue_patch_parameters(character),
-            TypeKind::Unit,
-            open_checked(),
-        ),
+        (DialogueCallableId::ContentCall, DialogueCalleeIdentity::Content { .. }) => {
+            (content_call_parameters(context), TypeKind::Unit, closed())
+        }
+        _ => {
+            return Err(CallableSchemaError::FamilyInvariant {
+                family: crate::callable::CallableFamily::Dialogue,
+                code: crate::callable::CallableFamilyInvariantCode::InvalidOwner,
+            });
+        }
     };
     Ok(schema(
         parameters,
@@ -124,69 +179,219 @@ pub(in crate::callable) fn dialogue_schema(
 }
 
 fn character_dialogue_patch_parameters(
-    character: Option<&CharacterDialogueCharacterType>,
+    character: &CharacterDialogueCharacterType,
 ) -> Vec<CallableParameter> {
-    let look = match character {
-        Some(CharacterDialogueCharacterType::Exact(character)) => {
-            CallableParameterType::Exact(TypeKind::character_look(character.clone()))
-        }
-        Some(CharacterDialogueCharacterType::Any) | None => CallableParameterType::Unchecked,
-    };
-    vec![
-        parameter(
-            0,
-            Some("look"),
-            look,
-            CallableParameterPassing::PositionalOrNamed,
-            CallableParameterPresence::Optional,
+    let mut parameters = Vec::new();
+    if let CharacterDialogueCharacterType::Exact(character) = character {
+        parameters.push(dialogue_patch(
+            parameters.len(),
+            "look",
+            TypeKind::character_look(character.clone()),
+            CharacterDialogueFieldCoordinate::Look,
+            true,
+        ));
+    }
+    let fixed = [
+        (
+            "voice",
+            TypeKind::Named("DialogueVoice".to_owned()),
+            CharacterDialogueFieldCoordinate::Voice,
         ),
-        optional_named(1, "voice", TypeKind::Named("DialogueVoice".to_owned())),
-        optional_named(2, "stage", TypeKind::Named("DialogueStage".to_owned())),
-        optional_named(
-            3,
+        (
+            "stage",
+            TypeKind::Named("DialogueStage".to_owned()),
+            CharacterDialogueFieldCoordinate::Stage,
+        ),
+        (
             "portrait",
             TypeKind::Named("DialoguePortrait".to_owned()),
+            CharacterDialogueFieldCoordinate::Portrait,
         ),
-        optional_named(4, "focus", TypeKind::Named("DialogueFocus".to_owned())),
-        optional_named(5, "cleanup", TypeKind::Named("DialogueCleanup".to_owned())),
-        optional_named(6, "view", TypeKind::entity_ref(EntityKind::View)),
-        optional_named(7, "source_locale", TypeKind::String),
-        optional_named(
-            8,
+        (
+            "focus",
+            TypeKind::Named("DialogueFocus".to_owned()),
+            CharacterDialogueFieldCoordinate::Focus,
+        ),
+        (
+            "cleanup",
+            TypeKind::Named("DialogueCleanup".to_owned()),
+            CharacterDialogueFieldCoordinate::Cleanup,
+        ),
+        (
+            "view",
+            TypeKind::entity_ref(EntityKind::View),
+            CharacterDialogueFieldCoordinate::View,
+        ),
+        (
+            "source_locale",
+            TypeKind::String,
+            CharacterDialogueFieldCoordinate::SourceLocale,
+        ),
+        (
             "hooks",
             TypeKind::Seq(Box::new(TypeKind::Named("DialogueHook".to_owned()))),
+            CharacterDialogueFieldCoordinate::Hooks,
         ),
-        optional_named(
-            9,
+        (
             "style",
             TypeKind::Choice(vec![
                 TypeKind::entity_ref(EntityKind::Style),
                 TypeKind::Named("RichTextStyle".to_owned()),
             ]),
+            CharacterDialogueFieldCoordinate::Style,
         ),
-        optional_named(10, "rich_text", TypeKind::Named("RichTextStyle".to_owned())),
-        optional_named(
-            11,
+        (
+            "rich_text",
+            TypeKind::Named("RichTextStyle".to_owned()),
+            CharacterDialogueFieldCoordinate::RichText,
+        ),
+        (
             "inline_error",
             TypeKind::Named("InlineFailurePolicy".to_owned()),
+            CharacterDialogueFieldCoordinate::InlineFailure,
         ),
-        optional_named(
-            12,
+        (
             "inline_error_policy",
             TypeKind::Named("InlineFailurePolicy".to_owned()),
+            CharacterDialogueFieldCoordinate::InlineFailure,
         ),
-        optional_named(
-            13,
+        (
             "inline_fallback",
             TypeKind::Named("InlineFailurePolicy".to_owned()),
+            CharacterDialogueFieldCoordinate::InlineFailure,
         ),
-    ]
+    ];
+    for (name, ty, coordinate) in fixed {
+        let index = parameters.len();
+        parameters.push(dialogue_patch(index, name, ty, coordinate, true));
+    }
+    parameters
+}
+
+/// A content call applies a content-owned patch to a dialogue value.  It is
+/// intentionally separate from CharacterFactory/Reconfigure: content calls
+/// have no concrete character owner, so every visible field is supply-only
+/// and unknown names are rejected by the closed argument policy.
+fn content_call_parameters(context: DialogueSchemaContext<'_>) -> Vec<CallableParameter> {
+    let fixed = [
+        (
+            "voice",
+            TypeKind::Named("DialogueVoice".to_owned()),
+            CharacterDialogueFieldCoordinate::Voice,
+        ),
+        (
+            "stage",
+            TypeKind::Named("DialogueStage".to_owned()),
+            CharacterDialogueFieldCoordinate::Stage,
+        ),
+        (
+            "portrait",
+            TypeKind::Named("DialoguePortrait".to_owned()),
+            CharacterDialogueFieldCoordinate::Portrait,
+        ),
+        (
+            "focus",
+            TypeKind::Named("DialogueFocus".to_owned()),
+            CharacterDialogueFieldCoordinate::Focus,
+        ),
+        (
+            "cleanup",
+            TypeKind::Named("DialogueCleanup".to_owned()),
+            CharacterDialogueFieldCoordinate::Cleanup,
+        ),
+        (
+            "view",
+            TypeKind::entity_ref(EntityKind::View),
+            CharacterDialogueFieldCoordinate::View,
+        ),
+        (
+            "source_locale",
+            TypeKind::String,
+            CharacterDialogueFieldCoordinate::SourceLocale,
+        ),
+        (
+            "hooks",
+            TypeKind::Seq(Box::new(TypeKind::Named("DialogueHook".to_owned()))),
+            CharacterDialogueFieldCoordinate::Hooks,
+        ),
+        (
+            "style",
+            TypeKind::Choice(vec![
+                TypeKind::entity_ref(EntityKind::Style),
+                TypeKind::Named("RichTextStyle".to_owned()),
+            ]),
+            CharacterDialogueFieldCoordinate::Style,
+        ),
+        (
+            "rich_text",
+            TypeKind::Named("RichTextStyle".to_owned()),
+            CharacterDialogueFieldCoordinate::RichText,
+        ),
+        (
+            "inline_error",
+            TypeKind::Named("InlineFailurePolicy".to_owned()),
+            CharacterDialogueFieldCoordinate::InlineFailure,
+        ),
+        (
+            "inline_error_policy",
+            TypeKind::Named("InlineFailurePolicy".to_owned()),
+            CharacterDialogueFieldCoordinate::InlineFailure,
+        ),
+        (
+            "inline_fallback",
+            TypeKind::Named("InlineFailurePolicy".to_owned()),
+            CharacterDialogueFieldCoordinate::InlineFailure,
+        ),
+    ];
+    let mut parameters = fixed
+        .into_iter()
+        .enumerate()
+        .map(|(index, (name, ty, coordinate))| dialogue_patch(index, name, ty, coordinate, false))
+        .collect::<Vec<_>>();
+    for (name, descriptor) in context.custom_fields.visible_bindings(context.module) {
+        let index = parameters.len();
+        parameters.push(dialogue_patch(
+            index,
+            name,
+            descriptor.value_type().clone(),
+            CharacterDialogueFieldCoordinate::Custom(descriptor.id().clone()),
+            false,
+        ));
+    }
+    parameters
+}
+
+fn dialogue_patch(
+    index: usize,
+    name: &str,
+    declared: TypeKind,
+    coordinate: CharacterDialogueFieldCoordinate,
+    clearable: bool,
+) -> CallableParameter {
+    let admission = if clearable {
+        CallableParameterAdmission::checked_with_rule(
+            declared,
+            CallableParameterValueRule::clearable_option(),
+        )
+    } else {
+        CallableParameterAdmission::checked(declared)
+    };
+    parameter_with_consumer(
+        index,
+        Some(name),
+        admission,
+        CallableParameterPassing::PositionalOrNamed,
+        CallableParameterPresence::Optional,
+        CallableParameterConsumer::DialoguePatch(coordinate),
+    )
 }
 
 impl BuiltinCallableId {
-    pub fn signature_schema(&self) -> CallableSignatureSchema {
+    /// Returns a schema only for a closed builtin whose identity is complete
+    /// without an accepted-world join. Reduction deliberately returns None.
+    pub fn closed_signature_schema(&self) -> Option<CallableSignatureSchema> {
         let validator = CallableValidator::Builtin(self.clone());
-        match self {
+        Some(match self {
             Self::InlineFailureFallback => {
                 variadic_unchecked(TypeKind::Named("InlineFailure".to_owned()), validator, &[])
             }
@@ -198,21 +403,21 @@ impl BuiltinCallableId {
                     parameter(
                         0,
                         Some("condition"),
-                        CallableParameterType::Exact(TypeKind::Bool),
+                        CallableParameterAdmission::checked(TypeKind::Bool),
                         CallableParameterPassing::PositionalOrNamed,
                         CallableParameterPresence::Required,
                     ),
                     parameter(
                         1,
                         Some("details"),
-                        CallableParameterType::Unchecked,
+                        CallableParameterAdmission::unchecked_supply(),
                         CallableParameterPassing::RestPositional,
                         CallableParameterPresence::Optional,
                     ),
                 ],
                 TypeKind::Unit,
                 &[],
-                open_unchecked(),
+                open_supply(),
                 validator,
             ),
             Self::Rgb => homogeneous(1, &TypeKind::String, named("Color"), validator),
@@ -245,8 +450,8 @@ impl BuiltinCallableId {
                 variadic_unchecked(TypeKind::Unit, validator, &[])
                     .with_evaluated_effect(CallableEvaluatedEffect::EmitEvent)
             }
-            Self::Reduction(kind) => kind.signature_schema(),
-        }
+            Self::Reduction(_) => return None,
+        })
     }
 }
 
@@ -294,137 +499,137 @@ fn std_float_schema(
 }
 
 impl ReductionConstructorKind {
-    pub fn signature_schema(self) -> CallableSignatureSchema {
-        self.instantiated_signature_schema(None)
-    }
-
-    pub(crate) fn instantiated_signature_schema(
+    pub(crate) fn accepted_signature_schema(
         self,
-        expected: Option<&TypeKind>,
-    ) -> CallableSignatureSchema {
-        match self {
-            Self::Unchanged => schema(
-                vec![parameter(
-                    0,
-                    Some("state"),
-                    CallableParameterType::Unchecked,
-                    CallableParameterPassing::PositionalOnly,
-                    CallableParameterPresence::Required,
-                )],
-                expected
-                    .filter(|expected| self.state_type(expected).is_some())
-                    .cloned()
-                    .unwrap_or_else(|| TypeKind::Named("Reduction<_>".to_owned())),
-                &[],
-                closed(),
-                CallableValidator::ReductionConstructor(self),
-            ),
-        }
-    }
-
-    pub(crate) fn state_type(self, ty: &TypeKind) -> Option<TypeKind> {
+        catalog: &AcceptedNominalCatalog,
+    ) -> Option<CallableSignatureSchema> {
+        let record = standard_reduction_record(catalog)?;
+        let declaration = record.id().clone();
         match self {
             Self::Unchanged => {
-                let TypeKind::AcceptedNominal(nominal) = ty else {
-                    return None;
+                let owner = GenericParameterOwnerId::AcceptedNominal(declaration.clone());
+                let state = generic(owner, 0);
+                let state_ref = TypeKind::BorrowRef {
+                    kind: BorrowKind::Shared,
+                    lifetime: None,
+                    inner: Box::new(state.clone()),
                 };
-                if crate::types::direct_type_name(nominal.declaration().canonical_path())
-                    != Some("Reduction")
-                {
-                    return None;
-                }
-                let [state] = nominal.arguments() else {
-                    return None;
-                };
-                Some(state.clone())
+                Some(schema_with_issuer(
+                    vec![parameter(
+                        0,
+                        Some("state"),
+                        CallableParameterAdmission::checked(state_ref),
+                        CallableParameterPassing::PositionalOnly,
+                        CallableParameterPresence::Required,
+                    )],
+                    TypeKind::AcceptedNominal(crate::types::AcceptedNominalType::new(
+                        declaration.clone(),
+                        [state],
+                    )),
+                    &[],
+                    closed(),
+                    CallableValidator::ReductionConstructor(self),
+                    CallableGenericParameterIssuer::accepted_nominal(declaration.clone(), 1, 0)
+                        .expect("accepted reduction issuer"),
+                ))
             }
         }
     }
 }
 
 impl ResultConstructorKind {
-    pub(crate) fn instantiated_signature_schema(
-        self,
-        expected: Option<&TypeKind>,
-    ) -> CallableSignatureSchema {
-        let expected_result = expected.and_then(|expected| match expected {
-            TypeKind::Result { ok, error } => Some((expected.clone(), ok.as_ref(), error.as_ref())),
-            _ => None,
-        });
-        let payload = expected_result.as_ref().map(|(_, ok, error)| match self {
-            Self::Ok => (*ok).clone(),
-            Self::Err => (*error).clone(),
-        });
-        let result = expected_result.map_or_else(
-            || TypeKind::Result {
-                ok: Box::new(named("_")),
-                error: Box::new(named("_")),
-            },
-            |(expected, _, _)| expected,
+    pub(crate) fn signature_schema(self) -> CallableSignatureSchema {
+        let owner = GenericParameterOwnerId::LanguageIntrinsic(
+            LanguageIntrinsicGenericOwner::ResultConstructor,
         );
-        schema(
+        let ok = generic(owner.clone(), 0);
+        let error = generic(owner, 1);
+        let payload = match self {
+            Self::Ok => ok.clone(),
+            Self::Err => error.clone(),
+        };
+        schema_with_issuer(
             vec![parameter(
                 0,
                 Some("payload"),
-                payload.map_or(
-                    CallableParameterType::Unchecked,
-                    CallableParameterType::Exact,
-                ),
+                CallableParameterAdmission::checked(payload),
                 CallableParameterPassing::PositionalOnly,
                 CallableParameterPresence::Required,
             )],
-            result,
+            TypeKind::Result {
+                ok: Box::new(ok),
+                error: Box::new(error),
+            },
             &[],
             closed(),
             CallableValidator::ResultConstructor(self),
+            CallableGenericParameterIssuer::language_intrinsic(
+                LanguageIntrinsicGenericOwner::ResultConstructor,
+                2,
+                0,
+            )
+            .expect("Result issuer"),
         )
     }
 }
 
 impl OptionConstructorKind {
-    pub(crate) fn instantiated_signature_schema(
-        self,
-        expected: Option<&TypeKind>,
-    ) -> CallableSignatureSchema {
-        let expected_option = expected.and_then(|expected| match expected {
-            TypeKind::Option(item) => Some((expected.clone(), item.as_ref().clone())),
-            _ => None,
-        });
-        let result = expected_option.as_ref().map_or_else(
-            || TypeKind::Option(Box::new(named("_"))),
-            |(ty, _)| ty.clone(),
+    pub(crate) fn signature_schema(self) -> CallableSignatureSchema {
+        let item = generic(
+            GenericParameterOwnerId::LanguageIntrinsic(
+                LanguageIntrinsicGenericOwner::OptionConstructor,
+            ),
+            0,
         );
-        schema(
+        schema_with_issuer(
             vec![parameter(
                 0,
                 Some("payload"),
-                expected_option.map_or(CallableParameterType::Unchecked, |(_, item)| {
-                    CallableParameterType::Exact(item)
-                }),
+                CallableParameterAdmission::checked(item.clone()),
                 CallableParameterPassing::PositionalOnly,
                 CallableParameterPresence::Required,
             )],
-            result,
+            TypeKind::Option(Box::new(item)),
             &[],
             closed(),
             CallableValidator::OptionConstructor(self),
+            CallableGenericParameterIssuer::language_intrinsic(
+                LanguageIntrinsicGenericOwner::OptionConstructor,
+                1,
+                0,
+            )
+            .expect("Option issuer"),
         )
     }
 }
 
 impl CollectionMethodId {
-    pub(crate) fn signature_schema(self, receiver: &TypeKind) -> CallableSignatureSchema {
-        let item = sequence_item(receiver).unwrap_or_else(|| named("_"));
+    pub(crate) fn signature_schema(self, receiver: &TypeKind) -> Option<CallableSignatureSchema> {
+        let item = sequence_item(receiver)?;
         let validator = CallableValidator::Collection(self);
-        match self {
+        Some(match self {
             Self::Len => empty(TypeKind::USize, &[], validator),
-            Self::Map => one_positional(
-                "mapping",
-                TypeKind::function([item], named("_")),
-                collection_with_item(receiver, named("_")),
-                &[],
-                validator,
-            ),
+            Self::Map => {
+                let output = generic(
+                    GenericParameterOwnerId::LanguageIntrinsic(
+                        LanguageIntrinsicGenericOwner::CollectionMap,
+                    ),
+                    0,
+                );
+                one_positional_with_issuer(
+                    "mapping",
+                    TypeKind::function([item], output.clone()),
+                    collection_with_item(receiver, output)?,
+                    &[],
+                    validator,
+                    CallableGenericParameterIssuer::language_intrinsic(
+                        LanguageIntrinsicGenericOwner::CollectionMap,
+                        1,
+                        0,
+                    )
+                    .expect("Collection::map issuer"),
+                )
+            }
             Self::Filter => one_positional(
                 "predicate",
                 TypeKind::function([item], TypeKind::Bool),
@@ -434,7 +639,7 @@ impl CollectionMethodId {
             ),
             Self::Sum => empty(TypeKind::I64, &[], validator),
             Self::Contains => one_positional("item", item, TypeKind::Bool, &[], validator),
-        }
+        })
     }
 }
 
@@ -461,29 +666,9 @@ impl IntegerMethodId {
 }
 
 impl DomainMethodId {
-    pub(crate) fn signature_schema(&self, receiver: &TypeKind) -> CallableSignatureSchema {
+    pub(crate) fn signature_schema(&self, receiver: &TypeKind) -> Option<CallableSignatureSchema> {
         let validator = CallableValidator::Domain(self.clone());
-        match self {
-            Self::Traverse => schema(
-                vec![parameter(
-                    0,
-                    Some("task"),
-                    CallableParameterType::Unchecked,
-                    CallableParameterPassing::PositionalOnly,
-                    CallableParameterPresence::Required,
-                )],
-                named("_"),
-                &[],
-                closed(),
-                validator,
-            ),
-            Self::Parallel => schema(
-                vec![required_named(0, "limit", TypeKind::I64)],
-                receiver.clone(),
-                &[],
-                closed(),
-                validator,
-            ),
+        Some(match self {
             Self::FxSampleOrdinalPhase => empty(TypeKind::F32, &[], validator),
             Self::ObservedObjectRequireRole => one_positional(
                 "role",
@@ -505,9 +690,9 @@ impl DomainMethodId {
             Self::DiagnosticsHasError => empty(TypeKind::Predicate, &[], validator),
             Self::RagContextPackSummary => empty(TypeKind::DisplayText, &[], validator),
             Self::Context | Self::WithContext => {
-                variadic_unchecked(context_result(receiver), validator, &[])
+                variadic_unchecked(context_result(receiver)?, validator, &[])
             }
-        }
+        })
     }
 }
 
@@ -524,7 +709,7 @@ impl CapacityMethodId {
                 vec![parameter(
                     0,
                     Some("value"),
-                    CallableParameterType::Unchecked,
+                    CallableParameterAdmission::unchecked_supply(),
                     CallableParameterPassing::PositionalOrNamed,
                     CallableParameterPresence::Required,
                 )],
@@ -550,7 +735,7 @@ impl StageMethodId {
                     vec![parameter(
                         0,
                         Some("scope"),
-                        CallableParameterType::Exact(named("PresentationLifetime")),
+                        CallableParameterAdmission::checked(named("PresentationLifetime")),
                         CallableParameterPassing::PositionalOrNamed,
                         CallableParameterPresence::Required,
                     )],
@@ -574,7 +759,7 @@ impl StageMethodId {
                         parameter(
                             0,
                             Some("look"),
-                            CallableParameterType::Exact(TypeKind::character_look(
+                            CallableParameterAdmission::checked(TypeKind::character_look(
                                 character.clone(),
                             )),
                             CallableParameterPassing::PositionalOrNamed,
@@ -583,7 +768,7 @@ impl StageMethodId {
                         parameter(
                             1,
                             Some("crossfade"),
-                            CallableParameterType::Exact(TypeKind::Duration),
+                            CallableParameterAdmission::checked(TypeKind::Duration),
                             CallableParameterPassing::PositionalOrNamed,
                             CallableParameterPresence::Optional,
                         ),
@@ -660,31 +845,32 @@ fn sequence_item(receiver: &TypeKind) -> Option<TypeKind> {
     }
 }
 
-fn collection_with_item(receiver: &TypeKind, item: TypeKind) -> TypeKind {
+fn collection_with_item(receiver: &TypeKind, item: TypeKind) -> Option<TypeKind> {
     match receiver {
-        TypeKind::Vec(_) => TypeKind::Vec(Box::new(item)),
-        TypeKind::Seq(_) => TypeKind::Seq(Box::new(item)),
-        TypeKind::Slice(_) => TypeKind::Slice(Box::new(item)),
-        TypeKind::Array { len, .. } => TypeKind::Array {
+        TypeKind::Vec(_) => Some(TypeKind::Vec(Box::new(item))),
+        TypeKind::Seq(_) => Some(TypeKind::Seq(Box::new(item))),
+        TypeKind::Slice(_) => Some(TypeKind::Slice(Box::new(item))),
+        TypeKind::Array { len, .. } => Some(TypeKind::Array {
             item: Box::new(item),
             len: len.clone(),
-        },
-        _ => named("_"),
+        }),
+        TypeKind::String => None,
+        _ => None,
     }
 }
 
-fn context_result(receiver: &TypeKind) -> TypeKind {
+fn context_result(receiver: &TypeKind) -> Option<TypeKind> {
     match receiver {
-        TypeKind::Need(_) => receiver.clone(),
-        TypeKind::Option(inner) => TypeKind::Result {
+        TypeKind::Need(_) => Some(receiver.clone()),
+        TypeKind::Option(inner) => Some(TypeKind::Result {
             ok: inner.clone(),
             error: Box::new(named("ArcError")),
-        },
-        TypeKind::Result { ok, .. } => TypeKind::Result {
+        }),
+        TypeKind::Result { ok, .. } => Some(TypeKind::Result {
             ok: ok.clone(),
             error: Box::new(named("ArcError")),
-        },
-        _ => named("_"),
+        }),
+        _ => None,
     }
 }
 
@@ -708,7 +894,7 @@ impl FxCallableSignatureId {
                 vec![parameter(
                     0,
                     Some("graphs"),
-                    CallableParameterType::Exact(TypeKind::Vec(Box::new(fx.clone()))),
+                    CallableParameterAdmission::checked(TypeKind::Vec(Box::new(fx.clone()))),
                     CallableParameterPassing::PositionalOnly,
                     CallableParameterPresence::Required,
                 )],
@@ -721,20 +907,20 @@ impl FxCallableSignatureId {
                 vec![parameter(
                     0,
                     Some("resource"),
-                    CallableParameterType::Unchecked,
+                    CallableParameterAdmission::unchecked_supply(),
                     CallableParameterPassing::PositionalOnly,
                     CallableParameterPresence::Optional,
                 )],
                 fx,
                 &[],
-                open_checked(),
+                open_supply(),
                 validator,
             ),
             Self::Transform => schema(
                 vec![parameter(
                     0,
                     Some("sample"),
-                    CallableParameterType::Exact(TypeKind::function(
+                    CallableParameterAdmission::checked(TypeKind::function(
                         [named("FxSampleContext")],
                         named("Transform2D"),
                     )),
@@ -743,7 +929,7 @@ impl FxCallableSignatureId {
                 )],
                 fx,
                 &[],
-                open_checked(),
+                open_supply(),
                 validator,
             ),
             Self::Style
@@ -751,7 +937,7 @@ impl FxCallableSignatureId {
             | Self::Color
             | Self::Mask
             | Self::Filter
-            | Self::Transition => schema(Vec::new(), fx, &[], open_checked(), validator),
+            | Self::Transition => schema(Vec::new(), fx, &[], open_supply(), validator),
         }
     }
 }
@@ -853,7 +1039,7 @@ impl AgentIntrinsicSignatureId {
                 vec![parameter(
                     0,
                     Some("entity"),
-                    CallableParameterType::Unchecked,
+                    CallableParameterAdmission::unchecked_supply(),
                     CallableParameterPassing::PositionalOnly,
                     CallableParameterPresence::Required,
                 )],
@@ -917,12 +1103,23 @@ impl AgentIntrinsicSignatureId {
                 &["agent.observe"],
                 validator,
             ),
-            Self::Exists => one_positional(
+            Self::Exists => one_positional_with_issuer(
                 "probe",
-                TypeKind::Probe(Box::new(named("_"))),
+                TypeKind::Probe(Box::new(generic(
+                    GenericParameterOwnerId::LanguageIntrinsic(
+                        LanguageIntrinsicGenericOwner::FxExists,
+                    ),
+                    0,
+                ))),
                 TypeKind::Predicate,
                 &[],
                 validator,
+                CallableGenericParameterIssuer::language_intrinsic(
+                    LanguageIntrinsicGenericOwner::FxExists,
+                    1,
+                    0,
+                )
+                .expect("exists issuer"),
             ),
             Self::ActionEnabled => one_positional(
                 "target",
@@ -935,7 +1132,7 @@ impl AgentIntrinsicSignatureId {
                 vec![parameter(
                     0,
                     Some("predicates"),
-                    CallableParameterType::Exact(TypeKind::Predicate),
+                    CallableParameterAdmission::checked(TypeKind::Predicate),
                     CallableParameterPassing::RestPositional,
                     CallableParameterPresence::Required,
                 )],
@@ -1008,7 +1205,7 @@ impl AgentIntrinsicSignatureId {
                     parameter(
                         2,
                         Some("args"),
-                        CallableParameterType::Exact(TypeKind::Map {
+                        CallableParameterAdmission::checked(TypeKind::Map {
                             kind: MapKind::Sorted,
                             key: Box::new(TypeKind::String),
                             value: Box::new(TypeKind::AgentValue),
@@ -1050,13 +1247,21 @@ impl AgentIntrinsicSignatureId {
 pub(in crate::callable) fn presentation_schema(
     id: PresentationCallableId,
     owner: Option<&ResolvedCharacterOwner>,
+    environment: Option<&RegisteredTypeCheckEnv>,
 ) -> Result<CallableSignatureSchema, CallableSchemaError> {
     let validator = CallableValidator::Presentation(id);
     let result = presentation_result(id);
+    let character = owner.and_then(|owner| {
+        let character = owner.character();
+        environment
+            .and_then(|environment| environment.character_manifest(character))
+            .filter(|manifest| !manifest.looks().is_empty())
+            .map(|_| character)
+    });
     let (parameters, policy) = match id {
         PresentationCallableId::View
         | PresentationCallableId::Menu
-        | PresentationCallableId::Overlay => (view_parameters(id), open_unchecked()),
+        | PresentationCallableId::Overlay => (view_parameters(id), open_supply()),
         PresentationCallableId::Background => (
             vec![
                 required_positional(0, "asset", TypeKind::entity_ref(EntityKind::Asset)),
@@ -1067,14 +1272,14 @@ pub(in crate::callable) fn presentation_schema(
                 optional_presentation_named(id, 5, "fit"),
                 optional_presentation_named(id, 6, "opacity"),
             ],
-            open_checked(),
+            open_supply(),
         ),
         PresentationCallableId::Image => (
             vec![
                 parameter(
                     0,
                     Some("source"),
-                    CallableParameterType::Unchecked,
+                    CallableParameterAdmission::unchecked_supply(),
                     CallableParameterPassing::PositionalOnly,
                     CallableParameterPresence::Optional,
                 ),
@@ -1099,7 +1304,7 @@ pub(in crate::callable) fn presentation_schema(
                 optional_presentation_named(id, 19, "owner"),
                 optional_presentation_named(id, 20, "drop"),
             ],
-            open_checked(),
+            open_supply(),
         ),
         PresentationCallableId::PlayerViewport => (
             vec![
@@ -1107,21 +1312,27 @@ pub(in crate::callable) fn presentation_schema(
                 optional_presentation_named(id, 1, "height"),
                 optional_presentation_named(id, 2, "fit"),
             ],
-            open_checked(),
+            open_supply(),
         ),
-        PresentationCallableId::Show => (
-            character_parameters(id, owner.map(ResolvedCharacterOwner::character), true),
-            open_unchecked(),
-        ),
-        PresentationCallableId::RefShow | PresentationCallableId::Hide => (
-            character_parameters(id, owner.map(ResolvedCharacterOwner::character), false),
-            open_unchecked(),
-        ),
+        PresentationCallableId::Show => (character_parameters(id, character, true), open_supply()),
+        PresentationCallableId::RefShow | PresentationCallableId::Hide => {
+            (character_parameters(id, character, false), open_supply())
+        }
         PresentationCallableId::RefBackground | PresentationCallableId::ClearBackground => {
-            (background_reference_parameters(id), open_unchecked())
+            (background_reference_parameters(id), open_supply())
         }
     };
-    Ok(schema(parameters, result, &[], policy, validator))
+    let reserved_open_names = match (id, character.is_some()) {
+        (PresentationCallableId::Show, true) => Vec::new(),
+        (PresentationCallableId::Show, false)
+        | (PresentationCallableId::RefShow, _)
+        | (PresentationCallableId::Hide, _) => {
+            vec![CallableName::try_new("look").expect("presentation reserved name is valid")]
+        }
+        _ => Vec::new(),
+    };
+    schema(parameters, result, &[], policy, validator)
+        .try_with_reserved_open_names(reserved_open_names, &PRODUCTION_CALLABLE_LIMITS)
 }
 
 fn presentation_result(id: PresentationCallableId) -> TypeKind {
@@ -1161,23 +1372,22 @@ fn character_parameters(
     character: Option<&CharacterId>,
     include_look: bool,
 ) -> Vec<CallableParameter> {
+    let character = include_look.then_some(character).flatten();
     let mut parameters = vec![required(
         0,
         "character",
         TypeKind::entity_ref(EntityKind::Character),
     )];
-    if include_look {
+    if let Some(character) = character {
         parameters.push(parameter(
             1,
             Some("look"),
-            character.map_or(CallableParameterType::Unchecked, |character| {
-                CallableParameterType::Exact(TypeKind::character_look(character.clone()))
-            }),
+            CallableParameterAdmission::checked(TypeKind::character_look(character.clone())),
             CallableParameterPassing::PositionalOrNamed,
             CallableParameterPresence::Optional,
         ));
     }
-    let offset = usize::from(include_look);
+    let offset = usize::from(character.is_some());
     parameters.extend([
         optional_presentation_named(id, 1 + offset, "target"),
         optional_presentation_named(id, 2 + offset, "slot"),
@@ -1196,15 +1406,15 @@ fn background_reference_parameters(id: PresentationCallableId) -> Vec<CallablePa
 
 fn probe_schema(kind: EntityKind, validator: CallableValidator) -> CallableSignatureSchema {
     let owner = match kind {
-        EntityKind::Signal => AgentIntrinsicGenericOwner::Signal,
-        EntityKind::Metric => AgentIntrinsicGenericOwner::Metric,
+        EntityKind::Signal => LanguageIntrinsicGenericOwner::AgentSignal,
+        EntityKind::Metric => LanguageIntrinsicGenericOwner::AgentMetric,
         _ => unreachable!("probe schemas are only published for signal and metric references"),
     };
     let value = TypeKind::GenericParam(GenericTypeParameterId::new(
-        GenericTypeOwnerId::AgentIntrinsic(owner),
+        GenericParameterOwnerId::LanguageIntrinsic(owner),
         0,
     ));
-    schema(
+    schema_with_issuer(
         vec![required_positional(
             0,
             "entity",
@@ -1214,6 +1424,7 @@ fn probe_schema(kind: EntityKind, validator: CallableValidator) -> CallableSigna
         &["agent.observe"],
         closed(),
         validator,
+        CallableGenericParameterIssuer::language_intrinsic(owner, 1, 0).expect("probe issuer"),
     )
 }
 
@@ -1226,6 +1437,10 @@ fn agent_result(ok: TypeKind) -> TypeKind {
 
 fn named(name: &str) -> TypeKind {
     TypeKind::Named(name.to_owned())
+}
+
+fn generic(owner: GenericParameterOwnerId, ordinal: u16) -> TypeKind {
+    TypeKind::GenericParam(GenericTypeParameterId::new(owner, ordinal))
 }
 
 fn homogeneous(
@@ -1256,6 +1471,24 @@ fn one_positional(
     )
 }
 
+fn one_positional_with_issuer(
+    name: &str,
+    input: TypeKind,
+    result: TypeKind,
+    effects: &[&str],
+    validator: CallableValidator,
+    issuer: CallableGenericParameterIssuer,
+) -> CallableSignatureSchema {
+    schema_with_issuer(
+        vec![required_positional(0, name, input)],
+        result,
+        effects,
+        closed(),
+        validator,
+        issuer,
+    )
+}
+
 fn variadic_unchecked(
     result: TypeKind,
     validator: CallableValidator,
@@ -1265,14 +1498,14 @@ fn variadic_unchecked(
         vec![parameter(
             0,
             Some("args"),
-            CallableParameterType::Unchecked,
+            CallableParameterAdmission::unchecked_supply(),
             CallableParameterPassing::RestPositional,
             CallableParameterPresence::Optional,
         )],
         result,
         effects,
         CallableArgumentPolicy::new(
-            UnknownNamedArgumentPolicy::OpenUnchecked,
+            UnknownNamedArgumentPolicy::OpenSupply,
             SpreadArgumentPolicy::Unchecked,
         ),
         validator,
@@ -1294,6 +1527,24 @@ fn schema(
     argument_policy: CallableArgumentPolicy,
     validator: CallableValidator,
 ) -> CallableSignatureSchema {
+    schema_with_issuer(
+        parameters,
+        result,
+        effects,
+        argument_policy,
+        validator,
+        CallableGenericParameterIssuer::empty(),
+    )
+}
+
+fn schema_with_issuer(
+    parameters: Vec<CallableParameter>,
+    result: TypeKind,
+    effects: &[&str],
+    argument_policy: CallableArgumentPolicy,
+    validator: CallableValidator,
+    generic_issuer: CallableGenericParameterIssuer,
+) -> CallableSignatureSchema {
     let group = CallableParameterGroup::try_new(
         crate::callable::CallableGroupIndex::ZERO,
         CallableGroupKind::Initial,
@@ -1308,6 +1559,7 @@ fn schema(
         CallableEffectSchema::fixed(EffectRow::closed(effects)),
         argument_policy,
         validator,
+        generic_issuer,
         &PRODUCTION_CALLABLE_LIMITS,
     )
     .expect("family schema satisfies callable invariants")
@@ -1317,7 +1569,7 @@ fn required(index: usize, name: &str, ty: TypeKind) -> CallableParameter {
     parameter(
         index,
         Some(name),
-        CallableParameterType::Exact(ty),
+        CallableParameterAdmission::checked(ty),
         CallableParameterPassing::PositionalOrNamed,
         CallableParameterPresence::Required,
     )
@@ -1327,7 +1579,7 @@ fn required_positional(index: usize, name: &str, ty: TypeKind) -> CallableParame
     parameter(
         index,
         Some(name),
-        CallableParameterType::Exact(ty),
+        CallableParameterAdmission::checked(ty),
         CallableParameterPassing::PositionalOnly,
         CallableParameterPresence::Required,
     )
@@ -1337,7 +1589,7 @@ fn required_named(index: usize, name: &str, ty: TypeKind) -> CallableParameter {
     parameter(
         index,
         Some(name),
-        CallableParameterType::Exact(ty),
+        CallableParameterAdmission::checked(ty),
         CallableParameterPassing::NamedOnly,
         CallableParameterPresence::Required,
     )
@@ -1347,7 +1599,7 @@ fn optional(index: usize, name: &str, ty: TypeKind) -> CallableParameter {
     parameter(
         index,
         Some(name),
-        CallableParameterType::Exact(ty),
+        CallableParameterAdmission::checked(ty),
         CallableParameterPassing::PositionalOrNamed,
         CallableParameterPresence::Optional,
     )
@@ -1357,7 +1609,7 @@ fn optional_named(index: usize, name: &str, ty: TypeKind) -> CallableParameter {
     parameter(
         index,
         Some(name),
-        CallableParameterType::Exact(ty),
+        CallableParameterAdmission::checked(ty),
         CallableParameterPassing::NamedOnly,
         CallableParameterPresence::Optional,
     )
@@ -1391,15 +1643,22 @@ fn required_presentation(
     )
 }
 
-fn presentation_parameter_type(id: PresentationCallableId, name: &str) -> CallableParameterType {
+fn presentation_parameter_type(
+    id: PresentationCallableId,
+    name: &str,
+) -> CallableParameterAdmission {
     let argument = id
         .resolve_named_argument(name)
         .expect("presentation schema parameter belongs to the callable argument catalog");
     match argument.value_policy() {
         PresentationArgumentValuePolicy::Exact(ty)
-        | PresentationArgumentValuePolicy::TokenScalar(ty) => CallableParameterType::Exact(ty),
+        | PresentationArgumentValuePolicy::TokenScalar(ty) => {
+            CallableParameterAdmission::checked(ty)
+        }
         PresentationArgumentValuePolicy::Unchecked
-        | PresentationArgumentValuePolicy::MetadataScalar => CallableParameterType::Unchecked,
+        | PresentationArgumentValuePolicy::MetadataScalar => {
+            CallableParameterAdmission::unchecked_supply()
+        }
     }
 }
 
@@ -1407,7 +1666,7 @@ fn optional_named_unchecked(index: usize, name: &str) -> CallableParameter {
     parameter(
         index,
         Some(name),
-        CallableParameterType::Unchecked,
+        CallableParameterAdmission::unchecked_supply(),
         CallableParameterPassing::NamedOnly,
         CallableParameterPresence::Optional,
     )
@@ -1417,7 +1676,7 @@ fn defaulted_named(index: usize, name: &str, ty: TypeKind) -> CallableParameter 
     parameter(
         index,
         Some(name),
-        CallableParameterType::Exact(ty),
+        CallableParameterAdmission::checked(ty),
         CallableParameterPassing::NamedOnly,
         CallableParameterPresence::Defaulted,
     )
@@ -1427,7 +1686,7 @@ fn unchecked(index: usize, name: &str, presence: CallableParameterPresence) -> C
     parameter(
         index,
         Some(name),
-        CallableParameterType::Unchecked,
+        CallableParameterAdmission::unchecked_supply(),
         CallableParameterPassing::PositionalOrNamed,
         presence,
     )
@@ -1440,7 +1699,7 @@ fn required_choice(index: usize, name: &str, left: TypeKind, right: TypeKind) ->
 fn parameter(
     index: usize,
     name: Option<&str>,
-    ty: CallableParameterType,
+    admission: CallableParameterAdmission,
     passing: CallableParameterPassing,
     presence: CallableParameterPresence,
 ) -> CallableParameter {
@@ -1448,8 +1707,19 @@ fn parameter(
         .expect("family parameter index fits the production limit");
     let name =
         name.map(|name| CallableName::try_new(name).expect("family parameter name is valid"));
-    CallableParameter::try_new(index, name, ty, passing, presence, None, None)
+    CallableParameter::try_new(index, name, admission, passing, presence, None, None)
         .expect("family parameter satisfies callable invariants")
+}
+
+fn parameter_with_consumer(
+    index: usize,
+    name: Option<&str>,
+    admission: CallableParameterAdmission,
+    passing: CallableParameterPassing,
+    presence: CallableParameterPresence,
+    consumer: CallableParameterConsumer,
+) -> CallableParameter {
+    parameter(index, name, admission, passing, presence).with_consumer(consumer)
 }
 
 const fn closed() -> CallableArgumentPolicy {
@@ -1459,16 +1729,9 @@ const fn closed() -> CallableArgumentPolicy {
     )
 }
 
-const fn open_checked() -> CallableArgumentPolicy {
+const fn open_supply() -> CallableArgumentPolicy {
     CallableArgumentPolicy::new(
-        UnknownNamedArgumentPolicy::OpenChecked,
-        SpreadArgumentPolicy::Reject,
-    )
-}
-
-const fn open_unchecked() -> CallableArgumentPolicy {
-    CallableArgumentPolicy::new(
-        UnknownNamedArgumentPolicy::OpenUnchecked,
+        UnknownNamedArgumentPolicy::OpenSupply,
         SpreadArgumentPolicy::Reject,
     )
 }
@@ -1476,15 +1739,124 @@ const fn open_unchecked() -> CallableArgumentPolicy {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::callable::{CallableGroupIndex, CallableSchemaGenericRole};
+
+    #[test]
+    fn character_any_reserves_look_without_closing_other_open_names() {
+        let show = presentation_schema(PresentationCallableId::Show, None, None)
+            .expect("Character-Any Show schema");
+        let [group] = show.groups() else {
+            panic!("Show schema must have one parameter group")
+        };
+        assert_eq!(
+            group
+                .parameters()
+                .iter()
+                .map(|parameter| parameter.name().map(CallableName::as_str))
+                .collect::<Vec<_>>(),
+            vec![
+                Some("character"),
+                Some("target"),
+                Some("slot"),
+                Some("scope")
+            ]
+        );
+        let look = CallableName::try_new("look").expect("look name");
+        let custom = CallableName::try_new("custom").expect("custom name");
+        assert_eq!(show.reserved_open_names(), std::slice::from_ref(&look));
+        assert!(!show.allows_open_name(&look));
+        assert!(show.allows_open_name(&custom));
+
+        let hide = presentation_schema(PresentationCallableId::Hide, None, None)
+            .expect("Character-Any Hide schema");
+        assert!(!hide.allows_open_name(&look));
+    }
+
+    #[test]
+    fn reserved_open_names_validate_policy_collisions_and_duplicates() {
+        let schema = presentation_schema(PresentationCallableId::Show, None, None)
+            .expect("Character-Any Show schema");
+        let look = CallableName::try_new("look").expect("look name");
+        let duplicate = schema.clone().try_with_reserved_open_names(
+            vec![look.clone(), look.clone()],
+            &PRODUCTION_CALLABLE_LIMITS,
+        );
+        assert!(matches!(
+            duplicate,
+            Err(CallableSchemaError::DuplicateReservedOpenName { .. })
+        ));
+
+        let collision = schema.clone().try_with_reserved_open_names(
+            vec![CallableName::try_new("character").expect("parameter name")],
+            &PRODUCTION_CALLABLE_LIMITS,
+        );
+        assert!(matches!(
+            collision,
+            Err(CallableSchemaError::ReservedOpenNameParameterCollision { .. })
+        ));
+
+        let closed = OptionConstructorKind::Some
+            .signature_schema()
+            .try_with_reserved_open_names(vec![look], &PRODUCTION_CALLABLE_LIMITS);
+        assert!(matches!(
+            closed,
+            Err(CallableSchemaError::ReservedOpenNamesRequireOpenPolicy)
+        ));
+    }
 
     #[test]
     fn event_emit_builtin_owns_its_evaluated_effect_disposition() {
-        let schema =
-            BuiltinCallableId::Capability(CapabilityCallableId::EventEmit).signature_schema();
+        let schema = BuiltinCallableId::Capability(CapabilityCallableId::EventEmit)
+            .closed_signature_schema()
+            .expect("closed event builtin schema");
         assert_eq!(
             schema.evaluated_effect(),
             Some(CallableEvaluatedEffect::EmitEvent)
         );
+    }
+
+    #[test]
+    fn reduction_has_no_schema_without_an_accepted_catalog_join() {
+        assert!(
+            BuiltinCallableId::Reduction(ReductionConstructorKind::Unchanged)
+                .closed_signature_schema()
+                .is_none()
+        );
+    }
+
+    #[test]
+    fn reduction_schema_uses_the_accepted_nominal_issuer() {
+        let environment = crate::env::TypeCheckEnv::standard();
+        let schema = ReductionConstructorKind::Unchanged
+            .accepted_signature_schema(environment.nominal_catalog())
+            .expect("standard Reduction catalog row");
+        assert_eq!(
+            schema
+                .generic_inventory()
+                .types()
+                .iter()
+                .filter(|entry| entry.role() == CallableSchemaGenericRole::Candidate)
+                .count(),
+            1,
+        );
+        let [parameter] = schema.groups()[0].parameters() else {
+            panic!("Reduction.unchanged must accept one state borrow")
+        };
+        let TypeKind::BorrowRef {
+            kind: BorrowKind::Shared,
+            lifetime: None,
+            inner,
+        } = parameter
+            .declared_type()
+            .expect("Reduction state parameter is checked")
+        else {
+            panic!("Reduction.unchanged must accept an elided shared state borrow")
+        };
+        assert!(matches!(inner.as_ref(), TypeKind::GenericParam(_)));
+        let TypeKind::AcceptedNominal(reduction) = schema.result() else {
+            panic!("Reduction.unchanged must return the accepted Reduction owner")
+        };
+        assert_eq!(reduction.arguments(), [inner.as_ref().clone()]);
     }
 
     #[test]
@@ -1493,12 +1865,12 @@ mod tests {
             (
                 AgentIntrinsicSignatureId::Signal,
                 EntityKind::Signal,
-                AgentIntrinsicGenericOwner::Signal,
+                LanguageIntrinsicGenericOwner::AgentSignal,
             ),
             (
                 AgentIntrinsicSignatureId::Metric,
                 EntityKind::Metric,
-                AgentIntrinsicGenericOwner::Metric,
+                LanguageIntrinsicGenericOwner::AgentMetric,
             ),
         ] {
             let schema = intrinsic.signature_schema();
@@ -1508,7 +1880,7 @@ mod tests {
             let [parameter] = group.parameters() else {
                 panic!("probe schema must have one parameter")
             };
-            let CallableParameterType::Exact(TypeKind::Ref(entity)) = parameter.ty() else {
+            let Some(TypeKind::Ref(entity)) = parameter.declared_type() else {
                 panic!("probe schema must accept one typed entity reference")
             };
             assert_eq!(entity.kind(), &kind);
@@ -1517,7 +1889,7 @@ mod tests {
             };
             assert_eq!(
                 parameter.owner(),
-                &GenericTypeOwnerId::AgentIntrinsic(owner)
+                &GenericParameterOwnerId::LanguageIntrinsic(owner)
             );
             assert_eq!(parameter.ordinal(), 0);
             assert_eq!(
@@ -1525,5 +1897,167 @@ mod tests {
                 &TypeKind::Probe(Box::new(TypeKind::GenericParam(parameter.clone())))
             );
         }
+    }
+
+    #[test]
+    fn constructors_are_context_free_generic_schemas() {
+        let option = OptionConstructorKind::Some.signature_schema();
+        let TypeKind::Option(item) = option.result() else {
+            panic!("Some must publish an Option result")
+        };
+        let TypeKind::GenericParam(option_item) = item.as_ref() else {
+            panic!("Some must publish a generic item")
+        };
+        assert_eq!(
+            option_item.owner(),
+            &GenericParameterOwnerId::LanguageIntrinsic(
+                LanguageIntrinsicGenericOwner::OptionConstructor
+            )
+        );
+        assert_eq!(option_item.ordinal(), 0);
+        assert_eq!(
+            option.groups()[0].parameters()[0].declared_type(),
+            Some(item.as_ref())
+        );
+
+        for (kind, ordinal) in [
+            (ResultConstructorKind::Ok, 0_u16),
+            (ResultConstructorKind::Err, 1_u16),
+        ] {
+            let schema = kind.signature_schema();
+            let TypeKind::Result { ok, error } = schema.result() else {
+                panic!("Result constructor must publish a Result result")
+            };
+            let payload = schema.groups()[0].parameters()[0]
+                .declared_type()
+                .expect("Result payload is checked");
+            let TypeKind::GenericParam(payload) = payload else {
+                panic!("Result payload must be generic")
+            };
+            assert_eq!(payload.ordinal(), ordinal);
+            assert_eq!(
+                payload.owner(),
+                &GenericParameterOwnerId::LanguageIntrinsic(
+                    LanguageIntrinsicGenericOwner::ResultConstructor
+                )
+            );
+            assert!(matches!(ok.as_ref(), TypeKind::GenericParam(_)));
+            assert!(matches!(error.as_ref(), TypeKind::GenericParam(_)));
+            assert!(!schema.result().source_label().contains("_"));
+        }
+    }
+
+    #[test]
+    fn collection_map_and_fx_exists_reject_untyped_receiver_fallbacks() {
+        let map = CollectionMethodId::Map
+            .signature_schema(&TypeKind::Vec(Box::new(TypeKind::I32)))
+            .expect("Vec map has a typed schema");
+        let TypeKind::Vec(item) = map.result() else {
+            panic!("map preserves the concrete collection constructor")
+        };
+        let TypeKind::GenericParam(item) = item.as_ref() else {
+            panic!("map result item is generic")
+        };
+        assert_eq!(
+            item.owner(),
+            &GenericParameterOwnerId::LanguageIntrinsic(
+                LanguageIntrinsicGenericOwner::CollectionMap
+            )
+        );
+        assert_eq!(item.ordinal(), 0);
+        let callback = map.groups()[0].parameters()[0]
+            .declared_type()
+            .expect("map callback is checked");
+        let TypeKind::Function { params, .. } = callback else {
+            panic!("map callback must be a function")
+        };
+        assert_eq!(params.as_slice(), &[TypeKind::I32]);
+        let wrong_callback = TypeKind::function([TypeKind::String], TypeKind::Bool);
+        assert!(!callback.accepts(&wrong_callback));
+        assert!(
+            CollectionMethodId::Map
+                .signature_schema(&TypeKind::Named("Unsupported".to_owned()))
+                .is_none()
+        );
+
+        let exists = AgentIntrinsicSignatureId::Exists.signature_schema();
+        let TypeKind::Probe(item) = exists.groups()[0].parameters()[0]
+            .declared_type()
+            .expect("exists probe is checked")
+        else {
+            panic!("exists must retain its generic probe payload")
+        };
+        let TypeKind::GenericParam(item) = item.as_ref() else {
+            panic!("exists payload is generic")
+        };
+        assert_eq!(
+            item.owner(),
+            &GenericParameterOwnerId::LanguageIntrinsic(LanguageIntrinsicGenericOwner::FxExists)
+        );
+    }
+
+    #[test]
+    fn typed_rest_is_single_supply_identity_and_both_rest_kinds_are_rejected() {
+        let positional = parameter(
+            0,
+            Some("items"),
+            CallableParameterAdmission::checked(TypeKind::String),
+            CallableParameterPassing::RestPositional,
+            CallableParameterPresence::Required,
+        );
+        let named = parameter(
+            1,
+            Some("fields"),
+            CallableParameterAdmission::checked(TypeKind::Map {
+                kind: MapKind::Sorted,
+                key: Box::new(TypeKind::String),
+                value: Box::new(TypeKind::String),
+            }),
+            CallableParameterPassing::RestNamed,
+            CallableParameterPresence::Required,
+        );
+        assert!(matches!(
+            CallableParameterGroup::try_new(
+                CallableGroupIndex::ZERO,
+                CallableGroupKind::Initial,
+                vec![positional.clone(), named],
+                &PRODUCTION_CALLABLE_LIMITS,
+            ),
+            Err(CallableSchemaError::InvalidRestParameter { .. })
+        ));
+
+        let clearable = parameter(
+            0,
+            Some("items"),
+            CallableParameterAdmission::checked_with_rule(
+                TypeKind::String,
+                CallableParameterValueRule::clearable_option(),
+            ),
+            CallableParameterPassing::RestPositional,
+            CallableParameterPresence::Required,
+        );
+        let group = CallableParameterGroup::try_new(
+            CallableGroupIndex::ZERO,
+            CallableGroupKind::Initial,
+            vec![clearable],
+            &PRODUCTION_CALLABLE_LIMITS,
+        )
+        .expect("one rest parameter has a valid shape");
+        assert!(matches!(
+            CallableSignatureSchema::try_new(
+                vec![group],
+                TypeKind::Unit,
+                CallableEffectSchema::fixed(EffectRow::closed(EffectSet::new())),
+                CallableArgumentPolicy::new(
+                    UnknownNamedArgumentPolicy::Reject,
+                    SpreadArgumentPolicy::TypedRest,
+                ),
+                CallableValidator::Ordinary,
+                CallableGenericParameterIssuer::empty(),
+                &PRODUCTION_CALLABLE_LIMITS,
+            ),
+            Err(CallableSchemaError::InvalidParameterAdmission { .. }
+                | CallableSchemaError::InvalidParameterConsumer { .. },)
+        ));
     }
 }

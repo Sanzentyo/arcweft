@@ -5,28 +5,22 @@
 //! classifier or expose caller-constructed admission rows.
 
 use arcweft_lang_hir::{
-    expr::{HirCallArgument, HirExprKind},
-    identity::ExprId,
-    project::HirExecutableProjectView,
-    symbol::{CallableDeclarationKey, ProjectSymbolTable},
+    identity::ExprId, project::HirExecutableProjectView, symbol::ProjectSymbolTable,
 };
 use thiserror::Error;
 
 use crate::{
     callable::{
-        CallCalleeClassificationFact, CallPoison, CallTargetFact, CheckedCallArgumentSlotSource,
+        CheckedCallArgumentPassing, CheckedCallArgumentSlotSource, CheckedCallCalleeExecution,
+        CheckedCallRuntimeOperand, CheckedCallRuntimeOperandOrder,
     },
     env::RegisteredSemanticWorld,
-    final_analysis::{
-        CheckedExpression, CheckedExpressionResolution, CheckedValueResolution,
-        FinalSemanticAnalysis, SemanticTranscriptError, StableCheckedValueCoordinate,
-        TranscriptHasher, accepted_declaration_id, checked_expression_path, write_len,
-        write_value_coordinate,
-    },
+    final_analysis::{FinalSemanticAnalysis, SemanticTranscriptError, TranscriptHasher, write_len},
     ownership::{
         CheckedOwnershipCertificate, CheckedOwnershipError, CheckedOwnershipLimits,
         OwnershipEvidenceDigest, RetainedValueDisposition, classify_checked_producer_arguments,
     },
+    semantic_coordinate::StableCheckedValueCoordinate,
     types::{SemanticTypeDigest, TypeKind},
 };
 
@@ -126,12 +120,10 @@ impl FinalSemanticAnalysis {
         project: HirExecutableProjectView<'_>,
         symbols: &ProjectSymbolTable,
         world: &RegisteredSemanticWorld,
-        declaration: &CallableDeclarationKey,
         call: ExprId,
         limits: CheckedOwnershipLimits,
     ) -> Result<CheckedNeedProducerAdmission, CheckedNeedProducerAdmissionError> {
-        let values =
-            self.checked_producer_argument_values(project, symbols, declaration, call, limits)?;
+        let values = self.checked_producer_argument_values(project, symbols, call, limits)?;
         let types = values.iter().map(|(_, ty)| *ty).collect::<Vec<_>>();
         let (dispositions, ownership) =
             classify_checked_producer_arguments(self, world, &types, limits)?;
@@ -159,100 +151,62 @@ impl FinalSemanticAnalysis {
         &'a self,
         project: HirExecutableProjectView<'_>,
         symbols: &ProjectSymbolTable,
-        declaration: &CallableDeclarationKey,
         call: ExprId,
         limits: CheckedOwnershipLimits,
     ) -> Result<Vec<(StableCheckedValueCoordinate, &'a TypeKind)>, CheckedNeedProducerAdmissionError>
     {
         self.validate_generation(project, symbols)
             .map_err(SemanticTranscriptError::from)?;
-        let module = project
-            .modules()
-            .find_map(|(_, module)| {
-                (module.module_id() == call.module()).then_some(module.as_ref())
-            })
-            .ok_or(SemanticTranscriptError::MissingExpression)?;
-        let expression = module
-            .resolve_expr(call)
-            .map_err(|_| SemanticTranscriptError::MissingExpression)?;
-        let HirExprKind::Call(authored) = expression.kind() else {
-            return Err(CheckedNeedProducerAdmissionError::NotSelectedCall);
-        };
-        if u64::try_from(authored.arguments().len()).unwrap_or(u64::MAX)
-            > limits.max_producer_arguments
-        {
-            return Err(CheckedNeedProducerAdmissionError::WorkLimit);
-        }
-        if !matches!(
-            self.expression(call).map(CheckedExpression::resolution),
-            Some(CheckedExpressionResolution::Call)
-        ) {
-            return Err(CheckedNeedProducerAdmissionError::NotSelectedCall);
-        }
         let facts = self
             .call(call)
             .ok_or(CheckedNeedProducerAdmissionError::NotSelectedCall)?;
-        if !matches!(facts.target(), CallTargetFact::Selected { .. })
-            || facts.poison() != CallPoison::Clean
-        {
+        let Some(application) = facts.selected_application() else {
             return Err(CheckedNeedProducerAdmissionError::NotSelectedCall);
-        }
+        };
+        let core = application.core();
         self.checked_callable_join(call)
             .map_err(|_| SemanticTranscriptError::MissingCallableJoin)?;
-        if facts.function_value_type().is_some()
-            || matches!(
-                facts.callee(),
-                Some(CallCalleeClassificationFact::Value { expression })
-                    if !matches!(
-                        self.expression(expression).map(CheckedExpression::resolution),
-                        Some(CheckedExpressionResolution::Value(
-                            CheckedValueResolution::ProjectCallable(_)
-                        ))
-                    )
-            )
+        if !matches!(core.callee(), CheckedCallCalleeExecution::Direct) {
+            return Err(CheckedNeedProducerAdmissionError::UnsupportedCapture);
+        }
+        let execution = core.execution();
+        let operands = execution.ordered_runtime_operands(CheckedCallRuntimeOperandOrder::Source);
+        if u64::try_from(operands.len()).unwrap_or(u64::MAX) > limits.max_producer_arguments {
+            return Err(CheckedNeedProducerAdmissionError::WorkLimit);
+        }
+        if operands
+            .iter()
+            .any(|operand| matches!(operand, CheckedCallRuntimeOperand::Receiver { .. }))
         {
             return Err(CheckedNeedProducerAdmissionError::UnsupportedCapture);
         }
-        if authored.arguments().len() != facts.arguments().len() {
+        if operands.len() != execution.arguments().len() {
             return Err(CheckedNeedProducerAdmissionError::UnsupportedArgumentInventory);
         }
-        let paths = project
-            .declaration_semantic_paths(symbols, declaration)
-            .map_err(|_| SemanticTranscriptError::MissingIdentity)?;
-        let declaration = accepted_declaration_id(self, declaration)?;
-        let mut values = Vec::with_capacity(authored.arguments().len());
-        for (ordinal, (authored, fact)) in authored
-            .arguments()
-            .iter()
-            .zip(facts.arguments())
-            .enumerate()
-        {
-            if matches!(authored, HirCallArgument::Spread { .. })
-                || usize::from(fact.argument().get()) != ordinal
-                || fact.poison() != CallPoison::Clean
+        let mut values = Vec::with_capacity(operands.len());
+        for (ordinal, operand) in operands.iter().copied().enumerate() {
+            let CheckedCallRuntimeOperand::Argument {
+                argument,
+                passing,
+                slot,
+            } = operand
+            else {
+                return Err(CheckedNeedProducerAdmissionError::UnsupportedCapture);
+            };
+            if passing == CheckedCallArgumentPassing::Spread
+                || usize::from(argument.get()) != ordinal
+                || slot.slot().get() != 0
             {
                 return Err(CheckedNeedProducerAdmissionError::UnsupportedArgumentInventory);
             }
-            let [slot] = fact.slots() else {
+            let CheckedCallArgumentSlotSource::Expression(_) = slot.source().raw() else {
                 return Err(CheckedNeedProducerAdmissionError::UnsupportedArgumentInventory);
             };
-            let CheckedCallArgumentSlotSource::Expression(source) = slot.source() else {
-                return Err(CheckedNeedProducerAdmissionError::UnsupportedArgumentInventory);
-            };
-            let checked = self
-                .expression(source)
-                .ok_or(SemanticTranscriptError::MissingExpression)?;
-            if source != authored.value()
-                || slot.poison() != CallPoison::Clean
-                || slot.inferred() != Some(checked.ty())
-            {
-                return Err(CheckedNeedProducerAdmissionError::UnsupportedArgumentInventory);
-            }
-            let path = checked_expression_path(self, &paths, declaration, source)?;
-            values.push((
-                StableCheckedValueCoordinate::Expression { declaration, path },
-                checked.ty(),
-            ));
+            // The C sealer already proved the raw expression type against the
+            // checked-base effect projection and frozen solution. Retention
+            // classification consumes that final execution type, not the raw
+            // annotation/inference carrier.
+            values.push((slot.source().coordinate().clone(), slot.inferred()));
         }
         Ok(values)
     }
@@ -267,7 +221,7 @@ fn need_producer_admission_digest(
     hasher.update(b"arcweft.lang.need-producer-admission.v1\0");
     write_len(&mut hasher, arguments.len());
     for argument in arguments {
-        write_value_coordinate(&mut hasher, argument.coordinate());
+        hasher.update(&argument.coordinate().canonical_bytes());
         hasher.update(argument.ty().as_bytes());
         hasher.update(&[argument.disposition().semantic_tag()]);
     }

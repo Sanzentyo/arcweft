@@ -384,16 +384,16 @@ pub(super) fn task_spec(
             .checked_type(record.payload_type)
             .map_err(|error| ProductStepError::Internal(error.to_string()))?,
     );
-    let spec = TaskSpec::new_with_outcome(
+    let spec = TaskSpec::new(
         task_id.clone(),
         TaskKey(task_id.0.clone()),
         class,
         TaskPriority(record.priority),
         CancelScopeId(string(record.cancel_scope)?),
         task_policy(record.policy),
-        outcome,
         request,
-    );
+    )
+    .with_outcome(outcome);
     Ok((need, spec))
 }
 

@@ -4,7 +4,7 @@ use crate::awbc_lower::expr::AwbcExprLowerer;
 use crate::awbc_lower::frame::FrameBuilder;
 use crate::awbc_lower::inventory::{AwbcInventory, AwbcLowerDiagnostic, line_cleanup};
 use crate::awbc_lower::line::AwbcLineLowerer;
-use crate::awbc_lower::pattern::lower_pattern;
+use crate::awbc_lower::pattern::{admitted_local_type, admitted_plan_type, lower_pattern};
 use crate::awbc_lower::{table_index, table_range_len};
 use arcweft_core::awbc::schema::{
     AwbcAwaitObserverResume, AwbcBindMode, AwbcBlock, AwbcBlockId, AwbcChoiceId, AwbcChoiceOption,
@@ -13,8 +13,8 @@ use arcweft_core::awbc::schema::{
     AwbcInstruction, AwbcIntrinsic, AwbcIntrinsicId, AwbcLineCancelHandler, AwbcLineTaskGroup,
     AwbcLineTaskGroupId, AwbcLineTaskNode, AwbcLineTaskNodeId, AwbcLineTaskTrigger,
     AwbcParallelPolicy, AwbcPatternId, AwbcPureHelper, AwbcPureHelperOrigin, AwbcRegisterId,
-    AwbcResumePoint, AwbcResumePointId, AwbcRuntimeType, AwbcSafePointKind, AwbcScopeId,
-    AwbcTableRange, AwbcTerminator, AwbcTrapCode,
+    AwbcResumePoint, AwbcResumePointId, AwbcRuntimeTypeShape, AwbcSafePointKind, AwbcScopeId,
+    AwbcTableRange, AwbcTerminator, AwbcTraitMethodId, AwbcTrapCode,
 };
 use arcweft_core::effect::LineEffectRequest;
 use arcweft_core::line_task::{
@@ -28,7 +28,7 @@ use arcweft_core::plan::{
     RuntimeIteratorWitnessExecutable, RuntimeMatchArm, RuntimePlan, RuntimePureHelper,
     RuntimePureHelperOrigin, RuntimeTraitMethodId,
 };
-use arcweft_core::value::{RuntimeExpr, RuntimeValue};
+use arcweft_core::value::{RuntimeCallTarget, RuntimeExpr, RuntimeValue};
 use std::collections::{BTreeMap, BTreeSet};
 
 /// Builds one contiguous flow body while allowing host-visible suspension
@@ -318,20 +318,9 @@ impl<'inventory, 'plan> AwbcFlowLowerer<'inventory, 'plan> {
 
         let owner = self.inventory.reserve_function_slot();
         let mut frame = FrameBuilder::new();
-        let dynamic_ty = self.inventory.dynamic_ty();
         let mut parameter_types = Vec::with_capacity(helper.input_locals.len());
         for input in &helper.input_locals {
-            let ty = self
-                .plan
-                .local_declarations()
-                .get(*input)
-                .map_or(dynamic_ty, |declaration| {
-                    crate::awbc_lower::pattern::plan_type(
-                        self.inventory,
-                        self.plan,
-                        declaration.ty(),
-                    )
-                });
+            let ty = admitted_local_type(self.inventory, self.plan, *input);
             frame.parameter(*input, ty);
             parameter_types.push(ty);
         }
@@ -356,8 +345,11 @@ impl<'inventory, 'plan> AwbcFlowLowerer<'inventory, 'plan> {
             source_map: None,
         });
         let public_id = self.inventory.intern_string(&helper.name);
-        let result_type =
-            crate::awbc_lower::pattern::plan_type(self.inventory, self.plan, helper.expr.ty());
+        let result_type = crate::awbc_lower::pattern::admitted_plan_type(
+            self.inventory,
+            self.plan,
+            helper.expr.ty(),
+        );
         let signature = self.inventory.intern_signature(
             parameter_types,
             Some(result_type),
@@ -391,14 +383,7 @@ impl<'inventory, 'plan> AwbcFlowLowerer<'inventory, 'plan> {
         &mut self,
         local: arcweft_core::runtime_id::RuntimeLocalDeclarationId,
     ) -> arcweft_core::awbc::schema::AwbcTypeId {
-        let Some(declaration) = self.plan.local_declarations().get(local) else {
-            self.inventory.diagnostic(AwbcLowerDiagnostic::error(
-                format!("local.{local}"),
-                "RuntimePlan local declaration is absent during AWBC lowering",
-            ));
-            return self.inventory.dynamic_ty();
-        };
-        crate::awbc_lower::pattern::plan_type(self.inventory, self.plan, declaration.ty())
+        admitted_local_type(self.inventory, self.plan, local)
     }
 
     pub fn into_diagnostics(mut self) -> Vec<AwbcLowerDiagnostic> {
@@ -601,19 +586,8 @@ impl<'inventory, 'plan> AwbcFlowLowerer<'inventory, 'plan> {
             .inventory
             .flow_function(&flow.id)
             .unwrap_or_else(|| self.inventory.reserve_flow_function_slot(&flow.id));
-        let dynamic_ty = self.inventory.dynamic_ty();
         for parameter in &flow.params {
-            let ty =
-                self.plan
-                    .local_declarations()
-                    .get(*parameter)
-                    .map_or(dynamic_ty, |declaration| {
-                        crate::awbc_lower::pattern::plan_type(
-                            self.inventory,
-                            self.plan,
-                            declaration.ty(),
-                        )
-                    });
+            let ty = self.local_type(*parameter);
             frame.parameter(*parameter, ty);
         }
         let mut body = FlowBodyBuilder::new(self.inventory, owner);
@@ -903,7 +877,10 @@ impl<'inventory, 'plan> AwbcFlowLowerer<'inventory, 'plan> {
                 });
             }
             FlowOp::HostCall { binding, target } => {
-                let call = self.inventory.intern_host_call(target);
+                let Some((call, result_type)) = self.inventory.intern_host_call(target, self.plan)
+                else {
+                    return;
+                };
                 let args = target
                     .args
                     .iter()
@@ -916,7 +893,7 @@ impl<'inventory, 'plan> AwbcFlowLowerer<'inventory, 'plan> {
                 // signature. Keep that result shape even when the source flow
                 // deliberately discards the value; only the pattern binding is
                 // optional.
-                let dst = frame.temp(self.inventory.dynamic_ty());
+                let dst = frame.temp(result_type);
                 let pattern = binding
                     .as_ref()
                     .map(|binding| lower_pattern(self.inventory, self.plan, frame, binding));
@@ -1198,7 +1175,7 @@ impl<'inventory, 'plan> AwbcFlowLowerer<'inventory, 'plan> {
         observers: &[arcweft_core::plan::RuntimeAwaitPendingObserver],
         path: &str,
     ) {
-        let progress_ty = self.inventory.intern_type(AwbcRuntimeType::Progress);
+        let progress_ty = self.inventory.intern_type(AwbcRuntimeTypeShape::Progress);
         let progress = frame.temp(progress_ty);
         let await_block = AwbcBlockId(table_index(
             self.inventory.program.blocks.len().saturating_add(1),
@@ -1656,7 +1633,11 @@ impl<'inventory, 'plan> AwbcFlowLowerer<'inventory, 'plan> {
         path: &str,
     ) {
         let result_register = result.map(|pattern| {
-            let ty = crate::awbc_lower::pattern::plan_type(self.inventory, self.plan, pattern.ty());
+            let ty = crate::awbc_lower::pattern::admitted_plan_type(
+                self.inventory,
+                self.plan,
+                pattern.ty(),
+            );
             frame.temp(ty)
         });
         let header = AwbcBlockId(table_index(
@@ -1972,23 +1953,29 @@ impl<'inventory, 'plan> AwbcFlowLowerer<'inventory, 'plan> {
         body: &mut FlowBodyBuilder,
         input: ForLoweringInput<'_>,
     ) {
-        let Some(evidence_label) = input.evidence.awbc_label() else {
-            self.inventory.diagnostic(AwbcLowerDiagnostic::error(
-                input.path.to_owned(),
-                "witness-backed IntoIterator lowering requires executable trait method bodies",
-            ));
-            return;
+        let RuntimeIteratorEvidence::Builtin(evidence) = input.evidence else {
+            panic!(
+                "witness-backed iterator reached built-in AWBC lowering at {}",
+                input.path
+            );
         };
         let source =
             AwbcExprLowerer::new(self.inventory, frame, input.path, self.plan).lower(input.source);
-        let evidence = self.lower_iterator_evidence_constant(frame, evidence_label);
-        let iterator = frame.runtime_state(self.inventory.dynamic_ty());
-        let into_iter = self.intrinsic("core.iter.into_iter", 2, Some(self.inventory.dynamic_ty()));
+        let source_ty = admitted_plan_type(self.inventory, self.plan, input.source.ty());
+        let iterator_ty = admitted_plan_type(self.inventory, self.plan, evidence.iterator);
+        let iterator = frame.runtime_state(iterator_ty);
+        let into_iter = self.intrinsic(
+            RuntimeCallTarget::intrinsic(
+                arcweft_core::value::RuntimeIntrinsic::builtin_iterator_into_iter(evidence.family),
+            ),
+            &[source_ty],
+            Some(iterator_ty),
+        );
         self.inventory
             .push_instruction(AwbcInstruction::CallIntrinsic {
                 dst: Some(iterator),
                 intrinsic: into_iter,
-                args: vec![source, evidence],
+                args: vec![source],
             });
 
         let condition_block = AwbcBlockId(table_index(
@@ -2002,8 +1989,13 @@ impl<'inventory, 'plan> AwbcFlowLowerer<'inventory, 'plan> {
             AwbcSafePointKind::None,
         );
 
-        let next_pair = frame.temp(self.inventory.dynamic_ty());
-        let next = self.intrinsic("core.iter.next", 1, Some(self.inventory.dynamic_ty()));
+        let next_pair_ty = admitted_plan_type(self.inventory, self.plan, evidence.step);
+        let next_pair = frame.temp(next_pair_ty);
+        let next = self.intrinsic(
+            RuntimeCallTarget::intrinsic(arcweft_core::value::RuntimeIntrinsic::CoreIterNext),
+            &[iterator_ty],
+            Some(next_pair_ty),
+        );
         self.inventory
             .push_instruction(AwbcInstruction::CallIntrinsic {
                 dst: Some(next_pair),
@@ -2016,7 +2008,8 @@ impl<'inventory, 'plan> AwbcFlowLowerer<'inventory, 'plan> {
                 target: next_pair,
                 ordinal: 0,
             });
-        let next_value = frame.temp(self.inventory.dynamic_ty());
+        let next_value_ty = admitted_plan_type(self.inventory, self.plan, evidence.next_value);
+        let next_value = frame.temp(next_value_ty);
         self.inventory
             .push_instruction(AwbcInstruction::ProjectTuple {
                 dst: next_value,
@@ -2025,7 +2018,11 @@ impl<'inventory, 'plan> AwbcFlowLowerer<'inventory, 'plan> {
             });
         let condition_ty = self.inventory.bool_ty();
         let condition = frame.temp(condition_ty);
-        let is_some = self.intrinsic("core.option.is_some", 1, Some(condition_ty));
+        let is_some = self.intrinsic(
+            RuntimeCallTarget::intrinsic(arcweft_core::value::RuntimeIntrinsic::CoreOptionIsSome),
+            &[next_value_ty],
+            Some(condition_ty),
+        );
         self.inventory
             .push_instruction(AwbcInstruction::CallIntrinsic {
                 dst: Some(condition),
@@ -2047,8 +2044,18 @@ impl<'inventory, 'plan> AwbcFlowLowerer<'inventory, 'plan> {
         let scope = frame.enter_scope();
         self.inventory
             .push_instruction(AwbcInstruction::EnterScope { scope });
-        let value = frame.temp(self.inventory.dynamic_ty());
-        let unwrap = self.intrinsic("core.option.unwrap", 1, Some(self.inventory.dynamic_ty()));
+        let value_ty = admitted_plan_type(self.inventory, self.plan, evidence.item);
+        assert_eq!(
+            value_ty,
+            admitted_plan_type(self.inventory, self.plan, input.pattern.ty()),
+            "admitted built-in iterator item must match its For pattern type"
+        );
+        let value = frame.temp(value_ty);
+        let unwrap = self.intrinsic(
+            RuntimeCallTarget::intrinsic(arcweft_core::value::RuntimeIntrinsic::CoreOptionUnwrap),
+            &[next_value_ty],
+            Some(value_ty),
+        );
         self.inventory
             .push_instruction(AwbcInstruction::CallIntrinsic {
                 dst: Some(value),
@@ -2080,15 +2087,17 @@ impl<'inventory, 'plan> AwbcFlowLowerer<'inventory, 'plan> {
         next: RuntimeTraitMethodId,
     ) {
         let Some(into_iter) = self.inventory.trait_method(into_iter) else {
-            self.inventory.diagnostic(AwbcLowerDiagnostic::error(
-                input.path.to_owned(),
-                "iterator witness refers to an unlowered IntoIterator method",
-            ));
-            return;
+            panic!(
+                "admitted iterator witness refers to an unlowered IntoIterator method at {}",
+                input.path
+            );
         };
+        let source_ty = admitted_plan_type(self.inventory, self.plan, input.source.ty());
         let source =
             AwbcExprLowerer::new(self.inventory, frame, input.path, self.plan).lower(input.source);
-        let iterator = frame.runtime_state(self.inventory.dynamic_ty());
+        let iterator_ty =
+            self.trait_method_result_type(into_iter, "IntoIterator::into_iter", source_ty);
+        let iterator = frame.runtime_state(iterator_ty);
         self.inventory
             .push_instruction(AwbcInstruction::CallTraitMethod {
                 dst: iterator,
@@ -2097,7 +2106,7 @@ impl<'inventory, 'plan> AwbcFlowLowerer<'inventory, 'plan> {
                 args: Vec::new(),
                 receiver_out: None,
             });
-        self.lower_trait_iterator_loop(frame, body, input, iterator, next);
+        self.lower_trait_iterator_loop(frame, body, input, iterator, iterator_ty, next);
     }
 
     fn lower_identity_trait_call_for(
@@ -2109,12 +2118,13 @@ impl<'inventory, 'plan> AwbcFlowLowerer<'inventory, 'plan> {
     ) {
         let source =
             AwbcExprLowerer::new(self.inventory, frame, input.path, self.plan).lower(input.source);
-        let iterator = frame.runtime_state(self.inventory.dynamic_ty());
+        let iterator_ty = admitted_plan_type(self.inventory, self.plan, input.source.ty());
+        let iterator = frame.runtime_state(iterator_ty);
         self.inventory.push_instruction(AwbcInstruction::Move {
             dst: iterator,
             src: source,
         });
-        self.lower_trait_iterator_loop(frame, body, input, iterator, next);
+        self.lower_trait_iterator_loop(frame, body, input, iterator, iterator_ty, next);
     }
 
     fn lower_trait_iterator_loop(
@@ -2123,14 +2133,14 @@ impl<'inventory, 'plan> AwbcFlowLowerer<'inventory, 'plan> {
         body: &mut FlowBodyBuilder,
         input: ForLoweringInput<'_>,
         iterator: AwbcRegisterId,
+        iterator_ty: arcweft_core::awbc::schema::AwbcTypeId,
         next: RuntimeTraitMethodId,
     ) {
         let Some(next) = self.inventory.trait_method(next) else {
-            self.inventory.diagnostic(AwbcLowerDiagnostic::error(
-                input.path.to_owned(),
-                "iterator witness refers to an unlowered Iterator::next method",
-            ));
-            return;
+            panic!(
+                "admitted iterator witness refers to an unlowered Iterator::next method at {}",
+                input.path
+            );
         };
         let condition_block = AwbcBlockId(table_index(
             self.inventory.program.blocks.len().saturating_add(1),
@@ -2143,7 +2153,8 @@ impl<'inventory, 'plan> AwbcFlowLowerer<'inventory, 'plan> {
             AwbcSafePointKind::None,
         );
 
-        let next_value = frame.temp(self.inventory.dynamic_ty());
+        let next_value_ty = self.trait_method_result_type(next, "Iterator::next", iterator_ty);
+        let next_value = frame.temp(next_value_ty);
         self.inventory
             .push_instruction(AwbcInstruction::CallTraitMethod {
                 dst: next_value,
@@ -2154,7 +2165,11 @@ impl<'inventory, 'plan> AwbcFlowLowerer<'inventory, 'plan> {
             });
         let condition_ty = self.inventory.bool_ty();
         let condition = frame.temp(condition_ty);
-        let is_some = self.intrinsic("core.option.is_some", 1, Some(condition_ty));
+        let is_some = self.intrinsic(
+            RuntimeCallTarget::intrinsic(arcweft_core::value::RuntimeIntrinsic::CoreOptionIsSome),
+            &[next_value_ty],
+            Some(condition_ty),
+        );
         self.inventory
             .push_instruction(AwbcInstruction::CallIntrinsic {
                 dst: Some(condition),
@@ -2176,8 +2191,13 @@ impl<'inventory, 'plan> AwbcFlowLowerer<'inventory, 'plan> {
         let scope = frame.enter_scope();
         self.inventory
             .push_instruction(AwbcInstruction::EnterScope { scope });
-        let value = frame.temp(self.inventory.dynamic_ty());
-        let unwrap = self.intrinsic("core.option.unwrap", 1, Some(self.inventory.dynamic_ty()));
+        let value_ty = admitted_plan_type(self.inventory, self.plan, input.pattern.ty());
+        let value = frame.temp(value_ty);
+        let unwrap = self.intrinsic(
+            RuntimeCallTarget::intrinsic(arcweft_core::value::RuntimeIntrinsic::CoreOptionUnwrap),
+            &[next_value_ty],
+            Some(value_ty),
+        );
         self.inventory
             .push_instruction(AwbcInstruction::CallIntrinsic {
                 dst: Some(value),
@@ -2200,6 +2220,38 @@ impl<'inventory, 'plan> AwbcFlowLowerer<'inventory, 'plan> {
         self.close_iterator_for_iteration(frame, body, scope, condition_block);
     }
 
+    fn trait_method_result_type(
+        &self,
+        method: AwbcTraitMethodId,
+        role: &str,
+        expected_receiver: arcweft_core::awbc::schema::AwbcTypeId,
+    ) -> arcweft_core::awbc::schema::AwbcTypeId {
+        let method = self
+            .inventory
+            .program
+            .trait_methods
+            .get(method.index())
+            .unwrap_or_else(|| panic!("admitted {role} AWBC method row is absent"));
+        let signature = self
+            .inventory
+            .program
+            .signatures
+            .get(method.signature.index())
+            .unwrap_or_else(|| panic!("admitted {role} AWBC signature row is absent"));
+        let receiver = signature
+            .params
+            .first()
+            .copied()
+            .unwrap_or_else(|| panic!("admitted {role} signature has no receiver type"));
+        assert_eq!(
+            receiver, expected_receiver,
+            "admitted iterator trait receiver must match its execution row"
+        );
+        signature
+            .result
+            .unwrap_or_else(|| panic!("admitted {role} signature has no result type"))
+    }
+
     fn reopen_loop_exit_after_terminated_body(
         &mut self,
         body: &mut FlowBodyBuilder,
@@ -2215,19 +2267,6 @@ impl<'inventory, 'plan> AwbcFlowLowerer<'inventory, 'plan> {
                 .push_instruction(AwbcInstruction::ExitScope { scope });
         }
         frame.exit_all_scopes();
-    }
-
-    fn lower_iterator_evidence_constant(
-        &mut self,
-        frame: &mut FrameBuilder,
-        evidence: &str,
-    ) -> AwbcRegisterId {
-        let value = RuntimeValue::String(evidence.to_owned());
-        let constant = self.inventory.constant_runtime_value(&value);
-        let dst = frame.temp(self.inventory.dynamic_ty());
-        self.inventory
-            .push_instruction(AwbcInstruction::LoadConst { dst, constant });
-        dst
     }
 
     fn close_iterator_for_iteration(
@@ -2253,10 +2292,13 @@ impl<'inventory, 'plan> AwbcFlowLowerer<'inventory, 'plan> {
 
     fn intrinsic(
         &mut self,
-        label: &str,
-        arity: usize,
+        identity: RuntimeCallTarget,
+        parameters: &[arcweft_core::awbc::schema::AwbcTypeId],
         result: Option<arcweft_core::awbc::schema::AwbcTypeId>,
     ) -> AwbcIntrinsicId {
+        let signature =
+            self.inventory
+                .intern_signature(parameters.to_vec(), result, AwbcEffectSetId(0));
         if let Some((index, _)) =
             self.inventory
                 .program
@@ -2264,29 +2306,14 @@ impl<'inventory, 'plan> AwbcFlowLowerer<'inventory, 'plan> {
                 .iter()
                 .enumerate()
                 .find(|(_, candidate)| {
-                    self.inventory.string(candidate.public_id) == label
-                        && self
-                            .inventory
-                            .program
-                            .signatures
-                            .get(candidate.signature.index())
-                            .is_some_and(|signature| {
-                                signature.params.len() == arity && signature.result == result
-                            })
+                    candidate.identity == identity && candidate.signature == signature
                 })
         {
             return AwbcIntrinsicId(table_index(index));
         }
         let id = AwbcIntrinsicId(table_index(self.inventory.program.intrinsics.len()));
-        let public_id = self.inventory.intern_string(label);
-        let signature = self.inventory.intern_signature(
-            vec![self.inventory.dynamic_ty(); arity],
-            result,
-            AwbcEffectSetId(0),
-        );
         self.inventory.program.intrinsics.push(AwbcIntrinsic {
-            public_id,
-            registry_code: 0,
+            identity,
             signature,
             revision: 1,
         });

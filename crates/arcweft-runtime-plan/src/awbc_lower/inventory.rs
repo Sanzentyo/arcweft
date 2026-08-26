@@ -2,31 +2,36 @@ use crate::awbc_lower::audio::constant_audio_command;
 use crate::awbc_lower::pattern::intern_runtime_type;
 use crate::awbc_lower::{AwbcLowerOptions, table_index, table_range_len};
 use arcweft_core::awbc::schema::{
-    AwbcAudioCleanup, AwbcAudioCommand, AwbcAudioCommandId, AwbcAwaitManyPolicy, AwbcBlock,
-    AwbcBlockId, AwbcCallableExecutable, AwbcChildCleanup, AwbcChoice, AwbcChoiceId,
-    AwbcChoiceOption, AwbcConstant, AwbcConstantId, AwbcContentUnit, AwbcContentUnitId,
-    AwbcDisplayMapEntry, AwbcEffectKind, AwbcEffectPlan, AwbcEffectPlanId, AwbcEffectSet,
-    AwbcEffectSetId, AwbcEntry, AwbcEntryKind, AwbcEntryTarget, AwbcFlowBinding,
+    AwbcAgentTypeShape, AwbcAudioCleanup, AwbcAudioCommand, AwbcAudioCommandId,
+    AwbcAwaitManyPolicy, AwbcBlock, AwbcBlockId, AwbcCallableExecutable, AwbcChildCleanup,
+    AwbcChoice, AwbcChoiceId, AwbcChoiceOption, AwbcConstant, AwbcConstantId, AwbcContentUnit,
+    AwbcContentUnitId, AwbcDisplayMapEntry, AwbcEffectKind, AwbcEffectPlan, AwbcEffectPlanId,
+    AwbcEffectSet, AwbcEffectSetId, AwbcEntry, AwbcEntryKind, AwbcEntryTarget, AwbcFlowBinding,
     AwbcFlowExecutable, AwbcFrameLayout, AwbcFrameLayoutId, AwbcFunction, AwbcFunctionFlags,
     AwbcFunctionId, AwbcFunctionKind, AwbcHostArgument, AwbcHostCall, AwbcHostCallId,
     AwbcHostCallMode, AwbcInstruction, AwbcInstructionId, AwbcLineCleanupPolicy,
     AwbcLineTaskGroupId, AwbcPattern, AwbcPatternId, AwbcPresentationCleanup, AwbcProgram,
-    AwbcRegisterId, AwbcResumePoint, AwbcResumePointId, AwbcRoute, AwbcRouteBinding,
-    AwbcRouteBindingSource, AwbcRuntimeType, AwbcSafePointKind, AwbcSignature, AwbcSignatureId,
-    AwbcSignedIntKind, AwbcStreamPlan, AwbcStreamPlanId, AwbcStringId, AwbcTableRange,
-    AwbcTaskClass, AwbcTaskPlan, AwbcTaskPlanId, AwbcTaskPolicy, AwbcTerminator, AwbcTraitMethodId,
-    AwbcTypeId, AwbcUnsignedIntKind,
+    AwbcPureHelperId, AwbcPureProgramBinding, AwbcRegisterId, AwbcResumePoint, AwbcResumePointId,
+    AwbcRoute, AwbcRouteBinding, AwbcRouteBindingSource, AwbcRouteSegment, AwbcRuntimeType,
+    AwbcRuntimeTypeShape, AwbcSafePointKind, AwbcSignature, AwbcSignatureId, AwbcSignedIntKind,
+    AwbcStreamPlan, AwbcStreamPlanId, AwbcStringId, AwbcStructuralRuntimeTypeKind,
+    AwbcSyntheticRuntimeTypeKind, AwbcTableRange, AwbcTaskClass, AwbcTaskPlan, AwbcTaskPlanId,
+    AwbcTaskPolicy, AwbcTerminator, AwbcTraitMethodId, AwbcTypeId, AwbcUnsignedIntKind,
+    AwbcVariantIdentity,
 };
 use arcweft_core::effect::{LineEffectRequest, RuntimeEffectExpr, RuntimeWaitTarget};
 use arcweft_core::entry::{RuntimeCallableExecutableCode, RuntimeCallableRole, RuntimeEntryRoles};
 use arcweft_core::line_task::{
     AudioCleanup, ChildTaskCleanup, LineCleanupPolicy, PresentationCleanup,
 };
+use arcweft_core::pattern::{RuntimeCheckedType, RuntimeSemanticTypeId, RuntimeVariantIdentity};
 use arcweft_core::plan::{
     FlowRuntimeId, RuntimeEntryKind, RuntimeEntrySpec, RuntimeEntryTarget, RuntimeHostCallTarget,
     RuntimePlan, RuntimeTraitMethodId,
 };
-use arcweft_core::runtime_id::{RuntimeFunctionSiteId, RuntimeLocalDeclarationId};
+use arcweft_core::runtime_id::{
+    RuntimeFunctionSiteId, RuntimeLocalDeclarationId, RuntimePlanTypeId,
+};
 use arcweft_core::step::RuntimeHostCallMode;
 use arcweft_core::stream::StreamRuntimeId;
 use arcweft_core::task::{
@@ -122,6 +127,12 @@ pub struct AwbcInventory {
     pub(crate) diagnostics: Vec<AwbcLowerDiagnostic>,
     pub(crate) options: AwbcLowerOptions,
     strings: BTreeMap<String, AwbcStringId>,
+    semantic_types: BTreeMap<RuntimeSemanticTypeId, AwbcTypeId>,
+    plan_types: BTreeMap<RuntimePlanTypeId, AwbcTypeId>,
+    reserved_types: BTreeMap<AwbcTypeId, RuntimeSemanticTypeId>,
+    pending_types: BTreeMap<AwbcTypeId, AwbcRuntimeType>,
+    unit_type: AwbcTypeId,
+    dynamic_type: AwbcTypeId,
     constants: BTreeMap<String, AwbcConstantId>,
     signatures: BTreeMap<String, AwbcSignatureId>,
     frame_layouts: BTreeMap<String, AwbcFrameLayoutId>,
@@ -162,11 +173,30 @@ struct NamedTaskSpec<'a> {
 
 impl AwbcInventory {
     pub fn new(source_label: &str, options: AwbcLowerOptions) -> Self {
+        let program = AwbcProgram::default();
+        let semantic_types = program
+            .runtime_types
+            .iter()
+            .enumerate()
+            .map(|(index, ty)| (ty.semantic_identity(), AwbcTypeId(table_index(index))))
+            .collect::<BTreeMap<_, _>>();
+        let unit_type = *semantic_types
+            .get(&RuntimeCheckedType::Unit.semantic_identity_digest())
+            .expect("default AWBC inventory owns its canonical Unit row");
+        let dynamic_type = *semantic_types
+            .get(&AwbcSyntheticRuntimeTypeKind::Dynamic.semantic_identity())
+            .expect("default AWBC inventory owns its canonical Dynamic row");
         let mut this = Self {
-            program: AwbcProgram::default(),
+            program,
             diagnostics: Vec::new(),
             options,
             strings: BTreeMap::new(),
+            semantic_types,
+            plan_types: BTreeMap::new(),
+            reserved_types: BTreeMap::new(),
+            pending_types: BTreeMap::new(),
+            unit_type,
+            dynamic_type,
             constants: BTreeMap::new(),
             signatures: BTreeMap::new(),
             frame_layouts: BTreeMap::new(),
@@ -194,6 +224,32 @@ impl AwbcInventory {
         self.program
     }
 
+    pub fn lower_pure_program_bindings(&mut self, plan: &RuntimePlan) {
+        for binding in plan.pure_programs() {
+            let Ok(helper) = u32::try_from(binding.helper().0) else {
+                self.diagnostic(AwbcLowerDiagnostic::error(
+                    binding.program().to_string(),
+                    "pure-program helper index exceeds Product AWBC limits",
+                ));
+                continue;
+            };
+            let helper = AwbcPureHelperId(helper);
+            if self.program.pure_helpers.get(helper.index()).is_none() {
+                self.diagnostic(AwbcLowerDiagnostic::error(
+                    binding.program().to_string(),
+                    "pure-program binding references a missing Product AWBC helper",
+                ));
+                continue;
+            }
+            self.program.pure_programs.push(AwbcPureProgramBinding {
+                program: binding.program(),
+                helper,
+                input_types: binding.input_types().to_vec(),
+                result_type: binding.result_type(),
+            });
+        }
+    }
+
     pub fn take_diagnostics(&mut self) -> Vec<AwbcLowerDiagnostic> {
         std::mem::take(&mut self.diagnostics)
     }
@@ -203,15 +259,15 @@ impl AwbcInventory {
     }
 
     pub fn intern_runtime_primitives(&mut self) {
-        self.intern_type(AwbcRuntimeType::Unit);
-        self.intern_type(AwbcRuntimeType::Dynamic);
-        self.intern_type(AwbcRuntimeType::Bool);
-        self.intern_type(AwbcRuntimeType::Int(AwbcSignedIntKind::I64));
-        self.intern_type(AwbcRuntimeType::UInt(AwbcUnsignedIntKind::U64));
-        self.intern_type(AwbcRuntimeType::F32);
-        self.intern_type(AwbcRuntimeType::F64);
-        self.intern_type(AwbcRuntimeType::String);
-        self.intern_type(AwbcRuntimeType::EntityRef);
+        let _ = self.unit_ty();
+        let _ = self.dynamic_ty();
+        self.intern_type(AwbcRuntimeTypeShape::Bool);
+        self.intern_type(AwbcRuntimeTypeShape::Int(AwbcSignedIntKind::I64));
+        self.intern_type(AwbcRuntimeTypeShape::UInt(AwbcUnsignedIntKind::U64));
+        self.intern_type(AwbcRuntimeTypeShape::F32);
+        self.intern_type(AwbcRuntimeTypeShape::F64);
+        self.intern_type(AwbcRuntimeTypeShape::String);
+        self.intern_type(AwbcRuntimeTypeShape::EntityRef);
     }
 
     pub fn intern_dialogue_content_catalog(&mut self, catalog: &DialogueContentCatalog) {
@@ -243,62 +299,257 @@ impl AwbcInventory {
         self.program
             .strings
             .get(id.index())
-            .map_or("<bad-string>", String::as_str)
+            .map(String::as_str)
+            .expect("AWBC string IDs are issued by this inventory")
     }
 
     pub fn dynamic_ty(&self) -> AwbcTypeId {
-        AwbcTypeId(1)
+        self.dynamic_type
     }
 
     pub fn unit_ty(&self) -> AwbcTypeId {
-        AwbcTypeId(0)
+        self.unit_type
     }
 
     pub fn bool_ty(&mut self) -> AwbcTypeId {
-        self.intern_type(AwbcRuntimeType::Bool)
+        self.intern_type(AwbcRuntimeTypeShape::Bool)
     }
 
     pub fn i64_ty(&mut self) -> AwbcTypeId {
-        self.intern_type(AwbcRuntimeType::Int(AwbcSignedIntKind::I64))
+        self.intern_type(AwbcRuntimeTypeShape::Int(AwbcSignedIntKind::I64))
     }
 
     pub fn string_ty(&mut self) -> AwbcTypeId {
-        self.intern_type(AwbcRuntimeType::String)
+        self.intern_type(AwbcRuntimeTypeShape::String)
     }
 
-    pub(crate) fn intern_runtime_value_type(&mut self, value: &RuntimeValue) -> AwbcTypeId {
-        match value {
-            RuntimeValue::Agent(value) => {
-                self.intern_type(AwbcRuntimeType::Agent(value.operational_type()))
-            }
-            RuntimeValue::Opaque(value) => {
-                let producer = self.intern_string(value.producer().as_str());
-                self.intern_type(AwbcRuntimeType::Opaque {
-                    producer,
-                    semantic_identity: *value.semantic_identity().as_bytes(),
-                    admission: arcweft_core::pattern::RuntimeOpaqueTypeAdmission::ExactIdentity,
-                    value_class: value.value_class(),
-                    persistence: value.persistence(),
-                    arguments: Vec::new(),
-                })
-            }
-            _ => self.dynamic_ty(),
-        }
+    pub fn intern_type(&mut self, shape: AwbcRuntimeTypeShape) -> AwbcTypeId {
+        let semantic_identity = self
+            .canonical_non_plan_type_identity(&shape)
+            .expect("plan-backed AWBC shapes must use intern_semantic_type");
+        self.intern_semantic_type(semantic_identity, shape)
+            .expect("canonical non-plan AWBC types cannot conflict")
     }
 
-    pub fn intern_type(&mut self, ty: AwbcRuntimeType) -> AwbcTypeId {
-        if let Some((index, _)) = self
-            .program
-            .runtime_types
-            .iter()
-            .enumerate()
-            .find(|(_, candidate)| **candidate == ty)
-        {
-            return AwbcTypeId(table_index(index));
+    pub(crate) fn intern_semantic_type(
+        &mut self,
+        semantic_identity: RuntimeSemanticTypeId,
+        shape: AwbcRuntimeTypeShape,
+    ) -> Result<AwbcTypeId, AwbcLowerDiagnostic> {
+        if let Some(id) = self.semantic_types.get(&semantic_identity).copied() {
+            if self
+                .program
+                .runtime_types
+                .get(id.index())
+                .is_some_and(|row| row.shape() == &shape)
+            {
+                return Ok(id);
+            }
+            return Err(AwbcLowerDiagnostic::error(
+                format!("type.{semantic_identity:?}"),
+                "one semantic type identity projects to conflicting AWBC shapes",
+            ));
         }
         let id = AwbcTypeId(table_index(self.program.runtime_types.len()));
-        self.program.runtime_types.push(ty);
-        id
+        self.program
+            .runtime_types
+            .push(AwbcRuntimeType::new(semantic_identity, shape));
+        self.semantic_types.insert(semantic_identity, id);
+        Ok(id)
+    }
+
+    pub(crate) fn plan_type(&self, plan_type: RuntimePlanTypeId) -> Option<AwbcTypeId> {
+        self.plan_types.get(&plan_type).copied()
+    }
+
+    pub(crate) fn reserve_plan_type(
+        &mut self,
+        plan_type: RuntimePlanTypeId,
+        semantic_identity: RuntimeSemanticTypeId,
+    ) -> Result<AwbcTypeId, AwbcLowerDiagnostic> {
+        if self.plan_types.contains_key(&plan_type) {
+            return Err(AwbcLowerDiagnostic::error(
+                format!("type.{plan_type}"),
+                "RuntimePlan type was reserved more than once",
+            ));
+        }
+        let awbc_type = if let Some(existing) = self.semantic_types.get(&semantic_identity) {
+            *existing
+        } else {
+            let index = self
+                .program
+                .runtime_types
+                .len()
+                .checked_add(self.reserved_types.len())
+                .and_then(|index| u32::try_from(index).ok())
+                .ok_or_else(|| {
+                    AwbcLowerDiagnostic::error(
+                        format!("type.{plan_type}"),
+                        "AWBC runtime type identity space is exhausted",
+                    )
+                })?;
+            let id = AwbcTypeId(index);
+            self.semantic_types.insert(semantic_identity, id);
+            self.reserved_types.insert(id, semantic_identity);
+            id
+        };
+        self.plan_types.insert(plan_type, awbc_type);
+        Ok(awbc_type)
+    }
+
+    pub(crate) fn define_plan_type(
+        &mut self,
+        plan_type: RuntimePlanTypeId,
+        shape: AwbcRuntimeTypeShape,
+    ) -> Result<(), AwbcLowerDiagnostic> {
+        let awbc_type = self.plan_type(plan_type).ok_or_else(|| {
+            AwbcLowerDiagnostic::error(
+                format!("type.{plan_type}"),
+                "RuntimePlan type has no reserved AWBC identity",
+            )
+        })?;
+        if let Some(existing) = self.program.runtime_types.get(awbc_type.index()) {
+            return (existing.shape() == &shape).then_some(()).ok_or_else(|| {
+                AwbcLowerDiagnostic::error(
+                    format!("type.{plan_type}"),
+                    "plan semantic identity conflicts with a canonical AWBC type shape",
+                )
+            });
+        }
+        let semantic_identity = self
+            .reserved_types
+            .get(&awbc_type)
+            .copied()
+            .ok_or_else(|| {
+                AwbcLowerDiagnostic::error(
+                    format!("type.{plan_type}"),
+                    "reserved AWBC runtime type owner is absent",
+                )
+            })?;
+        if self
+            .pending_types
+            .insert(awbc_type, AwbcRuntimeType::new(semantic_identity, shape))
+            .is_some()
+        {
+            return Err(AwbcLowerDiagnostic::error(
+                format!("type.{plan_type}"),
+                "reserved AWBC runtime type was defined more than once",
+            ));
+        }
+        Ok(())
+    }
+
+    pub(crate) fn commit_plan_types(&mut self) -> Result<(), AwbcLowerDiagnostic> {
+        if self.pending_types.len() != self.reserved_types.len() {
+            return Err(AwbcLowerDiagnostic::error(
+                "runtime_types",
+                "AWBC type preflight left one or more reserved rows undefined",
+            ));
+        }
+        let expected_start = self.program.runtime_types.len();
+        for (offset, (id, row)) in std::mem::take(&mut self.pending_types)
+            .into_iter()
+            .enumerate()
+        {
+            if id.index() != expected_start + offset {
+                return Err(AwbcLowerDiagnostic::error(
+                    "runtime_types",
+                    "AWBC type preflight produced a non-contiguous row reservation",
+                ));
+            }
+            self.program.runtime_types.push(row);
+        }
+        self.reserved_types.clear();
+        Ok(())
+    }
+
+    fn canonical_non_plan_type_identity(
+        &self,
+        shape: &AwbcRuntimeTypeShape,
+    ) -> Option<RuntimeSemanticTypeId> {
+        let checked = match shape {
+            AwbcRuntimeTypeShape::Unit => RuntimeCheckedType::Unit,
+            AwbcRuntimeTypeShape::Bool => RuntimeCheckedType::Bool,
+            AwbcRuntimeTypeShape::Int(kind) => RuntimeCheckedType::Signed(match kind {
+                AwbcSignedIntKind::I8 => arcweft_core::value::RuntimeSignedIntWidth::I8,
+                AwbcSignedIntKind::I16 => arcweft_core::value::RuntimeSignedIntWidth::I16,
+                AwbcSignedIntKind::I32 => arcweft_core::value::RuntimeSignedIntWidth::I32,
+                AwbcSignedIntKind::I64 => arcweft_core::value::RuntimeSignedIntWidth::I64,
+                AwbcSignedIntKind::I128 => arcweft_core::value::RuntimeSignedIntWidth::I128,
+                AwbcSignedIntKind::ISize => arcweft_core::value::RuntimeSignedIntWidth::ISize,
+            }),
+            AwbcRuntimeTypeShape::UInt(kind) => RuntimeCheckedType::Unsigned(match kind {
+                AwbcUnsignedIntKind::U8 => arcweft_core::value::RuntimeUnsignedIntWidth::U8,
+                AwbcUnsignedIntKind::U16 => arcweft_core::value::RuntimeUnsignedIntWidth::U16,
+                AwbcUnsignedIntKind::U32 => arcweft_core::value::RuntimeUnsignedIntWidth::U32,
+                AwbcUnsignedIntKind::U64 => arcweft_core::value::RuntimeUnsignedIntWidth::U64,
+                AwbcUnsignedIntKind::U128 => arcweft_core::value::RuntimeUnsignedIntWidth::U128,
+                AwbcUnsignedIntKind::USize => arcweft_core::value::RuntimeUnsignedIntWidth::USize,
+            }),
+            AwbcRuntimeTypeShape::F32 => RuntimeCheckedType::F32,
+            AwbcRuntimeTypeShape::F64 => RuntimeCheckedType::F64,
+            AwbcRuntimeTypeShape::String => RuntimeCheckedType::String,
+            AwbcRuntimeTypeShape::Char => RuntimeCheckedType::Char,
+            AwbcRuntimeTypeShape::Duration => RuntimeCheckedType::Duration,
+            AwbcRuntimeTypeShape::Progress => RuntimeCheckedType::Progress,
+            AwbcRuntimeTypeShape::EntityRef => RuntimeCheckedType::EntityReference,
+            AwbcRuntimeTypeShape::Bytes => RuntimeCheckedType::Bytes,
+            AwbcRuntimeTypeShape::Never => RuntimeCheckedType::Never,
+            AwbcRuntimeTypeShape::Agent(AwbcAgentTypeShape::Leaf(agent)) => {
+                RuntimeCheckedType::Agent(*agent)
+            }
+            AwbcRuntimeTypeShape::Agent(AwbcAgentTypeShape::Probe(_)) => return None,
+            AwbcRuntimeTypeShape::Dynamic => {
+                return Some(AwbcSyntheticRuntimeTypeKind::Dynamic.semantic_identity());
+            }
+            AwbcRuntimeTypeShape::MatrixF32 => {
+                return Some(AwbcSyntheticRuntimeTypeKind::MatrixF32.semantic_identity());
+            }
+            AwbcRuntimeTypeShape::MatrixF64 => {
+                return Some(AwbcSyntheticRuntimeTypeKind::MatrixF64.semantic_identity());
+            }
+            AwbcRuntimeTypeShape::TensorF32 => {
+                return Some(AwbcSyntheticRuntimeTypeKind::TensorF32.semantic_identity());
+            }
+            AwbcRuntimeTypeShape::TensorF64 => {
+                return Some(AwbcSyntheticRuntimeTypeKind::TensorF64.semantic_identity());
+            }
+            AwbcRuntimeTypeShape::Record { public_id, fields } => {
+                let public_id = public_id.map(|id| self.string(id).to_owned());
+                let fields = fields
+                    .iter()
+                    .map(|field| {
+                        let semantic_identity = self
+                            .program
+                            .runtime_types
+                            .get(field.ty.index())?
+                            .semantic_identity();
+                        Some((self.string(field.name).to_owned(), semantic_identity))
+                    })
+                    .collect::<Option<Vec<_>>>()?;
+                return Some(
+                    AwbcStructuralRuntimeTypeKind::Record { public_id, fields }.semantic_identity(),
+                );
+            }
+            AwbcRuntimeTypeShape::Tuple(_)
+            | AwbcRuntimeTypeShape::Sequence(_)
+            | AwbcRuntimeTypeShape::Variant { .. }
+            | AwbcRuntimeTypeShape::Choice(_)
+            | AwbcRuntimeTypeShape::Nominal { .. }
+            | AwbcRuntimeTypeShape::NominalRecord { .. }
+            | AwbcRuntimeTypeShape::Opaque { .. }
+            | AwbcRuntimeTypeShape::Range(_)
+            | AwbcRuntimeTypeShape::Iterator(_)
+            | AwbcRuntimeTypeShape::Array { .. }
+            | AwbcRuntimeTypeShape::Map { .. }
+            | AwbcRuntimeTypeShape::Need(_)
+            | AwbcRuntimeTypeShape::Task(_)
+            | AwbcRuntimeTypeShape::Stream { .. }
+            | AwbcRuntimeTypeShape::Shared(_)
+            | AwbcRuntimeTypeShape::Reference(_)
+            | AwbcRuntimeTypeShape::Function { .. } => return None,
+        };
+        Some(checked.semantic_identity_digest())
     }
 
     pub fn intern_effect_set(&mut self, mut effects: Vec<&str>) -> AwbcEffectSetId {
@@ -376,6 +627,25 @@ impl AwbcInventory {
             return id;
         }
         let constant = self.runtime_value_constant(value);
+        let id = AwbcConstantId(table_index(self.program.constants.len()));
+        self.program.constants.push(constant);
+        self.constants.insert(key, id);
+        id
+    }
+
+    /// Interns one accepted runtime value under its exact plan-owned type row.
+    /// Container and owner-bearing constants recursively retain that row's
+    /// child coordinates instead of inferring a parallel type from the value.
+    pub(crate) fn constant_runtime_value_typed(
+        &mut self,
+        value: &RuntimeValue,
+        ty: AwbcTypeId,
+    ) -> AwbcConstantId {
+        let key = format!("runtime-typed:{}:{value:?}", ty.0);
+        if let Some(id) = self.constants.get(&key).copied() {
+            return id;
+        }
+        let constant = self.runtime_value_constant_typed(value, ty);
         let id = AwbcConstantId(table_index(self.program.constants.len()));
         self.program.constants.push(constant);
         self.constants.insert(key, id);
@@ -476,9 +746,10 @@ impl AwbcInventory {
                     arcweft_core::value::RuntimeOpaqueValueClass::Plain,
                     "affine opaque handles cannot enter the AWBC constant pool"
                 );
-                let ty = self.intern_runtime_value_type(value);
-                let payload = self.constant_runtime_value(opaque.payload());
-                AwbcConstant::Opaque { ty, payload }
+                panic!(
+                    "runtime opaque value `{}` requires an exact accepted type row",
+                    opaque.producer().as_str()
+                )
             }
             RuntimeValue::Reduction(_) => {
                 panic!("runtime reduction state cannot be encoded as an AWBC constant")
@@ -547,6 +818,254 @@ impl AwbcInventory {
                     .map(|value| value.to_bits())
                     .collect(),
             },
+        }
+    }
+
+    #[allow(
+        clippy::too_many_lines,
+        reason = "the typed constant projection exhaustively preserves container child coordinates"
+    )]
+    fn runtime_value_constant_typed(
+        &mut self,
+        value: &RuntimeValue,
+        ty: AwbcTypeId,
+    ) -> AwbcConstant {
+        let row = self
+            .program
+            .runtime_types
+            .get(ty.index())
+            .cloned()
+            .expect("typed constants use a committed AWBC runtime type row");
+        match (value, row.shape()) {
+            (RuntimeValue::Tuple(values), AwbcRuntimeTypeShape::Tuple(items)) => {
+                assert_eq!(
+                    values.len(),
+                    items.len(),
+                    "accepted tuple constant must match its exact AWBC type arity"
+                );
+                AwbcConstant::Tuple(
+                    values
+                        .iter()
+                        .zip(items)
+                        .map(|(value, item)| self.constant_runtime_value_typed(value, *item))
+                        .collect(),
+                )
+            }
+            (RuntimeValue::Seq(values), AwbcRuntimeTypeShape::Sequence(item)) => {
+                AwbcConstant::Sequence(
+                    values
+                        .clone()
+                        .into_values()
+                        .iter()
+                        .map(|value| self.constant_runtime_value_typed(value, *item))
+                        .collect(),
+                )
+            }
+            (RuntimeValue::Seq(values), AwbcRuntimeTypeShape::Array { item, length }) => {
+                assert_eq!(
+                    u64::try_from(values.len()).ok(),
+                    Some(*length),
+                    "accepted array constant must match its exact AWBC length"
+                );
+                AwbcConstant::Sequence(
+                    values
+                        .clone()
+                        .into_values()
+                        .iter()
+                        .map(|value| self.constant_runtime_value_typed(value, *item))
+                        .collect(),
+                )
+            }
+            (RuntimeValue::Record(values), AwbcRuntimeTypeShape::Record { fields, .. }) => {
+                assert_eq!(
+                    values.len(),
+                    fields.len(),
+                    "accepted record constant must match its exact AWBC field count"
+                );
+                for (value, field) in values.iter().zip(fields) {
+                    assert_eq!(
+                        value.name(),
+                        self.string(field.name),
+                        "accepted record constant must match its exact AWBC field order"
+                    );
+                }
+                AwbcConstant::Record {
+                    ty,
+                    field_names: fields.iter().map(|field| field.name).collect(),
+                    fields: values
+                        .iter()
+                        .zip(fields)
+                        .map(|(value, field)| {
+                            self.constant_runtime_value_typed(value.value(), field.ty)
+                        })
+                        .collect(),
+                }
+            }
+            (
+                RuntimeValue::NominalRecord(value),
+                AwbcRuntimeTypeShape::NominalRecord {
+                    public_id,
+                    layout,
+                    fields,
+                    ..
+                },
+            ) => {
+                assert_eq!(
+                    value.type_id().as_str(),
+                    self.string(*public_id),
+                    "accepted nominal record constant must retain its exact nominal owner"
+                );
+                assert_eq!(
+                    value.layout().as_bytes(),
+                    layout,
+                    "accepted nominal record constant must retain its exact layout"
+                );
+                assert_eq!(
+                    value.fields().len(),
+                    fields.len(),
+                    "accepted nominal record constant must match its exact field count"
+                );
+                AwbcConstant::Record {
+                    ty,
+                    field_names: fields.iter().map(|field| field.name).collect(),
+                    fields: value
+                        .fields()
+                        .iter()
+                        .zip(fields)
+                        .map(|(value, field)| self.constant_runtime_value_typed(value, field.ty))
+                        .collect(),
+                }
+            }
+            (
+                RuntimeValue::Variant {
+                    owner,
+                    ordinal,
+                    name,
+                    payload,
+                },
+                AwbcRuntimeTypeShape::Variant {
+                    owner: expected_owner,
+                    cases,
+                    ..
+                },
+            ) => {
+                let owner_matches = match (owner, expected_owner) {
+                    (
+                        RuntimeVariantIdentity::Nominal {
+                            nominal,
+                            semantic_identity,
+                        },
+                        AwbcVariantIdentity::Nominal { public_id },
+                    ) => {
+                        nominal.as_str() == self.string(*public_id)
+                            && *semantic_identity == row.semantic_identity()
+                    }
+                    (RuntimeVariantIdentity::Option, AwbcVariantIdentity::Option)
+                    | (RuntimeVariantIdentity::Result, AwbcVariantIdentity::Result) => true,
+                    _ => false,
+                };
+                assert!(
+                    owner_matches,
+                    "accepted variant constant must retain its exact AWBC owner"
+                );
+                let case = usize::try_from(*ordinal)
+                    .ok()
+                    .and_then(|ordinal| cases.get(ordinal))
+                    .expect("accepted variant constant ordinal exists in its exact AWBC type");
+                assert_eq!(
+                    name,
+                    self.string(case.name),
+                    "accepted variant constant must retain its exact case name"
+                );
+                let payload = match (payload.as_deref(), case.payload) {
+                    (Some(value), Some(payload_ty)) => {
+                        Some(self.constant_runtime_value_typed(value, payload_ty))
+                    }
+                    (None, None) => None,
+                    _ => panic!(
+                        "accepted variant constant payload must match its exact AWBC case schema"
+                    ),
+                };
+                AwbcConstant::Variant {
+                    ty,
+                    case: *ordinal,
+                    case_name: case.name,
+                    payload,
+                }
+            }
+            (RuntimeValue::Opaque(value), AwbcRuntimeTypeShape::Opaque { arguments, .. }) => {
+                let owner = row
+                    .try_opaque_owner(&self.program.strings)
+                    .expect("accepted AWBC opaque owner has a valid producer identity")
+                    .expect("typed opaque constant references an opaque row");
+                assert!(
+                    owner.accepts_opaque_value(value),
+                    "accepted opaque constant must retain its exact AWBC owner"
+                );
+                assert_eq!(
+                    value.persistence(),
+                    arcweft_core::value::RuntimeOpaquePersistence::ConstantAndSnapshot,
+                    "snapshot-only opaque handles cannot enter the AWBC constant pool"
+                );
+                assert_eq!(
+                    value.value_class(),
+                    arcweft_core::value::RuntimeOpaqueValueClass::Plain,
+                    "affine opaque handles cannot enter the AWBC constant pool"
+                );
+                let payload = match arguments.as_slice() {
+                    [payload_ty] => self.constant_runtime_value_typed(value.payload(), *payload_ty),
+                    [] => self.constant_runtime_value(value.payload()),
+                    _ => panic!(
+                        "opaque constant payload schema must have zero or one exact type argument"
+                    ),
+                };
+                AwbcConstant::Opaque { ty, payload }
+            }
+            (value, AwbcRuntimeTypeShape::Choice(alternatives)) => {
+                let mut accepted = alternatives.iter().copied().filter(|alternative| {
+                    self.program
+                        .checked_type(*alternative)
+                        .is_ok_and(|checked| checked.accepts_value(value))
+                });
+                let selected = accepted
+                    .next()
+                    .expect("accepted choice constant matches one exact alternative");
+                assert!(
+                    accepted.next().is_none(),
+                    "accepted choice constant must have one unambiguous exact alternative"
+                );
+                self.runtime_value_constant_typed(value, selected)
+            }
+            (RuntimeValue::Unit, AwbcRuntimeTypeShape::Unit)
+            | (RuntimeValue::Bool(_), AwbcRuntimeTypeShape::Bool)
+            | (RuntimeValue::F32(_), AwbcRuntimeTypeShape::F32)
+            | (RuntimeValue::F64(_), AwbcRuntimeTypeShape::F64)
+            | (RuntimeValue::String(_), AwbcRuntimeTypeShape::String)
+            | (RuntimeValue::Char(_), AwbcRuntimeTypeShape::Char)
+            | (RuntimeValue::Duration(_), AwbcRuntimeTypeShape::Duration)
+            | (RuntimeValue::EntityRef(_), AwbcRuntimeTypeShape::EntityRef)
+            | (RuntimeValue::MatrixF32(_), AwbcRuntimeTypeShape::MatrixF32)
+            | (RuntimeValue::MatrixF64(_), AwbcRuntimeTypeShape::MatrixF64)
+            | (RuntimeValue::TensorF32(_), AwbcRuntimeTypeShape::TensorF32)
+            | (RuntimeValue::TensorF64(_), AwbcRuntimeTypeShape::TensorF64)
+            | (RuntimeValue::Range(_), AwbcRuntimeTypeShape::Range(_)) => {
+                self.runtime_value_constant(value)
+            }
+            (RuntimeValue::Int(value), AwbcRuntimeTypeShape::Int(kind))
+                if signed_kind(*value) == *kind =>
+            {
+                signed_constant(*value)
+            }
+            (RuntimeValue::UInt(value), AwbcRuntimeTypeShape::UInt(kind))
+                if unsigned_kind(*value) == *kind =>
+            {
+                unsigned_constant(*value)
+            }
+            (_, AwbcRuntimeTypeShape::Dynamic) => self.runtime_value_constant(value),
+            _ => panic!(
+                "accepted runtime constant does not match its exact AWBC type row {}",
+                ty.0
+            ),
         }
     }
 
@@ -852,23 +1371,50 @@ impl AwbcInventory {
         })
     }
 
-    pub fn intern_host_call(&mut self, target: &RuntimeHostCallTarget) -> AwbcHostCallId {
+    pub fn intern_host_call(
+        &mut self,
+        target: &RuntimeHostCallTarget,
+        plan: &RuntimePlan,
+    ) -> Option<(AwbcHostCallId, AwbcTypeId)> {
+        let checked_result = match plan.checked_type(target.result) {
+            Ok(Some(result)) => result,
+            Ok(None) => {
+                self.diagnostic(AwbcLowerDiagnostic::error(
+                    "host_call.result",
+                    format!(
+                        "host call `{}` result is outside the checked AWBC type image",
+                        target.public_id
+                    ),
+                ));
+                return None;
+            }
+            Err(error) => {
+                self.diagnostic(AwbcLowerDiagnostic::error(
+                    "host_call.result",
+                    error.to_string(),
+                ));
+                return None;
+            }
+        };
+        let result_type = intern_runtime_type(self, &checked_result);
         let key = format!(
-            "host_call:{}:{}:{}:{:?}:{}:{}",
+            "host_call:{}:{}:{}:{:?}:{:?}:{}:{}:{}",
             target.public_id,
             target.capability,
             target.operation,
+            target.contract,
             target.args,
+            result_type.0,
             target.mode as u8,
             target.deterministic
         );
         if let Some(id) = self.host_calls.get(&key).copied() {
-            return id;
+            return Some((id, result_type));
         }
         let id = AwbcHostCallId(table_index(self.program.host_calls.len()));
         let signature = self.intern_signature(
             vec![self.dynamic_ty(); target.args.len()],
-            Some(self.dynamic_ty()),
+            Some(result_type),
             AwbcEffectSetId(0),
         );
         let mode = match target.mode {
@@ -883,13 +1429,14 @@ impl AwbcInventory {
             public_id,
             capability,
             operation,
+            contract: target.contract,
             signature,
             mode,
             deterministic: target.deterministic,
             arguments,
         });
         self.host_calls.insert(key, id);
-        id
+        Some((id, result_type))
     }
 
     fn intern_named_task(&mut self, spec: NamedTaskSpec<'_>) -> AwbcTaskPlanId {
@@ -1062,16 +1609,9 @@ impl AwbcInventory {
 
     fn lower_flow_executables(&mut self, plan: &RuntimePlan, entries: &[&RuntimeEntrySpec]) {
         for executable in plan.flow_executables().iter().filter(|executable| {
-            entries.iter().any(|entry| match &entry.roles {
-                RuntimeEntryRoles::Stateful(roles) => {
-                    executable.flow == roles.initial_flow.flow
-                        && executable.contract == roles.initial_flow.contract
-                }
-                RuntimeEntryRoles::Agent(roles) => {
-                    executable.controller.as_ref() == Some(&roles.controller)
-                }
-                RuntimeEntryRoles::None => false,
-            })
+            entries
+                .iter()
+                .any(|entry| entry.references_flow(&executable.flow))
         }) {
             let Some(function) = self.flow_function(&executable.flow) else {
                 self.diagnostic(AwbcLowerDiagnostic::error(
@@ -1101,19 +1641,19 @@ impl AwbcInventory {
             RuntimeEntryKind::Agent => AwbcEntryKind::Agent,
             RuntimeEntryKind::Custom(value) => AwbcEntryKind::Custom(self.intern_string(value)),
         };
-        let mut signature = self.intern_unit_signature();
         let target = match &entry.target {
             RuntimeEntryTarget::Flow(flow) | RuntimeEntryTarget::Controller(flow) => {
                 let flow_public_id = flow.public_label().into_string();
                 if let Some(function) = self.flow_function(flow) {
-                    signature = self.program.functions[function.index()].signature;
-                    AwbcEntryTarget::Function(function)
+                    AwbcEntryTarget::Function { function }
                 } else {
                     self.diagnostic(AwbcLowerDiagnostic::error(
                         entry_public_id.clone(),
                         format!("entry targets missing flow {flow_public_id}"),
                     ));
-                    AwbcEntryTarget::Function(AwbcFunctionId(0))
+                    AwbcEntryTarget::Function {
+                        function: AwbcFunctionId(0),
+                    }
                 }
             }
             RuntimeEntryTarget::Routes(routes) => {
@@ -1128,24 +1668,32 @@ impl AwbcInventory {
                             ));
                             AwbcFunctionId(0)
                         });
-                        signature = self.program.functions[target.index()].signature;
                         AwbcRoute {
-                            method: self.intern_string(&route.method),
-                            path: self.intern_string(&route.path),
+                            method: route.method,
+                            segments: route
+                                .path
+                                .segments()
+                                .iter()
+                                .map(|segment| match segment {
+                                    arcweft_core::plan::RuntimeRoutePathSegment::Literal(
+                                        literal,
+                                    ) => AwbcRouteSegment::Literal(self.intern_string(literal)),
+                                    arcweft_core::plan::RuntimeRoutePathSegment::Capture(
+                                        coordinate,
+                                    ) => AwbcRouteSegment::Capture(*coordinate),
+                                })
+                                .collect(),
                             target,
                             bindings: route
                                 .bindings
                                 .iter()
-                                .enumerate()
-                                .map(|(index, binding)| {
+                                .map(|binding| {
                                     AwbcRouteBinding {
-                                    register: AwbcRegisterId(table_index(index)),
+                                    parameter: binding.parameter,
                                     source: match &binding.source {
-                                        arcweft_core::plan::RuntimeRouteBindingSource::PathParam(
-                                            value,
-                                        ) => AwbcRouteBindingSource::PathParameter(
-                                            self.intern_string(value),
-                                        ),
+                                        arcweft_core::plan::RuntimeRouteBindingSource::PathCapture(
+                                            capture,
+                                        ) => AwbcRouteBindingSource::PathCapture(*capture),
                                     },
                                 }
                                 })
@@ -1161,7 +1709,6 @@ impl AwbcInventory {
             binding: entry.binding,
             public_id,
             kind,
-            signature,
             target,
             roles: entry.roles.clone(),
         });
@@ -1206,27 +1753,55 @@ impl AwbcInventory {
 }
 
 fn signed_constant(value: RuntimeInt) -> AwbcConstant {
-    let (kind, bits) = match value {
-        RuntimeInt::I8(value) => (AwbcSignedIntKind::I8, i128::from(value).to_le_bytes()),
-        RuntimeInt::I16(value) => (AwbcSignedIntKind::I16, i128::from(value).to_le_bytes()),
-        RuntimeInt::I32(value) => (AwbcSignedIntKind::I32, i128::from(value).to_le_bytes()),
-        RuntimeInt::I64(value) => (AwbcSignedIntKind::I64, i128::from(value).to_le_bytes()),
-        RuntimeInt::I128(value) => (AwbcSignedIntKind::I128, value.to_le_bytes()),
-        RuntimeInt::ISize(value) => (AwbcSignedIntKind::ISize, i128::from(value).to_le_bytes()),
+    let bits = match value {
+        RuntimeInt::I8(value) => i128::from(value).to_le_bytes(),
+        RuntimeInt::I16(value) => i128::from(value).to_le_bytes(),
+        RuntimeInt::I32(value) => i128::from(value).to_le_bytes(),
+        RuntimeInt::I64(value) => i128::from(value).to_le_bytes(),
+        RuntimeInt::I128(value) => value.to_le_bytes(),
+        RuntimeInt::ISize(value) => i128::from(value).to_le_bytes(),
     };
-    AwbcConstant::Int { kind, bits }
+    AwbcConstant::Int {
+        kind: signed_kind(value),
+        bits,
+    }
 }
 
 fn unsigned_constant(value: RuntimeUInt) -> AwbcConstant {
-    let (kind, bits) = match value {
-        RuntimeUInt::U8(value) => (AwbcUnsignedIntKind::U8, u128::from(value).to_le_bytes()),
-        RuntimeUInt::U16(value) => (AwbcUnsignedIntKind::U16, u128::from(value).to_le_bytes()),
-        RuntimeUInt::U32(value) => (AwbcUnsignedIntKind::U32, u128::from(value).to_le_bytes()),
-        RuntimeUInt::U64(value) => (AwbcUnsignedIntKind::U64, u128::from(value).to_le_bytes()),
-        RuntimeUInt::U128(value) => (AwbcUnsignedIntKind::U128, value.to_le_bytes()),
-        RuntimeUInt::USize(value) => (AwbcUnsignedIntKind::USize, u128::from(value).to_le_bytes()),
+    let bits = match value {
+        RuntimeUInt::U8(value) => u128::from(value).to_le_bytes(),
+        RuntimeUInt::U16(value) => u128::from(value).to_le_bytes(),
+        RuntimeUInt::U32(value) => u128::from(value).to_le_bytes(),
+        RuntimeUInt::U64(value) => u128::from(value).to_le_bytes(),
+        RuntimeUInt::U128(value) => value.to_le_bytes(),
+        RuntimeUInt::USize(value) => u128::from(value).to_le_bytes(),
     };
-    AwbcConstant::UInt { kind, bits }
+    AwbcConstant::UInt {
+        kind: unsigned_kind(value),
+        bits,
+    }
+}
+
+const fn signed_kind(value: RuntimeInt) -> AwbcSignedIntKind {
+    match value {
+        RuntimeInt::I8(_) => AwbcSignedIntKind::I8,
+        RuntimeInt::I16(_) => AwbcSignedIntKind::I16,
+        RuntimeInt::I32(_) => AwbcSignedIntKind::I32,
+        RuntimeInt::I64(_) => AwbcSignedIntKind::I64,
+        RuntimeInt::I128(_) => AwbcSignedIntKind::I128,
+        RuntimeInt::ISize(_) => AwbcSignedIntKind::ISize,
+    }
+}
+
+const fn unsigned_kind(value: RuntimeUInt) -> AwbcUnsignedIntKind {
+    match value {
+        RuntimeUInt::U8(_) => AwbcUnsignedIntKind::U8,
+        RuntimeUInt::U16(_) => AwbcUnsignedIntKind::U16,
+        RuntimeUInt::U32(_) => AwbcUnsignedIntKind::U32,
+        RuntimeUInt::U64(_) => AwbcUnsignedIntKind::U64,
+        RuntimeUInt::U128(_) => AwbcUnsignedIntKind::U128,
+        RuntimeUInt::USize(_) => AwbcUnsignedIntKind::USize,
+    }
 }
 
 fn effect_kind(effect: &LineEffectRequest) -> AwbcEffectKind {

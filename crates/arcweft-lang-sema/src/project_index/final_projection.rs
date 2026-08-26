@@ -24,12 +24,12 @@ use arcweft_lang_hir::{
 use arcweft_source::{SourceAnchor, SourceSpan};
 
 use crate::{
-    callable::{CallTargetFact, CheckedCallableDeclaration},
+    callable::CheckedCallableDeclaration,
     entry::CheckedEntryCatalog,
     final_analysis::{CheckedExpressionResolution, CheckedValueResolution, FinalSemanticAnalysis},
     types::{
-        EntityKind, EntityType, GenericTypeOwnerId, GenericTypeParameterId, ProjectNominalType,
-        TypeKind,
+        EntityKind, EntityType, GenericParameterOwnerId, GenericTypeParameterId,
+        ProjectNominalType, TypeKind,
     },
 };
 
@@ -51,9 +51,9 @@ impl ProjectSemanticIndex {
         project: HirExecutableProjectView<'_>,
         symbols: &ProjectSymbolTable,
         analysis: &FinalSemanticAnalysis,
-        entries: &CheckedEntryCatalog,
     ) -> Result<Self, ProjectSemanticIndexError> {
         analysis.validate_generation(project, symbols)?;
+        let entries = analysis.checked_entries();
 
         let mut index = Self::try_new(program_hash, Arc::clone(analysis.checked_callables()))?;
         (index.entry_records, index.entry_role_edges) =
@@ -122,9 +122,10 @@ fn callable_dependencies(
     analysis: &FinalSemanticAnalysis,
 ) -> Result<(), ProjectSemanticIndexError> {
     for (_, facts) in analysis.calls() {
-        let CallTargetFact::Selected { selected, .. } = facts.target() else {
+        let Some(application) = facts.selected_application() else {
             continue;
         };
+        let selected = application.core().candidates().selected();
         let Some(target) = selected.checked() else {
             continue;
         };
@@ -526,7 +527,7 @@ fn project_nominal_types(
             .iter()
             .map(|parameter| {
                 TypeKind::GenericParam(GenericTypeParameterId::new(
-                    GenericTypeOwnerId::Nominal(declaration.id().clone()),
+                    GenericParameterOwnerId::Nominal(declaration.id().clone()),
                     parameter.ordinal(),
                 ))
             })

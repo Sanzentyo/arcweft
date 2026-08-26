@@ -1,5 +1,4 @@
 use super::runtime_control_style::ViewRuntimeControlVisualStyle;
-use crate::container::BundleDigest;
 use crate::resource_codec::types::{CrossSectionRef, SourceRangeRef};
 use arcweft_presentation::appearance::{
     PresentationColor, PresentationEnvironmentOverrides, SystemColor, SystemPalette,
@@ -9,10 +8,11 @@ use arcweft_presentation::fx::{FxId, FxRuntimeType};
 use arcweft_source::ProductSourceRef;
 use arcweft_text_model::{LineDisplayFrame, RichTextDocument};
 pub use arcweft_view::ViewProgramId;
-pub use arcweft_view::program::ViewElementKind;
+pub use arcweft_view::program::{EventKind, ViewElementKind};
 use arcweft_view::program::{ViewElementTextInputKind, ViewVirtualAxis};
 use arcweft_view::{
-    DialogueAdvanceTarget, ViewPartLocalName, ViewValueProgram, ViewValueProgramId,
+    ViewHandlerCapture, ViewHandlerProgramId, ViewHandlerResult, ViewHandlerValueTypeId,
+    ViewPartLocalName, ViewValueProgram, ViewValueProgramId,
 };
 use core::fmt;
 use serde::{Deserialize, Serialize};
@@ -141,8 +141,8 @@ pub enum ViewProgramInstruction {
         source: Option<SourceRangeRef>,
     },
     BindHandler {
-        event: String,
-        handler: String,
+        event: EventKind,
+        handler: ViewHandlerProgramId,
         source: Option<SourceRangeRef>,
     },
     AttachSemantic {
@@ -315,6 +315,8 @@ pub struct ViewParameterResource {
     pub ordinal: u16,
     pub name: String,
     pub role: ViewParameterRole,
+    /// Exact checked semantic type shared with the handler/AWBC ABI.
+    pub semantic_type: ViewHandlerValueTypeId,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub value_type: Option<FxRuntimeType>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -376,11 +378,9 @@ pub struct ViewInstructionSpan {
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
 pub struct ViewHandlerRef {
-    pub handler_id: String,
-    pub event: String,
-    pub awbc_function_index: u32,
-    pub handler_abi: BundleDigest,
-    pub function_binding: Option<CrossSectionRef>,
+    pub program: ViewHandlerProgramId,
+    pub captures: Vec<ViewHandlerCapture>,
+    pub result: ViewHandlerResult,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
@@ -537,10 +537,6 @@ pub enum ViewActionButtonActionResource {
         action: String,
         #[serde(default, skip_serializing_if = "Option::is_none")]
         payload: Option<ViewActionPayloadResource>,
-    },
-    /// Invokes the stale-safe primary action supplied by a dialogue View input.
-    DialoguePrimaryAction {
-        parameter: String,
     },
 }
 
@@ -743,28 +739,11 @@ pub enum ViewRuntimeActionButtonAction {
         #[serde(default, skip_serializing_if = "Option::is_none")]
         payload: Option<ViewActionPayloadResource>,
     },
-    /// Typed dialogue action. `target` is populated when the owning mount is projected.
-    DialoguePrimaryAction {
-        parameter: String,
-        #[serde(default, skip_serializing_if = "Option::is_none")]
-        target: Option<DialogueAdvanceTarget>,
+    /// Mount/frame-scoped typed handler route sealed by the View runtime.
+    ViewHandler {
+        event: EventKind,
+        route: arcweft_view::ViewHandlerRouteId,
     },
-}
-
-impl ViewRuntimeActionButtonAction {
-    /// Returns the stale-safe dialogue target carried by a projected primary action.
-    #[must_use]
-    pub const fn dialogue_advance_target(&self) -> Option<DialogueAdvanceTarget> {
-        match self {
-            Self::DialoguePrimaryAction {
-                target: Some(target),
-                ..
-            } => Some(*target),
-            Self::Noop
-            | Self::ActionInvoke { .. }
-            | Self::DialoguePrimaryAction { target: None, .. } => None,
-        }
-    }
 }
 
 /// Authored focus group metadata for Arcweft-owned player navigation.
@@ -1145,10 +1124,10 @@ impl ViewTextResource {
 }
 
 impl ViewProgramResource {
-    pub fn handler_ref(&self, handler_id: &str) -> Option<&ViewHandlerRef> {
+    pub fn handler_ref(&self, program: ViewHandlerProgramId) -> Option<&ViewHandlerRef> {
         self.handlers
             .iter()
-            .find(|handler| handler.handler_id == handler_id)
+            .find(|handler| handler.program == program)
     }
 
     pub fn runtime_action_buttons(
@@ -1174,12 +1153,6 @@ impl ViewProgramResource {
                         ViewRuntimeActionButtonAction::ActionInvoke {
                             action: action.clone(),
                             payload: payload.clone(),
-                        }
-                    }
-                    ViewActionButtonActionResource::DialoguePrimaryAction { parameter } => {
-                        ViewRuntimeActionButtonAction::DialoguePrimaryAction {
-                            parameter: parameter.clone(),
-                            target: None,
                         }
                     }
                 },
@@ -1774,6 +1747,25 @@ mod tests {
 
     #[test]
     fn runtime_text_control_carries_authored_change_and_submit_handlers() {
+        let submit = ViewHandlerProgramId::from_checked_digest([1; 32]);
+        let change = ViewHandlerProgramId::from_checked_digest([2; 32]);
+        let result = ViewHandlerResult::new(
+            arcweft_view::ViewHandlerResultRole::DialogueAction,
+            arcweft_view::ViewHandlerValueTypeId::from_semantic_digest([3; 32]),
+        );
+        let mut program = ViewProgramResource::default();
+        program.handlers = vec![
+            ViewHandlerRef {
+                program: submit,
+                captures: Vec::new(),
+                result,
+            },
+            ViewHandlerRef {
+                program: change,
+                captures: Vec::new(),
+                result,
+            },
+        ];
         let input = ViewInputOptions {
             public_id: "field.name".to_owned(),
             view: None,
@@ -1793,20 +1785,14 @@ mod tests {
             vertical_navigation_policy: ViewTextVerticalNavigationPolicy::LogicalLine,
             secure_policy: ViewSecureInputPolicy::Plain,
             composition_on_blur: CompositionOnBlurPolicy::Commit,
-            submit_handler: Some("handler.name.submit".to_owned()),
-            change_handler: Some("handler.name.change".to_owned()),
+            submit_handler: Some(submit),
+            change_handler: Some(change),
             adapter_requirements: Vec::new(),
         };
 
-        let control = input.runtime_text_control(0, None, None);
+        let control = input.runtime_text_control(0, None, Some(&program));
 
-        assert_eq!(
-            control.handlers.change.unwrap().handler_id,
-            "handler.name.change"
-        );
-        assert_eq!(
-            control.handlers.submit.unwrap().handler_id,
-            "handler.name.submit"
-        );
+        assert_eq!(control.handlers.change.unwrap().program, change);
+        assert_eq!(control.handlers.submit.unwrap().program, submit);
     }
 }

@@ -37,10 +37,10 @@ use super::nominal_signature::ProjectSignatureResolver;
 use super::{
     CallableAccess, CallableArgumentPolicy, CallableAuthorityRank, CallableBuildLimitError,
     CallableCandidateId, CallableCatalogBuildError, CallableDocumentation, CallableEffectSchema,
-    CallableEvaluatedEffect, CallableGroupIndex, CallableGroupKind, CallableLimits,
-    CallableLookupKey, CallableName, CallableOverloadIndex, CallableParameter,
-    CallableParameterGroup, CallableParameterIndex, CallableParameterPassing,
-    CallableParameterPresence, CallableParameterSource, CallableParameterType, CallablePath,
+    CallableEvaluatedEffect, CallableGenericParameterIssuer, CallableGroupIndex, CallableGroupKind,
+    CallableLimits, CallableLookupKey, CallableName, CallableOverloadIndex, CallableParameter,
+    CallableParameterAdmission, CallableParameterGroup, CallableParameterIndex,
+    CallableParameterPassing, CallableParameterPresence, CallableParameterSource, CallablePath,
     CallablePathError, CallableProviderId, CallableRecord, CallableSignatureSchema, CallableSource,
     CallableValidator, CatalogCallableEntry, DocumentationProvenance, EnvironmentCallableCatalog,
     EnvironmentCallableId, EnvironmentCallableKind, EnvironmentCallableOwner,
@@ -121,6 +121,7 @@ impl StandardEnvironmentMethodProjection {
         receiver: &TypeKind,
         member: &CallableName,
         signature: &FunctionSignature,
+        role: crate::env::StandardEnvironmentMethodRole,
         limits: &CallableLimits,
     ) -> Result<Self, super::CallablePublicationError> {
         let kind = if signature.checks_args() {
@@ -135,10 +136,11 @@ impl StandardEnvironmentMethodProjection {
         let schema = signature.callable_schema(
             EffectRow::closed(EffectSet::new()),
             if signature.checks_args() {
-                CallableValidator::Ordinary
+                role.validator()
             } else {
                 CallableValidator::Untyped
             },
+            CallableGenericParameterIssuer::empty(),
             limits,
         )?;
         let id = EnvironmentCallableId::new(
@@ -315,11 +317,13 @@ impl RegisteredCallableCatalogBuilder {
                 },
             ),
             validator,
+            resolved.generic_issuer,
             &self.limits,
         )?;
         if let Some(receiver) = parameters.extension_receiver {
             schema = schema.with_extension_receiver(receiver)?;
         }
+        let host_call_contract = resolved.host_call_contract;
         let schema = Arc::new(schema);
         let documentation = project_documentation(symbol, callable.prefix().documentation())?;
         let signature_span = project_signature_span(module, symbol, &callable)?;
@@ -351,6 +355,7 @@ impl RegisteredCallableCatalogBuilder {
             EnvironmentDeclarationOrdinal::try_from_usize(ordinal)
                 .map_err(|_| identity_mismatch(symbol))?,
         )
+        .and_then(|record| record.with_host_call_contract(host_call_contract))
         .map_err(CallableCatalogBuildError::InvalidRecord)
     }
 
@@ -841,7 +846,7 @@ fn project_parameters(
                 CallableParameter::try_new(
                     parameter_id,
                     parameter_name(module, *parameter, symbol)?,
-                    CallableParameterType::Exact(
+                    CallableParameterAdmission::checked(
                         resolved_groups
                             .get(group_index)
                             .and_then(|group| group.get(parameter_index))
@@ -964,10 +969,7 @@ fn project_lookup_key(
         .groups()
         .first()
         .and_then(|group| group.parameters().first())
-        .and_then(|parameter| match parameter.ty() {
-            CallableParameterType::Exact(receiver) => Some(receiver.clone()),
-            CallableParameterType::Unchecked => None,
-        })
+        .and_then(|parameter| parameter.declared_type().cloned())
         .ok_or_else(|| identity_mismatch(symbol))?;
     let method = CallableName::try_new(symbol.declaration().name())
         .map_err(|_| identity_mismatch(symbol))?;
@@ -1464,6 +1466,7 @@ impl TypeCheckEnv {
                 &receiver,
                 &method.member,
                 &signature,
+                method.role,
                 limits,
             )?;
             records.push(projection.into_publication_record(offset + ordinal)?);
@@ -1514,7 +1517,12 @@ fn environment_record_from_signature(
             .map(crate::env::EffectCapability::as_str),
     )
     .map_err(|_| super::CallablePublicationError::InvalidOverload)?;
-    let mut schema = signature.callable_schema(EffectRow::closed(effects), validator, limits)?;
+    let mut schema = signature.callable_schema(
+        EffectRow::closed(effects),
+        validator,
+        CallableGenericParameterIssuer::empty(),
+        limits,
+    )?;
     if let Some(effect) = evaluated_effect {
         schema = schema.with_evaluated_effect(effect);
     }

@@ -9,7 +9,7 @@ use arcweft_core::plan::{
     RuntimePlanTypeProjection,
 };
 use arcweft_core::value::{
-    RuntimeHandleKind, RuntimeIntrinsic, RuntimeOpaquePersistence, RuntimeOpaqueValueClass,
+    RuntimeHandleKind, RuntimeOpaquePersistence, RuntimeOpaqueValueClass, RuntimeRecordFieldId,
     RuntimeValue,
 };
 use arcweft_lang_hir::database::HirDatabase;
@@ -18,10 +18,10 @@ use arcweft_lang_hir::expr::{HirExprKind, HirSelectedMember};
 use arcweft_lang_hir::leaf::HirLiteral;
 use arcweft_lang_hir::lowering::{HirModuleKey, LoweringRequest};
 use arcweft_lang_hir::project::{
-    HirProject, HirProjectBuilder, HirProjectModule, HirRuntimeCallCalleeDisposition,
-    HirRuntimeEmissionMode, HirRuntimeExecutableOwner, HirRuntimeExpressionTypeDisposition,
-    HirRuntimeReachabilityEdge, HirRuntimeReachabilityEdgeKind, HirRuntimeReachabilityRoot,
-    HirRuntimeReachabilityRootKind, HirRuntimeReachabilitySite, HirRuntimeSemanticReachability,
+    HirProject, HirProjectBuilder, HirProjectModule, HirRuntimeEmissionMode,
+    HirRuntimeExecutableOwner, HirRuntimeExpressionTypeDisposition, HirRuntimeReachabilityEdge,
+    HirRuntimeReachabilityEdgeKind, HirRuntimeReachabilityRoot, HirRuntimeReachabilityRootKind,
+    HirRuntimeReachabilitySite, HirRuntimeSemanticReachability,
     HirRuntimeSemanticReachabilityInput,
 };
 use arcweft_lang_hir::proof_return::HirProofReturnSemanticFactSet;
@@ -36,15 +36,12 @@ use arcweft_source::identity::SourceSnapshotId;
 use arcweft_source::{SourceDocument, SourceDocumentId, SourceName};
 
 use super::{
-    RuntimeAgentTypeShape, RuntimeAssignmentFact, RuntimeCallResultShape,
-    RuntimeCheckedTypeProjectionError, RuntimeNormalizedVariantCase, RuntimePlanSemanticFactInput,
-    RuntimePlanSemanticFacts, RuntimeReductionConstructor, RuntimeRegisteredValueId,
-    RuntimeResolvedCall, RuntimeResolvedCallArgument, RuntimeResolvedCallTarget,
-    RuntimeResolvedHostArgumentPassing, RuntimeResolvedHostCall, RuntimeResolvedNominal,
-    RuntimeResolvedSelect, RuntimeResolvedValue, RuntimeResolvedVariant,
-    RuntimeResolvedVariantError, RuntimeSemanticFactFamily, RuntimeSemanticFactsError,
-    RuntimeSemanticTypeId, RuntimeSequenceKind, RuntimeTypeProjectionStep, RuntimeTypeShape,
-    RuntimeUnsupportedTypeShape,
+    RuntimeAgentTypeShape, RuntimeAssignmentFact, RuntimeCheckedTypeProjectionError,
+    RuntimeNormalizedVariantCase, RuntimePlanSemanticFactInput, RuntimePlanSemanticFacts,
+    RuntimeRegisteredValueId, RuntimeResolvedNominal, RuntimeResolvedSelect, RuntimeResolvedValue,
+    RuntimeResolvedVariant, RuntimeResolvedVariantError, RuntimeSemanticFactFamily,
+    RuntimeSemanticFactsError, RuntimeSemanticTypeId, RuntimeSequenceKind,
+    RuntimeTypeProjectionStep, RuntimeTypeShape, RuntimeUnsupportedTypeShape,
 };
 
 fn project_fixture(label: &str, source: &str) -> HirProject {
@@ -195,6 +192,16 @@ fn runtime_reachability_with(
             ))
         })
         .collect::<Vec<_>>();
+    let externals = ProjectExternalDeclarations::try_new(world.clone(), revision, Vec::new())
+        .expect("fixture external declarations");
+    let symbols = ProjectSymbolTable::link(project.view(), &externals)
+        .expect("fixture symbols")
+        .into_table();
+    let topology = executable
+        .accept_symbol_generation(&symbols)
+        .expect("accepted fixture symbol generation")
+        .into_evaluation_topology()
+        .expect("fixture evaluation topology");
     let input = HirRuntimeSemanticReachabilityInput::try_new(
         HirRuntimeEmissionMode::CheckAll,
         world,
@@ -204,7 +211,7 @@ fn runtime_reachability_with(
     )
     .expect("fixture reachability input");
     executable
-        .runtime_semantic_reachability(input, selected_postfix, call_disposition)
+        .runtime_semantic_reachability(input, &topology, selected_postfix, call_disposition)
         .expect("fixture reachability")
 }
 
@@ -254,18 +261,6 @@ fn flow_item(project: &HirProject) -> arcweft_lang_hir::identity::ItemId {
         })
         .map(arcweft_lang_hir::project::HirProjectItemRef::id)
         .expect("fixture Flow item")
-}
-
-fn call_expression(project: &HirProject) -> arcweft_lang_hir::identity::ExprId {
-    project
-        .executable_view()
-        .expect("clean fixture")
-        .modules()
-        .flat_map(|(_, module)| module.expressions())
-        .find_map(|(id, expression)| {
-            matches!(expression.kind(), HirExprKind::Call(_)).then_some(id)
-        })
-        .expect("fixture call expression")
 }
 
 fn entity_reference(project: &HirProject) -> arcweft_lang_hir::identity::ExprId {
@@ -356,7 +351,7 @@ fn assignment_fact_fixture(
         panic!("assignment target is a select")
     };
     let base = select.target();
-    let HirSelectedMember::Name(field_name) = select.member() else {
+    let HirSelectedMember::Name(_) = select.member() else {
         panic!("assignment field is resolved")
     };
     let runtime_owners = runtime_reachability(&project);
@@ -375,10 +370,12 @@ fn assignment_fact_fixture(
         },
     );
     let field_type = normalized_type(0x31, RuntimeTypeShape::Bool);
+    let runtime_field = RuntimeRecordFieldId::try_from_zero_based_ordinal(1)
+        .expect("assignment fixture field coordinate");
     let fact = RuntimeAssignmentFact::new(
         local,
         resolved.clone(),
-        1,
+        runtime_field,
         field_type.clone(),
         field_type.clone(),
     );
@@ -400,9 +397,8 @@ fn assignment_fact_fixture(
     input.push_select(
         target,
         RuntimeResolvedSelect::Field {
-            nominal: Some(resolved),
-            ordinal: Some(1),
-            name: field_name.clone(),
+            owner: identity,
+            field: runtime_field,
         },
     );
     (project, input, statement, extra_statement, fact)
@@ -482,7 +478,7 @@ fn assignment_facts_are_complete_unique_and_bound_to_assignment_statements() {
         .assignment(statement)
         .expect("assignment accessor returns the sole fact");
     assert_eq!(accepted, &fact);
-    assert_eq!(accepted.field_ordinal(), 1);
+    assert_eq!(accepted.field().zero_based(), 1);
     assert_eq!(accepted.field_type(), accepted.value_type());
 
     let (project, input, statement, _, _) = assignment_fact_fixture("assignment-fact-missing");
@@ -581,14 +577,6 @@ fn presentation_owned_facts_are_inactive_and_filtered_local_ids_remain_contiguou
             .then_some(owner)
         })
         .expect("presentation literal");
-    let presentation_call = module
-        .expressions()
-        .find_map(|(owner, expression)| {
-            (!runtime_owners.contains_expression(owner)
-                && matches!(expression.kind(), HirExprKind::Call(_)))
-            .then_some(owner)
-        })
-        .expect("presentation call");
     let retained_path = module
         .expressions()
         .find_map(|(owner, expression)| {
@@ -648,24 +636,6 @@ fn presentation_owned_facts_are_inactive_and_filtered_local_ids_remain_contiguou
             .expect_err("a presentation type cannot publish a runtime type fact"),
         RuntimeSemanticFactsError::InactiveTypeFact {
             ty: presentation_type,
-        }
-    );
-
-    let mut input = complete_type_input(&project);
-    input.push_call(
-        presentation_call,
-        RuntimeResolvedCall::new(
-            RuntimeResolvedCallTarget::Intrinsic(RuntimeIntrinsic::Add),
-            [],
-            RuntimeCallResultShape::Value,
-        ),
-    );
-    assert_eq!(
-        runtime_facts(&project, input)
-            .expect_err("a presentation call cannot publish a runtime call fact"),
-        RuntimeSemanticFactsError::InactiveExpressionFact {
-            expression: presentation_call,
-            family: RuntimeSemanticFactFamily::Call,
         }
     );
 
@@ -889,300 +859,6 @@ fn runtime_type_completeness_excludes_effect_metadata_owners() {
             family: RuntimeSemanticFactFamily::ExpressionType,
         },
     );
-}
-
-#[test]
-fn runtime_type_completeness_uses_the_selected_call_carrier_disposition() {
-    let project = project_fixture(
-        "agent-call-carrier-types",
-        "fn helper(value: bool) -> bool { value }\nfn root(value: bool) { helper(value) }\n",
-    );
-    let executable = project.executable_view().expect("executable fixture");
-    let (call, callee, argument) = executable
-        .modules()
-        .flat_map(|(_, module)| module.expressions())
-        .find_map(|(owner, expression)| {
-            let HirExprKind::Call(call) = expression.kind() else {
-                return None;
-            };
-            Some((
-                owner,
-                call.callee()
-                    .value_expression()
-                    .expect("fixture value callee"),
-                call.arguments()[0].value(),
-            ))
-        })
-        .expect("fixture call expression");
-    let call_fact = RuntimeResolvedCall::new(
-        RuntimeResolvedCallTarget::Host(
-            RuntimeResolvedHostCall::agent(crate::agent::RuntimeAgentIntrinsic::Observe)
-                .expect("effectful Agent intrinsic"),
-        ),
-        [RuntimeResolvedCallArgument::Authored {
-            ordinal: 0,
-            passing: RuntimeResolvedHostArgumentPassing::Positional,
-        }],
-        RuntimeCallResultShape::Value,
-    );
-    let runtime_owners = runtime_reachability_with(
-        &project,
-        |_| None,
-        |owner| {
-            if owner == call {
-                call_fact.expression_type_disposition()
-            } else {
-                HirRuntimeExpressionTypeDisposition::Retain
-            }
-        },
-    );
-    let accepted = runtime_owners
-        .selected_expression_type_owners()
-        .expect("postfix-free call-carrier inventory");
-    let mut input = RuntimePlanSemanticFactInput::new();
-    for owner in runtime_owners.locals() {
-        input.push_local_declaration(owner, unit_type());
-    }
-    for owner in runtime_owners.patterns() {
-        input.push_pattern_type(owner, unit_type());
-    }
-    for owner in accepted {
-        input.push_expression_type(owner, unit_type());
-    }
-    input.push_call(call, call_fact);
-
-    let facts = RuntimePlanSemanticFacts::try_new(executable, &runtime_owners, input)
-        .expect("selected Agent carrier requires only operand types");
-    assert!(facts.expression_type(call).is_none());
-    assert!(facts.expression_type(callee).is_none());
-    assert_eq!(facts.expression_type(argument), Some(&unit_type()));
-}
-
-#[test]
-fn agent_call_disposition_separates_results_from_host_carriers() {
-    for intrinsic in runtime_agent_intrinsics() {
-        let is_host = agent_intrinsic_is_host(intrinsic);
-        assert_eq!(intrinsic.host_operation().is_some(), is_host);
-        let (target, expected) = if is_host {
-            (
-                RuntimeResolvedCallTarget::Host(
-                    RuntimeResolvedHostCall::agent(intrinsic)
-                        .expect("effectful Agent intrinsic has a typed host projection"),
-                ),
-                HirRuntimeExpressionTypeDisposition::NonValueCallCarrier {
-                    callee: HirRuntimeCallCalleeDisposition::Static,
-                },
-            )
-        } else {
-            assert!(RuntimeResolvedHostCall::agent(intrinsic).is_none());
-            (
-                RuntimeResolvedCallTarget::Agent(intrinsic),
-                HirRuntimeExpressionTypeDisposition::RetainedCallResult {
-                    callee: HirRuntimeCallCalleeDisposition::Static,
-                },
-            )
-        };
-        let call = RuntimeResolvedCall::new(target, [], RuntimeCallResultShape::Value);
-        assert_eq!(call.expression_type_disposition(), expected);
-    }
-
-    let comparison = RuntimeResolvedCall::new(
-        RuntimeResolvedCallTarget::AgentProbeComparison(
-            arcweft_core::value::RuntimeAgentCompareOp::Eq,
-        ),
-        [
-            RuntimeResolvedCallArgument::Receiver,
-            RuntimeResolvedCallArgument::Authored {
-                ordinal: 0,
-                passing: RuntimeResolvedHostArgumentPassing::Positional,
-            },
-        ],
-        RuntimeCallResultShape::Value,
-    );
-    assert_eq!(
-        comparison.expression_type_disposition(),
-        HirRuntimeExpressionTypeDisposition::RetainedCallResult {
-            callee: HirRuntimeCallCalleeDisposition::RuntimeReceiver,
-        }
-    );
-    let diagnostics = RuntimeResolvedCall::new(
-        RuntimeResolvedCallTarget::AgentDiagnosticsHasError,
-        [RuntimeResolvedCallArgument::Receiver],
-        RuntimeCallResultShape::Value,
-    );
-    assert_eq!(
-        diagnostics.expression_type_disposition(),
-        HirRuntimeExpressionTypeDisposition::RetainedCallResult {
-            callee: HirRuntimeCallCalleeDisposition::RuntimeReceiver,
-        }
-    );
-}
-
-fn runtime_agent_intrinsics() -> Vec<crate::agent::RuntimeAgentIntrinsic> {
-    use crate::agent::RuntimeAgentIntrinsic;
-
-    vec![
-        RuntimeAgentIntrinsic::Observe,
-        RuntimeAgentIntrinsic::Expect,
-        RuntimeAgentIntrinsic::Deny,
-        RuntimeAgentIntrinsic::Checkpoint,
-        RuntimeAgentIntrinsic::Note,
-        RuntimeAgentIntrinsic::Attach,
-        RuntimeAgentIntrinsic::ChoiceAction,
-        RuntimeAgentIntrinsic::Viewport,
-        RuntimeAgentIntrinsic::Layer,
-        RuntimeAgentIntrinsic::Object,
-        RuntimeAgentIntrinsic::Capture,
-        RuntimeAgentIntrinsic::ReadResource,
-        RuntimeAgentIntrinsic::EntityMeta,
-        RuntimeAgentIntrinsic::ProjectNeighbors,
-        RuntimeAgentIntrinsic::Signal,
-        RuntimeAgentIntrinsic::Metric,
-        RuntimeAgentIntrinsic::StatePath,
-        RuntimeAgentIntrinsic::ObservationPath,
-        RuntimeAgentIntrinsic::State,
-        RuntimeAgentIntrinsic::Observation,
-        RuntimeAgentIntrinsic::Diagnostics,
-        RuntimeAgentIntrinsic::Exists,
-        RuntimeAgentIntrinsic::ActionEnabled,
-        RuntimeAgentIntrinsic::All,
-        RuntimeAgentIntrinsic::Any,
-        RuntimeAgentIntrinsic::Not,
-        RuntimeAgentIntrinsic::Wait,
-        RuntimeAgentIntrinsic::AdvanceText,
-        RuntimeAgentIntrinsic::ViewportPoint,
-        RuntimeAgentIntrinsic::PointerClick,
-        RuntimeAgentIntrinsic::Invoke,
-        RuntimeAgentIntrinsic::RagQuery,
-    ]
-}
-
-fn agent_intrinsic_is_host(intrinsic: crate::agent::RuntimeAgentIntrinsic) -> bool {
-    use crate::agent::RuntimeAgentIntrinsic;
-
-    match intrinsic {
-        RuntimeAgentIntrinsic::Observe
-        | RuntimeAgentIntrinsic::Expect
-        | RuntimeAgentIntrinsic::Deny
-        | RuntimeAgentIntrinsic::Checkpoint
-        | RuntimeAgentIntrinsic::Note
-        | RuntimeAgentIntrinsic::Attach
-        | RuntimeAgentIntrinsic::Capture
-        | RuntimeAgentIntrinsic::ReadResource
-        | RuntimeAgentIntrinsic::EntityMeta
-        | RuntimeAgentIntrinsic::ProjectNeighbors
-        | RuntimeAgentIntrinsic::Wait
-        | RuntimeAgentIntrinsic::AdvanceText
-        | RuntimeAgentIntrinsic::PointerClick
-        | RuntimeAgentIntrinsic::Invoke
-        | RuntimeAgentIntrinsic::RagQuery => true,
-        RuntimeAgentIntrinsic::ChoiceAction
-        | RuntimeAgentIntrinsic::Viewport
-        | RuntimeAgentIntrinsic::Layer
-        | RuntimeAgentIntrinsic::Object
-        | RuntimeAgentIntrinsic::Signal
-        | RuntimeAgentIntrinsic::Metric
-        | RuntimeAgentIntrinsic::StatePath
-        | RuntimeAgentIntrinsic::ObservationPath
-        | RuntimeAgentIntrinsic::State
-        | RuntimeAgentIntrinsic::Observation
-        | RuntimeAgentIntrinsic::Diagnostics
-        | RuntimeAgentIntrinsic::Exists
-        | RuntimeAgentIntrinsic::ActionEnabled
-        | RuntimeAgentIntrinsic::All
-        | RuntimeAgentIntrinsic::Any
-        | RuntimeAgentIntrinsic::Not
-        | RuntimeAgentIntrinsic::ViewportPoint => false,
-    }
-}
-
-#[test]
-fn agent_call_arguments_cannot_forge_runtime_receiver_disposition() {
-    let project = project_fixture(
-        "agent-call-arguments",
-        "fn helper(value: bool) -> bool { value }\nfn root(value: bool) { helper(value) }\n",
-    );
-    let owner = call_expression(&project);
-    let invalid = [
-        RuntimeResolvedCall::new(
-            RuntimeResolvedCallTarget::Agent(crate::agent::RuntimeAgentIntrinsic::Observation),
-            [
-                RuntimeResolvedCallArgument::Receiver,
-                RuntimeResolvedCallArgument::Authored {
-                    ordinal: 0,
-                    passing: RuntimeResolvedHostArgumentPassing::Positional,
-                },
-            ],
-            RuntimeCallResultShape::Value,
-        ),
-        RuntimeResolvedCall::new(
-            RuntimeResolvedCallTarget::AgentProbeComparison(
-                arcweft_core::value::RuntimeAgentCompareOp::Eq,
-            ),
-            [RuntimeResolvedCallArgument::Authored {
-                ordinal: 0,
-                passing: RuntimeResolvedHostArgumentPassing::Positional,
-            }],
-            RuntimeCallResultShape::Value,
-        ),
-        RuntimeResolvedCall::new(
-            RuntimeResolvedCallTarget::AgentProbeComparison(
-                arcweft_core::value::RuntimeAgentCompareOp::Eq,
-            ),
-            [
-                RuntimeResolvedCallArgument::Receiver,
-                RuntimeResolvedCallArgument::Authored {
-                    ordinal: 0,
-                    passing: RuntimeResolvedHostArgumentPassing::Positional,
-                },
-            ],
-            RuntimeCallResultShape::PartialFunction,
-        ),
-        RuntimeResolvedCall::new(
-            RuntimeResolvedCallTarget::AgentDiagnosticsHasError,
-            [],
-            RuntimeCallResultShape::Value,
-        ),
-        RuntimeResolvedCall::new(
-            RuntimeResolvedCallTarget::AgentDiagnosticsHasError,
-            [RuntimeResolvedCallArgument::Receiver],
-            RuntimeCallResultShape::PartialFunction,
-        ),
-    ];
-
-    for call in invalid {
-        let executable = project.executable_view().expect("executable fixture");
-        let runtime_owners = runtime_reachability_with(
-            &project,
-            |_| None,
-            |candidate| {
-                if candidate == owner {
-                    call.expression_type_disposition()
-                } else {
-                    HirRuntimeExpressionTypeDisposition::Retain
-                }
-            },
-        );
-        let mut input = RuntimePlanSemanticFactInput::new();
-        for local in runtime_owners.locals() {
-            input.push_local_declaration(local, unit_type());
-        }
-        for pattern in runtime_owners.patterns() {
-            input.push_pattern_type(pattern, unit_type());
-        }
-        for expression in runtime_owners
-            .selected_expression_type_owners()
-            .expect("invalid call still has one deterministic owner inventory")
-        {
-            input.push_expression_type(expression, unit_type());
-        }
-        input.push_call(owner, call);
-        assert_eq!(
-            RuntimePlanSemanticFacts::try_new(executable, &runtime_owners, input)
-                .expect_err("Agent receiver disposition must follow the selected call family"),
-            RuntimeSemanticFactsError::InvalidAgentCallArguments,
-        );
-    }
 }
 
 #[test]
@@ -1749,13 +1425,6 @@ fn postfix_type_completeness_keeps_only_the_selected_candidate_expression_tree()
     );
 
     let postfix_candidates = BTreeMap::from([(postfix_owner, dialogue)]);
-    let semantic = executable
-        .selected_expression_owners(|owner| postfix_candidates.get(&owner).copied())
-        .expect("selected semantic candidate inventory");
-    assert!(semantic.contains(&postfix_owner));
-    assert!(semantic.contains(&target));
-    assert!(semantic.contains(&dialogue));
-    assert!(!semantic.contains(&index));
     let runtime_owners = runtime_reachability_with(
         &project,
         |owner| postfix_candidates.get(&owner).copied(),
@@ -1826,51 +1495,6 @@ fn semantic_identities_round_trip_without_display_labels() {
         RuntimeRegisteredValueId::from_bytes(registered_bytes).as_bytes(),
         &registered_bytes
     );
-}
-
-#[test]
-fn reduction_constructor_fact_requires_one_authored_value_argument() {
-    let project = project_fixture(
-        "reduction-constructor",
-        "fn root(value: i32) {\n    identity(value)\n}\n",
-    );
-    let owner = call_expression(&project);
-    let valid = RuntimeResolvedCall::new(
-        RuntimeResolvedCallTarget::Reduction(RuntimeReductionConstructor::Unchanged),
-        [RuntimeResolvedCallArgument::Authored {
-            ordinal: 0,
-            passing: RuntimeResolvedHostArgumentPassing::Positional,
-        }],
-        RuntimeCallResultShape::Value,
-    );
-    let mut input = complete_type_input(&project);
-    input.push_call(owner, valid.clone());
-    let facts = runtime_facts(&project, input).expect("typed Reduction constructor fact");
-    assert_eq!(facts.call(owner), Some(&valid));
-
-    for invalid in [
-        RuntimeResolvedCall::new(
-            RuntimeResolvedCallTarget::Reduction(RuntimeReductionConstructor::Unchanged),
-            [],
-            RuntimeCallResultShape::Value,
-        ),
-        RuntimeResolvedCall::new(
-            RuntimeResolvedCallTarget::Reduction(RuntimeReductionConstructor::Unchanged),
-            [RuntimeResolvedCallArgument::Authored {
-                ordinal: 0,
-                passing: RuntimeResolvedHostArgumentPassing::Positional,
-            }],
-            RuntimeCallResultShape::PartialFunction,
-        ),
-    ] {
-        let mut input = complete_type_input(&project);
-        input.push_call(owner, invalid);
-        assert_eq!(
-            runtime_facts(&project, input)
-                .expect_err("fabricated Reduction constructor fact must fail"),
-            RuntimeSemanticFactsError::InvalidReductionConstructorCall,
-        );
-    }
 }
 
 #[test]

@@ -350,7 +350,11 @@ fn build_session_runtime_with_executor(
         arcweft_bundle::resource_codec::ViewProductValidationLimits::default(),
     )
     .map_err(BundleViewRuntimeError::from)?;
-    let view_runtime = BundleViewRuntime::try_new(view_product, bundle.view_text.clone())?;
+    let view_runtime = BundleViewRuntime::try_new_with_awbc(
+        view_product,
+        bundle.view_text.clone(),
+        Arc::new(program.clone()),
+    )?;
     let view_theme = bundle.view_theme.clone().unwrap_or_default();
     let view_theme_environment = view_theme.environment_overrides();
     let view_style_palettes = view_theme.system_palette_set();

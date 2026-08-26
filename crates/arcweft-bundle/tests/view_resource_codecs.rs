@@ -1,7 +1,7 @@
-use arcweft_bundle::container::{BundleDigest, BundleSectionKind};
+use arcweft_bundle::container::BundleSectionKind;
 use arcweft_bundle::patch::PatchCompatibility;
 use arcweft_bundle::resource_codec::view::{
-    CompositionOnBlurPolicy, DialogueTextProjection, EnterKeyHint, SystemColorOverride,
+    CompositionOnBlurPolicy, DialogueTextProjection, EnterKeyHint, EventKind, SystemColorOverride,
     TextAssistPolicy, TextCapitalization, ViewAwaitBranchSpan, ViewCallArgumentBindingRef,
     ViewDefinitionRef, ViewDefinitionResource, ViewElementKind, ViewExportValidationError,
     ViewExportedPart, ViewFocusAutoScrollPolicy, ViewFxArgumentBindingRef, ViewHandlerRef,
@@ -38,7 +38,10 @@ use arcweft_view::style::{
     ViewColorValue, ViewElementState, ViewPropertyKind, ViewSpecifiedValue, ViewStylePredicate,
     ViewStyleSelector, ViewStyleSelectorSequence, ViewStyleValueKind,
 };
-use arcweft_view::{ViewId, ViewPartLocalName, ViewPartName};
+use arcweft_view::{
+    ViewHandlerProgramId, ViewHandlerResult, ViewHandlerResultRole, ViewHandlerValueTypeId, ViewId,
+    ViewPartLocalName, ViewPartName,
+};
 use arcweft_view::{ViewValueProgram, ViewValueProgramId};
 
 const MALFORMED_RESOURCE_IDENTITIES: [&str; 4] =
@@ -122,7 +125,7 @@ fn emit_text_requires_a_one_to_one_owned_text_block_graph() {
         panic!("fixture instruction 1 emits text");
     };
     *part = None;
-    duplicate.instructions[2] = duplicate_emit;
+    duplicate.instructions[3] = duplicate_emit;
     assert_eq!(
         duplicate
             .encode_canonical_section()
@@ -345,19 +348,117 @@ fn view_resource_merge_does_not_publish_a_candidate_that_fails_canonical_validat
 }
 
 #[test]
-fn dialogue_primary_action_requires_a_dialogue_parameter_role() {
+fn dialogue_parameter_rejects_a_forged_semantic_identity() {
     let mut program = arcweft_bundle::standard_view::dialogue_program();
-    program.definitions[0].parameters[0].role =
-        arcweft_bundle::resource_codec::view::ViewParameterRole::Value;
+    let mut awbc = arcweft_bundle::standard_view::install_dialogue_handler_awbc(
+        arcweft_core::awbc::schema::AwbcProgram::default(),
+    )
+    .expect("standard handler installs");
+    let exact = arcweft_core::value::RuntimeDialogueOpaqueRole::View.semantic_identity();
+    let forged = arcweft_id::RuntimeSemanticTypeId::from_bytes([0xa7; 32]);
+    let view_type = awbc
+        .runtime_types
+        .iter()
+        .position(|row| row.semantic_identity() == exact)
+        .expect("DialogueView runtime type");
+    let shape = awbc.runtime_types[view_type].shape().clone();
+    awbc.runtime_types[view_type] = arcweft_core::awbc::schema::AwbcRuntimeType::new(forged, shape);
+    let binding = awbc
+        .pure_programs
+        .iter_mut()
+        .find(|binding| {
+            binding.program == arcweft_bundle::standard_view::dialogue_primary_action_program_id()
+        })
+        .expect("standard binding");
+    binding.input_types[0] = forged;
+    program.definitions[0].parameters[0].semantic_type = forged;
+    program.handlers[0].captures[0] = arcweft_view::ViewHandlerCapture::new(
+        arcweft_view::ViewParameterCoordinate::try_from_index(0).unwrap(),
+        forged,
+    );
 
     let error = program
-        .encode_canonical_section()
-        .expect_err("compact ViewProgram rejects an untyped dialogue action");
+        .validate_awbc_handlers(&awbc)
+        .expect_err("same-producer forged DialogueView identity must reject");
 
     assert_eq!(
         error,
         arcweft_bundle::resource_codec::SectionCodecError::NonCanonicalTable(
-            "view_dialogue_primary_action_parameter"
+            "view_dialogue_parameter_owner"
+        )
+    );
+}
+
+#[test]
+fn dialogue_action_result_rejects_a_same_producer_forged_semantic_identity() {
+    let mut program = arcweft_bundle::standard_view::dialogue_program();
+    let mut awbc = arcweft_bundle::standard_view::install_dialogue_handler_awbc(
+        arcweft_core::awbc::schema::AwbcProgram::default(),
+    )
+    .expect("standard handler installs");
+    let exact = arcweft_core::value::RuntimeDialogueOpaqueRole::Action.semantic_identity();
+    let forged = arcweft_id::RuntimeSemanticTypeId::from_bytes([0xa8; 32]);
+    let action_type = awbc
+        .runtime_types
+        .iter()
+        .position(|row| row.semantic_identity() == exact)
+        .expect("DialogueAction runtime type");
+    let shape = awbc.runtime_types[action_type].shape().clone();
+    awbc.runtime_types[action_type] =
+        arcweft_core::awbc::schema::AwbcRuntimeType::new(forged, shape);
+    awbc.pure_programs[0].result_type = forged;
+    program.handlers[0].result =
+        ViewHandlerResult::new(ViewHandlerResultRole::DialogueAction, forged);
+
+    assert_eq!(
+        program
+            .validate_awbc_handlers(&awbc)
+            .expect_err("same-producer forged DialogueAction identity must reject"),
+        arcweft_bundle::resource_codec::SectionCodecError::NonCanonicalTable(
+            "view_handler_result_owner"
+        )
+    );
+}
+
+#[test]
+fn view_handler_cross_section_rejects_missing_binding_and_nonempty_effects() {
+    let program = arcweft_bundle::standard_view::dialogue_program();
+    let awbc = arcweft_bundle::standard_view::install_dialogue_handler_awbc(
+        arcweft_core::awbc::schema::AwbcProgram::default(),
+    )
+    .expect("standard handler installs");
+    let mut missing = awbc.clone();
+    missing.pure_programs.clear();
+    assert_eq!(
+        program
+            .validate_awbc_handlers(&missing)
+            .expect_err("missing pure-program binding must reject"),
+        arcweft_bundle::resource_codec::SectionCodecError::NonCanonicalTable(
+            "view_handler_pure_program_binding"
+        )
+    );
+
+    let mut effectful = awbc;
+    let effect_name = arcweft_core::awbc::schema::AwbcStringId(
+        u32::try_from(effectful.strings.len()).expect("string table index"),
+    );
+    effectful.strings.push("effect.test".to_owned());
+    let effects = arcweft_core::awbc::schema::AwbcEffectSetId(
+        u32::try_from(effectful.effect_sets.len()).expect("effect table index"),
+    );
+    effectful
+        .effect_sets
+        .push(arcweft_core::awbc::schema::AwbcEffectSet {
+            effects: vec![effect_name],
+        });
+    let helper = &effectful.pure_helpers[effectful.pure_programs[0].helper.index()];
+    effectful.signatures[helper.signature.index()].effects = effects;
+    assert_eq!(
+        program
+            .validate_awbc_handlers(&effectful)
+            .expect_err("effectful handler helper must reject"),
+        arcweft_bundle::resource_codec::SectionCodecError::NonCanonicalTable(
+            "view_handler_pure_program_signature"
         )
     );
 }
@@ -450,6 +551,10 @@ fn nested_view_calls_are_ordinal_canonical_required_and_typed() {
                         ordinal: 0,
                         name: "count".to_owned(),
                         role: arcweft_bundle::resource_codec::view::ViewParameterRole::Value,
+                        semantic_type: arcweft_core::pattern::RuntimeCheckedType::Signed(
+                            arcweft_core::value::RuntimeSignedIntWidth::I32,
+                        )
+                        .semantic_identity_digest(),
                         value_type: Some(FxRuntimeType::I32),
                         value_slot: Some(0),
                         default_program: None,
@@ -458,6 +563,8 @@ fn nested_view_calls_are_ordinal_canonical_required_and_typed() {
                         ordinal: 1,
                         name: "opacity".to_owned(),
                         role: arcweft_bundle::resource_codec::view::ViewParameterRole::Value,
+                        semantic_type: arcweft_core::pattern::RuntimeCheckedType::F32
+                            .semantic_identity_digest(),
                         value_type: Some(FxRuntimeType::F32),
                         value_slot: Some(1),
                         default_program: None,
@@ -1341,7 +1448,7 @@ fn fixture_program() -> ViewProgramResource {
         source_refs: Vec::new(),
         definitions: vec![ViewDefinitionResource {
             public_id: view_ref("view.dialogue"),
-            body: ViewInstructionSpan::new(0, 4),
+            body: ViewInstructionSpan::new(0, 5),
             styles: vec![named_style("style.dialogue")],
             parameters: Vec::new(),
             state_schema_hash: 0xD1A1_06A0_0000_0001,
@@ -1370,6 +1477,11 @@ fn fixture_program() -> ViewProgramResource {
                 part: Some(local_part("part.title")),
                 source: None,
             },
+            ViewProgramInstruction::BindHandler {
+                event: EventKind::Activate,
+                handler: ViewHandlerProgramId::from_checked_digest([7; 32]),
+                source: None,
+            },
             ViewProgramInstruction::Await {
                 source_program: ViewValueProgramId(0),
                 pending_branch: Some(ViewAwaitBranchSpan {
@@ -1387,11 +1499,12 @@ fn fixture_program() -> ViewProgramResource {
             ViewProgramInstruction::CloseElement,
         ],
         handlers: vec![ViewHandlerRef {
-            handler_id: "handler.dialogue.submit".to_owned(),
-            event: "submit".to_owned(),
-            awbc_function_index: 2,
-            handler_abi: BundleDigest::of(b"handler-abi"),
-            function_binding: None,
+            program: ViewHandlerProgramId::from_checked_digest([7; 32]),
+            captures: Vec::new(),
+            result: ViewHandlerResult::new(
+                ViewHandlerResultRole::DialogueAction,
+                ViewHandlerValueTypeId::from_semantic_digest([8; 32]),
+            ),
         }],
         exported_parts: vec![],
         semantic_targets: vec![ViewSemanticTarget {
@@ -1623,8 +1736,8 @@ fn fixture_input(secure_policy: ViewSecureInputPolicy) -> ViewInputResource {
             vertical_navigation_policy: ViewTextVerticalNavigationPolicy::LogicalLine,
             secure_policy,
             composition_on_blur: CompositionOnBlurPolicy::Commit,
-            submit_handler: Some("handler.dialogue.submit".to_owned()),
-            change_handler: Some("handler.dialogue.change".to_owned()),
+            submit_handler: Some(ViewHandlerProgramId::from_checked_digest([7; 32])),
+            change_handler: Some(ViewHandlerProgramId::from_checked_digest([9; 32])),
             adapter_requirements: vec![],
         }],
         adapter_requirements: vec![],

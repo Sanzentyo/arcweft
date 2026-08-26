@@ -1,8 +1,8 @@
 use super::{
-    BundleDigest, CrossSectionRef, Deserialize, Serialize, ViewElementKind,
-    ViewElementTextInputKind, ViewHandlerRef, ViewProgramResource, ViewRuntimeControlVisualStyle,
-    ViewTextResource, fmt,
+    CrossSectionRef, Deserialize, Serialize, ViewElementKind, ViewElementTextInputKind,
+    ViewHandlerRef, ViewProgramResource, ViewRuntimeControlVisualStyle, ViewTextResource, fmt,
 };
+use arcweft_view::ViewHandlerProgramId;
 
 /// Product text-input metadata section decoded from `ViewInput`.
 #[derive(Clone, Debug, Default, Eq, PartialEq, Serialize, Deserialize)]
@@ -37,8 +37,8 @@ pub struct ViewInputOptions {
     pub vertical_navigation_policy: ViewTextVerticalNavigationPolicy,
     pub secure_policy: ViewSecureInputPolicy,
     pub composition_on_blur: CompositionOnBlurPolicy,
-    pub submit_handler: Option<String>,
-    pub change_handler: Option<String>,
+    pub submit_handler: Option<ViewHandlerProgramId>,
+    pub change_handler: Option<ViewHandlerProgramId>,
     pub adapter_requirements: Vec<CrossSectionRef>,
 }
 
@@ -190,17 +190,7 @@ pub struct ViewRuntimeTextControlHandlers {
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
 pub struct ViewRuntimeTextControlHandler {
-    pub handler_id: String,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub runtime: Option<ViewRuntimeTextControlHandlerRuntime>,
-}
-
-#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
-pub struct ViewRuntimeTextControlHandlerRuntime {
-    pub awbc_function_index: u32,
-    pub handler_abi: BundleDigest,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub function_binding: Option<CrossSectionRef>,
+    pub program: ViewHandlerProgramId,
 }
 
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq, Serialize, Deserialize)]
@@ -403,11 +393,9 @@ impl ViewRuntimeTextControlHandlers {
         Self {
             change: input
                 .change_handler
-                .as_deref()
                 .map(|handler| ViewRuntimeTextControlHandler::from_program(program, handler)),
             submit: input
                 .submit_handler
-                .as_deref()
                 .map(|handler| ViewRuntimeTextControlHandler::from_program(program, handler)),
         }
     }
@@ -418,27 +406,19 @@ impl ViewRuntimeTextControlHandlers {
 }
 
 impl ViewRuntimeTextControlHandler {
-    pub fn unresolved(handler_id: impl Into<String>) -> Self {
-        Self {
-            handler_id: handler_id.into(),
-            runtime: None,
-        }
-    }
-
-    pub fn from_program(program: Option<&ViewProgramResource>, handler_id: &str) -> Self {
-        program
-            .and_then(|program| program.handler_ref(handler_id))
-            .map_or_else(|| Self::unresolved(handler_id), Self::from_handler_ref)
+    pub fn from_program(
+        program: Option<&ViewProgramResource>,
+        handler: ViewHandlerProgramId,
+    ) -> Self {
+        let specification = program
+            .and_then(|program| program.handler_ref(handler))
+            .expect("validated View input handler retains its exact program specification");
+        Self::from_handler_ref(specification)
     }
 
     pub fn from_handler_ref(handler: &ViewHandlerRef) -> Self {
         Self {
-            handler_id: handler.handler_id.clone(),
-            runtime: Some(ViewRuntimeTextControlHandlerRuntime {
-                awbc_function_index: handler.awbc_function_index,
-                handler_abi: handler.handler_abi,
-                function_binding: handler.function_binding,
-            }),
+            program: handler.program,
         }
     }
 }

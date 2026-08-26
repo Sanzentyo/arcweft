@@ -1,0 +1,11 @@
+error[E0432]: unresolved import `arcweft_lang_sema::final_analysis::FinalSemanticAnalysisDraft`
+ --> tests/ui/final_semantic_draft_is_private.rs:1:5
+  |
+1 | use arcweft_lang_sema::final_analysis::FinalSemanticAnalysisDraft;
+  |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ no `FinalSemanticAnalysisDraft` in `final_analysis`
+  |
+help: a similar name exists in the module
+  |
+1 - use arcweft_lang_sema::final_analysis::FinalSemanticAnalysisDraft;
+1 + use arcweft_lang_sema::final_analysis::FinalSemanticAnalysisError;
+  |

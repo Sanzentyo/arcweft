@@ -5,7 +5,7 @@ use std::{collections::HashSet, sync::Arc};
 use arcweft_lang_hir::{
     expr::{HirAssociatedSeparator, HirCallArgumentOrdinal},
     identity::{ExprId, TypeId},
-    source_index::{HirCallArgumentSourcePart, HirExprSourceRole, HirSourceQuery},
+    source_index::{HirExprSourceRole, HirSourceQuery},
     symbol::CallableDeclarationKey,
 };
 use arcweft_source::{SourceDocumentIdentity, SourceSpan};
@@ -15,27 +15,18 @@ use crate::{effect_row::EffectRow, types::TypeKind};
 use super::{
     CallResolverAccountingReport, CallableArgumentSlotIndex, CallableCandidateId,
     CallableDiagnosticCode, CallableDocumentation, CallableGroupIndex, CallableGroupKind,
-    CallableInstantiation, CallableLimits, CallableName, CallableParameterCoordinate,
+    CallableLimits, CallableName, CallableParameterAdmission, CallableParameterCoordinate,
     CallableParameterPassing, CallableParameterPresence, CallableParameterSource,
-    CallableParameterType, CallableQueryLimitError, CallableSource, NonCallableSource,
-    ResolvedCallable, SemanticSignatureError, SignatureOrigin, SignatureQueryWorkReport,
-    SignatureWorkReport, UnknownCallKind,
+    CallableQueryLimitError, CallableSource, CheckedCallApplication, CheckedCallOperandDestination,
+    CheckedCallSite, NonCallableSource, ResolvedCallable, SemanticSignatureError, SignatureOrigin,
+    SignatureQueryWorkReport, SignatureWorkReport, UnknownCallKind,
 };
 
 /// Immutable semantic facts committed for one checked call expression.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct CallTargetFacts {
-    expression: ExprId,
     enclosing_callable: Option<CallableDeclarationKey>,
-    callee: Option<CallCalleeClassificationFact>,
-    target: CallTargetFact,
-    arguments: Arc<[CheckedCallArgumentFact]>,
-    result: Option<TypeKind>,
-    effects: EffectRow,
-    current_group: CallableGroupIndex,
-    next_group: Option<CallableGroupIndex>,
-    function_value_type: Option<TypeKind>,
-    poison: CallPoison,
+    outcome: CallAnalysisOutcome,
     diagnostics: Arc<[CallableDiagnostic]>,
     accounting: CallResolverAccountingReport,
 }
@@ -56,68 +47,272 @@ pub enum CallCalleeClassificationFact {
     },
 }
 
-/// Typed outcome of resolving a checked call target.
+/// One complete checked call outcome.
+///
+/// A selected result owns the sole final application authority.  Unselected
+/// variants own only tooling evidence; they cannot expose execution, a result
+/// type, effects, or a continuation.
 #[derive(Clone, Debug, Eq, PartialEq)]
-pub enum CallTargetFact {
-    /// One callable was selected after considering the retained candidates.
-    Selected {
-        /// Callable whose checked transaction was committed.
-        selected: Box<ResolvedCallable>,
-        /// Ordered candidates considered for this call.
-        considered: Arc<[ResolvedCallable]>,
-    },
-    /// Multiple equally viable callable candidates remain.
-    Ambiguous {
-        /// Deterministically ordered viable candidates.
-        candidates: Arc<[ResolvedCallable]>,
-        /// Complete ordered candidates considered before the viable tie was selected.
-        considered: Arc<[ResolvedCallable]>,
-    },
-    /// Resolution found bounded candidates, but none accepted the authored call.
-    Rejected {
-        /// Deterministically ordered candidates retained for diagnostics and tooling.
-        candidates: Arc<[ResolvedCallable]>,
-    },
-    /// Target resolution succeeded to a value that is not callable.
-    NonCallable {
-        /// Typed source that established the non-callable target.
+pub enum CallAnalysisOutcome {
+    Selected(CheckedCallApplication),
+    Ambiguous(CheckedAmbiguousCallEvidence),
+    Rejected(CheckedRejectedCallEvidence),
+    NonCallable(CheckedNonCallableEvidence),
+    Missing(CheckedMissingCallEvidence),
+}
+
+impl CallAnalysisOutcome {
+    pub fn site(&self) -> CheckedCallSite {
+        match self {
+            Self::Selected(application) => application.core().site(),
+            Self::Ambiguous(evidence) => evidence.site(),
+            Self::Rejected(evidence) => evidence.site(),
+            Self::NonCallable(evidence) => evidence.site(),
+            Self::Missing(evidence) => evidence.site(),
+        }
+    }
+
+    pub fn primary_candidate_id(&self) -> Option<&CallableCandidateId> {
+        match self {
+            Self::Selected(application) => Some(application.core().candidates().selected().id()),
+            Self::Ambiguous(evidence) => evidence
+                .candidates()
+                .first()
+                .map(|candidate| candidate.id()),
+            Self::Rejected(evidence) => evidence
+                .candidates()
+                .first()
+                .map(|candidate| candidate.id()),
+            Self::NonCallable(_) | Self::Missing(_) => None,
+        }
+    }
+
+    pub fn candidate_ids(
+        &self,
+    ) -> impl ExactSizeIterator<Item = &CallableCandidateId> + DoubleEndedIterator {
+        let candidates: &[Arc<ResolvedCallable>] = match self {
+            Self::Selected(application) => application.core().candidates().candidates(),
+            Self::Ambiguous(evidence) => evidence.candidates(),
+            Self::Rejected(evidence) => evidence.candidates(),
+            Self::NonCallable(_) | Self::Missing(_) => &[],
+        };
+        candidates.iter().map(|candidate| candidate.id())
+    }
+
+    pub fn considered_candidate_ids(
+        &self,
+    ) -> impl ExactSizeIterator<Item = &CallableCandidateId> + DoubleEndedIterator {
+        let candidates: &[Arc<ResolvedCallable>] = match self {
+            Self::Selected(application) => application.core().candidates().candidates(),
+            Self::Ambiguous(evidence) => evidence.considered(),
+            Self::Rejected(evidence) => evidence.candidates(),
+            Self::NonCallable(_) | Self::Missing(_) => &[],
+        };
+        candidates.iter().map(|candidate| candidate.id())
+    }
+
+    pub(crate) fn visit_types<E>(
+        &self,
+        visitor: &mut impl FnMut(&TypeKind) -> Result<(), E>,
+    ) -> Result<(), E> {
+        match self {
+            Self::Selected(application) => application.visit_types(visitor),
+            Self::Ambiguous(evidence) => evidence.visit_types(visitor),
+            Self::Rejected(evidence) => evidence.visit_types(visitor),
+            Self::NonCallable(evidence) => visitor(evidence.ty()),
+            Self::Missing(_) => Ok(()),
+        }
+    }
+}
+
+/// Final tooling evidence for an unresolved overload tie.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct CheckedAmbiguousCallEvidence {
+    site: CheckedCallSite,
+    callee: Option<CallCalleeClassificationFact>,
+    candidates: Arc<[Arc<ResolvedCallable>]>,
+    considered: Arc<[Arc<ResolvedCallable>]>,
+}
+
+impl CheckedAmbiguousCallEvidence {
+    pub(crate) fn seal(
+        site: CheckedCallSite,
+        callee: Option<CallCalleeClassificationFact>,
+        candidates: Vec<Arc<ResolvedCallable>>,
+        considered: Vec<Arc<ResolvedCallable>>,
+        limits: &CallableLimits,
+    ) -> Result<Self, SemanticSignatureError> {
+        validate_callee_for_site(callee, site)?;
+        let candidates = seal_unselected_candidates(candidates, limits)?;
+        let considered = seal_unselected_candidates(considered, limits)?;
+        if candidates.len() < 2
+            || candidates.iter().any(|candidate| {
+                !considered
+                    .iter()
+                    .any(|row| row.digest() == candidate.digest())
+            })
+        {
+            return Err(SemanticSignatureError::DuplicateCandidate);
+        }
+        Ok(Self {
+            site,
+            callee,
+            candidates,
+            considered,
+        })
+    }
+
+    pub const fn site(&self) -> CheckedCallSite {
+        self.site
+    }
+
+    pub const fn callee(&self) -> Option<CallCalleeClassificationFact> {
+        self.callee
+    }
+
+    pub fn candidates(&self) -> &[Arc<ResolvedCallable>] {
+        &self.candidates
+    }
+
+    pub fn considered(&self) -> &[Arc<ResolvedCallable>] {
+        &self.considered
+    }
+
+    pub(crate) fn visit_types<E>(
+        &self,
+        visitor: &mut impl FnMut(&TypeKind) -> Result<(), E>,
+    ) -> Result<(), E> {
+        for candidate in self.candidates() {
+            candidate.visit_types(visitor)?;
+        }
+        for candidate in self.considered() {
+            candidate.visit_types(visitor)?;
+        }
+        Ok(())
+    }
+}
+
+/// Final tooling evidence for a bounded candidate set with no accepted row.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct CheckedRejectedCallEvidence {
+    site: CheckedCallSite,
+    callee: Option<CallCalleeClassificationFact>,
+    candidates: Arc<[Arc<ResolvedCallable>]>,
+}
+
+impl CheckedRejectedCallEvidence {
+    pub(crate) fn seal(
+        site: CheckedCallSite,
+        callee: Option<CallCalleeClassificationFact>,
+        candidates: Vec<Arc<ResolvedCallable>>,
+        limits: &CallableLimits,
+    ) -> Result<Self, SemanticSignatureError> {
+        validate_callee_for_site(callee, site)?;
+        let candidates = seal_unselected_candidates(candidates, limits)?;
+        if candidates.is_empty() {
+            return Err(SemanticSignatureError::DuplicateCandidate);
+        }
+        Ok(Self {
+            site,
+            callee,
+            candidates,
+        })
+    }
+
+    pub const fn site(&self) -> CheckedCallSite {
+        self.site
+    }
+
+    pub const fn callee(&self) -> Option<CallCalleeClassificationFact> {
+        self.callee
+    }
+
+    pub fn candidates(&self) -> &[Arc<ResolvedCallable>] {
+        &self.candidates
+    }
+
+    pub(crate) fn visit_types<E>(
+        &self,
+        visitor: &mut impl FnMut(&TypeKind) -> Result<(), E>,
+    ) -> Result<(), E> {
+        for candidate in self.candidates() {
+            candidate.visit_types(visitor)?;
+        }
+        Ok(())
+    }
+}
+
+/// Final tooling evidence for a resolved value that is not callable.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct CheckedNonCallableEvidence {
+    site: CheckedCallSite,
+    callee: Option<CallCalleeClassificationFact>,
+    source: NonCallableSource,
+    ty: TypeKind,
+}
+
+impl CheckedNonCallableEvidence {
+    pub(crate) fn seal(
+        site: CheckedCallSite,
+        callee: Option<CallCalleeClassificationFact>,
         source: NonCallableSource,
-        /// Type of the resolved target value.
         ty: TypeKind,
-    },
-    /// No callable target could be resolved.
-    Missing {
-        /// Typed classification of the missing target.
+    ) -> Result<Self, SemanticSignatureError> {
+        validate_callee_for_site(callee, site)?;
+        Ok(Self {
+            site,
+            callee,
+            source,
+            ty,
+        })
+    }
+
+    pub const fn site(&self) -> CheckedCallSite {
+        self.site
+    }
+
+    pub const fn callee(&self) -> Option<CallCalleeClassificationFact> {
+        self.callee
+    }
+
+    pub const fn source(&self) -> &NonCallableSource {
+        &self.source
+    }
+
+    pub const fn ty(&self) -> &TypeKind {
+        &self.ty
+    }
+}
+
+/// Final tooling evidence for an unresolved call target.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct CheckedMissingCallEvidence {
+    site: CheckedCallSite,
+    callee: Option<CallCalleeClassificationFact>,
+    kind: UnknownCallKind,
+}
+
+impl CheckedMissingCallEvidence {
+    pub(crate) fn seal(
+        site: CheckedCallSite,
+        callee: Option<CallCalleeClassificationFact>,
         kind: UnknownCallKind,
-    },
-}
+    ) -> Result<Self, SemanticSignatureError> {
+        validate_callee_for_site(callee, site)?;
+        Ok(Self { site, callee, kind })
+    }
 
-/// Checked mapping retained for one authored call argument.
-#[derive(Clone, Debug, Eq, PartialEq)]
-pub struct CheckedCallArgumentFact {
-    argument: HirCallArgumentOrdinal,
-    slots: Arc<[CheckedCallArgumentSlotFact]>,
-    poison: CallPoison,
-}
+    pub const fn site(&self) -> CheckedCallSite {
+        self.site
+    }
 
-/// Checked mapping retained for one typed slot produced by an argument.
-#[derive(Clone, Debug, Eq, PartialEq)]
-pub struct CheckedCallArgumentSlotFact {
-    slot: CallableArgumentSlotIndex,
-    source: CheckedCallArgumentSlotSource,
-    mapped: Option<CallableParameterCoordinate>,
-    inferred: Option<TypeKind>,
-    expected: Option<TypeKind>,
-    poison: CallPoison,
-}
+    pub const fn callee(&self) -> Option<CallCalleeClassificationFact> {
+        self.callee
+    }
 
-pub(crate) struct CheckedCallArgumentSlotInput {
-    pub(crate) slot: CallableArgumentSlotIndex,
-    pub(crate) source: CheckedCallArgumentSlotSource,
-    pub(crate) mapped: Option<CallableParameterCoordinate>,
-    pub(crate) inferred: Option<TypeKind>,
-    pub(crate) expected: Option<TypeKind>,
-    pub(crate) poison: CallPoison,
+    pub const fn kind(&self) -> UnknownCallKind {
+        self.kind
+    }
 }
 
 /// Typed final-HIR source owned by one expanded call-argument slot.
@@ -156,24 +351,10 @@ impl CheckedCallArgumentSlotSource {
 }
 
 pub(crate) struct CallTargetFactsInput {
-    pub(crate) expression: ExprId,
     pub(crate) enclosing_callable: Option<CallableDeclarationKey>,
-    pub(crate) callee: Option<CallCalleeClassificationFact>,
-    pub(crate) checked: CheckedCallTarget,
+    pub(crate) outcome: CallAnalysisOutcome,
     pub(crate) diagnostics: Vec<CallableDiagnostic>,
     pub(crate) accounting: CallResolverAccountingReport,
-}
-
-#[derive(Clone, Debug, Eq, PartialEq)]
-pub(crate) struct CheckedCallTarget {
-    target: CallTargetFact,
-    result: Option<TypeKind>,
-    arguments: Arc<[CheckedCallArgumentFact]>,
-    effects: EffectRow,
-    current_group: CallableGroupIndex,
-    next_group: Option<CallableGroupIndex>,
-    function_value_type: Option<TypeKind>,
-    poison: CallPoison,
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -203,10 +384,8 @@ impl CallTargetFacts {
         limits: &CallableLimits,
     ) -> Result<Self, SemanticSignatureError> {
         let CallTargetFactsInput {
-            expression,
             enclosing_callable,
-            callee,
-            checked,
+            outcome,
             diagnostics,
             accounting,
         } = input;
@@ -217,35 +396,8 @@ impl CallTargetFacts {
             }
             .into());
         }
-        if !callee_is_valid_for_expression(callee, expression) {
-            return Err(SemanticSignatureError::InvalidCalleeClassification);
-        }
-        for (argument_index, argument) in checked.arguments.iter().enumerate() {
-            let expected = HirCallArgumentOrdinal::try_from_usize(argument_index)
-                .map_err(|_| SemanticSignatureError::ActiveParameterOutOfBounds)?;
-            if argument.argument != expected {
-                return Err(SemanticSignatureError::ActiveParameterOutOfBounds);
-            }
-            for (slot_index, slot) in argument.slots.iter().enumerate() {
-                let expected = CallableArgumentSlotIndex::try_from_usize(slot_index)
-                    .map_err(|_| SemanticSignatureError::ActiveParameterOutOfBounds)?;
-                if slot.slot != expected {
-                    return Err(SemanticSignatureError::ActiveParameterOutOfBounds);
-                }
-                if slot.source.owner().module() != expression.module() {
-                    return Err(SemanticSignatureError::SourceIdentityMismatch);
-                }
-                if let (Some(candidate), Some(coordinate)) =
-                    (checked.active_candidate(), slot.mapped)
-                    && candidate
-                        .schema()
-                        .group(coordinate.group())
-                        .and_then(|group| group.parameters().get(coordinate.parameter().get()))
-                        .is_none()
-                {
-                    return Err(SemanticSignatureError::ActiveParameterOutOfBounds);
-                }
-            }
+        if let CallAnalysisOutcome::Selected(application) = &outcome {
+            validate_selected_application(application, limits)?;
         }
         for diagnostic in &diagnostics {
             if let Some(span) = diagnostic.span() {
@@ -257,35 +409,25 @@ impl CallTargetFacts {
                 }
             }
         }
-        validate_call_target_candidates(&checked.target, limits)?;
-        if !call_accounting_matches(&checked, accounting) {
+        if accounting.resolver_invocations() > 1 {
             return Err(SemanticSignatureError::InvalidCallAccounting);
         }
         Ok(Self {
-            expression,
             enclosing_callable,
-            callee,
-            target: checked.target,
-            arguments: checked.arguments,
-            result: checked.result,
-            effects: checked.effects,
-            current_group: checked.current_group,
-            next_group: checked.next_group,
-            function_value_type: checked.function_value_type,
-            poison: checked.poison,
+            outcome,
             diagnostics: diagnostics.into(),
             accounting,
         })
     }
 
     /// Returns the checker expression identity for this call.
-    pub const fn expression(&self) -> ExprId {
-        self.expression
+    pub fn expression(&self) -> ExprId {
+        self.outcome.site().expression()
     }
     /// Returns the typed final-HIR query for the complete Call source.
     pub fn source_query(&self) -> HirSourceQuery {
         HirSourceQuery::Expr {
-            owner: self.expression,
+            owner: self.expression(),
             role: HirExprSourceRole::Whole,
         }
     }
@@ -293,53 +435,22 @@ impl CallTargetFacts {
     pub(crate) const fn enclosing_callable(&self) -> Option<&CallableDeclarationKey> {
         self.enclosing_callable.as_ref()
     }
-    /// Returns the project-aware semantic callee classification when structural
-    /// recovery did not prevent one from being established.
-    pub const fn callee(&self) -> Option<CallCalleeClassificationFact> {
-        self.callee
+
+    /// Returns the one typed outcome owned by this final call fact.
+    pub const fn outcome(&self) -> &CallAnalysisOutcome {
+        &self.outcome
     }
-    /// Returns the typed target-resolution outcome.
-    pub const fn target(&self) -> &CallTargetFact {
-        &self.target
-    }
-    /// Returns authored arguments in source order with their checked mappings.
-    pub fn arguments(&self) -> &[CheckedCallArgumentFact] {
-        &self.arguments
-    }
-    /// Final committed or deterministic-recovery slot projection.
-    ///
-    /// This is semantic retained state, not a count of physical candidate
-    /// evaluation. Speculative facts from non-primary probes are absent.
-    pub fn retained_argument_inference_facts(
-        &self,
-    ) -> impl Iterator<Item = &CheckedCallArgumentSlotFact> {
-        self.arguments
-            .iter()
-            .flat_map(|argument| argument.slots().iter())
-    }
-    /// Returns the checked result type when one was established.
-    pub const fn result(&self) -> Option<&TypeKind> {
-        self.result.as_ref()
-    }
-    /// Returns the effect row committed for the selected call.
-    pub const fn effects(&self) -> &EffectRow {
-        &self.effects
-    }
-    /// Returns the parameter group consumed by this call expression.
-    pub const fn current_group(&self) -> CallableGroupIndex {
-        self.current_group
-    }
-    /// Returns the next curried parameter group, if this call is partial.
-    pub const fn next_group(&self) -> Option<CallableGroupIndex> {
-        self.next_group
-    }
-    /// Returns the exact callable value type when the target was a function value.
-    pub const fn function_value_type(&self) -> Option<&TypeKind> {
-        self.function_value_type.as_ref()
-    }
-    /// Returns the aggregate recovery state for the checked call.
-    pub const fn poison(&self) -> CallPoison {
-        self.poison
+
+    /// Returns the sole selected application authority, when selection
+    /// succeeded.  No selected projection is rebuilt from wrapper fields.
+    pub const fn selected_application(&self) -> Option<&CheckedCallApplication> {
+        match &self.outcome {
+            CallAnalysisOutcome::Selected(application) => Some(application),
+            CallAnalysisOutcome::Ambiguous(_)
+            | CallAnalysisOutcome::Rejected(_)
+            | CallAnalysisOutcome::NonCallable(_)
+            | CallAnalysisOutcome::Missing(_) => None,
+        }
     }
     /// Returns callable diagnostics committed for this call.
     pub fn diagnostics(&self) -> &[CallableDiagnostic] {
@@ -350,70 +461,101 @@ impl CallTargetFacts {
     pub const fn accounting(&self) -> CallResolverAccountingReport {
         self.accounting
     }
+
+    pub(crate) fn visit_types<E>(
+        &self,
+        visitor: &mut impl FnMut(&TypeKind) -> Result<(), E>,
+    ) -> Result<(), E> {
+        self.outcome.visit_types(visitor)?;
+        for diagnostic in self.diagnostics() {
+            diagnostic.visit_types(visitor)?;
+        }
+        Ok(())
+    }
 }
 
-fn validate_call_target_candidates(
-    target: &CallTargetFact,
+fn validate_selected_application(
+    application: &CheckedCallApplication,
     limits: &CallableLimits,
 ) -> Result<(), SemanticSignatureError> {
-    let validate_complete = |candidates: &[ResolvedCallable]| {
-        if candidates.len() > limits.max_candidates_per_call() {
-            return Err(CallableQueryLimitError::Candidates {
-                actual: candidates.len(),
-                limit: limits.max_candidates_per_call(),
+    let candidates = application.core().candidates();
+    if candidates.candidates().len() > limits.max_candidates_per_call() {
+        return Err(CallableQueryLimitError::Candidates {
+            actual: candidates.candidates().len(),
+            limit: limits.max_candidates_per_call(),
+        }
+        .into());
+    }
+    let expression = application.core().site().expression();
+    let selected = candidates.selected();
+    for (argument_index, argument) in application
+        .core()
+        .execution()
+        .arguments()
+        .iter()
+        .enumerate()
+    {
+        let expected = HirCallArgumentOrdinal::try_from_usize(argument_index)
+            .map_err(|_| SemanticSignatureError::ActiveParameterOutOfBounds)?;
+        if argument.argument() != expected {
+            return Err(SemanticSignatureError::ActiveParameterOutOfBounds);
+        }
+        for (slot_index, slot) in argument.slots().iter().enumerate() {
+            let expected = CallableArgumentSlotIndex::try_from_usize(slot_index)
+                .map_err(|_| SemanticSignatureError::ActiveParameterOutOfBounds)?;
+            if slot.slot() != expected {
+                return Err(SemanticSignatureError::ActiveParameterOutOfBounds);
             }
-            .into());
-        }
-        let mut ids = HashSet::with_capacity(candidates.len());
-        if candidates
-            .iter()
-            .any(|candidate| !ids.insert(candidate.id().clone()))
-        {
-            return Err(SemanticSignatureError::DuplicateCandidate);
-        }
-        Ok(ids)
-    };
-
-    match target {
-        CallTargetFact::Selected {
-            selected,
-            considered,
-        } => {
-            let considered_ids = validate_complete(considered)?;
-            if considered.is_empty() || !considered_ids.contains(selected.id()) {
-                return Err(SemanticSignatureError::DuplicateCandidate);
+            if slot.source().owner().module() != expression.module() {
+                return Err(SemanticSignatureError::SourceIdentityMismatch);
             }
-        }
-        CallTargetFact::Ambiguous {
-            candidates,
-            considered,
-        } => {
-            let considered_ids = validate_complete(considered)?;
-            validate_complete(candidates)?;
-            if candidates.len() < 2
-                || candidates
-                    .iter()
-                    .any(|candidate| !considered_ids.contains(candidate.id()))
+            if let CheckedCallOperandDestination::Parameter(coordinate) = slot.destination()
+                && selected
+                    .schema()
+                    .group(coordinate.group())
+                    .and_then(|group| group.parameters().get(coordinate.parameter().get()))
+                    .is_none()
             {
-                return Err(SemanticSignatureError::DuplicateCandidate);
+                return Err(SemanticSignatureError::ActiveParameterOutOfBounds);
             }
         }
-        CallTargetFact::Rejected { candidates } => {
-            validate_complete(candidates)?;
-            if candidates.is_empty() {
-                return Err(SemanticSignatureError::DuplicateCandidate);
-            }
-        }
-        CallTargetFact::NonCallable { .. } | CallTargetFact::Missing { .. } => {}
     }
     Ok(())
 }
 
-fn callee_is_valid_for_expression(
+fn seal_unselected_candidates(
+    mut candidates: Vec<Arc<ResolvedCallable>>,
+    limits: &CallableLimits,
+) -> Result<Arc<[Arc<ResolvedCallable>]>, SemanticSignatureError> {
+    if candidates.len() > limits.max_candidates_per_call() {
+        return Err(CallableQueryLimitError::Candidates {
+            actual: candidates.len(),
+            limit: limits.max_candidates_per_call(),
+        }
+        .into());
+    }
+    candidates.sort_by_key(|candidate| candidate.digest());
+    let mut canonical: Vec<Arc<ResolvedCallable>> = Vec::with_capacity(candidates.len());
+    for candidate in candidates {
+        if let Some(previous) = canonical.last()
+            && previous.digest() == candidate.digest()
+        {
+            if previous.as_ref() != candidate.as_ref() {
+                return Err(SemanticSignatureError::DuplicateCandidate);
+            }
+            continue;
+        }
+        canonical.push(candidate);
+    }
+    Ok(canonical.into())
+}
+
+fn validate_callee_for_site(
     callee: Option<CallCalleeClassificationFact>,
-    expression: ExprId,
-) -> bool {
-    match callee {
+    site: CheckedCallSite,
+) -> Result<(), SemanticSignatureError> {
+    let expression = site.expression();
+    let valid = match callee {
         None => true,
         Some(CallCalleeClassificationFact::Value {
             expression: receiver,
@@ -425,247 +567,10 @@ fn callee_is_valid_for_expression(
             receiver.module() == expression.module()
                 && matches!(separator, HirAssociatedSeparator::Present(_))
         }
-    }
-}
-
-fn call_accounting_matches(
-    checked: &CheckedCallTarget,
-    accounting: CallResolverAccountingReport,
-) -> bool {
-    let Ok(arguments) = u64::try_from(checked.arguments.len()) else {
-        return false;
     };
-    if accounting.logical_argument_checks() != arguments
-        || accounting.retained_argument_fact_publications() != arguments
-        || accounting.resolver_invocations() > 1
-    {
-        return false;
-    }
-    let (candidate_count, replay) = match &checked.target {
-        CallTargetFact::Selected { considered, .. } => {
-            let Ok(candidate_count) = u64::try_from(considered.len()) else {
-                return false;
-            };
-            (candidate_count, candidate_count > 1)
-        }
-        CallTargetFact::Ambiguous { considered, .. } => {
-            let Ok(candidate_count) = u64::try_from(considered.len()) else {
-                return false;
-            };
-            (candidate_count, false)
-        }
-        CallTargetFact::Rejected { candidates } => {
-            let Ok(candidate_count) = u64::try_from(candidates.len()) else {
-                return false;
-            };
-            (candidate_count, false)
-        }
-        CallTargetFact::NonCallable { .. } | CallTargetFact::Missing { .. } => (0, false),
-    };
-    let Some(expected_probes) = candidate_count.checked_mul(arguments) else {
-        return false;
-    };
-    let expected_replay = if replay { arguments } else { 0 };
-    accounting.candidate_argument_probes() == expected_probes
-        && accounting.selected_replay_argument_visits() == expected_replay
-}
-
-impl CheckedCallArgumentFact {
-    pub(crate) fn new(
-        argument: HirCallArgumentOrdinal,
-        slots: Vec<CheckedCallArgumentSlotFact>,
-        poison: CallPoison,
-    ) -> Self {
-        Self {
-            argument,
-            slots: slots.into(),
-            poison,
-        }
-    }
-
-    /// Returns the final-HIR argument coordinate in source order.
-    pub const fn argument(&self) -> HirCallArgumentOrdinal {
-        self.argument
-    }
-
-    /// Returns one typed source role owned by the final Call expression.
-    pub const fn source_role(&self, part: HirCallArgumentSourcePart) -> HirExprSourceRole {
-        HirExprSourceRole::CallArgument {
-            argument: self.argument,
-            part,
-        }
-    }
-    /// Returns typed slots produced by this argument in mapping order.
-    pub fn slots(&self) -> &[CheckedCallArgumentSlotFact] {
-        &self.slots
-    }
-    /// Returns the aggregate recovery state for this argument.
-    pub const fn poison(&self) -> CallPoison {
-        self.poison
-    }
-}
-
-impl CheckedCallArgumentSlotFact {
-    pub(crate) fn new(input: CheckedCallArgumentSlotInput) -> Self {
-        Self {
-            slot: input.slot,
-            source: input.source,
-            mapped: input.mapped,
-            inferred: input.inferred,
-            expected: input.expected,
-            poison: input.poison,
-        }
-    }
-
-    /// Returns the zero-based slot index within its authored argument.
-    pub const fn slot(&self) -> CallableArgumentSlotIndex {
-        self.slot
-    }
-    /// Returns the typed final-HIR query for this checked slot expression.
-    pub fn source_query(&self) -> HirSourceQuery {
-        self.source.source_query()
-    }
-    /// Returns the checked parameter coordinate mapped to this slot.
-    pub const fn mapped(&self) -> Option<CallableParameterCoordinate> {
-        self.mapped
-    }
-    /// Returns the type inferred for the checked slot expression.
-    pub const fn inferred(&self) -> Option<&TypeKind> {
-        self.inferred.as_ref()
-    }
-    /// Returns the mapped parameter's expected type, when checked.
-    pub const fn expected(&self) -> Option<&TypeKind> {
-        self.expected.as_ref()
-    }
-    /// Returns the recovery state for this checked slot.
-    pub const fn poison(&self) -> CallPoison {
-        self.poison
-    }
-
-    /// Returns the typed source of this checked slot.
-    pub const fn source(&self) -> CheckedCallArgumentSlotSource {
-        self.source
-    }
-
-    /// Returns the expression identity when this slot is expression-backed.
-    pub const fn expression(&self) -> Option<ExprId> {
-        match self.source {
-            CheckedCallArgumentSlotSource::Expression(expression) => Some(expression),
-            CheckedCallArgumentSlotSource::CompactNumericElement { .. } => None,
-        }
-    }
-}
-
-impl CheckedCallTarget {
-    fn active_candidate(&self) -> Option<&ResolvedCallable> {
-        match &self.target {
-            CallTargetFact::Selected { selected, .. } => Some(selected),
-            CallTargetFact::Ambiguous { candidates, .. }
-            | CallTargetFact::Rejected { candidates } => candidates.first(),
-            CallTargetFact::NonCallable { .. } | CallTargetFact::Missing { .. } => None,
-        }
-    }
-
-    pub(crate) fn selected(
-        selected: &ResolvedCallable,
-        considered: &[ResolvedCallable],
-        arguments: Vec<CheckedCallArgumentFact>,
-        result: TypeKind,
-        effects: EffectRow,
-        current_group: CallableGroupIndex,
-        poison: CallPoison,
-    ) -> Self {
-        let next_group = CallableGroupIndex::try_from_usize(current_group.get() + 1)
-            .ok()
-            .filter(|next| selected.schema().group(*next).is_some())
-            .filter(|next| {
-                !matches!(
-                    selected.instantiation(),
-                    CallableInstantiation::Extension { group, .. } if group == next
-                )
-            });
-        Self {
-            target: CallTargetFact::Selected {
-                selected: Box::new(selected.clone()),
-                considered: considered.to_vec().into(),
-            },
-            result: Some(result),
-            arguments: arguments.into(),
-            effects,
-            current_group,
-            next_group,
-            function_value_type: None,
-            poison,
-        }
-    }
-
-    #[must_use]
-    pub(crate) fn with_function_value_type(mut self, function_value_type: TypeKind) -> Self {
-        self.function_value_type = Some(function_value_type);
-        self
-    }
-
-    pub(crate) fn ambiguous(
-        candidates: &[ResolvedCallable],
-        considered: &[ResolvedCallable],
-        arguments: Vec<CheckedCallArgumentFact>,
-        recovery_result: TypeKind,
-        current_group: CallableGroupIndex,
-    ) -> Self {
-        Self {
-            target: CallTargetFact::Ambiguous {
-                candidates: candidates.to_vec().into(),
-                considered: considered.to_vec().into(),
-            },
-            result: Some(recovery_result),
-            arguments: arguments.into(),
-            effects: EffectRow::closed(crate::effects::EffectSet::new()),
-            current_group,
-            next_group: None,
-            function_value_type: None,
-            poison: CallPoison::Rejected,
-        }
-    }
-
-    pub(crate) fn rejected(
-        candidates: &[ResolvedCallable],
-        arguments: Vec<CheckedCallArgumentFact>,
-        recovery_result: TypeKind,
-        current_group: CallableGroupIndex,
-    ) -> Self {
-        Self {
-            target: CallTargetFact::Rejected {
-                candidates: candidates.to_vec().into(),
-            },
-            result: Some(recovery_result),
-            arguments: arguments.into(),
-            effects: EffectRow::closed(crate::effects::EffectSet::new()),
-            current_group,
-            next_group: None,
-            function_value_type: None,
-            poison: CallPoison::Rejected,
-        }
-    }
-
-    /// Retains the typed, candidate-neutral result of an associated receiver
-    /// whose generic arity failed before shared-resolver entry.
-    pub(crate) fn associated_receiver_recovery(
-        arguments: Vec<CheckedCallArgumentFact>,
-        recovery_result: TypeKind,
-    ) -> Self {
-        Self {
-            target: CallTargetFact::Missing {
-                kind: UnknownCallKind::AssociatedType,
-            },
-            result: Some(recovery_result),
-            arguments: arguments.into(),
-            effects: EffectRow::closed(crate::effects::EffectSet::new()),
-            current_group: CallableGroupIndex::ZERO,
-            next_group: None,
-            function_value_type: None,
-            poison: CallPoison::Recovered,
-        }
-    }
+    valid
+        .then_some(())
+        .ok_or(SemanticSignatureError::InvalidCalleeClassification)
 }
 
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
@@ -686,7 +591,7 @@ pub struct SemanticParameter {
     coordinate: CallableParameterCoordinate,
     label: Arc<str>,
     name: Option<CallableName>,
-    ty: CallableParameterType,
+    admission: CallableParameterAdmission,
     passing: CallableParameterPassing,
     presence: CallableParameterPresence,
     documentation: Option<Arc<str>>,
@@ -699,7 +604,7 @@ impl SemanticParameter {
         coordinate: CallableParameterCoordinate,
         label: impl Into<Arc<str>>,
         name: Option<CallableName>,
-        ty: CallableParameterType,
+        admission: CallableParameterAdmission,
         passing: CallableParameterPassing,
         presence: CallableParameterPresence,
         documentation: Option<Arc<str>>,
@@ -714,7 +619,7 @@ impl SemanticParameter {
             coordinate,
             label: label.into(),
             name,
-            ty,
+            admission,
             passing,
             presence,
             documentation,
@@ -730,8 +635,11 @@ impl SemanticParameter {
     pub const fn name(&self) -> Option<&CallableName> {
         self.name.as_ref()
     }
-    pub const fn ty(&self) -> &CallableParameterType {
-        &self.ty
+    pub const fn admission(&self) -> &CallableParameterAdmission {
+        &self.admission
+    }
+    pub const fn declared_type(&self) -> Option<&TypeKind> {
+        self.admission.declared()
     }
     pub const fn passing(&self) -> CallableParameterPassing {
         self.passing
@@ -1217,6 +1125,43 @@ impl CallableDiagnostic {
     }
     pub fn related(&self) -> &[CallableDiagnosticRelated] {
         &self.related
+    }
+
+    pub(crate) fn visit_types<E>(
+        &self,
+        visitor: &mut impl FnMut(&TypeKind) -> Result<(), E>,
+    ) -> Result<(), E> {
+        self.subject.visit_types(visitor)?;
+        for related in self.related() {
+            related.visit_types(visitor)?;
+        }
+        Ok(())
+    }
+}
+
+impl CallableDiagnosticSubject {
+    pub(crate) fn visit_types<E>(
+        &self,
+        visitor: &mut impl FnMut(&TypeKind) -> Result<(), E>,
+    ) -> Result<(), E> {
+        match self {
+            Self::Method { receiver, .. } => visitor(receiver),
+            Self::Candidate(_)
+            | Self::Parameter(_)
+            | Self::Argument(_)
+            | Self::Path(_)
+            | Self::Character(_)
+            | Self::None => Ok(()),
+        }
+    }
+}
+
+impl CallableDiagnosticRelated {
+    pub(crate) fn visit_types<E>(
+        &self,
+        visitor: &mut impl FnMut(&TypeKind) -> Result<(), E>,
+    ) -> Result<(), E> {
+        self.subject.visit_types(visitor)
     }
 }
 

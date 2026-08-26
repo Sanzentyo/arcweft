@@ -45,11 +45,6 @@ pub struct CallableParameterIndex(u16);
 pub struct CallableOverloadIndex(u16);
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub struct CallableArgumentSlotIndex(u16);
-/// Unique lexical scope inside one type-check transaction.
-#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
-pub struct SemanticScopeId(u32);
-#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
-pub struct LexicalBindingIndex(u32);
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub struct FunctionValueOrdinal(u32);
 
@@ -186,24 +181,6 @@ impl CallableArgumentSlotIndex {
                 value,
             })
     }
-    pub const fn get(self) -> usize {
-        self.0 as usize
-    }
-}
-impl LexicalBindingIndex {
-    pub fn try_from_usize(value: usize) -> Result<Self, CallableScalarError> {
-        u32::try_from(value)
-            .map(Self)
-            .map_err(|_| CallableScalarError::IndexOverflow {
-                kind: CallableIndexKind::LexicalBinding,
-                value,
-            })
-    }
-    pub const fn get(self) -> usize {
-        self.0 as usize
-    }
-}
-impl SemanticScopeId {
     pub const fn get(self) -> usize {
         self.0 as usize
     }
@@ -723,43 +700,18 @@ fn resolve_std_float(path: &CallablePath) -> Option<BuiltinCallableId> {
 }
 
 #[derive(Clone, Debug, Eq, Hash, PartialEq)]
-pub struct ProjectNominalTypeId {
-    package: CallablePackageId,
-    module: CanonicalModulePath,
-    name: CallableName,
-}
-impl ProjectNominalTypeId {
-    pub fn new(
-        package: CallablePackageId,
-        module: CanonicalModulePath,
-        name: CallableName,
-    ) -> Self {
-        Self {
-            package,
-            module,
-            name,
-        }
-    }
-    pub const fn package(&self) -> &CallablePackageId {
-        &self.package
-    }
-    pub const fn module(&self) -> &CanonicalModulePath {
-        &self.module
-    }
-    pub const fn name(&self) -> &CallableName {
-        &self.name
-    }
-}
-#[derive(Clone, Debug, Eq, Hash, PartialEq)]
 pub struct EnumVariantSignatureId {
-    owner: ProjectNominalTypeId,
+    owner: arcweft_lang_hir::symbol::nominal::ProjectNominalDeclarationId,
     variant: CallableName,
 }
 impl EnumVariantSignatureId {
-    pub fn new(owner: ProjectNominalTypeId, variant: CallableName) -> Self {
+    pub fn new(
+        owner: arcweft_lang_hir::symbol::nominal::ProjectNominalDeclarationId,
+        variant: CallableName,
+    ) -> Self {
         Self { owner, variant }
     }
-    pub const fn owner(&self) -> &ProjectNominalTypeId {
+    pub const fn owner(&self) -> &arcweft_lang_hir::symbol::nominal::ProjectNominalDeclarationId {
         &self.owner
     }
     pub const fn variant(&self) -> &CallableName {
@@ -947,15 +899,15 @@ impl AgentIntrinsicSignatureId {
 
 #[derive(Clone, Debug, Eq, Hash, PartialEq)]
 pub struct LocalCallableId {
-    scope: SemanticScopeId,
-    binding: LexicalBindingIndex,
+    local: arcweft_lang_hir::identity::LocalId,
 }
 impl LocalCallableId {
-    pub const fn scope(&self) -> &SemanticScopeId {
-        &self.scope
+    pub(crate) const fn from_checked_local(local: arcweft_lang_hir::identity::LocalId) -> Self {
+        Self { local }
     }
-    pub const fn binding(&self) -> LexicalBindingIndex {
-        self.binding
+
+    pub const fn local(&self) -> arcweft_lang_hir::identity::LocalId {
+        self.local
     }
 }
 
@@ -976,40 +928,6 @@ impl FunctionValueSignatureId {
     }
     pub const fn ordinal(&self) -> FunctionValueOrdinal {
         self.ordinal
-    }
-}
-
-#[derive(Clone, Debug, Eq, Hash, PartialEq)]
-pub struct CurriedCallableId {
-    base: Box<CallableCandidateId>,
-    next_group: CallableGroupIndex,
-}
-impl CurriedCallableId {
-    pub fn try_new(
-        base: CallableCandidateId,
-        next_group: CallableGroupIndex,
-    ) -> Result<Self, CallableIdentityError> {
-        if matches!(base, CallableCandidateId::Curried(_)) {
-            return Err(CallableIdentityError::InvalidCurriedBase {
-                base: Box::new(base),
-            });
-        }
-        if next_group.get() == 0 {
-            return Err(CallableIdentityError::InvalidCurriedGroup {
-                base: Box::new(base),
-                group: next_group,
-            });
-        }
-        Ok(Self {
-            base: Box::new(base),
-            next_group,
-        })
-    }
-    pub const fn base(&self) -> &CallableCandidateId {
-        &self.base
-    }
-    pub const fn next_group(&self) -> CallableGroupIndex {
-        self.next_group
     }
 }
 
@@ -1141,8 +1059,6 @@ impl ProbeComparisonId {
 }
 #[derive(Clone, Debug, Eq, Hash, PartialEq)]
 pub enum DomainMethodId {
-    Traverse,
-    Parallel,
     FxSampleOrdinalPhase,
     ObservedObjectRequireRole,
     MapGet {
@@ -1162,12 +1078,6 @@ pub enum DomainMethodId {
 impl DomainMethodId {
     pub fn resolve(receiver: &TypeKind, method: &CallableName) -> Option<Self> {
         let name = method.as_str();
-        if name == "traverse" {
-            return Some(Self::Traverse);
-        }
-        if name == "parallel" {
-            return Some(Self::Parallel);
-        }
         if matches!(receiver, TypeKind::Named(name) if name == "FxSampleContext")
             && name == "ordinal_phase"
         {
@@ -1764,7 +1674,6 @@ pub enum CallableCandidateId {
     Standard(StandardCallableDeclarationId),
     Local(LocalCallableId),
     FunctionValue(FunctionValueSignatureId),
-    Curried(CurriedCallableId),
     CollectionMethod(CollectionMethodId),
     PresentationHandleMethod(PresentationHandleMethodId),
     IntegerMethod(IntegerMethodId),
@@ -1848,7 +1757,6 @@ impl CallableCandidateId {
             Self::Environment(_) => CallableFamily::Environment,
             Self::Local(_) => CallableFamily::Lexical,
             Self::FunctionValue(_) => CallableFamily::FunctionValue,
-            Self::Curried(id) => id.base().intrinsic_family(),
             Self::CollectionMethod(_) => CallableFamily::CollectionMethod,
             Self::PresentationHandleMethod(_) => CallableFamily::PresentationHandleMethod,
             Self::IntegerMethod(_) => CallableFamily::IntegerMethod,

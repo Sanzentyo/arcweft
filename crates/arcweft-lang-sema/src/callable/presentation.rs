@@ -155,13 +155,13 @@ impl PresentationCallableId {
         self,
         context: PresentationSchemaContext<'_>,
     ) -> Result<CallableSignatureSchema, CallableSchemaError> {
-        super::schema::presentation_schema(self, context.owner)
+        super::schema::presentation_schema(self, context.owner, Some(context.environment))
     }
 
     pub(crate) fn checker_signature_schema(
         self,
     ) -> Result<CallableSignatureSchema, CallableSchemaError> {
-        super::schema::presentation_schema(self, None)
+        super::schema::presentation_schema(self, None, None)
     }
 }
 

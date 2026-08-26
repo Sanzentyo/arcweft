@@ -1,8 +1,8 @@
 //! Projection from verified AWBC type rows to native runtime owners.
 
 use super::schema::{
-    AwbcProgram, AwbcRuntimeType, AwbcSignedIntKind, AwbcTypeId, AwbcUnsignedIntKind,
-    AwbcVariantCase, AwbcVariantIdentity,
+    AwbcAgentTypeShape, AwbcProgram, AwbcRuntimeType, AwbcRuntimeTypeShape, AwbcSignedIntKind,
+    AwbcTypeId, AwbcUnsignedIntKind, AwbcVariantCase, AwbcVariantIdentity,
 };
 use crate::entry::{RuntimeIdentityError, RuntimeNominalTypeId, TypeLayoutHash};
 use crate::pattern::{
@@ -56,14 +56,13 @@ impl AwbcRuntimeType {
         &self,
         strings: &[String],
     ) -> Result<Option<RuntimeOpaqueTypeOwner>, AwbcTypeProjectionError> {
-        let Self::Opaque {
+        let AwbcRuntimeTypeShape::Opaque {
             producer,
-            semantic_identity,
             admission,
             value_class,
             persistence,
             arguments: _,
-        } = self
+        } = self.shape()
         else {
             return Ok(None);
         };
@@ -77,14 +76,45 @@ impl AwbcRuntimeType {
                     source,
                 }
             })?;
-        let semantic_identity = RuntimeSemanticTypeId::from_bytes(*semantic_identity);
         Ok(Some(RuntimeOpaqueTypeOwner::with_admission(
             producer,
-            semantic_identity,
+            self.semantic_identity(),
             *admission,
             *value_class,
             *persistence,
         )))
+    }
+}
+
+struct CheckedVariantProjection<'owner, 'visiting> {
+    ty: AwbcTypeId,
+    semantic_identity: RuntimeSemanticTypeId,
+    owner: &'owner AwbcVariantIdentity,
+    arguments: &'owner [AwbcTypeId],
+    cases: &'owner [AwbcVariantCase],
+    depth: usize,
+    visiting: &'visiting mut BTreeSet<AwbcTypeId>,
+}
+
+const fn checked_signed_width(kind: AwbcSignedIntKind) -> RuntimeSignedIntWidth {
+    match kind {
+        AwbcSignedIntKind::I8 => RuntimeSignedIntWidth::I8,
+        AwbcSignedIntKind::I16 => RuntimeSignedIntWidth::I16,
+        AwbcSignedIntKind::I32 => RuntimeSignedIntWidth::I32,
+        AwbcSignedIntKind::I64 => RuntimeSignedIntWidth::I64,
+        AwbcSignedIntKind::I128 => RuntimeSignedIntWidth::I128,
+        AwbcSignedIntKind::ISize => RuntimeSignedIntWidth::ISize,
+    }
+}
+
+const fn checked_unsigned_width(kind: AwbcUnsignedIntKind) -> RuntimeUnsignedIntWidth {
+    match kind {
+        AwbcUnsignedIntKind::U8 => RuntimeUnsignedIntWidth::U8,
+        AwbcUnsignedIntKind::U16 => RuntimeUnsignedIntWidth::U16,
+        AwbcUnsignedIntKind::U32 => RuntimeUnsignedIntWidth::U32,
+        AwbcUnsignedIntKind::U64 => RuntimeUnsignedIntWidth::U64,
+        AwbcUnsignedIntKind::U128 => RuntimeUnsignedIntWidth::U128,
+        AwbcUnsignedIntKind::USize => RuntimeUnsignedIntWidth::USize,
     }
 }
 
@@ -110,17 +140,21 @@ impl AwbcProgram {
             .runtime_types
             .get(ty.index())
             .ok_or(AwbcTypeProjectionError::RuntimeTypeOutOfBounds { index: ty.0 })?;
-        let AwbcRuntimeType::NominalRecord {
+        let AwbcRuntimeTypeShape::NominalRecord {
             public_id,
-            semantic_identity,
             layout,
+            arguments,
             fields,
-        } = row
+        } = row.shape()
         else {
             return Ok(None);
         };
         let nominal = self.nominal_identity(*public_id)?;
         let mut visiting = BTreeSet::new();
+        let arguments = arguments
+            .iter()
+            .map(|argument| self.checked_type_at_depth(*argument, 0, &mut visiting))
+            .collect::<Result<Vec<_>, _>>()?;
         let fields = fields
             .iter()
             .map(|field| {
@@ -136,8 +170,9 @@ impl AwbcProgram {
             .collect::<Result<Vec<_>, _>>()?;
         RuntimeNominalRecordLayout::try_from_checked_projection(
             nominal,
-            RuntimeSemanticTypeId::from_bytes(*semantic_identity),
+            row.semantic_identity(),
             TypeLayoutHash::from_bytes(*layout),
+            arguments,
             fields,
         )
         .map(Some)
@@ -162,10 +197,6 @@ impl AwbcProgram {
         })
     }
 
-    #[allow(
-        clippy::too_many_lines,
-        reason = "the reverse projection is the exhaustive inverse of the closed checked-type family"
-    )]
     /// Reifies one indexed AWBC runtime type as the shared checked-type owner.
     pub fn checked_type(
         &self,
@@ -190,74 +221,91 @@ impl AwbcProgram {
         if !visiting.insert(ty) {
             return Err(AwbcTypeProjectionError::CheckedTypeCycle { index: ty.0 });
         }
-        let result = match row {
-            AwbcRuntimeType::Never => Ok(RuntimeCheckedType::Never),
-            AwbcRuntimeType::Unit => Ok(RuntimeCheckedType::Unit),
-            AwbcRuntimeType::Bool => Ok(RuntimeCheckedType::Bool),
-            AwbcRuntimeType::Int(kind) => Ok(RuntimeCheckedType::Signed(match kind {
-                AwbcSignedIntKind::I8 => RuntimeSignedIntWidth::I8,
-                AwbcSignedIntKind::I16 => RuntimeSignedIntWidth::I16,
-                AwbcSignedIntKind::I32 => RuntimeSignedIntWidth::I32,
-                AwbcSignedIntKind::I64 => RuntimeSignedIntWidth::I64,
-                AwbcSignedIntKind::I128 => RuntimeSignedIntWidth::I128,
-                AwbcSignedIntKind::ISize => RuntimeSignedIntWidth::ISize,
-            })),
-            AwbcRuntimeType::UInt(kind) => Ok(RuntimeCheckedType::Unsigned(match kind {
-                AwbcUnsignedIntKind::U8 => RuntimeUnsignedIntWidth::U8,
-                AwbcUnsignedIntKind::U16 => RuntimeUnsignedIntWidth::U16,
-                AwbcUnsignedIntKind::U32 => RuntimeUnsignedIntWidth::U32,
-                AwbcUnsignedIntKind::U64 => RuntimeUnsignedIntWidth::U64,
-                AwbcUnsignedIntKind::U128 => RuntimeUnsignedIntWidth::U128,
-                AwbcUnsignedIntKind::USize => RuntimeUnsignedIntWidth::USize,
-            })),
-            AwbcRuntimeType::F32 => Ok(RuntimeCheckedType::F32),
-            AwbcRuntimeType::F64 => Ok(RuntimeCheckedType::F64),
-            AwbcRuntimeType::String => Ok(RuntimeCheckedType::String),
-            AwbcRuntimeType::Char => Ok(RuntimeCheckedType::Char),
-            AwbcRuntimeType::Duration => Ok(RuntimeCheckedType::Duration),
-            AwbcRuntimeType::Progress => Ok(RuntimeCheckedType::Progress),
-            AwbcRuntimeType::EntityRef => Ok(RuntimeCheckedType::EntityReference),
-            AwbcRuntimeType::Bytes => Ok(RuntimeCheckedType::Bytes),
-            AwbcRuntimeType::Sequence(item) => self
+        let result = match row.shape() {
+            AwbcRuntimeTypeShape::Never => Ok(RuntimeCheckedType::Never),
+            AwbcRuntimeTypeShape::Unit => Ok(RuntimeCheckedType::Unit),
+            AwbcRuntimeTypeShape::Bool => Ok(RuntimeCheckedType::Bool),
+            AwbcRuntimeTypeShape::Int(kind) => {
+                Ok(RuntimeCheckedType::Signed(checked_signed_width(*kind)))
+            }
+            AwbcRuntimeTypeShape::UInt(kind) => {
+                Ok(RuntimeCheckedType::Unsigned(checked_unsigned_width(*kind)))
+            }
+            AwbcRuntimeTypeShape::F32 => Ok(RuntimeCheckedType::F32),
+            AwbcRuntimeTypeShape::F64 => Ok(RuntimeCheckedType::F64),
+            AwbcRuntimeTypeShape::String => Ok(RuntimeCheckedType::String),
+            AwbcRuntimeTypeShape::Char => Ok(RuntimeCheckedType::Char),
+            AwbcRuntimeTypeShape::Duration => Ok(RuntimeCheckedType::Duration),
+            AwbcRuntimeTypeShape::Progress => Ok(RuntimeCheckedType::Progress),
+            AwbcRuntimeTypeShape::EntityRef => Ok(RuntimeCheckedType::EntityReference),
+            AwbcRuntimeTypeShape::Bytes => Ok(RuntimeCheckedType::Bytes),
+            AwbcRuntimeTypeShape::Sequence(item) => self
                 .checked_type_at_depth(*item, depth + 1, visiting)
                 .map(Box::new)
                 .map(RuntimeCheckedType::Sequence),
-            AwbcRuntimeType::Tuple(items) => items
+            AwbcRuntimeTypeShape::Tuple(items) => items
                 .iter()
                 .map(|item| self.checked_type_at_depth(*item, depth + 1, visiting))
                 .collect::<Result<Vec<_>, _>>()
                 .map(RuntimeCheckedType::Tuple),
-            AwbcRuntimeType::Choice(alternatives) => alternatives
+            AwbcRuntimeTypeShape::Choice(alternatives) => alternatives
                 .iter()
                 .map(|item| self.checked_type_at_depth(*item, depth + 1, visiting))
                 .collect::<Result<Vec<_>, _>>()
                 .map(RuntimeCheckedType::Choice),
-            AwbcRuntimeType::Nominal {
+            AwbcRuntimeTypeShape::Nominal {
                 public_id,
-                semantic_identity,
                 layout,
+                arguments,
+            }
+            | AwbcRuntimeTypeShape::NominalRecord {
+                public_id,
+                layout,
+                arguments,
+                ..
             } => Ok(RuntimeCheckedType::Nominal {
                 nominal: self.nominal_identity(*public_id)?,
-                semantic_identity: RuntimeSemanticTypeId::from_bytes(*semantic_identity),
+                semantic_identity: row.semantic_identity(),
                 layout: TypeLayoutHash::from_bytes(*layout),
+                arguments: self.checked_children(arguments, depth, visiting)?,
             }),
-            AwbcRuntimeType::Opaque { .. } => self
+            AwbcRuntimeTypeShape::Opaque { .. } => self
                 .opaque_owner(ty)?
                 .map(|owner| RuntimeCheckedType::Opaque { owner })
                 .ok_or(AwbcTypeProjectionError::UnsupportedCheckedType { index: ty.0 }),
-            AwbcRuntimeType::Variant { owner, cases } => {
-                self.checked_variant_type(ty, owner, cases, depth, visiting)
+            AwbcRuntimeTypeShape::Variant {
+                owner,
+                arguments,
+                cases,
+            } => self.checked_variant_type(CheckedVariantProjection {
+                ty,
+                semantic_identity: row.semantic_identity(),
+                owner,
+                arguments,
+                cases,
+                depth,
+                visiting,
+            }),
+            AwbcRuntimeTypeShape::Agent(AwbcAgentTypeShape::Leaf(agent)) => {
+                Ok(RuntimeCheckedType::Agent(*agent))
             }
-            AwbcRuntimeType::Agent(agent) => Ok(RuntimeCheckedType::Agent(*agent)),
-            AwbcRuntimeType::Record { .. }
-            | AwbcRuntimeType::NominalRecord { .. }
-            | AwbcRuntimeType::MatrixF32
-            | AwbcRuntimeType::MatrixF64
-            | AwbcRuntimeType::TensorF32
-            | AwbcRuntimeType::TensorF64
-            | AwbcRuntimeType::TaskHandle
-            | AwbcRuntimeType::NeedHandle
-            | AwbcRuntimeType::Dynamic => {
+            AwbcRuntimeTypeShape::Agent(AwbcAgentTypeShape::Probe(_))
+            | AwbcRuntimeTypeShape::Record { .. }
+            | AwbcRuntimeTypeShape::MatrixF32
+            | AwbcRuntimeTypeShape::MatrixF64
+            | AwbcRuntimeTypeShape::TensorF32
+            | AwbcRuntimeTypeShape::TensorF64
+            | AwbcRuntimeTypeShape::Range(_)
+            | AwbcRuntimeTypeShape::Iterator(_)
+            | AwbcRuntimeTypeShape::Array { .. }
+            | AwbcRuntimeTypeShape::Map { .. }
+            | AwbcRuntimeTypeShape::Need(_)
+            | AwbcRuntimeTypeShape::Task(_)
+            | AwbcRuntimeTypeShape::Stream { .. }
+            | AwbcRuntimeTypeShape::Shared(_)
+            | AwbcRuntimeTypeShape::Reference(_)
+            | AwbcRuntimeTypeShape::Function { .. }
+            | AwbcRuntimeTypeShape::Dynamic => {
                 Err(AwbcTypeProjectionError::UnsupportedCheckedType { index: ty.0 })
             }
         };
@@ -267,12 +315,18 @@ impl AwbcProgram {
 
     fn checked_variant_type(
         &self,
-        ty: AwbcTypeId,
-        owner: &AwbcVariantIdentity,
-        cases: &[AwbcVariantCase],
-        depth: usize,
-        visiting: &mut BTreeSet<AwbcTypeId>,
+        projection: CheckedVariantProjection<'_, '_>,
     ) -> Result<RuntimeCheckedType, AwbcTypeProjectionError> {
+        let CheckedVariantProjection {
+            ty,
+            semantic_identity,
+            owner,
+            arguments,
+            cases,
+            depth,
+            visiting,
+        } = projection;
+        let projected_arguments = self.checked_children(arguments, depth, visiting)?;
         let projected = cases
             .iter()
             .map(|case| {
@@ -291,45 +345,62 @@ impl AwbcProgram {
             })
             .collect::<Result<Vec<_>, AwbcTypeProjectionError>>()?;
         match owner {
-            AwbcVariantIdentity::Nominal {
-                public_id,
-                semantic_identity,
-            } => Ok(RuntimeCheckedType::Variant {
+            AwbcVariantIdentity::Nominal { public_id } => Ok(RuntimeCheckedType::Variant {
                 nominal: self.nominal_identity(*public_id)?,
-                semantic_identity: RuntimeSemanticTypeId::from_bytes(*semantic_identity),
+                semantic_identity,
+                arguments: projected_arguments,
                 cases: projected,
             }),
-            AwbcVariantIdentity::Result => match projected.as_slice() {
-                [
-                    RuntimeCheckedVariantCase {
-                        name: ok_name,
-                        payload: Some(ok),
-                    },
-                    RuntimeCheckedVariantCase {
-                        name: error_name,
-                        payload: Some(error),
-                    },
-                ] if ok_name == "Ok" && error_name == "Err" => Ok(RuntimeCheckedType::Result {
-                    ok: ok.clone(),
-                    error: error.clone(),
-                }),
-                _ => Err(AwbcTypeProjectionError::InvalidBuiltinVariant { index: ty.0 }),
-            },
-            AwbcVariantIdentity::Option => match projected.as_slice() {
-                [
-                    RuntimeCheckedVariantCase {
-                        name: some_name,
-                        payload: Some(item),
-                    },
-                    RuntimeCheckedVariantCase {
-                        name: none_name,
-                        payload: None,
-                    },
-                ] if some_name == "Some" && none_name == "None" => {
-                    Ok(RuntimeCheckedType::Option(item.clone()))
+            AwbcVariantIdentity::Result if projected_arguments.is_empty() => {
+                match projected.as_slice() {
+                    [
+                        RuntimeCheckedVariantCase {
+                            name: ok_name,
+                            payload: Some(ok),
+                        },
+                        RuntimeCheckedVariantCase {
+                            name: error_name,
+                            payload: Some(error),
+                        },
+                    ] if ok_name == "Ok" && error_name == "Err" => Ok(RuntimeCheckedType::Result {
+                        ok: ok.clone(),
+                        error: error.clone(),
+                    }),
+                    _ => Err(AwbcTypeProjectionError::InvalidBuiltinVariant { index: ty.0 }),
                 }
-                _ => Err(AwbcTypeProjectionError::InvalidBuiltinVariant { index: ty.0 }),
-            },
+            }
+            AwbcVariantIdentity::Option if projected_arguments.is_empty() => {
+                match projected.as_slice() {
+                    [
+                        RuntimeCheckedVariantCase {
+                            name: some_name,
+                            payload: Some(item),
+                        },
+                        RuntimeCheckedVariantCase {
+                            name: none_name,
+                            payload: None,
+                        },
+                    ] if some_name == "Some" && none_name == "None" => {
+                        Ok(RuntimeCheckedType::Option(item.clone()))
+                    }
+                    _ => Err(AwbcTypeProjectionError::InvalidBuiltinVariant { index: ty.0 }),
+                }
+            }
+            AwbcVariantIdentity::Result | AwbcVariantIdentity::Option => {
+                Err(AwbcTypeProjectionError::InvalidBuiltinVariant { index: ty.0 })
+            }
         }
+    }
+
+    fn checked_children(
+        &self,
+        children: &[AwbcTypeId],
+        depth: usize,
+        visiting: &mut BTreeSet<AwbcTypeId>,
+    ) -> Result<Vec<RuntimeCheckedType>, AwbcTypeProjectionError> {
+        children
+            .iter()
+            .map(|child| self.checked_type_at_depth(*child, depth + 1, visiting))
+            .collect()
     }
 }

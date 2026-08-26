@@ -18,10 +18,12 @@ use super::owner::{AcceptedViewProgramGeneration, ResolvedMountedViewOwner};
 use super::part::ViewPartRuntimeCatalog;
 use super::value::{fx_placeholder, fx_to_runtime, runtime_to_fx};
 use super::{
-    BundleViewDiagnostic, BundleViewDiagnosticCode, BundleViewFrame, BundleViewFxApplication,
-    BundleViewFxArgument, BundleViewInstancePath, BundleViewInstancePathSegment,
-    BundleViewMountOutput, BundleViewPaintItem, BundleViewRuntime, BundleViewTextOutput,
-    MountedView, ViewOccurrenceKey, deterministic_mount_seed,
+    BundleViewDiagnostic, BundleViewDiagnosticCode, BundleViewEventBinding, BundleViewFrame,
+    BundleViewFxApplication, BundleViewFxArgument, BundleViewInstancePath,
+    BundleViewInstancePathSegment, BundleViewMountOutput, BundleViewPaintItem, BundleViewRuntime,
+    BundleViewTextOutput, MountedView, MountedViewHandlerKey, MountedViewHandlerSeal,
+    PublishedViewEventToken, RuntimeDialogueActionToken, ViewHandlerRuntimeAuthority,
+    ViewOccurrenceKey, deterministic_mount_seed, mount_scoped_interaction_target,
 };
 use crate::dialogue::DialogueViewInput;
 use crate::presentation_handles::{
@@ -33,13 +35,21 @@ use arcweft_bundle::resource_codec::{
     ViewDefinitionResource, ViewProgramResource, ViewTextResource, ViewValueInputNamespace,
     ViewValueInputSource,
 };
-use arcweft_core::value::{RuntimeBinding, RuntimeValue};
+use arcweft_core::{
+    awbc::product_step::evaluate_pure_program_with_backend,
+    pure::{RuntimeCallBackend, VmRuntimePureCallBackend},
+    value::{
+        AwbcRuntimeValueSnapshot, RuntimeBinding, RuntimeDialogueOpaqueRole,
+        RuntimeDialogueViewValue, RuntimeValue,
+    },
+};
 use arcweft_presentation::fx::{
     FxEvaluationBudget, FxEvaluationError, FxGraphChildPath, FxRuntimeValue, FxSampleContext,
 };
+use arcweft_presentation::input::InteractionTarget;
 use arcweft_view::{
-    ViewId, ViewMountState, ViewRegistry, ViewValueEvaluationError, ViewValueProgramId,
-    ViewValueProgramInventory,
+    EventKind, ViewHandlerProgramId, ViewHandlerRouteId, ViewId, ViewMountId, ViewMountState,
+    ViewRegistry, ViewValueEvaluationError, ViewValueProgramId, ViewValueProgramInventory,
 };
 use std::collections::{BTreeMap, BTreeSet};
 
@@ -95,6 +105,7 @@ impl EvaluationFailure {
 }
 
 struct MountRenderBuilder {
+    mount: ViewMountId,
     targets: BTreeSet<String>,
     images: BTreeSet<String>,
     text: Vec<BundleViewTextOutput>,
@@ -103,11 +114,16 @@ struct MountRenderBuilder {
     style_scopes: ViewStyleScopeRuntime,
     element_targets: Vec<Option<String>>,
     last_target: Option<String>,
+    last_node: Option<(BundleViewInstancePath, u32, Option<String>)>,
+    events: Vec<BundleViewEventBinding>,
+    event_tokens: BTreeMap<ViewHandlerRouteId, PublishedViewEventToken>,
+    handler_seals: BTreeSet<MountedViewHandlerKey>,
 }
 
 impl MountRenderBuilder {
-    fn new(style_scopes: ViewStyleScopeStack) -> Self {
+    fn new(mount: ViewMountId, style_scopes: ViewStyleScopeStack) -> Self {
         Self {
+            mount,
             targets: BTreeSet::new(),
             images: BTreeSet::new(),
             text: Vec::new(),
@@ -116,6 +132,10 @@ impl MountRenderBuilder {
             style_scopes: ViewStyleScopeRuntime::new(style_scopes),
             element_targets: Vec::new(),
             last_target: None,
+            last_node: None,
+            events: Vec::new(),
+            event_tokens: BTreeMap::new(),
+            handler_seals: BTreeSet::new(),
         }
     }
 
@@ -126,6 +146,21 @@ impl MountRenderBuilder {
     fn retain_target(&mut self, target: &str) {
         self.targets.insert(target.to_owned());
         self.last_target = Some(target.to_owned());
+    }
+
+    fn retain_node(
+        &mut self,
+        path: &BundleViewInstancePath,
+        instruction: u32,
+        target: Option<&str>,
+    ) {
+        self.last_node = Some((path.clone(), instruction, target.map(str::to_owned)));
+    }
+
+    fn attach_semantic_target(&mut self, target: &str) {
+        if let Some((_, _, node_target)) = &mut self.last_node {
+            *node_target = Some(target.to_owned());
+        }
     }
 
     fn fx_target(&self, definition: &str) -> String {
@@ -140,7 +175,7 @@ impl MountRenderBuilder {
     }
 }
 
-struct ViewEvaluator<'a> {
+struct ViewEvaluator<'a, B> {
     catalog: &'a ViewProgramCatalog,
     registry: &'a ViewRegistry,
     generation: AcceptedViewProgramGeneration,
@@ -151,7 +186,7 @@ struct ViewEvaluator<'a> {
     inventory: &'a ViewValueProgramInventory,
     logical_time: arcweft_presentation::fx::FxLogicalTime,
     allocator: &'a mut arcweft_view::ViewMountAllocator,
-    root_bindings: &'a BTreeMap<String, RuntimeValue>,
+    view_root_bindings: &'a BTreeMap<String, RuntimeValue>,
     dialogue_inputs:
         BTreeMap<crate::presentation_handles::PresentationHandleId, DialogueTextInput<'a>>,
     mounts: &'a mut BTreeMap<ViewOccurrenceKey, MountedView>,
@@ -162,11 +197,103 @@ struct ViewEvaluator<'a> {
     style_scope_allocator: ViewStyleScopeAllocator,
     visited: BTreeSet<ViewOccurrenceKey>,
     diagnostics: Vec<BundleViewDiagnostic>,
+    handler_runtime: &'a ViewHandlerRuntimeAuthority,
+    pure_backend: &'a mut B,
+    staged_event_tokens: BTreeMap<ViewHandlerRouteId, PublishedViewEventToken>,
 }
 
 struct DialogueTextInput<'a> {
     frame: &'a arcweft_text_model::LineDisplayFrame,
     state: crate::dialogue::DialogueViewState,
+}
+
+fn dialogue_view_runtime_value(
+    semantic_type: arcweft_id::RuntimeSemanticTypeId,
+    input: &DialogueTextInput<'_>,
+) -> Result<RuntimeValue, String> {
+    if semantic_type != RuntimeDialogueOpaqueRole::View.semantic_identity() {
+        return Err(
+            "dialogue View parameter is not the exact standard DialogueView type".to_owned(),
+        );
+    }
+    let wrap = |role: RuntimeDialogueOpaqueRole, payload: RuntimeValue| {
+        role.exact_owner()
+            .try_wrap(payload)
+            .map_err(|error| error.to_string())
+    };
+    let character = wrap(
+        RuntimeDialogueOpaqueRole::Character,
+        RuntimeValue::Tuple(vec![
+            RuntimeValue::EntityRef(input.frame.character.id.as_str().to_owned()),
+            RuntimeValue::String(input.frame.character.display_name.clone()),
+        ]),
+    )?;
+    let content = wrap(
+        RuntimeDialogueOpaqueRole::Content,
+        RuntimeValue::Tuple(Vec::new()),
+    )?;
+    let occurrence = wrap(
+        RuntimeDialogueOpaqueRole::Occurrence,
+        RuntimeValue::Tuple(vec![
+            RuntimeValue::u64(input.state.occurrence.presentation.get()),
+            RuntimeValue::u64(input.state.occurrence.entry.get()),
+            RuntimeValue::u64(input.state.occurrence.instance.get()),
+        ]),
+    )?;
+    let stage = wrap(
+        RuntimeDialogueOpaqueRole::Stage,
+        RuntimeValue::Tuple(vec![
+            RuntimeValue::u32(input.state.stage.index.get()),
+            RuntimeValue::u32(input.state.stage.page.get()),
+            RuntimeValue::u64(input.state.stage.stage_count),
+            RuntimeValue::u64(input.state.stage.page_count),
+        ]),
+    )?;
+    let reveal = wrap(
+        RuntimeDialogueOpaqueRole::Reveal,
+        RuntimeValue::Tuple(vec![
+            RuntimeValue::u16(input.state.reveal.progress_milli),
+            RuntimeValue::Bool(input.state.reveal.complete),
+        ]),
+    )?;
+    let action = RuntimeDialogueActionToken::from_target(input.state.primary_action.target)
+        .runtime_value()
+        .map_err(|error| error.to_string())?;
+    RuntimeDialogueViewValue::try_new(character, content, occurrence, stage, reveal, action)
+        .map(RuntimeDialogueViewValue::into_runtime_value)
+        .map_err(|error| error.to_string())
+}
+
+fn derive_handler_route_id(
+    mount: ViewMountId,
+    key: &MountedViewHandlerKey,
+    target: &InteractionTarget,
+    revision: u64,
+) -> ViewHandlerRouteId {
+    let mut transcript = Vec::new();
+    transcript.extend_from_slice(b"arcweft.view-handler-route.v1\0");
+    transcript.extend_from_slice(&mount.get().to_le_bytes());
+    let path = key.path.style_path_words();
+    transcript.extend_from_slice(
+        &u32::try_from(path.len())
+            .expect("accepted View paths fit the route transcript")
+            .to_le_bytes(),
+    );
+    for word in path {
+        transcript.extend_from_slice(&word.to_le_bytes());
+    }
+    transcript.extend_from_slice(&key.instruction.to_le_bytes());
+    transcript.push(key.event.semantic_tag());
+    transcript.extend_from_slice(&key.program.as_bytes());
+    let target = target.id().as_str().as_bytes();
+    transcript.extend_from_slice(
+        &u32::try_from(target.len())
+            .expect("accepted interaction targets fit the route transcript")
+            .to_le_bytes(),
+    );
+    transcript.extend_from_slice(target);
+    transcript.extend_from_slice(&revision.to_le_bytes());
+    ViewHandlerRouteId::from_digest(*blake3::hash(&transcript).as_bytes())
 }
 
 type ReconciledRootHandles<'a> = (
@@ -245,7 +372,8 @@ impl BundleViewRuntime {
         bindings: &[RuntimeBinding],
         reduce_motion: bool,
     ) -> BundleViewFrame {
-        self.evaluate_with_dialogue(handles, &[], bindings, reduce_motion)
+        let mut backend = VmRuntimePureCallBackend::default();
+        self.evaluate_with_dialogue_and_backend(handles, &[], bindings, reduce_motion, &mut backend)
     }
 
     /// Reconciles ordinary handles together with typed dialogue View occurrences.
@@ -260,6 +388,29 @@ impl BundleViewRuntime {
         bindings: &[RuntimeBinding],
         reduce_motion: bool,
     ) -> BundleViewFrame {
+        let mut backend = VmRuntimePureCallBackend::default();
+        self.evaluate_with_dialogue_and_backend(
+            handles,
+            dialogue,
+            bindings,
+            reduce_motion,
+            &mut backend,
+        )
+    }
+
+    /// Reconciles Views while sharing the session's exact pure-call backend.
+    #[expect(
+        clippy::too_many_lines,
+        reason = "frame reconciliation keeps ordered handle lifecycle, retained mounts, dialogue roots, and handler-token publication in one atomic orchestration"
+    )]
+    pub fn evaluate_with_dialogue_and_backend<'a, B: RuntimeCallBackend>(
+        &mut self,
+        handles: &[PresentationHandleRecord],
+        dialogue: &'a [DialogueViewInput<'a>],
+        bindings: &[RuntimeBinding],
+        reduce_motion: bool,
+        pure_backend: &mut B,
+    ) -> BundleViewFrame {
         if let Err(error) = self.validate_dialogue_inputs(dialogue) {
             return BundleViewFrame {
                 mounts: Vec::new(),
@@ -269,7 +420,7 @@ impl BundleViewRuntime {
         let active_required_dialogue_views =
             dialogue.iter().map(|input| input.view.clone()).collect();
         for binding in bindings {
-            self.root_bindings
+            self.view_root_bindings
                 .insert(binding.name.clone(), binding.value.clone());
         }
         let mut axis_diagnostics = self.discard_invalid_axis_seed_reservations(handles);
@@ -316,7 +467,7 @@ impl BundleViewRuntime {
             inventory: &self.inventory,
             logical_time: self.logical_time,
             allocator: &mut self.allocator,
-            root_bindings: &self.root_bindings,
+            view_root_bindings: &self.view_root_bindings,
             dialogue_inputs,
             mounts: &mut self.mounts,
             axis_seeds: &mut self.axis_seeds,
@@ -329,6 +480,9 @@ impl BundleViewRuntime {
                 axis_diagnostics.extend(collisions);
                 axis_diagnostics
             },
+            handler_runtime: &self.handler_runtime,
+            pure_backend,
+            staged_event_tokens: BTreeMap::new(),
         };
         let mut output = Vec::new();
         let mut evaluated_handles = BTreeSet::new();
@@ -404,6 +558,16 @@ impl BundleViewRuntime {
             (&left.handle, &left.path, left.mount).cmp(&(&right.handle, &right.path, right.mount))
         });
         let diagnostics = std::mem::take(&mut evaluator.diagnostics);
+        let active_routes = output
+            .iter()
+            .flat_map(|mount| mount.events.iter())
+            .map(BundleViewEventBinding::route)
+            .collect::<BTreeSet<_>>();
+        self.event_tokens = evaluator
+            .staged_event_tokens
+            .into_iter()
+            .filter(|(route, _)| active_routes.contains(route))
+            .collect();
         self.required_dialogue_views = active_required_dialogue_views;
         BundleViewFrame {
             mounts: output,
@@ -432,7 +596,7 @@ impl BundleViewRuntime {
     }
 }
 
-impl ViewEvaluator<'_> {
+impl<B: RuntimeCallBackend> ViewEvaluator<'_, B> {
     fn prepare_occurrence(
         &mut self,
         key: &ViewOccurrenceKey,
@@ -547,6 +711,8 @@ impl ViewEvaluator<'_> {
                 initialized_parameters: BTreeSet::new(),
                 initialized_state: BTreeSet::new(),
                 runtime_parameters: BTreeMap::new(),
+                handler_seals: BTreeMap::new(),
+                next_handler_seal_revision: 1,
             },
         );
         if let Some(plan) = root_axis_seed
@@ -586,7 +752,7 @@ impl ViewEvaluator<'_> {
                 | ViewValueInputSource::Local { .. }
                 | ViewValueInputSource::RepeatOrdinal { .. } => unreachable!(),
             };
-            let Some(value) = resolve_path(self.root_bindings, &path) else {
+            let Some(value) = resolve_path(self.view_root_bindings, &path) else {
                 continue;
             };
             let converted = runtime_to_fx(value, input.value_type).map_err(|error| {
@@ -635,7 +801,7 @@ impl ViewEvaluator<'_> {
                         ),
                     )
                 })?),
-                None => self.root_bindings.get(&parameter.name).cloned(),
+                None => self.view_root_bindings.get(&parameter.name).cloned(),
             };
             if let Some(value) = supplied_runtime {
                 mounted
@@ -765,7 +931,8 @@ impl ViewEvaluator<'_> {
         let root_style_result = style_scopes
             .enter_definition(&definition.styles, &mut self.style_scope_allocator)
             .map_err(|error| EvaluationFailure::style_scope(None, error));
-        let mut builder = MountRenderBuilder::new(style_scopes);
+        let mount_id = mounted.state.mount();
+        let mut builder = MountRenderBuilder::new(mount_id, style_scopes);
         let mut descendants = Vec::new();
         let start = definition.body.start_instruction as usize;
         let end = definition.body.end_instruction as usize;
@@ -784,7 +951,6 @@ impl ViewEvaluator<'_> {
         });
         match result {
             Ok(()) => {
-                let mount_id = mounted.state.mount();
                 let host_axis_seed = if key.path.segments().is_empty() {
                     let Some(seed) = self.axis_seeds.mounted_seed(mount_id) else {
                         self.mounts.insert(key.clone(), mounted);
@@ -808,6 +974,29 @@ impl ViewEvaluator<'_> {
                     .dialogue_inputs
                     .get(&key.handle)
                     .map(|input| input.state);
+                if builder
+                    .event_tokens
+                    .keys()
+                    .any(|binding| self.staged_event_tokens.contains_key(binding))
+                {
+                    self.mounts.insert(key.clone(), rollback);
+                    self.record_failure(
+                        &key,
+                        definition.public_id.view_id(),
+                        Some(mount_id),
+                        EvaluationFailure::new(
+                            BundleViewDiagnosticCode::InvalidHandler,
+                            None,
+                            "View frame repeats a sealed handler event route",
+                        ),
+                    );
+                    return Vec::new();
+                }
+                self.staged_event_tokens
+                    .extend(builder.event_tokens.clone());
+                mounted
+                    .handler_seals
+                    .retain(|key, _| builder.handler_seals.contains(key));
                 self.mounts.insert(key.clone(), mounted);
                 let mut output = vec![BundleViewMountOutput {
                     handle: key.handle,
@@ -821,6 +1010,7 @@ impl ViewEvaluator<'_> {
                     paint: builder.paint,
                     text: builder.text,
                     fx: builder.fx,
+                    events: builder.events,
                     style_nodes: builder.style_scopes.into_nodes(),
                 }];
                 output.extend(descendants);
@@ -1090,6 +1280,7 @@ impl ViewEvaluator<'_> {
                     key: authored_key,
                     ..
                 } => {
+                    builder.retain_node(structural_path, instruction_ordinal(cursor)?, None);
                     let root = builder.is_root_node();
                     let local_styles = builder
                         .style_scopes
@@ -1299,6 +1490,11 @@ impl ViewEvaluator<'_> {
                     part,
                     ..
                 } => {
+                    builder.retain_node(
+                        structural_path,
+                        instruction_ordinal(cursor)?,
+                        target.as_deref(),
+                    );
                     let root = builder.is_root_node();
                     let mut local_styles = builder
                         .style_scopes
@@ -1349,6 +1545,7 @@ impl ViewEvaluator<'_> {
                     part,
                     ..
                 } => {
+                    builder.retain_node(structural_path, instruction_ordinal(cursor)?, None);
                     let root = builder.is_root_node();
                     let _local_styles = builder
                         .style_scopes
@@ -1388,6 +1585,11 @@ impl ViewEvaluator<'_> {
                     part,
                     ..
                 } => {
+                    builder.retain_node(
+                        structural_path,
+                        instruction_ordinal(cursor)?,
+                        target.as_deref(),
+                    );
                     let root = builder.is_root_node();
                     let _local_styles = builder
                         .style_scopes
@@ -1423,6 +1625,7 @@ impl ViewEvaluator<'_> {
                     ..
                 } => {
                     builder.retain_target(target);
+                    builder.attach_semantic_target(target);
                     if let Some(source) = label_text_source
                         && !builder.text.iter().any(|text| text.source_id == *source)
                     {
@@ -1441,6 +1644,7 @@ impl ViewEvaluator<'_> {
                     part,
                     ..
                 } => {
+                    builder.retain_node(structural_path, instruction_ordinal(cursor)?, None);
                     let root = builder.is_root_node();
                     let _local_styles = builder
                         .style_scopes
@@ -1463,11 +1667,186 @@ impl ViewEvaluator<'_> {
                     builder.last_target = Some(element.clone());
                     cursor += 1;
                 }
-                ViewProgramInstruction::BindHandler { .. } => {
+                ViewProgramInstruction::BindHandler { event, handler, .. } => {
+                    self.seal_handler(key, definition, mounted, builder, cursor, *event, *handler)?;
                     cursor += 1;
                 }
             }
         }
+        Ok(())
+    }
+
+    #[expect(
+        clippy::too_many_arguments,
+        reason = "the handler seal joins one instruction, definition schema, capture snapshot, AWBC binding, and result token atomically"
+    )]
+    fn seal_handler(
+        &mut self,
+        key: &ViewOccurrenceKey,
+        definition: &ViewDefinitionResource,
+        mounted: &mut MountedView,
+        builder: &mut MountRenderBuilder,
+        instruction: usize,
+        event: EventKind,
+        program_id: ViewHandlerProgramId,
+    ) -> Result<(), EvaluationFailure> {
+        let failure = |message: String| {
+            EvaluationFailure::new(
+                BundleViewDiagnosticCode::InvalidHandler,
+                Some(instruction),
+                message,
+            )
+        };
+        let accepted = self
+            .catalog
+            .handler_runtime(program_id)
+            .ok_or_else(|| failure(format!("unknown View handler program {program_id}")))?;
+        if accepted.program() != program_id {
+            return Err(failure(
+                "accepted View handler identity is stale".to_owned(),
+            ));
+        }
+        let awbc = match self.handler_runtime {
+            ViewHandlerRuntimeAuthority::Awbc(program) => program.as_ref(),
+            ViewHandlerRuntimeAuthority::HandlerFree => {
+                return Err(failure(
+                    "View handler has no accepted AWBC runtime authority".to_owned(),
+                ));
+            }
+        };
+        let binding = awbc
+            .pure_program_binding(program_id)
+            .ok_or_else(|| failure("View handler pure-program binding is stale".to_owned()))?;
+        if binding.helper != accepted.helper()
+            || binding.input_types.len() != accepted.captures().len()
+            || binding
+                .input_types
+                .iter()
+                .zip(accepted.captures())
+                .any(|(expected, capture)| *expected != capture.value_type())
+            || binding.result_type != accepted.result().value_type()
+        {
+            return Err(failure(
+                "View handler runtime ABI differs from the accepted catalog".to_owned(),
+            ));
+        }
+
+        let mut capture_snapshots = Vec::with_capacity(accepted.captures().len());
+        for capture in accepted.captures() {
+            let parameter = definition
+                .parameters
+                .get(capture.parameter().index())
+                .filter(|parameter| {
+                    usize::from(parameter.ordinal) == capture.parameter().index()
+                        && parameter.semantic_type == capture.value_type()
+                })
+                .ok_or_else(|| {
+                    failure("View handler capture coordinate or type is stale".to_owned())
+                })?;
+            let snapshot =
+                match parameter.role {
+                    ViewParameterRole::Dialogue => {
+                        let input = self.dialogue_inputs.get(&key.handle).ok_or_else(|| {
+                            failure("View handler dialogue capture has no typed input".to_owned())
+                        })?;
+                        let value = dialogue_view_runtime_value(parameter.semantic_type, input)
+                            .map_err(failure)?;
+                        AwbcRuntimeValueSnapshot::from_runtime_value(&value)
+                            .map_err(|error| failure(error.to_string()))?
+                    }
+                    ViewParameterRole::Value => {
+                        let value = mounted.runtime_parameters.get(&parameter.name).ok_or_else(
+                            || {
+                                failure(format!(
+                                    "View handler capture `{}` has no runtime parameter snapshot",
+                                    parameter.name
+                                ))
+                            },
+                        )?;
+                        AwbcRuntimeValueSnapshot::from_runtime_value(value)
+                            .map_err(|error| failure(error.to_string()))?
+                    }
+                };
+            capture_snapshots.push(snapshot);
+        }
+        let (path, target_instruction, authored_target) = builder
+            .last_node
+            .clone()
+            .ok_or_else(|| failure("View handler has no retained node target".to_owned()))?;
+        let authored_target = authored_target.ok_or_else(|| {
+            failure("View handler target node has no authored interaction target".to_owned())
+        })?;
+        let target = mount_scoped_interaction_target(builder.mount, &authored_target)
+            .map_err(|error| failure(format!("View handler target is not canonical: {error}")))?;
+        let seal_key = MountedViewHandlerKey {
+            path: path.clone(),
+            instruction: target_instruction,
+            event,
+            program: program_id,
+        };
+        let (token, revision) = match mounted.handler_seals.get(&seal_key) {
+            Some(seal) if seal.captures.as_ref() == capture_snapshots.as_slice() => {
+                (seal.token.clone(), seal.revision)
+            }
+            _ => {
+                let revision = mounted.next_handler_seal_revision;
+                mounted.next_handler_seal_revision = revision
+                    .checked_add(1)
+                    .ok_or_else(|| failure("View handler seal revision is exhausted".to_owned()))?;
+                let arguments = capture_snapshots
+                    .iter()
+                    .cloned()
+                    .map(AwbcRuntimeValueSnapshot::into_runtime_value)
+                    .collect::<Result<Vec<_>, _>>()
+                    .map_err(|error| failure(error.to_string()))?;
+                let value = evaluate_pure_program_with_backend(
+                    awbc,
+                    program_id,
+                    &arguments,
+                    self.pure_backend,
+                )
+                .map_err(|error| failure(error.to_string()))?;
+                let token = RuntimeDialogueActionToken::try_from_runtime_value(value)
+                    .map_err(|error| failure(error.to_string()))?;
+                mounted.handler_seals.insert(
+                    seal_key.clone(),
+                    MountedViewHandlerSeal {
+                        captures: capture_snapshots.into_boxed_slice(),
+                        token: token.clone(),
+                        revision,
+                    },
+                );
+                (token, revision)
+            }
+        };
+        let route_id = derive_handler_route_id(builder.mount, &seal_key, &target, revision);
+        builder.handler_seals.insert(seal_key);
+        let route = BundleViewEventBinding {
+            route: route_id,
+            target: target.clone(),
+            mount: builder.mount,
+            path,
+            instruction: target_instruction,
+            event,
+            program: program_id,
+        };
+        if builder
+            .event_tokens
+            .insert(
+                route_id,
+                PublishedViewEventToken {
+                    event,
+                    target,
+                    token,
+                },
+            )
+            .is_some()
+        {
+            return Err(failure(
+                "View node repeats an event handler route".to_owned(),
+            ));
+        }
+        builder.events.push(route);
         Ok(())
     }
 

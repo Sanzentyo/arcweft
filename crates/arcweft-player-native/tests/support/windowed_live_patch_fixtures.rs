@@ -7,6 +7,7 @@ use arcweft_bundle::{
     BundleImageObjectPlayback, BundleImageObjectTransform, BundleManifest, BundleRuntimeSummary,
     BundleVirtualFile, BundleVirtualFileRef, BundleVirtualFileSpace,
 };
+use arcweft_core::entry::{FlowContractHash, RuntimeFlowExecutable, RuntimeFlowSchema};
 use arcweft_core::plan::{
     FlowRuntimeId, RuntimeChoiceOptionSeed, RuntimeDialogueContentPlanSeed, RuntimeExprSeed,
     RuntimeExprSeedKind, RuntimeFlowOpSeed, RuntimeFlowSeed, RuntimeLineId, RuntimePlan,
@@ -1055,6 +1056,13 @@ fn dialogue_runtime_plan(
             vec![RuntimeFlowOpSeed::Return("extra".to_owned())],
         );
     }
+    builder
+        .push_flow_executable(RuntimeFlowExecutable {
+            flow: main.clone(),
+            contract: FlowContractHash::from_bytes([0x78; 32]),
+            controller: None,
+        })
+        .expect("main flow executable admits");
     builder.push_entry(cli_main_entry()).expect("entry admits");
     builder
         .finish()
@@ -1108,8 +1116,14 @@ fn push_fixture_flow(
     ops: Vec<RuntimeFlowOpSeed>,
 ) {
     builder
-        .push_flow_seed(RuntimeFlowSeed::new(flow, [], ops))
+        .push_flow_seed(RuntimeFlowSeed::new(flow.clone(), [], ops))
         .expect("fixture flow admits");
+    builder
+        .push_flow_schema(RuntimeFlowSchema {
+            flow: flow.clone(),
+            parameters: Vec::new(),
+        })
+        .expect("fixture flow schema admits");
 }
 
 fn fixture_string_type() -> arcweft_core::pattern::RuntimeSemanticTypeId {
@@ -1215,7 +1229,7 @@ fn await_bundle(source_label: &str, source: &str) -> ArcweftBundle {
     let mut builder = fixture_plan_builder();
     push_fixture_flow(
         &mut builder,
-        main,
+        main.clone(),
         vec![
             RuntimeFlowOpSeed::Await {
                 binding: None,
@@ -1236,6 +1250,13 @@ fn await_bundle(source_label: &str, source: &str) -> ArcweftBundle {
             RuntimeFlowOpSeed::Return("ready".to_owned()),
         ],
     );
+    builder
+        .push_flow_executable(RuntimeFlowExecutable {
+            flow: main,
+            contract: FlowContractHash::from_bytes([0x79; 32]),
+            controller: None,
+        })
+        .expect("await flow executable admits");
     builder.push_entry(cli_main_entry()).expect("entry admits");
     let plan = builder
         .finish()
@@ -1274,9 +1295,16 @@ fn await_replacement_bundle(source_label: &str, source: &str) -> ArcweftBundle {
     let mut builder = fixture_plan_builder();
     push_fixture_flow(
         &mut builder,
-        main,
+        main.clone(),
         vec![RuntimeFlowOpSeed::Return("changed".to_owned())],
     );
+    builder
+        .push_flow_executable(RuntimeFlowExecutable {
+            flow: main,
+            contract: FlowContractHash::from_bytes([0x7a; 32]),
+            controller: None,
+        })
+        .expect("await replacement flow executable admits");
     builder.push_entry(cli_main_entry()).expect("entry admits");
     let plan = builder
         .finish()

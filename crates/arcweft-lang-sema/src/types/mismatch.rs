@@ -297,15 +297,7 @@ impl TypeKind {
                 let Self::StageActorHandle(actual_handle) = actual else {
                     unreachable!("equal discriminants")
                 };
-                let compatible = expected == actual_handle
-                    || matches!(
-                        (expected, actual_handle),
-                        (
-                            super::StageActorHandleType::Any,
-                            super::StageActorHandleType::Exact(_)
-                        )
-                    );
-                (!compatible).then(|| TypeMismatch::outer(self, actual))
+                (expected != actual_handle).then(|| TypeMismatch::outer(self, actual))
             }
             Self::CueHandle => {
                 let Self::CueHandle = actual else {
@@ -542,7 +534,7 @@ impl TypeKind {
                 else {
                     unreachable!("equal discriminants")
                 };
-                if expected_len.accepts(actual_len) {
+                if expected_len == actual_len {
                     expected
                         .first_mismatch(actual_item)
                         .map(|mismatch| mismatch.prepend(TypeMismatchPathSegment::ArrayItem))

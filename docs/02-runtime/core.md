@@ -107,11 +107,13 @@ pub enum FlowControlStackEntryKind {
 pub struct RuntimeStepInput {
     pub tick: TickId,
     pub dt: LogicalDuration,
-    pub bindings: Vec<RuntimeBinding>,
-    pub input_events: Vec<InputEvent>,
+    pub input_events: Vec<RoutedInputEvent>,
+    pub need_states: Vec<RuntimeNeedState>,
     pub task_events: Vec<TaskEvent>,
     pub audio_events: Vec<AudioEvent>,
     pub host_call_results: Vec<RuntimeHostCallResult>,
+    pub root_events: Vec<RootEventInput>,
+    pub deferred_root_events: Vec<RootEventInput>,
 }
 
 pub struct RuntimeStepOutput {
@@ -157,7 +159,12 @@ Phase 2.0 の `Engine` は headless structured-control-flow runtime slice であ
 `let name = scope { ... }` は final expression を scope 内で評価してから外側の
 pattern に束縛し、`let name = loop { break expr }` は `break expr` の値を
 loop result pattern に束縛する。
-`RuntimeStepInput::bindings` は ambient input として root runtime scope に束縛される。
+Flow parameter は `RuntimeStepInput` に含まれない。低レベルの明示 Flow 起動は、
+plan-owned parameter schema に対する complete な
+`FlowParameterCoordinate` 順の値列を `RuntimePlan::seal_flow_invocation` で検証し、
+affine な `RuntimeFlowInvocation` として executor 構築時に一度だけ消費する。
+Entry と route は checked Entry plan が同じ coordinate ABI を発行する。最初の op
+実行後に step input から parameter local を再束縛する経路はない。
 branch / match / while-let pattern binding は選択された lexical scope にだけ束縛される。
 Match はコンテナ全体を覆う共通 Block を作らず、通常の arm はそれぞれ独立した
 `MatchArm` scope を所有し、Thread の braced arm だけが単一の `Block` scope を所有する。

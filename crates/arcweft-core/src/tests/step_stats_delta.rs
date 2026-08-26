@@ -2,6 +2,7 @@ use crate::step::RuntimePureCallStats;
 
 fn stats(value: usize) -> RuntimePureCallStats {
     RuntimePureCallStats {
+        awbc_pure_program_calls: value,
         pure_calls: value,
         math_calls: value,
         math_accelerated_calls: value,

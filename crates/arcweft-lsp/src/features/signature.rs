@@ -250,9 +250,9 @@ mod tests {
     use arcweft_lang_sema::{
         callable::{
             BuiltinCallableId, CallPoison, CallableCandidateId, CallableDocumentation,
-            CallableGroupIndex, CallableGroupKind, CallableName, CallableParameterCoordinate,
-            CallableParameterIndex, CallableParameterPassing, CallableParameterPresence,
-            CallableParameterType, LanguageCallableFamily, PRODUCTION_CALLABLE_LIMITS,
+            CallableGroupIndex, CallableGroupKind, CallableName, CallableParameterAdmission,
+            CallableParameterCoordinate, CallableParameterIndex, CallableParameterPassing,
+            CallableParameterPresence, LanguageCallableFamily, PRODUCTION_CALLABLE_LIMITS,
             SemanticParameter, SemanticParameterGroup, SemanticSignature, SignatureOrigin,
         },
         effect_row::EffectRow,
@@ -270,7 +270,7 @@ mod tests {
             coordinate,
             "値: String",
             Some(CallableName::try_new("値").expect("name")),
-            CallableParameterType::Exact(TypeKind::String),
+            CallableParameterAdmission::checked(TypeKind::String),
             CallableParameterPassing::PositionalOrNamed,
             CallableParameterPresence::Required,
             None,
@@ -357,7 +357,7 @@ mod tests {
                     }
                 ),
                 Some(CallableName::try_new(name).expect("name")),
-                CallableParameterType::Exact(ty),
+                CallableParameterAdmission::checked(ty),
                 CallableParameterPassing::PositionalOnly,
                 presence,
                 None,

@@ -8,13 +8,14 @@ use std::{
     fmt,
 };
 
+use arcweft_core::entry::{FlowParameterCoordinate, RuntimeNominalTypeId, TypeLayoutHash};
 use arcweft_data::TypeShape;
 use arcweft_id::PublicId;
 use arcweft_lang_hir::{
     expr::HirExprKind,
     identity::ItemId,
-    item::HirAttribute,
-    leaf::{HirDurationLiteral, HirIntegerLiteral, HirLiteral, HirPathSegment},
+    item::{HirAttribute, HirHttpMethod, HirRouteCaptureCoordinate, HirRoutePath},
+    leaf::{HirDurationLiteral, HirIntegerLiteral, HirLiteral, HirName, HirPathSegment},
     module::HirModule,
     symbol::{
         CallableDeclarationDigest, CallableDeclarationId, CallablePackageId, FlowDeclarationId,
@@ -25,8 +26,10 @@ use arcweft_source::SourceSpan;
 use thiserror::Error;
 
 use crate::effects::{EffectId, EffectSet};
+use crate::types::SemanticTypeDigest;
 
-pub use checker::{CheckedEntryDiagnostic, check_project_entries};
+pub use checker::CheckedEntryDiagnostic;
+pub(crate) use checker::{PreparedEntrySemanticAuthority, check_prepared_project_entries};
 
 /// Canonical public identity of one checked source entry.
 #[derive(Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
@@ -136,7 +139,9 @@ pub struct CheckedStatefulEntry {
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct CheckedNominalRole {
     key: BoundNominalTypeKey,
-    schema: TypeShape,
+    semantic_type: SemanticTypeDigest,
+    runtime_nominal: RuntimeNominalTypeId,
+    layout: TypeLayoutHash,
     schema_digest: NominalSchemaDigest,
     source: SourceSpan,
 }
@@ -153,6 +158,7 @@ pub struct CheckedCallableRole {
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct CheckedInitialFlowRole {
     source_item: ItemId,
+    declaration: FlowDeclarationId,
     id: CheckedFlowId,
     contract_digest: FlowContractDigest,
     state_parameter_name: String,
@@ -204,7 +210,55 @@ pub struct CheckedExistingEntry {
     source_item: ItemId,
     id: CheckedEntryId,
     kind: CheckedEntryKind,
+    target: CheckedExistingEntryTarget,
     binding_digest: CheckedEntryBindingDigest,
+}
+
+/// Complete checked launch target for one non-stateful Entry.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum CheckedExistingEntryTarget {
+    Flow(CheckedEntryFlowTarget),
+    Routes(Box<[CheckedEntryRoute]>),
+}
+
+/// Exact accepted Flow identity and closed source-ordered parameter schema.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct CheckedEntryFlowTarget {
+    source_item: ItemId,
+    declaration: FlowDeclarationId,
+    id: CheckedFlowId,
+    contract_digest: FlowContractDigest,
+    parameters: Box<[CheckedEntryFlowParameter]>,
+}
+
+/// One direct immutable Flow parameter retained by checked Entry projection.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct CheckedEntryFlowParameter {
+    coordinate: FlowParameterCoordinate,
+    name: HirName,
+    semantic_type: SemanticTypeDigest,
+}
+
+/// One source-ordered, fully checked adapter route.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct CheckedEntryRoute {
+    method: HirHttpMethod,
+    path: HirRoutePath,
+    target: CheckedEntryFlowTarget,
+    bindings: Box<[CheckedEntryRouteBinding]>,
+}
+
+/// One target-parameter coordinate joined to its adapter-owned value source.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct CheckedEntryRouteBinding {
+    parameter: FlowParameterCoordinate,
+    source: CheckedEntryRouteBindingSource,
+}
+
+/// Closed adapter value-source family admitted by Entry checking.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum CheckedEntryRouteBindingSource {
+    PathCapture(HirRouteCaptureCoordinate),
 }
 
 /// Duplicate canonical entry identity.
@@ -247,6 +301,10 @@ impl CheckedFlowId {
             public_id,
         }
     }
+}
+
+pub(crate) fn nominal_schema_digest(shape: &TypeShape) -> NominalSchemaDigest {
+    digest::nominal_schema(shape)
 }
 
 impl fmt::Display for CheckedEntryId {
@@ -418,6 +476,13 @@ impl CheckedEntryBinding {
             Self::Stateful(_) | Self::Existing(_) => None,
         }
     }
+
+    pub const fn existing(&self) -> Option<&CheckedExistingEntry> {
+        match self {
+            Self::Existing(entry) => Some(entry),
+            Self::Stateful(_) | Self::Agent(_) => None,
+        }
+    }
 }
 
 impl CheckedStatefulEntry {
@@ -459,8 +524,16 @@ impl CheckedNominalRole {
         &self.key
     }
 
-    pub const fn schema(&self) -> &TypeShape {
-        &self.schema
+    pub const fn semantic_type(&self) -> SemanticTypeDigest {
+        self.semantic_type
+    }
+
+    pub const fn runtime_nominal(&self) -> &RuntimeNominalTypeId {
+        &self.runtime_nominal
+    }
+
+    pub const fn layout(&self) -> TypeLayoutHash {
+        self.layout
     }
 
     pub const fn schema_digest(&self) -> &NominalSchemaDigest {
@@ -493,6 +566,10 @@ impl CheckedInitialFlowRole {
 
     pub const fn id(&self) -> &CheckedFlowId {
         &self.id
+    }
+
+    pub const fn declaration(&self) -> &FlowDeclarationId {
+        &self.declaration
     }
 
     pub const fn contract_digest(&self) -> &FlowContractDigest {
@@ -551,8 +628,93 @@ impl CheckedExistingEntry {
         &self.kind
     }
 
+    pub const fn target(&self) -> &CheckedExistingEntryTarget {
+        &self.target
+    }
+
     pub const fn binding_digest(&self) -> &CheckedEntryBindingDigest {
         &self.binding_digest
+    }
+}
+
+impl CheckedExistingEntryTarget {
+    pub fn visit_flows<E>(
+        &self,
+        mut visitor: impl FnMut(&CheckedEntryFlowTarget) -> Result<(), E>,
+    ) -> Result<(), E> {
+        match self {
+            Self::Flow(flow) => visitor(flow),
+            Self::Routes(routes) => {
+                for route in routes {
+                    visitor(route.target())?;
+                }
+                Ok(())
+            }
+        }
+    }
+}
+
+impl CheckedEntryFlowTarget {
+    pub const fn source_item(&self) -> ItemId {
+        self.source_item
+    }
+
+    pub const fn id(&self) -> &CheckedFlowId {
+        &self.id
+    }
+
+    pub const fn declaration(&self) -> &FlowDeclarationId {
+        &self.declaration
+    }
+
+    pub const fn contract_digest(&self) -> &FlowContractDigest {
+        &self.contract_digest
+    }
+
+    pub fn parameters(&self) -> &[CheckedEntryFlowParameter] {
+        &self.parameters
+    }
+}
+
+impl CheckedEntryFlowParameter {
+    pub const fn coordinate(&self) -> FlowParameterCoordinate {
+        self.coordinate
+    }
+
+    pub const fn name(&self) -> &HirName {
+        &self.name
+    }
+
+    pub const fn semantic_type(&self) -> SemanticTypeDigest {
+        self.semantic_type
+    }
+}
+
+impl CheckedEntryRoute {
+    pub const fn method(&self) -> HirHttpMethod {
+        self.method
+    }
+
+    pub const fn path(&self) -> &HirRoutePath {
+        &self.path
+    }
+
+    pub const fn target(&self) -> &CheckedEntryFlowTarget {
+        &self.target
+    }
+
+    pub fn bindings(&self) -> &[CheckedEntryRouteBinding] {
+        &self.bindings
+    }
+}
+
+impl CheckedEntryRouteBinding {
+    pub const fn parameter(&self) -> FlowParameterCoordinate {
+        self.parameter
+    }
+
+    pub const fn source(&self) -> &CheckedEntryRouteBindingSource {
+        &self.source
     }
 }
 

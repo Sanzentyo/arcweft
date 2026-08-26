@@ -26,23 +26,25 @@ work and return typed results in a later step.
 `arcweft-bundle` remains a data/codec crate. It neither lowers source nor drives
 execution.
 
-## Entry ABI and root bindings
+## Entry and Flow invocation ABI
 
-The selected `AwbcEntry` identifies a function signature. Before the first
-instruction executes, the product executor transactionally binds the effective
-root bindings:
+The selected `AwbcEntry` owns an exact checked target. A direct Entry target is
+zero-parameter; it does not receive ambient host values. A checked route owns a
+complete mapping from typed route-capture coordinates to typed target Flow
+parameter coordinates. Explicit low-level Flow tooling likewise resolves its
+adapter input once, emits a complete canonical coordinate inventory, and seals
+an affine `RuntimeFlowInvocation` before executor construction.
 
-1. constructor-supplied root bindings establish defaults;
-2. `RuntimeStepInput::bindings` override bindings with the same name;
-3. if every provided binding name matches a parameter name, bindings are treated
-   as named-equivalent arguments;
-4. otherwise an equally sized list is positional;
-5. missing, extra, duplicate, unknown, or type-invalid arguments produce a typed
-   input/type diagnostic without mutating registers;
-6. a later step may retry with corrected bindings.
+Structured and AWBC executors validate the complete coordinate inventory
+against the plan-owned Flow parameter schema and initialize the first frame
+transactionally. `RuntimeStepInput` contains event/result ingress only: it does
+not carry Flow arguments, cannot overwrite parameter locals, and cannot retry a
+different invocation after execution begins. AWBC derives the expected
+parameter types from the selected target function signature; Entry and route
+records do not retain a second signature copy.
 
-Call frames use the same verified positional parameter binding rule. Tail calls
-replace the active frame only after argument validation succeeds.
+Ordinary internal call frames use their own checked positional call ABI. Tail
+calls replace the active frame only after that argument validation succeeds.
 
 ## Pure helpers and intrinsics
 

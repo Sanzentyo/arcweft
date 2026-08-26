@@ -4,9 +4,14 @@
 //! kind checks, lexical-scope admission, and `RichText` limit accounting are
 //! reported to the lowering transaction through [`HirDialogueTransactionContext`].
 
-use crate::expr::{HirCallArgument, HirCallArgumentOrdinal, HirCallArgumentOrdinalError};
+use std::collections::BTreeSet;
+
+use crate::expr::{
+    HirCallArgument, HirCallArgumentOrdinal, HirCallArgumentOrdinalError, HirExprKind,
+};
 use crate::identity::{ExprId, HirModuleId, ItemId, PatternId, ScopeId, StmtId, SyntheticRole};
 use crate::leaf::HirName;
+use crate::module::HirModule;
 
 mod content;
 mod rich_text;
@@ -104,14 +109,14 @@ impl HirDialogueContentApplication {
         context
             .require(HirDialogueTransactionRequirement::Expression {
                 id: self.target,
-                expected: HirDialogueExpressionExpectation::Any,
+                expected: HirDialogueExpressionExpectation::Unrestricted,
             })
             .map_err(HirDialogueTransactionError::Context)?;
         for coordinate in &self.coordinates {
             context
                 .require(HirDialogueTransactionRequirement::Expression {
                     id: coordinate.value,
-                    expected: HirDialogueExpressionExpectation::Any,
+                    expected: HirDialogueExpressionExpectation::Unrestricted,
                 })
                 .map_err(HirDialogueTransactionError::Context)?;
         }
@@ -192,6 +197,114 @@ pub enum HirDialogueCoordinateKind {
     TextKey,
 }
 
+/// HIR-owner-issued projection of the immediate Dialogue metadata arguments
+/// onto the exact inner target Call. Downstream layers consume this carrier
+/// instead of rediscovering `id`/`text_key` from names or guessing edge
+/// ownership from expression membership.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct HirDialogueApplicationMetadataProjection {
+    application: ExprId,
+    target_call: ExprId,
+    coordinates: Box<[HirDialogueCoordinate]>,
+}
+
+impl HirDialogueApplicationMetadataProjection {
+    pub const fn application(&self) -> ExprId {
+        self.application
+    }
+
+    pub const fn target_call(&self) -> ExprId {
+        self.target_call
+    }
+
+    pub const fn coordinates(&self) -> &[HirDialogueCoordinate] {
+        &self.coordinates
+    }
+}
+
+/// Failure to issue an exact application-to-target metadata projection.
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub enum HirDialogueApplicationMetadataProjectionError {
+    UnknownApplication,
+    NotDialogueApplication,
+    UnknownTarget,
+    TargetNotCall,
+    ArgumentOrdinalOverflow,
+    ArgumentOrdinalMismatch,
+    ArgumentIdentityMismatch,
+    CoordinateKindMismatch,
+    DuplicateCoordinate,
+    CoordinateInventoryMismatch,
+}
+
+impl HirModule {
+    /// Issues the exact metadata edge projection for one Dialogue content
+    /// application in this module and generation.
+    pub fn dialogue_application_metadata_projection(
+        &self,
+        owner: ExprId,
+    ) -> Result<
+        HirDialogueApplicationMetadataProjection,
+        HirDialogueApplicationMetadataProjectionError,
+    > {
+        let expression = self
+            .resolve_expr(owner)
+            .map_err(|_| HirDialogueApplicationMetadataProjectionError::UnknownApplication)?;
+        let HirExprKind::DialogueContentApplication(application) = expression.kind() else {
+            return Err(HirDialogueApplicationMetadataProjectionError::NotDialogueApplication);
+        };
+        let target = self
+            .resolve_expr(application.target())
+            .map_err(|_| HirDialogueApplicationMetadataProjectionError::UnknownTarget)?;
+        let HirExprKind::Call(call) = target.kind() else {
+            return Err(HirDialogueApplicationMetadataProjectionError::TargetNotCall);
+        };
+        let coordinates = validate_application_metadata_projection(application, call)?;
+        Ok(HirDialogueApplicationMetadataProjection {
+            application: owner,
+            target_call: application.target(),
+            coordinates,
+        })
+    }
+}
+
+fn validate_application_metadata_projection(
+    application: &HirDialogueContentApplication,
+    call: &crate::expr::HirCallExpr,
+) -> Result<Box<[HirDialogueCoordinate]>, HirDialogueApplicationMetadataProjectionError> {
+    let canonical = HirDialogueCoordinate::from_immediate_arguments(call.arguments())
+        .map_err(|_| HirDialogueApplicationMetadataProjectionError::ArgumentOrdinalOverflow)?;
+    let mut arguments = BTreeSet::new();
+    let mut sources = BTreeSet::new();
+    let mut kinds = BTreeSet::new();
+    for coordinate in application.coordinates() {
+        if !arguments.insert(coordinate.argument())
+            || !sources.insert(coordinate.value())
+            || !kinds.insert(coordinate.kind())
+        {
+            return Err(HirDialogueApplicationMetadataProjectionError::DuplicateCoordinate);
+        }
+        let argument = call
+            .arguments()
+            .get(usize::from(coordinate.argument().get()))
+            .ok_or(HirDialogueApplicationMetadataProjectionError::ArgumentOrdinalMismatch)?;
+        if argument.value() != coordinate.value() {
+            return Err(HirDialogueApplicationMetadataProjectionError::ArgumentIdentityMismatch);
+        }
+        let expected = canonical
+            .iter()
+            .find(|expected| expected.argument() == coordinate.argument())
+            .ok_or(HirDialogueApplicationMetadataProjectionError::CoordinateKindMismatch)?;
+        if expected.kind() != coordinate.kind() {
+            return Err(HirDialogueApplicationMetadataProjectionError::CoordinateKindMismatch);
+        }
+    }
+    if canonical.as_ref() != application.coordinates() {
+        return Err(HirDialogueApplicationMetadataProjectionError::CoordinateInventoryMismatch);
+    }
+    Ok(canonical)
+}
+
 /// A typed line plan whose children use the module's existing arenas.
 #[derive(Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub struct HirLinePlan {
@@ -267,9 +380,13 @@ pub enum HirLinePlanItem {
     Let {
         pattern: PatternId,
         value: ExprId,
+        statement: StmtId,
     },
     Statement(StmtId),
-    Out(ExprId),
+    Out {
+        value: ExprId,
+        statement: StmtId,
+    },
     CancelRule(StmtId),
     TimedCue {
         anchor: ExprId,
@@ -375,7 +492,7 @@ impl HirPostfixBracket {
         context
             .require(HirDialogueTransactionRequirement::Expression {
                 id: self.target,
-                expected: HirDialogueExpressionExpectation::Any,
+                expected: HirDialogueExpressionExpectation::Unrestricted,
             })
             .map_err(HirDialogueTransactionError::Context)?;
         if let HirPostfixBracketCandidates::Ambiguous { index, dialogue } = self.candidates {
@@ -457,7 +574,7 @@ pub(crate) enum HirDialogueOrdinalError {
 
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub(crate) enum HirDialogueExpressionExpectation {
-    Any,
+    Unrestricted,
     Call,
     PostfixIndexCandidate {
         owner: ExprId,
@@ -558,14 +675,19 @@ fn validate_line_plan_items(
                 validate_module(expected, statement.module())?;
             }
             HirLinePlanItem::Option { value, .. }
-            | HirLinePlanItem::Out(value)
+            | HirLinePlanItem::Out { value, .. }
             | HirLinePlanItem::Expression(value)
             | HirLinePlanItem::TimelineAssert {
                 condition: value, ..
             } => validate_module(expected, value.module())?,
-            HirLinePlanItem::Let { pattern, value } => {
+            HirLinePlanItem::Let {
+                pattern,
+                value,
+                statement,
+            } => {
                 validate_module(expected, pattern.module())?;
                 validate_module(expected, value.module())?;
+                validate_module(expected, statement.module())?;
             }
             HirLinePlanItem::TimedCue { anchor, body } => {
                 validate_module(expected, anchor.module())?;
@@ -600,25 +722,32 @@ fn report_line_plan_items<C: HirDialogueTransactionContext>(
                 .require(HirDialogueTransactionRequirement::Statement(*statement))
                 .map_err(HirDialogueTransactionError::Context)?,
             HirLinePlanItem::Option { value, .. }
-            | HirLinePlanItem::Out(value)
+            | HirLinePlanItem::Out { value, .. }
             | HirLinePlanItem::Expression(value)
             | HirLinePlanItem::TimelineAssert {
                 condition: value, ..
             } => context
                 .require(HirDialogueTransactionRequirement::Expression {
                     id: *value,
-                    expected: HirDialogueExpressionExpectation::Any,
+                    expected: HirDialogueExpressionExpectation::Unrestricted,
                 })
                 .map_err(HirDialogueTransactionError::Context)?,
-            HirLinePlanItem::Let { pattern, value } => {
+            HirLinePlanItem::Let {
+                pattern,
+                value,
+                statement,
+            } => {
                 context
                     .require(HirDialogueTransactionRequirement::Pattern(*pattern))
                     .map_err(HirDialogueTransactionError::Context)?;
                 context
                     .require(HirDialogueTransactionRequirement::Expression {
                         id: *value,
-                        expected: HirDialogueExpressionExpectation::Any,
+                        expected: HirDialogueExpressionExpectation::Unrestricted,
                     })
+                    .map_err(HirDialogueTransactionError::Context)?;
+                context
+                    .require(HirDialogueTransactionRequirement::Statement(*statement))
                     .map_err(HirDialogueTransactionError::Context)?;
             }
             HirLinePlanItem::TimedCue { anchor, body } => {
@@ -626,7 +755,7 @@ fn report_line_plan_items<C: HirDialogueTransactionContext>(
                     context
                         .require(HirDialogueTransactionRequirement::Expression {
                             id: expression,
-                            expected: HirDialogueExpressionExpectation::Any,
+                            expected: HirDialogueExpressionExpectation::Unrestricted,
                         })
                         .map_err(HirDialogueTransactionError::Context)?;
                 }

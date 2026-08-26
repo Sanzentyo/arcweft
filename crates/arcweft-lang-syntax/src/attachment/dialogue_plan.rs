@@ -74,7 +74,7 @@ impl AttachedDialogueLinePlanBody {
             .syntax()
             .ordered_children(SyntaxRoleClass::DialogueLinePlanItem)?
             .into_iter()
-            .map(|node| FamilyNode::<StatementFamily>::new(node))
+            .map(FamilyNode::<StatementFamily>::new)
             .collect::<Result<Vec<_>, _>>()?
             .into_boxed_slice();
         let missing = syntax

@@ -30,11 +30,20 @@ Engine::step
 pub struct RuntimeStepInput {
     pub tick: TickId,
     pub dt: LogicalDuration,
-    pub input: LayeredInputFrame,
+    pub input_events: Vec<RoutedInputEvent>,
+    pub need_states: Vec<RuntimeNeedState>,
     pub task_events: Vec<TaskEvent>,
     pub audio_events: Vec<AudioEvent>,
+    pub host_call_results: Vec<RuntimeHostCallResult>,
+    pub root_events: Vec<RootEventInput>,
+    pub deferred_root_events: Vec<RootEventInput>,
 }
 ```
+
+The host owns raw input and layer hit testing. Only the resulting ordered
+`RoutedInputEvent` inventory crosses the core step boundary; raw events and
+focus/capture routing state are host-side replay evidence, not a second field
+inside `RuntimeStepInput`.
 
 ## LayeredInputFrame
 

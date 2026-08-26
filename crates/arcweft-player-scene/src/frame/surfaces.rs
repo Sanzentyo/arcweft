@@ -774,6 +774,7 @@ mod tests {
             ],
             text: Vec::new(),
             fx: Vec::new(),
+            events: Vec::new(),
             style_nodes: Vec::new(),
         };
         let child = BundleViewMountOutput {
@@ -791,6 +792,7 @@ mod tests {
             }],
             text: Vec::new(),
             fx: Vec::new(),
+            events: Vec::new(),
             style_nodes: Vec::new(),
         };
         let view = BundleViewFrame {

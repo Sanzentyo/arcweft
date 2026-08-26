@@ -16,7 +16,7 @@ mod replacement;
 mod style_scope;
 mod value;
 
-use crate::dialogue::{DialogueViewInput, DialogueViewState};
+use crate::dialogue::{BundlePresentationInput, DialogueViewInput, DialogueViewState};
 use crate::presentation_handles::{PresentationHandleId, PresentationHandleRecord};
 use arcweft_bundle::container::BundleDigest;
 use arcweft_bundle::resource_codec::view::{
@@ -26,21 +26,32 @@ use arcweft_bundle::resource_codec::view::{
 use arcweft_bundle::resource_codec::{
     ViewDefinitionResource, ViewRuntimeControlVisualStyle, ViewTextBlockBounds, ViewTextResource,
 };
-use arcweft_core::value::{RuntimeBinding, RuntimeValue};
+use arcweft_core::{
+    awbc::schema::AwbcProgram,
+    value::{
+        AwbcRuntimeValueSnapshot, RuntimeBinding, RuntimeDialogueActionValue,
+        RuntimeDialogueAdvanceAction, RuntimeValue,
+    },
+};
+use arcweft_id::PublicId;
 use arcweft_presentation::fx::{
     FiniteF32Error, FxGraphChildPath, FxId, FxInstanceId, FxLogicalTime, FxRuntimeType,
     FxRuntimeValue,
 };
+use arcweft_presentation::input::InteractionTarget;
 use arcweft_text_model::{LineDisplayFrame, RichTextDocument};
 use arcweft_view::{
-    ViewId, ViewMountAllocationError, ViewMountAllocator, ViewMountId, ViewMountSnapshot,
-    ViewMountState, ViewPartName, ViewProgramId, ViewRegistry, ViewRegistryError, ViewRegistryId,
-    ViewSchemaId, ViewStyleProgram, ViewValueEvaluationError, ViewValueInventoryError,
-    ViewValueProgramInventory,
+    EventKind, ViewHandlerInvocation, ViewHandlerProgramId, ViewHandlerRouteId, ViewId,
+    ViewMountAllocationError, ViewMountAllocator, ViewMountId, ViewMountSnapshot, ViewMountState,
+    ViewPartName, ViewProgramId, ViewRegistry, ViewRegistryError, ViewRegistryId, ViewSchemaId,
+    ViewStyleProgram, ViewValueEvaluationError, ViewValueInventoryError, ViewValueProgramInventory,
 };
 use serde::{Deserialize, Serialize};
-use std::collections::{BTreeMap, BTreeSet};
 use std::fmt;
+use std::{
+    collections::{BTreeMap, BTreeSet},
+    sync::Arc,
+};
 use thiserror::Error;
 
 pub use axis_seed::{
@@ -103,6 +114,7 @@ pub enum BundleViewDiagnosticCode {
     InvalidDisplayStage,
     MissingDialogueInput,
     InvalidDialogueViewOwner,
+    InvalidHandler,
 }
 
 impl BundleViewDiagnosticCode {
@@ -128,6 +140,7 @@ impl BundleViewDiagnosticCode {
             Self::InvalidDisplayStage => "VIEW017_INVALID_DISPLAY_STAGE",
             Self::MissingDialogueInput => "VIEW018_MISSING_DIALOGUE_INPUT",
             Self::InvalidDialogueViewOwner => "VIEW019_INVALID_DIALOGUE_VIEW_OWNER",
+            Self::InvalidHandler => "VIEW020_INVALID_HANDLER",
         }
     }
 }
@@ -266,8 +279,77 @@ pub struct BundleViewMountOutput {
     pub paint: Vec<BundleViewPaintItem>,
     pub text: Vec<BundleViewTextOutput>,
     pub fx: Vec<BundleViewFxApplication>,
+    /// Typed event routes published only after all mount handlers seal.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub events: Vec<BundleViewEventBinding>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub style_nodes: Vec<BundleViewStyleNode>,
+}
+
+/// Exact retained node/event route for one sealed mount-time handler token.
+#[derive(Clone, Debug, Deserialize, Eq, Hash, Ord, PartialEq, PartialOrd, Serialize)]
+pub struct BundleViewEventBinding {
+    route: ViewHandlerRouteId,
+    target: InteractionTarget,
+    mount: ViewMountId,
+    path: BundleViewInstancePath,
+    instruction: u32,
+    event: EventKind,
+    program: ViewHandlerProgramId,
+}
+
+impl BundleViewEventBinding {
+    #[must_use]
+    pub const fn route(&self) -> ViewHandlerRouteId {
+        self.route
+    }
+
+    #[must_use]
+    pub const fn target(&self) -> &InteractionTarget {
+        &self.target
+    }
+
+    #[must_use]
+    pub const fn mount(&self) -> ViewMountId {
+        self.mount
+    }
+
+    #[must_use]
+    pub const fn path(&self) -> &BundleViewInstancePath {
+        &self.path
+    }
+
+    #[must_use]
+    pub const fn instruction(&self) -> u32 {
+        self.instruction
+    }
+
+    #[must_use]
+    pub const fn event(&self) -> EventKind {
+        self.event
+    }
+
+    #[must_use]
+    pub const fn program(&self) -> ViewHandlerProgramId {
+        self.program
+    }
+
+    /// Projects this accepted route into the retained fragment event algebra.
+    #[must_use]
+    pub const fn retained_binding(&self) -> arcweft_view::EventBinding {
+        arcweft_view::EventBinding::new(self.event, self.route)
+    }
+}
+
+/// Fail-closed event-token routing error.
+#[derive(Clone, Debug, Eq, Error, PartialEq)]
+pub enum BundleViewEventDispatchError {
+    #[error("View event binding is not active in the latest successful frame")]
+    UnknownBinding,
+    #[error("routed View handler invocation does not match the active binding")]
+    InvocationMismatch,
+    #[error("sealed DialogueAction token is invalid: {message}")]
+    InvalidDialogueAction { message: String },
 }
 
 /// Public owner and part identity projected from an accepted exported-part boundary.
@@ -283,7 +365,7 @@ impl BundleViewMountOutput {
     /// Qualifies one authored resource identity for this concrete mount occurrence.
     #[must_use]
     pub fn scoped_id(&self, authored: &str) -> String {
-        format!("view_mount_{}.{}", self.mount.get(), authored)
+        mount_scoped_id(self.mount, authored)
     }
 
     /// Projects exported-part evidence without exposing local or dense identities.
@@ -301,6 +383,17 @@ impl BundleViewMountOutput {
                 })
         })
     }
+}
+
+fn mount_scoped_id(mount: ViewMountId, authored: &str) -> String {
+    format!("view_mount_{}.{}", mount.get(), authored)
+}
+
+fn mount_scoped_interaction_target(
+    mount: ViewMountId,
+    authored: &str,
+) -> Result<InteractionTarget, arcweft_id::IdError> {
+    PublicId::try_new_engine_owned(mount_scoped_id(mount, authored)).map(InteractionTarget::new)
 }
 
 /// Complete result of one deterministic View evaluation frame.
@@ -341,7 +434,7 @@ pub struct BundleViewRuntimeSnapshot {
     pub program_id: Option<ViewProgramId>,
     pub logical_time: FxLogicalTime,
     pub next_mount_id: u64,
-    pub root_bindings: Vec<RuntimeBinding>,
+    pub view_root_bindings: Vec<RuntimeBinding>,
     pub mounts: Vec<BundleViewMountRuntimeSnapshot>,
     pub axis_seeds: BundleViewAxisSeedRegistrySnapshot,
 }
@@ -358,6 +451,7 @@ pub struct BundleViewMountRuntimeSnapshot {
     pub initialized_parameters: Vec<u16>,
     pub initialized_state: Vec<u16>,
     pub runtime_parameters: Vec<RuntimeBinding>,
+    pub next_handler_seal_revision: u64,
 }
 
 /// Fatal construction or snapshot restoration failure.
@@ -423,6 +517,8 @@ pub enum BundleViewRuntimeError {
     DuplicateRootBinding { binding: String },
     #[error("saved View presentation frame does not match the retained mount table: {message}")]
     PresentationFrameMismatch { message: String },
+    #[error("View snapshot has an invalid handler seal revision cursor")]
+    InvalidHandlerSealRevision,
 }
 
 impl BundleViewRuntimeError {
@@ -451,6 +547,23 @@ struct MountedView {
     initialized_parameters: BTreeSet<u16>,
     initialized_state: BTreeSet<u16>,
     runtime_parameters: BTreeMap<String, RuntimeValue>,
+    handler_seals: BTreeMap<MountedViewHandlerKey, MountedViewHandlerSeal>,
+    next_handler_seal_revision: u64,
+}
+
+#[derive(Clone, Debug, Eq, Ord, PartialEq, PartialOrd)]
+struct MountedViewHandlerKey {
+    path: BundleViewInstancePath,
+    instruction: u32,
+    event: EventKind,
+    program: ViewHandlerProgramId,
+}
+
+#[derive(Clone, Debug, PartialEq)]
+struct MountedViewHandlerSeal {
+    captures: Box<[AwbcRuntimeValueSnapshot]>,
+    token: RuntimeDialogueActionToken,
+    revision: u64,
 }
 
 impl MountedView {
@@ -475,10 +588,25 @@ pub struct BundleViewRuntime {
     inventory: ViewValueProgramInventory,
     logical_time: FxLogicalTime,
     allocator: ViewMountAllocator,
-    root_bindings: BTreeMap<String, RuntimeValue>,
+    view_root_bindings: BTreeMap<String, RuntimeValue>,
     mounts: BTreeMap<ViewOccurrenceKey, MountedView>,
     axis_seeds: axis_seed::BundleViewAxisSeedRegistry,
     required_dialogue_views: BTreeSet<ViewId>,
+    handler_runtime: ViewHandlerRuntimeAuthority,
+    event_tokens: BTreeMap<ViewHandlerRouteId, PublishedViewEventToken>,
+}
+
+#[derive(Clone, Debug, PartialEq)]
+struct PublishedViewEventToken {
+    event: EventKind,
+    target: InteractionTarget,
+    token: RuntimeDialogueActionToken,
+}
+
+#[derive(Clone, Debug)]
+enum ViewHandlerRuntimeAuthority {
+    HandlerFree,
+    Awbc(Arc<AwbcProgram>),
 }
 
 impl Default for BundleViewRuntime {
@@ -560,6 +688,15 @@ impl BundleViewRuntime {
         Self::try_new_with_registry(product, text, ViewRegistry::default())
     }
 
+    /// Builds a handler-capable evaluator from the exact bundle AWBC authority.
+    pub fn try_new_with_awbc(
+        product: ValidatedViewProduct,
+        text: Option<ViewTextResource>,
+        awbc: Arc<AwbcProgram>,
+    ) -> Result<Self, BundleViewRuntimeError> {
+        Self::try_new_with_registry_and_awbc(product, text, ViewRegistry::default(), awbc)
+    }
+
     /// Builds an evaluator while preserving already registered host Views.
     ///
     /// The supplied registry is consumed as a candidate. Arcweft definitions
@@ -568,7 +705,7 @@ impl BundleViewRuntime {
     pub fn try_new_with_registry(
         product: ValidatedViewProduct,
         text: Option<ViewTextResource>,
-        mut registry: ViewRegistry,
+        registry: ViewRegistry,
     ) -> Result<Self, BundleViewRuntimeError> {
         match product.program() {
             Some(program) => program
@@ -588,6 +725,55 @@ impl BundleViewRuntime {
             }
         }
         let catalog = ViewProgramCatalog::try_from_validated(&product)?;
+        Self::finish_construction(
+            product,
+            text,
+            registry,
+            catalog,
+            ViewHandlerRuntimeAuthority::HandlerFree,
+        )
+    }
+
+    pub fn try_new_with_registry_and_awbc(
+        product: ValidatedViewProduct,
+        text: Option<ViewTextResource>,
+        registry: ViewRegistry,
+        awbc: Arc<AwbcProgram>,
+    ) -> Result<Self, BundleViewRuntimeError> {
+        match product.program() {
+            Some(program) => program
+                .resource()
+                .validate_dialogue_contract(text.as_ref())?,
+            None => {
+                if let Some(source) = text.as_ref().and_then(|text| {
+                    text.sources
+                        .iter()
+                        .find(|source| matches!(source.kind, ViewTextSourceKind::Dialogue { .. }))
+                }) {
+                    return Err(DialogueViewContractError::MissingProgram {
+                        text_source: source.public_id.clone(),
+                    }
+                    .into());
+                }
+            }
+        }
+        let catalog = ViewProgramCatalog::try_from_validated_with_awbc(&product, &awbc)?;
+        Self::finish_construction(
+            product,
+            text,
+            registry,
+            catalog,
+            ViewHandlerRuntimeAuthority::Awbc(awbc),
+        )
+    }
+
+    fn finish_construction(
+        product: ValidatedViewProduct,
+        text: Option<ViewTextResource>,
+        mut registry: ViewRegistry,
+        catalog: Option<ViewProgramCatalog>,
+        handler_runtime: ViewHandlerRuntimeAuthority,
+    ) -> Result<Self, BundleViewRuntimeError> {
         if let Some(catalog) = &catalog {
             for (view, definition) in catalog.definitions() {
                 registry.register_arcweft(
@@ -616,10 +802,12 @@ impl BundleViewRuntime {
             inventory,
             logical_time: FxLogicalTime::zero(),
             allocator: ViewMountAllocator::default(),
-            root_bindings: BTreeMap::new(),
+            view_root_bindings: BTreeMap::new(),
             mounts: BTreeMap::new(),
             axis_seeds: axis_seed::BundleViewAxisSeedRegistry::default(),
             required_dialogue_views: BTreeSet::new(),
+            handler_runtime,
+            event_tokens: BTreeMap::new(),
         })
     }
 
@@ -627,6 +815,22 @@ impl BundleViewRuntime {
     #[must_use]
     pub const fn registry(&self) -> &ViewRegistry {
         &self.registry
+    }
+
+    /// Dispatches one latest-frame event from its sealed DialogueAction token.
+    /// The associated pure helper is never re-entered at this boundary.
+    pub fn dispatch_invocation(
+        &self,
+        invocation: &ViewHandlerInvocation,
+    ) -> Result<Option<BundlePresentationInput>, BundleViewEventDispatchError> {
+        let published = self
+            .event_tokens
+            .get(&invocation.route())
+            .ok_or(BundleViewEventDispatchError::UnknownBinding)?;
+        if published.event != invocation.event() || &published.target != invocation.target() {
+            return Err(BundleViewEventDispatchError::InvocationMismatch);
+        }
+        published.token.presentation_input()
     }
 
     /// Projects a live registry entry into stable public owner evidence.
@@ -935,6 +1139,7 @@ impl BundleViewRuntime {
                             value: value.clone(),
                         })
                         .collect(),
+                    next_handler_seal_revision: mount.next_handler_seal_revision,
                 })
             })
             .collect::<Result<Vec<_>, ViewSaveError>>()?;
@@ -945,8 +1150,8 @@ impl BundleViewRuntime {
                 .map(|catalog| catalog.program_id().clone()),
             logical_time: self.logical_time,
             next_mount_id: self.allocator.next(),
-            root_bindings: self
-                .root_bindings
+            view_root_bindings: self
+                .view_root_bindings
                 .iter()
                 .map(|(name, value)| RuntimeBinding {
                     name: name.clone(),
@@ -979,9 +1184,9 @@ impl BundleViewRuntime {
             });
         }
 
-        let mut root_bindings = BTreeMap::new();
-        for binding in &snapshot.root_bindings {
-            if root_bindings
+        let mut view_root_bindings = BTreeMap::new();
+        for binding in &snapshot.view_root_bindings {
+            if view_root_bindings
                 .insert(binding.name.clone(), binding.value.clone())
                 .is_some()
             {
@@ -994,6 +1199,9 @@ impl BundleViewRuntime {
         let mut mounts = BTreeMap::new();
         let mut mount_ids = BTreeSet::new();
         for saved in &snapshot.mounts {
+            if saved.next_handler_seal_revision == 0 {
+                return Err(BundleViewRuntimeError::InvalidHandlerSealRevision);
+            }
             saved.path.validate()?;
             if saved.activation_logical_time.seconds().seconds()
                 > snapshot.logical_time.seconds().seconds()
@@ -1065,6 +1273,8 @@ impl BundleViewRuntime {
                         initialized_parameters,
                         initialized_state,
                         runtime_parameters,
+                        handler_seals: BTreeMap::new(),
+                        next_handler_seal_revision: saved.next_handler_seal_revision,
                     },
                 )
                 .is_some()
@@ -1091,9 +1301,10 @@ impl BundleViewRuntime {
         allocator.restore_cursor(snapshot.next_mount_id, greatest_live)?;
         self.logical_time = snapshot.logical_time;
         self.allocator = allocator;
-        self.root_bindings = root_bindings;
+        self.view_root_bindings = view_root_bindings;
         self.mounts = mounts;
         self.axis_seeds = axis_seeds;
+        self.event_tokens.clear();
         Ok(())
     }
 
@@ -1202,6 +1413,75 @@ impl BundleViewRuntime {
             .as_ref()
             .expect("a definition index requires a View program")
             .execution_definition(index)
+    }
+}
+
+/// Runtime-driver owner of the closed DialogueAction payload and snapshot ABI.
+#[derive(Clone, Debug, PartialEq)]
+struct RuntimeDialogueActionToken {
+    snapshot: AwbcRuntimeValueSnapshot,
+}
+
+impl RuntimeDialogueActionToken {
+    fn from_target(target: Option<arcweft_view::DialogueAdvanceTarget>) -> Self {
+        let value = match target {
+            None => RuntimeDialogueActionValue::None,
+            Some(target) => RuntimeDialogueActionValue::Advance(RuntimeDialogueAdvanceAction {
+                dialogue: target.dialogue.get(),
+                entry: target.entry.get(),
+                instance: target.instance.get(),
+                stage: target.stage.get(),
+                revision: target.revision.get(),
+            }),
+        };
+        Self::try_from_runtime_value(value.into_runtime_value())
+            .expect("the DialogueAction owner produces its own closed payload schema")
+    }
+
+    fn try_from_runtime_value(value: RuntimeValue) -> Result<Self, BundleViewEventDispatchError> {
+        Self::decode(&value)?;
+        let snapshot = AwbcRuntimeValueSnapshot::from_runtime_value(&value).map_err(|error| {
+            BundleViewEventDispatchError::InvalidDialogueAction {
+                message: error.to_string(),
+            }
+        })?;
+        Ok(Self { snapshot })
+    }
+
+    fn runtime_value(&self) -> Result<RuntimeValue, BundleViewEventDispatchError> {
+        self.snapshot.clone().into_runtime_value().map_err(|error| {
+            BundleViewEventDispatchError::InvalidDialogueAction {
+                message: error.to_string(),
+            }
+        })
+    }
+
+    fn presentation_input(
+        &self,
+    ) -> Result<Option<BundlePresentationInput>, BundleViewEventDispatchError> {
+        Self::decode(&self.runtime_value()?)
+            .map(|target| target.map(BundlePresentationInput::advance_dialogue))
+    }
+
+    fn decode(
+        value: &RuntimeValue,
+    ) -> Result<Option<arcweft_view::DialogueAdvanceTarget>, BundleViewEventDispatchError> {
+        match RuntimeDialogueActionValue::try_from_runtime_value(value).map_err(|error| {
+            BundleViewEventDispatchError::InvalidDialogueAction {
+                message: error.to_string(),
+            }
+        })? {
+            RuntimeDialogueActionValue::None => Ok(None),
+            RuntimeDialogueActionValue::Advance(target) => {
+                Ok(Some(arcweft_view::DialogueAdvanceTarget::new(
+                    arcweft_view::DialoguePresentationId::new(target.dialogue),
+                    arcweft_view::DialogueEntryId::new(target.entry),
+                    arcweft_view::DialogueInstanceId::new(target.instance),
+                    arcweft_view::DialogueStageIndex::new(target.stage),
+                    arcweft_view::DialogueRevision::new(target.revision),
+                )))
+            }
+        }
     }
 }
 

@@ -6,8 +6,10 @@ use super::identity::{
     TypeLayoutHash,
 };
 use super::schema::{RuntimeSchemaLimits, RuntimeTypeSchema};
+use crate::pattern::RuntimeSemanticTypeId;
 use crate::plan::{EntryRuntimeId, FlowRuntimeId, RuntimePureHelperId};
 use serde::{Deserialize, Serialize};
+use thiserror::Error;
 /// Effective hard limits included in an Agent entry binding.
 #[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub struct AgentBudget {
@@ -51,6 +53,7 @@ pub struct RuntimeStatefulEntryRoles {
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub struct RuntimeNominalRole {
     pub identity: RuntimeNominalTypeId,
+    pub semantic_identity: RuntimeSemanticTypeId,
     pub layout: TypeLayoutHash,
     pub schema: RuntimeTypeSchema,
 }
@@ -90,22 +93,67 @@ pub enum RuntimeFlowParameterMode {
     Mutable,
 }
 
+/// Stable zero-based coordinate of one Flow parameter.
+#[derive(Clone, Copy, Debug, Deserialize, Eq, Hash, Ord, PartialEq, PartialOrd, Serialize)]
+#[serde(transparent)]
+pub struct FlowParameterCoordinate(u32);
+
+impl FlowParameterCoordinate {
+    #[must_use]
+    pub const fn from_position(position: u32) -> Self {
+        Self(position)
+    }
+
+    pub fn try_from_index(index: usize) -> Result<Self, FlowParameterCoordinateError> {
+        u32::try_from(index)
+            .map(Self)
+            .map_err(|_| FlowParameterCoordinateError::OutOfRange { index })
+    }
+
+    #[must_use]
+    pub const fn position(self) -> u32 {
+        self.0
+    }
+
+    pub fn index(self) -> Result<usize, FlowParameterCoordinateError> {
+        usize::try_from(self.0)
+            .map_err(|_| FlowParameterCoordinateError::InvalidPlatformWidth { position: self.0 })
+    }
+}
+
+#[derive(Clone, Copy, Debug, Eq, Error, PartialEq)]
+pub enum FlowParameterCoordinateError {
+    #[error("Flow parameter index {index} exceeds the coordinate domain")]
+    OutOfRange { index: usize },
+    #[error("Flow parameter coordinate {position} does not fit this platform")]
+    InvalidPlatformWidth { position: u32 },
+}
+
 /// Exact executable flow parameter metadata used by entry verification.
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub struct RuntimeFlowExecutableParameter {
-    pub position: u32,
+    pub coordinate: FlowParameterCoordinate,
     pub name: String,
     pub mode: RuntimeFlowParameterMode,
-    pub nominal: RuntimeNominalTypeId,
-    pub layout: TypeLayoutHash,
+    pub semantic_identity: RuntimeSemanticTypeId,
 }
 
-/// Executable flow contract metadata emitted from the accepted checked HIR.
+/// Complete plan-owned invocation schema for one executable Flow.
+///
+/// This inventory exists for every lowered Flow, independently of whether an
+/// Entry also assigns that Flow a launch role.
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+pub struct RuntimeFlowSchema {
+    pub flow: FlowRuntimeId,
+    pub parameters: Vec<RuntimeFlowExecutableParameter>,
+}
+
+/// Entry/controller role metadata for a Flow that has an externally selected
+/// launch role. Parameter ABI belongs solely to [`RuntimeFlowSchema`].
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub struct RuntimeFlowExecutable {
     pub flow: FlowRuntimeId,
     pub contract: FlowContractHash,
-    pub parameters: Vec<RuntimeFlowExecutableParameter>,
     pub controller: Option<RuntimeCallableRole>,
 }
 

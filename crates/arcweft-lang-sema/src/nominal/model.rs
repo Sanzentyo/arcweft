@@ -941,6 +941,33 @@ impl TypeResolutionReport {
     pub const fn work_charged(&self) -> u64 {
         self.work_charged
     }
+
+    pub(crate) fn visit_types<E>(
+        &self,
+        visitor: &mut impl FnMut(&TypeKind) -> Result<(), E>,
+    ) -> Result<(), E> {
+        let product = match self.outcome() {
+            ResolvedTypeRefOutcome::Complete(product) => product,
+            ResolvedTypeRefOutcome::Poisoned(poisoned) => poisoned.product(),
+            ResolvedTypeRefOutcome::Detached(detached) => detached.product(),
+        };
+        visitor(product.recovered())?;
+        for node in product.nodes() {
+            if let Some(recovered) = node.recovered() {
+                visitor(recovered)?;
+            }
+        }
+        for alias in product.aliases() {
+            for argument in alias.arguments() {
+                visitor(argument)?;
+            }
+            for (_, value) in alias.substitution() {
+                visitor(value)?;
+            }
+            visitor(alias.normalized())?;
+        }
+        Ok(())
+    }
 }
 
 impl TypeArityExpectation {

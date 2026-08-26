@@ -111,6 +111,16 @@ impl NominalResolutionIndex {
         self.work_charged
     }
 
+    pub(crate) fn visit_types<E>(
+        &self,
+        visitor: &mut impl FnMut(&TypeKind) -> Result<(), E>,
+    ) -> Result<(), E> {
+        for report in self.reports.values() {
+            report.visit_types(visitor)?;
+        }
+        Ok(())
+    }
+
     /// Publishes one accepted report under the exact root retained by the report itself.
     pub(crate) fn record(
         &mut self,

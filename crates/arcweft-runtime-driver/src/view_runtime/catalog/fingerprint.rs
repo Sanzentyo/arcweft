@@ -78,14 +78,14 @@ impl ViewDefinitionFingerprints {
         let handler_ids = body
             .iter()
             .filter_map(|instruction| match instruction {
-                ViewProgramInstruction::BindHandler { handler, .. } => Some(handler.as_str()),
+                ViewProgramInstruction::BindHandler { handler, .. } => Some(*handler),
                 _ => None,
             })
             .collect::<BTreeSet<_>>();
         let handlers = resource
             .handlers
             .iter()
-            .filter(|handler| handler_ids.contains(handler.handler_id.as_str()))
+            .filter(|handler| handler_ids.contains(&handler.program))
             .collect::<Vec<_>>();
         let local = LocalTranscript {
             schema: "arcweft.view.definition-local.v1",

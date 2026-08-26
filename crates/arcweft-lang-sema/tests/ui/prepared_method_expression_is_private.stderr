@@ -1,0 +1,11 @@
+error[E0603]: struct `PreparedMethodExpression` is private
+ --> tests/ui/prepared_method_expression_is_private.rs:1:40
+  |
+1 | use arcweft_lang_sema::final_analysis::PreparedMethodExpression;
+  |                                        ^^^^^^^^^^^^^^^^^^^^^^^^ private struct
+  |
+note: the struct `PreparedMethodExpression` is defined here
+ --> src/final_analysis.rs
+  |
+  |     PreparedExpressionFact, PreparedExpressionShell, PreparedMethodExpression,
+  |                                                      ^^^^^^^^^^^^^^^^^^^^^^^^

@@ -1071,6 +1071,60 @@ pub(in crate::parser) fn emit_indented_callback_call(
     let owner = parser.insert_projected_start(left.start_event, SyntaxKind::CallExpression, role);
     parser.set_start_role(left.start_event + 1, SyntaxRole::Callee);
 
+    let callback = emit_indented_callback_closure(parser, body_start, body_end);
+    parser.set_expression_projection(
+        owner,
+        PendingExpressionProjection::new(
+            ExpressionProjection::Call(SyntaxCallProjection::CallbackBlock(
+                SyntaxCallbackBlockCallProjection::new(
+                    SyntaxExpressionSlot::Authored,
+                    SyntaxCallArgumentListTerminator::Closed,
+                ),
+            )),
+            vec![
+                PendingExpressionComponent::new(ExpressionComponentRole::CallCallee, callee_range),
+                PendingExpressionComponent::new(
+                    ExpressionComponentRole::CallArgumentListOpen,
+                    callback.colon_range,
+                ),
+                PendingExpressionComponent::new(
+                    ExpressionComponentRole::CallArgumentListClose,
+                    callback.terminal_range,
+                ),
+                PendingExpressionComponent::new(
+                    ExpressionComponentRole::CallArgument {
+                        argument: 0,
+                        part: SyntaxCallArgumentPart::Whole,
+                    },
+                    callback.range,
+                ),
+                PendingExpressionComponent::new(
+                    ExpressionComponentRole::CallArgument {
+                        argument: 0,
+                        part: SyntaxCallArgumentPart::Value,
+                    },
+                    callback.range,
+                ),
+            ],
+        ),
+    );
+    parser.finish();
+    CompletedNode {
+        start_event: left.start_event,
+    }
+}
+
+struct EmittedIndentedCallbackClosure {
+    range: SourceRange,
+    colon_range: SourceRange,
+    terminal_range: SourceRange,
+}
+
+fn emit_indented_callback_closure(
+    parser: &mut DocumentParser<'_, '_>,
+    body_start: usize,
+    body_end: usize,
+) -> EmittedIndentedCallbackClosure {
     let callback_start = parser.event_position();
     let closure =
         parser.start_projected_owner(SyntaxKind::ClosureExpression, SyntaxRole::Argument(0));
@@ -1126,48 +1180,12 @@ pub(in crate::parser) fn emit_indented_callback_call(
     let callback = CompletedNode {
         start_event: callback_start,
     };
-    let callback_range = parser
-        .completed_range(callback.start_event)
-        .expect("indented callback Closure retains one exact source range");
-    parser.set_expression_projection(
-        owner,
-        PendingExpressionProjection::new(
-            ExpressionProjection::Call(SyntaxCallProjection::CallbackBlock(
-                SyntaxCallbackBlockCallProjection::new(
-                    SyntaxExpressionSlot::Authored,
-                    SyntaxCallArgumentListTerminator::Closed,
-                ),
-            )),
-            vec![
-                PendingExpressionComponent::new(ExpressionComponentRole::CallCallee, callee_range),
-                PendingExpressionComponent::new(
-                    ExpressionComponentRole::CallArgumentListOpen,
-                    colon_range,
-                ),
-                PendingExpressionComponent::new(
-                    ExpressionComponentRole::CallArgumentListClose,
-                    terminal_range,
-                ),
-                PendingExpressionComponent::new(
-                    ExpressionComponentRole::CallArgument {
-                        argument: 0,
-                        part: SyntaxCallArgumentPart::Whole,
-                    },
-                    callback_range,
-                ),
-                PendingExpressionComponent::new(
-                    ExpressionComponentRole::CallArgument {
-                        argument: 0,
-                        part: SyntaxCallArgumentPart::Value,
-                    },
-                    callback_range,
-                ),
-            ],
-        ),
-    );
-    parser.finish();
-    CompletedNode {
-        start_event: left.start_event,
+    EmittedIndentedCallbackClosure {
+        range: parser
+            .completed_range(callback.start_event)
+            .expect("indented callback Closure retains one exact source range"),
+        colon_range,
+        terminal_range,
     }
 }
 

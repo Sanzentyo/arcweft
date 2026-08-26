@@ -68,3 +68,10 @@ fn checked_match_reference_is_an_opaque_nonserializable_compiler_certificate() {
     let cases = trybuild::TestCases::new();
     cases.compile_fail("tests/ui/checked_match_ref_*.rs");
 }
+
+#[test]
+fn unpublished_final_semantic_draft_is_not_an_external_authority() {
+    let cases = trybuild::TestCases::new();
+    cases.compile_fail("tests/ui/final_semantic_draft_is_private.rs");
+    cases.compile_fail("tests/ui/prepared_method_expression_is_private.rs");
+}

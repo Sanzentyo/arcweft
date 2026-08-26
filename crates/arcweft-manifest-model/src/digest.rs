@@ -12,6 +12,13 @@ pub struct RawDigest([u8; 32]);
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub struct SemanticDigest([u8; 32]);
 
+/// Canonical identity of one adapter-owned host-call ABI contract.
+///
+/// The domain is fixed at version `1`; callers supply only the canonical
+/// contract encoding, never an alternate hash context.
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub struct HostCallContractDigest(SemanticDigest);
+
 /// Invalid canonical digest text.
 #[derive(Clone, Debug, Eq, Error, PartialEq)]
 pub enum DigestParseError {
@@ -50,6 +57,25 @@ impl SemanticDigest {
 
     pub const fn as_bytes(&self) -> &[u8; 32] {
         &self.0
+    }
+}
+
+impl HostCallContractDigest {
+    /// Hashes the adapter owner's canonical host-call contract encoding.
+    pub fn derive(canonical_bytes: &[u8]) -> Self {
+        Self(SemanticDigest::derive(
+            "arcweft.host-call-contract.v1",
+            canonical_bytes,
+        ))
+    }
+
+    /// Reconstructs a digest read from a checked wire carrier.
+    pub const fn from_bytes(bytes: [u8; 32]) -> Self {
+        Self(SemanticDigest::from_bytes(bytes))
+    }
+
+    pub const fn as_bytes(&self) -> &[u8; 32] {
+        self.0.as_bytes()
     }
 }
 
@@ -111,6 +137,38 @@ macro_rules! digest_impls {
 
 digest_impls!(RawDigest);
 digest_impls!(SemanticDigest);
+
+impl fmt::Display for HostCallContractDigest {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        self.0.fmt(formatter)
+    }
+}
+
+impl FromStr for HostCallContractDigest {
+    type Err = DigestParseError;
+
+    fn from_str(value: &str) -> Result<Self, Self::Err> {
+        value.parse().map(Self)
+    }
+}
+
+impl Serialize for HostCallContractDigest {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: Serializer,
+    {
+        self.0.serialize(serializer)
+    }
+}
+
+impl<'de> Deserialize<'de> for HostCallContractDigest {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        SemanticDigest::deserialize(deserializer).map(Self)
+    }
+}
 
 const fn hex_value(byte: u8) -> u8 {
     match byte {

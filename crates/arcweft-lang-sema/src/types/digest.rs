@@ -1,6 +1,9 @@
 //! Canonical semantic identity encoding for checked types.
 
-use arcweft_core::pattern::RuntimeSemanticTypeIdentityEncoder;
+use arcweft_core::{
+    pattern::{RuntimeCheckedType, RuntimeSemanticTypeIdentityEncoder},
+    value::{RuntimeSignedIntWidth, RuntimeUnsignedIntWidth},
+};
 use arcweft_lang_hir::{
     leaf::{HirPath, HirPathRoot, HirPathSegment},
     symbol::{
@@ -21,9 +24,10 @@ use crate::{
 };
 
 use super::{
-    AcceptedNominalType, ArrayLength, CharacterNominalType, EntityKind, GenericTypeOwnerId,
-    GenericTypeParameterId, HandleState, IteratorStateKind, LifetimeScopeKind, MapKind,
-    OpenNominalType, ProjectNominalType, StageActorHandleType, TypeKind,
+    AcceptedNominalType, ArrayLength, CharacterNominalType, EntityKind, GenericConstParameterId,
+    GenericParameterOwnerId, GenericTypeParameterId, HandleState, IteratorStateKind,
+    LifetimeScopeKind, MapKind, OpenNominalType, ProjectNominalType, StageActorHandleType,
+    TypeKind,
 };
 
 /// Stable semantic identity of one complete checked type.
@@ -37,6 +41,170 @@ impl SemanticTypeDigest {
 
     pub const fn as_bytes(&self) -> &[u8; 32] {
         &self.0
+    }
+}
+
+impl ArrayLength {
+    /// Canonical checked bytes for an array-length child embedded by another
+    /// semantic owner. Recovery/inference-only lengths have no checked form.
+    /// This owner method is the sole raw ArrayLength encoder; callable and
+    /// runtime identities must not reconstruct a generic-constant owner.
+    pub(crate) fn canonical_checked_bytes(&self) -> Option<Vec<u8>> {
+        let mut encoder = ArrayLengthCanonicalEncoder::default();
+        match self {
+            Self::Const(value) => {
+                encoder.tag(0);
+                encoder.u64(u64::try_from(*value).ok()?);
+            }
+            Self::Generic(parameter) => {
+                encoder.tag(1);
+                encoder.generic_const(parameter)?;
+            }
+            Self::Error(_) | Self::Inferred => return None,
+        }
+        Some(encoder.finish())
+    }
+}
+
+#[derive(Default)]
+struct ArrayLengthCanonicalEncoder(Vec<u8>);
+
+impl ArrayLengthCanonicalEncoder {
+    fn finish(self) -> Vec<u8> {
+        self.0
+    }
+    fn tag(&mut self, value: u8) {
+        self.0.push(value);
+    }
+    fn u16(&mut self, value: u16) {
+        self.0.extend_from_slice(&value.to_le_bytes());
+    }
+    fn u64(&mut self, value: u64) {
+        self.0.extend_from_slice(&value.to_le_bytes());
+    }
+    fn digest(&mut self, value: &[u8; 32]) {
+        self.0.extend_from_slice(value);
+    }
+    fn len(&mut self, value: usize) -> Option<()> {
+        self.u64(u64::try_from(value).ok()?);
+        Some(())
+    }
+    fn string(&mut self, value: &str) -> Option<()> {
+        self.len(value.len())?;
+        self.0.extend_from_slice(value.as_bytes());
+        Some(())
+    }
+
+    fn generic_const(&mut self, parameter: &GenericConstParameterId) -> Option<()> {
+        // This marker keeps the type- and const-parameter namespaces disjoint.
+        self.tag(0xC0);
+        self.generic_owner(parameter.owner())?;
+        self.u16(parameter.ordinal());
+        Some(())
+    }
+
+    fn generic_owner(&mut self, owner: &GenericParameterOwnerId) -> Option<()> {
+        match owner {
+            GenericParameterOwnerId::Callable(id) => {
+                self.tag(0);
+                self.digest(id.semantic_digest().as_bytes());
+            }
+            GenericParameterOwnerId::Nominal(id) => {
+                self.tag(1);
+                self.project_nominal(id)?;
+            }
+            GenericParameterOwnerId::AcceptedNominal(id) => {
+                self.tag(2);
+                self.accepted_nominal(id)?;
+            }
+            GenericParameterOwnerId::AcceptedSource(source) => {
+                self.tag(3);
+                self.source_span(source)?;
+            }
+            GenericParameterOwnerId::Detached(id) => {
+                self.tag(4);
+                self.u64(id.value());
+            }
+            GenericParameterOwnerId::LanguageIntrinsic(owner) => {
+                self.tag(5);
+                self.tag(owner.semantic_tag());
+            }
+        }
+        Some(())
+    }
+
+    fn project_nominal(&mut self, id: &ProjectNominalDeclarationId) -> Option<()> {
+        self.string(id.world().package().as_str())?;
+        self.string(id.world().root_document().as_str())?;
+        self.string(id.world().profile())?;
+        self.digest(id.revision().as_source_set().as_bytes());
+        self.module_path(id.module())?;
+        self.tag(match id.kind() {
+            ProjectNominalDeclarationKind::Struct => 0,
+            ProjectNominalDeclarationKind::Enum => 1,
+            ProjectNominalDeclarationKind::TypeAlias => 2,
+        });
+        self.len(id.owner_path().len())?;
+        for segment in id.owner_path() {
+            self.string(segment.as_str())?;
+        }
+        self.string(id.name().as_str())?;
+        Some(())
+    }
+
+    fn accepted_nominal(&mut self, id: &AcceptedNominalId) -> Option<()> {
+        match id.owner() {
+            AcceptedNominalOwnerId::Standard => self.tag(0),
+            AcceptedNominalOwnerId::Environment(owner) => {
+                self.tag(1);
+                self.string(owner.as_str())?;
+            }
+            AcceptedNominalOwnerId::RustPackage(package) => {
+                self.tag(2);
+                self.string(package.as_str())?;
+            }
+            AcceptedNominalOwnerId::Character(character) => {
+                self.tag(3);
+                self.string(character.as_str())?;
+            }
+        }
+        self.module_root(id.canonical_path().root())?;
+        self.len(id.canonical_path().segments().len())?;
+        for segment in id.canonical_path().segments() {
+            self.string(segment.as_str())?;
+        }
+        Some(())
+    }
+
+    fn module_path(&mut self, path: &CanonicalModulePath) -> Option<()> {
+        self.len(path.segments().len())?;
+        for segment in path.segments() {
+            self.string(segment.as_str())?;
+        }
+        Some(())
+    }
+
+    fn module_root(&mut self, root: ModulePathRoot) -> Option<()> {
+        match root {
+            ModulePathRoot::ImplicitCrate => self.tag(0),
+            ModulePathRoot::Crate => self.tag(1),
+            ModulePathRoot::SelfModule => self.tag(2),
+            ModulePathRoot::Super(levels) => {
+                self.tag(3);
+                self.u64(u64::try_from(levels).ok()?);
+            }
+        }
+        Some(())
+    }
+
+    fn source_span(&mut self, source: &SourceSpan) -> Option<()> {
+        self.string(source.source().id().as_str())?;
+        self.digest(source.source().revision().as_bytes());
+        self.u64(source.source().source_len());
+        let range = source.range();
+        self.u64(u64::try_from(range.start()).ok()?);
+        self.u64(u64::try_from(range.end()).ok()?);
+        Some(())
     }
 }
 
@@ -96,6 +264,10 @@ impl Encoder {
         self.0.write_u64(value);
     }
 
+    fn bytes(&mut self, value: &[u8]) {
+        self.0.write_bytes(value);
+    }
+
     fn len(&mut self, value: usize) {
         self.0.write_len(value);
     }
@@ -120,26 +292,50 @@ impl Encoder {
     )]
     fn ty(&mut self, ty: &TypeKind) {
         match ty {
-            TypeKind::Bool => self.tag(1),
-            TypeKind::I8 => self.tag(2),
-            TypeKind::I16 => self.tag(3),
-            TypeKind::I32 => self.tag(4),
-            TypeKind::I64 => self.tag(5),
-            TypeKind::I128 => self.tag(6),
-            TypeKind::ISize => self.tag(7),
-            TypeKind::U8 => self.tag(8),
-            TypeKind::U16 => self.tag(9),
-            TypeKind::U32 => self.tag(10),
-            TypeKind::U64 => self.tag(11),
-            TypeKind::U128 => self.tag(12),
-            TypeKind::USize => self.tag(13),
-            TypeKind::F32 => self.tag(14),
-            TypeKind::F64 => self.tag(15),
-            TypeKind::String => self.tag(16),
-            TypeKind::Char => self.tag(17),
-            TypeKind::Bytes => self.tag(18),
+            TypeKind::Bool => self.checked(&RuntimeCheckedType::Bool),
+            TypeKind::I8 => self.checked(&RuntimeCheckedType::Signed(RuntimeSignedIntWidth::I8)),
+            TypeKind::I16 => {
+                self.checked(&RuntimeCheckedType::Signed(RuntimeSignedIntWidth::I16));
+            }
+            TypeKind::I32 => {
+                self.checked(&RuntimeCheckedType::Signed(RuntimeSignedIntWidth::I32));
+            }
+            TypeKind::I64 => {
+                self.checked(&RuntimeCheckedType::Signed(RuntimeSignedIntWidth::I64));
+            }
+            TypeKind::I128 => {
+                self.checked(&RuntimeCheckedType::Signed(RuntimeSignedIntWidth::I128));
+            }
+            TypeKind::ISize => {
+                self.checked(&RuntimeCheckedType::Signed(RuntimeSignedIntWidth::ISize));
+            }
+            TypeKind::U8 => {
+                self.checked(&RuntimeCheckedType::Unsigned(RuntimeUnsignedIntWidth::U8));
+            }
+            TypeKind::U16 => {
+                self.checked(&RuntimeCheckedType::Unsigned(RuntimeUnsignedIntWidth::U16));
+            }
+            TypeKind::U32 => {
+                self.checked(&RuntimeCheckedType::Unsigned(RuntimeUnsignedIntWidth::U32));
+            }
+            TypeKind::U64 => {
+                self.checked(&RuntimeCheckedType::Unsigned(RuntimeUnsignedIntWidth::U64));
+            }
+            TypeKind::U128 => {
+                self.checked(&RuntimeCheckedType::Unsigned(RuntimeUnsignedIntWidth::U128));
+            }
+            TypeKind::USize => {
+                self.checked(&RuntimeCheckedType::Unsigned(
+                    RuntimeUnsignedIntWidth::USize,
+                ));
+            }
+            TypeKind::F32 => self.checked(&RuntimeCheckedType::F32),
+            TypeKind::F64 => self.checked(&RuntimeCheckedType::F64),
+            TypeKind::String => self.checked(&RuntimeCheckedType::String),
+            TypeKind::Char => self.checked(&RuntimeCheckedType::Char),
+            TypeKind::Bytes => self.checked(&RuntimeCheckedType::Bytes),
             TypeKind::TextCluster => self.tag(19),
-            TypeKind::Duration => self.tag(20),
+            TypeKind::Duration => self.checked(&RuntimeCheckedType::Duration),
             TypeKind::Range(inner) => {
                 self.tag(21);
                 self.ty(inner);
@@ -320,14 +516,14 @@ impl Encoder {
                 self.tag(76);
                 self.types(items);
             }
-            TypeKind::Unit => self.tag(77),
-            TypeKind::Never => self.tag(78),
+            TypeKind::Unit => self.checked(&RuntimeCheckedType::Unit),
+            TypeKind::Never => self.checked(&RuntimeCheckedType::Never),
             TypeKind::AgentBuiltin(builtin) => {
                 self.tag(79);
                 self.agent_builtin(*builtin);
             }
             TypeKind::ViewValue => self.tag(80),
-            TypeKind::Progress => self.tag(81),
+            TypeKind::Progress => self.checked(&RuntimeCheckedType::Progress),
             TypeKind::StageApi(character) => {
                 self.tag(82);
                 self.string(character.as_str());
@@ -346,6 +542,10 @@ impl Encoder {
             TypeKind::CueHandle => self.tag(85),
             TypeKind::VoiceHandle => self.tag(86),
         }
+    }
+
+    fn checked(&mut self, ty: &RuntimeCheckedType) {
+        ty.encode_semantic_identity(&mut self.0);
     }
 
     fn agent_builtin(&mut self, builtin: super::AgentBuiltinType) {
@@ -376,7 +576,7 @@ impl Encoder {
             }
             ArrayLength::Generic(parameter) => {
                 self.byte(1);
-                self.generic_parameter(parameter);
+                self.generic_const_parameter(parameter);
             }
             ArrayLength::Error(poison) => {
                 self.byte(2);
@@ -391,34 +591,39 @@ impl Encoder {
         self.u16(parameter.ordinal());
     }
 
-    fn generic_owner(&mut self, owner: &GenericTypeOwnerId) {
+    fn generic_const_parameter(&mut self, parameter: &GenericConstParameterId) {
+        // The tag separates the type and constant parameter namespaces even
+        // when a declaration happens to use the same ordinal in both.
+        self.byte(0xC0);
+        self.generic_owner(parameter.owner());
+        self.u16(parameter.ordinal());
+    }
+
+    fn generic_owner(&mut self, owner: &GenericParameterOwnerId) {
         match owner {
-            GenericTypeOwnerId::Callable(id) => {
+            GenericParameterOwnerId::Callable(id) => {
                 self.byte(0);
                 self.callable_declaration(id);
             }
-            GenericTypeOwnerId::Nominal(id) => {
+            GenericParameterOwnerId::Nominal(id) => {
                 self.byte(1);
                 self.project_nominal_declaration(id);
             }
-            GenericTypeOwnerId::AcceptedNominal(id) => {
+            GenericParameterOwnerId::AcceptedNominal(id) => {
                 self.byte(2);
                 self.accepted_nominal_id(id);
             }
-            GenericTypeOwnerId::AcceptedSource(source) => {
+            GenericParameterOwnerId::AcceptedSource(source) => {
                 self.byte(3);
                 self.source_span(source);
             }
-            GenericTypeOwnerId::Detached(id) => {
+            GenericParameterOwnerId::Detached(id) => {
                 self.byte(4);
                 self.u64(id.value());
             }
-            GenericTypeOwnerId::AgentIntrinsic(owner) => {
+            GenericParameterOwnerId::LanguageIntrinsic(owner) => {
                 self.byte(5);
-                self.byte(match owner {
-                    super::AgentIntrinsicGenericOwner::Signal => 0,
-                    super::AgentIntrinsicGenericOwner::Metric => 1,
-                });
+                self.byte(owner.semantic_tag());
             }
         }
     }
@@ -547,6 +752,7 @@ impl Encoder {
             EffectRowTail::Closed => self.byte(0),
             EffectRowTail::Variable(variable) => {
                 self.byte(1);
+                self.bytes(variable.issuer().as_bytes());
                 self.u32(variable.index());
             }
             EffectRowTail::Unknown => self.byte(2),

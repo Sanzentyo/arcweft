@@ -95,7 +95,7 @@ fn dialogue_line_plan_owns_typed_let_callback_and_out_items() {
         HirExprKind::Call(_)
     ));
     assert!(matches!(plan.items()[2], HirLinePlanItem::Let { .. }));
-    assert!(matches!(plan.items()[3], HirLinePlanItem::Out(_)));
+    assert!(matches!(plan.items()[3], HirLinePlanItem::Out { .. }));
 }
 
 #[test]

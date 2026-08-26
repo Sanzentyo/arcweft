@@ -7,20 +7,25 @@ use std::{
 
 use arcweft_character::presentation_name::CharacterPresentationCatalogData;
 use arcweft_core::effect::{RuntimeArtifactFingerprint, RuntimeAssertionProfile};
-use arcweft_core::entry::{RuntimeCallableId, RuntimeCallableRole, RuntimeFlowExecutable};
+use arcweft_core::entry::{
+    FlowParameterCoordinate, RuntimeCallableId, RuntimeCallableRole, RuntimeFlowExecutable,
+    RuntimeFlowExecutableParameter, RuntimeFlowParameterMode, RuntimeFlowSchema,
+};
 use arcweft_core::line_task::{ChildCancelPolicy, ChildJoinPolicy, LineCleanupPolicy};
 use arcweft_core::plan::{
-    FlowRuntimeId, RuntimeAwaitPendingObserverSeed, RuntimeChoiceOptionSeed,
-    RuntimeDialogueContentPlanSeedId, RuntimeEffectFieldSeed, RuntimeEntryKind, RuntimeEntrySpec,
-    RuntimeEvaluatedEffectSeed, RuntimeExprSeed, RuntimeFlowMatchArmSeed, RuntimeFlowOpSeed,
-    RuntimeFlowSeed, RuntimeFunctionSiteDeclarationSeed, RuntimeFunctionSiteSeedId,
+    FlowRuntimeId, RuntimeAwaitPendingObserverSeed, RuntimeBuiltinIteratorEvidenceSeed,
+    RuntimeChoiceOptionSeed, RuntimeDialogueContentPlanSeedId, RuntimeEffectFieldSeed,
+    RuntimeEntryKind, RuntimeEntrySpec, RuntimeEvaluatedEffectSeed, RuntimeExprSeed,
+    RuntimeFlowMatchArmSeed, RuntimeFlowOpSeed, RuntimeFlowSeed,
+    RuntimeFunctionSiteDeclarationSeed, RuntimeFunctionSiteSeedId,
     RuntimeHostTaskRequestTemplateSeed, RuntimeIteratorEvidenceSeed,
     RuntimeIteratorWitnessEvidenceSeed, RuntimeIteratorWitnessExecutableSeed,
     RuntimeLineTaskGroupSeed, RuntimeLineTaskNodeSeed, RuntimeLineTaskTriggerSeed,
     RuntimeLocalDeclarationSeed, RuntimeLocalSeedId, RuntimePatternSeed, RuntimePatternSeedKind,
     RuntimePlan, RuntimePlanBuilder, RuntimePureHelperDeclarationSeed, RuntimePureHelperOrigin,
-    RuntimePureHelperSeedId, RuntimePureInputType, RuntimePureOutputType, RuntimeReceiverMode,
-    RuntimeTraitMethodDeclarationSeed, RuntimeTraitMethodIdentity, RuntimeTraitMethodSeedId,
+    RuntimePureHelperSeedId, RuntimePureInputType, RuntimePureOutputType,
+    RuntimePureProgramBindingSeed, RuntimeReceiverMode, RuntimeTraitMethodDeclarationSeed,
+    RuntimeTraitMethodIdentity, RuntimeTraitMethodSeedId,
 };
 use arcweft_core::task::{HostCapabilityId, NeedId, TaskId, TaskOutcomeContract, TaskPriority};
 use arcweft_core::time::LogicalDuration;
@@ -31,12 +36,13 @@ use arcweft_lang_hir::expr::{
 };
 use arcweft_lang_hir::identity::{ExprId, HirModuleId, HirSnapshotId, ItemId, LocalId, StmtId};
 use arcweft_lang_hir::item::{
-    HirEntryDeclaration, HirEntryId, HirEntryKind, HirFunctionBody, HirFunctionItem,
+    HirEntryDeclaration, HirEntryId, HirEntryKind, HirFlowItem, HirFunctionBody, HirFunctionItem,
     HirFunctionParameterGroup, HirImplFunction, HirImplMember, HirItemKind, HirMethodParameter,
     HirMethodParameterGroup, HirMethodReceiverKind, HirParameter, HirParameterKind,
 };
 use arcweft_lang_hir::leaf::HirIdRef;
 use arcweft_lang_hir::module::HirModule;
+use arcweft_lang_hir::pattern::{HirPatternBinding, HirPatternKind};
 use arcweft_lang_hir::project::{HirExecutableProjectView, HirRuntimeExecutableOwner};
 use arcweft_lang_hir::source_index::{
     HirExprSourceRole, HirSourcePresence, HirSourceQuery, HirSourceSite, HirStmtSourceRole,
@@ -63,9 +69,9 @@ use crate::semantic_facts::{
     RuntimeAssertionAdmission, RuntimeAwaitFact, RuntimeDialogueApplication,
     RuntimeDialogueEffectTrigger, RuntimeEvaluatedEffect, RuntimeIteratorFact,
     RuntimeIteratorWitnessExecutableFact, RuntimeNormalizedType, RuntimePlanSemanticFacts,
-    RuntimeResolvedCallTarget, RuntimeResolvedValue, RuntimeSemanticFactsError,
-    RuntimeTraitIdentity, RuntimeTraitMethodFact, RuntimeTryBoundaryOwner, RuntimeTryCarrierFact,
-    RuntimeTryFact, RuntimeTypeShape,
+    RuntimeResolvedCallDispatch, RuntimeResolvedStaticCallTarget, RuntimeResolvedValue,
+    RuntimeSemanticFactsError, RuntimeTraitIdentity, RuntimeTraitMethodFact,
+    RuntimeTryBoundaryOwner, RuntimeTryCarrierFact, RuntimeTryFact, RuntimeTypeShape,
 };
 use arcweft_text_model::{RichTextControl, RichTextNode};
 
@@ -143,11 +149,20 @@ impl RuntimeEntryCallableInput {
 pub struct RuntimeEntryFlowInput {
     owner: ItemId,
     executable: RuntimeFlowExecutable,
+    expected_schema: RuntimeFlowSchema,
 }
 
 impl RuntimeEntryFlowInput {
-    pub const fn new(owner: ItemId, executable: RuntimeFlowExecutable) -> Self {
-        Self { owner, executable }
+    pub const fn new(
+        owner: ItemId,
+        executable: RuntimeFlowExecutable,
+        expected_schema: RuntimeFlowSchema,
+    ) -> Self {
+        Self {
+            owner,
+            executable,
+            expected_schema,
+        }
     }
 
     pub const fn owner(&self) -> ItemId {
@@ -156,6 +171,10 @@ impl RuntimeEntryFlowInput {
 
     pub const fn executable(&self) -> &RuntimeFlowExecutable {
         &self.executable
+    }
+
+    pub const fn expected_schema(&self) -> &RuntimeFlowSchema {
+        &self.expected_schema
     }
 }
 
@@ -275,6 +294,14 @@ struct ReservedPureHelperDefinition {
 }
 
 #[derive(Clone)]
+struct ReservedPureProgramDefinition {
+    closure: ExprId,
+    module: HirModuleId,
+    body: ExprId,
+    helper: RuntimePureHelperSeedId,
+}
+
+#[derive(Clone)]
 struct ReservedTraitMethodDefinition {
     checked: RuntimeTraitMethodFact,
     method: RuntimeTraitMethodSeedId,
@@ -324,6 +351,7 @@ struct FinalLoweringContext<'project, 'data> {
     await_locals: &'data BTreeMap<ExprId, AwaitLocalSeeds>,
     try_locals: &'data BTreeMap<ExprId, TryLocalSeeds>,
     pipe_locals: &'data BTreeMap<ExprId, RuntimeLocalSeedId>,
+    host_call_locals: &'data BTreeMap<ExprId, RuntimeLocalSeedId>,
 }
 
 #[derive(Clone)]
@@ -411,6 +439,24 @@ pub fn lower_runtime_plan_with_stats(
         })?;
         local_seeds.push(RuntimeLocalDeclarationSeed::new(left.identity()));
     }
+    let host_call_facts = facts
+        .calls()
+        .filter(|(_, call)| {
+            matches!(
+                call.dispatch(),
+                RuntimeResolvedCallDispatch::Static(RuntimeResolvedStaticCallTarget::Host(_))
+            )
+        })
+        .filter_map(|(expression, _)| {
+            facts
+                .expression_type(expression)
+                .filter(|ty| !matches!(ty.shape(), RuntimeTypeShape::Never))
+                .map(|ty| (expression, ty))
+        })
+        .collect::<Vec<_>>();
+    for (_, result) in &host_call_facts {
+        local_seeds.push(RuntimeLocalDeclarationSeed::new(result.identity()));
+    }
     let mut builder = RuntimePlanBuilder::new();
     let admission = builder
         .admit_semantic_batch(
@@ -486,6 +532,20 @@ pub fn lower_runtime_plan_with_stats(
                 })
         })
         .collect::<Result<BTreeMap<_, _>, _>>()?;
+    let host_call_locals = host_call_facts
+        .iter()
+        .map(|(expression, _)| *expression)
+        .map(|expression| {
+            admitted_try_locals
+                .next()
+                .map(|local| (expression, local))
+                .ok_or_else(|| {
+                    vec![RuntimePlanLowerError::new(
+                        "admitted host-call result local is missing",
+                    )]
+                })
+        })
+        .collect::<Result<BTreeMap<_, _>, _>>()?;
     debug_assert!(admitted_try_locals.next().is_none());
     let mut errors = Vec::new();
     let (function_sites, function_definitions) = reserve_function_sites(
@@ -513,6 +573,7 @@ pub fn lower_runtime_plan_with_stats(
         &mut builder,
         &mut errors,
     );
+    let pure_program_definitions = reserve_pure_programs(facts, &locals, &mut builder, &mut errors);
     let (trait_methods, trait_definitions) =
         reserve_trait_methods(project, facts, &locals, &mut builder, &mut errors);
     let empty_dialogue_content = BTreeMap::new();
@@ -527,10 +588,17 @@ pub fn lower_runtime_plan_with_stats(
         await_locals: &await_locals,
         try_locals: &try_locals,
         pipe_locals: &pipe_locals,
+        host_call_locals: &host_call_locals,
     };
 
     define_function_sites(&context, &function_definitions, &mut builder, &mut errors);
     define_pure_helpers(&context, &pure_definitions, &mut builder, &mut errors);
+    define_pure_programs(
+        &context,
+        &pure_program_definitions,
+        &mut builder,
+        &mut errors,
+    );
     define_trait_methods(&context, &trait_definitions, &mut builder, &mut errors);
     let dialogue_content = lower_dialogue_content(&context, &mut builder, &mut errors);
     let context = FinalLoweringContext {
@@ -540,6 +608,7 @@ pub fn lower_runtime_plan_with_stats(
 
     let mut entry_owners = collect_entry_inputs(entry_input, &mut errors);
     let mut flow_seeds = Vec::new();
+    let mut flow_schemas = Vec::new();
     let mut assertion_sites = Vec::new();
     for item in project.items() {
         if matches!(
@@ -558,6 +627,13 @@ pub fn lower_runtime_plan_with_stats(
                     )));
                     continue;
                 };
+                match flow_invocation_schema(item.module(), flow, &identity, facts) {
+                    Ok(schema) => flow_schemas.push(schema),
+                    Err(error) => {
+                        errors.push(error);
+                        continue;
+                    }
+                }
                 let params = flow
                     .parameters()
                     .iter()
@@ -636,9 +712,14 @@ pub fn lower_runtime_plan_with_stats(
     }
     let (controller_flows, controller_executables, callable_executables, controller_assertions) =
         lower_entry_callables(&context, entry_input, &mut errors);
+    flow_schemas.extend(controller_flows.iter().map(|flow| RuntimeFlowSchema {
+        flow: flow.id().clone(),
+        parameters: Vec::new(),
+    }));
     flow_seeds.extend(controller_flows);
     assertion_sites.extend(controller_assertions);
-    let mut flow_executables = lower_entry_flows(project, facts, entry_input, &mut errors)?;
+    let mut flow_executables =
+        lower_entry_flows(project, facts, entry_input, &flow_schemas, &mut errors)?;
     flow_executables.extend(controller_executables);
     validate_unique_assertion_guards(&assertion_sites)?;
     if !errors.is_empty() {
@@ -660,6 +741,11 @@ pub fn lower_runtime_plan_with_stats(
             .push_flow_executable(executable)
             .map_err(|error| vec![RuntimePlanLowerError::new(error.to_string())])?;
     }
+    for schema in flow_schemas {
+        builder
+            .push_flow_schema(schema)
+            .map_err(|error| vec![RuntimePlanLowerError::new(error.to_string())])?;
+    }
     for flow in flow_seeds {
         builder
             .push_flow_seed(flow)
@@ -677,10 +763,11 @@ pub fn lower_runtime_plan_with_stats(
     });
     let dialogue_content_catalog = DialogueContentCatalog::try_from_records(dialogue_records)
         .map_err(|error| vec![RuntimePlanLowerError::new(error.to_string())])?;
+    let pure_helper_count = plan.pure_helpers().len();
     Ok(RuntimePlanLowerReport {
         plan,
         stats: RuntimePlanLowerStats {
-            pure_helpers: pure_helpers.len(),
+            pure_helpers: pure_helper_count,
             pure_candidate_functions_seen: pure_helpers.len(),
             pure_candidate_lower_attempts: pure_helpers.len(),
             ..RuntimePlanLowerStats::default()
@@ -688,6 +775,66 @@ pub fn lower_runtime_plan_with_stats(
         dialogue_content_catalog,
         character_presentation_catalog: facts.character_presentation_catalog().cloned(),
         assertion_sites: assertion_sites.into_boxed_slice(),
+    })
+}
+
+fn flow_invocation_schema(
+    module: &HirModule,
+    flow: &HirFlowItem,
+    identity: &FlowRuntimeId,
+    facts: &RuntimePlanSemanticFacts,
+) -> Result<RuntimeFlowSchema, RuntimePlanLowerError> {
+    if !flow.generic_parameters().is_empty() || !flow.where_predicates().is_empty() {
+        return Err(RuntimePlanLowerError::new(format!(
+            "runtime Flow {identity} cannot publish an invocation schema with open generics"
+        )));
+    }
+    let parameters =
+        flow.parameters()
+            .iter()
+            .enumerate()
+            .map(|(index, parameter)| {
+                let [local] = parameter.locals() else {
+                    return Err(RuntimePlanLowerError::new(format!(
+                        "runtime Flow {identity} parameter {index} is not one direct binding"
+                    )));
+                };
+                let pattern = module.resolve_pattern(parameter.pattern()).map_err(|error| {
+                RuntimePlanLowerError::new(format!(
+                    "runtime Flow {identity} parameter {index} pattern is unavailable: {error}"
+                ))
+            })?;
+                let HirPatternKind::Binding(HirPatternBinding::Bound {
+                    name,
+                    local: pattern_local,
+                }) = pattern.kind()
+                else {
+                    return Err(RuntimePlanLowerError::new(format!(
+                        "runtime Flow {identity} parameter {index} is not a fixed immutable binding"
+                    )));
+                };
+                if pattern_local != local {
+                    return Err(RuntimePlanLowerError::new(format!(
+                        "runtime Flow {identity} parameter {index} binding identity is inconsistent"
+                    )));
+                }
+                let ty = facts.local_type(*local).ok_or_else(|| {
+                    RuntimePlanLowerError::new(format!(
+                        "runtime Flow {identity} parameter {index} has no checked semantic type"
+                    ))
+                })?;
+                Ok(RuntimeFlowExecutableParameter {
+                    coordinate: FlowParameterCoordinate::try_from_index(index)
+                        .map_err(|error| RuntimePlanLowerError::new(error.to_string()))?,
+                    name: name.as_str().to_owned(),
+                    mode: RuntimeFlowParameterMode::Owned,
+                    semantic_identity: ty.identity(),
+                })
+            })
+            .collect::<Result<Vec<_>, _>>()?;
+    Ok(RuntimeFlowSchema {
+        flow: identity.clone(),
+        parameters,
     })
 }
 
@@ -707,6 +854,12 @@ fn reserve_function_sites(
     for (_, module) in project.modules() {
         for (owner, expression) in module.expressions() {
             let HirExprKind::Closure(closure) = expression.kind() else {
+                continue;
+            };
+            if facts.is_pure_program_closure(owner) {
+                continue;
+            }
+            let Some(function_type) = facts.expression_type(owner) else {
                 continue;
             };
             let pattern_lowerer = FinalPatternLowerer::new(module, facts, locals);
@@ -738,13 +891,11 @@ fn reserve_function_sites(
                         })
                 })
                 .collect::<Result<Vec<_>, _>>();
-            let result = facts
-                .expression_type(owner)
-                .and_then(|ty| match ty.shape() {
-                    RuntimeTypeShape::Function { result, .. } => Some(result.identity()),
-                    _ => None,
-                })
-                .ok_or_else(|| format!("closure {owner:?} has no accepted function result"));
+            let result = match function_type.shape() {
+                RuntimeTypeShape::Function { result, .. } => Some(result.identity()),
+                _ => None,
+            }
+            .ok_or_else(|| format!("closure {owner:?} has no accepted function result"));
             let declaration = params.and_then(|params| {
                 captures.and_then(|captures| {
                     result.map(|result| RuntimeFunctionSiteDeclarationSeed {
@@ -943,7 +1094,10 @@ fn reserve_called_project_helpers(
         .collect::<BTreeMap<_, _>>();
     let mut called = BTreeMap::<ItemId, (RuntimeCallableId, &CallableDeclarationKey)>::new();
     for (_, call) in facts.calls() {
-        let RuntimeResolvedCallTarget::Declaration(callable) = call.target() else {
+        let RuntimeResolvedCallDispatch::Static(RuntimeResolvedStaticCallTarget::Declaration(
+            callable,
+        )) = call.dispatch()
+        else {
             continue;
         };
         if callable.declaration().owner() != CallableDeclarationOwner::Function {
@@ -1023,6 +1177,65 @@ fn reserve_called_project_helpers(
         }
     }
     (helpers, definitions)
+}
+
+fn reserve_pure_programs(
+    facts: &RuntimePlanSemanticFacts,
+    locals: &BTreeMap<LocalId, RuntimeLocalSeedId>,
+    builder: &mut RuntimePlanBuilder,
+    errors: &mut Vec<RuntimePlanLowerError>,
+) -> Vec<ReservedPureProgramDefinition> {
+    let mut definitions = Vec::new();
+    for (_, program) in facts.pure_programs() {
+        let inputs = program
+            .captures()
+            .iter()
+            .map(|capture| {
+                locals.get(&capture.local()).cloned().ok_or_else(|| {
+                    RuntimePlanLowerError::new(format!(
+                        "pure program {} capture {:?} has no admitted local",
+                        program.program(),
+                        capture.local()
+                    ))
+                })
+            })
+            .collect::<Result<Vec<_>, _>>();
+        let declaration = inputs.map(|inputs| RuntimePureHelperDeclarationSeed {
+            name: format!("pure.program.{}", program.program()),
+            input_abi: vec![RuntimePureInputType::Value; inputs.len()],
+            inputs: inputs.into_boxed_slice(),
+            result: program.result(),
+            output_abi: RuntimePureOutputType::Value,
+            scalar_eval_supported: false,
+            origin: RuntimePureHelperOrigin::Inferred,
+        });
+        let helper = match declaration.and_then(|declaration| {
+            builder
+                .reserve_pure_helper_seed(declaration)
+                .map_err(|error| RuntimePlanLowerError::new(error.to_string()))
+        }) {
+            Ok(helper) => helper,
+            Err(error) => {
+                errors.push(error);
+                continue;
+            }
+        };
+        let binding = RuntimePureProgramBindingSeed {
+            program: program.program(),
+            helper: helper.clone(),
+        };
+        if let Err(error) = builder.push_pure_program_binding_seed(&binding) {
+            errors.push(RuntimePlanLowerError::new(error.to_string()));
+            continue;
+        }
+        definitions.push(ReservedPureProgramDefinition {
+            closure: program.closure(),
+            module: program.closure().module(),
+            body: program.body(),
+            helper,
+        });
+    }
+    definitions
 }
 
 fn pure_helper_declaration(
@@ -1330,6 +1543,33 @@ fn define_pure_helpers(
         let body = context
             .expr_lowerer(item.module())
             .lower_function_body(function.body());
+        match body.and_then(|body| {
+            builder
+                .define_pure_helper_seed(&definition.helper, body)
+                .map_err(|error| error.to_string())
+        }) {
+            Ok(()) => {}
+            Err(error) => errors.push(RuntimePlanLowerError::new(error)),
+        }
+    }
+}
+
+fn define_pure_programs(
+    context: &FinalLoweringContext<'_, '_>,
+    definitions: &[ReservedPureProgramDefinition],
+    builder: &mut RuntimePlanBuilder,
+    errors: &mut Vec<RuntimePlanLowerError>,
+) {
+    for definition in definitions {
+        let Some(module) = module_by_id(context.project, definition.module) else {
+            errors.push(RuntimePlanLowerError::new("pure program module is absent"));
+            continue;
+        };
+        let body = context.expr_lowerer(module).lower_function_site_body(
+            definition.closure,
+            definition.body,
+            BTreeMap::new(),
+        );
         match body.and_then(|body| {
             builder
                 .define_pure_helper_seed(&definition.helper, body)
@@ -1730,7 +1970,6 @@ fn lower_controller_callable(
         contract: arcweft_core::entry::FlowContractHash::from_bytes(
             *callable.role().contract.as_bytes(),
         ),
-        parameters: Vec::new(),
         controller: Some(callable.role().clone()),
     };
     let executable = arcweft_core::plan::RuntimeCallableExecutableSeed {
@@ -1967,6 +2206,7 @@ fn lower_entry_flows(
     project: HirExecutableProjectView<'_>,
     facts: &RuntimePlanSemanticFacts,
     input: &RuntimeEntryLoweringInput,
+    schemas: &[RuntimeFlowSchema],
     errors: &mut Vec<RuntimePlanLowerError>,
 ) -> Result<Vec<RuntimeFlowExecutable>, Vec<RuntimePlanLowerError>> {
     let mut by_runtime = BTreeMap::new();
@@ -1991,6 +2231,17 @@ fn lower_entry_flows(
         {
             errors.push(RuntimePlanLowerError::new(format!(
                 "checked Entry Flow executable `{}` does not match its exact final-HIR Flow owner",
+                flow.executable().flow
+            )));
+            continue;
+        }
+        if schemas
+            .iter()
+            .find(|schema| schema.flow == flow.executable().flow)
+            != Some(flow.expected_schema())
+        {
+            errors.push(RuntimePlanLowerError::new(format!(
+                "checked Entry Flow schema `{}` does not match the sole final-HIR Flow schema",
                 flow.executable().flow
             )));
             continue;
@@ -2105,6 +2356,7 @@ struct FinalFlowLowerer<'a> {
     await_locals: &'a BTreeMap<ExprId, AwaitLocalSeeds>,
     try_locals: &'a BTreeMap<ExprId, TryLocalSeeds>,
     pipe_locals: &'a BTreeMap<ExprId, RuntimeLocalSeedId>,
+    host_call_locals: &'a BTreeMap<ExprId, RuntimeLocalSeedId>,
     carrier_continuations: BTreeMap<ExprId, RuntimeFlowValueContinuation>,
     assertion_owner: RuntimeAssertionOwner,
     assertion_ordinal: u32,
@@ -2175,6 +2427,7 @@ impl<'a> FinalFlowLowerer<'a> {
             await_locals: context.await_locals,
             try_locals: context.try_locals,
             pipe_locals: context.pipe_locals,
+            host_call_locals: context.host_call_locals,
             carrier_continuations: BTreeMap::new(),
             assertion_owner,
             assertion_ordinal: 0,
@@ -2556,7 +2809,13 @@ impl<'a> FinalFlowLowerer<'a> {
                     ))
                 })? {
                     RuntimeIteratorFact::Builtin(evidence) => {
-                        RuntimeIteratorEvidenceSeed::Builtin(evidence)
+                        RuntimeIteratorEvidenceSeed::Builtin(RuntimeBuiltinIteratorEvidenceSeed {
+                            family: evidence.family(),
+                            item: evidence.item().identity(),
+                            iterator: evidence.iterator().identity(),
+                            next_value: evidence.next_value().identity(),
+                            step: evidence.step().identity(),
+                        })
                     }
                     RuntimeIteratorFact::Witness(witness) => {
                         let executable = match witness.executable() {
@@ -2618,6 +2877,14 @@ impl<'a> FinalFlowLowerer<'a> {
         if self.facts.implicit_callable(expression).is_some() {
             return Ok(false);
         }
+        if self.facts.call(expression).is_some_and(|call| {
+            matches!(
+                call.dispatch(),
+                RuntimeResolvedCallDispatch::Static(RuntimeResolvedStaticCallTarget::Host(_))
+            )
+        }) {
+            return Ok(true);
+        }
         let expression = self.module.resolve_expr(expression).map_err(|error| {
             RuntimePlanLowerError::new(format!(
                 "cannot resolve flow value expression {expression:?}: {error}"
@@ -2673,6 +2940,14 @@ impl<'a> FinalFlowLowerer<'a> {
                 .lower(expression)
                 .map_err(RuntimePlanLowerError::new)?;
             return self.apply_value_continuation(value, continuation);
+        }
+        if self.facts.call(expression).is_some_and(|call| {
+            matches!(
+                call.dispatch(),
+                RuntimeResolvedCallDispatch::Static(RuntimeResolvedStaticCallTarget::Host(_))
+            )
+        }) {
+            return self.lower_host_call_value(expression, continuation, overrides);
         }
         match resolved.kind() {
             HirExprKind::Try(operation) => self.lower_flow_value_with_overrides(
@@ -3270,6 +3545,67 @@ impl<'a> FinalFlowLowerer<'a> {
             .map_err(RuntimePlanLowerError::new)
     }
 
+    fn lower_host_call_value(
+        &mut self,
+        expression: ExprId,
+        continuation: RuntimeFlowValueContinuation,
+        overrides: BTreeMap<ExprId, RuntimeExprSeed>,
+    ) -> Result<Vec<RuntimeFlowOpSeed>, RuntimePlanLowerError> {
+        let resolved = self.module.resolve_expr(expression).map_err(|error| {
+            RuntimePlanLowerError::new(format!(
+                "cannot resolve host-call value expression {expression:?}: {error}"
+            ))
+        })?;
+        let HirExprKind::Call(call) = resolved.kind() else {
+            return Err(RuntimePlanLowerError::new(format!(
+                "checked host-call value {expression:?} is not a Call expression"
+            )));
+        };
+        let target = FinalExprLowerer::new(
+            self.module,
+            self.facts,
+            self.locals,
+            self.pure_helpers,
+            self.trait_methods,
+            self.function_sites,
+            (self.pipe_locals, self.try_locals),
+        )
+        .with_overrides(overrides)
+        .lower_host_call_target(expression, call)
+        .map_err(RuntimePlanLowerError::new)?
+        .ok_or_else(|| {
+            RuntimePlanLowerError::new(format!(
+                "checked host-call value {expression:?} has no host target"
+            ))
+        })?;
+        let result = self.facts.expression_type(expression).ok_or_else(|| {
+            RuntimePlanLowerError::new(format!(
+                "host-call value {expression:?} has no accepted result type"
+            ))
+        })?;
+        if matches!(result.shape(), RuntimeTypeShape::Never) {
+            return Ok(vec![RuntimeFlowOpSeed::HostCall {
+                binding: None,
+                target,
+            }]);
+        }
+        let local = self
+            .host_call_locals
+            .get(&expression)
+            .cloned()
+            .ok_or_else(|| {
+                RuntimePlanLowerError::new(format!(
+                    "host-call value {expression:?} has no admitted result local"
+                ))
+            })?;
+        let mut ops = vec![RuntimeFlowOpSeed::HostCall {
+            binding: Some(bind_seed(result, local.clone())),
+            target,
+        }];
+        ops.extend(self.apply_value_continuation(local_seed(result, local), continuation)?);
+        Ok(ops)
+    }
+
     fn host_call_operand(
         &self,
         expression: arcweft_lang_hir::identity::ExprId,
@@ -3642,7 +3978,10 @@ mod tests {
     use std::sync::Arc;
 
     use arcweft_core::{
-        entry::{EntryBindingIdentity, RuntimeEntryRoles},
+        entry::{
+            EntryBindingIdentity, FlowContractHash, RuntimeEntryRoles, RuntimeFlowExecutable,
+            RuntimeFlowSchema,
+        },
         plan::{
             EntryRuntimeId, FlowOp, FlowRuntimeId, RuntimeEntryKind, RuntimeEntrySpec,
             RuntimeEntryTarget,
@@ -3659,7 +3998,8 @@ mod tests {
     };
     use arcweft_lang_hir::proof_return::HirProofReturnSemanticFactSet;
     use arcweft_lang_hir::symbol::{
-        CallablePackageId, ProjectSymbolRevision, ProjectSymbolWorldId,
+        CallablePackageId, ProjectExternalDeclarations, ProjectSymbolRevision, ProjectSymbolTable,
+        ProjectSymbolWorldId,
     };
     use arcweft_lang_syntax::ast::module_path::CanonicalModulePath;
     use arcweft_lang_syntax::incremental::SyntaxDatabase;
@@ -3667,7 +4007,8 @@ mod tests {
     use arcweft_source::{SourceDocument, SourceDocumentId, SourceName};
 
     use super::{
-        RuntimeCheckedEntryInput, RuntimeEntryLoweringInput, lower_runtime_plan_with_stats,
+        RuntimeCheckedEntryInput, RuntimeEntryFlowInput, RuntimeEntryLoweringInput,
+        lower_runtime_plan_with_stats,
     };
     use crate::semantic_facts::{
         RuntimeNormalizedType, RuntimePlanSemanticFactInput, RuntimePlanSemanticFacts,
@@ -3762,14 +4103,26 @@ mod tests {
                 .expect("runtime Entry identity"),
             kind: RuntimeEntryKind::Cli,
             binding: EntryBindingIdentity::from_bytes([7; 32]),
-            target: RuntimeEntryTarget::Flow(flow),
+            target: RuntimeEntryTarget::Flow(flow.clone()),
             roles: RuntimeEntryRoles::None,
         };
+        let runtime_flow = RuntimeEntryFlowInput::new(
+            flow_owner,
+            RuntimeFlowExecutable {
+                flow: flow.clone(),
+                contract: FlowContractHash::from_bytes([8; 32]),
+                controller: None,
+            },
+            RuntimeFlowSchema {
+                flow: flow.clone(),
+                parameters: Vec::new(),
+            },
+        );
         let input = RuntimeEntryLoweringInput::new(
             executable,
             vec![RuntimeCheckedEntryInput::new(entry_owner, runtime_entry)],
             Vec::new(),
-            Vec::new(),
+            vec![runtime_flow],
         );
         let report = lower_runtime_plan_with_stats(executable, &facts, &input)
             .expect("exact checked Entry owner lowers");
@@ -3866,6 +4219,16 @@ mod tests {
                 .map(|(_, module)| module.provenance().source_identity()),
         )
         .expect("fixture reachability revision");
+        let externals = ProjectExternalDeclarations::try_new(world.clone(), revision, Vec::new())
+            .expect("fixture external declarations");
+        let symbols = ProjectSymbolTable::link(project.view(), &externals)
+            .expect("fixture symbols")
+            .into_table();
+        let topology = executable
+            .accept_symbol_generation(&symbols)
+            .expect("accepted fixture symbol generation")
+            .into_evaluation_topology()
+            .expect("fixture evaluation topology");
         let roots = executable
             .items()
             .filter_map(|item| {
@@ -3891,6 +4254,7 @@ mod tests {
         executable
             .runtime_semantic_reachability(
                 input,
+                &topology,
                 |_| None,
                 |_| HirRuntimeExpressionTypeDisposition::Retain,
             )

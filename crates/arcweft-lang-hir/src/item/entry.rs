@@ -1,5 +1,7 @@
 //! Final semantic Entry declaration and closed member inventory.
 
+use core::cmp::Ordering;
+
 use crate::identity::{ExprId, HirModuleId, TypeId};
 use crate::leaf::{HirIdRef, HirIdRefValue, HirName, HirPathValue, HirStringIssue};
 
@@ -440,6 +442,21 @@ pub enum HirHttpMethod {
     Options,
 }
 
+impl HirHttpMethod {
+    /// Canonical adapter payload spelling for this checked method.
+    pub const fn as_str(self) -> &'static str {
+        match self {
+            Self::Get => "GET",
+            Self::Post => "POST",
+            Self::Put => "PUT",
+            Self::Patch => "PATCH",
+            Self::Delete => "DELETE",
+            Self::Head => "HEAD",
+            Self::Options => "OPTIONS",
+        }
+    }
+}
+
 #[derive(Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub enum HirHttpMethodValue {
     Resolved(HirHttpMethod),
@@ -482,18 +499,146 @@ pub enum HirHttpMethodIssue {
 }
 
 #[derive(Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
-pub struct HirRoutePath(Box<str>);
+pub struct HirRoutePath {
+    value: Box<str>,
+    segments: Box<[HirRoutePathSegment]>,
+    captures: Box<[HirRoutePathCapture]>,
+}
+
+/// One validated route-matching segment.
+#[derive(Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub enum HirRoutePathSegment {
+    Literal(Box<str>),
+    Capture(HirRouteCaptureCoordinate),
+}
+
+/// Stable source-order coordinate of one path capture.
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub struct HirRouteCaptureCoordinate(u32);
+
+impl HirRouteCaptureCoordinate {
+    pub const fn position(self) -> u32 {
+        self.0
+    }
+}
+
+/// One capture coordinate and its diagnostic authored name.
+#[derive(Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub struct HirRoutePathCapture {
+    coordinate: HirRouteCaptureCoordinate,
+    name: HirName,
+}
+
+impl HirRoutePathCapture {
+    pub const fn coordinate(&self) -> HirRouteCaptureCoordinate {
+        self.coordinate
+    }
+
+    pub const fn name(&self) -> &HirName {
+        &self.name
+    }
+}
 
 impl HirRoutePath {
     pub(crate) fn try_new(value: Box<str>) -> Result<Self, HirItemInvariantError> {
         if !value.starts_with('/') || value.chars().any(char::is_control) {
             return Err(HirItemInvariantError::InvalidRoutePath);
         }
-        Ok(Self(value))
+        let mut segments = Vec::new();
+        let mut captures = Vec::new();
+        for segment in value.split('/').skip(1) {
+            if segment.is_empty() {
+                if value.as_ref() == "/" {
+                    continue;
+                }
+                return Err(HirItemInvariantError::InvalidRoutePath);
+            }
+            let Some(capture) = segment.strip_prefix(':') else {
+                segments.push(HirRoutePathSegment::Literal(segment.into()));
+                continue;
+            };
+            let capture = HirName::try_new(capture.into())
+                .map_err(|_| HirItemInvariantError::InvalidRoutePath)?;
+            if captures
+                .iter()
+                .any(|existing: &HirRoutePathCapture| existing.name == capture)
+            {
+                return Err(HirItemInvariantError::InvalidRoutePath);
+            }
+            let coordinate = u32::try_from(captures.len())
+                .map(HirRouteCaptureCoordinate)
+                .map_err(|_| HirItemInvariantError::InvalidRoutePath)?;
+            captures.push(HirRoutePathCapture {
+                coordinate,
+                name: capture,
+            });
+            segments.push(HirRoutePathSegment::Capture(coordinate));
+        }
+        Ok(Self {
+            value,
+            segments: segments.into_boxed_slice(),
+            captures: captures.into_boxed_slice(),
+        })
     }
 
     pub fn as_str(&self) -> &str {
-        &self.0
+        &self.value
+    }
+
+    /// Validated path-capture names in exact path-segment order.
+    ///
+    /// Entry checking joins route bindings to this inventory without parsing
+    /// the retained path string a second time.
+    pub fn captures(&self) -> &[HirRoutePathCapture] {
+        &self.captures
+    }
+
+    pub fn segments(&self) -> &[HirRoutePathSegment] {
+        &self.segments
+    }
+
+    /// Whether both paths can accept at least one identical request path.
+    /// Capture names are source identities and never affect dispatch shape.
+    pub fn overlaps_dispatch(&self, other: &Self) -> bool {
+        self.segments.len() == other.segments.len()
+            && self
+                .segments
+                .iter()
+                .zip(other.segments.iter())
+                .all(|(left, right)| match (left, right) {
+                    (HirRoutePathSegment::Literal(left), HirRoutePathSegment::Literal(right)) => {
+                        left == right
+                    }
+                    (
+                        HirRoutePathSegment::Literal(_) | HirRoutePathSegment::Capture(_),
+                        HirRoutePathSegment::Capture(_),
+                    )
+                    | (HirRoutePathSegment::Capture(_), HirRoutePathSegment::Literal(_)) => true,
+                })
+    }
+
+    /// Canonical ordering of route dispatch shapes, ignoring capture names.
+    pub fn dispatch_cmp(&self, other: &Self) -> Ordering {
+        for (left, right) in self.segments.iter().zip(other.segments.iter()) {
+            let ordering = match (left, right) {
+                (HirRoutePathSegment::Literal(left), HirRoutePathSegment::Literal(right)) => {
+                    left.cmp(right)
+                }
+                (HirRoutePathSegment::Literal(_), HirRoutePathSegment::Capture(_)) => {
+                    Ordering::Less
+                }
+                (HirRoutePathSegment::Capture(_), HirRoutePathSegment::Literal(_)) => {
+                    Ordering::Greater
+                }
+                (HirRoutePathSegment::Capture(_), HirRoutePathSegment::Capture(_)) => {
+                    Ordering::Equal
+                }
+            };
+            if ordering != Ordering::Equal {
+                return ordering;
+            }
+        }
+        self.segments.len().cmp(&other.segments.len())
     }
 }
 

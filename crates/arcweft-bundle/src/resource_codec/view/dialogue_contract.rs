@@ -1,8 +1,8 @@
 //! Cross-record validation for typed dialogue View projections.
 
 use super::model::{
-    DialogueTextProjection, ViewActionButtonActionResource, ViewParameterRole, ViewProgramResource,
-    ViewTextResource, ViewTextSourceKind, ViewTextSurface,
+    DialogueTextProjection, ViewParameterRole, ViewProgramResource, ViewTextResource,
+    ViewTextSourceKind, ViewTextSurface,
 };
 use thiserror::Error;
 
@@ -34,18 +34,6 @@ pub enum DialogueViewContractError {
         expected: ViewTextSurface,
         actual: ViewTextSurface,
     },
-    #[error("dialogue primary action `{button}` has no owning View")]
-    MissingActionOwner { button: String },
-    #[error("dialogue primary action `{button}` owner `{view}` has no View definition")]
-    MissingActionViewDefinition { button: String, view: String },
-    #[error(
-        "View `{view}` primary action `{button}` references parameter `{parameter}` without the dialogue role"
-    )]
-    InvalidActionParameterRole {
-        button: String,
-        view: String,
-        parameter: String,
-    },
 }
 
 impl ViewProgramResource {
@@ -55,7 +43,6 @@ impl ViewProgramResource {
         &self,
         text: Option<&ViewTextResource>,
     ) -> Result<(), DialogueViewContractError> {
-        self.validate_dialogue_actions()?;
         let Some(text) = text else {
             return Ok(());
         };
@@ -113,40 +100,6 @@ impl ViewProgramResource {
                         actual: block.surface,
                     });
                 }
-            }
-        }
-        Ok(())
-    }
-
-    fn validate_dialogue_actions(&self) -> Result<(), DialogueViewContractError> {
-        for button in &self.action_buttons {
-            let ViewActionButtonActionResource::DialoguePrimaryAction { parameter } =
-                &button.action
-            else {
-                continue;
-            };
-            let view = button.view.as_deref().ok_or_else(|| {
-                DialogueViewContractError::MissingActionOwner {
-                    button: button.public_id.clone(),
-                }
-            })?;
-            let definition = self
-                .definitions
-                .iter()
-                .find(|definition| definition.public_id.as_str() == view)
-                .ok_or_else(|| DialogueViewContractError::MissingActionViewDefinition {
-                    button: button.public_id.clone(),
-                    view: view.to_owned(),
-                })?;
-            let has_dialogue_role = definition.parameters.iter().any(|candidate| {
-                candidate.name == *parameter && candidate.role == ViewParameterRole::Dialogue
-            });
-            if !has_dialogue_role {
-                return Err(DialogueViewContractError::InvalidActionParameterRole {
-                    button: button.public_id.clone(),
-                    view: view.to_owned(),
-                    parameter: parameter.clone(),
-                });
             }
         }
         Ok(())

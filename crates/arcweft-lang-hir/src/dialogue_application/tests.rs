@@ -1,7 +1,10 @@
 use core::num::{NonZeroU32, NonZeroU64};
 
 use super::*;
-use crate::expr::HirCallArgument;
+use crate::expr::{
+    HirCallArgument, HirCallArgumentListTerminator, HirCallCallee, HirCallChildPoison,
+    HirCallChildStates, HirCallExpr, HirCallTypeApplication,
+};
 use crate::identity::{HirDatabaseId, HirIdKind, HirTypedId, RawHirId};
 
 fn module(database: u64, slot: u32) -> HirModuleId {
@@ -26,6 +29,21 @@ fn name(value: &str) -> HirName {
 fn empty_content(owner: ExprId) -> HirDialogueContent {
     HirDialogueContent::try_new(HirDialogueContentId::new(owner), Box::new([]), Box::new([]))
         .unwrap()
+}
+
+fn call_fixture(module: HirModuleId, arguments: Box<[HirCallArgument]>) -> HirCallExpr {
+    let argument_states = vec![HirCallChildPoison::Clean; arguments.len()];
+    let (call, state) = HirCallExpr::try_new(
+        HirCallCallee::value(typed_id(module, 90)),
+        HirCallTypeApplication::absent(),
+        arguments,
+        HirCallArgumentListTerminator::Closed,
+        HirCallChildStates::new(HirCallChildPoison::Clean, &argument_states, &[]),
+        false,
+    )
+    .expect("clean call");
+    let _ = state;
+    call
 }
 
 #[derive(Default)]
@@ -68,6 +86,86 @@ fn immediate_target_coordinates_preserve_duplicates_and_authored_ordinals() {
     assert_eq!(coordinates[2].kind(), HirDialogueCoordinateKind::TextKey);
     assert_eq!(coordinates[2].argument().get(), 4);
     assert_eq!(coordinates[2].value(), typed_id(module, 5));
+}
+
+#[test]
+fn metadata_projection_requires_exact_ordinal_identity_kind_and_uniqueness() {
+    let module = module(8, 1);
+    let owner = typed_id(module, 1);
+    let target = typed_id(module, 2);
+    let id = typed_id(module, 3);
+    let text_key = typed_id(module, 4);
+    let other = typed_id(module, 5);
+    let call = call_fixture(
+        module,
+        Box::new([
+            HirCallArgument::named(name("id"), id),
+            HirCallArgument::named(name("text_key"), text_key),
+        ]),
+    );
+    let application = |coordinates| {
+        HirDialogueContentApplication::try_new(
+            owner,
+            target,
+            empty_content(owner),
+            None,
+            coordinates,
+        )
+        .expect("application fixture")
+    };
+    let exact =
+        application(HirDialogueCoordinate::from_immediate_arguments(call.arguments()).unwrap());
+    assert_eq!(
+        validate_application_metadata_projection(&exact, &call)
+            .expect("exact projection")
+            .as_ref(),
+        exact.coordinates()
+    );
+
+    let wrong_ordinal = application(Box::new([HirDialogueCoordinate::new(
+        HirDialogueCoordinateKind::Id,
+        HirCallArgumentOrdinal::try_new(2).unwrap(),
+        id,
+    )]));
+    assert_eq!(
+        validate_application_metadata_projection(&wrong_ordinal, &call),
+        Err(HirDialogueApplicationMetadataProjectionError::ArgumentOrdinalMismatch)
+    );
+
+    let wrong_identity = application(Box::new([HirDialogueCoordinate::new(
+        HirDialogueCoordinateKind::Id,
+        HirCallArgumentOrdinal::try_new(0).unwrap(),
+        other,
+    )]));
+    assert_eq!(
+        validate_application_metadata_projection(&wrong_identity, &call),
+        Err(HirDialogueApplicationMetadataProjectionError::ArgumentIdentityMismatch)
+    );
+
+    let wrong_kind = application(Box::new([HirDialogueCoordinate::new(
+        HirDialogueCoordinateKind::TextKey,
+        HirCallArgumentOrdinal::try_new(0).unwrap(),
+        id,
+    )]));
+    assert_eq!(
+        validate_application_metadata_projection(&wrong_kind, &call),
+        Err(HirDialogueApplicationMetadataProjectionError::CoordinateKindMismatch)
+    );
+
+    let duplicate_call = call_fixture(
+        module,
+        Box::new([
+            HirCallArgument::named(name("id"), id),
+            HirCallArgument::named(name("id"), text_key),
+        ]),
+    );
+    let duplicate = application(
+        HirDialogueCoordinate::from_immediate_arguments(duplicate_call.arguments()).unwrap(),
+    );
+    assert_eq!(
+        validate_application_metadata_projection(&duplicate, &duplicate_call),
+        Err(HirDialogueApplicationMetadataProjectionError::DuplicateCoordinate)
+    );
 }
 
 #[test]
@@ -249,7 +347,7 @@ fn rich_text_calls_share_expr_ids_and_report_call_kind_requirements() {
             .requirements
             .contains(&HirDialogueTransactionRequirement::Expression {
                 id: interpolation,
-                expected: HirDialogueExpressionExpectation::Any,
+                expected: HirDialogueExpressionExpectation::Unrestricted,
             })
     );
     assert!(
@@ -357,7 +455,11 @@ fn line_plan_uses_hir_owned_policy_and_existing_child_arenas() {
         Some(name("reveal")),
         vec![
             HirLinePlanItem::Init(Box::new([statement])),
-            HirLinePlanItem::Let { pattern, value },
+            HirLinePlanItem::Let {
+                pattern,
+                value,
+                statement,
+            },
             HirLinePlanItem::TimelineAssert {
                 policy: TimelineAssertPolicy::DebugOnly,
                 condition,

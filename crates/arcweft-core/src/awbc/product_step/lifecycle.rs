@@ -1,29 +1,15 @@
 use super::{
-    AwaitState, AwaitTarget, AwbcContentUnitId, AwbcFunctionId, AwbcHostCallId, AwbcHostCallMode,
+    AwaitState, AwaitTarget, AwbcContentUnitId, AwbcFunctionId, AwbcHostCallId,
     AwbcProductExecutorStatus, AwbcProductStepExecutor, AwbcResumePointId, AwbcTaskPlanId,
     AwbcTrapCode, ChoiceRuntimeOption, ChoiceState, DialogueState, FiberAwaitTarget, FiberStatus,
     FiberSuspensionReason, FiberTerminalValue, FiberTrap, FlowExit, FlowFiberStatus, HostCallState,
     HostTaskRequestTemplate, LogicalDuration, MappedEffect, NeedId, ProductStepError,
-    RuntimeDiagnostic, RuntimeDiagnosticCategory, RuntimeHostCallId, RuntimeHostCallMode,
-    RuntimeHostCallTarget, RuntimeStepMode, RuntimeStepOptions, RuntimeStepOutput,
-    RuntimeStepStopReason, TaskId, has_host_requests, has_visible_output,
-    line_id_from_awbc_public_id, runtime_value_label, source_diagnostic,
+    RuntimeDiagnostic, RuntimeDiagnosticCategory, RuntimeHostCallId, RuntimeStepMode,
+    RuntimeStepOptions, RuntimeStepOutput, RuntimeStepStopReason, TaskId, has_host_requests,
+    has_visible_output, line_id_from_awbc_public_id, runtime_value_label, source_diagnostic,
 };
 
 impl AwbcProductStepExecutor {
-    pub(super) fn entry_targets_active_function(&self) -> bool {
-        let Some(entry) = self.program.entries.get(self.fiber.entry.index()) else {
-            return false;
-        };
-        let Some(entry_function) = entry.target.function() else {
-            return false;
-        };
-        self.fiber
-            .frames
-            .first()
-            .is_some_and(|frame| frame.function == entry_function)
-    }
-
     pub(super) fn resume_at(
         &mut self,
         resume: AwbcResumePointId,
@@ -233,12 +219,12 @@ impl AwbcProductStepExecutor {
 
     pub(super) fn effective_status(&self) -> FlowFiberStatus {
         match self.product_status() {
-            AwbcProductExecutorStatus::Shared(status) => status,
+            AwbcProductExecutorStatus::Shared(status) => *status,
             AwbcProductExecutorStatus::WaitingMany(state) => {
                 // The shared structured facade has no evaluated-source
                 // waiting-many carrier. Preserve the exact items and binding
                 // in the compact status, and expose only a coarse suspension.
-                FlowFiberStatus::Waiting(AwaitState {
+                FlowFiberStatus::Waiting(Box::new(AwaitState {
                     binding: None,
                     target: AwaitTarget::new(
                         self.task_need_id(state.plan),
@@ -249,7 +235,7 @@ impl AwbcProductStepExecutor {
                     resume: None,
                     observed_through: None,
                     queued: std::collections::VecDeque::new(),
-                })
+                }))
             }
         }
     }
@@ -261,9 +247,9 @@ impl AwbcProductStepExecutor {
                 FiberStatus::Returned | FiberStatus::Cancelled | FiberStatus::Suspended
             )
         {
-            return AwbcProductExecutorStatus::Shared(FlowFiberStatus::Running);
+            return AwbcProductExecutorStatus::Shared(Box::new(FlowFiberStatus::Running));
         }
-        AwbcProductExecutorStatus::Shared(match self.fiber.status {
+        AwbcProductExecutorStatus::Shared(Box::new(match self.fiber.status {
             FiberStatus::Running => FlowFiberStatus::Running,
             FiberStatus::Returned => match self.fiber.terminal.as_ref() {
                 Some(FiberTerminalValue::Returned(Some(value))) => {
@@ -281,17 +267,17 @@ impl AwbcProductStepExecutor {
                 _ => FlowFiberStatus::Failed("AWBC fiber trapped".to_owned()),
             },
             FiberStatus::Suspended => return self.product_suspension_status(),
-        })
+        }))
     }
 
     fn product_suspension_status(&self) -> AwbcProductExecutorStatus {
         let Some(suspension) = self.fiber.suspension.as_ref() else {
-            return AwbcProductExecutorStatus::Shared(FlowFiberStatus::Running);
+            return AwbcProductExecutorStatus::Shared(Box::new(FlowFiberStatus::Running));
         };
         if let FiberSuspensionReason::AwaitMany(state) = &suspension.reason {
             return AwbcProductExecutorStatus::WaitingMany(state.clone());
         }
-        AwbcProductExecutorStatus::Shared(self.suspension_status())
+        AwbcProductExecutorStatus::Shared(Box::new(self.suspension_status()))
     }
 
     fn suspension_status(&self) -> FlowFiberStatus {
@@ -371,7 +357,7 @@ impl AwbcProductStepExecutor {
                 FiberAwaitTarget::Task(task) => {
                     let task = TaskId(runtime_value_label(task));
                     let plan = self.task_plan_for_id(&task.0);
-                    FlowFiberStatus::Waiting(AwaitState {
+                    FlowFiberStatus::Waiting(Box::new(AwaitState {
                         binding: None,
                         target: AwaitTarget::new(
                             plan.map_or_else(
@@ -385,7 +371,7 @@ impl AwbcProductStepExecutor {
                         resume: None,
                         observed_through: None,
                         queued: std::collections::VecDeque::new(),
-                    })
+                    }))
                 }
                 FiberAwaitTarget::Need(need) => FlowFiberStatus::NeedWaiting(need.clone()),
             },
@@ -408,23 +394,6 @@ impl AwbcProductStepExecutor {
         );
         FlowFiberStatus::HostCall(HostCallState {
             binding: None,
-            target: RuntimeHostCallTarget::new(
-                public_id,
-                record
-                    .and_then(|record| self.program.strings.get(record.capability.index()))
-                    .cloned()
-                    .unwrap_or_else(|| "host".to_owned()),
-                record
-                    .and_then(|record| self.program.strings.get(record.operation.index()))
-                    .cloned()
-                    .unwrap_or_else(|| "call".to_owned()),
-                [],
-                record.map_or(RuntimeHostCallMode::Suspend, |record| match record.mode {
-                    AwbcHostCallMode::Immediate => RuntimeHostCallMode::Immediate,
-                    AwbcHostCallMode::Suspend => RuntimeHostCallMode::Suspend,
-                }),
-                record.is_none_or(|record| record.deterministic),
-            ),
             id,
             resume: None,
         })

@@ -17,7 +17,7 @@ may bridge cuts.
    append only genuinely new roles.
 4. Delete the `ViewItem => MissingBody` branch. Retain `MissingBody` for extern
    capability and trait requirement.
-5. Prove one declaration-rooted path per live child, deterministic source
+5. Prove one accepted-rooted path per live child, deterministic source
    order, cycle/duplicate/foreign-snapshot rejection, and checked ordinal
    conversion.
 

@@ -1,11 +1,14 @@
 use std::collections::{BTreeMap, BTreeSet};
 
+use arcweft_core::entry::FlowParameterCoordinate;
 use arcweft_id::PublicId;
 use arcweft_lang_hir::{
-    identity::{ExprId, ItemId},
+    identity::{ExprId, ItemId, TypeId},
     item::{
         HirEntryDeclaration, HirEntryId, HirEntryKind, HirEntryMember, HirEntryPathValue,
-        HirEntryTarget, HirFlowItem, HirFunctionItem, HirItem, HirItemKind, HirParameterKind,
+        HirEntryRoute, HirEntryRouteBindings, HirEntryTarget, HirFlowItem, HirFunctionItem,
+        HirHttpMethod, HirHttpMethodValue, HirItem, HirItemKind, HirParameterKind, HirRequiredName,
+        HirRoutePath, HirRoutePathValue,
     },
     leaf::{HirIdRef, HirIdRefValue, HirPathValue},
     module::HirModule,
@@ -28,18 +31,20 @@ use arcweft_source::SourceSpan;
 
 use crate::{
     callable::{
-        CallTargetFact, CallableCandidateId, CallableFamily, CheckedCallableCatalog,
-        CheckedCallableFacts,
+        CallAnalysisOutcome, CallTargetFacts, CallableCandidateId, CallableFamily,
+        CheckedCallableCatalog, CheckedCallableFacts,
     },
-    final_analysis::{CheckedProjectNominal, FinalSemanticAnalysis},
+    final_analysis::{CheckedItem, CheckedProjectNominal, RuntimeNominalProjectionSeal},
     types::TypeKind,
 };
 
 use super::{
     AgentBudget, BoundNominalKind, BoundNominalTypeKey, CheckedAgentEntry, CheckedAgentPolicy,
-    CheckedCallableRole, CheckedEntryBinding, CheckedEntryCatalog, CheckedEntryId,
-    CheckedEntryKind, CheckedExistingEntry, CheckedFlowId, CheckedInitialFlowRole,
-    CheckedNominalRole, CheckedStatefulEntry, CheckedStatefulEntryKind, digest,
+    CheckedCallableRole, CheckedEntryBinding, CheckedEntryCatalog, CheckedEntryFlowParameter,
+    CheckedEntryFlowTarget, CheckedEntryId, CheckedEntryKind, CheckedEntryRoute,
+    CheckedEntryRouteBinding, CheckedEntryRouteBindingSource, CheckedExistingEntry,
+    CheckedExistingEntryTarget, CheckedFlowId, CheckedInitialFlowRole, CheckedNominalRole,
+    CheckedStatefulEntry, CheckedStatefulEntryKind, digest,
 };
 
 mod contract;
@@ -96,33 +101,75 @@ impl CheckedEntryDiagnostic {
     }
 }
 
-/// Resolves every final-HIR Entry against the exact accepted semantic generation.
-///
-/// This boundary deliberately has no syntax-tree, detached HIR, type-check
-/// sidecar, or registered-only callable overload. Entry roles consume the same
-/// immutable HIR project, symbol table, and checked callable authority already
-/// accepted by final semantic analysis.
-///
-/// # Panics
-///
-/// Panics when the supplied project or symbol table is not the generation
-/// owned by `analysis`.
-pub fn check_project_entries(
+/// Borrowed, unpublished semantic authority consumed by the Entry seal.
+/// Runtime nominal access is cache-only; Entry checking cannot discover a new
+/// projection after the complete draft inventory has been projected.
+pub(crate) struct PreparedEntrySemanticAuthority<'a> {
+    types: &'a BTreeMap<TypeId, TypeKind>,
+    items: &'a BTreeMap<ItemId, CheckedItem>,
+    calls: &'a BTreeMap<ExprId, CallTargetFacts>,
+    callables: &'a CheckedCallableCatalog,
+    runtime_nominals: &'a RuntimeNominalProjectionSeal,
+}
+
+impl<'a> PreparedEntrySemanticAuthority<'a> {
+    pub(crate) const fn new(
+        types: &'a BTreeMap<TypeId, TypeKind>,
+        items: &'a BTreeMap<ItemId, CheckedItem>,
+        calls: &'a BTreeMap<ExprId, CallTargetFacts>,
+        callables: &'a CheckedCallableCatalog,
+        runtime_nominals: &'a RuntimeNominalProjectionSeal,
+    ) -> Self {
+        Self {
+            types,
+            items,
+            calls,
+            callables,
+            runtime_nominals,
+        }
+    }
+
+    pub(crate) fn ty(&self, owner: TypeId) -> Option<&TypeKind> {
+        self.types.get(&owner)
+    }
+
+    pub(crate) fn item(&self, owner: ItemId) -> Option<&CheckedItem> {
+        self.items.get(&owner)
+    }
+
+    pub(crate) fn calls(&self) -> impl ExactSizeIterator<Item = (ExprId, &CallTargetFacts)> {
+        self.calls.iter().map(|(owner, facts)| (*owner, facts))
+    }
+
+    pub(crate) const fn checked_callables(&self) -> &CheckedCallableCatalog {
+        self.callables
+    }
+
+    pub(crate) fn runtime_nominal_projection(
+        &self,
+        nominal: &CheckedProjectNominal,
+    ) -> Result<
+        &crate::final_analysis::RuntimeProjectNominalProjection,
+        crate::final_analysis::NominalSchemaProjectionError,
+    > {
+        self.runtime_nominals.get_cached(nominal)
+    }
+}
+
+/// Resolves every final-HIR Entry against one unpublished semantic draft and
+/// its cache-only runtime-nominal seal.
+pub(crate) fn check_prepared_project_entries(
     project: HirExecutableProjectView<'_>,
     symbols: &ProjectSymbolTable,
-    analysis: &FinalSemanticAnalysis,
+    authority: &PreparedEntrySemanticAuthority<'_>,
 ) -> Result<CheckedEntryCatalog, Vec<CheckedEntryDiagnostic>> {
-    analysis
-        .validate_generation(project, symbols)
-        .expect("Entry checking requires the exact accepted final-HIR generation");
-    EntryCheckContext::new(project, symbols, analysis, analysis.checked_callables()).check()
+    EntryCheckContext::new(project, symbols, authority).check()
 }
 
 struct EntryCheckContext<'a> {
     project: HirExecutableProjectView<'a>,
     symbols: &'a ProjectSymbolTable,
-    analysis: &'a FinalSemanticAnalysis,
-    callables: &'a CheckedCallableCatalog,
+    authority: &'a PreparedEntrySemanticAuthority<'a>,
 }
 
 struct ResolvedCallable<'a> {
@@ -131,6 +178,15 @@ struct ResolvedCallable<'a> {
     item: &'a HirItem,
     function: &'a HirFunctionItem,
     facts: &'a CheckedCallableFacts,
+    source: SourceSpan,
+}
+
+struct ResolvedFlowTarget<'a> {
+    source_item: ItemId,
+    declaration: arcweft_lang_hir::symbol::FlowDeclarationId,
+    id: CheckedFlowId,
+    module: &'a HirModule,
+    flow: &'a HirFlowItem,
     source: SourceSpan,
 }
 
@@ -170,14 +226,12 @@ impl<'a> EntryCheckContext<'a> {
     fn new(
         project: HirExecutableProjectView<'a>,
         symbols: &'a ProjectSymbolTable,
-        analysis: &'a FinalSemanticAnalysis,
-        callables: &'a CheckedCallableCatalog,
+        authority: &'a PreparedEntrySemanticAuthority<'a>,
     ) -> Self {
         Self {
             project,
             symbols,
-            analysis,
-            callables,
+            authority,
         }
     }
 
@@ -318,7 +372,7 @@ impl<'a> EntryCheckContext<'a> {
             | HirEntryKind::Server
             | HirEntryKind::Activity
             | HirEntryKind::Bench
-            | HirEntryKind::Custom(_) => Ok(self.check_existing(owner, id, entry.kind())),
+            | HirEntryKind::Custom(_) => self.check_existing(module, owner, entry, id),
             HirEntryKind::Recovered(_) => Err(vec![CheckedEntryDiagnostic::new(
                 "sema.entry.invalid_kind",
                 "recovered Entry kind cannot enter an executable project",
@@ -391,6 +445,20 @@ impl<'a> EntryCheckContext<'a> {
                             entry_kind_label(entry.kind())
                         ),
                         entry_source(module, owner, HirEntrySourcePart::Whole),
+                    ));
+                }
+                HirEntryMember::Option(_) => {
+                    diagnostics.push(CheckedEntryDiagnostic::new(
+                        "sema.entry.unsupported_option",
+                        "Entry options require a checked adapter option registry and cannot enter an executable project",
+                        entry_member_source(module, owner, ordinal),
+                    ));
+                }
+                HirEntryMember::Error => {
+                    diagnostics.push(CheckedEntryDiagnostic::new(
+                        "sema.entry.recovered_member",
+                        "recovered Entry members cannot enter an executable project",
+                        entry_member_source(module, owner, ordinal),
                     ));
                 }
                 _ => {}
@@ -476,7 +544,7 @@ impl<'a> EntryCheckContext<'a> {
             return Err(diagnostics);
         };
 
-        let contracts = EntryContractBuilder::new(self.analysis, self.project.package());
+        let contracts = EntryContractBuilder::new(self.authority, self.project.package());
         let initializer_contract =
             match contracts.initializer(initializer.function, initializer.facts, state.key()) {
                 Ok(contract) => contract,
@@ -577,7 +645,7 @@ impl<'a> EntryCheckContext<'a> {
         let Some(controller) = controller else {
             return Err(diagnostics);
         };
-        let contracts = EntryContractBuilder::new(self.analysis, self.project.package());
+        let contracts = EntryContractBuilder::new(self.authority, self.project.package());
         let (contract, allowed_effects, inferred_effects) =
             match contracts.agent_controller(controller.function, controller.facts) {
                 Ok(contract) => contract,
@@ -630,11 +698,12 @@ impl<'a> EntryCheckContext<'a> {
 
     fn check_existing(
         &self,
+        module: &'a HirModule,
         source_item: ItemId,
+        entry: &'a HirEntryDeclaration,
         id: CheckedEntryId,
-        kind: &HirEntryKind,
-    ) -> CheckedEntryBinding {
-        let checked_kind = match kind {
+    ) -> Result<CheckedEntryBinding, Vec<CheckedEntryDiagnostic>> {
+        let checked_kind = match entry.kind() {
             HirEntryKind::Cli => CheckedEntryKind::Cli,
             HirEntryKind::Server => CheckedEntryKind::Server,
             HirEntryKind::Activity => CheckedEntryKind::Activity,
@@ -648,12 +717,364 @@ impl<'a> EntryCheckContext<'a> {
                 unreachable!("special Entry kinds use their typed checking paths")
             }
         };
-        let binding_digest = digest::existing_binding(self.project.package(), &id, &checked_kind);
-        CheckedEntryBinding::Existing(CheckedExistingEntry {
+        let mut diagnostics = Vec::new();
+        let target =
+            self.resolve_existing_entry_target(module, source_item, entry, &mut diagnostics);
+        let Some(target) = target else {
+            return Err(diagnostics);
+        };
+        if !diagnostics.is_empty() {
+            return Err(diagnostics);
+        }
+        let binding_digest =
+            digest::existing_binding(self.project.package(), &id, &checked_kind, &target);
+        Ok(CheckedEntryBinding::Existing(CheckedExistingEntry {
             source_item,
             id,
             kind: checked_kind,
+            target,
             binding_digest,
+        }))
+    }
+
+    fn resolve_existing_entry_target(
+        &self,
+        module: &'a HirModule,
+        owner: ItemId,
+        entry: &'a HirEntryDeclaration,
+        diagnostics: &mut Vec<CheckedEntryDiagnostic>,
+    ) -> Option<CheckedExistingEntryTarget> {
+        let gotos = entry
+            .members()
+            .iter()
+            .enumerate()
+            .filter_map(|(ordinal, member)| match member {
+                HirEntryMember::Goto(target) => Some((ordinal, target)),
+                _ => None,
+            })
+            .collect::<Vec<_>>();
+        let routes = entry
+            .members()
+            .iter()
+            .enumerate()
+            .filter_map(|(ordinal, member)| match member {
+                HirEntryMember::Route(route) => Some((ordinal, route)),
+                _ => None,
+            })
+            .collect::<Vec<_>>();
+        match (gotos.as_slice(), routes.as_slice()) {
+            ([(ordinal, goto)], []) => {
+                let source = entry_member_source(module, owner, *ordinal);
+                let resolved =
+                    self.resolve_flow_target(module, goto.target(), source.clone(), diagnostics)?;
+                let target = self.checked_existing_flow_target(&resolved, diagnostics)?;
+                if !target.parameters().is_empty() {
+                    diagnostics.push(CheckedEntryDiagnostic::new(
+                        "sema.entry.unbound_goto_parameters",
+                        "direct Entry goto target must not require Flow parameters",
+                        source,
+                    ));
+                    return None;
+                }
+                Some(CheckedExistingEntryTarget::Flow(target))
+            }
+            ([], routes) if !routes.is_empty() => {
+                let mut checked = Vec::with_capacity(routes.len());
+                let mut dispatches = Vec::<(HirHttpMethod, HirRoutePath, SourceSpan)>::new();
+                for (ordinal, route) in routes {
+                    let source = entry_member_source(module, owner, *ordinal);
+                    let Some(route) =
+                        self.checked_entry_route(module, route, source.clone(), diagnostics)
+                    else {
+                        continue;
+                    };
+                    if let Some((_, _, first)) = dispatches.iter().find(|(method, path, _)| {
+                        *method == route.method() && path.overlaps_dispatch(route.path())
+                    }) {
+                        diagnostics.push(
+                            CheckedEntryDiagnostic::new(
+                                "sema.entry.overlapping_route",
+                                "Entry routes with the same method must have disjoint dispatch paths",
+                                source,
+                            )
+                            .with_related([first.clone()]),
+                        );
+                        continue;
+                    }
+                    dispatches.push((route.method(), route.path().clone(), source));
+                    checked.push(route);
+                }
+                checked.sort_by(|left, right| {
+                    left.method()
+                        .cmp(&right.method())
+                        .then_with(|| left.path().dispatch_cmp(right.path()))
+                });
+                (!checked.is_empty() && diagnostics.is_empty())
+                    .then(|| CheckedExistingEntryTarget::Routes(checked.into_boxed_slice()))
+            }
+            ([], []) => {
+                diagnostics.push(CheckedEntryDiagnostic::new(
+                    "sema.entry.missing_target",
+                    "non-stateful Entry must declare one goto or at least one route",
+                    entry_source(module, owner, HirEntrySourcePart::Whole),
+                ));
+                None
+            }
+            _ => {
+                diagnostics.push(
+                    CheckedEntryDiagnostic::new(
+                        "sema.entry.ambiguous_target",
+                        "non-stateful Entry must declare either one goto or a non-empty route set",
+                        entry_source(module, owner, HirEntrySourcePart::Whole),
+                    )
+                    .with_related(
+                        gotos
+                            .iter()
+                            .map(|(ordinal, _)| entry_member_source(module, owner, *ordinal))
+                            .chain(
+                                routes.iter().map(|(ordinal, _)| {
+                                    entry_member_source(module, owner, *ordinal)
+                                }),
+                            ),
+                    ),
+                );
+                None
+            }
+        }
+    }
+
+    fn checked_entry_route(
+        &self,
+        module: &'a HirModule,
+        route: &'a HirEntryRoute,
+        source: SourceSpan,
+        diagnostics: &mut Vec<CheckedEntryDiagnostic>,
+    ) -> Option<CheckedEntryRoute> {
+        let HirHttpMethodValue::Resolved(method) = route.method() else {
+            diagnostics.push(CheckedEntryDiagnostic::new(
+                "sema.entry.invalid_route_method",
+                "Entry route method must be fully resolved",
+                source,
+            ));
+            return None;
+        };
+        let HirRoutePathValue::Resolved(path) = route.path() else {
+            diagnostics.push(CheckedEntryDiagnostic::new(
+                "sema.entry.invalid_route_path",
+                "Entry route path must be fully resolved",
+                source,
+            ));
+            return None;
+        };
+        if route.has_recovery() {
+            diagnostics.push(CheckedEntryDiagnostic::new(
+                "sema.entry.recovered_route",
+                "recovered Entry route metadata cannot enter an executable project",
+                source,
+            ));
+            return None;
+        }
+        let resolved =
+            self.resolve_flow_target(module, route.target(), source.clone(), diagnostics)?;
+        let target = self.checked_existing_flow_target(&resolved, diagnostics)?;
+        let authored = match route.bindings() {
+            HirEntryRouteBindings::Absent => &[][..],
+            HirEntryRouteBindings::Parenthesized {
+                items,
+                closed: true,
+            } => items,
+            HirEntryRouteBindings::Parenthesized { .. } => {
+                diagnostics.push(CheckedEntryDiagnostic::new(
+                    "sema.entry.recovered_route_bindings",
+                    "Entry route binding list must be closed",
+                    source,
+                ));
+                return None;
+            }
+        };
+        let parameters = target
+            .parameters()
+            .iter()
+            .map(|parameter| (parameter.name().as_str(), parameter.coordinate()))
+            .collect::<BTreeMap<_, _>>();
+        if parameters.len() != target.parameters().len() {
+            diagnostics.push(CheckedEntryDiagnostic::new(
+                "sema.entry.duplicate_flow_parameter",
+                "Entry target Flow parameter names must be unique",
+                source,
+            ));
+            return None;
+        }
+        let captures = path
+            .captures()
+            .iter()
+            .map(|capture| (capture.name().as_str(), capture.coordinate()))
+            .collect::<BTreeMap<_, _>>();
+        let mut seen_parameters = BTreeSet::new();
+        let mut seen_captures = BTreeSet::new();
+        let mut bindings = vec![None; target.parameters().len()];
+        for binding in authored {
+            let (HirRequiredName::Resolved(parameter), HirRequiredName::Resolved(capture)) =
+                (binding.parameter(), binding.path_capture())
+            else {
+                diagnostics.push(CheckedEntryDiagnostic::new(
+                    "sema.entry.recovered_route_binding",
+                    "Entry route bindings must contain resolved parameter and capture names",
+                    source.clone(),
+                ));
+                return None;
+            };
+            if binding.has_recovery() {
+                diagnostics.push(CheckedEntryDiagnostic::new(
+                    "sema.entry.recovered_route_binding",
+                    "recovered Entry route bindings cannot enter an executable project",
+                    source.clone(),
+                ));
+                return None;
+            }
+            let Some(position) = parameters.get(parameter.as_str()).copied() else {
+                diagnostics.push(CheckedEntryDiagnostic::new(
+                    "sema.entry.unknown_route_parameter",
+                    format!(
+                        "route binding names unknown target Flow parameter `{}`",
+                        parameter.as_str()
+                    ),
+                    source.clone(),
+                ));
+                return None;
+            };
+            let Some(capture_coordinate) = captures.get(capture.as_str()).copied() else {
+                diagnostics.push(CheckedEntryDiagnostic::new(
+                    "sema.entry.unknown_route_capture",
+                    format!(
+                        "route binding names capture `{}` that is absent from its path",
+                        capture.as_str()
+                    ),
+                    source.clone(),
+                ));
+                return None;
+            };
+            if !seen_parameters.insert(parameter.as_str())
+                || !seen_captures.insert(capture_coordinate)
+            {
+                diagnostics.push(CheckedEntryDiagnostic::new(
+                    "sema.entry.duplicate_route_binding",
+                    "route parameter and path-capture bindings must be one-to-one",
+                    source.clone(),
+                ));
+                return None;
+            }
+            let Ok(parameter_index) = position.index() else {
+                diagnostics.push(CheckedEntryDiagnostic::new(
+                    "sema.entry.invalid_route_parameter_coordinate",
+                    "checked Flow parameter coordinate does not fit this platform",
+                    source.clone(),
+                ));
+                return None;
+            };
+            let Some(flow_parameter) = resolved.flow.parameters().get(parameter_index) else {
+                diagnostics.push(CheckedEntryDiagnostic::new(
+                    "sema.entry.invalid_route_parameter_coordinate",
+                    "checked Flow parameter coordinate is outside its declaration",
+                    source.clone(),
+                ));
+                return None;
+            };
+            if self.authority.ty(flow_parameter.ty()) != Some(&TypeKind::String) {
+                diagnostics.push(CheckedEntryDiagnostic::new(
+                    "sema.entry.invalid_route_parameter_type",
+                    format!(
+                        "path capture can only supply String, but Flow parameter `{}` has another checked type",
+                        parameter.as_str()
+                    ),
+                    source.clone(),
+                ));
+                return None;
+            }
+            bindings[parameter_index] = Some(CheckedEntryRouteBinding {
+                parameter: position,
+                source: CheckedEntryRouteBindingSource::PathCapture(capture_coordinate),
+            });
+        }
+        if seen_parameters.len() != target.parameters().len()
+            || seen_captures.len() != path.captures().len()
+        {
+            diagnostics.push(CheckedEntryDiagnostic::new(
+                "sema.entry.incomplete_route_bindings",
+                "route bindings must cover every target Flow parameter and every path capture exactly once",
+                source,
+            ));
+            return None;
+        }
+        let bindings = bindings.into_iter().collect::<Option<Vec<_>>>()?;
+        Some(CheckedEntryRoute {
+            method: *method,
+            path: path.clone(),
+            target,
+            bindings: bindings.into_boxed_slice(),
+        })
+    }
+
+    fn checked_existing_flow_target(
+        &self,
+        resolved: &ResolvedFlowTarget<'a>,
+        diagnostics: &mut Vec<CheckedEntryDiagnostic>,
+    ) -> Option<CheckedEntryFlowTarget> {
+        let contracts = EntryContractBuilder::new(self.authority, self.project.package());
+        let contract = match contracts.existing_flow(resolved.source_item, resolved.flow) {
+            Ok(contract) => contract,
+            Err(message) => {
+                diagnostics.push(CheckedEntryDiagnostic::new(
+                    "sema.entry.invalid_target_flow_contract",
+                    message,
+                    resolved.source.clone(),
+                ));
+                return None;
+            }
+        };
+        let mut parameters = Vec::with_capacity(resolved.flow.parameters().len());
+        for (position, parameter) in resolved.flow.parameters().iter().enumerate() {
+            let pattern = resolved
+                .module
+                .resolve_pattern(parameter.pattern())
+                .expect("accepted Flow parameter pattern remains live");
+            let HirPatternKind::Binding(HirPatternBinding::Bound { name, .. }) = pattern.kind()
+            else {
+                diagnostics.push(CheckedEntryDiagnostic::new(
+                    "sema.entry.invalid_target_flow_parameter",
+                    "Entry target Flow parameters must be direct immutable bindings",
+                    resolved.source.clone(),
+                ));
+                return None;
+            };
+            let Some(ty) = self.authority.ty(parameter.ty()) else {
+                diagnostics.push(CheckedEntryDiagnostic::new(
+                    "sema.entry.missing_target_flow_parameter_type",
+                    "Entry target Flow parameter has no accepted checked type",
+                    resolved.source.clone(),
+                ));
+                return None;
+            };
+            let Ok(coordinate) = FlowParameterCoordinate::try_from_index(position) else {
+                diagnostics.push(CheckedEntryDiagnostic::new(
+                    "sema.entry.target_flow_parameter_capacity",
+                    "Entry target Flow has too many parameters",
+                    resolved.source.clone(),
+                ));
+                return None;
+            };
+            parameters.push(CheckedEntryFlowParameter {
+                coordinate,
+                name: name.clone(),
+                semantic_type: ty.semantic_identity_digest(),
+            });
+        }
+        Some(CheckedEntryFlowTarget {
+            source_item: resolved.source_item,
+            declaration: resolved.declaration.clone(),
+            id: resolved.id.clone(),
+            contract_digest: digest::flow_contract(&resolved.id, &contract),
+            parameters: parameters.into_boxed_slice(),
         })
     }
 
@@ -807,7 +1228,7 @@ impl<'a> EntryCheckContext<'a> {
             );
             return None;
         }
-        let Some(TypeKind::ProjectNominal(checked)) = self.analysis.ty(ty) else {
+        let Some(TypeKind::ProjectNominal(checked)) = self.authority.ty(ty) else {
             diagnostics.push(CheckedEntryDiagnostic::new(
                 "sema.entry.missing_nominal_resolution",
                 format!("{role} role has no accepted project-nominal type fact"),
@@ -829,19 +1250,18 @@ impl<'a> EntryCheckContext<'a> {
             TypeKind::ProjectNominal(checked.clone()).semantic_identity_digest(),
             checked.arguments().to_vec(),
         );
-        match self
-            .analysis
-            .project_nominal_schema(self.symbols, &checked_nominal)
-        {
-            Ok(schema) => Some(CheckedNominalRole {
+        match self.authority.runtime_nominal_projection(&checked_nominal) {
+            Ok(projection) => Some(CheckedNominalRole {
                 key: BoundNominalTypeKey::new(
                     self.project.package().clone(),
                     declaration.id().module().clone(),
                     declaration.id().name().as_str(),
                     kind,
                 ),
-                schema_digest: digest::nominal_schema(&schema),
-                schema,
+                semantic_type: checked_nominal.identity(),
+                runtime_nominal: projection.nominal().clone(),
+                layout: projection.layout(),
+                schema_digest: digest::nominal_schema(projection.shape()),
                 source,
             }),
             Err(error) => {
@@ -928,9 +1348,10 @@ impl<'a> EntryCheckContext<'a> {
         };
         let candidate = CallableCandidateId::Project(symbol.declaration().clone());
         let facts = self
-            .callables
+            .authority
+            .checked_callables()
             .checked_for_candidate(&candidate)
-            .and_then(|id| self.callables.callable(id));
+            .and_then(|id| self.authority.checked_callables().callable(id));
         let Ok(facts) = facts else {
             diagnostics.push(CheckedEntryDiagnostic::new(
                 "sema.entry.callable_not_registered",
@@ -963,6 +1384,102 @@ impl<'a> EntryCheckContext<'a> {
             return None;
         };
         Some((module, item, function))
+    }
+
+    fn resolve_flow_target(
+        &self,
+        module: &'a HirModule,
+        target: &HirEntryTarget,
+        source: SourceSpan,
+        diagnostics: &mut Vec<CheckedEntryDiagnostic>,
+    ) -> Option<ResolvedFlowTarget<'a>> {
+        let HirEntryTarget::Authored(value) = target else {
+            diagnostics.push(CheckedEntryDiagnostic::new(
+                "sema.entry.invalid_flow_id",
+                "Entry target must be one complete absolute Flow ID",
+                source,
+            ));
+            return None;
+        };
+        let Some(reference) = value.as_resolved() else {
+            diagnostics.push(CheckedEntryDiagnostic::new(
+                "sema.entry.invalid_flow_id",
+                "Entry target must be one complete absolute Flow ID",
+                source,
+            ));
+            return None;
+        };
+        let Some(public_id) = absolute_public_id(reference) else {
+            diagnostics.push(CheckedEntryDiagnostic::new(
+                "sema.entry.invalid_flow_id",
+                "Entry target must be one complete absolute Flow ID",
+                source,
+            ));
+            return None;
+        };
+        if !public_id.as_str().starts_with("flow.") {
+            diagnostics.push(CheckedEntryDiagnostic::new(
+                "sema.entry.invalid_flow_family",
+                format!("Entry target `{public_id}` must use the `flow.*` family"),
+                source,
+            ));
+            return None;
+        }
+        let symbol = match self.symbols.resolve_entity_reference(
+            module.key().path(),
+            reference,
+            source.clone(),
+        ) {
+            Ok(ResolvedProjectSymbol::StructuralCallable(symbol))
+                if symbol.owner() == CallableDeclarationOwner::Flow =>
+            {
+                symbol
+            }
+            Ok(other) => {
+                diagnostics.push(
+                    CheckedEntryDiagnostic::new(
+                        "sema.entry.invalid_flow_family",
+                        format!("Entry target `{public_id}` does not denote a Flow"),
+                        source,
+                    )
+                    .with_related(resolved_symbol_source(&other)),
+                );
+                return None;
+            }
+            Err(error) => {
+                let code = match &error {
+                    ProjectEntityReferenceLookupError::Ambiguous { .. } => {
+                        "sema.entry.ambiguous_flow"
+                    }
+                    _ => "sema.entry.unknown_flow",
+                };
+                diagnostics.push(
+                    CheckedEntryDiagnostic::new(code, error.to_string(), source)
+                        .with_related(entity_lookup_sources(self.symbols, &error)),
+                );
+                return None;
+            }
+        };
+        let CallableDeclarationKey::Flow(declaration) = symbol.declaration() else {
+            unreachable!("the structural Flow target owns a Flow declaration key")
+        };
+        let id = CheckedFlowId::from_declaration(declaration);
+        let Some((flow_module, source_item, flow)) = self.flow_for_symbol(symbol) else {
+            diagnostics.push(CheckedEntryDiagnostic::new(
+                "sema.entry.unknown_flow",
+                format!("Entry target Flow `{public_id}` is absent from its accepted HIR snapshot"),
+                source,
+            ));
+            return None;
+        };
+        Some(ResolvedFlowTarget {
+            source_item,
+            declaration: declaration.clone(),
+            id,
+            module: flow_module,
+            flow,
+            source,
+        })
     }
 
     #[expect(
@@ -1002,87 +1519,10 @@ impl<'a> EntryCheckContext<'a> {
             return None;
         };
         let source = entry_member_source(module, owner, *ordinal);
-        let HirEntryTarget::Authored(value) = target.target() else {
-            diagnostics.push(CheckedEntryDiagnostic::new(
-                "sema.entry.invalid_flow_id",
-                "initial target must be one complete absolute Flow ID",
-                source,
-            ));
-            return None;
-        };
-        let Some(reference) = value.as_resolved() else {
-            diagnostics.push(CheckedEntryDiagnostic::new(
-                "sema.entry.invalid_flow_id",
-                "initial target must be one complete absolute Flow ID",
-                source,
-            ));
-            return None;
-        };
-        let Some(public_id) = absolute_public_id(reference) else {
-            diagnostics.push(CheckedEntryDiagnostic::new(
-                "sema.entry.invalid_flow_id",
-                "initial target must be one complete absolute Flow ID",
-                source,
-            ));
-            return None;
-        };
-        if !public_id.as_str().starts_with("flow.") {
-            diagnostics.push(CheckedEntryDiagnostic::new(
-                "sema.entry.invalid_flow_family",
-                format!("initial target `{public_id}` must use the `flow.*` family"),
-                source,
-            ));
-            return None;
-        }
-        let symbol = match self.symbols.resolve_entity_reference(
-            module.key().path(),
-            reference,
-            source.clone(),
-        ) {
-            Ok(ResolvedProjectSymbol::StructuralCallable(symbol))
-                if symbol.owner() == CallableDeclarationOwner::Flow =>
-            {
-                symbol
-            }
-            Ok(other) => {
-                diagnostics.push(
-                    CheckedEntryDiagnostic::new(
-                        "sema.entry.invalid_flow_family",
-                        format!("initial target `{public_id}` does not denote a Flow"),
-                        source,
-                    )
-                    .with_related(resolved_symbol_source(&other)),
-                );
-                return None;
-            }
-            Err(error) => {
-                let code = match &error {
-                    ProjectEntityReferenceLookupError::Ambiguous { .. } => {
-                        "sema.entry.ambiguous_flow"
-                    }
-                    _ => "sema.entry.unknown_flow",
-                };
-                diagnostics.push(
-                    CheckedEntryDiagnostic::new(code, error.to_string(), source)
-                        .with_related(entity_lookup_sources(self.symbols, &error)),
-                );
-                return None;
-            }
-        };
-        let CallableDeclarationKey::Flow(declaration) = symbol.declaration() else {
-            unreachable!("the structural Flow target owns a Flow declaration key")
-        };
-        let id = CheckedFlowId::from_declaration(declaration);
-        let Some((flow_module, flow_owner, flow)) = self.flow_for_symbol(symbol) else {
-            diagnostics.push(CheckedEntryDiagnostic::new(
-                "sema.entry.unknown_flow",
-                format!("initial Flow `{public_id}` is absent from its accepted HIR snapshot"),
-                source,
-            ));
-            return None;
-        };
-        let contracts = EntryContractBuilder::new(self.analysis, self.project.package());
-        let contract = match contracts.flow(flow_owner, flow, state) {
+        let resolved =
+            self.resolve_flow_target(module, target.target(), source.clone(), diagnostics)?;
+        let contracts = EntryContractBuilder::new(self.authority, self.project.package());
+        let contract = match contracts.flow(resolved.source_item, resolved.flow, state) {
             Ok(contract) => contract,
             Err(message) => {
                 diagnostics.push(CheckedEntryDiagnostic::new(
@@ -1093,11 +1533,12 @@ impl<'a> EntryCheckContext<'a> {
                 return None;
             }
         };
-        let [parameter] = flow.parameters() else {
+        let [parameter] = resolved.flow.parameters() else {
             unreachable!("accepted initial Flow contract has exactly one parameter")
         };
         debug_assert_eq!(parameter.kind(), HirParameterKind::Fixed);
-        let pattern = flow_module
+        let pattern = resolved
+            .module
             .resolve_pattern(parameter.pattern())
             .expect("accepted initial Flow parameter pattern remains live");
         let HirPatternKind::Binding(HirPatternBinding::Bound { name, .. }) = pattern.kind() else {
@@ -1109,10 +1550,11 @@ impl<'a> EntryCheckContext<'a> {
             return None;
         };
         Some(CheckedInitialFlowRole {
-            source_item: flow_owner,
-            contract_digest: digest::flow_contract(&id, &contract),
+            source_item: resolved.source_item,
+            declaration: resolved.declaration,
+            contract_digest: digest::flow_contract(&resolved.id, &contract),
             state_parameter_name: name.as_str().to_owned(),
-            id,
+            id: resolved.id,
             source,
         })
     }
@@ -1178,13 +1620,11 @@ impl<'a> EntryCheckContext<'a> {
         selected: &BTreeSet<CallableDeclarationId>,
         diagnostics: &mut Vec<CheckedEntryDiagnostic>,
     ) {
-        for (expression, facts) in self.analysis.calls() {
-            let CallTargetFact::Selected {
-                selected: callable, ..
-            } = facts.target()
-            else {
+        for (expression, facts) in self.authority.calls() {
+            let CallAnalysisOutcome::Selected(application) = facts.outcome() else {
                 continue;
             };
+            let callable = application.core().candidates().selected();
             let selected_owner = facts.enclosing_callable().and_then(|owner| match owner {
                 CallableDeclarationKey::Existing(declaration) => Some(declaration),
                 CallableDeclarationKey::TraitRequirement(_)

@@ -28,8 +28,6 @@ pub enum RuntimeActionButtonLoweringError {
     InvalidAction { button: String, action: String },
     #[error("action button `{button}` references missing text-control target `{target}`")]
     MissingTextControlTarget { button: String, target: String },
-    #[error("dialogue action button `{button}` has no active primary action target")]
-    MissingDialoguePrimaryAction { button: String },
     #[error(transparent)]
     ViewGeometry(#[from] ViewGeometryRuntimeError),
 }
@@ -109,20 +107,12 @@ fn lower_action(
                 payload: lower_action_payload(&button.public_id, payload.as_ref(), text_inputs)?,
             })
         }
-        ViewRuntimeActionButtonAction::DialoguePrimaryAction {
-            target: Some(target),
-            ..
-        } => Ok(RenderActionButtonAction::DialoguePrimaryAction { target: *target }),
-        ViewRuntimeActionButtonAction::DialoguePrimaryAction { target: None, .. }
-            if !button.enabled =>
-        {
-            Ok(RenderActionButtonAction::Noop)
+        ViewRuntimeActionButtonAction::ViewHandler { event, route } => {
+            Ok(RenderActionButtonAction::ViewHandler {
+                event: *event,
+                route: *route,
+            })
         }
-        ViewRuntimeActionButtonAction::DialoguePrimaryAction { target: None, .. } => Err(
-            RuntimeActionButtonLoweringError::MissingDialoguePrimaryAction {
-                button: button.public_id.clone(),
-            },
-        ),
     }
 }
 

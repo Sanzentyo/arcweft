@@ -10,6 +10,7 @@ use arcweft_lang_hir::symbol::{
     CallableDeclarationKey, CallableDeclarationOwner, TraitDeclarationId,
 };
 use arcweft_lang_syntax::ast::{common::Visibility, module_path::CanonicalModulePath};
+use arcweft_manifest_model::HostCallContractDigest;
 use arcweft_source::SourceDocumentIdentity;
 
 use super::digest::CanonicalEncoder;
@@ -53,6 +54,7 @@ pub struct CallableRecord {
     source: Option<CallableSource>,
     rust: Option<RustCallableProvenance>,
     publication_digest: Option<EnvironmentCallablePublicationDigest>,
+    host_call_contract: Option<HostCallContractDigest>,
     declaration_order: EnvironmentDeclarationOrdinal,
 }
 
@@ -179,6 +181,7 @@ impl CallableRecord {
             source,
             rust,
             publication_digest,
+            host_call_contract: None,
             declaration_order,
         })
     }
@@ -213,6 +216,25 @@ impl CallableRecord {
     pub const fn publication_digest(&self) -> Option<EnvironmentCallablePublicationDigest> {
         self.publication_digest
     }
+    pub const fn host_call_contract(&self) -> Option<HostCallContractDigest> {
+        self.host_call_contract
+    }
+    pub(crate) fn with_host_call_contract(
+        mut self,
+        contract: Option<HostCallContractDigest>,
+    ) -> Result<Self, CallableCatalogError> {
+        if contract.is_some()
+            && !matches!(
+                self.id(),
+                CallableCandidateId::Project(declaration)
+                    if declaration.owner() == CallableDeclarationOwner::ExternCapability
+            )
+        {
+            return Err(CallableCatalogError::IdKeyMismatch);
+        }
+        self.host_call_contract = contract;
+        Ok(self)
+    }
     pub const fn declaration_order(&self) -> EnvironmentDeclarationOrdinal {
         self.declaration_order
     }
@@ -224,7 +246,18 @@ impl CallableRecord {
     }
     pub fn receiver_method_key(&self) -> Option<super::ReceiverMethodKey> {
         match self.key() {
-            CallableLookupKey::Method(key) if self.method_role().is_some() => Some(key.clone()),
+            CallableLookupKey::Method(key)
+                if self.method_role().is_some()
+                    || matches!(
+                        (self.id(), self.schema().validator()),
+                        (
+                            CallableCandidateId::Environment(environment),
+                            CallableValidator::Ordinary | CallableValidator::ViewModifier(_)
+                        ) if environment.kind() == EnvironmentCallableKind::Method
+                    ) =>
+            {
+                Some(key.clone())
+            }
             CallableLookupKey::Free(path) => {
                 self.schema().extension_receiver_type().map(|receiver| {
                     super::ReceiverMethodKey::new(receiver.clone(), path.leaf().clone())
@@ -333,6 +366,29 @@ fn validate_method_role(
                         candidate: Box::new(candidate.clone()),
                     },
                 );
+            }
+        }
+        CallableValidator::ViewModifier(modifier) => {
+            let CallableCandidateId::Environment(environment) = candidate else {
+                return Err(CallableCatalogError::IdKeyMismatch);
+            };
+            let expected = CallableLookupKey::Method(super::ReceiverMethodKey::new(
+                modifier.receiver(),
+                modifier.member(),
+            ));
+            if environment.owner()
+                != &EnvironmentCallableOwner::Standard(super::StandardEnvironmentId::Core)
+                || environment.kind() != EnvironmentCallableKind::Method
+                || key != &expected
+                || environment.key() != &expected
+                || !matches!(
+                    schema.effects(),
+                    super::CallableEffectSchema::Fixed(row)
+                        if matches!(row.tail(), crate::effect_row::EffectRowTail::Closed)
+                            && row.concrete().is_empty()
+                )
+            {
+                return Err(CallableCatalogError::IdKeyMismatch);
             }
         }
         _ if structural_owner.is_some_and(CallableDeclarationOwner::is_method) => {
@@ -945,6 +1001,9 @@ fn encode_record(encoder: &mut CanonicalEncoder, record: &CallableRecord) {
     encoder.provider(record.provider());
     encoder.bytes(record.schema().semantic_digest().as_bytes());
     encoder.option(record.publication_digest().as_ref(), |encoder, digest| {
+        encoder.bytes(digest.as_bytes());
+    });
+    encoder.option(record.host_call_contract().as_ref(), |encoder, digest| {
         encoder.bytes(digest.as_bytes());
     });
     encoder.documentation(record.documentation());

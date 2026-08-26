@@ -154,7 +154,7 @@ impl StagedHirModuleTransaction<'_> {
                 let AttachedViewFragmentEntry::Value(value) = entry else {
                     continue;
                 };
-                let value = self.lower_attached_expression(value, callable_scope)?;
+                let value = self.lower_attached_expression(value.as_ref(), callable_scope)?;
                 if self.staged_expression_is_poisoned(value)? {
                     value_issue.get_or_insert(HirItemIssue::InvalidMember);
                 }

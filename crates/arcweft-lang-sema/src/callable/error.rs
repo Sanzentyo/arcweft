@@ -11,6 +11,7 @@ use arcweft_source::SourceSpan;
 use thiserror::Error;
 
 use crate::nominal::{NominalResolutionIndexError, TypeResolutionInputError};
+use crate::types::{GenericConstParameterId, GenericTypeParameterId, TypeGenericUseError};
 
 use super::{
     CallableAuthorityRank, CallableCandidateId, CallableFamily, CallableGroupIndex,
@@ -54,7 +55,6 @@ pub enum CallableIndexKind {
     Parameter,
     Overload,
     ArgumentSlot,
-    LexicalBinding,
     FunctionValue,
 }
 
@@ -79,13 +79,6 @@ pub enum BuiltinIdentityError {
 pub enum CallableIdentityError {
     #[error(transparent)]
     Scalar(#[from] CallableScalarError),
-    #[error("callable {base:?} cannot use group {group:?} as a curried next group")]
-    InvalidCurriedGroup {
-        base: Box<CallableCandidateId>,
-        group: CallableGroupIndex,
-    },
-    #[error("callable {base:?} cannot be curried")]
-    InvalidCurriedBase { base: Box<CallableCandidateId> },
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -108,6 +101,16 @@ pub enum RustProvenanceError {
 
 #[derive(Clone, Debug, Eq, Error, PartialEq)]
 pub enum CallableSchemaError {
+    #[error(transparent)]
+    GenericUse(#[from] TypeGenericUseError),
+    #[error("callable schema candidate type parameter {parameter:?} does not occur in the schema")]
+    MissingCandidateType { parameter: GenericTypeParameterId },
+    #[error("callable schema candidate const parameter {parameter:?} does not occur in the schema")]
+    MissingCandidateConst { parameter: GenericConstParameterId },
+    #[error("inferable const generic {parameter:?} is not supported by callable schemas")]
+    InferableConstGeneric { parameter: GenericConstParameterId },
+    #[error("callable generic parameter issuer has an invalid owner arity")]
+    InvalidCandidateIssuer,
     #[error("callable schema must contain an initial parameter group")]
     EmptyGroups,
     #[error("callable has {actual} groups; maximum is {limit}")]
@@ -149,6 +152,14 @@ pub enum CallableSchemaError {
     },
     #[error("callable schema contains more than one extension receiver")]
     DuplicateExtensionReceiver,
+    #[error("reserved open names require an open named-argument policy")]
+    ReservedOpenNamesRequireOpenPolicy,
+    #[error("duplicate reserved open name {name:?}")]
+    DuplicateReservedOpenName { name: CallableName },
+    #[error("reserved open name {name:?} collides with a declared parameter")]
+    ReservedOpenNameParameterCollision { name: CallableName },
+    #[error("callable schema has {actual} reserved open names; maximum is {limit}")]
+    ReservedOpenNameLimit { actual: usize, limit: usize },
     #[error("invalid extension receiver coordinate {group:?}/{parameter:?}")]
     InvalidExtensionReceiver {
         group: CallableGroupIndex,
@@ -156,6 +167,16 @@ pub enum CallableSchemaError {
     },
     #[error("parameter source coordinate does not match {group:?}/{parameter:?}")]
     SourceCoordinateMismatch {
+        group: CallableGroupIndex,
+        parameter: CallableParameterIndex,
+    },
+    #[error("invalid admission rule for parameter {group:?}/{parameter:?}")]
+    InvalidParameterAdmission {
+        group: CallableGroupIndex,
+        parameter: CallableParameterIndex,
+    },
+    #[error("invalid consumer for parameter {group:?}/{parameter:?}")]
+    InvalidParameterConsumer {
         group: CallableGroupIndex,
         parameter: CallableParameterIndex,
     },

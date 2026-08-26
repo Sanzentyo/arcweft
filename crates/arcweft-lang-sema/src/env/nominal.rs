@@ -5,7 +5,10 @@ use std::{collections::BTreeMap, hash::Hash};
 
 use arcweft_character::id::CharacterId;
 use arcweft_core::{
-    pattern::RuntimeOpaqueTypeProducerId,
+    pattern::{
+        RUNTIME_STANDARD_AGENT_ERROR, RUNTIME_STANDARD_OPAQUE_TYPES, RUNTIME_STANDARD_REDUCTION,
+        RuntimeOpaqueTypeProducerId, RuntimeStandardOpaqueTypeSpec,
+    },
     value::{RuntimeOpaquePersistence, RuntimeOpaqueValueClass},
 };
 use arcweft_lang_syntax::{
@@ -18,91 +21,18 @@ use arcweft_lang_syntax::{
 use arcweft_source::SourceSpan;
 use thiserror::Error;
 
-use super::{base::TypeCheckEnv, identity::EnvironmentBindingId};
+use super::{
+    base::{TypeCheckEnv, normalize_type_kind},
+    identity::EnvironmentBindingId,
+};
 use crate::{
     nominal::{AcceptedNominalCatalogLimitKind, AcceptedNominalCatalogLimits},
-    types::{CharacterNominalType, TypeKind},
+    types::{CharacterNominalType, SemanticTypeDigest, TypeKind, direct_type_name},
 };
 
 const MAX_OPEN_NAMESPACE_TAIL: u16 = 16;
 const MAX_NOMINAL_ARITY: u16 = 256;
-
-#[derive(Clone, Copy)]
-struct StandardOpaqueNominalSpec {
-    name: &'static str,
-    arity: u16,
-    producer: &'static str,
-}
-
-const STANDARD_AGENT_ERROR: StandardOpaqueNominalSpec = StandardOpaqueNominalSpec {
-    name: "AgentError",
-    arity: 0,
-    producer: "std.agent_error",
-};
-
-const STANDARD_OPAQUE_NOMINALS: [StandardOpaqueNominalSpec; 13] = [
-    StandardOpaqueNominalSpec {
-        name: "Reduction",
-        arity: 1,
-        producer: "std.reduction",
-    },
-    StandardOpaqueNominalSpec {
-        name: "Watch",
-        arity: 1,
-        producer: "std.watch",
-    },
-    StandardOpaqueNominalSpec {
-        name: "Sample",
-        arity: 1,
-        producer: "std.sample",
-    },
-    StandardOpaqueNominalSpec {
-        name: "VirtualPath",
-        arity: 0,
-        producer: "std.virtual_path",
-    },
-    StandardOpaqueNominalSpec {
-        name: "ArcError",
-        arity: 0,
-        producer: "std.arc_error",
-    },
-    StandardOpaqueNominalSpec {
-        name: "ReducerError",
-        arity: 0,
-        producer: "std.reducer_error",
-    },
-    STANDARD_AGENT_ERROR,
-    StandardOpaqueNominalSpec {
-        name: "AssetError",
-        arity: 0,
-        producer: "std.asset_error",
-    },
-    StandardOpaqueNominalSpec {
-        name: "ContentLoadError",
-        arity: 0,
-        producer: "std.content_load_error",
-    },
-    StandardOpaqueNominalSpec {
-        name: "DialogueText",
-        arity: 0,
-        producer: "std.dialogue_text",
-    },
-    StandardOpaqueNominalSpec {
-        name: "ImageHandle",
-        arity: 0,
-        producer: "std.image_handle",
-    },
-    StandardOpaqueNominalSpec {
-        name: "PresentationLifetime",
-        arity: 0,
-        producer: "std.presentation_lifetime",
-    },
-    StandardOpaqueNominalSpec {
-        name: "VoiceError",
-        arity: 0,
-        producer: "std.voice_error",
-    },
-];
+const ENVIRONMENT_FIELD_SEMANTIC_DOMAIN: &[u8] = b"arcweft.lang.accepted-environment-field.v1\0";
 
 /// Stable identity of one Rust package contributing accepted type exports.
 #[derive(Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
@@ -152,6 +82,118 @@ pub enum AcceptedNominalSemantics {
     Exact(TypeKind),
     Opaque(AcceptedOpaqueRuntimeCarrier),
     Character(CharacterNominalType),
+    Record(AcceptedEnvironmentRecordSemantics),
+}
+
+/// Declaration-ordered semantic shape of one accepted environment record.
+#[derive(Clone, Debug, Eq, Hash, PartialEq)]
+pub struct AcceptedEnvironmentRecordSemantics {
+    ty: TypeKind,
+    semantic_type: SemanticTypeDigest,
+    fields: Box<[AcceptedEnvironmentRecordField]>,
+    runtime_carrier: Option<AcceptedOpaqueRuntimeCarrier>,
+}
+
+/// One declaration-ordered field in an accepted environment record.
+#[derive(Clone, Debug, Eq, Hash, PartialEq)]
+pub struct AcceptedEnvironmentRecordField {
+    diagnostic_name: String,
+    ordinal: u32,
+    ty: TypeKind,
+    type_digest: SemanticTypeDigest,
+    semantic_id: AcceptedEnvironmentFieldSemanticId,
+}
+
+/// Opaque exact identity of one accepted environment record row.
+///
+/// Construction remains with the catalog-owned record so prepared/final
+/// semantic carriers cannot pair a type digest with a different nominal owner.
+#[derive(Clone, Debug, Eq, Hash, PartialEq)]
+pub struct AcceptedEnvironmentRecordIdentity {
+    nominal: AcceptedNominalId,
+    semantic_type: SemanticTypeDigest,
+    field_count: u32,
+}
+
+impl AcceptedEnvironmentRecordIdentity {
+    pub const fn nominal(&self) -> &AcceptedNominalId {
+        &self.nominal
+    }
+
+    pub const fn semantic_type(&self) -> SemanticTypeDigest {
+        self.semantic_type
+    }
+
+    pub const fn field_count(&self) -> u32 {
+        self.field_count
+    }
+}
+
+/// Semantic identity of one exact environment record field.
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub(crate) struct AcceptedEnvironmentFieldSemanticId([u8; 32]);
+
+impl AcceptedEnvironmentRecordSemantics {
+    pub const fn ty(&self) -> &TypeKind {
+        &self.ty
+    }
+
+    pub const fn semantic_type(&self) -> SemanticTypeDigest {
+        self.semantic_type
+    }
+
+    pub const fn fields(&self) -> &[AcceptedEnvironmentRecordField] {
+        &self.fields
+    }
+
+    /// Exact runtime carrier accepted for this source-visible record, when the
+    /// record's payload is supplied by a domain owner rather than constructed
+    /// by the Arcweft value algebra.
+    pub const fn runtime_carrier(&self) -> Option<&AcceptedOpaqueRuntimeCarrier> {
+        self.runtime_carrier.as_ref()
+    }
+
+    pub fn field(&self, name: &str) -> Option<&AcceptedEnvironmentRecordField> {
+        self.fields
+            .iter()
+            .find(|field| field.diagnostic_name == name)
+    }
+}
+
+impl AcceptedEnvironmentRecordField {
+    pub fn diagnostic_name(&self) -> &str {
+        &self.diagnostic_name
+    }
+
+    pub const fn ordinal(&self) -> u32 {
+        self.ordinal
+    }
+
+    pub const fn ty(&self) -> &TypeKind {
+        &self.ty
+    }
+
+    pub const fn type_digest(&self) -> SemanticTypeDigest {
+        self.type_digest
+    }
+
+    pub(crate) const fn semantic_id(&self) -> AcceptedEnvironmentFieldSemanticId {
+        self.semantic_id
+    }
+}
+
+impl AcceptedEnvironmentFieldSemanticId {
+    pub(crate) fn issue(
+        owner: SemanticTypeDigest,
+        ordinal: u32,
+        field_type: SemanticTypeDigest,
+    ) -> Self {
+        accepted_environment_field_semantic_id(owner, ordinal, field_type)
+    }
+
+    pub(crate) const fn as_bytes(&self) -> &[u8; 32] {
+        &self.0
+    }
 }
 
 /// Concrete runtime carrier admitted for one accepted nominal declaration.
@@ -163,6 +205,30 @@ pub struct AcceptedOpaqueRuntimeCarrier {
     producer: RuntimeOpaqueTypeProducerId,
     value_class: RuntimeOpaqueValueClass,
     persistence: RuntimeOpaquePersistence,
+}
+
+/// Exact accepted environment-record field backed by an opaque runtime
+/// carrier. The projection is issued only by the catalog that owns both the
+/// source-visible field row and its runtime producer.
+#[derive(Clone, Copy, Debug)]
+pub struct AcceptedRuntimeEnvironmentFieldProjection<'a> {
+    owner: &'a AcceptedEnvironmentRecordSemantics,
+    carrier: &'a AcceptedOpaqueRuntimeCarrier,
+    field: &'a AcceptedEnvironmentRecordField,
+}
+
+impl AcceptedRuntimeEnvironmentFieldProjection<'_> {
+    pub const fn owner(&self) -> &AcceptedEnvironmentRecordSemantics {
+        self.owner
+    }
+
+    pub const fn carrier(&self) -> &AcceptedOpaqueRuntimeCarrier {
+        self.carrier
+    }
+
+    pub const fn field(&self) -> &AcceptedEnvironmentRecordField {
+        self.field
+    }
 }
 
 impl AcceptedOpaqueRuntimeCarrier {
@@ -334,6 +400,16 @@ pub enum AcceptedNominalCatalogError {
         observed: u64,
         maximum: u64,
     },
+    #[error("accepted environment record `{id}` has mismatched semantic identity")]
+    RecordIdentityMismatch {
+        id: String,
+        expected: SemanticTypeDigest,
+        actual: SemanticTypeDigest,
+    },
+    #[error("accepted environment record `{id}` contains duplicate field `{field}`")]
+    DuplicateRecordField { id: String, field: String },
+    #[error("accepted environment record `{id}` has more than u32::MAX fields")]
+    RecordFieldOrdinalOverflow { id: String },
 }
 
 impl RustPackageId {
@@ -418,7 +494,9 @@ impl AcceptedNominalRecord {
             || (arity != 0
                 && matches!(
                     semantics,
-                    AcceptedNominalSemantics::Exact(_) | AcceptedNominalSemantics::Character(_)
+                    AcceptedNominalSemantics::Exact(_)
+                        | AcceptedNominalSemantics::Character(_)
+                        | AcceptedNominalSemantics::Record(_)
                 ))
         {
             return Err(AcceptedNominalCatalogError::InvalidArity {
@@ -432,6 +510,9 @@ impl AcceptedNominalRecord {
                 path: id.canonical_path().clone(),
             });
         }
+        if let AcceptedNominalSemantics::Record(record) = &semantics {
+            validate_environment_record(&id, record)?;
+        }
         Ok(Self {
             id,
             arity,
@@ -439,6 +520,90 @@ impl AcceptedNominalRecord {
             origin,
             source,
         })
+    }
+
+    /// Validates and creates one accepted declaration-ordered record row.
+    pub(crate) fn try_new_record(
+        id: AcceptedNominalId,
+        ty: TypeKind,
+        fields: impl IntoIterator<Item = (String, TypeKind)>,
+        origin: AcceptedNominalOrigin,
+        source: Option<SourceSpan>,
+    ) -> Result<Self, AcceptedNominalCatalogError> {
+        Self::try_new_record_with_runtime_carrier(id, ty, fields, None, origin, source)
+    }
+
+    /// Validates one declaration-ordered environment record whose concrete
+    /// values are supplied through an exact registered opaque carrier.
+    pub(crate) fn try_new_runtime_record(
+        id: AcceptedNominalId,
+        ty: TypeKind,
+        fields: impl IntoIterator<Item = (String, TypeKind)>,
+        runtime_carrier: AcceptedOpaqueRuntimeCarrier,
+        origin: AcceptedNominalOrigin,
+        source: Option<SourceSpan>,
+    ) -> Result<Self, AcceptedNominalCatalogError> {
+        Self::try_new_record_with_runtime_carrier(
+            id,
+            ty,
+            fields,
+            Some(runtime_carrier),
+            origin,
+            source,
+        )
+    }
+
+    fn try_new_record_with_runtime_carrier(
+        id: AcceptedNominalId,
+        ty: TypeKind,
+        fields: impl IntoIterator<Item = (String, TypeKind)>,
+        runtime_carrier: Option<AcceptedOpaqueRuntimeCarrier>,
+        origin: AcceptedNominalOrigin,
+        source: Option<SourceSpan>,
+    ) -> Result<Self, AcceptedNominalCatalogError> {
+        let ty = normalize_type_kind(ty);
+        let semantic_type = ty.semantic_identity_digest();
+        let id_label = id.source_label();
+        let mut names = std::collections::BTreeSet::new();
+        let mut accepted = Vec::new();
+        for (diagnostic_name, field_ty) in fields {
+            let ordinal = u32::try_from(accepted.len()).map_err(|_| {
+                AcceptedNominalCatalogError::RecordFieldOrdinalOverflow {
+                    id: id_label.clone(),
+                }
+            })?;
+            if !names.insert(diagnostic_name.clone()) {
+                return Err(AcceptedNominalCatalogError::DuplicateRecordField {
+                    id: id_label,
+                    field: diagnostic_name,
+                });
+            }
+            let field_ty = normalize_type_kind(field_ty);
+            let type_digest = field_ty.semantic_identity_digest();
+            accepted.push(AcceptedEnvironmentRecordField {
+                diagnostic_name,
+                ordinal,
+                ty: field_ty,
+                type_digest,
+                semantic_id: accepted_environment_field_semantic_id(
+                    semantic_type,
+                    ordinal,
+                    type_digest,
+                ),
+            });
+        }
+        Self::try_new(
+            id,
+            0,
+            AcceptedNominalSemantics::Record(AcceptedEnvironmentRecordSemantics {
+                ty,
+                semantic_type,
+                fields: accepted.into_boxed_slice(),
+                runtime_carrier,
+            }),
+            origin,
+            source,
+        )
     }
 
     /// Validates and creates one opaque accepted runtime-carrier record.
@@ -484,6 +649,34 @@ impl AcceptedNominalRecord {
         self.source.as_ref()
     }
 
+    pub const fn environment_record(&self) -> Option<&AcceptedEnvironmentRecordSemantics> {
+        match &self.semantics {
+            AcceptedNominalSemantics::Record(record) => Some(record),
+            AcceptedNominalSemantics::Exact(_)
+            | AcceptedNominalSemantics::Opaque(_)
+            | AcceptedNominalSemantics::Character(_) => None,
+        }
+    }
+
+    /// Exact registered runtime carrier, whether the source-visible nominal is
+    /// opaque itself or a domain-supplied record with typed fields.
+    pub const fn runtime_carrier(&self) -> Option<&AcceptedOpaqueRuntimeCarrier> {
+        match &self.semantics {
+            AcceptedNominalSemantics::Opaque(carrier) => Some(carrier),
+            AcceptedNominalSemantics::Record(record) => record.runtime_carrier(),
+            AcceptedNominalSemantics::Exact(_) | AcceptedNominalSemantics::Character(_) => None,
+        }
+    }
+
+    pub(crate) fn environment_record_identity(&self) -> Option<AcceptedEnvironmentRecordIdentity> {
+        let record = self.environment_record()?;
+        Some(AcceptedEnvironmentRecordIdentity {
+            nominal: self.id.clone(),
+            semantic_type: record.semantic_type(),
+            field_count: u32::try_from(record.fields().len()).ok()?,
+        })
+    }
+
     /// Instantiates this exact record without performing another name lookup.
     pub(crate) fn try_instantiate(
         &self,
@@ -505,7 +698,12 @@ impl AcceptedNominalRecord {
             AcceptedNominalSemantics::Character(character) if arguments.is_empty() => {
                 Ok(TypeKind::CharacterNominal(character.clone()))
             }
-            AcceptedNominalSemantics::Exact(_) | AcceptedNominalSemantics::Character(_) => {
+            AcceptedNominalSemantics::Record(record) if arguments.is_empty() => {
+                Ok(record.ty().clone())
+            }
+            AcceptedNominalSemantics::Exact(_)
+            | AcceptedNominalSemantics::Character(_)
+            | AcceptedNominalSemantics::Record(_) => {
                 Err(AcceptedNominalInstantiationError::InvalidSemantics {
                     id: self.id.source_label(),
                 })
@@ -742,6 +940,40 @@ impl AcceptedNominalCatalog {
         self.exact.values()
     }
 
+    /// Sole accepted environment-record row for one semantic source type.
+    pub fn environment_record_for_semantic_type(
+        &self,
+        semantic_type: SemanticTypeDigest,
+    ) -> Option<&AcceptedNominalRecord> {
+        self.exact.values().find(|record| {
+            record
+                .environment_record()
+                .is_some_and(|environment| environment.semantic_type() == semantic_type)
+        })
+    }
+
+    /// Projects an exact checked environment field only when its owner is a
+    /// runtime-supplied opaque record and the complete ordinal/type relation
+    /// matches the accepted catalog row.
+    pub fn runtime_environment_field(
+        &self,
+        owner: SemanticTypeDigest,
+        ordinal: u32,
+        field_type: SemanticTypeDigest,
+    ) -> Option<AcceptedRuntimeEnvironmentFieldProjection<'_>> {
+        let record = self.environment_record_for_semantic_type(owner)?;
+        let semantics = record.environment_record()?;
+        let carrier = semantics.runtime_carrier()?;
+        let field = semantics.fields().get(usize::try_from(ordinal).ok()?)?;
+        (field.ordinal() == ordinal && field.type_digest() == field_type).then_some(
+            AcceptedRuntimeEnvironmentFieldProjection {
+                owner: semantics,
+                carrier,
+                field,
+            },
+        )
+    }
+
     /// Deterministically ordered exact records contributed by one typed owner.
     pub fn exact_records_for_owner<'a>(
         &'a self,
@@ -860,7 +1092,7 @@ impl TypeCheckEnv {
     }
 
     fn with_standard_opaque_nominals(self) -> Self {
-        STANDARD_OPAQUE_NOMINALS
+        RUNTIME_STANDARD_OPAQUE_TYPES
             .into_iter()
             .fold(self, |environment, spec| {
                 environment
@@ -913,11 +1145,7 @@ pub(super) fn standard_exact_record(
     semantics: TypeKind,
     origin: AcceptedNominalOrigin,
 ) -> Result<AcceptedNominalRecord, AcceptedNominalCatalogError> {
-    let segment = ProjectSymbolSegment::try_new(name.to_owned())
-        .expect("environment-owned type names are validated project-symbol segments");
-    let path = ProjectSymbolPath::new(ModulePathRoot::ImplicitCrate, [segment])
-        .expect("one validated segment is a valid project-symbol path")
-        .into();
+    let path = standard_nominal_path(name);
     AcceptedNominalRecord::try_new(
         AcceptedNominalId::new(AcceptedNominalOwnerId::Standard, path),
         0,
@@ -927,29 +1155,147 @@ pub(super) fn standard_exact_record(
     )
 }
 
+pub(super) fn standard_environment_record(
+    name: &str,
+    fields: impl IntoIterator<Item = (String, TypeKind)>,
+) -> Result<AcceptedNominalRecord, AcceptedNominalCatalogError> {
+    let path = standard_nominal_path(name);
+    AcceptedNominalRecord::try_new_record(
+        AcceptedNominalId::new(AcceptedNominalOwnerId::Standard, path),
+        TypeKind::Named(name.to_owned()),
+        fields,
+        AcceptedNominalOrigin::NominalRecord,
+        None,
+    )
+}
+
+pub(super) fn standard_runtime_environment_record(
+    name: &str,
+    fields: impl IntoIterator<Item = (String, TypeKind)>,
+    runtime_carrier: AcceptedOpaqueRuntimeCarrier,
+) -> Result<AcceptedNominalRecord, AcceptedNominalCatalogError> {
+    let path = standard_nominal_path(name);
+    AcceptedNominalRecord::try_new_runtime_record(
+        AcceptedNominalId::new(AcceptedNominalOwnerId::Standard, path),
+        TypeKind::Named(name.to_owned()),
+        fields,
+        runtime_carrier,
+        AcceptedNominalOrigin::NominalRecord,
+        None,
+    )
+}
+
+fn validate_environment_record(
+    id: &AcceptedNominalId,
+    record: &AcceptedEnvironmentRecordSemantics,
+) -> Result<(), AcceptedNominalCatalogError> {
+    let expected_type = direct_type_name(id.canonical_path())
+        .map(|name| TypeKind::Named(name.to_owned()))
+        .unwrap_or_else(|| record.ty().clone());
+    let expected = expected_type.semantic_identity_digest();
+    let actual = record.ty().semantic_identity_digest();
+    if expected != actual || record.semantic_type() != actual {
+        return Err(AcceptedNominalCatalogError::RecordIdentityMismatch {
+            id: id.source_label(),
+            expected,
+            actual: record.semantic_type(),
+        });
+    }
+    let mut names = std::collections::BTreeSet::new();
+    for (expected_ordinal, field) in record.fields().iter().enumerate() {
+        let ordinal = u32::try_from(expected_ordinal).map_err(|_| {
+            AcceptedNominalCatalogError::RecordFieldOrdinalOverflow {
+                id: id.source_label(),
+            }
+        })?;
+        if !names.insert(field.diagnostic_name().to_owned()) {
+            return Err(AcceptedNominalCatalogError::DuplicateRecordField {
+                id: id.source_label(),
+                field: field.diagnostic_name().to_owned(),
+            });
+        }
+        let type_digest = field.ty().semantic_identity_digest();
+        let semantic_id = accepted_environment_field_semantic_id(actual, ordinal, type_digest);
+        if field.ordinal() != ordinal
+            || field.type_digest() != type_digest
+            || field.semantic_id().as_bytes() != semantic_id.as_bytes()
+        {
+            return Err(AcceptedNominalCatalogError::RecordIdentityMismatch {
+                id: id.source_label(),
+                expected: type_digest,
+                actual: field.type_digest(),
+            });
+        }
+    }
+    Ok(())
+}
+
+fn accepted_environment_field_semantic_id(
+    owner: SemanticTypeDigest,
+    ordinal: u32,
+    field_type: SemanticTypeDigest,
+) -> AcceptedEnvironmentFieldSemanticId {
+    let mut hasher = blake3::Hasher::new();
+    hasher.update(ENVIRONMENT_FIELD_SEMANTIC_DOMAIN);
+    hasher.update(owner.as_bytes());
+    hasher.update(&ordinal.to_le_bytes());
+    hasher.update(field_type.as_bytes());
+    AcceptedEnvironmentFieldSemanticId(hasher.finalize().into())
+}
+
 fn standard_opaque_record(
-    spec: StandardOpaqueNominalSpec,
+    spec: RuntimeStandardOpaqueTypeSpec,
     origin: AcceptedNominalOrigin,
 ) -> Result<AcceptedNominalRecord, AcceptedNominalCatalogError> {
-    let segment = ProjectSymbolSegment::try_new(spec.name.to_owned())
-        .expect("environment-owned type names are validated project-symbol segments");
-    let path = ProjectSymbolPath::new(ModulePathRoot::ImplicitCrate, [segment])
-        .expect("one validated segment is a valid project-symbol path")
-        .into();
+    let path = standard_nominal_path_segments(spec.path());
     AcceptedNominalRecord::try_new_opaque(
         AcceptedNominalId::new(AcceptedNominalOwnerId::Standard, path),
-        spec.arity,
-        RuntimeOpaqueTypeProducerId::try_new(spec.producer)
+        spec.arity(),
+        RuntimeOpaqueTypeProducerId::try_new(spec.producer())
             .expect("fixed standard opaque producer IDs are valid"),
-        RuntimeOpaqueValueClass::Plain,
-        RuntimeOpaquePersistence::ConstantAndSnapshot,
+        spec.value_class(),
+        spec.persistence(),
         origin,
         None,
     )
 }
 
+fn standard_nominal_path(name: &str) -> TypePath {
+    standard_nominal_path_segments(&[name])
+}
+
+fn standard_nominal_path_segments(segments: &[&str]) -> TypePath {
+    let segments = segments.iter().map(|segment| {
+        ProjectSymbolSegment::try_new((*segment).to_owned())
+            .expect("environment-owned type names are validated project-symbol segments")
+    });
+    ProjectSymbolPath::new(ModulePathRoot::ImplicitCrate, segments)
+        .expect("one validated segment is a valid project-symbol path")
+        .into()
+}
+
+/// Selects the exact standard Reduction row from an accepted catalog.
+///
+/// The locally constructed path is lookup-only. The returned owner is always
+/// the record already admitted by the catalog at that exact path.
+pub(crate) fn standard_reduction_record(
+    catalog: &AcceptedNominalCatalog,
+) -> Option<&AcceptedNominalRecord> {
+    let path = standard_nominal_path_segments(RUNTIME_STANDARD_REDUCTION.path());
+    let record = catalog.exact(&path)?;
+    (record.id().owner() == &AcceptedNominalOwnerId::Standard
+        && record.id().canonical_path() == &path
+        && record.arity() == RUNTIME_STANDARD_REDUCTION.arity()
+        && matches!(
+            record.semantics(),
+            AcceptedNominalSemantics::Opaque(carrier)
+                if carrier.producer().as_str() == RUNTIME_STANDARD_REDUCTION.producer()
+        ))
+    .then_some(record)
+}
+
 pub(crate) fn standard_agent_error_type() -> TypeKind {
-    standard_opaque_record(STANDARD_AGENT_ERROR, AcceptedNominalOrigin::Domain)
+    standard_opaque_record(RUNTIME_STANDARD_AGENT_ERROR, AcceptedNominalOrigin::Domain)
         .expect("AgentError has valid fixed standard opaque evidence")
         .try_instantiate([])
         .expect("AgentError is a zero-argument standard opaque nominal")

@@ -1,7 +1,7 @@
 //! Module-preserving project owner for the final arena HIR.
 
-use std::collections::BTreeMap;
 use std::sync::Arc;
+use std::{collections::BTreeMap, fmt};
 
 use arcweft_lang_syntax::ast::module_path::CanonicalModulePath;
 use arcweft_source::{SourceDocumentId, SourceDocumentIdentity};
@@ -14,7 +14,9 @@ use crate::item::{
     HirViewExportMember,
 };
 use crate::module::{HirModule, HirModuleStatus};
-use crate::symbol::CallablePackageId;
+use crate::symbol::{
+    CallablePackageId, ProjectSymbolRevision, ProjectSymbolTable, ProjectSymbolWorldId,
+};
 
 #[path = "final_project/dialogue_lines.rs"]
 mod dialogue_lines;
@@ -38,11 +40,24 @@ pub use self::runtime_semantic_owners::{
 };
 pub use self::selected_expressions::{
     HirRuntimeCallCalleeDisposition, HirRuntimeExpressionTypeDisposition,
-    HirSelectedExpressionInventoryError,
+    HirSelectedCallExpressionDisposition, HirSelectedCallExpressionInventory,
+    HirSelectedExpressionGraph, HirSelectedExpressionInventoryError,
 };
 pub use self::semantic_paths::{
-    HirDeclarationBodyRootRole, HirDeclarationSemanticPathIndex, HirExpressionSemanticHop,
-    HirSemanticPathError, HirSemanticPathStep,
+    HirAcceptedItemFamily, HirBindingSite, HirCaptureEvaluationIndex, HirCaptureEvaluationRow,
+    HirDeclarationBodyRoot, HirDeclarationBodyRootChild, HirDeclarationBodyRootRole,
+    HirDeclarationBodyTopology, HirDeclarationContractRoot, HirDeclarationContractRootRole,
+    HirDeclarationEvaluationPhase, HirDeclarationEvaluationView, HirDeclarationItemRootRole,
+    HirDeclarationParameterRoot, HirDeclarationParameterRootChild, HirDeclarationParameterRootRole,
+    HirExpressionBindingRole, HirExpressionCallableBoundary, HirExpressionEvaluationEdge,
+    HirExpressionSemanticHop, HirExpressionUseIndex, HirExpressionUseRow,
+    HirFlowContractRootFamily, HirImplicitCallableRegion, HirItemAttributeOwner,
+    HirItemEvaluationEntry, HirItemEvaluationEntryRole, HirItemEvaluationRoot,
+    HirItemRecoveryRootOwner, HirLayerExpressionRootField, HirLocalBindingOrigin,
+    HirLocalBindingOriginIndex, HirLocalBindingStatementRole, HirLocalValueOrigin,
+    HirMemberBindingRole, HirModuleEvaluationTopology, HirProjectEvaluationTopology,
+    HirSemanticOwnerPath, HirSemanticPathError, HirSemanticPathIndex, HirSemanticPathLookupError,
+    HirSemanticPathRoot, HirSemanticPathStep, HirStyleRootPath, HirStyleRootPathSegment,
 };
 
 /// Package-qualified canonical key for one project module.
@@ -582,7 +597,361 @@ pub struct HirExecutableProjectView<'project> {
     view: HirProjectView<'project>,
 }
 
+/// One immutable module generation retained by an accepted project witness.
+///
+/// The row is identity-only: the module arena is borrowed from the executable
+/// project view and is never copied into the generation token.
+pub struct AcceptedHirModuleGeneration {
+    canonical_path: CanonicalModulePath,
+    module: crate::identity::HirModuleId,
+    snapshot: HirSnapshotId,
+    source: SourceDocumentIdentity,
+}
+
+impl fmt::Debug for AcceptedHirModuleGeneration {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter
+            .debug_struct("AcceptedHirModuleGeneration")
+            .field("canonical_path", &self.canonical_path)
+            .field("module", &self.module)
+            .field("snapshot", &self.snapshot)
+            .field("source", &self.source)
+            .finish()
+    }
+}
+
+impl PartialEq for AcceptedHirModuleGeneration {
+    fn eq(&self, other: &Self) -> bool {
+        self.canonical_path == other.canonical_path
+            && self.module == other.module
+            && self.snapshot == other.snapshot
+            && self.source == other.source
+    }
+}
+
+impl Eq for AcceptedHirModuleGeneration {}
+
+impl AcceptedHirModuleGeneration {
+    pub const fn canonical_path(&self) -> &CanonicalModulePath {
+        &self.canonical_path
+    }
+
+    pub const fn module(&self) -> crate::identity::HirModuleId {
+        self.module
+    }
+
+    pub const fn snapshot(&self) -> HirSnapshotId {
+        self.snapshot
+    }
+
+    pub const fn source(&self) -> &SourceDocumentIdentity {
+        &self.source
+    }
+}
+
+/// One immutable project generation retained by an accepted project witness.
+///
+/// The generation owns only identity rows in canonical path order. Its package
+/// is derived from the symbol world, avoiding a duplicate package authority.
+pub struct AcceptedHirProjectGeneration {
+    symbol_world: ProjectSymbolWorldId,
+    symbol_revision: ProjectSymbolRevision,
+    modules: Box<[Arc<AcceptedHirModuleGeneration>]>,
+}
+
+impl fmt::Debug for AcceptedHirProjectGeneration {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter
+            .debug_struct("AcceptedHirProjectGeneration")
+            .field("symbol_world", &self.symbol_world)
+            .field("symbol_revision", &self.symbol_revision)
+            .field("modules", &self.modules)
+            .finish()
+    }
+}
+
+impl PartialEq for AcceptedHirProjectGeneration {
+    fn eq(&self, other: &Self) -> bool {
+        self.symbol_world == other.symbol_world
+            && self.symbol_revision == other.symbol_revision
+            && self.modules == other.modules
+    }
+}
+
+impl Eq for AcceptedHirProjectGeneration {}
+
+impl AcceptedHirProjectGeneration {
+    pub const fn symbol_world(&self) -> &ProjectSymbolWorldId {
+        &self.symbol_world
+    }
+
+    pub const fn symbol_revision(&self) -> ProjectSymbolRevision {
+        self.symbol_revision
+    }
+
+    pub const fn package(&self) -> &CallablePackageId {
+        self.symbol_world.package()
+    }
+
+    pub fn modules(&self) -> &[Arc<AcceptedHirModuleGeneration>] {
+        &self.modules
+    }
+
+    pub fn module(&self, path: &CanonicalModulePath) -> Option<&Arc<AcceptedHirModuleGeneration>> {
+        self.modules
+            .binary_search_by(|value| value.canonical_path().cmp(path))
+            .ok()
+            .map(|index| &self.modules[index])
+    }
+
+    pub fn same_generation(&self, other: &Self) -> bool {
+        self == other
+    }
+
+    /// Validates that this accepted generation is an exact lease for the
+    /// supplied executable project view.
+    ///
+    /// Symbol identity is validated by the admission that minted this
+    /// generation. This check closes the remaining project-owned portion of
+    /// the lease without reconstructing a second generation token.
+    pub fn validate_executable_lease(
+        &self,
+        project: HirExecutableProjectView<'_>,
+    ) -> Result<(), AcceptedHirProjectLeaseError> {
+        if self.package() != project.package() {
+            return Err(AcceptedHirProjectLeaseError::PackageMismatch);
+        }
+        let mut project_modules = project.modules();
+        let mut accepted_modules = self.modules.iter();
+        loop {
+            match (project_modules.next(), accepted_modules.next()) {
+                (Some((project_path, module)), Some(accepted)) => {
+                    match project_path.cmp(accepted.canonical_path()) {
+                        std::cmp::Ordering::Less => {
+                            return Err(AcceptedHirProjectLeaseError::MissingAcceptedModule {
+                                module: project_path.clone(),
+                            });
+                        }
+                        std::cmp::Ordering::Greater => {
+                            return Err(AcceptedHirProjectLeaseError::ExtraAcceptedModule {
+                                module: accepted.canonical_path().clone(),
+                            });
+                        }
+                        std::cmp::Ordering::Equal => {}
+                    }
+                    if accepted.module() != module.module_id() {
+                        return Err(AcceptedHirProjectLeaseError::ModuleMismatch {
+                            module: project_path.clone(),
+                        });
+                    }
+                    if accepted.snapshot() != module.snapshot_id() {
+                        return Err(AcceptedHirProjectLeaseError::SnapshotMismatch {
+                            module: project_path.clone(),
+                        });
+                    }
+                    if accepted.source() != module.provenance().source_identity() {
+                        return Err(AcceptedHirProjectLeaseError::SourceMismatch {
+                            module: project_path.clone(),
+                        });
+                    }
+                }
+                (Some((project_path, _)), None) => {
+                    return Err(AcceptedHirProjectLeaseError::MissingAcceptedModule {
+                        module: project_path.clone(),
+                    });
+                }
+                (None, Some(accepted)) => {
+                    return Err(AcceptedHirProjectLeaseError::ExtraAcceptedModule {
+                        module: accepted.canonical_path().clone(),
+                    });
+                }
+                (None, None) => return Ok(()),
+            }
+        }
+    }
+
+    pub fn validate_module_lease(
+        &self,
+        module: &HirModule,
+        symbols: &ProjectSymbolTable,
+    ) -> Result<(), AcceptedHirModuleLeaseError> {
+        if self.symbol_world != *symbols.world() {
+            return Err(AcceptedHirModuleLeaseError::WorldMismatch);
+        }
+        if self.symbol_revision != *symbols.revision() {
+            return Err(AcceptedHirModuleLeaseError::RevisionMismatch);
+        }
+        if self.symbol_world.package() != module.key().package() {
+            return Err(AcceptedHirModuleLeaseError::PackageMismatch);
+        }
+        let Some(row) = self.module(module.key().path()) else {
+            return Err(AcceptedHirModuleLeaseError::MissingModule);
+        };
+        if row.module() != module.module_id() {
+            return Err(AcceptedHirModuleLeaseError::ModuleMismatch);
+        }
+        if row.snapshot() != module.snapshot_id() {
+            return Err(AcceptedHirModuleLeaseError::SnapshotMismatch);
+        }
+        if row.source() != module.provenance().source_identity()
+            || symbols.source_identity(module.key().path()) != Some(row.source())
+        {
+            return Err(AcceptedHirModuleLeaseError::SourceMismatch);
+        }
+        Ok(())
+    }
+}
+
+#[derive(Clone, Debug, Eq, Error, PartialEq)]
+pub enum AcceptedHirProjectLeaseError {
+    #[error("accepted HIR generation and executable project have different packages")]
+    PackageMismatch,
+    #[error("executable HIR module is absent from the accepted generation: {module}")]
+    MissingAcceptedModule { module: CanonicalModulePath },
+    #[error("accepted generation contains a module absent from executable HIR: {module}")]
+    ExtraAcceptedModule { module: CanonicalModulePath },
+    #[error("accepted generation module identity differs for `{module}`")]
+    ModuleMismatch { module: CanonicalModulePath },
+    #[error("accepted generation module snapshot differs for `{module}`")]
+    SnapshotMismatch { module: CanonicalModulePath },
+    #[error("accepted generation module source identity differs for `{module}`")]
+    SourceMismatch { module: CanonicalModulePath },
+}
+
+#[derive(Clone, Debug, Eq, Error, PartialEq)]
+pub enum AcceptedHirModuleLeaseError {
+    #[error("accepted HIR project generation symbol world differs")]
+    WorldMismatch,
+    #[error("accepted HIR project generation symbol revision differs")]
+    RevisionMismatch,
+    #[error("accepted HIR project/module packages differ")]
+    PackageMismatch,
+    #[error("module is absent from the accepted project generation")]
+    MissingModule,
+    #[error("module identity differs from the accepted project generation")]
+    ModuleMismatch,
+    #[error("module snapshot differs from the accepted project generation")]
+    SnapshotMismatch,
+    #[error("module source identity differs from the accepted project generation")]
+    SourceMismatch,
+}
+
+/// Exact symbol-generation witness for one executable HIR project.
+///
+/// The witness is move-only so consumers cannot retain an independently
+/// reconstructed package/module/source join.  It is issued only after the
+/// symbol table has been checked against every executable module lease.
+pub struct AcceptedHirProjectSymbolGeneration<'project, 'symbols> {
+    project: HirExecutableProjectView<'project>,
+    symbols: &'symbols ProjectSymbolTable,
+    generation: Arc<AcceptedHirProjectGeneration>,
+}
+
+impl<'project, 'symbols> AcceptedHirProjectSymbolGeneration<'project, 'symbols> {
+    pub const fn project(&self) -> HirExecutableProjectView<'project> {
+        self.project
+    }
+
+    pub const fn symbols(&self) -> &'symbols ProjectSymbolTable {
+        self.symbols
+    }
+
+    pub fn generation(&self) -> &Arc<AcceptedHirProjectGeneration> {
+        &self.generation
+    }
+}
+
+#[derive(Clone, Debug, Eq, Error, PartialEq)]
+pub enum AcceptedHirProjectSymbolGenerationError {
+    #[error("HIR and symbol generations have different packages")]
+    PackageMismatch,
+    #[error("symbol generation contains a module absent from HIR: {module}")]
+    ExtraSymbolModule { module: CanonicalModulePath },
+    #[error("HIR module is absent from the symbol generation: {module}")]
+    MissingSymbolModule { module: CanonicalModulePath },
+    #[error("symbol generation source identity does not match HIR module `{module}`")]
+    SourceIdentityMismatch { module: CanonicalModulePath },
+}
+
 impl<'project> HirExecutableProjectView<'project> {
+    /// Mints the sole exact symbol-generation witness for this executable
+    /// project.  Every accepted HIR module and every symbol module must join
+    /// by canonical path and source-document identity.
+    pub fn accept_symbol_generation<'symbols>(
+        self,
+        symbols: &'symbols ProjectSymbolTable,
+    ) -> Result<
+        AcceptedHirProjectSymbolGeneration<'project, 'symbols>,
+        AcceptedHirProjectSymbolGenerationError,
+    > {
+        if symbols.world().package() != self.package() {
+            return Err(AcceptedHirProjectSymbolGenerationError::PackageMismatch);
+        }
+        let mut project_modules = self.modules();
+        let mut symbol_modules = symbols.modules();
+        let mut accepted_modules = Vec::new();
+        loop {
+            match (project_modules.next(), symbol_modules.next()) {
+                (Some((project_path, module)), Some(symbol_path)) => match project_path
+                    .cmp(symbol_path)
+                {
+                    std::cmp::Ordering::Less => {
+                        return Err(
+                            AcceptedHirProjectSymbolGenerationError::MissingSymbolModule {
+                                module: project_path.clone(),
+                            },
+                        );
+                    }
+                    std::cmp::Ordering::Greater => {
+                        return Err(AcceptedHirProjectSymbolGenerationError::ExtraSymbolModule {
+                            module: symbol_path.clone(),
+                        });
+                    }
+                    std::cmp::Ordering::Equal => {
+                        if symbols.source_identity(project_path)
+                            != Some(module.provenance().source_identity())
+                        {
+                            return Err(
+                                AcceptedHirProjectSymbolGenerationError::SourceIdentityMismatch {
+                                    module: project_path.clone(),
+                                },
+                            );
+                        }
+                        accepted_modules.push(Arc::new(AcceptedHirModuleGeneration {
+                            canonical_path: project_path.clone(),
+                            module: module.module_id(),
+                            snapshot: module.snapshot_id(),
+                            source: module.provenance().source_identity().clone(),
+                        }));
+                    }
+                },
+                (Some((project_path, _)), None) => {
+                    return Err(
+                        AcceptedHirProjectSymbolGenerationError::MissingSymbolModule {
+                            module: project_path.clone(),
+                        },
+                    );
+                }
+                (None, Some(symbol_path)) => {
+                    return Err(AcceptedHirProjectSymbolGenerationError::ExtraSymbolModule {
+                        module: symbol_path.clone(),
+                    });
+                }
+                (None, None) => break,
+            }
+        }
+        let generation = Arc::new(AcceptedHirProjectGeneration {
+            symbol_world: symbols.world().clone(),
+            symbol_revision: *symbols.revision(),
+            modules: accepted_modules.into_boxed_slice(),
+        });
+        Ok(AcceptedHirProjectSymbolGeneration {
+            project: self,
+            symbols,
+            generation,
+        })
+    }
+
     /// Returns the exact tooling-capable view embedded by this executable
     /// admission without reopening or reconstructing the accepted project.
     pub const fn project_view(self) -> HirProjectView<'project> {

@@ -11,6 +11,7 @@ use arcweft_lang_syntax::{
 };
 use arcweft_source::SourceSpan;
 
+use super::super::hir_path_matches_type_path;
 use crate::{
     env::nominal::{
         OpenNominalArity, OpenNominalEnvironment, OpenNominalPattern, OpenNominalRule,
@@ -46,31 +47,6 @@ pub(super) fn direct_name(path: &HirPath) -> Option<&str> {
         HirPathSegment::Identifier(name) => name.as_str(),
         HirPathSegment::ProjectSymbol(name) => name.as_str(),
     })
-}
-
-pub(super) fn hir_path_matches_type_path(actual: &HirPath, expected: &TypePath) -> bool {
-    let root_matches = matches!(
-        (actual.root(), expected.root()),
-        (HirPathRoot::ImplicitCrate, ModulePathRoot::ImplicitCrate)
-            | (HirPathRoot::Crate, ModulePathRoot::Crate)
-            | (HirPathRoot::SelfModule, ModulePathRoot::SelfModule)
-    ) || matches!(
-        (actual.root(), expected.root()),
-        (HirPathRoot::Super { depth: actual }, ModulePathRoot::Super(expected)) if actual == expected
-    );
-    root_matches
-        && actual.segments().len() == expected.segments().len()
-        && actual
-            .segments()
-            .iter()
-            .zip(expected.segments())
-            .all(|(actual, expected)| {
-                let actual = match actual {
-                    HirPathSegment::Identifier(name) => name.as_str(),
-                    HirPathSegment::ProjectSymbol(name) => name.as_str(),
-                };
-                actual == expected.as_str()
-            })
 }
 
 pub(super) fn open_rule_matches_hir(

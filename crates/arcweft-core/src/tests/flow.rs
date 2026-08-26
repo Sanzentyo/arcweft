@@ -5,7 +5,7 @@ use crate::{
     pattern::RuntimeSemanticTypeId,
     plan::{
         FlowEvent, RuntimeAwaitPendingObserverSeed, RuntimeAwaitTargetSeed, RuntimeExprSeed,
-        RuntimeExprSeedKind, RuntimeFlowOpSeed, RuntimeFlowSeed,
+        RuntimeExprSeedKind, RuntimeFlowOpSeed, RuntimeFlowSchema, RuntimeFlowSeed,
         RuntimeHostTaskRequestTemplateSeed, RuntimePatternSeed, RuntimePatternSeedKind,
         RuntimePlanBuilder, RuntimePlanTypeProjection, RuntimePlanTypeSeed,
     },
@@ -35,6 +35,13 @@ fn flow_id(value: &str) -> crate::plan::FlowRuntimeId {
     crate::plan::FlowRuntimeId::from_runtime_target_value(value).expect("valid test flow id")
 }
 
+fn flow_schema(flow: &crate::plan::FlowRuntimeId) -> RuntimeFlowSchema {
+    RuntimeFlowSchema {
+        flow: flow.clone(),
+        parameters: Vec::new(),
+    }
+}
+
 fn finish_plan(flows: impl IntoIterator<Item = RuntimeFlowSeed>) -> crate::plan::RuntimePlan {
     let mut builder = RuntimePlanBuilder::new();
     builder
@@ -49,6 +56,9 @@ fn finish_plan(flows: impl IntoIterator<Item = RuntimeFlowSeed>) -> crate::plan:
         )
         .expect("typed scalar admission");
     for flow in flows {
+        builder
+            .push_flow_schema(flow_schema(flow.id()))
+            .expect("typed flow schema admission");
         builder.push_flow_seed(flow).expect("typed flow admission");
     }
     builder.finish().expect("valid typed runtime plan")
@@ -146,6 +156,9 @@ fn native_if_uses_the_admitted_bool_condition() {
         )
         .expect("typed scalar admission");
     builder
+        .push_flow_schema(flow_schema(&entry))
+        .expect("typed branch flow schema admission");
+    builder
         .push_flow_seed(RuntimeFlowSeed::new(
             entry.clone(),
             [],
@@ -188,6 +201,9 @@ fn await_progress_runs_only_the_first_matching_observer() {
             [],
         )
         .expect("Await observer types admit");
+    builder
+        .push_flow_schema(flow_schema(&entry))
+        .expect("Await observer flow schema admission");
     builder
         .push_flow_seed(RuntimeFlowSeed::new(
             entry.clone(),

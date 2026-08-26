@@ -1,16 +1,16 @@
 use super::AwbcCodecError;
 use super::wire::{Reader, Wire, Writer, wire_enum, wire_id};
 use crate::awbc::schema::{
-    AwbcAudioCommandId, AwbcBlockId, AwbcChoiceId, AwbcChoiceOptionId, AwbcConstant,
-    AwbcConstantId, AwbcContentUnitId, AwbcDigest, AwbcDisplayMapId, AwbcEffectPlanId,
-    AwbcEffectSet, AwbcEffectSetId, AwbcEntryId, AwbcFrameLayout, AwbcFrameLayoutId, AwbcFrameSlot,
-    AwbcFrameSlotRole, AwbcFunctionFlags, AwbcFunctionId, AwbcHeader, AwbcHostCallId,
-    AwbcInstructionId, AwbcIntrinsicId, AwbcLineTaskGroupId, AwbcLineTaskNodeId, AwbcMatchArmId,
-    AwbcPatternId, AwbcPureHelperId, AwbcRecordField, AwbcRegisterId, AwbcResourceId,
-    AwbcResumePointId, AwbcRuntimeType, AwbcScopeId, AwbcSignature, AwbcSignatureId,
-    AwbcSignedIntKind, AwbcSourceMapId, AwbcStreamPlanId, AwbcStringId, AwbcTableRange,
-    AwbcTaskPlanId, AwbcTraitMethodId, AwbcTypeId, AwbcUnsignedIntKind, AwbcVariantCase,
-    AwbcVariantIdentity,
+    AwbcAgentTypeShape, AwbcAudioCommandId, AwbcBlockId, AwbcChoiceId, AwbcChoiceOptionId,
+    AwbcConstant, AwbcConstantId, AwbcContentUnitId, AwbcDigest, AwbcDisplayMapId,
+    AwbcEffectPlanId, AwbcEffectSet, AwbcEffectSetId, AwbcEntryId, AwbcFrameLayout,
+    AwbcFrameLayoutId, AwbcFrameSlot, AwbcFrameSlotRole, AwbcFunctionFlags, AwbcFunctionId,
+    AwbcHeader, AwbcHostCallId, AwbcInstructionId, AwbcIntrinsicId, AwbcLineTaskGroupId,
+    AwbcLineTaskNodeId, AwbcMatchArmId, AwbcPatternId, AwbcPureHelperId, AwbcRecordField,
+    AwbcRegisterId, AwbcResourceId, AwbcResumePointId, AwbcRuntimeType, AwbcRuntimeTypeShape,
+    AwbcScopeId, AwbcSignature, AwbcSignatureId, AwbcSignedIntKind, AwbcSourceMapId,
+    AwbcStreamPlanId, AwbcStringId, AwbcTableRange, AwbcTaskPlanId, AwbcTraitMethodId, AwbcTypeId,
+    AwbcUnsignedIntKind, AwbcVariantCase, AwbcVariantIdentity,
 };
 use crate::pattern::RuntimeOpaqueTypeAdmission;
 use crate::plan::RuntimeAgentOperationalType;
@@ -143,13 +143,9 @@ impl Wire for AwbcVariantCase {
 impl Wire for AwbcVariantIdentity {
     fn write_wire(&self, writer: &mut Writer) -> Result<(), AwbcCodecError> {
         match self {
-            Self::Nominal {
-                public_id,
-                semantic_identity,
-            } => {
+            Self::Nominal { public_id } => {
                 writer.write_u8(0);
-                public_id.write_wire(writer)?;
-                semantic_identity.write_wire(writer)
+                public_id.write_wire(writer)
             }
             Self::Option => {
                 writer.write_u8(1);
@@ -167,7 +163,6 @@ impl Wire for AwbcVariantIdentity {
         match reader.read_u8()? {
             0 => Ok(Self::Nominal {
                 public_id: AwbcStringId::read_wire(reader)?,
-                semantic_identity: <[u8; 32]>::read_wire(reader)?,
             }),
             1 => Ok(Self::Option),
             2 => Ok(Self::Result),
@@ -224,155 +219,85 @@ wire_enum!(RuntimeOpaquePersistence, "opaque persistence", {
 
 impl Wire for AwbcRuntimeType {
     fn write_wire(&self, writer: &mut Writer) -> Result<(), AwbcCodecError> {
-        match self {
-            Self::Unit => writer.write_u8(0),
-            Self::Bool => writer.write_u8(1),
-            Self::Int(kind) => {
-                writer.write_u8(2);
-                kind.write_wire(writer)?;
-            }
-            Self::UInt(kind) => {
-                writer.write_u8(3);
-                kind.write_wire(writer)?;
-            }
-            Self::F32 => writer.write_u8(4),
-            Self::F64 => writer.write_u8(5),
-            Self::String => writer.write_u8(6),
-            Self::Char => writer.write_u8(7),
-            Self::Duration => writer.write_u8(8),
-            Self::EntityRef => writer.write_u8(9),
-            Self::Tuple(items) => {
-                writer.write_u8(10);
-                items.write_wire(writer)?;
-            }
-            Self::Sequence(item) => {
-                writer.write_u8(11);
-                item.write_wire(writer)?;
-            }
-            Self::Record { public_id, fields } => {
-                writer.write_u8(12);
-                public_id.write_wire(writer)?;
-                fields.write_wire(writer)?;
-            }
-            Self::Variant { owner, cases } => {
-                writer.write_u8(13);
-                owner.write_wire(writer)?;
-                cases.write_wire(writer)?;
-            }
-            Self::MatrixF32 => writer.write_u8(14),
-            Self::MatrixF64 => writer.write_u8(15),
-            Self::TensorF32 => writer.write_u8(16),
-            Self::TensorF64 => writer.write_u8(17),
-            Self::TaskHandle => writer.write_u8(18),
-            Self::NeedHandle => writer.write_u8(19),
-            Self::Dynamic => writer.write_u8(20),
-            Self::Choice(alternatives) => {
-                writer.write_u8(21);
-                alternatives.write_wire(writer)?;
-            }
-            Self::Nominal {
-                public_id,
-                semantic_identity,
-                layout,
-            } => {
-                writer.write_u8(22);
-                public_id.write_wire(writer)?;
-                semantic_identity.write_wire(writer)?;
-                layout.write_wire(writer)?;
-            }
-            Self::Opaque {
-                producer,
-                semantic_identity,
-                admission,
-                value_class,
-                persistence,
-                arguments,
-            } => {
-                writer.write_u8(23);
-                producer.write_wire(writer)?;
-                semantic_identity.write_wire(writer)?;
-                admission.write_wire(writer)?;
-                value_class.write_wire(writer)?;
-                persistence.write_wire(writer)?;
-                arguments.write_wire(writer)?;
-            }
-            Self::NominalRecord {
-                public_id,
-                semantic_identity,
-                layout,
-                fields,
-            } => {
-                writer.write_u8(24);
-                public_id.write_wire(writer)?;
-                semantic_identity.write_wire(writer)?;
-                layout.write_wire(writer)?;
-                fields.write_wire(writer)?;
-            }
-            Self::Bytes => writer.write_u8(25),
-            Self::Never => writer.write_u8(26),
-            Self::Agent(agent) => {
-                writer.write_u8(27);
-                agent.write_wire(writer)?;
-            }
-            Self::Progress => writer.write_u8(28),
-        }
-        Ok(())
+        self.semantic_identity().write_wire(writer)?;
+        write_runtime_type_shape(self.shape(), writer)
     }
 
     fn read_wire(reader: &mut Reader<'_>) -> Result<Self, AwbcCodecError> {
+        let semantic_identity = crate::pattern::RuntimeSemanticTypeId::read_wire(reader)?;
         let offset = reader.offset();
-        Ok(match reader.read_u8()? {
-            0 => Self::Unit,
-            1 => Self::Bool,
-            2 => Self::Int(AwbcSignedIntKind::read_wire(reader)?),
-            3 => Self::UInt(AwbcUnsignedIntKind::read_wire(reader)?),
-            4 => Self::F32,
-            5 => Self::F64,
-            6 => Self::String,
-            7 => Self::Char,
-            8 => Self::Duration,
-            9 => Self::EntityRef,
-            10 => Self::Tuple(Vec::<AwbcTypeId>::read_wire(reader)?),
-            11 => Self::Sequence(AwbcTypeId::read_wire(reader)?),
-            12 => Self::Record {
+        let shape = match reader.read_u8()? {
+            0 => AwbcRuntimeTypeShape::Unit,
+            1 => AwbcRuntimeTypeShape::Bool,
+            2 => AwbcRuntimeTypeShape::Int(AwbcSignedIntKind::read_wire(reader)?),
+            3 => AwbcRuntimeTypeShape::UInt(AwbcUnsignedIntKind::read_wire(reader)?),
+            4 => AwbcRuntimeTypeShape::F32,
+            5 => AwbcRuntimeTypeShape::F64,
+            6 => AwbcRuntimeTypeShape::String,
+            7 => AwbcRuntimeTypeShape::Char,
+            8 => AwbcRuntimeTypeShape::Duration,
+            9 => AwbcRuntimeTypeShape::EntityRef,
+            10 => AwbcRuntimeTypeShape::Tuple(Vec::<AwbcTypeId>::read_wire(reader)?),
+            11 => AwbcRuntimeTypeShape::Sequence(AwbcTypeId::read_wire(reader)?),
+            12 => AwbcRuntimeTypeShape::Record {
                 public_id: Option::<AwbcStringId>::read_wire(reader)?,
                 fields: Vec::<AwbcRecordField>::read_wire(reader)?,
             },
-            13 => Self::Variant {
+            13 => AwbcRuntimeTypeShape::Variant {
                 owner: AwbcVariantIdentity::read_wire(reader)?,
+                arguments: Vec::<AwbcTypeId>::read_wire(reader)?,
                 cases: Vec::<AwbcVariantCase>::read_wire(reader)?,
             },
-            14 => Self::MatrixF32,
-            15 => Self::MatrixF64,
-            16 => Self::TensorF32,
-            17 => Self::TensorF64,
-            18 => Self::TaskHandle,
-            19 => Self::NeedHandle,
-            20 => Self::Dynamic,
-            21 => Self::Choice(Vec::<AwbcTypeId>::read_wire(reader)?),
-            22 => Self::Nominal {
+            14 => AwbcRuntimeTypeShape::MatrixF32,
+            15 => AwbcRuntimeTypeShape::MatrixF64,
+            16 => AwbcRuntimeTypeShape::TensorF32,
+            17 => AwbcRuntimeTypeShape::TensorF64,
+            18 => AwbcRuntimeTypeShape::Task(AwbcTypeId::read_wire(reader)?),
+            19 => AwbcRuntimeTypeShape::Need(AwbcTypeId::read_wire(reader)?),
+            20 => AwbcRuntimeTypeShape::Dynamic,
+            21 => AwbcRuntimeTypeShape::Choice(Vec::<AwbcTypeId>::read_wire(reader)?),
+            22 => AwbcRuntimeTypeShape::Nominal {
                 public_id: AwbcStringId::read_wire(reader)?,
-                semantic_identity: <[u8; 32]>::read_wire(reader)?,
                 layout: <[u8; 32]>::read_wire(reader)?,
+                arguments: Vec::<AwbcTypeId>::read_wire(reader)?,
             },
-            23 => Self::Opaque {
+            23 => AwbcRuntimeTypeShape::Opaque {
                 producer: AwbcStringId::read_wire(reader)?,
-                semantic_identity: <[u8; 32]>::read_wire(reader)?,
                 admission: RuntimeOpaqueTypeAdmission::read_wire(reader)?,
                 value_class: RuntimeOpaqueValueClass::read_wire(reader)?,
                 persistence: RuntimeOpaquePersistence::read_wire(reader)?,
                 arguments: Vec::<AwbcTypeId>::read_wire(reader)?,
             },
-            24 => Self::NominalRecord {
+            24 => AwbcRuntimeTypeShape::NominalRecord {
                 public_id: AwbcStringId::read_wire(reader)?,
-                semantic_identity: <[u8; 32]>::read_wire(reader)?,
                 layout: <[u8; 32]>::read_wire(reader)?,
+                arguments: Vec::<AwbcTypeId>::read_wire(reader)?,
                 fields: Vec::<AwbcRecordField>::read_wire(reader)?,
             },
-            25 => Self::Bytes,
-            26 => Self::Never,
-            27 => Self::Agent(RuntimeAgentOperationalType::read_wire(reader)?),
-            28 => Self::Progress,
+            25 => AwbcRuntimeTypeShape::Bytes,
+            26 => AwbcRuntimeTypeShape::Never,
+            27 => AwbcRuntimeTypeShape::Agent(AwbcAgentTypeShape::read_wire(reader)?),
+            28 => AwbcRuntimeTypeShape::Progress,
+            29 => AwbcRuntimeTypeShape::Range(AwbcTypeId::read_wire(reader)?),
+            30 => AwbcRuntimeTypeShape::Iterator(AwbcTypeId::read_wire(reader)?),
+            31 => AwbcRuntimeTypeShape::Array {
+                item: AwbcTypeId::read_wire(reader)?,
+                length: u64::read_wire(reader)?,
+            },
+            32 => AwbcRuntimeTypeShape::Map {
+                key: AwbcTypeId::read_wire(reader)?,
+                value: AwbcTypeId::read_wire(reader)?,
+            },
+            33 => AwbcRuntimeTypeShape::Stream {
+                item: AwbcTypeId::read_wire(reader)?,
+                error: AwbcTypeId::read_wire(reader)?,
+            },
+            34 => AwbcRuntimeTypeShape::Shared(AwbcTypeId::read_wire(reader)?),
+            35 => AwbcRuntimeTypeShape::Reference(AwbcTypeId::read_wire(reader)?),
+            36 => AwbcRuntimeTypeShape::Function {
+                parameters: Vec::<AwbcTypeId>::read_wire(reader)?,
+                result: AwbcTypeId::read_wire(reader)?,
+            },
             tag => {
                 return Err(AwbcCodecError::UnknownTag {
                     kind: "runtime type",
@@ -380,8 +305,202 @@ impl Wire for AwbcRuntimeType {
                     offset,
                 });
             }
-        })
+        };
+        Ok(AwbcRuntimeType::new(semantic_identity, shape))
     }
+}
+
+fn write_runtime_type_shape(
+    shape: &AwbcRuntimeTypeShape,
+    writer: &mut Writer,
+) -> Result<(), AwbcCodecError> {
+    match shape {
+        AwbcRuntimeTypeShape::Unit => {
+            writer.write_u8(0);
+            Ok(())
+        }
+        AwbcRuntimeTypeShape::Bool => {
+            writer.write_u8(1);
+            Ok(())
+        }
+        AwbcRuntimeTypeShape::Int(kind) => write_tagged(writer, 2, kind),
+        AwbcRuntimeTypeShape::UInt(kind) => write_tagged(writer, 3, kind),
+        AwbcRuntimeTypeShape::F32 => {
+            writer.write_u8(4);
+            Ok(())
+        }
+        AwbcRuntimeTypeShape::F64 => {
+            writer.write_u8(5);
+            Ok(())
+        }
+        AwbcRuntimeTypeShape::String => {
+            writer.write_u8(6);
+            Ok(())
+        }
+        AwbcRuntimeTypeShape::Char => {
+            writer.write_u8(7);
+            Ok(())
+        }
+        AwbcRuntimeTypeShape::Duration => {
+            writer.write_u8(8);
+            Ok(())
+        }
+        AwbcRuntimeTypeShape::EntityRef => {
+            writer.write_u8(9);
+            Ok(())
+        }
+        AwbcRuntimeTypeShape::MatrixF32 => {
+            writer.write_u8(14);
+            Ok(())
+        }
+        AwbcRuntimeTypeShape::MatrixF64 => {
+            writer.write_u8(15);
+            Ok(())
+        }
+        AwbcRuntimeTypeShape::TensorF32 => {
+            writer.write_u8(16);
+            Ok(())
+        }
+        AwbcRuntimeTypeShape::TensorF64 => {
+            writer.write_u8(17);
+            Ok(())
+        }
+        AwbcRuntimeTypeShape::Dynamic => {
+            writer.write_u8(20);
+            Ok(())
+        }
+        AwbcRuntimeTypeShape::Bytes => {
+            writer.write_u8(25);
+            Ok(())
+        }
+        AwbcRuntimeTypeShape::Never => {
+            writer.write_u8(26);
+            Ok(())
+        }
+        AwbcRuntimeTypeShape::Progress => {
+            writer.write_u8(28);
+            Ok(())
+        }
+        _ => write_runtime_type_composite_shape(shape, writer),
+    }
+}
+
+fn write_runtime_type_composite_shape(
+    shape: &AwbcRuntimeTypeShape,
+    writer: &mut Writer,
+) -> Result<(), AwbcCodecError> {
+    match shape {
+        AwbcRuntimeTypeShape::Tuple(items) => write_tagged(writer, 10, items),
+        AwbcRuntimeTypeShape::Sequence(item) => write_tagged(writer, 11, item),
+        AwbcRuntimeTypeShape::Record { public_id, fields } => {
+            write_tagged_fields(writer, 12, |writer| {
+                public_id.write_wire(writer)?;
+                fields.write_wire(writer)
+            })
+        }
+        AwbcRuntimeTypeShape::Variant {
+            owner,
+            arguments,
+            cases,
+        } => write_tagged_fields(writer, 13, |writer| {
+            owner.write_wire(writer)?;
+            arguments.write_wire(writer)?;
+            cases.write_wire(writer)
+        }),
+        AwbcRuntimeTypeShape::Task(result) => write_tagged(writer, 18, result),
+        AwbcRuntimeTypeShape::Need(value) => write_tagged(writer, 19, value),
+        AwbcRuntimeTypeShape::Choice(alternatives) => write_tagged(writer, 21, alternatives),
+        AwbcRuntimeTypeShape::Nominal {
+            public_id,
+            layout,
+            arguments,
+        } => write_tagged_fields(writer, 22, |writer| {
+            public_id.write_wire(writer)?;
+            layout.write_wire(writer)?;
+            arguments.write_wire(writer)
+        }),
+        AwbcRuntimeTypeShape::Opaque {
+            producer,
+            admission,
+            value_class,
+            persistence,
+            arguments,
+        } => write_tagged_fields(writer, 23, |writer| {
+            producer.write_wire(writer)?;
+            admission.write_wire(writer)?;
+            value_class.write_wire(writer)?;
+            persistence.write_wire(writer)?;
+            arguments.write_wire(writer)
+        }),
+        AwbcRuntimeTypeShape::NominalRecord {
+            public_id,
+            layout,
+            arguments,
+            fields,
+        } => write_tagged_fields(writer, 24, |writer| {
+            public_id.write_wire(writer)?;
+            layout.write_wire(writer)?;
+            arguments.write_wire(writer)?;
+            fields.write_wire(writer)
+        }),
+        AwbcRuntimeTypeShape::Agent(agent) => write_tagged(writer, 27, agent),
+        AwbcRuntimeTypeShape::Range(item) => write_tagged(writer, 29, item),
+        AwbcRuntimeTypeShape::Iterator(item) => write_tagged(writer, 30, item),
+        AwbcRuntimeTypeShape::Array { item, length } => write_tagged_fields(writer, 31, |writer| {
+            item.write_wire(writer)?;
+            length.write_wire(writer)
+        }),
+        AwbcRuntimeTypeShape::Map { key, value } => write_tagged_fields(writer, 32, |writer| {
+            key.write_wire(writer)?;
+            value.write_wire(writer)
+        }),
+        AwbcRuntimeTypeShape::Stream { item, error } => write_tagged_fields(writer, 33, |writer| {
+            item.write_wire(writer)?;
+            error.write_wire(writer)
+        }),
+        AwbcRuntimeTypeShape::Shared(value) => write_tagged(writer, 34, value),
+        AwbcRuntimeTypeShape::Reference(value) => write_tagged(writer, 35, value),
+        AwbcRuntimeTypeShape::Function { parameters, result } => {
+            write_tagged_fields(writer, 36, |writer| {
+                parameters.write_wire(writer)?;
+                result.write_wire(writer)
+            })
+        }
+        AwbcRuntimeTypeShape::Unit
+        | AwbcRuntimeTypeShape::Bool
+        | AwbcRuntimeTypeShape::Int(_)
+        | AwbcRuntimeTypeShape::UInt(_)
+        | AwbcRuntimeTypeShape::F32
+        | AwbcRuntimeTypeShape::F64
+        | AwbcRuntimeTypeShape::String
+        | AwbcRuntimeTypeShape::Char
+        | AwbcRuntimeTypeShape::Duration
+        | AwbcRuntimeTypeShape::EntityRef
+        | AwbcRuntimeTypeShape::MatrixF32
+        | AwbcRuntimeTypeShape::MatrixF64
+        | AwbcRuntimeTypeShape::TensorF32
+        | AwbcRuntimeTypeShape::TensorF64
+        | AwbcRuntimeTypeShape::Dynamic
+        | AwbcRuntimeTypeShape::Bytes
+        | AwbcRuntimeTypeShape::Never
+        | AwbcRuntimeTypeShape::Progress => {
+            unreachable!("scalar runtime type delegated to scalar writer")
+        }
+    }
+}
+
+fn write_tagged<T: Wire>(writer: &mut Writer, tag: u8, value: &T) -> Result<(), AwbcCodecError> {
+    writer.write_u8(tag);
+    value.write_wire(writer)
+}
+
+fn write_tagged_fields(
+    writer: &mut Writer,
+    tag: u8,
+    write_fields: impl FnOnce(&mut Writer) -> Result<(), AwbcCodecError>,
+) -> Result<(), AwbcCodecError> {
+    writer.write_u8(tag);
+    write_fields(writer)
 }
 
 wire_enum!(RuntimeAgentOperationalType, "Agent runtime type", {
@@ -417,6 +536,34 @@ wire_enum!(RuntimeAgentOperationalType, "Agent runtime type", {
     29 => RuntimeAgentOperationalType::PointerButton,
     30 => RuntimeAgentOperationalType::RagError,
 });
+
+impl Wire for AwbcAgentTypeShape {
+    fn write_wire(&self, writer: &mut Writer) -> Result<(), AwbcCodecError> {
+        match self {
+            Self::Leaf(agent) => {
+                writer.write_u8(0);
+                agent.write_wire(writer)
+            }
+            Self::Probe(value) => {
+                writer.write_u8(1);
+                value.write_wire(writer)
+            }
+        }
+    }
+
+    fn read_wire(reader: &mut Reader<'_>) -> Result<Self, AwbcCodecError> {
+        let offset = reader.offset();
+        match reader.read_u8()? {
+            0 => RuntimeAgentOperationalType::read_wire(reader).map(Self::Leaf),
+            1 => AwbcTypeId::read_wire(reader).map(Self::Probe),
+            tag => Err(AwbcCodecError::UnknownTag {
+                kind: "Agent runtime type shape",
+                tag,
+                offset,
+            }),
+        }
+    }
+}
 
 impl Wire for AwbcConstant {
     fn write_wire(&self, writer: &mut Writer) -> Result<(), AwbcCodecError> {
@@ -704,21 +851,24 @@ impl Wire for AwbcFunctionFlags {
 mod opaque_wire_tests {
     use super::*;
     use crate::awbc::codec::AwbcDecodeBudget;
+    use crate::pattern::RuntimeSemanticTypeId;
 
     #[test]
     fn opaque_type_and_constant_rows_have_canonical_tags_and_admission_bytes() {
-        let ty = AwbcRuntimeType::Opaque {
-            producer: AwbcStringId(7),
-            semantic_identity: [9; 32],
-            admission: RuntimeOpaqueTypeAdmission::ExactIdentity,
-            value_class: RuntimeOpaqueValueClass::Plain,
-            persistence: RuntimeOpaquePersistence::ConstantAndSnapshot,
-            arguments: vec![],
-        };
+        let ty = AwbcRuntimeType::new(
+            RuntimeSemanticTypeId::from_bytes([9; 32]),
+            AwbcRuntimeTypeShape::Opaque {
+                producer: AwbcStringId(7),
+                admission: RuntimeOpaqueTypeAdmission::ExactIdentity,
+                value_class: RuntimeOpaqueValueClass::Plain,
+                persistence: RuntimeOpaquePersistence::ConstantAndSnapshot,
+                arguments: vec![],
+            },
+        );
         let mut writer = Writer::default();
         ty.write_wire(&mut writer).expect("encode opaque type");
-        let mut expected = vec![23, 7];
-        expected.extend([9; 32]);
+        let mut expected = vec![9; 32];
+        expected.extend([23, 7]);
         expected.extend([0, 0, 0, 0]);
         assert_eq!(writer.finish(), expected);
 
@@ -735,8 +885,8 @@ mod opaque_wire_tests {
 
     #[test]
     fn opaque_type_decode_rejects_unknown_admission_tag() {
-        let mut bytes = vec![23, 0];
-        bytes.extend([0; 32]);
+        let mut bytes = vec![0; 32];
+        bytes.extend([23, 0]);
         bytes.push(2);
         let mut reader = Reader::new(&bytes, &AwbcDecodeBudget::default());
         assert_eq!(

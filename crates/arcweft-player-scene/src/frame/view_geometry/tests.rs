@@ -294,6 +294,7 @@ fn mount_with_node(
         paint: Vec::new(),
         text: Vec::new(),
         fx: Vec::new(),
+        events: Vec::new(),
         style_nodes: vec![BundleViewStyleNode {
             path: BundleViewInstancePath::default(),
             instruction: 0,

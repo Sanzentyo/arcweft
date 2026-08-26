@@ -3,19 +3,19 @@
 use std::collections::{BTreeMap, BTreeSet};
 
 use super::{
-    AcceptedDeclarationSemanticId, CheckedCoverageDomainDigest, CheckedExpressionChildRolePath,
-    CheckedExpressionChildRoleStep, CheckedExpressionResolution, CheckedExpressionSemanticDigest,
+    CheckedCoverageDomainDigest, CheckedExpressionResolution, CheckedExpressionSemanticDigest,
     CheckedMatchRef, CheckedMatchSemanticDigest, CheckedPatternSemanticDigest,
     CheckedSelectResolution, CheckedValueResolution, CheckedVariantOwner, FinalSemanticAnalysis,
-    StableCheckedValueCoordinate, StablePatternCoordinate, StablePatternCoordinateStep,
+};
+use crate::semantic_coordinate::{
+    AcceptedSemanticRootCatalogError, CheckedSemanticPath, SemanticCoordinateIndex,
+    SemanticCoordinateIndexError, StableCheckedValueCoordinate, StablePatternCoordinate,
+    StablePatternCoordinateStep,
 };
 use crate::types::{SemanticTypeDigest, TypeKind};
 use arcweft_core::entry::TypeLayoutHash;
 use arcweft_lang_hir::{
-    expr::{
-        HirExprKind, HirExpressionOwnedBodyRole, HirLinePlanStatementRole, HirMatchExpr,
-        HirNestedExpressionPath, HirNestedExpressionPathSegment,
-    },
+    expr::{HirExprKind, HirMatchExpr},
     identity::{ExprId, PatternId},
     leaf::{
         HirCharacterLiteral, HirDurationLiteral, HirFloatLiteral, HirIntegerLiteral, HirLiteral,
@@ -23,12 +23,8 @@ use arcweft_lang_hir::{
     },
     module::HirModule,
     pattern::{HirPatternChild, HirPatternChildRole, HirPatternKind, HirVariantPatternPayload},
-    project::{
-        HirDeclarationBodyRootRole, HirDeclarationSemanticPathIndex, HirExecutableProjectView,
-        HirSemanticPathStep,
-    },
-    stmt::{HirStatementBodyRole, HirStatementChildRole},
-    symbol::{CallableDeclarationKey, ProjectSymbolTable, nominal::ProjectNominalBody},
+    project::HirExecutableProjectView,
+    symbol::{ProjectSymbolTable, nominal::ProjectNominalBody},
 };
 use thiserror::Error;
 
@@ -116,12 +112,28 @@ pub enum SemanticTranscriptError {
     WorkLimit,
     #[error("semantic transcript cannot resolve an accepted identity")]
     MissingIdentity,
+    #[error(transparent)]
+    AcceptedRootCatalog(AcceptedSemanticRootCatalogError),
     #[error("semantic transcript identity family is not supported by this cut")]
     UnsupportedIdentity,
     #[error("Match coverage family is outside the bounded exact transcript space")]
     UnsupportedCoverage,
     #[error("Match is not exhaustive; coverage witness is retained in the error")]
     NonExhaustive { witness: CheckedCoverageWitness },
+}
+
+impl From<SemanticCoordinateIndexError> for SemanticTranscriptError {
+    fn from(error: SemanticCoordinateIndexError) -> Self {
+        match error {
+            SemanticCoordinateIndexError::RootCatalog(error) => Self::AcceptedRootCatalog(error),
+            SemanticCoordinateIndexError::MissingChildEdges => Self::MissingChildEdges,
+            SemanticCoordinateIndexError::MissingExpression
+            | SemanticCoordinateIndexError::MissingBinding
+            | SemanticCoordinateIndexError::InvalidBindingPath
+            | SemanticCoordinateIndexError::ExpressionRoleMismatch
+            | SemanticCoordinateIndexError::InvalidRootPath => Self::MissingIdentity,
+        }
+    }
 }
 
 /// Counts the exact bytes fed to one semantic digest hasher.
@@ -234,12 +246,12 @@ impl CheckedMatchCoverage {
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct CheckedMatchBinding {
-    coordinate: super::StableCheckedValueCoordinate,
+    coordinate: StableCheckedValueCoordinate,
     ty: SemanticTypeDigest,
 }
 
 impl CheckedMatchBinding {
-    pub const fn coordinate(&self) -> &super::StableCheckedValueCoordinate {
+    pub const fn coordinate(&self) -> &StableCheckedValueCoordinate {
         &self.coordinate
     }
 
@@ -335,7 +347,6 @@ impl FinalSemanticAnalysis {
         &self,
         project: HirExecutableProjectView<'_>,
         symbols: &ProjectSymbolTable,
-        declaration: &CallableDeclarationKey,
         reference: CheckedMatchRef,
         limits: CheckedMatchLimits,
     ) -> Result<CheckedMatch, SemanticTranscriptError> {
@@ -368,18 +379,12 @@ impl FinalSemanticAnalysis {
         if fact.scrutinee() != authored.scrutinee() || fact.arms().len() != authored.arms().len() {
             return Err(SemanticTranscriptError::MissingMatchFact);
         }
-        let paths = project
-            .declaration_semantic_paths(symbols, declaration)
-            .map_err(|_| SemanticTranscriptError::MissingIdentity)?;
-        let declaration_id = accepted_declaration_id(self, declaration)?;
-        let match_path = checked_expression_path(self, &paths, declaration_id, expression)?;
+        let coordinates = SemanticCoordinateIndex::new(self.accepted_root_catalog(), self);
         MatchTranscriptBuilder {
             analysis: self,
             module,
             symbols,
-            paths: &paths,
-            declaration: declaration_id,
-            match_path,
+            coordinates,
             limits,
             expression_nodes: 0,
             pattern_nodes: 0,
@@ -391,13 +396,11 @@ impl FinalSemanticAnalysis {
     }
 }
 
-struct MatchTranscriptBuilder<'a> {
-    analysis: &'a FinalSemanticAnalysis,
-    module: &'a HirModule,
-    symbols: &'a ProjectSymbolTable,
-    paths: &'a HirDeclarationSemanticPathIndex,
-    declaration: AcceptedDeclarationSemanticId,
-    match_path: CheckedExpressionChildRolePath,
+struct MatchTranscriptBuilder<'analysis, 'paths, 'edges> {
+    analysis: &'analysis FinalSemanticAnalysis,
+    module: &'analysis HirModule,
+    symbols: &'analysis ProjectSymbolTable,
+    coordinates: SemanticCoordinateIndex<'paths, 'edges>,
     limits: CheckedMatchLimits,
     expression_nodes: u64,
     pattern_nodes: u64,
@@ -406,7 +409,7 @@ struct MatchTranscriptBuilder<'a> {
     pattern_digests: BTreeMap<(PatternId, StablePatternCoordinate), CheckedPatternSemanticDigest>,
 }
 
-impl MatchTranscriptBuilder<'_> {
+impl<'analysis, 'paths, 'edges> MatchTranscriptBuilder<'analysis, 'paths, 'edges> {
     fn build(
         &mut self,
         owner: ExprId,
@@ -435,7 +438,6 @@ impl MatchTranscriptBuilder<'_> {
             self.collect_pattern_bindings(
                 arm.pattern(),
                 &StablePatternCoordinate::new([]),
-                ordinal,
                 &mut bindings,
             )?;
             let (guard, guard_expression) = match (arm.guard(), checked.guard()) {
@@ -527,7 +529,7 @@ impl MatchTranscriptBuilder<'_> {
         let mut hasher =
             TranscriptHasher::new(&mut self.transcript_bytes, self.limits.max_transcript_bytes);
         hasher.update(b"arcweft.lang.checked-expression-semantic.v1\0");
-        write_checked_path(&mut hasher, &path);
+        hasher.update(&path.canonical_bytes());
         hasher.update(&checked.resolution().semantic_tag().to_le_bytes());
         hasher.update(checked.ty().semantic_identity_digest().as_bytes());
         if let CheckedExpressionResolution::Literal(literal) = checked.resolution() {
@@ -537,17 +539,16 @@ impl MatchTranscriptBuilder<'_> {
             &mut hasher,
             checked.resolution(),
             checked.ty(),
-            self.paths,
-            self.declaration,
+            &self.coordinates,
             self.analysis,
-            self.symbols,
         )?;
+        write_record_expression_fields(&mut hasher, edges);
         write_effects(&mut hasher, checked.effects());
         if matches!(checked.resolution(), CheckedExpressionResolution::Call) {
             let callable = edges
                 .callable()
                 .ok_or(SemanticTranscriptError::MissingCallableJoin)?;
-            hasher.update(&callable.semantic_digest());
+            hasher.update(callable.semantic_digest().as_bytes());
         }
         write_len(&mut hasher, edges.edges().len());
         for ((_, role), child_digest) in edges.edges().iter().zip(child_digests) {
@@ -559,11 +560,8 @@ impl MatchTranscriptBuilder<'_> {
         Ok(digest)
     }
 
-    fn checked_path(
-        &self,
-        owner: ExprId,
-    ) -> Result<CheckedExpressionChildRolePath, SemanticTranscriptError> {
-        checked_expression_path(self.analysis, self.paths, self.declaration, owner)
+    fn checked_path(&self, owner: ExprId) -> Result<CheckedSemanticPath, SemanticTranscriptError> {
+        Ok(self.coordinates.expression(owner)?)
     }
 
     fn pattern_digest(
@@ -594,23 +592,36 @@ impl MatchTranscriptBuilder<'_> {
             .analysis
             .pattern(owner)
             .ok_or(SemanticTranscriptError::MissingPattern)?;
-        let child_digests = hir
-            .kind()
-            .child_edges()
-            .into_iter()
-            .filter_map(|edge| match edge.child() {
-                HirPatternChild::Pattern(child) => Some((child, edge.role())),
-                HirPatternChild::Type(_) | HirPatternChild::Local(_) => None,
-            })
-            .map(|(child, role)| {
-                let child_coordinate = child_pattern_coordinate(coordinate, hir.kind(), role)?;
-                self.pattern_digest(child, &child_coordinate)
-            })
-            .collect::<Result<Vec<_>, SemanticTranscriptError>>()?;
+        let child_digests = if let super::CheckedPatternResolution::Record(record) =
+            checked.resolution()
+        {
+            record
+                .fields()
+                .iter()
+                .filter_map(|field| field.source().raw_pattern().map(|child| (child, field)))
+                .map(|(child, field)| {
+                    let child_coordinate = record_pattern_child_coordinate(coordinate, field)?;
+                    self.pattern_digest(child, &child_coordinate)
+                })
+                .collect::<Result<Vec<_>, SemanticTranscriptError>>()?
+        } else {
+            hir.kind()
+                .child_edges()
+                .into_iter()
+                .filter_map(|edge| match edge.child() {
+                    HirPatternChild::Pattern(child) => Some((child, edge.role())),
+                    HirPatternChild::Type(_) | HirPatternChild::Local(_) => None,
+                })
+                .map(|(child, role)| {
+                    let child_coordinate = child_pattern_coordinate(coordinate, hir.kind(), role)?;
+                    self.pattern_digest(child, &child_coordinate)
+                })
+                .collect::<Result<Vec<_>, SemanticTranscriptError>>()?
+        };
         let mut hasher =
             TranscriptHasher::new(&mut self.transcript_bytes, self.limits.max_transcript_bytes);
         hasher.update(b"arcweft.lang.checked-pattern-semantic.v1\0");
-        write_pattern_coordinate(&mut hasher, coordinate);
+        hasher.update(&coordinate.canonical_bytes());
         hasher.update(&[pattern_kind_tag(hir.kind())]);
         hasher.update(&checked.resolution().semantic_tag().to_le_bytes());
         hasher.update(checked.ty().semantic_identity_digest().as_bytes());
@@ -618,8 +629,8 @@ impl MatchTranscriptBuilder<'_> {
             &mut hasher,
             checked.resolution(),
             checked.ty(),
+            coordinate,
             self.analysis,
-            self.symbols,
         )?;
         for digest in child_digests {
             hasher.update(digest.as_bytes());
@@ -634,7 +645,6 @@ impl MatchTranscriptBuilder<'_> {
         &self,
         owner: PatternId,
         coordinate: &StablePatternCoordinate,
-        arm: u32,
         bindings: &mut Vec<CheckedMatchBinding>,
     ) -> Result<(), SemanticTranscriptError> {
         let hir = self
@@ -643,6 +653,40 @@ impl MatchTranscriptBuilder<'_> {
             .map_err(|_| SemanticTranscriptError::MissingPattern)?;
         if matches!(hir.kind(), HirPatternKind::Error(_)) {
             return Err(SemanticTranscriptError::RecoveredOwner);
+        }
+        let checked = self
+            .analysis
+            .pattern(owner)
+            .ok_or(SemanticTranscriptError::MissingPattern)?;
+        if let super::CheckedPatternResolution::Record(record) = checked.resolution() {
+            for field in record.fields() {
+                if let Some(binding) = field.source().binding() {
+                    bindings.push(CheckedMatchBinding {
+                        coordinate: StableCheckedValueCoordinate::Binding(
+                            binding.coordinate().clone(),
+                        ),
+                        ty: field.field_type_digest(),
+                    });
+                } else if let Some(child) = field.source().raw_pattern() {
+                    let child_coordinate = record_pattern_child_coordinate(coordinate, field)?;
+                    self.collect_pattern_bindings(child, &child_coordinate, bindings)?;
+                } else {
+                    return Err(SemanticTranscriptError::UnsupportedIdentity);
+                }
+            }
+            if let super::CheckedRecordPatternRest::Binding(binding) = record.rest() {
+                let ty = self
+                    .analysis
+                    .local(binding.raw())
+                    .ok_or(SemanticTranscriptError::MissingIdentity)?
+                    .ty()
+                    .semantic_identity_digest();
+                bindings.push(CheckedMatchBinding {
+                    coordinate: StableCheckedValueCoordinate::Binding(binding.coordinate().clone()),
+                    ty,
+                });
+            }
+            return Ok(());
         }
         for edge in hir.kind().child_edges() {
             match edge.child() {
@@ -653,23 +697,17 @@ impl MatchTranscriptBuilder<'_> {
                         .ok_or(SemanticTranscriptError::MissingIdentity)?
                         .ty()
                         .semantic_identity_digest();
-                    let binding_ordinal = u32::try_from(bindings.len())
-                        .map_err(|_| SemanticTranscriptError::WorkLimit)?;
                     bindings.push(CheckedMatchBinding {
-                        coordinate: StableCheckedValueCoordinate::PatternBinding {
-                            declaration: self.declaration,
-                            match_path: self.match_path.clone(),
-                            arm_ordinal: arm,
-                            pattern: coordinate.clone(),
-                            binding_ordinal,
-                        },
+                        coordinate: StableCheckedValueCoordinate::Binding(
+                            self.coordinates.binding(local)?,
+                        ),
                         ty,
                     });
                 }
                 HirPatternChild::Pattern(child) => {
                     let child_coordinate =
                         child_pattern_coordinate(coordinate, hir.kind(), edge.role())?;
-                    self.collect_pattern_bindings(child, &child_coordinate, arm, bindings)?;
+                    self.collect_pattern_bindings(child, &child_coordinate, bindings)?;
                 }
                 HirPatternChild::Type(_) => {}
             }
@@ -678,90 +716,27 @@ impl MatchTranscriptBuilder<'_> {
     }
 }
 
-pub(crate) fn checked_expression_path(
-    analysis: &FinalSemanticAnalysis,
-    paths: &HirDeclarationSemanticPathIndex,
-    declaration: AcceptedDeclarationSemanticId,
-    owner: ExprId,
-) -> Result<CheckedExpressionChildRolePath, SemanticTranscriptError> {
-    let raw = paths
-        .expression(owner)
-        .ok_or(SemanticTranscriptError::MissingIdentity)?;
-    let mut hops = paths
-        .expression_hops(owner)
-        .ok_or(SemanticTranscriptError::MissingIdentity)?
-        .iter();
-    let mut steps = Vec::with_capacity(raw.len());
-    for step in raw {
-        steps.push(match step {
-            HirSemanticPathStep::DeclarationBody(role) => {
-                CheckedExpressionChildRoleStep::DeclarationBody(*role)
+fn write_record_expression_fields(
+    hasher: &mut TranscriptHasher<'_>,
+    edges: &super::CheckedExpressionEdgeFact,
+) {
+    write_len(hasher, edges.record_fields().len());
+    for field in edges.record_fields() {
+        hasher.update(&field.source_ordinal().to_le_bytes());
+        hasher.update(&field.declaration_ordinal().to_le_bytes());
+        hasher.update(field.semantic_id().as_bytes());
+        hasher.update(field.field_type().as_bytes());
+        match field.source() {
+            super::CheckedRecordValueSource::Expression(source) => {
+                hasher.update(&[0]);
+                hasher.update(&source.coordinate().canonical_bytes());
             }
-            HirSemanticPathStep::ExpressionOwned(role) => {
-                CheckedExpressionChildRoleStep::ExpressionOwned(role.clone())
+            super::CheckedRecordValueSource::Binding(source) => {
+                hasher.update(&[1]);
+                hasher.update(&source.coordinate().canonical_bytes());
             }
-            HirSemanticPathStep::Body(role) => CheckedExpressionChildRoleStep::Body(*role),
-            HirSemanticPathStep::Statement(role) => {
-                CheckedExpressionChildRoleStep::Statement(*role)
-            }
-            HirSemanticPathStep::ThreadBody(role) => {
-                CheckedExpressionChildRoleStep::ThreadBody(*role)
-            }
-            HirSemanticPathStep::Expression(raw_role) => {
-                let hop = hops
-                    .next()
-                    .ok_or(SemanticTranscriptError::MissingIdentity)?;
-                if hop.role() != raw_role {
-                    return Err(SemanticTranscriptError::MissingIdentity);
-                }
-                let role = analysis
-                    .checked_child_edges(hop.parent())
-                    .map_err(|_| SemanticTranscriptError::MissingChildEdges)?
-                    .iter()
-                    .find_map(|(child, role)| (*child == hop.child()).then(|| role.clone()))
-                    .ok_or(SemanticTranscriptError::MissingChildEdges)?;
-                CheckedExpressionChildRoleStep::Expression(role)
-            }
-            HirSemanticPathStep::MatchPattern { arm } => {
-                CheckedExpressionChildRoleStep::MatchPattern { arm: *arm }
-            }
-            HirSemanticPathStep::Pattern(role) => CheckedExpressionChildRoleStep::Pattern(*role),
-            HirSemanticPathStep::ParameterPattern { group, parameter } => {
-                CheckedExpressionChildRoleStep::ParameterPattern {
-                    group: *group,
-                    parameter: *parameter,
-                }
-            }
-            HirSemanticPathStep::ParameterDefault { group, parameter } => {
-                CheckedExpressionChildRoleStep::ParameterDefault {
-                    group: *group,
-                    parameter: *parameter,
-                }
-            }
-        });
+        }
     }
-    if hops.next().is_some() {
-        return Err(SemanticTranscriptError::MissingIdentity);
-    }
-    Ok(CheckedExpressionChildRolePath::new(declaration, steps))
-}
-
-pub(crate) fn accepted_declaration_id(
-    analysis: &FinalSemanticAnalysis,
-    declaration: &CallableDeclarationKey,
-) -> Result<AcceptedDeclarationSemanticId, SemanticTranscriptError> {
-    let facts = analysis
-        .checked_callables()
-        .project_callable(declaration)
-        .map_err(|_| SemanticTranscriptError::MissingIdentity)?;
-    let mut hasher = blake3::Hasher::new();
-    hasher.update(b"arcweft.lang.accepted-declaration-semantic.v1\0");
-    hasher.update(declaration.semantic_digest().as_bytes());
-    hasher.update(facts.id().semantic_digest().as_bytes());
-    hasher.update(facts.interface_digest().as_bytes());
-    Ok(AcceptedDeclarationSemanticId::from_bytes(
-        *hasher.finalize().as_bytes(),
-    ))
 }
 
 fn guard_class(
@@ -983,7 +958,7 @@ fn coverage_domain_digest(
                 nominal_identity,
                 nominal.arguments().to_vec(),
             );
-            hasher.update(nominal_layout_hash(analysis, symbols, &checked_nominal)?.as_bytes());
+            hasher.update(nominal_layout_hash(analysis, &checked_nominal)?.as_bytes());
             let ProjectNominalBody::Enum { variants } = declaration.body() else {
                 hasher.update(&[255]);
                 return Ok(CheckedCoverageDomainDigest::from_bytes(
@@ -1159,7 +1134,7 @@ fn match_digest(
         hasher.update(arm.pattern.as_bytes());
         write_len(&mut hasher, arm.bindings.len());
         for binding in &arm.bindings {
-            write_value_coordinate(&mut hasher, &binding.coordinate);
+            hasher.update(&binding.coordinate.canonical_bytes());
             hasher.update(binding.ty.as_bytes());
         }
         match arm.guard_expression {
@@ -1182,338 +1157,6 @@ fn match_digest(
         hasher.update(&[unreachable_tag(row.reason)]);
     }
     Ok(CheckedMatchSemanticDigest::from_bytes(hasher.finalize()?))
-}
-
-const CHECKED_DECLARATION_BODY_STEP_TAG: u8 = 8;
-const CHECKED_EXPRESSION_OWNED_STEP_TAG: u8 = 9;
-const HIR_LOCAL_DECLARATION_BODY_STEP_TAG: u8 = 7;
-const HIR_LOCAL_EXPRESSION_OWNED_STEP_TAG: u8 = 8;
-
-fn write_checked_path(hasher: &mut TranscriptHasher<'_>, path: &CheckedExpressionChildRolePath) {
-    hasher.update(path.declaration().as_bytes());
-    write_len(hasher, path.steps().len());
-    for step in path.steps() {
-        match step {
-            CheckedExpressionChildRoleStep::DeclarationBody(role) => {
-                hasher.update(&[CHECKED_DECLARATION_BODY_STEP_TAG]);
-                write_declaration_body_role(hasher, *role);
-            }
-            CheckedExpressionChildRoleStep::ExpressionOwned(role) => {
-                hasher.update(&[CHECKED_EXPRESSION_OWNED_STEP_TAG]);
-                write_expression_owned_role(hasher, role);
-            }
-            CheckedExpressionChildRoleStep::Body(role) => {
-                hasher.update(&[0, body_role_tag(*role)]);
-                write_body_role_payload(hasher, *role);
-            }
-            CheckedExpressionChildRoleStep::Statement(role) => {
-                hasher.update(&[1, statement_role_tag(*role)]);
-                write_statement_role_payload(hasher, *role);
-            }
-            CheckedExpressionChildRoleStep::ThreadBody(role) => {
-                hasher.update(&[7, statement_body_tag(*role)]);
-                write_statement_body_payload(hasher, *role);
-            }
-            CheckedExpressionChildRoleStep::Expression(role) => {
-                hasher.update(&[2]);
-                write_bytes(hasher, &role.transcript_bytes());
-            }
-            CheckedExpressionChildRoleStep::MatchPattern { arm } => {
-                hasher.update(&[3]);
-                hasher.update(&arm.to_le_bytes());
-            }
-            CheckedExpressionChildRoleStep::Pattern(role) => {
-                hasher.update(&[4, pattern_role_tag(*role)]);
-                write_pattern_role_payload(hasher, *role);
-            }
-            CheckedExpressionChildRoleStep::ParameterPattern { group, parameter } => {
-                hasher.update(&[5]);
-                hasher.update(&group.to_le_bytes());
-                hasher.update(&parameter.to_le_bytes());
-            }
-            CheckedExpressionChildRoleStep::ParameterDefault { group, parameter } => {
-                hasher.update(&[6]);
-                hasher.update(&group.to_le_bytes());
-                hasher.update(&parameter.to_le_bytes());
-            }
-        }
-    }
-}
-
-pub(crate) fn write_value_coordinate(
-    hasher: &mut TranscriptHasher<'_>,
-    coordinate: &StableCheckedValueCoordinate,
-) {
-    match coordinate {
-        StableCheckedValueCoordinate::Expression { declaration, path } => {
-            hasher.update(&[0]);
-            hasher.update(declaration.as_bytes());
-            write_checked_path(hasher, path);
-        }
-        StableCheckedValueCoordinate::PatternBinding {
-            declaration,
-            match_path,
-            arm_ordinal,
-            pattern,
-            binding_ordinal,
-        } => {
-            hasher.update(&[1]);
-            hasher.update(declaration.as_bytes());
-            write_checked_path(hasher, match_path);
-            hasher.update(&arm_ordinal.to_le_bytes());
-            write_pattern_coordinate(hasher, pattern);
-            hasher.update(&binding_ordinal.to_le_bytes());
-        }
-        StableCheckedValueCoordinate::Capture {
-            callable,
-            capture_ordinal,
-            origin,
-        } => {
-            hasher.update(&[2]);
-            hasher.update(callable.as_bytes());
-            hasher.update(&capture_ordinal.to_le_bytes());
-            write_value_coordinate(hasher, origin);
-        }
-    }
-}
-
-fn write_hir_local_path(
-    hasher: &mut TranscriptHasher<'_>,
-    path: &[HirSemanticPathStep],
-) -> Result<(), SemanticTranscriptError> {
-    write_len(hasher, path.len());
-    for step in path {
-        match step {
-            HirSemanticPathStep::DeclarationBody(role) => {
-                hasher.update(&[HIR_LOCAL_DECLARATION_BODY_STEP_TAG]);
-                write_declaration_body_role(hasher, *role);
-            }
-            HirSemanticPathStep::ExpressionOwned(role) => {
-                hasher.update(&[HIR_LOCAL_EXPRESSION_OWNED_STEP_TAG]);
-                write_expression_owned_role(hasher, role);
-            }
-            HirSemanticPathStep::Body(role) => {
-                hasher.update(&[0, body_role_tag(*role)]);
-                write_body_role_payload(hasher, *role);
-            }
-            HirSemanticPathStep::Statement(role) => {
-                hasher.update(&[1, statement_role_tag(*role)]);
-                write_statement_role_payload(hasher, *role);
-            }
-            HirSemanticPathStep::ThreadBody(role) => {
-                hasher.update(&[6, statement_body_tag(*role)]);
-                write_statement_body_payload(hasher, *role);
-            }
-            HirSemanticPathStep::MatchPattern { arm } => {
-                hasher.update(&[2]);
-                hasher.update(&arm.to_le_bytes());
-            }
-            HirSemanticPathStep::Pattern(role) => {
-                hasher.update(&[3, pattern_role_tag(*role)]);
-                write_pattern_role_payload(hasher, *role);
-            }
-            HirSemanticPathStep::ParameterPattern { group, parameter } => {
-                hasher.update(&[4]);
-                hasher.update(&group.to_le_bytes());
-                hasher.update(&parameter.to_le_bytes());
-            }
-            HirSemanticPathStep::ParameterDefault { group, parameter } => {
-                hasher.update(&[5]);
-                hasher.update(&group.to_le_bytes());
-                hasher.update(&parameter.to_le_bytes());
-            }
-            HirSemanticPathStep::Expression(_) => {
-                return Err(SemanticTranscriptError::MissingIdentity);
-            }
-        }
-    }
-    Ok(())
-}
-
-fn write_declaration_body_role(
-    hasher: &mut TranscriptHasher<'_>,
-    role: HirDeclarationBodyRootRole,
-) {
-    match role {
-        HirDeclarationBodyRootRole::FunctionBody => hasher.update(&[0]),
-        HirDeclarationBodyRootRole::PredicateBody => hasher.update(&[1]),
-        HirDeclarationBodyRootRole::ProofBody => hasher.update(&[2]),
-        HirDeclarationBodyRootRole::FlowBody => hasher.update(&[3]),
-        HirDeclarationBodyRootRole::ImplFunctionBody => hasher.update(&[4]),
-        HirDeclarationBodyRootRole::ViewValue { ordinal } => {
-            hasher.update(&[5]);
-            hasher.update(&ordinal.to_le_bytes());
-        }
-    }
-}
-
-fn write_expression_owned_role(
-    hasher: &mut TranscriptHasher<'_>,
-    role: &HirExpressionOwnedBodyRole,
-) {
-    match role {
-        HirExpressionOwnedBodyRole::AwaitBranchPattern { branch } => {
-            hasher.update(&[0]);
-            hasher.update(&branch.to_le_bytes());
-        }
-        HirExpressionOwnedBodyRole::AwaitBranchBody { branch } => {
-            hasher.update(&[1]);
-            hasher.update(&branch.to_le_bytes());
-        }
-        HirExpressionOwnedBodyRole::ChoiceLetStatement { path } => {
-            hasher.update(&[2]);
-            write_hir_nested_path(hasher, path);
-        }
-        HirExpressionOwnedBodyRole::ChoiceForPattern { path } => {
-            hasher.update(&[3]);
-            write_hir_nested_path(hasher, path);
-        }
-        HirExpressionOwnedBodyRole::ChoiceMatchArmPattern { path, arm } => {
-            hasher.update(&[4]);
-            write_hir_nested_path(hasher, path);
-            hasher.update(&arm.to_le_bytes());
-        }
-        HirExpressionOwnedBodyRole::ChoiceOptionForPattern { path } => {
-            hasher.update(&[5]);
-            write_hir_nested_path(hasher, path);
-        }
-        HirExpressionOwnedBodyRole::ChoiceOptionSelectBody { path, field } => {
-            hasher.update(&[6]);
-            write_hir_nested_path(hasher, path);
-            hasher.update(&field.to_le_bytes());
-        }
-        HirExpressionOwnedBodyRole::ChoiceOptionLetStatement { path, field } => {
-            hasher.update(&[7]);
-            write_hir_nested_path(hasher, path);
-            hasher.update(&field.to_le_bytes());
-        }
-        HirExpressionOwnedBodyRole::ChoicePlanTimeoutBody { path } => {
-            hasher.update(&[8]);
-            write_hir_nested_path(hasher, path);
-        }
-        HirExpressionOwnedBodyRole::ChoicePlanCancelBody { path } => {
-            hasher.update(&[9]);
-            write_hir_nested_path(hasher, path);
-        }
-        HirExpressionOwnedBodyRole::ChoicePlanOnSelectPattern { path } => {
-            hasher.update(&[10]);
-            write_hir_nested_path(hasher, path);
-        }
-        HirExpressionOwnedBodyRole::ChoicePlanOnSelectBody { path } => {
-            hasher.update(&[11]);
-            write_hir_nested_path(hasher, path);
-        }
-        HirExpressionOwnedBodyRole::DialogueLinePlanStatement { path, role } => {
-            hasher.update(&[12]);
-            write_hir_nested_path(hasher, path);
-            write_line_plan_statement_role(hasher, *role);
-        }
-        HirExpressionOwnedBodyRole::DialogueLinePlanLetPattern { path } => {
-            hasher.update(&[13]);
-            write_hir_nested_path(hasher, path);
-        }
-    }
-}
-
-fn write_line_plan_statement_role(
-    hasher: &mut TranscriptHasher<'_>,
-    role: HirLinePlanStatementRole,
-) {
-    match role {
-        HirLinePlanStatementRole::Init { statement } => {
-            hasher.update(&[0]);
-            hasher.update(&statement.to_le_bytes());
-        }
-        HirLinePlanStatementRole::Thread => hasher.update(&[1]),
-        HirLinePlanStatementRole::On => hasher.update(&[2]),
-        HirLinePlanStatementRole::Statement => hasher.update(&[3]),
-        HirLinePlanStatementRole::CancelRule => hasher.update(&[4]),
-        HirLinePlanStatementRole::Error => hasher.update(&[5]),
-    }
-}
-
-fn write_hir_nested_path(hasher: &mut TranscriptHasher<'_>, path: &HirNestedExpressionPath) {
-    write_len(hasher, path.segments().len());
-    for segment in path.segments() {
-        match segment {
-            HirNestedExpressionPathSegment::ChoiceBodyItem { ordinal } => {
-                hasher.update(&[0]);
-                hasher.update(&ordinal.to_le_bytes());
-            }
-            HirNestedExpressionPathSegment::ChoiceIfBranch { ordinal } => {
-                hasher.update(&[1]);
-                hasher.update(&ordinal.to_le_bytes());
-            }
-            HirNestedExpressionPathSegment::ChoiceIfElse => hasher.update(&[2]),
-            HirNestedExpressionPathSegment::ChoiceForBody => hasher.update(&[3]),
-            HirNestedExpressionPathSegment::ChoiceMatchArm { ordinal } => {
-                hasher.update(&[4]);
-                hasher.update(&ordinal.to_le_bytes());
-            }
-            HirNestedExpressionPathSegment::ChoiceOptionBody => hasher.update(&[5]),
-            HirNestedExpressionPathSegment::ChoiceOptionField { ordinal } => {
-                hasher.update(&[6]);
-                hasher.update(&ordinal.to_le_bytes());
-            }
-            HirNestedExpressionPathSegment::ChoiceViewEntry { ordinal } => {
-                hasher.update(&[7]);
-                hasher.update(&ordinal.to_le_bytes());
-            }
-            HirNestedExpressionPathSegment::ChoicePlanItem { ordinal } => {
-                hasher.update(&[8]);
-                hasher.update(&ordinal.to_le_bytes());
-            }
-            HirNestedExpressionPathSegment::LinePlanItem { ordinal } => {
-                hasher.update(&[9]);
-                hasher.update(&ordinal.to_le_bytes());
-            }
-            HirNestedExpressionPathSegment::LinePlanStartGroupItem { ordinal } => {
-                hasher.update(&[10]);
-                hasher.update(&ordinal.to_le_bytes());
-            }
-            HirNestedExpressionPathSegment::LinePlanTogetherGroupItem { ordinal } => {
-                hasher.update(&[11]);
-                hasher.update(&ordinal.to_le_bytes());
-            }
-        }
-    }
-}
-
-fn write_pattern_coordinate(hasher: &mut TranscriptHasher<'_>, path: &StablePatternCoordinate) {
-    write_len(hasher, path.steps().len());
-    for step in path.steps() {
-        match step {
-            StablePatternCoordinateStep::TupleElement(ordinal) => {
-                hasher.update(&[0]);
-                hasher.update(&ordinal.to_le_bytes());
-            }
-            StablePatternCoordinateStep::RecordField {
-                field,
-                source_ordinal,
-            } => {
-                hasher.update(&[1]);
-                hasher.update(&field.get().get().to_le_bytes());
-                hasher.update(&source_ordinal.to_le_bytes());
-            }
-            StablePatternCoordinateStep::SequenceElement(ordinal) => {
-                hasher.update(&[2]);
-                hasher.update(&ordinal.to_le_bytes());
-            }
-            StablePatternCoordinateStep::VariantPayload => {
-                hasher.update(&[3]);
-            }
-            StablePatternCoordinateStep::WholeBindingInner => {
-                hasher.update(&[4]);
-            }
-            StablePatternCoordinateStep::OrAlternative(ordinal) => {
-                hasher.update(&[5]);
-                hasher.update(&ordinal.to_le_bytes());
-            }
-            StablePatternCoordinateStep::TypedBindingInner => {
-                hasher.update(&[6]);
-            }
-        }
-    }
 }
 
 fn child_pattern_coordinate(
@@ -1552,6 +1195,19 @@ fn child_pattern_coordinate(
         | HirPatternChildRole::TypedBindingLocal => StablePatternCoordinateStep::TypedBindingInner,
     };
     steps.push(next);
+    Ok(StablePatternCoordinate::new(steps))
+}
+
+fn record_pattern_child_coordinate(
+    parent: &StablePatternCoordinate,
+    field: &super::CheckedRecordPatternField,
+) -> Result<StablePatternCoordinate, SemanticTranscriptError> {
+    let relative = field
+        .source()
+        .pattern_coordinate()
+        .ok_or(SemanticTranscriptError::UnsupportedIdentity)?;
+    let mut steps = parent.steps().to_vec();
+    steps.extend_from_slice(relative.steps());
     Ok(StablePatternCoordinate::new(steps))
 }
 
@@ -1648,18 +1304,53 @@ fn write_pattern_resolution(
     hasher: &mut TranscriptHasher<'_>,
     resolution: &super::CheckedPatternResolution,
     ty: &TypeKind,
+    coordinate: &StablePatternCoordinate,
     analysis: &FinalSemanticAnalysis,
-    symbols: &ProjectSymbolTable,
 ) -> Result<(), SemanticTranscriptError> {
     match resolution {
         super::CheckedPatternResolution::Structural => {}
         super::CheckedPatternResolution::Literal(literal) => write_literal(hasher, literal, ty)?,
-        super::CheckedPatternResolution::Nominal(nominal) => {
-            write_nominal(hasher, nominal, analysis, symbols)?;
+        super::CheckedPatternResolution::Record(record) => {
+            let nominal = record
+                .owner()
+                .project_nominal()
+                .ok_or(SemanticTranscriptError::UnsupportedIdentity)?;
+            write_nominal(hasher, nominal, analysis)?;
+            match record.rest() {
+                super::CheckedRecordPatternRest::Absent => {
+                    hasher.update(&[0]);
+                }
+                super::CheckedRecordPatternRest::Ignore => {
+                    hasher.update(&[1]);
+                }
+                super::CheckedRecordPatternRest::Binding(binding) => {
+                    hasher.update(&[2]);
+                    hasher.update(&binding.coordinate().canonical_bytes());
+                }
+            }
+            write_len(hasher, record.fields().len());
+            for field in record.fields() {
+                hasher.update(&field.source_ordinal().to_le_bytes());
+                hasher.update(&field.declaration_ordinal().to_le_bytes());
+                hasher.update(field.semantic_id().as_bytes());
+                hasher.update(field.field_type_digest().as_bytes());
+                if field.source().pattern_coordinate().is_some() {
+                    hasher.update(&[0]);
+                    let child = record_pattern_child_coordinate(coordinate, field)?;
+                    hasher.update(&child.canonical_bytes());
+                } else if let Some(binding) = field.source().binding() {
+                    hasher.update(&[1]);
+                    hasher.update(&binding.coordinate().canonical_bytes());
+                } else {
+                    return Err(SemanticTranscriptError::UnsupportedIdentity);
+                }
+            }
         }
         super::CheckedPatternResolution::Variant(variant) => {
-            write_variant_owner(hasher, variant.owner(), analysis, symbols)?;
-            hasher.update(&variant.ordinal().to_le_bytes());
+            write_variant_resolution(hasher, variant);
+        }
+        super::CheckedPatternResolution::TypedBinding(binding) => {
+            hasher.update(binding.annotation_digest().as_bytes());
         }
         super::CheckedPatternResolution::Entity(_) => {
             return Err(SemanticTranscriptError::UnsupportedIdentity);
@@ -1668,14 +1359,12 @@ fn write_pattern_resolution(
     Ok(())
 }
 
-fn write_resolution_payload(
+fn write_resolution_payload<'paths, 'edges>(
     hasher: &mut TranscriptHasher<'_>,
     resolution: &CheckedExpressionResolution,
     ty: &TypeKind,
-    paths: &HirDeclarationSemanticPathIndex,
-    declaration: AcceptedDeclarationSemanticId,
+    coordinates: &SemanticCoordinateIndex<'paths, 'edges>,
     analysis: &FinalSemanticAnalysis,
-    symbols: &ProjectSymbolTable,
 ) -> Result<(), SemanticTranscriptError> {
     match resolution {
         CheckedExpressionResolution::Structural
@@ -1683,11 +1372,8 @@ fn write_resolution_payload(
         | CheckedExpressionResolution::Call => {}
         CheckedExpressionResolution::Value(value) => match value {
             CheckedValueResolution::Local(local) => {
-                let path = paths
-                    .local(*local)
-                    .ok_or(SemanticTranscriptError::MissingIdentity)?;
-                hasher.update(declaration.as_bytes());
-                write_hir_local_path(hasher, path)?;
+                let binding = coordinates.binding(*local)?;
+                hasher.update(&binding.canonical_bytes());
             }
             CheckedValueResolution::LineContext => {}
             CheckedValueResolution::ProjectCallable(callable) => {
@@ -1710,24 +1396,18 @@ fn write_resolution_payload(
             }
         },
         CheckedExpressionResolution::Select(select) => match select {
-            CheckedSelectResolution::Field {
-                nominal: Some(nominal),
-                ordinal: Some(ordinal),
-                ..
-            } => {
-                write_nominal(hasher, nominal, analysis, symbols)?;
-                hasher.update(&ordinal.to_le_bytes());
-            }
-            CheckedSelectResolution::RecordElement {
-                nominal: Some(nominal),
-                ordinal,
-                ..
-            } => {
-                write_nominal(hasher, nominal, analysis, symbols)?;
-                hasher.update(&ordinal.to_le_bytes());
-            }
-            CheckedSelectResolution::TupleElement { ordinal } => {
-                hasher.update(&ordinal.to_le_bytes());
+            CheckedSelectResolution::Field(selection) => {
+                hasher.update(selection.owner_type().as_bytes());
+                hasher.update(selection.field().as_bytes());
+                hasher.update(&selection.declaration_ordinal().to_le_bytes());
+                hasher.update(selection.field_type().as_bytes());
+                match selection.runtime_field() {
+                    Some(runtime_field) => {
+                        hasher.update(&[1]);
+                        hasher.update(&runtime_field.get().get().to_le_bytes());
+                    }
+                    None => hasher.update(&[0]),
+                }
             }
             CheckedSelectResolution::ProgressField { field } => {
                 hasher.update(&[match field {
@@ -1735,29 +1415,58 @@ fn write_resolution_payload(
                     crate::types::ProgressField::Label => 1,
                 }]);
             }
-            CheckedSelectResolution::Method { .. }
-            | CheckedSelectResolution::DialogueView { .. }
-            | CheckedSelectResolution::AgentField { .. }
-            | CheckedSelectResolution::Field { .. }
-            | CheckedSelectResolution::RecordElement { .. } => {
+            CheckedSelectResolution::Method(method) => {
+                hasher.update(method.callable().as_bytes());
+                hasher.update(method.receiver_type().as_bytes());
+                match method.receiver_mode() {
+                    crate::callable::CallableReceiverMode::None => {
+                        return Err(SemanticTranscriptError::UnsupportedIdentity);
+                    }
+                    crate::callable::CallableReceiverMode::Value { .. } => {
+                        hasher.update(&[0]);
+                    }
+                    crate::callable::CallableReceiverMode::Type { .. } => {
+                        hasher.update(&[1]);
+                    }
+                    crate::callable::CallableReceiverMode::Extension {
+                        group, parameter, ..
+                    } => {
+                        hasher.update(&[2]);
+                        hasher.update(
+                            &u64::try_from(group.get())
+                                .map_err(|_| SemanticTranscriptError::UnsupportedIdentity)?
+                                .to_le_bytes(),
+                        );
+                        hasher.update(
+                            &u64::try_from(parameter.get())
+                                .map_err(|_| SemanticTranscriptError::UnsupportedIdentity)?
+                                .to_le_bytes(),
+                        );
+                    }
+                }
+            }
+            CheckedSelectResolution::DialogueView { .. }
+            | CheckedSelectResolution::AgentField { .. } => {
                 return Err(SemanticTranscriptError::UnsupportedIdentity);
             }
         },
         CheckedExpressionResolution::Nominal(nominal) => {
-            write_nominal(hasher, nominal, analysis, symbols)?;
+            write_nominal(hasher, nominal, analysis)?;
         }
         CheckedExpressionResolution::Variant(variant) => {
-            write_variant_owner(hasher, variant.owner(), analysis, symbols)?;
-            hasher.update(&variant.ordinal().to_le_bytes());
+            write_variant_resolution(hasher, variant);
         }
         CheckedExpressionResolution::Effect(effect) => {
             write_bytes(hasher, effect.as_str().as_bytes());
         }
-        CheckedExpressionResolution::StageLook(_)
-        | CheckedExpressionResolution::Await(_)
+        CheckedExpressionResolution::StageLook(look) => {
+            hasher.update(look.look().as_bytes());
+        }
+        CheckedExpressionResolution::Await(_)
         | CheckedExpressionResolution::Choice(_)
         | CheckedExpressionResolution::Try(_)
         | CheckedExpressionResolution::ImplicitCallable(_)
+        | CheckedExpressionResolution::Closure(_)
         | CheckedExpressionResolution::ImplicitParameter { .. }
         | CheckedExpressionResolution::Pipe(_)
         | CheckedExpressionResolution::PipeLeft { .. }
@@ -1782,10 +1491,9 @@ fn write_nominal(
     hasher: &mut TranscriptHasher<'_>,
     nominal: &super::CheckedProjectNominal,
     analysis: &FinalSemanticAnalysis,
-    symbols: &ProjectSymbolTable,
 ) -> Result<(), SemanticTranscriptError> {
     hasher.update(nominal.identity().as_bytes());
-    let layout = nominal_layout_hash(analysis, symbols, nominal)?;
+    let layout = nominal_layout_hash(analysis, nominal)?;
     hasher.update(layout.as_bytes());
     write_len(hasher, nominal.arguments().len());
     for argument in nominal.arguments() {
@@ -1808,43 +1516,46 @@ fn write_project_callable(
     Ok(())
 }
 
-fn write_variant_owner(
+fn write_variant_resolution(
     hasher: &mut TranscriptHasher<'_>,
-    owner: &CheckedVariantOwner,
-    analysis: &FinalSemanticAnalysis,
-    symbols: &ProjectSymbolTable,
-) -> Result<(), SemanticTranscriptError> {
-    match owner {
-        CheckedVariantOwner::Project(nominal) => {
-            hasher.update(&[0]);
-            write_nominal(hasher, nominal, analysis, symbols)?;
-        }
-        CheckedVariantOwner::Option { item } => {
+    resolution: &super::CheckedVariantResolution,
+) {
+    let owner_tag = match resolution.owner() {
+        CheckedVariantOwner::Project { .. } => 0,
+        CheckedVariantOwner::CharacterNominal { .. } => 1,
+        CheckedVariantOwner::BuiltinClosed { .. } => 2,
+        CheckedVariantOwner::Option { .. } => 3,
+        CheckedVariantOwner::Result { .. } => 4,
+    };
+    hasher.update(&[owner_tag]);
+    hasher.update(resolution.owner().semantic_type().as_bytes());
+    match resolution.owner().layout() {
+        Some(layout) => {
             hasher.update(&[1]);
-            hasher.update(item.semantic_identity_digest().as_bytes());
+            hasher.update(layout.as_bytes());
         }
-        CheckedVariantOwner::Result { ok, error } => {
-            hasher.update(&[2]);
-            hasher.update(ok.semantic_identity_digest().as_bytes());
-            hasher.update(error.semantic_identity_digest().as_bytes());
-        }
-        CheckedVariantOwner::CharacterNominal { .. }
-        | CheckedVariantOwner::BuiltinClosed { .. } => {
-            return Err(SemanticTranscriptError::UnsupportedIdentity);
-        }
+        None => hasher.update(&[0]),
     }
-    Ok(())
+    let selected = resolution.selected();
+    hasher.update(selected.semantic_id().as_bytes());
+    hasher.update(&selected.ordinal().to_le_bytes());
+    match selected.payload() {
+        Some(payload) => {
+            hasher.update(&[1]);
+            hasher.update(payload.semantic_identity_digest().as_bytes());
+        }
+        None => hasher.update(&[0]),
+    }
 }
 
 fn nominal_layout_hash(
     analysis: &FinalSemanticAnalysis,
-    symbols: &ProjectSymbolTable,
     nominal: &super::CheckedProjectNominal,
 ) -> Result<TypeLayoutHash, SemanticTranscriptError> {
     analysis
-        .project_checked_runtime_nominal(symbols, nominal)
-        .map(|projection| projection.layout())
+        .checked_runtime_nominal_projection(nominal)
         .map_err(|_| SemanticTranscriptError::UnsupportedIdentity)
+        .map(|projection| projection.layout())
 }
 
 fn unit_number_tag(unit: HirUnitNumberUnit) -> u8 {
@@ -1903,168 +1614,3 @@ fn unreachable_tag(value: CheckedUnreachableReason) -> u8 {
         CheckedUnreachableReason::UninhabitedDomain => 3,
     }
 }
-
-fn body_role_tag(role: arcweft_lang_hir::body_edges::HirBodyChildRole) -> u8 {
-    use arcweft_lang_hir::body_edges::HirBodyChildRole;
-    match role {
-        HirBodyChildRole::Expression => 0,
-        HirBodyChildRole::Statement { .. } => 1,
-        HirBodyChildRole::Tail => 2,
-        HirBodyChildRole::RecoveryExpression => 3,
-        HirBodyChildRole::ThreadItem { .. } => 4,
-    }
-}
-
-fn write_body_role_payload(
-    hasher: &mut TranscriptHasher<'_>,
-    role: arcweft_lang_hir::body_edges::HirBodyChildRole,
-) {
-    match role {
-        arcweft_lang_hir::body_edges::HirBodyChildRole::Statement { ordinal }
-        | arcweft_lang_hir::body_edges::HirBodyChildRole::ThreadItem { ordinal } => {
-            hasher.update(&ordinal.to_le_bytes());
-        }
-        _ => {}
-    }
-}
-
-fn statement_role_tag(role: HirStatementChildRole) -> u8 {
-    match role {
-        HirStatementChildRole::AssertionCondition { .. } => 0,
-        HirStatementChildRole::Pattern => 1,
-        HirStatementChildRole::Annotation => 2,
-        HirStatementChildRole::Initializer => 3,
-        HirStatementChildRole::Input => 4,
-        HirStatementChildRole::Target => 5,
-        HirStatementChildRole::Value => 6,
-        HirStatementChildRole::BodyItem { .. } => 7,
-        HirStatementChildRole::ElseIf => 8,
-        HirStatementChildRole::TriggerExpression => 9,
-        HirStatementChildRole::TriggerPattern => 10,
-        HirStatementChildRole::TriggerSignalTarget => 11,
-        HirStatementChildRole::TriggerSignalValue => 12,
-        HirStatementChildRole::UnsafeReason => 13,
-        HirStatementChildRole::Condition => 14,
-        HirStatementChildRole::Scrutinee => 15,
-        HirStatementChildRole::Guard => 16,
-        HirStatementChildRole::MatchPattern { .. } => 17,
-        HirStatementChildRole::MatchGuard { .. } => 18,
-        HirStatementChildRole::MatchValue { .. } => 19,
-        HirStatementChildRole::ForSource => 20,
-        HirStatementChildRole::ForIterator => 21,
-        HirStatementChildRole::ForNextValue => 22,
-        HirStatementChildRole::SelectOperand => 23,
-        HirStatementChildRole::SelectBinding { .. } => 24,
-        HirStatementChildRole::SelectSource { .. } => 25,
-        HirStatementChildRole::SelectPattern { .. } => 26,
-    }
-}
-
-fn write_statement_role_payload(hasher: &mut TranscriptHasher<'_>, role: HirStatementChildRole) {
-    match role {
-        HirStatementChildRole::AssertionCondition { ordinal } => {
-            hasher.update(&ordinal.to_le_bytes());
-        }
-        HirStatementChildRole::BodyItem { body, ordinal } => {
-            hasher.update(&[statement_body_tag(body)]);
-            write_statement_body_payload(hasher, body);
-            hasher.update(&ordinal.to_le_bytes());
-        }
-        HirStatementChildRole::MatchPattern { arm }
-        | HirStatementChildRole::MatchGuard { arm }
-        | HirStatementChildRole::MatchValue { arm } => {
-            hasher.update(&arm.to_le_bytes());
-        }
-        HirStatementChildRole::SelectBinding { branch }
-        | HirStatementChildRole::SelectSource { branch }
-        | HirStatementChildRole::SelectPattern { branch } => {
-            hasher.update(&branch.to_le_bytes());
-        }
-        HirStatementChildRole::Pattern
-        | HirStatementChildRole::Annotation
-        | HirStatementChildRole::Initializer
-        | HirStatementChildRole::Input
-        | HirStatementChildRole::Target
-        | HirStatementChildRole::Value
-        | HirStatementChildRole::ElseIf
-        | HirStatementChildRole::TriggerExpression
-        | HirStatementChildRole::TriggerPattern
-        | HirStatementChildRole::TriggerSignalTarget
-        | HirStatementChildRole::TriggerSignalValue
-        | HirStatementChildRole::UnsafeReason
-        | HirStatementChildRole::Condition
-        | HirStatementChildRole::Scrutinee
-        | HirStatementChildRole::Guard
-        | HirStatementChildRole::ForSource
-        | HirStatementChildRole::ForIterator
-        | HirStatementChildRole::ForNextValue
-        | HirStatementChildRole::SelectOperand => {}
-    }
-}
-
-fn statement_body_tag(role: HirStatementBodyRole) -> u8 {
-    match role {
-        HirStatementBodyRole::LetElse => 0,
-        HirStatementBodyRole::Defer => 1,
-        HirStatementBodyRole::On => 2,
-        HirStatementBodyRole::UnsafeLifetime => 3,
-        HirStatementBodyRole::Then => 4,
-        HirStatementBodyRole::Else => 5,
-        HirStatementBodyRole::MatchArm { .. } => 6,
-        HirStatementBodyRole::While => 7,
-        HirStatementBodyRole::WhileLet => 8,
-        HirStatementBodyRole::For => 9,
-        HirStatementBodyRole::SelectBranch { .. } => 10,
-        HirStatementBodyRole::SourceLocale => 11,
-        HirStatementBodyRole::Scope => 12,
-    }
-}
-
-fn write_statement_body_payload(hasher: &mut TranscriptHasher<'_>, role: HirStatementBodyRole) {
-    match role {
-        HirStatementBodyRole::MatchArm { arm } => {
-            hasher.update(&arm.to_le_bytes());
-        }
-        HirStatementBodyRole::SelectBranch { branch } => {
-            hasher.update(&branch.to_le_bytes());
-        }
-        _ => {}
-    }
-}
-
-fn pattern_role_tag(role: HirPatternChildRole) -> u8 {
-    match role {
-        HirPatternChildRole::BindingLocal => 0,
-        HirPatternChildRole::MutableBindingLocal => 1,
-        HirPatternChildRole::VariantPayload => 2,
-        HirPatternChildRole::Element { .. } => 3,
-        HirPatternChildRole::RecordField { .. } => 4,
-        HirPatternChildRole::RecordShorthandLocal { .. } => 5,
-        HirPatternChildRole::RecordRestLocal { .. } => 6,
-        HirPatternChildRole::SequenceRestLocal => 7,
-        HirPatternChildRole::WholeBindingLocal => 8,
-        HirPatternChildRole::NestedPattern => 9,
-        HirPatternChildRole::OrAlternative { .. } => 10,
-        HirPatternChildRole::TypedBindingLocal => 11,
-        HirPatternChildRole::TypedBindingType => 12,
-    }
-}
-
-fn write_pattern_role_payload(hasher: &mut TranscriptHasher<'_>, role: HirPatternChildRole) {
-    match role {
-        HirPatternChildRole::Element { ordinal }
-        | HirPatternChildRole::OrAlternative { ordinal } => {
-            hasher.update(&ordinal.to_le_bytes());
-        }
-        HirPatternChildRole::RecordField { field }
-        | HirPatternChildRole::RecordShorthandLocal { field }
-        | HirPatternChildRole::RecordRestLocal { field } => {
-            hasher.update(&field.to_le_bytes());
-        }
-        _ => {}
-    }
-}
-
-#[cfg(test)]
-#[path = "semantic_transcript/tests.rs"]
-mod tests;

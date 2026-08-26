@@ -142,7 +142,7 @@ pub(super) fn native_player_runtime_state_for_options(
             entry: Some(entry),
             mode: options.mode.into(),
             max_ops: options.max_ops,
-            root_bindings: options.values.clone(),
+            view_root_bindings: options.view_values.clone(),
             root_command_host_calls: RootCommandHostCallCatalog::default(),
             engine_resource_types: std::sync::Arc::new(
                 arcweft_resource_model::registry::ResourceTypeRegistry::empty(),
@@ -161,6 +161,7 @@ pub(super) fn native_player_runtime_state_for_options(
     let host = NativeTaskBridge::try_new(
         selection.path(),
         file_roots,
+        &[],
         host_policy,
         adapter_registrars,
     )
@@ -180,6 +181,7 @@ pub(super) fn native_player_runtime_state_for_options(
         shared_capture,
         host,
         task_events: Vec::new(),
+        host_call_results: Vec::new(),
         next_clock_millis: 1,
     })
 }
@@ -240,6 +242,16 @@ fn advance_player_runtime(
     let mut task_request_count = 0usize;
     let mut last_step = None;
     for _ in 0..effective_steps {
+        if let Some(host) = runtime.host.as_mut() {
+            host.pump_main_thread().map_err(|error| {
+                eprintln!("error: native adapter pump failed: {error}");
+                ExitCode::FAILURE
+            })?;
+            runtime.task_events.extend(host.poll_completions());
+            runtime
+                .host_call_results
+                .extend(host.take_host_call_results());
+        }
         let clock =
             RuntimeClockStep::from_millis(runtime.next_clock_millis, 16).map_err(|error| {
                 eprintln!("error: player-backed observe clock failed: {error}");
@@ -248,7 +260,8 @@ fn advance_player_runtime(
         runtime.next_clock_millis = runtime.next_clock_millis.saturating_add(1);
         let mut step_input = std::mem::take(&mut pending_step_input);
         step_input.task_events = std::mem::take(&mut runtime.task_events);
-        let step = runtime.session.step_with_clock(clock, step_input);
+        step_input.host_call_results = std::mem::take(&mut runtime.host_call_results);
+        let mut step = runtime.session.step_with_clock(clock, step_input);
         let finished = step.finished;
         let fx_diagnostics = &step.presentation.fx_diagnostics;
         diagnostics.extend(
@@ -291,6 +304,13 @@ fn advance_player_runtime(
             Vec::new()
         } else {
             complete_player_runtime_tasks(runtime.host.as_mut(), &step.requested_tasks)
+        };
+        runtime.host_call_results = if finished {
+            Vec::new()
+        } else {
+            runtime.host.as_mut().map_or_else(Vec::new, |host| {
+                host.complete_host_calls(std::mem::take(&mut step.requested_host_calls))
+            })
         };
         last_step = Some(step);
         if finished && !force_capture_step {

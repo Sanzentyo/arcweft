@@ -6,9 +6,9 @@ use crate::audio::RuntimeAudioCommand;
 use crate::effect::{LineEffectRequest, RuntimeEffectExpr, RuntimeEffectFieldExpr};
 use crate::entry::TypeLayoutHash;
 use crate::pattern::{
-    RuntimeOpaqueTypeAdmission, RuntimePattern, RuntimePatternBindingCoordinate,
-    RuntimePatternBindingPath, RuntimePatternBindingStep, RuntimePatternKind, RuntimePatternRest,
-    RuntimeRecordPatternField, RuntimeVariantIdentity,
+    RuntimeOpaqueTypeAdmission, RuntimeOpaqueTypeOwner, RuntimePattern,
+    RuntimePatternBindingCoordinate, RuntimePatternBindingPath, RuntimePatternBindingStep,
+    RuntimePatternKind, RuntimePatternRest, RuntimeRecordPatternField, RuntimeVariantIdentity,
 };
 use crate::runtime_id::{RuntimeLocalDeclarationId, RuntimePlanTypeId};
 use crate::stream::{StreamMatchArm, StreamOp, StreamPlan};
@@ -26,20 +26,22 @@ use crate::value::{
 
 use super::super::{
     ChoiceRuntimeOption, FlowOp, RuntimeAgentOperationalType, RuntimeAgentTypeProjection,
-    RuntimeHostCallTarget, RuntimeIteratorEvidence, RuntimeIteratorWitnessEvidence,
-    RuntimeIteratorWitnessExecutable, RuntimeMatchArm, RuntimePlanSequenceKind,
-    RuntimePlanTypeProjection, RuntimePureInputType, RuntimePureOutputType, RuntimeReceiverMode,
+    RuntimeBuiltinIteratorEvidence, RuntimeBuiltinIteratorFamily, RuntimeHostCallTarget,
+    RuntimeIteratorEvidence, RuntimeIteratorWitnessEvidence, RuntimeIteratorWitnessExecutable,
+    RuntimeMatchArm, RuntimePlanSequenceKind, RuntimePlanTypeProjection, RuntimePureInputType,
+    RuntimePureOutputType, RuntimeReceiverMode,
 };
 use super::{
-    RuntimeAgentExprSeed, RuntimeAudioCommandSeed, RuntimeCallArgumentSeed,
-    RuntimeChoiceOptionSeed, RuntimeEvaluatedEffectSeed, RuntimeExprMatchArmSeed, RuntimeExprSeed,
-    RuntimeExprSeedKind, RuntimeFieldProjectionSeed, RuntimeFlowMatchArmSeed, RuntimeFlowOpSeed,
-    RuntimeHostArgumentSeed, RuntimeHostCallTargetSeed, RuntimeHostTaskRequestTemplateSeed,
-    RuntimeIteratorEvidenceSeed, RuntimeIteratorWitnessEvidenceSeed,
-    RuntimeIteratorWitnessExecutableSeed, RuntimeLineEffectSeed, RuntimeLocalSeedId,
-    RuntimeNominalRecordFieldSeed, RuntimePatternRestSeed, RuntimePatternSeed,
-    RuntimePatternSeedKind, RuntimePlanBuildError, RuntimePlanBuilder, RuntimeRecordFieldSeedId,
-    RuntimeStreamMatchArmSeed, RuntimeStreamOpSeed, RuntimeStreamPlanSeed,
+    RuntimeAgentExprSeed, RuntimeAudioCommandSeed, RuntimeBuiltinIteratorEvidenceSeed,
+    RuntimeCallArgumentSeed, RuntimeChoiceOptionSeed, RuntimeEvaluatedEffectSeed,
+    RuntimeExprMatchArmSeed, RuntimeExprSeed, RuntimeExprSeedKind, RuntimeFieldProjectionSeed,
+    RuntimeFlowMatchArmSeed, RuntimeFlowOpSeed, RuntimeHostArgumentSeed, RuntimeHostCallTargetSeed,
+    RuntimeHostTaskRequestTemplateSeed, RuntimeIteratorEvidenceSeed,
+    RuntimeIteratorWitnessEvidenceSeed, RuntimeIteratorWitnessExecutableSeed,
+    RuntimeLineEffectSeed, RuntimeLocalSeedId, RuntimeNominalRecordFieldSeed,
+    RuntimePatternRestSeed, RuntimePatternSeed, RuntimePatternSeedKind, RuntimePlanBuildError,
+    RuntimePlanBuilder, RuntimeRecordFieldSeedId, RuntimeStreamMatchArmSeed, RuntimeStreamOpSeed,
+    RuntimeStreamPlanSeed,
 };
 
 impl RuntimePlanBuilder {
@@ -667,6 +669,48 @@ impl RuntimePlanBuilder {
                 let (field, field_ty) = self.resolve_record_field(owner, *field)?;
                 require_same("nominal field result", field_ty, result_ty)?;
                 Ok(RuntimeFieldProjection::Nominal(field))
+            }
+            RuntimeFieldProjectionSeed::OpaqueRecord {
+                owner,
+                producer,
+                field,
+                field_type,
+            } => {
+                let semantic_owner = *owner;
+                let owner = self.resolve_seed_type("opaque record field owner", semantic_owner)?;
+                require_same("opaque record field target", owner, target_ty)?;
+                let expected_result =
+                    self.resolve_seed_type("opaque record field result", *field_type)?;
+                require_same("opaque record field result", expected_result, result_ty)?;
+                let opaque_owner = match self.projection(target_ty)? {
+                    RuntimePlanTypeProjection::Opaque {
+                        producer: accepted,
+                        admission,
+                        value_class,
+                        persistence,
+                        ..
+                    } if accepted == producer
+                        && *admission == RuntimeOpaqueTypeAdmission::ExactIdentity =>
+                    {
+                        RuntimeOpaqueTypeOwner::with_admission(
+                            accepted.clone(),
+                            semantic_owner,
+                            *admission,
+                            *value_class,
+                            *persistence,
+                        )
+                    }
+                    _ => return invalid_projection("opaque record field target", target_ty),
+                };
+                let ordinal = usize::try_from(field.zero_based()).map_err(|_| {
+                    RuntimePlanBuildError::RecordFieldIdentity(
+                        RuntimeRecordFieldIdError::OrdinalOverflow,
+                    )
+                })?;
+                Ok(RuntimeFieldProjection::OpaqueRecord {
+                    owner: opaque_owner,
+                    field: RuntimeRecordFieldId::try_from_zero_based_ordinal(ordinal)?,
+                })
             }
             RuntimeFieldProjectionSeed::Agent(field) => {
                 if !self.agent_field_owner_matches(target_ty, field.owner())? {
@@ -2373,9 +2417,9 @@ impl RuntimePlanBuilder {
         evidence: RuntimeIteratorEvidenceSeed,
     ) -> Result<(RuntimePlanTypeId, RuntimeIteratorEvidence), RuntimePlanBuildError> {
         match evidence {
-            RuntimeIteratorEvidenceSeed::Builtin(evidence) => self
-                .builtin_iterator_item_type(source, evidence)
-                .map(|item| (item, RuntimeIteratorEvidence::Builtin(evidence))),
+            RuntimeIteratorEvidenceSeed::Builtin(evidence) => {
+                self.lower_builtin_iterator(source, &evidence)
+            }
             RuntimeIteratorEvidenceSeed::Witness(evidence) => {
                 self.lower_iterator_witness(source, evidence)
             }
@@ -2385,44 +2429,42 @@ impl RuntimePlanBuilder {
     fn builtin_iterator_item_type(
         &self,
         source: RuntimePlanTypeId,
-        evidence: super::super::RuntimeBuiltinIteratorEvidence,
+        evidence: RuntimeBuiltinIteratorFamily,
     ) -> Result<RuntimePlanTypeId, RuntimePlanBuildError> {
-        use super::super::{RuntimeBuiltinIteratorEvidence, RuntimePlanSequenceKind};
-
         let projection = self.projection(source)?;
         match (evidence, projection) {
-            (RuntimeBuiltinIteratorEvidence::Range, RuntimePlanTypeProjection::Range(item))
+            (RuntimeBuiltinIteratorFamily::Range, RuntimePlanTypeProjection::Range(item))
             | (
-                RuntimeBuiltinIteratorEvidence::Stream,
+                RuntimeBuiltinIteratorFamily::Stream,
                 RuntimePlanTypeProjection::Stream { item, .. },
             )
             | (
-                RuntimeBuiltinIteratorEvidence::Array,
+                RuntimeBuiltinIteratorFamily::Array,
                 RuntimePlanTypeProjection::Array { item, .. },
             )
             | (
-                RuntimeBuiltinIteratorEvidence::Seq,
+                RuntimeBuiltinIteratorFamily::Seq,
                 RuntimePlanTypeProjection::Sequence {
                     kind: RuntimePlanSequenceKind::Seq,
                     item,
                 },
             )
             | (
-                RuntimeBuiltinIteratorEvidence::Vec,
+                RuntimeBuiltinIteratorFamily::Vec,
                 RuntimePlanTypeProjection::Sequence {
                     kind: RuntimePlanSequenceKind::Vec,
                     item,
                 },
             )
             | (
-                RuntimeBuiltinIteratorEvidence::Slice,
+                RuntimeBuiltinIteratorFamily::Slice,
                 RuntimePlanTypeProjection::Sequence {
                     kind: RuntimePlanSequenceKind::Slice,
                     item,
                 },
             ) => Ok(*item),
             (
-                RuntimeBuiltinIteratorEvidence::TupleHomogeneous,
+                RuntimeBuiltinIteratorFamily::TupleHomogeneous,
                 RuntimePlanTypeProjection::Tuple(items),
             ) => {
                 let Some(first) = items.first().copied() else {
@@ -2436,6 +2478,46 @@ impl RuntimePlanBuilder {
             }
             _ => invalid_projection("flow for iterator evidence", source),
         }
+    }
+
+    fn lower_builtin_iterator(
+        &self,
+        source: RuntimePlanTypeId,
+        evidence: &RuntimeBuiltinIteratorEvidenceSeed,
+    ) -> Result<(RuntimePlanTypeId, RuntimeIteratorEvidence), RuntimePlanBuildError> {
+        let item = self.resolve_seed_type("builtin iterator item", evidence.item)?;
+        let iterator = self.resolve_seed_type("builtin iterator state", evidence.iterator)?;
+        let next_value =
+            self.resolve_seed_type("builtin iterator next value", evidence.next_value)?;
+        let step = self.resolve_seed_type("builtin iterator step", evidence.step)?;
+        require_same(
+            "builtin iterator source item",
+            item,
+            self.builtin_iterator_item_type(source, evidence.family)?,
+        )?;
+        match self.projection(iterator)? {
+            RuntimePlanTypeProjection::Iterator(actual) if *actual == item => {}
+            _ => return invalid_projection("builtin iterator state", iterator),
+        }
+        match self.projection(next_value)? {
+            RuntimePlanTypeProjection::Option(actual) if *actual == item => {}
+            _ => return invalid_projection("builtin iterator next value", next_value),
+        }
+        match self.projection(step)? {
+            RuntimePlanTypeProjection::Tuple(items) if items.as_ref() == [iterator, next_value] => {
+            }
+            _ => return invalid_projection("builtin iterator step", step),
+        }
+        Ok((
+            item,
+            RuntimeIteratorEvidence::builtin(RuntimeBuiltinIteratorEvidence {
+                family: evidence.family,
+                item,
+                iterator,
+                next_value,
+                step,
+            }),
+        ))
     }
 
     fn await_many_item_type(
@@ -2557,11 +2639,13 @@ impl RuntimePlanBuilder {
             public_id: target.public_id,
             capability: target.capability,
             operation: target.operation,
+            contract: target.contract,
             args: target
                 .args
                 .into_iter()
                 .map(|arg| self.lower_host_argument(arg))
                 .collect::<Result<_, _>>()?,
+            result: self.resolve_seed_type("host call result", target.result)?,
             mode: target.mode,
             deterministic: target.deterministic,
         })
@@ -3726,12 +3810,15 @@ impl RuntimePlanBuilder {
 mod tests {
     use super::*;
     use crate::entry::{RuntimeNominalTypeId, TypeLayoutHash};
-    use crate::pattern::{RuntimePatternBindingPathError, RuntimeSemanticTypeId};
+    use crate::pattern::{
+        RuntimeOpaqueTypeProducerId, RuntimePatternBindingPathError, RuntimeSemanticTypeId,
+    };
     use crate::plan::{
         RuntimeLocalDeclarationSeed, RuntimeNominalRecordDomainFieldSeed,
         RuntimeNominalRecordDomainSeed, RuntimePlanTypeSeed, RuntimeRecordPatternFieldSeed,
         RuntimeVariantCaseSeed, RuntimeVariantDomainSeed,
     };
+    use crate::value::{RuntimeHandleKind, RuntimeOpaquePersistence, RuntimeOpaqueValueClass};
 
     fn identity(marker: u8) -> RuntimeSemanticTypeId {
         RuntimeSemanticTypeId::from_bytes([marker; 32])
@@ -3739,6 +3826,71 @@ mod tests {
 
     fn nominal(label: &str) -> RuntimeNominalTypeId {
         RuntimeNominalTypeId::try_new(label).expect("test nominal")
+    }
+
+    #[test]
+    fn opaque_record_projection_retains_the_complete_exact_owner() {
+        let producer =
+            RuntimeOpaqueTypeProducerId::try_new("fixture.dialogue-view").expect("test producer");
+        let semantic_owner = identity(91);
+        let field_type = identity(92);
+        let mut builder = RuntimePlanBuilder::new();
+        let admission = builder
+            .admit_semantic_batch(
+                [
+                    RuntimePlanTypeSeed::new(
+                        semantic_owner,
+                        RuntimePlanTypeProjection::Opaque {
+                            producer: producer.clone(),
+                            admission: RuntimeOpaqueTypeAdmission::ExactIdentity,
+                            value_class: RuntimeOpaqueValueClass::AffineHandle(
+                                RuntimeHandleKind::StageActor,
+                            ),
+                            persistence: RuntimeOpaquePersistence::SnapshotOnly,
+                            arguments: Box::new([]),
+                        },
+                    ),
+                    RuntimePlanTypeSeed::new(field_type, RuntimePlanTypeProjection::String),
+                ],
+                [RuntimeLocalDeclarationSeed::new(semantic_owner)],
+                [],
+                [],
+            )
+            .expect("opaque record graph");
+        let expression = builder
+            .lower_expression(RuntimeExprSeed::new(
+                field_type,
+                RuntimeExprSeedKind::Field {
+                    target: Box::new(RuntimeExprSeed::new(
+                        semantic_owner,
+                        RuntimeExprSeedKind::Local(admission.local_ids()[0].clone()),
+                    )),
+                    field: RuntimeFieldProjectionSeed::OpaqueRecord {
+                        owner: semantic_owner,
+                        producer: producer.clone(),
+                        field: RuntimeRecordFieldSeedId::from_zero_based(0),
+                        field_type,
+                    },
+                },
+            ))
+            .expect("opaque record projection");
+
+        let RuntimeExprKind::Field {
+            field: RuntimeFieldProjection::OpaqueRecord { owner, field },
+            ..
+        } = expression.kind()
+        else {
+            panic!("opaque record field expression");
+        };
+        assert_eq!(field.zero_based(), 0);
+        assert_eq!(owner.producer(), &producer);
+        assert_eq!(owner.semantic_identity(), semantic_owner);
+        assert_eq!(owner.admission(), RuntimeOpaqueTypeAdmission::ExactIdentity);
+        assert_eq!(
+            owner.value_class(),
+            RuntimeOpaqueValueClass::AffineHandle(RuntimeHandleKind::StageActor)
+        );
+        assert_eq!(owner.persistence(), RuntimeOpaquePersistence::SnapshotOnly);
     }
 
     #[test]

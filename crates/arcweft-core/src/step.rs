@@ -4,13 +4,14 @@ use crate::root::{RootEventInput, RootTransitionOutcome, RuntimeCommandEnvelope}
 use crate::stream::RuntimeStreamEvent;
 use crate::task::{CancelScopeId, NamedHostArg, RuntimeNeedState, TaskEvent, TaskSpec};
 use crate::time::{LogicalDuration, TickId};
-use crate::value::{RuntimeBinding, RuntimePayload};
+use crate::value::RuntimePayload;
 use arcweft_interaction_model::{
     audio::{AudioCommandEnvelope, AudioEvent},
     id::Identifier,
     input::{InputEpoch, InputEventKind, InputSequence, InteractionTarget, RoutedInputEvent},
     payload::InteractionPayload,
 };
+pub use arcweft_manifest_model::HostCallContractDigest;
 
 const RUNTIME_INPUT_TARGET: &str = "runtime";
 const DIALOGUE_ADVANCE_INPUT: &str = "dialogue.advance";
@@ -19,7 +20,6 @@ const DIALOGUE_ADVANCE_INPUT: &str = "dialogue.advance";
 pub struct RuntimeStepInput {
     pub tick: TickId,
     pub dt: LogicalDuration,
-    pub bindings: Vec<RuntimeBinding>,
     pub input_events: Vec<RoutedInputEvent>,
     pub need_states: Vec<RuntimeNeedState>,
     pub task_events: Vec<TaskEvent>,
@@ -40,7 +40,6 @@ pub struct RuntimeStepInput {
 pub struct RuntimeStepInputRef<'a> {
     tick: TickId,
     dt: LogicalDuration,
-    bindings: &'a [RuntimeBinding],
     input_events: &'a [RoutedInputEvent],
     need_states: &'a [RuntimeNeedState],
     task_events: &'a [TaskEvent],
@@ -110,8 +109,10 @@ pub struct RuntimeHostCallRequest {
     pub public_id: String,
     pub capability: String,
     pub operation: String,
+    pub contract: Option<HostCallContractDigest>,
     pub args: Vec<RuntimePayload>,
     pub named_args: Vec<NamedHostArg<RuntimePayload>>,
+    pub result: crate::pattern::RuntimeCheckedType,
     pub mode: RuntimeHostCallMode,
     pub deterministic: bool,
 }
@@ -193,6 +194,11 @@ pub struct RuntimeStepStats {
 /// Deterministic counters for runtime pure helper acceleration.
 #[derive(Clone, Copy, Debug, Default, serde::Deserialize, PartialEq, serde::Serialize)]
 pub struct RuntimePureCallStats {
+    /// Accepted top-level compact-AWBC pure-program invocations.
+    ///
+    /// This is non-semantic runtime telemetry. It is not persisted into
+    /// replay, cache, or program identity state.
+    pub awbc_pure_program_calls: usize,
     pub pure_calls: usize,
     pub math_calls: usize,
     pub math_accelerated_calls: usize,
@@ -246,6 +252,9 @@ impl RuntimePureCallStats {
     #[must_use]
     pub fn saturating_add(self, other: Self) -> Self {
         Self {
+            awbc_pure_program_calls: self
+                .awbc_pure_program_calls
+                .saturating_add(other.awbc_pure_program_calls),
             pure_calls: self.pure_calls.saturating_add(other.pure_calls),
             math_calls: self.math_calls.saturating_add(other.math_calls),
             math_accelerated_calls: self
@@ -302,6 +311,9 @@ impl RuntimePureCallStats {
     #[must_use]
     pub fn saturating_delta(self, before: Self) -> Self {
         Self {
+            awbc_pure_program_calls: self
+                .awbc_pure_program_calls
+                .saturating_sub(before.awbc_pure_program_calls),
             pure_calls: self.pure_calls.saturating_sub(before.pure_calls),
             math_calls: self.math_calls.saturating_sub(before.math_calls),
             math_accelerated_calls: self
@@ -469,7 +481,6 @@ impl RuntimeStepInput {
         RuntimeStepInputRef {
             tick: self.tick,
             dt: self.dt,
-            bindings: self.bindings.as_slice(),
             input_events: self.input_events.as_slice(),
             need_states: self.need_states.as_slice(),
             task_events: self.task_events.as_slice(),
@@ -533,10 +544,6 @@ impl<'a> RuntimeStepInputRef<'a> {
 
     pub const fn dt(&self) -> LogicalDuration {
         self.dt
-    }
-
-    pub const fn bindings(&self) -> &'a [RuntimeBinding] {
-        self.bindings
     }
 
     pub const fn input_events(&self) -> &'a [RoutedInputEvent] {

@@ -7,12 +7,12 @@ use arcweft_presentation::interaction::{FocusState, InteractionState, PressedTar
 use arcweft_presentation::layer::LayerId;
 use arcweft_presentation::semantic::SemanticRole;
 use arcweft_view::{
-    ContainerKind, EventBinding, EventKind, FragmentKind, HandlerId, LayoutBox, LayoutLength,
-    LayoutPoint, LayoutResults, LayoutSize, LayoutTree, NodeKey, RichTextSourceId, SemanticSpecId,
-    ViewColorValue, ViewElementKind, ViewFragmentBuilder, ViewInteractionSelector, ViewLayerOutput,
-    ViewLengthMilli, ViewPropertyKind, ViewScalarMilli, ViewSemanticFragmentBuilder,
-    ViewSemanticNode, ViewSpecifiedValue, ViewStyleApplicationTarget, ViewStyleAssignOp,
-    ViewStyleCombinator, ViewStyleDeclaration, ViewStylePatch, ViewStylePatchId,
+    ContainerKind, EventBinding, EventKind, FragmentKind, LayoutBox, LayoutLength, LayoutPoint,
+    LayoutResults, LayoutSize, LayoutTree, NodeKey, RichTextSourceId, SemanticSpecId,
+    ViewColorValue, ViewElementKind, ViewFragmentBuilder, ViewHandlerRouteId,
+    ViewInteractionSelector, ViewLayerOutput, ViewLengthMilli, ViewPropertyKind, ViewScalarMilli,
+    ViewSemanticFragmentBuilder, ViewSemanticNode, ViewSpecifiedValue, ViewStyleApplicationTarget,
+    ViewStyleAssignOp, ViewStyleCombinator, ViewStyleDeclaration, ViewStylePatch, ViewStylePatchId,
     ViewStylePredicate, ViewStyleProgram, ViewStyleResolver, ViewStyleRevisionSet, ViewStyleRule,
     ViewStyleSelector, ViewStyleSelectorSequence, ViewStyleSheet, ViewStyleSheetId,
     ViewStyleSourceId,
@@ -41,7 +41,10 @@ fn fragment_and_layout() -> (arcweft_view::ViewFragment, LayoutResults) {
             FragmentKind::RichText(RichTextSourceId(1)),
             &styles,
             &[],
-            &[EventBinding::new(EventKind::Activate, HandlerId(11))],
+            &[EventBinding::new(
+                EventKind::Activate,
+                ViewHandlerRouteId::from_digest([11; 32]),
+            )],
             Some(SemanticSpecId(0)),
         )
         .unwrap();
@@ -214,7 +217,10 @@ fn routed_activate_selects_handler_by_stable_target() {
     assert_eq!(invocations.len(), 1);
     assert_eq!(invocations[0].target(), &button);
     assert_eq!(invocations[0].event(), EventKind::Activate);
-    assert_eq!(invocations[0].handler(), HandlerId(11));
+    assert_eq!(
+        invocations[0].route(),
+        ViewHandlerRouteId::from_digest([11; 32])
+    );
 }
 
 #[test]

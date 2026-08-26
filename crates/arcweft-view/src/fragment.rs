@@ -1,7 +1,10 @@
 //! Flat retained View fragments emitted by Rust and Arcweft views.
 
-use crate::{NodeKey, RawEntity, ViewError, ViewStyleApplicationTarget};
-use arcweft_presentation::input::{InputEventKind, PointerPhase};
+use crate::{
+    NodeKey, RawEntity, ViewError, ViewHandlerRouteId, ViewStyleApplicationTarget,
+    program::EventKind,
+};
+use arcweft_presentation::input::InputEventKind;
 use std::collections::BTreeSet;
 
 /// Frame-local node identifier inside one retained fragment.
@@ -47,17 +50,6 @@ pub enum ContainerKind {
     Stack,
 }
 
-/// Event kinds that a fragment can bind without introducing a public `ViewEvent`.
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub enum EventKind {
-    Activate,
-    PointerDown,
-    PointerUp,
-    PointerMove,
-    Focus,
-    Blur,
-}
-
 /// A retained View node payload.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum FragmentKind {
@@ -73,7 +65,7 @@ pub enum FragmentKind {
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct EventBinding {
     kind: EventKind,
-    handler: HandlerId,
+    route: ViewHandlerRouteId,
 }
 
 /// One flat retained fragment node.
@@ -123,30 +115,17 @@ impl Span32 {
     }
 }
 
-impl EventKind {
-    pub const fn accepts(self, input: &InputEventKind) -> bool {
-        match self {
-            Self::Activate => input.is_activate(),
-            Self::PointerDown => matches!(input.pointer_phase(), Some(PointerPhase::Down)),
-            Self::PointerUp => matches!(input.pointer_phase(), Some(PointerPhase::Up)),
-            Self::PointerMove => matches!(input.pointer_phase(), Some(PointerPhase::Move)),
-            Self::Focus => matches!(input.focus_changed(), Some(true)),
-            Self::Blur => matches!(input.focus_changed(), Some(false)),
-        }
-    }
-}
-
 impl EventBinding {
-    pub const fn new(kind: EventKind, handler: HandlerId) -> Self {
-        Self { kind, handler }
+    pub const fn new(kind: EventKind, route: ViewHandlerRouteId) -> Self {
+        Self { kind, route }
     }
 
     pub const fn kind(self) -> EventKind {
         self.kind
     }
 
-    pub const fn handler(self) -> HandlerId {
-        self.handler
+    pub const fn route(self) -> ViewHandlerRouteId {
+        self.route
     }
 
     pub const fn accepts(self, input: &InputEventKind) -> bool {

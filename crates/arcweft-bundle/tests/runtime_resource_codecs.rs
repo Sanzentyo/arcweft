@@ -5,25 +5,26 @@ use arcweft_bundle::container::{
 use arcweft_bundle::patch::{BundlePatchArtifact, PatchCompatibility};
 use arcweft_bundle::resource_codec::runtime::{
     AdapterRequirementsSection, EntrypointDeclaration, EntrypointsSection,
-    FunctionInterfaceFingerprint, InitialStateRequirement, ProductVisibility, RuntimeFunctionKind,
-    RuntimeResourceBudget, RuntimeResourceCompatibility, RuntimeTypeDeclaration,
-    RuntimeTypesSection, RuntimeValueKind, TypeCompatibilityLabel,
-    migrated_runtime_section_compatibility,
+    FunctionInterfaceFingerprint, ProductVisibility, RuntimeFunctionKind, RuntimeResourceBudget,
+    RuntimeResourceCompatibility, RuntimeTypeDeclaration, RuntimeTypesSection, RuntimeValueKind,
+    TypeCompatibilityLabel, migrated_runtime_section_compatibility,
 };
 use arcweft_bundle::resource_codec::{
     FieldId, ResourceField, ResourceWireType, SectionCodecBudget, SectionCodecError,
 };
 use arcweft_core::awbc::schema::{AwbcDigest, AwbcProgram};
+use arcweft_core::pattern::RuntimeSemanticTypeId;
 
 #[test]
 fn runtime_types_compact_bytes_are_deterministic_and_round_trip() {
     let left = runtime_types_section();
-    let right = RuntimeTypesSection::new(
+    let right = RuntimeTypesSection::try_new(
         left.abi_version,
         left.runtime_layout_digest,
         left.declarations.iter().cloned().rev(),
         left.function_interfaces.iter().cloned().rev(),
-    );
+    )
+    .expect("runtime types producer canonicalizes");
 
     let left_bytes = left
         .encode_canonical_section()
@@ -42,27 +43,19 @@ fn runtime_types_compact_bytes_are_deterministic_and_round_trip() {
 #[test]
 fn runtime_types_must_match_the_awbc_header_exactly() {
     let program = AwbcProgram::default();
-    let section = RuntimeTypesSection::new(
-        program.header.abi_version,
-        program.header.runtime_layout_digest,
-        [],
-        [],
-    );
+    let section = RuntimeTypesSection::from_awbc_program(&program)
+        .expect("default AWBC runtime types project");
     assert!(section.validate_awbc(&program).is_ok());
 
-    let abi_mismatch = RuntimeTypesSection::new(
-        program.header.abi_version + 1,
-        program.header.runtime_layout_digest,
-        [],
-        [],
-    );
+    let mut abi_mismatch = section.clone();
+    abi_mismatch.abi_version += 1;
     assert_eq!(
         abi_mismatch.validate_awbc(&program),
         Err(SectionCodecError::RuntimeLayoutMismatch)
     );
 
-    let digest_mismatch =
-        RuntimeTypesSection::new(program.header.abi_version, AwbcDigest([0xa9; 32]), [], []);
+    let mut digest_mismatch = section;
+    digest_mismatch.runtime_layout_digest = AwbcDigest([0xa9; 32]);
     assert_eq!(
         digest_mismatch.validate_awbc(&program),
         Err(SectionCodecError::RuntimeLayoutMismatch)
@@ -76,7 +69,6 @@ fn entrypoints_compact_bytes_are_deterministic_and_round_trip() {
             public_id: "entry.zeta".to_owned(),
             exported_name: Some("zeta".to_owned()),
             awbc_function_index: Some(2),
-            initial_state: InitialStateRequirement::None,
             source_anchor: None,
             visibility: ProductVisibility::Public,
         },
@@ -84,7 +76,6 @@ fn entrypoints_compact_bytes_are_deterministic_and_round_trip() {
             public_id: "entry.alpha".to_owned(),
             exported_name: Some("alpha".to_owned()),
             awbc_function_index: Some(1),
-            initial_state: InitialStateRequirement::RootBindings,
             source_anchor: None,
             visibility: ProductVisibility::Hidden,
         },
@@ -196,20 +187,22 @@ fn unknown_optional_fields_are_skipped_and_unknown_required_fields_reject() {
 #[test]
 fn patch_compatibility_fingerprints_classify_runtime_resource_changes() {
     let base = runtime_types_section();
-    let added = RuntimeTypesSection::new(
+    let added = RuntimeTypesSection::try_new(
         base.abi_version,
         base.runtime_layout_digest,
         base.declarations
             .iter()
             .cloned()
             .chain([RuntimeTypeDeclaration {
+                semantic_identity: RuntimeSemanticTypeId::from_bytes([0xe1; 32]),
                 public_id: Some("type.extra".to_owned()),
                 value_kind: RuntimeValueKind::Record,
                 layout_digest: digest(b"extra"),
                 compatibility: TypeCompatibilityLabel::CodeCompatible,
             }]),
         base.function_interfaces.clone(),
-    );
+    )
+    .expect("added runtime type section canonicalizes");
     assert_eq!(
         base.compatibility_with(&added),
         RuntimeResourceCompatibility::CodeCompatible
@@ -231,20 +224,22 @@ fn patch_compatibility_fingerprints_classify_runtime_resource_changes() {
 #[test]
 fn patch_artifact_from_views_uses_compact_runtime_compatibility() {
     let base = runtime_types_section();
-    let target = RuntimeTypesSection::new(
+    let target = RuntimeTypesSection::try_new(
         base.abi_version,
         base.runtime_layout_digest,
         base.declarations
             .iter()
             .cloned()
             .chain([RuntimeTypeDeclaration {
+                semantic_identity: RuntimeSemanticTypeId::from_bytes([0xe1; 32]),
                 public_id: Some("type.extra".to_owned()),
                 value_kind: RuntimeValueKind::Record,
                 layout_digest: digest(b"extra"),
                 compatibility: TypeCompatibilityLabel::CodeCompatible,
             }]),
         base.function_interfaces.clone(),
-    );
+    )
+    .expect("target runtime type section canonicalizes");
     let base_bytes = compact_program_with_runtime_types(&base);
     let target_bytes = compact_program_with_runtime_types(&target);
     let base_view = BundleView::parse(&base_bytes, ReadBudget::default()).expect("base parses");
@@ -263,7 +258,7 @@ fn patch_artifact_from_views_uses_compact_runtime_compatibility() {
 #[test]
 fn migrated_runtime_section_compatibility_decodes_compact_bytes() {
     let base = runtime_types_section();
-    let target = RuntimeTypesSection::new(
+    let target = RuntimeTypesSection::try_new(
         base.abi_version,
         base.runtime_layout_digest,
         base.declarations.clone(),
@@ -275,7 +270,8 @@ fn migrated_runtime_section_compatibility_decodes_compact_bytes() {
                 fingerprint.compatibility = TypeCompatibilityLabel::CodeGenerational;
                 fingerprint
             }),
-    );
+    )
+    .expect("target function interfaces canonicalize");
 
     let compatibility = migrated_runtime_section_compatibility(
         arcweft_bundle::container::BundleSectionKind::RuntimeTypes,
@@ -311,10 +307,11 @@ impl RuntimeTypesSectionTestExt for RuntimeTypesSection {
 }
 
 fn runtime_types_section() -> RuntimeTypesSection {
-    RuntimeTypesSection::new(
+    RuntimeTypesSection::try_new(
         1,
         AwbcDigest([0xa8; 32]),
         [RuntimeTypeDeclaration {
+            semantic_identity: RuntimeSemanticTypeId::from_bytes([0xa1; 32]),
             public_id: Some("type.actor".to_owned()),
             value_kind: RuntimeValueKind::Record,
             layout_digest: digest(b"actor layout"),
@@ -330,6 +327,7 @@ fn runtime_types_section() -> RuntimeTypesSection {
             compatibility: TypeCompatibilityLabel::CodeCompatible,
         }],
     )
+    .expect("fixture runtime types canonicalize")
 }
 
 fn compact_program_with_runtime_types(runtime_types: &RuntimeTypesSection) -> Vec<u8> {
@@ -337,7 +335,6 @@ fn compact_program_with_runtime_types(runtime_types: &RuntimeTypesSection) -> Ve
         public_id: "entry.main".to_owned(),
         exported_name: Some("main".to_owned()),
         awbc_function_index: Some(0),
-        initial_state: InitialStateRequirement::None,
         source_anchor: None,
         visibility: ProductVisibility::Public,
     }]);

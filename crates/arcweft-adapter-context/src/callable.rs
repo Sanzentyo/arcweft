@@ -203,6 +203,10 @@ macro_rules! checked_index {
             pub const fn get(self) -> usize {
                 self.0 as usize
             }
+
+            pub const fn encoded(self) -> u32 {
+                self.0 as u32
+            }
         }
     };
 }

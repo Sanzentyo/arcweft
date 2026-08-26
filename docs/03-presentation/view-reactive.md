@@ -8,6 +8,7 @@ Game Native View は SwiftUI 風の宣言的・リアクティブ View。HTML/CS
 pub view SettingsPanel(
     config: Binding<Config>,
     props: SettingsProps,
+    close_action: DialogueAction,
 ) {
     local state tab: SettingsTab = .Audio
 
@@ -31,7 +32,7 @@ pub view SettingsPanel(
 
         Button("閉じる")
             .agent_target(@view.settings.close)
-            .on_click { action.invoke(@action.settings.close) }
+            .on_click { close_action }
     }
     .padding(24)
     .background(.panel)

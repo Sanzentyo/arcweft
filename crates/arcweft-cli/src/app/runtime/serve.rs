@@ -87,7 +87,13 @@ pub(in crate::app) fn runtime_serve_selection(
     let host_policy = native_host_policy_for_selection_with_adapter(selection, adapter_override)?;
     let plan = checked.runtime_plan().plan.clone();
     let entry = select_server_entry(&plan, selection.command_entry(entry_override)?)?;
-    let routes = server_routes(entry);
+    let Some(routes) = server_routes(entry) else {
+        eprintln!(
+            "error: server entry `{}` has no runnable routes",
+            entry.id.public_label()
+        );
+        return Err(ExitCode::FAILURE);
+    };
     if routes.is_empty() {
         eprintln!(
             "error: server entry `{}` has no runnable routes",
@@ -95,11 +101,11 @@ pub(in crate::app) fn runtime_serve_selection(
         );
         return Err(ExitCode::FAILURE);
     }
-    for route in &routes {
+    for route in routes {
         if !plan.flows().iter().any(|flow| flow.id == route.target) {
             eprintln!(
                 "error: server route {} {} targets unknown flow `{}`",
-                route.method,
+                route.method.as_str(),
                 route.path,
                 route.target.public_label()
             );
@@ -113,8 +119,8 @@ pub(in crate::app) fn runtime_serve_selection(
         routes: routes
             .iter()
             .map(|route| ServeRouteReport {
-                method: route.method.clone(),
-                path: route.path.clone(),
+                method: route.method.as_str().to_owned(),
+                path: route.path.to_string(),
                 target: route.target.public_label().into_string(),
             })
             .collect(),
@@ -126,7 +132,7 @@ pub(in crate::app) fn runtime_serve_selection(
     if let Some(listen) = listen {
         let server_report = serve_native_http(
             &plan,
-            &routes,
+            routes,
             &NativeHttpServerConfig {
                 listen,
                 once: config.once,

@@ -641,7 +641,7 @@ mod tests {
     use super::*;
     use crate::{
         env::nominal::AcceptedNominalOwnerId,
-        types::{GenericTypeOwnerId, GenericTypeParameterId},
+        types::{GenericParameterOwnerId, GenericTypeParameterId},
     };
 
     #[test]
@@ -721,7 +721,7 @@ mod tests {
     fn generic_metadata_instantiation_substitutes_without_persisting_instances() {
         let id = accepted_id("tooling", "Envelope");
         let parameter =
-            GenericTypeParameterId::new(GenericTypeOwnerId::AcceptedNominal(id.clone()), 0);
+            GenericTypeParameterId::new(GenericParameterOwnerId::AcceptedNominal(id.clone()), 0);
         let record = AcceptedRustTypeMetadata::new(
             id.clone(),
             RustPackageId::try_new("tooling").expect("package"),

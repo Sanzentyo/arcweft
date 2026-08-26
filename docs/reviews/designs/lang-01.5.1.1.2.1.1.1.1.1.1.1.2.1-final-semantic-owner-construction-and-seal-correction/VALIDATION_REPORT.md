@@ -5,7 +5,14 @@
 Documentation-only design resolution against Git commit
 `300e824eea6740eab0ae708508cce00a1bd49435`. No production Rust, Cargo
 manifest, test, fixture, branch, worktree, commit, push, or returned ZIP was
-created or changed.
+created or changed by that original design cut.
+
+The 2026-08-25 C1 coordinate erratum in
+`CALL_APPLICATION_AUTHORITY_AMENDMENT.md` corrects the binding capture owner,
+removes recursive value-coordinate reconstruction, and fixes checked path/byte
+lengths to canonical little-endian `u64`. This report remains the accepted
+design evidence, but the erratum's implementation and canonical-byte
+validation are now **pending** against the current dirty `main`.
 
 The call-application amendment additionally audited the intentionally dirty C2
 implementation at HEAD
@@ -118,11 +125,18 @@ domain is not implemented or registered.
 
 ## Failed
 
-None.
+- The current full sema library tier has `410 passed, 40 failed` tests. The
+  failures remain in the call/type-constraint, candidate probe/replay,
+  rooted-evaluator, and pending nominal-projection families listed in the
+  implementation amendment below.
 
 ## Blocked
 
-None. All result-changing choices in the request are closed.
+- Strict implementation completion remains **BLOCKED**. The accepted-root
+  catalog and path plumbing compile, but the lower call/application graph and
+  C2.4 nominal/item-root closure are not complete.
+- Item-root negative-path coverage and the remaining strict audit corpus are
+  pending; this report must not be read as an implementation PASS.
 
 ## Not run
 
@@ -138,3 +152,28 @@ None. All result-changing choices in the request are closed.
   documentation-only phase-boundary amendment. Focused callable-join tests run
   against the concurrent implementation are recorded with that implementation
   cut, not as design validation.
+- C1 coordinate owner tests for full binding paths, allocation-order/raw-ID
+  exclusion, and canonical `u64` length bytes are pending after the erratum.
+
+## 2026-08-25 accepted-root implementation amendment
+
+The active dirty-main implementation now carries the version-1
+`AcceptedSemanticRoot` tag byte in canonical checked paths and uses one
+Analyzer-owned `AcceptedSemanticRootCatalog` lease over the already sealed
+HIR project topology. Item roots use the typed source-order entry/inline-member
+role and direct exhaustive family tags; Match and producer coordinate APIs no
+longer rebuild declaration/item path indexes or accept a declaration argument.
+`cargo check -p arcweft-lang-sema`, focused coordinate/Match/producer tests,
+and the full sema library tier were run during this cut. After the lower exact
+regression was added, the full tier inventory is 450 tests: `410 passed, 40
+failed`. Failures remain in the call/type constraint, candidate-probe/replay,
+rooted-evaluator, dialogue-topology, and nominal-projection families
+(including `CallConstraintFailure`, `CheckedCallableJoin(ResultMismatch)`,
+zero-vs-expected candidate counters, `ExpressionTypeUnavailable`,
+`InvalidOwner`, and the existing `InvalidNominalOwner` Match fixture); no
+catalog/path compile failure occurred. HIR full tests were `876 passed, 0
+failed, 8 ignored`; HIR clippy exited successfully with warnings. Sema
+clippy also exited successfully with warnings after the `never_loop` shape in
+`types/constraints/transaction.rs` was removed. This is implementation
+evidence, not an implementation PASS; strict completion and item-root negative
+tests remain pending.

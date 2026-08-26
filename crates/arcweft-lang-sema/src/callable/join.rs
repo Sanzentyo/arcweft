@@ -2,10 +2,9 @@
 //!
 //! A final semantic consumer may have HIR lookup evidence (for example a
 //! typed receiver/method key), but it must not rebuild callable identity or
-//! resolve a second catalog.  [`validate_selected_call`] is the sole seam for
-//! joining one clean selected call with the current callable authority.
-
-use std::sync::Arc;
+//! resolve a second catalog.  [`validate_selected_application`] is the sole
+//! seam for joining one clean selected call with its prepared application and
+//! the current callable authority.
 
 use arcweft_lang_hir::expr::HirCallArgumentOrdinal;
 use thiserror::Error;
@@ -13,11 +12,11 @@ use thiserror::Error;
 use crate::{effect_row::EffectRow, types::TypeKind};
 
 use super::{
-    CallPoison, CallTargetFact, CallTargetFacts, CallableArgumentSlotIndex, CallableCandidateId,
-    CallableFamily, CallableGroupIndex, CallableInstantiation, CallableParameterCoordinate,
-    CallableParameterType, CallableSignatureSchemaDigest, CheckedCallableCatalog,
-    CheckedCallableDigest, CheckedCallableFacts, CheckedCallableId, CheckedCallableLookupError,
-    CheckedMethodLookup, ReceiverMethodKey, ResolvedCallable,
+    CallableArgumentSlotIndex, CallableCandidateId, CallableFamily, CallableGroupIndex,
+    CallableParameterCoordinate, CallableSignatureSchemaDigest, CheckedCallApplication,
+    CheckedCallExecutionArgument, CheckedCallOperandDestination, CheckedCallResult,
+    CheckedCallableCatalog, CheckedCallableDigest, CheckedCallableId, CheckedCallableLookupError,
+    CheckedMethodLookup, ResolvedCallable, ResolvedCallableBaseInstantiation,
 };
 
 /// Failure while joining one final call fact with the current callable
@@ -27,8 +26,8 @@ use super::{
 pub enum CheckedCallableJoinError {
     #[error("call target is not a clean selected callable")]
     NotSelected,
-    #[error("selected call fact is recovered or rejected")]
-    CallPoison,
+    #[error("selected call fact does not belong to the prepared application authority")]
+    ApplicationAuthorityMismatch,
     #[error("selected callable group does not match the call fact")]
     SelectedGroupMismatch,
     #[error("selected callable has no current parameter group")]
@@ -39,10 +38,6 @@ pub enum CheckedCallableJoinError {
     MissingResult,
     #[error("selected call result type does not match its current/full or partial group")]
     ResultMismatch,
-    #[error("function-value call has no exact full function type")]
-    FunctionValueTypeMismatch,
-    #[error("non-function-value call retained a function-value type")]
-    UnexpectedFunctionValueType,
     #[error("call argument ordinal is not source contiguous")]
     ArgumentOrdinalMismatch,
     #[error("call argument slot index is not contiguous")]
@@ -51,12 +46,6 @@ pub enum CheckedCallableJoinError {
     ArgumentGroupMismatch,
     #[error("selected call argument mapping points outside the schema")]
     ArgumentParameterMissing,
-    #[error("selected call argument has no inferred typed value")]
-    ArgumentTypeMissing,
-    #[error("selected call argument retained a non-clean poison state")]
-    ArgumentPoison,
-    #[error("selected call argument expected type disagrees with its schema")]
-    ArgumentExpectedMismatch,
     #[error("selected call generic type observation conflicts")]
     GenericInstantiationMismatch,
     #[error("selected call effects do not match the current group")]
@@ -93,6 +82,44 @@ pub enum CheckedCallableJoinError {
     IntrinsicFamilyMismatch,
 }
 
+impl CheckedCallableJoinError {
+    pub(crate) fn visit_types<E>(
+        &self,
+        _visitor: &mut impl FnMut(&TypeKind) -> Result<(), E>,
+    ) -> Result<(), E> {
+        match self {
+            Self::NotSelected
+            | Self::ApplicationAuthorityMismatch
+            | Self::SelectedGroupMismatch
+            | Self::CurrentGroupMissing
+            | Self::NextGroupMismatch
+            | Self::MissingResult
+            | Self::ResultMismatch
+            | Self::ArgumentOrdinalMismatch
+            | Self::ArgumentSlotMismatch
+            | Self::ArgumentGroupMismatch
+            | Self::ArgumentParameterMissing
+            | Self::GenericInstantiationMismatch
+            | Self::EffectsMismatch
+            | Self::MissingCheckedCallable
+            | Self::MissingCheckedRecord
+            | Self::CatalogRecordMismatch
+            | Self::CatalogSignatureMismatch
+            | Self::CatalogEffectsMismatch
+            | Self::Catalog(_)
+            | Self::MissingReceiverKey
+            | Self::UnexpectedReceiverKey
+            | Self::ReceiverTypeMismatch
+            | Self::ReceiverModeMismatch
+            | Self::MethodLookupMissing
+            | Self::MethodLookupAmbiguous
+            | Self::MethodLookupMismatch
+            | Self::MissingIntrinsicAuthority
+            | Self::IntrinsicFamilyMismatch => Ok(()),
+        }
+    }
+}
+
 /// Closed intrinsic candidate family tag retained by a checked join.
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub enum IntrinsicCallableCandidateTag {
@@ -107,7 +134,6 @@ pub enum IntrinsicCallableCandidateTag {
     Environment,
     Local,
     FunctionValue,
-    Curried,
     CollectionMethod,
     PresentationHandleMethod,
     IntegerMethod,
@@ -134,7 +160,6 @@ impl IntrinsicCallableCandidateTag {
             Self::Environment => 8,
             Self::Local => 9,
             Self::FunctionValue => 10,
-            Self::Curried => 11,
             Self::CollectionMethod => 12,
             Self::PresentationHandleMethod => 13,
             Self::IntegerMethod => 14,
@@ -161,7 +186,6 @@ impl IntrinsicCallableCandidateTag {
             CallableCandidateId::Environment(_) => Self::Environment,
             CallableCandidateId::Local(_) => Self::Local,
             CallableCandidateId::FunctionValue(_) => Self::FunctionValue,
-            CallableCandidateId::Curried(_) => Self::Curried,
             CallableCandidateId::CollectionMethod(_) => Self::CollectionMethod,
             CallableCandidateId::PresentationHandleMethod(_) => Self::PresentationHandleMethod,
             CallableCandidateId::IntegerMethod(_) => Self::IntegerMethod,
@@ -182,12 +206,27 @@ impl IntrinsicCallableCandidateTag {
 /// Stable digest of the selected callable's typed instantiation.  Generic
 /// call-site bindings are not reconstructed here: current call facts do not
 /// retain a raw substitution map, so the selected resolver-owned
-/// [`CallableInstantiation`] is the accepted authority retained in the join.
+/// [`ResolvedCallableBaseInstantiation`] is the accepted authority retained in
+/// the join.
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub struct CallableInstantiationDigest([u8; 32]);
 
 impl CallableInstantiationDigest {
     pub const fn bytes(&self) -> &[u8; 32] {
+        &self.0
+    }
+}
+
+/// Stable semantic digest of one fully checked callable-owner join.
+///
+/// The bytes can only be produced by [`CheckedCallableJoin::semantic_digest`];
+/// consumers may borrow them for a parent transcript but cannot mint a second
+/// callable authority from raw bytes.
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub struct CheckedCallableJoinDigest([u8; 32]);
+
+impl CheckedCallableJoinDigest {
+    pub const fn as_bytes(&self) -> &[u8; 32] {
         &self.0
     }
 }
@@ -207,6 +246,20 @@ pub enum CallableReceiverMode {
         group: CallableGroupIndex,
         parameter: super::CallableParameterIndex,
     },
+}
+
+impl CallableReceiverMode {
+    pub(crate) fn visit_types<E>(
+        &self,
+        visitor: &mut impl FnMut(&TypeKind) -> Result<(), E>,
+    ) -> Result<(), E> {
+        match self {
+            Self::None => Ok(()),
+            Self::Value { receiver }
+            | Self::Type { receiver }
+            | Self::Extension { receiver, .. } => visitor(receiver),
+        }
+    }
 }
 
 /// One source-order argument slot after exact schema validation.
@@ -287,6 +340,23 @@ pub enum CheckedCallableJoin {
 }
 
 impl CheckedCallableJoin {
+    pub(crate) fn visit_types<E>(
+        &self,
+        visitor: &mut impl FnMut(&TypeKind) -> Result<(), E>,
+    ) -> Result<(), E> {
+        match self {
+            Self::Catalog {
+                result, receiver, ..
+            }
+            | Self::Intrinsic {
+                result, receiver, ..
+            } => {
+                visitor(result)?;
+                receiver.visit_types(visitor)
+            }
+        }
+    }
+
     pub const fn checked_id(&self) -> Option<&CheckedCallableId> {
         match self {
             Self::Catalog { id, .. } => Some(id),
@@ -354,7 +424,7 @@ impl CheckedCallableJoin {
     }
 
     /// Stable semantic transcript for the fully checked join.
-    pub fn semantic_digest(&self) -> [u8; 32] {
+    pub fn semantic_digest(&self) -> CheckedCallableJoinDigest {
         let mut hasher = blake3::Hasher::new();
         hasher.update(b"arcweft.lang.checked-callable-authority-join.v1\0");
         match self {
@@ -409,90 +479,75 @@ impl CheckedCallableJoin {
                 hasher.update(instantiation.bytes());
             }
         }
-        *hasher.finalize().as_bytes()
+        CheckedCallableJoinDigest(*hasher.finalize().as_bytes())
     }
 }
 
 /// The one callable-owner validation seam for final semantic consumers.
 ///
-/// `method_key` is optional HIR-derived lookup evidence.  It is compared to
-/// the accepted typed receiver key and is never retained as transcript
-/// identity.  All other authority comes from `facts`, the selected resolver
-/// product, and the supplied current checked catalog.
-pub fn validate_selected_call(
-    facts: &CallTargetFacts,
+/// Every execution, result, group, effect, receiver, and instantiation row is
+/// projected from the already sealed application.  The join performs only the
+/// remaining checked-catalog identity lookup; it never observes HIR receiver
+/// spelling or reruns lower substitution.
+pub(crate) fn validate_selected_application(
+    application: &CheckedCallApplication,
     catalog: &CheckedCallableCatalog,
-    method_key: Option<&ReceiverMethodKey>,
 ) -> Result<CheckedCallableJoin, CheckedCallableJoinError> {
-    let selected = match facts.target() {
-        CallTargetFact::Selected { selected, .. } => selected,
-        CallTargetFact::Ambiguous { .. }
-        | CallTargetFact::Rejected { .. }
-        | CallTargetFact::NonCallable { .. }
-        | CallTargetFact::Missing { .. } => return Err(CheckedCallableJoinError::NotSelected),
+    let core = application.core();
+    let selected = core.candidates().selected();
+    let current_group = core.current_group();
+    let next_group = match application.result() {
+        CheckedCallResult::Value(_) => None,
+        CheckedCallResult::Continuation(continuation) => Some(continuation.next_group()),
     };
-    if facts.poison() != CallPoison::Clean {
-        return Err(CheckedCallableJoinError::CallPoison);
-    }
-
-    let current_group = facts.current_group();
-    let function_value = matches!(selected.id(), CallableCandidateId::FunctionValue(_));
-    let next_group =
-        validate_selected_groups(selected, current_group, facts.next_group(), function_value)?;
-
-    let checked_row = checked_row(selected, catalog)?;
-    let accepted_receiver_key = checked_row
-        .facts
-        .and_then(|row| row.record().receiver_method_key());
-    validate_method_lookup(
-        selected,
-        checked_row.id.as_ref(),
-        checked_row.facts,
-        method_key,
-        catalog,
-    )?;
-    let receiver = receiver_mode(selected, accepted_receiver_key.as_ref(), method_key)?;
-    let (arguments, substitutions) =
-        validate_arguments(selected, facts, current_group, checked_row.facts)?;
-
-    let raw_result = selected
-        .result_type_for_group(current_group)
-        .ok_or(CheckedCallableJoinError::ResultMismatch)?;
-    let result = substitutions.apply(&raw_result);
-    validate_result_type(facts.result(), &result)?;
-    if function_value {
-        let full = callable_schema_type(selected.schema())
-            .map(|ty| substitutions.apply(&ty))
-            .ok_or(CheckedCallableJoinError::FunctionValueTypeMismatch)?;
-        if facts.function_value_type() != Some(&full) {
-            return Err(CheckedCallableJoinError::FunctionValueTypeMismatch);
-        }
-    } else if facts.function_value_type().is_some() {
-        return Err(CheckedCallableJoinError::UnexpectedFunctionValueType);
-    }
-
-    let expected_effects =
-        expected_call_effects(selected, current_group, checked_row.effects.as_ref());
-    if facts.effects() != &expected_effects {
-        return Err(CheckedCallableJoinError::EffectsMismatch);
-    }
+    let arguments = checked_join_arguments(selected, current_group, core.execution().arguments())?;
+    let receiver = checked_receiver_mode(selected)?;
     let signature = selected.schema().semantic_digest();
     let instantiation = callable_instantiation_digest(selected.instantiation());
-    match (checked_row.id, checked_row.facts, checked_row.effects) {
-        (Some(id), Some(_row), Some(catalog_effects)) => Ok(CheckedCallableJoin::Catalog {
-            digest: id.semantic_digest(),
-            id: Box::new(id),
-            signature,
-            catalog_effects,
-            effects: facts.effects().clone(),
-            result,
-            current_group,
-            next_group,
-            arguments,
-            receiver,
-            instantiation,
-        }),
-        (None, None, None) => {
+    let result = application.result().ty().clone();
+    let effects = core.effects().clone();
+
+    match selected.checked() {
+        Some(id) => {
+            let row = catalog
+                .callable(id)
+                .map_err(CheckedCallableJoinError::Catalog)?;
+            if row.id() != id
+                || row.signature().semantic_digest() != signature
+                || row.record().id() != selected.id()
+            {
+                return Err(CheckedCallableJoinError::CatalogRecordMismatch);
+            }
+            if let Some(key) = row.record().receiver_method_key() {
+                match catalog.method(&key) {
+                    CheckedMethodLookup::Unique(found) if found.as_ref() == id => {}
+                    CheckedMethodLookup::Unique(_) => {
+                        return Err(CheckedCallableJoinError::MethodLookupMismatch);
+                    }
+                    CheckedMethodLookup::Absent => {
+                        return Err(CheckedCallableJoinError::MethodLookupMissing);
+                    }
+                    CheckedMethodLookup::Ambiguous(_) | CheckedMethodLookup::Inaccessible(_) => {
+                        return Err(CheckedCallableJoinError::MethodLookupAmbiguous);
+                    }
+                }
+            }
+            let catalog_effects = row.exposed_row().clone();
+            Ok(CheckedCallableJoin::Catalog {
+                id: Box::new(id.clone()),
+                digest: id.semantic_digest(),
+                signature,
+                catalog_effects,
+                effects,
+                result,
+                current_group,
+                next_group,
+                arguments,
+                receiver,
+                instantiation,
+            })
+        }
+        None => {
             let candidate = IntrinsicCallableCandidateTag::from_candidate(selected.id())
                 .ok_or(CheckedCallableJoinError::MissingIntrinsicAuthority)?;
             if selected.family() != selected.id().intrinsic_family() {
@@ -502,7 +557,7 @@ pub fn validate_selected_call(
                 candidate,
                 family: selected.family(),
                 signature,
-                effects: facts.effects().clone(),
+                effects,
                 result,
                 current_group,
                 next_group,
@@ -511,236 +566,20 @@ pub fn validate_selected_call(
                 instantiation,
             })
         }
-        _ => Err(CheckedCallableJoinError::MissingCheckedRecord),
     }
 }
 
-struct CheckedRow<'a> {
-    id: Option<CheckedCallableId>,
-    facts: Option<&'a CheckedCallableFacts>,
-    effects: Option<EffectRow>,
-}
-
-fn checked_row<'a>(
-    selected: &ResolvedCallable,
-    catalog: &'a CheckedCallableCatalog,
-) -> Result<CheckedRow<'a>, CheckedCallableJoinError> {
-    match (selected.checked(), selected.record()) {
-        (Some(id), Some(record)) => {
-            let row = catalog
-                .callable(id)
-                .map_err(CheckedCallableJoinError::Catalog)?;
-            if row.id() != id || row.record().id() != selected.id() {
-                return Err(CheckedCallableJoinError::CatalogRecordMismatch);
-            }
-            if !Arc::ptr_eq(row.record(), record) {
-                return Err(CheckedCallableJoinError::CatalogRecordMismatch);
-            }
-            if row.signature().semantic_digest() != selected.schema().semantic_digest() {
-                return Err(CheckedCallableJoinError::CatalogSignatureMismatch);
-            }
-            if selected
-                .schema()
-                .effects()
-                .fixed_row()
-                .is_some_and(|expected| row.exposed_row() != expected)
-            {
-                return Err(CheckedCallableJoinError::CatalogEffectsMismatch);
-            }
-            Ok(CheckedRow {
-                id: Some(id.clone()),
-                facts: Some(row),
-                effects: Some(row.exposed_row().clone()),
-            })
-        }
-        (None, None) if selected.schema().effects().fixed_row().is_some() => Ok(CheckedRow {
-            id: None,
-            facts: None,
-            effects: None,
-        }),
-        (None, None | Some(_)) => Err(CheckedCallableJoinError::MissingIntrinsicAuthority),
-        (Some(_), None) => Err(CheckedCallableJoinError::MissingCheckedRecord),
-    }
-}
-
-fn validate_selected_groups(
+fn checked_join_arguments(
     selected: &ResolvedCallable,
     current_group: CallableGroupIndex,
-    actual_next_group: Option<CallableGroupIndex>,
-    function_value: bool,
-) -> Result<Option<CallableGroupIndex>, CheckedCallableJoinError> {
-    if !function_value && selected.call_group() != current_group {
-        return Err(CheckedCallableJoinError::SelectedGroupMismatch);
-    }
-    if selected.schema().group(current_group).is_none() {
-        return Err(CheckedCallableJoinError::CurrentGroupMissing);
-    }
-    let next_group = selected.next_group_for(current_group);
-    if next_group != actual_next_group {
-        return Err(CheckedCallableJoinError::NextGroupMismatch);
-    }
-    Ok(next_group)
-}
-
-fn validate_result_type(
-    actual: Option<&TypeKind>,
-    expected: &TypeKind,
-) -> Result<(), CheckedCallableJoinError> {
-    let actual = actual.ok_or(CheckedCallableJoinError::MissingResult)?;
-    (actual == expected)
-        .then_some(())
-        .ok_or(CheckedCallableJoinError::ResultMismatch)
-}
-
-fn receiver_mode(
-    selected: &ResolvedCallable,
-    accepted_key: Option<&ReceiverMethodKey>,
-    method_key: Option<&ReceiverMethodKey>,
-) -> Result<CallableReceiverMode, CheckedCallableJoinError> {
-    match (accepted_key, method_key) {
-        (Some(accepted), Some(actual)) if accepted != actual => {
-            return Err(CheckedCallableJoinError::ReceiverTypeMismatch);
-        }
-        _ => {}
-    }
-
-    match selected.instantiation() {
-        CallableInstantiation::None => {
-            if method_key.is_some() {
-                return Err(CheckedCallableJoinError::UnexpectedReceiverKey);
-            }
-            Ok(CallableReceiverMode::None)
-        }
-        CallableInstantiation::ExpectedEnum { .. }
-        | CallableInstantiation::Result { .. }
-        | CallableInstantiation::Option { .. }
-        | CallableInstantiation::Character { .. }
-        | CallableInstantiation::Curried { .. } => {
-            if accepted_key.is_some() || method_key.is_some() {
-                return Err(CheckedCallableJoinError::ReceiverModeMismatch);
-            }
-            Ok(CallableReceiverMode::None)
-        }
-        CallableInstantiation::Receiver { receiver } => {
-            let key = method_key.ok_or(CheckedCallableJoinError::MissingReceiverKey)?;
-            if key.receiver() != receiver {
-                return Err(CheckedCallableJoinError::ReceiverTypeMismatch);
-            }
-            Ok(CallableReceiverMode::Value {
-                receiver: receiver.clone(),
-            })
-        }
-        CallableInstantiation::TypeReceiver { receiver } => {
-            let key = method_key.ok_or(CheckedCallableJoinError::MissingReceiverKey)?;
-            if key.receiver() != receiver.receiver() {
-                return Err(CheckedCallableJoinError::ReceiverTypeMismatch);
-            }
-            Ok(CallableReceiverMode::Type {
-                receiver: receiver.receiver().clone(),
-            })
-        }
-        CallableInstantiation::Extension {
-            receiver,
-            group,
-            parameter,
-        } => {
-            let key = method_key.ok_or(CheckedCallableJoinError::MissingReceiverKey)?;
-            if key.receiver() != receiver {
-                return Err(CheckedCallableJoinError::ReceiverTypeMismatch);
-            }
-            if selected.schema().extension_receiver()
-                != Some(super::CallableExtensionReceiver::new(*group, *parameter))
-            {
-                return Err(CheckedCallableJoinError::ReceiverModeMismatch);
-            }
-            Ok(CallableReceiverMode::Extension {
-                receiver: receiver.clone(),
-                group: *group,
-                parameter: *parameter,
-            })
-        }
-    }
-}
-
-fn validate_method_lookup(
-    selected: &ResolvedCallable,
-    checked: Option<&CheckedCallableId>,
-    row: Option<&CheckedCallableFacts>,
-    method_key: Option<&ReceiverMethodKey>,
-    catalog: &CheckedCallableCatalog,
-) -> Result<(), CheckedCallableJoinError> {
-    if !matches!(
-        selected.instantiation(),
-        CallableInstantiation::Receiver { .. }
-            | CallableInstantiation::TypeReceiver { .. }
-            | CallableInstantiation::Extension { .. }
-    ) {
-        return Ok(());
-    }
-    let Some(row) = row else {
-        return Ok(());
-    };
-    let accepted_key = row
-        .record()
-        .receiver_method_key()
-        .ok_or(CheckedCallableJoinError::MissingReceiverKey)?;
-    let key = method_key.ok_or(CheckedCallableJoinError::MissingReceiverKey)?;
-    if key != &accepted_key {
-        return Err(CheckedCallableJoinError::ReceiverTypeMismatch);
-    }
-    let selected = checked.ok_or(CheckedCallableJoinError::MissingCheckedCallable)?;
-    validate_method_lookup_result(selected, catalog.method(key))
-}
-
-fn validate_method_lookup_result(
-    selected: &CheckedCallableId,
-    lookup: CheckedMethodLookup,
-) -> Result<(), CheckedCallableJoinError> {
-    match lookup {
-        CheckedMethodLookup::Unique(candidate) if candidate.as_ref() == selected => Ok(()),
-        CheckedMethodLookup::Unique(_) => Err(CheckedCallableJoinError::MethodLookupMismatch),
-        CheckedMethodLookup::Absent => Err(CheckedCallableJoinError::MethodLookupMissing),
-        CheckedMethodLookup::Ambiguous(_) | CheckedMethodLookup::Inaccessible(_) => {
-            Err(CheckedCallableJoinError::MethodLookupAmbiguous)
-        }
-    }
-}
-
-fn validate_arguments(
-    selected: &ResolvedCallable,
-    facts: &CallTargetFacts,
-    current_group: CallableGroupIndex,
-    row: Option<&CheckedCallableFacts>,
-) -> Result<
-    (
-        Box<[CheckedCallableArgument]>,
-        crate::types::TypeParameterSubstitutions,
-    ),
-    CheckedCallableJoinError,
-> {
-    let mut substitutions = crate::types::TypeParameterSubstitutions::default();
-    if let Some((coordinate, receiver)) = receiver_binding(selected, row) {
-        let parameter = selected
-            .schema()
-            .group(coordinate.group())
-            .and_then(|group| group.parameter(coordinate.parameter()))
-            .ok_or(CheckedCallableJoinError::ArgumentParameterMissing)?;
-        let CallableParameterType::Exact(declared) = parameter.ty() else {
-            return Err(CheckedCallableJoinError::GenericInstantiationMismatch);
-        };
-        if !substitutions.observe(declared, receiver) {
-            return Err(CheckedCallableJoinError::GenericInstantiationMismatch);
-        }
-    }
-    let mut arguments = Vec::with_capacity(facts.arguments().len());
-    for (argument_index, argument) in facts.arguments().iter().enumerate() {
+    execution: &[CheckedCallExecutionArgument],
+) -> Result<Box<[CheckedCallableArgument]>, CheckedCallableJoinError> {
+    let mut arguments = Vec::with_capacity(execution.len());
+    for (argument_index, argument) in execution.iter().enumerate() {
         let expected = HirCallArgumentOrdinal::try_from_usize(argument_index)
             .map_err(|_| CheckedCallableJoinError::ArgumentOrdinalMismatch)?;
         if argument.argument() != expected {
             return Err(CheckedCallableJoinError::ArgumentOrdinalMismatch);
-        }
-        if argument.poison() != CallPoison::Clean {
-            return Err(CheckedCallableJoinError::ArgumentPoison);
         }
         let mut slots = Vec::with_capacity(argument.slots().len());
         for (slot_index, slot) in argument.slots().iter().enumerate() {
@@ -749,50 +588,30 @@ fn validate_arguments(
             if slot.slot() != expected_slot {
                 return Err(CheckedCallableJoinError::ArgumentSlotMismatch);
             }
-            if slot.poison() != CallPoison::Clean {
-                return Err(CheckedCallableJoinError::ArgumentPoison);
-            }
-            let inferred = slot
-                .inferred()
-                .ok_or(CheckedCallableJoinError::ArgumentTypeMissing)?;
-            let expected_type = if let Some(coordinate) = slot.mapped() {
-                if coordinate.group() != current_group {
-                    return Err(CheckedCallableJoinError::ArgumentGroupMismatch);
-                }
-                let parameter = selected
-                    .schema()
-                    .group(coordinate.group())
-                    .and_then(|group| group.parameter(coordinate.parameter()))
-                    .ok_or(CheckedCallableJoinError::ArgumentParameterMissing)?;
-                match parameter.ty() {
-                    CallableParameterType::Exact(declared) => {
-                        if !substitutions.observe(declared, inferred) {
-                            return Err(CheckedCallableJoinError::GenericInstantiationMismatch);
-                        }
-                        let expected = substitutions.apply(declared);
-                        if slot.expected() != Some(&expected) {
-                            return Err(CheckedCallableJoinError::ArgumentExpectedMismatch);
-                        }
-                        Some(expected)
+            let mapped = match slot.destination() {
+                CheckedCallOperandDestination::Parameter(coordinate) => {
+                    if coordinate.group() != current_group {
+                        return Err(CheckedCallableJoinError::ArgumentGroupMismatch);
                     }
-                    CallableParameterType::Unchecked => {
-                        if slot.expected().is_some() {
-                            return Err(CheckedCallableJoinError::ArgumentExpectedMismatch);
-                        }
-                        None
+                    if selected
+                        .schema()
+                        .group(coordinate.group())
+                        .and_then(|group| group.parameters().get(coordinate.parameter().get()))
+                        .is_none()
+                    {
+                        return Err(CheckedCallableJoinError::ArgumentParameterMissing);
                     }
+                    Some(*coordinate)
                 }
-            } else {
-                if slot.expected().is_some() {
-                    return Err(CheckedCallableJoinError::ArgumentExpectedMismatch);
-                }
-                None
+                CheckedCallOperandDestination::Open(_) => None,
             };
             slots.push(CheckedCallableArgumentSlot {
                 slot: slot.slot(),
-                mapped: slot.mapped(),
-                inferred: Some(*inferred.semantic_identity_digest().as_bytes()),
-                expected: expected_type.map(|ty| *ty.semantic_identity_digest().as_bytes()),
+                mapped,
+                inferred: Some(*slot.inferred().semantic_identity_digest().as_bytes()),
+                expected: slot
+                    .expected()
+                    .map(|ty| *ty.semantic_identity_digest().as_bytes()),
             });
         }
         arguments.push(CheckedCallableArgument {
@@ -800,134 +619,78 @@ fn validate_arguments(
             slots: slots.into_boxed_slice(),
         });
     }
-    Ok((arguments.into_boxed_slice(), substitutions))
+    Ok(arguments.into_boxed_slice())
 }
 
-fn receiver_binding<'a>(
-    selected: &'a ResolvedCallable,
-    row: Option<&CheckedCallableFacts>,
-) -> Option<(CallableParameterCoordinate, &'a TypeKind)> {
-    match selected.instantiation() {
-        CallableInstantiation::Extension {
+fn checked_receiver_mode(
+    selected: &ResolvedCallable,
+) -> Result<CallableReceiverMode, CheckedCallableJoinError> {
+    Ok(match selected.instantiation() {
+        ResolvedCallableBaseInstantiation::None
+        | ResolvedCallableBaseInstantiation::ExpectedEnum { .. }
+        | ResolvedCallableBaseInstantiation::Result { .. }
+        | ResolvedCallableBaseInstantiation::Option
+        | ResolvedCallableBaseInstantiation::Character { .. } => CallableReceiverMode::None,
+        ResolvedCallableBaseInstantiation::Receiver { receiver } => CallableReceiverMode::Value {
+            receiver: receiver.clone(),
+        },
+        ResolvedCallableBaseInstantiation::TypeReceiver { receiver } => {
+            CallableReceiverMode::Type {
+                receiver: receiver.receiver().clone(),
+            }
+        }
+        ResolvedCallableBaseInstantiation::Extension {
             receiver,
             group,
             parameter,
-        } => Some((
-            CallableParameterCoordinate::new(*group, *parameter),
-            receiver,
-        )),
-        CallableInstantiation::Receiver { .. } | CallableInstantiation::TypeReceiver { .. }
-            if row.is_some_and(|row| row.record().method_role().is_some()) =>
-        {
-            let receiver = match selected.instantiation() {
-                CallableInstantiation::Receiver { receiver } => receiver,
-                CallableInstantiation::TypeReceiver { receiver } => receiver.receiver(),
-                _ => unreachable!("receiver binding arm is restricted to receiver modes"),
-            };
-            Some((
-                CallableParameterCoordinate::new(
-                    CallableGroupIndex::try_from_usize(0)
-                        .expect("zero callable group is representable"),
-                    super::CallableParameterIndex::try_from_usize(0)
-                        .expect("zero callable parameter is representable"),
-                ),
-                receiver,
-            ))
-        }
-        _ => None,
-    }
-}
-
-fn callable_schema_type(schema: &super::CallableSignatureSchema) -> Option<TypeKind> {
-    let mut result = schema.result().clone();
-    for group in schema.groups().iter().rev() {
-        let parameters = group
-            .parameters()
-            .iter()
-            .map(|parameter| match parameter.ty() {
-                CallableParameterType::Exact(ty) => Some(ty.clone()),
-                CallableParameterType::Unchecked => None,
-            })
-            .collect::<Option<Vec<_>>>()?;
-        result = TypeKind::function_with_effects(
-            parameters,
-            result,
-            schema
-                .effects()
-                .fixed_row()
-                .cloned()
-                .unwrap_or_else(EffectRow::unknown),
-        );
-    }
-    Some(result)
-}
-
-fn expected_call_effects(
-    selected: &ResolvedCallable,
-    current_group: CallableGroupIndex,
-    catalog_effects: Option<&EffectRow>,
-) -> EffectRow {
-    if selected.next_group_for(current_group).is_some() {
-        return EffectRow::closed(crate::effects::EffectSet::new());
-    }
-    selected
-        .schema()
-        .effects()
-        .fixed_row()
-        .cloned()
-        .or_else(|| catalog_effects.cloned())
-        .unwrap_or_else(EffectRow::unknown)
+        } => CallableReceiverMode::Extension {
+            receiver: receiver.clone(),
+            group: *group,
+            parameter: *parameter,
+        },
+    })
 }
 
 fn callable_instantiation_digest(
-    instantiation: &CallableInstantiation,
+    instantiation: &ResolvedCallableBaseInstantiation,
 ) -> CallableInstantiationDigest {
     let mut hasher = blake3::Hasher::new();
     hasher.update(b"arcweft.lang.callable-instantiation.v1\0");
     match instantiation {
-        CallableInstantiation::None => {
+        ResolvedCallableBaseInstantiation::None => {
             hasher.update(&[0]);
         }
-        CallableInstantiation::ExpectedEnum { expected } => {
+        ResolvedCallableBaseInstantiation::ExpectedEnum { expected } => {
             hasher.update(&[1]);
             write_type(&mut hasher, expected);
         }
-        CallableInstantiation::Result { kind, expected } => {
+        ResolvedCallableBaseInstantiation::Result { kind } => {
             hasher.update(&[
                 2,
                 u8::from(matches!(kind, super::ResultConstructorKind::Err)),
             ]);
-            write_optional_type(&mut hasher, expected.as_ref());
         }
-        CallableInstantiation::Option { expected } => {
+        ResolvedCallableBaseInstantiation::Option => {
             hasher.update(&[3]);
-            write_optional_type(&mut hasher, expected.as_ref());
         }
-        CallableInstantiation::Character { owner } => {
+        ResolvedCallableBaseInstantiation::Character { owner } => {
             hasher.update(&[4]);
             write_bytes(&mut hasher, owner.character().as_str().as_bytes());
         }
-        CallableInstantiation::Receiver { receiver } => {
+        ResolvedCallableBaseInstantiation::Receiver { receiver } => {
             hasher.update(&[5]);
             write_type(&mut hasher, receiver);
         }
-        CallableInstantiation::TypeReceiver { receiver } => {
+        ResolvedCallableBaseInstantiation::TypeReceiver { receiver } => {
             hasher.update(&[6]);
             write_type(&mut hasher, receiver.receiver());
         }
-        CallableInstantiation::Curried { base, group } => {
-            hasher.update(&[7]);
-            let tag = IntrinsicCallableCandidateTag::from_candidate(base)
-                .map_or(u16::MAX, IntrinsicCallableCandidateTag::semantic_tag);
-            hasher.update(&tag.to_le_bytes());
-            write_group(&mut hasher, *group);
-        }
-        CallableInstantiation::Extension {
+        ResolvedCallableBaseInstantiation::Extension {
             receiver,
             group,
             parameter,
         } => {
-            hasher.update(&[8]);
+            hasher.update(&[7]);
             write_type(&mut hasher, receiver);
             write_group(&mut hasher, *group);
             hasher.update(
@@ -942,18 +705,6 @@ fn callable_instantiation_digest(
 
 fn write_type(hasher: &mut blake3::Hasher, ty: &TypeKind) {
     hasher.update(ty.semantic_identity_digest().as_bytes());
-}
-
-fn write_optional_type(hasher: &mut blake3::Hasher, ty: Option<&TypeKind>) {
-    match ty {
-        Some(ty) => {
-            hasher.update(&[1]);
-            write_type(hasher, ty);
-        }
-        None => {
-            hasher.update(&[0]);
-        }
-    }
 }
 
 fn write_group(hasher: &mut blake3::Hasher, group: CallableGroupIndex) {

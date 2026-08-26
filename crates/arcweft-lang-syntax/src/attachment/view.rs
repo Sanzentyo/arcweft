@@ -124,8 +124,8 @@ impl AttachedViewExport {
 /// One source-interleaved View fragment entry.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum AttachedViewFragmentEntry {
-    Value(AttachedExpressionNode),
-    MisplacedExport(AttachedViewExport),
+    Value(Box<AttachedExpressionNode>),
+    MisplacedExport(Box<AttachedViewExport>),
 }
 
 /// Typed local-name state for one parser-owned View `.part(...)` modifier.
@@ -226,7 +226,7 @@ impl AttachedViewFragment {
 
     pub fn values(&self) -> impl Iterator<Item = &AttachedExpressionNode> {
         self.entries.iter().filter_map(|entry| match entry {
-            AttachedViewFragmentEntry::Value(value) => Some(value),
+            AttachedViewFragmentEntry::Value(value) => Some(value.as_ref()),
             AttachedViewFragmentEntry::MisplacedExport(_) => None,
         })
     }
@@ -234,7 +234,7 @@ impl AttachedViewFragment {
     pub fn misplaced_exports(&self) -> impl Iterator<Item = &AttachedViewExport> {
         self.entries.iter().filter_map(|entry| match entry {
             AttachedViewFragmentEntry::Value(_) => None,
-            AttachedViewFragmentEntry::MisplacedExport(export) => Some(export),
+            AttachedViewFragmentEntry::MisplacedExport(export) => Some(export.as_ref()),
         })
     }
 
@@ -531,12 +531,9 @@ fn attach_fragment(
                 return Err(SyntaxAccessError::InvalidViewProjection { id: syntax.id() });
             }
             let source_ordinal = take_export_ordinal(next_export_ordinal, syntax.id())?;
-            entries.push(AttachedViewFragmentEntry::MisplacedExport(attach_export(
-                child.cast()?,
-                source_ordinal,
-                next_misplaced_ordinal,
-                true,
-            )?));
+            entries.push(AttachedViewFragmentEntry::MisplacedExport(Box::new(
+                attach_export(child.cast()?, source_ordinal, next_misplaced_ordinal, true)?,
+            )));
             next_misplaced_ordinal = next_misplaced_ordinal
                 .checked_add(1)
                 .ok_or(SyntaxAccessError::InvalidViewProjection { id: syntax.id() })?;
@@ -544,9 +541,9 @@ fn attach_fragment(
             if child.role() != SyntaxRole::Element(next_value_ordinal) {
                 return Err(SyntaxAccessError::InvalidViewProjection { id: syntax.id() });
             }
-            entries.push(AttachedViewFragmentEntry::Value(
+            entries.push(AttachedViewFragmentEntry::Value(Box::new(
                 AttachedExpressionNode::from_syntax(child)?,
-            ));
+            )));
             next_value_ordinal = next_value_ordinal
                 .checked_add(1)
                 .ok_or(SyntaxAccessError::InvalidViewProjection { id: syntax.id() })?;

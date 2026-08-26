@@ -1,12 +1,27 @@
-use std::collections::BTreeMap;
+use std::{
+    collections::{BTreeMap, BTreeSet},
+    sync::atomic::{AtomicU64, Ordering},
+};
 
 use thiserror::Error;
 
 use crate::{effect_model::CallableId, effects::EffectSet};
 
+/// Typed issuer of one effect-variable namespace.
+///
+/// Candidate-owned higher-order effect variables use a schema/path digest;
+/// checker-local inference uses the all-zero issuer inside its private
+/// substitution.  Equality therefore never aliases equal ordinals minted by
+/// distinct semantic owners.
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub struct EffectVarIssuer([u8; 32]);
+
 /// Type-inference variable used as the open tail of an effect row.
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
-pub struct EffectVar(u32);
+pub struct EffectVar {
+    issuer: EffectVarIssuer,
+    ordinal: u32,
+}
 
 /// Tail state of a set-like effect row.
 #[derive(Clone, Copy, Debug, Default, Eq, Hash, PartialEq)]
@@ -28,6 +43,83 @@ pub struct EffectRow {
 /// Exact substitutions produced when a polymorphic callable is instantiated.
 #[derive(Clone, Debug, Default, Eq, PartialEq)]
 pub struct EffectSubstitution(BTreeMap<EffectVar, EffectRow>);
+
+/// Eligibility of one issuer-backed effect variable in a lower constraint
+/// run. Bindable variables close in this run; future-eligible variables remain
+/// absent until a constraint touches them or their declaration position enters
+/// the active callable group.
+#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
+pub(crate) enum EffectConstraintEligibility {
+    Bindable,
+    FutureEligible,
+}
+
+/// One authorized variable row used to initialize a path-local effect
+/// environment. Rows are sealed and ordered by the types layer before they
+/// reach this lower algebra.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(crate) struct EffectConstraintVariable {
+    variable: EffectVar,
+    eligibility: EffectConstraintEligibility,
+}
+
+/// A directed open-tail relation. `source - covered` must flow into `target`;
+/// `covered` is the permitted row's concrete prefix and prevents redundant
+/// effects from being added to the minimal target binding.
+#[derive(Clone, Debug, Eq, Ord, PartialEq, PartialOrd)]
+struct EffectConstraintEdge {
+    source: EffectVar,
+    target: EffectVar,
+    covered: EffectSet,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+struct EffectConstraintBounds {
+    eligibility: EffectConstraintEligibility,
+    lower: EffectSet,
+    upper: Option<EffectSet>,
+    touched: bool,
+    inherited: Option<EffectSet>,
+}
+
+/// Branch-local higher-order effect constraints. This is deliberately not an
+/// exact substitution table: directional function relations need lower and
+/// upper bounds plus residual-aware tail edges before a minimal fixed point
+/// can be sealed.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub(crate) struct EffectConstraintEnvironment {
+    bounds: BTreeMap<EffectVar, EffectConstraintBounds>,
+    edges: BTreeSet<EffectConstraintEdge>,
+}
+
+/// Closed failures produced by the path-local effect algebra. The types layer
+/// maps only `MissingEffects` to candidate rejection; every other variant is
+/// malformed authority or a non-canonical sealed seed.
+#[derive(Clone, Debug, Eq, Error, PartialEq)]
+pub(crate) enum EffectConstraintEnvironmentError {
+    #[error("unknown effect row reached issuer-backed lower")]
+    UnknownRow,
+    #[error("effect variable is outside the authorized lower scope")]
+    ForeignVariable { variable: EffectVar },
+    #[error("effect constraint scope is duplicated or not canonically ordered")]
+    NonCanonicalScope,
+    #[error("effect rows are not in the subset relation")]
+    MissingEffects { missing: EffectSet },
+    #[error("inherited effect binding is not a closed canonical row")]
+    NonCanonicalInheritedBinding { variable: EffectVar },
+    #[error("inherited effect binding was supplied more than once")]
+    DuplicateInheritedBinding { variable: EffectVar },
+}
+
+#[derive(Clone, Debug, Eq, Error, PartialEq)]
+pub(crate) enum EffectIssuerRebindError {
+    #[error("unknown effect row cannot cross the checked issuer boundary")]
+    UnknownRow,
+    #[error("effect variable belongs to a foreign prepared issuer")]
+    ForeignVariable { variable: EffectVar },
+    #[error("effect variable ordinal is outside the prepared overlay")]
+    UnauthorizedVariable { variable: EffectVar },
+}
 
 /// Closed or bounded effect-row evidence for one callable.
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -116,11 +208,84 @@ pub enum EffectRowCloseError {
 
 impl EffectVar {
     pub const fn from_index(index: u32) -> Self {
-        Self(index)
+        Self {
+            issuer: EffectVarIssuer::LOCAL,
+            ordinal: index,
+        }
+    }
+
+    pub(crate) const fn issued(issuer: EffectVarIssuer, ordinal: u32) -> Self {
+        Self { issuer, ordinal }
     }
 
     pub const fn index(self) -> u32 {
-        self.0
+        self.ordinal
+    }
+
+    pub const fn issuer(self) -> EffectVarIssuer {
+        self.issuer
+    }
+
+    pub(crate) fn rebind_issuer(self, prepared: EffectVarIssuer, checked: EffectVarIssuer) -> Self {
+        if self.issuer == prepared {
+            Self {
+                issuer: checked,
+                ordinal: self.ordinal,
+            }
+        } else {
+            self
+        }
+    }
+}
+
+impl EffectVarIssuer {
+    const LOCAL: Self = Self([0; 32]);
+
+    /// Mint one generation-local prepared namespace. It is never encoded into
+    /// final facts; the checked-call sealer validates and rebinds it to the
+    /// stable callable-owned namespace before canonical encoding.
+    pub(crate) fn fresh_prepared() -> Option<Self> {
+        static NEXT_PREPARED_EFFECT_ISSUER: AtomicU64 = AtomicU64::new(0);
+        let ordinal = NEXT_PREPARED_EFFECT_ISSUER
+            .fetch_update(Ordering::Relaxed, Ordering::Relaxed, |value| {
+                value.checked_add(1)
+            })
+            .ok()?;
+        let mut hasher = blake3::Hasher::new();
+        hasher.update(b"arcweft.prepared-callable-effect-issuer.v1\0");
+        hasher.update(&ordinal.to_le_bytes());
+        Some(Self(*hasher.finalize().as_bytes()))
+    }
+
+    /// Derive the stable checked namespace from the canonical callable owner.
+    /// This constructor is crate-private and is called only by the checked-call
+    /// authority after the callable digest has been minted.
+    pub(crate) fn for_checked_callable(owner: &[u8; 32]) -> Self {
+        let mut hasher = blake3::Hasher::new();
+        hasher.update(b"arcweft.checked-callable-effect-issuer.v1\0");
+        hasher.update(owner);
+        Self(*hasher.finalize().as_bytes())
+    }
+
+    pub const fn as_bytes(&self) -> &[u8; 32] {
+        &self.0
+    }
+}
+
+impl EffectConstraintVariable {
+    pub(crate) const fn new(variable: EffectVar, eligibility: EffectConstraintEligibility) -> Self {
+        Self {
+            variable,
+            eligibility,
+        }
+    }
+
+    pub(crate) const fn variable(self) -> EffectVar {
+        self.variable
+    }
+
+    pub(crate) const fn eligibility(self) -> EffectConstraintEligibility {
+        self.eligibility
     }
 }
 
@@ -153,6 +318,30 @@ impl EffectRow {
 
     pub const fn is_known(&self) -> bool {
         !matches!(self.tail, EffectRowTail::Unknown)
+    }
+
+    pub(crate) fn checked_rebind_issuer(
+        &self,
+        prepared: EffectVarIssuer,
+        checked: EffectVarIssuer,
+        authorized_ordinals: &BTreeSet<u32>,
+    ) -> Result<Self, EffectIssuerRebindError> {
+        match self.tail {
+            EffectRowTail::Closed => Ok(Self::closed(self.concrete.clone())),
+            EffectRowTail::Unknown => Err(EffectIssuerRebindError::UnknownRow),
+            EffectRowTail::Variable(variable) if variable.issuer() != prepared => {
+                Err(EffectIssuerRebindError::ForeignVariable { variable })
+            }
+            EffectRowTail::Variable(variable)
+                if !authorized_ordinals.contains(&variable.index()) =>
+            {
+                Err(EffectIssuerRebindError::UnauthorizedVariable { variable })
+            }
+            EffectRowTail::Variable(variable) => Ok(Self::open(
+                self.concrete.clone(),
+                variable.rebind_issuer(prepared, checked),
+            )),
+        }
     }
 
     pub fn display_label(&self) -> String {
@@ -236,7 +425,7 @@ impl EffectRow {
         }
     }
 
-    fn resolve_partial(
+    pub(crate) fn resolve_partial(
         &self,
         substitutions: &EffectSubstitution,
     ) -> Result<EffectRow, EffectRowError> {
@@ -280,6 +469,264 @@ impl EffectSubsetError {
             },
             EffectRowError::CyclicBinding { variable } => Self::CyclicSubstitution { variable },
         }
+    }
+}
+
+impl EffectConstraintEnvironment {
+    pub(crate) fn new(
+        variables: &[EffectConstraintVariable],
+    ) -> Result<Self, EffectConstraintEnvironmentError> {
+        if variables
+            .windows(2)
+            .any(|rows| rows[0].variable >= rows[1].variable)
+        {
+            return Err(EffectConstraintEnvironmentError::NonCanonicalScope);
+        }
+        let bounds = variables
+            .iter()
+            .map(|row| {
+                (
+                    row.variable,
+                    EffectConstraintBounds {
+                        eligibility: row.eligibility,
+                        lower: EffectSet::new(),
+                        upper: None,
+                        touched: false,
+                        inherited: None,
+                    },
+                )
+            })
+            .collect();
+        Ok(Self {
+            bounds,
+            edges: BTreeSet::new(),
+        })
+    }
+
+    pub(crate) fn validate_row(
+        &self,
+        row: &EffectRow,
+    ) -> Result<(), EffectConstraintEnvironmentError> {
+        match row.tail {
+            EffectRowTail::Closed => Ok(()),
+            EffectRowTail::Variable(variable) if self.bounds.contains_key(&variable) => Ok(()),
+            EffectRowTail::Variable(variable) => {
+                Err(EffectConstraintEnvironmentError::ForeignVariable { variable })
+            }
+            EffectRowTail::Unknown => Err(EffectConstraintEnvironmentError::UnknownRow),
+        }
+    }
+
+    pub(crate) fn seed_inherited(
+        &mut self,
+        variable: EffectVar,
+        row: &EffectRow,
+    ) -> Result<(), EffectConstraintEnvironmentError> {
+        self.validate_row(row)?;
+        let EffectRowTail::Closed = row.tail else {
+            return Err(
+                EffectConstraintEnvironmentError::NonCanonicalInheritedBinding { variable },
+            );
+        };
+        let Some(bounds) = self.bounds.get_mut(&variable) else {
+            return Err(EffectConstraintEnvironmentError::ForeignVariable { variable });
+        };
+        if bounds.inherited.is_some() {
+            return Err(EffectConstraintEnvironmentError::DuplicateInheritedBinding { variable });
+        }
+        bounds.lower = row.concrete.clone();
+        bounds.upper = Some(row.concrete.clone());
+        bounds.touched = true;
+        bounds.inherited = Some(row.concrete.clone());
+        Ok(())
+    }
+
+    /// Record `actual <= permitted` without prematurely closing either tail.
+    /// The operation is transactional: an incompatible addition leaves this
+    /// environment unchanged.
+    pub(crate) fn constrain_subset(
+        &mut self,
+        actual: &EffectRow,
+        permitted: &EffectRow,
+    ) -> Result<(), EffectConstraintEnvironmentError> {
+        self.validate_row(actual)?;
+        self.validate_row(permitted)?;
+        let mut next = self.clone();
+        let residual = actual.concrete.difference(&permitted.concrete);
+
+        match permitted.tail {
+            EffectRowTail::Closed => {
+                if !residual.is_empty() {
+                    return Err(EffectConstraintEnvironmentError::MissingEffects {
+                        missing: residual,
+                    });
+                }
+                if let EffectRowTail::Variable(source) = actual.tail {
+                    next.mark_touched(source)?;
+                    next.intersect_upper(source, permitted.concrete.clone())?;
+                }
+            }
+            EffectRowTail::Variable(target) => {
+                next.mark_touched(target)?;
+                next.extend_lower(target, &residual)?;
+                if let EffectRowTail::Variable(source) = actual.tail {
+                    next.mark_touched(source)?;
+                    if source != target {
+                        next.edges.insert(EffectConstraintEdge {
+                            source,
+                            target,
+                            covered: permitted.concrete.clone(),
+                        });
+                    }
+                }
+            }
+            EffectRowTail::Unknown => unreachable!("validated rows are known"),
+        }
+        next.solve_bounds()?;
+        *self = next;
+        Ok(())
+    }
+
+    pub(crate) fn bindings(
+        &self,
+    ) -> Result<Vec<(EffectVar, EffectRow)>, EffectConstraintEnvironmentError> {
+        let bounds = self.solve_bounds()?;
+        Ok(bounds
+            .into_iter()
+            .filter_map(|(variable, bounds)| {
+                (matches!(bounds.eligibility, EffectConstraintEligibility::Bindable)
+                    || bounds.touched
+                    || bounds.inherited.is_some())
+                .then(|| (variable, EffectRow::closed(bounds.lower)))
+            })
+            .collect())
+    }
+
+    pub(crate) fn bindings_equal(
+        &self,
+        other: &Self,
+    ) -> Result<bool, EffectConstraintEnvironmentError> {
+        Ok(self.bindings()? == other.bindings()?)
+    }
+
+    pub(crate) fn validate_inherited_extension(
+        &self,
+    ) -> Result<(), EffectConstraintEnvironmentError> {
+        let solved = self.solve_bounds()?;
+        for (variable, bounds) in solved {
+            if let Some(inherited) = bounds.inherited
+                && bounds.lower != inherited
+            {
+                return Err(
+                    EffectConstraintEnvironmentError::NonCanonicalInheritedBinding { variable },
+                );
+            }
+        }
+        Ok(())
+    }
+
+    pub(crate) fn substitution(
+        &self,
+    ) -> Result<EffectSubstitution, EffectConstraintEnvironmentError> {
+        Ok(EffectSubstitution(
+            self.bindings()?.into_iter().collect::<BTreeMap<_, _>>(),
+        ))
+    }
+
+    fn mark_touched(
+        &mut self,
+        variable: EffectVar,
+    ) -> Result<(), EffectConstraintEnvironmentError> {
+        let Some(bounds) = self.bounds.get_mut(&variable) else {
+            return Err(EffectConstraintEnvironmentError::ForeignVariable { variable });
+        };
+        bounds.touched = true;
+        Ok(())
+    }
+
+    fn extend_lower(
+        &mut self,
+        variable: EffectVar,
+        effects: &EffectSet,
+    ) -> Result<(), EffectConstraintEnvironmentError> {
+        let Some(bounds) = self.bounds.get_mut(&variable) else {
+            return Err(EffectConstraintEnvironmentError::ForeignVariable { variable });
+        };
+        bounds.lower.union_with(effects);
+        Ok(())
+    }
+
+    fn intersect_upper(
+        &mut self,
+        variable: EffectVar,
+        upper: EffectSet,
+    ) -> Result<(), EffectConstraintEnvironmentError> {
+        let Some(bounds) = self.bounds.get_mut(&variable) else {
+            return Err(EffectConstraintEnvironmentError::ForeignVariable { variable });
+        };
+        bounds.upper = Some(match bounds.upper.take() {
+            Some(existing) => existing.intersection(&upper),
+            None => upper,
+        });
+        Ok(())
+    }
+
+    fn solve_bounds(
+        &self,
+    ) -> Result<BTreeMap<EffectVar, EffectConstraintBounds>, EffectConstraintEnvironmentError> {
+        let mut bounds = self.bounds.clone();
+        loop {
+            let mut changed = false;
+            for edge in &self.edges {
+                let source = bounds.get(&edge.source).ok_or(
+                    EffectConstraintEnvironmentError::ForeignVariable {
+                        variable: edge.source,
+                    },
+                )?;
+                let source_lower = source.lower.difference(&edge.covered);
+                let target_upper = bounds
+                    .get(&edge.target)
+                    .ok_or(EffectConstraintEnvironmentError::ForeignVariable {
+                        variable: edge.target,
+                    })?
+                    .upper
+                    .clone();
+
+                changed |= bounds
+                    .get_mut(&edge.target)
+                    .expect("edge target validated above")
+                    .lower
+                    .union_with(&source_lower);
+
+                if let Some(target_upper) = target_upper {
+                    let propagated = edge.covered.union(&target_upper);
+                    let source = bounds
+                        .get_mut(&edge.source)
+                        .expect("edge source validated above");
+                    let narrowed = match &source.upper {
+                        Some(existing) => existing.intersection(&propagated),
+                        None => propagated,
+                    };
+                    if source.upper.as_ref() != Some(&narrowed) {
+                        source.upper = Some(narrowed);
+                        changed = true;
+                    }
+                }
+            }
+            if !changed {
+                break;
+            }
+        }
+        for row in bounds.values() {
+            if let Some(upper) = &row.upper
+                && !row.lower.is_subset(upper)
+            {
+                return Err(EffectConstraintEnvironmentError::MissingEffects {
+                    missing: row.lower.difference(upper),
+                });
+            }
+        }
+        Ok(bounds)
     }
 }
 
@@ -442,6 +889,10 @@ impl EffectSubstitution {
         Self::default()
     }
 
+    pub(crate) fn from_rows(rows: impl IntoIterator<Item = (EffectVar, EffectRow)>) -> Self {
+        Self(rows.into_iter().collect())
+    }
+
     pub fn bind_exact(
         &mut self,
         variable: EffectVar,
@@ -459,7 +910,7 @@ impl EffectSubstitution {
         self.0.get(&variable)
     }
 
-    fn bind_row(
+    pub(crate) fn bind_row(
         &mut self,
         variable: EffectVar,
         requested: &EffectRow,
@@ -768,6 +1219,92 @@ mod tests {
                 callable,
                 source: EffectRowError::UnboundVariable { variable: 7 },
             })
+        );
+    }
+
+    #[test]
+    fn constraint_environment_computes_residual_aware_minimal_fixed_point() {
+        let issuer = EffectVarIssuer::fresh_prepared().expect("test issuer");
+        let source = EffectVar::issued(issuer, 0);
+        let target = EffectVar::issued(issuer, 1);
+        let mut environment = EffectConstraintEnvironment::new(&[
+            EffectConstraintVariable::new(source, EffectConstraintEligibility::Bindable),
+            EffectConstraintVariable::new(target, EffectConstraintEligibility::Bindable),
+        ])
+        .expect("canonical scope");
+        let covered = EffectSet::from_labels(["fs.read"]).expect("effect");
+        let residual = EffectSet::from_labels(["net.open"]).expect("effect");
+
+        environment
+            .constrain_subset(
+                &EffectRow::open(covered.clone(), source),
+                &EffectRow::open(covered.clone(), target),
+            )
+            .expect("tail edge");
+        environment
+            .constrain_subset(
+                &EffectRow::closed(residual.clone()),
+                &EffectRow::open(EffectSet::new(), source),
+            )
+            .expect("source lower bound");
+
+        assert_eq!(
+            environment.bindings().expect("minimal solution"),
+            vec![
+                (source, EffectRow::closed(residual.clone())),
+                (target, EffectRow::closed(residual)),
+            ]
+        );
+    }
+
+    #[test]
+    fn constraint_environment_rejects_only_well_formed_subset_conflict_transactionally() {
+        let issuer = EffectVarIssuer::fresh_prepared().expect("test issuer");
+        let variable = EffectVar::issued(issuer, 0);
+        let mut environment = EffectConstraintEnvironment::new(&[EffectConstraintVariable::new(
+            variable,
+            EffectConstraintEligibility::Bindable,
+        )])
+        .expect("canonical scope");
+        let permitted = EffectSet::from_labels(["fs.read"]).expect("effect");
+        environment
+            .constrain_subset(
+                &EffectRow::open(EffectSet::new(), variable),
+                &EffectRow::closed(permitted),
+            )
+            .expect("upper bound");
+        let before = environment.clone();
+
+        assert!(matches!(
+            environment.constrain_subset(
+                &EffectRow::closed(EffectSet::from_labels(["net.open"]).expect("effect")),
+                &EffectRow::open(EffectSet::new(), variable),
+            ),
+            Err(EffectConstraintEnvironmentError::MissingEffects { .. })
+        ));
+        assert_eq!(environment, before);
+    }
+
+    #[test]
+    fn constraint_environment_classifies_unknown_and_foreign_rows_as_invariants() {
+        let issuer = EffectVarIssuer::fresh_prepared().expect("test issuer");
+        let variable = EffectVar::issued(issuer, 0);
+        let environment = EffectConstraintEnvironment::new(&[EffectConstraintVariable::new(
+            variable,
+            EffectConstraintEligibility::Bindable,
+        )])
+        .expect("canonical scope");
+        assert_eq!(
+            environment.validate_row(&EffectRow::unknown()),
+            Err(EffectConstraintEnvironmentError::UnknownRow)
+        );
+        let foreign = EffectVar::issued(
+            EffectVarIssuer::fresh_prepared().expect("foreign issuer"),
+            0,
+        );
+        assert_eq!(
+            environment.validate_row(&EffectRow::open(EffectSet::new(), foreign)),
+            Err(EffectConstraintEnvironmentError::ForeignVariable { variable: foreign })
         );
     }
 }

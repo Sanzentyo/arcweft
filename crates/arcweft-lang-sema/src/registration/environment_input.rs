@@ -8,16 +8,18 @@ use std::collections::BTreeSet;
 use arcweft_core::entry::{RuntimeNominalTypeId, TypeLayoutHash};
 use arcweft_interaction_model::dialogue::CharacterDialogueCustomFieldId;
 use arcweft_lang_hir::symbol::ProjectSymbolWorldId;
+use arcweft_manifest_model::HostCallContractDigest;
 use arcweft_rust_abi::ArcweftRustTypeParameterIndex;
 use arcweft_source::{SourceDocumentIdentity, SourceSpan};
 use arcweft_view::ViewId;
 
 use crate::{
     callable::{
-        AdapterPackageId, CallableArgumentPolicy, CallableDocumentation, CallableGroupIndex,
-        CallableGroupKind, CallableName, CallableOverloadIndex, CallableParameterIndex,
-        CallableParameterPassing, CallableParameterPresence, CallableParameterSource, CallablePath,
-        CallableSource, CallableValidator, EnvironmentCallableKind, EnvironmentCallableOwner,
+        AdapterPackageId, CallableArgumentPolicy, CallableDocumentation,
+        CallableGenericParameterIssuer, CallableGroupIndex, CallableGroupKind, CallableName,
+        CallableOverloadIndex, CallableParameterIndex, CallableParameterPassing,
+        CallableParameterPresence, CallableParameterSource, CallablePath, CallableSource,
+        CallableValidator, EnvironmentCallableKind, EnvironmentCallableOwner,
         EnvironmentDeclarationOrdinal, ProjectCallablePath, RustCallableProvenance, RustItemPath,
     },
     character_dialogue::CharacterDialogueCustomFieldBinding,
@@ -260,6 +262,7 @@ pub struct EnvironmentCallableSignatureInput {
     effects: EffectRow,
     argument_policy: CallableArgumentPolicy,
     validator: CallableValidator,
+    generic_issuer: CallableGenericParameterIssuer,
 }
 
 /// One typed adapter host-call contract retained for checking authored
@@ -270,6 +273,7 @@ pub struct EnvironmentHostCallContractInput {
     path: CallablePath,
     signature: EnvironmentCallableSignatureInput,
     domain_error: Option<EnvironmentTypeProjectionNode>,
+    contract_digest: HostCallContractDigest,
     source: SourceSpan,
 }
 
@@ -611,6 +615,7 @@ impl EnvironmentCallableSignatureInput {
         effects: EffectRow,
         argument_policy: CallableArgumentPolicy,
         validator: CallableValidator,
+        generic_issuer: CallableGenericParameterIssuer,
     ) -> Self {
         Self {
             groups: groups.into(),
@@ -618,6 +623,7 @@ impl EnvironmentCallableSignatureInput {
             effects,
             argument_policy,
             validator,
+            generic_issuer,
         }
     }
 
@@ -640,6 +646,10 @@ impl EnvironmentCallableSignatureInput {
     pub const fn validator(&self) -> &CallableValidator {
         &self.validator
     }
+
+    pub const fn generic_issuer(&self) -> &CallableGenericParameterIssuer {
+        &self.generic_issuer
+    }
 }
 
 impl EnvironmentHostCallContractInput {
@@ -648,6 +658,7 @@ impl EnvironmentHostCallContractInput {
         path: CallablePath,
         signature: EnvironmentCallableSignatureInput,
         domain_error: Option<EnvironmentTypeProjectionNode>,
+        contract_digest: HostCallContractDigest,
         source: SourceSpan,
     ) -> Self {
         Self {
@@ -655,6 +666,7 @@ impl EnvironmentHostCallContractInput {
             path,
             signature,
             domain_error,
+            contract_digest,
             source,
         }
     }
@@ -673,6 +685,10 @@ impl EnvironmentHostCallContractInput {
 
     pub const fn domain_error(&self) -> Option<&EnvironmentTypeProjectionNode> {
         self.domain_error.as_ref()
+    }
+
+    pub const fn contract_digest(&self) -> HostCallContractDigest {
+        self.contract_digest
     }
 
     pub const fn source(&self) -> &SourceSpan {

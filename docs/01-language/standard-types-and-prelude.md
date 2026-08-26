@@ -86,12 +86,14 @@ the `f32` types. `math.matmul_f64`, `math.matrix_add_f64`, and
 storage through VM and CPU accelerator paths instead of widening or narrowing
 through `f32`.
 
-Runtime CLI values use path-free typed payload strings:
+Explicit low-level Flow invocation values use path-free typed payload strings.
+They are accepted only by `arcw run --flow ... --value ...`; Entry execution
+and View environment injection do not consume this option:
 
 ```bash
---value lhs=matrix/f32/4x4:1,0,0,0,0,1,0,0,0,0,1,0,0,0,0,1
---value rhs=matrix/f64/2x2:1.5,2,3.25,4.5
---value t=tensor/f64/2x2:1.5,2.25,3.75,4.5
+arcw run math.arcw --flow flow.matmul --value lhs=matrix/f32/4x4:1,0,0,0,0,1,0,0,0,0,1,0,0,0,0,1
+arcw run math.arcw --flow flow.matmul64 --value rhs=matrix/f64/2x2:1.5,2,3.25,4.5
+arcw run math.arcw --flow flow.tensor64 --value t=tensor/f64/2x2:1.5,2.25,3.75,4.5
 ```
 
 The portable `wgpu` math backend is currently `f32`-only. `f64` matrix/tensor

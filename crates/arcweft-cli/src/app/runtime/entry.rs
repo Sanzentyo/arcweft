@@ -8,7 +8,7 @@ pub(in crate::app) fn select_runtime_entry(
     plan: &RuntimePlan,
     entry: &str,
 ) -> Result<EntryRuntimeId, ExitCode> {
-    let entry = parse_entry_id(entry)?;
+    let entry = parse_runtime_entry_id(entry)?;
     let Some(spec) = plan
         .entries()
         .iter()
@@ -31,7 +31,7 @@ pub(in crate::app) fn select_server_entry<'a>(
     plan: &'a RuntimePlan,
     entry: &str,
 ) -> Result<&'a RuntimeEntrySpec, ExitCode> {
-    let entry = parse_entry_id(entry)?;
+    let entry = parse_runtime_entry_id(entry)?;
     let Some(spec) = plan
         .entries()
         .iter()
@@ -50,25 +50,37 @@ pub(in crate::app) fn select_server_entry<'a>(
     Ok(spec)
 }
 
-pub(in crate::app) fn server_routes(entry: &RuntimeEntrySpec) -> Vec<RuntimeRouteSpec> {
+pub(in crate::app) fn server_routes(entry: &RuntimeEntrySpec) -> Option<&[RuntimeRouteSpec]> {
     match &entry.target {
-        RuntimeEntryTarget::Routes(routes) => routes.clone(),
-        RuntimeEntryTarget::Flow(flow) | RuntimeEntryTarget::Controller(flow) => {
-            vec![RuntimeRouteSpec {
-                method: "*".to_owned(),
-                path: "*".to_owned(),
-                target: flow.clone(),
-                bindings: Vec::new(),
-            }]
-        }
+        RuntimeEntryTarget::Routes(routes) => Some(routes),
+        RuntimeEntryTarget::Flow(_) | RuntimeEntryTarget::Controller(_) => None,
     }
 }
 
 pub(in crate::app) fn select_runtime_cli_entry(
     plan: &RuntimePlan,
-    entry: &str,
+    entry: Option<&str>,
 ) -> Result<EntryRuntimeId, ExitCode> {
-    let entry = parse_entry_id(entry)?;
+    let entry = match entry {
+        Some(entry) => parse_runtime_entry_id(entry)?,
+        None => {
+            let mut candidates = plan
+                .entries()
+                .iter()
+                .filter(|candidate| candidate.kind == RuntimeEntryKind::Cli);
+            let Some(candidate) = candidates.next() else {
+                eprintln!("error: source launch has no `entry cli` declaration");
+                return Err(ExitCode::FAILURE);
+            };
+            if candidates.next().is_some() {
+                eprintln!(
+                    "error: source launch has multiple `entry cli` declarations; pass --entry entry.*"
+                );
+                return Err(ExitCode::from(2));
+            }
+            candidate.id.clone()
+        }
+    };
     let Some(spec) = plan
         .entries()
         .iter()
@@ -91,7 +103,7 @@ pub(in crate::app) fn select_runtime_cli_entry(
     Ok(entry)
 }
 
-fn parse_entry_id(value: &str) -> Result<EntryRuntimeId, ExitCode> {
+pub(in crate::app) fn parse_runtime_entry_id(value: &str) -> Result<EntryRuntimeId, ExitCode> {
     EntryRuntimeId::from_source_entity_body(value).map_err(|error| {
         eprintln!("error: entry selector must be an exact canonical entry.* ID: {error}");
         ExitCode::from(2)

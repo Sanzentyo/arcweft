@@ -146,6 +146,7 @@ fn bench_expectation_failures(
             source: Some(NativeRunSource::new(source_path, runtime.file_roots)),
             policy: runtime.host_policy,
             adapter_registrars: runtime.adapter_registrars,
+            cli_args: &[],
         },
         RuntimeStepRunConfig {
             steps: options.steps,
@@ -154,7 +155,6 @@ fn bench_expectation_failures(
             executor: options.executor,
             pure_config: runtime.pure_config,
         },
-        &options.values,
         runtime.execution_diagnostics,
     );
     let Ok(frames) = frames else {
@@ -303,7 +303,6 @@ fn run_bench_flow_section(
             },
             runtime.host_policy,
             runtime.adapter_registrars,
-            &options.values,
             &mut pure,
         );
         let Ok(trace) = trace else {

@@ -15,9 +15,9 @@ use arcweft_core::engine::{EngineStartError, FlowFiber, FlowFiberStatus, FlowSta
 use arcweft_core::executor::{ArcweftRuntimeExecutor, RuntimeExecutor};
 use arcweft_core::plan::{EntryRuntimeId, FlowEvent, RuntimePlanBuilder};
 use arcweft_core::step::{
-    RuntimeStepBudget, RuntimeStepInput, RuntimeStepMode, RuntimeStepOptions, RuntimeStepResult,
+    RuntimeHostCallRequest, RuntimeStepBudget, RuntimeStepInput, RuntimeStepMode,
+    RuntimeStepOptions, RuntimeStepResult,
 };
-use arcweft_core::value::RuntimeBinding;
 use arcweft_host_adapter::HostCallPolicy;
 use arcweft_interaction_model::audio::AudioCommandEnvelope;
 use arcweft_resource_model::registry::ResourceTypeRegistry;
@@ -77,7 +77,6 @@ pub struct BundleRunnerOptions {
     pub steps: usize,
     pub mode: BundleRunnerStepMode,
     pub max_ops: usize,
-    pub values: Vec<RuntimeBinding>,
     pub engine_resource_types: std::sync::Arc<ResourceTypeRegistry>,
 }
 
@@ -88,7 +87,6 @@ impl Default for BundleRunnerOptions {
             steps: 8,
             mode: BundleRunnerStepMode::Drain,
             max_ops: 32,
-            values: Vec::new(),
             engine_resource_types: std::sync::Arc::new(ResourceTypeRegistry::empty()),
         }
     }
@@ -232,7 +230,6 @@ fn execute_bundle_with_native_adapters(
             },
             &host_policy,
             adapter_registrars,
-            &options.values,
         )
     })?;
     Ok(BundleRunnerReport {
@@ -421,7 +418,6 @@ fn run_product_runtime_steps(
     config: RuntimeStepRunConfig,
     host_policy: &HostCallPolicy,
     adapter_registrars: &[NativeAdapterRegistrar],
-    values: &[RuntimeBinding],
 ) -> Result<RuntimeRunTrace, BundleRunnerError> {
     let mut executor = RuntimeExecutorInstance::from_awbc_product(program)?;
     run_runtime_steps_with_executor(
@@ -434,7 +430,6 @@ fn run_product_runtime_steps(
         config.steps,
         config.mode,
         config.max_ops,
-        values,
     )
     .map_err(BundleRunnerError::NativeAdapter)
 }
@@ -445,7 +440,6 @@ fn run_runtime_steps_with_executor(
     steps: usize,
     mode: BundleRunnerStepMode,
     max_ops: usize,
-    values: &[RuntimeBinding],
 ) -> Result<RuntimeRunTrace, arcweft_host_adapter::HostAdapterError> {
     let mut host = host_config
         .source_path
@@ -453,27 +447,30 @@ fn run_runtime_steps_with_executor(
             NativeTaskBridge::try_new(
                 path,
                 NativeFileRoots::for_bundle_workspace(path),
+                &[],
                 host_config.policy.clone(),
                 host_config.adapter_registrars,
             )
         })
         .transpose()?;
     let mut task_events = Vec::new();
+    let mut host_call_results = Vec::new();
     let mut summaries = Vec::new();
     for step_index in 0..steps {
         if let Some(host) = host.as_mut() {
             host.pump_main_thread()?;
             task_events.extend(host.poll_completions());
+            host_call_results.extend(host.take_host_call_results());
         }
-        let result = executor.step_with_root_bindings(
+        let result = executor.step(
             RuntimeStepInput {
                 task_events: std::mem::take(&mut task_events),
+                host_call_results: std::mem::take(&mut host_call_results),
                 ..RuntimeStepInput::default()
             },
-            values,
             step_options(mode, max_ops),
         );
-        let (summary, task_requests, _audio_commands) =
+        let (summary, task_requests, host_call_requests, _audio_commands) =
             BundleRunnerStepSummary::from_result(step_index, result);
         let done = matches!(
             executor.fiber().status,
@@ -485,6 +482,7 @@ fn run_runtime_steps_with_executor(
         }
         if let Some(host) = host.as_mut() {
             task_events.extend(host.complete_tasks(task_requests));
+            host_call_results.extend(host.complete_host_calls(host_call_requests));
         }
     }
     Ok(RuntimeRunTrace {
@@ -539,18 +537,9 @@ impl RuntimeExecutorInstance {
         })
     }
 
-    fn step_with_root_bindings(
-        &mut self,
-        input: RuntimeStepInput,
-        root_bindings: &[RuntimeBinding],
-        options: RuntimeStepOptions,
-    ) -> RuntimeStepResult {
-        self.executor.step_with_root_bindings_and_pure_backend(
-            input,
-            root_bindings,
-            options,
-            &mut self.pure,
-        )
+    fn step(&mut self, input: RuntimeStepInput, options: RuntimeStepOptions) -> RuntimeStepResult {
+        self.executor
+            .step_with_pure_backend(input, options, &mut self.pure)
     }
 
     fn fiber(&self) -> &FlowFiber {
@@ -569,6 +558,7 @@ impl BundleRunnerStepSummary {
     ) -> (
         Self,
         Vec<arcweft_core::task::TaskSpec>,
+        Vec<RuntimeHostCallRequest>,
         Vec<AudioCommandEnvelope>,
     ) {
         let RuntimeStepResult {
@@ -578,6 +568,7 @@ impl BundleRunnerStepSummary {
             stats,
         } = result;
         let task_requests = std::mem::take(&mut output.requests.tasks);
+        let host_call_requests = std::mem::take(&mut output.requests.host_calls);
         let audio_commands = output.requests.audio;
         let flow_events = std::mem::take(&mut output.flow_events);
         let assertion_failures = output
@@ -609,6 +600,7 @@ impl BundleRunnerStepSummary {
                 flow_events,
             },
             task_requests,
+            host_call_requests,
             audio_commands,
         )
     }
@@ -763,7 +755,10 @@ mod tests {
     use arcweft_core::effect::{
         RuntimeAssertion, RuntimeAssertionGuardId, RuntimeAssertionProfile,
     };
-    use arcweft_core::entry::{EntryBindingIdentity, RuntimeEntryRoles};
+    use arcweft_core::entry::{
+        EntryBindingIdentity, FlowContractHash, RuntimeEntryRoles, RuntimeFlowExecutable,
+        RuntimeFlowSchema,
+    };
     use arcweft_core::plan::{
         FlowRuntimeId, RuntimeDialogueContentPlanSeed, RuntimeEntryKind, RuntimeEntrySpec,
         RuntimeEntryTarget, RuntimeFlowOpSeed, RuntimeFlowSeed, RuntimeLineId, RuntimePlanBuilder,
@@ -842,11 +837,12 @@ mod tests {
             stats: arcweft_core::step::RuntimeStepStats::default(),
         };
 
-        let (summary, tasks, audio) = BundleRunnerStepSummary::from_result(0, result);
+        let (summary, tasks, host_calls, audio) = BundleRunnerStepSummary::from_result(0, result);
 
         assert_eq!(summary.assertion_failures, vec![expected]);
         assert_eq!(summary.line_effects, vec!["assert"]);
         assert!(tasks.is_empty());
+        assert!(host_calls.is_empty());
         assert!(audio.is_empty());
     }
 
@@ -1073,6 +1069,19 @@ mod tests {
                 ],
             ))
             .expect("flow admits");
+        builder
+            .push_flow_schema(RuntimeFlowSchema {
+                flow: flow.clone(),
+                parameters: Vec::new(),
+            })
+            .expect("flow schema admits");
+        builder
+            .push_flow_executable(RuntimeFlowExecutable {
+                flow: flow.clone(),
+                contract: FlowContractHash::from_bytes([0x7b; 32]),
+                controller: None,
+            })
+            .expect("flow executable admits");
         builder
             .push_entry(RuntimeEntrySpec {
                 id: EntryRuntimeId::from_source_entity_body("entry.main")

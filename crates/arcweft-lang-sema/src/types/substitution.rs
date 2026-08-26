@@ -1,10 +1,16 @@
 //! Declaration-owned generic substitution for semantic types.
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
+
+use crate::effect_row::{
+    EffectIssuerRebindError, EffectRow, EffectRowError, EffectRowTail, EffectSubstitution,
+    EffectVar, EffectVarIssuer,
+};
+use crate::effects::EffectSet;
 
 use super::{
-    AcceptedNominalType, EntityType, GenericTypeOwnerId, GenericTypeParameterId, OpenNominalType,
-    ProjectNominalType, TypeKind,
+    AcceptedNominalType, EntityType, GenericTypeParameterId, OpenNominalType, ProjectNominalType,
+    TypeKind,
 };
 
 /// One call-site instantiation of declaration-owned generic type parameters.
@@ -43,27 +49,10 @@ impl TypeParameterSubstitutions {
         let applied = self.apply(ty);
         (!contains_generic_parameter(&applied)).then_some(applied)
     }
-
-    /// Applies known bindings while withholding only a standard Agent
-    /// intrinsic's still-unbound payload from contextual expression checking.
-    ///
-    /// Those closed intrinsics infer their payload from the referenced Signal
-    /// or Metric. Other declaration generics remain visible as the candidate's
-    /// exact expected type until ordinary observation specializes them.
-    pub(crate) fn apply_argument_expected(&self, ty: &TypeKind) -> Option<TypeKind> {
-        let applied = self.apply(ty);
-        (!contains_agent_intrinsic_parameter(&applied)).then_some(applied)
-    }
 }
 
 fn contains_generic_parameter(ty: &TypeKind) -> bool {
     contains_generic_parameter_where(ty, &|_| true)
-}
-
-fn contains_agent_intrinsic_parameter(ty: &TypeKind) -> bool {
-    contains_generic_parameter_where(ty, &|parameter| {
-        matches!(parameter.owner(), GenericTypeOwnerId::AgentIntrinsic(_))
-    })
 }
 
 fn contains_generic_parameter_where(
@@ -333,6 +322,139 @@ impl TypeKind {
         }
     }
 
+    /// Applies issuer-backed effect bindings to every nested function row.
+    /// Type and effect substitution are separate authorities; the checked
+    /// lower solution composes them in that order.
+    pub(crate) fn substitute_effect_rows(
+        &self,
+        substitutions: &EffectSubstitution,
+    ) -> Result<Self, EffectRowError> {
+        let recurse = |ty: &Self| ty.substitute_effect_rows(substitutions);
+        Ok(match self {
+            Self::ProjectNominal(nominal) => Self::ProjectNominal(ProjectNominalType::new(
+                nominal.declaration().clone(),
+                nominal
+                    .arguments()
+                    .iter()
+                    .map(recurse)
+                    .collect::<Result<Vec<_>, _>>()?,
+            )),
+            Self::AcceptedNominal(nominal) => Self::AcceptedNominal(AcceptedNominalType::new(
+                nominal.declaration().clone(),
+                nominal
+                    .arguments()
+                    .iter()
+                    .map(recurse)
+                    .collect::<Result<Vec<_>, _>>()?,
+            )),
+            Self::OpenNominal(nominal) => Self::OpenNominal(OpenNominalType::new(
+                nominal.rule().clone(),
+                nominal.path().clone(),
+                nominal
+                    .arguments()
+                    .iter()
+                    .map(recurse)
+                    .collect::<Result<Vec<_>, _>>()?,
+            )),
+            Self::Range(inner) => Self::Range(Box::new(recurse(inner)?)),
+            Self::Probe(inner) => Self::Probe(Box::new(recurse(inner)?)),
+            Self::Vec(inner) => Self::Vec(Box::new(recurse(inner)?)),
+            Self::Slice(inner) => Self::Slice(Box::new(recurse(inner)?)),
+            Self::Seq(inner) => Self::Seq(Box::new(recurse(inner)?)),
+            Self::Need(inner) => Self::Need(Box::new(recurse(inner)?)),
+            Self::Option(inner) => Self::Option(Box::new(recurse(inner)?)),
+            Self::ThreadHandle(inner) => Self::ThreadHandle(Box::new(recurse(inner)?)),
+            Self::Shared(inner) => Self::Shared(Box::new(recurse(inner)?)),
+            Self::DialogueLine(inner) => Self::DialogueLine(Box::new(recurse(inner)?)),
+            Self::BorrowRef {
+                kind,
+                lifetime,
+                inner,
+            } => Self::BorrowRef {
+                kind: *kind,
+                lifetime: lifetime.clone(),
+                inner: Box::new(recurse(inner)?),
+            },
+            Self::IteratorState { family, item } => Self::IteratorState {
+                family: *family,
+                item: Box::new(recurse(item)?),
+            },
+            Self::Array { item, len } => Self::Array {
+                item: Box::new(recurse(item)?),
+                len: len.clone(),
+            },
+            Self::Ref(entity) => Self::Ref(EntityType::new(
+                entity.kind().clone(),
+                entity.value().map(recurse).transpose()?,
+            )),
+            Self::Map { kind, key, value } => Self::Map {
+                kind: *kind,
+                key: Box::new(recurse(key)?),
+                value: Box::new(recurse(value)?),
+            },
+            Self::Stream { item, error } => Self::Stream {
+                item: Box::new(recurse(item)?),
+                error: Box::new(recurse(error)?),
+            },
+            Self::Result { ok, error } => Self::Result {
+                ok: Box::new(recurse(ok)?),
+                error: Box::new(recurse(error)?),
+            },
+            Self::Function {
+                params,
+                return_type,
+                effects,
+            } => Self::function_with_effects(
+                params.iter().map(recurse).collect::<Result<Vec<_>, _>>()?,
+                recurse(return_type)?,
+                effects.resolve_partial(substitutions)?,
+            ),
+            Self::Projection {
+                subject,
+                trait_name,
+                assoc,
+            } => Self::Projection {
+                subject: Box::new(recurse(subject)?),
+                trait_name: trait_name.clone(),
+                assoc: assoc.clone(),
+            },
+            Self::Tuple(items) => {
+                Self::Tuple(items.iter().map(recurse).collect::<Result<Vec<_>, _>>()?)
+            }
+            Self::Choice(items) => {
+                Self::Choice(items.iter().map(recurse).collect::<Result<Vec<_>, _>>()?)
+            }
+            other => other.clone(),
+        })
+    }
+
+    pub(crate) fn checked_rebind_effect_rows(
+        &self,
+        prepared: EffectVarIssuer,
+        checked: EffectVarIssuer,
+        authorized_ordinals: &BTreeSet<u32>,
+    ) -> Result<Self, EffectIssuerRebindError> {
+        let substitutions =
+            EffectSubstitution::from_rows(authorized_ordinals.iter().map(|ordinal| {
+                (
+                    EffectVar::issued(prepared, *ordinal),
+                    EffectRow::open(EffectSet::new(), EffectVar::issued(checked, *ordinal)),
+                )
+            }));
+        let rebound = self
+            .substitute_effect_rows(&substitutions)
+            .map_err(|error| match error {
+                EffectRowError::UnknownRow => EffectIssuerRebindError::UnknownRow,
+                EffectRowError::UnboundVariable { .. }
+                | EffectRowError::ConflictingBinding { .. }
+                | EffectRowError::CyclicBinding { .. } => {
+                    unreachable!("fresh one-step issuer rebind cannot conflict or cycle")
+                }
+            })?;
+        validate_rebound_effect_rows(&rebound, prepared, checked, authorized_ordinals)?;
+        Ok(rebound)
+    }
+
     fn substitute_nominal_type_parameters(
         &self,
         substitutions: &BTreeMap<GenericTypeParameterId, TypeKind>,
@@ -378,6 +500,80 @@ impl TypeKind {
             Self::DialogueLine(inner) => Self::DialogueLine(substitute(inner)),
             _ => return None,
         })
+    }
+}
+
+fn validate_rebound_effect_rows(
+    ty: &TypeKind,
+    prepared: EffectVarIssuer,
+    checked: EffectVarIssuer,
+    authorized_ordinals: &BTreeSet<u32>,
+) -> Result<(), EffectIssuerRebindError> {
+    let validate_children = |children: &[TypeKind]| {
+        children.iter().try_for_each(|child| {
+            validate_rebound_effect_rows(child, prepared, checked, authorized_ordinals)
+        })
+    };
+    match ty {
+        TypeKind::Function {
+            params,
+            return_type,
+            effects,
+        } => {
+            match effects.tail() {
+                EffectRowTail::Closed => {}
+                EffectRowTail::Unknown => return Err(EffectIssuerRebindError::UnknownRow),
+                EffectRowTail::Variable(variable)
+                    if variable.issuer() == checked
+                        && authorized_ordinals.contains(&variable.index()) => {}
+                EffectRowTail::Variable(variable) if variable.issuer() == prepared => {
+                    return Err(EffectIssuerRebindError::UnauthorizedVariable { variable });
+                }
+                EffectRowTail::Variable(variable) => {
+                    return Err(EffectIssuerRebindError::ForeignVariable { variable });
+                }
+            }
+            validate_children(params)?;
+            validate_rebound_effect_rows(return_type, prepared, checked, authorized_ordinals)
+        }
+        TypeKind::Range(inner)
+        | TypeKind::Probe(inner)
+        | TypeKind::Vec(inner)
+        | TypeKind::Slice(inner)
+        | TypeKind::Seq(inner)
+        | TypeKind::Need(inner)
+        | TypeKind::Option(inner)
+        | TypeKind::ThreadHandle(inner)
+        | TypeKind::Shared(inner)
+        | TypeKind::DialogueLine(inner)
+        | TypeKind::BorrowRef { inner, .. }
+        | TypeKind::IteratorState { item: inner, .. }
+        | TypeKind::Array { item: inner, .. } => {
+            validate_rebound_effect_rows(inner, prepared, checked, authorized_ordinals)
+        }
+        TypeKind::Ref(entity) => entity.value().map_or(Ok(()), |value| {
+            validate_rebound_effect_rows(value, prepared, checked, authorized_ordinals)
+        }),
+        TypeKind::Map { key, value, .. }
+        | TypeKind::Stream {
+            item: key,
+            error: value,
+        }
+        | TypeKind::Result {
+            ok: key,
+            error: value,
+        } => {
+            validate_rebound_effect_rows(key, prepared, checked, authorized_ordinals)?;
+            validate_rebound_effect_rows(value, prepared, checked, authorized_ordinals)
+        }
+        TypeKind::ProjectNominal(nominal) => validate_children(nominal.arguments()),
+        TypeKind::AcceptedNominal(nominal) => validate_children(nominal.arguments()),
+        TypeKind::OpenNominal(nominal) => validate_children(nominal.arguments()),
+        TypeKind::Projection { subject, .. } => {
+            validate_rebound_effect_rows(subject, prepared, checked, authorized_ordinals)
+        }
+        TypeKind::Tuple(items) | TypeKind::Choice(items) => validate_children(items),
+        _ => Ok(()),
     }
 }
 
@@ -615,11 +811,11 @@ fn observe_type_slices(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::types::{DetachedTypeOwnerId, GenericTypeOwnerId};
+    use crate::types::{DetachedGenericOwnerId, GenericParameterOwnerId};
 
     #[test]
     fn typed_identity_controls_recursive_substitution() {
-        let owner = GenericTypeOwnerId::Detached(DetachedTypeOwnerId::new(7));
+        let owner = GenericParameterOwnerId::Detached(DetachedGenericOwnerId::new(7));
         let selected = GenericTypeParameterId::new(owner.clone(), 0);
         let untouched = GenericTypeParameterId::new(owner, 1);
         let ty = TypeKind::Result {
@@ -641,7 +837,7 @@ mod tests {
 
     #[test]
     fn observation_specializes_a_nested_result_error() {
-        let owner = GenericTypeOwnerId::Detached(DetachedTypeOwnerId::new(11));
+        let owner = GenericParameterOwnerId::Detached(DetachedGenericOwnerId::new(11));
         let error = GenericTypeParameterId::new(owner, 0);
         let declared = TypeKind::Result {
             ok: Box::new(TypeKind::I64),
@@ -662,7 +858,7 @@ mod tests {
 
     #[test]
     fn conflicting_observation_does_not_commit_partial_bindings() {
-        let owner = GenericTypeOwnerId::Detached(DetachedTypeOwnerId::new(12));
+        let owner = GenericParameterOwnerId::Detached(DetachedGenericOwnerId::new(12));
         let item = GenericTypeParameterId::new(owner.clone(), 0);
         let error = GenericTypeParameterId::new(owner, 1);
         let mut substitutions = TypeParameterSubstitutions::default();
@@ -687,7 +883,7 @@ mod tests {
 
     #[test]
     fn resolved_application_only_exposes_concrete_expected_types() {
-        let owner = GenericTypeOwnerId::Detached(DetachedTypeOwnerId::new(13));
+        let owner = GenericParameterOwnerId::Detached(DetachedGenericOwnerId::new(13));
         let item = GenericTypeParameterId::new(owner, 0);
         let declared = TypeKind::Option(Box::new(TypeKind::GenericParam(item.clone())));
         let mut substitutions = TypeParameterSubstitutions::default();

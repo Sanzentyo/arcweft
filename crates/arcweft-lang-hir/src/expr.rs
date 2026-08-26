@@ -32,8 +32,9 @@ pub(crate) use self::call::{
 };
 pub(crate) use self::child_edges::HirRecoveryOperandSlot;
 pub use self::child_edges::{
-    HirExpressionChildEdge, HirExpressionChildEdgeError, HirExpressionChildRole,
-    HirNestedExpressionPath, HirNestedExpressionPathError, HirNestedExpressionPathSegment,
+    HirExpressionChildEdge, HirExpressionChildEdgeError, HirExpressionChildOwnership,
+    HirExpressionChildRole, HirNestedExpressionPath, HirNestedExpressionPathError,
+    HirNestedExpressionPathSegment,
 };
 pub(crate) use self::choice::HirChoiceRequiredExpressionSlot;
 pub use self::choice::{

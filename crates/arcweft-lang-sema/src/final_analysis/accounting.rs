@@ -4,6 +4,7 @@
 use std::cell::Cell;
 use std::sync::atomic::{AtomicBool, Ordering};
 
+use super::analyzer::PhysicalCallAttemptId;
 use super::{
     AssertionBuildProfile, CallableArgumentSlotIndex, CallableCandidateId,
     CheckedCallArgumentSlotSource, ExprId, FinalSemanticAnalysisError, HirCallArgumentOrdinal,
@@ -110,7 +111,6 @@ pub struct FinalSemanticAnalysisWork {
 pub(crate) enum CandidateEvaluationPass {
     Probe,
     SelectedReplay,
-    RejectedRecoveryReplay,
 }
 
 /// Candidate-specific expectation in force at one physical evaluation.
@@ -122,7 +122,7 @@ pub(crate) enum CandidateExpectedType {
 }
 
 /// Structural source family physically evaluated for one candidate slot.
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub(crate) enum PhysicalArgumentEvaluationKind {
     Authored,
     Recovered,
@@ -157,13 +157,29 @@ impl PhysicalCandidateArgument {
             expected,
         }
     }
+
+    pub(crate) const fn argument(&self) -> HirCallArgumentOrdinal {
+        self.argument
+    }
+
+    pub(crate) const fn slot(&self) -> CallableArgumentSlotIndex {
+        self.slot
+    }
+
+    pub(crate) const fn source(&self) -> CheckedCallArgumentSlotSource {
+        self.source
+    }
+
+    pub(crate) const fn kind(&self) -> PhysicalArgumentEvaluationKind {
+        self.kind
+    }
 }
 
 /// One bounded, typed observation emitted immediately before a real slot
 /// evaluation. Rolled-back candidate semantics never erase this record.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub(crate) struct PhysicalCandidateArgumentEvaluation {
-    call_expression: ExprId,
+    attempt: PhysicalCallAttemptId,
     candidate: CallableCandidateId,
     pass: CandidateEvaluationPass,
     argument: HirCallArgumentOrdinal,
@@ -174,14 +190,14 @@ pub(crate) struct PhysicalCandidateArgumentEvaluation {
 }
 
 impl PhysicalCandidateArgumentEvaluation {
-    pub(crate) fn new(
-        call_expression: ExprId,
+    pub(in crate::final_analysis) fn new(
+        attempt: PhysicalCallAttemptId,
         candidate: CallableCandidateId,
         pass: CandidateEvaluationPass,
         argument: PhysicalCandidateArgument,
     ) -> Self {
         Self {
-            call_expression,
+            attempt,
             candidate,
             pass,
             argument: argument.argument,
@@ -193,7 +209,11 @@ impl PhysicalCandidateArgumentEvaluation {
     }
 
     pub(crate) const fn call_expression(&self) -> ExprId {
-        self.call_expression
+        self.attempt.owner()
+    }
+
+    pub(in crate::final_analysis) const fn attempt(&self) -> &PhysicalCallAttemptId {
+        &self.attempt
     }
 
     #[cfg(test)]
@@ -227,6 +247,15 @@ impl PhysicalCandidateArgumentEvaluation {
     #[cfg(test)]
     pub(crate) const fn expected(&self) -> &CandidateExpectedType {
         &self.expected
+    }
+
+    pub(crate) fn same_candidate_slot(&self, other: &Self) -> bool {
+        self.attempt.same_operational_attempt(&other.attempt)
+            && self.candidate == other.candidate
+            && self.pass == other.pass
+            && self.argument == other.argument
+            && self.slot == other.slot
+            && self.source == other.source
     }
 }
 

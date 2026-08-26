@@ -7,6 +7,246 @@ use serde_json;
 use crate::model::McpToolDescriptor;
 use crate::repl_command::MCP_REPL_COMMAND_TOOL;
 
+/// Closed wire-key authority for `arcweft.script.run`.
+///
+/// The schema and transport parser both derive their accepted key set from
+/// [`Self::ALL`]. Unknown keys are rejected at the transport boundary.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum AgentScriptRunArgument {
+    Path,
+    ControllerEntry,
+    NativeSource,
+    Manifest,
+    Profile,
+    Entry,
+    Executor,
+    PureBackend,
+    PureWorkers,
+    PureBatchMinLen,
+    PureObjectArtifacts,
+    MathBackend,
+    MathWgpuMinElements,
+    NativeSteps,
+    NativeMode,
+    NativeMaxOps,
+    MaxSteps,
+    MaxOps,
+    ViewValues,
+    Signals,
+    State,
+    TraceOut,
+    BlobDir,
+    DebugDb,
+    RunId,
+    ViewportWidth,
+    ViewportHeight,
+    CaptureTime,
+}
+
+impl AgentScriptRunArgument {
+    /// Every accepted `arcweft.script.run` argument, in schema order.
+    pub const ALL: &'static [Self] = &[
+        Self::Path,
+        Self::ControllerEntry,
+        Self::NativeSource,
+        Self::Manifest,
+        Self::Profile,
+        Self::Entry,
+        Self::Executor,
+        Self::PureBackend,
+        Self::PureWorkers,
+        Self::PureBatchMinLen,
+        Self::PureObjectArtifacts,
+        Self::MathBackend,
+        Self::MathWgpuMinElements,
+        Self::NativeSteps,
+        Self::NativeMode,
+        Self::NativeMaxOps,
+        Self::MaxSteps,
+        Self::MaxOps,
+        Self::ViewValues,
+        Self::Signals,
+        Self::State,
+        Self::TraceOut,
+        Self::BlobDir,
+        Self::DebugDb,
+        Self::RunId,
+        Self::ViewportWidth,
+        Self::ViewportHeight,
+        Self::CaptureTime,
+    ];
+
+    /// Returns the exact wire key for this argument.
+    #[must_use]
+    pub const fn as_str(self) -> &'static str {
+        match self {
+            Self::Path => "path",
+            Self::ControllerEntry => "controller_entry",
+            Self::NativeSource => "native_source",
+            Self::Manifest => "manifest",
+            Self::Profile => "profile",
+            Self::Entry => "entry",
+            Self::Executor => "executor",
+            Self::PureBackend => "pure_backend",
+            Self::PureWorkers => "pure_workers",
+            Self::PureBatchMinLen => "pure_batch_min_len",
+            Self::PureObjectArtifacts => "pure_object_artifacts",
+            Self::MathBackend => "math_backend",
+            Self::MathWgpuMinElements => "math_wgpu_min_elements",
+            Self::NativeSteps => "native_steps",
+            Self::NativeMode => "native_mode",
+            Self::NativeMaxOps => "native_max_ops",
+            Self::MaxSteps => "max_steps",
+            Self::MaxOps => "max_ops",
+            Self::ViewValues => "view_values",
+            Self::Signals => "signals",
+            Self::State => "state",
+            Self::TraceOut => "trace_out",
+            Self::BlobDir => "blob_dir",
+            Self::DebugDb => "debug_db",
+            Self::RunId => "run_id",
+            Self::ViewportWidth => "viewport_width",
+            Self::ViewportHeight => "viewport_height",
+            Self::CaptureTime => "capture_time",
+        }
+    }
+
+    /// Resolves a wire key through the closed argument authority.
+    #[must_use]
+    pub fn parse(value: &str) -> Option<Self> {
+        Self::ALL
+            .iter()
+            .copied()
+            .find(|argument| argument.as_str() == value)
+    }
+
+    fn schema(self) -> serde_json::Value {
+        match self {
+            Self::Path => serde_json::json!({
+                "type": "string",
+                "description": "Path to a .awfagent source file or .awfb Agent controller bundle."
+            }),
+            Self::ControllerEntry => serde_json::json!({
+                "type": "string",
+                "pattern": "^entry\\.",
+                "default": "entry.agent.main"
+            }),
+            Self::NativeSource => serde_json::json!({
+                "type": "string",
+                "description": "Optional .arcw source to run the Agent script against using the native Agent session."
+            }),
+            Self::Manifest => serde_json::json!({
+                "type": "string",
+                "description": "Launch manifest path for profile-based native Agent session. Defaults to arcw.toml when profile is supplied."
+            }),
+            Self::Profile => serde_json::json!({
+                "type": "string",
+                "description": "Optional launch profile for the native Agent session. Mutually exclusive with native_source."
+            }),
+            Self::Entry => serde_json::json!({
+                "type": "string",
+                "pattern": "^entry\\.",
+                "description": "Exact canonical native launch entry. Required with native_source."
+            }),
+            Self::Executor => serde_json::json!({
+                "type": "string",
+                "enum": ["bytecode-vm", "aot"],
+                "default": "bytecode-vm"
+            }),
+            Self::PureBackend => serde_json::json!({
+                "type": "string",
+                "enum": ["auto", "vm", "aot", "jit"]
+            }),
+            Self::PureWorkers => serde_json::json!({
+                "oneOf": [
+                    { "type": "string", "enum": ["auto"] },
+                    { "type": "integer", "minimum": 1 }
+                ]
+            }),
+            Self::PureBatchMinLen => serde_json::json!({ "type": "integer", "minimum": 1 }),
+            Self::PureObjectArtifacts => serde_json::json!({
+                "type": "boolean",
+                "default": false
+            }),
+            Self::MathBackend => serde_json::json!({
+                "type": "string",
+                "enum": ["auto", "scalar", "glam", "ndarray", "wgpu"]
+            }),
+            Self::MathWgpuMinElements => serde_json::json!({
+                "type": "integer",
+                "minimum": 1
+            }),
+            Self::NativeSteps => serde_json::json!({
+                "type": "integer",
+                "minimum": 1,
+                "default": 8
+            }),
+            Self::NativeMode => serde_json::json!({
+                "type": "string",
+                "enum": ["one-op", "drain", "game", "server"],
+                "default": "drain"
+            }),
+            Self::NativeMaxOps => serde_json::json!({
+                "type": "integer",
+                "minimum": 1,
+                "default": 64
+            }),
+            Self::MaxSteps => serde_json::json!({
+                "type": "integer",
+                "minimum": 1,
+                "default": 256
+            }),
+            Self::MaxOps => serde_json::json!({
+                "type": "integer",
+                "minimum": 1,
+                "default": 1024
+            }),
+            Self::ViewValues => serde_json::json!({
+                "type": "object",
+                "description": "View root values keyed by binding name, using the same bool/string/integer value syntax as arcw --view-value."
+            }),
+            Self::Signals => serde_json::json!({
+                "type": "object",
+                "description": "Deterministic CLI-session signal values keyed by signal id, using JSON bool/string/integer values."
+            }),
+            Self::State => serde_json::json!({
+                "type": "object",
+                "description": "Deterministic CLI-session debug state values keyed by dotted state path, using JSON bool/string/integer values."
+            }),
+            Self::TraceOut => serde_json::json!({
+                "type": "string",
+                "description": "Optional .arcwx trace output path."
+            }),
+            Self::BlobDir => serde_json::json!({
+                "type": "string",
+                "description": "Optional directory for byte-backed capture blobs."
+            }),
+            Self::DebugDb => serde_json::json!({
+                "type": "string",
+                "description": "Optional Agent debug database path."
+            }),
+            Self::RunId => serde_json::json!({
+                "type": "string",
+                "default": "run.cli"
+            }),
+            Self::ViewportWidth => serde_json::json!({
+                "type": "integer",
+                "minimum": 1,
+                "default": 1280
+            }),
+            Self::ViewportHeight => serde_json::json!({
+                "type": "integer",
+                "minimum": 1,
+                "default": 720
+            }),
+            Self::CaptureTime => serde_json::json!({
+                "type": "number",
+                "minimum": 0
+            }),
+        }
+    }
+}
+
 pub fn agent_tool_descriptors() -> Vec<McpToolDescriptor> {
     vec![
         agent_observe_tool_descriptor(),
@@ -58,54 +298,18 @@ fn agent_repl_command_tool_descriptor() -> McpToolDescriptor {
 }
 
 fn agent_script_run_tool_descriptor() -> McpToolDescriptor {
+    let properties = AgentScriptRunArgument::ALL
+        .iter()
+        .map(|argument| (argument.as_str().to_owned(), argument.schema()))
+        .collect::<serde_json::Map<_, _>>();
     McpToolDescriptor {
         name: "arcweft.script.run".to_owned(),
         title: Some("Run Arcweft Agent Script".to_owned()),
         description: "Runs a .awfagent source or .awfb Agent controller bundle through the shared Agent Script runner and returns the structured run report.".to_owned(),
         input_schema: serde_json::json!({
             "type": "object",
-            "properties": {
-                "path": { "type": "string", "description": "Path to a .awfagent source file or .awfb Agent controller bundle." },
-                "native_source": { "type": "string", "description": "Optional .arcw source to run the Agent script against using the native Agent session." },
-                "manifest": { "type": "string", "description": "Launch manifest path for profile-based native Agent session. Defaults to arcw.toml when profile is supplied." },
-                "profile": { "type": "string", "description": "Optional launch profile for the native Agent session. Mutually exclusive with native_source." },
-                "entry": { "type": "string", "pattern": "^entry\\.", "description": "Exact canonical native launch entry. Required with native_source." },
-                "executor": { "type": "string", "enum": ["bytecode-vm", "aot"], "default": "bytecode-vm" },
-                "pure_backend": { "type": "string", "enum": ["auto", "vm", "aot", "jit"] },
-                "pure_workers": {
-                    "oneOf": [
-                        { "type": "string", "enum": ["auto"] },
-                        { "type": "integer", "minimum": 1 }
-                    ]
-                },
-                "pure_batch_min_len": { "type": "integer", "minimum": 1 },
-                "pure_object_artifacts": { "type": "boolean", "default": false },
-                "math_backend": { "type": "string", "enum": ["auto", "scalar", "glam", "ndarray", "wgpu"] },
-                "math_wgpu_min_elements": { "type": "integer", "minimum": 1 },
-                "native_steps": { "type": "integer", "minimum": 1, "default": 8 },
-                "native_mode": { "type": "string", "enum": ["one-op", "drain", "game", "server"], "default": "drain" },
-                "native_max_ops": { "type": "integer", "minimum": 1, "default": 64 },
-                "max_steps": { "type": "integer", "minimum": 1, "default": 256 },
-                "max_ops": { "type": "integer", "minimum": 1, "default": 1024 },
-                "values": {
-                    "type": "object",
-                    "description": "Native runtime root bindings keyed by binding name, using the same bool/string/integer value syntax as arcw --value."
-                },
-                "signals": {
-                    "type": "object",
-                    "description": "Deterministic CLI-session signal values keyed by signal id, using JSON bool/string/integer values."
-                },
-                "state": {
-                    "type": "object",
-                    "description": "Deterministic CLI-session debug state values keyed by dotted state path, using JSON bool/string/integer values."
-                },
-                "trace_out": { "type": "string", "description": "Optional .arcwx trace output path." },
-                "blob_dir": { "type": "string", "description": "Optional directory for byte-backed capture blobs." },
-                "run_id": { "type": "string", "default": "run.cli" },
-                "viewport_width": { "type": "integer", "minimum": 1, "default": 1280 },
-                "viewport_height": { "type": "integer", "minimum": 1, "default": 720 },
-                "capture_time": { "type": "number", "minimum": 0 }
-            },
+            "properties": properties,
+            "additionalProperties": false,
             "required": ["path"],
             "dependentRequired": {
                 "native_source": ["entry"]

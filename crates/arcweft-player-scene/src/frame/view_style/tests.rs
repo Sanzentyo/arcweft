@@ -1323,6 +1323,7 @@ fn empty_mount() -> BundleViewMountOutput {
         paint: Vec::new(),
         text: Vec::new(),
         fx: Vec::new(),
+        events: Vec::new(),
         style_nodes: Vec::new(),
     }
 }

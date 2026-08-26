@@ -1,7 +1,10 @@
 use crate::entry::{
     EntryBindingIdentity, RuntimeCallableRole, RuntimeEntryRoles, RuntimeFlowExecutable,
 };
-use crate::pattern::RuntimeOpaqueTypeAdmission;
+use crate::pattern::{
+    RuntimeCheckedType, RuntimeOpaqueTypeAdmission, RuntimeSemanticTypeId,
+    RuntimeSemanticTypeIdentityEncoder,
+};
 use crate::plan::{FlowRuntimeId, RuntimeAgentOperationalType, RuntimeFlowTargetError};
 use crate::runtime_id::{
     RuntimeDialogueMarkId, RuntimeDialogueValueSlotId, RuntimeLocalDeclarationId,
@@ -144,6 +147,7 @@ pub struct AwbcProgram {
     pub line_task_nodes: Vec<AwbcLineTaskNode>,
     pub stream_plans: Vec<AwbcStreamPlan>,
     pub pure_helpers: Vec<AwbcPureHelper>,
+    pub pure_programs: Vec<AwbcPureProgramBinding>,
     pub trait_methods: Vec<AwbcTraitMethod>,
     pub display_map: Vec<AwbcDisplayMapEntry>,
     pub source_map: Vec<AwbcSourceMapEntry>,
@@ -159,7 +163,7 @@ impl Default for AwbcProgram {
         Self {
             header: AwbcHeader::default(),
             strings: Vec::new(),
-            runtime_types: vec![AwbcRuntimeType::Unit, AwbcRuntimeType::Dynamic],
+            runtime_types: vec![AwbcRuntimeType::unit(), AwbcRuntimeType::dynamic()],
             constants: Vec::new(),
             effect_sets: vec![AwbcEffectSet::default()],
             signatures: Vec::new(),
@@ -182,6 +186,7 @@ impl Default for AwbcProgram {
             line_task_nodes: Vec::new(),
             stream_plans: Vec::new(),
             pure_helpers: Vec::new(),
+            pure_programs: Vec::new(),
             trait_methods: Vec::new(),
             display_map: Vec::new(),
             source_map: Vec::new(),
@@ -211,6 +216,29 @@ impl AwbcProgram {
             .iter()
             .find(|binding| binding.function == function)
             .map(|binding| &binding.flow)
+    }
+
+    /// Resolves one stable domain-owned pure program to its exact helper row.
+    #[must_use]
+    pub fn pure_program_helper(
+        &self,
+        program: arcweft_id::runtime_program::RuntimePureProgramId,
+    ) -> Option<AwbcPureHelperId> {
+        self.pure_programs
+            .iter()
+            .find(|binding| binding.program == program)
+            .map(|binding| binding.helper)
+    }
+
+    /// Resolves the complete semantic signature sealed for one pure program.
+    #[must_use]
+    pub fn pure_program_binding(
+        &self,
+        program: arcweft_id::runtime_program::RuntimePureProgramId,
+    ) -> Option<&AwbcPureProgramBinding> {
+        self.pure_programs
+            .iter()
+            .find(|binding| binding.program == program)
     }
 
     /// Resolves runtime-authored target text through the persisted accepted
@@ -328,9 +356,6 @@ fn visit_program_strings(program: &mut AwbcProgram, visitor: &mut dyn FnMut(&mut
     for pattern in &mut program.patterns {
         visit_pattern_strings(pattern, visitor);
     }
-    for intrinsic in &mut program.intrinsics {
-        visit_string_id(&mut intrinsic.public_id, visitor);
-    }
     for call in &mut program.host_calls {
         visit_string_id(&mut call.public_id, visitor);
         visit_string_id(&mut call.capability, visitor);
@@ -407,14 +432,14 @@ fn visit_runtime_type_strings(
     ty: &mut AwbcRuntimeType,
     visitor: &mut dyn FnMut(&mut AwbcStringId),
 ) {
-    match ty {
-        AwbcRuntimeType::Record { public_id, fields } => {
+    match &mut ty.shape {
+        AwbcRuntimeTypeShape::Record { public_id, fields } => {
             visit_optional_string_id(public_id, visitor);
             for field in fields {
                 visit_string_id(&mut field.name, visitor);
             }
         }
-        AwbcRuntimeType::Variant { owner, cases } => {
+        AwbcRuntimeTypeShape::Variant { owner, cases, .. } => {
             if let AwbcVariantIdentity::Nominal { public_id, .. } = owner {
                 visit_string_id(public_id, visitor);
             }
@@ -422,8 +447,8 @@ fn visit_runtime_type_strings(
                 visit_string_id(&mut case.name, visitor);
             }
         }
-        AwbcRuntimeType::Nominal { public_id, .. } => visit_string_id(public_id, visitor),
-        AwbcRuntimeType::NominalRecord {
+        AwbcRuntimeTypeShape::Nominal { public_id, .. } => visit_string_id(public_id, visitor),
+        AwbcRuntimeTypeShape::NominalRecord {
             public_id, fields, ..
         } => {
             visit_string_id(public_id, visitor);
@@ -431,31 +456,39 @@ fn visit_runtime_type_strings(
                 visit_string_id(&mut field.name, visitor);
             }
         }
-        AwbcRuntimeType::Opaque { producer, .. } => visit_string_id(producer, visitor),
-        AwbcRuntimeType::Unit
-        | AwbcRuntimeType::Bool
-        | AwbcRuntimeType::Int(_)
-        | AwbcRuntimeType::UInt(_)
-        | AwbcRuntimeType::Bytes
-        | AwbcRuntimeType::Never
-        | AwbcRuntimeType::F32
-        | AwbcRuntimeType::F64
-        | AwbcRuntimeType::String
-        | AwbcRuntimeType::Char
-        | AwbcRuntimeType::Duration
-        | AwbcRuntimeType::Progress
-        | AwbcRuntimeType::EntityRef
-        | AwbcRuntimeType::Tuple(_)
-        | AwbcRuntimeType::Sequence(_)
-        | AwbcRuntimeType::Choice(_)
-        | AwbcRuntimeType::MatrixF32
-        | AwbcRuntimeType::MatrixF64
-        | AwbcRuntimeType::TensorF32
-        | AwbcRuntimeType::TensorF64
-        | AwbcRuntimeType::TaskHandle
-        | AwbcRuntimeType::NeedHandle
-        | AwbcRuntimeType::Agent(_)
-        | AwbcRuntimeType::Dynamic => {}
+        AwbcRuntimeTypeShape::Opaque { producer, .. } => visit_string_id(producer, visitor),
+        AwbcRuntimeTypeShape::Unit
+        | AwbcRuntimeTypeShape::Bool
+        | AwbcRuntimeTypeShape::Int(_)
+        | AwbcRuntimeTypeShape::UInt(_)
+        | AwbcRuntimeTypeShape::Bytes
+        | AwbcRuntimeTypeShape::Never
+        | AwbcRuntimeTypeShape::F32
+        | AwbcRuntimeTypeShape::F64
+        | AwbcRuntimeTypeShape::String
+        | AwbcRuntimeTypeShape::Char
+        | AwbcRuntimeTypeShape::Duration
+        | AwbcRuntimeTypeShape::Progress
+        | AwbcRuntimeTypeShape::EntityRef
+        | AwbcRuntimeTypeShape::Tuple(_)
+        | AwbcRuntimeTypeShape::Sequence(_)
+        | AwbcRuntimeTypeShape::Choice(_)
+        | AwbcRuntimeTypeShape::MatrixF32
+        | AwbcRuntimeTypeShape::MatrixF64
+        | AwbcRuntimeTypeShape::TensorF32
+        | AwbcRuntimeTypeShape::TensorF64
+        | AwbcRuntimeTypeShape::Range(_)
+        | AwbcRuntimeTypeShape::Iterator(_)
+        | AwbcRuntimeTypeShape::Array { .. }
+        | AwbcRuntimeTypeShape::Map { .. }
+        | AwbcRuntimeTypeShape::Need(_)
+        | AwbcRuntimeTypeShape::Task(_)
+        | AwbcRuntimeTypeShape::Stream { .. }
+        | AwbcRuntimeTypeShape::Shared(_)
+        | AwbcRuntimeTypeShape::Reference(_)
+        | AwbcRuntimeTypeShape::Function { .. }
+        | AwbcRuntimeTypeShape::Agent(_)
+        | AwbcRuntimeTypeShape::Dynamic => {}
     }
 }
 
@@ -563,21 +596,12 @@ fn visit_entry_target_strings(
 ) {
     if let AwbcEntryTarget::Routes(routes) = target {
         for route in routes {
-            visit_string_id(&mut route.method, visitor);
-            visit_string_id(&mut route.path, visitor);
-            for binding in &mut route.bindings {
-                visit_route_binding_source_strings(&mut binding.source, visitor);
+            for segment in &mut route.segments {
+                if let AwbcRouteSegment::Literal(literal) = segment {
+                    visit_string_id(literal, visitor);
+                }
             }
         }
-    }
-}
-
-fn visit_route_binding_source_strings(
-    source: &mut AwbcRouteBindingSource,
-    visitor: &mut dyn FnMut(&mut AwbcStringId),
-) {
-    match source {
-        AwbcRouteBindingSource::PathParameter(id) => visit_string_id(id, visitor),
     }
 }
 
@@ -604,8 +628,121 @@ impl Default for AwbcHeader {
 }
 
 /// Runtime value layout visible to both the compact VM and compiled regions.
+/// One total semantic type owner in the AWBC runtime-type table.
+///
+/// The semantic identity and executable shape are inseparable. Every
+/// instruction signature therefore retains the checked identity even when its
+/// operational ABI is structurally primitive.
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
-pub enum AwbcRuntimeType {
+pub struct AwbcRuntimeType {
+    semantic_identity: RuntimeSemanticTypeId,
+    shape: AwbcRuntimeTypeShape,
+}
+
+impl AwbcRuntimeType {
+    #[must_use]
+    pub const fn new(
+        semantic_identity: RuntimeSemanticTypeId,
+        shape: AwbcRuntimeTypeShape,
+    ) -> Self {
+        Self {
+            semantic_identity,
+            shape,
+        }
+    }
+
+    #[must_use]
+    pub fn unit() -> Self {
+        Self::new(
+            RuntimeCheckedType::Unit.semantic_identity_digest(),
+            AwbcRuntimeTypeShape::Unit,
+        )
+    }
+
+    #[must_use]
+    pub fn dynamic() -> Self {
+        Self::new(
+            AwbcSyntheticRuntimeTypeKind::Dynamic.semantic_identity(),
+            AwbcRuntimeTypeShape::Dynamic,
+        )
+    }
+
+    #[must_use]
+    pub const fn semantic_identity(&self) -> RuntimeSemanticTypeId {
+        self.semantic_identity
+    }
+
+    #[must_use]
+    pub const fn shape(&self) -> &AwbcRuntimeTypeShape {
+        &self.shape
+    }
+}
+
+/// Closed identity owner for executable AWBC shapes that have no checked
+/// language type. Plan-backed types never use this domain.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum AwbcSyntheticRuntimeTypeKind {
+    Dynamic,
+    MatrixF32,
+    MatrixF64,
+    TensorF32,
+    TensorF64,
+}
+
+impl AwbcSyntheticRuntimeTypeKind {
+    /// Returns the collision-separated semantic identity for this complete
+    /// synthetic runtime shape.
+    #[must_use]
+    pub fn semantic_identity(&self) -> RuntimeSemanticTypeId {
+        let mut encoder = RuntimeSemanticTypeIdentityEncoder::new();
+        match self {
+            Self::Dynamic => encoder.write_tag(0xff00),
+            Self::MatrixF32 => encoder.write_tag(0xff01),
+            Self::MatrixF64 => encoder.write_tag(0xff02),
+            Self::TensorF32 => encoder.write_tag(0xff03),
+            Self::TensorF64 => encoder.write_tag(0xff04),
+        }
+        encoder.finish()
+    }
+}
+
+/// Closed structural identity owner for runtime-only container shapes.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum AwbcStructuralRuntimeTypeKind {
+    Record {
+        public_id: Option<String>,
+        fields: Vec<(String, RuntimeSemanticTypeId)>,
+    },
+}
+
+impl AwbcStructuralRuntimeTypeKind {
+    #[must_use]
+    pub fn semantic_identity(&self) -> RuntimeSemanticTypeId {
+        let mut encoder = RuntimeSemanticTypeIdentityEncoder::new();
+        match self {
+            Self::Record { public_id, fields } => {
+                encoder.write_tag(0xff20);
+                match public_id {
+                    Some(public_id) => {
+                        encoder.write_u8(1);
+                        encoder.write_str(public_id);
+                    }
+                    None => encoder.write_u8(0),
+                }
+                encoder.write_len(fields.len());
+                for (name, semantic_identity) in fields {
+                    encoder.write_str(name);
+                    encoder.write_bytes(semantic_identity.as_bytes());
+                }
+            }
+        }
+        encoder.finish()
+    }
+}
+
+/// Closed executable shape owned by one [`AwbcRuntimeType`] row.
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+pub enum AwbcRuntimeTypeShape {
     Unit,
     Bool,
     Int(AwbcSignedIntKind),
@@ -625,6 +762,9 @@ pub enum AwbcRuntimeType {
     },
     Variant {
         owner: AwbcVariantIdentity,
+        /// Ordered project-nominal generic arguments. Built-in variants keep
+        /// this empty because their payload edges already own the parameters.
+        arguments: Vec<AwbcTypeId>,
         cases: Vec<AwbcVariantCase>,
     },
     /// One of several closed structural alternatives.
@@ -632,20 +772,19 @@ pub enum AwbcRuntimeType {
     /// Checked nominal identity shared by project and standard runtime types.
     Nominal {
         public_id: AwbcStringId,
-        semantic_identity: [u8; 32],
         layout: [u8; 32],
+        arguments: Vec<AwbcTypeId>,
     },
     /// Executable nominal-record descriptor in defining field order.
     NominalRecord {
         public_id: AwbcStringId,
-        semantic_identity: [u8; 32],
         layout: [u8; 32],
+        arguments: Vec<AwbcTypeId>,
         fields: Vec<AwbcRecordField>,
     },
     /// Opaque checked-type identity and its producer-owned admission rule.
     Opaque {
         producer: AwbcStringId,
-        semantic_identity: [u8; 32],
         admission: RuntimeOpaqueTypeAdmission,
         value_class: crate::value::RuntimeOpaqueValueClass,
         persistence: crate::value::RuntimeOpaquePersistence,
@@ -658,23 +797,57 @@ pub enum AwbcRuntimeType {
     Never,
     /// Closed Agent runtime family. Exact semantic identity remains in the
     /// runtime-plan facts; this type selects the executable value carrier.
-    Agent(RuntimeAgentOperationalType),
+    Agent(AwbcAgentTypeShape),
     MatrixF32,
     MatrixF64,
     TensorF32,
     TensorF64,
-    TaskHandle,
-    NeedHandle,
+    Range(AwbcTypeId),
+    Iterator(AwbcTypeId),
+    Array {
+        item: AwbcTypeId,
+        length: u64,
+    },
+    Map {
+        key: AwbcTypeId,
+        value: AwbcTypeId,
+    },
+    Need(AwbcTypeId),
+    Task(AwbcTypeId),
+    Stream {
+        item: AwbcTypeId,
+        error: AwbcTypeId,
+    },
+    Shared(AwbcTypeId),
+    Reference(AwbcTypeId),
+    Function {
+        parameters: Vec<AwbcTypeId>,
+        result: AwbcTypeId,
+    },
     Dynamic,
+}
+
+/// Exact Agent runtime type graph retained by an AWBC row.
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+pub enum AwbcAgentTypeShape {
+    Leaf(RuntimeAgentOperationalType),
+    Probe(AwbcTypeId),
+}
+
+impl AwbcAgentTypeShape {
+    #[must_use]
+    pub const fn operational_type(&self) -> RuntimeAgentOperationalType {
+        match self {
+            Self::Leaf(value) => *value,
+            Self::Probe(_) => RuntimeAgentOperationalType::Probe,
+        }
+    }
 }
 
 /// Closed semantic owner for an AWBC variant type.
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub enum AwbcVariantIdentity {
-    Nominal {
-        public_id: AwbcStringId,
-        semantic_identity: [u8; 32],
-    },
+    Nominal { public_id: AwbcStringId },
     Option,
     Result,
 }
@@ -892,6 +1065,7 @@ pub enum AwbcOpcode {
     ProjectTuple,
     ProjectRecord,
     ProjectField,
+    ProjectOpaqueRecordField,
     Unary,
     Binary,
     CallPureHelper,
@@ -970,6 +1144,7 @@ impl AwbcOpcode {
             Self::ApplyFunction => 0x26,
             Self::MakeAgent => 0x27,
             Self::MakeReductionUnchanged => 0x28,
+            Self::ProjectOpaqueRecordField => 0x29,
             Self::Jump => 0x80,
             Self::Branch => 0x81,
             Self::Match => 0x82,
@@ -1029,6 +1204,7 @@ impl AwbcOpcode {
             0x26 => Self::ApplyFunction,
             0x27 => Self::MakeAgent,
             0x28 => Self::MakeReductionUnchanged,
+            0x29 => Self::ProjectOpaqueRecordField,
             0x80 => Self::Jump,
             0x81 => Self::Branch,
             0x82 => Self::Match,
@@ -1141,6 +1317,18 @@ pub enum AwbcInstruction {
         dst: AwbcRegisterId,
         target: AwbcRegisterId,
         field: AwbcStringId,
+    },
+    /// Projects one ordinal from an exact opaque-record payload.
+    ///
+    /// `owner` is the complete checked opaque owner carried by the target
+    /// register and `field_type` is the sealed runtime type of the selected
+    /// payload position. The VM must validate both before exposing the value.
+    ProjectOpaqueRecordField {
+        dst: AwbcRegisterId,
+        target: AwbcRegisterId,
+        owner: AwbcTypeId,
+        field: u32,
+        field_type: AwbcTypeId,
     },
     Unary {
         dst: AwbcRegisterId,
@@ -1258,6 +1446,7 @@ impl AwbcInstruction {
             Self::ProjectTuple { .. } => AwbcOpcode::ProjectTuple,
             Self::ProjectRecord { .. } => AwbcOpcode::ProjectRecord,
             Self::ProjectField { .. } => AwbcOpcode::ProjectField,
+            Self::ProjectOpaqueRecordField { .. } => AwbcOpcode::ProjectOpaqueRecordField,
             Self::Unary { .. } => AwbcOpcode::Unary,
             Self::Binary { .. } => AwbcOpcode::Binary,
             Self::CallPureHelper { .. } => AwbcOpcode::CallPureHelper,
@@ -1550,8 +1739,7 @@ pub struct AwbcMatchArm {
 /// Pure, deterministic intrinsic resolved by the runtime's typed registry.
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub struct AwbcIntrinsic {
-    pub public_id: AwbcStringId,
-    pub registry_code: u32,
+    pub identity: crate::value::RuntimeCallTarget,
     pub signature: AwbcSignatureId,
     pub revision: u32,
 }
@@ -1561,6 +1749,7 @@ pub struct AwbcHostCall {
     pub public_id: AwbcStringId,
     pub capability: AwbcStringId,
     pub operation: AwbcStringId,
+    pub contract: Option<crate::step::HostCallContractDigest>,
     pub signature: AwbcSignatureId,
     pub mode: AwbcHostCallMode,
     pub deterministic: bool,
@@ -2009,10 +2198,20 @@ pub struct AwbcPureHelper {
     pub origin: AwbcPureHelperOrigin,
 }
 
+/// Exact stable pure-program identity mapped to one verified helper row.
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+pub struct AwbcPureProgramBinding {
+    pub program: arcweft_id::runtime_program::RuntimePureProgramId,
+    pub helper: AwbcPureHelperId,
+    pub input_types: Vec<RuntimeSemanticTypeId>,
+    pub result_type: RuntimeSemanticTypeId,
+}
+
 #[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub enum AwbcPureHelperOrigin {
     Annotated,
     Inferred,
+    EngineOwned,
 }
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
@@ -2061,7 +2260,6 @@ pub struct AwbcEntry {
     pub binding: EntryBindingIdentity,
     pub public_id: AwbcStringId,
     pub kind: AwbcEntryKind,
-    pub signature: AwbcSignatureId,
     pub target: AwbcEntryTarget,
     pub roles: RuntimeEntryRoles,
 }
@@ -2128,7 +2326,7 @@ impl AwbcEntryKind {
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub enum AwbcEntryTarget {
-    Function(AwbcFunctionId),
+    Function { function: AwbcFunctionId },
     Routes(Vec<AwbcRoute>),
 }
 
@@ -2137,7 +2335,7 @@ impl AwbcEntryTarget {
     #[must_use]
     pub const fn function(&self) -> Option<AwbcFunctionId> {
         match self {
-            Self::Function(function) => Some(*function),
+            Self::Function { function, .. } => Some(*function),
             Self::Routes(_) => None,
         }
     }
@@ -2145,19 +2343,25 @@ impl AwbcEntryTarget {
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub struct AwbcRoute {
-    pub method: AwbcStringId,
-    pub path: AwbcStringId,
+    pub method: crate::plan::RuntimeHttpMethod,
+    pub segments: Vec<AwbcRouteSegment>,
     pub target: AwbcFunctionId,
     pub bindings: Vec<AwbcRouteBinding>,
 }
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+pub enum AwbcRouteSegment {
+    Literal(AwbcStringId),
+    Capture(crate::plan::RouteCaptureCoordinate),
+}
+
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub struct AwbcRouteBinding {
-    pub register: AwbcRegisterId,
+    pub parameter: crate::entry::FlowParameterCoordinate,
     pub source: AwbcRouteBindingSource,
 }
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub enum AwbcRouteBindingSource {
-    PathParameter(AwbcStringId),
+    PathCapture(crate::plan::RouteCaptureCoordinate),
 }

@@ -8,7 +8,7 @@ pub mod nominal;
 pub mod registered;
 pub mod rust_metadata;
 
-pub(crate) use base::EnvironmentEnumSchema;
+pub(crate) use base::{EnvironmentEnumSchema, StandardEnvironmentMethodRole};
 pub use base::{
     FunctionParam, FunctionParamHigherOrderBinding, FunctionParamSelector,
     FunctionParamSelectorSegment, FunctionSignature, TypeCheckEnv, TypeCheckEnvBuildError,

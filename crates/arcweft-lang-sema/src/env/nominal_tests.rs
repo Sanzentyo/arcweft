@@ -20,6 +20,7 @@ use super::{
         AcceptedNominalRecord, AcceptedNominalSemantics, AcceptedOpaqueRuntimeCarrier,
         OpenNominalArity, OpenNominalEnvironment, OpenNominalPattern, OpenNominalPatternError,
         OpenNominalRule, OpenNominalRuleId, OpenNominalScope, RustPackageId,
+        standard_reduction_record,
     },
 };
 use crate::nominal::{AcceptedNominalCatalogLimitKind, AcceptedNominalCatalogLimits};
@@ -688,30 +689,147 @@ fn standard_environment_projects_domain_and_structural_nominals_exactly() {
         .exact(&path("DialogueContent"))
         .expect("standard structural nominal is exact accepted evidence");
     assert_eq!(dialogue.origin(), AcceptedNominalOrigin::NominalRecord);
-    assert!(
-        environment
-            .nominal_records()
-            .contains_key("DialogueContent")
-    );
+    assert!(environment.environment_record("DialogueContent").is_some());
 
     let transform = environment
         .nominal_catalog()
         .exact(&path("Transform2D"))
         .expect("Transform2D is an exact standard record");
     assert_eq!(transform.origin(), AcceptedNominalOrigin::NominalRecord);
-    assert_eq!(
+    assert!(matches!(
         transform.semantics(),
-        &AcceptedNominalSemantics::Exact(TypeKind::Named("Transform2D".to_owned()))
-    );
+        AcceptedNominalSemantics::Record(record)
+            if record.ty() == &TypeKind::Named("Transform2D".to_owned())
+    ));
     let transform_fields = environment
-        .nominal_records()
-        .get("Transform2D")
+        .environment_record("Transform2D")
         .expect("Transform2D publishes its typed field inventory");
-    assert_eq!(transform_fields.len(), 10);
+    assert_eq!(transform_fields.fields().len(), 10);
     assert_eq!(
-        transform_fields.get("rotation"),
+        transform_fields.field("rotation").map(|field| field.ty()),
         Some(&TypeKind::Named("Angle".to_owned()))
     );
+}
+
+#[test]
+fn standard_reduction_lookup_ignores_spoof_rows_and_requires_the_exact_standard_path() {
+    let spoof = AcceptedNominalRecord::try_new_opaque(
+        AcceptedNominalId::new(
+            AcceptedNominalOwnerId::Environment(
+                EnvironmentBindingId::try_new("spoof-reduction").expect("environment owner"),
+            ),
+            path("a.Reduction"),
+        ),
+        1,
+        producer("std.reduction"),
+        RuntimeOpaqueValueClass::Plain,
+        RuntimeOpaquePersistence::ConstantAndSnapshot,
+        AcceptedNominalOrigin::Test,
+        None,
+    )
+    .expect("spoof accepted row is structurally valid");
+
+    let with_standard = TypeCheckEnv::standard()
+        .nominal_catalog()
+        .try_with_record(spoof.clone(), AcceptedNominalCatalogLimits::PRODUCTION)
+        .expect("spoof path does not collide with the standard catalog");
+    let selected = standard_reduction_record(&with_standard).expect("standard Reduction row");
+    assert_eq!(selected.id().owner(), &AcceptedNominalOwnerId::Standard);
+    assert_eq!(selected.id().canonical_path(), &path("Reduction"));
+
+    let spoof_only =
+        AcceptedNominalCatalog::try_new([spoof], [], AcceptedNominalCatalogLimits::PRODUCTION)
+            .expect("spoof-only catalog");
+    assert!(standard_reduction_record(&spoof_only).is_none());
+}
+
+#[test]
+fn environment_record_fields_preserve_declaration_order_and_typed_identity() {
+    let first = AcceptedNominalRecord::try_new_record(
+        AcceptedNominalId::new(AcceptedNominalOwnerId::Standard, path("Example")),
+        TypeKind::Named("Example".to_owned()),
+        [
+            ("left".to_owned(), TypeKind::I32),
+            ("right".to_owned(), TypeKind::String),
+        ],
+        AcceptedNominalOrigin::NominalRecord,
+        None,
+    )
+    .expect("ordered environment record");
+    let reordered = AcceptedNominalRecord::try_new_record(
+        AcceptedNominalId::new(AcceptedNominalOwnerId::Standard, path("Example")),
+        TypeKind::Named("Example".to_owned()),
+        [
+            ("right".to_owned(), TypeKind::String),
+            ("left".to_owned(), TypeKind::I32),
+        ],
+        AcceptedNominalOrigin::NominalRecord,
+        None,
+    )
+    .expect("reordered environment record");
+    let first_catalog = AcceptedNominalCatalog::try_new(
+        [first.clone()],
+        [],
+        AcceptedNominalCatalogLimits::PRODUCTION,
+    )
+    .expect("first record catalog");
+    let reordered_catalog = AcceptedNominalCatalog::try_new(
+        [reordered.clone()],
+        [],
+        AcceptedNominalCatalogLimits::PRODUCTION,
+    )
+    .expect("reordered record catalog");
+    assert_ne!(first_catalog.digest(), reordered_catalog.digest());
+    assert!(matches!(
+        AcceptedNominalRecord::try_new(
+            AcceptedNominalId::new(AcceptedNominalOwnerId::Standard, path("Other")),
+            0,
+            first.semantics().clone(),
+            AcceptedNominalOrigin::NominalRecord,
+            None,
+        ),
+        Err(AcceptedNominalCatalogError::RecordIdentityMismatch { .. })
+    ));
+    let first = first.environment_record().expect("record semantics");
+    let reordered = reordered.environment_record().expect("record semantics");
+
+    assert_eq!(
+        first
+            .fields()
+            .iter()
+            .map(|field| (field.diagnostic_name(), field.ordinal()))
+            .collect::<Vec<_>>(),
+        [("left", 0), ("right", 1)]
+    );
+    assert_eq!(
+        first.field("right").map(|field| field.ty()),
+        Some(&TypeKind::String)
+    );
+    assert_ne!(
+        first.field("left").expect("left field").semantic_id(),
+        reordered
+            .field("left")
+            .expect("reordered left field")
+            .semantic_id()
+    );
+}
+
+#[test]
+fn environment_record_rejects_duplicate_fields() {
+    assert!(matches!(
+        AcceptedNominalRecord::try_new_record(
+            AcceptedNominalId::new(AcceptedNominalOwnerId::Standard, path("Example")),
+            TypeKind::Named("Example".to_owned()),
+            [
+                ("value".to_owned(), TypeKind::I32),
+                ("value".to_owned(), TypeKind::I64),
+            ],
+            AcceptedNominalOrigin::NominalRecord,
+            None,
+        ),
+        Err(AcceptedNominalCatalogError::DuplicateRecordField { field, .. })
+            if field == "value"
+    ));
 }
 
 fn assert_exact_standard_domain_nominals(environment: &TypeCheckEnv) {

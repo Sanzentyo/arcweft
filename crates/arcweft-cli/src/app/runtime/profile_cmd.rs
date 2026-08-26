@@ -64,11 +64,11 @@ pub(in crate::app) fn runtime_profile_command(
                 source: Some(NativeRunSource::new(selection.path(), &file_roots)),
                 policy: &host_policy,
                 adapter_registrars,
+                cli_args: &[],
             },
             options.steps,
             options.mode,
             options.max_ops,
-            &options.values,
             &execution_diagnostics,
         )
     })?;

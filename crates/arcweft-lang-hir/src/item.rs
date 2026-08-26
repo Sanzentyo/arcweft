@@ -60,7 +60,8 @@ pub use self::entry::{
     HirEntryMember, HirEntryOption, HirEntryOptionValue, HirEntryPathBinding, HirEntryPathValue,
     HirEntryPunctuationState, HirEntryRoute, HirEntryRouteBinding, HirEntryRouteBindings,
     HirEntryTarget, HirEntryTypeBinding, HirHttpMethod, HirHttpMethodIssue, HirHttpMethodValue,
-    HirRoutePath, HirRoutePathIssue, HirRoutePathValue,
+    HirRouteCaptureCoordinate, HirRoutePath, HirRoutePathCapture, HirRoutePathIssue,
+    HirRoutePathSegment, HirRoutePathValue,
 };
 pub use self::flow::{
     HirContractCondition, HirContractMode, HirContractOperandList, HirFlowContractClause,
@@ -139,6 +140,16 @@ impl HirItemFamily {
         Self::Style,
         Self::Error,
     ];
+
+    /// Returns the executable accepted-family witness. Recovered `Error`
+    /// items are intentionally excluded at the owning family boundary.
+    pub const fn accepted(self) -> Option<crate::project::HirAcceptedItemFamily> {
+        if matches!(self, Self::Error) {
+            None
+        } else {
+            Some(crate::project::HirAcceptedItemFamily::from_family(self))
+        }
+    }
 }
 
 /// One immutable item-arena record.

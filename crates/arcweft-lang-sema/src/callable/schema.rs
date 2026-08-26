@@ -1,14 +1,21 @@
 //! Callable documentation, source evidence, and shared signature schemas.
 
-use std::{collections::HashSet, sync::Arc};
+use std::{
+    collections::{BTreeSet, HashSet},
+    sync::Arc,
+};
 
 use arcweft_lang_hir::symbol::{CallableDeclarationKey, CallableDeclarationOwner};
 use arcweft_source::SourceSpan;
 
 use crate::{
+    character_dialogue::CharacterDialogueFieldCoordinate,
     effect_row::EffectRow,
-    env::{FunctionParam, FunctionSignature},
-    types::TypeKind,
+    env::{FunctionParam, FunctionSignature, nominal::AcceptedNominalId},
+    types::{
+        GenericConstParameterId, GenericParameterOwnerId, GenericTypeParameterId,
+        LanguageIntrinsicGenericOwner, SemanticTypeDigest, TypeGenericUseCollector, TypeKind,
+    },
 };
 
 use super::{
@@ -387,11 +394,241 @@ impl RustCallableProvenance {
 pub struct CallableSignatureSchema {
     groups: Arc<[CallableParameterGroup]>,
     result: TypeKind,
+    generic_inventory: CallableGenericParameterInventory,
     effects: CallableEffectSchema,
     argument_policy: CallableArgumentPolicy,
+    reserved_open_names: Arc<[CallableName]>,
     validator: CallableValidator,
     evaluated_effect: Option<CallableEvaluatedEffect>,
     extension_receiver: Option<CallableExtensionReceiver>,
+}
+
+/// Typed owner selected by the declaration or intrinsic schema issuer.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub(crate) enum CallableGenericIssuerOwner {
+    Callable(CallableDeclarationKey),
+    AcceptedNominal(AcceptedNominalId),
+    LanguageIntrinsic(LanguageIntrinsicGenericOwner),
+}
+
+/// Authenticated declaration-owned generic inventory issuer.
+///
+/// The issuer creates the complete contiguous type/const identities for one
+/// exact owner. No arbitrary ID list can be supplied by a schema caller. The
+/// schema constructor consumes this token only as input evidence and derives
+/// all role and first-use rows from the checked type graph.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct CallableGenericParameterIssuer {
+    owner: Option<CallableGenericIssuerOwner>,
+    type_count: u16,
+    const_count: u16,
+}
+
+impl CallableGenericParameterIssuer {
+    pub fn empty() -> Self {
+        Self {
+            owner: None,
+            type_count: 0,
+            const_count: 0,
+        }
+    }
+
+    pub(crate) fn callable(
+        declaration: CallableDeclarationKey,
+        type_count: u16,
+        const_count: u16,
+    ) -> Result<Self, CallableSchemaError> {
+        Self::new(
+            CallableGenericIssuerOwner::Callable(declaration),
+            type_count,
+            const_count,
+        )
+    }
+
+    pub(crate) fn accepted_nominal(
+        declaration: AcceptedNominalId,
+        type_count: u16,
+        const_count: u16,
+    ) -> Result<Self, CallableSchemaError> {
+        Self::new(
+            CallableGenericIssuerOwner::AcceptedNominal(declaration),
+            type_count,
+            const_count,
+        )
+    }
+
+    pub(crate) fn language_intrinsic(
+        owner: LanguageIntrinsicGenericOwner,
+        type_count: u16,
+        const_count: u16,
+    ) -> Result<Self, CallableSchemaError> {
+        Self::new(
+            CallableGenericIssuerOwner::LanguageIntrinsic(owner),
+            type_count,
+            const_count,
+        )
+    }
+
+    fn new(
+        owner: CallableGenericIssuerOwner,
+        type_count: u16,
+        const_count: u16,
+    ) -> Result<Self, CallableSchemaError> {
+        if let CallableGenericIssuerOwner::LanguageIntrinsic(owner) = &owner {
+            let expected_type_count = match owner {
+                LanguageIntrinsicGenericOwner::OptionConstructor
+                | LanguageIntrinsicGenericOwner::CollectionMap
+                | LanguageIntrinsicGenericOwner::FxExists
+                | LanguageIntrinsicGenericOwner::AgentSignal
+                | LanguageIntrinsicGenericOwner::AgentMetric => 1,
+                LanguageIntrinsicGenericOwner::ResultConstructor => 2,
+            };
+            if const_count != 0 || type_count != expected_type_count {
+                return Err(CallableSchemaError::InvalidCandidateIssuer);
+            }
+            return Ok(Self {
+                owner: Some(CallableGenericIssuerOwner::LanguageIntrinsic(*owner)),
+                type_count,
+                const_count,
+            });
+        }
+        Ok(Self {
+            owner: Some(owner),
+            type_count,
+            const_count,
+        })
+    }
+
+    pub(crate) fn type_parameters(&self) -> Vec<GenericTypeParameterId> {
+        let Some(owner) = self.generic_owner() else {
+            return Vec::new();
+        };
+        (0..self.type_count)
+            .map(|ordinal| GenericTypeParameterId::new(owner.clone(), ordinal))
+            .collect()
+    }
+
+    pub(crate) fn const_parameters(&self) -> Vec<GenericConstParameterId> {
+        let Some(owner) = self.generic_owner() else {
+            return Vec::new();
+        };
+        (0..self.const_count)
+            .map(|ordinal| GenericConstParameterId::new(owner.clone(), ordinal))
+            .collect()
+    }
+
+    pub(crate) fn owns_type(&self, parameter: &GenericTypeParameterId) -> bool {
+        self.generic_owner()
+            .is_some_and(|owner| parameter.owner() == &owner)
+    }
+
+    pub(crate) fn owns_const(&self, parameter: &GenericConstParameterId) -> bool {
+        self.generic_owner()
+            .is_some_and(|owner| parameter.owner() == &owner)
+    }
+
+    fn generic_owner(&self) -> Option<GenericParameterOwnerId> {
+        self.owner.as_ref().map(|owner| match owner {
+            CallableGenericIssuerOwner::Callable(declaration) => {
+                GenericParameterOwnerId::Callable(declaration.clone())
+            }
+            CallableGenericIssuerOwner::AcceptedNominal(declaration) => {
+                GenericParameterOwnerId::AcceptedNominal(declaration.clone())
+            }
+            CallableGenericIssuerOwner::LanguageIntrinsic(owner) => {
+                GenericParameterOwnerId::LanguageIntrinsic(*owner)
+            }
+        })
+    }
+}
+
+/// The one schema-sealed inventory used by callable constraint preparation.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub(crate) struct CallableGenericParameterInventory {
+    types: Arc<[CallableGenericTypeUse]>,
+    rigid_consts: Arc<[CallableRigidConstUse]>,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub(crate) struct CallableGenericTypeUse {
+    parameter: GenericTypeParameterId,
+    role: CallableSchemaGenericRole,
+    first_use: CallableGenericFirstUse,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub(crate) struct CallableRigidConstUse {
+    parameter: GenericConstParameterId,
+    first_use: CallableGenericFirstUse,
+}
+
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub(crate) enum CallableSchemaGenericRole {
+    Candidate,
+    RigidReference,
+}
+
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub(crate) enum CallableGenericFirstUse {
+    Group(CallableGroupIndex),
+    Result,
+}
+
+impl CallableGenericParameterInventory {
+    pub(crate) fn types(&self) -> &[CallableGenericTypeUse] {
+        &self.types
+    }
+
+    pub(crate) fn rigid_consts(&self) -> &[CallableRigidConstUse] {
+        &self.rigid_consts
+    }
+}
+
+impl CallableGenericTypeUse {
+    pub(crate) const fn parameter(&self) -> &GenericTypeParameterId {
+        &self.parameter
+    }
+
+    pub(crate) const fn role(&self) -> CallableSchemaGenericRole {
+        self.role
+    }
+
+    pub(crate) const fn first_use(&self) -> CallableGenericFirstUse {
+        self.first_use
+    }
+}
+
+impl CallableRigidConstUse {
+    pub(crate) const fn parameter(&self) -> &GenericConstParameterId {
+        &self.parameter
+    }
+
+    pub(crate) const fn first_use(&self) -> CallableGenericFirstUse {
+        self.first_use
+    }
+}
+
+/// Call-site identity for one deliberately open named argument. The schema
+/// digest prevents two open slots from different signatures from colliding;
+/// the authored name is canonicalized through `CallableName` before issuance.
+#[derive(Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub struct OpenArgumentId {
+    schema: super::CallableSignatureSchemaDigest,
+    binding: CallableName,
+}
+
+impl OpenArgumentId {
+    pub(crate) fn new(schema: super::CallableSignatureSchemaDigest, binding: CallableName) -> Self {
+        Self { schema, binding }
+    }
+
+    pub const fn schema(&self) -> super::CallableSignatureSchemaDigest {
+        self.schema
+    }
+
+    pub const fn binding(&self) -> &CallableName {
+        &self.binding
+    }
 }
 
 /// Declaration-owned receiver coordinate for one ordinary extension function.
@@ -481,17 +718,337 @@ pub enum CallableGroupKind {
 pub struct CallableParameter {
     index: CallableParameterIndex,
     name: Option<CallableName>,
-    ty: CallableParameterType,
+    admission: CallableParameterAdmission,
     passing: CallableParameterPassing,
     presence: CallableParameterPresence,
+    consumer: CallableParameterConsumer,
     documentation: Option<Arc<str>>,
     source: Option<CallableParameterSource>,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
-pub enum CallableParameterType {
-    Exact(TypeKind),
-    Unchecked,
+pub enum CallableParameterAdmission {
+    Checked {
+        declared: TypeKind,
+        rule: CallableParameterValueRule,
+    },
+    UncheckedSupply,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct CallableParameterValueRule {
+    guarded: Arc<[CallableParameterGuardedValueAlternative]>,
+    otherwise: CallableParameterOtherwiseValueAlternative,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct CallableParameterGuardedValueAlternative {
+    guard: CallableSemanticValueGuard,
+    expected: ParameterExpectedTypeProjection,
+    action: CallableArgumentSemanticAction,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct CallableParameterOtherwiseValueAlternative {
+    expected: ParameterExpectedTypeProjection,
+    action: CallableArgumentSemanticAction,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum CallableParameterValueAlternative<'a> {
+    Guarded(&'a CallableParameterGuardedValueAlternative),
+    Otherwise(&'a CallableParameterOtherwiseValueAlternative),
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum CallableSemanticValueGuard {
+    VariantCase {
+        owner: ParameterExpectedTypeProjection,
+        ordinal: u32,
+        payload: VariantPayloadRequirement,
+    },
+}
+
+/// Exact semantic discriminator observed on one checked source value.
+///
+/// This is independent of the selected schema alternative: an `otherwise`
+/// row still retains a variant case when the checked value is a variant that
+/// did not match any guarded row.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum CheckedSemanticValueEvidence {
+    VariantCase {
+        owner: SemanticTypeDigest,
+        ordinal: u32,
+        payload: VariantPayloadRequirement,
+    },
+    NoVariantCase,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum VariantPayloadRequirement {
+    Unit,
+    Present,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum ParameterExpectedTypeProjection {
+    Identity,
+    ApplyUnary(CallableUnaryTypeConstructor),
+}
+
+impl ParameterExpectedTypeProjection {
+    pub(crate) fn apply_to(&self, declared: &TypeKind) -> TypeKind {
+        match self {
+            Self::Identity => declared.clone(),
+            Self::ApplyUnary(CallableUnaryTypeConstructor::Option) => {
+                TypeKind::Option(Box::new(declared.clone()))
+            }
+        }
+    }
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum CallableUnaryTypeConstructor {
+    Option,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum CallableArgumentSemanticAction {
+    Supply,
+    Clear,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum CallableParameterConsumer {
+    Value,
+    DialoguePatch(CharacterDialogueFieldCoordinate),
+    DialogueApplicationMetadata(DialogueApplicationMetadataCoordinate),
+}
+
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub enum DialogueApplicationMetadataCoordinate {
+    Id,
+    TextKey,
+}
+
+impl CallableParameterValueRule {
+    pub fn supply() -> Self {
+        Self {
+            guarded: Arc::from([]),
+            otherwise: CallableParameterOtherwiseValueAlternative {
+                expected: ParameterExpectedTypeProjection::Identity,
+                action: CallableArgumentSemanticAction::Supply,
+            },
+        }
+    }
+
+    pub(in crate::callable) fn clearable_option() -> Self {
+        Self {
+            guarded: Arc::from([CallableParameterGuardedValueAlternative {
+                guard: CallableSemanticValueGuard::VariantCase {
+                    owner: ParameterExpectedTypeProjection::ApplyUnary(
+                        CallableUnaryTypeConstructor::Option,
+                    ),
+                    ordinal: 1,
+                    payload: VariantPayloadRequirement::Unit,
+                },
+                expected: ParameterExpectedTypeProjection::ApplyUnary(
+                    CallableUnaryTypeConstructor::Option,
+                ),
+                action: CallableArgumentSemanticAction::Clear,
+            }]),
+            otherwise: CallableParameterOtherwiseValueAlternative {
+                expected: ParameterExpectedTypeProjection::Identity,
+                action: CallableArgumentSemanticAction::Supply,
+            },
+        }
+    }
+
+    pub fn guarded(&self) -> &[CallableParameterGuardedValueAlternative] {
+        &self.guarded
+    }
+
+    pub const fn otherwise(&self) -> &CallableParameterOtherwiseValueAlternative {
+        &self.otherwise
+    }
+
+    pub fn len(&self) -> usize {
+        self.guarded.len() + 1
+    }
+
+    pub fn alternatives(
+        &self,
+    ) -> impl Clone + DoubleEndedIterator<Item = CallableParameterValueAlternative<'_>> {
+        self.guarded
+            .iter()
+            .map(CallableParameterValueAlternative::Guarded)
+            .chain(std::iter::once(
+                CallableParameterValueAlternative::Otherwise(&self.otherwise),
+            ))
+    }
+
+    pub fn alternative(&self, index: usize) -> Option<CallableParameterValueAlternative<'_>> {
+        self.guarded
+            .get(index)
+            .map(CallableParameterValueAlternative::Guarded)
+            .or_else(|| {
+                (index == self.guarded.len()).then_some(
+                    CallableParameterValueAlternative::Otherwise(&self.otherwise),
+                )
+            })
+    }
+
+    /// Validate the exact first-match selection owned by this schema rule.
+    /// Guarded rows have priority in declaration order; `otherwise` is legal
+    /// only when no guarded row accepts the observed evidence.
+    pub(crate) fn selects(
+        &self,
+        index: usize,
+        declared: &TypeKind,
+        checked: &CheckedSemanticValueEvidence,
+    ) -> bool {
+        let mut matching = self
+            .guarded
+            .iter()
+            .enumerate()
+            .filter_map(|(index, row)| row.guard().accepts(declared, checked).then_some(index));
+        match (matching.next(), matching.next()) {
+            (Some(selected), None) => selected == index,
+            (None, None) => index == self.guarded.len(),
+            (Some(_), Some(_)) | (None, Some(_)) => false,
+        }
+    }
+}
+
+impl CallableParameterGuardedValueAlternative {
+    pub const fn guard(&self) -> &CallableSemanticValueGuard {
+        &self.guard
+    }
+
+    pub const fn expected(&self) -> &ParameterExpectedTypeProjection {
+        &self.expected
+    }
+
+    pub const fn action(&self) -> CallableArgumentSemanticAction {
+        self.action
+    }
+}
+
+impl CallableParameterOtherwiseValueAlternative {
+    pub const fn expected(&self) -> &ParameterExpectedTypeProjection {
+        &self.expected
+    }
+
+    pub const fn action(&self) -> CallableArgumentSemanticAction {
+        self.action
+    }
+}
+
+impl<'a> CallableParameterValueAlternative<'a> {
+    pub const fn guard(self) -> Option<&'a CallableSemanticValueGuard> {
+        match self {
+            Self::Guarded(alternative) => Some(alternative.guard()),
+            Self::Otherwise(_) => None,
+        }
+    }
+
+    pub const fn expected(self) -> &'a ParameterExpectedTypeProjection {
+        match self {
+            Self::Guarded(alternative) => alternative.expected(),
+            Self::Otherwise(alternative) => alternative.expected(),
+        }
+    }
+
+    pub const fn action(self) -> CallableArgumentSemanticAction {
+        match self {
+            Self::Guarded(alternative) => alternative.action(),
+            Self::Otherwise(alternative) => alternative.action(),
+        }
+    }
+
+    pub const fn is_otherwise(self) -> bool {
+        matches!(self, Self::Otherwise(_))
+    }
+}
+
+impl CallableSemanticValueGuard {
+    pub(crate) fn accepts(
+        &self,
+        declared: &TypeKind,
+        checked: &CheckedSemanticValueEvidence,
+    ) -> bool {
+        match (self, checked) {
+            (
+                Self::VariantCase {
+                    owner,
+                    ordinal,
+                    payload,
+                },
+                CheckedSemanticValueEvidence::VariantCase {
+                    owner: checked_owner,
+                    ordinal: checked_ordinal,
+                    payload: checked_payload,
+                },
+            ) => {
+                owner.apply_to(declared).semantic_identity_digest() == *checked_owner
+                    && ordinal == checked_ordinal
+                    && payload == checked_payload
+            }
+            (Self::VariantCase { .. }, CheckedSemanticValueEvidence::NoVariantCase) => false,
+        }
+    }
+}
+
+impl CallableParameterAdmission {
+    pub fn checked(declared: TypeKind) -> Self {
+        Self::Checked {
+            declared,
+            rule: CallableParameterValueRule::supply(),
+        }
+    }
+
+    pub fn checked_with_rule(declared: TypeKind, rule: CallableParameterValueRule) -> Self {
+        Self::Checked { declared, rule }
+    }
+
+    pub const fn unchecked_supply() -> Self {
+        Self::UncheckedSupply
+    }
+
+    pub const fn declared(&self) -> Option<&TypeKind> {
+        match self {
+            Self::Checked { declared, .. } => Some(declared),
+            Self::UncheckedSupply => None,
+        }
+    }
+
+    pub const fn rule(&self) -> Option<&CallableParameterValueRule> {
+        match self {
+            Self::Checked { rule, .. } => Some(rule),
+            Self::UncheckedSupply => None,
+        }
+    }
+
+    pub const fn is_unchecked(&self) -> bool {
+        matches!(self, Self::UncheckedSupply)
+    }
+}
+
+fn is_single_supply_identity_rule(rule: &CallableParameterValueRule) -> bool {
+    rule.guarded().is_empty()
+        && matches!(
+            (rule.otherwise().expected(), rule.otherwise().action()),
+            (
+                ParameterExpectedTypeProjection::Identity,
+                CallableArgumentSemanticAction::Supply
+            )
+        )
+}
+
+impl From<TypeKind> for CallableParameterAdmission {
+    fn from(value: TypeKind) -> Self {
+        Self::checked(value)
+    }
 }
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum CallableParameterPassing {
@@ -516,8 +1073,7 @@ pub struct CallableArgumentPolicy {
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum UnknownNamedArgumentPolicy {
     Reject,
-    OpenChecked,
-    OpenUnchecked,
+    OpenSupply,
 }
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum SpreadArgumentPolicy {
@@ -551,6 +1107,7 @@ pub enum CallableValidator {
     LineContext(LineContextMethodId),
     Drop,
     Promotion(PromotionCallableId),
+    ViewModifier(super::ViewModifierId),
 }
 
 /// Pre-check behavior of one structurally identified method declaration.
@@ -583,12 +1140,13 @@ impl CallableMethodRole {
 }
 
 impl CallableSignatureSchema {
-    pub fn try_new(
+    pub(crate) fn try_new(
         groups: Vec<CallableParameterGroup>,
         result: TypeKind,
         effects: CallableEffectSchema,
         argument_policy: CallableArgumentPolicy,
         validator: CallableValidator,
+        generic_issuer: CallableGenericParameterIssuer,
         limits: &CallableLimits,
     ) -> Result<Self, CallableSchemaError> {
         if groups.is_empty() {
@@ -628,6 +1186,64 @@ impl CallableSignatureSchema {
                     limit: limits.max_parameters_per_callable(),
                 },
             )?;
+            for parameter in group.parameters() {
+                match parameter.admission() {
+                    CallableParameterAdmission::UncheckedSupply => {
+                        if !matches!(parameter.consumer(), CallableParameterConsumer::Value) {
+                            return Err(CallableSchemaError::InvalidParameterConsumer {
+                                group: group.index,
+                                parameter: parameter.index,
+                            });
+                        }
+                    }
+                    CallableParameterAdmission::Checked { rule, .. } => {
+                        if rule.guarded().iter().enumerate().any(|(index, row)| {
+                            rule.guarded()[..index]
+                                .iter()
+                                .any(|previous| previous.guard() == row.guard())
+                        }) {
+                            return Err(CallableSchemaError::InvalidParameterAdmission {
+                                group: group.index,
+                                parameter: parameter.index,
+                            });
+                        }
+                        if rule.alternatives().any(|alternative| {
+                            alternative.action() == CallableArgumentSemanticAction::Clear
+                                && !matches!(
+                                    parameter.consumer(),
+                                    CallableParameterConsumer::DialoguePatch(_)
+                                )
+                        }) {
+                            return Err(CallableSchemaError::InvalidParameterConsumer {
+                                group: group.index,
+                                parameter: parameter.index,
+                            });
+                        }
+                    }
+                }
+                if matches!(
+                    parameter.passing(),
+                    CallableParameterPassing::RestPositional | CallableParameterPassing::RestNamed
+                ) {
+                    let typed_rest = matches!(
+                        parameter.admission(),
+                        CallableParameterAdmission::Checked { rule, .. }
+                            if is_single_supply_identity_rule(rule)
+                    );
+                    let unchecked_rest = matches!(
+                        parameter.admission(),
+                        CallableParameterAdmission::UncheckedSupply
+                    ) && parameter.passing()
+                        == CallableParameterPassing::RestPositional
+                        && argument_policy.spread() == SpreadArgumentPolicy::Unchecked;
+                    if !typed_rest && !unchecked_rest {
+                        return Err(CallableSchemaError::InvalidParameterAdmission {
+                            group: group.index,
+                            parameter: parameter.index,
+                        });
+                    }
+                }
+            }
         }
         if total_parameters > limits.max_parameters_per_callable() {
             return Err(CallableSchemaError::ParameterLimit {
@@ -635,15 +1251,64 @@ impl CallableSignatureSchema {
                 limit: limits.max_parameters_per_callable(),
             });
         }
+        let generic_inventory = seal_generic_inventory(&groups, &result, &generic_issuer)?;
         Ok(Self {
             groups: groups.into(),
             result,
+            generic_inventory,
             effects,
             argument_policy,
+            reserved_open_names: Arc::new([]),
             validator,
             evaluated_effect: None,
             extension_receiver: None,
         })
+    }
+
+    pub(crate) fn try_with_reserved_open_names(
+        mut self,
+        mut names: Vec<CallableName>,
+        limits: &CallableLimits,
+    ) -> Result<Self, CallableSchemaError> {
+        if !names.is_empty()
+            && self.argument_policy.unknown_named() != UnknownNamedArgumentPolicy::OpenSupply
+        {
+            return Err(CallableSchemaError::ReservedOpenNamesRequireOpenPolicy);
+        }
+        if names.len() > limits.max_parameters_per_callable() {
+            return Err(CallableSchemaError::ReservedOpenNameLimit {
+                actual: names.len(),
+                limit: limits.max_parameters_per_callable(),
+            });
+        }
+        names.sort_unstable();
+        for pair in names.windows(2) {
+            if pair[0] == pair[1] {
+                return Err(CallableSchemaError::DuplicateReservedOpenName {
+                    name: pair[0].clone(),
+                });
+            }
+        }
+        if names.iter().any(|reserved| {
+            self.groups
+                .iter()
+                .flat_map(|group| group.parameters())
+                .any(|parameter| parameter.name() == Some(reserved))
+        }) {
+            let name = names
+                .iter()
+                .find(|reserved| {
+                    self.groups
+                        .iter()
+                        .flat_map(|group| group.parameters())
+                        .any(|parameter| parameter.name() == Some(reserved))
+                })
+                .expect("reserved parameter collision was observed")
+                .clone();
+            return Err(CallableSchemaError::ReservedOpenNameParameterCollision { name });
+        }
+        self.reserved_open_names = names.into();
+        Ok(self)
     }
 
     pub fn with_extension_receiver(
@@ -675,7 +1340,7 @@ impl CallableSignatureSchema {
         if (!receiver_first && !receiver_data_last)
             || parameter.passing() != CallableParameterPassing::PositionalOnly
             || parameter.presence() != CallableParameterPresence::Required
-            || !matches!(parameter.ty(), CallableParameterType::Exact(_))
+            || parameter.admission().is_unchecked()
         {
             return Err(CallableSchemaError::InvalidExtensionReceiver {
                 group: receiver.group(),
@@ -696,11 +1361,21 @@ impl CallableSignatureSchema {
     pub const fn result(&self) -> &TypeKind {
         &self.result
     }
+    pub(crate) const fn generic_inventory(&self) -> &CallableGenericParameterInventory {
+        &self.generic_inventory
+    }
     pub const fn effects(&self) -> &CallableEffectSchema {
         &self.effects
     }
     pub const fn argument_policy(&self) -> CallableArgumentPolicy {
         self.argument_policy
+    }
+    pub fn reserved_open_names(&self) -> &[CallableName] {
+        &self.reserved_open_names
+    }
+    pub(crate) fn allows_open_name(&self, name: &CallableName) -> bool {
+        self.argument_policy.unknown_named() == UnknownNamedArgumentPolicy::OpenSupply
+            && self.reserved_open_names.binary_search(name).is_err()
     }
     pub const fn validator(&self) -> &CallableValidator {
         &self.validator
@@ -715,11 +1390,27 @@ impl CallableSignatureSchema {
         let receiver = self.extension_receiver?;
         self.group(receiver.group())
             .and_then(|group| group.parameter(receiver.parameter()))
-            .and_then(|parameter| match parameter.ty() {
-                CallableParameterType::Exact(ty) => Some(ty),
-                CallableParameterType::Unchecked => None,
-            })
+            .and_then(|parameter| parameter.declared_type())
     }
+
+    pub(crate) fn visit_types<E>(
+        &self,
+        visitor: &mut impl FnMut(&TypeKind) -> Result<(), E>,
+    ) -> Result<(), E> {
+        visitor(self.result())?;
+        for group in self.groups() {
+            for parameter in group.parameters() {
+                if let Some(ty) = parameter.declared_type() {
+                    visitor(ty)?;
+                }
+            }
+        }
+        if let Some(receiver) = self.extension_receiver_type() {
+            visitor(receiver)?;
+        }
+        Ok(())
+    }
+
     pub fn group(&self, index: CallableGroupIndex) -> Option<&CallableParameterGroup> {
         self.groups
             .get(index.get())
@@ -730,9 +1421,11 @@ impl CallableSignatureSchema {
     }
 
     pub fn semantic_eq(&self, other: &Self) -> bool {
-        self.result == other.result
+        self.generic_inventory == other.generic_inventory
+            && self.result == other.result
             && self.effects == other.effects
             && self.argument_policy == other.argument_policy
+            && self.reserved_open_names == other.reserved_open_names
             && self.validator == other.validator
             && self.evaluated_effect == other.evaluated_effect
             && self.extension_receiver == other.extension_receiver
@@ -779,7 +1472,7 @@ impl CallableSignatureSchema {
                             }
                         })?,
                     ),
-                    CallableParameterType::Exact(parameter.clone()),
+                    CallableParameterAdmission::checked(parameter.clone()),
                     CallableParameterPassing::PositionalOnly,
                     CallableParameterPresence::Required,
                     None,
@@ -802,7 +1495,183 @@ impl CallableSignatureSchema {
                 SpreadArgumentPolicy::FixedLiteralOnly,
             ),
             CallableValidator::Ordinary,
+            CallableGenericParameterIssuer::empty(),
             limits,
+        )
+    }
+
+    /// Builds the exact constructor schema retained by one accepted project
+    /// enum case. The checked case row has already instantiated declaration
+    /// generics, so no generic issuer or path lookup is admitted here.
+    pub(crate) fn for_accepted_enum_case(
+        id: EnumVariantSignatureId,
+        payload: Option<&TypeKind>,
+        result: TypeKind,
+        limits: &CallableLimits,
+    ) -> Result<Self, CallableSchemaError> {
+        let payloads: &[TypeKind] = match payload {
+            Some(TypeKind::Tuple(items)) => items,
+            Some(payload) => std::slice::from_ref(payload),
+            None => &[],
+        };
+        let parameters = payloads
+            .iter()
+            .enumerate()
+            .map(|(index, payload)| {
+                CallableParameter::try_new(
+                    CallableParameterIndex::try_from_usize(index).map_err(|_| {
+                        CallableSchemaError::ParameterLimit {
+                            actual: payloads.len(),
+                            limit: limits.max_parameters_per_callable(),
+                        }
+                    })?,
+                    Some(
+                        CallableName::try_new(format!("payload{}", index + 1)).map_err(|_| {
+                            CallableSchemaError::FamilyInvariant {
+                                family: super::CallableFamily::EnumConstructor,
+                                code: super::CallableFamilyInvariantCode::InvalidParameterType,
+                            }
+                        })?,
+                    ),
+                    CallableParameterAdmission::checked(payload.clone()),
+                    CallableParameterPassing::PositionalOnly,
+                    CallableParameterPresence::Required,
+                    None,
+                    None,
+                )
+            })
+            .collect::<Result<Vec<_>, _>>()?;
+        let group = CallableParameterGroup::try_new(
+            CallableGroupIndex::ZERO,
+            CallableGroupKind::Initial,
+            parameters,
+            limits,
+        )?;
+        Self::try_new(
+            vec![group],
+            result,
+            CallableEffectSchema::fixed(crate::effect_row::EffectRow::closed(
+                crate::effects::EffectSet::new(),
+            )),
+            CallableArgumentPolicy::new(
+                UnknownNamedArgumentPolicy::Reject,
+                SpreadArgumentPolicy::FixedLiteralOnly,
+            ),
+            CallableValidator::EnumConstructor(id),
+            CallableGenericParameterIssuer::empty(),
+            limits,
+        )
+    }
+}
+
+fn seal_generic_inventory(
+    groups: &[CallableParameterGroup],
+    result: &TypeKind,
+    issuer: &CallableGenericParameterIssuer,
+) -> Result<CallableGenericParameterInventory, CallableSchemaError> {
+    let mut occurrences = Vec::new();
+    for group in groups {
+        let position = u32::try_from(group.index().get())
+            .expect("schema group positions fit the generic-use coordinate");
+        for parameter in group.parameters() {
+            if let Some(ty) = parameter.declared_type() {
+                occurrences.push((ty, position));
+            }
+        }
+    }
+    let result_position =
+        u32::try_from(groups.len()).map_err(|_| CallableSchemaError::GroupLimit {
+            actual: groups.len(),
+            limit: groups.len(),
+        })?;
+    occurrences.push((result, result_position));
+    let collected = TypeGenericUseCollector::collect_many(occurrences)?;
+    let candidate_types = issuer.type_parameters();
+    for parameter in &candidate_types {
+        if !collected.types().contains(parameter) {
+            return Err(CallableSchemaError::MissingCandidateType {
+                parameter: parameter.clone(),
+            });
+        }
+    }
+    let candidate_consts = issuer.const_parameters();
+    for parameter in &candidate_consts {
+        if !collected.consts().contains(parameter) {
+            return Err(CallableSchemaError::MissingCandidateConst {
+                parameter: parameter.clone(),
+            });
+        }
+    }
+    for parameter in collected.types() {
+        if issuer.owns_type(parameter) && !candidate_types.contains(parameter) {
+            return Err(CallableSchemaError::MissingCandidateType {
+                parameter: parameter.clone(),
+            });
+        }
+    }
+    for parameter in collected.consts() {
+        if issuer.owns_const(parameter) {
+            if !candidate_consts.contains(parameter) {
+                return Err(CallableSchemaError::MissingCandidateConst {
+                    parameter: parameter.clone(),
+                });
+            }
+            return Err(CallableSchemaError::InferableConstGeneric {
+                parameter: parameter.clone(),
+            });
+        }
+    }
+
+    let candidate_types = candidate_types.iter().collect::<BTreeSet<_>>();
+    let types = collected
+        .types()
+        .iter()
+        .map(|parameter| {
+            let first_use = first_use_for(
+                collected
+                    .first_type_use(parameter)
+                    .expect("collector stores a first use for every type"),
+                groups.len(),
+            );
+            CallableGenericTypeUse {
+                parameter: parameter.clone(),
+                role: if candidate_types.contains(parameter) {
+                    CallableSchemaGenericRole::Candidate
+                } else {
+                    CallableSchemaGenericRole::RigidReference
+                },
+                first_use,
+            }
+        })
+        .collect::<Vec<_>>()
+        .into();
+    let rigid_consts = collected
+        .consts()
+        .iter()
+        .map(|parameter| CallableRigidConstUse {
+            parameter: parameter.clone(),
+            first_use: first_use_for(
+                collected
+                    .first_const_use(parameter)
+                    .expect("collector stores a first use for every const"),
+                groups.len(),
+            ),
+        })
+        .collect::<Vec<_>>()
+        .into();
+    Ok(CallableGenericParameterInventory {
+        types,
+        rigid_consts,
+    })
+}
+
+fn first_use_for(position: u32, group_count: usize) -> CallableGenericFirstUse {
+    if usize::try_from(position).ok() == Some(group_count) {
+        CallableGenericFirstUse::Result
+    } else {
+        CallableGenericFirstUse::Group(
+            CallableGroupIndex::try_from_usize(position as usize)
+                .expect("schema group positions are representable"),
         )
     }
 }
@@ -814,6 +1683,7 @@ impl FunctionSignature {
         &self,
         effects: EffectRow,
         validator: CallableValidator,
+        generic_issuer: CallableGenericParameterIssuer,
         limits: &CallableLimits,
     ) -> Result<CallableSignatureSchema, CallableSchemaError> {
         let (groups, argument_policy) = if self.checks_args() {
@@ -847,7 +1717,7 @@ impl FunctionSignature {
             (
                 vec![unchecked_function_parameter_group(limits)?],
                 CallableArgumentPolicy::new(
-                    UnknownNamedArgumentPolicy::OpenUnchecked,
+                    UnknownNamedArgumentPolicy::OpenSupply,
                     SpreadArgumentPolicy::Unchecked,
                 ),
             )
@@ -858,6 +1728,7 @@ impl FunctionSignature {
             CallableEffectSchema::fixed(effects),
             argument_policy,
             validator,
+            generic_issuer,
             limits,
         )
     }
@@ -895,7 +1766,7 @@ fn function_parameter_group(
                                 .expect("zero parameter index is representable"),
                         ),
                     })?,
-                CallableParameterType::Exact(parameter.ty().clone()),
+                CallableParameterAdmission::checked(parameter.ty().clone()),
                 if parameter.is_rest() {
                     CallableParameterPassing::RestPositional
                 } else if parameter.name().is_some() {
@@ -931,7 +1802,7 @@ fn unchecked_function_parameter_group(
     let parameter = CallableParameter::try_new(
         CallableParameterIndex::try_from_usize(0).expect("zero parameter index is representable"),
         Some(CallableName::try_new("args").expect("static callable name is valid")),
-        CallableParameterType::Unchecked,
+        CallableParameterAdmission::unchecked_supply(),
         CallableParameterPassing::RestPositional,
         CallableParameterPresence::Optional,
         None,
@@ -1024,19 +1895,23 @@ impl CallableParameterGroup {
                 });
             }
             match parameter.passing {
-                CallableParameterPassing::RestPositional
-                    if rest_positional.replace(expected).is_some() =>
-                {
-                    return Err(CallableSchemaError::InvalidRestParameter {
-                        group: index,
-                        parameter: expected,
-                    });
+                CallableParameterPassing::RestPositional => {
+                    if rest_positional.is_some() || rest_named.is_some() {
+                        return Err(CallableSchemaError::InvalidRestParameter {
+                            group: index,
+                            parameter: expected,
+                        });
+                    }
+                    rest_positional = Some(expected);
                 }
-                CallableParameterPassing::RestNamed if rest_named.replace(expected).is_some() => {
-                    return Err(CallableSchemaError::InvalidRestParameter {
-                        group: index,
-                        parameter: expected,
-                    });
+                CallableParameterPassing::RestNamed => {
+                    if rest_positional.is_some() || rest_named.is_some() {
+                        return Err(CallableSchemaError::InvalidRestParameter {
+                            group: index,
+                            parameter: expected,
+                        });
+                    }
+                    rest_named = Some(expected);
                 }
                 _ => {}
             }
@@ -1107,12 +1982,13 @@ impl CallableParameter {
     pub fn try_new(
         index: CallableParameterIndex,
         name: Option<CallableName>,
-        ty: CallableParameterType,
+        admission: impl Into<CallableParameterAdmission>,
         passing: CallableParameterPassing,
         presence: CallableParameterPresence,
         documentation: Option<Arc<str>>,
         source: Option<CallableParameterSource>,
     ) -> Result<Self, CallableSchemaError> {
+        let admission = admission.into();
         if matches!(
             passing,
             CallableParameterPassing::NamedOnly | CallableParameterPassing::RestNamed
@@ -1144,9 +2020,10 @@ impl CallableParameter {
         Ok(Self {
             index,
             name,
-            ty,
+            admission,
             passing,
             presence,
+            consumer: CallableParameterConsumer::Value,
             documentation,
             source,
         })
@@ -1157,8 +2034,21 @@ impl CallableParameter {
     pub fn name(&self) -> Option<&CallableName> {
         self.name.as_ref()
     }
-    pub const fn ty(&self) -> &CallableParameterType {
-        &self.ty
+    pub const fn admission(&self) -> &CallableParameterAdmission {
+        &self.admission
+    }
+    pub const fn declared_type(&self) -> Option<&TypeKind> {
+        self.admission.declared()
+    }
+    pub const fn value_rule(&self) -> Option<&CallableParameterValueRule> {
+        self.admission.rule()
+    }
+    pub const fn consumer(&self) -> &CallableParameterConsumer {
+        &self.consumer
+    }
+    pub(crate) fn with_consumer(mut self, consumer: CallableParameterConsumer) -> Self {
+        self.consumer = consumer;
+        self
     }
     pub const fn passing(&self) -> CallableParameterPassing {
         self.passing
@@ -1175,9 +2065,10 @@ impl CallableParameter {
     fn semantic_eq(&self, other: &Self) -> bool {
         self.index == other.index
             && self.name == other.name
-            && self.ty == other.ty
+            && self.admission == other.admission
             && self.passing == other.passing
             && self.presence == other.presence
+            && self.consumer == other.consumer
     }
 }
 
@@ -1202,3 +2093,415 @@ impl CallableArgumentPolicy {
 mod families;
 
 pub(super) use families::{dialogue_schema, presentation_schema};
+
+#[cfg(test)]
+mod generic_inventory_tests {
+    use super::*;
+    use crate::{
+        callable::PRODUCTION_CALLABLE_LIMITS,
+        effect_row::EffectRow,
+        effects::EffectSet,
+        env::nominal::{AcceptedNominalId, AcceptedNominalOwnerId},
+        types::{
+            ArrayLength, GenericConstParameterId, GenericParameterOwnerId, GenericTypeParameterId,
+            MapKind,
+        },
+    };
+
+    fn accepted_owner(owner: u64) -> AcceptedNominalId {
+        let path = arcweft_lang_syntax::types::TypePath::from(
+            arcweft_lang_syntax::ast::symbol_path::ProjectSymbolPath::new(
+                arcweft_lang_syntax::ast::module_path::ModulePathRoot::ImplicitCrate,
+                [
+                    arcweft_lang_syntax::ast::symbol_path::ProjectSymbolSegment::try_new(format!(
+                        "GenericOwner{owner}"
+                    ))
+                    .expect("generic owner path segment"),
+                ],
+            )
+            .expect("generic owner path"),
+        );
+        AcceptedNominalId::new(AcceptedNominalOwnerId::Standard, path)
+    }
+
+    fn accepted_type(owner: u64, ordinal: u16) -> GenericTypeParameterId {
+        GenericTypeParameterId::new(
+            GenericParameterOwnerId::AcceptedNominal(accepted_owner(owner)),
+            ordinal,
+        )
+    }
+
+    fn parameter(index: usize, ty: TypeKind) -> CallableParameter {
+        CallableParameter::try_new(
+            CallableParameterIndex::try_from_usize(index).expect("test parameter index"),
+            Some(CallableName::try_new(format!("arg{index}")).expect("test parameter name")),
+            CallableParameterAdmission::checked(ty),
+            CallableParameterPassing::PositionalOnly,
+            CallableParameterPresence::Required,
+            None,
+            None,
+        )
+        .expect("test parameter is valid")
+    }
+
+    fn group(index: usize, parameters: Vec<CallableParameter>) -> CallableParameterGroup {
+        let index = CallableGroupIndex::try_from_usize(index).expect("test group index");
+        CallableParameterGroup::try_new(
+            index,
+            if index == CallableGroupIndex::ZERO {
+                CallableGroupKind::Initial
+            } else {
+                CallableGroupKind::Curried
+            },
+            parameters,
+            &PRODUCTION_CALLABLE_LIMITS,
+        )
+        .expect("test group is valid")
+    }
+
+    fn effects() -> CallableEffectSchema {
+        CallableEffectSchema::fixed(EffectRow::closed(EffectSet::new()))
+    }
+
+    #[test]
+    fn semantic_value_rule_selects_clear_guard_before_mandatory_otherwise() {
+        let declared = TypeKind::I32;
+        let rule = CallableParameterValueRule::clearable_option();
+        let clear = CheckedSemanticValueEvidence::VariantCase {
+            owner: TypeKind::Option(Box::new(declared.clone())).semantic_identity_digest(),
+            ordinal: 1,
+            payload: VariantPayloadRequirement::Unit,
+        };
+        assert!(rule.selects(0, &declared, &clear));
+        assert!(!rule.selects(1, &declared, &clear));
+    }
+
+    #[test]
+    fn semantic_value_rule_routes_other_variant_and_nonvariant_values_to_otherwise() {
+        let declared = TypeKind::I32;
+        let rule = CallableParameterValueRule::clearable_option();
+        let other_variant = CheckedSemanticValueEvidence::VariantCase {
+            owner: TypeKind::Option(Box::new(declared.clone())).semantic_identity_digest(),
+            ordinal: 0,
+            payload: VariantPayloadRequirement::Present,
+        };
+        assert!(rule.selects(1, &declared, &other_variant));
+        assert!(rule.selects(1, &declared, &CheckedSemanticValueEvidence::NoVariantCase,));
+
+        let supply = CallableParameterValueRule::supply();
+        assert!(supply.selects(0, &declared, &other_variant));
+        assert!(supply.selects(0, &declared, &CheckedSemanticValueEvidence::NoVariantCase,));
+    }
+
+    #[test]
+    fn semantic_value_rule_rejects_tampered_clear_evidence_at_the_guarded_coordinate() {
+        let declared = TypeKind::I32;
+        let rule = CallableParameterValueRule::clearable_option();
+        for tampered in [
+            CheckedSemanticValueEvidence::VariantCase {
+                owner: TypeKind::Option(Box::new(TypeKind::U32)).semantic_identity_digest(),
+                ordinal: 1,
+                payload: VariantPayloadRequirement::Unit,
+            },
+            CheckedSemanticValueEvidence::VariantCase {
+                owner: TypeKind::Option(Box::new(declared.clone())).semantic_identity_digest(),
+                ordinal: 0,
+                payload: VariantPayloadRequirement::Unit,
+            },
+            CheckedSemanticValueEvidence::VariantCase {
+                owner: TypeKind::Option(Box::new(declared.clone())).semantic_identity_digest(),
+                ordinal: 1,
+                payload: VariantPayloadRequirement::Present,
+            },
+        ] {
+            assert!(!rule.selects(0, &declared, &tampered));
+        }
+    }
+
+    #[test]
+    fn intrinsic_schema_seals_candidate_and_result_first_use_rows() {
+        let option = crate::callable::OptionConstructorKind::Some.signature_schema();
+        let option_item = option
+            .generic_inventory()
+            .types()
+            .iter()
+            .find(|entry| entry.role() == CallableSchemaGenericRole::Candidate)
+            .expect("Option candidate row");
+        assert_eq!(
+            option_item.first_use(),
+            CallableGenericFirstUse::Group(CallableGroupIndex::ZERO)
+        );
+
+        let result = crate::callable::ResultConstructorKind::Ok.signature_schema();
+        let result_only = result
+            .generic_inventory()
+            .types()
+            .iter()
+            .filter(|entry| entry.first_use() == CallableGenericFirstUse::Result)
+            .count();
+        assert_eq!(
+            result_only, 1,
+            "the unused Result side first occurs in result"
+        );
+        assert!(
+            result
+                .generic_inventory()
+                .types()
+                .iter()
+                .all(|entry| entry.role() == CallableSchemaGenericRole::Candidate)
+        );
+    }
+
+    #[test]
+    fn explicit_issuer_classifies_foreign_types_rigid_and_retains_const_references() {
+        let candidate = accepted_type(10, 0);
+        let foreign = accepted_type(11, 0);
+        let enclosing = GenericTypeParameterId::new(
+            GenericParameterOwnerId::AcceptedNominal(AcceptedNominalId::new(
+                AcceptedNominalOwnerId::Standard,
+                arcweft_lang_syntax::types::TypePath::from(
+                    arcweft_lang_syntax::ast::symbol_path::ProjectSymbolPath::new(
+                        arcweft_lang_syntax::ast::module_path::ModulePathRoot::ImplicitCrate,
+                        [
+                            arcweft_lang_syntax::ast::symbol_path::ProjectSymbolSegment::try_new(
+                                "Enclosing",
+                            )
+                            .expect("enclosing nominal segment"),
+                        ],
+                    )
+                    .expect("enclosing nominal path"),
+                ),
+            )),
+            2,
+        );
+        let constant = GenericConstParameterId::new(
+            GenericParameterOwnerId::AcceptedNominal(accepted_owner(12)),
+            4,
+        );
+        let declared = TypeKind::Tuple(vec![
+            TypeKind::GenericParam(candidate.clone()),
+            TypeKind::GenericParam(foreign.clone()),
+            TypeKind::GenericParam(enclosing.clone()),
+            TypeKind::Array {
+                item: Box::new(TypeKind::I32),
+                len: ArrayLength::Generic(constant.clone()),
+            },
+        ]);
+        let schema = CallableSignatureSchema::try_new(
+            vec![group(0, vec![parameter(0, declared)])],
+            TypeKind::GenericParam(candidate.clone()),
+            effects(),
+            CallableArgumentPolicy::new(
+                UnknownNamedArgumentPolicy::Reject,
+                SpreadArgumentPolicy::FixedLiteralOnly,
+            ),
+            CallableValidator::Ordinary,
+            CallableGenericParameterIssuer::accepted_nominal(accepted_owner(10), 1, 0)
+                .expect("typed candidate issuer"),
+            &PRODUCTION_CALLABLE_LIMITS,
+        )
+        .expect("schema inventory");
+
+        let types = schema.generic_inventory().types();
+        assert_eq!(
+            types
+                .iter()
+                .find(|entry| entry.parameter() == &candidate)
+                .expect("candidate row")
+                .role(),
+            CallableSchemaGenericRole::Candidate
+        );
+        assert_eq!(
+            types
+                .iter()
+                .find(|entry| entry.parameter() == &foreign)
+                .expect("foreign row")
+                .role(),
+            CallableSchemaGenericRole::RigidReference
+        );
+        assert_eq!(
+            types
+                .iter()
+                .find(|entry| entry.parameter() == &enclosing)
+                .expect("enclosing row")
+                .role(),
+            CallableSchemaGenericRole::RigidReference
+        );
+        assert_eq!(
+            schema
+                .generic_inventory()
+                .rigid_consts()
+                .first()
+                .expect("rigid const row")
+                .parameter(),
+            &constant
+        );
+
+        let later = accepted_type(13, 0);
+        let later_schema = CallableSignatureSchema::try_new(
+            vec![
+                group(0, vec![parameter(0, TypeKind::I32)]),
+                group(1, vec![parameter(0, TypeKind::GenericParam(later.clone()))]),
+            ],
+            TypeKind::GenericParam(later.clone()),
+            effects(),
+            CallableArgumentPolicy::new(
+                UnknownNamedArgumentPolicy::Reject,
+                SpreadArgumentPolicy::FixedLiteralOnly,
+            ),
+            CallableValidator::Ordinary,
+            CallableGenericParameterIssuer::accepted_nominal(accepted_owner(13), 1, 0)
+                .expect("later-group issuer"),
+            &PRODUCTION_CALLABLE_LIMITS,
+        )
+        .expect("later-group schema");
+        assert_eq!(
+            later_schema
+                .generic_inventory()
+                .types()
+                .first()
+                .expect("later candidate row")
+                .first_use(),
+            CallableGenericFirstUse::Group(
+                CallableGroupIndex::try_from_usize(1).expect("group one")
+            )
+        );
+    }
+
+    #[test]
+    fn issuer_tampering_rejects_invalid_arity_missing_candidates_and_inferable_consts() {
+        assert!(matches!(
+            CallableGenericParameterIssuer::language_intrinsic(
+                LanguageIntrinsicGenericOwner::OptionConstructor,
+                2,
+                0,
+            ),
+            Err(CallableSchemaError::InvalidCandidateIssuer)
+        ));
+        assert!(matches!(
+            CallableGenericParameterIssuer::language_intrinsic(
+                LanguageIntrinsicGenericOwner::OptionConstructor,
+                0,
+                0,
+            ),
+            Err(CallableSchemaError::InvalidCandidateIssuer)
+        ));
+
+        let missing = CallableGenericParameterIssuer::accepted_nominal(accepted_owner(20), 1, 0)
+            .expect("candidate issuer");
+        let error = CallableSignatureSchema::try_new(
+            vec![group(0, vec![parameter(0, TypeKind::I32)])],
+            TypeKind::Unit,
+            effects(),
+            CallableArgumentPolicy::new(
+                UnknownNamedArgumentPolicy::Reject,
+                SpreadArgumentPolicy::FixedLiteralOnly,
+            ),
+            CallableValidator::Ordinary,
+            missing,
+            &PRODUCTION_CALLABLE_LIMITS,
+        )
+        .expect_err("omitted candidate must not disappear");
+        assert!(matches!(
+            error,
+            CallableSchemaError::MissingCandidateType { .. }
+        ));
+
+        let omitted_const =
+            CallableGenericParameterIssuer::accepted_nominal(accepted_owner(22), 0, 1)
+                .expect("const candidate issuer");
+        let error = CallableSignatureSchema::try_new(
+            vec![group(0, vec![parameter(0, TypeKind::I32)])],
+            TypeKind::Unit,
+            effects(),
+            CallableArgumentPolicy::new(
+                UnknownNamedArgumentPolicy::Reject,
+                SpreadArgumentPolicy::FixedLiteralOnly,
+            ),
+            CallableValidator::Ordinary,
+            omitted_const,
+            &PRODUCTION_CALLABLE_LIMITS,
+        )
+        .expect_err("omitted const candidate must not disappear");
+        assert!(matches!(
+            error,
+            CallableSchemaError::MissingCandidateConst { .. }
+        ));
+
+        let constant = GenericConstParameterId::new(
+            GenericParameterOwnerId::AcceptedNominal(accepted_owner(21)),
+            0,
+        );
+        let inferable = CallableGenericParameterIssuer::accepted_nominal(accepted_owner(21), 0, 1)
+            .expect("const candidate issuer");
+        let error = CallableSignatureSchema::try_new(
+            vec![group(
+                0,
+                vec![parameter(
+                    0,
+                    TypeKind::Array {
+                        item: Box::new(TypeKind::I32),
+                        len: ArrayLength::Generic(constant.clone()),
+                    },
+                )],
+            )],
+            TypeKind::Unit,
+            effects(),
+            CallableArgumentPolicy::new(
+                UnknownNamedArgumentPolicy::Reject,
+                SpreadArgumentPolicy::FixedLiteralOnly,
+            ),
+            CallableValidator::Ordinary,
+            inferable,
+            &PRODUCTION_CALLABLE_LIMITS,
+        )
+        .expect_err("inferable const candidate must be rejected");
+        assert!(matches!(
+            error,
+            CallableSchemaError::InferableConstGeneric { parameter } if parameter == constant
+        ));
+    }
+
+    #[test]
+    fn inventory_role_and_first_use_are_digest_committed_deterministically() {
+        let candidate = accepted_type(30, 0);
+        let ty = TypeKind::Map {
+            kind: MapKind::Sorted,
+            key: Box::new(TypeKind::GenericParam(candidate.clone())),
+            value: Box::new(TypeKind::I32),
+        };
+        let policy = CallableArgumentPolicy::new(
+            UnknownNamedArgumentPolicy::Reject,
+            SpreadArgumentPolicy::FixedLiteralOnly,
+        );
+        let issuer = CallableGenericParameterIssuer::accepted_nominal(accepted_owner(30), 1, 0)
+            .expect("issuer");
+        let make = || {
+            CallableSignatureSchema::try_new(
+                vec![group(0, vec![parameter(0, ty.clone())])],
+                TypeKind::Unit,
+                effects(),
+                policy,
+                CallableValidator::Ordinary,
+                issuer.clone(),
+                &PRODUCTION_CALLABLE_LIMITS,
+            )
+            .expect("schema")
+        };
+        let first = make();
+        let second = make();
+        assert_eq!(first.semantic_digest(), second.semantic_digest());
+
+        let rigid = CallableSignatureSchema::try_new(
+            vec![group(0, vec![parameter(0, ty)])],
+            TypeKind::Unit,
+            effects(),
+            policy,
+            CallableValidator::Ordinary,
+            CallableGenericParameterIssuer::empty(),
+            &PRODUCTION_CALLABLE_LIMITS,
+        )
+        .expect("rigid schema");
+        assert_ne!(first.semantic_digest(), rigid.semantic_digest());
+    }
+}

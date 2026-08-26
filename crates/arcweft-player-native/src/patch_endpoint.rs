@@ -502,6 +502,7 @@ mod tests {
     use arcweft_bundle::patch::{BundlePatchArtifact, encode_patch_bundle};
     use arcweft_bundle::resource_codec::SourceMapSection;
     use arcweft_bundle::{ArcweftBundle, BundleFormat, BundleManifest, BundleRuntimeSummary};
+    use arcweft_core::entry::{FlowContractHash, RuntimeFlowExecutable, RuntimeFlowSchema};
     use arcweft_core::plan::{
         FlowRuntimeId, RuntimeDialogueContentPlanSeed, RuntimeFlowOpSeed, RuntimeFlowSeed,
         RuntimeLineId, RuntimePlanBuilder,
@@ -697,11 +698,12 @@ mod tests {
             outcome,
             NativePatchOutcome::Applied {
                 report: BundleHotSwapReport {
-                    generation: GenerationId::new(1),
+                    generation,
                     compatibility: SwapCompatibility::ContentOnly,
                 },
                 content_root,
-            } if content_root == target_identity.content_root
+            } if generation == GenerationId::new(1)
+                && content_root == target_identity.content_root
         ));
         assert_eq!(endpoint.active_awfb_bytes(), target_bytes);
         assert_ne!(endpoint.active_awfb_bytes(), base_bytes);
@@ -736,11 +738,11 @@ mod tests {
             outcome,
             NativePatchOutcome::Applied {
                 report: BundleHotSwapReport {
-                    generation: GenerationId::new(1),
+                    generation,
                     compatibility: SwapCompatibility::CodeCompatible,
                 },
                 content_root,
-            } if content_root == new_root
+            } if generation == GenerationId::new(1) && content_root == new_root
         ));
         assert_eq!(endpoint.active_content_root(), Some(new_root));
 
@@ -978,6 +980,19 @@ mod tests {
         builder
             .push_flow_seed(RuntimeFlowSeed::new(flow.clone(), [], main_ops))
             .expect("flow admits");
+        builder
+            .push_flow_schema(RuntimeFlowSchema {
+                flow: flow.clone(),
+                parameters: Vec::new(),
+            })
+            .expect("flow schema admits");
+        builder
+            .push_flow_executable(RuntimeFlowExecutable {
+                flow: flow.clone(),
+                contract: FlowContractHash::from_bytes([0x73; 32]),
+                controller: None,
+            })
+            .expect("flow executable admits");
         builder
             .push_entry(arcweft_core::plan::RuntimeEntrySpec {
                 id: arcweft_core::plan::EntryRuntimeId::from_source_entity_body("entry.main")

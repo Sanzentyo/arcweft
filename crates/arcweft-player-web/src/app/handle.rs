@@ -9,6 +9,7 @@ use crate::edit_context::WebEditContextFeatureDetection;
 use crate::host::BrowserTaskBroker;
 use crate::runtime_text_input::register_runtime_bridge;
 use arcweft_bundle::ArcweftBundle;
+use arcweft_core::plan::EntryRuntimeId;
 use arcweft_layout::ScalePolicy;
 use arcweft_player_scene::dialogue::DialogueVisualClock;
 use arcweft_player_scene::fonts::PlayerFontSet;
@@ -28,6 +29,7 @@ use winit::keyboard::ModifiersState;
 struct WebPlayerOptions {
     frame_fit: PlayerFrameFit,
     additional_font_bytes: Vec<Vec<u8>>,
+    entry: Option<EntryRuntimeId>,
 }
 
 impl Default for WebPlayerOptions {
@@ -35,6 +37,7 @@ impl Default for WebPlayerOptions {
         Self {
             frame_fit: PlayerFrameFit::design_1280x720(ScalePolicy::Contain),
             additional_font_bytes: Vec::new(),
+            entry: None,
         }
     }
 }
@@ -101,6 +104,7 @@ fn create(
     let WebPlayerOptions {
         frame_fit,
         additional_font_bytes,
+        entry,
     } = options;
     let mut font_resources = Vec::with_capacity(additional_font_bytes.len().saturating_add(1));
     font_resources.push(font_bytes);
@@ -119,7 +123,8 @@ fn create(
         .map_err(|_| WebPlayerError::NotCanvas(canvas_id.clone()))?;
     let detection = WebEditContextFeatureDetection::detect_for_element(canvas.unchecked_ref());
     let text_input = register_runtime_bridge(canvas_id.clone(), detection);
-    let session_options = BundleSessionOptions::default();
+    let mut session_options = BundleSessionOptions::default();
+    session_options.entry = entry;
     let bundle = ArcweftBundle::from_awfb_slice_with_resource_types(
         &bundle_bytes,
         session_options.engine_resource_types.as_ref(),
@@ -177,7 +182,19 @@ fn web_player_options_from_js(options: &JsValue) -> Result<WebPlayerOptions, Web
         };
     }
     parsed.additional_font_bytes = js_u8_array_list_property(options, "additionalFontBytes")?;
+    parsed.entry = js_string_property(options, "entry")
+        .map(parse_web_entry_selection)
+        .transpose()?;
     Ok(parsed)
+}
+
+fn parse_web_entry_selection(entry: String) -> Result<EntryRuntimeId, WebPlayerError> {
+    EntryRuntimeId::from_source_entity_body(&entry).map_err(|error| {
+        WebPlayerError::InvalidEntrySelection {
+            entry,
+            message: error.to_string(),
+        }
+    })
 }
 
 fn js_property(parent: &JsValue, key: &str) -> Option<JsValue> {

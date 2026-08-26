@@ -1,26 +1,198 @@
 //! Item roles and checked callable-catalog publication.
 
 use super::{
-    Analyzer, Arc, BTreeMap, CallPoison, CallTargetFacts, CallTargetFactsInput, CallableAccess,
-    CallableCandidateId, CallableEffectContract, CallableEffectSchema, CallableMethodRole,
-    CheckedCallTarget, CheckedCallableCatalog, CheckedCallableCatalogBuildError,
-    CheckedCallableCatalogBuilder, CheckedCallableExecution, CheckedCallableId, CheckedExpression,
-    CheckedExpressionResolution, CheckedFunctionExecution, CheckedItem, CheckedItemRole,
-    CheckedSuspensionRole, CheckedValueResolution, EffectId, EffectRow, EffectSet,
+    Analyzer, Arc, BTreeMap, CallableAccess, CallableCandidateId, CallableEffectContract,
+    CallableEffectSchema, CallableMethodRole, CheckedCallableCatalog,
+    CheckedCallableCatalogBuildError, CheckedCallableCatalogBuilder, CheckedCallableExecution,
+    CheckedCallableId, CheckedExpression, CheckedExpressionResolution, CheckedFunctionExecution,
+    CheckedItem, CheckedItemRole, CheckedSuspensionRole, EffectId, EffectRow, EffectSet,
     EffectSubsetError, ExprId, FinalSemanticAnalysisError, FinalSemanticAnalysisInput,
     HirCallCallee, HirCallableSourceOwner, HirExprKind, HirFlowContractClause,
     HirFlowContractSourcePart, HirFlowSourceRole, HirFunctionBody, HirImplMember, HirItem,
     HirItemKind, HirItemSourceRole, HirModule, HirPathSegment, HirPredicateBody, HirProofBody,
-    HirSourceQuery, HirStmtKind, HirTraitMember, ItemId, LocalId, PendingCallAnalysis,
-    ProjectSymbolTable, STANDARD_TRAIT_CATALOG_VERSION, ScopeId, SourceSpan, StagedCallableBody,
+    HirSourceQuery, HirStmtKind, HirTraitMember, ItemId, ProjectSymbolTable,
+    STANDARD_TRAIT_CATALOG_VERSION, ScopeId, SourceSpan, StagedCallableBody,
     StagedCheckedCallables, TypeId, TypeKind,
     callable_effect_graph::CallableEffectGraph,
-    calls::{final_call_effects, final_callable_effects, instantiated_callee_type},
+    calls::{AnalyzerPreparedCallGraph, AnalyzerPreparedCallPrefix},
     statements::{
         checked_effect_expression, closure_effect_rows, execution_effects,
         function_effect_contract, scope_executes_within, scope_span, source_span,
     },
 };
+use crate::{
+    callable::{
+        CallTargetFacts, CheckedCallCalleeExecution, CheckedCallSite, EffectPermission,
+        PreparedCallGraphSelectedNode, ResolvedCallableState,
+    },
+    semantic_coordinate::StableCheckedValueCoordinate,
+};
+
+fn prepared_call_node<'a>(
+    prepared_calls: &'a AnalyzerPreparedCallGraph,
+    owner: ExprId,
+) -> Option<PreparedCallGraphSelectedNode<'a, AnalyzerPreparedCallPrefix>> {
+    prepared_calls
+        .selected_nodes()
+        .find(|node| node.site() == CheckedCallSite::HirCall(owner))
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum EffectTraceCallDispatch {
+    Direct,
+    Value,
+}
+
+struct EffectTraceSelectedCall<'a> {
+    dispatch: EffectTraceCallDispatch,
+    producer: Option<ExprId>,
+    argument_sources: Box<[ExprId]>,
+    selected: &'a CallableCandidateId,
+}
+
+trait EffectTraceCallAuthority {
+    fn selected_call(
+        &self,
+        owner: ExprId,
+    ) -> Result<Option<EffectTraceSelectedCall<'_>>, FinalSemanticAnalysisError>;
+}
+
+struct PreparedEffectTraceCallAuthority<'a> {
+    graph: &'a AnalyzerPreparedCallGraph,
+}
+
+impl<'a> PreparedEffectTraceCallAuthority<'a> {
+    const fn new(graph: &'a AnalyzerPreparedCallGraph) -> Self {
+        Self { graph }
+    }
+}
+
+impl EffectTraceCallAuthority for PreparedEffectTraceCallAuthority<'_> {
+    fn selected_call(
+        &self,
+        owner: ExprId,
+    ) -> Result<Option<EffectTraceSelectedCall<'_>>, FinalSemanticAnalysisError> {
+        let Some(node) = prepared_call_node(self.graph, owner) else {
+            return Ok(None);
+        };
+        let prefix = node.prefix();
+        let application = prefix.application();
+        let record = prefix.record();
+        let origin = record.function_value_origin();
+        let producer = origin.and_then(|origin| match origin.producer() {
+            crate::callable::PreparedFunctionValueOriginProducer::PreparedContinuation(site) => {
+                Some(site.expression())
+            }
+            crate::callable::PreparedFunctionValueOriginProducer::Call(_)
+            | crate::callable::PreparedFunctionValueOriginProducer::Lexical { .. }
+            | crate::callable::PreparedFunctionValueOriginProducer::IndependentExpression {
+                ..
+            } => None,
+        });
+        let argument_sources = record.input_projection().expression_sources();
+        Ok(Some(EffectTraceSelectedCall {
+            dispatch: if origin.is_some() {
+                EffectTraceCallDispatch::Value
+            } else {
+                EffectTraceCallDispatch::Direct
+            },
+            producer,
+            argument_sources,
+            selected: application.selected().id(),
+        }))
+    }
+}
+
+struct CheckedEffectTraceCallAuthority<'a> {
+    calls: &'a [CallTargetFacts],
+    sites: BTreeMap<StableCheckedValueCoordinate, ExprId>,
+}
+
+impl<'a> CheckedEffectTraceCallAuthority<'a> {
+    fn seal(calls: &'a [CallTargetFacts]) -> Result<Self, FinalSemanticAnalysisError> {
+        let mut sites = BTreeMap::new();
+        for call in calls {
+            let Some(application) = call.selected_application() else {
+                continue;
+            };
+            if sites
+                .insert(application.core().stable_site().clone(), call.expression())
+                .is_some()
+            {
+                return Err(FinalSemanticAnalysisError::WrongPayloadFamily);
+            }
+        }
+        Ok(Self { calls, sites })
+    }
+}
+
+impl EffectTraceCallAuthority for CheckedEffectTraceCallAuthority<'_> {
+    fn selected_call(
+        &self,
+        owner: ExprId,
+    ) -> Result<Option<EffectTraceSelectedCall<'_>>, FinalSemanticAnalysisError> {
+        let mut matching = self.calls.iter().filter(|call| call.expression() == owner);
+        let Some(call) = matching.next() else {
+            return Ok(None);
+        };
+        if matching.next().is_some() {
+            return Err(FinalSemanticAnalysisError::WrongPayloadFamily);
+        }
+        let Some(application) = call.selected_application() else {
+            return Ok(None);
+        };
+        let selected = application.core().candidates().selected();
+        let (dispatch, producer) = match (application.core().callee(), selected.state()) {
+            (CheckedCallCalleeExecution::Direct, ResolvedCallableState::Base) => {
+                (EffectTraceCallDispatch::Direct, None)
+            }
+            (CheckedCallCalleeExecution::Value { .. }, ResolvedCallableState::Base) => {
+                let producer = match selected.base().authority().stable() {
+                    crate::callable::ResolvedCallableStableIdentity::FunctionValue(identity) => {
+                        self.sites
+                            .get(&StableCheckedValueCoordinate::Expression(
+                                identity.expression().clone(),
+                            ))
+                            .copied()
+                    }
+                    crate::callable::ResolvedCallableStableIdentity::Catalog(_)
+                    | crate::callable::ResolvedCallableStableIdentity::Language(_)
+                    | crate::callable::ResolvedCallableStableIdentity::Lexical(_) => None,
+                };
+                (EffectTraceCallDispatch::Value, producer)
+            }
+            (
+                CheckedCallCalleeExecution::Value { .. },
+                ResolvedCallableState::Continuation(continuation),
+            ) => {
+                let producer = self
+                    .sites
+                    .get(continuation.prefix_application_site())
+                    .copied()
+                    .ok_or(FinalSemanticAnalysisError::WrongPayloadFamily)?;
+                (EffectTraceCallDispatch::Value, Some(producer))
+            }
+            (CheckedCallCalleeExecution::Direct, ResolvedCallableState::Continuation(_)) => {
+                return Err(FinalSemanticAnalysisError::WrongPayloadFamily);
+            }
+        };
+        let argument_sources = application
+            .core()
+            .execution()
+            .arguments()
+            .iter()
+            .flat_map(|argument| argument.slots())
+            .map(|slot| slot.source().owner())
+            .collect::<Vec<_>>()
+            .into_boxed_slice();
+        Ok(Some(EffectTraceSelectedCall {
+            dispatch,
+            producer,
+            argument_sources,
+            selected: selected.id(),
+        }))
+    }
+}
 
 fn callable_label(module: &HirModule, owner: ItemId) -> Result<String, FinalSemanticAnalysisError> {
     let item = module
@@ -66,7 +238,7 @@ fn effect_trace_notes(
     owner: ItemId,
     scope: ScopeId,
     input: &FinalSemanticAnalysisInput,
-    pending_calls: &BTreeMap<ExprId, PendingCallAnalysis>,
+    call_authority: &impl EffectTraceCallAuthority,
     symbols: &ProjectSymbolTable,
     modules: &BTreeMap<super::HirModuleId, &HirModule>,
     missing: &EffectSet,
@@ -80,7 +252,7 @@ fn effect_trace_notes(
             module,
             scope,
             input,
-            pending_calls,
+            call_authority,
             symbols,
             modules,
             effect,
@@ -109,11 +281,11 @@ fn effect_trace_notes(
                     if trace.returned_calls.contains(owner) {
                         notes.push(format!("returned function value from `{label}`"));
                     }
+                    let selected = call_authority.selected_call(*owner)?;
                     if within_body
                         && checked.effects().contains(effect)
-                        && pending_calls
-                            .get(owner)
-                            .is_some_and(|pending| pending.function_value_type.is_none())
+                        && selected
+                            .is_some_and(|call| call.dispatch == EffectTraceCallDispatch::Direct)
                     {
                         notes.push(format!("call `{label}`"));
                         direct_perform = true;
@@ -183,10 +355,17 @@ fn effect_trace_notes(
             if !closure_performs {
                 continue;
             }
-            for (_, capture) in returned_module
-                .captures()
-                .filter(|(_, capture)| capture.closure() == *returned)
-            {
+            let checked_closure = input
+                .expressions
+                .iter()
+                .find_map(|(owner, checked)| {
+                    (*owner == *returned).then(|| match checked.checked_resolution() {
+                        Some(super::CheckedExpressionResolution::Closure(closure)) => Some(closure),
+                        _ => None,
+                    })?
+                })
+                .ok_or(FinalSemanticAnalysisError::WrongPayloadFamily)?;
+            for capture in checked_closure.captures() {
                 let local = returned_module
                     .resolve_local(capture.local())
                     .map_err(|_| FinalSemanticAnalysisError::InvalidOwner)?;
@@ -216,7 +395,7 @@ fn function_value_effect_trace(
     module: &HirModule,
     scope: ScopeId,
     input: &FinalSemanticAnalysisInput,
-    pending_calls: &BTreeMap<ExprId, PendingCallAnalysis>,
+    call_authority: &impl EffectTraceCallAuthority,
     symbols: &ProjectSymbolTable,
     modules: &BTreeMap<super::HirModuleId, &HirModule>,
     effect: &super::EffectId,
@@ -229,38 +408,34 @@ fn function_value_effect_trace(
         let expression = module
             .resolve_expr(*owner)
             .map_err(|_| FinalSemanticAnalysisError::InvalidOwner)?;
-        let HirExprKind::Call(call) = expression.kind() else {
+        let HirExprKind::Call(_) = expression.kind() else {
+            continue;
+        };
+        let Some(call) = call_authority.selected_call(*owner)? else {
             continue;
         };
         if !(scope_executes_within(module, expression.scope(), scope)?
-            && pending_calls
-                .get(owner)
-                .is_some_and(|pending| pending.function_value_type.is_some()))
+            && call.dispatch == EffectTraceCallDispatch::Value)
         {
             continue;
         }
         trace.function_value_calls.insert(*owner);
-        let Some(origin) = function_value_origin_call(module, call, input)? else {
+        let Some(origin) = call.producer else {
             continue;
         };
-        let Some(pending) = pending_calls.get(&origin) else {
-            continue;
-        };
+        let origin_call = call_authority
+            .selected_call(origin)?
+            .ok_or(FinalSemanticAnalysisError::WrongPayloadFamily)?;
         trace.returned_calls.insert(origin);
-        for argument in &pending.arguments {
-            for slot in argument.slots() {
-                let Some(argument) = slot.expression() else {
-                    continue;
-                };
-                let argument_expression = module
-                    .resolve_expr(argument)
-                    .map_err(|_| FinalSemanticAnalysisError::InvalidOwner)?;
-                if matches!(argument_expression.kind(), HirExprKind::Closure(_)) {
-                    trace.callback_closures.insert(argument);
-                }
+        for argument in origin_call.argument_sources {
+            let argument_expression = module
+                .resolve_expr(argument)
+                .map_err(|_| FinalSemanticAnalysisError::InvalidOwner)?;
+            if matches!(argument_expression.kind(), HirExprKind::Closure(_)) {
+                trace.callback_closures.insert(argument);
             }
         }
-        let CallableCandidateId::Project(declaration) = pending.selected.id() else {
+        let CallableCandidateId::Project(declaration) = origin_call.selected else {
             continue;
         };
         let Some(symbol) = symbols.callable(declaration) else {
@@ -284,77 +459,6 @@ fn function_value_effect_trace(
         }
     }
     Ok(trace)
-}
-
-fn function_value_origin_call(
-    module: &HirModule,
-    call: &arcweft_lang_hir::expr::HirCallExpr,
-    input: &FinalSemanticAnalysisInput,
-) -> Result<Option<ExprId>, FinalSemanticAnalysisError> {
-    let Some(mut expression) = call.callee().value_expression() else {
-        return Ok(None);
-    };
-    let mut visited = std::collections::BTreeSet::<LocalId>::new();
-    loop {
-        let record = module
-            .resolve_expr(expression)
-            .map_err(|_| FinalSemanticAnalysisError::InvalidOwner)?;
-        if matches!(record.kind(), HirExprKind::Call(_)) {
-            return Ok(Some(expression));
-        }
-        let Some((_, checked)) = input
-            .expressions
-            .iter()
-            .find(|(owner, _)| *owner == expression)
-        else {
-            return Ok(None);
-        };
-        let CheckedExpressionResolution::Value(CheckedValueResolution::Local(local)) =
-            checked.resolution()
-        else {
-            return Ok(None);
-        };
-        if !visited.insert(*local) {
-            return Ok(None);
-        }
-        let Some(initializer) = binding_initializer_for_local(module, *local) else {
-            return Ok(None);
-        };
-        expression = initializer;
-    }
-}
-
-fn binding_initializer_for_local(module: &HirModule, local: LocalId) -> Option<ExprId> {
-    module
-        .statements()
-        .find_map(|(_, statement)| match statement.kind() {
-            HirStmtKind::Let {
-                initializer,
-                locals,
-                ..
-            }
-            | HirStmtKind::LetElse {
-                initializer,
-                locals,
-                ..
-            } if locals.contains(&local) => Some(*initializer),
-            HirStmtKind::LetChoice {
-                choice: initializer,
-                locals,
-                ..
-            }
-            | HirStmtKind::LetScope {
-                scope_expr: initializer,
-                locals,
-                ..
-            }
-            | HirStmtKind::LetActionReceive {
-                action: initializer,
-                locals,
-                ..
-            } if locals.contains(&local) => Some(*initializer),
-            _ => None,
-        })
 }
 
 fn returned_closure_expression(
@@ -455,8 +559,10 @@ impl Analyzer<'_, '_, '_> {
                                 .expressions()
                                 .get(owner)
                                 .ok_or(FinalSemanticAnalysisError::InvalidOwner)?;
-                            match checked.resolution() {
-                                CheckedExpressionResolution::Effect(effect) => Ok(effect.clone()),
+                            match checked.checked_resolution() {
+                                Some(CheckedExpressionResolution::Effect(effect)) => {
+                                    Ok(effect.clone())
+                                }
                                 _ => Err(FinalSemanticAnalysisError::WrongPayloadFamily),
                             }
                         })
@@ -476,8 +582,7 @@ impl Analyzer<'_, '_, '_> {
         let accepted = Arc::clone(self.catalogs.world.environment().callable_catalog_arc());
         let mut builder = CheckedCallableCatalogBuilder::for_registered(
             Arc::clone(&accepted),
-            self.symbols.world().clone(),
-            *self.symbols.revision(),
+            Arc::clone(self.topology.generation()),
             STANDARD_TRAIT_CATALOG_VERSION,
         )
         .map_err(checked_catalog_error)?;
@@ -586,12 +691,41 @@ impl Analyzer<'_, '_, '_> {
         }
         let graph = CallableEffectGraph::build(
             &staged.bodies,
-            self.facts.pending_calls(),
+            self.facts
+                .prepared_calls()
+                .map_err(FinalSemanticAnalysisError::from)?,
             &self.modules,
             self.control,
         )?;
         graph.reject_recursive_contracts(self.control)?;
         graph.close_effect_rows(&mut rows, self.control)?;
+
+        // Body rows remain the authority for validating each callable's own
+        // contract. Calls execute the callable's exposed interface instead:
+        // an authored upper bound is observable even when this project build
+        // can prove that the current body performs fewer effects. Closure
+        // latent rows must therefore close project-call edges with exposed
+        // rows, exactly like final call applications do.
+        let call_effect_rows = staged
+            .bodies
+            .iter()
+            .map(|body| {
+                let inferred = rows
+                    .get(&body.id)
+                    .ok_or(FinalSemanticAnalysisError::CheckedCallableCatalog)?;
+                let contract = staged
+                    .builder
+                    .pending_by_id(&body.id)
+                    .map_err(|_| FinalSemanticAnalysisError::CheckedCallableCatalog)?
+                    .body_contract()
+                    .ok_or(FinalSemanticAnalysisError::CheckedCallableCatalog)?;
+                let exposed = match contract.permission() {
+                    EffectPermission::UnboundedInference => inferred,
+                    EffectPermission::Bounded(row) => row.concrete(),
+                };
+                Ok((body.id.clone(), exposed.clone()))
+            })
+            .collect::<Result<BTreeMap<_, _>, FinalSemanticAnalysisError>>()?;
 
         for body in &staged.bodies {
             self.control.check()?;
@@ -611,7 +745,7 @@ impl Analyzer<'_, '_, '_> {
                     module,
                     closure_scope,
                     row.concrete(),
-                    &rows,
+                    &call_effect_rows,
                     self.control,
                 )?);
                 staged
@@ -639,6 +773,11 @@ impl Analyzer<'_, '_, '_> {
                     EffectSubsetError::MissingEffects { missing },
                 )) => {
                     let module = self.module(body.module)?;
+                    let call_authority = PreparedEffectTraceCallAuthority::new(
+                        self.facts
+                            .prepared_calls()
+                            .map_err(FinalSemanticAnalysisError::from)?,
+                    );
                     return Err(FinalSemanticAnalysisError::EffectUpperBoundExceeded {
                         owner: body.item,
                         callable: callable_label(module, body.item)?,
@@ -647,7 +786,7 @@ impl Analyzer<'_, '_, '_> {
                             body.item,
                             body.scope,
                             input,
-                            self.facts.pending_calls(),
+                            &call_authority,
                             self.symbols,
                             &self.modules,
                             &missing,
@@ -667,8 +806,7 @@ impl Analyzer<'_, '_, '_> {
         checked
             .validate_registered_authority(
                 staged.accepted.as_ref(),
-                self.symbols.world(),
-                *self.symbols.revision(),
+                self.topology.generation().as_ref(),
             )
             .map_err(|_| FinalSemanticAnalysisError::CatalogGenerationMismatch)?;
         Ok(checked)
@@ -683,6 +821,7 @@ impl Analyzer<'_, '_, '_> {
         &self,
         input: &FinalSemanticAnalysisInput,
     ) -> Result<(), FinalSemanticAnalysisError> {
+        let call_authority = CheckedEffectTraceCallAuthority::seal(&input.calls)?;
         for module in self.modules.values().copied() {
             for (owner, item) in module.items() {
                 self.control.check()?;
@@ -743,7 +882,7 @@ impl Analyzer<'_, '_, '_> {
                         owner,
                         flow.body_scope(),
                         input,
-                        self.facts.pending_calls(),
+                        &call_authority,
                         self.symbols,
                         &self.modules,
                         &missing,
@@ -763,85 +902,6 @@ impl Analyzer<'_, '_, '_> {
         input: &FinalSemanticAnalysisInput,
     ) -> Result<Arc<CheckedCallableCatalog>, FinalSemanticAnalysisError> {
         self.finish_checked_callables(self.stage_checked_callables()?, input)
-    }
-
-    pub(super) fn finalize_call_facts(
-        &mut self,
-        checked_callables: &CheckedCallableCatalog,
-    ) -> Result<(), FinalSemanticAnalysisError> {
-        let pending = self
-            .facts
-            .pending_calls()
-            .values()
-            .cloned()
-            .collect::<Vec<_>>();
-        for call in pending {
-            self.control.check()?;
-            let effects =
-                final_call_effects(&call.selected, call.current_group, checked_callables)?;
-            let mut checked = CheckedCallTarget::selected(
-                &call.selected,
-                &call.considered,
-                call.arguments.clone(),
-                call.result.clone(),
-                effects.clone(),
-                call.current_group,
-                CallPoison::Clean,
-            );
-            if let Some(function_value_type) = &call.function_value_type {
-                checked = checked.with_function_value_type(function_value_type.clone());
-            }
-            let facts = CallTargetFacts::try_new(
-                CallTargetFactsInput {
-                    expression: call.expression,
-                    enclosing_callable: call.enclosing_callable,
-                    callee: Some(call.callee),
-                    checked,
-                    diagnostics: Vec::new(),
-                    accounting: call.accounting,
-                },
-                &self.catalogs.callable_limits,
-            )
-            .map_err(|_| FinalSemanticAnalysisError::CallResolutionFailed {
-                owner: call.expression,
-            })?;
-            self.facts.set_call_fact(call.expression, facts);
-            if let Some(callee) = call.callee_expression {
-                let previous = self.facts.expressions().get(&callee).cloned().ok_or(
-                    FinalSemanticAnalysisError::ExpressionTypeUnavailable { owner: callee },
-                )?;
-                let effects = final_callable_effects(&call.selected, checked_callables)?;
-                let ty = instantiated_callee_type(&call.selected, &call.result, &effects)
-                    .ok_or(FinalSemanticAnalysisError::CallResolutionFailed { owner: callee })?;
-                self.facts.set_expression(
-                    callee,
-                    CheckedExpression::new(
-                        ty,
-                        previous.type_selection(),
-                        previous.effects().clone(),
-                        previous.resolution().clone(),
-                    ),
-                );
-            }
-            let previous = self
-                .facts
-                .expressions()
-                .get(&call.expression)
-                .ok_or(FinalSemanticAnalysisError::ExpressionTypeUnavailable {
-                    owner: call.expression,
-                })?
-                .clone();
-            self.facts.set_expression(
-                call.expression,
-                CheckedExpression::new(
-                    previous.ty().clone(),
-                    previous.type_selection(),
-                    effects.concrete().clone(),
-                    call.expression_resolution.clone(),
-                ),
-            );
-        }
-        Ok(())
     }
 }
 

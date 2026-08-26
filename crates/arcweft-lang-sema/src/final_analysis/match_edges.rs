@@ -6,56 +6,693 @@
 //! has been found.  In particular, no source spelling or arena identity is
 //! used as a fallback identity.
 
-use std::{collections::BTreeMap, sync::Arc};
+use std::{
+    collections::{BTreeMap, BTreeSet},
+    sync::Arc,
+};
 
 use arcweft_core::value::RuntimeRecordFieldId;
 use arcweft_lang_hir::{
     expr::{
-        HirCallCallee, HirExprKind, HirExpressionChildEdge, HirExpressionChildRole,
-        HirNestedExpressionPath, HirSelectedMember,
+        HirExprKind, HirExpressionChildRole, HirNestedExpressionPath,
+        HirNestedExpressionPathSegment,
     },
     identity::ExprId,
     module::HirModule,
-    symbol::{ProjectSymbolTable, nominal::ProjectNominalBody},
+    project::{
+        HirExpressionEvaluationEdge, HirProjectEvaluationTopology,
+        HirSelectedCallExpressionDisposition, HirSelectedCallExpressionInventory,
+        HirSelectedExpressionGraph, HirSelectedExpressionInventoryError,
+    },
 };
 
 use super::{
-    CallTargetFact, CheckedExpressionResolution, ExprId as SemaExprId, FinalSemanticAnalysis,
-    HirModuleId, TypeId, TypeKind,
+    CheckedExpressionResolution, CheckedMethodSelection, ExprId as SemaExprId,
+    FinalCallSealFailure, FinalCallSealLocation, FinalSemanticAnalysis, FinalSemanticAnalysisError,
+    HirExecutableProjectView, HirModuleId, SemanticFactFamily, TypeKind,
 };
 use crate::callable::{
-    CallableName, CheckedCallableCatalog, CheckedCallableJoin, CheckedCallableJoinError,
-    ReceiverMethodKey, validate_selected_call,
+    CheckedCallableCatalog, CheckedCallableJoin, CheckedCallableJoinError,
+    validate_selected_application,
+};
+use crate::semantic_coordinate::{
+    CheckedExpressionChildRole, CheckedExpressionEdgeAuthority, CheckedNestedPathSegmentV1,
+    CheckedNestedPathV1,
 };
 
 mod model;
 
 pub use model::{
-    CheckedChildEdgeError, CheckedExpressionChildRole, CheckedExpressionEdgeError,
-    CheckedExpressionEdgeFact, CheckedNestedEvidenceRole, CheckedNestedPathError,
-    CheckedNestedPathSegmentV1, CheckedNestedPathV1, NestedPathEvidence,
+    CheckedChildEdgeError, CheckedExpressionEdgeError, CheckedExpressionEdgeFact,
+    CheckedNestedEvidenceRole, NestedPathEvidence,
 };
 
-/// Copies the one structural edge inventory for all final-HIR expressions at
-/// report publication.  The raw rows are publication-only input; they are
-/// never retained by `FinalSemanticAnalysis`.
-pub(super) fn collect_child_edges(
-    modules: &BTreeMap<HirModuleId, &HirModule>,
-) -> BTreeMap<ExprId, Box<[HirExpressionChildEdge]>> {
-    modules
-        .values()
-        .flat_map(|module| {
-            module.expressions().map(|(owner, expression)| {
-                (owner, expression.kind().child_edges().into_boxed_slice())
-            })
+fn checked_nested_path_from_hir(
+    path: &HirNestedExpressionPath,
+) -> Result<CheckedNestedPathV1, CheckedChildEdgeError> {
+    let segments = path
+        .segments()
+        .iter()
+        .map(|segment| match segment {
+            HirNestedExpressionPathSegment::ChoiceBodyItem { ordinal } => {
+                CheckedNestedPathSegmentV1::ChoiceBodyItem { ordinal: *ordinal }
+            }
+            HirNestedExpressionPathSegment::ChoiceIfBranch { ordinal } => {
+                CheckedNestedPathSegmentV1::ChoiceIfBranch { ordinal: *ordinal }
+            }
+            HirNestedExpressionPathSegment::ChoiceIfElse => {
+                CheckedNestedPathSegmentV1::ChoiceIfElse
+            }
+            HirNestedExpressionPathSegment::ChoiceForBody => {
+                CheckedNestedPathSegmentV1::ChoiceForBody
+            }
+            HirNestedExpressionPathSegment::ChoiceMatchArm { ordinal } => {
+                CheckedNestedPathSegmentV1::ChoiceMatchArm { ordinal: *ordinal }
+            }
+            HirNestedExpressionPathSegment::ChoiceOptionBody => {
+                CheckedNestedPathSegmentV1::ChoiceOptionBody
+            }
+            HirNestedExpressionPathSegment::ChoiceOptionField { ordinal } => {
+                CheckedNestedPathSegmentV1::ChoiceOptionField { ordinal: *ordinal }
+            }
+            HirNestedExpressionPathSegment::ChoiceViewEntry { ordinal } => {
+                CheckedNestedPathSegmentV1::ChoiceViewEntry { ordinal: *ordinal }
+            }
+            HirNestedExpressionPathSegment::ChoicePlanItem { ordinal } => {
+                CheckedNestedPathSegmentV1::ChoicePlanItem { ordinal: *ordinal }
+            }
+            HirNestedExpressionPathSegment::LinePlanItem { ordinal } => {
+                CheckedNestedPathSegmentV1::LinePlanItem { ordinal: *ordinal }
+            }
+            HirNestedExpressionPathSegment::LinePlanStartGroupItem { ordinal } => {
+                CheckedNestedPathSegmentV1::LinePlanStartGroupItem { ordinal: *ordinal }
+            }
+            HirNestedExpressionPathSegment::LinePlanTogetherGroupItem { ordinal } => {
+                CheckedNestedPathSegmentV1::LinePlanTogetherGroupItem { ordinal: *ordinal }
+            }
+        })
+        .collect::<Vec<_>>();
+    CheckedNestedPathV1::try_from_segments(segments.into_boxed_slice())
+        .map_err(|_| CheckedChildEdgeError::MissingNestedPath)
+}
+
+pub(super) type PreparedCallableJoins =
+    BTreeMap<ExprId, Result<CheckedCallableJoin, CheckedCallableJoinError>>;
+
+pub(crate) type SelectedHirExpressionEdge = (ExprId, HirExpressionChildRole);
+
+/// Resolves the exact expression inventory selected by checked postfix facts.
+/// HIR owns traversal and candidate membership; the checked fact supplies only
+/// the already-accepted candidate identity.
+#[derive(Debug)]
+pub(super) struct CheckedSelectedExpressionGraph {
+    graph: HirSelectedExpressionGraph,
+}
+
+impl CheckedSelectedExpressionGraph {
+    pub(super) fn seal(
+        project: HirExecutableProjectView<'_>,
+        topology: Arc<HirProjectEvaluationTopology>,
+        expressions: &BTreeMap<ExprId, super::PreparedExpressionFact>,
+        prepared_calls: &super::analyzer::AnalyzerPreparedCallGraph,
+    ) -> Result<Self, FinalSemanticAnalysisError> {
+        let mut call_inventories = BTreeMap::<ExprId, HirSelectedCallExpressionInventory>::new();
+        for site in prepared_calls.sites() {
+            let crate::callable::CheckedCallSite::HirCall(owner) = site else {
+                continue;
+            };
+            if expressions
+                .get(&owner)
+                .and_then(|expression| expression.checked_call_site(owner))
+                != Some(site)
+            {
+                return Err(FinalSemanticAnalysisError::CallSeal(
+                    FinalCallSealFailure::new(
+                        FinalCallSealLocation::Site(site),
+                        crate::callable::CallConstraintInvariant::PreparedCallSiteMismatch,
+                    ),
+                ));
+            }
+            let inventory = prepared_calls
+                .project_site_payload(
+                    site,
+                    |prefix| prefix.selected_expression_inventory(),
+                    |unselected| Ok(unselected.selected_expression_inventory()),
+                )
+                .ok_or_else(|| {
+                    FinalSemanticAnalysisError::CallSeal(FinalCallSealFailure::new(
+                        FinalCallSealLocation::Site(site),
+                        crate::callable::CallConstraintInvariant::MissingOrStalePreparedNode,
+                    ))
+                })?
+                .map_err(|failure| {
+                    FinalSemanticAnalysisError::CallSeal(FinalCallSealFailure::new(
+                        FinalCallSealLocation::Site(site),
+                        failure,
+                    ))
+                })?;
+            if call_inventories.insert(owner, inventory).is_some() {
+                return Err(FinalSemanticAnalysisError::CallSeal(
+                    FinalCallSealFailure::new(
+                        FinalCallSealLocation::Site(site),
+                        crate::callable::CallConstraintInvariant::PreparedCallSiteMismatch,
+                    ),
+                ));
+            }
+        }
+        Self::seal_with_call_inventory(project, topology, expressions, |owner| {
+            call_inventories
+                .get(&owner)
+                .cloned()
+                .map(HirSelectedCallExpressionDisposition::Callable)
+                .or_else(|| {
+                    expressions
+                        .get(&owner)
+                        .filter(|expression| expression.checked_call_site(owner).is_none())
+                        .map(|_| HirSelectedCallExpressionDisposition::Structural)
+                })
+        })
+    }
+
+    /// Manual fact fixtures may omit prepared-call state only when their HIR
+    /// contains no selected Call. Encountering a Call fails closed through the
+    /// same inventory error; this helper never reconstructs children from raw
+    /// syntax or final expression membership.
+    #[cfg(test)]
+    pub(super) fn seal_call_free_fixture(
+        project: HirExecutableProjectView<'_>,
+        topology: Arc<HirProjectEvaluationTopology>,
+        expressions: &BTreeMap<ExprId, super::PreparedExpressionFact>,
+    ) -> Result<Self, FinalSemanticAnalysisError> {
+        Self::seal_with_call_inventory(project, topology, expressions, |owner| {
+            expressions
+                .get(&owner)
+                .filter(|expression| expression.checked_call_site(owner).is_none())
+                .map(|_| HirSelectedCallExpressionDisposition::Structural)
+        })
+    }
+
+    fn seal_with_call_inventory(
+        project: HirExecutableProjectView<'_>,
+        topology: Arc<HirProjectEvaluationTopology>,
+        expressions: &BTreeMap<ExprId, super::PreparedExpressionFact>,
+        selected_call: impl FnMut(ExprId) -> Option<HirSelectedCallExpressionDisposition>,
+    ) -> Result<Self, FinalSemanticAnalysisError> {
+        let graph = project
+            .selected_expression_graph(
+                &topology,
+                |owner| expressions.get(&owner)?.selected_postfix_candidate(),
+                selected_call,
+            )
+            .map_err(|error| match error {
+                HirSelectedExpressionInventoryError::MissingPostfixSelection { expression }
+                    if !expressions.contains_key(&expression) =>
+                {
+                    FinalSemanticAnalysisError::MissingFact {
+                        family: SemanticFactFamily::Expression,
+                    }
+                }
+                HirSelectedExpressionInventoryError::MissingPostfixSelection { .. }
+                | HirSelectedExpressionInventoryError::InvalidPostfixSelection { .. }
+                | HirSelectedExpressionInventoryError::InvalidRuntimeCallDisposition { .. }
+                | HirSelectedExpressionInventoryError::MissingRuntimeCallReceiver { .. } => {
+                    FinalSemanticAnalysisError::WrongPayloadFamily
+                }
+                HirSelectedExpressionInventoryError::MissingSelectedCallEdges { expression }
+                    if !expressions.contains_key(&expression) =>
+                {
+                    FinalSemanticAnalysisError::MissingFact {
+                        family: SemanticFactFamily::Expression,
+                    }
+                }
+                HirSelectedExpressionInventoryError::MissingSelectedCallEdges { expression } => {
+                    FinalSemanticAnalysisError::CallSeal(FinalCallSealFailure::new(
+                        FinalCallSealLocation::Site(crate::callable::CheckedCallSite::HirCall(
+                            expression,
+                        )),
+                        crate::callable::CallConstraintInvariant::MissingOrStalePreparedNode,
+                    ))
+                }
+                HirSelectedExpressionInventoryError::InvalidSelectedCallCallee {
+                    expression,
+                    ..
+                } => FinalSemanticAnalysisError::CallSeal(FinalCallSealFailure::new(
+                    FinalCallSealLocation::Site(crate::callable::CheckedCallSite::HirCall(
+                        expression,
+                    )),
+                    crate::callable::CallConstraintInvariant::PreparedCallSiteMismatch,
+                )),
+                HirSelectedExpressionInventoryError::InvalidSelectedCallArguments {
+                    expression,
+                } => FinalSemanticAnalysisError::CallSeal(FinalCallSealFailure::new(
+                    FinalCallSealLocation::Site(crate::callable::CheckedCallSite::HirCall(
+                        expression,
+                    )),
+                    crate::callable::CallConstraintInvariant::MalformedMapperSeal,
+                )),
+                HirSelectedExpressionInventoryError::UnresolvedExpression { expression } => {
+                    FinalSemanticAnalysisError::CallSeal(FinalCallSealFailure::new(
+                        FinalCallSealLocation::Graph,
+                        crate::callable::CallConstraintInvariant::MissingCheckedExpressionCoordinate {
+                            owner: expression,
+                        },
+                    ))
+                }
+                HirSelectedExpressionInventoryError::UnknownModule { .. }
+                | HirSelectedExpressionInventoryError::TopologyMismatch => {
+                    FinalSemanticAnalysisError::InvalidOwner
+                }
+                HirSelectedExpressionInventoryError::InvalidSelectedGraph => {
+                    FinalSemanticAnalysisError::WrongPayloadFamily
+                }
+            })?;
+        Ok(Self { graph })
+    }
+
+    pub(super) fn topology(&self) -> &Arc<HirProjectEvaluationTopology> {
+        self.graph.topology()
+    }
+
+    pub(super) fn owners(&self) -> impl Iterator<Item = ExprId> + '_ {
+        self.graph.expression_owners()
+    }
+}
+
+fn selected_expression_edges(
+    graph: &CheckedSelectedExpressionGraph,
+) -> BTreeMap<ExprId, Box<[SelectedHirExpressionEdge]>> {
+    graph
+        .graph
+        .expression_owners()
+        .map(|owner| {
+            let edges = graph
+                .graph
+                .expression_edges(owner)
+                .iter()
+                .filter_map(|edge| match edge {
+                    HirExpressionEvaluationEdge::Expression {
+                        role,
+                        ownership: arcweft_lang_hir::expr::HirExpressionChildOwnership::Owning,
+                        child,
+                    } => Some((*child, role.clone())),
+                    _ => None,
+                })
+                .collect::<Vec<_>>()
+                .into_boxed_slice();
+            (owner, edges)
         })
         .collect()
+}
+
+/// Move-only structural edge authority sealed before call application
+/// finalization.  C1 semantic coordinates borrow this exact draft; final edge
+/// publication later consumes it together with callable joins.  No second HIR
+/// walk or parallel checked-role table is permitted across those phases.
+#[derive(Debug)]
+pub(super) struct CheckedStructuralEdgeDraft {
+    facts: BTreeMap<
+        ExprId,
+        Result<Box<[(ExprId, CheckedExpressionChildRole)]>, CheckedChildEdgeError>,
+    >,
+    call_owners: BTreeSet<ExprId>,
+    record_owners: BTreeSet<ExprId>,
+    record_fields: Option<BTreeMap<ExprId, Box<[super::CheckedExpressionRecordField]>>>,
+}
+
+impl CheckedExpressionEdgeAuthority for CheckedStructuralEdgeDraft {
+    fn checked_expression_child_role(
+        &self,
+        parent: ExprId,
+        child: ExprId,
+    ) -> Option<CheckedExpressionChildRole> {
+        self.facts
+            .get(&parent)?
+            .as_ref()
+            .ok()?
+            .iter()
+            .find_map(|(candidate, role)| (*candidate == child).then(|| role.clone()))
+    }
+}
+
+impl CheckedStructuralEdgeDraft {
+    pub(super) fn attach_record_fields(
+        &mut self,
+        fields: BTreeMap<ExprId, Box<[super::CheckedExpressionRecordField]>>,
+    ) -> Result<(), CheckedChildEdgeError> {
+        if self.record_fields.is_some()
+            || !fields
+                .keys()
+                .copied()
+                .eq(self.record_owners.iter().copied())
+        {
+            return Err(CheckedChildEdgeError::UnexpectedCheckedRecordField);
+        }
+        self.record_fields = Some(fields);
+        Ok(())
+    }
+
+    fn call_callee(&self, owner: ExprId) -> Result<Option<ExprId>, CheckedCallableJoinError> {
+        let edges = self
+            .facts
+            .get(&owner)
+            .ok_or(CheckedCallableJoinError::NotSelected)?
+            .as_ref()
+            .map_err(|_| CheckedCallableJoinError::NotSelected)?;
+        let mut callees = edges.iter().filter_map(|(child, role)| {
+            matches!(role, CheckedExpressionChildRole::Callee).then_some(*child)
+        });
+        let callee = callees.next();
+        if callees.next().is_some() {
+            return Err(CheckedCallableJoinError::UnexpectedReceiverKey);
+        }
+        Ok(callee)
+    }
+
+    pub(super) fn seal(
+        selected: &CheckedSelectedExpressionGraph,
+        modules: &BTreeMap<HirModuleId, &HirModule>,
+        expressions: &BTreeMap<ExprId, super::PreparedExpressionFact>,
+    ) -> Self {
+        let raw_edges = selected_expression_edges(selected);
+        let mut facts = BTreeMap::new();
+        let mut call_owners = BTreeSet::new();
+        let mut record_owners = BTreeSet::new();
+        for (owner, edges) in raw_edges {
+            let Some(owner_expression) = modules
+                .get(&owner.module())
+                .and_then(|module| module.resolve_expr(owner).ok())
+            else {
+                facts.insert(owner, Err(CheckedChildEdgeError::MissingExpression));
+                continue;
+            };
+            if matches!(owner_expression.kind(), HirExprKind::Call(_)) {
+                call_owners.insert(owner);
+            }
+            let Some(checked_owner) = expressions.get(&owner) else {
+                facts.insert(owner, Err(CheckedChildEdgeError::MissingExpression));
+                continue;
+            };
+            match (
+                matches!(
+                    owner_expression.kind(),
+                    HirExprKind::Record(_) | HirExprKind::RecordLiteral(_)
+                ),
+                matches!(
+                    checked_owner,
+                    super::PreparedExpressionFact::ProjectRecord(_)
+                ),
+            ) {
+                (true, true) => {
+                    record_owners.insert(owner);
+                }
+                (false, false) => {}
+                (true, false) => {
+                    facts.insert(owner, Err(CheckedChildEdgeError::MissingCheckedRecordField));
+                    continue;
+                }
+                (false, true) => {
+                    facts.insert(
+                        owner,
+                        Err(CheckedChildEdgeError::UnexpectedCheckedRecordField),
+                    );
+                    continue;
+                }
+            }
+            if let Some(complete) = checked_owner.complete() {
+                if let Err(error) =
+                    validate_match_owner(owner_expression.kind(), complete, expressions)
+                {
+                    facts.insert(owner, Err(error));
+                    continue;
+                }
+                if let Err(error) = validate_nested_path_evidence(
+                    owner_expression.kind(),
+                    complete,
+                    &edges,
+                    expressions,
+                ) {
+                    facts.insert(owner, Err(error));
+                    continue;
+                }
+            }
+            let mut enriched = Vec::with_capacity(edges.len());
+            let mut first_error = None;
+            for (child, role) in &edges {
+                let child = *child;
+                let Some(checked_child) = expressions.get(&child) else {
+                    first_error = Some(CheckedChildEdgeError::MissingExpression);
+                    break;
+                };
+                if let Some(complete) = checked_owner.complete() {
+                    if let Err(error) = validate_match_edge(
+                        owner_expression.kind(),
+                        complete,
+                        child,
+                        role,
+                        expressions,
+                    ) {
+                        first_error = Some(error);
+                        break;
+                    }
+                }
+                let accepted_field = match role {
+                    HirExpressionChildRole::RecordField { source_ordinal } => {
+                        match prepared_record_field(checked_owner, child, *source_ordinal) {
+                            Ok(field) => Some(field),
+                            Err(error) => {
+                                first_error = Some(error);
+                                break;
+                            }
+                        }
+                    }
+                    _ => None,
+                };
+                if matches!(role, HirExpressionChildRole::Guard { .. })
+                    && checked_child.ty() != &TypeKind::Bool
+                {
+                    first_error = Some(CheckedChildEdgeError::MatchGuardTypeMismatch);
+                    break;
+                }
+                if matches!(role, HirExpressionChildRole::ChoiceMatchGuard { .. })
+                    && checked_child.ty() != &TypeKind::Bool
+                {
+                    first_error = Some(CheckedChildEdgeError::MatchGuardTypeMismatch);
+                    break;
+                }
+                match checked_role_from_hir(role, accepted_field) {
+                    Ok(role) => enriched.push((child, role)),
+                    Err(error) => {
+                        first_error = Some(error);
+                        break;
+                    }
+                }
+            }
+            facts.insert(
+                owner,
+                first_error.map_or_else(|| Ok(enriched.into_boxed_slice()), Err),
+            );
+        }
+        Self {
+            facts,
+            call_owners,
+            record_owners,
+            record_fields: None,
+        }
+    }
+
+    pub(super) fn into_final_facts(
+        mut self,
+        calls: &BTreeMap<ExprId, super::CallTargetFacts>,
+        mut callable_joins: PreparedCallableJoins,
+    ) -> (
+        BTreeMap<ExprId, Result<CheckedExpressionEdgeFact, CheckedExpressionEdgeError>>,
+        PreparedCallableJoins,
+    ) {
+        let mut final_facts = BTreeMap::new();
+        let record_fields_attached = self.record_fields.is_some();
+        let mut record_fields = self.record_fields.take().unwrap_or_default();
+        for (owner, structural) in self.facts {
+            let callable = if self.call_owners.contains(&owner) {
+                match callable_joins
+                    .remove(&owner)
+                    .unwrap_or(Err(CheckedCallableJoinError::NotSelected))
+                {
+                    Ok(join) => Some(join),
+                    Err(error) => {
+                        final_facts.insert(owner, Err(CheckedExpressionEdgeError::Callable(error)));
+                        continue;
+                    }
+                }
+            } else {
+                None
+            };
+            let edges = match structural {
+                Ok(edges) => edges,
+                Err(error) => {
+                    final_facts.insert(owner, Err(CheckedExpressionEdgeError::Child(error)));
+                    continue;
+                }
+            };
+            let record_field_rows = record_fields.remove(&owner);
+            if self.record_owners.contains(&owner) != record_field_rows.is_some()
+                || (self.record_owners.contains(&owner) && !record_fields_attached)
+            {
+                final_facts.insert(
+                    owner,
+                    Err(CheckedExpressionEdgeError::Child(
+                        CheckedChildEdgeError::MissingCheckedRecordField,
+                    )),
+                );
+                continue;
+            }
+            let record_fields = record_field_rows.unwrap_or_default();
+            if self.call_owners.contains(&owner) {
+                let Some(call) = calls.get(&owner) else {
+                    final_facts.insert(
+                        owner,
+                        Err(CheckedExpressionEdgeError::Child(
+                            CheckedChildEdgeError::MissingCallFacts,
+                        )),
+                    );
+                    continue;
+                };
+                if let Some(error) = edges
+                    .iter()
+                    .find_map(|(child, role)| validate_checked_call_edge(call, *child, role).err())
+                {
+                    final_facts.insert(owner, Err(CheckedExpressionEdgeError::Child(error)));
+                    continue;
+                }
+            }
+            match CheckedExpressionEdgeFact::try_new(edges, record_fields, callable) {
+                Ok(fact) => {
+                    final_facts.insert(owner, Ok(fact));
+                }
+                Err(error) => {
+                    final_facts.insert(owner, Err(CheckedExpressionEdgeError::Child(error)));
+                }
+            }
+        }
+        for owner in record_fields.into_keys() {
+            final_facts.insert(
+                owner,
+                Err(CheckedExpressionEdgeError::Child(
+                    CheckedChildEdgeError::UnexpectedCheckedRecordField,
+                )),
+            );
+        }
+        (final_facts, callable_joins)
+    }
+}
+
+/// Composes the accepted callable-owner join for every call exactly once.
+///
+/// The returned transaction is staging input: Method rows borrow its accepted
+/// joins during enrichment, then edge publication consumes the same values.
+/// Neither phase resolves another method key or rejoins the callable catalog.
+pub(super) fn prepare_checked_callable_joins(
+    calls: &BTreeMap<ExprId, super::CallTargetFacts>,
+    checked_callables: &CheckedCallableCatalog,
+) -> PreparedCallableJoins {
+    calls
+        .iter()
+        .filter_map(|(owner, facts)| {
+            if !matches!(
+                facts.outcome().site(),
+                crate::callable::CheckedCallSite::HirCall(_)
+            ) {
+                return None;
+            }
+            let joined = facts
+                .selected_application()
+                .ok_or(CheckedCallableJoinError::NotSelected)
+                .and_then(|application| {
+                    validate_selected_application(application, checked_callables)
+                });
+            Some((*owner, joined))
+        })
+        .collect()
+}
+
+pub(super) fn validate_callable_join_inventory(
+    calls: &BTreeMap<ExprId, super::CallTargetFacts>,
+    joins: &PreparedCallableJoins,
+) -> Result<(), CheckedCallableJoinError> {
+    let call_owners = calls
+        .iter()
+        .filter(|(_, facts)| {
+            matches!(
+                facts.outcome().site(),
+                crate::callable::CheckedCallSite::HirCall(_)
+            )
+        })
+        .collect::<Vec<_>>();
+    if call_owners.len() != joins.len()
+        || !call_owners
+            .iter()
+            .map(|(owner, _)| **owner)
+            .eq(joins.keys().copied())
+    {
+        return Err(CheckedCallableJoinError::NotSelected);
+    }
+    for (owner, facts) in call_owners {
+        let joined = joins
+            .get(owner)
+            .ok_or(CheckedCallableJoinError::NotSelected)?;
+        if facts.selected_application().is_some() {
+            if let Err(error) = joined {
+                return Err(error.clone());
+            }
+        } else if joined.is_ok() {
+            return Err(CheckedCallableJoinError::UnexpectedReceiverKey);
+        }
+    }
+    Ok(())
+}
+
+pub(super) fn prepare_checked_method_selections(
+    structural_edges: &CheckedStructuralEdgeDraft,
+    expressions: &BTreeMap<ExprId, super::PreparedExpressionFact>,
+    joins: &PreparedCallableJoins,
+) -> Result<BTreeMap<ExprId, CheckedMethodSelection>, CheckedCallableJoinError> {
+    let mut methods = BTreeMap::new();
+    for (call_owner, joined) in joins {
+        let Ok(join) = joined else {
+            continue;
+        };
+        let Some(value) = structural_edges.call_callee(*call_owner)? else {
+            continue;
+        };
+        let Some(checked) = expressions.get(&value) else {
+            return Err(CheckedCallableJoinError::MissingCheckedRecord);
+        };
+        if !matches!(checked, super::PreparedExpressionFact::Method(_)) {
+            continue;
+        }
+        let selection = CheckedMethodSelection::try_from_join(join)
+            .ok_or(CheckedCallableJoinError::ReceiverModeMismatch)?;
+        if methods.insert(value, selection).is_some() {
+            return Err(CheckedCallableJoinError::MethodLookupAmbiguous);
+        }
+    }
+
+    let prepared = expressions
+        .iter()
+        .filter_map(|(owner, checked)| {
+            matches!(checked, super::PreparedExpressionFact::Method(_)).then_some(*owner)
+        })
+        .collect::<Vec<_>>();
+    if prepared.len() != methods.len() || prepared.iter().any(|owner| !methods.contains_key(owner))
+    {
+        return Err(CheckedCallableJoinError::NotSelected);
+    }
+    Ok(methods)
 }
 
 fn validate_match_owner(
     kind: &HirExprKind,
     checked: &super::CheckedExpression,
-    expressions: &BTreeMap<ExprId, super::CheckedExpression>,
+    expressions: &BTreeMap<ExprId, super::PreparedExpressionFact>,
 ) -> Result<(), CheckedChildEdgeError> {
     let HirExprKind::Match(authored) = kind else {
         return Ok(());
@@ -101,7 +738,7 @@ fn validate_match_edge(
     checked: &super::CheckedExpression,
     child: ExprId,
     role: &HirExpressionChildRole,
-    expressions: &BTreeMap<ExprId, super::CheckedExpression>,
+    expressions: &BTreeMap<ExprId, super::PreparedExpressionFact>,
 ) -> Result<(), CheckedChildEdgeError> {
     let HirExprKind::Match(authored) = kind else {
         return Ok(());
@@ -227,8 +864,8 @@ fn nested_path_role(
 pub(crate) fn build_nested_path_evidence(
     kind: &HirExprKind,
     checked: &super::CheckedExpression,
-    edges: &[HirExpressionChildEdge],
-    expressions: &BTreeMap<ExprId, super::CheckedExpression>,
+    edges: &[SelectedHirExpressionEdge],
+    expressions: &BTreeMap<ExprId, super::PreparedExpressionFact>,
 ) -> Option<Result<NestedPathEvidence, CheckedChildEdgeError>> {
     let owner_family = match (kind, checked.resolution()) {
         (HirExprKind::Choice(_), CheckedExpressionResolution::Choice(_)) => {
@@ -242,14 +879,14 @@ pub(crate) fn build_nested_path_evidence(
     };
     let mut evidence =
         BTreeMap::<CheckedNestedPathV1, Vec<(CheckedNestedEvidenceRole, ExprId)>>::new();
-    for edge in edges {
-        let Some((hir_path, family)) = nested_path_role(edge.role()) else {
+    for (child, role) in edges {
+        let Some((hir_path, family)) = nested_path_role(role) else {
             continue;
         };
         if owner_family != Some(family) {
             return Some(Err(CheckedChildEdgeError::StaleNestedPath));
         }
-        let path = match CheckedNestedPathV1::from_hir(hir_path) {
+        let path = match checked_nested_path_from_hir(hir_path) {
             Ok(path) => path,
             Err(error) => return Some(Err(error)),
         };
@@ -269,17 +906,17 @@ pub(crate) fn build_nested_path_evidence(
         {
             return Some(Err(CheckedChildEdgeError::StaleNestedPath));
         }
-        if !expressions.contains_key(&edge.child()) {
+        if !expressions.contains_key(child) {
             return Some(Err(CheckedChildEdgeError::MissingExpression));
         }
-        let checked_role = match checked_role_from_hir(edge.role(), None) {
+        let checked_role = match checked_role_from_hir(role, None) {
             Ok(role) => role,
             Err(error) => return Some(Err(error)),
         };
         let Some(role) = CheckedNestedEvidenceRole::from_checked_role(&checked_role) else {
             return Some(Err(CheckedChildEdgeError::StaleNestedPath));
         };
-        evidence.entry(path).or_default().push((role, edge.child()));
+        evidence.entry(path).or_default().push((role, *child));
     }
     Some(Ok(evidence
         .into_iter()
@@ -290,8 +927,8 @@ pub(crate) fn build_nested_path_evidence(
 fn validate_nested_path_evidence(
     kind: &HirExprKind,
     checked: &super::CheckedExpression,
-    edges: &[HirExpressionChildEdge],
-    expressions: &BTreeMap<ExprId, super::CheckedExpression>,
+    edges: &[SelectedHirExpressionEdge],
+    expressions: &BTreeMap<ExprId, super::PreparedExpressionFact>,
 ) -> Result<(), CheckedChildEdgeError> {
     let expected = build_nested_path_evidence(kind, checked, edges, expressions);
     let Some(stored) = checked.nested_path_evidence() else {
@@ -313,173 +950,6 @@ fn validate_nested_path_evidence(
     } else {
         Err(CheckedChildEdgeError::StaleNestedPath)
     }
-}
-
-/// Enriches all owners that have complete checked evidence and retains only
-/// those final sema rows.  Recoverable/ambiguous call facts remain available
-/// through their ordinary call inventory, but cannot accidentally expose a
-/// partial child transcript.
-#[allow(
-    clippy::too_many_lines,
-    reason = "one publication transaction owns the exhaustive edge/callable first-error order"
-)]
-pub(super) fn collect_checked_edges(
-    modules: &BTreeMap<HirModuleId, &HirModule>,
-    symbols: &ProjectSymbolTable,
-    types: &BTreeMap<TypeId, TypeKind>,
-    expressions: &BTreeMap<ExprId, super::CheckedExpression>,
-    calls: &BTreeMap<ExprId, super::CallTargetFacts>,
-    checked_callables: &Arc<CheckedCallableCatalog>,
-    raw_edges: BTreeMap<ExprId, Box<[HirExpressionChildEdge]>>,
-) -> BTreeMap<ExprId, Result<CheckedExpressionEdgeFact, CheckedExpressionEdgeError>> {
-    let mut facts = BTreeMap::new();
-    for (owner, edges) in raw_edges {
-        let owner_expression = modules
-            .get(&owner.module())
-            .and_then(|module| module.resolve_expr(owner).ok());
-        let is_call_owner = owner_expression
-            .as_ref()
-            .is_some_and(|expression| matches!(expression.kind(), HirExprKind::Call(_)));
-        let callable_result = if is_call_owner {
-            if let Some(call_facts) = calls.get(&owner) {
-                match method_key_for_call(owner, modules, types, expressions, call_facts) {
-                    Ok(method_key) => Some(validate_selected_call(
-                        call_facts,
-                        checked_callables,
-                        method_key.as_ref(),
-                    )),
-                    Err(error) => Some(Err(error)),
-                }
-            } else {
-                Some(Err(CheckedCallableJoinError::NotSelected))
-            }
-        } else {
-            None
-        };
-        let callable_join = callable_result
-            .as_ref()
-            .and_then(|result| result.as_ref().ok().cloned());
-
-        // A call owner must publish a callable join together with its edge
-        // vector.  Recoverable call facts remain accepted in the ordinary
-        // report, but this owner-level product is rejected atomically.
-        if is_call_owner && callable_join.is_none() {
-            let error = callable_result
-                .and_then(Result::err)
-                .unwrap_or(CheckedCallableJoinError::NotSelected);
-            facts.insert(owner, Err(CheckedExpressionEdgeError::Callable(error)));
-            continue;
-        }
-
-        let Some(owner_expression) = owner_expression else {
-            facts.insert(
-                owner,
-                Err(CheckedExpressionEdgeError::Child(
-                    CheckedChildEdgeError::MissingExpression,
-                )),
-            );
-            continue;
-        };
-        let Some(checked_owner) = expressions.get(&owner) else {
-            facts.insert(
-                owner,
-                Err(CheckedExpressionEdgeError::Child(
-                    CheckedChildEdgeError::MissingExpression,
-                )),
-            );
-            continue;
-        };
-        if let Err(error) =
-            validate_match_owner(owner_expression.kind(), checked_owner, expressions)
-        {
-            facts.insert(owner, Err(CheckedExpressionEdgeError::Child(error)));
-            continue;
-        }
-        if let Err(error) = validate_nested_path_evidence(
-            owner_expression.kind(),
-            checked_owner,
-            &edges,
-            expressions,
-        ) {
-            facts.insert(owner, Err(CheckedExpressionEdgeError::Child(error)));
-            continue;
-        }
-        let mut enriched = Vec::with_capacity(edges.len());
-        let mut first_error = None;
-        for edge in &edges {
-            let child = edge.child();
-            let Some(checked_child) = expressions.get(&child) else {
-                first_error = Some(CheckedChildEdgeError::MissingExpression);
-                break;
-            };
-            if let Some(facts) = calls.get(&owner)
-                && let Err(error) = validate_call_edge(facts, child, edge.role())
-            {
-                first_error = Some(error);
-                break;
-            }
-            if let Err(error) = validate_match_edge(
-                owner_expression.kind(),
-                checked_owner,
-                child,
-                edge.role(),
-                expressions,
-            ) {
-                first_error = Some(error);
-                break;
-            }
-            let accepted_field = match edge.role() {
-                HirExpressionChildRole::RecordField { source_ordinal } => {
-                    match accepted_record_field(
-                        owner,
-                        owner_expression.kind(),
-                        *source_ordinal,
-                        symbols,
-                        expressions,
-                    ) {
-                        Ok(field) => Some(field),
-                        Err(error) => {
-                            first_error = Some(error);
-                            break;
-                        }
-                    }
-                }
-                _ => None,
-            };
-            if matches!(edge.role(), HirExpressionChildRole::Guard { .. })
-                && checked_child.ty() != &TypeKind::Bool
-            {
-                first_error = Some(CheckedChildEdgeError::MatchGuardTypeMismatch);
-                break;
-            }
-            if matches!(edge.role(), HirExpressionChildRole::ChoiceMatchGuard { .. })
-                && checked_child.ty() != &TypeKind::Bool
-            {
-                first_error = Some(CheckedChildEdgeError::MatchGuardTypeMismatch);
-                break;
-            }
-            let role = match checked_role_from_hir(edge.role(), accepted_field) {
-                Ok(role) => role,
-                Err(error) => {
-                    first_error = Some(error);
-                    break;
-                }
-            };
-            enriched.push((child, role));
-        }
-        if let Some(error) = first_error {
-            facts.insert(owner, Err(CheckedExpressionEdgeError::Child(error)));
-        } else {
-            facts.insert(
-                owner,
-                Ok(CheckedExpressionEdgeFact::new(
-                    enriched.into_boxed_slice(),
-                    callable_join,
-                )),
-            );
-        }
-    }
-    facts
 }
 
 impl FinalSemanticAnalysis {
@@ -517,167 +987,67 @@ impl FinalSemanticAnalysis {
     }
 }
 
-fn validate_call_edge(
+impl CheckedExpressionEdgeAuthority for FinalSemanticAnalysis {
+    fn checked_expression_child_role(
+        &self,
+        parent: ExprId,
+        child: ExprId,
+    ) -> Option<CheckedExpressionChildRole> {
+        self.checked_child_edges(parent)
+            .ok()?
+            .iter()
+            .find_map(|(candidate, role)| (*candidate == child).then(|| role.clone()))
+    }
+}
+
+fn validate_checked_call_edge(
     facts: &super::CallTargetFacts,
     child: ExprId,
-    role: &HirExpressionChildRole,
+    role: &CheckedExpressionChildRole,
 ) -> Result<(), CheckedChildEdgeError> {
-    if !matches!(facts.target(), CallTargetFact::Selected { .. }) {
-        return Err(CheckedChildEdgeError::MissingCallFacts);
-    }
+    let application = facts
+        .selected_application()
+        .ok_or(CheckedChildEdgeError::MissingCallFacts)?;
     match role {
-        HirExpressionChildRole::Callee => match facts.callee() {
-            Some(crate::callable::CallCalleeClassificationFact::Value { expression })
-                if expression == child =>
-            {
-                Ok(())
-            }
-            Some(crate::callable::CallCalleeClassificationFact::AssociatedType { .. }) => Ok(()),
-            _ => Err(CheckedChildEdgeError::CallSlotMismatch),
-        },
-        HirExpressionChildRole::Argument { ordinal } => {
-            let argument = facts
-                .arguments()
-                .get(
-                    usize::try_from(*ordinal)
-                        .map_err(|_| CheckedChildEdgeError::CallSlotMismatch)?,
-                )
-                .ok_or(CheckedChildEdgeError::CallSlotMismatch)?;
-            argument
-                .slots()
-                .iter()
-                .any(|slot| slot.source().owner() == child)
-                .then_some(())
-                .ok_or(CheckedChildEdgeError::CallSlotMismatch)
-        }
+        CheckedExpressionChildRole::Callee => Ok(()),
+        CheckedExpressionChildRole::Argument { ordinal } => application
+            .core()
+            .execution()
+            .arguments()
+            .get(usize::try_from(*ordinal).map_err(|_| CheckedChildEdgeError::CallSlotMismatch)?)
+            .filter(|argument| {
+                argument
+                    .slots()
+                    .iter()
+                    .any(|slot| slot.source().owner() == child)
+            })
+            .map(|_| ())
+            .ok_or(CheckedChildEdgeError::CallSlotMismatch),
         _ => Ok(()),
     }
 }
 
-fn method_key_for_call(
-    owner: ExprId,
-    modules: &BTreeMap<HirModuleId, &HirModule>,
-    types: &BTreeMap<TypeId, TypeKind>,
-    expressions: &BTreeMap<ExprId, super::CheckedExpression>,
-    facts: &super::CallTargetFacts,
-) -> Result<Option<ReceiverMethodKey>, CheckedCallableJoinError> {
-    let CallTargetFact::Selected { selected, .. } = facts.target() else {
-        return Ok(None);
-    };
-    let requires_key = matches!(
-        selected.instantiation(),
-        crate::callable::CallableInstantiation::Receiver { .. }
-            | crate::callable::CallableInstantiation::TypeReceiver { .. }
-            | crate::callable::CallableInstantiation::Extension { .. }
-    );
-    if !requires_key {
-        return Ok(None);
-    }
-    let Some(module) = modules.get(&owner.module()) else {
-        return Err(CheckedCallableJoinError::MissingReceiverKey);
-    };
-    let expression = module
-        .resolve_expr(owner)
-        .map_err(|_| CheckedCallableJoinError::MissingReceiverKey)?;
-    let HirExprKind::Call(call) = expression.kind() else {
-        return Err(CheckedCallableJoinError::MissingReceiverKey);
-    };
-    let (receiver, name) = match call.callee() {
-        HirCallCallee::Value { value } => {
-            let callee = module
-                .resolve_expr(*value)
-                .map_err(|_| CheckedCallableJoinError::MissingReceiverKey)?;
-            let HirExprKind::Select(select) = callee.kind() else {
-                return Err(CheckedCallableJoinError::MissingReceiverKey);
-            };
-            let HirSelectedMember::Name(name) = select.member() else {
-                return Err(CheckedCallableJoinError::MissingReceiverKey);
-            };
-            (
-                expressions
-                    .get(&select.target())
-                    .ok_or(CheckedCallableJoinError::MissingReceiverKey)?
-                    .ty()
-                    .clone(),
-                name.clone(),
-            )
-        }
-        HirCallCallee::UnresolvedDot {
-            value_receiver,
-            member,
-            ..
-        } => (
-            expressions
-                .get(value_receiver)
-                .ok_or(CheckedCallableJoinError::MissingReceiverKey)?
-                .ty()
-                .clone(),
-            member
-                .resolved()
-                .cloned()
-                .ok_or(CheckedCallableJoinError::MissingReceiverKey)?,
-        ),
-        HirCallCallee::Associated {
-            receiver, member, ..
-        } => {
-            let receiver = receiver
-                .type_id()
-                .and_then(|receiver| types.get(&receiver))
-                .cloned()
-                .ok_or(CheckedCallableJoinError::MissingReceiverKey)?;
-            (
-                receiver,
-                member
-                    .resolved()
-                    .cloned()
-                    .ok_or(CheckedCallableJoinError::MissingReceiverKey)?,
-            )
-        }
-    };
-    let method = CallableName::try_new(name.as_str())
-        .map_err(|_| CheckedCallableJoinError::MissingReceiverKey)?;
-    Ok(Some(ReceiverMethodKey::new(receiver, method)))
-}
-
-fn accepted_record_field(
-    owner: ExprId,
-    owner_kind: &HirExprKind,
+fn prepared_record_field(
+    checked: &super::PreparedExpressionFact,
+    child: ExprId,
     source_ordinal: u32,
-    symbols: &ProjectSymbolTable,
-    expressions: &BTreeMap<ExprId, super::CheckedExpression>,
 ) -> Result<RuntimeRecordFieldId, CheckedChildEdgeError> {
-    let checked = expressions
-        .get(&owner)
-        .ok_or(CheckedChildEdgeError::MissingExpression)?;
-    let CheckedExpressionResolution::Nominal(nominal) = checked.resolution() else {
+    let super::PreparedExpressionFact::ProjectRecord(record) = checked else {
         return Err(CheckedChildEdgeError::MissingCheckedRecordField);
     };
-    let fields = match owner_kind {
-        HirExprKind::Record(record) => record.fields(),
-        HirExprKind::RecordLiteral(record) => record.fields(),
-        _ => return Err(CheckedChildEdgeError::MissingCheckedRecordField),
-    };
-    let field = fields
-        .get(
-            usize::try_from(source_ordinal)
-                .map_err(|_| CheckedChildEdgeError::MissingCheckedRecordField)?,
-        )
-        .ok_or(CheckedChildEdgeError::MissingCheckedRecordField)?;
-    let name = field
-        .name()
-        .ok_or(CheckedChildEdgeError::MissingCheckedRecordField)?;
-    let declaration = symbols
-        .nominal(nominal.declaration())
-        .ok_or(CheckedChildEdgeError::MissingCheckedRecordField)?;
-    let ProjectNominalBody::Struct { fields } = declaration.body() else {
-        return Err(CheckedChildEdgeError::MissingCheckedRecordField);
-    };
-    let declared_ordinal = fields
+    let field = record
+        .fields()
         .iter()
-        .position(|declared| declared.name().as_str() == name.as_str())
+        .find(|field| field.source_ordinal() == source_ordinal)
         .ok_or(CheckedChildEdgeError::MissingCheckedRecordField)?;
-    RuntimeRecordFieldId::try_from_zero_based_ordinal(declared_ordinal)
-        .map_err(|_| CheckedChildEdgeError::MissingCheckedRecordField)
+    if field.source() != super::PreparedRecordValueSource::Expression(child) {
+        return Err(CheckedChildEdgeError::MissingCheckedRecordField);
+    }
+    RuntimeRecordFieldId::try_from_zero_based_ordinal(
+        usize::try_from(field.declaration_ordinal())
+            .map_err(|_| CheckedChildEdgeError::MissingCheckedRecordField)?,
+    )
+    .map_err(|_| CheckedChildEdgeError::MissingCheckedRecordField)
 }
 
 #[allow(
@@ -688,7 +1058,7 @@ fn checked_role_from_hir(
     role: &HirExpressionChildRole,
     accepted_field: Option<RuntimeRecordFieldId>,
 ) -> Result<CheckedExpressionChildRole, CheckedChildEdgeError> {
-    let path = |path: &HirNestedExpressionPath| CheckedNestedPathV1::from_hir(path);
+    let path = checked_nested_path_from_hir;
     Ok(match role {
         HirExpressionChildRole::Element { ordinal } => {
             CheckedExpressionChildRole::Element { ordinal: *ordinal }

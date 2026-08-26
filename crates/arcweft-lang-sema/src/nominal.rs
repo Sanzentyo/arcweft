@@ -38,4 +38,5 @@ pub use model::{
     TypeArityTarget, TypeNameResolution, TypeResolutionFailure, TypeResolutionReport,
     TypeSourceEvidence,
 };
+pub(crate) use resolver::hir_path_matches_type_path;
 pub use resolver::resolve_type_ref;

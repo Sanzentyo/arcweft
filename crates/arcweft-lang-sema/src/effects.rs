@@ -12,6 +12,16 @@ use thiserror::Error;
 #[derive(Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub struct EffectId(String);
 
+/// One-way semantic identity of an already canonical effect capability.
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub struct EffectSemanticDigest([u8; 32]);
+
+impl EffectSemanticDigest {
+    pub const fn as_bytes(&self) -> &[u8; 32] {
+        &self.0
+    }
+}
+
 /// Parse failure for a canonical effect identifier.
 #[derive(Clone, Debug, Eq, Error, PartialEq)]
 pub enum EffectIdError {
@@ -56,7 +66,7 @@ pub struct EffectSetParseError {
 }
 
 /// Deterministically ordered set of canonical effects.
-#[derive(Clone, Debug, Default, Eq, Hash, PartialEq)]
+#[derive(Clone, Debug, Default, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub struct EffectSet(BTreeSet<EffectId>);
 
 impl EffectId {
@@ -122,6 +132,25 @@ impl EffectId {
 
     pub fn as_str(&self) -> &str {
         &self.0
+    }
+
+    /// Hashes this parsed canonical identity without reparsing display text.
+    ///
+    /// # Panics
+    ///
+    /// Panics on a target whose address space can hold a string longer than
+    /// the canonical `u64` transcript length.
+    #[must_use]
+    pub fn semantic_digest(&self) -> EffectSemanticDigest {
+        let mut hasher = blake3::Hasher::new();
+        hasher.update(b"arcweft.lang.effect-semantic.v1\0");
+        hasher.update(
+            &u64::try_from(self.0.len())
+                .expect("Rust string lengths fit the semantic u64 grammar")
+                .to_le_bytes(),
+        );
+        hasher.update(self.0.as_bytes());
+        EffectSemanticDigest(hasher.finalize().into())
     }
 
     /// Returns whether this is the canonical direct-style suspension effect.
@@ -469,5 +498,17 @@ mod tests {
         let effects = EffectSet::from_labels(["view.show", "fs.read", "view.show"])
             .expect("valid effect set");
         assert_eq!(effects.to_labels(), vec!["fs.read", "view.show"]);
+    }
+
+    #[test]
+    fn effect_semantic_digest_is_canonical_and_payload_sensitive() {
+        let first = EffectId::parse("fs.read(save)").expect("valid effect");
+        let same = EffectId::parse("fs.read(save)").expect("same valid effect");
+        let other_scope = EffectId::parse("fs.read(asset)").expect("valid effect");
+        let other_path = EffectId::parse("fs.write(save)").expect("valid effect");
+
+        assert_eq!(first.semantic_digest(), same.semantic_digest());
+        assert_ne!(first.semantic_digest(), other_scope.semantic_digest());
+        assert_ne!(first.semantic_digest(), other_path.semantic_digest());
     }
 }

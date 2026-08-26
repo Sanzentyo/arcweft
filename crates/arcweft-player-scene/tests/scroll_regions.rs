@@ -144,6 +144,7 @@ fn push_view_text(
             replacement: None,
         }],
         fx: Vec::new(),
+        events: Vec::new(),
         style_nodes: vec![BundleViewStyleNode {
             path: BundleViewInstancePath::default(),
             instruction: 0,

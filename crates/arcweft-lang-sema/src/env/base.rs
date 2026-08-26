@@ -2,21 +2,32 @@ use super::identity::EnvironmentBindingId;
 use super::{
     effects::EffectCapability,
     enums::{EnumVariantPayload, normalize_enum_variant_payload},
-    nominal::{AcceptedNominalCatalog, AcceptedNominalOrigin, standard_exact_record},
+    nominal::{
+        AcceptedEnvironmentRecordSemantics, AcceptedNominalCatalog, AcceptedNominalOrigin,
+        AcceptedNominalRecord, AcceptedOpaqueRuntimeCarrier, standard_environment_record,
+        standard_exact_record, standard_runtime_environment_record,
+    },
 };
 use crate::callable::{
     CallableEvaluatedEffect, CallableLogLevel, CallableName, CallablePath, CallableValidator,
+    ViewModifierId,
 };
 use crate::dialogue_view::{
     DIALOGUE_ACTION_TYPE, DIALOGUE_CHARACTER_TYPE, DIALOGUE_CONTENT_TYPE,
     DIALOGUE_OCCURRENCE_ID_TYPE, DIALOGUE_REVEAL_TYPE, DIALOGUE_STAGE_TYPE,
-    DialogueCharacterProjection, DialogueProjectionCoordinate, DialogueViewModelRegistry,
-    STANDARD_DIALOGUE_VIEW_TYPE,
+    DialogueCharacterProjection, DialogueProjectionCoordinate, DialogueRuntimeValueRole,
+    DialogueViewModelRegistry, STANDARD_DIALOGUE_VIEW_TYPE,
 };
 use crate::effect_row::EffectRow;
 use crate::types::{CharacterNominalType, EntityType, TypeKind, direct_type_name};
 use arcweft_data::DataFormat;
-use arcweft_lang_syntax::types::FnParamKind;
+use arcweft_lang_syntax::{
+    ast::{
+        module_path::ModulePathRoot,
+        symbol_path::{ProjectSymbolPath, ProjectSymbolSegment},
+    },
+    types::FnParamKind,
+};
 use std::collections::{HashMap, HashSet};
 use thiserror::Error;
 
@@ -81,6 +92,23 @@ pub(crate) struct StandardEnvironmentMethod {
     pub(crate) receiver: TypeKind,
     pub(crate) member: CallableName,
     pub(crate) signature: FunctionSignature,
+    pub(crate) role: StandardEnvironmentMethodRole,
+}
+
+/// Closed standard-registry role for one typed receiver method.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(crate) enum StandardEnvironmentMethodRole {
+    Ordinary,
+    ViewModifier(ViewModifierId),
+}
+
+impl StandardEnvironmentMethodRole {
+    pub(crate) const fn validator(self) -> CallableValidator {
+        match self {
+            Self::Ordinary => CallableValidator::Ordinary,
+            Self::ViewModifier(modifier) => CallableValidator::ViewModifier(modifier),
+        }
+    }
 }
 
 /// One source-ordered case owned by a closed base-environment enum schema.
@@ -127,7 +155,6 @@ pub struct TypeCheckEnv {
     pub(crate) standard_methods: Vec<StandardEnvironmentMethod>,
     pub(crate) capabilities: HashSet<EffectCapability>,
     pub(crate) available_effects: Option<HashSet<EffectCapability>>,
-    pub(crate) nominal_records: HashMap<String, HashMap<String, TypeKind>>,
     pub(crate) dialogue_view_models: DialogueViewModelRegistry,
 }
 
@@ -457,7 +484,7 @@ impl TypeCheckEnv {
                 FunctionSignature::new(
                     TypeKind::Bytes,
                     [
-                        FunctionParam::required("value", TypeKind::Named("_".to_owned())),
+                        FunctionParam::required("value", TypeKind::AgentValue),
                         FunctionParam::required("format", TypeKind::DataFormat),
                     ],
                 ),
@@ -477,10 +504,7 @@ impl TypeCheckEnv {
                 ["data", "shape"],
                 FunctionSignature::new(
                     TypeKind::DataShape,
-                    [FunctionParam::required(
-                        "value",
-                        TypeKind::Named("_".to_owned()),
-                    )],
+                    [FunctionParam::required("value", TypeKind::AgentValue)],
                 ),
             )
     }
@@ -737,31 +761,37 @@ impl TypeCheckEnv {
             "flush",
             FunctionSignature::return_only(TypeKind::Unit),
         )
+        .with_standard_view_modifier(ViewModifierId::OnActivate)
     }
 
     #[must_use]
     fn with_standard_dialogue_view_types(self) -> Self {
-        self.with_standard_nominal_record(
+        self.with_standard_runtime_nominal_record(
             DIALOGUE_CONTENT_TYPE,
             std::iter::empty::<(String, TypeKind)>(),
+            DialogueRuntimeValueRole::Content,
         )
-        .with_standard_nominal_record(
+        .with_standard_runtime_nominal_record(
             DIALOGUE_OCCURRENCE_ID_TYPE,
             std::iter::empty::<(String, TypeKind)>(),
+            DialogueRuntimeValueRole::Occurrence,
         )
-        .with_standard_nominal_record(
+        .with_standard_runtime_nominal_record(
             DIALOGUE_STAGE_TYPE,
             std::iter::empty::<(String, TypeKind)>(),
+            DialogueRuntimeValueRole::Stage,
         )
-        .with_standard_nominal_record(
+        .with_standard_runtime_nominal_record(
             DIALOGUE_REVEAL_TYPE,
             std::iter::empty::<(String, TypeKind)>(),
+            DialogueRuntimeValueRole::Reveal,
         )
-        .with_standard_nominal_record(
+        .with_standard_runtime_nominal_record(
             DIALOGUE_ACTION_TYPE,
             std::iter::empty::<(String, TypeKind)>(),
+            DialogueRuntimeValueRole::Action,
         )
-        .with_standard_nominal_record(
+        .with_standard_runtime_nominal_record(
             DIALOGUE_CHARACTER_TYPE,
             [
                 (
@@ -773,8 +803,9 @@ impl TypeCheckEnv {
                     DialogueCharacterProjection::DisplayName.value_type(),
                 ),
             ],
+            DialogueRuntimeValueRole::Character,
         )
-        .with_standard_nominal_record(
+        .with_standard_runtime_nominal_record(
             STANDARD_DIALOGUE_VIEW_TYPE,
             [
                 (
@@ -804,6 +835,7 @@ impl TypeCheckEnv {
                     TypeKind::Named(DIALOGUE_ACTION_TYPE.to_owned()),
                 ),
             ],
+            DialogueRuntimeValueRole::View,
         )
         .with_dialogue_view_models(DialogueViewModelRegistry::standard())
     }
@@ -819,17 +851,41 @@ impl TypeCheckEnv {
         self
     }
 
+    #[must_use]
+    fn with_standard_runtime_nominal_record(
+        mut self,
+        name: impl Into<String>,
+        fields: impl IntoIterator<Item = (String, TypeKind)>,
+        role: DialogueRuntimeValueRole,
+    ) -> Self {
+        let name = name.into();
+        let record = standard_runtime_environment_record(
+            &name,
+            fields,
+            AcceptedOpaqueRuntimeCarrier::new(
+                role.producer(),
+                role.value_class(),
+                role.persistence(),
+            ),
+        )
+        .expect("standard runtime environment records are valid");
+        self.nominal_catalog = self
+            .nominal_catalog
+            .try_with_record(
+                record,
+                crate::nominal::AcceptedNominalCatalogLimits::PRODUCTION,
+            )
+            .expect("standard runtime environment record identities are unique");
+        self
+    }
+
     fn insert_standard_nominal_record(
         &mut self,
         name: String,
         fields: impl IntoIterator<Item = (String, TypeKind)>,
     ) {
-        let accepted = standard_exact_record(
-            &name,
-            TypeKind::Named(name.clone()),
-            AcceptedNominalOrigin::NominalRecord,
-        )
-        .expect("nominal record names are valid non-reserved type paths");
+        let accepted = standard_environment_record(&name, fields)
+            .expect("nominal record names are valid non-reserved type paths");
         self.nominal_catalog = self
             .nominal_catalog
             .try_with_record(
@@ -837,18 +893,22 @@ impl TypeCheckEnv {
                 crate::nominal::AcceptedNominalCatalogLimits::PRODUCTION,
             )
             .expect("nominal record paths are unique in one semantic environment");
-        self.nominal_records.insert(
-            name,
-            fields
-                .into_iter()
-                .map(|(name, ty)| (name, normalize_type_kind(ty)))
-                .collect(),
-        );
     }
 
-    /// Standard and adapter-provided nominal records visible to source files.
-    pub fn nominal_records(&self) -> &HashMap<String, HashMap<String, TypeKind>> {
-        &self.nominal_records
+    /// Exact accepted environment record selected from the sole nominal
+    /// catalog authority.
+    pub fn environment_record(&self, name: &str) -> Option<&AcceptedEnvironmentRecordSemantics> {
+        self.accepted_environment_record(name)
+            .and_then(AcceptedNominalRecord::environment_record)
+    }
+
+    /// Exact accepted owner row for one direct environment record name.
+    pub(crate) fn accepted_environment_record(&self, name: &str) -> Option<&AcceptedNominalRecord> {
+        let segment = ProjectSymbolSegment::try_new(name).ok()?;
+        let path = ProjectSymbolPath::new(ModulePathRoot::ImplicitCrate, [segment]).ok()?;
+        self.nominal_catalog
+            .exact(&path.into())
+            .filter(|record| record.environment_record().is_some())
     }
 
     /// Registers the semantic-role inventory used by dialogue View parameters.
@@ -1157,6 +1217,26 @@ impl TypeCheckEnv {
             receiver,
             member,
             signature: normalize_function_signature(signature),
+            role: StandardEnvironmentMethodRole::Ordinary,
+        });
+        self
+    }
+
+    #[must_use]
+    fn with_standard_view_modifier(mut self, modifier: ViewModifierId) -> Self {
+        let receiver = normalize_type_kind(modifier.receiver());
+        let member = modifier.member();
+        assert!(
+            self.standard_methods
+                .iter()
+                .all(|method| method.receiver != receiver || method.member != member),
+            "standard method keys are unique"
+        );
+        self.standard_methods.push(StandardEnvironmentMethod {
+            receiver,
+            member,
+            signature: normalize_function_signature(modifier.signature()),
+            role: StandardEnvironmentMethodRole::ViewModifier(modifier),
         });
         self
     }

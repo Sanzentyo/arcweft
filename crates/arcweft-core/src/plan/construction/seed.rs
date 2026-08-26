@@ -21,9 +21,10 @@ use crate::value::{
     RuntimeCallTarget, RuntimeEntityReference, RuntimeEntityReferenceField, RuntimeUnaryOp,
     RuntimeValue,
 };
+use arcweft_id::runtime_program::RuntimePureProgramId;
 
 use super::super::{
-    FlowRuntimeId, RuntimeBuiltinIteratorEvidence, RuntimeDialogueValueRole, RuntimeLineId,
+    FlowRuntimeId, RuntimeBuiltinIteratorFamily, RuntimeDialogueValueRole, RuntimeLineId,
     RuntimePureHelperId, RuntimePureHelperOrigin, RuntimePureInputType, RuntimePureOutputType,
     RuntimeReceiverMode, RuntimeTraitMethodId, RuntimeTraitMethodIdentity,
 };
@@ -285,6 +286,11 @@ impl RuntimeFlowSeed {
             params: params.into_iter().collect::<Vec<_>>().into_boxed_slice(),
             ops,
         }
+    }
+
+    #[must_use]
+    pub const fn id(&self) -> &FlowRuntimeId {
+        &self.id
     }
 
     pub(super) fn into_parts(
@@ -728,8 +734,17 @@ impl Eq for RuntimeDialogueContentPlanSeedId {}
 /// builder's reserved trait-method signatures.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum RuntimeIteratorEvidenceSeed {
-    Builtin(RuntimeBuiltinIteratorEvidence),
+    Builtin(RuntimeBuiltinIteratorEvidenceSeed),
     Witness(RuntimeIteratorWitnessEvidenceSeed),
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct RuntimeBuiltinIteratorEvidenceSeed {
+    pub family: RuntimeBuiltinIteratorFamily,
+    pub item: RuntimeSemanticTypeId,
+    pub iterator: RuntimeSemanticTypeId,
+    pub next_value: RuntimeSemanticTypeId,
+    pub step: RuntimeSemanticTypeId,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -810,7 +825,9 @@ pub struct RuntimeHostCallTargetSeed {
     pub public_id: String,
     pub capability: String,
     pub operation: String,
+    pub contract: Option<crate::step::HostCallContractDigest>,
     pub args: Vec<RuntimeHostArgumentSeed>,
+    pub result: RuntimeSemanticTypeId,
     pub mode: RuntimeHostCallMode,
     pub deterministic: bool,
 }
@@ -1343,6 +1360,16 @@ pub struct RuntimePureHelperDeclarationSeed {
     pub origin: RuntimePureHelperOrigin,
 }
 
+/// One exact domain program identity bound to a reserved deterministic helper.
+///
+/// The helper handle proves that the binding belongs to the same aggregate
+/// runtime-plan construction transaction.
+#[derive(Clone, Debug, PartialEq)]
+pub struct RuntimePureProgramBindingSeed {
+    pub program: RuntimePureProgramId,
+    pub helper: RuntimePureHelperSeedId,
+}
+
 #[derive(Clone, Debug, PartialEq)]
 pub struct RuntimeTraitMethodSeed {
     pub identity: RuntimeTraitMethodIdentity,
@@ -1394,6 +1421,12 @@ pub enum RuntimeFieldProjectionSeed {
     Nominal {
         owner: RuntimeSemanticTypeId,
         field: RuntimeRecordFieldSeedId,
+    },
+    OpaqueRecord {
+        owner: RuntimeSemanticTypeId,
+        producer: crate::pattern::RuntimeOpaqueTypeProducerId,
+        field: RuntimeRecordFieldSeedId,
+        field_type: RuntimeSemanticTypeId,
     },
     Agent(RuntimeAgentField),
     EntityReference(RuntimeEntityReferenceField),

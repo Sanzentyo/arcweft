@@ -7,6 +7,7 @@ use std::{
 
 use arcweft_lang_hir::{
     item::{HirItemKind, HirVisibility},
+    project::HirProjectEvaluationTopology,
     scope::HirScopeKind,
     source_index::{
         HirDeclarationSourceRole, HirExprSourceRole, HirItemSourceRole, HirSourcePresence,
@@ -18,31 +19,34 @@ use arcweft_source::{Diagnostic, DiagnosticLabel, DiagnosticSeverity, SourceSpan
 #[cfg(test)]
 use std::sync::atomic::AtomicBool;
 
-#[cfg(test)]
 use super::PhysicalCandidateArgumentEvaluation;
 use super::match_edges;
 use super::{
     CallTargetFacts, CaptureId, CheckedBinding, CheckedCallableCatalog, CheckedExpression,
     CheckedItem, CheckedPattern, CheckedStatement, ExprId, FinalSemanticAnalysisControl,
     FinalSemanticAnalysisError, FinalSemanticAnalysisInput, FinalSemanticAnalysisWork,
-    HirExecutableProjectView, HirModule, HirModuleId, HirSnapshotId, ItemId, LocalId, PatternId,
-    ProjectSymbolRevision, ProjectSymbolTable, ProjectSymbolWorldId, SemanticFactFamily, StmtId,
-    TypeId, TypeKind, TypeResolutionReport,
+    FinalSemanticProjectError, HirExecutableProjectView, HirModule, HirModuleId, ItemId, LocalId,
+    PatternId, ProjectSymbolTable, SemanticFactFamily, StmtId, TypeId, TypeKind,
+    TypeResolutionReport,
     validation::{
         SemanticFactInventory, accepted_type_owners, collect_unique, collect_work,
         validate_bindings, validate_calls, validate_complete_inventory, validate_expressions,
         validate_items, validate_patterns, validate_physical_candidate_argument_evaluations,
-        validate_statements, validate_symbol_generation, validate_types,
+        validate_statements, validate_types,
     },
 };
+use crate::entry::CheckedEntryCatalog;
+use crate::semantic_coordinate::AcceptedSemanticRootCatalog;
+
+use super::nominal_schema::RuntimeNominalProjectionCatalog;
 
 /// Immutable semantic analysis bound to one exact accepted HIR generation.
 #[derive(Clone, Debug)]
 pub struct FinalSemanticAnalysis {
-    snapshots: BTreeMap<HirModuleId, HirSnapshotId>,
-    symbol_world: ProjectSymbolWorldId,
-    symbol_revision: ProjectSymbolRevision,
     checked_callables: Arc<CheckedCallableCatalog>,
+    accepted_roots: Arc<AcceptedSemanticRootCatalog>,
+    checked_entries: CheckedEntryCatalog,
+    runtime_nominals: RuntimeNominalProjectionCatalog,
     types: BTreeMap<TypeId, TypeKind>,
     type_resolutions: BTreeMap<TypeId, TypeResolutionReport>,
     locals: BTreeMap<LocalId, CheckedBinding>,
@@ -63,101 +67,156 @@ pub struct FinalSemanticAnalysis {
     work: FinalSemanticAnalysisWork,
 }
 
-impl FinalSemanticAnalysis {
-    #[allow(
-        dead_code,
-        reason = "used only by the crate-private Cut 2 ownership classifier until Cut 5 publication"
-    )]
-    pub(crate) fn matches_symbol_lease(&self, symbols: &ProjectSymbolTable) -> bool {
-        symbols.world() == &self.symbol_world
-            && symbols.revision() == &self.symbol_revision
-            && self
-                .checked_callables
-                .validate_project_generation(symbols.world(), *symbols.revision())
-                .is_ok()
-    }
+/// Complete, unpublished semantic generation awaiting the consuming Entry and
+/// runtime-nominal seal. This owner is deliberately non-Clone.
+pub(crate) struct FinalSemanticAnalysisDraft {
+    pub(super) checked_callables: Arc<CheckedCallableCatalog>,
+    pub(super) accepted_roots: Arc<AcceptedSemanticRootCatalog>,
+    pub(super) types: BTreeMap<TypeId, TypeKind>,
+    pub(super) type_resolutions: BTreeMap<TypeId, TypeResolutionReport>,
+    pub(super) locals: BTreeMap<LocalId, CheckedBinding>,
+    pub(super) captures: BTreeMap<CaptureId, CheckedBinding>,
+    pub(super) expressions: BTreeMap<ExprId, super::PreparedExpressionFact>,
+    pub(super) patterns: BTreeMap<PatternId, super::PreparedPatternFact>,
+    pub(super) statements: BTreeMap<StmtId, super::PreparedStatementFact>,
+    pub(super) items: BTreeMap<ItemId, CheckedItem>,
+    pub(super) calls: BTreeMap<ExprId, CallTargetFacts>,
+    pub(super) callable_joins: super::match_edges::PreparedCallableJoins,
+    pub(super) selected_expressions: super::match_edges::CheckedSelectedExpressionGraph,
+    pub(super) structural_edges: super::match_edges::CheckedStructuralEdgeDraft,
+    pub(super) physical_candidate_argument_evaluations:
+        BTreeMap<ExprId, Arc<[PhysicalCandidateArgumentEvaluation]>>,
+}
 
-    /// Validates and publishes a complete semantic generation.
-    #[cfg(test)]
-    pub(crate) fn try_new(
-        project: HirExecutableProjectView<'_>,
-        symbols: &ProjectSymbolTable,
-        checked_callables: Arc<CheckedCallableCatalog>,
-        input: FinalSemanticAnalysisInput,
-    ) -> Result<Self, FinalSemanticAnalysisError> {
-        let cancellation = AtomicBool::new(false);
-        Self::try_new_with_control(
-            project,
-            symbols,
+/// Disjoint moved draft state used while the nominal context borrows only the
+/// accepted type map.
+pub(crate) struct FinalSemanticAnalysisDraftParts {
+    pub(super) checked_callables: Arc<CheckedCallableCatalog>,
+    pub(super) accepted_roots: Arc<AcceptedSemanticRootCatalog>,
+    pub(super) types: BTreeMap<TypeId, TypeKind>,
+    pub(super) type_resolutions: BTreeMap<TypeId, TypeResolutionReport>,
+    pub(super) locals: BTreeMap<LocalId, CheckedBinding>,
+    pub(super) captures: BTreeMap<CaptureId, CheckedBinding>,
+    pub(super) expressions: BTreeMap<ExprId, super::PreparedExpressionFact>,
+    pub(super) patterns: BTreeMap<PatternId, super::PreparedPatternFact>,
+    pub(super) statements: BTreeMap<StmtId, super::PreparedStatementFact>,
+    pub(super) items: BTreeMap<ItemId, CheckedItem>,
+    pub(super) calls: BTreeMap<ExprId, CallTargetFacts>,
+    pub(super) callable_joins: super::match_edges::PreparedCallableJoins,
+    pub(super) selected_expressions: super::match_edges::CheckedSelectedExpressionGraph,
+    pub(super) structural_edges: super::match_edges::CheckedStructuralEdgeDraft,
+    pub(super) physical_candidate_argument_evaluations:
+        BTreeMap<ExprId, Arc<[PhysicalCandidateArgumentEvaluation]>>,
+}
+
+impl FinalSemanticAnalysisDraft {
+    pub(crate) fn into_parts(self) -> FinalSemanticAnalysisDraftParts {
+        let Self {
             checked_callables,
-            input,
-            FinalSemanticAnalysisControl::new(&cancellation),
-        )
-    }
-
-    /// Validates and publishes a complete semantic generation while observing
-    /// caller-owned cancellation at every publication phase boundary.
-    #[cfg(test)]
-    pub(crate) fn try_new_with_control(
-        project: HirExecutableProjectView<'_>,
-        symbols: &ProjectSymbolTable,
-        checked_callables: Arc<CheckedCallableCatalog>,
-        input: FinalSemanticAnalysisInput,
-        control: FinalSemanticAnalysisControl<'_>,
-    ) -> Result<Self, FinalSemanticAnalysisError> {
-        Self::try_new_with_control_and_type_resolutions(
-            project,
-            symbols,
+            accepted_roots,
+            types,
+            type_resolutions,
+            locals,
+            captures,
+            expressions,
+            patterns,
+            statements,
+            items,
+            calls,
+            callable_joins,
+            selected_expressions,
+            structural_edges,
+            physical_candidate_argument_evaluations,
+        } = self;
+        FinalSemanticAnalysisDraftParts {
             checked_callables,
-            input,
-            BTreeMap::new(),
-            control,
-        )
+            accepted_roots,
+            types,
+            type_resolutions,
+            locals,
+            captures,
+            expressions,
+            patterns,
+            statements,
+            items,
+            calls,
+            callable_joins,
+            selected_expressions,
+            structural_edges,
+            physical_candidate_argument_evaluations,
+        }
     }
 
-    /// Publishes the semantic type products created by the sole production
-    /// nominal resolver with the same accepted generation as their flattened
-    /// type facts. Manual fact fixtures deliberately use the constructor above
-    /// and therefore cannot fabricate nominal-reference evidence.
-    pub(super) fn try_new_with_control_and_type_resolutions(
+    pub(crate) fn from_parts(parts: FinalSemanticAnalysisDraftParts) -> Self {
+        let FinalSemanticAnalysisDraftParts {
+            checked_callables,
+            accepted_roots,
+            types,
+            type_resolutions,
+            locals,
+            captures,
+            expressions,
+            patterns,
+            statements,
+            items,
+            calls,
+            callable_joins,
+            selected_expressions,
+            structural_edges,
+            physical_candidate_argument_evaluations,
+        } = parts;
+        Self {
+            checked_callables,
+            accepted_roots,
+            types,
+            type_resolutions,
+            locals,
+            captures,
+            expressions,
+            patterns,
+            statements,
+            items,
+            calls,
+            callable_joins,
+            selected_expressions,
+            structural_edges,
+            physical_candidate_argument_evaluations,
+        }
+    }
+
+    pub(crate) fn seal(
+        self,
         project: HirExecutableProjectView<'_>,
         symbols: &ProjectSymbolTable,
-        checked_callables: Arc<CheckedCallableCatalog>,
-        input: FinalSemanticAnalysisInput,
-        type_resolutions: BTreeMap<TypeId, TypeResolutionReport>,
+        checked_entries: CheckedEntryCatalog,
+        runtime_nominals: RuntimeNominalProjectionCatalog,
         control: FinalSemanticAnalysisControl<'_>,
-    ) -> Result<Self, FinalSemanticAnalysisError> {
+    ) -> Result<FinalSemanticAnalysis, FinalSemanticAnalysisError> {
+        let Self {
+            checked_callables,
+            accepted_roots,
+            types,
+            type_resolutions,
+            locals,
+            captures,
+            expressions: prepared_expressions,
+            patterns: prepared_patterns,
+            statements: prepared_statements,
+            items,
+            calls,
+            callable_joins,
+            selected_expressions,
+            structural_edges,
+            physical_candidate_argument_evaluations,
+        } = self;
         control.check()?;
-        validate_symbol_generation(project, symbols)?;
-        checked_callables
-            .validate_project_generation(symbols.world(), *symbols.revision())
-            .map_err(|_| FinalSemanticAnalysisError::CatalogGenerationMismatch)?;
-        let (modules, snapshots) = project_generation_maps(project);
-        let raw_child_edges = match_edges::collect_child_edges(&modules);
+        let expressions = collect_sealed_expressions(prepared_expressions)?;
+        validate_checked_entry_references(&expressions, &checked_entries)?;
+        let patterns = collect_sealed_patterns(prepared_patterns)?;
+        let statements = collect_sealed_statements(prepared_statements)?;
+        let evaluation_topology = Arc::clone(accepted_roots.topology());
+        let modules = project_generation_modules(project);
         let dialogue_lines = project.dialogue_lines();
-
-        let types = collect_unique(input.types, SemanticFactFamily::Type)?;
-        let locals = collect_unique(input.locals, SemanticFactFamily::Local)?;
-        control.check()?;
-        let captures = collect_unique(input.captures, SemanticFactFamily::Capture)?;
-        control.check()?;
-        let expressions = collect_unique(input.expressions, SemanticFactFamily::Expression)?;
-        control.check()?;
-        let patterns = collect_unique(input.patterns, SemanticFactFamily::Pattern)?;
-        control.check()?;
-        let statements = collect_unique(input.statements, SemanticFactFamily::Statement)?;
-        control.check()?;
-        let items = collect_unique(input.items, SemanticFactFamily::Item)?;
-        control.check()?;
-        let calls = collect_unique(
-            input
-                .calls
-                .into_iter()
-                .map(|call| (call.expression(), call)),
-            SemanticFactFamily::Call,
-        )?;
-        let physical_candidate_argument_evaluations = input.physical_candidate_argument_evaluations;
-        control.check()?;
 
         let type_owners = if type_resolutions.is_empty() {
             None
@@ -182,49 +241,51 @@ impl FinalSemanticAnalysis {
             items: &items,
             calls: &calls,
         };
-        validate_complete_inventory(project, &modules, inventory, &type_resolutions)?;
+        validate_complete_inventory(
+            evaluation_topology.as_ref(),
+            &modules,
+            &selected_expressions,
+            inventory,
+            &type_resolutions,
+        )?;
         control.check()?;
-        validate_types(&modules, &types, &calls, &type_resolutions)?;
+        validate_types(&modules, &types)?;
         control.check()?;
         validate_bindings(&modules, &locals, &captures)?;
         control.check()?;
         validate_expressions(
             symbols,
+            &evaluation_topology,
             &modules,
             dialogue_lines,
             &expressions,
             &calls,
-            &type_resolutions,
         )?;
         control.check()?;
-        validate_patterns(symbols, &modules, &patterns)?;
+        validate_patterns(symbols, &modules, &types, &patterns)?;
         control.check()?;
         validate_statements(&modules, &locals, &expressions, &statements, &calls)?;
         control.check()?;
         validate_items(&modules, &items)?;
         control.check()?;
-        validate_calls(symbols, &modules, &expressions, &calls, &type_resolutions)?;
+        validate_calls(symbols, &modules, &expressions, &calls)?;
         validate_physical_candidate_argument_evaluations(
             &modules,
             &physical_candidate_argument_evaluations,
         )?;
         let work = collect_work(inventory)?;
         let diagnostics = collect_final_diagnostics(&modules, &types, &expressions, &items)?;
-        let edge_facts = match_edges::collect_checked_edges(
-            &modules,
-            symbols,
-            &types,
-            &expressions,
-            &calls,
-            &checked_callables,
-            raw_child_edges,
-        );
+        let (edge_facts, unconsumed_callable_joins) =
+            structural_edges.into_final_facts(&calls, callable_joins);
+        if !unconsumed_callable_joins.is_empty() {
+            return Err(FinalSemanticAnalysisError::CheckedCallableCatalog);
+        }
         control.check()?;
-        Ok(Self {
-            snapshots,
-            symbol_world: symbols.world().clone(),
-            symbol_revision: *symbols.revision(),
+        Ok(FinalSemanticAnalysis {
             checked_callables,
+            accepted_roots,
+            checked_entries,
+            runtime_nominals,
             types,
             type_resolutions,
             locals,
@@ -241,6 +302,233 @@ impl FinalSemanticAnalysis {
             work,
         })
     }
+}
+
+fn validate_checked_entry_references(
+    expressions: &BTreeMap<ExprId, CheckedExpression>,
+    entries: &CheckedEntryCatalog,
+) -> Result<(), FinalSemanticAnalysisError> {
+    for expression in expressions.values() {
+        let super::CheckedExpressionResolution::Value(super::CheckedValueResolution::Entry(
+            reference,
+        )) = expression.resolution()
+        else {
+            continue;
+        };
+        let binding = entries
+            .get_public(reference.diagnostic_public_id())
+            .ok_or(FinalSemanticAnalysisError::InvalidOwner)?;
+        if binding.source_item() != reference.lookup_owner()
+            || binding.binding_digest() != reference.binding()
+            || expression.ty().semantic_identity_digest() != reference.value_type()
+            || expression.ty() != &TypeKind::entity_ref(crate::types::EntityKind::Entry)
+        {
+            return Err(FinalSemanticAnalysisError::WrongPayloadFamily);
+        }
+    }
+    Ok(())
+}
+
+impl FinalSemanticAnalysis {
+    #[cfg(test)]
+    pub(super) const fn accepted_types(&self) -> &BTreeMap<TypeId, TypeKind> {
+        &self.types
+    }
+
+    #[allow(
+        dead_code,
+        reason = "used only by the crate-private Cut 2 ownership classifier until Cut 5 publication"
+    )]
+    pub(crate) fn matches_symbol_lease(&self, symbols: &ProjectSymbolTable) -> bool {
+        symbols.world() == self.hir_generation().symbol_world()
+            && *symbols.revision() == self.hir_generation().symbol_revision()
+    }
+
+    /// Validates and publishes a complete semantic generation.
+    #[cfg(test)]
+    pub(crate) fn try_new(
+        project: HirExecutableProjectView<'_>,
+        symbols: &ProjectSymbolTable,
+        topology: Arc<HirProjectEvaluationTopology>,
+        checked_callables: Arc<CheckedCallableCatalog>,
+        input: FinalSemanticAnalysisInput,
+    ) -> Result<Self, FinalSemanticAnalysisError> {
+        let cancellation = AtomicBool::new(false);
+        Self::try_new_with_control(
+            project,
+            symbols,
+            topology,
+            checked_callables,
+            input,
+            FinalSemanticAnalysisControl::new(&cancellation),
+        )
+    }
+
+    /// Validates and publishes a complete semantic generation while observing
+    /// caller-owned cancellation at every publication phase boundary.
+    #[cfg(test)]
+    pub(crate) fn try_new_with_control(
+        project: HirExecutableProjectView<'_>,
+        symbols: &ProjectSymbolTable,
+        topology: Arc<HirProjectEvaluationTopology>,
+        checked_callables: Arc<CheckedCallableCatalog>,
+        input: FinalSemanticAnalysisInput,
+        control: FinalSemanticAnalysisControl<'_>,
+    ) -> Result<Self, FinalSemanticAnalysisError> {
+        Self::try_new_with_control_and_type_resolutions(
+            project,
+            symbols,
+            topology,
+            checked_callables,
+            input,
+            BTreeMap::new(),
+            control,
+        )
+    }
+
+    /// Test-only publication keeps a single topology lease without exposing a
+    /// constructor that can mint accepted roots in production.
+    #[cfg(test)]
+    pub(crate) fn try_new_with_control_and_type_resolutions(
+        project: HirExecutableProjectView<'_>,
+        symbols: &ProjectSymbolTable,
+        topology: Arc<HirProjectEvaluationTopology>,
+        checked_callables: Arc<CheckedCallableCatalog>,
+        mut input: FinalSemanticAnalysisInput,
+        type_resolutions: BTreeMap<TypeId, TypeResolutionReport>,
+        control: FinalSemanticAnalysisControl<'_>,
+    ) -> Result<Self, FinalSemanticAnalysisError> {
+        control.check()?;
+        let mut item_facts = BTreeMap::new();
+        for (item, fact) in &input.items {
+            if item_facts.insert(*item, fact).is_some() {
+                return Err(FinalSemanticAnalysisError::DuplicateFact {
+                    family: SemanticFactFamily::Item,
+                });
+            }
+        }
+        let accepted_roots = Arc::new(AcceptedSemanticRootCatalog::seal(
+            Arc::clone(&topology),
+            &checked_callables,
+            &item_facts,
+        )?);
+        let modules = project_generation_modules(project);
+        let prepared_expressions = collect_unique(
+            input.expressions.iter().cloned(),
+            SemanticFactFamily::Expression,
+        )?;
+        let expressions = prepared_expressions;
+        let selected_expressions =
+            match_edges::CheckedSelectedExpressionGraph::seal_call_free_fixture(
+                project,
+                Arc::clone(&topology),
+                &expressions,
+            )?;
+        input.set_structural_edges(match_edges::CheckedStructuralEdgeDraft::seal(
+            &selected_expressions,
+            &modules,
+            &expressions,
+        ))?;
+        input.set_selected_expressions(selected_expressions)?;
+        Self::try_new_with_control_and_type_resolutions_and_catalog(
+            project,
+            symbols,
+            checked_callables,
+            input,
+            type_resolutions,
+            accepted_roots,
+            control,
+        )
+        .map_err(FinalSemanticProjectError::into_semantic_fixture_error)
+    }
+
+    /// Publishes the semantic type products created by the sole production
+    /// nominal resolver with the same accepted generation as their flattened
+    /// type facts. Manual fact fixtures deliberately use the constructor above
+    /// and therefore cannot fabricate nominal-reference evidence.
+    pub(super) fn try_new_with_control_and_type_resolutions_and_catalog(
+        project: HirExecutableProjectView<'_>,
+        symbols: &ProjectSymbolTable,
+        checked_callables: Arc<CheckedCallableCatalog>,
+        mut input: FinalSemanticAnalysisInput,
+        type_resolutions: BTreeMap<TypeId, TypeResolutionReport>,
+        accepted_roots: Arc<AcceptedSemanticRootCatalog>,
+        control: FinalSemanticAnalysisControl<'_>,
+    ) -> Result<Self, FinalSemanticProjectError> {
+        control.check()?;
+        let observed = project
+            .accept_symbol_generation(symbols)
+            .map_err(|_| FinalSemanticAnalysisError::SymbolGenerationMismatch)?;
+        if !accepted_roots
+            .topology()
+            .generation()
+            .same_generation(observed.generation().as_ref())
+        {
+            return Err(FinalSemanticAnalysisError::GenerationMismatch.into());
+        }
+        let callable_generation = checked_callables
+            .hir_generation()
+            .ok_or(FinalSemanticAnalysisError::CatalogGenerationMismatch)?;
+        if !Arc::ptr_eq(accepted_roots.topology().generation(), callable_generation) {
+            return Err(FinalSemanticAnalysisError::CatalogGenerationMismatch.into());
+        }
+        let evaluation_topology = Arc::clone(accepted_roots.topology());
+        let types = collect_unique(input.types, SemanticFactFamily::Type)?;
+        let locals = collect_unique(input.locals, SemanticFactFamily::Local)?;
+        control.check()?;
+        let captures = collect_unique(input.captures, SemanticFactFamily::Capture)?;
+        control.check()?;
+        let prepared_expressions =
+            collect_unique(input.expressions, SemanticFactFamily::Expression)?;
+        let selected_expressions = input
+            .selected_expressions
+            .take()
+            .ok_or(FinalSemanticAnalysisError::WrongPayloadFamily)?;
+        if !Arc::ptr_eq(selected_expressions.topology(), &evaluation_topology) {
+            return Err(FinalSemanticAnalysisError::GenerationMismatch.into());
+        }
+        let structural_edges = input
+            .structural_edges
+            .take()
+            .ok_or(FinalSemanticAnalysisError::WrongPayloadFamily)?;
+        control.check()?;
+        let prepared_patterns = collect_unique(input.patterns, SemanticFactFamily::Pattern)?;
+        control.check()?;
+        let statements = collect_unique(input.statements, SemanticFactFamily::Statement)?;
+        control.check()?;
+        let items = collect_unique(input.items, SemanticFactFamily::Item)?;
+        control.check()?;
+        let calls = collect_unique(
+            input
+                .calls
+                .into_iter()
+                .map(|call| (call.expression(), call)),
+            SemanticFactFamily::Call,
+        )?;
+        let callable_joins = input.callable_joins;
+        match_edges::validate_callable_join_inventory(&calls, &callable_joins)
+            .map_err(|error| FinalSemanticAnalysisError::CheckedCallableJoin(Box::new(error)))?;
+        let physical_candidate_argument_evaluations = input.physical_candidate_argument_evaluations;
+        control.check()?;
+        let draft = FinalSemanticAnalysisDraft {
+            checked_callables,
+            accepted_roots,
+            types,
+            type_resolutions,
+            locals,
+            captures,
+            expressions: prepared_expressions,
+            patterns: prepared_patterns,
+            statements,
+            items,
+            calls,
+            callable_joins,
+            selected_expressions,
+            structural_edges,
+            physical_candidate_argument_evaluations,
+        };
+        super::nominal_schema::seal_runtime_nominal_draft(draft, project, symbols, control)
+    }
 
     /// Rejects reuse with any missing, foreign, or stale module generation.
     pub fn validate_generation(
@@ -248,22 +536,13 @@ impl FinalSemanticAnalysis {
         project: HirExecutableProjectView<'_>,
         symbols: &ProjectSymbolTable,
     ) -> Result<(), FinalSemanticAnalysisError> {
-        validate_symbol_generation(project, symbols)?;
-        self.checked_callables
-            .validate_project_generation(symbols.world(), *symbols.revision())
-            .map_err(|_| FinalSemanticAnalysisError::CatalogGenerationMismatch)?;
-        let actual = project
-            .modules()
-            .map(|(_, module)| (module.module_id(), module.snapshot_id()))
-            .collect::<BTreeMap<_, _>>();
-        if actual == self.snapshots
-            && symbols.world() == &self.symbol_world
-            && symbols.revision() == &self.symbol_revision
-        {
-            Ok(())
-        } else {
-            Err(FinalSemanticAnalysisError::GenerationMismatch)
-        }
+        let observed = project
+            .accept_symbol_generation(symbols)
+            .map_err(|_| FinalSemanticAnalysisError::SymbolGenerationMismatch)?;
+        self.hir_generation()
+            .same_generation(observed.generation().as_ref())
+            .then_some(())
+            .ok_or(FinalSemanticAnalysisError::GenerationMismatch)
     }
 
     /// Validates one module-scoped query against this report's exact accepted
@@ -275,13 +554,34 @@ impl FinalSemanticAnalysis {
         module: &HirModule,
         symbols: &ProjectSymbolTable,
     ) -> Result<(), FinalSemanticAnalysisError> {
-        if symbols.world() != &self.symbol_world
-            || symbols.revision() != &self.symbol_revision
-            || self.snapshots.get(&module.module_id()) != Some(&module.snapshot_id())
-        {
-            return Err(FinalSemanticAnalysisError::GenerationMismatch);
-        }
-        Ok(())
+        self.hir_generation()
+            .validate_module_lease(module, symbols)
+            .map_err(|_| FinalSemanticAnalysisError::GenerationMismatch)
+    }
+
+    pub fn hir_generation(&self) -> &Arc<arcweft_lang_hir::project::AcceptedHirProjectGeneration> {
+        self.accepted_roots.topology().generation()
+    }
+
+    pub fn validate_registered_callable_authority(
+        &self,
+        registered: &crate::callable::RegisteredCallableCatalog,
+    ) -> Result<(), crate::callable::CheckedCallableLookupError> {
+        self.checked_callables
+            .validate_registered_authority(registered, self.hir_generation().as_ref())
+    }
+
+    pub fn hir_topology(&self) -> &Arc<HirProjectEvaluationTopology> {
+        self.accepted_roots.topology()
+    }
+
+    /// Sole checked Entry catalog accepted by this semantic generation.
+    pub const fn checked_entries(&self) -> &CheckedEntryCatalog {
+        &self.checked_entries
+    }
+
+    pub(crate) const fn runtime_nominals(&self) -> &RuntimeNominalProjectionCatalog {
+        &self.runtime_nominals
     }
 
     pub fn ty(&self, owner: TypeId) -> Option<&TypeKind> {
@@ -337,6 +637,11 @@ impl FinalSemanticAnalysis {
     /// semantic generation.
     pub const fn checked_callables(&self) -> &Arc<CheckedCallableCatalog> {
         &self.checked_callables
+    }
+
+    /// Sole accepted-root authority retained by this immutable report.
+    pub(crate) const fn accepted_root_catalog(&self) -> &Arc<AcceptedSemanticRootCatalog> {
+        &self.accepted_roots
     }
 
     pub fn types(&self) -> impl ExactSizeIterator<Item = (TypeId, &TypeKind)> {
@@ -400,21 +705,52 @@ impl FinalSemanticAnalysis {
     }
 }
 
-fn project_generation_maps(
+fn collect_sealed_expressions(
+    prepared: BTreeMap<ExprId, super::PreparedExpressionFact>,
+) -> Result<BTreeMap<ExprId, CheckedExpression>, FinalSemanticAnalysisError> {
+    prepared
+        .into_iter()
+        .map(|(owner, fact)| {
+            fact.into_complete()
+                .map(|fact| (owner, fact))
+                .map_err(|_| FinalSemanticAnalysisError::UnsealedPreparedC2Owner)
+        })
+        .collect()
+}
+
+fn collect_sealed_patterns(
+    prepared: BTreeMap<PatternId, super::PreparedPatternFact>,
+) -> Result<BTreeMap<PatternId, CheckedPattern>, FinalSemanticAnalysisError> {
+    prepared
+        .into_iter()
+        .map(|(owner, fact)| {
+            fact.into_complete()
+                .map(|fact| (owner, fact))
+                .map_err(|_| FinalSemanticAnalysisError::UnsealedPreparedC2Owner)
+        })
+        .collect()
+}
+
+fn collect_sealed_statements(
+    prepared: BTreeMap<StmtId, super::PreparedStatementFact>,
+) -> Result<BTreeMap<StmtId, CheckedStatement>, FinalSemanticAnalysisError> {
+    prepared
+        .into_iter()
+        .map(|(owner, fact)| {
+            fact.into_complete()
+                .map(|fact| (owner, fact))
+                .map_err(|_| FinalSemanticAnalysisError::UnsealedPreparedC2Owner)
+        })
+        .collect()
+}
+
+fn project_generation_modules(
     project: HirExecutableProjectView<'_>,
-) -> (
-    BTreeMap<HirModuleId, &HirModule>,
-    BTreeMap<HirModuleId, HirSnapshotId>,
-) {
-    let modules = project
+) -> BTreeMap<HirModuleId, &HirModule> {
+    project
         .modules()
         .map(|(_, module)| (module.module_id(), module.as_ref()))
-        .collect::<BTreeMap<_, _>>();
-    let snapshots = modules
-        .iter()
-        .map(|(id, module)| (*id, module.snapshot_id()))
-        .collect();
-    (modules, snapshots)
+        .collect()
 }
 
 fn collect_final_diagnostics(

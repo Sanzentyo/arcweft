@@ -4,8 +4,11 @@ use arcweft_bundle::{
     ArcweftBundle, BundleAdapterHostCall, BundleAdapterManifest, BundleFormat, BundleManifest,
     BundleRuntimeSummary,
 };
-use arcweft_core::entry::{EntryBindingIdentity, RuntimeEntryRoles};
-use arcweft_core::pattern::RuntimeSemanticTypeId;
+use arcweft_core::entry::{
+    EntryBindingIdentity, FlowContractHash, RuntimeEntryRoles, RuntimeFlowExecutable,
+    RuntimeFlowSchema,
+};
+use arcweft_core::pattern::{RuntimeCheckedType, RuntimeSemanticTypeId};
 use arcweft_core::plan::{
     EntryRuntimeId, FlowRuntimeId, RuntimeAwaitTargetSeed, RuntimeEntryKind, RuntimeEntrySpec,
     RuntimeEntryTarget, RuntimeExprSeed, RuntimeExprSeedKind, RuntimeFlowOpSeed, RuntimeFlowSeed,
@@ -208,7 +211,7 @@ fn custom_echo_bundle() -> ArcweftBundle {
         .expect("string type admits");
     builder
         .push_flow_seed(RuntimeFlowSeed::new(
-            flow,
+            flow.clone(),
             [],
             vec![
                 RuntimeFlowOpSeed::Await {
@@ -216,7 +219,7 @@ fn custom_echo_bundle() -> ArcweftBundle {
                     target: RuntimeAwaitTargetSeed {
                         need: NeedId("need.custom.echo".to_owned()),
                         task: TaskId("task.custom.echo".to_owned()),
-                        outcome: TaskOutcomeContract::default(),
+                        outcome: TaskOutcomeContract::new(RuntimeCheckedType::String),
                         request: RuntimeHostTaskRequestTemplateSeed {
                             capability: HostCapabilityId("custom".to_owned()),
                             operation: "echo".to_owned(),
@@ -234,6 +237,19 @@ fn custom_echo_bundle() -> ArcweftBundle {
             ],
         ))
         .expect("custom flow admits");
+    builder
+        .push_flow_schema(RuntimeFlowSchema {
+            flow: flow.clone(),
+            parameters: Vec::new(),
+        })
+        .expect("custom flow schema admits");
+    builder
+        .push_flow_executable(RuntimeFlowExecutable {
+            flow: flow.clone(),
+            contract: FlowContractHash::from_bytes([0x7c; 32]),
+            controller: None,
+        })
+        .expect("custom flow executable admits");
     builder
         .push_entry(cli_entry("entry.custom", "flow.custom"))
         .expect("custom entry admits");

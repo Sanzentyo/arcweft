@@ -17,7 +17,7 @@ use crate::nominal::{
     TypeResolutionWorld, TypeSourceEvidence, resolve_type_ref,
 };
 use crate::registration::AcceptedNominalWorld;
-use crate::types::{GenericTypeOwnerId, GenericTypeParameterId, TypeKind};
+use crate::types::{GenericParameterOwnerId, GenericTypeParameterId, TypeKind};
 use arcweft_lang_hir::item::HirGenericParameter;
 use arcweft_lang_hir::symbol::ProjectSymbolTable;
 use arcweft_lang_syntax::ast::module_path::ModuleSegment;
@@ -163,7 +163,7 @@ fn proof_generic_scope(
     let owner = symbols
         .callable_symbols()
         .find(|symbol| symbol.source_item() == item)
-        .map(|symbol| GenericTypeOwnerId::Callable(symbol.declaration().clone()))
+        .map(|symbol| GenericParameterOwnerId::Callable(symbol.declaration().clone()))
         .ok_or(ProofReturnProjectClassificationError::MissingCallableSymbol { item })?;
     let mut ordinal = 0_u16;
     let mut bindings = Vec::new();

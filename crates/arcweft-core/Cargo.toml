@@ -10,6 +10,7 @@ repository.workspace = true
 default = []
 
 [dependencies]
+arcweft-manifest-model.workspace = true
 arcweft-id = { workspace = true }
 arcweft-interaction-model.workspace = true
 arcweft-need = { workspace = true }

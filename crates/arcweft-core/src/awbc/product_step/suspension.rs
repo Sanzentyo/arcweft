@@ -2,7 +2,7 @@ use super::{
     AudioCommandEnvelope, AudioDispatchId, AwbcAwaitObserverResume, AwbcEffectPlanId,
     AwbcFunctionId, AwbcHostCallId, AwbcHostCallMode, AwbcProductStepExecutor, AwbcResumePointId,
     AwbcTrapCode, FiberAwaitManyInFlight, FiberState, FiberSuspensionReason, FlowEvent,
-    MappedEffect, NeedId, PendingHostCall, ProductStepError, RuntimeBinding, RuntimeDiagnostic,
+    MappedEffect, NeedId, PendingHostCall, ProductStepError, RuntimeDiagnostic,
     RuntimeDiagnosticCategory, RuntimeHostCallId, RuntimeHostCallMode, RuntimeHostCallRequest,
     RuntimeNeedState, RuntimePayload, RuntimeStepOutput, RuntimeStreamEvent, RuntimeValue,
     TaskEvent, TaskEventKind, TaskId, TaskKey, TaskSequence, VmObservation, content_request,
@@ -442,6 +442,23 @@ impl AwbcProductStepExecutor {
             );
             return;
         };
+        let Some(signature) = self.program.signatures.get(record.signature.index()) else {
+            self.record_error(
+                ProductStepError::Internal(format!("AWBC host call {} has no signature", call.0)),
+                output,
+            );
+            return;
+        };
+        let result = match signature.result {
+            Some(result) => match self.program.checked_type(result) {
+                Ok(result) => result,
+                Err(error) => {
+                    self.record_error(ProductStepError::Internal(error.to_string()), output);
+                    return;
+                }
+            },
+            None => crate::pattern::RuntimeCheckedType::Unit,
+        };
         let public_id = self
             .program
             .strings
@@ -500,8 +517,10 @@ impl AwbcProductStepExecutor {
                 .get(record.operation.index())
                 .cloned()
                 .unwrap_or_else(|| "call".to_owned()),
+            contract: record.contract,
             args: positional,
             named_args,
+            result,
             mode: match record.mode {
                 AwbcHostCallMode::Immediate => RuntimeHostCallMode::Immediate,
                 AwbcHostCallMode::Suspend => RuntimeHostCallMode::Suspend,
@@ -733,17 +752,6 @@ impl AwbcProductStepExecutor {
                 }
             }
             Err(error) => self.record_error(ProductStepError::Internal(error.to_string()), output),
-        }
-    }
-
-    pub(super) fn bind_root_arguments(
-        &mut self,
-        bindings: &[RuntimeBinding],
-    ) -> Result<(), crate::awbc::fiber::FiberStateError> {
-        if self.entry_targets_active_function() {
-            self.fiber.bind_entry_arguments(&self.program, bindings)
-        } else {
-            self.fiber.bind_function_arguments(&self.program, bindings)
         }
     }
 }

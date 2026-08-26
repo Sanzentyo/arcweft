@@ -61,17 +61,17 @@ fn native_desktop_capabilities_complete_through_host_registry() {
 
 fn task(capability: &str, operation: &str) -> TaskSpec {
     let id = format!("{capability}.{operation}");
-    TaskSpec::new_with_outcome(
+    TaskSpec::new(
         TaskId(id.clone()),
         TaskKey(id),
         TaskClass::Background,
         TaskPriority(0),
         CancelScopeId("desktop-test".to_owned()),
         TaskPolicy::JoinSameKey,
-        TaskOutcomeContract::new(RuntimeCheckedType::Result {
-            ok: Box::new(RuntimeCheckedType::String),
-            error: Box::new(RuntimeCheckedType::String),
-        }),
         HostTaskRequest::custom(capability, operation, []),
     )
+    .with_outcome(TaskOutcomeContract::new(RuntimeCheckedType::Result {
+        ok: Box::new(RuntimeCheckedType::String),
+        error: Box::new(RuntimeCheckedType::String),
+    }))
 }

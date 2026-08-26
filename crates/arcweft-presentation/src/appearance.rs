@@ -141,6 +141,27 @@ impl SystemColor {
         Self::Success,
     ];
 
+    /// Stable semantic tag in declaration order.
+    pub const fn semantic_tag(self) -> u8 {
+        match self {
+            Self::Canvas => 0,
+            Self::CanvasText => 1,
+            Self::Surface => 2,
+            Self::SurfaceText => 3,
+            Self::RaisedSurface => 4,
+            Self::MutedText => 5,
+            Self::Border => 6,
+            Self::Accent => 7,
+            Self::AccentText => 8,
+            Self::FocusRing => 9,
+            Self::Selection => 10,
+            Self::SelectionText => 11,
+            Self::Danger => 12,
+            Self::Warning => 13,
+            Self::Success => 14,
+        }
+    }
+
     /// Canonical native Style enum shorthand without the leading dot.
     pub const fn source_name(self) -> &'static str {
         match self {
@@ -275,6 +296,17 @@ impl SystemPaletteSet {
 #[cfg(test)]
 mod tests {
     use super::{ColorScheme, SystemColor, SystemPaletteSet};
+    use std::collections::BTreeSet;
+
+    #[test]
+    fn system_color_semantic_tags_are_unique() {
+        let tags = SystemColor::ALL
+            .iter()
+            .copied()
+            .map(SystemColor::semantic_tag)
+            .collect::<BTreeSet<_>>();
+        assert_eq!(tags.len(), SystemColor::ALL.len());
+    }
 
     #[test]
     fn default_system_palette_resolves_scheme_specific_roles() {

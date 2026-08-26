@@ -17,6 +17,10 @@ use super::{
 };
 
 impl RuntimePureCallBackend for RuntimePureAccelerator {
+    fn record_awbc_pure_program_call(&mut self) {
+        self.stats.awbc_pure_program_calls = self.stats.awbc_pure_program_calls.saturating_add(1);
+    }
+
     fn call_i8_slice(
         &mut self,
         helper: RuntimePureHelperRef<'_>,

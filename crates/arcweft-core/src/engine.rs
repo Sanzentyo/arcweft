@@ -27,7 +27,7 @@ use crate::task::{
     TaskPolicy, TaskPriority, TaskPublicationCursor, TaskSpec, normalize_task_events,
 };
 use crate::value::{
-    RuntimeBinding, RuntimeEnv, RuntimeEvalError, RuntimeExpr, RuntimeExprMatchArm,
+    RuntimeEnv, RuntimeEvalError, RuntimeExpr, RuntimeExprMatchArm, RuntimeFlowParameterBinding,
     RuntimeIterator, RuntimeLocalBinding, RuntimePayload, RuntimeSeq, RuntimeValue,
     evaluate_binary, evaluate_unary, runtime_sequence_dense_i64,
     runtime_sequence_from_literal_values, runtime_sequence_repeat_value, runtime_sequence_values,
@@ -51,7 +51,6 @@ pub struct Engine {
     flow_positions: BTreeMap<FlowRuntimeId, usize>,
     main_started: bool,
     root: Option<RootRuntime>,
-    root_flow_binding: Option<RuntimeLocalBinding>,
     fiber: FlowFiber,
     child_fibers: VecDeque<FlowFiber>,
     task_publications: BTreeMap<TaskId, TaskPublicationCursor>,
@@ -196,6 +195,8 @@ pub enum EngineStartError {
     EntryDoesNotSelectFlow { entry: String },
     #[error("runtime engine already has a selected flow")]
     AlreadyStarted,
+    #[error("runtime Flow invocation is invalid: {message}")]
+    InvalidFlowInvocation { message: String },
     #[error("runtime entry `{entry}` failed root startup validation: {message}")]
     InvalidRootStartup { entry: String, message: String },
 }
@@ -250,7 +251,7 @@ impl RootCallableEvaluator for StructuredRootEvaluator<'_> {
 pub enum FlowFiberStatus {
     Running,
     Dialogue(DialogueState),
-    Waiting(AwaitState),
+    Waiting(Box<AwaitState>),
     NeedWaiting(NeedId),
     WaitingMany(Box<AwaitManyState>),
     HostCall(HostCallState),
@@ -318,7 +319,6 @@ pub struct AwaitManyInFlight {
 #[derive(Clone, Debug, PartialEq)]
 pub struct HostCallState {
     pub binding: Option<RuntimePattern>,
-    pub target: crate::plan::RuntimeHostCallTarget,
     pub id: RuntimeHostCallId,
     pub resume: Option<FlowCursor>,
 }
@@ -490,7 +490,6 @@ impl Engine {
             flow_positions,
             main_started,
             root: None,
-            root_flow_binding: None,
             fiber: FlowFiber {
                 line_cursor: 0,
                 cursor: None,
@@ -523,8 +522,29 @@ impl Engine {
 
     /// Creates an engine and selects the requested flow exactly.
     pub fn for_flow(plan: RuntimePlan, flow: &FlowRuntimeId) -> Result<Self, EngineStartError> {
+        let invocation = plan
+            .seal_flow_invocation(flow.clone(), [])
+            .map_err(|error| EngineStartError::InvalidFlowInvocation {
+                message: error.to_string(),
+            })?;
+        Self::for_flow_invocation(invocation)
+    }
+
+    /// Creates an engine from one complete plan-owned Flow invocation.
+    pub fn for_flow_invocation(
+        invocation: crate::plan::RuntimeFlowInvocation,
+    ) -> Result<Self, EngineStartError> {
+        let (plan, flow, bindings) = invocation.into_parts();
         let mut engine = Self::new(plan);
-        engine.start_flow(flow)?;
+        engine.start_flow_cursor(&flow)?;
+        let admitted = engine
+            .admit_current_flow_parameter_bindings(bindings.iter())
+            .map_err(|error| EngineStartError::InvalidFlowInvocation {
+                message: error.to_string(),
+            })?
+            .into_iter()
+            .map(|(_, binding)| binding);
+        engine.fiber.env.bind_all_root(admitted);
         Ok(engine)
     }
 
@@ -537,6 +557,25 @@ impl Engine {
 
     /// Selects one flow before the first flow execution step.
     pub fn start_flow(&mut self, flow: &FlowRuntimeId) -> Result<(), EngineStartError> {
+        let schema = self
+            .plan
+            .flow_schemas
+            .iter()
+            .find(|candidate| candidate.flow == *flow)
+            .ok_or_else(|| EngineStartError::InvalidFlowInvocation {
+                message: format!("Flow `{flow}` has no invocation schema"),
+            })?;
+        if !schema.parameters.is_empty() {
+            return Err(EngineStartError::InvalidFlowInvocation {
+                message: format!(
+                    "Flow `{flow}` requires an explicit coordinate-addressed invocation"
+                ),
+            });
+        }
+        self.start_flow_cursor(flow)
+    }
+
+    fn start_flow_cursor(&mut self, flow: &FlowRuntimeId) -> Result<(), EngineStartError> {
         if self.main_started {
             return Err(EngineStartError::AlreadyStarted);
         }
@@ -609,14 +648,19 @@ impl Engine {
             });
             self.fiber.status = FlowFiberStatus::Running;
             let initial_state_binding = self
-                .admit_current_flow_bindings(std::iter::once(&startup.initial_state_binding))
+                .admit_current_flow_parameter_bindings(std::iter::once(
+                    &startup.initial_state_binding,
+                ))
                 .and_then(|mut bindings| {
-                    bindings
-                        .pop()
-                        .ok_or_else(|| RuntimeEvalError::UnknownFlowBinding {
+                    bindings.pop().map(|(_, binding)| binding).ok_or_else(|| {
+                        RuntimeEvalError::UnknownFlowBinding {
                             flow: startup.initial_flow.canonical_label(),
-                            binding: startup.initial_state_binding.name.clone(),
-                        })
+                            binding: format!(
+                                "#{}",
+                                startup.initial_state_binding.parameter.position()
+                            ),
+                        }
+                    })
                 })
                 .map_err(|error| EngineStartError::InvalidRootStartup {
                     entry: entry.canonical_label(),
@@ -626,7 +670,6 @@ impl Engine {
                 initial_state_binding.local,
                 initial_state_binding.value.clone(),
             );
-            self.root_flow_binding = Some(initial_state_binding);
             self.root = Some(startup.root);
             self.main_started = true;
             return Ok(());
@@ -662,70 +705,66 @@ impl Engine {
         self.flow_positions.get(flow).copied()
     }
 
-    fn admit_current_flow_bindings<'a>(
+    fn admit_current_flow_parameter_bindings<'a>(
         &self,
-        bindings: impl IntoIterator<Item = &'a RuntimeBinding>,
-    ) -> Result<Vec<RuntimeLocalBinding>, RuntimeEvalError> {
+        bindings: impl IntoIterator<Item = &'a RuntimeFlowParameterBinding>,
+    ) -> Result<Vec<(crate::entry::FlowParameterCoordinate, RuntimeLocalBinding)>, RuntimeEvalError>
+    {
         let mut bindings = bindings.into_iter().peekable();
         let Some(first) = bindings.peek() else {
             return Ok(Vec::new());
         };
+        let binding_label = format!("#{}", first.parameter.position());
         let Some(cursor) = self.fiber.cursor.as_ref() else {
             return Err(RuntimeEvalError::MissingFlowBindingTarget {
                 flow: "<none>".to_owned(),
-                binding: first.name.clone(),
+                binding: binding_label,
             });
         };
         let Some(flow) = self.plan.flows.get(cursor.flow_index) else {
             return Err(RuntimeEvalError::MissingFlowBindingTarget {
                 flow: format!("#{}", cursor.flow_index),
-                binding: first.name.clone(),
+                binding: binding_label,
             });
         };
         let flow_label = flow.id.canonical_label();
-        let Some(executable) = self
+        let Some(schema) = self
             .plan
-            .flow_executables
+            .flow_schemas
             .iter()
             .find(|candidate| candidate.flow == flow.id)
         else {
             return Err(RuntimeEvalError::MissingFlowBindingTarget {
                 flow: flow_label,
-                binding: first.name.clone(),
+                binding: binding_label,
             });
         };
 
         let mut admitted = Vec::new();
         let mut unique = BTreeSet::new();
         for binding in bindings {
-            if !unique.insert(binding.name.as_str()) {
-                return Err(RuntimeEvalError::DuplicateFlowBinding {
+            if !unique.insert(binding.parameter) {
+                return Err(RuntimeEvalError::DuplicateFlowParameterBinding {
                     flow: flow_label,
-                    binding: binding.name.clone(),
+                    parameter: binding.parameter,
                 });
             }
-            let mut matching = executable
-                .parameters
-                .iter()
-                .filter(|parameter| parameter.name == binding.name);
-            let Some(parameter) = matching.next() else {
-                return Err(RuntimeEvalError::UnknownFlowBinding {
-                    flow: flow_label,
-                    binding: binding.name.clone(),
-                });
-            };
-            if matching.next().is_some() {
-                return Err(RuntimeEvalError::AmbiguousFlowBinding {
-                    flow: flow_label,
-                    binding: binding.name.clone(),
-                });
-            }
-            let position = usize::try_from(parameter.position).map_err(|_| {
-                RuntimeEvalError::MissingFlowParameterLocal {
+            let position = binding.parameter.index().map_err(|_| {
+                RuntimeEvalError::InvalidFlowParameterCoordinate {
                     flow: flow_label.clone(),
-                    position: usize::MAX,
+                    parameter: binding.parameter,
                 }
             })?;
+            let Some(parameter) = schema
+                .parameters
+                .get(position)
+                .filter(|parameter| parameter.coordinate == binding.parameter)
+            else {
+                return Err(RuntimeEvalError::UnknownFlowParameterBinding {
+                    flow: flow_label,
+                    parameter: binding.parameter,
+                });
+            };
             let local = flow.params.get(position).copied().ok_or_else(|| {
                 RuntimeEvalError::MissingFlowParameterLocal {
                     flow: flow_label.clone(),
@@ -741,17 +780,20 @@ impl Engine {
                 .plan
                 .value_matches_type(declaration.ty(), &binding.value)?
             {
-                return Err(RuntimeEvalError::FlowBindingType {
+                return Err(RuntimeEvalError::FlowParameterBindingType {
                     flow: flow_label,
-                    binding: binding.name.clone(),
+                    parameter: parameter.coordinate,
                     local,
                     expected: declaration.ty(),
                 });
             }
-            admitted.push(RuntimeLocalBinding {
-                local,
-                value: binding.value.clone(),
-            });
+            admitted.push((
+                binding.parameter,
+                RuntimeLocalBinding {
+                    local,
+                    value: binding.value.clone(),
+                },
+            ));
         }
         Ok(admitted)
     }
@@ -771,17 +813,7 @@ impl Engine {
 
     pub fn step_with_pure_backend(
         &mut self,
-        input: RuntimeStepInput,
-        options: RuntimeStepOptions,
-        pure_backend: &mut impl RuntimeCallBackend,
-    ) -> RuntimeStepResult {
-        self.step_with_root_bindings_and_pure_backend(input, &[], options, pure_backend)
-    }
-
-    pub fn step_with_root_bindings_and_pure_backend(
-        &mut self,
         mut input: RuntimeStepInput,
-        root_bindings: &[RuntimeBinding],
         options: RuntimeStepOptions,
         pure_backend: &mut impl RuntimeCallBackend,
     ) -> RuntimeStepResult {
@@ -792,23 +824,6 @@ impl Engine {
         let root_events_in = input.root_events.len();
         let deferred_root_events = std::mem::take(&mut input.deferred_root_events);
         let need_states_in = input.need_states.len();
-        if let Err(error) = self.bind_step_inputs(root_bindings, &input.bindings) {
-            output.diagnostics.push(RuntimeDiagnostic::categorized(
-                RuntimeDiagnosticCategory::Input,
-                error.to_string(),
-            ));
-            let stats = RuntimeStepStats {
-                executed_ops,
-                pending_ops_before,
-                pending_ops_after: self.pending_ops_len(),
-                child_fibers: self.child_fibers.len(),
-                pure: pure_backend.stats().saturating_delta(pure_stats_before),
-                root_events_in,
-                diagnostics: output.diagnostics.len(),
-                ..RuntimeStepStats::default()
-            };
-            return self.step_result(output, options, stats);
-        }
         if !self.run_root_phase(std::mem::take(&mut input.root_events), &mut output) {
             let stats = RuntimeStepStats {
                 executed_ops,
@@ -864,33 +879,6 @@ impl Engine {
             diagnostics: output.diagnostics.len(),
         };
         self.step_result(output, options, stats)
-    }
-
-    fn protected_root_flow_binding(&self) -> Option<RuntimeLocalBinding> {
-        self.root_flow_binding.as_ref().and_then(|binding| {
-            self.fiber
-                .env
-                .get_cloned(binding.local)
-                .map(|value| RuntimeLocalBinding {
-                    local: binding.local,
-                    value,
-                })
-        })
-    }
-
-    pub(super) fn bind_step_inputs(
-        &mut self,
-        root_bindings: &[RuntimeBinding],
-        input_bindings: &[RuntimeBinding],
-    ) -> Result<(), RuntimeEvalError> {
-        let protected = self.protected_root_flow_binding();
-        let admitted =
-            self.admit_current_flow_bindings(root_bindings.iter().chain(input_bindings.iter()))?;
-        self.fiber.env.bind_all_root(admitted);
-        if let Some(binding) = protected {
-            self.fiber.env.set_root(binding.local, binding.value);
-        }
-        Ok(())
     }
 
     fn run_root_phase(

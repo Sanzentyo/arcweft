@@ -6,38 +6,31 @@ use arcweft_core::{
         EntryBindingIdentity, FlowContractHash, RuntimeAgentEntryRoles, RuntimeCallableId,
         RuntimeCallableRole, RuntimeCommandPolicy, RuntimeEntryRoles, RuntimeFlowExecutable,
         RuntimeFlowExecutableParameter, RuntimeFlowParameterMode, RuntimeFlowRole,
-        RuntimeNominalRole, RuntimeNominalTypeId, RuntimeSchemaError, RuntimeStatefulEntryRoles,
-        RuntimeTypeSchema, TypeLayoutHash,
+        RuntimeFlowSchema, RuntimeNominalRole, RuntimeStatefulEntryRoles,
     },
+    pattern::RuntimeSemanticTypeId,
     plan::{
-        EntryRuntimeId, FlowRuntimeId, RuntimeEntryKind, RuntimeEntrySpec, RuntimeEntryTarget,
-        RuntimeRouteBinding, RuntimeRouteBindingSource, RuntimeRouteSpec,
+        EntryRuntimeId, FlowRuntimeId, RouteCaptureCoordinate, RuntimeEntryKind, RuntimeEntrySpec,
+        RuntimeEntryTarget, RuntimeHttpMethod, RuntimeRouteBinding, RuntimeRouteBindingSource,
+        RuntimeRoutePath, RuntimeRoutePathSegment, RuntimeRouteSpec,
     },
 };
 use arcweft_lang_hir::{
-    identity::ItemId,
-    item::{
-        HirEntryDeclaration, HirEntryMember, HirEntryRoute, HirEntryRouteBindings, HirEntryTarget,
-        HirHttpMethod, HirHttpMethodValue, HirItemKind, HirRoutePathValue,
-    },
-    module::HirModule,
+    item::{HirHttpMethod, HirItemKind, HirRoutePathSegment},
     project::{
         HirExecutableProjectView, HirRuntimeExecutableOwner, HirRuntimeSemanticReachability,
     },
-    source_index::{
-        HirEntrySourcePart, HirItemSourceRole, HirSourcePresence, HirSourceQuery, HirSourceSite,
-    },
-    symbol::{
-        CallableDeclarationKey, CallableDeclarationOwner, ProjectSymbolTable, ResolvedProjectSymbol,
-    },
+    symbol::{CallableDeclarationKey, ProjectSymbolTable},
 };
 use arcweft_lang_sema::{
     entry::{
-        AgentBudget as CheckedAgentBudget, BoundNominalTypeKey, CheckedAgentEntry,
-        CheckedCallableRole, CheckedEntryBinding, CheckedEntryCatalog, CheckedEntryId,
-        CheckedEntryKind, CheckedInitialFlowRole, CheckedNominalRole, CheckedStatefulEntry,
+        AgentBudget as CheckedAgentBudget, CheckedAgentEntry, CheckedCallableRole,
+        CheckedEntryBinding, CheckedEntryFlowTarget, CheckedEntryId, CheckedEntryKind,
+        CheckedEntryRoute, CheckedEntryRouteBindingSource, CheckedExistingEntry,
+        CheckedExistingEntryTarget, CheckedInitialFlowRole, CheckedNominalRole,
+        CheckedStatefulEntry,
     },
-    final_analysis::{FinalSemanticAnalysis, project_runtime_type_schema},
+    final_analysis::FinalSemanticAnalysis,
 };
 use arcweft_runtime_plan::flow::{
     RuntimeCheckedEntryInput, RuntimeEntryCallableBody, RuntimeEntryCallableInput,
@@ -65,30 +58,14 @@ pub(crate) enum EntryRuntimeProjectionError {
     InvalidFlowIdentity(String),
     #[error("checked role identity is invalid: {0}")]
     InvalidRoleIdentity(String),
-    #[error("runtime schema for nominal `{nominal}` cannot be canonically encoded")]
-    NominalLayoutHash {
-        nominal: String,
-        #[source]
-        source: RuntimeSchemaError,
-    },
-    #[error(
-        "checked nominal schema digest for `{nominal}` differs from the projected runtime schema hash"
-    )]
-    NominalSchemaDigestMismatch {
-        nominal: String,
-        checked: [u8; 32],
-        projected: TypeLayoutHash,
-    },
+    #[error("checked nominal role `{nominal}` has an invalid sealed runtime relation: {reason}")]
+    InvalidNominalRelation { nominal: String, reason: String },
     #[error(
         "stateful entry `{entry}` requires an explicit selected-adapter command constructor policy"
     )]
     MissingCommandPolicy { entry: String },
-    #[error("checked Entry `{entry}` has no executable goto or route target")]
-    MissingEntryTarget { entry: String },
-    #[error("checked Entry `{entry}` mixes or repeats incompatible goto/route targets")]
-    AmbiguousEntryTarget { entry: String },
-    #[error("checked Entry `{entry}` contains recovered target or route metadata")]
-    RecoveredEntryTarget { entry: String },
+    #[error("checked Entry `{entry}` has an invalid sealed route plan: {reason}")]
+    InvalidRoutePlan { entry: String, reason: String },
 }
 
 /// Owns typed schema and budget projection into the runtime vocabulary.
@@ -115,10 +92,10 @@ pub(super) fn runtime_entry_lowering_input(
     project: HirExecutableProjectView<'_>,
     symbols: &ProjectSymbolTable,
     analysis: &FinalSemanticAnalysis,
-    catalog: &CheckedEntryCatalog,
     reachability: &HirRuntimeSemanticReachability<'_>,
     command_policy: Option<&RuntimeCommandPolicy>,
 ) -> Result<RuntimeEntryLoweringInput, EntryRuntimeProjectionError> {
+    let catalog = analysis.checked_entries();
     let mut entries = Vec::with_capacity(catalog.len());
     let mut callables = Vec::new();
     let mut flows = Vec::new();
@@ -131,7 +108,7 @@ pub(super) fn runtime_entry_lowering_input(
         let Some(item) = project.items().find(|item| item.id() == owner) else {
             return Err(EntryRuntimeProjectionError::MissingEntryOwner { owner });
         };
-        let HirItemKind::Entry(hir_entry) = item.item().kind() else {
+        let HirItemKind::Entry(_) = item.item().kind() else {
             return Err(EntryRuntimeProjectionError::EntryOwnerMismatch { owner });
         };
         let runtime_id = runtime_entry_id(binding.id())?;
@@ -158,10 +135,11 @@ pub(super) fn runtime_entry_lowering_input(
                 callables.push(controller);
                 (target, roles)
             }
-            CheckedEntryBinding::Existing(_) => (
-                project_existing_target(binding.id(), owner, item.module(), symbols, hir_entry)?,
-                RuntimeEntryRoles::None,
-            ),
+            CheckedEntryBinding::Existing(checked) => {
+                let (target, entry_flows) = project_existing_entry(checked)?;
+                flows.extend(entry_flows);
+                (target, RuntimeEntryRoles::None)
+            }
         };
 
         entries.push(RuntimeCheckedEntryInput::new(
@@ -201,8 +179,8 @@ fn project_stateful_entry(
             entry: checked.id().to_string(),
         }
     })?;
-    let state = RuntimeSchemaProjection::nominal(checked.state())?;
-    let event = RuntimeSchemaProjection::nominal(checked.event())?;
+    let state = RuntimeSchemaProjection::nominal(analysis, checked.state())?;
+    let event = RuntimeSchemaProjection::nominal(analysis, checked.event())?;
     let initializer = runtime_callable_role(checked.initializer())?;
     let reducer = runtime_callable_role(checked.reducer())?;
     let initial_flow = runtime_flow_role(checked.initial_flow())?;
@@ -227,14 +205,16 @@ fn project_stateful_entry(
         RuntimeFlowExecutable {
             flow: initial_flow.flow.clone(),
             contract: initial_flow.contract,
+            controller: None,
+        },
+        RuntimeFlowSchema {
+            flow: initial_flow.flow.clone(),
             parameters: vec![RuntimeFlowExecutableParameter {
-                position: 0,
+                coordinate: arcweft_core::entry::FlowParameterCoordinate::from_position(0),
                 name: checked.initial_flow().state_parameter_name().to_owned(),
                 mode: RuntimeFlowParameterMode::Owned,
-                nominal: state.identity.clone(),
-                layout: state.layout,
+                semantic_identity: state.semantic_identity,
             }],
-            controller: None,
         },
     );
     let target = RuntimeEntryTarget::Flow(initial_flow.flow.clone());
@@ -309,172 +289,146 @@ fn runtime_callable_input(
     ))
 }
 
-fn project_existing_target(
-    id: &CheckedEntryId,
-    owner: ItemId,
-    module: &HirModule,
-    symbols: &ProjectSymbolTable,
-    entry: &HirEntryDeclaration,
-) -> Result<RuntimeEntryTarget, EntryRuntimeProjectionError> {
-    let gotos = entry
-        .members()
-        .iter()
-        .filter_map(|member| match member {
-            HirEntryMember::Goto(goto) => Some(goto),
-            _ => None,
-        })
-        .collect::<Vec<_>>();
-    let routes = entry
-        .members()
-        .iter()
-        .filter_map(|member| match member {
-            HirEntryMember::Route(route) => Some(route),
-            _ => None,
-        })
-        .collect::<Vec<_>>();
-    match (gotos.as_slice(), routes.as_slice()) {
-        ([goto], []) => Ok(RuntimeEntryTarget::Flow(runtime_flow_target(
-            id,
-            owner,
-            module,
-            symbols,
-            goto.target(),
-        )?)),
-        ([], routes) if !routes.is_empty() => routes
-            .iter()
-            .map(|route| runtime_route(id, owner, module, symbols, route))
-            .collect::<Result<Vec<_>, _>>()
-            .map(RuntimeEntryTarget::Routes),
-        ([], []) => Err(EntryRuntimeProjectionError::MissingEntryTarget {
-            entry: id.to_string(),
-        }),
-        _ => Err(EntryRuntimeProjectionError::AmbiguousEntryTarget {
-            entry: id.to_string(),
-        }),
-    }
-}
-
-fn runtime_route(
-    entry: &CheckedEntryId,
-    owner: ItemId,
-    module: &HirModule,
-    symbols: &ProjectSymbolTable,
-    route: &HirEntryRoute,
-) -> Result<RuntimeRouteSpec, EntryRuntimeProjectionError> {
-    let HirHttpMethodValue::Resolved(method) = route.method() else {
-        return Err(recovered_entry_target(entry));
-    };
-    let HirRoutePathValue::Resolved(path) = route.path() else {
-        return Err(recovered_entry_target(entry));
-    };
-    let bindings = match route.bindings() {
-        HirEntryRouteBindings::Absent => Vec::new(),
-        HirEntryRouteBindings::Parenthesized { items, closed } if *closed => items
-            .iter()
-            .map(|binding| {
-                let (Some(parameter), Some(capture)) = (
-                    binding.parameter().resolved(),
-                    binding.path_capture().resolved(),
-                ) else {
-                    return Err(recovered_entry_target(entry));
-                };
-                if binding.has_recovery() {
-                    return Err(recovered_entry_target(entry));
+fn project_existing_entry(
+    checked: &CheckedExistingEntry,
+) -> Result<(RuntimeEntryTarget, Vec<RuntimeEntryFlowInput>), EntryRuntimeProjectionError> {
+    let mut flows = std::collections::BTreeMap::new();
+    let target = match checked.target() {
+        CheckedExistingEntryTarget::Flow(flow) => {
+            let (runtime, input) = runtime_entry_flow(flow)?;
+            flows.insert(runtime.clone(), input);
+            RuntimeEntryTarget::Flow(runtime)
+        }
+        CheckedExistingEntryTarget::Routes(routes) => {
+            let mut projected = Vec::with_capacity(routes.len());
+            for route in routes {
+                let (runtime, input) = runtime_entry_flow(route.target())?;
+                if let Some(previous) = flows.insert(runtime.clone(), input.clone())
+                    && previous != input
+                {
+                    return Err(EntryRuntimeProjectionError::InvalidFlowIdentity(format!(
+                        "Entry `{}` retains conflicting schemas for Flow `{}`",
+                        checked.id(),
+                        runtime
+                    )));
                 }
-                Ok(RuntimeRouteBinding {
-                    name: parameter.as_str().to_owned(),
-                    source: RuntimeRouteBindingSource::PathParam(capture.as_str().to_owned()),
-                })
-            })
-            .collect::<Result<Vec<_>, _>>()?,
-        HirEntryRouteBindings::Parenthesized { .. } => {
-            return Err(recovered_entry_target(entry));
+                projected.push(runtime_entry_route(checked.id(), route, runtime)?);
+            }
+            RuntimeEntryTarget::Routes(projected)
         }
     };
+    Ok((target, flows.into_values().collect()))
+}
+
+fn runtime_entry_flow(
+    checked: &CheckedEntryFlowTarget,
+) -> Result<(FlowRuntimeId, RuntimeEntryFlowInput), EntryRuntimeProjectionError> {
+    let flow = FlowRuntimeId::from_checked_declaration_digest(
+        checked.id().declaration_digest().into_bytes(),
+        checked.id().public_id().as_str(),
+    )
+    .map_err(|error| EntryRuntimeProjectionError::InvalidFlowIdentity(error.to_string()))?;
+    let executable = RuntimeFlowExecutable {
+        flow: flow.clone(),
+        contract: FlowContractHash::from_bytes(*checked.contract_digest().as_bytes()),
+        controller: None,
+    };
+    let expected_schema = RuntimeFlowSchema {
+        flow: flow.clone(),
+        parameters: checked
+            .parameters()
+            .iter()
+            .map(|parameter| RuntimeFlowExecutableParameter {
+                coordinate: parameter.coordinate(),
+                name: parameter.name().as_str().to_owned(),
+                mode: RuntimeFlowParameterMode::Owned,
+                semantic_identity: RuntimeSemanticTypeId::from_bytes(
+                    *parameter.semantic_type().as_bytes(),
+                ),
+            })
+            .collect(),
+    };
+    Ok((
+        flow,
+        RuntimeEntryFlowInput::new(checked.source_item(), executable, expected_schema),
+    ))
+}
+
+fn runtime_entry_route(
+    entry: &CheckedEntryId,
+    checked: &CheckedEntryRoute,
+    target: FlowRuntimeId,
+) -> Result<RuntimeRouteSpec, EntryRuntimeProjectionError> {
+    let segments = checked
+        .path()
+        .segments()
+        .iter()
+        .map(|segment| match segment {
+            HirRoutePathSegment::Literal(literal) => {
+                Ok(RuntimeRoutePathSegment::Literal(literal.to_string()))
+            }
+            HirRoutePathSegment::Capture(coordinate) => {
+                let index = usize::try_from(coordinate.position()).map_err(|_| {
+                    EntryRuntimeProjectionError::InvalidRoutePlan {
+                        entry: entry.to_string(),
+                        reason: "capture coordinate does not fit this platform".to_owned(),
+                    }
+                })?;
+                let capture = checked.path().captures().get(index).ok_or_else(|| {
+                    EntryRuntimeProjectionError::InvalidRoutePlan {
+                        entry: entry.to_string(),
+                        reason: "capture coordinate is absent from the checked path".to_owned(),
+                    }
+                })?;
+                if capture.coordinate() != *coordinate {
+                    return Err(EntryRuntimeProjectionError::InvalidRoutePlan {
+                        entry: entry.to_string(),
+                        reason: "capture coordinate/name relation is inconsistent".to_owned(),
+                    });
+                }
+                Ok(RuntimeRoutePathSegment::Capture(
+                    RouteCaptureCoordinate::from_position(coordinate.position()),
+                ))
+            }
+        })
+        .collect::<Result<Vec<_>, EntryRuntimeProjectionError>>()?;
+    let path = RuntimeRoutePath::try_new(segments).map_err(|error| {
+        EntryRuntimeProjectionError::InvalidRoutePlan {
+            entry: entry.to_string(),
+            reason: error.to_string(),
+        }
+    })?;
+    let bindings = checked
+        .bindings()
+        .iter()
+        .map(|binding| RuntimeRouteBinding {
+            parameter: binding.parameter(),
+            source: match binding.source() {
+                CheckedEntryRouteBindingSource::PathCapture(capture) => {
+                    RuntimeRouteBindingSource::PathCapture(RouteCaptureCoordinate::from_position(
+                        capture.position(),
+                    ))
+                }
+            },
+        })
+        .collect();
     Ok(RuntimeRouteSpec {
-        method: runtime_http_method(*method).to_owned(),
-        path: path.as_str().to_owned(),
-        target: runtime_flow_target(entry, owner, module, symbols, route.target())?,
+        method: runtime_http_method(checked.method()),
+        path,
+        target,
         bindings,
     })
 }
 
-fn runtime_flow_target(
-    entry: &CheckedEntryId,
-    owner: ItemId,
-    module: &HirModule,
-    symbols: &ProjectSymbolTable,
-    target: &HirEntryTarget,
-) -> Result<FlowRuntimeId, EntryRuntimeProjectionError> {
-    let HirEntryTarget::Authored(value) = target else {
-        return Err(recovered_entry_target(entry));
-    };
-    let Some(reference) = value.as_resolved() else {
-        return Err(recovered_entry_target(entry));
-    };
-    let source = entry_whole_source(module, owner)?;
-    let symbol = symbols
-        .resolve_entity_reference(module.key().path(), reference, source)
-        .map_err(|error| EntryRuntimeProjectionError::InvalidFlowIdentity(error.to_string()))?;
-    let ResolvedProjectSymbol::StructuralCallable(symbol) = symbol else {
-        return Err(EntryRuntimeProjectionError::InvalidFlowIdentity(format!(
-            "Entry `{entry}` target does not resolve to a structural Flow"
-        )));
-    };
-    if symbol.owner() != CallableDeclarationOwner::Flow {
-        return Err(EntryRuntimeProjectionError::InvalidFlowIdentity(format!(
-            "Entry `{entry}` target does not resolve to a Flow"
-        )));
-    }
-    let CallableDeclarationKey::Flow(declaration) = symbol.declaration() else {
-        unreachable!("accepted structural Flow symbol owns a Flow declaration key")
-    };
-    FlowRuntimeId::from_checked_declaration_digest(
-        declaration.semantic_digest().into_bytes(),
-        declaration.public_id().as_str(),
-    )
-    .map_err(|error| EntryRuntimeProjectionError::InvalidFlowIdentity(error.to_string()))
-}
-
-fn entry_whole_source(
-    module: &HirModule,
-    owner: ItemId,
-) -> Result<arcweft_source::SourceSpan, EntryRuntimeProjectionError> {
-    let lookup = module
-        .source_site(
-            module.provenance().source_identity(),
-            HirSourceQuery::Item {
-                owner,
-                role: HirItemSourceRole::Entry(HirEntrySourcePart::Whole),
-            },
-        )
-        .map_err(|error| EntryRuntimeProjectionError::InvalidFlowIdentity(error.to_string()))?;
-    match lookup.presence() {
-        HirSourcePresence::Present(HirSourceSite::Span(source)) => Ok(source.clone()),
-        HirSourcePresence::Present(HirSourceSite::Insertion(_))
-        | HirSourcePresence::AbsentOptional => {
-            Err(EntryRuntimeProjectionError::InvalidFlowIdentity(format!(
-                "checked Entry {owner:?} has no authored whole-declaration source"
-            )))
-        }
-    }
-}
-
-const fn runtime_http_method(method: HirHttpMethod) -> &'static str {
+const fn runtime_http_method(method: HirHttpMethod) -> RuntimeHttpMethod {
     match method {
-        HirHttpMethod::Get => "GET",
-        HirHttpMethod::Post => "POST",
-        HirHttpMethod::Put => "PUT",
-        HirHttpMethod::Patch => "PATCH",
-        HirHttpMethod::Delete => "DELETE",
-        HirHttpMethod::Head => "HEAD",
-        HirHttpMethod::Options => "OPTIONS",
-    }
-}
-
-fn recovered_entry_target(entry: &CheckedEntryId) -> EntryRuntimeProjectionError {
-    EntryRuntimeProjectionError::RecoveredEntryTarget {
-        entry: entry.to_string(),
+        HirHttpMethod::Get => RuntimeHttpMethod::Get,
+        HirHttpMethod::Post => RuntimeHttpMethod::Post,
+        HirHttpMethod::Put => RuntimeHttpMethod::Put,
+        HirHttpMethod::Patch => RuntimeHttpMethod::Patch,
+        HirHttpMethod::Delete => RuntimeHttpMethod::Delete,
+        HirHttpMethod::Head => RuntimeHttpMethod::Head,
+        HirHttpMethod::Options => RuntimeHttpMethod::Options,
     }
 }
 
@@ -532,46 +486,24 @@ pub(crate) struct RuntimeSchemaProjection;
 
 impl RuntimeSchemaProjection {
     fn nominal(
+        analysis: &FinalSemanticAnalysis,
         checked: &CheckedNominalRole,
     ) -> Result<RuntimeNominalRole, EntryRuntimeProjectionError> {
-        let nominal = nominal_identity(checked.key());
-        let schema = project_runtime_type_schema(checked.schema());
-        let layout = Self::layout_hash(&nominal, &schema)?;
-        let checked_digest = *checked.schema_digest().as_bytes();
-        if layout.as_bytes() != &checked_digest {
-            return Err(EntryRuntimeProjectionError::NominalSchemaDigestMismatch {
-                nominal,
-                checked: checked_digest,
-                projected: layout,
-            });
-        }
+        let projection = analysis
+            .checked_entry_runtime_nominal(checked)
+            .map_err(
+                |error| EntryRuntimeProjectionError::InvalidNominalRelation {
+                    nominal: format!("{:?}", checked.runtime_nominal()),
+                    reason: error.to_string(),
+                },
+            )?;
         Ok(RuntimeNominalRole {
-            identity: RuntimeNominalTypeId::try_new(nominal).map_err(|error| {
-                EntryRuntimeProjectionError::InvalidRoleIdentity(error.to_string())
-            })?,
-            layout,
-            schema,
+            identity: projection.nominal().clone(),
+            semantic_identity: RuntimeSemanticTypeId::from_bytes(
+                *checked.semantic_type().as_bytes(),
+            ),
+            layout: projection.layout(),
+            schema: projection.schema().clone(),
         })
     }
-
-    pub(crate) fn layout_hash(
-        nominal: &str,
-        schema: &RuntimeTypeSchema,
-    ) -> Result<TypeLayoutHash, EntryRuntimeProjectionError> {
-        schema
-            .try_layout_hash()
-            .map_err(|source| EntryRuntimeProjectionError::NominalLayoutHash {
-                nominal: nominal.to_owned(),
-                source,
-            })
-    }
-}
-
-fn nominal_identity(key: &BoundNominalTypeKey) -> String {
-    format!(
-        "{}::{}::{}",
-        key.package().as_str(),
-        key.module(),
-        key.name()
-    )
 }

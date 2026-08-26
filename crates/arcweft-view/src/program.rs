@@ -8,16 +8,17 @@
 
 use crate::style::{ViewPhysicalFlow, ViewStyleApplicationTarget};
 use crate::{
-    CustomElementId, EventKind, HandlerId, ImageId, SemanticSpecId, TextSourceId,
-    ViewEvaluationSiteId, ViewId, ViewInstructionIndex, ViewPartExport, ViewPartId,
-    ViewPartInstructionKind, ViewPartLocalName, ViewPartName, ViewPartStaticReachability,
-    ViewProgramBuildError, ViewProgramId, ViewStaticPart, ViewValueProgramId,
-    ViewValueProgramInventory,
+    CustomElementId, HandlerId, ImageId, SemanticSpecId, TextSourceId, ViewEvaluationSiteId,
+    ViewHandlerCapture, ViewHandlerProgramId, ViewHandlerResult, ViewId, ViewInstructionIndex,
+    ViewPartExport, ViewPartId, ViewPartInstructionKind, ViewPartLocalName, ViewPartName,
+    ViewPartStaticReachability, ViewProgramBuildError, ViewProgramId, ViewStaticPart,
+    ViewValueProgramId, ViewValueProgramInventory,
 };
 use arcweft_id::PublicId;
 use arcweft_presentation::fx::FxId;
+use arcweft_presentation::input::{InputEventKind, PointerPhase};
 use serde::{Deserialize, Serialize};
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct ViewProgram {
@@ -27,7 +28,7 @@ pub struct ViewProgram {
     instructions: Vec<ViewInstruction>,
     static_parts: Vec<ViewStaticPart>,
     exported_parts: Vec<ViewPartExport>,
-    handler_programs: Vec<ViewHandlerProgram>,
+    handler_programs: Vec<BindHandler>,
     state_schema_hash: u64,
 }
 
@@ -39,7 +40,7 @@ pub struct ViewProgramBuilder {
     instructions: Vec<ViewInstruction>,
     static_parts: Vec<ViewStaticPart>,
     exported_parts: Vec<ViewPartExport>,
-    handler_programs: Vec<ViewHandlerProgram>,
+    handler_programs: Vec<BindHandler>,
     state_schema_hash: u64,
 }
 
@@ -56,8 +57,45 @@ pub enum ViewInstruction {
     Await(ViewAwait),
     BindLocal(ViewLocalBinding),
     ApplyFx(ViewFxApplicationInstruction),
-    BindEvent(ViewEventBindingSpec),
+    BindEvent(BindEvent),
     AttachSemantic(ViewSemanticSpec),
+}
+
+/// Closed event algebra accepted by authored View programs and runtime input routing.
+#[derive(Clone, Copy, Debug, Deserialize, Eq, Hash, Ord, PartialEq, PartialOrd, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum EventKind {
+    Activate,
+    PointerDown,
+    PointerUp,
+    PointerMove,
+    Focus,
+    Blur,
+}
+
+impl EventKind {
+    /// Collision-free transcript tag owned by the closed event algebra.
+    pub const fn semantic_tag(self) -> u8 {
+        match self {
+            Self::Activate => 0,
+            Self::PointerDown => 1,
+            Self::PointerUp => 2,
+            Self::PointerMove => 3,
+            Self::Focus => 4,
+            Self::Blur => 5,
+        }
+    }
+
+    pub const fn accepts(self, input: &InputEventKind) -> bool {
+        match self {
+            Self::Activate => input.is_activate(),
+            Self::PointerDown => matches!(input.pointer_phase(), Some(PointerPhase::Down)),
+            Self::PointerUp => matches!(input.pointer_phase(), Some(PointerPhase::Up)),
+            Self::PointerMove => matches!(input.pointer_phase(), Some(PointerPhase::Move)),
+            Self::Focus => matches!(input.focus_changed(), Some(true)),
+            Self::Blur => matches!(input.focus_changed(), Some(false)),
+        }
+    }
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -127,6 +165,22 @@ impl ViewElementKind {
         Self::TextArea,
         Self::SecureField,
     ];
+
+    /// Stable semantic tag in declaration order.
+    pub const fn semantic_tag(self) -> u8 {
+        match self {
+            Self::Panel => 0,
+            Self::Box => 1,
+            Self::Scroll => 2,
+            Self::Row => 3,
+            Self::Column => 4,
+            Self::Stack => 5,
+            Self::Button => 6,
+            Self::TextField => 7,
+            Self::TextArea => 8,
+            Self::SecureField => 9,
+        }
+    }
 
     /// Canonical case-sensitive spelling in Arcweft View source.
     pub const fn source_name(self) -> &'static str {
@@ -327,7 +381,7 @@ pub struct ViewInstructionRange {
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
-pub struct ViewEventBindingSpec {
+pub struct BindEvent {
     pub event: EventKind,
     pub handler: HandlerId,
 }
@@ -340,10 +394,11 @@ pub struct ViewSemanticSpec {
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
-pub struct ViewHandlerProgram {
+pub struct BindHandler {
     pub handler: HandlerId,
-    pub target_action: Option<PublicId>,
-    pub body: ViewValueProgramId,
+    pub program: ViewHandlerProgramId,
+    pub captures: Box<[ViewHandlerCapture]>,
+    pub result: ViewHandlerResult,
 }
 
 impl ViewInstructionRange {
@@ -508,12 +563,15 @@ impl ViewProgramBuilder {
         Ok(())
     }
 
-    pub fn push_handler_program(&mut self, handler: ViewHandlerProgram) {
+    pub fn push_handler(&mut self, handler: BindHandler) -> Result<(), ViewProgramBuildError> {
+        validate_next_handler(&self.handler_programs, &handler)?;
         self.handler_programs.push(handler);
+        Ok(())
     }
 
     pub fn finish(self) -> Result<ViewProgram, ViewProgramBuildError> {
         validate_parts(&self.instructions, &self.static_parts, &self.exported_parts)?;
+        validate_handlers(&self.instructions, &self.handler_programs)?;
         Ok(ViewProgram {
             id: self.id,
             view: self.view,
@@ -525,6 +583,115 @@ impl ViewProgramBuilder {
             state_schema_hash: self.state_schema_hash,
         })
     }
+}
+
+fn validate_next_handler(
+    existing: &[BindHandler],
+    handler: &BindHandler,
+) -> Result<(), ViewProgramBuildError> {
+    let expected = HandlerId(u32::try_from(existing.len()).map_err(|_| {
+        ViewProgramBuildError::HandlerIdOverflow {
+            count: existing.len(),
+        }
+    })?);
+    if handler.handler != expected {
+        return Err(ViewProgramBuildError::NonCanonicalHandlerId {
+            expected,
+            actual: handler.handler,
+        });
+    }
+    if existing.iter().any(|row| row.program == handler.program) {
+        return Err(ViewProgramBuildError::DuplicateHandlerProgram {
+            program: handler.program,
+        });
+    }
+    if let Some(previous) = existing.last()
+        && previous.program >= handler.program
+    {
+        return Err(ViewProgramBuildError::NonCanonicalHandlerOrder {
+            previous: previous.program,
+            next: handler.program,
+        });
+    }
+    if handler
+        .captures
+        .windows(2)
+        .any(|pair| pair[0].parameter() >= pair[1].parameter())
+    {
+        return Err(ViewProgramBuildError::NonCanonicalHandlerCaptures {
+            handler: handler.handler,
+        });
+    }
+    Ok(())
+}
+
+fn validate_handlers(
+    instructions: &[ViewInstruction],
+    handlers: &[BindHandler],
+) -> Result<(), ViewProgramBuildError> {
+    let mut accepted = Vec::with_capacity(handlers.len());
+    for handler in handlers {
+        validate_next_handler(&accepted, handler)?;
+        accepted.push(handler.clone());
+    }
+
+    let mut target = None;
+    let mut referenced = BTreeSet::new();
+    let mut target_events = BTreeSet::new();
+    for (index, instruction) in instructions.iter().enumerate() {
+        let instruction_index = ViewInstructionIndex::try_from_index(index).map_err(|_| {
+            ViewProgramBuildError::InstructionIndexOverflow {
+                length: instructions.len(),
+            }
+        })?;
+        match instruction {
+            ViewInstruction::OpenElement(_)
+            | ViewInstruction::EmitText(_)
+            | ViewInstruction::EmitImage(_)
+            | ViewInstruction::EmitCustom(_)
+            | ViewInstruction::CallView(_) => target = Some(instruction_index),
+            ViewInstruction::BindEvent(binding) => {
+                if handlers
+                    .get(binding.handler.0 as usize)
+                    .is_none_or(|handler| handler.handler != binding.handler)
+                {
+                    return Err(ViewProgramBuildError::UnknownHandler {
+                        instruction: instruction_index,
+                        handler: binding.handler,
+                    });
+                }
+                if !referenced.insert(binding.handler) {
+                    return Err(ViewProgramBuildError::DuplicateHandlerBinding {
+                        handler: binding.handler,
+                    });
+                }
+                let target = target.ok_or(ViewProgramBuildError::HandlerWithoutTarget {
+                    instruction: instruction_index,
+                })?;
+                if !target_events.insert((target, binding.event)) {
+                    return Err(ViewProgramBuildError::DuplicateTargetEvent {
+                        target,
+                        event: binding.event,
+                    });
+                }
+            }
+            ViewInstruction::Branch(_)
+            | ViewInstruction::RepeatKeyed(_)
+            | ViewInstruction::Await(_)
+            | ViewInstruction::BindLocal(_) => target = None,
+            ViewInstruction::CloseElement
+            | ViewInstruction::ApplyFx(_)
+            | ViewInstruction::AttachSemantic(_) => {}
+        }
+    }
+    for handler in handlers {
+        if !referenced.contains(&handler.handler) {
+            return Err(ViewProgramBuildError::UnboundHandler {
+                handler: handler.handler,
+            });
+        }
+    }
+    Ok(())
 }
 
 impl ViewProgram {
@@ -556,7 +723,7 @@ impl ViewProgram {
         &self.exported_parts
     }
 
-    pub fn handler_programs(&self) -> &[ViewHandlerProgram] {
+    pub fn handlers(&self) -> &[BindHandler] {
         &self.handler_programs
     }
 }
@@ -810,6 +977,15 @@ mod tests {
 
     fn program_id(value: &str) -> ViewProgramId {
         ViewProgramId::try_new(value).unwrap()
+    }
+
+    #[test]
+    fn view_element_semantic_tags_are_unique() {
+        let tags = ViewElementKind::ALL
+            .into_iter()
+            .map(ViewElementKind::semantic_tag)
+            .collect::<BTreeSet<_>>();
+        assert_eq!(tags.len(), ViewElementKind::ALL.len());
     }
 
     #[test]

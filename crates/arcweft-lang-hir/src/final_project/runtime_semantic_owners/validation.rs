@@ -150,16 +150,23 @@ fn root_kind_matches(
     project: HirExecutableProjectView<'_>,
     root: &HirRuntimeReachabilityRoot,
 ) -> bool {
-    let HirRuntimeExecutableOwner::Item(owner) = root.owner else {
-        return false;
-    };
-    let Some(kind) = resolve_item_kind(project, owner) else {
-        return false;
-    };
-    match root.kind {
-        HirRuntimeReachabilityRootKind::CheckedFlow => matches!(kind, HirItemKind::Flow(_)),
-        HirRuntimeReachabilityRootKind::CheckedEntry
-        | HirRuntimeReachabilityRootKind::SelectedEntry => matches!(kind, HirItemKind::Entry(_)),
+    match (root.kind, &root.owner) {
+        (HirRuntimeReachabilityRootKind::CheckedFlow, HirRuntimeExecutableOwner::Item(owner)) => {
+            resolve_item_kind(project, *owner)
+                .is_some_and(|kind| matches!(kind, HirItemKind::Flow(_)))
+        }
+        (
+            HirRuntimeReachabilityRootKind::CheckedEntry
+            | HirRuntimeReachabilityRootKind::SelectedEntry,
+            HirRuntimeExecutableOwner::Item(owner),
+        ) => resolve_item_kind(project, *owner)
+            .is_some_and(|kind| matches!(kind, HirItemKind::Entry(_))),
+        (
+            HirRuntimeReachabilityRootKind::CheckedViewValueProgram,
+            HirRuntimeExecutableOwner::Closure(owner),
+        ) => resolve_expression_kind(project, *owner)
+            .is_some_and(|kind| matches!(kind, HirExprKind::Closure(_))),
+        _ => false,
     }
 }
 

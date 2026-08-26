@@ -203,14 +203,14 @@ impl Engine {
                 };
                 output.requests.tasks.push(task);
                 let observed_through = self.task_publications.get(&target.task).copied();
-                self.fiber.status = FlowFiberStatus::Waiting(AwaitState {
+                self.fiber.status = FlowFiberStatus::Waiting(Box::new(AwaitState {
                     binding,
                     target,
                     observers,
                     resume: self.resume_cursor(next_op_index),
                     observed_through,
                     queued: std::collections::VecDeque::new(),
-                });
+                }));
             }
             FlowOp::AwaitMany {
                 binding,
@@ -237,20 +237,40 @@ impl Engine {
                     }
                 };
                 let (args, named_args) = arguments;
+                let result = match self.plan.checked_type(target.result) {
+                    Ok(Some(result)) => result,
+                    Ok(None) => {
+                        let error = format!(
+                            "host call {} result is outside the checked host-call image",
+                            target.public_id
+                        );
+                        self.fiber.status = FlowFiberStatus::Failed(error.clone());
+                        output.diagnostics.push(RuntimeDiagnostic::new(error));
+                        return;
+                    }
+                    Err(error) => {
+                        self.fiber.status = FlowFiberStatus::Failed(error.to_string());
+                        output
+                            .diagnostics
+                            .push(RuntimeDiagnostic::new(error.to_string()));
+                        return;
+                    }
+                };
                 let id = self.next_host_call_id(&target.public_id);
                 output.requests.host_calls.push(RuntimeHostCallRequest {
                     id: id.clone(),
                     public_id: target.public_id.clone(),
                     capability: target.capability.clone(),
                     operation: target.operation.clone(),
+                    contract: target.contract,
                     args,
                     named_args,
+                    result,
                     mode: target.mode,
                     deterministic: target.deterministic,
                 });
                 self.fiber.status = FlowFiberStatus::HostCall(HostCallState {
                     binding,
-                    target,
                     id,
                     resume: self.resume_cursor(next_op_index),
                 });
@@ -550,7 +570,7 @@ impl Engine {
                     ));
                     return;
                 };
-                self.fiber.status = FlowFiberStatus::Waiting(*state);
+                self.fiber.status = FlowFiberStatus::Waiting(Box::new(*state));
             }
             FlowOp::ExitScopeBind { pattern, expr } => {
                 let value = match self.evaluate_expr_with_backend(&expr, pure_backend) {

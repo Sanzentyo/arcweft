@@ -476,7 +476,11 @@ where
                 selected.canonical_label(),
             )));
         }
-        let AwbcEntryTarget::Function(controller) = &entry.target else {
+        let AwbcEntryTarget::Function {
+            function: controller,
+            ..
+        } = &entry.target
+        else {
             return Err(invalid(format!(
                 "selected entry `{}` does not target an AWBC function",
                 selected.canonical_label(),
@@ -501,12 +505,17 @@ where
                 callable.role == roles.controller && callable.function == *controller
             })
             .count();
+        let controller_parameterless = program
+            .functions
+            .get(controller.index())
+            .and_then(|function| program.signatures.get(function.signature.index()))
+            .is_some_and(|signature| signature.params.is_empty());
         let flow_matches = program
             .flow_executables
             .iter()
             .filter(|flow| {
                 flow.function == *controller
-                    && flow.metadata.parameters.is_empty()
+                    && controller_parameterless
                     && flow.metadata.controller.as_ref() == Some(&roles.controller)
             })
             .count();
@@ -702,7 +711,11 @@ where
                 "AWBC entry identity or kind does not match the Agent manifest".to_owned(),
             ));
         }
-        let AwbcEntryTarget::Function(controller) = &entry.target else {
+        let AwbcEntryTarget::Function {
+            function: controller,
+            ..
+        } = &entry.target
+        else {
             return Err(mismatch(
                 "Agent AWBC entry does not target a controller function".to_owned(),
             ));
@@ -743,8 +756,13 @@ where
                 program.flow_executables.len(),
             )));
         };
+        let controller_parameterless = program
+            .functions
+            .get(controller.index())
+            .and_then(|function| program.signatures.get(function.signature.index()))
+            .is_some_and(|signature| signature.params.is_empty());
         if flow_executable.function != *controller
-            || !flow_executable.metadata.parameters.is_empty()
+            || !controller_parameterless
             || flow_executable.metadata.controller.as_ref() != Some(&roles.controller)
             || StableHash::from_blake3_bytes(*flow_executable.metadata.contract.as_bytes())
                 != manifest.controller_contract_hash

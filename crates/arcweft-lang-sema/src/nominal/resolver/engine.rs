@@ -30,10 +30,11 @@ use super::super::{
     TypeResolutionFailure, TypeResolutionInput, TypeResolutionInputError, TypeResolutionModule,
     TypeResolutionReport, TypeResolutionWorld, TypeSourceEvidence,
 };
+use super::hir_path_matches_type_path;
 use support::{
     ProjectNameLookup, ProjectSelection, canonical_cycle, canonical_poisons, diagnostic_kind,
-    diagnostic_ordering, direct_name, evidence_from_project, hir_path_matches_type_path,
-    open_expectation, open_rule_matches_hir, related_ordering,
+    diagnostic_ordering, direct_name, evidence_from_project, open_expectation,
+    open_rule_matches_hir, related_ordering,
 };
 
 pub(super) fn resolve_type_ref(

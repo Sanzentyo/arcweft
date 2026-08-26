@@ -160,10 +160,11 @@ For both records and bracket sequences, `Exact` rejects unmentioned values and
 complete record; sequence `Bind` receives the unmatched tail.
 
 This evaluator is deliberately small and Sans I/O. It handles deterministic
-bool/int/string/entity/list/tuple/record/variant values, structured bindings,
-and explicit external bindings from `RuntimeStepInput`. Function calls, overloads,
-numeric unit coercions, and full type-directed evaluation remain semantic/HIR
-work before this runtime layer.
+bool/int/string/entity/list/tuple/record/variant values and structured lexical
+bindings. Flow invocation parameters are admitted once through a complete,
+coordinate-addressed `RuntimeFlowInvocation` before execution; they are not
+step input. Function calls, overloads, numeric unit coercions, and full
+type-directed evaluation remain semantic/HIR work before this runtime layer.
 
 `scope name { ... }` lowers to the same control-flow shape as a lexical block,
 plus a scope-name push/pop around ID-bearing constructs and trace/debug frames.

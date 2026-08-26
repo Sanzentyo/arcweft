@@ -10,7 +10,7 @@ mod path;
 mod schema;
 
 pub use canonical::{CanonicalJsonError, canonical_json_bytes};
-pub use digest::{DigestParseError, RawDigest, SemanticDigest};
+pub use digest::{DigestParseError, HostCallContractDigest, RawDigest, SemanticDigest};
 pub use identity::{
     ActivityId, ActivityImplementationId, AdapterExportId, AdapterProfileId, AdapterTypeName,
     CapabilityId, ContentUnitId, EntrySelectionId, ExternalModuleId, ExternalModuleImportId,

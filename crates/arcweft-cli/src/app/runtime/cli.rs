@@ -8,7 +8,6 @@ use crate::app::project::{
 use crate::app::shared::print_json;
 use crate::output::{RuntimeExecutorTier, RuntimeRunReport};
 use arcweft_core::engine::FlowStatusLabelStyle;
-use arcweft_core::value::{RuntimeBinding, RuntimeValue, runtime_sequence_values};
 use arcweft_launch::LaunchKind;
 use arcweft_runtime_host::{NativeAdapterRegistrar, host_system_info};
 use std::process::ExitCode;
@@ -31,25 +30,12 @@ pub(in crate::app) fn runtime_cli_command(
     let checked = load_and_check_selection(&selection, None)?;
     let host_policy = native_host_policy_for_selection(&selection)?;
     let plan = checked.runtime_plan().plan.clone();
-    let entry = selection.command_entry(options.entry.as_deref())?;
+    let entry = if selection.profile().is_some() {
+        Some(selection.command_entry(options.entry.as_deref())?)
+    } else {
+        options.entry.as_deref()
+    };
     let entry = select_runtime_cli_entry(&plan, entry)?;
-    let mut bindings = options.values.clone();
-    bindings.push(RuntimeBinding {
-        name: "args".to_owned(),
-        value: runtime_sequence_values(
-            options
-                .args
-                .iter()
-                .cloned()
-                .map(RuntimeValue::String)
-                .collect(),
-        ),
-    });
-    bindings.push(RuntimeBinding {
-        name: "argc".to_owned(),
-        value: RuntimeValue::i64(i64::try_from(options.args.len()).unwrap_or(i64::MAX)),
-    });
-
     let file_roots = selection.native_file_roots();
     let trace = run_runtime_steps(
         plan,
@@ -58,6 +44,7 @@ pub(in crate::app) fn runtime_cli_command(
             source: Some(NativeRunSource::new(selection.path(), &file_roots)),
             policy: &host_policy,
             adapter_registrars,
+            cli_args: &options.args,
         },
         RuntimeStepRunConfig {
             steps: options.steps,
@@ -66,7 +53,6 @@ pub(in crate::app) fn runtime_cli_command(
             executor: options.executor,
             pure_config,
         },
-        &bindings,
         &checked.execution_diagnostics,
     )?;
     let report = RuntimeRunReport {

@@ -2,19 +2,21 @@
 
 use std::collections::BTreeMap;
 
-use arcweft_bundle::resource_codec::SourceSetRevision;
 use arcweft_bundle::resource_codec::view::{
     ValidatedViewProduct, ViewDefinitionResource, ViewProgramInstruction, ViewProgramResource,
 };
+use arcweft_bundle::resource_codec::{SectionCodecError, SourceSetRevision};
+use arcweft_core::awbc::schema::{AwbcProgram, AwbcPureHelperId};
 use arcweft_id::PublicId;
 use arcweft_view::{
-    AcceptedViewProgramRevision, CustomElementId, EventKind, HandlerId, ImageId, SemanticSpecId,
-    TextSourceId, ViewAwait, ViewAwaitBranch, ViewBranch, ViewCall, ViewCallArgument,
-    ViewCustomSpec, ViewElementSpec, ViewEvaluationSiteId, ViewEventBindingSpec,
-    ViewFxApplicationInstruction, ViewFxCallArgument, ViewId, ViewImageSpec, ViewInstruction,
-    ViewInstructionRange, ViewLocalBinding, ViewPartId, ViewPartStaticReachability, ViewProgram,
-    ViewProgramBuildError, ViewProgramBuilder, ViewProgramId, ViewRepeat, ViewSemanticSpec,
-    ViewStableKey, ViewTextSpec, ViewValueInventoryError, ViewValueProgramInventory,
+    AcceptedViewProgramRevision, BindEvent, BindHandler, CustomElementId, HandlerId, ImageId,
+    SemanticSpecId, TextSourceId, ViewAwait, ViewAwaitBranch, ViewBranch, ViewCall,
+    ViewCallArgument, ViewCustomSpec, ViewElementSpec, ViewEvaluationSiteId,
+    ViewFxApplicationInstruction, ViewFxCallArgument, ViewHandlerCapture, ViewHandlerProgramId,
+    ViewHandlerResult, ViewId, ViewImageSpec, ViewInstruction, ViewInstructionRange,
+    ViewLocalBinding, ViewPartId, ViewPartStaticReachability, ViewProgram, ViewProgramBuildError,
+    ViewProgramBuilder, ViewProgramId, ViewRepeat, ViewSemanticSpec, ViewStableKey, ViewTextSpec,
+    ViewValueInventoryError, ViewValueProgramInventory,
 };
 use thiserror::Error;
 
@@ -52,6 +54,16 @@ pub struct ViewProgramCatalog {
     definitions: Vec<RuntimeViewDefinition>,
     by_view: BTreeMap<ViewId, ViewDefinitionIndex>,
     parts: ViewPartRuntimeCatalog,
+    handlers: BTreeMap<ViewHandlerProgramId, AcceptedViewHandlerRuntime>,
+}
+
+/// Runtime-private execution evidence derived from the bundle/AWBC cross-join.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub(super) struct AcceptedViewHandlerRuntime {
+    program: ViewHandlerProgramId,
+    helper: AwbcPureHelperId,
+    captures: Box<[ViewHandlerCapture]>,
+    result: ViewHandlerResult,
 }
 
 /// Failure to adapt an already validated product into the immutable runtime catalog.
@@ -63,8 +75,6 @@ pub enum ViewProgramCatalogError {
     DuplicateDefinition(ViewId),
     #[error("View definition {view} has an invalid instruction span")]
     InvalidDefinitionSpan { view: ViewId },
-    #[error("View definition {view} uses unsupported handler event `{event}`")]
-    UnsupportedHandlerEvent { view: ViewId, event: String },
     #[error("View semantic target `{target}` is not a valid public identity")]
     InvalidSemanticTarget { target: String },
     #[error("View instruction table index cannot be represented")]
@@ -75,6 +85,10 @@ pub enum ViewProgramCatalogError {
     ValueInventory(#[from] ViewValueInventoryError),
     #[error(transparent)]
     Program(#[from] ViewProgramBuildError),
+    #[error("View handlers require an exact validated AWBC program")]
+    MissingHandlerRuntime,
+    #[error(transparent)]
+    HandlerRuntime(#[from] SectionCodecError),
 }
 
 impl ViewDefinitionIndex {
@@ -92,6 +106,51 @@ impl ViewDefinitionIndex {
 impl ViewProgramCatalog {
     pub(crate) fn try_from_validated(
         product: &ValidatedViewProduct,
+    ) -> Result<Option<Self>, ViewProgramCatalogError> {
+        if product
+            .program()
+            .is_some_and(|program| !program.resource().handlers.is_empty())
+        {
+            return Err(ViewProgramCatalogError::MissingHandlerRuntime);
+        }
+        Self::build(product, BTreeMap::new())
+    }
+
+    pub(crate) fn try_from_validated_with_awbc(
+        product: &ValidatedViewProduct,
+        awbc: &AwbcProgram,
+    ) -> Result<Option<Self>, ViewProgramCatalogError> {
+        let handlers = match product.program() {
+            Some(program) => {
+                program.resource().validate_awbc_handlers(awbc)?;
+                program
+                    .resource()
+                    .handlers
+                    .iter()
+                    .map(|handler| {
+                        let binding = awbc
+                            .pure_program_binding(handler.program)
+                            .expect("validated View/AWBC cross-join retains every handler binding");
+                        (
+                            handler.program,
+                            AcceptedViewHandlerRuntime {
+                                program: handler.program,
+                                helper: binding.helper,
+                                captures: handler.captures.clone().into_boxed_slice(),
+                                result: handler.result,
+                            },
+                        )
+                    })
+                    .collect()
+            }
+            None => BTreeMap::new(),
+        };
+        Self::build(product, handlers)
+    }
+
+    fn build(
+        product: &ValidatedViewProduct,
+        handlers: BTreeMap<ViewHandlerProgramId, AcceptedViewHandlerRuntime>,
     ) -> Result<Option<Self>, ViewProgramCatalogError> {
         let Some(validated) = product.program() else {
             return Ok(None);
@@ -133,6 +192,7 @@ impl ViewProgramCatalog {
             definitions,
             by_view,
             parts,
+            handlers,
         }))
     }
 
@@ -181,6 +241,13 @@ impl ViewProgramCatalog {
 
     pub(crate) const fn parts(&self) -> &ViewPartRuntimeCatalog {
         &self.parts
+    }
+
+    pub(super) fn handler_runtime(
+        &self,
+        program: ViewHandlerProgramId,
+    ) -> Option<&AcceptedViewHandlerRuntime> {
+        self.handlers.get(&program)
     }
 
     pub(crate) fn view_ids(&self) -> impl Iterator<Item = &ViewId> {
@@ -240,6 +307,24 @@ impl ViewProgramCatalog {
     }
 }
 
+impl AcceptedViewHandlerRuntime {
+    pub(super) const fn program(&self) -> ViewHandlerProgramId {
+        self.program
+    }
+
+    pub(super) const fn helper(&self) -> AwbcPureHelperId {
+        self.helper
+    }
+
+    pub(super) const fn captures(&self) -> &[ViewHandlerCapture] {
+        &self.captures
+    }
+
+    pub(super) const fn result(&self) -> ViewHandlerResult {
+        self.result
+    }
+}
+
 fn build_definition(
     resource: &ViewProgramResource,
     definition: &ViewDefinitionResource,
@@ -276,10 +361,21 @@ fn build_definition(
         ViewProgramInstruction::AttachSemantic { target, .. } => Some(target.as_str()),
         _ => None,
     }))?;
-    let handler_ids = canonical_ids(body.iter().filter_map(|instruction| match instruction {
-        ViewProgramInstruction::BindHandler { handler, .. } => Some(handler.as_str()),
-        _ => None,
-    }))?;
+    let handler_ids = body
+        .iter()
+        .filter_map(|instruction| match instruction {
+            ViewProgramInstruction::BindHandler { handler, .. } => Some(*handler),
+            _ => None,
+        })
+        .collect::<std::collections::BTreeSet<_>>()
+        .into_iter()
+        .enumerate()
+        .map(|(index, program)| {
+            u32::try_from(index)
+                .map(|index| (program, index))
+                .map_err(|_| ViewProgramCatalogError::InstructionIndexOverflow)
+        })
+        .collect::<Result<BTreeMap<_, _>, _>>()?;
 
     let mut builder =
         ViewProgramBuilder::new(program_id, view.clone(), definition.state_schema_hash);
@@ -289,7 +385,6 @@ fn build_definition(
         let mapped = map_instruction(
             instruction,
             local_index,
-            view,
             &text_ids,
             &image_ids,
             &custom_ids,
@@ -300,6 +395,17 @@ fn build_definition(
         if let Some(local) = instruction.part() {
             authored_parts.push((local.clone(), index));
         }
+    }
+    for (program, dense) in &handler_ids {
+        let specification = resource
+            .handler_ref(*program)
+            .expect("validated View handler instruction retains its exact specification");
+        builder.push_handler(BindHandler {
+            handler: HandlerId(*dense),
+            program: *program,
+            captures: specification.captures.clone().into_boxed_slice(),
+            result: specification.result,
+        })?;
     }
     authored_parts.sort_by(|left, right| left.0.cmp(&right.0));
     let mut part_ids = BTreeMap::new();
@@ -357,12 +463,11 @@ fn build_definition(
 fn map_instruction(
     instruction: &ViewProgramInstruction,
     local_index: usize,
-    view: &ViewId,
     text_ids: &BTreeMap<String, u32>,
     image_ids: &BTreeMap<String, u32>,
     custom_ids: &BTreeMap<String, u32>,
     semantic_ids: &BTreeMap<String, u32>,
-    handler_ids: &BTreeMap<String, u32>,
+    handler_ids: &BTreeMap<ViewHandlerProgramId, u32>,
 ) -> Result<ViewInstruction, ViewProgramCatalogError> {
     Ok(match instruction {
         ViewProgramInstruction::OpenElement {
@@ -503,13 +608,8 @@ fn map_instruction(
             application_ordinal: *application_ordinal,
         }),
         ViewProgramInstruction::BindHandler { event, handler, .. } => {
-            ViewInstruction::BindEvent(ViewEventBindingSpec {
-                event: parse_event(event).ok_or_else(|| {
-                    ViewProgramCatalogError::UnsupportedHandlerEvent {
-                        view: view.clone(),
-                        event: event.clone(),
-                    }
-                })?,
+            ViewInstruction::BindEvent(BindEvent {
+                event: *event,
                 handler: HandlerId(handler_ids[handler]),
             })
         }
@@ -554,20 +654,5 @@ fn map_await_branch(
     ViewAwaitBranch {
         start_offset: branch.start_offset,
         body_span: branch.body_span,
-    }
-}
-
-fn parse_event(event: &str) -> Option<EventKind> {
-    match event {
-        // `.on_click` is the authoring surface for a control activation. Runtime
-        // dispatch deliberately uses the input-agnostic activation event so the
-        // same handler is reachable from pointer, keyboard, and accessibility input.
-        "activate" | "click" => Some(EventKind::Activate),
-        "pointer_down" => Some(EventKind::PointerDown),
-        "pointer_up" => Some(EventKind::PointerUp),
-        "pointer_move" => Some(EventKind::PointerMove),
-        "focus" => Some(EventKind::Focus),
-        "blur" => Some(EventKind::Blur),
-        _ => None,
     }
 }

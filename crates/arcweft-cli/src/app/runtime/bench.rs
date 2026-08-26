@@ -5,7 +5,6 @@ use arcweft_core::engine::FlowFiberStatus;
 use arcweft_core::step::{
     RuntimePureCallStats, RuntimeStepInput, RuntimeStepResult, RuntimeStepStats,
 };
-use arcweft_core::value::RuntimeBinding;
 use arcweft_host_adapter::HostCallPolicy;
 use arcweft_runtime_accelerator::RuntimePureAccelerator;
 use arcweft_runtime_host::{
@@ -20,19 +19,27 @@ pub(in crate::app) fn run_runtime_bench_steps_with_pure(
     config: RuntimeStepRunConfig,
     host_policy: &HostCallPolicy,
     adapter_registrars: &[NativeAdapterRegistrar],
-    values: &[RuntimeBinding],
     pure: &mut RuntimePureAccelerator,
 ) -> Result<RuntimeBenchTrace, ExitCode> {
-    let mut host = None;
+    let mut host: Option<NativeTaskBridge> = None;
     let mut task_events = Vec::new();
+    let mut host_call_results = Vec::new();
     let mut totals = RuntimeBenchStepTotals::default();
     for _ in 0..config.steps {
-        let result = executor.step_with_root_bindings(
+        if let Some(host) = host.as_mut() {
+            host.pump_main_thread().map_err(|error| {
+                eprintln!("error: {error}");
+                ExitCode::FAILURE
+            })?;
+            task_events.extend(host.poll_completions());
+            host_call_results.extend(host.take_host_call_results());
+        }
+        let result = executor.step(
             RuntimeStepInput {
                 task_events: std::mem::take(&mut task_events),
+                host_call_results: std::mem::take(&mut host_call_results),
                 ..RuntimeStepInput::default()
             },
-            values,
             step_options(config.mode, config.max_ops),
             pure,
         );
@@ -43,6 +50,7 @@ pub(in crate::app) fn run_runtime_bench_steps_with_pure(
             ..
         } = result;
         let task_requests = std::mem::take(&mut output.requests.tasks);
+        let host_call_requests = std::mem::take(&mut output.requests.host_calls);
         totals.push(&stats, task_requests.len(), output.diagnostics.len());
         let done = matches!(
             fiber_status,
@@ -52,13 +60,14 @@ pub(in crate::app) fn run_runtime_bench_steps_with_pure(
             break;
         }
         if let Some(source) = source
-            && !task_requests.is_empty()
+            && (!task_requests.is_empty() || !host_call_requests.is_empty())
         {
             if host.is_none() {
                 host = Some(
                     NativeTaskBridge::try_new(
                         source.path(),
                         source.file_roots().clone(),
+                        &[],
                         host_policy.clone(),
                         adapter_registrars,
                     )
@@ -70,6 +79,7 @@ pub(in crate::app) fn run_runtime_bench_steps_with_pure(
             }
             if let Some(host) = host.as_mut() {
                 task_events = host.complete_tasks(task_requests);
+                host_call_results = host.complete_host_calls(host_call_requests);
             }
         }
     }

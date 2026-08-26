@@ -8,14 +8,17 @@ use crate::awbc::schema::{
     AwbcAudioArg, AwbcAudioCommand, AwbcAudioCommandId, AwbcAudioValueRef, AwbcBlock, AwbcBlockId,
     AwbcChoice, AwbcChoiceId, AwbcChoiceOption, AwbcConstant, AwbcContentUnit, AwbcEffectKind,
     AwbcEffectPlan, AwbcEffectPlanId, AwbcEffectSetId, AwbcEntryId, AwbcFlowBinding,
-    AwbcFrameLayout, AwbcFrameLayoutId, AwbcFrameSlot, AwbcFrameSlotRole, AwbcFunction,
-    AwbcFunctionFlags, AwbcFunctionId, AwbcFunctionKind, AwbcHostCall, AwbcHostCallId,
-    AwbcHostCallMode, AwbcInstruction, AwbcPattern, AwbcPatternId, AwbcProgram, AwbcRegisterId,
-    AwbcResumePoint, AwbcResumePointId, AwbcRuntimeType, AwbcSafePointKind, AwbcSignature,
-    AwbcSignatureId, AwbcStringId, AwbcTableRange, AwbcTerminator, AwbcTrapCode, AwbcTypeId,
+    AwbcFlowExecutable, AwbcFrameLayout, AwbcFrameLayoutId, AwbcFrameSlot, AwbcFrameSlotRole,
+    AwbcFunction, AwbcFunctionFlags, AwbcFunctionId, AwbcFunctionKind, AwbcHostCall,
+    AwbcHostCallId, AwbcHostCallMode, AwbcInstruction, AwbcPattern, AwbcPatternId, AwbcProgram,
+    AwbcRegisterId, AwbcResumePoint, AwbcResumePointId, AwbcRuntimeType, AwbcRuntimeTypeShape,
+    AwbcSafePointKind, AwbcSignature, AwbcSignatureId, AwbcStringId, AwbcTableRange,
+    AwbcTerminator, AwbcTrapCode, AwbcTypeId,
 };
 use crate::effect::{LineEffectRequest, RuntimeAssertionGuardId, RuntimeAssertionProfile};
 use crate::engine::{FlowExit, FlowFiberStatus};
+use crate::entry::{FlowContractHash, RuntimeFlowExecutable};
+use crate::pattern::RuntimeSemanticTypeId;
 use crate::step::{
     RuntimeDiagnosticCategory, RuntimeHostCallId, RuntimeHostCallMode, RuntimeHostCallResult,
     RuntimeStepInput, RuntimeStepOptions, RuntimeStepStopReason,
@@ -23,7 +26,7 @@ use crate::step::{
 use crate::task::{
     LogicalEpoch, NeedId, RuntimeNeedState, TaskEvent, TaskEventKind, TaskId, TaskSequence,
 };
-use crate::value::{RuntimeBinding, RuntimePayload, RuntimeValue};
+use crate::value::{RuntimeFlowParameterBinding, RuntimePayload, RuntimeValue};
 use arcweft_need::{Need, Progress};
 
 #[test]
@@ -77,6 +80,7 @@ fn snapshot_restore_and_hot_swap_require_exact_semantic_flow_identity() {
 
     let mut replacement_program = program;
     replacement_program.flow_bindings[0].flow = replacement.clone();
+    replacement_program.flow_executables[0].metadata.flow = replacement.clone();
     let error = executor
         .replace_program_preserving_state(replacement_program)
         .expect_err("same-label declaration replacement must not preserve live state");
@@ -109,6 +113,7 @@ fn snapshot_restore_rejects_same_label_choice_target_substitution() {
             .expect("second Flow identity");
     let mut program = return_program();
     program.flow_bindings[0].flow = first.clone();
+    program.flow_executables[0].metadata.flow = first.clone();
     let mut second_function = program.functions[0].clone();
     second_function.blocks = AwbcTableRange::new(1, 1);
     second_function.entry_block = AwbcBlockId(1);
@@ -180,6 +185,17 @@ fn test_flow_binding() -> AwbcFlowBinding {
     AwbcFlowBinding {
         flow: crate::plan::FlowRuntimeId::from_checked_declaration_digest([0x51; 32], "flow.main")
             .expect("test Flow identity is valid"),
+        function: AwbcFunctionId(0),
+    }
+}
+
+fn test_flow_executable() -> AwbcFlowExecutable {
+    AwbcFlowExecutable {
+        metadata: RuntimeFlowExecutable {
+            flow: test_flow_binding().flow,
+            contract: FlowContractHash::from_bytes([0x5a; 32]),
+            controller: None,
+        },
         function: AwbcFunctionId(0),
     }
 }
@@ -642,14 +658,16 @@ fn trap_program(code: AwbcTrapCode, message: &str) -> AwbcProgram {
             flags: AwbcFunctionFlags::default(),
         }],
         flow_bindings: vec![test_flow_binding()],
+        flow_executables: vec![test_flow_executable()],
         entries: vec![crate::awbc::schema::AwbcEntry {
             runtime_id: crate::plan::EntryRuntimeId::canonical("main")
                 .expect("test entry runtime ID is valid"),
             binding: crate::entry::EntryBindingIdentity::from_bytes([1; 32]),
             public_id: AwbcStringId(0),
             kind: crate::awbc::schema::AwbcEntryKind::Cli,
-            signature: AwbcSignatureId(0),
-            target: crate::awbc::schema::AwbcEntryTarget::Function(AwbcFunctionId(0)),
+            target: crate::awbc::schema::AwbcEntryTarget::Function {
+                function: AwbcFunctionId(0),
+            },
             roles: crate::entry::RuntimeEntryRoles::None,
         }],
         ..AwbcProgram::default()
@@ -698,14 +716,16 @@ fn content_ensure_program() -> AwbcProgram {
             flags: AwbcFunctionFlags::default(),
         }],
         flow_bindings: vec![test_flow_binding()],
+        flow_executables: vec![test_flow_executable()],
         entries: vec![crate::awbc::schema::AwbcEntry {
             runtime_id: crate::plan::EntryRuntimeId::canonical("main")
                 .expect("test entry runtime ID is valid"),
             binding: crate::entry::EntryBindingIdentity::from_bytes([1; 32]),
             public_id: AwbcStringId(0),
             kind: crate::awbc::schema::AwbcEntryKind::Cli,
-            signature: AwbcSignatureId(0),
-            target: crate::awbc::schema::AwbcEntryTarget::Function(AwbcFunctionId(0)),
+            target: crate::awbc::schema::AwbcEntryTarget::Function {
+                function: AwbcFunctionId(0),
+            },
             roles: crate::entry::RuntimeEntryRoles::None,
         }],
         ..AwbcProgram::default()
@@ -735,12 +755,20 @@ fn host_call_program() -> AwbcProgram {
     };
     AwbcProgram {
         strings,
+        runtime_types: vec![
+            AwbcRuntimeType::unit(),
+            AwbcRuntimeType::new(
+                crate::pattern::RuntimeCheckedType::String.semantic_identity_digest(),
+                AwbcRuntimeTypeShape::String,
+            ),
+        ],
         signatures: vec![signature],
         frame_layouts: vec![frame_layout],
         host_calls: vec![AwbcHostCall {
             public_id: AwbcStringId(1),
             capability: AwbcStringId(2),
             operation: AwbcStringId(3),
+            contract: None,
             signature: AwbcSignatureId(0),
             mode: AwbcHostCallMode::Suspend,
             deterministic: true,
@@ -785,14 +813,16 @@ fn host_call_program() -> AwbcProgram {
             flags: AwbcFunctionFlags(AwbcFunctionFlags::MAY_SUSPEND),
         }],
         flow_bindings: vec![test_flow_binding()],
+        flow_executables: vec![test_flow_executable()],
         entries: vec![crate::awbc::schema::AwbcEntry {
             runtime_id: crate::plan::EntryRuntimeId::canonical("main")
                 .expect("test entry runtime ID is valid"),
             binding: crate::entry::EntryBindingIdentity::from_bytes([1; 32]),
             public_id: AwbcStringId(0),
             kind: crate::awbc::schema::AwbcEntryKind::Cli,
-            signature: AwbcSignatureId(0),
-            target: crate::awbc::schema::AwbcEntryTarget::Function(AwbcFunctionId(0)),
+            target: crate::awbc::schema::AwbcEntryTarget::Function {
+                function: AwbcFunctionId(0),
+            },
             roles: crate::entry::RuntimeEntryRoles::None,
         }],
         ..AwbcProgram::default()
@@ -802,13 +832,18 @@ fn host_call_program() -> AwbcProgram {
 fn direct_need_executor_and_input(
     need_states: Vec<RuntimeNeedState>,
 ) -> (AwbcProductStepExecutor, RuntimeStepInput) {
-    let executor = AwbcProductStepExecutor::for_entry(direct_need_program(), AwbcEntryId(0), 64)
-        .expect("direct Need product executor starts");
-    let input = RuntimeStepInput {
-        bindings: vec![RuntimeBinding {
-            name: "need".to_owned(),
+    let executor = AwbcProductStepExecutor::for_function_invocation(
+        direct_need_program(),
+        AwbcEntryId(0),
+        AwbcFunctionId(0),
+        [RuntimeFlowParameterBinding {
+            parameter: crate::entry::FlowParameterCoordinate::from_position(0),
             value: RuntimeValue::String("need.profile".to_owned()),
         }],
+        64,
+    )
+    .expect("direct Need product executor starts");
+    let input = RuntimeStepInput {
         need_states,
         ..RuntimeStepInput::default()
     };
@@ -836,7 +871,13 @@ fn direct_need_program() -> AwbcProgram {
     let dynamic_ty = AwbcTypeId(1);
     AwbcProgram {
         strings: vec!["entry.main".to_owned(), "need".to_owned()],
-        runtime_types: vec![AwbcRuntimeType::NeedHandle, AwbcRuntimeType::Dynamic],
+        runtime_types: vec![
+            AwbcRuntimeType::new(
+                RuntimeSemanticTypeId::from_bytes([91; 32]),
+                AwbcRuntimeTypeShape::Need(AwbcTypeId(1)),
+            ),
+            AwbcRuntimeType::dynamic(),
+        ],
         signatures: vec![AwbcSignature {
             params: vec![need_ty],
             result: Some(dynamic_ty),
@@ -905,14 +946,16 @@ fn direct_need_program() -> AwbcProgram {
             ),
         }],
         flow_bindings: vec![test_flow_binding()],
+        flow_executables: vec![test_flow_executable()],
         entries: vec![crate::awbc::schema::AwbcEntry {
             runtime_id: crate::plan::EntryRuntimeId::canonical("main")
                 .expect("test entry runtime ID is valid"),
             binding: crate::entry::EntryBindingIdentity::from_bytes([1; 32]),
             public_id: AwbcStringId(0),
             kind: crate::awbc::schema::AwbcEntryKind::Cli,
-            signature: AwbcSignatureId(0),
-            target: crate::awbc::schema::AwbcEntryTarget::Function(AwbcFunctionId(0)),
+            target: crate::awbc::schema::AwbcEntryTarget::Function {
+                function: AwbcFunctionId(0),
+            },
             roles: crate::entry::RuntimeEntryRoles::None,
         }],
         ..AwbcProgram::default()

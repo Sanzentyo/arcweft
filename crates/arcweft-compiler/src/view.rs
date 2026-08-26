@@ -15,7 +15,8 @@ use arcweft_bundle::{
         ViewProgramStyleResources, ViewResourceMergeError, ViewTextBlockBounds,
         ViewTextBlockResource, ViewTextResource,
         view::{
-            DialogueTextProjection, ViewDefinitionRef, ViewParameterRole, ViewProgramInstruction,
+            DialogueTextProjection, ViewActionButtonActionResource, ViewActionButtonResource,
+            ViewDefinitionRef, ViewParameterRole, ViewProgramInstruction, ViewRuntimeButtonBounds,
             ViewTextSourceKind, ViewTextSourceRecord, ViewTextSurface,
         },
     },
@@ -24,22 +25,28 @@ use arcweft_bundle::{
 use arcweft_id::DeclarationIdentityFamily;
 use arcweft_lang_hir::{
     expr::HirCallArgument,
-    identity::{ExprId, ItemId, LocalId},
+    identity::{CaptureId, ExprId, ItemId, LocalId},
     item::{HirItemKind, HirPublicIdOrigin, HirRetainedName, HirViewDeclaration},
     leaf::{HirLiteral, HirStringLiteral},
     module::HirModule,
     project::HirProject,
+    scope::CaptureAccess,
     source_index::{
         HirItemSourceRole, HirSourcePresence, HirSourceQuery, HirSourceSite, HirViewSourceRole,
     },
     symbol::ProjectSymbolTable,
 };
 use arcweft_lang_sema::{
+    CheckedOwnershipError, CheckedOwnershipLimits,
+    callable::CallableValidator,
     dialogue_view::{DialogueCharacterProjection, DialogueProjectionCoordinate},
+    effect_row::EffectRowTail,
     final_analysis::{
         CheckedBindingRole, CheckedExpressionResolution, CheckedSelectResolution,
         CheckedValueResolution, CheckedViewCall, FinalSemanticAnalysis,
     },
+    registration::RegisteredSemanticWorld,
+    types::TypeKind,
 };
 use arcweft_project::sources::ProjectSources;
 use arcweft_resource_model::registry::{ResourceTypeRegistry, ResourceTypeRegistryDigest};
@@ -47,7 +54,10 @@ use arcweft_source::{
     Diagnostic, DiagnosticSeverity, SourceDocumentIdentity, SourceRange, SourceSetRevision,
     SourceSpan,
 };
-use arcweft_view::{ViewId, ViewProgramId, style::ViewStyleSheetId};
+use arcweft_view::{
+    ViewHandlerCapture, ViewHandlerProgramId, ViewHandlerResult, ViewHandlerValueTypeId, ViewId,
+    ViewParameterCoordinate, ViewProgramId, style::ViewStyleSheetId,
+};
 use thiserror::Error;
 
 use crate::style::CompiledViewStyleArtifact;
@@ -73,12 +83,33 @@ pub struct CompiledViewProduct {
     style_sources: BTreeMap<ViewStyleSheetId, SourceSpan>,
     authored_sources: SourceSetRevision,
     resource_types: ResourceTypeRegistryDigest,
+    handler_programs: Arc<[CheckedViewHandlerProgram]>,
+}
+
+/// Compiler-private checked owner of one mount-time View handler program.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub(crate) struct CheckedViewHandlerProgram {
+    id: ViewHandlerProgramId,
+    event: arcweft_view::EventKind,
+    closure: ExprId,
+    body: ExprId,
+    captures: Box<[CheckedViewHandlerCapture]>,
+    result: ViewHandlerResult,
+}
+
+/// Join between one checked closure capture and its View parameter coordinate.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(crate) struct CheckedViewHandlerCapture {
+    capture: CaptureId,
+    local: LocalId,
+    schema: ViewHandlerCapture,
 }
 
 /// Final-HIR inputs for one atomic View-product publication.
 pub(crate) struct ViewProjectLowerer<'a> {
     hir_project: &'a HirProject,
     semantic_analysis: &'a FinalSemanticAnalysis,
+    registered_world: &'a RegisteredSemanticWorld,
     style: &'a CompiledViewStyleArtifact,
     source_map: SourceMapSection,
     resource_types: &'a ResourceTypeRegistry,
@@ -105,6 +136,13 @@ pub(crate) enum ViewProjectLowerError {
     InvalidViewParameter { owner: ItemId, ordinal: usize },
     #[error("semantic analysis does not belong to the accepted HIR generation")]
     SemanticGenerationMismatch,
+    #[error("View handler {owner:?} capture {capture:?} is not snapshot-retainable")]
+    InvalidViewHandlerCaptureOwnership {
+        owner: ItemId,
+        capture: CaptureId,
+        #[source]
+        source: CheckedOwnershipError,
+    },
     #[error(transparent)]
     ProductSource(#[from] ViewProductBuildError),
     #[error(transparent)]
@@ -151,6 +189,46 @@ impl CompiledViewProduct {
     pub const fn resource_type_registry_digest(&self) -> ResourceTypeRegistryDigest {
         self.resource_types
     }
+
+    pub(crate) fn handler_programs(&self) -> &[CheckedViewHandlerProgram] {
+        &self.handler_programs
+    }
+}
+
+impl CheckedViewHandlerProgram {
+    pub(crate) const fn id(&self) -> ViewHandlerProgramId {
+        self.id
+    }
+
+    pub(crate) const fn closure(&self) -> ExprId {
+        self.closure
+    }
+
+    pub(crate) const fn body(&self) -> ExprId {
+        self.body
+    }
+
+    pub(crate) const fn captures(&self) -> &[CheckedViewHandlerCapture] {
+        &self.captures
+    }
+
+    pub(crate) const fn result(&self) -> ViewHandlerResult {
+        self.result
+    }
+}
+
+impl CheckedViewHandlerCapture {
+    pub(crate) const fn capture(self) -> CaptureId {
+        self.capture
+    }
+
+    pub(crate) const fn local(self) -> LocalId {
+        self.local
+    }
+
+    pub(crate) const fn schema(self) -> ViewHandlerCapture {
+        self.schema
+    }
 }
 
 impl ViewProjectLowerError {
@@ -165,6 +243,7 @@ impl<'a> ViewProjectLowerer<'a> {
         hir_project: &'a HirProject,
         semantic_analysis: &'a FinalSemanticAnalysis,
         symbols: &ProjectSymbolTable,
+        registered_world: &'a RegisteredSemanticWorld,
         style: &'a CompiledViewStyleArtifact,
         project: &ProjectSources,
         resource_types: &'a ResourceTypeRegistry,
@@ -192,6 +271,7 @@ impl<'a> ViewProjectLowerer<'a> {
         Ok(Self {
             hir_project,
             semantic_analysis,
+            registered_world,
             style,
             source_map,
             resource_types,
@@ -203,7 +283,8 @@ impl<'a> ViewProjectLowerer<'a> {
             .hir_project
             .executable_view()
             .map_err(|_| ViewProjectLowerError::SemanticGenerationMismatch)?;
-        let authored = lower_authored_views(executable, self.semantic_analysis)?;
+        let authored =
+            lower_authored_views(executable, self.semantic_analysis, self.registered_world)?;
 
         let authored_sources = self.source_map.source_set_revision();
         let standard_view_source = standard_view::dialogue_view_source_document();
@@ -259,6 +340,7 @@ impl<'a> ViewProjectLowerer<'a> {
             style_sources,
             authored_sources,
             resource_types: self.resource_types.digest(),
+            handler_programs: authored.handlers.into(),
         })
     }
 }
@@ -267,19 +349,23 @@ struct AuthoredViewArtifact {
     program: Option<ViewProgramResource>,
     text: ViewTextResource,
     sources: BTreeMap<ViewId, SourceSpan>,
+    handlers: Vec<CheckedViewHandlerProgram>,
 }
 
 struct AuthoredViewLowering {
     definitions: Vec<ViewDefinitionResource>,
     instructions: Vec<ViewProgramInstruction>,
     text_blocks: Vec<ViewTextBlockResource>,
+    action_buttons: Vec<ViewActionButtonResource>,
     text: ViewTextResource,
     sources: BTreeMap<ViewId, SourceSpan>,
+    handlers: Vec<CheckedViewHandlerProgram>,
 }
 
 fn lower_authored_views(
     project: arcweft_lang_hir::project::HirExecutableProjectView<'_>,
     analysis: &FinalSemanticAnalysis,
+    registered_world: &RegisteredSemanticWorld,
 ) -> Result<AuthoredViewArtifact, ViewProjectLowerError> {
     let views = project
         .items()
@@ -292,11 +378,20 @@ fn lower_authored_views(
         definitions: Vec::new(),
         instructions: Vec::new(),
         text_blocks: Vec::new(),
+        action_buttons: Vec::new(),
         text: ViewTextResource::default(),
         sources: BTreeMap::new(),
+        handlers: Vec::new(),
     };
     for (item, view) in views {
-        lower_authored_view(item.module(), item.id(), view, analysis, &mut output)?;
+        lower_authored_view(
+            item.module(),
+            item.id(),
+            view,
+            analysis,
+            registered_world,
+            &mut output,
+        )?;
     }
     let program_id = output.definitions.first().map(|first| {
         ViewProgramId::try_new(format!(
@@ -309,13 +404,30 @@ fn lower_authored_views(
         program_id,
         definitions: output.definitions,
         instructions: output.instructions,
+        handlers: output
+            .handlers
+            .iter()
+            .map(
+                |handler| arcweft_bundle::resource_codec::view::ViewHandlerRef {
+                    program: handler.id,
+                    captures: handler
+                        .captures
+                        .iter()
+                        .map(|capture| capture.schema)
+                        .collect(),
+                    result: handler.result,
+                },
+            )
+            .collect(),
         text_blocks: output.text_blocks,
+        action_buttons: output.action_buttons,
         ..ViewProgramResource::default()
     });
     Ok(AuthoredViewArtifact {
         program,
         text: output.text,
         sources: output.sources,
+        handlers: output.handlers,
     })
 }
 
@@ -324,6 +436,7 @@ fn lower_authored_view(
     owner: ItemId,
     view: &HirViewDeclaration,
     analysis: &FinalSemanticAnalysis,
+    registered_world: &RegisteredSemanticWorld,
     output: &mut AuthoredViewLowering,
 ) -> Result<(), ViewProjectLowerError> {
     if view.header().family() != DeclarationIdentityFamily::View {
@@ -375,7 +488,18 @@ fn lower_authored_view(
                 .name()
                 .as_str()
                 .to_owned();
-            parameters.insert(local, name.clone());
+            let coordinate = ViewParameterCoordinate::try_from_index(ordinal)
+                .ok_or(ViewProjectLowerError::InvalidViewParameter { owner, ordinal })?;
+            parameters.insert(
+                local,
+                CheckedViewParameter {
+                    coordinate,
+                    name: name.clone(),
+                    value_type: ViewHandlerValueTypeId::from_semantic_digest(
+                        *local_fact.ty().semantic_identity_digest().as_bytes(),
+                    ),
+                },
+            );
             Ok(ViewParameterResource {
                 ordinal: u16::try_from(ordinal)
                     .map_err(|_| ViewProjectLowerError::InvalidViewParameter { owner, ordinal })?,
@@ -385,6 +509,9 @@ fn lower_authored_view(
                 } else {
                     ViewParameterRole::Value
                 },
+                semantic_type: ViewHandlerValueTypeId::from_semantic_digest(
+                    *local_fact.ty().semantic_identity_digest().as_bytes(),
+                ),
                 value_type: None,
                 value_slot: None,
                 default_program: None,
@@ -398,9 +525,11 @@ fn lower_authored_view(
             module,
             owner,
             analysis,
+            registered_world,
             parameters: &parameters,
             view: &view_id,
             text_ordinal: 0,
+            element_ordinal: 0,
             output,
         };
         for value in view.values() {
@@ -423,10 +552,19 @@ struct AuthoredViewBodyLowerer<'a> {
     module: &'a HirModule,
     owner: ItemId,
     analysis: &'a FinalSemanticAnalysis,
-    parameters: &'a BTreeMap<LocalId, String>,
+    registered_world: &'a RegisteredSemanticWorld,
+    parameters: &'a BTreeMap<LocalId, CheckedViewParameter>,
     view: &'a ViewId,
     text_ordinal: u32,
+    element_ordinal: u32,
     output: &'a mut AuthoredViewLowering,
+}
+
+#[derive(Clone, Debug)]
+struct CheckedViewParameter {
+    coordinate: ViewParameterCoordinate,
+    name: String,
+    value_type: ViewHandlerValueTypeId,
 }
 
 impl AuthoredViewBodyLowerer<'_> {
@@ -438,11 +576,13 @@ impl AuthoredViewBodyLowerer<'_> {
             .analysis
             .expression(value)
             .ok_or(ViewProjectLowerError::MissingCheckedViewProjection { owner: self.owner })?;
-        let (
-            arcweft_lang_hir::expr::HirExprKind::Call(call),
-            CheckedExpressionResolution::ViewCall(kind),
-        ) = (expression.kind(), checked.resolution())
-        else {
+        let arcweft_lang_hir::expr::HirExprKind::Call(call) = expression.kind() else {
+            return Err(ViewProjectLowerError::MissingCheckedViewProjection { owner: self.owner });
+        };
+        let CheckedExpressionResolution::ViewCall(kind) = checked.resolution() else {
+            if matches!(checked.resolution(), CheckedExpressionResolution::Call) {
+                return self.lower_modifier(value, call);
+            }
             return Err(ViewProjectLowerError::MissingCheckedViewProjection { owner: self.owner });
         };
         match kind {
@@ -452,16 +592,46 @@ impl AuthoredViewBodyLowerer<'_> {
                         owner: self.owner,
                     });
                 }
+                let ordinal = self.element_ordinal;
+                self.element_ordinal = self.element_ordinal.checked_add(1).ok_or(
+                    ViewProjectLowerError::MissingCheckedViewProjection { owner: self.owner },
+                )?;
+                let target = format!("node.{}.{}", self.view.as_str(), ordinal);
                 self.output
                     .instructions
                     .push(ViewProgramInstruction::OpenElement {
                         element: *element,
-                        target: None,
+                        target: Some(target.clone()),
                         styles: Vec::new(),
                         part: None,
                         key: None,
                         source: None,
                     });
+                if element.is_action_control() {
+                    let label = format!("button.label.{}.{}", self.view.as_str(), ordinal);
+                    self.output.text.sources.push(ViewTextSourceRecord {
+                        public_id: label.clone(),
+                        kind: ViewTextSourceKind::Literal {
+                            value: String::new(),
+                        },
+                        source: None,
+                    });
+                    self.output.action_buttons.push(ViewActionButtonResource {
+                        public_id: target.clone(),
+                        view: Some(self.view.as_str().to_owned()),
+                        containing_scroll_region: None,
+                        label_text_source: label,
+                        enabled: true,
+                        action: ViewActionButtonActionResource::Noop,
+                        bounds: ViewRuntimeButtonBounds::new(
+                            VIEW_ROOT_X_MILLI,
+                            VIEW_ROOT_Y_MILLI,
+                            VIEW_TEXT_WIDTH_MILLI,
+                            VIEW_TEXT_LINE_HEIGHT_MILLI,
+                        ),
+                        source: None,
+                    });
+                }
                 self.output
                     .instructions
                     .push(ViewProgramInstruction::CloseElement);
@@ -480,12 +650,186 @@ impl AuthoredViewBodyLowerer<'_> {
                 };
                 self.lower_text(argument, surface)?;
             }
-            CheckedViewCall::Modifier { .. } => {
-                return Err(ViewProjectLowerError::MissingCheckedViewProjection {
-                    owner: self.owner,
-                });
-            }
         }
+        Ok(())
+    }
+
+    fn lower_modifier(
+        &mut self,
+        owner: ExprId,
+        call: &arcweft_lang_hir::expr::HirCallExpr,
+    ) -> Result<(), ViewProjectLowerError> {
+        let application = self
+            .analysis
+            .call(owner)
+            .and_then(arcweft_lang_sema::callable::CallTargetFacts::selected_application)
+            .ok_or(ViewProjectLowerError::MissingCheckedViewProjection { owner: self.owner })?;
+        let CallableValidator::ViewModifier(modifier) = application
+            .core()
+            .candidates()
+            .selected()
+            .schema()
+            .validator()
+        else {
+            return Err(ViewProjectLowerError::MissingCheckedViewProjection { owner: self.owner });
+        };
+        let modifier = *modifier;
+        let arcweft_lang_hir::expr::HirCallCallee::Value { value: callee } = call.callee() else {
+            return Err(ViewProjectLowerError::MissingCheckedViewProjection { owner: self.owner });
+        };
+        let select = self
+            .module
+            .resolve_expr(*callee)
+            .ok()
+            .and_then(|callee| match callee.kind() {
+                arcweft_lang_hir::expr::HirExprKind::Select(select) => Some(select),
+                _ => None,
+            })
+            .ok_or(ViewProjectLowerError::MissingCheckedViewProjection { owner: self.owner })?;
+        if !matches!(
+            self.analysis
+                .expression(*callee)
+                .map(|checked| checked.resolution()),
+            Some(CheckedExpressionResolution::Select(
+                CheckedSelectResolution::Method(_)
+            ))
+        ) {
+            return Err(ViewProjectLowerError::MissingCheckedViewProjection { owner: self.owner });
+        }
+        let [argument] = application.core().execution().arguments() else {
+            return Err(ViewProjectLowerError::MissingCheckedViewProjection { owner: self.owner });
+        };
+        let [slot] = argument.slots() else {
+            return Err(ViewProjectLowerError::MissingCheckedViewProjection { owner: self.owner });
+        };
+        let handler_source = slot.source().owner();
+        if call.arguments().len() != 1 || call.arguments()[0].value() != handler_source {
+            return Err(ViewProjectLowerError::MissingCheckedViewProjection { owner: self.owner });
+        }
+
+        let checked_handler = self
+            .analysis
+            .expression(handler_source)
+            .ok_or(ViewProjectLowerError::MissingCheckedViewProjection { owner: self.owner })?;
+        let CheckedExpressionResolution::Closure(closure) = checked_handler.resolution() else {
+            return Err(ViewProjectLowerError::MissingCheckedViewProjection { owner: self.owner });
+        };
+        let arcweft_lang_hir::expr::HirExprKind::Closure(hir_closure) = self
+            .module
+            .resolve_expr(handler_source)
+            .map_err(|_| ViewProjectLowerError::MissingCheckedViewProjection { owner: self.owner })?
+            .kind()
+        else {
+            return Err(ViewProjectLowerError::MissingCheckedViewProjection { owner: self.owner });
+        };
+        let TypeKind::Function {
+            params,
+            return_type,
+            effects,
+        } = checked_handler.ty()
+        else {
+            return Err(ViewProjectLowerError::MissingCheckedViewProjection { owner: self.owner });
+        };
+        if closure.owner() != handler_source
+            || !params.is_empty()
+            || effects.tail() != EffectRowTail::Closed
+            || !effects.concrete().is_empty()
+            || return_type.as_ref() != &modifier.handler_result_type()
+        {
+            return Err(ViewProjectLowerError::MissingCheckedViewProjection { owner: self.owner });
+        }
+        if hir_closure.captures().len() != closure.captures().len() {
+            return Err(ViewProjectLowerError::MissingCheckedViewProjection { owner: self.owner });
+        }
+        let captures = hir_closure
+            .captures()
+            .iter()
+            .copied()
+            .zip(closure.captures())
+            .map(|(capture_id, capture)| {
+                if capture.mode() != CaptureAccess::Read {
+                    return Err(ViewProjectLowerError::MissingCheckedViewProjection {
+                        owner: self.owner,
+                    });
+                }
+                let parameter = self.parameters.get(&capture.local()).ok_or(
+                    ViewProjectLowerError::MissingCheckedViewProjection { owner: self.owner },
+                )?;
+                let capture_fact = self.analysis.capture(capture_id).ok_or(
+                    ViewProjectLowerError::MissingCheckedViewProjection { owner: self.owner },
+                )?;
+                if capture_fact.ty().semantic_identity_digest().as_bytes()
+                    != parameter.value_type.as_bytes()
+                {
+                    return Err(ViewProjectLowerError::MissingCheckedViewProjection {
+                        owner: self.owner,
+                    });
+                }
+                self.registered_world
+                    .checked_ownership(
+                        self.analysis,
+                        capture_fact.ty(),
+                        CheckedOwnershipLimits::PRODUCTION,
+                    )
+                    .map_err(|source| {
+                        ViewProjectLowerError::InvalidViewHandlerCaptureOwnership {
+                            owner: self.owner,
+                            capture: capture_id,
+                            source,
+                        }
+                    })?;
+                let hir_capture = self.module.resolve_capture(capture_id).map_err(|_| {
+                    ViewProjectLowerError::MissingCheckedViewProjection { owner: self.owner }
+                })?;
+                if hir_capture.closure() != handler_source
+                    || hir_capture.local() != capture.local()
+                    || hir_capture.access() != capture.mode()
+                {
+                    return Err(ViewProjectLowerError::MissingCheckedViewProjection {
+                        owner: self.owner,
+                    });
+                }
+                Ok(CheckedViewHandlerCapture {
+                    capture: capture_id,
+                    local: capture.local(),
+                    schema: ViewHandlerCapture::new(parameter.coordinate, parameter.value_type),
+                })
+            })
+            .collect::<Result<Vec<_>, _>>()?
+            .into_boxed_slice();
+        let program_id = modifier
+            .handler_program_id(application)
+            .ok_or(ViewProjectLowerError::MissingCheckedViewProjection { owner: self.owner })?;
+        if self
+            .output
+            .handlers
+            .iter()
+            .any(|handler| handler.id == program_id)
+        {
+            return Err(ViewProjectLowerError::MissingCheckedViewProjection { owner: self.owner });
+        }
+        self.output.handlers.push(CheckedViewHandlerProgram {
+            id: program_id,
+            event: modifier.event(),
+            closure: handler_source,
+            body: hir_closure.body(),
+            captures,
+            result: ViewHandlerResult::new(
+                modifier.handler_result_role(),
+                ViewHandlerValueTypeId::from_semantic_digest(
+                    *return_type.semantic_identity_digest().as_bytes(),
+                ),
+            ),
+        });
+
+        self.lower_value(select.target())?;
+        self.output
+            .instructions
+            .push(ViewProgramInstruction::BindHandler {
+                event: modifier.event(),
+                handler: program_id,
+                source: None,
+            });
         Ok(())
     }
 
@@ -613,7 +957,7 @@ impl AuthoredViewBodyLowerer<'_> {
                     }
                 };
                 ViewTextSourceKind::Dialogue {
-                    parameter,
+                    parameter: parameter.name,
                     projection,
                 }
             }
@@ -623,12 +967,14 @@ impl AuthoredViewBodyLowerer<'_> {
     }
 }
 
-fn view_schema_hash(view: &ViewId, parameters: &BTreeMap<LocalId, String>) -> u64 {
+fn view_schema_hash(view: &ViewId, parameters: &BTreeMap<LocalId, CheckedViewParameter>) -> u64 {
     let mut hasher = blake3::Hasher::new_derive_key("arcweft.view.state-schema.v1");
     hasher.update(view.as_str().as_bytes());
-    for name in parameters.values() {
+    for parameter in parameters.values() {
         hasher.update(&[0]);
-        hasher.update(name.as_bytes());
+        hasher.update(parameter.name.as_bytes());
+        hasher.update(&parameter.coordinate.value().to_le_bytes());
+        hasher.update(parameter.value_type.as_bytes());
     }
     let digest = hasher.finalize();
     u64::from_le_bytes(

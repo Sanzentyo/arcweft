@@ -4,7 +4,8 @@ use arcweft_lang_syntax::ast::module_path::CanonicalModulePath;
 
 use super::{CallablePath, CallableSchemaError, CallableSignatureSchema};
 use crate::{
-    character_dialogue::CharacterDialogueCustomFieldRegistry, types::CharacterDialogueCharacterType,
+    character_dialogue::CharacterDialogueCustomFieldRegistry,
+    types::{CharacterDialogueCharacterType, TypeKind},
 };
 
 /// Closed language-owned `CharacterDialogue` operation family.
@@ -44,6 +45,16 @@ pub struct DialogueSchemaContext<'a> {
     pub module: &'a CanonicalModulePath,
     pub custom_fields: &'a CharacterDialogueCustomFieldRegistry,
     pub patch_context: CharacterDialoguePatchContext,
+    pub result: DialogueCallableResultContext<'a>,
+}
+
+/// Exact result authority supplied before a Dialogue callable schema is
+/// constructed. Content applications specialize their schema from the checked
+/// line-plan result; every other Dialogue callable uses its closed declaration.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum DialogueCallableResultContext<'a> {
+    Declared,
+    ContentApplication { line_result: &'a TypeKind },
 }
 
 impl PartialEq for DialogueSchemaContext<'_> {
@@ -51,6 +62,7 @@ impl PartialEq for DialogueSchemaContext<'_> {
         self.callee == other.callee
             && self.module == other.module
             && self.patch_context == other.patch_context
+            && self.result == other.result
             && std::ptr::eq(self.custom_fields, other.custom_fields)
     }
 }

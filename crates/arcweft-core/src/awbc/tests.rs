@@ -17,9 +17,24 @@ use crate::value::{
     RuntimeValue, runtime_sequence_values,
 };
 
+fn runtime_type(marker: u8, shape: AwbcRuntimeTypeShape) -> AwbcRuntimeType {
+    AwbcRuntimeType::new(RuntimeSemanticTypeId::from_bytes([marker; 32]), shape)
+}
+
 fn test_flow_binding(label: &str, function: u32) -> AwbcFlowBinding {
     AwbcFlowBinding {
         flow: FlowRuntimeId::canonical(label).expect("test Flow ID is valid"),
+        function: AwbcFunctionId(function),
+    }
+}
+
+fn test_flow_executable(label: &str, function: u32) -> AwbcFlowExecutable {
+    AwbcFlowExecutable {
+        metadata: RuntimeFlowExecutable {
+            flow: FlowRuntimeId::canonical(label).expect("test Flow ID is valid"),
+            contract: FlowContractHash::from_bytes([0x5a; 32]),
+            controller: None,
+        },
         function: AwbcFunctionId(function),
     }
 }
@@ -53,14 +68,16 @@ fn minimal_program() -> AwbcProgram {
             source_map: None,
         }],
         flow_bindings: vec![test_flow_binding("main", 0)],
+        flow_executables: vec![test_flow_executable("main", 0)],
         entries: vec![AwbcEntry {
             runtime_id: crate::plan::EntryRuntimeId::canonical("main")
                 .expect("test entry runtime ID is valid"),
             binding: crate::entry::EntryBindingIdentity::from_bytes([1; 32]),
             public_id: AwbcStringId(0),
             kind: AwbcEntryKind::Cli,
-            signature: AwbcSignatureId(0),
-            target: AwbcEntryTarget::Function(AwbcFunctionId(0)),
+            target: AwbcEntryTarget::Function {
+                function: AwbcFunctionId(0),
+            },
             roles: crate::entry::RuntimeEntryRoles::None,
         }],
         ..AwbcProgram::default()
@@ -113,7 +130,10 @@ fn pattern_rest_modes_roundtrip_in_the_schema_one_codec() {
 #[test]
 fn verifier_rejects_duplicate_binding_targets_across_pattern_rest() {
     let mut program = minimal_program();
-    program.runtime_types = vec![AwbcRuntimeType::Dynamic, AwbcRuntimeType::Bool];
+    program.runtime_types = vec![
+        runtime_type(1, AwbcRuntimeTypeShape::Dynamic),
+        runtime_type(2, AwbcRuntimeTypeShape::Bool),
+    ];
     program.signatures[0].params = vec![AwbcTypeId(0)];
     program.frame_layouts[0] = AwbcFrameLayout {
         slots: vec![
@@ -168,7 +188,7 @@ fn verifier_rejects_duplicate_binding_targets_across_pattern_rest() {
 #[test]
 fn verifier_tracks_dynamic_record_children_before_the_rest_binding() {
     let mut program = minimal_program();
-    program.runtime_types = vec![AwbcRuntimeType::Dynamic];
+    program.runtime_types = vec![runtime_type(1, AwbcRuntimeTypeShape::Dynamic)];
     program.signatures[0].params = vec![AwbcTypeId(0)];
     program.frame_layouts[0] = AwbcFrameLayout {
         slots: vec![
@@ -241,8 +261,13 @@ fn verifier_rejects_incorrect_agent_field_destination_type() {
     let mut program = minimal_program();
     program.strings.push("enabled".to_owned());
     program.runtime_types = vec![
-        AwbcRuntimeType::Agent(RuntimeAgentOperationalType::ActionTarget),
-        AwbcRuntimeType::String,
+        runtime_type(
+            1,
+            AwbcRuntimeTypeShape::Agent(AwbcAgentTypeShape::Leaf(
+                RuntimeAgentOperationalType::ActionTarget,
+            )),
+        ),
+        runtime_type(2, AwbcRuntimeTypeShape::String),
     ];
     program.signatures[0].params = vec![AwbcTypeId(0)];
     program.frame_layouts[0] = AwbcFrameLayout {
@@ -284,8 +309,13 @@ fn verifier_rejects_incorrect_agent_field_destination_type() {
 fn verifier_rejects_agent_operands_that_can_only_fail_at_runtime() {
     let mut viewport = minimal_program();
     viewport.runtime_types = vec![
-        AwbcRuntimeType::Int(AwbcSignedIntKind::I64),
-        AwbcRuntimeType::Agent(RuntimeAgentOperationalType::ViewportPoint),
+        runtime_type(1, AwbcRuntimeTypeShape::Int(AwbcSignedIntKind::I64)),
+        runtime_type(
+            2,
+            AwbcRuntimeTypeShape::Agent(AwbcAgentTypeShape::Leaf(
+                RuntimeAgentOperationalType::ViewportPoint,
+            )),
+        ),
     ];
     viewport.signatures[0].params = vec![AwbcTypeId(0), AwbcTypeId(0)];
     viewport.frame_layouts[0] = AwbcFrameLayout {
@@ -327,9 +357,14 @@ fn verifier_rejects_agent_operands_that_can_only_fail_at_runtime() {
 
     let mut all = minimal_program();
     all.runtime_types = vec![
-        AwbcRuntimeType::String,
-        AwbcRuntimeType::Sequence(AwbcTypeId(0)),
-        AwbcRuntimeType::Agent(RuntimeAgentOperationalType::Predicate),
+        runtime_type(1, AwbcRuntimeTypeShape::String),
+        runtime_type(2, AwbcRuntimeTypeShape::Sequence(AwbcTypeId(0))),
+        runtime_type(
+            3,
+            AwbcRuntimeTypeShape::Agent(AwbcAgentTypeShape::Leaf(
+                RuntimeAgentOperationalType::Predicate,
+            )),
+        ),
     ];
     all.signatures[0].params = vec![AwbcTypeId(1)];
     all.frame_layouts[0] = AwbcFrameLayout {
@@ -366,7 +401,7 @@ fn verifier_rejects_agent_operands_that_can_only_fail_at_runtime() {
 #[test]
 fn vm_pretests_before_writes_and_binds_record_and_sequence_rests_last() {
     let mut program = minimal_program();
-    program.runtime_types = vec![AwbcRuntimeType::Dynamic];
+    program.runtime_types = vec![runtime_type(1, AwbcRuntimeTypeShape::Dynamic)];
     program.frame_layouts[0] = AwbcFrameLayout {
         slots: (0..3)
             .map(|_| AwbcFrameSlot {
@@ -478,24 +513,27 @@ fn nominal_record_bytes_and_never_types_roundtrip_and_project_exactly() {
             "zeta".to_owned(),
         ],
         runtime_types: vec![
-            AwbcRuntimeType::Bool,
-            AwbcRuntimeType::Bytes,
-            AwbcRuntimeType::Never,
-            AwbcRuntimeType::NominalRecord {
-                public_id: AwbcStringId(1),
-                semantic_identity: [31; 32],
-                layout: [32; 32],
-                fields: vec![
-                    AwbcRecordField {
-                        name: AwbcStringId(0),
-                        ty: AwbcTypeId(1),
-                    },
-                    AwbcRecordField {
-                        name: AwbcStringId(2),
-                        ty: AwbcTypeId(2),
-                    },
-                ],
-            },
+            runtime_type(1, AwbcRuntimeTypeShape::Bool),
+            runtime_type(2, AwbcRuntimeTypeShape::Bytes),
+            runtime_type(3, AwbcRuntimeTypeShape::Never),
+            runtime_type(
+                31,
+                AwbcRuntimeTypeShape::NominalRecord {
+                    public_id: AwbcStringId(1),
+                    layout: [32; 32],
+                    arguments: Vec::new(),
+                    fields: vec![
+                        AwbcRecordField {
+                            name: AwbcStringId(0),
+                            ty: AwbcTypeId(1),
+                        },
+                        AwbcRecordField {
+                            name: AwbcStringId(2),
+                            ty: AwbcTypeId(2),
+                        },
+                    ],
+                },
+            ),
         ],
         ..AwbcProgram::default()
     };
@@ -519,12 +557,15 @@ fn nominal_record_bytes_and_never_types_roundtrip_and_project_exactly() {
 
 #[test]
 fn verifier_rejects_duplicate_nominal_record_descriptor_authority() {
-    let descriptor = AwbcRuntimeType::NominalRecord {
-        public_id: AwbcStringId(0),
-        semantic_identity: [41; 32],
-        layout: [42; 32],
-        fields: Vec::new(),
-    };
+    let descriptor = runtime_type(
+        41,
+        AwbcRuntimeTypeShape::NominalRecord {
+            public_id: AwbcStringId(0),
+            layout: [42; 32],
+            arguments: Vec::new(),
+            fields: Vec::new(),
+        },
+    );
     let program = AwbcProgram {
         strings: vec!["game.Empty".to_owned()],
         runtime_types: vec![descriptor.clone(), descriptor],
@@ -540,7 +581,7 @@ fn verifier_rejects_duplicate_nominal_record_descriptor_authority() {
             }
         ),
         Err(AwbcVerifyError::InvalidInvariant { message, .. })
-            if message.contains("more than one executable descriptor")
+            if message.contains("semantic type identity is duplicated")
     ));
 }
 
@@ -554,10 +595,7 @@ fn fiber_snapshot_rejects_stale_functions_in_cleanup_arguments() {
         AwbcConstant::String(AwbcStringId(1)),
         AwbcConstant::String(AwbcStringId(2)),
     ]);
-    let dynamic_type = AwbcTypeId(
-        u32::try_from(program.runtime_types.len()).expect("test type table fits AWBC index"),
-    );
-    program.runtime_types.push(AwbcRuntimeType::Dynamic);
+    let dynamic_type = AwbcTypeId(1);
     program.signatures.push(AwbcSignature {
         params: vec![dynamic_type],
         result: None,
@@ -731,14 +769,16 @@ fn expression_apply_program(
         },
         resume_points,
         flow_bindings: vec![test_flow_binding("main", 0)],
+        flow_executables: vec![test_flow_executable("main", 0)],
         entries: vec![AwbcEntry {
             runtime_id: crate::plan::EntryRuntimeId::canonical("main")
                 .expect("test entry runtime ID is valid"),
             binding: crate::entry::EntryBindingIdentity::from_bytes([1; 32]),
             public_id: AwbcStringId(0),
             kind: AwbcEntryKind::Cli,
-            signature: AwbcSignatureId(0),
-            target: AwbcEntryTarget::Function(AwbcFunctionId(0)),
+            target: AwbcEntryTarget::Function {
+                function: AwbcFunctionId(0),
+            },
             roles: crate::entry::RuntimeEntryRoles::None,
         }],
         ..AwbcProgram::default()
@@ -765,15 +805,7 @@ fn canonical_codec_round_trips_checked_flow_identity_and_public_label() {
     let flow = FlowRuntimeId::from_checked_declaration_digest([0xa5; 32], "flow.opening")
         .expect("accepted Flow public label");
     program.flow_bindings[0].flow = flow.clone();
-    program.flow_executables.push(AwbcFlowExecutable {
-        metadata: RuntimeFlowExecutable {
-            flow: flow.clone(),
-            contract: FlowContractHash::from_bytes([0x5a; 32]),
-            parameters: Vec::new(),
-            controller: None,
-        },
-        function: AwbcFunctionId(0),
-    });
+    program.flow_executables[0].metadata.flow = flow.clone();
 
     let encoded = program.encode_canonical().expect("encode checked Flow ID");
     let decoded = AwbcProgram::decode_canonical(&encoded, AwbcDecodeBudget::default())
@@ -799,6 +831,7 @@ fn canonical_flow_bindings_preserve_same_label_declarations_and_reject_ambiguous
     let second = FlowRuntimeId::from_checked_declaration_digest([0x22; 32], "flow.opening")
         .expect("second checked Flow identity");
     program.flow_bindings[0].flow = first.clone();
+    program.flow_executables[0].metadata.flow = first.clone();
     let mut second_function = program.functions[0].clone();
     second_function.blocks = AwbcTableRange::new(1, 1);
     second_function.entry_block = AwbcBlockId(1);
@@ -928,22 +961,30 @@ fn canonical_codec_round_trips_choice_and_nominal_runtime_types() {
     let string_type = AwbcTypeId(
         u32::try_from(program.runtime_types.len()).expect("test type table fits AWBC index"),
     );
-    program.runtime_types.push(AwbcRuntimeType::String);
+    program
+        .runtime_types
+        .push(runtime_type(16, AwbcRuntimeTypeShape::String));
     let nominal_type = AwbcTypeId(
         u32::try_from(program.runtime_types.len()).expect("test type table fits AWBC index"),
     );
-    program.runtime_types.push(AwbcRuntimeType::Nominal {
-        public_id: nominal_name,
-        semantic_identity: [17; 32],
-        layout: [18; 32],
-    });
-    program
-        .runtime_types
-        .push(AwbcRuntimeType::Choice(vec![string_type, nominal_type]));
+    program.runtime_types.push(runtime_type(
+        17,
+        AwbcRuntimeTypeShape::Nominal {
+            public_id: nominal_name,
+            layout: [18; 32],
+            arguments: Vec::new(),
+        },
+    ));
+    program.runtime_types.push(runtime_type(
+        19,
+        AwbcRuntimeTypeShape::Choice(vec![string_type, nominal_type]),
+    ));
     let progress_type = AwbcTypeId(
         u32::try_from(program.runtime_types.len()).expect("test type table fits AWBC index"),
     );
-    program.runtime_types.push(AwbcRuntimeType::Progress);
+    program
+        .runtime_types
+        .push(runtime_type(20, AwbcRuntimeTypeShape::Progress));
 
     let encoded = program
         .encode_canonical()
@@ -984,25 +1025,29 @@ fn opaque_program() -> (AwbcProgram, AwbcTypeId, AwbcTypeId) {
     let exact = AwbcTypeId(
         u32::try_from(program.runtime_types.len()).expect("test type table fits AWBC index"),
     );
-    program.runtime_types.push(AwbcRuntimeType::Opaque {
-        producer: AwbcStringId(1),
-        semantic_identity: [41; 32],
-        admission: RuntimeOpaqueTypeAdmission::ExactIdentity,
-        value_class: RuntimeOpaqueValueClass::Plain,
-        persistence: RuntimeOpaquePersistence::ConstantAndSnapshot,
-        arguments: vec![],
-    });
+    program.runtime_types.push(runtime_type(
+        41,
+        AwbcRuntimeTypeShape::Opaque {
+            producer: AwbcStringId(1),
+            admission: RuntimeOpaqueTypeAdmission::ExactIdentity,
+            value_class: RuntimeOpaqueValueClass::Plain,
+            persistence: RuntimeOpaquePersistence::ConstantAndSnapshot,
+            arguments: vec![],
+        },
+    ));
     let wide = AwbcTypeId(
         u32::try_from(program.runtime_types.len()).expect("test type table fits AWBC index"),
     );
-    program.runtime_types.push(AwbcRuntimeType::Opaque {
-        producer: AwbcStringId(1),
-        semantic_identity: [42; 32],
-        admission: RuntimeOpaqueTypeAdmission::ProducerWide,
-        value_class: RuntimeOpaqueValueClass::Plain,
-        persistence: RuntimeOpaquePersistence::ConstantAndSnapshot,
-        arguments: vec![],
-    });
+    program.runtime_types.push(runtime_type(
+        42,
+        AwbcRuntimeTypeShape::Opaque {
+            producer: AwbcStringId(1),
+            admission: RuntimeOpaqueTypeAdmission::ProducerWide,
+            value_class: RuntimeOpaqueValueClass::Plain,
+            persistence: RuntimeOpaquePersistence::ConstantAndSnapshot,
+            arguments: vec![],
+        },
+    ));
     (program, exact, wide)
 }
 
@@ -1013,25 +1058,29 @@ fn opaque_codec_owner_compatibility_and_vm_materialization_share_core_authority(
     let foreign = AwbcTypeId(
         u32::try_from(program.runtime_types.len()).expect("test type table fits AWBC index"),
     );
-    program.runtime_types.push(AwbcRuntimeType::Opaque {
-        producer: AwbcStringId(2),
-        semantic_identity: [41; 32],
-        admission: RuntimeOpaqueTypeAdmission::ExactIdentity,
-        value_class: RuntimeOpaqueValueClass::Plain,
-        persistence: RuntimeOpaquePersistence::ConstantAndSnapshot,
-        arguments: vec![],
-    });
+    program.runtime_types.push(runtime_type(
+        43,
+        AwbcRuntimeTypeShape::Opaque {
+            producer: AwbcStringId(2),
+            admission: RuntimeOpaqueTypeAdmission::ExactIdentity,
+            value_class: RuntimeOpaqueValueClass::Plain,
+            persistence: RuntimeOpaquePersistence::ConstantAndSnapshot,
+            arguments: vec![],
+        },
+    ));
     let other_identity = AwbcTypeId(
         u32::try_from(program.runtime_types.len()).expect("test type table fits AWBC index"),
     );
-    program.runtime_types.push(AwbcRuntimeType::Opaque {
-        producer: AwbcStringId(1),
-        semantic_identity: [44; 32],
-        admission: RuntimeOpaqueTypeAdmission::ExactIdentity,
-        value_class: RuntimeOpaqueValueClass::Plain,
-        persistence: RuntimeOpaquePersistence::ConstantAndSnapshot,
-        arguments: vec![],
-    });
+    program.runtime_types.push(runtime_type(
+        44,
+        AwbcRuntimeTypeShape::Opaque {
+            producer: AwbcStringId(1),
+            admission: RuntimeOpaqueTypeAdmission::ExactIdentity,
+            value_class: RuntimeOpaqueValueClass::Plain,
+            persistence: RuntimeOpaquePersistence::ConstantAndSnapshot,
+            arguments: vec![],
+        },
+    ));
     let payload = AwbcConstantId(
         u32::try_from(program.constants.len()).expect("test constant table fits AWBC index"),
     );
@@ -1079,15 +1128,17 @@ fn reduction_unchanged_instruction_roundtrips_verifies_and_constructs_typed_valu
     let mut program = minimal_program();
     program.strings.push("std.reduction".to_owned());
     program.runtime_types = vec![
-        AwbcRuntimeType::Unit,
-        AwbcRuntimeType::Opaque {
-            producer: AwbcStringId(1),
-            semantic_identity: [93; 32],
-            admission: RuntimeOpaqueTypeAdmission::ExactIdentity,
-            value_class: RuntimeOpaqueValueClass::Plain,
-            persistence: RuntimeOpaquePersistence::ConstantAndSnapshot,
-            arguments: vec![AwbcTypeId(0)],
-        },
+        AwbcRuntimeType::unit(),
+        runtime_type(
+            93,
+            AwbcRuntimeTypeShape::Opaque {
+                producer: AwbcStringId(1),
+                admission: RuntimeOpaqueTypeAdmission::ExactIdentity,
+                value_class: RuntimeOpaqueValueClass::Plain,
+                persistence: RuntimeOpaquePersistence::ConstantAndSnapshot,
+                arguments: vec![AwbcTypeId(0)],
+            },
+        ),
     ];
     program.signatures[0].result = Some(AwbcTypeId(1));
     program.frame_layouts[0] = AwbcFrameLayout {
@@ -1184,14 +1235,16 @@ fn verifier_rejects_wide_or_cyclic_opaque_constants_and_invalid_producers() {
 
     let mut invalid = minimal_program();
     invalid.strings.push(String::new());
-    invalid.runtime_types.push(AwbcRuntimeType::Opaque {
-        producer: AwbcStringId(1),
-        semantic_identity: [43; 32],
-        admission: RuntimeOpaqueTypeAdmission::ExactIdentity,
-        value_class: RuntimeOpaqueValueClass::Plain,
-        persistence: RuntimeOpaquePersistence::ConstantAndSnapshot,
-        arguments: vec![],
-    });
+    invalid.runtime_types.push(runtime_type(
+        43,
+        AwbcRuntimeTypeShape::Opaque {
+            producer: AwbcStringId(1),
+            admission: RuntimeOpaqueTypeAdmission::ExactIdentity,
+            value_class: RuntimeOpaqueValueClass::Plain,
+            persistence: RuntimeOpaquePersistence::ConstantAndSnapshot,
+            arguments: vec![],
+        },
+    ));
     invalid.canonicalize_string_table();
     let error = invalid
         .verify(AwbcVerifyBudget::default(), AwbcVerifyContext::default())
@@ -1210,14 +1263,16 @@ fn snapshot_only_affine_opaque_type_roundtrips_but_rejects_constant_materializat
     let handle_ty = AwbcTypeId(
         u32::try_from(program.runtime_types.len()).expect("test type table fits AWBC index"),
     );
-    program.runtime_types.push(AwbcRuntimeType::Opaque {
-        producer: AwbcStringId(1),
-        semantic_identity: [55; 32],
-        admission: RuntimeOpaqueTypeAdmission::ExactIdentity,
-        value_class: RuntimeOpaqueValueClass::AffineHandle(RuntimeHandleKind::Cue),
-        persistence: RuntimeOpaquePersistence::SnapshotOnly,
-        arguments: vec![],
-    });
+    program.runtime_types.push(runtime_type(
+        55,
+        AwbcRuntimeTypeShape::Opaque {
+            producer: AwbcStringId(1),
+            admission: RuntimeOpaqueTypeAdmission::ExactIdentity,
+            value_class: RuntimeOpaqueValueClass::AffineHandle(RuntimeHandleKind::Cue),
+            persistence: RuntimeOpaquePersistence::SnapshotOnly,
+            arguments: vec![],
+        },
+    ));
     program.constants.push(AwbcConstant::Unit);
     program.constants.push(AwbcConstant::Opaque {
         ty: handle_ty,
@@ -1362,20 +1417,23 @@ fn verifier_rejects_non_canonical_builtin_variant_schema() {
     program
         .strings
         .extend(["None".to_owned(), "Some".to_owned()]);
-    program.runtime_types.push(AwbcRuntimeType::Unit);
-    program.runtime_types.push(AwbcRuntimeType::Variant {
-        owner: AwbcVariantIdentity::Option,
-        cases: vec![
-            AwbcVariantCase {
-                name: AwbcStringId(1),
-                payload: None,
-            },
-            AwbcVariantCase {
-                name: AwbcStringId(2),
-                payload: Some(AwbcTypeId(0)),
-            },
-        ],
-    });
+    program.runtime_types.push(runtime_type(
+        56,
+        AwbcRuntimeTypeShape::Variant {
+            owner: AwbcVariantIdentity::Option,
+            arguments: Vec::new(),
+            cases: vec![
+                AwbcVariantCase {
+                    name: AwbcStringId(1),
+                    payload: None,
+                },
+                AwbcVariantCase {
+                    name: AwbcStringId(2),
+                    payload: Some(AwbcTypeId(0)),
+                },
+            ],
+        },
+    ));
     program.canonicalize_string_table();
 
     let error = program
@@ -1397,11 +1455,14 @@ fn verifier_rejects_variant_constant_with_obsolete_nominal_type() {
     program
         .strings
         .extend(["state.Widget".to_owned(), "Ready".to_owned()]);
-    program.runtime_types.push(AwbcRuntimeType::Nominal {
-        public_id: AwbcStringId(1),
-        semantic_identity: [23; 32],
-        layout: [24; 32],
-    });
+    program.runtime_types.push(runtime_type(
+        23,
+        AwbcRuntimeTypeShape::Nominal {
+            public_id: AwbcStringId(1),
+            layout: [24; 32],
+            arguments: Vec::new(),
+        },
+    ));
     program.constants.push(AwbcConstant::Variant {
         ty: AwbcTypeId(0),
         case: 0,
@@ -1686,7 +1747,9 @@ fn decode_rejects_encoded_byte_budget() {
 #[test]
 fn verifier_reports_uninitialized_register() {
     let mut program = minimal_program();
-    program.runtime_types.push(AwbcRuntimeType::Bool);
+    program
+        .runtime_types
+        .push(runtime_type(66, AwbcRuntimeTypeShape::Bool));
     program.frame_layouts[0].slots.push(AwbcFrameSlot {
         name: None,
         ty: AwbcTypeId(2),
@@ -1818,14 +1881,16 @@ fn closure_instructions_capture_and_apply_awbc_function_value() {
             },
         ],
         flow_bindings: vec![test_flow_binding("main", 0)],
+        flow_executables: vec![test_flow_executable("main", 0)],
         entries: vec![AwbcEntry {
             runtime_id: crate::plan::EntryRuntimeId::canonical("main")
                 .expect("test entry runtime ID is valid"),
             binding: crate::entry::EntryBindingIdentity::from_bytes([1; 32]),
             public_id: AwbcStringId(1),
             kind: AwbcEntryKind::Cli,
-            signature: AwbcSignatureId(0),
-            target: AwbcEntryTarget::Function(AwbcFunctionId(0)),
+            target: AwbcEntryTarget::Function {
+                function: AwbcFunctionId(0),
+            },
             roles: crate::entry::RuntimeEntryRoles::None,
         }],
         ..AwbcProgram::default()
@@ -1977,7 +2042,7 @@ fn expression_apply_surfaces_await_from_the_dynamic_callee() {
         .push(AwbcConstant::String(AwbcStringId(1)));
     await_program
         .runtime_types
-        .push(AwbcRuntimeType::TaskHandle);
+        .push(runtime_type(67, AwbcRuntimeTypeShape::Task(AwbcTypeId(1))));
     await_program.frame_layouts[1].slots[0].ty = AwbcTypeId(2);
 
     let mut fiber = FiberState::for_entry(&await_program, AwbcEntryId(0), 0, 64)
@@ -2055,6 +2120,7 @@ fn expression_apply_surfaces_host_call_from_the_dynamic_callee() {
         public_id: AwbcStringId(0),
         capability: AwbcStringId(0),
         operation: AwbcStringId(0),
+        contract: None,
         signature: AwbcSignatureId(1),
         mode: AwbcHostCallMode::Suspend,
         deterministic: true,

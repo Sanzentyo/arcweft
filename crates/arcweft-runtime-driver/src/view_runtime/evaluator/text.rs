@@ -12,7 +12,7 @@ use arcweft_bundle::resource_codec::view::{
     DialogueTextProjection, ViewParameterRole, ViewTextSourceKind,
 };
 
-impl ViewEvaluator<'_> {
+impl<B: super::RuntimeCallBackend> ViewEvaluator<'_, B> {
     pub(super) fn resolve_text(
         &self,
         handle: &PresentationHandleId,
@@ -176,14 +176,15 @@ impl ViewEvaluator<'_> {
         path: &[String],
         instruction: usize,
     ) -> Result<BundleViewTextValue, EvaluationFailure> {
-        let projected = resolve_mount_path(&mounted.runtime_parameters, self.root_bindings, path)
-            .ok_or_else(|| {
-            EvaluationFailure::new(
-                BundleViewDiagnosticCode::MissingInput,
-                Some(instruction),
-                format!("text projection `{}` has no value", path.join(".")),
-            )
-        })?;
+        let projected =
+            resolve_mount_path(&mounted.runtime_parameters, self.view_root_bindings, path)
+                .ok_or_else(|| {
+                    EvaluationFailure::new(
+                        BundleViewDiagnosticCode::MissingInput,
+                        Some(instruction),
+                        format!("text projection `{}` has no value", path.join(".")),
+                    )
+                })?;
         let value = runtime_scalar_text(projected).ok_or_else(|| {
             EvaluationFailure::new(
                 BundleViewDiagnosticCode::UnsupportedTextValue,

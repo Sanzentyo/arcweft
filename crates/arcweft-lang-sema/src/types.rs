@@ -9,22 +9,37 @@ use core::fmt;
 mod agent_fields;
 mod character_nominal;
 mod compatibility;
+pub(crate) mod constraints;
 mod digest;
+mod generic_use;
 mod mismatch;
 mod nominal;
 mod openness;
 mod order;
+mod project_nominal_visit;
 mod substitution;
 
 pub use arcweft_dialogue::{CharacterDialogueCharacterType, CharacterDialogueType};
 pub use character_nominal::{CharacterNominalFamily, CharacterNominalType};
+pub(crate) use compatibility::{
+    NoopTypeCompatibilityControl, TypeCompatibilityControl, TypeCompatibilityFailure,
+    TypeCompatibilityForbidden, TypeCompatibilityPolicy,
+};
+pub(crate) use constraints::ConstraintAcceptance;
+#[cfg(test)]
+pub(crate) use constraints::NoConstraintClient;
+pub use constraints::{CheckedConstraintContainerConstructor, CheckedConstraintSourceProjection};
 pub use digest::SemanticTypeDigest;
 pub(crate) use digest::accepted_nominal_semantic_identity_digest;
+pub(crate) use generic_use::TypeGenericUseCollector;
+pub use generic_use::TypeGenericUseError;
 pub use mismatch::{TypeMismatch, TypeMismatchPathSegment, TypeMismatchReason};
 pub use nominal::{
-    AcceptedNominalType, AgentIntrinsicGenericOwner, DetachedTypeOwnerId, GenericTypeOwnerId,
-    GenericTypeParameterId, OpenNominalType, ProjectNominalType, TypePoisonId,
+    AcceptedNominalType, DetachedGenericOwnerId, GenericConstParameterId, GenericParameterOwnerId,
+    GenericTypeParameterId, LanguageIntrinsicGenericOwner, OpenNominalType, ProjectNominalType,
+    TypePoisonId,
 };
+pub(crate) use project_nominal_visit::visit_project_nominals;
 pub(crate) use substitution::TypeParameterSubstitutions;
 
 /// Runtime lifetime-registry scope retained by checked semantic types.
@@ -90,7 +105,7 @@ pub enum ArrayLength {
     /// A concrete compile-time length.
     Const(usize),
     /// A declaration-owned generic constant length.
-    Generic(GenericTypeParameterId),
+    Generic(GenericConstParameterId),
     /// A resolver-owned error already reported for this length.
     Error(TypePoisonId),
     /// A checker-local length that remains to be inferred.
@@ -98,22 +113,6 @@ pub enum ArrayLength {
 }
 
 impl ArrayLength {
-    /// Returns whether an expected array length can accept an actual one.
-    ///
-    /// A concrete length is exact. Generic, recovery, and inference lengths
-    /// deliberately remain open here; the owner-specific generic substitution
-    /// machinery retains the identity when an operation needs to bind it.
-    #[must_use]
-    pub(crate) fn accepts(&self, actual: &Self) -> bool {
-        match self {
-            Self::Const(expected) => {
-                matches!(actual, Self::Const(found) if expected == found)
-                    || matches!(actual, Self::Error(_))
-            }
-            Self::Generic(_) | Self::Error(_) | Self::Inferred => true,
-        }
-    }
-
     /// Returns the diagnostic and tooling spelling for this semantic length.
     #[must_use]
     pub(crate) fn source_label(&self) -> String {
@@ -407,6 +406,15 @@ pub enum CharacterField {
 }
 
 impl CharacterField {
+    pub const ALL: &'static [Self] = &[Self::Stage];
+
+    /// Stable semantic tag in declaration order.
+    pub const fn semantic_tag(self) -> u8 {
+        match self {
+            Self::Stage => 0,
+        }
+    }
+
     #[must_use]
     pub fn from_name(name: &str) -> Option<Self> {
         match name {
@@ -424,6 +432,16 @@ impl CharacterField {
 }
 
 impl ProgressField {
+    pub const ALL: &'static [Self] = &[Self::Ratio, Self::Label];
+
+    /// Stable semantic tag in declaration order.
+    pub const fn semantic_tag(self) -> u8 {
+        match self {
+            Self::Ratio => 0,
+            Self::Label => 1,
+        }
+    }
+
     #[must_use]
     pub fn from_name(name: &str) -> Option<Self> {
         match name {
@@ -1026,6 +1044,10 @@ impl fmt::Display for TypeKind {
         formatter.write_str(&self.source_label())
     }
 }
+
+#[cfg(test)]
+#[path = "types/semantic_tests.rs"]
+mod semantic_tests;
 
 #[cfg(test)]
 mod entity_kind_tests {

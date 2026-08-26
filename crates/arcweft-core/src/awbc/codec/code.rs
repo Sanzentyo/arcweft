@@ -214,6 +214,19 @@ impl Wire for AwbcInstruction {
                 target.write_wire(writer)?;
                 field.write_wire(writer)?;
             }
+            Self::ProjectOpaqueRecordField {
+                dst,
+                target,
+                owner,
+                field,
+                field_type,
+            } => {
+                dst.write_wire(writer)?;
+                target.write_wire(writer)?;
+                owner.write_wire(writer)?;
+                field.write_wire(writer)?;
+                field_type.write_wire(writer)?;
+            }
             Self::Unary { dst, op, src } => {
                 dst.write_wire(writer)?;
                 op.write_wire(writer)?;
@@ -431,6 +444,13 @@ impl Wire for AwbcInstruction {
                 dst: AwbcRegisterId::read_wire(reader)?,
                 target: AwbcRegisterId::read_wire(reader)?,
                 field: AwbcStringId::read_wire(reader)?,
+            },
+            AwbcOpcode::ProjectOpaqueRecordField => Self::ProjectOpaqueRecordField {
+                dst: AwbcRegisterId::read_wire(reader)?,
+                target: AwbcRegisterId::read_wire(reader)?,
+                owner: AwbcTypeId::read_wire(reader)?,
+                field: u32::read_wire(reader)?,
+                field_type: AwbcTypeId::read_wire(reader)?,
             },
             AwbcOpcode::Unary => Self::Unary {
                 dst: AwbcRegisterId::read_wire(reader)?,
@@ -752,6 +772,7 @@ impl Wire for AwbcTerminator {
             | AwbcOpcode::ProjectTuple
             | AwbcOpcode::ProjectRecord
             | AwbcOpcode::ProjectField
+            | AwbcOpcode::ProjectOpaqueRecordField
             | AwbcOpcode::Unary
             | AwbcOpcode::Binary
             | AwbcOpcode::CallPureHelper

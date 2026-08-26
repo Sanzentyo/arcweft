@@ -1,6 +1,6 @@
 use arcweft_core::plan::{
-    EntryRuntimeId, FlowRuntimeId, RuntimeFlowSeed, RuntimeFlowTargetError, RuntimeLineId,
-    RuntimePlan, RuntimePlanBuilder,
+    EntryRuntimeId, FlowRuntimeId, RuntimeFlowSchema, RuntimeFlowSeed, RuntimeFlowTargetError,
+    RuntimeLineId, RuntimePlan, RuntimePlanBuilder,
 };
 use arcweft_core::runtime_id::{
     RuntimeIdError, RuntimeIdFamily, RuntimeIdPath, RuntimeIdReference, RuntimeIdReferenceAnchor,
@@ -57,6 +57,12 @@ fn dynamic_flow_target_selects_one_accepted_identity_or_reports_label_ambiguity(
 fn plan_with_flows(flows: impl IntoIterator<Item = FlowRuntimeId>) -> RuntimePlan {
     let mut builder = RuntimePlanBuilder::new();
     for flow in flows {
+        builder
+            .push_flow_schema(RuntimeFlowSchema {
+                flow: flow.clone(),
+                parameters: Vec::new(),
+            })
+            .expect("test Flow schema admits");
         builder
             .push_flow_seed(RuntimeFlowSeed::new(flow, [], Vec::new()))
             .expect("test Flow admits");

@@ -362,6 +362,15 @@ pub enum BundleViewProductAttachError {
     PrimaryDocumentMismatch,
 }
 
+/// Failure to assemble the engine-owned resources of one bundle candidate.
+#[derive(Debug, Error)]
+pub enum BundleConstructionError {
+    #[error(transparent)]
+    SourceMap(#[from] SourceMapBuildError),
+    #[error(transparent)]
+    StandardViewAwbc(#[from] standard_view::StandardViewAwbcError),
+}
+
 #[derive(Debug, Error)]
 pub enum BundleCodecError {
     #[error("unsupported Arcweft bundle schema version {actual}; expected {expected}")]
@@ -449,6 +458,8 @@ pub enum BundleCodecError {
     InvalidViewStyleContract(#[from] ViewStyleContractError),
     #[error(transparent)]
     InvalidViewProduct(#[from] ViewProductValidationError),
+    #[error("View handler runtime cross-section is invalid: {message}")]
+    InvalidViewHandlerRuntime { message: String },
     #[error(transparent)]
     ResourceTypeManifests(#[from] resource_type_manifests::ResourceTypeManifestSectionError),
 }
@@ -556,12 +567,13 @@ impl ArcweftBundle {
         source_map: SourceMapSection,
         product_awbc: AwbcProgram,
         dialogue_content: DialogueContentCatalog,
-    ) -> Result<Self, SourceMapBuildError> {
+    ) -> Result<Self, BundleConstructionError> {
         let standard_view_source = standard_view::dialogue_view_source_document();
         let standard_style_source = standard_view::dialogue_style_source_document();
         let source_map = source_map
             .try_with_document(&standard_view_source)?
             .try_with_document(&standard_style_source)?;
+        let product_awbc = standard_view::install_dialogue_handler_awbc(product_awbc)?;
         Ok(Self {
             schema_version: ARCWEFT_BUNDLE_SCHEMA_VERSION,
             bundle_kind: BundleKind::Game,
@@ -1186,6 +1198,11 @@ impl ArcweftBundle {
         dialogue_contract?;
         if let Some(program) = &self.view_program {
             program.validate_style_contract(self.view_style.as_ref())?;
+            program
+                .validate_awbc_handlers(self.product_awbc.program())
+                .map_err(|error| BundleCodecError::InvalidViewHandlerRuntime {
+                    message: error.to_string(),
+                })?;
         } else if let Some(style) = &self.view_style {
             style
                 .encode_canonical_section()
@@ -1586,12 +1603,13 @@ mod tests {
     use arcweft_core::awbc::schema::{
         AwbcBlock, AwbcBlockId, AwbcConstant, AwbcConstantId, AwbcEffectKind, AwbcEffectPlan,
         AwbcEffectSetId, AwbcEntry, AwbcEntryKind, AwbcEntryTarget, AwbcFlowBinding,
-        AwbcFrameLayout, AwbcFrameLayoutId, AwbcFunction, AwbcFunctionFlags, AwbcFunctionId,
-        AwbcFunctionKind, AwbcSafePointKind, AwbcSignature, AwbcSignatureId, AwbcStringId,
-        AwbcTableRange, AwbcTerminator,
+        AwbcFlowExecutable, AwbcFrameLayout, AwbcFrameLayoutId, AwbcFunction, AwbcFunctionFlags,
+        AwbcFunctionId, AwbcFunctionKind, AwbcSafePointKind, AwbcSignature, AwbcSignatureId,
+        AwbcStringId, AwbcTableRange, AwbcTerminator,
     };
     use arcweft_core::effect::{RuntimeArtifactFingerprint, RuntimeAssertionGuardId};
     use arcweft_core::entry::AgentBudget;
+    use arcweft_core::entry::{FlowContractHash, RuntimeFlowExecutable};
     use arcweft_interaction_model::audio::{
         AudioBusId, AudioLoopMode, AudioResourceId, GainDbMilli,
     };
@@ -1678,7 +1696,8 @@ mod tests {
             ],
             resources: Vec::new(),
         });
-        let expected_program = program.clone();
+        let expected_program = crate::standard_view::install_dialogue_handler_awbc(program.clone())
+            .expect("standard dialogue handler installs");
         let empty = empty_test_bundle();
         let bundle = ArcweftBundle::try_new(
             empty.manifest,
@@ -2173,33 +2192,6 @@ mod tests {
         ));
     }
 
-    #[test]
-    fn tampered_dialogue_primary_action_parameter_is_rejected() {
-        let mut bundle = empty_test_bundle();
-        let action = &mut bundle
-            .view_program
-            .as_mut()
-            .expect("standard View program")
-            .action_buttons[0]
-            .action;
-        *action =
-            crate::resource_codec::view::ViewActionButtonActionResource::DialoguePrimaryAction {
-                parameter: "not_dialogue".to_owned(),
-            };
-
-        let error = ArcweftBundle::from_json_slice(
-            &serde_json::to_vec(&bundle).expect("tampered bundle serializes"),
-        )
-        .expect_err("incorrect primary action parameter must be rejected");
-
-        assert!(matches!(
-            error,
-            BundleCodecError::InvalidDialogueViewContract(
-                DialogueViewContractError::InvalidActionParameterRole { .. }
-            )
-        ));
-    }
-
     fn empty_test_bundle() -> ArcweftBundle {
         ArcweftBundle::try_new(
             BundleManifest {
@@ -2241,6 +2233,11 @@ mod tests {
     }
 
     fn minimal_awbc_program() -> AwbcProgram {
+        let flow = arcweft_core::plan::FlowRuntimeId::from_checked_declaration_digest(
+            [0xa4; 32],
+            "flow.main",
+        )
+        .expect("test checked Flow identity");
         AwbcProgram {
             strings: vec!["entry.main".to_owned()],
             signatures: vec![AwbcSignature {
@@ -2262,11 +2259,15 @@ mod tests {
                 flags: AwbcFunctionFlags(AwbcFunctionFlags::DETERMINISTIC),
             }],
             flow_bindings: vec![AwbcFlowBinding {
-                flow: arcweft_core::plan::FlowRuntimeId::from_checked_declaration_digest(
-                    [0xa4; 32],
-                    "flow.main",
-                )
-                .expect("test checked Flow identity"),
+                flow: flow.clone(),
+                function: AwbcFunctionId(0),
+            }],
+            flow_executables: vec![AwbcFlowExecutable {
+                metadata: RuntimeFlowExecutable {
+                    flow,
+                    contract: FlowContractHash::from_bytes([0xb4; 32]),
+                    controller: None,
+                },
                 function: AwbcFunctionId(0),
             }],
             blocks: vec![AwbcBlock {
@@ -2284,8 +2285,9 @@ mod tests {
                 binding: arcweft_core::entry::EntryBindingIdentity::from_bytes([1; 32]),
                 public_id: AwbcStringId(0),
                 kind: AwbcEntryKind::Cli,
-                signature: AwbcSignatureId(0),
-                target: AwbcEntryTarget::Function(AwbcFunctionId(0)),
+                target: AwbcEntryTarget::Function {
+                    function: AwbcFunctionId(0),
+                },
                 roles: arcweft_core::entry::RuntimeEntryRoles::None,
             }],
             ..AwbcProgram::default()

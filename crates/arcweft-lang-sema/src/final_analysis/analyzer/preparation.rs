@@ -374,14 +374,18 @@ impl Analyzer<'_, '_, '_> {
                     let ty = self.types.get(&annotation).cloned().ok_or(
                         FinalSemanticAnalysisError::TypeResolutionFailed { owner: annotation },
                     )?;
-                    self.facts.set_local_type(owner, ty);
+                    self.facts
+                        .set_local_type(owner, ty)
+                        .map_err(FinalSemanticAnalysisError::from)?;
                 }
             }
             for (_, item) in module.items() {
                 let mut locals = BTreeMap::new();
                 seed_item_parameter_types(item, &self.types, &mut locals)?;
                 for (owner, ty) in locals {
-                    self.facts.set_local_type(owner, ty);
+                    self.facts
+                        .set_local_type(owner, ty)
+                        .map_err(FinalSemanticAnalysisError::from)?;
                 }
             }
             for (_, expression) in module.expressions() {
@@ -407,10 +411,14 @@ impl Analyzer<'_, '_, '_> {
                                 &mut patterns,
                             )?;
                             for (owner, ty) in locals {
-                                self.facts.set_local_type(owner, ty);
+                                self.facts
+                                    .set_local_type(owner, ty)
+                                    .map_err(FinalSemanticAnalysisError::from)?;
                             }
                             for (owner, ty) in patterns {
-                                self.facts.set_pattern_type(owner, ty);
+                                self.facts
+                                    .set_pattern_type(owner, ty)
+                                    .map_err(FinalSemanticAnalysisError::from)?;
                             }
                         }
                     }
@@ -439,10 +447,14 @@ impl Analyzer<'_, '_, '_> {
                                 &mut patterns,
                             )?;
                             for (owner, ty) in locals {
-                                self.facts.set_local_type(owner, ty);
+                                self.facts
+                                    .set_local_type(owner, ty)
+                                    .map_err(FinalSemanticAnalysisError::from)?;
                             }
                             for (owner, ty) in patterns {
-                                self.facts.set_pattern_type(owner, ty);
+                                self.facts
+                                    .set_pattern_type(owner, ty)
+                                    .map_err(FinalSemanticAnalysisError::from)?;
                             }
                         }
                     }
@@ -495,7 +507,7 @@ impl Analyzer<'_, '_, '_> {
         initializer: ExprId,
     ) -> Result<(), FinalSemanticAnalysisError> {
         self.infer_nested_expression_bindings(initializer)?;
-        let actual = self.check_expression(initializer, None)?;
+        let actual = self.check_expression_published(initializer, None)?;
         let module = self.module(pattern.module())?;
         self.seed_contextual_pattern_locals(module, pattern, actual.ty())
     }
@@ -525,7 +537,7 @@ impl Analyzer<'_, '_, '_> {
                     .ok_or(FinalSemanticAnalysisError::TypeResolutionFailed { owner: annotation })
             })
             .transpose()?;
-        let actual = self.check_expression(initializer, expected.as_ref())?;
+        let actual = self.check_expression_published(initializer, expected.as_ref())?;
         let binding = match expected {
             Some(expected) if expected.accepts(actual.ty()) => expected,
             Some(_) => {
@@ -596,30 +608,32 @@ impl Analyzer<'_, '_, '_> {
     ) -> Result<(), FinalSemanticAnalysisError> {
         match statement {
             HirStmtKind::IfLet(statement) => {
-                let scrutinee = self.check_expression(statement.scrutinee(), None)?;
+                let scrutinee = self.check_expression_published(statement.scrutinee(), None)?;
                 let module = self.module(owner.module())?;
                 self.seed_contextual_pattern_locals(module, statement.pattern(), scrutinee.ty())?;
             }
             HirStmtKind::WhileLet(statement) => {
-                let scrutinee = self.check_expression(statement.scrutinee(), None)?;
+                let scrutinee = self.check_expression_published(statement.scrutinee(), None)?;
                 let module = self.module(owner.module())?;
                 self.seed_contextual_pattern_locals(module, statement.pattern(), scrutinee.ty())?;
             }
             HirStmtKind::Match(statement) => {
-                let scrutinee = self.check_expression(statement.scrutinee(), None)?;
+                let scrutinee = self.check_expression_published(statement.scrutinee(), None)?;
                 let module = self.module(owner.module())?;
                 for arm in statement.arms() {
                     self.seed_contextual_pattern_locals(module, arm.pattern(), scrutinee.ty())?;
                 }
             }
             HirStmtKind::For(statement) => {
-                self.check_expression(statement.source(), None)?;
-                self.check_expression(statement.iterator(), None)?;
-                let iteration = self.iteration_facts.get(&statement.iterator()).ok_or(
-                    FinalSemanticAnalysisError::ExpressionTypeUnavailable {
+                self.check_expression_published(statement.source(), None)?;
+                self.check_expression_published(statement.iterator(), None)?;
+                let iteration = self
+                    .facts
+                    .iteration_facts()
+                    .get(&statement.iterator())
+                    .ok_or(FinalSemanticAnalysisError::ExpressionTypeUnavailable {
                         owner: statement.iterator(),
-                    },
-                )?;
+                    })?;
                 let item = super::statements::iteration_item(iteration).clone();
                 let module = self.module(owner.module())?;
                 self.seed_contextual_pattern_locals(module, statement.pattern(), &item)?;
@@ -658,7 +672,7 @@ impl Analyzer<'_, '_, '_> {
             .filter(|owner| !expression_children.contains(owner))
             .collect::<BTreeSet<_>>();
         for owner in owners {
-            self.check_expression(owner, None)?;
+            self.check_expression_published(owner, None)?;
         }
         // A fixed compact spread is physically checked through typed element
         // coordinates, so no candidate pass evaluates the sequence container
@@ -667,7 +681,7 @@ impl Analyzer<'_, '_, '_> {
         // expression fact without inventing another candidate-slot visit.
         for owner in contextual_call_arguments {
             if !self.facts.expressions().contains_key(&owner) {
-                self.check_expression(owner, None)?;
+                self.check_expression_published(owner, None)?;
             }
         }
         Ok(())
@@ -729,7 +743,7 @@ impl Analyzer<'_, '_, '_> {
             }
         }
         for (owner, expected) in expectations {
-            let checked = self.check_expression(owner, Some(&expected))?;
+            let checked = self.check_expression_published(owner, Some(&expected))?;
             if !expected.accepts(checked.ty()) {
                 return Err(FinalSemanticAnalysisError::ExpressionTypeUnavailable { owner });
             }
@@ -750,7 +764,9 @@ impl Analyzer<'_, '_, '_> {
                     .pattern()
                     .and_then(|pattern| self.pattern_type_hint(module, pattern))
                     .ok_or(FinalSemanticAnalysisError::LocalTypeUnavailable { owner })?;
-                self.facts.set_local_type(owner, inferred);
+                self.facts
+                    .set_local_type(owner, inferred)
+                    .map_err(FinalSemanticAnalysisError::from)?;
             }
         }
         Ok(())
@@ -779,7 +795,9 @@ fn line_plan_let_bindings(items: &[HirLinePlanItem]) -> Vec<(PatternId, ExprId)>
     while let Some(items) = pending.pop() {
         for item in items {
             match item {
-                HirLinePlanItem::Let { pattern, value } => bindings.push((*pattern, *value)),
+                HirLinePlanItem::Let { pattern, value, .. } => {
+                    bindings.push((*pattern, *value));
+                }
                 HirLinePlanItem::StartGroup(items) | HirLinePlanItem::TogetherGroup(items) => {
                     pending.push(items);
                 }

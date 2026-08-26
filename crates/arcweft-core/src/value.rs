@@ -1,13 +1,13 @@
 use crate::awbc::schema::AwbcFunctionId;
 use crate::entry::{
-    RuntimeCallableId, RuntimeIdentityError, RuntimeSchemaError, RuntimeValueDigest,
+    FlowParameterCoordinate, RuntimeCallableId, RuntimeIdentityError, RuntimeSchemaError,
+    RuntimeValueDigest,
 };
 use crate::math::{DenseMatrixF32, DenseMatrixF64, DenseTensorF32, DenseTensorF64};
 use crate::pattern::{RuntimePattern, RuntimeVariantIdentity};
 use crate::plan::{
-    RuntimeIteratorEvidence, RuntimeLineId, RuntimePlan, RuntimePlanValueTypeError,
-    RuntimePureHelperId, RuntimePureInputType, RuntimePureOutputType, RuntimeReceiverMode,
-    RuntimeTraitMethodId,
+    RuntimeLineId, RuntimePlan, RuntimePlanValueTypeError, RuntimePureHelperId,
+    RuntimePureInputType, RuntimePureOutputType, RuntimeReceiverMode, RuntimeTraitMethodId,
 };
 use crate::runtime_id::{RuntimeFunctionSiteId, RuntimeLocalDeclarationId, RuntimePlanTypeId};
 use crate::time::LogicalDuration;
@@ -51,6 +51,8 @@ pub use nominal_record::{
 };
 pub use nominal_record_expr::{RuntimeNominalRecordExpr, RuntimeNominalRecordFieldExpr};
 pub use opaque::{
+    RuntimeDialogueActionValue, RuntimeDialogueAdvanceAction, RuntimeDialogueOpaqueRole,
+    RuntimeDialogueValueError, RuntimeDialogueViewField, RuntimeDialogueViewValue,
     RuntimeHandleKind, RuntimeOpaquePersistence, RuntimeOpaqueValue, RuntimeOpaqueValueClass,
     RuntimeOpaqueValueError,
 };
@@ -77,6 +79,18 @@ pub use shape::RuntimeValueShape;
 #[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
 pub struct RuntimeBinding {
     pub name: String,
+    pub value: RuntimeValue,
+}
+
+/// One adapter-supplied value addressed by the checked Flow parameter ABI.
+///
+/// Route adapters use this carrier after a checked route binding has resolved
+/// the external request source to an exact target parameter coordinate. The
+/// diagnostic parameter name is deliberately absent and cannot become a
+/// second execution authority.
+#[derive(Clone, Debug, PartialEq)]
+pub struct RuntimeFlowParameterBinding {
+    pub parameter: FlowParameterCoordinate,
     pub value: RuntimeValue,
 }
 
@@ -661,7 +675,13 @@ pub enum RuntimeIntrinsic {
     Add,
     CoreRange,
     CoreIterCollect,
-    CoreIterIntoIter,
+    CoreRangeIntoIter,
+    CoreSeqIntoIter,
+    CoreStreamIntoIter,
+    CoreVecIntoIter,
+    CoreArrayIntoIter,
+    CoreSliceIntoIter,
+    CoreTupleIntoIter,
     CoreIterNext,
     CoreOptionIsSome,
     CoreOptionUnwrap,
@@ -738,7 +758,13 @@ impl RuntimeIntrinsic {
             "add" => Some(Self::Add),
             "core.range" => Some(Self::CoreRange),
             "core.iter.collect" => Some(Self::CoreIterCollect),
-            "core.iter.into_iter" => Some(Self::CoreIterIntoIter),
+            "core.iter.into_iter.range" => Some(Self::CoreRangeIntoIter),
+            "core.iter.into_iter.seq" => Some(Self::CoreSeqIntoIter),
+            "core.iter.into_iter.stream" => Some(Self::CoreStreamIntoIter),
+            "core.iter.into_iter.vec" => Some(Self::CoreVecIntoIter),
+            "core.iter.into_iter.array" => Some(Self::CoreArrayIntoIter),
+            "core.iter.into_iter.slice" => Some(Self::CoreSliceIntoIter),
+            "core.iter.into_iter.tuple" => Some(Self::CoreTupleIntoIter),
             "core.iter.next" => Some(Self::CoreIterNext),
             "core.option.is_some" => Some(Self::CoreOptionIsSome),
             "core.option.unwrap" => Some(Self::CoreOptionUnwrap),
@@ -816,7 +842,13 @@ impl RuntimeIntrinsic {
             Self::Add => "add",
             Self::CoreRange => "core.range",
             Self::CoreIterCollect => "core.iter.collect",
-            Self::CoreIterIntoIter => "core.iter.into_iter",
+            Self::CoreRangeIntoIter => "core.iter.into_iter.range",
+            Self::CoreSeqIntoIter => "core.iter.into_iter.seq",
+            Self::CoreStreamIntoIter => "core.iter.into_iter.stream",
+            Self::CoreVecIntoIter => "core.iter.into_iter.vec",
+            Self::CoreArrayIntoIter => "core.iter.into_iter.array",
+            Self::CoreSliceIntoIter => "core.iter.into_iter.slice",
+            Self::CoreTupleIntoIter => "core.iter.into_iter.tuple",
             Self::CoreIterNext => "core.iter.next",
             Self::CoreOptionIsSome => "core.option.is_some",
             Self::CoreOptionUnwrap => "core.option.unwrap",
@@ -888,6 +920,39 @@ impl RuntimeIntrinsic {
         }
     }
 
+    #[must_use]
+    pub const fn builtin_iterator_into_iter(
+        family: crate::plan::RuntimeBuiltinIteratorFamily,
+    ) -> Self {
+        match family {
+            crate::plan::RuntimeBuiltinIteratorFamily::Range => Self::CoreRangeIntoIter,
+            crate::plan::RuntimeBuiltinIteratorFamily::Seq => Self::CoreSeqIntoIter,
+            crate::plan::RuntimeBuiltinIteratorFamily::Stream => Self::CoreStreamIntoIter,
+            crate::plan::RuntimeBuiltinIteratorFamily::Vec => Self::CoreVecIntoIter,
+            crate::plan::RuntimeBuiltinIteratorFamily::Array => Self::CoreArrayIntoIter,
+            crate::plan::RuntimeBuiltinIteratorFamily::Slice => Self::CoreSliceIntoIter,
+            crate::plan::RuntimeBuiltinIteratorFamily::TupleHomogeneous => Self::CoreTupleIntoIter,
+        }
+    }
+
+    #[must_use]
+    pub const fn builtin_iterator_family(
+        self,
+    ) -> Option<crate::plan::RuntimeBuiltinIteratorFamily> {
+        match self {
+            Self::CoreRangeIntoIter => Some(crate::plan::RuntimeBuiltinIteratorFamily::Range),
+            Self::CoreSeqIntoIter => Some(crate::plan::RuntimeBuiltinIteratorFamily::Seq),
+            Self::CoreStreamIntoIter => Some(crate::plan::RuntimeBuiltinIteratorFamily::Stream),
+            Self::CoreVecIntoIter => Some(crate::plan::RuntimeBuiltinIteratorFamily::Vec),
+            Self::CoreArrayIntoIter => Some(crate::plan::RuntimeBuiltinIteratorFamily::Array),
+            Self::CoreSliceIntoIter => Some(crate::plan::RuntimeBuiltinIteratorFamily::Slice),
+            Self::CoreTupleIntoIter => {
+                Some(crate::plan::RuntimeBuiltinIteratorFamily::TupleHomogeneous)
+            }
+            _ => None,
+        }
+    }
+
     pub const fn path_space(self) -> Option<&'static str> {
         match self {
             Self::PathSave => Some("save"),
@@ -897,7 +962,13 @@ impl RuntimeIntrinsic {
             Self::Add
             | Self::CoreRange
             | Self::CoreIterCollect
-            | Self::CoreIterIntoIter
+            | Self::CoreRangeIntoIter
+            | Self::CoreSeqIntoIter
+            | Self::CoreStreamIntoIter
+            | Self::CoreVecIntoIter
+            | Self::CoreArrayIntoIter
+            | Self::CoreSliceIntoIter
+            | Self::CoreTupleIntoIter
             | Self::CoreIterNext
             | Self::CoreOptionIsSome
             | Self::CoreOptionUnwrap
@@ -1432,9 +1503,13 @@ impl RuntimeProgressField {
 }
 
 /// Checked field projection retained by a runtime expression.
-#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+#[derive(Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub enum RuntimeFieldProjection {
     Nominal(RuntimeRecordFieldId),
+    OpaqueRecord {
+        owner: crate::pattern::RuntimeOpaqueTypeOwner,
+        field: RuntimeRecordFieldId,
+    },
     Agent(RuntimeAgentField),
     EntityReference(RuntimeEntityReferenceField),
     Progress(RuntimeProgressField),
@@ -1442,9 +1517,12 @@ pub enum RuntimeFieldProjection {
 
 impl RuntimeFieldProjection {
     #[must_use]
-    pub fn label(self) -> String {
+    pub fn label(&self) -> String {
         match self {
             Self::Nominal(field) => format!("field#{}", field.zero_based()),
+            Self::OpaqueRecord { owner, field } => {
+                format!("opaque:{owner:?}.field#{}", field.zero_based())
+            }
             Self::Agent(field) => field.as_label().to_owned(),
             Self::EntityReference(field) => field.as_label().to_owned(),
             Self::Progress(field) => field.as_label().to_owned(),
@@ -1873,6 +1951,21 @@ pub enum RuntimeEvalError {
     AmbiguousFlowBinding { flow: String, binding: String },
     #[error("runtime flow `{flow}` received duplicate binding `{binding}`")]
     DuplicateFlowBinding { flow: String, binding: String },
+    #[error("runtime flow `{flow}` has no executable parameter at coordinate {parameter:?}")]
+    UnknownFlowParameterBinding {
+        flow: String,
+        parameter: FlowParameterCoordinate,
+    },
+    #[error("runtime flow `{flow}` received duplicate binding for parameter {parameter:?}")]
+    DuplicateFlowParameterBinding {
+        flow: String,
+        parameter: FlowParameterCoordinate,
+    },
+    #[error("runtime flow `{flow}` parameter coordinate {parameter:?} does not fit this platform")]
+    InvalidFlowParameterCoordinate {
+        flow: String,
+        parameter: FlowParameterCoordinate,
+    },
     #[error("runtime flow `{flow}` executable parameter {position} has no plan-local declaration")]
     MissingFlowParameterLocal { flow: String, position: usize },
     #[error(
@@ -1881,6 +1974,15 @@ pub enum RuntimeEvalError {
     FlowBindingType {
         flow: String,
         binding: String,
+        local: RuntimeLocalDeclarationId,
+        expected: RuntimePlanTypeId,
+    },
+    #[error(
+        "runtime flow `{flow}` parameter {parameter:?} does not match plan type {expected} for local {local}"
+    )]
+    FlowParameterBindingType {
+        flow: String,
+        parameter: FlowParameterCoordinate,
         local: RuntimeLocalDeclarationId,
         expected: RuntimePlanTypeId,
     },
@@ -2753,20 +2855,9 @@ pub fn evaluate_core_iter_collect_intrinsic(
 
 pub fn evaluate_core_iter_into_iter_intrinsic(
     value: RuntimeValue,
-    evidence: &RuntimeValue,
+    family: crate::plan::RuntimeBuiltinIteratorFamily,
 ) -> Result<RuntimeValue, RuntimeEvalError> {
-    let RuntimeValue::String(label) = evidence else {
-        return Err(RuntimeEvalError::ExpectedBracketSeq(format!(
-            "iterator evidence must be a string label, found {}",
-            runtime_value_label(evidence)
-        )));
-    };
-    let Some(evidence) = RuntimeIteratorEvidence::from_awbc_label(label) else {
-        return Err(RuntimeEvalError::ExpectedBracketSeq(format!(
-            "unknown iterator evidence `{label}`"
-        )));
-    };
-    RuntimeIterator::from_value_with_evidence(value, &evidence)
+    RuntimeIterator::from_value_with_builtin_family(value, family)
         .map(RuntimeValue::Iterator)
         .map_err(|value| RuntimeEvalError::ExpectedBracketSeq(runtime_value_label(&value)))
 }

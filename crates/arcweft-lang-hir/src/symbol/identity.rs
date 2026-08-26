@@ -163,6 +163,16 @@ impl CallableDeclarationOwner {
         )
     }
 
+    /// Whether this declaration owns executable HIR that runtime reachability
+    /// must close. Extern capabilities are runtime-callable host boundaries,
+    /// but deliberately do not own an Arcweft executable body.
+    pub const fn owns_runtime_executable_body(self) -> bool {
+        matches!(
+            self,
+            Self::Function | Self::TraitImplementation | Self::InherentMethod | Self::Flow
+        )
+    }
+
     /// Whether declarations of this family denote logical Boolean callables.
     pub const fn is_logical_callable(self) -> bool {
         matches!(self, Self::Predicate)

@@ -42,6 +42,8 @@ pub enum CompileAgentError {
     EffectManifest(Box<effect_manifest::VerifiedEffectBuildError>),
     #[error("agent product source-map error: {0}")]
     SourceMap(Box<arcweft_bundle::resource_codec::SourceMapBuildError>),
+    #[error("agent bundle construction failed: {0}")]
+    BundleConstruction(Box<arcweft_bundle::BundleConstructionError>),
     #[error("selected source entry `{entry}` does not exist")]
     MissingSelectedEntry { entry: String },
     #[error("selected source entry `{entry}` is not an Agent entry")]
@@ -85,5 +87,11 @@ impl From<effect_manifest::VerifiedEffectBuildError> for CompileAgentError {
 impl From<arcweft_bundle::resource_codec::SourceMapBuildError> for CompileAgentError {
     fn from(error: arcweft_bundle::resource_codec::SourceMapBuildError) -> Self {
         Self::SourceMap(Box::new(error))
+    }
+}
+
+impl From<arcweft_bundle::BundleConstructionError> for CompileAgentError {
+    fn from(error: arcweft_bundle::BundleConstructionError) -> Self {
+        Self::BundleConstruction(Box::new(error))
     }
 }

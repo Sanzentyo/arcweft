@@ -12,8 +12,8 @@ use crate::awbc::schema::{
     AwbcBinaryOp, AwbcBindMode, AwbcBlockId, AwbcConstant, AwbcDialogueValueRole, AwbcEffectSetId,
     AwbcFrameLayout, AwbcFrameSlotRole, AwbcFunctionFlags, AwbcFunctionKind, AwbcInstruction,
     AwbcPattern, AwbcPatternId, AwbcPatternRest, AwbcProgram, AwbcRegisterId, AwbcResumePointId,
-    AwbcRuntimeType, AwbcSafePointKind, AwbcScopeId, AwbcSignatureId, AwbcTerminator,
-    AwbcTraitReceiverMode, AwbcTypeId, AwbcUnaryOp, AwbcUnsignedIntKind,
+    AwbcRuntimeType, AwbcRuntimeTypeShape, AwbcSafePointKind, AwbcScopeId, AwbcSignatureId,
+    AwbcTerminator, AwbcTraitReceiverMode, AwbcTypeId, AwbcUnaryOp, AwbcUnsignedIntKind,
 };
 use crate::value::{RuntimeAgentField, RuntimeAgentFieldResult, RuntimeReductionProducer};
 use std::collections::{BTreeSet, VecDeque};
@@ -314,8 +314,7 @@ fn apply_instruction(
         AwbcInstruction::MakeTuple { dst, items } => {
             check_args_budget(verifier, items.len())?;
             let dst_ty = register_type(verifier, function, block, *dst)?;
-            let Some(AwbcRuntimeType::Tuple(types)) = program.runtime_types.get(dst_ty.index())
-            else {
+            let Some(AwbcRuntimeTypeShape::Tuple(types)) = runtime_shape(program, dst_ty) else {
                 return invalid_type(&at, "tuple destination");
             };
             if types.len() != items.len() {
@@ -330,8 +329,7 @@ fn apply_instruction(
         AwbcInstruction::MakeSequence { dst, items } => {
             check_args_budget(verifier, items.len())?;
             let dst_ty = register_type(verifier, function, block, *dst)?;
-            let Some(AwbcRuntimeType::Sequence(item_ty)) =
-                program.runtime_types.get(dst_ty.index())
+            let Some(AwbcRuntimeTypeShape::Sequence(item_ty)) = runtime_shape(program, dst_ty)
             else {
                 return invalid_type(&at, "sequence destination");
             };
@@ -343,22 +341,21 @@ fn apply_instruction(
         }
         AwbcInstruction::RepeatSequence { dst, value, len } => {
             let dst_ty = register_type(verifier, function, block, *dst)?;
-            let Some(AwbcRuntimeType::Sequence(item_ty)) =
-                program.runtime_types.get(dst_ty.index())
+            let Some(AwbcRuntimeTypeShape::Sequence(item_ty)) = runtime_shape(program, dst_ty)
             else {
                 return invalid_type(&at, "sequence destination");
             };
             let value_ty = read_register(verifier, function, block, *value, state)?;
             require_compatible(program, *item_ty, value_ty, &at)?;
             let len_ty = read_register(verifier, function, block, *len, state)?;
-            if !is_integer(program.runtime_types.get(len_ty.index())) {
+            if !is_integer(runtime_shape(program, len_ty)) {
                 return invalid_type(&at, "integer repeat length");
             }
             write_register(verifier, function, block, *dst, state)?;
         }
         AwbcInstruction::SequenceLen { dst, sequence } => {
             let sequence_ty = read_register(verifier, function, block, *sequence, state)?;
-            if !is_sequence_or_dynamic(program.runtime_types.get(sequence_ty.index())) {
+            if !is_sequence_or_dynamic(runtime_shape(program, sequence_ty)) {
                 return invalid_type(&at, "sequence input");
             }
             require_type_kind(verifier, function, block, *dst, is_integer, "integer", &at)?;
@@ -371,15 +368,15 @@ fn apply_instruction(
         } => {
             let sequence_ty = read_register(verifier, function, block, *sequence, state)?;
             let index_ty = read_register(verifier, function, block, *index, state)?;
-            if !is_integer(program.runtime_types.get(index_ty.index())) {
+            if !is_integer(runtime_shape(program, index_ty)) {
                 return invalid_type(&at, "integer sequence index");
             }
             let dst_ty = register_type(verifier, function, block, *dst)?;
-            if let Some(AwbcRuntimeType::Sequence(item_ty)) =
-                program.runtime_types.get(sequence_ty.index())
+            if let Some(AwbcRuntimeTypeShape::Sequence(item_ty)) =
+                runtime_shape(program, sequence_ty)
             {
                 require_compatible(program, dst_ty, *item_ty, &at)?;
-            } else if !is_dynamic(program.runtime_types.get(sequence_ty.index())) {
+            } else if !is_dynamic(runtime_shape(program, sequence_ty)) {
                 return invalid_type(&at, "sequence input");
             }
             write_register(verifier, function, block, *dst, state)?;
@@ -391,12 +388,12 @@ fn apply_instruction(
         } => {
             let sequence_ty = read_register(verifier, function, block, *sequence, state)?;
             let start_ty = read_register(verifier, function, block, *start, state)?;
-            if !is_integer(program.runtime_types.get(start_ty.index())) {
+            if !is_integer(runtime_shape(program, start_ty)) {
                 return invalid_type(&at, "integer sequence slice start");
             }
             let dst_ty = register_type(verifier, function, block, *dst)?;
             require_compatible(program, dst_ty, sequence_ty, &at)?;
-            if !is_sequence_or_dynamic(program.runtime_types.get(sequence_ty.index())) {
+            if !is_sequence_or_dynamic(runtime_shape(program, sequence_ty)) {
                 return invalid_type(&at, "sequence input");
             }
             write_register(verifier, function, block, *dst, state)?;
@@ -404,11 +401,11 @@ fn apply_instruction(
         AwbcInstruction::SequencePush { sequence, value } => {
             let sequence_ty = read_register(verifier, function, block, *sequence, state)?;
             let value_ty = read_register(verifier, function, block, *value, state)?;
-            if let Some(AwbcRuntimeType::Sequence(item_ty)) =
-                program.runtime_types.get(sequence_ty.index())
+            if let Some(AwbcRuntimeTypeShape::Sequence(item_ty)) =
+                runtime_shape(program, sequence_ty)
             {
                 require_compatible(program, *item_ty, value_ty, &at)?;
-            } else if !is_dynamic(program.runtime_types.get(sequence_ty.index())) {
+            } else if !is_dynamic(runtime_shape(program, sequence_ty)) {
                 return invalid_type(&at, "sequence input");
             }
         }
@@ -427,13 +424,13 @@ fn apply_instruction(
             }
             let dst_ty = register_type(verifier, function, block, *dst)?;
             require_compatible(program, dst_ty, *ty, &at)?;
-            match program.runtime_types.get(ty.index()) {
+            match runtime_shape(program, *ty) {
                 Some(
-                    AwbcRuntimeType::Record {
+                    AwbcRuntimeTypeShape::Record {
                         fields: type_fields,
                         ..
                     }
-                    | AwbcRuntimeType::NominalRecord {
+                    | AwbcRuntimeTypeShape::NominalRecord {
                         fields: type_fields,
                         ..
                     },
@@ -451,7 +448,7 @@ fn apply_instruction(
                         require_compatible(program, expected.ty, actual, &at)?;
                     }
                 }
-                Some(AwbcRuntimeType::Dynamic) => {
+                Some(AwbcRuntimeTypeShape::Dynamic) => {
                     for field in fields {
                         read_register(verifier, function, block, *field, state)?;
                     }
@@ -469,8 +466,8 @@ fn apply_instruction(
         } => {
             check_index(program.runtime_types.len(), ty.0, "runtime_types", &at)?;
             check_string(program, *case_name, &at)?;
-            match program.runtime_types.get(ty.index()) {
-                Some(AwbcRuntimeType::Variant { cases, .. }) => {
+            match runtime_shape(program, *ty) {
+                Some(AwbcRuntimeTypeShape::Variant { cases, .. }) => {
                     let Some(case_layout) = cases.get(*case as usize) else {
                         return Err(AwbcVerifyError::IndexOutOfBounds {
                             table: "variant cases",
@@ -527,9 +524,10 @@ fn apply_instruction(
                 }
             }
             let dst_ty = register_type(verifier, function, block, *dst)?;
-            match program.runtime_types.get(dst_ty.index()) {
-                Some(AwbcRuntimeType::Agent(actual)) if *actual == constructor.result_type() => {}
-                Some(AwbcRuntimeType::Dynamic) => {}
+            match runtime_shape(program, dst_ty) {
+                Some(AwbcRuntimeTypeShape::Agent(actual))
+                    if actual.operational_type() == constructor.result_type() => {}
+                Some(AwbcRuntimeTypeShape::Dynamic) => {}
                 _ => return invalid_type(&at, "Agent constructor destination"),
             }
             write_register(verifier, function, block, *dst, state)?;
@@ -539,11 +537,11 @@ fn apply_instruction(
             ty,
             state: value,
         } => {
-            let Some(AwbcRuntimeType::Opaque {
+            let Some(AwbcRuntimeTypeShape::Opaque {
                 admission,
                 arguments,
                 ..
-            }) = program.runtime_types.get(ty.index())
+            }) = runtime_shape(program, *ty)
             else {
                 return invalid_type(&at, "Reduction opaque type");
             };
@@ -588,10 +586,10 @@ fn apply_instruction(
             check_string(program, *field, &at)?;
             let target_ty = read_register(verifier, function, block, *target, state)?;
             let dst_ty = register_type(verifier, function, block, *dst)?;
-            match program.runtime_types.get(target_ty.index()) {
+            match runtime_shape(program, target_ty) {
                 Some(
-                    AwbcRuntimeType::Record { fields, .. }
-                    | AwbcRuntimeType::NominalRecord { fields, .. },
+                    AwbcRuntimeTypeShape::Record { fields, .. }
+                    | AwbcRuntimeTypeShape::NominalRecord { fields, .. },
                 ) => {
                     let Some(field_layout) =
                         fields.iter().find(|candidate| candidate.name == *field)
@@ -603,25 +601,26 @@ fn apply_instruction(
                     };
                     require_compatible(program, dst_ty, field_layout.ty, "field projection")?;
                 }
-                Some(AwbcRuntimeType::Dynamic) => {}
-                Some(AwbcRuntimeType::Progress) => {
+                Some(AwbcRuntimeTypeShape::Dynamic) => {}
+                Some(AwbcRuntimeTypeShape::Progress) => {
                     let label = program
                         .strings
                         .get(field.index())
                         .map(String::as_str)
                         .unwrap_or_default();
-                    let destination = program.runtime_types.get(dst_ty.index());
+                    let destination = runtime_shape(program, dst_ty);
                     let destination_matches = match label {
-                        "ratio" => matches!(destination, Some(AwbcRuntimeType::F32)),
+                        "ratio" => matches!(destination, Some(AwbcRuntimeTypeShape::F32)),
                         "label" => matches!(
                             destination,
-                            Some(AwbcRuntimeType::Variant {
+                            Some(AwbcRuntimeTypeShape::Variant {
                                 owner: crate::awbc::schema::AwbcVariantIdentity::Option,
                                 cases,
+                                ..
                             }) if cases.first().and_then(|case| case.payload).is_some_and(|item| {
                                 matches!(
-                                    program.runtime_types.get(item.index()),
-                                    Some(AwbcRuntimeType::String)
+                                    runtime_shape(program, item),
+                                    Some(AwbcRuntimeTypeShape::String)
                                 )
                             })
                         ),
@@ -631,58 +630,62 @@ fn apply_instruction(
                         return invalid_type(&at, "Progress field projection destination");
                     }
                 }
-                Some(AwbcRuntimeType::Agent(agent)) => {
+                Some(AwbcRuntimeTypeShape::Agent(agent)) => {
                     let label = program
                         .strings
                         .get(field.index())
                         .map(String::as_str)
                         .unwrap_or_default();
-                    let Some(field) = RuntimeAgentField::from_owner_label(*agent, label) else {
+                    let Some(field) =
+                        RuntimeAgentField::from_owner_label(agent.operational_type(), label)
+                    else {
                         return Err(AwbcVerifyError::InvalidInvariant {
                             at,
                             message: "projected Agent field does not exist".to_owned(),
                         });
                     };
-                    let destination = program.runtime_types.get(dst_ty.index());
+                    let destination = runtime_shape(program, dst_ty);
                     let destination_matches = match field.result() {
                         RuntimeAgentFieldResult::String => matches!(
                             destination,
-                            Some(AwbcRuntimeType::String | AwbcRuntimeType::Dynamic)
+                            Some(AwbcRuntimeTypeShape::String | AwbcRuntimeTypeShape::Dynamic)
                         ),
                         RuntimeAgentFieldResult::Bool => {
                             is_bool(destination)
-                                || matches!(destination, Some(AwbcRuntimeType::Dynamic))
+                                || matches!(destination, Some(AwbcRuntimeTypeShape::Dynamic))
                         }
                         RuntimeAgentFieldResult::U32 => matches!(
                             destination,
                             Some(
-                                AwbcRuntimeType::UInt(AwbcUnsignedIntKind::U32)
-                                    | AwbcRuntimeType::Dynamic
+                                AwbcRuntimeTypeShape::UInt(AwbcUnsignedIntKind::U32)
+                                    | AwbcRuntimeTypeShape::Dynamic
                             )
                         ),
                         RuntimeAgentFieldResult::U64 => matches!(
                             destination,
                             Some(
-                                AwbcRuntimeType::UInt(AwbcUnsignedIntKind::U64)
-                                    | AwbcRuntimeType::Dynamic
+                                AwbcRuntimeTypeShape::UInt(AwbcUnsignedIntKind::U64)
+                                    | AwbcRuntimeTypeShape::Dynamic
                             )
                         ),
                         RuntimeAgentFieldResult::Agent(expected) => {
                             matches!(
                                 destination,
-                                Some(AwbcRuntimeType::Agent(actual)) if actual == &expected
-                            ) || matches!(destination, Some(AwbcRuntimeType::Dynamic))
+                                Some(AwbcRuntimeTypeShape::Agent(actual))
+                                    if actual.operational_type() == expected
+                            ) || matches!(destination, Some(AwbcRuntimeTypeShape::Dynamic))
                         }
                         RuntimeAgentFieldResult::VecAgent(expected) => match destination {
-                            Some(AwbcRuntimeType::Sequence(item)) => matches!(
-                                program.runtime_types.get(item.index()),
-                                Some(AwbcRuntimeType::Agent(actual)) if actual == &expected
+                            Some(AwbcRuntimeTypeShape::Sequence(item)) => matches!(
+                                runtime_shape(program, *item),
+                                Some(AwbcRuntimeTypeShape::Agent(actual))
+                                    if actual.operational_type() == expected
                             ),
-                            Some(AwbcRuntimeType::Dynamic) => true,
+                            Some(AwbcRuntimeTypeShape::Dynamic) => true,
                             _ => false,
                         },
                         RuntimeAgentFieldResult::AgentValueMap => {
-                            matches!(destination, Some(AwbcRuntimeType::Dynamic))
+                            matches!(destination, Some(AwbcRuntimeTypeShape::Dynamic))
                         }
                     };
                     if !destination_matches {
@@ -693,19 +696,53 @@ fn apply_instruction(
             }
             write_register(verifier, function, block, *dst, state)?;
         }
+        AwbcInstruction::ProjectOpaqueRecordField {
+            dst,
+            target,
+            owner,
+            field: _,
+            field_type,
+        } => {
+            check_index(program.runtime_types.len(), owner.0, "runtime_types", &at)?;
+            check_index(
+                program.runtime_types.len(),
+                field_type.0,
+                "runtime_types",
+                &at,
+            )?;
+            let target_ty = read_register(verifier, function, block, *target, state)?;
+            if target_ty != *owner {
+                return type_mismatch(&at, *owner, target_ty);
+            }
+            let exact_owner = program
+                .runtime_types
+                .get(owner.index())
+                .and_then(|row| row.try_opaque_owner(&program.strings).ok().flatten())
+                .is_some_and(|owner| {
+                    owner.admission() == crate::pattern::RuntimeOpaqueTypeAdmission::ExactIdentity
+                });
+            if !exact_owner {
+                return invalid_type(&at, "exact opaque-record projection owner");
+            }
+            let dst_ty = register_type(verifier, function, block, *dst)?;
+            if dst_ty != *field_type {
+                return type_mismatch(&at, *field_type, dst_ty);
+            }
+            write_register(verifier, function, block, *dst, state)?;
+        }
         AwbcInstruction::Unary { dst, op, src } => {
             let src_ty = read_register(verifier, function, block, *src, state)?;
             let dst_ty = register_type(verifier, function, block, *dst)?;
             match op {
                 AwbcUnaryOp::Not => {
-                    if !is_bool(program.runtime_types.get(src_ty.index()))
-                        || !is_bool(program.runtime_types.get(dst_ty.index()))
+                    if !is_bool(runtime_shape(program, src_ty))
+                        || !is_bool(runtime_shape(program, dst_ty))
                     {
                         return invalid_type(&at, "bool unary operands");
                     }
                 }
                 AwbcUnaryOp::Neg => {
-                    if !is_numeric(program.runtime_types.get(src_ty.index())) {
+                    if !is_numeric(runtime_shape(program, src_ty)) {
                         return invalid_type(&at, "numeric unary operand");
                     }
                     require_compatible(program, dst_ty, src_ty, &at)?;
@@ -725,19 +762,19 @@ fn apply_instruction(
                 | AwbcBinaryOp::Le
                 | AwbcBinaryOp::Gt
                 | AwbcBinaryOp::Ge => {
-                    if !is_bool(program.runtime_types.get(dst_ty.index())) {
+                    if !is_bool(runtime_shape(program, dst_ty)) {
                         return invalid_type(&at, "bool comparison destination");
                     }
                 }
                 AwbcBinaryOp::Add | AwbcBinaryOp::Sub | AwbcBinaryOp::Mul | AwbcBinaryOp::Div => {
-                    if !is_numeric(program.runtime_types.get(lhs_ty.index())) {
+                    if !is_numeric(runtime_shape(program, lhs_ty)) {
                         return invalid_type(&at, "numeric binary operands");
                     }
                     require_compatible(program, dst_ty, lhs_ty, &at)?;
                 }
                 AwbcBinaryOp::And | AwbcBinaryOp::Or => {
-                    if !is_bool(program.runtime_types.get(lhs_ty.index()))
-                        || !is_bool(program.runtime_types.get(dst_ty.index()))
+                    if !is_bool(runtime_shape(program, lhs_ty))
+                        || !is_bool(runtime_shape(program, dst_ty))
                     {
                         return invalid_type(&at, "bool logical operands");
                     }
@@ -767,8 +804,8 @@ fn apply_instruction(
         } => {
             let target_ty = read_register(verifier, function, block, *target, state)?;
             let value_ty = read_register(verifier, function, block, *value, state)?;
-            match program.runtime_types.get(target_ty.index()) {
-                Some(AwbcRuntimeType::Record { fields, .. }) => {
+            match runtime_shape(program, target_ty) {
+                Some(AwbcRuntimeTypeShape::Record { fields, .. }) => {
                     let Some(field_layout) = fields.get(*field as usize) else {
                         return Err(AwbcVerifyError::InvalidInvariant {
                             at,
@@ -819,7 +856,7 @@ fn apply_instruction(
                 *dst,
                 state,
                 &at,
-                &format!("intrinsic {}", intrinsic.public_id.0),
+                &format!("intrinsic {}", intrinsic.identity),
             )?;
         }
         AwbcInstruction::EnsureContent { content } => {
@@ -1010,54 +1047,57 @@ fn agent_operand_type_is_valid(
     use crate::plan::RuntimeAgentOperationalType as AgentType;
     use crate::value::RuntimeAgentConstructor as Constructor;
 
-    let Some(ty) = program.runtime_types.get(ty.index()) else {
+    let Some(ty) = runtime_shape(program, ty) else {
         return false;
     };
-    if matches!(ty, AwbcRuntimeType::Dynamic) {
+    if matches!(ty, AwbcRuntimeTypeShape::Dynamic) {
         return true;
     }
     match constructor {
         Constructor::CaptureViewport | Constructor::Diagnostics => false,
         Constructor::ChoiceAction | Constructor::CaptureLayer | Constructor::CaptureObject => {
-            matches!(ty, AwbcRuntimeType::String | AwbcRuntimeType::EntityRef)
+            matches!(
+                ty,
+                AwbcRuntimeTypeShape::String | AwbcRuntimeTypeShape::EntityRef
+            )
         }
         Constructor::StatePath | Constructor::ObservationPath => {
-            matches!(ty, AwbcRuntimeType::String)
+            matches!(ty, AwbcRuntimeTypeShape::String)
         }
         Constructor::ProbeSignal | Constructor::ProbeMetric => {
-            matches!(ty, AwbcRuntimeType::String | AwbcRuntimeType::EntityRef)
+            matches!(
+                ty,
+                AwbcRuntimeTypeShape::String | AwbcRuntimeTypeShape::EntityRef
+            )
         }
-        Constructor::ProbeState => matches!(ty, AwbcRuntimeType::Agent(AgentType::DebugStatePath)),
+        Constructor::ProbeState => agent_operational_type_is(ty, AgentType::DebugStatePath),
         Constructor::ProbeObservation => {
-            matches!(ty, AwbcRuntimeType::Agent(AgentType::ObservationFieldPath))
+            agent_operational_type_is(ty, AgentType::ObservationFieldPath)
         }
-        Constructor::PredicateExists => {
-            matches!(ty, AwbcRuntimeType::Agent(AgentType::Probe))
-        }
+        Constructor::PredicateExists => agent_operational_type_is(ty, AgentType::Probe),
         Constructor::PredicateActionEnabled => {
-            matches!(ty, AwbcRuntimeType::Agent(AgentType::ActionTarget))
+            agent_operational_type_is(ty, AgentType::ActionTarget)
         }
         Constructor::PredicateDiagnosticsHasError => {
-            matches!(ty, AwbcRuntimeType::Agent(AgentType::Diagnostics))
+            agent_operational_type_is(ty, AgentType::Diagnostics)
         }
         Constructor::PredicateAll | Constructor::PredicateAny => {
             agent_predicate_collection_operand_type_is_valid(program, ty)
         }
-        Constructor::PredicateNot => {
-            matches!(ty, AwbcRuntimeType::Agent(AgentType::Predicate))
-        }
+        Constructor::PredicateNot => agent_operational_type_is(ty, AgentType::Predicate),
         Constructor::PredicateEq
         | Constructor::PredicateNotEq
         | Constructor::PredicateGreater
         | Constructor::PredicateGreaterOrEqual
         | Constructor::PredicateLess
         | Constructor::PredicateLessOrEqual => {
-            ordinal != 0 || matches!(ty, AwbcRuntimeType::Agent(AgentType::Probe))
+            ordinal != 0 || agent_operational_type_is(ty, AgentType::Probe)
         }
         Constructor::ViewportPoint => {
             matches!(
                 ty,
-                AwbcRuntimeType::UInt(AwbcUnsignedIntKind::U32) | AwbcRuntimeType::Dynamic
+                AwbcRuntimeTypeShape::UInt(AwbcUnsignedIntKind::U32)
+                    | AwbcRuntimeTypeShape::Dynamic
             )
         }
     }
@@ -1065,24 +1105,37 @@ fn agent_operand_type_is_valid(
 
 fn agent_predicate_collection_operand_type_is_valid(
     program: &AwbcProgram,
-    ty: &AwbcRuntimeType,
+    ty: &AwbcRuntimeTypeShape,
 ) -> bool {
     use crate::plan::RuntimeAgentOperationalType as AgentType;
 
     let predicate_item = |ty: AwbcTypeId| {
-        matches!(
-            program.runtime_types.get(ty.index()),
-            Some(AwbcRuntimeType::Agent(AgentType::Predicate) | AwbcRuntimeType::Dynamic)
-        )
+        runtime_shape(program, ty).is_some_and(|ty| {
+            matches!(ty, AwbcRuntimeTypeShape::Dynamic)
+                || agent_operational_type_is(ty, AgentType::Predicate)
+        })
     };
     match ty {
-        AwbcRuntimeType::Agent(AgentType::Predicate) | AwbcRuntimeType::Dynamic => true,
-        AwbcRuntimeType::Sequence(item) => predicate_item(*item),
-        AwbcRuntimeType::Tuple(items) => {
+        AwbcRuntimeTypeShape::Agent(agent) if agent.operational_type() == AgentType::Predicate => {
+            true
+        }
+        AwbcRuntimeTypeShape::Dynamic => true,
+        AwbcRuntimeTypeShape::Sequence(item) => predicate_item(*item),
+        AwbcRuntimeTypeShape::Tuple(items) => {
             !items.is_empty() && items.iter().copied().all(predicate_item)
         }
         _ => false,
     }
+}
+
+fn agent_operational_type_is(
+    ty: &AwbcRuntimeTypeShape,
+    expected: crate::plan::RuntimeAgentOperationalType,
+) -> bool {
+    matches!(
+        ty,
+        AwbcRuntimeTypeShape::Agent(actual) if actual.operational_type() == expected
+    )
 }
 
 fn apply_terminator(
@@ -1105,7 +1158,7 @@ fn apply_terminator(
             else_block,
         } => {
             let condition_ty = read_register(verifier, function, block, *condition, state)?;
-            if !is_bool(program.runtime_types.get(condition_ty.index())) {
+            if !is_bool(runtime_shape(program, condition_ty)) {
                 return invalid_type(&at, "bool branch condition");
             }
             push_target(
@@ -1152,7 +1205,7 @@ fn apply_terminator(
                         || !types_compatible(program, signature.params[0], scrutinee_ty)
                         || signature
                             .result
-                            .is_none_or(|ty| !is_bool(program.runtime_types.get(ty.index())))
+                            .is_none_or(|ty| !is_bool(runtime_shape(program, ty)))
                     {
                         return Err(AwbcVerifyError::InvalidInvariant {
                             at: format!("match arm {arm_index}"),
@@ -1228,7 +1281,7 @@ fn apply_terminator(
         }
         AwbcTerminator::GotoDynamic { target, args } => {
             let target_ty = read_register(verifier, function, block, *target, state)?;
-            if !is_dynamic_target(program.runtime_types.get(target_ty.index())) {
+            if !is_dynamic_target(runtime_shape(program, target_ty)) {
                 return invalid_type(&at, "dynamic target string/entity/dynamic");
             }
             check_args_budget(verifier, args.len())?;
@@ -1287,7 +1340,7 @@ fn apply_terminator(
                 }
                 let ty = read_register(verifier, function, block, binding.value, state)?;
                 if binding.role == AwbcDialogueValueRole::Condition
-                    && !is_bool(program.runtime_types.get(ty.index()))
+                    && !is_bool(runtime_shape(program, ty))
                 {
                     return invalid_type(&at, "dialogue condition Bool");
                 }
@@ -1332,7 +1385,7 @@ fn apply_terminator(
             resume,
         } => {
             let handle_ty = read_register(verifier, function, block, *handle, state)?;
-            if !is_await_handle(program.runtime_types.get(handle_ty.index())) {
+            if !is_await_handle(runtime_shape(program, handle_ty)) {
                 return invalid_type(&at, "task or need handle");
             }
             let mut next = state.clone();
@@ -1401,7 +1454,7 @@ fn apply_terminator(
                 });
             }
             let source_ty = read_register(verifier, function, block, *source, state)?;
-            if !is_sequence_or_dynamic(program.runtime_types.get(source_ty.index())) {
+            if !is_sequence_or_dynamic(runtime_shape(program, source_ty)) {
                 return invalid_type(&at, "await-many sequence source");
             }
             let mut next = state.clone();
@@ -1790,14 +1843,14 @@ fn validate_pattern(
         }
         AwbcPattern::Entity(_) => {
             if !matches!(
-                program.runtime_types.get(value_ty.index()),
-                Some(AwbcRuntimeType::EntityRef | AwbcRuntimeType::Dynamic)
+                runtime_shape(program, value_ty),
+                Some(AwbcRuntimeTypeShape::EntityRef | AwbcRuntimeTypeShape::Dynamic)
             ) {
                 return invalid_type("entity pattern", "entity reference");
             }
         }
-        AwbcPattern::Tuple(items) => match program.runtime_types.get(value_ty.index()) {
-            Some(AwbcRuntimeType::Tuple(types)) => {
+        AwbcPattern::Tuple(items) => match runtime_shape(program, value_ty) {
+            Some(AwbcRuntimeTypeShape::Tuple(types)) => {
                 if items.len() != types.len() {
                     return argument_count("tuple pattern", types.len(), items.len());
                 }
@@ -1814,7 +1867,7 @@ fn validate_pattern(
                     )?;
                 }
             }
-            Some(AwbcRuntimeType::Dynamic) => {
+            Some(AwbcRuntimeTypeShape::Dynamic) => {
                 for child in items {
                     validate_pattern(
                         verifier,
@@ -1835,13 +1888,13 @@ fn validate_pattern(
                 require_compatible(program, *expected, value_ty, "record pattern")?;
             }
             let record_ty = ty.unwrap_or(value_ty);
-            match program.runtime_types.get(record_ty.index()) {
+            match runtime_shape(program, record_ty) {
                 Some(
-                    AwbcRuntimeType::Record {
+                    AwbcRuntimeTypeShape::Record {
                         fields: type_fields,
                         ..
                     }
-                    | AwbcRuntimeType::NominalRecord {
+                    | AwbcRuntimeTypeShape::NominalRecord {
                         fields: type_fields,
                         ..
                     },
@@ -1866,7 +1919,7 @@ fn validate_pattern(
                         )?;
                     }
                 }
-                Some(AwbcRuntimeType::Dynamic) if ty.is_none() => {
+                Some(AwbcRuntimeTypeShape::Dynamic) if ty.is_none() => {
                     for field in fields {
                         validate_pattern(
                             verifier,
@@ -1897,9 +1950,9 @@ fn validate_pattern(
             }
         }
         AwbcPattern::Sequence { items, rest } => {
-            let item_ty = match program.runtime_types.get(value_ty.index()) {
-                Some(AwbcRuntimeType::Sequence(item_ty)) => Some(*item_ty),
-                Some(AwbcRuntimeType::Dynamic) => dynamic_type(program),
+            let item_ty = match runtime_shape(program, value_ty) {
+                Some(AwbcRuntimeTypeShape::Sequence(item_ty)) => Some(*item_ty),
+                Some(AwbcRuntimeTypeShape::Dynamic) => dynamic_type(program),
                 _ => None,
             }
             .ok_or_else(|| AwbcVerifyError::InvalidInvariant {
@@ -1940,8 +1993,8 @@ fn validate_pattern(
         } => {
             check_string(program, *case_name, "variant pattern")?;
             require_compatible(program, *ty, value_ty, "variant pattern")?;
-            match program.runtime_types.get(ty.index()) {
-                Some(AwbcRuntimeType::Variant { cases, .. }) => {
+            match runtime_shape(program, *ty) {
+                Some(AwbcRuntimeTypeShape::Variant { cases, .. }) => {
                     let Some(case_layout) = cases.get(*case as usize) else {
                         return Err(AwbcVerifyError::IndexOutOfBounds {
                             table: "variant cases",
@@ -2129,12 +2182,12 @@ fn project_ordinal(
     let program = verifier.program;
     let target_ty = read_register(verifier, function, block, target, state)?;
     let dst_ty = register_type(verifier, function, block, dst)?;
-    let projected = match program.runtime_types.get(target_ty.index()) {
-        Some(AwbcRuntimeType::Tuple(items)) if tuple => items.get(ordinal as usize).copied(),
-        Some(AwbcRuntimeType::Record { fields, .. }) if !tuple => {
+    let projected = match runtime_shape(program, target_ty) {
+        Some(AwbcRuntimeTypeShape::Tuple(items)) if tuple => items.get(ordinal as usize).copied(),
+        Some(AwbcRuntimeTypeShape::Record { fields, .. }) if !tuple => {
             fields.get(ordinal as usize).map(|field| field.ty)
         }
-        Some(AwbcRuntimeType::Dynamic) => Some(target_ty),
+        Some(AwbcRuntimeTypeShape::Dynamic) => Some(target_ty),
         _ => None,
     }
     .ok_or_else(|| AwbcVerifyError::IndexOutOfBounds {
@@ -2219,12 +2272,12 @@ fn require_type_kind(
     function: usize,
     block: usize,
     register: AwbcRegisterId,
-    predicate: fn(Option<&AwbcRuntimeType>) -> bool,
+    predicate: fn(Option<&AwbcRuntimeTypeShape>) -> bool,
     label: &str,
     at: &str,
 ) -> Result<(), AwbcVerifyError> {
     let ty = register_type(verifier, function, block, register)?;
-    if predicate(verifier.program.runtime_types.get(ty.index())) {
+    if predicate(runtime_shape(verifier.program, ty)) {
         Ok(())
     } else {
         invalid_type(at, label)
@@ -2280,29 +2333,31 @@ fn constant_matches_type(
     if depth > 64 {
         return false;
     }
-    let Some(ty_layout) = program.runtime_types.get(ty.index()) else {
+    let Some(ty_layout) = runtime_shape(program, ty) else {
         return false;
     };
-    if matches!(ty_layout, AwbcRuntimeType::Dynamic) {
+    if matches!(ty_layout, AwbcRuntimeTypeShape::Dynamic) {
         return true;
     }
     match (constant, ty_layout) {
-        (AwbcConstant::Unit, AwbcRuntimeType::Unit)
-        | (AwbcConstant::Bool(_), AwbcRuntimeType::Bool)
-        | (AwbcConstant::F32Bits(_), AwbcRuntimeType::F32)
-        | (AwbcConstant::F64Bits(_), AwbcRuntimeType::F64)
-        | (AwbcConstant::String(_), AwbcRuntimeType::String)
-        | (AwbcConstant::Char(_), AwbcRuntimeType::Char)
-        | (AwbcConstant::DurationNanos(_), AwbcRuntimeType::Duration)
-        | (AwbcConstant::EntityRef(_), AwbcRuntimeType::EntityRef)
-        | (AwbcConstant::Bytes(_), AwbcRuntimeType::Bytes)
-        | (AwbcConstant::TensorF32 { .. }, AwbcRuntimeType::MatrixF32)
-        | (AwbcConstant::TensorF32 { .. }, AwbcRuntimeType::TensorF32)
-        | (AwbcConstant::TensorF64 { .. }, AwbcRuntimeType::MatrixF64)
-        | (AwbcConstant::TensorF64 { .. }, AwbcRuntimeType::TensorF64) => true,
-        (AwbcConstant::Int { kind, .. }, AwbcRuntimeType::Int(expected)) => *kind == *expected,
-        (AwbcConstant::UInt { kind, .. }, AwbcRuntimeType::UInt(expected)) => *kind == *expected,
-        (AwbcConstant::Tuple(values), AwbcRuntimeType::Tuple(types)) => {
+        (AwbcConstant::Unit, AwbcRuntimeTypeShape::Unit)
+        | (AwbcConstant::Bool(_), AwbcRuntimeTypeShape::Bool)
+        | (AwbcConstant::F32Bits(_), AwbcRuntimeTypeShape::F32)
+        | (AwbcConstant::F64Bits(_), AwbcRuntimeTypeShape::F64)
+        | (AwbcConstant::String(_), AwbcRuntimeTypeShape::String)
+        | (AwbcConstant::Char(_), AwbcRuntimeTypeShape::Char)
+        | (AwbcConstant::DurationNanos(_), AwbcRuntimeTypeShape::Duration)
+        | (AwbcConstant::EntityRef(_), AwbcRuntimeTypeShape::EntityRef)
+        | (AwbcConstant::Bytes(_), AwbcRuntimeTypeShape::Bytes)
+        | (AwbcConstant::TensorF32 { .. }, AwbcRuntimeTypeShape::MatrixF32)
+        | (AwbcConstant::TensorF32 { .. }, AwbcRuntimeTypeShape::TensorF32)
+        | (AwbcConstant::TensorF64 { .. }, AwbcRuntimeTypeShape::MatrixF64)
+        | (AwbcConstant::TensorF64 { .. }, AwbcRuntimeTypeShape::TensorF64) => true,
+        (AwbcConstant::Int { kind, .. }, AwbcRuntimeTypeShape::Int(expected)) => *kind == *expected,
+        (AwbcConstant::UInt { kind, .. }, AwbcRuntimeTypeShape::UInt(expected)) => {
+            *kind == *expected
+        }
+        (AwbcConstant::Tuple(values), AwbcRuntimeTypeShape::Tuple(types)) => {
             values.len() == types.len()
                 && values.iter().zip(types).all(|(value, ty)| {
                     program
@@ -2311,7 +2366,7 @@ fn constant_matches_type(
                         .is_some_and(|value| constant_matches_type(program, value, *ty, depth + 1))
                 })
         }
-        (AwbcConstant::Sequence(values), AwbcRuntimeType::Sequence(item_ty)) => {
+        (AwbcConstant::Sequence(values), AwbcRuntimeTypeShape::Sequence(item_ty)) => {
             values.iter().all(|value| {
                 program
                     .constants
@@ -2321,12 +2376,12 @@ fn constant_matches_type(
         }
         (
             AwbcConstant::Record { ty: actual, .. },
-            AwbcRuntimeType::Record { .. } | AwbcRuntimeType::NominalRecord { .. },
+            AwbcRuntimeTypeShape::Record { .. } | AwbcRuntimeTypeShape::NominalRecord { .. },
         ) => actual == &ty,
-        (AwbcConstant::Variant { ty: actual, .. }, AwbcRuntimeType::Variant { .. }) => {
+        (AwbcConstant::Variant { ty: actual, .. }, AwbcRuntimeTypeShape::Variant { .. }) => {
             actual == &ty
         }
-        (AwbcConstant::Opaque { ty: actual, .. }, AwbcRuntimeType::Opaque { .. }) => {
+        (AwbcConstant::Opaque { ty: actual, .. }, AwbcRuntimeTypeShape::Opaque { .. }) => {
             types_compatible(program, ty, *actual)
         }
         _ => false,
@@ -2337,74 +2392,100 @@ fn dynamic_type(program: &AwbcProgram) -> Option<AwbcTypeId> {
     program
         .runtime_types
         .iter()
-        .position(|ty| matches!(ty, AwbcRuntimeType::Dynamic))
+        .position(|ty| matches!(ty.shape(), AwbcRuntimeTypeShape::Dynamic))
         .and_then(|index| u32::try_from(index).ok())
         .map(AwbcTypeId)
 }
 
-fn is_bool(ty: Option<&AwbcRuntimeType>) -> bool {
-    matches!(ty, Some(AwbcRuntimeType::Bool | AwbcRuntimeType::Dynamic))
+fn runtime_shape(program: &AwbcProgram, ty: AwbcTypeId) -> Option<&AwbcRuntimeTypeShape> {
+    program
+        .runtime_types
+        .get(ty.index())
+        .map(AwbcRuntimeType::shape)
 }
 
-fn is_integer(ty: Option<&AwbcRuntimeType>) -> bool {
+fn is_bool(ty: Option<&AwbcRuntimeTypeShape>) -> bool {
     matches!(
         ty,
-        Some(AwbcRuntimeType::Int(_) | AwbcRuntimeType::UInt(_) | AwbcRuntimeType::Dynamic)
+        Some(AwbcRuntimeTypeShape::Bool | AwbcRuntimeTypeShape::Dynamic)
     )
 }
 
-fn is_numeric(ty: Option<&AwbcRuntimeType>) -> bool {
+fn is_integer(ty: Option<&AwbcRuntimeTypeShape>) -> bool {
     matches!(
         ty,
         Some(
-            AwbcRuntimeType::Int(_)
-                | AwbcRuntimeType::UInt(_)
-                | AwbcRuntimeType::F32
-                | AwbcRuntimeType::F64
-                | AwbcRuntimeType::Dynamic
+            AwbcRuntimeTypeShape::Int(_)
+                | AwbcRuntimeTypeShape::UInt(_)
+                | AwbcRuntimeTypeShape::Dynamic
         )
     )
 }
 
-fn is_sequence_or_dynamic(ty: Option<&AwbcRuntimeType>) -> bool {
+fn is_numeric(ty: Option<&AwbcRuntimeTypeShape>) -> bool {
     matches!(
         ty,
-        Some(AwbcRuntimeType::Sequence(_) | AwbcRuntimeType::Dynamic)
+        Some(
+            AwbcRuntimeTypeShape::Int(_)
+                | AwbcRuntimeTypeShape::UInt(_)
+                | AwbcRuntimeTypeShape::F32
+                | AwbcRuntimeTypeShape::F64
+                | AwbcRuntimeTypeShape::Dynamic
+        )
     )
 }
 
-fn is_dynamic(ty: Option<&AwbcRuntimeType>) -> bool {
-    matches!(ty, Some(AwbcRuntimeType::Dynamic))
-}
-
-fn is_await_handle(ty: Option<&AwbcRuntimeType>) -> bool {
+fn is_sequence_or_dynamic(ty: Option<&AwbcRuntimeTypeShape>) -> bool {
     matches!(
         ty,
-        Some(AwbcRuntimeType::TaskHandle | AwbcRuntimeType::NeedHandle | AwbcRuntimeType::Dynamic)
+        Some(AwbcRuntimeTypeShape::Sequence(_) | AwbcRuntimeTypeShape::Dynamic)
     )
 }
 
-fn is_progress(ty: Option<&AwbcRuntimeType>) -> bool {
-    matches!(ty, Some(AwbcRuntimeType::Progress))
+fn is_dynamic(ty: Option<&AwbcRuntimeTypeShape>) -> bool {
+    matches!(ty, Some(AwbcRuntimeTypeShape::Dynamic))
 }
 
-fn is_task_handle(ty: Option<&AwbcRuntimeType>) -> bool {
+fn is_await_handle(ty: Option<&AwbcRuntimeTypeShape>) -> bool {
     matches!(
         ty,
-        Some(AwbcRuntimeType::TaskHandle | AwbcRuntimeType::Dynamic)
+        Some(
+            AwbcRuntimeTypeShape::Task(_)
+                | AwbcRuntimeTypeShape::Need(_)
+                | AwbcRuntimeTypeShape::Dynamic
+        )
     )
 }
 
-fn is_dynamic_target(ty: Option<&AwbcRuntimeType>) -> bool {
+fn is_progress(ty: Option<&AwbcRuntimeTypeShape>) -> bool {
+    matches!(ty, Some(AwbcRuntimeTypeShape::Progress))
+}
+
+fn is_task_handle(ty: Option<&AwbcRuntimeTypeShape>) -> bool {
     matches!(
         ty,
-        Some(AwbcRuntimeType::String | AwbcRuntimeType::EntityRef | AwbcRuntimeType::Dynamic)
+        Some(AwbcRuntimeTypeShape::Task(_) | AwbcRuntimeTypeShape::Dynamic)
     )
 }
 
-fn is_choice_value(ty: Option<&AwbcRuntimeType>) -> bool {
+fn is_dynamic_target(ty: Option<&AwbcRuntimeTypeShape>) -> bool {
     matches!(
         ty,
-        Some(AwbcRuntimeType::String | AwbcRuntimeType::UInt(_) | AwbcRuntimeType::Dynamic)
+        Some(
+            AwbcRuntimeTypeShape::String
+                | AwbcRuntimeTypeShape::EntityRef
+                | AwbcRuntimeTypeShape::Dynamic
+        )
+    )
+}
+
+fn is_choice_value(ty: Option<&AwbcRuntimeTypeShape>) -> bool {
+    matches!(
+        ty,
+        Some(
+            AwbcRuntimeTypeShape::String
+                | AwbcRuntimeTypeShape::UInt(_)
+                | AwbcRuntimeTypeShape::Dynamic
+        )
     )
 }

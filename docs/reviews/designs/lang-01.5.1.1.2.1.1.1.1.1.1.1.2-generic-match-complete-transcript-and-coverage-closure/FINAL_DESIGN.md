@@ -72,7 +72,8 @@ Every transcript atom is one of:
 - an existing accepted typed identity/digest;
 - a same-cut opaque semantic ID constructed from existing accepted atoms;
 - a checked ordinal within an accepted row; or
-- a declaration-rooted role coordinate.
+- an accepted-rooted role coordinate carrying the closed Declaration or Item
+  root tag.
 
 Names, spans, raw arena/snapshot IDs, source files, debug/display/Serde forms,
 and enumeration of a whole catalog are never atoms. If no exact row can be

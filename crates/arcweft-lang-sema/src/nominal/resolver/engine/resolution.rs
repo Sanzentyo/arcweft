@@ -18,7 +18,7 @@ use crate::{
     },
     registration::{AcceptedNominalWorld, ExternalOwnerLookupError, RegisteredExternalOwner},
     types::{
-        AcceptedNominalType, ArrayLength, GenericTypeOwnerId, GenericTypeParameterId, MapKind,
+        AcceptedNominalType, ArrayLength, GenericParameterOwnerId, GenericTypeParameterId, MapKind,
         OpenNominalType, ProjectNominalType, TypeKind, TypePoisonId,
     },
 };
@@ -542,7 +542,7 @@ impl Resolver<'_, '_> {
                 return Ok(failed);
             }
             let id = GenericTypeParameterId::new(
-                GenericTypeOwnerId::Nominal(declaration.id().clone()),
+                GenericParameterOwnerId::Nominal(declaration.id().clone()),
                 parameter.ordinal(),
             );
             substitution.push((id.clone(), argument.clone()));
@@ -858,7 +858,7 @@ impl Resolver<'_, '_> {
                     },
                 )
             }
-            AcceptedNominalSemantics::Exact(_) => (
+            AcceptedNominalSemantics::Exact(_) | AcceptedNominalSemantics::Record(_) => (
                 instantiated.clone(),
                 ExternalNominalResolution::Exact {
                     external: external.declaration(),
@@ -1015,7 +1015,24 @@ impl Resolver<'_, '_> {
             ArrayLength::Const(value)
         } else {
             match length.ty {
-                Some(TypeKind::GenericParam(parameter)) => ArrayLength::Generic(parameter),
+                Some(actual @ TypeKind::GenericParam(_)) => {
+                    // HIR currently inventories type/lifetime parameters only.
+                    // A type parameter in a const position is therefore a
+                    // typed kind error, never a fabricated const identity.
+                    let failure = TypeResolutionFailure::WrongArgumentKind {
+                        target,
+                        argument: 1,
+                        expected: TypeArgumentExpectation::ConstInt,
+                        actual: TypeArgumentKind::Type(actual),
+                    };
+                    let poison = self.emit_failure(
+                        &failure,
+                        context.evidence(length_path, true),
+                        Vec::new(),
+                    );
+                    self.replace_node_outcome(length_path, TypeNameResolution::Failed(failure));
+                    ArrayLength::Error(poison)
+                }
                 Some(TypeKind::Error(poison)) => ArrayLength::Error(poison),
                 Some(actual) => {
                     let failure = TypeResolutionFailure::WrongArgumentKind {

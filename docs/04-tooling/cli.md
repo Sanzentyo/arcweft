@@ -213,7 +213,7 @@ CLI adapter and does not start renderer/audio/device backends.
 
 ## Runtime Dry Run
 
-`arcw run <file.arcw> [--entry entry.id|main] [--flow flow.id|name] [--executor bytecode-vm|aot] [--pure-backend auto|vm|aot|jit] [--pure-workers auto|N] [--pure-batch-min-len N] [--pure-object-artifacts] [--math-backend auto|scalar|glam|ndarray|wgpu] [--math-wgpu-min-elements N] [--steps N] [--mode one-op|drain|game|server] [--max-ops N] [--value name=value] [--json]` is the first
+`arcw run <file.arcw> (--entry entry.id | --flow flow.id [--value name=value]...) [--executor bytecode-vm|aot] [--pure-backend auto|vm|aot|jit] [--pure-workers auto|N] [--pure-batch-min-len N] [--pure-object-artifacts] [--math-backend auto|scalar|glam|ndarray|wgpu] [--math-wgpu-min-elements N] [--steps N] [--mode one-op|drain|game|server] [--max-ops N] [--json]` is the first
 headless execution entry point. It uses the same parse, HIR, reference
 validation, typecheck, and line-plan lowering path as `arcw check`, then lowers
 checked flows to `arcweft-core::RuntimePlan`, materializes bytecode, and steps
@@ -243,9 +243,13 @@ threshold. The same JSON includes `executor_stats.math` counters for selected
 backend calls, borrowed/copy/upload/download bytes, GPU buffer creation/reuse,
 staging-buffer reuse, and the last Auto policy reason. `--pure-workers auto|N` controls the runtime
 accelerator's Rayon pool for batchable pure helpers. `--pure-batch-min-len N`
-sets the minimum rows per resolved worker before the dedicated pool is used. If `--entry` or
-`--flow` is omitted, the first lowered flow is used as a deterministic fallback
-for headless inspection.
+sets the minimum rows per resolved worker before the dedicated pool is used.
+Source execution selects either one complete checked Entry or one explicit
+low-level Flow; it never falls back to the first lowered Flow. `--value` is
+accepted only with `--flow`. The tooling boundary resolves each supplied name
+once against that Flow's checked parameter schema, emits complete bindings in
+`FlowParameterCoordinate` order, and seals one affine `RuntimeFlowInvocation`
+before the first operation. Entry execution never receives these values.
 Use `--math-backend scalar|glam|ndarray|wgpu` when a run must explicitly pin a
 backend for measurement or product policy. Use `--math-backend auto` with
 `--math-wgpu-min-elements N` to express a policy threshold. Host-specific
@@ -290,15 +294,15 @@ host default with `player_viewport(width = 1280px, height = 720px, fit =
 contain)` or `player_viewport(fit = default)`.
 
 ```bash
-arcw run game/routes/opening.arcw --steps 8
-arcw run game/routes/opening.arcw --entry main --mode drain --steps 8
+arcw run game/routes/opening.arcw --entry entry.game.main --steps 8
+arcw run game/routes/opening.arcw --entry entry.game.main --mode drain --steps 8
 arcw run game/routes/opening.arcw --flow opening --mode drain --steps 8
 arcw run game/routes/opening.arcw --mode drain --steps 8 --max-ops 32
 arcw run game/routes/opening.arcw --executor aot --mode drain --steps 8 --json
 arcw run game/routes/opening.arcw --pure-backend jit --mode drain --steps 8 --json
 arcw run game/routes/opening.arcw --pure-backend aot --pure-workers 4 --pure-batch-min-len 512 --json
-arcw run game/routes/opening.arcw --steps 8 --value ready=true --value route=@flow.next
-arcw run game/routes/opening.arcw --steps 8 --json
+arcw run game/routes/opening.arcw --flow opening --steps 8 --value ready=true --value route=@flow.next
+arcw run game/routes/opening.arcw --entry entry.game.main --steps 8 --json
 ```
 
 The command is still Sans I/O at the runtime layer. The CLI reads the source
@@ -573,7 +577,7 @@ evaluator.
 
 ## Agent Observation
 
-`arcw agent observe <file.arcw> [--entry entry.id|main] [--flow flow.id|name] [--executor bytecode-vm|aot] [--pure-backend auto|vm|aot|jit] [--pure-workers auto|N] [--pure-batch-min-len N] [--pure-object-artifacts] [--math-backend auto|scalar|glam|ndarray|wgpu] [--math-wgpu-min-elements N] [--steps N] [--capture-step N] [--mode one-op|drain|game|server] [--max-ops N] [--value name=value] [--viewport-width PX] [--viewport-height PX] [--image overlay|png|raw-rgba] [--capture color|object-id|mask] [--layer LAYER|--object OBJECT_ID] [--page N] [--capture-time SECONDS] [--resource observation|objects|overlay|image|logs|signals|audio|all] [--read-uri URI] [--mcp] [--mcp-format read|list|tool-result] [--out PATH] [--json]`
+`arcw agent observe <file.arcw> [--entry entry.id|main] [--flow flow.id|name] [--executor bytecode-vm|aot] [--pure-backend auto|vm|aot|jit] [--pure-workers auto|N] [--pure-batch-min-len N] [--pure-object-artifacts] [--math-backend auto|scalar|glam|ndarray|wgpu] [--math-wgpu-min-elements N] [--steps N] [--capture-step N] [--mode one-op|drain|game|server] [--max-ops N] [--view-value name=value] [--viewport-width PX] [--viewport-height PX] [--image overlay|png|raw-rgba] [--capture color|object-id|mask] [--layer LAYER|--object OBJECT_ID] [--page N] [--capture-time SECONDS] [--resource observation|objects|overlay|image|logs|signals|audio|all] [--read-uri URI] [--mcp] [--mcp-format read|list|tool-result] [--out PATH] [--json]`
 is the first Agent Debug Bus CLI slice. `arcw agent mcp` exposes the same
 observation and resource-read path as a minimal line-delimited JSON-RPC stdio
 MCP server for local Agent debugging. The stdio server supports
@@ -591,6 +595,11 @@ audit sensitive readback decisions. `--viewport-width` and `--viewport-height`
 set the observed screen size used by Agent geometry and native PNG/raw
 framebuffer capture. Dialogue layout comes from the selected authored View and
 cannot be overridden by a second Agent-only geometry input.
+
+`--view-value` supplies only the named View evaluation environment used by
+observation. It is not a Flow argument adapter. Explicit low-level source Flow
+invocation uses `arcw run --flow ... --value ...`; Entry and Agent observation
+do not ambiently bind those values into Flow parameters.
 
 `arcw agent hit-test <file.arcw> --x PX --y PX [--entry entry.id|main] [--flow flow.id|name] [--steps N] [--capture-step N] [--capture-time SECONDS] [--viewport-width PX] [--viewport-height PX] [--json]`
 runs the same bounded observation path, then resolves the viewport coordinate
@@ -840,9 +849,10 @@ with`, bounded `traverse(...).parallel(limit = N)` fanout, `let`, `let else`,
 `cancel on` rules. The runtime also executes the first generation slice: typed
 `RuntimeStepInput` stream events feed stream queues, and stream plans drain
 those queues and emit stream events under a deterministic per-step budget.
-External capability calls remain ordinary host-call operations. `--value` injects pure
-`RuntimeValue` bindings into `RuntimeStepInput`; this is for deterministic
-CLI/LSP inspection, not host I/O. Matrix/tensor test inputs use
+External capability calls remain ordinary host-call operations. Explicit
+`--flow --value` inputs are sealed once into the selected Flow invocation;
+`RuntimeStepInput` does not carry Flow arguments and later steps cannot rebind
+parameter locals. Matrix/tensor low-level inputs use
 `matrix/f32/<rows>x<cols>:<csv>` and `tensor/f32/<dims>:<csv>`; for example
 `--value lhs=matrix/f32/4x4:1,0,...`. Unsupported flow syntax fails with a
 runtime-lowering error instead of being silently dropped.
@@ -1025,14 +1035,14 @@ arcw cache prune --apply
 arcw cache fetch --manifest dist/game.awfr --content-root 0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef --json
 ```
 
-`arcw run-bundle <game.awfb> [--patch update.awfb] [--entry entry.id|main] [--flow flow.id|name] [--executor bytecode-vm|aot] [--steps N] [--mode one-op|drain|game|server] [--max-ops N] [--value name=value] [--json]`
+`arcw run-bundle <game.awfb> [--patch update.awfb] [--entry entry.id] [--steps N] [--mode one-op|drain|game|server] [--max-ops N] [--json]`
 checks AWFB magic/version before decoding the packaged bytecode, materializes
 the packaged source and virtual files into a temporary CLI workspace for
 source-local virtual I/O roots, then runs the same native task bridge used by
 `arcw run`. It does not parse, typecheck, or lower the source again. `--entry`
-and `--flow` override the
-bundled entry selection by rewriting the decoded runtime entry selection before
-execution. The current implementation supports the standard CLI native file,
+may select another complete Entry already present in the bundle; bundle
+execution does not rewrite an Entry into a Flow target or inject ambient Flow
+parameters. The current implementation supports the standard CLI native file,
 system-info, and internal scheduler adapters; custom profile adapter
 implementations still need an embedding runner or future player adapter to
 provide concrete host code. Embedding runners use
@@ -1057,32 +1067,31 @@ execution without recording host absolute paths.
 
 ```bash
 arcw run-bundle dist/game.awfb --mode drain --steps 8 --json
-arcw run-bundle dist/game.awfb --flow opening --mode drain --steps 8 --json
+arcw run-bundle dist/game.awfb --entry entry.game.main --mode drain --steps 8 --json
 arcw run-bundle dist/game.awfb --patch dist/game.update.awfb --mode drain --steps 8 --json
 ```
 
 ## CLI Entry Dry Run
 
-`arcw cli <file.arcw> [--entry entry.id] [--steps N] [--mode one-op|drain|game|server] [--max-ops N] [--value name=value] [--json] -- ARGS...`
+`arcw cli <file.arcw> [--entry entry.id] [--steps N] [--mode one-op|drain|game|server] [--max-ops N] [--json] -- ARGS...`
 executes a source-declared `entry cli` through the same Sans I/O runtime as
-`arcw run`. If `--entry` is omitted, the first `entry cli` that selects a single
-flow is used. The command does not perform script-requested filesystem,
-process, or network effects; it only binds CLI arguments as pure runtime values:
-
-```text
-args: [String]
-argc: i32
-```
+`arcw run`. If `--entry` is omitted, the source must contain exactly one
+`entry cli`; multiple CLI entries require an explicit complete Entry ID. The
+selected Entry's Flow remains zero-parameter. Trailing process arguments are
+owned by the native CLI adapter and are available only through the checked
+`cli.args() -> Vec<String>` capability. There is no ambient `args`/`argc`
+binding and no `--value` path for Entry execution; `args.len()` derives the
+count without a second value authority.
 
 ```bash
 arcw cli tools/build.arcw -- --profile debug
-arcw cli tools/build.arcw --entry main --json -- --profile release
+arcw cli tools/build.arcw --entry entry.cli.main --json -- --profile release
 arcw cli --manifest arcw.toml --profile cli.main --json -- --profile release
 ```
 
 When `--profile` is used, `arcw cli` requires a `kind = "cli"` profile. The
-command is a user-facing alias for the launch-profile context plus CLI argument
-binding.
+command is a user-facing alias for the launch-profile context plus the typed
+native CLI capability.
 
 ## Server Entry Plan
 
@@ -1093,9 +1102,8 @@ verifies that route targets exist, and prints the method/path/flow table that a
 host adapter should bind.
 
 If `--entry` is omitted, the first `entry server` is selected. A server entry
-with `route METHOD "PATH" -> @flow.id` exposes those routes directly. A server
-entry with `goto @flow.id` is treated as a default `* * -> flow.id` route for
-headless adapter planning.
+must own a nonempty checked `route METHOD "PATH" -> @flow.id` plan. A `goto`
+target is not converted into a synthetic wildcard route.
 
 Routes that capture path parameters bind them explicitly to target flow
 parameters:
@@ -1110,8 +1118,11 @@ flow hello(name: String) -> String {
 }
 ```
 
-The native HTTP adapter injects these bindings by name when a request matches
-the route. It does not provide an ambient `route_params` local.
+Entry sealing resolves every authored destination to a checked Flow parameter
+coordinate and every capture source to a route-segment capture coordinate.
+The native HTTP adapter matches typed segments and produces the canonical
+coordinate-addressed invocation; it performs no Flow-parameter name lookup and
+does not provide an ambient `route_params` local.
 
 ```bash
 arcw serve game/routes/server.arcw

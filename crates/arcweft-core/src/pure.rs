@@ -259,6 +259,12 @@ impl Deref for RuntimePureHelperRef<'_> {
 
 /// Runtime-facing backend for deterministic pure helper calls.
 pub trait RuntimePureCallBackend {
+    /// Records one accepted top-level compact-AWBC pure-program invocation.
+    ///
+    /// Backends may project this into their existing non-semantic statistics;
+    /// it must not influence helper selection or evaluation results.
+    fn record_awbc_pure_program_call(&mut self);
+
     fn call_i8_slice(
         &mut self,
         helper: RuntimePureHelperRef<'_>,
@@ -1632,7 +1638,7 @@ impl<'a> PureEvaluator<'a> {
             RuntimeExprKind::Variant { ordinal, payload } => {
                 self.evaluate_variant_expr(expr.ty(), *ordinal, payload.as_deref())
             }
-            RuntimeExprKind::Field { target, field } => self.evaluate_field_expr(target, *field),
+            RuntimeExprKind::Field { target, field } => self.evaluate_field_expr(target, field),
             RuntimeExprKind::ProjectTuple { target, ordinal } => {
                 self.evaluate_project_tuple_expr(target, *ordinal)
             }
@@ -2249,7 +2255,14 @@ impl<'a> PureEvaluator<'a> {
         {
             return Ok(value);
         }
-        match (callee.as_intrinsic(), args.as_slice()) {
+        Self::evaluate_pure_call(callee, &args)
+    }
+
+    fn evaluate_pure_call(
+        callee: &RuntimeCallTarget,
+        args: &[RuntimeValue],
+    ) -> Result<RuntimeValue, RuntimeEvalError> {
+        match (callee.as_intrinsic(), args) {
             (Some(RuntimeIntrinsic::Add), [RuntimeValue::Int(lhs), RuntimeValue::Int(rhs)]) => {
                 evaluate_binary(
                     RuntimeValue::Int(*lhs),
@@ -2257,12 +2270,17 @@ impl<'a> PureEvaluator<'a> {
                     RuntimeValue::Int(*rhs),
                 )
             }
-            (Some(RuntimeIntrinsic::CoreRange), _) => evaluate_core_range_intrinsic(&args),
+            (Some(RuntimeIntrinsic::CoreRange), _) => evaluate_core_range_intrinsic(args),
             (Some(RuntimeIntrinsic::CoreIterCollect), [value]) => {
                 evaluate_core_iter_collect_intrinsic(value.clone())
             }
-            (Some(RuntimeIntrinsic::CoreIterIntoIter), [value, evidence]) => {
-                evaluate_core_iter_into_iter_intrinsic(value.clone(), evidence)
+            (Some(intrinsic), [value]) if intrinsic.builtin_iterator_family().is_some() => {
+                evaluate_core_iter_into_iter_intrinsic(
+                    value.clone(),
+                    intrinsic
+                        .builtin_iterator_family()
+                        .expect("guard retains a built-in iterator family"),
+                )
             }
             (Some(RuntimeIntrinsic::CoreIterNext), [value]) => {
                 evaluate_core_iter_next_intrinsic(value.clone())
@@ -2343,22 +2361,40 @@ impl<'a> PureEvaluator<'a> {
     fn evaluate_field_expr(
         &mut self,
         target: &RuntimeExpr,
-        field: RuntimeFieldProjection,
+        field: &RuntimeFieldProjection,
     ) -> Result<RuntimeValue, RuntimeEvalError> {
         let value = self.evaluate_expr(target)?;
         match (field, value) {
             (RuntimeFieldProjection::Nominal(field), RuntimeValue::NominalRecord(record)) => record
-                .field(field)
+                .field(*field)
                 .cloned()
                 .ok_or_else(|| RuntimeEvalError::MissingField {
                     field: field.zero_based().to_string(),
                     value: "nominal record".to_owned(),
                 }),
+            (
+                RuntimeFieldProjection::OpaqueRecord { owner, field },
+                RuntimeValue::Opaque(value),
+            ) if owner.accepts_opaque_value(&value) => {
+                let RuntimeValue::Tuple(fields) = value.payload() else {
+                    return Err(RuntimeEvalError::MissingField {
+                        field: field.zero_based().to_string(),
+                        value: "opaque record payload".to_owned(),
+                    });
+                };
+                fields
+                    .get(field.zero_based() as usize)
+                    .cloned()
+                    .ok_or_else(|| RuntimeEvalError::MissingField {
+                        field: field.zero_based().to_string(),
+                        value: "opaque record payload".to_owned(),
+                    })
+            }
             (RuntimeFieldProjection::EntityReference(field), RuntimeValue::EntityRef(id)) => {
-                Ok(Self::entity_ref_field(&id, field))
+                Ok(Self::entity_ref_field(&id, *field))
             }
             (RuntimeFieldProjection::Agent(field), RuntimeValue::Agent(value)) => value
-                .project_typed_field(field)
+                .project_typed_field(*field)
                 .ok_or_else(|| RuntimeEvalError::MissingField {
                     field: field.as_label().to_owned(),
                     value: value.label().to_owned(),
@@ -2627,5 +2663,138 @@ fn spread_runtime_values(value: RuntimeValue) -> Result<Vec<RuntimeValue>, Runti
     match runtime_value_into_sequence_values(value) {
         Ok(items) => Ok(items),
         Err(value) => Err(RuntimeEvalError::InvalidSpread(runtime_value_label(&value))),
+    }
+}
+
+#[cfg(test)]
+mod opaque_record_projection_tests {
+    use super::*;
+    use crate::pattern::{RuntimeOpaqueTypeProducerId, RuntimeSemanticTypeId};
+    use crate::plan::{RuntimePlanBuilder, RuntimePlanTypeProjection, RuntimePlanTypeSeed};
+    use crate::value::{
+        RuntimeFieldProjection, RuntimeHandleKind, RuntimeOpaquePersistence,
+        RuntimeOpaqueValueClass, RuntimeRecordFieldId,
+    };
+
+    fn identity(marker: u8) -> RuntimeSemanticTypeId {
+        RuntimeSemanticTypeId::from_bytes([marker; 32])
+    }
+
+    fn producer(label: &str) -> RuntimeOpaqueTypeProducerId {
+        RuntimeOpaqueTypeProducerId::try_new(label).expect("test opaque producer")
+    }
+
+    fn plan_and_owner() -> (Arc<RuntimePlan>, RuntimeOpaqueTypeOwner) {
+        let owner = RuntimeOpaqueTypeOwner::exact_with(
+            producer("fixture.dialogue-view"),
+            identity(101),
+            RuntimeOpaqueValueClass::Plain,
+            RuntimeOpaquePersistence::ConstantAndSnapshot,
+        );
+        let mut builder = RuntimePlanBuilder::new();
+        builder
+            .admit_semantic_batch(
+                [
+                    RuntimePlanTypeSeed::new(
+                        owner.semantic_identity(),
+                        RuntimePlanTypeProjection::Opaque {
+                            producer: owner.producer().clone(),
+                            admission: owner.admission(),
+                            value_class: owner.value_class(),
+                            persistence: owner.persistence(),
+                            arguments: Box::new([]),
+                        },
+                    ),
+                    RuntimePlanTypeSeed::new(identity(102), RuntimePlanTypeProjection::String),
+                ],
+                [],
+                [],
+                [],
+            )
+            .expect("test type graph");
+        (
+            Arc::new(builder.finish().expect("test runtime plan")),
+            owner,
+        )
+    }
+
+    fn expression(
+        plan: &RuntimePlan,
+        expected: &RuntimeOpaqueTypeOwner,
+        actual: &RuntimeOpaqueTypeOwner,
+    ) -> RuntimeExpr {
+        let owner_ty = plan
+            .type_table()
+            .id_for_semantic(expected.semantic_identity())
+            .expect("opaque owner type");
+        let field_ty = plan
+            .type_table()
+            .id_for_semantic(identity(102))
+            .expect("field type");
+        let target = RuntimeExpr::from_admitted_parts(
+            owner_ty,
+            RuntimeExprKind::Value(
+                actual
+                    .try_wrap(RuntimeValue::Tuple(vec![RuntimeValue::String(
+                        "accepted".to_owned(),
+                    )]))
+                    .expect("exact tamper fixture"),
+            ),
+        );
+        RuntimeExpr::from_admitted_parts(
+            field_ty,
+            RuntimeExprKind::Field {
+                target: Box::new(target),
+                field: RuntimeFieldProjection::OpaqueRecord {
+                    owner: expected.clone(),
+                    field: RuntimeRecordFieldId::try_from_zero_based_ordinal(0)
+                        .expect("first field"),
+                },
+            },
+        )
+    }
+
+    #[test]
+    fn pure_field_projection_rejects_each_tampered_opaque_owner_dimension() {
+        let (plan, expected) = plan_and_owner();
+        let mut evaluator = PureEvaluator::new_ref(&plan, &[]);
+        assert_eq!(
+            evaluator
+                .evaluate_expr(&expression(&plan, &expected, &expected))
+                .expect("exact opaque owner"),
+            RuntimeValue::String("accepted".to_owned())
+        );
+
+        let tampered = [
+            RuntimeOpaqueTypeOwner::exact_with(
+                producer("fixture.other-dialogue-view"),
+                expected.semantic_identity(),
+                expected.value_class(),
+                expected.persistence(),
+            ),
+            RuntimeOpaqueTypeOwner::exact_with(
+                expected.producer().clone(),
+                expected.semantic_identity(),
+                RuntimeOpaqueValueClass::AffineHandle(RuntimeHandleKind::StageActor),
+                expected.persistence(),
+            ),
+            RuntimeOpaqueTypeOwner::exact_with(
+                expected.producer().clone(),
+                expected.semantic_identity(),
+                expected.value_class(),
+                RuntimeOpaquePersistence::SnapshotOnly,
+            ),
+        ];
+        let owner_ty = plan
+            .type_table()
+            .id_for_semantic(expected.semantic_identity())
+            .expect("opaque owner type");
+        for actual in tampered {
+            let result = evaluator.evaluate_expr(&expression(&plan, &expected, &actual));
+            assert_eq!(
+                result,
+                Err(RuntimeEvalError::InvalidExpressionType(owner_ty))
+            );
+        }
     }
 }

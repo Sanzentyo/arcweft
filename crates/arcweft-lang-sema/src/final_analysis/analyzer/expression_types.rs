@@ -1,6 +1,6 @@
 //! Expression type projection and builtin iteration helpers.
 
-use super::calls::callable_schema_type;
+use super::calls::source_callable_schema_type;
 use super::{
     CheckedIteratorFamily, CheckedTypeSelection, CheckedValueResolution, HirFloatLiteral,
     HirFloatWidth, HirIntegerLiteral, HirLiteral, IteratorStateKind, RegisteredSemanticWorld,
@@ -146,7 +146,7 @@ pub(super) fn value_resolution_type(
             .environment()
             .callable_catalog()
             .project_record(callable.declaration())
-            .and_then(|record| callable_schema_type(record.schema())),
+            .and_then(|record| source_callable_schema_type(record.schema())),
         CheckedValueResolution::ProjectItem(item) => Some(item.ty()),
         CheckedValueResolution::Entry(entry) => Some(entry.ty()),
         CheckedValueResolution::Constant(literal) => literal_type(literal, None).map(|(ty, _)| ty),

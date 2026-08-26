@@ -480,7 +480,7 @@ impl<'a> AttachedCandidateStatement<'a> {
         exact_required_child(self.node, role)?.pattern_root()
     }
 
-    /// Complete typed relation for one candidate-local LetElse statement.
+    /// Complete typed relation for one candidate-local `LetElse` statement.
     pub fn let_else_view(self) -> Option<AttachedCandidateLetElse<'a>> {
         if self.kind() != SyntaxKind::LetElseStatement {
             return None;

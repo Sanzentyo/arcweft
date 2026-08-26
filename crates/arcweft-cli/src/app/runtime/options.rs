@@ -50,6 +50,8 @@ pub(in crate::app) struct RuntimeRunOptions {
     pub(in crate::app) runner: CliRuntimeRunner,
     #[arg(long)]
     pub(in crate::app) entry: Option<String>,
+    #[arg(long, conflicts_with = "entry")]
+    pub(in crate::app) flow: Option<String>,
     #[arg(long, value_enum, default_value_t = CliRuntimeExecutorTier::BytecodeVm)]
     pub(in crate::app) executor: CliRuntimeExecutorTier,
     #[arg(long, value_enum)]
@@ -70,7 +72,7 @@ pub(in crate::app) struct RuntimeRunOptions {
     pub(in crate::app) mode: CliRuntimeStepMode,
     #[arg(long, default_value_t = 1)]
     pub(in crate::app) max_ops: usize,
-    #[arg(long = "value", value_parser = parse_runtime_binding_arg)]
+    #[arg(long = "value", requires = "flow", value_parser = parse_runtime_binding_arg)]
     pub(in crate::app) values: Vec<RuntimeBinding>,
     #[arg(long)]
     pub(in crate::app) watch: bool,
@@ -117,8 +119,6 @@ pub(in crate::app) struct RuntimeProfileOptions {
     pub(in crate::app) mode: CliRuntimeStepMode,
     #[arg(long, default_value_t = 32)]
     pub(in crate::app) max_ops: usize,
-    #[arg(long = "value", value_parser = parse_runtime_binding_arg)]
-    pub(in crate::app) values: Vec<RuntimeBinding>,
     #[arg(long)]
     pub(in crate::app) json: bool,
 }
@@ -150,8 +150,6 @@ pub(in crate::app) struct CliRunOptions {
     pub(in crate::app) mode: CliRuntimeStepMode,
     #[arg(long, default_value_t = 32)]
     pub(in crate::app) max_ops: usize,
-    #[arg(long = "value", value_parser = parse_runtime_binding_arg)]
-    pub(in crate::app) values: Vec<RuntimeBinding>,
     #[arg(long)]
     pub(in crate::app) json: bool,
     #[arg(last = true)]
@@ -214,8 +212,6 @@ pub(in crate::app) struct ScriptTestOptions {
     pub(in crate::app) mode: CliRuntimeStepMode,
     #[arg(long, default_value_t = 32)]
     pub(in crate::app) max_ops: usize,
-    #[arg(long = "value", value_parser = parse_runtime_binding_arg)]
-    pub(in crate::app) values: Vec<RuntimeBinding>,
     #[arg(long)]
     pub(in crate::app) json: bool,
 }
@@ -253,8 +249,6 @@ pub(in crate::app) struct ScriptBenchOptions {
     pub(in crate::app) samples: usize,
     #[arg(long, default_value_t = 0)]
     pub(in crate::app) input_seed: u64,
-    #[arg(long = "value", value_parser = parse_runtime_binding_arg)]
-    pub(in crate::app) values: Vec<RuntimeBinding>,
     #[arg(long)]
     pub(in crate::app) json: bool,
 }

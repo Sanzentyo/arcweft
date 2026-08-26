@@ -50,7 +50,7 @@ fn agent_mcp_script_run_options_accept_native_runtime_arguments() {
         "math_backend": "ndarray",
         "math_wgpu_min_elements": 16,
         "native_mode": "game",
-        "values": {
+        "view_values": {
             "ready": true,
             "route": "@flow.opening",
             "count": 3
@@ -76,19 +76,54 @@ fn agent_mcp_script_run_options_accept_native_runtime_arguments() {
     );
     assert_eq!(options.math_wgpu_min_elements, Some(16));
     assert!(matches!(options.native_mode, CliRuntimeStepMode::Game));
-    assert_eq!(options.values.len(), 3);
-    assert!(options.values.iter().any(|binding| binding.name == "ready"
-        && matches!(binding.value, arcweft_core::value::RuntimeValue::Bool(true))));
-    assert!(options.values.iter().any(|binding| binding.name == "route"
-        && matches!(
-            &binding.value,
-            arcweft_core::value::RuntimeValue::EntityRef(value) if value == "flow.opening"
-        )));
-    assert!(options.values.iter().any(|binding| binding.name == "count"
-        && matches!(
-            binding.value,
-            arcweft_core::value::RuntimeValue::Int(arcweft_core::value::RuntimeInt::I64(3))
-        )));
+    assert_eq!(options.view_values.len(), 3);
+    assert!(
+        options
+            .view_values
+            .iter()
+            .any(|binding| binding.name == "ready"
+                && matches!(binding.value, arcweft_core::value::RuntimeValue::Bool(true)))
+    );
+    assert!(
+        options
+            .view_values
+            .iter()
+            .any(|binding| binding.name == "route"
+                && matches!(
+                    &binding.value,
+                    arcweft_core::value::RuntimeValue::EntityRef(value) if value == "flow.opening"
+                ))
+    );
+    assert!(
+        options
+            .view_values
+            .iter()
+            .any(|binding| binding.name == "count"
+                && matches!(
+                    binding.value,
+                    arcweft_core::value::RuntimeValue::Int(arcweft_core::value::RuntimeInt::I64(3))
+                ))
+    );
+}
+
+#[test]
+fn agent_mcp_script_run_rejects_unknown_arguments() {
+    for key in ["values", "flow"] {
+        let mut arguments = serde_json::Map::new();
+        arguments.insert(
+            "path".to_owned(),
+            serde_json::json!("samples/agent-script/cli-run-smoke.awfagent"),
+        );
+        arguments.insert(key.to_owned(), serde_json::Value::Null);
+        let error = agent_mcp_script_run_options(&serde_json::Value::Object(arguments))
+            .expect_err("unknown script.run argument must be rejected");
+
+        assert!(
+            error.contains("unknown argument"),
+            "unexpected error: {error}"
+        );
+        assert!(error.contains(key), "unexpected error: {error}");
+    }
 }
 
 fn test_agent_observation_report(capture_time_millis: Option<u32>) -> AgentObservationReport {
@@ -2137,7 +2172,7 @@ fn test_repl_options() -> AgentReplOptions {
         capture_step: None,
         mode: CliRuntimeStepMode::Drain,
         max_ops: 64,
-        values: Vec::new(),
+        view_values: Vec::new(),
         viewport_width: AGENT_OBSERVE_DEFAULT_VIEWPORT_WIDTH,
         viewport_height: AGENT_OBSERVE_DEFAULT_VIEWPORT_HEIGHT,
         capture_time_seconds: None,

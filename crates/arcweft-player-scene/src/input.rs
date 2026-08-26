@@ -6,7 +6,7 @@ use arcweft_presentation::clipboard::{
     TextClipboardOutcome, TextClipboardRequest, TextClipboardRequestId,
 };
 use arcweft_presentation::input::{
-    Action, InputEpoch, KeyPhase, PointerId, PointerInput, PointerPhase, RawInputEvent,
+    Action, InputEpoch, InputEvent, KeyPhase, PointerId, PointerInput, PointerPhase, RawInputEvent,
     RawInputKind, ViewportPoint,
 };
 use arcweft_presentation::interaction::{
@@ -28,6 +28,7 @@ use arcweft_render_wgpu::geometry::{
     RenderActionButtonAction, RenderFocusAutoScrollPolicy, RenderScrollAxis,
     RenderScrollOverscrollPolicy, RenderScrollRegion, RenderTextInputControl,
 };
+use arcweft_view::ViewHandlerInvocation;
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
 use thiserror::Error;
@@ -190,6 +191,7 @@ impl InputPointerModifiers {
 #[derive(Clone, Debug, Default, Eq, PartialEq)]
 pub struct InputOutcome {
     pub actions: Vec<Action>,
+    pub view_handler_invocations: Vec<ViewHandlerInvocation>,
     pub text_control_write_backs: Vec<TextControlWriteBack>,
     pub clipboard_requests: Vec<TextClipboardRequest>,
     pub diagnostics: Vec<InputDiagnostic>,
@@ -257,6 +259,7 @@ struct ActionButtonSubmitOutcome {
 #[derive(Debug, Default)]
 struct PointerActivationEffects {
     actions: Vec<Action>,
+    view_handler_invocations: Vec<ViewHandlerInvocation>,
     text_control_write_backs: Vec<TextControlWriteBack>,
     diagnostics: Vec<InputDiagnostic>,
     action_button_activation: bool,
@@ -297,6 +300,10 @@ impl InputOutcome {
         &self.actions
     }
 
+    pub fn view_handler_invocations(&self) -> &[ViewHandlerInvocation] {
+        &self.view_handler_invocations
+    }
+
     pub fn text_control_write_backs(&self) -> &[TextControlWriteBack] {
         &self.text_control_write_backs
     }
@@ -312,6 +319,7 @@ impl InputOutcome {
     fn redraw(redraw: bool) -> Self {
         Self {
             actions: Vec::new(),
+            view_handler_invocations: Vec::new(),
             text_control_write_backs: Vec::new(),
             clipboard_requests: Vec::new(),
             diagnostics: Vec::new(),
@@ -331,6 +339,8 @@ impl InputOutcome {
 
     pub fn merge(&mut self, other: Self) {
         self.actions.extend(other.actions);
+        self.view_handler_invocations
+            .extend(other.view_handler_invocations);
         self.text_control_write_backs
             .extend(other.text_control_write_backs);
         self.clipboard_requests.extend(other.clipboard_requests);
@@ -410,6 +420,7 @@ impl InputController {
         }
         InputOutcome {
             actions: Vec::new(),
+            view_handler_invocations: Vec::new(),
             text_control_write_backs,
             clipboard_requests: Vec::new(),
             diagnostics: Vec::new(),
@@ -717,11 +728,8 @@ impl InputController {
         }
         let (action, payload) = match &button.action {
             RenderActionButtonAction::Noop => return ActionButtonSubmitOutcome::default(),
-            RenderActionButtonAction::DialoguePrimaryAction { target } => {
-                return ActionButtonSubmitOutcome {
-                    dialogue_progress: dialogue_progress_for_target(frame, *target),
-                    ..ActionButtonSubmitOutcome::default()
-                };
+            RenderActionButtonAction::ViewHandler { .. } => {
+                return ActionButtonSubmitOutcome::default();
             }
             RenderActionButtonAction::ActionInvoke { action, payload } => (action, payload),
         };
@@ -875,6 +883,7 @@ fn activation_outcome(
     );
     InputOutcome {
         actions,
+        view_handler_invocations: Vec::new(),
         text_control_write_backs,
         clipboard_requests: Vec::new(),
         diagnostics,
@@ -898,23 +907,6 @@ fn dialogue_progress_for_frame(frame: &PreparedFrame, requested: bool) -> Dialog
         .primary_action
         .map_or(DialogueProgress::None, |target| DialogueProgress::Advance {
             target,
-        })
-}
-
-fn dialogue_progress_for_target(
-    frame: &PreparedFrame,
-    target: arcweft_view::DialogueAdvanceTarget,
-) -> DialogueProgress {
-    frame
-        .dialogue_views()
-        .iter()
-        .find(|dialogue| dialogue.primary_action == Some(target))
-        .map_or(DialogueProgress::None, |dialogue| {
-            if dialogue.reveal_complete {
-                DialogueProgress::Advance { target }
-            } else {
-                DialogueProgress::Reveal
-            }
         })
 }
 
@@ -1014,8 +1006,20 @@ fn pointer_activation_effects(
         .collect::<Vec<_>>();
     let submit = InputController::action_button_submit(frame, event.target());
     actions.extend(submit.action);
+    let view_handler_invocations = frame
+        .action_button_for_target(event.target())
+        .and_then(|button| match &button.action {
+            RenderActionButtonAction::ViewHandler { event: kind, route } => {
+                let activation = InputEvent::activate(event.raw_epoch(), event.target().clone());
+                ViewHandlerInvocation::from_input(&activation, *kind, *route)
+            }
+            RenderActionButtonAction::Noop | RenderActionButtonAction::ActionInvoke { .. } => None,
+        })
+        .into_iter()
+        .collect();
     PointerActivationEffects {
         actions,
+        view_handler_invocations,
         text_control_write_backs: submit.write_back.into_iter().collect(),
         diagnostics: submit.diagnostic.into_iter().collect(),
         action_button_activation: frame_target_is_action_button(frame, event.target()),

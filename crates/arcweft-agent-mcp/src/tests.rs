@@ -132,9 +132,15 @@ fn tool_descriptors_include_script_run_surface() {
         serde_json::json!(["one-op", "drain", "game", "server"])
     );
     assert_eq!(
-        script_run.input_schema["properties"]["values"]["type"],
+        script_run.input_schema["properties"]["view_values"]["type"],
         "object"
     );
+    assert!(
+        script_run.input_schema["properties"]
+            .get("values")
+            .is_none()
+    );
+    assert_eq!(script_run.input_schema["additionalProperties"], false);
     assert_eq!(
         script_run.input_schema["properties"]["signals"]["type"],
         "object"

@@ -1,12 +1,16 @@
 use arcweft_core::awbc::schema::AwbcEntryId;
 use arcweft_core::engine::{FlowExit, FlowFiberStatus};
-use arcweft_core::entry::{EntryBindingIdentity, RuntimeEntryRoles};
+use arcweft_core::entry::{
+    EntryBindingIdentity, FlowContractHash, RuntimeEntryRoles, RuntimeFlowExecutable,
+    RuntimeFlowSchema,
+};
 use arcweft_core::executor::ArcweftRuntimeExecutor;
 use arcweft_core::pattern::RuntimeSemanticTypeId;
 use arcweft_core::plan::{
-    EntryRuntimeId, FlowRuntimeId, RuntimeBuiltinIteratorEvidence, RuntimeEntryKind,
-    RuntimeEntrySpec, RuntimeEntryTarget, RuntimeExprSeed, RuntimeExprSeedKind, RuntimeFlowOpSeed,
-    RuntimeFlowSeed, RuntimeIteratorEvidenceSeed, RuntimeLocalDeclarationSeed, RuntimePatternSeed,
+    EntryRuntimeId, FlowRuntimeId, RuntimeBuiltinIteratorEvidenceSeed,
+    RuntimeBuiltinIteratorFamily, RuntimeEntryKind, RuntimeEntrySpec, RuntimeEntryTarget,
+    RuntimeExprSeed, RuntimeExprSeedKind, RuntimeFlowOpSeed, RuntimeFlowSeed,
+    RuntimeIteratorEvidenceSeed, RuntimeLocalDeclarationSeed, RuntimePatternSeed,
     RuntimePatternSeedKind, RuntimePlan, RuntimePlanBuilder, RuntimePlanSequenceKind,
     RuntimePlanTypeProjection, RuntimePlanTypeSeed,
 };
@@ -33,6 +37,9 @@ fn entry_id(value: &str) -> EntryRuntimeId {
 fn counter_plan() -> RuntimePlan {
     let item_type = type_id(1);
     let sequence_type = type_id(2);
+    let iterator_type = type_id(3);
+    let next_value_type = type_id(4);
+    let step_type = type_id(5);
     let mut builder = RuntimePlanBuilder::new();
     let admission = builder
         .admit_semantic_batch(
@@ -48,6 +55,18 @@ fn counter_plan() -> RuntimePlan {
                         item: item_type,
                     },
                 ),
+                RuntimePlanTypeSeed::new(
+                    iterator_type,
+                    RuntimePlanTypeProjection::Iterator(item_type),
+                ),
+                RuntimePlanTypeSeed::new(
+                    next_value_type,
+                    RuntimePlanTypeProjection::Option(item_type),
+                ),
+                RuntimePlanTypeSeed::new(
+                    step_type,
+                    RuntimePlanTypeProjection::Tuple(vec![iterator_type, next_value_type].into()),
+                ),
             ],
             [RuntimeLocalDeclarationSeed::new(item_type)],
             [],
@@ -56,6 +75,19 @@ fn counter_plan() -> RuntimePlan {
         .expect("test semantic facts admit");
     let item = admission.local_ids()[0].clone();
     let main = flow_id("iterator.main");
+    builder
+        .push_flow_executable(RuntimeFlowExecutable {
+            flow: main.clone(),
+            contract: FlowContractHash::from_bytes([0xf2; 32]),
+            controller: None,
+        })
+        .expect("typed flow executable admits");
+    builder
+        .push_flow_schema(RuntimeFlowSchema {
+            flow: main.clone(),
+            parameters: Vec::new(),
+        })
+        .expect("typed flow schema admits");
     builder
         .push_flow_seed(RuntimeFlowSeed::new(
             main.clone(),
@@ -75,7 +107,15 @@ fn counter_plan() -> RuntimePlan {
                         RuntimeValue::i64(1),
                     ]))),
                 ),
-                evidence: RuntimeIteratorEvidenceSeed::Builtin(RuntimeBuiltinIteratorEvidence::Vec),
+                evidence: RuntimeIteratorEvidenceSeed::Builtin(
+                    RuntimeBuiltinIteratorEvidenceSeed {
+                        family: RuntimeBuiltinIteratorFamily::Vec,
+                        item: item_type,
+                        iterator: iterator_type,
+                        next_value: next_value_type,
+                        step: step_type,
+                    },
+                ),
                 body: vec![RuntimeFlowOpSeed::ReturnExpr(RuntimeExprSeed::new(
                     item_type,
                     RuntimeExprSeedKind::Local(item),
@@ -105,9 +145,8 @@ fn builtin_iterator_lowers_and_executes_on_awbc_product_vm() {
     let mut executor = ArcweftRuntimeExecutor::from_awbc_product(report.program, AwbcEntryId(0))
         .expect("AWBC product executor initializes");
     let mut pure_backend = VmRuntimePureCallBackend::default();
-    let result = executor.step_with_root_bindings_and_pure_backend(
+    let result = executor.step_with_pure_backend(
         RuntimeStepInput::default(),
-        &[],
         RuntimeStepOptions {
             mode: RuntimeStepMode::Drain,
             budget: RuntimeStepBudget { max_ops: 128 },

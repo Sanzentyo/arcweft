@@ -129,15 +129,15 @@ export async function startArcweftWebPlayer(options = {}) {
       });
     }
 
-    if (typeof wasm.start_arcweft_player_with_options === "function") {
-      wasm.start_arcweft_player_with_options(canvasId, bundleBytes, fontBytes, {
-        textInput: options.textInput ?? true,
-        frameFit: resolveFrameFitOptions(options, params),
-        additionalFontBytes,
-      });
-    } else {
-      wasm.start_arcweft_player(canvasId, bundleBytes, fontBytes);
+    if (typeof wasm.start_arcweft_player_with_options !== "function") {
+      throw new Error("Arcweft Web player options ABI is unavailable");
     }
+    wasm.start_arcweft_player_with_options(canvasId, bundleBytes, fontBytes, {
+      textInput: options.textInput ?? true,
+      frameFit: resolveFrameFitOptions(options, params),
+      additionalFontBytes,
+      entry: options.entry ?? params.get("entry") ?? undefined,
+    });
     canvas?.focus();
   } catch (error) {
     showFatal(error);

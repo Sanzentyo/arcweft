@@ -3,6 +3,7 @@ use super::repl_cli_command::{
     cli_repl_command_result_json, cli_repl_protocol_unavailable_result, parse_agent_repl_input,
 };
 use super::*;
+use arcweft_agent_mcp::tools::AgentScriptRunArgument;
 use arcweft_agent_repl::command::{
     ReplCommandEvidence, ReplCommandId, ReplCommandJsonOptions, ReplCommandResult,
     ReplCommandStatus, ReplTracePolicy, repl_command_result_json,
@@ -185,6 +186,7 @@ pub(super) struct NativeAgentRuntimeState {
     pub(super) shared_capture: arcweft_render_wgpu::offscreen::SharedOffscreenCapture,
     pub(super) host: Option<NativeTaskBridge>,
     pub(super) task_events: Vec<arcweft_core::task::TaskEvent>,
+    pub(super) host_call_results: Vec<arcweft_core::step::RuntimeHostCallResult>,
     pub(super) next_clock_millis: u64,
 }
 
@@ -1002,11 +1004,14 @@ pub(super) fn agent_mcp_call_script_run(
 pub(super) fn agent_mcp_script_run_options(
     arguments: &serde_json::Value,
 ) -> Result<AgentScriptRunOptions, String> {
-    if arguments.get("flow").is_some() {
-        return Err(
-            "arcweft.script.run does not accept arguments.flow; select an exact entry.* ID"
-                .to_owned(),
-        );
+    let object = arguments
+        .as_object()
+        .ok_or_else(|| "arcweft.script.run arguments must be a JSON object".to_owned())?;
+    if let Some(argument) = object
+        .keys()
+        .find(|argument| AgentScriptRunArgument::parse(argument).is_none())
+    {
+        return Err(format!("arcweft.script.run unknown argument `{argument}`"));
     }
     let path = arguments
         .get("path")
@@ -1077,7 +1082,7 @@ pub(super) fn agent_mcp_script_run_options(
         native_mode: agent_mcp_value_enum_argument(arguments, "native_mode", "arcweft.script.run")?
             .unwrap_or(CliRuntimeStepMode::Drain),
         native_max_ops: agent_mcp_usize_argument(arguments, "native_max_ops").unwrap_or(64),
-        values: agent_mcp_runtime_bindings(arguments)?,
+        view_values: agent_mcp_view_values(arguments)?,
         viewport_width: agent_mcp_u32_argument(arguments, "viewport_width", "arcweft.script.run")?
             .unwrap_or(AGENT_OBSERVE_DEFAULT_VIEWPORT_WIDTH),
         viewport_height: agent_mcp_u32_argument(
@@ -1174,27 +1179,27 @@ pub(super) fn agent_mcp_script_scalar_arg(
     }
 }
 
-pub(super) fn agent_mcp_runtime_bindings(
+pub(super) fn agent_mcp_view_values(
     arguments: &serde_json::Value,
 ) -> Result<Vec<arcweft_core::value::RuntimeBinding>, String> {
-    let Some(value) = arguments.get("values") else {
+    let Some(value) = arguments.get("view_values") else {
         return Ok(Vec::new());
     };
     let object = value
         .as_object()
-        .ok_or_else(|| "arcweft.script.run values must be a JSON object".to_owned())?;
+        .ok_or_else(|| "arcweft.script.run view_values must be a JSON object".to_owned())?;
     object
         .iter()
         .map(|(key, value)| {
             parse_runtime_binding_arg(&format!(
                 "{key}={}",
-                agent_mcp_runtime_value_arg(value, "arcweft.script.run values")?
+                agent_mcp_view_value_arg(value, "arcweft.script.run view_values")?
             ))
         })
         .collect()
 }
 
-pub(super) fn agent_mcp_runtime_value_arg(
+pub(super) fn agent_mcp_view_value_arg(
     value: &serde_json::Value,
     context: &str,
 ) -> Result<String, String> {

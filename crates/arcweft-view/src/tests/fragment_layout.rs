@@ -1,9 +1,9 @@
 use crate::{
-    ContainerKind, CustomElementId, EntityStore, EventBinding, EventKind, FragmentKind, HandlerId,
-    ImageId, LayoutBox, LayoutKind, LayoutLength, LayoutPoint, LayoutResults, LayoutSize,
-    LayoutTree, NodeId, NodeKey, RichTextSourceId, SemanticSpecId, TextSourceId, ViewError,
-    ViewFragmentBuilder, ViewRegistryId, ViewStyleApplicationTarget, ViewStylePatchId,
-    ViewStyleSheetId,
+    ContainerKind, CustomElementId, EntityStore, EventBinding, EventKind, FragmentKind, ImageId,
+    LayoutBox, LayoutKind, LayoutLength, LayoutPoint, LayoutResults, LayoutSize, LayoutTree,
+    NodeId, NodeKey, RichTextSourceId, SemanticSpecId, TextSourceId, ViewError,
+    ViewFragmentBuilder, ViewHandlerRouteId, ViewRegistryId, ViewStyleApplicationTarget,
+    ViewStylePatchId, ViewStyleSheetId,
 };
 
 #[derive(Debug, Eq, PartialEq)]
@@ -38,7 +38,10 @@ fn view_fragment_keeps_text_media_view_and_custom_nodes_flat() {
             FragmentKind::RichText(RichTextSourceId(1)),
             &styles,
             &[],
-            &[EventBinding::new(EventKind::Activate, HandlerId(9))],
+            &[EventBinding::new(
+                EventKind::Activate,
+                ViewHandlerRouteId::from_digest([9; 32]),
+            )],
             Some(SemanticSpecId(1)),
         )
         .unwrap();
@@ -91,7 +94,13 @@ fn view_fragment_keeps_text_media_view_and_custom_nodes_flat() {
     );
     assert_eq!(
         fragment.node_events(rich_text),
-        Some([EventBinding::new(EventKind::Activate, HandlerId(9))].as_slice())
+        Some(
+            [EventBinding::new(
+                EventKind::Activate,
+                ViewHandlerRouteId::from_digest([9; 32]),
+            )]
+            .as_slice()
+        )
     );
     assert_eq!(
         fragment.node_style_applications(rich_text),

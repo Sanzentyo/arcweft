@@ -19,6 +19,7 @@ use crate::identity::{
     TypeId,
 };
 use crate::item::{HirEntryMember, HirImplMember, HirItemKind};
+use crate::module::HirModule;
 use crate::pattern::HirPatternChild;
 use crate::scope::HirScopeOwner;
 use crate::stmt::HirStatementChild;
@@ -53,6 +54,7 @@ pub enum HirRuntimeReachabilityRootKind {
     CheckedFlow,
     CheckedEntry,
     SelectedEntry,
+    CheckedViewValueProgram,
 }
 
 #[derive(Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
@@ -284,13 +286,15 @@ pub enum HirRuntimeReachabilityLimitFamily {
 pub enum HirRuntimeReachabilityError {
     #[error("runtime reachability symbol world does not match the executable project")]
     SymbolWorldMismatch,
+    #[error("runtime reachability topology does not lease the exact input and HIR generation")]
+    TopologyGenerationMismatch,
     #[error("runtime reachability root references an unknown executable owner")]
     UnknownRoot { owner: HirRuntimeExecutableOwner },
     #[error("runtime reachability root kind does not match its executable owner")]
     InvalidRootKind { root: HirRuntimeReachabilityRoot },
     #[error("runtime reachability edge source is unresolved")]
     UnknownEdgeSource { site: HirRuntimeReachabilitySite },
-    #[error("runtime reachability edge target is unresolved")]
+    #[error("runtime reachability edge target {target:?} is unresolved")]
     UnknownEdgeTarget { target: HirRuntimeExecutableOwner },
     #[error("runtime reachability edge targets a presentation product")]
     PresentationTarget { target: HirRuntimeExecutableOwner },
@@ -461,6 +465,7 @@ struct StructuralIndex {
     pattern_edges: BTreeMap<PatternId, Vec<HirPatternChild>>,
     owned_scopes: BTreeMap<HirScopeOwner, Vec<ScopeId>>,
     capture_closures: BTreeMap<CaptureId, ExprId>,
+    closure_captures: BTreeMap<ExprId, Vec<(CaptureId, LocalId)>>,
 }
 
 #[derive(Default)]
@@ -579,10 +584,11 @@ impl<'project> HirExecutableProjectView<'project> {
     pub fn runtime_semantic_reachability(
         self,
         input: HirRuntimeSemanticReachabilityInput,
+        topology: &super::HirProjectEvaluationTopology,
         mut selected_postfix: impl FnMut(ExprId) -> Option<ExprId>,
         mut call_disposition: impl FnMut(ExprId) -> HirRuntimeExpressionTypeDisposition,
     ) -> Result<HirRuntimeSemanticReachability<'project>, HirRuntimeReachabilityError> {
-        self.validate_reachability_generation(&input)?;
+        self.validate_reachability_generation(&input, topology)?;
         validate_roots_and_edges(self, &input)?;
         let index = StructuralIndex::new(self);
         let mut reachable_executables = BTreeSet::new();
@@ -608,10 +614,12 @@ impl<'project> HirExecutableProjectView<'project> {
                 continue;
             }
             first_paths.insert(owner.clone(), path.clone());
-            let structural = self.close_executable(&index, &owner)?;
+            let (structural, execution_expression_roots) = self.close_executable(&index, &owner)?;
             let HirSelectedRuntimeExpressionOwners { reached, typed } = self
                 .selected_runtime_expression_owners(
+                    topology,
                     &structural.expressions,
+                    &execution_expression_roots,
                     &mut selected_postfix,
                     &mut call_disposition,
                 )?;
@@ -692,9 +700,17 @@ impl<'project> HirExecutableProjectView<'project> {
     fn validate_reachability_generation(
         self,
         input: &HirRuntimeSemanticReachabilityInput,
+        topology: &super::HirProjectEvaluationTopology,
     ) -> Result<(), HirRuntimeReachabilityError> {
         if input.symbol_world.package() != self.package() {
             return Err(HirRuntimeReachabilityError::SymbolWorldMismatch);
+        }
+        let generation = topology.generation();
+        if generation.symbol_world() != &input.symbol_world
+            || generation.symbol_revision() != input.symbol_revision
+            || generation.validate_executable_lease(self).is_err()
+        {
+            return Err(HirRuntimeReachabilityError::TopologyGenerationMismatch);
         }
         Ok(())
     }
@@ -703,13 +719,16 @@ impl<'project> HirExecutableProjectView<'project> {
         self,
         index: &StructuralIndex,
         owner: &HirRuntimeExecutableOwner,
-    ) -> Result<StructuralOwners, HirRuntimeReachabilityError> {
+    ) -> Result<(StructuralOwners, Vec<ExprId>), HirRuntimeReachabilityError> {
         let roots = execution_roots(self, owner)?;
+        let expression_roots = roots.expressions.clone();
         let active_closure = match owner {
             HirRuntimeExecutableOwner::Closure(expression) => Some(*expression),
             HirRuntimeExecutableOwner::Item(_) | HirRuntimeExecutableOwner::ImplMethod(_) => None,
         };
-        index.close(roots, active_closure)
+        index
+            .close(roots, active_closure)
+            .map(|owners| (owners, expression_roots))
     }
 }
 
@@ -725,92 +744,102 @@ impl StructuralIndex {
             pattern_edges: BTreeMap::new(),
             owned_scopes: BTreeMap::new(),
             capture_closures: BTreeMap::new(),
+            closure_captures: BTreeMap::new(),
         };
         for (_, module) in project.modules() {
-            for (owner, scope) in module.scopes() {
-                index.scopes.insert(
-                    owner,
-                    ScopeEdges {
-                        owner: *scope.owner(),
-                        children: scope.children().into(),
-                        locals: scope.locals().into(),
-                    },
-                );
-                index
-                    .owned_scopes
-                    .entry(*scope.owner())
-                    .or_default()
-                    .push(owner);
-            }
-            for (owner, local) in module.locals() {
-                index.local_types.insert(owner, local.annotation());
-            }
-            for (owner, expression) in module.expressions() {
-                index
-                    .scope_members
-                    .entry(expression.scope())
-                    .or_default()
-                    .expressions
-                    .push(owner);
-                index.expression_edges.insert(
-                    owner,
-                    (
-                        expression.kind().direct_expression_children(),
-                        expression.kind().direct_type_roots(),
-                        matches!(expression.kind(), HirExprKind::Closure(_)),
-                    ),
-                );
-            }
-            for (owner, statement) in module.statements() {
-                index
-                    .scope_members
-                    .entry(statement.scope())
-                    .or_default()
-                    .statements
-                    .push(owner);
-                index.statement_edges.insert(
-                    owner,
-                    statement
-                        .kind()
-                        .child_edges()
-                        .into_iter()
-                        .map(|edge| edge.child())
-                        .collect(),
-                );
-            }
-            for (owner, ty) in module.types() {
-                index
-                    .scope_members
-                    .entry(ty.scope())
-                    .or_default()
-                    .types
-                    .push(owner);
-                index
-                    .type_edges
-                    .insert(owner, ty.kind().direct_type_children());
-            }
-            for (owner, pattern) in module.patterns() {
-                index
-                    .scope_members
-                    .entry(pattern.scope())
-                    .or_default()
-                    .patterns
-                    .push(owner);
-                index.pattern_edges.insert(
-                    owner,
-                    pattern
-                        .kind()
-                        .child_edges()
-                        .into_iter()
-                        .map(|edge| edge.child())
-                        .collect(),
-                );
-            }
-            for (owner, capture) in module.captures() {
-                index.capture_closures.insert(owner, capture.closure());
-            }
+            Self::index_module(&mut index, module);
         }
         index
+    }
+
+    fn index_module(index: &mut Self, module: &HirModule) {
+        for (owner, scope) in module.scopes() {
+            index.scopes.insert(
+                owner,
+                ScopeEdges {
+                    owner: *scope.owner(),
+                    children: scope.children().into(),
+                    locals: scope.locals().into(),
+                },
+            );
+            index
+                .owned_scopes
+                .entry(*scope.owner())
+                .or_default()
+                .push(owner);
+        }
+        for (owner, local) in module.locals() {
+            index.local_types.insert(owner, local.annotation());
+        }
+        for (owner, expression) in module.expressions() {
+            index
+                .scope_members
+                .entry(expression.scope())
+                .or_default()
+                .expressions
+                .push(owner);
+            index.expression_edges.insert(
+                owner,
+                (
+                    expression.kind().direct_expression_children(),
+                    expression.kind().direct_type_roots(),
+                    matches!(expression.kind(), HirExprKind::Closure(_)),
+                ),
+            );
+        }
+        for (owner, statement) in module.statements() {
+            index
+                .scope_members
+                .entry(statement.scope())
+                .or_default()
+                .statements
+                .push(owner);
+            index.statement_edges.insert(
+                owner,
+                statement
+                    .kind()
+                    .child_edges()
+                    .into_iter()
+                    .map(|edge| edge.child())
+                    .collect(),
+            );
+        }
+        for (owner, ty) in module.types() {
+            index
+                .scope_members
+                .entry(ty.scope())
+                .or_default()
+                .types
+                .push(owner);
+            index
+                .type_edges
+                .insert(owner, ty.kind().direct_type_children());
+        }
+        for (owner, pattern) in module.patterns() {
+            index
+                .scope_members
+                .entry(pattern.scope())
+                .or_default()
+                .patterns
+                .push(owner);
+            index.pattern_edges.insert(
+                owner,
+                pattern
+                    .kind()
+                    .child_edges()
+                    .into_iter()
+                    .map(|edge| edge.child())
+                    .collect(),
+            );
+        }
+        for (owner, capture) in module.captures() {
+            index.capture_closures.insert(owner, capture.closure());
+            index
+                .closure_captures
+                .entry(capture.closure())
+                .or_default()
+                .push((owner, capture.local()));
+        }
     }
 
     #[expect(
@@ -892,6 +921,15 @@ impl StructuralIndex {
                                 .flatten()
                                 .copied()
                                 .map(PendingOwner::Scope),
+                        );
+                    }
+                    if active_closure == Some(owner) {
+                        pending.extend(
+                            self.closure_captures
+                                .get(&owner)
+                                .into_iter()
+                                .flatten()
+                                .map(|(_, local)| PendingOwner::Local(*local)),
                         );
                     }
                     pending.extend(types.iter().copied().map(PendingOwner::Type));

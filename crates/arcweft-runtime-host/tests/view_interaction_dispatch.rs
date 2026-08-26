@@ -10,13 +10,14 @@ use arcweft_presentation::layer::{
 use arcweft_presentation::semantic::SemanticRole;
 use arcweft_runtime_host::ViewFrameCommitBuilder;
 use arcweft_view::{
-    EventBinding, EventKind, FragmentKind, HandlerId, LayoutBox, LayoutLength, LayoutPoint,
-    LayoutResults, LayoutSize, LayoutTree, NodeKey, RichTextSourceId, SemanticSpecId,
-    ViewColorValue, ViewElementKind, ViewFragmentBuilder, ViewInteractionSelector, ViewLayerOutput,
-    ViewPropertyKind, ViewSemanticFragmentBuilder, ViewSemanticNode, ViewSpecifiedValue,
-    ViewStyleApplicationTarget, ViewStyleAssignOp, ViewStyleDeclaration, ViewStylePredicate,
-    ViewStyleProgram, ViewStyleResolver, ViewStyleRevisionSet, ViewStyleRule, ViewStyleSelector,
-    ViewStyleSelectorSequence, ViewStyleSheet, ViewStyleSheetId, ViewStyleSourceId,
+    EventBinding, EventKind, FragmentKind, LayoutBox, LayoutLength, LayoutPoint, LayoutResults,
+    LayoutSize, LayoutTree, NodeKey, RichTextSourceId, SemanticSpecId, ViewColorValue,
+    ViewElementKind, ViewFragmentBuilder, ViewHandlerRouteId, ViewInteractionSelector,
+    ViewLayerOutput, ViewPropertyKind, ViewSemanticFragmentBuilder, ViewSemanticNode,
+    ViewSpecifiedValue, ViewStyleApplicationTarget, ViewStyleAssignOp, ViewStyleDeclaration,
+    ViewStylePredicate, ViewStyleProgram, ViewStyleResolver, ViewStyleRevisionSet, ViewStyleRule,
+    ViewStyleSelector, ViewStyleSelectorSequence, ViewStyleSheet, ViewStyleSheetId,
+    ViewStyleSourceId,
 };
 
 fn public_id(value: &str) -> PublicId {
@@ -136,7 +137,10 @@ fn frame_commit_preserves_handler_dispatch_and_resolved_interaction_style() {
             FragmentKind::RichText(RichTextSourceId(1)),
             &styles,
             &[],
-            &[EventBinding::new(EventKind::Activate, HandlerId(5))],
+            &[EventBinding::new(
+                EventKind::Activate,
+                ViewHandlerRouteId::from_digest([5; 32]),
+            )],
             Some(SemanticSpecId(0)),
         )
         .unwrap();
@@ -177,7 +181,10 @@ fn frame_commit_preserves_handler_dispatch_and_resolved_interaction_style() {
     builder.push_layer(view.clone(), output).unwrap();
     let commit = builder.finish();
     let input = InputEvent::activate(InputEpoch(2), button.clone());
-    assert_eq!(commit.dispatch_input(&input)[0].handler(), HandlerId(5));
+    assert_eq!(
+        commit.dispatch_input(&input)[0].route(),
+        ViewHandlerRouteId::from_digest([5; 32])
+    );
 
     let mut interaction = InteractionState::default();
     let _ = interaction.set_hover_path(HoverPath::new(PointerId(0), vec![button]));

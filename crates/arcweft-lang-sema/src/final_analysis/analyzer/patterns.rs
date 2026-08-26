@@ -1,18 +1,23 @@
 //! Pattern analysis, binding seeding, and variant ownership.
 
 use super::{
-    Analyzer, ArrayLength, BTreeMap, BTreeSet, BuiltinTypeConstructor, CheckedBuiltinVariantCase,
-    CheckedPattern, CheckedPatternResolution, CheckedVariantOwner, EnumVariantPayload,
+    Analyzer, ArrayLength, BTreeMap, BTreeSet, BuiltinTypeConstructor, CheckedPattern,
+    CheckedPatternResolution, CheckedTypedBinding, CheckedVariantOwner, EnumVariantPayload,
     EnvironmentEnumSchema, ExprId, FinalSemanticAnalysisError, FinalSemanticAnalysisInput, HirItem,
     HirItemKind, HirModule, HirPathRoot, HirPathSegment, HirPatternBinding, HirPatternField,
     HirPatternKind, HirPatternRecordPath, HirPatternSequenceRest, HirVariantPattern,
     HirVariantPatternHead, HirVariantPatternHeadValue, HirVariantPatternName,
-    HirVariantPatternPayload, LocalId, PatternId, ProjectNominalBody, ProjectNominalDeclaration,
-    ProjectNominalType, ProjectSymbolTable, ProjectTypeTarget, TypeCheckEnv, TypeId, TypeKind,
+    HirVariantPatternPayload, LocalId, PatternId, ProjectNominalBody, ProjectNominalType,
+    ProjectSymbolTable, ProjectTypeTarget, TypeCheckEnv, TypeId, TypeKind,
     calls::{checked_project_nominal, nominal_substitutions},
     expression_types::literal_type,
     statements::pattern_span,
 };
+use crate::final_analysis::{
+    PreparedRecordPattern, PreparedRecordPatternField, PreparedRecordPatternFieldIdentity,
+    PreparedRecordPatternOwner, PreparedRecordPatternRest, PreparedRecordPatternSource,
+};
+use crate::record_field::CheckedRecordFieldSemanticId;
 use arcweft_lang_hir::item::{HirCapabilityMember, HirImplMember};
 
 use super::entities::EntityReferenceResolutionError;
@@ -38,16 +43,27 @@ impl Analyzer<'_, '_, '_> {
                     HirPatternKind::Literal(literal) => {
                         CheckedPatternResolution::Literal(literal.clone())
                     }
-                    HirPatternKind::Record { path, .. } => {
-                        let declaration =
-                            resolve_project_record_pattern(module, owner, path, &ty, self.symbols)?;
-                        CheckedPatternResolution::Nominal(checked_project_nominal(
-                            declaration,
+                    HirPatternKind::Record { path, fields } => {
+                        let schema = resolve_record_pattern_schema(
+                            PatternSeedContext {
+                                module,
+                                types: &self.types,
+                                symbols: self.symbols,
+                                environment: self.catalogs.world.environment().typecheck_env(),
+                            },
+                            owner,
+                            path,
                             &ty,
-                        )?)
+                        )?;
+                        let prepared = self.prepare_record_pattern(owner, &schema, fields, &ty)?;
+                        input.push_prepared_pattern(
+                            owner,
+                            super::PreparedPatternFact::Record(prepared),
+                        );
+                        continue;
                     }
                     HirPatternKind::Variant(variant) => {
-                        let (variant_owner, ordinal, _) = resolve_variant_pattern(
+                        let resolved = resolve_variant_pattern(
                             PatternSeedContext {
                                 module,
                                 types: &self.types,
@@ -58,14 +74,33 @@ impl Analyzer<'_, '_, '_> {
                             variant,
                             &ty,
                         )?;
-                        let HirVariantPatternName::Resolved(name) = variant.name() else {
-                            return Err(FinalSemanticAnalysisError::RecoveredOwner);
-                        };
-                        CheckedPatternResolution::Variant(super::CheckedVariantResolution::new(
-                            variant_owner,
-                            ordinal,
-                            name.clone(),
-                        ))
+                        match resolved {
+                            ResolvedVariantPattern::Complete {
+                                owner: variant_owner,
+                                ordinal,
+                                ..
+                            } => CheckedPatternResolution::Variant(
+                                super::CheckedVariantResolution::try_new(variant_owner, ordinal)
+                                    .ok_or(FinalSemanticAnalysisError::WrongPayloadFamily)?,
+                            ),
+                            ResolvedVariantPattern::Project {
+                                owner: seed,
+                                ordinal,
+                                ..
+                            } => {
+                                let prepared = super::PreparedProjectVariantPattern::try_new(
+                                    ty.clone(),
+                                    seed,
+                                    ordinal,
+                                )
+                                .ok_or(FinalSemanticAnalysisError::InvalidNominalOwner)?;
+                                input.push_prepared_pattern(
+                                    owner,
+                                    super::PreparedPatternFact::ProjectVariant(prepared),
+                                );
+                                continue;
+                            }
+                        }
                     }
                     HirPatternKind::Error(_) => {
                         return Err(FinalSemanticAnalysisError::RecoveredOwner);
@@ -92,12 +127,103 @@ impl Analyzer<'_, '_, '_> {
                         }
                         CheckedPatternResolution::Entity(item)
                     }
+                    HirPatternKind::TypedBinding { ty: annotation, .. } => {
+                        let annotation = self.types.get(annotation).cloned().ok_or(
+                            FinalSemanticAnalysisError::TypeResolutionFailed { owner: *annotation },
+                        )?;
+                        CheckedPatternResolution::TypedBinding(CheckedTypedBinding::new(annotation))
+                    }
                     _ => CheckedPatternResolution::Structural,
                 };
                 input.push_pattern(owner, CheckedPattern::new(ty, resolution));
             }
         }
         Ok(())
+    }
+
+    fn prepare_record_pattern(
+        &self,
+        owner: PatternId,
+        schema: &ResolvedRecordPatternSchema<'_>,
+        authored: &[HirPatternField],
+        ty: &TypeKind,
+    ) -> Result<PreparedRecordPattern, FinalSemanticAnalysisError> {
+        let mut fields = Vec::with_capacity(authored.len());
+        let mut seen = BTreeSet::new();
+        let mut rest = PreparedRecordPatternRest::Absent;
+        for (source_ordinal, field) in authored.iter().enumerate() {
+            let source_ordinal = u32::try_from(source_ordinal)
+                .map_err(|_| FinalSemanticAnalysisError::AccountingOverflow)?;
+            let (name, source) = match field {
+                HirPatternField::Explicit {
+                    name,
+                    pattern: child,
+                } => (name, PreparedRecordPatternSource::Pattern(*child)),
+                HirPatternField::Shorthand { name, local } => {
+                    (name, PreparedRecordPatternSource::Binding(*local))
+                }
+                HirPatternField::Rest { binding }
+                    if matches!(rest, PreparedRecordPatternRest::Absent) =>
+                {
+                    rest = if let Some(binding) = binding {
+                        PreparedRecordPatternRest::Binding(*binding)
+                    } else {
+                        PreparedRecordPatternRest::Ignore
+                    };
+                    if let Some(binding) = binding
+                        && self.facts.locals().get(binding) != Some(ty)
+                    {
+                        return Err(FinalSemanticAnalysisError::PatternTypeUnavailable { owner });
+                    }
+                    continue;
+                }
+                HirPatternField::Rest { .. } | HirPatternField::Invalid { .. } => {
+                    return Err(FinalSemanticAnalysisError::RecoveredOwner);
+                }
+            };
+            if !seen.insert(name.clone()) {
+                return Err(FinalSemanticAnalysisError::PatternTypeUnavailable { owner });
+            }
+            let resolved = schema.field(owner, name, &self.types)?;
+            let field_type = resolved.ty;
+            let observed = match source {
+                PreparedRecordPatternSource::Pattern(child) => self.facts.patterns().get(&child),
+                PreparedRecordPatternSource::Binding(local) => self.facts.locals().get(&local),
+            };
+            if observed != Some(&field_type) {
+                return Err(FinalSemanticAnalysisError::PatternTypeUnavailable { owner });
+            }
+            fields.push(match resolved.identity {
+                PreparedRecordPatternFieldIdentity::Project {
+                    declaration_ordinal,
+                } => PreparedRecordPatternField::project(
+                    source_ordinal,
+                    declaration_ordinal,
+                    field_type,
+                    source,
+                ),
+                PreparedRecordPatternFieldIdentity::Environment {
+                    declaration_ordinal,
+                    semantic_id,
+                } => PreparedRecordPatternField::environment(
+                    source_ordinal,
+                    declaration_ordinal,
+                    semantic_id,
+                    field_type,
+                    source,
+                ),
+            });
+        }
+        if matches!(rest, PreparedRecordPatternRest::Absent) && seen.len() != schema.field_count() {
+            return Err(FinalSemanticAnalysisError::PatternTypeUnavailable { owner });
+        }
+        PreparedRecordPattern::try_new(
+            ty.clone(),
+            schema.prepared_owner()?,
+            fields.into_boxed_slice(),
+            rest,
+        )
+        .ok_or(FinalSemanticAnalysisError::InvalidNominalOwner)
     }
 
     pub(super) fn seed_contextual_pattern_locals(
@@ -130,7 +256,9 @@ impl Analyzer<'_, '_, '_> {
                 return Err(FinalSemanticAnalysisError::LocalTypeUnavailable { owner });
             }
             if !self.facts.locals().contains_key(&owner) {
-                self.facts.set_local_type(owner, value);
+                self.facts
+                    .set_local_type(owner, value)
+                    .map_err(FinalSemanticAnalysisError::from)?;
             }
         }
         for (owner, value) in patterns {
@@ -143,7 +271,9 @@ impl Analyzer<'_, '_, '_> {
                 return Err(FinalSemanticAnalysisError::PatternTypeUnavailable { owner });
             }
             if !self.facts.patterns().contains_key(&owner) {
-                self.facts.set_pattern_type(owner, value);
+                self.facts
+                    .set_pattern_type(owner, value)
+                    .map_err(FinalSemanticAnalysisError::from)?;
             }
         }
         Ok(())
@@ -249,6 +379,85 @@ pub(super) struct PatternSeedContext<'a> {
     pub(super) environment: &'a TypeCheckEnv,
 }
 
+struct ResolvedRecordPatternField {
+    identity: PreparedRecordPatternFieldIdentity,
+    ty: TypeKind,
+}
+
+enum ResolvedRecordPatternSchema<'a> {
+    Project {
+        nominal: super::CheckedProjectNominal,
+        substitutions: super::TypeParameterSubstitutions,
+        fields: &'a [arcweft_lang_hir::symbol::nominal::ProjectNominalField],
+    },
+    Environment {
+        identity: crate::env::nominal::AcceptedEnvironmentRecordIdentity,
+        semantics: &'a crate::env::nominal::AcceptedEnvironmentRecordSemantics,
+    },
+}
+
+impl ResolvedRecordPatternSchema<'_> {
+    fn field_count(&self) -> usize {
+        match self {
+            Self::Project { fields, .. } => fields.len(),
+            Self::Environment { semantics, .. } => semantics.fields().len(),
+        }
+    }
+
+    fn prepared_owner(&self) -> Result<PreparedRecordPatternOwner, FinalSemanticAnalysisError> {
+        Ok(match self {
+            Self::Project { nominal, .. } => PreparedRecordPatternOwner::Project(nominal.clone()),
+            Self::Environment { identity, .. } => PreparedRecordPatternOwner::Environment {
+                record: identity.clone(),
+            },
+        })
+    }
+
+    fn field(
+        &self,
+        owner: PatternId,
+        name: &super::HirName,
+        types: &BTreeMap<TypeId, TypeKind>,
+    ) -> Result<ResolvedRecordPatternField, FinalSemanticAnalysisError> {
+        match self {
+            Self::Project {
+                substitutions,
+                fields,
+                ..
+            } => {
+                let (declaration_ordinal, field) = fields
+                    .iter()
+                    .enumerate()
+                    .find(|(_, field)| field.name().as_str() == name.as_str())
+                    .ok_or(FinalSemanticAnalysisError::PatternTypeUnavailable { owner })?;
+                let declaration_ordinal = u32::try_from(declaration_ordinal)
+                    .map_err(|_| FinalSemanticAnalysisError::AccountingOverflow)?;
+                let declared = types.get(&field.ty()).ok_or(
+                    FinalSemanticAnalysisError::TypeResolutionFailed { owner: field.ty() },
+                )?;
+                Ok(ResolvedRecordPatternField {
+                    identity: PreparedRecordPatternFieldIdentity::Project {
+                        declaration_ordinal,
+                    },
+                    ty: substitutions.apply(declared),
+                })
+            }
+            Self::Environment { semantics, .. } => {
+                let field = semantics
+                    .field(name.as_str())
+                    .ok_or(FinalSemanticAnalysisError::PatternTypeUnavailable { owner })?;
+                Ok(ResolvedRecordPatternField {
+                    identity: PreparedRecordPatternFieldIdentity::Environment {
+                        declaration_ordinal: field.ordinal(),
+                        semantic_id: CheckedRecordFieldSemanticId::Environment(field.semantic_id()),
+                    },
+                    ty: field.ty().clone(),
+                })
+            }
+        }
+    }
+}
+
 pub(super) fn seed_pattern_locals(
     context: PatternSeedContext<'_>,
     pattern: PatternId,
@@ -274,15 +483,6 @@ struct PatternSeeder<'context, 'facts> {
     environment: &'context TypeCheckEnv,
     locals: &'facts mut BTreeMap<LocalId, TypeKind>,
     patterns: &'facts mut BTreeMap<PatternId, TypeKind>,
-}
-
-struct RecordPatternState<'a> {
-    owner: PatternId,
-    owner_ty: &'a TypeKind,
-    declared: &'a [arcweft_lang_hir::symbol::nominal::ProjectNominalField],
-    substitutions: &'a super::TypeParameterSubstitutions,
-    seen: BTreeSet<super::HirName>,
-    has_rest: bool,
 }
 
 impl PatternSeeder<'_, '_> {
@@ -356,7 +556,7 @@ impl PatternSeeder<'_, '_> {
         variant: &HirVariantPattern,
         ty: &TypeKind,
     ) -> Result<(), FinalSemanticAnalysisError> {
-        let (_, _, payload) = resolve_variant_pattern(
+        let payload = resolve_variant_pattern(
             PatternSeedContext {
                 module: self.module,
                 types: self.types,
@@ -366,7 +566,9 @@ impl PatternSeeder<'_, '_> {
             pattern,
             variant,
             ty,
-        )?;
+        )?
+        .payload()
+        .cloned();
         match (variant.payload(), payload) {
             (HirVariantPatternPayload::Absent, None) => Ok(()),
             (HirVariantPatternPayload::Pattern(child), Some(payload_ty)) => {
@@ -407,96 +609,57 @@ impl PatternSeeder<'_, '_> {
         fields: &[HirPatternField],
         ty: &TypeKind,
     ) -> Result<(), FinalSemanticAnalysisError> {
-        let declaration =
-            resolve_project_record_pattern(self.module, pattern, path, ty, self.symbols)?;
-        let TypeKind::ProjectNominal(nominal) = ty else {
-            return Err(FinalSemanticAnalysisError::PatternTypeUnavailable { owner: pattern });
-        };
-        let substitutions = nominal_substitutions(declaration, nominal)
-            .ok_or(FinalSemanticAnalysisError::PatternTypeUnavailable { owner: pattern })?;
-        let ProjectNominalBody::Struct { fields: declared } = declaration.body() else {
-            return Err(FinalSemanticAnalysisError::PatternTypeUnavailable { owner: pattern });
-        };
-        let mut state = RecordPatternState {
-            owner: pattern,
-            owner_ty: ty,
-            declared,
-            substitutions: &substitutions,
-            seen: BTreeSet::new(),
-            has_rest: false,
-        };
+        let schema = resolve_record_pattern_schema(
+            PatternSeedContext {
+                module: self.module,
+                types: self.types,
+                symbols: self.symbols,
+                environment: self.environment,
+            },
+            pattern,
+            path,
+            ty,
+        )?;
+        let mut seen = BTreeSet::new();
+        let mut has_rest = false;
         for field in fields {
-            self.seed_record_field(field, &mut state)?;
+            match field {
+                HirPatternField::Explicit {
+                    name,
+                    pattern: child,
+                } => {
+                    if !seen.insert(name.clone()) {
+                        return Err(FinalSemanticAnalysisError::PatternTypeUnavailable {
+                            owner: pattern,
+                        });
+                    }
+                    let field = schema.field(pattern, name, self.types)?;
+                    self.seed(*child, &field.ty)?;
+                }
+                HirPatternField::Shorthand { name, local } => {
+                    if !seen.insert(name.clone()) {
+                        return Err(FinalSemanticAnalysisError::PatternTypeUnavailable {
+                            owner: pattern,
+                        });
+                    }
+                    let field = schema.field(pattern, name, self.types)?;
+                    insert_local_type(*local, &field.ty, self.locals)?;
+                }
+                HirPatternField::Rest { binding } if !has_rest => {
+                    has_rest = true;
+                    if let Some(local) = binding {
+                        insert_local_type(*local, ty, self.locals)?;
+                    }
+                }
+                HirPatternField::Rest { .. } | HirPatternField::Invalid { .. } => {
+                    return Err(FinalSemanticAnalysisError::RecoveredOwner);
+                }
+            }
         }
-        if !state.has_rest && state.seen.len() != declared.len() {
+        if !has_rest && seen.len() != schema.field_count() {
             return Err(FinalSemanticAnalysisError::PatternTypeUnavailable { owner: pattern });
         }
         Ok(())
-    }
-
-    fn seed_record_field(
-        &mut self,
-        field: &HirPatternField,
-        state: &mut RecordPatternState<'_>,
-    ) -> Result<(), FinalSemanticAnalysisError> {
-        match field {
-            HirPatternField::Explicit {
-                name,
-                pattern: child,
-            } => {
-                let field_ty = self.record_field_type(
-                    state.owner,
-                    name,
-                    state.declared,
-                    state.substitutions,
-                    &mut state.seen,
-                )?;
-                self.seed(*child, &field_ty)
-            }
-            HirPatternField::Shorthand { name, local } => {
-                let field_ty = self.record_field_type(
-                    state.owner,
-                    name,
-                    state.declared,
-                    state.substitutions,
-                    &mut state.seen,
-                )?;
-                insert_local_type(*local, &field_ty, self.locals)
-            }
-            HirPatternField::Rest { binding } if !state.has_rest => {
-                state.has_rest = true;
-                if let Some(local) = binding {
-                    insert_local_type(*local, state.owner_ty, self.locals)?;
-                }
-                Ok(())
-            }
-            HirPatternField::Rest { .. } | HirPatternField::Invalid { .. } => {
-                Err(FinalSemanticAnalysisError::RecoveredOwner)
-            }
-        }
-    }
-
-    fn record_field_type(
-        &self,
-        pattern: PatternId,
-        name: &super::HirName,
-        declared: &[arcweft_lang_hir::symbol::nominal::ProjectNominalField],
-        substitutions: &super::TypeParameterSubstitutions,
-        seen: &mut BTreeSet<super::HirName>,
-    ) -> Result<TypeKind, FinalSemanticAnalysisError> {
-        if !seen.insert(name.clone()) {
-            return Err(FinalSemanticAnalysisError::PatternTypeUnavailable { owner: pattern });
-        }
-        let declared = declared
-            .iter()
-            .find(|field| field.name().as_str() == name.as_str())
-            .ok_or(FinalSemanticAnalysisError::PatternTypeUnavailable { owner: pattern })?;
-        let field_ty = self.types.get(&declared.ty()).ok_or(
-            FinalSemanticAnalysisError::TypeResolutionFailed {
-                owner: declared.ty(),
-            },
-        )?;
-        Ok(substitutions.apply(field_ty))
     }
 
     fn seed_sequence(
@@ -597,36 +760,80 @@ fn insert_local_type(
     Ok(())
 }
 
-fn resolve_project_record_pattern<'a>(
-    module: &HirModule,
+fn resolve_record_pattern_schema<'a>(
+    context: PatternSeedContext<'a>,
     owner: PatternId,
     path: &HirPatternRecordPath,
     ty: &TypeKind,
-    symbols: &'a ProjectSymbolTable,
-) -> Result<&'a ProjectNominalDeclaration, FinalSemanticAnalysisError> {
-    let TypeKind::ProjectNominal(nominal) = ty else {
-        return Err(FinalSemanticAnalysisError::PatternTypeUnavailable { owner });
-    };
-    let declaration = match path {
-        HirPatternRecordPath::Absent => symbols.nominal(nominal.declaration()),
-        HirPatternRecordPath::Resolved(path) => match symbols
-            .resolve_hir_type_target(module.key().path(), path, pattern_span(module, owner)?)
-            .map_err(|_| FinalSemanticAnalysisError::PatternTypeUnavailable { owner })?
-        {
-            ProjectTypeTarget::Nominal(declaration) => Some(declaration),
-            ProjectTypeTarget::External(_) => None,
-        },
-        HirPatternRecordPath::Recovered(_) => {
-            return Err(FinalSemanticAnalysisError::RecoveredOwner);
+) -> Result<ResolvedRecordPatternSchema<'a>, FinalSemanticAnalysisError> {
+    match ty {
+        TypeKind::ProjectNominal(nominal) => {
+            let declaration = match path {
+                HirPatternRecordPath::Absent => context.symbols.nominal(nominal.declaration()),
+                HirPatternRecordPath::Resolved(path) => match context
+                    .symbols
+                    .resolve_hir_type_target(
+                        context.module.key().path(),
+                        path,
+                        pattern_span(context.module, owner)?,
+                    )
+                    .map_err(|_| FinalSemanticAnalysisError::PatternTypeUnavailable { owner })?
+                {
+                    ProjectTypeTarget::Nominal(declaration) => Some(declaration),
+                    ProjectTypeTarget::External(_) => None,
+                },
+                HirPatternRecordPath::Recovered(_) => {
+                    return Err(FinalSemanticAnalysisError::RecoveredOwner);
+                }
+            }
+            .ok_or(FinalSemanticAnalysisError::PatternTypeUnavailable { owner })?;
+            if declaration.id() != nominal.declaration() {
+                return Err(FinalSemanticAnalysisError::PatternTypeUnavailable { owner });
+            }
+            let ProjectNominalBody::Struct { fields } = declaration.body() else {
+                return Err(FinalSemanticAnalysisError::PatternTypeUnavailable { owner });
+            };
+            let substitutions = nominal_substitutions(declaration, nominal)
+                .ok_or(FinalSemanticAnalysisError::PatternTypeUnavailable { owner })?;
+            Ok(ResolvedRecordPatternSchema::Project {
+                nominal: checked_project_nominal(declaration, ty)?,
+                substitutions,
+                fields,
+            })
         }
+        TypeKind::Named(name) => {
+            let accepted = context
+                .environment
+                .accepted_environment_record(name)
+                .ok_or(FinalSemanticAnalysisError::PatternTypeUnavailable { owner })?;
+            let semantics = accepted
+                .environment_record()
+                .filter(|record| record.ty() == ty)
+                .ok_or(FinalSemanticAnalysisError::PatternTypeUnavailable { owner })?;
+            match path {
+                HirPatternRecordPath::Absent => {}
+                HirPatternRecordPath::Resolved(path)
+                    if crate::nominal::hir_path_matches_type_path(
+                        path,
+                        accepted.id().canonical_path(),
+                    ) => {}
+                HirPatternRecordPath::Recovered(_) => {
+                    return Err(FinalSemanticAnalysisError::RecoveredOwner);
+                }
+                HirPatternRecordPath::Resolved(_) => {
+                    return Err(FinalSemanticAnalysisError::PatternTypeUnavailable { owner });
+                }
+            }
+            let identity = accepted
+                .environment_record_identity()
+                .ok_or(FinalSemanticAnalysisError::AccountingOverflow)?;
+            Ok(ResolvedRecordPatternSchema::Environment {
+                identity,
+                semantics,
+            })
+        }
+        _ => Err(FinalSemanticAnalysisError::PatternTypeUnavailable { owner }),
     }
-    .ok_or(FinalSemanticAnalysisError::PatternTypeUnavailable { owner })?;
-    if declaration.id() != nominal.declaration()
-        || !matches!(declaration.body(), ProjectNominalBody::Struct { .. })
-    {
-        return Err(FinalSemanticAnalysisError::PatternTypeUnavailable { owner });
-    }
-    Ok(declaration)
 }
 
 pub(super) fn checked_builtin_closed_owner(
@@ -636,16 +843,17 @@ pub(super) fn checked_builtin_closed_owner(
 ) -> Result<CheckedVariantOwner, FinalSemanticAnalysisError> {
     let cases = checked_builtin_closed_cases(schema)
         .ok_or(FinalSemanticAnalysisError::ExpressionTypeUnavailable { owner })?;
-    Ok(CheckedVariantOwner::BuiltinClosed {
-        nominal: schema.owner().clone(),
-        semantic_identity: ty.semantic_identity_digest(),
+    CheckedVariantOwner::try_builtin_closed(
+        schema.owner().clone(),
+        ty.semantic_identity_digest(),
         cases,
-    })
+    )
+    .ok_or(FinalSemanticAnalysisError::AccountingOverflow)
 }
 
 fn checked_builtin_closed_cases(
     schema: &EnvironmentEnumSchema,
-) -> Option<Box<[CheckedBuiltinVariantCase]>> {
+) -> Option<Vec<(Option<TypeKind>, Option<String>)>> {
     schema
         .variants()
         .iter()
@@ -659,10 +867,9 @@ fn checked_builtin_closed_cases(
                 },
                 EnumVariantPayload::Record(_) => return None,
             };
-            Some(CheckedBuiltinVariantCase::new(variant.name(), payload))
+            Some((payload, Some(variant.name().to_owned())))
         })
-        .collect::<Option<Vec<_>>>()
-        .map(Vec::into_boxed_slice)
+        .collect()
 }
 
 pub(super) fn resolve_closed_variant_path(
@@ -698,12 +905,33 @@ pub(super) fn resolve_closed_variant_path(
         u32::try_from(ordinal).map_err(|_| FinalSemanticAnalysisError::AccountingOverflow)?;
     Ok(Some((
         ty.clone(),
-        super::CheckedVariantResolution::new(
+        super::CheckedVariantResolution::try_new(
             checked_builtin_closed_owner(schema, ty, owner)?,
             ordinal,
-            name.clone(),
-        ),
+        )
+        .ok_or(FinalSemanticAnalysisError::WrongPayloadFamily)?,
     )))
+}
+
+enum ResolvedVariantPattern {
+    Complete {
+        owner: CheckedVariantOwner,
+        ordinal: u32,
+        payload: Option<TypeKind>,
+    },
+    Project {
+        owner: super::PreparedProjectVariantOwnerSeed,
+        ordinal: u32,
+        payload: Option<TypeKind>,
+    },
+}
+
+impl ResolvedVariantPattern {
+    const fn payload(&self) -> Option<&TypeKind> {
+        match self {
+            Self::Complete { payload, .. } | Self::Project { payload, .. } => payload.as_ref(),
+        }
+    }
 }
 
 fn resolve_variant_pattern(
@@ -711,7 +939,7 @@ fn resolve_variant_pattern(
     owner: PatternId,
     pattern: &HirVariantPattern,
     ty: &TypeKind,
-) -> Result<(CheckedVariantOwner, u32, Option<TypeKind>), FinalSemanticAnalysisError> {
+) -> Result<ResolvedVariantPattern, FinalSemanticAnalysisError> {
     let HirVariantPatternName::Resolved(name) = pattern.name() else {
         return Err(FinalSemanticAnalysisError::RecoveredOwner);
     };
@@ -728,13 +956,11 @@ fn resolve_variant_pattern(
                     return Err(FinalSemanticAnalysisError::PatternTypeUnavailable { owner });
                 }
             };
-            Ok((
-                CheckedVariantOwner::Option {
-                    item: (**item).clone(),
-                },
+            Ok(ResolvedVariantPattern::Complete {
+                owner: CheckedVariantOwner::option((**item).clone()),
                 ordinal,
                 payload,
-            ))
+            })
         }
         TypeKind::Result { ok, error } => {
             validate_builtin_variant_head(pattern.head(), BuiltinTypeConstructor::Result, owner)?;
@@ -745,14 +971,11 @@ fn resolve_variant_pattern(
                     return Err(FinalSemanticAnalysisError::PatternTypeUnavailable { owner });
                 }
             };
-            Ok((
-                CheckedVariantOwner::Result {
-                    ok: (**ok).clone(),
-                    error: (**error).clone(),
-                },
+            Ok(ResolvedVariantPattern::Complete {
+                owner: CheckedVariantOwner::result((**ok).clone(), (**error).clone()),
                 ordinal,
                 payload,
-            ))
+            })
         }
         closed_enum_ty => resolve_closed_variant_pattern(
             context.environment,
@@ -771,7 +994,7 @@ fn resolve_project_variant_pattern(
     nominal: &ProjectNominalType,
     ty: &TypeKind,
     name: &super::HirName,
-) -> Result<(CheckedVariantOwner, u32, Option<TypeKind>), FinalSemanticAnalysisError> {
+) -> Result<ResolvedVariantPattern, FinalSemanticAnalysisError> {
     let declaration = match pattern.head() {
         HirVariantPatternHeadValue::Resolved(HirVariantPatternHead::Unqualified(_)) => {
             context.symbols.nominal(nominal.declaration())
@@ -799,7 +1022,7 @@ fn resolve_project_variant_pattern(
     let ProjectNominalBody::Enum { variants } = declaration.body() else {
         return Err(FinalSemanticAnalysisError::PatternTypeUnavailable { owner });
     };
-    let (ordinal, variant) = variants
+    let (selected_ordinal, variant) = variants
         .iter()
         .enumerate()
         .find(|(_, variant)| variant.name().as_str() == name.as_str())
@@ -816,11 +1039,36 @@ fn resolve_project_variant_pattern(
                 .ok_or(FinalSemanticAnalysisError::TypeResolutionFailed { owner: payload })
         })
         .transpose()?;
-    Ok((
-        CheckedVariantOwner::Project(checked_project_nominal(declaration, ty)?),
-        u32::try_from(ordinal).map_err(|_| FinalSemanticAnalysisError::AccountingOverflow)?,
+    let selected_ordinal = u32::try_from(selected_ordinal)
+        .map_err(|_| FinalSemanticAnalysisError::AccountingOverflow)?;
+    let checked_nominal = checked_project_nominal(declaration, ty)?;
+    let mut cases = Vec::with_capacity(variants.len());
+    for (ordinal, case) in variants.iter().enumerate() {
+        let ordinal =
+            u32::try_from(ordinal).map_err(|_| FinalSemanticAnalysisError::AccountingOverflow)?;
+        let case_payload = case
+            .payload()
+            .map(|payload| {
+                context
+                    .types
+                    .get(&payload)
+                    .map(|payload| substitutions.apply(payload))
+                    .ok_or(FinalSemanticAnalysisError::TypeResolutionFailed { owner: payload })
+            })
+            .transpose()?;
+        cases.push(super::PreparedVariantCaseSeed::new(
+            ordinal,
+            case_payload,
+            Some(case.name().as_str().to_owned()),
+        ));
+    }
+    let owner = super::PreparedProjectVariantOwnerSeed::try_new(checked_nominal, cases)
+        .ok_or(FinalSemanticAnalysisError::InvalidNominalOwner)?;
+    Ok(ResolvedVariantPattern::Project {
+        owner,
+        ordinal: selected_ordinal,
         payload,
-    ))
+    })
 }
 
 fn resolve_closed_variant_pattern(
@@ -829,7 +1077,7 @@ fn resolve_closed_variant_pattern(
     pattern: &HirVariantPattern,
     ty: &TypeKind,
     name: &super::HirName,
-) -> Result<(CheckedVariantOwner, u32, Option<TypeKind>), FinalSemanticAnalysisError> {
+) -> Result<ResolvedVariantPattern, FinalSemanticAnalysisError> {
     let schema = environment
         .closed_enum(ty)
         .ok_or(FinalSemanticAnalysisError::PatternTypeUnavailable { owner })?;
@@ -848,17 +1096,19 @@ fn resolve_closed_variant_pattern(
             return Err(FinalSemanticAnalysisError::PatternTypeUnavailable { owner });
         }
     };
-    let cases = checked_builtin_closed_cases(schema)
-        .ok_or(FinalSemanticAnalysisError::PatternTypeUnavailable { owner })?;
-    Ok((
-        CheckedVariantOwner::BuiltinClosed {
-            nominal: schema.owner().clone(),
-            semantic_identity: ty.semantic_identity_digest(),
-            cases,
-        },
-        u32::try_from(ordinal).map_err(|_| FinalSemanticAnalysisError::AccountingOverflow)?,
+    let checked_owner = CheckedVariantOwner::try_builtin_closed(
+        schema.owner().clone(),
+        ty.semantic_identity_digest(),
+        checked_builtin_closed_cases(schema)
+            .ok_or(FinalSemanticAnalysisError::PatternTypeUnavailable { owner })?,
+    )
+    .ok_or(FinalSemanticAnalysisError::AccountingOverflow)?;
+    Ok(ResolvedVariantPattern::Complete {
+        owner: checked_owner,
+        ordinal: u32::try_from(ordinal)
+            .map_err(|_| FinalSemanticAnalysisError::AccountingOverflow)?,
         payload,
-    ))
+    })
 }
 
 fn validate_closed_variant_head(

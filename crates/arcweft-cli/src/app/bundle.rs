@@ -5,7 +5,6 @@ use super::project::{
     semantic_context_for_selection, verify_compiled_project,
 };
 use super::runtime::options::CliRuntimeStepMode;
-use super::runtime::parse::parse_runtime_binding_arg;
 use super::runtime::profile::report_path;
 use super::runtime::profile::{
     ProfileCompiledRuntimePlan, compile_profile_runtime_plan, run_profile_phase,
@@ -46,7 +45,7 @@ use arcweft_core::{
     effect::{LineEffectRequest, RuntimeCall},
     line_task::{LineTaskGroup, LineTaskNode, ScopeExit},
     plan::{EntryRuntimeId, FlowOp, RuntimeEntryKind, RuntimeEntryTarget, RuntimePlan},
-    value::{RuntimeBinding, RuntimeExpr, RuntimeExprKind, RuntimeValue},
+    value::{RuntimeExpr, RuntimeExprKind, RuntimeValue},
 };
 use arcweft_id::{AssetId, AssetVirtualPath, DeclarationIdentityFamily, PublicId};
 use arcweft_lang_sema::project_index::ProjectSemanticIndex;
@@ -104,8 +103,6 @@ pub(in crate::app) struct RunBundleOptions {
     mode: CliRuntimeStepMode,
     #[arg(long, default_value_t = 32)]
     max_ops: usize,
-    #[arg(long = "value", value_parser = parse_runtime_binding_arg)]
-    values: Vec<RuntimeBinding>,
     #[arg(long)]
     json: bool,
 }
@@ -165,7 +162,6 @@ fn bundle_runner_options(options: &RunBundleOptions) -> Result<BundleRunnerOptio
         steps: options.steps,
         mode: options.mode.into(),
         max_ops: options.max_ops,
-        values: options.values.clone(),
         engine_resource_types: std::sync::Arc::new(
             arcweft_resource_model::registry::ResourceTypeRegistry::empty(),
         ),

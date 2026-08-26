@@ -68,7 +68,7 @@ pub use value::{
     ViewClip, ViewColorValue, ViewDisplay, ViewFilter, ViewFlexDirection, ViewFlexWrap,
     ViewFontFamily, ViewFontFamilyList, ViewFontStyle, ViewFontWeight, ViewLengthMilli, ViewMask,
     ViewOverflow, ViewPosition, ViewRatioMilli, ViewScalarMilli, ViewShadow, ViewSpecifiedValue,
-    ViewStyleTransition, ViewSystemFontFamily,
+    ViewSpecifiedValueSemanticDigest, ViewStyleTransition, ViewSystemFontFamily,
 };
 
 /// Dynamic property binding emitted by Rust or Arcweft view rendering.

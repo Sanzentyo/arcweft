@@ -3,16 +3,19 @@ mod support;
 use arcweft_bundle::fx_definitions::FxDefinitions;
 use arcweft_bundle::resource_codec::view::ViewRuntimeActionButtonAction;
 use arcweft_bundle::resource_codec::{ValidatedViewProduct, ViewProductValidationLimits};
-use arcweft_bundle::standard_view::{dialogue_program, dialogue_style, dialogue_text};
+use arcweft_bundle::standard_view::{
+    dialogue_program, dialogue_style, dialogue_text, install_dialogue_handler_awbc,
+};
 use arcweft_character::id::CharacterId;
-use arcweft_core::{entry::RuntimeValueDigest, plan::RuntimeLineId};
+use arcweft_core::{awbc::schema::AwbcProgram, entry::RuntimeValueDigest, plan::RuntimeLineId};
 use arcweft_dialogue::InlineFailurePolicy;
 use arcweft_id::TextKey;
 use arcweft_player_scene::{
     frame::{PlayerFrameFit, PlayerFramePlanner, PlayerFrameRequest, PlayerPreparedFrame},
     images::BundleImageCatalog,
-    input::InputController,
+    input::{InputController, InputPointerModifiers},
 };
+use arcweft_presentation::input::{PointerId, ViewportPoint};
 use arcweft_render_text::{RuntimeLineContext, resolve_frame};
 use arcweft_render_wgpu::{
     geometry::{PreparedTextOwnerKind, RenderPreferences, RenderViewport},
@@ -29,7 +32,7 @@ use arcweft_text_model::{
     LineDisplayFrame, RichTextDocument, RichTextInlineDirection, RichTextLayout, RichTextNode,
     RichTextStyle, RichTextWritingMode,
 };
-use std::collections::BTreeMap;
+use std::{collections::BTreeMap, sync::Arc};
 
 fn test_source_ref() -> ProductSourceRef {
     let source = SourceDocument::try_new(
@@ -126,6 +129,51 @@ fn standard_dialogue_view_preserves_vertical_ruby_and_final_panel_geometry() {
     );
 }
 
+#[test]
+fn standard_dialogue_view_pointer_activation_emits_its_exact_typed_handler_route() {
+    let presentation = vertical_ruby_dialogue_view();
+    let expected = &presentation.action_buttons[0];
+    let ViewRuntimeActionButtonAction::ViewHandler { event, route } = &expected.action else {
+        panic!("standard dialogue button must retain the typed handler route")
+    };
+    let prepared = prepare(&presentation);
+    let mut input = InputController::default();
+    let bounds = prepared.scene.action_buttons[0].bounds;
+    let position = ViewportPoint::new(
+        bounds.x + bounds.width * 0.5,
+        bounds.y + bounds.height * 0.5,
+    );
+
+    input.pointer_down(
+        &prepared.frame,
+        PointerId(0),
+        position,
+        InputPointerModifiers::NONE,
+    );
+    let pressed = input.visual_state().pressed;
+    let outcome = input.pointer_up(
+        &prepared.frame,
+        PointerId(0),
+        position,
+        InputPointerModifiers::NONE,
+    );
+
+    let [invocation] = outcome.view_handler_invocations() else {
+        panic!(
+            "production pointer routing must emit exactly one typed View invocation; button={:?}, pressed={pressed:?}, diagnostics={:?}, actions={:?}, dialogue={:?}",
+            prepared.scene.action_buttons[0],
+            outcome.diagnostics,
+            outcome.actions(),
+            outcome.dialogue_progress,
+        )
+    };
+    assert_eq!(invocation.target().id().as_str(), expected.target);
+    assert_eq!(invocation.event(), *event);
+    assert_eq!(invocation.route(), *route);
+    assert!(outcome.actions().is_empty());
+    assert!(!outcome.dialogue_progress.advances());
+}
+
 fn vertical_ruby_dialogue_view() -> BundlePresentationSnapshot {
     let line = RuntimeLineId::from_runtime_line_value("say.vertical_ruby").expect("line id");
     let frame = vertical_ruby_frame(&line);
@@ -157,8 +205,11 @@ fn vertical_ruby_dialogue_view() -> BundlePresentationSnapshot {
         ViewProductValidationLimits::default(),
     )
     .expect("standard View product");
+    let awbc =
+        install_dialogue_handler_awbc(AwbcProgram::default()).expect("standard handler installs");
     let mut runtime =
-        BundleViewRuntime::try_new(product, Some(text.clone())).expect("standard View runtime");
+        BundleViewRuntime::try_new_with_awbc(product, Some(text.clone()), Arc::new(awbc))
+            .expect("standard View runtime");
     presentation.view =
         runtime.evaluate_with_dialogue(&[], &presentation.dialogue.view_inputs(), &[], false);
     assert!(presentation.view.diagnostics.is_empty());
@@ -181,14 +232,15 @@ fn vertical_ruby_dialogue_view() -> BundlePresentationSnapshot {
             button.public_id = mount.scoped_id(&button.public_id);
             button.target = mount.scoped_id(&button.target);
             button.view = Some(mount.scoped_id(mount.view.as_str()));
-            if let ViewRuntimeActionButtonAction::DialoguePrimaryAction { target, .. } =
-                &mut button.action
-            {
-                *target = mount
-                    .dialogue
-                    .and_then(|dialogue| dialogue.primary_action.target);
-                button.enabled &= target.is_some();
-            }
+            let handler = mount
+                .events
+                .iter()
+                .find(|binding| binding.event() == arcweft_view::EventKind::Activate)
+                .expect("standard action button publishes its typed route");
+            button.action = ViewRuntimeActionButtonAction::ViewHandler {
+                event: handler.event(),
+                route: handler.route(),
+            };
             button
         })
         .collect();

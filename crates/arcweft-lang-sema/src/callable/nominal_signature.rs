@@ -14,6 +14,7 @@ use arcweft_lang_hir::{
     symbol::{CallableDeclarationOwner, CallableSymbol, ProjectSymbolTable},
 };
 use arcweft_lang_syntax::ast::module_path::ModuleSegment;
+use arcweft_manifest_model::HostCallContractDigest;
 use arcweft_source::SourceSpan;
 
 use crate::{
@@ -23,14 +24,18 @@ use crate::{
         TypeResolutionInput, TypeSourceEvidence,
     },
     registration::AcceptedNominalWorld,
-    types::{GenericTypeOwnerId, GenericTypeParameterId, TypeKind},
+    types::{GenericParameterOwnerId, GenericTypeParameterId, TypeKind},
 };
 
-use super::{CallableCatalogBuildError, CallableName, CallablePath};
+use super::{
+    CallableCatalogBuildError, CallableGenericParameterIssuer, CallableName, CallablePath,
+};
 
 pub(super) struct ResolvedProjectSignature {
     pub(super) parameter_types: Vec<Vec<TypeKind>>,
     pub(super) return_type: TypeKind,
+    pub(super) generic_issuer: CallableGenericParameterIssuer,
+    pub(super) host_call_contract: Option<HostCallContractDigest>,
 }
 
 pub(super) struct ProjectSignatureResolver<'a> {
@@ -85,7 +90,7 @@ impl<'a> ProjectSignatureResolver<'a> {
             }
         })?;
 
-        let owner = GenericTypeOwnerId::Callable(declaration.clone());
+        let owner = GenericParameterOwnerId::Callable(declaration.clone());
         match (declaration.owner(), symbol.source_owner(), item.kind()) {
             (
                 CallableDeclarationOwner::Flow,
@@ -249,7 +254,7 @@ impl<'a> ProjectSignatureResolver<'a> {
                         &owner,
                     );
                     self.associated_scope = None;
-                    let resolved = resolved?;
+                    let mut resolved = resolved?;
                     if resolved.parameter_types != projected.parameter_types
                         || resolved.return_type != projected.result_type
                     {
@@ -258,6 +263,7 @@ impl<'a> ProjectSignatureResolver<'a> {
                             path: path.clone(),
                         });
                     }
+                    resolved.host_call_contract = Some(contract.contract_digest());
                     return Ok(resolved);
                 }
                 self.resolve_signature_types(
@@ -358,7 +364,7 @@ impl<'a> ProjectSignatureResolver<'a> {
         method_where: &[HirWherePredicate],
         parameter_groups: impl IntoIterator<Item = &'method [HirMethodParameter]>,
         return_type: Option<TypeId>,
-        owner: &GenericTypeOwnerId,
+        owner: &GenericParameterOwnerId,
     ) -> Result<ResolvedProjectSignature, CallableCatalogBuildError> {
         let generics = owner_generics
             .iter()
@@ -371,6 +377,12 @@ impl<'a> ProjectSignatureResolver<'a> {
             .cloned()
             .collect::<Vec<_>>();
         let generic_scope = Self::generic_scope(&generics, owner, symbol.declaration_span())?;
+        let generic_count = generic_scope
+            .bindings()
+            .len()
+            .checked_add(usize::from(impl_target.is_none()))
+            .ok_or(CallableCatalogBuildError::WorkOverflow)?;
+        let generic_issuer = callable_generic_issuer(owner, generic_count)?;
         for parameter in &generics {
             for bound in parameter.bounds() {
                 self.resolve_type(
@@ -409,7 +421,7 @@ impl<'a> ProjectSignatureResolver<'a> {
                 symbol.declaration_span(),
             )?
         } else {
-            let ordinal = u16::try_from(generics.len())
+            let ordinal = u16::try_from(generic_scope.bindings().len())
                 .map_err(|_| CallableCatalogBuildError::WorkOverflow)?;
             TypeKind::GenericParam(GenericTypeParameterId::new(owner.clone(), ordinal))
         };
@@ -444,6 +456,8 @@ impl<'a> ProjectSignatureResolver<'a> {
         Ok(ResolvedProjectSignature {
             parameter_types,
             return_type,
+            generic_issuer,
+            host_call_contract: None,
         })
     }
 
@@ -459,9 +473,10 @@ impl<'a> ProjectSignatureResolver<'a> {
         where_predicates: &[HirWherePredicate],
         parameter_groups: Vec<Vec<TypeId>>,
         return_type: Option<TypeId>,
-        owner: &GenericTypeOwnerId,
+        owner: &GenericParameterOwnerId,
     ) -> Result<ResolvedProjectSignature, CallableCatalogBuildError> {
         let generics = Self::generic_scope(generic_parameters, owner, declaration_span)?;
+        let generic_issuer = callable_generic_issuer(owner, generics.bindings().len())?;
         for parameter in generic_parameters {
             for bound in parameter.bounds() {
                 self.resolve_type(
@@ -520,12 +535,14 @@ impl<'a> ProjectSignatureResolver<'a> {
         Ok(ResolvedProjectSignature {
             parameter_types,
             return_type,
+            generic_issuer,
+            host_call_contract: None,
         })
     }
 
     fn generic_scope(
         parameters: &[HirGenericParameter],
-        owner: &GenericTypeOwnerId,
+        owner: &GenericParameterOwnerId,
         declaration_span: &SourceSpan,
     ) -> Result<GenericTypeScope, CallableCatalogBuildError> {
         let bindings = parameters
@@ -624,6 +641,19 @@ impl<'a> ProjectSignatureResolver<'a> {
             )?;
         Ok(resolved)
     }
+}
+
+fn callable_generic_issuer(
+    owner: &GenericParameterOwnerId,
+    type_count: usize,
+) -> Result<CallableGenericParameterIssuer, CallableCatalogBuildError> {
+    let GenericParameterOwnerId::Callable(declaration) = owner else {
+        return Err(CallableCatalogBuildError::WorkOverflow);
+    };
+    let type_count =
+        u16::try_from(type_count).map_err(|_| CallableCatalogBuildError::WorkOverflow)?;
+    CallableGenericParameterIssuer::callable(declaration.clone(), type_count, 0)
+        .map_err(CallableCatalogBuildError::from)
 }
 
 pub(crate) fn associated_scope_for(

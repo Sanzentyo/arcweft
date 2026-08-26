@@ -41,8 +41,12 @@ impl StagedHirModuleTransaction<'_> {
                     } => HirLinePlanItem::Let {
                         pattern: *pattern,
                         value: *initializer,
+                        statement: lowered.owner,
                     },
-                    HirStmtKind::Out { label: None, value } => HirLinePlanItem::Out(*value),
+                    HirStmtKind::Out { label: None, value } => HirLinePlanItem::Out {
+                        value: *value,
+                        statement: lowered.owner,
+                    },
                     HirStmtKind::Expression { expression } => {
                         HirLinePlanItem::Expression(*expression)
                     }

@@ -5,10 +5,14 @@
 //! exposes immutable read models while keeping catalog construction and
 //! resolver mutation crate-private.
 
+mod application;
 mod arguments;
 mod builder;
 mod catalog;
+mod checked_application;
 mod checked_catalog;
+mod constraints;
+mod continuation;
 mod dialogue;
 mod digest;
 mod error;
@@ -22,17 +26,51 @@ mod projection;
 mod publication;
 mod resolver;
 mod schema;
+mod view_modifier;
 
+pub use crate::types::{CheckedConstraintContainerConstructor, CheckedConstraintSourceProjection};
+pub(crate) use application::{
+    DetachedPreparedCallableApplication, PreparedCallableApplication,
+    PreparedCallableApplicationReplayMismatch,
+};
 pub use arguments::CallableParameterCoordinate;
 pub(crate) use arguments::{
-    CallArgumentMapping, MappedCallArgument, MappedCallArgumentSlot, map_call_arguments,
-    map_unmapped_call_arguments,
+    CallableRestContainerPolicy, MappedCallArgumentPassing, MappedCallArgumentSlot,
+    PreparedArgumentSourceProjection, PreparedCallArgumentMapping,
+    PreparedDialogueApplicationMetadataArgument, PreparedDialogueApplicationMetadataEvidence,
+    PreparedDialogueApplicationMetadataInventory, map_call_arguments,
 };
 pub(crate) use builder::RegisteredCallableCatalogBuilder;
 pub use catalog::{
     CallableAccess, CallableRecord, CatalogCallableEntry, EnvironmentCallableCatalog,
     EnvironmentDeclarationOrdinal, EquivalentCallableSource, NonEmptyCallableSet,
     ProjectCallableCatalog, RegisteredCallableCatalog, RegisteredProjectModuleCallables,
+};
+pub use checked_application::{
+    CallableParameterAlternativeIndex, CheckedCallApplication, CheckedCallApplicationCore,
+    CheckedCallApplicationCoreDigest, CheckedCallApplicationDigest, CheckedCallApplicationSite,
+    CheckedCallArgumentPassing, CheckedCallCalleeExecution, CheckedCallCandidateInventoryDigest,
+    CheckedCallContinuation, CheckedCallContinuationDigest, CheckedCallEffectBinding,
+    CheckedCallExecutionArgument, CheckedCallExecutionProjection, CheckedCallExecutionSlot,
+    CheckedCallExecutionSource, CheckedCallOperandDestination, CheckedCallReceiverProjection,
+    CheckedCallResult, CheckedCallRuntimeOperand, CheckedCallRuntimeOperandOrder,
+    CheckedCallSemanticOperand, CheckedCallSemanticOperandSource, CheckedCallSemanticSelection,
+    CheckedCandidateIndex, CheckedCandidateInventory, CheckedCapacityMethodIdentity,
+    CheckedCapacityOperation, CheckedCaptureMode, CheckedCaptureSignatureRow,
+    CheckedContentCallableCoordinate, CheckedDeferredContinuationParameter,
+    CheckedDialogueCallableIdentity, CheckedDomainMethodIdentity, CheckedFunctionValueIdentity,
+    CheckedLanguageCallableIdentity, CheckedLexicalCallableIdentity, FrozenCallTypeSolution,
+    FrozenCallTypeSolutionDigest, ResolvedCallable, ResolvedCallableAuthority,
+    ResolvedCallableBase, ResolvedCallableBaseInstantiation, ResolvedCallableDigest,
+    ResolvedCallableIssuerEvidence, ResolvedCallableOrigin, ResolvedCallableStableIdentity,
+    ResolvedCallableState, ResolvedDialogueCalleeIdentity,
+};
+pub(crate) use checked_application::{
+    CheckedCallApplicationCoreSeal, CheckedCallExecutionArgumentSeal,
+    CheckedCallExecutionProjectionSeal, CheckedCallExecutionSlotSeal, CheckedCallResultSeal,
+    CheckedCallSemanticOperandSeal, CheckedCaptureSignatureSeal, PreparedCandidateIndex,
+    ResolvedCallableBaseSeal, ResolvedCallableCheckedDefinition,
+    ResolvedCallableStableIdentitySeal,
 };
 pub use checked_catalog::{
     CallableEffectContract, CallableInterfaceDigest, CheckedCallableCatalog,
@@ -43,9 +81,24 @@ pub use checked_catalog::{
     EffectItemSource, EffectPermission,
 };
 pub(crate) use checked_catalog::{CheckedCallableCatalogBuildError, CheckedCallableCatalogBuilder};
+pub(crate) use constraints::{
+    CandidateConstraintDriverStartFailure, CandidateConstraintWorkSession,
+    PreparedSourceConstraintGroup, SourceCallbackFailure, SourceCheckpointFailure,
+    TypeConstraintClient,
+};
+pub(crate) use continuation::{
+    CallConstraintInvariant, EnclosingGenericParameterScope, PreparedCallContinuationAuthority,
+    PreparedCallContinuationRef, PreparedCallGraph, PreparedCallGraphCheckpoint,
+    PreparedCallGraphDelta, PreparedCallGraphIngress, PreparedCallGraphReplayMismatch,
+    PreparedCallGraphSealAuthority, PreparedCallGraphSealNodeKey, PreparedCallGraphSealPayload,
+    PreparedCallGraphSelectedNode, PreparedCallGraphSiteState, PreparedCallPrefixPayload,
+    PreparedCallPrefixReplayMismatch, PreparedCallSiteContinuation,
+    PreparedConstraintInitialization,
+};
+pub use continuation::{CheckedCallSite, PreparedCallGraphInvariant};
 pub use dialogue::{
-    CharacterDialoguePatchContext, DialogueCallableId, DialogueCalleeIdentity,
-    DialogueSchemaContext,
+    CharacterDialoguePatchContext, DialogueCallableId, DialogueCallableResultContext,
+    DialogueCalleeIdentity, DialogueSchemaContext,
 };
 pub use digest::{
     CallableSignatureSchemaDigest, EnvironmentCallablePublicationDigest,
@@ -60,14 +113,15 @@ pub use error::{
     RustProvenanceField, SemanticSignatureError, SignatureLimitExceeded, SignatureLimitKind,
     SignatureWorkKind,
 };
+pub(crate) use facts::CallTargetFactsInput;
 pub use facts::{
-    CallCalleeClassificationFact, CallPoison, CallTargetFact, CallTargetFacts, CallableDiagnostic,
-    CallableDiagnosticRelated, CallableDiagnosticSeverity, CallableDiagnosticSubject,
-    CheckedCallArgumentFact, CheckedCallArgumentSlotFact, CheckedCallArgumentSlotSource,
+    CallAnalysisOutcome, CallCalleeClassificationFact, CallPoison, CallTargetFacts,
+    CallableDiagnostic, CallableDiagnosticRelated, CallableDiagnosticSeverity,
+    CallableDiagnosticSubject, CheckedAmbiguousCallEvidence, CheckedCallArgumentSlotSource,
+    CheckedMissingCallEvidence, CheckedNonCallableEvidence, CheckedRejectedCallEvidence,
     SemanticParameter, SemanticParameterGroup, SemanticSignature, SemanticSignatureHelp,
     SemanticSignatureIndex, SemanticSignatureRecovery, SemanticSignatureSurface,
 };
-pub(crate) use facts::{CallTargetFactsInput, CheckedCallArgumentSlotInput, CheckedCallTarget};
 pub use identity::{
     AdapterPackageId, AgentIntrinsicSignatureId, BuiltinCallableId, CallableArgumentSlotIndex,
     CallableAuthorityRank, CallableCandidateId, CallableFamily, CallableGroupIndex,
@@ -75,22 +129,23 @@ pub use identity::{
     CallableProviderId, CapabilityCallableId, CapacityMethodId, CheckedCallableContext,
     CheckedCallableDeclaration, CheckedCallableDigest, CheckedCallableId,
     CheckedCallableIdentityError, CheckedClosureId, CheckedEffectCallableId, CollectionMethodId,
-    CurriedCallableId, DetachedCallableDeclarationId, DomainMethodId, DropCallableId,
-    EnumVariantSignatureId, EnvironmentCallableDigest, EnvironmentCallableId,
-    EnvironmentCallableKind, EnvironmentCallableOwner, FloatWidth, FunctionValueOrdinal,
-    FunctionValueSignatureId, FxCallableSignatureId, FxResolution, IntegerMethodId,
-    LanguageCallableFamily, LanguageDocumentationFamily, LexicalBindingIndex, LineContextMethodId,
-    LineScheduleCallableId, LocalCallableId, MathCallableId, OptionConstructorKind,
-    PresentationHandleMethodId, ProbeComparisonId, ProbeComparisonOperator, ProjectCallablePath,
-    ProjectNameBinding, ProjectNominalTypeId, PromotionCallableId, ReceiverMethodKey,
-    ReductionConstructorKind, ResultConstructorKind, RustItemPath, STANDARD_TRAIT_CATALOG_VERSION,
-    SemanticScopeId, StageMethodId, StandardCallableDeclarationId, StandardEnvironmentId,
-    StandardTraitCatalogVersion, StdFloatCallableId, StdFloatOperation, VectorDimensions,
+    DetachedCallableDeclarationId, DomainMethodId, DropCallableId, EnumVariantSignatureId,
+    EnvironmentCallableDigest, EnvironmentCallableId, EnvironmentCallableKind,
+    EnvironmentCallableOwner, FloatWidth, FunctionValueOrdinal, FunctionValueSignatureId,
+    FxCallableSignatureId, FxResolution, IntegerMethodId, LanguageCallableFamily,
+    LanguageDocumentationFamily, LineContextMethodId, LineScheduleCallableId, LocalCallableId,
+    MathCallableId, OptionConstructorKind, PresentationHandleMethodId, ProbeComparisonId,
+    ProbeComparisonOperator, ProjectCallablePath, ProjectNameBinding, PromotionCallableId,
+    ReceiverMethodKey, ReductionConstructorKind, ResultConstructorKind, RustItemPath,
+    STANDARD_TRAIT_CATALOG_VERSION, StageMethodId, StandardCallableDeclarationId,
+    StandardEnvironmentId, StandardTraitCatalogVersion, StdFloatCallableId, StdFloatOperation,
+    VectorDimensions,
 };
+pub(crate) use join::validate_selected_application;
 pub use join::{
     CallableInstantiationDigest, CallableReceiverMode, CheckedCallableArgument,
-    CheckedCallableArgumentSlot, CheckedCallableJoin, CheckedCallableJoinError,
-    IntrinsicCallableCandidateTag, validate_selected_call,
+    CheckedCallableArgumentSlot, CheckedCallableJoin, CheckedCallableJoinDigest,
+    CheckedCallableJoinError, IntrinsicCallableCandidateTag,
 };
 pub use limits::{
     CallResolverAccountingReport, CallableLimits, PRODUCTION_CALLABLE_LIMITS,
@@ -98,7 +153,9 @@ pub use limits::{
     SignatureQueryProjectionWork, SignatureQueryResolutionWork, SignatureQuerySearchWork,
     SignatureQueryWorkReport, SignatureWorkReport,
 };
-pub(crate) use limits::{CallableQueryDepth, ResolverWork, SignatureQueryWorkMeter};
+pub(crate) use limits::{
+    CandidateConstraintSessionStartFailure, ResolverWork, SignatureQueryWorkMeter,
+};
 pub(crate) use nominal_signature::associated_scope_for;
 pub(crate) use presentation::PresentationArgumentValuePolicy;
 pub use presentation::{PresentationCallableId, PresentationSchemaContext};
@@ -109,22 +166,43 @@ pub use projection::{
 };
 pub use publication::{EnvironmentCallablePublication, EnvironmentCallablePublicationRecord};
 pub(crate) use resolver::{
-    CallResolverAuthority, CallResolverContext, CallResolverRequest, FinalCallCalleeFacts,
-    PreparedCallCallee, prepare_final_call_callee, prepare_language_free_dot_path,
-    resolve_call_target,
+    CallResolverAuthority, CallResolverContext, CallResolverRequest,
+    CheckedCallableEffectInstantiation, DetachedPreparedResolvedCallable, FinalCallCalleeFacts,
+    PrepareFinalCallCalleeError, PreparedCallCallee, PreparedCallCalleeConstraintInputs,
+    PreparedCallInputProjection, PreparedCallableDefinitionKey,
+    PreparedCallableEffectInstantiationEvidence, PreparedCaptureIdentityRow,
+    PreparedDialogueCallConstraintInputs, PreparedDialogueCallOperandSource,
+    PreparedDialogueCalleeIdentity, PreparedFunctionValueOriginEvidence,
+    PreparedFunctionValueOriginIdentity, PreparedFunctionValueOriginProducer,
+    PreparedFunctionValueOriginProgress, PreparedFunctionValueOriginQueryError,
+    PreparedResolvedCallable, PreparedResolvedCallableDefinition,
+    PreparedResolvedCallableDefinitionBatch, PreparedResolvedCallableDefinitionSealInput,
+    PreparedResolvedCallableDetachArena, PreparedResolvedCallableIdentity, ResolveCallOutcome,
+    ResolvedCallTarget, prepare_final_call_callee, prepare_function_value_origin_query,
+    prepare_language_free_dot_path, prepare_presentation_callee_id, resolve_call_target,
 };
 pub use resolver::{
-    CallableInstantiation, CharacterOwnerSource, NonCallableSource, NonEmptyResolvedCandidates,
-    ResolveCallOutcome, ResolvedCallTarget, ResolvedCallable, ResolvedCharacterOwner,
-    ResolvedFunctionValue, ResolvedNonCallableTarget, SignatureOrigin, TypeReceiverInstantiation,
-    UnknownCallKind, UnknownCallTarget,
+    CallableInstantiation, CharacterOwnerSource, NonCallableSource, ResolvedCharacterOwner,
+    ResolvedNonCallableTarget, SignatureOrigin, TypeReceiverInstantiation, UnknownCallKind,
+    UnknownCallTarget,
 };
 pub use schema::{
-    CallableArgumentPolicy, CallableDocumentation, CallableEffectSchema, CallableEvaluatedEffect,
-    CallableExtensionReceiver, CallableGroupKind, CallableLogLevel, CallableMethodRole,
-    CallableParameter, CallableParameterDocumentation, CallableParameterGroup,
+    CallableArgumentPolicy, CallableArgumentSemanticAction, CallableDocumentation,
+    CallableEffectSchema, CallableEvaluatedEffect, CallableExtensionReceiver,
+    CallableGenericParameterIssuer, CallableGroupKind, CallableLogLevel, CallableMethodRole,
+    CallableParameter, CallableParameterAdmission, CallableParameterConsumer,
+    CallableParameterDocumentation, CallableParameterGroup,
+    CallableParameterGuardedValueAlternative, CallableParameterOtherwiseValueAlternative,
     CallableParameterPassing, CallableParameterPresence, CallableParameterSource,
-    CallableParameterType, CallableSignatureSchema, CallableSource, CallableValidator,
-    DocumentationProvenance, RustCallableProvenance, RustCallablePurity, RustPackageProvenance,
-    SpreadArgumentPolicy, UnknownNamedArgumentPolicy,
+    CallableParameterValueAlternative, CallableParameterValueRule, CallableSemanticValueGuard,
+    CallableSignatureSchema, CallableSource, CallableUnaryTypeConstructor, CallableValidator,
+    CheckedSemanticValueEvidence, DialogueApplicationMetadataCoordinate, DocumentationProvenance,
+    OpenArgumentId, ParameterExpectedTypeProjection, RustCallableProvenance, RustCallablePurity,
+    RustPackageProvenance, SpreadArgumentPolicy, UnknownNamedArgumentPolicy,
+    VariantPayloadRequirement,
 };
+pub(crate) use schema::{
+    CallableGenericFirstUse, CallableGenericParameterInventory, CallableGenericTypeUse,
+    CallableRigidConstUse, CallableSchemaGenericRole,
+};
+pub use view_modifier::ViewModifierId;

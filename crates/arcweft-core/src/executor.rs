@@ -5,13 +5,12 @@ use crate::awbc::product_step::{
 use crate::awbc::schema::{AwbcEntryId, AwbcFunctionId, AwbcProgram};
 use crate::engine::{Engine, EngineStartError, FlowFiber};
 use crate::entry::ActiveEntrySnapshotV1;
-use crate::plan::{EntryRuntimeId, RuntimePlan};
+use crate::plan::{EntryRuntimeId, RuntimeFlowInvocation, RuntimePlan};
 use crate::pure::RuntimeCallBackend;
 use crate::root::{
     RootRuntimeError, RootSaveBlockers, RootStateSnapshotV1, RuntimeCommandEnvelope,
 };
 use crate::step::{RuntimeStepInput, RuntimeStepOptions, RuntimeStepResult};
-use crate::value::RuntimeBinding;
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
 
@@ -127,6 +126,12 @@ impl VmExecutor {
         }
     }
 
+    pub(crate) fn from_flow_invocation(
+        invocation: RuntimeFlowInvocation,
+    ) -> Result<Self, EngineStartError> {
+        Engine::for_flow_invocation(invocation).map(|engine| Self { engine })
+    }
+
     pub(crate) const fn engine(&self) -> &Engine {
         &self.engine
     }
@@ -139,19 +144,14 @@ impl VmExecutor {
         self.engine.start_entry(entry)
     }
 
-    pub(crate) fn step_with_root_bindings_and_pure_backend(
+    pub(crate) fn step_with_pure_backend(
         &mut self,
         input: RuntimeStepInput,
-        root_bindings: &[RuntimeBinding],
         options: RuntimeStepOptions,
         pure_backend: &mut impl RuntimeCallBackend,
     ) -> RuntimeStepResult {
-        self.engine.step_with_root_bindings_and_pure_backend(
-            input,
-            root_bindings,
-            options,
-            pure_backend,
-        )
+        self.engine
+            .step_with_pure_backend(input, options, pure_backend)
     }
 }
 
@@ -166,6 +166,18 @@ impl AotExecutor {
         }
     }
 
+    pub(crate) fn from_flow_invocation(
+        invocation: RuntimeFlowInvocation,
+    ) -> Result<Self, EngineStartError> {
+        let program = AotProgram::from_runtime_plan(invocation.plan());
+        let vm = VmExecutor::from_flow_invocation(invocation)?;
+        Ok(Self {
+            program,
+            vm,
+            fast_path_ops: 0,
+        })
+    }
+
     pub(crate) const fn fast_path_ops(&self) -> usize {
         self.fast_path_ops
     }
@@ -174,10 +186,9 @@ impl AotExecutor {
         self.vm.start_entry(entry)
     }
 
-    pub(crate) fn step_with_root_bindings_and_pure_backend(
+    pub(crate) fn step_with_pure_backend(
         &mut self,
         input: RuntimeStepInput,
-        root_bindings: &[RuntimeBinding],
         options: RuntimeStepOptions,
         pure_backend: &mut impl RuntimeCallBackend,
     ) -> RuntimeStepResult {
@@ -189,22 +200,11 @@ impl AotExecutor {
             let (result, fast_path_ops) = self
                 .vm
                 .engine_mut()
-                .step_prechecked_aot_linear_with_pure_backend(
-                    &self.program,
-                    &input,
-                    root_bindings,
-                    options,
-                    pure_backend,
-                );
+                .step_prechecked_aot_linear_with_pure_backend(&self.program, options, pure_backend);
             self.fast_path_ops += fast_path_ops;
             return result;
         }
-        self.vm.step_with_root_bindings_and_pure_backend(
-            input,
-            root_bindings,
-            options,
-            pure_backend,
-        )
+        self.vm.step_with_pure_backend(input, options, pure_backend)
     }
 }
 
@@ -240,6 +240,24 @@ impl ArcweftRuntimeExecutor {
                 });
             }
         })
+    }
+
+    pub fn from_runtime_flow_invocation(
+        invocation: RuntimeFlowInvocation,
+        tier: ArcweftExecutionTier,
+    ) -> Result<Self, EngineStartError> {
+        match tier {
+            ArcweftExecutionTier::RuntimePlanVm => VmExecutor::from_flow_invocation(invocation)
+                .map(ArcweftRuntimeExecutorInner::RuntimePlanVm)
+                .map(Self::from_inner),
+            ArcweftExecutionTier::StructuredAot => AotExecutor::from_flow_invocation(invocation)
+                .map(ArcweftRuntimeExecutorInner::StructuredAot)
+                .map(Self::from_inner),
+            ArcweftExecutionTier::AwbcProduct => Err(EngineStartError::InvalidFlowInvocation {
+                message: "RuntimePlan Flow invocation cannot initialize a Product AWBC executor"
+                    .to_owned(),
+            }),
+        }
     }
 
     pub fn from_awbc_product(
@@ -432,39 +450,16 @@ impl ArcweftRuntimeExecutor {
         options: RuntimeStepOptions,
         pure_backend: &mut impl RuntimeCallBackend,
     ) -> RuntimeStepResult {
-        self.step_with_root_bindings_and_pure_backend(input, &[], options, pure_backend)
-    }
-
-    pub fn step_with_root_bindings_and_pure_backend(
-        &mut self,
-        input: RuntimeStepInput,
-        root_bindings: &[RuntimeBinding],
-        options: RuntimeStepOptions,
-        pure_backend: &mut impl RuntimeCallBackend,
-    ) -> RuntimeStepResult {
         match &mut self.inner {
-            ArcweftRuntimeExecutorInner::RuntimePlanVm(executor) => executor
-                .step_with_root_bindings_and_pure_backend(
-                    input,
-                    root_bindings,
-                    options,
-                    pure_backend,
-                ),
-            ArcweftRuntimeExecutorInner::StructuredAot(executor) => executor
-                .step_with_root_bindings_and_pure_backend(
-                    input,
-                    root_bindings,
-                    options,
-                    pure_backend,
-                ),
-            ArcweftRuntimeExecutorInner::AwbcProduct(executor) => {
-                executor.vm.step_with_root_bindings_and_pure_backend(
-                    input,
-                    root_bindings,
-                    options,
-                    pure_backend,
-                )
+            ArcweftRuntimeExecutorInner::RuntimePlanVm(executor) => {
+                executor.step_with_pure_backend(input, options, pure_backend)
             }
+            ArcweftRuntimeExecutorInner::StructuredAot(executor) => {
+                executor.step_with_pure_backend(input, options, pure_backend)
+            }
+            ArcweftRuntimeExecutorInner::AwbcProduct(executor) => executor
+                .vm
+                .step_with_pure_backend(input, options, pure_backend),
         }
     }
 
@@ -496,8 +491,6 @@ impl RuntimeExecutor for AotExecutor {
                 .engine_mut()
                 .step_prechecked_aot_linear_with_pure_backend(
                     &self.program,
-                    &input,
-                    &[],
                     options,
                     &mut pure_backend,
                 );

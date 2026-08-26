@@ -26,6 +26,7 @@ pub use ownership::{
     OwnershipEvidenceDigest, RetainedValueDisposition,
 };
 mod producer_admission;
+mod record_field;
 pub use producer_admission::{
     CheckedNeedProducerAdmission, CheckedNeedProducerAdmissionDigest,
     CheckedNeedProducerAdmissionError, CheckedProducerArgumentAdmission,
@@ -33,5 +34,6 @@ pub use producer_admission::{
 pub mod project_index;
 pub mod proof_return;
 pub mod registration;
+pub mod semantic_coordinate;
 pub mod signature;
 pub mod types;

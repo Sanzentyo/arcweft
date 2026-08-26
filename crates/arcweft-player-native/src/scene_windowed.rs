@@ -22,6 +22,7 @@ use crate::windowed_runtime::{
     WindowedRuntimeOutcome, WindowedRuntimeOwner, WindowedRuntimeOwnerError,
 };
 use arcweft_bundle::ArcweftBundle;
+use arcweft_core::plan::EntryRuntimeId;
 use arcweft_desktop_native::NativeDesktopBackend;
 use arcweft_layout::ScalePolicy;
 use arcweft_player_scene::dialogue::{DialogueVisualClock, DialogueVisualClockSnapshot};
@@ -55,6 +56,7 @@ use arcweft_render_wgpu::renderer::{
 use arcweft_runtime_driver::clock::{RuntimeClockError, RuntimeClockStep};
 use arcweft_runtime_driver::session::{BundleSessionError, BundleSessionOptions, BundleStepInput};
 use arcweft_runtime_driver::session_save::BundleSessionSaveError;
+use arcweft_runtime_driver::view_runtime::BundleViewEventDispatchError;
 use serde::{Deserialize, Serialize};
 use std::collections::VecDeque;
 use std::fs;
@@ -87,6 +89,7 @@ pub struct NativePlayerOptions {
     frame_fit: PlayerFrameFit,
     session_load: Option<PathBuf>,
     session_save_out: Option<PathBuf>,
+    entry: Option<EntryRuntimeId>,
 }
 
 impl Default for NativePlayerOptions {
@@ -96,6 +99,7 @@ impl Default for NativePlayerOptions {
             frame_fit: PlayerFrameFit::design_1280x720(ScalePolicy::Contain),
             session_load: None,
             session_save_out: None,
+            entry: None,
         }
     }
 }
@@ -122,6 +126,12 @@ impl NativePlayerOptions {
     #[must_use]
     pub fn with_session_save_out_path(mut self, path: PathBuf) -> Self {
         self.session_save_out = Some(path);
+        self
+    }
+
+    #[must_use]
+    pub fn with_entry(mut self, entry: EntryRuntimeId) -> Self {
+        self.entry = Some(entry);
         self
     }
 }
@@ -199,6 +209,8 @@ enum NativeSceneWindowError {
     Window(String),
     #[error("bundle session failed: {0}")]
     Session(#[from] BundleSessionError),
+    #[error("View handler dispatch failed: {0}")]
+    ViewHandlerDispatch(#[from] BundleViewEventDispatchError),
     #[error("bundle session save failed: {0}")]
     SessionSave(#[from] BundleSessionSaveError),
     #[error("failed to {operation} native player session save {path}: {source}")]
@@ -993,12 +1005,12 @@ fn restored_windowed_runtime_and_input(
     bundle: &ArcweftBundle,
     backend: NativeDesktopBackend,
     session_load: Option<&Path>,
+    entry: Option<&EntryRuntimeId>,
 ) -> Result<(WindowedRuntimeOwner, InputController, DialogueVisualClock), NativeSceneWindowError> {
-    let mut runtime = WindowedRuntimeOwner::from_bundle_with_desktop_backend(
-        bundle,
-        BundleSessionOptions::default(),
-        backend,
-    )?;
+    let mut session_options = BundleSessionOptions::default();
+    session_options.entry = entry.cloned();
+    let mut runtime =
+        WindowedRuntimeOwner::from_bundle_with_desktop_backend(bundle, session_options, backend)?;
     let restored = load_native_player_session_save(&mut runtime, session_load)?;
     let mut input = InputController::default();
     let mut dialogue_visual_clock = DialogueVisualClock::default();

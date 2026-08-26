@@ -3,6 +3,7 @@ pub mod cli;
 pub mod entry;
 pub mod executor;
 pub mod expectations;
+pub mod invocation;
 pub mod options;
 pub mod parse;
 pub mod plan;

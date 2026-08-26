@@ -19,6 +19,7 @@ use arcweft_core::{
 use arcweft_interaction_model::dialogue::CharacterDialogueCustomFieldId;
 use arcweft_lang_hir::{
     database::HirDatabase,
+    dialogue_application::HirPostfixBracketCandidates,
     expr::{HirCallCallee, HirExprKind, HirSelectedMember},
     item::{HirFunctionBody, HirItemKind},
     lowering::{HirModuleKey, LoweringRequest},
@@ -50,58 +51,57 @@ use arcweft_source::{
 };
 
 use super::{
-    CallTargetFacts, CandidateEvaluationPass, CandidateExpectedType,
-    CharacterDialogueFieldCoordinate, CharacterDialoguePatchContext, CheckedAssertionDisposition,
-    CheckedBinding, CheckedBuiltinVariantCase, CheckedCharacterDialogueTarget,
-    CheckedCoverageWitness, CheckedExpression, CheckedExpressionResolution,
+    CallAnalysisOutcome, CallTargetFacts, CandidateEvaluationPass, CandidateExpectedType,
+    CharacterDialogueFieldCoordinate, CheckedAssertionDisposition, CheckedBinding,
+    CheckedCallableJoinError, CheckedCharacterDialogueTarget, CheckedCoverageWitness,
+    CheckedExpression, CheckedExpressionEdgeError, CheckedExpressionResolution,
     CheckedFunctionExecution, CheckedItem, CheckedItemRole, CheckedIteration,
     CheckedIteratorFamily, CheckedMatchLimits, CheckedPatchOperation, CheckedPattern,
     CheckedPatternResolution, CheckedSelectResolution, CheckedStatement, CheckedStatementRole,
     CheckedSuspensionRole, CheckedSuspensionStatement, CheckedTryBoundary, CheckedTryCarrier,
     CheckedTypeSelection, CheckedUnreachableReason, CheckedValueResolution, CheckedVariantOwner,
-    FinalSemanticAnalysis, FinalSemanticAnalysisControl, FinalSemanticAnalysisError,
-    FinalSemanticAnalysisInput, FinalSemanticCatalogs, PhysicalArgumentEvaluationKind,
-    RegisteredSemanticValueId, ResolvedCallable, SemanticTranscriptError,
-    StableCheckedValueCoordinate, analyze_final_project,
+    FinalCallSealLocation, FinalSemanticAnalysis, FinalSemanticAnalysisControl,
+    FinalSemanticAnalysisError, FinalSemanticAnalysisInput, FinalSemanticCatalogs,
+    PhysicalArgumentEvaluationKind, PostfixBracketResolution, RegisteredSemanticValueId,
+    SemanticFactFamily, SemanticTranscriptError, analyze_final_project,
 };
 use crate::{
     CheckedNeedProducerAdmissionError,
     assertion::{AssertionBuildProfile, AssertionContext, AssertionRuntimePolicy},
     callable::{
-        AdapterPackageId, AgentIntrinsicSignatureId, CallCalleeClassificationFact,
-        CallResolverAuthority, CallResolverContext, CallResolverRequest, CallTargetFact,
+        AdapterPackageId, AgentIntrinsicSignatureId, CallConstraintInvariant, CallPoison,
         CallableAccess, CallableArgumentPolicy, CallableAuthorityRank, CallableCandidateId,
-        CallableDocumentation, CallableEffectSchema, CallableGroupIndex, CallableGroupKind,
-        CallableLimits, CallableLookupKey, CallableName, CallableOverloadIndex, CallableParameter,
+        CallableDocumentation, CallableEffectSchema, CallableGenericParameterIssuer,
+        CallableGroupIndex, CallableGroupKind, CallableLimits, CallableLookupKey, CallableName,
+        CallableOverloadIndex, CallableParameter, CallableParameterAdmission,
         CallableParameterGroup, CallableParameterIndex, CallableParameterPassing,
-        CallableParameterPresence, CallableParameterType, CallablePath, CallableProviderId,
-        CallableReceiverMode, CallableRecord, CallableSignatureSchema, CallableValidator,
-        CatalogCallableEntry, CheckedCallArgumentSlotSource, CheckedClosureId, DialogueCallableId,
-        DomainMethodId, EffectContractOrigin, EnvironmentCallableCatalog, EnvironmentCallableId,
-        EnvironmentCallableKind, EnvironmentCallableOwner, EnvironmentCallablePublicationDigest,
-        EnvironmentDeclarationOrdinal, FinalCallCalleeFacts, LineContextMethodId,
+        CallableParameterPresence, CallablePath, CallableProviderId, CallableReceiverMode,
+        CallableRecord, CallableSignatureSchema, CallableValidator, CatalogCallableEntry,
+        CheckedCallArgumentSlotSource, CheckedCallExecutionSource, CheckedClosureId,
+        DialogueCallableId, DomainMethodId, EffectContractOrigin, EnvironmentCallableCatalog,
+        EnvironmentCallableId, EnvironmentCallableKind, EnvironmentCallableOwner,
+        EnvironmentCallablePublicationDigest, EnvironmentDeclarationOrdinal, LineContextMethodId,
         LineScheduleCallableId, NonEmptyCallableSet, PRODUCTION_CALLABLE_LIMITS,
-        PresentationCallableId, ProjectCallablePath, RegisteredCallableCatalog, ResolveCallError,
-        ResolveCallOutcome, ResolverWork, SemanticSignatureSurface, SpreadArgumentPolicy,
-        StageMethodId, UnknownCallKind, UnknownNamedArgumentPolicy, prepare_final_call_callee,
-        resolve_call_target,
+        PresentationCallableId, ProjectCallablePath, RegisteredCallableCatalog,
+        SemanticSignatureSurface, SpreadArgumentPolicy, StageMethodId, UnknownCallKind,
+        UnknownNamedArgumentPolicy, ViewModifierId,
     },
     character_dialogue::CharacterDialogueCustomFieldBinding,
     effect_row::EffectRow,
     effects::{EffectId, EffectSet},
-    entry::CheckedEntryCatalog,
     env::{
         TypeCheckEnv,
         nominal::{
             AcceptedNominalId, AcceptedNominalOrigin, AcceptedNominalOwnerId,
-            AcceptedNominalRecord, AcceptedNominalSemantics,
+            AcceptedNominalRecord, AcceptedNominalSemantics, OpenNominalArity, OpenNominalPattern,
+            OpenNominalRule, OpenNominalRuleId, OpenNominalScope,
         },
     },
-    nominal::{ResolvedTypeRefOutcome, TypeNameResolution, TypeResolutionFailure},
+    nominal::TypeNameResolution,
     ownership::{
         CheckedOwnershipCertificate, CheckedOwnershipError, CheckedOwnershipLimits,
-        RetainedValueDisposition, RuntimeOwnershipPathSegment, RuntimeOwnershipProjection,
-        RuntimeOwnershipRejection, RuntimeProducerArgumentClassifier,
+        RetainedValueDisposition, RuntimeOwnershipProjection, RuntimeOwnershipRejection,
+        RuntimeProducerArgumentClassifier,
     },
     project_index::{ProgramHash, ProjectCallableKind, ProjectEntityId, ProjectSemanticIndex},
     registration::{
@@ -114,20 +114,23 @@ use crate::{
         ExternalRegistrationFact, ProjectRegistrationFacts, RegisteredExternalOwner,
         RegisteredSemanticWorld, SourceBackedEnvironmentRegistrationInput,
     },
+    semantic_coordinate::{
+        CheckedExpressionChildRole, SemanticCoordinateIndex, StableCheckedValueCoordinate,
+    },
     signature::{
         SignatureQuery, SignatureQueryControl, SignatureQueryError, SignatureQueryOutcome,
         SignatureQueryStep, query_signature,
     },
     types::{
-        AgentBuiltinType, DetachedTypeOwnerId, EntityKind, GenericTypeOwnerId,
-        GenericTypeParameterId, StageActorHandleType, TypeKind,
+        AgentBuiltinType, EntityKind, GenericParameterOwnerId, GenericTypeParameterId,
+        StageActorHandleType, TypeGenericUseCollector, TypeKind,
     },
 };
 
-struct Fixture {
-    project: HirProject,
-    symbols: Arc<ProjectSymbolTable>,
-    registered: RegisteredSemanticWorld,
+pub(super) struct Fixture {
+    pub(super) project: HirProject,
+    pub(super) symbols: Arc<ProjectSymbolTable>,
+    pub(super) registered: RegisteredSemanticWorld,
     root_document: Arc<SourceDocument>,
 }
 
@@ -156,7 +159,7 @@ fn parse(id: &str, path: &str, source: &str) -> (Arc<SourceDocument>, ParsedSour
     (document, parsed)
 }
 
-fn fixture(root_source: &str, child_source: Option<&str>) -> Fixture {
+pub(super) fn fixture(root_source: &str, child_source: Option<&str>) -> Fixture {
     fixture_with_environment_inputs(root_source, child_source, Vec::new())
 }
 
@@ -365,7 +368,7 @@ fn publish_fixture_modules(
         .collect()
 }
 
-fn environment_overload_fixture(root_source: &str) -> Fixture {
+pub(super) fn environment_overload_fixture(root_source: &str) -> Fixture {
     let owner_id = "final-analysis-overloads";
     let package = AdapterPackageId::try_new(owner_id).expect("adapter package ID");
     let owner = EnvironmentCallableOwner::Adapter(package.clone());
@@ -426,6 +429,7 @@ fn environment_overload_fixture(root_source: &str) -> Fixture {
                     SpreadArgumentPolicy::Reject,
                 ),
                 CallableValidator::Ordinary,
+                CallableGenericParameterIssuer::empty(),
             ),
             EnvironmentDeclarationOrdinal::try_from_usize(ordinal).expect("declaration ordinal"),
             EnvironmentCallablePublicationMetadataInput::new(
@@ -473,16 +477,16 @@ const AKANE_CHARACTER_MANIFEST: &str = r#"{
   }]
 }"#;
 
-fn akane_character_registration() -> (
+fn character_registration(
+    document_id: &str,
+    path: &str,
+    source: &str,
+) -> (
     Arc<SourceDocument>,
     SourceBackedCharacterCatalog,
     ExternalRegistrationFact,
 ) {
-    let manifest_document = source_document(
-        "arcweft-test://sema/final/character-akane",
-        "character-akane.json",
-        AKANE_CHARACTER_MANIFEST,
-    );
+    let manifest_document = source_document(document_id, path, source);
     let manifest = SourceBackedCharacterManifest::decode_registration_json(&manifest_document)
         .expect("source-backed Character manifest");
     let owner = manifest.manifest().character().clone();
@@ -537,6 +541,18 @@ fn akane_character_registration() -> (
     (manifest_document, catalog, external)
 }
 
+fn akane_character_registration() -> (
+    Arc<SourceDocument>,
+    SourceBackedCharacterCatalog,
+    ExternalRegistrationFact,
+) {
+    character_registration(
+        "arcweft-test://sema/final/character-akane",
+        "character-akane.json",
+        AKANE_CHARACTER_MANIFEST,
+    )
+}
+
 fn character_nominal_fixture(root_source: &str) -> Fixture {
     let (manifest_document, catalog, _) = akane_character_registration();
     fixture_with_registration_inputs(
@@ -561,7 +577,7 @@ fn external_character_fixture(root_source: &str) -> Fixture {
 
 #[derive(Clone)]
 struct TestCallableParameter {
-    ty: CallableParameterType,
+    admission: CallableParameterAdmission,
     passing: CallableParameterPassing,
     presence: CallableParameterPresence,
 }
@@ -569,7 +585,7 @@ struct TestCallableParameter {
 impl TestCallableParameter {
     fn exact(ty: TypeKind) -> Self {
         Self {
-            ty: CallableParameterType::Exact(ty),
+            admission: CallableParameterAdmission::checked(ty),
             passing: CallableParameterPassing::PositionalOrNamed,
             presence: CallableParameterPresence::Required,
         }
@@ -577,7 +593,7 @@ impl TestCallableParameter {
 
     fn typed_rest(ty: TypeKind) -> Self {
         Self {
-            ty: CallableParameterType::Exact(ty),
+            admission: CallableParameterAdmission::checked(ty),
             passing: CallableParameterPassing::RestPositional,
             presence: CallableParameterPresence::Required,
         }
@@ -589,6 +605,7 @@ struct TestCallableOverload {
     result: TypeKind,
     effects: EffectSet,
     spread: SpreadArgumentPolicy,
+    generic_issuer: CallableGenericParameterIssuer,
 }
 
 impl TestCallableOverload {
@@ -601,7 +618,13 @@ impl TestCallableOverload {
             result,
             effects: EffectSet::new(),
             spread: SpreadArgumentPolicy::Reject,
+            generic_issuer: CallableGenericParameterIssuer::empty(),
         }
+    }
+
+    fn with_generic_issuer(mut self, generic_issuer: CallableGenericParameterIssuer) -> Self {
+        self.generic_issuer = generic_issuer;
+        self
     }
 
     fn typed_rest(item: TypeKind, result: TypeKind) -> Self {
@@ -610,6 +633,7 @@ impl TestCallableOverload {
             result,
             effects: EffectSet::new(),
             spread: SpreadArgumentPolicy::TypedRest,
+            generic_issuer: CallableGenericParameterIssuer::empty(),
         }
     }
 
@@ -622,6 +646,7 @@ impl TestCallableOverload {
             result,
             effects: EffectSet::new(),
             spread: SpreadArgumentPolicy::FixedLiteralOnly,
+            generic_issuer: CallableGenericParameterIssuer::empty(),
         }
     }
 
@@ -631,6 +656,7 @@ impl TestCallableOverload {
             result,
             effects: EffectSet::from_labels([effect]).expect("valid test effect"),
             spread: SpreadArgumentPolicy::Reject,
+            generic_issuer: CallableGenericParameterIssuer::empty(),
         }
     }
 }
@@ -638,7 +664,7 @@ impl TestCallableOverload {
 /// Replaces only the accepted environment callable catalog while preserving
 /// the source-backed project, nominal generation, and symbol authority. This
 /// lets the matrix exercise typed schemas that the environment input codec
-/// intentionally cannot author (notably function and detached generic types).
+/// intentionally cannot author (notably function-value and generic-parameter types).
 fn typed_overload_fixture(
     root_source: &str,
     name: &str,
@@ -713,15 +739,21 @@ fn typed_overload_entry(
     Arc<CallableRecord>,
     CatalogCallableEntry,
 ) {
-    let parameters = overload
-        .parameters
+    let TestCallableOverload {
+        parameters,
+        result,
+        effects,
+        spread,
+        generic_issuer,
+    } = overload;
+    let parameters = parameters
         .into_iter()
         .enumerate()
         .map(|(index, parameter)| {
             CallableParameter::try_new(
                 CallableParameterIndex::try_from_usize(index).expect("parameter index"),
                 Some(CallableName::try_new(format!("value{index}")).expect("parameter name")),
-                parameter.ty,
+                parameter.admission,
                 parameter.passing,
                 parameter.presence,
                 None,
@@ -740,10 +772,11 @@ fn typed_overload_entry(
     let schema = Arc::new(
         CallableSignatureSchema::try_new(
             vec![group],
-            overload.result,
-            CallableEffectSchema::Fixed(EffectRow::closed(overload.effects)),
-            CallableArgumentPolicy::new(UnknownNamedArgumentPolicy::Reject, overload.spread),
+            result,
+            CallableEffectSchema::Fixed(EffectRow::closed(effects)),
+            CallableArgumentPolicy::new(UnknownNamedArgumentPolicy::Reject, spread),
             CallableValidator::Ordinary,
+            generic_issuer,
             &PRODUCTION_CALLABLE_LIMITS,
         )
         .expect("test callable schema"),
@@ -824,7 +857,10 @@ fn candidate_boundary_fixture(candidate_count: usize) -> Fixture {
 fn checked_callables(
     fixture: &Fixture,
     input: &FinalSemanticAnalysisInput,
-) -> Arc<crate::callable::CheckedCallableCatalog> {
+) -> (
+    Arc<arcweft_lang_hir::project::HirProjectEvaluationTopology>,
+    Arc<crate::callable::CheckedCallableCatalog>,
+) {
     super::analyzer::freeze_checked_callables_for_test(
         fixture.project.executable_view().expect("executable HIR"),
         &fixture.symbols,
@@ -834,7 +870,9 @@ fn checked_callables(
     .expect("checked callable catalog")
 }
 
-fn analyze(fixture: &Fixture) -> Result<FinalSemanticAnalysis, FinalSemanticAnalysisError> {
+pub(super) fn analyze(
+    fixture: &Fixture,
+) -> Result<FinalSemanticAnalysis, FinalSemanticAnalysisError> {
     let cancellation = AtomicBool::new(false);
     analyze_final_project(
         fixture.project.executable_view().expect("executable HIR"),
@@ -842,6 +880,7 @@ fn analyze(fixture: &Fixture) -> Result<FinalSemanticAnalysis, FinalSemanticAnal
         FinalSemanticCatalogs::production(&fixture.registered),
         FinalSemanticAnalysisControl::new(&cancellation),
     )
+    .map_err(super::FinalSemanticProjectError::into_semantic_fixture_error)
 }
 
 fn analyze_with_assertion_profile(
@@ -855,82 +894,74 @@ fn analyze_with_assertion_profile(
         FinalSemanticCatalogs::production(&fixture.registered),
         FinalSemanticAnalysisControl::new(&cancellation).with_assertion_build_profile(profile),
     )
+    .map_err(super::FinalSemanticProjectError::into_semantic_fixture_error)
 }
 
 #[test]
 fn dialogue_line_plan_bindings_are_inferred_in_source_order() {
-    let fixture = fixture(
-        concat!(
-            "pub character alice { display_name = \"Alice\" }\n",
-            "flow line_handles() -> String {\n",
-            "    let (_, cue) = alice(voice=auto)[聞いて。[p]]\n",
-            "    with:\n",
-            "        let actor = alice.stage.acquire(scope=line)\n",
-            "        let cue = at(0.42s):\n",
-            "            actor.look(.worried, crossfade=120ms)\n",
-            "        let voice = line.voice_handle()\n",
-            "        out (voice, cue)\n",
-            "    return \"done\"\n",
-            "}\n",
-        ),
-        None,
-    );
+    let fixture = character_nominal_fixture(concat!(
+        "pub character @character.akane Akane as akane {}\n",
+        "flow line_handles() -> String {\n",
+        "    let (_, cue) = akane(voice=auto)[聞いて。[p]]\n",
+        "    with:\n",
+        "        let actor = akane.stage.acquire(scope=line)\n",
+        "        let cue = at(0.42s):\n",
+        "            actor.look(.normal, crossfade=120ms)\n",
+        "        let voice = line.voice_handle()\n",
+        "        out (voice, cue)\n",
+        "    return \"done\"\n",
+        "}\n",
+    ));
     let report = analyze(&fixture).expect("typed Dialogue line-plan bindings");
-    let character = CharacterId::try_new("character.alice").expect("Character identity");
+    let character = CharacterId::try_new("character.akane").expect("Character identity");
     let acquire = report
         .calls()
         .find(|(_, call)| {
-            matches!(
-                call.target(),
-                CallTargetFact::Selected { selected, .. }
-                    if selected.id()
-                        == &CallableCandidateId::StageMethod(StageMethodId::Acquire)
-            )
+            call.selected_application().is_some_and(|application| {
+                application.core().candidates().selected().id()
+                    == &CallableCandidateId::StageMethod(StageMethodId::Acquire)
+            })
         })
         .map(|(_, call)| call)
         .expect("exact stage acquire call");
     assert_eq!(
-        acquire.result(),
-        Some(&TypeKind::StageActorHandle(StageActorHandleType::Exact(
-            character.clone()
-        )))
+        selected_application(acquire).result().ty(),
+        &TypeKind::StageActorHandle(StageActorHandleType::Exact(character.clone()))
     );
     let look = report
         .calls()
         .find(|(_, call)| {
-            matches!(
-                call.target(),
-                CallTargetFact::Selected { selected, .. }
-                    if selected.id() == &CallableCandidateId::StageMethod(StageMethodId::Look)
-            )
+            call.selected_application().is_some_and(|application| {
+                application.core().candidates().selected().id()
+                    == &CallableCandidateId::StageMethod(StageMethodId::Look)
+            })
         })
         .map(|(_, call)| call)
         .expect("exact stage look call");
-    assert_eq!(look.result(), Some(&TypeKind::CueHandle));
+    assert_eq!(
+        selected_application(look).result().ty(),
+        &TypeKind::CueHandle
+    );
     assert!(report.calls().any(|(_, call)| {
-        matches!(
-            call.target(),
-            CallTargetFact::Selected { selected, .. }
-                if selected.id() == &CallableCandidateId::LineContextMethod(
-                    LineContextMethodId::VoiceHandle
-                ) && call.result() == Some(&TypeKind::VoiceHandle)
-        )
+        call.selected_application().is_some_and(|application| {
+            application.core().candidates().selected().id()
+                == &CallableCandidateId::LineContextMethod(LineContextMethodId::VoiceHandle)
+                && application.result().ty() == &TypeKind::VoiceHandle
+        })
     }));
     assert!(report.calls().any(|(_, call)| {
-        matches!(
-            call.target(),
-            CallTargetFact::Selected { selected, .. }
-                if selected.id()
-                    == &CallableCandidateId::LineSchedule(LineScheduleCallableId::At)
-        )
+        call.selected_application().is_some_and(|application| {
+            application.core().candidates().selected().id()
+                == &CallableCandidateId::LineSchedule(LineScheduleCallableId::At)
+        })
     }));
     assert!(!report.calls().any(|(_, call)| {
-        matches!(
-            call.target(),
-            CallTargetFact::Selected { selected, .. }
-                if matches!(selected.id(), CallableCandidateId::CapacityMethod(_))
-                    && call.result() == Some(&TypeKind::VoiceHandle)
-        )
+        call.selected_application().is_some_and(|application| {
+            matches!(
+                application.core().candidates().selected().id(),
+                CallableCandidateId::CapacityMethod(_)
+            ) && application.result().ty() == &TypeKind::VoiceHandle
+        })
     }));
     let module = fixture
         .project
@@ -938,7 +969,43 @@ fn dialogue_line_plan_bindings_are_inferred_in_source_order() {
         .expect("executable HIR")
         .module(&CanonicalModulePath::crate_root())
         .expect("root HIR module");
+    let dialogue_owner = module
+        .expressions()
+        .find_map(|(owner, expression)| {
+            matches!(
+                expression.kind(),
+                HirExprKind::DialogueContentApplication(_)
+            )
+            .then_some(owner)
+        })
+        .expect("typed Dialogue application owner");
+    assert_dialogue_application_result_authority(
+        &report,
+        dialogue_owner,
+        &TypeKind::DialogueLine(Box::new(TypeKind::Tuple(vec![
+            TypeKind::VoiceHandle,
+            TypeKind::CueHandle,
+        ]))),
+    );
     assert_dialogue_line_plan_edges(&report, module);
+}
+
+fn assert_dialogue_application_result_authority(
+    report: &FinalSemanticAnalysis,
+    owner: arcweft_lang_hir::identity::ExprId,
+    expected: &TypeKind,
+) {
+    let expression = report
+        .expression(owner)
+        .expect("Dialogue application expression fact");
+    let call = report.call(owner).expect("Dialogue application call fact");
+    let application = selected_application(call);
+    assert_eq!(expression.ty(), expected);
+    assert_eq!(application.result().ty(), expected);
+    assert_eq!(
+        application.core().candidates().selected().schema().result(),
+        expected
+    );
 }
 
 fn assert_dialogue_line_plan_edges(report: &FinalSemanticAnalysis, module: &HirModule) {
@@ -957,13 +1024,13 @@ fn assert_dialogue_line_plan_edges(report: &FinalSemanticAnalysis, module: &HirM
     assert!(dialogue_edges.iter().any(|(_, role)| {
         matches!(
             role,
-            super::CheckedExpressionChildRole::LinePlanOptionValue { .. }
-                | super::CheckedExpressionChildRole::LinePlanLetValue { .. }
-                | super::CheckedExpressionChildRole::LinePlanOut { .. }
-                | super::CheckedExpressionChildRole::LinePlanTimelineAssert { .. }
-                | super::CheckedExpressionChildRole::LinePlanExpression { .. }
-                | super::CheckedExpressionChildRole::LinePlanTimedCueAnchor { .. }
-                | super::CheckedExpressionChildRole::LinePlanTimedCueBody { .. }
+            CheckedExpressionChildRole::LinePlanOptionValue { .. }
+                | CheckedExpressionChildRole::LinePlanLetValue { .. }
+                | CheckedExpressionChildRole::LinePlanOut { .. }
+                | CheckedExpressionChildRole::LinePlanTimelineAssert { .. }
+                | CheckedExpressionChildRole::LinePlanExpression { .. }
+                | CheckedExpressionChildRole::LinePlanTimedCueAnchor { .. }
+                | CheckedExpressionChildRole::LinePlanTimedCueBody { .. }
         )
     }));
 }
@@ -1053,7 +1120,7 @@ fn assignment_semantics_admit_only_one_direct_local_nominal_field() {
         })
         .expect("assignment statement retains one checked place");
 
-    assert_eq!(assignment.place().field_ordinal(), 1);
+    assert_eq!(assignment.place().field().declaration_ordinal(), 1);
     assert_eq!(assignment.place().field_type(), &TypeKind::Bool);
     assert_eq!(assignment.value_type(), &TypeKind::Bool);
     assert_eq!(
@@ -1101,13 +1168,10 @@ fn assignment_semantics_reject_non_direct_or_non_nominal_places_and_type_mismatc
             ),
         ),
         (
-            "agent-field",
-            "fn invalid(result: ActionResult) { result.accepted = false }\n",
-        ),
-        (
             "entity-field",
             concat!(
-                "entry agent @entry.agent.main {}\n",
+                "fn controller() -> Result<Unit, AgentError> effects {} { Ok(()) }\n",
+                "entry agent @entry.agent.main { controller = controller }\n",
                 "fn invalid() { @entry.agent.main.name = \"changed\" }\n",
             ),
         ),
@@ -1219,65 +1283,7 @@ fn analyze_with_callable_limits(
             .with_callable_limits(callable_limits),
         FinalSemanticAnalysisControl::new(&cancellation),
     )
-}
-
-fn resolve_single_call_directly(
-    fixture: &Fixture,
-) -> (
-    arcweft_lang_hir::identity::ExprId,
-    ResolveCallOutcome,
-    crate::callable::CallResolverAccountingReport,
-) {
-    let checked = checked_callables(fixture, &complete_input(fixture));
-    let project = fixture.project.executable_view().expect("executable HIR");
-    let module = project
-        .module(&CanonicalModulePath::crate_root())
-        .expect("root HIR module");
-    let (owner, call) = module
-        .expressions()
-        .find_map(|(owner, expression)| match expression.kind() {
-            HirExprKind::Call(call) => Some((owner, call)),
-            _ => None,
-        })
-        .expect("one final-HIR Call expression");
-    let expressions = BTreeMap::new();
-    let calls = BTreeMap::new();
-    let nominal_receivers = BTreeMap::new();
-    let enum_variants = BTreeMap::new();
-    let authority = CallResolverAuthority::accepted(
-        project.project_view(),
-        module,
-        &fixture.symbols,
-        &fixture.registered,
-    );
-    let prepared = prepare_final_call_callee(
-        authority,
-        owner,
-        FinalCallCalleeFacts::new(&expressions, &calls, &nominal_receivers, &enum_variants),
-        CharacterDialoguePatchContext::ReusableValue,
-        &PRODUCTION_CALLABLE_LIMITS,
-    )
-    .expect("free environment Call callee preparation");
-    let argument_count = u64::try_from(call.arguments().len()).expect("argument count");
-    let cancellation = AtomicBool::new(false);
-    let mut work = ResolverWork::new(PRODUCTION_CALLABLE_LIMITS.max_query_work());
-    work.record_logical_argument_checks(argument_count)
-        .expect("candidate-neutral logical argument accounting");
-    let request = CallResolverRequest::try_new(
-        prepared.as_borrowed(),
-        &CallResolverContext {
-            authority,
-            checked: checked.as_ref().into(),
-            expected: None,
-            expression: owner,
-            cancellation: &cancellation,
-            limits: &PRODUCTION_CALLABLE_LIMITS,
-        },
-        &mut work,
-    )
-    .expect("validated direct shared-resolver request");
-    let outcome = resolve_call_target(request);
-    (owner, outcome, work.call_accounting())
+    .map_err(super::FinalSemanticProjectError::into_semantic_fixture_error)
 }
 
 fn set_expression_effect(
@@ -1291,17 +1297,20 @@ fn set_expression_effect(
         .find(|(candidate, _)| *candidate == owner)
         .expect("checked expression fixture");
     let effects = EffectSet::from_labels([effect]).expect("effect fixture");
+    let complete = fact.complete().expect("complete expression fixture");
     *fact = CheckedExpression::new(
-        fact.ty().clone(),
-        fact.type_selection(),
+        complete.ty().clone(),
+        complete.type_selection(),
         effects.clone(),
-        fact.resolution().clone(),
-    );
+        complete.resolution().clone(),
+    )
+    .into();
     effects
 }
 
 fn input_from_report(report: &FinalSemanticAnalysis) -> FinalSemanticAnalysisInput {
     let mut input = FinalSemanticAnalysisInput::new();
+    let mut callable_joins = BTreeMap::new();
     for (owner, fact) in report.types() {
         input.push_type(owner, fact.clone());
     }
@@ -1323,9 +1332,16 @@ fn input_from_report(report: &FinalSemanticAnalysis) -> FinalSemanticAnalysisInp
     for (owner, fact) in report.items() {
         input.push_item(owner, fact.clone());
     }
-    for (_, fact) in report.calls() {
+    for (owner, fact) in report.calls() {
         input.push_call(fact.clone());
+        let join = match report.checked_callable_join(owner) {
+            Ok(join) => Ok(join.clone()),
+            Err(CheckedExpressionEdgeError::Callable(error)) => Err(error),
+            Err(CheckedExpressionEdgeError::Child(_)) => Err(CheckedCallableJoinError::NotSelected),
+        };
+        callable_joins.insert(owner, join);
     }
+    input.set_callable_joins(callable_joins);
     input
 }
 
@@ -1736,10 +1752,11 @@ fn multi_module_report_is_complete_generation_bound_and_exactly_accounted() {
         .map(|(_, module)| module.items().len())
         .sum::<usize>();
     let input = complete_input(&fixture);
-    let checked_callables = checked_callables(&fixture, &input);
+    let (topology, checked_callables) = checked_callables(&fixture, &input);
     let report = FinalSemanticAnalysis::try_new(
         executable,
         &fixture.symbols,
+        topology,
         Arc::clone(&checked_callables),
         input,
     )
@@ -1857,18 +1874,25 @@ fn standard_zero_argument_need_callable_uses_accepted_nominal_results() {
         r"
 type ArcResult<T> = Result<T, ArcError>
 
-struct OpeningAssets {
-    bg: ImageHandle
-}
-
-fn load_opening_assets() -> ArcResult<OpeningAssets> {
+fn load_opening_assets() -> ArcResult<ImageHandle> {
     let bg = try await load_bg()
-    Ok(OpeningAssets { bg })
+    Ok(bg)
 }
 ",
         None,
     );
-    let report = analyze(&fixture).expect("standard load_bg final analysis");
+    let report = analyze(&fixture).unwrap_or_else(|error| {
+        let module = fixture
+            .project
+            .executable_view()
+            .expect("executable HIR")
+            .module(&CanonicalModulePath::crate_root())
+            .expect("root HIR module");
+        panic!(
+            "standard load_bg final analysis failed: {error:?}\nexpressions: {:#?}",
+            module.expressions().collect::<Vec<_>>()
+        )
+    });
     let awaited = report
         .expressions()
         .find_map(|(_, expression)| match expression.resolution() {
@@ -1968,6 +1992,13 @@ fn ownership_test_type_path(name: &str) -> TypePath {
             [ProjectSymbolSegment::try_new(name).expect("ownership test type segment")],
         )
         .expect("ownership test type path"),
+    )
+}
+
+fn generic_test_owner(owner: u64) -> AcceptedNominalId {
+    AcceptedNominalId::new(
+        AcceptedNominalOwnerId::Standard,
+        ownership_test_type_path(&format!("GenericOwner{owner}")),
     )
 }
 
@@ -2085,7 +2116,10 @@ fn public_ownership_recursion_limit_is_exact_and_fails_one_over() {
     );
 }
 
-fn project_nominal_expression_type(report: &FinalSemanticAnalysis, name: &str) -> TypeKind {
+pub(super) fn project_nominal_expression_type(
+    report: &FinalSemanticAnalysis,
+    name: &str,
+) -> TypeKind {
     report
         .expressions()
         .find_map(|(_, expression)| match expression.ty() {
@@ -2098,7 +2132,7 @@ fn project_nominal_expression_type(report: &FinalSemanticAnalysis, name: &str) -
 }
 
 #[test]
-fn project_nominal_ownership_rejects_an_affine_struct_field() {
+fn project_nominal_schema_rejects_an_affine_struct_field() {
     let fixture = fixture(
         concat!(
             "struct Retained { stable: i64, handle: CueHandle }\n",
@@ -2106,19 +2140,16 @@ fn project_nominal_ownership_rejects_an_affine_struct_field() {
         ),
         None,
     );
-    let report = analyze(&fixture).expect("project nominal ownership fixture final analysis");
-    let ty = project_nominal_expression_type(&report, "Retained");
-
-    assert_eq!(
-        fixture
-            .registered
-            .checked_ownership(&report, &ty, CheckedOwnershipLimits::PRODUCTION,),
-        Err(CheckedOwnershipError::Rejected)
-    );
+    assert!(matches!(
+        analyze(&fixture),
+        Err(FinalSemanticAnalysisError::NominalSchemaProjection(
+            super::NominalSchemaProjectionError::UnsupportedLeaf { ty, .. }
+        )) if *ty == TypeKind::CueHandle
+    ));
 }
 
 #[test]
-fn project_nominal_ownership_reports_the_first_rejected_field_in_declaration_order() {
+fn project_nominal_schema_reports_the_first_rejected_field_in_declaration_order() {
     let fixture = fixture(
         concat!(
             "struct Ordered { first: CueHandle, second: Stream<i64, String> }\n",
@@ -2126,26 +2157,24 @@ fn project_nominal_ownership_reports_the_first_rejected_field_in_declaration_ord
         ),
         None,
     );
-    let report = analyze(&fixture).expect("ordered nominal ownership fixture final analysis");
-    let ty = project_nominal_expression_type(&report, "Ordered");
-    let classifier = RuntimeProducerArgumentClassifier::try_new(&report, &fixture.registered)
-        .expect("final analysis and registered world share one symbol lease");
-    let error = classifier
-        .classify(&ty)
-        .expect_err("the first affine declaration field rejects ownership");
-
+    let Err(FinalSemanticAnalysisError::NominalSchemaProjection(
+        super::NominalSchemaProjectionError::UnsupportedLeaf { path, ty },
+    )) = analyze(&fixture)
+    else {
+        panic!("the first non-persistent field must fail at the nominal schema owner")
+    };
+    assert_eq!(*ty, TypeKind::CueHandle);
     assert_eq!(
-        error.rejection(),
-        Some(RuntimeOwnershipRejection::AffineValue)
-    );
-    assert_eq!(
-        error.path().segments(),
-        &[RuntimeOwnershipPathSegment::ProjectNominalMember(0)]
+        path.steps(),
+        &[super::NominalSchemaPathStep::Field {
+            ordinal: 0,
+            name: ModuleSegment::new("first").expect("field name"),
+        }]
     );
 }
 
 #[test]
-fn project_nominal_ownership_classifies_variant_payloads_in_declaration_order() {
+fn project_nominal_schema_classifies_variant_payloads_in_declaration_order() {
     let fixture = fixture(
         concat!(
             "enum RetainedChoice { Stable i64, Live CueHandle }\n",
@@ -2153,26 +2182,24 @@ fn project_nominal_ownership_classifies_variant_payloads_in_declaration_order() 
         ),
         None,
     );
-    let report = analyze(&fixture).expect("variant ownership fixture final analysis");
-    let ty = project_nominal_expression_type(&report, "RetainedChoice");
-    let classifier = RuntimeProducerArgumentClassifier::try_new(&report, &fixture.registered)
-        .expect("final analysis and registered world share one symbol lease");
-    let error = classifier
-        .classify(&ty)
-        .expect_err("the second variant payload is affine");
-
+    let Err(FinalSemanticAnalysisError::NominalSchemaProjection(
+        super::NominalSchemaProjectionError::UnsupportedLeaf { path, ty },
+    )) = analyze(&fixture)
+    else {
+        panic!("the affine variant payload must fail at the nominal schema owner")
+    };
+    assert_eq!(*ty, TypeKind::CueHandle);
     assert_eq!(
-        error.rejection(),
-        Some(RuntimeOwnershipRejection::AffineValue)
-    );
-    assert_eq!(
-        error.path().segments(),
-        &[RuntimeOwnershipPathSegment::ProjectNominalMember(1)]
+        path.steps(),
+        &[super::NominalSchemaPathStep::VariantPayload {
+            ordinal: 1,
+            name: ModuleSegment::new("Live").expect("variant name"),
+        }]
     );
 }
 
 #[test]
-fn need_payload_identity_does_not_require_project_nominal_snapshot_layout() {
+fn need_payload_project_nominal_requires_a_closed_snapshot_schema() {
     let fixture = fixture(
         concat!(
             "struct DeferredPayload { stream: Stream<i64, String> }\n",
@@ -2180,14 +2207,12 @@ fn need_payload_identity_does_not_require_project_nominal_snapshot_layout() {
         ),
         None,
     );
-    let report = analyze(&fixture).expect("project nominal identity fixture final analysis");
-    let payload = project_nominal_expression_type(&report, "DeferredPayload");
-    let classifier = RuntimeProducerArgumentClassifier::try_new(&report, &fixture.registered)
-        .expect("final analysis and registered world share one symbol lease");
-
-    classifier
-        .classify(&TypeKind::Need(Box::new(payload)))
-        .expect("Need identity admission does not imply payload snapshot ownership");
+    assert!(matches!(
+        analyze(&fixture),
+        Err(FinalSemanticAnalysisError::NominalSchemaProjection(
+            super::NominalSchemaProjectionError::UnsupportedLeaf { ty, .. }
+        )) if matches!(*ty, TypeKind::Stream { .. })
+    ));
 }
 
 #[test]
@@ -2270,12 +2295,29 @@ fn public_ownership_evidence_row_limit_is_exact_and_fails_one_over() {
     );
 }
 
+fn selected_application(call: &CallTargetFacts) -> &crate::callable::CheckedCallApplication {
+    call.selected_application()
+        .expect("fixture retains a selected call application")
+}
+
+fn selected_candidate(call: &CallTargetFacts) -> &Arc<crate::callable::ResolvedCallable> {
+    selected_application(call).core().candidates().selected()
+}
+
+fn selected_candidates(call: &CallTargetFacts) -> &[Arc<crate::callable::ResolvedCallable>] {
+    selected_application(call).core().candidates().candidates()
+}
+
+fn selected_execution_arguments(
+    call: &CallTargetFacts,
+) -> &[crate::callable::CheckedCallExecutionArgument] {
+    selected_application(call).core().execution().arguments()
+}
+
 fn selected_call_owner(report: &FinalSemanticAnalysis) -> arcweft_lang_hir::identity::ExprId {
     report
         .calls()
-        .find_map(|(owner, facts)| {
-            matches!(facts.target(), CallTargetFact::Selected { .. }).then_some(owner)
-        })
+        .find_map(|(owner, facts)| facts.selected_application().is_some().then_some(owner))
         .expect("fixture retains one selected call")
 }
 
@@ -2285,18 +2327,11 @@ fn selected_direct_call_derives_source_order_producer_admission_without_caller_r
         let fixture = fixture(source, None);
         let report = analyze(&fixture).expect("selected producer call final analysis");
         let project = fixture.project.executable_view().expect("executable HIR");
-        let declaration = fixture
-            .symbols
-            .callable_symbols()
-            .find(|symbol| symbol.declaration().name() == "root")
-            .expect("root callable")
-            .declaration();
         report
             .checked_need_producer_admission_for_call(
                 project,
                 &fixture.symbols,
                 &fixture.registered,
-                declaration,
                 selected_call_owner(&report),
                 CheckedOwnershipLimits::PRODUCTION,
             )
@@ -2338,12 +2373,6 @@ fn producer_admission_fails_closed_for_need_and_argument_limit() {
     );
     let report = analyze(&fixture).expect("Need producer call final analysis");
     let project = fixture.project.executable_view().expect("executable HIR");
-    let declaration = fixture
-        .symbols
-        .callable_symbols()
-        .find(|symbol| symbol.declaration().name() == "root")
-        .expect("root callable")
-        .declaration();
     let owner = selected_call_owner(&report);
 
     assert!(matches!(
@@ -2351,7 +2380,6 @@ fn producer_admission_fails_closed_for_need_and_argument_limit() {
             project,
             &fixture.symbols,
             &fixture.registered,
-            declaration,
             owner,
             CheckedOwnershipLimits::PRODUCTION,
         ),
@@ -2364,7 +2392,6 @@ fn producer_admission_fails_closed_for_need_and_argument_limit() {
             project,
             &fixture.symbols,
             &fixture.registered,
-            declaration,
             owner,
             CheckedOwnershipLimits {
                 max_producer_arguments: 0,
@@ -2405,19 +2432,11 @@ fn producer_admission_rejects_an_explicit_extension_receiver_capture() {
                 .then_some(owner)
         })
         .expect("dotted extension call");
-    let declaration = fixture
-        .symbols
-        .callable_symbols()
-        .find(|symbol| symbol.declaration().name() == "dotted")
-        .expect("dotted callable")
-        .declaration();
-
     assert_eq!(
         report.checked_need_producer_admission_for_call(
             project,
             &fixture.symbols,
             &fixture.registered,
-            declaration,
             owner,
             CheckedOwnershipLimits::PRODUCTION,
         ),
@@ -2436,19 +2455,11 @@ fn producer_admission_rejects_compact_spread_slots() {
     );
     let report = analyze(&fixture).expect("compact spread final analysis");
     let project = fixture.project.executable_view().expect("executable HIR");
-    let declaration = fixture
-        .symbols
-        .callable_symbols()
-        .find(|symbol| symbol.declaration().name() == "root")
-        .expect("root callable")
-        .declaration();
-
     assert_eq!(
         report.checked_need_producer_admission_for_call(
             project,
             &fixture.symbols,
             &fixture.registered,
-            declaration,
             selected_call_owner(&report),
             CheckedOwnershipLimits::PRODUCTION,
         ),
@@ -2457,7 +2468,7 @@ fn producer_admission_rejects_compact_spread_slots() {
 }
 
 #[test]
-fn producer_admission_rejects_a_type_level_function_argument() {
+fn type_level_function_argument_fails_at_the_exact_call_projection() {
     let fixture = fixture(
         concat!(
             "fn consume(callback: i64 -> i64) {}\n",
@@ -2465,27 +2476,9 @@ fn producer_admission_rejects_a_type_level_function_argument() {
         ),
         None,
     );
-    let report = analyze(&fixture).expect("function argument final analysis");
-    let project = fixture.project.executable_view().expect("executable HIR");
-    let declaration = fixture
-        .symbols
-        .callable_symbols()
-        .find(|symbol| symbol.declaration().name() == "root")
-        .expect("root callable")
-        .declaration();
-
     assert!(matches!(
-        report.checked_need_producer_admission_for_call(
-            project,
-            &fixture.symbols,
-            &fixture.registered,
-            declaration,
-            selected_call_owner(&report),
-            CheckedOwnershipLimits::PRODUCTION,
-        ),
-        Err(CheckedNeedProducerAdmissionError::Ownership(
-            CheckedOwnershipError::Rejected
-        ))
+        analyze(&fixture),
+        Err(FinalSemanticAnalysisError::CallConstraintFailure(_))
     ));
 }
 
@@ -2533,7 +2526,11 @@ fn prefix_try_uses_the_checked_implicit_callable_as_its_propagation_boundary() {
         ok: Box::new(TypeKind::I64),
         error: Box::new(TypeKind::String),
     };
-    let callback = TypeKind::function([carrier.clone()], carrier);
+    let callback = TypeKind::function_with_effects(
+        [carrier.clone()],
+        carrier,
+        EffectRow::closed(EffectSet::new()),
+    );
     let fixture = typed_overload_fixture(
         "fn caller() { choose(try _); }\n",
         "choose",
@@ -2741,7 +2738,7 @@ fn checked_catalog_keeps_closure_body_effects_latent() {
     let mut input = complete_input(&fixture);
     let closure_effects = set_expression_effect(&mut input, closure_body, "fs.read");
     let outer_effects = set_expression_effect(&mut input, function_tail, "fs.write");
-    let catalog = checked_callables(&fixture, &input);
+    let (_, catalog) = checked_callables(&fixture, &input);
     let declaration = fixture
         .symbols
         .callable_symbols()
@@ -2793,23 +2790,84 @@ fn checked_catalog_keeps_closure_body_effects_latent() {
 }
 
 #[test]
+fn checked_catalog_closure_rows_use_project_callee_exposed_effect_contract() {
+    let fixture = fixture(
+        r#"
+fn bounded() -> i64 effects { fs.read } {
+    1i64
+}
+
+fn root() {
+    let callback = || bounded();
+    ()
+}
+"#,
+        None,
+    );
+    let report = analyze(&fixture).expect("project-call closure effect analysis");
+    let executable = fixture.project.executable_view().expect("executable HIR");
+    let (_, module) = executable.modules().next().expect("root module");
+    let closure_owner = module
+        .expressions()
+        .find_map(|(owner, expression)| {
+            matches!(expression.kind(), HirExprKind::Closure(_)).then_some(owner)
+        })
+        .expect("closure expression");
+    let closure_source = module
+        .source_site(
+            module.provenance().source_identity(),
+            HirSourceQuery::Expr {
+                owner: closure_owner,
+                role: HirExprSourceRole::Whole,
+            },
+        )
+        .expect("closure source lookup");
+    let HirSourcePresence::Present(HirSourceSite::Span(closure_source)) = closure_source.presence()
+    else {
+        panic!("closure must retain an authored source span");
+    };
+
+    assert_eq!(
+        report
+            .checked_callables()
+            .closure_at_source(closure_source)
+            .expect("source-indexed checked closure row")
+            .concrete()
+            .to_labels(),
+        ["fs.read"]
+    );
+}
+
+#[test]
 fn incomplete_or_duplicate_fact_sets_never_publish() {
     let fixture = fixture("fn root() {}\n", None);
     let executable = fixture.project.executable_view().expect("executable HIR");
     let mut missing = complete_input(&fixture);
     missing.expressions.pop();
-    let missing_catalog = checked_callables(&fixture, &missing);
+    let (missing_topology, missing_catalog) = checked_callables(&fixture, &missing);
     assert!(matches!(
-        FinalSemanticAnalysis::try_new(executable, &fixture.symbols, missing_catalog, missing),
+        FinalSemanticAnalysis::try_new(
+            executable,
+            &fixture.symbols,
+            missing_topology,
+            missing_catalog,
+            missing
+        ),
         Err(FinalSemanticAnalysisError::MissingFact { .. })
     ));
 
     let mut duplicate = complete_input(&fixture);
     let expression = duplicate.expressions[0].clone();
     duplicate.expressions.push(expression);
-    let duplicate_catalog = checked_callables(&fixture, &duplicate);
+    let (duplicate_topology, duplicate_catalog) = checked_callables(&fixture, &duplicate);
     assert!(matches!(
-        FinalSemanticAnalysis::try_new(executable, &fixture.symbols, duplicate_catalog, duplicate),
+        FinalSemanticAnalysis::try_new(
+            executable,
+            &fixture.symbols,
+            duplicate_topology,
+            duplicate_catalog,
+            duplicate
+        ),
         Err(FinalSemanticAnalysisError::DuplicateFact { .. })
     ));
 }
@@ -2819,10 +2877,11 @@ fn cancellation_is_terminal_before_any_report_is_observable() {
     let fixture = fixture("fn root() {}\n", None);
     let cancellation = AtomicBool::new(true);
     let input = complete_input(&fixture);
-    let checked_callables = checked_callables(&fixture, &input);
+    let (topology, checked_callables) = checked_callables(&fixture, &input);
     let result = FinalSemanticAnalysis::try_new_with_control(
         fixture.project.executable_view().expect("executable HIR"),
         &fixture.symbols,
+        topology,
         checked_callables,
         input,
         FinalSemanticAnalysisControl::new(&cancellation),
@@ -2833,18 +2892,36 @@ fn cancellation_is_terminal_before_any_report_is_observable() {
 #[test]
 fn every_call_expression_requires_one_sealed_shared_resolver_fact() {
     let fixture = fixture("fn target() {}\nfn caller() { target(); }\n", None);
+    let call_owner = fixture
+        .project
+        .executable_view()
+        .expect("executable HIR")
+        .modules()
+        .flat_map(|(_, module)| module.expressions())
+        .find_map(|(owner, expression)| {
+            matches!(expression.kind(), HirExprKind::Call(_)).then_some(owner)
+        })
+        .expect("fixture call owner");
     let input = complete_input(&fixture);
-    let checked_callables = checked_callables(&fixture, &input);
+    let (topology, checked_callables) = checked_callables(&fixture, &input);
     let result = FinalSemanticAnalysis::try_new(
         fixture.project.executable_view().expect("executable HIR"),
         &fixture.symbols,
+        topology,
         checked_callables,
         input,
     );
-    assert!(matches!(
-        result,
-        Err(FinalSemanticAnalysisError::CallFactMismatch)
-    ));
+    let Err(FinalSemanticAnalysisError::CallSeal(failure)) = result else {
+        panic!("missing sealed resolver graph result: {result:?}");
+    };
+    assert_eq!(
+        failure.location(),
+        FinalCallSealLocation::Site(crate::callable::CheckedCallSite::HirCall(call_owner))
+    );
+    assert_eq!(
+        failure.typed_failure_for_test(),
+        &CallConstraintInvariant::MissingOrStalePreparedNode
+    );
 }
 
 #[test]
@@ -2992,13 +3069,8 @@ fn production_analyzer_selects_project_call_through_shared_resolver_once() {
     let calls = report.calls().collect::<Vec<_>>();
     assert_eq!(calls.len(), 1);
     let (owner, call) = calls[0];
-    let CallTargetFact::Selected {
-        selected,
-        considered,
-    } = call.target()
-    else {
-        panic!("clean selected project call");
-    };
+    let selected = selected_candidate(call);
+    let considered = selected_candidates(call);
     assert!(matches!(selected.id(), CallableCandidateId::Project(_)));
     assert_eq!(considered.len(), 1);
     assert_eq!(call.expression(), owner);
@@ -3024,7 +3096,7 @@ fn checked_callable_join_uses_the_current_catalog_row_and_digest() {
         .checked_id()
         .expect("project call has a checked callable ID");
     assert_eq!(join.digest(), Some(id.semantic_digest()));
-    assert_ne!(join.semantic_digest(), [0; 32]);
+    assert_ne!(join.semantic_digest().as_bytes(), &[0; 32]);
 }
 
 #[test]
@@ -3037,7 +3109,7 @@ fn intrinsic_callable_join_keeps_typed_candidate_authority_without_a_catalog_row
         .expect("typed intrinsic joins without fabricating a checked catalog row");
     assert!(join.checked_id().is_none());
     assert!(join.digest().is_none());
-    assert_ne!(join.semantic_digest(), [0; 32]);
+    assert_ne!(join.semantic_digest().as_bytes(), &[0; 32]);
 }
 
 #[test]
@@ -3119,7 +3191,7 @@ fn checked_record_fields_use_declaration_ordinals_not_authored_order() {
     let accepted_ordinals = edges
         .iter()
         .map(|(_, role)| match role {
-            super::CheckedExpressionChildRole::RecordField {
+            CheckedExpressionChildRole::RecordField {
                 source_ordinal,
                 accepted_field,
             } => (*source_ordinal, accepted_field.zero_based()),
@@ -3162,12 +3234,6 @@ fn checked_match_reference_rejects_a_foreign_snapshot_before_transcription() {
             matches!(expression.kind(), HirExprKind::Match(_)).then_some(owner)
         })
         .expect("Match expression");
-    let declaration = fixture
-        .symbols
-        .callable_symbols()
-        .find(|symbol| symbol.declaration().name() == "root")
-        .expect("root callable")
-        .declaration();
     let foreign = self::fixture(source, None);
     let foreign_project = foreign.project.executable_view().expect("foreign HIR");
     let foreign_snapshot = foreign_project
@@ -3180,7 +3246,6 @@ fn checked_match_reference_rejects_a_foreign_snapshot_before_transcription() {
         report.build_checked_match_for_ref(
             project,
             &fixture.symbols,
-            declaration,
             stale,
             CheckedMatchLimits::PRODUCTION,
         ),
@@ -3233,27 +3298,17 @@ fn checked_match_fact_and_edges_retain_exact_guard_presence_and_children() {
     assert!(
         edges
             .iter()
-            .any(|(_, role)| matches!(role, super::CheckedExpressionChildRole::Guard { arm: 0 }))
+            .any(|(_, role)| matches!(role, CheckedExpressionChildRole::Guard { arm: 0 }))
     );
     assert!(
-        edges.iter().any(|(_, role)| matches!(
-            role,
-            super::CheckedExpressionChildRole::ArmValue { arm: 1 }
-        ))
+        edges
+            .iter()
+            .any(|(_, role)| matches!(role, CheckedExpressionChildRole::ArmValue { arm: 1 }))
     );
-    let declaration = fixture
-        .symbols
-        .callable_symbols()
-        .find(|symbol| {
-            symbol.owner() == arcweft_lang_hir::symbol::CallableDeclarationOwner::Function
-        })
-        .expect("root function callable")
-        .declaration();
     let product = report
         .build_checked_match_for_ref(
             fixture.project.executable_view().expect("executable HIR"),
             &fixture.symbols,
-            declaration,
             checked_match_reference(&report, module, &fixture.symbols, owner),
             super::CheckedMatchLimits::PRODUCTION,
         )
@@ -3288,19 +3343,10 @@ fn checked_match_semantic_path_crosses_the_typed_statement_root() {
             matches!(expression.kind(), HirExprKind::Match(_)).then_some(owner)
         })
         .expect("statement initializer Match");
-    let declaration = fixture
-        .symbols
-        .callable_symbols()
-        .find(|symbol| {
-            symbol.owner() == arcweft_lang_hir::symbol::CallableDeclarationOwner::Function
-        })
-        .expect("root function callable")
-        .declaration();
     let product = report
         .build_checked_match_for_ref(
             project,
             &fixture.symbols,
-            declaration,
             checked_match_reference(&report, module, &fixture.symbols, owner),
             super::CheckedMatchLimits::PRODUCTION,
         )
@@ -3333,19 +3379,10 @@ fn root(value: Option<i64>) -> i64 {
             matches!(expression.kind(), HirExprKind::Match(_)).then_some(owner)
         })
         .expect("Option Match expression");
-    let declaration = fixture
-        .symbols
-        .callable_symbols()
-        .find(|symbol| {
-            symbol.owner() == arcweft_lang_hir::symbol::CallableDeclarationOwner::Function
-        })
-        .expect("root function callable")
-        .declaration();
     let product = report
         .build_checked_match_for_ref(
             project,
             &fixture.symbols,
-            declaration,
             checked_match_reference(&report, module, &fixture.symbols, owner),
             CheckedMatchLimits::PRODUCTION,
         )
@@ -3357,11 +3394,7 @@ fn root(value: Option<i64>) -> i64 {
     assert_ne!(some.bindings()[0].ty().as_bytes(), &[0; 32]);
     assert!(matches!(
         some.bindings()[0].coordinate(),
-        StableCheckedValueCoordinate::PatternBinding {
-            arm_ordinal: 0,
-            binding_ordinal: 0,
-            ..
-        }
+        StableCheckedValueCoordinate::Binding(_)
     ));
 }
 
@@ -3382,18 +3415,9 @@ fn checked_match_transcript_rejects_non_exhaustive_and_enforces_limits() {
             matches!(expression.kind(), HirExprKind::Match(_)).then_some(owner)
         })
         .expect("non-exhaustive Match expression");
-    let declaration = fixture
-        .symbols
-        .callable_symbols()
-        .find(|symbol| {
-            symbol.owner() == arcweft_lang_hir::symbol::CallableDeclarationOwner::Function
-        })
-        .expect("root function callable")
-        .declaration();
     let non_exhaustive = report.build_checked_match_for_ref(
         project,
         &fixture.symbols,
-        declaration,
         checked_match_reference(&report, module, &fixture.symbols, owner),
         CheckedMatchLimits::PRODUCTION,
     );
@@ -3407,7 +3431,6 @@ fn checked_match_transcript_rejects_non_exhaustive_and_enforces_limits() {
     let byte_limited = report.build_checked_match_for_ref(
         project,
         &fixture.symbols,
-        declaration,
         checked_match_reference(&report, module, &fixture.symbols, owner),
         CheckedMatchLimits::new(4_096, 65_536, 65_536, 0, 4_096, 256, 65_536),
     );
@@ -3442,19 +3465,10 @@ fn root(flag: bool, ready: bool) -> i64 {
             matches!(expression.kind(), HirExprKind::Match(_)).then_some(owner)
         })
         .expect("guarded Match expression");
-    let declaration = fixture
-        .symbols
-        .callable_symbols()
-        .find(|symbol| {
-            symbol.owner() == arcweft_lang_hir::symbol::CallableDeclarationOwner::Function
-        })
-        .expect("root function callable")
-        .declaration();
     let product = report
         .build_checked_match_for_ref(
             project,
             &fixture.symbols,
-            declaration,
             checked_match_reference(&report, module, &fixture.symbols, owner),
             CheckedMatchLimits::PRODUCTION,
         )
@@ -3494,8 +3508,13 @@ flow main(flag: bool) {
         .find(|symbol| symbol.owner() == arcweft_lang_hir::symbol::CallableDeclarationOwner::Flow)
         .expect("root flow callable")
         .declaration();
-    let paths = project
-        .declaration_semantic_paths(&fixture.symbols, declaration)
+    let topology = project
+        .accept_symbol_generation(&fixture.symbols)
+        .expect("accepted HIR symbol generation")
+        .into_evaluation_topology()
+        .expect("project evaluation topology");
+    let paths = topology
+        .declaration_semantic_paths(declaration)
         .expect("nested Thread semantic paths");
     let module = project
         .module(&CanonicalModulePath::crate_root())
@@ -3511,10 +3530,11 @@ flow main(flag: bool) {
         .expression(match_scrutinee)
         .expect("Thread Match scrutinee semantic path");
     assert!(
-        path.iter()
+        path.steps()
+            .iter()
             .any(|step| matches!(step, HirSemanticPathStep::ThreadBody(_)))
     );
-    assert!(path.iter().any(|step| {
+    assert!(path.steps().iter().any(|step| {
         matches!(
             step,
             HirSemanticPathStep::Body(
@@ -3526,6 +3546,110 @@ flow main(flag: bool) {
         report
             .expressions()
             .any(|(owner, _)| paths.expression(owner).is_some())
+    );
+}
+
+#[test]
+fn semantic_coordinate_index_issues_only_from_the_exact_declaration_local_path() {
+    let fixture = fixture(
+        r#"
+flow root {
+    let value: i64 = 1i64
+}
+flow other {}
+"#,
+        None,
+    );
+    let report = analyze(&fixture).expect("coordinate edge authority");
+    let project = fixture.project.executable_view().expect("executable HIR");
+    let module = project
+        .module(&CanonicalModulePath::crate_root())
+        .expect("root HIR module");
+    let local = module
+        .locals()
+        .map(|(owner, _)| owner)
+        .find(|owner| {
+            report
+                .accepted_root_catalog()
+                .semantic_path_for_local(*owner)
+                .expect("sealed local lookup")
+                .is_some()
+        })
+        .expect("root binding local");
+    let index = SemanticCoordinateIndex::new(report.accepted_root_catalog(), &report);
+    let binding = index
+        .binding_evidence(local)
+        .expect("stable binding coordinate evidence");
+    assert_eq!(binding.owner(), local);
+    let binding = binding.into_coordinate();
+    assert_eq!(binding.canonical_bytes(), binding.path().canonical_bytes());
+    assert!(binding.path().steps().iter().all(|step| !matches!(
+        step,
+        crate::semantic_coordinate::CheckedSemanticPathStep::Expression(_)
+    )));
+}
+
+#[test]
+fn semantic_coordinate_index_resolves_expression_hops_from_checked_edges() {
+    let fixture = fixture("fn root() -> i64 { 1i64 + 2i64 }\n", None);
+    let report = analyze(&fixture).expect("expression edge authority");
+    let project = fixture.project.executable_view().expect("executable HIR");
+    let module = project
+        .module(&CanonicalModulePath::crate_root())
+        .expect("root module");
+    let owner = module
+        .expressions()
+        .map(|(owner, _)| owner)
+        .find(|owner| {
+            report
+                .accepted_root_catalog()
+                .semantic_path_for_expression(*owner)
+                .expect("sealed expression lookup")
+                .is_some_and(|(_, path)| {
+                    path.steps()
+                        .iter()
+                        .any(|step| matches!(step, HirSemanticPathStep::Expression(_)))
+                })
+        })
+        .expect("expression reached through a checked hop");
+    let index = SemanticCoordinateIndex::new(report.accepted_root_catalog(), &report);
+    let checked = index
+        .expression_evidence(owner)
+        .expect("checked expression hop coordinate evidence");
+    assert_eq!(checked.owner(), owner);
+    let checked = checked.into_coordinate();
+    assert!(checked.steps().iter().any(|step| {
+        matches!(
+            step,
+            crate::semantic_coordinate::CheckedSemanticPathStep::Expression(_)
+        )
+    }));
+
+    let matching = CheckedCallExecutionSource::seal(
+        CheckedCallArgumentSlotSource::Expression(owner),
+        index
+            .expression_evidence(owner)
+            .expect("matching expression coordinate evidence"),
+    )
+    .expect("execution source consumes exact owner evidence");
+    assert_eq!(
+        matching.coordinate(),
+        &StableCheckedValueCoordinate::Expression(checked)
+    );
+
+    let other = module
+        .expressions()
+        .map(|(candidate, _)| candidate)
+        .find(|candidate| *candidate != owner)
+        .expect("distinct expression owner");
+    assert_eq!(
+        CheckedCallExecutionSource::seal(
+            CheckedCallArgumentSlotSource::Expression(other),
+            index
+                .expression_evidence(owner)
+                .expect("mismatched expression coordinate evidence"),
+        ),
+        Err(CallConstraintInvariant::PreparedCallSiteMismatch)
     );
 }
 
@@ -3558,19 +3682,10 @@ fn root(route: Route) -> i64 {
             matches!(expression.kind(), HirExprKind::Match(_)).then_some(owner)
         })
         .expect("project enum Match expression");
-    let declaration = fixture
-        .symbols
-        .callable_symbols()
-        .find(|symbol| {
-            symbol.owner() == arcweft_lang_hir::symbol::CallableDeclarationOwner::Function
-        })
-        .expect("root function callable")
-        .declaration();
     let product = report
         .build_checked_match_for_ref(
             project,
             &fixture.symbols,
-            declaration,
             checked_match_reference(&report, module, &fixture.symbols, owner),
             CheckedMatchLimits::PRODUCTION,
         )
@@ -3598,17 +3713,10 @@ fn checked_match_transcript_changes_when_source_arm_order_changes() {
                 matches!(expression.kind(), HirExprKind::Match(_)).then_some(owner)
             })
             .expect("Match expression");
-        let declaration = fixture
-            .symbols
-            .callable_symbols()
-            .find(|symbol| symbol.declaration().name() == "root")
-            .expect("root callable")
-            .declaration();
         let product = report
             .build_checked_match_for_ref(
                 project,
                 &fixture.symbols,
-                declaration,
                 checked_match_reference(&report, module, &fixture.symbols, owner),
                 CheckedMatchLimits::PRODUCTION,
             )
@@ -3668,17 +3776,10 @@ fn root(flag: bool) -> i64 {{
                 matches!(expression.kind(), HirExprKind::Match(_)).then_some(owner)
             })
             .expect("Match expression");
-        let declaration = fixture
-            .symbols
-            .callable_symbols()
-            .find(|symbol| symbol.declaration().name() == "root")
-            .expect("root callable")
-            .declaration();
         let product = report
             .build_checked_match_for_ref(
                 project,
                 &fixture.symbols,
-                declaration,
                 checked_match_reference(&report, module, &fixture.symbols, owner),
                 CheckedMatchLimits::PRODUCTION,
             )
@@ -3713,17 +3814,10 @@ fn root(pair: (bool, bool)) -> i64 {
             matches!(expression.kind(), HirExprKind::Match(_)).then_some(owner)
         })
         .expect("tuple Match expression");
-    let declaration = fixture
-        .symbols
-        .callable_symbols()
-        .find(|symbol| symbol.declaration().name() == "root")
-        .expect("root callable")
-        .declaration();
     assert!(matches!(
         report.build_checked_match_for_ref(
             project,
             &fixture.symbols,
-            declaration,
             checked_match_reference(&report, module, &fixture.symbols, owner),
             CheckedMatchLimits::PRODUCTION,
         ),
@@ -3758,8 +3852,13 @@ flow root {
         .find(|symbol| symbol.declaration().name() == "root")
         .expect("root flow callable")
         .declaration();
-    let paths = project
-        .declaration_semantic_paths(&fixture.symbols, declaration)
+    let topology = project
+        .accept_symbol_generation(&fixture.symbols)
+        .expect("accepted HIR symbol generation")
+        .into_evaluation_topology()
+        .expect("project evaluation topology");
+    let paths = topology
+        .declaration_semantic_paths(declaration)
         .expect("For/closure semantic paths");
     let module = project
         .module(&CanonicalModulePath::crate_root())
@@ -3773,13 +3872,13 @@ flow root {
     let path = paths
         .expression(match_owner)
         .expect("closure Match semantic path");
-    assert!(path.iter().any(|step| {
+    assert!(path.steps().iter().any(|step| {
         matches!(
             step,
             HirSemanticPathStep::ThreadBody(arcweft_lang_hir::stmt::HirStatementBodyRole::For)
         )
     }));
-    assert!(path.iter().any(|step| {
+    assert!(path.steps().iter().any(|step| {
         matches!(
             step,
             HirSemanticPathStep::Expression(
@@ -3861,15 +3960,18 @@ flow done() -> String {
         .iter_mut()
         .find(|(candidate, _)| *candidate == owner)
         .expect("checked Choice input fact");
+    let complete = checked.complete().expect("complete Choice fixture");
     *checked = CheckedExpression::new(
-        checked.ty().clone(),
-        checked.type_selection(),
-        checked.effects().clone(),
-        checked.resolution().clone(),
-    );
+        complete.ty().clone(),
+        complete.type_selection(),
+        complete.effects().clone(),
+        complete.resolution().clone(),
+    )
+    .into();
     let report = FinalSemanticAnalysis::try_new(
         fixture.project.executable_view().expect("executable HIR"),
         &fixture.symbols,
+        Arc::clone(accepted.hir_topology()),
         accepted.checked_callables().clone(),
         input,
     )
@@ -3922,16 +4024,19 @@ flow done() -> String {
         .iter_mut()
         .find(|(candidate, _)| *candidate == owner)
         .expect("checked Choice input fact");
+    let complete = checked.complete().expect("complete Choice fixture");
     *checked = CheckedExpression::new(
-        checked.ty().clone(),
-        checked.type_selection(),
-        checked.effects().clone(),
-        checked.resolution().clone(),
+        complete.ty().clone(),
+        complete.type_selection(),
+        complete.effects().clone(),
+        complete.resolution().clone(),
     )
-    .with_nested_path_evidence(Err(super::CheckedChildEdgeError::StaleNestedPath));
+    .with_nested_path_evidence(Err(super::CheckedChildEdgeError::StaleNestedPath))
+    .into();
     let report = FinalSemanticAnalysis::try_new(
         fixture.project.executable_view().expect("executable HIR"),
         &fixture.symbols,
+        Arc::clone(accepted.hir_topology()),
         accepted.checked_callables().clone(),
         input,
     )
@@ -3951,25 +4056,15 @@ fn production_analyzer_routes_capacity_through_typed_associated_authority() {
     let calls = report.calls().collect::<Vec<_>>();
     assert_eq!(calls.len(), 1);
     let (_, call) = calls[0];
-    let Some(CallCalleeClassificationFact::AssociatedType { receiver, .. }) = call.callee() else {
-        panic!("Capacity call must retain its selected typed receiver")
-    };
-    assert!(report.type_resolution(receiver).is_some());
-    assert!(report.ty(receiver).is_some());
-    let CallTargetFact::Selected {
-        selected,
-        considered,
-    } = call.target()
-    else {
-        panic!("clean selected Capacity call");
-    };
+    let selected = selected_candidate(call);
+    let considered = selected_candidates(call);
     assert!(matches!(
         selected.id(),
         CallableCandidateId::CapacityMethod(_)
     ));
     assert_eq!(considered.len(), 1);
-    assert_eq!(call.result(), Some(&TypeKind::String));
-    assert_eq!(call.arguments().len(), 1);
+    assert_eq!(selected_application(call).result().ty(), &TypeKind::String);
+    assert_eq!(selected_execution_arguments(call).len(), 1);
     assert_eq!(call.accounting().logical_argument_checks(), 1);
     assert_eq!(call.accounting().resolver_invocations(), 1);
     assert_eq!(call.accounting().candidate_argument_probes(), 1);
@@ -3994,9 +4089,7 @@ fn associated_capacity_checker_signature_primary_and_schema_equal() {
     let fixture = fixture(SOURCE, None);
     let report = analyze(&fixture).expect("typed Capacity final analysis");
     let (_, call) = report.calls().next().expect("one Capacity call fact");
-    let CallTargetFact::Selected { selected, .. } = call.target() else {
-        panic!("Capacity checker facts retain one selected candidate")
-    };
+    let selected = selected_candidate(call);
     let module = fixture
         .project
         .executable_view()
@@ -4030,7 +4123,10 @@ fn associated_capacity_checker_signature_primary_and_schema_equal() {
             panic!("one Capacity signature")
         };
         assert_eq!(signature.candidate(), selected.id());
-        assert_eq!(signature.origin(), selected.origin());
+        assert!(matches!(
+            signature.origin(),
+            crate::callable::SignatureOrigin::Language { .. }
+        ));
         assert_eq!(signature.result(), selected.schema().result());
         assert_eq!(
             signature.effects(),
@@ -4040,12 +4136,12 @@ fn associated_capacity_checker_signature_primary_and_schema_equal() {
                 .fixed_row()
                 .expect("Capacity has fixed effects")
         );
-        assert_eq!(signature.poison(), call.poison());
+        assert_eq!(signature.poison(), CallPoison::Clean);
         assert_eq!(signature.groups().len(), selected.schema().groups().len());
         assert_eq!(
             selected.schema().argument_policy(),
             CallableArgumentPolicy::new(
-                UnknownNamedArgumentPolicy::OpenUnchecked,
+                UnknownNamedArgumentPolicy::OpenSupply,
                 SpreadArgumentPolicy::Unchecked,
             )
         );
@@ -4055,7 +4151,7 @@ fn associated_capacity_checker_signature_primary_and_schema_equal() {
         let [parameter] = group.parameters() else {
             panic!("one unchecked rest parameter")
         };
-        assert_eq!(parameter.ty(), &CallableParameterType::Unchecked);
+        assert!(parameter.admission().is_unchecked());
         assert_eq!(
             parameter.passing(),
             CallableParameterPassing::RestPositional
@@ -4184,40 +4280,89 @@ fn character_nominal_show_checker_signature_primary_and_schema_equal() {
         .calls()
         .next()
         .expect("one Character presentation call");
-    let CallTargetFact::Selected {
-        selected,
-        considered,
-    } = call.target()
-    else {
-        panic!("Character presentation call retains one selected candidate")
-    };
+    let selected = selected_candidate(call);
+    let considered = selected_candidates(call);
     assert_eq!(considered.len(), 1);
     assert_eq!(
         selected.id(),
         &CallableCandidateId::Presentation(PresentationCallableId::Show)
     );
+    let crate::callable::ResolvedCallableBaseInstantiation::Character { owner } =
+        selected.instantiation()
+    else {
+        panic!("Character presentation specialization must precede candidate preparation")
+    };
+    assert_eq!(owner.character().as_str(), "character.akane");
     let expected_look =
         TypeKind::character_look(CharacterId::try_new("character.akane").expect("Character ID"));
-    let variant = report
+    let look = report
         .expressions()
         .find_map(|(_, expression)| match expression.resolution() {
-            CheckedExpressionResolution::Variant(variant) => Some(variant),
+            CheckedExpressionResolution::StageLook(look) => Some(look),
             _ => None,
         })
-        .expect("accepted Character look variant fact");
+        .expect("accepted manifest-joined Character look fact");
     assert_eq!(
-        variant.owner(),
-        &CheckedVariantOwner::CharacterNominal {
-            nominal: expected_look
-                .character_nominal()
-                .expect("Character nominal type")
-                .clone(),
-            cases: vec!["normal".to_owned()].into_boxed_slice(),
-        }
+        CheckedExpressionResolution::StageLook(look.clone()).semantic_tag(),
+        0x0206
     );
-    assert_eq!(variant.ordinal(), 0);
-    assert_eq!(variant.name().as_str(), "normal");
+    assert_eq!(
+        look.character(),
+        expected_look
+            .character_nominal()
+            .expect("Character nominal type")
+            .character()
+    );
+    assert_eq!(
+        look.character_nominal(),
+        expected_look.semantic_identity_digest()
+    );
+    assert_eq!(look.diagnostic_name().as_str(), "normal");
+    assert_ne!(look.look().as_bytes(), &[0; 32]);
+    assert!(report.expressions().all(|(_, expression)| !matches!(
+        expression.resolution(),
+        CheckedExpressionResolution::Variant(variant)
+            if matches!(variant.owner(), CheckedVariantOwner::CharacterNominal { nominal, .. }
+                if nominal.family() == crate::types::CharacterNominalFamily::Look)
+    )));
     assert_character_signature_projection(&fixture, &report, SOURCE, selected, &expected_look);
+}
+
+#[test]
+fn character_stage_look_rejects_names_absent_from_the_exact_registered_manifest() {
+    let fixture = character_nominal_fixture(concat!(
+        "pub character @character.akane Akane as akane {}\n",
+        "fn caller() { show(@character.akane, look = .missing); }\n",
+    ));
+
+    assert!(matches!(
+        analyze(&fixture),
+        Err(FinalSemanticAnalysisError::ExpressionTypeUnavailable { .. })
+    ));
+}
+
+#[test]
+fn character_any_show_rejects_reserved_look_instead_of_open_supply() {
+    let fixture = fixture(
+        "fn supply(speaker: Ref<Character>) { show(speaker, look = 1i64); }\n",
+        None,
+    );
+    let report = analyze(&fixture).expect("Character-Any call keeps rejected evidence");
+    let (_, call) = report.calls().next().expect("one Show call");
+    assert!(matches!(call.outcome(), CallAnalysisOutcome::Rejected(_)));
+    assert!(call.selected_application().is_none());
+}
+
+#[test]
+fn character_any_show_rejects_reserved_look_clear() {
+    let fixture = fixture(
+        "fn clear(speaker: Ref<Character>) { show(speaker, look = None); }\n",
+        None,
+    );
+    assert!(matches!(
+        analyze(&fixture),
+        Err(FinalSemanticAnalysisError::ValueResolutionFailed { .. })
+    ));
 }
 
 #[test]
@@ -4269,6 +4414,9 @@ fn external_character_entity_reference_retains_registered_owner_without_hir_item
         .expect("checked external Character item");
     let expected = CharacterId::try_new("character.akane").expect("Character ID");
     assert_eq!(checked.ty(), &TypeKind::entity_ref(EntityKind::Character));
+    assert_eq!(item.value_type(), checked.ty().semantic_identity_digest());
+    assert!(item.has_valid_semantic_identity());
+    assert_ne!(item.semantic_id().as_bytes(), &[0; 32]);
     assert_eq!(item.public_id().as_str(), expected.as_str());
     assert_eq!(item.character(), Some(expected));
     assert_eq!(item.retained_owner(), None);
@@ -4280,7 +4428,7 @@ fn assert_character_signature_projection(
     fixture: &Fixture,
     report: &FinalSemanticAnalysis,
     source: &str,
-    selected: &ResolvedCallable,
+    selected: &Arc<crate::callable::ResolvedCallable>,
     expected_look: &TypeKind,
 ) {
     let selected_group = selected
@@ -4291,10 +4439,7 @@ fn assert_character_signature_projection(
         .parameters()
         .get(1)
         .expect("Show look parameter");
-    assert_eq!(
-        selected_look.ty(),
-        &CallableParameterType::Exact(expected_look.clone())
-    );
+    assert_eq!(selected_look.declared_type(), Some(expected_look));
     let module = fixture
         .project
         .executable_view()
@@ -4328,7 +4473,10 @@ fn assert_character_signature_projection(
         panic!("one Character presentation signature")
     };
     assert_eq!(signature.candidate(), selected.id());
-    assert_eq!(signature.origin(), selected.origin());
+    assert!(matches!(
+        signature.origin(),
+        crate::callable::SignatureOrigin::Language { .. }
+    ));
     assert_eq!(signature.result(), selected.schema().result());
     let [group] = signature.groups() else {
         panic!("one Character presentation group")
@@ -4337,11 +4485,8 @@ fn assert_character_signature_projection(
         .parameters()
         .get(1)
         .expect("projected Character look parameter");
-    assert_eq!(signature_look.ty(), selected_look.ty());
-    assert_eq!(
-        signature_look.ty(),
-        &CallableParameterType::Exact(expected_look.clone())
-    );
+    assert_eq!(signature_look.admission(), selected_look.admission());
+    assert_eq!(signature_look.declared_type(), Some(expected_look));
 }
 
 #[test]
@@ -4358,31 +4503,35 @@ fn caller() { add([1i64, 2i64]...); }
         .calls()
         .map(|(_, facts)| facts)
         .find(|facts| {
-            facts
-                .arguments()
+            selected_execution_arguments(facts)
                 .iter()
                 .any(|argument| argument.slots().len() == 2)
         })
         .expect("expanded two-slot call facts");
-    let slots = call.arguments()[0].slots();
+    let slots = selected_execution_arguments(call)[0].slots();
 
     assert_eq!(slots.len(), 2);
     for (ordinal, slot) in slots.iter().enumerate() {
         assert!(matches!(
-            slot.source(),
+            slot.source().raw(),
             CheckedCallArgumentSlotSource::CompactNumericElement {
                 ordinal: actual,
                 ..
             } if actual == u32::try_from(ordinal).unwrap()
         ));
-        assert_eq!(slot.expression(), None);
-        assert_eq!(slot.inferred(), Some(&TypeKind::I64));
+        assert_eq!(slot.inferred(), &TypeKind::I64);
         assert_eq!(slot.expected(), Some(&TypeKind::I64));
     }
     assert_eq!(call.accounting().logical_argument_checks(), 1);
     assert_eq!(call.accounting().candidate_argument_probes(), 1);
     assert_eq!(call.accounting().retained_argument_fact_publications(), 1);
-    assert_eq!(call.retained_argument_inference_facts().count(), 2);
+    assert_eq!(
+        selected_execution_arguments(call)
+            .iter()
+            .flat_map(|argument| argument.slots())
+            .count(),
+        2
+    );
     let physical = report
         .physical_candidate_argument_evaluations()
         .filter(|evaluation| evaluation.call_expression() == call.expression())
@@ -4417,22 +4566,23 @@ fn multi_candidate_winner_replays_but_singleton_does_not() {
     let call = report
         .calls()
         .map(|(_, facts)| facts)
-        .find(|facts| facts.arguments().len() == 1)
+        .find(|facts| selected_execution_arguments(facts).len() == 1)
         .expect("overloaded call facts");
-    let CallTargetFact::Selected {
-        selected,
-        considered,
-    } = call.target()
-    else {
-        panic!("unique overload winner");
-    };
+    let selected = selected_candidate(call);
+    let considered = selected_candidates(call);
     assert_eq!(considered.len(), 2);
     assert_eq!(call.accounting().logical_argument_checks(), 1);
     assert_eq!(call.accounting().resolver_invocations(), 1);
     assert_eq!(call.accounting().candidate_argument_probes(), 2);
     assert_eq!(call.accounting().selected_replay_argument_visits(), 1);
     assert_eq!(call.accounting().retained_argument_fact_publications(), 1);
-    assert_eq!(call.retained_argument_inference_facts().count(), 1);
+    assert_eq!(
+        selected_execution_arguments(call)
+            .iter()
+            .flat_map(|argument| argument.slots())
+            .count(),
+        1
+    );
     let physical = report
         .physical_candidate_argument_evaluations()
         .filter(|evaluation| evaluation.call_expression() == call.expression())
@@ -4456,6 +4606,120 @@ fn multi_candidate_winner_replays_but_singleton_does_not() {
     );
 }
 
+fn assert_index_postfix_transaction(fixture: &Fixture) {
+    let report = analyze(fixture).expect("postfix expression final analysis");
+    let module = fixture
+        .project
+        .executable_view()
+        .expect("executable HIR")
+        .module(&CanonicalModulePath::crate_root())
+        .expect("root HIR module");
+    let (owner, postfix) = module
+        .expressions()
+        .find_map(|(owner, expression)| match expression.kind() {
+            HirExprKind::PostfixBracket(postfix) => Some((owner, postfix)),
+            _ => None,
+        })
+        .expect("postfix bracket expression");
+    let HirPostfixBracketCandidates::Ambiguous { index, dialogue } = postfix.candidates() else {
+        panic!("postfix fixture retains both typed candidates");
+    };
+    assert!(matches!(
+        report.expression(owner).map(CheckedExpression::resolution),
+        Some(CheckedExpressionResolution::PostfixBracket(
+            PostfixBracketResolution::Index { candidate }
+        )) if candidate == index
+    ));
+    assert!(report.expression(*index).is_some());
+    assert!(
+        report.expression(*dialogue).is_none(),
+        "the rejected dialogue candidate must not leak a semantic fact"
+    );
+    let edges = report
+        .checked_child_edges(owner)
+        .expect("selected postfix edge graph");
+    assert!(edges.iter().any(|(child, role)| {
+        *child == *index && matches!(role, CheckedExpressionChildRole::PostfixIndexCandidate)
+    }));
+    assert!(
+        !edges.iter().any(|(_, role)| {
+            matches!(role, CheckedExpressionChildRole::PostfixDialogueCandidate)
+        })
+    );
+}
+
+#[test]
+fn top_level_postfix_winner_applies_inside_expression_transaction() {
+    let fixture = fixture(
+        "fn caller(items: Seq<i64>, key: usize) { items[key]; }\n",
+        None,
+    );
+    assert_index_postfix_transaction(&fixture);
+}
+
+#[test]
+fn selected_postfix_child_missing_from_facts_fails_closed() {
+    let fixture = fixture(
+        "fn caller(items: Seq<i64>, key: usize) { items[key]; }\n",
+        None,
+    );
+    let accepted = analyze(&fixture).expect("selected index analysis");
+    let module = fixture
+        .project
+        .executable_view()
+        .expect("executable HIR")
+        .module(&CanonicalModulePath::crate_root())
+        .expect("root HIR module");
+    let missing = module
+        .expressions()
+        .find_map(|(_, expression)| {
+            let HirExprKind::Index(index) = expression.kind() else {
+                return None;
+            };
+            Some(index.index())
+        })
+        .expect("selected index operand");
+    let mut input = input_from_report(&accepted);
+    input.expressions.retain(|(owner, _)| *owner != missing);
+    assert!(matches!(
+        FinalSemanticAnalysis::try_new(
+            fixture.project.executable_view().expect("executable HIR"),
+            &fixture.symbols,
+            Arc::clone(accepted.hir_topology()),
+            accepted.checked_callables().clone(),
+            input,
+        ),
+        Err(FinalSemanticAnalysisError::MissingFact {
+            family: SemanticFactFamily::Expression,
+        })
+    ));
+}
+
+#[test]
+fn singleton_call_postfix_argument_commits_with_selected_publication() {
+    let fixture = fixture(
+        concat!(
+            "fn consume(value: i64) -> i64 { value }\n",
+            "fn caller(items: Seq<i64>, key: usize) { consume(items[key]); }\n",
+        ),
+        None,
+    );
+    assert_index_postfix_transaction(&fixture);
+}
+
+#[test]
+fn multi_candidate_call_postfix_argument_survives_selected_replay() {
+    let fixture = typed_overload_fixture(
+        "fn caller(items: Seq<i64>, key: usize) { choose(items[key]); }\n",
+        "choose",
+        vec![
+            TestCallableOverload::strict([TypeKind::I64], TypeKind::I64),
+            TestCallableOverload::strict([TypeKind::Bool], TypeKind::Bool),
+        ],
+    );
+    assert_index_postfix_transaction(&fixture);
+}
+
 #[test]
 fn call_adj_a_013_three_candidate_semantic_facts_remain_complete() {
     let fixture = candidate_boundary_fixture(3);
@@ -4463,15 +4727,10 @@ fn call_adj_a_013_three_candidate_semantic_facts_remain_complete() {
     let call = report
         .calls()
         .map(|(_, facts)| facts)
-        .find(|facts| facts.arguments().len() == 1)
+        .find(|facts| selected_execution_arguments(facts).len() == 1)
         .expect("three-candidate call facts");
-    let CallTargetFact::Selected {
-        selected,
-        considered,
-    } = call.target()
-    else {
-        panic!("the exact I64 overload wins");
-    };
+    let selected = selected_candidate(call);
+    let considered = selected_candidates(call);
 
     assert_eq!(considered.len(), 3);
     assert_eq!(call.accounting().logical_argument_checks(), 1);
@@ -4509,16 +4768,11 @@ fn t_lim_12_007_candidate_boundary_probes_each_of_256_candidates_once() {
         "the boundary fixture publishes one Call fact"
     );
     let (owner, call) = calls[0];
-    let CallTargetFact::Selected {
-        selected,
-        considered,
-    } = call.target()
-    else {
-        panic!("the sole I64 overload wins after every candidate is probed")
-    };
+    let selected = selected_candidate(call);
+    let considered = selected_candidates(call);
 
     assert_eq!(considered.len(), candidate_count);
-    assert_eq!(call.result(), Some(&TypeKind::I64));
+    assert_eq!(selected_application(call).result().ty(), &TypeKind::I64);
     assert_eq!(call.accounting().logical_argument_checks(), 1);
     assert_eq!(call.accounting().resolver_invocations(), 1);
     assert_eq!(
@@ -4555,9 +4809,6 @@ fn t_lim_12_007_candidate_boundary_probes_each_of_256_candidates_once() {
                     .or_insert(0usize) += 1;
             }
             CandidateEvaluationPass::SelectedReplay => selected_replays.push(evaluation),
-            CandidateEvaluationPass::RejectedRecoveryReplay => {
-                panic!("the selected multi-candidate path has no rejection replay")
-            }
         }
     }
     assert_eq!(probe_counts.len(), candidate_count);
@@ -4572,44 +4823,6 @@ fn t_lim_12_007_candidate_boundary_probes_each_of_256_candidates_once() {
         panic!("the selected multi-candidate path replays exactly once")
     };
     assert_eq!(selected_replay.candidate(), selected.id());
-}
-
-#[test]
-fn t_lim_12_008_and_t_rb_12_004_candidate_one_over_rolls_back_publication() {
-    let candidate_count = PRODUCTION_CALLABLE_LIMITS
-        .max_candidates_per_call()
-        .checked_add(1)
-        .expect("candidate one-over");
-    let fixture = candidate_boundary_fixture(candidate_count);
-    let (owner, outcome, accounting) = resolve_single_call_directly(&fixture);
-    assert!(matches!(
-        outcome,
-        ResolveCallOutcome::Rejected(ResolveCallError::CandidateLimit { actual, limit })
-            if actual == candidate_count
-                && limit == PRODUCTION_CALLABLE_LIMITS.max_candidates_per_call()
-    ));
-    assert_eq!(accounting.logical_argument_checks(), 1);
-    assert_eq!(accounting.resolver_invocations(), 1);
-    assert_eq!(accounting.candidate_argument_probes(), 0);
-    assert_eq!(accounting.selected_replay_argument_visits(), 0);
-    assert_eq!(accounting.retained_argument_fact_publications(), 0);
-
-    let cancellation = AtomicBool::new(false);
-    let (result, physical) = super::analyzer::analyze_final_project_with_physical_trace_for_test(
-        fixture.project.executable_view().expect("executable HIR"),
-        &fixture.symbols,
-        FinalSemanticCatalogs::production(&fixture.registered),
-        FinalSemanticAnalysisControl::new(&cancellation),
-    );
-    assert!(matches!(
-        result,
-        Err(FinalSemanticAnalysisError::CallResolutionFailed { owner: rejected })
-            if rejected == owner
-    ));
-    assert!(
-        physical.is_empty(),
-        "CandidateLimit occurs before any candidate probe; Err publishes no semantic report, CallTargetFacts, result, or accounting carrier"
-    );
 }
 
 #[test]
@@ -4692,51 +4905,6 @@ fn t_res_12_006_repeated_final_authority_preserves_facts_and_projection() {
 }
 
 #[test]
-fn ambiguous_overload_retains_primary_probe_without_replay() {
-    let fixture = environment_overload_fixture("fn caller() { choose(1); }\n");
-    let report = analyze(&fixture).expect("ambiguous call recovery facts");
-    let call = report
-        .calls()
-        .map(|(_, facts)| facts)
-        .find(|facts| facts.arguments().len() == 1)
-        .expect("ambiguous call facts");
-    let CallTargetFact::Ambiguous {
-        candidates,
-        considered,
-    } = call.target()
-    else {
-        panic!("same-ranked contextual candidates remain ambiguous");
-    };
-    assert_eq!(candidates.len(), 2);
-    assert_eq!(considered.len(), 2);
-    assert_eq!(call.accounting().candidate_argument_probes(), 2);
-    assert_eq!(call.accounting().selected_replay_argument_visits(), 0);
-    assert_eq!(call.retained_argument_inference_facts().count(), 1);
-    let physical = report
-        .physical_candidate_argument_evaluations()
-        .filter(|evaluation| evaluation.call_expression() == call.expression())
-        .collect::<Vec<_>>();
-    assert_eq!(physical.len(), 2);
-    assert!(
-        physical
-            .iter()
-            .all(|evaluation| evaluation.pass() == CandidateEvaluationPass::Probe)
-    );
-    assert_eq!(
-        physical[0].expected(),
-        &CandidateExpectedType::Exact(TypeKind::I64)
-    );
-    assert_eq!(
-        physical[1].expected(),
-        &CandidateExpectedType::Exact(TypeKind::U64)
-    );
-    assert_eq!(
-        call.arguments()[0].slots()[0].inferred(),
-        Some(&TypeKind::I64)
-    );
-}
-
-#[test]
 fn ambiguous_call_retains_complete_considered_set_beyond_the_tied_subset() {
     let fixture = typed_overload_fixture(
         "fn caller() { choose(1); }\n",
@@ -4751,15 +4919,13 @@ fn ambiguous_call_retains_complete_considered_set_beyond_the_tied_subset() {
     let call = report
         .calls()
         .map(|(_, facts)| facts)
-        .find(|facts| facts.arguments().len() == 1)
+        .find(|facts| matches!(facts.outcome(), CallAnalysisOutcome::Ambiguous(_)))
         .expect("ambiguous call facts");
-    let CallTargetFact::Ambiguous {
-        candidates,
-        considered,
-    } = call.target()
-    else {
+    let CallAnalysisOutcome::Ambiguous(evidence) = call.outcome() else {
         panic!("the two numeric candidates remain tied");
     };
+    let candidates = evidence.candidates();
+    let considered = evidence.considered();
 
     assert_eq!(candidates.len(), 2);
     assert_eq!(considered.len(), 3);
@@ -4771,78 +4937,7 @@ fn ambiguous_call_retains_complete_considered_set_beyond_the_tied_subset() {
 }
 
 #[test]
-fn rejected_overloads_retain_stable_primary_projection_without_replay() {
-    let fixture = environment_overload_fixture("fn caller() { choose(\"no\"); }\n");
-    let report = analyze(&fixture).expect("rejected call recovery facts");
-    let call = report
-        .calls()
-        .map(|(_, facts)| facts)
-        .find(|facts| facts.arguments().len() == 1)
-        .expect("rejected call facts");
-    let CallTargetFact::Rejected { candidates } = call.target() else {
-        panic!("no viable overload publishes rejected target facts");
-    };
-    assert_eq!(candidates.len(), 2);
-    assert_eq!(call.accounting().candidate_argument_probes(), 2);
-    assert_eq!(call.accounting().selected_replay_argument_visits(), 0);
-    assert_eq!(call.retained_argument_inference_facts().count(), 1);
-    assert_eq!(
-        call.arguments()[0].slots()[0].inferred(),
-        Some(&TypeKind::String)
-    );
-    assert_eq!(
-        call.arguments()[0].slots()[0].poison(),
-        super::CallPoison::Rejected
-    );
-    let physical = report
-        .physical_candidate_argument_evaluations()
-        .filter(|evaluation| evaluation.call_expression() == call.expression())
-        .collect::<Vec<_>>();
-    assert_eq!(physical.len(), 2);
-    assert!(
-        physical
-            .iter()
-            .all(|evaluation| evaluation.pass() == CandidateEvaluationPass::Probe)
-    );
-}
-
-#[test]
-fn rejected_singleton_replays_for_precise_recovery_projection() {
-    let fixture = fixture(
-        r#"
-fn choose(value: i64) -> i64 { value }
-fn caller() { choose("no"); }
-"#,
-        None,
-    );
-    let report = analyze(&fixture).expect("singleton rejected recovery facts");
-    let call = report
-        .calls()
-        .map(|(_, facts)| facts)
-        .find(|facts| facts.arguments().len() == 1)
-        .expect("singleton rejected call facts");
-    assert!(matches!(
-        call.target(),
-        CallTargetFact::Rejected { candidates } if candidates.len() == 1
-    ));
-    let physical = report
-        .physical_candidate_argument_evaluations()
-        .filter(|evaluation| evaluation.call_expression() == call.expression())
-        .collect::<Vec<_>>();
-    assert_eq!(physical.len(), 2);
-    assert_eq!(physical[0].pass(), CandidateEvaluationPass::Probe);
-    assert_eq!(
-        physical[1].pass(),
-        CandidateEvaluationPass::RejectedRecoveryReplay
-    );
-    assert_eq!(physical[0].candidate(), physical[1].candidate());
-    assert_eq!(physical[0].source(), physical[1].source());
-    assert_eq!(call.accounting().selected_replay_argument_visits(), 0);
-    assert_eq!(call.retained_argument_inference_facts().count(), 1);
-}
-
-#[test]
-fn work_failure_preserves_only_the_completed_physical_prefix() {
+fn work_failure_is_terminal_without_recovery_replay() {
     let fixture = fixture(
         r"
 fn combine(left: i64, right: i64) -> i64 { left + right }
@@ -4850,86 +4945,9 @@ fn caller() { combine(1i64, 2i64); }
 ",
         None,
     );
-    let boundary = (1..=64)
-        .find(|limit| {
-            let (result, physical) = analyze_with_query_work(&fixture, *limit);
-            result.is_err() && physical.len() == 1
-        })
-        .expect("one exact work limit admits the first slot and rejects the second");
-
-    let (before, no_physical) = analyze_with_query_work(&fixture, boundary - 1);
-    assert!(matches!(
-        before,
-        Err(FinalSemanticAnalysisError::CallResolutionFailed { .. })
-    ));
-    assert!(no_physical.is_empty());
-
-    let (failed, physical_prefix) = analyze_with_query_work(&fixture, boundary);
-    assert!(matches!(
-        failed,
-        Err(FinalSemanticAnalysisError::CallResolutionFailed { .. })
-    ));
-    assert_eq!(physical_prefix.len(), 1);
-    assert_eq!(physical_prefix[0].pass(), CandidateEvaluationPass::Probe);
-    assert_eq!(physical_prefix[0].argument().get(), 0);
-    assert_eq!(physical_prefix[0].slot().get(), 0);
-
-    let (accepted, complete_physical) = analyze_with_query_work(&fixture, boundary + 1);
-    let report = accepted.expect("one more work unit admits the complete singleton call");
-    assert_eq!(complete_physical.len(), 2);
-    assert!(
-        complete_physical
-            .iter()
-            .all(|evaluation| evaluation.pass() == CandidateEvaluationPass::Probe)
-    );
-    let call = report
-        .calls()
-        .map(|(_, facts)| facts)
-        .find(|facts| facts.arguments().len() == 2)
-        .expect("accepted two-argument call facts");
-    assert_eq!(call.retained_argument_inference_facts().count(), 2);
-}
-
-#[test]
-fn closure_arguments_are_rechecked_under_each_candidate_function_context() {
-    let i64_callback = TypeKind::function([TypeKind::I64], TypeKind::I64);
-    let u64_callback = TypeKind::function([TypeKind::U64], TypeKind::U64);
-    let fixture = typed_overload_fixture(
-        "fn caller() { choose(|value| value); }\n",
-        "choose",
-        vec![
-            TestCallableOverload::strict([i64_callback.clone()], TypeKind::I64),
-            TestCallableOverload::strict([u64_callback.clone()], TypeKind::U64),
-        ],
-    );
-    let report = analyze(&fixture).expect("contextual closure overload analysis");
-    let call = report
-        .calls()
-        .map(|(_, facts)| facts)
-        .find(|facts| facts.arguments().len() == 1)
-        .expect("closure call facts");
-    assert!(matches!(
-        call.target(),
-        CallTargetFact::Ambiguous { candidates, .. } if candidates.len() == 2
-    ));
-    let physical = report
-        .physical_candidate_argument_evaluations()
-        .filter(|evaluation| evaluation.call_expression() == call.expression())
-        .collect::<Vec<_>>();
-    assert_eq!(physical.len(), 2);
-    assert_eq!(
-        physical[0].expected(),
-        &CandidateExpectedType::Exact(i64_callback.clone())
-    );
-    assert_eq!(
-        physical[1].expected(),
-        &CandidateExpectedType::Exact(u64_callback)
-    );
-    assert_eq!(
-        call.arguments()[0].slots()[0].inferred(),
-        Some(&i64_callback),
-        "the deterministic primary probe is the only retained closure projection"
-    );
+    let (failed, physical) = analyze_with_query_work(&fixture, 1);
+    assert!(failed.is_err());
+    assert!(physical.is_empty());
 }
 
 #[test]
@@ -4957,27 +4975,89 @@ fn enum_shorthand_and_partial_placeholder_are_candidate_contextual() {
                 TestCallableOverload::strict([expected[1].clone()], TypeKind::Unit),
             ],
         );
-        let report = analyze(&fixture).expect("candidate-contextual argument analysis");
+        let report = analyze(&fixture).unwrap_or_else(|error| {
+            panic!("candidate-contextual argument analysis for `{source}`: {error:?}")
+        });
         let call = report
             .calls()
             .map(|(_, facts)| facts)
-            .find(|facts| facts.arguments().len() == 1)
+            .find(|facts| matches!(facts.outcome(), CallAnalysisOutcome::Ambiguous(_)))
             .expect("contextual call facts");
         assert!(matches!(
-            call.target(),
-            CallTargetFact::Ambiguous { candidates, .. } if candidates.len() == 2
+            call.outcome(),
+            CallAnalysisOutcome::Ambiguous(evidence) if evidence.candidates().len() == 2
         ));
         let physical = report
             .physical_candidate_argument_evaluations()
             .filter(|evaluation| evaluation.call_expression() == call.expression())
             .collect::<Vec<_>>();
         assert_eq!(physical.len(), 2);
-        for (evaluation, expected) in physical.into_iter().zip(expected) {
+        for (evaluation, expected) in physical.iter().zip(&expected) {
             assert_eq!(evaluation.pass(), CandidateEvaluationPass::Probe);
-            assert_eq!(
-                evaluation.expected(),
-                &CandidateExpectedType::Exact(expected)
-            );
+            let CandidateExpectedType::Exact(actual) = evaluation.expected() else {
+                panic!("contextual candidate owns an exact expected type");
+            };
+            match (actual, expected) {
+                (
+                    TypeKind::Function {
+                        params: actual_params,
+                        return_type: actual_return,
+                        effects: actual_effects,
+                    },
+                    TypeKind::Function {
+                        params: expected_params,
+                        return_type: expected_return,
+                        effects: expected_effects,
+                    },
+                ) => {
+                    assert_eq!(actual_params, expected_params);
+                    assert_eq!(actual_return, expected_return);
+                    assert_eq!(actual_effects.concrete(), expected_effects.concrete());
+                    assert!(matches!(
+                        actual_effects.tail(),
+                        crate::effect_row::EffectRowTail::Variable(_)
+                    ));
+                }
+                _ => assert_eq!(actual, expected),
+            }
+        }
+        let primary_source = physical[0].source();
+        let CandidateExpectedType::Exact(primary_expected) = physical[0].expected() else {
+            panic!("primary candidate owns an exact expected type");
+        };
+        let CheckedCallArgumentSlotSource::Expression(primary_owner) = primary_source else {
+            panic!("contextual shorthand/placeholder is expression-backed");
+        };
+        let published = report
+            .expression(primary_owner)
+            .expect("primary contextual projection is published")
+            .ty();
+        match (published, primary_expected) {
+            (
+                TypeKind::Function {
+                    params: published_params,
+                    return_type: published_return,
+                    effects: published_effects,
+                },
+                TypeKind::Function {
+                    params: expected_params,
+                    return_type: expected_return,
+                    effects: expected_effects,
+                },
+            ) => {
+                assert_eq!(published_params, expected_params);
+                assert_eq!(published_return, expected_return);
+                assert_eq!(published_effects.concrete(), expected_effects.concrete());
+                assert_eq!(
+                    published_effects.tail(),
+                    crate::effect_row::EffectRowTail::Closed
+                );
+                assert!(matches!(
+                    expected_effects.tail(),
+                    crate::effect_row::EffectRowTail::Variable(_)
+                ));
+            }
+            _ => assert_eq!(published, primary_expected),
         }
     }
 }
@@ -5021,7 +5101,7 @@ fn patterned(value: DataFormat) -> bool {
         .chain(std::iter::once(pattern_variant))
     {
         assert_eq!(variant.ordinal(), 0);
-        assert_eq!(variant.name().as_str(), "Json");
+        assert_eq!(variant.selected().diagnostic_name(), Some("Json"));
         assert_eq!(variant.owner(), expression_variants[0].owner());
     }
     let CheckedVariantOwner::BuiltinClosed { nominal, cases, .. } = expression_variants[0].owner()
@@ -5032,7 +5112,7 @@ fn patterned(value: DataFormat) -> bool {
     assert_eq!(
         cases
             .iter()
-            .map(CheckedBuiltinVariantCase::name)
+            .map(|case| case.diagnostic_name().expect("builtin diagnostic name"))
             .collect::<Vec<_>>(),
         arcweft_data::DataFormat::ALL
             .map(arcweft_data::DataFormat::variant_name)
@@ -5108,14 +5188,18 @@ fn root() {
             .expression(initializers[2])
             .expect("partial placeholder initializer fact")
             .ty(),
-        &TypeKind::function([TypeKind::I64], TypeKind::Bool)
+        &TypeKind::function_with_effects(
+            [TypeKind::I64],
+            TypeKind::Bool,
+            EffectRow::closed(EffectSet::new()),
+        )
     );
     assert_eq!(
         report
             .expression(initializers[3])
             .expect("zero-argument closure initializer fact")
             .ty(),
-        &TypeKind::function([], TypeKind::I32)
+        &TypeKind::function_with_effects([], TypeKind::I32, EffectRow::closed(EffectSet::new()))
     );
 }
 
@@ -5149,6 +5233,21 @@ flow @flow.numeric_inlays numeric_inlays {
             "final pattern fact missing for {owner:?}"
         );
     }
+    let typed = module
+        .patterns()
+        .find_map(|(owner, pattern)| {
+            matches!(pattern.kind(), HirPatternKind::TypedBinding { .. }).then_some(owner)
+        })
+        .expect("one typed-binding pattern");
+    let checked = report.pattern(typed).expect("typed-binding fact");
+    let CheckedPatternResolution::TypedBinding(binding) = checked.resolution() else {
+        panic!("typed binding must not collapse into Structural")
+    };
+    assert_eq!(binding.annotation(), &TypeKind::U64);
+    assert_eq!(
+        binding.annotation_digest(),
+        TypeKind::U64.semantic_identity_digest()
+    );
 }
 
 #[test]
@@ -5363,6 +5462,48 @@ flow @flow.root root {
         checked.ty(),
         &TypeKind::DialogueLine(Box::new(TypeKind::Unit))
     );
+    assert_dialogue_application_result_authority(
+        &report,
+        application,
+        &TypeKind::DialogueLine(Box::new(TypeKind::Unit)),
+    );
+    let (postfix_owner, rejected_index) = module
+        .expressions()
+        .find_map(|(owner, expression)| {
+            let HirExprKind::PostfixBracket(postfix) = expression.kind() else {
+                return None;
+            };
+            let HirPostfixBracketCandidates::Ambiguous { index, dialogue } = postfix.candidates()
+            else {
+                return None;
+            };
+            (*dialogue == application).then_some((owner, *index))
+        })
+        .expect("outer Dialogue postfix selection");
+    let edges = report
+        .checked_child_edges(postfix_owner)
+        .expect("selected Dialogue postfix edges");
+    assert!(edges.iter().any(|(child, role)| {
+        *child == application
+            && matches!(role, CheckedExpressionChildRole::PostfixDialogueCandidate)
+    }));
+    assert!(
+        !edges
+            .iter()
+            .any(|(_, role)| { matches!(role, CheckedExpressionChildRole::PostfixIndexCandidate) })
+    );
+    assert!(report.expression(rejected_index).is_none());
+    let dormant_content_target = module
+        .expressions()
+        .find_map(|(owner, expression)| {
+            let HirExprKind::Path(path) = expression.kind() else {
+                return None;
+            };
+            (path.as_resolved().and_then(|path| path.lexical_name()) == Some("Hello"))
+                .then_some(owner)
+        })
+        .expect("dormant index-alternative content target");
+    assert!(report.expression(dormant_content_target).is_none());
     let CheckedExpressionResolution::DialogueApplication {
         target: dialogue_target,
         rich_text,
@@ -5437,7 +5578,6 @@ fn reference() {
         fixture.project.executable_view().expect("executable HIR"),
         &fixture.symbols,
         &analysis,
-        &CheckedEntryCatalog::default(),
     )
     .expect("dialogue-line project index");
     let [reference] = index.dialogue_line_references() else {
@@ -5537,9 +5677,7 @@ flow @flow.root root {
     let call = report
         .call(factory_owner)
         .expect("Character factory is retained as one shared-resolver call fact");
-    let CallTargetFact::Selected { selected, .. } = call.target() else {
-        panic!("Character factory must select one callable candidate")
-    };
+    let selected = selected_candidate(call);
     assert_eq!(
         selected.id(),
         &CallableCandidateId::Dialogue(DialogueCallableId::CharacterFactory)
@@ -5582,13 +5720,8 @@ flow @flow.root root {
     let application_call = report
         .call(application_owner)
         .expect("content application retains the shared resolver selection");
-    let CallTargetFact::Selected {
-        selected,
-        considered,
-    } = application_call.target()
-    else {
-        panic!("content application must select one callable candidate")
-    };
+    let selected = selected_candidate(application_call);
+    let considered = selected_candidates(application_call);
     assert_eq!(considered.len(), 1);
     assert_eq!(
         selected.id(),
@@ -5598,7 +5731,7 @@ flow @flow.root root {
         selected.schema().validator(),
         &CallableValidator::Dialogue(DialogueCallableId::ContentApplication)
     );
-    assert!(application_call.arguments().is_empty());
+    assert!(selected_execution_arguments(application_call).is_empty());
     assert_eq!(application_call.accounting().resolver_invocations(), 1);
 }
 
@@ -5741,26 +5874,59 @@ flow @flow.root root {
         custom.coordinate(),
         &CharacterDialogueFieldCoordinate::Custom(field)
     );
-    assert!(matches!(
-        custom.operation(),
-        CheckedPatchOperation::Set {
-            ty: TypeKind::String,
-            ..
-        }
-    ));
-    let CallTargetFact::Selected { selected, .. } = report
-        .call(factory_owner)
-        .expect("custom field call fact")
-        .target()
+    let CheckedPatchOperation::Set {
+        value: custom_value,
+        ty: TypeKind::String,
+    } = custom.operation()
     else {
-        panic!("custom field call must select its Dialogue candidate")
+        panic!("custom field must retain one typed Set source")
     };
+    let selected = selected_candidate(report.call(factory_owner).expect("custom field call fact"));
     let mood = selected.schema().groups()[0]
         .parameters()
         .iter()
         .find(|parameter| parameter.name().is_some_and(|name| name.as_str() == "mood"))
         .expect("accepted custom binding is part of the shared signature schema");
-    assert_eq!(mood.ty(), &CallableParameterType::Exact(TypeKind::String));
+    assert_eq!(mood.declared_type(), Some(&TypeKind::String));
+    let physical = report
+        .physical_candidate_argument_evaluations()
+        .filter(|row| {
+            row.call_expression() == factory_owner
+                && row.source() == CheckedCallArgumentSlotSource::Expression(*custom_value)
+        })
+        .collect::<Vec<_>>();
+    assert!(
+        !physical.is_empty(),
+        "custom source must have a physical candidate observation"
+    );
+    assert!(
+        physical
+            .iter()
+            .all(|row| row.pass() == CandidateEvaluationPass::Probe
+                && row.kind() == PhysicalArgumentEvaluationKind::Authored)
+    );
+    for (index, row) in physical.iter().enumerate() {
+        assert!(
+            physical[..index]
+                .iter()
+                .all(|previous| !previous.same_candidate_slot(row))
+        );
+    }
+    assert_eq!(
+        report
+            .call(factory_owner)
+            .expect("custom field call fact")
+            .accounting()
+            .retained_argument_fact_publications(),
+        1
+    );
+    assert_eq!(
+        report
+            .expressions()
+            .filter(|(owner, _)| owner == custom_value)
+            .count(),
+        1
+    );
 }
 
 fn custom_dialogue_field_fixture(
@@ -5963,7 +6129,11 @@ fn configure(condition: bool) {
     );
     assert_eq!(
         local_type("captured"),
-        Some(TypeKind::function(Vec::new(), any_dialogue.clone()))
+        Some(TypeKind::function_with_effects(
+            Vec::new(),
+            any_dialogue.clone(),
+            EffectRow::closed(EffectSet::new()),
+        ))
     );
     assert!(
         analysis
@@ -6051,6 +6221,141 @@ fn configure() {
 }
 
 #[test]
+fn generic_collector_traverses_project_accepted_and_open_nominal_arguments() {
+    let project_fixture = fixture(
+        r"
+struct GenericProject<T> { value: T }
+
+fn identity<T>(value: GenericProject<T>) -> GenericProject<T> { value }
+",
+        None,
+    );
+    let project_report = analyze(&project_fixture).expect("project nominal generic analysis");
+    let project_type = project_report
+        .types()
+        .find_map(|(_, ty)| match ty {
+            TypeKind::ProjectNominal(nominal)
+                if nominal
+                    .arguments()
+                    .iter()
+                    .any(|argument| matches!(argument, TypeKind::GenericParam(_))) =>
+            {
+                Some(ty.clone())
+            }
+            _ => None,
+        })
+        .expect("generic project nominal type");
+    let project_declaration = project_fixture
+        .symbols
+        .callable_symbols()
+        .find(|symbol| symbol.declaration().name() == "identity")
+        .expect("project generic declaration")
+        .declaration()
+        .clone();
+    let project_record = project_fixture
+        .registered
+        .environment()
+        .callable_catalog()
+        .project_record(&project_declaration)
+        .expect("project generic callable record");
+    assert_eq!(
+        project_record
+            .schema()
+            .generic_inventory()
+            .types()
+            .iter()
+            .filter(|entry| entry.role() == crate::callable::CallableSchemaGenericRole::Candidate)
+            .count(),
+        1,
+        "project declaration issuer supplies its exact candidate",
+    );
+
+    let accepted_id = AcceptedNominalId::new(
+        AcceptedNominalOwnerId::Standard,
+        ownership_test_type_path("GenericAccepted"),
+    );
+    let accepted_record = AcceptedNominalRecord::try_new_opaque(
+        accepted_id,
+        1,
+        RuntimeOpaqueTypeProducerId::try_new("test.generic-accepted").expect("accepted producer"),
+        RuntimeOpaqueValueClass::Plain,
+        RuntimeOpaquePersistence::SnapshotOnly,
+        AcceptedNominalOrigin::Test,
+        None,
+    )
+    .expect("accepted generic nominal record");
+    let accepted_base = TypeCheckEnv::standard()
+        .try_with_nominal_record(accepted_record)
+        .expect("accepted generic nominal environment");
+    let accepted_fixture = fixture_with_base_environment(
+        "fn identity<T>(value: GenericAccepted<T>) -> GenericAccepted<T> { value }\n",
+        None,
+        accepted_base,
+    );
+    let accepted_report = analyze(&accepted_fixture).expect("accepted nominal generic analysis");
+    let accepted_type = accepted_report
+        .types()
+        .find_map(|(_, ty)| match ty {
+            TypeKind::AcceptedNominal(nominal)
+                if nominal
+                    .arguments()
+                    .iter()
+                    .any(|argument| matches!(argument, TypeKind::GenericParam(_))) =>
+            {
+                Some(ty.clone())
+            }
+            _ => None,
+        })
+        .expect("generic accepted nominal type");
+
+    let open_rule = OpenNominalRule::try_new(
+        OpenNominalRuleId::new(
+            crate::env::identity::EnvironmentBindingId::try_new("generic-open")
+                .expect("open rule owner"),
+            0,
+        ),
+        OpenNominalScope::AcceptedWorld,
+        OpenNominalPattern::Exact(ownership_test_type_path("GenericOpen")),
+        OpenNominalArity::Exact(1),
+        None,
+    )
+    .expect("open generic nominal rule");
+    let open_base = TypeCheckEnv::standard()
+        .try_with_open_nominal_rule(open_rule)
+        .expect("open generic nominal environment");
+    let open_fixture = fixture_with_base_environment(
+        "fn identity<T>(value: GenericOpen<T>) -> GenericOpen<T> { value }\n",
+        None,
+        open_base,
+    );
+    let open_report = analyze(&open_fixture).expect("open nominal generic analysis");
+    let open_type = open_report
+        .types()
+        .find_map(|(_, ty)| match ty {
+            TypeKind::OpenNominal(nominal)
+                if nominal
+                    .arguments()
+                    .iter()
+                    .any(|argument| matches!(argument, TypeKind::GenericParam(_))) =>
+            {
+                Some(ty.clone())
+            }
+            _ => None,
+        })
+        .expect("generic open nominal type");
+
+    for (label, ty) in [
+        ("project", project_type),
+        ("accepted", accepted_type),
+        ("open", open_type),
+    ] {
+        let inventory = TypeGenericUseCollector::collect(&ty)
+            .unwrap_or_else(|error| panic!("{label} generic collection: {error}"));
+        assert_eq!(inventory.types().len(), 1, "{label} generic type count");
+    }
+}
+
+#[test]
 fn dialogue_content_signature_help_uses_the_shared_application_schema() {
     const SOURCE: &str = r"
 pub character @character.alice Alice as alice {}
@@ -6100,8 +6405,8 @@ fn opening() {
     };
     assert_eq!(group.parameters().len(), 3);
     assert_eq!(
-        group.parameters()[1].ty(),
-        &CallableParameterType::Exact(TypeKind::Named("DialogueContent".to_owned()))
+        group.parameters()[1].declared_type(),
+        Some(&TypeKind::Named("DialogueContent".to_owned()))
     );
     assert_eq!(
         signature.result(),
@@ -6140,7 +6445,13 @@ flow @flow.references references {
     let selected = @entry.agent.main
 }
 
-entry agent @entry.agent.main {}
+fn controller() -> Result<Unit, AgentError> effects {} {
+    Ok(())
+}
+
+entry agent @entry.agent.main {
+    controller = controller
+}
 ",
         None,
     );
@@ -6157,17 +6468,19 @@ entry agent @entry.agent.main {}
         })
         .expect("exact Entry reference fact");
     assert_eq!(checked.ty(), &TypeKind::entity_ref(EntityKind::Entry));
-    assert_eq!(entry.public_id().as_str(), "entry.agent.main");
+    assert_eq!(entry.diagnostic_public_id().as_str(), "entry.agent.main");
     let module = fixture
         .project
         .executable_view()
         .expect("executable HIR")
         .modules()
-        .find_map(|(_, module)| (module.resolve_item(entry.owner()).is_ok()).then_some(module))
+        .find_map(|(_, module)| {
+            (module.resolve_item(entry.lookup_owner()).is_ok()).then_some(module)
+        })
         .expect("Entry owner module");
     assert!(matches!(
         module
-            .resolve_item(entry.owner())
+            .resolve_item(entry.lookup_owner())
             .expect("Entry owner")
             .kind(),
         HirItemKind::Entry(_)
@@ -6178,31 +6491,66 @@ entry agent @entry.agent.main {}
 fn generic_substitutions_are_candidate_local_and_specialize_result() {
     let generic = |owner| {
         TypeKind::GenericParam(GenericTypeParameterId::new(
-            GenericTypeOwnerId::Detached(DetachedTypeOwnerId::new(owner)),
+            GenericParameterOwnerId::AcceptedNominal(generic_test_owner(owner)),
             0,
         ))
     };
     let first = generic(41);
     let second = generic(42);
+    let first_issuer =
+        CallableGenericParameterIssuer::accepted_nominal(generic_test_owner(41), 1, 0)
+            .expect("first accepted nominal generic issuer");
+    let second_issuer =
+        CallableGenericParameterIssuer::accepted_nominal(generic_test_owner(42), 1, 0)
+            .expect("second accepted nominal generic issuer");
     let fixture = typed_overload_fixture(
         "fn caller() { choose(1i64, 2i64); }\n",
         "choose",
         vec![
-            TestCallableOverload::strict([first.clone(), first.clone()], first.clone()),
-            TestCallableOverload::strict([second.clone(), second.clone()], second.clone()),
+            TestCallableOverload::strict([first.clone(), first.clone()], first.clone())
+                .with_generic_issuer(first_issuer),
+            TestCallableOverload::strict([second.clone(), second.clone()], second.clone())
+                .with_generic_issuer(second_issuer),
         ],
     );
+    let choose_path = CallablePath::try_new([CallableName::try_new("choose").expect("path")])
+        .expect("choose path");
+    let choose = fixture
+        .registered
+        .environment()
+        .callable_catalog()
+        .free(&choose_path)
+        .expect("generic overload set");
+    assert_eq!(choose.as_slice().len(), 2);
+    let expected_parameters = [
+        GenericTypeParameterId::new(
+            GenericParameterOwnerId::AcceptedNominal(generic_test_owner(41)),
+            0,
+        ),
+        GenericTypeParameterId::new(
+            GenericParameterOwnerId::AcceptedNominal(generic_test_owner(42)),
+            0,
+        ),
+    ];
+    for (entry, expected_parameter) in choose.as_slice().iter().zip(expected_parameters) {
+        let rows = entry.primary().schema().generic_inventory().types();
+        assert_eq!(rows.len(), 1, "one generic candidate row");
+        assert_eq!(rows[0].parameter(), &expected_parameter);
+        assert!(
+            rows.iter()
+                .all(|row| { row.role() == crate::callable::CallableSchemaGenericRole::Candidate })
+        );
+    }
     let report = analyze(&fixture).expect("generic overload analysis");
     let call = report
         .calls()
         .map(|(_, facts)| facts)
-        .find(|facts| facts.arguments().len() == 2)
+        .find(|facts| matches!(facts.outcome(), CallAnalysisOutcome::Ambiguous(_)))
         .expect("generic call facts");
     assert!(matches!(
-        call.target(),
-        CallTargetFact::Ambiguous { candidates, .. } if candidates.len() == 2
+        call.outcome(),
+        CallAnalysisOutcome::Ambiguous(evidence) if evidence.candidates().len() == 2
     ));
-    assert_eq!(call.result(), Some(&TypeKind::I64));
     let physical = report
         .physical_candidate_argument_evaluations()
         .filter(|evaluation| evaluation.call_expression() == call.expression())
@@ -6237,7 +6585,7 @@ fn typed_rest_spread_checks_one_container_slot_per_candidate_pass() {
     let call = report
         .calls()
         .map(|(_, facts)| facts)
-        .find(|facts| facts.arguments().len() == 1)
+        .find(|facts| selected_execution_arguments(facts).len() == 1)
         .expect("typed-rest call facts");
     let physical = report
         .physical_candidate_argument_evaluations()
@@ -6250,10 +6598,16 @@ fn typed_rest_spread_checks_one_container_slot_per_candidate_pass() {
         PhysicalArgumentEvaluationKind::TypedRestSpread
     );
     assert_eq!(physical[0].expected(), &CandidateExpectedType::Unchecked);
-    assert_eq!(call.retained_argument_inference_facts().count(), 1);
     assert_eq!(
-        call.arguments()[0].slots()[0].inferred(),
-        Some(&TypeKind::Vec(Box::new(TypeKind::I64)))
+        selected_execution_arguments(call)
+            .iter()
+            .flat_map(|argument| argument.slots())
+            .count(),
+        1
+    );
+    assert_eq!(
+        selected_execution_arguments(call)[0].slots()[0].inferred(),
+        &TypeKind::Vec(Box::new(TypeKind::I64))
     );
 }
 
@@ -6271,18 +6625,21 @@ fn fixed_literal_spread_counts_each_logical_slot_in_every_probe_and_replay() {
     let call = report
         .calls()
         .map(|(_, facts)| facts)
-        .find(|facts| facts.arguments().len() == 1)
+        .find(|facts| selected_execution_arguments(facts).len() == 1)
         .expect("fixed-spread call facts");
-    assert!(matches!(
-        call.target(),
-        CallTargetFact::Selected { considered, .. } if considered.len() == 2
-    ));
+    assert_eq!(selected_candidates(call).len(), 2);
     let physical = report
         .physical_candidate_argument_evaluations()
         .filter(|evaluation| evaluation.call_expression() == call.expression())
         .collect::<Vec<_>>();
     assert_eq!(physical.len(), 6);
-    assert_eq!(call.retained_argument_inference_facts().count(), 2);
+    assert_eq!(
+        selected_execution_arguments(call)
+            .iter()
+            .flat_map(|argument| argument.slots())
+            .count(),
+        2
+    );
     assert!(physical.iter().all(|evaluation| {
         evaluation.argument().get() == 0
             && evaluation.kind() == PhysicalArgumentEvaluationKind::FixedLiteralSpread
@@ -6308,14 +6665,13 @@ fn intentionally_unchecked_capacity_arguments_retain_clean_typed_facts() {
     let call = report
         .calls()
         .map(|(_, facts)| facts)
-        .find(|facts| facts.arguments().len() == 2)
+        .find(|facts| selected_execution_arguments(facts).len() == 2)
         .expect("unchecked call facts");
     assert!(matches!(
-        call.target(),
-        CallTargetFact::Selected { selected, considered }
-            if matches!(selected.id(), CallableCandidateId::CapacityMethod(_))
-                && considered.len() == 1
+        selected_candidate(call).id(),
+        CallableCandidateId::CapacityMethod(_)
     ));
+    assert_eq!(selected_candidates(call).len(), 1);
     let physical = report
         .physical_candidate_argument_evaluations()
         .filter(|evaluation| evaluation.call_expression() == call.expression())
@@ -6328,14 +6684,12 @@ fn intentionally_unchecked_capacity_arguments_retain_clean_typed_facts() {
     );
     assert_eq!(physical[0].expected(), &CandidateExpectedType::Unmapped);
     assert_eq!(physical[1].expected(), &CandidateExpectedType::Unchecked);
-    let retained = call.retained_argument_inference_facts().collect::<Vec<_>>();
+    let retained = selected_execution_arguments(call)
+        .iter()
+        .flat_map(|argument| argument.slots())
+        .collect::<Vec<_>>();
     assert_eq!(retained.len(), 2);
     assert!(retained.iter().all(|fact| fact.expected().is_none()));
-    assert!(
-        retained
-            .iter()
-            .all(|fact| fact.poison() == super::CallPoison::Clean)
-    );
 }
 
 #[test]
@@ -6355,7 +6709,11 @@ fn caller() { choose(identity(1i64)); }
     let outer = report
         .calls()
         .map(|(_, facts)| facts)
-        .find(|facts| matches!(facts.target(), CallTargetFact::Selected { considered, .. } if considered.len() == 2))
+        .find(|facts| {
+            facts
+                .selected_application()
+                .is_some_and(|application| application.core().candidates().candidates().len() == 2)
+        })
         .expect("outer overloaded call");
     let inner = report
         .calls()
@@ -6371,21 +6729,17 @@ fn caller() { choose(identity(1i64)); }
         .filter(|evaluation| evaluation.call_expression() == inner.expression())
         .collect::<Vec<_>>();
     assert_eq!(outer_physical.len(), 3);
-    // The outer I64 probe and selected replay each probe the singleton inner
-    // call once.  The outer U64 probe rejects the inner call's I64 result, so
-    // that singleton performs its required deterministic recovery replay.
-    assert_eq!(inner_physical.len(), 4);
+    // Each exact outer attempt evaluates the singleton inner call once: the
+    // I64 probe, the U64 probe, and the selected outer replay. The inner call
+    // itself remains a singleton probe in all three attempts.
+    assert_eq!(inner_physical.len(), 3);
     assert_eq!(
         outer_physical[2].pass(),
         CandidateEvaluationPass::SelectedReplay
     );
     assert_eq!(inner_physical[0].pass(), CandidateEvaluationPass::Probe);
     assert_eq!(inner_physical[1].pass(), CandidateEvaluationPass::Probe);
-    assert_eq!(
-        inner_physical[2].pass(),
-        CandidateEvaluationPass::RejectedRecoveryReplay
-    );
-    assert_eq!(inner_physical[3].pass(), CandidateEvaluationPass::Probe);
+    assert_eq!(inner_physical[2].pass(), CandidateEvaluationPass::Probe);
 }
 
 #[test]
@@ -6501,12 +6855,14 @@ fn vec_turbofish_path() { Vec::<i32>::with_capacity(6); }
     let report = analyze(&fixture).expect("typed Capacity spelling matrix");
     let calls = report.calls().map(|(_, facts)| facts).collect::<Vec<_>>();
     assert_eq!(calls.len(), 6);
-    assert!(calls.iter().all(|facts| matches!(
-        facts.target(),
-        CallTargetFact::Selected { selected, considered }
-            if matches!(selected.id(), CallableCandidateId::CapacityMethod(_))
-                && considered.len() == 1
-    )));
+    assert!(calls.iter().all(|facts| {
+        facts.selected_application().is_some_and(|application| {
+            matches!(
+                application.core().candidates().selected().id(),
+                CallableCandidateId::CapacityMethod(_)
+            ) && application.core().candidates().candidates().len() == 1
+        })
+    }));
     assert_eq!(report.work().logical_argument_checks(), 6);
     assert_eq!(report.work().resolver_invocations(), 6);
     assert_eq!(report.work().candidate_argument_probes(), 6);
@@ -6523,17 +6879,19 @@ fn production_analyzer_routes_string_preserving_value_methods_through_capacity_f
     let report = analyze(&fixture).expect("typed String value-method analysis");
     let calls = report.calls().map(|(_, facts)| facts).collect::<Vec<_>>();
     assert_eq!(calls.len(), 2);
-    assert!(calls.iter().all(|facts| matches!(
-        facts.target(),
-        CallTargetFact::Selected { selected, considered }
-            if matches!(selected.id(), CallableCandidateId::CapacityMethod(_))
-                && considered.len() == 1
-    )));
-    assert!(
-        calls
-            .iter()
-            .all(|facts| facts.result() == Some(&TypeKind::String))
-    );
+    assert!(calls.iter().all(|facts| {
+        facts.selected_application().is_some_and(|application| {
+            matches!(
+                application.core().candidates().selected().id(),
+                CallableCandidateId::CapacityMethod(_)
+            ) && application.core().candidates().candidates().len() == 1
+        })
+    }));
+    assert!(calls.iter().all(|facts| {
+        facts
+            .selected_application()
+            .is_some_and(|application| application.result().ty() == &TypeKind::String)
+    }));
 }
 
 #[test]
@@ -6545,12 +6903,14 @@ fn production_analyzer_routes_single_string_preserving_value_method() {
     let report = analyze(&fixture).expect("typed String value-method analysis");
     let (_, call) = report.calls().next().expect("one method call");
     assert!(matches!(
-        call.target(),
-        CallTargetFact::Selected { selected, considered }
-            if matches!(selected.id(), CallableCandidateId::CapacityMethod(_))
-                && considered.len() == 1
+        call.selected_application(),
+        Some(application)
+            if matches!(
+                application.core().candidates().selected().id(),
+                CallableCandidateId::CapacityMethod(_)
+            ) && application.core().candidates().candidates().len() == 1
     ));
-    assert_eq!(call.result(), Some(&TypeKind::String));
+    assert_eq!(selected_application(call).result().ty(), &TypeKind::String);
 }
 
 #[test]
@@ -6566,10 +6926,7 @@ fn explicit_extension_receiver_unifies_free_and_dot_callable_identity() {
     let report = analyze(&fixture).expect("typed extension receiver analysis");
     let selected = report
         .calls()
-        .map(|(_, facts)| match facts.target() {
-            CallTargetFact::Selected { selected, .. } => selected,
-            target => panic!("expected selected extension call, got {target:?}"),
-        })
+        .map(|(_, facts)| selected_candidate(facts))
         .collect::<Vec<_>>();
     assert_eq!(selected.len(), 2);
     assert_eq!(selected[0].id(), selected[1].id());
@@ -6622,11 +6979,11 @@ fn explicit_extension_receiver_unifies_free_and_dot_callable_identity() {
     ));
     assert!(matches!(
         selected[0].instantiation(),
-        crate::callable::CallableInstantiation::None
+        crate::callable::ResolvedCallableBaseInstantiation::None
     ));
     assert!(matches!(
         selected[1].instantiation(),
-        crate::callable::CallableInstantiation::Extension { group, parameter, .. }
+        crate::callable::ResolvedCallableBaseInstantiation::Extension { group, parameter, .. }
             if group.get() == 0 && parameter.get() == 0
     ));
 }
@@ -6642,88 +6999,17 @@ fn data_last_extension_receiver_consumes_the_final_receiver_group() {
     );
     let report = analyze(&fixture).expect("typed data-last extension analysis");
     let (_, facts) = report.calls().next().expect("one extension call");
-    let CallTargetFact::Selected { selected, .. } = facts.target() else {
-        panic!("data-last extension must select one callable")
-    };
+    let selected = selected_candidate(facts);
     assert!(matches!(
         selected.instantiation(),
-        crate::callable::CallableInstantiation::Extension { group, parameter, .. }
+        crate::callable::ResolvedCallableBaseInstantiation::Extension { group, parameter, .. }
             if group.get() == 1 && parameter.get() == 0
     ));
-    assert_eq!(facts.result(), Some(&TypeKind::String));
-    assert!(facts.next_group().is_none());
-}
-
-#[test]
-fn bare_vec_capacity_retains_candidate_neutral_arguments_without_resolver_entry() {
-    let fixture = fixture("fn caller() { Vec.with_capacity(1, 2, 3); }\n", None);
-    let report = analyze(&fixture).expect("bare generic associated recovery");
-    let (owner, call) = report.calls().next().expect("one retained Call fact");
-    let Some(CallCalleeClassificationFact::AssociatedType { receiver, .. }) = call.callee() else {
-        panic!("bare generic recovery retains its typed associated receiver")
-    };
+    assert_eq!(selected_application(facts).result().ty(), &TypeKind::String);
     assert!(matches!(
-        call.target(),
-        CallTargetFact::Missing {
-            kind: UnknownCallKind::AssociatedType
-        }
+        selected_application(facts).result(),
+        crate::callable::CheckedCallResult::Value(_)
     ));
-    assert_eq!(call.poison(), super::CallPoison::Recovered);
-    assert!(call.result().is_some_and(TypeKind::contains_nominal_poison));
-    assert_eq!(
-        report.expression(owner).map(CheckedExpression::ty),
-        call.result()
-    );
-    assert_eq!(report.ty(receiver), call.result());
-
-    let type_report = report
-        .type_resolution(receiver)
-        .expect("wrong-arity receiver report");
-    assert!(matches!(
-        type_report.outcome(),
-        ResolvedTypeRefOutcome::Poisoned(_)
-    ));
-    assert!(type_report.outcome().product().nodes().iter().any(|node| {
-        node.node() == receiver
-            && matches!(
-                node.outcome(),
-                TypeNameResolution::Failed(TypeResolutionFailure::WrongArity { actual: 0, .. })
-            )
-    }));
-
-    assert_eq!(call.arguments().len(), 3);
-    for (index, argument) in call.arguments().iter().enumerate() {
-        assert_eq!(usize::from(argument.argument().get()), index);
-        assert_eq!(argument.poison(), super::CallPoison::Clean);
-        let [slot] = argument.slots() else {
-            panic!("candidate-neutral recovery retains one authored expression slot")
-        };
-        assert_eq!(slot.slot().get(), 0);
-        assert_eq!(slot.mapped(), None);
-        assert_eq!(slot.expected(), None);
-        assert_eq!(slot.inferred(), Some(&TypeKind::I32));
-        assert_eq!(slot.poison(), super::CallPoison::Clean);
-    }
-
-    let accounting = call.accounting();
-    assert_eq!(accounting.logical_argument_checks(), 3);
-    assert_eq!(accounting.resolver_invocations(), 0);
-    assert_eq!(accounting.candidate_argument_probes(), 0);
-    assert_eq!(accounting.selected_replay_argument_visits(), 0);
-    assert_eq!(accounting.retained_argument_fact_publications(), 3);
-    assert_eq!(report.work().logical_argument_checks(), 3);
-    assert_eq!(report.work().resolver_invocations(), 0);
-    assert_eq!(report.work().candidate_argument_probes(), 0);
-    assert_eq!(report.work().selected_replay_argument_visits(), 0);
-    assert_eq!(report.work().retained_argument_fact_publications(), 3);
-    assert_eq!(report.work().call_facts(), 1);
-    assert_eq!(
-        report
-            .physical_candidate_argument_evaluations()
-            .filter(|evaluation| evaluation.call_expression() == owner)
-            .count(),
-        0
-    );
 }
 
 #[test]
@@ -6768,18 +7054,21 @@ fn load_story() -> Unit effects { agent.observe } {
 
     let report =
         analyze(&fixture).expect("extern capability member call uses typed callable facts");
-    assert!(report.calls().any(|(_, call)| matches!(
-        call.target(),
-        CallTargetFact::Selected { selected, .. }
-            if matches!(selected.id(), CallableCandidateId::Project(owner) if owner == declaration)
-    )));
+    assert!(report.calls().any(|(_, call)| {
+        call.selected_application().is_some_and(|application| {
+            matches!(
+                application.core().candidates().selected().id(),
+                CallableCandidateId::Project(owner) if owner == declaration
+            )
+        })
+    }));
     let module = fixture
         .project
         .executable_view()
         .expect("executable HIR")
         .module(&CanonicalModulePath::crate_root())
         .expect("root HIR module");
-    let (call_owner, value_receiver, nominal_receiver) = module
+    let (_call_owner, _value_receiver, nominal_receiver) = module
         .expressions()
         .find_map(|(owner, expression)| {
             let HirExprKind::Call(call) = expression.kind() else {
@@ -6796,11 +7085,6 @@ fn load_story() -> Unit effects { agent.observe } {
             Some((owner, *value_receiver, nominal_receiver.type_id()?))
         })
         .expect("extern capability member Call retains both source-backed candidates");
-    assert!(matches!(
-        report.call(call_owner).and_then(CallTargetFacts::callee),
-        Some(CallCalleeClassificationFact::Value { expression })
-            if expression == value_receiver
-    ));
     assert_eq!(report.ty(nominal_receiver), None);
     assert_eq!(report.type_resolution(nominal_receiver), None);
 }
@@ -6815,6 +7099,8 @@ effects { agent.observe }
     observe()
     return Ok(())
 }
+
+entry agent @entry.agent.main { controller = run_smoke }
 ",
         None,
     );
@@ -6844,11 +7130,12 @@ effects { agent.observe }
         .calls()
         .map(|(_, call)| call)
         .find(|call| {
-            matches!(
-                call.target(),
-                CallTargetFact::Selected { selected, .. }
-                    if matches!(selected.id(), CallableCandidateId::Agent(_))
-            )
+            call.selected_application().is_some_and(|application| {
+                matches!(
+                    application.core().candidates().selected().id(),
+                    CallableCandidateId::Agent(_)
+                )
+            })
         })
         .expect("Agent intrinsic call fact");
     assert_eq!(call.enclosing_callable(), Some(declaration));
@@ -6870,8 +7157,11 @@ effects { agent.observe, agent.wait }
     )
     return Ok(())
 }
+
 signal ready: bool
 metric counter count: u64 {}
+
+entry agent @entry.agent.main { controller = composite_wait }
 ",
         None,
     );
@@ -6890,11 +7180,14 @@ metric counter count: u64 {}
     assert_eq!(
         report
             .calls()
-            .filter(|(_, call)| matches!(
-                call.target(),
-                CallTargetFact::Selected { selected, .. }
-                    if matches!(selected.id(), CallableCandidateId::Agent(_))
-            ))
+            .filter(|(_, call)| {
+                call.selected_application().is_some_and(|application| {
+                    matches!(
+                        application.core().candidates().selected().id(),
+                        CallableCandidateId::Agent(_)
+                    )
+                })
+            })
             .count(),
         7,
         "calls: {:#?}",
@@ -6903,31 +7196,29 @@ metric counter count: u64 {}
     assert_eq!(
         report
             .calls()
-            .filter(|(_, call)| matches!(
-                call.target(),
-                CallTargetFact::Selected { selected, .. }
-                    if matches!(
-                        selected.id(),
+            .filter(|(_, call)| {
+                call.selected_application().is_some_and(|application| {
+                    matches!(
+                        application.core().candidates().selected().id(),
                         CallableCandidateId::DomainMethod(DomainMethodId::ProbeCompare { .. })
                     )
-            ))
+                })
+            })
             .count(),
         1
     );
     let (signal_owner, signal) = report
         .calls()
         .find(|(_, call)| {
-            matches!(
-                call.target(),
-                CallTargetFact::Selected { selected, .. }
-                    if selected.id()
-                        == &CallableCandidateId::Agent(AgentIntrinsicSignatureId::Signal)
-            )
+            call.selected_application().is_some_and(|application| {
+                application.core().candidates().selected().id()
+                    == &CallableCandidateId::Agent(AgentIntrinsicSignatureId::Signal)
+            })
         })
         .expect("typed signal probe call");
     assert_eq!(
-        signal.result(),
-        Some(&TypeKind::Probe(Box::new(TypeKind::Bool)))
+        selected_application(signal).result().ty(),
+        &TypeKind::Probe(Box::new(TypeKind::Bool))
     );
     assert_eq!(
         report.expression(signal_owner).map(CheckedExpression::ty),
@@ -6936,22 +7227,79 @@ metric counter count: u64 {}
     let (metric_owner, metric) = report
         .calls()
         .find(|(_, call)| {
-            matches!(
-                call.target(),
-                CallTargetFact::Selected { selected, .. }
-                    if selected.id()
-                        == &CallableCandidateId::Agent(AgentIntrinsicSignatureId::Metric)
-            )
+            call.selected_application().is_some_and(|application| {
+                application.core().candidates().selected().id()
+                    == &CallableCandidateId::Agent(AgentIntrinsicSignatureId::Metric)
+            })
         })
         .expect("typed metric probe call");
     assert_eq!(
-        metric.result(),
-        Some(&TypeKind::Probe(Box::new(TypeKind::U64)))
+        selected_application(metric).result().ty(),
+        &TypeKind::Probe(Box::new(TypeKind::U64))
     );
     assert_eq!(
         report.expression(metric_owner).map(CheckedExpression::ty),
         Some(&TypeKind::Probe(Box::new(TypeKind::U64)))
     );
+}
+
+#[test]
+fn agent_signal_payload_closes_before_the_exists_parent_scope() {
+    let fixture = fixture(
+        r"
+fn local_wait() -> Result<Unit, AgentError>
+effects { agent.observe, agent.wait }
+{
+    let ready = signal(@signal.ready)
+    wait(exists(ready), timeout = 5s)
+    return Ok(())
+}
+signal ready: bool
+
+entry agent @entry.agent.main { controller = local_wait }
+",
+        None,
+    );
+    let report = analyze(&fixture)
+        .unwrap_or_else(|error| panic!("Agent local signal projection: {error:?}"));
+    let signal = report
+        .calls()
+        .map(|(_, call)| call)
+        .find(|call| {
+            call.selected_application().is_some_and(|application| {
+                application.core().candidates().selected().id()
+                    == &CallableCandidateId::Agent(AgentIntrinsicSignatureId::Signal)
+            })
+        })
+        .expect("selected signal call");
+    assert_eq!(
+        selected_application(signal).result().ty(),
+        &TypeKind::Probe(Box::new(TypeKind::Bool))
+    );
+    let exists = report
+        .calls()
+        .map(|(_, call)| call)
+        .find(|call| {
+            call.selected_application().is_some_and(|application| {
+                application.core().candidates().selected().id()
+                    == &CallableCandidateId::Agent(AgentIntrinsicSignatureId::Exists)
+            })
+        })
+        .expect("selected exists call");
+    assert_eq!(
+        selected_application(exists).result().ty(),
+        &TypeKind::Predicate
+    );
+    assert!(report.expressions().all(|(_, expression)| {
+        crate::types::TypeGenericUseCollector::collect(expression.ty()).is_ok_and(|inventory| {
+            inventory.types().iter().all(|parameter| {
+                parameter.owner()
+                    != &GenericParameterOwnerId::LanguageIntrinsic(
+                        crate::types::LanguageIntrinsicGenericOwner::AgentSignal,
+                    )
+            })
+        })
+    }));
 }
 
 #[test]
@@ -6968,6 +7316,8 @@ effects { agent.act.physical }
     expect(click_result.accepted)
     return Ok(())
 }
+
+entry agent @entry.agent.main { controller = run_smoke }
 ",
         None,
     );
@@ -6999,9 +7349,12 @@ effects { agent.act.physical }
 fn agent_diagnostics_method_uses_the_typed_builtin_receiver() {
     let fixture = fixture(
         r"
-fn inspect() effects { agent.observe } {
+fn inspect() -> Result<Unit, AgentError> effects { agent.observe } {
     let result = diagnostics().has_error()
+    return Ok(())
 }
+
+entry agent @entry.agent.main { controller = inspect }
 ",
         None,
     );
@@ -7009,16 +7362,16 @@ fn inspect() effects { agent.observe } {
     let (owner, call) = report
         .calls()
         .find(|(_, call)| {
-            matches!(
-                call.target(),
-                CallTargetFact::Selected { selected, .. }
-                    if selected.id() == &CallableCandidateId::DomainMethod(
-                        DomainMethodId::DiagnosticsHasError
-                    )
-            )
+            call.selected_application().is_some_and(|application| {
+                application.core().candidates().selected().id()
+                    == &CallableCandidateId::DomainMethod(DomainMethodId::DiagnosticsHasError)
+            })
         })
         .expect("typed diagnostics method call");
-    assert_eq!(call.result(), Some(&TypeKind::Predicate));
+    assert_eq!(
+        selected_application(call).result().ty(),
+        &TypeKind::Predicate
+    );
 
     let module = fixture
         .project
@@ -7062,6 +7415,8 @@ effects {}
     let hidden = || { observe() }
     return Ok(())
 }
+
+entry agent @entry.agent.main { controller = run_smoke }
 ",
         None,
     );
@@ -7077,11 +7432,12 @@ effects {}
         .calls()
         .map(|(_, call)| call)
         .find(|call| {
-            matches!(
-                call.target(),
-                CallTargetFact::Selected { selected, .. }
-                    if matches!(selected.id(), CallableCandidateId::Agent(_))
-            )
+            call.selected_application().is_some_and(|application| {
+                matches!(
+                    application.core().candidates().selected().id(),
+                    CallableCandidateId::Agent(_)
+                )
+            })
         })
         .expect("closure Agent intrinsic call fact");
     assert_eq!(call.enclosing_callable(), Some(declaration));
@@ -7247,10 +7603,11 @@ effects { }
 fn report_rejects_a_foreign_hir_or_symbol_generation() {
     let accepted = fixture("fn root() {}\n", None);
     let input = complete_input(&accepted);
-    let checked_callables = checked_callables(&accepted, &input);
+    let (topology, checked_callables) = checked_callables(&accepted, &input);
     let report = FinalSemanticAnalysis::try_new(
         accepted.project.executable_view().expect("accepted HIR"),
         &accepted.symbols,
+        topology,
         checked_callables,
         input,
     )
@@ -7280,7 +7637,6 @@ fn project_index_preserves_same_named_module_scoped_flows() {
         fixture.project.executable_view().expect("executable HIR"),
         &fixture.symbols,
         &analysis,
-        &CheckedEntryCatalog::default(),
     )
     .expect("module-preserving project index");
 
@@ -7334,7 +7690,6 @@ fn view_has_checked_callable_and_project_index_rows_without_a_call_binding() {
         fixture.project.executable_view().expect("executable HIR"),
         &fixture.symbols,
         &analysis,
-        &CheckedEntryCatalog::default(),
     )
     .expect("View project index");
     let indexed = index
@@ -7342,4 +7697,160 @@ fn view_has_checked_callable_and_project_index_rows_without_a_call_binding() {
         .expect("View callable index row");
     assert_eq!(indexed.kind(), ProjectCallableKind::View);
     assert_eq!(indexed.checked(), facts.id());
+}
+
+#[test]
+fn view_modifier_without_an_accepted_catalog_fails_at_the_call_owner() {
+    let fixture = fixture("view Main() {\n    Text(\"hello\").x(10px)\n}\n", None);
+    let module = fixture
+        .project
+        .executable_view()
+        .expect("executable HIR")
+        .module(&CanonicalModulePath::crate_root())
+        .expect("root HIR module");
+    let owner = module
+        .expressions()
+        .find_map(|(owner, expression)| match expression.kind() {
+            HirExprKind::Call(call) => match call.callee() {
+                HirCallCallee::Value { value }
+                    if module
+                        .resolve_expr(*value)
+                        .is_ok_and(|callee| matches!(callee.kind(), HirExprKind::Select(_))) =>
+                {
+                    Some(owner)
+                }
+                _ => None,
+            },
+            _ => None,
+        })
+        .expect("well-formed selected-member View call");
+
+    let result = analyze(&fixture);
+    assert!(
+        matches!(
+            &result,
+            Err(FinalSemanticAnalysisError::UnknownCallTarget {
+                owner: rejected,
+                kind: UnknownCallKind::Method,
+                name,
+                ..
+            }) if rejected == &owner && name == "x"
+        ),
+        "{result:?}"
+    );
+}
+
+#[test]
+fn registered_on_click_selects_the_typed_modifier_and_exact_handler_contract() {
+    let fixture = fixture(
+        "view Main(dialogue: DialogueView) {\n    Button().on_click { dialogue.primary_action }\n}\n",
+        None,
+    );
+    let analysis = analyze(&fixture).expect("registered on_click View modifier analysis");
+    let module = fixture
+        .project
+        .executable_view()
+        .expect("executable HIR")
+        .module(&CanonicalModulePath::crate_root())
+        .expect("root HIR module");
+    let (owner, callee, handler) = module
+        .expressions()
+        .find_map(|(owner, expression)| {
+            let HirExprKind::Call(call) = expression.kind() else {
+                return None;
+            };
+            let selected = analysis.call(owner)?.selected_application()?;
+            if selected.core().candidates().selected().schema().validator()
+                != &CallableValidator::ViewModifier(ViewModifierId::OnActivate)
+            {
+                return None;
+            }
+            let HirCallCallee::Value { value: callee } = call.callee() else {
+                return None;
+            };
+            let [argument] = call.arguments() else {
+                return None;
+            };
+            Some((owner, *callee, argument.value()))
+        })
+        .expect("typed on_click application");
+
+    assert_eq!(
+        analysis.expression(owner).expect("modifier result").ty(),
+        &TypeKind::ViewValue
+    );
+    assert!(matches!(
+        analysis
+            .expression(callee)
+            .expect("modifier callee")
+            .resolution(),
+        CheckedExpressionResolution::Select(CheckedSelectResolution::Method(_))
+    ));
+    assert_eq!(
+        analysis.expression(handler).expect("handler closure").ty(),
+        ViewModifierId::OnActivate.signature().params()[0].ty()
+    );
+}
+
+#[test]
+fn registered_on_click_rejects_a_non_action_handler() {
+    let fixture = fixture(
+        "view Main(dialogue: DialogueView) {\n    Button().on_click { \"not an action\" }\n}\n",
+        None,
+    );
+    assert!(matches!(
+        analyze(&fixture),
+        Err(FinalSemanticAnalysisError::CheckedCallableJoin(error))
+            if error.as_ref() == &CheckedCallableJoinError::NotSelected
+    ));
+}
+
+#[test]
+fn registered_on_click_rejects_an_effectful_action_producer_at_the_call_owner() {
+    let fixture = fixture(
+        r#"
+extern capability fs {
+    fn read_text(path: String) -> String effects { fs.read }
+}
+
+fn impure(value: DialogueAction) -> DialogueAction effects { fs.read } {
+    value
+}
+
+view Main(dialogue: DialogueView) {
+    Button().on_click { impure(dialogue.primary_action) }
+}
+"#,
+        None,
+    );
+    let module = fixture
+        .project
+        .executable_view()
+        .expect("executable HIR")
+        .module(&CanonicalModulePath::crate_root())
+        .expect("root HIR module");
+    let owner = module
+        .expressions()
+        .find_map(|(owner, expression)| match expression.kind() {
+            HirExprKind::Call(call)
+                if matches!(
+                    call.callee(),
+                    HirCallCallee::Value { value }
+                        if module.resolve_expr(*value).is_ok_and(|callee| {
+                            matches!(callee.kind(), HirExprKind::Select(select) if module.resolve_expr(select.target()).is_ok_and(|target| matches!(target.kind(), HirExprKind::Call(_))))
+                        })
+                ) => Some(owner),
+            _ => None,
+        })
+        .expect("outer selected-member View call");
+
+    let result = analyze(&fixture);
+    assert!(
+        matches!(
+            &result,
+            Err(FinalSemanticAnalysisError::CallResolutionFailed { owner: rejected })
+                if rejected == &owner
+        ),
+        "{result:?}"
+    );
 }

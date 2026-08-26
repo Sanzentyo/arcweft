@@ -7,6 +7,7 @@ license.workspace = true
 repository.workspace = true
 
 [dependencies]
+arcweft-manifest-model.workspace = true
 arcweft-character = { workspace = true }
 arcweft-core.workspace = true
 arcweft-data.workspace = true

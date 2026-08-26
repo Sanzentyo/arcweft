@@ -95,6 +95,7 @@ pub(super) fn reconcile_mounts(
             generation,
         };
         next.state = state;
+        next.handler_seals.clear();
         if !preserved {
             next.initialized_parameters.clear();
             next.initialized_state.clear();

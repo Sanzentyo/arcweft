@@ -15,16 +15,25 @@ use arcweft_bundle::resource_codec::{
 };
 use arcweft_character::id::CharacterId;
 use arcweft_core::value::{RuntimeBinding, RuntimeInt, RuntimeValue};
-use arcweft_core::{entry::RuntimeValueDigest, plan::RuntimeLineId};
+use arcweft_core::{
+    entry::RuntimeValueDigest,
+    plan::RuntimeLineId,
+    pure::{RuntimePureCallBackend, VmRuntimePureCallBackend},
+};
 use arcweft_dialogue::InlineFailurePolicy;
-use arcweft_id::TextKey;
+use arcweft_id::{PublicId, TextKey};
 use arcweft_presentation::fx::{
     FxContextSlot, FxRuntimeType, FxRuntimeValue, ValueInstruction, ValueProgramSchema,
 };
+use arcweft_presentation::{
+    hit::HitRect,
+    input::{InputEpoch, InputEvent, InteractionTarget},
+    layer::LayerId,
+    semantic::SemanticRole,
+};
 use arcweft_render_text::{RuntimeLineContext, resolve_frame};
 use arcweft_runtime_driver::dialogue::{
-    DialoguePageIndex, DialoguePresentationOperation, DialoguePresentationStore,
-    DialogueViewDefinition, DialogueViewInput, DialogueViewOccurrence, DialogueViewPrimaryAction,
+    DialoguePageIndex, DialogueViewInput, DialogueViewOccurrence, DialogueViewPrimaryAction,
     DialogueViewReveal, DialogueViewStage, DialogueViewState,
 };
 use arcweft_runtime_driver::presentation_handles::{
@@ -32,11 +41,11 @@ use arcweft_runtime_driver::presentation_handles::{
     PresentationResourceState,
 };
 use arcweft_runtime_driver::view_runtime::{
-    BundleViewDiagnosticCode, BundleViewInstancePath, BundleViewInstancePathSegment,
-    BundleViewMountOutput, BundleViewPaintItem, BundleViewRuntime as AcceptedBundleViewRuntime,
-    BundleViewRuntimeError, BundleViewStyleNode, BundleViewStyleNodeId, BundleViewStyleNodeKind,
-    BundleViewTextValue, SavedViewOwner, ViewOwnerEvidence, ViewProgramReplacementError,
-    ViewProgramReplacementOutcome,
+    BundleViewDiagnosticCode, BundleViewEventDispatchError, BundleViewInstancePath,
+    BundleViewInstancePathSegment, BundleViewMountOutput, BundleViewPaintItem,
+    BundleViewRuntime as AcceptedBundleViewRuntime, BundleViewRuntimeError, BundleViewStyleNode,
+    BundleViewStyleNodeId, BundleViewStyleNodeKind, BundleViewTextValue, SavedViewOwner,
+    ViewOwnerEvidence, ViewProgramReplacementError, ViewProgramReplacementOutcome,
 };
 use arcweft_source::{ProductSourceRef, SourceDocument, SourceDocumentId, SourceName};
 use arcweft_text_model::{
@@ -44,13 +53,19 @@ use arcweft_text_model::{
     LineDisplayFrame, RichTextDocument, RichTextNode,
 };
 use arcweft_view::{
-    AcceptedViewProgramRevision, DialogueEntryId, DialogueInstanceId, DialoguePresentationId,
-    DialogueStageIndex, EventKind, RustViewId, ViewDescriptor, ViewId, ViewImplementation,
-    ViewInstruction, ViewMountId, ViewPartLocalName, ViewPartName, ViewProgramId, ViewRegistry,
-    ViewRegistryError, ViewSchemaId,
+    AcceptedViewProgramRevision, ContainerKind, DialogueAdvanceTarget, DialogueEntryId,
+    DialogueInstanceId, DialoguePresentationId, DialogueRevision, DialogueStageIndex, EventKind,
+    FragmentKind, NodeKey, RustViewId, SemanticSpecId, ViewDescriptor, ViewFragmentBuilder,
+    ViewHandlerInvocation, ViewHandlerResult, ViewHandlerResultRole, ViewHandlerRouteTable, ViewId,
+    ViewImplementation, ViewInstruction, ViewMountId, ViewPartLocalName, ViewPartName,
+    ViewProgramId, ViewRegistry, ViewRegistryError, ViewSchemaId, ViewSemanticFragmentBuilder,
+    ViewSemanticNode,
 };
 use arcweft_view::{ViewValueProgram, ViewValueProgramId};
-use std::collections::{BTreeMap, BTreeSet};
+use std::{
+    collections::{BTreeMap, BTreeSet},
+    sync::Arc,
+};
 
 mod support;
 
@@ -302,23 +317,54 @@ fn accepted_catalog_rejects_host_owner_collision_before_publication() {
 
 #[test]
 fn authored_click_handler_enters_the_catalog_as_control_activation() {
+    let handler = arcweft_bundle::standard_view::dialogue_primary_action_program_id();
     let mut program = minimal_program("view.program.click", "view.Clickable", 1);
-    program.definitions[0].body = ViewInstructionSpan::new(0, 1);
-    program.instructions = vec![ViewProgramInstruction::BindHandler {
-        event: "click".to_owned(),
-        handler: "handler.click".to_owned(),
-        source: None,
+    program.definitions[0].body = ViewInstructionSpan::new(0, 3);
+    program.definitions[0].parameters = vec![ViewParameterResource {
+        ordinal: 0,
+        name: "dialogue".to_owned(),
+        role: arcweft_bundle::resource_codec::view::ViewParameterRole::Dialogue,
+        semantic_type: arcweft_core::value::RuntimeDialogueOpaqueRole::View.semantic_identity(),
+        value_type: None,
+        value_slot: None,
+        default_program: None,
     }];
+    program.instructions = vec![
+        ViewProgramInstruction::OpenElement {
+            element: ViewElementKind::Button,
+            target: None,
+            styles: Vec::new(),
+            part: None,
+            key: None,
+            source: None,
+        },
+        ViewProgramInstruction::CloseElement,
+        ViewProgramInstruction::BindHandler {
+            event: EventKind::Activate,
+            handler,
+            source: None,
+        },
+    ];
     program.handlers = vec![arcweft_bundle::resource_codec::view::ViewHandlerRef {
-        handler_id: "handler.click".to_owned(),
-        event: "click".to_owned(),
-        awbc_function_index: 0,
-        handler_abi: arcweft_bundle::container::BundleDigest::of(b"handler.click"),
-        function_binding: None,
+        program: handler,
+        captures: vec![arcweft_view::ViewHandlerCapture::new(
+            arcweft_view::ViewParameterCoordinate::try_from_index(0).unwrap(),
+            arcweft_core::value::RuntimeDialogueOpaqueRole::View.semantic_identity(),
+        )],
+        result: ViewHandlerResult::new(
+            ViewHandlerResultRole::DialogueAction,
+            arcweft_core::value::RuntimeDialogueOpaqueRole::Action.semantic_identity(),
+        ),
     }];
 
     let product = validated_product(program);
-    let runtime = AcceptedBundleViewRuntime::try_new(product, None).unwrap();
+    let awbc = Arc::new(
+        arcweft_bundle::standard_view::install_dialogue_handler_awbc(
+            arcweft_core::awbc::schema::AwbcProgram::default(),
+        )
+        .expect("standard handler installs"),
+    );
+    let runtime = AcceptedBundleViewRuntime::try_new_with_awbc(product, None, awbc).unwrap();
     let definition = runtime
         .catalog()
         .unwrap()
@@ -326,7 +372,7 @@ fn authored_click_handler_enters_the_catalog_as_control_activation() {
         .unwrap();
     assert!(matches!(
         definition.instructions(),
-        [ViewInstruction::BindEvent(binding)] if binding.event == EventKind::Activate
+        [.., ViewInstruction::BindEvent(binding)] if binding.event == EventKind::Activate
     ));
 }
 
@@ -505,33 +551,11 @@ fn hot_reload_prepared_candidate_rejects_stale_runtime_without_mutation() {
 }
 
 #[test]
-fn hot_reload_invalid_catalog_and_program_identity_leave_runtime_unchanged() {
+fn hot_reload_program_identity_mismatch_leaves_runtime_unchanged() {
     let initial = validated_product(minimal_program("view.program.atomic", "view.Atomic", 1));
     let mut runtime = AcceptedBundleViewRuntime::try_new(initial, None).unwrap();
     runtime.evaluate(&[handle("handle.atomic", "view.Atomic")], &[], false);
     let before = runtime.snapshot().unwrap();
-    let mut invalid = minimal_program("view.program.atomic", "view.Atomic", 1);
-    invalid.definitions[0].body = ViewInstructionSpan::new(0, 1);
-    invalid.instructions = vec![ViewProgramInstruction::BindHandler {
-        event: "unsupported_event".to_owned(),
-        handler: "handler.invalid".to_owned(),
-        source: None,
-    }];
-    invalid.handlers = vec![arcweft_bundle::resource_codec::view::ViewHandlerRef {
-        handler_id: "handler.invalid".to_owned(),
-        event: "unsupported_event".to_owned(),
-        awbc_function_index: 0,
-        handler_abi: arcweft_bundle::container::BundleDigest::of(b"handler.invalid"),
-        function_binding: None,
-    }];
-
-    assert!(matches!(
-        runtime.prepare_view_program_replacement(validated_product(invalid)),
-        Err(ViewProgramReplacementError::Catalog(_))
-    ));
-    assert_eq!(runtime.snapshot().unwrap(), before);
-    assert_eq!(runtime.accepted_generation().get(), 1);
-
     let other = validated_product(minimal_program("view.program.other", "view.Atomic", 2));
     assert!(matches!(
         runtime.prepare_view_program_replacement(other),
@@ -1471,6 +1495,8 @@ fn branch_reacts_per_mount_and_missing_input_never_uses_placeholder() {
                 ordinal: 0,
                 name: "active".to_owned(),
                 role: arcweft_bundle::resource_codec::view::ViewParameterRole::Value,
+                semantic_type: arcweft_core::pattern::RuntimeCheckedType::Bool
+                    .semantic_identity_digest(),
                 value_type: Some(FxRuntimeType::Bool),
                 value_slot: Some(0),
                 default_program: None,
@@ -1640,6 +1666,10 @@ fn view_save_round_trips_stable_nested_owners_and_allocator_stays_fresh() {
                     ordinal: 0,
                     name: "count".to_owned(),
                     role: arcweft_bundle::resource_codec::view::ViewParameterRole::Value,
+                    semantic_type: arcweft_core::pattern::RuntimeCheckedType::Signed(
+                        arcweft_core::value::RuntimeSignedIntWidth::I32,
+                    )
+                    .semantic_identity_digest(),
                     value_type: Some(FxRuntimeType::I32),
                     value_slot: Some(0),
                     default_program: None,
@@ -2171,6 +2201,10 @@ fn exact_i32_width_is_enforced_at_the_runtime_boundary() {
                 ordinal: 0,
                 name: "count".to_owned(),
                 role: arcweft_bundle::resource_codec::view::ViewParameterRole::Value,
+                semantic_type: arcweft_core::pattern::RuntimeCheckedType::Signed(
+                    arcweft_core::value::RuntimeSignedIntWidth::I32,
+                )
+                .semantic_identity_digest(),
                 value_type: Some(FxRuntimeType::I32),
                 value_slot: Some(0),
                 default_program: None,
@@ -2485,6 +2519,8 @@ fn typed_dialogue_view_resources() -> (ViewProgramResource, ViewTextResource) {
                 ordinal: 0,
                 name: "dialogue".to_owned(),
                 role: arcweft_bundle::resource_codec::view::ViewParameterRole::Dialogue,
+                semantic_type: arcweft_core::value::RuntimeDialogueOpaqueRole::View
+                    .semantic_identity(),
                 value_type: None,
                 value_slot: None,
                 default_program: None,
@@ -2569,8 +2605,47 @@ fn dialogue_view_state(identity: u64) -> DialogueViewState {
     }
 }
 
+fn invocation_from_binding(
+    binding: &arcweft_runtime_driver::view_runtime::BundleViewEventBinding,
+    epoch: u64,
+) -> ViewHandlerInvocation {
+    let mut fragment = ViewFragmentBuilder::default();
+    fragment
+        .push_node(
+            NodeKey(1),
+            FragmentKind::Container(ContainerKind::Block),
+            &[],
+            &[],
+            &[binding.retained_binding()],
+            Some(SemanticSpecId(0)),
+        )
+        .expect("retained handler fragment");
+    let fragment = fragment.finish();
+    let layer = LayerId::new(
+        PublicId::try_new_engine_owned("std.layer.dialogue").expect("standard dialogue layer"),
+    );
+    let mut semantics = ViewSemanticFragmentBuilder::default();
+    semantics
+        .push(ViewSemanticNode::new(
+            NodeKey(1),
+            layer,
+            binding.target().clone(),
+            SemanticRole::Button,
+            HitRect::new(0.0, 0.0, 1.0, 1.0),
+        ))
+        .expect("handler semantic node");
+    let routes = ViewHandlerRouteTable::from_fragment(&fragment, &semantics.finish())
+        .expect("handler route table");
+    let invocations = routes.dispatch_input(&InputEvent::activate(
+        InputEpoch(epoch),
+        binding.target().clone(),
+    ));
+    assert_eq!(invocations.len(), 1);
+    invocations[0].clone()
+}
+
 #[test]
-fn standard_dialogue_resource_uses_the_same_typed_mount_path() {
+fn standard_dialogue_handler_seals_once_reseals_on_capture_change_and_rejects_stale_routes() {
     let frame = dialogue_frame(
         "say.standard.dialogue",
         arcweft_bundle::standard_view::DIALOGUE_VIEW_ID,
@@ -2579,36 +2654,180 @@ fn standard_dialogue_resource_uses_the_same_typed_mount_path() {
             text: "Standard authored View".to_owned(),
         }],
     );
-    let mut dialogue = DialoguePresentationStore::default();
-    dialogue
-        .apply_operations(&[DialoguePresentationOperation::append(
-            DialogueViewDefinition::new(view_id(arcweft_bundle::standard_view::DIALOGUE_VIEW_ID)),
-            frame,
-        )])
-        .unwrap();
-    dialogue
-        .synchronize_waiting_line(Some(
-            &RuntimeLineId::from_runtime_line_value("say.standard.dialogue").unwrap(),
-        ))
-        .unwrap();
-    let mut runtime = BundleViewRuntime::try_new(
-        Some(arcweft_bundle::standard_view::dialogue_program()),
-        Some(arcweft_bundle::standard_view::dialogue_text()),
-        Some(&arcweft_bundle::standard_view::dialogue_style()),
+    let program = arcweft_bundle::standard_view::dialogue_program();
+    let source = arcweft_bundle::standard_view::dialogue_style_source_document();
+    let product = ValidatedViewProduct::try_new(
+        Some(SourceMapSection::try_from_documents(&[&source]).unwrap()),
+        Some(program.clone()),
+        Some(arcweft_bundle::standard_view::dialogue_style()),
+        ViewProductValidationLimits::default(),
     )
     .unwrap();
-    let output = runtime.evaluate_with_dialogue(&[], &dialogue.view_inputs(), &[], false);
+    let awbc = Arc::new(
+        arcweft_bundle::standard_view::install_dialogue_handler_awbc(
+            arcweft_core::awbc::schema::AwbcProgram::default(),
+        )
+        .expect("standard handler installs"),
+    );
+    let mut runtime = AcceptedBundleViewRuntime::try_new_with_awbc(
+        product.clone(),
+        Some(arcweft_bundle::standard_view::dialogue_text()),
+        Arc::clone(&awbc),
+    )
+    .unwrap();
+    let mut pure_backend = VmRuntimePureCallBackend::default();
+    let view = view_id(arcweft_bundle::standard_view::DIALOGUE_VIEW_ID);
+    let handle = PresentationHandleId::try_new("dialogue.standard.1").unwrap();
+    let target = |revision| {
+        DialogueAdvanceTarget::new(
+            DialoguePresentationId::new(1),
+            DialogueEntryId::new(2),
+            DialogueInstanceId::new(3),
+            DialogueStageIndex::new(0),
+            DialogueRevision::new(revision),
+        )
+    };
+    let input = |target| DialogueViewInput {
+        handle: handle.clone(),
+        view: &view,
+        frame: &frame,
+        state: DialogueViewState {
+            occurrence: DialogueViewOccurrence {
+                presentation: DialoguePresentationId::new(1),
+                entry: DialogueEntryId::new(2),
+                instance: DialogueInstanceId::new(3),
+            },
+            stage: DialogueViewStage {
+                index: DialogueStageIndex::new(0),
+                page: DialoguePageIndex::new(0),
+                stage_count: 1,
+                page_count: 1,
+            },
+            reveal: DialogueViewReveal::complete(),
+            primary_action: DialogueViewPrimaryAction {
+                target: Some(target),
+            },
+        },
+    };
 
-    assert!(output.diagnostics.is_empty(), "{output:#?}");
-    assert_eq!(output.mounts.len(), 1);
+    let first_input = input(target(1));
+    let first = runtime.evaluate_with_dialogue_and_backend(
+        &[],
+        &[first_input],
+        &[],
+        false,
+        &mut pure_backend,
+    );
+    assert!(first.diagnostics.is_empty(), "{first:#?}");
+    assert_eq!(pure_backend.stats().awbc_pure_program_calls, 1);
+    assert_eq!(first.mounts.len(), 1);
     assert_eq!(
-        output.mounts[0].view.as_str(),
+        first.mounts[0].view.as_str(),
         arcweft_bundle::standard_view::DIALOGUE_VIEW_ID
     );
-    assert_eq!(output.mounts[0].text.len(), 2);
-    assert!(
-        output.mounts[0]
-            .dialogue
-            .is_some_and(|state| state.primary_action.target.is_some())
+    assert_eq!(first.mounts[0].text.len(), 2);
+    let first_binding = first.mounts[0].events[0].clone();
+    assert_eq!(
+        first_binding.target().id().as_str(),
+        first.mounts[0].scoped_id(&program.action_buttons[0].public_id)
     );
+    let first_invocation = invocation_from_binding(&first_binding, 1);
+    assert_eq!(
+        runtime.dispatch_invocation(&first_invocation).unwrap(),
+        Some(
+            arcweft_runtime_driver::dialogue::BundlePresentationInput::advance_dialogue(target(1))
+        )
+    );
+
+    let unchanged_input = input(target(1));
+    let unchanged = runtime.evaluate_with_dialogue_and_backend(
+        &[],
+        &[unchanged_input],
+        &[],
+        false,
+        &mut pure_backend,
+    );
+    assert_eq!(pure_backend.stats().awbc_pure_program_calls, 1);
+    assert_eq!(unchanged.mounts[0].events[0].route(), first_binding.route());
+
+    let changed_input = input(target(2));
+    let changed = runtime.evaluate_with_dialogue_and_backend(
+        &[],
+        &[changed_input],
+        &[],
+        false,
+        &mut pure_backend,
+    );
+    assert!(changed.diagnostics.is_empty(), "{changed:#?}");
+    assert_eq!(pure_backend.stats().awbc_pure_program_calls, 2);
+    let changed_binding = changed.mounts[0].events[0].clone();
+    assert_ne!(changed_binding.route(), first_binding.route());
+    assert_eq!(
+        runtime.dispatch_invocation(&first_invocation),
+        Err(BundleViewEventDispatchError::UnknownBinding)
+    );
+    let changed_invocation = invocation_from_binding(&changed_binding, 2);
+    let changed_dispatch = Some(
+        arcweft_runtime_driver::dialogue::BundlePresentationInput::advance_dialogue(target(2)),
+    );
+    assert_eq!(
+        runtime.dispatch_invocation(&changed_invocation).unwrap(),
+        changed_dispatch
+    );
+    assert_eq!(
+        runtime.dispatch_invocation(&changed_invocation).unwrap(),
+        changed_dispatch
+    );
+    assert_eq!(pure_backend.stats().awbc_pure_program_calls, 2);
+
+    let mismatched_target = InteractionTarget::new(
+        PublicId::try_new("target.other").expect("other interaction target"),
+    );
+    let mismatch = ViewHandlerInvocation::from_input(
+        &InputEvent::activate(InputEpoch(3), mismatched_target),
+        changed_binding.event(),
+        changed_binding.route(),
+    )
+    .expect("Activate can form a typed invocation");
+    assert_eq!(
+        runtime.dispatch_invocation(&mismatch),
+        Err(BundleViewEventDispatchError::InvocationMismatch)
+    );
+
+    let snapshot = runtime.snapshot().expect("View runtime snapshots");
+    let reconciled = [PresentationHandleRecord::new(
+        handle.clone(),
+        PresentationHandleKind::View,
+        view.as_str().to_owned(),
+        Some("dialogue".to_owned()),
+        PresentationResourceState::Mounted,
+        None,
+        0,
+    )];
+    let mut restored = AcceptedBundleViewRuntime::try_new_with_awbc(
+        product,
+        Some(arcweft_bundle::standard_view::dialogue_text()),
+        awbc,
+    )
+    .unwrap();
+    restored.restore(&snapshot, &reconciled).unwrap();
+    assert_eq!(
+        restored.dispatch_invocation(&changed_invocation),
+        Err(BundleViewEventDispatchError::UnknownBinding)
+    );
+    let restored_input = input(target(2));
+    let mut restored_backend = VmRuntimePureCallBackend::default();
+    let restored_frame = restored.evaluate_with_dialogue_and_backend(
+        &[],
+        &[restored_input],
+        &[],
+        false,
+        &mut restored_backend,
+    );
+    assert!(restored_frame.diagnostics.is_empty(), "{restored_frame:#?}");
+    assert_ne!(
+        restored_frame.mounts[0].events[0].route(),
+        changed_binding.route()
+    );
+    assert_eq!(restored_backend.stats().awbc_pure_program_calls, 1);
 }

@@ -48,6 +48,10 @@ impl HirExpressionOwnedChildEdge {
 /// as ordinary expression children.
 #[derive(Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub enum HirExpressionOwnedBodyRole {
+    ClosureParameterPattern {
+        parameter: u32,
+    },
+    IfLetPattern,
     AwaitBranchPattern {
         branch: u32,
     },
@@ -78,6 +82,9 @@ pub enum HirExpressionOwnedBodyRole {
     ChoicePlanTimeoutBody {
         path: HirNestedExpressionPath,
     },
+    ChoicePlanCancelTrigger {
+        path: HirNestedExpressionPath,
+    },
     ChoicePlanCancelBody {
         path: HirNestedExpressionPath,
     },
@@ -91,7 +98,7 @@ pub enum HirExpressionOwnedBodyRole {
         path: HirNestedExpressionPath,
         role: HirLinePlanStatementRole,
     },
-    DialogueLinePlanLetPattern {
+    DialogueLinePlanLet {
         path: HirNestedExpressionPath,
     },
 }
@@ -124,6 +131,24 @@ impl HirExprKind {
     ) -> Result<Vec<HirExpressionOwnedChildEdge>, HirExpressionOwnedChildEdgeError> {
         let mut edges = Vec::new();
         match self {
+            Self::Closure(expression) => {
+                for (parameter, value) in expression.parameters().iter().enumerate() {
+                    push_owned_edge(
+                        &mut edges,
+                        HirExpressionOwnedChild::Pattern(value.pattern()),
+                        HirExpressionOwnedBodyRole::ClosureParameterPattern {
+                            parameter: owned_ordinal(parameter)?,
+                        },
+                    );
+                }
+            }
+            Self::IfLet(expression) => {
+                push_owned_edge(
+                    &mut edges,
+                    HirExpressionOwnedChild::Pattern(expression.pattern()),
+                    HirExpressionOwnedBodyRole::IfLetPattern,
+                );
+            }
             Self::Await(expression) => {
                 for (branch, value) in expression.branches().iter().enumerate() {
                     let branch = owned_ordinal(branch)?;
@@ -171,14 +196,12 @@ impl HirExprKind {
             | Self::Binary(_)
             | Self::Borrow(_)
             | Self::Dereference(_)
-            | Self::Closure(_)
             | Self::Unary(_)
             | Self::Block(_)
             | Self::ComputationBlock(_)
             | Self::NamedBlock(_)
             | Self::Loop(_)
             | Self::If(_)
-            | Self::IfLet(_)
             | Self::Match(_)
             | Self::PostfixBracket(_)
             | Self::Error(_)
@@ -407,7 +430,14 @@ fn append_choice_plan_edges(
                     push_owned_edge(
                         edges,
                         HirExpressionOwnedChild::Pattern(pattern),
-                        role.clone(),
+                        HirExpressionOwnedBodyRole::ChoicePlanCancelTrigger {
+                            path: match &role {
+                                HirExpressionOwnedBodyRole::ChoicePlanCancelBody { path } => {
+                                    path.clone()
+                                }
+                                _ => unreachable!("cancel role is body"),
+                            },
+                        },
                     );
                 }
                 push_owned_body_edges(
@@ -522,11 +552,24 @@ fn append_line_plan_item<'plan>(
         HirLinePlanItem::On(statement) => {
             push_line_plan_statement(edges, *statement, path()?, HirLinePlanStatementRole::On);
         }
-        HirLinePlanItem::Let { pattern, .. } => push_owned_edge(
-            edges,
-            HirExpressionOwnedChild::Pattern(*pattern),
-            HirExpressionOwnedBodyRole::DialogueLinePlanLetPattern { path: path()? },
-        ),
+        HirLinePlanItem::Let {
+            pattern, statement, ..
+        } => {
+            let nested_path = path()?;
+            push_owned_edge(
+                edges,
+                HirExpressionOwnedChild::Pattern(*pattern),
+                HirExpressionOwnedBodyRole::DialogueLinePlanLet {
+                    path: nested_path.clone(),
+                },
+            );
+            push_line_plan_statement(
+                edges,
+                *statement,
+                nested_path,
+                HirLinePlanStatementRole::Statement,
+            );
+        }
         HirLinePlanItem::Statement(statement) => push_line_plan_statement(
             edges,
             *statement,
@@ -552,8 +595,15 @@ fn append_line_plan_item<'plan>(
             item_path,
             Some(LinePlanGroupKind::Together),
         )),
+        HirLinePlanItem::Out { statement, .. } => {
+            push_line_plan_statement(
+                edges,
+                *statement,
+                path()?,
+                HirLinePlanStatementRole::Statement,
+            );
+        }
         HirLinePlanItem::Option { .. }
-        | HirLinePlanItem::Out(_)
         | HirLinePlanItem::TimedCue { .. }
         | HirLinePlanItem::TimelineAssert { .. }
         | HirLinePlanItem::Expression(_) => {}

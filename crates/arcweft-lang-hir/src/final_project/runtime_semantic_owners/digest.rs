@@ -148,6 +148,7 @@ const fn root_kind_tag(kind: HirRuntimeReachabilityRootKind) -> u8 {
         HirRuntimeReachabilityRootKind::CheckedFlow => 0,
         HirRuntimeReachabilityRootKind::CheckedEntry => 1,
         HirRuntimeReachabilityRootKind::SelectedEntry => 2,
+        HirRuntimeReachabilityRootKind::CheckedViewValueProgram => 3,
     }
 }
 

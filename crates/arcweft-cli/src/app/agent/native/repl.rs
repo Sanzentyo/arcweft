@@ -1267,7 +1267,7 @@ pub(super) fn agent_repl_observe_options(
         capture_step: options.capture_step,
         mode: options.mode,
         max_ops: options.max_ops,
-        values: options.values.clone(),
+        view_values: options.view_values.clone(),
         viewport_width: options.viewport_width,
         viewport_height: options.viewport_height,
         image: None,

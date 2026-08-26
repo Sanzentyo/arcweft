@@ -3,8 +3,8 @@
 use super::{
     BTreeMap, BTreeSet, CallableDeclarationOwner, CallableEffectSchema, CheckedCallableId,
     EffectSet, ExprId, FinalSemanticAnalysisControl, FinalSemanticAnalysisError, HirModule,
-    HirModuleId, PendingCallAnalysis, RecursiveCallableContractEdge, ScopeId, StagedCallableBody,
-    statements::scope_executes_within,
+    HirModuleId, RecursiveCallableContractEdge, ScopeId, StagedCallableBody,
+    calls::AnalyzerPreparedCallGraph, statements::scope_executes_within,
 };
 
 type CallableEdges = BTreeMap<CheckedCallableId, BTreeMap<CheckedCallableId, BTreeSet<ExprId>>>;
@@ -28,7 +28,7 @@ pub(super) struct CallableEffectGraph {
 impl CallableEffectGraph {
     pub(super) fn build(
         bodies: &[StagedCallableBody],
-        pending_calls: &BTreeMap<ExprId, PendingCallAnalysis>,
+        prepared_calls: &AnalyzerPreparedCallGraph,
         modules: &BTreeMap<HirModuleId, &HirModule>,
         control: FinalSemanticAnalysisControl<'_>,
     ) -> Result<Self, FinalSemanticAnalysisError> {
@@ -42,23 +42,28 @@ impl CallableEffectGraph {
         let body_ids = owners.keys().cloned().collect::<BTreeSet<_>>();
         let mut calls_by_module = BTreeMap::<HirModuleId, Vec<IndexedCallableCall>>::new();
 
-        for pending in pending_calls.values() {
+        for node in prepared_calls.selected_nodes() {
             control.check()?;
+            let application = node.prefix().application();
             if !matches!(
-                pending.selected.schema().effects(),
+                application.selected().schema().effects(),
                 CallableEffectSchema::Project { .. }
             ) {
                 continue;
             }
-            let Some(target) = pending.selected.checked() else {
+            let Some(target) = application.selected().checked() else {
                 continue;
             };
             if !body_ids.contains(target) {
                 continue;
             }
-            let module = resolve_module(modules, pending.expression.module())?;
+            let owner = match node.site() {
+                crate::callable::CheckedCallSite::HirCall(owner)
+                | crate::callable::CheckedCallSite::DialogueApplication(owner) => owner,
+            };
+            let module = resolve_module(modules, owner.module())?;
             let expression = module
-                .resolve_expr(pending.expression)
+                .resolve_expr(owner)
                 .map_err(|_| FinalSemanticAnalysisError::InvalidOwner)?;
             calls_by_module
                 .entry(module.module_id())
@@ -66,7 +71,7 @@ impl CallableEffectGraph {
                 .push(IndexedCallableCall {
                     scope: expression.scope(),
                     target: target.clone(),
-                    expression: pending.expression,
+                    expression: owner,
                 });
         }
 

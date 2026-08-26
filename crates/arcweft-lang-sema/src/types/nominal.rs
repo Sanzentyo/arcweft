@@ -17,32 +17,84 @@ pub struct TypePoisonId(u32);
 
 /// Declaration or detached scope that owns one semantic generic parameter.
 #[derive(Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
-pub enum GenericTypeOwnerId {
+pub enum GenericParameterOwnerId {
     Callable(CallableDeclarationKey),
     Nominal(ProjectNominalDeclarationId),
     AcceptedNominal(AcceptedNominalId),
     AcceptedSource(SourceSpan),
-    Detached(DetachedTypeOwnerId),
-    AgentIntrinsic(AgentIntrinsicGenericOwner),
+    Detached(DetachedGenericOwnerId),
+    LanguageIntrinsic(LanguageIntrinsicGenericOwner),
 }
 
-/// Standard Agent intrinsic that owns one closed generic type parameter.
+/// Language-owned intrinsic family that owns closed generic parameters.
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
-pub enum AgentIntrinsicGenericOwner {
-    Signal,
-    Metric,
+pub enum LanguageIntrinsicGenericOwner {
+    OptionConstructor,
+    ResultConstructor,
+    CollectionMap,
+    FxExists,
+    AgentSignal,
+    AgentMetric,
+}
+
+impl LanguageIntrinsicGenericOwner {
+    pub const ALL: [Self; 6] = [
+        Self::OptionConstructor,
+        Self::ResultConstructor,
+        Self::CollectionMap,
+        Self::FxExists,
+        Self::AgentSignal,
+        Self::AgentMetric,
+    ];
+
+    /// Canonical version-1 semantic tag owned by this closed family.
+    pub const fn semantic_tag(self) -> u8 {
+        match self {
+            Self::OptionConstructor => 0,
+            Self::ResultConstructor => 1,
+            Self::CollectionMap => 2,
+            Self::FxExists => 3,
+            Self::AgentSignal => 4,
+            Self::AgentMetric => 5,
+        }
+    }
+
+    const fn source_label(self) -> &'static str {
+        match self {
+            Self::OptionConstructor => "language.option-constructor",
+            Self::ResultConstructor => "language.result-constructor",
+            Self::CollectionMap => "language.collection-map",
+            Self::FxExists => "language.fx-exists",
+            Self::AgentSignal => "language.agent-signal",
+            Self::AgentMetric => "language.agent-metric",
+        }
+    }
 }
 
 /// Stable caller-supplied owner for generic parameters resolved without a project.
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
-pub struct DetachedTypeOwnerId(u64);
+pub struct DetachedGenericOwnerId(u64);
+
+/// Shared declaration coordinate used by the distinct type and constant
+/// parameter identity wrappers below.
+#[derive(Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+struct GenericParameterCoordinate {
+    owner: Arc<GenericParameterOwnerId>,
+    ordinal: u16,
+}
 
 /// Declaration-relative identity of one generic type parameter.
 #[derive(Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
-pub struct GenericTypeParameterId {
-    owner: Arc<GenericTypeOwnerId>,
-    ordinal: u16,
-}
+pub struct GenericTypeParameterId(GenericParameterCoordinate);
+
+/// Declaration-relative identity of one generic constant parameter.
+///
+/// This is deliberately a different type from [`GenericTypeParameterId`].
+/// A declaration coordinate may be shared by the identity implementation,
+/// but a type parameter can never be silently reinterpreted as a constant
+/// parameter (or vice versa) at a semantic boundary.
+#[derive(Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub struct GenericConstParameterId(GenericParameterCoordinate);
 
 /// Instantiation of one source-backed project struct or enum declaration.
 #[derive(Clone, Debug, Eq, Hash, PartialEq)]
@@ -78,7 +130,7 @@ impl TypePoisonId {
     }
 }
 
-impl DetachedTypeOwnerId {
+impl DetachedGenericOwnerId {
     /// Creates a detached generic owner from a caller-stable identity.
     pub const fn new(value: u64) -> Self {
         Self(value)
@@ -92,48 +144,73 @@ impl DetachedTypeOwnerId {
 
 impl GenericTypeParameterId {
     /// Creates the identity of one declaration-relative generic parameter.
-    pub fn new(owner: GenericTypeOwnerId, ordinal: u16) -> Self {
-        Self {
+    pub fn new(owner: GenericParameterOwnerId, ordinal: u16) -> Self {
+        Self(GenericParameterCoordinate {
             owner: Arc::new(owner),
             ordinal,
-        }
+        })
     }
 
     /// Declaration or detached scope that owns this parameter.
-    pub fn owner(&self) -> &GenericTypeOwnerId {
-        self.owner.as_ref()
+    pub fn owner(&self) -> &GenericParameterOwnerId {
+        self.0.owner.as_ref()
     }
 
     /// Zero-based position within the owning generic parameter list.
     pub const fn ordinal(&self) -> u16 {
-        self.ordinal
+        self.0.ordinal
     }
 
-    pub(super) fn source_label(&self) -> String {
-        let owner = match self.owner.as_ref() {
-            GenericTypeOwnerId::Callable(owner) => {
-                format!("{}::{}::{}", owner.package(), owner.module(), owner.name())
-            }
-            GenericTypeOwnerId::Nominal(owner) => owner.qualified_name(),
-            GenericTypeOwnerId::AcceptedNominal(owner) => owner.source_label(),
-            GenericTypeOwnerId::AcceptedSource(source) => {
-                let range = source.range();
-                format!(
-                    "{}@{}:{}..{}",
-                    source.source().id(),
-                    source.source().revision().to_hex(),
-                    range.start(),
-                    range.end()
-                )
-            }
-            GenericTypeOwnerId::Detached(owner) => format!("detached:{}", owner.value()),
-            GenericTypeOwnerId::AgentIntrinsic(owner) => match owner {
-                AgentIntrinsicGenericOwner::Signal => "agent.signal".to_owned(),
-                AgentIntrinsicGenericOwner::Metric => "agent.metric".to_owned(),
-            },
-        };
-        format!("$generic<{owner}>#{}", self.ordinal)
+    pub(crate) fn source_label(&self) -> String {
+        generic_source_label(self.0.owner.as_ref(), self.0.ordinal, "$generic")
     }
+}
+
+impl GenericConstParameterId {
+    /// Creates the identity of one declaration-relative generic constant.
+    pub fn new(owner: GenericParameterOwnerId, ordinal: u16) -> Self {
+        Self(GenericParameterCoordinate {
+            owner: Arc::new(owner),
+            ordinal,
+        })
+    }
+
+    /// Declaration or detached scope that owns this parameter.
+    pub fn owner(&self) -> &GenericParameterOwnerId {
+        self.0.owner.as_ref()
+    }
+
+    /// Zero-based position within the owning constant-parameter list.
+    pub const fn ordinal(&self) -> u16 {
+        self.0.ordinal
+    }
+
+    pub(crate) fn source_label(&self) -> String {
+        generic_source_label(self.0.owner.as_ref(), self.0.ordinal, "$const")
+    }
+}
+
+fn generic_source_label(owner: &GenericParameterOwnerId, ordinal: u16, prefix: &str) -> String {
+    let owner = match owner {
+        GenericParameterOwnerId::Callable(owner) => {
+            format!("{}::{}::{}", owner.package(), owner.module(), owner.name())
+        }
+        GenericParameterOwnerId::Nominal(owner) => owner.qualified_name(),
+        GenericParameterOwnerId::AcceptedNominal(owner) => owner.source_label(),
+        GenericParameterOwnerId::AcceptedSource(source) => {
+            let range = source.range();
+            format!(
+                "{}@{}:{}..{}",
+                source.source().id(),
+                source.source().revision().to_hex(),
+                range.start(),
+                range.end()
+            )
+        }
+        GenericParameterOwnerId::Detached(owner) => format!("detached:{}", owner.value()),
+        GenericParameterOwnerId::LanguageIntrinsic(owner) => owner.source_label().to_owned(),
+    };
+    format!("{prefix}<{owner}>#{ordinal}")
 }
 
 impl ProjectNominalType {
@@ -265,17 +342,18 @@ fn application_label(head: &str, arguments: &[TypeKind]) -> String {
 #[cfg(test)]
 mod tests {
     use super::{
-        DetachedTypeOwnerId, GenericTypeOwnerId, GenericTypeParameterId, TypeKind, TypePoisonId,
+        DetachedGenericOwnerId, GenericConstParameterId, GenericParameterOwnerId,
+        GenericTypeParameterId, TypeKind, TypePoisonId,
     };
     use crate::types::TypeMismatchPathSegment;
 
     #[test]
     fn generic_parameter_identity_retains_owner_and_ordinal() {
-        let owner = GenericTypeOwnerId::Detached(DetachedTypeOwnerId::new(17));
+        let owner = GenericParameterOwnerId::Detached(DetachedGenericOwnerId::new(17));
         let first = GenericTypeParameterId::new(owner.clone(), 0);
         let second = GenericTypeParameterId::new(owner, 1);
         let other_owner = GenericTypeParameterId::new(
-            GenericTypeOwnerId::Detached(DetachedTypeOwnerId::new(18)),
+            GenericParameterOwnerId::Detached(DetachedGenericOwnerId::new(18)),
             0,
         );
 
@@ -301,5 +379,16 @@ mod tests {
         assert_eq!(poison.source_label(), "<type-error:9>");
         assert!(poison.accepts(&TypeKind::I32));
         assert!(TypeKind::I32.accepts(&poison));
+    }
+
+    #[test]
+    fn type_and_const_parameter_namespaces_are_distinct() {
+        let owner = GenericParameterOwnerId::Detached(DetachedGenericOwnerId::new(19));
+        let ty = GenericTypeParameterId::new(owner.clone(), 0);
+        let constant = GenericConstParameterId::new(owner, 0);
+
+        assert_eq!(ty.ordinal(), constant.ordinal());
+        assert_eq!(ty.owner(), constant.owner());
+        assert_ne!(ty.source_label(), constant.source_label());
     }
 }

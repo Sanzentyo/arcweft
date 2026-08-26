@@ -10,19 +10,25 @@ use arcweft_source::identity::SourceSnapshotId;
 use arcweft_source::{SourceDocument, SourceDocumentId, SourceEdit, SourceName, SourceRange};
 
 use super::{
-    HirDeclarationBodyRootRole, HirExecutableProjectView, HirPackageModuleKey, HirProject,
-    HirProjectBuildError, HirProjectBuilder, HirProjectExecutionError, HirProjectModule,
-    HirProjectModuleError, HirRuntimeCallCalleeDisposition, HirRuntimeEmissionMode,
-    HirRuntimeExecutableOwner, HirRuntimeExpressionTypeDisposition, HirRuntimeReachabilityEdge,
-    HirRuntimeReachabilityError, HirRuntimeReachabilityRoot, HirRuntimeReachabilityRootKind,
-    HirRuntimeSemanticReachability, HirRuntimeSemanticReachabilityInput,
-    HirSelectedExpressionInventoryError, HirSemanticPathError, HirSemanticPathStep, exported_parts,
-    styles,
+    HirDeclarationBodyRootChild, HirDeclarationBodyRootRole, HirDeclarationContractRootRole,
+    HirDeclarationParameterRoot, HirDeclarationParameterRootRole, HirExecutableProjectView,
+    HirPackageModuleKey, HirProject, HirProjectBuildError, HirProjectBuilder,
+    HirProjectExecutionError, HirProjectModule, HirProjectModuleError,
+    HirRuntimeCallCalleeDisposition, HirRuntimeEmissionMode, HirRuntimeExecutableOwner,
+    HirRuntimeExpressionTypeDisposition, HirRuntimeReachabilityEdge, HirRuntimeReachabilityError,
+    HirRuntimeReachabilityRoot, HirRuntimeReachabilityRootKind, HirRuntimeSemanticReachability,
+    HirRuntimeSemanticReachabilityInput, HirSelectedExpressionInventoryError, HirSemanticOwnerPath,
+    HirSemanticPathStep, exported_parts, styles,
 };
 use crate::body_edges::HirBodyChild;
 use crate::database::HirDatabase;
-use crate::dialogue_application::HirPostfixBracketCandidates;
-use crate::expr::{HirExprKind, HirExpressionOwnedChild, HirThreadFlowItem};
+use crate::dialogue_application::{
+    HirDialogueApplicationMetadataProjectionError, HirPostfixBracketCandidates,
+};
+use crate::expr::{
+    HirExprKind, HirExpressionChildOwnership, HirExpressionChildRole, HirExpressionOwnedChild,
+    HirThreadFlowItem,
+};
 use crate::final_lowering::stage_unpublished_module_for_invariant_test;
 use crate::identity::ExprId;
 use crate::item::{HirDeclarationMemberKind, HirItemKind};
@@ -30,6 +36,7 @@ use crate::line_identity::{DialogueLineDiagnostic, DialogueLineIdOrigin, Dialogu
 use crate::lowering::{HirModuleKey, LoweringRequest};
 use crate::module::HirModule;
 use crate::source_index::HirCallableSourceOwner;
+use crate::stmt::HirStmtKind;
 use crate::symbol::{
     CallableDeclarationId, CallableDeclarationKey, CallableDeclarationOwner, CallablePackageId,
     ProjectExternalDeclarations, ProjectSymbolRevision, ProjectSymbolTable, ProjectSymbolWorldId,
@@ -117,32 +124,14 @@ fn build_project_with_limit(
     builder.finish()
 }
 
-fn runtime_reachability(
-    executable: HirExecutableProjectView<'_>,
+fn runtime_reachability<'project>(
+    executable: HirExecutableProjectView<'project>,
+    topology: &super::HirProjectEvaluationTopology,
     selected_postfix: impl FnMut(ExprId) -> Option<ExprId>,
     call_disposition: impl FnMut(ExprId) -> HirRuntimeExpressionTypeDisposition,
-) -> Result<HirRuntimeSemanticReachability<'_>, HirRuntimeReachabilityError> {
-    let root_document = executable
-        .modules()
-        .next()
-        .expect("test project has one module")
-        .1
-        .provenance()
-        .source_identity()
-        .id()
-        .clone();
-    let world = ProjectSymbolWorldId::try_new(
-        executable.package().clone(),
-        root_document,
-        "final-project-tests",
-    )
-    .unwrap();
-    let revision = ProjectSymbolRevision::try_for_documents(
-        executable
-            .modules()
-            .map(|(_, module)| module.provenance().source_identity()),
-    )
-    .unwrap();
+) -> Result<HirRuntimeSemanticReachability<'project>, HirRuntimeReachabilityError> {
+    let world = topology.generation().symbol_world().clone();
+    let revision = topology.generation().symbol_revision();
     let roots = executable
         .items()
         .filter_map(|item| {
@@ -164,7 +153,7 @@ fn runtime_reachability(
         roots,
         Vec::new(),
     )?;
-    executable.runtime_semantic_reachability(input, selected_postfix, call_disposition)
+    executable.runtime_semantic_reachability(input, topology, selected_postfix, call_disposition)
 }
 
 pub(super) fn root_module_fixture(
@@ -187,6 +176,16 @@ pub(super) fn root_module_fixture(
     let mut database = HirDatabase::try_new().unwrap();
     let module = lower(&mut database, &parsed, &package, &root_path);
     (database, package, root_path, module)
+}
+
+#[test]
+fn non_application_expression_cannot_issue_dialogue_metadata_projection() {
+    let (_, _, _, module) = root_module_fixture("metadata-projection");
+    let owner = module.expressions().next().expect("fixture expression").0;
+    assert_eq!(
+        module.dialogue_application_metadata_projection(owner),
+        Err(HirDialogueApplicationMetadataProjectionError::NotDialogueApplication)
+    );
 }
 
 fn symbols_for_project(
@@ -214,9 +213,76 @@ fn symbols_for_project(
         .into_table()
 }
 
+fn evaluation_topology(
+    project: &HirProject,
+    symbols: &ProjectSymbolTable,
+) -> Arc<super::HirProjectEvaluationTopology> {
+    project
+        .executable_view()
+        .expect("executable project")
+        .accept_symbol_generation(symbols)
+        .expect("accepted symbol generation")
+        .into_evaluation_topology()
+        .expect("project evaluation topology")
+}
+
+#[test]
+fn runtime_reachability_rejects_a_foreign_topology_generation() {
+    let (database, package, root_path, module) = root_module_fixture("foreign-runtime-topology");
+    let project = build_project(
+        &database,
+        package.clone(),
+        [bind(&database, &package, &root_path, Arc::clone(&module))],
+    )
+    .expect("project");
+    let symbols_for = |profile: &str| {
+        let world = ProjectSymbolWorldId::try_new(
+            package.clone(),
+            module.provenance().source_identity().id().clone(),
+            profile,
+        )
+        .expect("symbol world");
+        let revision = ProjectSymbolRevision::try_for_documents(
+            project
+                .view()
+                .modules()
+                .map(|(_, module)| module.provenance().source_identity()),
+        )
+        .expect("symbol revision");
+        let externals = ProjectExternalDeclarations::try_new(world, revision, Vec::new())
+            .expect("external declarations");
+        ProjectSymbolTable::link(project.view(), &externals)
+            .expect("linked symbols")
+            .into_table()
+    };
+    let accepted_symbols = symbols_for("accepted-runtime-topology");
+    let foreign_symbols = symbols_for("foreign-runtime-topology");
+    let executable = project.executable_view().expect("executable project");
+    let accepted = evaluation_topology(&project, &accepted_symbols);
+    let foreign = evaluation_topology(&project, &foreign_symbols);
+    let input = HirRuntimeSemanticReachabilityInput::try_new(
+        HirRuntimeEmissionMode::CheckAll,
+        accepted.generation().symbol_world().clone(),
+        accepted.generation().symbol_revision(),
+        Vec::new(),
+        Vec::new(),
+    )
+    .expect("reachability input");
+
+    assert!(matches!(
+        executable.runtime_semantic_reachability(
+            input,
+            foreign.as_ref(),
+            |_| None,
+            |_| HirRuntimeExpressionTypeDisposition::Retain,
+        ),
+        Err(HirRuntimeReachabilityError::TopologyGenerationMismatch)
+    ));
+}
+
 fn assert_expression_owned_edges_have_semantic_paths(
     module: &HirModule,
-    paths: &super::HirDeclarationSemanticPathIndex,
+    paths: &super::HirSemanticPathIndex,
     owner: ExprId,
 ) {
     let expression = module.resolve_expr(owner).expect("owned expression");
@@ -225,6 +291,10 @@ fn assert_expression_owned_edges_have_semantic_paths(
         .expression_owned_child_edges()
         .expect("bounded owned topology");
     assert!(!edges.is_empty(), "fixture must contain owned roots");
+    let owner_hops = paths
+        .expression(owner)
+        .expect("owned expression path")
+        .hops();
     for edge in edges {
         let path = match edge.child() {
             HirExpressionOwnedChild::Pattern(owner) => paths.pattern(owner),
@@ -235,7 +305,11 @@ fn assert_expression_owned_edges_have_semantic_paths(
             },
         }
         .expect("owned child semantic path");
-        assert!(path.contains(&HirSemanticPathStep::ExpressionOwned(edge.role().clone())));
+        assert!(
+            path.steps()
+                .contains(&HirSemanticPathStep::ExpressionOwned(edge.role().clone()))
+        );
+        assert_eq!(path.hops(), owner_hops);
     }
 }
 
@@ -279,16 +353,15 @@ fn assert_source_expression_owned_paths(
         .expect("fixture callable")
         .declaration()
         .clone();
-    let paths = project
-        .executable_view()
-        .expect("executable HIR")
-        .declaration_semantic_paths(&symbols, &declaration)
+    let topology = evaluation_topology(&project, &symbols);
+    let paths = topology
+        .declaration_semantic_paths(&declaration)
         .expect("semantic paths");
     let owner = retained_module
         .expressions()
         .find_map(|(owner, expression)| select(expression.kind()).then_some(owner))
         .expect("selected owned expression");
-    assert_expression_owned_edges_have_semantic_paths(&retained_module, &paths, owner);
+    assert_expression_owned_edges_have_semantic_paths(&retained_module, paths, owner);
 }
 
 #[test]
@@ -329,6 +402,837 @@ fn semantic_paths_consume_dialogue_owned_roots() {
 }
 
 #[test]
+fn nested_postfix_dialogue_candidates_publish_each_expression_once() {
+    let package = package();
+    let root_path = CanonicalModulePath::crate_root();
+    let mut syntax = SyntaxDatabase::try_new().unwrap();
+    let parsed = parse_initial(
+        &mut syntax,
+        "arcweft-test://proof/final-project/nested-postfix-dialogue-paths",
+        "nested-postfix-dialogue-paths.arcw",
+        concat!(
+            "pub character alice { display_name = \"Alice\" }\n",
+            "flow opening {\n",
+            "    alice[Hello[p]]\n",
+            "}\n",
+        ),
+    );
+    assert!(
+        parsed.diagnostics().is_empty(),
+        "{:?}",
+        parsed.diagnostics()
+    );
+    let mut database = HirDatabase::try_new().unwrap();
+    let module = lower(&mut database, &parsed, &package, &root_path);
+    assert!(
+        module.diagnostics().is_empty(),
+        "{:?}",
+        module.diagnostics()
+    );
+    let project = build_project(
+        &database,
+        package.clone(),
+        [bind(&database, &package, &root_path, Arc::clone(&module))],
+    )
+    .expect("executable project");
+    let symbols = symbols_for_project(&project, parsed.document(), "nested-postfix-dialogue-paths");
+    let topology = evaluation_topology(&project, &symbols);
+    let module_topology = topology
+        .module(module.module_id())
+        .expect("module evaluation topology");
+    let expected = module
+        .expressions()
+        .map(|(owner, _)| owner)
+        .collect::<BTreeSet<_>>();
+    let actual = module_topology.expression_owners().collect::<BTreeSet<_>>();
+    assert_eq!(actual, expected);
+    assert_eq!(
+        module_topology.expression_uses().rows().len(),
+        expected.len()
+    );
+
+    for (owner, expression) in module.expressions() {
+        let target_role = match expression.kind() {
+            HirExprKind::PostfixBracket(_) | HirExprKind::Index(_) => {
+                Some(HirExpressionChildRole::Target)
+            }
+            HirExprKind::DialogueContentApplication(_) => {
+                Some(HirExpressionChildRole::DialogueTarget)
+            }
+            _ => None,
+        };
+        let Some(target_role) = target_role else {
+            continue;
+        };
+        let expected_ownership = match expression.kind() {
+            HirExprKind::PostfixBracket(_) => HirExpressionChildOwnership::Owning,
+            HirExprKind::Index(_) | HirExprKind::DialogueContentApplication(_) => {
+                HirExpressionChildOwnership::ReferenceOnly
+            }
+            _ => unreachable!(),
+        };
+        assert!(module_topology.expression_edges(owner).iter().any(|edge| {
+            matches!(
+                edge,
+                super::HirExpressionEvaluationEdge::Expression {
+                    role,
+                    ownership,
+                    ..
+                } if role == &target_role && *ownership == expected_ownership
+            )
+        }));
+    }
+}
+
+#[test]
+fn semantic_owner_hops_survive_closure_block_statement_and_initializer_walkers() {
+    let package = package();
+    let root_path = CanonicalModulePath::crate_root();
+    let mut syntax = SyntaxDatabase::try_new().unwrap();
+    let parsed = parse_initial(
+        &mut syntax,
+        "arcweft-test://proof/final-project/semantic-owner-hops",
+        "semantic-owner-hops.arcw",
+        concat!(
+            "fn accepted() -> Unit {\n",
+            "    let callback: (Unit) -> Unit = |_unit: Unit| -> Unit {\n",
+            "        let inner = ()\n",
+            "        inner\n",
+            "    }\n",
+            "    ()\n",
+            "}\n",
+        ),
+    );
+    assert!(
+        parsed.diagnostics().is_empty(),
+        "{:?}",
+        parsed.diagnostics()
+    );
+    let mut database = HirDatabase::try_new().unwrap();
+    let module = lower(&mut database, &parsed, &package, &root_path);
+    assert!(
+        module.diagnostics().is_empty(),
+        "{:?}",
+        module.diagnostics()
+    );
+    let retained_module = Arc::clone(&module);
+    let project = build_project(
+        &database,
+        package.clone(),
+        [bind(&database, &package, &root_path, module)],
+    )
+    .expect("semantic-owner-hop project");
+    let symbols = symbols_for_project(&project, parsed.document(), "semantic-owner-hops");
+    let declaration = symbols
+        .callable_symbols()
+        .find(|symbol| symbol.declaration().name() == "accepted")
+        .expect("accepted declaration")
+        .declaration()
+        .clone();
+    let topology = evaluation_topology(&project, &symbols);
+    let paths = topology
+        .declaration_semantic_paths(&declaration)
+        .expect("semantic paths");
+    let (closure, closure_expression) = retained_module
+        .expressions()
+        .find_map(|(owner, expression)| match expression.kind() {
+            HirExprKind::Closure(closure) => Some((owner, closure)),
+            _ => None,
+        })
+        .expect("closure expression");
+    let block = closure_expression.body();
+    let HirExprKind::Block(block_expression) = retained_module
+        .resolve_expr(block)
+        .expect("closure body")
+        .kind()
+    else {
+        panic!("closure body is a block");
+    };
+    let [statement] = block_expression.statements() else {
+        panic!("closure block has one initializer statement");
+    };
+    let initializer = match retained_module.resolve_stmt(*statement).unwrap().kind() {
+        HirStmtKind::Let { initializer, .. } => *initializer,
+        kind => panic!("unexpected closure statement: {kind:?}"),
+    };
+    let body_path = paths.expression(block).expect("closure block path");
+    let parameter_pattern = closure_expression
+        .parameters()
+        .first()
+        .expect("closure parameter")
+        .pattern();
+    let parameter_path = paths
+        .pattern(parameter_pattern)
+        .expect("closure parameter pattern path");
+    assert!(parameter_path.steps().iter().any(|step| matches!(
+        step,
+        HirSemanticPathStep::ExpressionOwned(
+            crate::expr::HirExpressionOwnedBodyRole::ClosureParameterPattern { parameter: 0 }
+        )
+    )));
+    let statement_path = paths.statement(*statement).expect("closure statement path");
+    let initializer_path = paths.expression(initializer).expect("initializer path");
+    assert_eq!(statement_path.hops(), body_path.hops());
+    assert_eq!(initializer_path.hops(), body_path.hops());
+    assert_eq!(body_path.hops().len(), 1);
+    let [hop] = body_path.hops() else {
+        panic!("one closure-to-block expression hop");
+    };
+    assert_eq!(hop.parent(), closure);
+    assert_eq!(hop.child(), block);
+}
+
+#[test]
+fn declaration_body_topology_keeps_root_matrix_and_unified_path_index_parity() {
+    let package = package();
+    let root_path = CanonicalModulePath::crate_root();
+    let mut syntax = SyntaxDatabase::try_new().unwrap();
+    let parsed = parse_initial(
+        &mut syntax,
+        "arcweft-test://proof/final-project/declaration-body-topology",
+        "declaration-body-topology.arcw",
+        concat!(
+            "fn accepted(value: Unit = ()) effects { agent.observe } {\n",
+            "    value\n",
+            "}\n",
+        ),
+    );
+    assert!(
+        parsed.diagnostics().is_empty(),
+        "{:?}",
+        parsed.diagnostics()
+    );
+    let mut database = HirDatabase::try_new().unwrap();
+    let module = lower(&mut database, &parsed, &package, &root_path);
+    assert!(
+        module.diagnostics().is_empty(),
+        "{:?}",
+        module.diagnostics()
+    );
+    let retained_module = Arc::clone(&module);
+    let project = build_project(
+        &database,
+        package.clone(),
+        [bind(&database, &package, &root_path, module)],
+    )
+    .expect("topology project");
+    let symbols = symbols_for_project(&project, parsed.document(), "declaration-body-topology");
+    let symbol = symbols
+        .callable_symbols()
+        .find(|symbol| symbol.declaration().name() == "accepted")
+        .expect("accepted declaration");
+    let declaration = symbol.declaration().clone();
+    let project_topology = evaluation_topology(&project, &symbols);
+    let declaration_view = project_topology
+        .declaration(&declaration)
+        .expect("declaration topology");
+    let topology = declaration_view.body();
+    assert_eq!(topology.declaration(), &declaration);
+    assert_eq!(topology.source_item(), symbol.source_item());
+    assert_eq!(topology.source_owner(), symbol.source_owner());
+    assert_eq!(topology.snapshot(), retained_module.snapshot_id());
+    assert!(matches!(
+        topology.paths().root(),
+        super::HirSemanticPathRoot::Declaration(value) if value == &declaration
+    ));
+    assert_eq!(topology.paths().snapshot(), topology.snapshot());
+    assert_eq!(
+        topology
+            .parameter_roots()
+            .iter()
+            .map(HirDeclarationParameterRoot::role)
+            .collect::<Vec<_>>(),
+        vec![
+            HirDeclarationParameterRootRole::Pattern {
+                group: 0,
+                parameter: 0,
+            },
+            HirDeclarationParameterRootRole::Default {
+                group: 0,
+                parameter: 0,
+            },
+        ]
+    );
+    let contracts = topology.contract_roots();
+    assert_eq!(contracts.len(), 1);
+    assert_eq!(
+        contracts[0].role(),
+        HirDeclarationContractRootRole::EffectOperand {
+            clause: 0,
+            family: super::HirFlowContractRootFamily::Effects,
+            operand: 0
+        }
+    );
+    let roots = topology.roots();
+    assert_eq!(roots.len(), 1);
+    assert!(matches!(
+        roots[0].child(),
+        HirDeclarationBodyRootChild::Body(_)
+    ));
+    assert_eq!(roots[0].role(), HirDeclarationBodyRootRole::FunctionBody);
+    let delegated_paths = project_topology
+        .declaration_semantic_paths(&declaration)
+        .expect("delegated semantic path index");
+    assert_eq!(topology.paths(), delegated_paths);
+    assert_eq!(
+        declaration_view,
+        project_topology
+            .declaration(&declaration)
+            .expect("deterministic declaration topology")
+    );
+}
+
+#[test]
+#[allow(
+    clippy::too_many_lines,
+    reason = "the project seal test checks paths, locals, captures, and deterministic reconstruction"
+)]
+fn project_evaluation_topology_seals_source_order_and_local_origins() {
+    let package = package();
+    let root_path = CanonicalModulePath::crate_root();
+    let mut syntax = SyntaxDatabase::try_new().unwrap();
+    let parsed = parse_initial(
+        &mut syntax,
+        "arcweft-test://proof/final-project/project-evaluation-topology",
+        "project-evaluation-topology.arcw",
+        concat!(
+            "fn accepted(input: Unit) -> Unit {\n",
+            "    let value = input\n",
+            "    value\n",
+            "}\n",
+        ),
+    );
+    assert!(
+        parsed.diagnostics().is_empty(),
+        "{:?}",
+        parsed.diagnostics()
+    );
+    let mut database = HirDatabase::try_new().unwrap();
+    let module = lower(&mut database, &parsed, &package, &root_path);
+    let retained_module = Arc::clone(&module);
+    let project = build_project(
+        &database,
+        package.clone(),
+        [bind(&database, &package, &root_path, module)],
+    )
+    .expect("evaluation topology project");
+    let symbols = symbols_for_project(&project, parsed.document(), "project-evaluation-topology");
+    let executable = project.executable_view().expect("executable project");
+    let witness = executable
+        .accept_symbol_generation(&symbols)
+        .expect("accepted symbol generation");
+    let project_generation = Arc::clone(witness.generation());
+    let topology = witness
+        .into_evaluation_topology()
+        .expect("project evaluation topology");
+    assert_eq!(topology.modules().len(), 1);
+    let module_topology = &topology.modules()[0];
+    assert!(Arc::ptr_eq(topology.generation(), &project_generation));
+    assert!(Arc::ptr_eq(
+        module_topology.generation(),
+        topology
+            .generation()
+            .module(&CanonicalModulePath::crate_root())
+            .expect("root module generation")
+    ));
+    assert_eq!(module_topology.entries().len(), 1);
+    assert_eq!(module_topology.snapshot(), retained_module.snapshot_id());
+    let item = retained_module.source_ordered_items()[0];
+    let item_entry = &module_topology.entries()[0];
+    assert_eq!(item_entry.item(), item);
+    assert_eq!(
+        item_entry.family().family(),
+        retained_module
+            .resolve_item(item)
+            .expect("accepted item")
+            .family()
+    );
+    assert_eq!(item_entry.entry_ordinal(), 0);
+    assert_eq!(
+        item_entry.paths().root(),
+        &super::HirSemanticPathRoot::Item {
+            item,
+            entry_ordinal: 0,
+            role: super::HirItemEvaluationEntryRole::Item,
+        }
+    );
+    assert_eq!(
+        module_topology.expression_owners().collect::<BTreeSet<_>>(),
+        retained_module
+            .expressions()
+            .map(|(expression, _)| expression)
+            .collect::<BTreeSet<_>>()
+    );
+    assert!(matches!(
+        module_topology.entries()[0].role(),
+        super::HirItemEvaluationEntryRole::Item
+    ));
+    assert!(module_topology.entries()[0].body().is_some());
+    let value = retained_module
+        .locals()
+        .find(|(_, local)| local.name().as_str() == "value")
+        .expect("value local")
+        .0;
+    let initializer = retained_module
+        .statements()
+        .find_map(|(_, statement)| match statement.kind() {
+            HirStmtKind::Let {
+                initializer,
+                locals,
+                ..
+            } if locals.as_ref() == [value].as_slice() => Some(*initializer),
+            _ => None,
+        })
+        .expect("value initializer");
+    assert_eq!(
+        module_topology.local_origins().origin(value),
+        Some(super::HirLocalValueOrigin::DirectInitializer(initializer))
+    );
+    let binding = module_topology
+        .local_origins()
+        .binding(value)
+        .expect("binding origin site");
+    assert_eq!(binding.local(), value);
+    assert!(binding.statement().is_some());
+    assert_eq!(binding.value(), Some(initializer));
+    assert!(binding.pattern().is_some());
+    assert_eq!(
+        binding.statement_role(),
+        Some(super::HirLocalBindingStatementRole::Let)
+    );
+    assert_eq!(
+        topology,
+        executable
+            .accept_symbol_generation(&symbols)
+            .expect("accepted symbol generation")
+            .into_evaluation_topology()
+            .expect("deterministic project topology")
+    );
+}
+
+#[test]
+fn capture_and_expression_use_indexes_preserve_regions_order_and_access() {
+    let package = package();
+    let root_path = CanonicalModulePath::crate_root();
+    let mut syntax = SyntaxDatabase::try_new().expect("syntax database");
+    let parsed = parse_initial(
+        &mut syntax,
+        "arcweft-test://proof/final-project/capture-use-index",
+        "capture-use-index.arcw",
+        concat!(
+            "fn accepted(input: i64, other: i64) -> Unit {\n",
+            "    let mut target = input\n",
+            "    target = other\n",
+            "    let callback = || -> i64 { other + input }\n",
+            "    let empty = || -> Unit { () }\n",
+            "    let abstraction = {\n",
+            "        let internal = input\n",
+            "        let nested = || { _ + input }\n",
+            "        consume(_)\n",
+            "        _ + internal\n",
+            "    }\n",
+            "    ()\n",
+            "}\n",
+        ),
+    );
+    assert!(
+        parsed.diagnostics().is_empty(),
+        "{:?}",
+        parsed.diagnostics()
+    );
+    let mut database = HirDatabase::try_new().expect("HIR database");
+    let module = lower(&mut database, &parsed, &package, &root_path);
+    assert!(
+        module.diagnostics().is_empty(),
+        "{:?}",
+        module.diagnostics()
+    );
+    let project = build_project(
+        &database,
+        package.clone(),
+        [bind(&database, &package, &root_path, Arc::clone(&module))],
+    )
+    .expect("project");
+    let symbols = symbols_for_project(&project, parsed.document(), "capture-use-index");
+    let topology = evaluation_topology(&project, &symbols);
+    let module_topology = topology
+        .module(module.module_id())
+        .expect("module topology");
+
+    let assignment = module
+        .statements()
+        .find_map(|(_, statement)| match statement.kind() {
+            HirStmtKind::Assign { target, value } => Some((*target, *value)),
+            _ => None,
+        })
+        .expect("assignment");
+    assert_eq!(
+        module_topology
+            .expression_uses()
+            .row(assignment.0)
+            .expect("assignment target use")
+            .capture_access(),
+        crate::scope::CaptureAccess::Reassign,
+    );
+    assert_eq!(
+        module_topology
+            .expression_uses()
+            .row(assignment.1)
+            .expect("assignment value use")
+            .capture_access(),
+        crate::scope::CaptureAccess::Read,
+    );
+
+    assert_capture_and_region_indexes(&module, module_topology);
+}
+
+fn assert_capture_and_region_indexes(
+    module: &HirModule,
+    module_topology: &super::HirModuleEvaluationTopology,
+) {
+    let closures = module
+        .expressions()
+        .filter_map(|(owner, expression)| match expression.kind() {
+            HirExprKind::Closure(closure) => Some((owner, closure)),
+            _ => None,
+        })
+        .collect::<Vec<_>>();
+    assert!(closures.len() >= 3, "fixture retains all explicit closures");
+    for (owner, closure) in &closures {
+        let rows = module_topology
+            .captures()
+            .captures_for_closure(*owner)
+            .expect("every closure, including an empty closure, owns one range");
+        assert_eq!(
+            rows.iter()
+                .map(super::semantic_paths::HirCaptureEvaluationRow::capture)
+                .collect::<Vec<_>>(),
+            closure.captures(),
+        );
+    }
+    assert!(closures.iter().any(|(owner, closure)| {
+        closure.captures().is_empty()
+            && module_topology.captures().captures_for_closure(*owner) == Some(&[])
+    }));
+
+    let local = |name: &str| {
+        module
+            .locals()
+            .find_map(|(owner, local)| (local.name().as_str() == name).then_some(owner))
+            .unwrap_or_else(|| panic!("local `{name}`"))
+    };
+    let internal = module_topology
+        .local_origins()
+        .binding(local("internal"))
+        .expect("internal binding origin");
+    let region_root = internal
+        .binding_expression()
+        .expect("statement binding retains its expression region");
+    let region = module_topology
+        .expression_uses()
+        .implicit_callable_region(
+            region_root,
+            crate::expr::HirPlaceholderKind::PartialApplication,
+        )
+        .expect("implicit callable region");
+    assert!(region.contains_binding(internal));
+    assert!(
+        !region.contains_binding(
+            module_topology
+                .local_origins()
+                .binding(local("input"))
+                .expect("parameter binding"),
+        )
+    );
+    let all_placeholders = module
+        .expressions()
+        .filter_map(|(owner, expression)| {
+            matches!(
+                expression.kind(),
+                HirExprKind::Placeholder(crate::expr::HirPlaceholderKind::PartialApplication)
+            )
+            .then_some(owner)
+        })
+        .collect::<BTreeSet<_>>();
+    let region_placeholders = region.placeholders().collect::<BTreeSet<_>>();
+    assert!(all_placeholders.len() >= 3);
+    assert_eq!(region_placeholders.len(), 1);
+    assert!(region_placeholders.is_subset(&all_placeholders));
+}
+
+#[test]
+#[allow(
+    clippy::too_many_lines,
+    reason = "the item-root matrix keeps every non-callable and inline-member role visible"
+)]
+fn project_item_entries_retain_rooted_paths_in_source_order() {
+    let package = package();
+    let root_path = CanonicalModulePath::crate_root();
+    let mut syntax = SyntaxDatabase::try_new().unwrap();
+    let parsed = parse_initial(
+        &mut syntax,
+        "arcweft-test://proof/final-project/item-entry-paths",
+        "item-entry-paths.arcw",
+        concat!(
+            "#[tool.fixture(1)]\n",
+            "pub res @image.room room: std.presentation.Image {\n",
+            "    asset = @asset.bg.room\n",
+            "    visible = true\n",
+            "}\n",
+            "#[launch(primary)]\n",
+            "entry server @entry.http {\n",
+            "    budget = policy(1 + 2)\n",
+            "}\n",
+            "#[tool.fixture(1)]\n",
+            "test @test.scenario scenario {\n",
+            "    true\n",
+            "}\n",
+            "bench @bench.score {\n",
+            "    setup { true }\n",
+            "    measure { false }\n",
+            "    report { true }\n",
+            "}\n",
+            "#[tool.flag(1)]\n",
+            "style Theme {\n",
+            "    token color.text: Color = white\n",
+            "}\n",
+            "trait Base {\n",
+            "    #[member.flag(2)]\n",
+            "    fn run(self) -> Int\n",
+            "}\n",
+        ),
+    );
+    assert!(
+        parsed.diagnostics().is_empty(),
+        "{:?}",
+        parsed.diagnostics()
+    );
+    let mut database = HirDatabase::try_new().unwrap();
+    let module = lower(&mut database, &parsed, &package, &root_path);
+    assert!(
+        module.diagnostics().is_empty(),
+        "{:?}",
+        module.diagnostics()
+    );
+    let project = build_project(
+        &database,
+        package.clone(),
+        [bind(&database, &package, &root_path, Arc::clone(&module))],
+    )
+    .expect("item-root topology project");
+    let symbols = symbols_for_project(&project, parsed.document(), "item-entry-paths");
+    let topology = project
+        .executable_view()
+        .expect("executable item-root project")
+        .accept_symbol_generation(&symbols)
+        .expect("accepted symbol generation")
+        .into_evaluation_topology()
+        .expect("item-root topology");
+    let entries = topology.modules()[0].entries();
+    assert_eq!(entries.len(), 7);
+    for (ordinal, entry) in entries.iter().enumerate() {
+        assert_eq!(entry.entry_ordinal(), u32::try_from(ordinal).unwrap());
+        assert_eq!(
+            entry.paths().root(),
+            &super::HirSemanticPathRoot::Item {
+                item: entry.item(),
+                entry_ordinal: u32::try_from(ordinal).unwrap(),
+                role: entry.role(),
+            }
+        );
+        assert!(matches!(
+            entry.paths().root(),
+            super::HirSemanticPathRoot::Item { .. }
+        ));
+        for root in entry.roots() {
+            match root.child() {
+                super::HirDeclarationBodyRootChild::Expression(expression) => {
+                    assert!(entry.paths().expression(*expression).is_some());
+                    let (root, _) = topology
+                        .semantic_path_for_expression(*expression)
+                        .expect("unique expression path")
+                        .expect("expression path lookup");
+                    assert_eq!(root, entry.paths().root());
+                }
+                super::HirDeclarationBodyRootChild::Body(edges) => {
+                    for edge in edges {
+                        match edge.child() {
+                            HirBodyChild::Expression(expression) => {
+                                assert!(entry.paths().expression(expression).is_some());
+                                let (root, _) = topology
+                                    .semantic_path_for_expression(expression)
+                                    .expect("unique body expression path")
+                                    .expect("body expression path lookup");
+                                assert_eq!(root, entry.paths().root());
+                            }
+                            HirBodyChild::Statement(statement) => {
+                                assert!(entry.paths().statement(statement).is_some());
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+    assert!(entries[0].roots().iter().any(|root| matches!(
+        root.role(),
+        super::HirDeclarationItemRootRole::ResourceField { field: 0 }
+    )));
+    assert!(entries[0].roots().iter().any(|root| matches!(
+        root.role(),
+        super::HirDeclarationItemRootRole::AttributeArgument { .. }
+    )));
+    assert!(entries[1].roots().iter().any(|root| matches!(
+        root.role(),
+        super::HirDeclarationItemRootRole::EntryOption { .. }
+    )));
+    assert!(
+        entries[2]
+            .roots()
+            .iter()
+            .any(|root| matches!(root.role(), super::HirDeclarationItemRootRole::TestBody))
+    );
+    assert!(
+        entries[3]
+            .roots()
+            .iter()
+            .any(|root| matches!(root.role(), super::HirDeclarationItemRootRole::BenchBody))
+    );
+    assert!(
+        entries[4]
+            .roots()
+            .iter()
+            .any(|root| matches!(root.role(), super::HirDeclarationItemRootRole::Style { .. }))
+    );
+    assert!(entries[6].roots().iter().any(|root| matches!(
+        root.role(),
+        super::HirDeclarationItemRootRole::AttributeArgument {
+            owner: super::HirItemAttributeOwner::InlineMember { member: 0 },
+            ..
+        }
+    )));
+    assert!(entries[5].body().is_none());
+    assert!(entries[6].body().is_some());
+}
+
+#[test]
+#[allow(
+    clippy::match_same_arms,
+    clippy::too_many_lines,
+    reason = "the activity path test checks all member-local ownership boundaries"
+)]
+fn activity_member_bindings_belong_only_to_the_primary_item_path_index() {
+    let package = package();
+    let root_path = CanonicalModulePath::crate_root();
+    let mut syntax = SyntaxDatabase::try_new().unwrap();
+    let parsed = parse_initial(
+        &mut syntax,
+        "arcweft-test://proof/final-project/activity-item-paths",
+        "activity-item-paths.arcw",
+        concat!(
+            "pub activity TruckGame {\n",
+            "    mode = checkpointed_realtime\n",
+            "    lifecycle = snapshot\n",
+            "    input {\n",
+            "        controls: Stream<InputEvent, InputError>\n",
+            "        seed: u64\n",
+            "    }\n",
+            "    output {\n",
+            "        result: TruckResult\n",
+            "    }\n",
+            "}\n",
+        ),
+    );
+    assert!(
+        parsed.diagnostics().is_empty(),
+        "{:?}",
+        parsed.diagnostics()
+    );
+    let mut database = HirDatabase::try_new().unwrap();
+    let module = lower(&mut database, &parsed, &package, &root_path);
+    assert!(
+        module.diagnostics().is_empty(),
+        "{:?}",
+        module.diagnostics()
+    );
+    let project = build_project(
+        &database,
+        package.clone(),
+        [bind(&database, &package, &root_path, Arc::clone(&module))],
+    )
+    .expect("activity item topology project");
+    let symbols = symbols_for_project(&project, parsed.document(), "activity-item-paths");
+    let topology = project
+        .executable_view()
+        .expect("executable activity project")
+        .accept_symbol_generation(&symbols)
+        .expect("accepted symbol generation")
+        .into_evaluation_topology()
+        .expect("activity item topology");
+    let activity_item = module
+        .source_ordered_items()
+        .iter()
+        .copied()
+        .find(|item| {
+            matches!(
+                module.resolve_item(*item).unwrap().kind(),
+                HirItemKind::Activity(_)
+            )
+        })
+        .expect("activity item");
+    let activity = module.resolve_item(activity_item).unwrap();
+    let member_locals = activity
+        .members()
+        .iter()
+        .copied()
+        .filter_map(|member| {
+            let member = module.declaration_members().resolve(member).unwrap();
+            match member.kind() {
+                HirDeclarationMemberKind::ActivityInput(value) => value.local(),
+                HirDeclarationMemberKind::ActivityOutput(value) => value.local(),
+                _ => None,
+            }
+        })
+        .collect::<Vec<_>>();
+    assert_eq!(member_locals.len(), 3);
+    let entries = topology.modules()[0].entries();
+    let primary = entries
+        .iter()
+        .find(|entry| entry.item() == activity_item)
+        .expect("primary activity entry");
+    for local in member_locals {
+        let path = primary
+            .paths()
+            .local(local)
+            .expect("activity member local item path");
+        let (root, lookup_path) = topology
+            .semantic_path_for_local(local)
+            .expect("unique activity local path")
+            .expect("activity local path lookup");
+        assert_eq!(root, primary.paths().root());
+        assert_eq!(lookup_path, path);
+        assert!(matches!(
+            path.steps().first(),
+            Some(HirSemanticPathStep::DeclarationMember { .. })
+        ));
+        assert!(matches!(
+            primary.paths().root(),
+            super::HirSemanticPathRoot::Item { .. }
+        ));
+        for entry in entries {
+            if entry.item() != activity_item {
+                assert!(entry.paths().local(local).is_none());
+                assert!(
+                    entry
+                        .body()
+                        .is_none_or(|body| body.paths().local(local).is_none())
+                );
+            }
+        }
+    }
+}
+
+#[test]
 fn view_semantic_paths_cover_parameters_and_source_ordered_values() {
     let package = package();
     let root_path = CanonicalModulePath::crate_root();
@@ -366,14 +1270,18 @@ fn view_semantic_paths_cover_parameters_and_source_ordered_values() {
     let parameter = &view.parameters()[0];
     let values = view.values();
 
-    let paths = project
-        .executable_view()
-        .unwrap()
-        .declaration_semantic_paths(&symbols, &declaration)
+    let topology = evaluation_topology(&project, &symbols);
+    let paths = topology
+        .declaration_semantic_paths(&declaration)
         .expect("View has executable semantic roots");
-    assert_eq!(paths.declaration(), &declaration);
+    assert!(matches!(
+        paths.root(),
+        super::HirSemanticPathRoot::Declaration(value) if value == &declaration
+    ));
     assert_eq!(
-        paths.pattern(parameter.pattern()),
+        paths
+            .pattern(parameter.pattern())
+            .map(HirSemanticOwnerPath::steps),
         Some(
             [HirSemanticPathStep::ParameterPattern {
                 group: 0,
@@ -383,7 +1291,9 @@ fn view_semantic_paths_cover_parameters_and_source_ordered_values() {
         )
     );
     assert_eq!(
-        paths.expression(parameter.default().expect("default")),
+        paths
+            .expression(parameter.default().expect("default"))
+            .map(HirSemanticOwnerPath::steps),
         Some(
             [HirSemanticPathStep::ParameterDefault {
                 group: 0,
@@ -395,7 +1305,7 @@ fn view_semantic_paths_cover_parameters_and_source_ordered_values() {
     assert_eq!(values.len(), 2);
     for (ordinal, value) in values.iter().copied().enumerate() {
         assert_eq!(
-            paths.expression(value),
+            paths.expression(value).map(HirSemanticOwnerPath::steps),
             Some(
                 [HirSemanticPathStep::DeclarationBody(
                     HirDeclarationBodyRootRole::ViewValue {
@@ -408,10 +1318,8 @@ fn view_semantic_paths_cover_parameters_and_source_ordered_values() {
     }
     assert_eq!(
         paths,
-        project
-            .executable_view()
-            .unwrap()
-            .declaration_semantic_paths(&symbols, &declaration)
+        topology
+            .declaration_semantic_paths(&declaration)
             .expect("deterministic View paths")
     );
 }
@@ -441,12 +1349,14 @@ fn empty_view_has_an_empty_but_valid_semantic_path_index() {
         .find(|symbol| symbol.source_owner() == HirCallableSourceOwner::ViewItem)
         .expect("empty View callable")
         .declaration();
-    let paths = project
-        .executable_view()
-        .expect("executable empty View")
-        .declaration_semantic_paths(&symbols, declaration)
+    let topology = evaluation_topology(&project, &symbols);
+    let paths = topology
+        .declaration_semantic_paths(declaration)
         .expect("empty View path index");
-    assert_eq!(paths.declaration(), declaration);
+    assert!(matches!(
+        paths.root(),
+        super::HirSemanticPathRoot::Declaration(value) if value == declaration
+    ));
 }
 
 #[test]
@@ -507,13 +1417,6 @@ fn semantic_paths_reject_symbols_from_a_foreign_snapshot() {
     )
     .unwrap();
     let first_symbols = symbols_for_project(&first_project, first.document(), "foreign-snapshot");
-    let declaration = first_symbols
-        .callable_symbols()
-        .find(|symbol| symbol.source_owner() == HirCallableSourceOwner::ViewItem)
-        .expect("View callable symbol")
-        .declaration()
-        .clone();
-
     let second = syntax
         .reparse(
             &first,
@@ -534,13 +1437,14 @@ fn semantic_paths_reject_symbols_from_a_foreign_snapshot() {
     )
     .unwrap();
 
-    assert_eq!(
-        second_project
-            .executable_view()
-            .unwrap()
-            .declaration_semantic_paths(&first_symbols, &declaration),
-        Err(HirSemanticPathError::ForeignSnapshot)
-    );
+    let result = second_project
+        .executable_view()
+        .unwrap()
+        .accept_symbol_generation(&first_symbols);
+    assert!(matches!(
+        result,
+        Err(super::AcceptedHirProjectSymbolGenerationError::SourceIdentityMismatch { .. })
+    ));
 }
 
 #[test]
@@ -576,6 +1480,7 @@ fn semantic_paths_keep_extern_and_trait_requirements_bodyless() {
     )
     .expect("bodyless project");
     let symbols = symbols_for_project(&project, parsed.document(), "bodyless-semantic-paths");
+    let project_topology = evaluation_topology(&project, &symbols);
     let bodyless = symbols
         .callable_symbols()
         .filter(|symbol| {
@@ -588,13 +1493,14 @@ fn semantic_paths_keep_extern_and_trait_requirements_bodyless() {
         .collect::<Vec<_>>();
     assert_eq!(bodyless.len(), 2);
     for symbol in bodyless {
-        assert_eq!(
-            project
-                .executable_view()
-                .expect("executable HIR")
-                .declaration_semantic_paths(&symbols, symbol.declaration()),
-            Err(HirSemanticPathError::MissingBody)
-        );
+        let topology = project_topology
+            .declaration(symbol.declaration())
+            .expect("bodyless declaration topology");
+        assert!(topology.body().roots().is_empty());
+        assert!(matches!(
+            topology.body().paths().root(),
+            super::HirSemanticPathRoot::Declaration(value) if value == symbol.declaration()
+        ));
     }
 }
 
@@ -639,6 +1545,15 @@ fn declaration_root_matrix_is_exact_and_deterministic() {
     )
     .expect("declaration-root matrix project");
     let symbols = symbols_for_project(&project, parsed.document(), "declaration-root-matrix");
+    let project_topology = evaluation_topology(&project, &symbols);
+    assert_declaration_root_matrix(&retained_module, &project_topology, &symbols);
+}
+
+fn assert_declaration_root_matrix(
+    retained_module: &HirModule,
+    project_topology: &super::HirProjectEvaluationTopology,
+    symbols: &ProjectSymbolTable,
+) {
     let expected = [
         (
             CallableDeclarationOwner::Function,
@@ -683,19 +1598,17 @@ fn declaration_root_matrix_is_exact_and_deterministic() {
             .collect::<Vec<_>>();
         assert_eq!(rows.len(), expected_count, "{owner:?}");
         for symbol in rows {
-            let paths = project
-                .executable_view()
-                .expect("executable HIR")
-                .declaration_semantic_paths(&symbols, symbol.declaration())
+            let paths = project_topology
+                .declaration_semantic_paths(symbol.declaration())
                 .expect("declaration semantic paths");
             let rooted = retained_module.expressions().any(|(expression, _)| {
                 paths.expression(expression).is_some_and(|path| {
-                    path.first() == Some(&HirSemanticPathStep::DeclarationBody(root))
+                    path.steps().first() == Some(&HirSemanticPathStep::DeclarationBody(root))
                 })
             });
             assert!(rooted, "missing {owner:?} declaration root");
             assert!(retained_module.patterns().any(|(pattern, _)| matches!(
-                paths.pattern(pattern),
+                paths.pattern(pattern).map(HirSemanticOwnerPath::steps),
                 Some([HirSemanticPathStep::ParameterPattern {
                     group: 0,
                     parameter: 0
@@ -703,7 +1616,9 @@ fn declaration_root_matrix_is_exact_and_deterministic() {
             )));
             let has_default = retained_module.expressions().any(|(expression, _)| {
                 matches!(
-                    paths.expression(expression),
+                    paths
+                        .expression(expression)
+                        .map(HirSemanticOwnerPath::steps),
                     Some([HirSemanticPathStep::ParameterDefault {
                         group: 0,
                         parameter: 0
@@ -720,10 +1635,8 @@ fn declaration_root_matrix_is_exact_and_deterministic() {
             );
             assert_eq!(
                 paths,
-                project
-                    .executable_view()
-                    .unwrap()
-                    .declaration_semantic_paths(&symbols, symbol.declaration())
+                project_topology
+                    .declaration_semantic_paths(symbol.declaration())
                     .expect("deterministic declaration semantic paths")
             );
         }
@@ -1021,15 +1934,54 @@ fn selected_expression_inventory_validates_and_projects_one_postfix_graph() {
     )
     .unwrap();
     let executable = project.executable_view().unwrap();
+    let symbols = symbols_for_project(&project, root_source.document(), "selected-expression");
+    let topology = executable
+        .accept_symbol_generation(&symbols)
+        .expect("accepted symbol generation")
+        .into_evaluation_topology()
+        .expect("selected expression topology");
 
+    assert_selected_graph_rejections(executable, &topology, owner, foreign);
+
+    assert_selected_index_graph(executable, &topology, owner, target, index, &index_children);
+    assert_selected_dialogue_graph(
+        executable,
+        &topology,
+        owner,
+        target,
+        index,
+        dialogue,
+        &dialogue_children,
+    );
+
+    assert_runtime_postfix_expression_type_inventory(RuntimePostfixExpressionTypeInventory {
+        executable,
+        topology: &topology,
+        owner,
+        target,
+        index,
+        dialogue,
+        index_children: index_children.into_boxed_slice(),
+        dialogue_children: dialogue_children.into_boxed_slice(),
+    });
+}
+
+fn assert_selected_graph_rejections(
+    executable: HirExecutableProjectView<'_>,
+    topology: &Arc<super::HirProjectEvaluationTopology>,
+    owner: ExprId,
+    foreign: ExprId,
+) {
     assert_eq!(
-        executable.selected_expression_owners(|_| None),
+        executable.selected_expression_graph(topology, |_| None, |_| None),
         Err(HirSelectedExpressionInventoryError::MissingPostfixSelection { expression: owner })
     );
     assert_eq!(
-        executable.selected_expression_owners(|candidate_owner| {
-            (candidate_owner == owner).then_some(foreign)
-        }),
+        executable.selected_expression_graph(
+            topology,
+            |candidate_owner| (candidate_owner == owner).then_some(foreign),
+            |_| None,
+        ),
         Err(
             HirSelectedExpressionInventoryError::InvalidPostfixSelection {
                 expression: owner,
@@ -1037,42 +1989,318 @@ fn selected_expression_inventory_validates_and_projects_one_postfix_graph() {
             }
         )
     );
+}
 
-    let selected = executable
-        .selected_expression_owners(|candidate_owner| (candidate_owner == owner).then_some(index))
+fn assert_selected_index_graph(
+    executable: HirExecutableProjectView<'_>,
+    topology: &Arc<super::HirProjectEvaluationTopology>,
+    owner: ExprId,
+    target: ExprId,
+    index: ExprId,
+    index_children: &[ExprId],
+) {
+    let selected_graph = executable
+        .selected_expression_graph(
+            topology,
+            |candidate_owner| (candidate_owner == owner).then_some(index),
+            |_| None,
+        )
         .expect("selected index graph");
+    assert!(selected_graph.expression_edges(owner).iter().any(|edge| {
+        matches!(
+            edge,
+            super::HirExpressionEvaluationEdge::Expression {
+                role: crate::expr::HirExpressionChildRole::PostfixIndexCandidate,
+                ownership: crate::expr::HirExpressionChildOwnership::Owning,
+                child,
+            } if *child == index
+        )
+    }));
+    assert!(!selected_graph.expression_edges(owner).iter().any(|edge| {
+        matches!(
+            edge,
+            super::HirExpressionEvaluationEdge::Expression {
+                role: crate::expr::HirExpressionChildRole::PostfixDialogueCandidate,
+                ..
+            }
+        )
+    }));
+    assert!(!selected_graph.expression_edges(index).iter().any(|edge| {
+        matches!(
+            edge,
+            super::HirExpressionEvaluationEdge::Expression {
+                ownership: crate::expr::HirExpressionChildOwnership::ReferenceOnly,
+                ..
+            }
+        )
+    }));
+    let selected = selected_graph.expression_owners().collect::<BTreeSet<_>>();
     assert!(selected.contains(&owner));
     assert!(selected.contains(&target));
     assert!(selected.contains(&index));
-    assert!(!selected.contains(&dialogue));
-    assert!(
-        index_children.iter().all(|child| selected.contains(child)),
-        "the complete selected candidate graph remains reachable"
-    );
-
-    assert_runtime_postfix_expression_type_inventory(
-        executable,
-        owner,
-        target,
-        index,
-        dialogue,
-        &index_children,
-        &dialogue_children,
-    );
+    assert!(index_children.iter().all(|child| selected.contains(child)));
 }
 
-fn assert_runtime_postfix_expression_type_inventory(
+fn assert_selected_dialogue_graph(
     executable: HirExecutableProjectView<'_>,
+    topology: &Arc<super::HirProjectEvaluationTopology>,
     owner: ExprId,
     target: ExprId,
     index: ExprId,
     dialogue: ExprId,
-    index_children: &[ExprId],
     dialogue_children: &[ExprId],
 ) {
+    let dialogue_graph = executable
+        .selected_expression_graph(
+            topology,
+            |candidate_owner| (candidate_owner == owner).then_some(dialogue),
+            |_| None,
+        )
+        .expect("selected dialogue graph");
+    assert!(dialogue_graph.expression_edges(owner).iter().any(|edge| {
+        matches!(
+            edge,
+            super::HirExpressionEvaluationEdge::Expression {
+                role: crate::expr::HirExpressionChildRole::PostfixDialogueCandidate,
+                ownership: crate::expr::HirExpressionChildOwnership::Owning,
+                child,
+            } if *child == dialogue
+        )
+    }));
+    assert!(!dialogue_graph.expression_edges(owner).iter().any(|edge| {
+        matches!(
+            edge,
+            super::HirExpressionEvaluationEdge::Expression {
+                role: crate::expr::HirExpressionChildRole::PostfixIndexCandidate,
+                ..
+            }
+        )
+    }));
+    assert!(
+        !dialogue_graph
+            .expression_edges(dialogue)
+            .iter()
+            .any(|edge| {
+                matches!(
+                    edge,
+                    super::HirExpressionEvaluationEdge::Expression {
+                        ownership: crate::expr::HirExpressionChildOwnership::ReferenceOnly,
+                        ..
+                    }
+                )
+            })
+    );
+    let selected = dialogue_graph.expression_owners().collect::<BTreeSet<_>>();
+    assert!(selected.contains(&target));
+    assert!(selected.contains(&dialogue));
+    assert!(!selected.contains(&index));
+    assert!(
+        dialogue_children
+            .iter()
+            .filter(|child| **child != target)
+            .all(|child| selected.contains(child))
+    );
+}
+
+#[test]
+fn selected_expression_inventory_rejects_a_foreign_project_topology() {
+    let package = package();
+    let root_path = CanonicalModulePath::crate_root();
+    let mut first_syntax = SyntaxDatabase::try_new().unwrap();
+    let first_source = parse_initial(
+        &mut first_syntax,
+        "arcweft-test://proof/final-project/selection-foreign-first",
+        "selection-foreign-first.arcw",
+        "fn first() { 1 }\n",
+    );
+    let mut first_database = HirDatabase::try_new().unwrap();
+    let first_module = lower(&mut first_database, &first_source, &package, &root_path);
+    let first_project = build_project(
+        &first_database,
+        package.clone(),
+        [bind(&first_database, &package, &root_path, first_module)],
+    )
+    .unwrap();
+    let first_executable = first_project.executable_view().unwrap();
+
+    let mut second_syntax = SyntaxDatabase::try_new().unwrap();
+    let second_source = parse_initial(
+        &mut second_syntax,
+        "arcweft-test://proof/final-project/selection-foreign-second",
+        "selection-foreign-second.arcw",
+        "fn second() { 2 }\n",
+    );
+    let mut second_database = HirDatabase::try_new().unwrap();
+    let second_module = lower(&mut second_database, &second_source, &package, &root_path);
+    let second_project = build_project(
+        &second_database,
+        package.clone(),
+        [bind(&second_database, &package, &root_path, second_module)],
+    )
+    .unwrap();
+    let second_symbols = symbols_for_project(
+        &second_project,
+        second_source.document(),
+        "selection-foreign-second",
+    );
+    let second_topology = second_project
+        .executable_view()
+        .unwrap()
+        .accept_symbol_generation(&second_symbols)
+        .expect("accepted symbol generation")
+        .into_evaluation_topology()
+        .unwrap();
+
+    assert_eq!(
+        first_executable.selected_expression_graph(&second_topology, |_| None, |_| None),
+        Err(HirSelectedExpressionInventoryError::TopologyMismatch)
+    );
+}
+
+#[test]
+#[allow(
+    clippy::too_many_lines,
+    reason = "the lowered integration fixture checks all nested statement/body transitions together"
+)]
+fn selected_topology_uses_statement_plan_order_for_nested_control_bodies() {
+    let package = package();
+    let root_path = CanonicalModulePath::crate_root();
+    let mut syntax = SyntaxDatabase::try_new().unwrap();
+    let source = parse_initial(
+        &mut syntax,
+        "arcweft-test://proof/final-project/selected-statement-plan-order",
+        "selected-statement-plan-order.arcw",
+        concat!(
+            "flow mixed() {\n",
+            "    if true { 1 } else if false { 2 } else { 3 }\n",
+            "    match true {\n",
+            "        true => thread worker { 4 },\n",
+            "        false => { 5 },\n",
+            "    }\n",
+            "    select {\n",
+            "        value = true => { 6 }\n",
+            "    }\n",
+            "}\n",
+        ),
+    );
+    let mut database = HirDatabase::try_new().unwrap();
+    let module = lower(&mut database, &source, &package, &root_path);
+    assert!(module.is_executable(), "{:?}", module.diagnostics());
+    let project = build_project(
+        &database,
+        package.clone(),
+        [bind(&database, &package, &root_path, Arc::clone(&module))],
+    )
+    .unwrap();
+    let executable = project.executable_view().unwrap();
+    let symbols = symbols_for_project(&project, source.document(), "selected-statement-plan-order");
+    let topology = executable
+        .accept_symbol_generation(&symbols)
+        .expect("accepted symbol generation")
+        .into_evaluation_topology()
+        .expect("statement-plan topology");
+    let module_topology = &topology.modules()[0];
+    let all_expressions = module
+        .expressions()
+        .map(|(owner, _)| owner)
+        .collect::<BTreeSet<_>>();
+    let selected = executable
+        .selected_expression_graph(&topology, |_| None, |_| None)
+        .expect("selected statement-plan graph")
+        .expression_owners()
+        .collect::<BTreeSet<_>>();
+    assert_eq!(selected, all_expressions);
+
+    let if_statement = module
+        .statements()
+        .find_map(|(owner, statement)| {
+            matches!(statement.kind(), HirStmtKind::If(_)).then_some(owner)
+        })
+        .expect("nested if statement");
+    let match_statement = module
+        .statements()
+        .find_map(|(owner, statement)| {
+            matches!(statement.kind(), HirStmtKind::Match(_)).then_some(owner)
+        })
+        .expect("mixed match statement");
+    let select_statement = module
+        .statements()
+        .find_map(|(owner, statement)| {
+            matches!(statement.kind(), HirStmtKind::Select(_)).then_some(owner)
+        })
+        .expect("select statement");
+    let if_condition = match module.resolve_stmt(if_statement).unwrap().kind() {
+        HirStmtKind::If(value) => value.condition(),
+        _ => unreachable!(),
+    };
+    let match_scrutinee = match module.resolve_stmt(match_statement).unwrap().kind() {
+        HirStmtKind::Match(value) => value.scrutinee(),
+        _ => unreachable!(),
+    };
+    let select_source = match module.resolve_stmt(select_statement).unwrap().kind() {
+        HirStmtKind::Select(crate::stmt::HirSelectStmt::Branches { branches, .. }) => {
+            match branches[0].head() {
+                crate::stmt::HirSelectBranchHead::Bind { source, .. } => *source,
+                _ => panic!("select source binding"),
+            }
+        }
+        _ => panic!("select branches"),
+    };
+    let roots = module_topology.selection_roots();
+    let position = |owner| {
+        roots
+            .iter()
+            .position(|candidate| *candidate == owner)
+            .unwrap()
+    };
+    assert!(position(if_condition) < position(match_scrutinee));
+    assert!(position(match_scrutinee) < position(select_source));
+
+    let thread_owner = module
+        .expressions()
+        .find_map(|(owner, expression)| {
+            matches!(expression.kind(), HirExprKind::Thread(_)).then_some(owner)
+        })
+        .expect("thread arm expression");
+    let thread_edges = module_topology.expression_edges(thread_owner);
+    assert!(!thread_edges.is_empty());
+    assert!(
+        matches!(
+            thread_edges[0],
+            super::HirExpressionEvaluationEdge::Statement { .. }
+        ),
+        "thread edges: {thread_edges:?}"
+    );
+}
+
+struct RuntimePostfixExpressionTypeInventory<'project, 'topology> {
+    executable: HirExecutableProjectView<'project>,
+    topology: &'topology Arc<super::HirProjectEvaluationTopology>,
+    owner: ExprId,
+    target: ExprId,
+    index: ExprId,
+    dialogue: ExprId,
+    index_children: Box<[ExprId]>,
+    dialogue_children: Box<[ExprId]>,
+}
+
+fn assert_runtime_postfix_expression_type_inventory(
+    inventory: RuntimePostfixExpressionTypeInventory<'_, '_>,
+) {
+    let RuntimePostfixExpressionTypeInventory {
+        executable,
+        topology,
+        owner,
+        target,
+        index,
+        dialogue,
+        index_children,
+        dialogue_children,
+    } = inventory;
     assert!(matches!(
         runtime_reachability(
             executable,
+            topology,
             |_| None,
             |_| HirRuntimeExpressionTypeDisposition::Retain,
         ),
@@ -1082,6 +2310,7 @@ fn assert_runtime_postfix_expression_type_inventory(
     ));
     let runtime_index = runtime_reachability(
         executable,
+        topology,
         |candidate_owner| (candidate_owner == owner).then_some(index),
         |_| HirRuntimeExpressionTypeDisposition::Retain,
     )
@@ -1101,6 +2330,7 @@ fn assert_runtime_postfix_expression_type_inventory(
 
     let runtime_dialogue = runtime_reachability(
         executable,
+        topology,
         |candidate_owner| (candidate_owner == owner).then_some(dialogue),
         |_| HirRuntimeExpressionTypeDisposition::Retain,
     )
@@ -1154,10 +2384,17 @@ fn runtime_expression_type_inventory_excludes_effect_metadata_subtrees() {
     )
     .unwrap();
     let executable = project.executable_view().unwrap();
+    let symbols = symbols_for_project(&project, parsed.document(), "runtime-expression-types");
+    let topology = executable
+        .accept_symbol_generation(&symbols)
+        .expect("accepted symbol generation")
+        .into_evaluation_topology()
+        .expect("runtime expression topology");
 
     let semantic = executable
-        .selected_expression_owners(|_| None)
+        .selected_expression_graph(&topology, |_| None, |_| None)
         .expect("postfix-free semantic inventory");
+    let semantic = semantic.expression_owners().collect::<BTreeSet<_>>();
     assert!(semantic.contains(&effect_root));
     assert!(
         effect_children.iter().all(|child| semantic.contains(child)),
@@ -1166,6 +2403,7 @@ fn runtime_expression_type_inventory_excludes_effect_metadata_subtrees() {
 
     let runtime_owners = runtime_reachability(
         executable,
+        &topology,
         |_| None,
         |_| HirRuntimeExpressionTypeDisposition::Retain,
     )
@@ -1187,10 +2425,11 @@ fn runtime_expression_type_inventory_excludes_effect_metadata_subtrees() {
     reason = "the fixture asserts every non-value call-carrier disposition in one matrix"
 )]
 fn runtime_expression_type_inventory_applies_typed_non_value_call_carriers() {
-    let (project, call, callee, argument, _, _, _, _) = runtime_call_inventory_fixture();
+    let (project, call, callee, argument, _, _, _, _, topology) = runtime_call_inventory_fixture();
     let executable = project.executable_view().unwrap();
     let retained = runtime_reachability(
         executable,
+        &topology,
         |_| None,
         |_| HirRuntimeExpressionTypeDisposition::Retain,
     )
@@ -1203,6 +2442,7 @@ fn runtime_expression_type_inventory_applies_typed_non_value_call_carriers() {
 
     let retained_static_call = runtime_reachability(
         executable,
+        &topology,
         |_| None,
         |owner| {
             if owner == call {
@@ -1223,6 +2463,7 @@ fn runtime_expression_type_inventory_applies_typed_non_value_call_carriers() {
 
     let retained_receiver_call = runtime_reachability(
         executable,
+        &topology,
         |_| None,
         |owner| {
             if owner == call {
@@ -1243,6 +2484,7 @@ fn runtime_expression_type_inventory_applies_typed_non_value_call_carriers() {
 
     let carrier = runtime_reachability(
         executable,
+        &topology,
         |_| None,
         |owner| {
             if owner == call {
@@ -1263,6 +2505,7 @@ fn runtime_expression_type_inventory_applies_typed_non_value_call_carriers() {
 
     let receiver = runtime_reachability(
         executable,
+        &topology,
         |_| None,
         |owner| {
             if owner == call {
@@ -1284,6 +2527,7 @@ fn runtime_expression_type_inventory_applies_typed_non_value_call_carriers() {
     assert!(matches!(
         runtime_reachability(
             executable,
+            &topology,
             |_| None,
             |owner| {
                 if owner == argument {
@@ -1305,10 +2549,12 @@ fn runtime_expression_type_inventory_applies_typed_non_value_call_carriers() {
 
 #[test]
 fn retained_member_call_result_keeps_receiver_and_omits_select_callee() {
-    let (project, _, _, _, call, callee, receiver, argument) = runtime_call_inventory_fixture();
+    let (project, _, _, _, call, callee, receiver, argument, topology) =
+        runtime_call_inventory_fixture();
     let executable = project.executable_view().expect("executable fixture");
     let retained = runtime_reachability(
         executable,
+        &topology,
         |_| None,
         |owner| {
             if owner == call {
@@ -1338,6 +2584,7 @@ fn runtime_call_inventory_fixture() -> (
     ExprId,
     ExprId,
     ExprId,
+    Arc<super::HirProjectEvaluationTopology>,
 ) {
     let package = package();
     let root_path = CanonicalModulePath::crate_root();
@@ -1387,6 +2634,14 @@ fn runtime_call_inventory_fixture() -> (
         [bind(&database, &package, &root_path, module)],
     )
     .unwrap();
+    let symbols = symbols_for_project(&project, parsed.document(), "runtime-expression-carrier");
+    let topology = project
+        .executable_view()
+        .unwrap()
+        .accept_symbol_generation(&symbols)
+        .expect("accepted symbol generation")
+        .into_evaluation_topology()
+        .expect("runtime carrier topology");
     (
         project,
         call,
@@ -1396,6 +2651,7 @@ fn runtime_call_inventory_fixture() -> (
         member_callee,
         receiver,
         member_argument,
+        topology,
     )
 }
 
@@ -1446,8 +2702,15 @@ fn runtime_semantic_reachability_excludes_presentation_and_unreachable_functions
     )
     .unwrap();
     let executable = project.executable_view().unwrap();
+    let symbols = symbols_for_project(&project, parsed.document(), "runtime-owner-domain");
+    let topology = executable
+        .accept_symbol_generation(&symbols)
+        .expect("accepted symbol generation")
+        .into_evaluation_topology()
+        .expect("runtime owner topology");
     let inventory = runtime_reachability(
         executable,
+        &topology,
         |_| None,
         |_| HirRuntimeExpressionTypeDisposition::Retain,
     )
@@ -1610,6 +2873,12 @@ fn runtime_reachability_is_edge_order_independent_and_records_shortest_paths() {
     )
     .unwrap();
     let executable = project.executable_view().unwrap();
+    let symbols = symbols_for_project(&project, parsed.document(), "runtime-reachability-order");
+    let topology = executable
+        .accept_symbol_generation(&symbols)
+        .expect("accepted symbol generation")
+        .into_evaluation_topology()
+        .expect("runtime reachability topology");
     let flow = executable
         .items()
         .find(|item| matches!(item.item().kind(), HirItemKind::Flow(_)))
@@ -1653,14 +2922,8 @@ fn runtime_reachability_is_edge_order_independent_and_records_shortest_paths() {
             )
         })
         .collect::<Vec<_>>();
-    let world = ProjectSymbolWorldId::try_new(
-        package,
-        parsed.document().identity().id().clone(),
-        "final-project-tests",
-    )
-    .unwrap();
-    let revision =
-        ProjectSymbolRevision::try_for_documents([parsed.document().identity()]).unwrap();
+    let world = topology.generation().symbol_world().clone();
+    let revision = topology.generation().symbol_revision();
     let build = |edges: Vec<HirRuntimeReachabilityEdge>| {
         let input = HirRuntimeSemanticReachabilityInput::try_new(
             HirRuntimeEmissionMode::CheckAll,
@@ -1673,6 +2936,7 @@ fn runtime_reachability_is_edge_order_independent_and_records_shortest_paths() {
         executable
             .runtime_semantic_reachability(
                 input,
+                &topology,
                 |_| None,
                 |owner| {
                     if owner == call {
@@ -1727,17 +2991,39 @@ fn selected_expression_inventory_is_deterministic_across_module_input_order() {
     let child = bind(&database, &package, &child_path, child);
     let forward = build_project(&database, package.clone(), [root.clone(), child.clone()]).unwrap();
     let reverse = build_project(&database, package, [child, root]).unwrap();
+    let forward_symbols =
+        symbols_for_project(&forward, root_source.document(), "selected-roots-forward");
+    let reverse_symbols =
+        symbols_for_project(&reverse, root_source.document(), "selected-roots-reverse");
+    let forward_topology = forward
+        .executable_view()
+        .unwrap()
+        .accept_symbol_generation(&forward_symbols)
+        .expect("accepted symbol generation")
+        .into_evaluation_topology()
+        .expect("forward selected roots topology");
+    let reverse_topology = reverse
+        .executable_view()
+        .unwrap()
+        .accept_symbol_generation(&reverse_symbols)
+        .expect("accepted symbol generation")
+        .into_evaluation_topology()
+        .expect("reverse selected roots topology");
 
     let forward = forward
         .executable_view()
         .unwrap()
-        .selected_expression_owners(|_| None)
-        .expect("postfix-free forward inventory");
+        .selected_expression_graph(&forward_topology, |_| None, |_| None)
+        .expect("postfix-free forward inventory")
+        .expression_owners()
+        .collect::<BTreeSet<_>>();
     let reverse = reverse
         .executable_view()
         .unwrap()
-        .selected_expression_owners(|_| None)
-        .expect("postfix-free reverse inventory");
+        .selected_expression_graph(&reverse_topology, |_| None, |_| None)
+        .expect("postfix-free reverse inventory")
+        .expression_owners()
+        .collect::<BTreeSet<_>>();
     assert_eq!(forward, expected);
     assert_eq!(reverse, expected);
 }
@@ -2105,6 +3391,63 @@ fn accepted_project_generation_remains_bound_to_its_original_exact_arc() {
             supplied: first_snapshot,
         })
     );
+}
+
+#[test]
+fn accepted_symbol_generation_witness_joins_non_callable_sources_exactly() {
+    let package = package();
+    let root_path = CanonicalModulePath::crate_root();
+    let mut first_syntax = SyntaxDatabase::try_new().unwrap();
+    let first = parse_initial(
+        &mut first_syntax,
+        "arcweft-test://proof/final-project/witness-first",
+        "witness.arcw",
+        "struct First {}\n",
+    );
+    let mut first_database = HirDatabase::try_new().unwrap();
+    let first_module = lower(&mut first_database, &first, &package, &root_path);
+    let first_project = build_project(
+        &first_database,
+        package.clone(),
+        [bind(&first_database, &package, &root_path, first_module)],
+    )
+    .unwrap();
+    let first_symbols = symbols_for_project(
+        &first_project,
+        first.document(),
+        "accepted-symbol-generation-witness",
+    );
+    let first_executable = first_project.executable_view().unwrap();
+    let witness = first_executable
+        .accept_symbol_generation(&first_symbols)
+        .unwrap();
+    assert_eq!(witness.project().modules().len(), 1);
+    assert_eq!(witness.symbols().modules().len(), 1);
+
+    let mut second_syntax = SyntaxDatabase::try_new().unwrap();
+    let second = parse_initial(
+        &mut second_syntax,
+        "arcweft-test://proof/final-project/witness-second",
+        "witness.arcw",
+        "struct Second {}\n",
+    );
+    let mut second_database = HirDatabase::try_new().unwrap();
+    let second_module = lower(&mut second_database, &second, &package, &root_path);
+    let second_project = build_project(
+        &second_database,
+        package.clone(),
+        [bind(&second_database, &package, &root_path, second_module)],
+    )
+    .unwrap();
+    let second_symbols = symbols_for_project(
+        &second_project,
+        second.document(),
+        "accepted-symbol-generation-foreign",
+    );
+    assert!(matches!(
+        first_executable.accept_symbol_generation(&second_symbols),
+        Err(super::AcceptedHirProjectSymbolGenerationError::SourceIdentityMismatch { .. })
+    ));
 }
 
 #[test]

@@ -22,7 +22,8 @@ use arcweft_lang_hir::{
     proof_return::HirProofReturnSemanticFactSet,
     stmt::HirStmtKind,
     symbol::{
-        CallableDeclarationId, CallableDeclarationOwner, CallablePackageId, ProjectSymbolRevision,
+        CallableDeclarationId, CallableDeclarationOwner, CallablePackageId,
+        ProjectExternalDeclarations, ProjectSymbolRevision, ProjectSymbolTable,
         ProjectSymbolWorldId,
     },
 };
@@ -570,6 +571,16 @@ fn lower_assertion_project(
             .map(|(_, module)| module.provenance().source_identity()),
     )
     .expect("fixture reachability revision");
+    let externals = ProjectExternalDeclarations::try_new(world.clone(), revision, Vec::new())
+        .expect("fixture external declarations");
+    let symbols = ProjectSymbolTable::link(project.view(), &externals)
+        .expect("fixture symbols")
+        .into_table();
+    let topology = executable
+        .accept_symbol_generation(&symbols)
+        .expect("accepted fixture symbol generation")
+        .into_evaluation_topology()
+        .expect("fixture evaluation topology");
     let roots = executable
         .items()
         .filter(|item| matches!(item.item().kind(), HirItemKind::Flow(_)))
@@ -591,6 +602,7 @@ fn lower_assertion_project(
     let runtime_owners = executable
         .runtime_semantic_reachability(
             reachability_input,
+            &topology,
             |_| None,
             |_| HirRuntimeExpressionTypeDisposition::Retain,
         )

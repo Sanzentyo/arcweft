@@ -106,8 +106,8 @@ pub(super) struct AgentObserveOptions {
     mode: CliRuntimeStepMode,
     #[arg(long, default_value_t = 64)]
     max_ops: usize,
-    #[arg(long = "value", value_parser = parse_runtime_binding_arg)]
-    values: Vec<RuntimeBinding>,
+    #[arg(long = "view-value", value_parser = parse_runtime_binding_arg)]
+    view_values: Vec<RuntimeBinding>,
     #[arg(long = "viewport-width", default_value_t = AGENT_OBSERVE_DEFAULT_VIEWPORT_WIDTH)]
     viewport_width: u32,
     #[arg(long = "viewport-height", default_value_t = AGENT_OBSERVE_DEFAULT_VIEWPORT_HEIGHT)]
@@ -171,8 +171,8 @@ pub(super) struct AgentHitTestOptions {
     mode: CliRuntimeStepMode,
     #[arg(long, default_value_t = 64)]
     max_ops: usize,
-    #[arg(long = "value", value_parser = parse_runtime_binding_arg)]
-    values: Vec<RuntimeBinding>,
+    #[arg(long = "view-value", value_parser = parse_runtime_binding_arg)]
+    view_values: Vec<RuntimeBinding>,
     #[arg(long = "viewport-width", default_value_t = AGENT_OBSERVE_DEFAULT_VIEWPORT_WIDTH)]
     viewport_width: u32,
     #[arg(long = "viewport-height", default_value_t = AGENT_OBSERVE_DEFAULT_VIEWPORT_HEIGHT)]
@@ -244,8 +244,8 @@ pub(super) struct AgentReplOptions {
     #[arg(long, default_value_t = 64)]
     max_ops: usize,
     #[cfg(feature = "native-capture")]
-    #[arg(long = "value", value_parser = parse_runtime_binding_arg)]
-    values: Vec<RuntimeBinding>,
+    #[arg(long = "view-value", value_parser = parse_runtime_binding_arg)]
+    view_values: Vec<RuntimeBinding>,
     #[cfg(feature = "native-capture")]
     #[arg(long = "viewport-width", default_value_t = AGENT_OBSERVE_DEFAULT_VIEWPORT_WIDTH)]
     viewport_width: u32,
@@ -411,8 +411,8 @@ pub(super) struct AgentScriptRunOptions {
     #[arg(long = "native-max-ops", default_value_t = 64)]
     native_max_ops: usize,
     #[cfg(feature = "native-capture")]
-    #[arg(long = "value", value_parser = parse_runtime_binding_arg)]
-    values: Vec<RuntimeBinding>,
+    #[arg(long = "view-value", value_parser = parse_runtime_binding_arg)]
+    view_values: Vec<RuntimeBinding>,
     #[cfg(feature = "native-capture")]
     #[arg(long = "viewport-width", default_value_t = AGENT_OBSERVE_DEFAULT_VIEWPORT_WIDTH)]
     viewport_width: u32,

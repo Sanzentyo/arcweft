@@ -1,8 +1,7 @@
 use super::options::CliRuntimeExecutorTier;
 use arcweft_core::executor::{ArcweftExecutionTier, ArcweftRuntimeExecutor, RuntimeExecutor};
-use arcweft_core::plan::{EntryRuntimeId, RuntimePlan};
+use arcweft_core::plan::{EntryRuntimeId, RuntimeFlowInvocation, RuntimePlan};
 use arcweft_core::step::{RuntimeStepInput, RuntimeStepOptions, RuntimeStepResult};
-use arcweft_core::value::RuntimeBinding;
 use arcweft_runtime_accelerator::{RuntimePureAccelerator, RuntimePureAcceleratorConfig};
 use arcweft_runtime_host::{RuntimeExecutorStats, runtime_executor_stats};
 use std::sync::Arc;
@@ -46,15 +45,13 @@ impl RuntimeExecutorTemplate {
 }
 
 impl RuntimeExecutorCore {
-    pub(in crate::app) fn step_with_root_bindings(
+    pub(in crate::app) fn step(
         &mut self,
         input: RuntimeStepInput,
-        root_bindings: &[RuntimeBinding],
         options: RuntimeStepOptions,
         pure: &mut RuntimePureAccelerator,
     ) -> RuntimeStepResult {
-        self.executor
-            .step_with_root_bindings_and_pure_backend(input, root_bindings, options, pure)
+        self.executor.step_with_pure_backend(input, options, pure)
     }
 
     pub(in crate::app) fn fast_path_ops(&self) -> usize {
@@ -82,18 +79,27 @@ impl RuntimeExecutorInstance {
         Ok(Self { executor, pure })
     }
 
-    pub(in crate::app) fn step_with_root_bindings(
+    pub(in crate::app) fn from_flow_invocation(
+        invocation: RuntimeFlowInvocation,
+        tier: CliRuntimeExecutorTier,
+        pure_config: RuntimePureAcceleratorConfig,
+    ) -> Result<Self, String> {
+        let pure = RuntimePureAccelerator::with_config(pure_config, invocation.plan());
+        let executor = ArcweftRuntimeExecutor::from_runtime_flow_invocation(
+            invocation,
+            arcweft_execution_tier(tier),
+        )
+        .map_err(|error| error.to_string())?;
+        Ok(Self { executor, pure })
+    }
+
+    pub(in crate::app) fn step(
         &mut self,
         input: RuntimeStepInput,
-        root_bindings: &[RuntimeBinding],
         options: RuntimeStepOptions,
     ) -> RuntimeStepResult {
-        self.executor.step_with_root_bindings_and_pure_backend(
-            input,
-            root_bindings,
-            options,
-            &mut self.pure,
-        )
+        self.executor
+            .step_with_pure_backend(input, options, &mut self.pure)
     }
 
     pub(in crate::app) fn fiber(&self) -> &arcweft_core::engine::FlowFiber {

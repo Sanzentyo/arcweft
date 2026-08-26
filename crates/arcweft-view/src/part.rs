@@ -1,5 +1,6 @@
 //! Canonical private/public View-part identities and static inventory contracts.
 
+use crate::{EventKind, HandlerId, ViewHandlerProgramId};
 use arcweft_id::{IdError, IdErrorKind, PublicId};
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
 use std::fmt;
@@ -180,6 +181,38 @@ pub enum ViewProgramBuildError {
         site: ViewEvaluationSiteId,
         first: ViewInstructionIndex,
         duplicate: ViewInstructionIndex,
+    },
+    #[error("View handler count {count} cannot be represented")]
+    HandlerIdOverflow { count: usize },
+    #[error("View handler row {actual:?} is not the expected dense identity {expected:?}")]
+    NonCanonicalHandlerId {
+        expected: HandlerId,
+        actual: HandlerId,
+    },
+    #[error("duplicate View handler program {program:?}")]
+    DuplicateHandlerProgram { program: ViewHandlerProgramId },
+    #[error("View handler programs are not in canonical identity order")]
+    NonCanonicalHandlerOrder {
+        previous: ViewHandlerProgramId,
+        next: ViewHandlerProgramId,
+    },
+    #[error("View handler {handler:?} captures are not in canonical coordinate order")]
+    NonCanonicalHandlerCaptures { handler: HandlerId },
+    #[error("View event at {instruction:?} references unknown handler {handler:?}")]
+    UnknownHandler {
+        instruction: ViewInstructionIndex,
+        handler: HandlerId,
+    },
+    #[error("View handler {handler:?} is bound more than once")]
+    DuplicateHandlerBinding { handler: HandlerId },
+    #[error("View handler {handler:?} is never bound to an event")]
+    UnboundHandler { handler: HandlerId },
+    #[error("View event at {instruction:?} has no preceding node target")]
+    HandlerWithoutTarget { instruction: ViewInstructionIndex },
+    #[error("View node {target:?} binds duplicate {event:?} events")]
+    DuplicateTargetEvent {
+        target: ViewInstructionIndex,
+        event: EventKind,
     },
 }
 

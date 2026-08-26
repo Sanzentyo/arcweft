@@ -14,6 +14,7 @@ pub struct RuntimeNominalRecordLayout {
     nominal: RuntimeNominalTypeId,
     semantic_identity: RuntimeSemanticTypeId,
     layout: TypeLayoutHash,
+    arguments: Box<[RuntimeCheckedType]>,
     fields: Box<[RuntimeNominalRecordLayoutField]>,
 }
 
@@ -47,6 +48,7 @@ impl RuntimeNominalRecordLayout {
         nominal: RuntimeNominalTypeId,
         semantic_identity: RuntimeSemanticTypeId,
         layout: TypeLayoutHash,
+        arguments: Vec<RuntimeCheckedType>,
         fields_in_layout_order: Vec<(String, RuntimeCheckedType)>,
     ) -> Result<Self, RuntimeNominalRecordLayoutError> {
         if fields_in_layout_order.len() > u32::MAX as usize {
@@ -79,6 +81,7 @@ impl RuntimeNominalRecordLayout {
             nominal,
             semantic_identity,
             layout,
+            arguments: arguments.into_boxed_slice(),
             fields: fields_in_layout_order
                 .into_iter()
                 .map(|(name, checked_type)| RuntimeNominalRecordLayoutField { name, checked_type })
@@ -102,6 +105,12 @@ impl RuntimeNominalRecordLayout {
     #[must_use]
     pub const fn layout(&self) -> TypeLayoutHash {
         self.layout
+    }
+
+    /// Ordered checked generic arguments for this exact nominal instance.
+    #[must_use]
+    pub fn arguments(&self) -> &[RuntimeCheckedType] {
+        &self.arguments
     }
 
     /// Fields in defining layout order.
@@ -159,6 +168,7 @@ impl RuntimeNominalRecordLayout {
             nominal: self.nominal.clone(),
             semantic_identity: self.semantic_identity,
             layout: self.layout,
+            arguments: self.arguments.to_vec(),
         }
     }
 }
@@ -210,7 +220,7 @@ pub enum RuntimeNominalRecordError {
     FieldType {
         field: RuntimeRecordFieldId,
         name: String,
-        expected: RuntimeCheckedType,
+        expected: Box<RuntimeCheckedType>,
     },
 }
 
@@ -370,7 +380,7 @@ fn validate_layout_fields(
             return Err(RuntimeNominalRecordError::FieldType {
                 field,
                 name: field_layout.name().to_owned(),
-                expected: field_layout.checked_type().clone(),
+                expected: Box::new(field_layout.checked_type().clone()),
             });
         }
     }
@@ -387,6 +397,7 @@ mod tests {
             RuntimeNominalTypeId::try_new("game.State").expect("nominal identity"),
             RuntimeSemanticTypeId::from_bytes([3; 32]),
             TypeLayoutHash::from_bytes([5; 32]),
+            Vec::new(),
             fields,
         )
         .expect("accepted layout")
@@ -427,6 +438,7 @@ mod tests {
             RuntimeNominalTypeId::try_new("game.State").expect("nominal identity"),
             RuntimeSemanticTypeId::from_bytes([3; 32]),
             TypeLayoutHash::from_bytes([5; 32]),
+            Vec::new(),
             vec![
                 ("value".to_owned(), RuntimeCheckedType::Bool),
                 ("value".to_owned(), RuntimeCheckedType::String),
@@ -456,6 +468,7 @@ mod tests {
             nominal: layout.nominal().clone(),
             semantic_identity: layout.semantic_identity(),
             layout: TypeLayoutHash::from_bytes([9; 32]),
+            arguments: Vec::new(),
         };
         assert!(!wrong.accepts_value(&value));
     }

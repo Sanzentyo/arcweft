@@ -456,7 +456,7 @@ fn transaction_resolvers_read_staged_and_retained_typed_payloads() {
         first
             .require(HirDialogueTransactionRequirement::Expression {
                 id: expression,
-                expected: HirDialogueExpressionExpectation::Any,
+                expected: HirDialogueExpressionExpectation::Unrestricted,
             })
             .is_ok()
     );
@@ -496,7 +496,7 @@ fn transaction_resolvers_read_staged_and_retained_typed_payloads() {
         second
             .require(HirDialogueTransactionRequirement::Expression {
                 id: expression,
-                expected: HirDialogueExpressionExpectation::Any,
+                expected: HirDialogueExpressionExpectation::Unrestricted,
             })
             .is_ok()
     );

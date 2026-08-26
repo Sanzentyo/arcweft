@@ -954,7 +954,7 @@ pub(super) fn agent_mcp_observe_options(
         capture_step: agent_mcp_usize_argument(arguments, "capture_step"),
         mode: CliRuntimeStepMode::Drain,
         max_ops: agent_mcp_usize_argument(arguments, "max_ops").unwrap_or(64),
-        values: Vec::new(),
+        view_values: Vec::new(),
         viewport_width: agent_mcp_u32_argument(arguments, "viewport_width", "arcweft.observe")?
             .unwrap_or(AGENT_OBSERVE_DEFAULT_VIEWPORT_WIDTH),
         viewport_height: agent_mcp_u32_argument(arguments, "viewport_height", "arcweft.observe")?

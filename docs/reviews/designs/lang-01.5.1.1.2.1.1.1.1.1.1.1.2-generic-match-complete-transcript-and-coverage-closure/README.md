@@ -11,7 +11,7 @@ Maranget coverage engine.
 
 The selected design is:
 
-- extend HIR's existing declaration-rooted path authority for View values and
+- extend HIR's existing accepted-rooted path authority for View values and
   expression-owned statement/pattern bodies;
 - construct exact project-item, entry, case, field, look, modifier, rich-text,
   statement, and body semantic atoms in the checker that already resolves

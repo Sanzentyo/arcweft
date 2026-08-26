@@ -51,7 +51,7 @@ use arcweft_core::{
     entry::{
         AgentBudget, AgentPolicyHash, CallableContractHash, EntryBindingIdentity, FlowContractHash,
         RuntimeAgentEntryRoles, RuntimeCallableId, RuntimeCallableRole, RuntimeEntryRoles,
-        RuntimeFlowExecutable,
+        RuntimeFlowExecutable, RuntimeFlowSchema,
     },
     pattern::{RuntimeCheckedType, RuntimeSemanticTypeId},
     plan::{
@@ -319,10 +319,15 @@ fn agent_controller_program_seed(
         })
         .expect("test Agent callable executable admits");
     builder
+        .push_flow_schema(RuntimeFlowSchema {
+            flow: controller_flow.clone(),
+            parameters: Vec::new(),
+        })
+        .expect("test Agent flow schema admits");
+    builder
         .push_flow_executable(RuntimeFlowExecutable {
             flow: controller_flow,
             contract: FlowContractHash::from_bytes(*contract.as_bytes()),
-            parameters: Vec::new(),
             controller: Some(controller),
         })
         .expect("test Agent flow executable admits");
@@ -382,10 +387,15 @@ fn agent_controller_program_with_builder(
         })
         .expect("test Agent callable executable admits");
     builder
+        .push_flow_schema(RuntimeFlowSchema {
+            flow: controller_flow.clone(),
+            parameters: Vec::new(),
+        })
+        .expect("test Agent flow schema admits");
+    builder
         .push_flow_executable(RuntimeFlowExecutable {
             flow: controller_flow,
             contract: FlowContractHash::from_bytes(*contract.as_bytes()),
-            parameters: Vec::new(),
             controller: Some(controller),
         })
         .expect("test Agent flow executable admits");
@@ -859,7 +869,10 @@ fn agent_controller_test_bundle(
         panic!("test Agent artifact has exactly one entry");
     };
     assert_eq!(entry.runtime_id, agent_entry_id(agent_id));
-    let AwbcEntryTarget::Function(controller) = &entry.target else {
+    let AwbcEntryTarget::Function {
+        function: controller,
+    } = &entry.target
+    else {
         panic!("test Agent entry targets a controller function");
     };
     let roles = entry.roles.agent().expect("test Agent roles exist");
@@ -1167,7 +1180,9 @@ fn direct_observe_program() -> AwbcProgram {
                         public_id: "agent.observe".to_owned(),
                         capability: "agent".to_owned(),
                         operation: "observe".to_owned(),
+                        contract: None,
                         args: Vec::new(),
+                        result: controller_type(OBSERVATION_TY),
                         mode: RuntimeHostCallMode::Suspend,
                         deterministic: false,
                     },

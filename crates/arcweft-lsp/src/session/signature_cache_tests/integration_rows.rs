@@ -16,8 +16,8 @@ use arcweft_lang_hir::{
 };
 use arcweft_lang_sema::{
     callable::{
-        CallableCandidateId, CallableGroupKind, CallableName, CallableParameterPassing,
-        CallableParameterPresence, CallableParameterType, CallableQueryLimitError,
+        CallableCandidateId, CallableGroupKind, CallableName, CallableParameterAdmission,
+        CallableParameterPassing, CallableParameterPresence, CallableQueryLimitError,
         CapacityMethodId, PresentationCallableId,
     },
     env::TypeCheckEnv,
@@ -273,7 +273,10 @@ fn assert_capacity_native_signature(
     assert_eq!(parameter.coordinate(), active);
     assert_eq!(parameter.label(), "...args: _?");
     assert_eq!(parameter.name().map(CallableName::as_str), Some("args"));
-    assert_eq!(parameter.ty(), &CallableParameterType::Unchecked);
+    assert_eq!(
+        parameter.admission(),
+        &CallableParameterAdmission::UncheckedSupply
+    );
     assert_eq!(
         parameter.passing(),
         CallableParameterPassing::RestPositional
@@ -515,8 +518,8 @@ fn character_nominal_show_native_lsp_projection_parity() {
         panic!("one Character presentation parameter group")
     };
     assert_eq!(
-        group.parameters()[1].ty(),
-        &CallableParameterType::Exact(TypeKind::character_look(
+        group.parameters()[1].admission(),
+        &CallableParameterAdmission::checked(TypeKind::character_look(
             CharacterId::try_new("character.akane").expect("Character ID"),
         ))
     );

@@ -28,20 +28,23 @@ use arcweft_core::pattern::{
 };
 use arcweft_core::plan::{
     FlowRuntimeId, RuntimeAgentOperationalType, RuntimeAgentTypeProjection,
-    RuntimeDialogueValueRole, RuntimeLineId, RuntimeNominalRecordDomainFieldSeed,
-    RuntimeNominalRecordDomainSeed, RuntimePlanSequenceKind, RuntimePlanTypeProjection,
-    RuntimePlanTypeSeed, RuntimeReceiverMode, RuntimeVariantCaseSeed, RuntimeVariantDomainSeed,
+    RuntimeBuiltinIteratorFamily, RuntimeDialogueValueRole, RuntimeLineId,
+    RuntimeNominalRecordDomainFieldSeed, RuntimeNominalRecordDomainSeed, RuntimePlanSequenceKind,
+    RuntimePlanTypeProjection, RuntimePlanTypeSeed, RuntimeReceiverMode, RuntimeVariantCaseSeed,
+    RuntimeVariantDomainSeed,
 };
 use arcweft_core::runtime_id::RuntimeDialogueValueSlotId;
 use arcweft_core::step::RuntimeHostCallMode;
 use arcweft_core::value::{
     RuntimeAgentField, RuntimeIntrinsic, RuntimeNominalRecordLayout, RuntimeOpaquePersistence,
-    RuntimeOpaqueValueClass, RuntimeSignedIntWidth, RuntimeUnsignedIntWidth, RuntimeValue,
+    RuntimeOpaqueValueClass, RuntimeRecordFieldId, RuntimeSignedIntWidth, RuntimeUnsignedIntWidth,
+    RuntimeValue,
 };
+use arcweft_id::runtime_program::RuntimePureProgramId;
 use arcweft_id::{DeclarationIdentityFamily, PublicId};
 use arcweft_lang_hir::expr::{
-    HirAwaitBranchKind, HirCallExpr, HirChoiceCompactAction, HirChoiceItem, HirExprKind,
-    HirPlaceholderKind,
+    HirAwaitBranchKind, HirCallArgument, HirCallExpr, HirChoiceCompactAction, HirChoiceItem,
+    HirExprKind, HirPlaceholderKind, HirRecordField,
 };
 use arcweft_lang_hir::identity::{
     CaptureId, ExprId, HirModuleId, HirSnapshotId, ItemId, LocalId, PatternId, StmtId, TypeId,
@@ -49,12 +52,13 @@ use arcweft_lang_hir::identity::{
 use arcweft_lang_hir::item::{HirImplMember, HirItemFamily, HirItemKind};
 use arcweft_lang_hir::leaf::{HirName, HirPathSegment};
 use arcweft_lang_hir::module::HirModule;
-use arcweft_lang_hir::pattern::HirPatternKind;
+use arcweft_lang_hir::pattern::{HirPatternField, HirPatternKind};
 use arcweft_lang_hir::project::{
     HirExecutableProjectView, HirRuntimeCallCalleeDisposition, HirRuntimeExecutableOwner,
     HirRuntimeExpressionTypeDisposition, HirRuntimeReachabilityError,
-    HirRuntimeReachabilityIdentity, HirRuntimeSemanticReachability,
+    HirRuntimeReachabilityIdentity, HirRuntimeReachabilityRootKind, HirRuntimeSemanticReachability,
 };
+use arcweft_lang_hir::scope::CaptureAccess;
 use arcweft_lang_hir::stmt::HirStmtKind;
 use arcweft_lang_hir::symbol::ImplMethodDeclarationId;
 use arcweft_lang_hir::symbol::{
@@ -201,6 +205,7 @@ pub enum RuntimeSequenceKind {
 #[derive(Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub enum RuntimeTypeProjectionStep {
     SequenceItem,
+    ProjectNominalArgument(u32),
     TupleItem(u32),
     ChoiceAlternative(u32),
     OpaqueArgument(u32),
@@ -482,11 +487,24 @@ impl RuntimeNormalizedType {
                     item.checked_type_at(&path.pushed(RuntimeTypeProjectionStep::SequenceItem))?,
                 ))
             }
-            RuntimeTypeShape::ProjectNominal { nominal, .. } => RuntimeCheckedType::Nominal {
-                nominal: nominal.runtime_nominal_id(),
-                semantic_identity: self.identity(),
-                layout: nominal.layout(),
-            },
+            RuntimeTypeShape::ProjectNominal { nominal, arguments } => {
+                RuntimeCheckedType::Nominal {
+                    nominal: nominal.runtime_nominal_id(),
+                    semantic_identity: self.identity(),
+                    layout: nominal.layout(),
+                    arguments: arguments
+                        .iter()
+                        .enumerate()
+                        .map(|(index, argument)| {
+                            argument.checked_type_at(&path.pushed(
+                                RuntimeTypeProjectionStep::ProjectNominalArgument(
+                                    projection_index(index),
+                                ),
+                            ))
+                        })
+                        .collect::<Result<Vec<_>, _>>()?,
+                }
+            }
             RuntimeTypeShape::Choice(alternatives) => RuntimeCheckedType::Choice(
                 alternatives
                     .iter()
@@ -798,6 +816,7 @@ impl RuntimeResolvedNominal {
             nominal: self.runtime_nominal_id(),
             semantic_identity: self.identity,
             layout: self.layout,
+            arguments: Vec::new(),
         }
     }
 }
@@ -811,7 +830,7 @@ impl RuntimeResolvedNominal {
 pub struct RuntimeAssignmentFact {
     base: LocalId,
     nominal: RuntimeResolvedNominal,
-    field_ordinal: u32,
+    field: RuntimeRecordFieldId,
     field_type: RuntimeNormalizedType,
     value_type: RuntimeNormalizedType,
 }
@@ -1219,8 +1238,55 @@ impl RuntimeEvaluatedEffect {
 /// Checked iterator dispatch before plan-local type and method IDs are issued.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum RuntimeIteratorFact {
-    Builtin(arcweft_core::plan::RuntimeBuiltinIteratorEvidence),
+    Builtin(Box<RuntimeBuiltinIteratorFact>),
     Witness(Box<RuntimeIteratorWitnessFact>),
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct RuntimeBuiltinIteratorFact {
+    family: RuntimeBuiltinIteratorFamily,
+    item: RuntimeNormalizedType,
+    iterator: RuntimeNormalizedType,
+    next_value: RuntimeNormalizedType,
+    step: RuntimeNormalizedType,
+}
+
+impl RuntimeBuiltinIteratorFact {
+    pub const fn new(
+        family: RuntimeBuiltinIteratorFamily,
+        item: RuntimeNormalizedType,
+        iterator: RuntimeNormalizedType,
+        next_value: RuntimeNormalizedType,
+        step: RuntimeNormalizedType,
+    ) -> Self {
+        Self {
+            family,
+            item,
+            iterator,
+            next_value,
+            step,
+        }
+    }
+
+    pub const fn family(&self) -> RuntimeBuiltinIteratorFamily {
+        self.family
+    }
+
+    pub const fn item(&self) -> &RuntimeNormalizedType {
+        &self.item
+    }
+
+    pub const fn iterator(&self) -> &RuntimeNormalizedType {
+        &self.iterator
+    }
+
+    pub const fn next_value(&self) -> &RuntimeNormalizedType {
+        &self.next_value
+    }
+
+    pub const fn step(&self) -> &RuntimeNormalizedType {
+        &self.step
+    }
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -1271,14 +1337,14 @@ impl RuntimeAssignmentFact {
     pub const fn new(
         base: LocalId,
         nominal: RuntimeResolvedNominal,
-        field_ordinal: u32,
+        field: RuntimeRecordFieldId,
         field_type: RuntimeNormalizedType,
         value_type: RuntimeNormalizedType,
     ) -> Self {
         Self {
             base,
             nominal,
-            field_ordinal,
+            field,
             field_type,
             value_type,
         }
@@ -1292,8 +1358,8 @@ impl RuntimeAssignmentFact {
         &self.nominal
     }
 
-    pub const fn field_ordinal(&self) -> u32 {
-        self.field_ordinal
+    pub const fn field(&self) -> RuntimeRecordFieldId {
+        self.field
     }
 
     pub const fn field_type(&self) -> &RuntimeNormalizedType {
@@ -1318,6 +1384,178 @@ pub struct RuntimeResolvedNominalRecord {
 pub struct RuntimeResolvedNominalRecordField {
     name: String,
     ty: RuntimeNormalizedType,
+}
+
+/// Runtime-only source retained from one C2-sealed record-expression row.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum RuntimeRecordExpressionSource {
+    Expression(ExprId),
+    Binding(LocalId),
+}
+
+/// One source-ordered executable record-expression field.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct RuntimeRecordExpressionField {
+    field: RuntimeRecordFieldId,
+    source: RuntimeRecordExpressionSource,
+}
+
+impl RuntimeRecordExpressionField {
+    pub const fn new(field: RuntimeRecordFieldId, source: RuntimeRecordExpressionSource) -> Self {
+        Self { field, source }
+    }
+
+    pub const fn field(&self) -> RuntimeRecordFieldId {
+        self.field
+    }
+
+    pub const fn source(&self) -> RuntimeRecordExpressionSource {
+        self.source
+    }
+}
+
+/// Atomic executable projection of one nominal-record expression.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct RuntimeRecordExpressionFact {
+    nominal: RuntimeResolvedNominalRecord,
+    fields: Box<[RuntimeRecordExpressionField]>,
+}
+
+/// Runtime-only source retained from one C2-sealed record-pattern row.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum RuntimeRecordPatternSource {
+    Pattern(PatternId),
+    Binding(LocalId),
+}
+
+/// One source-ordered executable record-pattern field.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct RuntimeRecordPatternField {
+    field: RuntimeRecordFieldId,
+    source: RuntimeRecordPatternSource,
+}
+
+impl RuntimeRecordPatternField {
+    pub const fn new(field: RuntimeRecordFieldId, source: RuntimeRecordPatternSource) -> Self {
+        Self { field, source }
+    }
+
+    pub const fn field(&self) -> RuntimeRecordFieldId {
+        self.field
+    }
+
+    pub const fn source(&self) -> RuntimeRecordPatternSource {
+        self.source
+    }
+}
+
+/// Exact runtime disposition of an authored record-pattern rest row.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum RuntimeRecordPatternRest {
+    Absent,
+    Ignore,
+    Binding(LocalId),
+}
+
+/// Atomic executable projection of one nominal-record pattern.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct RuntimeRecordPatternFact {
+    nominal: RuntimeResolvedNominalRecord,
+    fields: Box<[RuntimeRecordPatternField]>,
+    rest: RuntimeRecordPatternRest,
+}
+
+/// Invalid executable record plan projected from checked semantics.
+#[derive(Clone, Debug, Eq, Error, PartialEq)]
+pub enum RuntimeRecordPlanError {
+    #[error("record plan contains field {field} more than once")]
+    DuplicateField { field: RuntimeRecordFieldId },
+    #[error("record plan references field {field} outside its nominal layout")]
+    UnknownField { field: RuntimeRecordFieldId },
+    #[error("complete record plan has {actual} fields, expected {expected}")]
+    Incomplete { expected: usize, actual: usize },
+}
+
+fn validate_runtime_record_fields(
+    nominal: &RuntimeResolvedNominalRecord,
+    fields: impl IntoIterator<Item = RuntimeRecordFieldId>,
+    require_complete: bool,
+) -> Result<(), RuntimeRecordPlanError> {
+    let mut seen = BTreeSet::new();
+    for field in fields {
+        if nominal.layout().field_by_id(field).is_none() {
+            return Err(RuntimeRecordPlanError::UnknownField { field });
+        }
+        if !seen.insert(field) {
+            return Err(RuntimeRecordPlanError::DuplicateField { field });
+        }
+    }
+    if require_complete && seen.len() != nominal.layout().len() {
+        return Err(RuntimeRecordPlanError::Incomplete {
+            expected: nominal.layout().len(),
+            actual: seen.len(),
+        });
+    }
+    Ok(())
+}
+
+impl RuntimeRecordExpressionFact {
+    pub fn try_new(
+        nominal: RuntimeResolvedNominalRecord,
+        fields: impl Into<Box<[RuntimeRecordExpressionField]>>,
+    ) -> Result<Self, RuntimeRecordPlanError> {
+        let fields = fields.into();
+        validate_runtime_record_fields(&nominal, fields.iter().map(|field| field.field), true)?;
+        Ok(Self { nominal, fields })
+    }
+
+    pub const fn nominal(&self) -> &RuntimeResolvedNominalRecord {
+        &self.nominal
+    }
+
+    pub const fn fields(&self) -> &[RuntimeRecordExpressionField] {
+        &self.fields
+    }
+
+    fn nominal_mut(&mut self) -> &mut RuntimeResolvedNominalRecord {
+        &mut self.nominal
+    }
+}
+
+impl RuntimeRecordPatternFact {
+    pub fn try_new(
+        nominal: RuntimeResolvedNominalRecord,
+        fields: impl Into<Box<[RuntimeRecordPatternField]>>,
+        rest: RuntimeRecordPatternRest,
+    ) -> Result<Self, RuntimeRecordPlanError> {
+        let fields = fields.into();
+        validate_runtime_record_fields(
+            &nominal,
+            fields.iter().map(|field| field.field),
+            matches!(rest, RuntimeRecordPatternRest::Absent),
+        )?;
+        Ok(Self {
+            nominal,
+            fields,
+            rest,
+        })
+    }
+
+    pub const fn nominal(&self) -> &RuntimeResolvedNominalRecord {
+        &self.nominal
+    }
+
+    pub const fn fields(&self) -> &[RuntimeRecordPatternField] {
+        &self.fields
+    }
+
+    pub const fn rest(&self) -> RuntimeRecordPatternRest {
+        self.rest
+    }
+
+    fn nominal_mut(&mut self) -> &mut RuntimeResolvedNominalRecord {
+        &mut self.nominal
+    }
 }
 
 /// Failure to pair a nominal fact with an executable record layout.
@@ -1540,27 +1778,22 @@ pub enum RuntimeResolvedValue {
 /// Checked projection selected for one final-HIR member expression.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum RuntimeResolvedSelect {
-    Method {
-        name: HirName,
-    },
+    Method,
     Field {
-        nominal: Option<RuntimeResolvedNominal>,
-        ordinal: Option<u32>,
-        name: HirName,
+        owner: RuntimeSemanticTypeId,
+        field: RuntimeRecordFieldId,
+    },
+    OpaqueRecord {
+        owner: RuntimeSemanticTypeId,
+        producer: RuntimeOpaqueTypeProducerId,
+        field: RuntimeRecordFieldId,
+        field_type: RuntimeSemanticTypeId,
     },
     AgentField {
         field: RuntimeAgentField,
     },
     ProgressField {
         field: arcweft_core::value::RuntimeProgressField,
-    },
-    TupleElement {
-        ordinal: u32,
-    },
-    RecordElement {
-        nominal: Option<RuntimeResolvedNominal>,
-        ordinal: u32,
-        name: HirName,
     },
 }
 
@@ -1631,6 +1864,7 @@ impl<'a> RuntimeNormalizedVariantCaseRef<'a> {
 pub enum RuntimeVariantOwner {
     Project {
         nominal: RuntimeResolvedNominal,
+        arguments: Box<[RuntimeNormalizedType]>,
         cases: Box<[RuntimeNormalizedVariantCase]>,
     },
     CharacterNominal {
@@ -1655,9 +1889,17 @@ pub enum RuntimeVariantOwner {
 impl RuntimeVariantOwner {
     fn append_normalized_types<'a>(&'a self, types: &mut Vec<&'a RuntimeNormalizedType>) {
         match self {
-            Self::Project { cases, .. }
-            | Self::CharacterNominal { cases, .. }
-            | Self::BuiltinClosed { cases, .. } => {
+            Self::Project {
+                arguments, cases, ..
+            } => {
+                types.extend(arguments.iter());
+                types.extend(
+                    cases
+                        .iter()
+                        .filter_map(RuntimeNormalizedVariantCase::payload),
+                );
+            }
+            Self::CharacterNominal { cases, .. } | Self::BuiltinClosed { cases, .. } => {
                 types.extend(
                     cases
                         .iter()
@@ -1674,7 +1916,7 @@ impl RuntimeVariantOwner {
 
     fn runtime_plan_domain_seed(&self) -> Option<RuntimeVariantDomainSeed> {
         let (owner, nominal, cases) = match self {
-            Self::Project { nominal, cases } => (
+            Self::Project { nominal, cases, .. } => (
                 nominal.identity(),
                 nominal.runtime_nominal_id(),
                 cases.as_ref(),
@@ -1756,9 +1998,17 @@ impl RuntimeVariantOwner {
         &self,
     ) -> Result<RuntimeCheckedType, RuntimeCheckedTypeProjectionError> {
         Ok(match self {
-            Self::Project { nominal, cases } => RuntimeCheckedType::Variant {
+            Self::Project {
+                nominal,
+                arguments,
+                cases,
+            } => RuntimeCheckedType::Variant {
                 nominal: nominal.runtime_nominal_id(),
                 semantic_identity: nominal.identity(),
+                arguments: arguments
+                    .iter()
+                    .map(RuntimeNormalizedType::checked_type)
+                    .collect::<Result<Vec<_>, _>>()?,
                 cases: cases
                     .iter()
                     .map(RuntimeNormalizedVariantCase::checked_case)
@@ -1776,6 +2026,7 @@ impl RuntimeVariantOwner {
             } => RuntimeCheckedType::Variant {
                 nominal: nominal.clone(),
                 semantic_identity: *identity,
+                arguments: Vec::new(),
                 cases: cases
                     .iter()
                     .map(RuntimeNormalizedVariantCase::checked_case)
@@ -1870,6 +2121,7 @@ impl RuntimeResolvedVariant {
     /// Retains a case directly from its accepted project enum declaration.
     pub fn project(
         owner: RuntimeResolvedNominal,
+        arguments: Box<[RuntimeNormalizedType]>,
         ordinal: u32,
         selected_name: &str,
         cases: Box<[RuntimeNormalizedVariantCase]>,
@@ -1877,6 +2129,7 @@ impl RuntimeResolvedVariant {
         Self::try_new(
             RuntimeVariantOwner::Project {
                 nominal: owner,
+                arguments,
                 cases,
             },
             ordinal,
@@ -1990,33 +2243,77 @@ impl RuntimeResolvedVariant {
     }
 }
 
+/// Typed failure while consuming one ABI-positioned runtime call operand list.
+#[derive(Clone, Copy, Debug, Eq, Error, PartialEq)]
+pub enum RuntimeResolvedCallError {
+    #[error("runtime call ABI position {actual} is not canonical position {expected}")]
+    NonCanonicalAbiPosition { expected: u32, actual: u32 },
+    #[error("runtime call contains duplicate operand origin")]
+    DuplicateOperandOrigin,
+    #[error("runtime call contains more than one receiver operand")]
+    MultipleReceivers,
+}
+
 /// One compiler-selected call dispatch for an exact final-HIR call expression.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct RuntimeResolvedCall {
-    target: RuntimeResolvedCallTarget,
-    arguments: Box<[RuntimeResolvedCallArgument]>,
+    dispatch: RuntimeResolvedCallDispatch,
+    operands: Box<[RuntimeResolvedCallOperand]>,
     result: RuntimeCallResultShape,
 }
 
 impl RuntimeResolvedCall {
-    pub fn new(
-        target: RuntimeResolvedCallTarget,
-        arguments: impl Into<Box<[RuntimeResolvedCallArgument]>>,
+    /// Validates and consumes ABI positions, retaining operands in canonical
+    /// ABI order. Positions are deliberately not duplicated in the stored
+    /// operand authority after this boundary.
+    pub fn try_new(
+        dispatch: RuntimeResolvedCallDispatch,
+        mut positioned_operands: Vec<RuntimePositionedCallOperand>,
         result: RuntimeCallResultShape,
-    ) -> Self {
-        Self {
-            target,
-            arguments: arguments.into(),
-            result,
+    ) -> Result<Self, RuntimeResolvedCallError> {
+        positioned_operands.sort_by_key(RuntimePositionedCallOperand::abi_position);
+        let mut origins = BTreeSet::new();
+        let mut receivers = 0_u8;
+        for (expected, positioned) in positioned_operands.iter().enumerate() {
+            let expected = u32::try_from(expected).map_err(|_| {
+                RuntimeResolvedCallError::NonCanonicalAbiPosition {
+                    expected: u32::MAX,
+                    actual: positioned.abi_position(),
+                }
+            })?;
+            if positioned.abi_position() != expected {
+                return Err(RuntimeResolvedCallError::NonCanonicalAbiPosition {
+                    expected,
+                    actual: positioned.abi_position(),
+                });
+            }
+            let operand = positioned.operand();
+            if !origins.insert(operand.origin().clone()) {
+                return Err(RuntimeResolvedCallError::DuplicateOperandOrigin);
+            }
+            if matches!(operand.origin(), RuntimeResolvedCallOperandOrigin::Receiver) {
+                receivers = receivers.saturating_add(1);
+            }
         }
+        if receivers > 1 {
+            return Err(RuntimeResolvedCallError::MultipleReceivers);
+        }
+        Ok(Self {
+            dispatch,
+            operands: positioned_operands
+                .into_iter()
+                .map(RuntimePositionedCallOperand::into_operand)
+                .collect(),
+            result,
+        })
     }
 
-    pub const fn target(&self) -> &RuntimeResolvedCallTarget {
-        &self.target
+    pub const fn dispatch(&self) -> &RuntimeResolvedCallDispatch {
+        &self.dispatch
     }
 
-    pub const fn arguments(&self) -> &[RuntimeResolvedCallArgument] {
-        &self.arguments
+    pub const fn operands(&self) -> &[RuntimeResolvedCallOperand] {
+        &self.operands
     }
 
     pub const fn result(&self) -> RuntimeCallResultShape {
@@ -2027,45 +2324,61 @@ impl RuntimeResolvedCall {
     /// or lowers as a synthetic call carrier, including the accepted use of
     /// its HIR callee.
     pub fn expression_type_disposition(&self) -> HirRuntimeExpressionTypeDisposition {
-        match &self.target {
-            RuntimeResolvedCallTarget::Host(host)
+        let callee = self.runtime_callee_disposition();
+        match self.dispatch.static_target() {
+            Some(RuntimeResolvedStaticCallTarget::Host(host))
                 if matches!(host.owner(), RuntimeResolvedHostCallOwner::Agent(_)) =>
             {
-                HirRuntimeExpressionTypeDisposition::NonValueCallCarrier {
-                    callee: self.runtime_callee_disposition(),
-                }
+                HirRuntimeExpressionTypeDisposition::NonValueCallCarrier { callee }
             }
-            RuntimeResolvedCallTarget::Agent(_) => {
-                HirRuntimeExpressionTypeDisposition::RetainedCallResult {
-                    callee: self.runtime_callee_disposition(),
-                }
+            Some(RuntimeResolvedStaticCallTarget::Agent(_)) => {
+                HirRuntimeExpressionTypeDisposition::RetainedCallResult { callee }
             }
-            RuntimeResolvedCallTarget::AgentProbeComparison(_)
-            | RuntimeResolvedCallTarget::AgentDiagnosticsHasError => {
+            Some(RuntimeResolvedStaticCallTarget::AgentProbeComparison(_))
+            | Some(RuntimeResolvedStaticCallTarget::AgentDiagnosticsHasError) => {
                 HirRuntimeExpressionTypeDisposition::RetainedCallResult {
                     callee: HirRuntimeCallCalleeDisposition::RuntimeReceiver,
                 }
             }
-            RuntimeResolvedCallTarget::Intrinsic(_)
-            | RuntimeResolvedCallTarget::Declaration(_)
-            | RuntimeResolvedCallTarget::Variant(_)
-            | RuntimeResolvedCallTarget::Reduction(_)
-            | RuntimeResolvedCallTarget::FunctionValue
-            | RuntimeResolvedCallTarget::TraitMethod { .. }
-            | RuntimeResolvedCallTarget::Registered(_)
-            | RuntimeResolvedCallTarget::Host(_) => HirRuntimeExpressionTypeDisposition::Retain,
+            Some(
+                RuntimeResolvedStaticCallTarget::Intrinsic(_)
+                | RuntimeResolvedStaticCallTarget::Declaration(_)
+                | RuntimeResolvedStaticCallTarget::Variant(_)
+                | RuntimeResolvedStaticCallTarget::Reduction(_)
+                | RuntimeResolvedStaticCallTarget::TraitMethod { .. }
+                | RuntimeResolvedStaticCallTarget::Registered(_)
+                | RuntimeResolvedStaticCallTarget::Host(_),
+            )
+            | None => HirRuntimeExpressionTypeDisposition::Retain,
         }
     }
 
     fn runtime_callee_disposition(&self) -> HirRuntimeCallCalleeDisposition {
-        if self
-            .arguments
-            .iter()
-            .any(|argument| matches!(argument, RuntimeResolvedCallArgument::Receiver))
+        if matches!(self.dispatch, RuntimeResolvedCallDispatch::Value { .. })
+            || self.operands.iter().any(|operand| {
+                matches!(operand.origin(), RuntimeResolvedCallOperandOrigin::Receiver)
+            })
         {
             HirRuntimeCallCalleeDisposition::RuntimeReceiver
         } else {
             HirRuntimeCallCalleeDisposition::Static
+        }
+    }
+}
+
+/// Closed dispatch authority. Static targets are exhaustive and never encode
+/// value-callee classification; value dispatch retains its exact HIR callee.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum RuntimeResolvedCallDispatch {
+    Static(RuntimeResolvedStaticCallTarget),
+    Value { callee: ExprId },
+}
+
+impl RuntimeResolvedCallDispatch {
+    fn static_target(&self) -> Option<&RuntimeResolvedStaticCallTarget> {
+        match self {
+            Self::Static(target) => Some(target),
+            Self::Value { .. } => None,
         }
     }
 }
@@ -2076,7 +2389,7 @@ impl RuntimeResolvedCall {
     clippy::large_enum_variant,
     reason = "the closed selected-target vocabulary deliberately retains exact typed owners without target-specific indirection"
 )]
-pub enum RuntimeResolvedCallTarget {
+pub enum RuntimeResolvedStaticCallTarget {
     Intrinsic(RuntimeIntrinsic),
     Agent(crate::agent::RuntimeAgentIntrinsic),
     AgentProbeComparison(arcweft_core::value::RuntimeAgentCompareOp),
@@ -2089,7 +2402,6 @@ pub enum RuntimeResolvedCallTarget {
     Variant(RuntimeResolvedVariant),
     /// Core-owned `Reduction` value construction selected by semantic identity.
     Reduction(RuntimeReductionConstructor),
-    FunctionValue,
     TraitMethod {
         method: ImplMethodDeclarationId,
         receiver: RuntimeReceiverMode,
@@ -2104,6 +2416,7 @@ pub struct RuntimeResolvedHostCall {
     public_id: String,
     capability: String,
     operation: String,
+    contract: Option<arcweft_core::step::HostCallContractDigest>,
     mode: RuntimeHostCallMode,
     deterministic: bool,
 }
@@ -2111,6 +2424,7 @@ pub struct RuntimeResolvedHostCall {
 impl RuntimeResolvedHostCall {
     pub fn extern_capability(
         callable: RuntimeProjectCallable,
+        contract: arcweft_core::step::HostCallContractDigest,
         mode: RuntimeHostCallMode,
     ) -> Result<Self, RuntimeResolvedHostCallError> {
         let CallableDeclarationKey::Existing(declaration) = callable.declaration() else {
@@ -2134,6 +2448,7 @@ impl RuntimeResolvedHostCall {
             public_id: format!("{capability}.{operation}"),
             capability,
             operation,
+            contract: Some(contract),
             mode,
             deterministic: false,
         })
@@ -2146,6 +2461,7 @@ impl RuntimeResolvedHostCall {
             public_id: format!("agent.{operation}"),
             capability: "agent".to_owned(),
             operation: operation.to_owned(),
+            contract: None,
             mode: RuntimeHostCallMode::Suspend,
             deterministic: false,
         })
@@ -2165,6 +2481,10 @@ impl RuntimeResolvedHostCall {
 
     pub fn operation(&self) -> &str {
         &self.operation
+    }
+
+    pub const fn contract(&self) -> Option<arcweft_core::step::HostCallContractDigest> {
+        self.contract
     }
 
     pub const fn mode(&self) -> RuntimeHostCallMode {
@@ -2198,21 +2518,120 @@ pub enum RuntimeReductionConstructor {
     Unchanged,
 }
 
-/// Runtime argument order after overload and data-last resolution.
+/// ABI operand origin retained by the final runtime carrier.
 #[derive(Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
-pub enum RuntimeResolvedCallArgument {
-    Authored {
-        ordinal: u32,
-        passing: RuntimeResolvedHostArgumentPassing,
-    },
+pub enum RuntimeResolvedCallOperandOrigin {
     Receiver,
+    Argument { argument: u32, slot: u32 },
 }
 
+/// Exact final-HIR source for one runtime operand.
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub enum RuntimeResolvedCallOperandSource {
+    Expression(ExprId),
+    CompactNumericElement { sequence: ExprId, ordinal: u32 },
+}
+
+/// Authored/runtime argument binding disposition.
 #[derive(Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
-pub enum RuntimeResolvedHostArgumentPassing {
+pub enum RuntimeResolvedCallOperandBinding {
     Positional,
     Named(String),
-    Spread,
+}
+
+/// Accepted scalar or spread-container runtime projection.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum RuntimeResolvedCallOperandProjection {
+    Scalar,
+    SpreadContainer(RuntimeResolvedSpreadContainer),
+}
+
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub enum RuntimeMapKind {
+    Ordered,
+    Sorted,
+    BTree,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum RuntimeResolvedSpreadContainer {
+    Vec,
+    Seq,
+    Slice,
+    Array {
+        len: usize,
+    },
+    MapValue {
+        kind: RuntimeMapKind,
+        key: RuntimeNormalizedType,
+    },
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct RuntimeResolvedCallOperand {
+    origin: RuntimeResolvedCallOperandOrigin,
+    source: RuntimeResolvedCallOperandSource,
+    ty: RuntimeNormalizedType,
+    binding: RuntimeResolvedCallOperandBinding,
+    projection: RuntimeResolvedCallOperandProjection,
+}
+
+impl RuntimeResolvedCallOperand {
+    pub fn new(
+        origin: RuntimeResolvedCallOperandOrigin,
+        source: RuntimeResolvedCallOperandSource,
+        ty: RuntimeNormalizedType,
+        binding: RuntimeResolvedCallOperandBinding,
+        projection: RuntimeResolvedCallOperandProjection,
+    ) -> Self {
+        Self {
+            origin,
+            source,
+            ty,
+            binding,
+            projection,
+        }
+    }
+
+    pub const fn origin(&self) -> &RuntimeResolvedCallOperandOrigin {
+        &self.origin
+    }
+    pub const fn source(&self) -> RuntimeResolvedCallOperandSource {
+        self.source
+    }
+    pub const fn ty(&self) -> &RuntimeNormalizedType {
+        &self.ty
+    }
+    pub const fn binding(&self) -> &RuntimeResolvedCallOperandBinding {
+        &self.binding
+    }
+    pub const fn projection(&self) -> &RuntimeResolvedCallOperandProjection {
+        &self.projection
+    }
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct RuntimePositionedCallOperand {
+    abi_position: u32,
+    operand: RuntimeResolvedCallOperand,
+}
+
+impl RuntimePositionedCallOperand {
+    pub const fn new(abi_position: u32, operand: RuntimeResolvedCallOperand) -> Self {
+        Self {
+            abi_position,
+            operand,
+        }
+    }
+    pub const fn abi_position(&self) -> u32 {
+        self.abi_position
+    }
+    pub const fn operand(&self) -> &RuntimeResolvedCallOperand {
+        &self.operand
+    }
+    fn into_operand(self) -> RuntimeResolvedCallOperand {
+        self.operand
+    }
 }
 
 /// Whether a checked call produces its declared value or a partial function.
@@ -2369,6 +2788,97 @@ impl RuntimeCheckedCapture {
     }
 }
 
+/// One closure capture bound to a declaration-ordered domain parameter.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct RuntimePureProgramCaptureFact {
+    capture: CaptureId,
+    local: LocalId,
+    parameter: u16,
+    value_type: RuntimeSemanticTypeId,
+}
+
+impl RuntimePureProgramCaptureFact {
+    #[must_use]
+    pub const fn new(
+        capture: CaptureId,
+        local: LocalId,
+        parameter: u16,
+        value_type: RuntimeSemanticTypeId,
+    ) -> Self {
+        Self {
+            capture,
+            local,
+            parameter,
+            value_type,
+        }
+    }
+
+    pub const fn capture(self) -> CaptureId {
+        self.capture
+    }
+
+    pub const fn local(self) -> LocalId {
+        self.local
+    }
+
+    pub const fn parameter(self) -> u16 {
+        self.parameter
+    }
+
+    pub const fn value_type(self) -> RuntimeSemanticTypeId {
+        self.value_type
+    }
+}
+
+/// Exact mount-only deterministic program rooted at one checked closure.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct RuntimePureProgramFact {
+    program: RuntimePureProgramId,
+    closure: ExprId,
+    body: ExprId,
+    captures: Box<[RuntimePureProgramCaptureFact]>,
+    result: RuntimeSemanticTypeId,
+}
+
+impl RuntimePureProgramFact {
+    #[must_use]
+    pub const fn new(
+        program: RuntimePureProgramId,
+        closure: ExprId,
+        body: ExprId,
+        captures: Box<[RuntimePureProgramCaptureFact]>,
+        result: RuntimeSemanticTypeId,
+    ) -> Self {
+        Self {
+            program,
+            closure,
+            body,
+            captures,
+            result,
+        }
+    }
+
+    pub const fn program(&self) -> RuntimePureProgramId {
+        self.program
+    }
+
+    pub const fn closure(&self) -> ExprId {
+        self.closure
+    }
+
+    pub const fn body(&self) -> ExprId {
+        self.body
+    }
+
+    pub const fn captures(&self) -> &[RuntimePureProgramCaptureFact] {
+        &self.captures
+    }
+
+    pub const fn result(&self) -> RuntimeSemanticTypeId {
+        self.result
+    }
+}
+
 /// Mutable staging owner used by semantic analysis before generation binding.
 ///
 /// Staged facts are not executable. [`RuntimePlanSemanticFacts::try_new`]
@@ -2384,8 +2894,8 @@ pub struct RuntimePlanSemanticFactInput {
     pattern_items: Vec<(PatternId, RuntimeProjectItem)>,
     values: Vec<(ExprId, RuntimeResolvedValue)>,
     selects: Vec<(ExprId, RuntimeResolvedSelect)>,
-    nominal_records: Vec<(ExprId, RuntimeResolvedNominalRecord)>,
-    pattern_nominal_records: Vec<(PatternId, RuntimeResolvedNominalRecord)>,
+    nominal_records: Vec<(ExprId, RuntimeRecordExpressionFact)>,
+    pattern_nominal_records: Vec<(PatternId, RuntimeRecordPatternFact)>,
     expression_variants: Vec<(ExprId, RuntimeResolvedVariant)>,
     pattern_variants: Vec<(PatternId, RuntimeResolvedVariant)>,
     types: Vec<(TypeId, RuntimeNormalizedType)>,
@@ -2402,6 +2912,7 @@ pub struct RuntimePlanSemanticFactInput {
     implicit_callables: Vec<(ExprId, RuntimeImplicitCallableFact)>,
     pipes: Vec<(ExprId, RuntimePipeFact)>,
     captures: Vec<RuntimeCheckedCapture>,
+    pure_programs: Vec<RuntimePureProgramFact>,
 }
 
 impl RuntimePlanSemanticFactInput {
@@ -2434,6 +2945,7 @@ impl RuntimePlanSemanticFactInput {
             implicit_callables: Vec::new(),
             pipes: Vec::new(),
             captures: Vec::new(),
+            pure_programs: Vec::new(),
         }
     }
 
@@ -2480,16 +2992,16 @@ impl RuntimePlanSemanticFactInput {
         self.selects.push((owner, select));
     }
 
-    pub fn push_nominal_record(&mut self, owner: ExprId, nominal: RuntimeResolvedNominalRecord) {
-        self.nominal_records.push((owner, nominal));
+    pub fn push_nominal_record(&mut self, owner: ExprId, record: RuntimeRecordExpressionFact) {
+        self.nominal_records.push((owner, record));
     }
 
     pub fn push_pattern_nominal_record(
         &mut self,
         owner: PatternId,
-        nominal: RuntimeResolvedNominalRecord,
+        record: RuntimeRecordPatternFact,
     ) {
-        self.pattern_nominal_records.push((owner, nominal));
+        self.pattern_nominal_records.push((owner, record));
     }
 
     pub fn push_expression_variant(&mut self, owner: ExprId, variant: RuntimeResolvedVariant) {
@@ -2557,6 +3069,10 @@ impl RuntimePlanSemanticFactInput {
     pub fn push_capture(&mut self, capture: RuntimeCheckedCapture) {
         self.captures.push(capture);
     }
+
+    pub fn push_pure_program(&mut self, program: RuntimePureProgramFact) {
+        self.pure_programs.push(program);
+    }
 }
 
 impl Default for RuntimePlanSemanticFactInput {
@@ -2569,6 +3085,7 @@ impl Default for RuntimePlanSemanticFactInput {
 #[derive(Clone, Debug)]
 pub struct RuntimePlanSemanticFacts {
     reachability: HirRuntimeReachabilityIdentity,
+    view_value_reachability: Option<HirRuntimeReachabilityIdentity>,
     runtime_owners: BTreeSet<HirRuntimeExecutableOwner>,
     snapshots: BTreeMap<HirModuleId, HirSnapshotId>,
     local_declaration_order: Box<[LocalId]>,
@@ -2581,8 +3098,8 @@ pub struct RuntimePlanSemanticFacts {
     pattern_items: BTreeMap<PatternId, RuntimeProjectItem>,
     values: BTreeMap<ExprId, RuntimeResolvedValue>,
     selects: BTreeMap<ExprId, RuntimeResolvedSelect>,
-    nominal_records: BTreeMap<ExprId, RuntimeResolvedNominalRecord>,
-    pattern_nominal_records: BTreeMap<PatternId, RuntimeResolvedNominalRecord>,
+    nominal_records: BTreeMap<ExprId, RuntimeRecordExpressionFact>,
+    pattern_nominal_records: BTreeMap<PatternId, RuntimeRecordPatternFact>,
     expression_variants: BTreeMap<ExprId, RuntimeResolvedVariant>,
     pattern_variants: BTreeMap<PatternId, RuntimeResolvedVariant>,
     types: BTreeMap<TypeId, RuntimeNormalizedType>,
@@ -2599,8 +3116,142 @@ pub struct RuntimePlanSemanticFacts {
     implicit_callables: BTreeMap<ExprId, RuntimeImplicitCallableFact>,
     pipes: BTreeMap<ExprId, RuntimePipeFact>,
     captures: BTreeMap<CaptureId, RuntimeCheckedCapture>,
+    pure_programs: BTreeMap<RuntimePureProgramId, RuntimePureProgramFact>,
     dialogue_applications: BTreeMap<ExprId, RuntimeDialogueApplication>,
     character_presentation_catalog: Option<Arc<CharacterPresentationCatalogData>>,
+}
+
+#[derive(Clone, Copy)]
+struct RuntimeSemanticOwnerSet<'a> {
+    runtime: &'a HirRuntimeSemanticReachability<'a>,
+    view_values: Option<&'a HirRuntimeSemanticReachability<'a>>,
+}
+
+impl<'a> RuntimeSemanticOwnerSet<'a> {
+    const fn runtime_only(runtime: &'a HirRuntimeSemanticReachability<'a>) -> Self {
+        Self {
+            runtime,
+            view_values: None,
+        }
+    }
+
+    const fn with_view_values(
+        runtime: &'a HirRuntimeSemanticReachability<'a>,
+        view_values: &'a HirRuntimeSemanticReachability<'a>,
+    ) -> Self {
+        Self {
+            runtime,
+            view_values: Some(view_values),
+        }
+    }
+
+    fn contains_expression(self, owner: ExprId) -> bool {
+        self.runtime.contains_expression(owner)
+            || self
+                .view_values
+                .is_some_and(|owners| owners.contains_expression(owner))
+    }
+
+    fn contains_pattern(self, owner: PatternId) -> bool {
+        self.runtime.contains_pattern(owner)
+            || self
+                .view_values
+                .is_some_and(|owners| owners.contains_pattern(owner))
+    }
+
+    fn contains_statement(self, owner: StmtId) -> bool {
+        self.runtime.contains_statement(owner)
+            || self
+                .view_values
+                .is_some_and(|owners| owners.contains_statement(owner))
+    }
+
+    fn contains_type(self, owner: TypeId) -> bool {
+        self.runtime.contains_type(owner)
+            || self
+                .view_values
+                .is_some_and(|owners| owners.contains_type(owner))
+    }
+
+    fn contains_local(self, owner: LocalId) -> bool {
+        self.runtime.contains_local(owner)
+            || self
+                .view_values
+                .is_some_and(|owners| owners.contains_local(owner))
+    }
+
+    fn contains_capture(self, owner: CaptureId) -> bool {
+        self.runtime.contains_capture(owner)
+            || self
+                .view_values
+                .is_some_and(|owners| owners.contains_capture(owner))
+    }
+
+    fn contains_runtime_owner(self, owner: &HirRuntimeExecutableOwner) -> bool {
+        self.runtime.contains_runtime_owner(owner)
+            || self
+                .view_values
+                .is_some_and(|owners| owners.contains_runtime_owner(owner))
+    }
+
+    fn locals(self) -> BTreeSet<LocalId> {
+        self.runtime
+            .locals()
+            .chain(
+                self.view_values
+                    .into_iter()
+                    .flat_map(|owners| owners.locals()),
+            )
+            .collect()
+    }
+
+    fn reachable_executables(self) -> BTreeSet<HirRuntimeExecutableOwner> {
+        self.runtime
+            .reachable_executables()
+            .chain(
+                self.view_values
+                    .into_iter()
+                    .flat_map(HirRuntimeSemanticReachability::reachable_executables),
+            )
+            .cloned()
+            .collect()
+    }
+
+    fn selected_expression_type_owners(
+        self,
+    ) -> Result<BTreeSet<ExprId>, RuntimeSemanticFactsError> {
+        let mut owners = self
+            .runtime
+            .selected_expression_type_owners()
+            .map_err(|error| {
+                RuntimeSemanticFactsError::RuntimeReachability(HirRuntimeReachabilityError::from(
+                    error,
+                ))
+            })?;
+        if let Some(view_values) = self.view_values {
+            owners.extend(
+                view_values
+                    .selected_expression_type_owners()
+                    .map_err(|error| {
+                        RuntimeSemanticFactsError::RuntimeReachability(
+                            HirRuntimeReachabilityError::from(error),
+                        )
+                    })?,
+            );
+        }
+        Ok(owners)
+    }
+
+    fn patterns(self) -> BTreeSet<PatternId> {
+        self.runtime
+            .patterns()
+            .chain(
+                self.view_values
+                    .into_iter()
+                    .flat_map(HirRuntimeSemanticReachability::patterns),
+            )
+            .collect()
+    }
 }
 
 impl RuntimePlanSemanticFacts {
@@ -2624,14 +3275,56 @@ impl RuntimePlanSemanticFacts {
         runtime_owners: &HirRuntimeSemanticReachability<'_>,
         input: RuntimePlanSemanticFactInput,
     ) -> Result<Self, RuntimeSemanticFactsError> {
+        Self::try_new_with_owner_set(
+            project,
+            RuntimeSemanticOwnerSet::runtime_only(runtime_owners),
+            input,
+        )
+    }
+
+    pub fn try_new_with_view_value_programs(
+        project: HirExecutableProjectView<'_>,
+        runtime_owners: &HirRuntimeSemanticReachability<'_>,
+        view_value_owners: &HirRuntimeSemanticReachability<'_>,
+        input: RuntimePlanSemanticFactInput,
+    ) -> Result<Self, RuntimeSemanticFactsError> {
+        if runtime_owners
+            .roots()
+            .any(|root| root.kind() == HirRuntimeReachabilityRootKind::CheckedViewValueProgram)
+            || view_value_owners
+                .roots()
+                .any(|root| root.kind() != HirRuntimeReachabilityRootKind::CheckedViewValueProgram)
+        {
+            return Err(RuntimeSemanticFactsError::ReachabilityMismatch);
+        }
+        Self::try_new_with_owner_set(
+            project,
+            RuntimeSemanticOwnerSet::with_view_values(runtime_owners, view_value_owners),
+            input,
+        )
+    }
+
+    fn try_new_with_owner_set(
+        project: HirExecutableProjectView<'_>,
+        runtime_owners: RuntimeSemanticOwnerSet<'_>,
+        input: RuntimePlanSemanticFactInput,
+    ) -> Result<Self, RuntimeSemanticFactsError> {
         let supplied_snapshots = project
             .modules()
             .map(|(_, module)| (module.module_id(), module.snapshot_id()))
             .collect::<Box<[_]>>();
-        if supplied_snapshots.as_ref() != runtime_owners.identity().module_snapshots() {
+        if supplied_snapshots.as_ref() != runtime_owners.runtime.identity().module_snapshots()
+            || runtime_owners.view_values.is_some_and(|owners| {
+                supplied_snapshots.as_ref() != owners.identity().module_snapshots()
+                    || owners.identity().symbol_world()
+                        != runtime_owners.runtime.identity().symbol_world()
+                    || owners.identity().symbol_revision()
+                        != runtime_owners.runtime.identity().symbol_revision()
+            })
+        {
             return Err(RuntimeSemanticFactsError::ReachabilityMismatch);
         }
-        let expected_local_declarations = runtime_owners.locals().collect::<Vec<_>>();
+        let expected_local_declarations = runtime_owners.locals().into_iter().collect::<Vec<_>>();
         let modules = project
             .modules()
             .map(|(_, module)| (module.module_id(), module.as_ref()))
@@ -2819,22 +3512,22 @@ impl RuntimePlanSemanticFacts {
             input.nominal_records,
             RuntimeSemanticFactFamily::NominalRecord,
         )?;
-        for (expression, nominal) in &nominal_records {
+        for (expression, record) in &nominal_records {
             require_expr_family(
                 &modules,
                 runtime_owners,
                 *expression,
                 RuntimeSemanticFactFamily::NominalRecord,
-                |kind| matches!(kind, HirExprKind::Record(_)),
+                |kind| matches!(kind, HirExprKind::Record(_) | HirExprKind::RecordLiteral(_)),
             )?;
-            validate_nominal_record(&modules, nominal)?;
+            validate_record_expression_fact(&modules, *expression, record)?;
         }
 
         let mut pattern_nominal_records = collect_unique(
             input.pattern_nominal_records,
             RuntimeSemanticFactFamily::PatternNominalRecord,
         )?;
-        for (pattern, nominal) in &pattern_nominal_records {
+        for (pattern, record) in &pattern_nominal_records {
             require_pattern_family(
                 &modules,
                 runtime_owners,
@@ -2842,15 +3535,15 @@ impl RuntimePlanSemanticFacts {
                 RuntimeSemanticFactFamily::PatternNominalRecord,
                 |kind| matches!(kind, HirPatternKind::Record { .. }),
             )?;
-            validate_nominal_record(&modules, nominal)?;
+            validate_record_pattern_fact(&modules, *pattern, record)?;
         }
 
         let mut nominal_layouts = BTreeMap::new();
-        for record in nominal_records
-            .values_mut()
-            .chain(pattern_nominal_records.values_mut())
-        {
-            intern_nominal_record_layout(record, &mut nominal_layouts)?;
+        for record in nominal_records.values_mut() {
+            intern_nominal_record_layout(record.nominal_mut(), &mut nominal_layouts)?;
+        }
+        for record in pattern_nominal_records.values_mut() {
+            intern_nominal_record_layout(record.nominal_mut(), &mut nominal_layouts)?;
         }
 
         let expression_variants = collect_unique(
@@ -2909,23 +3602,25 @@ impl RuntimePlanSemanticFacts {
                     expected: RuntimeSemanticFactFamily::Call,
                 });
             };
-            validate_call(&modules, hir_call, call)?;
-            let executable = match call.target() {
-                RuntimeResolvedCallTarget::Declaration(callable) => {
-                    Some(HirRuntimeExecutableOwner::Item(callable.owner()))
-                }
-                RuntimeResolvedCallTarget::TraitMethod { method, .. } => {
-                    Some(HirRuntimeExecutableOwner::ImplMethod(method.clone()))
-                }
-                RuntimeResolvedCallTarget::Intrinsic(_)
-                | RuntimeResolvedCallTarget::Agent(_)
-                | RuntimeResolvedCallTarget::AgentProbeComparison(_)
-                | RuntimeResolvedCallTarget::AgentDiagnosticsHasError
-                | RuntimeResolvedCallTarget::Variant(_)
-                | RuntimeResolvedCallTarget::Reduction(_)
-                | RuntimeResolvedCallTarget::FunctionValue
-                | RuntimeResolvedCallTarget::Registered(_)
-                | RuntimeResolvedCallTarget::Host(_) => None,
+            validate_call(&modules, &expression_types, *expression, hir_call, call)?;
+            let executable = match call.dispatch() {
+                RuntimeResolvedCallDispatch::Static(
+                    RuntimeResolvedStaticCallTarget::Declaration(callable),
+                ) => Some(HirRuntimeExecutableOwner::Item(callable.owner())),
+                RuntimeResolvedCallDispatch::Static(
+                    RuntimeResolvedStaticCallTarget::TraitMethod { method, .. },
+                ) => Some(HirRuntimeExecutableOwner::ImplMethod(method.clone())),
+                RuntimeResolvedCallDispatch::Static(
+                    RuntimeResolvedStaticCallTarget::Intrinsic(_)
+                    | RuntimeResolvedStaticCallTarget::Agent(_)
+                    | RuntimeResolvedStaticCallTarget::AgentProbeComparison(_)
+                    | RuntimeResolvedStaticCallTarget::AgentDiagnosticsHasError
+                    | RuntimeResolvedStaticCallTarget::Variant(_)
+                    | RuntimeResolvedStaticCallTarget::Reduction(_)
+                    | RuntimeResolvedStaticCallTarget::Registered(_)
+                    | RuntimeResolvedStaticCallTarget::Host(_),
+                )
+                | RuntimeResolvedCallDispatch::Value { .. } => None,
             };
             if let Some(owner) = executable
                 && !runtime_owners.contains_runtime_owner(&owner)
@@ -3337,7 +4032,17 @@ impl RuntimePlanSemanticFacts {
                 |kind| matches!(kind, HirStmtKind::For(_)),
             )?;
             let methods_exist = match evidence {
-                RuntimeIteratorFact::Builtin(_) => true,
+                RuntimeIteratorFact::Builtin(builtin) => {
+                    for ty in [
+                        builtin.item(),
+                        builtin.iterator(),
+                        builtin.next_value(),
+                        builtin.step(),
+                    ] {
+                        validate_normalized_type(&modules, ty)?;
+                    }
+                    true
+                }
                 RuntimeIteratorFact::Witness(witness) => match witness.executable() {
                     RuntimeIteratorWitnessExecutableFact::TraitCalls { into_iter, next } => {
                         trait_methods.contains_key(into_iter) && trait_methods.contains_key(next)
@@ -3438,9 +4143,21 @@ impl RuntimePlanSemanticFacts {
             }
         }
 
+        let pure_programs = validate_pure_programs(
+            &modules,
+            runtime_owners,
+            &expression_types,
+            &local_declarations,
+            &captures,
+            input.pure_programs,
+        )?;
+
         Ok(Self {
-            reachability: runtime_owners.identity().clone(),
-            runtime_owners: runtime_owners.reachable_executables().cloned().collect(),
+            reachability: runtime_owners.runtime.identity().clone(),
+            view_value_reachability: runtime_owners
+                .view_values
+                .map(|owners| owners.identity().clone()),
+            runtime_owners: runtime_owners.reachable_executables(),
             snapshots,
             local_declaration_order: expected_local_declarations.into_boxed_slice(),
             local_declarations,
@@ -3470,6 +4187,7 @@ impl RuntimePlanSemanticFacts {
             implicit_callables,
             pipes,
             captures,
+            pure_programs,
             dialogue_applications: BTreeMap::new(),
             character_presentation_catalog: None,
         })
@@ -3522,6 +4240,7 @@ impl RuntimePlanSemanticFacts {
         owner: ExprId,
         application: &RuntimeDialogueApplication,
     ) -> Result<(), RuntimeSemanticFactsError> {
+        let runtime_owners = RuntimeSemanticOwnerSet::runtime_only(runtime_owners);
         require_expr_family(
             modules,
             runtime_owners,
@@ -3679,20 +4398,22 @@ impl RuntimePlanSemanticFacts {
     /// Complete plan-owned nominal-record schemas. Repeated owners are
     /// retained so the sole builder can reject conflicting projections.
     pub fn runtime_plan_nominal_record_domain_seeds(&self) -> Vec<RuntimeNominalRecordDomainSeed> {
+        let project = |record: &RuntimeResolvedNominalRecord| {
+            RuntimeNominalRecordDomainSeed::new(
+                record.nominal().identity(),
+                record.fields().iter().map(|field| {
+                    RuntimeNominalRecordDomainFieldSeed::new(field.name(), field.ty().identity())
+                }),
+            )
+        };
         self.nominal_records
             .values()
-            .chain(self.pattern_nominal_records.values())
-            .map(|record| {
-                RuntimeNominalRecordDomainSeed::new(
-                    record.nominal().identity(),
-                    record.fields().iter().map(|field| {
-                        RuntimeNominalRecordDomainFieldSeed::new(
-                            field.name(),
-                            field.ty().identity(),
-                        )
-                    }),
-                )
-            })
+            .map(|record| project(record.nominal()))
+            .chain(
+                self.pattern_nominal_records
+                    .values()
+                    .map(|record| project(record.nominal())),
+            )
             .collect()
     }
 
@@ -3713,13 +4434,19 @@ impl RuntimePlanSemanticFacts {
         roots.extend(self.pattern_types.values());
         roots.extend(self.types.values());
         roots.extend(self.captures.values().map(RuntimeCheckedCapture::ty));
-        for record in self
-            .nominal_records
-            .values()
-            .chain(self.pattern_nominal_records.values())
-        {
+        for record in self.nominal_records.values() {
             roots.extend(
                 record
+                    .nominal()
+                    .fields()
+                    .iter()
+                    .map(RuntimeResolvedNominalRecordField::ty),
+            );
+        }
+        for record in self.pattern_nominal_records.values() {
+            roots.extend(
+                record
+                    .nominal()
                     .fields()
                     .iter()
                     .map(RuntimeResolvedNominalRecordField::ty),
@@ -3745,8 +4472,16 @@ impl RuntimePlanSemanticFacts {
                 .map(RuntimeTraitMethodFact::self_type),
         );
         for iteration in self.iterations.values() {
-            if let RuntimeIteratorFact::Witness(witness) = iteration {
-                roots.extend([witness.item(), witness.iterator()]);
+            match iteration {
+                RuntimeIteratorFact::Builtin(builtin) => roots.extend([
+                    builtin.item(),
+                    builtin.iterator(),
+                    builtin.next_value(),
+                    builtin.step(),
+                ]),
+                RuntimeIteratorFact::Witness(witness) => {
+                    roots.extend([witness.item(), witness.iterator()]);
+                }
             }
         }
         for variant in self
@@ -3780,14 +4515,11 @@ impl RuntimePlanSemanticFacts {
         self.selects.get(&expression)
     }
 
-    pub fn nominal_record(&self, expression: ExprId) -> Option<&RuntimeResolvedNominalRecord> {
+    pub fn nominal_record(&self, expression: ExprId) -> Option<&RuntimeRecordExpressionFact> {
         self.nominal_records.get(&expression)
     }
 
-    pub fn pattern_nominal_record(
-        &self,
-        pattern: PatternId,
-    ) -> Option<&RuntimeResolvedNominalRecord> {
+    pub fn pattern_nominal_record(&self, pattern: PatternId) -> Option<&RuntimeRecordPatternFact> {
         self.pattern_nominal_records.get(&pattern)
     }
 
@@ -3880,6 +4612,22 @@ impl RuntimePlanSemanticFacts {
         self.captures.get(&capture)
     }
 
+    pub fn pure_programs(
+        &self,
+    ) -> impl ExactSizeIterator<Item = (&RuntimePureProgramId, &RuntimePureProgramFact)> {
+        self.pure_programs.iter()
+    }
+
+    pub fn is_pure_program_closure(&self, closure: ExprId) -> bool {
+        self.pure_programs
+            .values()
+            .any(|program| program.closure() == closure)
+    }
+
+    pub const fn view_value_reachability(&self) -> Option<&HirRuntimeReachabilityIdentity> {
+        self.view_value_reachability.as_ref()
+    }
+
     pub fn dialogue_application(&self, expression: ExprId) -> Option<&RuntimeDialogueApplication> {
         self.dialogue_applications.get(&expression)
     }
@@ -3897,6 +4645,103 @@ impl RuntimePlanSemanticFacts {
     }
 }
 
+fn validate_pure_programs(
+    modules: &BTreeMap<HirModuleId, &HirModule>,
+    owners: RuntimeSemanticOwnerSet<'_>,
+    expression_types: &BTreeMap<ExprId, RuntimeNormalizedType>,
+    local_declarations: &BTreeMap<LocalId, RuntimeNormalizedType>,
+    checked_captures: &BTreeMap<CaptureId, RuntimeCheckedCapture>,
+    staged: Vec<RuntimePureProgramFact>,
+) -> Result<BTreeMap<RuntimePureProgramId, RuntimePureProgramFact>, RuntimeSemanticFactsError> {
+    let expected_closures = owners
+        .view_values
+        .into_iter()
+        .flat_map(HirRuntimeSemanticReachability::roots)
+        .filter_map(|root| match root.owner() {
+            HirRuntimeExecutableOwner::Closure(closure)
+                if root.kind() == HirRuntimeReachabilityRootKind::CheckedViewValueProgram =>
+            {
+                Some(*closure)
+            }
+            HirRuntimeExecutableOwner::Item(_)
+            | HirRuntimeExecutableOwner::ImplMethod(_)
+            | HirRuntimeExecutableOwner::Closure(_) => None,
+        })
+        .collect::<BTreeSet<_>>();
+    let mut programs = BTreeMap::new();
+    let mut closures = BTreeSet::new();
+    for fact in staged {
+        let program = fact.program();
+        if programs.contains_key(&program) {
+            return Err(RuntimeSemanticFactsError::DuplicateFact {
+                family: RuntimeSemanticFactFamily::PureProgram,
+            });
+        }
+        if !expected_closures.contains(&fact.closure()) || !closures.insert(fact.closure()) {
+            return Err(RuntimeSemanticFactsError::InvalidPureProgram { program });
+        }
+        let HirExprKind::Closure(closure) = resolve_expr(modules, fact.closure())? else {
+            return Err(RuntimeSemanticFactsError::InvalidPureProgram { program });
+        };
+        let Some(RuntimeTypeShape::Function { parameters, result }) = expression_types
+            .get(&fact.closure())
+            .map(RuntimeNormalizedType::shape)
+        else {
+            return Err(RuntimeSemanticFactsError::InvalidPureProgram { program });
+        };
+        if !parameters.is_empty()
+            || !closure.parameters().is_empty()
+            || closure.body() != fact.body()
+            || result.identity() != fact.result()
+            || expression_types
+                .get(&fact.body())
+                .is_none_or(|body| body.identity() != fact.result())
+            || closure.captures().len() != fact.captures().len()
+        {
+            return Err(RuntimeSemanticFactsError::InvalidPureProgram { program });
+        }
+        let module = module_for(modules, fact.closure().module())?;
+        let mut parameters = BTreeSet::new();
+        let mut locals = BTreeSet::new();
+        for (expected_capture, capture) in closure
+            .captures()
+            .iter()
+            .copied()
+            .zip(fact.captures().iter().copied())
+        {
+            let hir_capture = module.resolve_capture(capture.capture()).map_err(|_| {
+                RuntimeSemanticFactsError::UnresolvedCapture {
+                    capture: capture.capture(),
+                }
+            })?;
+            let checked = checked_captures.get(&capture.capture());
+            let local_type = local_declarations.get(&capture.local());
+            if expected_capture != capture.capture()
+                || hir_capture.closure() != fact.closure()
+                || hir_capture.local() != capture.local()
+                || hir_capture.access() != CaptureAccess::Read
+                || !parameters.insert(capture.parameter())
+                || !locals.insert(capture.local())
+                || checked.is_none_or(|checked| {
+                    checked.capture() != capture.capture()
+                        || checked.ty().identity() != capture.value_type()
+                })
+                || local_type.is_none_or(|ty| ty.identity() != capture.value_type())
+            {
+                return Err(RuntimeSemanticFactsError::InvalidPureProgram { program });
+            }
+        }
+        programs.insert(program, fact);
+    }
+    if let Some(closure) = expected_closures
+        .iter()
+        .find(|closure| !closures.contains(closure))
+    {
+        return Err(RuntimeSemanticFactsError::MissingPureProgram { closure: *closure });
+    }
+    Ok(programs)
+}
+
 #[derive(Clone, Debug, Eq, Error, PartialEq)]
 pub enum RuntimeSemanticFactsError {
     #[error("runtime semantic facts and reachability belong to different generations")]
@@ -3907,6 +4752,10 @@ pub enum RuntimeSemanticFactsError {
     WrongProjectGeneration,
     #[error("runtime semantic facts contain more than one {family:?} fact for the same HIR ID")]
     DuplicateFact { family: RuntimeSemanticFactFamily },
+    #[error("runtime pure program {program} does not match its checked View closure root")]
+    InvalidPureProgram { program: RuntimePureProgramId },
+    #[error("checked View closure root {closure:?} has no exact runtime pure-program fact")]
+    MissingPureProgram { closure: ExprId },
     #[error("accepted runtime semantic facts omit expression type {expression:?}")]
     MissingExpressionType { expression: ExprId },
     #[error(
@@ -4003,32 +4852,11 @@ pub enum RuntimeSemanticFactsError {
     WrongItemFamily { item: ItemId, actual: HirItemFamily },
     #[error("runtime nominal-record fact item {item:?} is not a struct")]
     WrongNominalRecordItemFamily { item: ItemId },
-    #[error("runtime nominal-record fact item {item:?} has {actual} fields, expected {expected}")]
-    NominalRecordFieldCount {
-        item: ItemId,
-        expected: usize,
-        actual: usize,
-    },
-    #[error(
-        "runtime nominal-record fact item {item:?} field {ordinal} is `{actual}`, expected `{expected}`"
-    )]
-    NominalRecordFieldName {
-        item: ItemId,
-        ordinal: usize,
-        expected: String,
-        actual: String,
-    },
     #[error("runtime nominal-record layout catalog contains conflicting descriptors")]
     ConflictingNominalRecordLayout {
         nominal: RuntimeNominalTypeId,
         semantic_identity: RuntimeSemanticTypeId,
         layout: TypeLayoutHash,
-    },
-    #[error("runtime nominal-record field {ordinal} (`{name}`) on {item:?} is not representable")]
-    UnrepresentableNominalRecordField {
-        item: ItemId,
-        ordinal: usize,
-        name: String,
     },
     #[error("runtime nominal layout for `{nominal:?}` on {item:?} is unresolved")]
     UnresolvedNominalLayout {
@@ -4119,20 +4947,17 @@ pub enum RuntimeSemanticFactFamily {
     ImplicitCallable,
     Pipe,
     Capture,
+    PureProgram,
     DialogueApplication,
 }
 
 fn validate_complete_expression_types(
-    runtime_owners: &HirRuntimeSemanticReachability<'_>,
+    runtime_owners: RuntimeSemanticOwnerSet<'_>,
     _postfix_candidates: &BTreeMap<ExprId, ExprId>,
     _calls: &BTreeMap<ExprId, RuntimeResolvedCall>,
     expression_types: &BTreeMap<ExprId, RuntimeNormalizedType>,
 ) -> Result<(), RuntimeSemanticFactsError> {
-    let accepted = runtime_owners
-        .selected_expression_type_owners()
-        .map_err(|error| {
-            RuntimeSemanticFactsError::RuntimeReachability(HirRuntimeReachabilityError::from(error))
-        })?;
+    let accepted = runtime_owners.selected_expression_type_owners()?;
 
     if let Some(expression) = accepted
         .iter()
@@ -4160,7 +4985,7 @@ fn validate_complete_expression_types(
 /// before this projection can be constructed. Presentation-owned patterns do
 /// not enter this table.
 fn validate_complete_pattern_types(
-    runtime_owners: &HirRuntimeSemanticReachability<'_>,
+    runtime_owners: RuntimeSemanticOwnerSet<'_>,
     pattern_types: &BTreeMap<PatternId, RuntimeNormalizedType>,
 ) -> Result<(), RuntimeSemanticFactsError> {
     for pattern in runtime_owners.patterns() {
@@ -4181,7 +5006,7 @@ fn validate_complete_pattern_types(
 }
 
 fn require_runtime_expression_owner(
-    runtime_owners: &HirRuntimeSemanticReachability<'_>,
+    runtime_owners: RuntimeSemanticOwnerSet<'_>,
     expression: ExprId,
     family: RuntimeSemanticFactFamily,
 ) -> Result<(), RuntimeSemanticFactsError> {
@@ -4193,7 +5018,7 @@ fn require_runtime_expression_owner(
 }
 
 fn require_runtime_statement_owner(
-    runtime_owners: &HirRuntimeSemanticReachability<'_>,
+    runtime_owners: RuntimeSemanticOwnerSet<'_>,
     statement: StmtId,
     family: RuntimeSemanticFactFamily,
 ) -> Result<(), RuntimeSemanticFactsError> {
@@ -4205,7 +5030,7 @@ fn require_runtime_statement_owner(
 }
 
 fn require_runtime_pattern_owner(
-    runtime_owners: &HirRuntimeSemanticReachability<'_>,
+    runtime_owners: RuntimeSemanticOwnerSet<'_>,
     pattern: PatternId,
     family: RuntimeSemanticFactFamily,
 ) -> Result<(), RuntimeSemanticFactsError> {
@@ -4217,7 +5042,7 @@ fn require_runtime_pattern_owner(
 }
 
 fn require_runtime_type_owner(
-    runtime_owners: &HirRuntimeSemanticReachability<'_>,
+    runtime_owners: RuntimeSemanticOwnerSet<'_>,
     ty: TypeId,
 ) -> Result<(), RuntimeSemanticFactsError> {
     if runtime_owners.contains_type(ty) {
@@ -4228,7 +5053,7 @@ fn require_runtime_type_owner(
 }
 
 fn require_runtime_capture_owner(
-    runtime_owners: &HirRuntimeSemanticReachability<'_>,
+    runtime_owners: RuntimeSemanticOwnerSet<'_>,
     capture: CaptureId,
 ) -> Result<(), RuntimeSemanticFactsError> {
     if runtime_owners.contains_capture(capture) {
@@ -4239,7 +5064,7 @@ fn require_runtime_capture_owner(
 }
 
 fn require_runtime_local_reference(
-    runtime_owners: &HirRuntimeSemanticReachability<'_>,
+    runtime_owners: RuntimeSemanticOwnerSet<'_>,
     local: LocalId,
 ) -> Result<(), RuntimeSemanticFactsError> {
     if runtime_owners.contains_local(local) {
@@ -4308,7 +5133,7 @@ fn resolve_pattern<'project>(
 
 fn require_expr_family(
     modules: &BTreeMap<HirModuleId, &HirModule>,
-    runtime_owners: &HirRuntimeSemanticReachability<'_>,
+    runtime_owners: RuntimeSemanticOwnerSet<'_>,
     expression: ExprId,
     expected: RuntimeSemanticFactFamily,
     predicate: impl FnOnce(&HirExprKind) -> bool,
@@ -4327,7 +5152,7 @@ fn require_expr_family(
 
 fn require_stmt_family(
     modules: &BTreeMap<HirModuleId, &HirModule>,
-    runtime_owners: &HirRuntimeSemanticReachability<'_>,
+    runtime_owners: RuntimeSemanticOwnerSet<'_>,
     statement: StmtId,
     expected: RuntimeSemanticFactFamily,
     predicate: impl FnOnce(&HirStmtKind) -> bool,
@@ -4346,7 +5171,7 @@ fn require_stmt_family(
 
 fn require_pattern_family(
     modules: &BTreeMap<HirModuleId, &HirModule>,
-    runtime_owners: &HirRuntimeSemanticReachability<'_>,
+    runtime_owners: RuntimeSemanticOwnerSet<'_>,
     pattern: PatternId,
     expected: RuntimeSemanticFactFamily,
     predicate: impl FnOnce(&HirPatternKind) -> bool,
@@ -4362,7 +5187,7 @@ fn require_pattern_family(
 
 fn validate_resolved_value(
     modules: &BTreeMap<HirModuleId, &HirModule>,
-    runtime_owners: &HirRuntimeSemanticReachability<'_>,
+    runtime_owners: RuntimeSemanticOwnerSet<'_>,
     value: &RuntimeResolvedValue,
 ) -> Result<(), RuntimeSemanticFactsError> {
     match value {
@@ -4449,18 +5274,14 @@ fn validate_assignment(
     {
         return Err(RuntimeSemanticFactsError::InvalidAssignmentFact { statement });
     }
-    let RuntimeResolvedSelect::Field {
-        nominal: Some(nominal),
-        ordinal: Some(ordinal),
-        name,
-    } = selects
+    let RuntimeResolvedSelect::Field { owner, field } = selects
         .get(target)
         .ok_or(RuntimeSemanticFactsError::InvalidAssignmentFact { statement })?
     else {
         return Err(RuntimeSemanticFactsError::InvalidAssignmentFact { statement });
     };
-    if nominal != assignment.nominal()
-        || *ordinal != assignment.field_ordinal()
+    if *owner != assignment.nominal().identity()
+        || *field != assignment.field()
         || expression_types.get(target) != Some(assignment.field_type())
         || expression_types.get(value) != Some(assignment.value_type())
         || assignment.field_type() != assignment.value_type()
@@ -4476,25 +5297,7 @@ fn validate_assignment(
     validate_nominal(modules, assignment.nominal())?;
     validate_normalized_type(modules, assignment.field_type())?;
     validate_normalized_type(modules, assignment.value_type())?;
-    let HirItemKind::Struct(declaration) =
-        resolve_item(modules, assignment.nominal().owner())?.kind()
-    else {
-        return Err(RuntimeSemanticFactsError::InvalidAssignmentFact { statement });
-    };
-    let valid_field = usize::try_from(assignment.field_ordinal())
-        .ok()
-        .and_then(|ordinal| declaration.fields().get(ordinal))
-        .is_some_and(|field| {
-            field
-                .name()
-                .resolved()
-                .is_some_and(|field_name| field_name.as_str() == name.as_str())
-        });
-    if valid_field {
-        Ok(())
-    } else {
-        Err(RuntimeSemanticFactsError::InvalidAssignmentFact { statement })
-    }
+    Ok(())
 }
 
 fn validate_evaluated_effect(
@@ -4533,18 +5336,15 @@ fn validate_evaluated_effect(
 }
 
 fn validate_select(
-    modules: &BTreeMap<HirModuleId, &HirModule>,
+    _modules: &BTreeMap<HirModuleId, &HirModule>,
     select: &RuntimeResolvedSelect,
 ) -> Result<(), RuntimeSemanticFactsError> {
     match select {
-        RuntimeResolvedSelect::Method { .. }
+        RuntimeResolvedSelect::Method
         | RuntimeResolvedSelect::AgentField { .. }
         | RuntimeResolvedSelect::ProgressField { .. }
-        | RuntimeResolvedSelect::TupleElement { .. } => Ok(()),
-        RuntimeResolvedSelect::Field { nominal, .. }
-        | RuntimeResolvedSelect::RecordElement { nominal, .. } => nominal
-            .as_ref()
-            .map_or(Ok(()), |nominal| validate_nominal(modules, nominal)),
+        | RuntimeResolvedSelect::Field { .. }
+        | RuntimeResolvedSelect::OpaqueRecord { .. } => Ok(()),
     }
 }
 
@@ -4559,8 +5359,15 @@ fn validate_variant(
         .selected_name()
         .map_err(|_| RuntimeSemanticFactsError::WrongVariantIdentity)?;
     match variant.owner() {
-        RuntimeVariantOwner::Project { nominal, cases } => {
+        RuntimeVariantOwner::Project {
+            nominal,
+            arguments,
+            cases,
+        } => {
             validate_nominal(modules, nominal)?;
+            for argument in arguments {
+                validate_normalized_type(modules, argument)?;
+            }
             validate_normalized_variant_payloads(modules, cases)?;
             let HirItemKind::Enum(declaration) = resolve_item(modules, nominal.owner())?.kind()
             else {
@@ -4767,93 +5574,263 @@ fn validate_normalized_type(
 
 fn validate_call(
     modules: &BTreeMap<HirModuleId, &HirModule>,
+    expression_types: &BTreeMap<ExprId, RuntimeNormalizedType>,
+    expression: ExprId,
     hir_call: &HirCallExpr,
     call: &RuntimeResolvedCall,
 ) -> Result<(), RuntimeSemanticFactsError> {
-    match call.target() {
-        RuntimeResolvedCallTarget::Declaration(callable) => validate_callable(modules, callable)?,
-        RuntimeResolvedCallTarget::Host(host) => {
+    match call.dispatch() {
+        RuntimeResolvedCallDispatch::Static(RuntimeResolvedStaticCallTarget::Declaration(
+            callable,
+        )) => validate_callable(modules, callable)?,
+        RuntimeResolvedCallDispatch::Static(RuntimeResolvedStaticCallTarget::Host(host)) => {
             if let RuntimeResolvedHostCallOwner::ExternCapability(callable) = host.owner() {
                 validate_callable(modules, callable)?;
             }
         }
-        RuntimeResolvedCallTarget::FunctionValue => {
-            if hir_call.callee().value_expression().is_none() {
+        RuntimeResolvedCallDispatch::Value { callee } => {
+            if !matches!(
+                hir_call.callee(),
+                arcweft_lang_hir::expr::HirCallCallee::Value { value } if value == callee
+            ) {
                 return Err(RuntimeSemanticFactsError::MissingFunctionValueCallee);
             }
         }
-        RuntimeResolvedCallTarget::Variant(variant) => validate_variant(modules, variant)?,
-        RuntimeResolvedCallTarget::Agent(_)
-        | RuntimeResolvedCallTarget::AgentProbeComparison(_)
-        | RuntimeResolvedCallTarget::AgentDiagnosticsHasError
-        | RuntimeResolvedCallTarget::Reduction(_)
-        | RuntimeResolvedCallTarget::Intrinsic(_)
-        | RuntimeResolvedCallTarget::TraitMethod { .. }
-        | RuntimeResolvedCallTarget::Registered(_) => {}
+        RuntimeResolvedCallDispatch::Static(RuntimeResolvedStaticCallTarget::Variant(variant)) => {
+            validate_variant(modules, variant)?;
+        }
+        RuntimeResolvedCallDispatch::Static(
+            RuntimeResolvedStaticCallTarget::Agent(_)
+            | RuntimeResolvedStaticCallTarget::AgentProbeComparison(_)
+            | RuntimeResolvedStaticCallTarget::AgentDiagnosticsHasError
+            | RuntimeResolvedStaticCallTarget::Reduction(_)
+            | RuntimeResolvedStaticCallTarget::Intrinsic(_)
+            | RuntimeResolvedStaticCallTarget::TraitMethod { .. }
+            | RuntimeResolvedStaticCallTarget::Registered(_),
+        ) => {}
     }
 
+    let module = modules
+        .get(&expression.module())
+        .copied()
+        .ok_or(RuntimeSemanticFactsError::InvalidRuntimeCallDisposition { expression })?;
     let count = hir_call.arguments().len();
-    let mut seen = BTreeSet::new();
-    for argument in call.arguments() {
-        if let RuntimeResolvedCallArgument::Authored { ordinal, .. } = argument
-            && usize::try_from(*ordinal).map_or(true, |ordinal| ordinal >= count)
-        {
-            return Err(RuntimeSemanticFactsError::InvalidCallArgumentOrdinal {
-                ordinal: *ordinal,
-                count,
-            });
-        }
-        if !seen.insert(argument.clone()) {
+    let mut origins = BTreeSet::new();
+    let expected_receiver = module
+        .resolve_call_value_receiver(hir_call)
+        .map_err(|_| RuntimeSemanticFactsError::InvalidRuntimeCallDisposition { expression })?;
+    for operand in call.operands() {
+        if !origins.insert(operand.origin().clone()) {
             return Err(RuntimeSemanticFactsError::DuplicateCallArgument);
         }
+        if !runtime_call_projection_matches_type(operand) {
+            return Err(RuntimeSemanticFactsError::InvalidRuntimeCallDisposition { expression });
+        }
+        match operand.origin() {
+            RuntimeResolvedCallOperandOrigin::Receiver => {
+                let RuntimeResolvedCallOperandSource::Expression(source) = operand.source() else {
+                    return Err(RuntimeSemanticFactsError::InvalidRuntimeCallDisposition {
+                        expression,
+                    });
+                };
+                if expected_receiver != Some(source)
+                    || !matches!(
+                        operand.binding(),
+                        RuntimeResolvedCallOperandBinding::Positional
+                    )
+                    || !matches!(
+                        operand.projection(),
+                        RuntimeResolvedCallOperandProjection::Scalar
+                    )
+                    || expression_types.get(&source) != Some(operand.ty())
+                {
+                    return Err(RuntimeSemanticFactsError::MissingRuntimeCallReceiver {
+                        expression,
+                    });
+                }
+            }
+            RuntimeResolvedCallOperandOrigin::Argument { argument, .. } => {
+                let ordinal = usize::try_from(*argument).map_err(|_| {
+                    RuntimeSemanticFactsError::InvalidCallArgumentOrdinal {
+                        ordinal: *argument,
+                        count,
+                    }
+                })?;
+                let authored = hir_call.arguments().get(ordinal).ok_or(
+                    RuntimeSemanticFactsError::InvalidCallArgumentOrdinal {
+                        ordinal: *argument,
+                        count,
+                    },
+                )?;
+                match operand.source() {
+                    RuntimeResolvedCallOperandSource::Expression(source) => {
+                        if source != authored.value()
+                            || expression_types.get(&source) != Some(operand.ty())
+                        {
+                            return Err(RuntimeSemanticFactsError::InvalidRuntimeCallDisposition {
+                                expression,
+                            });
+                        }
+                    }
+                    RuntimeResolvedCallOperandSource::CompactNumericElement {
+                        sequence,
+                        ordinal,
+                    } => {
+                        if sequence != authored.value() || !expression_types.contains_key(&sequence)
+                        {
+                            return Err(RuntimeSemanticFactsError::InvalidRuntimeCallDisposition {
+                                expression,
+                            });
+                        }
+                        let sequence_expression = module.resolve_expr(sequence).map_err(|_| {
+                            RuntimeSemanticFactsError::InvalidRuntimeCallDisposition { expression }
+                        })?;
+                        let HirExprKind::NumericBracketSequence(sequence) =
+                            sequence_expression.kind()
+                        else {
+                            return Err(RuntimeSemanticFactsError::InvalidRuntimeCallDisposition {
+                                expression,
+                            });
+                        };
+                        if usize::try_from(ordinal)
+                            .map_or(true, |ordinal| ordinal >= sequence.elements().len())
+                        {
+                            return Err(RuntimeSemanticFactsError::InvalidCallArgumentOrdinal {
+                                ordinal,
+                                count: sequence.elements().len(),
+                            });
+                        }
+                    }
+                }
+                let binding_matches = match authored {
+                    HirCallArgument::Positional { .. } => matches!(
+                        operand.binding(),
+                        RuntimeResolvedCallOperandBinding::Positional
+                    ),
+                    HirCallArgument::Named { .. } => matches!(
+                        operand.binding(),
+                        RuntimeResolvedCallOperandBinding::Named(name)
+                            if authored.resolved_name().is_some_and(|resolved| resolved.as_str() == name)
+                    ),
+                    HirCallArgument::Spread { .. } => matches!(
+                        operand.binding(),
+                        RuntimeResolvedCallOperandBinding::Positional
+                    ),
+                };
+                if !binding_matches {
+                    return Err(RuntimeSemanticFactsError::InvalidRuntimeCallDisposition {
+                        expression,
+                    });
+                }
+                if matches!(
+                    operand.projection(),
+                    RuntimeResolvedCallOperandProjection::SpreadContainer(_)
+                ) && !matches!(authored, HirCallArgument::Spread { .. })
+                {
+                    return Err(RuntimeSemanticFactsError::InvalidRuntimeCallDisposition {
+                        expression,
+                    });
+                }
+            }
+        }
     }
-    if matches!(call.target(), RuntimeResolvedCallTarget::Reduction(_))
-        && (!matches!(
-            call.arguments(),
-            [RuntimeResolvedCallArgument::Authored { ordinal: 0, .. }]
-        ) || call.result() != RuntimeCallResultShape::Value)
-    {
-        return Err(RuntimeSemanticFactsError::InvalidReductionConstructorCall);
-    }
-    match call.target() {
-        RuntimeResolvedCallTarget::Agent(_)
-            if call
-                .arguments()
-                .iter()
-                .any(|argument| matches!(argument, RuntimeResolvedCallArgument::Receiver)) =>
+    match call.dispatch() {
+        RuntimeResolvedCallDispatch::Static(RuntimeResolvedStaticCallTarget::Reduction(_))
+            if (!matches!(
+                call.operands(),
+                [RuntimeResolvedCallOperand {
+                    origin: RuntimeResolvedCallOperandOrigin::Argument {
+                        argument: 0,
+                        slot: 0
+                    },
+                    binding: RuntimeResolvedCallOperandBinding::Positional,
+                    projection: RuntimeResolvedCallOperandProjection::Scalar,
+                    ..
+                }]
+            ) || call.result() != RuntimeCallResultShape::Value) =>
+        {
+            return Err(RuntimeSemanticFactsError::InvalidReductionConstructorCall);
+        }
+        RuntimeResolvedCallDispatch::Static(RuntimeResolvedStaticCallTarget::Agent(_))
+            if call.operands().iter().any(|operand| {
+                matches!(operand.origin(), RuntimeResolvedCallOperandOrigin::Receiver)
+            }) =>
         {
             return Err(RuntimeSemanticFactsError::InvalidAgentCallArguments);
         }
-        RuntimeResolvedCallTarget::AgentProbeComparison(_)
-            if !matches!(
-                call.arguments(),
-                [
-                    RuntimeResolvedCallArgument::Receiver,
-                    RuntimeResolvedCallArgument::Authored { ordinal: 0, .. }
-                ]
-            ) || call.result() != RuntimeCallResultShape::Value =>
+        RuntimeResolvedCallDispatch::Static(
+            RuntimeResolvedStaticCallTarget::AgentProbeComparison(_),
+        ) if !matches!(
+            call.operands(),
+            [
+                RuntimeResolvedCallOperand {
+                    origin: RuntimeResolvedCallOperandOrigin::Receiver,
+                    ..
+                },
+                RuntimeResolvedCallOperand {
+                    origin: RuntimeResolvedCallOperandOrigin::Argument { argument: 0, .. },
+                    ..
+                }
+            ]
+        ) || call.result() != RuntimeCallResultShape::Value =>
         {
             return Err(RuntimeSemanticFactsError::InvalidAgentCallArguments);
         }
-        RuntimeResolvedCallTarget::AgentDiagnosticsHasError
-            if !matches!(call.arguments(), [RuntimeResolvedCallArgument::Receiver])
-                || call.result() != RuntimeCallResultShape::Value =>
+        RuntimeResolvedCallDispatch::Static(
+            RuntimeResolvedStaticCallTarget::AgentDiagnosticsHasError,
+        ) if !matches!(
+            call.operands(),
+            [RuntimeResolvedCallOperand {
+                origin: RuntimeResolvedCallOperandOrigin::Receiver,
+                ..
+            }]
+        ) || call.result() != RuntimeCallResultShape::Value =>
         {
             return Err(RuntimeSemanticFactsError::InvalidAgentCallArguments);
         }
-        RuntimeResolvedCallTarget::Agent(_)
-        | RuntimeResolvedCallTarget::AgentProbeComparison(_)
-        | RuntimeResolvedCallTarget::AgentDiagnosticsHasError
-        | RuntimeResolvedCallTarget::Intrinsic(_)
-        | RuntimeResolvedCallTarget::Declaration(_)
-        | RuntimeResolvedCallTarget::Variant(_)
-        | RuntimeResolvedCallTarget::Reduction(_)
-        | RuntimeResolvedCallTarget::FunctionValue
-        | RuntimeResolvedCallTarget::TraitMethod { .. }
-        | RuntimeResolvedCallTarget::Registered(_)
-        | RuntimeResolvedCallTarget::Host(_) => {}
+        _ => {}
     }
     Ok(())
+}
+
+fn runtime_call_projection_matches_type(operand: &RuntimeResolvedCallOperand) -> bool {
+    match operand.projection() {
+        RuntimeResolvedCallOperandProjection::Scalar => true,
+        RuntimeResolvedCallOperandProjection::SpreadContainer(container) => {
+            match (container, operand.ty().shape()) {
+                (
+                    RuntimeResolvedSpreadContainer::Vec,
+                    RuntimeTypeShape::Sequence {
+                        kind: RuntimeSequenceKind::Vec,
+                        ..
+                    },
+                )
+                | (
+                    RuntimeResolvedSpreadContainer::Seq,
+                    RuntimeTypeShape::Sequence {
+                        kind: RuntimeSequenceKind::Seq,
+                        ..
+                    },
+                )
+                | (
+                    RuntimeResolvedSpreadContainer::Slice,
+                    RuntimeTypeShape::Sequence {
+                        kind: RuntimeSequenceKind::Slice,
+                        ..
+                    },
+                ) => true,
+                (
+                    RuntimeResolvedSpreadContainer::Array { len },
+                    RuntimeTypeShape::Array { length, .. },
+                ) => len == length,
+                (
+                    RuntimeResolvedSpreadContainer::MapValue { key, .. },
+                    RuntimeTypeShape::Map { key: actual, .. },
+                ) => key == actual.as_ref(),
+                _ => false,
+            }
+        }
+    }
 }
 
 fn validate_callable(
@@ -4927,7 +5904,6 @@ fn validate_nominal_record(
     record: &RuntimeResolvedNominalRecord,
 ) -> Result<(), RuntimeSemanticFactsError> {
     let nominal = record.nominal();
-    let item = resolve_item(modules, nominal.owner())?;
     let arcweft_lang_hir::symbol::nominal::ProjectNominalDeclarationKind::Struct =
         nominal.declaration().kind()
     else {
@@ -4935,40 +5911,121 @@ fn validate_nominal_record(
             item: nominal.owner(),
         });
     };
-    let HirItemKind::Struct(declaration) = item.kind() else {
-        return Err(RuntimeSemanticFactsError::WrongNominalRecordItemFamily {
-            item: nominal.owner(),
-        });
-    };
+    validate_nominal(modules, nominal)
+}
 
-    let layout = Arc::clone(record.layout());
-    if layout.len() != declaration.fields().len() {
-        return Err(RuntimeSemanticFactsError::NominalRecordFieldCount {
-            item: nominal.owner(),
-            expected: declaration.fields().len(),
-            actual: layout.len(),
-        });
-    }
-    for (ordinal, (expected, actual)) in
-        declaration.fields().iter().zip(layout.fields()).enumerate()
-    {
-        let Some(expected) = expected.name().resolved() else {
-            return Err(
-                RuntimeSemanticFactsError::UnrepresentableNominalRecordField {
-                    item: nominal.owner(),
-                    ordinal,
-                    name: actual.name().to_owned(),
-                },
-            );
-        };
-        if expected.as_str() != actual.name() {
-            return Err(RuntimeSemanticFactsError::NominalRecordFieldName {
-                item: nominal.owner(),
-                ordinal,
-                expected: expected.as_str().to_owned(),
-                actual: actual.name().to_owned(),
+fn validate_record_expression_fact(
+    modules: &BTreeMap<HirModuleId, &HirModule>,
+    owner: ExprId,
+    fact: &RuntimeRecordExpressionFact,
+) -> Result<(), RuntimeSemanticFactsError> {
+    validate_nominal_record(modules, fact.nominal())?;
+    let expression = resolve_expr(modules, owner)?;
+    let authored = match expression {
+        HirExprKind::Record(record) => record.fields(),
+        HirExprKind::RecordLiteral(record) => record.fields(),
+        _ => {
+            return Err(RuntimeSemanticFactsError::WrongExpressionFamily {
+                expression: owner,
+                expected: RuntimeSemanticFactFamily::NominalRecord,
             });
         }
+    };
+    if authored.len() != fact.fields().len() {
+        return Err(RuntimeSemanticFactsError::WrongExpressionFamily {
+            expression: owner,
+            expected: RuntimeSemanticFactFamily::NominalRecord,
+        });
+    }
+    let sources_match = authored
+        .iter()
+        .zip(fact.fields())
+        .all(|(authored, checked)| {
+            matches!(
+                (authored, checked.source()),
+                (
+                    HirRecordField::Explicit { value, .. },
+                    RuntimeRecordExpressionSource::Expression(checked)
+                ) if *value == checked
+            ) || matches!(
+                (authored, checked.source()),
+                (
+                    HirRecordField::Shorthand { local, .. },
+                    RuntimeRecordExpressionSource::Binding(checked)
+                ) if *local == checked
+            )
+        });
+    sources_match
+        .then_some(())
+        .ok_or(RuntimeSemanticFactsError::WrongExpressionFamily {
+            expression: owner,
+            expected: RuntimeSemanticFactFamily::NominalRecord,
+        })
+}
+
+fn validate_record_pattern_fact(
+    modules: &BTreeMap<HirModuleId, &HirModule>,
+    owner: PatternId,
+    fact: &RuntimeRecordPatternFact,
+) -> Result<(), RuntimeSemanticFactsError> {
+    validate_nominal_record(modules, fact.nominal())?;
+    let HirPatternKind::Record { fields, .. } = resolve_pattern(modules, owner)? else {
+        return Err(RuntimeSemanticFactsError::WrongPatternFamily {
+            pattern: owner,
+            expected: RuntimeSemanticFactFamily::PatternNominalRecord,
+        });
+    };
+    let mut checked = fact.fields().iter();
+    let mut rest = None;
+    for authored in fields {
+        match authored {
+            HirPatternField::Explicit { pattern, .. } => {
+                let Some(projected) = checked.next() else {
+                    return Err(RuntimeSemanticFactsError::WrongPatternFamily {
+                        pattern: owner,
+                        expected: RuntimeSemanticFactFamily::PatternNominalRecord,
+                    });
+                };
+                if projected.source() != RuntimeRecordPatternSource::Pattern(*pattern) {
+                    return Err(RuntimeSemanticFactsError::WrongPatternFamily {
+                        pattern: owner,
+                        expected: RuntimeSemanticFactFamily::PatternNominalRecord,
+                    });
+                }
+            }
+            HirPatternField::Shorthand { local, .. } => {
+                let Some(projected) = checked.next() else {
+                    return Err(RuntimeSemanticFactsError::WrongPatternFamily {
+                        pattern: owner,
+                        expected: RuntimeSemanticFactFamily::PatternNominalRecord,
+                    });
+                };
+                if projected.source() != RuntimeRecordPatternSource::Binding(*local) {
+                    return Err(RuntimeSemanticFactsError::WrongPatternFamily {
+                        pattern: owner,
+                        expected: RuntimeSemanticFactFamily::PatternNominalRecord,
+                    });
+                }
+            }
+            HirPatternField::Rest { binding } if rest.is_none() => {
+                rest = Some(match binding {
+                    Some(local) => RuntimeRecordPatternRest::Binding(*local),
+                    None => RuntimeRecordPatternRest::Ignore,
+                });
+            }
+            HirPatternField::Rest { .. } | HirPatternField::Invalid { .. } => {
+                return Err(RuntimeSemanticFactsError::WrongPatternFamily {
+                    pattern: owner,
+                    expected: RuntimeSemanticFactFamily::PatternNominalRecord,
+                });
+            }
+        }
+    }
+    if checked.next().is_some() || fact.rest() != rest.unwrap_or(RuntimeRecordPatternRest::Absent) {
+        return Err(RuntimeSemanticFactsError::WrongPatternFamily {
+            pattern: owner,
+            expected: RuntimeSemanticFactFamily::PatternNominalRecord,
+        });
     }
     Ok(())
 }

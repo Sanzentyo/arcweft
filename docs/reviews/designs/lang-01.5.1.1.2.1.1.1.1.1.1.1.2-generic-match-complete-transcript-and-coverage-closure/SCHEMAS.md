@@ -16,8 +16,10 @@ The following words are normative:
   nominal authority;
 - **same-cut owner**: a purpose-built opaque semantic identity produced while
   the checked fact is constructed, before transcript construction;
-- **coordinate**: a declaration-rooted semantic path composed only from closed
-  role tags and checked ordinals;
+- **coordinate**: an accepted-rooted semantic path. Its canonical prefix is
+  `0x00 || accepted_declaration_semantic_id` or
+  `0x01 || accepted_item_semantic_id`; the remainder is composed only from
+  closed role tags and checked ordinals;
 - **source ordinal**: order in an accepted typed row; it is not an arena ID;
 - **diagnostic spelling**: a name retained only for lookup or rendering and
   explicitly excluded from transcript authority.
@@ -30,8 +32,9 @@ names or recreate an owner that the checker failed to retain.
 ```rust
 pub(crate) struct CheckedMatch {
     lookup: CheckedMatchRef,             // private, non-semantic
-    owner: AcceptedDeclarationId,        // existing callable join
-    path: StableExpressionCoordinate,    // declaration-rooted
+    root: AcceptedSemanticRoot,          // Declaration for callable, Item for item-owned Match
+    callable_owner: Option<AcceptedDeclarationId>, // existing join for declaration roots
+    path: StableExpressionCoordinate,    // accepted-rooted
     scrutinee: CheckedExpressionSemanticDigest,
     scrutinee_type: SemanticTypeDigest,
     arms: Box<[CheckedMatchArm]>,

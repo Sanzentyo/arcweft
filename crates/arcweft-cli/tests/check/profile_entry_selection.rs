@@ -1,11 +1,13 @@
 fn profiled_cli_source() -> &'static str {
     r"
-mod crate
+extern capability cli {
+    fn args() -> Vec<String>
+}
 
 entry cli @entry.cli.main { goto @flow.main }
 
-flow main(argc: i32) {
-    return argc
+flow main() {
+    return cli.args()
 }
 "
 }
@@ -115,6 +117,8 @@ fn cli_test_and_bench_profiles_use_profile_sources() {
         .arg("--profile")
         .arg("cli.main")
         .arg("--json")
+        .arg("--steps")
+        .arg("2")
         .arg("--")
         .arg("alice")
         .output()
@@ -123,6 +127,19 @@ fn cli_test_and_bench_profiles_use_profile_sources() {
         cli.status.success(),
         "cli profile should run, stderr: {}",
         String::from_utf8_lossy(&cli.stderr)
+    );
+    let cli_json: serde_json::Value =
+        serde_json::from_slice(&cli.stdout).expect("cli profile output is structured JSON");
+    assert!(
+        cli_json["final_status"]
+            .as_str()
+            .is_some_and(|status| status.contains("seq/values/1")),
+        "cli profile should return the supplied args sequence with one item: {cli_json}"
+    );
+    assert_eq!(
+        cli_json["native_io"]["completed_tasks"],
+        serde_json::json!(1),
+        "cli.args should complete through the standard host adapter: {cli_json}"
     );
 
     let test = Command::new(env!("CARGO_BIN_EXE_arcw"))

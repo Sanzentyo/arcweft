@@ -12,6 +12,7 @@ use super::{
 use arcweft_core::entry::{
     RuntimeCommandConstructorId, RuntimeCommandContract, RuntimeCommandTargetId,
 };
+use arcweft_core::pattern::RuntimeCheckedType;
 use arcweft_core::step::RuntimeHostCallMode;
 use std::collections::{BTreeMap, BTreeSet};
 use thiserror::Error;
@@ -68,6 +69,7 @@ pub struct RootCommandHostCallBinding {
     target: RuntimeCommandTargetId,
     endpoint: RootCommandHostCallEndpoint,
     arguments: Vec<RootCommandHostArgument>,
+    result: RuntimeCheckedType,
     result_route: RootCommandHostResultRoute,
 }
 
@@ -78,6 +80,7 @@ impl RootCommandHostCallBinding {
         target: RuntimeCommandTargetId,
         endpoint: RootCommandHostCallEndpoint,
         arguments: impl IntoIterator<Item = RootCommandHostArgument>,
+        result: RuntimeCheckedType,
         result_route: RootCommandHostResultRoute,
     ) -> Self {
         Self {
@@ -85,6 +88,7 @@ impl RootCommandHostCallBinding {
             target,
             endpoint,
             arguments: arguments.into_iter().collect(),
+            result,
             result_route,
         }
     }
@@ -195,8 +199,10 @@ impl RootCommandHostCallCatalog {
                 public_id: binding.endpoint.public_id.clone(),
                 capability: binding.endpoint.capability.clone(),
                 operation: binding.endpoint.operation.clone(),
+                contract: None,
                 args,
                 named_args: Vec::new(),
+                result: binding.result.clone(),
                 mode: binding.endpoint.mode,
                 deterministic: binding.endpoint.deterministic,
             },

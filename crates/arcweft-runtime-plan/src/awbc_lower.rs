@@ -136,6 +136,7 @@ impl<'a> AwbcLowerer<'a> {
         } = self;
         let mut inventory = AwbcInventory::new(source_label, options);
         inventory.intern_runtime_primitives();
+        pattern::preflight_plan_types(&mut inventory, plan).map_err(AwbcLowerError::Lowering)?;
         inventory.intern_dialogue_content_catalog(dialogue_content);
 
         let mut diagnostics = {
@@ -148,8 +149,12 @@ impl<'a> AwbcLowerer<'a> {
             flow_lowerer.into_diagnostics()
         };
         expr::lower_pending_closures(&mut inventory, plan);
+        inventory.lower_pure_program_bindings(plan);
 
         diagnostics.extend(inventory.take_diagnostics());
+        if diagnostics.iter().any(AwbcLowerDiagnostic::is_error) {
+            return Err(AwbcLowerError::Lowering(diagnostics));
+        }
         let mut program = inventory.finish();
         if options.emit_source_map && program.source_map.is_empty() {
             let source_file = program
@@ -176,9 +181,6 @@ impl<'a> AwbcLowerer<'a> {
                 .map_err(AwbcLowerError::Verify)?;
         }
         let stats = AwbcLowerStats::from_program(&program);
-        if diagnostics.iter().any(AwbcLowerDiagnostic::is_error) {
-            return Err(AwbcLowerError::Lowering(diagnostics));
-        }
         Ok(AwbcLowerReport {
             program,
             stats,

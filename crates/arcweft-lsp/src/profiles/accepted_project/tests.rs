@@ -195,7 +195,7 @@ fn exact_root_dependency_and_declaration_free_hir_are_retained() {
 }
 
 #[test]
-fn compiled_semantic_authority_requires_one_checked_catalog_generation() {
+fn compiled_semantic_authority_is_admitted_only_as_one_compiled_generation() {
     let first_document = document(
         "arcweft-project://accepted/semantic-authority-first.arcw",
         "fn first() {}\n",
@@ -207,31 +207,17 @@ fn compiled_semantic_authority_requires_one_checked_catalog_generation() {
     let first = compiled_project(&[(CanonicalModulePath::crate_root(), first_document)]);
     let second = compiled_project(&[(CanonicalModulePath::crate_root(), second_document)]);
 
-    validate_compiled_semantic_authority(
-        first.final_analysis(),
-        first.semantic_index(),
-        first.registered_world(),
-        first.project_symbols(),
-    )
-    .expect("one compiled generation retains its exact semantic authority");
-
-    assert!(matches!(
-        validate_compiled_semantic_authority(
-            first.final_analysis(),
-            second.semantic_index(),
-            first.registered_world(),
-            first.project_symbols(),
-        ),
-        Err(CompiledSemanticAuthorityError::CatalogLeaseMismatch)
+    validate_compiled_semantic_authority(&first)
+        .expect("first compiled generation retains its exact semantic authority");
+    validate_compiled_semantic_authority(&second)
+        .expect("second compiled generation retains its exact semantic authority");
+    assert!(!Arc::ptr_eq(
+        first.final_analysis().checked_callables(),
+        second.final_analysis().checked_callables(),
     ));
-    assert!(matches!(
-        validate_compiled_semantic_authority(
-            first.final_analysis(),
-            first.semantic_index(),
-            second.registered_world(),
-            second.project_symbols(),
-        ),
-        Err(CompiledSemanticAuthorityError::CatalogAuthority(_))
+    assert!(!Arc::ptr_eq(
+        first.semantic_index().checked_callables(),
+        second.semantic_index().checked_callables(),
     ));
 }
 

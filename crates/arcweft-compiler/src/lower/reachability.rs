@@ -3,7 +3,7 @@ use std::collections::BTreeSet;
 use arcweft_lang_hir::{
     expr::HirExprKind,
     identity::{ExprId, ItemId, StmtId},
-    item::{HirEntryMember, HirEntryTarget, HirItemKind},
+    item::HirItemKind,
     project::{
         HirExecutableProjectView, HirRuntimeCallCalleeDisposition, HirRuntimeEmissionMode,
         HirRuntimeExecutableOwner, HirRuntimeExpressionTypeDisposition, HirRuntimeReachabilityEdge,
@@ -12,15 +12,10 @@ use arcweft_lang_hir::{
         HirRuntimeSemanticReachability, HirRuntimeSemanticReachabilityInput,
     },
     scope::HirScopeOwner,
-    source_index::{
-        HirEntrySourcePart, HirItemSourceRole, HirSourcePresence, HirSourceQuery, HirSourceSite,
-    },
-    symbol::{
-        CallableDeclarationKey, CallableDeclarationOwner, ProjectSymbolTable, ResolvedProjectSymbol,
-    },
+    symbol::{CallableDeclarationKey, ProjectSymbolTable},
 };
 use arcweft_lang_sema::{
-    callable::{CallPoison, CallTargetFact, CallableInstantiation, SignatureOrigin},
+    callable::{CheckedCallCalleeExecution, CheckedCallReceiverProjection, ResolvedCallableOrigin},
     entry::{CheckedEntryBinding, CheckedEntryCatalog},
     final_analysis::{
         CheckedChoice, CheckedExpressionResolution, CheckedItemRole,
@@ -66,8 +61,6 @@ pub enum RuntimeReachabilityProjectionError {
     MissingCheckedItem { owner: ItemId },
     #[error("reachable executable {owner:?} has no deterministic root path")]
     MissingReachabilityPath { owner: HirRuntimeExecutableOwner },
-    #[error("checked Entry {entry:?} has no exact executable edge")]
-    InvalidCheckedEntryEdge { entry: ItemId },
     #[error(
         "reachable ordinary function {owner:?} cannot be emitted by the current runtime: {reason:?}"
     )]
@@ -87,9 +80,7 @@ impl RuntimeReachabilityProjectionError {
             Self::MissingSelectedEntry
             | Self::MissingCheckedItem { .. }
             | Self::MissingReachabilityPath { .. } => "compiler.runtime_reachability.invalid_root",
-            Self::MissingCheckedEdge { .. } | Self::InvalidCheckedEntryEdge { .. } => {
-                "compiler.runtime_reachability.missing_checked_edge"
-            }
+            Self::MissingCheckedEdge { .. } => "compiler.runtime_reachability.missing_checked_edge",
             Self::MismatchedCheckedEdge { .. } | Self::UnexpectedCheckedEdge { .. } => {
                 "compiler.runtime_reachability.mismatched_checked_edge"
             }
@@ -150,7 +141,6 @@ pub fn project_runtime_reachability<'project>(
             HirRuntimeExecutableOwner::Item(entry.source_item()),
         )
     }));
-
     let mut edges = BTreeSet::new();
     for (call, facts) in analysis.calls() {
         if let Some(edge) = checked_call_edge(project, call, facts, symbols)? {
@@ -170,7 +160,7 @@ pub fn project_runtime_reachability<'project>(
         edges.extend(checked_iteration_edges(statement, iteration));
     }
     for entry in &selected_entries {
-        append_entry_edges(project, entry, symbols, &mut edges)?;
+        append_entry_edges(entry, symbols, &mut edges)?;
     }
 
     let input = HirRuntimeSemanticReachabilityInput::try_new(
@@ -182,6 +172,7 @@ pub fn project_runtime_reachability<'project>(
     )?;
     let reachability = project.runtime_semantic_reachability(
         input,
+        analysis.hir_topology().as_ref(),
         |owner| {
             let expression = analysis.expression(owner)?;
             let arcweft_lang_sema::final_analysis::CheckedExpressionResolution::PostfixBracket(
@@ -204,19 +195,87 @@ pub fn project_runtime_reachability<'project>(
     Ok(reachability)
 }
 
+/// Projects View handler value programs through an execution-owner inventory
+/// that is disjoint from ordinary Flow/Entry roots. Captured View parameters
+/// enter only this transaction and therefore cannot become Flow locals.
+pub(crate) fn project_view_value_program_reachability<'project>(
+    project: HirExecutableProjectView<'project>,
+    symbols: &ProjectSymbolTable,
+    analysis: &FinalSemanticAnalysis,
+    handler_closures: impl IntoIterator<Item = ExprId>,
+) -> Result<HirRuntimeSemanticReachability<'project>, RuntimeReachabilityProjectionError> {
+    analysis.validate_generation(project, symbols)?;
+    let roots = handler_closures
+        .into_iter()
+        .map(|closure| {
+            HirRuntimeReachabilityRoot::new(
+                HirRuntimeReachabilityRootKind::CheckedViewValueProgram,
+                HirRuntimeExecutableOwner::Closure(closure),
+            )
+        })
+        .collect::<BTreeSet<_>>();
+    let mut edges = BTreeSet::new();
+    for (call, facts) in analysis.calls() {
+        if let Some(edge) = checked_call_edge(project, call, facts, symbols)? {
+            edges.insert(edge);
+        }
+    }
+    for (owner, checked) in analysis.expressions() {
+        let CheckedExpressionResolution::Choice(choice) = checked.resolution() else {
+            continue;
+        };
+        edges.extend(checked_choice_edges(owner, choice));
+    }
+    for (statement, checked) in analysis.statements() {
+        let CheckedStatementRole::Iteration(iteration) = checked.role() else {
+            continue;
+        };
+        edges.extend(checked_iteration_edges(statement, iteration));
+    }
+    let input = HirRuntimeSemanticReachabilityInput::try_new(
+        HirRuntimeEmissionMode::CheckAll,
+        symbols.world().clone(),
+        *symbols.revision(),
+        roots.into_iter().collect(),
+        edges.into_iter().collect(),
+    )?;
+    let reachability = project.runtime_semantic_reachability(
+        input,
+        analysis.hir_topology().as_ref(),
+        |owner| {
+            let expression = analysis.expression(owner)?;
+            let CheckedExpressionResolution::PostfixBracket(resolution) = expression.resolution()
+            else {
+                return None;
+            };
+            Some(resolution.candidate())
+        },
+        |owner| call_expression_disposition(project, analysis, owner),
+    )?;
+    validate_checked_executable_edges(project, symbols, analysis, &[], &reachability)?;
+    Ok(reachability)
+}
+
 fn checked_call_edge(
     project: HirExecutableProjectView<'_>,
     call: ExprId,
     facts: &arcweft_lang_sema::callable::CallTargetFacts,
     symbols: &ProjectSymbolTable,
 ) -> Result<Option<HirRuntimeReachabilityEdge>, RuntimeReachabilityProjectionError> {
-    if !is_hir_call(project, call) || facts.poison() != CallPoison::Clean {
+    if !is_hir_call(project, call) {
         return Ok(None);
     }
-    let CallTargetFact::Selected { selected, .. } = facts.target() else {
+    let Some(application) = facts.selected_application() else {
         return Ok(None);
     };
-    let SignatureOrigin::Project { declaration, .. } = selected.origin() else {
+    if !matches!(
+        application.core().callee(),
+        CheckedCallCalleeExecution::Direct
+    ) {
+        return Ok(None);
+    }
+    let selected = application.core().candidates().selected();
+    let ResolvedCallableOrigin::Project { declaration, .. } = selected.origin() else {
         return Ok(None);
     };
     let Some(target) = runtime_owner_for_declaration(symbols, declaration) else {
@@ -379,7 +438,6 @@ fn scope_is_direct_callable_descendant(
 }
 
 fn append_entry_edges(
-    project: HirExecutableProjectView<'_>,
     entry: &CheckedEntryBinding,
     symbols: &ProjectSymbolTable,
     edges: &mut BTreeSet<HirRuntimeReachabilityEdge>,
@@ -402,64 +460,16 @@ fn append_entry_edges(
         CheckedEntryBinding::Agent(entry) => {
             append_entry_callable(source, entry.controller().declaration(), symbols, edges)?;
         }
-        CheckedEntryBinding::Existing(_) => {
-            append_existing_entry_edges(project, source, symbols, edges)?;
+        CheckedEntryBinding::Existing(entry) => {
+            entry.target().visit_flows(|target| {
+                append_entry_declaration(
+                    source,
+                    &CallableDeclarationKey::Flow(target.declaration().clone()),
+                    symbols,
+                    edges,
+                )
+            })?;
         }
-    }
-    Ok(())
-}
-
-fn append_existing_entry_edges(
-    project: HirExecutableProjectView<'_>,
-    entry: ItemId,
-    symbols: &ProjectSymbolTable,
-    edges: &mut BTreeSet<HirRuntimeReachabilityEdge>,
-) -> Result<(), RuntimeReachabilityProjectionError> {
-    let item = project
-        .items()
-        .find(|item| item.id() == entry)
-        .ok_or(RuntimeReachabilityProjectionError::InvalidCheckedEntryEdge { entry })?;
-    let HirItemKind::Entry(declaration) = item.item().kind() else {
-        return Err(RuntimeReachabilityProjectionError::InvalidCheckedEntryEdge { entry });
-    };
-    let lookup = item
-        .module()
-        .source_site(
-            item.module().provenance().source_identity(),
-            HirSourceQuery::Item {
-                owner: entry,
-                role: HirItemSourceRole::Entry(HirEntrySourcePart::Whole),
-            },
-        )
-        .map_err(|_| RuntimeReachabilityProjectionError::InvalidCheckedEntryEdge { entry })?;
-    let HirSourcePresence::Present(HirSourceSite::Span(source)) = lookup.presence() else {
-        return Err(RuntimeReachabilityProjectionError::InvalidCheckedEntryEdge { entry });
-    };
-    for target in declaration
-        .members()
-        .iter()
-        .filter_map(|member| match member {
-            HirEntryMember::Goto(target) => Some(target.target()),
-            HirEntryMember::Route(route) => Some(route.target()),
-            _ => None,
-        })
-    {
-        let HirEntryTarget::Authored(target) = target else {
-            return Err(RuntimeReachabilityProjectionError::InvalidCheckedEntryEdge { entry });
-        };
-        let reference = target
-            .as_resolved()
-            .ok_or(RuntimeReachabilityProjectionError::InvalidCheckedEntryEdge { entry })?;
-        let resolved = symbols
-            .resolve_entity_reference(item.module().key().path(), reference, source.clone())
-            .map_err(|_| RuntimeReachabilityProjectionError::InvalidCheckedEntryEdge { entry })?;
-        let ResolvedProjectSymbol::StructuralCallable(symbol) = resolved else {
-            return Err(RuntimeReachabilityProjectionError::InvalidCheckedEntryEdge { entry });
-        };
-        if symbol.owner() != CallableDeclarationOwner::Flow {
-            return Err(RuntimeReachabilityProjectionError::InvalidCheckedEntryEdge { entry });
-        }
-        append_entry_declaration(entry, symbol.declaration(), symbols, edges)?;
     }
     Ok(())
 }
@@ -509,10 +519,19 @@ fn runtime_owner_for_declaration(
         CallableDeclarationKey::ImplMethod(method) => {
             Some(HirRuntimeExecutableOwner::ImplMethod(method.clone()))
         }
-        CallableDeclarationKey::Existing(_) | CallableDeclarationKey::Flow(_) => symbols
+        CallableDeclarationKey::Existing(existing)
+            if existing.owner().owns_runtime_executable_body() =>
+        {
+            symbols
+                .callable_symbols()
+                .find(|symbol| symbol.declaration() == declaration)
+                .map(|symbol| HirRuntimeExecutableOwner::Item(symbol.source_item()))
+        }
+        CallableDeclarationKey::Flow(_) => symbols
             .callable_symbols()
             .find(|symbol| symbol.declaration() == declaration)
             .map(|symbol| HirRuntimeExecutableOwner::Item(symbol.source_item())),
+        CallableDeclarationKey::Existing(_) => None,
         CallableDeclarationKey::TraitRequirement(_) => None,
     }
 }
@@ -528,12 +547,15 @@ fn call_expression_disposition(
     let Some(facts) = analysis.call(owner) else {
         return HirRuntimeExpressionTypeDisposition::Retain;
     };
-    let CallTargetFact::Selected { selected, .. } = facts.target() else {
+    let Some(application) = facts.selected_application() else {
         return HirRuntimeExpressionTypeDisposition::Retain;
     };
     let callee = if matches!(
-        selected.instantiation(),
-        CallableInstantiation::Receiver { .. } | CallableInstantiation::Extension { .. }
+        application.core().callee(),
+        CheckedCallCalleeExecution::Value { .. }
+    ) || matches!(
+        application.core().execution().receiver(),
+        CheckedCallReceiverProjection::Operand { .. }
     ) {
         HirRuntimeCallCalleeDisposition::RuntimeReceiver
     } else {
@@ -605,7 +627,7 @@ fn validate_checked_executable_edges(
             continue;
         }
         let mut expected = BTreeSet::new();
-        append_entry_edges(project, entry, symbols, &mut expected)?;
+        append_entry_edges(entry, symbols, &mut expected)?;
         validate_exact_edge_set(reachability, site, &expected)?;
     }
     Ok(())

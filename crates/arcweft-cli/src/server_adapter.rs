@@ -1,10 +1,13 @@
 use arcweft_compiler::runtime_diagnostics::ExecutionDiagnosticContext;
 use arcweft_core::engine::{Engine, FlowExit, FlowFiberStatus};
-use arcweft_core::plan::{RuntimePlan, RuntimeRouteBindingSource, RuntimeRouteSpec};
+use arcweft_core::plan::{
+    RuntimePlan, RuntimeRouteBindingSource, RuntimeRoutePath, RuntimeRoutePathSegment,
+    RuntimeRouteSpec,
+};
 use arcweft_core::step::{
     RuntimeStepBudget, RuntimeStepInput, RuntimeStepMode, RuntimeStepOptions,
 };
-use arcweft_core::value::{RuntimeBinding, RuntimeValue};
+use arcweft_core::value::{RuntimeFlowParameterBinding, RuntimeValue};
 use arcweft_host_adapter::HostCallPolicy;
 use arcweft_runtime_accelerator::{RuntimePureAccelerator, RuntimePureAcceleratorConfig};
 use std::io::{Read, Write};
@@ -65,6 +68,10 @@ pub(crate) enum ServerAdapterError {
     MissingHostCall(String),
     #[error("invalid HTTP request")]
     InvalidRequest,
+    #[error("checked route binding references absent capture coordinate {capture:?}")]
+    InvalidRouteBinding {
+        capture: arcweft_core::plan::RouteCaptureCoordinate,
+    },
     #[error("fresh runtime assertion identity projection failed: {0}")]
     AssertionProjection(String),
 }
@@ -176,14 +183,26 @@ fn require_host_call(host_policy: &HostCallPolicy, id: &str) -> Result<(), Serve
 fn run_route_flow(
     plan: &RuntimePlan,
     route: &RuntimeRouteSpec,
-    params: &[(String, String)],
+    params: &[String],
     max_ops: usize,
     pure_config: RuntimePureAcceleratorConfig,
     assertion_projector: &impl NativeHttpAssertionProjector,
 ) -> Result<NativeHttpResponse, ServerAdapterError> {
+    let flow_parameter_bindings = request_bindings(route, params)?;
     let plan = Arc::new(plan.clone());
     let mut pure = RuntimePureAccelerator::with_config(pure_config, &plan);
-    let mut executor = match Engine::for_flow(Arc::unwrap_or_clone(plan), &route.target) {
+    let invocation = match Arc::unwrap_or_clone(Arc::clone(&plan))
+        .seal_flow_invocation(route.target.clone(), flow_parameter_bindings)
+    {
+        Ok(invocation) => invocation,
+        Err(error) => {
+            return Ok(NativeHttpResponse::new(
+                500,
+                format!("failed to seal server route invocation: {error}"),
+            ));
+        }
+    };
+    let mut executor = match Engine::for_flow_invocation(invocation) {
         Ok(executor) => executor,
         Err(error) => {
             return Ok(NativeHttpResponse::new(
@@ -193,10 +212,7 @@ fn run_route_flow(
         }
     };
     let result = executor.step_with_pure_backend(
-        RuntimeStepInput {
-            bindings: request_bindings(route, params),
-            ..RuntimeStepInput::default()
-        },
+        RuntimeStepInput::default(),
         RuntimeStepOptions {
             mode: RuntimeStepMode::Server,
             budget: RuntimeStepBudget { max_ops },
@@ -265,18 +281,26 @@ impl NativeHttpAssertionProjector for ExecutionDiagnosticContext {
     }
 }
 
-fn request_bindings(route: &RuntimeRouteSpec, params: &[(String, String)]) -> Vec<RuntimeBinding> {
+fn request_bindings(
+    route: &RuntimeRouteSpec,
+    params: &[String],
+) -> Result<Vec<RuntimeFlowParameterBinding>, ServerAdapterError> {
     route
         .bindings
         .iter()
-        .filter_map(|binding| match &binding.source {
-            RuntimeRouteBindingSource::PathParam(param) => params
-                .iter()
-                .find(|(name, _)| name == param)
-                .map(|(_, value)| RuntimeBinding {
-                    name: binding.name.clone(),
+        .map(|binding| match binding.source {
+            RuntimeRouteBindingSource::PathCapture(capture) => {
+                let index = capture
+                    .index()
+                    .map_err(|_| ServerAdapterError::InvalidRouteBinding { capture })?;
+                let value = params
+                    .get(index)
+                    .ok_or(ServerAdapterError::InvalidRouteBinding { capture })?;
+                Ok(RuntimeFlowParameterBinding {
+                    parameter: binding.parameter,
                     value: RuntimeValue::String(value.clone()),
-                }),
+                })
+            }
         })
         .collect()
 }
@@ -314,37 +338,32 @@ fn parse_http_request(request: &str) -> Result<HttpRequestHead, ServerAdapterErr
     })
 }
 
-fn route_match(
-    route: &RuntimeRouteSpec,
-    request: &HttpRequestHead,
-) -> Option<Vec<(String, String)>> {
-    let method_matches = route.method == "*" || route.method.eq_ignore_ascii_case(&request.method);
+fn route_match(route: &RuntimeRouteSpec, request: &HttpRequestHead) -> Option<Vec<String>> {
+    let method_matches = route.method.as_str().eq_ignore_ascii_case(&request.method);
     if !method_matches {
         return None;
     }
     match_path(&route.path, &request.path)
 }
 
-fn match_path(pattern: &str, path: &str) -> Option<Vec<(String, String)>> {
-    if pattern == "*" {
-        return Some(Vec::new());
-    }
-    let pattern_segments = split_path(pattern);
+fn match_path(pattern: &RuntimeRoutePath, path: &str) -> Option<Vec<String>> {
+    let pattern_segments = pattern.segments();
     let path_segments = split_path(path);
     if pattern_segments.len() != path_segments.len() {
         return None;
     }
     pattern_segments.iter().zip(path_segments).try_fold(
         Vec::new(),
-        |mut params, (pattern, value)| {
-            if let Some(name) = pattern.strip_prefix(':') {
-                params.push((name.to_owned(), value.to_owned()));
+        |mut params, (pattern, value)| match pattern {
+            RuntimeRoutePathSegment::Capture(coordinate) => {
+                if coordinate.index().ok()? != params.len() {
+                    return None;
+                }
+                params.push(value.to_owned());
                 Some(params)
-            } else if pattern == &value {
-                Some(params)
-            } else {
-                None
             }
+            RuntimeRoutePathSegment::Literal(literal) if literal == value => Some(params),
+            RuntimeRoutePathSegment::Literal(_) => None,
         },
     )
 }
@@ -406,8 +425,11 @@ mod tests {
             vec![RuntimeFlowOpSeed::Return("ok".to_owned())],
         );
         let routes = vec![RuntimeRouteSpec {
-            method: "GET".to_owned(),
-            path: "/health".to_owned(),
+            method: arcweft_core::plan::RuntimeHttpMethod::Get,
+            path: RuntimeRoutePath::try_new([RuntimeRoutePathSegment::Literal(
+                "health".to_owned(),
+            )])
+            .expect("route path"),
             target: FlowRuntimeId::from_runtime_target_value("flow.health")
                 .expect("flow runtime id"),
             bindings: Vec::new(),
@@ -446,8 +468,11 @@ mod tests {
             ],
         );
         let routes = vec![RuntimeRouteSpec {
-            method: "GET".to_owned(),
-            path: "/assertion".to_owned(),
+            method: arcweft_core::plan::RuntimeHttpMethod::Get,
+            path: RuntimeRoutePath::try_new([RuntimeRoutePathSegment::Literal(
+                "assertion".to_owned(),
+            )])
+            .expect("route path"),
             target: FlowRuntimeId::from_runtime_target_value("flow.assertion")
                 .expect("flow runtime id"),
             bindings: Vec::new(),
@@ -485,8 +510,11 @@ mod tests {
             vec![RuntimeFlowOpSeed::Return("ok".to_owned())],
         );
         let routes = vec![RuntimeRouteSpec {
-            method: "GET".to_owned(),
-            path: "/health".to_owned(),
+            method: arcweft_core::plan::RuntimeHttpMethod::Get,
+            path: RuntimeRoutePath::try_new([RuntimeRoutePathSegment::Literal(
+                "health".to_owned(),
+            )])
+            .expect("route path"),
             target: FlowRuntimeId::from_runtime_target_value("flow.health")
                 .expect("flow runtime id"),
             bindings: Vec::new(),

@@ -36,62 +36,17 @@ pub(super) fn emit_postfix_bracket(
         parser.insert_projected_start(left.start_event, SyntaxKind::PostfixBracketExpression, role);
     parser.set_start_role(left.start_event + 1, SyntaxRole::Target);
     emit_open_delimiter(parser, SyntaxKind::OpenBracketNode, "[");
-    let payload_end = find_top_level_boundary(parser, parser.cursor(), end, &["]"]);
-    let interval = parser
-        .candidate_interval(payload_end)
-        .expect("postfix candidates share one validated lexer interval");
-    let payload_range = SourceRange::new(
-        parser
-            .offset_at_token_boundary(interval.start())
-            .expect("postfix payload starts at a lexer boundary"),
-        parser
-            .offset_at_token_boundary(interval.end())
-            .expect("postfix payload ends at a lexer boundary"),
+    let staged = match stage_postfix_bracket_candidates(parser, end, target_range, open_range) {
+        Ok(staged) => staged,
+        Err(interval) => return finish_postfix_limit(parser, interval, left),
+    };
+    let mut projection = select_postfix_bracket_projection(
+        parser,
+        staged.interval,
+        staged.index,
+        staged.dialogue,
+        &staged.sources,
     );
-    let close_range = parser
-        .token_at(payload_end)
-        .filter(|token| parser.text_of(*token) == "]")
-        .map_or_else(
-            || SourceRange::new(payload_range.end(), payload_range.end()),
-            super::super::lexer::LexToken::range,
-        );
-    let terminator = if parser
-        .token_at(payload_end)
-        .is_some_and(|token| parser.text_of(token) == "]")
-    {
-        SyntaxBracketTerminator::Closed
-    } else {
-        SyntaxBracketTerminator::RecoveredMissing(
-            SyntaxPostfixBracketRecoveryBoundary::EndOfExpression {
-                anchor: payload_range.end(),
-            },
-        )
-    };
-
-    let index = stage_index_candidate(parser, interval);
-    if matches!(index, StagedIndexAttempt::LimitExceeded) {
-        return finish_postfix_limit(parser, interval, left);
-    }
-    let missing_content_boundary = if matches!(terminator, SyntaxBracketTerminator::Closed) {
-        SyntaxDialogueContentRecoveryBoundary::CloseBracket { range: close_range }
-    } else {
-        SyntaxDialogueContentRecoveryBoundary::MissingBracketClose {
-            insertion: payload_range.end(),
-        }
-    };
-    let dialogue = stage_dialogue_candidate(parser, interval, missing_content_boundary);
-    if matches!(dialogue, StagedDialogueAttempt::LimitExceeded) {
-        return finish_postfix_limit(parser, interval, left);
-    }
-    let sources = PostfixBracketSources {
-        target: target_range,
-        open: open_range,
-        close: close_range,
-        payload: payload_range,
-        terminator,
-    };
-    let mut projection =
-        select_postfix_bracket_projection(parser, interval, index, dialogue, &sources);
     emit_close_delimiter(
         parser,
         SyntaxKind::CloseBracketNode,
@@ -143,6 +98,80 @@ pub(super) fn emit_postfix_bracket(
     CompletedNode {
         start_event: left.start_event,
     }
+}
+
+struct StagedPostfixBracket {
+    interval: CandidateTokenInterval,
+    index: StagedIndexAttempt,
+    dialogue: StagedDialogueAttempt,
+    sources: PostfixBracketSources,
+}
+
+fn stage_postfix_bracket_candidates(
+    parser: &mut DocumentParser<'_, '_>,
+    end: usize,
+    target: SourceRange,
+    open: SourceRange,
+) -> Result<StagedPostfixBracket, CandidateTokenInterval> {
+    let payload_end = find_top_level_boundary(parser, parser.cursor(), end, &["]"]);
+    let interval = parser
+        .candidate_interval(payload_end)
+        .expect("postfix candidates share one validated lexer interval");
+    let payload_range = SourceRange::new(
+        parser
+            .offset_at_token_boundary(interval.start())
+            .expect("postfix payload starts at a lexer boundary"),
+        parser
+            .offset_at_token_boundary(interval.end())
+            .expect("postfix payload ends at a lexer boundary"),
+    );
+    let close_range = parser
+        .token_at(payload_end)
+        .filter(|token| parser.text_of(*token) == "]")
+        .map_or_else(
+            || SourceRange::new(payload_range.end(), payload_range.end()),
+            super::super::lexer::LexToken::range,
+        );
+    let terminator = if parser
+        .token_at(payload_end)
+        .is_some_and(|token| parser.text_of(token) == "]")
+    {
+        SyntaxBracketTerminator::Closed
+    } else {
+        SyntaxBracketTerminator::RecoveredMissing(
+            SyntaxPostfixBracketRecoveryBoundary::EndOfExpression {
+                anchor: payload_range.end(),
+            },
+        )
+    };
+
+    let index = stage_index_candidate(parser, interval);
+    if matches!(index, StagedIndexAttempt::LimitExceeded) {
+        return Err(interval);
+    }
+    let missing_content_boundary = if matches!(terminator, SyntaxBracketTerminator::Closed) {
+        SyntaxDialogueContentRecoveryBoundary::CloseBracket { range: close_range }
+    } else {
+        SyntaxDialogueContentRecoveryBoundary::MissingBracketClose {
+            insertion: payload_range.end(),
+        }
+    };
+    let dialogue = stage_dialogue_candidate(parser, interval, missing_content_boundary);
+    if matches!(dialogue, StagedDialogueAttempt::LimitExceeded) {
+        return Err(interval);
+    }
+    Ok(StagedPostfixBracket {
+        interval,
+        index,
+        dialogue,
+        sources: PostfixBracketSources {
+            target,
+            open,
+            close: close_range,
+            payload: payload_range,
+            terminator,
+        },
+    })
 }
 
 struct PostfixBracketSources {

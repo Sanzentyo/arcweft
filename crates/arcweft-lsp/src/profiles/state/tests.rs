@@ -29,10 +29,11 @@ use arcweft_lang_hir::{
 };
 use arcweft_lang_sema::{
     callable::{
-        AdapterPackageId, CallableArgumentPolicy, CallableDocumentation, CallableGroupIndex,
-        CallableGroupKind, CallableName, CallableOverloadIndex, CallableValidator,
-        EnvironmentCallableKind, EnvironmentCallableOwner, EnvironmentDeclarationOrdinal,
-        ProjectCallablePath, SpreadArgumentPolicy, UnknownNamedArgumentPolicy,
+        AdapterPackageId, CallableArgumentPolicy, CallableDocumentation,
+        CallableGenericParameterIssuer, CallableGroupIndex, CallableGroupKind, CallableName,
+        CallableOverloadIndex, CallableValidator, EnvironmentCallableKind,
+        EnvironmentCallableOwner, EnvironmentDeclarationOrdinal, ProjectCallablePath,
+        SpreadArgumentPolicy, UnknownNamedArgumentPolicy,
     },
     effect_row::EffectRow,
     effects::EffectSet,
@@ -610,6 +611,7 @@ fn environment_callable_failure_input(
                         SpreadArgumentPolicy::Reject,
                     ),
                     CallableValidator::Ordinary,
+                    CallableGenericParameterIssuer::empty(),
                 ),
                 EnvironmentDeclarationOrdinal::try_from_usize(record.declaration_order)
                     .expect("declaration order"),

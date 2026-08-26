@@ -678,7 +678,7 @@ mod tests {
             capture_step: None,
             mode: CliRuntimeStepMode::Drain,
             max_ops: 64,
-            values: Vec::new(),
+            view_values: Vec::new(),
             viewport_width: AGENT_OBSERVE_DEFAULT_VIEWPORT_WIDTH,
             viewport_height: AGENT_OBSERVE_DEFAULT_VIEWPORT_HEIGHT,
             capture_time_seconds: None,

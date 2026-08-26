@@ -44,7 +44,7 @@ RuntimeStepStopReason
 FlowControlStackEntry
 FlowControlStackEntryKind
 FlowFiber.control_stack
-RuntimeStepInput.bindings
+RuntimeFlowInvocation
 RuntimeStepOutput.effects
 RuntimeStepOutput.requests
 RuntimeStreamEvent
@@ -94,9 +94,15 @@ Rewrite the public API section around the following target API:
 
 ```rust
 pub struct RuntimeStepInput {
-    pub clock: Option<LogicalClockInput>,
-    pub bindings: Vec<RuntimeBinding>,
-    pub events: HostEventBatch,
+    pub tick: TickId,
+    pub dt: LogicalDuration,
+    pub input_events: Vec<RoutedInputEvent>,
+    pub need_states: Vec<RuntimeNeedState>,
+    pub task_events: Vec<TaskEvent>,
+    pub audio_events: Vec<AudioEvent>,
+    pub host_call_results: Vec<RuntimeHostCallResult>,
+    pub root_events: Vec<RootEventInput>,
+    pub deferred_root_events: Vec<RootEventInput>,
 }
 
 pub struct RuntimeStepOutput {
@@ -114,7 +120,9 @@ pub struct RuntimeStepResult {
 }
 ```
 
-Remove examples that show `RuntimeStepInput`, `RuntimeStepOutput`, and `RuntimeStepInput::bindings`.
+Remove examples that show the old Frame API. Any retained
+`RuntimeStepInput`/`RuntimeStepOutput` example must match the event/result-only
+step boundary above; Flow launch values belong to `RuntimeFlowInvocation`.
 
 ### `crates/arcweft-core/src/frame.rs`
 
@@ -361,7 +369,11 @@ max_ops: Option<usize>,
 entry: Option<String>,
 ```
 
-Replace all `RuntimeStepInput { bindings: ... }` construction with `RuntimeStepInput { bindings: ... }`.
+Delete Flow-parameter bindings from every `RuntimeStepInput` construction.
+Explicit low-level Flow launch must resolve external adapter values once,
+produce the complete canonical `FlowParameterCoordinate` inventory, and consume
+the plan through `RuntimePlan::seal_flow_invocation`. Entry and route launch use
+their checked coordinate plans. Step inputs remain event/result ingress only.
 
 ### `crates/arcweft-cli/src/output.rs`
 

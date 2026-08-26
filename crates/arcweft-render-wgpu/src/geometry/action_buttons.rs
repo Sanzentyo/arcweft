@@ -37,8 +37,9 @@ pub enum RenderActionButtonAction {
         action: PublicId,
         payload: Option<String>,
     },
-    DialoguePrimaryAction {
-        target: arcweft_view::DialogueAdvanceTarget,
+    ViewHandler {
+        event: arcweft_view::EventKind,
+        route: arcweft_view::ViewHandlerRouteId,
     },
 }
 
@@ -261,7 +262,7 @@ impl RenderActionButtonAction {
     pub const fn semantic_action_id(&self) -> Option<&PublicId> {
         match self {
             Self::ActionInvoke { action, .. } => Some(action),
-            Self::Noop | Self::DialoguePrimaryAction { .. } => None,
+            Self::Noop | Self::ViewHandler { .. } => None,
         }
     }
 }

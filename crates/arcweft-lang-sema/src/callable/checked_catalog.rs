@@ -5,9 +5,7 @@ use std::{
     sync::Arc,
 };
 
-use arcweft_lang_hir::symbol::{
-    CallableDeclarationKey, ProjectSymbolRevision, ProjectSymbolWorldId,
-};
+use arcweft_lang_hir::{project::AcceptedHirProjectGeneration, symbol::CallableDeclarationKey};
 use arcweft_source::{SourceDocumentIdentity, SourceRange, SourceSpan};
 
 use crate::{
@@ -15,6 +13,7 @@ use crate::{
     effects::EffectSet,
     final_analysis::CheckedFunctionExecution,
     nominal::TypeSourceEvidence,
+    types::TypeKind,
 };
 
 use super::{
@@ -31,17 +30,38 @@ pub struct CheckedCallableCatalogGeneration {
     standard: StandardTraitCatalogVersion,
 }
 
-#[derive(Clone, Debug, Eq, PartialEq)]
+#[derive(Clone, Debug)]
 pub enum CheckedCallableCatalogOrigin {
     RegisteredProject {
-        world: ProjectSymbolWorldId,
-        revision: ProjectSymbolRevision,
+        hir: Arc<AcceptedHirProjectGeneration>,
         catalog: RegisteredCallableCatalogDigest,
     },
     Detached {
         source: SourceDocumentIdentity,
     },
 }
+
+impl PartialEq for CheckedCallableCatalogOrigin {
+    fn eq(&self, other: &Self) -> bool {
+        match (self, other) {
+            (
+                Self::RegisteredProject {
+                    hir: left_hir,
+                    catalog: left_catalog,
+                },
+                Self::RegisteredProject {
+                    hir: right_hir,
+                    catalog: right_catalog,
+                },
+            ) => Arc::ptr_eq(left_hir, right_hir) && left_catalog == right_catalog,
+            (Self::Detached { source: left }, Self::Detached { source: right }) => left == right,
+            (Self::RegisteredProject { .. }, Self::Detached { .. })
+            | (Self::Detached { .. }, Self::RegisteredProject { .. }) => false,
+        }
+    }
+}
+
+impl Eq for CheckedCallableCatalogOrigin {}
 
 /// Runtime disposition frozen after semantic role checking.
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -350,6 +370,10 @@ impl CheckedCallableFacts {
         self.record.publication_digest()
     }
 
+    pub fn host_call_contract(&self) -> Option<arcweft_manifest_model::HostCallContractDigest> {
+        self.record.host_call_contract()
+    }
+
     pub const fn execution(&self) -> &CheckedCallableExecution {
         &self.execution
     }
@@ -403,6 +427,25 @@ impl CheckedCallableFacts {
 
     pub const fn interface_digest(&self) -> CallableInterfaceDigest {
         self.interface_digest
+    }
+
+    pub(crate) fn visit_types<E>(
+        &self,
+        visitor: &mut impl FnMut(&TypeKind) -> Result<(), E>,
+    ) -> Result<(), E> {
+        self.record.schema().visit_types(visitor)?;
+        match &self.execution {
+            CheckedCallableExecution::Runtime(CheckedFunctionExecution::StreamFactory {
+                item,
+                error,
+                ..
+            }) => {
+                visitor(item)?;
+                visitor(error)
+            }
+            CheckedCallableExecution::Runtime(CheckedFunctionExecution::DirectFrame)
+            | CheckedCallableExecution::DispatchContract => Ok(()),
+        }
     }
 }
 
@@ -501,8 +544,7 @@ impl CheckedCallableCatalog {
     pub fn validate_registered_authority(
         &self,
         registered: &RegisteredCallableCatalog,
-        world: &ProjectSymbolWorldId,
-        revision: ProjectSymbolRevision,
+        hir: &AcceptedHirProjectGeneration,
     ) -> Result<(), CheckedCallableLookupError> {
         let Some(retained) = &self.registered else {
             return Err(CheckedCallableLookupError::WrongFamily);
@@ -512,24 +554,17 @@ impl CheckedCallableCatalog {
         }
         match &self.generation.origin {
             CheckedCallableCatalogOrigin::RegisteredProject {
-                world: retained_world,
-                revision: retained_revision,
+                hir: retained_hir,
                 catalog,
-            } if retained_world == world
-                && *retained_revision == revision
-                && *catalog == registered.digest() =>
-            {
+            } if std::ptr::eq(retained_hir.as_ref(), hir) && *catalog == registered.digest() => {
                 Ok(())
             }
             CheckedCallableCatalogOrigin::RegisteredProject {
-                world: retained_world,
-                revision: retained_revision,
+                hir: retained_hir,
                 catalog,
             } => {
-                if retained_world != world {
+                if !std::ptr::eq(retained_hir.as_ref(), hir) {
                     Err(CheckedCallableLookupError::ForeignWorld)
-                } else if *retained_revision != revision {
-                    Err(CheckedCallableLookupError::StaleProjectRevision)
                 } else if *catalog != registered.digest() {
                     Err(CheckedCallableLookupError::ForeignCatalogDigest)
                 } else {
@@ -542,32 +577,10 @@ impl CheckedCallableCatalog {
         }
     }
 
-    /// Validates only the project generation carried by this immutable
-    /// checked authority. Exact registered-pointer validation is performed at
-    /// the analyzer publication boundary with
-    /// [`Self::validate_registered_authority`].
-    pub fn validate_project_generation(
-        &self,
-        world: &ProjectSymbolWorldId,
-        revision: ProjectSymbolRevision,
-    ) -> Result<(), CheckedCallableLookupError> {
+    pub(crate) fn hir_generation(&self) -> Option<&Arc<AcceptedHirProjectGeneration>> {
         match &self.generation.origin {
-            CheckedCallableCatalogOrigin::RegisteredProject {
-                world: retained_world,
-                revision: retained_revision,
-                ..
-            } => {
-                if retained_world != world {
-                    Err(CheckedCallableLookupError::ForeignWorld)
-                } else if *retained_revision != revision {
-                    Err(CheckedCallableLookupError::StaleProjectRevision)
-                } else {
-                    Ok(())
-                }
-            }
-            CheckedCallableCatalogOrigin::Detached { .. } => {
-                Err(CheckedCallableLookupError::WrongFamily)
-            }
+            CheckedCallableCatalogOrigin::RegisteredProject { hir, .. } => Some(hir),
+            CheckedCallableCatalogOrigin::Detached { .. } => None,
         }
     }
 
@@ -578,6 +591,25 @@ impl CheckedCallableCatalog {
         &self,
     ) -> impl ExactSizeIterator<Item = &CheckedCallableFacts> + DoubleEndedIterator {
         self.records.values()
+    }
+
+    pub(crate) fn visit_types<E>(
+        &self,
+        visitor: &mut impl FnMut(&TypeKind) -> Result<(), E>,
+    ) -> Result<(), E> {
+        if let Some(registered) = self.registered_catalog() {
+            registered.nominal_resolutions().visit_types(visitor)?;
+        }
+        for facts in self.records() {
+            facts.visit_types(visitor)?;
+        }
+        for key in self.method_index.keys() {
+            visitor(key.receiver())?;
+        }
+        for key in self.inaccessible_methods.keys() {
+            visitor(key.receiver())?;
+        }
+        Ok(())
     }
 
     pub fn callable(
@@ -684,11 +716,7 @@ fn validate_checked_context(
 ) -> Result<(), CheckedCallableLookupError> {
     match (&generation.origin, id.context(), id.declaration()) {
         (
-            CheckedCallableCatalogOrigin::RegisteredProject {
-                world,
-                revision,
-                catalog,
-            },
+            CheckedCallableCatalogOrigin::RegisteredProject { hir, catalog },
             CheckedCallableContext::Project {
                 world: id_world,
                 revision: id_revision,
@@ -697,9 +725,9 @@ fn validate_checked_context(
             },
             CheckedCallableDeclaration::Project(_),
         ) => {
-            if world != id_world {
+            if hir.symbol_world() != id_world {
                 Err(CheckedCallableLookupError::ForeignWorld)
-            } else if revision != id_revision {
+            } else if hir.symbol_revision() != *id_revision {
                 Err(CheckedCallableLookupError::StaleProjectRevision)
             } else if catalog != id_catalog {
                 Err(CheckedCallableLookupError::ForeignCatalogDigest)
@@ -837,23 +865,18 @@ pub(crate) struct CheckedCallableCatalogBuilder {
 impl CheckedCallableCatalogBuilder {
     pub(crate) fn for_registered(
         registered: Arc<RegisteredCallableCatalog>,
-        world: ProjectSymbolWorldId,
-        revision: ProjectSymbolRevision,
+        hir: Arc<AcceptedHirProjectGeneration>,
         standard: StandardTraitCatalogVersion,
     ) -> Result<Self, CheckedCallableCatalogBuildError> {
-        if registered.nominal_world().world() != &world
-            || registered.nominal_world().revision() != revision
+        if registered.nominal_world().world() != hir.symbol_world()
+            || registered.nominal_world().revision() != hir.symbol_revision()
         {
             return Err(CheckedCallableCatalogBuildError::GenerationMismatch);
         }
         let catalog = registered.digest();
         Ok(Self {
             generation: CheckedCallableCatalogGeneration {
-                origin: CheckedCallableCatalogOrigin::RegisteredProject {
-                    world,
-                    revision,
-                    catalog,
-                },
+                origin: CheckedCallableCatalogOrigin::RegisteredProject { hir, catalog },
                 standard,
             },
             registered: Some(registered),
@@ -957,16 +980,12 @@ impl CheckedCallableCatalogBuilder {
             record.id(),
         ) {
             (
-                CheckedCallableCatalogOrigin::RegisteredProject {
-                    world,
-                    revision,
-                    catalog,
-                },
+                CheckedCallableCatalogOrigin::RegisteredProject { hir, catalog },
                 standard,
                 CallableCandidateId::Project(declaration),
             ) => CheckedCallableId::for_project(
-                world.clone(),
-                *revision,
+                hir.symbol_world().clone(),
+                hir.symbol_revision(),
                 *catalog,
                 standard,
                 declaration.clone(),
@@ -1647,6 +1666,9 @@ fn interface_digest(
     encoder.option(record.publication_digest().as_ref(), |encoder, digest| {
         encoder.bytes(digest.as_bytes());
     });
+    encoder.option(record.host_call_contract().as_ref(), |encoder, digest| {
+        encoder.bytes(digest.as_bytes());
+    });
     match execution {
         CheckedCallableExecution::DispatchContract => encoder.tag(0),
         CheckedCallableExecution::Runtime(CheckedFunctionExecution::DirectFrame) => encoder.tag(1),
@@ -1716,6 +1738,7 @@ fn encode_row(encoder: &mut super::digest::CanonicalEncoder, row: &EffectRow) {
         EffectRowTail::Closed => encoder.tag(0),
         EffectRowTail::Variable(variable) => {
             encoder.tag(1);
+            encoder.bytes(variable.issuer().as_bytes());
             encoder.u32(variable.index());
         }
         EffectRowTail::Unknown => encoder.tag(2),

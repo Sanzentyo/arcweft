@@ -2,6 +2,11 @@
 
 Status: `READY_FOR_IMPLEMENTATION`
 
+The accepted design carries a 2026-08-25 C1 coordinate erratum in
+`CALL_APPLICATION_AUTHORITY_AMENDMENT.md`. Its production implementation and
+canonical-byte validation are pending; the erratum does not introduce a
+compatibility format or reopen the accepted phase/layer decisions.
+
 This is the accepted repository-local resolution of
 [Lang-01.5.1.1.2.1.1.1.1.1.1.1.2.1](../../requests/2026-08-23-lang-01.5.1.1.2.1.1.1.1.1.1.1.2.1-final-semantic-owner-construction-and-seal-correction.md),
 validated against clean `main` at Git commit
@@ -60,3 +65,16 @@ The detailed authorities are:
 - [validation record](VALIDATION_REPORT.md)
 
 [OPEN_QUESTIONS.md](OPEN_QUESTIONS.md) is exactly `none`.
+
+## Accepted-root plumbing amendment (2026-08-25)
+
+C1's accepted coordinate root is now the in-place version-1 algebra
+`AcceptedSemanticRoot::{Declaration, Item}`. Canonical checked paths begin
+with the eight-bit root tag and 32-byte accepted ID, followed by a fixed
+little-endian `u64` step count. Item IDs are BLAKE3-derived from the accepted
+package/module/entry/typed-role/family tuple; raw HIR IDs, spans, names, and
+content are excluded. One `AcceptedSemanticRootCatalog` owns the already
+sealed project evaluation topology and all root issuance/lookups. Analyzer
+publication builds that topology once and seals the catalog before call-fact
+finalization; Match and producer consumers query that lease rather than
+rebuilding declaration paths.

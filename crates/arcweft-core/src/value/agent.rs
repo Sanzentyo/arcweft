@@ -12,6 +12,8 @@ use crate::plan::RuntimeAgentOperationalType;
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
 
+mod semantic;
+
 /// One deterministic Agent expression retained by the runtime plan.
 #[derive(Clone, Debug, PartialEq)]
 pub enum RuntimeAgentExpr {

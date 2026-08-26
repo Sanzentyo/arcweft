@@ -15,8 +15,8 @@ mod snapshot;
 mod suspension;
 
 use self::execution::{
-    ProductVmHost, entry_argument_diagnostic, has_host_requests, has_visible_output,
-    input_choice_selection, run_function, stream_id_for,
+    ProductVmHost, has_host_requests, has_visible_output, input_choice_selection, run_function,
+    stream_id_for,
 };
 use self::mapping::{MappedEffect, content_request, source_diagnostic, task_spec};
 use self::runtime_id::line_id_from_awbc_public_id;
@@ -36,12 +36,13 @@ pub use self::snapshot::{
 use crate::awbc::fiber::{
     FiberAwaitManyInFlight, FiberAwaitManyState, FiberAwaitTarget, FiberBudget, FiberCursor,
     FiberState, FiberStatus, FiberSuspensionReason, FiberTerminalValue, FiberTrap,
+    runtime_value_matches_type,
 };
 use crate::awbc::schema::{
     AwbcAwaitObserverResume, AwbcBlockId, AwbcChoiceId, AwbcContentUnitId, AwbcEffectPlanId,
     AwbcEntryId, AwbcFunctionId, AwbcHostCallId, AwbcHostCallMode, AwbcLineTaskGroupId,
     AwbcLineTaskNode, AwbcLineTaskNodeId, AwbcLineTaskTrigger, AwbcProgram, AwbcResumePointId,
-    AwbcStreamPlanId, AwbcTaskPlanId, AwbcTrapCode,
+    AwbcStreamPlanId, AwbcTaskPlanId, AwbcTrapCode, AwbcTypeId,
 };
 use crate::awbc::verify::{AwbcVerifyBudget, AwbcVerifyContext};
 use crate::awbc::vm::{VmExit, VmObservation, VmStepOptions, step_with_host};
@@ -56,7 +57,7 @@ use crate::line_task::{
     progress_live_line_task_group,
 };
 use crate::observation::RuntimeObservationState;
-use crate::plan::{ChoiceRuntimeOption, FlowEvent, RuntimeHostCallTarget};
+use crate::plan::{ChoiceRuntimeOption, FlowEvent};
 use crate::pure::{RuntimeCallBackend, VmRuntimePureCallBackend};
 use crate::root::RootRuntime;
 use crate::step::{
@@ -73,12 +74,82 @@ use crate::task::{
 };
 use crate::time::LogicalDuration;
 use crate::value::{
-    RuntimeBinding, RuntimeEnv, RuntimePayload, RuntimeValue, runtime_sequence_values,
+    RuntimeEnv, RuntimeFlowParameterBinding, RuntimePayload, RuntimeValue, runtime_sequence_values,
     runtime_value_label,
 };
 use arcweft_interaction_model::audio::{AudioCommandEnvelope, AudioDispatchId};
 use std::collections::{BTreeMap, BTreeSet, VecDeque};
 use thiserror::Error;
+
+/// Executes one verified stable pure-program binding through its exact AWBC
+/// helper row. Callers retain domain ownership of the program identity and
+/// arguments; this boundary performs no string lookup or helper fallback.
+pub fn evaluate_pure_program_with_backend(
+    program: &AwbcProgram,
+    pure_program: arcweft_id::runtime_program::RuntimePureProgramId,
+    args: &[RuntimeValue],
+    backend: &mut impl RuntimeCallBackend,
+) -> Result<RuntimeValue, crate::awbc::vm::VmError> {
+    let binding = program.pure_program_binding(pure_program).ok_or_else(|| {
+        crate::awbc::vm::VmError::Runtime(format!(
+            "missing verified AWBC pure program {pure_program}"
+        ))
+    })?;
+    let helper = program
+        .pure_helpers
+        .get(binding.helper.index())
+        .ok_or_else(|| {
+            crate::awbc::vm::VmError::Runtime(format!(
+                "pure program {pure_program} references missing helper {}",
+                binding.helper.0
+            ))
+        })?;
+    if args.len() != binding.input_types.len() {
+        return Err(crate::awbc::vm::VmError::FunctionArgumentCount {
+            expected: binding.input_types.len(),
+            actual: args.len(),
+        });
+    }
+    for (position, (value, expected)) in args.iter().zip(&binding.input_types).enumerate() {
+        let ty = program
+            .runtime_types
+            .iter()
+            .position(|ty| ty.semantic_identity() == *expected)
+            .and_then(|index| u32::try_from(index).ok())
+            .map(AwbcTypeId)
+            .ok_or_else(|| {
+                crate::awbc::vm::VmError::Runtime(format!(
+                    "pure program {pure_program} input {position} references missing semantic type {expected:?}"
+                ))
+            })?;
+        if !runtime_value_matches_type(program, value, ty, 0) {
+            return Err(crate::awbc::vm::VmError::Runtime(format!(
+                "pure program {pure_program} input {position} violates its exact runtime type"
+            )));
+        }
+    }
+    backend.record_awbc_pure_program_call();
+    let mut fallback_stats = crate::step::RuntimePureCallStats::default();
+    let result = run_function(program, helper.function, args, backend, &mut fallback_stats)?;
+    let result_ty = program
+        .runtime_types
+        .iter()
+        .position(|ty| ty.semantic_identity() == binding.result_type)
+        .and_then(|index| u32::try_from(index).ok())
+        .map(AwbcTypeId)
+        .ok_or_else(|| {
+            crate::awbc::vm::VmError::Runtime(format!(
+                "pure program {pure_program} result references missing semantic type {:?}",
+                binding.result_type
+            ))
+        })?;
+    if !runtime_value_matches_type(program, &result, result_ty, 0) {
+        return Err(crate::awbc::vm::VmError::Runtime(format!(
+            "pure program {pure_program} result violates its exact runtime type"
+        )));
+    }
+    Ok(result)
+}
 
 /// Product AWBC executor construction failures.
 #[derive(Clone, Debug, Error, Eq, PartialEq)]
@@ -358,7 +429,7 @@ struct PendingHostCall {
 /// synthetic plan-qualified expression.
 #[derive(Clone, Debug, PartialEq)]
 enum AwbcProductExecutorStatus {
-    Shared(FlowFiberStatus),
+    Shared(Box<FlowFiberStatus>),
     WaitingMany(FiberAwaitManyState),
 }
 
@@ -448,7 +519,15 @@ impl AwbcProductStepExecutor {
             })?
         };
         root::bind_startup(&program, &mut fiber, root_startup.as_ref())?;
+        if root_startup.is_none() && !fiber.frames.is_empty() {
+            fiber
+                .bind_flow_parameter_coordinates(&program, &[])
+                .map_err(|error| AwbcProductStepBuildError::FiberState {
+                    message: error.to_string(),
+                })?;
+        }
         let mut executor = Self::for_fiber(program, fiber);
+        executor.entry_bound = true;
         if let Some(startup) = root_startup.take() {
             executor.install_root_startup(startup);
         }
@@ -461,16 +540,42 @@ impl AwbcProductStepExecutor {
         function: AwbcFunctionId,
         budget_quantum: u64,
     ) -> Result<Self, AwbcProductStepBuildError> {
+        Self::for_function_invocation(program, entry, function, [], budget_quantum)
+    }
+
+    /// Creates a route-selected product executor and consumes the complete
+    /// checked Flow parameter invocation before the first instruction.
+    pub fn for_function_invocation(
+        program: AwbcProgram,
+        entry: AwbcEntryId,
+        function: AwbcFunctionId,
+        bindings: impl IntoIterator<Item = RuntimeFlowParameterBinding>,
+        budget_quantum: u64,
+    ) -> Result<Self, AwbcProductStepBuildError> {
         program
             .verify(AwbcVerifyBudget::default(), AwbcVerifyContext::default())
             .map_err(|error| AwbcProductStepBuildError::InvalidProgram {
                 message: error.to_string(),
             })?;
-        let fiber = FiberState::for_function(&program, entry, function, 0, budget_quantum.max(1))
-            .map_err(|error| AwbcProductStepBuildError::FiberState {
+        let mut fiber = FiberState::for_entry_target_function(
+            &program,
+            entry,
+            function,
+            0,
+            budget_quantum.max(1),
+        )
+        .map_err(|error| AwbcProductStepBuildError::FiberState {
             message: error.to_string(),
         })?;
-        Ok(Self::for_fiber(program, fiber))
+        let bindings = bindings.into_iter().collect::<Vec<_>>();
+        fiber
+            .bind_flow_parameter_coordinates(&program, &bindings)
+            .map_err(|error| AwbcProductStepBuildError::FiberState {
+                message: error.to_string(),
+            })?;
+        let mut executor = Self::for_fiber(program, fiber);
+        executor.entry_bound = true;
+        Ok(executor)
     }
 
     fn for_fiber(program: AwbcProgram, fiber: FiberState) -> Self {
@@ -548,63 +653,17 @@ impl AwbcProductStepExecutor {
 
     pub fn step_with_pure_backend(
         &mut self,
-        input: RuntimeStepInput,
-        options: RuntimeStepOptions,
-        pure_backend: &mut impl RuntimeCallBackend,
-    ) -> RuntimeStepResult {
-        self.step_with_root_bindings_and_pure_backend(input, &[], options, pure_backend)
-    }
-
-    #[allow(clippy::too_many_lines)]
-    pub fn step_with_root_bindings_and_pure_backend(
-        &mut self,
         mut input: RuntimeStepInput,
-        root_bindings: &[RuntimeBinding],
         options: RuntimeStepOptions,
         pure_backend: &mut impl RuntimeCallBackend,
     ) -> RuntimeStepResult {
         let pure_before = pure_backend.stats();
         let local_pure_before = self.compact_pure_stats;
         let mut output = RuntimeStepOutput::default();
-        let mut executed_ops = 0_usize;
+        let executed_ops = 0_usize;
         let pending_ops_before = self.pending_ops_len();
         let root_events_in = input.root_events.len();
         let deferred_root_events = std::mem::take(&mut input.deferred_root_events);
-
-        if !self.entry_bound && !self.fiber.frames.is_empty() {
-            let mut entry_bindings = root_bindings.to_vec();
-            for binding in &input.bindings {
-                if let Some(existing) = entry_bindings
-                    .iter_mut()
-                    .find(|existing| existing.name == binding.name)
-                {
-                    *existing = binding.clone();
-                } else {
-                    entry_bindings.push(binding.clone());
-                }
-            }
-            if let Err(error) = self.bind_root_arguments(&entry_bindings) {
-                output.diagnostics.push(entry_argument_diagnostic(&error));
-                self.sync_facade();
-                return self.finish_result(
-                    output,
-                    RuntimeStepStopReason::Failed,
-                    RuntimeStepStats {
-                        pending_ops_before,
-                        pending_ops_after: self.pending_ops_len(),
-                        diagnostics: 1,
-                        pure: pure_backend
-                            .stats()
-                            .saturating_delta(pure_before)
-                            .saturating_add(
-                                self.compact_pure_stats.saturating_delta(local_pure_before),
-                            ),
-                        ..RuntimeStepStats::default()
-                    },
-                );
-            }
-            self.entry_bound = true;
-        }
 
         if !self.run_root_phase(
             std::mem::take(&mut input.root_events),
@@ -646,12 +705,7 @@ impl AwbcProductStepExecutor {
         let task_events = normalize_task_events(std::mem::take(&mut input.task_events));
         let need_states_in = need_states.len();
         let task_events_in = task_events.len();
-        output.diagnostics.extend(task_events.iter().map(|event| {
-            RuntimeDiagnostic::new(format!(
-                "task {} sequence {} delivered",
-                event.task_id.0, event.sequence.0
-            ))
-        }));
+        Self::append_task_event_diagnostics(&mut output, &task_events);
         self.latch_task_events(&task_events);
         self.step_stream_plans(&mut output, pure_backend);
 
@@ -671,41 +725,14 @@ impl AwbcProductStepExecutor {
             self.fiber.replenish_budget();
         }
 
-        let max_ops = options.budget.max_ops;
-        while executed_ops < max_ops && self.has_attemptable_work() {
-            if self.fiber.status == FiberStatus::Suspended {
-                let progressed = self.resume_main_suspension(
-                    &input,
-                    &need_states,
-                    &task_events,
-                    &mut output,
-                    pure_backend,
-                );
-                executed_ops = executed_ops.saturating_add(usize::from(progressed));
-                if !progressed || self.should_return_to_host(options.mode, &output, executed_ops) {
-                    break;
-                }
-                continue;
-            }
-
-            if self.fiber.status == FiberStatus::Running {
-                let line_effects_before = output.effects.line.len();
-                let step = self.step_main_vm(&need_states, &mut output, pure_backend);
-                executed_ops = executed_ops.saturating_add(step);
-                self.apply_control_effects(&mut output, line_effects_before);
-            } else {
-                let line_effects_before = output.effects.line.len();
-                if !self.step_next_child(&mut output, pure_backend) {
-                    break;
-                }
-                executed_ops = executed_ops.saturating_add(1);
-                self.apply_control_effects(&mut output, line_effects_before);
-            }
-
-            if self.should_return_to_host(options.mode, &output, executed_ops) {
-                break;
-            }
-        }
+        let executed_ops = self.run_main_work(
+            &input,
+            &need_states,
+            &task_events,
+            &mut output,
+            options,
+            pure_backend,
+        );
 
         for effect in &output.effects.line {
             self.facade_fiber.observations.record_effect(effect);
@@ -733,6 +760,60 @@ impl AwbcProductStepExecutor {
             diagnostics: output.diagnostics.len(),
         };
         self.finish_result(output, stop_reason, stats)
+    }
+
+    fn append_task_event_diagnostics(output: &mut RuntimeStepOutput, events: &[TaskEvent]) {
+        output.diagnostics.extend(events.iter().map(|event| {
+            RuntimeDiagnostic::new(format!(
+                "task {} sequence {} delivered",
+                event.task_id.0, event.sequence.0
+            ))
+        }));
+    }
+
+    fn run_main_work(
+        &mut self,
+        input: &RuntimeStepInput,
+        need_states: &[RuntimeNeedState],
+        task_events: &[TaskEvent],
+        output: &mut RuntimeStepOutput,
+        options: RuntimeStepOptions,
+        pure_backend: &mut impl RuntimeCallBackend,
+    ) -> usize {
+        let mut executed_ops = 0_usize;
+        while executed_ops < options.budget.max_ops && self.has_attemptable_work() {
+            if self.fiber.status == FiberStatus::Suspended {
+                let progressed = self.resume_main_suspension(
+                    input,
+                    need_states,
+                    task_events,
+                    output,
+                    pure_backend,
+                );
+                executed_ops = executed_ops.saturating_add(usize::from(progressed));
+                if !progressed || self.should_return_to_host(options.mode, output, executed_ops) {
+                    break;
+                }
+                continue;
+            }
+            let line_effects_before = output.effects.line.len();
+            if self.fiber.status == FiberStatus::Running {
+                executed_ops = executed_ops.saturating_add(self.step_main_vm(
+                    need_states,
+                    output,
+                    pure_backend,
+                ));
+            } else if !self.step_next_child(output, pure_backend) {
+                break;
+            } else {
+                executed_ops = executed_ops.saturating_add(1);
+            }
+            self.apply_control_effects(output, line_effects_before);
+            if self.should_return_to_host(options.mode, output, executed_ops) {
+                break;
+            }
+        }
+        executed_ops
     }
 
     fn finish_result(

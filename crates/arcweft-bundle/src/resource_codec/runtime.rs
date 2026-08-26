@@ -9,9 +9,12 @@ use crate::container::{BundleDigest, BundleSectionKind};
 use crate::patch::PatchCompatibility;
 use crate::{ArcweftBundle, BundleAdapterHostCall, BundleAdapterManifest, BundleManifest};
 use arcweft_core::awbc::schema::{
-    AwbcDigest, AwbcEntryKind, AwbcEntryTarget, AwbcFunctionKind, AwbcProgram, AwbcRuntimeType,
+    AwbcAgentTypeShape, AwbcDigest, AwbcEntryKind, AwbcEntryTarget, AwbcFrameLayout,
+    AwbcFrameSlotRole, AwbcFunctionKind, AwbcProgram, AwbcRuntimeType, AwbcRuntimeTypeShape,
+    AwbcSignature, AwbcSignedIntKind, AwbcStringId, AwbcTypeId, AwbcUnsignedIntKind,
     AwbcVariantIdentity,
 };
+use arcweft_core::pattern::RuntimeSemanticTypeId;
 use serde::{Deserialize, Serialize};
 use std::cmp::Ordering;
 use std::collections::{BTreeMap, BTreeSet};
@@ -58,6 +61,7 @@ pub struct RuntimeTypesSection {
 /// One public or anonymous runtime type layout declaration.
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
 pub struct RuntimeTypeDeclaration {
+    pub semantic_identity: RuntimeSemanticTypeId,
     pub public_id: Option<String>,
     pub value_kind: RuntimeValueKind,
     pub layout_digest: BundleDigest,
@@ -88,8 +92,16 @@ pub enum RuntimeValueKind {
     Agent,
     Matrix,
     Tensor,
-    TaskHandle,
-    NeedHandle,
+    Task,
+    Need,
+    Range,
+    Iterator,
+    Array,
+    Map,
+    Stream,
+    Shared,
+    Reference,
+    Function,
     Dynamic,
 }
 
@@ -140,18 +152,8 @@ pub struct EntrypointDeclaration {
     pub public_id: String,
     pub exported_name: Option<String>,
     pub awbc_function_index: Option<u32>,
-    pub initial_state: InitialStateRequirement,
     pub source_anchor: Option<EntrypointSourceAnchor>,
     pub visibility: ProductVisibility,
-}
-
-/// Initial state contract required before invoking an entrypoint.
-#[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd, Serialize, Deserialize)]
-#[serde(rename_all = "snake_case")]
-pub enum InitialStateRequirement {
-    None,
-    RootBindings,
-    HostPrepared,
 }
 
 /// Source anchor for human inspection and source-map cross checks.
@@ -295,32 +297,41 @@ impl VersionRange {
 
 impl RuntimeTypesSection {
     pub fn from_bundle(bundle: &ArcweftBundle) -> Result<Self, SectionCodecError> {
-        let program = bundle.product_awbc_program();
-        let (declarations, function_interfaces) = Self::from_awbc_program(program)?;
-        Ok(Self::new(
-            program.header.abi_version,
-            program.header.runtime_layout_digest,
-            declarations,
-            function_interfaces,
-        ))
+        Self::from_awbc_program(bundle.product_awbc_program())
     }
 
-    pub fn new(
+    pub fn try_new(
         abi_version: u32,
         runtime_layout_digest: AwbcDigest,
         declarations: impl IntoIterator<Item = RuntimeTypeDeclaration>,
         function_interfaces: impl IntoIterator<Item = FunctionInterfaceFingerprint>,
-    ) -> Self {
+    ) -> Result<Self, SectionCodecError> {
         let mut declarations = declarations.into_iter().collect::<Vec<_>>();
         declarations.sort_by(runtime_type_order);
+        if declarations
+            .windows(2)
+            .any(|pair| pair[0].semantic_identity == pair[1].semantic_identity)
+        {
+            return Err(SectionCodecError::NonCanonicalTable(
+                "runtime_type_semantic_identity",
+            ));
+        }
         let mut function_interfaces = function_interfaces.into_iter().collect::<Vec<_>>();
         function_interfaces.sort_by(function_interface_order);
-        Self {
+        if function_interfaces
+            .windows(2)
+            .any(|pair| function_interface_order(&pair[0], &pair[1]) != Ordering::Less)
+        {
+            return Err(SectionCodecError::NonCanonicalTable(
+                "runtime_function_interface",
+            ));
+        }
+        Ok(Self {
             abi_version,
             runtime_layout_digest,
             declarations,
             function_interfaces,
-        }
+        })
     }
 
     pub fn encode_canonical_section(&self) -> Result<Vec<u8>, SectionCodecError> {
@@ -361,12 +372,12 @@ impl RuntimeTypesSection {
             &envelope.public_ids,
             budget,
         )?;
-        Ok(Self::new(
+        Ok(Self {
             abi_version,
             runtime_layout_digest,
             declarations,
             function_interfaces,
-        ))
+        })
     }
 
     pub fn canonical_digest(&self) -> Result<BundleDigest, SectionCodecError> {
@@ -378,6 +389,25 @@ impl RuntimeTypesSection {
         if self.abi_version != program.header.abi_version
             || self.runtime_layout_digest != program.header.runtime_layout_digest
         {
+            return Err(SectionCodecError::RuntimeLayoutMismatch);
+        }
+        let mut program_identities = BTreeSet::new();
+        if program
+            .runtime_types
+            .iter()
+            .any(|ty| !program_identities.insert(ty.semantic_identity()))
+        {
+            return Err(SectionCodecError::NonCanonicalTable(
+                "awbc_runtime_type_semantic_identity",
+            ));
+        }
+        let mut expected_declarations = program
+            .runtime_types
+            .iter()
+            .map(|ty| runtime_type_declaration(program, ty))
+            .collect::<Result<Vec<_>, _>>()?;
+        expected_declarations.sort_by(runtime_type_order);
+        if self.declarations != expected_declarations {
             return Err(SectionCodecError::RuntimeLayoutMismatch);
         }
         check_budget(
@@ -423,6 +453,24 @@ impl RuntimeTypesSection {
             budget.function_interfaces,
             "function_interfaces",
         )?;
+        if self
+            .declarations
+            .windows(2)
+            .any(|pair| runtime_type_order(&pair[0], &pair[1]) != Ordering::Less)
+        {
+            return Err(SectionCodecError::NonCanonicalTable(
+                "runtime_type_declaration_order",
+            ));
+        }
+        if self
+            .function_interfaces
+            .windows(2)
+            .any(|pair| function_interface_order(&pair[0], &pair[1]) != Ordering::Less)
+        {
+            return Err(SectionCodecError::NonCanonicalTable(
+                "runtime_function_interface_order",
+            ));
+        }
         let strings = StringTable::new(enum_symbol_names())?;
         let public_ids = PublicIdTable::new(unique_strings(
             self.declarations
@@ -474,15 +522,7 @@ impl RuntimeTypesSection {
         )
     }
 
-    fn from_awbc_program(
-        program: &AwbcProgram,
-    ) -> Result<
-        (
-            Vec<RuntimeTypeDeclaration>,
-            Vec<FunctionInterfaceFingerprint>,
-        ),
-        SectionCodecError,
-    > {
+    pub fn from_awbc_program(program: &AwbcProgram) -> Result<Self, SectionCodecError> {
         let declarations = program
             .runtime_types
             .iter()
@@ -495,22 +535,23 @@ impl RuntimeTypesSection {
             .map(|(index, function)| {
                 let public_id = function
                     .public_id
-                    .and_then(|id| program.strings.get(id.index()).cloned());
-                let signature_digest = program
-                    .signatures
-                    .get(function.signature.index())
-                    .map(serde_digest)
-                    .transpose()?
-                    .unwrap_or(BundleDigest::ZERO);
-                let frame_layout_digest = program
+                    .map(|id| canonical_awbc_string(program, id).map(str::to_owned))
+                    .transpose()?;
+                let signature = program.signatures.get(function.signature.index()).ok_or(
+                    SectionCodecError::BudgetExceeded("awbc_signature_reference"),
+                )?;
+                let signature_digest = runtime_signature_digest(program, signature)?;
+                let frame_layout = program
                     .frame_layouts
                     .get(function.frame_layout.index())
-                    .map(serde_digest)
-                    .transpose()?
-                    .unwrap_or(BundleDigest::ZERO);
+                    .ok_or(SectionCodecError::BudgetExceeded(
+                        "awbc_frame_layout_reference",
+                    ))?;
+                let frame_layout_digest = runtime_frame_layout_digest(program, frame_layout)?;
                 Ok(FunctionInterfaceFingerprint {
                     public_id,
-                    awbc_function_index: u32::try_from(index).unwrap_or(u32::MAX),
+                    awbc_function_index: u32::try_from(index)
+                        .map_err(|_| SectionCodecError::LengthOverflow)?,
                     kind: RuntimeFunctionKind::from(function.kind),
                     signature_digest,
                     frame_layout_digest,
@@ -526,7 +567,12 @@ impl RuntimeTypesSection {
                 })
             })
             .collect::<Result<Vec<_>, SectionCodecError>>()?;
-        Ok((declarations, function_interfaces))
+        Self::try_new(
+            program.header.abi_version,
+            program.header.runtime_layout_digest,
+            declarations,
+            function_interfaces,
+        )
     }
 }
 
@@ -624,7 +670,6 @@ impl EntrypointsSection {
         let changed_existing = old.iter().any(|(id, left)| {
             new.get(id).is_some_and(|right| {
                 left.awbc_function_index != right.awbc_function_index
-                    || left.initial_state != right.initial_state
                     || left.visibility != right.visibility
             })
         });
@@ -948,14 +993,22 @@ impl RuntimeValueKind {
             Self::Variant => 112,
             Self::Matrix => 113,
             Self::Tensor => 114,
-            Self::TaskHandle => 115,
-            Self::NeedHandle => 116,
+            Self::Task => 115,
+            Self::Need => 116,
             Self::Dynamic => 117,
             Self::Choice => 118,
             Self::Nominal => 119,
             Self::Opaque => 120,
             Self::Agent => 121,
             Self::Progress => 122,
+            Self::Range => 123,
+            Self::Iterator => 124,
+            Self::Array => 125,
+            Self::Map => 126,
+            Self::Stream => 127,
+            Self::Shared => 128,
+            Self::Reference => 129,
+            Self::Function => 130,
         }
     }
 
@@ -975,14 +1028,22 @@ impl RuntimeValueKind {
             112 => Some(Self::Variant),
             113 => Some(Self::Matrix),
             114 => Some(Self::Tensor),
-            115 => Some(Self::TaskHandle),
-            116 => Some(Self::NeedHandle),
+            115 => Some(Self::Task),
+            116 => Some(Self::Need),
             117 => Some(Self::Dynamic),
             118 => Some(Self::Choice),
             119 => Some(Self::Nominal),
             120 => Some(Self::Opaque),
             121 => Some(Self::Agent),
             122 => Some(Self::Progress),
+            123 => Some(Self::Range),
+            124 => Some(Self::Iterator),
+            125 => Some(Self::Array),
+            126 => Some(Self::Map),
+            127 => Some(Self::Stream),
+            128 => Some(Self::Shared),
+            129 => Some(Self::Reference),
+            130 => Some(Self::Function),
             _ => None,
         }
     }
@@ -1028,25 +1089,6 @@ impl ProductVisibility {
     }
 }
 
-impl InitialStateRequirement {
-    pub const fn encoded(self) -> u32 {
-        match self {
-            Self::None => 401,
-            Self::RootBindings => 402,
-            Self::HostPrepared => 403,
-        }
-    }
-
-    pub const fn from_encoded(value: u32) -> Option<Self> {
-        match value {
-            401 => Some(Self::None),
-            402 => Some(Self::RootBindings),
-            403 => Some(Self::HostPrepared),
-            _ => None,
-        }
-    }
-}
-
 fn runtime_types_registry() -> Result<FieldRegistry, SectionCodecError> {
     FieldRegistry::new([
         FieldSpec::required(FIELD_RUNTIME_ABI_VERSION, ResourceWireType::U32),
@@ -1075,67 +1117,456 @@ fn runtime_type_declaration(
     ty: &AwbcRuntimeType,
 ) -> Result<RuntimeTypeDeclaration, SectionCodecError> {
     Ok(RuntimeTypeDeclaration {
-        public_id: runtime_type_public_id(program, ty),
+        semantic_identity: ty.semantic_identity(),
+        public_id: runtime_type_public_id(program, ty)?,
         value_kind: runtime_value_kind(ty),
-        layout_digest: serde_digest(ty)?,
-        compatibility: match ty {
-            AwbcRuntimeType::Record { .. }
-            | AwbcRuntimeType::Variant { .. }
-            | AwbcRuntimeType::Nominal { .. }
-            | AwbcRuntimeType::NominalRecord { .. }
-            | AwbcRuntimeType::Opaque { .. }
-            | AwbcRuntimeType::Agent(_) => TypeCompatibilityLabel::RestartRequired,
+        layout_digest: runtime_type_layout_digest(program, ty)?,
+        compatibility: match ty.shape() {
+            AwbcRuntimeTypeShape::Record { .. }
+            | AwbcRuntimeTypeShape::Variant { .. }
+            | AwbcRuntimeTypeShape::Nominal { .. }
+            | AwbcRuntimeTypeShape::NominalRecord { .. }
+            | AwbcRuntimeTypeShape::Opaque { .. }
+            | AwbcRuntimeTypeShape::Agent(_) => TypeCompatibilityLabel::RestartRequired,
             _ => TypeCompatibilityLabel::CodeCompatible,
         },
     })
 }
 
-fn runtime_type_public_id(program: &AwbcProgram, ty: &AwbcRuntimeType) -> Option<String> {
-    match ty {
-        AwbcRuntimeType::Record { public_id, .. } => {
-            public_id.and_then(|id| program.strings.get(id.index()).cloned())
+fn runtime_type_public_id(
+    program: &AwbcProgram,
+    ty: &AwbcRuntimeType,
+) -> Result<Option<String>, SectionCodecError> {
+    let id = match ty.shape() {
+        AwbcRuntimeTypeShape::Record { public_id, .. } => {
+            return public_id
+                .map(|id| canonical_awbc_string(program, id).map(str::to_owned))
+                .transpose();
         }
-        AwbcRuntimeType::Variant { owner, .. } => match owner {
-            AwbcVariantIdentity::Nominal { public_id, .. } => {
-                program.strings.get(public_id.index()).cloned()
-            }
-            AwbcVariantIdentity::Option => Some("Option".to_owned()),
-            AwbcVariantIdentity::Result => Some("Result".to_owned()),
+        AwbcRuntimeTypeShape::Variant { owner, .. } => match owner {
+            AwbcVariantIdentity::Nominal { public_id, .. } => Some(*public_id),
+            AwbcVariantIdentity::Option | AwbcVariantIdentity::Result => return Ok(None),
         },
-        AwbcRuntimeType::Nominal { public_id, .. }
-        | AwbcRuntimeType::NominalRecord { public_id, .. } => {
-            program.strings.get(public_id.index()).cloned()
+        AwbcRuntimeTypeShape::Nominal { public_id, .. }
+        | AwbcRuntimeTypeShape::NominalRecord { public_id, .. } => Some(*public_id),
+        _ => return Ok(None),
+    };
+    id.map(|id| canonical_awbc_string(program, id).map(str::to_owned))
+        .transpose()
+}
+
+/// Canonical, table-position-independent executable layout identity.
+///
+/// AWBC table indices are generation-local coordinates. Runtime compatibility
+/// therefore commits referenced strings by value and child types by their
+/// total semantic identity. This transcript is the sole layout authority used
+/// by the compact RuntimeTypes section.
+fn runtime_type_layout_digest(
+    program: &AwbcProgram,
+    ty: &AwbcRuntimeType,
+) -> Result<BundleDigest, SectionCodecError> {
+    let mut transcript = CanonicalAwbcTranscript::new(b"arcweft.runtime-type-layout.v1\0");
+    transcript.write_semantic_type(ty.semantic_identity());
+    match ty.shape() {
+        AwbcRuntimeTypeShape::Unit => transcript.write_tag(0),
+        AwbcRuntimeTypeShape::Bool => transcript.write_tag(1),
+        AwbcRuntimeTypeShape::Int(kind) => {
+            transcript.write_tag(2);
+            transcript.write_u8(signed_int_kind_tag(*kind));
         }
-        _ => None,
+        AwbcRuntimeTypeShape::UInt(kind) => {
+            transcript.write_tag(3);
+            transcript.write_u8(unsigned_int_kind_tag(*kind));
+        }
+        AwbcRuntimeTypeShape::F32 => transcript.write_tag(4),
+        AwbcRuntimeTypeShape::F64 => transcript.write_tag(5),
+        AwbcRuntimeTypeShape::String => transcript.write_tag(6),
+        AwbcRuntimeTypeShape::Char => transcript.write_tag(7),
+        AwbcRuntimeTypeShape::Duration => transcript.write_tag(8),
+        AwbcRuntimeTypeShape::Progress => transcript.write_tag(9),
+        AwbcRuntimeTypeShape::EntityRef => transcript.write_tag(10),
+        AwbcRuntimeTypeShape::Tuple(items) => {
+            transcript.write_tag(11);
+            transcript.write_type_list(program, items)?;
+        }
+        AwbcRuntimeTypeShape::Sequence(item) => {
+            transcript.write_tag(12);
+            transcript.write_type(program, *item)?;
+        }
+        AwbcRuntimeTypeShape::Record { public_id, fields } => {
+            transcript.write_tag(13);
+            transcript.write_optional_string(program, *public_id)?;
+            transcript.write_len(fields.len())?;
+            for field in fields {
+                transcript.write_string(program, field.name)?;
+                transcript.write_type(program, field.ty)?;
+            }
+        }
+        AwbcRuntimeTypeShape::Variant {
+            owner,
+            arguments,
+            cases,
+        } => {
+            transcript.write_tag(14);
+            match owner {
+                AwbcVariantIdentity::Nominal { public_id } => {
+                    transcript.write_u8(0);
+                    transcript.write_string(program, *public_id)?;
+                }
+                AwbcVariantIdentity::Option => transcript.write_u8(1),
+                AwbcVariantIdentity::Result => transcript.write_u8(2),
+            }
+            transcript.write_type_list(program, arguments)?;
+            transcript.write_len(cases.len())?;
+            for case in cases {
+                transcript.write_string(program, case.name)?;
+                transcript.write_optional_type(program, case.payload)?;
+            }
+        }
+        AwbcRuntimeTypeShape::Choice(alternatives) => {
+            transcript.write_tag(15);
+            transcript.write_type_list(program, alternatives)?;
+        }
+        AwbcRuntimeTypeShape::Nominal {
+            public_id,
+            layout,
+            arguments,
+        } => {
+            transcript.write_tag(16);
+            transcript.write_string(program, *public_id)?;
+            transcript.write_bytes(layout);
+            transcript.write_type_list(program, arguments)?;
+        }
+        AwbcRuntimeTypeShape::NominalRecord {
+            public_id,
+            layout,
+            arguments,
+            fields,
+        } => {
+            transcript.write_tag(17);
+            transcript.write_string(program, *public_id)?;
+            transcript.write_bytes(layout);
+            transcript.write_type_list(program, arguments)?;
+            transcript.write_len(fields.len())?;
+            for field in fields {
+                transcript.write_string(program, field.name)?;
+                transcript.write_type(program, field.ty)?;
+            }
+        }
+        AwbcRuntimeTypeShape::Opaque {
+            producer,
+            admission,
+            value_class,
+            persistence,
+            arguments,
+        } => {
+            transcript.write_tag(18);
+            transcript.write_string(program, *producer)?;
+            transcript.write_u8(*admission as u8);
+            transcript.write_u8(value_class.semantic_tag());
+            transcript.write_u8(persistence.semantic_tag());
+            transcript.write_type_list(program, arguments)?;
+        }
+        AwbcRuntimeTypeShape::Bytes => transcript.write_tag(19),
+        AwbcRuntimeTypeShape::Never => transcript.write_tag(20),
+        AwbcRuntimeTypeShape::Agent(agent) => {
+            transcript.write_tag(21);
+            match agent {
+                AwbcAgentTypeShape::Leaf(kind) => {
+                    transcript.write_u8(0);
+                    transcript.write_u8(kind.semantic_tag());
+                }
+                AwbcAgentTypeShape::Probe(item) => {
+                    transcript.write_u8(1);
+                    transcript.write_type(program, *item)?;
+                }
+            }
+        }
+        AwbcRuntimeTypeShape::MatrixF32 => transcript.write_tag(22),
+        AwbcRuntimeTypeShape::MatrixF64 => transcript.write_tag(23),
+        AwbcRuntimeTypeShape::TensorF32 => transcript.write_tag(24),
+        AwbcRuntimeTypeShape::TensorF64 => transcript.write_tag(25),
+        AwbcRuntimeTypeShape::Range(item) => {
+            transcript.write_tag(26);
+            transcript.write_type(program, *item)?;
+        }
+        AwbcRuntimeTypeShape::Iterator(item) => {
+            transcript.write_tag(27);
+            transcript.write_type(program, *item)?;
+        }
+        AwbcRuntimeTypeShape::Array { item, length } => {
+            transcript.write_tag(28);
+            transcript.write_type(program, *item)?;
+            transcript.write_u64(*length);
+        }
+        AwbcRuntimeTypeShape::Map { key, value } => {
+            transcript.write_tag(29);
+            transcript.write_type(program, *key)?;
+            transcript.write_type(program, *value)?;
+        }
+        AwbcRuntimeTypeShape::Need(item) => {
+            transcript.write_tag(30);
+            transcript.write_type(program, *item)?;
+        }
+        AwbcRuntimeTypeShape::Task(item) => {
+            transcript.write_tag(31);
+            transcript.write_type(program, *item)?;
+        }
+        AwbcRuntimeTypeShape::Stream { item, error } => {
+            transcript.write_tag(32);
+            transcript.write_type(program, *item)?;
+            transcript.write_type(program, *error)?;
+        }
+        AwbcRuntimeTypeShape::Shared(item) => {
+            transcript.write_tag(33);
+            transcript.write_type(program, *item)?;
+        }
+        AwbcRuntimeTypeShape::Reference(item) => {
+            transcript.write_tag(34);
+            transcript.write_type(program, *item)?;
+        }
+        AwbcRuntimeTypeShape::Function { parameters, result } => {
+            transcript.write_tag(35);
+            transcript.write_type_list(program, parameters)?;
+            transcript.write_type(program, *result)?;
+        }
+        AwbcRuntimeTypeShape::Dynamic => transcript.write_tag(36),
+    }
+    Ok(transcript.finish())
+}
+
+fn runtime_signature_digest(
+    program: &AwbcProgram,
+    signature: &AwbcSignature,
+) -> Result<BundleDigest, SectionCodecError> {
+    let mut transcript = CanonicalAwbcTranscript::new(b"arcweft.runtime-signature.v1\0");
+    transcript.write_type_list(program, &signature.params)?;
+    transcript.write_optional_type(program, signature.result)?;
+    let effects = program.effect_sets.get(signature.effects.index()).ok_or(
+        SectionCodecError::BudgetExceeded("awbc_effect_set_reference"),
+    )?;
+    transcript.write_len(effects.effects.len())?;
+    for effect in &effects.effects {
+        transcript.write_string(program, *effect)?;
+    }
+    Ok(transcript.finish())
+}
+
+fn runtime_frame_layout_digest(
+    program: &AwbcProgram,
+    layout: &AwbcFrameLayout,
+) -> Result<BundleDigest, SectionCodecError> {
+    let mut transcript = CanonicalAwbcTranscript::new(b"arcweft.runtime-frame-layout.v1\0");
+    transcript.write_len(layout.slots.len())?;
+    for slot in &layout.slots {
+        transcript.write_optional_string(program, slot.name)?;
+        transcript.write_type(program, slot.ty)?;
+        transcript.write_u8(match slot.role {
+            AwbcFrameSlotRole::Parameter => 0,
+            AwbcFrameSlotRole::Local => 1,
+            AwbcFrameSlotRole::Temporary => 2,
+            AwbcFrameSlotRole::ReturnValue => 3,
+            AwbcFrameSlotRole::RuntimeState => 4,
+        });
+        transcript.write_u32(slot.scope_depth);
+    }
+    transcript.write_u32(layout.max_scope_depth);
+    Ok(transcript.finish())
+}
+
+fn canonical_awbc_string(
+    program: &AwbcProgram,
+    id: AwbcStringId,
+) -> Result<&str, SectionCodecError> {
+    program
+        .strings
+        .get(id.index())
+        .map(String::as_str)
+        .ok_or(SectionCodecError::BudgetExceeded("awbc_string_reference"))
+}
+
+struct CanonicalAwbcTranscript {
+    bytes: Vec<u8>,
+}
+
+impl CanonicalAwbcTranscript {
+    fn new(domain: &'static [u8]) -> Self {
+        Self {
+            bytes: domain.to_vec(),
+        }
+    }
+
+    fn write_tag(&mut self, tag: u16) {
+        self.bytes.extend_from_slice(&tag.to_le_bytes());
+    }
+
+    fn write_u8(&mut self, value: u8) {
+        self.bytes.push(value);
+    }
+
+    fn write_u32(&mut self, value: u32) {
+        self.bytes.extend_from_slice(&value.to_le_bytes());
+    }
+
+    fn write_u64(&mut self, value: u64) {
+        self.bytes.extend_from_slice(&value.to_le_bytes());
+    }
+
+    fn write_len(&mut self, value: usize) -> Result<(), SectionCodecError> {
+        self.write_u32(u32::try_from(value).map_err(|_| SectionCodecError::LengthOverflow)?);
+        Ok(())
+    }
+
+    fn write_bytes(&mut self, value: &[u8]) {
+        self.bytes.extend_from_slice(value);
+    }
+
+    fn write_str(&mut self, value: &str) -> Result<(), SectionCodecError> {
+        self.write_len(value.len())?;
+        self.write_bytes(value.as_bytes());
+        Ok(())
+    }
+
+    fn write_string(
+        &mut self,
+        program: &AwbcProgram,
+        id: AwbcStringId,
+    ) -> Result<(), SectionCodecError> {
+        self.write_str(canonical_awbc_string(program, id)?)
+    }
+
+    fn write_optional_string(
+        &mut self,
+        program: &AwbcProgram,
+        id: Option<AwbcStringId>,
+    ) -> Result<(), SectionCodecError> {
+        match id {
+            Some(id) => {
+                self.write_u8(1);
+                self.write_string(program, id)
+            }
+            None => {
+                self.write_u8(0);
+                Ok(())
+            }
+        }
+    }
+
+    fn write_semantic_type(&mut self, identity: RuntimeSemanticTypeId) {
+        self.write_bytes(identity.as_bytes());
+    }
+
+    fn write_type(
+        &mut self,
+        program: &AwbcProgram,
+        id: AwbcTypeId,
+    ) -> Result<(), SectionCodecError> {
+        let ty = program
+            .runtime_types
+            .get(id.index())
+            .ok_or(SectionCodecError::BudgetExceeded(
+                "awbc_runtime_type_reference",
+            ))?;
+        self.write_semantic_type(ty.semantic_identity());
+        Ok(())
+    }
+
+    fn write_optional_type(
+        &mut self,
+        program: &AwbcProgram,
+        id: Option<AwbcTypeId>,
+    ) -> Result<(), SectionCodecError> {
+        match id {
+            Some(id) => {
+                self.write_u8(1);
+                self.write_type(program, id)
+            }
+            None => {
+                self.write_u8(0);
+                Ok(())
+            }
+        }
+    }
+
+    fn write_type_list(
+        &mut self,
+        program: &AwbcProgram,
+        ids: &[AwbcTypeId],
+    ) -> Result<(), SectionCodecError> {
+        self.write_len(ids.len())?;
+        for id in ids {
+            self.write_type(program, *id)?;
+        }
+        Ok(())
+    }
+
+    fn finish(self) -> BundleDigest {
+        BundleDigest::of(&self.bytes)
+    }
+}
+
+const fn signed_int_kind_tag(kind: AwbcSignedIntKind) -> u8 {
+    match kind {
+        AwbcSignedIntKind::I8 => 0,
+        AwbcSignedIntKind::I16 => 1,
+        AwbcSignedIntKind::I32 => 2,
+        AwbcSignedIntKind::I64 => 3,
+        AwbcSignedIntKind::I128 => 4,
+        AwbcSignedIntKind::ISize => 5,
+    }
+}
+
+const fn unsigned_int_kind_tag(kind: AwbcUnsignedIntKind) -> u8 {
+    match kind {
+        AwbcUnsignedIntKind::U8 => 0,
+        AwbcUnsignedIntKind::U16 => 1,
+        AwbcUnsignedIntKind::U32 => 2,
+        AwbcUnsignedIntKind::U64 => 3,
+        AwbcUnsignedIntKind::U128 => 4,
+        AwbcUnsignedIntKind::USize => 5,
     }
 }
 
 fn runtime_value_kind(ty: &AwbcRuntimeType) -> RuntimeValueKind {
-    match ty {
-        AwbcRuntimeType::Unit => RuntimeValueKind::Unit,
-        AwbcRuntimeType::Bool => RuntimeValueKind::Bool,
-        AwbcRuntimeType::Int(_) => RuntimeValueKind::SignedInteger,
-        AwbcRuntimeType::UInt(_) => RuntimeValueKind::UnsignedInteger,
-        AwbcRuntimeType::F32 | AwbcRuntimeType::F64 => RuntimeValueKind::Float,
-        AwbcRuntimeType::String | AwbcRuntimeType::Char => RuntimeValueKind::Text,
-        AwbcRuntimeType::Duration => RuntimeValueKind::Duration,
-        AwbcRuntimeType::Progress => RuntimeValueKind::Progress,
-        AwbcRuntimeType::EntityRef => RuntimeValueKind::EntityRef,
-        AwbcRuntimeType::Tuple(_) => RuntimeValueKind::Tuple,
-        AwbcRuntimeType::Sequence(_) | AwbcRuntimeType::Bytes => RuntimeValueKind::Sequence,
-        AwbcRuntimeType::Record { .. } => RuntimeValueKind::Record,
-        AwbcRuntimeType::Variant { .. } => RuntimeValueKind::Variant,
-        AwbcRuntimeType::Choice(_) | AwbcRuntimeType::Never => RuntimeValueKind::Choice,
-        AwbcRuntimeType::Nominal { .. } | AwbcRuntimeType::NominalRecord { .. } => {
+    match ty.shape() {
+        AwbcRuntimeTypeShape::Unit => RuntimeValueKind::Unit,
+        AwbcRuntimeTypeShape::Bool => RuntimeValueKind::Bool,
+        AwbcRuntimeTypeShape::Int(_) => RuntimeValueKind::SignedInteger,
+        AwbcRuntimeTypeShape::UInt(_) => RuntimeValueKind::UnsignedInteger,
+        AwbcRuntimeTypeShape::F32 | AwbcRuntimeTypeShape::F64 => RuntimeValueKind::Float,
+        AwbcRuntimeTypeShape::String | AwbcRuntimeTypeShape::Char => RuntimeValueKind::Text,
+        AwbcRuntimeTypeShape::Duration => RuntimeValueKind::Duration,
+        AwbcRuntimeTypeShape::Progress => RuntimeValueKind::Progress,
+        AwbcRuntimeTypeShape::EntityRef => RuntimeValueKind::EntityRef,
+        AwbcRuntimeTypeShape::Tuple(_) => RuntimeValueKind::Tuple,
+        AwbcRuntimeTypeShape::Sequence(_) | AwbcRuntimeTypeShape::Bytes => {
+            RuntimeValueKind::Sequence
+        }
+        AwbcRuntimeTypeShape::Record { .. } => RuntimeValueKind::Record,
+        AwbcRuntimeTypeShape::Variant { .. } => RuntimeValueKind::Variant,
+        AwbcRuntimeTypeShape::Choice(_) | AwbcRuntimeTypeShape::Never => RuntimeValueKind::Choice,
+        AwbcRuntimeTypeShape::Nominal { .. } | AwbcRuntimeTypeShape::NominalRecord { .. } => {
             RuntimeValueKind::Nominal
         }
-        AwbcRuntimeType::Opaque { .. } => RuntimeValueKind::Opaque,
-        AwbcRuntimeType::Agent(_) => RuntimeValueKind::Agent,
-        AwbcRuntimeType::MatrixF32 | AwbcRuntimeType::MatrixF64 => RuntimeValueKind::Matrix,
-        AwbcRuntimeType::TensorF32 | AwbcRuntimeType::TensorF64 => RuntimeValueKind::Tensor,
-        AwbcRuntimeType::TaskHandle => RuntimeValueKind::TaskHandle,
-        AwbcRuntimeType::NeedHandle => RuntimeValueKind::NeedHandle,
-        AwbcRuntimeType::Dynamic => RuntimeValueKind::Dynamic,
+        AwbcRuntimeTypeShape::Opaque { .. } => RuntimeValueKind::Opaque,
+        AwbcRuntimeTypeShape::Agent(_) => RuntimeValueKind::Agent,
+        AwbcRuntimeTypeShape::MatrixF32 | AwbcRuntimeTypeShape::MatrixF64 => {
+            RuntimeValueKind::Matrix
+        }
+        AwbcRuntimeTypeShape::TensorF32 | AwbcRuntimeTypeShape::TensorF64 => {
+            RuntimeValueKind::Tensor
+        }
+        AwbcRuntimeTypeShape::Range(_) => RuntimeValueKind::Range,
+        AwbcRuntimeTypeShape::Iterator(_) => RuntimeValueKind::Iterator,
+        AwbcRuntimeTypeShape::Array { .. } => RuntimeValueKind::Array,
+        AwbcRuntimeTypeShape::Map { .. } => RuntimeValueKind::Map,
+        AwbcRuntimeTypeShape::Need(_) => RuntimeValueKind::Need,
+        AwbcRuntimeTypeShape::Task(_) => RuntimeValueKind::Task,
+        AwbcRuntimeTypeShape::Stream { .. } => RuntimeValueKind::Stream,
+        AwbcRuntimeTypeShape::Shared(_) => RuntimeValueKind::Shared,
+        AwbcRuntimeTypeShape::Reference(_) => RuntimeValueKind::Reference,
+        AwbcRuntimeTypeShape::Function { .. } => RuntimeValueKind::Function,
+        AwbcRuntimeTypeShape::Dynamic => RuntimeValueKind::Dynamic,
     }
 }
 
@@ -1161,10 +1592,9 @@ fn entrypoints_from_awbc(
                     .filter(|name| *name == &public_id || format!("entry.{name}") == public_id)
                     .cloned(),
                 awbc_function_index: match &entry.target {
-                    AwbcEntryTarget::Function(function) => Some(function.0),
+                    AwbcEntryTarget::Function { function, .. } => Some(function.0),
                     AwbcEntryTarget::Routes(routes) => routes.first().map(|route| route.target.0),
                 },
-                initial_state: InitialStateRequirement::None,
                 source_anchor: None,
                 visibility: match &entry.kind {
                     AwbcEntryKind::Test | AwbcEntryKind::Bench => ProductVisibility::TestOnly,
@@ -1253,17 +1683,10 @@ fn function_interface_compatibility(
 
 fn type_decl_index(
     declarations: &[RuntimeTypeDeclaration],
-) -> BTreeMap<String, &RuntimeTypeDeclaration> {
+) -> BTreeMap<RuntimeSemanticTypeId, &RuntimeTypeDeclaration> {
     declarations
         .iter()
-        .enumerate()
-        .map(|(index, declaration)| {
-            let key = declaration
-                .public_id
-                .clone()
-                .unwrap_or_else(|| format!("__anonymous_type_{index}"));
-            (key, declaration)
-        })
+        .map(|declaration| (declaration.semantic_identity, declaration))
         .collect()
 }
 
@@ -1283,8 +1706,9 @@ fn function_interface_index(
 }
 
 fn runtime_type_order(left: &RuntimeTypeDeclaration, right: &RuntimeTypeDeclaration) -> Ordering {
-    left.public_id
-        .cmp(&right.public_id)
+    left.semantic_identity
+        .cmp(&right.semantic_identity)
+        .then_with(|| left.public_id.cmp(&right.public_id))
         .then_with(|| left.value_kind.cmp(&right.value_kind))
         .then_with(|| left.layout_digest.cmp(&right.layout_digest))
 }
@@ -1318,9 +1742,22 @@ fn enum_symbol_specs() -> impl Iterator<Item = (u32, &'static str)> {
         (112, "variant"),
         (113, "matrix"),
         (114, "tensor"),
-        (115, "task_handle"),
-        (116, "need_handle"),
+        (115, "task"),
+        (116, "need"),
         (117, "dynamic"),
+        (118, "choice"),
+        (119, "nominal"),
+        (120, "opaque"),
+        (121, "agent"),
+        (122, "progress"),
+        (123, "range"),
+        (124, "iterator"),
+        (125, "array"),
+        (126, "map"),
+        (127, "stream"),
+        (128, "shared"),
+        (129, "reference"),
+        (130, "function"),
         (201, "flow"),
         (202, "pure_helper"),
         (203, "trait_method"),
@@ -1451,6 +1888,7 @@ fn encode_type_declarations(
     let mut out = Vec::new();
     write_u32(&mut out, u32_saturating(declarations.len()));
     for declaration in declarations {
+        out.extend_from_slice(declaration.semantic_identity.as_bytes());
         write_u32(
             &mut out,
             optional_public_ref(public_ids, declaration.public_id.as_deref())?,
@@ -1471,7 +1909,15 @@ fn decode_type_declarations(
     let count = reader.read_u32()? as usize;
     check_budget(count, budget.runtime_types, "runtime_types")?;
     let mut declarations = Vec::with_capacity(count);
+    let mut previous_identity = None;
     for _ in 0..count {
+        let semantic_identity = RuntimeSemanticTypeId::from_bytes(reader.read_array()?);
+        if previous_identity.is_some_and(|previous| previous >= semantic_identity) {
+            return Err(SectionCodecError::NonCanonicalTable(
+                "runtime_type_declaration_order",
+            ));
+        }
+        previous_identity = Some(semantic_identity);
         let public_id = public_ref_value(public_ids, reader.read_u32()?)?;
         let value_kind = RuntimeValueKind::from_encoded(reader.read_u32()?)
             .ok_or(SectionCodecError::NonCanonicalTable("runtime_value_kind"))?;
@@ -1479,11 +1925,20 @@ fn decode_type_declarations(
             .ok_or(SectionCodecError::NonCanonicalTable("type_compatibility"))?;
         let layout_digest = BundleDigest::from_bytes(reader.read_array()?);
         declarations.push(RuntimeTypeDeclaration {
+            semantic_identity,
             public_id,
             value_kind,
             layout_digest,
             compatibility,
         });
+    }
+    if declarations
+        .windows(2)
+        .any(|pair| runtime_type_order(&pair[0], &pair[1]) != Ordering::Less)
+    {
+        return Err(SectionCodecError::NonCanonicalTable(
+            "runtime_type_declaration_order",
+        ));
     }
     reader.finish()?;
     Ok(declarations)
@@ -1541,6 +1996,14 @@ fn decode_function_interfaces(
             compatibility,
         });
     }
+    if fingerprints
+        .windows(2)
+        .any(|pair| function_interface_order(&pair[0], &pair[1]) != Ordering::Less)
+    {
+        return Err(SectionCodecError::NonCanonicalTable(
+            "runtime_function_interface_order",
+        ));
+    }
     reader.finish()?;
     Ok(fingerprints)
 }
@@ -1559,7 +2022,6 @@ fn encode_entrypoints(
             optional_string_ref(strings, entry.exported_name.as_deref())?,
         );
         write_u32(&mut out, entry.awbc_function_index.unwrap_or(NONE_REF));
-        write_u32(&mut out, entry.initial_state.encoded());
         write_u32(&mut out, entry.visibility.encoded());
         if let Some(anchor) = &entry.source_anchor {
             write_u32(
@@ -1594,8 +2056,6 @@ fn decode_entrypoints(
             NONE_REF => None,
             index => Some(index),
         };
-        let initial_state = InitialStateRequirement::from_encoded(reader.read_u32()?)
-            .ok_or(SectionCodecError::NonCanonicalTable("entry_initial_state"))?;
         let visibility = ProductVisibility::from_encoded(reader.read_u32()?)
             .ok_or(SectionCodecError::NonCanonicalTable("entry_visibility"))?;
         let source = string_ref_value(strings, reader.read_u32()?)?;
@@ -1610,7 +2070,6 @@ fn decode_entrypoints(
             public_id,
             exported_name,
             awbc_function_index: function,
-            initial_state,
             source_anchor,
             visibility,
         });
@@ -1918,12 +2377,6 @@ fn read_public_id_list(
         .collect()
 }
 
-fn serde_digest(value: &impl Serialize) -> Result<BundleDigest, SectionCodecError> {
-    serde_json::to_vec(value)
-        .map(|bytes| BundleDigest::of(&bytes))
-        .map_err(|_| SectionCodecError::NonCanonicalTable("serde_fingerprint"))
-}
-
 fn write_u32(out: &mut Vec<u8>, value: u32) {
     out.extend_from_slice(&value.to_le_bytes());
 }
@@ -2021,7 +2474,9 @@ fn unique_strings(values: impl IntoIterator<Item = String>) -> Vec<String> {
 #[cfg(test)]
 mod opaque_runtime_type_tests {
     use super::*;
-    use arcweft_core::awbc::schema::{AwbcStringId, AwbcTypeId};
+    use arcweft_core::awbc::schema::{
+        AwbcAgentTypeShape, AwbcEffectSet, AwbcEffectSetId, AwbcFrameSlot, AwbcStringId, AwbcTypeId,
+    };
     use arcweft_core::pattern::RuntimeOpaqueTypeAdmission;
     use arcweft_core::plan::RuntimeAgentOperationalType;
     use arcweft_core::value::{RuntimeOpaquePersistence, RuntimeOpaqueValueClass};
@@ -2030,14 +2485,16 @@ mod opaque_runtime_type_tests {
     fn opaque_awbc_type_projects_to_final_bundle_value_family() {
         let mut program = AwbcProgram::default();
         program.strings.push("fixture.bundle".to_owned());
-        program.runtime_types.push(AwbcRuntimeType::Opaque {
-            producer: AwbcStringId(0),
-            semantic_identity: [81; 32],
-            admission: RuntimeOpaqueTypeAdmission::ExactIdentity,
-            value_class: RuntimeOpaqueValueClass::Plain,
-            persistence: RuntimeOpaquePersistence::ConstantAndSnapshot,
-            arguments: vec![],
-        });
+        program.runtime_types.push(AwbcRuntimeType::new(
+            RuntimeSemanticTypeId::from_bytes([81; 32]),
+            AwbcRuntimeTypeShape::Opaque {
+                producer: AwbcStringId(0),
+                admission: RuntimeOpaqueTypeAdmission::ExactIdentity,
+                value_class: RuntimeOpaqueValueClass::Plain,
+                persistence: RuntimeOpaquePersistence::ConstantAndSnapshot,
+                arguments: vec![],
+            },
+        ));
         let declaration =
             runtime_type_declaration(&program, &program.runtime_types[AwbcTypeId(2).index()])
                 .expect("opaque runtime type declaration projects");
@@ -2056,10 +2513,121 @@ mod opaque_runtime_type_tests {
     }
 
     #[test]
+    fn runtime_layout_and_function_abi_digests_ignore_generation_local_indices() {
+        let semantic_identity = RuntimeSemanticTypeId::from_bytes([83; 32]);
+        let mut left = AwbcProgram::default();
+        left.strings.extend([
+            "capture".to_owned(),
+            "effect.read".to_owned(),
+            "std.fixture".to_owned(),
+        ]);
+        left.effect_sets[0] = AwbcEffectSet {
+            effects: vec![AwbcStringId(1)],
+        };
+        left.runtime_types.push(AwbcRuntimeType::new(
+            semantic_identity,
+            AwbcRuntimeTypeShape::Opaque {
+                producer: AwbcStringId(2),
+                admission: RuntimeOpaqueTypeAdmission::ExactIdentity,
+                value_class: RuntimeOpaqueValueClass::Plain,
+                persistence: RuntimeOpaquePersistence::SnapshotOnly,
+                arguments: vec![AwbcTypeId(0)],
+            },
+        ));
+
+        let mut right = AwbcProgram::default();
+        right.runtime_types.swap(0, 1);
+        right.strings.extend([
+            "effect.read".to_owned(),
+            "std.fixture".to_owned(),
+            "capture".to_owned(),
+            "generation-only".to_owned(),
+        ]);
+        right.effect_sets[0] = AwbcEffectSet {
+            effects: vec![AwbcStringId(0)],
+        };
+        right.runtime_types.push(AwbcRuntimeType::new(
+            semantic_identity,
+            AwbcRuntimeTypeShape::Opaque {
+                producer: AwbcStringId(1),
+                admission: RuntimeOpaqueTypeAdmission::ExactIdentity,
+                value_class: RuntimeOpaqueValueClass::Plain,
+                persistence: RuntimeOpaquePersistence::SnapshotOnly,
+                arguments: vec![AwbcTypeId(1)],
+            },
+        ));
+
+        assert_eq!(
+            runtime_type_layout_digest(&left, &left.runtime_types[2]),
+            runtime_type_layout_digest(&right, &right.runtime_types[2])
+        );
+
+        let left_signature = AwbcSignature {
+            params: vec![AwbcTypeId(2)],
+            result: Some(AwbcTypeId(0)),
+            effects: AwbcEffectSetId(0),
+        };
+        let right_signature = AwbcSignature {
+            params: vec![AwbcTypeId(2)],
+            result: Some(AwbcTypeId(1)),
+            effects: AwbcEffectSetId(0),
+        };
+        assert_eq!(
+            runtime_signature_digest(&left, &left_signature),
+            runtime_signature_digest(&right, &right_signature)
+        );
+
+        let left_frame = AwbcFrameLayout {
+            slots: vec![AwbcFrameSlot {
+                name: Some(AwbcStringId(0)),
+                ty: AwbcTypeId(2),
+                role: AwbcFrameSlotRole::Parameter,
+                scope_depth: 0,
+            }],
+            max_scope_depth: 0,
+        };
+        let right_frame = AwbcFrameLayout {
+            slots: vec![AwbcFrameSlot {
+                name: Some(AwbcStringId(2)),
+                ty: AwbcTypeId(2),
+                role: AwbcFrameSlotRole::Parameter,
+                scope_depth: 0,
+            }],
+            max_scope_depth: 0,
+        };
+        assert_eq!(
+            runtime_frame_layout_digest(&left, &left_frame),
+            runtime_frame_layout_digest(&right, &right_frame)
+        );
+    }
+
+    #[test]
+    fn canonical_runtime_digest_rejects_a_missing_table_reference() {
+        let mut program = AwbcProgram::default();
+        program.runtime_types.push(AwbcRuntimeType::new(
+            RuntimeSemanticTypeId::from_bytes([84; 32]),
+            AwbcRuntimeTypeShape::Opaque {
+                producer: AwbcStringId(u32::MAX),
+                admission: RuntimeOpaqueTypeAdmission::ExactIdentity,
+                value_class: RuntimeOpaqueValueClass::Plain,
+                persistence: RuntimeOpaquePersistence::SnapshotOnly,
+                arguments: Vec::new(),
+            },
+        ));
+        assert_eq!(
+            runtime_type_layout_digest(&program, &program.runtime_types[2]),
+            Err(SectionCodecError::BudgetExceeded("awbc_string_reference"))
+        );
+    }
+
+    #[test]
     fn agent_awbc_type_projects_to_non_colliding_bundle_value_family() {
         let mut program = AwbcProgram::default();
-        program.runtime_types.push(AwbcRuntimeType::Agent(
-            RuntimeAgentOperationalType::Predicate,
+        program.runtime_types.push(AwbcRuntimeType::new(
+            RuntimeSemanticTypeId::from_bytes([82; 32]),
+            AwbcRuntimeTypeShape::Agent(AwbcAgentTypeShape::Leaf(
+                RuntimeAgentOperationalType::Predicate,
+            )),
         ));
         let declaration =
             runtime_type_declaration(&program, &program.runtime_types[AwbcTypeId(2).index()])
@@ -2080,6 +2648,20 @@ mod opaque_runtime_type_tests {
             RuntimeValueKind::from_encoded(122),
             Some(RuntimeValueKind::Progress)
         );
-        assert_eq!(RuntimeValueKind::from_encoded(123), None);
+        let closed_kinds = [
+            (RuntimeValueKind::Range, 123),
+            (RuntimeValueKind::Iterator, 124),
+            (RuntimeValueKind::Array, 125),
+            (RuntimeValueKind::Map, 126),
+            (RuntimeValueKind::Stream, 127),
+            (RuntimeValueKind::Shared, 128),
+            (RuntimeValueKind::Reference, 129),
+            (RuntimeValueKind::Function, 130),
+        ];
+        for (kind, encoded) in closed_kinds {
+            assert_eq!(kind.encoded(), encoded);
+            assert_eq!(RuntimeValueKind::from_encoded(encoded), Some(kind));
+        }
+        assert_eq!(RuntimeValueKind::from_encoded(131), None);
     }
 }

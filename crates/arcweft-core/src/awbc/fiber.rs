@@ -3,17 +3,17 @@
 use super::schema::{
     AwbcBlockId, AwbcChoiceId, AwbcContentUnitId, AwbcEffectPlanId, AwbcEntryId, AwbcEntryTarget,
     AwbcFrameLayoutId, AwbcFrameSlotRole, AwbcFunctionId, AwbcHostCallId, AwbcPatternId,
-    AwbcProgram, AwbcRegisterId, AwbcResumePointId, AwbcRuntimeType, AwbcScopeId, AwbcSignatureId,
-    AwbcSignedIntKind, AwbcSourceMapId, AwbcStreamPlanId, AwbcTaskPlanId, AwbcTrapCode, AwbcTypeId,
-    AwbcUnsignedIntKind, AwbcVariantIdentity,
+    AwbcProgram, AwbcRegisterId, AwbcResumePointId, AwbcRuntimeTypeShape, AwbcScopeId,
+    AwbcSignatureId, AwbcSignedIntKind, AwbcSourceMapId, AwbcStreamPlanId, AwbcTaskPlanId,
+    AwbcTrapCode, AwbcTypeId, AwbcUnsignedIntKind, AwbcVariantIdentity,
 };
-use crate::entry::RuntimeNominalTypeId;
+use crate::entry::{FlowParameterCoordinate, RuntimeNominalTypeId};
 use crate::pattern::{RuntimeSemanticTypeId, RuntimeVariantIdentity};
 use crate::plan::RuntimeDialogueValueBinding;
 use crate::task::NeedId;
 use crate::value::{
-    AwbcRuntimeValueSnapshot, RuntimeBinding, RuntimeFunctionBody, RuntimeFunctionValue,
-    RuntimeInt, RuntimeIterator, RuntimeSeq, RuntimeUInt, RuntimeValue,
+    AwbcRuntimeValueSnapshot, RuntimeBinding, RuntimeFlowParameterBinding, RuntimeFunctionBody,
+    RuntimeFunctionValue, RuntimeInt, RuntimeIterator, RuntimeSeq, RuntimeUInt, RuntimeValue,
 };
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeSet;
@@ -777,15 +777,25 @@ pub enum FiberStateError {
     InvalidRuntimeValue { path: String, reason: String },
     #[error("{kind} has no admitted AWBC snapshot representation")]
     UnsupportedSnapshotValue { kind: &'static str },
-    #[error("AWBC entry expects {expected} arguments, received {actual}")]
-    EntryArgumentCount { expected: usize, actual: usize },
-    #[error("AWBC entry argument `{name}` is duplicated")]
-    DuplicateEntryArgument { name: String },
-    #[error("AWBC entry argument `{name}` does not match a parameter")]
-    UnknownEntryArgument { name: String },
-    #[error("AWBC entry argument `{name}` expected {expected}, received {actual}")]
-    EntryArgumentType {
+    #[error("AWBC function expects {expected} arguments, received {actual}")]
+    ArgumentCount { expected: usize, actual: usize },
+    #[error("AWBC function argument `{name}` is duplicated")]
+    DuplicateArgument { name: String },
+    #[error("AWBC function argument `{name}` does not match a parameter")]
+    UnknownArgument { name: String },
+    #[error("AWBC function argument `{name}` expected {expected}, received {actual}")]
+    ArgumentType {
         name: String,
+        expected: String,
+        actual: String,
+    },
+    #[error("AWBC Flow parameter coordinate {parameter:?} is out of range")]
+    UnknownFlowParameter { parameter: FlowParameterCoordinate },
+    #[error("AWBC Flow parameter coordinate {parameter:?} is duplicated")]
+    DuplicateFlowParameter { parameter: FlowParameterCoordinate },
+    #[error("AWBC Flow parameter {parameter:?} expected {expected}, received {actual}")]
+    FlowParameterType {
+        parameter: FlowParameterCoordinate,
         expected: String,
         actual: String,
     },
@@ -804,13 +814,39 @@ impl FiberState {
             .get(entry.index())
             .ok_or(FiberStateError::UnknownEntry(entry.0))?;
         let function = match &entry_record.target {
-            AwbcEntryTarget::Function(function) => *function,
+            AwbcEntryTarget::Function { function, .. } => *function,
             AwbcEntryTarget::Routes(_) => return Err(FiberStateError::RouteSelectionRequired),
         };
+        Self::for_entry_target_function(program, entry, function, generation, budget_quantum)
+    }
+
+    /// Creates a root fiber after the host has selected an exact function from
+    /// this entry's closed target inventory.
+    pub fn for_entry_target_function(
+        program: &AwbcProgram,
+        entry: AwbcEntryId,
+        function: AwbcFunctionId,
+        generation: u64,
+        budget_quantum: u64,
+    ) -> Result<Self, FiberStateError> {
+        let entry_record = program
+            .entries
+            .get(entry.index())
+            .ok_or(FiberStateError::UnknownEntry(entry.0))?;
+        let selected = match &entry_record.target {
+            AwbcEntryTarget::Function { function: expected } => *expected == function,
+            AwbcEntryTarget::Routes(routes) => routes.iter().any(|route| route.target == function),
+        };
+        if !selected {
+            return Err(FiberStateError::InvalidFrame);
+        }
         Self::for_function(program, entry, function, generation, budget_quantum)
     }
 
-    /// Creates a root fiber after the host has selected a route/function.
+    /// Creates an internal function fiber. Entry target membership is not an
+    /// invariant of trait methods, stream transforms, pure calls, or child
+    /// functions; external entry/route selection must use
+    /// [`Self::for_entry_target_function`].
     pub fn for_function(
         program: &AwbcProgram,
         entry: AwbcEntryId,
@@ -855,30 +891,20 @@ impl FiberState {
         })
     }
 
-    /// Transactionally binds the root entry arguments to parameter registers.
-    ///
-    /// Bindings whose names all match named parameters are treated as named
-    /// arguments. Otherwise, an equally-sized list is positional. Validation
-    /// completes before the live frame is mutated, so a rejected step may be
-    /// retried with corrected input.
-    pub fn bind_entry_arguments(
+    /// Transactionally binds checked Flow parameter coordinates to the active
+    /// Flow frame. This is the sole external Flow ABI path and never resolves
+    /// diagnostic parameter names.
+    pub(super) fn bind_flow_parameter_coordinates(
         &mut self,
         program: &AwbcProgram,
-        bindings: &[RuntimeBinding],
+        bindings: &[RuntimeFlowParameterBinding],
     ) -> Result<(), FiberStateError> {
         let frame = self.active_frame()?;
         let function = program
             .functions
             .get(frame.function.index())
             .ok_or(FiberStateError::UnknownFunction(frame.function.0))?;
-        let entry = program
-            .entries
-            .get(self.entry.index())
-            .ok_or(FiberStateError::UnknownEntry(self.entry.0))?;
-        if entry.signature != function.signature {
-            return Err(FiberStateError::InvalidFrame);
-        }
-        self.bind_active_frame_arguments(program, entry.signature, bindings)
+        self.bind_active_flow_parameter_coordinates(program, function.signature, bindings)
     }
 
     /// Transactionally binds arguments to the active function frame.
@@ -920,7 +946,7 @@ impl FiberState {
             return Err(FiberStateError::InvalidFrame);
         }
         if bindings.len() != parameters.len() {
-            return Err(FiberStateError::EntryArgumentCount {
+            return Err(FiberStateError::ArgumentCount {
                 expected: parameters.len(),
                 actual: bindings.len(),
             });
@@ -944,7 +970,7 @@ impl FiberState {
             let mut used = std::collections::BTreeSet::new();
             for binding in bindings {
                 if !used.insert(binding.name.as_str()) {
-                    return Err(FiberStateError::DuplicateEntryArgument {
+                    return Err(FiberStateError::DuplicateArgument {
                         name: binding.name.clone(),
                     });
                 }
@@ -952,7 +978,7 @@ impl FiberState {
                     .iter()
                     .position(|name| name.is_some_and(|name| name == binding.name))
                 else {
-                    return Err(FiberStateError::UnknownEntryArgument {
+                    return Err(FiberStateError::UnknownArgument {
                         name: binding.name.clone(),
                     });
                 };
@@ -974,13 +1000,81 @@ impl FiberState {
                 return Err(FiberStateError::InvalidFrame);
             }
             if !runtime_value_matches_type(program, value, expected, 0) {
-                return Err(FiberStateError::EntryArgumentType {
+                return Err(FiberStateError::ArgumentType {
                     name: name.to_owned(),
                     expected: runtime_type_label(program, expected),
                     actual: runtime_value_type_label(value),
                 });
             }
             register_values[register] = Some(value.clone());
+        }
+        self.active_frame_mut()?.registers = register_values;
+        Ok(())
+    }
+
+    fn bind_active_flow_parameter_coordinates(
+        &mut self,
+        program: &AwbcProgram,
+        signature_id: AwbcSignatureId,
+        bindings: &[RuntimeFlowParameterBinding],
+    ) -> Result<(), FiberStateError> {
+        let frame = self.active_frame()?;
+        let signature = program
+            .signatures
+            .get(signature_id.index())
+            .ok_or(FiberStateError::InvalidFrame)?;
+        let layout = program
+            .frame_layouts
+            .get(frame.layout.index())
+            .ok_or(FiberStateError::UnknownFrameLayout(frame.layout.0))?;
+        let parameters = layout
+            .slots
+            .iter()
+            .enumerate()
+            .filter(|(_, slot)| slot.role == AwbcFrameSlotRole::Parameter)
+            .collect::<Vec<_>>();
+        if parameters.len() != signature.params.len() {
+            return Err(FiberStateError::InvalidFrame);
+        }
+        if bindings.len() != parameters.len() {
+            return Err(FiberStateError::ArgumentCount {
+                expected: parameters.len(),
+                actual: bindings.len(),
+            });
+        }
+
+        let mut used = BTreeSet::new();
+        let mut register_values = frame.registers.clone();
+        for binding in bindings {
+            if !used.insert(binding.parameter) {
+                return Err(FiberStateError::DuplicateFlowParameter {
+                    parameter: binding.parameter,
+                });
+            }
+            let position =
+                binding
+                    .parameter
+                    .index()
+                    .map_err(|_| FiberStateError::UnknownFlowParameter {
+                        parameter: binding.parameter,
+                    })?;
+            let Some((register, slot)) = parameters.get(position).copied() else {
+                return Err(FiberStateError::UnknownFlowParameter {
+                    parameter: binding.parameter,
+                });
+            };
+            let expected = signature.params[position];
+            if slot.ty != expected {
+                return Err(FiberStateError::InvalidFrame);
+            }
+            if !runtime_value_matches_type(program, &binding.value, expected, 0) {
+                return Err(FiberStateError::FlowParameterType {
+                    parameter: binding.parameter,
+                    expected: runtime_type_label(program, expected),
+                    actual: runtime_value_type_label(&binding.value),
+                });
+            }
+            register_values[register] = Some(binding.value.clone());
         }
         self.active_frame_mut()?.registers = register_values;
         Ok(())
@@ -2181,7 +2275,7 @@ impl FiberFrame {
             .filter(|(_, slot)| slot.role == AwbcFrameSlotRole::Parameter)
             .collect::<Vec<_>>();
         if parameters.len() != signature.params.len() || args.len() != parameters.len() {
-            return Err(FiberStateError::EntryArgumentCount {
+            return Err(FiberStateError::ArgumentCount {
                 expected: parameters.len(),
                 actual: args.len(),
             });
@@ -2190,7 +2284,7 @@ impl FiberFrame {
         for (position, ((register, slot), value)) in parameters.iter().zip(args).enumerate() {
             let expected = signature.params[position];
             if slot.ty != expected || !runtime_value_matches_type(program, value, expected, 0) {
-                return Err(FiberStateError::EntryArgumentType {
+                return Err(FiberStateError::ArgumentType {
                     name: slot
                         .name
                         .and_then(|id| program.strings.get(id.index()).cloned())
@@ -2259,8 +2353,8 @@ pub(crate) fn runtime_value_matches_type(
     let Some(ty) = program.runtime_types.get(type_id.index()) else {
         return false;
     };
-    match (value, ty) {
-        (RuntimeValue::Reduction(value), AwbcRuntimeType::Opaque { arguments, .. }) => program
+    match (value, ty.shape()) {
+        (RuntimeValue::Reduction(value), AwbcRuntimeTypeShape::Opaque { arguments, .. }) => program
             .opaque_owner(type_id)
             .ok()
             .flatten()
@@ -2269,54 +2363,64 @@ pub(crate) fn runtime_value_matches_type(
                     && arguments.len() == 1
                     && runtime_value_matches_type(program, value.state(), arguments[0], depth + 1)
             }),
-        (_, AwbcRuntimeType::Dynamic)
+        (_, AwbcRuntimeTypeShape::Dynamic)
         | (
             RuntimeValue::String(_),
-            AwbcRuntimeType::String | AwbcRuntimeType::TaskHandle | AwbcRuntimeType::NeedHandle,
+            AwbcRuntimeTypeShape::String
+                | AwbcRuntimeTypeShape::Task(_)
+                | AwbcRuntimeTypeShape::Need(_),
         )
-        | (RuntimeValue::Unit, AwbcRuntimeType::Unit)
-        | (RuntimeValue::Bool(_), AwbcRuntimeType::Bool)
-        | (RuntimeValue::F32(_), AwbcRuntimeType::F32)
-        | (RuntimeValue::F64(_), AwbcRuntimeType::F64)
-        | (RuntimeValue::Char(_), AwbcRuntimeType::Char)
-        | (RuntimeValue::Duration(_), AwbcRuntimeType::Duration)
-        | (RuntimeValue::Progress(_), AwbcRuntimeType::Progress)
-        | (RuntimeValue::EntityRef(_), AwbcRuntimeType::EntityRef)
-        | (RuntimeValue::MatrixF32(_), AwbcRuntimeType::MatrixF32)
-        | (RuntimeValue::MatrixF64(_), AwbcRuntimeType::MatrixF64)
-        | (RuntimeValue::TensorF32(_), AwbcRuntimeType::TensorF32)
-        | (RuntimeValue::TensorF64(_), AwbcRuntimeType::TensorF64) => true,
-        (RuntimeValue::Agent(value), AwbcRuntimeType::Agent(expected)) => {
-            value.operational_type() == *expected
+        | (RuntimeValue::Unit, AwbcRuntimeTypeShape::Unit)
+        | (RuntimeValue::Bool(_), AwbcRuntimeTypeShape::Bool)
+        | (RuntimeValue::F32(_), AwbcRuntimeTypeShape::F32)
+        | (RuntimeValue::F64(_), AwbcRuntimeTypeShape::F64)
+        | (RuntimeValue::Char(_), AwbcRuntimeTypeShape::Char)
+        | (RuntimeValue::Duration(_), AwbcRuntimeTypeShape::Duration)
+        | (RuntimeValue::Progress(_), AwbcRuntimeTypeShape::Progress)
+        | (RuntimeValue::EntityRef(_), AwbcRuntimeTypeShape::EntityRef)
+        | (RuntimeValue::MatrixF32(_), AwbcRuntimeTypeShape::MatrixF32)
+        | (RuntimeValue::MatrixF64(_), AwbcRuntimeTypeShape::MatrixF64)
+        | (RuntimeValue::TensorF32(_), AwbcRuntimeTypeShape::TensorF32)
+        | (RuntimeValue::TensorF64(_), AwbcRuntimeTypeShape::TensorF64) => true,
+        (RuntimeValue::Agent(value), AwbcRuntimeTypeShape::Agent(expected)) => {
+            value.operational_type() == expected.operational_type()
         }
-        (RuntimeValue::Record(_), AwbcRuntimeType::Agent(expected)) => {
-            expected.accepts_protocol_record()
+        (RuntimeValue::Record(_), AwbcRuntimeTypeShape::Agent(expected)) => {
+            expected.operational_type().accepts_protocol_record()
         }
-        (RuntimeValue::Seq(values), AwbcRuntimeType::Bytes) => values
+        (RuntimeValue::Seq(values), AwbcRuntimeTypeShape::Bytes) => values
             .clone()
             .into_values()
             .iter()
             .all(|value| matches!(value, RuntimeValue::UInt(value) if value.width() == crate::value::RuntimeUnsignedIntWidth::U8)),
-        (RuntimeValue::Int(value), AwbcRuntimeType::Int(kind)) => signed_kind(*value) == *kind,
-        (RuntimeValue::UInt(value), AwbcRuntimeType::UInt(kind)) => unsigned_kind(*value) == *kind,
-        (RuntimeValue::Opaque(value), AwbcRuntimeType::Opaque { .. }) => program
+        (RuntimeValue::Int(value), AwbcRuntimeTypeShape::Int(kind)) => signed_kind(*value) == *kind,
+        (RuntimeValue::UInt(value), AwbcRuntimeTypeShape::UInt(kind)) => unsigned_kind(*value) == *kind,
+        (RuntimeValue::Opaque(value), AwbcRuntimeTypeShape::Opaque { .. }) => program
             .opaque_owner(type_id)
             .ok()
             .flatten()
             .is_some_and(|owner| owner.accepts_opaque_value(value)),
-        (RuntimeValue::Tuple(values), AwbcRuntimeType::Tuple(types)) => {
+        (RuntimeValue::Tuple(values), AwbcRuntimeTypeShape::Tuple(types)) => {
             values.len() == types.len()
                 && values
                     .iter()
                     .zip(types)
                     .all(|(value, ty)| runtime_value_matches_type(program, value, *ty, depth + 1))
         }
-        (RuntimeValue::Seq(values), AwbcRuntimeType::Sequence(item)) => values
+        (RuntimeValue::Seq(values), AwbcRuntimeTypeShape::Sequence(item)) => values
             .clone()
             .into_values()
             .iter()
             .all(|value| runtime_value_matches_type(program, value, *item, depth + 1)),
-        (RuntimeValue::Record(values), AwbcRuntimeType::Record { fields, .. }) => {
+        (RuntimeValue::Seq(values), AwbcRuntimeTypeShape::Array { item, length }) => {
+            values.len() == usize::try_from(*length).unwrap_or(usize::MAX)
+                && values
+                    .clone()
+                    .into_values()
+                    .iter()
+                    .all(|value| runtime_value_matches_type(program, value, *item, depth + 1))
+        }
+        (RuntimeValue::Record(values), AwbcRuntimeTypeShape::Record { fields, .. }) => {
             values.len() == fields.len()
                 && values.iter().zip(fields).all(|(value, field)| {
                     runtime_value_matches_type(program, value.value(), field.ty, depth + 1)
@@ -2329,9 +2433,10 @@ pub(crate) fn runtime_value_matches_type(
                 name,
                 payload,
             },
-            AwbcRuntimeType::Variant { owner, cases },
+            AwbcRuntimeTypeShape::Variant { owner, cases, .. },
         ) => {
-            runtime_variant_identity(program, owner).as_ref() == Some(actual_owner)
+            runtime_variant_identity(program, ty.semantic_identity(), owner).as_ref()
+                == Some(actual_owner)
                 && usize::try_from(*ordinal)
                     .ok()
                     .and_then(|ordinal| cases.get(ordinal))
@@ -2354,12 +2459,12 @@ pub(crate) fn runtime_value_matches_type(
                             })
                     })
         }
-        (value, AwbcRuntimeType::Choice(alternatives)) => alternatives
+        (value, AwbcRuntimeTypeShape::Choice(alternatives)) => alternatives
             .iter()
             .any(|alternative| runtime_value_matches_type(program, value, *alternative, depth + 1)),
         (
             RuntimeValue::NominalRecord(record),
-            AwbcRuntimeType::Nominal {
+            AwbcRuntimeTypeShape::Nominal {
                 public_id, layout, ..
             },
         ) => {
@@ -2371,7 +2476,7 @@ pub(crate) fn runtime_value_matches_type(
         }
         (
             RuntimeValue::NominalRecord(record),
-            AwbcRuntimeType::NominalRecord { .. },
+            AwbcRuntimeTypeShape::NominalRecord { .. },
         ) => program
             .nominal_record_layout(type_id)
             .ok()
@@ -2383,16 +2488,14 @@ pub(crate) fn runtime_value_matches_type(
 
 pub(crate) fn runtime_variant_identity(
     program: &AwbcProgram,
+    semantic_identity: RuntimeSemanticTypeId,
     owner: &AwbcVariantIdentity,
 ) -> Option<RuntimeVariantIdentity> {
     match owner {
-        AwbcVariantIdentity::Nominal {
-            public_id,
-            semantic_identity,
-        } => Some(RuntimeVariantIdentity::Nominal {
+        AwbcVariantIdentity::Nominal { public_id } => Some(RuntimeVariantIdentity::Nominal {
             nominal: RuntimeNominalTypeId::try_new(program.strings.get(public_id.index())?.clone())
                 .ok()?,
-            semantic_identity: RuntimeSemanticTypeId::from_bytes(*semantic_identity),
+            semantic_identity,
         }),
         AwbcVariantIdentity::Option => Some(RuntimeVariantIdentity::Option),
         AwbcVariantIdentity::Result => Some(RuntimeVariantIdentity::Result),
@@ -2465,44 +2568,25 @@ fn runtime_value_type_label(value: &RuntimeValue) -> String {
 mod tests {
     use super::*;
     use crate::awbc::schema::{
-        AwbcBlock, AwbcEntry, AwbcEntryKind, AwbcFlowBinding, AwbcFrameLayout, AwbcFrameSlot,
-        AwbcFunction, AwbcFunctionFlags, AwbcFunctionKind, AwbcSafePointKind, AwbcSignature,
-        AwbcStringId, AwbcTableRange, AwbcTerminator,
+        AwbcBlock, AwbcEntry, AwbcEntryKind, AwbcFlowBinding, AwbcFrameLayout, AwbcFunction,
+        AwbcFunctionFlags, AwbcFunctionKind, AwbcSafePointKind, AwbcSignature, AwbcStringId,
+        AwbcTableRange, AwbcTerminator,
     };
 
-    fn entry_arguments_program() -> AwbcProgram {
+    fn zero_parameter_entry_program() -> AwbcProgram {
         let mut program = AwbcProgram::default();
-        program.strings = vec!["a".to_owned(), "b".to_owned(), "entry".to_owned()];
-        let string_ty = AwbcTypeId(u32::try_from(program.runtime_types.len()).unwrap());
-        program.runtime_types.push(AwbcRuntimeType::String);
-        let i64_ty = AwbcTypeId(u32::try_from(program.runtime_types.len()).unwrap());
-        program
-            .runtime_types
-            .push(AwbcRuntimeType::Int(AwbcSignedIntKind::I64));
+        program.strings = vec!["entry".to_owned()];
         program.signatures.push(AwbcSignature {
-            params: vec![string_ty, i64_ty],
+            params: Vec::new(),
             result: None,
             effects: Default::default(),
         });
         program.frame_layouts.push(AwbcFrameLayout {
-            slots: vec![
-                AwbcFrameSlot {
-                    name: Some(AwbcStringId(0)),
-                    ty: string_ty,
-                    role: AwbcFrameSlotRole::Parameter,
-                    scope_depth: 0,
-                },
-                AwbcFrameSlot {
-                    name: Some(AwbcStringId(1)),
-                    ty: i64_ty,
-                    role: AwbcFrameSlotRole::Parameter,
-                    scope_depth: 0,
-                },
-            ],
+            slots: Vec::new(),
             max_scope_depth: 0,
         });
         program.functions.push(AwbcFunction {
-            public_id: Some(AwbcStringId(2)),
+            public_id: Some(AwbcStringId(0)),
             kind: AwbcFunctionKind::Flow,
             signature: Default::default(),
             frame_layout: Default::default(),
@@ -2529,20 +2613,14 @@ mod tests {
             runtime_id: crate::plan::EntryRuntimeId::canonical("main")
                 .expect("test entry runtime ID is valid"),
             binding: crate::entry::EntryBindingIdentity::from_bytes([1; 32]),
-            public_id: AwbcStringId(2),
+            public_id: AwbcStringId(0),
             kind: AwbcEntryKind::Cli,
-            signature: Default::default(),
-            target: AwbcEntryTarget::Function(Default::default()),
+            target: AwbcEntryTarget::Function {
+                function: Default::default(),
+            },
             roles: crate::entry::RuntimeEntryRoles::None,
         });
         program
-    }
-
-    fn binding(name: &str, value: RuntimeValue) -> RuntimeBinding {
-        RuntimeBinding {
-            name: name.to_owned(),
-            value,
-        }
     }
 
     #[test]
@@ -2569,121 +2647,8 @@ mod tests {
     }
 
     #[test]
-    fn entry_arguments_accept_positional_and_named_equivalent_bindings() {
-        let program = entry_arguments_program();
-        let mut positional = FiberState::for_entry(&program, Default::default(), 0, 64).unwrap();
-        positional
-            .bind_entry_arguments(
-                &program,
-                &[
-                    binding("$0", RuntimeValue::String("value".to_owned())),
-                    binding("$1", RuntimeValue::i64(7)),
-                ],
-            )
-            .unwrap();
-        assert_eq!(
-            positional
-                .active_frame()
-                .unwrap()
-                .register(AwbcRegisterId(0)),
-            Ok(&RuntimeValue::String("value".to_owned()))
-        );
-        assert_eq!(
-            positional
-                .active_frame()
-                .unwrap()
-                .register(AwbcRegisterId(1)),
-            Ok(&RuntimeValue::i64(7))
-        );
-
-        let mut named = FiberState::for_entry(&program, Default::default(), 0, 64).unwrap();
-        named
-            .bind_entry_arguments(
-                &program,
-                &[
-                    binding("b", RuntimeValue::i64(11)),
-                    binding("a", RuntimeValue::String("named".to_owned())),
-                ],
-            )
-            .unwrap();
-        assert_eq!(
-            named.active_frame().unwrap().register(AwbcRegisterId(0)),
-            Ok(&RuntimeValue::String("named".to_owned()))
-        );
-        assert_eq!(
-            named.active_frame().unwrap().register(AwbcRegisterId(1)),
-            Ok(&RuntimeValue::i64(11))
-        );
-    }
-
-    #[test]
-    fn rejected_entry_arguments_are_transactional_and_retryable() {
-        let program = entry_arguments_program();
-        let mut fiber = FiberState::for_entry(&program, Default::default(), 0, 64).unwrap();
-        let before = fiber.clone();
-        let error = fiber
-            .bind_entry_arguments(
-                &program,
-                &[
-                    binding("a", RuntimeValue::String("ok".to_owned())),
-                    binding("b", RuntimeValue::Bool(false)),
-                ],
-            )
-            .unwrap_err();
-        assert!(matches!(error, FiberStateError::EntryArgumentType { .. }));
-        assert_eq!(fiber, before);
-
-        fiber
-            .bind_entry_arguments(
-                &program,
-                &[
-                    binding("a", RuntimeValue::String("ok".to_owned())),
-                    binding("b", RuntimeValue::i64(9)),
-                ],
-            )
-            .unwrap();
-        assert_eq!(
-            fiber.active_frame().unwrap().register(AwbcRegisterId(1)),
-            Ok(&RuntimeValue::i64(9))
-        );
-    }
-
-    #[test]
-    fn entry_arguments_reject_missing_unknown_and_duplicate_names() {
-        let program = entry_arguments_program();
-        let mut fiber = FiberState::for_entry(&program, Default::default(), 0, 64).unwrap();
-        assert!(matches!(
-            fiber.bind_entry_arguments(
-                &program,
-                &[binding("a", RuntimeValue::String("value".to_owned()))]
-            ),
-            Err(FiberStateError::EntryArgumentCount { .. })
-        ));
-        assert!(matches!(
-            fiber.bind_entry_arguments(
-                &program,
-                &[
-                    binding("a", RuntimeValue::String("value".to_owned())),
-                    binding("missing", RuntimeValue::i64(1)),
-                ]
-            ),
-            Err(FiberStateError::UnknownEntryArgument { .. })
-        ));
-        assert!(matches!(
-            fiber.bind_entry_arguments(
-                &program,
-                &[
-                    binding("a", RuntimeValue::String("value".to_owned())),
-                    binding("a", RuntimeValue::i64(1)),
-                ]
-            ),
-            Err(FiberStateError::DuplicateEntryArgument { .. })
-        ));
-    }
-
-    #[test]
     fn fiber_snapshot_validation_rejects_invalid_cursor_shape() {
-        let program = entry_arguments_program();
+        let program = zero_parameter_entry_program();
         let mut fiber = FiberState::for_entry(&program, Default::default(), 0, 64).unwrap();
         fiber.validate_for_program(&program).unwrap();
 

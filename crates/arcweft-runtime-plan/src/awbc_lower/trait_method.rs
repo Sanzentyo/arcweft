@@ -1,6 +1,7 @@
 use crate::awbc_lower::expr::AwbcExprLowerer;
 use crate::awbc_lower::frame::FrameBuilder;
 use crate::awbc_lower::inventory::{AwbcInventory, AwbcLowerDiagnostic};
+use crate::awbc_lower::pattern::admitted_local_type;
 use crate::awbc_lower::{table_index, table_range_len};
 use arcweft_core::awbc::schema::{
     AwbcBlock, AwbcBlockId, AwbcFunction, AwbcFunctionFlags, AwbcFunctionId, AwbcFunctionKind,
@@ -42,19 +43,8 @@ impl<'a, 'plan> AwbcTraitMethodLowerer<'a, 'plan> {
         let public_label = trait_method_label(method);
         let owner = self.inventory.reserve_function_slot();
         let mut frame = FrameBuilder::new();
-        let dynamic_ty = self.inventory.dynamic_ty();
         for input in &method.input_locals {
-            let ty = self
-                .plan
-                .local_declarations()
-                .get(*input)
-                .map_or(dynamic_ty, |declaration| {
-                    crate::awbc_lower::pattern::plan_type(
-                        self.inventory,
-                        self.plan,
-                        declaration.ty(),
-                    )
-                });
+            let ty = admitted_local_type(self.inventory, self.plan, *input);
             frame.parameter(*input, ty);
         }
 
@@ -171,11 +161,7 @@ impl TraitMethodBodyBuilder {
                 body,
             } => {
                 let value = AwbcExprLowerer::new(inventory, frame, path.clone(), plan).lower(expr);
-                let ty = if let Some(declaration) = plan.local_declarations().get(*binding) {
-                    crate::awbc_lower::pattern::plan_type(inventory, plan, declaration.ty())
-                } else {
-                    inventory.dynamic_ty()
-                };
+                let ty = admitted_local_type(inventory, plan, *binding);
                 let local = frame.local(*binding, ty);
                 inventory.push_instruction(AwbcInstruction::Move {
                     dst: local,

@@ -70,29 +70,44 @@ impl RuntimePlanTypeDeclaration {
 /// Immutable contiguous plan-local semantic type table.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct RuntimePlanTypeTable {
-    declarations: Box<[RuntimePlanTypeDeclaration]>,
+    rows: Box<[RuntimePlanTypeTableRow]>,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+struct RuntimePlanTypeTableRow {
+    id: RuntimePlanTypeId,
+    declaration: RuntimePlanTypeDeclaration,
 }
 
 impl RuntimePlanTypeTable {
     #[must_use]
     pub fn len(&self) -> usize {
-        self.declarations.len()
+        self.rows.len()
     }
 
     #[must_use]
     pub fn is_empty(&self) -> bool {
-        self.declarations.is_empty()
+        self.rows.is_empty()
     }
 
     /// Resolves one ID issued by this table's builder.
     #[must_use]
     pub fn get(&self, id: RuntimePlanTypeId) -> Option<&RuntimePlanTypeDeclaration> {
-        declaration_index(id).and_then(|index| self.declarations.get(index))
+        declaration_index(id)
+            .and_then(|index| self.rows.get(index))
+            .map(|row| &row.declaration)
     }
 
     /// Declarations in their canonical plan-local ID order.
     pub fn declarations(&self) -> impl ExactSizeIterator<Item = &RuntimePlanTypeDeclaration> {
-        self.declarations.iter()
+        self.rows.iter().map(|row| &row.declaration)
+    }
+
+    /// Declarations paired with their exact contiguous plan-local identity.
+    pub fn declarations_with_ids(
+        &self,
+    ) -> impl ExactSizeIterator<Item = (RuntimePlanTypeId, &RuntimePlanTypeDeclaration)> {
+        self.rows.iter().map(|row| (row.id, &row.declaration))
     }
 
     /// Resolves the plan-local ID for one exact semantic identity.
@@ -101,10 +116,10 @@ impl RuntimePlanTypeTable {
         &self,
         semantic_identity: RuntimeSemanticTypeId,
     ) -> Option<RuntimePlanTypeId> {
-        self.declarations
+        self.rows
             .iter()
-            .position(|row| row.semantic_identity == semantic_identity)
-            .and_then(|index| plan_type_id_for_index(index).ok())
+            .find(|row| row.declaration.semantic_identity == semantic_identity)
+            .map(|row| row.id)
     }
 
     pub(crate) fn is_checked(
@@ -417,11 +432,20 @@ impl RuntimePlanTypeTableBuilder {
         prepared.result_ids
     }
 
-    #[must_use]
-    pub(crate) fn finish(self) -> RuntimePlanTypeTable {
-        RuntimePlanTypeTable {
-            declarations: self.rows.into_boxed_slice(),
-        }
+    pub(crate) fn finish(self) -> Result<RuntimePlanTypeTable, RuntimePlanTypeTableError> {
+        let rows = self
+            .rows
+            .into_iter()
+            .enumerate()
+            .map(|(index, declaration)| {
+                Ok(RuntimePlanTypeTableRow {
+                    id: plan_type_id_for_index(index)?,
+                    declaration,
+                })
+            })
+            .collect::<Result<Vec<_>, RuntimePlanTypeTableError>>()?
+            .into_boxed_slice();
+        Ok(RuntimePlanTypeTable { rows })
     }
 
     #[cfg(test)]
@@ -559,7 +583,7 @@ mod tests {
         let ids = builder
             .intern_batch([root, item])
             .expect("valid semantic graph");
-        let table = builder.finish();
+        let table = builder.finish().expect("valid semantic graph");
 
         assert_eq!(ids.len(), 2);
         assert_eq!(table.class(ids[0]), Ok(RuntimePlanTypeClass::Checked));
@@ -612,7 +636,7 @@ mod tests {
                 leaf(12, RuntimePlanTypeProjection::Unit),
             ])
             .expect("range graph");
-        let table = builder.finish();
+        let table = builder.finish().expect("range graph");
 
         assert_eq!(
             table.class(ids[0]),

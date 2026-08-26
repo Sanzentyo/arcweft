@@ -50,7 +50,7 @@ struct ExpectedViewRuntimeState {
     frame_revision: u64,
     logical_time: arcweft_presentation::fx::FxLogicalTime,
     allocator: arcweft_view::ViewMountAllocator,
-    root_bindings: BTreeMap<String, arcweft_core::value::RuntimeValue>,
+    view_root_bindings: BTreeMap<String, arcweft_core::value::RuntimeValue>,
     mounts: BTreeMap<ViewOccurrenceKey, MountedView>,
     axis_seeds: BundleViewAxisSeedRegistry,
     required_dialogue_views: BTreeSet<ViewId>,
@@ -323,6 +323,7 @@ impl BundleViewRuntime {
                 self.frame_revision = frame_revision;
                 self.mounts = mounts;
                 self.axis_seeds = axis_seeds;
+                self.event_tokens.clear();
                 self.last_invalidation = Some(invalidation);
             }
         }
@@ -354,7 +355,7 @@ impl BundleViewRuntime {
             frame_revision: self.frame_revision,
             logical_time: self.logical_time,
             allocator: self.allocator,
-            root_bindings: self.root_bindings.clone(),
+            view_root_bindings: self.view_root_bindings.clone(),
             mounts: self.mounts.clone(),
             axis_seeds: self.axis_seeds.clone(),
             required_dialogue_views: self.required_dialogue_views.clone(),
@@ -377,7 +378,7 @@ impl BundleViewRuntime {
             && self.frame_revision == expected.frame_revision
             && self.logical_time == expected.logical_time
             && self.allocator == expected.allocator
-            && self.root_bindings == expected.root_bindings
+            && self.view_root_bindings == expected.view_root_bindings
             && self.mounts == expected.mounts
             && self.axis_seeds == expected.axis_seeds
             && self.required_dialogue_views == expected.required_dialogue_views

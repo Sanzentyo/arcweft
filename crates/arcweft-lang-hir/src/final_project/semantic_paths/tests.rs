@@ -7,8 +7,8 @@ use crate::dialogue_application::{
 };
 use crate::expr::{
     HirChoiceBody, HirChoiceExpr, HirChoiceItem, HirChoiceOptionBody, HirChoiceOptionField,
-    HirChoiceOptionFor, HirExprKind, HirExpressionOwnedBodyRole, HirLinePlanStatementRole,
-    HirNestedExpressionPathSegment,
+    HirChoiceOptionFor, HirExprKind, HirExpressionChildOwnership, HirExpressionChildRole,
+    HirExpressionOwnedBodyRole, HirLinePlanStatementRole, HirNestedExpressionPathSegment,
 };
 use crate::identity::{HirDatabaseId, HirModuleId, HirTypedId, RawHirId};
 use crate::symbol::{CallableDeclarationId, CallableDeclarationOwner};
@@ -34,34 +34,163 @@ fn fixture() -> (std::sync::Arc<HirModule>, CallableDeclarationKey, ExprId) {
 }
 
 #[test]
+fn postfix_candidate_targets_are_references_only_at_the_immediate_candidate_boundary() {
+    let (module, _, owner) = fixture();
+    for candidate_role in [
+        HirExpressionChildRole::PostfixIndexCandidate,
+        HirExpressionChildRole::PostfixDialogueCandidate,
+    ] {
+        let immediate_candidate = [HirSemanticPathStep::Expression(candidate_role.clone())];
+        assert_eq!(
+            expression_edge_ownership(
+                &module,
+                owner,
+                None,
+                &immediate_candidate,
+                &HirExpressionChildRole::Target,
+                owner,
+            )
+            .unwrap(),
+            HirExpressionChildOwnership::ReferenceOnly
+        );
+        assert_eq!(
+            expression_edge_ownership(
+                &module,
+                owner,
+                None,
+                &immediate_candidate,
+                &HirExpressionChildRole::DialogueTarget,
+                owner,
+            )
+            .unwrap(),
+            HirExpressionChildOwnership::ReferenceOnly
+        );
+
+        let descendant_postfix = [
+            HirSemanticPathStep::Expression(candidate_role),
+            HirSemanticPathStep::Expression(HirExpressionChildRole::Index),
+        ];
+        assert_eq!(
+            expression_edge_ownership(
+                &module,
+                owner,
+                None,
+                &descendant_postfix,
+                &HirExpressionChildRole::Target,
+                owner,
+            )
+            .unwrap(),
+            HirExpressionChildOwnership::Owning
+        );
+        assert_eq!(
+            expression_edge_ownership(
+                &module,
+                owner,
+                None,
+                &descendant_postfix,
+                &HirExpressionChildRole::DialogueTarget,
+                owner,
+            )
+            .unwrap(),
+            HirExpressionChildOwnership::Owning
+        );
+    }
+}
+
+#[test]
 fn expression_walk_rejects_cycle_before_duplicate() {
-    let (module, declaration, owner) = fixture();
-    let mut builder = PathBuilder::new(&module, declaration);
-    builder.expressions.insert(owner, Box::new([]));
+    let (module, _, owner) = fixture();
+    let mut builder = HirProjectEvaluationTopologyBuilder::new_for_module(&module);
+    builder
+        .expressions
+        .insert(owner, HirSemanticOwnerPath::new(Box::new([]), Box::new([])));
     builder.active_expressions.insert(owner);
     assert_eq!(
-        builder.walk_expression(owner, &[], &[]),
+        builder.walk_expression(owner, &[], &[], None, CaptureAccess::Read),
         Err(HirSemanticPathError::CyclicPath)
     );
 }
 
 #[test]
+fn item_root_path_index_keeps_recovery_coordinate_typed_and_item_owned() {
+    let (module, _, _) = fixture();
+    let item = module.items().next().expect("fixture item").0;
+    let expression = module.expressions().next().expect("fixture expression").0;
+    let mut builder = HirProjectEvaluationTopologyBuilder::new_for_module(&module);
+    let checkpoint = builder.path_checkpoint();
+    builder
+        .walk_item_root(&HirItemEvaluationRoot {
+            role: HirDeclarationItemRootRole::Recovery {
+                owner: HirItemRecoveryRootOwner::Item,
+            },
+            child: HirDeclarationBodyRootChild::Expression(expression),
+        })
+        .expect("recovery item root");
+    let paths = builder
+        .path_index_since(
+            HirSemanticPathRoot::Item {
+                item,
+                entry_ordinal: 0,
+                role: HirItemEvaluationEntryRole::Item,
+            },
+            &checkpoint,
+        )
+        .expect("item recovery path index");
+    assert!(matches!(
+        paths.root(),
+        HirSemanticPathRoot::Item {
+            item: actual,
+            entry_ordinal: 0,
+            role: HirItemEvaluationEntryRole::Item,
+        } if *actual == item
+    ));
+    assert!(matches!(
+        paths
+            .expression(expression)
+            .and_then(|path| path.steps().first()),
+        Some(HirSemanticPathStep::DeclarationItem(
+            HirDeclarationItemRootRole::Recovery {
+                owner: HirItemRecoveryRootOwner::Item
+            }
+        ))
+    ));
+}
+
+#[test]
 fn expression_walk_rejects_duplicate_before_resolution() {
-    let (module, declaration, owner) = fixture();
-    let mut builder = PathBuilder::new(&module, declaration);
-    builder.expressions.insert(owner, Box::new([]));
+    let (module, _, owner) = fixture();
+    let mut builder = HirProjectEvaluationTopologyBuilder::new_for_module(&module);
+    builder
+        .expressions
+        .insert(owner, HirSemanticOwnerPath::new(Box::new([]), Box::new([])));
     assert_eq!(
-        builder.walk_expression(owner, &[], &[]),
+        builder.walk_expression(owner, &[], &[], None, CaptureAccess::Read),
+        Err(HirSemanticPathError::DuplicatePath)
+    );
+}
+
+#[test]
+fn insert_unique_rejects_every_second_owning_coordinate() {
+    let (_, _, owner) = fixture();
+    let mut rows = BTreeMap::new();
+    insert_unique(&mut rows, owner, &[], &[]).expect("first owning coordinate");
+    assert_eq!(
+        insert_unique(
+            &mut rows,
+            owner,
+            &[HirSemanticPathStep::DeclarationResult],
+            &[],
+        ),
         Err(HirSemanticPathError::DuplicatePath)
     );
 }
 
 #[test]
 fn expression_walk_rejects_an_unresolved_owner() {
-    let (module, declaration, owner) = fixture();
-    let mut builder = PathBuilder::new(&module, declaration);
+    let (module, _, owner) = fixture();
+    let mut builder = HirProjectEvaluationTopologyBuilder::new_for_module(&module);
     assert_eq!(
-        builder.walk_expression(owner, &[], &[]),
+        builder.walk_expression(owner, &[], &[], None, CaptureAccess::Read),
         Err(HirSemanticPathError::UnresolvedOwner)
     );
 }
@@ -80,7 +209,7 @@ fn semantic_path_ordinal_conversion_is_checked_at_the_u32_boundary() {
 
 #[test]
 fn path_builder_consumes_nested_start_and_together_owned_edge() {
-    let (module, declaration, _) = fixture();
+    let (module, _, _) = fixture();
     let statement = module.statements().next().expect("fixture statement").0;
     let target = module.expressions().next().expect("fixture expression").0;
     let scope = module.scopes().next().expect("fixture scope").0;
@@ -119,13 +248,16 @@ fn path_builder_consumes_nested_start_and_together_owned_edge() {
         })
         .expect("nested Thread edge");
 
-    let mut builder = PathBuilder::new(&module, declaration);
+    let mut builder = HirProjectEvaluationTopologyBuilder::new_for_module(&module);
     builder
         .walk_expression_owned_edge(
+            target,
             &edge,
             &[HirSemanticPathStep::DeclarationBody(
                 HirDeclarationBodyRootRole::FunctionBody,
             )],
+            &[],
+            CaptureAccess::Read,
         )
         .expect("builder consumes nested owned edge");
     let path = builder
@@ -133,7 +265,7 @@ fn path_builder_consumes_nested_start_and_together_owned_edge() {
         .get(&statement)
         .expect("nested statement path");
     assert!(matches!(
-        path.as_ref(),
+        path.steps(),
         [
             HirSemanticPathStep::DeclarationBody(HirDeclarationBodyRootRole::FunctionBody),
             HirSemanticPathStep::ExpressionOwned(
@@ -149,7 +281,7 @@ fn path_builder_consumes_nested_start_and_together_owned_edge() {
 
 #[test]
 fn path_builder_preserves_a_multisegment_choice_owned_statement_path() {
-    let (module, declaration, _) = fixture();
+    let (module, _, _) = fixture();
     let statement = module.statements().next().expect("fixture statement").0;
     let pattern = module.patterns().next().expect("fixture pattern").0;
     let source = module.expressions().next().expect("fixture expression").0;
@@ -179,13 +311,16 @@ fn path_builder_preserves_a_multisegment_choice_owned_statement_path() {
         })
         .expect("Choice option Let edge");
 
-    let mut builder = PathBuilder::new(&module, declaration);
+    let mut builder = HirProjectEvaluationTopologyBuilder::new_for_module(&module);
     builder
         .walk_expression_owned_edge(
+            source,
             &edge,
             &[HirSemanticPathStep::DeclarationBody(
                 HirDeclarationBodyRootRole::FunctionBody,
             )],
+            &[],
+            CaptureAccess::Read,
         )
         .expect("builder consumes Choice owned edge");
     let path = builder
@@ -193,7 +328,7 @@ fn path_builder_preserves_a_multisegment_choice_owned_statement_path() {
         .get(&statement)
         .expect("Choice statement path");
     assert!(matches!(
-        path.as_ref(),
+        path.steps(),
         [
             HirSemanticPathStep::DeclarationBody(HirDeclarationBodyRootRole::FunctionBody),
             HirSemanticPathStep::ExpressionOwned(

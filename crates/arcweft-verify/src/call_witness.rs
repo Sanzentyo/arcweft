@@ -4,7 +4,7 @@ use std::sync::Arc;
 
 use arcweft_lang_hir::identity::ExprId;
 use arcweft_lang_sema::{
-    callable::{CallTargetFact, CallTargetFacts, CallableCandidateId, ResolvedCallable},
+    callable::{CallAnalysisOutcome, CallTargetFacts, CallableCandidateId},
     types::TypeKind,
 };
 
@@ -15,8 +15,8 @@ const MAX_PROOF_CALL_CANDIDATE_WITNESSES: usize = 2;
 /// The semantic resolver retains the complete candidate set under its
 /// production ceiling. Proof keeps only the primary candidate and first
 /// distinct conflict candidate while preserving exact truncation accounting.
-/// The committed call result remains singular because speculative
-/// candidate-local results are not checker-owned public facts.
+/// A result is projected only for a selected application; unselected
+/// outcomes own candidate evidence but no result type.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct ProofCallWitnessProjection {
     expression: ExprId,
@@ -28,46 +28,26 @@ pub struct ProofCallWitnessProjection {
 
 impl ProofCallWitnessProjection {
     pub(crate) fn from_facts(facts: &CallTargetFacts) -> Self {
-        let (primary, conflicts, considered) = match facts.target() {
-            CallTargetFact::Selected {
-                selected,
-                considered,
-            } => (
-                Some(selected.id()),
-                considered.as_ref(),
-                considered.as_ref(),
-            ),
-            CallTargetFact::Ambiguous {
-                candidates,
-                considered,
-            } => (
-                candidates.first().map(ResolvedCallable::id),
-                candidates.as_ref(),
-                considered.as_ref(),
-            ),
-            CallTargetFact::Rejected { candidates } => (
-                candidates.first().map(ResolvedCallable::id),
-                candidates.as_ref(),
-                candidates.as_ref(),
-            ),
-            CallTargetFact::NonCallable { .. } | CallTargetFact::Missing { .. } => {
-                (None, &[] as &[ResolvedCallable], &[] as &[ResolvedCallable])
-            }
-        };
-        let conflicts = conflicts
-            .iter()
-            .map(|candidate| candidate.id().clone())
-            .collect::<Vec<_>>();
-        let considered = considered
-            .iter()
-            .map(|candidate| candidate.id().clone())
+        let outcome = facts.outcome();
+        let primary = outcome.primary_candidate_id();
+        let conflicts = outcome.candidate_ids().cloned().collect::<Vec<_>>();
+        let considered = outcome
+            .considered_candidate_ids()
+            .cloned()
             .collect::<Vec<_>>();
         let (candidate_witnesses, omitted_count) =
             retain_candidate_witnesses(primary, &conflicts, &considered);
+        let result = match outcome {
+            CallAnalysisOutcome::Selected(application) => Some(application.result().ty().clone()),
+            CallAnalysisOutcome::Ambiguous(_)
+            | CallAnalysisOutcome::Rejected(_)
+            | CallAnalysisOutcome::NonCallable(_)
+            | CallAnalysisOutcome::Missing(_) => None,
+        };
         Self {
             expression: facts.expression(),
             candidate_witnesses,
-            result: facts.result().cloned(),
+            result,
             considered_count: considered.len(),
             omitted_count,
         }
@@ -83,7 +63,7 @@ impl ProofCallWitnessProjection {
         &self.candidate_witnesses
     }
 
-    /// Returns the committed or deterministic-recovery call result.
+    /// Returns the selected call result, if this outcome was selected.
     pub const fn result(&self) -> Option<&TypeKind> {
         self.result.as_ref()
     }

@@ -4,6 +4,7 @@ use arcweft_bundle::container::{BundleDigest, BundleView, ReadBudget};
 use arcweft_bundle::patch::{BundlePatchArtifact, decode_patch_bundle, encode_patch_bundle};
 use arcweft_bundle::resource_codec::SourceMapSection;
 use arcweft_bundle::{ArcweftBundle, BundleFormat, BundleManifest, BundleRuntimeSummary};
+use arcweft_core::entry::{FlowContractHash, RuntimeFlowExecutable, RuntimeFlowSchema};
 use arcweft_core::plan::{
     FlowRuntimeId, RuntimeDialogueContentPlanSeed, RuntimeFlowOpSeed, RuntimeFlowSeed,
     RuntimeLineId, RuntimePlanBuilder,
@@ -216,6 +217,19 @@ fn fixture_bundle_with(display_text: &str) -> ArcweftBundle {
             ],
         ))
         .expect("flow admits");
+    builder
+        .push_flow_schema(RuntimeFlowSchema {
+            flow: flow.clone(),
+            parameters: Vec::new(),
+        })
+        .expect("flow schema admits");
+    builder
+        .push_flow_executable(RuntimeFlowExecutable {
+            flow: flow.clone(),
+            contract: FlowContractHash::from_bytes([0x77; 32]),
+            controller: None,
+        })
+        .expect("flow executable admits");
     builder
         .push_entry(arcweft_core::plan::RuntimeEntrySpec {
             id: arcweft_core::plan::EntryRuntimeId::from_source_entity_body("entry.main")

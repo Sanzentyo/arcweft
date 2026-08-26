@@ -1,18 +1,20 @@
 use crate::awbc_lower::frame::FrameBuilder;
-use crate::awbc_lower::inventory::{AwbcInventory, AwbcLowerDiagnostic, PendingAwbcClosure};
-use crate::awbc_lower::pattern::{lower_pattern, plan_type, variant_case_name};
+use crate::awbc_lower::inventory::{AwbcInventory, PendingAwbcClosure};
+use crate::awbc_lower::pattern::{admitted_plan_type, admitted_variant_case_name, lower_pattern};
 use crate::awbc_lower::{table_index, table_range_len};
 use arcweft_core::awbc::schema::{
     AwbcBinaryOp, AwbcBindMode, AwbcBlock, AwbcBlockId, AwbcEffectSetId, AwbcFunction,
     AwbcFunctionFlags, AwbcFunctionKind, AwbcInstruction, AwbcIntrinsic, AwbcIntrinsicId,
-    AwbcPatternId, AwbcPureHelperId, AwbcRegisterId, AwbcRuntimeType, AwbcSafePointKind,
+    AwbcPatternId, AwbcPureHelperId, AwbcRegisterId, AwbcRuntimeTypeShape, AwbcSafePointKind,
     AwbcScopeId, AwbcTableRange, AwbcTerminator, AwbcTraitMethodId, AwbcTrapCode, AwbcUnaryOp,
+    AwbcUnsignedIntKind,
 };
+use arcweft_core::entry::RuntimeCallableId;
 use arcweft_core::pattern::RuntimePattern;
 use arcweft_core::plan::{RuntimePlan, RuntimeReceiverMode};
 use arcweft_core::value::{
     RuntimeBinaryOp, RuntimeCallTarget, RuntimeExpr, RuntimeExprKind, RuntimeExprMatchArm,
-    RuntimeUnaryOp,
+    RuntimeFieldProjection, RuntimeUnaryOp,
 };
 
 /// Expression lowerer used by flow/source/stream builders.
@@ -51,26 +53,25 @@ impl<'a, 'b, 'plan> AwbcExprLowerer<'a, 'b, 'plan> {
     pub fn lower(&mut self, expr: &RuntimeExpr) -> AwbcRegisterId {
         match expr.kind() {
             RuntimeExprKind::Value(value) => {
-                let ty = self.inventory.intern_runtime_value_type(value);
+                let ty = admitted_plan_type(self.inventory, self.plan, expr.ty());
                 let dst = self.frame.temp(ty);
-                let constant = self.inventory.constant_runtime_value(value);
+                let constant = self.inventory.constant_runtime_value_typed(value, ty);
                 self.inventory
                     .push_instruction(AwbcInstruction::LoadConst { dst, constant });
                 dst
             }
-            RuntimeExprKind::Local(name) => {
-                self.frame.register_for_local(*name).unwrap_or_else(|| {
-                    self.inventory.diagnostic(AwbcLowerDiagnostic::error(
-                        self.path.clone(),
-                        format!("local `{name}` is read before it is allocated in AWBC frame"),
-                    ));
-                    self.frame.temp(self.inventory.dynamic_ty())
-                })
-            }
+            RuntimeExprKind::Local(name) => self.frame.register_for_local(*name).unwrap_or_else(|| {
+                panic!(
+                    "admitted local `{name}` is read before it is allocated in AWBC frame at {}",
+                    self.path
+                )
+            }),
             RuntimeExprKind::EntityRef(value) => {
-                let dst = self.frame.temp(self.inventory.dynamic_ty());
-                let constant = self.inventory.constant_runtime_value(
+                let ty = admitted_plan_type(self.inventory, self.plan, expr.ty());
+                let dst = self.frame.temp(ty);
+                let constant = self.inventory.constant_runtime_value_typed(
                     &arcweft_core::value::RuntimeValue::EntityRef(value.runtime_label()),
+                    ty,
                 );
                 self.inventory
                     .push_instruction(AwbcInstruction::LoadConst { dst, constant });
@@ -81,8 +82,10 @@ impl<'a, 'b, 'plan> AwbcExprLowerer<'a, 'b, 'plan> {
                     agent.operands().len() + usize::from(agent.choice().is_some()),
                 );
                 if let Some(choice) = agent.choice() {
+                    let entity_ty = self.inventory.intern_type(AwbcRuntimeTypeShape::EntityRef);
                     operands.push(self.load_runtime_const(
                         &arcweft_core::value::RuntimeValue::EntityRef(choice.as_str().to_owned()),
+                        entity_ty,
                     ));
                 }
                 operands.extend(
@@ -92,9 +95,7 @@ impl<'a, 'b, 'plan> AwbcExprLowerer<'a, 'b, 'plan> {
                         .map(|operand| self.lower(operand)),
                 );
                 let constructor = agent.constructor();
-                let ty = self
-                    .inventory
-                    .intern_type(AwbcRuntimeType::Agent(constructor.result_type()));
+                let ty = admitted_plan_type(self.inventory, self.plan, expr.ty());
                 let dst = self.frame.temp(ty);
                 self.inventory.push_instruction(AwbcInstruction::MakeAgent {
                     dst,
@@ -109,9 +110,10 @@ impl<'a, 'b, 'plan> AwbcExprLowerer<'a, 'b, 'plan> {
                 body,
             } => {
                 let value = self.lower(expr);
-                let local = self
-                    .frame
-                    .local(*binding, plan_type(self.inventory, self.plan, expr.ty()));
+                let local = self.frame.local(
+                    *binding,
+                    admitted_plan_type(self.inventory, self.plan, expr.ty()),
+                );
                 self.inventory.push_instruction(AwbcInstruction::Move {
                     dst: local,
                     src: value,
@@ -120,11 +122,7 @@ impl<'a, 'b, 'plan> AwbcExprLowerer<'a, 'b, 'plan> {
             }
             RuntimeExprKind::Tuple(items) => {
                 let registers = items.iter().map(|item| self.lower(item)).collect();
-                let ty = self.inventory.intern_type(AwbcRuntimeType::Tuple(vec![
-                    self.inventory
-                        .dynamic_ty();
-                    items.len()
-                ]));
+                let ty = admitted_plan_type(self.inventory, self.plan, expr.ty());
                 let dst = self.frame.temp(ty);
                 self.inventory.push_instruction(AwbcInstruction::MakeTuple {
                     dst,
@@ -134,9 +132,7 @@ impl<'a, 'b, 'plan> AwbcExprLowerer<'a, 'b, 'plan> {
             }
             RuntimeExprKind::BracketSeq(items) => {
                 let registers = items.iter().map(|item| self.lower(item)).collect();
-                let ty = self
-                    .inventory
-                    .intern_type(AwbcRuntimeType::Sequence(self.inventory.dynamic_ty()));
+                let ty = admitted_plan_type(self.inventory, self.plan, expr.ty());
                 let dst = self.frame.temp(ty);
                 self.inventory
                     .push_instruction(AwbcInstruction::MakeSequence {
@@ -147,17 +143,19 @@ impl<'a, 'b, 'plan> AwbcExprLowerer<'a, 'b, 'plan> {
             }
             RuntimeExprKind::RepeatSeq { value, len } => {
                 let value = self.lower(value);
-                let len_reg = self.frame.temp(self.inventory.i64_ty());
-                let constant = self
+                let len_ty = self
                     .inventory
-                    .constant_runtime_value(&arcweft_core::value::RuntimeValue::usize(*len as u64));
+                    .intern_type(AwbcRuntimeTypeShape::UInt(AwbcUnsignedIntKind::USize));
+                let len_reg = self.frame.temp(len_ty);
+                let constant = self.inventory.constant_runtime_value_typed(
+                    &arcweft_core::value::RuntimeValue::usize(*len as u64),
+                    len_ty,
+                );
                 self.inventory.push_instruction(AwbcInstruction::LoadConst {
                     dst: len_reg,
                     constant,
                 });
-                let ty = self
-                    .inventory
-                    .intern_type(AwbcRuntimeType::Sequence(self.inventory.dynamic_ty()));
+                let ty = admitted_plan_type(self.inventory, self.plan, expr.ty());
                 let dst = self.frame.temp(ty);
                 self.inventory
                     .push_instruction(AwbcInstruction::RepeatSequence {
@@ -172,12 +170,22 @@ impl<'a, 'b, 'plan> AwbcExprLowerer<'a, 'b, 'plan> {
                 end,
                 inclusive,
             } => {
-                let start = self.lower_optional_range_bound(start.as_deref());
-                let end = self.lower_optional_range_bound(end.as_deref());
-                let inclusive =
-                    self.load_runtime_const(&arcweft_core::value::RuntimeValue::Bool(*inclusive));
-                let dst = self.frame.temp(self.inventory.dynamic_ty());
-                let intrinsic = self.intern_intrinsic("core.range", 3);
+                let (start, start_ty) = self.lower_optional_range_bound(start.as_deref());
+                let (end, end_ty) = self.lower_optional_range_bound(end.as_deref());
+                let bool_ty = self.inventory.bool_ty();
+                let inclusive = self.load_runtime_const(
+                    &arcweft_core::value::RuntimeValue::Bool(*inclusive),
+                    bool_ty,
+                );
+                let result_ty = admitted_plan_type(self.inventory, self.plan, expr.ty());
+                let dst = self.frame.temp(result_ty);
+                let intrinsic = self.intern_intrinsic(
+                    &RuntimeCallTarget::intrinsic(
+                        arcweft_core::value::RuntimeIntrinsic::CoreRange,
+                    ),
+                    &[start_ty, end_ty, bool_ty],
+                    Some(result_ty),
+                );
                 self.inventory
                     .push_instruction(AwbcInstruction::CallIntrinsic {
                         dst: Some(dst),
@@ -188,16 +196,13 @@ impl<'a, 'b, 'plan> AwbcExprLowerer<'a, 'b, 'plan> {
             }
             RuntimeExprKind::NominalRecord(record) => {
                 let Some(domain) = self.plan.nominal_record_domains().get(expr.ty()) else {
-                    self.inventory.diagnostic(AwbcLowerDiagnostic::error(
-                        self.path.clone(),
-                        format!(
-                            "nominal record expression type {} has no RuntimePlan record domain",
-                            expr.ty()
-                        ),
-                    ));
-                    return self.frame.temp(self.inventory.dynamic_ty());
+                    panic!(
+                        "admitted nominal record expression type {} has no RuntimePlan record domain at {}",
+                        expr.ty(),
+                        self.path
+                    );
                 };
-                let ty = plan_type(self.inventory, self.plan, expr.ty());
+                let ty = admitted_plan_type(self.inventory, self.plan, expr.ty());
                 let mut registers = vec![None; domain.fields().len()];
                 for initializer in record.initializers() {
                     let value = self.lower(initializer.value());
@@ -227,10 +232,11 @@ impl<'a, 'b, 'plan> AwbcExprLowerer<'a, 'b, 'plan> {
                 dst
             }
             RuntimeExprKind::Variant { ordinal, payload } => {
-                let ty = plan_type(self.inventory, self.plan, expr.ty());
+                let ty = admitted_plan_type(self.inventory, self.plan, expr.ty());
                 let dst = self.frame.temp(ty);
                 let payload = payload.as_deref().map(|payload| self.lower(payload));
-                let case_name = variant_case_name(self.inventory, self.plan, expr.ty(), *ordinal);
+                let case_name =
+                    admitted_variant_case_name(self.inventory, self.plan, expr.ty(), *ordinal);
                 self.inventory
                     .push_instruction(AwbcInstruction::MakeVariant {
                         dst,
@@ -242,18 +248,37 @@ impl<'a, 'b, 'plan> AwbcExprLowerer<'a, 'b, 'plan> {
                 dst
             }
             RuntimeExprKind::Field { target, field } => {
+                let target_ty = admitted_plan_type(self.inventory, self.plan, target.ty());
                 let target = self.lower(target);
-                let dst = self
-                    .frame
-                    .temp(plan_type(self.inventory, self.plan, expr.ty()));
-                let field = self.inventory.intern_string(&field.label());
-                self.inventory
-                    .push_instruction(AwbcInstruction::ProjectField { dst, target, field });
+                let field_type = admitted_plan_type(self.inventory, self.plan, expr.ty());
+                let dst = self.frame.temp(field_type);
+                match field {
+                    RuntimeFieldProjection::OpaqueRecord { field, .. } => {
+                        self.inventory.push_instruction(
+                            AwbcInstruction::ProjectOpaqueRecordField {
+                                dst,
+                                target,
+                                owner: target_ty,
+                                field: field.zero_based(),
+                                field_type,
+                            },
+                        );
+                    }
+                    _ => {
+                        let field = self.inventory.intern_string(&field.label());
+                        self.inventory
+                            .push_instruction(AwbcInstruction::ProjectField { dst, target, field });
+                    }
+                }
                 dst
             }
             RuntimeExprKind::ProjectTuple { target, ordinal } => {
                 let target = self.lower(target);
-                let dst = self.frame.temp(self.inventory.dynamic_ty());
+                let dst = self.frame.temp(admitted_plan_type(
+                    self.inventory,
+                    self.plan,
+                    expr.ty(),
+                ));
                 self.inventory
                     .push_instruction(AwbcInstruction::ProjectTuple {
                         dst,
@@ -264,7 +289,11 @@ impl<'a, 'b, 'plan> AwbcExprLowerer<'a, 'b, 'plan> {
             }
             RuntimeExprKind::ProjectRecord { target, ordinal } => {
                 let target = self.lower(target);
-                let dst = self.frame.temp(self.inventory.dynamic_ty());
+                let dst = self.frame.temp(admitted_plan_type(
+                    self.inventory,
+                    self.plan,
+                    expr.ty(),
+                ));
                 self.inventory
                     .push_instruction(AwbcInstruction::ProjectRecord {
                         dst,
@@ -280,11 +309,10 @@ impl<'a, 'b, 'plan> AwbcExprLowerer<'a, 'b, 'plan> {
                 body,
             } => {
                 let Some(target) = self.frame.register_for_local(*base) else {
-                    self.inventory.diagnostic(AwbcLowerDiagnostic::error(
-                        self.path.clone(),
-                        format!("field assignment base `{base}` is not in the AWBC frame"),
-                    ));
-                    return self.lower(body);
+                    panic!(
+                        "admitted field assignment base `{base}` is not in the AWBC frame at {}",
+                        self.path
+                    );
                 };
                 let value = self.lower(expr);
                 self.inventory
@@ -295,15 +323,19 @@ impl<'a, 'b, 'plan> AwbcExprLowerer<'a, 'b, 'plan> {
                     });
                 self.lower(body)
             }
-            RuntimeExprKind::Call { callee, args } => self.lower_call(callee, args),
-            RuntimeExprKind::Function(site) => self.lower_function_site(*site),
+            RuntimeExprKind::Call { callee, args } => self.lower_call(expr.ty(), callee, args),
+            RuntimeExprKind::Function(site) => self.lower_function_site(*site, expr.ty()),
             RuntimeExprKind::Apply { callee, args } => {
                 let callee = self.lower(callee);
                 let args = args
                     .iter()
                     .map(|arg| self.lower(arg.value()))
                     .collect::<Vec<_>>();
-                let dst = self.frame.temp(self.inventory.dynamic_ty());
+                let dst = self.frame.temp(admitted_plan_type(
+                    self.inventory,
+                    self.plan,
+                    expr.ty(),
+                ));
                 self.inventory
                     .push_instruction(AwbcInstruction::ApplyFunction { dst, callee, args });
                 dst
@@ -316,12 +348,20 @@ impl<'a, 'b, 'plan> AwbcExprLowerer<'a, 'b, 'plan> {
             } => {
                 let receiver_register = self.lower(receiver);
                 let args = args.iter().map(|arg| self.lower(arg.value())).collect();
-                let dst = self.frame.temp(self.inventory.dynamic_ty());
+                let dst = self.frame.temp(admitted_plan_type(
+                    self.inventory,
+                    self.plan,
+                    expr.ty(),
+                ));
                 let receiver_out = (*receiver_mode == RuntimeReceiverMode::MutRef).then(|| {
                     if matches!(receiver.kind(), RuntimeExprKind::Local(_)) {
                         receiver_register
                     } else {
-                        self.frame.temp(self.inventory.dynamic_ty())
+                        self.frame.temp(admitted_plan_type(
+                            self.inventory,
+                            self.plan,
+                            receiver.ty(),
+                        ))
                     }
                 });
                 self.inventory
@@ -336,7 +376,11 @@ impl<'a, 'b, 'plan> AwbcExprLowerer<'a, 'b, 'plan> {
             }
             RuntimeExprKind::PureCall { helper, args } => {
                 let args = args.iter().map(|arg| self.lower(arg.value())).collect();
-                let dst = self.frame.temp(self.inventory.dynamic_ty());
+                let dst = self.frame.temp(admitted_plan_type(
+                    self.inventory,
+                    self.plan,
+                    expr.ty(),
+                ));
                 self.inventory
                     .push_instruction(AwbcInstruction::CallPureHelper {
                         dst,
@@ -350,13 +394,24 @@ impl<'a, 'b, 'plan> AwbcExprLowerer<'a, 'b, 'plan> {
                 param,
                 body,
             } => {
+                let source_ty = admitted_plan_type(self.inventory, self.plan, source.ty());
+                let body_ty = admitted_plan_type(self.inventory, self.plan, body.ty());
                 let source = self.lower(source);
-                let _ = self
-                    .frame
-                    .local(*param, plan_type(self.inventory, self.plan, body.ty()));
+                let _ = self.frame.local(
+                    *param,
+                    admitted_plan_type(self.inventory, self.plan, local_type(self.plan, *param)),
+                );
                 let body = self.lower(body);
-                let dst = self.frame.temp(self.inventory.dynamic_ty());
-                let intrinsic = self.intern_intrinsic("seq.map", 2);
+                let result_ty = admitted_plan_type(self.inventory, self.plan, expr.ty());
+                let dst = self.frame.temp(result_ty);
+                let intrinsic = self.intern_intrinsic(
+                    &RuntimeCallTarget::callable(
+                        RuntimeCallableId::try_new("seq.map".to_owned())
+                            .expect("synthetic seq.map callable identity is valid"),
+                    ),
+                    &[source_ty, body_ty],
+                    Some(result_ty),
+                );
                 self.inventory
                     .push_instruction(AwbcInstruction::CallIntrinsic {
                         dst: Some(dst),
@@ -370,13 +425,24 @@ impl<'a, 'b, 'plan> AwbcExprLowerer<'a, 'b, 'plan> {
                 param,
                 body,
             } => {
+                let source_ty = admitted_plan_type(self.inventory, self.plan, source.ty());
+                let body_ty = admitted_plan_type(self.inventory, self.plan, body.ty());
                 let source = self.lower(source);
-                let _ = self
-                    .frame
-                    .local(*param, plan_type(self.inventory, self.plan, body.ty()));
+                let _ = self.frame.local(
+                    *param,
+                    admitted_plan_type(self.inventory, self.plan, local_type(self.plan, *param)),
+                );
                 let body = self.lower(body);
-                let dst = self.frame.temp(self.inventory.dynamic_ty());
-                let intrinsic = self.intern_intrinsic("seq.filter", 2);
+                let result_ty = admitted_plan_type(self.inventory, self.plan, expr.ty());
+                let dst = self.frame.temp(result_ty);
+                let intrinsic = self.intern_intrinsic(
+                    &RuntimeCallTarget::callable(
+                        RuntimeCallableId::try_new("seq.filter".to_owned())
+                            .expect("synthetic seq.filter callable identity is valid"),
+                    ),
+                    &[source_ty, body_ty],
+                    Some(result_ty),
+                );
                 self.inventory
                     .push_instruction(AwbcInstruction::CallIntrinsic {
                         dst: Some(dst),
@@ -386,9 +452,18 @@ impl<'a, 'b, 'plan> AwbcExprLowerer<'a, 'b, 'plan> {
                 dst
             }
             RuntimeExprKind::Sum { source } => {
+                let source_ty = admitted_plan_type(self.inventory, self.plan, source.ty());
                 let source = self.lower(source);
-                let dst = self.frame.temp(self.inventory.i64_ty());
-                let intrinsic = self.intern_intrinsic("seq.sum", 1);
+                let result_ty = admitted_plan_type(self.inventory, self.plan, expr.ty());
+                let dst = self.frame.temp(result_ty);
+                let intrinsic = self.intern_intrinsic(
+                    &RuntimeCallTarget::callable(
+                        RuntimeCallableId::try_new("seq.sum".to_owned())
+                            .expect("synthetic seq.sum callable identity is valid"),
+                    ),
+                    &[source_ty],
+                    Some(result_ty),
+                );
                 self.inventory
                     .push_instruction(AwbcInstruction::CallIntrinsic {
                         dst: Some(dst),
@@ -397,9 +472,13 @@ impl<'a, 'b, 'plan> AwbcExprLowerer<'a, 'b, 'plan> {
                     });
                 dst
             }
-            RuntimeExprKind::Unary { op, expr } => {
-                let src = self.lower(expr);
-                let dst = self.frame.temp(self.inventory.dynamic_ty());
+            RuntimeExprKind::Unary { op, expr: operand } => {
+                let src = self.lower(operand);
+                let dst = self.frame.temp(admitted_plan_type(
+                    self.inventory,
+                    self.plan,
+                    expr.ty(),
+                ));
                 self.inventory.push_instruction(AwbcInstruction::Unary {
                     dst,
                     op: unary_op(*op),
@@ -410,7 +489,11 @@ impl<'a, 'b, 'plan> AwbcExprLowerer<'a, 'b, 'plan> {
             RuntimeExprKind::Binary { lhs, op, rhs } => {
                 let lhs = self.lower(lhs);
                 let rhs = self.lower(rhs);
-                let dst = self.frame.temp(self.inventory.dynamic_ty());
+                let dst = self.frame.temp(admitted_plan_type(
+                    self.inventory,
+                    self.plan,
+                    expr.ty(),
+                ));
                 self.inventory.push_instruction(AwbcInstruction::Binary {
                     dst,
                     op: binary_op(*op),
@@ -424,7 +507,7 @@ impl<'a, 'b, 'plan> AwbcExprLowerer<'a, 'b, 'plan> {
             | RuntimeExprKind::Match { .. } => self.lower_value_control_expr(expr),
             RuntimeExprKind::ReductionUnchanged { state } => {
                 let state = self.lower(state);
-                let ty = plan_type(self.inventory, self.plan, expr.ty());
+                let ty = admitted_plan_type(self.inventory, self.plan, expr.ty());
                 let dst = self.frame.temp(ty);
                 self.inventory
                     .push_instruction(AwbcInstruction::MakeReductionUnchanged { dst, ty, state });
@@ -435,15 +518,21 @@ impl<'a, 'b, 'plan> AwbcExprLowerer<'a, 'b, 'plan> {
 
     fn lower_call(
         &mut self,
+        result_type: arcweft_core::runtime_id::RuntimePlanTypeId,
         callee: &RuntimeCallTarget,
         args: &[arcweft_core::value::RuntimeCallArgument],
     ) -> AwbcRegisterId {
+        let argument_types = args
+            .iter()
+            .map(|arg| admitted_plan_type(self.inventory, self.plan, arg.value().ty()))
+            .collect::<Vec<_>>();
         let args = args
             .iter()
             .map(|arg| self.lower(arg.value()))
             .collect::<Vec<_>>();
-        let dst = self.frame.temp(self.inventory.dynamic_ty());
-        let intrinsic = self.intern_intrinsic(callee.as_label(), args.len());
+        let result_type = admitted_plan_type(self.inventory, self.plan, result_type);
+        let dst = self.frame.temp(result_type);
+        let intrinsic = self.intern_intrinsic(callee, &argument_types, Some(result_type));
         self.inventory
             .push_instruction(AwbcInstruction::CallIntrinsic {
                 dst: Some(dst),
@@ -453,34 +542,48 @@ impl<'a, 'b, 'plan> AwbcExprLowerer<'a, 'b, 'plan> {
         dst
     }
 
-    fn lower_optional_range_bound(&mut self, expr: Option<&RuntimeExpr>) -> AwbcRegisterId {
+    fn lower_optional_range_bound(
+        &mut self,
+        expr: Option<&RuntimeExpr>,
+    ) -> (AwbcRegisterId, arcweft_core::awbc::schema::AwbcTypeId) {
         if let Some(expr) = expr {
-            self.lower(expr)
+            (
+                self.lower(expr),
+                admitted_plan_type(self.inventory, self.plan, expr.ty()),
+            )
         } else {
-            self.load_runtime_const(&arcweft_core::value::RuntimeValue::Unit)
+            let ty = self.inventory.unit_ty();
+            (
+                self.load_runtime_const(&arcweft_core::value::RuntimeValue::Unit, ty),
+                ty,
+            )
         }
     }
 
     fn lower_function_site(
         &mut self,
         site: arcweft_core::runtime_id::RuntimeFunctionSiteId,
+        result_type: arcweft_core::runtime_id::RuntimePlanTypeId,
     ) -> AwbcRegisterId {
         let Some(function_site) = self.plan.function_sites().get(site) else {
-            self.inventory.diagnostic(AwbcLowerDiagnostic::error(
-                self.path.clone(),
-                format!("function site {site} is absent from the RuntimePlan"),
-            ));
-            return self.frame.temp(self.inventory.dynamic_ty());
+            panic!(
+                "admitted function site {site} is absent from the RuntimePlan at {}",
+                self.path
+            );
         };
         let already_lowered = self.inventory.function_site_function(site).is_some();
         let function = self.inventory.reserve_function_site_slot(site);
         let captures = function_site
             .captures()
             .iter()
-            .filter_map(|local| {
-                self.frame
-                    .register_for_local(*local)
-                    .map(|register| (*local, register))
+            .map(|local| {
+                let register = self.frame.register_for_local(*local).unwrap_or_else(|| {
+                    panic!(
+                        "admitted function site {site} capture local {local} is absent from the AWBC frame at {}",
+                        self.path
+                    )
+                });
+                (*local, register)
             })
             .collect::<Vec<_>>();
         if !already_lowered {
@@ -501,7 +604,9 @@ impl<'a, 'b, 'plan> AwbcExprLowerer<'a, 'b, 'plan> {
             .iter()
             .map(|(local, _)| local_name(self.inventory, *local))
             .collect();
-        let dst = self.frame.temp(self.inventory.dynamic_ty());
+        let dst = self
+            .frame
+            .temp(admitted_plan_type(self.inventory, self.plan, result_type));
         self.inventory
             .push_instruction(AwbcInstruction::MakeFunction {
                 dst,
@@ -537,7 +642,9 @@ impl<'a, 'b, 'plan> AwbcExprLowerer<'a, 'b, 'plan> {
                 capture_names,
                 captures: captures.iter().map(|capture| capture.register).collect(),
             });
-        let dst = self.frame.temp(self.inventory.dynamic_ty());
+        let dst = self
+            .frame
+            .temp(admitted_plan_type(self.inventory, self.plan, expr.ty()));
         self.inventory
             .push_instruction(AwbcInstruction::ApplyFunction {
                 dst,
@@ -547,15 +654,27 @@ impl<'a, 'b, 'plan> AwbcExprLowerer<'a, 'b, 'plan> {
         dst
     }
 
-    fn load_runtime_const(&mut self, value: &arcweft_core::value::RuntimeValue) -> AwbcRegisterId {
-        let dst = self.frame.temp(self.inventory.dynamic_ty());
-        let constant = self.inventory.constant_runtime_value(value);
+    fn load_runtime_const(
+        &mut self,
+        value: &arcweft_core::value::RuntimeValue,
+        ty: arcweft_core::awbc::schema::AwbcTypeId,
+    ) -> AwbcRegisterId {
+        let dst = self.frame.temp(ty);
+        let constant = self.inventory.constant_runtime_value_typed(value, ty);
         self.inventory
             .push_instruction(AwbcInstruction::LoadConst { dst, constant });
         dst
     }
 
-    fn intern_intrinsic(&mut self, label: &str, arity: usize) -> AwbcIntrinsicId {
+    fn intern_intrinsic(
+        &mut self,
+        identity: &RuntimeCallTarget,
+        parameters: &[arcweft_core::awbc::schema::AwbcTypeId],
+        result: Option<arcweft_core::awbc::schema::AwbcTypeId>,
+    ) -> AwbcIntrinsicId {
+        let signature =
+            self.inventory
+                .intern_signature(parameters.to_vec(), result, AwbcEffectSetId(0));
         if let Some((index, _)) =
             self.inventory
                 .program
@@ -563,23 +682,14 @@ impl<'a, 'b, 'plan> AwbcExprLowerer<'a, 'b, 'plan> {
                 .iter()
                 .enumerate()
                 .find(|(_, candidate)| {
-                    self.inventory.string(candidate.public_id) == label
-                        && self
-                            .inventory
-                            .program
-                            .signatures
-                            .get(candidate.signature.index())
-                            .is_some_and(|signature| signature.params.len() == arity)
+                    candidate.identity == *identity && candidate.signature == signature
                 })
         {
             return AwbcIntrinsicId(table_index(index));
         }
-        let signature = self.inventory.intern_dynamic_value_signature(arity);
         let id = AwbcIntrinsicId(table_index(self.inventory.program.intrinsics.len()));
-        let public_id = self.inventory.intern_string(label);
         self.inventory.program.intrinsics.push(AwbcIntrinsic {
-            public_id,
-            registry_code: 0,
+            identity: identity.clone(),
             signature,
             revision: 1,
         });
@@ -594,7 +704,7 @@ pub(crate) fn lower_pending_closures(inventory: &mut AwbcInventory, plan: &Runti
             let name = local_name(inventory, *local);
             frame.named_parameter(
                 *local,
-                plan_type(inventory, plan, local_type(plan, *local)),
+                admitted_plan_type(inventory, plan, local_type(plan, *local)),
                 name,
             );
         }
@@ -602,7 +712,7 @@ pub(crate) fn lower_pending_closures(inventory: &mut AwbcInventory, plan: &Runti
             let name = local_name(inventory, *local);
             frame.named_parameter(
                 *local,
-                plan_type(inventory, plan, local_type(plan, *local)),
+                admitted_plan_type(inventory, plan, local_type(plan, *local)),
                 name,
             );
         }
@@ -624,9 +734,9 @@ pub(crate) fn lower_pending_closures(inventory: &mut AwbcInventory, plan: &Runti
             .captures
             .iter()
             .chain(closure.params.iter())
-            .map(|local| plan_type(inventory, plan, local_type(plan, *local)))
+            .map(|local| admitted_plan_type(inventory, plan, local_type(plan, *local)))
             .collect();
-        let result = plan_type(inventory, plan, closure.body.ty());
+        let result = admitted_plan_type(inventory, plan, closure.body.ty());
         let signature = inventory.intern_signature(params, Some(result), AwbcEffectSetId(0));
         inventory.replace_function(
             closure.function,
@@ -1039,7 +1149,7 @@ fn terminate_return_expr(
     let mut value = AwbcExprLowerer::new(inventory, frame, path, plan).lower(expr);
     if let Some(scope) = exit_scope {
         let scoped_value = value;
-        value = frame.root_temp(inventory.dynamic_ty());
+        value = frame.root_temp(admitted_plan_type(inventory, plan, expr.ty()));
         inventory.push_instruction(AwbcInstruction::Move {
             dst: value,
             src: scoped_value,

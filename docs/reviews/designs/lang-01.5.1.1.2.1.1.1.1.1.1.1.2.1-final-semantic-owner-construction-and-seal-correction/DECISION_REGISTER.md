@@ -38,3 +38,27 @@
 | D30 | source-dependent constraints | callable-owned generic callbacks receive borrowed `ExpectedHint::{Unchecked, Complete, Parametric}` plus a narrow work session; isolated probes retain every correlated trace, then each trace is re-materialized from one baseline in exact source order and coalesced only by sealed final value | reverse source hints, optional single branch request, source facts shared across probes, binding-only branch deduplication, first-success contextual checking, argument-only selected replay |
 
 All decisions are closed.
+
+## D31 — accepted semantic root catalog
+
+Accepted checked coordinates use one version-1 root grammar: declaration roots
+carry tag `0x00`, item roots carry tag `0x01`, and both carry a 32-byte
+catalog-issued digest. The project evaluation topology is built once per
+Analyzer generation and leased by an `AcceptedSemanticRootCatalog`; item
+family/role coordinates are typed and source-ordered. Match and producer
+coordinate issuance consumes that catalog and does not accept a declaration
+argument or rebuild declaration paths. The HIR sole admission constructor
+validates the project module/snapshot and symbol generation join once. The root
+catalog retains that accepted topology and joins it to the checked callable
+catalog only by pointer identity of their shared generation token. Raw report
+reuse is validated by structural readmission through the same HIR constructor;
+the root catalog does not repeat project, module, snapshot, or symbol scans.
+
+Erratum note (2026-08-25): D27's shared C1 value coordinate is the exact
+two-case algebra `Expression(CheckedSemanticPath) |
+Binding(StableCheckedBindingCoordinate)`. The binding coordinate owns one full
+checked path; capture rows therefore use the binding coordinate and cannot
+reconstruct a pattern binding or recursively wrap another value coordinate.
+Path/byte lengths are canonical checked little-endian `u64`; ordinal payloads
+remain `u32`. Production validation of this in-place correction is pending as
+recorded in `VALIDATION_REPORT.md`.

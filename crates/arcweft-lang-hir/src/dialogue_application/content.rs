@@ -183,7 +183,7 @@ impl HirDialogueNode {
             context
                 .require(HirDialogueTransactionRequirement::Expression {
                     id: expression,
-                    expected: HirDialogueExpressionExpectation::Any,
+                    expected: HirDialogueExpressionExpectation::Unrestricted,
                 })
                 .map_err(HirDialogueTransactionError::Context)?;
         }

@@ -1,6 +1,6 @@
 //! Projects mount-scoped executable View output into existing scene resources.
 
-use crate::view_runtime::{BundleViewFrame, BundleViewMountOutput};
+use crate::view_runtime::{BundleViewFrame, BundleViewMountOutput, BundleViewStyleNodeKind};
 use arcweft_bundle::BundleImageObject;
 use arcweft_bundle::resource_codec::view::{
     ViewActionPayloadResource, ViewFocusInitialPolicy, ViewFocusTargetResolution,
@@ -10,7 +10,7 @@ use arcweft_bundle::resource_codec::{
     ViewRuntimeActionButton, ViewRuntimeFocusGroup, ViewRuntimeFocusNavigation,
     ViewRuntimeScrollRegion, ViewRuntimeSurface, ViewRuntimeTextControl,
 };
-use arcweft_view::ViewId;
+use arcweft_view::{EventKind, ViewId};
 use std::collections::BTreeSet;
 
 #[derive(Clone, Debug, Default, Eq, PartialEq)]
@@ -152,6 +152,26 @@ fn project_action_buttons(
             })
             .cloned()
             .map(|mut button| {
+                let authored_target = button.target.clone();
+                let handler = mount
+                    .style_nodes
+                    .iter()
+                    .find(|node| {
+                        matches!(
+                            &node.kind,
+                            BundleViewStyleNodeKind::Element {
+                                target: Some(target),
+                                ..
+                            } if target == &authored_target
+                        )
+                    })
+                    .and_then(|node| {
+                        mount.events.iter().find(|binding| {
+                            binding.path() == &node.path
+                                && binding.instruction() == node.instruction
+                                && binding.event() == EventKind::Activate
+                        })
+                    });
                 button.public_id = scoped_id(mount, &button.public_id);
                 button.target = scoped_id(mount, &button.target);
                 scope_owner(
@@ -166,13 +186,13 @@ fn project_action_buttons(
                 {
                     *input = scoped_id(mount, input);
                 }
-                if let ViewRuntimeActionButtonAction::DialoguePrimaryAction { target, .. } =
-                    &mut button.action
+                if matches!(button.action, ViewRuntimeActionButtonAction::Noop)
+                    && let Some(handler) = handler
                 {
-                    *target = mount
-                        .dialogue
-                        .and_then(|dialogue| dialogue.primary_action.target);
-                    button.enabled &= target.is_some();
+                    button.action = ViewRuntimeActionButtonAction::ViewHandler {
+                        event: handler.event(),
+                        route: handler.route(),
+                    };
                 }
                 button
             }),

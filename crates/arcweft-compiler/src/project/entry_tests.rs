@@ -209,7 +209,7 @@ fn sel_005_checks_selected_entry_identity_and_kind_before_runtime_lowering() {
     assert_eq!(entry.binding, roles.binding);
     assert_eq!(plan.callable_executables().len(), 2);
     assert_eq!(plan.flow_executables().len(), 1);
-    assert_eq!(plan.flow_executables()[0].parameters[0].name, "current");
+    assert_eq!(plan.flow_schemas()[0].parameters[0].name, "current");
     assert_eq!(
         entry.target,
         RuntimeEntryTarget::Flow(roles.initial_flow.flow.clone())

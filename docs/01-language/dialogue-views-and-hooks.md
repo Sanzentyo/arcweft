@@ -34,6 +34,11 @@ The standard library provides the reserved authored View resource
 is an ordinary authored resource with the same surface, text, and action nodes
 available to project Views. In abbreviated form:
 
+`on_click` is resolved as the standard `ViewValue` modifier with an exact pure
+`() -> DialogueAction` callback. The checked modifier identity lowers to the
+typed activation event; compiler and runtime consumers do not recover its role
+from the member spelling.
+
 ```arcw
 pub view StandardDialogueShape(dialogue: DialogueView) {
     Panel(x = 57.6px, y = 460.8px, width = 1164.8px, height = 201.6px) {

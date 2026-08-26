@@ -23,15 +23,20 @@ Author-facing event handling stays next to its owner:
   function rather than a global callback.
 - Agent and debugger observation is read-only trace data.
 
-For example, View input is local to the View node:
+For example, View input is local to the View node. The retained callback is a
+pure producer of the typed `DialogueAction` supplied by the View input:
 
 ```arcw
-Button("聞いてみる")
-    .agent_target(@choice.opening.listen)
-    .on_click {
-        action.invoke(@action.choice.select, @choice.opening.listen)
-    }
+view DialogueChoice(dialogue: DialogueView) {
+    Button("聞いてみる")
+        .agent_target(@choice.opening.listen)
+        .on_click { dialogue.primary_action }
+}
 ```
+
+`on_click` is the registered `ViewValue` modifier whose exact handler type is
+`() -> DialogueAction effects {}`. It lowers to the typed activation event;
+there is no string-dispatched action or event fallback.
 
 Choice availability is expressed on the option itself:
 

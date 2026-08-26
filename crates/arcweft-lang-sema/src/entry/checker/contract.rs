@@ -7,17 +7,17 @@ use arcweft_lang_syntax::reference::BorrowKind;
 
 use crate::{
     callable::{
-        CallableParameterPassing, CallableParameterPresence, CallableParameterType,
-        CheckedCallableExecution, CheckedCallableFacts, EffectContractOrigin,
+        CallableParameterPassing, CallableParameterPresence, CheckedCallableExecution,
+        CheckedCallableFacts, EffectContractOrigin,
     },
     effect_row::EffectRowTail,
     effects::EffectSet,
-    final_analysis::{CheckedFunctionExecution, CheckedItemRole, FinalSemanticAnalysis},
+    final_analysis::{CheckedFunctionExecution, CheckedItemRole},
     types::{ArrayLength, MapKind, TypeKind},
 };
 
 use super::{
-    BoundNominalKind, BoundNominalTypeKey,
+    BoundNominalKind, BoundNominalTypeKey, PreparedEntrySemanticAuthority,
     digest::{
         CanonicalAtomic, CanonicalCallableContract, CanonicalConstructor, CanonicalEffectRow,
         CanonicalFlowContract, CanonicalFlowSuspension, CanonicalGenericParameter,
@@ -27,7 +27,7 @@ use super::{
 };
 
 pub(super) struct EntryContractBuilder<'a> {
-    analysis: &'a FinalSemanticAnalysis,
+    analysis: &'a PreparedEntrySemanticAuthority<'a>,
     package: &'a CallablePackageId,
 }
 
@@ -39,7 +39,7 @@ pub(super) struct ReducerContractNominals<'a> {
 
 impl<'a> EntryContractBuilder<'a> {
     pub(super) const fn new(
-        analysis: &'a FinalSemanticAnalysis,
+        analysis: &'a PreparedEntrySemanticAuthority<'a>,
         package: &'a CallablePackageId,
     ) -> Self {
         Self { analysis, package }
@@ -183,16 +183,49 @@ impl<'a> EntryContractBuilder<'a> {
                 parameter_type.source_label()
             ));
         }
+        self.closed_flow_contract(owner, flow)
+    }
+
+    pub(super) fn existing_flow(
+        &self,
+        owner: ItemId,
+        flow: &HirFlowItem,
+    ) -> Result<CanonicalFlowContract, String> {
+        if !flow.generic_parameters().is_empty() || !flow.where_predicates().is_empty() {
+            return Err(
+                "Entry target flow must not declare generics or where predicates".to_owned(),
+            );
+        }
+        self.closed_flow_contract(owner, flow)
+    }
+
+    fn closed_flow_contract(
+        &self,
+        owner: ItemId,
+        flow: &HirFlowItem,
+    ) -> Result<CanonicalFlowContract, String> {
+        let parameters = flow
+            .parameters()
+            .iter()
+            .map(|parameter| {
+                if parameter.kind() != HirParameterKind::Fixed || parameter.default().is_some() {
+                    return Err(
+                        "Entry target Flow parameters must be fixed and required".to_owned()
+                    );
+                }
+                Ok(CanonicalParameter {
+                    passing: CallableParameterPassing::PositionalOrNamed,
+                    presence: CallableParameterPresence::Required,
+                    receiver: 0,
+                    ty: self.canonical_type_id(parameter.ty())?,
+                })
+            })
+            .collect::<Result<Vec<_>, String>>()?;
         let signature = CanonicalSignature {
             generics: Vec::new(),
             groups: vec![CanonicalParameterGroup {
                 kind: crate::callable::CallableGroupKind::Initial,
-                parameters: vec![CanonicalParameter {
-                    passing: CallableParameterPassing::PositionalOrNamed,
-                    presence: CallableParameterPresence::Required,
-                    receiver: 0,
-                    ty: parameter_type,
-                }],
+                parameters,
             }],
             result: Some(match flow.result().authored_type() {
                 Some(result) => self.canonical_type_id(result)?,
@@ -205,7 +238,7 @@ impl<'a> EntryContractBuilder<'a> {
             .item(owner)
             .ok_or_else(|| format!("accepted final analysis has no item fact for {owner:?}"))?;
         if !matches!(checked.role(), CheckedItemRole::Flow { .. }) {
-            return Err("selected initial-flow item has no checked Flow role".to_owned());
+            return Err("selected Entry target has no checked Flow role".to_owned());
         }
         let contract_effects = checked.effects().clone();
         Ok(CanonicalFlowContract {
@@ -241,7 +274,7 @@ impl<'a> EntryContractBuilder<'a> {
                 .iter()
                 .zip(source_group.parameters())
                 .map(|(schema_parameter, source_parameter)| {
-                    let CallableParameterType::Exact(schema_type) = schema_parameter.ty() else {
+                    let Some(schema_type) = schema_parameter.declared_type() else {
                         return Err(
                             "entry role callable has an unchecked parameter type".to_owned()
                         );
@@ -459,7 +492,7 @@ impl<'a> EntryContractBuilder<'a> {
                             .map_err(|_| "array length does not fit canonical u64".to_owned())?,
                     ),
                     ArrayLength::Generic(parameter) => {
-                        CanonicalType::Named(format!("generic#{}", parameter.ordinal()))
+                        CanonicalType::Named(parameter.source_label())
                     }
                     ArrayLength::Error(poison) => {
                         return Err(format!(
@@ -557,9 +590,7 @@ impl<'a> EntryContractBuilder<'a> {
                 alternatives.dedup();
                 CanonicalType::Choice(alternatives)
             }
-            TypeKind::GenericParam(parameter) => {
-                CanonicalType::Named(format!("generic#{}", parameter.ordinal()))
-            }
+            TypeKind::GenericParam(parameter) => CanonicalType::Named(parameter.source_label()),
             TypeKind::Error(poison) => {
                 return Err(format!(
                     "poisoned type {} is not an accepted entry contract",

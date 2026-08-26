@@ -1313,7 +1313,7 @@ impl HirDialogueTransactionContext for StagedHirModuleTransaction<'_> {
                 let expression = self.arenas.expressions.resolve_staged(&self.slots, id)?;
                 let scope_is_live = HirTypeResolver::scope_is_live(self, expression.scope());
                 let kind_matches = match expected {
-                    HirDialogueExpressionExpectation::Any => true,
+                    HirDialogueExpressionExpectation::Unrestricted => true,
                     HirDialogueExpressionExpectation::Call => {
                         matches!(expression.kind(), HirExprKind::Call(_))
                     }

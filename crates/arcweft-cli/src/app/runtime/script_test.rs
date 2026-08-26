@@ -11,7 +11,6 @@ use crate::output::{
 };
 use arcweft_core::engine::{FlowFiberStatus, FlowStatusLabelStyle};
 use arcweft_core::plan::{RuntimeEntryKind, RuntimeEntryTarget, RuntimePlan};
-use arcweft_core::value::RuntimeBinding;
 use arcweft_launch::LaunchKind;
 use arcweft_runtime_host::NativeAdapterRegistrar;
 use arcweft_test::{ScriptTest, collect_script_tests};
@@ -42,7 +41,6 @@ pub(in crate::app) fn script_test_command(
             pure_config,
         },
         adapter_registrars,
-        &options.values,
         options.json,
     )
 }
@@ -51,7 +49,6 @@ pub(in crate::app) fn script_test_selection(
     selection: &SourceSelection,
     config: RuntimeStepRunConfig,
     adapter_registrars: &[NativeAdapterRegistrar],
-    values: &[RuntimeBinding],
     json: bool,
 ) -> Result<(), ExitCode> {
     let checked = load_and_check_selection(selection, None)?;
@@ -72,9 +69,9 @@ pub(in crate::app) fn script_test_selection(
                         source: Some(source),
                         policy: &host_policy,
                         adapter_registrars,
+                        cli_args: &[],
                     },
                     config,
-                    values,
                     &checked.execution_diagnostics,
                 )
             })
@@ -118,7 +115,6 @@ fn run_script_test(
     plan: &RuntimePlan,
     host_config: NativeRunHost<'_>,
     config: RuntimeStepRunConfig,
-    values: &[RuntimeBinding],
     execution_diagnostics: &arcweft_compiler::runtime_diagnostics::ExecutionDiagnosticContext,
 ) -> ScriptTestRunSummary {
     if test.kind != "scenario" {
@@ -182,7 +178,6 @@ fn run_script_test(
         &entry.id,
         host_config,
         config,
-        values,
         execution_diagnostics,
     ) else {
         return ScriptTestRunSummary::completed(

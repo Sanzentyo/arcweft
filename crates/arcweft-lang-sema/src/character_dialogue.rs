@@ -11,6 +11,34 @@ use thiserror::Error;
 
 use crate::{callable::CallableName, registration::AcceptedNominalWorldStamp, types::TypeKind};
 
+/// Typed coordinate of a field admitted by the CharacterDialogue schema.
+///
+/// The coordinate is shared by schema construction and final patch rows. It
+/// is deliberately not reconstructed from an authored parameter name after
+/// call checking.
+#[derive(Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub enum CharacterDialogueFieldCoordinate {
+    Voice,
+    Look,
+    Stage,
+    Portrait,
+    Focus,
+    Cleanup,
+    View,
+    SourceLocale,
+    Hooks,
+    Style,
+    RichText,
+    InlineFailure,
+    Custom(CharacterDialogueCustomFieldId),
+}
+
+impl CharacterDialogueFieldCoordinate {
+    pub const fn is_custom(&self) -> bool {
+        matches!(self, Self::Custom(_))
+    }
+}
+
 /// One source binding that selects a stable custom-field identity.
 #[derive(Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub struct CharacterDialogueCustomFieldBinding {

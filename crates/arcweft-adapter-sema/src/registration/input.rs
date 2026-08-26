@@ -12,13 +12,14 @@ use arcweft_core::{
 use arcweft_lang_hir::symbol::CallablePackageId;
 use arcweft_lang_sema::{
     callable::{
-        AdapterPackageId, CallableArgumentPolicy, CallableDocumentation, CallableGroupIndex,
-        CallableGroupKind, CallableName, CallableOverloadIndex, CallableParameterDocumentation,
-        CallableParameterIndex, CallableParameterPassing, CallableParameterPresence, CallablePath,
-        CallableValidator, DocumentationProvenance, EnvironmentCallableKind,
-        EnvironmentCallableOwner, EnvironmentDeclarationOrdinal, ProjectCallablePath,
-        RustCallableProvenance, RustCallablePurity, RustItemPath, RustPackageProvenance,
-        SpreadArgumentPolicy, UnknownNamedArgumentPolicy,
+        AdapterPackageId, CallableArgumentPolicy, CallableDocumentation,
+        CallableGenericParameterIssuer, CallableGroupIndex, CallableGroupKind, CallableName,
+        CallableOverloadIndex, CallableParameterDocumentation, CallableParameterIndex,
+        CallableParameterPassing, CallableParameterPresence, CallablePath, CallableValidator,
+        DocumentationProvenance, EnvironmentCallableKind, EnvironmentCallableOwner,
+        EnvironmentDeclarationOrdinal, ProjectCallablePath, RustCallableProvenance,
+        RustCallablePurity, RustItemPath, RustPackageProvenance, SpreadArgumentPolicy,
+        UnknownNamedArgumentPolicy,
     },
     effect_row::EffectRow,
     effects::EffectSet,
@@ -336,6 +337,7 @@ impl<'a> EnvironmentInputProjector<'a> {
                     path,
                     signature,
                     domain_error,
+                    call.contract_digest(),
                     item_source(self.document, self.source_map, &item)?,
                 ))
             })
@@ -739,6 +741,7 @@ fn signature_input(
             },
         ),
         CallableValidator::Ordinary,
+        CallableGenericParameterIssuer::empty(),
     ))
 }
 

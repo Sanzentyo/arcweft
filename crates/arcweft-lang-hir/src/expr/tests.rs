@@ -8,12 +8,12 @@ use super::{
     HirChoiceMatch, HirChoiceMatchArm, HirChoicePlan, HirChoicePlanError, HirChoicePlanItem,
     HirClosureExpr, HirClosureParameter, HirComputationBlockExpr, HirComputationBlockKind,
     HirDereferenceExpr, HirExpr, HirExprInvariantError, HirExprKind, HirExpressionChildEdge,
-    HirExpressionChildRole, HirExpressionRecoveryIssue, HirGenericExprIssue, HirIfExpr,
-    HirIfLetExpr, HirIndexExpr, HirLoopExpr, HirMatchArm, HirMatchExpr, HirNamedBlockExpr,
-    HirNamedBlockName, HirNestedExpressionPath, HirNestedExpressionPathSegment, HirPipeExpr,
-    HirPlaceholderKind, HirPoisonState, HirRangeExpr, HirRecordExpr, HirRecordField,
-    HirRecordFieldIssue, HirRecordLiteralExpr, HirRecoveredName, HirRecoveryIssue,
-    HirRecoveryOperandSlot, HirSelectExpr, HirSelectedMember, HirThreadBody,
+    HirExpressionChildOwnership, HirExpressionChildRole, HirExpressionRecoveryIssue,
+    HirGenericExprIssue, HirIfExpr, HirIfLetExpr, HirIndexExpr, HirLoopExpr, HirMatchArm,
+    HirMatchExpr, HirNamedBlockExpr, HirNamedBlockName, HirNestedExpressionPath,
+    HirNestedExpressionPathSegment, HirPipeExpr, HirPlaceholderKind, HirPoisonState, HirRangeExpr,
+    HirRecordExpr, HirRecordField, HirRecordFieldIssue, HirRecordLiteralExpr, HirRecoveredName,
+    HirRecoveryIssue, HirRecoveryOperandSlot, HirSelectExpr, HirSelectedMember, HirThreadBody,
     HirThreadBodyInvariantError, HirThreadBodyOwner, HirThreadExpr, HirThreadFlowItem,
     HirThreadMode, HirTryExpr, HirTupleExpr, HirUnaryExpr, HirUnaryOp,
 };
@@ -2247,6 +2247,18 @@ fn final_variant_ordinal(kind: &HirExprKind) -> u8 {
         HirExprKind::Error(_) => 36,
         HirExprKind::ForSynthetic(_) => 37,
     }
+}
+
+#[test]
+fn for_input_edge_is_reference_only_for_topology_completeness() {
+    assert_eq!(
+        HirExpressionChildRole::ForInput.ownership(),
+        HirExpressionChildOwnership::ReferenceOnly
+    );
+    assert_eq!(
+        HirExpressionChildRole::Operand.ownership(),
+        HirExpressionChildOwnership::Owning
+    );
 }
 
 #[test]

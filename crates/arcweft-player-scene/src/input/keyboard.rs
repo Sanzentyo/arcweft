@@ -1,8 +1,9 @@
 use super::{
     ActionButtonSubmitOutcome, ControllerInputChange, DialogueProgress, FocusNavigationDirection,
-    InputController, InputOutcome, KeyPhase, NormalizedControllerAction, PreparedFrame,
-    TextControlWriteBack, TextEditorState, TextInputKeyDisposition, activation_outcome,
-    choice_action, dialogue_progress_for_frame, frame_target_is_view_control,
+    InputController, InputEpoch, InputEvent, InputOutcome, KeyPhase, NormalizedControllerAction,
+    PreparedFrame, RenderActionButtonAction, TextControlWriteBack, TextEditorState,
+    TextInputKeyDisposition, activation_outcome, choice_action, dialogue_progress_for_frame,
+    frame_target_is_view_control,
 };
 
 impl InputController {
@@ -65,6 +66,7 @@ impl InputController {
         if disposition.shortcuts_suppressed() || self.ime_composing {
             return InputOutcome {
                 actions: Vec::new(),
+                view_handler_invocations: Vec::new(),
                 text_control_write_backs: Vec::new(),
                 clipboard_requests: Vec::new(),
                 diagnostics: Vec::new(),
@@ -87,6 +89,7 @@ impl InputController {
         if disposition.shortcuts_suppressed() || self.ime_composing {
             return InputOutcome {
                 actions: Vec::new(),
+                view_handler_invocations: Vec::new(),
                 text_control_write_backs: Vec::new(),
                 clipboard_requests: Vec::new(),
                 diagnostics: Vec::new(),
@@ -145,6 +148,19 @@ impl InputController {
 
     fn activate_focused(&mut self, frame: &PreparedFrame) -> InputOutcome {
         let focused = self.interaction.focus().target().cloned();
+        let view_handler_invocations = focused
+            .as_ref()
+            .and_then(|target| {
+                let button = frame.action_button_for_target(target)?;
+                let RenderActionButtonAction::ViewHandler { event, route } = &button.action else {
+                    return None;
+                };
+                let input = InputEvent::activate(InputEpoch(self.next_epoch), target.clone());
+                self.next_epoch = self.next_epoch.saturating_add(1);
+                arcweft_view::ViewHandlerInvocation::from_input(&input, *event, *route)
+            })
+            .into_iter()
+            .collect::<Vec<_>>();
         let actions = focused
             .as_ref()
             .and_then(|target| choice_action(frame, target))
@@ -174,6 +190,9 @@ impl InputController {
             !activates_choice && !focused_view_control,
         );
         outcome.dialogue_progress = outcome.dialogue_progress.merge(submit.dialogue_progress);
+        outcome
+            .view_handler_invocations
+            .extend(view_handler_invocations);
         outcome.redraw |= submit.dialogue_progress.redraws();
         outcome
     }

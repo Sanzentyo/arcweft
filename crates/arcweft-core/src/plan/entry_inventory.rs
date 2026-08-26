@@ -5,20 +5,23 @@
 //! executable metadata, then verifies the complete entry graph before runtime
 //! selection. It performs no source resolution, adapter work, or platform I/O.
 
+use std::cmp::Ordering;
 use std::collections::BTreeSet;
 use std::fmt;
+use std::sync::Arc;
 
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
 
 use crate::entry::{
-    CallableContractHash, EntryBindingIdentity, RuntimeCallableExecutable,
-    RuntimeCallableExecutableCode, RuntimeCallableId, RuntimeCallableRole, RuntimeEntryRoles,
-    RuntimeFlowParameterMode, RuntimeStatefulEntryRoles,
+    CallableContractHash, EntryBindingIdentity, FlowParameterCoordinate, RuntimeCallableExecutable,
+    RuntimeCallableExecutableCode, RuntimeCallableId, RuntimeCallableRole, RuntimeCommandContract,
+    RuntimeEntryRoles, RuntimeFlowParameterMode, RuntimeStatefulEntryRoles,
 };
 use crate::runtime_id::{RuntimeIdError, RuntimeIdFamily, RuntimeIdPath, RuntimePublicLabel};
+use crate::value::RuntimeFlowParameterBinding;
 
-use super::{FlowRuntimeId, RuntimePlan};
+use super::{FlowRuntimeId, RuntimePlan, RuntimePlanValueTypeError, RuntimePureHelperId};
 
 /// Runtime identifier for a source-declared entry.
 #[derive(Clone, Debug, Deserialize, Eq, Hash, Ord, PartialEq, PartialOrd, Serialize)]
@@ -48,11 +51,208 @@ pub enum RuntimeEntryTarget {
     Controller(FlowRuntimeId),
 }
 
+/// Closed HTTP method family admitted by the runtime route registry.
+#[derive(Clone, Copy, Debug, Deserialize, Eq, Hash, Ord, PartialEq, PartialOrd, Serialize)]
+pub enum RuntimeHttpMethod {
+    Get,
+    Post,
+    Put,
+    Patch,
+    Delete,
+    Head,
+    Options,
+}
+
+impl RuntimeHttpMethod {
+    #[must_use]
+    pub const fn as_str(self) -> &'static str {
+        match self {
+            Self::Get => "GET",
+            Self::Post => "POST",
+            Self::Put => "PUT",
+            Self::Patch => "PATCH",
+            Self::Delete => "DELETE",
+            Self::Head => "HEAD",
+            Self::Options => "OPTIONS",
+        }
+    }
+}
+
+/// Stable source-order coordinate of one route-path capture.
+#[derive(Clone, Copy, Debug, Deserialize, Eq, Hash, Ord, PartialEq, PartialOrd, Serialize)]
+#[serde(transparent)]
+pub struct RouteCaptureCoordinate(u32);
+
+impl RouteCaptureCoordinate {
+    #[must_use]
+    pub const fn from_position(position: u32) -> Self {
+        Self(position)
+    }
+
+    pub fn try_from_index(index: usize) -> Result<Self, RuntimeRoutePathError> {
+        u32::try_from(index)
+            .map(Self)
+            .map_err(|_| RuntimeRoutePathError::CaptureCapacity { index })
+    }
+
+    #[must_use]
+    pub const fn position(self) -> u32 {
+        self.0
+    }
+
+    pub fn index(self) -> Result<usize, RuntimeRoutePathError> {
+        usize::try_from(self.0)
+            .map_err(|_| RuntimeRoutePathError::CaptureCoordinate { position: self.0 })
+    }
+}
+
+/// One canonical route-matching segment.
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+pub enum RuntimeRoutePathSegment {
+    Literal(String),
+    Capture(RouteCaptureCoordinate),
+}
+
+/// Canonical path plus its typed dispatch/capture inventory.
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+pub struct RuntimeRoutePath {
+    segments: Vec<RuntimeRoutePathSegment>,
+}
+
+impl RuntimeRoutePath {
+    pub fn try_new(
+        segments: impl Into<Vec<RuntimeRoutePathSegment>>,
+    ) -> Result<Self, RuntimeRoutePathError> {
+        let segments = segments.into();
+        let mut capture_count = 0usize;
+        for segment in &segments {
+            match segment {
+                RuntimeRoutePathSegment::Literal(literal) => {
+                    if literal.is_empty()
+                        || literal.starts_with(':')
+                        || literal.contains('/')
+                        || literal.chars().any(char::is_control)
+                    {
+                        return Err(RuntimeRoutePathError::InvalidLiteral);
+                    }
+                }
+                RuntimeRoutePathSegment::Capture(coordinate) => {
+                    if coordinate.index()? != capture_count {
+                        return Err(RuntimeRoutePathError::InvalidCapture);
+                    }
+                    capture_count += 1;
+                }
+            }
+        }
+        Ok(Self { segments })
+    }
+
+    #[must_use]
+    pub fn segments(&self) -> &[RuntimeRoutePathSegment] {
+        &self.segments
+    }
+
+    #[must_use]
+    pub fn capture_count(&self) -> usize {
+        self.segments
+            .iter()
+            .filter(|segment| matches!(segment, RuntimeRoutePathSegment::Capture(_)))
+            .count()
+    }
+
+    #[must_use]
+    pub fn overlaps_dispatch(&self, other: &Self) -> bool {
+        self.segments.len() == other.segments.len()
+            && self
+                .segments
+                .iter()
+                .zip(other.segments.iter())
+                .all(|(left, right)| match (left, right) {
+                    (
+                        RuntimeRoutePathSegment::Literal(left),
+                        RuntimeRoutePathSegment::Literal(right),
+                    ) => left == right,
+                    (
+                        RuntimeRoutePathSegment::Literal(_)
+                        | RuntimeRoutePathSegment::Capture(_),
+                        RuntimeRoutePathSegment::Capture(_),
+                    )
+                    | (
+                        RuntimeRoutePathSegment::Capture(_),
+                        RuntimeRoutePathSegment::Literal(_),
+                    ) => {
+                        true
+                    }
+                })
+    }
+
+    #[must_use]
+    pub fn dispatch_cmp(&self, other: &Self) -> Ordering {
+        for (left, right) in self.segments.iter().zip(other.segments.iter()) {
+            let ordering = match (left, right) {
+                (
+                    RuntimeRoutePathSegment::Literal(left),
+                    RuntimeRoutePathSegment::Literal(right),
+                ) => left.cmp(right),
+                (RuntimeRoutePathSegment::Literal(_), RuntimeRoutePathSegment::Capture(_)) => {
+                    Ordering::Less
+                }
+                (RuntimeRoutePathSegment::Capture(_), RuntimeRoutePathSegment::Literal(_)) => {
+                    Ordering::Greater
+                }
+                (RuntimeRoutePathSegment::Capture(_), RuntimeRoutePathSegment::Capture(_)) => {
+                    Ordering::Equal
+                }
+            };
+            if ordering != Ordering::Equal {
+                return ordering;
+            }
+        }
+        self.segments.len().cmp(&other.segments.len())
+    }
+
+    fn validate(&self) -> Result<(), RuntimeRoutePathError> {
+        (Self::try_new(self.segments.clone())? == *self)
+            .then_some(())
+            .ok_or(RuntimeRoutePathError::NonCanonical)
+    }
+}
+
+impl fmt::Display for RuntimeRoutePath {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        if self.segments.is_empty() {
+            return f.write_str("/");
+        }
+        for segment in &self.segments {
+            f.write_str("/")?;
+            match segment {
+                RuntimeRoutePathSegment::Literal(literal) => f.write_str(literal)?,
+                RuntimeRoutePathSegment::Capture(_) => f.write_str(":")?,
+            }
+        }
+        Ok(())
+    }
+}
+
+#[derive(Clone, Debug, Eq, Error, PartialEq)]
+pub enum RuntimeRoutePathError {
+    #[error("route literal segment is not canonical")]
+    InvalidLiteral,
+    #[error("route capture inventory is not canonical")]
+    InvalidCapture,
+    #[error("route capture index {index} exceeds the coordinate domain")]
+    CaptureCapacity { index: usize },
+    #[error("route capture coordinate {position} does not fit this platform")]
+    CaptureCoordinate { position: u32 },
+    #[error("route path payload differs from its canonical segment inventory")]
+    NonCanonical,
+}
+
 /// Route declaration in a server-like entry.
 #[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
 pub struct RuntimeRouteSpec {
-    pub method: String,
-    pub path: String,
+    pub method: RuntimeHttpMethod,
+    pub path: RuntimeRoutePath,
     pub target: FlowRuntimeId,
     pub bindings: Vec<RuntimeRouteBinding>,
 }
@@ -60,14 +260,168 @@ pub struct RuntimeRouteSpec {
 /// Explicit route parameter binding for a target flow invocation.
 #[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
 pub struct RuntimeRouteBinding {
-    pub name: String,
+    pub parameter: FlowParameterCoordinate,
     pub source: RuntimeRouteBindingSource,
 }
 
 /// Adapter route value source used by a route binding.
 #[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
 pub enum RuntimeRouteBindingSource {
-    PathParam(String),
+    PathCapture(RouteCaptureCoordinate),
+}
+
+/// One complete, plan-validated Flow invocation consumed before the first
+/// operation executes.
+///
+/// The carrier owns its exact immutable plan so a coordinate/value inventory
+/// cannot be paired with a different runtime generation after sealing.
+#[derive(Debug, PartialEq)]
+pub struct RuntimeFlowInvocation {
+    plan: Arc<RuntimePlan>,
+    flow: FlowRuntimeId,
+    bindings: Box<[RuntimeFlowParameterBinding]>,
+}
+
+#[derive(Clone, Debug, Error, PartialEq)]
+pub enum RuntimeFlowInvocationError {
+    #[error("runtime Flow `{flow}` does not exist")]
+    UnknownFlow { flow: String },
+    #[error("runtime Flow `{flow}` has no invocation schema")]
+    MissingSchema { flow: String },
+    #[error("runtime Flow `{flow}` expects {expected} invocation bindings, received {actual}")]
+    BindingCount {
+        flow: String,
+        expected: usize,
+        actual: usize,
+    },
+    #[error("runtime Flow `{flow}` received duplicate parameter coordinate {parameter:?}")]
+    DuplicateParameter {
+        flow: String,
+        parameter: FlowParameterCoordinate,
+    },
+    #[error("runtime Flow `{flow}` has no parameter coordinate {parameter:?}")]
+    UnknownParameter {
+        flow: String,
+        parameter: FlowParameterCoordinate,
+    },
+    #[error(
+        "runtime Flow `{flow}` invocation row {index} carries noncanonical parameter {parameter:?}"
+    )]
+    NonCanonicalParameter {
+        flow: String,
+        index: usize,
+        parameter: FlowParameterCoordinate,
+    },
+    #[error("runtime Flow `{flow}` parameter {parameter:?} has no plan-local declaration")]
+    MissingParameterLocal {
+        flow: String,
+        parameter: FlowParameterCoordinate,
+    },
+    #[error("runtime Flow `{flow}` parameter {parameter:?} does not match its checked type")]
+    ParameterType {
+        flow: String,
+        parameter: FlowParameterCoordinate,
+    },
+    #[error(transparent)]
+    ValueType(#[from] RuntimePlanValueTypeError),
+}
+
+impl RuntimePlan {
+    /// Consumes this immutable plan and seals a complete coordinate-addressed
+    /// invocation for one exact Flow.
+    pub fn seal_flow_invocation(
+        self,
+        flow: FlowRuntimeId,
+        bindings: impl IntoIterator<Item = RuntimeFlowParameterBinding>,
+    ) -> Result<RuntimeFlowInvocation, RuntimeFlowInvocationError> {
+        let flow_label = flow.canonical_label();
+        let runtime_flow = self
+            .flows
+            .iter()
+            .find(|candidate| candidate.id == flow)
+            .ok_or_else(|| RuntimeFlowInvocationError::UnknownFlow {
+                flow: flow_label.clone(),
+            })?;
+        let schema = self
+            .flow_schemas
+            .iter()
+            .find(|candidate| candidate.flow == flow)
+            .ok_or_else(|| RuntimeFlowInvocationError::MissingSchema {
+                flow: flow_label.clone(),
+            })?;
+        let bindings = bindings.into_iter().collect::<Vec<_>>();
+        if bindings.len() != schema.parameters.len() {
+            return Err(RuntimeFlowInvocationError::BindingCount {
+                flow: flow_label,
+                expected: schema.parameters.len(),
+                actual: bindings.len(),
+            });
+        }
+        let mut unique = BTreeSet::new();
+        for (index, binding) in bindings.iter().enumerate() {
+            if !unique.insert(binding.parameter) {
+                return Err(RuntimeFlowInvocationError::DuplicateParameter {
+                    flow: flow_label,
+                    parameter: binding.parameter,
+                });
+            }
+            if binding.parameter.index().ok() != Some(index) {
+                return Err(RuntimeFlowInvocationError::NonCanonicalParameter {
+                    flow: flow_label,
+                    index,
+                    parameter: binding.parameter,
+                });
+            }
+            let parameter = schema
+                .parameters
+                .get(index)
+                .filter(|parameter| parameter.coordinate == binding.parameter)
+                .ok_or_else(|| RuntimeFlowInvocationError::UnknownParameter {
+                    flow: flow_label.clone(),
+                    parameter: binding.parameter,
+                })?;
+            let local = runtime_flow.params.get(index).copied().ok_or_else(|| {
+                RuntimeFlowInvocationError::MissingParameterLocal {
+                    flow: flow_label.clone(),
+                    parameter: parameter.coordinate,
+                }
+            })?;
+            let declaration = self.local_declarations.get(local).ok_or_else(|| {
+                RuntimeFlowInvocationError::MissingParameterLocal {
+                    flow: flow_label.clone(),
+                    parameter: parameter.coordinate,
+                }
+            })?;
+            if !self.value_matches_type(declaration.ty(), &binding.value)? {
+                return Err(RuntimeFlowInvocationError::ParameterType {
+                    flow: flow_label,
+                    parameter: parameter.coordinate,
+                });
+            }
+        }
+        Ok(RuntimeFlowInvocation {
+            plan: Arc::new(self),
+            flow,
+            bindings: bindings.into_boxed_slice(),
+        })
+    }
+}
+
+impl RuntimeFlowInvocation {
+    /// Borrows the exact immutable plan pinned by this affine invocation.
+    pub const fn plan(&self) -> &Arc<RuntimePlan> {
+        &self.plan
+    }
+
+    pub(crate) fn into_parts(
+        self,
+    ) -> (
+        RuntimePlan,
+        FlowRuntimeId,
+        Box<[RuntimeFlowParameterBinding]>,
+    ) {
+        (Arc::unwrap_or_clone(self.plan), self.flow, self.bindings)
+    }
 }
 
 /// Lowered entry declaration preserved for CLI/LSP/runtime launch selection.
@@ -220,6 +574,12 @@ pub enum RuntimePlanError {
     DuplicateCallableExecutable(String),
     #[error("duplicate role-flow executable metadata for `{0}`")]
     DuplicateFlowExecutable(String),
+    #[error("duplicate runtime Flow invocation schema for `{0}`")]
+    DuplicateFlowSchema(String),
+    #[error("runtime Flow invocation schema references missing flow `{0}`")]
+    MissingSchemaFlow(String),
+    #[error("runtime Flow `{0}` has no invocation schema")]
+    MissingFlowSchema(String),
     #[error("role-callable `{callable}` maps to missing pure-helper slot {helper}")]
     MissingCallableHelper { callable: String, helper: usize },
     #[error("role-callable `{callable}` maps to missing controller flow `{flow}`")]
@@ -278,27 +638,49 @@ pub enum RuntimePlanError {
     },
     #[error("role-callable executable `{0}` is not reachable from an entry role")]
     UnreachableCallableExecutable(String),
+    #[error("runtime pure program {program} is bound more than once")]
+    DuplicatePureProgram {
+        program: arcweft_id::runtime_program::RuntimePureProgramId,
+    },
+    #[error("runtime pure program {program} references missing helper {helper}")]
+    MissingPureProgramHelper {
+        program: arcweft_id::runtime_program::RuntimePureProgramId,
+        helper: usize,
+    },
+    #[error("runtime pure program {program} semantic signature does not match helper {helper}")]
+    PureProgramSignatureMismatch {
+        program: arcweft_id::runtime_program::RuntimePureProgramId,
+        helper: usize,
+    },
     #[error("role-flow executable `{0}` is not reachable from an entry role")]
     UnreachableFlowExecutable(String),
     #[error("entry `{entry}` route targets missing flow `{flow}`")]
     MissingRouteTarget { entry: String, flow: String },
+    #[error("entry `{entry}` route set is empty")]
+    EmptyRouteSet { entry: String },
+    #[error("entry `{entry}` contains a non-canonical route path: {reason}")]
+    InvalidRoutePath { entry: String, reason: String },
+    #[error("entry `{entry}` contains overlapping or non-canonically ordered routes")]
+    InvalidRouteOrder { entry: String },
+    #[error("entry `{entry}` target flow `{flow}` has no executable parameter schema")]
+    MissingEntryFlowExecutable { entry: String, flow: String },
+    #[error("entry `{entry}` route to `{flow}` has an invalid closed binding plan")]
+    InvalidRouteBindings { entry: String, flow: String },
+    #[error("entry `{entry}` direct target `{flow}` requires parameters")]
+    ParameterizedDirectEntryTarget { entry: String, flow: String },
 }
 
 impl RuntimePlan {
     /// Verifies the complete executable entry inventory before selection.
     pub fn verify(&self) -> Result<(), RuntimePlanError> {
-        let mut flow_ids = BTreeSet::new();
-        for flow in &self.flows {
-            if !flow_ids.insert(flow.id.clone()) {
-                return Err(RuntimePlanError::DuplicateFlow(flow.id.canonical_label()));
-            }
-        }
+        let flow_ids = self.verify_flow_schemas()?;
         let mut helper_ids = BTreeSet::new();
         for helper in &self.pure_helpers {
             if !helper_ids.insert(helper.id) {
                 return Err(RuntimePlanError::DuplicatePureHelper(helper.id.0));
             }
         }
+        self.verify_pure_programs(&helper_ids)?;
         let mut callable_ids = BTreeSet::new();
         for executable in &self.callable_executables {
             if !callable_ids.insert(executable.callable.clone()) {
@@ -360,11 +742,93 @@ impl RuntimePlan {
             if !self
                 .entries
                 .iter()
-                .any(|entry| entry.references_role_flow(&executable.flow))
+                .any(|entry| entry.references_flow(&executable.flow))
             {
                 return Err(RuntimePlanError::UnreachableFlowExecutable(
                     executable.flow.canonical_label(),
                 ));
+            }
+        }
+        Ok(())
+    }
+
+    fn verify_flow_schemas(&self) -> Result<BTreeSet<FlowRuntimeId>, RuntimePlanError> {
+        let mut flow_ids = BTreeSet::new();
+        for flow in &self.flows {
+            if !flow_ids.insert(flow.id.clone()) {
+                return Err(RuntimePlanError::DuplicateFlow(flow.id.canonical_label()));
+            }
+        }
+        let mut schema_flow_ids = BTreeSet::new();
+        for schema in &self.flow_schemas {
+            if !schema_flow_ids.insert(schema.flow.clone()) {
+                return Err(RuntimePlanError::DuplicateFlowSchema(
+                    schema.flow.canonical_label(),
+                ));
+            }
+            if !flow_ids.contains(&schema.flow) {
+                return Err(RuntimePlanError::MissingSchemaFlow(
+                    schema.flow.canonical_label(),
+                ));
+            }
+        }
+        if let Some(flow) = flow_ids
+            .iter()
+            .find(|flow| !schema_flow_ids.contains(*flow))
+        {
+            return Err(RuntimePlanError::MissingFlowSchema(flow.canonical_label()));
+        }
+        Ok(flow_ids)
+    }
+
+    fn verify_pure_programs(
+        &self,
+        helper_ids: &BTreeSet<RuntimePureHelperId>,
+    ) -> Result<(), RuntimePlanError> {
+        let mut pure_programs = BTreeSet::new();
+        for binding in &self.pure_programs {
+            if !pure_programs.insert(binding.program()) {
+                return Err(RuntimePlanError::DuplicatePureProgram {
+                    program: binding.program(),
+                });
+            }
+            if !helper_ids.contains(&binding.helper()) {
+                return Err(RuntimePlanError::MissingPureProgramHelper {
+                    program: binding.program(),
+                    helper: binding.helper().0,
+                });
+            }
+            let Some(helper) = self
+                .pure_helpers
+                .iter()
+                .find(|helper| helper.id == binding.helper())
+            else {
+                return Err(RuntimePlanError::MissingPureProgramHelper {
+                    program: binding.program(),
+                    helper: binding.helper().0,
+                });
+            };
+            let input_types = helper
+                .input_locals
+                .iter()
+                .map(|local| {
+                    self.local_declarations
+                        .get(*local)
+                        .and_then(|declaration| self.type_table.get(declaration.ty()))
+                        .map(super::type_table::RuntimePlanTypeDeclaration::semantic_identity)
+                })
+                .collect::<Option<Vec<_>>>();
+            let result_type = self
+                .type_table
+                .get(helper.expr.ty())
+                .map(super::type_table::RuntimePlanTypeDeclaration::semantic_identity);
+            if input_types.as_deref() != Some(binding.input_types())
+                || result_type != Some(binding.result_type())
+            {
+                return Err(RuntimePlanError::PureProgramSignatureMismatch {
+                    program: binding.program(),
+                    helper: binding.helper().0,
+                });
             }
         }
         Ok(())
@@ -447,12 +911,136 @@ impl RuntimePlan {
                 | RuntimeEntryKind::Custom(_),
                 RuntimeEntryTarget::Flow(_) | RuntimeEntryTarget::Routes(_),
                 RuntimeEntryRoles::None,
-            ) => Ok(()),
+            ) => self.verify_existing_entry_target(&entry.id, &entry.target),
             _ => Err(RuntimePlanError::IncompatibleEntryRoles {
                 entry: entry.id.canonical_label(),
                 kind: entry.kind.as_str().to_owned(),
             }),
         }
+    }
+
+    fn verify_existing_entry_target(
+        &self,
+        entry: &EntryRuntimeId,
+        target: &RuntimeEntryTarget,
+    ) -> Result<(), RuntimePlanError> {
+        match target {
+            RuntimeEntryTarget::Flow(flow) => {
+                self.flow_executables
+                    .iter()
+                    .find(|row| row.flow == *flow)
+                    .ok_or_else(|| RuntimePlanError::MissingEntryFlowExecutable {
+                        entry: entry.canonical_label(),
+                        flow: flow.canonical_label(),
+                    })?;
+                let schema = self
+                    .flow_schemas
+                    .iter()
+                    .find(|row| row.flow == *flow)
+                    .ok_or_else(|| RuntimePlanError::MissingFlowSchema(flow.canonical_label()))?;
+                if !schema.parameters.is_empty() {
+                    return Err(RuntimePlanError::ParameterizedDirectEntryTarget {
+                        entry: entry.canonical_label(),
+                        flow: flow.canonical_label(),
+                    });
+                }
+                Ok(())
+            }
+            RuntimeEntryTarget::Routes(routes) => self.verify_route_entry_target(entry, routes),
+            RuntimeEntryTarget::Controller(_) => Err(RuntimePlanError::IncompatibleEntryRoles {
+                entry: entry.canonical_label(),
+                kind: "non-stateful".to_owned(),
+            }),
+        }
+    }
+
+    fn verify_route_entry_target(
+        &self,
+        entry: &EntryRuntimeId,
+        routes: &[RuntimeRouteSpec],
+    ) -> Result<(), RuntimePlanError> {
+        if routes.is_empty() {
+            return Err(RuntimePlanError::EmptyRouteSet {
+                entry: entry.canonical_label(),
+            });
+        }
+        for (index, route) in routes.iter().enumerate() {
+            route
+                .path
+                .validate()
+                .map_err(|error| RuntimePlanError::InvalidRoutePath {
+                    entry: entry.canonical_label(),
+                    reason: error.to_string(),
+                })?;
+            if routes[..index].iter().any(|previous| {
+                previous.method == route.method && previous.path.overlaps_dispatch(&route.path)
+            }) || index > 0
+                && routes[index - 1]
+                    .method
+                    .cmp(&route.method)
+                    .then_with(|| routes[index - 1].path.dispatch_cmp(&route.path))
+                    != Ordering::Less
+            {
+                return Err(RuntimePlanError::InvalidRouteOrder {
+                    entry: entry.canonical_label(),
+                });
+            }
+            self.flow_executables
+                .iter()
+                .find(|row| row.flow == route.target)
+                .ok_or_else(|| RuntimePlanError::MissingEntryFlowExecutable {
+                    entry: entry.canonical_label(),
+                    flow: route.target.canonical_label(),
+                })?;
+            let schema = self
+                .flow_schemas
+                .iter()
+                .find(|row| row.flow == route.target)
+                .ok_or_else(|| {
+                    RuntimePlanError::MissingFlowSchema(route.target.canonical_label())
+                })?;
+            let string_identity =
+                crate::pattern::RuntimeCheckedType::String.semantic_identity_digest();
+            let mut captures = BTreeSet::new();
+            let parameters_valid =
+                schema
+                    .parameters
+                    .iter()
+                    .enumerate()
+                    .all(|(parameter_index, parameter)| {
+                        parameter.coordinate.index().ok() == Some(parameter_index)
+                            && parameter.mode == RuntimeFlowParameterMode::Owned
+                            && parameter.semantic_identity == string_identity
+                    });
+            let bindings_valid =
+                route
+                    .bindings
+                    .iter()
+                    .enumerate()
+                    .all(|(parameter_index, binding)| {
+                        binding.parameter.index().ok() == Some(parameter_index)
+                            && match binding.source {
+                                RuntimeRouteBindingSource::PathCapture(capture) => {
+                                    capture.index().ok().is_some_and(|capture_index| {
+                                        capture_index < route.path.capture_count()
+                                            && captures.insert(capture_index)
+                                    })
+                                }
+                            }
+                    });
+            if schema.parameters.len() != route.bindings.len()
+                || route.path.capture_count() != route.bindings.len()
+                || !parameters_valid
+                || !bindings_valid
+                || captures.len() != route.path.capture_count()
+            {
+                return Err(RuntimePlanError::InvalidRouteBindings {
+                    entry: entry.canonical_label(),
+                    flow: route.target.canonical_label(),
+                });
+            }
+        }
+        Ok(())
     }
 
     fn verify_stateful_entry(
@@ -503,24 +1091,52 @@ impl RuntimePlan {
                 entry: entry.canonical_label(),
             });
         }
-        let [state_parameter] = flow.parameters.as_slice() else {
+        let Some(schema) = self
+            .flow_schemas
+            .iter()
+            .find(|schema| schema.flow == roles.initial_flow.flow)
+        else {
             return Err(RuntimePlanError::InvalidInitialFlowStateParameter {
                 entry: entry.canonical_label(),
             });
         };
-        if state_parameter.position != 0
+        let [state_parameter] = schema.parameters.as_slice() else {
+            return Err(RuntimePlanError::InvalidInitialFlowStateParameter {
+                entry: entry.canonical_label(),
+            });
+        };
+        if state_parameter.coordinate.position() != 0
             || state_parameter.name.is_empty()
             || state_parameter.name.chars().any(char::is_control)
             || state_parameter.mode != RuntimeFlowParameterMode::Owned
-            || state_parameter.nominal != roles.state.identity
-            || state_parameter.layout != roles.state.layout
+            || state_parameter.semantic_identity != roles.state.semantic_identity
         {
             return Err(RuntimePlanError::InvalidInitialFlowStateParameter {
                 entry: entry.canonical_label(),
             });
         }
+        Self::verify_stateful_command_contracts(entry, &roles.command_policy.admitted)?;
+        let initializer = self.verify_callable(entry, "initializer", &roles.initializer)?;
+        let reducer = self.verify_callable(entry, "reducer", &roles.reducer)?;
+        if !matches!(
+            initializer.code,
+            RuntimeCallableExecutableCode::PureHelper(_)
+        ) || !matches!(reducer.code, RuntimeCallableExecutableCode::PureHelper(_))
+        {
+            return Err(RuntimePlanError::IncompatibleEntryRoles {
+                entry: entry.canonical_label(),
+                kind: "stateful callable code".to_owned(),
+            });
+        }
+        Ok(())
+    }
+
+    fn verify_stateful_command_contracts(
+        entry: &EntryRuntimeId,
+        commands: &[RuntimeCommandContract],
+    ) -> Result<(), RuntimePlanError> {
         let mut command_contracts = BTreeSet::new();
-        for command in &roles.command_policy.admitted {
+        for command in commands {
             let key = (
                 command.constructor.as_str().to_owned(),
                 command.target.as_str().to_owned(),
@@ -545,18 +1161,6 @@ impl RuntimePlan {
                     constructor: command.constructor.as_str().to_owned(),
                 });
             }
-        }
-        let initializer = self.verify_callable(entry, "initializer", &roles.initializer)?;
-        let reducer = self.verify_callable(entry, "reducer", &roles.reducer)?;
-        if !matches!(
-            initializer.code,
-            RuntimeCallableExecutableCode::PureHelper(_)
-        ) || !matches!(reducer.code, RuntimeCallableExecutableCode::PureHelper(_))
-        {
-            return Err(RuntimePlanError::IncompatibleEntryRoles {
-                entry: entry.canonical_label(),
-                kind: "stateful callable code".to_owned(),
-            });
         }
         Ok(())
     }
@@ -608,13 +1212,25 @@ impl RuntimeEntryRoles {
 }
 
 impl RuntimeEntrySpec {
-    fn references_role_flow(&self, flow: &FlowRuntimeId) -> bool {
+    /// Returns whether this exact checked Entry plan retains the Flow as an
+    /// executable launch target.
+    ///
+    /// Consumers must use this owner behavior instead of reconstructing Flow
+    /// reachability from Entry kind, roles, or route rows independently.
+    #[must_use]
+    pub fn references_flow(&self, flow: &FlowRuntimeId) -> bool {
         match &self.roles {
             RuntimeEntryRoles::Stateful(roles) => roles.initial_flow.flow == *flow,
             RuntimeEntryRoles::Agent(_) => {
                 matches!(&self.target, RuntimeEntryTarget::Controller(target) if target == flow)
             }
-            RuntimeEntryRoles::None => false,
+            RuntimeEntryRoles::None => match &self.target {
+                RuntimeEntryTarget::Flow(target) => target == flow,
+                RuntimeEntryTarget::Routes(routes) => {
+                    routes.iter().any(|route| &route.target == flow)
+                }
+                RuntimeEntryTarget::Controller(_) => false,
+            },
         }
     }
 }

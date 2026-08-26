@@ -327,31 +327,6 @@ fn runtime_action_invoke_payload_reads_text_control_projection() {
 }
 
 #[test]
-fn unavailable_dialogue_primary_action_lowers_as_a_disabled_noop() {
-    let buttons = RuntimeActionButtonLowerer::lower_buttons(
-        &[ViewRuntimeActionButton {
-            public_id: "button.dialogue.primary".to_owned(),
-            target: "button.dialogue.primary".to_owned(),
-            view: Some("view.mount.4".to_owned()),
-            containing_scroll_region: None,
-            label: String::new(),
-            enabled: false,
-            bounds: ViewRuntimeButtonBounds::new(57_600, 460_800, 1_164_800, 201_600),
-            action: ViewRuntimeActionButtonAction::DialoguePrimaryAction {
-                parameter: "dialogue".to_owned(),
-                target: None,
-            },
-            style: ViewRuntimeControlVisualStyle::default(),
-        }],
-        &[],
-    )
-    .expect("an unavailable typed dialogue action is a valid disabled control");
-
-    assert!(!buttons[0].enabled);
-    assert_eq!(buttons[0].action, RenderActionButtonAction::Noop);
-}
-
-#[test]
 fn keyboard_activation_on_focused_action_button_emits_semantic_action() {
     let scene = scene_with_text_input_and_action_button();
     let frame = prepare(&scene).unwrap();

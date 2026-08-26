@@ -113,8 +113,12 @@ impl NativeSceneState {
             .with_owned_window_driver(owned_window)
             .build();
         let audio = NativeAudioRuntime::from_bundle(&bundle)?;
-        let (runtime, input, dialogue_visual_clock) =
-            restored_windowed_runtime_and_input(&bundle, backend, options.session_load.as_deref())?;
+        let (runtime, input, dialogue_visual_clock) = restored_windowed_runtime_and_input(
+            &bundle,
+            backend,
+            options.session_load.as_deref(),
+            options.entry.as_ref(),
+        )?;
         let text_input = NativeTextInputBridge::new(options.text_input.clone());
         Ok(Self {
             window,

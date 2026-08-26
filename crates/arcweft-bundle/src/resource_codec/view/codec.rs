@@ -1,4 +1,5 @@
 use crate::container::BundleDigest;
+use arcweft_core::{awbc::schema::AwbcProgram, value::RuntimeDialogueOpaqueRole};
 use arcweft_presentation::fx::FxRuntimeType;
 use arcweft_view::{
     ViewValueProgramId, ViewValueProgramInventory,
@@ -48,6 +49,7 @@ pub struct ViewResourceBudget {
     pub definitions: usize,
     pub definition_parameters: usize,
     pub handlers: usize,
+    pub handler_captures: usize,
     pub exported_parts: usize,
     pub semantic_targets: usize,
     pub layout_bounds: usize,
@@ -108,6 +110,7 @@ impl Default for ViewResourceBudget {
             definitions: 65_536,
             definition_parameters: 262_144,
             handlers: 65_536,
+            handler_captures: 262_144,
             exported_parts: 65_536,
             semantic_targets: 262_144,
             layout_bounds: 262_144,
@@ -207,6 +210,120 @@ impl ViewProgramResource {
         ViewResourceCompatibility::ContentOnly
     }
 
+    /// Joins every View handler schema to its exact verified AWBC pure-program
+    /// binding. The View wire keeps only the stable program identity; helper
+    /// indices remain derived execution data. Product bytecode body integrity
+    /// is owned once by the canonical bundle content root/signature, while this
+    /// join proves the local typed ABI and opaque result owner.
+    pub fn validate_awbc_handlers(&self, program: &AwbcProgram) -> Result<(), SectionCodecError> {
+        let bindings = program
+            .pure_programs
+            .iter()
+            .map(|binding| (binding.program, binding))
+            .collect::<BTreeMap<_, _>>();
+        if bindings.len() != program.pure_programs.len() {
+            return Err(SectionCodecError::NonCanonicalTable("awbc_pure_programs"));
+        }
+        let runtime_types = program
+            .runtime_types
+            .iter()
+            .map(|ty| (ty.semantic_identity(), ty))
+            .collect::<BTreeMap<_, _>>();
+        if runtime_types.len() != program.runtime_types.len() {
+            return Err(SectionCodecError::NonCanonicalTable(
+                "awbc_runtime_type_semantic_identity",
+            ));
+        }
+        for definition in &self.definitions {
+            for parameter in &definition.parameters {
+                let runtime_type = runtime_types.get(&parameter.semantic_type).ok_or(
+                    SectionCodecError::NonCanonicalTable("view_parameter_runtime_type"),
+                )?;
+                if parameter.role == super::model::ViewParameterRole::Dialogue {
+                    let accepted = parameter.semantic_type
+                        == RuntimeDialogueOpaqueRole::View.semantic_identity()
+                        && runtime_type
+                            .try_opaque_owner(&program.strings)
+                            .ok()
+                            .flatten()
+                            .is_some_and(|owner| {
+                                RuntimeDialogueOpaqueRole::View.accepts_exact_owner(&owner)
+                            });
+                    if !accepted {
+                        return Err(SectionCodecError::NonCanonicalTable(
+                            "view_dialogue_parameter_owner",
+                        ));
+                    }
+                }
+            }
+        }
+        for handler in &self.handlers {
+            let binding =
+                bindings
+                    .get(&handler.program)
+                    .ok_or(SectionCodecError::NonCanonicalTable(
+                        "view_handler_pure_program_binding",
+                    ))?;
+            let helper = program.pure_helpers.get(binding.helper.index()).ok_or(
+                SectionCodecError::NonCanonicalTable("view_handler_pure_program_helper"),
+            )?;
+            let signature = program.signatures.get(helper.signature.index()).ok_or(
+                SectionCodecError::NonCanonicalTable("view_handler_pure_program_signature"),
+            )?;
+            let signature_inputs = signature
+                .params
+                .iter()
+                .map(|ty| {
+                    program
+                        .runtime_types
+                        .get(ty.index())
+                        .map(|row| row.semantic_identity())
+                })
+                .collect::<Option<Vec<_>>>();
+            let signature_result = signature
+                .result
+                .and_then(|ty| program.runtime_types.get(ty.index()))
+                .map(|row| row.semantic_identity());
+            let closed_effects = program
+                .effect_sets
+                .get(signature.effects.index())
+                .is_some_and(|effects| effects.effects.is_empty());
+            if binding.input_types.len() != handler.captures.len()
+                || binding
+                    .input_types
+                    .iter()
+                    .zip(&handler.captures)
+                    .any(|(expected, capture)| *expected != capture.value_type())
+                || binding.result_type != handler.result.value_type()
+                || signature_inputs.as_deref() != Some(binding.input_types.as_slice())
+                || signature_result != Some(binding.result_type)
+                || !closed_effects
+            {
+                return Err(SectionCodecError::NonCanonicalTable(
+                    "view_handler_pure_program_signature",
+                ));
+            }
+            let result_type = runtime_types.get(&binding.result_type).ok_or(
+                SectionCodecError::NonCanonicalTable("view_handler_result_type"),
+            )?;
+            let accepted_result = match handler.result.role() {
+                arcweft_view::ViewHandlerResultRole::DialogueAction => result_type
+                    .try_opaque_owner(&program.strings)
+                    .ok()
+                    .flatten()
+                    .is_some_and(|owner| {
+                        RuntimeDialogueOpaqueRole::Action.accepts_exact_owner(&owner)
+                    }),
+            };
+            if !accepted_result {
+                return Err(SectionCodecError::NonCanonicalTable(
+                    "view_handler_result_owner",
+                ));
+            }
+        }
+        Ok(())
+    }
+
     /// Canonical public-ID table used when independently lowered View programs
     /// are composed and their source references are rebased.
     pub fn public_id_table(&self) -> Result<PublicIdTable, SectionCodecError> {
@@ -232,8 +349,7 @@ impl ViewProgramResource {
                 _ => {}
             }
         }
-        self.handlers
-            .sort_by(|left, right| left.handler_id.cmp(&right.handler_id));
+        self.handlers.sort_by_key(|handler| handler.program);
         self.exported_parts.sort_by(|left, right| {
             left.target
                 .view
@@ -270,11 +386,11 @@ impl ViewProgramResource {
         self.validate_exported_parts()?;
         self.validate_control_flow_spans()?;
         self.validate_unique_ids()?;
+        self.validate_handlers()?;
         self.validate_layout_bounds()?;
         self.validate_scroll_regions()?;
         self.validate_surfaces()?;
         self.validate_text_blocks()?;
-        self.validate_action_buttons()?;
         self.validate_focus_targets()?;
         self.validate_fx_applications()?;
         self.validate_source_refs()
@@ -358,6 +474,14 @@ impl ViewProgramResource {
         budget: &ViewResourceBudget,
     ) -> Result<(), SectionCodecError> {
         check_budget(self.handlers.len(), budget.handlers, "view_handlers")?;
+        check_budget(
+            self.handlers
+                .iter()
+                .map(|handler| handler.captures.len())
+                .sum::<usize>(),
+            budget.handler_captures,
+            "view_handler_captures",
+        )?;
         check_budget(
             self.exported_parts.len(),
             budget.exported_parts,
@@ -674,10 +798,8 @@ impl ViewProgramResource {
     }
 
     fn validate_unique_ids(&self) -> Result<(), SectionCodecError> {
-        reject_duplicates(
-            self.handlers
-                .iter()
-                .map(|handler| handler.handler_id.clone()),
+        reject_duplicate_keys(
+            self.handlers.iter().map(|handler| handler.program),
             "view_handlers",
         )?;
         reject_duplicate_keys(
@@ -820,6 +942,93 @@ impl ViewProgramResource {
         Ok(())
     }
 
+    fn validate_handlers(&self) -> Result<(), SectionCodecError> {
+        if self
+            .handlers
+            .windows(2)
+            .any(|pair| pair[0].program >= pair[1].program)
+        {
+            return Err(SectionCodecError::NonCanonicalTable("view_handlers"));
+        }
+        let handlers = self
+            .handlers
+            .iter()
+            .map(|handler| (handler.program, handler))
+            .collect::<BTreeMap<_, _>>();
+        if handlers.len() != self.handlers.len() {
+            return Err(SectionCodecError::NonCanonicalTable("view_handlers"));
+        }
+        for handler in &self.handlers {
+            if handler
+                .captures
+                .windows(2)
+                .any(|pair| pair[0].parameter() >= pair[1].parameter())
+            {
+                return Err(SectionCodecError::NonCanonicalTable(
+                    "view_handler_captures",
+                ));
+            }
+        }
+        let mut referenced = BTreeSet::new();
+        let mut target = None;
+        let mut event_targets = BTreeSet::new();
+        for (ordinal, instruction) in self.instructions.iter().enumerate() {
+            match instruction {
+                ViewProgramInstruction::OpenElement { .. }
+                | ViewProgramInstruction::EmitText { .. }
+                | ViewProgramInstruction::EmitImage { .. }
+                | ViewProgramInstruction::EmitCustom { .. }
+                | ViewProgramInstruction::CallView { .. } => target = Some(ordinal),
+                ViewProgramInstruction::BindHandler { event, handler, .. } => {
+                    let Some(specification) = handlers.get(handler) else {
+                        return Err(SectionCodecError::NonCanonicalTable(
+                            "view_handler_bindings",
+                        ));
+                    };
+                    let mut owners = self.definitions.iter().filter(|definition| {
+                        usize::try_from(definition.body.start_instruction).is_ok_and(|start| {
+                            usize::try_from(definition.body.end_instruction)
+                                .is_ok_and(|end| start <= ordinal && ordinal < end)
+                        })
+                    });
+                    let Some(owner) = owners.next() else {
+                        return Err(SectionCodecError::NonCanonicalTable(
+                            "view_handler_definition",
+                        ));
+                    };
+                    if owners.next().is_some()
+                        || specification.captures.iter().any(|capture| {
+                            owner
+                                .parameters
+                                .get(capture.parameter().index())
+                                .is_none_or(|parameter| {
+                                    usize::from(parameter.ordinal) != capture.parameter().index()
+                                        || parameter.semantic_type != capture.value_type()
+                                })
+                        })
+                        || !referenced.insert(*handler)
+                        || !target.is_some_and(|node| event_targets.insert((node, *event)))
+                    {
+                        return Err(SectionCodecError::NonCanonicalTable(
+                            "view_handler_bindings",
+                        ));
+                    }
+                }
+                ViewProgramInstruction::Branch { .. }
+                | ViewProgramInstruction::RepeatKeyed { .. }
+                | ViewProgramInstruction::Await { .. }
+                | ViewProgramInstruction::BindLocal { .. } => target = None,
+                _ => {}
+            }
+        }
+        if referenced.len() != handlers.len() {
+            return Err(SectionCodecError::NonCanonicalTable(
+                "view_handler_bindings",
+            ));
+        }
+        Ok(())
+    }
+
     fn validate_surfaces(&self) -> Result<(), SectionCodecError> {
         if self
             .surfaces
@@ -830,36 +1039,6 @@ impl ViewProgramResource {
         } else {
             Err(SectionCodecError::NonCanonicalTable("view_surfaces"))
         }
-    }
-
-    fn validate_action_buttons(&self) -> Result<(), SectionCodecError> {
-        for button in &self.action_buttons {
-            let super::model::ViewActionButtonActionResource::DialoguePrimaryAction { parameter } =
-                &button.action
-            else {
-                continue;
-            };
-            let Some(definition) = button.view.as_deref().and_then(|view| {
-                self.definitions
-                    .iter()
-                    .find(|definition| definition.public_id.as_str() == view)
-            }) else {
-                return Err(SectionCodecError::NonCanonicalTable(
-                    "view_dialogue_primary_action_owner",
-                ));
-            };
-            if !valid_identifier(parameter)
-                || !definition.parameters.iter().any(|candidate| {
-                    candidate.name == *parameter
-                        && candidate.role == super::model::ViewParameterRole::Dialogue
-                })
-            {
-                return Err(SectionCodecError::NonCanonicalTable(
-                    "view_dialogue_primary_action_parameter",
-                ));
-            }
-        }
-        Ok(())
     }
 
     fn validate_focus_targets(&self) -> Result<(), SectionCodecError> {
@@ -990,11 +1169,6 @@ impl ViewProgramResource {
                         .chain(style_apply_public_ids(&definition.styles))
                 }))
                 .chain(self.instructions.iter().flat_map(instruction_public_ids))
-                .chain(
-                    self.handlers
-                        .iter()
-                        .flat_map(|handler| [handler.handler_id.clone(), handler.event.clone()]),
-                )
                 .chain(self.exported_parts.iter().flat_map(|part| {
                     [
                         part.target.view.view_id().as_str().to_owned(),
@@ -1044,6 +1218,13 @@ impl ViewProgramResource {
             ))
             .saturating_add(saturating_u32(self.value_inputs.len()))
             .saturating_add(saturating_u32(self.instructions.len()))
+            .saturating_add(saturating_u32(self.handlers.len()))
+            .saturating_add(saturating_u32(
+                self.handlers
+                    .iter()
+                    .map(|handler| handler.captures.len())
+                    .sum::<usize>(),
+            ))
             .saturating_add(saturating_u32(self.layout_bounds.len()))
             .saturating_add(saturating_u32(self.action_buttons.len()))
             .saturating_add(saturating_u32(self.scroll_regions.len()))
@@ -1068,8 +1249,7 @@ fn semantic_target_public_ids(target: &super::model::ViewSemanticTarget) -> Vec<
 
 fn action_button_public_ids(button: &super::model::ViewActionButtonResource) -> Vec<String> {
     let action_ids = match &button.action {
-        super::model::ViewActionButtonActionResource::Noop
-        | super::model::ViewActionButtonActionResource::DialoguePrimaryAction { .. } => Vec::new(),
+        super::model::ViewActionButtonActionResource::Noop => Vec::new(),
         super::model::ViewActionButtonActionResource::ActionInvoke { action, payload } => {
             std::iter::once(action.clone())
                 .chain(action_payload_refs(payload.as_ref()))
@@ -1276,8 +1456,6 @@ impl ViewInputOptions {
             self.containing_scroll_region.clone(),
             Some(self.value_text_source.clone()),
             self.placeholder_text_source.clone(),
-            self.submit_handler.clone(),
-            self.change_handler.clone(),
         ]
         .into_iter()
         .flatten()
@@ -1466,9 +1644,7 @@ fn instruction_public_ids(instruction: &ViewProgramInstruction) -> Vec<String> {
         .flatten()
         .chain(style_apply_public_ids(styles))
         .collect(),
-        ViewProgramInstruction::BindHandler { event, handler, .. } => {
-            vec![event.clone(), handler.clone()]
-        }
+        ViewProgramInstruction::BindHandler { .. } => Vec::new(),
         ViewProgramInstruction::AttachSemantic {
             target,
             label_text_source,

@@ -1,9 +1,330 @@
 //! Producer-validated opaque runtime values.
 
 use crate::pattern::{RuntimeOpaqueTypeOwner, RuntimeOpaqueTypeProducerId, RuntimeSemanticTypeId};
-use crate::value::RuntimeValue;
+use crate::value::{RuntimeUInt, RuntimeValue};
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
+
+/// Closed producer authority for runtime-supplied dialogue values.
+#[derive(Clone, Copy, Debug, Deserialize, Eq, Hash, Ord, PartialEq, PartialOrd, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum RuntimeDialogueOpaqueRole {
+    View,
+    Character,
+    Content,
+    Occurrence,
+    Stage,
+    Reveal,
+    Action,
+}
+
+/// Closed field coordinates of the standard `DialogueView` runtime payload.
+///
+/// This owner is shared by standard pure-program lowering and runtime value
+/// construction, so neither side can independently invent tuple ordinals.
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub enum RuntimeDialogueViewField {
+    Character,
+    Content,
+    Occurrence,
+    Stage,
+    Reveal,
+    PrimaryAction,
+}
+
+/// Typed, owner-validated payload of one standard `DialogueView` value.
+#[derive(Clone, Debug, PartialEq)]
+pub struct RuntimeDialogueViewValue {
+    character: RuntimeValue,
+    content: RuntimeValue,
+    occurrence: RuntimeValue,
+    stage: RuntimeValue,
+    reveal: RuntimeValue,
+    primary_action: RuntimeValue,
+}
+
+/// Closed data carried by a `DialogueAction` token.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum RuntimeDialogueActionValue {
+    None,
+    Advance(RuntimeDialogueAdvanceAction),
+}
+
+/// Runtime-neutral coordinates of one stale-safe dialogue advance.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct RuntimeDialogueAdvanceAction {
+    pub dialogue: u64,
+    pub entry: u64,
+    pub instance: u64,
+    pub stage: u32,
+    pub revision: u64,
+}
+
+/// Failure to admit a producer-owned dialogue carrier.
+#[derive(Clone, Debug, Eq, Error, PartialEq)]
+pub enum RuntimeDialogueValueError {
+    #[error("runtime value is not owned by exact dialogue role {expected:?}")]
+    InvalidOwner { expected: RuntimeDialogueOpaqueRole },
+    #[error("DialogueView field {field:?} is not owned by exact dialogue role {expected:?}")]
+    InvalidViewFieldOwner {
+        field: RuntimeDialogueViewField,
+        expected: RuntimeDialogueOpaqueRole,
+    },
+    #[error("DialogueView payload does not contain its six canonical fields")]
+    InvalidViewPayload,
+    #[error("DialogueAction payload violates its closed token schema")]
+    InvalidActionPayload,
+}
+
+impl RuntimeDialogueOpaqueRole {
+    #[must_use]
+    pub const fn standard_type_name(self) -> &'static str {
+        match self {
+            Self::View => "DialogueView",
+            Self::Character => "DialogueCharacter",
+            Self::Content => "DialogueContent",
+            Self::Occurrence => "DialogueOccurrenceId",
+            Self::Stage => "DialogueStage",
+            Self::Reveal => "DialogueReveal",
+            Self::Action => "DialogueAction",
+        }
+    }
+
+    #[must_use]
+    /// # Panics
+    ///
+    /// Panics only if a fixed standard dialogue producer identity violates the
+    /// validated runtime identity grammar.
+    pub fn producer(self) -> RuntimeOpaqueTypeProducerId {
+        RuntimeOpaqueTypeProducerId::try_new(match self {
+            Self::View => "std.dialogue.view",
+            Self::Character => "std.dialogue.character",
+            Self::Content => "std.dialogue.content",
+            Self::Occurrence => "std.dialogue.occurrence",
+            Self::Stage => "std.dialogue.stage",
+            Self::Reveal => "std.dialogue.reveal",
+            Self::Action => "std.dialogue.action",
+        })
+        .expect("fixed dialogue runtime producer identities are valid")
+    }
+
+    #[must_use]
+    pub const fn value_class(self) -> RuntimeOpaqueValueClass {
+        RuntimeOpaqueValueClass::Plain
+    }
+
+    #[must_use]
+    pub const fn persistence(self) -> RuntimeOpaquePersistence {
+        RuntimeOpaquePersistence::SnapshotOnly
+    }
+
+    /// Exact semantic identity of the corresponding standard checked nominal.
+    #[must_use]
+    pub fn semantic_identity(self) -> RuntimeSemanticTypeId {
+        let mut encoder = crate::pattern::RuntimeSemanticTypeIdentityEncoder::new();
+        encoder.write_tag(74);
+        encoder.write_str(self.standard_type_name());
+        encoder.finish()
+    }
+
+    #[must_use]
+    pub fn exact_owner(self) -> RuntimeOpaqueTypeOwner {
+        RuntimeOpaqueTypeOwner::exact_with(
+            self.producer(),
+            self.semantic_identity(),
+            self.value_class(),
+            self.persistence(),
+        )
+    }
+
+    #[must_use]
+    pub fn accepts_exact_owner(self, owner: &RuntimeOpaqueTypeOwner) -> bool {
+        owner == &self.exact_owner()
+    }
+}
+
+impl RuntimeDialogueViewField {
+    /// Canonical payload order used by both projection bytecode and values.
+    pub const ALL: [Self; 6] = [
+        Self::Character,
+        Self::Content,
+        Self::Occurrence,
+        Self::Stage,
+        Self::Reveal,
+        Self::PrimaryAction,
+    ];
+
+    #[must_use]
+    pub const fn ordinal(self) -> u32 {
+        match self {
+            Self::Character => 0,
+            Self::Content => 1,
+            Self::Occurrence => 2,
+            Self::Stage => 3,
+            Self::Reveal => 4,
+            Self::PrimaryAction => 5,
+        }
+    }
+
+    #[must_use]
+    pub const fn role(self) -> RuntimeDialogueOpaqueRole {
+        match self {
+            Self::Character => RuntimeDialogueOpaqueRole::Character,
+            Self::Content => RuntimeDialogueOpaqueRole::Content,
+            Self::Occurrence => RuntimeDialogueOpaqueRole::Occurrence,
+            Self::Stage => RuntimeDialogueOpaqueRole::Stage,
+            Self::Reveal => RuntimeDialogueOpaqueRole::Reveal,
+            Self::PrimaryAction => RuntimeDialogueOpaqueRole::Action,
+        }
+    }
+}
+
+impl RuntimeDialogueViewValue {
+    pub fn try_new(
+        character: RuntimeValue,
+        content: RuntimeValue,
+        occurrence: RuntimeValue,
+        stage: RuntimeValue,
+        reveal: RuntimeValue,
+        primary_action: RuntimeValue,
+    ) -> Result<Self, RuntimeDialogueValueError> {
+        let value = Self {
+            character,
+            content,
+            occurrence,
+            stage,
+            reveal,
+            primary_action,
+        };
+        for field in RuntimeDialogueViewField::ALL {
+            value.validate_field(field)?;
+        }
+        Ok(value)
+    }
+
+    pub fn try_from_runtime_value(value: &RuntimeValue) -> Result<Self, RuntimeDialogueValueError> {
+        let payload = exact_dialogue_payload(value, RuntimeDialogueOpaqueRole::View)?;
+        let RuntimeValue::Tuple(fields) = payload else {
+            return Err(RuntimeDialogueValueError::InvalidViewPayload);
+        };
+        let [
+            character,
+            content,
+            occurrence,
+            stage,
+            reveal,
+            primary_action,
+        ] = fields.as_slice()
+        else {
+            return Err(RuntimeDialogueValueError::InvalidViewPayload);
+        };
+        Self::try_new(
+            character.clone(),
+            content.clone(),
+            occurrence.clone(),
+            stage.clone(),
+            reveal.clone(),
+            primary_action.clone(),
+        )
+    }
+
+    #[must_use]
+    pub fn field(&self, field: RuntimeDialogueViewField) -> &RuntimeValue {
+        match field {
+            RuntimeDialogueViewField::Character => &self.character,
+            RuntimeDialogueViewField::Content => &self.content,
+            RuntimeDialogueViewField::Occurrence => &self.occurrence,
+            RuntimeDialogueViewField::Stage => &self.stage,
+            RuntimeDialogueViewField::Reveal => &self.reveal,
+            RuntimeDialogueViewField::PrimaryAction => &self.primary_action,
+        }
+    }
+
+    pub fn into_runtime_value(self) -> RuntimeValue {
+        wrap_dialogue_payload(
+            RuntimeDialogueOpaqueRole::View,
+            RuntimeValue::Tuple(vec![
+                self.character,
+                self.content,
+                self.occurrence,
+                self.stage,
+                self.reveal,
+                self.primary_action,
+            ]),
+        )
+    }
+
+    fn validate_field(
+        &self,
+        field: RuntimeDialogueViewField,
+    ) -> Result<(), RuntimeDialogueValueError> {
+        let expected = field.role();
+        exact_dialogue_payload(self.field(field), expected)
+            .map(|_| ())
+            .map_err(|_| RuntimeDialogueValueError::InvalidViewFieldOwner { field, expected })
+    }
+}
+
+impl RuntimeDialogueActionValue {
+    #[must_use]
+    pub fn into_runtime_value(self) -> RuntimeValue {
+        let payload = match self {
+            Self::None => RuntimeValue::Tuple(vec![RuntimeValue::u8(0)]),
+            Self::Advance(target) => RuntimeValue::Tuple(vec![
+                RuntimeValue::u8(1),
+                RuntimeValue::u64(target.dialogue),
+                RuntimeValue::u64(target.entry),
+                RuntimeValue::u64(target.instance),
+                RuntimeValue::u32(target.stage),
+                RuntimeValue::u64(target.revision),
+            ]),
+        };
+        wrap_dialogue_payload(RuntimeDialogueOpaqueRole::Action, payload)
+    }
+
+    pub fn try_from_runtime_value(value: &RuntimeValue) -> Result<Self, RuntimeDialogueValueError> {
+        let payload = exact_dialogue_payload(value, RuntimeDialogueOpaqueRole::Action)?;
+        let RuntimeValue::Tuple(fields) = payload else {
+            return Err(RuntimeDialogueValueError::InvalidActionPayload);
+        };
+        match fields.as_slice() {
+            [RuntimeValue::UInt(RuntimeUInt::U8(0))] => Ok(Self::None),
+            [
+                RuntimeValue::UInt(RuntimeUInt::U8(1)),
+                RuntimeValue::UInt(RuntimeUInt::U64(dialogue)),
+                RuntimeValue::UInt(RuntimeUInt::U64(entry)),
+                RuntimeValue::UInt(RuntimeUInt::U64(instance)),
+                RuntimeValue::UInt(RuntimeUInt::U32(stage)),
+                RuntimeValue::UInt(RuntimeUInt::U64(revision)),
+            ] => Ok(Self::Advance(RuntimeDialogueAdvanceAction {
+                dialogue: *dialogue,
+                entry: *entry,
+                instance: *instance,
+                stage: *stage,
+                revision: *revision,
+            })),
+            _ => Err(RuntimeDialogueValueError::InvalidActionPayload),
+        }
+    }
+}
+
+fn exact_dialogue_payload(
+    value: &RuntimeValue,
+    role: RuntimeDialogueOpaqueRole,
+) -> Result<&RuntimeValue, RuntimeDialogueValueError> {
+    let RuntimeValue::Opaque(opaque) = value else {
+        return Err(RuntimeDialogueValueError::InvalidOwner { expected: role });
+    };
+    role.exact_owner()
+        .accepts_opaque_value(opaque)
+        .then_some(opaque.payload())
+        .ok_or(RuntimeDialogueValueError::InvalidOwner { expected: role })
+}
+
+fn wrap_dialogue_payload(role: RuntimeDialogueOpaqueRole, payload: RuntimeValue) -> RuntimeValue {
+    let owner = role.exact_owner();
+    RuntimeValue::Opaque(RuntimeOpaqueValue::new_exact(&owner, payload))
+}
 
 #[derive(Clone, Copy, Debug, Deserialize, Eq, Hash, Ord, PartialEq, PartialOrd, Serialize)]
 #[serde(rename_all = "snake_case")]
@@ -447,6 +768,86 @@ mod tests {
             !exact("std.line.cue_handle", 11).accepts_opaque_value(match &value {
                 RuntimeValue::Opaque(value) => value,
                 _ => unreachable!("owner wrapped opaque value"),
+            })
+        );
+    }
+
+    #[test]
+    fn dialogue_action_carrier_round_trips_and_rejects_same_producer_forgery() {
+        let action = RuntimeDialogueActionValue::Advance(RuntimeDialogueAdvanceAction {
+            dialogue: 1,
+            entry: 2,
+            instance: 3,
+            stage: 4,
+            revision: 5,
+        });
+        let value = action.into_runtime_value();
+        assert_eq!(
+            RuntimeDialogueActionValue::try_from_runtime_value(&value),
+            Ok(action)
+        );
+
+        let forged_owner = RuntimeOpaqueTypeOwner::exact_with(
+            RuntimeDialogueOpaqueRole::Action.producer(),
+            RuntimeSemanticTypeId::from_bytes([0xd1; 32]),
+            RuntimeDialogueOpaqueRole::Action.value_class(),
+            RuntimeDialogueOpaqueRole::Action.persistence(),
+        );
+        let forged = forged_owner
+            .try_wrap(RuntimeValue::Tuple(vec![RuntimeValue::u8(0)]))
+            .expect("forged exact owner can construct only its own value");
+        assert_eq!(
+            RuntimeDialogueActionValue::try_from_runtime_value(&forged),
+            Err(RuntimeDialogueValueError::InvalidOwner {
+                expected: RuntimeDialogueOpaqueRole::Action,
+            })
+        );
+    }
+
+    #[test]
+    fn dialogue_view_field_owner_is_canonical_and_tamper_checked() {
+        let wrap = |role: RuntimeDialogueOpaqueRole| {
+            role.exact_owner()
+                .try_wrap(RuntimeValue::Unit)
+                .expect("standard dialogue role is exact")
+        };
+        let view = RuntimeDialogueViewValue::try_new(
+            wrap(RuntimeDialogueOpaqueRole::Character),
+            wrap(RuntimeDialogueOpaqueRole::Content),
+            wrap(RuntimeDialogueOpaqueRole::Occurrence),
+            wrap(RuntimeDialogueOpaqueRole::Stage),
+            wrap(RuntimeDialogueOpaqueRole::Reveal),
+            RuntimeDialogueActionValue::None.into_runtime_value(),
+        )
+        .expect("canonical dialogue fields admit");
+        let runtime_value = view.clone().into_runtime_value();
+        assert_eq!(
+            RuntimeDialogueViewValue::try_from_runtime_value(&runtime_value),
+            Ok(view)
+        );
+        assert_eq!(RuntimeDialogueViewField::PrimaryAction.ordinal(), 5);
+
+        let forged_action_owner = RuntimeOpaqueTypeOwner::exact_with(
+            RuntimeDialogueOpaqueRole::Action.producer(),
+            RuntimeSemanticTypeId::from_bytes([0xd2; 32]),
+            RuntimeDialogueOpaqueRole::Action.value_class(),
+            RuntimeDialogueOpaqueRole::Action.persistence(),
+        );
+        let forged_action = forged_action_owner
+            .try_wrap(RuntimeValue::Tuple(vec![RuntimeValue::u8(0)]))
+            .expect("forged exact owner wraps its own payload");
+        assert_eq!(
+            RuntimeDialogueViewValue::try_new(
+                wrap(RuntimeDialogueOpaqueRole::Character),
+                wrap(RuntimeDialogueOpaqueRole::Content),
+                wrap(RuntimeDialogueOpaqueRole::Occurrence),
+                wrap(RuntimeDialogueOpaqueRole::Stage),
+                wrap(RuntimeDialogueOpaqueRole::Reveal),
+                forged_action,
+            ),
+            Err(RuntimeDialogueValueError::InvalidViewFieldOwner {
+                field: RuntimeDialogueViewField::PrimaryAction,
+                expected: RuntimeDialogueOpaqueRole::Action,
             })
         );
     }

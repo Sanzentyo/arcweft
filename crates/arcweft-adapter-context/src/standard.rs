@@ -16,6 +16,9 @@ pub const SANS_IO_ADAPTER_ID: &str = "sans-io";
 /// Adapter id for the native HTTP server environment.
 pub const NATIVE_HTTP_ADAPTER_ID: &str = "native-http";
 
+/// Adapter id for the native command-line process environment.
+pub const NATIVE_CLI_ADAPTER_ID: &str = "native-cli";
+
 /// Adapter id for optional tensor inference helpers.
 pub const INFERENCE_TENSOR_ADAPTER_ID: &str = "inference-tensor";
 
@@ -32,6 +35,7 @@ pub const MATH_ADAPTER_ID: &str = "math";
 pub fn standard_registry() -> AdapterRegistry {
     AdapterRegistry::from_manifests([
         sans_io_manifest(),
+        native_cli_manifest(),
         native_http_manifest(),
         inference_tensor_manifest(),
         system_info_manifest(),
@@ -43,6 +47,22 @@ pub fn standard_registry() -> AdapterRegistry {
 /// Default Sans I/O manifest.
 pub fn sans_io_manifest() -> AdapterManifest {
     AdapterManifest::new(SANS_IO_ADAPTER_ID, "Sans I/O")
+}
+
+/// Native command-line process manifest.
+pub fn native_cli_manifest() -> AdapterManifest {
+    AdapterManifest::new(NATIVE_CLI_ADAPTER_ID, "Native CLI").with_host_call(
+        AdapterHostCall::with_signature(
+            "cli.args",
+            signature(
+                [],
+                AdapterTypeKind::Vec {
+                    item: Box::new(AdapterTypeKind::String),
+                },
+            ),
+            [],
+        ),
+    )
 }
 
 /// Native HTTP server manifest.
@@ -578,6 +598,7 @@ mod tests {
 
         for id in [
             SANS_IO_ADAPTER_ID,
+            NATIVE_CLI_ADAPTER_ID,
             NATIVE_HTTP_ADAPTER_ID,
             INFERENCE_TENSOR_ADAPTER_ID,
             SYSTEM_INFO_ADAPTER_ID,
@@ -613,5 +634,76 @@ mod tests {
                     .iter()
                     .any(|effect| effect.as_str() == "fs.write")
         }));
+    }
+
+    #[test]
+    fn host_call_contract_digest_is_structural_and_effect_order_independent() {
+        let first = AdapterHostCall::with_signature(
+            "contract.call",
+            signature(
+                [
+                    ("left", AdapterTypeKind::String),
+                    ("right", AdapterTypeKind::U32),
+                ],
+                AdapterTypeKind::Bool,
+            ),
+            [
+                AdapterEffectCapability::new("io.write"),
+                AdapterEffectCapability::new("io.read"),
+            ],
+        );
+        let reordered_effects = AdapterHostCall::with_signature(
+            "contract.call",
+            signature(
+                [
+                    ("left", AdapterTypeKind::String),
+                    ("right", AdapterTypeKind::U32),
+                ],
+                AdapterTypeKind::Bool,
+            ),
+            [
+                AdapterEffectCapability::new("io.read"),
+                AdapterEffectCapability::new("io.write"),
+            ],
+        );
+        let reordered_parameters = AdapterHostCall::with_signature(
+            "contract.call",
+            signature(
+                [
+                    ("right", AdapterTypeKind::U32),
+                    ("left", AdapterTypeKind::String),
+                ],
+                AdapterTypeKind::Bool,
+            ),
+            [
+                AdapterEffectCapability::new("io.read"),
+                AdapterEffectCapability::new("io.write"),
+            ],
+        );
+        let changed_result = AdapterHostCall::with_signature(
+            "contract.call",
+            signature(
+                [
+                    ("left", AdapterTypeKind::String),
+                    ("right", AdapterTypeKind::U32),
+                ],
+                AdapterTypeKind::String,
+            ),
+            [
+                AdapterEffectCapability::new("io.read"),
+                AdapterEffectCapability::new("io.write"),
+            ],
+        );
+
+        assert_eq!(first.contract_digest(), reordered_effects.contract_digest());
+        assert_ne!(
+            first.contract_digest(),
+            reordered_parameters.contract_digest()
+        );
+        assert_ne!(first.contract_digest(), changed_result.contract_digest());
+        assert_ne!(
+            AdapterHostCall::new("a.bc", []).contract_digest(),
+            AdapterHostCall::new("ab.c", []).contract_digest()
+        );
     }
 }

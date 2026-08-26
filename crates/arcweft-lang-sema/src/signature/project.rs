@@ -5,14 +5,18 @@ use std::{cmp::Ordering, sync::Arc};
 use arcweft_source::SourceDocument;
 
 use crate::callable::{
-    CallPoison, CallTargetFact, CallTargetFacts, CallableDiagnostic, CallableDiagnosticCode,
-    CallableDiagnosticSeverity, CallableDiagnosticSubject, CallableInstantiation, CallableLimits,
-    CallableLookupKey, CallableParameter, CallableParameterCoordinate, CallableParameterPassing,
-    CallableParameterPresence, CallableParameterType, CallableRecord, CheckedCallableCatalog,
-    ResolvedCallable, SemanticParameter, SemanticParameterGroup, SemanticSignature,
-    SemanticSignatureHelp, SemanticSignatureIndex, SemanticSignatureRecovery, SignatureQueryLimits,
-    SignatureQueryWorkMeter, SignatureWorkKind, SignatureWorkReport,
+    CallAnalysisOutcome, CallPoison, CallTargetFacts, CallableCandidateId, CallableDiagnostic,
+    CallableDiagnosticCode, CallableDiagnosticSeverity, CallableDiagnosticSubject,
+    CallableGroupIndex, CallableLimits, CallableLookupKey, CallableParameter,
+    CallableParameterCoordinate, CallableParameterPassing, CallableParameterPresence,
+    CallableRecord, CheckedCallApplication, CheckedCallExecutionArgument,
+    CheckedCallOperandDestination, CheckedCallableCatalog, ResolvedCallable,
+    ResolvedCallableBaseInstantiation, ResolvedCallableOrigin, SemanticParameter,
+    SemanticParameterGroup, SemanticSignature, SemanticSignatureHelp, SemanticSignatureIndex,
+    SemanticSignatureRecovery, SignatureOrigin, SignatureQueryLimits, SignatureQueryWorkMeter,
+    SignatureWorkKind, SignatureWorkReport,
 };
+use crate::types::TypeKind;
 
 use super::{
     FocusedCallSite, SignatureNotApplicable, SignatureQueryControl, SignatureQueryError,
@@ -56,27 +60,30 @@ pub(super) fn project_signature_help(
         .text()
         .get(site.callee().range().as_range())
         .ok_or(crate::callable::SemanticSignatureError::InvalidSpan)?;
-    let (candidates, selected_candidate) = match facts.target() {
-        CallTargetFact::Selected {
-            selected,
-            considered,
-        } => (considered.as_ref(), Some(selected.as_ref())),
-        CallTargetFact::Ambiguous { candidates, .. } | CallTargetFact::Rejected { candidates } => {
-            (candidates.as_ref(), None)
-        }
-        CallTargetFact::NonCallable { .. } => {
+    let (candidates, selected_candidate, selected_application) = match facts.outcome() {
+        CallAnalysisOutcome::Selected(application) => (
+            application.core().candidates().candidates(),
+            Some(application.core().candidates().selected()),
+            Some(application),
+        ),
+        CallAnalysisOutcome::Ambiguous(evidence) => (evidence.candidates(), None, None),
+        CallAnalysisOutcome::Rejected(evidence) => (evidence.candidates(), None, None),
+        CallAnalysisOutcome::NonCallable(_) => {
             return Ok(SignatureQueryOutcome::NotApplicable(
                 SignatureNotApplicable::NonCallableCallee,
             ));
         }
-        CallTargetFact::Missing { .. } => {
+        CallAnalysisOutcome::Missing(_) => {
             return Ok(SignatureQueryOutcome::NotApplicable(
                 SignatureNotApplicable::UnknownCallee,
             ));
         }
     };
 
-    for _ in facts.arguments() {
+    for _ in selected_application
+        .map(|application| application.core().execution().arguments())
+        .unwrap_or(&[])
+    {
         control.check()?;
         signature_work
             .charge(SignatureWorkKind::ArgumentProjections, 1)
@@ -87,7 +94,7 @@ pub(super) fn project_signature_help(
     let mut active_signature = SemanticSignatureIndex::try_from_usize(0)?;
     for (candidate_index, candidate) in candidates.iter().enumerate() {
         control.check()?;
-        let record = candidate.record().map(AsRef::as_ref);
+        let record = candidate_record(candidate, checked)?;
         let is_selected =
             selected_candidate.is_some_and(|selected| selected.id() == candidate.id());
         if is_selected {
@@ -97,8 +104,8 @@ pub(super) fn project_signature_help(
             candidate,
             record,
             authored_callee,
-            facts,
             checked,
+            selected_application,
             is_selected,
             control,
             callable_limits,
@@ -107,6 +114,18 @@ pub(super) fn project_signature_help(
     }
 
     let active_parameter = active_parameter(site, facts);
+    let (current_group, next_group) =
+        selected_application.map_or((CallableGroupIndex::ZERO, None), |application| {
+            (
+                application.core().current_group(),
+                match application.result() {
+                    crate::callable::CheckedCallResult::Value(_) => None,
+                    crate::callable::CheckedCallResult::Continuation(continuation) => {
+                        Some(continuation.next_group())
+                    }
+                },
+            )
+        });
     let (diagnostics, omitted_diagnostics) = bounded_diagnostics(
         facts.diagnostics(),
         document.identity(),
@@ -140,8 +159,8 @@ pub(super) fn project_signature_help(
         signatures,
         active_signature,
         active_parameter,
-        facts.current_group(),
-        facts.next_group(),
+        current_group,
+        next_group,
         recovery,
         diagnostics,
         omitted_diagnostics,
@@ -160,8 +179,8 @@ fn project_signature(
     candidate: &ResolvedCallable,
     record: Option<&CallableRecord>,
     authored_callee: &str,
-    facts: &CallTargetFacts,
     checked: &CheckedCallableCatalog,
+    selected_application: Option<&CheckedCallApplication>,
     active: bool,
     control: SignatureQueryControl<'_>,
     callable_limits: &CallableLimits,
@@ -183,7 +202,7 @@ fn project_signature(
                 coordinate,
                 parameter_label(parameter),
                 parameter.name().cloned(),
-                parameter.ty().clone(),
+                parameter.admission().clone(),
                 parameter.passing(),
                 parameter.presence(),
                 parameter.documentation().map(Arc::<str>::from).or_else(|| {
@@ -209,19 +228,17 @@ fn project_signature(
             callable_limits,
         )?);
     }
-    let result = if active {
-        facts
-            .result()
-            .cloned()
-            .unwrap_or_else(|| schema.result().clone())
-    } else {
-        schema.result().clone()
-    };
-    let effects = if active {
-        facts.effects().clone()
-    } else {
-        candidate_effects(candidate, checked)?
-    };
+    let selected_application = active.then_some(selected_application).flatten();
+    let result = selected_application.map_or_else(
+        || schema.result().clone(),
+        |application| application.result().ty().clone(),
+    );
+    let effects = selected_application
+        .map(|application| application.core().effects().clone())
+        .map_or_else(|| candidate_effects(candidate, checked), Ok)?;
+    let current_group = selected_application.map_or(CallableGroupIndex::ZERO, |application| {
+        application.core().current_group()
+    });
     let canonical_callee = record.map_or_else(|| authored_callee.to_owned(), canonical_callee);
     let documentation = match record {
         Some(record) => {
@@ -242,7 +259,7 @@ fn project_signature(
             .iter()
             .map(|source| source.id().clone())
             .collect(),
-        candidate.origin().clone(),
+        signature_origin(candidate)?,
         Arc::from(authored_callee),
         Arc::from(canonical_callee),
         groups,
@@ -250,14 +267,60 @@ fn project_signature(
         effects,
         documentation,
         record.and_then(CallableRecord::source).cloned(),
-        facts.current_group(),
-        if active {
-            facts.poison()
-        } else {
-            CallPoison::Clean
-        },
+        current_group,
+        CallPoison::Clean,
         callable_limits,
     )?)
+}
+
+fn signature_origin(candidate: &ResolvedCallable) -> Result<SignatureOrigin, SignatureQueryError> {
+    let unavailable = || {
+        crate::signature::SignatureSemanticUnavailable::MissingCallableAuthority {
+            candidate: Box::new(candidate.id().clone()),
+        }
+        .into()
+    };
+    match candidate.origin() {
+        ResolvedCallableOrigin::Project {
+            declaration,
+            binding,
+        } => Ok(SignatureOrigin::Project {
+            declaration: declaration.clone(),
+            binding: binding.clone(),
+        }),
+        ResolvedCallableOrigin::Standard { owner, id } => Ok(SignatureOrigin::Standard {
+            owner: *owner,
+            id: id.clone(),
+        }),
+        ResolvedCallableOrigin::Adapter { package, id } => Ok(SignatureOrigin::Adapter {
+            package: package.clone(),
+            id: id.clone(),
+        }),
+        ResolvedCallableOrigin::Language { family } => {
+            Ok(SignatureOrigin::Language { family: *family })
+        }
+        ResolvedCallableOrigin::LanguageDialogue { operation, callee } => {
+            Ok(SignatureOrigin::LanguageDialogue {
+                operation: *operation,
+                callee: Arc::new(callee.clone()),
+            })
+        }
+        ResolvedCallableOrigin::Lexical { .. } => {
+            let CallableCandidateId::Local(id) = candidate.id() else {
+                return Err(unavailable());
+            };
+            Ok(SignatureOrigin::Lexical {
+                id: id.clone(),
+                local: id.local(),
+            })
+        }
+        ResolvedCallableOrigin::FunctionValue { .. } => {
+            let CallableCandidateId::FunctionValue(id) = candidate.id() else {
+                return Err(unavailable());
+            };
+            Ok(SignatureOrigin::FunctionValue { id: id.clone() })
+        }
+    }
 }
 
 fn candidate_effects(
@@ -296,42 +359,62 @@ fn active_parameter(
         return Some(active);
     }
     let active_argument = site.active_argument()?;
-    if let Some(argument) = facts.arguments().get(active_argument) {
+    let (candidate, current_group, arguments): (
+        &ResolvedCallable,
+        CallableGroupIndex,
+        &[CheckedCallExecutionArgument],
+    ) = match facts.outcome() {
+        CallAnalysisOutcome::Selected(application) => (
+            application.core().candidates().selected().as_ref(),
+            application.core().current_group(),
+            application.core().execution().arguments(),
+        ),
+        CallAnalysisOutcome::Ambiguous(evidence) => (
+            evidence.candidates().first()?.as_ref(),
+            CallableGroupIndex::ZERO,
+            &[],
+        ),
+        CallAnalysisOutcome::Rejected(evidence) => (
+            evidence.candidates().first()?.as_ref(),
+            CallableGroupIndex::ZERO,
+            &[],
+        ),
+        CallAnalysisOutcome::NonCallable(_) | CallAnalysisOutcome::Missing(_) => return None,
+    };
+    if let Some(argument) = arguments.get(active_argument) {
         let mut mapped = argument
             .slots()
             .iter()
-            .filter_map(crate::callable::CheckedCallArgumentSlotFact::mapped);
+            .filter_map(|slot| match slot.destination() {
+                CheckedCallOperandDestination::Parameter(coordinate) => Some(*coordinate),
+                CheckedCallOperandDestination::Open(_) => None,
+            });
         let first = mapped.next();
         return (first.is_some() && mapped.all(|candidate| Some(candidate) == first))
             .then_some(first)
             .flatten();
     }
 
-    let candidate = match facts.target() {
-        CallTargetFact::Selected { selected, .. } => selected.as_ref(),
-        CallTargetFact::Ambiguous { candidates, .. } | CallTargetFact::Rejected { candidates } => {
-            candidates.first()?
-        }
-        CallTargetFact::NonCallable { .. } | CallTargetFact::Missing { .. } => return None,
-    };
-    let group = candidate.schema().group(facts.current_group())?;
+    let group = candidate.schema().group(current_group)?;
     let mut provided = vec![false; group.parameters().len()];
-    if let CallableInstantiation::Extension {
+    if let ResolvedCallableBaseInstantiation::Extension {
         group: implicit_group,
         parameter,
         ..
     } = candidate.instantiation()
-        && *implicit_group == facts.current_group()
+        && *implicit_group == current_group
         && let Some(provided) = provided.get_mut(parameter.get())
     {
         *provided = true;
     }
-    for coordinate in facts
-        .arguments()
+    for coordinate in arguments
         .iter()
-        .flat_map(crate::callable::CheckedCallArgumentFact::slots)
-        .filter_map(crate::callable::CheckedCallArgumentSlotFact::mapped)
-        .filter(|coordinate| coordinate.group() == facts.current_group())
+        .flat_map(|argument| argument.slots())
+        .filter_map(|slot| match slot.destination() {
+            CheckedCallOperandDestination::Parameter(coordinate) => Some(*coordinate),
+            CheckedCallOperandDestination::Open(_) => None,
+        })
+        .filter(|coordinate| coordinate.group() == current_group)
     {
         let Some(parameter) = group.parameters().get(coordinate.parameter().get()) else {
             continue;
@@ -355,7 +438,27 @@ fn active_parameter(
                         | CallableParameterPassing::RestPositional
                 )
         })
-        .map(|parameter| CallableParameterCoordinate::new(facts.current_group(), parameter.index()))
+        .map(|parameter| CallableParameterCoordinate::new(current_group, parameter.index()))
+}
+
+fn candidate_record<'a>(
+    candidate: &ResolvedCallable,
+    checked: &'a CheckedCallableCatalog,
+) -> Result<Option<&'a CallableRecord>, SignatureQueryError> {
+    candidate
+        .checked()
+        .map(|id| {
+            checked
+                .callable(id)
+                .map(|facts| facts.record().as_ref())
+                .map_err(|_| {
+                    crate::signature::SignatureSemanticUnavailable::MissingCallableAuthority {
+                        candidate: Box::new(candidate.id().clone()),
+                    }
+                    .into()
+                })
+        })
+        .transpose()
 }
 
 fn canonical_callee(record: &CallableRecord) -> String {
@@ -372,10 +475,9 @@ fn canonical_callee(record: &CallableRecord) -> String {
 }
 
 fn parameter_label(parameter: &CallableParameter) -> String {
-    let ty = match parameter.ty() {
-        CallableParameterType::Exact(ty) => ty.source_label(),
-        CallableParameterType::Unchecked => "_".to_owned(),
-    };
+    let ty = parameter
+        .declared_type()
+        .map_or_else(|| "<unchecked-supply>".to_owned(), TypeKind::source_label);
     let name = parameter.name().map(crate::callable::CallableName::as_str);
     let mut label = match (parameter.passing(), name) {
         (

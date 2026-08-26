@@ -1254,28 +1254,6 @@ impl TaskSpec {
         policy: TaskPolicy,
         request: HostTaskRequest,
     ) -> Self {
-        Self::new_with_outcome(
-            id,
-            key,
-            class,
-            priority,
-            cancel_scope,
-            policy,
-            TaskOutcomeContract::default(),
-            request,
-        )
-    }
-
-    pub fn new_with_outcome(
-        id: TaskId,
-        key: TaskKey,
-        class: TaskClass,
-        priority: TaskPriority,
-        cancel_scope: CancelScopeId,
-        policy: TaskPolicy,
-        outcome: TaskOutcomeContract,
-        request: HostTaskRequest,
-    ) -> Self {
         let debug_label = request.debug_label();
         Self {
             id,
@@ -1284,10 +1262,16 @@ impl TaskSpec {
             priority,
             cancel_scope,
             policy,
-            outcome,
+            outcome: TaskOutcomeContract::default(),
             request,
             debug_label,
         }
+    }
+
+    #[must_use]
+    pub fn with_outcome(mut self, outcome: TaskOutcomeContract) -> Self {
+        self.outcome = outcome;
+        self
     }
 }
 

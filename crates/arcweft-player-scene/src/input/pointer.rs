@@ -4,8 +4,9 @@ use super::{
     PointerId, PointerInput, PointerPhase, PreparedFrame, PressedTarget, RawInputKind,
     RouteDecision, TextBlockSelectionState, TextByteOffset, TextCharacterBounds, TextEditorError,
     TextPointerSelectionKind, TextPointerSelectionState, ViewportPoint, activation_outcome,
-    frame_target_is_text_input, line_range_at_text_offset, ordered_text_range,
-    pointer_activation_effects, viewport_text_hit_offset, word_range_at_text_offset,
+    frame_target_is_action_button, frame_target_is_text_input, line_range_at_text_offset,
+    ordered_text_range, pointer_activation_effects, viewport_text_hit_offset,
+    word_range_at_text_offset,
 };
 
 impl InputController {
@@ -55,8 +56,19 @@ impl InputController {
     ) -> InputOutcome {
         self.pointer_positions.insert(pointer.0, position);
         self.blank_presses.remove(&pointer.0);
-        if let Some(target) = frame
-            .selectable_text_at(position)
+        let raw = self.raw(RawInputKind::Pointer(PointerInput {
+            pointer,
+            position,
+            phase: PointerPhase::Down,
+        }));
+        let routed = InputRouter::route(&raw, &frame.layers, &frame.hits, &self.interaction);
+        let routed_to_control = routed.event().is_some_and(|event| {
+            frame_target_is_action_button(frame, event.target())
+                || frame_target_is_text_input(frame, event.target())
+        });
+        if let Some(target) = (!routed_to_control)
+            .then(|| frame.selectable_text_at(position))
+            .flatten()
             .and_then(|item| item.interaction.target.clone())
         {
             self.pending_text_pointer_selection = None;
@@ -82,12 +94,6 @@ impl InputController {
             );
             return InputOutcome::redraw(true);
         }
-        let raw = self.raw(RawInputKind::Pointer(PointerInput {
-            pointer,
-            position,
-            phase: PointerPhase::Down,
-        }));
-        let routed = InputRouter::route(&raw, &frame.layers, &frame.hits, &self.interaction);
         let had_view_control_focus = self.focused_target_is_view_control(frame);
         let advances_dialogue =
             !had_view_control_focus && self.dialogue_can_advance_from_unfocused_input(frame);
@@ -246,6 +252,9 @@ impl InputController {
                 && !text_input_activation
                 && !effects.action_button_activation,
         );
+        outcome
+            .view_handler_invocations
+            .extend(effects.view_handler_invocations);
         outcome.dialogue_progress = outcome.dialogue_progress.merge(effects.dialogue_progress);
         outcome.redraw |= effects.dialogue_progress.redraws();
         outcome

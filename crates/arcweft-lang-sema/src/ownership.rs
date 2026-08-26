@@ -20,7 +20,7 @@ use arcweft_core::{
         RuntimeOpaqueValueClass, RuntimePayload, RuntimeValue,
     },
 };
-use arcweft_lang_hir::symbol::{ProjectSymbolTable, nominal::ProjectNominalBody};
+use arcweft_lang_hir::symbol::ProjectSymbolTable;
 use arcweft_lang_syntax::reference::BorrowKind;
 use thiserror::Error;
 
@@ -810,18 +810,18 @@ impl<'a> RuntimeProducerArgumentClassifier<'a> {
                 RuntimeOwnershipRejection::UnresolvedType,
             )),
             TypeKind::ProjectNominal(nominal) => {
-                let Some((analysis, _, symbols)) = self.authority() else {
+                let Some((analysis, _, _)) = self.authority() else {
                     return Err(RuntimeOwnershipError::rejected(
                         path,
                         RuntimeOwnershipRejection::MissingCanonicalIdentity,
                     ));
                 };
+                let semantic_type =
+                    TypeKind::ProjectNominal(nominal.clone()).semantic_identity_digest();
                 analysis
-                    .checked_project_nominal(symbols, nominal)
-                    .map(|checked| {
-                        RuntimeSemanticTypeId::from_bytes(*checked.identity().as_bytes())
-                    })
-                    .map_err(|_| {
+                    .runtime_nominal_projection(semantic_type)
+                    .map(|projection| projection.semantic_identity())
+                    .ok_or_else(|| {
                         RuntimeOwnershipError::rejected(
                             path,
                             RuntimeOwnershipRejection::MissingCanonicalIdentity,
@@ -1209,7 +1209,7 @@ impl<'a> RuntimeProducerArgumentClassifier<'a> {
             }
             TypeKind::ViewValue => rejected(RuntimeOwnershipRejection::MissingRuntimeSnapshotOwner),
             TypeKind::CharacterNominal(nominal) => Self::classify_character_nominal(nominal, path),
-            TypeKind::Named(_) => rejected(RuntimeOwnershipRejection::UnresolvedType),
+            TypeKind::Named(_) => self.classify_environment_runtime_nominal(ty, path, traversal),
             TypeKind::Tuple(items) => {
                 let mut checked_items = Vec::with_capacity(items.len());
                 for (index, item) in items.iter().enumerate() {
@@ -1267,7 +1267,13 @@ impl<'a> RuntimeProducerArgumentClassifier<'a> {
             .exact_records()
             .any(|record| {
                 record.id().owner() == &AcceptedNominalOwnerId::Standard
-                    && matches!(record.semantics(), AcceptedNominalSemantics::Exact(exact) if exact == ty)
+                    && (matches!(
+                        record.semantics(),
+                        AcceptedNominalSemantics::Exact(exact) if exact == ty
+                    ) || matches!(
+                        record.semantics(),
+                        AcceptedNominalSemantics::Record(record) if record.ty() == ty
+                    ))
             });
         if !accepted {
             return Err(RuntimeOwnershipError::rejected(
@@ -1294,7 +1300,7 @@ impl<'a> RuntimeProducerArgumentClassifier<'a> {
         depth: u64,
         traversal: &mut OwnershipTraversal,
     ) -> Result<RuntimeProducerArgumentAdmission, RuntimeOwnershipError> {
-        let Some((analysis, _, symbols)) = self.authority() else {
+        let Some((analysis, _, _)) = self.authority() else {
             return Err(RuntimeOwnershipError::rejected(
                 path,
                 RuntimeOwnershipRejection::MissingRuntimeSnapshotOwner,
@@ -1303,95 +1309,67 @@ impl<'a> RuntimeProducerArgumentClassifier<'a> {
         let identity = runtime_semantic_identity(&TypeKind::ProjectNominal(nominal.clone()));
         traversal.enter_nominal(identity, path)?;
         let result = (|| {
-            let declaration = symbols.nominal(nominal.declaration()).ok_or_else(|| {
-                RuntimeOwnershipError::rejected(
-                    path,
-                    RuntimeOwnershipRejection::MissingRuntimeSnapshotOwner,
-                )
-            })?;
-            let owner = analysis
-                .checked_project_nominal(symbols, nominal)
-                .map_err(|_| {
+            let semantic_type =
+                TypeKind::ProjectNominal(nominal.clone()).semantic_identity_digest();
+            let projected = analysis
+                .runtime_nominal_projection(semantic_type)
+                .ok_or_else(|| {
                     RuntimeOwnershipError::rejected(
                         path,
                         RuntimeOwnershipRejection::MissingRuntimeSnapshotOwner,
                     )
                 })?;
-            let (checked, projected) = match declaration.body() {
-                ProjectNominalBody::Struct { fields } => {
-                    for (ordinal, field) in fields.iter().enumerate() {
-                        let field_ty = analysis.ty(field.ty()).ok_or_else(|| {
-                            RuntimeOwnershipError::rejected(
-                                path,
-                                RuntimeOwnershipRejection::UnresolvedType,
-                            )
-                        })?;
-                        let field_ty = owner
-                            .instantiate_declaration_type(declaration, field_ty)
-                            .ok_or_else(|| {
-                                RuntimeOwnershipError::rejected(
-                                    path,
-                                    RuntimeOwnershipRejection::UnresolvedType,
-                                )
-                            })?;
+            let arguments = nominal
+                .arguments()
+                .iter()
+                .enumerate()
+                .map(|(index, argument)| {
+                    let argument_path =
+                        path.pushed(RuntimeOwnershipPathSegment::AcceptedNominalArgument(
+                            u32::try_from(index)
+                                .expect("accepted project nominal argument ordinal fits u32"),
+                        ));
+                    self.classify_at(
+                        argument,
+                        &argument_path,
+                        OwnershipTraversal::child_depth(depth)?,
+                        traversal,
+                    )?
+                    .projection()
+                    .checked_type_at(&argument_path)
+                })
+                .collect::<Result<Vec<_>, RuntimeOwnershipError>>()?;
+            let checked = match projected.kind() {
+                RuntimeProjectNominalKind::Record => {
+                    for field in projected.record_fields() {
                         self.classify_at(
-                            &field_ty,
+                            field.ty(),
                             &path.pushed(RuntimeOwnershipPathSegment::ProjectNominalMember(
-                                u32::try_from(ordinal).unwrap_or(u32::MAX),
+                                field.declaration_ordinal(),
                             )),
                             OwnershipTraversal::child_depth(depth)?,
                             traversal,
                         )?;
                     }
-                    let projected = analysis
-                        .project_checked_runtime_nominal(symbols, &owner)
-                        .map_err(|_| {
-                            RuntimeOwnershipError::rejected(
-                                path,
-                                RuntimeOwnershipRejection::MissingRuntimeSnapshotOwner,
-                            )
-                        })?;
-                    if projected.kind() != RuntimeProjectNominalKind::Record {
-                        return Err(RuntimeOwnershipError::rejected(
-                            path,
-                            RuntimeOwnershipRejection::MissingRuntimeSnapshotOwner,
-                        ));
+                    RuntimeCheckedType::Nominal {
+                        nominal: projected.nominal().clone(),
+                        semantic_identity: identity,
+                        layout: projected.layout(),
+                        arguments,
                     }
-                    (
-                        RuntimeCheckedType::Nominal {
-                            nominal: projected.nominal().clone(),
-                            semantic_identity: identity,
-                            layout: projected.layout(),
-                        },
-                        projected,
-                    )
                 }
-                ProjectNominalBody::Enum { variants } => {
-                    let mut cases = Vec::with_capacity(variants.len());
-                    for (ordinal, variant) in variants.iter().enumerate() {
+                RuntimeProjectNominalKind::Variant => {
+                    let mut cases = Vec::with_capacity(projected.variant_cases().len());
+                    for variant in projected.variant_cases() {
                         let payload = variant
                             .payload()
-                            .map(|payload| {
-                                let ty = analysis.ty(payload).ok_or_else(|| {
-                                    RuntimeOwnershipError::rejected(
-                                        path,
-                                        RuntimeOwnershipRejection::UnresolvedType,
-                                    )
-                                })?;
-                                let ty = owner
-                                    .instantiate_declaration_type(declaration, ty)
-                                    .ok_or_else(|| {
-                                        RuntimeOwnershipError::rejected(
-                                            path,
-                                            RuntimeOwnershipRejection::UnresolvedType,
-                                        )
-                                    })?;
+                            .map(|ty| {
                                 let member_path =
                                     path.pushed(RuntimeOwnershipPathSegment::ProjectNominalMember(
-                                        u32::try_from(ordinal).unwrap_or(u32::MAX),
+                                        variant.ordinal(),
                                     ));
                                 self.classify_at(
-                                    &ty,
+                                    ty,
                                     &member_path,
                                     OwnershipTraversal::child_depth(depth)?,
                                     traversal,
@@ -1402,38 +1380,16 @@ impl<'a> RuntimeProducerArgumentClassifier<'a> {
                             })
                             .transpose()?;
                         cases.push(RuntimeCheckedVariantCase {
-                            name: variant.name().as_str().to_owned(),
+                            name: variant.diagnostic_name().as_str().to_owned(),
                             payload,
                         });
                     }
-                    let projected = analysis
-                        .project_checked_runtime_nominal(symbols, &owner)
-                        .map_err(|_| {
-                            RuntimeOwnershipError::rejected(
-                                path,
-                                RuntimeOwnershipRejection::MissingRuntimeSnapshotOwner,
-                            )
-                        })?;
-                    if projected.kind() != RuntimeProjectNominalKind::Variant {
-                        return Err(RuntimeOwnershipError::rejected(
-                            path,
-                            RuntimeOwnershipRejection::MissingRuntimeSnapshotOwner,
-                        ));
+                    RuntimeCheckedType::Variant {
+                        nominal: projected.nominal().clone(),
+                        semantic_identity: identity,
+                        arguments,
+                        cases,
                     }
-                    (
-                        RuntimeCheckedType::Variant {
-                            nominal: projected.nominal().clone(),
-                            semantic_identity: identity,
-                            cases,
-                        },
-                        projected,
-                    )
-                }
-                ProjectNominalBody::TypeAlias { .. } => {
-                    return Err(RuntimeOwnershipError::rejected(
-                        path,
-                        RuntimeOwnershipRejection::MissingRuntimeSnapshotOwner,
-                    ));
                 }
             };
             let checked_type = TypeKind::ProjectNominal(nominal.clone()).semantic_identity_digest();
@@ -1500,6 +1456,54 @@ impl<'a> RuntimeProducerArgumentClassifier<'a> {
         };
         let semantic_identity =
             runtime_semantic_identity(&TypeKind::AcceptedNominal(nominal.clone()));
+        if !matches!(carrier.value_class(), RuntimeOpaqueValueClass::Plain) {
+            return Err(RuntimeOwnershipError::rejected(
+                path,
+                RuntimeOwnershipRejection::AffineValue,
+            ));
+        }
+        traversal.push_evidence(OwnershipEvidenceRow::AcceptedOpaque {
+            semantic_identity: *semantic_identity.as_bytes(),
+            runtime_producer: carrier.producer().as_str().to_owned(),
+            value_class: carrier.value_class(),
+            persistence: carrier.persistence(),
+        })?;
+        Ok(RuntimeProducerArgumentAdmission::SnapshotClone(
+            RuntimeOwnershipProjection::Checked(RuntimeCheckedType::Opaque {
+                owner: RuntimeOpaqueTypeOwner::exact_with(
+                    carrier.producer().clone(),
+                    semantic_identity,
+                    carrier.value_class(),
+                    carrier.persistence(),
+                ),
+            }),
+        ))
+    }
+
+    fn classify_environment_runtime_nominal(
+        &self,
+        ty: &TypeKind,
+        path: &RuntimeOwnershipPath,
+        traversal: &mut OwnershipTraversal,
+    ) -> Result<RuntimeProducerArgumentAdmission, RuntimeOwnershipError> {
+        let Some((_, world, _)) = self.authority() else {
+            return Err(RuntimeOwnershipError::rejected(
+                path,
+                RuntimeOwnershipRejection::MissingRuntimeSnapshotOwner,
+            ));
+        };
+        let semantic_identity = runtime_semantic_identity(ty);
+        let carrier = world
+            .environment()
+            .nominal_catalog()
+            .environment_record_for_semantic_type(ty.semantic_identity_digest())
+            .and_then(|record| record.runtime_carrier())
+            .ok_or_else(|| {
+                RuntimeOwnershipError::rejected(
+                    path,
+                    RuntimeOwnershipRejection::MissingRuntimeSnapshotOwner,
+                )
+            })?;
         if !matches!(carrier.value_class(), RuntimeOpaqueValueClass::Plain) {
             return Err(RuntimeOwnershipError::rejected(
                 path,

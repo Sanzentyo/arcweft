@@ -5,15 +5,20 @@ use arcweft_core::awbc::schema::{
     AwbcEntryId, AwbcEntryTarget, AwbcInstruction, AwbcProgram, AwbcSafePointKind, AwbcTerminator,
 };
 use arcweft_core::awbc::vm::{self, VmExit, VmStepOptions};
-use arcweft_core::entry::{EntryBindingIdentity, RuntimeEntryRoles};
+use arcweft_core::entry::{
+    EntryBindingIdentity, FlowContractHash, RuntimeEntryRoles, RuntimeFlowExecutable,
+};
 use arcweft_core::pattern::RuntimeSemanticTypeId;
 use arcweft_core::plan::{
     EntryRuntimeId, FlowRuntimeId, RuntimeAwaitPendingObserverSeed, RuntimeAwaitTargetSeed,
     RuntimeEntryKind, RuntimeEntrySpec, RuntimeEntryTarget, RuntimeExprSeed, RuntimeExprSeedKind,
-    RuntimeFlowOpSeed, RuntimeFlowSeed, RuntimeHostCallTargetSeed,
-    RuntimeHostTaskRequestTemplateSeed, RuntimeLocalDeclarationSeed, RuntimePatternSeed,
-    RuntimePatternSeedKind, RuntimePlan, RuntimePlanBuilder, RuntimePlanTypeProjection,
-    RuntimePlanTypeSeed, RuntimeRouteSpec,
+    RuntimeFlowOpSeed, RuntimeFlowSchema, RuntimeFlowSeed, RuntimeHostCallTargetSeed,
+    RuntimeHostTaskRequestTemplateSeed, RuntimeHttpMethod, RuntimeLocalDeclarationSeed,
+    RuntimeLocalSeedId, RuntimePatternSeed, RuntimePatternSeedKind, RuntimePlan,
+    RuntimePlanBuildError, RuntimePlanBuilder, RuntimePlanTypeProjection, RuntimePlanTypeSeed,
+    RuntimePureHelperOrigin, RuntimePureHelperSeed, RuntimePureInputType, RuntimePureOutputType,
+    RuntimeReceiverMode, RuntimeRoutePath, RuntimeRoutePathSegment, RuntimeRouteSpec,
+    RuntimeTraitMethodIdentity, RuntimeTraitMethodSeed,
 };
 use arcweft_core::step::RuntimeHostCallMode;
 use arcweft_core::task::{HostCapabilityId, NeedId, TaskId, TaskOutcomeContract};
@@ -49,11 +54,27 @@ fn bool_expr(value: bool) -> RuntimeExprSeed {
     )
 }
 
+fn flow_schema(flow: &FlowRuntimeId) -> RuntimeFlowSchema {
+    RuntimeFlowSchema {
+        flow: flow.clone(),
+        parameters: Vec::new(),
+    }
+}
+
+fn flow_executable(flow: &FlowRuntimeId) -> RuntimeFlowExecutable {
+    RuntimeFlowExecutable {
+        flow: flow.clone(),
+        contract: FlowContractHash::from_bytes([0xf0; 32]),
+        controller: None,
+    }
+}
+
 fn build_plan(
     flows: impl IntoIterator<Item = (FlowRuntimeId, Vec<RuntimeFlowOpSeed>)>,
     entries: impl IntoIterator<Item = RuntimeEntrySpec>,
 ) -> RuntimePlan {
     let flows = flows.into_iter().collect::<Vec<_>>();
+    let entries = entries.into_iter().collect::<Vec<_>>();
     let mut builder = RuntimePlanBuilder::new();
     builder
         .admit_semantic_batch(
@@ -68,8 +89,34 @@ fn build_plan(
         .expect("test semantic facts admit");
     for (id, ops) in flows {
         builder
+            .push_flow_schema(flow_schema(&id))
+            .expect("test flow schema admits");
+        builder
             .push_flow_seed(RuntimeFlowSeed::new(id, [], ops))
             .expect("test flow admits");
+    }
+    let mut executable_flows = Vec::new();
+    for entry in &entries {
+        match &entry.target {
+            RuntimeEntryTarget::Flow(flow) | RuntimeEntryTarget::Controller(flow) => {
+                if !executable_flows.contains(flow) {
+                    builder
+                        .push_flow_executable(flow_executable(flow))
+                        .expect("test flow executable admits");
+                    executable_flows.push(flow.clone());
+                }
+            }
+            RuntimeEntryTarget::Routes(routes) => {
+                for route in routes {
+                    if !executable_flows.contains(&route.target) {
+                        builder
+                            .push_flow_executable(flow_executable(&route.target))
+                            .expect("test route flow executable admits");
+                        executable_flows.push(route.target.clone());
+                    }
+                }
+            }
+        }
     }
     for entry in entries {
         builder.push_entry(entry).expect("test entry admits");
@@ -109,6 +156,161 @@ fn run_entry(program: &AwbcProgram) -> VmExit {
     )
     .expect("AWBC VM executes entry")
     .exit
+}
+
+fn foreign_local_seed() -> RuntimeLocalSeedId {
+    let mut builder = RuntimePlanBuilder::new();
+    let admission = builder
+        .admit_semantic_batch(
+            [RuntimePlanTypeSeed::new(
+                type_id(1),
+                RuntimePlanTypeProjection::Bool,
+            )],
+            [RuntimeLocalDeclarationSeed::new(type_id(1))],
+            [],
+            [],
+        )
+        .expect("foreign local admission");
+    admission.local_ids()[0].clone()
+}
+
+fn builder_with_local() -> (RuntimePlanBuilder, RuntimeLocalSeedId) {
+    let mut builder = RuntimePlanBuilder::new();
+    let admission = builder
+        .admit_semantic_batch(
+            [RuntimePlanTypeSeed::new(
+                type_id(1),
+                RuntimePlanTypeProjection::Bool,
+            )],
+            [RuntimeLocalDeclarationSeed::new(type_id(1))],
+            [],
+            [],
+        )
+        .expect("local admission");
+    (builder, admission.local_ids()[0].clone())
+}
+
+fn invalid_let_expression(binding: RuntimeLocalSeedId) -> RuntimeExprSeed {
+    RuntimeExprSeed::new(
+        type_id(1),
+        RuntimeExprSeedKind::Let {
+            binding,
+            expr: Box::new(bool_expr(true)),
+            body: Box::new(bool_expr(true)),
+        },
+    )
+}
+
+fn plan_with_local() -> (
+    RuntimePlan,
+    arcweft_core::runtime_id::RuntimeLocalDeclarationId,
+) {
+    let mut builder = RuntimePlanBuilder::new();
+    let admission = builder
+        .admit_semantic_batch(
+            [RuntimePlanTypeSeed::new(
+                type_id(1),
+                RuntimePlanTypeProjection::String,
+            )],
+            [RuntimeLocalDeclarationSeed::new(type_id(1))],
+            [],
+            [],
+        )
+        .expect("local plan admission");
+    builder
+        .push_pure_helper_seed(RuntimePureHelperSeed {
+            name: "local".to_owned(),
+            inputs: admission.local_ids().to_vec().into_boxed_slice(),
+            input_abi: vec![RuntimePureInputType::Value],
+            output_abi: RuntimePureOutputType::Value,
+            body: string_expr("ok"),
+            scalar_eval_supported: false,
+            origin: RuntimePureHelperOrigin::Annotated,
+        })
+        .expect("local helper admission");
+    let plan = builder.finish().expect("local plan seals");
+    let local = plan.pure_helpers()[0].input_locals[0];
+    (plan, local)
+}
+
+#[test]
+fn missing_local_type_is_reported_instead_of_becoming_a_success_type() {
+    let (_, missing) = plan_with_local();
+    let plan = build_plan([], []);
+    let mut inventory = AwbcInventory::new("test.arcw", AwbcLowerOptions::default());
+    let dynamic = inventory.dynamic_ty();
+
+    assert_eq!(
+        crate::awbc_lower::pattern::admitted_local_type(&mut inventory, &plan, missing),
+        dynamic
+    );
+    assert!(inventory.take_diagnostics().iter().any(|diagnostic| {
+        diagnostic.path == format!("local.{missing}") && diagnostic.is_error()
+    }));
+}
+
+#[test]
+fn invalid_local_seeds_cannot_produce_an_awbc_plan() {
+    let foreign = foreign_local_seed();
+
+    let mut flow_builder = RuntimePlanBuilder::new();
+    assert_eq!(
+        flow_builder.push_flow_seed(RuntimeFlowSeed::new(
+            flow_id("invalid_plan"),
+            [foreign.clone()],
+            vec![RuntimeFlowOpSeed::Noop],
+        )),
+        Err(RuntimePlanBuildError::ForeignLocalSeed)
+    );
+    assert_eq!(flow_builder.finish(), Err(RuntimePlanBuildError::Poisoned));
+
+    let mut pure_builder = RuntimePlanBuilder::new();
+    pure_builder
+        .admit_semantic_batch(
+            [RuntimePlanTypeSeed::new(
+                type_id(1),
+                RuntimePlanTypeProjection::Bool,
+            )],
+            [],
+            [],
+            [],
+        )
+        .expect("pure helper type admission");
+    assert_eq!(
+        pure_builder.push_pure_helper_seed(RuntimePureHelperSeed {
+            name: "invalid.local".to_owned(),
+            inputs: Box::new([]),
+            input_abi: Vec::new(),
+            output_abi: RuntimePureOutputType::Value,
+            body: invalid_let_expression(foreign.clone()),
+            scalar_eval_supported: false,
+            origin: RuntimePureHelperOrigin::Annotated,
+        }),
+        Err(RuntimePlanBuildError::ForeignLocalSeed)
+    );
+    assert_eq!(pure_builder.finish(), Err(RuntimePlanBuildError::Poisoned));
+
+    let (mut trait_builder, receiver) = builder_with_local();
+    assert_eq!(
+        trait_builder.push_trait_method_seed(RuntimeTraitMethodSeed {
+            identity: RuntimeTraitMethodIdentity {
+                impl_id: 0,
+                trait_id: None,
+                witness: None,
+                trait_name: None,
+                self_type: "bool".to_owned(),
+                method_name: "invalid_local".to_owned(),
+                monomorph_label: "invalid_local".to_owned(),
+            },
+            receiver: RuntimeReceiverMode::Owned,
+            inputs: vec![receiver].into_boxed_slice(),
+            input_abi: vec![RuntimePureInputType::Value],
+            output_abi: RuntimePureOutputType::Value,
+            body: invalid_let_expression(foreign),
+        }),
+        Err(RuntimePlanBuildError::ForeignLocalSeed)
+    );
+    assert_eq!(trait_builder.finish(), Err(RuntimePlanBuildError::Poisoned));
 }
 
 #[test]
@@ -249,7 +451,9 @@ fn discarded_host_call_result_still_has_an_awbc_destination() {
                         public_id: "test.notify".to_owned(),
                         capability: "test".to_owned(),
                         operation: "notify".to_owned(),
+                        contract: None,
                         args: Vec::new(),
+                        result: type_id(2),
                         mode: RuntimeHostCallMode::Suspend,
                         deterministic: false,
                     },
@@ -284,6 +488,12 @@ fn loop_break_paths_initialize_one_typed_result_before_binding() {
         )
         .expect("loop result facts admit");
     let result = admission.local_ids()[0].clone();
+    builder
+        .push_flow_executable(flow_executable(&main))
+        .expect("loop flow executable admits");
+    builder
+        .push_flow_schema(flow_schema(&main))
+        .expect("loop flow schema admits");
     builder
         .push_flow_seed(RuntimeFlowSeed::new(
             main.clone(),
@@ -328,7 +538,7 @@ fn loop_break_paths_initialize_one_typed_result_before_binding() {
     );
     assert!(!report.program.intrinsics.iter().any(|intrinsic| {
         matches!(
-            report.program.strings[intrinsic.public_id.index()].as_str(),
+            intrinsic.identity.as_label(),
             "flow.break" | "flow.continue"
         )
     }));
@@ -363,6 +573,12 @@ fn nested_loops_bind_the_nearest_break_result() {
             },
         )
     };
+    builder
+        .push_flow_executable(flow_executable(&main))
+        .expect("nested loop flow executable admits");
+    builder
+        .push_flow_schema(flow_schema(&main))
+        .expect("nested loop flow schema admits");
     builder
         .push_flow_seed(RuntimeFlowSeed::new(
             main.clone(),
@@ -414,9 +630,13 @@ fn loop_continue_targets_the_verified_backedge_header() {
     );
     let report = lower_plan(&plan);
 
-    assert!(!report.program.intrinsics.iter().any(|intrinsic| {
-        report.program.strings[intrinsic.public_id.index()] == "flow.continue"
-    }));
+    assert!(
+        !report
+            .program
+            .intrinsics
+            .iter()
+            .any(|intrinsic| { intrinsic.identity.as_label() == "flow.continue" })
+    );
     assert!(
         report
             .program
@@ -452,8 +672,11 @@ fn typed_runtime_ids_drive_static_goto_and_server_route_targets() {
             kind: RuntimeEntryKind::Server,
             binding: EntryBindingIdentity::from_bytes([1; 32]),
             target: RuntimeEntryTarget::Routes(vec![RuntimeRouteSpec {
-                method: "GET".to_owned(),
-                path: "/next".to_owned(),
+                method: RuntimeHttpMethod::Get,
+                path: RuntimeRoutePath::try_new([RuntimeRoutePathSegment::Literal(
+                    "next".to_owned(),
+                )])
+                .expect("route path"),
                 target: next,
                 bindings: Vec::new(),
             }]),
@@ -472,7 +695,7 @@ fn typed_runtime_ids_drive_static_goto_and_server_route_targets() {
         .expect("static goto lowers to a function target");
     let route_target = match &report.program.entries[0].target {
         AwbcEntryTarget::Routes(routes) => routes[0].target,
-        AwbcEntryTarget::Function(_) => panic!("test entry must lower as routes"),
+        AwbcEntryTarget::Function { .. } => panic!("test entry must lower as routes"),
     };
     assert_eq!(goto_target, route_target);
 }
@@ -493,6 +716,12 @@ fn await_observers_lower_to_progress_dispatch_and_rewait_backedge() {
             [],
         )
         .expect("Await observer types admit");
+    builder
+        .push_flow_executable(flow_executable(&main))
+        .expect("Await observer flow executable admits");
+    builder
+        .push_flow_schema(flow_schema(&main))
+        .expect("Await observer flow schema admits");
     builder
         .push_flow_seed(RuntimeFlowSeed::new(
             main.clone(),

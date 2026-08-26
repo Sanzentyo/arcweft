@@ -48,25 +48,34 @@ pub enum CallableParameterAdmission {
 }
 
 pub struct CallableParameterValueRule {
-    alternatives: Arc<[CallableParameterValueAlternative]>,
+    guarded: Arc<[CallableParameterGuardedValueAlternative]>,
+    otherwise: CallableParameterOtherwiseValueAlternative,
 }
 
 pub struct CallableParameterAlternativeIndex(u32);
 
-pub struct CallableParameterValueAlternative {
-    index: CallableParameterAlternativeIndex,
-    evidence: CallableSemanticValueEvidenceRule,
+pub struct CallableParameterGuardedValueAlternative {
+    guard: CallableSemanticValueGuard,
     expected: ParameterExpectedTypeProjection,
     action: CallableArgumentSemanticAction,
 }
 
-pub enum CallableSemanticValueEvidenceRule {
+pub struct CallableParameterOtherwiseValueAlternative {
+    expected: ParameterExpectedTypeProjection,
+    action: CallableArgumentSemanticAction,
+}
+
+pub enum CallableParameterValueAlternative<'a> {
+    Guarded(&'a CallableParameterGuardedValueAlternative),
+    Otherwise(&'a CallableParameterOtherwiseValueAlternative),
+}
+
+pub enum CallableSemanticValueGuard {
     VariantCase {
         owner: ParameterExpectedTypeProjection,
         ordinal: u32,
         payload: VariantPayloadRequirement,
     },
-    Any,
 }
 
 pub enum VariantPayloadRequirement { Unit, Present }
@@ -96,16 +105,18 @@ pub enum UnknownNamedArgumentPolicy {
 }
 ```
 
-`CallableParameterValueRule` construction assigns contiguous alternative
-indexes in source-independent schema order and rejects a supplied row whose
-index is not its exact position. `Any` occurs exactly once and last. Earlier
-evidence rows are pairwise exclusive. The checker selects an alternative
-through final typed semantic evidence, never through first successful type
-inference, source spelling, or parameter optionality. A checked slot retains a
-schema-relative `CallableParameterAlternativeIndex`, the evidence that
-selected it, and the composed final expected type. It does not retain a
-parallel `Supply`/`Clear` flag; consumers obtain the action from the selected
-schema alternative.
+`CallableParameterValueRule` construction assigns contiguous indexes to the
+source-independent `guarded` rows and gives the single mandatory `otherwise`
+row the final index. Guarded rows are pairwise exclusive. The checker selects
+one guarded alternative only when its guard accepts the observed semantic-value
+evidence; when no guarded row accepts, it selects the mandatory `otherwise`
+alternative. It never selects by first successful type inference, source
+spelling, or parameter optionality. A checked slot retains its
+schema-relative alternative index, the observed evidence that selected it,
+and the composed final expected type. It does not retain a parallel
+`Supply`/`Clear` flag; consumers obtain the action from the selected schema
+alternative. `otherwise` is not a wildcard evidence row: it is the mandatory
+no-guard-match alternative.
 `Clear` is legal only when the same parameter owns a `DialoguePatch` consumer.
 The fixed and custom dialogue coordinates move from `final_analysis` to the
 shared `character_dialogue` owner so schema construction and final patch rows
@@ -154,8 +165,9 @@ For declared type `D`, selected value alternative `A`, and checked source
 projection `S`, the only final expected constraint is `S(A(D))`. Fixed literal
 spreads become scalar element slots. A nonliteral typed-rest container is one
 container slot. Because the current runtime cannot observe a semantic action
-per element, a nonliteral rest container admits only a single
-`Any + Identity + Supply` value rule; every clear-capable rest rule rejects.
+per element, a nonliteral rest container admits only a value rule with no
+guarded rows and a mandatory `otherwise { Identity, Supply }` alternative;
+every clear-capable rest rule rejects.
 
 ## 2. Dialogue patch authority
 
@@ -163,7 +175,8 @@ Character Factory/Reconfigure fixed patch fields and clearable custom fields
 use two schema alternatives:
 
 1. exact `Option::None` unit case evidence, `ApplyUnary(Option)`, `Clear`;
-2. terminal `Any`, `Identity`, `Supply`.
+2. mandatory `otherwise`, `Identity`, `Supply`, selected only when no guarded
+   row accepts the observed evidence.
 
 `id`, `text_key`, ContentCall parameters, and non-clearable custom fields are
 Supply-only. Custom field rows obtain the rule from the accepted descriptor's
@@ -184,10 +197,10 @@ same. The only deliberately open policy is `OpenSupply`; the current
 `OpenArgumentId`, because that identity includes the call-site name. Instead,
 after `OpenSupply` admission the mapper privately constructs `OpenArgumentId`
 from the selected schema digest and canonical authored argument name. The
-sealed slot owns `destination=Open(id)`, `alternative=None`, `expected=None`,
-`evidence=Any`, required final `inferred`, and schema-derived `Supply`. It contributes no type
-constraint. Raw open-name success and any Clear-capable open argument are
-forbidden.
+sealed slot owns `destination=Open(id)`, `selection=Unchecked`, `expected=None`,
+required final `inferred`, and schema-derived `Supply`. It has no alternative
+or checked semantic evidence and contributes no type constraint. Raw open-name
+success and any Clear-capable open argument are forbidden.
 The manifest-specific `look` parameter is published only for an exact Character
 whose accepted manifest supplies its Look nominal. A Character-Any target does
 not receive an unchecked look/clear success path.
@@ -1335,31 +1348,35 @@ by construction. Thus only `Abort` or either invariant branch stops
 materialization correlation iteration immediately.
 
 `PreparedSourceConstraint` is a types-owned input, not an analyzer hint object.
-The callable preparation gate moves into it the exact schema-keyed alternatives
-and value-expected templates. It validates strict alternative-index order,
-unique keys, one terminal fallback, and the mapper's one source projection.
+The callable preparation gate moves into it the exact schema-keyed guarded
+alternatives, mandatory otherwise row, and value-expected templates. It
+validates strict alternative-index order, unique keys, exactly one terminal
+otherwise row, and the mapper's one source projection.
 Prepared sources are in strict authored argument/physical-slot order and their
 typed source coordinates are unique; a duplicate returns `PreparedSource`
 invariant before the first callback and a duplicate sealed submission returns
 `SourceProtocol` invariant when it violates the affine ticket.
-The lower owner moves accepted checked evidence and probe-semantic branches
+The lower owner moves accepted observed semantic evidence and probe-semantic branches
 into private `Arc` cells before a frontier can fork. Domain values therefore do
 not need `Clone`, `Copy`, or `Ord`; path copies share the exact issuer-sealed
 value and trace order remains the deterministic source/branch-derivation order.
 The lower transaction alone substitutes a frontier binding into those
 templates and constructs the borrowed hints. `Complete` and `Parametric` have
 their prior meanings, but now exist per keyed alternative. The callback may
-select only one supplied key and return checked evidence for that key; it never
-returns, composes, or rewrites an expected type. The lower domain hook validates
-that issuer-sealed complete evidence against every rule and requires the
-returned key to be the first accepting nonfallback row, or the terminal `Any`
-row only when no earlier row accepts. Unknown keys, an `Any` shortcut around an
-earlier match, inconsistent evidence, and more than one nonfallback match are
-source protocol violations.
+select only one supplied key and return the observed evidence for that key; it
+never returns, composes, or rewrites an expected type. The lower domain hook
+validates issuer-sealed evidence against every guarded row and requires the
+returned key to be the first accepting guarded row, or the mandatory
+`otherwise` row only when no guarded row accepts. An otherwise selection still
+retains the observed `VariantCase` when the value is a different variant, and
+retains `NoVariantCase` only when no variant case was observed. Unknown keys,
+an otherwise shortcut around an accepting guarded row, inconsistent evidence,
+and more than one matching guarded row are source protocol violations.
 
 For `Scalar`, the selected value expected is also the source expected. For
-`InferSpreadContainer`, the current contract admits only the single
-`Any + Identity + Supply` alternative. The client probes its actual container
+`InferSpreadContainer`, the current contract admits only the single rule with
+no guarded rows and a mandatory `otherwise { Identity, Supply }` alternative.
+The client probes its actual container
 without inventing a container expected; after receiving the actual type the
 lower owner derives the exact checked source projection and composes the
 expected container, including array length or map kind/key. A malformed
@@ -1368,7 +1385,7 @@ choose a container constructor.
 
 An accepted checked probe is converted inside the lower transaction into one
 source equation and one correlated trace row containing the selected
-alternative, checked evidence, checked source projection, expected template,
+alternative, observed evidence, checked source projection, expected template,
 actual type, and canonical semantic branch. At final closure the lower owner
 normalizes the template through the unique candidate solution, composes the
 source projection, rechecks the whole equation, and moves a
@@ -1376,8 +1393,8 @@ source projection, rechecks the whole equation, and moves a
 materialization request row. `MaterializedSourceRequest::Checked` is only a
 borrowed view of that row. The final keyed projection returned to callable
 sealing retains the
-same alternative, evidence, projection, actual, and final expected; none is
-re-derived by the analyzer or callable layer. Unchecked sources remain
+same alternative, observed evidence, projection, actual, and final expected;
+none is re-derived by the analyzer or callable layer. Unchecked sources remain
 `Unchecked` through every phase and cannot acquire an alternative or expected.
 
 Every source probe executes in a fresh client-owned semantic checkpoint;
@@ -1543,7 +1560,7 @@ impl AnalyzerCallClientInvariant {
 impl ConstraintDomain for AnalyzerCallConstraintDomain {
     type Source = AnalyzerCallConstraintSource;
     type AlternativeIndex = CallableParameterAlternativeIndex;
-    type EvidenceRule = CallableSemanticValueEvidenceRule;
+    type EvidenceRule = CallableSemanticValueGuard;
     type CheckedEvidence = CheckedSemanticValueEvidence;
     type ProbeSemanticBranch = AnalyzerProbeSemanticBranch;
     type SealedBranchValue = AnalyzerCallSealedBranch;
@@ -2200,6 +2217,10 @@ private prepared-graph publication during body analysis. Any final seal or
 write failure rolls the final-fact checkpoint back. Probe paths never apply a
 projection; singleton or selected replay may apply one only while atomically
 publishing its private prepared node, never as `CallTargetFacts`.
+The C sealer consumes the lower-issued `CheckedCallSemanticSelection` and its
+observed `VariantCase`/`NoVariantCase` evidence directly. It does not re-run
+guarded matching, synthesize wildcard evidence, or reconstruct selection from
+HIR, schema names, or source text.
 
 The result owns the only continuation coordinate:
 
@@ -2332,10 +2353,17 @@ pub struct CheckedCallExecutionSlot {
     abi_position: u32,
     destination: CheckedCallOperandDestination,
     source_projection: CheckedConstraintSourceProjection,
-    alternative: Option<CallableParameterAlternativeIndex>,
-    evidence: CheckedSemanticValueEvidence,
+    selection: CheckedCallSemanticSelection,
     inferred: TypeKind,
     expected: Option<TypeKind>,
+}
+
+pub enum CheckedCallSemanticSelection {
+    Unchecked,
+    Checked {
+        alternative: CallableParameterAlternativeIndex,
+        evidence: CheckedSemanticValueEvidence,
+    },
 }
 
 pub enum CheckedSemanticValueEvidence {
@@ -2344,7 +2372,7 @@ pub enum CheckedSemanticValueEvidence {
         ordinal: u32,
         payload: VariantPayloadRequirement,
     },
-    Any,
+    NoVariantCase,
 }
 
 pub enum CheckedCallOperandDestination {
@@ -2355,8 +2383,8 @@ pub enum CheckedCallOperandDestination {
 ```
 
 Each authored argument is one atomic source-order row; its slots atomically own
-destination, source/value projections, selected schema alternative, checked
-evidence, and final types. Receiver and arguments own unique
+destination, source/value projections, `Unchecked` or `Checked { alternative,
+evidence }` selection, and final types. Receiver and arguments own unique
 contiguous ABI positions per slot, so a fixed-literal spread may supply several
 parameters. `ordered_runtime_operands()` validates and returns
 that order without schema or HIR lookup. A type receiver uses `SemanticOnly`;
@@ -2376,17 +2404,18 @@ The selected candidate is the only dispatch identity. Owner methods on
 continuation dispatch form directly from `candidates.selected()`; the execution
 row does not copy a second dispatch identity.
 
-`CheckedSemanticValueEvidence` is `Any` or a shared lower semantic variant-case
-row containing owner type digest, exact ordinal, and payload presence. The core
-owner derives `CallableArgumentSemanticAction` by joining the selected
-candidate schema with destination/admission/alternative. OpenSupply and
-UncheckedSupply derive Supply; a checked parameter derives its selected
-alternative's action. No slot stores or hashes a copied action, and callers
-cannot mint one independently.
-For a checked Parameter destination, `alternative` and `expected` are both
-Some and the evidence matches that row. For UncheckedSupply Parameter and
-OpenSupply Open destinations, both are None and evidence is Any. Every other
-combination rejects at the core seal.
+`CheckedSemanticValueEvidence` is either an observed `VariantCase` row
+containing owner type digest, exact ordinal, and payload presence, or observed
+`NoVariantCase`. `NoVariantCase` means that no variant case was observed; it is
+not a wildcard and cannot bypass an accepting guarded row. An otherwise
+selection may still retain an observed `VariantCase` for a different,
+nonmatching case. The core owner derives `CallableArgumentSemanticAction` by
+joining the selected candidate schema with destination/admission/alternative.
+OpenSupply and UncheckedSupply use `Unchecked` and carry no alternative or
+evidence; a checked parameter uses `Checked { alternative, evidence }` and the
+evidence must match that row. No slot stores or hashes a copied action, and
+callers cannot mint one independently. Every other combination rejects at the
+core seal.
 Closed named arguments retain only the `Named` tag; their destination
 coordinate is authority. The sema owner method obtains any host ABI label from
 the already validated selected schema. Only `OpenArgumentId` retains its typed
@@ -2436,7 +2465,7 @@ little-endian `u64` scalar lengths, `bytes = u64 length || bytes`, and raw
 allowed. Tags are fixed as follows:
 
 ```text
-evidence VariantCase=0 Any=1; payload Unit=0 Present=1
+evidence VariantCase=0 NoVariantCase=1; payload Unit=0 Present=1
 admission Checked=0 UncheckedSupply=1
 expected Identity=0 ApplyUnary=1; unary Option=0
 schema action Supply=0 Clear=1 (never stored in an execution slot)
@@ -2477,7 +2506,7 @@ stable-callable-identity =
   | FunctionValue || bytes(c1-semantic-path) || u32(function-ordinal) ||
     function-type-digest32 || effect-row || u32(capture-count) || capture-row*
 
-capture-row = bytes(c1-stable-value-coordinate) || capture-mode-tag8 ||
+capture-row = bytes(c1-stable-binding-coordinate) || capture-mode-tag8 ||
   capture-type-digest32
 
 checked-language-callable-identity = language-family-tag8 || family-payload
@@ -2584,7 +2613,7 @@ pub struct CheckedFunctionValueIdentity {
 }
 
 pub struct CheckedCaptureSignatureRow {
-    binding: StableCheckedValueCoordinate,
+    binding: StableCheckedBindingCoordinate,
     mode: CheckedCaptureMode,
     ty: SemanticTypeDigest,
 }
@@ -2736,12 +2765,24 @@ with a different checked parameter/result/effect schema has a different base
 identity without duplicating schema fields inside each family payload.
 
 `CheckedSemanticPath` and `StableCheckedBindingCoordinate` are produced only
-from C1's accepted declaration semantic-path index. Their bytes, and those of
-`StableCheckedValueCoordinate`, are exactly the moved C1 canonical child
-grammar wrapped by the displayed `bytes` length; this amendment does not define
-a second path encoding or path digest domain. A lexical identity binds the accepted enclosing
+from C1's sealed accepted-root catalog and its typed project-wide path indexes. A
+`StableCheckedBindingCoordinate` owns exactly one complete
+`CheckedSemanticPath`; it does not retain a root digest plus a separately
+encoded HIR-local path. `StableCheckedValueCoordinate` is exactly
+`Expression(CheckedSemanticPath) | Binding(StableCheckedBindingCoordinate)`.
+There is no recursive `Capture` case and no separate `PatternBinding`
+reconstruction. Their bytes are exactly the moved C1 canonical child grammar
+wrapped by the displayed `bytes` length; this amendment does not define a
+second path encoding or path digest domain. A lexical identity binds the accepted enclosing
 declaration/binding path and its checked schema/effect digests; raw
 `SemanticScopeId` and `LexicalBindingIndex` remain issuer lookup evidence only.
+A raw HIR path is likewise issuer input only; the obsolete HIR-local byte
+encoder is deleted rather than retained as a second coordinate authority.
+`SemanticCoordinateIndex` is the sole C1 issuer. It is sealed with the
+accepted-root path indexes and checked expression-edge authority, then
+issues both checked expression paths and stable binding coordinates. Match,
+Need-producer, and transcript consumers use that issuer; no free path walker or
+terminal-binding reconstruction is a second issuer.
 A function-value identity binds its expression semantic path, ordinal within
 that expression, checked schema/function type/effects, and the canonical
 capture signature. That signature sorts rows by the canonical bytes of their
@@ -2750,6 +2791,34 @@ accepted stable binding coordinate and commits to `CaptureAccess::Read` or
 raw `CaptureId` is
 excluded. `FunctionValueSignatureId.expression` remains issuer lookup evidence
 only.
+
+### C1 coordinate and phase-boundary erratum (2026-08-25)
+
+The C1 child grammar uses fixed little-endian `u64` for every sequence or byte
+length. Checked ordinals and bounded semantic indexes remain checked `u32`.
+This distinction is normative: a path step count, nested-path segment count,
+pattern-coordinate step count, and `bytes` wrapper length are `u64`, while an
+ordinal payload remains `u32`. The version remains `1`; this is an in-place
+correction, not a compatibility format.
+
+The producer origin is the accepted-rooted
+`CheckedSemanticPath` of the function-value expression. A capture row points
+to the accepted binding coordinate that supplies the captured value. Neither
+the producer path nor a capture row may contain `ExprId`, `LocalId`, `CaptureId`,
+`FunctionValueSignatureId`, or a recursive value-coordinate wrapper. Those
+identities may remain issuer lookup evidence only.
+
+Prepared graph nodes, continuation references, and affine seeds are
+generation-local capabilities. They have no canonical encoder and cannot enter
+any checked fact, stable callable identity, snapshot, cache key, or digest.
+Only the final application seal consumes them and publishes final rows. A
+prepared row is never accepted as a final row through a compatibility alias,
+fallback resolver, or late reconstruction.
+
+This erratum corrects the earlier `CheckedCaptureSignatureRow.binding` and
+`capture-row` sketches above. Production implementation and canonical-byte
+tests for the corrected C1 owner are pending; the design remains the accepted
+version-1 authority while that validation is in progress.
 
 Diagnostic origin, authority rank, equivalent sources, and generation-local
 lookup keys are validated against the checked definition but do not enter
@@ -2803,8 +2872,11 @@ execution-argument =
 
 execution-slot =
   u32(slot-ordinal) || source-coordinate || u32(abi-position) || destination ||
-  source-projection || optional(u32(alternative-index)) || evidence ||
+  source-projection || selection ||
   inferred-type-digest32 || optional(expected-type-digest32)
+
+selection = Unchecked
+  | Checked || u32(alternative-index) || evidence
 
 source-coordinate = Expression
   | CompactNumericElement || u32(element-ordinal)
@@ -2816,7 +2888,7 @@ source-projection = Scalar
 container-constructor = Vec | Seq | Slice
   | Array || ArrayLength canonical bytes
   | MapValue || map-kind-tag8 || key-type-digest32
-evidence = Any
+evidence = NoVariantCase
   | VariantCase || owner-type-digest32 || u32(case-ordinal) || payload-tag8
 result = Value || value-type-digest32
   | Continuation || continuation-digest32
@@ -3076,15 +3148,17 @@ Implementation must cover:
   equal final expected types but different alternative/solution/application
   identity and both authored source orders (`None` then `T`, and `T` then
   `None`), with identical failure precedence and no order-selected binding;
-- illegal/aliased/local `None`, overlapping evidence, multiple fallback rows,
-  custom clearable/non-clearable fields, and clear-capable rest rejection;
+- illegal/aliased/local `None`, overlapping guarded evidence, missing or
+  duplicate/nonterminal mandatory `otherwise` rows, observed
+  `VariantCase`/`NoVariantCase` routing, custom clearable/non-clearable fields,
+  and clear-capable rest rejection;
 - Reject/OpenSupply unknown-name admission, schema/name-sensitive
   `OpenArgumentId`, impossible open/unchecked/checked slot combinations, and
   action derivation with no copied slot field;
 - fixed spread versus typed rest, every container constructor, and constructor,
-  array-length, map-kind, map-key, alternative, evidence, source projection,
-  final expected, and solution tampering; the callback must be unable to return
-  an expected type or container constructor;
+  array-length, map-kind, map-key, alternative, observed evidence, source
+  projection, final expected, and solution tampering; the callback must be
+  unable to return an expected type or container constructor;
 - types-owned generic-use collection over every `TypeKind` and `ArrayLength`
   constructor, schema inventory role/first-use derivation for group zero,
   later groups, and result-only use, and rejection of omitted/duplicate/wrong

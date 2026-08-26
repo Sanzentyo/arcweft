@@ -15,7 +15,7 @@ use arcweft_lang_syntax::ast::{
 };
 use arcweft_source::{SourceDocumentIdentity, SourceSpan};
 
-use crate::identity::ItemId;
+use crate::identity::{HirSnapshotId, ItemId};
 use crate::item::{HirItemKind, HirUseBinding, HirVisibility};
 use crate::leaf::HirPath;
 use crate::module::HirModule;
@@ -305,6 +305,8 @@ pub struct ProjectSymbolTable {
     modules: BTreeSet<CanonicalModulePath>,
     source_identities: BTreeMap<CanonicalModulePath, SourceDocumentIdentity>,
     symbols: BTreeMap<ProjectDeclarationId, ProjectSymbol>,
+    callable_sources:
+        BTreeMap<(HirSnapshotId, ItemId, HirCallableSourceOwner), Option<CallableDeclarationKey>>,
     nominal_ids: BTreeSet<ProjectNominalDeclarationId>,
     pub(super) scopes: BTreeMap<CanonicalModulePath, BTreeMap<String, Vec<ScopeBinding>>>,
 }
@@ -524,6 +526,7 @@ impl ProjectSymbolTable {
             modules,
             source_identities,
             symbols: BTreeMap::new(),
+            callable_sources: BTreeMap::new(),
             nominal_ids: BTreeSet::new(),
         };
         let mut diagnostics = Vec::new();
@@ -699,6 +702,7 @@ impl ProjectSymbolTable {
             );
         }
 
+        table.rebuild_callable_source_index();
         let seed_declarations = table.insert_externals(externals, &mut diagnostics, &mut work);
         let imports = project
             .items()
@@ -808,6 +812,7 @@ impl ProjectSymbolTable {
             modules,
             source_identities,
             symbols: BTreeMap::new(),
+            callable_sources: BTreeMap::new(),
             nominal_ids: BTreeSet::new(),
         };
         let mut diagnostics = Vec::new();
@@ -819,6 +824,7 @@ impl ProjectSymbolTable {
         table.insert_module_bindings(project);
         table.insert_retained_declarations(project, &mut diagnostics, &mut work);
         table.insert_callables(project, &mut diagnostics, &mut work);
+        table.rebuild_callable_source_index();
         table.insert_nominals(project, &mut diagnostics, &mut work);
         let seed_declarations = table.insert_externals(externals, &mut diagnostics, &mut work);
 
@@ -1058,6 +1064,52 @@ impl ProjectSymbolTable {
                 None
             }
         }
+    }
+
+    fn rebuild_callable_source_index(&mut self) {
+        self.callable_sources.clear();
+        let rows = self
+            .callable_symbols()
+            .map(|symbol| {
+                (
+                    (
+                        symbol.source_snapshot(),
+                        symbol.source_item(),
+                        symbol.source_owner(),
+                    ),
+                    symbol.declaration().clone(),
+                )
+            })
+            .collect::<Vec<_>>();
+        for (key, declaration) in rows {
+            match self.callable_sources.entry(key) {
+                std::collections::btree_map::Entry::Vacant(entry) => {
+                    entry.insert(Some(declaration));
+                }
+                std::collections::btree_map::Entry::Occupied(mut entry) => {
+                    if entry.get().as_ref() != Some(&declaration) {
+                        entry.insert(None);
+                    }
+                }
+            }
+        }
+    }
+
+    /// Returns the unique callable published at one exact HIR source owner.
+    ///
+    /// Source coordinates are a join key, not a filter that callers may
+    /// rebuild independently. Ambiguous or absent rows fail closed.
+    pub fn callable_at_source(
+        &self,
+        snapshot: HirSnapshotId,
+        item: crate::identity::ItemId,
+        owner: crate::source_index::HirCallableSourceOwner,
+    ) -> Option<&CallableSymbol> {
+        let declaration = self
+            .callable_sources
+            .get(&(snapshot, item, owner))?
+            .as_ref()?;
+        self.callable(declaration)
     }
 
     /// Derives the sole session-only proof identity from the registered symbol

@@ -5,11 +5,12 @@ use arcweft_bundle::{
 };
 use arcweft_core::awbc::schema::{
     AwbcBlock, AwbcBlockId, AwbcEffectSetId, AwbcEntry, AwbcEntryKind, AwbcEntryTarget,
-    AwbcFlowBinding, AwbcFrameLayout, AwbcFrameLayoutId, AwbcFunction, AwbcFunctionFlags,
-    AwbcFunctionId, AwbcFunctionKind, AwbcProgram, AwbcSafePointKind, AwbcSignature,
-    AwbcSignatureId, AwbcStringId, AwbcTableRange, AwbcTerminator,
+    AwbcFlowBinding, AwbcFlowExecutable, AwbcFrameLayout, AwbcFrameLayoutId, AwbcFunction,
+    AwbcFunctionFlags, AwbcFunctionId, AwbcFunctionKind, AwbcProgram, AwbcSafePointKind,
+    AwbcSignature, AwbcSignatureId, AwbcStringId, AwbcTableRange, AwbcTerminator,
 };
 use arcweft_core::effect::RuntimeArtifactFingerprint;
+use arcweft_core::entry::{FlowContractHash, RuntimeFlowExecutable};
 use arcweft_source::{SourceDocument, SourceDocumentId, SourceName};
 use arcweft_text_model::DialogueContentCatalog;
 
@@ -74,6 +75,9 @@ fn source_map(label: &str, text: &str) -> SourceMapSection {
 }
 
 fn minimal_awbc_program() -> AwbcProgram {
+    let flow =
+        arcweft_core::plan::FlowRuntimeId::from_checked_declaration_digest([0xa1; 32], "flow.main")
+            .expect("test checked Flow identity");
     AwbcProgram {
         strings: vec!["entry.main".to_owned()],
         signatures: vec![AwbcSignature {
@@ -95,11 +99,15 @@ fn minimal_awbc_program() -> AwbcProgram {
             flags: AwbcFunctionFlags(AwbcFunctionFlags::DETERMINISTIC),
         }],
         flow_bindings: vec![AwbcFlowBinding {
-            flow: arcweft_core::plan::FlowRuntimeId::from_checked_declaration_digest(
-                [0xa1; 32],
-                "flow.main",
-            )
-            .expect("test checked Flow identity"),
+            flow: flow.clone(),
+            function: AwbcFunctionId(0),
+        }],
+        flow_executables: vec![AwbcFlowExecutable {
+            metadata: RuntimeFlowExecutable {
+                flow,
+                contract: FlowContractHash::from_bytes([0xb1; 32]),
+                controller: None,
+            },
             function: AwbcFunctionId(0),
         }],
         blocks: vec![AwbcBlock {
@@ -115,8 +123,9 @@ fn minimal_awbc_program() -> AwbcProgram {
             binding: arcweft_core::entry::EntryBindingIdentity::from_bytes([1; 32]),
             public_id: AwbcStringId(0),
             kind: AwbcEntryKind::Cli,
-            signature: AwbcSignatureId(0),
-            target: AwbcEntryTarget::Function(AwbcFunctionId(0)),
+            target: AwbcEntryTarget::Function {
+                function: AwbcFunctionId(0),
+            },
             roles: arcweft_core::entry::RuntimeEntryRoles::None,
         }],
         ..AwbcProgram::default()

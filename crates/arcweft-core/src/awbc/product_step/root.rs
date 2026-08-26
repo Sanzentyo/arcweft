@@ -47,14 +47,13 @@ fn startup_contract(
     let crate::plan::RuntimeEntryRoles::Stateful(roles) = &entry_record.roles else {
         return Ok(None);
     };
-    let initial_flow = program
+    program
         .flow_executables
         .iter()
         .find(|executable| {
             executable.metadata.flow == roles.initial_flow.flow
                 && executable.metadata.contract == roles.initial_flow.contract
         })
-        .map(|executable| executable.metadata.clone())
         .ok_or_else(|| {
             RootRuntimeError::MissingInitialFlowExecutable(
                 entry_record.runtime_id.canonical_label(),
@@ -63,7 +62,8 @@ fn startup_contract(
     Ok(Some(RootStartupContract {
         entry: entry_record.runtime_id.clone(),
         roles: roles.as_ref().clone(),
-        initial_flow,
+        initial_flow: roles.initial_flow.flow.clone(),
+        initial_state_parameter: crate::entry::FlowParameterCoordinate::from_position(0),
     }))
 }
 
@@ -76,7 +76,7 @@ pub(super) fn bind_startup(
         return Ok(());
     };
     fiber
-        .bind_entry_arguments(
+        .bind_flow_parameter_coordinates(
             program,
             std::slice::from_ref(&startup.initial_state_binding),
         )

@@ -8,9 +8,9 @@ use crate::native_task::{NativeFileRoots, NativeTaskBridge, standard_cli_registr
 use arcweft_bundle::ArcweftBundle;
 use arcweft_core::{
     engine::{FlowFiberStatus, FlowStatusLabelStyle},
+    step::RuntimeHostCallResult,
     step::RuntimeStepInput,
     task::TaskEvent,
-    value::RuntimeBinding,
 };
 use arcweft_host_adapter::{HostAdapterError, HostAdapterRegistryBuilder};
 use arcweft_interaction_model::audio::{AudioCommandEnvelope, AudioEvent};
@@ -39,8 +39,8 @@ pub struct BundleRunnerSession {
     phases: Vec<BundleRunnerPhase>,
     executor: RuntimeExecutorInstance,
     host: NativeTaskBridge,
-    values: Vec<RuntimeBinding>,
     task_events: Vec<TaskEvent>,
+    host_call_results: Vec<RuntimeHostCallResult>,
     audio_events: Vec<AudioEvent>,
     mode: BundleRunnerStepMode,
     max_ops: usize,
@@ -84,9 +84,10 @@ impl BundleRunnerSession {
 
         let policy = bundle_host_policy(bundle);
         let run_started = Instant::now();
-        let builder = standard_cli_registry_builder(NativeFileRoots::for_bundle_workspace(
-            workspace.source_path(),
-        ))
+        let builder = standard_cli_registry_builder(
+            NativeFileRoots::for_bundle_workspace(workspace.source_path()),
+            &[],
+        )
         .map_err(BundleRunnerError::NativeAdapter)?;
         let registry = install(workspace.source_path(), builder)
             .map(HostAdapterRegistryBuilder::build)
@@ -103,8 +104,8 @@ impl BundleRunnerSession {
             phases,
             executor,
             host,
-            values: options.values.clone(),
             task_events: Vec::new(),
+            host_call_results: Vec::new(),
             audio_events: Vec::new(),
             mode: options.mode,
             max_ops: options.max_ops,
@@ -124,7 +125,10 @@ impl BundleRunnerSession {
         let completions = self.host.poll_completions();
         let completion_count = completions.len();
         self.task_events.extend(completions);
-        Ok(completion_count)
+        let host_call_results = self.host.take_host_call_results();
+        let host_call_completion_count = host_call_results.len();
+        self.host_call_results.extend(host_call_results);
+        Ok(completion_count.saturating_add(host_call_completion_count))
     }
 
     /// Executes at most one Arcweft runtime step.
@@ -135,16 +139,16 @@ impl BundleRunnerSession {
 
         self.pump_main_thread()?;
         let index = self.steps.len();
-        let result = self.executor.step_with_root_bindings(
+        let result = self.executor.step(
             RuntimeStepInput {
                 task_events: std::mem::take(&mut self.task_events),
+                host_call_results: std::mem::take(&mut self.host_call_results),
                 audio_events: std::mem::take(&mut self.audio_events),
                 ..RuntimeStepInput::default()
             },
-            &self.values,
             step_options(self.mode, self.max_ops),
         );
-        let (summary, task_requests, audio_commands) =
+        let (summary, task_requests, host_call_requests, audio_commands) =
             BundleRunnerStepSummary::from_result(index, result);
         let runtime_finished = matches!(
             self.executor.fiber().status,
@@ -153,6 +157,8 @@ impl BundleRunnerSession {
         if !runtime_finished {
             self.task_events
                 .extend(self.host.complete_tasks(task_requests));
+            self.host_call_results
+                .extend(self.host.complete_host_calls(host_call_requests));
         }
 
         self.steps.push(summary.clone());

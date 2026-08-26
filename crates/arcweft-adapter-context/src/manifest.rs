@@ -20,7 +20,10 @@ pub use crate::callable::{
     AdapterToolingParameterDoc, AdapterToolingSubject,
 };
 pub use crate::symbol::{AdapterSymbolPath, AdapterSymbolPathError, AdapterSymbolSegment};
-pub use arcweft_manifest_model::{AdapterOpaqueTypeProducerId, AdapterOpaqueTypeProducerIdError};
+pub use arcweft_manifest_model::{
+    AdapterOpaqueTypeProducerId, AdapterOpaqueTypeProducerIdError, HostCallContractDigest,
+    canonical_json_bytes,
+};
 pub use nominal::{
     AdapterEnvironmentOwnerId, AdapterNominalDeclaration, AdapterNominalOwner, AdapterNominalPath,
     AdapterNominalPathError, AdapterNominalPathPrefix, AdapterNominalPathSegment,
@@ -386,6 +389,95 @@ impl AdapterHostCall {
     /// Typed domain error carried by the host call, when one exists.
     pub const fn domain_error(&self) -> Option<&AdapterTypeKind> {
         self.domain_error.as_ref()
+    }
+
+    /// Canonical identity of this complete manifest-owned host-call ABI.
+    ///
+    /// # Panics
+    ///
+    /// Panics only if the closed, derive-backed contract projection cannot be
+    /// represented as canonical semantic JSON. Its fields contain only
+    /// strings, integer indices, typed adapter shapes, and omitted optional
+    /// values, so null and floating-point JSON are excluded by construction.
+    pub fn contract_digest(&self) -> HostCallContractDigest {
+        let mut effects = self
+            .effects
+            .iter()
+            .map(AdapterEffectCapability::as_str)
+            .collect::<Vec<_>>();
+        effects.sort_unstable();
+        let groups = self
+            .signature
+            .groups()
+            .iter()
+            .map(|group| HostCallContractGroupProjection {
+                index: group.index().encoded(),
+                parameters: group
+                    .parameters()
+                    .iter()
+                    .map(|parameter| HostCallContractParameterProjection {
+                        index: parameter.index().encoded(),
+                        name: parameter.name().map(AdapterCallableName::as_str),
+                        ty: parameter.ty(),
+                        passing: adapter_parameter_passing_label(parameter.passing()),
+                        presence: adapter_parameter_presence_label(parameter.presence()),
+                    })
+                    .collect(),
+            })
+            .collect();
+        let projection = HostCallContractProjection {
+            id: self.id(),
+            groups,
+            result: self.signature.return_type(),
+            domain_error: self.domain_error.as_ref(),
+            effects,
+        };
+        let canonical = canonical_json_bytes(&projection)
+            .expect("the closed host-call contract projection contains no nullable or float JSON");
+        HostCallContractDigest::derive(&canonical)
+    }
+}
+
+#[derive(Serialize)]
+struct HostCallContractProjection<'a> {
+    id: &'a str,
+    groups: Vec<HostCallContractGroupProjection<'a>>,
+    result: &'a AdapterTypeKind,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    domain_error: Option<&'a AdapterTypeKind>,
+    effects: Vec<&'a str>,
+}
+
+#[derive(Serialize)]
+struct HostCallContractGroupProjection<'a> {
+    index: u32,
+    parameters: Vec<HostCallContractParameterProjection<'a>>,
+}
+
+#[derive(Serialize)]
+struct HostCallContractParameterProjection<'a> {
+    index: u32,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    name: Option<&'a str>,
+    ty: &'a AdapterTypeKind,
+    passing: &'static str,
+    presence: &'static str,
+}
+
+const fn adapter_parameter_passing_label(value: AdapterParameterPassing) -> &'static str {
+    match value {
+        AdapterParameterPassing::PositionalOrNamed => "positional_or_named",
+        AdapterParameterPassing::PositionalOnly => "positional_only",
+        AdapterParameterPassing::NamedOnly => "named_only",
+        AdapterParameterPassing::RestPositional => "rest_positional",
+        AdapterParameterPassing::RestNamed => "rest_named",
+    }
+}
+
+const fn adapter_parameter_presence_label(value: AdapterParameterPresence) -> &'static str {
+    match value {
+        AdapterParameterPresence::Required => "required",
+        AdapterParameterPresence::Defaulted => "defaulted",
     }
 }
 

@@ -1,4 +1,5 @@
-use super::entry::select_runtime_entry;
+use super::entry::{parse_runtime_entry_id, select_runtime_entry};
+use super::invocation::seal_named_flow_invocation;
 use super::options::{
     CliRuntimeExecutorTier, CliRuntimeRunner, CliRuntimeStepMode, RuntimeRunOptions,
     ScriptBenchOptions,
@@ -8,7 +9,8 @@ use super::script_bench::script_bench_selection;
 use super::script_test::script_test_selection;
 use super::serve::{RuntimeServeSelectionConfig, runtime_serve_selection};
 use super::steps::{
-    NativeRunHost, NativeRunSource, run_runtime_steps, runtime_step_run_config_from_run_options,
+    NativeRunHost, NativeRunSource, run_runtime_flow_steps, run_runtime_steps,
+    runtime_step_run_config_from_run_options,
 };
 use crate::app::bundle::{
     build_patch_bundle_artifact_from_awfb_bytes, compile_bundle_for_selection,
@@ -110,6 +112,12 @@ fn runtime_run_headless_command(
         options.math_backend,
         options.math_wgpu_min_elements,
     );
+    if options.flow.is_some() && selection.profile().is_some() {
+        eprintln!(
+            "error: --flow is a low-level source invocation and cannot select a launch profile"
+        );
+        return Err(ExitCode::from(2));
+    }
     if let Some(profile) = selection.profile() {
         match profile.kind() {
             LaunchKind::Server => {
@@ -132,7 +140,6 @@ fn runtime_run_headless_command(
                     selection,
                     runtime_step_run_config_from_run_options(options, pure_config),
                     adapter_registrars,
-                    &options.values,
                     options.json,
                 );
             }
@@ -147,21 +154,22 @@ fn runtime_run_headless_command(
     require_runtime_verification_safety(&checked)?;
     let host_policy = native_host_policy_for_selection(selection)?;
     let plan = checked.runtime_plan().plan.clone();
-    let entry = selection.command_entry(options.entry.as_deref())?;
-    let entry = select_runtime_entry(&plan, entry)?;
     let file_roots = selection.native_file_roots();
-    let trace = run_runtime_steps(
-        plan,
-        &entry,
-        NativeRunHost {
-            source: Some(NativeRunSource::new(selection.path(), &file_roots)),
-            policy: &host_policy,
-            adapter_registrars,
-        },
-        runtime_step_run_config_from_run_options(options, pure_config),
-        &options.values,
-        &checked.execution_diagnostics,
-    )?;
+    let host = NativeRunHost {
+        source: Some(NativeRunSource::new(selection.path(), &file_roots)),
+        policy: &host_policy,
+        adapter_registrars,
+        cli_args: &[],
+    };
+    let config = runtime_step_run_config_from_run_options(options, pure_config);
+    let trace = if let Some(flow) = options.flow.as_deref() {
+        let invocation = seal_named_flow_invocation(plan, flow, &options.values)?;
+        run_runtime_flow_steps(invocation, host, config, &checked.execution_diagnostics)?
+    } else {
+        let entry = selection.command_entry(options.entry.as_deref())?;
+        let entry = select_runtime_entry(&plan, entry)?;
+        run_runtime_steps(plan, &entry, host, config, &checked.execution_diagnostics)?
+    };
     let report = RuntimeRunReport {
         host_system: host_system_info(),
         executor: RuntimeExecutorTier::from(options.executor),
@@ -256,7 +264,6 @@ fn runtime_run_bench_selection(
         pure_object_artifacts: options.pure_object_artifacts,
         math_backend: options.math_backend,
         math_wgpu_min_elements: options.math_wgpu_min_elements,
-        values: options.values.clone(),
         json: options.json,
     };
     script_bench_selection(selection, &bench_options, adapter_registrars)
@@ -285,6 +292,7 @@ fn has_headless_debug_options(options: &RuntimeRunOptions) -> bool {
         || options.executor != CliRuntimeExecutorTier::BytecodeVm
         || options.mode != CliRuntimeStepMode::OneOp
         || options.max_ops != 1
+        || options.flow.is_some()
         || !options.values.is_empty()
         || options.pure_backend.is_some()
         || options.pure_workers.is_some()
@@ -344,6 +352,11 @@ fn run_game_target(
         );
         return Err(ExitCode::from(2));
     }
+    let entry_override = options
+        .entry
+        .as_deref()
+        .map(parse_runtime_entry_id)
+        .transpose()?;
     if options.watch {
         run_watch_target(
             options,
@@ -351,20 +364,24 @@ fn run_game_target(
             runner,
             pure_config,
             compiled.bundle,
+            entry_override,
             phases,
         )?;
         return Ok(RunTargetOutcome::Handled);
     }
-    let mut bundle = compiled.bundle;
-    if let Some(entry) = options.entry.as_ref() {
-        bundle.manifest.entry = Some(entry.clone());
-    }
+    let bundle = compiled.bundle;
     match runner {
         CliRuntimeRunner::Native => {
             let output = run_bundle_output_path(selection, RUN_BUNDLE_DIR);
             write_run_bundle_with_progress(progress, &output, &bundle, &mut phases)?;
             progress.run(CliProgressStatus::Running, "native player", || {
-                run_native_bundle(bundle, options.steps, options, selection)
+                run_native_bundle(
+                    bundle,
+                    options.steps,
+                    options,
+                    selection,
+                    entry_override.as_ref(),
+                )
             })?;
             Ok(RunTargetOutcome::Handled)
         }
@@ -379,7 +396,7 @@ fn run_game_target(
                         .file_name()
                         .and_then(std::ffi::OsStr::to_str)
                         .unwrap_or("game.awfb"),
-                    web_player_frame_fit_query(selection)
+                    web_player_query(selection, entry_override.as_ref())
                 ),
             );
             Ok(RunTargetOutcome::Handled)
@@ -410,7 +427,8 @@ fn run_watch_target(
     selection: &SourceSelection,
     runner: CliRuntimeRunner,
     _pure_config: RuntimePureAcceleratorConfig,
-    mut initial_bundle: ArcweftBundle,
+    initial_bundle: ArcweftBundle,
+    entry_override: Option<arcweft_core::plan::EntryRuntimeId>,
     mut phases: Vec<crate::output::RuntimeProfilePhase>,
 ) -> Result<(), ExitCode> {
     if matches!(runner, CliRuntimeRunner::Native) {
@@ -418,6 +436,7 @@ fn run_watch_target(
             options.clone(),
             selection.clone(),
             initial_bundle,
+            entry_override,
             phases,
         );
     }
@@ -432,7 +451,6 @@ fn run_watch_target(
         CliRuntimeRunner::Native => unreachable!("native watch returned above"),
     };
     let output = run_bundle_output_path(&selection, output_dir);
-    apply_watch_entry_override(options, &mut initial_bundle);
     let mut base_bytes = write_watch_bundle(&output, &initial_bundle, &mut phases)?;
     let mut inputs = watch_inputs(&selection)?;
     println!(
@@ -448,7 +466,7 @@ fn run_watch_target(
                 .file_name()
                 .and_then(std::ffi::OsStr::to_str)
                 .unwrap_or("game.awfb"),
-            web_player_frame_fit_query(&selection)
+            web_player_query(&selection, entry_override.as_ref())
         );
     }
 
@@ -472,7 +490,7 @@ fn run_watch_target(
             continue;
         }
         let mut next_phases = Vec::new();
-        match compile_watch_bundle(options, &selection, &mut next_phases) {
+        match compile_watch_bundle(&selection, &mut next_phases) {
             Ok(next_bundle) => {
                 let next_bytes =
                     next_bundle
@@ -522,11 +540,11 @@ fn run_watch_target(
 fn run_native_windowed_watch_target(
     options: RuntimeRunOptions,
     selection: SourceSelection,
-    mut initial_bundle: ArcweftBundle,
+    initial_bundle: ArcweftBundle,
+    entry_override: Option<arcweft_core::plan::EntryRuntimeId>,
     mut phases: Vec<crate::output::RuntimeProfilePhase>,
 ) -> Result<(), ExitCode> {
     let output = run_bundle_output_path(&selection, RUN_BUNDLE_DIR);
-    apply_watch_entry_override(&options, &mut initial_bundle);
     let base_bytes = write_watch_bundle(&output, &initial_bundle, &mut phases)?;
     let inputs = watch_inputs(&selection)?;
     println!(
@@ -534,7 +552,7 @@ fn run_native_windowed_watch_target(
         output.display(),
         inputs.len(),
     );
-    let native_options = native_player_options(&options, &selection);
+    let native_options = native_player_options(&options, &selection, entry_override.as_ref());
     run_native_bundle_with_ingress(
         initial_bundle,
         options.steps,
@@ -561,6 +579,7 @@ fn run_native_windowed_watch_target(
     _options: RuntimeRunOptions,
     _selection: SourceSelection,
     _initial_bundle: ArcweftBundle,
+    _entry_override: Option<arcweft_core::plan::EntryRuntimeId>,
     _phases: Vec<crate::output::RuntimeProfilePhase>,
 ) -> Result<(), ExitCode> {
     eprintln!("error: native player support is not enabled for this arcw build");
@@ -596,7 +615,7 @@ fn native_windowed_watch_producer_loop(
             continue;
         }
         let mut next_phases = Vec::new();
-        match compile_watch_bundle(options, &selection, &mut next_phases) {
+        match compile_watch_bundle(&selection, &mut next_phases) {
             Ok(next_bundle) => {
                 let next_bytes =
                     next_bundle
@@ -657,6 +676,7 @@ fn has_headless_debug_options_for_watch(options: &RuntimeRunOptions) -> bool {
         || options.executor != CliRuntimeExecutorTier::BytecodeVm
         || options.mode != CliRuntimeStepMode::OneOp
         || options.max_ops != 1
+        || options.flow.is_some()
         || !options.values.is_empty()
         || options.pure_backend.is_some()
         || options.pure_workers.is_some()
@@ -667,21 +687,11 @@ fn has_headless_debug_options_for_watch(options: &RuntimeRunOptions) -> bool {
 }
 
 fn compile_watch_bundle(
-    options: &RuntimeRunOptions,
     selection: &SourceSelection,
     phases: &mut Vec<crate::output::RuntimeProfilePhase>,
 ) -> Result<ArcweftBundle, ExitCode> {
-    let mut bundle =
-        compile_bundle_for_selection(selection, vec![BundleVirtualFileSpace::Asset], phases)?
-            .bundle;
-    apply_watch_entry_override(options, &mut bundle);
-    Ok(bundle)
-}
-
-fn apply_watch_entry_override(options: &RuntimeRunOptions, bundle: &mut ArcweftBundle) {
-    if let Some(entry) = options.entry.as_ref() {
-        bundle.manifest.entry = Some(entry.clone());
-    }
+    compile_bundle_for_selection(selection, vec![BundleVirtualFileSpace::Asset], phases)
+        .map(|compiled| compiled.bundle)
 }
 
 fn write_watch_bundle(
@@ -962,11 +972,12 @@ fn run_native_bundle(
     steps: usize,
     options: &RuntimeRunOptions,
     selection: &SourceSelection,
+    entry_override: Option<&arcweft_core::plan::EntryRuntimeId>,
 ) -> Result<(), ExitCode> {
     arcweft_player_native::run_bundle_windowed_with_options(
         bundle,
         steps,
-        native_player_options(options, selection),
+        native_player_options(options, selection, entry_override),
     )
     .map_err(|error| {
         eprintln!("error: native player failed: {error}");
@@ -1013,6 +1024,7 @@ fn native_text_input_options(
 fn native_player_options(
     options: &RuntimeRunOptions,
     selection: &SourceSelection,
+    entry_override: Option<&arcweft_core::plan::EntryRuntimeId>,
 ) -> arcweft_player_native::NativePlayerOptions {
     let mut native_options = arcweft_player_native::NativePlayerOptions::default()
         .with_text_input_options(native_text_input_options(options));
@@ -1024,6 +1036,9 @@ fn native_player_options(
     }
     if let Some(path) = options.session_save_out.as_ref() {
         native_options = native_options.with_session_save_out_path(path.clone());
+    }
+    if let Some(entry) = entry_override {
+        native_options = native_options.with_entry(entry.clone());
     }
     native_options
 }
@@ -1062,35 +1077,63 @@ fn run_native_bundle(
     _steps: usize,
     _options: &RuntimeRunOptions,
     _selection: &SourceSelection,
+    _entry_override: Option<&arcweft_core::plan::EntryRuntimeId>,
 ) -> Result<(), ExitCode> {
     eprintln!("error: native player support is not enabled for this arcw build");
     Err(ExitCode::from(2))
 }
 
-fn web_player_frame_fit_query(selection: &SourceSelection) -> String {
-    let Some(viewport) = selection
+fn web_player_query(
+    selection: &SourceSelection,
+    entry_override: Option<&arcweft_core::plan::EntryRuntimeId>,
+) -> String {
+    let mut query = selection
         .profile()
         .and_then(|profile| profile.player().viewport())
-    else {
-        return String::new();
-    };
-    let fit = match viewport.fit() {
-        LaunchPlayerViewportFit::Raw => return "&fit=raw".to_owned(),
-        LaunchPlayerViewportFit::Contain => "contain",
-        LaunchPlayerViewportFit::Cover => "cover",
-        LaunchPlayerViewportFit::Stretch => "stretch",
-    };
-    format!(
-        "&fit={fit}&designWidth={}&designHeight={}",
-        viewport
-            .design_width()
-            .expect("non-raw viewport has a validated design width")
-            .get(),
-        viewport
-            .design_height()
-            .expect("non-raw viewport has a validated design height")
-            .get()
-    )
+        .map_or_else(String::new, |viewport| match viewport.fit() {
+            LaunchPlayerViewportFit::Raw => "&fit=raw".to_owned(),
+            fit => {
+                let fit = match fit {
+                    LaunchPlayerViewportFit::Contain => "contain",
+                    LaunchPlayerViewportFit::Cover => "cover",
+                    LaunchPlayerViewportFit::Stretch => "stretch",
+                    LaunchPlayerViewportFit::Raw => unreachable!("raw handled above"),
+                };
+                format!(
+                    "&fit={fit}&designWidth={}&designHeight={}",
+                    viewport
+                        .design_width()
+                        .expect("non-raw viewport has a validated design width")
+                        .get(),
+                    viewport
+                        .design_height()
+                        .expect("non-raw viewport has a validated design height")
+                        .get()
+                )
+            }
+        });
+    if let Some(entry) = entry_override {
+        query.push_str("&entry=");
+        query.push_str(&percent_encode_query_component(
+            entry.public_label().as_str(),
+        ));
+    }
+    query
+}
+
+fn percent_encode_query_component(value: &str) -> String {
+    const HEX: &[u8; 16] = b"0123456789ABCDEF";
+    let mut encoded = String::with_capacity(value.len());
+    for byte in value.bytes() {
+        if byte.is_ascii_alphanumeric() || matches!(byte, b'-' | b'.' | b'_' | b'~') {
+            encoded.push(char::from(byte));
+        } else {
+            encoded.push('%');
+            encoded.push(char::from(HEX[usize::from(byte >> 4)]));
+            encoded.push(char::from(HEX[usize::from(byte & 0x0F)]));
+        }
+    }
+    encoded
 }
 
 #[cfg(test)]
@@ -1098,6 +1141,18 @@ mod tests {
     use super::*;
     use std::process;
     use std::time::{SystemTime, UNIX_EPOCH};
+
+    #[test]
+    fn web_entry_query_uses_rfc3986_component_encoding() {
+        assert_eq!(
+            percent_encode_query_component("entry.game.main"),
+            "entry.game.main"
+        );
+        assert_eq!(
+            percent_encode_query_component("entry.章&debug=true"),
+            "entry.%E7%AB%A0%26debug%3Dtrue"
+        );
+    }
 
     #[test]
     fn watch_inputs_include_project_manifest_and_modules() {

@@ -1,4 +1,3 @@
-use arcweft_bundle::BundleViewProductAttachError;
 use arcweft_bundle::resource_codec::view::{
     ViewActionButtonActionResource, ViewDefinitionResource, ViewInstructionSpan,
     ViewProgramResource, ViewResourceMergeError, ViewRuntimeButtonBounds, ViewRuntimeSurfaceBounds,
@@ -10,9 +9,10 @@ use arcweft_bundle::resource_codec::{
 };
 use arcweft_bundle::standard_view::{
     DIALOGUE_STYLE_ID, DIALOGUE_STYLE_SOURCE_ID, DIALOGUE_VIEW_ID, DIALOGUE_VIEW_SOURCE_ID,
-    dialogue_program, dialogue_style, dialogue_text,
+    dialogue_primary_action_program_id, dialogue_program, dialogue_style, dialogue_text,
 };
-use arcweft_core::effect::RuntimeArtifactFingerprint;
+use arcweft_bundle::{BundleConstructionError, BundleViewProductAttachError};
+use arcweft_core::{effect::RuntimeArtifactFingerprint, value::RuntimeDialogueOpaqueRole};
 use arcweft_presentation::appearance::PresentationColor;
 use arcweft_source::{SourceDocument, SourceDocumentId, SourceName};
 use arcweft_view::ViewId;
@@ -29,11 +29,22 @@ fn standard_dialogue_view_is_a_complete_encodable_authored_resource() {
 
     assert_eq!(program.definitions[0].public_id.as_str(), DIALOGUE_VIEW_ID);
     assert_eq!(program.definitions[0].parameters[0].name, "dialogue");
-    assert!(matches!(
-        &program.action_buttons[0].action,
-        ViewActionButtonActionResource::DialoguePrimaryAction { parameter }
-            if parameter == "dialogue"
-    ));
+    assert_eq!(
+        program.action_buttons[0].action,
+        ViewActionButtonActionResource::Noop
+    );
+    assert_eq!(
+        program.handlers[0].program,
+        dialogue_primary_action_program_id()
+    );
+    assert_eq!(
+        program.handlers[0].captures[0].value_type(),
+        RuntimeDialogueOpaqueRole::View.semantic_identity()
+    );
+    assert_eq!(
+        program.handlers[0].result.value_type(),
+        RuntimeDialogueOpaqueRole::Action.semantic_identity()
+    );
     assert_eq!(program.surfaces.len(), 1);
     assert_eq!(program.text_blocks.len(), 2);
     assert_eq!(text.sources.len(), 3);
@@ -380,7 +391,8 @@ fn reserved_standard_source_collisions_are_typed_bundle_build_errors() {
 
         assert!(matches!(
             error,
-            SourceMapBuildError::DuplicateDocument(id) if id.as_str() == reserved
+            BundleConstructionError::SourceMap(SourceMapBuildError::DuplicateDocument(id))
+                if id.as_str() == reserved
         ));
     }
 }
@@ -403,13 +415,13 @@ fn one_free_source_slot_is_insufficient_for_both_reserved_standard_sources() {
 
     let error = try_test_bundle(source_map).expect_err("standard sources need two reserved slots");
 
-    assert_eq!(
+    assert!(matches!(
         error,
-        SourceMapBuildError::TooManyDocuments {
-            actual: MAX_SOURCE_MAP_DOCUMENTS + 1,
+        BundleConstructionError::SourceMap(SourceMapBuildError::TooManyDocuments {
+            actual,
             limit: MAX_SOURCE_MAP_DOCUMENTS,
-        }
-    );
+        }) if actual == MAX_SOURCE_MAP_DOCUMENTS + 1
+    ));
 }
 
 fn assert_declaration(
@@ -487,7 +499,7 @@ fn accepted_standard_product(source_map: SourceMapSection) -> ValidatedViewProdu
 
 fn try_test_bundle(
     source_map: SourceMapSection,
-) -> Result<arcweft_bundle::ArcweftBundle, SourceMapBuildError> {
+) -> Result<arcweft_bundle::ArcweftBundle, BundleConstructionError> {
     use arcweft_bundle::{BundleManifest, BundleRuntimeSummary};
     use arcweft_core::awbc::schema::AwbcProgram;
     use arcweft_text_model::DialogueContentCatalog;

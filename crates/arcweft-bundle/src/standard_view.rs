@@ -1,5 +1,9 @@
 //! Linked standard authored View resources supplied to every product bundle.
 
+mod handler;
+
+pub use handler::{StandardViewAwbcError, install_dialogue_handler_awbc};
+
 use crate::resource_codec::view::{
     DialogueTextProjection, ViewActionButtonActionResource, ViewActionButtonResource,
     ViewDefinitionRef, ViewDefinitionResource, ViewElementKind, ViewInstructionSpan,
@@ -9,6 +13,7 @@ use crate::resource_codec::view::{
     ViewTextSourceRecord, ViewTextSurface,
 };
 use crate::resource_codec::{SourceMapSection, SourceRangeRef};
+use arcweft_core::value::{RuntimeDialogueOpaqueRole, RuntimeDialogueViewField};
 use arcweft_presentation::appearance::PresentationColor;
 use arcweft_source::{SourceDocument, SourceDocumentId, SourceName};
 use arcweft_view::style::{
@@ -17,7 +22,10 @@ use arcweft_view::style::{
     ViewStyleRule, ViewStyleSelector, ViewStyleSelectorSequence, ViewStyleSheet, ViewStyleSheetId,
     ViewStyleSourceId,
 };
-use arcweft_view::{ViewId, ViewPartLocalName, ViewPartName};
+use arcweft_view::{
+    EventKind, ViewHandlerCapture, ViewHandlerProgramId, ViewHandlerResult, ViewHandlerResultRole,
+    ViewId, ViewParameterCoordinate, ViewPartLocalName, ViewPartName,
+};
 
 pub const DIALOGUE_VIEW_ID: &str = "std.view.dialogue";
 pub const DIALOGUE_VIEW_SOURCE_ID: &str = "arcweft:standard/dialogue-view";
@@ -33,6 +41,29 @@ pub fn dialogue_view_id() -> arcweft_view::ViewId {
     arcweft_view::ViewId::try_new_engine_owned(DIALOGUE_VIEW_ID)
         .expect("the reserved standard dialogue View identity is valid")
 }
+
+/// Stable program identity of the engine-owned primary-action projection.
+#[must_use]
+pub fn dialogue_primary_action_program_id() -> ViewHandlerProgramId {
+    let mut hasher =
+        blake3::Hasher::new_derive_key("arcweft.standard-dialogue-view-primary-action-program.v1");
+    hasher.update(
+        RuntimeDialogueOpaqueRole::View
+            .semantic_identity()
+            .as_bytes(),
+    );
+    hasher.update(
+        &RuntimeDialogueViewField::PrimaryAction
+            .ordinal()
+            .to_le_bytes(),
+    );
+    hasher.update(
+        RuntimeDialogueOpaqueRole::Action
+            .semantic_identity()
+            .as_bytes(),
+    );
+    ViewHandlerProgramId::from_checked_digest(*hasher.finalize().as_bytes())
+}
 pub const DIALOGUE_PARAMETER: &str = "dialogue";
 pub const DIALOGUE_STYLE_ID: &str = "std.style.dialogue";
 pub const DIALOGUE_STYLE_SOURCE_ID: &str = "arcweft:standard/dialogue-style";
@@ -43,11 +74,11 @@ const CONTENT_PART: &str = "part.dialogue.content";
 const ACTION_PART: &str = "part.dialogue.primary_action";
 const CHARACTER_DISPLAY_NAME_SOURCE: &str = "std.dialogue.text.character_display_name";
 const CONTENT_SOURCE: &str = "std.dialogue.text.content";
+const ACTION_LABEL_SOURCE: &str = "std.dialogue.text.primary_action";
 
 fn local_part(value: &str) -> ViewPartLocalName {
     ViewPartLocalName::try_new(value).expect("standard View part identities are canonical")
 }
-const ACTION_LABEL_SOURCE: &str = "std.dialogue.text.primary_action";
 const DIALOGUE_STYLE_SOURCE: &str = "standard dialogue style";
 const DIALOGUE_VIEW_SOURCE: &str = "standard dialogue view";
 
@@ -89,12 +120,13 @@ pub fn dialogue_program() -> ViewProgramResource {
                 ViewId::try_new_engine_owned(DIALOGUE_VIEW_ID)
                     .expect("the standard dialogue View identity is valid"),
             ),
-            body: ViewInstructionSpan::new(0, 6),
+            body: ViewInstructionSpan::new(0, 7),
             styles: vec![dialogue_style_ref()],
             parameters: vec![ViewParameterResource {
                 ordinal: 0,
                 name: DIALOGUE_PARAMETER.to_owned(),
                 role: ViewParameterRole::Dialogue,
+                semantic_type: RuntimeDialogueOpaqueRole::View.semantic_identity(),
                 value_type: None,
                 value_slot: None,
                 default_program: None,
@@ -133,8 +165,25 @@ pub fn dialogue_program() -> ViewProgramResource {
                 source: None,
             },
             ViewProgramInstruction::CloseElement,
+            ViewProgramInstruction::BindHandler {
+                event: EventKind::Activate,
+                handler: dialogue_primary_action_program_id(),
+                source: None,
+            },
             ViewProgramInstruction::CloseElement,
         ],
+        handlers: vec![crate::resource_codec::view::ViewHandlerRef {
+            program: dialogue_primary_action_program_id(),
+            captures: vec![ViewHandlerCapture::new(
+                ViewParameterCoordinate::try_from_index(0)
+                    .expect("the standard dialogue parameter coordinate is representable"),
+                RuntimeDialogueOpaqueRole::View.semantic_identity(),
+            )],
+            result: ViewHandlerResult::new(
+                ViewHandlerResultRole::DialogueAction,
+                RuntimeDialogueOpaqueRole::Action.semantic_identity(),
+            ),
+        }],
         text_blocks: vec![
             text_block_milli(
                 CHARACTER_DISPLAY_NAME_PART,
@@ -169,9 +218,7 @@ pub fn dialogue_program() -> ViewProgramResource {
             containing_scroll_region: None,
             label_text_source: ACTION_LABEL_SOURCE.to_owned(),
             enabled: true,
-            action: ViewActionButtonActionResource::DialoguePrimaryAction {
-                parameter: DIALOGUE_PARAMETER.to_owned(),
-            },
+            action: ViewActionButtonActionResource::Noop,
             bounds: ViewRuntimeButtonBounds::new(57_600, 460_800, 1_164_800, 201_600),
             source: None,
         }],

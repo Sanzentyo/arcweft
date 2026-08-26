@@ -23,6 +23,14 @@ pub enum HirExpressionChildEdgeError {
     OrdinalOverflow,
 }
 
+/// Whether an expression child edge owns the child evaluation root or merely
+/// references a root published by another typed owner.
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub enum HirExpressionChildOwnership {
+    Owning,
+    ReferenceOnly,
+}
+
 /// One ordered expression-to-expression edge owned by a HIR expression.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct HirExpressionChildEdge {
@@ -39,6 +47,11 @@ impl HirExpressionChildEdge {
     /// Returns the HIR-only role and coordinate of this child edge.
     pub const fn role(&self) -> &HirExpressionChildRole {
         &self.role
+    }
+
+    /// Returns the ownership classification used by topology completeness.
+    pub const fn ownership(&self) -> HirExpressionChildOwnership {
+        self.role.ownership()
     }
 
     fn new(child: ExprId, role: HirExpressionChildRole) -> Self {
@@ -248,6 +261,18 @@ pub enum HirExpressionChildRole {
     ChoicePlanCancelExpr {
         item: u32,
     },
+}
+
+impl HirExpressionChildRole {
+    /// `ForSynthetic::ForInput` is a lowered back-reference to the source,
+    /// iterator, or next-value expression owned by the enclosing `for`
+    /// statement. Every other direct expression edge owns its child.
+    pub const fn ownership(&self) -> HirExpressionChildOwnership {
+        match self {
+            Self::ForInput => HirExpressionChildOwnership::ReferenceOnly,
+            _ => HirExpressionChildOwnership::Owning,
+        }
+    }
 }
 
 /// One exact semantic slot which may own a synthetic `RecoveryOperand`.
@@ -718,7 +743,7 @@ fn append_line_plan_edges(
                     *value,
                     HirExpressionChildRole::LinePlanLetValue { path: path() },
                 ),
-                HirLinePlanItem::Out(value) => push_edge(
+                HirLinePlanItem::Out { value, .. } => push_edge(
                     edges,
                     *value,
                     HirExpressionChildRole::LinePlanOut { path: path() },

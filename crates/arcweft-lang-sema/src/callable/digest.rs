@@ -3,16 +3,24 @@
 use arcweft_lang_hir::symbol::CallableDeclarationKey;
 use arcweft_source::SourceSpan;
 
-use crate::{effect_row::EffectRowTail, registration::AcceptedNominalWorldStamp};
+use crate::{
+    effect_row::EffectRowTail,
+    registration::AcceptedNominalWorldStamp,
+    types::{ArrayLength, TypeKind},
+};
 
 use super::{
-    CallableArgumentPolicy, CallableAuthorityRank, CallableDocumentation, CallableEffectSchema,
-    CallableEvaluatedEffect, CallableGroupKind, CallableLogLevel, CallableLookupKey,
-    CallableParameterPassing, CallableParameterPresence, CallableParameterType, CallableProviderId,
-    CallableSignatureSchema, CallableSource, CallableValidator, DocumentationProvenance,
-    EnvironmentCallableId, EnvironmentCallableKind, EnvironmentCallableOwner,
-    LanguageDocumentationFamily, RustCallableProvenance, RustCallablePurity, RustPackageProvenance,
-    SpreadArgumentPolicy, StandardEnvironmentId, UnknownNamedArgumentPolicy,
+    CallableArgumentPolicy, CallableArgumentSemanticAction, CallableAuthorityRank,
+    CallableDocumentation, CallableEffectSchema, CallableEvaluatedEffect, CallableGenericFirstUse,
+    CallableGenericParameterInventory, CallableGenericTypeUse, CallableGroupKind, CallableLogLevel,
+    CallableLookupKey, CallableParameterAdmission, CallableParameterConsumer,
+    CallableParameterPassing, CallableParameterPresence, CallableParameterValueAlternative,
+    CallableProviderId, CallableRigidConstUse, CallableSchemaGenericRole,
+    CallableSemanticValueGuard, CallableSignatureSchema, CallableSource, CallableValidator,
+    DocumentationProvenance, EnvironmentCallableId, EnvironmentCallableKind,
+    EnvironmentCallableOwner, LanguageDocumentationFamily, ParameterExpectedTypeProjection,
+    RustCallableProvenance, RustCallablePurity, RustPackageProvenance, SpreadArgumentPolicy,
+    StandardEnvironmentId, UnknownNamedArgumentPolicy, VariantPayloadRequirement,
 };
 
 const SCHEMA_DOMAIN: &[u8] = b"arcweft.callable-signature.semantic.v1\0";
@@ -157,18 +165,17 @@ impl CanonicalEncoder {
                     CallableParameterPresence::Optional => 1,
                     CallableParameterPresence::Defaulted => 2,
                 });
-                match parameter.ty() {
-                    CallableParameterType::Exact(ty) => {
-                        self.tag(0);
-                        self.bytes(ty.semantic_identity_digest().as_bytes());
-                    }
-                    CallableParameterType::Unchecked => self.tag(1),
-                }
+                self.admission(parameter.admission(), parameter.consumer());
             }
         }
+        self.generic_inventory(schema.generic_inventory());
         self.bytes(schema.result().semantic_identity_digest().as_bytes());
         self.effect_schema(schema.effects());
         self.argument_policy(schema.argument_policy());
+        self.usize(schema.reserved_open_names().len());
+        for name in schema.reserved_open_names() {
+            self.string(name.as_str());
+        }
         self.validator(schema.validator());
         self.option(schema.evaluated_effect().as_ref(), |encoder, effect| {
             encoder.evaluated_effect(*effect);
@@ -177,6 +184,149 @@ impl CanonicalEncoder {
             encoder.usize(receiver.group().get());
             encoder.usize(receiver.parameter().get());
         });
+    }
+
+    fn generic_inventory(&mut self, inventory: &CallableGenericParameterInventory) {
+        self.usize(inventory.types().len());
+        for entry in inventory.types() {
+            self.generic_type_use(entry);
+        }
+        self.usize(inventory.rigid_consts().len());
+        for entry in inventory.rigid_consts() {
+            self.rigid_const_use(entry);
+        }
+    }
+
+    fn generic_type_use(&mut self, entry: &CallableGenericTypeUse) {
+        self.bytes(
+            TypeKind::GenericParam(entry.parameter().clone())
+                .semantic_identity_digest()
+                .as_bytes(),
+        );
+        self.tag(match entry.role() {
+            CallableSchemaGenericRole::Candidate => 0,
+            CallableSchemaGenericRole::RigidReference => 1,
+        });
+        self.generic_first_use(entry.first_use());
+    }
+
+    fn rigid_const_use(&mut self, entry: &CallableRigidConstUse) {
+        self.bytes(
+            TypeKind::Array {
+                item: Box::new(TypeKind::Unit),
+                len: ArrayLength::Generic(entry.parameter().clone()),
+            }
+            .semantic_identity_digest()
+            .as_bytes(),
+        );
+        self.generic_first_use(entry.first_use());
+    }
+
+    fn generic_first_use(&mut self, first_use: CallableGenericFirstUse) {
+        match first_use {
+            CallableGenericFirstUse::Group(group) => {
+                self.tag(0);
+                self.usize(group.get());
+            }
+            CallableGenericFirstUse::Result => self.tag(1),
+        }
+    }
+
+    fn admission(
+        &mut self,
+        admission: &CallableParameterAdmission,
+        consumer: &CallableParameterConsumer,
+    ) {
+        match admission {
+            CallableParameterAdmission::Checked { declared, rule } => {
+                self.tag(0);
+                self.bytes(declared.semantic_identity_digest().as_bytes());
+                self.consumer(consumer);
+                self.usize(rule.len());
+                for alternative in rule.alternatives() {
+                    self.value_alternative(alternative);
+                }
+            }
+            CallableParameterAdmission::UncheckedSupply => self.tag(1),
+        }
+    }
+
+    fn value_alternative(&mut self, alternative: CallableParameterValueAlternative<'_>) {
+        match alternative.guard() {
+            Some(CallableSemanticValueGuard::VariantCase {
+                owner,
+                ordinal,
+                payload,
+            }) => {
+                self.tag(0);
+                self.expected_projection(owner);
+                self.u32(*ordinal);
+                self.tag(match payload {
+                    VariantPayloadRequirement::Unit => 0,
+                    VariantPayloadRequirement::Present => 1,
+                });
+            }
+            None => self.tag(1),
+        }
+        self.expected_projection(alternative.expected());
+        self.tag(match alternative.action() {
+            CallableArgumentSemanticAction::Supply => 0,
+            CallableArgumentSemanticAction::Clear => 1,
+        });
+    }
+
+    fn expected_projection(&mut self, projection: &ParameterExpectedTypeProjection) {
+        match projection {
+            ParameterExpectedTypeProjection::Identity => self.tag(0),
+            ParameterExpectedTypeProjection::ApplyUnary(constructor) => {
+                self.tag(1);
+                self.tag(match constructor {
+                    super::CallableUnaryTypeConstructor::Option => 0,
+                });
+            }
+        }
+    }
+
+    fn consumer(&mut self, consumer: &CallableParameterConsumer) {
+        match consumer {
+            CallableParameterConsumer::Value => self.tag(0),
+            CallableParameterConsumer::DialoguePatch(coordinate) => {
+                self.tag(1);
+                self.dialogue_field_coordinate(coordinate);
+            }
+            CallableParameterConsumer::DialogueApplicationMetadata(coordinate) => {
+                self.tag(2);
+                self.tag(match coordinate {
+                    super::DialogueApplicationMetadataCoordinate::Id => 0,
+                    super::DialogueApplicationMetadataCoordinate::TextKey => 1,
+                });
+            }
+        }
+    }
+
+    fn dialogue_field_coordinate(
+        &mut self,
+        coordinate: &crate::character_dialogue::CharacterDialogueFieldCoordinate,
+    ) {
+        use crate::character_dialogue::CharacterDialogueFieldCoordinate;
+        self.tag(match coordinate {
+            CharacterDialogueFieldCoordinate::Voice => 0,
+            CharacterDialogueFieldCoordinate::Look => 1,
+            CharacterDialogueFieldCoordinate::Stage => 2,
+            CharacterDialogueFieldCoordinate::Portrait => 3,
+            CharacterDialogueFieldCoordinate::Focus => 4,
+            CharacterDialogueFieldCoordinate::Cleanup => 5,
+            CharacterDialogueFieldCoordinate::View => 6,
+            CharacterDialogueFieldCoordinate::SourceLocale => 7,
+            CharacterDialogueFieldCoordinate::Hooks => 8,
+            CharacterDialogueFieldCoordinate::Style => 9,
+            CharacterDialogueFieldCoordinate::RichText => 10,
+            CharacterDialogueFieldCoordinate::InlineFailure => 11,
+            CharacterDialogueFieldCoordinate::Custom(_) => 12,
+        });
+        if let CharacterDialogueFieldCoordinate::Custom(id) = coordinate {
+            self.string(id.as_str());
+        }
     }
 
     fn evaluated_effect(&mut self, effect: CallableEvaluatedEffect) {
@@ -213,6 +363,7 @@ impl CanonicalEncoder {
                     EffectRowTail::Closed => self.tag(0),
                     EffectRowTail::Variable(variable) => {
                         self.tag(1);
+                        self.bytes(variable.issuer().as_bytes());
                         self.u32(variable.index());
                     }
                     EffectRowTail::Unknown => self.tag(2),
@@ -233,8 +384,7 @@ impl CanonicalEncoder {
     fn argument_policy(&mut self, policy: CallableArgumentPolicy) {
         self.tag(match policy.unknown_named() {
             UnknownNamedArgumentPolicy::Reject => 0,
-            UnknownNamedArgumentPolicy::OpenChecked => 1,
-            UnknownNamedArgumentPolicy::OpenUnchecked => 2,
+            UnknownNamedArgumentPolicy::OpenSupply => 1,
         });
         self.tag(match policy.spread() {
             SpreadArgumentPolicy::Reject => 0,
@@ -268,6 +418,7 @@ impl CanonicalEncoder {
             CallableValidator::Drop => 19,
             CallableValidator::Promotion(_) => 20,
             CallableValidator::LineContext(_) => 21,
+            CallableValidator::ViewModifier(_) => 22,
         });
         if let CallableValidator::Method(role) = validator {
             self.tag(match role {
@@ -283,6 +434,9 @@ impl CanonicalEncoder {
                 super::DialogueCallableId::ContentApplication => 2,
                 super::DialogueCallableId::ContentCall => 3,
             });
+        }
+        if let CallableValidator::ViewModifier(modifier) = validator {
+            self.tag(u16::from(modifier.semantic_tag()));
         }
     }
 
@@ -483,7 +637,12 @@ impl CanonicalEncoder {
 #[cfg(test)]
 mod tests {
     use super::CanonicalEncoder;
-    use crate::callable::{CallableMethodRole, CallableValidator};
+    use crate::callable::{
+        CallableMethodRole, CallableParameterAdmission, CallableParameterConsumer,
+        CallableParameterValueRule, CallableValidator,
+    };
+    use crate::character_dialogue::CharacterDialogueFieldCoordinate;
+    use crate::types::TypeKind;
 
     #[test]
     fn method_validator_replaces_reserved_tag_sixteen_with_exact_role_subtag() {
@@ -500,5 +659,63 @@ mod tests {
             expected.extend_from_slice(&role_tag.to_le_bytes());
             assert_eq!(encoder.into_bytes(), expected);
         }
+    }
+
+    #[test]
+    fn checked_admission_golden_order_is_declared_consumer_then_alternatives() {
+        let admission = CallableParameterAdmission::checked_with_rule(
+            TypeKind::String,
+            CallableParameterValueRule::clearable_option(),
+        );
+        let consumer =
+            CallableParameterConsumer::DialoguePatch(CharacterDialogueFieldCoordinate::Voice);
+        let mut actual = CanonicalEncoder::default();
+        actual.admission(&admission, &consumer);
+
+        let CallableParameterAdmission::Checked { declared, rule } = &admission else {
+            unreachable!("test admission is checked")
+        };
+        let mut expected = CanonicalEncoder::default();
+        expected.tag(0);
+        expected.bytes(declared.semantic_identity_digest().as_bytes());
+        expected.consumer(&consumer);
+        expected.usize(rule.len());
+        for alternative in rule.alternatives() {
+            expected.value_alternative(alternative);
+        }
+        assert_eq!(actual.into_bytes(), expected.into_bytes());
+    }
+
+    #[test]
+    fn unchecked_admission_golden_bytes_have_no_consumer_payload() {
+        let consumer =
+            CallableParameterConsumer::DialoguePatch(CharacterDialogueFieldCoordinate::Voice);
+        let mut encoder = CanonicalEncoder::default();
+        encoder.admission(&CallableParameterAdmission::UncheckedSupply, &consumer);
+        assert_eq!(encoder.into_bytes(), vec![1, 0]);
+    }
+
+    #[test]
+    fn alternative_and_consumer_tampering_change_schema_admission_bytes() {
+        let consumer = CallableParameterConsumer::Value;
+        let supply = CallableParameterAdmission::checked(TypeKind::String);
+        let clear = CallableParameterAdmission::checked_with_rule(
+            TypeKind::String,
+            CallableParameterValueRule::clearable_option(),
+        );
+        let mut supply_bytes = CanonicalEncoder::default();
+        supply_bytes.admission(&supply, &consumer);
+        let mut clear_bytes = CanonicalEncoder::default();
+        clear_bytes.admission(&clear, &consumer);
+        assert_ne!(supply_bytes.into_bytes(), clear_bytes.into_bytes());
+
+        let mut value_bytes = CanonicalEncoder::default();
+        value_bytes.admission(&supply, &CallableParameterConsumer::Value);
+        let mut dialogue_bytes = CanonicalEncoder::default();
+        dialogue_bytes.admission(
+            &supply,
+            &CallableParameterConsumer::DialoguePatch(CharacterDialogueFieldCoordinate::Voice),
+        );
+        assert_ne!(value_bytes.into_bytes(), dialogue_bytes.into_bytes());
     }
 }

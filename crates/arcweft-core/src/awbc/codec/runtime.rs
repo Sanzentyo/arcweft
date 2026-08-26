@@ -12,6 +12,7 @@ use crate::awbc::schema::{
     AwbcStringId, AwbcTableRange, AwbcTaskClass, AwbcTaskPlan, AwbcTaskPolicy, AwbcTypeId,
 };
 use crate::runtime_id::{RuntimeDialogueMarkId, RuntimeLocalDeclarationId};
+use crate::value::{RuntimeCallTarget, RuntimeIntrinsic};
 use arcweft_interaction_model::audio::{
     AudioEffectParameterKind, AudioLoopMode, MicrophoneConstraints,
 };
@@ -19,19 +20,54 @@ use std::num::NonZeroU32;
 
 impl Wire for AwbcIntrinsic {
     fn write_wire(&self, writer: &mut Writer) -> Result<(), AwbcCodecError> {
-        self.public_id.write_wire(writer)?;
-        self.registry_code.write_wire(writer)?;
+        self.identity.write_wire(writer)?;
         self.signature.write_wire(writer)?;
         self.revision.write_wire(writer)
     }
 
     fn read_wire(reader: &mut Reader<'_>) -> Result<Self, AwbcCodecError> {
         Ok(Self {
-            public_id: AwbcStringId::read_wire(reader)?,
-            registry_code: u32::read_wire(reader)?,
+            identity: RuntimeCallTarget::read_wire(reader)?,
             signature: AwbcSignatureId::read_wire(reader)?,
             revision: u32::read_wire(reader)?,
         })
+    }
+}
+
+impl Wire for RuntimeCallTarget {
+    fn write_wire(&self, writer: &mut Writer) -> Result<(), AwbcCodecError> {
+        match self {
+            Self::Intrinsic(intrinsic) => {
+                0_u8.write_wire(writer)?;
+                intrinsic.as_label().to_owned().write_wire(writer)
+            }
+            Self::Callable(callable) => {
+                1_u8.write_wire(writer)?;
+                callable.write_wire(writer)
+            }
+        }
+    }
+
+    fn read_wire(reader: &mut Reader<'_>) -> Result<Self, AwbcCodecError> {
+        let offset = reader.offset();
+        match u8::read_wire(reader)? {
+            0 => {
+                let label = String::read_wire(reader)?;
+                RuntimeIntrinsic::from_label(&label)
+                    .map(Self::Intrinsic)
+                    .ok_or(AwbcCodecError::InvalidMetadata {
+                        kind: "runtime intrinsic identity",
+                        message: format!("unknown runtime intrinsic `{label}`"),
+                        offset,
+                    })
+            }
+            1 => crate::entry::RuntimeCallableId::read_wire(reader).map(Self::Callable),
+            tag => Err(AwbcCodecError::UnknownTag {
+                kind: "runtime call target",
+                tag,
+                offset,
+            }),
+        }
     }
 }
 
@@ -40,6 +76,7 @@ impl Wire for AwbcHostCall {
         self.public_id.write_wire(writer)?;
         self.capability.write_wire(writer)?;
         self.operation.write_wire(writer)?;
+        self.contract.write_wire(writer)?;
         self.signature.write_wire(writer)?;
         self.mode.write_wire(writer)?;
         self.deterministic.write_wire(writer)?;
@@ -51,11 +88,22 @@ impl Wire for AwbcHostCall {
             public_id: AwbcStringId::read_wire(reader)?,
             capability: AwbcStringId::read_wire(reader)?,
             operation: AwbcStringId::read_wire(reader)?,
+            contract: Option::<crate::step::HostCallContractDigest>::read_wire(reader)?,
             signature: AwbcSignatureId::read_wire(reader)?,
             mode: AwbcHostCallMode::read_wire(reader)?,
             deterministic: bool::read_wire(reader)?,
             arguments: Vec::<AwbcHostArgument>::read_wire(reader)?,
         })
+    }
+}
+
+impl Wire for crate::step::HostCallContractDigest {
+    fn write_wire(&self, writer: &mut Writer) -> Result<(), AwbcCodecError> {
+        self.as_bytes().write_wire(writer)
+    }
+
+    fn read_wire(reader: &mut Reader<'_>) -> Result<Self, AwbcCodecError> {
+        <[u8; 32]>::read_wire(reader).map(Self::from_bytes)
     }
 }
 
@@ -893,4 +941,5 @@ impl Wire for AwbcPureHelper {
 wire_enum!(AwbcPureHelperOrigin, "pure helper origin", {
     0 => AwbcPureHelperOrigin::Annotated,
     1 => AwbcPureHelperOrigin::Inferred,
+    2 => AwbcPureHelperOrigin::EngineOwned,
 });

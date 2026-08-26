@@ -2,7 +2,7 @@ use super::{
     RuntimeEvalError, RuntimeInt, RuntimeSignedIntWidth, RuntimeUInt, RuntimeUnsignedIntWidth,
     RuntimeValue, runtime_value_label,
 };
-use crate::plan::{RuntimeBuiltinIteratorEvidence, RuntimeIteratorEvidence, RuntimeTraitMethodId};
+use crate::plan::{RuntimeBuiltinIteratorFamily, RuntimeIteratorEvidence, RuntimeTraitMethodId};
 use serde::{Deserialize, Serialize};
 
 /// Width-preserving integer range value.
@@ -163,26 +163,31 @@ impl RuntimeIterator {
         evidence: &RuntimeIteratorEvidence,
     ) -> Result<Self, RuntimeValue> {
         match evidence {
-            RuntimeIteratorEvidence::Builtin(RuntimeBuiltinIteratorEvidence::Range) => {
-                match value {
-                    RuntimeValue::Range(range) => {
-                        range.into_iterator().map_err(RuntimeValue::Range)
-                    }
-                    value => Err(value),
-                }
+            RuntimeIteratorEvidence::Builtin(evidence) => {
+                Self::from_value_with_builtin_family(value, evidence.family)
             }
-            RuntimeIteratorEvidence::Builtin(RuntimeBuiltinIteratorEvidence::Seq) => match value {
+            RuntimeIteratorEvidence::Witness(_) => Err(value),
+        }
+    }
+
+    pub fn from_value_with_builtin_family(
+        value: RuntimeValue,
+        family: RuntimeBuiltinIteratorFamily,
+    ) -> Result<Self, RuntimeValue> {
+        match family {
+            RuntimeBuiltinIteratorFamily::Range => match value {
+                RuntimeValue::Range(range) => range.into_iterator().map_err(RuntimeValue::Range),
+                value => Err(value),
+            },
+            RuntimeBuiltinIteratorFamily::Seq => match value {
                 RuntimeValue::Seq(seq) => Ok(Self::values(seq.into_values())),
                 value => Err(value),
             },
-            RuntimeIteratorEvidence::Builtin(RuntimeBuiltinIteratorEvidence::Stream)
-            | RuntimeIteratorEvidence::Witness(_) => Err(value),
-            RuntimeIteratorEvidence::Builtin(
-                RuntimeBuiltinIteratorEvidence::Vec
-                | RuntimeBuiltinIteratorEvidence::Array
-                | RuntimeBuiltinIteratorEvidence::Slice
-                | RuntimeBuiltinIteratorEvidence::TupleHomogeneous,
-            ) => match value {
+            RuntimeBuiltinIteratorFamily::Stream => Err(value),
+            RuntimeBuiltinIteratorFamily::Vec
+            | RuntimeBuiltinIteratorFamily::Array
+            | RuntimeBuiltinIteratorFamily::Slice
+            | RuntimeBuiltinIteratorFamily::TupleHomogeneous => match value {
                 RuntimeValue::Seq(seq) => Ok(Self::values(seq.into_values())),
                 RuntimeValue::Tuple(values) => Ok(Self::values(values)),
                 value => Err(value),

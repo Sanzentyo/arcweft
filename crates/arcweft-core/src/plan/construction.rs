@@ -12,12 +12,12 @@ mod seed;
 use seed::RuntimePlanConstructionIssuer;
 pub use seed::{
     RuntimeAgentExprSeed, RuntimeAudioCommandSeed, RuntimeAwaitManyTargetSeed,
-    RuntimeAwaitPendingObserverSeed, RuntimeAwaitTargetSeed, RuntimeCallArgumentSeed,
-    RuntimeCallableExecutableSeed, RuntimeCallableExecutableSeedCode, RuntimeChoiceOptionSeed,
-    RuntimeDialogueContentPlanSeed, RuntimeDialogueContentPlanSeedId, RuntimeDialogueMarkSeedId,
-    RuntimeDialogueValueSiteSeed, RuntimeEffectFieldSeed, RuntimeEvaluatedEffectSeed,
-    RuntimeExprMatchArmSeed, RuntimeExprSeed, RuntimeExprSeedKind, RuntimeFieldProjectionSeed,
-    RuntimeFlowMatchArmSeed, RuntimeFlowOpSeed, RuntimeFlowSeed,
+    RuntimeAwaitPendingObserverSeed, RuntimeAwaitTargetSeed, RuntimeBuiltinIteratorEvidenceSeed,
+    RuntimeCallArgumentSeed, RuntimeCallableExecutableSeed, RuntimeCallableExecutableSeedCode,
+    RuntimeChoiceOptionSeed, RuntimeDialogueContentPlanSeed, RuntimeDialogueContentPlanSeedId,
+    RuntimeDialogueMarkSeedId, RuntimeDialogueValueSiteSeed, RuntimeEffectFieldSeed,
+    RuntimeEvaluatedEffectSeed, RuntimeExprMatchArmSeed, RuntimeExprSeed, RuntimeExprSeedKind,
+    RuntimeFieldProjectionSeed, RuntimeFlowMatchArmSeed, RuntimeFlowOpSeed, RuntimeFlowSeed,
     RuntimeFunctionSiteDeclarationSeed, RuntimeFunctionSiteSeedId, RuntimeHostArgumentSeed,
     RuntimeHostCallTargetSeed, RuntimeHostTaskRequestTemplateSeed, RuntimeIteratorEvidenceSeed,
     RuntimeIteratorWitnessEvidenceSeed, RuntimeIteratorWitnessExecutableSeed,
@@ -26,14 +26,14 @@ pub use seed::{
     RuntimeLocalDeclarationSeed, RuntimeLocalSeedId, RuntimeNominalRecordFieldSeed,
     RuntimePatternRestSeed, RuntimePatternSeed, RuntimePatternSeedKind,
     RuntimePureHelperDeclarationSeed, RuntimePureHelperSeed, RuntimePureHelperSeedId,
-    RuntimeRecordFieldSeedId, RuntimeRecordPatternFieldSeed, RuntimeStreamMatchArmSeed,
-    RuntimeStreamOpSeed, RuntimeStreamPlanSeed, RuntimeTraitMethodDeclarationSeed,
-    RuntimeTraitMethodSeed, RuntimeTraitMethodSeedId,
+    RuntimePureProgramBindingSeed, RuntimeRecordFieldSeedId, RuntimeRecordPatternFieldSeed,
+    RuntimeStreamMatchArmSeed, RuntimeStreamOpSeed, RuntimeStreamPlanSeed,
+    RuntimeTraitMethodDeclarationSeed, RuntimeTraitMethodSeed, RuntimeTraitMethodSeedId,
 };
 
 use crate::entry::{
     RuntimeCallableExecutable, RuntimeCallableExecutableCode, RuntimeFlowExecutable,
-    RuntimeNominalTypeId,
+    RuntimeFlowSchema, RuntimeNominalTypeId,
 };
 use crate::line_task::{
     LineCancelRule, LineTaskCleanup, LineTaskGroup, LineTaskNode, LineTaskTrigger,
@@ -66,7 +66,7 @@ use super::variant_domains::{
 use super::{
     RuntimeDialogueContentPlan, RuntimeDialogueMark, RuntimeDialogueValueRole,
     RuntimeDialogueValueSite, RuntimeEntrySpec, RuntimeFlow, RuntimePlan,
-    RuntimePlanTypeProjection, RuntimePureHelper, RuntimeTraitMethod,
+    RuntimePlanTypeProjection, RuntimePureHelper, RuntimePureProgramBinding, RuntimeTraitMethod,
 };
 
 /// Result identities issued by one atomic semantic graph transaction.
@@ -87,9 +87,11 @@ pub enum RuntimePlanTable {
     DialogueContent,
     Entries,
     CallableExecutables,
+    FlowSchemas,
     FlowExecutables,
     Flows,
     PureHelpers,
+    PurePrograms,
     TraitMethods,
     LineTaskGroups,
     StreamPlans,
@@ -176,6 +178,10 @@ pub enum RuntimePlanBuildError {
     },
     #[error("a construction-only pure-helper handle belongs to another runtime-plan builder")]
     ForeignPureHelperSeed,
+    #[error("runtime pure program {program} is bound more than once")]
+    DuplicatePureProgram {
+        program: arcweft_id::runtime_program::RuntimePureProgramId,
+    },
     #[error("a construction-only trait-method handle belongs to another runtime-plan builder")]
     ForeignTraitMethodSeed,
     #[error("invalid iterator witness signature at {context}")]
@@ -330,9 +336,11 @@ pub enum RuntimePlanBuildError {
     },
     #[error("runtime flow `{flow}` is defined more than once")]
     DuplicateFlowDefinition { flow: String },
-    #[error("runtime flow `{flow}` has more than one executable metadata row")]
-    DuplicateFlowExecutable { flow: String },
-    #[error("runtime flow executable `{flow}` has no matching plan flow")]
+    #[error("runtime flow `{flow}` has more than one invocation schema row")]
+    DuplicateFlowSchema { flow: String },
+    #[error("runtime flow `{flow}` has no invocation schema row")]
+    MissingFlowSchema { flow: String },
+    #[error("runtime flow schema `{flow}` has no matching plan flow")]
     MissingFlowDefinition { flow: String },
     #[error("runtime flow `{flow}` has {actual} local parameters, expected {expected}")]
     FlowParameterCount {
@@ -404,9 +412,11 @@ pub struct RuntimePlanBuilder {
     dialogue_content: RuntimeDialogueContentPlanTableBuilder,
     entries: Vec<RuntimeEntrySpec>,
     callable_executables: Vec<RuntimeCallableExecutable>,
+    flow_schemas: Vec<RuntimeFlowSchema>,
     flow_executables: Vec<RuntimeFlowExecutable>,
     flows: Vec<RuntimeFlow>,
     pure_helpers: Vec<ReservedPureHelper>,
+    pure_programs: Vec<RuntimePureProgramBinding>,
     trait_methods: Vec<ReservedTraitMethod>,
     line_task_groups: Vec<LineTaskGroup>,
     line_task_group_mark_owners: Vec<BTreeSet<RuntimeDialogueContentPlanId>>,
@@ -428,9 +438,11 @@ impl RuntimePlanBuilder {
             dialogue_content: RuntimeDialogueContentPlanTableBuilder::new(),
             entries: Vec::new(),
             callable_executables: Vec::new(),
+            flow_schemas: Vec::new(),
             flow_executables: Vec::new(),
             flows: Vec::new(),
             pure_helpers: Vec::new(),
+            pure_programs: Vec::new(),
             trait_methods: Vec::new(),
             line_task_groups: Vec::new(),
             line_task_group_mark_owners: Vec::new(),
@@ -999,6 +1011,54 @@ impl RuntimePlanBuilder {
         Ok(helper)
     }
 
+    /// Binds one stable domain-owned pure-program identity to a helper
+    /// reserved by this same aggregate construction transaction.
+    pub fn push_pure_program_binding_seed(
+        &mut self,
+        seed: &RuntimePureProgramBindingSeed,
+    ) -> Result<u32, RuntimePlanBuildError> {
+        self.ensure_usable()?;
+        let Some((helper, parameters, result)) = seed.helper.resolve(&self.issuer) else {
+            self.poisoned = true;
+            return Err(RuntimePlanBuildError::ForeignPureHelperSeed);
+        };
+        let input_types = parameters
+            .iter()
+            .map(|ty| {
+                self.types
+                    .get(*ty)
+                    .map(super::RuntimePlanTypeDeclaration::semantic_identity)
+                    .ok_or(RuntimePlanBuildError::InvalidTypeProjection {
+                        context: "pure program input",
+                        ty: *ty,
+                    })
+            })
+            .collect::<Result<Box<[_]>, _>>()?;
+        let result_type = self
+            .types
+            .get(result)
+            .map(super::RuntimePlanTypeDeclaration::semantic_identity)
+            .ok_or(RuntimePlanBuildError::InvalidTypeProjection {
+                context: "pure program result",
+                ty: result,
+            })?;
+        if self
+            .pure_programs
+            .iter()
+            .any(|binding| binding.program() == seed.program)
+        {
+            self.poisoned = true;
+            return Err(RuntimePlanBuildError::DuplicatePureProgram {
+                program: seed.program,
+            });
+        }
+        push_row(
+            &mut self.pure_programs,
+            RuntimePureProgramBinding::new(seed.program, helper, input_types, result_type),
+            RuntimePlanTable::PurePrograms,
+        )
+    }
+
     pub fn reserve_pure_helper_seed(
         &mut self,
         seed: RuntimePureHelperDeclarationSeed,
@@ -1256,6 +1316,13 @@ impl RuntimePlanBuilder {
         )
     }
 
+    pub fn push_flow_schema(
+        &mut self,
+        value: RuntimeFlowSchema,
+    ) -> Result<u32, RuntimePlanBuildError> {
+        push_row(&mut self.flow_schemas, value, RuntimePlanTable::FlowSchemas)
+    }
+
     pub fn push_flow_seed(&mut self, seed: RuntimeFlowSeed) -> Result<u32, RuntimePlanBuildError> {
         self.ensure_usable()?;
         let result = self.try_push_flow_seed(seed);
@@ -1339,11 +1406,11 @@ impl RuntimePlanBuilder {
                 }
             })
             .collect();
-        let type_table = self.types.finish();
+        let type_table = self.types.finish()?;
         let local_declarations = self.locals.finish();
         validate_flow_parameters(
             &self.flows,
-            &self.flow_executables,
+            &self.flow_schemas,
             &local_declarations,
             &type_table,
         )?;
@@ -1356,9 +1423,11 @@ impl RuntimePlanBuilder {
             dialogue_content: self.dialogue_content.finish(),
             entries: self.entries,
             callable_executables: self.callable_executables,
+            flow_schemas: self.flow_schemas,
             flow_executables: self.flow_executables,
             flows: self.flows,
             pure_helpers,
+            pure_programs: self.pure_programs,
             trait_methods,
             line_task_groups: self.line_task_groups,
             stream_plans: self.stream_plans,
@@ -1530,7 +1599,7 @@ fn line_task_node_requests_detach(node: &RuntimeLineTaskNodeSeed) -> bool {
 
 fn validate_flow_parameters(
     flows: &[RuntimeFlow],
-    executables: &[RuntimeFlowExecutable],
+    schemas: &[RuntimeFlowSchema],
     locals: &super::RuntimeLocalDeclarationTable,
     types: &super::RuntimePlanTypeTable,
 ) -> Result<(), RuntimePlanBuildError> {
@@ -1549,24 +1618,22 @@ fn validate_flow_parameters(
                 return Err(RuntimePlanBuildError::UnknownFlowParameter { flow: label, local });
             }
         }
-        let mut matching = executables.iter().filter(|row| row.flow == flow.id);
-        let Some(executable) = matching.next() else {
-            continue;
+        let mut matching = schemas.iter().filter(|row| row.flow == flow.id);
+        let Some(schema) = matching.next() else {
+            return Err(RuntimePlanBuildError::MissingFlowSchema { flow: label });
         };
         if matching.next().is_some() {
-            return Err(RuntimePlanBuildError::DuplicateFlowExecutable { flow: label });
+            return Err(RuntimePlanBuildError::DuplicateFlowSchema { flow: label });
         }
-        if executable.parameters.len() != flow.params.len() {
+        if schema.parameters.len() != flow.params.len() {
             return Err(RuntimePlanBuildError::FlowParameterCount {
                 flow: label,
-                expected: executable.parameters.len(),
+                expected: schema.parameters.len(),
                 actual: flow.params.len(),
             });
         }
         let mut parameter_names = BTreeSet::new();
-        for (index, (parameter, &local)) in
-            executable.parameters.iter().zip(&flow.params).enumerate()
-        {
+        for (index, (parameter, &local)) in schema.parameters.iter().zip(&flow.params).enumerate() {
             if parameter.name.is_empty() {
                 return Err(RuntimePlanBuildError::EmptyFlowParameterName { flow: label, index });
             }
@@ -1576,11 +1643,11 @@ fn validate_flow_parameters(
                     name: parameter.name.clone(),
                 });
             }
-            if usize::try_from(parameter.position).ok() != Some(index) {
+            if parameter.coordinate.index().ok() != Some(index) {
                 return Err(RuntimePlanBuildError::FlowParameterPosition {
                     flow: label,
                     index,
-                    actual: parameter.position,
+                    actual: parameter.coordinate.position(),
                 });
             }
             let local_ty = locals
@@ -1591,17 +1658,10 @@ fn validate_flow_parameters(
                 })?
                 .ty();
             let matches = types.get(local_ty).is_some_and(|declaration| {
-                matches!(
-                    declaration.projection(),
-                    RuntimePlanTypeProjection::ProjectNominal { nominal, layout, .. }
-                        if nominal == &parameter.nominal && layout == &parameter.layout
-                )
+                declaration.semantic_identity() == parameter.semantic_identity
             });
             if !matches {
-                let expected = format!(
-                    "nominal {:?} layout {:?}",
-                    parameter.nominal, parameter.layout
-                );
+                let expected = format!("semantic type {:?}", parameter.semantic_identity);
                 let actual = types.get(local_ty).map_or_else(
                     || "missing type declaration".to_owned(),
                     |declaration| format!("{:?}", declaration.projection()),
@@ -1616,10 +1676,10 @@ fn validate_flow_parameters(
             }
         }
     }
-    for executable in executables {
-        if !flow_ids.contains(&executable.flow) {
+    for schema in schemas {
+        if !flow_ids.contains(&schema.flow) {
             return Err(RuntimePlanBuildError::MissingFlowDefinition {
-                flow: executable.flow.canonical_label(),
+                flow: schema.flow.canonical_label(),
             });
         }
     }

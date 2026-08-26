@@ -1,6 +1,6 @@
 use super::{
-    Engine, FlowFiberStatus, RuntimeDiagnostic, RuntimeDiagnosticCategory, RuntimeStepInput,
-    RuntimeStepOptions, RuntimeStepOutput, RuntimeStepResult, RuntimeStepStats,
+    Engine, FlowFiberStatus, RuntimeStepInput, RuntimeStepOptions, RuntimeStepOutput,
+    RuntimeStepResult, RuntimeStepStats,
 };
 use crate::aot::{AotLinearOp, AotProgram};
 use crate::pure::RuntimeCallBackend;
@@ -9,8 +9,6 @@ impl Engine {
     pub(crate) fn step_prechecked_aot_linear_with_pure_backend(
         &mut self,
         program: &AotProgram,
-        input: &RuntimeStepInput,
-        root_bindings: &[crate::value::RuntimeBinding],
         options: RuntimeStepOptions,
         pure_backend: &mut impl RuntimeCallBackend,
     ) -> (RuntimeStepResult, usize) {
@@ -19,21 +17,6 @@ impl Engine {
         let mut aot_fast_path_ops = 0;
         let pure_stats_before = pure_backend.stats();
         let pending_ops_before = self.fiber.pending_ops.len();
-        if let Err(error) = self.bind_step_inputs(root_bindings, &input.bindings) {
-            output.diagnostics.push(RuntimeDiagnostic::categorized(
-                RuntimeDiagnosticCategory::Input,
-                error.to_string(),
-            ));
-            let stats = RuntimeStepStats {
-                pending_ops_before,
-                pending_ops_after: self.fiber.pending_ops.len(),
-                child_fibers: self.child_fibers.len(),
-                pure: pure_backend.stats().saturating_delta(pure_stats_before),
-                diagnostics: output.diagnostics.len(),
-                ..RuntimeStepStats::default()
-            };
-            return (self.step_result(output, options, stats), 0);
-        }
         let runtime_input = RuntimeStepInput::default();
 
         while executed_ops < options.budget.max_ops && self.can_attempt_runtime_op() {

@@ -11,6 +11,9 @@ use serde::{Deserialize, Serialize};
 use thiserror::Error;
 
 mod codec;
+mod semantic;
+
+pub use semantic::ViewSpecifiedValueSemanticDigest;
 
 /// Normalized ratio/progress value in thousandths.
 #[derive(Clone, Copy, Debug, Default, Eq, Hash, Ord, PartialEq, PartialOrd, Serialize)]

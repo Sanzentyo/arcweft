@@ -26,12 +26,12 @@ use crate::{
         EnvironmentTypeProjectionKind, EnvironmentTypeProjectionNode, EnvironmentTypeSite,
         EnvironmentTypeSiteRoot, EnvironmentTypeSiteStep,
     },
-    types::{GenericTypeOwnerId, GenericTypeParameterId, TypeKind},
+    types::{GenericParameterOwnerId, GenericTypeParameterId, TypeKind},
 };
 
 use super::{
-    CallableEffectSchema, CallableLookupKey, CallableParameter, CallableParameterGroup,
-    CallableParameterType, CallablePublicationError, CallableSignatureSchema,
+    CallableEffectSchema, CallableLookupKey, CallableParameter, CallableParameterAdmission,
+    CallableParameterGroup, CallablePublicationError, CallableSignatureSchema,
     EnvironmentCallablePublication, EnvironmentCallablePublicationRecord, ReceiverMethodKey,
 };
 
@@ -647,6 +647,7 @@ impl AcceptedNominalWorld {
             CallableEffectSchema::fixed(record.schema().effects().clone()),
             record.schema().argument_policy(),
             record.schema().validator().clone(),
+            record.schema().generic_issuer().clone(),
             callable_limits,
         )
         .map_err(CallablePublicationError::from)
@@ -692,16 +693,18 @@ impl AcceptedNominalWorld {
             group: group.index(),
             parameter: parameter.index(),
         };
-        let ty = match parameter.ty() {
-            EnvironmentParameterTypeInput::Exact(ty) => CallableParameterType::Exact(
+        let admission = match parameter.ty() {
+            EnvironmentParameterTypeInput::Exact(ty) => CallableParameterAdmission::checked(
                 self.project_callable_type(ty, record.item(), site.clone(), nominal_limits)?,
             ),
-            EnvironmentParameterTypeInput::Unchecked { .. } => CallableParameterType::Unchecked,
+            EnvironmentParameterTypeInput::Unchecked { .. } => {
+                CallableParameterAdmission::unchecked_supply()
+            }
         };
         CallableParameter::try_new(
             parameter.index(),
             parameter.name().cloned(),
-            ty,
+            admission,
             parameter.passing(),
             parameter.presence(),
             parameter.documentation().map(std::sync::Arc::from),
@@ -1052,7 +1055,7 @@ fn metadata_binder(
         };
         let ordinal = u16::try_from(parameter.index().get()).map_err(|_| error())?;
         let id = GenericTypeParameterId::new(
-            GenericTypeOwnerId::AcceptedNominal(input.id().clone()),
+            GenericParameterOwnerId::AcceptedNominal(input.id().clone()),
             ordinal,
         );
         if by_index.insert(parameter.index(), id.clone()).is_some() {

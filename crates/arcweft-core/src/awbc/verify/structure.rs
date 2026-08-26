@@ -5,16 +5,18 @@
 
 use super::{AwbcVerifyBudget, AwbcVerifyContext, AwbcVerifyError};
 use crate::awbc::schema::{
-    AWBC_ABI_VERSION, AwbcAudioCommandId, AwbcAudioValueRef, AwbcBlockId, AwbcCodeLocation,
-    AwbcConstant, AwbcConstantId, AwbcEffectKind, AwbcEffectPlan, AwbcEffectSetId, AwbcEntryKind,
-    AwbcEntryTarget, AwbcFrameSlotRole, AwbcFunctionId, AwbcFunctionKind, AwbcLineTaskNode,
-    AwbcPattern, AwbcPatternId, AwbcProgram, AwbcRouteBindingSource, AwbcRuntimeType,
+    AWBC_ABI_VERSION, AwbcAgentTypeShape, AwbcAudioCommandId, AwbcAudioValueRef, AwbcBlockId,
+    AwbcCodeLocation, AwbcConstant, AwbcConstantId, AwbcEffectKind, AwbcEffectPlan,
+    AwbcEffectSetId, AwbcEntryKind, AwbcEntryTarget, AwbcFrameSlotRole, AwbcFunctionId,
+    AwbcFunctionKind, AwbcLineTaskNode, AwbcPattern, AwbcPatternId, AwbcProgram, AwbcRoute,
+    AwbcRouteBindingSource, AwbcRouteSegment, AwbcRuntimeType, AwbcRuntimeTypeShape,
     AwbcSignatureId, AwbcStringId, AwbcTableRange, AwbcTraitMethod, AwbcTraitReceiverMode,
     AwbcTypeId, AwbcVariantIdentity,
 };
 use crate::effect::RuntimeAssertionGuardId;
-use crate::entry::{RuntimeCallableRole, RuntimeEntryRoles, RuntimeFlowParameterMode};
+use crate::entry::{RuntimeCallableRole, RuntimeEntryRoles};
 use crate::pattern::RuntimeOpaqueTypeAdmission;
+use std::cmp::Ordering;
 use std::collections::{BTreeMap, BTreeSet};
 
 pub(super) struct Verifier<'program, 'context> {
@@ -97,18 +99,52 @@ fn verify_strings(program: &AwbcProgram) -> Result<(), AwbcVerifyError> {
 
 fn verify_runtime_types(program: &AwbcProgram) -> Result<(), AwbcVerifyError> {
     let mut nominal_records = BTreeMap::new();
+    let mut semantic_identities = BTreeSet::new();
     for (index, ty) in program.runtime_types.iter().enumerate() {
         let at = format!("runtime type {index}");
-        match ty {
-            AwbcRuntimeType::Tuple(items) => {
+        if !semantic_identities.insert(ty.semantic_identity()) {
+            return Err(AwbcVerifyError::InvalidInvariant {
+                at,
+                message: "runtime semantic type identity is duplicated".to_owned(),
+            });
+        }
+        match ty.shape() {
+            AwbcRuntimeTypeShape::Tuple(items) => {
                 for item in items {
                     check_index(program.runtime_types.len(), item.0, "runtime_types", &at)?;
                 }
             }
-            AwbcRuntimeType::Sequence(item) => {
+            AwbcRuntimeTypeShape::Sequence(item)
+            | AwbcRuntimeTypeShape::Range(item)
+            | AwbcRuntimeTypeShape::Iterator(item)
+            | AwbcRuntimeTypeShape::Need(item)
+            | AwbcRuntimeTypeShape::Task(item)
+            | AwbcRuntimeTypeShape::Shared(item)
+            | AwbcRuntimeTypeShape::Reference(item)
+            | AwbcRuntimeTypeShape::Array { item, .. }
+            | AwbcRuntimeTypeShape::Agent(AwbcAgentTypeShape::Probe(item)) => {
                 check_index(program.runtime_types.len(), item.0, "runtime_types", &at)?;
             }
-            AwbcRuntimeType::Record { public_id, fields } => {
+            AwbcRuntimeTypeShape::Map { key, value }
+            | AwbcRuntimeTypeShape::Stream {
+                item: key,
+                error: value,
+            } => {
+                check_index(program.runtime_types.len(), key.0, "runtime_types", &at)?;
+                check_index(program.runtime_types.len(), value.0, "runtime_types", &at)?;
+            }
+            AwbcRuntimeTypeShape::Function { parameters, result } => {
+                for parameter in parameters {
+                    check_index(
+                        program.runtime_types.len(),
+                        parameter.0,
+                        "runtime_types",
+                        &at,
+                    )?;
+                }
+                check_index(program.runtime_types.len(), result.0, "runtime_types", &at)?;
+            }
+            AwbcRuntimeTypeShape::Record { public_id, fields } => {
                 check_optional_string(program, *public_id, &at)?;
                 let mut names = BTreeSet::new();
                 for field in fields {
@@ -127,9 +163,21 @@ fn verify_runtime_types(program: &AwbcProgram) -> Result<(), AwbcVerifyError> {
                     }
                 }
             }
-            AwbcRuntimeType::Variant { owner, cases } => {
+            AwbcRuntimeTypeShape::Variant {
+                owner,
+                arguments,
+                cases,
+            } => {
                 if let AwbcVariantIdentity::Nominal { public_id, .. } = owner {
                     check_string(program, *public_id, &at)?;
+                }
+                for argument in arguments {
+                    check_index(
+                        program.runtime_types.len(),
+                        argument.0,
+                        "runtime_types",
+                        &at,
+                    )?;
                 }
                 let mut names = BTreeSet::new();
                 for case in cases {
@@ -144,9 +192,9 @@ fn verify_runtime_types(program: &AwbcProgram) -> Result<(), AwbcVerifyError> {
                         });
                     }
                 }
-                verify_builtin_variant_schema(program, owner, cases, &at)?;
+                verify_builtin_variant_schema(program, owner, arguments, cases, &at)?;
             }
-            AwbcRuntimeType::Choice(alternatives) => {
+            AwbcRuntimeTypeShape::Choice(alternatives) => {
                 for alternative in alternatives {
                     check_index(
                         program.runtime_types.len(),
@@ -156,17 +204,37 @@ fn verify_runtime_types(program: &AwbcProgram) -> Result<(), AwbcVerifyError> {
                     )?;
                 }
             }
-            AwbcRuntimeType::Nominal { public_id, .. } => {
-                check_string(program, *public_id, &at)?;
-            }
-            AwbcRuntimeType::NominalRecord {
+            AwbcRuntimeTypeShape::Nominal {
                 public_id,
-                semantic_identity,
+                arguments,
+                ..
+            } => {
+                check_string(program, *public_id, &at)?;
+                for argument in arguments {
+                    check_index(
+                        program.runtime_types.len(),
+                        argument.0,
+                        "runtime_types",
+                        &at,
+                    )?;
+                }
+            }
+            AwbcRuntimeTypeShape::NominalRecord {
+                public_id,
                 layout,
+                arguments,
                 fields,
             } => {
                 check_string(program, *public_id, &at)?;
-                let key = (*public_id, *semantic_identity, *layout);
+                for argument in arguments {
+                    check_index(
+                        program.runtime_types.len(),
+                        argument.0,
+                        "runtime_types",
+                        &at,
+                    )?;
+                }
+                let key = (*public_id, ty.semantic_identity(), *layout);
                 if nominal_records.insert(key, index).is_some() {
                     return Err(AwbcVerifyError::InvalidInvariant {
                         at: at.clone(),
@@ -203,7 +271,7 @@ fn verify_runtime_types(program: &AwbcProgram) -> Result<(), AwbcVerifyError> {
                         message: error.to_string(),
                     })?;
             }
-            AwbcRuntimeType::Opaque {
+            AwbcRuntimeTypeShape::Opaque {
                 producer,
                 arguments,
                 ..
@@ -224,27 +292,25 @@ fn verify_runtime_types(program: &AwbcProgram) -> Result<(), AwbcVerifyError> {
                     }
                 })?;
             }
-            AwbcRuntimeType::Unit
-            | AwbcRuntimeType::Bool
-            | AwbcRuntimeType::Int(_)
-            | AwbcRuntimeType::UInt(_)
-            | AwbcRuntimeType::Bytes
-            | AwbcRuntimeType::Never
-            | AwbcRuntimeType::F32
-            | AwbcRuntimeType::F64
-            | AwbcRuntimeType::String
-            | AwbcRuntimeType::Char
-            | AwbcRuntimeType::Duration
-            | AwbcRuntimeType::Progress
-            | AwbcRuntimeType::EntityRef
-            | AwbcRuntimeType::MatrixF32
-            | AwbcRuntimeType::MatrixF64
-            | AwbcRuntimeType::TensorF32
-            | AwbcRuntimeType::TensorF64
-            | AwbcRuntimeType::TaskHandle
-            | AwbcRuntimeType::NeedHandle
-            | AwbcRuntimeType::Agent(_)
-            | AwbcRuntimeType::Dynamic => {}
+            AwbcRuntimeTypeShape::Unit
+            | AwbcRuntimeTypeShape::Bool
+            | AwbcRuntimeTypeShape::Int(_)
+            | AwbcRuntimeTypeShape::UInt(_)
+            | AwbcRuntimeTypeShape::Bytes
+            | AwbcRuntimeTypeShape::Never
+            | AwbcRuntimeTypeShape::F32
+            | AwbcRuntimeTypeShape::F64
+            | AwbcRuntimeTypeShape::String
+            | AwbcRuntimeTypeShape::Char
+            | AwbcRuntimeTypeShape::Duration
+            | AwbcRuntimeTypeShape::Progress
+            | AwbcRuntimeTypeShape::EntityRef
+            | AwbcRuntimeTypeShape::MatrixF32
+            | AwbcRuntimeTypeShape::MatrixF64
+            | AwbcRuntimeTypeShape::TensorF32
+            | AwbcRuntimeTypeShape::TensorF64
+            | AwbcRuntimeTypeShape::Agent(AwbcAgentTypeShape::Leaf(_))
+            | AwbcRuntimeTypeShape::Dynamic => {}
         }
     }
     Ok(())
@@ -289,12 +355,12 @@ fn verify_constants(program: &AwbcProgram) -> Result<(), AwbcVerifyError> {
                 for field in fields {
                     check_index(program.constants.len(), field.0, "constants", &at)?;
                 }
-                match &program.runtime_types[ty.index()] {
-                    AwbcRuntimeType::Record {
+                match program.runtime_types[ty.index()].shape() {
+                    AwbcRuntimeTypeShape::Record {
                         fields: type_fields,
                         ..
                     }
-                    | AwbcRuntimeType::NominalRecord {
+                    | AwbcRuntimeTypeShape::NominalRecord {
                         fields: type_fields,
                         ..
                     } => {
@@ -315,7 +381,7 @@ fn verify_constants(program: &AwbcProgram) -> Result<(), AwbcVerifyError> {
                             }
                         }
                     }
-                    AwbcRuntimeType::Dynamic => {}
+                    AwbcRuntimeTypeShape::Dynamic => {}
                     _ => {
                         return Err(AwbcVerifyError::InvalidInvariant {
                             at,
@@ -335,8 +401,8 @@ fn verify_constants(program: &AwbcProgram) -> Result<(), AwbcVerifyError> {
                 if let Some(payload) = payload {
                     check_index(program.constants.len(), payload.0, "constants", &at)?;
                 }
-                match &program.runtime_types[ty.index()] {
-                    AwbcRuntimeType::Variant { cases, .. } => {
+                match program.runtime_types[ty.index()].shape() {
+                    AwbcRuntimeTypeShape::Variant { cases, .. } => {
                         let Some(case_layout) = cases.get(*case as usize) else {
                             return Err(AwbcVerifyError::IndexOutOfBounds {
                                 table: "variant cases",
@@ -515,6 +581,7 @@ fn verify_constant_graph_from(
 fn verify_builtin_variant_schema(
     program: &AwbcProgram,
     owner: &AwbcVariantIdentity,
+    arguments: &[AwbcTypeId],
     cases: &[crate::awbc::schema::AwbcVariantCase],
     at: &str,
 ) -> Result<(), AwbcVerifyError> {
@@ -527,8 +594,12 @@ fn verify_builtin_variant_schema(
     };
     let valid = match owner {
         AwbcVariantIdentity::Nominal { .. } => true,
-        AwbcVariantIdentity::Option => matches_schema(&[("Some", true), ("None", false)]),
-        AwbcVariantIdentity::Result => matches_schema(&[("Ok", true), ("Err", true)]),
+        AwbcVariantIdentity::Option => {
+            arguments.is_empty() && matches_schema(&[("Some", true), ("None", false)])
+        }
+        AwbcVariantIdentity::Result => {
+            arguments.is_empty() && matches_schema(&[("Ok", true), ("Err", true)])
+        }
     };
     if !valid {
         return Err(AwbcVerifyError::InvalidInvariant {
@@ -892,13 +963,18 @@ fn verify_runtime_tables(verifier: &Verifier<'_, '_>) -> Result<(), AwbcVerifyEr
     let program = verifier.program;
     for (index, intrinsic) in program.intrinsics.iter().enumerate() {
         let at = format!("intrinsic {index}");
-        check_string(program, intrinsic.public_id, &at)?;
         check_index(
             program.signatures.len(),
             intrinsic.signature.0,
             "signatures",
             &at,
         )?;
+        if intrinsic.revision != 1 {
+            return Err(AwbcVerifyError::InvalidInvariant {
+                at,
+                message: "intrinsic revision must remain 1".to_owned(),
+            });
+        }
     }
     for (index, call) in program.host_calls.iter().enumerate() {
         let at = format!("host call {index}");
@@ -1039,6 +1115,62 @@ fn verify_runtime_tables(verifier: &Verifier<'_, '_>) -> Result<(), AwbcVerifyEr
             });
         }
     }
+    let mut pure_programs = std::collections::BTreeSet::new();
+    let semantic_types = program
+        .runtime_types
+        .iter()
+        .map(AwbcRuntimeType::semantic_identity)
+        .collect::<BTreeSet<_>>();
+    for (index, binding) in program.pure_programs.iter().enumerate() {
+        let at = format!("pure program {index}");
+        if !pure_programs.insert(binding.program) {
+            return Err(AwbcVerifyError::InvalidInvariant {
+                at,
+                message: "stable pure-program identity is duplicated".to_owned(),
+            });
+        }
+        check_index(
+            program.pure_helpers.len(),
+            binding.helper.0,
+            "pure_helpers",
+            &at,
+        )?;
+        let helper = &program.pure_helpers[binding.helper.index()];
+        let signature = &program.signatures[helper.signature.index()];
+        if signature.params.len() != binding.input_types.len() || signature.result.is_none() {
+            return Err(AwbcVerifyError::InvalidInvariant {
+                at,
+                message: "pure-program semantic signature does not match helper arity".to_owned(),
+            });
+        }
+        for (parameter, semantic_identity) in
+            signature.params.iter().zip(binding.input_types.iter())
+        {
+            if !semantic_types.contains(semantic_identity)
+                || runtime_semantic_identity(program, *parameter) != Some(*semantic_identity)
+            {
+                return Err(AwbcVerifyError::InvalidInvariant {
+                    at,
+                    message: "pure-program input semantic identity does not match helper type"
+                        .to_owned(),
+                });
+            }
+        }
+        if !semantic_types.contains(&binding.result_type)
+            || runtime_semantic_identity(
+                program,
+                signature
+                    .result
+                    .expect("pure-program helper result checked above"),
+            ) != Some(binding.result_type)
+        {
+            return Err(AwbcVerifyError::InvalidInvariant {
+                at,
+                message: "pure-program result semantic identity does not match helper type"
+                    .to_owned(),
+            });
+        }
+    }
     for (index, method) in program.trait_methods.iter().enumerate() {
         let at = format!("trait method {index}");
         check_string(program, method.public_id, &at)?;
@@ -1060,6 +1192,16 @@ fn verify_runtime_tables(verifier: &Verifier<'_, '_>) -> Result<(), AwbcVerifyEr
         verify_trait_method_receiver(program, index, method)?;
     }
     Ok(())
+}
+
+fn runtime_semantic_identity(
+    program: &AwbcProgram,
+    ty: AwbcTypeId,
+) -> Option<crate::pattern::RuntimeSemanticTypeId> {
+    program
+        .runtime_types
+        .get(ty.index())
+        .map(AwbcRuntimeType::semantic_identity)
 }
 
 fn verify_trait_method_receiver(
@@ -1625,15 +1767,9 @@ fn verify_entries(verifier: &Verifier<'_, '_>) -> Result<(), AwbcVerifyError> {
         if let AwbcEntryKind::Custom(kind) = entry.kind {
             check_string(program, kind, &format!("entry {entry_index}"))?;
         }
-        check_index(
-            program.signatures.len(),
-            entry.signature.0,
-            "signatures",
-            &at,
-        )?;
         match &entry.target {
-            AwbcEntryTarget::Function(function) => {
-                verify_entry_function(program, entry_index, entry.signature, *function)?;
+            AwbcEntryTarget::Function { function } => {
+                verify_entry_function(program, entry_index, *function)?;
             }
             AwbcEntryTarget::Routes(routes) => {
                 if routes.is_empty() {
@@ -1642,30 +1778,83 @@ fn verify_entries(verifier: &Verifier<'_, '_>) -> Result<(), AwbcVerifyError> {
                         message: "route entry must contain at least one route".to_owned(),
                     });
                 }
-                let mut route_ids = BTreeSet::new();
-                for route in routes {
-                    check_string(program, route.method, &format!("entry {entry_index} route"))?;
-                    check_string(program, route.path, &format!("entry {entry_index} route"))?;
-                    if !route_ids.insert((route.method, route.path)) {
+                for (route_index, route) in routes.iter().enumerate() {
+                    let capture_count =
+                        verify_route_segments(program, entry_index, route_index, route)?;
+                    if let Some(previous) = route_index
+                        .checked_sub(1)
+                        .and_then(|index| routes.get(index))
+                        && previous
+                            .method
+                            .cmp(&route.method)
+                            .then_with(|| route_dispatch_cmp(program, previous, route))
+                            != Ordering::Less
+                    {
                         return Err(AwbcVerifyError::InvalidInvariant {
-                            at: format!("entry {entry_index}"),
-                            message: "duplicate route method/path".to_owned(),
+                            at: format!("entry {entry_index} route {route_index}"),
+                            message: "routes are not in canonical method/dispatch order".to_owned(),
                         });
                     }
-                    verify_entry_function(program, entry_index, entry.signature, route.target)?;
+                    if routes[..route_index].iter().any(|previous| {
+                        previous.method == route.method
+                            && route_dispatch_overlaps(program, previous, route)
+                    }) {
+                        return Err(AwbcVerifyError::InvalidInvariant {
+                            at: format!("entry {entry_index} route {route_index}"),
+                            message: "same-method route dispatch patterns overlap".to_owned(),
+                        });
+                    }
+                    verify_entry_function(program, entry_index, route.target)?;
                     let layout = &program.frame_layouts
                         [program.functions[route.target.index()].frame_layout.index()];
-                    for binding in &route.bindings {
-                        if binding.register.index() >= layout.slots.len() {
-                            return Err(AwbcVerifyError::RegisterOutOfBounds {
-                                function: route.target.index(),
-                                block: program.functions[route.target.index()].entry_block.index(),
-                                register: binding.register.0,
+                    let signature = &program.signatures
+                        [program.functions[route.target.index()].signature.index()];
+                    if route.bindings.len() != signature.params.len()
+                        || capture_count != route.bindings.len()
+                    {
+                        return Err(AwbcVerifyError::InvalidInvariant {
+                            at: format!("entry {entry_index}"),
+                            message: "route bindings must cover every target parameter and capture"
+                                .to_owned(),
+                        });
+                    }
+                    let mut captures = BTreeSet::new();
+                    for (index, binding) in route.bindings.iter().enumerate() {
+                        if binding.parameter.index().ok() != Some(index) {
+                            return Err(AwbcVerifyError::InvalidInvariant {
+                                at: format!("entry {entry_index} route {route_index}"),
+                                message: "route parameter coordinates are not complete and ordered"
+                                    .to_owned(),
+                            });
+                        }
+                        let parameter_registers = layout
+                            .slots
+                            .iter()
+                            .filter(|slot| slot.role == AwbcFrameSlotRole::Parameter)
+                            .count();
+                        if parameter_registers != signature.params.len() {
+                            return Err(AwbcVerifyError::InvalidInvariant {
+                                at: format!("entry {entry_index} route {route_index}"),
+                                message: "route target frame parameters differ from its signature"
+                                    .to_owned(),
                             });
                         }
                         match binding.source {
-                            AwbcRouteBindingSource::PathParameter(name) => {
-                                check_string(program, name, &format!("entry {entry_index} route"))?;
+                            AwbcRouteBindingSource::PathCapture(capture) => {
+                                let capture = capture.index().map_err(|_| {
+                                    AwbcVerifyError::InvalidInvariant {
+                                        at: format!("entry {entry_index}"),
+                                        message: "route capture coordinate is invalid".to_owned(),
+                                    }
+                                })?;
+                                if capture >= capture_count || !captures.insert(capture) {
+                                    return Err(AwbcVerifyError::InvalidInvariant {
+                                        at: format!("entry {entry_index}"),
+                                        message:
+                                            "route capture coordinates are not complete and unique"
+                                                .to_owned(),
+                                    });
+                                }
                             }
                         }
                     }
@@ -1772,22 +1961,6 @@ fn verify_entry_runtime_contracts(verifier: &Verifier<'_, '_>) -> Result<(), Awb
                 message: "flow executable metadata differs from the typed Flow binding".to_owned(),
             });
         }
-        let signature = &program.signatures[function.signature.index()];
-        if signature.params.len() != executable.metadata.parameters.len() {
-            return Err(AwbcVerifyError::InvalidInvariant {
-                at,
-                message: "flow executable parameter metadata does not match its signature"
-                    .to_owned(),
-            });
-        }
-        for (position, parameter) in executable.metadata.parameters.iter().enumerate() {
-            if parameter.position as usize != position || parameter.name.is_empty() {
-                return Err(AwbcVerifyError::InvalidInvariant {
-                    at: format!("{at} parameter {position}"),
-                    message: "flow executable parameters must be contiguous and named".to_owned(),
-                });
-            }
-        }
         if let Some(controller) = executable.metadata.controller.as_ref() {
             let Some(callable) = find_callable_executable(program, controller) else {
                 return Err(AwbcVerifyError::InvalidInvariant {
@@ -1809,13 +1982,18 @@ fn verify_entry_runtime_contracts(verifier: &Verifier<'_, '_>) -> Result<(), Awb
     let mut referenced_flows = BTreeSet::new();
     for (entry_index, entry) in program.entries.iter().enumerate() {
         let at = format!("entry {entry_index} runtime contract");
-        if let AwbcEntryTarget::Function(target) = &entry.target {
+        if let AwbcEntryTarget::Function {
+            function: target, ..
+        } = &entry.target
+        {
             check_index(program.functions.len(), target.0, "functions", &at)?;
         }
         match (&entry.kind, &entry.target, &entry.roles) {
             (
                 AwbcEntryKind::Game | AwbcEntryKind::Editor | AwbcEntryKind::Test,
-                AwbcEntryTarget::Function(target),
+                AwbcEntryTarget::Function {
+                    function: target, ..
+                },
                 RuntimeEntryRoles::Stateful(roles),
             ) => {
                 if entry.binding != roles.binding {
@@ -1872,16 +2050,16 @@ fn verify_entry_runtime_contracts(verifier: &Verifier<'_, '_>) -> Result<(), Awb
                         message: "stateful target differs from its bound initial flow".to_owned(),
                     });
                 }
-                let [parameter] = flow.metadata.parameters.as_slice() else {
+                let function = &program.functions[flow.function.index()];
+                let signature = &program.signatures[function.signature.index()];
+                let [parameter] = signature.params.as_slice() else {
                     return Err(AwbcVerifyError::InvalidInvariant {
                         at: at.clone(),
                         message: "stateful initial flow must have exactly one parameter".to_owned(),
                     });
                 };
-                if parameter.mode != RuntimeFlowParameterMode::Owned
-                    || parameter.nominal != roles.state.identity
-                    || parameter.layout != roles.state.layout
-                {
+                let parameter_type = &program.runtime_types[parameter.index()];
+                if parameter_type.semantic_identity() != roles.state.semantic_identity {
                     return Err(AwbcVerifyError::InvalidInvariant {
                         at: at.clone(),
                         message: "initial flow does not receive the selected owned state role"
@@ -1895,7 +2073,9 @@ fn verify_entry_runtime_contracts(verifier: &Verifier<'_, '_>) -> Result<(), Awb
             }
             (
                 AwbcEntryKind::Agent,
-                AwbcEntryTarget::Function(target),
+                AwbcEntryTarget::Function {
+                    function: target, ..
+                },
                 RuntimeEntryRoles::Agent(roles),
             ) => {
                 if entry.binding != roles.binding {
@@ -1940,9 +2120,43 @@ fn verify_entry_runtime_contracts(verifier: &Verifier<'_, '_>) -> Result<(), Awb
                 | AwbcEntryKind::Activity
                 | AwbcEntryKind::Bench
                 | AwbcEntryKind::Custom(_),
-                AwbcEntryTarget::Function(_) | AwbcEntryTarget::Routes(_),
+                AwbcEntryTarget::Function { .. } | AwbcEntryTarget::Routes(_),
                 RuntimeEntryRoles::None,
-            ) => {}
+            ) => {
+                let functions = match &entry.target {
+                    AwbcEntryTarget::Function { function, .. } => std::slice::from_ref(function),
+                    AwbcEntryTarget::Routes(routes) => {
+                        for route in routes {
+                            let Some(flow) = program
+                                .flow_executables
+                                .iter()
+                                .find(|flow| flow.function == route.target)
+                            else {
+                                return Err(AwbcVerifyError::InvalidInvariant {
+                                    at: at.clone(),
+                                    message: "route target has no exact flow executable".to_owned(),
+                                });
+                            };
+                            referenced_flows
+                                .insert((flow.metadata.flow.clone(), flow.metadata.contract));
+                        }
+                        &[]
+                    }
+                };
+                for function in functions {
+                    let Some(flow) = program
+                        .flow_executables
+                        .iter()
+                        .find(|flow| flow.function == *function)
+                    else {
+                        return Err(AwbcVerifyError::InvalidInvariant {
+                            at: at.clone(),
+                            message: "entry target has no exact flow executable".to_owned(),
+                        });
+                    };
+                    referenced_flows.insert((flow.metadata.flow.clone(), flow.metadata.contract));
+                }
+            }
             _ => {
                 return Err(AwbcVerifyError::InvalidInvariant {
                     at,
@@ -2007,10 +2221,83 @@ fn verify_role_schema(
     Ok(())
 }
 
+fn verify_route_segments(
+    program: &AwbcProgram,
+    entry_index: usize,
+    route_index: usize,
+    route: &AwbcRoute,
+) -> Result<usize, AwbcVerifyError> {
+    let at = format!("entry {entry_index} route {route_index}");
+    let mut capture_count = 0usize;
+    for segment in &route.segments {
+        match segment {
+            AwbcRouteSegment::Literal(literal) => {
+                check_string(program, *literal, &at)?;
+                let value = &program.strings[literal.index()];
+                if value.is_empty()
+                    || value.starts_with(':')
+                    || value.contains('/')
+                    || value.chars().any(char::is_control)
+                {
+                    return Err(AwbcVerifyError::InvalidInvariant {
+                        at,
+                        message: "route literal segment is not canonical".to_owned(),
+                    });
+                }
+            }
+            AwbcRouteSegment::Capture(coordinate) => {
+                if coordinate.index().ok() != Some(capture_count) {
+                    return Err(AwbcVerifyError::InvalidInvariant {
+                        at,
+                        message: "route capture coordinates are not complete and ordered"
+                            .to_owned(),
+                    });
+                }
+                capture_count += 1;
+            }
+        }
+    }
+    Ok(capture_count)
+}
+
+fn route_dispatch_overlaps(program: &AwbcProgram, left: &AwbcRoute, right: &AwbcRoute) -> bool {
+    left.segments.len() == right.segments.len()
+        && left
+            .segments
+            .iter()
+            .zip(right.segments.iter())
+            .all(|(left, right)| match (left, right) {
+                (AwbcRouteSegment::Literal(left), AwbcRouteSegment::Literal(right)) => {
+                    program.strings[left.index()] == program.strings[right.index()]
+                }
+                (
+                    AwbcRouteSegment::Literal(_) | AwbcRouteSegment::Capture(_),
+                    AwbcRouteSegment::Capture(_),
+                )
+                | (AwbcRouteSegment::Capture(_), AwbcRouteSegment::Literal(_)) => true,
+            })
+}
+
+fn route_dispatch_cmp(program: &AwbcProgram, left: &AwbcRoute, right: &AwbcRoute) -> Ordering {
+    for (left, right) in left.segments.iter().zip(right.segments.iter()) {
+        let ordering = match (left, right) {
+            (AwbcRouteSegment::Literal(left), AwbcRouteSegment::Literal(right)) => {
+                program.strings[left.index()].cmp(&program.strings[right.index()])
+            }
+            (AwbcRouteSegment::Literal(_), AwbcRouteSegment::Capture(_)) => Ordering::Less,
+            (AwbcRouteSegment::Capture(_), AwbcRouteSegment::Literal(_)) => Ordering::Greater,
+            (AwbcRouteSegment::Capture(_), AwbcRouteSegment::Capture(_)) => Ordering::Equal,
+        };
+        if ordering != Ordering::Equal {
+            return ordering;
+        }
+    }
+    left.segments.len().cmp(&right.segments.len())
+}
+
 fn verify_entry_function(
     program: &AwbcProgram,
     entry_index: usize,
-    signature: AwbcSignatureId,
     function: AwbcFunctionId,
 ) -> Result<(), AwbcVerifyError> {
     check_index(
@@ -2019,12 +2306,6 @@ fn verify_entry_function(
         "functions",
         &format!("entry {entry_index}"),
     )?;
-    if program.functions[function.index()].signature != signature {
-        return Err(AwbcVerifyError::EntrypointSignatureMismatch {
-            entry: entry_index,
-            function: function.0,
-        });
-    }
     if program.flow_identity(function).is_none() {
         return Err(AwbcVerifyError::InvalidInvariant {
             at: format!("entry {entry_index}"),
@@ -2226,14 +2507,16 @@ fn types_compatible_inner(
     if expected == actual {
         return true;
     }
-    let Some(expected_type) = program.runtime_types.get(expected.index()) else {
+    let Some(expected_row) = program.runtime_types.get(expected.index()) else {
         return false;
     };
-    let Some(actual_type) = program.runtime_types.get(actual.index()) else {
+    let Some(actual_row) = program.runtime_types.get(actual.index()) else {
         return false;
     };
-    if matches!(expected_type, AwbcRuntimeType::Dynamic)
-        || matches!(actual_type, AwbcRuntimeType::Dynamic)
+    let expected_type = expected_row.shape();
+    let actual_type = actual_row.shape();
+    if matches!(expected_type, AwbcRuntimeTypeShape::Dynamic)
+        || matches!(actual_type, AwbcRuntimeTypeShape::Dynamic)
     {
         return true;
     }
@@ -2242,24 +2525,19 @@ fn types_compatible_inner(
     }
     let compatible = match (expected_type, actual_type) {
         (
-            AwbcRuntimeType::Opaque {
+            AwbcRuntimeTypeShape::Opaque {
                 arguments: expected_arguments,
                 ..
             },
-            AwbcRuntimeType::Opaque {
+            AwbcRuntimeTypeShape::Opaque {
                 arguments: actual_arguments,
                 ..
             },
-        ) => expected_type
+        ) => expected_row
             .try_opaque_owner(&program.strings)
             .ok()
             .flatten()
-            .zip(
-                actual_type
-                    .try_opaque_owner(&program.strings)
-                    .ok()
-                    .flatten(),
-            )
+            .zip(actual_row.try_opaque_owner(&program.strings).ok().flatten())
             .is_some_and(|(expected, actual)| {
                 expected.accepts_owner(&actual)
                     && expected_arguments.len() == actual_arguments.len()
@@ -2270,47 +2548,17 @@ fn types_compatible_inner(
                             types_compatible_inner(program, *expected, *actual, visiting)
                         })
             }),
-        (
-            AwbcRuntimeType::Nominal {
-                public_id: expected_public,
-                semantic_identity: expected_semantic,
-                layout: expected_layout,
-            },
-            AwbcRuntimeType::NominalRecord {
-                public_id: actual_public,
-                semantic_identity: actual_semantic,
-                layout: actual_layout,
-                ..
-            },
-        )
-        | (
-            AwbcRuntimeType::NominalRecord {
-                public_id: expected_public,
-                semantic_identity: expected_semantic,
-                layout: expected_layout,
-                ..
-            },
-            AwbcRuntimeType::Nominal {
-                public_id: actual_public,
-                semantic_identity: actual_semantic,
-                layout: actual_layout,
-            },
-        ) => {
-            expected_public == actual_public
-                && expected_semantic == actual_semantic
-                && expected_layout == actual_layout
-        }
-        (AwbcRuntimeType::Choice(expected), AwbcRuntimeType::Choice(actual)) => {
+        (AwbcRuntimeTypeShape::Choice(expected), AwbcRuntimeTypeShape::Choice(actual)) => {
             actual.iter().all(|actual| {
                 expected
                     .iter()
                     .any(|expected| types_compatible_inner(program, *expected, *actual, visiting))
             })
         }
-        (AwbcRuntimeType::Choice(expected), _) => expected
+        (AwbcRuntimeTypeShape::Choice(expected), _) => expected
             .iter()
             .any(|expected| types_compatible_inner(program, *expected, actual, visiting)),
-        (_, AwbcRuntimeType::Choice(actual)) => actual
+        (_, AwbcRuntimeTypeShape::Choice(actual)) => actual
             .iter()
             .all(|actual| types_compatible_inner(program, expected, *actual, visiting)),
         _ => false,

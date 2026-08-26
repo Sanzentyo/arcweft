@@ -4,9 +4,8 @@ use super::parse::step_options;
 use crate::output::RuntimeStepRunSummary;
 use arcweft_compiler::runtime_diagnostics::ExecutionDiagnosticContext;
 use arcweft_core::engine::FlowFiberStatus;
-use arcweft_core::plan::{EntryRuntimeId, RuntimePlan};
+use arcweft_core::plan::{EntryRuntimeId, RuntimeFlowInvocation, RuntimePlan};
 use arcweft_core::step::RuntimeStepInput;
-use arcweft_core::value::RuntimeBinding;
 use arcweft_host_adapter::HostCallPolicy;
 use arcweft_runtime_accelerator::RuntimePureAcceleratorConfig;
 use arcweft_runtime_host::{
@@ -22,7 +21,6 @@ pub(in crate::app) fn run_runtime_steps(
     entry: &EntryRuntimeId,
     host_config: NativeRunHost<'_>,
     config: RuntimeStepRunConfig,
-    values: &[RuntimeBinding],
     execution_diagnostics: &ExecutionDiagnosticContext,
 ) -> Result<RuntimeRunTrace, ExitCode> {
     let mut executor =
@@ -41,7 +39,31 @@ pub(in crate::app) fn run_runtime_steps(
         config.steps,
         config.mode,
         config.max_ops,
-        values,
+        execution_diagnostics,
+    )
+}
+
+pub(in crate::app) fn run_runtime_flow_steps(
+    invocation: RuntimeFlowInvocation,
+    host_config: NativeRunHost<'_>,
+    config: RuntimeStepRunConfig,
+    execution_diagnostics: &ExecutionDiagnosticContext,
+) -> Result<RuntimeRunTrace, ExitCode> {
+    let mut executor = RuntimeExecutorInstance::from_flow_invocation(
+        invocation,
+        config.executor,
+        config.pure_config,
+    )
+    .map_err(|error| {
+        eprintln!("error: failed to start explicit Flow invocation: {error}");
+        ExitCode::FAILURE
+    })?;
+    run_runtime_steps_with_executor(
+        &mut executor,
+        host_config,
+        config.steps,
+        config.mode,
+        config.max_ops,
         execution_diagnostics,
     )
 }
@@ -52,7 +74,6 @@ pub(in crate::app) fn run_runtime_steps_with_executor(
     steps: usize,
     mode: CliRuntimeStepMode,
     max_ops: usize,
-    values: &[RuntimeBinding],
     execution_diagnostics: &ExecutionDiagnosticContext,
 ) -> Result<RuntimeRunTrace, ExitCode> {
     try_run_runtime_steps_with_executor(
@@ -61,7 +82,6 @@ pub(in crate::app) fn run_runtime_steps_with_executor(
         steps,
         mode,
         max_ops,
-        values,
         execution_diagnostics,
     )
     .map_err(|error| {
@@ -76,7 +96,6 @@ fn try_run_runtime_steps_with_executor(
     steps: usize,
     mode: CliRuntimeStepMode,
     max_ops: usize,
-    values: &[RuntimeBinding],
     execution_diagnostics: &ExecutionDiagnosticContext,
 ) -> Result<RuntimeRunTrace, RuntimeStepRunError> {
     let mut host = host_config
@@ -85,28 +104,36 @@ fn try_run_runtime_steps_with_executor(
             NativeTaskBridge::try_new(
                 source.path,
                 source.file_roots.clone(),
+                host_config.cli_args,
                 host_config.policy.clone(),
                 host_config.adapter_registrars,
             )
         })
         .transpose()?;
     let mut task_events = Vec::new();
+    let mut host_call_results = Vec::new();
     let mut summaries = Vec::new();
     for step_index in 0..steps {
-        let result = executor.step_with_root_bindings(
+        if let Some(host) = host.as_mut() {
+            host.pump_main_thread()?;
+            task_events.extend(host.poll_completions());
+            host_call_results.extend(host.take_host_call_results());
+        }
+        let result = executor.step(
             RuntimeStepInput {
                 task_events: std::mem::take(&mut task_events),
+                host_call_results: std::mem::take(&mut host_call_results),
                 ..RuntimeStepInput::default()
             },
-            values,
             step_options(mode, max_ops),
         );
-        let (summary, task_requests) = RuntimeStepRunSummary::from_result_and_task_requests(
-            step_index,
-            result,
-            executor.fiber(),
-            execution_diagnostics,
-        )?;
+        let (summary, task_requests, host_call_requests) =
+            RuntimeStepRunSummary::from_result_and_task_requests(
+                step_index,
+                result,
+                executor.fiber(),
+                execution_diagnostics,
+            )?;
         let done = matches!(
             executor.fiber().status,
             FlowFiberStatus::Done(_) | FlowFiberStatus::Failed(_)
@@ -117,6 +144,7 @@ fn try_run_runtime_steps_with_executor(
         }
         if let Some(host) = host.as_mut() {
             task_events = host.complete_tasks(task_requests);
+            host_call_results = host.complete_host_calls(host_call_requests);
         }
     }
     Ok(RuntimeRunTrace {
@@ -149,6 +177,7 @@ pub(in crate::app) struct NativeRunHost<'a> {
     pub(in crate::app) source: Option<NativeRunSource<'a>>,
     pub(in crate::app) policy: &'a HostCallPolicy,
     pub(in crate::app) adapter_registrars: &'a [NativeAdapterRegistrar],
+    pub(in crate::app) cli_args: &'a [String],
 }
 
 #[derive(Clone, Copy)]

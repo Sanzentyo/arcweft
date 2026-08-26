@@ -1,22 +1,26 @@
 //! Generation-bound checked semantic fact model.
 
-use super::match_edges::CheckedExpressionChildRole;
 use super::match_edges::NestedPathEvidence;
 use super::{
     AssertionRuntimePolicy, CallableDeclarationKey, CharacterDialogueCharacterType,
     CharacterDialogueType, CharacterId, CharacterNominalType, CheckedRichTextReport,
     DeclarationIdentityFamily, DialogueLineId, DialogueTextKey, EffectSet, EnvironmentBindingId,
-    ExprId, GenericTypeOwnerId, GenericTypeParameterId, HirFlowIdentity, HirItemFamily, HirLiteral,
-    HirName, HirSnapshotId, ItemId, LocalId, PatternId, ProjectNominalDeclaration,
+    ExprId, GenericParameterOwnerId, GenericTypeParameterId, HirFlowIdentity, HirItemFamily,
+    HirLiteral, HirSnapshotId, ItemId, LocalId, PatternId, ProjectNominalDeclaration,
     ProjectNominalDeclarationId, PublicId, SemanticTypeDigest, TypeKind,
     TypeParameterSubstitutions,
 };
-use crate::callable::{CallableEvaluatedEffect, CallableLogLevel, CharacterDialoguePatchContext};
-use crate::types::CharacterField;
-use arcweft_core::value::RuntimeAgentField;
-use arcweft_interaction_model::dialogue::CharacterDialogueCustomFieldId;
+use crate::callable::{
+    CallableEvaluatedEffect, CallableLogLevel, CallableReceiverMode, CharacterDialoguePatchContext,
+    CheckedCallableJoin, CheckedCallableJoinDigest,
+};
+pub use crate::character_dialogue::CharacterDialogueFieldCoordinate;
+use crate::types::{CharacterField, EntityKind};
+use arcweft_core::{entry::TypeLayoutHash, value::RuntimeAgentField};
 use arcweft_lang_hir::expr::HirCallArgument;
-use arcweft_lang_hir::symbol::{ExternalDeclarationId, ImplMethodDeclarationId};
+use arcweft_lang_hir::symbol::{
+    CallableDeclarationDigest, ExternalDeclarationId, ImplMethodDeclarationId,
+};
 use arcweft_source::SourceSpan;
 
 #[derive(Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
@@ -88,17 +92,31 @@ pub enum CheckedProjectItemOwner {
     External(ExternalDeclarationId),
 }
 
+const PROJECT_ITEM_SEMANTIC_DOMAIN: &[u8] = b"arcweft.lang.accepted-project-item.v1\0";
+
+/// Canonical semantic identity of one accepted project item value.
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub(crate) struct AcceptedProjectItemSemanticId([u8; 32]);
+
+impl AcceptedProjectItemSemanticId {
+    pub(crate) const fn as_bytes(&self) -> &[u8; 32] {
+        &self.0
+    }
+}
+
 /// Exact project declaration selected by an entity-reference leaf.
 ///
-/// The public ID is the stable publication projection. The closed owner is the
-/// semantic identity: in particular, structural Flow owners retain their exact
-/// module-preserving declaration key even when two modules derive the same
-/// public spelling. Character facts also retain the validated [`CharacterId`]
-/// selected by registration, so consumers never reconstruct it from source
-/// text or fabricate an [`ItemId`].
+/// `semantic_id` is the final checked identity. Public spelling and raw owners
+/// remain lookup/diagnostic evidence only. Structural Flow identity binds its
+/// accepted module-preserving declaration digest, while other entity families
+/// bind their accepted public identity. Character facts also retain the
+/// validated [`CharacterId`] selected by registration, so consumers never
+/// reconstruct it from source text or fabricate an [`ItemId`].
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct CheckedProjectItem {
-    public_id: PublicId,
+    semantic_id: AcceptedProjectItemSemanticId,
+    value_type: SemanticTypeDigest,
+    diagnostic_public_id: PublicId,
     family: DeclarationIdentityFamily,
     owner: CheckedProjectItemOwner,
     character: Option<CharacterId>,
@@ -110,9 +128,18 @@ impl CheckedProjectItem {
         let CallableDeclarationKey::Flow(flow) = &declaration else {
             return None;
         };
+        let family = DeclarationIdentityFamily::Flow;
+        let value_type = project_item_type(family, None).semantic_identity_digest();
+        let semantic_id = accepted_project_item_semantic_id(
+            family,
+            value_type,
+            ProjectItemSemanticOwner::Flow(declaration.semantic_digest()),
+        );
         Some(Self {
-            public_id: flow.public_id().clone(),
-            family: DeclarationIdentityFamily::Flow,
+            semantic_id,
+            value_type,
+            diagnostic_public_id: flow.public_id().clone(),
+            family,
             owner: CheckedProjectItemOwner::Flow { declaration, item },
             character: None,
             value: None,
@@ -132,8 +159,16 @@ impl CheckedProjectItem {
         if family == DeclarationIdentityFamily::Character && character.is_none() {
             return None;
         }
+        let value_type = project_item_type(family, value.as_ref()).semantic_identity_digest();
+        let semantic_id = accepted_project_item_semantic_id(
+            family,
+            value_type,
+            ProjectItemSemanticOwner::Entity(&public_id),
+        );
         Some(Self {
-            public_id,
+            semantic_id,
+            value_type,
+            diagnostic_public_id: public_id,
             family,
             owner: CheckedProjectItemOwner::Retained(owner),
             character,
@@ -145,9 +180,18 @@ impl CheckedProjectItem {
         declaration: ExternalDeclarationId,
         character: CharacterId,
     ) -> Self {
+        let family = DeclarationIdentityFamily::Character;
+        let public_id = character.as_public_id();
+        let value_type = project_item_type(family, None).semantic_identity_digest();
         Self {
-            public_id: character.as_public_id(),
-            family: DeclarationIdentityFamily::Character,
+            semantic_id: accepted_project_item_semantic_id(
+                family,
+                value_type,
+                ProjectItemSemanticOwner::Entity(&public_id),
+            ),
+            value_type,
+            diagnostic_public_id: public_id,
+            family,
             owner: CheckedProjectItemOwner::External(declaration),
             character: Some(character),
             value: None,
@@ -155,7 +199,31 @@ impl CheckedProjectItem {
     }
 
     pub const fn public_id(&self) -> &PublicId {
-        &self.public_id
+        &self.diagnostic_public_id
+    }
+
+    pub(crate) const fn semantic_id(&self) -> AcceptedProjectItemSemanticId {
+        self.semantic_id
+    }
+
+    pub const fn value_type(&self) -> SemanticTypeDigest {
+        self.value_type
+    }
+
+    pub(crate) fn has_valid_semantic_identity(&self) -> bool {
+        let expected_owner = match &self.owner {
+            CheckedProjectItemOwner::Flow { declaration, .. } => {
+                ProjectItemSemanticOwner::Flow(declaration.semantic_digest())
+            }
+            CheckedProjectItemOwner::Retained(_) | CheckedProjectItemOwner::External(_) => {
+                ProjectItemSemanticOwner::Entity(&self.diagnostic_public_id)
+            }
+        };
+        let expected =
+            accepted_project_item_semantic_id(self.family, self.value_type, expected_owner);
+        expected.as_bytes() == self.semantic_id().as_bytes()
+            && project_item_type(self.family, self.value.as_ref()).semantic_identity_digest()
+                == self.value_type
     }
 
     pub const fn family(&self) -> DeclarationIdentityFamily {
@@ -199,9 +267,72 @@ impl CheckedProjectItem {
     /// Panics only if the internal checked-item family invariant is broken.
     /// Construction admits entity-reference declaration families exclusively.
     pub fn ty(&self) -> TypeKind {
-        let kind = crate::types::EntityKind::from_declaration_identity_family(self.family)
-            .expect("checked project items only retain entity-reference families");
-        TypeKind::Ref(crate::types::EntityType::new(kind, self.value.clone()))
+        let ty = project_item_type(self.family, self.value.as_ref());
+        debug_assert_eq!(ty.semantic_identity_digest(), self.value_type);
+        ty
+    }
+
+    pub(crate) fn visit_types<E>(
+        &self,
+        visitor: &mut impl FnMut(&TypeKind) -> Result<(), E>,
+    ) -> Result<(), E> {
+        visitor(&self.ty())
+    }
+}
+
+enum ProjectItemSemanticOwner<'a> {
+    Entity(&'a PublicId),
+    Flow(CallableDeclarationDigest),
+}
+
+fn project_item_type(family: DeclarationIdentityFamily, value: Option<&TypeKind>) -> TypeKind {
+    let kind = crate::types::EntityKind::from_declaration_identity_family(family)
+        .expect("checked project items only retain entity-reference families");
+    TypeKind::Ref(crate::types::EntityType::new(kind, value.cloned()))
+}
+
+fn accepted_project_item_semantic_id(
+    family: DeclarationIdentityFamily,
+    value_type: SemanticTypeDigest,
+    owner: ProjectItemSemanticOwner<'_>,
+) -> AcceptedProjectItemSemanticId {
+    let mut hasher = blake3::Hasher::new();
+    hasher.update(PROJECT_ITEM_SEMANTIC_DOMAIN);
+    match owner {
+        ProjectItemSemanticOwner::Entity(public_id) => {
+            hasher.update(&[0]);
+            hasher.update(&[project_item_family_tag(family)]);
+            hasher.update(value_type.as_bytes());
+            hasher.update(
+                &u64::try_from(public_id.as_str().len())
+                    .expect("PublicId length fits canonical u64")
+                    .to_le_bytes(),
+            );
+            hasher.update(public_id.as_str().as_bytes());
+        }
+        ProjectItemSemanticOwner::Flow(declaration) => {
+            hasher.update(&[1]);
+            hasher.update(&[project_item_family_tag(family)]);
+            hasher.update(value_type.as_bytes());
+            hasher.update(declaration.as_bytes());
+        }
+    }
+    AcceptedProjectItemSemanticId(hasher.finalize().into())
+}
+
+const fn project_item_family_tag(family: DeclarationIdentityFamily) -> u8 {
+    match family {
+        DeclarationIdentityFamily::Asset => 0,
+        DeclarationIdentityFamily::Character => 1,
+        DeclarationIdentityFamily::View => 2,
+        DeclarationIdentityFamily::Action => 3,
+        DeclarationIdentityFamily::Activity => 4,
+        DeclarationIdentityFamily::Signal => 5,
+        DeclarationIdentityFamily::Metric => 6,
+        DeclarationIdentityFamily::Layer => 7,
+        DeclarationIdentityFamily::Flow => 8,
+        DeclarationIdentityFamily::Proof => 9,
+        DeclarationIdentityFamily::Style => 10,
     }
 }
 
@@ -213,25 +344,55 @@ impl CheckedProjectItem {
 /// a retained symbol or reparsing source text.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct CheckedEntryReference {
-    public_id: PublicId,
-    owner: ItemId,
+    binding: crate::entry::CheckedEntryBindingDigest,
+    value_type: SemanticTypeDigest,
+    diagnostic_public_id: PublicId,
+    lookup_owner: ItemId,
 }
 
 impl CheckedEntryReference {
-    pub(crate) const fn new(public_id: PublicId, owner: ItemId) -> Self {
-        Self { public_id, owner }
+    pub(crate) fn seal(
+        prepared: super::PreparedEntryReference,
+        value_type: SemanticTypeDigest,
+        binding: &crate::entry::CheckedEntryBinding,
+    ) -> Option<Self> {
+        let (diagnostic_public_id, lookup_owner) = prepared.into_parts();
+        let expected_value_type =
+            TypeKind::entity_ref(crate::types::EntityKind::Entry).semantic_identity_digest();
+        if binding.id().public_id() != &diagnostic_public_id
+            || binding.source_item() != lookup_owner
+            || value_type != expected_value_type
+        {
+            return None;
+        }
+        Some(Self {
+            binding: *binding.binding_digest(),
+            value_type,
+            diagnostic_public_id,
+            lookup_owner,
+        })
     }
 
-    pub const fn public_id(&self) -> &PublicId {
-        &self.public_id
+    pub const fn binding(&self) -> &crate::entry::CheckedEntryBindingDigest {
+        &self.binding
     }
 
-    pub const fn owner(&self) -> ItemId {
-        self.owner
+    pub const fn value_type(&self) -> SemanticTypeDigest {
+        self.value_type
+    }
+
+    pub const fn diagnostic_public_id(&self) -> &PublicId {
+        &self.diagnostic_public_id
+    }
+
+    pub const fn lookup_owner(&self) -> ItemId {
+        self.lookup_owner
     }
 
     pub fn ty(&self) -> TypeKind {
-        TypeKind::entity_ref(crate::types::EntityKind::Entry)
+        let ty = TypeKind::entity_ref(crate::types::EntityKind::Entry);
+        debug_assert_eq!(ty.semantic_identity_digest(), self.value_type);
+        ty
     }
 }
 
@@ -275,6 +436,20 @@ impl CheckedProjectNominal {
         &self.arguments
     }
 
+    pub(crate) fn ty(&self) -> TypeKind {
+        TypeKind::ProjectNominal(crate::types::ProjectNominalType::new(
+            self.declaration.clone(),
+            self.arguments.to_vec(),
+        ))
+    }
+
+    pub(crate) fn visit_types<E>(
+        &self,
+        visitor: &mut impl FnMut(&TypeKind) -> Result<(), E>,
+    ) -> Result<(), E> {
+        visitor(&self.ty())
+    }
+
     /// Applies this checked nominal instantiation to a declaration-owned type.
     pub fn instantiate_declaration_type(
         &self,
@@ -289,7 +464,7 @@ impl CheckedProjectNominal {
         let mut substitutions = TypeParameterSubstitutions::default();
         for (parameter, argument) in declaration.type_parameters().iter().zip(self.arguments()) {
             let parameter = TypeKind::GenericParam(GenericTypeParameterId::new(
-                GenericTypeOwnerId::Nominal(declaration.id().clone()),
+                GenericParameterOwnerId::Nominal(declaration.id().clone()),
                 parameter.ordinal(),
             ));
             if !substitutions.observe(&parameter, argument) {
@@ -333,24 +508,110 @@ impl CheckedValueResolution {
             | Self::Constant(_) => None,
         }
     }
+
+    pub(crate) fn visit_types<E>(
+        &self,
+        visitor: &mut impl FnMut(&TypeKind) -> Result<(), E>,
+    ) -> Result<(), E> {
+        match self {
+            Self::CharacterField { receiver, .. } => receiver.visit_types(visitor),
+            Self::ProjectItem(item) => item.visit_types(visitor),
+            Self::Local(_)
+            | Self::LineContext
+            | Self::ProjectCallable(_)
+            | Self::Entry(_)
+            | Self::Registered(_)
+            | Self::Constant(_) => Ok(()),
+        }
+    }
+}
+
+/// Checked projection selected for one member expression.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct CheckedMethodSelection {
+    callable: CheckedCallableJoinDigest,
+    receiver_type: SemanticTypeDigest,
+    receiver_mode: CallableReceiverMode,
+}
+
+impl CheckedMethodSelection {
+    pub(crate) fn try_from_join(join: &CheckedCallableJoin) -> Option<Self> {
+        let receiver_mode = join.receiver().clone();
+        let receiver = match &receiver_mode {
+            CallableReceiverMode::None => return None,
+            CallableReceiverMode::Value { receiver }
+            | CallableReceiverMode::Type { receiver }
+            | CallableReceiverMode::Extension { receiver, .. } => receiver,
+        };
+        Some(Self {
+            callable: join.semantic_digest(),
+            receiver_type: receiver.semantic_identity_digest(),
+            receiver_mode,
+        })
+    }
+
+    pub const fn callable(&self) -> CheckedCallableJoinDigest {
+        self.callable
+    }
+
+    pub const fn receiver_type(&self) -> SemanticTypeDigest {
+        self.receiver_type
+    }
+
+    pub const fn receiver_mode(&self) -> &CallableReceiverMode {
+        &self.receiver_mode
+    }
+
+    pub(crate) fn has_valid_receiver_identity(&self) -> bool {
+        let receiver = match &self.receiver_mode {
+            CallableReceiverMode::None => return false,
+            CallableReceiverMode::Value { receiver }
+            | CallableReceiverMode::Type { receiver }
+            | CallableReceiverMode::Extension { receiver, .. } => receiver,
+        };
+        receiver.semantic_identity_digest() == self.receiver_type
+    }
+
+    pub(crate) fn visit_types<E>(
+        &self,
+        visitor: &mut impl FnMut(&TypeKind) -> Result<(), E>,
+    ) -> Result<(), E> {
+        match &self.receiver_mode {
+            CallableReceiverMode::None => Ok(()),
+            CallableReceiverMode::Value { receiver }
+            | CallableReceiverMode::Type { receiver }
+            | CallableReceiverMode::Extension { receiver, .. } => visitor(receiver),
+        }
+    }
+}
+
+impl CheckedSelectResolution {
+    pub(crate) fn visit_types<E>(
+        &self,
+        visitor: &mut impl FnMut(&TypeKind) -> Result<(), E>,
+    ) -> Result<(), E> {
+        match self {
+            Self::Method(method) => method.visit_types(visitor),
+            Self::DialogueView { .. }
+            | Self::AgentField { .. }
+            | Self::ProgressField { .. }
+            | Self::Field(_) => Ok(()),
+        }
+    }
 }
 
 /// Checked projection selected for one member expression.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum CheckedSelectResolution {
-    /// Method selected through an arbitrary value expression. The enclosing
-    /// checked Call owns the exact callable identity; this fact retains the
-    /// bound-method shape of its final-HIR callee expression.
-    Method {
-        name: HirName,
-    },
+    /// Exact Method selected through the once-composed enclosing call join.
+    Method(CheckedMethodSelection),
     /// Runtime-supplied field of a nominal record carrying the semantic
     /// `#[dialogue_view]` role. The projection identity is selected by the
     /// environment registry, never reconstructed from its field spelling by
     /// compiler or runtime consumers.
     DialogueView {
         projection: crate::dialogue_view::DialogueProjectionCoordinate,
-        name: HirName,
+        field: CheckedFieldSelection,
     },
     /// Closed Agent protocol record coordinate selected during type checking.
     AgentField {
@@ -360,75 +621,302 @@ pub enum CheckedSelectResolution {
     ProgressField {
         field: crate::types::ProgressField,
     },
-    Field {
-        nominal: Option<CheckedProjectNominal>,
-        ordinal: Option<u32>,
-        name: HirName,
-    },
-    TupleElement {
-        ordinal: u32,
-    },
-    RecordElement {
-        nominal: Option<CheckedProjectNominal>,
-        ordinal: u32,
-        name: HirName,
-    },
+    Field(CheckedFieldSelection),
 }
 
-/// Exact semantic owner selected for one enum case.
+const VARIANT_CASE_SEMANTIC_DOMAIN: &[u8] = b"arcweft.lang.accepted-variant-case.v1\0";
+
+/// Canonical semantic identity of one accepted closed variant case.
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub(crate) struct AcceptedVariantCaseSemanticId([u8; 32]);
+
+impl AcceptedVariantCaseSemanticId {
+    pub(crate) const fn as_bytes(&self) -> &[u8; 32] {
+        &self.0
+    }
+}
+
+/// One declaration-ordered case retained by its complete checked owner.
 #[derive(Clone, Debug, Eq, PartialEq)]
-pub struct CheckedBuiltinVariantCase {
-    name: String,
+pub struct CheckedVariantCase {
+    ordinal: u32,
+    semantic_id: AcceptedVariantCaseSemanticId,
     payload: Option<TypeKind>,
+    diagnostic_name: Option<String>,
 }
 
-impl CheckedBuiltinVariantCase {
-    pub fn new(name: impl Into<String>, payload: Option<TypeKind>) -> Self {
-        Self {
-            name: name.into(),
-            payload,
-        }
+impl CheckedVariantCase {
+    pub const fn ordinal(&self) -> u32 {
+        self.ordinal
     }
 
-    pub fn name(&self) -> &str {
-        &self.name
+    pub(crate) const fn semantic_id(&self) -> AcceptedVariantCaseSemanticId {
+        self.semantic_id
     }
 
     pub const fn payload(&self) -> Option<&TypeKind> {
         self.payload.as_ref()
+    }
+
+    pub fn diagnostic_name(&self) -> Option<&str> {
+        self.diagnostic_name.as_deref()
     }
 }
 
 /// Exact semantic owner selected for one enum case.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum CheckedVariantOwner {
-    Project(CheckedProjectNominal),
+    Project {
+        nominal: CheckedProjectNominal,
+        semantic_type: SemanticTypeDigest,
+        layout: TypeLayoutHash,
+        cases: Box<[CheckedVariantCase]>,
+    },
     CharacterNominal {
         nominal: CharacterNominalType,
-        cases: Box<[String]>,
+        semantic_type: SemanticTypeDigest,
+        cases: Box<[CheckedVariantCase]>,
     },
     BuiltinClosed {
         nominal: EnvironmentBindingId,
-        semantic_identity: SemanticTypeDigest,
-        cases: Box<[CheckedBuiltinVariantCase]>,
+        semantic_type: SemanticTypeDigest,
+        cases: Box<[CheckedVariantCase]>,
     },
     Option {
         item: TypeKind,
+        cases: [CheckedVariantCase; 2],
     },
     Result {
         ok: TypeKind,
         error: TypeKind,
+        cases: [CheckedVariantCase; 2],
     },
 }
 
 impl CheckedVariantOwner {
+    #[allow(
+        dead_code,
+        reason = "C2.4 digest-ordered Project seed sealing consumes this exact final-row constructor"
+    )]
+    pub(crate) fn try_project(
+        nominal: CheckedProjectNominal,
+        layout: TypeLayoutHash,
+        cases: impl IntoIterator<Item = (Option<TypeKind>, Option<String>)>,
+    ) -> Option<Self> {
+        let semantic_type = nominal.identity();
+        Some(Self::Project {
+            nominal,
+            semantic_type,
+            layout,
+            cases: checked_variant_cases(0, semantic_type, Some(layout), cases)?,
+        })
+    }
+
+    pub(crate) fn try_character_nominal(
+        nominal: CharacterNominalType,
+        names: impl IntoIterator<Item = String>,
+    ) -> Option<Self> {
+        let semantic_type = TypeKind::CharacterNominal(nominal.clone()).semantic_identity_digest();
+        let cases = names.into_iter().map(|name| (None, Some(name)));
+        Some(Self::CharacterNominal {
+            nominal,
+            semantic_type,
+            cases: checked_variant_cases(1, semantic_type, None, cases)?,
+        })
+    }
+
+    pub(crate) fn try_builtin_closed(
+        nominal: EnvironmentBindingId,
+        semantic_type: SemanticTypeDigest,
+        cases: impl IntoIterator<Item = (Option<TypeKind>, Option<String>)>,
+    ) -> Option<Self> {
+        Some(Self::BuiltinClosed {
+            nominal,
+            semantic_type,
+            cases: checked_variant_cases(2, semantic_type, None, cases)?,
+        })
+    }
+
+    pub(crate) fn option(item: TypeKind) -> Self {
+        let semantic_type = TypeKind::Option(Box::new(item.clone())).semantic_identity_digest();
+        Self::Option {
+            item: item.clone(),
+            cases: [
+                checked_variant_case(3, semantic_type, None, 0, Some(item), Some("Some".into())),
+                checked_variant_case(3, semantic_type, None, 1, None, Some("None".into())),
+            ],
+        }
+    }
+
+    pub(crate) fn result(ok: TypeKind, error: TypeKind) -> Self {
+        let semantic_type = TypeKind::Result {
+            ok: Box::new(ok.clone()),
+            error: Box::new(error.clone()),
+        }
+        .semantic_identity_digest();
+        Self::Result {
+            ok: ok.clone(),
+            error: error.clone(),
+            cases: [
+                checked_variant_case(4, semantic_type, None, 0, Some(ok), Some("Ok".into())),
+                checked_variant_case(4, semantic_type, None, 1, Some(error), Some("Err".into())),
+            ],
+        }
+    }
+
     pub const fn project(&self) -> Option<&CheckedProjectNominal> {
         match self {
-            Self::Project(nominal) => Some(nominal),
+            Self::Project { nominal, .. } => Some(nominal),
             Self::CharacterNominal { .. }
             | Self::BuiltinClosed { .. }
             | Self::Option { .. }
             | Self::Result { .. } => None,
+        }
+    }
+
+    pub fn cases(&self) -> &[CheckedVariantCase] {
+        match self {
+            Self::Project { cases, .. }
+            | Self::CharacterNominal { cases, .. }
+            | Self::BuiltinClosed { cases, .. } => cases,
+            Self::Option { cases, .. } | Self::Result { cases, .. } => cases,
+        }
+    }
+
+    pub fn semantic_type(&self) -> SemanticTypeDigest {
+        match self {
+            Self::Project { semantic_type, .. }
+            | Self::CharacterNominal { semantic_type, .. }
+            | Self::BuiltinClosed { semantic_type, .. } => *semantic_type,
+            Self::Option { item, .. } => {
+                TypeKind::Option(Box::new(item.clone())).semantic_identity_digest()
+            }
+            Self::Result { ok, error, .. } => TypeKind::Result {
+                ok: Box::new(ok.clone()),
+                error: Box::new(error.clone()),
+            }
+            .semantic_identity_digest(),
+        }
+    }
+
+    pub const fn layout(&self) -> Option<TypeLayoutHash> {
+        match self {
+            Self::Project { layout, .. } => Some(*layout),
+            Self::CharacterNominal { .. }
+            | Self::BuiltinClosed { .. }
+            | Self::Option { .. }
+            | Self::Result { .. } => None,
+        }
+    }
+
+    pub fn case(&self, ordinal: u32) -> Option<&CheckedVariantCase> {
+        usize::try_from(ordinal)
+            .ok()
+            .and_then(|index| self.cases().get(index))
+            .filter(|case| case.ordinal == ordinal)
+    }
+
+    pub(crate) fn has_valid_case_rows(&self) -> bool {
+        let (owner_tag, semantic_type, layout) = match self {
+            Self::Project {
+                nominal,
+                semantic_type,
+                layout,
+                ..
+            } => {
+                if nominal.identity() != *semantic_type {
+                    return false;
+                }
+                (0, *semantic_type, Some(*layout))
+            }
+            Self::CharacterNominal {
+                nominal,
+                semantic_type,
+                ..
+            } => {
+                if TypeKind::CharacterNominal(nominal.clone()).semantic_identity_digest()
+                    != *semantic_type
+                {
+                    return false;
+                }
+                (1, *semantic_type, None)
+            }
+            Self::BuiltinClosed { semantic_type, .. } => (2, *semantic_type, None),
+            Self::Option { item, .. } => (
+                3,
+                TypeKind::Option(Box::new(item.clone())).semantic_identity_digest(),
+                None,
+            ),
+            Self::Result { ok, error, .. } => (
+                4,
+                TypeKind::Result {
+                    ok: Box::new(ok.clone()),
+                    error: Box::new(error.clone()),
+                }
+                .semantic_identity_digest(),
+                None,
+            ),
+        };
+        self.cases().iter().enumerate().all(|(ordinal, case)| {
+            u32::try_from(ordinal).is_ok_and(|ordinal| {
+                case.ordinal == ordinal
+                    && case
+                        .payload
+                        .as_ref()
+                        .is_none_or(|payload| !payload.contains_nominal_poison())
+                    && case.semantic_id
+                        == accepted_variant_case_semantic_id(
+                            owner_tag,
+                            semantic_type,
+                            layout,
+                            ordinal,
+                            case.payload.as_ref(),
+                        )
+            })
+        })
+    }
+
+    pub(crate) fn visit_types<E>(
+        &self,
+        visitor: &mut impl FnMut(&TypeKind) -> Result<(), E>,
+    ) -> Result<(), E> {
+        match self {
+            Self::Project { nominal, cases, .. } => {
+                nominal.visit_types(visitor)?;
+                for case in cases {
+                    if let Some(payload) = case.payload() {
+                        visitor(payload)?;
+                    }
+                }
+                Ok(())
+            }
+            Self::CharacterNominal { cases, .. } | Self::BuiltinClosed { cases, .. } => {
+                for case in cases {
+                    if let Some(payload) = case.payload() {
+                        visitor(payload)?;
+                    }
+                }
+                Ok(())
+            }
+            Self::Option { item, cases } => {
+                visitor(item)?;
+                for case in cases {
+                    if let Some(payload) = case.payload() {
+                        visitor(payload)?;
+                    }
+                }
+                Ok(())
+            }
+            Self::Result { ok, error, cases } => {
+                visitor(ok)?;
+                visitor(error)?;
+                for case in cases {
+                    if let Some(payload) = case.payload() {
+                        visitor(payload)?;
+                    }
+                }
+                Ok(())
+            }
         }
     }
 }
@@ -437,17 +925,16 @@ impl CheckedVariantOwner {
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct CheckedVariantResolution {
     owner: CheckedVariantOwner,
-    ordinal: u32,
-    name: HirName,
+    selected_ordinal: u32,
 }
 
 impl CheckedVariantResolution {
-    pub const fn new(owner: CheckedVariantOwner, ordinal: u32, name: HirName) -> Self {
-        Self {
+    pub(crate) fn try_new(owner: CheckedVariantOwner, selected_ordinal: u32) -> Option<Self> {
+        owner.case(selected_ordinal)?;
+        Some(Self {
             owner,
-            ordinal,
-            name,
-        }
+            selected_ordinal,
+        })
     }
 
     pub const fn owner(&self) -> &CheckedVariantOwner {
@@ -455,13 +942,130 @@ impl CheckedVariantResolution {
     }
 
     pub const fn ordinal(&self) -> u32 {
-        self.ordinal
+        self.selected_ordinal
     }
 
-    pub const fn name(&self) -> &HirName {
-        &self.name
+    /// Returns the exact owner row selected by `selected_ordinal`.
+    ///
+    /// # Panics
+    ///
+    /// Panics only if crate-internal memory corruption violates the private
+    /// constructor invariant.
+    pub fn selected(&self) -> &CheckedVariantCase {
+        self.owner
+            .case(self.selected_ordinal)
+            .expect("checked variant resolution retains one exact owner case")
+    }
+
+    pub(crate) fn visit_types<E>(
+        &self,
+        visitor: &mut impl FnMut(&TypeKind) -> Result<(), E>,
+    ) -> Result<(), E> {
+        self.owner.visit_types(visitor)
     }
 }
+
+fn checked_variant_cases(
+    owner_tag: u8,
+    semantic_type: SemanticTypeDigest,
+    layout: Option<TypeLayoutHash>,
+    cases: impl IntoIterator<Item = (Option<TypeKind>, Option<String>)>,
+) -> Option<Box<[CheckedVariantCase]>> {
+    cases
+        .into_iter()
+        .enumerate()
+        .map(|(ordinal, (payload, diagnostic_name))| {
+            let ordinal = u32::try_from(ordinal).ok()?;
+            Some(checked_variant_case(
+                owner_tag,
+                semantic_type,
+                layout,
+                ordinal,
+                payload,
+                diagnostic_name,
+            ))
+        })
+        .collect::<Option<Vec<_>>>()
+        .map(Vec::into_boxed_slice)
+}
+
+fn checked_variant_case(
+    owner_tag: u8,
+    semantic_type: SemanticTypeDigest,
+    layout: Option<TypeLayoutHash>,
+    ordinal: u32,
+    payload: Option<TypeKind>,
+    diagnostic_name: Option<String>,
+) -> CheckedVariantCase {
+    let semantic_id = accepted_variant_case_semantic_id(
+        owner_tag,
+        semantic_type,
+        layout,
+        ordinal,
+        payload.as_ref(),
+    );
+    CheckedVariantCase {
+        ordinal,
+        semantic_id,
+        payload,
+        diagnostic_name,
+    }
+}
+
+fn accepted_variant_case_semantic_id(
+    owner_tag: u8,
+    semantic_type: SemanticTypeDigest,
+    layout: Option<TypeLayoutHash>,
+    ordinal: u32,
+    payload: Option<&TypeKind>,
+) -> AcceptedVariantCaseSemanticId {
+    let mut hasher = blake3::Hasher::new();
+    hasher.update(VARIANT_CASE_SEMANTIC_DOMAIN);
+    hasher.update(&[owner_tag]);
+    hasher.update(semantic_type.as_bytes());
+    match layout {
+        Some(layout) => {
+            hasher.update(&[1]);
+            hasher.update(layout.as_bytes());
+        }
+        None => {
+            hasher.update(&[0]);
+        }
+    }
+    hasher.update(&ordinal.to_le_bytes());
+    match payload {
+        Some(payload) => {
+            hasher.update(&[1]);
+            hasher.update(payload.semantic_identity_digest().as_bytes());
+        }
+        None => {
+            hasher.update(&[0]);
+        }
+    }
+    AcceptedVariantCaseSemanticId(hasher.finalize().into())
+}
+
+#[cfg(test)]
+#[path = "model/variant_tests.rs"]
+mod variant_tests;
+
+#[path = "model/stage_look.rs"]
+mod stage_look;
+pub use stage_look::CheckedStageLook;
+#[path = "model/record.rs"]
+mod record;
+pub use record::{
+    CheckedExpressionRecordField, CheckedFieldSelection, CheckedRecordBindingSource,
+    CheckedRecordExpressionSource, CheckedRecordPattern, CheckedRecordPatternField,
+    CheckedRecordPatternOwner, CheckedRecordPatternRest, CheckedRecordPatternSource,
+    CheckedRecordPatternSourceRef, CheckedRecordValueSource,
+};
+#[path = "model/capture.rs"]
+mod capture;
+pub use capture::{
+    CheckedCapture, CheckedCaptureAuthorityViolation, CheckedClosure, CheckedImplicitCallable,
+    CheckedImplicitCaptureUse,
+};
 
 /// Semantic payload needed in addition to the final-HIR expression family.
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -472,8 +1076,8 @@ pub enum CheckedExpressionResolution {
     Select(CheckedSelectResolution),
     Nominal(CheckedProjectNominal),
     Variant(CheckedVariantResolution),
-    /// Open stage-look token checked under the Stage API's typed parameter.
-    StageLook(HirName),
+    /// Exact registered manifest look selected under the Stage API's typed parameter.
+    StageLook(CheckedStageLook),
     /// Canonical effect identity selected from an authored effect-clause path.
     Effect(crate::effects::EffectId),
     Call,
@@ -485,6 +1089,9 @@ pub enum CheckedExpressionResolution {
     Try(CheckedTry),
     /// One implicit callable introduced by partial-application placeholders.
     ImplicitCallable(Box<CheckedImplicitCallable>),
+    /// One explicit closure with the exact accepted HIR capture rows retained
+    /// by its terminal checked producer fact.
+    Closure(CheckedClosure),
     /// One placeholder bound by its checked implicit callable owner.
     ImplicitParameter {
         callable: ExprId,
@@ -519,6 +1126,102 @@ pub enum CheckedExpressionResolution {
         rich_text: Box<CheckedRichTextReport>,
     },
     PostfixBracket(PostfixBracketResolution),
+}
+
+impl CheckedExpressionResolution {
+    /// Returns the unique prepared/final call site required by this checked
+    /// semantic resolution. Raw HIR Call syntax is deliberately not enough:
+    /// structural Call-shaped operands remain outside the callable graph.
+    pub(crate) const fn checked_call_site(
+        &self,
+        owner: ExprId,
+    ) -> Option<crate::callable::CheckedCallSite> {
+        match self {
+            Self::Call
+            | Self::CharacterDialogueFactory(_)
+            | Self::CharacterDialogueReconfigure(_) => {
+                Some(crate::callable::CheckedCallSite::HirCall(owner))
+            }
+            Self::DialogueApplication { .. } => {
+                Some(crate::callable::CheckedCallSite::DialogueApplication(owner))
+            }
+            Self::Structural
+            | Self::Literal(_)
+            | Self::Value(_)
+            | Self::Select(_)
+            | Self::Nominal(_)
+            | Self::Variant(_)
+            | Self::StageLook(_)
+            | Self::Effect(_)
+            | Self::Await(_)
+            | Self::Choice(_)
+            | Self::Try(_)
+            | Self::ImplicitCallable(_)
+            | Self::Closure(_)
+            | Self::ImplicitParameter { .. }
+            | Self::Pipe(_)
+            | Self::PipeLeft { .. }
+            | Self::ViewCall(_)
+            | Self::ViewCallee(_)
+            | Self::StyleValue(_)
+            | Self::StyleCallee(_)
+            | Self::DialogueLineReference(_)
+            | Self::DialogueLineCoordinate(_)
+            | Self::DialogueTextKeyCoordinate(_)
+            | Self::PostfixBracket(_) => None,
+        }
+    }
+
+    pub(crate) fn visit_types<E>(
+        &self,
+        visitor: &mut impl FnMut(&TypeKind) -> Result<(), E>,
+    ) -> Result<(), E> {
+        match self {
+            Self::Value(value) => value.visit_types(visitor),
+            Self::Select(selection) => selection.visit_types(visitor),
+            Self::Nominal(nominal) => nominal.visit_types(visitor),
+            Self::Variant(variant) => variant.visit_types(visitor),
+            Self::Choice(choice) => {
+                for goto in choice.gotos() {
+                    goto.target().visit_types(visitor)?;
+                }
+                Ok(())
+            }
+            Self::Try(checked) => checked.carrier().visit_types(visitor),
+            Self::ImplicitCallable(callable) => callable.visit_types(visitor),
+            Self::CharacterDialogueFactory(factory) => factory.visit_types(visitor),
+            Self::CharacterDialogueReconfigure(reconfigure) => reconfigure.visit_types(visitor),
+            Self::DialogueApplication {
+                target,
+                application_patch,
+                rich_text: _,
+            } => {
+                target.visit_types(visitor)?;
+                if let Some(patch) = application_patch {
+                    patch.visit_types(visitor)?;
+                }
+                Ok(())
+            }
+            Self::Structural
+            | Self::Literal(_)
+            | Self::StageLook(_)
+            | Self::Effect(_)
+            | Self::Call
+            | Self::Await(_)
+            | Self::Closure(_)
+            | Self::ImplicitParameter { .. }
+            | Self::Pipe(_)
+            | Self::PipeLeft { .. }
+            | Self::ViewCall(_)
+            | Self::ViewCallee(_)
+            | Self::StyleValue(_)
+            | Self::StyleCallee(_)
+            | Self::DialogueLineReference(_)
+            | Self::DialogueLineCoordinate(_)
+            | Self::DialogueTextKeyCoordinate(_)
+            | Self::PostfixBracket(_) => Ok(()),
+        }
+    }
 }
 
 /// One compact Choice arm whose `goto` target was resolved against the exact
@@ -581,54 +1284,6 @@ impl CheckedChoice {
     }
 }
 
-/// Checked implicit callable introduced by one or more `_` placeholders.
-#[derive(Clone, Debug, Eq, PartialEq)]
-pub struct CheckedImplicitCallable {
-    parameter: TypeKind,
-    result: TypeKind,
-    placeholders: Box<[ExprId]>,
-    captures: Box<[LocalId]>,
-    body_resolution: Box<CheckedExpressionResolution>,
-}
-
-impl CheckedImplicitCallable {
-    pub fn new(
-        parameter: TypeKind,
-        result: TypeKind,
-        placeholders: Box<[ExprId]>,
-        captures: Box<[LocalId]>,
-        body_resolution: CheckedExpressionResolution,
-    ) -> Self {
-        Self {
-            parameter,
-            result,
-            placeholders,
-            captures,
-            body_resolution: Box::new(body_resolution),
-        }
-    }
-
-    pub const fn parameter(&self) -> &TypeKind {
-        &self.parameter
-    }
-
-    pub const fn result(&self) -> &TypeKind {
-        &self.result
-    }
-
-    pub const fn placeholders(&self) -> &[ExprId] {
-        &self.placeholders
-    }
-
-    pub const fn captures(&self) -> &[LocalId] {
-        &self.captures
-    }
-
-    pub fn body_resolution(&self) -> &CheckedExpressionResolution {
-        self.body_resolution.as_ref()
-    }
-}
-
 /// Checked once-only pipe binding and every `^` use owned by it.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct CheckedPipe {
@@ -682,6 +1337,19 @@ impl CheckedTryCarrier {
         match self {
             Self::Result { residual, .. } => Some(residual.as_ref()),
             Self::Option { .. } => None,
+        }
+    }
+
+    pub(crate) fn visit_types<E>(
+        &self,
+        visitor: &mut impl FnMut(&TypeKind) -> Result<(), E>,
+    ) -> Result<(), E> {
+        match self {
+            Self::Result { success, residual } => {
+                visitor(success)?;
+                visitor(residual)
+            }
+            Self::Option { success } => visitor(success),
         }
     }
 }
@@ -800,6 +1468,29 @@ impl CheckedCharacterDialogueTarget {
     pub fn result_type(&self) -> CharacterDialogueType {
         CharacterDialogueType::new(self.character().clone())
     }
+
+    /// Exact semantic type of the application target. Structural Dialogue
+    /// operand sealing uses this owner projection instead of reconstructing a
+    /// type from the target's variant at each consumer.
+    pub fn ty(&self) -> TypeKind {
+        match self {
+            Self::Character { .. } => TypeKind::entity_ref(EntityKind::Character),
+            Self::Dialogue { ty, .. } => TypeKind::CharacterDialogue(ty.clone()),
+        }
+    }
+
+    pub(crate) fn visit_types<E>(
+        &self,
+        visitor: &mut impl FnMut(&TypeKind) -> Result<(), E>,
+    ) -> Result<(), E> {
+        if let Self::Character {
+            item: Some(item), ..
+        } = self
+        {
+            item.visit_types(visitor)?;
+        }
+        visitor(&self.ty())
+    }
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -833,24 +1524,19 @@ impl CheckedCharacterDialoguePatch {
     pub const fn source(&self) -> &SourceSpan {
         &self.source
     }
-}
 
-/// Stable semantic coordinate selected for one `CharacterDialogue` patch field.
-#[derive(Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
-pub enum CharacterDialogueFieldCoordinate {
-    Voice,
-    Look,
-    Stage,
-    Portrait,
-    Focus,
-    Cleanup,
-    View,
-    SourceLocale,
-    Hooks,
-    Style,
-    RichText,
-    InlineFailure,
-    Custom(CharacterDialogueCustomFieldId),
+    pub(crate) fn visit_types<E>(
+        &self,
+        visitor: &mut impl FnMut(&TypeKind) -> Result<(), E>,
+    ) -> Result<(), E> {
+        for field in self.fields() {
+            match field.operation() {
+                CheckedPatchOperation::Set { ty, .. } => visitor(ty)?,
+                CheckedPatchOperation::Clear => {}
+            }
+        }
+        Ok(())
+    }
 }
 
 /// Compile-time operation carried by one source-ordered patch field.
@@ -915,6 +1601,14 @@ impl CheckedCharacterDialogueFactory {
     pub const fn patch(&self) -> &CheckedCharacterDialoguePatch {
         &self.patch
     }
+
+    pub(crate) fn visit_types<E>(
+        &self,
+        visitor: &mut impl FnMut(&TypeKind) -> Result<(), E>,
+    ) -> Result<(), E> {
+        self.target.visit_types(visitor)?;
+        self.patch.visit_types(visitor)
+    }
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -938,6 +1632,14 @@ impl CheckedCharacterDialogueReconfigure {
     pub const fn patch(&self) -> &CheckedCharacterDialoguePatch {
         &self.patch
     }
+
+    pub(crate) fn visit_types<E>(
+        &self,
+        visitor: &mut impl FnMut(&TypeKind) -> Result<(), E>,
+    ) -> Result<(), E> {
+        self.target.visit_types(visitor)?;
+        self.patch.visit_types(visitor)
+    }
 }
 
 /// Closed semantic classification for a call executed by the View evaluator.
@@ -946,9 +1648,6 @@ pub enum CheckedViewCall {
     Element(arcweft_view::ViewElementKind),
     Text,
     RichText,
-    Modifier {
-        member: arcweft_lang_hir::leaf::HirName,
-    },
 }
 
 /// Closed semantic classification for the source callee of a View call.
@@ -1090,6 +1789,16 @@ impl CheckedExpression {
         &self.resolution
     }
 
+    /// Returns the exact postfix candidate selected by this checked fact.
+    /// HIR remains the authority for validating that the candidate belongs to
+    /// the source-backed postfix owner.
+    pub(crate) const fn selected_postfix_candidate(&self) -> Option<ExprId> {
+        match self.resolution {
+            CheckedExpressionResolution::PostfixBracket(resolution) => Some(resolution.candidate()),
+            _ => None,
+        }
+    }
+
     /// Adds the checker-owned ordinary Match evidence to this expression.
     #[must_use]
     pub(crate) fn with_match_fact(mut self, fact: CheckedMatchFact) -> Self {
@@ -1118,18 +1827,12 @@ impl CheckedExpression {
         self
     }
 
-    /// Returns whether this fact is an application-owned semantic coordinate
-    /// whose identity is fixed before ordinary-call candidate evaluation.
-    ///
-    /// Candidate probes still type-check and account for the authored slot,
-    /// but must not erase this fact and reinterpret its entity path outside
-    /// the owning dialogue application.
-    pub(crate) const fn is_candidate_stable_coordinate(&self) -> bool {
-        matches!(
-            self.resolution,
-            CheckedExpressionResolution::DialogueLineCoordinate(_)
-                | CheckedExpressionResolution::DialogueTextKeyCoordinate(_)
-        )
+    pub(crate) fn visit_types<E>(
+        &self,
+        visitor: &mut impl FnMut(&TypeKind) -> Result<(), E>,
+    ) -> Result<(), E> {
+        visitor(self.ty())?;
+        self.resolution.visit_types(visitor)
     }
 }
 
@@ -1139,9 +1842,14 @@ pub enum CheckedPatternResolution {
     Structural,
     Literal(HirLiteral),
     Entity(CheckedProjectItem),
-    Nominal(CheckedProjectNominal),
+    Record(CheckedRecordPattern),
     Variant(CheckedVariantResolution),
+    TypedBinding(CheckedTypedBinding),
 }
+
+#[path = "model/typed_binding.rs"]
+mod typed_binding;
+pub use typed_binding::CheckedTypedBinding;
 
 /// Closed checked fact for one live pattern.
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -1161,6 +1869,20 @@ impl CheckedPattern {
 
     pub const fn resolution(&self) -> &CheckedPatternResolution {
         &self.resolution
+    }
+
+    pub(crate) fn visit_types<E>(
+        &self,
+        visitor: &mut impl FnMut(&TypeKind) -> Result<(), E>,
+    ) -> Result<(), E> {
+        visitor(self.ty())?;
+        match self.resolution() {
+            CheckedPatternResolution::Entity(item) => item.visit_types(visitor),
+            CheckedPatternResolution::Record(record) => record.visit_types(visitor),
+            CheckedPatternResolution::Variant(variant) => variant.visit_types(visitor),
+            CheckedPatternResolution::TypedBinding(binding) => visitor(binding.annotation()),
+            CheckedPatternResolution::Structural | CheckedPatternResolution::Literal(_) => Ok(()),
+        }
     }
 }
 
@@ -1258,6 +1980,29 @@ impl CheckedIteration {
             Self::IteratorWitness { iterator, .. } => [Some(iterator), None],
         }
     }
+
+    pub(crate) fn visit_types<E>(
+        &self,
+        visitor: &mut impl FnMut(&TypeKind) -> Result<(), E>,
+    ) -> Result<(), E> {
+        match self {
+            Self::Builtin { item, .. } => visitor(item),
+            Self::Witness {
+                source,
+                item,
+                into_iter,
+                ..
+            } => {
+                visitor(source)?;
+                visitor(item)?;
+                visitor(into_iter)
+            }
+            Self::IteratorWitness { source, item, .. } => {
+                visitor(source)?;
+                visitor(item)
+            }
+        }
+    }
 }
 
 /// Final assertion disposition after proof/debug policy admission.
@@ -1279,23 +2024,29 @@ pub enum CheckedAssertionDisposition {
 pub struct CheckedAssignmentPlace {
     local: LocalId,
     nominal: CheckedProjectNominal,
-    field_ordinal: u32,
+    field: CheckedFieldSelection,
     field_type: TypeKind,
 }
 
 impl CheckedAssignmentPlace {
-    pub const fn new(
+    pub fn try_new(
         local: LocalId,
         nominal: CheckedProjectNominal,
-        field_ordinal: u32,
+        field: CheckedFieldSelection,
         field_type: TypeKind,
-    ) -> Self {
-        Self {
+    ) -> Option<Self> {
+        if field.owner_type() != nominal.identity()
+            || field.runtime_field().is_none()
+            || field.field_type() != field_type.semantic_identity_digest()
+        {
+            return None;
+        }
+        Some(Self {
             local,
             nominal,
-            field_ordinal,
+            field,
             field_type,
-        }
+        })
     }
 
     pub const fn local(&self) -> LocalId {
@@ -1306,8 +2057,12 @@ impl CheckedAssignmentPlace {
         &self.nominal
     }
 
-    pub const fn field_ordinal(&self) -> u32 {
-        self.field_ordinal
+    pub const fn field(&self) -> &CheckedFieldSelection {
+        &self.field
+    }
+
+    pub const fn runtime_field(&self) -> Option<arcweft_core::value::RuntimeRecordFieldId> {
+        self.field.runtime_field()
     }
 
     pub const fn field_type(&self) -> &TypeKind {
@@ -1573,6 +2328,26 @@ impl CheckedStatement {
     pub const fn role(&self) -> &CheckedStatementRole {
         &self.role
     }
+
+    pub(crate) fn visit_types<E>(
+        &self,
+        visitor: &mut impl FnMut(&TypeKind) -> Result<(), E>,
+    ) -> Result<(), E> {
+        match self.role() {
+            CheckedStatementRole::Assignment(assignment) => {
+                assignment.place().nominal().visit_types(visitor)?;
+                visitor(assignment.place().field_type())?;
+                visitor(assignment.value_type())
+            }
+            CheckedStatementRole::Iteration(iteration) => iteration.visit_types(visitor),
+            CheckedStatementRole::Ordinary
+            | CheckedStatementRole::Assertion(_)
+            | CheckedStatementRole::EvaluatedEffect(_)
+            | CheckedStatementRole::Suspension(_)
+            | CheckedStatementRole::Yield
+            | CheckedStatementRole::UnsafeAudit => Ok(()),
+        }
+    }
 }
 
 /// Invocation behavior of one ordinary function.
@@ -1653,6 +2428,39 @@ pub enum CheckedItemRole {
 }
 
 impl CheckedItemRole {
+    /// Stable family coordinate used by the accepted item-root authority.
+    ///
+    /// This is deliberately a direct exhaustive mapping.  The recovered
+    /// family has no accepted tag and therefore cannot enter a catalog.
+    pub const fn accepted_item_family_tag(&self) -> u8 {
+        match self {
+            Self::Module => 0,
+            Self::Use => 1,
+            Self::Flow { .. } => 2,
+            Self::Function { .. } => 3,
+            Self::Predicate => 4,
+            Self::Proof => 5,
+            Self::Trait => 6,
+            Self::Impl => 7,
+            Self::Enum => 8,
+            Self::Struct => 9,
+            Self::TypeAlias => 10,
+            Self::Resource => 11,
+            Self::Character => 12,
+            Self::View => 13,
+            Self::Action => 14,
+            Self::Activity => 15,
+            Self::Signal => 16,
+            Self::Metric => 17,
+            Self::Layer => 18,
+            Self::Entry => 19,
+            Self::ExternCapability => 20,
+            Self::Test => 21,
+            Self::Bench => 22,
+            Self::Style => 23,
+        }
+    }
+
     pub fn ordinary_function_emission(
         &self,
         effects: &EffectSet,
@@ -1731,6 +2539,48 @@ impl CheckedItem {
     pub const fn role(&self) -> &CheckedItemRole {
         &self.role
     }
+
+    pub(crate) fn visit_types<E>(
+        &self,
+        visitor: &mut impl FnMut(&TypeKind) -> Result<(), E>,
+    ) -> Result<(), E> {
+        match self.role() {
+            CheckedItemRole::Function {
+                execution: CheckedFunctionExecution::StreamFactory { item, error, .. },
+                ..
+            } => {
+                visitor(item)?;
+                visitor(error)
+            }
+            CheckedItemRole::Function {
+                execution: CheckedFunctionExecution::DirectFrame,
+                ..
+            }
+            | CheckedItemRole::Module
+            | CheckedItemRole::Use
+            | CheckedItemRole::Flow { .. }
+            | CheckedItemRole::Predicate
+            | CheckedItemRole::Proof
+            | CheckedItemRole::Trait
+            | CheckedItemRole::Impl
+            | CheckedItemRole::Enum
+            | CheckedItemRole::Struct
+            | CheckedItemRole::TypeAlias
+            | CheckedItemRole::Resource
+            | CheckedItemRole::Character
+            | CheckedItemRole::View
+            | CheckedItemRole::Action
+            | CheckedItemRole::Activity
+            | CheckedItemRole::Signal
+            | CheckedItemRole::Metric
+            | CheckedItemRole::Layer
+            | CheckedItemRole::Entry
+            | CheckedItemRole::ExternCapability
+            | CheckedItemRole::Test
+            | CheckedItemRole::Bench
+            | CheckedItemRole::Style => Ok(()),
+        }
+    }
 }
 
 /// Type of one lexical local or captured binding.
@@ -1763,120 +2613,16 @@ impl CheckedBinding {
         &self.ty
     }
 
+    pub(crate) fn visit_types<E>(
+        &self,
+        visitor: &mut impl FnMut(&TypeKind) -> Result<(), E>,
+    ) -> Result<(), E> {
+        visitor(self.ty())
+    }
+
     pub const fn role(&self) -> CheckedBindingRole {
         self.role
     }
-}
-
-/// Stable semantic identity of one accepted declaration root.
-///
-/// The bytes are produced by the final-analysis transcript owner.  HIR arena
-/// identifiers, source spans, and retained display names are deliberately not
-/// part of this value.
-#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
-pub struct AcceptedDeclarationSemanticId([u8; 32]);
-
-impl AcceptedDeclarationSemanticId {
-    pub(crate) const fn from_bytes(bytes: [u8; 32]) -> Self {
-        Self(bytes)
-    }
-
-    pub const fn as_bytes(&self) -> &[u8; 32] {
-        &self.0
-    }
-}
-
-/// One structural step in a declaration-rooted checked expression path.
-#[derive(Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
-pub enum CheckedExpressionChildRoleStep {
-    DeclarationBody(arcweft_lang_hir::project::HirDeclarationBodyRootRole),
-    ExpressionOwned(arcweft_lang_hir::expr::HirExpressionOwnedBodyRole),
-    Body(arcweft_lang_hir::body_edges::HirBodyChildRole),
-    Statement(arcweft_lang_hir::stmt::HirStatementChildRole),
-    ThreadBody(arcweft_lang_hir::stmt::HirStatementBodyRole),
-    Expression(CheckedExpressionChildRole),
-    MatchPattern { arm: u32 },
-    Pattern(arcweft_lang_hir::pattern::HirPatternChildRole),
-    ParameterPattern { group: u32, parameter: u32 },
-    ParameterDefault { group: u32, parameter: u32 },
-}
-
-/// Stable declaration-rooted path for a checked expression.
-#[derive(Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
-pub struct CheckedExpressionChildRolePath {
-    declaration: AcceptedDeclarationSemanticId,
-    steps: Box<[CheckedExpressionChildRoleStep]>,
-}
-
-impl CheckedExpressionChildRolePath {
-    pub(crate) fn new(
-        declaration: AcceptedDeclarationSemanticId,
-        steps: impl Into<Box<[CheckedExpressionChildRoleStep]>>,
-    ) -> Self {
-        Self {
-            declaration,
-            steps: steps.into(),
-        }
-    }
-
-    pub const fn declaration(&self) -> AcceptedDeclarationSemanticId {
-        self.declaration
-    }
-
-    pub fn steps(&self) -> &[CheckedExpressionChildRoleStep] {
-        &self.steps
-    }
-}
-
-/// One stable structural coordinate inside a checked pattern.
-#[derive(Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
-pub enum StablePatternCoordinateStep {
-    TupleElement(u32),
-    RecordField {
-        field: arcweft_core::value::RuntimeRecordFieldId,
-        source_ordinal: u32,
-    },
-    SequenceElement(u32),
-    VariantPayload,
-    WholeBindingInner,
-    OrAlternative(u32),
-    TypedBindingInner,
-}
-
-/// Declaration-independent pattern coordinate made only from structural
-/// roles and accepted field identities.
-#[derive(Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
-pub struct StablePatternCoordinate(Box<[StablePatternCoordinateStep]>);
-
-impl StablePatternCoordinate {
-    pub(crate) fn new(steps: impl Into<Box<[StablePatternCoordinateStep]>>) -> Self {
-        Self(steps.into())
-    }
-
-    pub fn steps(&self) -> &[StablePatternCoordinateStep] {
-        &self.0
-    }
-}
-
-/// Stable coordinate for a checked value retained by Match semantics.
-#[derive(Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
-pub enum StableCheckedValueCoordinate {
-    Expression {
-        declaration: AcceptedDeclarationSemanticId,
-        path: CheckedExpressionChildRolePath,
-    },
-    PatternBinding {
-        declaration: AcceptedDeclarationSemanticId,
-        match_path: CheckedExpressionChildRolePath,
-        arm_ordinal: u32,
-        pattern: StablePatternCoordinate,
-        binding_ordinal: u32,
-    },
-    Capture {
-        callable: AcceptedDeclarationSemanticId,
-        capture_ordinal: u32,
-        origin: Box<StableCheckedValueCoordinate>,
-    },
 }
 
 /// Stable digest of one checked expression semantic transcript.

@@ -1642,15 +1642,25 @@ mod tests {
     use super::*;
     use arcweft_core::awbc::schema::{
         AwbcBlockId, AwbcEffectSetId, AwbcEntry, AwbcEntryKind, AwbcEntryTarget, AwbcFlowBinding,
-        AwbcFrameLayoutId, AwbcFunctionFlags, AwbcFunctionId, AwbcFunctionKind, AwbcSafePointKind,
-        AwbcSignatureId, AwbcStringId, AwbcTerminator,
+        AwbcFlowExecutable, AwbcFrameLayoutId, AwbcFunctionFlags, AwbcFunctionId, AwbcFunctionKind,
+        AwbcSafePointKind, AwbcSignatureId, AwbcStringId, AwbcTerminator,
     };
-    use arcweft_core::entry::{EntryBindingIdentity, RuntimeEntryRoles};
+    use arcweft_core::entry::{
+        EntryBindingIdentity, FlowContractHash, RuntimeEntryRoles, RuntimeFlowExecutable,
+    };
     use arcweft_core::plan::{EntryRuntimeId, FlowRuntimeId};
 
     fn same_label_flow_program() -> AwbcProgram {
+        let first_flow = FlowRuntimeId::from_checked_declaration_digest([0x91; 32], "flow.main")
+            .expect("first checked Flow identity");
+        let second_flow = FlowRuntimeId::from_checked_declaration_digest([0x92; 32], "flow.main")
+            .expect("second checked Flow identity");
         AwbcProgram {
-            strings: vec!["flow.main".to_owned()],
+            strings: vec![
+                "entry.main".to_owned(),
+                "entry.second".to_owned(),
+                "flow.main".to_owned(),
+            ],
             signatures: vec![AwbcSignature {
                 params: Vec::new(),
                 result: None,
@@ -1662,7 +1672,7 @@ mod tests {
             }],
             functions: vec![
                 AwbcFunction {
-                    public_id: Some(AwbcStringId(0)),
+                    public_id: Some(AwbcStringId(2)),
                     kind: AwbcFunctionKind::Flow,
                     signature: AwbcSignatureId(0),
                     frame_layout: AwbcFrameLayoutId(0),
@@ -1671,7 +1681,7 @@ mod tests {
                     flags: AwbcFunctionFlags(AwbcFunctionFlags::DETERMINISTIC),
                 },
                 AwbcFunction {
-                    public_id: Some(AwbcStringId(0)),
+                    public_id: Some(AwbcStringId(2)),
                     kind: AwbcFunctionKind::Flow,
                     signature: AwbcSignatureId(0),
                     frame_layout: AwbcFrameLayoutId(0),
@@ -1698,26 +1708,56 @@ mod tests {
             ],
             flow_bindings: vec![
                 AwbcFlowBinding {
-                    flow: FlowRuntimeId::from_checked_declaration_digest([0x91; 32], "flow.main")
-                        .expect("first checked Flow identity"),
+                    flow: first_flow.clone(),
                     function: AwbcFunctionId(0),
                 },
                 AwbcFlowBinding {
-                    flow: FlowRuntimeId::from_checked_declaration_digest([0x92; 32], "flow.main")
-                        .expect("second checked Flow identity"),
+                    flow: second_flow.clone(),
                     function: AwbcFunctionId(1),
                 },
             ],
-            entries: vec![AwbcEntry {
-                runtime_id: EntryRuntimeId::from_source_entity_body("entry.main")
-                    .expect("test entry identity"),
-                binding: EntryBindingIdentity::from_bytes([1; 32]),
-                public_id: AwbcStringId(0),
-                kind: AwbcEntryKind::Cli,
-                signature: AwbcSignatureId(0),
-                target: AwbcEntryTarget::Function(AwbcFunctionId(0)),
-                roles: RuntimeEntryRoles::None,
-            }],
+            flow_executables: vec![
+                AwbcFlowExecutable {
+                    metadata: RuntimeFlowExecutable {
+                        flow: first_flow,
+                        contract: FlowContractHash::from_bytes([0xa1; 32]),
+                        controller: None,
+                    },
+                    function: AwbcFunctionId(0),
+                },
+                AwbcFlowExecutable {
+                    metadata: RuntimeFlowExecutable {
+                        flow: second_flow,
+                        contract: FlowContractHash::from_bytes([0xa2; 32]),
+                        controller: None,
+                    },
+                    function: AwbcFunctionId(1),
+                },
+            ],
+            entries: vec![
+                AwbcEntry {
+                    runtime_id: EntryRuntimeId::from_source_entity_body("entry.main")
+                        .expect("test entry identity"),
+                    binding: EntryBindingIdentity::from_bytes([1; 32]),
+                    public_id: AwbcStringId(0),
+                    kind: AwbcEntryKind::Cli,
+                    target: AwbcEntryTarget::Function {
+                        function: AwbcFunctionId(0),
+                    },
+                    roles: RuntimeEntryRoles::None,
+                },
+                AwbcEntry {
+                    runtime_id: EntryRuntimeId::from_source_entity_body("entry.second")
+                        .expect("second test entry identity"),
+                    binding: EntryBindingIdentity::from_bytes([2; 32]),
+                    public_id: AwbcStringId(1),
+                    kind: AwbcEntryKind::Cli,
+                    target: AwbcEntryTarget::Function {
+                        function: AwbcFunctionId(1),
+                    },
+                    roles: RuntimeEntryRoles::None,
+                },
+            ],
             ..AwbcProgram::default()
         }
     }
@@ -1772,6 +1812,8 @@ mod tests {
         removed.functions.pop();
         removed.blocks.pop();
         removed.flow_bindings.pop();
+        removed.flow_executables.pop();
+        removed.entries.pop();
         assert_eq!(
             awbc_executable_compatibility(
                 &base_bytes,

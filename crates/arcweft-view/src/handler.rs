@@ -1,7 +1,13 @@
 //! Routed presentation input to retained view handler dispatch.
 
-use crate::{EventKind, HandlerId, NodeId, ViewError, ViewFragment, ViewSemanticFragment};
+use crate::{EventKind, NodeId, ViewError, ViewFragment, ViewSemanticFragment};
 use arcweft_presentation::input::{InputEpoch, InputEvent, InteractionTarget};
+use serde::{Deserialize, Serialize};
+
+/// Opaque frame-scoped identity of one published mount/event token route.
+#[derive(Clone, Copy, Debug, Deserialize, Eq, Hash, Ord, PartialEq, PartialOrd, Serialize)]
+#[serde(transparent)]
+pub struct ViewHandlerRouteId([u8; 32]);
 
 /// One stable event route emitted from a retained fragment node.
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -9,7 +15,7 @@ pub struct ViewHandlerRoute {
     node: NodeId,
     target: InteractionTarget,
     event: EventKind,
-    handler: HandlerId,
+    route: ViewHandlerRouteId,
 }
 
 /// Ordered handler routes for one View layer output.
@@ -22,10 +28,21 @@ pub struct ViewHandlerRouteTable {
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct ViewHandlerInvocation {
     raw_epoch: InputEpoch,
-    node: NodeId,
     target: InteractionTarget,
     event: EventKind,
-    handler: HandlerId,
+    route: ViewHandlerRouteId,
+}
+
+impl ViewHandlerRouteId {
+    #[must_use]
+    pub const fn from_digest(bytes: [u8; 32]) -> Self {
+        Self(bytes)
+    }
+
+    #[must_use]
+    pub const fn as_bytes(&self) -> &[u8; 32] {
+        &self.0
+    }
 }
 
 impl ViewHandlerRoute {
@@ -41,8 +58,8 @@ impl ViewHandlerRoute {
         self.event
     }
 
-    pub const fn handler(&self) -> HandlerId {
-        self.handler
+    pub const fn route(&self) -> ViewHandlerRouteId {
+        self.route
     }
 
     pub fn accepts(&self, input: &InputEvent) -> bool {
@@ -79,7 +96,7 @@ impl ViewHandlerRouteTable {
                 node: node_id,
                 target: target.clone(),
                 event: binding.kind(),
-                handler: binding.handler(),
+                route: binding.route(),
             }));
         }
         Ok(Self { routes })
@@ -93,12 +110,8 @@ impl ViewHandlerRouteTable {
         self.routes
             .iter()
             .filter(|route| route.accepts(input))
-            .map(|route| ViewHandlerInvocation {
-                raw_epoch: input.raw_epoch(),
-                node: route.node(),
-                target: route.target().clone(),
-                event: route.event(),
-                handler: route.handler(),
+            .filter_map(|route| {
+                ViewHandlerInvocation::from_input(input, route.event(), route.route())
             })
             .collect()
     }
@@ -109,12 +122,23 @@ impl ViewHandlerRouteTable {
 }
 
 impl ViewHandlerInvocation {
-    pub const fn raw_epoch(&self) -> InputEpoch {
-        self.raw_epoch
+    /// Seals an invocation only from an already routed presentation event.
+    #[must_use]
+    pub fn from_input(
+        input: &InputEvent,
+        event: EventKind,
+        route: ViewHandlerRouteId,
+    ) -> Option<Self> {
+        event.accepts(input.kind()).then(|| Self {
+            raw_epoch: input.raw_epoch(),
+            target: input.target().clone(),
+            event,
+            route,
+        })
     }
 
-    pub const fn node(&self) -> NodeId {
-        self.node
+    pub const fn raw_epoch(&self) -> InputEpoch {
+        self.raw_epoch
     }
 
     pub const fn target(&self) -> &InteractionTarget {
@@ -125,7 +149,7 @@ impl ViewHandlerInvocation {
         self.event
     }
 
-    pub const fn handler(&self) -> HandlerId {
-        self.handler
+    pub const fn route(&self) -> ViewHandlerRouteId {
+        self.route
     }
 }

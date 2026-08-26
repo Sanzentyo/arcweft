@@ -20,7 +20,10 @@ use arcweft_lang_hir::{
     },
     proof_return::HirProofReturnSemanticFactSet,
     stmt::HirStmtKind,
-    symbol::{CallablePackageId, ProjectSymbolRevision, ProjectSymbolWorldId},
+    symbol::{
+        CallablePackageId, ProjectExternalDeclarations, ProjectSymbolRevision, ProjectSymbolTable,
+        ProjectSymbolWorldId,
+    },
 };
 use arcweft_lang_syntax::{
     ast::module_path::CanonicalModulePath, incremental::SyntaxDatabase, parser::ParseOptions,
@@ -202,6 +205,16 @@ fn runtime_projection_emits_stable_diagnostic_without_message_parsing() {
         statement,
         RuntimeAssertionAdmission::Runtime(RuntimeAssertionMode::Check),
     );
+    let externals = ProjectExternalDeclarations::try_new(world.clone(), revision, Vec::new())
+        .expect("empty external declarations");
+    let symbols = ProjectSymbolTable::link(project.view(), &externals)
+        .expect("linked project symbols")
+        .into_table();
+    let topology = executable
+        .accept_symbol_generation(&symbols)
+        .expect("accepted symbol generation")
+        .into_evaluation_topology()
+        .expect("project evaluation topology");
     let reachability_input = HirRuntimeSemanticReachabilityInput::try_new(
         HirRuntimeEmissionMode::CheckAll,
         world,
@@ -216,6 +229,7 @@ fn runtime_projection_emits_stable_diagnostic_without_message_parsing() {
     let reachability = executable
         .runtime_semantic_reachability(
             reachability_input,
+            &topology,
             |_| None,
             |_| HirRuntimeExpressionTypeDisposition::Retain,
         )

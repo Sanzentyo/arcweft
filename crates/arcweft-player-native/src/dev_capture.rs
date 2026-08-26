@@ -359,6 +359,7 @@ mod tests {
     use super::*;
     use arcweft_bundle::resource_codec::SourceMapSection;
     use arcweft_bundle::{BundleManifest, BundleRuntimeSummary};
+    use arcweft_core::entry::{FlowContractHash, RuntimeFlowExecutable, RuntimeFlowSchema};
     use arcweft_core::plan::{
         FlowRuntimeId, RuntimeDialogueContentPlanSeed, RuntimeFlowOpSeed, RuntimeFlowSeed,
         RuntimeLineId, RuntimePlanBuilder,
@@ -480,6 +481,19 @@ mod tests {
                 ],
             ))
             .expect("flow admits");
+        builder
+            .push_flow_schema(RuntimeFlowSchema {
+                flow: flow.clone(),
+                parameters: Vec::new(),
+            })
+            .expect("flow schema admits");
+        builder
+            .push_flow_executable(RuntimeFlowExecutable {
+                flow: flow.clone(),
+                contract: FlowContractHash::from_bytes([0x75; 32]),
+                controller: None,
+            })
+            .expect("flow executable admits");
         builder
             .push_entry(arcweft_core::plan::RuntimeEntrySpec {
                 id: arcweft_core::plan::EntryRuntimeId::from_source_entity_body("entry.main")

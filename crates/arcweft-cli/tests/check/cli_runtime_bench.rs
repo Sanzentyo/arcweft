@@ -1359,10 +1359,14 @@ fn cli_json_selects_cli_entry_and_binds_args() {
     let path = temp_arcw(
         "cli-entry",
         r"
+extern capability cli {
+    fn args() -> Vec<String>
+}
+
 entry cli @entry.main { goto @flow.main }
 
-flow main(argc: i32) {
-    return argc
+flow main() {
+    return cli.args()
 }
 ",
     );
@@ -1371,6 +1375,8 @@ flow main(argc: i32) {
         .arg("cli")
         .arg(&path)
         .arg("--json")
+        .arg("--steps")
+        .arg("2")
         .arg("--")
         .arg("one")
         .arg("two")
@@ -1385,9 +1391,110 @@ flow main(argc: i32) {
     assert!(
         stdout.contains("\"executor\": \"bytecode_vm\"")
             && stdout.contains("\"final_status\": \"done")
-            && stdout.contains("return 2"),
-        "cli entry should run through bytecode VM and bind argc from trailing args: {stdout}"
+            && stdout.contains("\"completed_tasks\": 1")
+            && stdout.contains("return seq/values/2"),
+        "cli entry should run through bytecode VM and obtain trailing args from cli.args(): {stdout}"
     );
+}
+
+#[test]
+fn run_flow_values_are_sealed_once_by_parameter_coordinate() {
+    let path = temp_arcw(
+        "explicit-flow-value",
+        r#"
+flow choose(first: i64, second: i64) {
+    return first
+}
+"#,
+    );
+
+    let output = Command::new(env!("CARGO_BIN_EXE_arcw"))
+        .arg("run")
+        .arg(&path)
+        .arg("--flow")
+        .arg("flow.choose")
+        .arg("--value")
+        .arg("second=22")
+        .arg("--value")
+        .arg("first=11")
+        .arg("--steps")
+        .arg("1")
+        .arg("--json")
+        .output()
+        .expect("arcw run invokes an explicitly selected Flow");
+
+    assert!(
+        output.status.success(),
+        "explicit Flow invocation should succeed, stderr: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    assert!(
+        stdout.contains("return 11"),
+        "external source order must not replace canonical Flow coordinate order: {stdout}"
+    );
+}
+
+#[test]
+fn run_flow_values_reject_incomplete_or_ambiguous_external_inventory() {
+    let path = temp_arcw(
+        "explicit-flow-invalid-values",
+        r#"
+flow choose(first: i64, second: i64) {
+    return first
+}
+"#,
+    );
+    let cases: &[(&[&str], &str)] = &[
+        (&["--value", "first=11"], "missing --value `second`"),
+        (
+            &[
+                "--value",
+                "first=11",
+                "--value",
+                "first=12",
+                "--value",
+                "second=22",
+            ],
+            "duplicate --value binding `first`",
+        ),
+        (
+            &[
+                "--value",
+                "first=11",
+                "--value",
+                "second=22",
+                "--value",
+                "third=33",
+            ],
+            "has no parameter named `third`",
+        ),
+        (
+            &[
+                "--value",
+                "first=not-an-integer",
+                "--value",
+                "second=22",
+            ],
+            "does not match its checked type",
+        ),
+    ];
+    for (arguments, expected) in cases {
+        let output = Command::new(env!("CARGO_BIN_EXE_arcw"))
+            .arg("run")
+            .arg(&path)
+            .arg("--flow")
+            .arg("flow.choose")
+            .args(*arguments)
+            .output()
+            .expect("arcw run rejects malformed explicit Flow values");
+        assert!(!output.status.success(), "malformed values unexpectedly ran");
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        assert!(
+            stderr.contains(expected),
+            "expected `{expected}` for {arguments:?}, got {stderr}"
+        );
+    }
 }
 
 #[test]

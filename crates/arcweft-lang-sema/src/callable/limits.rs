@@ -1,8 +1,15 @@
 //! Inclusive callable catalog and query limits.
+use std::sync::atomic::{AtomicBool, Ordering};
+
 use super::{
     CallableBuildLimitError, CallableQueryLimitError, SignatureLimitExceeded, SignatureLimitKind,
     SignatureWorkKind,
 };
+use crate::types::constraints::context::{
+    TypeConstraintAccounting, TypeConstraintContextIssuer, TypeConstraintLimits,
+    TypeConstraintWorkReport,
+};
+use crate::types::constraints::{TypeConstraintAbort, TypeConstraintError};
 
 /// Fixed resource limits shared by callable registration and semantic queries.
 #[allow(
@@ -24,6 +31,11 @@ pub struct CallableLimits {
     max_catalog_records: usize,
     max_catalog_build_work: u64,
     max_query_work: u64,
+    max_call_constraint_branches: u64,
+    max_call_constraint_nodes: u64,
+    max_call_constraint_source_probes: u64,
+    max_call_constraint_materializations: u64,
+    max_call_solution_bindings: u64,
 }
 
 /// Production callable limits. Every bound is inclusive.
@@ -41,6 +53,11 @@ pub const PRODUCTION_CALLABLE_LIMITS: CallableLimits = CallableLimits {
     max_catalog_records: 262_144,
     max_catalog_build_work: 1_048_576,
     max_query_work: 4_096,
+    max_call_constraint_branches: 256,
+    max_call_constraint_nodes: 16_384,
+    max_call_constraint_source_probes: 512,
+    max_call_constraint_materializations: 512,
+    max_call_solution_bindings: 128,
 };
 
 /// Inclusive public signature-search and result limits.
@@ -154,6 +171,46 @@ impl CallableLimits {
         self.max_query_work
     }
 
+    /// Maximum number of distinct generic constraint branches for one candidate.
+    pub const fn max_call_constraint_branches(self) -> u64 {
+        self.max_call_constraint_branches
+    }
+
+    /// Maximum semantic nodes visited by one candidate constraint relation.
+    pub const fn max_call_constraint_nodes(self) -> u64 {
+        self.max_call_constraint_nodes
+    }
+
+    /// Maximum isolated source probes retained by one lower candidate run.
+    pub const fn max_call_constraint_source_probes(self) -> u64 {
+        self.max_call_constraint_source_probes
+    }
+
+    /// Maximum final source materializations retained by one lower candidate run.
+    pub const fn max_call_constraint_materializations(self) -> u64 {
+        self.max_call_constraint_materializations
+    }
+
+    /// Maximum generic bindings retained by one candidate solution.
+    pub const fn max_call_solution_bindings(self) -> u64 {
+        self.max_call_solution_bindings
+    }
+
+    /// Projects callable policy and an exact remaining resolver budget into
+    /// the lower types-owned constraint context limits.
+    pub(crate) const fn type_constraint_limits(self, remaining_work: u64) -> TypeConstraintLimits {
+        TypeConstraintLimits::new(
+            remaining_work,
+            self.max_call_constraint_nodes,
+            self.max_call_constraint_branches,
+            self.max_call_solution_bindings,
+        )
+        .with_source_limits(
+            self.max_call_constraint_source_probes,
+            self.max_call_constraint_materializations,
+        )
+    }
+
     #[cfg(test)]
     #[allow(
         clippy::too_many_arguments,
@@ -185,7 +242,38 @@ impl CallableLimits {
             max_catalog_records: 262_144,
             max_catalog_build_work,
             max_query_work,
+            max_call_constraint_branches: PRODUCTION_CALLABLE_LIMITS.max_call_constraint_branches,
+            max_call_constraint_nodes: PRODUCTION_CALLABLE_LIMITS.max_call_constraint_nodes,
+            max_call_constraint_source_probes: PRODUCTION_CALLABLE_LIMITS
+                .max_call_constraint_source_probes,
+            max_call_constraint_materializations: PRODUCTION_CALLABLE_LIMITS
+                .max_call_constraint_materializations,
+            max_call_solution_bindings: PRODUCTION_CALLABLE_LIMITS.max_call_solution_bindings,
         }
+    }
+
+    #[cfg(test)]
+    pub(crate) const fn with_type_constraint_limits(
+        mut self,
+        max_call_constraint_branches: u64,
+        max_call_constraint_nodes: u64,
+        max_call_solution_bindings: u64,
+    ) -> Self {
+        self.max_call_constraint_branches = max_call_constraint_branches;
+        self.max_call_constraint_nodes = max_call_constraint_nodes;
+        self.max_call_solution_bindings = max_call_solution_bindings;
+        self
+    }
+
+    #[cfg(test)]
+    pub(crate) const fn with_type_constraint_source_limits(
+        mut self,
+        max_call_constraint_source_probes: u64,
+        max_call_constraint_materializations: u64,
+    ) -> Self {
+        self.max_call_constraint_source_probes = max_call_constraint_source_probes;
+        self.max_call_constraint_materializations = max_call_constraint_materializations;
+        self
     }
 }
 
@@ -218,14 +306,290 @@ impl CatalogBuildWork {
     }
 }
 
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+#[derive(Clone, Debug, Eq, PartialEq)]
 pub(crate) struct ResolverWork {
     consumed: u64,
     limit: u64,
     resolver: u64,
     argument_mapping: u64,
     type_checks: u64,
+    type_constraint_report: TypeConstraintWorkReport,
     call: CallResolverAccountingReport,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+struct ResolverWorkFullReport {
+    consumed: u64,
+    limit: u64,
+    resolver: u64,
+    argument_mapping: u64,
+    type_checks: u64,
+    type_constraint_report: TypeConstraintWorkReport,
+    call: CallResolverAccountingReport,
+}
+
+impl ResolverWorkFullReport {
+    fn from_work(work: &ResolverWork) -> Self {
+        Self {
+            consumed: work.consumed,
+            limit: work.limit,
+            resolver: work.resolver,
+            argument_mapping: work.argument_mapping,
+            type_checks: work.type_checks,
+            type_constraint_report: work.type_constraint_report.clone(),
+            call: work.call,
+        }
+    }
+
+    fn publish_into(self, work: &mut ResolverWork) {
+        work.consumed = self.consumed;
+        work.limit = self.limit;
+        work.resolver = self.resolver;
+        work.argument_mapping = self.argument_mapping;
+        work.type_checks = self.type_checks;
+        work.type_constraint_report = self.type_constraint_report;
+        work.call = self.call;
+    }
+}
+
+/// One previous/proposed full resolver report. The reservation is private to
+/// the candidate session; no caller can merge an exposed lower delta.
+#[derive(Clone, Debug, Eq, PartialEq)]
+struct PendingCandidateConstraintReport {
+    previous: ResolverWorkFullReport,
+    proposed: ResolverWorkFullReport,
+}
+
+/// Exclusively borrowed candidate-wide lower constraint accounting session.
+///
+/// An unfinished session commits its checked proposal on `Drop`; a completed
+/// run owns this guard until `complete`, so exactly one publication occurs for
+/// success, failure, cancellation, and early return alike.
+#[derive(Clone, Copy, Debug, Eq, thiserror::Error, PartialEq)]
+pub(crate) enum CandidateConstraintSessionStartFailure {
+    #[error("candidate constraint session accounting overflow")]
+    ArithmeticOverflow,
+}
+
+pub(crate) struct CandidateConstraintWorkSession<'a> {
+    work: Option<&'a mut ResolverWork>,
+    cancellation: &'a AtomicBool,
+    limits: TypeConstraintLimits,
+    reservation: PendingCandidateConstraintReport,
+    constraint_work: u64,
+    source_probes: u64,
+    materializations: u64,
+    committed: bool,
+}
+
+impl<'a> CandidateConstraintWorkSession<'a> {
+    pub(crate) fn new(
+        work: &'a mut ResolverWork,
+        limits: CallableLimits,
+        cancellation: &'a AtomicBool,
+    ) -> Result<Self, CandidateConstraintSessionStartFailure> {
+        let previous = ResolverWorkFullReport::from_work(work);
+        let remaining = previous
+            .limit
+            .checked_sub(previous.consumed)
+            .ok_or(CandidateConstraintSessionStartFailure::ArithmeticOverflow)?;
+        let proposed = previous.clone();
+        Ok(Self {
+            work: Some(work),
+            cancellation,
+            limits: limits.type_constraint_limits(remaining),
+            reservation: PendingCandidateConstraintReport { previous, proposed },
+            constraint_work: 0,
+            source_probes: 0,
+            materializations: 0,
+            committed: false,
+        })
+    }
+
+    fn apply_lower_delta(
+        &mut self,
+        delta: TypeConstraintWorkReport,
+    ) -> Result<(), CallableQueryLimitError> {
+        let proposed = &self.reservation.proposed;
+        let lower_work = self
+            .constraint_work
+            .checked_add(delta.work())
+            .ok_or(CallableQueryLimitError::ArithmeticOverflow)?;
+        if lower_work > self.limits.max_work() {
+            return Err(CallableQueryLimitError::Work {
+                requested: delta.work(),
+                consumed: self.constraint_work,
+                limit: self.limits.max_work(),
+            });
+        }
+        let consumed = proposed
+            .consumed
+            .checked_add(delta.work())
+            .ok_or(CallableQueryLimitError::ArithmeticOverflow)?;
+        if consumed > proposed.limit {
+            return Err(CallableQueryLimitError::Work {
+                requested: delta.work(),
+                consumed: proposed.consumed,
+                limit: proposed.limit,
+            });
+        }
+        let type_checks = proposed
+            .type_checks
+            .checked_add(delta.work())
+            .ok_or(CallableQueryLimitError::ArithmeticOverflow)?;
+        let report = proposed
+            .type_constraint_report
+            .checked_add(&delta)
+            .map_err(|_| CallableQueryLimitError::ArithmeticOverflow)?;
+        self.reservation.proposed.consumed = consumed;
+        self.reservation.proposed.type_checks = type_checks;
+        self.reservation.proposed.type_constraint_report = report;
+        self.constraint_work = lower_work;
+        Ok(())
+    }
+
+    fn commit(&mut self) {
+        if self.committed {
+            return;
+        }
+        let Some(work) = self.work.take() else {
+            self.committed = true;
+            return;
+        };
+        let proposed = core::mem::replace(
+            &mut self.reservation.proposed,
+            self.reservation.previous.clone(),
+        );
+        proposed.publish_into(work);
+        self.committed = true;
+    }
+
+    /// Charges one callback-owned expression check against the proposed outer
+    /// resolver work report.  This deliberately does not synthesize lower
+    /// source-probe/materialization counters; those remain minted by the
+    /// callable driver.
+    pub(crate) fn charge_callback_expression(
+        &mut self,
+        units: u64,
+    ) -> Result<(), crate::types::constraints::TypeConstraintAbort> {
+        if self.cancellation.load(Ordering::Acquire) {
+            return Err(crate::types::constraints::TypeConstraintAbort::Cancelled);
+        }
+        let proposed = &mut self.reservation.proposed;
+        let consumed = proposed
+            .consumed
+            .checked_add(units)
+            .ok_or(crate::types::constraints::TypeConstraintAbort::ArithmeticOverflow)?;
+        if consumed > proposed.limit {
+            return Err(crate::types::constraints::TypeConstraintAbort::WorkLimit {
+                requested: units,
+                consumed: proposed.consumed,
+                limit: proposed.limit,
+            });
+        }
+        proposed.type_checks = proposed
+            .type_checks
+            .checked_add(units)
+            .ok_or(crate::types::constraints::TypeConstraintAbort::ArithmeticOverflow)?;
+        proposed.consumed = consumed;
+        Ok(())
+    }
+
+    pub(crate) fn check_cancelled(
+        &self,
+    ) -> Result<(), crate::types::constraints::TypeConstraintAbort> {
+        if self.cancellation.load(Ordering::Acquire) {
+            Err(crate::types::constraints::TypeConstraintAbort::Cancelled)
+        } else {
+            Ok(())
+        }
+    }
+}
+
+impl Drop for CandidateConstraintWorkSession<'_> {
+    fn drop(&mut self) {
+        self.commit();
+    }
+}
+
+impl TypeConstraintAccounting for CandidateConstraintWorkSession<'_> {
+    fn charge_constraint(
+        &mut self,
+        delta: &TypeConstraintWorkReport,
+        _limits: TypeConstraintLimits,
+    ) -> Result<(), TypeConstraintError> {
+        if self.cancellation.load(Ordering::Acquire) {
+            return Err(TypeConstraintError::Abort(TypeConstraintAbort::Cancelled));
+        }
+        let source_probes = self
+            .source_probes
+            .checked_add(delta.source_probes())
+            .ok_or(TypeConstraintError::Abort(
+                TypeConstraintAbort::ArithmeticOverflow,
+            ))?;
+        if source_probes > self.limits.max_source_probes() {
+            return Err(TypeConstraintError::Abort(
+                TypeConstraintAbort::SourceProbeLimit {
+                    actual: source_probes,
+                    limit: self.limits.max_source_probes(),
+                },
+            ));
+        }
+        let materializations = self
+            .materializations
+            .checked_add(delta.materializations())
+            .ok_or(TypeConstraintError::Abort(
+                TypeConstraintAbort::ArithmeticOverflow,
+            ))?;
+        if materializations > self.limits.max_materializations() {
+            return Err(TypeConstraintError::Abort(
+                TypeConstraintAbort::MaterializationLimit {
+                    actual: materializations,
+                    limit: self.limits.max_materializations(),
+                },
+            ));
+        }
+        self.apply_lower_delta(delta.clone())
+            .map_err(|error| match error {
+                CallableQueryLimitError::ArithmeticOverflow => {
+                    TypeConstraintError::Abort(TypeConstraintAbort::ArithmeticOverflow)
+                }
+                CallableQueryLimitError::Work {
+                    requested,
+                    consumed,
+                    limit,
+                } => TypeConstraintError::Abort(TypeConstraintAbort::WorkLimit {
+                    requested,
+                    consumed,
+                    limit,
+                }),
+                CallableQueryLimitError::Candidates { .. }
+                | CallableQueryLimitError::Parameters { .. }
+                | CallableQueryLimitError::NestedCalls { .. }
+                | CallableQueryLimitError::RecoveryNodes { .. }
+                | CallableQueryLimitError::Diagnostics { .. }
+                | CallableQueryLimitError::SourceBytes { .. } => {
+                    unreachable!("candidate lower accounting cannot charge non-lower limits")
+                }
+            })?;
+        self.source_probes = source_probes;
+        self.materializations = materializations;
+        Ok(())
+    }
+
+    fn commit(&mut self) {
+        CandidateConstraintWorkSession::commit(self);
+    }
+}
+
+impl<'a> TypeConstraintContextIssuer<'a> for CandidateConstraintWorkSession<'a> {
+    fn context_limits(&self) -> TypeConstraintLimits {
+        self.limits
+    }
+
+    fn context_cancellation(&self) -> &'a AtomicBool {
+        self.cancellation
+    }
 }
 
 /// Closed resolver-work and committed-publication counters for one final Call
@@ -310,48 +674,6 @@ enum CallResolverAccountingEvent {
     RetainedArgumentFactPublication,
 }
 
-/// Current registered-candidate recursion owned by one focused callable query.
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub(crate) struct CallableQueryDepth {
-    current: usize,
-    limit: usize,
-}
-
-impl CallableQueryDepth {
-    pub(crate) const fn new(limits: CallableLimits) -> Self {
-        Self {
-            current: 0,
-            limit: limits.max_nested_calls(),
-        }
-    }
-
-    pub(crate) fn try_enter(&mut self) -> Result<(), CallableQueryLimitError> {
-        let actual = self
-            .current
-            .checked_add(1)
-            .ok_or(CallableQueryLimitError::ArithmeticOverflow)?;
-        if actual > self.limit {
-            return Err(CallableQueryLimitError::NestedCalls {
-                actual,
-                limit: self.limit,
-            });
-        }
-        self.current = actual;
-        Ok(())
-    }
-
-    pub(crate) fn leave(&mut self) {
-        self.current = self
-            .current
-            .checked_sub(1)
-            .expect("focused callable depth exits exactly once");
-    }
-
-    pub(crate) const fn is_active(self) -> bool {
-        self.current != 0
-    }
-}
-
 impl ResolverWork {
     pub(crate) const fn new(limit: u64) -> Self {
         Self {
@@ -360,6 +682,7 @@ impl ResolverWork {
             resolver: 0,
             argument_mapping: 0,
             type_checks: 0,
+            type_constraint_report: TypeConstraintWorkReport::ZERO,
             call: CallResolverAccountingReport::ZERO,
         }
     }
@@ -370,6 +693,7 @@ impl ResolverWork {
         self.resolver = 0;
         self.argument_mapping = 0;
         self.type_checks = 0;
+        self.type_constraint_report = TypeConstraintWorkReport::ZERO;
         self.call = CallResolverAccountingReport::ZERO;
     }
 
@@ -384,8 +708,22 @@ impl ResolverWork {
         self.charge_component(units, ResolverWorkComponent::ArgumentMapping)
     }
 
-    pub(crate) fn charge_type_check(&mut self, units: u64) -> Result<(), CallableQueryLimitError> {
-        self.charge_component(units, ResolverWorkComponent::TypeCheck)
+    /// Returns the exact unconsumed query-work budget for one projected
+    /// candidate relation. Saturation would hide an accounting invariant
+    /// violation, so an over-consumed meter is reported as overflow.
+    #[cfg(test)]
+    pub(crate) fn remaining_budget(&self) -> Result<u64, CallableQueryLimitError> {
+        self.limit
+            .checked_sub(self.consumed)
+            .ok_or(CallableQueryLimitError::ArithmeticOverflow)
+    }
+
+    pub(crate) fn begin_candidate_constraint_session<'a>(
+        &'a mut self,
+        limits: CallableLimits,
+        cancellation: &'a AtomicBool,
+    ) -> Result<CandidateConstraintWorkSession<'a>, CandidateConstraintSessionStartFailure> {
+        CandidateConstraintWorkSession::new(self, limits, cancellation)
     }
 
     pub(crate) fn record_logical_argument_checks(
@@ -428,6 +766,11 @@ impl ResolverWork {
 
     pub(crate) const fn call_accounting(&self) -> CallResolverAccountingReport {
         self.call
+    }
+
+    #[cfg(test)]
+    pub(crate) const fn type_constraint_report(&self) -> &TypeConstraintWorkReport {
+        &self.type_constraint_report
     }
 
     fn record_call_event(
@@ -475,14 +818,12 @@ impl ResolverWork {
         let next_component = match component {
             ResolverWorkComponent::Resolver => self.resolver.checked_add(units),
             ResolverWorkComponent::ArgumentMapping => self.argument_mapping.checked_add(units),
-            ResolverWorkComponent::TypeCheck => self.type_checks.checked_add(units),
         }
         .ok_or(CallableQueryLimitError::ArithmeticOverflow)?;
         self.consumed = next;
         match component {
             ResolverWorkComponent::Resolver => self.resolver = next_component,
             ResolverWorkComponent::ArgumentMapping => self.argument_mapping = next_component,
-            ResolverWorkComponent::TypeCheck => self.type_checks = next_component,
         }
         Ok(())
     }
@@ -492,7 +833,6 @@ impl ResolverWork {
 enum ResolverWorkComponent {
     Resolver,
     ArgumentMapping,
-    TypeCheck,
 }
 
 /// Work performed while resolving and projecting one semantic signature query.
@@ -960,5 +1300,106 @@ mod final_call_accounting_tests {
         assert_eq!(report.search().arguments(), 3);
         assert_eq!(report.projection().argument_projections(), 2);
         assert_eq!(report.total_work(), 5);
+    }
+
+    #[test]
+    fn type_constraint_run_is_consumed_by_exactly_one_merge() {
+        use std::sync::atomic::AtomicBool;
+
+        use crate::types::{ConstraintAcceptance, TypeKind};
+
+        let limits = PRODUCTION_CALLABLE_LIMITS;
+        let mut work = ResolverWork::new(256);
+        work.charge(2).expect("initial resolver work");
+        let remaining = work.remaining_budget().expect("remaining budget");
+        assert_eq!(remaining, 254);
+        let cancellation = AtomicBool::new(false);
+        let session = work
+            .begin_candidate_constraint_session(limits, &cancellation)
+            .expect("reserved candidate session");
+        let mut driver = session
+            .start::<crate::types::NoConstraintClient, _>(
+                super::super::constraints::tests::no_constraint_initialization(),
+                crate::types::NoConstraintClient,
+            )
+            .expect("prepared initialization");
+        driver.constrain(
+            &TypeKind::I32,
+            &TypeKind::I32,
+            ConstraintAcceptance::PatternAcceptsActual,
+        );
+        let outcome = driver.finish().complete().expect("constraint outcome");
+        assert_eq!(outcome.solution.bindings().len(), 0);
+        let committed = work.type_constraint_report.work();
+        assert!(committed > 0);
+        assert_eq!(
+            work.remaining_budget().expect("remaining budget"),
+            254 - committed
+        );
+    }
+
+    #[test]
+    fn candidate_session_failure_commits_metered_failure() {
+        use std::sync::atomic::AtomicBool;
+
+        let cancellation = AtomicBool::new(true);
+        let mut work = ResolverWork::new(16);
+        let session = work
+            .begin_candidate_constraint_session(PRODUCTION_CALLABLE_LIMITS, &cancellation)
+            .expect("reserved candidate session");
+        assert!(matches!(
+            session.start::<crate::types::NoConstraintClient, _>(
+                super::super::constraints::tests::no_constraint_initialization(),
+                crate::types::NoConstraintClient,
+            ),
+            Err(
+                crate::callable::CandidateConstraintDriverStartFailure::Lower(
+                    crate::types::constraints::TypeConstraintInitializationFailure::Abort(
+                        crate::types::constraints::TypeConstraintAbort::Cancelled,
+                    ),
+                )
+            )
+        ));
+        assert_eq!(work.type_constraint_report.work(), 0);
+        assert_eq!(work.consumed, 0);
+    }
+
+    #[test]
+    fn candidate_session_start_reports_only_arithmetic_overflow() {
+        use std::sync::atomic::AtomicBool;
+
+        let cancellation = AtomicBool::new(false);
+        let mut work = ResolverWork::new(0);
+        work.consumed = 1;
+        assert!(matches!(
+            work.begin_candidate_constraint_session(PRODUCTION_CALLABLE_LIMITS, &cancellation),
+            Err(CandidateConstraintSessionStartFailure::ArithmeticOverflow)
+        ));
+    }
+
+    #[test]
+    fn uncompleted_candidate_run_commits_before_outcome_is_dropped() {
+        use std::sync::atomic::AtomicBool;
+
+        use crate::types::{ConstraintAcceptance, TypeKind};
+
+        let cancellation = AtomicBool::new(false);
+        let mut work = ResolverWork::new(16);
+        let session = work
+            .begin_candidate_constraint_session(PRODUCTION_CALLABLE_LIMITS, &cancellation)
+            .expect("reserved candidate session");
+        let mut driver = session
+            .start::<crate::types::NoConstraintClient, _>(
+                super::super::constraints::tests::no_constraint_initialization(),
+                crate::types::NoConstraintClient,
+            )
+            .expect("prepared initialization");
+        driver.constrain(
+            &TypeKind::I32,
+            &TypeKind::I32,
+            ConstraintAcceptance::PatternAcceptsActual,
+        );
+        drop(driver.finish());
+        assert!(work.type_constraint_report.work() > 0);
     }
 }

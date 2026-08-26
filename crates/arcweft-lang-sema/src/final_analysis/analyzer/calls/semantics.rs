@@ -1,28 +1,16 @@
 //! Candidate selection and final callable semantic projections.
 
 use super::super::{
-    CallableAuthorityRank, CallableGroupIndex, CallableInstantiation, CallableParameterType,
-    CandidateExpectedType, CandidateProbe, CandidateScore, CandidateSelection,
-    CheckedCallArgumentSlotSource, CheckedCallableCatalog, CheckedProjectNominal, EffectRow,
-    EffectSet, FinalSemanticAnalysisError, GenericTypeOwnerId, GenericTypeParameterId,
-    HirCallArgument, HirCallValue, MappedCallArgumentSlot, Ordering,
-    PhysicalArgumentEvaluationKind, ProjectNominalDeclaration, ProjectNominalType,
-    ResolvedCallable, SpreadArgumentPolicy, TypeKind, TypeParameterSubstitutions,
+    AcceptedCandidateRank, CallableAuthorityRank, CallableGroupIndex, CallableInstantiation,
+    CandidateSelection, CheckedCallArgumentSlotSource, CheckedCallableCatalog,
+    CheckedProjectNominal, EffectRow, EffectSet, FinalSemanticAnalysisError,
+    GenericParameterOwnerId, GenericTypeParameterId, HirCallArgument, HirCallValue,
+    MappedCallArgumentSlot, Ordering, PhysicalArgumentEvaluationKind, PreparedResolvedCallable,
+    ProjectNominalDeclaration, ProjectNominalType, SpreadArgumentPolicy, TypeKind,
+    TypeParameterSubstitutions,
 };
-
-pub(super) fn physical_expected_type(
-    expected: Option<&TypeKind>,
-    has_coordinate: bool,
-    shape_rejected: bool,
-) -> CandidateExpectedType {
-    if shape_rejected || !has_coordinate {
-        CandidateExpectedType::Unmapped
-    } else if let Some(expected) = expected {
-        CandidateExpectedType::Exact(expected.clone())
-    } else {
-        CandidateExpectedType::Unchecked
-    }
-}
+use super::PreparedCandidateOutcome;
+use crate::callable::ResolvedCallable;
 
 pub(super) fn physical_evaluation_kind(
     argument: &HirCallArgument,
@@ -49,7 +37,7 @@ pub(super) fn physical_evaluation_kind(
     PhysicalArgumentEvaluationKind::Authored
 }
 
-pub(in super::super) fn callable_schema_type(
+pub(in super::super) fn source_callable_schema_type(
     schema: &crate::callable::CallableSignatureSchema,
 ) -> Option<TypeKind> {
     let mut result = schema.result().clone();
@@ -57,10 +45,7 @@ pub(in super::super) fn callable_schema_type(
         let parameters = group
             .parameters()
             .iter()
-            .map(|parameter| match parameter.ty() {
-                CallableParameterType::Exact(ty) => Some(ty.clone()),
-                CallableParameterType::Unchecked => None,
-            })
+            .map(|parameter| parameter.declared_type().cloned())
             .collect::<Option<Vec<_>>>()?;
         result = TypeKind::function_with_effects(
             parameters,
@@ -71,27 +56,8 @@ pub(in super::super) fn callable_schema_type(
     Some(result)
 }
 
-pub(in super::super) fn callable_schema_type_with_effects(
-    schema: &crate::callable::CallableSignatureSchema,
-    effects: &EffectRow,
-) -> Option<TypeKind> {
-    let mut result = schema.result().clone();
-    for group in schema.groups().iter().rev() {
-        let parameters = group
-            .parameters()
-            .iter()
-            .map(|parameter| match parameter.ty() {
-                CallableParameterType::Exact(ty) => Some(ty.clone()),
-                CallableParameterType::Unchecked => None,
-            })
-            .collect::<Option<Vec<_>>>()?;
-        result = TypeKind::function_with_effects(parameters, result, effects.clone());
-    }
-    Some(result)
-}
-
 pub(super) fn provisional_call_effects(
-    candidate: &ResolvedCallable,
+    candidate: &PreparedResolvedCallable,
     current_group: CallableGroupIndex,
 ) -> Result<EffectRow, FinalSemanticAnalysisError> {
     let next = CallableGroupIndex::try_from_usize(
@@ -123,7 +89,7 @@ pub(super) fn provisional_call_effects(
         .unwrap_or_else(|| EffectRow::closed(EffectSet::new())))
 }
 
-pub(super) fn provisional_callable_effects(candidate: &ResolvedCallable) -> EffectRow {
+pub(super) fn provisional_callable_effects(candidate: &PreparedResolvedCallable) -> EffectRow {
     candidate
         .schema()
         .effects()
@@ -153,65 +119,60 @@ pub(in super::super) fn final_call_effects(
     current_group: CallableGroupIndex,
     checked: &CheckedCallableCatalog,
 ) -> Result<EffectRow, FinalSemanticAnalysisError> {
-    let provisional = provisional_call_effects(candidate, current_group)?;
-    let next = CallableGroupIndex::try_from_usize(
-        current_group
-            .get()
-            .checked_add(1)
-            .ok_or(FinalSemanticAnalysisError::AccountingOverflow)?,
-    )
-    .map_err(|_| FinalSemanticAnalysisError::AccountingOverflow)?;
-    if candidate.schema().group(next).is_some()
-        || candidate.schema().effects().fixed_row().is_some()
-    {
-        return Ok(provisional);
+    if candidate.base().next_group_for(current_group).is_some() {
+        return Ok(EffectRow::closed(EffectSet::new()));
     }
-    let id = candidate
-        .checked()
-        .ok_or(FinalSemanticAnalysisError::CheckedCallableCatalog)?;
-    checked
-        .callable(id)
-        .map(|facts| facts.exposed_row().clone())
-        .map_err(|_| FinalSemanticAnalysisError::CheckedCallableCatalog)
+    final_callable_effects(candidate, checked)
 }
 
-pub(super) fn select_candidate_probes(probes: &[CandidateProbe]) -> CandidateSelection {
+pub(super) fn select_prepared_candidates(
+    probes: &[PreparedCandidateOutcome],
+) -> CandidateSelection {
     let mut best = None::<usize>;
     let mut tied = Vec::new();
     for (index, probe) in probes.iter().enumerate() {
-        if probe.score.hard_errors != 0 {
+        let PreparedCandidateOutcome::Accepted { rank, .. } = probe else {
             continue;
-        }
+        };
         match best {
             None => {
                 best = Some(index);
                 tied.clear();
                 tied.push(index);
             }
-            Some(current) => match compare_candidate_score(&probe.score, &probes[current].score) {
-                Ordering::Greater => {
-                    best = Some(index);
-                    tied.clear();
-                    tied.push(index);
+            Some(current) => {
+                let PreparedCandidateOutcome::Accepted {
+                    rank: current_rank, ..
+                } = &probes[current]
+                else {
+                    continue;
+                };
+                match compare_accepted_candidate_rank(rank, current_rank) {
+                    Ordering::Greater => {
+                        best = Some(index);
+                        tied.clear();
+                        tied.push(index);
+                    }
+                    Ordering::Equal => tied.push(index),
+                    Ordering::Less => {}
                 }
-                Ordering::Equal => tied.push(index),
-                Ordering::Less => {}
-            },
+            }
         }
     }
     match (best, tied.as_slice()) {
         (Some(selected), [_]) => CandidateSelection::Selected(selected),
         (Some(primary), [_, _, ..]) => CandidateSelection::Ambiguous { primary, tied },
         (None, _) => CandidateSelection::Rejected { primary: 0 },
-        (Some(_), []) => unreachable!("a selected candidate is inserted into the tie set"),
+        (Some(selected), []) => CandidateSelection::Selected(selected),
     }
 }
 
-fn compare_candidate_score(left: &CandidateScore, right: &CandidateScore) -> Ordering {
-    right
-        .hard_errors
-        .cmp(&left.hard_errors)
-        .then_with(|| left.exact_matches.cmp(&right.exact_matches))
+fn compare_accepted_candidate_rank(
+    left: &AcceptedCandidateRank,
+    right: &AcceptedCandidateRank,
+) -> Ordering {
+    left.exact_matches
+        .cmp(&right.exact_matches)
         .then_with(|| right.unchecked_or_open.cmp(&left.unchecked_or_open))
         .then_with(|| right.omitted_parameters.cmp(&left.omitted_parameters))
         .then_with(|| compare_candidate_authority(left.authority, right.authority))
@@ -266,7 +227,7 @@ pub(in super::super) fn nominal_substitutions(
         .zip(nominal.arguments())
     {
         let parameter = TypeKind::GenericParam(GenericTypeParameterId::new(
-            GenericTypeOwnerId::Nominal(declaration.id().clone()),
+            GenericParameterOwnerId::Nominal(declaration.id().clone()),
             parameter.ordinal(),
         ));
         if !substitutions.observe(&parameter, argument) {

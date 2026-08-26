@@ -1,5 +1,8 @@
 use arcweft_data::{BytesFormat, EnumRepr, EnumTagStyle, FieldShape, TypeShape, VariantShape};
-use arcweft_lang_hir::symbol::{CallableDeclarationId, CallablePackageId};
+use arcweft_lang_hir::{
+    item::HirRoutePathSegment,
+    symbol::{CallableDeclarationId, CallablePackageId},
+};
 
 use crate::{
     callable::{CallableGroupKind, CallableParameterPassing, CallableParameterPresence},
@@ -8,8 +11,9 @@ use crate::{
 
 use super::{
     AgentBudget, BoundNominalKind, BoundNominalTypeKey, CallableContractDigest, CheckedAgentPolicy,
-    CheckedAgentPolicyDigest, CheckedEntryBindingDigest, CheckedEntryId, CheckedEntryKind,
-    CheckedFlowId, CheckedStatefulEntryKind, FlowContractDigest, NominalSchemaDigest,
+    CheckedAgentPolicyDigest, CheckedEntryBindingDigest, CheckedEntryFlowTarget, CheckedEntryId,
+    CheckedEntryKind, CheckedEntryRouteBindingSource, CheckedExistingEntryTarget, CheckedFlowId,
+    CheckedStatefulEntryKind, FlowContractDigest, NominalSchemaDigest,
 };
 
 const VERSION: u32 = 1;
@@ -407,9 +411,10 @@ pub(super) fn existing_binding(
     package: &CallablePackageId,
     id: &CheckedEntryId,
     kind: &CheckedEntryKind,
+    target: &CheckedExistingEntryTarget,
 ) -> CheckedEntryBindingDigest {
     CheckedEntryBindingDigest::from_bytes(
-        blake3::hash(&existing_binding_bytes(package, id, kind)).into(),
+        blake3::hash(&existing_binding_bytes(package, id, kind, target)).into(),
     )
 }
 
@@ -417,6 +422,7 @@ fn existing_binding_bytes(
     package: &CallablePackageId,
     id: &CheckedEntryId,
     kind: &CheckedEntryKind,
+    target: &CheckedExistingEntryTarget,
 ) -> Vec<u8> {
     let mut bytes = CanonicalBytes::domain(b"arcweft.checked-entry-binding\0");
     bytes.u8(3);
@@ -424,6 +430,40 @@ fn existing_binding_bytes(
     bytes.string(id.public_id().as_str());
     bytes.u8(kind.canonical_tag());
     bytes.option(kind.custom_payload(), CanonicalBytes::string);
+    match target {
+        CheckedExistingEntryTarget::Flow(flow) => {
+            bytes.u8(1);
+            bytes.entry_flow_target(flow);
+        }
+        CheckedExistingEntryTarget::Routes(routes) => {
+            bytes.u8(2);
+            bytes.len(routes.len());
+            for route in routes {
+                bytes.string(route.method().as_str());
+                bytes.len(route.path().segments().len());
+                for segment in route.path().segments() {
+                    match segment {
+                        HirRoutePathSegment::Literal(literal) => {
+                            bytes.u8(1);
+                            bytes.string(literal);
+                        }
+                        HirRoutePathSegment::Capture(_) => bytes.u8(2),
+                    }
+                }
+                bytes.entry_flow_target(route.target());
+                bytes.len(route.bindings().len());
+                for binding in route.bindings() {
+                    bytes.u32(binding.parameter().position());
+                    match binding.source() {
+                        CheckedEntryRouteBindingSource::PathCapture(capture) => {
+                            bytes.u8(1);
+                            bytes.u32(capture.position());
+                        }
+                    }
+                }
+            }
+        }
+    }
     bytes.finish()
 }
 
@@ -503,6 +543,16 @@ impl CanonicalBytes {
             self.string(segment.as_str());
         }
         self.string(id.name());
+    }
+
+    fn entry_flow_target(&mut self, target: &CheckedEntryFlowTarget) {
+        self.fixed(target.id().declaration_digest().as_bytes());
+        self.fixed(target.contract_digest().as_bytes());
+        self.len(target.parameters().len());
+        for parameter in target.parameters() {
+            self.u32(parameter.coordinate().position());
+            self.fixed(parameter.semantic_type().as_bytes());
+        }
     }
 
     fn type_shape(&mut self, shape: &TypeShape) {
@@ -1122,7 +1172,8 @@ mod tests {
     fn canonical_existing_binding_bytes_use_a_distinct_variant_prefix() {
         let package = package();
         let id = CheckedEntryId::try_new("entry.server.main").unwrap();
-        let actual = existing_binding_bytes(&package, &id, &CheckedEntryKind::Server);
+        let target = CheckedExistingEntryTarget::Routes(Box::new([]));
+        let actual = existing_binding_bytes(&package, &id, &CheckedEntryKind::Server, &target);
 
         let mut expected = domain(b"arcweft.checked-entry-binding\0");
         expected.push(3);
@@ -1130,6 +1181,8 @@ mod tests {
         push_string(&mut expected, "entry.server.main");
         expected.push(6);
         expected.push(0);
+        expected.push(2);
+        expected.extend_from_slice(&0_u32.to_le_bytes());
         assert_eq!(actual, expected);
     }
 }

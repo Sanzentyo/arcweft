@@ -26,6 +26,7 @@ use arcweft_lang_syntax::assertion::AssertionMode;
 use arcweft_lang_syntax::ast::line_plan::DeferOutcome;
 use thiserror::Error;
 
+use crate::body_edges::HirBodyChildEdge;
 use crate::identity::{ExprId, HirModuleId, LocalId, PatternId, ScopeId, StmtId, TypeId};
 use crate::leaf::{HirIdRefIssue, HirIdRefValue, HirName, HirNameInvariantError};
 
@@ -501,6 +502,829 @@ pub enum HirStmtKind {
     Error,
 }
 
+/// Explicit statement algebra used by evaluation consumers. The plan itself
+/// is closed over all semantic statement families; consumers never need to
+/// rematch [`HirStmtKind`] to recover Return/Out/control or binding meaning.
+#[derive(Debug, Eq, PartialEq)]
+pub enum HirStmtEvaluationPlan<'stmt> {
+    Assertion {
+        mode: HirAssertionMode,
+        conditions: &'stmt [ExprId],
+    },
+    Binding {
+        kind: HirStmtBindingPlanKind,
+        pattern: PatternId,
+        annotation: Option<TypeId>,
+        input: ExprId,
+        locals: &'stmt [LocalId],
+    },
+    OrderedPair {
+        kind: HirStmtOrderedPairPlanKind,
+        first: ExprId,
+        second: ExprId,
+    },
+    Value {
+        kind: HirStmtValuePlanKind,
+        expression: Option<ExprId>,
+        label: Option<&'stmt HirName>,
+        outcome: Option<DeferOutcome>,
+    },
+    DeferredBody {
+        kind: HirStmtDeferredBodyPlanKind,
+        scope: ScopeId,
+        body: &'stmt [StmtId],
+        outcome: DeferOutcome,
+    },
+    EventBody {
+        trigger: HirStmtTriggerEvaluationPlan,
+        scope: ScopeId,
+        body: &'stmt [StmtId],
+    },
+    UnsafeLifetime {
+        audit: &'stmt HirUnsafeAudit,
+        body: &'stmt HirUnsafeLifetimeBody,
+    },
+    LetElse {
+        pattern: PatternId,
+        annotation: Option<TypeId>,
+        initializer: ExprId,
+        else_scope: ScopeId,
+        else_body: &'stmt [StmtId],
+        success_locals: &'stmt [LocalId],
+    },
+    If {
+        condition: ExprId,
+        then_body: &'stmt HirContextualStmtBody,
+        else_branch: Option<&'stmt HirConditionalElseBranch>,
+    },
+    IfLet {
+        pattern: PatternId,
+        scrutinee: ExprId,
+        guard: Option<ExprId>,
+        branch_locals: &'stmt [LocalId],
+        then_body: &'stmt HirContextualStmtBody,
+        else_branch: Option<&'stmt HirConditionalElseBranch>,
+    },
+    Match {
+        scrutinee: ExprId,
+        arms: &'stmt [HirStmtMatchArm],
+    },
+    While {
+        condition: ExprId,
+        body: &'stmt HirContextualStmtBody,
+    },
+    WhileLet {
+        pattern: PatternId,
+        scrutinee: ExprId,
+        guard: Option<ExprId>,
+        branch_locals: &'stmt [LocalId],
+        body: &'stmt HirContextualStmtBody,
+    },
+    For {
+        source: ExprId,
+        iterator: ExprId,
+        next_value: ExprId,
+        pattern: PatternId,
+        branch_locals: &'stmt [LocalId],
+        body: &'stmt HirContextualStmtBody,
+    },
+    Select {
+        scope: Option<ScopeId>,
+        plan: HirStmtSelectEvaluationPlan<'stmt>,
+    },
+    SourceLocale {
+        locale: &'stmt HirSourceLocaleValue,
+        body: &'stmt HirContextualStmtBody,
+    },
+    Scope {
+        name: Option<&'stmt HirName>,
+        body: &'stmt HirContextualStmtBody,
+    },
+    Include {
+        target: &'stmt HirIdRefValue,
+    },
+    Continue {
+        label: Option<&'stmt HirName>,
+    },
+    Recovered,
+}
+
+/// One source-ordered step emitted by a statement evaluation plan.
+///
+/// Unlike structural child edges, this stream interleaves ordinary statement
+/// bodies, heterogeneous Thread bodies, else-if statements, match arms, and
+/// Select branches at their authored evaluation boundaries. Consumers that
+/// need expression reachability borrow this one stream instead of rebuilding a
+/// second statement/body graph.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum HirStmtEvaluationStep<'stmt> {
+    Expression {
+        role: HirStatementChildRole,
+        expression: ExprId,
+    },
+    Statement {
+        role: HirStatementChildRole,
+        statement: StmtId,
+    },
+    ThreadBody {
+        role: HirStatementBodyRole,
+        edge: HirBodyChildEdge,
+    },
+    Pattern {
+        role: HirStatementChildRole,
+        pattern: PatternId,
+    },
+    Type {
+        role: HirStatementChildRole,
+        ty: TypeId,
+    },
+    Local {
+        role: HirStatementChildRole,
+        local: LocalId,
+    },
+    Publication {
+        role: HirStmtEvaluationPublicationRole,
+        locals: &'stmt [LocalId],
+    },
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum HirStmtEvaluationPublicationRole {
+    Binding { kind: HirStmtBindingPlanKind },
+    LetElseSuccess,
+    Branch { kind: HirStmtBranchPublicationKind },
+    TriggerPattern { pattern: PatternId },
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum HirStmtBranchPublicationKind {
+    IfLet,
+    MatchArm { arm: u32 },
+    WhileLet,
+    For,
+    SelectBranch { branch: u32 },
+}
+
+#[derive(Clone, Copy, Debug, Eq, Error, PartialEq)]
+pub enum HirStmtEvaluationStepError {
+    #[error("a statement evaluation step ordinal does not fit u32")]
+    OrdinalOverflow,
+}
+
+#[derive(Debug, Eq, PartialEq)]
+pub enum HirStmtSelectEvaluationPlan<'stmt> {
+    Operand {
+        expression: ExprId,
+    },
+    Branches {
+        branches: HirStmtSelectBranches<'stmt>,
+    },
+}
+
+#[derive(Debug, Eq, PartialEq)]
+pub struct HirStmtSelectBranches<'stmt> {
+    branches: &'stmt [HirSelectBranch],
+}
+
+impl HirStmtSelectBranches<'_> {
+    pub const fn len(&self) -> usize {
+        self.branches.len()
+    }
+
+    pub const fn is_empty(&self) -> bool {
+        self.branches.is_empty()
+    }
+
+    pub fn entries(&self) -> impl Iterator<Item = HirStmtSelectBranchEvaluation<'_>> {
+        self.branches.iter().map(HirStmtSelectBranchEvaluation::new)
+    }
+}
+
+impl<'stmt> HirStmtEvaluationPlan<'stmt> {
+    /// Returns the one source-ordered evaluation stream owned by this plan.
+    ///
+    /// The stream is deliberately richer than expression reachability: typed
+    /// pattern/type and binding-publication steps make visibility boundaries
+    /// explicit, while statement and Thread-body steps retain the exact place
+    /// where nested evaluation resumes.
+    #[allow(
+        clippy::too_many_lines,
+        reason = "the exhaustive statement-family plan is the single evaluation-order authority"
+    )]
+    pub fn try_visit_evaluation_steps(
+        &self,
+        mut visitor: impl FnMut(HirStmtEvaluationStep<'stmt>),
+    ) -> Result<(), HirStmtEvaluationStepError> {
+        match self {
+            Self::Assertion { conditions, .. } => {
+                for (ordinal, expression) in conditions.iter().copied().enumerate() {
+                    visitor(HirStmtEvaluationStep::Expression {
+                        role: HirStatementChildRole::AssertionCondition {
+                            ordinal: evaluation_ordinal(ordinal)?,
+                        },
+                        expression,
+                    });
+                }
+            }
+            Self::Binding {
+                kind,
+                pattern,
+                annotation,
+                input,
+                locals,
+            } => {
+                if let Some(ty) = annotation {
+                    visitor(HirStmtEvaluationStep::Type {
+                        role: HirStatementChildRole::Annotation,
+                        ty: *ty,
+                    });
+                }
+                visitor(HirStmtEvaluationStep::Expression {
+                    role: kind.input_role(),
+                    expression: *input,
+                });
+                visitor(HirStmtEvaluationStep::Pattern {
+                    role: HirStatementChildRole::Pattern,
+                    pattern: *pattern,
+                });
+                visitor(HirStmtEvaluationStep::Publication {
+                    role: HirStmtEvaluationPublicationRole::Binding { kind: *kind },
+                    locals,
+                });
+            }
+            Self::OrderedPair {
+                kind,
+                first,
+                second,
+            } => {
+                let (first_role, second_role) = match kind {
+                    HirStmtOrderedPairPlanKind::Assign
+                    | HirStmtOrderedPairPlanKind::Signal
+                    | HirStmtOrderedPairPlanKind::LifetimeSet => {
+                        (HirStatementChildRole::Target, HirStatementChildRole::Value)
+                    }
+                };
+                visitor(HirStmtEvaluationStep::Expression {
+                    role: first_role,
+                    expression: *first,
+                });
+                visitor(HirStmtEvaluationStep::Expression {
+                    role: second_role,
+                    expression: *second,
+                });
+            }
+            Self::Value {
+                kind, expression, ..
+            } => {
+                if let Some(expression) = expression {
+                    visitor(HirStmtEvaluationStep::Expression {
+                        role: kind.expression_role(),
+                        expression: *expression,
+                    });
+                }
+            }
+            Self::DeferredBody { body, .. } => {
+                visit_statement_steps(&mut visitor, HirStatementBodyRole::Defer, body)?;
+            }
+            Self::EventBody { trigger, body, .. } => {
+                visit_trigger_steps(&mut visitor, trigger);
+                visit_statement_steps(&mut visitor, HirStatementBodyRole::On, body)?;
+            }
+            Self::UnsafeLifetime { audit, body } => {
+                if let Some(reason) = audit.reason() {
+                    visitor(HirStmtEvaluationStep::Expression {
+                        role: HirStatementChildRole::UnsafeReason,
+                        expression: reason,
+                    });
+                }
+                if let HirUnsafeLifetimeBody::Block { statements, .. } = body {
+                    visit_statement_steps(
+                        &mut visitor,
+                        HirStatementBodyRole::UnsafeLifetime,
+                        statements,
+                    )?;
+                }
+            }
+            Self::LetElse {
+                pattern,
+                annotation,
+                initializer,
+                else_body,
+                success_locals,
+                ..
+            } => {
+                if let Some(ty) = annotation {
+                    visitor(HirStmtEvaluationStep::Type {
+                        role: HirStatementChildRole::Annotation,
+                        ty: *ty,
+                    });
+                }
+                visitor(HirStmtEvaluationStep::Expression {
+                    role: HirStatementChildRole::Initializer,
+                    expression: *initializer,
+                });
+                visitor(HirStmtEvaluationStep::Pattern {
+                    role: HirStatementChildRole::Pattern,
+                    pattern: *pattern,
+                });
+                visit_statement_steps(&mut visitor, HirStatementBodyRole::LetElse, else_body)?;
+                visitor(HirStmtEvaluationStep::Publication {
+                    role: HirStmtEvaluationPublicationRole::LetElseSuccess,
+                    locals: success_locals,
+                });
+            }
+            Self::If {
+                condition,
+                then_body,
+                else_branch,
+            } => {
+                visitor(HirStmtEvaluationStep::Expression {
+                    role: HirStatementChildRole::Condition,
+                    expression: *condition,
+                });
+                visit_contextual_steps(&mut visitor, HirStatementBodyRole::Then, then_body)?;
+                visit_else_steps(&mut visitor, else_branch.as_deref())?;
+            }
+            Self::IfLet {
+                pattern,
+                scrutinee,
+                guard,
+                branch_locals,
+                then_body,
+                else_branch,
+            } => {
+                visitor(HirStmtEvaluationStep::Expression {
+                    role: HirStatementChildRole::Scrutinee,
+                    expression: *scrutinee,
+                });
+                visitor(HirStmtEvaluationStep::Pattern {
+                    role: HirStatementChildRole::Pattern,
+                    pattern: *pattern,
+                });
+                visitor(HirStmtEvaluationStep::Publication {
+                    role: HirStmtEvaluationPublicationRole::Branch {
+                        kind: HirStmtBranchPublicationKind::IfLet,
+                    },
+                    locals: branch_locals,
+                });
+                if let Some(guard) = guard {
+                    visitor(HirStmtEvaluationStep::Expression {
+                        role: HirStatementChildRole::Guard,
+                        expression: *guard,
+                    });
+                }
+                visit_contextual_steps(&mut visitor, HirStatementBodyRole::Then, then_body)?;
+                visit_else_steps(&mut visitor, else_branch.as_deref())?;
+            }
+            Self::Match { scrutinee, arms } => {
+                visitor(HirStmtEvaluationStep::Expression {
+                    role: HirStatementChildRole::Scrutinee,
+                    expression: *scrutinee,
+                });
+                for (arm, value) in arms.iter().enumerate() {
+                    let arm = evaluation_ordinal(arm)?;
+                    visitor(HirStmtEvaluationStep::Pattern {
+                        role: HirStatementChildRole::MatchPattern { arm },
+                        pattern: value.pattern(),
+                    });
+                    visitor(HirStmtEvaluationStep::Publication {
+                        role: HirStmtEvaluationPublicationRole::Branch {
+                            kind: HirStmtBranchPublicationKind::MatchArm { arm },
+                        },
+                        locals: value.locals(),
+                    });
+                    if let Some(guard) = value.guard() {
+                        visitor(HirStmtEvaluationStep::Expression {
+                            role: HirStatementChildRole::MatchGuard { arm },
+                            expression: guard,
+                        });
+                    }
+                    match value.body() {
+                        HirStmtMatchArmBody::Expression(expression) => {
+                            visitor(HirStmtEvaluationStep::Expression {
+                                role: HirStatementChildRole::MatchValue { arm },
+                                expression: *expression,
+                            });
+                        }
+                        HirStmtMatchArmBody::Body(body) => visit_contextual_steps(
+                            &mut visitor,
+                            HirStatementBodyRole::MatchArm { arm },
+                            body,
+                        )?,
+                    }
+                }
+            }
+            Self::While { condition, body } => {
+                visitor(HirStmtEvaluationStep::Expression {
+                    role: HirStatementChildRole::Condition,
+                    expression: *condition,
+                });
+                visit_contextual_steps(&mut visitor, HirStatementBodyRole::While, body)?;
+            }
+            Self::WhileLet {
+                pattern,
+                scrutinee,
+                guard,
+                branch_locals,
+                body,
+            } => {
+                visitor(HirStmtEvaluationStep::Expression {
+                    role: HirStatementChildRole::Scrutinee,
+                    expression: *scrutinee,
+                });
+                visitor(HirStmtEvaluationStep::Pattern {
+                    role: HirStatementChildRole::Pattern,
+                    pattern: *pattern,
+                });
+                visitor(HirStmtEvaluationStep::Publication {
+                    role: HirStmtEvaluationPublicationRole::Branch {
+                        kind: HirStmtBranchPublicationKind::WhileLet,
+                    },
+                    locals: branch_locals,
+                });
+                if let Some(guard) = guard {
+                    visitor(HirStmtEvaluationStep::Expression {
+                        role: HirStatementChildRole::Guard,
+                        expression: *guard,
+                    });
+                }
+                visit_contextual_steps(&mut visitor, HirStatementBodyRole::WhileLet, body)?;
+            }
+            Self::For {
+                source,
+                iterator,
+                next_value,
+                pattern,
+                branch_locals,
+                body,
+            } => {
+                for (role, expression) in [
+                    (HirStatementChildRole::ForSource, *source),
+                    (HirStatementChildRole::ForIterator, *iterator),
+                    (HirStatementChildRole::ForNextValue, *next_value),
+                ] {
+                    visitor(HirStmtEvaluationStep::Expression { role, expression });
+                }
+                visitor(HirStmtEvaluationStep::Pattern {
+                    role: HirStatementChildRole::Pattern,
+                    pattern: *pattern,
+                });
+                visitor(HirStmtEvaluationStep::Publication {
+                    role: HirStmtEvaluationPublicationRole::Branch {
+                        kind: HirStmtBranchPublicationKind::For,
+                    },
+                    locals: branch_locals,
+                });
+                visit_contextual_steps(&mut visitor, HirStatementBodyRole::For, body)?;
+            }
+            Self::Select { plan, .. } => match plan {
+                HirStmtSelectEvaluationPlan::Operand { expression } => {
+                    visitor(HirStmtEvaluationStep::Expression {
+                        role: HirStatementChildRole::SelectOperand,
+                        expression: *expression,
+                    });
+                }
+                HirStmtSelectEvaluationPlan::Branches { branches } => {
+                    for (branch, value) in branches.branches.iter().enumerate() {
+                        let branch = evaluation_ordinal(branch)?;
+                        match value.head() {
+                            HirSelectBranchHead::Bind {
+                                binding, source, ..
+                            } => {
+                                visitor(HirStmtEvaluationStep::Expression {
+                                    role: HirStatementChildRole::SelectSource { branch },
+                                    expression: *source,
+                                });
+                                if let Some(local) = binding.resolved() {
+                                    visitor(HirStmtEvaluationStep::Local {
+                                        role: HirStatementChildRole::SelectBinding { branch },
+                                        local,
+                                    });
+                                }
+                                visitor(HirStmtEvaluationStep::Publication {
+                                    role: HirStmtEvaluationPublicationRole::Branch {
+                                        kind: HirStmtBranchPublicationKind::SelectBranch { branch },
+                                    },
+                                    locals: &[],
+                                });
+                            }
+                            HirSelectBranchHead::Frame { pattern, locals }
+                            | HirSelectBranchHead::Event { pattern, locals } => {
+                                visitor(HirStmtEvaluationStep::Pattern {
+                                    role: HirStatementChildRole::SelectPattern { branch },
+                                    pattern: *pattern,
+                                });
+                                visitor(HirStmtEvaluationStep::Publication {
+                                    role: HirStmtEvaluationPublicationRole::Branch {
+                                        kind: HirStmtBranchPublicationKind::SelectBranch { branch },
+                                    },
+                                    locals,
+                                });
+                            }
+                            HirSelectBranchHead::Recovered => {}
+                        }
+                        visit_contextual_steps(
+                            &mut visitor,
+                            HirStatementBodyRole::SelectBranch { branch },
+                            value.body(),
+                        )?;
+                    }
+                }
+            },
+            Self::SourceLocale { body, .. } => {
+                visit_contextual_steps(&mut visitor, HirStatementBodyRole::SourceLocale, body)?;
+            }
+            Self::Scope { body, .. } => {
+                visit_contextual_steps(&mut visitor, HirStatementBodyRole::Scope, body)?;
+            }
+            Self::Include { .. } | Self::Continue { .. } | Self::Recovered => {}
+        }
+        Ok(())
+    }
+}
+
+fn evaluation_ordinal(value: usize) -> Result<u32, HirStmtEvaluationStepError> {
+    u32::try_from(value).map_err(|_| HirStmtEvaluationStepError::OrdinalOverflow)
+}
+
+fn visit_statement_steps<'stmt>(
+    visitor: &mut impl FnMut(HirStmtEvaluationStep<'stmt>),
+    body: HirStatementBodyRole,
+    statements: &[StmtId],
+) -> Result<(), HirStmtEvaluationStepError> {
+    for (ordinal, statement) in statements.iter().copied().enumerate() {
+        visitor(HirStmtEvaluationStep::Statement {
+            role: HirStatementChildRole::BodyItem {
+                body,
+                ordinal: evaluation_ordinal(ordinal)?,
+            },
+            statement,
+        });
+    }
+    Ok(())
+}
+
+fn visit_contextual_steps<'stmt>(
+    visitor: &mut impl FnMut(HirStmtEvaluationStep<'stmt>),
+    body_role: HirStatementBodyRole,
+    body: &HirContextualStmtBody,
+) -> Result<(), HirStmtEvaluationStepError> {
+    if let Some(statements) = body.ordinary_statements() {
+        return visit_statement_steps(visitor, body_role, statements);
+    }
+    if let Some(body) = body.thread_body() {
+        for edge in body
+            .try_child_edges()
+            .map_err(|_| HirStmtEvaluationStepError::OrdinalOverflow)?
+        {
+            visitor(HirStmtEvaluationStep::ThreadBody {
+                role: body_role,
+                edge,
+            });
+        }
+    }
+    Ok(())
+}
+
+fn visit_else_steps<'stmt>(
+    visitor: &mut impl FnMut(HirStmtEvaluationStep<'stmt>),
+    branch: Option<&HirConditionalElseBranch>,
+) -> Result<(), HirStmtEvaluationStepError> {
+    match branch {
+        Some(HirConditionalElseBranch::Body(body)) => {
+            visit_contextual_steps(visitor, HirStatementBodyRole::Else, body)
+        }
+        Some(HirConditionalElseBranch::ElseIf(statement)) => {
+            visitor(HirStmtEvaluationStep::Statement {
+                role: HirStatementChildRole::ElseIf,
+                statement: *statement,
+            });
+            Ok(())
+        }
+        None => Ok(()),
+    }
+}
+
+fn visit_trigger_steps<'stmt>(
+    visitor: &mut impl FnMut(HirStmtEvaluationStep<'stmt>),
+    trigger: &HirStmtTriggerEvaluationPlan,
+) {
+    match trigger {
+        HirStmtTriggerEvaluationPlan::Pattern { pattern } => {
+            visitor(HirStmtEvaluationStep::Pattern {
+                role: HirStatementChildRole::TriggerPattern,
+                pattern: *pattern,
+            });
+            visitor(HirStmtEvaluationStep::Publication {
+                role: HirStmtEvaluationPublicationRole::TriggerPattern { pattern: *pattern },
+                locals: &[],
+            });
+        }
+        HirStmtTriggerEvaluationPlan::Signal { target, value } => {
+            visitor(HirStmtEvaluationStep::Expression {
+                role: HirStatementChildRole::TriggerSignalTarget,
+                expression: *target,
+            });
+            if let Some(pattern) = value {
+                visitor(HirStmtEvaluationStep::Pattern {
+                    role: HirStatementChildRole::TriggerSignalValue,
+                    pattern: *pattern,
+                });
+                visitor(HirStmtEvaluationStep::Publication {
+                    role: HirStmtEvaluationPublicationRole::TriggerPattern { pattern: *pattern },
+                    locals: &[],
+                });
+            }
+        }
+        HirStmtTriggerEvaluationPlan::Expression { expression } => {
+            visitor(HirStmtEvaluationStep::Expression {
+                role: HirStatementChildRole::TriggerExpression,
+                expression: *expression,
+            });
+        }
+    }
+}
+
+#[derive(Debug, Eq, PartialEq)]
+pub struct HirStmtSelectBranchEvaluation<'stmt> {
+    branch: &'stmt HirSelectBranch,
+}
+
+impl HirStmtSelectBranchEvaluation<'_> {
+    const fn new(branch: &HirSelectBranch) -> HirStmtSelectBranchEvaluation<'_> {
+        HirStmtSelectBranchEvaluation { branch }
+    }
+
+    pub fn head(&self) -> HirStmtSelectHeadEvaluation<'_> {
+        self.branch.evaluation_head()
+    }
+
+    pub const fn body(&self) -> &HirContextualStmtBody {
+        self.branch.body()
+    }
+}
+
+#[derive(Debug, Eq, PartialEq)]
+pub enum HirStmtSelectHeadEvaluation<'stmt> {
+    Bind {
+        binding: &'stmt HirSelectBindingLocal,
+        source: ExprId,
+        propagates_error: bool,
+    },
+    Frame {
+        pattern: PatternId,
+        locals: &'stmt [LocalId],
+    },
+    Event {
+        pattern: PatternId,
+        locals: &'stmt [LocalId],
+    },
+    Recovered,
+}
+
+impl HirSelectBranch {
+    /// Projects one source-ordered branch head without copying its binding
+    /// identity or local slice. The raw branch remains the HIR storage owner;
+    /// this wrapper is the typed evaluation view.
+    pub fn evaluation_head(&self) -> HirStmtSelectHeadEvaluation<'_> {
+        match self.head() {
+            HirSelectBranchHead::Bind {
+                binding,
+                source,
+                propagates_error,
+            } => HirStmtSelectHeadEvaluation::Bind {
+                binding,
+                source: *source,
+                propagates_error: *propagates_error,
+            },
+            HirSelectBranchHead::Frame { pattern, locals } => HirStmtSelectHeadEvaluation::Frame {
+                pattern: *pattern,
+                locals,
+            },
+            HirSelectBranchHead::Event { pattern, locals } => HirStmtSelectHeadEvaluation::Event {
+                pattern: *pattern,
+                locals,
+            },
+            HirSelectBranchHead::Recovered => HirStmtSelectHeadEvaluation::Recovered,
+        }
+    }
+
+    pub const fn evaluation_body(&self) -> &HirContextualStmtBody {
+        self.body()
+    }
+}
+
+#[derive(Debug, Eq, PartialEq)]
+pub enum HirStmtTriggerEvaluationPlan {
+    Pattern {
+        pattern: PatternId,
+    },
+    Signal {
+        target: ExprId,
+        value: Option<PatternId>,
+    },
+    Expression {
+        expression: ExprId,
+    },
+}
+
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub enum HirStmtBindingPlanKind {
+    Let,
+    LetChoice,
+    LetScope,
+    LetActionReceive,
+}
+
+impl HirStmtBindingPlanKind {
+    /// Returns the exact child role used to evaluate this binding's input.
+    pub const fn input_role(self) -> HirStatementChildRole {
+        match self {
+            Self::Let => HirStatementChildRole::Initializer,
+            Self::LetChoice | Self::LetScope | Self::LetActionReceive => {
+                HirStatementChildRole::Input
+            }
+        }
+    }
+}
+
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub enum HirStmtOrderedPairPlanKind {
+    Assign,
+    Signal,
+    LifetimeSet,
+}
+
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub enum HirStmtValuePlanKind {
+    Return,
+    Out,
+    Defer,
+    Yield,
+    Goto,
+    Wait,
+    Close,
+    Choice,
+    Expression,
+    ProofCall,
+    Break,
+}
+
+impl HirStmtValuePlanKind {
+    /// Returns the exact child role used to evaluate this value expression.
+    pub const fn expression_role(self) -> HirStatementChildRole {
+        match self {
+            Self::Goto | Self::Wait | Self::Close => HirStatementChildRole::Target,
+            Self::Choice => HirStatementChildRole::Input,
+            Self::Return
+            | Self::Out
+            | Self::Defer
+            | Self::Yield
+            | Self::Break
+            | Self::Expression
+            | Self::ProofCall => HirStatementChildRole::Value,
+        }
+    }
+}
+
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub enum HirStmtDeferredBodyPlanKind {
+    DeferBlock,
+}
+
+fn trigger_evaluation_plan(trigger: &HirTriggerPattern) -> HirStmtTriggerEvaluationPlan {
+    match trigger {
+        HirTriggerPattern::Input(pattern)
+        | HirTriggerPattern::Event(pattern)
+        | HirTriggerPattern::Mark(pattern)
+        | HirTriggerPattern::Select(pattern)
+        | HirTriggerPattern::Task(pattern)
+        | HirTriggerPattern::Scope(pattern) => {
+            HirStmtTriggerEvaluationPlan::Pattern { pattern: *pattern }
+        }
+        HirTriggerPattern::Signal { target, value } => HirStmtTriggerEvaluationPlan::Signal {
+            target: *target,
+            value: *value,
+        },
+        HirTriggerPattern::Timeout(expression) | HirTriggerPattern::Expr(expression) => {
+            HirStmtTriggerEvaluationPlan::Expression {
+                expression: *expression,
+            }
+        }
+    }
+}
+
+fn select_evaluation_plan(select: &HirSelectStmt) -> HirStmtSelectEvaluationPlan<'_> {
+    match select {
+        HirSelectStmt::Operand(expression) => HirStmtSelectEvaluationPlan::Operand {
+            expression: *expression,
+        },
+        HirSelectStmt::Branches { branches, .. } => HirStmtSelectEvaluationPlan::Branches {
+            branches: HirStmtSelectBranches { branches },
+        },
+    }
+}
+
 /// Canonical assertion mode or typed recovery from the same source family.
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub enum HirAssertionMode {
@@ -518,6 +1342,248 @@ impl HirAssertionMode {
 }
 
 impl HirStmtKind {
+    /// Returns the typed evaluation order for every statement family.
+    ///
+    /// This projection is borrowed from the statement payload and is not a
+    /// second structural-child inventory. In particular, input expressions
+    /// precede binding publication, and branch-local bindings are visible
+    /// only to their matching guard/body steps.
+    #[allow(
+        clippy::too_many_lines,
+        reason = "the closed 35-family statement algebra has one explicit evaluation-order authority"
+    )]
+    /// Returns the closed typed evaluation plan for all 35 statement
+    /// families. Branch-bearing rows retain their success/failure binding
+    /// scopes instead of flattening them into a visibility-tagged sequence.
+    pub fn evaluation_plan(&self) -> HirStmtEvaluationPlan<'_> {
+        use HirStmtEvaluationPlan as Plan;
+        match self {
+            Self::Assertion { mode, conditions } => Plan::Assertion {
+                mode: *mode,
+                conditions,
+            },
+            Self::Let {
+                pattern,
+                annotation,
+                initializer,
+                locals,
+            } => Plan::Binding {
+                kind: HirStmtBindingPlanKind::Let,
+                pattern: *pattern,
+                annotation: *annotation,
+                input: *initializer,
+                locals,
+            },
+            Self::Assign { target, value } => Plan::OrderedPair {
+                kind: HirStmtOrderedPairPlanKind::Assign,
+                first: *target,
+                second: *value,
+            },
+            Self::LetElse {
+                pattern,
+                annotation,
+                initializer,
+                else_scope,
+                else_body,
+                locals,
+            } => Plan::LetElse {
+                pattern: *pattern,
+                annotation: *annotation,
+                initializer: *initializer,
+                else_scope: *else_scope,
+                else_body,
+                success_locals: locals,
+            },
+            Self::LetChoice {
+                pattern,
+                choice,
+                locals,
+            } => Plan::Binding {
+                kind: HirStmtBindingPlanKind::LetChoice,
+                pattern: *pattern,
+                annotation: None,
+                input: *choice,
+                locals,
+            },
+            Self::LetScope {
+                pattern,
+                scope_expr,
+                locals,
+            } => Plan::Binding {
+                kind: HirStmtBindingPlanKind::LetScope,
+                pattern: *pattern,
+                annotation: None,
+                input: *scope_expr,
+                locals,
+            },
+            Self::LetActionReceive {
+                pattern,
+                action,
+                locals,
+            } => Plan::Binding {
+                kind: HirStmtBindingPlanKind::LetActionReceive,
+                pattern: *pattern,
+                annotation: None,
+                input: *action,
+                locals,
+            },
+            Self::Return { value } => Plan::Value {
+                kind: HirStmtValuePlanKind::Return,
+                expression: Some(*value),
+                label: None,
+                outcome: None,
+            },
+            Self::Out { label, value } => Plan::Value {
+                kind: HirStmtValuePlanKind::Out,
+                expression: Some(*value),
+                label: label.as_ref(),
+                outcome: None,
+            },
+            Self::Goto { target } => Plan::Value {
+                kind: HirStmtValuePlanKind::Goto,
+                expression: Some(*target),
+                label: None,
+                outcome: None,
+            },
+            Self::DeferBlock {
+                outcome,
+                scope,
+                body,
+            } => Plan::DeferredBody {
+                kind: HirStmtDeferredBodyPlanKind::DeferBlock,
+                scope: *scope,
+                body,
+                outcome: *outcome,
+            },
+            Self::Defer {
+                outcome,
+                expression,
+            } => Plan::Value {
+                kind: HirStmtValuePlanKind::Defer,
+                expression: Some(*expression),
+                label: None,
+                outcome: Some(*outcome),
+            },
+            Self::Yield { expression } => Plan::Value {
+                kind: HirStmtValuePlanKind::Yield,
+                expression: Some(*expression),
+                label: None,
+                outcome: None,
+            },
+            Self::Signal { target, value } => Plan::OrderedPair {
+                kind: HirStmtOrderedPairPlanKind::Signal,
+                first: *target,
+                second: *value,
+            },
+            Self::LifetimeSet { target, value } => Plan::OrderedPair {
+                kind: HirStmtOrderedPairPlanKind::LifetimeSet,
+                first: *target,
+                second: *value,
+            },
+            Self::Wait { target } => Plan::Value {
+                kind: HirStmtValuePlanKind::Wait,
+                expression: Some(*target),
+                label: None,
+                outcome: None,
+            },
+            Self::On {
+                trigger,
+                scope,
+                body,
+            } => Plan::EventBody {
+                trigger: trigger_evaluation_plan(trigger),
+                scope: *scope,
+                body,
+            },
+            Self::UnsafeLifetime { audit, body } => Plan::UnsafeLifetime { audit, body },
+            Self::Choice { choice } => Plan::Value {
+                kind: HirStmtValuePlanKind::Choice,
+                expression: Some(*choice),
+                label: None,
+                outcome: None,
+            },
+            Self::If(statement) => Plan::If {
+                condition: statement.condition(),
+                then_body: statement.then_body(),
+                else_branch: statement.else_branch(),
+            },
+            Self::IfLet(statement) => Plan::IfLet {
+                pattern: statement.pattern(),
+                scrutinee: statement.scrutinee(),
+                guard: statement.guard(),
+                branch_locals: statement.locals(),
+                then_body: statement.then_body(),
+                else_branch: statement.else_branch(),
+            },
+            Self::Match(statement) => Plan::Match {
+                scrutinee: statement.scrutinee(),
+                arms: statement.arms(),
+            },
+            Self::While(statement) => Plan::While {
+                condition: statement.condition(),
+                body: statement.body(),
+            },
+            Self::WhileLet(statement) => Plan::WhileLet {
+                pattern: statement.pattern(),
+                scrutinee: statement.scrutinee(),
+                guard: statement.guard(),
+                branch_locals: statement.locals(),
+                body: statement.body(),
+            },
+            Self::For(statement) => Plan::For {
+                source: statement.source(),
+                iterator: statement.iterator(),
+                next_value: statement.next_value(),
+                pattern: statement.pattern(),
+                branch_locals: statement.locals(),
+                body: statement.body(),
+            },
+            Self::Close { target } => Plan::Value {
+                kind: HirStmtValuePlanKind::Close,
+                expression: Some(*target),
+                label: None,
+                outcome: None,
+            },
+            Self::Select(select) => Plan::Select {
+                scope: select.scope(),
+                plan: select_evaluation_plan(select),
+            },
+            Self::SourceLocale(statement) => Plan::SourceLocale {
+                locale: statement.locale(),
+                body: statement.body(),
+            },
+            Self::Scope(statement) => Plan::Scope {
+                name: statement.name(),
+                body: statement.body(),
+            },
+            Self::Include(include) => Plan::Include {
+                target: include.target(),
+            },
+            Self::Break { label, value } => Plan::Value {
+                kind: HirStmtValuePlanKind::Break,
+                expression: *value,
+                label: label.as_ref(),
+                outcome: None,
+            },
+            Self::Continue { label } => Plan::Continue {
+                label: label.as_ref(),
+            },
+            Self::Expression { expression } => Plan::Value {
+                kind: HirStmtValuePlanKind::Expression,
+                expression: Some(*expression),
+                label: None,
+                outcome: None,
+            },
+            Self::ProofCall { call } => Plan::Value {
+                kind: HirStmtValuePlanKind::ProofCall,
+                expression: Some(*call),
+                label: None,
+                outcome: None,
+            },
+            Self::Error => Plan::Recovered,
+        }
+    }
+
     /// Returns every type-arena root attached directly to this statement.
     #[allow(
         dead_code,

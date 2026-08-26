@@ -235,7 +235,9 @@ impl HirRichTextTag {
                 HirRichTextTagPayload::FxCall(_) | HirRichTextTagPayload::DialogueCall(_) => {
                     HirDialogueExpressionExpectation::Call
                 }
-                HirRichTextTagPayload::Condition(_) => HirDialogueExpressionExpectation::Any,
+                HirRichTextTagPayload::Condition(_) => {
+                    HirDialogueExpressionExpectation::Unrestricted
+                }
                 HirRichTextTagPayload::Arguments | HirRichTextTagPayload::None => unreachable!(),
             };
             context

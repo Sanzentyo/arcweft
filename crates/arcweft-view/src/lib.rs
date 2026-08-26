@@ -8,6 +8,7 @@ pub mod frame;
 pub mod fx;
 pub mod geometry;
 pub mod handler;
+pub mod handler_program;
 pub mod image;
 pub mod layout;
 pub mod motion;
@@ -35,8 +36,8 @@ pub use display::{
 };
 pub use entity::{DirtyFlags, Entity, EntityStore, RawEntity};
 pub use fragment::{
-    ContainerKind, CustomElementId, EventBinding, EventKind, FragmentKind, FragmentNode, HandlerId,
-    ImageId, NodeId, RichTextSourceId, SemanticSpecId, Span32, TextSourceId, ViewFragment,
+    ContainerKind, CustomElementId, EventBinding, FragmentKind, FragmentNode, HandlerId, ImageId,
+    NodeId, RichTextSourceId, SemanticSpecId, Span32, TextSourceId, ViewFragment,
     ViewFragmentBuilder,
 };
 pub use frame::ViewLayerOutput;
@@ -44,7 +45,13 @@ pub use fx::{
     RetainedViewFxApplication, RetainedViewFxTable, ViewFxArgumentBinding, ViewFxError,
     ViewFxIdentity, ViewFxOrdinal,
 };
-pub use handler::{ViewHandlerInvocation, ViewHandlerRoute, ViewHandlerRouteTable};
+pub use handler::{
+    ViewHandlerInvocation, ViewHandlerRoute, ViewHandlerRouteId, ViewHandlerRouteTable,
+};
+pub use handler_program::{
+    ViewHandlerCapture, ViewHandlerProgramId, ViewHandlerResult, ViewHandlerResultRole,
+    ViewHandlerValueTypeId, ViewParameterCoordinate,
+};
 pub use image::{
     ImageAlignment, ImageFit, ImagePlayback, ViewImagePresentationMetadata, ViewImageSource,
     ViewImageSourceTable, ViewResolvedImageFrame,
@@ -65,11 +72,11 @@ pub use part::{
 };
 pub use presentation_image::{ViewImagePresentationFrame, ViewImagePresentationInput};
 pub use program::{
-    ViewAwait, ViewAwaitBranch, ViewBranch, ViewCall, ViewCallArgument, ViewCustomSpec,
-    ViewElementKind, ViewElementLayoutKind, ViewElementSpec, ViewElementTextInputKind,
-    ViewEventBindingSpec, ViewFxApplicationInstruction, ViewFxCallArgument, ViewHandlerProgram,
-    ViewImageSpec, ViewInstruction, ViewInstructionRange, ViewLocalBinding, ViewProgram,
-    ViewProgramBuilder, ViewRepeat, ViewSemanticSpec, ViewStableKey, ViewTextSpec,
+    BindEvent, BindHandler, EventKind, ViewAwait, ViewAwaitBranch, ViewBranch, ViewCall,
+    ViewCallArgument, ViewCustomSpec, ViewElementKind, ViewElementLayoutKind, ViewElementSpec,
+    ViewElementTextInputKind, ViewFxApplicationInstruction, ViewFxCallArgument, ViewImageSpec,
+    ViewInstruction, ViewInstructionRange, ViewLocalBinding, ViewProgram, ViewProgramBuilder,
+    ViewRepeat, ViewSemanticSpec, ViewStableKey, ViewTextSpec,
 };
 pub use reactive::{EntityInvalidation, ReactiveGraph, ReactiveInvalidation, Revision};
 pub use semantics::{
@@ -93,16 +100,17 @@ pub use style::{
     ViewPhysicalBoxStyle, ViewPhysicalContainerStyle, ViewPhysicalEdges, ViewPhysicalFlow,
     ViewPhysicalSide, ViewPosition, ViewPropertyExpansion, ViewPropertyId, ViewPropertyKind,
     ViewPropertyResolution, ViewPropertyValueTransform, ViewRatioMilli, ViewResolvedAxis,
-    ViewResolvedBoxAxes, ViewScalarMilli, ViewShadow, ViewSpecifiedValue, ViewStyleApplication,
-    ViewStyleApplicationTarget, ViewStyleAssignOp, ViewStyleBoundaryFacts, ViewStyleCombinator,
-    ViewStyleContribution, ViewStyleContributionSource, ViewStyleDeclaration,
-    ViewStyleEnvironmentUsage, ViewStyleInvalidationSet, ViewStyleModelError, ViewStyleNodeFacts,
-    ViewStyleNodeKey, ViewStylePatch, ViewStylePatchId, ViewStylePredicate, ViewStylePriority,
-    ViewStyleProgram, ViewStyleResolveContext, ViewStyleResolveError, ViewStyleResolveResult,
-    ViewStyleResolver, ViewStyleResolverLimits, ViewStyleRevisionSet, ViewStyleRule,
-    ViewStyleScopeId, ViewStyleSelector, ViewStyleSelectorSequence, ViewStyleSheet,
-    ViewStyleSheetId, ViewStyleSheetIdError, ViewStyleSourceId, ViewStyleSpecificity,
-    ViewStyleToken, ViewStyleTokenId, ViewStyleTrace, ViewStyleTraceEntry, ViewStyleTraceMode,
+    ViewResolvedBoxAxes, ViewScalarMilli, ViewShadow, ViewSpecifiedValue,
+    ViewSpecifiedValueSemanticDigest, ViewStyleApplication, ViewStyleApplicationTarget,
+    ViewStyleAssignOp, ViewStyleBoundaryFacts, ViewStyleCombinator, ViewStyleContribution,
+    ViewStyleContributionSource, ViewStyleDeclaration, ViewStyleEnvironmentUsage,
+    ViewStyleInvalidationSet, ViewStyleModelError, ViewStyleNodeFacts, ViewStyleNodeKey,
+    ViewStylePatch, ViewStylePatchId, ViewStylePredicate, ViewStylePriority, ViewStyleProgram,
+    ViewStyleResolveContext, ViewStyleResolveError, ViewStyleResolveResult, ViewStyleResolver,
+    ViewStyleResolverLimits, ViewStyleRevisionSet, ViewStyleRule, ViewStyleScopeId,
+    ViewStyleSelector, ViewStyleSelectorSequence, ViewStyleSheet, ViewStyleSheetId,
+    ViewStyleSheetIdError, ViewStyleSourceId, ViewStyleSpecificity, ViewStyleToken,
+    ViewStyleTokenId, ViewStyleTrace, ViewStyleTraceEntry, ViewStyleTraceMode,
     ViewStyleTraceRejection, ViewStyleTransition, ViewStyleValueKind, ViewSystemFontFamily,
     ViewTextScaleComparison,
 };

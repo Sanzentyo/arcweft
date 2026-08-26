@@ -985,7 +985,11 @@ impl RuntimeStepRunSummary {
         fiber: &FlowFiber,
         execution_diagnostics: &arcweft_compiler::runtime_diagnostics::ExecutionDiagnosticContext,
     ) -> Result<
-        (Self, Vec<TaskSpec>),
+        (
+            Self,
+            Vec<TaskSpec>,
+            Vec<arcweft_core::step::RuntimeHostCallRequest>,
+        ),
         arcweft_runtime_plan::assertion_identity::RuntimeAssertionProjectionError,
     > {
         let RuntimeStepResult {
@@ -995,6 +999,7 @@ impl RuntimeStepRunSummary {
             stats,
         } = result;
         let task_requests = std::mem::take(&mut output.requests.tasks);
+        let host_call_requests = std::mem::take(&mut output.requests.host_calls);
         let assertion_failures = output
             .effects
             .line
@@ -1082,7 +1087,7 @@ impl RuntimeStepRunSummary {
                 })
                 .collect(),
         };
-        Ok((summary, task_requests))
+        Ok((summary, task_requests, host_call_requests))
     }
 }
 

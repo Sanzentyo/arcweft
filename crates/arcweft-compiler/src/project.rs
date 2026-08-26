@@ -42,10 +42,11 @@ use arcweft_lang_hir::{
 #[cfg(test)]
 use arcweft_lang_sema::env::TypeCheckEnv;
 use arcweft_lang_sema::{
-    entry::{CheckedEntryCatalog, CheckedEntryDiagnostic, CheckedEntryKind, check_project_entries},
+    entry::{CheckedEntryCatalog, CheckedEntryDiagnostic, CheckedEntryKind},
     final_analysis::{
         FinalSemanticAnalysis, FinalSemanticAnalysisControl, FinalSemanticCatalogs,
-        analyze_final_project, project_callable_tail_recovery_diagnostics,
+        FinalSemanticProjectError, analyze_final_project,
+        project_callable_tail_recovery_diagnostics,
     },
     project_index::{ProgramHash, ProjectSemanticIndex},
     proof_return::classify_proof_return_project,
@@ -164,7 +165,6 @@ pub struct CompiledProject {
     assertion_build_profile: AssertionBuildProfile,
     final_analysis: Arc<FinalSemanticAnalysis>,
     verification: Arc<VerificationReport>,
-    checked_entries: CheckedEntryCatalog,
     semantic_index: Arc<ProjectSemanticIndex>,
     style: style::CompiledViewStyleArtifact,
     fx_definitions: Arc<[FxDefinition]>,
@@ -224,7 +224,7 @@ impl std::fmt::Debug for CompiledProject {
             .field("assertion_build_profile", &self.assertion_build_profile)
             .field("final_analysis", &self.final_analysis)
             .field("verification", &self.verification)
-            .field("checked_entries", &self.checked_entries)
+            .field("checked_entries", &self.checked_entries())
             .field("registered_world", &self.registered_world)
             .field("semantic_index", &self.semantic_index)
             .field("style", &self.style)
@@ -481,8 +481,8 @@ impl CompiledProject {
         &self.verification
     }
 
-    pub const fn checked_entries(&self) -> &CheckedEntryCatalog {
-        &self.checked_entries
+    pub fn checked_entries(&self) -> &CheckedEntryCatalog {
+        self.final_analysis.checked_entries()
     }
 
     /// Returns the exact Agent/LSP semantic projection accepted for this build.
@@ -776,17 +776,24 @@ where
                 FinalSemanticAnalysisControl::new(&semantic_cancellation)
                     .with_assertion_build_profile(context.assertion_build_profile()),
             )
-            .map_err(|error| {
-                let diagnostic = error.source_diagnostic().unwrap_or_else(|| {
-                    Diagnostic::new(DiagnosticSeverity::Error, error.to_string())
-                        .with_code(error.diagnostic_code())
-                });
-                linked_error(
-                    ProjectCompileStage::TypeCheck,
-                    [diagnostic],
-                )
+            .map_err(|error| match error {
+                FinalSemanticProjectError::Semantic(error) => {
+                    let diagnostic = error.source_diagnostic().unwrap_or_else(|| {
+                        Diagnostic::new(DiagnosticSeverity::Error, error.to_string())
+                            .with_code(error.diagnostic_code())
+                    });
+                    linked_error(ProjectCompileStage::TypeCheck, [diagnostic])
+                }
+                FinalSemanticProjectError::Entry(diagnostics) => {
+                    linked_error_with_registration_sources(
+                        ProjectCompileStage::EntryBinding,
+                        context.facts(),
+                        diagnostics.iter().map(entry_binding_diagnostic),
+                    )
+                }
             })?,
         );
+        let checked_entries = final_analysis.checked_entries();
         let verification = Arc::new(
             verify_project(
                 executable,
@@ -817,24 +824,12 @@ where
                 verification_errors,
             ));
         }
-        let checked_entries = check_project_entries(
-            executable,
-            registered_world.symbols(),
-            final_analysis.as_ref(),
-        )
-        .map_err(|diagnostics| {
-            linked_error_with_registration_sources(
-                ProjectCompileStage::EntryBinding,
-                context.facts(),
-                diagnostics.iter().map(entry_binding_diagnostic),
-            )
-        })?;
-        validate_entry_selection(&checked_entries, context.entry_selection())?;
+        validate_entry_selection(checked_entries, context.entry_selection())?;
         let runtime_reachability = lower::project_runtime_reachability(
             executable,
             registered_world.symbols(),
             final_analysis.as_ref(),
-            &checked_entries,
+            checked_entries,
             context.entry_selection().map_or(
                 lower::RuntimeEmissionMode::CheckAll,
                 lower::RuntimeEmissionMode::SelectedEntry,
@@ -858,7 +853,6 @@ where
                 executable,
                 registered_world.symbols(),
                 final_analysis.as_ref(),
-                &checked_entries,
             )
             .map_err(|error| {
                 linked_error(
@@ -888,6 +882,7 @@ where
             &hir_project,
             final_analysis.as_ref(),
             registered_world.symbols(),
+            &registered_world,
             &style,
             project,
             context.resource_types(),
@@ -898,6 +893,26 @@ where
                 ProjectCompileStage::ViewLower,
                 context.facts(),
                 [error.diagnostic()],
+            )
+        })?;
+        let view_value_reachability = lower::project_view_value_program_reachability(
+            executable,
+            registered_world.symbols(),
+            final_analysis.as_ref(),
+            view_product
+                .handler_programs()
+                .iter()
+                .map(view::CheckedViewHandlerProgram::closure),
+        )
+        .and_then(|reachability| {
+            lower::validate_reachable_runtime_callables(final_analysis.as_ref(), &reachability)?;
+            Ok(reachability)
+        })
+        .map_err(|error| {
+            let code = error.diagnostic_code();
+            linked_error(
+                ProjectCompileStage::RuntimePlanLower,
+                [Diagnostic::new(DiagnosticSeverity::Error, error.to_string()).with_code(code)],
             )
         })?;
         let dialogue_profile_input = if let Some(input) = context.accepted_launch_profile() {
@@ -941,12 +956,14 @@ where
                 [error.diagnostic()],
             )
         })?;
-        let runtime_facts = lower::project_runtime_semantic_facts(
+        let runtime_facts = lower::project_runtime_semantic_facts_with_view_value_programs(
             executable,
             registered_world.symbols(),
             &registered_world,
             &final_analysis,
             &runtime_reachability,
+            &view_value_reachability,
+            view_product.handler_programs(),
             Some((dialogue_profile.presentation(), dialogue_profile.revision())),
             context.accepted_launch_profile().and_then(|input| {
                 input
@@ -968,7 +985,6 @@ where
             executable,
             registered_world.symbols(),
             &final_analysis,
-            &checked_entries,
             &runtime_reachability,
             context.command_policy(),
         )
@@ -1008,7 +1024,6 @@ where
             assertion_build_profile: context.assertion_build_profile(),
             final_analysis,
             verification,
-            checked_entries,
             semantic_index,
             style,
             fx_definitions,

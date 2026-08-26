@@ -6,6 +6,7 @@
 //! particular type-name spelling.
 
 use crate::types::TypeKind;
+pub use arcweft_core::value::RuntimeDialogueOpaqueRole as DialogueRuntimeValueRole;
 use std::collections::BTreeMap;
 
 /// Attribute that assigns the dialogue View input role to a nominal record.

@@ -67,6 +67,8 @@ enum WebPlayerError {
     NotCanvas(String),
     #[error("Arcweft bundle decode failed: {0}")]
     BundleDecode(String),
+    #[error("invalid Arcweft entry selection `{entry}`: {message}")]
+    InvalidEntrySelection { entry: String, message: String },
     #[error("Arcweft bundle session failed: {0}")]
     Session(String),
     #[error("browser task broker failed: {0}")]
@@ -771,6 +773,7 @@ impl From<BundleImageCatalogError> for WebPlayerError {
 fn apply_outcome(state: &mut PlayerState, outcome: InputOutcome) -> Vec<TextClipboardRequest> {
     let InputOutcome {
         actions,
+        view_handler_invocations,
         text_control_write_backs,
         clipboard_requests,
         diagnostics: _,
@@ -785,6 +788,12 @@ fn apply_outcome(state: &mut PlayerState, outcome: InputOutcome) -> Vec<TextClip
     }
     for action in actions {
         if let Err(error) = state.session.queue_semantic_action(&action) {
+            set_fatal(state, WebPlayerError::Session(error.to_string()));
+            break;
+        }
+    }
+    for invocation in view_handler_invocations {
+        if let Err(error) = state.session.queue_view_handler_invocation(&invocation) {
             set_fatal(state, WebPlayerError::Session(error.to_string()));
             break;
         }
