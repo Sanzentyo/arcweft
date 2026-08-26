@@ -1,9 +1,78 @@
 use arcweft_agent_protocol::{artifact::ProjectBindingMode, protocol::AgentAssertionKind};
 use arcweft_bundle::BundleCodecError;
 use arcweft_core::awbc::{product_step::AwbcProductStepBuildError, verify::AwbcVerifyError};
+use std::fmt;
 use thiserror::Error;
 
 use crate::effect_policy::AgentEffectPolicyError;
+
+/// Host response/event family whose JSON projection failed.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum AgentHostResponseKind {
+    /// Observation response or observation debug event.
+    Observation,
+    /// Action response or action debug event.
+    Action,
+    /// Capture response or capture debug event.
+    Capture,
+    /// Resource response or resource debug event.
+    Resource,
+    /// RAG context response or RAG debug event.
+    RagContext,
+}
+
+impl AgentHostResponseKind {
+    /// Stable diagnostic label for this response/event family.
+    pub const fn as_str(self) -> &'static str {
+        match self {
+            Self::Observation => "observation",
+            Self::Action => "action",
+            Self::Capture => "capture",
+            Self::Resource => "resource",
+            Self::RagContext => "rag_context",
+        }
+    }
+}
+
+/// Failure while projecting one host response/event family to JSON.
+#[derive(Debug, Error)]
+#[error("Agent {kind} response/event serialization failed: {source}")]
+pub struct AgentHostResponseSerializationError {
+    kind: AgentHostResponseKind,
+    #[source]
+    source: serde_json::Error,
+}
+
+impl AgentHostResponseSerializationError {
+    /// Returns the response/event family that failed to serialize.
+    #[must_use]
+    pub const fn kind(&self) -> AgentHostResponseKind {
+        self.kind
+    }
+
+    /// Returns the underlying JSON serialization failure.
+    #[must_use]
+    pub fn source(&self) -> &serde_json::Error {
+        &self.source
+    }
+}
+
+impl AgentHostResponseKind {
+    /// Serializes a response/event value while retaining its typed family.
+    pub fn serialize<T: serde::Serialize>(
+        self,
+        value: &T,
+    ) -> Result<serde_json::Value, AgentHostResponseSerializationError> {
+        serde_json::to_value(value)
+            .map_err(|source| AgentHostResponseSerializationError { kind: self, source })
+    }
+}
+
+impl fmt::Display for AgentHostResponseKind {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter.write_str(self.as_str())
+    }
+}
 
 /// Agent runner failure.
 #[derive(Debug, Error)]
@@ -23,6 +92,8 @@ where
     Debug(#[source] DebugError),
     #[error("Agent RAG service failed: {0}")]
     Rag(#[source] RagError),
+    #[error(transparent)]
+    HostResponseSerialization(#[from] AgentHostResponseSerializationError),
     #[error("Agent controller Product AWBC failed verification: {0}")]
     ProductAwbcVerification(#[source] AwbcVerifyError),
     #[error("Agent controller Product AWBC executor could not be built: {0}")]

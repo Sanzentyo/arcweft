@@ -1,7 +1,7 @@
 use crate::{
     config::{AgentControllerRunConfig, AgentRunnerConfig},
     effect_policy::AgentEffectPolicyError,
-    error::AgentRunError,
+    error::{AgentHostResponseKind, AgentRunError},
     host_request::{agent_host_request_from_call, agent_host_request_from_task},
     label_parse::parse_capture_format,
     policy::{RuntimeAgentCapability, RuntimeAgentPolicy},
@@ -134,7 +134,48 @@ const PROJECT_NEIGHBORHOOD_RESULT_TY: u8 = 18;
 const OBSERVATION_RESULT_TY: u8 = 19;
 
 fn controller_type(marker: u8) -> RuntimeSemanticTypeId {
-    RuntimeSemanticTypeId::from_bytes([marker; 32])
+    controller_checked_type(marker).semantic_identity_digest()
+}
+
+fn controller_checked_type(marker: u8) -> RuntimeCheckedType {
+    let agent = |kind| RuntimeCheckedType::Agent(kind);
+    match marker {
+        STRING_TY => RuntimeCheckedType::String,
+        U32_TY => RuntimeCheckedType::Unsigned(arcweft_core::value::RuntimeUnsignedIntWidth::U32),
+        U64_TY => RuntimeCheckedType::Unsigned(arcweft_core::value::RuntimeUnsignedIntWidth::U64),
+        BOOL_TY => RuntimeCheckedType::Bool,
+        DURATION_TY => RuntimeCheckedType::Duration,
+        CAPTURE_TARGET_TY => agent(RuntimeAgentOperationalType::CaptureTarget),
+        CAPTURE_REFERENCE_TY => agent(RuntimeAgentOperationalType::CaptureReference),
+        RESOURCE_TY => agent(RuntimeAgentOperationalType::Resource),
+        RESOURCE_BODY_TY => agent(RuntimeAgentOperationalType::ResourceBody),
+        ENTITY_METADATA_TY => agent(RuntimeAgentOperationalType::EntityMetadata),
+        PROJECT_NEIGHBORHOOD_TY => agent(RuntimeAgentOperationalType::ProjectGraphNeighborhood),
+        OBSERVATION_TY => agent(RuntimeAgentOperationalType::Observation),
+        PROBE_BOOL_TY => agent(RuntimeAgentOperationalType::Probe),
+        PREDICATE_TY => agent(RuntimeAgentOperationalType::Predicate),
+        CAPTURE_RESULT_TY => RuntimeCheckedType::Result {
+            ok: Box::new(controller_checked_type(CAPTURE_REFERENCE_TY)),
+            error: Box::new(RuntimeCheckedType::String),
+        },
+        RESOURCE_RESULT_TY => RuntimeCheckedType::Result {
+            ok: Box::new(controller_checked_type(RESOURCE_TY)),
+            error: Box::new(RuntimeCheckedType::String),
+        },
+        ENTITY_METADATA_RESULT_TY => RuntimeCheckedType::Result {
+            ok: Box::new(controller_checked_type(ENTITY_METADATA_TY)),
+            error: Box::new(RuntimeCheckedType::String),
+        },
+        PROJECT_NEIGHBORHOOD_RESULT_TY => RuntimeCheckedType::Result {
+            ok: Box::new(controller_checked_type(PROJECT_NEIGHBORHOOD_TY)),
+            error: Box::new(RuntimeCheckedType::String),
+        },
+        OBSERVATION_RESULT_TY => RuntimeCheckedType::Result {
+            ok: Box::new(controller_checked_type(OBSERVATION_TY)),
+            error: Box::new(RuntimeCheckedType::String),
+        },
+        _ => panic!("unknown controller fixture type marker {marker}"),
+    }
 }
 
 fn controller_expr(ty: u8, kind: RuntimeExprSeedKind) -> RuntimeExprSeed {
@@ -427,6 +468,19 @@ struct MetadataSession {
 #[derive(Default)]
 struct RecordingDebugSink {
     events: Vec<DebugEvent>,
+}
+
+struct HostResponseSerializationFailure;
+
+impl serde::Serialize for HostResponseSerializationFailure {
+    fn serialize<S>(&self, _serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: serde::Serializer,
+    {
+        Err(serde::ser::Error::custom(
+            "test host response serialization failure",
+        ))
+    }
 }
 
 fn graph_symbol_id(value: &str) -> AgentProjectGraphSymbolId {
@@ -1088,16 +1142,28 @@ fn read_resource_binding_program() -> AwbcProgram {
     )
 }
 
-fn single_response_field_program(
+struct SingleResponseFieldRequest {
     flow: FlowRuntimeId,
-    agent_id: &str,
+    agent_id: &'static str,
     response_ty: u8,
     response_result_ty: u8,
     result_ty: u8,
     field: RuntimeAgentField,
-    operation: &str,
+    operation: &'static str,
     args: Vec<RuntimeHostArgumentSeed>,
-) -> AwbcProgram {
+}
+
+fn single_response_field_program(request: SingleResponseFieldRequest) -> AwbcProgram {
+    let SingleResponseFieldRequest {
+        flow,
+        agent_id,
+        response_ty,
+        response_result_ty,
+        result_ty,
+        field,
+        operation,
+        args,
+    } = request;
     let mut builder = RuntimePlanBuilder::new();
     let locals = builder
         .admit_semantic_batch(
@@ -1200,31 +1266,31 @@ fn direct_observe_program() -> AwbcProgram {
 }
 
 fn entity_metadata_binding_program() -> AwbcProgram {
-    single_response_field_program(
-        flow_id("agent.entity_metadata_binding"),
-        "agent.entity_metadata_binding",
-        ENTITY_METADATA_TY,
-        ENTITY_METADATA_RESULT_TY,
-        STRING_TY,
-        RuntimeAgentField::EntityMetadataSemanticHash,
-        "entity_meta",
-        vec![RuntimeHostArgumentSeed::Positional(controller_expr(
+    single_response_field_program(SingleResponseFieldRequest {
+        flow: flow_id("agent.entity_metadata_binding"),
+        agent_id: "agent.entity_metadata_binding",
+        response_ty: ENTITY_METADATA_TY,
+        response_result_ty: ENTITY_METADATA_RESULT_TY,
+        result_ty: STRING_TY,
+        field: RuntimeAgentField::EntityMetadataSemanticHash,
+        operation: "entity_meta",
+        args: vec![RuntimeHostArgumentSeed::Positional(controller_expr(
             STRING_TY,
             RuntimeExprSeedKind::Value(RuntimeValue::String("flow.opening".to_owned())),
         ))],
-    )
+    })
 }
 
 fn project_neighbors_binding_program() -> AwbcProgram {
-    single_response_field_program(
-        flow_id("agent.project_neighbors_binding"),
-        "agent.project_neighbors_binding",
-        PROJECT_NEIGHBORHOOD_TY,
-        PROJECT_NEIGHBORHOOD_RESULT_TY,
-        U32_TY,
-        RuntimeAgentField::ProjectGraphNeighborhoodEdgeCount,
-        "project_neighbors",
-        vec![
+    single_response_field_program(SingleResponseFieldRequest {
+        flow: flow_id("agent.project_neighbors_binding"),
+        agent_id: "agent.project_neighbors_binding",
+        response_ty: PROJECT_NEIGHBORHOOD_TY,
+        response_result_ty: PROJECT_NEIGHBORHOOD_RESULT_TY,
+        result_ty: U32_TY,
+        field: RuntimeAgentField::ProjectGraphNeighborhoodEdgeCount,
+        operation: "project_neighbors",
+        args: vec![
             RuntimeHostArgumentSeed::Positional(controller_expr(
                 STRING_TY,
                 RuntimeExprSeedKind::Value(RuntimeValue::String(
@@ -1236,7 +1302,7 @@ fn project_neighbors_binding_program() -> AwbcProgram {
                 value: controller_expr(U32_TY, RuntimeExprSeedKind::Value(RuntimeValue::u32(1))),
             }),
         ],
-    )
+    })
 }
 
 fn wait_binding_program() -> AwbcProgram {
@@ -1259,15 +1325,15 @@ fn wait_binding_program() -> AwbcProgram {
             )),
         }),
     );
-    single_response_field_program(
-        flow_id("agent.wait_binding"),
-        "agent.wait_binding",
-        OBSERVATION_TY,
-        OBSERVATION_RESULT_TY,
-        U64_TY,
-        RuntimeAgentField::ObservationTick,
-        "wait",
-        vec![
+    single_response_field_program(SingleResponseFieldRequest {
+        flow: flow_id("agent.wait_binding"),
+        agent_id: "agent.wait_binding",
+        response_ty: OBSERVATION_TY,
+        response_result_ty: OBSERVATION_RESULT_TY,
+        result_ty: U64_TY,
+        field: RuntimeAgentField::ObservationTick,
+        operation: "wait",
+        args: vec![
             RuntimeHostArgumentSeed::Positional(predicate),
             RuntimeHostArgumentSeed::Named(arcweft_core::task::NamedHostArg {
                 name: "timeout".to_owned(),
@@ -1287,7 +1353,7 @@ fn wait_binding_program() -> AwbcProgram {
                 value: controller_expr(U32_TY, RuntimeExprSeedKind::Value(RuntimeValue::u32(1))),
             }),
         ],
-    )
+    })
 }
 
 #[test]
@@ -2500,6 +2566,24 @@ fn controller_awbc_resumes_bound_resource_response_fields() {
         Some(FlowFiberStatus::Done(FlowExit::Return(ref value)))
             if value == "{\"uri\":\"agent://resource/test\"}"
     ));
+}
+
+#[test]
+fn host_response_serialization_failure_maps_to_typed_runner_error() {
+    let serialization_error = AgentHostResponseKind::RagContext
+        .serialize(&HostResponseSerializationFailure)
+        .expect_err("test serializer must fail");
+    let AgentRunError::HostResponseSerialization(error) =
+        AgentRunError::<Infallible, Infallible, Infallible>::from(serialization_error)
+    else {
+        panic!("host serialization failure must retain its typed error");
+    };
+
+    assert_eq!(error.kind(), AgentHostResponseKind::RagContext);
+    assert_eq!(
+        error.source().to_string(),
+        "test host response serialization failure"
+    );
 }
 
 #[test]

@@ -35,7 +35,7 @@ use crate::config::{
     AgentRunnerResult,
 };
 use crate::effect_policy::{AgentEffectAuthorization, AgentEffectRegistry};
-use crate::error::AgentRunError;
+use crate::error::{AgentHostResponseKind, AgentRunError};
 use crate::host_request::{
     agent_host_request_from_effect, agent_host_request_from_host_call, agent_host_request_from_task,
 };
@@ -206,10 +206,11 @@ where
             .session
             .observe(request)
             .map_err(AgentRunError::Session)?;
+        let observation_value = AgentHostResponseKind::Observation.serialize(&observation)?;
         self.emit(
             DebugEventKind::Observation,
             Some(observation.tick),
-            serde_json::to_value(&observation).unwrap_or(serde_json::Value::Null),
+            observation_value,
         )?;
         Ok(AgentHostResponse::Observation(Box::new(observation)))
     }
@@ -226,10 +227,11 @@ where
             | AgentAction::Scroll(_) => RuntimeAgentCapability::Act,
         })?;
         let result = self.session.act(action).map_err(AgentRunError::Session)?;
+        let result_value = AgentHostResponseKind::Action.serialize(&result)?;
         self.emit(
             DebugEventKind::Action,
             Some(result.after_tick),
-            serde_json::to_value(&result).unwrap_or(serde_json::Value::Null),
+            result_value,
         )?;
         Ok(AgentHostResponse::Action(Box::new(result)))
     }
@@ -276,11 +278,8 @@ where
                 budget.limits.max_capture_bytes,
             )?;
         }
-        self.emit(
-            DebugEventKind::Capture,
-            None,
-            serde_json::to_value(&result).unwrap_or(serde_json::Value::Null),
-        )?;
+        let result_value = AgentHostResponseKind::Capture.serialize(&result)?;
+        self.emit(DebugEventKind::Capture, None, result_value)?;
         Ok(AgentHostResponse::Capture(Box::new(result)))
     }
 
@@ -293,14 +292,9 @@ where
             .session
             .read_resource(uri.as_str())
             .map_err(AgentRunError::Session)?;
-        self.emit(
-            DebugEventKind::ResourceRead,
-            None,
-            serde_json::to_value(&resource).unwrap_or(serde_json::Value::Null),
-        )?;
-        Ok(AgentHostResponse::Resource(Box::new(
-            serde_json::to_value(resource).unwrap_or(serde_json::Value::Null),
-        )))
+        let resource_value = AgentHostResponseKind::Resource.serialize(&resource)?;
+        self.emit(DebugEventKind::ResourceRead, None, resource_value.clone())?;
+        Ok(AgentHostResponse::Resource(Box::new(resource_value)))
     }
 
     fn handle_entity_metadata_request(
@@ -375,7 +369,7 @@ where
             )?;
         }
         let context = self.rag.query(request).map_err(AgentRunError::Rag)?;
-        let context_value = serde_json::to_value(&context).unwrap_or(serde_json::Value::Null);
+        let context_value = AgentHostResponseKind::RagContext.serialize(&context)?;
         if let Some(budget) = budget.as_mut() {
             let context_bytes = serde_json::to_vec(&context_value).map_or(u64::MAX, |bytes| {
                 u64::try_from(bytes.len()).unwrap_or(u64::MAX)
@@ -847,10 +841,12 @@ where
             if predicate_matches(&request.predicate, &observation) {
                 stable_count += 1;
                 if stable_count >= stable_frames {
+                    let observation_value =
+                        AgentHostResponseKind::Observation.serialize(&observation)?;
                     self.emit(
                         DebugEventKind::Observation,
                         Some(observation.tick),
-                        serde_json::to_value(&observation).unwrap_or(serde_json::Value::Null),
+                        observation_value,
                     )?;
                     return Ok(observation);
                 }
@@ -861,10 +857,11 @@ where
         }
 
         if let Some(observation) = last_observation {
+            let observation_value = AgentHostResponseKind::Observation.serialize(&observation)?;
             self.emit(
                 DebugEventKind::Observation,
                 Some(observation.tick),
-                serde_json::to_value(&observation).unwrap_or(serde_json::Value::Null),
+                observation_value,
             )?;
         }
         Err(AgentRunError::WaitTimeout {
