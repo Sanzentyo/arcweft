@@ -464,13 +464,6 @@ pub struct LspProfileState {
     accepted: RwLock<Option<Arc<AcceptedProfileEnvironment>>>,
 }
 
-#[derive(Clone, Copy)]
-enum AcceptedEnvironmentExpectation<'a> {
-    #[cfg(test)]
-    Any,
-    Exact(Option<&'a Arc<AcceptedProfileEnvironment>>),
-}
-
 impl LspProfileState {
     pub const fn new() -> Self {
         Self {
@@ -511,7 +504,8 @@ impl LspProfileState {
         &self,
         candidate: AcceptedProfileCandidate,
     ) -> Result<Arc<AcceptedProfileEnvironment>, AcceptedEnvironmentReplaceError> {
-        self.replace_accepted_inner(AcceptedEnvironmentExpectation::Any, candidate, |_| {})
+        let expected = self.current();
+        self.replace_accepted_inner(expected.as_ref(), candidate, |_| {})
     }
 
     pub(crate) fn replace_accepted_with(
@@ -520,16 +514,12 @@ impl LspProfileState {
         candidate: AcceptedProfileCandidate,
         before_swap: impl FnOnce(Option<&Arc<AcceptedProfileEnvironment>>),
     ) -> Result<Arc<AcceptedProfileEnvironment>, AcceptedEnvironmentReplaceError> {
-        self.replace_accepted_inner(
-            AcceptedEnvironmentExpectation::Exact(expected),
-            candidate,
-            before_swap,
-        )
+        self.replace_accepted_inner(expected, candidate, before_swap)
     }
 
     fn replace_accepted_inner(
         &self,
-        expected: AcceptedEnvironmentExpectation<'_>,
+        expected: Option<&Arc<AcceptedProfileEnvironment>>,
         candidate: AcceptedProfileCandidate,
         before_swap: impl FnOnce(Option<&Arc<AcceptedProfileEnvironment>>),
     ) -> Result<Arc<AcceptedProfileEnvironment>, AcceptedEnvironmentReplaceError> {
@@ -540,19 +530,13 @@ impl LspProfileState {
         if self.lifecycle() != ProfileEnvironmentLifecycle::Active {
             return Err(AcceptedEnvironmentReplaceError::ShuttingDown);
         }
-        match expected {
-            #[cfg(test)]
-            AcceptedEnvironmentExpectation::Any => {}
-            AcceptedEnvironmentExpectation::Exact(expected) => {
-                let current_matches = match (expected, accepted.as_ref()) {
-                    (None, None) => true,
-                    (Some(expected), Some(current)) => Arc::ptr_eq(current, expected),
-                    (None | Some(_), _) => false,
-                };
-                if !current_matches {
-                    return Err(AcceptedEnvironmentReplaceError::CurrentChanged);
-                }
-            }
+        let current_matches = match (expected, accepted.as_ref()) {
+            (None, None) => true,
+            (Some(expected), Some(current)) => Arc::ptr_eq(current, expected),
+            (None | Some(_), _) => false,
+        };
+        if !current_matches {
+            return Err(AcceptedEnvironmentReplaceError::CurrentChanged);
         }
         let generation = accepted.as_ref().map_or(Ok(1), |current| {
             current
