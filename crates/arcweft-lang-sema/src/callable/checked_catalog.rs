@@ -792,8 +792,8 @@ pub(crate) enum CheckedCallableCatalogBuildError {
     DuplicateInference,
     DuplicateValidation,
     UnknownEffectRow,
-    EffectRow(EffectRowError),
-    EffectSubset(EffectSubsetError),
+    EffectRow(Box<EffectRowError>),
+    EffectSubset(Box<EffectSubsetError>),
     ForbiddenEffects(EffectSet),
     ForeignClosureOwner,
 }
@@ -1144,11 +1144,11 @@ impl CheckedCallableCatalogBuilder {
         let actual = EffectRow::closed(
             inferred
                 .resolve(&staged_substitution)
-                .map_err(CheckedCallableCatalogBuildError::EffectRow)?,
+                .map_err(|error| CheckedCallableCatalogBuildError::EffectRow(Box::new(error)))?,
         );
         if let EffectPermission::Bounded(permitted) = contract.permission() {
             EffectRow::check_subset(&actual, permitted, &mut staged_substitution)
-                .map_err(CheckedCallableCatalogBuildError::EffectSubset)?;
+                .map_err(|error| CheckedCallableCatalogBuildError::EffectSubset(Box::new(error)))?;
         }
         let forbidden = actual.concrete().intersection(contract.forbidden());
         if !forbidden.is_empty() {
@@ -1282,10 +1282,10 @@ impl CheckedCallableCatalogBuilder {
         }
         self.validate_freeze_indices()?;
         for row in self.closure_rows.values_mut() {
-            *row = EffectRow::closed(
-                row.resolve(&self.effect_substitution)
-                    .map_err(CheckedCallableCatalogBuildError::EffectRow)?,
-            );
+            *row =
+                EffectRow::closed(row.resolve(&self.effect_substitution).map_err(|error| {
+                    CheckedCallableCatalogBuildError::EffectRow(Box::new(error))
+                })?);
         }
         let mut records = BTreeMap::new();
         for (id, pending) in std::mem::take(&mut self.pending) {
@@ -1429,7 +1429,7 @@ impl CheckedCallableCatalogBuilder {
                 return Err(CheckedCallableCatalogBuildError::CorruptIndex);
             }
             row.resolve(&self.effect_substitution)
-                .map_err(CheckedCallableCatalogBuildError::EffectRow)?;
+                .map_err(|error| CheckedCallableCatalogBuildError::EffectRow(Box::new(error)))?;
         }
         Ok(())
     }

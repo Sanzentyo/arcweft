@@ -856,9 +856,8 @@ mod semantic_fact_transaction_tests {
             .expect_err("retry reaches the authored outer failure again");
         assert!(!matches!(
             first_error,
-            crate::final_analysis::FinalSemanticProjectError::Semantic(
-                FinalSemanticAnalysisError::ExpressionCycle { .. }
-            )
+            crate::final_analysis::FinalSemanticProjectError::Semantic(error)
+                if matches!(error.as_ref(), FinalSemanticAnalysisError::ExpressionCycle { .. })
         ));
         assert!(!matches!(
             retry_error,

@@ -80,14 +80,30 @@ pub(crate) trait TypeConstraintClient<D: ConstraintDomain> {
 /// Callback failures are deliberately separate from ordinary semantic
 /// rejections.  Only the driver may validate and promote a fatal source error.
 pub(crate) enum SourceCallbackFailure<D: ConstraintDomain> {
-    Fatal(SourceError<D::Source, D::SourceErrorCause>),
+    Fatal(Box<SourceError<D::Source, D::SourceErrorCause>>),
     Abort(TypeConstraintAbort),
-    Invariant(D::ClientInvariant),
+    Invariant(Box<D::ClientInvariant>),
 }
 
 pub(crate) enum SourceCheckpointFailure<D: ConstraintDomain> {
     Protocol(TypeConstraintSourceProtocolInvariant),
-    Client(D::ClientInvariant),
+    Client(Box<D::ClientInvariant>),
+}
+
+impl<D: ConstraintDomain> SourceCallbackFailure<D> {
+    pub(crate) fn fatal(error: SourceError<D::Source, D::SourceErrorCause>) -> Self {
+        Self::Fatal(Box::new(error))
+    }
+
+    pub(crate) fn invariant(invariant: D::ClientInvariant) -> Self {
+        Self::Invariant(Box::new(invariant))
+    }
+}
+
+impl<D: ConstraintDomain> SourceCheckpointFailure<D> {
+    pub(crate) fn client(invariant: D::ClientInvariant) -> Self {
+        Self::Client(Box::new(invariant))
+    }
 }
 
 #[derive(Clone)]
@@ -566,7 +582,7 @@ where
                     ));
                 }
                 materialization
-                    .bind_closed_submission(ClosedMaterializationSubmission::Fatal(error))
+                    .bind_closed_submission(ClosedMaterializationSubmission::Fatal(*error))
                     .map_err(Self::materialization_protocol_failure)
             }
             Err(SourceCallbackFailure::Abort(error)) => {
@@ -784,7 +800,7 @@ impl TypeConstraintClient<crate::types::NoConstraintClient> for crate::types::No
         SourceProbeOutcome<crate::types::NoConstraintClient>,
         SourceCallbackFailure<crate::types::NoConstraintClient>,
     > {
-        Err(SourceCallbackFailure::Fatal(SourceError::new(
+        Err(SourceCallbackFailure::fatal(SourceError::new(
             source,
             crate::types::constraints::SourcePhase::Probe,
             (),
@@ -829,7 +845,7 @@ impl TypeConstraintClient<crate::types::NoConstraintClient> for crate::types::No
         I: IntoIterator<Item = MaterializedSourceRequest<'h, crate::types::NoConstraintClient>>,
         (): 'h,
     {
-        Err(SourceCallbackFailure::Fatal(SourceError::new(
+        Err(SourceCallbackFailure::fatal(SourceError::new(
             (),
             crate::types::constraints::SourcePhase::Materialize,
             (),
@@ -1105,14 +1121,14 @@ pub(crate) mod tests {
                     CallbackMode::GroupRejectedThenSuccess => Ok(SourceProbeOutcome::Accepted(
                         SourceProbeResult::checked(TypeKind::I32, Branch, 0, ()),
                     )),
-                    CallbackMode::GroupRejectedThenFatal => Err(SourceCallbackFailure::Fatal(
+                    CallbackMode::GroupRejectedThenFatal => Err(SourceCallbackFailure::fatal(
                         SourceError::new(source, SourcePhase::Probe, "group tail fatal"),
                     )),
                     CallbackMode::GroupRejectedThenAbort => {
                         Err(SourceCallbackFailure::Abort(TypeConstraintAbort::Cancelled))
                     }
                     CallbackMode::GroupRejectedThenInvariant => {
-                        Err(SourceCallbackFailure::Invariant(()))
+                        Err(SourceCallbackFailure::invariant(()))
                     }
                     _ => unreachable!("group callback mode was matched above"),
                 };
@@ -1139,11 +1155,11 @@ pub(crate) mod tests {
                 CallbackMode::ProbeAbort => {
                     Err(SourceCallbackFailure::Abort(TypeConstraintAbort::Cancelled))
                 }
-                CallbackMode::ProbeInvariant => Err(SourceCallbackFailure::Invariant(())),
-                CallbackMode::WrongFatalSource => Err(SourceCallbackFailure::Fatal(
+                CallbackMode::ProbeInvariant => Err(SourceCallbackFailure::invariant(())),
+                CallbackMode::WrongFatalSource => Err(SourceCallbackFailure::fatal(
                     SourceError::new(source.saturating_add(1), SourcePhase::Probe, "fatal"),
                 )),
-                CallbackMode::Fatal => Err(SourceCallbackFailure::Fatal(SourceError::new(
+                CallbackMode::Fatal => Err(SourceCallbackFailure::fatal(SourceError::new(
                     source,
                     SourcePhase::Probe,
                     "fatal",
@@ -1171,7 +1187,7 @@ pub(crate) mod tests {
         ) -> Result<(), SourceCheckpointFailure<Domain>> {
             self.counts.probe_close.fetch_add(1, Ordering::Relaxed);
             if matches!(self.mode, CallbackMode::CloseProbeClientFailure) {
-                return Err(SourceCheckpointFailure::Client(()));
+                return Err(SourceCheckpointFailure::client(()));
             }
             Ok(())
         }
@@ -1221,7 +1237,7 @@ pub(crate) mod tests {
                     cause: "wrong source",
                 }),
                 CallbackMode::Fatal | CallbackMode::MaterializationFatal => {
-                    Err(SourceCallbackFailure::Fatal(SourceError::new(
+                    Err(SourceCallbackFailure::fatal(SourceError::new(
                         1,
                         SourcePhase::Materialize,
                         "materialized fatal",
@@ -1241,7 +1257,7 @@ pub(crate) mod tests {
                     } else {
                         (10, "earlier source")
                     };
-                    Err(SourceCallbackFailure::Fatal(SourceError::new(
+                    Err(SourceCallbackFailure::fatal(SourceError::new(
                         source,
                         SourcePhase::Materialize,
                         cause,
@@ -1250,7 +1266,7 @@ pub(crate) mod tests {
                 CallbackMode::MaterializationAbort => {
                     Err(SourceCallbackFailure::Abort(TypeConstraintAbort::Cancelled))
                 }
-                CallbackMode::MaterializationInvariant => Err(SourceCallbackFailure::Invariant(())),
+                CallbackMode::MaterializationInvariant => Err(SourceCallbackFailure::invariant(())),
                 CallbackMode::OpenProbeFailure
                 | CallbackMode::OpenMaterializationFailure
                 | CallbackMode::CloseProbeClientFailure
@@ -1274,7 +1290,7 @@ pub(crate) mod tests {
                 .materialize_close
                 .fetch_add(1, Ordering::Relaxed);
             if matches!(self.mode, CallbackMode::CloseMaterializationClientFailure) {
-                return Err(SourceCheckpointFailure::Client(()));
+                return Err(SourceCheckpointFailure::client(()));
             }
             Ok(sealed.map(|_| Sealed))
         }
@@ -1776,7 +1792,7 @@ pub(crate) mod tests {
         assert!(matches!(
             result,
             Err(TypeConstraintFailure::Invariant(
-                TypeConstraintFailureInvariant::Client(())
+                TypeConstraintFailureInvariant::Client(_)
             ))
         ));
         assert_eq!(counts.probe_close.load(Ordering::Relaxed), 1);
@@ -1827,7 +1843,7 @@ pub(crate) mod tests {
         assert!(matches!(
             result,
             Err(TypeConstraintFailure::Invariant(
-                TypeConstraintFailureInvariant::Client(())
+                TypeConstraintFailureInvariant::Client(_)
             ))
         ));
         assert_eq!(counts.materialize_call.load(Ordering::Relaxed), 1);
@@ -2133,7 +2149,7 @@ pub(crate) mod tests {
         assert!(matches!(
             probe_result,
             Err(TypeConstraintFailure::Invariant(
-                TypeConstraintFailureInvariant::Client(())
+                TypeConstraintFailureInvariant::Client(_)
             ))
         ));
         assert_eq!(probe_counts.probe_close.load(Ordering::Relaxed), 1);
@@ -2146,7 +2162,7 @@ pub(crate) mod tests {
         assert!(matches!(
             materialize_result,
             Err(TypeConstraintFailure::Invariant(
-                TypeConstraintFailureInvariant::Client(())
+                TypeConstraintFailureInvariant::Client(_)
             ))
         ));
         assert_eq!(materialize_counts.probe_close.load(Ordering::Relaxed), 1);

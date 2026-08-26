@@ -390,8 +390,8 @@ impl<D: ConstraintDomain> fmt::Debug for RejectedConstraintSourceProjection<D> {
 
 pub(crate) enum TypeConstraintCandidateFailure<D: ConstraintDomain> {
     Constraint(TypeConstraintRejection),
-    Source(SourceError<D::Source, Box<[D::SourceErrorCause]>>),
-    SourceProjection(RejectedConstraintSourceProjection<D>),
+    Source(Box<SourceError<D::Source, Box<[D::SourceErrorCause]>>>),
+    SourceProjection(Box<RejectedConstraintSourceProjection<D>>),
 }
 
 impl<D: ConstraintDomain> fmt::Debug for TypeConstraintCandidateFailure<D> {
@@ -412,7 +412,7 @@ impl<D: ConstraintDomain> fmt::Debug for TypeConstraintCandidateFailure<D> {
 
 pub(crate) enum TypeConstraintFailureInvariant<D: ConstraintDomain> {
     Constraint(TypeConstraintInvariant),
-    Client(D::ClientInvariant),
+    Client(Box<D::ClientInvariant>),
 }
 
 impl<D: ConstraintDomain> fmt::Debug for TypeConstraintFailureInvariant<D> {
@@ -426,9 +426,23 @@ impl<D: ConstraintDomain> fmt::Debug for TypeConstraintFailureInvariant<D> {
 
 pub(crate) enum TypeConstraintFailure<D: ConstraintDomain> {
     Rejected(TypeConstraintCandidateFailure<D>),
-    FatalSource(SourceError<D::Source, D::SourceErrorCause>),
+    FatalSource(Box<SourceError<D::Source, D::SourceErrorCause>>),
     Abort(TypeConstraintAbort),
     Invariant(TypeConstraintFailureInvariant<D>),
+}
+
+impl<D: ConstraintDomain> TypeConstraintFailure<D> {
+    pub(crate) fn rejected(error: TypeConstraintCandidateFailure<D>) -> Self {
+        Self::Rejected(error)
+    }
+
+    pub(crate) fn fatal_source(error: SourceError<D::Source, D::SourceErrorCause>) -> Self {
+        Self::FatalSource(Box::new(error))
+    }
+
+    pub(crate) fn client_invariant(invariant: D::ClientInvariant) -> Self {
+        Self::Invariant(TypeConstraintFailureInvariant::Client(Box::new(invariant)))
+    }
 }
 
 impl<D: ConstraintDomain> fmt::Debug for TypeConstraintFailure<D> {
@@ -457,7 +471,7 @@ impl<D: ConstraintDomain> From<TypeConstraintError> for TypeConstraintFailure<D>
     fn from(error: TypeConstraintError) -> Self {
         match error {
             TypeConstraintError::Rejected(error) => {
-                Self::Rejected(TypeConstraintCandidateFailure::Constraint(error))
+                Self::rejected(TypeConstraintCandidateFailure::Constraint(error))
             }
             TypeConstraintError::Abort(error) => Self::Abort(error),
             TypeConstraintError::Invariant(error) => {

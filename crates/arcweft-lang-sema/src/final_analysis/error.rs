@@ -456,9 +456,15 @@ pub enum FinalSemanticAnalysisError {
 #[derive(Clone, Debug, Eq, Error, PartialEq)]
 pub enum FinalSemanticProjectError {
     #[error(transparent)]
-    Semantic(#[from] FinalSemanticAnalysisError),
+    Semantic(Box<FinalSemanticAnalysisError>),
     #[error("checked Entry seal rejected one or more declarations")]
     Entry(Box<[CheckedEntryDiagnostic]>),
+}
+
+impl From<FinalSemanticAnalysisError> for FinalSemanticProjectError {
+    fn from(error: FinalSemanticAnalysisError) -> Self {
+        Self::Semantic(Box::new(error))
+    }
 }
 
 impl FinalSemanticProjectError {
@@ -493,7 +499,7 @@ impl FinalSemanticProjectError {
     #[cfg(test)]
     pub(crate) fn into_semantic_fixture_error(self) -> FinalSemanticAnalysisError {
         match self {
-            Self::Semantic(error) => error,
+            Self::Semantic(error) => *error,
             Self::Entry(diagnostics) => panic!(
                 "call-free semantic fixture unexpectedly reached Entry rejection: {diagnostics:?}"
             ),

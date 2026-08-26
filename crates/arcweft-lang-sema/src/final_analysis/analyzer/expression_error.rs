@@ -690,21 +690,21 @@ pub(super) enum AnalyzerExpressionRejection {
 
 #[derive(Debug, Eq, PartialEq)]
 pub(super) enum AnalyzerExpressionInvariant {
-    Fact(CandidateFactTransactionViolation),
-    Semantic(FinalSemanticAnalysisError),
+    Fact(Box<CandidateFactTransactionViolation>),
+    Semantic(Box<FinalSemanticAnalysisError>),
     Cycle {
         owner: ExprId,
     },
     CallFrame {
         owner: ExprId,
-        violation: CallFrameInvariant,
+        violation: Box<CallFrameInvariant>,
     },
 }
 
 #[derive(Debug, Eq, PartialEq)]
 pub(super) enum AnalyzerExpressionError {
     Rejected(AnalyzerExpressionRejection),
-    Fatal(FinalSemanticAnalysisError),
+    Fatal(Box<FinalSemanticAnalysisError>),
     Abort(TypeConstraintAbort),
     Invariant(AnalyzerExpressionInvariant),
     Call {
@@ -715,15 +715,15 @@ pub(super) enum AnalyzerExpressionError {
 
 impl AnalyzerExpressionError {
     pub(super) fn fatal(error: FinalSemanticAnalysisError) -> Self {
-        Self::Fatal(error)
+        Self::Fatal(Box::new(error))
     }
 
     pub(super) fn invariant(error: FinalSemanticAnalysisError) -> Self {
-        Self::Invariant(AnalyzerExpressionInvariant::Semantic(error))
+        Self::Invariant(AnalyzerExpressionInvariant::Semantic(Box::new(error)))
     }
 
     pub(super) fn fact(violation: CandidateFactTransactionViolation) -> Self {
-        Self::Invariant(AnalyzerExpressionInvariant::Fact(violation))
+        Self::Invariant(AnalyzerExpressionInvariant::Fact(Box::new(violation)))
     }
 
     pub(super) fn rejected(owner: ExprId) -> Self {
@@ -731,24 +731,36 @@ impl AnalyzerExpressionError {
     }
 
     pub(super) fn is_cancellation(&self) -> bool {
-        matches!(
-            self,
-            Self::Abort(TypeConstraintAbort::Cancelled)
-                | Self::Fatal(FinalSemanticAnalysisError::Cancelled)
-                | Self::Invariant(AnalyzerExpressionInvariant::Semantic(
-                    FinalSemanticAnalysisError::Cancelled
-                ))
-                | Self::Call {
-                    failure: CallAnalysisFailure::Abort(TypeConstraintAbort::Cancelled),
-                    ..
-                }
-        )
+        match self {
+            Self::Abort(TypeConstraintAbort::Cancelled) => true,
+            Self::Fatal(error) => matches!(error.as_ref(), FinalSemanticAnalysisError::Cancelled),
+            Self::Invariant(invariant) => matches!(
+                invariant,
+                AnalyzerExpressionInvariant::Semantic(error)
+                    if matches!(error.as_ref(), FinalSemanticAnalysisError::Cancelled)
+            ),
+            Self::Call { failure, .. } => matches!(
+                failure,
+                CallAnalysisFailure::Abort(TypeConstraintAbort::Cancelled)
+            ),
+            Self::Rejected(_)
+            | Self::Abort(
+                TypeConstraintAbort::ArithmeticOverflow
+                | TypeConstraintAbort::WorkLimit { .. }
+                | TypeConstraintAbort::NodeLimit { .. }
+                | TypeConstraintAbort::BranchLimit { .. }
+                | TypeConstraintAbort::BindingLimit { .. }
+                | TypeConstraintAbort::SourceProbeLimit { .. }
+                | TypeConstraintAbort::MaterializationLimit { .. }
+                | TypeConstraintAbort::CallDepth { .. },
+            ) => false,
+        }
     }
 
     pub(super) fn into_public(self, owner: ExprId) -> FinalSemanticAnalysisError {
         match self {
             Self::Rejected(_) => FinalSemanticAnalysisError::ExpressionTypeUnavailable { owner },
-            Self::Fatal(error) => error,
+            Self::Fatal(error) => *error,
             Self::Abort(TypeConstraintAbort::Cancelled) => FinalSemanticAnalysisError::Cancelled,
             Self::Abort(TypeConstraintAbort::ArithmeticOverflow) => {
                 FinalSemanticAnalysisError::AccountingOverflow
@@ -762,16 +774,18 @@ impl AnalyzerExpressionError {
             | Self::Abort(TypeConstraintAbort::MaterializationLimit { .. }) => {
                 FinalSemanticAnalysisError::CallResolutionFailed { owner }
             }
-            Self::Invariant(AnalyzerExpressionInvariant::Fact(violation)) => violation.into(),
-            Self::Invariant(AnalyzerExpressionInvariant::Semantic(error)) => error,
-            Self::Invariant(AnalyzerExpressionInvariant::Cycle { owner }) => {
-                FinalSemanticAnalysisError::ExpressionCycle { owner }
-            }
-            Self::Invariant(AnalyzerExpressionInvariant::CallFrame { owner, violation }) => {
-                FinalSemanticAnalysisError::CallFrameInvariant(
-                    crate::final_analysis::FinalCallFrameInvariant::new(owner, violation),
-                )
-            }
+            Self::Invariant(invariant) => match invariant {
+                AnalyzerExpressionInvariant::Fact(violation) => (*violation).into(),
+                AnalyzerExpressionInvariant::Semantic(error) => *error,
+                AnalyzerExpressionInvariant::Cycle { owner } => {
+                    FinalSemanticAnalysisError::ExpressionCycle { owner }
+                }
+                AnalyzerExpressionInvariant::CallFrame { owner, violation } => {
+                    FinalSemanticAnalysisError::CallFrameInvariant(
+                        crate::final_analysis::FinalCallFrameInvariant::new(owner, *violation),
+                    )
+                }
+            },
             Self::Call { owner, failure } => FinalSemanticAnalysisError::CallConstraintFailure(
                 FinalCallConstraintFailure::new(owner, failure),
             ),
@@ -912,11 +926,11 @@ mod tests {
         let owner = test_owner();
         let error = AnalyzerExpressionError::Invariant(AnalyzerExpressionInvariant::CallFrame {
             owner,
-            violation: CallFrameInvariant::DepthMismatch {
+            violation: Box::new(CallFrameInvariant::DepthMismatch {
                 owner,
                 entered_depth: 1,
                 actual_depth: 0,
-            },
+            }),
         })
         .into_public(owner);
         assert!(matches!(

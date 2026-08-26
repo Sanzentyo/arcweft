@@ -91,7 +91,7 @@ impl Default for CheckedMatchLimits {
 #[derive(Clone, Debug, Eq, Error, PartialEq)]
 pub enum SemanticTranscriptError {
     #[error(transparent)]
-    Generation(#[from] super::FinalSemanticAnalysisError),
+    Generation(Box<super::FinalSemanticAnalysisError>),
     #[error("expression is not a Match")]
     NotMatch,
     #[error("checked Match evidence is missing or stale")]
@@ -120,6 +120,12 @@ pub enum SemanticTranscriptError {
     UnsupportedCoverage,
     #[error("Match is not exhaustive; coverage witness is retained in the error")]
     NonExhaustive { witness: CheckedCoverageWitness },
+}
+
+impl From<super::FinalSemanticAnalysisError> for SemanticTranscriptError {
+    fn from(error: super::FinalSemanticAnalysisError) -> Self {
+        Self::Generation(Box::new(error))
+    }
 }
 
 impl From<SemanticCoordinateIndexError> for SemanticTranscriptError {

@@ -523,16 +523,16 @@ impl<D: ConstraintDomain> ProbeOperation<D> {
     fn into_ordinary_rejection(self) -> TypeConstraintFailure<D> {
         if !self.rejections.is_empty() {
             return TypeConstraintFailure::Rejected(TypeConstraintCandidateFailure::Source(
-                SourceError::new(
+                Box::new(SourceError::new(
                     self.source,
                     SourcePhase::Probe,
                     self.rejections.into_boxed_slice(),
-                ),
+                )),
             ));
         }
         if let Some(rejection) = self.relation_rejections.into_iter().next() {
             return TypeConstraintFailure::Rejected(
-                TypeConstraintCandidateFailure::SourceProjection(rejection),
+                TypeConstraintCandidateFailure::SourceProjection(Box::new(rejection)),
             );
         }
         TypeConstraintError::Rejected(TypeConstraintRejection::Mismatch).into()
@@ -1445,7 +1445,7 @@ impl<D: ConstraintDomain> TypeConstraintTransaction<D> {
                 unreachable!("fatal index identifies fatal record")
             };
             let (source, phase, cause) = error.into_parts();
-            return Err(TypeConstraintFailure::FatalSource(SourceError::new(
+            return Err(TypeConstraintFailure::fatal_source(SourceError::new(
                 source, phase, cause,
             )));
         }
@@ -1497,11 +1497,9 @@ impl<D: ConstraintDomain> TypeConstraintTransaction<D> {
                 .collect::<Vec<_>>()
                 .into_boxed_slice();
             return Err(TypeConstraintFailure::Rejected(
-                TypeConstraintCandidateFailure::Source(SourceError::new(
-                    source,
-                    SourcePhase::Materialize,
-                    causes,
-                )),
+                TypeConstraintCandidateFailure::Source(
+                    SourceError::new(source, SourcePhase::Materialize, causes).into(),
+                ),
             ));
         }
         if candidates.len() != 1 {

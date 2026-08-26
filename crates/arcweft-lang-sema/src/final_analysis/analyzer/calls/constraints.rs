@@ -928,7 +928,7 @@ impl<'a, 'project, 'catalog, 'control>
                             TypeConstraintAbort::Cancelled,
                         )
                     }
-                    error => crate::callable::SourceCallbackFailure::Fatal(SourceError::new(
+                    error => crate::callable::SourceCallbackFailure::fatal(SourceError::new(
                         source,
                         phase,
                         AnalyzerCallSourceFailureCause::FinalSemantic(Box::new(error)),
@@ -971,7 +971,7 @@ impl<'a, 'project, 'catalog, 'control>
         checkpoint: &AnalyzerProbeCheckpoint,
     ) -> Result<(), crate::callable::SourceCallbackFailure<AnalyzerCallConstraintDomain>> {
         let Some(active) = self.active_fact_scope.as_ref() else {
-            return Err(crate::callable::SourceCallbackFailure::Invariant(
+            return Err(crate::callable::SourceCallbackFailure::invariant(
                 AnalyzerCallClientInvariant::fact_transaction(
                     source,
                     crate::final_analysis::CandidateFactTransactionViolation::StaleCheckpoint,
@@ -986,7 +986,7 @@ impl<'a, 'project, 'catalog, 'control>
         {
             return Ok(());
         }
-        Err(crate::callable::SourceCallbackFailure::Invariant(
+        Err(crate::callable::SourceCallbackFailure::invariant(
             AnalyzerCallClientInvariant::active_fact_scope_mismatch(
                 source,
                 active.coordinate.clone(),
@@ -1000,7 +1000,7 @@ impl<'a, 'project, 'catalog, 'control>
         checkpoint: &mut AnalyzerMaterializationCheckpoint,
     ) -> Result<(), crate::callable::SourceCallbackFailure<AnalyzerCallConstraintDomain>> {
         let Some(active) = self.active_fact_scope.as_ref() else {
-            return Err(crate::callable::SourceCallbackFailure::Invariant(
+            return Err(crate::callable::SourceCallbackFailure::invariant(
                 AnalyzerCallClientInvariant::fact_transaction(
                     source,
                     crate::final_analysis::CandidateFactTransactionViolation::StaleCheckpoint,
@@ -1020,7 +1020,7 @@ impl<'a, 'project, 'catalog, 'control>
                 return Ok(());
             }
         }
-        Err(crate::callable::SourceCallbackFailure::Invariant(
+        Err(crate::callable::SourceCallbackFailure::invariant(
             AnalyzerCallClientInvariant::active_fact_scope_mismatch(
                 source,
                 active.coordinate.clone(),
@@ -1222,7 +1222,7 @@ impl<'a, 'project, 'catalog, 'control>
                 Err(AnalyzerCallCheckFailure::Fatal(SourceError::new(
                     source,
                     phase,
-                    AnalyzerCallSourceFailureCause::FinalSemantic(Box::new(error)),
+                    AnalyzerCallSourceFailureCause::FinalSemantic(error),
                 )))
             }
             Err(crate::final_analysis::analyzer::expression_error::AnalyzerExpressionError::Abort(error)) => {
@@ -1233,14 +1233,14 @@ impl<'a, 'project, 'catalog, 'control>
                     violation,
                 ),
             )) => Err(AnalyzerCallCheckFailure::Invariant(
-                AnalyzerCallClientInvariant::fact_transaction(source, violation),
+                AnalyzerCallClientInvariant::fact_transaction(source, *violation),
             )),
             Err(crate::final_analysis::analyzer::expression_error::AnalyzerExpressionError::Invariant(
                 crate::final_analysis::analyzer::expression_error::AnalyzerExpressionInvariant::Semantic(
                     error,
                 ),
             )) => Err(AnalyzerCallCheckFailure::Invariant(
-                AnalyzerCallClientInvariant::final_semantic(source, error),
+                AnalyzerCallClientInvariant::final_semantic(source, *error),
             )),
             Err(crate::final_analysis::analyzer::expression_error::AnalyzerExpressionError::Invariant(
                 crate::final_analysis::analyzer::expression_error::AnalyzerExpressionInvariant::Cycle {
@@ -1258,7 +1258,7 @@ impl<'a, 'project, 'catalog, 'control>
                     violation,
                 },
             )) => Err(AnalyzerCallCheckFailure::Invariant(
-                AnalyzerCallClientInvariant::call_frame(source, owner, violation),
+                AnalyzerCallClientInvariant::call_frame(source, owner, *violation),
             )),
             Err(crate::final_analysis::analyzer::expression_error::AnalyzerExpressionError::Call {
                 owner: inner_owner,
@@ -1302,7 +1302,7 @@ impl<'a, 'project, 'catalog, 'control>
             .analyzer
             .facts
             .abort_callback_scope_close_failure(failure);
-        crate::callable::SourceCheckpointFailure::Client(
+        crate::callable::SourceCheckpointFailure::client(
             AnalyzerCallClientInvariant::fact_transaction(coordinate.owner_source(), cause),
         )
     }
@@ -1401,7 +1401,7 @@ impl<'a, 'project, 'catalog, 'control> AnalyzerCallConstraintOperations
         self.admit_physical_source(source, SourcePhase::Probe, work)?;
         self.record_physical_source(source, Self::physical_expected(source, &hint))
             .map_err(|error| {
-                crate::callable::SourceCallbackFailure::Fatal(SourceError::new(
+                crate::callable::SourceCallbackFailure::fatal(SourceError::new(
                     source,
                     SourcePhase::Probe,
                     AnalyzerCallSourceFailureCause::FinalSemantic(Box::new(error)),
@@ -1409,20 +1409,20 @@ impl<'a, 'project, 'catalog, 'control> AnalyzerCallConstraintOperations
             })?;
         let map_failure = |failure: AnalyzerCallCheckFailure| match failure {
             AnalyzerCallCheckFailure::Mismatch => {
-                crate::callable::SourceCallbackFailure::Fatal(SourceError::new(
+                crate::callable::SourceCallbackFailure::fatal(SourceError::new(
                     source,
                     SourcePhase::Probe,
                     AnalyzerCallSourceFailureCause::Mismatch,
                 ))
             }
             AnalyzerCallCheckFailure::Fatal(error) => {
-                crate::callable::SourceCallbackFailure::Fatal(error)
+                crate::callable::SourceCallbackFailure::fatal(error)
             }
             AnalyzerCallCheckFailure::Abort(error) => {
                 crate::callable::SourceCallbackFailure::Abort(error)
             }
             AnalyzerCallCheckFailure::Invariant(invariant) => {
-                crate::callable::SourceCallbackFailure::Invariant(invariant)
+                crate::callable::SourceCallbackFailure::invariant(invariant)
             }
         };
         let admission = self.dialogue_patch_admissions.get(&source).cloned();
@@ -1453,7 +1453,7 @@ impl<'a, 'project, 'catalog, 'control> AnalyzerCallConstraintOperations
                         payload: VariantPayloadRequirement::Unit,
                     };
                     if guard.accepts(admission.declared(), &checked.evidence) {
-                        return Err(crate::callable::SourceCallbackFailure::Fatal(
+                        return Err(crate::callable::SourceCallbackFailure::fatal(
                             SourceError::new(
                                 source,
                                 SourcePhase::Probe,
@@ -1500,7 +1500,7 @@ impl<'a, 'project, 'catalog, 'control> AnalyzerCallConstraintOperations
                         {
                             AnalyzerExpressionExpectation::parametric(expected, unbound)
                                 .ok_or_else(|| {
-                                    crate::callable::SourceCallbackFailure::Invariant(
+                                    crate::callable::SourceCallbackFailure::invariant(
                                         AnalyzerCallClientInvariant::constraint(
                                             source,
                                             CallConstraintInvariant::Lower(
@@ -1550,7 +1550,7 @@ impl<'a, 'project, 'catalog, 'control> AnalyzerCallConstraintOperations
                         },
                         |(actual, _)| admission.mismatch_failure(actual),
                     );
-                    return Err(crate::callable::SourceCallbackFailure::Fatal(
+                    return Err(crate::callable::SourceCallbackFailure::fatal(
                         SourceError::new(
                             source,
                             SourcePhase::Probe,
@@ -1574,7 +1574,7 @@ impl<'a, 'project, 'catalog, 'control> AnalyzerCallConstraintOperations
     > {
         let requested = AnalyzerCallScopeCoordinate::Probe { source };
         if let Some(active) = self.active_fact_scope.as_ref() {
-            return Err(crate::callable::SourceCheckpointFailure::Client(
+            return Err(crate::callable::SourceCheckpointFailure::client(
                 AnalyzerCallClientInvariant::active_fact_scope_conflict(
                     active.coordinate.clone(),
                     requested,
@@ -1586,7 +1586,7 @@ impl<'a, 'project, 'catalog, 'control> AnalyzerCallConstraintOperations
             .facts
             .open_callback_fact_scope()
             .map_err(|violation| {
-                crate::callable::SourceCheckpointFailure::Client(
+                crate::callable::SourceCheckpointFailure::client(
                     AnalyzerCallClientInvariant::fact_transaction(source, violation),
                 )
             })?;
@@ -1657,7 +1657,7 @@ impl<'a, 'project, 'catalog, 'control> AnalyzerCallConstraintOperations
             sources: ordered_sources.clone(),
         };
         if let Some(active) = self.active_fact_scope.as_ref() {
-            return Err(crate::callable::SourceCheckpointFailure::Client(
+            return Err(crate::callable::SourceCheckpointFailure::client(
                 AnalyzerCallClientInvariant::active_fact_scope_conflict(
                     active.coordinate.clone(),
                     coordinate,
@@ -1669,7 +1669,7 @@ impl<'a, 'project, 'catalog, 'control> AnalyzerCallConstraintOperations
             .facts
             .open_callback_fact_scope()
             .map_err(|violation| {
-                crate::callable::SourceCheckpointFailure::Client(
+                crate::callable::SourceCheckpointFailure::client(
                     AnalyzerCallClientInvariant::fact_transaction(owner, violation),
                 )
             })?;
@@ -1704,7 +1704,7 @@ impl<'a, 'project, 'catalog, 'control> AnalyzerCallConstraintOperations
             let source = *request.source();
             self.materialization_checkpoint_check(source, checkpoint)?;
             self.active_source_check(source, SourcePhase::Materialize)
-                .map_err(crate::callable::SourceCallbackFailure::Invariant)?;
+                .map_err(crate::callable::SourceCallbackFailure::invariant)?;
             self.admit_physical_source(source, SourcePhase::Materialize, work)?;
             let expected =
                 source
@@ -1729,7 +1729,7 @@ impl<'a, 'project, 'catalog, 'control> AnalyzerCallConstraintOperations
                     );
             self.record_physical_source(source, expected)
                 .map_err(|error| {
-                    crate::callable::SourceCallbackFailure::Fatal(SourceError::new(
+                    crate::callable::SourceCallbackFailure::fatal(SourceError::new(
                         source,
                         SourcePhase::Materialize,
                         AnalyzerCallSourceFailureCause::FinalSemantic(Box::new(error)),
@@ -1749,7 +1749,7 @@ impl<'a, 'project, 'catalog, 'control> AnalyzerCallConstraintOperations
                 Ok(checked) => {
                     if let Err(invariant) = validate_materialized_source_request(&request, &checked)
                     {
-                        return Err(crate::callable::SourceCallbackFailure::Invariant(
+                        return Err(crate::callable::SourceCallbackFailure::invariant(
                             AnalyzerCallClientInvariant::constraint(
                                 source,
                                 CallConstraintInvariant::Lower(invariant),
@@ -1764,13 +1764,13 @@ impl<'a, 'project, 'catalog, 'control> AnalyzerCallConstraintOperations
                     });
                 }
                 Err(AnalyzerCallCheckFailure::Fatal(error)) => {
-                    return Err(crate::callable::SourceCallbackFailure::Fatal(error));
+                    return Err(crate::callable::SourceCallbackFailure::fatal(error));
                 }
                 Err(AnalyzerCallCheckFailure::Abort(error)) => {
                     return Err(crate::callable::SourceCallbackFailure::Abort(error));
                 }
                 Err(AnalyzerCallCheckFailure::Invariant(invariant)) => {
-                    return Err(crate::callable::SourceCallbackFailure::Invariant(invariant));
+                    return Err(crate::callable::SourceCallbackFailure::invariant(invariant));
                 }
             }
         }
@@ -1851,7 +1851,7 @@ impl<'a, 'project, 'catalog, 'control> AnalyzerCallConstraintOperations
             .facts
             .rollback_callback_fact_scope(active.scope)
         {
-            Ok(()) => Err(crate::callable::SourceCheckpointFailure::Client(
+            Ok(()) => Err(crate::callable::SourceCheckpointFailure::client(
                 AnalyzerCallClientInvariant::active_fact_scope(coordinate),
             )),
             Err(failure) => Err(self.close_fact_failure(failure, coordinate)),
@@ -2599,7 +2599,7 @@ pub(crate) enum AnalyzerDetachedUnselectedOutcome {
 #[derive(Debug, Eq, PartialEq)]
 pub(crate) enum CallAnalysisInvariant {
     Constraint(CallConstraintInvariant),
-    Client(AnalyzerCallClientInvariant),
+    Client(Box<AnalyzerCallClientInvariant>),
 }
 
 #[derive(Debug, Eq, PartialEq)]
@@ -3594,11 +3594,9 @@ pub(crate) fn run_prepared_candidate(
         )
         .map_err(|failure| match failure {
             crate::callable::CandidateConstraintDriverStartFailure::Prepared(error) => {
-                TypeConstraintFailure::Invariant(TypeConstraintFailureInvariant::Client(
-                    AnalyzerCallClientInvariant::constraint(
-                        AnalyzerCallConstraintSource::BaseInstantiation,
-                        error,
-                    ),
+                TypeConstraintFailure::client_invariant(AnalyzerCallClientInvariant::constraint(
+                    AnalyzerCallConstraintSource::BaseInstantiation,
+                    error,
                 ))
             }
             crate::callable::CandidateConstraintDriverStartFailure::Lower(

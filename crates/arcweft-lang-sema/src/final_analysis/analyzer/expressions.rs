@@ -2833,7 +2833,7 @@ impl Analyzer<'_, '_, '_> {
         };
         self.facts
             .apply_candidate_projection(transaction_authority, projection)
-            .map_err(CandidateFactOperationFailure::Projection)?;
+            .map_err(|failure| CandidateFactOperationFailure::Projection(Box::new(failure)))?;
         Ok(CheckedExpression::new(
             checked.ty().clone(),
             checked.type_selection(),

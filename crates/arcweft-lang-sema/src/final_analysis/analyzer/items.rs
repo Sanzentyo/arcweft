@@ -769,9 +769,10 @@ impl Analyzer<'_, '_, '_> {
                 .ok_or(FinalSemanticAnalysisError::CheckedCallableCatalog)?;
             match staged.builder.validate_body_contract(&body.id) {
                 Ok(()) => {}
-                Err(CheckedCallableCatalogBuildError::EffectSubset(
-                    EffectSubsetError::MissingEffects { missing },
-                )) => {
+                Err(CheckedCallableCatalogBuildError::EffectSubset(error)) => {
+                    let EffectSubsetError::MissingEffects { missing } = *error else {
+                        return Err(FinalSemanticAnalysisError::CheckedCallableCatalog);
+                    };
                     let module = self.module(body.module)?;
                     let call_authority = PreparedEffectTraceCallAuthority::new(
                         self.facts

@@ -681,7 +681,7 @@ impl PreparedCallGraphCloseFailure {
 /// transaction can poison/rollback it without dropping semantic evidence.
 pub(crate) struct PreparedCallGraphRestoreFailure<P, U = ()> {
     violation: CallConstraintInvariant,
-    delta: PreparedCallGraphDelta<P, U>,
+    delta: Box<PreparedCallGraphDelta<P, U>>,
 }
 
 impl<P, U> std::fmt::Debug for PreparedCallGraphRestoreFailure<P, U> {
@@ -695,7 +695,7 @@ impl<P, U> std::fmt::Debug for PreparedCallGraphRestoreFailure<P, U> {
 
 impl<P, U> PreparedCallGraphRestoreFailure<P, U> {
     pub(crate) fn into_parts(self) -> (CallConstraintInvariant, PreparedCallGraphDelta<P, U>) {
-        (self.violation, self.delta)
+        (self.violation, *self.delta)
     }
 }
 
@@ -1338,7 +1338,7 @@ impl<P, U> PreparedCallGraph<P, U> {
             ($violation:expr) => {
                 return Err(PreparedCallGraphRestoreFailure {
                     violation: $violation,
-                    delta,
+                    delta: Box::new(delta),
                 });
             };
         }

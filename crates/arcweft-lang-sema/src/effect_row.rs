@@ -169,8 +169,8 @@ pub enum EffectRowError {
     )]
     ConflictingBinding {
         variable: u32,
-        existing: EffectRow,
-        requested: EffectRow,
+        existing: Box<EffectRow>,
+        requested: Box<EffectRow>,
     },
     #[error("effect variable e{variable} participates in a cyclic row substitution")]
     CyclicBinding { variable: u32 },
@@ -190,8 +190,8 @@ pub enum EffectSubsetError {
     #[error("effect variable e{variable} has incompatible row bindings")]
     ConflictingBinding {
         variable: u32,
-        existing: EffectRow,
-        requested: EffectRow,
+        existing: Box<EffectRow>,
+        requested: Box<EffectRow>,
     },
 }
 
@@ -202,7 +202,7 @@ pub enum EffectRowCloseError {
     Unresolved {
         callable: CallableId,
         #[source]
-        source: EffectRowError,
+        source: Box<EffectRowError>,
     },
 }
 
@@ -824,7 +824,7 @@ impl EffectRowReport {
                     .map(|closed| (closed.callable.clone(), closed))
                     .map_err(|source| EffectRowCloseError::Unresolved {
                         callable: summary.callable.clone(),
-                        source,
+                        source: Box::new(source),
                     })
             })
             .collect::<Result<BTreeMap<_, _>, _>>()?;
@@ -931,8 +931,8 @@ impl EffectSubstitution {
             }
             return Err(EffectRowError::ConflictingBinding {
                 variable: variable.index(),
-                existing,
-                requested,
+                existing: Box::new(existing),
+                requested: Box::new(requested),
             });
         }
         self.0.insert(variable, requested);
@@ -1217,7 +1217,7 @@ mod tests {
             report.resolve_closed(&EffectSubstitution::new()),
             Err(EffectRowCloseError::Unresolved {
                 callable,
-                source: EffectRowError::UnboundVariable { variable: 7 },
+                source: Box::new(EffectRowError::UnboundVariable { variable: 7 }),
             })
         );
     }

@@ -7,5 +7,5 @@ error[E0603]: struct `PreparedMethodExpression` is private
 note: the struct `PreparedMethodExpression` is defined here
  --> src/final_analysis.rs
   |
-  |     PreparedExpressionFact, PreparedExpressionShell, PreparedMethodExpression,
+  |     PreparedExpressionFact, PreparedExpressionShell, PreparedMethodExpression, PreparedPatternFact,
   |                                                      ^^^^^^^^^^^^^^^^^^^^^^^^

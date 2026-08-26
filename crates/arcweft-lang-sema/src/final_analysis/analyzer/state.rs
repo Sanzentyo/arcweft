@@ -166,12 +166,12 @@ impl<'a> CandidateExpressionFactAuthority<'a> {
 #[derive(Debug)]
 pub(super) struct CandidateFactCloseFailure {
     violation: CandidateFactTransactionViolation,
-    checkpoint: CandidateFactCheckpoint,
+    checkpoint: Box<CandidateFactCheckpoint>,
 }
 
 impl CandidateFactCloseFailure {
     pub(super) fn into_parts(self) -> (CandidateFactTransactionViolation, CandidateFactCheckpoint) {
-        (self.violation, self.checkpoint)
+        (self.violation, *self.checkpoint)
     }
 }
 
@@ -196,7 +196,7 @@ pub(super) type ImplicitCaptureUseKey = (ExprId, ExprId);
 #[derive(Debug)]
 pub(super) struct CandidateProjectionApplyFailure {
     violation: CandidateFactTransactionViolation,
-    projection: CandidateSemanticProjection,
+    projection: Box<CandidateSemanticProjection>,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -213,7 +213,7 @@ impl CandidateProjectionApplyFailure {
         CandidateFactTransactionViolation,
         CandidateSemanticProjection,
     ) {
-        (self.violation, self.projection)
+        (self.violation, *self.projection)
     }
 }
 
@@ -339,7 +339,7 @@ pub(super) enum CandidateFactTransactionAction<T> {
 
 pub(super) enum CandidateFactOperationFailure {
     Expression(super::expression_error::AnalyzerExpressionError),
-    Projection(CandidateProjectionApplyFailure),
+    Projection(Box<CandidateProjectionApplyFailure>),
 }
 
 impl From<super::expression_error::AnalyzerExpressionError> for CandidateFactOperationFailure {
@@ -366,7 +366,7 @@ pub(super) enum CandidateFactTransactionOutcome<T> {
     RolledBack(T),
     Extracted {
         value: T,
-        projection: CandidateSemanticProjection,
+        projection: Box<CandidateSemanticProjection>,
     },
 }
 
@@ -384,7 +384,7 @@ impl<T> CandidateFactTransactionOutcome<T> {
         self,
     ) -> Result<(T, CandidateSemanticProjection), CandidateFactTransactionViolation> {
         match self {
-            Self::Extracted { value, projection } => Ok((value, projection)),
+            Self::Extracted { value, projection } => Ok((value, *projection)),
             Self::Committed(_) | Self::RolledBack(_) => {
                 Err(CandidateFactTransactionViolation::UnrecoverableLedger)
             }
@@ -1060,7 +1060,7 @@ impl SemanticFactState {
         if let Err(violation) = self.validate_checkpoint(&checkpoint) {
             return Err(CandidateFactCloseFailure {
                 violation,
-                checkpoint,
+                checkpoint: Box::new(checkpoint),
             });
         }
         let CandidateFactCheckpoint {
@@ -1079,13 +1079,13 @@ impl SemanticFactState {
             let (violation, graph) = failure.into_parts();
             return Err(CandidateFactCloseFailure {
                 violation: CandidateFactTransactionViolation::PreparedCallGraph(violation.into()),
-                checkpoint: CandidateFactCheckpoint {
+                checkpoint: Box::new(CandidateFactCheckpoint {
                     issuer,
                     id,
                     journal_start,
                     epoch,
                     graph,
-                },
+                }),
             });
         }
         self.candidate_checkpoints.pop();
@@ -1111,7 +1111,7 @@ impl SemanticFactState {
         if let Err(violation) = self.validate_checkpoint(&checkpoint) {
             return Err(CandidateFactCloseFailure {
                 violation,
-                checkpoint,
+                checkpoint: Box::new(checkpoint),
             });
         }
         let CandidateFactCheckpoint {
@@ -1130,13 +1130,13 @@ impl SemanticFactState {
             let (violation, graph) = failure.into_parts();
             return Err(CandidateFactCloseFailure {
                 violation: CandidateFactTransactionViolation::PreparedCallGraph(violation.into()),
-                checkpoint: CandidateFactCheckpoint {
+                checkpoint: Box::new(CandidateFactCheckpoint {
                     issuer,
                     id,
                     journal_start,
                     epoch,
                     graph,
-                },
+                }),
             });
         }
         self.candidate_checkpoints.pop();
@@ -1157,7 +1157,7 @@ impl SemanticFactState {
         if let Err(violation) = self.validate_checkpoint(&checkpoint) {
             return Err(CandidateFactCloseFailure {
                 violation,
-                checkpoint,
+                checkpoint: Box::new(checkpoint),
             });
         }
         let CandidateFactCheckpoint {
@@ -1180,13 +1180,13 @@ impl SemanticFactState {
                     violation: CandidateFactTransactionViolation::PreparedCallGraph(
                         violation.into(),
                     ),
-                    checkpoint: CandidateFactCheckpoint {
+                    checkpoint: Box::new(CandidateFactCheckpoint {
                         issuer,
                         id,
                         journal_start,
                         epoch,
                         graph,
-                    },
+                    }),
                 });
             }
         };
@@ -1274,7 +1274,7 @@ impl SemanticFactState {
         if let Some(violation) = violation {
             return Err(CandidateProjectionApplyFailure {
                 violation,
-                projection,
+                projection: Box::new(projection),
             });
         }
         if let Err(violation) =
@@ -1282,7 +1282,7 @@ impl SemanticFactState {
         {
             return Err(CandidateProjectionApplyFailure {
                 violation,
-                projection,
+                projection: Box::new(projection),
             });
         }
         let CandidateSemanticProjection {
@@ -1313,7 +1313,7 @@ impl SemanticFactState {
                     existing,
                     proposed,
                 },
-                projection: CandidateSemanticProjection {
+                projection: Box::new(CandidateSemanticProjection {
                     authority,
                     graph_delta,
                     locals,
@@ -1322,7 +1322,7 @@ impl SemanticFactState {
                     iterations,
                     implicit_capture_uses,
                     physical_candidate_argument_evaluations,
-                },
+                }),
             });
         }
         match self
@@ -1338,7 +1338,7 @@ impl SemanticFactState {
                     violation: CandidateFactTransactionViolation::PreparedCallGraph(
                         violation.into(),
                     ),
-                    projection: CandidateSemanticProjection {
+                    projection: Box::new(CandidateSemanticProjection {
                         authority,
                         graph_delta,
                         locals,
@@ -1347,7 +1347,7 @@ impl SemanticFactState {
                         iterations,
                         implicit_capture_uses,
                         physical_candidate_argument_evaluations,
-                    },
+                    }),
                 });
             }
         }
@@ -2017,9 +2017,10 @@ impl<'project, 'catalog, 'control> super::Analyzer<'project, 'catalog, 'control>
             }
             CandidateFactTransactionAction::Extract(value) => {
                 match self.facts.extract_and_rollback(checkpoint) {
-                    Ok(projection) => {
-                        Ok(CandidateFactTransactionOutcome::Extracted { value, projection })
-                    }
+                    Ok(projection) => Ok(CandidateFactTransactionOutcome::Extracted {
+                        value,
+                        projection: Box::new(projection),
+                    }),
                     Err(failure) => Err(AnalyzerExpressionError::fact(
                         self.facts.abort_after_close_failure(failure),
                     )),

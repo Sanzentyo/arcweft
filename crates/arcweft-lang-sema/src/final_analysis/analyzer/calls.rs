@@ -132,7 +132,7 @@ fn terminal_lower_constraint_failure(
             ))
         }
         crate::types::constraints::TypeConstraintFailure::FatalSource(error) => {
-            CallAnalysisFailure::FatalSource(error)
+            CallAnalysisFailure::FatalSource(*error)
         }
         crate::types::constraints::TypeConstraintFailure::Abort(error) => {
             CallAnalysisFailure::Abort(error)
@@ -157,7 +157,10 @@ fn close_call_frame<T>(
     match frame.close() {
         Ok(()) => result,
         Err(violation) => Err(AnalyzerExpressionError::Invariant(
-            AnalyzerExpressionInvariant::CallFrame { owner, violation },
+            AnalyzerExpressionInvariant::CallFrame {
+                owner,
+                violation: Box::new(violation),
+            },
         )),
     }
 }
@@ -547,7 +550,10 @@ impl Analyzer<'_, '_, '_> {
             }
             Err(CallFrameEnterFailure::Invariant(violation)) => {
                 return Err(AnalyzerExpressionError::Invariant(
-                    AnalyzerExpressionInvariant::CallFrame { owner, violation },
+                    AnalyzerExpressionInvariant::CallFrame {
+                        owner,
+                        violation: Box::new(violation),
+                    },
                 ));
             }
         };
@@ -1471,7 +1477,7 @@ impl Analyzer<'_, '_, '_> {
                     value: PreparedCandidateRunOutcome::Accepted { transaction, rank },
                     projection,
                 } => PreparedCandidateOutcome::Accepted {
-                    transaction: SealedAcceptedCandidate::seal(transaction, projection),
+                    transaction: SealedAcceptedCandidate::seal(transaction, *projection),
                     rank,
                 },
                 CandidateFactTransactionOutcome::Extracted {
@@ -1487,7 +1493,7 @@ impl Analyzer<'_, '_, '_> {
                     candidate,
                     result,
                     evidence,
-                    projection,
+                    projection: *projection,
                     branch,
                 },
                 CandidateFactTransactionOutcome::Committed(_)
@@ -1617,7 +1623,7 @@ impl Analyzer<'_, '_, '_> {
             CandidateFactTransactionOutcome::Extracted {
                 value: (ran, rank),
                 projection,
-            } => (ran, rank, projection),
+            } => (ran, rank, *projection),
             CandidateFactTransactionOutcome::Committed(_)
             | CandidateFactTransactionOutcome::RolledBack(_) => {
                 return Err(AnalyzerExpressionError::fact(
@@ -1747,7 +1753,7 @@ impl Analyzer<'_, '_, '_> {
                 CandidateFactTransactionOutcome::Extracted {
                     value: PreparedCandidateRunOutcome::Accepted { transaction, rank },
                     projection,
-                } => (transaction, projection, rank),
+                } => (transaction, *projection, rank),
                 CandidateFactTransactionOutcome::RolledBack(
                     PreparedCandidateRunOutcome::Rejected { .. },
                 ) => {
@@ -1928,7 +1934,7 @@ impl Analyzer<'_, '_, '_> {
         };
         self.facts
             .apply_candidate_projection(transaction_authority, outer_projection)
-            .map_err(CandidateFactOperationFailure::Projection)?;
+            .map_err(|failure| CandidateFactOperationFailure::Projection(Box::new(failure)))?;
         let result = transaction.result().map_err(|error| {
             CandidateFactOperationFailure::Expression(AnalyzerExpressionError::Call {
                 owner,
@@ -1948,7 +1954,9 @@ impl Analyzer<'_, '_, '_> {
             constraints::AnalyzerCallSealedBranch::Materialized { projection } => {
                 self.facts
                     .apply_candidate_projection(transaction_authority, projection)
-                    .map_err(CandidateFactOperationFailure::Projection)?;
+                    .map_err(|failure| {
+                        CandidateFactOperationFailure::Projection(Box::new(failure))
+                    })?;
             }
         }
         let record = AnalyzerPreparedCandidateRecord::seal(
@@ -3174,11 +3182,13 @@ mod tests {
             result,
             Err(AnalyzerExpressionError::Invariant(
                 AnalyzerExpressionInvariant::CallFrame {
-                    violation:
-                        super::super::expression_error::CallFrameInvariant::OutOfOrderClose { .. },
+                    violation,
                     ..
                 }
-            ))
+            )) if matches!(
+                violation.as_ref(),
+                super::super::expression_error::CallFrameInvariant::OutOfOrderClose { .. }
+            )
         ));
     }
 
