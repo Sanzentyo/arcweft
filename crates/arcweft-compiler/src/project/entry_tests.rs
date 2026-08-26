@@ -791,7 +791,7 @@ entry agent @entry.agent.controller {
     };
     let RuntimeExprKind::Agent(RuntimeAgentExpr::Predicate(RuntimeAgentPredicateExpr::Not {
         predicate: compare,
-    })) = predicates[1].kind()
+    })) = predicates.as_slice()[1].kind()
     else {
         panic!("second predicate must remain the typed Agent not expression");
     };

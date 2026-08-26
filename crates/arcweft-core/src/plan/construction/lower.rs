@@ -1357,7 +1357,11 @@ impl RuntimePlanBuilder {
     ) -> Result<(), RuntimePlanBuildError> {
         use RuntimeAgentConstructor as Constructor;
 
-        if !constructor.accepts_operand_count(operands.len()) {
+        if !matches!(
+            constructor,
+            Constructor::PredicateAll | Constructor::PredicateAny
+        ) && !constructor.accepts_operand_count(operands.len())
+        {
             return Err(RuntimePlanBuildError::InvalidAgentExpression { constructor });
         }
         match constructor {

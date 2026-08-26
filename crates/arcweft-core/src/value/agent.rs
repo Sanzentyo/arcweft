@@ -69,10 +69,10 @@ pub enum RuntimeAgentPredicateExpr {
         diagnostics: Box<RuntimeExpr>,
     },
     All {
-        predicates: Vec<RuntimeExpr>,
+        predicates: AgentPredicateOperands<RuntimeExpr>,
     },
     Any {
-        predicates: Vec<RuntimeExpr>,
+        predicates: AgentPredicateOperands<RuntimeExpr>,
     },
     Not {
         predicate: Box<RuntimeExpr>,
@@ -884,6 +884,23 @@ impl RuntimeAgentConstructor {
             Self::PredicateAll | Self::PredicateAny => count >= 1,
         }
     }
+
+    /// Validates fixed and scalar constructor arity before materialization.
+    /// Predicate collection cardinality is owned by `AgentPredicateOperands`.
+    fn validate_fixed_operand_count(
+        self,
+        count: usize,
+    ) -> Result<(), RuntimeAgentConstructionError> {
+        debug_assert!(!matches!(self, Self::PredicateAll | Self::PredicateAny));
+        if self.accepts_operand_count(count) {
+            Ok(())
+        } else {
+            Err(RuntimeAgentConstructionError::InvalidOperandCount {
+                constructor: self,
+                actual: count,
+            })
+        }
+    }
 }
 
 impl RuntimeAgentExpr {
@@ -894,11 +911,11 @@ impl RuntimeAgentExpr {
     ) -> Result<Self, RuntimeAgentConstructionError> {
         use RuntimeAgentConstructor as Constructor;
 
-        if !constructor.accepts_operand_count(operands.len()) {
-            return Err(RuntimeAgentConstructionError::InvalidOperandCount {
-                constructor,
-                actual: operands.len(),
-            });
+        if !matches!(
+            constructor,
+            Constructor::PredicateAll | Constructor::PredicateAny
+        ) {
+            constructor.validate_fixed_operand_count(operands.len())?;
         }
         if matches!(constructor, RuntimeAgentConstructor::ChoiceAction) != choice.is_some() {
             return Err(RuntimeAgentConstructionError::InvalidExpressionChoice { constructor });
@@ -952,7 +969,11 @@ impl RuntimeAgentExpr {
                 })
             }
             Constructor::PredicateAll | Constructor::PredicateAny => {
-                let predicates = operands.collect::<Vec<_>>();
+                let predicates = AgentPredicateOperands::try_from(operands.collect::<Vec<_>>())
+                    .map_err(|error| RuntimeAgentConstructionError::InvalidOperandCount {
+                        constructor,
+                        actual: error.actual(),
+                    })?;
                 if constructor == Constructor::PredicateAll {
                     Self::Predicate(RuntimeAgentPredicateExpr::All { predicates })
                 } else {
@@ -1237,6 +1258,103 @@ pub enum RuntimeAgentProbe {
     ObservationField { path: RuntimeAgentPath },
 }
 
+/// Non-empty operands owned by an Agent predicate collection.
+///
+/// The private storage prevents an admitted collection from being emptied or
+/// mutated after construction.  Every serde boundary also goes through the
+/// same `TryFrom<Vec<T>>` admission.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct AgentPredicateOperands<T>(Box<[T]>);
+
+#[derive(Clone, Copy, Debug, Eq, Error, PartialEq)]
+#[error("Agent predicate collections require at least one operand (found {actual})")]
+pub struct AgentPredicateOperandsError {
+    actual: usize,
+}
+
+impl AgentPredicateOperandsError {
+    #[must_use]
+    pub const fn actual(self) -> usize {
+        self.actual
+    }
+}
+
+impl<T> TryFrom<Vec<T>> for AgentPredicateOperands<T> {
+    type Error = AgentPredicateOperandsError;
+
+    fn try_from(values: Vec<T>) -> Result<Self, Self::Error> {
+        if values.is_empty() {
+            return Err(AgentPredicateOperandsError { actual: 0 });
+        }
+        Ok(Self(values.into_boxed_slice()))
+    }
+}
+
+impl<T> AgentPredicateOperands<T> {
+    #[must_use]
+    pub fn as_slice(&self) -> &[T] {
+        &self.0
+    }
+
+    #[must_use]
+    pub fn len(&self) -> usize {
+        self.0.len()
+    }
+
+    /// Returns `false`; successful construction guarantees at least one
+    /// predicate operand.
+    #[must_use]
+    pub const fn is_empty(&self) -> bool {
+        false
+    }
+
+    pub fn iter(&self) -> std::slice::Iter<'_, T> {
+        self.0.iter()
+    }
+}
+
+impl<'a, T> IntoIterator for &'a AgentPredicateOperands<T> {
+    type Item = &'a T;
+    type IntoIter = std::slice::Iter<'a, T>;
+
+    fn into_iter(self) -> Self::IntoIter {
+        self.iter()
+    }
+}
+
+impl<T> IntoIterator for AgentPredicateOperands<T> {
+    type Item = T;
+    type IntoIter = std::vec::IntoIter<T>;
+
+    fn into_iter(self) -> Self::IntoIter {
+        Vec::from(self.0).into_iter()
+    }
+}
+
+impl<T> Serialize for AgentPredicateOperands<T>
+where
+    T: Serialize,
+{
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: serde::Serializer,
+    {
+        self.0.serialize(serializer)
+    }
+}
+
+impl<'de, T> Deserialize<'de> for AgentPredicateOperands<T>
+where
+    T: Deserialize<'de>,
+{
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        Self::try_from(Vec::<T>::deserialize(deserializer)?).map_err(serde::de::Error::custom)
+    }
+}
+
 #[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
 pub enum RuntimeAgentPredicate {
     Compare {
@@ -1252,17 +1370,41 @@ pub enum RuntimeAgentPredicate {
     },
     DiagnosticsHasError,
     All {
-        predicates: Vec<Self>,
+        predicates: AgentPredicateOperands<Self>,
     },
     Any {
-        predicates: Vec<Self>,
+        predicates: AgentPredicateOperands<Self>,
     },
     Not {
         predicate: Box<Self>,
     },
 }
 
-#[derive(Clone, Debug, Error, PartialEq)]
+impl RuntimeAgentPredicate {
+    /// Materializes a non-empty conjunction through the owned operand carrier.
+    pub fn try_all(predicates: Vec<Self>) -> Result<Self, RuntimeAgentConstructionError> {
+        let predicates = AgentPredicateOperands::try_from(predicates).map_err(|error| {
+            RuntimeAgentConstructionError::InvalidOperandCount {
+                constructor: RuntimeAgentConstructor::PredicateAll,
+                actual: error.actual(),
+            }
+        })?;
+        Ok(Self::All { predicates })
+    }
+
+    /// Materializes a non-empty disjunction through the owned operand carrier.
+    pub fn try_any(predicates: Vec<Self>) -> Result<Self, RuntimeAgentConstructionError> {
+        let predicates = AgentPredicateOperands::try_from(predicates).map_err(|error| {
+            RuntimeAgentConstructionError::InvalidOperandCount {
+                constructor: RuntimeAgentConstructor::PredicateAny,
+                actual: error.actual(),
+            }
+        })?;
+        Ok(Self::Any { predicates })
+    }
+}
+
+#[derive(Clone, Debug, Eq, Error, PartialEq)]
 pub enum RuntimeAgentConstructionError {
     #[error("Agent constructor {constructor:?} does not accept {actual} operand(s)")]
     InvalidOperandCount {
@@ -1293,11 +1435,11 @@ impl RuntimeAgentValue {
     ) -> Result<Self, RuntimeAgentConstructionError> {
         use RuntimeAgentConstructor as Constructor;
 
-        if !constructor.accepts_operand_count(operands.len()) {
-            return Err(RuntimeAgentConstructionError::InvalidOperandCount {
-                constructor,
-                actual: operands.len(),
-            });
+        if !matches!(
+            constructor,
+            Constructor::PredicateAll | Constructor::PredicateAny
+        ) {
+            constructor.validate_fixed_operand_count(operands.len())?;
         }
         let mut operands = operands.into_iter();
         Ok(match constructor {
@@ -1746,7 +1888,7 @@ fn predicate_operand(
 fn predicate_operands(
     constructor: RuntimeAgentConstructor,
     values: Vec<RuntimeValue>,
-) -> Result<Vec<RuntimeAgentPredicate>, RuntimeAgentConstructionError> {
+) -> Result<AgentPredicateOperands<RuntimeAgentPredicate>, RuntimeAgentConstructionError> {
     let mut predicates = Vec::new();
     for value in values {
         match value {
@@ -1763,13 +1905,12 @@ fn predicate_operands(
             value => predicates.push(predicate_operand(constructor, value)?),
         }
     }
-    if predicates.is_empty() {
-        return Err(RuntimeAgentConstructionError::InvalidOperandCount {
+    AgentPredicateOperands::try_from(predicates).map_err(|error| {
+        RuntimeAgentConstructionError::InvalidOperandCount {
             constructor,
-            actual: 0,
-        });
-    }
-    Ok(predicates)
+            actual: error.actual(),
+        }
+    })
 }
 
 fn construct_choice_action(
@@ -1941,6 +2082,80 @@ mod tests {
             ),
             Err(RuntimeAgentConstructionError::InvalidOperand { .. })
         ));
+    }
+
+    #[test]
+    fn predicate_collection_constructors_reject_empty_all_and_any() {
+        assert!(matches!(
+            RuntimeAgentPredicate::try_all(Vec::new()),
+            Err(RuntimeAgentConstructionError::InvalidOperandCount {
+                constructor: RuntimeAgentConstructor::PredicateAll,
+                actual: 0,
+            })
+        ));
+        assert!(matches!(
+            RuntimeAgentPredicate::try_any(Vec::new()),
+            Err(RuntimeAgentConstructionError::InvalidOperandCount {
+                constructor: RuntimeAgentConstructor::PredicateAny,
+                actual: 0,
+            })
+        ));
+    }
+
+    #[test]
+    fn predicate_operand_carrier_rejects_empty_vectors() {
+        assert!(AgentPredicateOperands::<RuntimeAgentPredicate>::try_from(Vec::new()).is_err());
+        assert!(AgentPredicateOperands::<RuntimeAgentPredicateExpr>::try_from(Vec::new()).is_err());
+    }
+
+    #[test]
+    fn predicate_expression_constructors_reject_empty_all_and_any() {
+        for constructor in [
+            RuntimeAgentConstructor::PredicateAll,
+            RuntimeAgentConstructor::PredicateAny,
+        ] {
+            assert!(matches!(
+                RuntimeAgentExpr::try_from_admitted_constructor(constructor, None, Vec::new()),
+                Err(RuntimeAgentConstructionError::InvalidOperandCount {
+                    constructor: actual,
+                    actual: 0,
+                }) if actual == constructor
+            ));
+        }
+    }
+
+    #[test]
+    fn runtime_predicate_json_rejects_empty_all_and_any_collections() {
+        for value in [
+            serde_json::json!({ "All": { "predicates": [] } }),
+            serde_json::json!({ "Any": { "predicates": [] } }),
+        ] {
+            assert!(serde_json::from_value::<RuntimeAgentPredicate>(value).is_err());
+        }
+        assert!(
+            serde_json::from_value::<RuntimeValue>(serde_json::json!({
+                "Agent": {
+                    "Predicate": {
+                        "Any": { "predicates": [] },
+                    },
+                },
+            }))
+            .is_err()
+        );
+    }
+
+    #[test]
+    fn runtime_predicate_json_rejects_nested_empty_collections() {
+        let value = serde_json::json!({
+            "All": {
+                "predicates": [{
+                    "Any": {
+                        "predicates": [],
+                    },
+                }],
+            },
+        });
+        assert!(serde_json::from_value::<RuntimeAgentPredicate>(value).is_err());
     }
 
     #[test]

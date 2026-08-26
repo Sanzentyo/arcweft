@@ -439,17 +439,12 @@ fn parse_predicate_collection(body: &str, any: bool) -> Result<Predicate, String
         .into_iter()
         .map(parse_predicate_label)
         .collect::<Result<Vec<_>, _>>()?;
-    if predicates.is_empty() {
-        return Err(format!(
-            "{} requires at least one predicate",
-            if any { "any" } else { "all" }
-        ));
-    }
-    Ok(if any {
-        Predicate::Any { predicates }
+    if any {
+        Predicate::try_any(predicates)
     } else {
-        Predicate::All { predicates }
-    })
+        Predicate::try_all(predicates)
+    }
+    .map_err(|error| error.to_string())
 }
 
 fn split_top_level_args(value: &str) -> Result<Vec<&str>, String> {

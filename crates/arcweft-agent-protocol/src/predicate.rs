@@ -1,4 +1,5 @@
 use crate::{ids::PublicId, value::AgentValue};
+use arcweft_core::value::AgentPredicateOperands;
 use serde::{Deserialize, Serialize};
 
 /// A first-class Agent debug-state path.
@@ -80,14 +81,28 @@ pub enum Predicate {
     },
     DiagnosticsHasError,
     All {
-        predicates: Vec<Self>,
+        predicates: AgentPredicateOperands<Self>,
     },
     Any {
-        predicates: Vec<Self>,
+        predicates: AgentPredicateOperands<Self>,
     },
     Not {
         predicate: Box<Self>,
     },
+}
+
+impl Predicate {
+    pub fn try_all(
+        predicates: Vec<Self>,
+    ) -> Result<Self, arcweft_core::value::AgentPredicateOperandsError> {
+        AgentPredicateOperands::try_from(predicates).map(|predicates| Self::All { predicates })
+    }
+
+    pub fn try_any(
+        predicates: Vec<Self>,
+    ) -> Result<Self, arcweft_core::value::AgentPredicateOperandsError> {
+        AgentPredicateOperands::try_from(predicates).map(|predicates| Self::Any { predicates })
+    }
 }
 
 #[cfg(test)]
@@ -126,21 +141,19 @@ mod tests {
 
     #[test]
     fn debug_and_observation_paths_keep_string_wire_shape() {
-        let predicate = Predicate::All {
-            predicates: vec![
-                Predicate::Exists {
-                    probe: Probe::StatePath {
-                        path: DebugStatePath::new("route.phase").expect("valid state path"),
-                    },
+        let predicate = Predicate::try_all(vec![
+            Predicate::Exists {
+                probe: Probe::StatePath {
+                    path: DebugStatePath::new("route.phase").expect("valid state path"),
                 },
-                Predicate::Exists {
-                    probe: Probe::ObservationField {
-                        path: ObservationFieldPath::new("tick")
-                            .expect("valid observation field path"),
-                    },
+            },
+            Predicate::Exists {
+                probe: Probe::ObservationField {
+                    path: ObservationFieldPath::new("tick").expect("valid observation field path"),
                 },
-            ],
-        };
+            },
+        ])
+        .expect("non-empty predicate collection");
 
         let value = serde_json::to_value(predicate).expect("serializes typed paths");
 
@@ -172,5 +185,31 @@ mod tests {
     fn typed_paths_reject_empty_values() {
         assert!(DebugStatePath::new(" ").is_err());
         assert!(ObservationFieldPath::new("").is_err());
+    }
+
+    #[test]
+    fn json_rejects_empty_all_and_any_predicates() {
+        for kind in ["all", "any"] {
+            let value = serde_json::json!({
+                "kind": kind,
+                "predicates": [],
+            });
+            assert!(
+                serde_json::from_value::<Predicate>(value).is_err(),
+                "empty {kind} predicate collection must be rejected"
+            );
+        }
+    }
+
+    #[test]
+    fn json_rejects_nested_empty_predicate_collections() {
+        let value = serde_json::json!({
+            "kind": "all",
+            "predicates": [{
+                "kind": "any",
+                "predicates": [],
+            }],
+        });
+        assert!(serde_json::from_value::<Predicate>(value).is_err());
     }
 }

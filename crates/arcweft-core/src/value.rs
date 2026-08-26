@@ -35,12 +35,12 @@ mod sequence_impls;
 mod shape;
 
 pub use agent::{
-    RuntimeAgentAction, RuntimeAgentActionDispatch, RuntimeAgentActionTarget,
-    RuntimeAgentCaptureTarget, RuntimeAgentCompareOp, RuntimeAgentConstructionError,
-    RuntimeAgentConstructor, RuntimeAgentExpr, RuntimeAgentField, RuntimeAgentFieldOwner,
-    RuntimeAgentFieldResult, RuntimeAgentPath, RuntimeAgentPathExpr, RuntimeAgentPredicate,
-    RuntimeAgentPredicateExpr, RuntimeAgentProbe, RuntimeAgentProbeExpr, RuntimeAgentTargetExpr,
-    RuntimeAgentValue,
+    AgentPredicateOperands, AgentPredicateOperandsError, RuntimeAgentAction,
+    RuntimeAgentActionDispatch, RuntimeAgentActionTarget, RuntimeAgentCaptureTarget,
+    RuntimeAgentCompareOp, RuntimeAgentConstructionError, RuntimeAgentConstructor,
+    RuntimeAgentExpr, RuntimeAgentField, RuntimeAgentFieldOwner, RuntimeAgentFieldResult,
+    RuntimeAgentPath, RuntimeAgentPathExpr, RuntimeAgentPredicate, RuntimeAgentPredicateExpr,
+    RuntimeAgentProbe, RuntimeAgentProbeExpr, RuntimeAgentTargetExpr, RuntimeAgentValue,
 };
 pub use awbc_save::{AwbcRuntimeValueSnapshot, AwbcRuntimeValueSnapshotError};
 pub use integer::{RuntimeInt, RuntimeSignedIntWidth, RuntimeUInt, RuntimeUnsignedIntWidth};

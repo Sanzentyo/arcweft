@@ -5,38 +5,34 @@
 //! this module rather than serializing or deserializing the live value graph.
 
 use super::{
-    DenseSeq, RecordSeq, RuntimeAgentActionTarget, RuntimeAgentCaptureTarget,
-    RuntimeAgentCompareOp, RuntimeAgentPath, RuntimeAgentPredicate, RuntimeAgentProbe,
-    RuntimeAgentValue, RuntimeBinding, RuntimeCommand, RuntimeFunctionBody, RuntimeFunctionValue,
-    RuntimeIterator, RuntimeNominalRecordValue, RuntimeOpaqueValue, RuntimePayload,
-    RuntimeReductionValue, RuntimeSeq, RuntimeValue, TupleSeq,
+    AgentPredicateOperands, DenseSeq, RecordSeq, RuntimeAgentActionTarget,
+    RuntimeAgentCaptureTarget, RuntimeAgentCompareOp, RuntimeAgentConstructionError,
+    RuntimeAgentPath, RuntimeAgentPredicate, RuntimeAgentProbe, RuntimeAgentValue, RuntimeBinding,
+    RuntimeCommand, RuntimeFunctionBody, RuntimeFunctionValue, RuntimeIterator,
+    RuntimeNominalRecordValue, RuntimeOpaqueValue, RuntimePayload, RuntimeReductionValue,
+    RuntimeSeq, RuntimeValue, TupleSeq,
 };
 use crate::awbc::schema::AwbcFunctionId;
 use crate::entry::{RuntimeCommandConstructorId, RuntimeCommandTargetId};
 use crate::pattern::RuntimeOpaqueTypeOwner;
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
-use std::fmt;
+use thiserror::Error;
 
-#[derive(Clone, Debug, Eq, PartialEq)]
-pub struct AwbcRuntimeValueSnapshotError {
-    message: String,
+#[derive(Clone, Debug, Eq, Error, PartialEq)]
+pub enum AwbcRuntimeValueSnapshotError {
+    #[error("{message}")]
+    Message { message: String },
+    #[error("invalid Agent predicate: {0}")]
+    AgentPredicate(#[from] RuntimeAgentConstructionError),
 }
 
 impl AwbcRuntimeValueSnapshotError {
     fn new(message: impl Into<String>) -> Self {
-        Self {
+        Self::Message {
             message: message.into(),
         }
     }
 }
-
-impl fmt::Display for AwbcRuntimeValueSnapshotError {
-    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
-        formatter.write_str(&self.message)
-    }
-}
-
-impl std::error::Error for AwbcRuntimeValueSnapshotError {}
 
 /// Typed recursive AWBC session-save representation of one live value.
 ///
@@ -189,10 +185,10 @@ pub enum AwbcRuntimeAgentPredicateSnapshot {
     },
     DiagnosticsHasError,
     All {
-        predicates: Vec<AwbcRuntimeAgentPredicateSnapshot>,
+        predicates: AgentPredicateOperands<AwbcRuntimeAgentPredicateSnapshot>,
     },
     Any {
-        predicates: Vec<AwbcRuntimeAgentPredicateSnapshot>,
+        predicates: AgentPredicateOperands<AwbcRuntimeAgentPredicateSnapshot>,
     },
     Not {
         predicate: Box<AwbcRuntimeAgentPredicateSnapshot>,
@@ -677,16 +673,22 @@ impl AwbcRuntimeValueSnapshot {
                 AwbcRuntimeAgentPredicateSnapshot::DiagnosticsHasError
             }
             RuntimeAgentPredicate::All { predicates } => AwbcRuntimeAgentPredicateSnapshot::All {
-                predicates: predicates
-                    .iter()
-                    .map(Self::predicate_from_live)
-                    .collect::<Result<_, _>>()?,
+                predicates: AgentPredicateOperands::try_from(
+                    predicates
+                        .iter()
+                        .map(Self::predicate_from_live)
+                        .collect::<Result<Vec<_>, _>>()?,
+                )
+                .map_err(|error| AwbcRuntimeValueSnapshotError::new(error.to_string()))?,
             },
             RuntimeAgentPredicate::Any { predicates } => AwbcRuntimeAgentPredicateSnapshot::Any {
-                predicates: predicates
-                    .iter()
-                    .map(Self::predicate_from_live)
-                    .collect::<Result<_, _>>()?,
+                predicates: AgentPredicateOperands::try_from(
+                    predicates
+                        .iter()
+                        .map(Self::predicate_from_live)
+                        .collect::<Result<Vec<_>, _>>()?,
+                )
+                .map_err(|error| AwbcRuntimeValueSnapshotError::new(error.to_string()))?,
             },
             RuntimeAgentPredicate::Not { predicate } => AwbcRuntimeAgentPredicateSnapshot::Not {
                 predicate: Box::new(Self::predicate_from_live(predicate)?),
@@ -714,18 +716,22 @@ impl AwbcRuntimeValueSnapshot {
             AwbcRuntimeAgentPredicateSnapshot::DiagnosticsHasError => {
                 RuntimeAgentPredicate::DiagnosticsHasError
             }
-            AwbcRuntimeAgentPredicateSnapshot::All { predicates } => RuntimeAgentPredicate::All {
-                predicates: predicates
-                    .into_iter()
-                    .map(Self::predicate_into_live)
-                    .collect::<Result<_, _>>()?,
-            },
-            AwbcRuntimeAgentPredicateSnapshot::Any { predicates } => RuntimeAgentPredicate::Any {
-                predicates: predicates
-                    .into_iter()
-                    .map(Self::predicate_into_live)
-                    .collect::<Result<_, _>>()?,
-            },
+            AwbcRuntimeAgentPredicateSnapshot::All { predicates } => {
+                RuntimeAgentPredicate::try_all(
+                    predicates
+                        .into_iter()
+                        .map(Self::predicate_into_live)
+                        .collect::<Result<_, _>>()?,
+                )?
+            }
+            AwbcRuntimeAgentPredicateSnapshot::Any { predicates } => {
+                RuntimeAgentPredicate::try_any(
+                    predicates
+                        .into_iter()
+                        .map(Self::predicate_into_live)
+                        .collect::<Result<_, _>>()?,
+                )?
+            }
             AwbcRuntimeAgentPredicateSnapshot::Not { predicate } => RuntimeAgentPredicate::Not {
                 predicate: Box::new(Self::predicate_into_live(*predicate)?),
             },
@@ -784,7 +790,7 @@ impl Serialize for AwbcRuntimeValueSnapshotError {
     where
         S: Serializer,
     {
-        Err(serde::ser::Error::custom(self.message.clone()))
+        Err(serde::ser::Error::custom(self.to_string()))
     }
 }
 
@@ -796,5 +802,34 @@ impl<'de> Deserialize<'de> for AwbcRuntimeValueSnapshotError {
         Err(serde::de::Error::custom(
             "AWBC runtime-value snapshot errors are not wire values",
         ))
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn awbc_snapshot_deserialize_rejects_empty_all_and_any_predicates() {
+        for value in [
+            serde_json::json!({ "All": { "predicates": [] } }),
+            serde_json::json!({ "Any": { "predicates": [] } }),
+        ] {
+            assert!(serde_json::from_value::<AwbcRuntimeAgentPredicateSnapshot>(value).is_err());
+        }
+    }
+
+    #[test]
+    fn awbc_snapshot_deserialize_rejects_nested_empty_predicates() {
+        let value = serde_json::json!({
+            "All": {
+                "predicates": [{
+                    "Any": {
+                        "predicates": [],
+                    },
+                }],
+            },
+        });
+        assert!(serde_json::from_value::<AwbcRuntimeAgentPredicateSnapshot>(value).is_err());
     }
 }

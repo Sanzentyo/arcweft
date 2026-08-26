@@ -1856,24 +1856,23 @@ fn wait_matches_composite_float_predicate() {
 
     let report = runner
         .handle_host_request(AgentHostRequest::Wait(Box::new(WaitRequest {
-            predicate: Predicate::All {
-                predicates: vec![
-                    Predicate::Exists {
-                        probe: Probe::Signal {
-                            target: PublicId::new("signal.ready").expect("valid public id"),
+            predicate: Predicate::try_all(vec![
+                Predicate::Exists {
+                    probe: Probe::Signal {
+                        target: PublicId::new("signal.ready").expect("valid public id"),
+                    },
+                },
+                Predicate::Not {
+                    predicate: Box::new(Predicate::Compare {
+                        probe: Probe::Metric {
+                            target: PublicId::new("metric.fps").expect("valid public id"),
                         },
-                    },
-                    Predicate::Not {
-                        predicate: Box::new(Predicate::Compare {
-                            probe: Probe::Metric {
-                                target: PublicId::new("metric.fps").expect("valid public id"),
-                            },
-                            op: CompareOp::Less,
-                            value: Box::new(AgentValue::F64(30.0)),
-                        }),
-                    },
-                ],
-            },
+                        op: CompareOp::Less,
+                        value: Box::new(AgentValue::F64(30.0)),
+                    }),
+                },
+            ])
+            .expect("non-empty predicate collection"),
             timeout_millis: 5,
             stable_frames: 1,
             poll_frames: 1,
@@ -1913,25 +1912,24 @@ fn wait_matches_state_and_observation_field_predicates() {
 
     let report = runner
         .handle_host_request(AgentHostRequest::Wait(Box::new(WaitRequest {
-            predicate: Predicate::All {
-                predicates: vec![
-                    Predicate::Compare {
-                        probe: Probe::StatePath {
-                            path: DebugStatePath::new("route.phase").expect("valid state path"),
-                        },
-                        op: CompareOp::Eq,
-                        value: Box::new(AgentValue::String("opening".to_owned())),
+            predicate: Predicate::try_all(vec![
+                Predicate::Compare {
+                    probe: Probe::StatePath {
+                        path: DebugStatePath::new("route.phase").expect("valid state path"),
                     },
-                    Predicate::Compare {
-                        probe: Probe::ObservationField {
-                            path: ObservationFieldPath::new("tick")
-                                .expect("valid observation field path"),
-                        },
-                        op: CompareOp::GreaterOrEqual,
-                        value: Box::new(AgentValue::I64(2)),
+                    op: CompareOp::Eq,
+                    value: Box::new(AgentValue::String("opening".to_owned())),
+                },
+                Predicate::Compare {
+                    probe: Probe::ObservationField {
+                        path: ObservationFieldPath::new("tick")
+                            .expect("valid observation field path"),
                     },
-                ],
-            },
+                    op: CompareOp::GreaterOrEqual,
+                    value: Box::new(AgentValue::I64(2)),
+                },
+            ])
+            .expect("non-empty predicate collection"),
             timeout_millis: 5,
             stable_frames: 1,
             poll_frames: 1,

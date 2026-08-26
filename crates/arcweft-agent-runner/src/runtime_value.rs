@@ -240,12 +240,16 @@ fn protocol_predicate(predicate: &RuntimeAgentPredicate) -> Result<Predicate, St
             .iter()
             .map(protocol_predicate)
             .collect::<Result<Vec<_>, _>>()
-            .map(|predicates| Predicate::All { predicates }),
+            .and_then(|predicates| {
+                Predicate::try_all(predicates).map_err(|error| error.to_string())
+            }),
         RuntimeAgentPredicate::Any { predicates } => predicates
             .iter()
             .map(protocol_predicate)
             .collect::<Result<Vec<_>, _>>()
-            .map(|predicates| Predicate::Any { predicates }),
+            .and_then(|predicates| {
+                Predicate::try_any(predicates).map_err(|error| error.to_string())
+            }),
         RuntimeAgentPredicate::Not { predicate } => {
             protocol_predicate(predicate).map(|predicate| Predicate::Not {
                 predicate: Box::new(predicate),
