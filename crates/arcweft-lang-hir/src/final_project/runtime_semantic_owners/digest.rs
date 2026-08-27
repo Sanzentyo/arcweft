@@ -109,14 +109,26 @@ fn digest_edge_kind(hasher: &mut Sha256, kind: &HirRuntimeReachabilityEdgeKind) 
             hasher.update(call.raw().cache_fingerprint_input());
             hasher.update(declaration.semantic_digest().as_bytes());
         }
-        HirRuntimeReachabilityEdgeKind::CheckedTraitDispatch {
-            source,
+        HirRuntimeReachabilityEdgeKind::CheckedTraitMethodCall {
+            call,
             implementation,
             method,
         } => {
             hasher.update([1]);
-            digest_site(hasher, *source);
+            hasher.update(call.raw().cache_fingerprint_input());
             hasher.update(implementation.raw().cache_fingerprint_input());
+            let declaration = CallableDeclarationKey::ImplMethod(method.clone());
+            hasher.update(declaration.semantic_digest().as_bytes());
+        }
+        HirRuntimeReachabilityEdgeKind::CheckedIteratorWitnessMethod {
+            role,
+            implementation,
+            member,
+            method,
+        } => {
+            hasher.update([2, role.digest_tag()]);
+            hasher.update(implementation.raw().cache_fingerprint_input());
+            hasher.update(member.to_le_bytes());
             let declaration = CallableDeclarationKey::ImplMethod(method.clone());
             hasher.update(declaration.semantic_digest().as_bytes());
         }
@@ -124,12 +136,12 @@ fn digest_edge_kind(hasher: &mut Sha256, kind: &HirRuntimeReachabilityEdgeKind) 
             source,
             declaration,
         } => {
-            hasher.update([2]);
+            hasher.update([3]);
             digest_site(hasher, *source);
             hasher.update(declaration.semantic_digest().as_bytes());
         }
         HirRuntimeReachabilityEdgeKind::CheckedEntryBinding { entry, declaration } => {
-            hasher.update([3]);
+            hasher.update([4]);
             hasher.update(entry.raw().cache_fingerprint_input());
             hasher.update(declaration.semantic_digest().as_bytes());
         }

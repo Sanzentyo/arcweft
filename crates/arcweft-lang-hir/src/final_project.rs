@@ -32,11 +32,12 @@ pub use self::dialogue_lines::{
     DialogueLineIndex, DialogueLineProjectFatal, DialogueLineProjectRejection,
 };
 pub use self::runtime_semantic_owners::{
-    HirRuntimeEmissionMode, HirRuntimeExecutableOwner, HirRuntimeReachabilityDigest,
-    HirRuntimeReachabilityEdge, HirRuntimeReachabilityEdgeKind, HirRuntimeReachabilityError,
-    HirRuntimeReachabilityIdentity, HirRuntimeReachabilityLimitFamily, HirRuntimeReachabilityPath,
-    HirRuntimeReachabilityRoot, HirRuntimeReachabilityRootKind, HirRuntimeReachabilitySite,
-    HirRuntimeSemanticReachability, HirRuntimeSemanticReachabilityInput,
+    HirRuntimeEmissionMode, HirRuntimeExecutableOwner, HirRuntimeIteratorWitnessMethodRole,
+    HirRuntimeReachabilityDigest, HirRuntimeReachabilityEdge, HirRuntimeReachabilityEdgeKind,
+    HirRuntimeReachabilityError, HirRuntimeReachabilityIdentity, HirRuntimeReachabilityLimitFamily,
+    HirRuntimeReachabilityPath, HirRuntimeReachabilityRoot, HirRuntimeReachabilityRootKind,
+    HirRuntimeReachabilitySite, HirRuntimeSemanticReachability,
+    HirRuntimeSemanticReachabilityInput,
 };
 pub use self::selected_expressions::{
     HirRuntimeCallCalleeDisposition, HirRuntimeExpressionTypeDisposition,

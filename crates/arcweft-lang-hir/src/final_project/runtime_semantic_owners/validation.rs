@@ -7,10 +7,10 @@ use super::{
 use crate::{
     expr::HirExprKind,
     identity::{ExprId, ItemId, StmtId},
-    item::HirItemKind,
+    item::{HirImplMember, HirItemKind},
     project::HirExecutableProjectView,
     stmt::HirStmtKind,
-    symbol::ImplMethodDeclarationId,
+    symbol::{ImplMethodDeclarationId, ImplMethodKind},
 };
 
 pub(super) fn validate_roots_and_edges(
@@ -58,12 +58,12 @@ fn edge_source_family_matches(
         (
             HirRuntimeReachabilitySite::Expression(owner),
             HirRuntimeReachabilityEdgeKind::CheckedProjectCall { .. }
-            | HirRuntimeReachabilityEdgeKind::CheckedTraitDispatch { .. },
+            | HirRuntimeReachabilityEdgeKind::CheckedTraitMethodCall { .. },
         ) => resolve_expression_kind(project, *owner)
             .is_some_and(|kind| matches!(kind, HirExprKind::Call(_))),
         (
             HirRuntimeReachabilitySite::Statement(owner),
-            HirRuntimeReachabilityEdgeKind::CheckedTraitDispatch { .. },
+            HirRuntimeReachabilityEdgeKind::CheckedIteratorWitnessMethod { .. },
         ) => resolve_statement_kind(project, *owner)
             .is_some_and(|kind| matches!(kind, HirStmtKind::For(_))),
         (
@@ -115,7 +115,7 @@ fn edge_kind_matches_target(
 ) -> bool {
     match (&edge.kind, &edge.target) {
         (
-            HirRuntimeReachabilityEdgeKind::CheckedTraitDispatch {
+            HirRuntimeReachabilityEdgeKind::CheckedTraitMethodCall {
                 implementation,
                 method,
                 ..
@@ -125,9 +125,69 @@ fn edge_kind_matches_target(
             method == target
                 && impl_method_implementation_owner(project, method) == Some(*implementation)
         }
-        (HirRuntimeReachabilityEdgeKind::CheckedTraitDispatch { .. }, _) => false,
+        (HirRuntimeReachabilityEdgeKind::CheckedTraitMethodCall { .. }, _) => false,
+        (
+            HirRuntimeReachabilityEdgeKind::CheckedIteratorWitnessMethod {
+                implementation,
+                member,
+                method,
+                ..
+            },
+            HirRuntimeExecutableOwner::ImplMethod(target),
+        ) => {
+            method == target
+                && iterator_witness_method_matches(project, *implementation, *member, method)
+        }
+        (HirRuntimeReachabilityEdgeKind::CheckedIteratorWitnessMethod { .. }, _) => false,
         _ => true,
     }
+}
+
+fn iterator_witness_method_matches(
+    project: HirExecutableProjectView<'_>,
+    implementation_owner: ItemId,
+    member: u16,
+    method: &ImplMethodDeclarationId,
+) -> bool {
+    if method.kind() != ImplMethodKind::Trait {
+        return false;
+    }
+    let declaration = method.implementation();
+    let Some(module) = project
+        .modules()
+        .find_map(|(path, module)| (path == declaration.module()).then_some(module.as_ref()))
+    else {
+        return false;
+    };
+    let Ok(ordinal) = usize::try_from(declaration.source_ordinal()) else {
+        return false;
+    };
+    let Some((actual_owner, implementation)) = module
+        .items()
+        .filter_map(|(owner, item)| match item.kind() {
+            HirItemKind::Impl(implementation) => Some((owner, implementation)),
+            _ => None,
+        })
+        .nth(ordinal)
+    else {
+        return false;
+    };
+    if actual_owner != implementation_owner {
+        return false;
+    }
+    let Some(HirImplMember::Function(function)) = implementation.members().get(usize::from(member))
+    else {
+        return false;
+    };
+    if function
+        .name()
+        .resolved()
+        .is_none_or(|name| name.as_str() != method.method().as_str())
+        || function.body().is_none()
+    {
+        return false;
+    }
+    true
 }
 
 fn impl_method_implementation_owner(

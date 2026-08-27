@@ -12,7 +12,24 @@ fn source_iterator_witness_lowers_trait_methods_and_for_evidence() {
     assert_eq!(
         plan.trait_methods().len(),
         2,
-        "into_iter and next are lowered"
+        "only the exact witnessed into_iter and next methods are lowered"
+    );
+    let method_local_domain = plan
+        .nominal_record_domains()
+        .domains()
+        .find(|domain| matches!(domain.fields(), [field] if field.name() == "output"))
+        .expect("the reached Iterator::next body retains its nominal local layout");
+    assert!(
+        plan.local_declarations()
+            .declarations()
+            .any(|local| local.ty() == method_local_domain.owner()),
+        "the reached Iterator::next body local is admitted with its exact nominal type"
+    );
+    assert!(
+        plan.nominal_record_domains()
+            .domains()
+            .all(|domain| domain.fields().iter().all(|field| field.name() != "unused")),
+        "an unwitnessed Iterator impl does not re-enter runtime reachability"
     );
     let evidence = plan
         .flows()

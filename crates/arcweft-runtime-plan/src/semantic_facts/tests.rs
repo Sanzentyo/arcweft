@@ -5,8 +5,8 @@ use arcweft_core::pattern::{
     RuntimeCheckedType, RuntimeOpaqueTypeAdmission, RuntimeOpaqueTypeProducerId,
 };
 use arcweft_core::plan::{
-    FlowRuntimeId, RuntimeAgentOperationalType, RuntimeLineId, RuntimeOperationalType,
-    RuntimePlanTypeProjection,
+    FlowRuntimeId, RuntimeAgentOperationalType, RuntimeBuiltinIteratorFamily, RuntimeLineId,
+    RuntimeOperationalType, RuntimePlanTypeProjection,
 };
 use arcweft_core::value::{
     RuntimeHandleKind, RuntimeOpaquePersistence, RuntimeOpaqueValueClass, RuntimeRecordFieldId,
@@ -15,11 +15,13 @@ use arcweft_core::value::{
 use arcweft_lang_hir::database::HirDatabase;
 use arcweft_lang_hir::dialogue_application::HirPostfixBracketCandidates;
 use arcweft_lang_hir::expr::{HirExprKind, HirSelectedMember};
+use arcweft_lang_hir::item::{HirImplMember, HirItemKind};
 use arcweft_lang_hir::leaf::HirLiteral;
 use arcweft_lang_hir::lowering::{HirModuleKey, LoweringRequest};
 use arcweft_lang_hir::project::{
     HirProject, HirProjectBuilder, HirProjectModule, HirRuntimeEmissionMode,
-    HirRuntimeExecutableOwner, HirRuntimeExpressionTypeDisposition, HirRuntimeReachabilityEdge,
+    HirRuntimeExecutableOwner, HirRuntimeExpressionTypeDisposition,
+    HirRuntimeIteratorWitnessMethodRole, HirRuntimeReachabilityEdge,
     HirRuntimeReachabilityEdgeKind, HirRuntimeReachabilityRoot, HirRuntimeReachabilityRootKind,
     HirRuntimeReachabilitySite, HirRuntimeSemanticReachability,
     HirRuntimeSemanticReachabilityInput,
@@ -28,7 +30,8 @@ use arcweft_lang_hir::proof_return::HirProofReturnSemanticFactSet;
 use arcweft_lang_hir::stmt::HirStmtKind;
 use arcweft_lang_hir::symbol::{
     CallableDeclarationId, CallableDeclarationKey, CallableDeclarationOwner, CallablePackageId,
-    ProjectExternalDeclarations, ProjectSymbolRevision, ProjectSymbolTable, ProjectSymbolWorldId,
+    ImplMethodDeclarationId, ProjectExternalDeclarations, ProjectSymbolRevision,
+    ProjectSymbolTable, ProjectSymbolWorldId,
 };
 use arcweft_lang_syntax::ast::module_path::CanonicalModulePath;
 use arcweft_lang_syntax::incremental::SyntaxDatabase;
@@ -36,12 +39,15 @@ use arcweft_source::identity::SourceSnapshotId;
 use arcweft_source::{SourceDocument, SourceDocumentId, SourceName};
 
 use super::{
-    RuntimeAgentTypeShape, RuntimeAssignmentFact, RuntimeCheckedTypeProjectionError,
-    RuntimeNormalizedVariantCase, RuntimePlanSemanticFactInput, RuntimePlanSemanticFacts,
-    RuntimeRegisteredValueId, RuntimeResolvedNominal, RuntimeResolvedSelect, RuntimeResolvedValue,
-    RuntimeResolvedVariant, RuntimeResolvedVariantError, RuntimeSemanticFactFamily,
-    RuntimeSemanticFactsError, RuntimeSemanticTypeId, RuntimeSequenceKind,
-    RuntimeTypeProjectionStep, RuntimeTypeShape, RuntimeUnsupportedTypeShape,
+    RuntimeAgentTypeShape, RuntimeAssignmentFact, RuntimeBuiltinIteratorFact,
+    RuntimeCheckedTypeProjectionError, RuntimeIteratorFact, RuntimeIteratorWitnessExecutableFact,
+    RuntimeIteratorWitnessFact, RuntimeNormalizedVariantCase, RuntimePlanSemanticFactInput,
+    RuntimePlanSemanticFacts, RuntimeRegisteredValueId, RuntimeResolvedNominal,
+    RuntimeResolvedSelect, RuntimeResolvedValue, RuntimeResolvedVariant,
+    RuntimeResolvedVariantError, RuntimeSemanticFactFamily, RuntimeSemanticFactsError,
+    RuntimeSemanticOwnerSet, RuntimeSemanticTypeId, RuntimeSequenceKind, RuntimeTraitIdentity,
+    RuntimeTraitMethodFact, RuntimeTypeProjectionStep, RuntimeTypeShape,
+    RuntimeUnsupportedTypeShape, validate_iterator_witness_method_edges,
 };
 
 fn project_fixture(label: &str, source: &str) -> HirProject {
@@ -1704,5 +1710,429 @@ fn operational_variant_payload_is_not_admitted_through_raw_facts() {
     assert_eq!(
         super::validate_variant(&BTreeMap::new(), &variant),
         Err(RuntimeSemanticFactsError::WrongVariantIdentity)
+    );
+}
+
+#[derive(Clone)]
+struct IteratorMethodFixture {
+    implementation: arcweft_lang_hir::identity::ItemId,
+    member: u16,
+    declaration: ImplMethodDeclarationId,
+}
+
+fn iterator_fixture_symbols(project: &HirProject) -> ProjectSymbolTable {
+    let executable = project.executable_view().expect("clean iterator fixture");
+    let (_, first_module) = executable
+        .modules()
+        .next()
+        .expect("iterator fixture module");
+    let world = ProjectSymbolWorldId::try_new(
+        executable.package().clone(),
+        first_module.provenance().source_identity().id().clone(),
+        "runtime-plan-iterator-witness-edge-test",
+    )
+    .expect("iterator symbol world");
+    let revision = ProjectSymbolRevision::try_for_documents(
+        executable
+            .modules()
+            .map(|(_, module)| module.provenance().source_identity()),
+    )
+    .expect("iterator symbol revision");
+    let externals = ProjectExternalDeclarations::try_new(world, revision, Vec::new())
+        .expect("iterator fixture external declarations");
+    ProjectSymbolTable::link(project.view(), &externals)
+        .expect("iterator fixture symbols")
+        .into_table()
+}
+
+fn iterator_method_fixture(
+    project: &HirProject,
+    implementation_ordinal: usize,
+    method_name: &str,
+) -> IteratorMethodFixture {
+    let executable = project.executable_view().expect("iterator edge fixture");
+    let (_, module) = executable.modules().next().expect("root fixture module");
+    let (implementation, declaration) = module
+        .items()
+        .filter_map(|(owner, item)| match item.kind() {
+            HirItemKind::Impl(declaration) => Some((owner, declaration)),
+            _ => None,
+        })
+        .nth(implementation_ordinal)
+        .expect("fixture Impl declaration");
+    let member = declaration
+        .members()
+        .iter()
+        .position(|member| {
+            matches!(
+                member,
+                HirImplMember::Function(function)
+                    if function
+                        .name()
+                        .resolved()
+                        .is_some_and(|name| name.as_str() == method_name)
+            )
+        })
+        .and_then(|member| u16::try_from(member).ok())
+        .expect("fixture method member");
+    let symbols = iterator_fixture_symbols(project);
+    let declaration = symbols
+        .callable_symbols()
+        .find_map(|symbol| {
+            if symbol.source_item() != implementation {
+                return None;
+            }
+            let CallableDeclarationKey::ImplMethod(method) = symbol.declaration() else {
+                return None;
+            };
+            (method.method().as_str() == method_name).then(|| method.clone())
+        })
+        .expect("linked fixture method identity");
+    IteratorMethodFixture {
+        implementation,
+        member,
+        declaration,
+    }
+}
+
+fn iterator_method_edge(
+    statement: arcweft_lang_hir::identity::StmtId,
+    role: HirRuntimeIteratorWitnessMethodRole,
+    method: &IteratorMethodFixture,
+) -> HirRuntimeReachabilityEdge {
+    HirRuntimeReachabilityEdge::new(
+        HirRuntimeReachabilitySite::Statement(statement),
+        HirRuntimeExecutableOwner::ImplMethod(method.declaration.clone()),
+        HirRuntimeReachabilityEdgeKind::CheckedIteratorWitnessMethod {
+            role,
+            implementation: method.implementation,
+            member: method.member,
+            method: method.declaration.clone(),
+        },
+    )
+}
+
+fn iterator_reachability_with_edges<'project>(
+    project: &'project HirProject,
+    edges: Vec<HirRuntimeReachabilityEdge>,
+) -> HirRuntimeSemanticReachability<'project> {
+    let executable = project.executable_view().expect("clean iterator fixture");
+    let symbols = iterator_fixture_symbols(project);
+    let world = symbols.world().clone();
+    let revision = *symbols.revision();
+    let roots = executable
+        .items()
+        .filter(|item| matches!(item.item().kind(), HirItemKind::Flow(_)))
+        .map(|item| {
+            HirRuntimeReachabilityRoot::new(
+                HirRuntimeReachabilityRootKind::CheckedFlow,
+                HirRuntimeExecutableOwner::Item(item.id()),
+            )
+        })
+        .collect::<Vec<_>>();
+    let topology = executable
+        .accept_symbol_generation(&symbols)
+        .expect("accepted iterator symbol generation")
+        .into_evaluation_topology()
+        .expect("iterator evaluation topology");
+    let input = HirRuntimeSemanticReachabilityInput::try_new(
+        HirRuntimeEmissionMode::CheckAll,
+        world,
+        revision,
+        roots,
+        edges,
+    )
+    .expect("accepted iterator reachability input");
+    executable
+        .runtime_semantic_reachability(
+            input,
+            &topology,
+            |_| None,
+            |_| HirRuntimeExpressionTypeDisposition::Retain,
+        )
+        .expect("accepted iterator reachability")
+}
+
+fn iterator_method_fact(
+    method: &IteratorMethodFixture,
+    trait_identity: RuntimeTraitIdentity,
+) -> RuntimeTraitMethodFact {
+    RuntimeTraitMethodFact::new(
+        method.declaration.clone(),
+        method.implementation,
+        method.member,
+        trait_identity,
+        unit_type(),
+    )
+}
+
+fn identity_iterator_fact(method: &IteratorMethodFixture) -> RuntimeIteratorFact {
+    RuntimeIteratorFact::Witness(Box::new(RuntimeIteratorWitnessFact::new(
+        unit_type(),
+        unit_type(),
+        RuntimeIteratorWitnessExecutableFact::IdentityIntoIterator {
+            next: method.declaration.clone(),
+        },
+    )))
+}
+
+fn trait_call_iterator_fact(
+    into_iter: &IteratorMethodFixture,
+    next: &IteratorMethodFixture,
+) -> RuntimeIteratorFact {
+    RuntimeIteratorFact::Witness(Box::new(RuntimeIteratorWitnessFact::new(
+        unit_type(),
+        unit_type(),
+        RuntimeIteratorWitnessExecutableFact::TraitCalls {
+            into_iter: into_iter.declaration.clone(),
+            next: next.declaration.clone(),
+        },
+    )))
+}
+
+fn iterator_edge_error(
+    project: &HirProject,
+    statement: arcweft_lang_hir::identity::StmtId,
+    edges: Vec<HirRuntimeReachabilityEdge>,
+    iteration: &RuntimeIteratorFact,
+    methods: &BTreeMap<ImplMethodDeclarationId, RuntimeTraitMethodFact>,
+) -> RuntimeSemanticFactsError {
+    let reachability = iterator_reachability_with_edges(project, edges);
+    validate_iterator_witness_method_edges(
+        RuntimeSemanticOwnerSet::runtime_only(&reachability),
+        statement,
+        iteration,
+        methods,
+    )
+    .expect_err("tampered iterator witness edge")
+}
+
+#[test]
+#[allow(
+    clippy::too_many_lines,
+    reason = "one closed tamper matrix proves every field of the statement-owned iterator edge and both witness variants"
+)]
+fn iterator_witness_method_edges_are_exact_and_fail_closed() {
+    let project = project_fixture(
+        "iterator-witness-edges",
+        concat!(
+            "struct Counter { end: i64 }\n",
+            "struct CounterIter { current: i64, end: i64 }\n",
+            "impl IntoIterator for Counter {\n",
+            "    type Item = i64\n",
+            "    type IntoIter = CounterIter\n",
+            "    fn into_iter(self) -> CounterIter {\n",
+            "        CounterIter { current: 0, end: self.end }\n",
+            "    }\n",
+            "}\n",
+            "impl Iterator for CounterIter {\n",
+            "    type Item = i64\n",
+            "    fn next(&mut self) -> Option<i64> { None }\n",
+            "}\n",
+            "struct OtherIter {}\n",
+            "impl Iterator for OtherIter {\n",
+            "    type Item = i64\n",
+            "    fn next(&mut self) -> Option<i64> { None }\n",
+            "}\n",
+            "flow iterator_edge_root() {\n",
+            "    let counter = Counter { end: 1 }\n",
+            "    for value in counter { value }\n",
+            "}\n",
+        ),
+    );
+    let statement = project
+        .executable_view()
+        .expect("iterator edge fixture")
+        .modules()
+        .flat_map(|(_, module)| module.statements())
+        .find_map(|(owner, statement)| {
+            matches!(statement.kind(), HirStmtKind::For(_)).then_some(owner)
+        })
+        .expect("fixture for statement");
+    let into_iter = iterator_method_fixture(&project, 0, "into_iter");
+    let next = iterator_method_fixture(&project, 1, "next");
+    let other_next = iterator_method_fixture(&project, 2, "next");
+    let next_edge = || {
+        iterator_method_edge(
+            statement,
+            HirRuntimeIteratorWitnessMethodRole::IteratorNext,
+            &next,
+        )
+    };
+    let into_iter_edge = || {
+        iterator_method_edge(
+            statement,
+            HirRuntimeIteratorWitnessMethodRole::IntoIterator,
+            &into_iter,
+        )
+    };
+    let methods = BTreeMap::from([
+        (
+            into_iter.declaration.clone(),
+            iterator_method_fact(&into_iter, RuntimeTraitIdentity::StandardIntoIterator),
+        ),
+        (
+            next.declaration.clone(),
+            iterator_method_fact(&next, RuntimeTraitIdentity::StandardIterator),
+        ),
+    ]);
+    let identity = identity_iterator_fact(&next);
+    let trait_calls = trait_call_iterator_fact(&into_iter, &next);
+
+    let accepted_identity = iterator_reachability_with_edges(&project, vec![next_edge()]);
+    assert_eq!(
+        validate_iterator_witness_method_edges(
+            RuntimeSemanticOwnerSet::runtime_only(&accepted_identity),
+            statement,
+            &identity,
+            &methods,
+        ),
+        Ok(())
+    );
+    let accepted_trait_calls =
+        iterator_reachability_with_edges(&project, vec![into_iter_edge(), next_edge()]);
+    assert_eq!(
+        validate_iterator_witness_method_edges(
+            RuntimeSemanticOwnerSet::runtime_only(&accepted_trait_calls),
+            statement,
+            &trait_calls,
+            &methods,
+        ),
+        Ok(())
+    );
+
+    let wrong_role = iterator_method_edge(
+        statement,
+        HirRuntimeIteratorWitnessMethodRole::IntoIterator,
+        &next,
+    );
+    assert_eq!(
+        iterator_edge_error(&project, statement, vec![wrong_role], &identity, &methods),
+        RuntimeSemanticFactsError::InvalidIteratorWitnessMethodEdge {
+            statement,
+            role: HirRuntimeIteratorWitnessMethodRole::IteratorNext,
+        }
+    );
+    assert_eq!(
+        iterator_edge_error(&project, statement, Vec::new(), &identity, &methods),
+        RuntimeSemanticFactsError::InvalidIteratorWitnessMethodEdge {
+            statement,
+            role: HirRuntimeIteratorWitnessMethodRole::IteratorNext,
+        }
+    );
+    assert_eq!(
+        iterator_edge_error(
+            &project,
+            statement,
+            vec![into_iter_edge(), next_edge()],
+            &identity,
+            &methods,
+        ),
+        RuntimeSemanticFactsError::InvalidIteratorWitnessMethodEdge {
+            statement,
+            role: HirRuntimeIteratorWitnessMethodRole::IntoIterator,
+        }
+    );
+    let builtin = RuntimeIteratorFact::Builtin(Box::new(RuntimeBuiltinIteratorFact::new(
+        RuntimeBuiltinIteratorFamily::Range,
+        unit_type(),
+        unit_type(),
+        unit_type(),
+        unit_type(),
+    )));
+    assert_eq!(
+        iterator_edge_error(&project, statement, vec![next_edge()], &builtin, &methods,),
+        RuntimeSemanticFactsError::InvalidIteratorWitnessMethodEdge {
+            statement,
+            role: HirRuntimeIteratorWitnessMethodRole::IteratorNext,
+        }
+    );
+
+    let alternate_declaration = iterator_method_edge(
+        statement,
+        HirRuntimeIteratorWitnessMethodRole::IteratorNext,
+        &other_next,
+    );
+    assert_eq!(
+        iterator_edge_error(
+            &project,
+            statement,
+            vec![alternate_declaration],
+            &identity,
+            &methods,
+        ),
+        RuntimeSemanticFactsError::InvalidIteratorWitnessMethodEdge {
+            statement,
+            role: HirRuntimeIteratorWitnessMethodRole::IteratorNext,
+        }
+    );
+
+    let mut wrong_implementation = methods.clone();
+    wrong_implementation.insert(
+        next.declaration.clone(),
+        RuntimeTraitMethodFact::new(
+            next.declaration.clone(),
+            other_next.implementation,
+            next.member,
+            RuntimeTraitIdentity::StandardIterator,
+            unit_type(),
+        ),
+    );
+    assert_eq!(
+        iterator_edge_error(
+            &project,
+            statement,
+            vec![next_edge()],
+            &identity,
+            &wrong_implementation,
+        ),
+        RuntimeSemanticFactsError::InvalidIteratorWitnessMethodEdge {
+            statement,
+            role: HirRuntimeIteratorWitnessMethodRole::IteratorNext,
+        }
+    );
+    let mut wrong_member = methods.clone();
+    wrong_member.insert(
+        next.declaration.clone(),
+        RuntimeTraitMethodFact::new(
+            next.declaration.clone(),
+            next.implementation,
+            next.member
+                .checked_add(1)
+                .expect("fixture member coordinate"),
+            RuntimeTraitIdentity::StandardIterator,
+            unit_type(),
+        ),
+    );
+    assert_eq!(
+        iterator_edge_error(
+            &project,
+            statement,
+            vec![next_edge()],
+            &identity,
+            &wrong_member,
+        ),
+        RuntimeSemanticFactsError::InvalidIteratorWitnessMethodEdge {
+            statement,
+            role: HirRuntimeIteratorWitnessMethodRole::IteratorNext,
+        }
+    );
+    let mut wrong_trait = methods;
+    wrong_trait.insert(
+        next.declaration.clone(),
+        iterator_method_fact(&next, RuntimeTraitIdentity::StandardIntoIterator),
+    );
+    assert_eq!(
+        iterator_edge_error(
+            &project,
+            statement,
+            vec![next_edge()],
+            &identity,
+            &wrong_trait,
+        ),
+        RuntimeSemanticFactsError::InvalidIteratorWitnessMethodEdge {
+            statement,
+            role: HirRuntimeIteratorWitnessMethodRole::IteratorNext,
+        }
     );
 }

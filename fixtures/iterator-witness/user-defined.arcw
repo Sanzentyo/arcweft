@@ -8,6 +8,10 @@ struct CounterIter {
     end: i64,
 }
 
+struct CounterValue {
+    output: i64,
+}
+
 impl IntoIterator for Counter {
     type Item = i64
     type IntoIter = CounterIter
@@ -22,12 +26,24 @@ impl Iterator for CounterIter {
 
     fn next(&mut self) -> Option<i64> {
         if self.current < self.end {
-            let value = self.current
+            let value = CounterValue { output: self.current }
             self.current = self.current + 1
-            Some(value)
+            Some(value.output)
         } else {
             None
         }
+    }
+}
+
+struct UnusedIter {
+    unused: i64,
+}
+
+impl Iterator for UnusedIter {
+    type Item = i64
+
+    fn next(&mut self) -> Option<i64> {
+        None
     }
 }
 

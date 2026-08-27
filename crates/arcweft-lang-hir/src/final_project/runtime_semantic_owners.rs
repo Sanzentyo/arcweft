@@ -6,6 +6,9 @@ use thiserror::Error;
 
 #[path = "runtime_semantic_owners/digest.rs"]
 mod digest;
+#[cfg(test)]
+#[path = "runtime_semantic_owners/tests.rs"]
+mod tests;
 #[path = "runtime_semantic_owners/validation.rs"]
 mod validation;
 
@@ -57,6 +60,26 @@ pub enum HirRuntimeReachabilityRootKind {
     CheckedViewValueProgram,
 }
 
+/// Exact standard-trait operation selected by one checked `for` witness.
+///
+/// This role is owned by final HIR because it is part of runtime dependency
+/// reachability, not an authored call expression. Consumers must not infer it
+/// from a method name or from the position of a row in a side table.
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub enum HirRuntimeIteratorWitnessMethodRole {
+    IntoIterator,
+    IteratorNext,
+}
+
+impl HirRuntimeIteratorWitnessMethodRole {
+    pub(crate) const fn digest_tag(self) -> u8 {
+        match self {
+            Self::IntoIterator => 0,
+            Self::IteratorNext => 1,
+        }
+    }
+}
+
 #[derive(Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub struct HirRuntimeReachabilityRoot {
     kind: HirRuntimeReachabilityRootKind,
@@ -86,9 +109,15 @@ pub enum HirRuntimeReachabilityEdgeKind {
         call: ExprId,
         declaration: CallableDeclarationKey,
     },
-    CheckedTraitDispatch {
-        source: HirRuntimeReachabilitySite,
+    CheckedTraitMethodCall {
+        call: ExprId,
         implementation: ItemId,
+        method: ImplMethodDeclarationId,
+    },
+    CheckedIteratorWitnessMethod {
+        role: HirRuntimeIteratorWitnessMethodRole,
+        implementation: ItemId,
+        member: u16,
         method: ImplMethodDeclarationId,
     },
     CheckedFlowTransfer {
@@ -104,7 +133,8 @@ pub enum HirRuntimeReachabilityEdgeKind {
 #[derive(Clone, Debug, Eq, Ord, PartialEq, PartialOrd)]
 enum HirRuntimeReachabilityEdgeAuthority {
     ProjectCall(CallableDeclarationKey),
-    TraitDispatch(ImplMethodDeclarationId),
+    TraitMethodCall(ImplMethodDeclarationId),
+    IteratorWitnessMethod(HirRuntimeIteratorWitnessMethodRole),
     FlowTransfer(CallableDeclarationKey),
     EntryBinding(CallableDeclarationKey),
 }
@@ -230,6 +260,22 @@ impl HirRuntimeSemanticReachabilityInput {
                 edge: Box::new(edge),
             });
         }
+        let mut iterator_witness_roles = BTreeSet::new();
+        for edge in &edges {
+            let HirRuntimeReachabilityEdgeKind::CheckedIteratorWitnessMethod { role, .. } =
+                &edge.kind
+            else {
+                continue;
+            };
+            if !iterator_witness_roles.insert((edge.source, *role)) {
+                return Err(
+                    HirRuntimeReachabilityError::DuplicateIteratorWitnessMethodRole {
+                        site: edge.source,
+                        role: *role,
+                    },
+                );
+            }
+        }
         let mut authority_targets = BTreeMap::new();
         for edge in &edges {
             let key = (edge.source, edge_authority(&edge.kind));
@@ -303,6 +349,11 @@ pub enum HirRuntimeReachabilityError {
     #[error("runtime reachability contains a duplicate edge")]
     DuplicateEdge {
         edge: Box<HirRuntimeReachabilityEdge>,
+    },
+    #[error("runtime reachability repeats one checked iterator-witness method role")]
+    DuplicateIteratorWitnessMethodRole {
+        site: HirRuntimeReachabilitySite,
+        role: HirRuntimeIteratorWitnessMethodRole,
     },
     #[error("runtime reachability contains conflicting edges for one checked source")]
     ConflictingEdge {
@@ -1110,12 +1161,13 @@ fn edge_kind_matches_source(edge: &HirRuntimeReachabilityEdge) -> bool {
             HirRuntimeReachabilityEdgeKind::CheckedProjectCall { call, .. },
         ) => source == call,
         (
-            source,
-            HirRuntimeReachabilityEdgeKind::CheckedTraitDispatch {
-                source: dispatch_source,
-                ..
-            },
-        ) => source == dispatch_source,
+            HirRuntimeReachabilitySite::Expression(source),
+            HirRuntimeReachabilityEdgeKind::CheckedTraitMethodCall { call, .. },
+        ) => source == call,
+        (
+            HirRuntimeReachabilitySite::Statement(_),
+            HirRuntimeReachabilityEdgeKind::CheckedIteratorWitnessMethod { .. },
+        ) => true,
         (
             source,
             HirRuntimeReachabilityEdgeKind::CheckedFlowTransfer {
@@ -1135,8 +1187,11 @@ fn edge_authority(kind: &HirRuntimeReachabilityEdgeKind) -> HirRuntimeReachabili
         HirRuntimeReachabilityEdgeKind::CheckedProjectCall { declaration, .. } => {
             HirRuntimeReachabilityEdgeAuthority::ProjectCall(declaration.clone())
         }
-        HirRuntimeReachabilityEdgeKind::CheckedTraitDispatch { method, .. } => {
-            HirRuntimeReachabilityEdgeAuthority::TraitDispatch(method.clone())
+        HirRuntimeReachabilityEdgeKind::CheckedTraitMethodCall { method, .. } => {
+            HirRuntimeReachabilityEdgeAuthority::TraitMethodCall(method.clone())
+        }
+        HirRuntimeReachabilityEdgeKind::CheckedIteratorWitnessMethod { role, .. } => {
+            HirRuntimeReachabilityEdgeAuthority::IteratorWitnessMethod(*role)
         }
         HirRuntimeReachabilityEdgeKind::CheckedFlowTransfer { declaration, .. } => {
             HirRuntimeReachabilityEdgeAuthority::FlowTransfer(declaration.clone())

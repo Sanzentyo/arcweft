@@ -50,13 +50,15 @@ use arcweft_lang_hir::identity::{
     CaptureId, ExprId, HirModuleId, HirSnapshotId, ItemId, LocalId, PatternId, StmtId, TypeId,
 };
 use arcweft_lang_hir::item::{HirImplMember, HirItemFamily, HirItemKind};
-use arcweft_lang_hir::leaf::{HirName, HirPathSegment};
+use arcweft_lang_hir::leaf::HirName;
 use arcweft_lang_hir::module::HirModule;
 use arcweft_lang_hir::pattern::{HirPatternField, HirPatternKind};
 use arcweft_lang_hir::project::{
     HirExecutableProjectView, HirRuntimeCallCalleeDisposition, HirRuntimeExecutableOwner,
-    HirRuntimeExpressionTypeDisposition, HirRuntimeReachabilityError,
-    HirRuntimeReachabilityIdentity, HirRuntimeReachabilityRootKind, HirRuntimeSemanticReachability,
+    HirRuntimeExpressionTypeDisposition, HirRuntimeIteratorWitnessMethodRole,
+    HirRuntimeReachabilityEdge, HirRuntimeReachabilityEdgeKind, HirRuntimeReachabilityError,
+    HirRuntimeReachabilityIdentity, HirRuntimeReachabilityRootKind, HirRuntimeReachabilitySite,
+    HirRuntimeSemanticReachability,
 };
 use arcweft_lang_hir::scope::CaptureAccess;
 use arcweft_lang_hir::stmt::HirStmtKind;
@@ -64,7 +66,6 @@ use arcweft_lang_hir::symbol::ImplMethodDeclarationId;
 use arcweft_lang_hir::symbol::{
     CallableDeclarationKey, CallableDeclarationOwner, nominal::ProjectNominalDeclarationId,
 };
-use arcweft_lang_hir::type_ref::HirTypeKind;
 use arcweft_text_model::DialogueContentSpec;
 use thiserror::Error;
 
@@ -3217,6 +3218,17 @@ impl<'a> RuntimeSemanticOwnerSet<'a> {
             .collect()
     }
 
+    fn edges_from(
+        self,
+        source: HirRuntimeReachabilitySite,
+    ) -> impl Iterator<Item = &'a HirRuntimeReachabilityEdge> + 'a {
+        self.runtime.edge_from(source).chain(
+            self.view_values
+                .into_iter()
+                .flat_map(move |owners| owners.edge_from(source)),
+        )
+    }
+
     fn selected_expression_type_owners(
         self,
     ) -> Result<BTreeSet<ExprId>, RuntimeSemanticFactsError> {
@@ -4020,6 +4032,10 @@ impl RuntimePlanSemanticFacts {
         )?;
         for method in trait_methods.values() {
             validate_trait_method(&modules, method)?;
+            let owner = HirRuntimeExecutableOwner::ImplMethod(method.declaration().clone());
+            if !runtime_owners.contains_runtime_owner(&owner) {
+                return Err(RuntimeSemanticFactsError::OwnerOutsideReachability { owner });
+            }
         }
 
         let iterations = collect_unique(input.iterations, RuntimeSemanticFactFamily::Iteration)?;
@@ -4041,20 +4057,18 @@ impl RuntimePlanSemanticFacts {
                     ] {
                         validate_normalized_type(&modules, ty)?;
                     }
-                    true
                 }
-                RuntimeIteratorFact::Witness(witness) => match witness.executable() {
-                    RuntimeIteratorWitnessExecutableFact::TraitCalls { into_iter, next } => {
-                        trait_methods.contains_key(into_iter) && trait_methods.contains_key(next)
-                    }
-                    RuntimeIteratorWitnessExecutableFact::IdentityIntoIterator { next } => {
-                        trait_methods.contains_key(next)
-                    }
-                },
-            };
-            if !methods_exist {
-                return Err(RuntimeSemanticFactsError::InvalidTraitMethodIdentity);
+                RuntimeIteratorFact::Witness(witness) => {
+                    validate_normalized_type(&modules, witness.item())?;
+                    validate_normalized_type(&modules, witness.iterator())?;
+                }
             }
+            validate_iterator_witness_method_edges(
+                runtime_owners,
+                *statement,
+                evidence,
+                &trait_methods,
+            )?;
         }
 
         let assertions = collect_unique(input.assertions, RuntimeSemanticFactFamily::Assertion)?;
@@ -4892,6 +4906,11 @@ pub enum RuntimeSemanticFactsError {
     MissingRuntimeCallReceiver { expression: ExprId },
     #[error("runtime trait method fact does not match its final-HIR implementation member")]
     InvalidTraitMethodIdentity,
+    #[error("iterator witness method edge does not match its checked statement role")]
+    InvalidIteratorWitnessMethodEdge {
+        statement: StmtId,
+        role: HirRuntimeIteratorWitnessMethodRole,
+    },
     #[error("dialogue projection and Character presentation catalog presence disagree")]
     DialogueCatalogPresenceMismatch,
     #[error("dialogue application {expression:?} does not match its accepted line identity")]
@@ -6068,6 +6087,108 @@ fn resolve_item<'project>(
         .map_err(|_| RuntimeSemanticFactsError::UnresolvedItem { item: id })
 }
 
+fn validate_iterator_witness_method_edges(
+    runtime_owners: RuntimeSemanticOwnerSet<'_>,
+    statement: StmtId,
+    iteration: &RuntimeIteratorFact,
+    methods: &BTreeMap<ImplMethodDeclarationId, RuntimeTraitMethodFact>,
+) -> Result<(), RuntimeSemanticFactsError> {
+    let expected = match iteration {
+        RuntimeIteratorFact::Builtin(_) => BTreeMap::new(),
+        RuntimeIteratorFact::Witness(witness) => match witness.executable() {
+            RuntimeIteratorWitnessExecutableFact::TraitCalls { into_iter, next } => {
+                BTreeMap::from([
+                    (
+                        HirRuntimeIteratorWitnessMethodRole::IntoIterator,
+                        into_iter.clone(),
+                    ),
+                    (
+                        HirRuntimeIteratorWitnessMethodRole::IteratorNext,
+                        next.clone(),
+                    ),
+                ])
+            }
+            RuntimeIteratorWitnessExecutableFact::IdentityIntoIterator { next } => {
+                BTreeMap::from([(
+                    HirRuntimeIteratorWitnessMethodRole::IteratorNext,
+                    next.clone(),
+                )])
+            }
+        },
+    };
+    let source = HirRuntimeReachabilitySite::Statement(statement);
+    let mut actual = BTreeMap::new();
+    for edge in runtime_owners.edges_from(source) {
+        let HirRuntimeReachabilityEdgeKind::CheckedIteratorWitnessMethod {
+            role,
+            implementation,
+            member,
+            method,
+        } = edge.kind()
+        else {
+            continue;
+        };
+        let row = (*implementation, *member, method.clone());
+        if actual
+            .insert(*role, row.clone())
+            .is_some_and(|existing| existing != row)
+        {
+            return Err(
+                RuntimeSemanticFactsError::InvalidIteratorWitnessMethodEdge {
+                    statement,
+                    role: *role,
+                },
+            );
+        }
+    }
+    if let Some(role) = expected.iter().find_map(|(role, expected_method)| {
+        actual
+            .get(role)
+            .is_none_or(|(_, _, actual_method)| actual_method != expected_method)
+            .then_some(*role)
+    }) {
+        return Err(
+            RuntimeSemanticFactsError::InvalidIteratorWitnessMethodEdge { statement, role },
+        );
+    }
+    if let Some(role) = actual
+        .keys()
+        .copied()
+        .find(|role| !expected.contains_key(role))
+    {
+        return Err(
+            RuntimeSemanticFactsError::InvalidIteratorWitnessMethodEdge { statement, role },
+        );
+    }
+    for (role, method) in expected {
+        let Some((implementation, member, actual_method)) = actual.get(&role) else {
+            return Err(
+                RuntimeSemanticFactsError::InvalidIteratorWitnessMethodEdge { statement, role },
+            );
+        };
+        let expected_trait = match role {
+            HirRuntimeIteratorWitnessMethodRole::IntoIterator => {
+                RuntimeTraitIdentity::StandardIntoIterator
+            }
+            HirRuntimeIteratorWitnessMethodRole::IteratorNext => {
+                RuntimeTraitIdentity::StandardIterator
+            }
+        };
+        if actual_method != &method
+            || methods.get(&method).is_none_or(|fact| {
+                fact.implementation() != *implementation
+                    || fact.member() != *member
+                    || fact.trait_identity() != &expected_trait
+            })
+        {
+            return Err(
+                RuntimeSemanticFactsError::InvalidIteratorWitnessMethodEdge { statement, role },
+            );
+        }
+    }
+    Ok(())
+}
+
 fn validate_trait_method(
     modules: &BTreeMap<HirModuleId, &HirModule>,
     method: &RuntimeTraitMethodFact,
@@ -6088,7 +6209,10 @@ fn validate_trait_method(
         .name()
         .resolved()
         .ok_or(RuntimeSemanticFactsError::InvalidTraitMethodIdentity)?;
-    let expected = match method.trait_identity() {
+    if method.declaration().method().as_str() != name.as_str() || function.body().is_none() {
+        return Err(RuntimeSemanticFactsError::InvalidTraitMethodIdentity);
+    }
+    match method.trait_identity() {
         RuntimeTraitIdentity::Project(trait_item) => {
             let trait_owner = *trait_item;
             let trait_item = resolve_item(modules, trait_owner)?;
@@ -6098,31 +6222,8 @@ fn validate_trait_method(
                     actual: trait_item.kind().family(),
                 });
             }
-            None
         }
-        RuntimeTraitIdentity::StandardIterator => Some(("Iterator", "next")),
-        RuntimeTraitIdentity::StandardIntoIterator => Some(("IntoIterator", "into_iter")),
-    };
-    if method.declaration().method().as_str() != name.as_str() {
-        return Err(RuntimeSemanticFactsError::InvalidTraitMethodIdentity);
-    }
-    if let Some((trait_name, method_name)) = expected {
-        let trait_ref = implementation
-            .trait_ref()
-            .ok_or(RuntimeSemanticFactsError::InvalidTraitMethodIdentity)?;
-        let trait_ref = module_for(modules, trait_ref.module())?
-            .resolve_type(trait_ref)
-            .map_err(|_| RuntimeSemanticFactsError::UnresolvedType { ty: trait_ref })?;
-        let HirTypeKind::Path(path) = trait_ref.kind() else {
-            return Err(RuntimeSemanticFactsError::InvalidTraitMethodIdentity);
-        };
-        let terminal = path.segments().last().map(|segment| match segment {
-            HirPathSegment::Identifier(name) => name.as_str(),
-            HirPathSegment::ProjectSymbol(name) => name.as_str(),
-        });
-        if terminal != Some(trait_name) || name.as_str() != method_name {
-            return Err(RuntimeSemanticFactsError::InvalidTraitMethodIdentity);
-        }
+        RuntimeTraitIdentity::StandardIterator | RuntimeTraitIdentity::StandardIntoIterator => {}
     }
     Ok(())
 }

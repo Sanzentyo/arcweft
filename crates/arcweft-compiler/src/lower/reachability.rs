@@ -292,8 +292,8 @@ fn checked_call_edge(
                     site: source,
                     expected_target: Box::new(target.clone()),
                 })?;
-            HirRuntimeReachabilityEdgeKind::CheckedTraitDispatch {
-                source,
+            HirRuntimeReachabilityEdgeKind::CheckedTraitMethodCall {
+                call,
                 implementation,
                 method: method.clone(),
             }
@@ -336,17 +336,16 @@ fn checked_iteration_edges(
 ) -> BTreeSet<HirRuntimeReachabilityEdge> {
     let source = HirRuntimeReachabilitySite::Statement(statement);
     iteration
-        .trait_dispatches()
-        .into_iter()
-        .flatten()
-        .map(|conformance| {
+        .witness_methods()
+        .map(|(role, conformance, _)| {
             let method = conformance.declaration().clone();
             HirRuntimeReachabilityEdge::new(
                 source,
                 HirRuntimeExecutableOwner::ImplMethod(method.clone()),
-                HirRuntimeReachabilityEdgeKind::CheckedTraitDispatch {
-                    source,
+                HirRuntimeReachabilityEdgeKind::CheckedIteratorWitnessMethod {
+                    role,
                     implementation: conformance.implementation(),
+                    member: conformance.method(),
                     method,
                 },
             )

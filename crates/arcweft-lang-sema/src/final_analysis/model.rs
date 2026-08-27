@@ -18,6 +18,7 @@ pub use crate::character_dialogue::CharacterDialogueFieldCoordinate;
 use crate::types::{CharacterField, EntityKind};
 use arcweft_core::{entry::TypeLayoutHash, value::RuntimeAgentField};
 use arcweft_lang_hir::expr::HirCallArgument;
+use arcweft_lang_hir::project::HirRuntimeIteratorWitnessMethodRole;
 use arcweft_lang_hir::symbol::{
     CallableDeclarationDigest, ExternalDeclarationId, ImplMethodDeclarationId,
 };
@@ -1968,17 +1969,52 @@ pub enum CheckedIteration {
 }
 
 impl CheckedIteration {
-    /// Returns the exact checked trait dispatches required by this iteration.
-    pub const fn trait_dispatches(&self) -> [Option<&CheckedTraitConformance>; 2] {
-        match self {
+    /// Iterates the exact checked method rows required by this witness.
+    ///
+    /// Roles are assigned by the checked iteration variant itself. In
+    /// particular, an identity `Iterator` witness emits only `IteratorNext`;
+    /// consumers must never infer roles from array positions or method names.
+    pub fn witness_methods(
+        &self,
+    ) -> impl Iterator<
+        Item = (
+            HirRuntimeIteratorWitnessMethodRole,
+            &CheckedTraitConformance,
+            &TypeKind,
+        ),
+    > + '_ {
+        let rows = match self {
             Self::Builtin { .. } => [None, None],
             Self::Witness {
+                source,
+                into_iter,
                 into_iterator,
                 iterator,
                 ..
-            } => [Some(into_iterator), Some(iterator)],
-            Self::IteratorWitness { iterator, .. } => [Some(iterator), None],
-        }
+            } => [
+                Some((
+                    HirRuntimeIteratorWitnessMethodRole::IntoIterator,
+                    into_iterator,
+                    source,
+                )),
+                Some((
+                    HirRuntimeIteratorWitnessMethodRole::IteratorNext,
+                    iterator,
+                    into_iter,
+                )),
+            ],
+            Self::IteratorWitness {
+                source, iterator, ..
+            } => [
+                Some((
+                    HirRuntimeIteratorWitnessMethodRole::IteratorNext,
+                    iterator,
+                    source,
+                )),
+                None,
+            ],
+        };
+        rows.into_iter().flatten()
     }
 
     pub(crate) fn visit_types<E>(

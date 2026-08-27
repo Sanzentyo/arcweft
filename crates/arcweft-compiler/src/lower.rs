@@ -2907,23 +2907,8 @@ fn runtime_iteration_methods(
         let CheckedStatementRole::Iteration(iteration) = statement.role() else {
             continue;
         };
-        match iteration.as_ref() {
-            CheckedIteration::Builtin { .. } => {}
-            CheckedIteration::Witness {
-                source, into_iter, ..
-            } => {
-                let [Some(into_iterator), Some(iterator)] = iteration.trait_dispatches() else {
-                    unreachable!("checked witness owns both exact conformances")
-                };
-                insert(into_iterator, source)?;
-                insert(iterator, into_iter)?;
-            }
-            CheckedIteration::IteratorWitness { source, .. } => {
-                let [Some(iterator), None] = iteration.trait_dispatches() else {
-                    unreachable!("checked iterator witness owns one exact conformance")
-                };
-                insert(iterator, source)?;
-            }
+        for (_, conformance, self_type) in iteration.witness_methods() {
+            insert(conformance, self_type)?;
         }
     }
     Ok(methods)
