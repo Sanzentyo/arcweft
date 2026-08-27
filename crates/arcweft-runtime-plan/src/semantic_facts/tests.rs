@@ -1072,10 +1072,6 @@ fn every_agent_shape_selects_its_closed_operational_family() {
             RuntimeAgentOperationalType::ActionResult,
         ),
         (
-            RuntimeAgentTypeShape::AgentValue,
-            RuntimeAgentOperationalType::AgentValue,
-        ),
-        (
             RuntimeAgentTypeShape::DataFormat,
             RuntimeAgentOperationalType::DataFormat,
         ),
@@ -1116,10 +1112,6 @@ fn every_agent_shape_selects_its_closed_operational_family() {
             RuntimeAgentOperationalType::Resource,
         ),
         (
-            RuntimeAgentTypeShape::ResourceBody,
-            RuntimeAgentOperationalType::ResourceBody,
-        ),
-        (
             RuntimeAgentTypeShape::RagContextPack,
             RuntimeAgentOperationalType::RagContextPack,
         ),
@@ -1154,6 +1146,18 @@ fn every_agent_shape_selects_its_closed_operational_family() {
         (
             RuntimeAgentTypeShape::RagError,
             RuntimeAgentOperationalType::RagError,
+        ),
+        (
+            RuntimeAgentTypeShape::SourcePosition,
+            RuntimeAgentOperationalType::SourcePosition,
+        ),
+        (
+            RuntimeAgentTypeShape::ProjectFlowControlSummary,
+            RuntimeAgentOperationalType::ProjectFlowControlSummary,
+        ),
+        (
+            RuntimeAgentTypeShape::ProjectGraphSummary,
+            RuntimeAgentOperationalType::ProjectGraphSummary,
         ),
     ];
 

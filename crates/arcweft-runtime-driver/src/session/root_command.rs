@@ -184,10 +184,10 @@ impl RootCommandHostCallCatalog {
             .arguments
             .iter()
             .map(|argument| match argument {
-                RootCommandHostArgument::Constructor => RuntimePayload(RuntimeValue::EntityRef(
+                RootCommandHostArgument::Constructor => RuntimePayload(RuntimeValue::String(
                     envelope.command.constructor().as_str().to_owned(),
                 )),
-                RootCommandHostArgument::Target => RuntimePayload(RuntimeValue::EntityRef(
+                RootCommandHostArgument::Target => RuntimePayload(RuntimeValue::String(
                     envelope.command.target().as_str().to_owned(),
                 )),
                 RootCommandHostArgument::Payload => envelope.command.payload().clone(),

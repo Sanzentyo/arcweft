@@ -1642,8 +1642,8 @@ mod tests {
     use super::*;
     use arcweft_core::awbc::schema::{
         AwbcBlockId, AwbcEffectSetId, AwbcEntry, AwbcEntryKind, AwbcEntryTarget, AwbcFlowBinding,
-        AwbcFlowExecutable, AwbcFrameLayoutId, AwbcFunctionFlags, AwbcFunctionId, AwbcFunctionKind,
-        AwbcSafePointKind, AwbcSignatureId, AwbcStringId, AwbcTerminator,
+        AwbcFlowExecutable, AwbcFrameLayoutId, AwbcFunctionFlag, AwbcFunctionFlags, AwbcFunctionId,
+        AwbcFunctionKind, AwbcSafePointKind, AwbcSignatureId, AwbcStringId, AwbcTerminator,
     };
     use arcweft_core::entry::{
         EntryBindingIdentity, FlowContractHash, RuntimeEntryRoles, RuntimeFlowExecutable,
@@ -1678,7 +1678,7 @@ mod tests {
                     frame_layout: AwbcFrameLayoutId(0),
                     blocks: AwbcTableRange::new(0, 1),
                     entry_block: AwbcBlockId(0),
-                    flags: AwbcFunctionFlags(AwbcFunctionFlags::DETERMINISTIC),
+                    flags: AwbcFunctionFlags::empty().with(AwbcFunctionFlag::Deterministic),
                 },
                 AwbcFunction {
                     public_id: Some(AwbcStringId(2)),
@@ -1687,7 +1687,7 @@ mod tests {
                     frame_layout: AwbcFrameLayoutId(0),
                     blocks: AwbcTableRange::new(1, 1),
                     entry_block: AwbcBlockId(1),
-                    flags: AwbcFunctionFlags(AwbcFunctionFlags::DETERMINISTIC),
+                    flags: AwbcFunctionFlags::empty().with(AwbcFunctionFlag::Deterministic),
                 },
             ],
             blocks: vec![
@@ -1795,8 +1795,9 @@ mod tests {
         );
 
         let mut interface_change = base.clone();
-        interface_change.functions[1].flags =
-            AwbcFunctionFlags(AwbcFunctionFlags::DETERMINISTIC | AwbcFunctionFlags::MAY_SUSPEND);
+        interface_change.functions[1].flags = AwbcFunctionFlags::empty()
+            .with(AwbcFunctionFlag::Deterministic)
+            .with(AwbcFunctionFlag::MaySuspend);
         assert_eq!(
             awbc_executable_compatibility(
                 &base_bytes,

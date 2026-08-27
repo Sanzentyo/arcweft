@@ -709,8 +709,6 @@ fn validate_relative_virtual_path(path: &Path) -> Result<(), BundleRunnerError> 
 
 fn effect_label(effect: &LineEffectRequest) -> String {
     match effect {
-        LineEffectRequest::RegisterHandle { key, .. } => format!("register {key}"),
-        LineEffectRequest::DropHandle { key } => format!("drop {key}"),
         LineEffectRequest::Wait(target) => format!("wait {target:?}"),
         LineEffectRequest::Call(call) => format!("call {}", call.callee),
         LineEffectRequest::Audio(command) => format!("audio.{}", command.operation_name()),
@@ -1052,11 +1050,26 @@ mod tests {
         let line = line_id("line.opening");
         let flow = flow_id("flow.main");
         let mut builder = RuntimePlanBuilder::new();
+        let unit_result = arcweft_core::plan::RuntimeDialogueResultTargetSeed::discard(
+            arcweft_core::pattern::RuntimeCheckedType::Unit.semantic_identity_digest(),
+        );
+        builder
+            .admit_semantic_batch(
+                [arcweft_core::plan::RuntimePlanTypeSeed::new(
+                    unit_result.ty(),
+                    arcweft_core::plan::RuntimePlanTypeProjection::Unit,
+                )],
+                [],
+                [],
+                [],
+            )
+            .expect("unit result type admits");
         let content = builder
             .push_dialogue_content_seed(RuntimeDialogueContentPlanSeed {
                 line: line.clone(),
                 values: Box::default(),
                 marks: Box::default(),
+                effect_site_count: Default::default(),
             })
             .expect("dialogue content admits");
         builder
@@ -1064,7 +1077,10 @@ mod tests {
                 flow.clone(),
                 [],
                 vec![
-                    RuntimeFlowOpSeed::Dialogue { content },
+                    RuntimeFlowOpSeed::Dialogue {
+                        content,
+                        result: unit_result,
+                    },
                     RuntimeFlowOpSeed::Return("done".to_owned()),
                 ],
             ))

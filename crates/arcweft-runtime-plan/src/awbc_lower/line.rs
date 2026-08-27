@@ -32,6 +32,7 @@ impl<'a> AwbcLineLowerer<'a> {
         if let Some(unit) = self.inventory.program.content_units.get_mut(id.index()) {
             unit.line_task_group = line_task_group;
             unit.marks = marks;
+            unit.effect_site_count = content.effect_site_count().get();
         }
         id
     }

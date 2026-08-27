@@ -4,6 +4,9 @@ mod store;
 
 use crate::presentation_handles::PresentationHandleId;
 use arcweft_core::plan::RuntimeLineId;
+use arcweft_core::runtime_id::DialogueActivationId;
+use arcweft_core::step::RuntimeDialogueContentEventKind;
+use arcweft_core::time::LogicalDuration;
 use arcweft_presentation::fx::{FxApplication, FxInstanceId};
 use arcweft_text_model::{LineDisplayFrame, LineDisplayStage};
 use arcweft_view::ViewId;
@@ -96,6 +99,14 @@ impl DialogueViewReveal {
             complete: true,
         }
     }
+
+    #[must_use]
+    pub const fn from_progress(progress_milli: u16, complete: bool) -> Self {
+        Self {
+            progress_milli,
+            complete,
+        }
+    }
 }
 
 /// Stale-safe primary action carried by the authored dialogue View parameter.
@@ -118,10 +129,16 @@ pub struct DialogueViewState {
 #[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
 #[serde(tag = "kind", rename_all = "snake_case")]
 pub enum BundlePresentationInput {
+    CompleteDialogueReveal { target: DialogueAdvanceTarget },
     AdvanceDialogue { target: DialogueAdvanceTarget },
 }
 
 impl BundlePresentationInput {
+    #[must_use]
+    pub const fn complete_dialogue_reveal(target: DialogueAdvanceTarget) -> Self {
+        Self::CompleteDialogueReveal { target }
+    }
+
     #[must_use]
     pub const fn advance_dialogue(target: DialogueAdvanceTarget) -> Self {
         Self::AdvanceDialogue { target }
@@ -148,14 +165,18 @@ pub enum DialogueAdvanceRejection {
     StaleInstance,
     StaleStage,
     InvalidStage,
+    RevealAlreadyComplete,
     RevisionExhausted,
-    UntargetedRuntimeInput,
 }
 
 /// Deterministic result of routing one dialogue progression request.
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 #[serde(tag = "kind", rename_all = "snake_case")]
 pub enum BundlePresentationTransition {
+    DialogueRevealCompleted {
+        target: DialogueAdvanceTarget,
+        revision: DialogueRevision,
+    },
     StageAdvanced {
         target: DialogueAdvanceTarget,
         revision: DialogueRevision,
@@ -180,10 +201,12 @@ pub enum BundlePresentationTransition {
 #[serde(tag = "kind", rename_all = "snake_case")]
 pub enum DialoguePresentationOperation {
     Append {
+        activation: DialogueActivationId,
         view: DialogueViewDefinition,
         frame: LineDisplayFrame,
     },
     Replace {
+        activation: DialogueActivationId,
         view: DialogueViewDefinition,
         frame: LineDisplayFrame,
     },
@@ -194,13 +217,29 @@ pub enum DialoguePresentationOperation {
 
 impl DialoguePresentationOperation {
     #[must_use]
-    pub fn append(view: DialogueViewDefinition, frame: LineDisplayFrame) -> Self {
-        Self::Append { view, frame }
+    pub fn append(
+        activation: DialogueActivationId,
+        view: DialogueViewDefinition,
+        frame: LineDisplayFrame,
+    ) -> Self {
+        Self::Append {
+            activation,
+            view,
+            frame,
+        }
     }
 
     #[must_use]
-    pub fn replace(view: DialogueViewDefinition, frame: LineDisplayFrame) -> Self {
-        Self::Replace { view, frame }
+    pub fn replace(
+        activation: DialogueActivationId,
+        view: DialogueViewDefinition,
+        frame: LineDisplayFrame,
+    ) -> Self {
+        Self::Replace {
+            activation,
+            view,
+            frame,
+        }
     }
 
     #[must_use]
@@ -212,14 +251,33 @@ impl DialoguePresentationOperation {
 /// One retained dialogue occurrence evaluated as its own authored View mount.
 #[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
 pub struct DialogueEntryState {
+    pub(super) activation: DialogueActivationId,
     pub(super) id: DialogueEntryId,
     pub(super) instance: DialogueInstanceId,
     pub(super) stage: DialogueStageIndex,
     pub(super) waiting_for_advance: bool,
+    pub(super) reveal_elapsed: LogicalDuration,
+    pub(super) reveal_complete: bool,
+    pub(super) revealed_content_events: std::collections::BTreeSet<RuntimeDialogueContentEventKind>,
     pub(super) frame: LineDisplayFrame,
 }
 
 impl DialogueEntryState {
+    #[must_use]
+    pub const fn activation(&self) -> &DialogueActivationId {
+        &self.activation
+    }
+
+    #[must_use]
+    pub const fn reveal_elapsed(&self) -> LogicalDuration {
+        self.reveal_elapsed
+    }
+
+    #[must_use]
+    pub fn reveal_is_complete(&self) -> bool {
+        self.reveal_evaluation()
+            .is_some_and(|reveal| reveal.is_complete())
+    }
     #[must_use]
     pub const fn id(&self) -> DialogueEntryId {
         self.id
@@ -245,6 +303,22 @@ impl DialogueEntryState {
         self.stage
             .as_usize()
             .and_then(|index| self.frame.stage(index))
+    }
+
+    #[must_use]
+    pub fn reveal_evaluation(&self) -> Option<arcweft_text_model::DialogueRevealEvaluation> {
+        let stage = self.current_stage()?;
+        Some(arcweft_text_model::evaluate_dialogue_reveal(
+            stage.text(),
+            &stage.text_runs(),
+            &stage.controls(),
+            stage.reveal_start(),
+            arcweft_text_model::DialogueRevealPolicy {
+                complete_stage: self.reveal_complete,
+                instant_characters: false,
+            },
+            self.reveal_elapsed.into(),
+        ))
     }
 
     /// Stable root handle used by the shared authored View runtime.
@@ -309,6 +383,8 @@ impl DialogueEntryState {
         let next_stage = to.as_usize().and_then(|index| self.frame.stage(index))?;
         let page = DialoguePageIndex::from_usize(next_stage.page_index())?;
         self.stage = to;
+        self.reveal_elapsed = LogicalDuration::from_nanos(0);
+        self.reveal_complete = false;
         let advance = if page == from_page {
             DialogueStageAdvanceKind::ContinuePage
         } else {

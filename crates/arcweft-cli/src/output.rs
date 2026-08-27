@@ -68,11 +68,7 @@ pub(crate) struct RuntimeNodeSummary {
 
 #[derive(serde::Serialize)]
 struct RuntimeTaskSummary {
-    id: String,
-    key: Option<String>,
-    name: Option<String>,
     trigger: String,
-    priority: i32,
     join_policy: String,
     cancel_policy: String,
     scope: Box<RuntimeScopeSummary>,
@@ -188,11 +184,7 @@ fn node_summary(
             node_children_summary(group, "parallel", children)
         }
         LineTaskNode::Child {
-            id,
-            key,
-            name,
             trigger,
-            priority,
             join_policy,
             cancel_policy,
             scope,
@@ -200,11 +192,7 @@ fn node_summary(
             kind: "child".to_owned(),
             children: Vec::new(),
             task: Some(Box::new(RuntimeTaskSummary {
-                id: id.0.clone(),
-                key: key.as_ref().map(|key| key.0.clone()),
-                name: name.clone(),
                 trigger: trigger_label(trigger),
-                priority: priority.0,
                 join_policy: format!("{join_policy:?}"),
                 cancel_policy: format!("{cancel_policy:?}"),
                 scope: Box::new(scope_summary(group, *scope)),
@@ -240,14 +228,13 @@ fn trigger_label(trigger: &LineTaskTrigger) -> String {
     match trigger {
         LineTaskTrigger::Immediate => "immediate".to_owned(),
         LineTaskTrigger::Mark(name) => format!("mark {name}"),
-        LineTaskTrigger::Delay(duration) => format!("delay {}ns", duration.as_nanos()),
+        LineTaskTrigger::ContentEffect(site) => format!("content effect site {}", site.get()),
+        LineTaskTrigger::Scheduled(site) => format!("scheduled site {}", site.get()),
     }
 }
 
 fn effect_label(effect: &LineEffectRequest) -> String {
     match effect {
-        LineEffectRequest::RegisterHandle { key, .. } => format!("register {key}"),
-        LineEffectRequest::DropHandle { key } => format!("drop {key}"),
         LineEffectRequest::Wait(target) => wait_target_label(target),
         LineEffectRequest::Call(call) => format!("call {}", call.callee),
         LineEffectRequest::Log(log) => format!("log.{}", log.level),

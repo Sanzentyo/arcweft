@@ -13,6 +13,8 @@ use arcweft_bundle::resource_codec::{
     ViewRuntimeScrollRegionBounds, ViewRuntimeTextControlBounds, ViewRuntimeTextControlHandlers,
     ViewRuntimeTextControlOptions, ViewRuntimeTextSelection,
 };
+use arcweft_core::engine::ChoiceState;
+use arcweft_core::plan::ChoiceRuntimeOption;
 use arcweft_layout::stage_placement::StagePlacementContext;
 use arcweft_layout::{LayoutCoordinateSpace, LayoutRect, LayoutSize};
 
@@ -66,29 +68,25 @@ fn inline_image_call_accepts_runtime_length_labels() {
 }
 
 #[test]
-fn viewport_effect_sets_and_clears_runtime_fit() {
-    let contain = RuntimeCall {
-        callee: "player_viewport".to_owned(),
-        args: vec![
-            "width = 1920".to_owned(),
-            "height = 1080px".to_owned(),
-            "fit = \"cover\"".to_owned(),
-        ],
-    };
-    let reset = RuntimeCall {
-        callee: "player_viewport".to_owned(),
-        args: vec!["fit = \"default\"".to_owned()],
-    };
-
-    let fit = viewport_fit_from_effects(None, &[LineEffectRequest::Call(contain.clone())])
-        .expect("viewport fit is set");
-    assert_eq!(fit.design_width, 1920);
-    assert_eq!(fit.design_height, 1080);
-    assert_eq!(fit.scale_policy, ScalePolicy::Cover);
+fn choices_preserve_a_missing_id_without_synthesizing_from_the_label() {
+    let status = FlowFiberStatus::Choice(ChoiceState {
+        id: None,
+        options: vec![ChoiceRuntimeOption {
+            id: None,
+            label: "Listen".to_owned(),
+            target: None,
+            out: None,
+            effects: Vec::new(),
+        }],
+        resume: None,
+    });
 
     assert_eq!(
-        viewport_fit_from_effects(Some(fit), &[LineEffectRequest::Call(reset)]),
-        None
+        choices_from_status(&status),
+        vec![BundleChoice {
+            id: None,
+            label: "Listen".to_owned(),
+        }]
     );
 }
 
@@ -407,29 +405,76 @@ fn malformed_background_clear_preserves_the_existing_slot() {
 }
 
 #[test]
-fn canonical_viewport_command_mutates_direct_runtime_state() {
-    let image = presentation_image_object("image.glass_bg");
+fn malformed_inline_image_arguments_are_rejected_atomically() {
+    let image = presentation_image_object("image.glass_bg.inline");
     let resources = image_runtime_resources(&image);
-    let mut snapshot = BundlePresentationSnapshot::default();
-    let diagnostics = update_snapshot_with_effects(
-        &mut snapshot,
-        &[LineEffectRequest::Call(RuntimeCall {
-            callee: "player_viewport".to_owned(),
-            args: vec![
-                "width = 1920".to_owned(),
-                "height = 1080".to_owned(),
-                "fit = \"stretch\"".to_owned(),
-            ],
-        })],
-        resources,
-    );
+    let malformed = [
+        ("width", "width = 0"),
+        ("fit", "fit = \"bogus\""),
+        ("alignment.x", "alignment.x = 1.5"),
+        ("playback.start", "playback.start = -1ms"),
+        ("transform.m11", "transform.m11 = nan"),
+        ("opacity", "opacity = -0.25"),
+        ("visible", "visible = maybe"),
+        ("depth", "depth = nan"),
+    ];
+    for (argument, replacement) in malformed {
+        let mut call = inline_image_runtime_call();
+        if let Some(existing) = call
+            .args
+            .iter_mut()
+            .find(|candidate| candidate.starts_with(&format!("{argument} =")))
+        {
+            *existing = replacement.to_owned();
+        } else {
+            call.args.push(replacement.to_owned());
+        }
+        let mut snapshot = BundlePresentationSnapshot {
+            revision: 47,
+            images: vec![image.clone()],
+            ..BundlePresentationSnapshot::default()
+        };
+        let before = snapshot.clone();
+        let error = snapshot
+            .update(
+                &DisplayResolution::default(),
+                &FlowFiberStatus::Running,
+                &[LineEffectRequest::Call(call)],
+                resources,
+            )
+            .expect_err("malformed inline image is rejected");
 
-    assert!(diagnostics.is_empty());
+        assert!(matches!(
+            error,
+            BundlePresentationUpdateError::InvalidCommandArgument {
+                callee: "image",
+                argument: actual,
+                ..
+            } if actual == argument
+        ));
+        assert_eq!(snapshot, before);
+    }
+
+    let mut missing_id = inline_image_runtime_call();
+    missing_id
+        .args
+        .retain(|argument| !argument.starts_with("id ="));
+    let mut snapshot = BundlePresentationSnapshot::default();
+    let error = snapshot
+        .update(
+            &DisplayResolution::default(),
+            &FlowFiberStatus::Running,
+            &[LineEffectRequest::Call(missing_id)],
+            resources,
+        )
+        .expect_err("runtime driver requires a source-site-stable inline image id");
     assert_eq!(
-        snapshot.viewport_fit,
-        Some(BundleViewportFit::design(1920, 1080, ScalePolicy::Stretch))
+        error,
+        BundlePresentationUpdateError::MissingCommandArgument {
+            callee: "image",
+            argument: "id",
+        }
     );
-    assert_eq!(snapshot.revision, 1);
 }
 
 #[test]
@@ -447,27 +492,6 @@ fn unknown_presentation_commands_do_not_mutate_direct_runtime_state() {
     let before = snapshot.clone();
     let diagnostics =
         update_snapshot_with_effects(&mut snapshot, &[LineEffectRequest::Call(call)], resources);
-
-    assert!(diagnostics.is_empty());
-    assert_eq!(snapshot, before);
-}
-
-#[test]
-fn unknown_viewport_argument_does_not_mutate_direct_runtime_state() {
-    let mut snapshot = BundlePresentationSnapshot {
-        revision: 43,
-        viewport_fit: Some(BundleViewportFit::raw()),
-        ..BundlePresentationSnapshot::default()
-    };
-    let before = snapshot.clone();
-    let diagnostics = update_snapshot_with_effects(
-        &mut snapshot,
-        &[LineEffectRequest::Call(RuntimeCall {
-            callee: "player_viewport".to_owned(),
-            args: vec!["mystery = true".to_owned()],
-        })],
-        empty_presentation_resources(),
-    );
 
     assert!(diagnostics.is_empty());
     assert_eq!(snapshot, before);

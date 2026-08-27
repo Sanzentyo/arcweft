@@ -22,9 +22,9 @@ use arcweft_bundle::resource_codec::view::{
 use arcweft_bundle::{ArcweftBundle, BundleFormat, BundleManifest, BundleRuntimeSummary};
 use arcweft_core::awbc::schema::{
     AwbcBlock, AwbcBlockId, AwbcEffectSetId, AwbcEntry, AwbcEntryKind, AwbcEntryTarget,
-    AwbcFlowBinding, AwbcFrameLayout, AwbcFrameLayoutId, AwbcFunction, AwbcFunctionFlags,
-    AwbcFunctionId, AwbcFunctionKind, AwbcProgram, AwbcSafePointKind, AwbcSignature,
-    AwbcSignatureId, AwbcStringId, AwbcTableRange, AwbcTerminator,
+    AwbcFlowBinding, AwbcFrameLayout, AwbcFrameLayoutId, AwbcFunction, AwbcFunctionFlag,
+    AwbcFunctionFlags, AwbcFunctionId, AwbcFunctionKind, AwbcProgram, AwbcSafePointKind,
+    AwbcSignature, AwbcSignatureId, AwbcStringId, AwbcTableRange, AwbcTerminator,
 };
 use arcweft_render_text::LineDisplayCatalog;
 use arcweft_source::{SourceDocument, SourceDocumentId, SourceName};
@@ -322,7 +322,7 @@ fn minimal_awbc_program() -> AwbcProgram {
             frame_layout: AwbcFrameLayoutId(0),
             blocks: AwbcTableRange::new(0, 1),
             entry_block: AwbcBlockId(0),
-            flags: AwbcFunctionFlags(AwbcFunctionFlags::DETERMINISTIC),
+            flags: AwbcFunctionFlags::empty().with(AwbcFunctionFlag::Deterministic),
         }],
         flow_bindings: vec![AwbcFlowBinding {
             flow: arcweft_core::plan::FlowRuntimeId::from_checked_declaration_digest(

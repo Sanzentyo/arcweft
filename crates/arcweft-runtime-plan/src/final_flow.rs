@@ -1,5 +1,8 @@
 //! Runtime-plan lowering from one accepted final-HIR project generation.
 
+#[path = "final_flow/line_plan.rs"]
+mod line_plan;
+
 use std::{
     collections::{BTreeMap, BTreeSet},
     sync::Arc,
@@ -11,23 +14,21 @@ use arcweft_core::entry::{
     FlowParameterCoordinate, RuntimeCallableId, RuntimeCallableRole, RuntimeFlowExecutable,
     RuntimeFlowExecutableParameter, RuntimeFlowParameterMode, RuntimeFlowSchema,
 };
-use arcweft_core::line_task::{ChildCancelPolicy, ChildJoinPolicy, LineCleanupPolicy};
 use arcweft_core::plan::{
     FlowRuntimeId, RuntimeAwaitPendingObserverSeed, RuntimeBuiltinIteratorEvidenceSeed,
-    RuntimeChoiceOptionSeed, RuntimeDialogueContentPlanSeedId, RuntimeEffectFieldSeed,
-    RuntimeEntryKind, RuntimeEntrySpec, RuntimeEvaluatedEffectSeed, RuntimeExprSeed,
-    RuntimeFlowMatchArmSeed, RuntimeFlowOpSeed, RuntimeFlowSeed,
+    RuntimeChoiceOptionSeed, RuntimeDialogueContentPlanSeedId, RuntimeDropPolicySeed,
+    RuntimeEffectFieldSeed, RuntimeEntryKind, RuntimeEntrySpec, RuntimeEvaluatedEffectSeed,
+    RuntimeExprSeed, RuntimeFlowMatchArmSeed, RuntimeFlowOpSeed, RuntimeFlowSeed,
     RuntimeFunctionSiteDeclarationSeed, RuntimeFunctionSiteSeedId,
     RuntimeHostTaskRequestTemplateSeed, RuntimeIteratorEvidenceSeed,
-    RuntimeIteratorWitnessEvidenceSeed, RuntimeIteratorWitnessExecutableSeed,
-    RuntimeLineTaskGroupSeed, RuntimeLineTaskNodeSeed, RuntimeLineTaskTriggerSeed,
+    RuntimeIteratorWitnessEvidenceSeed, RuntimeIteratorWitnessExecutableSeed, RuntimeLineId,
     RuntimeLocalDeclarationSeed, RuntimeLocalSeedId, RuntimePatternSeed, RuntimePatternSeedKind,
     RuntimePlan, RuntimePlanBuilder, RuntimePureHelperDeclarationSeed, RuntimePureHelperOrigin,
     RuntimePureHelperSeedId, RuntimePureInputType, RuntimePureOutputType,
     RuntimePureProgramBindingSeed, RuntimeReceiverMode, RuntimeTraitMethodDeclarationSeed,
     RuntimeTraitMethodIdentity, RuntimeTraitMethodSeedId,
 };
-use arcweft_core::task::{HostCapabilityId, NeedId, TaskId, TaskOutcomeContract, TaskPriority};
+use arcweft_core::task::{HostCapabilityId, NeedId, TaskId, TaskOutcomeContract};
 use arcweft_core::time::LogicalDuration;
 use arcweft_core::value::{RuntimeSignedIntWidth, RuntimeUnsignedIntWidth, RuntimeValue};
 use arcweft_lang_hir::expr::{
@@ -66,8 +67,8 @@ use crate::errors::RuntimePlanLowerError;
 use crate::final_expr::FinalExprLowerer;
 use crate::final_pattern::FinalPatternLowerer;
 use crate::semantic_facts::{
-    RuntimeAssertionAdmission, RuntimeAwaitFact, RuntimeDialogueApplication,
-    RuntimeDialogueEffectTrigger, RuntimeEvaluatedEffect, RuntimeIteratorFact,
+    RuntimeAssertionAdmission, RuntimeAwaitFact, RuntimeDialogueApplication, RuntimeDropFadeFact,
+    RuntimeDropPolicyFact, RuntimeEvaluatedEffect, RuntimeIteratorFact,
     RuntimeIteratorWitnessExecutableFact, RuntimeNormalizedType, RuntimePlanSemanticFacts,
     RuntimeResolvedCallDispatch, RuntimeResolvedStaticCallTarget, RuntimeResolvedValue,
     RuntimeSemanticFactsError, RuntimeTraitIdentity, RuntimeTraitMethodFact,
@@ -324,13 +325,7 @@ struct PendingDialogueContentDefinition {
         RuntimeFunctionSiteSeedId,
     )>,
     marks: Box<[String]>,
-    effects: Vec<PendingDialogueEffectDefinition>,
-}
-
-#[derive(Clone)]
-struct PendingDialogueEffectDefinition {
-    trigger: RuntimeDialogueEffectTrigger,
-    target: arcweft_core::plan::RuntimeHostCallTargetSeed,
+    effect_site_count: arcweft_core::runtime_id::RuntimeDialogueEffectSiteCount,
 }
 
 struct LoweredControllerCallable {
@@ -600,7 +595,8 @@ pub fn lower_runtime_plan_with_stats(
         &mut errors,
     );
     define_trait_methods(&context, &trait_definitions, &mut builder, &mut errors);
-    let dialogue_content = lower_dialogue_content(&context, &mut builder, &mut errors);
+    let (dialogue_content, dialogue_assertion_sites) =
+        lower_dialogue_content(&context, &mut builder, &mut errors);
     let context = FinalLoweringContext {
         dialogue_content: &dialogue_content,
         ..context
@@ -609,7 +605,7 @@ pub fn lower_runtime_plan_with_stats(
     let mut entry_owners = collect_entry_inputs(entry_input, &mut errors);
     let mut flow_seeds = Vec::new();
     let mut flow_schemas = Vec::new();
-    let mut assertion_sites = Vec::new();
+    let mut assertion_sites = dialogue_assertion_sites;
     for item in project.items() {
         if matches!(
             item.item().kind(),
@@ -1615,7 +1611,10 @@ fn lower_dialogue_content(
     context: &FinalLoweringContext<'_, '_>,
     builder: &mut RuntimePlanBuilder,
     errors: &mut Vec<RuntimePlanLowerError>,
-) -> BTreeMap<ExprId, RuntimeDialogueContentPlanSeedId> {
+) -> (
+    BTreeMap<ExprId, RuntimeDialogueContentPlanSeedId>,
+    Vec<RuntimeAssertionSite>,
+) {
     let mut value_definitions = Vec::new();
     let mut content_definitions = Vec::new();
     for (owner, application) in context.facts.dialogue_applications() {
@@ -1636,8 +1635,8 @@ fn lower_dialogue_content(
         }
     }
     let mut content_handles = BTreeMap::new();
+    let mut assertion_sites = Vec::new();
     for definition in content_definitions {
-        let line_task_id = definition.line.public_label().into_string();
         let seed = arcweft_core::plan::RuntimeDialogueContentPlanSeed {
             line: definition.line,
             values: definition
@@ -1653,26 +1652,32 @@ fn lower_dialogue_content(
                 .collect::<Vec<_>>()
                 .into_boxed_slice(),
             marks: definition.marks.clone(),
+            effect_site_count: definition.effect_site_count,
         };
         match builder.push_dialogue_content_seed(seed) {
             Ok(handle) => {
-                if let Err(error) = attach_dialogue_effects(
-                    builder,
-                    definition.owner,
-                    &line_task_id,
-                    &definition.marks,
-                    definition.effects,
-                    &handle,
-                ) {
-                    errors.push(RuntimePlanLowerError::new(error));
+                let (group, assertions) =
+                    match line_plan::lower_dialogue_line_plan(context, definition.owner, &handle) {
+                        Ok(group) => group,
+                        Err(error) => {
+                            errors.push(error);
+                            continue;
+                        }
+                    };
+                if let Err(error) = builder
+                    .push_line_task_group_seed(group)
+                    .and_then(|group| builder.attach_line_task_group_seed(&handle, &group))
+                {
+                    errors.push(RuntimePlanLowerError::new(error.to_string()));
                     continue;
                 }
                 content_handles.insert(definition.owner, handle);
+                assertion_sites.extend(assertions);
             }
             Err(error) => errors.push(RuntimePlanLowerError::new(error.to_string())),
         }
     }
-    content_handles
+    (content_handles, assertion_sites)
 }
 
 fn lower_dialogue_application(
@@ -1690,8 +1695,7 @@ fn lower_dialogue_application(
         return None;
     };
     let lowerer = context.expr_lowerer(module);
-    let effects = lower_dialogue_effects(module, &lowerer, application, errors);
-    let mut invalid = effects.is_none();
+    let mut invalid = false;
     let mut values = Vec::new();
     let mut value_definitions = Vec::new();
     for value in application.values() {
@@ -1726,7 +1730,16 @@ fn lower_dialogue_application(
     if invalid {
         return None;
     }
-    let effects = effects?;
+    let Some(effect_site_count) =
+        arcweft_core::runtime_id::RuntimeDialogueEffectSiteCount::try_from_len(
+            application.effects().len(),
+        )
+    else {
+        errors.push(RuntimePlanLowerError::new(
+            "dialogue effect-site count exceeds the runtime u32 admission bound",
+        ));
+        return None;
+    };
     let marks = application
         .content()
         .content()
@@ -1734,8 +1747,11 @@ fn lower_dialogue_application(
         .iter()
         .filter_map(|node| match node {
             RichTextNode::Control {
-                control: RichTextControl::Mark { name },
-            } => Some(name.clone()),
+                control:
+                    RichTextControl::Mark {
+                        diagnostic_name, ..
+                    },
+            } => Some(diagnostic_name.clone()),
             _ => None,
         })
         .collect::<Vec<_>>()
@@ -1746,119 +1762,10 @@ fn lower_dialogue_application(
             line: application.content().line().clone(),
             values,
             marks,
-            effects,
+            effect_site_count,
         },
         value_definitions,
     ))
-}
-
-fn lower_dialogue_effects(
-    module: &HirModule,
-    lowerer: &FinalExprLowerer<'_>,
-    application: &RuntimeDialogueApplication,
-    errors: &mut Vec<RuntimePlanLowerError>,
-) -> Option<Vec<PendingDialogueEffectDefinition>> {
-    let mut effects = Vec::with_capacity(application.effects().len());
-    let mut valid = true;
-    for effect in application.effects() {
-        let expression = match module.resolve_expr(effect.expression) {
-            Ok(expression) => expression,
-            Err(error) => {
-                errors.push(RuntimePlanLowerError::new(format!(
-                    "cannot resolve dialogue effect {:?}: {error}",
-                    effect.expression
-                )));
-                valid = false;
-                continue;
-            }
-        };
-        let HirExprKind::Call(call) = expression.kind() else {
-            errors.push(RuntimePlanLowerError::new(format!(
-                "dialogue effect {:?} is not a checked Call expression",
-                effect.expression
-            )));
-            valid = false;
-            continue;
-        };
-        match lowerer.lower_host_call_target(effect.expression, call) {
-            Ok(Some(target)) => effects.push(PendingDialogueEffectDefinition {
-                trigger: effect.trigger.clone(),
-                target,
-            }),
-            Ok(None) => {
-                errors.push(RuntimePlanLowerError::new(format!(
-                    "dialogue effect {:?} is not a typed host call",
-                    effect.expression
-                )));
-                valid = false;
-            }
-            Err(error) => {
-                errors.push(RuntimePlanLowerError::new(error));
-                valid = false;
-            }
-        }
-    }
-    valid.then_some(effects)
-}
-
-fn attach_dialogue_effects(
-    builder: &mut RuntimePlanBuilder,
-    owner: ExprId,
-    line_task_id: &str,
-    marks: &[String],
-    effects: Vec<PendingDialogueEffectDefinition>,
-    handle: &RuntimeDialogueContentPlanSeedId,
-) -> Result<(), String> {
-    let mut children = Vec::with_capacity(effects.len());
-    for (ordinal, effect) in effects.into_iter().enumerate() {
-        let trigger = match effect.trigger {
-            RuntimeDialogueEffectTrigger::Mark(label) => marks
-                .iter()
-                .position(|mark| mark == &label)
-                .and_then(|index| handle.mark(index))
-                .map(RuntimeLineTaskTriggerSeed::Mark)
-                .ok_or_else(|| {
-                    format!("dialogue application {owner:?} effect mark `{label}` is absent")
-                })?,
-            RuntimeDialogueEffectTrigger::DelayMillis(millis) => millis
-                .checked_mul(1_000_000)
-                .map(LogicalDuration::from_nanos)
-                .map(RuntimeLineTaskTriggerSeed::Delay)
-                .ok_or_else(|| {
-                    format!("dialogue application {owner:?} delay {millis}ms overflows nanoseconds")
-                })?,
-        };
-        children.push(RuntimeLineTaskNodeSeed::Child {
-            id: TaskId(format!("{line_task_id}.effect.{ordinal}")),
-            key: None,
-            name: None,
-            trigger,
-            priority: TaskPriority::default(),
-            join_policy: ChildJoinPolicy::Join,
-            cancel_policy: ChildCancelPolicy::CancelAndJoin,
-            scope: Box::new(RuntimeLineTaskNodeSeed::Action(vec![
-                RuntimeFlowOpSeed::HostCall {
-                    binding: None,
-                    target: effect.target,
-                },
-            ])),
-        });
-    }
-    if children.is_empty() {
-        return Ok(());
-    }
-    let group = RuntimeLineTaskGroupSeed {
-        root: RuntimeLineTaskNodeSeed::Start(children),
-        cancel_rules: Box::new([]),
-        cleanup_completed: Vec::new(),
-        cleanup_cancelled: Vec::new(),
-        cleanup_failed: Vec::new(),
-        cleanup_policy: LineCleanupPolicy::default(),
-    };
-    builder
-        .push_line_task_group_seed(group)
-        .and_then(|group| builder.attach_line_task_group_seed(handle, &group))
-        .map_err(|error| error.to_string())
 }
 
 fn lower_entry_callables(
@@ -2333,6 +2240,7 @@ fn validate_unique_assertion_guards(
 enum RuntimeAssertionOwner {
     Callable(CallableDeclarationId),
     Flow(FlowRuntimeId),
+    Line(RuntimeLineId),
 }
 
 impl RuntimeAssertionOwner {
@@ -2340,6 +2248,7 @@ impl RuntimeAssertionOwner {
         match self {
             Self::Callable(declaration) => declaration.qualified_name(),
             Self::Flow(flow) => flow.canonical_label(),
+            Self::Line(line) => line.canonical_label(),
         }
     }
 }
@@ -2492,19 +2401,25 @@ impl<'a> FinalFlowLowerer<'a> {
     ) -> Result<Vec<RuntimeFlowOpSeed>, RuntimePlanLowerError> {
         let statement = match item {
             HirThreadFlowItem::DialogueApplication(expression) => {
-                self.facts
-                    .dialogue_application(*expression)
-                    .ok_or_else(|| {
-                        RuntimePlanLowerError::new(format!(
-                            "dialogue application {expression:?} has no checked projection fact"
-                        ))
-                    })?;
+                let application =
+                    self.facts
+                        .dialogue_application(*expression)
+                        .ok_or_else(|| {
+                            RuntimePlanLowerError::new(format!(
+                                "dialogue application {expression:?} has no checked projection fact"
+                            ))
+                        })?;
                 let content = self.dialogue_content.get(expression).cloned().ok_or_else(|| {
                     RuntimePlanLowerError::new(format!(
                         "dialogue application {expression:?} has no builder-issued content handle"
                     ))
                 })?;
-                let mut ops = vec![RuntimeFlowOpSeed::Dialogue { content }];
+                let mut ops = vec![RuntimeFlowOpSeed::Dialogue {
+                    content,
+                    result: arcweft_core::plan::RuntimeDialogueResultTargetSeed::discard(
+                        application.line_result().identity(),
+                    ),
+                }];
                 ops.extend(self.lower_flow_tail(tail)?);
                 return Ok(ops);
             }
@@ -2892,7 +2807,8 @@ impl<'a> FinalFlowLowerer<'a> {
         })?;
         if matches!(
             expression.kind(),
-            HirExprKind::Await(_)
+            HirExprKind::DialogueContentApplication(_)
+                | HirExprKind::Await(_)
                 | HirExprKind::Choice(_)
                 | HirExprKind::Loop(_)
                 | HirExprKind::Try(_)
@@ -2950,6 +2866,9 @@ impl<'a> FinalFlowLowerer<'a> {
             return self.lower_host_call_value(expression, continuation, overrides);
         }
         match resolved.kind() {
+            HirExprKind::DialogueContentApplication(_) => {
+                self.lower_dialogue_value(expression, continuation)
+            }
             HirExprKind::Try(operation) => self.lower_flow_value_with_overrides(
                 operation.operand(),
                 RuntimeFlowValueContinuation::Try {
@@ -3022,6 +2941,65 @@ impl<'a> FinalFlowLowerer<'a> {
                 self.apply_value_continuation(value, continuation)
             }
         }
+    }
+
+    fn lower_dialogue_value(
+        &mut self,
+        expression: ExprId,
+        continuation: RuntimeFlowValueContinuation,
+    ) -> Result<Vec<RuntimeFlowOpSeed>, RuntimePlanLowerError> {
+        let application = self.facts.dialogue_application(expression).ok_or_else(|| {
+            RuntimePlanLowerError::new(format!(
+                "dialogue application {expression:?} has no checked projection fact"
+            ))
+        })?;
+        let content = self
+            .dialogue_content
+            .get(&expression)
+            .cloned()
+            .ok_or_else(|| {
+                RuntimePlanLowerError::new(format!(
+                    "dialogue application {expression:?} has no builder-issued content handle"
+                ))
+            })?;
+        let (pattern, tail) = match continuation {
+            RuntimeFlowValueContinuation::Bind { pattern, tail } => (pattern, tail),
+            RuntimeFlowValueContinuation::Ignore(tail) => (
+                RuntimePatternSeed::new(
+                    application.line_result().identity(),
+                    RuntimePatternSeedKind::Discard,
+                ),
+                tail,
+            ),
+            RuntimeFlowValueContinuation::Return
+            | RuntimeFlowValueContinuation::Try { .. }
+            | RuntimeFlowValueContinuation::WrapCarrier { .. }
+            | RuntimeFlowValueContinuation::Compose { .. }
+            | RuntimeFlowValueContinuation::Pipe { .. } => {
+                return Err(RuntimePlanLowerError::new(format!(
+                    "dialogue application {expression:?} requires a direct result-pattern continuation"
+                )));
+            }
+        };
+        if pattern.ty() != application.line_result().identity() {
+            return Err(RuntimePlanLowerError::new(format!(
+                "dialogue application {expression:?} result pattern has the wrong accepted type"
+            )));
+        }
+        let mut ops = vec![RuntimeFlowOpSeed::Dialogue {
+            content,
+            result: arcweft_core::plan::RuntimeDialogueResultTargetSeed::try_new(
+                application.line_result().identity(),
+                pattern,
+            )
+            .map_err(|error| {
+                RuntimePlanLowerError::new(format!(
+                    "dialogue application {expression:?} result target rejected: {error}"
+                ))
+            })?,
+        }];
+        ops.extend(self.lower_flow_tail(tail)?);
+        Ok(ops)
     }
 
     fn lower_pipe_value(
@@ -3746,6 +3724,16 @@ impl<'a> FinalFlowLowerer<'a> {
                         profile,
                     )
                 }
+                RuntimeAssertionOwner::Line(line) => {
+                    crate::assertion_lower::derive_runtime_line_assertion_guard(
+                        self.package,
+                        self.module.key().path(),
+                        line,
+                        ordinal,
+                        condition_index,
+                        profile,
+                    )
+                }
             };
             let condition_expr = FinalExprLowerer::new(
                 self.module,
@@ -3937,6 +3925,28 @@ fn lower_evaluated_effect(
                 message: lower(*message)?,
             }
         }
+        RuntimeEvaluatedEffect::Drop { target, policy, .. } => RuntimeEvaluatedEffectSeed::Drop {
+            target: lower(*target)?,
+            policy: match policy {
+                RuntimeDropPolicyFact::Default => RuntimeDropPolicySeed::Default,
+                RuntimeDropPolicyFact::Cancel => RuntimeDropPolicySeed::Cancel,
+                RuntimeDropPolicyFact::Stop { fade } => RuntimeDropPolicySeed::Stop {
+                    fade: match fade {
+                        RuntimeDropFadeFact::ConstantNanos(value) => RuntimeExprSeed::new(
+                            arcweft_core::pattern::RuntimeCheckedType::Duration
+                                .semantic_identity_digest(),
+                            arcweft_core::plan::RuntimeExprSeedKind::Value(RuntimeValue::Duration(
+                                LogicalDuration::from_nanos(*value),
+                            )),
+                        ),
+                        RuntimeDropFadeFact::Expression(expression) => lower(*expression)?,
+                    },
+                },
+                RuntimeDropPolicyFact::Finish => RuntimeDropPolicySeed::Finish,
+                RuntimeDropPolicyFact::Release => RuntimeDropPolicySeed::Release,
+                RuntimeDropPolicyFact::Detach => RuntimeDropPolicySeed::Detach,
+            },
+        },
     })
 }
 

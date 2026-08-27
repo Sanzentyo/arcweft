@@ -7,6 +7,7 @@
 pub mod catalog;
 pub mod frame;
 pub mod playback;
+pub mod reveal;
 pub mod rich_effects;
 pub mod rich_text;
 pub mod style;
@@ -22,6 +23,9 @@ pub use frame::{
     RichTextRange, RichTextRubyAnnotation, RichTextTextRun, RichTextTextSource,
 };
 pub use playback::{LineDisplayFrameValidationError, LineDisplayStage, LineDisplayStageEnd};
+pub use reveal::{
+    DialogueRevealElapsed, DialogueRevealEvaluation, DialogueRevealPolicy, evaluate_dialogue_reveal,
+};
 pub use rich_effects::{
     Milli, RichTextAngle, RichTextInlineDirection, RichTextJlreqStrictness, RichTextLayout,
     RichTextObjectProxy, RichTextObjectProxyDeclaration, RichTextParam, RichTextPresentation,

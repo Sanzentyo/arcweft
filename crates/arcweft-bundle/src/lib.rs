@@ -1603,9 +1603,9 @@ mod tests {
     use arcweft_core::awbc::schema::{
         AwbcBlock, AwbcBlockId, AwbcConstant, AwbcConstantId, AwbcEffectKind, AwbcEffectPlan,
         AwbcEffectSetId, AwbcEntry, AwbcEntryKind, AwbcEntryTarget, AwbcFlowBinding,
-        AwbcFlowExecutable, AwbcFrameLayout, AwbcFrameLayoutId, AwbcFunction, AwbcFunctionFlags,
-        AwbcFunctionId, AwbcFunctionKind, AwbcSafePointKind, AwbcSignature, AwbcSignatureId,
-        AwbcStringId, AwbcTableRange, AwbcTerminator,
+        AwbcFlowExecutable, AwbcFrameLayout, AwbcFrameLayoutId, AwbcFunction, AwbcFunctionFlag,
+        AwbcFunctionFlags, AwbcFunctionId, AwbcFunctionKind, AwbcSafePointKind, AwbcSignature,
+        AwbcSignatureId, AwbcStringId, AwbcTableRange, AwbcTerminator,
     };
     use arcweft_core::effect::{RuntimeArtifactFingerprint, RuntimeAssertionGuardId};
     use arcweft_core::entry::AgentBudget;
@@ -2256,7 +2256,7 @@ mod tests {
                 frame_layout: AwbcFrameLayoutId(0),
                 blocks: AwbcTableRange::new(0, 1),
                 entry_block: AwbcBlockId(0),
-                flags: AwbcFunctionFlags(AwbcFunctionFlags::DETERMINISTIC),
+                flags: AwbcFunctionFlags::empty().with(AwbcFunctionFlag::Deterministic),
             }],
             flow_bindings: vec![AwbcFlowBinding {
                 flow: flow.clone(),

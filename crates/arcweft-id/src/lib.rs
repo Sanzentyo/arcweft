@@ -64,7 +64,8 @@ pub struct AssetId(PublicId);
 /// assets are discovered by the asset catalog rather than an authored
 /// top-level declaration. Callable declaration families share this authority
 /// instead of maintaining parser-local string tables.
-#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+#[derive(Clone, Copy, Debug, Deserialize, Eq, Hash, Ord, PartialEq, PartialOrd, Serialize)]
+#[serde(rename_all = "snake_case")]
 pub enum DeclarationIdentityFamily {
     Asset,
     Character,

@@ -10,14 +10,15 @@ use crate::patch::PatchCompatibility;
 use crate::{ArcweftBundle, BundleAdapterHostCall, BundleAdapterManifest, BundleManifest};
 use arcweft_core::awbc::schema::{
     AwbcAgentTypeShape, AwbcDigest, AwbcEntryKind, AwbcEntryTarget, AwbcFrameLayout,
-    AwbcFrameSlotRole, AwbcFunctionKind, AwbcProgram, AwbcRuntimeType, AwbcRuntimeTypeShape,
-    AwbcSignature, AwbcSignedIntKind, AwbcStringId, AwbcTypeId, AwbcUnsignedIntKind,
-    AwbcVariantIdentity,
+    AwbcFrameSlotRole, AwbcProgram, AwbcRuntimeType, AwbcRuntimeTypeShape, AwbcSignature,
+    AwbcSignedIntKind, AwbcStringId, AwbcTypeId, AwbcUnsignedIntKind, AwbcVariantIdentity,
 };
 use arcweft_core::pattern::RuntimeSemanticTypeId;
 use serde::{Deserialize, Serialize};
 use std::cmp::Ordering;
 use std::collections::{BTreeMap, BTreeSet};
+
+pub use arcweft_core::awbc::schema::AwbcFunctionKind as RuntimeFunctionKind;
 
 use super::budget::{SectionCodecBudget, check_budget};
 use super::error::SectionCodecError;
@@ -90,6 +91,7 @@ pub enum RuntimeValueKind {
     Nominal,
     Opaque,
     Agent,
+    AgentValue,
     Matrix,
     Tensor,
     Task,
@@ -126,18 +128,6 @@ pub struct FunctionInterfaceFingerprint {
     pub frame_layout_digest: BundleDigest,
     pub flags: u32,
     pub compatibility: TypeCompatibilityLabel,
-}
-
-/// Product/runtime callable families.
-#[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd, Serialize, Deserialize)]
-#[serde(rename_all = "snake_case")]
-pub enum RuntimeFunctionKind {
-    Flow,
-    PureHelper,
-    TraitMethod,
-    StreamTransform,
-    LineTask,
-    Synthetic,
 }
 
 /// Product entrypoint section decoded from `Entrypoints`.
@@ -552,13 +542,13 @@ impl RuntimeTypesSection {
                     public_id,
                     awbc_function_index: u32::try_from(index)
                         .map_err(|_| SectionCodecError::LengthOverflow)?,
-                    kind: RuntimeFunctionKind::from(function.kind),
+                    kind: function.kind,
                     signature_digest,
                     frame_layout_digest,
-                    flags: function.flags.0,
-                    compatibility: if function.flags.0
-                        & arcweft_core::awbc::schema::AwbcFunctionFlags::HAS_DYNAMIC_TARGET
-                        != 0
+                    flags: function.flags.bits(),
+                    compatibility: if function
+                        .flags
+                        .contains(arcweft_core::awbc::schema::AwbcFunctionFlag::HasDynamicTarget)
                     {
                         TypeCompatibilityLabel::CodeGenerational
                     } else {
@@ -938,44 +928,6 @@ impl AdapterRequirementsSection {
     }
 }
 
-impl RuntimeFunctionKind {
-    pub const fn encoded(self) -> u32 {
-        match self {
-            Self::Flow => 201,
-            Self::PureHelper => 202,
-            Self::TraitMethod => 203,
-            Self::StreamTransform => 204,
-            Self::LineTask => 207,
-            Self::Synthetic => 208,
-        }
-    }
-
-    pub const fn from_encoded(value: u32) -> Option<Self> {
-        match value {
-            201 => Some(Self::Flow),
-            202 => Some(Self::PureHelper),
-            203 => Some(Self::TraitMethod),
-            204 => Some(Self::StreamTransform),
-            207 => Some(Self::LineTask),
-            208 => Some(Self::Synthetic),
-            _ => None,
-        }
-    }
-}
-
-impl From<AwbcFunctionKind> for RuntimeFunctionKind {
-    fn from(value: AwbcFunctionKind) -> Self {
-        match value {
-            AwbcFunctionKind::Flow => Self::Flow,
-            AwbcFunctionKind::PureHelper => Self::PureHelper,
-            AwbcFunctionKind::TraitMethod => Self::TraitMethod,
-            AwbcFunctionKind::StreamTransform => Self::StreamTransform,
-            AwbcFunctionKind::LineTask => Self::LineTask,
-            AwbcFunctionKind::Synthetic => Self::Synthetic,
-        }
-    }
-}
-
 impl RuntimeValueKind {
     pub const fn encoded(self) -> u32 {
         match self {
@@ -1009,6 +961,7 @@ impl RuntimeValueKind {
             Self::Shared => 128,
             Self::Reference => 129,
             Self::Function => 130,
+            Self::AgentValue => 131,
         }
     }
 
@@ -1044,6 +997,7 @@ impl RuntimeValueKind {
             128 => Some(Self::Shared),
             129 => Some(Self::Reference),
             130 => Some(Self::Function),
+            131 => Some(Self::AgentValue),
             _ => None,
         }
     }
@@ -1145,7 +1099,7 @@ fn runtime_type_public_id(
         }
         AwbcRuntimeTypeShape::Variant { owner, .. } => match owner {
             AwbcVariantIdentity::Nominal { public_id, .. } => Some(*public_id),
-            AwbcVariantIdentity::Option | AwbcVariantIdentity::Result => return Ok(None),
+            AwbcVariantIdentity::Builtin(_) => return Ok(None),
         },
         AwbcRuntimeTypeShape::Nominal { public_id, .. }
         | AwbcRuntimeTypeShape::NominalRecord { public_id, .. } => Some(*public_id),
@@ -1213,8 +1167,10 @@ fn runtime_type_layout_digest(
                     transcript.write_u8(0);
                     transcript.write_string(program, *public_id)?;
                 }
-                AwbcVariantIdentity::Option => transcript.write_u8(1),
-                AwbcVariantIdentity::Result => transcript.write_u8(2),
+                AwbcVariantIdentity::Builtin(owner) => {
+                    transcript.write_u8(1);
+                    transcript.write_u8(owner.semantic_tag());
+                }
             }
             transcript.write_type_list(program, arguments)?;
             transcript.write_len(cases.len())?;
@@ -1282,6 +1238,7 @@ fn runtime_type_layout_digest(
                 }
             }
         }
+        AwbcRuntimeTypeShape::AgentValue => transcript.write_tag(37),
         AwbcRuntimeTypeShape::MatrixF32 => transcript.write_tag(22),
         AwbcRuntimeTypeShape::MatrixF64 => transcript.write_tag(23),
         AwbcRuntimeTypeShape::TensorF32 => transcript.write_tag(24),
@@ -1550,6 +1507,7 @@ fn runtime_value_kind(ty: &AwbcRuntimeType) -> RuntimeValueKind {
         }
         AwbcRuntimeTypeShape::Opaque { .. } => RuntimeValueKind::Opaque,
         AwbcRuntimeTypeShape::Agent(_) => RuntimeValueKind::Agent,
+        AwbcRuntimeTypeShape::AgentValue => RuntimeValueKind::AgentValue,
         AwbcRuntimeTypeShape::MatrixF32 | AwbcRuntimeTypeShape::MatrixF64 => {
             RuntimeValueKind::Matrix
         }
@@ -1956,7 +1914,7 @@ fn encode_function_interfaces(
             optional_public_ref(public_ids, fingerprint.public_id.as_deref())?,
         );
         write_u32(&mut out, fingerprint.awbc_function_index);
-        write_u32(&mut out, fingerprint.kind.encoded());
+        write_u32(&mut out, u32::from(fingerprint.kind.encoded()));
         write_u32(&mut out, fingerprint.flags);
         write_u32(&mut out, fingerprint.compatibility.encoded());
         out.extend_from_slice(&fingerprint.signature_digest.as_bytes());
@@ -1977,9 +1935,12 @@ fn decode_function_interfaces(
     for _ in 0..count {
         let public_id = public_ref_value(public_ids, reader.read_u32()?)?;
         let awbc_function_index = reader.read_u32()?;
-        let kind = RuntimeFunctionKind::from_encoded(reader.read_u32()?).ok_or(
-            SectionCodecError::NonCanonicalTable("runtime_function_kind"),
-        )?;
+        let kind = u8::try_from(reader.read_u32()?)
+            .ok()
+            .and_then(RuntimeFunctionKind::from_encoded)
+            .ok_or(SectionCodecError::NonCanonicalTable(
+                "runtime_function_kind",
+            ))?;
         let flags = reader.read_u32()?;
         let compatibility = TypeCompatibilityLabel::from_encoded(reader.read_u32()?).ok_or(
             SectionCodecError::NonCanonicalTable("function_compatibility"),
@@ -2643,6 +2604,11 @@ mod opaque_runtime_type_tests {
             RuntimeValueKind::from_encoded(121),
             Some(RuntimeValueKind::Agent)
         );
+        assert_eq!(RuntimeValueKind::AgentValue.encoded(), 131);
+        assert_eq!(
+            RuntimeValueKind::from_encoded(131),
+            Some(RuntimeValueKind::AgentValue)
+        );
         assert_eq!(RuntimeValueKind::Progress.encoded(), 122);
         assert_eq!(
             RuntimeValueKind::from_encoded(122),
@@ -2662,6 +2628,6 @@ mod opaque_runtime_type_tests {
             assert_eq!(kind.encoded(), encoded);
             assert_eq!(RuntimeValueKind::from_encoded(encoded), Some(kind));
         }
-        assert_eq!(RuntimeValueKind::from_encoded(131), None);
+        assert_eq!(RuntimeValueKind::from_encoded(132), None);
     }
 }

@@ -248,7 +248,13 @@ fn validate_inline_failure(
 fn validate_config_strings(value: &RuntimeValue) -> Result<(), CharacterDialogueValueError> {
     let maximum = PRODUCTION_CHARACTER_DIALOGUE_LIMITS.max_config_string_bytes as usize;
     match value {
-        RuntimeValue::String(value) | RuntimeValue::EntityRef(value) if value.len() > maximum => {
+        RuntimeValue::String(value) if value.len() > maximum => {
+            Err(CharacterDialogueValueError::Limit {
+                limit: "config_string_bytes",
+                maximum,
+            })
+        }
+        RuntimeValue::EntityRef(value) if value.runtime_label().len() > maximum => {
             Err(CharacterDialogueValueError::Limit {
                 limit: "config_string_bytes",
                 maximum,

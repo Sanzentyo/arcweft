@@ -8,7 +8,9 @@ use super::{
 };
 use arcweft_character::id::CharacterId;
 use arcweft_core::plan::RuntimeLineId;
-use arcweft_text_model::LineDisplayFrame;
+use arcweft_core::runtime_id::DialogueActivationId;
+use arcweft_core::step::RuntimeDialogueContentEvent;
+use arcweft_text_model::{LineDisplayFrame, LineDisplayStage, RichTextControl};
 use serde::{Deserialize, Serialize};
 use std::collections::{BTreeMap, BTreeSet};
 use thiserror::Error;
@@ -23,6 +25,25 @@ pub struct DialoguePresentationStore {
     next_dialogue_instance_id: u64,
 }
 
+fn dialogue_reveal_view(
+    entry: &DialogueEntryState,
+    stage: LineDisplayStage<'_>,
+) -> DialogueViewReveal {
+    let Some(reveal) = entry.reveal_evaluation() else {
+        return DialogueViewReveal::pending();
+    };
+    let start = stage.reveal_start().min(stage.text().len());
+    let total = stage.text().len().saturating_sub(start);
+    let visible = reveal.visible_end().saturating_sub(start).min(total);
+    let progress = if total == 0 {
+        1_000
+    } else {
+        let value = (visible as u128 * 1_000) / total as u128;
+        u16::try_from(value).map_or(1_000, |value| value)
+    };
+    DialogueViewReveal::from_progress(progress, reveal.is_complete())
+}
+
 /// Failure to apply or restore persistent dialogue View state.
 #[derive(Clone, Debug, Error, Eq, PartialEq)]
 pub enum DialoguePresentationStoreError {
@@ -30,6 +51,10 @@ pub enum DialoguePresentationStoreError {
     IdentityExhausted { identity: &'static str },
     #[error("dialogue presentation {dialogue:?} revision is exhausted")]
     RevisionExhausted { dialogue: DialoguePresentationId },
+    #[error("dialogue reveal logical clock overflowed for entry {entry:?}")]
+    RevealClockOverflow { entry: DialogueEntryId },
+    #[error("dialogue activation {activation:?} is not retained")]
+    UnknownActivation { activation: DialogueActivationId },
     #[error("invalid dialogue presentation snapshot: {message}")]
     InvalidSnapshot { message: String },
 }
@@ -45,6 +70,7 @@ enum DialogueAdvanceOutcome {
     Line {
         revision: DialogueRevision,
         line: RuntimeLineId,
+        activation: DialogueActivationId,
     },
 }
 
@@ -96,6 +122,73 @@ impl DialoguePresentationStore {
                 .filter(|entry| entry.waiting_for_advance)
                 .map(|entry| (dialogue, entry))
         })
+    }
+
+    /// Emits each typed mark/effect coordinate exactly once when its authored
+    /// stage first becomes current. Semantic reveal is stage-based and
+    /// independent from renderer-local typewriter timing, so an instant visual
+    /// reveal follows the same deterministic event path.
+    pub(crate) fn take_reached_content_events(&mut self) -> Vec<RuntimeDialogueContentEvent> {
+        let mut events = Vec::new();
+        for dialogue in self.presentations.values_mut() {
+            let Some(active) = dialogue.active else {
+                continue;
+            };
+            let Some(entry) = dialogue.entries.iter_mut().find(|entry| entry.id == active) else {
+                continue;
+            };
+            let Some(reveal) = entry.reveal_evaluation() else {
+                continue;
+            };
+            for &kind in reveal.reached_content_events() {
+                if entry.revealed_content_events.insert(kind) {
+                    events.push(RuntimeDialogueContentEvent::new(
+                        entry.activation.clone(),
+                        kind,
+                    ));
+                }
+            }
+        }
+        events
+    }
+
+    pub(crate) fn advance_reveal(
+        &mut self,
+        dt: arcweft_core::time::LogicalDuration,
+    ) -> Result<(), DialoguePresentationStoreError> {
+        let mut next = self.clone();
+        for dialogue in next.presentations.values_mut() {
+            let Some(active) = dialogue.active else {
+                continue;
+            };
+            let Some(entry) = dialogue.entries.iter_mut().find(|entry| entry.id == active) else {
+                continue;
+            };
+            if entry.reveal_complete {
+                continue;
+            }
+            entry.reveal_elapsed = entry
+                .reveal_elapsed
+                .checked_add(dt)
+                .ok_or(DialoguePresentationStoreError::RevealClockOverflow { entry: entry.id })?;
+        }
+        *self = next;
+        Ok(())
+    }
+
+    pub(crate) fn complete_reveal(
+        &mut self,
+        target: DialogueAdvanceTarget,
+    ) -> BundlePresentationTransition {
+        match self.complete_reveal_target(target) {
+            Ok(revision) => {
+                BundlePresentationTransition::DialogueRevealCompleted { target, revision }
+            }
+            Err(reason) => BundlePresentationTransition::DialogueAdvanceRejected {
+                target: Some(target),
+                reason,
+            },
+        }
     }
 
     /// Re-resolves every retained frame's presentation name in one atomic store update.
@@ -166,11 +259,7 @@ impl DialoguePresentationStore {
                             page_count: u64::try_from(entry.frame.page_count())
                                 .expect("View runtime targets have at most u64 addressable pages"),
                         },
-                        reveal: if entry.waiting_for_advance {
-                            DialogueViewReveal::complete()
-                        } else {
-                            DialogueViewReveal::pending()
-                        },
+                        reveal: dialogue_reveal_view(entry, stage),
                         primary_action: DialogueViewPrimaryAction {
                             target: dialogue.advance_target(),
                         },
@@ -196,27 +285,29 @@ impl DialoguePresentationStore {
         Ok(())
     }
 
-    /// Selects the newest occurrence matching the runtime's waiting line and
+    /// Selects the exact occurrence named by the runtime activation key and
     /// clears actionable state from every other authored dialogue View.
-    pub fn synchronize_waiting_line(
+    pub fn synchronize_waiting_activation(
         &mut self,
-        line: Option<&RuntimeLineId>,
+        activation: Option<&DialogueActivationId>,
     ) -> Result<(), DialoguePresentationStoreError> {
-        let selected = line.and_then(|line| {
+        let selected = activation.and_then(|activation| {
             self.presentations
                 .values()
                 .flat_map(|dialogue| {
                     dialogue.entries.iter().filter_map(move |entry| {
-                        (&entry.frame.line == line).then_some((
-                            dialogue.id,
-                            entry.id,
-                            entry.instance,
-                        ))
+                        (&entry.activation == activation).then_some((dialogue.id, entry.id))
                     })
                 })
-                .max_by_key(|(_, _, instance)| *instance)
-                .map(|(dialogue, entry, _)| (dialogue, entry))
+                .next()
         });
+        if selected.is_none()
+            && let Some(activation) = activation
+        {
+            return Err(DialoguePresentationStoreError::UnknownActivation {
+                activation: activation.clone(),
+            });
+        }
         let mut next = self.clone();
         for dialogue in next.presentations.values_mut() {
             let selected_entry = selected
@@ -248,7 +339,7 @@ impl DialoguePresentationStore {
     pub(crate) fn advance_dialogue(
         &mut self,
         target: DialogueAdvanceTarget,
-    ) -> (BundlePresentationTransition, Option<RuntimeLineId>) {
+    ) -> (BundlePresentationTransition, Option<DialogueActivationId>) {
         match self.advance_target(target) {
             Ok(DialogueAdvanceOutcome::Stage {
                 revision,
@@ -267,13 +358,17 @@ impl DialoguePresentationStore {
                 },
                 None,
             ),
-            Ok(DialogueAdvanceOutcome::Line { revision, line }) => (
+            Ok(DialogueAdvanceOutcome::Line {
+                revision,
+                line,
+                activation,
+            }) => (
                 BundlePresentationTransition::RuntimeLineAdvanceQueued {
                     target,
                     revision,
                     line: line.clone(),
                 },
-                Some(line),
+                Some(activation),
             ),
             Err(reason) => (
                 BundlePresentationTransition::DialogueAdvanceRejected {
@@ -296,8 +391,15 @@ impl DialoguePresentationStore {
         }
         let mut entry_ids = BTreeSet::new();
         let mut instances = BTreeSet::new();
+        let mut activations = BTreeSet::new();
         for (id, dialogue) in &self.presentations {
-            self.validate_presentation_record(*id, dialogue, &mut entry_ids, &mut instances)?;
+            self.validate_presentation_record(
+                *id,
+                dialogue,
+                &mut entry_ids,
+                &mut instances,
+                &mut activations,
+            )?;
         }
         Self::validate_cursor(
             "presentation",
@@ -322,6 +424,7 @@ impl DialoguePresentationStore {
         dialogue: &DialoguePresentation,
         entry_ids: &mut BTreeSet<DialogueEntryId>,
         instances: &mut BTreeSet<DialogueInstanceId>,
+        activations: &mut BTreeSet<DialogueActivationId>,
     ) -> Result<(), DialoguePresentationStoreError> {
         if id != dialogue.id {
             return Err(DialoguePresentationStoreError::InvalidSnapshot {
@@ -353,7 +456,7 @@ impl DialoguePresentationStore {
             });
         }
         for entry in &dialogue.entries {
-            Self::validate_entry_record(dialogue, entry, entry_ids, instances)?;
+            Self::validate_entry_record(dialogue, entry, entry_ids, instances, activations)?;
         }
         Ok(())
     }
@@ -363,6 +466,7 @@ impl DialoguePresentationStore {
         entry: &DialogueEntryState,
         entry_ids: &mut BTreeSet<DialogueEntryId>,
         instances: &mut BTreeSet<DialogueInstanceId>,
+        activations: &mut BTreeSet<DialogueActivationId>,
     ) -> Result<(), DialoguePresentationStoreError> {
         if !entry_ids.insert(entry.id) {
             return Err(DialoguePresentationStoreError::InvalidSnapshot {
@@ -374,6 +478,14 @@ impl DialoguePresentationStore {
                 message: format!(
                     "dialogue occurrence {:?} appears more than once",
                     entry.instance
+                ),
+            });
+        }
+        if !activations.insert(entry.activation.clone()) {
+            return Err(DialoguePresentationStoreError::InvalidSnapshot {
+                message: format!(
+                    "dialogue activation {:?} appears more than once",
+                    entry.activation
                 ),
             });
         }
@@ -403,6 +515,39 @@ impl DialoguePresentationStore {
                 ),
             });
         }
+        let mut available_content_events = BTreeSet::new();
+        for marker in &entry.frame.display_map.controls {
+            let event = match marker.control {
+                RichTextControl::Mark { mark, .. } => Some(
+                    arcweft_core::step::RuntimeDialogueContentEventKind::Mark(mark),
+                ),
+                RichTextControl::Effect { site } => Some(
+                    arcweft_core::step::RuntimeDialogueContentEventKind::Effect(site),
+                ),
+                _ => None,
+            };
+            if let Some(event) = event
+                && !available_content_events.insert(event)
+            {
+                return Err(DialoguePresentationStoreError::InvalidSnapshot {
+                    message: format!(
+                        "dialogue entry {:?} repeats content event {event:?}",
+                        entry.id
+                    ),
+                });
+            }
+        }
+        if !entry
+            .revealed_content_events
+            .is_subset(&available_content_events)
+        {
+            return Err(DialoguePresentationStoreError::InvalidSnapshot {
+                message: format!(
+                    "dialogue entry {:?} records an unknown revealed content event",
+                    entry.id
+                ),
+            });
+        }
         Ok(())
     }
 
@@ -411,18 +556,23 @@ impl DialoguePresentationStore {
         operation: &DialoguePresentationOperation,
     ) -> Result<(), DialoguePresentationStoreError> {
         match operation {
-            DialoguePresentationOperation::Append { view, frame } => {
-                self.insert_entry(view, frame, false)
-            }
-            DialoguePresentationOperation::Replace { view, frame } => {
-                self.insert_entry(view, frame, true)
-            }
+            DialoguePresentationOperation::Append {
+                activation,
+                view,
+                frame,
+            } => self.insert_entry(activation, view, frame, false),
+            DialoguePresentationOperation::Replace {
+                activation,
+                view,
+                frame,
+            } => self.insert_entry(activation, view, frame, true),
             DialoguePresentationOperation::Clear { view } => self.clear_view(view),
         }
     }
 
     fn insert_entry(
         &mut self,
+        activation: &DialogueActivationId,
         view: &DialogueViewDefinition,
         frame: &LineDisplayFrame,
         replace: bool,
@@ -435,10 +585,14 @@ impl DialoguePresentationStore {
             "occurrence",
         )?);
         let entry = DialogueEntryState {
+            activation: activation.clone(),
             id: entry_id,
             instance,
             stage: DialogueStageIndex::default(),
             waiting_for_advance: false,
+            reveal_elapsed: arcweft_core::time::LogicalDuration::from_nanos(0),
+            reveal_complete: false,
+            revealed_content_events: BTreeSet::new(),
             frame: frame.clone(),
         };
         let presentation = self
@@ -540,6 +694,7 @@ impl DialoguePresentationStore {
             });
         }
         let line = entry.frame.line.clone();
+        let activation = entry.activation.clone();
         entry.waiting_for_advance = false;
         dialogue
             .bump_revision()
@@ -547,7 +702,43 @@ impl DialoguePresentationStore {
         Ok(DialogueAdvanceOutcome::Line {
             revision: dialogue.revision,
             line,
+            activation,
         })
+    }
+
+    fn complete_reveal_target(
+        &mut self,
+        target: DialogueAdvanceTarget,
+    ) -> Result<DialogueRevision, DialogueAdvanceRejection> {
+        let dialogue = self
+            .presentations
+            .get_mut(&target.dialogue)
+            .ok_or(DialogueAdvanceRejection::UnknownPresentation)?;
+        if target.revision != dialogue.revision {
+            return Err(DialogueAdvanceRejection::StaleRevision);
+        }
+        if dialogue.active != Some(target.entry) {
+            return Err(DialogueAdvanceRejection::StaleEntry);
+        }
+        let entry = dialogue
+            .entries
+            .iter_mut()
+            .find(|entry| entry.id == target.entry)
+            .ok_or(DialogueAdvanceRejection::StaleEntry)?;
+        if target.instance != entry.instance {
+            return Err(DialogueAdvanceRejection::StaleInstance);
+        }
+        if target.stage != entry.stage {
+            return Err(DialogueAdvanceRejection::StaleStage);
+        }
+        if entry.reveal_complete {
+            return Err(DialogueAdvanceRejection::RevealAlreadyComplete);
+        }
+        entry.reveal_complete = true;
+        dialogue
+            .bump_revision()
+            .map_err(|_| DialogueAdvanceRejection::RevisionExhausted)?;
+        Ok(dialogue.revision)
     }
 
     fn allocate_identity(

@@ -742,6 +742,7 @@ fn validate_control(
         RichTextControl::Clear => ("clear", None, None),
         RichTextControl::Reset => ("reset", None, None),
         RichTextControl::Mark { .. } => ("mark", None, None),
+        RichTextControl::Effect { .. } => ("effect", None, None),
     };
     match (expected_text, source, marker.range) {
         (Some(expected_text), Some(source), Some(range)) => {

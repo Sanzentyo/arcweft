@@ -753,6 +753,8 @@ fn collect_flow_op_host_calls(op: &FlowOp) -> Vec<String> {
         FlowOp::Bind(_)
         | FlowOp::Let { .. }
         | FlowOp::AssignNominalField { .. }
+        | FlowOp::LineOperation { .. }
+        | FlowOp::CommitDialogueResult { .. }
         | FlowOp::Dialogue { .. }
         | FlowOp::Choice { .. }
         | FlowOp::Break(_)
@@ -898,6 +900,8 @@ fn collect_flow_op_static_image_asset_refs(op: &FlowOp) -> Vec<String> {
         FlowOp::Bind(_)
         | FlowOp::Let { .. }
         | FlowOp::AssignNominalField { .. }
+        | FlowOp::LineOperation { .. }
+        | FlowOp::CommitDialogueResult { .. }
         | FlowOp::Dialogue { .. }
         | FlowOp::Choice { .. }
         | FlowOp::HostCall { .. }
@@ -940,9 +944,8 @@ fn static_image_asset_ref_for_template(
 fn static_image_asset_ref_expr(expr: &RuntimeExpr) -> Option<String> {
     match expr.kind() {
         RuntimeExprKind::EntityRef(id) => Some(id.runtime_label()),
-        RuntimeExprKind::Value(RuntimeValue::EntityRef(id) | RuntimeValue::String(id)) => {
-            Some(id.clone())
-        }
+        RuntimeExprKind::Value(RuntimeValue::EntityRef(id)) => Some(id.runtime_label()),
+        RuntimeExprKind::Value(RuntimeValue::String(id)) => Some(id.clone()),
         _ => None,
     }
 }
@@ -993,9 +996,7 @@ fn collect_line_effect_static_image_asset_refs(effect: &LineEffectRequest) -> Ve
         LineEffectRequest::Call(call) => static_image_asset_ref_for_runtime_call(call)
             .into_iter()
             .collect(),
-        LineEffectRequest::RegisterHandle { .. }
-        | LineEffectRequest::DropHandle { .. }
-        | LineEffectRequest::Wait(_)
+        LineEffectRequest::Wait(_)
         | LineEffectRequest::Log(_)
         | LineEffectRequest::SignalWrite(_)
         | LineEffectRequest::MetricWrite(_)

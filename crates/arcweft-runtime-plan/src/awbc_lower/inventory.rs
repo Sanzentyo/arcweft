@@ -493,6 +493,7 @@ impl AwbcInventory {
             AwbcRuntimeTypeShape::Duration => RuntimeCheckedType::Duration,
             AwbcRuntimeTypeShape::Progress => RuntimeCheckedType::Progress,
             AwbcRuntimeTypeShape::EntityRef => RuntimeCheckedType::EntityReference,
+            AwbcRuntimeTypeShape::AgentValue => RuntimeCheckedType::AgentValue,
             AwbcRuntimeTypeShape::Bytes => RuntimeCheckedType::Bytes,
             AwbcRuntimeTypeShape::Never => RuntimeCheckedType::Never,
             AwbcRuntimeTypeShape::Agent(AwbcAgentTypeShape::Leaf(agent)) => {
@@ -703,7 +704,7 @@ impl AwbcInventory {
             RuntimeValue::String(value) => AwbcConstant::String(self.intern_string(value)),
             RuntimeValue::Char(value) => AwbcConstant::Char(u32::from(*value)),
             RuntimeValue::Duration(value) => AwbcConstant::DurationNanos(value.as_nanos()),
-            RuntimeValue::EntityRef(value) => AwbcConstant::EntityRef(self.intern_string(value)),
+            RuntimeValue::EntityRef(value) => AwbcConstant::EntityRef(value.clone()),
             RuntimeValue::Tuple(items) => AwbcConstant::Tuple(
                 items
                     .iter()
@@ -960,8 +961,10 @@ impl AwbcInventory {
                         nominal.as_str() == self.string(*public_id)
                             && *semantic_identity == row.semantic_identity()
                     }
-                    (RuntimeVariantIdentity::Option, AwbcVariantIdentity::Option)
-                    | (RuntimeVariantIdentity::Result, AwbcVariantIdentity::Result) => true,
+                    (
+                        RuntimeVariantIdentity::Builtin(runtime),
+                        AwbcVariantIdentity::Builtin(awbc),
+                    ) => runtime == awbc,
                     _ => false,
                 };
                 assert!(
@@ -1131,7 +1134,7 @@ impl AwbcInventory {
             frame_layout: AwbcFrameLayoutId::default(),
             blocks: AwbcTableRange::new(0, 0),
             entry_block: AwbcBlockId::default(),
-            flags: AwbcFunctionFlags(0),
+            flags: AwbcFunctionFlags::empty(),
         });
         id
     }
@@ -1210,14 +1213,34 @@ impl AwbcInventory {
         plan: AwbcTaskPlanId,
         item_binding: AwbcRegisterId,
         limit: usize,
-    ) {
-        let limit = u32::try_from(limit).unwrap_or(u32::MAX).max(1);
-        if let Some(task) = self.program.task_plans.get_mut(plan.index()) {
-            task.many = Some(AwbcAwaitManyPolicy {
-                item_binding,
-                limit,
-            });
+    ) -> Result<(), AwbcLowerDiagnostic> {
+        let limit = u32::try_from(limit).map_err(|_| {
+            AwbcLowerDiagnostic::error(
+                format!("task_plan.{}", plan.0),
+                format!("AwaitMany limit {limit} exceeds the u32 AWBC domain"),
+            )
+        })?;
+        if limit == 0 {
+            return Err(AwbcLowerDiagnostic::error(
+                format!("task_plan.{}", plan.0),
+                "AwaitMany limit must be positive",
+            ));
         }
+        let task = self
+            .program
+            .task_plans
+            .get_mut(plan.index())
+            .ok_or_else(|| {
+                AwbcLowerDiagnostic::error(
+                    format!("task_plan.{}", plan.0),
+                    "AwaitMany policy references an absent AWBC task plan",
+                )
+            })?;
+        task.many = Some(AwbcAwaitManyPolicy {
+            item_binding,
+            limit,
+        });
+        Ok(())
     }
 
     pub fn intern_content_unit(
@@ -1239,6 +1262,7 @@ impl AwbcInventory {
         self.program.content_units.push(AwbcContentUnit {
             public_id,
             marks: Vec::new(),
+            effect_site_count: 0,
             line_task_group: group,
             display: None,
             source: None,
@@ -1273,12 +1297,15 @@ impl AwbcInventory {
         id
     }
 
-    pub fn intern_evaluated_effect(&mut self, effect: &RuntimeEffectExpr) -> AwbcEffectPlanId {
-        let descriptor = effect.descriptor();
+    pub fn intern_evaluated_effect(
+        &mut self,
+        effect: &RuntimeEffectExpr,
+    ) -> Option<AwbcEffectPlanId> {
+        let descriptor = effect.host_descriptor()?;
         let arg_count = effect.argument_exprs().len();
         let key = format!("effect:evaluated:{descriptor:?}:{arg_count}");
         if let Some(id) = self.effects.get(&key).copied() {
-            return id;
+            return Some(id);
         }
         let id = AwbcEffectPlanId(table_index(self.program.effect_plans.len()));
         let kind = effect_kind(&descriptor);
@@ -1296,7 +1323,7 @@ impl AwbcInventory {
             resources: Vec::new(),
         });
         self.effects.insert(key, id);
-        id
+        Some(id)
     }
 
     pub fn intern_audio_effect(
@@ -1747,7 +1774,8 @@ impl AwbcInventory {
             frame_layout: layout,
             blocks: AwbcTableRange::new(block.0, 1),
             entry_block: block,
-            flags: AwbcFunctionFlags(AwbcFunctionFlags::DETERMINISTIC),
+            flags: AwbcFunctionFlags::empty()
+                .with(arcweft_core::awbc::schema::AwbcFunctionFlag::Deterministic),
         })
     }
 }
@@ -1806,8 +1834,6 @@ const fn unsigned_kind(value: RuntimeUInt) -> AwbcUnsignedIntKind {
 
 fn effect_kind(effect: &LineEffectRequest) -> AwbcEffectKind {
     match effect {
-        LineEffectRequest::RegisterHandle { .. } => AwbcEffectKind::RegisterHandle,
-        LineEffectRequest::DropHandle { .. } => AwbcEffectKind::DropHandle,
         LineEffectRequest::Wait(_) => AwbcEffectKind::Wait,
         LineEffectRequest::Audio(_) => AwbcEffectKind::Audio,
         LineEffectRequest::Call(_) => AwbcEffectKind::Call,
@@ -1846,14 +1872,7 @@ fn effect_static_args(
     effect: &LineEffectRequest,
 ) -> Vec<AwbcConstantId> {
     match effect {
-        LineEffectRequest::RegisterHandle { key, handle } => {
-            vec![
-                inventory.constant_string(key),
-                inventory.constant_string(handle),
-            ]
-        }
-        LineEffectRequest::DropHandle { key }
-        | LineEffectRequest::Return(key)
+        LineEffectRequest::Return(key)
         | LineEffectRequest::Goto(key)
         | LineEffectRequest::Panic(key)
         | LineEffectRequest::Fail(key)

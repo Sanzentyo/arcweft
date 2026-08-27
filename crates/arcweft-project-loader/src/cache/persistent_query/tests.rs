@@ -6,9 +6,9 @@ use crate::cache::{record::CacheRecord, store::FilesystemCacheStore};
 use arcweft_core::awbc::schema::{
     AwbcBlock, AwbcBlockId, AwbcConstant, AwbcConstantId, AwbcEffectKind, AwbcEffectPlan,
     AwbcEffectSetId, AwbcEntry, AwbcEntryKind, AwbcEntryTarget, AwbcFlowBinding,
-    AwbcFlowExecutable, AwbcFrameLayout, AwbcFrameLayoutId, AwbcFunction, AwbcFunctionFlags,
-    AwbcFunctionId, AwbcFunctionKind, AwbcProgram, AwbcSafePointKind, AwbcSignature,
-    AwbcSignatureId, AwbcStringId, AwbcTableRange, AwbcTerminator,
+    AwbcFlowExecutable, AwbcFrameLayout, AwbcFrameLayoutId, AwbcFunction, AwbcFunctionFlag,
+    AwbcFunctionFlags, AwbcFunctionId, AwbcFunctionKind, AwbcProgram, AwbcSafePointKind,
+    AwbcSignature, AwbcSignatureId, AwbcStringId, AwbcTableRange, AwbcTerminator,
 };
 use arcweft_core::effect::RuntimeAssertionGuardId;
 use arcweft_core::entry::{FlowContractHash, RuntimeFlowExecutable};
@@ -398,7 +398,7 @@ fn minimal_awbc_bytes() -> Vec<u8> {
             frame_layout: AwbcFrameLayoutId(0),
             blocks: AwbcTableRange::new(0, 1),
             entry_block: AwbcBlockId(0),
-            flags: AwbcFunctionFlags(AwbcFunctionFlags::DETERMINISTIC),
+            flags: AwbcFunctionFlags::empty().with(AwbcFunctionFlag::Deterministic),
         }],
         flow_bindings: vec![AwbcFlowBinding {
             flow: flow.clone(),

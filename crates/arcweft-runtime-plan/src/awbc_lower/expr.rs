@@ -3,11 +3,11 @@ use crate::awbc_lower::inventory::{AwbcInventory, PendingAwbcClosure};
 use crate::awbc_lower::pattern::{admitted_plan_type, admitted_variant_case_name, lower_pattern};
 use crate::awbc_lower::{table_index, table_range_len};
 use arcweft_core::awbc::schema::{
-    AwbcBinaryOp, AwbcBindMode, AwbcBlock, AwbcBlockId, AwbcEffectSetId, AwbcFunction,
-    AwbcFunctionFlags, AwbcFunctionKind, AwbcInstruction, AwbcIntrinsic, AwbcIntrinsicId,
-    AwbcPatternId, AwbcPureHelperId, AwbcRegisterId, AwbcRuntimeTypeShape, AwbcSafePointKind,
-    AwbcScopeId, AwbcTableRange, AwbcTerminator, AwbcTraitMethodId, AwbcTrapCode, AwbcUnaryOp,
-    AwbcUnsignedIntKind,
+    AwbcBinaryOp, AwbcBindMode, AwbcBlock, AwbcBlockId, AwbcEffectSetId, AwbcFieldProjection,
+    AwbcFunction, AwbcFunctionFlag, AwbcFunctionFlags, AwbcFunctionKind, AwbcInstruction,
+    AwbcIntrinsic, AwbcIntrinsicId, AwbcPatternId, AwbcPureHelperId, AwbcRegisterId,
+    AwbcRuntimeTypeShape, AwbcSafePointKind, AwbcScopeId, AwbcTableRange, AwbcTerminator,
+    AwbcTraitMethodId, AwbcTrapCode, AwbcUnaryOp, AwbcUnsignedIntKind,
 };
 use arcweft_core::entry::RuntimeCallableId;
 use arcweft_core::pattern::RuntimePattern;
@@ -70,7 +70,7 @@ impl<'a, 'b, 'plan> AwbcExprLowerer<'a, 'b, 'plan> {
                 let ty = admitted_plan_type(self.inventory, self.plan, expr.ty());
                 let dst = self.frame.temp(ty);
                 let constant = self.inventory.constant_runtime_value_typed(
-                    &arcweft_core::value::RuntimeValue::EntityRef(value.runtime_label()),
+                    &arcweft_core::value::RuntimeValue::EntityRef(value.clone()),
                     ty,
                 );
                 self.inventory
@@ -82,9 +82,9 @@ impl<'a, 'b, 'plan> AwbcExprLowerer<'a, 'b, 'plan> {
                     agent.operands().len() + usize::from(agent.choice().is_some()),
                 );
                 if let Some(choice) = agent.choice() {
-                    let entity_ty = self.inventory.intern_type(AwbcRuntimeTypeShape::EntityRef);
+                    let entity_ty = self.inventory.intern_type(AwbcRuntimeTypeShape::String);
                     operands.push(self.load_runtime_const(
-                        &arcweft_core::value::RuntimeValue::EntityRef(choice.as_str().to_owned()),
+                        &arcweft_core::value::RuntimeValue::String(choice.as_str().to_owned()),
                         entity_ty,
                     ));
                 }
@@ -254,20 +254,25 @@ impl<'a, 'b, 'plan> AwbcExprLowerer<'a, 'b, 'plan> {
                 let dst = self.frame.temp(field_type);
                 match field {
                     RuntimeFieldProjection::OpaqueRecord { field, .. } => {
-                        self.inventory.push_instruction(
-                            AwbcInstruction::ProjectOpaqueRecordField {
-                                dst,
-                                target,
+                        self.inventory.push_instruction(AwbcInstruction::ProjectField {
+                            dst,
+                            target,
+                            field: AwbcFieldProjection::OpaqueRecord {
                                 owner: target_ty,
                                 field: field.zero_based(),
                                 field_type,
                             },
-                        );
+                        });
                     }
                     _ => {
-                        let field = self.inventory.intern_string(&field.label());
-                        self.inventory
-                            .push_instruction(AwbcInstruction::ProjectField { dst, target, field });
+                        let field = AwbcFieldProjection::Named(
+                            self.inventory.intern_string(&field.label()),
+                        );
+                        self.inventory.push_instruction(AwbcInstruction::ProjectField {
+                            dst,
+                            target,
+                            field,
+                        });
                     }
                 }
                 dst
@@ -747,7 +752,7 @@ pub(crate) fn lower_pending_closures(inventory: &mut AwbcInventory, plan: &Runti
                 frame_layout: layout,
                 blocks: AwbcTableRange::new(block.0, block_len),
                 entry_block: block,
-                flags: AwbcFunctionFlags(AwbcFunctionFlags::DETERMINISTIC),
+                flags: AwbcFunctionFlags::empty().with(AwbcFunctionFlag::Deterministic),
             },
         );
     }

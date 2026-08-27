@@ -1,5 +1,9 @@
 use arcweft_character::id::CharacterId;
-use arcweft_core::{entry::RuntimeValueDigest, plan::RuntimeLineId};
+use arcweft_core::{
+    entry::RuntimeValueDigest,
+    plan::RuntimeLineId,
+    runtime_id::{DialogueActivationId, RuntimeDialogueContentPlanId, RuntimePersistentFiberId},
+};
 use arcweft_dialogue::InlineFailurePolicy;
 use arcweft_id::TextKey;
 use arcweft_render_text::{RuntimeLineContext, resolve_frame};
@@ -17,6 +21,17 @@ mod support;
 
 fn line_id(value: &str) -> RuntimeLineId {
     RuntimeLineId::from_runtime_line_value(value).expect("test line ID is valid")
+}
+
+fn activation(occurrence: u64) -> DialogueActivationId {
+    DialogueActivationId::new(
+        arcweft_core::effect::RuntimeArtifactFingerprint::try_from_bytes([0x47; 32])
+            .expect("fixture artifact"),
+        RuntimePersistentFiberId::from_allocated(1),
+        serde_json::from_value::<RuntimeDialogueContentPlanId>(serde_json::json!(1))
+            .expect("fixture content identity"),
+        occurrence,
+    )
 }
 
 fn source_ref() -> ProductSourceRef {
@@ -89,10 +104,12 @@ fn same_view_history_mounts_only_its_active_occurrence() {
     store
         .apply_operations(&[
             DialoguePresentationOperation::append(
+                activation(0),
                 view_definition("view.Dialogue"),
                 resolved_frame("line.first", "view.Dialogue", "first"),
             ),
             DialoguePresentationOperation::append(
+                activation(1),
                 view_definition("view.Dialogue"),
                 resolved_frame("line.second", "view.Dialogue", "second"),
             ),
@@ -117,8 +134,8 @@ fn same_view_history_mounts_only_its_active_occurrence() {
     assert!(inputs[0].state.primary_action.target.is_none());
 
     store
-        .synchronize_waiting_line(Some(&line_id("line.first")))
-        .expect("runtime waiting line selects its retained entry");
+        .synchronize_waiting_activation(Some(&activation(0)))
+        .expect("runtime waiting activation selects its retained entry");
     let dialogue = store
         .get_by_definition(&view_definition("view.Dialogue"))
         .expect("dialogue View presentation remains retained");
@@ -135,19 +152,52 @@ fn same_view_history_mounts_only_its_active_occurrence() {
 }
 
 #[test]
+fn unknown_waiting_activation_is_rejected_without_mutating_the_store() {
+    let mut store = DialoguePresentationStore::default();
+    store
+        .apply_operations(&[DialoguePresentationOperation::append(
+            activation(10),
+            view_definition("view.Dialogue"),
+            resolved_frame("line.only", "view.Dialogue", "only"),
+        )])
+        .expect("dialogue append applies");
+    let retained = activation(10);
+    store
+        .synchronize_waiting_activation(Some(&retained))
+        .expect("retained activation selects its entry");
+    let before = store.clone();
+    let unknown = activation(11);
+
+    let error = store
+        .synchronize_waiting_activation(Some(&unknown))
+        .expect_err("unknown activation must fail closed");
+
+    assert_eq!(
+        error,
+        arcweft_runtime_driver::dialogue::DialoguePresentationStoreError::UnknownActivation {
+            activation: unknown,
+        }
+    );
+    assert_eq!(store, before);
+}
+
+#[test]
 fn authored_view_definitions_keep_independent_order_and_revisions() {
     let mut store = DialoguePresentationStore::default();
     store
         .apply_operations(&[
             DialoguePresentationOperation::append(
+                activation(2),
                 view_definition("view.MainDialogue"),
                 resolved_frame("line.main.first", "view.MainDialogue", "main-1"),
             ),
             DialoguePresentationOperation::append(
+                activation(3),
                 view_definition("view.SideDialogue"),
                 resolved_frame("line.side.first", "view.SideDialogue", "side-1"),
             ),
             DialoguePresentationOperation::append(
+                activation(4),
                 view_definition("view.MainDialogue"),
                 resolved_frame("line.main.second", "view.MainDialogue", "main-2"),
             ),
@@ -181,11 +231,13 @@ fn authored_view_definitions_keep_independent_order_and_revisions() {
     store
         .apply_operations(&[
             DialoguePresentationOperation::replace(
+                activation(5),
                 view_definition("view.SideDialogue"),
                 resolved_frame("line.side.second", "view.SideDialogue", "side-2"),
             ),
             DialoguePresentationOperation::clear(view_definition("view.MainDialogue")),
             DialoguePresentationOperation::append(
+                activation(6),
                 view_definition("view.MainDialogue"),
                 resolved_frame("line.main.third", "view.MainDialogue", "main-3"),
             ),
@@ -213,6 +265,7 @@ fn store_round_trip_does_not_reuse_occurrence_identity() {
     let mut store = DialoguePresentationStore::default();
     store
         .apply_operations(&[DialoguePresentationOperation::append(
+            activation(7),
             view_definition("view.MainDialogue"),
             resolved_frame("line.before", "view.MainDialogue", "before"),
         )])
@@ -224,6 +277,7 @@ fn store_round_trip_does_not_reuse_occurrence_identity() {
 
     restored
         .apply_operations(&[DialoguePresentationOperation::append(
+            activation(8),
             view_definition("view.SideDialogue"),
             resolved_frame("line.after", "view.SideDialogue", "after"),
         )])
@@ -240,6 +294,7 @@ fn snapshot_with_retained_entries_but_no_active_entry_is_rejected() {
     let mut store = DialoguePresentationStore::default();
     store
         .apply_operations(&[DialoguePresentationOperation::append(
+            activation(9),
             view_definition("view.Dialogue"),
             resolved_frame("line.invalid.active", "view.Dialogue", "retained"),
         )])

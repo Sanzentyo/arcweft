@@ -17,8 +17,9 @@ use arcweft_bundle::{
 use arcweft_core::awbc::schema::{
     AwbcBlock, AwbcBlockId, AwbcEffectSetId, AwbcEntry, AwbcEntryKind, AwbcEntryTarget,
     AwbcFlowBinding, AwbcFlowExecutable, AwbcFrameLayout, AwbcFrameLayoutId, AwbcFunction,
-    AwbcFunctionFlags, AwbcFunctionId, AwbcFunctionKind, AwbcProgram, AwbcSafePointKind,
-    AwbcSignature, AwbcSignatureId, AwbcStringId, AwbcTableRange, AwbcTerminator,
+    AwbcFunctionFlag, AwbcFunctionFlags, AwbcFunctionId, AwbcFunctionKind, AwbcProgram,
+    AwbcSafePointKind, AwbcSignature, AwbcSignatureId, AwbcStringId, AwbcTableRange,
+    AwbcTerminator,
 };
 use arcweft_core::effect::RuntimeArtifactFingerprint;
 use arcweft_core::entry::{FlowContractHash, RuntimeFlowExecutable};
@@ -395,7 +396,7 @@ fn minimal_awbc_program() -> AwbcProgram {
             frame_layout: AwbcFrameLayoutId(0),
             blocks: AwbcTableRange::new(0, 1),
             entry_block: AwbcBlockId(0),
-            flags: AwbcFunctionFlags(AwbcFunctionFlags::DETERMINISTIC),
+            flags: AwbcFunctionFlags::empty().with(AwbcFunctionFlag::Deterministic),
         }],
         flow_bindings: vec![AwbcFlowBinding {
             flow: flow.clone(),

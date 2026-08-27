@@ -284,6 +284,14 @@ impl<'hir> FinalExprLowerer<'hir> {
                 self.lower_unit_variant(id)?
             }
             HirExprKind::Path(_) => self.lower_path(id)?,
+            HirExprKind::ShortVariant(_)
+                if matches!(
+                    self.facts.value(id),
+                    Some(RuntimeResolvedValue::CharacterLook { .. })
+                ) =>
+            {
+                RuntimeExprSeedKind::EntityRef(self.entity_reference(id)?)
+            }
             HirExprKind::ShortVariant(_) => self.lower_unit_variant(id)?,
             HirExprKind::Tuple(tuple) => RuntimeExprSeedKind::Tuple(
                 tuple
@@ -1215,6 +1223,7 @@ impl<'hir> FinalExprLowerer<'hir> {
             | RuntimeResolvedValue::ProjectCallable(_)
             | RuntimeResolvedValue::ProjectItem(_)
             | RuntimeResolvedValue::DialogueLine(_)
+            | RuntimeResolvedValue::CharacterLook { .. }
             | RuntimeResolvedValue::Registered(_) => Err(format!(
                 "resolved callable/project value at {id:?} requires a builder-issued runtime function-value identity"
             )),
@@ -1379,6 +1388,9 @@ impl<'hir> FinalExprLowerer<'hir> {
             }
             RuntimeResolvedCallDispatch::Static(RuntimeResolvedStaticCallTarget::Host(_)) => Err(
                 format!("host call {id:?} is effectful and cannot enter pure expression lowering"),
+            ),
+            RuntimeResolvedCallDispatch::Static(RuntimeResolvedStaticCallTarget::Line(_)) => Err(
+                format!("line capability call {id:?} must be consumed by typed line-plan lowering"),
             ),
         }
     }
@@ -1717,6 +1729,12 @@ impl<'hir> FinalExprLowerer<'hir> {
             Some(RuntimeResolvedValue::DialogueLine(line)) => Ok(
                 arcweft_core::value::RuntimeEntityReference::DialogueLine(line.clone()),
             ),
+            Some(RuntimeResolvedValue::CharacterLook { character, look }) => {
+                Ok(arcweft_core::value::RuntimeEntityReference::CharacterLook {
+                    character: character.clone(),
+                    look: look.clone(),
+                })
+            }
             _ => Err(format!(
                 "Agent semantic identity at {id:?} is not an exact accepted entity"
             )),

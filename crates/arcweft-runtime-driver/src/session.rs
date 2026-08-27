@@ -1,8 +1,8 @@
 use self::virtualization::validate_virtual_list_scroll_owner;
 use crate::clock::RuntimeClockStep;
 use crate::dialogue::{
-    BundlePresentationInput, BundlePresentationTransition, DialogueAdvanceRejection,
-    DialogueAdvanceTarget, DialoguePresentationStore,
+    BundlePresentationInput, BundlePresentationTransition, DialogueAdvanceTarget,
+    DialoguePresentationStore,
 };
 use crate::display::{
     ActiveSessionLocale, BundlePresentationResources, BundlePresentationSnapshot,
@@ -569,6 +569,12 @@ impl BundleSession {
             .push(BundlePresentationInput::advance_dialogue(target));
     }
 
+    /// Queues a stale-safe semantic reveal completion for the observed stage.
+    pub fn queue_dialogue_reveal_completion(&mut self, target: DialogueAdvanceTarget) {
+        self.pending_presentation_inputs
+            .push(BundlePresentationInput::complete_dialogue_reveal(target));
+    }
+
     /// Queues the typed presentation action sealed for one routed View invocation.
     pub fn queue_view_handler_invocation(
         &mut self,
@@ -804,6 +810,9 @@ impl BundleSession {
         mut input: BundleStepInput,
     ) -> PreparedBundleStepInput {
         let mut diagnostics = Vec::new();
+        if let Err(error) = self.presentation.dialogue.advance_reveal(clock.dt()) {
+            diagnostics.push(error.to_string());
+        }
         let mut root_events = std::mem::take(&mut self.pending_deferred_root_events);
         root_events.append(&mut input.root_events);
         input.root_events = root_events;
@@ -819,10 +828,12 @@ impl BundleSession {
         input
             .presentation_inputs
             .append(&mut self.pending_presentation_inputs);
+        let mut dialogue_advances = Vec::new();
         let presentation_transitions =
-            self.route_presentation_inputs(input.presentation_inputs, &mut input.input_events);
+            self.route_presentation_inputs(input.presentation_inputs, &mut dialogue_advances);
         let routed_input_events = input.input_events.clone();
         let text_control_write_backs = std::mem::take(&mut self.pending_text_control_write_backs);
+        let dialogue_content_events = self.presentation.dialogue.take_reached_content_events();
         PreparedBundleStepInput {
             runtime: RuntimeStepInput {
                 tick: clock.tick(),
@@ -830,6 +841,8 @@ impl BundleSession {
                 root_events: input.root_events,
                 deferred_root_events: input.deferred_root_events,
                 input_events: input.input_events,
+                dialogue_content_events,
+                dialogue_advances,
                 need_states: input.need_states,
                 task_events,
                 audio_events: input.audio_events,
@@ -838,6 +851,7 @@ impl BundleSession {
                     .drain(..)
                     .chain(ordinary_host_call_results)
                     .collect(),
+                line_outcomes: Vec::new(),
             },
             routed_input_events,
             presentation_transitions,
@@ -849,27 +863,18 @@ impl BundleSession {
     fn route_presentation_inputs(
         &mut self,
         inputs: Vec<BundlePresentationInput>,
-        runtime_inputs: &mut Vec<RoutedInputEvent>,
+        dialogue_advances: &mut Vec<arcweft_core::runtime_id::DialogueActivationId>,
     ) -> Vec<BundlePresentationTransition> {
         let mut transitions = Vec::new();
-        runtime_inputs.retain(|event| {
-            if runtime_input_is_untargeted_dialogue_advance(event) {
-                transitions.push(BundlePresentationTransition::DialogueAdvanceRejected {
-                    target: None,
-                    reason: DialogueAdvanceRejection::UntargetedRuntimeInput,
-                });
-                false
-            } else {
-                true
-            }
-        });
-
         for input in inputs {
             match input {
+                BundlePresentationInput::CompleteDialogueReveal { target } => {
+                    transitions.push(self.presentation.dialogue.complete_reveal(target));
+                }
                 BundlePresentationInput::AdvanceDialogue { target } => {
-                    let (transition, runtime_line) = self.presentation.advance_dialogue(target);
-                    if let Some(line) = runtime_line {
-                        runtime_inputs.push(RuntimeStepInput::dialogue_advance_event(&line));
+                    let (transition, activation) = self.presentation.advance_dialogue(target);
+                    if let Some(activation) = activation {
+                        dialogue_advances.push(activation);
                     }
                     transitions.push(transition);
                 }
@@ -1182,7 +1187,8 @@ impl BundleSession {
 fn action_receive_action_id(request: &RuntimeHostCallRequest) -> Option<String> {
     let value = request.args.first()?.value();
     match value {
-        RuntimeValue::EntityRef(value) | RuntimeValue::String(value) => Some(value.to_owned()),
+        RuntimeValue::EntityRef(value) => Some(value.runtime_label()),
+        RuntimeValue::String(value) => Some(value.to_owned()),
         _ => None,
     }
 }
@@ -1233,29 +1239,24 @@ fn action_receive_payload(
     action_id: &str,
     payload: Option<&str>,
 ) -> Result<RuntimePayload, RuntimeHostCallError> {
+    let payload = payload.ok_or_else(|| RuntimeHostCallError {
+        kind: RuntimeHostCallErrorKind::Rejected,
+        message: format!(
+            "runtime action `{action_id}` is missing the text/entity payload required by action.receive"
+        ),
+    })?;
     RuntimeValue::try_record(vec![
         (
             "action".to_owned(),
-            RuntimeValue::EntityRef(action_id.to_owned()),
+            RuntimeValue::String(action_id.to_owned()),
         ),
-        (
-            "value".to_owned(),
-            RuntimeValue::String(payload.unwrap_or_default().to_owned()),
-        ),
+        ("value".to_owned(), RuntimeValue::String(payload.to_owned())),
     ])
     .map(RuntimePayload::from)
     .map_err(|error| RuntimeHostCallError {
         kind: RuntimeHostCallErrorKind::Failed,
         message: error.to_string(),
     })
-}
-
-fn runtime_input_is_untargeted_dialogue_advance(event: &RoutedInputEvent) -> bool {
-    matches!(
-        &event.event,
-        InputEventKind::Custom { name }
-            if matches!(name.as_str(), "advance" | "dialogue.advance")
-    )
 }
 
 fn presentation_transition_diagnostic(transition: &BundlePresentationTransition) -> Option<String> {
@@ -1296,6 +1297,28 @@ mod view_handler_queue_tests {
         DialogueEntryId, DialogueInstanceId, DialoguePresentationId, DialogueRevision,
         DialogueStageIndex, ViewId,
     };
+
+    #[test]
+    fn action_receive_rejects_a_missing_payload_instead_of_synthesizing_empty_text() {
+        let error = action_receive_payload("action.inspect", None)
+            .expect_err("missing action payload is rejected");
+
+        assert_eq!(error.kind, RuntimeHostCallErrorKind::Rejected);
+        assert!(error.message.contains("action.inspect"));
+    }
+
+    #[test]
+    fn action_receive_preserves_an_explicit_empty_text_payload() {
+        let payload = action_receive_payload("action.inspect", Some(""))
+            .expect("explicit empty text remains a valid payload");
+        let RuntimeValue::Record(fields) = payload.value() else {
+            panic!("action.receive payload is a record");
+        };
+        assert!(matches!(
+            fields.iter().find(|field| field.name() == "value"),
+            Some(field) if field.value() == &RuntimeValue::String(String::new())
+        ));
+    }
 
     #[test]
     fn session_queues_the_exact_token_selected_by_the_player_invocation() {

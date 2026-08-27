@@ -4,9 +4,9 @@ use crate::awbc_lower::inventory::{AwbcInventory, AwbcLowerDiagnostic};
 use crate::awbc_lower::pattern::admitted_local_type;
 use crate::awbc_lower::{table_index, table_range_len};
 use arcweft_core::awbc::schema::{
-    AwbcBlock, AwbcBlockId, AwbcFunction, AwbcFunctionFlags, AwbcFunctionId, AwbcFunctionKind,
-    AwbcInstruction, AwbcRegisterId, AwbcSafePointKind, AwbcTableRange, AwbcTerminator,
-    AwbcTraitMethod, AwbcTraitMethodId, AwbcTraitReceiverMode,
+    AwbcBlock, AwbcBlockId, AwbcFunction, AwbcFunctionFlag, AwbcFunctionFlags, AwbcFunctionId,
+    AwbcFunctionKind, AwbcInstruction, AwbcRegisterId, AwbcSafePointKind, AwbcTableRange,
+    AwbcTerminator, AwbcTraitMethod, AwbcTraitMethodId, AwbcTraitReceiverMode,
 };
 use arcweft_core::plan::{RuntimePlan, RuntimeReceiverMode, RuntimeTraitMethod};
 use arcweft_core::value::RuntimeExpr;
@@ -74,7 +74,7 @@ impl<'a, 'plan> AwbcTraitMethodLowerer<'a, 'plan> {
                 frame_layout: layout,
                 blocks: body.blocks,
                 entry_block: body.entry_block,
-                flags: AwbcFunctionFlags(AwbcFunctionFlags::DETERMINISTIC),
+                flags: AwbcFunctionFlags::empty().with(AwbcFunctionFlag::Deterministic),
             },
         );
         self.inventory.program.trait_methods.push(AwbcTraitMethod {

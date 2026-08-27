@@ -45,6 +45,9 @@ use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
 use thiserror::Error;
 
+mod viewport;
+use viewport::viewport_fit_from_effects;
+
 /// Canonical Character-name locale selected for the current runtime session.
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 #[serde(transparent)]
@@ -69,7 +72,7 @@ impl ActiveSessionLocale {
 /// Choice metadata shared by native and Web presentation hosts.
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub struct BundleChoice {
-    pub id: String,
+    pub id: Option<String>,
     pub label: String,
 }
 
@@ -294,7 +297,11 @@ pub fn resolve_display_frames(
     events
         .iter()
         .fold(DisplayResolution::default(), |mut resolution, event| {
-            if let FlowEvent::DialogueLine { line, values } = event
+            if let FlowEvent::DialogueLine {
+                activation,
+                line,
+                values,
+            } = event
                 && let Some(spec) = catalog.find(line)
             {
                 let Some(provider) = context_provider else {
@@ -316,6 +323,7 @@ pub fn resolve_display_frames(
                         resolution
                             .dialogue_operations
                             .push(DialoguePresentationOperation::append(
+                                activation.clone(),
                                 DialogueViewDefinition::new(view),
                                 frame,
                             ));
@@ -355,7 +363,7 @@ impl BundlePresentationSnapshot {
     ) -> Result<Vec<PresentationHandleDiagnostic>, BundlePresentationUpdateError> {
         let mut next_dialogue = self.dialogue.clone();
         next_dialogue.apply_operations(&resolution.dialogue_operations)?;
-        next_dialogue.synchronize_waiting_line(waiting_dialogue_line(status))?;
+        next_dialogue.synchronize_waiting_activation(waiting_dialogue_activation(status))?;
         let next_choices = choices_from_status(status);
         let (handle_operations, mut handle_diagnostics) =
             presentation_handle_operations_from_effects(effects);
@@ -372,7 +380,7 @@ impl BundlePresentationSnapshot {
             &next_presentation_handles,
             resources.image_objects,
         );
-        let next_viewport_fit = viewport_fit_from_effects(self.viewport_fit, effects);
+        let next_viewport_fit = viewport_fit_from_effects(self.viewport_fit, effects)?;
         let next_text_inputs = filter_presentation_text_inputs(
             resources.text_inputs.to_vec(),
             &next_presentation_handles,
@@ -460,7 +468,7 @@ impl BundlePresentationSnapshot {
         target: DialogueAdvanceTarget,
     ) -> (
         BundlePresentationTransition,
-        Option<arcweft_core::plan::RuntimeLineId>,
+        Option<arcweft_core::runtime_id::DialogueActivationId>,
     ) {
         let before = self.dialogue.clone();
         let result = self.dialogue.advance_dialogue(target);
@@ -484,9 +492,11 @@ impl BundlePresentationSnapshot {
     }
 }
 
-fn waiting_dialogue_line(status: &FlowFiberStatus) -> Option<&arcweft_core::plan::RuntimeLineId> {
+fn waiting_dialogue_activation(
+    status: &FlowFiberStatus,
+) -> Option<&arcweft_core::runtime_id::DialogueActivationId> {
     match status {
-        FlowFiberStatus::Dialogue(state) => Some(&state.line),
+        FlowFiberStatus::Dialogue(activation) => Some(activation),
         _ => None,
     }
 }
@@ -541,72 +551,10 @@ fn choices_from_status(status: &FlowFiberStatus) -> Vec<BundleChoice> {
         .options
         .iter()
         .map(|option| BundleChoice {
-            id: option.id.clone().unwrap_or_else(|| option.label.clone()),
+            id: option.id.clone(),
             label: option.label.clone(),
         })
         .collect()
-}
-
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-enum PresentationViewportEffect {
-    Set(BundleViewportFit),
-    Clear,
-}
-
-impl PresentationViewportEffect {
-    fn from_call(call: &RuntimeCall) -> Option<Self> {
-        match call.callee.as_str() {
-            "player_viewport" => viewport_effect_from_call(call),
-            _ => None,
-        }
-    }
-}
-
-fn viewport_fit_from_effects(
-    previous: Option<BundleViewportFit>,
-    effects: &[LineEffectRequest],
-) -> Option<BundleViewportFit> {
-    effects
-        .iter()
-        .filter_map(|effect| {
-            let LineEffectRequest::Call(call) = effect else {
-                return None;
-            };
-            PresentationViewportEffect::from_call(call)
-        })
-        .fold(previous, |_active, effect| match effect {
-            PresentationViewportEffect::Set(fit) => Some(fit),
-            PresentationViewportEffect::Clear => None,
-        })
-}
-
-fn viewport_effect_from_call(call: &RuntimeCall) -> Option<PresentationViewportEffect> {
-    let width_arg = named_arg(&call.args, "width");
-    let height_arg = named_arg(&call.args, "height");
-    let fit_arg = named_arg(&call.args, "fit");
-    if width_arg.is_none() && height_arg.is_none() && fit_arg.is_none() {
-        return None;
-    }
-    let fit_arg = fit_arg.map_or("contain", unquote_arg);
-    match fit_arg {
-        "default" | "host" | "inherit" => Some(PresentationViewportEffect::Clear),
-        "raw" | "none" => Some(PresentationViewportEffect::Set(BundleViewportFit::raw())),
-        "contain" | "cover" | "stretch" => {
-            let design_width = width_arg.and_then(parse_positive_u32_px).unwrap_or(1280);
-            let design_height = height_arg.and_then(parse_positive_u32_px).unwrap_or(720);
-            let scale_policy = match fit_arg {
-                "cover" => ScalePolicy::Cover,
-                "stretch" => ScalePolicy::Stretch,
-                _ => ScalePolicy::Contain,
-            };
-            Some(PresentationViewportEffect::Set(BundleViewportFit::design(
-                design_width,
-                design_height,
-                scale_policy,
-            )))
-        }
-        _ => None,
-    }
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -620,17 +568,7 @@ enum PresentationImageEffect {
 impl PresentationImageEffect {
     fn from_call(call: &RuntimeCall) -> Result<Option<Self>, BundlePresentationUpdateError> {
         match call.callee.as_str() {
-            "image" => Ok(inline_image_object(call)
-                .map(|object| Self::InlineObject(Box::new(object)))
-                .or_else(|| {
-                    call.args
-                        .first()
-                        .map(String::as_str)
-                        .or_else(|| named_arg(&call.args, "id"))
-                        .and_then(public_id_arg)
-                        .filter(|id| id.starts_with("image."))
-                        .map(Self::Object)
-                })),
+            "image" => image_effect_from_call(call),
             "bg" => background_image_object(call)
                 .map(Box::new)
                 .map(Self::Background)
@@ -642,6 +580,39 @@ impl PresentationImageEffect {
             _ => Ok(None),
         }
     }
+}
+
+fn image_effect_from_call(
+    call: &RuntimeCall,
+) -> Result<Option<PresentationImageEffect>, BundlePresentationUpdateError> {
+    if named_arg(&call.args, "asset").is_some() {
+        return inline_image_object(call)
+            .map(|object| Some(PresentationImageEffect::InlineObject(Box::new(object))));
+    }
+    let Some(argument) = call
+        .args
+        .first()
+        .filter(|argument| !argument.contains(" = "))
+        .map(String::as_str)
+        .or_else(|| named_arg(&call.args, "id"))
+    else {
+        return Err(BundlePresentationUpdateError::missing_argument(
+            "image",
+            "asset or id",
+        ));
+    };
+    public_id_arg(argument)
+        .filter(|id| id.starts_with("image."))
+        .map(PresentationImageEffect::Object)
+        .map(Some)
+        .ok_or_else(|| {
+            BundlePresentationUpdateError::invalid_argument(
+                "image",
+                "id",
+                argument,
+                "an `image.*` public ID or a complete inline image object",
+            )
+        })
 }
 
 fn images_from_effects(
@@ -719,24 +690,37 @@ fn public_id_arg(arg: &str) -> Option<String> {
     .then_some(normalized)
 }
 
-fn inline_image_object(call: &RuntimeCall) -> Option<BundleImageObject> {
+fn inline_image_object(
+    call: &RuntimeCall,
+) -> Result<BundleImageObject, BundlePresentationUpdateError> {
     let asset = named_arg(&call.args, "asset")
         .and_then(public_id_arg)
-        .filter(|id| id.starts_with("asset."))?;
-    let id = named_arg(&call.args, "id")
-        .and_then(public_id_arg)
+        .filter(|id| id.starts_with("asset."))
+        .ok_or_else(|| {
+            BundlePresentationUpdateError::invalid_argument(
+                "image",
+                "asset",
+                named_arg(&call.args, "asset").unwrap_or("<missing>"),
+                "an `asset.*` public ID",
+            )
+        })?;
+    let id_arg = named_arg(&call.args, "id")
+        .ok_or_else(|| BundlePresentationUpdateError::missing_argument("image", "id"))?;
+    let id = public_id_arg(id_arg)
         .filter(|id| id.starts_with("image."))
-        .unwrap_or_else(|| {
-            let stem = asset.strip_prefix("asset.").unwrap_or(asset.as_str());
-            format!("image.{stem}.inline")
-        });
+        .ok_or_else(|| {
+            BundlePresentationUpdateError::invalid_argument(
+                "image",
+                "id",
+                id_arg,
+                "an `image.*` public ID",
+            )
+        })?;
     let bounds = BundleImageObjectBounds {
-        x_milli: named_arg(&call.args, "x").and_then(parse_px_milli)?,
-        y_milli: named_arg(&call.args, "y").and_then(parse_px_milli)?,
-        width_milli: u32::try_from(named_arg(&call.args, "width").and_then(parse_px_milli)?)
-            .ok()?,
-        height_milli: u32::try_from(named_arg(&call.args, "height").and_then(parse_px_milli)?)
-            .ok()?,
+        x_milli: required_image_coordinate(call, "x")?,
+        y_milli: required_image_coordinate(call, "y")?,
+        width_milli: required_image_extent(call, "width")?,
+        height_milli: required_image_extent(call, "height")?,
     };
     let placement = StagePlacement::absolute(StageRect::new(
         bounds.x_milli,
@@ -744,31 +728,112 @@ fn inline_image_object(call: &RuntimeCall) -> Option<BundleImageObject> {
         bounds.width_milli,
         bounds.height_milli,
     ));
-    Some(BundleImageObject {
+    Ok(BundleImageObject {
         id,
         asset,
-        target: named_arg(&call.args, "target").and_then(public_id_arg),
-        layer: named_arg(&call.args, "layer").and_then(public_id_arg),
+        target: optional_image_public_id(call, "target", "target.")?,
+        layer: optional_image_public_id(call, "layer", "layer.")?,
         view: None,
         containing_scroll_region: None,
         bounds,
         placement: Some(placement),
-        fit: image_fit_arg(call),
-        alignment: image_alignment_arg(call),
-        playback: image_playback_arg(call),
-        transform: image_transform_arg(call),
-        depth_milli: named_arg(&call.args, "depth")
-            .and_then(parse_depth_arg)
-            .unwrap_or_default(),
-        opacity_milli: named_arg(&call.args, "opacity")
-            .and_then(parse_opacity_milli)
-            .unwrap_or(1_000),
+        fit: presentation_image_fit_arg(call, "image", BundleImageObjectFit::Contain)?,
+        alignment: presentation_image_alignment_arg(call, "image")?,
+        playback: presentation_image_playback_arg(call, "image")?,
+        transform: image_transform_arg(call)?,
+        depth_milli: optional_image_argument(
+            call,
+            "depth",
+            0,
+            parse_depth_arg,
+            "a finite i32 milli-depth",
+        )?,
+        opacity_milli: presentation_opacity_arg(call, "image")?,
         actions: Vec::new(),
         params: std::collections::BTreeMap::default(),
         proxies: Vec::new(),
-        visible: named_arg(&call.args, "visible")
-            .and_then(parse_bool_arg)
-            .unwrap_or(true),
+        visible: optional_image_argument(
+            call,
+            "visible",
+            true,
+            parse_bool_arg,
+            "`true` or `false`",
+        )?,
+    })
+}
+
+fn required_image_coordinate(
+    call: &RuntimeCall,
+    argument: &'static str,
+) -> Result<i32, BundlePresentationUpdateError> {
+    let value = named_arg(&call.args, argument)
+        .ok_or_else(|| BundlePresentationUpdateError::missing_argument("image", argument))?;
+    parse_px_milli(value).ok_or_else(|| {
+        BundlePresentationUpdateError::invalid_argument(
+            "image",
+            argument,
+            value,
+            "a finite logical-pixel coordinate",
+        )
+    })
+}
+
+fn required_image_extent(
+    call: &RuntimeCall,
+    argument: &'static str,
+) -> Result<u32, BundlePresentationUpdateError> {
+    let value = named_arg(&call.args, argument)
+        .ok_or_else(|| BundlePresentationUpdateError::missing_argument("image", argument))?;
+    parse_px_milli(value)
+        .and_then(|value| u32::try_from(value).ok())
+        .filter(|value| *value > 0)
+        .ok_or_else(|| {
+            BundlePresentationUpdateError::invalid_argument(
+                "image",
+                argument,
+                value,
+                "a finite positive logical-pixel extent",
+            )
+        })
+}
+
+fn optional_image_public_id(
+    call: &RuntimeCall,
+    argument: &'static str,
+    family: &'static str,
+) -> Result<Option<String>, BundlePresentationUpdateError> {
+    let Some(value) = named_arg(&call.args, argument) else {
+        return Ok(None);
+    };
+    public_id_arg(value)
+        .filter(|id| id.starts_with(family))
+        .map(Some)
+        .ok_or_else(|| {
+            BundlePresentationUpdateError::invalid_argument(
+                "image",
+                argument,
+                value,
+                match family {
+                    "target." => "a `target.*` public ID",
+                    "layer." => "a `layer.*` public ID",
+                    _ => "a public ID from the required family",
+                },
+            )
+        })
+}
+
+fn optional_image_argument<T: Copy>(
+    call: &RuntimeCall,
+    argument: &'static str,
+    default: T,
+    parse: impl FnOnce(&str) -> Option<T>,
+    expected: &'static str,
+) -> Result<T, BundlePresentationUpdateError> {
+    let Some(value) = named_arg(&call.args, argument) else {
+        return Ok(default);
+    };
+    parse(value).ok_or_else(|| {
+        BundlePresentationUpdateError::invalid_argument("image", argument, value, expected)
     })
 }
 
@@ -809,12 +874,12 @@ fn background_image_object(
             StageAnchor::TopLeft,
             StageSize::new(bounds.width_milli, bounds.height_milli),
         )),
-        fit: background_image_fit_arg(call)?,
-        alignment: background_image_alignment_arg(call)?,
-        playback: background_image_playback_arg(call)?,
+        fit: presentation_image_fit_arg(call, "bg", BundleImageObjectFit::Cover)?,
+        alignment: presentation_image_alignment_arg(call, "bg")?,
+        playback: presentation_image_playback_arg(call, "bg")?,
         transform: BundleImageObjectTransform::default(),
         depth_milli: 0,
-        opacity_milli: background_opacity_arg(call)?,
+        opacity_milli: presentation_opacity_arg(call, "bg")?,
         actions: Vec::new(),
         params: std::collections::BTreeMap::default(),
         proxies: Vec::new(),
@@ -882,16 +947,19 @@ fn background_slot_address(
     })
 }
 
-fn background_image_fit_arg(
+fn presentation_image_fit_arg(
     call: &RuntimeCall,
+    callee: &'static str,
+    default: BundleImageObjectFit,
 ) -> Result<BundleImageObjectFit, BundlePresentationUpdateError> {
     match named_arg(&call.args, "fit").map(unquote_arg) {
-        None | Some("cover") => Ok(BundleImageObjectFit::Cover),
+        None => Ok(default),
+        Some("cover") => Ok(BundleImageObjectFit::Cover),
         Some("contain") => Ok(BundleImageObjectFit::Contain),
         Some("stretch") => Ok(BundleImageObjectFit::Stretch),
         Some("intrinsic") => Ok(BundleImageObjectFit::Intrinsic),
         Some(value) => Err(BundlePresentationUpdateError::invalid_argument(
-            "bg",
+            callee,
             "fit",
             value,
             "`cover`, `contain`, `stretch`, or `intrinsic`",
@@ -899,8 +967,9 @@ fn background_image_fit_arg(
     }
 }
 
-fn background_image_alignment_arg(
+fn presentation_image_alignment_arg(
     call: &RuntimeCall,
+    callee: &'static str,
 ) -> Result<BundleImageObjectAlignment, BundlePresentationUpdateError> {
     let axis = |argument: &'static str, axis: &'static str| {
         let Some(value) = named_arg(&call.args, argument) else {
@@ -908,7 +977,7 @@ fn background_image_alignment_arg(
         };
         parse_alignment_view_milli(value, axis).ok_or_else(|| {
             BundlePresentationUpdateError::invalid_argument(
-                "bg",
+                callee,
                 argument,
                 value,
                 "an alignment keyword, a ratio in [0, 1], or integer milli-units in [0, 1000]",
@@ -921,13 +990,16 @@ fn background_image_alignment_arg(
     })
 }
 
-fn background_opacity_arg(call: &RuntimeCall) -> Result<u16, BundlePresentationUpdateError> {
+fn presentation_opacity_arg(
+    call: &RuntimeCall,
+    callee: &'static str,
+) -> Result<u16, BundlePresentationUpdateError> {
     let Some(value) = named_arg(&call.args, "opacity") else {
         return Ok(1_000);
     };
     parse_opacity_milli(value).ok_or_else(|| {
         BundlePresentationUpdateError::invalid_argument(
-            "bg",
+            callee,
             "opacity",
             value,
             "a ratio in [0, 1], percentage in [0%, 100%], or integer milli-units in [0, 1000]",
@@ -935,8 +1007,9 @@ fn background_opacity_arg(call: &RuntimeCall) -> Result<u16, BundlePresentationU
     })
 }
 
-fn background_image_playback_arg(
+fn presentation_image_playback_arg(
     call: &RuntimeCall,
+    callee: &'static str,
 ) -> Result<BundleImageObjectPlayback, BundlePresentationUpdateError> {
     let duration = |argument: &'static str| {
         let Some(value) = named_arg(&call.args, argument) else {
@@ -944,7 +1017,7 @@ fn background_image_playback_arg(
         };
         parse_duration_millis(value).map(Some).ok_or_else(|| {
             BundlePresentationUpdateError::invalid_argument(
-                "bg",
+                callee,
                 argument,
                 value,
                 "a finite non-negative duration",
@@ -955,7 +1028,7 @@ fn background_image_playback_arg(
         None => 1_000,
         Some(value) => parse_rate_milli(value).ok_or_else(|| {
             BundlePresentationUpdateError::invalid_argument(
-                "bg",
+                callee,
                 "playback.rate",
                 value,
                 "a non-negative ratio or integer milli-unit rate",
@@ -968,26 +1041,6 @@ fn background_image_playback_arg(
         paused_at_millis: duration("playback.paused_at")?,
         pinned_local_time_millis: duration("playback.local_time")?,
     })
-}
-
-fn image_fit_arg(call: &RuntimeCall) -> BundleImageObjectFit {
-    match named_arg(&call.args, "fit").map(unquote_arg) {
-        Some("cover") => BundleImageObjectFit::Cover,
-        Some("stretch") => BundleImageObjectFit::Stretch,
-        Some("intrinsic") => BundleImageObjectFit::Intrinsic,
-        _ => BundleImageObjectFit::Contain,
-    }
-}
-
-fn image_alignment_arg(call: &RuntimeCall) -> BundleImageObjectAlignment {
-    BundleImageObjectAlignment {
-        x_milli: named_arg(&call.args, "alignment.x")
-            .and_then(|value| parse_alignment_view_milli(value, "x"))
-            .unwrap_or(500),
-        y_milli: named_arg(&call.args, "alignment.y")
-            .and_then(|value| parse_alignment_view_milli(value, "y"))
-            .unwrap_or(500),
-    }
 }
 
 fn parse_alignment_view_milli(value: &str, axis: &str) -> Option<i32> {
@@ -1012,42 +1065,53 @@ fn parse_alignment_view_milli(value: &str, axis: &str) -> Option<i32> {
     }
 }
 
-fn image_playback_arg(call: &RuntimeCall) -> BundleImageObjectPlayback {
-    BundleImageObjectPlayback {
-        start_time_millis: named_arg(&call.args, "playback.start")
-            .and_then(parse_duration_millis)
-            .unwrap_or_default(),
-        rate_milli: named_arg(&call.args, "playback.rate")
-            .and_then(parse_rate_milli)
-            .unwrap_or(1_000),
-        paused_at_millis: named_arg(&call.args, "playback.paused_at")
-            .and_then(parse_duration_millis),
-        pinned_local_time_millis: named_arg(&call.args, "playback.local_time")
-            .and_then(parse_duration_millis),
-    }
-}
-
-fn image_transform_arg(call: &RuntimeCall) -> BundleImageObjectTransform {
-    BundleImageObjectTransform {
-        m11_milli: named_arg(&call.args, "transform.m11")
-            .and_then(parse_milli_arg)
-            .unwrap_or(1_000),
-        m12_milli: named_arg(&call.args, "transform.m12")
-            .and_then(parse_milli_arg)
-            .unwrap_or_default(),
-        m21_milli: named_arg(&call.args, "transform.m21")
-            .and_then(parse_milli_arg)
-            .unwrap_or_default(),
-        m22_milli: named_arg(&call.args, "transform.m22")
-            .and_then(parse_milli_arg)
-            .unwrap_or(1_000),
-        tx_milli: named_arg(&call.args, "transform.tx")
-            .and_then(parse_px_milli)
-            .unwrap_or_default(),
-        ty_milli: named_arg(&call.args, "transform.ty")
-            .and_then(parse_px_milli)
-            .unwrap_or_default(),
-    }
+fn image_transform_arg(
+    call: &RuntimeCall,
+) -> Result<BundleImageObjectTransform, BundlePresentationUpdateError> {
+    let component = |argument: &'static str,
+                     default: i32,
+                     parse: fn(&str) -> Option<i32>,
+                     expected: &'static str| {
+        optional_image_argument(call, argument, default, parse, expected)
+    };
+    Ok(BundleImageObjectTransform {
+        m11_milli: component(
+            "transform.m11",
+            1_000,
+            parse_milli_arg,
+            "a finite i32 milli-transform component",
+        )?,
+        m12_milli: component(
+            "transform.m12",
+            0,
+            parse_milli_arg,
+            "a finite i32 milli-transform component",
+        )?,
+        m21_milli: component(
+            "transform.m21",
+            0,
+            parse_milli_arg,
+            "a finite i32 milli-transform component",
+        )?,
+        m22_milli: component(
+            "transform.m22",
+            1_000,
+            parse_milli_arg,
+            "a finite i32 milli-transform component",
+        )?,
+        tx_milli: component(
+            "transform.tx",
+            0,
+            parse_px_milli,
+            "a finite logical-pixel translation",
+        )?,
+        ty_milli: component(
+            "transform.ty",
+            0,
+            parse_px_milli,
+            "a finite logical-pixel translation",
+        )?,
+    })
 }
 
 fn parse_bool_arg(value: &str) -> Option<bool> {
@@ -1133,17 +1197,6 @@ fn parse_px_milli(value: &str) -> Option<i32> {
     let pixels = value.strip_suffix("px").unwrap_or(value).trim();
     let parsed = pixels.parse::<f64>().ok()?;
     rounded_i32(parsed * 1_000.0)
-}
-
-#[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)]
-fn parse_positive_u32_px(value: &str) -> Option<u32> {
-    let value = unquote_arg(value);
-    let pixels = value.strip_suffix("px").unwrap_or(value).trim();
-    let parsed = pixels.parse::<f64>().ok()?.round();
-    if !parsed.is_finite() || parsed < 1.0 {
-        return None;
-    }
-    Some(parsed.min(f64::from(u32::MAX)) as u32)
 }
 
 #[allow(clippy::cast_possible_truncation)]

@@ -190,7 +190,7 @@ impl ConstantAudioLowerer<'_> {
     fn expr(&mut self, expr: &RuntimeExpr) -> AwbcAudioValueRef {
         let value = match expr.kind() {
             RuntimeExprKind::Value(value) => value.clone(),
-            RuntimeExprKind::EntityRef(value) => RuntimeValue::EntityRef(value.runtime_label()),
+            RuntimeExprKind::EntityRef(value) => RuntimeValue::EntityRef(value.clone()),
             _ => {
                 self.inventory.diagnostic(AwbcLowerDiagnostic::error(
                     self.path.clone(),

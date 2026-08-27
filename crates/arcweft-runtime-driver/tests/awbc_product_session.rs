@@ -10,10 +10,10 @@ use arcweft_core::{
             AwbcBlock, AwbcBlockId, AwbcConstant, AwbcConstantId, AwbcEffectKind, AwbcEffectPlan,
             AwbcEffectPlanId, AwbcEffectSetId, AwbcEntry, AwbcEntryKind, AwbcEntryTarget,
             AwbcFlowBinding, AwbcFlowExecutable, AwbcFrameLayout, AwbcFrameLayoutId, AwbcFrameSlot,
-            AwbcFrameSlotRole, AwbcFunction, AwbcFunctionFlags, AwbcFunctionId, AwbcFunctionKind,
-            AwbcProgram, AwbcRuntimeType, AwbcRuntimeTypeShape, AwbcSafePointKind, AwbcScopeId,
-            AwbcSignature, AwbcSignatureId, AwbcStringId, AwbcTableRange, AwbcTerminator,
-            AwbcTypeId,
+            AwbcFrameSlotRole, AwbcFunction, AwbcFunctionFlag, AwbcFunctionFlags, AwbcFunctionId,
+            AwbcFunctionKind, AwbcProgram, AwbcRuntimeType, AwbcRuntimeTypeShape,
+            AwbcSafePointKind, AwbcScopeId, AwbcSignature, AwbcSignatureId, AwbcStringId,
+            AwbcTableRange, AwbcTerminator, AwbcTypeId,
         },
     },
     effect::{RuntimeAssertionGuardId, RuntimeAssertionProfile},
@@ -49,7 +49,6 @@ use arcweft_runtime_driver::{
     session_save::{
         BUNDLE_SESSION_SAVE_SCHEMA_ID, BUNDLE_SESSION_SAVE_SCHEMA_VERSION,
         BundleSessionArtifactIdentity, BundleSessionPendingBlocker, BundleSessionSaveError,
-        BundleSessionSnapshot,
     },
 };
 use arcweft_runtime_plan::awbc_lower::AwbcLowerer;
@@ -651,7 +650,7 @@ fn session_save_round_trips_opaque_values_and_rejects_invalid_producer_atomicall
         snapshot.executor
     );
 
-    let mut tampered = serde_json::to_value(snapshot).expect("snapshot becomes JSON");
+    let mut tampered = exported_session_json(&session);
     let producer = tampered
         .pointer_mut("/executor/state/fiber/frames/0/root_cleanups/0/args/0/Opaque/producer")
         .expect("opaque producer is explicit persisted evidence");
@@ -812,8 +811,7 @@ fn logical_session_save_rejects_a_different_bundle_manifest() {
 fn save_envelope_strict_decode_rejects_future_or_trailing_payloads() {
     let bytes = product_awfb_bytes("entry.main");
     let session = product_session_from_bytes(&bytes);
-    let snapshot = session.snapshot_session().expect("snapshot exports");
-    let future = encode_session_snapshot(&snapshot, BUNDLE_SESSION_SAVE_SCHEMA_VERSION + 1);
+    let future = encode_session_save_with_version(&session, BUNDLE_SESSION_SAVE_SCHEMA_VERSION + 1);
     let mut target = product_session_from_bytes(&bytes);
 
     let future_error = target
@@ -843,8 +841,7 @@ fn save_envelope_strict_decode_rejects_future_or_trailing_payloads() {
 fn save_007_predecessor_v1_missing_runtime_generation_pin_is_rejected() {
     let bytes = product_awfb_bytes("entry.main");
     let session = product_session_from_bytes(&bytes);
-    let snapshot = session.snapshot_session().expect("snapshot exports");
-    let mut predecessor = serde_json::to_value(snapshot).expect("snapshot becomes JSON");
+    let mut predecessor = exported_session_json(&session);
     predecessor
         .get_mut("runtime")
         .and_then(serde_json::Value::as_object_mut)
@@ -875,8 +872,7 @@ fn save_007_predecessor_v1_missing_runtime_generation_pin_is_rejected() {
 fn save_007_unknown_nested_session_field_is_rejected() {
     let bytes = product_awfb_bytes("entry.main");
     let session = product_session_from_bytes(&bytes);
-    let snapshot = session.snapshot_session().expect("snapshot exports");
-    let mut future = serde_json::to_value(snapshot).expect("snapshot becomes JSON");
+    let mut future = exported_session_json(&session);
     future
         .get_mut("runtime")
         .and_then(serde_json::Value::as_object_mut)
@@ -934,13 +930,31 @@ fn product_session_from_bytes(bytes: &[u8]) -> BundleSession {
         .expect("AWBC product session starts")
 }
 
-fn encode_session_snapshot(snapshot: &BundleSessionSnapshot, schema_version: u32) -> Vec<u8> {
-    arcweft_save::encode_typed_json_save(
-        snapshot,
-        arcweft_save::SaveSchemaId::new(BUNDLE_SESSION_SAVE_SCHEMA_ID),
-        schema_version,
+fn exported_session_json(session: &BundleSession) -> serde_json::Value {
+    let encoded = session
+        .export_session_save_bytes()
+        .expect("session save exports");
+    let envelope = arcweft_save::SaveEnvelope::decode_bytes(
+        &encoded,
+        &arcweft_save::SaveDecodeOptions::default(),
     )
-    .expect("session snapshot encodes")
+    .expect("session save envelope decodes");
+    serde_json::from_slice(&envelope.payload).expect("typed session payload becomes JSON")
+}
+
+fn encode_session_save_with_version(session: &BundleSession, schema_version: u32) -> Vec<u8> {
+    let encoded = session
+        .export_session_save_bytes()
+        .expect("session save exports");
+    let mut envelope = arcweft_save::SaveEnvelope::decode_bytes(
+        &encoded,
+        &arcweft_save::SaveDecodeOptions::default(),
+    )
+    .expect("session save envelope decodes");
+    envelope.schema_version = schema_version;
+    envelope
+        .encode_bytes()
+        .expect("session save envelope encodes")
 }
 
 fn encode_session_json_value(value: &serde_json::Value) -> Vec<u8> {
@@ -1226,7 +1240,7 @@ fn minimal_awbc_program(entry: &str) -> AwbcProgram {
                 frame_layout: AwbcFrameLayoutId(0),
                 blocks: AwbcTableRange::new(0, 1),
                 entry_block: AwbcBlockId(0),
-                flags: AwbcFunctionFlags(AwbcFunctionFlags::DETERMINISTIC),
+                flags: AwbcFunctionFlags::empty().with(AwbcFunctionFlag::Deterministic),
             },
             AwbcFunction {
                 public_id: None,
@@ -1235,7 +1249,7 @@ fn minimal_awbc_program(entry: &str) -> AwbcProgram {
                 frame_layout: AwbcFrameLayoutId(1),
                 blocks: AwbcTableRange::new(1, 1),
                 entry_block: AwbcBlockId(1),
-                flags: AwbcFunctionFlags(AwbcFunctionFlags::DETERMINISTIC),
+                flags: AwbcFunctionFlags::empty().with(AwbcFunctionFlag::Deterministic),
             },
         ],
         flow_bindings: vec![AwbcFlowBinding {

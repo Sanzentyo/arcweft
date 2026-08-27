@@ -40,7 +40,7 @@ use arcweft_core::{
     pure::{RuntimeCallBackend, VmRuntimePureCallBackend},
     value::{
         AwbcRuntimeValueSnapshot, RuntimeBinding, RuntimeDialogueOpaqueRole,
-        RuntimeDialogueViewValue, RuntimeValue,
+        RuntimeDialogueViewValue, RuntimeEntityReference, RuntimeValue,
     },
 };
 use arcweft_presentation::fx::{
@@ -224,7 +224,10 @@ fn dialogue_view_runtime_value(
     let character = wrap(
         RuntimeDialogueOpaqueRole::Character,
         RuntimeValue::Tuple(vec![
-            RuntimeValue::EntityRef(input.frame.character.id.as_str().to_owned()),
+            RuntimeValue::EntityRef(RuntimeEntityReference::Project {
+                family: arcweft_id::DeclarationIdentityFamily::Character,
+                public_id: input.frame.character.id.as_public_id(),
+            }),
             RuntimeValue::String(input.frame.character.display_name.clone()),
         ]),
     )?;

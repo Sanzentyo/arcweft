@@ -94,7 +94,7 @@ fn program() -> AwbcProgram {
             frame_layout: AwbcFrameLayoutId(0),
             blocks: AwbcTableRange::new(0, 2),
             entry_block: AwbcBlockId(0),
-            flags: AwbcFunctionFlags(AwbcFunctionFlags::DETERMINISTIC),
+            flags: AwbcFunctionFlags::empty().with(AwbcFunctionFlag::Deterministic),
         }],
         flow_bindings: vec![AwbcFlowBinding {
             flow: arcweft_core::plan::FlowRuntimeId::from_checked_declaration_digest(
@@ -298,7 +298,7 @@ fn compiled_nested_return_restores_caller_and_writes_destination() {
         frame_layout: AwbcFrameLayoutId(1),
         blocks: AwbcTableRange::new(2, 1),
         entry_block: AwbcBlockId(2),
-        flags: AwbcFunctionFlags(AwbcFunctionFlags::DETERMINISTIC),
+        flags: AwbcFunctionFlags::empty().with(AwbcFunctionFlag::Deterministic),
     });
     program.blocks[0].terminator = AwbcTerminator::CallFunction {
         function: AwbcFunctionId(1),

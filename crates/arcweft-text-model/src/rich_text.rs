@@ -1,7 +1,9 @@
 //! Authored rich-text nodes and dialogue-local control data.
 
 use crate::{RichTextSpanKind, RichTextStyle};
-use arcweft_core::runtime_id::RuntimeDialogueValueSlotId;
+use arcweft_core::runtime_id::{
+    RuntimeDialogueEffectSiteId, RuntimeDialogueMarkId, RuntimeDialogueValueSlotId,
+};
 use arcweft_dialogue::InlineFailurePolicy;
 use serde::{Deserialize, Serialize};
 
@@ -56,11 +58,24 @@ pub enum RichTextControl {
     Page,
     LineWait,
     HardBreak,
-    TimedWait { duration_millis: u64 },
+    TimedWait {
+        duration_millis: u64,
+    },
     Clear,
     Reset,
-    Mark { name: String },
-    Raw { text: String },
+    Mark {
+        mark: RuntimeDialogueMarkId,
+        diagnostic_name: String,
+    },
+    /// Typed source-ordered inline effect boundary. The runtime content plan
+    /// owns the matching operation; renderers never interpret a synthetic
+    /// mark label.
+    Effect {
+        site: RuntimeDialogueEffectSiteId,
+    },
+    Raw {
+        text: String,
+    },
 }
 
 /// Host-observable rich-text event for non-text presentation/audio/capability tags.

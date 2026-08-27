@@ -1,7 +1,7 @@
 //! Private typed identity construction for runtime assertion lowering.
 
 use arcweft_core::effect::{RuntimeAssertionGuardId, RuntimeAssertionProfile};
-use arcweft_core::plan::FlowRuntimeId;
+use arcweft_core::plan::{FlowRuntimeId, RuntimeLineId};
 use arcweft_lang_hir::symbol::{CallableDeclarationId, CallablePackageId};
 use arcweft_lang_syntax::ast::module_path::CanonicalModulePath;
 
@@ -122,6 +122,42 @@ pub(crate) fn derive_runtime_flow_assertion_guard(
     }
     RuntimeAssertionGuardId::try_from_bytes(bytes)
         .expect("runtime Flow assertion guard derivation replaces the reserved zero value")
+}
+
+/// Derives an assertion guard for one accepted dialogue-line identity without
+/// involving source labels or revision-bound HIR coordinates.
+pub(crate) fn derive_runtime_line_assertion_guard(
+    package: &CallablePackageId,
+    module: &CanonicalModulePath,
+    line: &RuntimeLineId,
+    assertion_ordinal: u32,
+    condition: AssertionConditionIndex,
+    profile: RuntimeAssertionProfile,
+) -> RuntimeAssertionGuardId {
+    let mut hasher = blake3::Hasher::new_derive_key(RUNTIME_ASSERTION_GUARD_CONTEXT);
+    hasher.update(&RUNTIME_ASSERTION_GUARD_SCHEMA.to_le_bytes());
+    hash_text(&mut hasher, package.as_str());
+    hash_module(&mut hasher, module);
+    hash_text(&mut hasher, "dialogue-line");
+    hash_len(&mut hasher, line.path().segments().len());
+    for segment in line.path().segments() {
+        hash_text(&mut hasher, segment.as_str());
+    }
+    hasher.update(&assertion_ordinal.to_le_bytes());
+    hasher.update(&[condition.get()]);
+    hasher.update(&[match profile {
+        RuntimeAssertionProfile::Always => 0,
+        RuntimeAssertionProfile::DebugOnly => 1,
+    }]);
+
+    let digest = hasher.finalize();
+    let mut bytes = [0_u8; 16];
+    bytes.copy_from_slice(&digest.as_bytes()[..16]);
+    if bytes == [0; 16] {
+        bytes[15] = 1;
+    }
+    RuntimeAssertionGuardId::try_from_bytes(bytes)
+        .expect("runtime dialogue-line assertion guard derivation replaces reserved zero")
 }
 
 fn hash_callable(hasher: &mut blake3::Hasher, callable: &CallableDeclarationId) {

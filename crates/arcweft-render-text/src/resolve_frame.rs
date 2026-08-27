@@ -517,7 +517,8 @@ fn push_control_text(
         | RichTextControl::TimedWait { .. }
         | RichTextControl::Clear
         | RichTextControl::Reset
-        | RichTextControl::Mark { .. } => None,
+        | RichTextControl::Mark { .. }
+        | RichTextControl::Effect { .. } => None,
     }
 }
 
@@ -539,7 +540,7 @@ fn display_runtime_value(value: &RuntimeValue) -> String {
             .map_or_else(|| value.ratio().to_string(), ToOwned::to_owned),
         RuntimeValue::Range(value) => value.label(),
         RuntimeValue::Iterator(_) => "<iterator>".to_owned(),
-        RuntimeValue::EntityRef(value) => format!("@{value}"),
+        RuntimeValue::EntityRef(value) => format!("@{}", value.runtime_label()),
         RuntimeValue::Seq(_) => "[...]".to_owned(),
         RuntimeValue::Tuple(_) => "(...)".to_owned(),
         RuntimeValue::Record(_) => "{...}".to_owned(),

@@ -31,10 +31,9 @@ use thiserror::Error;
 pub const BUNDLE_SESSION_SAVE_SCHEMA_ID: &str = "arcweft.bundle_session";
 pub const BUNDLE_SESSION_SAVE_SCHEMA_VERSION: u32 = 1;
 
-#[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
+#[derive(Clone, Debug, PartialEq)]
 pub struct BundleSessionSnapshot {
     pub generation: BundleSessionGenerationSnapshot,
-    #[serde(deserialize_with = "deserialize_required_option")]
     pub character_presentation: Option<BundleSessionCharacterPresentationSnapshot>,
     pub active_entry: ActiveEntrySnapshotV1,
     pub root: Option<RootStateSnapshotV1>,
@@ -168,7 +167,7 @@ where
     Option::<T>::deserialize(deserializer)
 }
 
-#[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
+#[derive(Clone, Debug, PartialEq)]
 pub struct BundleSessionExecutorSnapshot {
     /// Generation that owns the Product AWBC fiber state.
     pub generation: GenerationId,
@@ -355,13 +354,12 @@ pub(crate) fn validate_presentation_runtime_status(
     status: &FlowFiberStatus,
 ) -> Result<(), BundleSessionSaveError> {
     match status {
-        FlowFiberStatus::Dialogue(state) => {
+        FlowFiberStatus::Dialogue(activation) => {
             let mut waiting = snapshot.dialogue.waiting_entries();
             let Some((presentation, dialogue)) = waiting.next() else {
                 return Err(BundleSessionSaveError::Presentation {
                     message: format!(
-                        "runtime waits for dialogue `{}` but the presentation has no dialogue",
-                        state.line
+                        "runtime waits for dialogue activation {activation:?} but the presentation has no dialogue"
                     ),
                 });
             };
@@ -370,13 +368,13 @@ pub(crate) fn validate_presentation_runtime_status(
                     message: "runtime has more than one actionable dialogue occurrence".to_owned(),
                 });
             }
-            if dialogue.frame().line != state.line {
+            if dialogue.activation() != activation {
                 return Err(BundleSessionSaveError::Presentation {
                     message: format!(
-                        "runtime waits for dialogue `{}` but presentation {} occurrence {} retains `{}`",
-                        state.line,
+                        "runtime waits for activation {activation:?} but presentation {} occurrence {} retains activation {:?} for `{}`",
                         presentation.id().get(),
                         dialogue.instance().get(),
+                        dialogue.activation(),
                         dialogue.frame().line,
                     ),
                 });

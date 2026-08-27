@@ -19,14 +19,15 @@ use arcweft_core::{
         RuntimeValueDigest, TypeLayoutHash,
     },
     pattern::{
-        RuntimeOpaqueTypeOwner, RuntimeOpaqueTypeProducerId, RuntimeSemanticTypeId,
-        RuntimeVariantIdentity,
+        RuntimeBuiltinVariantCaseIdentity, RuntimeOpaqueTypeOwner, RuntimeOpaqueTypeProducerId,
+        RuntimeSemanticTypeId, RuntimeVariantIdentity,
     },
     value::{
-        RuntimeNominalRecordValue, RuntimeOpaqueValue, RuntimeSeq, RuntimeValue,
-        runtime_sequence_dense_bytes,
+        RuntimeEntityReference, RuntimeNominalRecordValue, RuntimeOpaqueValue, RuntimeSeq,
+        RuntimeValue, runtime_sequence_dense_bytes,
     },
 };
+use arcweft_id::DeclarationIdentityFamily;
 use arcweft_view::{ViewId, ViewRegistry};
 use std::collections::{BTreeMap, BTreeSet};
 
@@ -417,7 +418,10 @@ pub(super) fn encode_record(
     let contract = dialogue.contract;
     let config = &dialogue.config;
     let fields = vec![
-        RuntimeValue::EntityRef(dialogue.character.as_str().to_owned()),
+        RuntimeValue::EntityRef(RuntimeEntityReference::Project {
+            family: DeclarationIdentityFamily::Character,
+            public_id: dialogue.character.as_public_id(),
+        }),
         digest_value(contract.character_manifest()),
         digest_value(contract.defaults()),
         digest_value(contract.custom_schema()),
@@ -453,7 +457,10 @@ pub(super) fn encode_record(
                 .as_ref()
                 .map(CharacterDialogueCleanupValue::typed),
         ),
-        RuntimeValue::EntityRef(config.view.as_str().to_owned()),
+        RuntimeValue::EntityRef(RuntimeEntityReference::Project {
+            family: DeclarationIdentityFamily::View,
+            public_id: config.view.public_id().clone(),
+        }),
         encode_option(
             config
                 .source_locale
@@ -484,14 +491,23 @@ fn decode_record(
     record: &RuntimeNominalRecordValue,
 ) -> Result<CharacterDialogue, CharacterDialogueValueError> {
     let fields = record.fields();
-    let character = fields
+    let RuntimeValue::EntityRef(RuntimeEntityReference::Project { family, public_id }) = fields
         .first()
-        .and_then(RuntimeValue::as_identifier)
-        .ok_or_else(|| field_shape("character_id", "expected EntityRef"))
-        .and_then(|value| {
-            CharacterId::try_new(value.to_owned())
-                .map_err(|error| field_shape("character_id", error.to_string()))
-        })?;
+        .ok_or_else(|| field_shape("character_id", "expected EntityRef"))?
+    else {
+        return Err(field_shape(
+            "character_id",
+            "expected Character entity reference",
+        ));
+    };
+    if *family != DeclarationIdentityFamily::Character {
+        return Err(field_shape(
+            "character_id",
+            "expected Character entity reference",
+        ));
+    }
+    let character = CharacterId::try_new(public_id.as_str())
+        .map_err(|error| field_shape("character_id", error.to_string()))?;
     let contract = CharacterDialogueContractIdentity::new(
         decode_digest(&fields[1], "character_manifest_digest")?,
         decode_digest(&fields[2], "defaults_digest")?,
@@ -522,13 +538,16 @@ fn decode_record(
     let cleanup = decode_typed_option(&fields[10], "cleanup")?
         .map(CharacterDialogueCleanupValue::try_new)
         .transpose()?;
-    let view = fields[11]
-        .as_identifier()
-        .ok_or_else(|| field_shape("view", "expected EntityRef"))
-        .and_then(|value| {
-            ViewId::parse_public(value.to_owned())
-                .map_err(|error| field_shape("view", error.to_string()))
-        })?;
+    let RuntimeValue::EntityRef(RuntimeEntityReference::Project { family, public_id }) =
+        &fields[11]
+    else {
+        return Err(field_shape("view", "expected View entity reference"));
+    };
+    if *family != DeclarationIdentityFamily::View {
+        return Err(field_shape("view", "expected View entity reference"));
+    }
+    let view = ViewId::parse_public(public_id.as_str())
+        .map_err(|error| field_shape("view", error.to_string()))?;
     let source_locale = decode_option(&fields[12], "source_locale")?
         .map(|value| {
             let RuntimeValue::String(value) = value else {
@@ -583,7 +602,7 @@ fn encode_voice(voice: &CharacterDialogueVoice) -> RuntimeValue {
             DialogueRuntimeVariantOwner::Voice,
             1,
             "Id",
-            Some(RuntimeValue::EntityRef(id.as_str().to_owned())),
+            Some(RuntimeValue::String(id.as_str().to_owned())),
         ),
     }
 }
@@ -603,7 +622,7 @@ fn decode_voice(
     expect_dialogue_variant_owner(owner, DialogueRuntimeVariantOwner::Voice, "voice")?;
     match (*ordinal, name.as_str(), payload.as_deref()) {
         (0, "Auto", None) => Ok(CharacterDialogueVoice::Auto),
-        (1, "Id", Some(RuntimeValue::EntityRef(id))) => {
+        (1, "Id", Some(RuntimeValue::String(id))) => {
             CharacterDialogueVoiceId::try_new(id.clone()).map(CharacterDialogueVoice::Id)
         }
         _ => Err(field_shape("voice", "invalid DialogueVoice variant")),
@@ -645,18 +664,9 @@ fn decode_option<'a>(
     value: &'a RuntimeValue,
     field: &'static str,
 ) -> Result<Option<&'a RuntimeValue>, CharacterDialogueValueError> {
-    let RuntimeValue::Variant {
-        owner,
-        ordinal,
-        name,
-        payload,
-    } = value
-    else {
-        return Err(field_shape(field, "expected Option variant"));
-    };
-    match (owner, *ordinal, name.as_str(), payload.as_deref()) {
-        (RuntimeVariantIdentity::Option, 1, "None", None) => Ok(None),
-        (RuntimeVariantIdentity::Option, 0, "Some", Some(value)) => Ok(Some(value)),
+    match value.builtin_variant_case() {
+        Some((RuntimeBuiltinVariantCaseIdentity::OptionNone, None)) => Ok(None),
+        Some((RuntimeBuiltinVariantCaseIdentity::OptionSome, Some(value))) => Ok(Some(value)),
         _ => Err(field_shape(field, "invalid Option payload")),
     }
 }

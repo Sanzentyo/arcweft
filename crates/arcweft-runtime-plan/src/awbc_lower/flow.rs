@@ -8,15 +8,17 @@ use crate::awbc_lower::pattern::{admitted_local_type, admitted_plan_type, lower_
 use crate::awbc_lower::{table_index, table_range_len};
 use arcweft_core::awbc::schema::{
     AwbcAwaitObserverResume, AwbcBindMode, AwbcBlock, AwbcBlockId, AwbcChoiceId, AwbcChoiceOption,
-    AwbcDialogueValueBinding, AwbcDialogueValueRole, AwbcEffectPlanId, AwbcEffectSetId,
-    AwbcFrameLayoutId, AwbcFunction, AwbcFunctionFlags, AwbcFunctionId, AwbcFunctionKind,
-    AwbcInstruction, AwbcIntrinsic, AwbcIntrinsicId, AwbcLineCancelHandler, AwbcLineTaskGroup,
-    AwbcLineTaskGroupId, AwbcLineTaskNode, AwbcLineTaskNodeId, AwbcLineTaskTrigger,
-    AwbcParallelPolicy, AwbcPatternId, AwbcPureHelper, AwbcPureHelperOrigin, AwbcRegisterId,
-    AwbcResumePoint, AwbcResumePointId, AwbcRuntimeTypeShape, AwbcSafePointKind, AwbcScopeId,
-    AwbcTableRange, AwbcTerminator, AwbcTraitMethodId, AwbcTrapCode,
+    AwbcDialogueResultTarget, AwbcDialogueValueBinding, AwbcDialogueValueRole, AwbcDropPolicy,
+    AwbcEffectPlanId, AwbcEffectSetId, AwbcFrameLayoutId, AwbcFunction, AwbcFunctionFlag,
+    AwbcFunctionFlags, AwbcFunctionId, AwbcFunctionKind, AwbcInstruction, AwbcIntrinsic,
+    AwbcIntrinsicId, AwbcLineCancelHandler, AwbcLineHandleSite, AwbcLineHandleSiteId,
+    AwbcLineOperation, AwbcLineOperationId, AwbcLineTaskGroup, AwbcLineTaskGroupId,
+    AwbcLineTaskNode, AwbcLineTaskNodeId, AwbcLineTaskTrigger, AwbcParallelPolicy, AwbcPatternId,
+    AwbcPureHelper, AwbcPureHelperOrigin, AwbcRegisterId, AwbcResumePoint, AwbcResumePointId,
+    AwbcRuntimeTypeShape, AwbcSafePointKind, AwbcScopeId, AwbcTableRange, AwbcTerminator,
+    AwbcTraitMethodId, AwbcTrapCode,
 };
-use arcweft_core::effect::LineEffectRequest;
+use arcweft_core::effect::{LineEffectRequest, RuntimeDropPolicyExpr, RuntimeEffectExpr};
 use arcweft_core::line_task::{
     ChildCancelPolicy, ChildJoinPolicy, LineTaskGroup, LineTaskNode, LineTaskTrigger,
     ParallelPolicy,
@@ -25,8 +27,8 @@ use arcweft_core::pattern::RuntimePattern;
 use arcweft_core::plan::{
     ChoiceRuntimeOption, EntryRuntimeId, FlowOp, FlowRuntimeId, RuntimeDialogueValueRole,
     RuntimeEntrySpec, RuntimeEntryTarget, RuntimeFlow, RuntimeIteratorEvidence,
-    RuntimeIteratorWitnessExecutable, RuntimeMatchArm, RuntimePlan, RuntimePureHelper,
-    RuntimePureHelperOrigin, RuntimeTraitMethodId,
+    RuntimeIteratorWitnessExecutable, RuntimeLineOperation, RuntimeMatchArm, RuntimePlan,
+    RuntimePureHelper, RuntimePureHelperOrigin, RuntimeTraitMethodId,
 };
 use arcweft_core::value::{RuntimeCallTarget, RuntimeExpr, RuntimeValue};
 use std::collections::{BTreeMap, BTreeSet};
@@ -66,6 +68,13 @@ struct LoopLoweringTarget {
     exit_jumps: Vec<AwbcBlockId>,
     outer_scope_depth: u32,
     result: Option<AwbcRegisterId>,
+}
+
+#[derive(Clone)]
+struct LineGroupLoweringContext {
+    id: AwbcLineTaskGroupId,
+    group: LineTaskGroup,
+    node_ids: Vec<AwbcLineTaskNodeId>,
 }
 
 impl BranchJoin {
@@ -225,6 +234,7 @@ pub struct AwbcFlowLowerer<'inventory, 'plan> {
     plan: &'plan RuntimePlan,
     diagnostics: Vec<AwbcLowerDiagnostic>,
     loop_targets: Vec<LoopLoweringTarget>,
+    line_group: Option<LineGroupLoweringContext>,
 }
 
 impl<'inventory, 'plan> AwbcFlowLowerer<'inventory, 'plan> {
@@ -234,6 +244,7 @@ impl<'inventory, 'plan> AwbcFlowLowerer<'inventory, 'plan> {
             plan,
             diagnostics: Vec::new(),
             loop_targets: Vec::new(),
+            line_group: None,
         }
     }
 
@@ -281,7 +292,7 @@ impl<'inventory, 'plan> AwbcFlowLowerer<'inventory, 'plan> {
         }
         AwbcTraitMethodLowerer::new(self.inventory, self.plan).lower_plan();
         for group in self.plan.line_task_groups() {
-            self.lower_line_task_group(group);
+            let _ = self.lower_line_task_group(group);
         }
 
         for flow in self
@@ -364,7 +375,7 @@ impl<'inventory, 'plan> AwbcFlowLowerer<'inventory, 'plan> {
                 frame_layout: layout,
                 blocks: AwbcTableRange::new(block.0, 1),
                 entry_block: block,
-                flags: AwbcFunctionFlags(AwbcFunctionFlags::DETERMINISTIC),
+                flags: AwbcFunctionFlags::empty().with(AwbcFunctionFlag::Deterministic),
             },
         );
         self.inventory.program.pure_helpers.push(AwbcPureHelper {
@@ -391,15 +402,30 @@ impl<'inventory, 'plan> AwbcFlowLowerer<'inventory, 'plan> {
         self.diagnostics
     }
 
-    fn lower_line_task_group(&mut self, group: &LineTaskGroup) -> AwbcLineTaskGroupId {
+    fn lower_line_task_group(&mut self, group: &LineTaskGroup) -> Option<AwbcLineTaskGroupId> {
+        let id = AwbcLineTaskGroupId(table_index(self.inventory.program.line_task_groups.len()));
         let node_start = table_index(self.inventory.program.line_task_nodes.len());
-        let node_id = |id: arcweft_core::runtime_id::RuntimeLineTaskNodeId| {
-            AwbcLineTaskNodeId(
-                node_start.saturating_add(u32::try_from(id.index()).unwrap_or(u32::MAX)),
-            )
+        let node_ids = match checked_line_task_node_ids(group, node_start) {
+            Ok(node_ids) => node_ids,
+            Err(diagnostic) => {
+                self.inventory.diagnostic(diagnostic);
+                return None;
+            }
         };
+        let node_id = |id: arcweft_core::runtime_id::RuntimeLineTaskNodeId| node_ids[id.index()];
         let captures = group.captures().to_vec();
-        self.lower_line_task_nodes(group, node_start, &captures);
+        let previous = self.line_group.replace(LineGroupLoweringContext {
+            id,
+            group: group.clone(),
+            node_ids: node_ids.clone(),
+        });
+        debug_assert!(previous.is_none());
+        let activation = self.lower_line_task_activation(
+            &captures,
+            group.activation_ops(),
+            "line_task.activation",
+        );
+        self.lower_line_task_nodes(group, &node_ids, &captures);
         let cancel_handlers = group
             .cancel_rules()
             .iter()
@@ -413,7 +439,6 @@ impl<'inventory, 'plan> AwbcFlowLowerer<'inventory, 'plan> {
                 ),
             })
             .collect();
-        let id = AwbcLineTaskGroupId(table_index(self.inventory.program.line_task_groups.len()));
         let completed = group
             .cleanup()
             .actions(arcweft_core::line_task::ScopeExit::Completed);
@@ -431,11 +456,26 @@ impl<'inventory, 'plan> AwbcFlowLowerer<'inventory, 'plan> {
             .actions(arcweft_core::line_task::ScopeExit::Failed);
         let cleanup_failed = (!failed.is_empty())
             .then(|| self.lower_line_task_action(&captures, failed, "line_task.cleanup.failed"));
+        let result_type = admitted_plan_type(self.inventory, self.plan, group.result_type());
+        let handle_sites = group
+            .handle_sites()
+            .iter()
+            .map(|site| AwbcLineHandleSite {
+                source_ordinal: site.source_ordinal(),
+                kind: site.kind(),
+                result_type: admitted_plan_type(self.inventory, self.plan, site.result_type()),
+                character: site.character().cloned(),
+                scheduled_child: site.scheduled_child().map(node_id),
+            })
+            .collect();
         self.inventory
             .program
             .line_task_groups
             .push(AwbcLineTaskGroup {
                 captures,
+                activation,
+                result_type,
+                handle_sites,
                 root: node_id(group.root()),
                 nodes: AwbcTableRange::new(
                     node_start,
@@ -447,20 +487,26 @@ impl<'inventory, 'plan> AwbcFlowLowerer<'inventory, 'plan> {
                 cleanup_failed,
                 cleanup: line_cleanup(group.cleanup().policy()),
             });
-        id
+        self.line_group = previous;
+        Some(id)
+    }
+
+    fn lower_line_task_activation(
+        &mut self,
+        captures: &[arcweft_core::runtime_id::RuntimeLocalDeclarationId],
+        ops: &[FlowOp],
+        path: &str,
+    ) -> AwbcFunctionId {
+        self.lower_line_function(captures, ops, path, AwbcFunctionKind::LineActivation)
     }
 
     fn lower_line_task_nodes(
         &mut self,
         group: &LineTaskGroup,
-        node_start: u32,
+        node_ids: &[AwbcLineTaskNodeId],
         captures: &[arcweft_core::runtime_id::RuntimeLocalDeclarationId],
     ) {
-        let node_id = |id: arcweft_core::runtime_id::RuntimeLineTaskNodeId| {
-            AwbcLineTaskNodeId(
-                node_start.saturating_add(u32::try_from(id.index()).unwrap_or(u32::MAX)),
-            )
-        };
+        let node_id = |id: arcweft_core::runtime_id::RuntimeLineTaskNodeId| node_ids[id.index()];
         for (index, node) in group.nodes().iter().enumerate() {
             let path = format!("line_task.{index}");
             let lowered = match node {
@@ -477,26 +523,21 @@ impl<'inventory, 'plan> AwbcFlowLowerer<'inventory, 'plan> {
                     children: children.iter().copied().map(node_id).collect(),
                 },
                 LineTaskNode::Child {
-                    id,
-                    key,
-                    name,
                     trigger,
-                    priority,
                     join_policy,
                     cancel_policy,
                     scope,
                 } => AwbcLineTaskNode::Child {
-                    id: self.inventory.intern_string(&id.0),
-                    key: key.as_ref().map(|key| self.inventory.intern_string(&key.0)),
-                    name: name.as_ref().map(|name| self.inventory.intern_string(name)),
                     trigger: match trigger {
                         LineTaskTrigger::Immediate => AwbcLineTaskTrigger::Immediate,
                         LineTaskTrigger::Mark(mark) => AwbcLineTaskTrigger::Mark(*mark),
-                        LineTaskTrigger::Delay(duration) => {
-                            AwbcLineTaskTrigger::DelayNanos(duration.as_nanos())
+                        LineTaskTrigger::ContentEffect(site) => {
+                            AwbcLineTaskTrigger::ContentEffect(*site)
                         }
+                        LineTaskTrigger::Scheduled(site) => AwbcLineTaskTrigger::Scheduled(
+                            arcweft_core::awbc::schema::AwbcLineHandleSiteId(site.get()),
+                        ),
                     },
-                    priority: priority.0,
                     join: match join_policy {
                         ChildJoinPolicy::Join => {
                             arcweft_core::awbc::schema::AwbcChildJoinPolicy::Join
@@ -532,6 +573,16 @@ impl<'inventory, 'plan> AwbcFlowLowerer<'inventory, 'plan> {
         ops: &[FlowOp],
         path: &str,
     ) -> AwbcFunctionId {
+        self.lower_line_function(captures, ops, path, AwbcFunctionKind::LineTask)
+    }
+
+    fn lower_line_function(
+        &mut self,
+        captures: &[arcweft_core::runtime_id::RuntimeLocalDeclarationId],
+        ops: &[FlowOp],
+        path: &str,
+        kind: AwbcFunctionKind,
+    ) -> AwbcFunctionId {
         let owner = self.inventory.reserve_function_slot();
         let mut frame = FrameBuilder::new();
         for capture in captures {
@@ -566,14 +617,14 @@ impl<'inventory, 'plan> AwbcFlowLowerer<'inventory, 'plan> {
             owner,
             AwbcFunction {
                 public_id,
-                kind: AwbcFunctionKind::LineTask,
+                kind,
                 signature,
                 frame_layout: layout,
                 blocks: body.blocks,
                 entry_block: body.entry_block,
-                flags: AwbcFunctionFlags(
-                    AwbcFunctionFlags::MAY_SUSPEND | AwbcFunctionFlags::DETERMINISTIC,
-                ),
+                flags: AwbcFunctionFlags::empty()
+                    .with(AwbcFunctionFlag::Deterministic)
+                    .with(AwbcFunctionFlag::MaySuspend),
             },
         )
     }
@@ -620,9 +671,12 @@ impl<'inventory, 'plan> AwbcFlowLowerer<'inventory, 'plan> {
                 .intern_signature(params, None, AwbcEffectSetId(0))
         };
         let public_id = self.inventory.intern_string(&public_name);
-        let mut flags = AwbcFunctionFlags::MAY_SUSPEND | AwbcFunctionFlags::DETERMINISTIC;
+        let mut flags = vec![
+            AwbcFunctionFlag::Deterministic,
+            AwbcFunctionFlag::MaySuspend,
+        ];
         if body.has_dynamic_target {
-            flags |= AwbcFunctionFlags::HAS_DYNAMIC_TARGET;
+            flags.push(AwbcFunctionFlag::HasDynamicTarget);
         }
         let function = self.inventory.replace_flow_function(
             &flow.id,
@@ -634,7 +688,9 @@ impl<'inventory, 'plan> AwbcFlowLowerer<'inventory, 'plan> {
                 frame_layout: layout,
                 blocks: body.blocks,
                 entry_block: body.entry_block,
-                flags: AwbcFunctionFlags(flags),
+                flags: flags
+                    .into_iter()
+                    .fold(AwbcFunctionFlags::empty(), AwbcFunctionFlags::with),
             },
         );
         debug_assert_eq!(function, owner);
@@ -731,7 +787,16 @@ impl<'inventory, 'plan> AwbcFlowLowerer<'inventory, 'plan> {
                         value,
                     });
             }
-            FlowOp::Dialogue { content } => {
+            FlowOp::LineOperation { binding, operation } => {
+                self.lower_line_operation(frame, binding.as_ref(), operation, path);
+            }
+            FlowOp::CommitDialogueResult { value } => {
+                let source =
+                    AwbcExprLowerer::new(self.inventory, frame, path, self.plan).lower(value);
+                self.inventory
+                    .push_instruction(AwbcInstruction::CommitDialogueResult { source });
+            }
+            FlowOp::Dialogue { content, result } => {
                 let Some(content_plan) = self.plan.dialogue_content().get(*content) else {
                     self.inventory.diagnostic(AwbcLowerDiagnostic::error(
                         path,
@@ -755,6 +820,12 @@ impl<'inventory, 'plan> AwbcFlowLowerer<'inventory, 'plan> {
                         frame.local(*capture, ty)
                     })
                     .collect();
+                let result_ty = admitted_plan_type(self.inventory, self.plan, result.ty());
+                let result_target = AwbcDialogueResultTarget {
+                    ty: result_ty,
+                    pattern: lower_pattern(self.inventory, self.plan, frame, result.pattern()),
+                    destination: frame.root_temp(result_ty),
+                };
                 let mut values_by_function = BTreeMap::new();
                 let mut values = Vec::with_capacity(content_plan.values().len());
                 for site in content_plan.values() {
@@ -789,6 +860,7 @@ impl<'inventory, 'plan> AwbcFlowLowerer<'inventory, 'plan> {
                         content,
                         values,
                         line_task_captures,
+                        result: result_target,
                         resume,
                     }
                 });
@@ -862,8 +934,13 @@ impl<'inventory, 'plan> AwbcFlowLowerer<'inventory, 'plan> {
                 );
                 let item_binding =
                     frame.local(target.item_binding, self.local_type(target.item_binding));
-                self.inventory
-                    .set_await_many_policy(task, item_binding, target.limit);
+                if let Err(diagnostic) =
+                    self.inventory
+                        .set_await_many_policy(task, item_binding, target.limit)
+                {
+                    self.inventory.diagnostic(diagnostic);
+                    return;
+                }
                 let binding = binding
                     .as_ref()
                     .map(|binding| lower_pattern(self.inventory, self.plan, frame, binding));
@@ -1120,6 +1197,23 @@ impl<'inventory, 'plan> AwbcFlowLowerer<'inventory, 'plan> {
                 self.inventory
                     .push_instruction(AwbcInstruction::EmitEffect { effect, args });
             }
+            FlowOp::EvaluatedEffect(RuntimeEffectExpr::Drop { target, policy }) => {
+                let register =
+                    AwbcExprLowerer::new(self.inventory, frame, path, self.plan).lower(target);
+                let policy = match policy {
+                    RuntimeDropPolicyExpr::Default => AwbcDropPolicy::Default,
+                    RuntimeDropPolicyExpr::Cancel => AwbcDropPolicy::Cancel,
+                    RuntimeDropPolicyExpr::Stop { fade } => AwbcDropPolicy::Stop {
+                        fade: AwbcExprLowerer::new(self.inventory, frame, path, self.plan)
+                            .lower(fade),
+                    },
+                    RuntimeDropPolicyExpr::Finish => AwbcDropPolicy::Finish,
+                    RuntimeDropPolicyExpr::Release => AwbcDropPolicy::Release,
+                    RuntimeDropPolicyExpr::Detach => AwbcDropPolicy::Detach,
+                };
+                self.inventory
+                    .push_instruction(AwbcInstruction::Drop { register, policy });
+            }
             FlowOp::EvaluatedEffect(effect) => {
                 let args = effect
                     .argument_exprs()
@@ -1128,7 +1222,13 @@ impl<'inventory, 'plan> AwbcFlowLowerer<'inventory, 'plan> {
                         AwbcExprLowerer::new(self.inventory, frame, path, self.plan).lower(expr)
                     })
                     .collect();
-                let effect = self.inventory.intern_evaluated_effect(effect);
+                let Some(effect) = self.inventory.intern_evaluated_effect(effect) else {
+                    self.inventory.diagnostic(AwbcLowerDiagnostic::error(
+                        path,
+                        "evaluated effect has no host descriptor",
+                    ));
+                    return;
+                };
                 self.inventory
                     .push_instruction(AwbcInstruction::EmitEffect { effect, args });
             }
@@ -1163,6 +1263,146 @@ impl<'inventory, 'plan> AwbcFlowLowerer<'inventory, 'plan> {
                     "runtime-only Await observer completion reached AWBC lowering",
                 ));
             }
+        }
+    }
+
+    fn lower_line_operation(
+        &mut self,
+        frame: &mut FrameBuilder,
+        binding: Option<&RuntimePattern>,
+        operation: &RuntimeLineOperation,
+        path: &str,
+    ) {
+        let Some(context) = self.line_group.clone() else {
+            self.inventory.diagnostic(AwbcLowerDiagnostic::error(
+                path,
+                "typed line operation is outside a sealed line-task group",
+            ));
+            return;
+        };
+        let Some(site) = context.group.handle_site(operation.site()).cloned() else {
+            self.inventory.diagnostic(AwbcLowerDiagnostic::error(
+                path,
+                "typed line operation references an absent handle site",
+            ));
+            return;
+        };
+        let site_id = AwbcLineHandleSiteId(site.id().get());
+        let result_type = admitted_plan_type(self.inventory, self.plan, site.result_type());
+        let dst = frame.temp(result_type);
+        let (operation_record, args) = match operation {
+            RuntimeLineOperation::AcquireActor {
+                character, scope, ..
+            } => (
+                AwbcLineOperation::AcquireActor {
+                    group: context.id,
+                    site: site_id,
+                    character: character.clone(),
+                    scope: *scope,
+                    result_type,
+                },
+                Vec::new(),
+            ),
+            RuntimeLineOperation::Schedule {
+                delay,
+                child,
+                captures,
+                ..
+            } => {
+                let Some(child) = context.node_ids.get(child.index()).copied() else {
+                    self.inventory.diagnostic(AwbcLowerDiagnostic::error(
+                        path,
+                        "schedule operation references a node outside its sealed group",
+                    ));
+                    return;
+                };
+                let mut args = Vec::with_capacity(captures.len() + 1);
+                args.push(
+                    AwbcExprLowerer::new(self.inventory, frame, path, self.plan).lower(delay),
+                );
+                let mut capture_schema = Vec::with_capacity(captures.len());
+                for capture in captures {
+                    capture_schema.push(arcweft_core::awbc::schema::AwbcLineScheduledCapture {
+                        local: capture.local(),
+                        ty: admitted_plan_type(self.inventory, self.plan, capture.value().ty()),
+                    });
+                    args.push(
+                        AwbcExprLowerer::new(self.inventory, frame, path, self.plan)
+                            .lower(capture.value()),
+                    );
+                }
+                (
+                    AwbcLineOperation::Schedule {
+                        group: context.id,
+                        site: site_id,
+                        child,
+                        captures: capture_schema,
+                        result_type,
+                    },
+                    args,
+                )
+            }
+            RuntimeLineOperation::ActorLook {
+                character,
+                actor,
+                look,
+                crossfade,
+                ..
+            } => {
+                let actor_type = admitted_plan_type(self.inventory, self.plan, actor.ty());
+                let look_type = admitted_plan_type(self.inventory, self.plan, look.ty());
+                let args = [actor, look, crossfade]
+                    .into_iter()
+                    .map(|argument| {
+                        AwbcExprLowerer::new(self.inventory, frame, path, self.plan).lower(argument)
+                    })
+                    .collect();
+                (
+                    AwbcLineOperation::ActorLook {
+                        group: context.id,
+                        site: site_id,
+                        character: character.clone(),
+                        actor_type,
+                        look_type,
+                        result_type,
+                    },
+                    args,
+                )
+            }
+            RuntimeLineOperation::VoiceHandle { .. } => (
+                AwbcLineOperation::VoiceHandle {
+                    group: context.id,
+                    site: site_id,
+                    result_type,
+                },
+                Vec::new(),
+            ),
+        };
+        let operation =
+            AwbcLineOperationId(table_index(self.inventory.program.line_operations.len()));
+        self.inventory
+            .program
+            .line_operations
+            .push(operation_record);
+        self.inventory
+            .push_instruction(AwbcInstruction::ExecuteLineOperation {
+                dst,
+                operation,
+                args,
+            });
+        if let Some(binding) = binding {
+            let pattern = lower_pattern(self.inventory, self.plan, frame, binding);
+            self.inventory
+                .push_instruction(AwbcInstruction::BindPattern {
+                    pattern,
+                    value: dst,
+                    mode: AwbcBindMode::Declare,
+                });
+        } else {
+            self.inventory.push_instruction(AwbcInstruction::Drop {
+                register: dst,
+                policy: AwbcDropPolicy::Default,
+            });
         }
     }
 
@@ -2369,6 +2609,56 @@ fn patch_jump_target(
     *target = target_block;
 }
 
+fn checked_line_task_node_ids(
+    group: &LineTaskGroup,
+    node_start: u32,
+) -> Result<Vec<AwbcLineTaskNodeId>, AwbcLowerDiagnostic> {
+    let mut node_ids = Vec::with_capacity(group.nodes().len());
+    for index in 0..group.nodes().len() {
+        let offset = u32::try_from(index).map_err(|_| {
+            AwbcLowerDiagnostic::error(
+                "line_task.nodes",
+                format!("line-task node offset {index} exceeds the u32 AWBC domain"),
+            )
+        })?;
+        let absolute = node_start.checked_add(offset).ok_or_else(|| {
+            AwbcLowerDiagnostic::error(
+                "line_task.nodes",
+                format!(
+                    "line-task node table range starting at {node_start} exceeds the u32 AWBC domain"
+                ),
+            )
+        })?;
+        node_ids.push(AwbcLineTaskNodeId(absolute));
+    }
+
+    let validates =
+        |id: arcweft_core::runtime_id::RuntimeLineTaskNodeId| node_ids.get(id.index()).is_some();
+    if !validates(group.root()) {
+        return Err(AwbcLowerDiagnostic::error(
+            "line_task.root",
+            "line-task root is outside its sealed node table",
+        ));
+    }
+    for (index, node) in group.nodes().iter().enumerate() {
+        let valid = match node {
+            LineTaskNode::Sequence(children) | LineTaskNode::Start(children) => {
+                children.iter().copied().all(&validates)
+            }
+            LineTaskNode::Parallel { children, .. } => children.iter().copied().all(&validates),
+            LineTaskNode::Child { scope, .. } => validates(*scope),
+            LineTaskNode::Action(_) => true,
+        };
+        if !valid {
+            return Err(AwbcLowerDiagnostic::error(
+                format!("line_task.node.{index}"),
+                "line-task node references an ID outside its sealed node table",
+            ));
+        }
+    }
+    Ok(node_ids)
+}
+
 fn entry_target_flows<'a>(
     entries: impl IntoIterator<Item = &'a RuntimeEntrySpec>,
 ) -> BTreeSet<FlowRuntimeId> {
@@ -2478,6 +2768,8 @@ fn collect_flow_dependencies(
             FlowOp::Bind(_)
             | FlowOp::Let { .. }
             | FlowOp::AssignNominalField { .. }
+            | FlowOp::LineOperation { .. }
+            | FlowOp::CommitDialogueResult { .. }
             | FlowOp::Dialogue { .. }
             | FlowOp::AwaitMany { .. }
             | FlowOp::HostCall { .. }

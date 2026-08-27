@@ -4,12 +4,13 @@ use super::dialogue_primary_action_program_id;
 use arcweft_core::{
     awbc::{
         schema::{
-            AwbcBlock, AwbcBlockId, AwbcEffectSet, AwbcEffectSetId, AwbcFrameLayout,
-            AwbcFrameLayoutId, AwbcFrameSlot, AwbcFrameSlotRole, AwbcFunction, AwbcFunctionFlags,
-            AwbcFunctionId, AwbcFunctionKind, AwbcInstruction, AwbcProgram, AwbcPureHelper,
-            AwbcPureHelperId, AwbcPureHelperOrigin, AwbcPureProgramBinding, AwbcRegisterId,
-            AwbcRuntimeType, AwbcRuntimeTypeShape, AwbcSafePointKind, AwbcSignature,
-            AwbcSignatureId, AwbcStringId, AwbcTableRange, AwbcTerminator, AwbcTypeId,
+            AwbcBlock, AwbcBlockId, AwbcEffectSet, AwbcEffectSetId, AwbcFieldProjection,
+            AwbcFrameLayout, AwbcFrameLayoutId, AwbcFrameSlot, AwbcFrameSlotRole, AwbcFunction,
+            AwbcFunctionFlag, AwbcFunctionFlags, AwbcFunctionId, AwbcFunctionKind, AwbcInstruction,
+            AwbcProgram, AwbcPureHelper, AwbcPureHelperId, AwbcPureHelperOrigin,
+            AwbcPureProgramBinding, AwbcRegisterId, AwbcRuntimeType, AwbcRuntimeTypeShape,
+            AwbcSafePointKind, AwbcSignature, AwbcSignatureId, AwbcStringId, AwbcTableRange,
+            AwbcTerminator, AwbcTypeId,
         },
         verify::{AwbcVerifyBudget, AwbcVerifyContext, AwbcVerifyError},
     },
@@ -112,15 +113,15 @@ fn install_dialogue_handler_rows(candidate: &mut AwbcProgram) -> Result<(), Stan
     let function = AwbcFunctionId(table_index(candidate.functions.len(), "functions")?);
     let block = AwbcBlockId(table_index(candidate.blocks.len(), "blocks")?);
     let instruction_start = table_index(candidate.instructions.len(), "instructions")?;
-    candidate
-        .instructions
-        .push(AwbcInstruction::ProjectOpaqueRecordField {
-            dst: AwbcRegisterId(1),
-            target: AwbcRegisterId(0),
+    candidate.instructions.push(AwbcInstruction::ProjectField {
+        dst: AwbcRegisterId(1),
+        target: AwbcRegisterId(0),
+        field: AwbcFieldProjection::OpaqueRecord {
             owner: view_type,
             field: RuntimeDialogueViewField::PrimaryAction.ordinal(),
             field_type: action_type,
-        });
+        },
+    });
     candidate.blocks.push(AwbcBlock {
         owner: function,
         instructions: AwbcTableRange::new(instruction_start, 1),
@@ -137,7 +138,7 @@ fn install_dialogue_handler_rows(candidate: &mut AwbcProgram) -> Result<(), Stan
         frame_layout,
         blocks: AwbcTableRange::new(block.0, 1),
         entry_block: block,
-        flags: AwbcFunctionFlags(AwbcFunctionFlags::DETERMINISTIC),
+        flags: AwbcFunctionFlags::empty().with(AwbcFunctionFlag::Deterministic),
     });
 
     let helper = AwbcPureHelperId(table_index(candidate.pure_helpers.len(), "pure_helpers")?);

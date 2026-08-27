@@ -6,8 +6,8 @@ use arcweft_core::awbc::schema::{
     AwbcVariantIdentity,
 };
 use arcweft_core::pattern::{
-    RuntimeCheckedType, RuntimePattern, RuntimePatternKind, RuntimePatternRest,
-    RuntimeRecordPatternField,
+    RuntimeBuiltinVariantIdentity, RuntimeCheckedType, RuntimePattern, RuntimePatternKind,
+    RuntimePatternRest, RuntimeRecordPatternField, RuntimeVariantIdentity,
 };
 use arcweft_core::plan::{RuntimeAgentTypeProjection, RuntimePlan, RuntimePlanTypeProjection};
 use arcweft_core::runtime_id::{RuntimeLocalDeclarationId, RuntimePlanTypeId};
@@ -45,9 +45,7 @@ pub(crate) fn lower_pattern(
             inventory.intern_pattern(AwbcPattern::Literal(constant))
         }
         RuntimePatternKind::Entity(value) => {
-            let label = value.runtime_label();
-            let entity = inventory.intern_string(&label);
-            inventory.intern_pattern(AwbcPattern::Entity(entity))
+            inventory.intern_pattern(AwbcPattern::Entity(value.clone()))
         }
         RuntimePatternKind::Tuple(items) => {
             let items = items
@@ -222,6 +220,7 @@ fn plan_type_shape(
         RuntimePlanTypeProjection::Duration => AwbcRuntimeTypeShape::Duration,
         RuntimePlanTypeProjection::Progress => AwbcRuntimeTypeShape::Progress,
         RuntimePlanTypeProjection::EntityReference => AwbcRuntimeTypeShape::EntityRef,
+        RuntimePlanTypeProjection::AgentValue => AwbcRuntimeTypeShape::AgentValue,
         RuntimePlanTypeProjection::Range(item) => {
             AwbcRuntimeTypeShape::Range(reserved_plan_type(inventory, *item)?)
         }
@@ -247,7 +246,9 @@ fn plan_type_shape(
             error: reserved_plan_type(inventory, *error)?,
         },
         RuntimePlanTypeProjection::Result { value, error } => AwbcRuntimeTypeShape::Variant {
-            owner: AwbcVariantIdentity::Result,
+            owner: AwbcVariantIdentity::Builtin(
+                arcweft_core::pattern::RuntimeBuiltinVariantIdentity::Result,
+            ),
             arguments: Vec::new(),
             cases: vec![
                 AwbcVariantCase {
@@ -261,7 +262,9 @@ fn plan_type_shape(
             ],
         },
         RuntimePlanTypeProjection::Option(item) => AwbcRuntimeTypeShape::Variant {
-            owner: AwbcVariantIdentity::Option,
+            owner: AwbcVariantIdentity::Builtin(
+                arcweft_core::pattern::RuntimeBuiltinVariantIdentity::Option,
+            ),
             arguments: Vec::new(),
             cases: vec![
                 AwbcVariantCase {
@@ -274,6 +277,25 @@ fn plan_type_shape(
                 },
             ],
         },
+        RuntimePlanTypeProjection::BuiltinVariant { owner, cases } => {
+            AwbcRuntimeTypeShape::Variant {
+                owner: AwbcVariantIdentity::Builtin(*owner),
+                arguments: Vec::new(),
+                cases: owner
+                    .cases()
+                    .iter()
+                    .zip(cases)
+                    .map(|(schema, payload)| {
+                        Ok(AwbcVariantCase {
+                            name: inventory.intern_string(schema.name()),
+                            payload: payload
+                                .map(|payload| reserved_plan_type(inventory, payload))
+                                .transpose()?,
+                        })
+                    })
+                    .collect::<Result<Vec<_>, AwbcLowerDiagnostic>>()?,
+            }
+        }
         RuntimePlanTypeProjection::ThreadHandle(result) => {
             AwbcRuntimeTypeShape::Task(reserved_plan_type(inventory, *result)?)
         }
@@ -517,6 +539,7 @@ pub(crate) fn intern_runtime_type(
         RuntimeCheckedType::Duration => AwbcRuntimeTypeShape::Duration,
         RuntimeCheckedType::Progress => AwbcRuntimeTypeShape::Progress,
         RuntimeCheckedType::EntityReference => AwbcRuntimeTypeShape::EntityRef,
+        RuntimeCheckedType::AgentValue => AwbcRuntimeTypeShape::AgentValue,
         RuntimeCheckedType::Bytes => AwbcRuntimeTypeShape::Bytes,
         RuntimeCheckedType::Sequence(item) => {
             AwbcRuntimeTypeShape::Sequence(intern_runtime_type(inventory, item))
@@ -554,13 +577,12 @@ pub(crate) fn intern_runtime_type(
             arguments: Vec::new(),
         },
         RuntimeCheckedType::Variant {
-            nominal,
+            owner,
             arguments,
             cases,
-            ..
-        } => intern_variant_type(inventory, nominal, arguments, cases),
+        } => intern_variant_type(inventory, owner, arguments, cases),
         RuntimeCheckedType::Result { ok, error } => AwbcRuntimeTypeShape::Variant {
-            owner: AwbcVariantIdentity::Result,
+            owner: AwbcVariantIdentity::Builtin(RuntimeBuiltinVariantIdentity::Result),
             arguments: Vec::new(),
             cases: vec![
                 AwbcVariantCase {
@@ -574,7 +596,7 @@ pub(crate) fn intern_runtime_type(
             ],
         },
         RuntimeCheckedType::Option(item) => AwbcRuntimeTypeShape::Variant {
-            owner: AwbcVariantIdentity::Option,
+            owner: AwbcVariantIdentity::Builtin(RuntimeBuiltinVariantIdentity::Option),
             arguments: Vec::new(),
             cases: vec![
                 AwbcVariantCase {
@@ -596,7 +618,11 @@ pub(crate) fn intern_runtime_type(
             semantic_identity, ..
         }
         | RuntimeCheckedType::Variant {
-            semantic_identity, ..
+            owner:
+                RuntimeVariantIdentity::Nominal {
+                    semantic_identity, ..
+                },
+            ..
         } => *semantic_identity,
         RuntimeCheckedType::Opaque { owner } => owner.semantic_identity(),
         _ => ty.semantic_identity_digest(),
@@ -608,13 +634,16 @@ pub(crate) fn intern_runtime_type(
 
 fn intern_variant_type(
     inventory: &mut AwbcInventory,
-    nominal: &arcweft_core::entry::RuntimeNominalTypeId,
+    owner: &RuntimeVariantIdentity,
     arguments: &[RuntimeCheckedType],
     cases: &[arcweft_core::pattern::RuntimeCheckedVariantCase],
 ) -> AwbcRuntimeTypeShape {
     AwbcRuntimeTypeShape::Variant {
-        owner: AwbcVariantIdentity::Nominal {
-            public_id: inventory.intern_string(nominal.as_str()),
+        owner: match owner {
+            RuntimeVariantIdentity::Nominal { nominal, .. } => AwbcVariantIdentity::Nominal {
+                public_id: inventory.intern_string(nominal.as_str()),
+            },
+            RuntimeVariantIdentity::Builtin(owner) => AwbcVariantIdentity::Builtin(*owner),
         },
         arguments: arguments
             .iter()

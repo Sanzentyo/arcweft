@@ -23,8 +23,8 @@ use arcweft_core::entry::{
 };
 pub use arcweft_core::pattern::RuntimeSemanticTypeId;
 use arcweft_core::pattern::{
-    RuntimeCheckedType, RuntimeCheckedVariantCase, RuntimeOpaqueTypeAdmission,
-    RuntimeOpaqueTypeOwner, RuntimeOpaqueTypeProducerId,
+    RuntimeBuiltinVariantIdentity, RuntimeCheckedType, RuntimeCheckedVariantCase,
+    RuntimeOpaqueTypeAdmission, RuntimeOpaqueTypeOwner, RuntimeOpaqueTypeProducerId,
 };
 use arcweft_core::plan::{
     FlowRuntimeId, RuntimeAgentOperationalType, RuntimeAgentTypeProjection,
@@ -99,7 +99,6 @@ pub enum RuntimeAgentTypeShape {
     ActionName,
     ActionTarget,
     ActionResult,
-    AgentValue,
     DataFormat,
     DataShape,
     EntityMetadata,
@@ -110,7 +109,6 @@ pub enum RuntimeAgentTypeShape {
     CaptureTarget,
     CaptureReference,
     Resource,
-    ResourceBody,
     RagContextPack,
     ObservedObjectId,
     CaptureFormat,
@@ -120,6 +118,11 @@ pub enum RuntimeAgentTypeShape {
     ViewportPoint,
     PointerButton,
     RagError,
+    SourcePosition,
+    ProjectFlowControlSummary,
+    ProjectGraphSummary,
+    BinaryResourceBody,
+    BinaryData,
 }
 
 /// Runtime-relevant shape paired with an exact semantic type identity.
@@ -147,6 +150,7 @@ pub enum RuntimeTypeShape {
     Duration,
     Progress,
     EntityReference,
+    AgentValue,
     Range(Box<RuntimeNormalizedType>),
     Iterator(Box<RuntimeNormalizedType>),
     Sequence {
@@ -171,6 +175,10 @@ pub enum RuntimeTypeShape {
         error: Box<RuntimeNormalizedType>,
     },
     Option(Box<RuntimeNormalizedType>),
+    BuiltinVariant {
+        owner: RuntimeBuiltinVariantIdentity,
+        cases: Box<[Option<RuntimeNormalizedType>]>,
+    },
     ThreadHandle(Box<RuntimeNormalizedType>),
     Shared(Box<RuntimeNormalizedType>),
     Reference(Box<RuntimeNormalizedType>),
@@ -213,6 +221,7 @@ pub enum RuntimeTypeProjectionStep {
     ResultOk,
     ResultError,
     OptionItem,
+    BuiltinVariantCase(u32),
     AgentProbeValue,
 }
 
@@ -282,6 +291,12 @@ pub enum RuntimeCheckedTypeProjectionError {
         path: RuntimeTypeProjectionPath,
         reason: RuntimeResolvedNominalError,
     },
+    #[error("builtin variant `{owner:?}` has a non-canonical payload schema")]
+    InvalidBuiltinVariant {
+        semantic_identity: RuntimeSemanticTypeId,
+        path: RuntimeTypeProjectionPath,
+        owner: RuntimeBuiltinVariantIdentity,
+    },
 }
 
 /// One normalized semantic type that can be compared without source spelling.
@@ -336,6 +351,7 @@ impl RuntimeNormalizedType {
             RuntimeTypeShape::Duration => RuntimePlanTypeProjection::Duration,
             RuntimeTypeShape::Progress => RuntimePlanTypeProjection::Progress,
             RuntimeTypeShape::EntityReference => RuntimePlanTypeProjection::EntityReference,
+            RuntimeTypeShape::AgentValue => RuntimePlanTypeProjection::AgentValue,
             RuntimeTypeShape::Range(item) => RuntimePlanTypeProjection::Range(child(item)),
             RuntimeTypeShape::Iterator(item) => RuntimePlanTypeProjection::Iterator(child(item)),
             RuntimeTypeShape::Sequence { kind, item } => RuntimePlanTypeProjection::Sequence {
@@ -361,6 +377,15 @@ impl RuntimeNormalizedType {
                 error: child(error),
             },
             RuntimeTypeShape::Option(item) => RuntimePlanTypeProjection::Option(child(item)),
+            RuntimeTypeShape::BuiltinVariant { owner, cases } => {
+                RuntimePlanTypeProjection::BuiltinVariant {
+                    owner: *owner,
+                    cases: cases
+                        .iter()
+                        .map(|payload| payload.as_ref().map(RuntimeNormalizedType::identity))
+                        .collect(),
+                }
+            }
             RuntimeTypeShape::ThreadHandle(result) => {
                 RuntimePlanTypeProjection::ThreadHandle(child(result))
             }
@@ -447,6 +472,9 @@ impl RuntimeNormalizedType {
                 value: key,
                 error: value,
             } => vec![key, value],
+            RuntimeTypeShape::BuiltinVariant { cases, .. } => {
+                cases.iter().filter_map(Option::as_ref).collect()
+            }
             RuntimeTypeShape::Function { parameters, result } => parameters
                 .iter()
                 .chain(std::iter::once(result.as_ref()))
@@ -468,6 +496,7 @@ impl RuntimeNormalizedType {
             | RuntimeTypeShape::Duration
             | RuntimeTypeShape::Progress
             | RuntimeTypeShape::EntityReference
+            | RuntimeTypeShape::AgentValue
             | RuntimeTypeShape::Agent(_) => Vec::new(),
         }
     }
@@ -539,6 +568,31 @@ impl RuntimeNormalizedType {
             RuntimeTypeShape::Option(item) => RuntimeCheckedType::Option(Box::new(
                 item.checked_type_at(&path.pushed(RuntimeTypeProjectionStep::OptionItem))?,
             )),
+            RuntimeTypeShape::BuiltinVariant { owner, cases } => {
+                let payloads = cases
+                    .iter()
+                    .enumerate()
+                    .map(|(index, payload)| {
+                        payload
+                            .as_ref()
+                            .map(|payload| {
+                                payload.checked_type_at(&path.pushed(
+                                    RuntimeTypeProjectionStep::BuiltinVariantCase(
+                                        projection_index(index),
+                                    ),
+                                ))
+                            })
+                            .transpose()
+                    })
+                    .collect::<Result<Vec<_>, RuntimeCheckedTypeProjectionError>>()?;
+                RuntimeCheckedType::try_builtin_variant(*owner, payloads).map_err(|_| {
+                    RuntimeCheckedTypeProjectionError::InvalidBuiltinVariant {
+                        semantic_identity: self.identity(),
+                        path: path.clone(),
+                        owner: *owner,
+                    }
+                })?
+            }
             RuntimeTypeShape::Opaque {
                 producer,
                 admission,
@@ -567,6 +621,7 @@ impl RuntimeNormalizedType {
             | RuntimeTypeShape::Duration
             | RuntimeTypeShape::Progress
             | RuntimeTypeShape::EntityReference
+            | RuntimeTypeShape::AgentValue
             | RuntimeTypeShape::Range(_)
             | RuntimeTypeShape::Iterator(_)
             | RuntimeTypeShape::Map { .. }
@@ -599,6 +654,7 @@ impl RuntimeNormalizedType {
             RuntimeTypeShape::Duration => Some(RuntimeCheckedType::Duration),
             RuntimeTypeShape::Progress => Some(RuntimeCheckedType::Progress),
             RuntimeTypeShape::EntityReference => Some(RuntimeCheckedType::EntityReference),
+            RuntimeTypeShape::AgentValue => Some(RuntimeCheckedType::AgentValue),
             _ => None,
         }
     }
@@ -651,7 +707,6 @@ impl RuntimeAgentTypeShape {
             Self::ActionName => RuntimeAgentTypeProjection::ActionName,
             Self::ActionTarget => RuntimeAgentTypeProjection::ActionTarget,
             Self::ActionResult => RuntimeAgentTypeProjection::ActionResult,
-            Self::AgentValue => RuntimeAgentTypeProjection::AgentValue,
             Self::DataFormat => RuntimeAgentTypeProjection::DataFormat,
             Self::DataShape => RuntimeAgentTypeProjection::DataShape,
             Self::EntityMetadata => RuntimeAgentTypeProjection::EntityMetadata,
@@ -662,7 +717,6 @@ impl RuntimeAgentTypeShape {
             Self::CaptureTarget => RuntimeAgentTypeProjection::CaptureTarget,
             Self::CaptureReference => RuntimeAgentTypeProjection::CaptureReference,
             Self::Resource => RuntimeAgentTypeProjection::Resource,
-            Self::ResourceBody => RuntimeAgentTypeProjection::ResourceBody,
             Self::RagContextPack => RuntimeAgentTypeProjection::RagContextPack,
             Self::ObservedObjectId => RuntimeAgentTypeProjection::ObservedObjectId,
             Self::CaptureFormat => RuntimeAgentTypeProjection::CaptureFormat,
@@ -672,6 +726,13 @@ impl RuntimeAgentTypeShape {
             Self::ViewportPoint => RuntimeAgentTypeProjection::ViewportPoint,
             Self::PointerButton => RuntimeAgentTypeProjection::PointerButton,
             Self::RagError => RuntimeAgentTypeProjection::RagError,
+            Self::SourcePosition => RuntimeAgentTypeProjection::SourcePosition,
+            Self::ProjectFlowControlSummary => {
+                RuntimeAgentTypeProjection::ProjectFlowControlSummary
+            }
+            Self::ProjectGraphSummary => RuntimeAgentTypeProjection::ProjectGraphSummary,
+            Self::BinaryResourceBody => RuntimeAgentTypeProjection::BinaryResourceBody,
+            Self::BinaryData => RuntimeAgentTypeProjection::BinaryData,
         }
     }
 
@@ -687,7 +748,6 @@ impl RuntimeAgentTypeShape {
             Self::ActionName => RuntimeAgentOperationalType::ActionName,
             Self::ActionTarget => RuntimeAgentOperationalType::ActionTarget,
             Self::ActionResult => RuntimeAgentOperationalType::ActionResult,
-            Self::AgentValue => RuntimeAgentOperationalType::AgentValue,
             Self::DataFormat => RuntimeAgentOperationalType::DataFormat,
             Self::DataShape => RuntimeAgentOperationalType::DataShape,
             Self::EntityMetadata => RuntimeAgentOperationalType::EntityMetadata,
@@ -698,7 +758,6 @@ impl RuntimeAgentTypeShape {
             Self::CaptureTarget => RuntimeAgentOperationalType::CaptureTarget,
             Self::CaptureReference => RuntimeAgentOperationalType::CaptureReference,
             Self::Resource => RuntimeAgentOperationalType::Resource,
-            Self::ResourceBody => RuntimeAgentOperationalType::ResourceBody,
             Self::RagContextPack => RuntimeAgentOperationalType::RagContextPack,
             Self::ObservedObjectId => RuntimeAgentOperationalType::ObservedObjectId,
             Self::CaptureFormat => RuntimeAgentOperationalType::CaptureFormat,
@@ -708,6 +767,13 @@ impl RuntimeAgentTypeShape {
             Self::ViewportPoint => RuntimeAgentOperationalType::ViewportPoint,
             Self::PointerButton => RuntimeAgentOperationalType::PointerButton,
             Self::RagError => RuntimeAgentOperationalType::RagError,
+            Self::SourcePosition => RuntimeAgentOperationalType::SourcePosition,
+            Self::ProjectFlowControlSummary => {
+                RuntimeAgentOperationalType::ProjectFlowControlSummary
+            }
+            Self::ProjectGraphSummary => RuntimeAgentOperationalType::ProjectGraphSummary,
+            Self::BinaryResourceBody => RuntimeAgentOperationalType::BinaryResourceBody,
+            Self::BinaryData => RuntimeAgentOperationalType::BinaryData,
         }
     }
 }
@@ -1137,6 +1203,22 @@ pub struct RuntimeEffectFieldFact {
     value: ExprId,
 }
 
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum RuntimeDropFadeFact {
+    ConstantNanos(u64),
+    Expression(ExprId),
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum RuntimeDropPolicyFact {
+    Default,
+    Cancel,
+    Stop { fade: RuntimeDropFadeFact },
+    Finish,
+    Release,
+    Detach,
+}
+
 impl RuntimeEffectFieldFact {
     pub fn new(name: impl Into<String>, value: ExprId) -> Self {
         Self {
@@ -1186,6 +1268,11 @@ pub enum RuntimeEvaluatedEffect {
         condition: ExprId,
         message: ExprId,
     },
+    Drop {
+        target: ExprId,
+        policy_source: Option<ExprId>,
+        policy: RuntimeDropPolicyFact,
+    },
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -1221,6 +1308,16 @@ impl RuntimeEvaluatedEffect {
                 vec![*message]
             }
             Self::Ensure { condition, message } => vec![*condition, *message],
+            Self::Drop { target, policy, .. } => {
+                let mut expressions = vec![*target];
+                if let RuntimeDropPolicyFact::Stop {
+                    fade: RuntimeDropFadeFact::Expression(fade),
+                } = policy
+                {
+                    expressions.push(*fade);
+                }
+                expressions
+            }
         }
     }
 
@@ -1771,6 +1868,10 @@ pub enum RuntimeResolvedValue {
     /// Checked one-way lowering of a durable `say.*` identity into the
     /// path-only runtime line domain.
     DialogueLine(RuntimeLineId),
+    CharacterLook {
+        character: arcweft_character::id::CharacterId,
+        look: arcweft_character::id::CharacterLookId,
+    },
     Intrinsic(RuntimeIntrinsic),
     Registered(RuntimeRegisteredValueId),
     Constant(RuntimeValue),
@@ -1803,6 +1904,47 @@ pub enum RuntimeResolvedSelect {
 pub struct RuntimeNormalizedVariantCase {
     name: String,
     payload: Option<Box<RuntimeNormalizedType>>,
+}
+
+/// Source-ordered variant cases whose cardinality is representable by every
+/// runtime ordinal and wire boundary.
+///
+/// The private row/count pair is sealed together so downstream selection and
+/// diagnostics never need a lossy `usize -> u32` conversion or a saturated
+/// success value.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct RuntimeNormalizedVariantCases {
+    rows: Box<[RuntimeNormalizedVariantCase]>,
+    count: u32,
+}
+
+impl RuntimeNormalizedVariantCases {
+    fn try_new(
+        rows: Box<[RuntimeNormalizedVariantCase]>,
+    ) -> Result<Self, RuntimeResolvedVariantError> {
+        let count = u32::try_from(rows.len())
+            .map_err(|_| RuntimeResolvedVariantError::CaseCountOverflow { count: rows.len() })?;
+        Ok(Self { rows, count })
+    }
+
+    #[must_use]
+    pub const fn count(&self) -> u32 {
+        self.count
+    }
+}
+
+impl std::ops::Deref for RuntimeNormalizedVariantCases {
+    type Target = [RuntimeNormalizedVariantCase];
+
+    fn deref(&self) -> &Self::Target {
+        &self.rows
+    }
+}
+
+impl AsRef<[RuntimeNormalizedVariantCase]> for RuntimeNormalizedVariantCases {
+    fn as_ref(&self) -> &[RuntimeNormalizedVariantCase] {
+        &self.rows
+    }
 }
 
 impl RuntimeNormalizedVariantCase {
@@ -1866,17 +2008,22 @@ pub enum RuntimeVariantOwner {
     Project {
         nominal: RuntimeResolvedNominal,
         arguments: Box<[RuntimeNormalizedType]>,
-        cases: Box<[RuntimeNormalizedVariantCase]>,
+        cases: RuntimeNormalizedVariantCases,
     },
     CharacterNominal {
         identity: RuntimeSemanticTypeId,
         nominal: RuntimeNominalTypeId,
-        cases: Box<[RuntimeNormalizedVariantCase]>,
+        cases: RuntimeNormalizedVariantCases,
     },
     BuiltinClosed {
         identity: RuntimeSemanticTypeId,
         nominal: RuntimeNominalTypeId,
-        cases: Box<[RuntimeNormalizedVariantCase]>,
+        cases: RuntimeNormalizedVariantCases,
+    },
+    RuntimeBuiltin {
+        identity: RuntimeSemanticTypeId,
+        owner: RuntimeBuiltinVariantIdentity,
+        cases: RuntimeNormalizedVariantCases,
     },
     Option {
         item: RuntimeNormalizedType,
@@ -1900,7 +2047,9 @@ impl RuntimeVariantOwner {
                         .filter_map(RuntimeNormalizedVariantCase::payload),
                 );
             }
-            Self::CharacterNominal { cases, .. } | Self::BuiltinClosed { cases, .. } => {
+            Self::CharacterNominal { cases, .. }
+            | Self::BuiltinClosed { cases, .. }
+            | Self::RuntimeBuiltin { cases, .. } => {
                 types.extend(
                     cases
                         .iter()
@@ -1932,6 +2081,7 @@ impl RuntimeVariantOwner {
                 nominal,
                 cases,
             } => (*identity, nominal.clone(), cases.as_ref()),
+            Self::RuntimeBuiltin { .. } => return None,
             Self::Option { .. } | Self::Result { .. } => return None,
         };
         Some(RuntimeVariantDomainSeed::new(
@@ -1955,6 +2105,9 @@ impl RuntimeVariantOwner {
             Self::Project { cases, .. }
             | Self::CharacterNominal { cases, .. }
             | Self::BuiltinClosed { cases, .. } => ordinal_index
+                .and_then(|ordinal| cases.get(ordinal))
+                .map(RuntimeNormalizedVariantCaseRef::from_case),
+            Self::RuntimeBuiltin { cases, .. } => ordinal_index
                 .and_then(|ordinal| cases.get(ordinal))
                 .map(RuntimeNormalizedVariantCaseRef::from_case),
             Self::Option { item } => match ordinal {
@@ -1990,7 +2143,8 @@ impl RuntimeVariantOwner {
         match self {
             Self::Project { cases, .. }
             | Self::CharacterNominal { cases, .. }
-            | Self::BuiltinClosed { cases, .. } => u32::try_from(cases.len()).unwrap_or(u32::MAX),
+            | Self::BuiltinClosed { cases, .. }
+            | Self::RuntimeBuiltin { cases, .. } => cases.count(),
             Self::Option { .. } | Self::Result { .. } => 2,
         }
     }
@@ -2004,8 +2158,10 @@ impl RuntimeVariantOwner {
                 arguments,
                 cases,
             } => RuntimeCheckedType::Variant {
-                nominal: nominal.runtime_nominal_id(),
-                semantic_identity: nominal.identity(),
+                owner: arcweft_core::pattern::RuntimeVariantIdentity::Nominal {
+                    nominal: nominal.runtime_nominal_id(),
+                    semantic_identity: nominal.identity(),
+                },
                 arguments: arguments
                     .iter()
                     .map(RuntimeNormalizedType::checked_type)
@@ -2025,14 +2181,37 @@ impl RuntimeVariantOwner {
                 nominal,
                 cases,
             } => RuntimeCheckedType::Variant {
-                nominal: nominal.clone(),
-                semantic_identity: *identity,
+                owner: arcweft_core::pattern::RuntimeVariantIdentity::Nominal {
+                    nominal: nominal.clone(),
+                    semantic_identity: *identity,
+                },
                 arguments: Vec::new(),
                 cases: cases
                     .iter()
                     .map(RuntimeNormalizedVariantCase::checked_case)
                     .collect::<Result<Vec<_>, _>>()?,
             },
+            Self::RuntimeBuiltin {
+                identity,
+                owner,
+                cases,
+            } => {
+                let payloads = cases
+                    .iter()
+                    .map(|case| {
+                        case.payload()
+                            .map(RuntimeNormalizedType::checked_type)
+                            .transpose()
+                    })
+                    .collect::<Result<Vec<_>, _>>()?;
+                RuntimeCheckedType::try_builtin_variant(*owner, payloads).map_err(|_| {
+                    RuntimeCheckedTypeProjectionError::InvalidBuiltinVariant {
+                        semantic_identity: *identity,
+                        path: RuntimeTypeProjectionPath::default(),
+                        owner: *owner,
+                    }
+                })?
+            }
             Self::Option { item } => RuntimeCheckedType::Option(Box::new(item.checked_type()?)),
             Self::Result { ok, error } => RuntimeCheckedType::Result {
                 ok: Box::new(ok.checked_type()?),
@@ -2087,6 +2266,8 @@ pub enum RuntimeResolvedVariantError {
     CheckedTypeProjection(#[from] RuntimeCheckedTypeProjectionError),
     #[error("variant case ordinal {ordinal} is outside {case_count} cases")]
     CaseOrdinal { ordinal: u32, case_count: u32 },
+    #[error("variant owner has {count} cases, exceeding the u32 runtime ordinal domain")]
+    CaseCountOverflow { count: usize },
     #[error("variant case {ordinal} resolved as `{actual}`, expected `{expected}`")]
     CaseName {
         ordinal: u32,
@@ -2127,6 +2308,7 @@ impl RuntimeResolvedVariant {
         selected_name: &str,
         cases: Box<[RuntimeNormalizedVariantCase]>,
     ) -> Result<Self, RuntimeResolvedVariantError> {
+        let cases = RuntimeNormalizedVariantCases::try_new(cases)?;
         Self::try_new(
             RuntimeVariantOwner::Project {
                 nominal: owner,
@@ -2146,6 +2328,7 @@ impl RuntimeResolvedVariant {
         ordinal: u32,
         selected_name: &str,
     ) -> Result<Self, RuntimeResolvedVariantError> {
+        let cases = RuntimeNormalizedVariantCases::try_new(cases)?;
         Self::try_new(
             RuntimeVariantOwner::CharacterNominal {
                 identity,
@@ -2165,10 +2348,30 @@ impl RuntimeResolvedVariant {
         ordinal: u32,
         selected_name: &str,
     ) -> Result<Self, RuntimeResolvedVariantError> {
+        let cases = RuntimeNormalizedVariantCases::try_new(cases)?;
         Self::try_new(
             RuntimeVariantOwner::BuiltinClosed {
                 identity,
                 nominal,
+                cases,
+            },
+            ordinal,
+            selected_name,
+        )
+    }
+
+    pub fn runtime_builtin(
+        identity: RuntimeSemanticTypeId,
+        owner: RuntimeBuiltinVariantIdentity,
+        cases: Box<[RuntimeNormalizedVariantCase]>,
+        ordinal: u32,
+        selected_name: &str,
+    ) -> Result<Self, RuntimeResolvedVariantError> {
+        let cases = RuntimeNormalizedVariantCases::try_new(cases)?;
+        Self::try_new(
+            RuntimeVariantOwner::RuntimeBuiltin {
+                identity,
+                owner,
                 cases,
             },
             ordinal,
@@ -2347,6 +2550,7 @@ impl RuntimeResolvedCall {
                 | RuntimeResolvedStaticCallTarget::Variant(_)
                 | RuntimeResolvedStaticCallTarget::Reduction(_)
                 | RuntimeResolvedStaticCallTarget::TraitMethod { .. }
+                | RuntimeResolvedStaticCallTarget::Line(_)
                 | RuntimeResolvedStaticCallTarget::Registered(_)
                 | RuntimeResolvedStaticCallTarget::Host(_),
             )
@@ -2386,6 +2590,25 @@ impl RuntimeResolvedCallDispatch {
 
 /// Closed runtime dispatch selected by the shared semantic resolver.
 #[derive(Clone, Debug, Eq, PartialEq)]
+pub enum RuntimeLineCallable {
+    AcquireActor {
+        character: arcweft_character::id::CharacterId,
+    },
+    ActorLook {
+        character: arcweft_character::id::CharacterId,
+        actor: ExprId,
+        look: ExprId,
+        crossfade: ExprId,
+    },
+    VoiceHandle,
+    Schedule {
+        anchor: ExprId,
+        callback: ExprId,
+    },
+}
+
+/// Closed runtime dispatch selected by the shared semantic resolver.
+#[derive(Clone, Debug, Eq, PartialEq)]
 #[allow(
     clippy::large_enum_variant,
     reason = "the closed selected-target vocabulary deliberately retains exact typed owners without target-specific indirection"
@@ -2407,6 +2630,10 @@ pub enum RuntimeResolvedStaticCallTarget {
         method: ImplMethodDeclarationId,
         receiver: RuntimeReceiverMode,
     },
+    /// A checked line capability retained as typed operation identity. It has
+    /// no ordinary runtime-call fallback and is consumed only by line-plan
+    /// lowering.
+    Line(RuntimeLineCallable),
     Registered(RuntimeCallableId),
     Host(RuntimeResolvedHostCall),
 }
@@ -2526,6 +2753,29 @@ pub enum RuntimeResolvedCallOperandOrigin {
     Argument { argument: u32, slot: u32 },
 }
 
+/// Exact checked callable-schema destination of one scalar runtime operand.
+/// This coordinate is retained independently from authored argument order so
+/// named and positional spellings project to the same runtime authority.
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub struct RuntimeCallParameterCoordinate {
+    group: u32,
+    parameter: u32,
+}
+
+impl RuntimeCallParameterCoordinate {
+    pub const fn new(group: u32, parameter: u32) -> Self {
+        Self { group, parameter }
+    }
+
+    pub const fn group(self) -> u32 {
+        self.group
+    }
+
+    pub const fn parameter(self) -> u32 {
+        self.parameter
+    }
+}
+
 /// Exact final-HIR source for one runtime operand.
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub enum RuntimeResolvedCallOperandSource {
@@ -2575,6 +2825,7 @@ pub struct RuntimeResolvedCallOperand {
     ty: RuntimeNormalizedType,
     binding: RuntimeResolvedCallOperandBinding,
     projection: RuntimeResolvedCallOperandProjection,
+    parameter: Option<RuntimeCallParameterCoordinate>,
 }
 
 impl RuntimeResolvedCallOperand {
@@ -2584,6 +2835,7 @@ impl RuntimeResolvedCallOperand {
         ty: RuntimeNormalizedType,
         binding: RuntimeResolvedCallOperandBinding,
         projection: RuntimeResolvedCallOperandProjection,
+        parameter: Option<RuntimeCallParameterCoordinate>,
     ) -> Self {
         Self {
             origin,
@@ -2591,6 +2843,7 @@ impl RuntimeResolvedCallOperand {
             ty,
             binding,
             projection,
+            parameter,
         }
     }
 
@@ -2608,6 +2861,10 @@ impl RuntimeResolvedCallOperand {
     }
     pub const fn projection(&self) -> &RuntimeResolvedCallOperandProjection {
         &self.projection
+    }
+
+    pub const fn parameter(&self) -> Option<RuntimeCallParameterCoordinate> {
+        self.parameter
     }
 }
 
@@ -2661,25 +2918,35 @@ pub struct RuntimeCheckedCapture {
 #[derive(Clone, Debug, PartialEq)]
 pub struct RuntimeDialogueApplication {
     content: DialogueContentSpec,
+    line_result: RuntimeNormalizedType,
     values: Box<[RuntimeDialogueValueExpression]>,
     effects: Box<[RuntimeDialogueEffectExpression]>,
+    mark_handlers: Box<[RuntimeDialogueMarkHandler]>,
 }
 
 impl RuntimeDialogueApplication {
     pub fn new(
         content: DialogueContentSpec,
+        line_result: RuntimeNormalizedType,
         values: impl IntoIterator<Item = RuntimeDialogueValueExpression>,
         effects: impl IntoIterator<Item = RuntimeDialogueEffectExpression>,
+        mark_handlers: impl IntoIterator<Item = RuntimeDialogueMarkHandler>,
     ) -> Self {
         Self {
             content,
+            line_result,
             values: values.into_iter().collect(),
             effects: effects.into_iter().collect(),
+            mark_handlers: mark_handlers.into_iter().collect(),
         }
     }
 
     pub const fn content(&self) -> &DialogueContentSpec {
         &self.content
+    }
+
+    pub const fn line_result(&self) -> &RuntimeNormalizedType {
+        &self.line_result
     }
 
     pub const fn values(&self) -> &[RuntimeDialogueValueExpression] {
@@ -2689,20 +2956,84 @@ impl RuntimeDialogueApplication {
     pub const fn effects(&self) -> &[RuntimeDialogueEffectExpression] {
         &self.effects
     }
+
+    pub const fn mark_handlers(&self) -> &[RuntimeDialogueMarkHandler] {
+        &self.mark_handlers
+    }
+}
+
+/// Exact final-HIR statement to source-ordered checked content-mark mapping.
+/// Runtime lowering projects the ordinal through the builder-issued content
+/// handle and never joins on a label.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct RuntimeDialogueMarkHandler {
+    statement: StmtId,
+    ordinal: u32,
+}
+
+impl RuntimeDialogueMarkHandler {
+    pub const fn new(statement: StmtId, ordinal: u32) -> Self {
+        Self { statement, ordinal }
+    }
+
+    pub const fn statement(self) -> StmtId {
+        self.statement
+    }
+
+    pub const fn ordinal(self) -> u32 {
+        self.ordinal
+    }
 }
 
 /// Typed trigger for one effectful inline dialogue call.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum RuntimeDialogueEffectTrigger {
-    Mark(String),
-    DelayMillis(u64),
+    Content,
+    Delay {
+        duration: arcweft_core::time::LogicalDuration,
+        schedule_handle_type: RuntimeNormalizedType,
+    },
 }
 
 /// Accepted effectful expression lowered into the surrounding line task.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct RuntimeDialogueEffectExpression {
-    pub trigger: RuntimeDialogueEffectTrigger,
-    pub expression: ExprId,
+    site: arcweft_core::runtime_id::RuntimeDialogueEffectSiteId,
+    trigger: RuntimeDialogueEffectTrigger,
+    expression: ExprId,
+    operation: RuntimeEvaluatedEffectFact,
+}
+
+impl RuntimeDialogueEffectExpression {
+    pub const fn new(
+        site: arcweft_core::runtime_id::RuntimeDialogueEffectSiteId,
+        trigger: RuntimeDialogueEffectTrigger,
+        expression: ExprId,
+        operation: RuntimeEvaluatedEffectFact,
+    ) -> Self {
+        Self {
+            site,
+            trigger,
+            expression,
+            operation,
+        }
+    }
+
+    pub const fn site(&self) -> arcweft_core::runtime_id::RuntimeDialogueEffectSiteId {
+        self.site
+    }
+
+    pub const fn trigger(&self) -> &RuntimeDialogueEffectTrigger {
+        &self.trigger
+    }
+
+    pub const fn expression(&self) -> ExprId {
+        self.expression
+    }
+
+    pub const fn operation(&self) -> &RuntimeEvaluatedEffectFact {
+        &self.operation
+    }
 }
 
 /// Accepted authored expression supplying one document-local dialogue slot.
@@ -3478,7 +3809,14 @@ impl RuntimePlanSemanticFacts {
                 runtime_owners,
                 *expression,
                 RuntimeSemanticFactFamily::Value,
-                |kind| matches!(kind, HirExprKind::Path(_) | HirExprKind::EntityReference(_)),
+                |kind| {
+                    matches!(
+                        kind,
+                        HirExprKind::Path(_)
+                            | HirExprKind::EntityReference(_)
+                            | HirExprKind::ShortVariant(_)
+                    )
+                },
             )?;
             validate_resolved_value(&modules, runtime_owners, value)?;
             match (resolve_expr(&modules, *expression)?, value) {
@@ -3504,6 +3842,7 @@ impl RuntimePlanSemanticFacts {
                     RuntimeResolvedValue::ProjectItem(_) | RuntimeResolvedValue::DialogueLine(_),
                 )
                 | (HirExprKind::Path(_), _) => {}
+                (HirExprKind::ShortVariant(_), RuntimeResolvedValue::CharacterLook { .. }) => {}
                 _ => unreachable!("value fact family was checked immediately above"),
             }
         }
@@ -3629,6 +3968,7 @@ impl RuntimePlanSemanticFacts {
                     | RuntimeResolvedStaticCallTarget::AgentDiagnosticsHasError
                     | RuntimeResolvedStaticCallTarget::Variant(_)
                     | RuntimeResolvedStaticCallTarget::Reduction(_)
+                    | RuntimeResolvedStaticCallTarget::Line(_)
                     | RuntimeResolvedStaticCallTarget::Registered(_)
                     | RuntimeResolvedStaticCallTarget::Host(_),
                 )
@@ -4047,7 +4387,7 @@ impl RuntimePlanSemanticFacts {
                 RuntimeSemanticFactFamily::Iteration,
                 |kind| matches!(kind, HirStmtKind::For(_)),
             )?;
-            let methods_exist = match evidence {
+            match evidence {
                 RuntimeIteratorFact::Builtin(builtin) => {
                     for ty in [
                         builtin.item(),
@@ -4273,6 +4613,7 @@ impl RuntimePlanSemanticFacts {
         {
             return Err(RuntimeSemanticFactsError::DialogueLineMismatch { expression: owner });
         }
+        validate_normalized_type(modules, application.line_result())?;
         if application.content().character().semantic_digest() != catalog.semantic_digest()
             || application.content().character().locale_policy_digest()
                 != catalog.locale_policy_digest()
@@ -4322,17 +4663,25 @@ impl RuntimePlanSemanticFacts {
                 });
             }
         }
-        for effect in application.effects() {
-            resolve_expr(modules, effect.expression)?;
-            if self.call(effect.expression).is_none() {
-                return Err(RuntimeSemanticFactsError::MissingDialogueEffectCall {
-                    dialogue: owner,
-                    effect: effect.expression,
-                });
-            }
-            if matches!(&effect.trigger, RuntimeDialogueEffectTrigger::Mark(mark) if mark.is_empty())
+        for (index, effect) in application.effects().iter().enumerate() {
+            let expected =
+                arcweft_core::runtime_id::RuntimeDialogueEffectSiteId::from_zero_based(index)
+                    .ok_or(RuntimeSemanticFactsError::TooManyDialogueValueSlots {
+                        expression: owner,
+                    })?;
+            if effect.site() != expected
+                || !evaluated_effect_expression_matches(
+                    modules,
+                    &self.expression_types,
+                    &self.calls,
+                    effect.expression(),
+                    effect.operation(),
+                )
             {
-                return Err(RuntimeSemanticFactsError::EmptyDialogueEffectMark { dialogue: owner });
+                return Err(RuntimeSemanticFactsError::InvalidDialogueEffectSite {
+                    dialogue: owner,
+                    site: effect.site(),
+                });
             }
         }
         Ok(())
@@ -4448,6 +4797,23 @@ impl RuntimePlanSemanticFacts {
         roots.extend(self.pattern_types.values());
         roots.extend(self.types.values());
         roots.extend(self.captures.values().map(RuntimeCheckedCapture::ty));
+        roots.extend(
+            self.dialogue_applications
+                .values()
+                .map(RuntimeDialogueApplication::line_result),
+        );
+        roots.extend(self.dialogue_applications.values().flat_map(|application| {
+            application.effects().iter().filter_map(|effect| {
+                let RuntimeDialogueEffectTrigger::Delay {
+                    schedule_handle_type,
+                    ..
+                } = effect.trigger()
+                else {
+                    return None;
+                };
+                Some(schedule_handle_type)
+            })
+        }));
         for record in self.nominal_records.values() {
             roots.extend(
                 record
@@ -4929,10 +5295,11 @@ pub enum RuntimeSemanticFactsError {
     MissingDialogueValueType { dialogue: ExprId, value: ExprId },
     #[error("dialogue {dialogue:?} condition {condition:?} is not Bool")]
     InvalidDialogueConditionType { dialogue: ExprId, condition: ExprId },
-    #[error("dialogue {dialogue:?} effect expression {effect:?} is not a selected call")]
-    MissingDialogueEffectCall { dialogue: ExprId, effect: ExprId },
-    #[error("dialogue {dialogue:?} contains an empty effect mark")]
-    EmptyDialogueEffectMark { dialogue: ExprId },
+    #[error("dialogue {dialogue:?} effect site {site:?} does not match its checked operation")]
+    InvalidDialogueEffectSite {
+        dialogue: ExprId,
+        site: arcweft_core::runtime_id::RuntimeDialogueEffectSiteId,
+    },
     #[error("dialogue application {expression:?} carries stale or unknown Character evidence")]
     DialogueCharacterPlanMismatch { expression: ExprId },
 }
@@ -5219,6 +5586,7 @@ fn validate_resolved_value(
         RuntimeResolvedValue::ProjectCallable(callable) => validate_callable(modules, callable),
         RuntimeResolvedValue::ProjectItem(item) => validate_project_item(modules, item),
         RuntimeResolvedValue::DialogueLine(_)
+        | RuntimeResolvedValue::CharacterLook { .. }
         | RuntimeResolvedValue::Intrinsic(_)
         | RuntimeResolvedValue::Registered(_)
         | RuntimeResolvedValue::Constant(_) => Ok(()),
@@ -5329,11 +5697,54 @@ fn validate_evaluated_effect(
     let HirStmtKind::Expression { expression } = resolve_stmt(modules, statement)? else {
         return Err(RuntimeSemanticFactsError::InvalidEvaluatedEffectFact { statement });
     };
-    let HirExprKind::Call(hir_call) = resolve_expr(modules, *expression)? else {
-        return Err(RuntimeSemanticFactsError::InvalidEvaluatedEffectFact { statement });
+    evaluated_effect_expression_matches(modules, expression_types, calls, *expression, fact)
+        .then_some(())
+        .ok_or(RuntimeSemanticFactsError::InvalidEvaluatedEffectFact { statement })
+}
+
+fn evaluated_effect_expression_matches(
+    modules: &BTreeMap<HirModuleId, &HirModule>,
+    expression_types: &BTreeMap<ExprId, RuntimeNormalizedType>,
+    calls: &BTreeMap<ExprId, RuntimeResolvedCall>,
+    expression: ExprId,
+    fact: &RuntimeEvaluatedEffectFact,
+) -> bool {
+    let owner = expression;
+    let Ok(expression) = resolve_expr(modules, owner) else {
+        return false;
     };
-    if calls.contains_key(expression) || !fact.effect().fields_are_valid() {
-        return Err(RuntimeSemanticFactsError::InvalidEvaluatedEffectFact { statement });
+    let (call_owner, hir_call, pipeline_target) = match expression {
+        HirExprKind::Call(call) => (owner, call, None),
+        HirExprKind::Pipe(pipe) => {
+            let Ok(HirExprKind::Call(call)) = resolve_expr(modules, pipe.right()) else {
+                return false;
+            };
+            (pipe.right(), call, Some(pipe.left()))
+        }
+        _ => return false,
+    };
+    if calls.contains_key(&call_owner) || !fact.effect().fields_are_valid() {
+        return false;
+    }
+
+    if let RuntimeEvaluatedEffect::Drop {
+        target,
+        policy_source,
+        policy,
+    } = fact.effect()
+    {
+        return drop_effect_matches_hir(
+            modules,
+            hir_call,
+            *target,
+            *policy_source,
+            policy,
+            pipeline_target,
+        ) && !fact
+            .effect()
+            .expression_ids()
+            .iter()
+            .any(|expression| !expression_types.contains_key(expression));
     }
 
     let mut authored = hir_call
@@ -5344,14 +5755,80 @@ fn validate_evaluated_effect(
     let mut projected = fact.effect().expression_ids();
     authored.sort_unstable();
     projected.sort_unstable();
-    if authored != projected
-        || projected
+    authored == projected
+        && !projected
             .iter()
             .any(|expression| !expression_types.contains_key(expression))
-    {
-        return Err(RuntimeSemanticFactsError::InvalidEvaluatedEffectFact { statement });
-    }
-    Ok(())
+}
+
+fn drop_effect_matches_hir(
+    modules: &BTreeMap<HirModuleId, &HirModule>,
+    call: &HirCallExpr,
+    target: ExprId,
+    policy_source: Option<ExprId>,
+    policy: &RuntimeDropPolicyFact,
+    pipeline_target: Option<ExprId>,
+) -> bool {
+    let target_and_policy_match = if let Some(pipeline_target) = pipeline_target {
+        pipeline_target == target
+            && match policy_source {
+                Some(policy) => single_hir_call_argument(call.arguments()) == Some(policy),
+                None => call.arguments().is_empty(),
+            }
+    } else {
+        match call.callee() {
+            arcweft_lang_hir::expr::HirCallCallee::UnresolvedDot { value_receiver, .. } => {
+                *value_receiver == target
+                    && match policy_source {
+                        Some(policy) => single_hir_call_argument(call.arguments()) == Some(policy),
+                        None => call.arguments().is_empty(),
+                    }
+            }
+            arcweft_lang_hir::expr::HirCallCallee::Value { value } => {
+                if single_hir_call_argument(call.arguments()) != Some(target) {
+                    return false;
+                }
+                match policy_source {
+                    None => true,
+                    Some(policy) => matches!(
+                        resolve_expr(modules, *value),
+                        Ok(HirExprKind::Call(prefix))
+                            if single_hir_call_argument(prefix.arguments()) == Some(policy)
+                    ),
+                }
+            }
+            arcweft_lang_hir::expr::HirCallCallee::Associated { .. } => false,
+        }
+    };
+    target_and_policy_match
+        && match (policy_source, policy) {
+            (None, RuntimeDropPolicyFact::Default)
+            | (
+                Some(_),
+                RuntimeDropPolicyFact::Cancel
+                | RuntimeDropPolicyFact::Finish
+                | RuntimeDropPolicyFact::Release
+                | RuntimeDropPolicyFact::Detach,
+            ) => true,
+            (Some(source), RuntimeDropPolicyFact::Stop { fade }) => match fade {
+                RuntimeDropFadeFact::ConstantNanos(_) => {
+                    !matches!(resolve_expr(modules, source), Ok(HirExprKind::Call(_)))
+                }
+                RuntimeDropFadeFact::Expression(fade) => matches!(
+                    resolve_expr(modules, source),
+                    Ok(HirExprKind::Call(policy_call))
+                        if single_hir_call_argument(policy_call.arguments()) == Some(*fade)
+                ),
+            },
+            _ => false,
+        }
+}
+
+fn single_hir_call_argument(arguments: &[HirCallArgument]) -> Option<ExprId> {
+    let [argument] = arguments else {
+        return None;
+    };
+    (!matches!(argument, HirCallArgument::Spread { .. })).then(|| argument.value())
 }
 
 fn validate_select(
@@ -5454,6 +5931,22 @@ fn validate_variant(
                 Ok(())
             }
         }
+        RuntimeVariantOwner::RuntimeBuiltin { owner, cases, .. } => {
+            validate_normalized_variant_payloads(modules, cases)?;
+            if cases.len() != owner.cases().len()
+                || cases.iter().zip(owner.cases()).any(|(case, schema)| {
+                    case.name() != schema.name() || case.payload().is_some() != schema.has_payload()
+                })
+                || usize::try_from(variant.ordinal())
+                    .ok()
+                    .and_then(|ordinal| cases.get(ordinal))
+                    .is_none_or(|case| case.name() != selected_name)
+            {
+                Err(RuntimeSemanticFactsError::WrongVariantIdentity)
+            } else {
+                Ok(())
+            }
+        }
         RuntimeVariantOwner::Option { item } => {
             validate_normalized_type(modules, item)?;
             if matches!(
@@ -5518,6 +6011,14 @@ fn validate_normalized_type(
             validate_normalized_type(modules, key)?;
             validate_normalized_type(modules, value)
         }
+        RuntimeTypeShape::BuiltinVariant { cases, .. } => {
+            for payload in cases.iter().flatten() {
+                validate_normalized_type(modules, payload)?;
+            }
+            ty.checked_type()
+                .map(|_| ())
+                .map_err(|_| RuntimeSemanticFactsError::WrongVariantIdentity)
+        }
         RuntimeTypeShape::Function { parameters, result } => {
             for parameter in parameters {
                 validate_normalized_type(modules, parameter)?;
@@ -5556,6 +6057,7 @@ fn validate_normalized_type(
         | RuntimeTypeShape::Duration
         | RuntimeTypeShape::Progress
         | RuntimeTypeShape::EntityReference
+        | RuntimeTypeShape::AgentValue
         | RuntimeTypeShape::Agent(
             RuntimeAgentTypeShape::DebugStatePath
             | RuntimeAgentTypeShape::ObservationFieldPath
@@ -5566,7 +6068,6 @@ fn validate_normalized_type(
             | RuntimeAgentTypeShape::ActionName
             | RuntimeAgentTypeShape::ActionTarget
             | RuntimeAgentTypeShape::ActionResult
-            | RuntimeAgentTypeShape::AgentValue
             | RuntimeAgentTypeShape::DataFormat
             | RuntimeAgentTypeShape::DataShape
             | RuntimeAgentTypeShape::EntityMetadata
@@ -5577,7 +6078,6 @@ fn validate_normalized_type(
             | RuntimeAgentTypeShape::CaptureTarget
             | RuntimeAgentTypeShape::CaptureReference
             | RuntimeAgentTypeShape::Resource
-            | RuntimeAgentTypeShape::ResourceBody
             | RuntimeAgentTypeShape::RagContextPack
             | RuntimeAgentTypeShape::ObservedObjectId
             | RuntimeAgentTypeShape::CaptureFormat
@@ -5586,7 +6086,12 @@ fn validate_normalized_type(
             | RuntimeAgentTypeShape::WaitError
             | RuntimeAgentTypeShape::ViewportPoint
             | RuntimeAgentTypeShape::PointerButton
-            | RuntimeAgentTypeShape::RagError,
+            | RuntimeAgentTypeShape::RagError
+            | RuntimeAgentTypeShape::SourcePosition
+            | RuntimeAgentTypeShape::ProjectFlowControlSummary
+            | RuntimeAgentTypeShape::ProjectGraphSummary
+            | RuntimeAgentTypeShape::BinaryResourceBody
+            | RuntimeAgentTypeShape::BinaryData,
         ) => Ok(()),
     }
 }
@@ -5627,6 +6132,13 @@ fn validate_call(
             | RuntimeResolvedStaticCallTarget::TraitMethod { .. }
             | RuntimeResolvedStaticCallTarget::Registered(_),
         ) => {}
+        RuntimeResolvedCallDispatch::Static(RuntimeResolvedStaticCallTarget::Line(line)) => {
+            if !runtime_line_callable_matches_operands(call, line) {
+                return Err(RuntimeSemanticFactsError::InvalidRuntimeCallDisposition {
+                    expression,
+                });
+            }
+        }
     }
 
     let module = modules
@@ -5661,6 +6173,7 @@ fn validate_call(
                         operand.projection(),
                         RuntimeResolvedCallOperandProjection::Scalar
                     )
+                    || operand.parameter().is_some()
                     || expression_types.get(&source) != Some(operand.ty())
                 {
                     return Err(RuntimeSemanticFactsError::MissingRuntimeCallReceiver {
@@ -5810,6 +6323,54 @@ fn validate_call(
         _ => {}
     }
     Ok(())
+}
+
+fn runtime_line_callable_matches_operands(
+    call: &RuntimeResolvedCall,
+    line: &RuntimeLineCallable,
+) -> bool {
+    let exact_operand =
+        |source: ExprId, parameter: Option<RuntimeCallParameterCoordinate>, receiver: bool| {
+            let mut operands = call.operands().iter().filter(|operand| {
+                matches!(
+                    (receiver, operand.origin()),
+                    (true, RuntimeResolvedCallOperandOrigin::Receiver)
+                        | (false, RuntimeResolvedCallOperandOrigin::Argument { .. })
+                ) && operand.parameter() == parameter
+                    && operand.source() == RuntimeResolvedCallOperandSource::Expression(source)
+                    && matches!(
+                        operand.projection(),
+                        RuntimeResolvedCallOperandProjection::Scalar
+                    )
+            });
+            operands.next().is_some() && operands.next().is_none()
+        };
+    match line {
+        RuntimeLineCallable::ActorLook {
+            character: _,
+            actor,
+            look,
+            crossfade,
+        } => {
+            exact_operand(*actor, None, true)
+                && exact_operand(
+                    *look,
+                    Some(RuntimeCallParameterCoordinate::new(0, 0)),
+                    false,
+                )
+                && exact_operand(
+                    *crossfade,
+                    Some(RuntimeCallParameterCoordinate::new(0, 1)),
+                    false,
+                )
+        }
+        RuntimeLineCallable::Schedule { callback, .. } => exact_operand(
+            *callback,
+            Some(RuntimeCallParameterCoordinate::new(1, 0)),
+            false,
+        ),
+        RuntimeLineCallable::AcquireActor { .. } | RuntimeLineCallable::VoiceHandle => true,
+    }
 }
 
 fn runtime_call_projection_matches_type(operand: &RuntimeResolvedCallOperand) -> bool {

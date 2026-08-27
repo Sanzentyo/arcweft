@@ -186,7 +186,8 @@ pub(super) fn runtime_scalar_text(value: &RuntimeValue) -> Option<String> {
         RuntimeValue::UInt(value) => Some(value.label()),
         RuntimeValue::F32(value) if value.is_finite() => Some(value.to_string()),
         RuntimeValue::F64(value) if value.is_finite() => Some(value.to_string()),
-        RuntimeValue::String(value) | RuntimeValue::EntityRef(value) => Some(value.clone()),
+        RuntimeValue::String(value) => Some(value.clone()),
+        RuntimeValue::EntityRef(value) => Some(value.runtime_label()),
         RuntimeValue::Char(value) => Some(value.to_string()),
         RuntimeValue::Duration(value) => Some(format_duration(value.as_nanos())),
         RuntimeValue::Unit
