@@ -243,7 +243,6 @@ EventLog<E>
 TraceLog<E>
 TaskQueue<T>
 EventQueue<E>
-NeedCacheState<T, E, P = Unit>
 RingBuffer<T>
 Signal<T>
 SignalBus<T>
@@ -251,8 +250,7 @@ Stream<T, E>
 ```
 
 `StatePath` is a structured dotted path. `PatchSet`, queues, and logs preserve
-append order. `NeedCacheState` mirrors the state of cached asynchronous work
-without depending on a host runtime or I/O adapter.
+append order.
 
 `RingBuffer<T>` is a bounded FIFO data structure for source/device queues. It is
 still pure data: adapter crates decide whether the backing transport is shared

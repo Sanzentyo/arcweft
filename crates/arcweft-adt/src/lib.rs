@@ -827,17 +827,6 @@ impl<E> EventQueue<E> {
     }
 }
 
-/// Cached Need state without depending on the runtime Need crate.
-#[derive(Clone, Debug, Default, Eq, PartialEq)]
-pub enum NeedCacheState<T, E, P = ()> {
-    #[default]
-    Empty,
-    Pending(P),
-    Ready(T),
-    Err(E),
-    Cancelled,
-}
-
 /// Ordered stream transform descriptor.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct Stream<T, E> {
@@ -1341,8 +1330,8 @@ impl RichText {
 #[cfg(test)]
 mod tests {
     use super::{
-        Arena, Array, DependencyGraph, EntityStore, NeedCacheState, OrderedMap, Patch, PatchSet,
-        RichText, RingBuffer, SignalBus, StatePath, TaskQueue, TextRun, Tree, Vec,
+        Arena, Array, DependencyGraph, EntityStore, OrderedMap, Patch, PatchSet, RichText,
+        RingBuffer, SignalBus, StatePath, TaskQueue, TextRun, Tree, Vec,
     };
 
     #[test]
@@ -1398,12 +1387,6 @@ mod tests {
         queue.push_back("show");
         assert_eq!(queue.pop_front(), Some("load"));
         assert_eq!(queue.pop_front(), Some("show"));
-    }
-
-    #[test]
-    fn need_cache_state_is_pure_data() {
-        let state: NeedCacheState<i32, &str, u8> = NeedCacheState::Pending(2);
-        assert_eq!(state, NeedCacheState::Pending(2));
     }
 
     #[test]
