@@ -7,13 +7,15 @@ use crate::pattern::{
 };
 use crate::plan::{FlowRuntimeId, RuntimeAgentOperationalType, RuntimeFlowTargetError};
 use crate::runtime_id::{
-    RuntimeDialogueMarkId, RuntimeDialogueValueSlotId, RuntimeLocalDeclarationId,
+    RuntimeDialogueEffectSiteId, RuntimeDialogueMarkId, RuntimeDialogueValueSlotId,
+    RuntimeLocalDeclarationId,
 };
-use crate::value::RuntimeAgentConstructor;
+use crate::value::{RuntimeAgentConstructor, RuntimeEntityReference, RuntimeHandleKind};
+use arcweft_character::id::CharacterId;
 use arcweft_interaction_model::audio::{
     AudioEffectParameterKind, AudioLoopMode, MicrophoneConstraints,
 };
-use serde::{Deserialize, Serialize};
+use serde::{Deserialize, Deserializer, Serialize, Serializer};
 
 /// Canonical AWBC executable ABI implemented by this schema.
 pub const AWBC_ABI_VERSION: u32 = 1;
@@ -81,6 +83,14 @@ awbc_id!(AwbcEffectPlanId, "Index into the effect plan table.");
 awbc_id!(AwbcContentUnitId, "Index into the content-unit table.");
 awbc_id!(AwbcLineTaskGroupId, "Index into the line-task-group table.");
 awbc_id!(AwbcLineTaskNodeId, "Index into the line-task-node table.");
+awbc_id!(
+    AwbcLineOperationId,
+    "Index into the typed line-operation table."
+);
+awbc_id!(
+    AwbcLineHandleSiteId,
+    "Index into one line-task group's typed handle-site table."
+);
 awbc_id!(AwbcStreamPlanId, "Index into the stream-plan table.");
 awbc_id!(AwbcPureHelperId, "Index into the pure-helper table.");
 awbc_id!(
@@ -145,6 +155,7 @@ pub struct AwbcProgram {
     pub content_units: Vec<AwbcContentUnit>,
     pub line_task_groups: Vec<AwbcLineTaskGroup>,
     pub line_task_nodes: Vec<AwbcLineTaskNode>,
+    pub line_operations: Vec<AwbcLineOperation>,
     pub stream_plans: Vec<AwbcStreamPlan>,
     pub pure_helpers: Vec<AwbcPureHelper>,
     pub pure_programs: Vec<AwbcPureProgramBinding>,
@@ -184,6 +195,7 @@ impl Default for AwbcProgram {
             content_units: Vec::new(),
             line_task_groups: Vec::new(),
             line_task_nodes: Vec::new(),
+            line_operations: Vec::new(),
             stream_plans: Vec::new(),
             pure_helpers: Vec::new(),
             pure_programs: Vec::new(),
@@ -390,9 +402,6 @@ fn visit_program_strings(program: &mut AwbcProgram, visitor: &mut dyn FnMut(&mut
             visit_string_id(&mut mark.label, visitor);
         }
     }
-    for node in &mut program.line_task_nodes {
-        visit_line_task_node_strings(node, visitor);
-    }
     for stream in &mut program.stream_plans {
         visit_string_id(&mut stream.public_id, visitor);
     }
@@ -470,6 +479,7 @@ fn visit_runtime_type_strings(
         | AwbcRuntimeTypeShape::Duration
         | AwbcRuntimeTypeShape::Progress
         | AwbcRuntimeTypeShape::EntityRef
+        | AwbcRuntimeTypeShape::AgentValue
         | AwbcRuntimeTypeShape::Tuple(_)
         | AwbcRuntimeTypeShape::Sequence(_)
         | AwbcRuntimeTypeShape::Choice(_)
@@ -494,7 +504,7 @@ fn visit_runtime_type_strings(
 
 fn visit_constant_strings(constant: &mut AwbcConstant, visitor: &mut dyn FnMut(&mut AwbcStringId)) {
     match constant {
-        AwbcConstant::String(id) | AwbcConstant::EntityRef(id) => visit_string_id(id, visitor),
+        AwbcConstant::String(id) => visit_string_id(id, visitor),
         AwbcConstant::Unit
         | AwbcConstant::Bool(_)
         | AwbcConstant::Int { .. }
@@ -506,6 +516,7 @@ fn visit_constant_strings(constant: &mut AwbcConstant, visitor: &mut dyn FnMut(&
         | AwbcConstant::Tuple(_)
         | AwbcConstant::Sequence(_)
         | AwbcConstant::Range { .. }
+        | AwbcConstant::EntityRef(_)
         | AwbcConstant::Bytes(_)
         | AwbcConstant::TensorF32 { .. }
         | AwbcConstant::TensorF64 { .. }
@@ -524,7 +535,10 @@ fn visit_instruction_strings(
     visitor: &mut dyn FnMut(&mut AwbcStringId),
 ) {
     match instruction {
-        AwbcInstruction::ProjectField { field, .. } => visit_string_id(field, visitor),
+        AwbcInstruction::ProjectField {
+            field: AwbcFieldProjection::Named(field),
+            ..
+        } => visit_string_id(field, visitor),
         AwbcInstruction::RegisterCleanup { key, .. } | AwbcInstruction::CancelCleanup { key } => {
             visit_string_id(key, visitor);
         }
@@ -561,26 +575,15 @@ fn visit_terminator_strings(
 
 fn visit_pattern_strings(pattern: &mut AwbcPattern, visitor: &mut dyn FnMut(&mut AwbcStringId)) {
     match pattern {
-        AwbcPattern::Entity(entity) => visit_string_id(entity, visitor),
         AwbcPattern::Variant { case_name, .. } => visit_string_id(case_name, visitor),
         AwbcPattern::Bind { .. }
         | AwbcPattern::Discard
         | AwbcPattern::Literal(_)
+        | AwbcPattern::Entity(_)
         | AwbcPattern::Tuple(_)
         | AwbcPattern::Record { .. }
         | AwbcPattern::Sequence { .. }
         | AwbcPattern::Whole { .. } => {}
-    }
-}
-
-fn visit_line_task_node_strings(
-    node: &mut AwbcLineTaskNode,
-    visitor: &mut dyn FnMut(&mut AwbcStringId),
-) {
-    if let AwbcLineTaskNode::Child { id, key, name, .. } = node {
-        visit_string_id(id, visitor);
-        visit_optional_string_id(key, visitor);
-        visit_optional_string_id(name, visitor);
     }
 }
 
@@ -795,6 +798,8 @@ pub enum AwbcRuntimeTypeShape {
     Bytes,
     /// Uninhabited checked type, distinct from an authored empty choice.
     Never,
+    /// Recursive closed JSON-like value algebra owned by Agent protocol.
+    AgentValue,
     /// Closed Agent runtime family. Exact semantic identity remains in the
     /// runtime-plan facts; this type selects the executable value carrier.
     Agent(AwbcAgentTypeShape),
@@ -848,8 +853,7 @@ impl AwbcAgentTypeShape {
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub enum AwbcVariantIdentity {
     Nominal { public_id: AwbcStringId },
-    Option,
-    Result,
+    Builtin(crate::pattern::RuntimeBuiltinVariantIdentity),
 }
 
 #[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
@@ -902,7 +906,7 @@ pub enum AwbcConstant {
     String(AwbcStringId),
     Char(u32),
     DurationNanos(u64),
-    EntityRef(AwbcStringId),
+    EntityRef(RuntimeEntityReference),
     Tuple(Vec<AwbcConstantId>),
     Sequence(Vec<AwbcConstantId>),
     Record {
@@ -986,34 +990,197 @@ pub struct AwbcFunction {
     pub flags: AwbcFunctionFlags,
 }
 
-#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+#[repr(u8)]
 pub enum AwbcFunctionKind {
-    Flow,
-    PureHelper,
-    TraitMethod,
-    StreamTransform,
-    LineTask,
-    Synthetic,
+    Flow = 0,
+    Ordinary = 1,
+    PureHelper = 2,
+    TraitMethod = 3,
+    Synthetic = 4,
+    GeneratorProducer = 5,
+    StreamTransform = 6,
+    LineActivation = 7,
+    LineTask = 8,
 }
 
 impl AwbcFunctionKind {
+    const DECODE: [Option<Self>; 256] = {
+        let mut table = [None; 256];
+        table[Self::Flow as usize] = Some(Self::Flow);
+        table[Self::Ordinary as usize] = Some(Self::Ordinary);
+        table[Self::PureHelper as usize] = Some(Self::PureHelper);
+        table[Self::TraitMethod as usize] = Some(Self::TraitMethod);
+        table[Self::Synthetic as usize] = Some(Self::Synthetic);
+        table[Self::GeneratorProducer as usize] = Some(Self::GeneratorProducer);
+        table[Self::StreamTransform as usize] = Some(Self::StreamTransform);
+        table[Self::LineActivation as usize] = Some(Self::LineActivation);
+        table[Self::LineTask as usize] = Some(Self::LineTask);
+        table
+    };
+
+    #[must_use]
+    pub const fn encoded(self) -> u8 {
+        self as u8
+    }
+
+    #[must_use]
+    pub const fn from_encoded(encoded: u8) -> Option<Self> {
+        Self::DECODE[encoded as usize]
+    }
+
     #[must_use]
     pub const fn is_flow(self) -> bool {
         matches!(self, Self::Flow)
     }
 }
 
-#[derive(Clone, Copy, Debug, Default, Deserialize, Eq, PartialEq, Serialize)]
-pub struct AwbcFunctionFlags(pub u32);
+impl Serialize for AwbcFunctionKind {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: Serializer,
+    {
+        serializer.serialize_u8(self.encoded())
+    }
+}
+
+impl<'de> Deserialize<'de> for AwbcFunctionKind {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        let encoded = u8::deserialize(deserializer)?;
+        Self::from_encoded(encoded).ok_or_else(|| {
+            serde::de::Error::custom(format_args!("unknown AWBC function kind {encoded}"))
+        })
+    }
+}
+
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+#[repr(u8)]
+pub enum AwbcFunctionFlag {
+    Deterministic = 0,
+    MayAllocate = 1,
+    MaySuspend = 2,
+    HasDynamicTarget = 3,
+    NeedProducer = 4,
+    OwnsStreamProducer = 5,
+}
+
+impl AwbcFunctionFlag {
+    #[must_use]
+    pub const fn mask(self) -> u32 {
+        1_u32 << (self as u8)
+    }
+}
+
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+pub struct AwbcFunctionFlags {
+    bits: u32,
+}
 
 impl AwbcFunctionFlags {
-    pub const MAY_SUSPEND: u32 = 1 << 0;
-    pub const MAY_ALLOCATE: u32 = 1 << 1;
-    pub const DETERMINISTIC: u32 = 1 << 2;
-    pub const HAS_DYNAMIC_TARGET: u32 = 1 << 3;
+    pub const KNOWN_MASK: u32 = 0x3f;
 
-    pub const fn contains(self, flag: u32) -> bool {
-        self.0 & flag == flag
+    #[must_use]
+    pub const fn empty() -> Self {
+        Self { bits: 0 }
+    }
+
+    #[must_use]
+    pub const fn with(self, flag: AwbcFunctionFlag) -> Self {
+        Self {
+            bits: self.bits | flag.mask(),
+        }
+    }
+
+    pub const fn try_from_bits(bits: u32) -> Result<Self, AwbcFunctionFlagsError> {
+        if bits & !Self::KNOWN_MASK == 0 {
+            Ok(Self { bits })
+        } else {
+            Err(AwbcFunctionFlagsError { bits })
+        }
+    }
+
+    #[must_use]
+    pub const fn bits(self) -> u32 {
+        self.bits
+    }
+
+    #[must_use]
+    pub const fn contains(self, flag: AwbcFunctionFlag) -> bool {
+        self.bits & flag.mask() != 0
+    }
+
+    pub const fn validate_for_kind(
+        self,
+        kind: AwbcFunctionKind,
+    ) -> Result<(), AwbcFunctionRoleError> {
+        let need = self.contains(AwbcFunctionFlag::NeedProducer);
+        let stream = self.contains(AwbcFunctionFlag::OwnsStreamProducer);
+        if need && stream {
+            return Err(AwbcFunctionRoleError::ConflictingProducerRoles);
+        }
+        if need {
+            if !matches!(kind, AwbcFunctionKind::Synthetic) {
+                return Err(AwbcFunctionRoleError::NeedProducerKind { actual: kind });
+            }
+            if !self.contains(AwbcFunctionFlag::Deterministic)
+                || !self.contains(AwbcFunctionFlag::MayAllocate)
+                || self.contains(AwbcFunctionFlag::MaySuspend)
+                || self.contains(AwbcFunctionFlag::HasDynamicTarget)
+            {
+                return Err(AwbcFunctionRoleError::NeedProducerFlags);
+            }
+        }
+        if matches!(kind, AwbcFunctionKind::GeneratorProducer) {
+            if !stream || !self.contains(AwbcFunctionFlag::MaySuspend) {
+                return Err(AwbcFunctionRoleError::StreamProducerFlags);
+            }
+        } else if stream {
+            return Err(AwbcFunctionRoleError::StreamProducerKind { actual: kind });
+        }
+        Ok(())
+    }
+}
+
+#[derive(Clone, Copy, Debug, Eq, thiserror::Error, PartialEq)]
+#[error("AWBC function flags contain unknown bits: {bits:#x}")]
+pub struct AwbcFunctionFlagsError {
+    bits: u32,
+}
+
+#[derive(Clone, Copy, Debug, Eq, thiserror::Error, PartialEq)]
+pub enum AwbcFunctionRoleError {
+    #[error("AWBC function cannot own both Need and Stream producer roles")]
+    ConflictingProducerRoles,
+    #[error("AWBC Need producer role requires Synthetic kind, found {actual:?}")]
+    NeedProducerKind { actual: AwbcFunctionKind },
+    #[error(
+        "AWBC Need producer requires deterministic, allocating, non-suspending, static-target flags"
+    )]
+    NeedProducerFlags,
+    #[error("AWBC Stream producer role requires GeneratorProducer kind, found {actual:?}")]
+    StreamProducerKind { actual: AwbcFunctionKind },
+    #[error("AWBC GeneratorProducer requires MaySuspend and OwnsStreamProducer flags")]
+    StreamProducerFlags,
+}
+
+impl Serialize for AwbcFunctionFlags {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: Serializer,
+    {
+        serializer.serialize_u32(self.bits)
+    }
+}
+
+impl<'de> Deserialize<'de> for AwbcFunctionFlags {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        Self::try_from_bits(u32::deserialize(deserializer)?).map_err(serde::de::Error::custom)
     }
 }
 
@@ -1033,6 +1200,14 @@ pub struct AwbcDialogueValueBinding {
     pub value: AwbcRegisterId,
 }
 
+/// Parent-frame publication target for one typed dialogue result.
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+pub struct AwbcDialogueResultTarget {
+    pub ty: AwbcTypeId,
+    pub pattern: AwbcPatternId,
+    pub destination: AwbcRegisterId,
+}
+
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub struct AwbcBlock {
     pub owner: AwbcFunctionId,
@@ -1048,6 +1223,7 @@ pub enum AwbcOpcode {
     Nop,
     LoadConst,
     Move,
+    CopyValue,
     Clear,
     EnterScope,
     ExitScope,
@@ -1065,7 +1241,6 @@ pub enum AwbcOpcode {
     ProjectTuple,
     ProjectRecord,
     ProjectField,
-    ProjectOpaqueRecordField,
     Unary,
     Binary,
     CallPureHelper,
@@ -1076,6 +1251,8 @@ pub enum AwbcOpcode {
     SpawnFiber,
     StreamYield,
     StreamClose,
+    ExecuteLineOperation,
+    CommitDialogueResult,
     Drop,
     AssignRecordField,
     CallTraitMethod,
@@ -1107,59 +1284,61 @@ impl AwbcOpcode {
         match self {
             Self::Nop => 0x00,
             Self::LoadConst => 0x01,
-            Self::Move => 0x02,
-            Self::Clear => 0x03,
-            Self::EnterScope => 0x04,
-            Self::ExitScope => 0x05,
-            Self::BindPattern => 0x06,
-            Self::TestPattern => 0x07,
-            Self::MakeTuple => 0x08,
-            Self::MakeSequence => 0x09,
-            Self::RepeatSequence => 0x0a,
-            Self::SequenceLen => 0x0b,
-            Self::SequenceGet => 0x0c,
-            Self::SequenceSlice => 0x0d,
-            Self::SequencePush => 0x0e,
-            Self::MakeRecord => 0x0f,
-            Self::MakeVariant => 0x10,
-            Self::ProjectTuple => 0x11,
-            Self::ProjectRecord => 0x12,
-            Self::ProjectField => 0x13,
-            Self::Unary => 0x14,
-            Self::Binary => 0x15,
-            Self::CallPureHelper => 0x16,
-            Self::CallIntrinsic => 0x17,
-            Self::EnsureContent => 0x18,
-            Self::EmitEffect => 0x19,
-            Self::StartTask => 0x1a,
-            Self::SpawnFiber => 0x1b,
-            Self::StreamYield => 0x1c,
-            Self::StreamClose => 0x1d,
-            Self::Drop => 0x1f,
-            Self::AssignRecordField => 0x21,
+            Self::MakeTuple => 0x02,
+            Self::MakeSequence => 0x03,
+            Self::RepeatSequence => 0x04,
+            Self::MakeRecord => 0x05,
+            Self::MakeVariant => 0x06,
+            Self::MakeFunction => 0x07,
+            Self::MakeAgent => 0x08,
+            Self::MakeReductionUnchanged => 0x09,
+            Self::SequenceLen => 0x0a,
+            Self::SequenceGet => 0x0b,
+            Self::SequenceSlice => 0x0c,
+            Self::SequencePush => 0x0d,
+            Self::ProjectTuple => 0x0e,
+            Self::ProjectRecord => 0x0f,
+            Self::ProjectField => 0x10,
+            Self::AssignRecordField => 0x11,
+            Self::TestPattern => 0x12,
+            Self::Unary => 0x13,
+            Self::Binary => 0x14,
+            Self::CallPureHelper => 0x20,
+            Self::CallIntrinsic => 0x21,
             Self::CallTraitMethod => 0x22,
-            Self::RegisterCleanup => 0x23,
-            Self::CancelCleanup => 0x24,
-            Self::MakeFunction => 0x25,
-            Self::ApplyFunction => 0x26,
-            Self::MakeAgent => 0x27,
-            Self::MakeReductionUnchanged => 0x28,
-            Self::ProjectOpaqueRecordField => 0x29,
+            Self::ApplyFunction => 0x23,
+            Self::EnsureContent => 0x24,
+            Self::EmitEffect => 0x25,
+            Self::StartTask => 0x26,
+            Self::SpawnFiber => 0x27,
+            Self::StreamYield => 0x32,
+            Self::StreamClose => 0x34,
+            Self::ExecuteLineOperation => 0x35,
+            Self::CommitDialogueResult => 0x36,
+            Self::Move => 0x40,
+            Self::CopyValue => 0x41,
+            Self::Clear => 0x42,
+            Self::Drop => 0x43,
+            Self::EnterScope => 0x44,
+            Self::ExitScope => 0x45,
+            Self::BindPattern => 0x46,
+            Self::RegisterCleanup => 0x47,
+            Self::CancelCleanup => 0x48,
             Self::Jump => 0x80,
             Self::Branch => 0x81,
             Self::Match => 0x82,
             Self::CallFunction => 0x83,
             Self::GotoStatic => 0x84,
             Self::GotoDynamic => 0x85,
-            Self::Dialogue => 0x86,
-            Self::Choice => 0x87,
-            Self::Await => 0x88,
-            Self::AwaitMany => 0x89,
-            Self::HostCall => 0x8a,
-            Self::Return => 0x8b,
-            Self::Trap => 0x8c,
-            Self::BudgetYield => 0x8d,
-            Self::Unreachable => 0x8e,
+            Self::Return => 0x86,
+            Self::HostCall => 0x88,
+            Self::Await => 0x89,
+            Self::AwaitMany => 0x8a,
+            Self::BudgetYield => 0x8b,
+            Self::Dialogue => 0x98,
+            Self::Choice => 0x99,
+            Self::Trap => 0xa0,
+            Self::Unreachable => 0xa1,
         }
     }
 
@@ -1167,59 +1346,61 @@ impl AwbcOpcode {
         Some(match value {
             0x00 => Self::Nop,
             0x01 => Self::LoadConst,
-            0x02 => Self::Move,
-            0x03 => Self::Clear,
-            0x04 => Self::EnterScope,
-            0x05 => Self::ExitScope,
-            0x06 => Self::BindPattern,
-            0x07 => Self::TestPattern,
-            0x08 => Self::MakeTuple,
-            0x09 => Self::MakeSequence,
-            0x0a => Self::RepeatSequence,
-            0x0b => Self::SequenceLen,
-            0x0c => Self::SequenceGet,
-            0x0d => Self::SequenceSlice,
-            0x0e => Self::SequencePush,
-            0x0f => Self::MakeRecord,
-            0x10 => Self::MakeVariant,
-            0x11 => Self::ProjectTuple,
-            0x12 => Self::ProjectRecord,
-            0x13 => Self::ProjectField,
-            0x14 => Self::Unary,
-            0x15 => Self::Binary,
-            0x16 => Self::CallPureHelper,
-            0x17 => Self::CallIntrinsic,
-            0x18 => Self::EnsureContent,
-            0x19 => Self::EmitEffect,
-            0x1a => Self::StartTask,
-            0x1b => Self::SpawnFiber,
-            0x1c => Self::StreamYield,
-            0x1d => Self::StreamClose,
-            0x1f => Self::Drop,
-            0x21 => Self::AssignRecordField,
+            0x02 => Self::MakeTuple,
+            0x03 => Self::MakeSequence,
+            0x04 => Self::RepeatSequence,
+            0x05 => Self::MakeRecord,
+            0x06 => Self::MakeVariant,
+            0x07 => Self::MakeFunction,
+            0x08 => Self::MakeAgent,
+            0x09 => Self::MakeReductionUnchanged,
+            0x0a => Self::SequenceLen,
+            0x0b => Self::SequenceGet,
+            0x0c => Self::SequenceSlice,
+            0x0d => Self::SequencePush,
+            0x0e => Self::ProjectTuple,
+            0x0f => Self::ProjectRecord,
+            0x10 => Self::ProjectField,
+            0x11 => Self::AssignRecordField,
+            0x12 => Self::TestPattern,
+            0x13 => Self::Unary,
+            0x14 => Self::Binary,
+            0x20 => Self::CallPureHelper,
+            0x21 => Self::CallIntrinsic,
             0x22 => Self::CallTraitMethod,
-            0x23 => Self::RegisterCleanup,
-            0x24 => Self::CancelCleanup,
-            0x25 => Self::MakeFunction,
-            0x26 => Self::ApplyFunction,
-            0x27 => Self::MakeAgent,
-            0x28 => Self::MakeReductionUnchanged,
-            0x29 => Self::ProjectOpaqueRecordField,
+            0x23 => Self::ApplyFunction,
+            0x24 => Self::EnsureContent,
+            0x25 => Self::EmitEffect,
+            0x26 => Self::StartTask,
+            0x27 => Self::SpawnFiber,
+            0x32 => Self::StreamYield,
+            0x34 => Self::StreamClose,
+            0x35 => Self::ExecuteLineOperation,
+            0x36 => Self::CommitDialogueResult,
+            0x40 => Self::Move,
+            0x41 => Self::CopyValue,
+            0x42 => Self::Clear,
+            0x43 => Self::Drop,
+            0x44 => Self::EnterScope,
+            0x45 => Self::ExitScope,
+            0x46 => Self::BindPattern,
+            0x47 => Self::RegisterCleanup,
+            0x48 => Self::CancelCleanup,
             0x80 => Self::Jump,
             0x81 => Self::Branch,
             0x82 => Self::Match,
             0x83 => Self::CallFunction,
             0x84 => Self::GotoStatic,
             0x85 => Self::GotoDynamic,
-            0x86 => Self::Dialogue,
-            0x87 => Self::Choice,
-            0x88 => Self::Await,
-            0x89 => Self::AwaitMany,
-            0x8a => Self::HostCall,
-            0x8b => Self::Return,
-            0x8c => Self::Trap,
-            0x8d => Self::BudgetYield,
-            0x8e => Self::Unreachable,
+            0x86 => Self::Return,
+            0x88 => Self::HostCall,
+            0x89 => Self::Await,
+            0x8a => Self::AwaitMany,
+            0x8b => Self::BudgetYield,
+            0x98 => Self::Dialogue,
+            0x99 => Self::Choice,
+            0xa0 => Self::Trap,
+            0xa1 => Self::Unreachable,
             _ => return None,
         })
     }
@@ -1237,6 +1418,10 @@ pub enum AwbcInstruction {
         constant: AwbcConstantId,
     },
     Move {
+        dst: AwbcRegisterId,
+        src: AwbcRegisterId,
+    },
+    CopyValue {
         dst: AwbcRegisterId,
         src: AwbcRegisterId,
     },
@@ -1316,19 +1501,7 @@ pub enum AwbcInstruction {
     ProjectField {
         dst: AwbcRegisterId,
         target: AwbcRegisterId,
-        field: AwbcStringId,
-    },
-    /// Projects one ordinal from an exact opaque-record payload.
-    ///
-    /// `owner` is the complete checked opaque owner carried by the target
-    /// register and `field_type` is the sealed runtime type of the selected
-    /// payload position. The VM must validate both before exposing the value.
-    ProjectOpaqueRecordField {
-        dst: AwbcRegisterId,
-        target: AwbcRegisterId,
-        owner: AwbcTypeId,
-        field: u32,
-        field_type: AwbcTypeId,
+        field: AwbcFieldProjection,
     },
     Unary {
         dst: AwbcRegisterId,
@@ -1375,8 +1548,17 @@ pub enum AwbcInstruction {
     StreamClose {
         stream: AwbcStreamPlanId,
     },
+    ExecuteLineOperation {
+        dst: AwbcRegisterId,
+        operation: AwbcLineOperationId,
+        args: Vec<AwbcRegisterId>,
+    },
+    CommitDialogueResult {
+        source: AwbcRegisterId,
+    },
     Drop {
         register: AwbcRegisterId,
+        policy: AwbcDropPolicy,
     },
     AssignRecordField {
         target: AwbcRegisterId,
@@ -1423,12 +1605,40 @@ pub enum AwbcInstruction {
     },
 }
 
+/// Closed, typed policy operand of the affine `Drop` instruction.
+///
+/// The optional fade payload belongs only to `Stop`; representing it in the
+/// enum payload prevents invalid kind/register combinations from entering the
+/// accepted AWBC instruction stream.
+#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(deny_unknown_fields)]
+pub enum AwbcDropPolicy {
+    Default,
+    Cancel,
+    Stop { fade: AwbcRegisterId },
+    Finish,
+    Release,
+    Detach,
+}
+
+/// Typed field coordinate consumed by the one generic `ProjectField` opcode.
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+pub enum AwbcFieldProjection {
+    Named(AwbcStringId),
+    OpaqueRecord {
+        owner: AwbcTypeId,
+        field: u32,
+        field_type: AwbcTypeId,
+    },
+}
+
 impl AwbcInstruction {
     pub const fn opcode(&self) -> AwbcOpcode {
         match self {
             Self::Nop => AwbcOpcode::Nop,
             Self::LoadConst { .. } => AwbcOpcode::LoadConst,
             Self::Move { .. } => AwbcOpcode::Move,
+            Self::CopyValue { .. } => AwbcOpcode::CopyValue,
             Self::Clear { .. } => AwbcOpcode::Clear,
             Self::EnterScope { .. } => AwbcOpcode::EnterScope,
             Self::ExitScope { .. } => AwbcOpcode::ExitScope,
@@ -1446,7 +1656,6 @@ impl AwbcInstruction {
             Self::ProjectTuple { .. } => AwbcOpcode::ProjectTuple,
             Self::ProjectRecord { .. } => AwbcOpcode::ProjectRecord,
             Self::ProjectField { .. } => AwbcOpcode::ProjectField,
-            Self::ProjectOpaqueRecordField { .. } => AwbcOpcode::ProjectOpaqueRecordField,
             Self::Unary { .. } => AwbcOpcode::Unary,
             Self::Binary { .. } => AwbcOpcode::Binary,
             Self::CallPureHelper { .. } => AwbcOpcode::CallPureHelper,
@@ -1457,6 +1666,8 @@ impl AwbcInstruction {
             Self::SpawnFiber { .. } => AwbcOpcode::SpawnFiber,
             Self::StreamYield { .. } => AwbcOpcode::StreamYield,
             Self::StreamClose { .. } => AwbcOpcode::StreamClose,
+            Self::ExecuteLineOperation { .. } => AwbcOpcode::ExecuteLineOperation,
+            Self::CommitDialogueResult { .. } => AwbcOpcode::CommitDialogueResult,
             Self::Drop { .. } => AwbcOpcode::Drop,
             Self::AssignRecordField { .. } => AwbcOpcode::AssignRecordField,
             Self::CallTraitMethod { .. } => AwbcOpcode::CallTraitMethod,
@@ -1547,6 +1758,7 @@ pub enum AwbcTerminator {
         content: AwbcContentUnitId,
         values: Vec<AwbcDialogueValueBinding>,
         line_task_captures: Vec<AwbcRegisterId>,
+        result: AwbcDialogueResultTarget,
         resume: AwbcResumePointId,
     },
     Choice {
@@ -1682,7 +1894,7 @@ pub enum AwbcPattern {
     },
     Discard,
     Literal(AwbcConstantId),
-    Entity(AwbcStringId),
+    Entity(RuntimeEntityReference),
     Tuple(Vec<AwbcPatternId>),
     Record {
         ty: Option<AwbcTypeId>,
@@ -2001,8 +2213,6 @@ pub struct AwbcEffectPlan {
 
 #[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub enum AwbcEffectKind {
-    RegisterHandle,
-    DropHandle,
     Wait,
     Audio,
     Call,
@@ -2078,6 +2288,7 @@ pub struct AwbcChoiceOption {
 pub struct AwbcContentUnit {
     pub public_id: AwbcStringId,
     pub marks: Vec<AwbcDialogueMark>,
+    pub effect_site_count: u32,
     pub line_task_group: Option<AwbcLineTaskGroupId>,
     pub display: Option<AwbcDisplayMapId>,
     pub source: Option<AwbcSourceMapId>,
@@ -2093,6 +2304,9 @@ pub struct AwbcDialogueMark {
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub struct AwbcLineTaskGroup {
     pub captures: Vec<RuntimeLocalDeclarationId>,
+    pub activation: AwbcFunctionId,
+    pub result_type: AwbcTypeId,
+    pub handle_sites: Vec<AwbcLineHandleSite>,
     pub root: AwbcLineTaskNodeId,
     pub nodes: AwbcTableRange,
     pub cancel_handlers: Vec<AwbcLineCancelHandler>,
@@ -2100,6 +2314,89 @@ pub struct AwbcLineTaskGroup {
     pub cleanup_cancelled: Option<AwbcFunctionId>,
     pub cleanup_failed: Option<AwbcFunctionId>,
     pub cleanup: AwbcLineCleanupPolicy,
+}
+
+/// One dense typed handle-producing site owned by an AWBC line-task group.
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+pub struct AwbcLineHandleSite {
+    pub source_ordinal: u32,
+    pub kind: RuntimeHandleKind,
+    pub result_type: AwbcTypeId,
+    pub character: Option<CharacterId>,
+    pub scheduled_child: Option<AwbcLineTaskNodeId>,
+}
+
+/// Exact destination-local and type coordinate for one scheduled callback
+/// capture. Values remain instruction operands; this row is the sealed child
+/// binding ABI and prevents runtime position/type guessing.
+#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
+pub struct AwbcLineScheduledCapture {
+    pub local: RuntimeLocalDeclarationId,
+    pub ty: AwbcTypeId,
+}
+
+/// Static typed identity and ABI of one executable line operation.
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+pub enum AwbcLineOperation {
+    AcquireActor {
+        group: AwbcLineTaskGroupId,
+        site: AwbcLineHandleSiteId,
+        character: CharacterId,
+        scope: crate::line_task::RuntimeLineHandleScope,
+        result_type: AwbcTypeId,
+    },
+    Schedule {
+        group: AwbcLineTaskGroupId,
+        site: AwbcLineHandleSiteId,
+        child: AwbcLineTaskNodeId,
+        captures: Vec<AwbcLineScheduledCapture>,
+        result_type: AwbcTypeId,
+    },
+    ActorLook {
+        group: AwbcLineTaskGroupId,
+        site: AwbcLineHandleSiteId,
+        character: CharacterId,
+        actor_type: AwbcTypeId,
+        look_type: AwbcTypeId,
+        result_type: AwbcTypeId,
+    },
+    VoiceHandle {
+        group: AwbcLineTaskGroupId,
+        site: AwbcLineHandleSiteId,
+        result_type: AwbcTypeId,
+    },
+}
+
+impl AwbcLineOperation {
+    #[must_use]
+    pub const fn group(&self) -> AwbcLineTaskGroupId {
+        match self {
+            Self::AcquireActor { group, .. }
+            | Self::Schedule { group, .. }
+            | Self::ActorLook { group, .. }
+            | Self::VoiceHandle { group, .. } => *group,
+        }
+    }
+
+    #[must_use]
+    pub const fn site(&self) -> AwbcLineHandleSiteId {
+        match self {
+            Self::AcquireActor { site, .. }
+            | Self::Schedule { site, .. }
+            | Self::ActorLook { site, .. }
+            | Self::VoiceHandle { site, .. } => *site,
+        }
+    }
+
+    #[must_use]
+    pub const fn result_type(&self) -> AwbcTypeId {
+        match self {
+            Self::AcquireActor { result_type, .. }
+            | Self::Schedule { result_type, .. }
+            | Self::ActorLook { result_type, .. }
+            | Self::VoiceHandle { result_type, .. } => *result_type,
+        }
+    }
 }
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
@@ -2144,11 +2441,7 @@ pub enum AwbcLineTaskNode {
         children: Vec<AwbcLineTaskNodeId>,
     },
     Child {
-        id: AwbcStringId,
-        key: Option<AwbcStringId>,
-        name: Option<AwbcStringId>,
         trigger: AwbcLineTaskTrigger,
-        priority: i32,
         join: AwbcChildJoinPolicy,
         cancel: AwbcChildCancelPolicy,
         scope: AwbcLineTaskNodeId,
@@ -2165,7 +2458,8 @@ pub enum AwbcParallelPolicy {
 pub enum AwbcLineTaskTrigger {
     Immediate,
     Mark(RuntimeDialogueMarkId),
-    DelayNanos(u64),
+    Scheduled(AwbcLineHandleSiteId),
+    ContentEffect(RuntimeDialogueEffectSiteId),
 }
 
 #[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]

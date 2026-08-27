@@ -3,9 +3,12 @@
 use std::collections::BTreeSet;
 
 use crate::audio::RuntimeAudioCommand;
-use crate::effect::{LineEffectRequest, RuntimeEffectExpr, RuntimeEffectFieldExpr};
+use crate::effect::{
+    LineEffectRequest, RuntimeDropPolicyExpr, RuntimeEffectExpr, RuntimeEffectFieldExpr,
+};
 use crate::entry::TypeLayoutHash;
 use crate::pattern::{
+    RuntimeBuiltinVariantCaseIdentity, RuntimeBuiltinVariantIdentity, RuntimeCheckedType,
     RuntimeOpaqueTypeAdmission, RuntimeOpaqueTypeOwner, RuntimePattern,
     RuntimePatternBindingCoordinate, RuntimePatternBindingPath, RuntimePatternBindingStep,
     RuntimePatternKind, RuntimePatternRest, RuntimeRecordPatternField, RuntimeVariantIdentity,
@@ -18,30 +21,32 @@ use crate::task::{
 };
 use crate::value::{
     RuntimeAgentConstructor, RuntimeAgentExpr, RuntimeAgentFieldOwner, RuntimeAgentFieldResult,
-    RuntimeBinaryOp, RuntimeCallArgument, RuntimeCallArgumentMode, RuntimeExpr, RuntimeExprKind,
-    RuntimeExprMatchArm, RuntimeFieldProjection, RuntimeNominalRecordExpr, RuntimeRange,
-    RuntimeRecordFieldId, RuntimeRecordFieldIdError, RuntimeReductionProducer,
-    RuntimeSignedIntWidth, RuntimeUnaryOp, RuntimeUnsignedIntWidth, RuntimeValue,
+    RuntimeAgentFieldValue, RuntimeBinaryOp, RuntimeCallArgument, RuntimeCallArgumentMode,
+    RuntimeExpr, RuntimeExprKind, RuntimeExprMatchArm, RuntimeFieldProjection,
+    RuntimeNominalRecordExpr, RuntimeRange, RuntimeRecordFieldId, RuntimeRecordFieldIdError,
+    RuntimeReductionProducer, RuntimeSignedIntWidth, RuntimeUnaryOp, RuntimeUnsignedIntWidth,
+    RuntimeValue,
 };
 
 use super::super::{
     ChoiceRuntimeOption, FlowOp, RuntimeAgentOperationalType, RuntimeAgentTypeProjection,
-    RuntimeBuiltinIteratorEvidence, RuntimeBuiltinIteratorFamily, RuntimeHostCallTarget,
-    RuntimeIteratorEvidence, RuntimeIteratorWitnessEvidence, RuntimeIteratorWitnessExecutable,
-    RuntimeMatchArm, RuntimePlanSequenceKind, RuntimePlanTypeProjection, RuntimePureInputType,
+    RuntimeBuiltinIteratorEvidence, RuntimeBuiltinIteratorFamily, RuntimeDialogueResultTarget,
+    RuntimeHostCallTarget, RuntimeIteratorEvidence, RuntimeIteratorWitnessEvidence,
+    RuntimeIteratorWitnessExecutable, RuntimeLineOperation, RuntimeMatchArm,
+    RuntimePlanSequenceKind, RuntimePlanTypeProjection, RuntimePureInputType,
     RuntimePureOutputType, RuntimeReceiverMode,
 };
 use super::{
     RuntimeAgentExprSeed, RuntimeAudioCommandSeed, RuntimeBuiltinIteratorEvidenceSeed,
-    RuntimeCallArgumentSeed, RuntimeChoiceOptionSeed, RuntimeEvaluatedEffectSeed,
-    RuntimeExprMatchArmSeed, RuntimeExprSeed, RuntimeExprSeedKind, RuntimeFieldProjectionSeed,
-    RuntimeFlowMatchArmSeed, RuntimeFlowOpSeed, RuntimeHostArgumentSeed, RuntimeHostCallTargetSeed,
-    RuntimeHostTaskRequestTemplateSeed, RuntimeIteratorEvidenceSeed,
-    RuntimeIteratorWitnessEvidenceSeed, RuntimeIteratorWitnessExecutableSeed,
-    RuntimeLineEffectSeed, RuntimeLocalSeedId, RuntimeNominalRecordFieldSeed,
-    RuntimePatternRestSeed, RuntimePatternSeed, RuntimePatternSeedKind, RuntimePlanBuildError,
-    RuntimePlanBuilder, RuntimeRecordFieldSeedId, RuntimeStreamMatchArmSeed, RuntimeStreamOpSeed,
-    RuntimeStreamPlanSeed,
+    RuntimeCallArgumentSeed, RuntimeChoiceOptionSeed, RuntimeDropPolicySeed,
+    RuntimeEvaluatedEffectSeed, RuntimeExprMatchArmSeed, RuntimeExprSeed, RuntimeExprSeedKind,
+    RuntimeFieldProjectionSeed, RuntimeFlowMatchArmSeed, RuntimeFlowOpSeed,
+    RuntimeHostArgumentSeed, RuntimeHostCallTargetSeed, RuntimeHostTaskRequestTemplateSeed,
+    RuntimeIteratorEvidenceSeed, RuntimeIteratorWitnessEvidenceSeed,
+    RuntimeIteratorWitnessExecutableSeed, RuntimeLineEffectSeed, RuntimeLineOperationSeed,
+    RuntimeLocalSeedId, RuntimeNominalRecordFieldSeed, RuntimePatternRestSeed, RuntimePatternSeed,
+    RuntimePatternSeedKind, RuntimePlanBuildError, RuntimePlanBuilder, RuntimeRecordFieldSeedId,
+    RuntimeStreamMatchArmSeed, RuntimeStreamOpSeed, RuntimeStreamPlanSeed,
 };
 
 impl RuntimePlanBuilder {
@@ -1180,23 +1185,42 @@ impl RuntimePlanBuilder {
         ty: RuntimePlanTypeId,
         result: RuntimeAgentFieldResult,
     ) -> Result<bool, RuntimePlanBuildError> {
-        Ok(match (result, self.projection(ty)?) {
-            (RuntimeAgentFieldResult::Bool, RuntimePlanTypeProjection::Bool)
-            | (RuntimeAgentFieldResult::String, RuntimePlanTypeProjection::String)
+        match result {
+            RuntimeAgentFieldResult::Required(value) => self.agent_field_value_matches(ty, value),
+            RuntimeAgentFieldResult::Optional(value) => {
+                let RuntimePlanTypeProjection::Option(item) = self.projection(ty)? else {
+                    return Ok(false);
+                };
+                self.agent_field_value_matches(*item, value)
+            }
+        }
+    }
+
+    fn agent_field_value_matches(
+        &self,
+        ty: RuntimePlanTypeId,
+        value: RuntimeAgentFieldValue,
+    ) -> Result<bool, RuntimePlanBuildError> {
+        Ok(match (value, self.projection(ty)?) {
+            (RuntimeAgentFieldValue::Bool, RuntimePlanTypeProjection::Bool)
+            | (RuntimeAgentFieldValue::String, RuntimePlanTypeProjection::String)
             | (
-                RuntimeAgentFieldResult::U32,
+                RuntimeAgentFieldValue::U32,
                 RuntimePlanTypeProjection::Unsigned(RuntimeUnsignedIntWidth::U32),
             )
             | (
-                RuntimeAgentFieldResult::U64,
+                RuntimeAgentFieldValue::U64,
                 RuntimePlanTypeProjection::Unsigned(RuntimeUnsignedIntWidth::U64),
             ) => true,
+            (RuntimeAgentFieldValue::Agent(expected), RuntimePlanTypeProjection::Agent(actual)) => {
+                actual.operational_type() == expected
+            }
             (
-                RuntimeAgentFieldResult::Agent(expected),
-                RuntimePlanTypeProjection::Agent(actual),
-            ) => actual.operational_type() == expected,
+                RuntimeAgentFieldValue::BuiltinVariant(expected),
+                RuntimePlanTypeProjection::BuiltinVariant { owner, .. },
+            ) => *owner == expected,
             (
-                RuntimeAgentFieldResult::VecAgent(expected),
+                RuntimeAgentFieldValue::VecAgent(expected),
                 RuntimePlanTypeProjection::Sequence {
                     kind: RuntimePlanSequenceKind::Vec,
                     item,
@@ -1206,15 +1230,14 @@ impl RuntimePlanBuilder {
                 RuntimePlanTypeProjection::Agent(actual) if actual.operational_type() == expected
             ),
             (
-                RuntimeAgentFieldResult::AgentValueMap,
+                RuntimeAgentFieldValue::AgentValueMap,
                 RuntimePlanTypeProjection::Map { key, value },
             ) => matches!(
                 (self.projection(*key)?, self.projection(*value)?),
                 (
-                    RuntimePlanTypeProjection::Agent(key),
-                    RuntimePlanTypeProjection::Agent(value),
-                ) if key.operational_type() == RuntimeAgentOperationalType::AgentValue
-                    && value.operational_type() == RuntimeAgentOperationalType::AgentValue
+                    RuntimePlanTypeProjection::AgentValue,
+                    RuntimePlanTypeProjection::AgentValue,
+                )
             ),
             _ => false,
         })
@@ -2183,15 +2206,31 @@ impl RuntimePlanBuilder {
                 require_same("flow assignment value", field_ty, value.ty())?;
                 FlowOp::AssignNominalField { base, field, value }
             }
-            RuntimeFlowOpSeed::Dialogue { content } => {
+            RuntimeFlowOpSeed::Dialogue { content, result } => {
                 let content = content
                     .resolve(&self.issuer)
                     .ok_or(RuntimePlanBuildError::ForeignDialogueContentSeed)?;
                 if self.dialogue_content.get(content).is_none() {
                     return Err(RuntimePlanBuildError::ForeignDialogueContentSeed);
                 }
-                FlowOp::Dialogue { content }
+                let (result_type, result_pattern) = result.into_parts();
+                let ty = self.resolve_seed_type("dialogue result target", result_type)?;
+                let pattern = self.lower_pattern_seed(result_pattern)?;
+                require_same("dialogue result target pattern", ty, pattern.ty())?;
+                FlowOp::Dialogue {
+                    content,
+                    result: RuntimeDialogueResultTarget::new(ty, pattern),
+                }
             }
+            RuntimeFlowOpSeed::LineOperation { binding, operation } => FlowOp::LineOperation {
+                binding: binding
+                    .map(|binding| self.lower_pattern_seed(binding))
+                    .transpose()?,
+                operation: self.lower_line_operation(operation)?,
+            },
+            RuntimeFlowOpSeed::CommitDialogueResult { value } => FlowOp::CommitDialogueResult {
+                value: self.lower_expression(value)?,
+            },
             RuntimeFlowOpSeed::Choice { id, options } => FlowOp::Choice {
                 id,
                 options: options
@@ -2391,6 +2430,64 @@ impl RuntimePlanBuilder {
             RuntimeFlowOpSeed::EnterScope => FlowOp::EnterScope,
             RuntimeFlowOpSeed::ExitScope => FlowOp::ExitScope,
             RuntimeFlowOpSeed::Noop => FlowOp::Noop,
+        })
+    }
+
+    fn lower_line_operation(
+        &self,
+        operation: RuntimeLineOperationSeed,
+    ) -> Result<RuntimeLineOperation, RuntimePlanBuildError> {
+        Ok(match operation {
+            RuntimeLineOperationSeed::AcquireActor {
+                site,
+                character,
+                scope,
+            } => RuntimeLineOperation::AcquireActor {
+                site,
+                character,
+                scope,
+            },
+            RuntimeLineOperationSeed::Schedule {
+                site,
+                delay,
+                child,
+                captures,
+            } => RuntimeLineOperation::Schedule {
+                site,
+                delay: self.lower_expression(delay)?,
+                child: child.runtime_id().ok_or(
+                    RuntimePlanBuildError::InvalidLineTaskNodeSeedId {
+                        actual: child.get(),
+                    },
+                )?,
+                captures: captures
+                    .into_vec()
+                    .into_iter()
+                    .map(|capture| -> Result<_, RuntimePlanBuildError> {
+                        let (local, expected) = self.resolve_local(&capture.local)?;
+                        let value = self.lower_expression(capture.value)?;
+                        require_same("scheduled capture local", expected, value.ty())?;
+                        Ok(super::super::RuntimeScheduledCapture::new(local, value))
+                    })
+                    .collect::<Result<Vec<_>, _>>()?
+                    .into_boxed_slice(),
+            },
+            RuntimeLineOperationSeed::ActorLook {
+                site,
+                character,
+                actor,
+                look,
+                crossfade,
+            } => RuntimeLineOperation::ActorLook {
+                site,
+                character,
+                actor: self.lower_expression(actor)?,
+                look: self.lower_expression(look)?,
+                crossfade: self.lower_expression(crossfade)?,
+            },
+            RuntimeLineOperationSeed::VoiceHandle { site } => {
+                RuntimeLineOperation::VoiceHandle { site }
+            }
         })
     }
 
@@ -2936,6 +3033,19 @@ impl RuntimePlanBuilder {
                     message: self.lower_expression(message)?,
                 }
             }
+            RuntimeEvaluatedEffectSeed::Drop { target, policy } => RuntimeEffectExpr::Drop {
+                target: self.lower_expression(target)?,
+                policy: match policy {
+                    RuntimeDropPolicySeed::Default => RuntimeDropPolicyExpr::Default,
+                    RuntimeDropPolicySeed::Cancel => RuntimeDropPolicyExpr::Cancel,
+                    RuntimeDropPolicySeed::Stop { fade } => RuntimeDropPolicyExpr::Stop {
+                        fade: self.lower_expression(fade)?,
+                    },
+                    RuntimeDropPolicySeed::Finish => RuntimeDropPolicyExpr::Finish,
+                    RuntimeDropPolicySeed::Release => RuntimeDropPolicyExpr::Release,
+                    RuntimeDropPolicySeed::Detach => RuntimeDropPolicyExpr::Detach,
+                },
+            },
             RuntimeEvaluatedEffectSeed::Assert {
                 guard,
                 condition,
@@ -3005,6 +3115,17 @@ impl RuntimePlanBuilder {
                 FlowOp::AssignNominalField { base, value, .. } => {
                     require_local_in_scope(*base, scope)?;
                     used.insert(*base);
+                    self.validate_expression_locals(value, scope, used)?;
+                }
+                FlowOp::LineOperation { binding, operation } => {
+                    for expression in line_operation_expressions(operation) {
+                        self.validate_expression_locals(expression, scope, used)?;
+                    }
+                    if let Some(binding) = binding {
+                        *scope = extend_scope(scope, pattern_binding_locals(binding))?;
+                    }
+                }
+                FlowOp::CommitDialogueResult { value } => {
                     self.validate_expression_locals(value, scope, used)?;
                 }
                 FlowOp::Choice { options, .. } => {
@@ -3155,10 +3276,11 @@ impl RuntimePlanBuilder {
                         operation: "Bind",
                     });
                 }
-                FlowOp::Dialogue { content, .. } => {
+                FlowOp::Dialogue { content, result } => {
                     if self.dialogue_content.get(*content).is_none() {
                         return Err(RuntimePlanBuildError::ForeignDialogueContentSeed);
                     }
+                    *scope = extend_scope(scope, pattern_binding_locals(result.pattern()))?;
                 }
                 FlowOp::LoopNext { .. } => {
                     return Err(RuntimePlanBuildError::NonCanonicalFlowOperation {
@@ -3240,6 +3362,29 @@ impl RuntimePlanBuilder {
             }
         }
         Ok(())
+    }
+}
+
+fn line_operation_expressions(operation: &RuntimeLineOperation) -> Vec<&RuntimeExpr> {
+    match operation {
+        RuntimeLineOperation::AcquireActor { .. } | RuntimeLineOperation::VoiceHandle { .. } => {
+            Vec::new()
+        }
+        RuntimeLineOperation::Schedule {
+            delay, captures, ..
+        } => std::iter::once(delay)
+            .chain(
+                captures
+                    .iter()
+                    .map(super::super::RuntimeScheduledCapture::value),
+            )
+            .collect(),
+        RuntimeLineOperation::ActorLook {
+            actor,
+            look,
+            crossfade,
+            ..
+        } => vec![actor, look, crossfade],
     }
 }
 
@@ -3464,6 +3609,9 @@ impl RuntimePlanBuilder {
             RuntimePlanTypeProjection::EntityReference => {
                 matches!(value, RuntimeValue::EntityRef(_))
             }
+            RuntimePlanTypeProjection::AgentValue => {
+                RuntimeCheckedType::AgentValue.accepts_value(value)
+            }
             RuntimePlanTypeProjection::Range(item) => match value {
                 RuntimeValue::Range(range) => self.range_matches_item(*item, range)?,
                 _ => false,
@@ -3484,7 +3632,9 @@ impl RuntimePlanBuilder {
             RuntimePlanTypeProjection::Choice(alternatives) => {
                 self.choice_value_matches(alternatives, value, depth + 1)?
             }
-            RuntimePlanTypeProjection::Result { .. } | RuntimePlanTypeProjection::Option(_) => {
+            RuntimePlanTypeProjection::Result { .. }
+            | RuntimePlanTypeProjection::Option(_)
+            | RuntimePlanTypeProjection::BuiltinVariant { .. } => {
                 matches!(value, RuntimeValue::Variant { .. })
                     && self.variant_value_matches(ty, value, depth + 1)?
             }
@@ -3758,8 +3908,18 @@ impl RuntimePlanBuilder {
                     ty: owner,
                 })?;
         let owner_matches = match (declaration.projection(), actual_owner) {
-            (RuntimePlanTypeProjection::Option(_), RuntimeVariantIdentity::Option)
-            | (RuntimePlanTypeProjection::Result { .. }, RuntimeVariantIdentity::Result) => true,
+            (
+                RuntimePlanTypeProjection::Option(_),
+                RuntimeVariantIdentity::Builtin(RuntimeBuiltinVariantIdentity::Option),
+            )
+            | (
+                RuntimePlanTypeProjection::Result { .. },
+                RuntimeVariantIdentity::Builtin(RuntimeBuiltinVariantIdentity::Result),
+            ) => true,
+            (
+                RuntimePlanTypeProjection::BuiltinVariant { owner, .. },
+                RuntimeVariantIdentity::Builtin(actual),
+            ) => owner == actual,
             (
                 RuntimePlanTypeProjection::ProjectNominal { .. }
                 | RuntimePlanTypeProjection::Opaque { .. },
@@ -3800,13 +3960,51 @@ impl RuntimePlanBuilder {
                 .ok_or(RuntimePlanBuildError::UnknownVariantCase { owner, ordinal })?;
             return Ok((case.name(), case.payload()));
         }
-        match (self.projection(owner)?, ordinal) {
-            (RuntimePlanTypeProjection::Option(item), 0) => Ok(("Some", Some(*item))),
-            (RuntimePlanTypeProjection::Option(_), 1) => Ok(("None", None)),
-            (RuntimePlanTypeProjection::Result { value, .. }, 0) => Ok(("Ok", Some(*value))),
-            (RuntimePlanTypeProjection::Result { error, .. }, 1) => Ok(("Err", Some(*error))),
-            _ => Err(RuntimePlanBuildError::UnknownVariantCase { owner, ordinal }),
-        }
+        let projection = self.projection(owner)?;
+        let (builtin_owner, payload) = match projection {
+            RuntimePlanTypeProjection::Option(item) => {
+                let payload = match RuntimeBuiltinVariantIdentity::Option
+                    .case_at(ordinal)
+                    .map(|schema| schema.identity())
+                {
+                    Some(RuntimeBuiltinVariantCaseIdentity::OptionSome) => Some(*item),
+                    Some(RuntimeBuiltinVariantCaseIdentity::OptionNone) => None,
+                    _ => {
+                        return Err(RuntimePlanBuildError::UnknownVariantCase { owner, ordinal });
+                    }
+                };
+                (RuntimeBuiltinVariantIdentity::Option, payload)
+            }
+            RuntimePlanTypeProjection::Result { value, error } => {
+                let payload = match RuntimeBuiltinVariantIdentity::Result
+                    .case_at(ordinal)
+                    .map(|schema| schema.identity())
+                {
+                    Some(RuntimeBuiltinVariantCaseIdentity::ResultOk) => Some(*value),
+                    Some(RuntimeBuiltinVariantCaseIdentity::ResultErr) => Some(*error),
+                    _ => {
+                        return Err(RuntimePlanBuildError::UnknownVariantCase { owner, ordinal });
+                    }
+                };
+                (RuntimeBuiltinVariantIdentity::Result, payload)
+            }
+            RuntimePlanTypeProjection::BuiltinVariant {
+                owner: builtin_owner,
+                cases,
+            } => {
+                let payload = usize::try_from(ordinal)
+                    .ok()
+                    .and_then(|ordinal| cases.get(ordinal))
+                    .copied()
+                    .ok_or(RuntimePlanBuildError::UnknownVariantCase { owner, ordinal })?;
+                (*builtin_owner, payload)
+            }
+            _ => return Err(RuntimePlanBuildError::UnknownVariantCase { owner, ordinal }),
+        };
+        let schema = builtin_owner
+            .case_at(ordinal)
+            .ok_or(RuntimePlanBuildError::UnknownVariantCase { owner, ordinal })?;
+        Ok((schema.name(), payload))
     }
 }
 

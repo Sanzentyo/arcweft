@@ -279,7 +279,13 @@ impl Engine {
         pure_backend: &mut impl RuntimeCallBackend,
     ) -> Result<String, RuntimeEvalError> {
         match self.evaluate_expr_with_backend(expr, pure_backend)? {
-            RuntimeValue::EntityRef(target) | RuntimeValue::String(target) => {
+            RuntimeValue::EntityRef(target) => {
+                let target = target.runtime_label();
+                let stream = StreamRuntimeId::from_runtime_target_value(&target)
+                    .map_err(|_| RuntimeEvalError::ExpectedEntityRef(target))?;
+                Ok(format!("stream:{}", stream.canonical_label()))
+            }
+            RuntimeValue::String(target) => {
                 let stream = StreamRuntimeId::from_runtime_target_value(&target)
                     .map_err(|_| RuntimeEvalError::ExpectedEntityRef(target))?;
                 Ok(format!("stream:{}", stream.canonical_label()))

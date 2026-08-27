@@ -9,11 +9,11 @@ use arcweft_core::{
             AwbcBlock, AwbcBlockId, AwbcConstant, AwbcConstantId, AwbcEffectKind, AwbcEffectPlan,
             AwbcEffectPlanId, AwbcEffectSetId, AwbcEntry, AwbcEntryId, AwbcEntryKind,
             AwbcEntryTarget, AwbcFlowBinding, AwbcFlowExecutable, AwbcFrameLayout,
-            AwbcFrameLayoutId, AwbcFrameSlot, AwbcFrameSlotRole, AwbcFunction, AwbcFunctionFlags,
-            AwbcFunctionId, AwbcFunctionKind, AwbcInstruction, AwbcProgram, AwbcRegisterId,
-            AwbcResumePoint, AwbcResumePointId, AwbcRuntimeType, AwbcRuntimeTypeShape,
-            AwbcSafePointKind, AwbcScopeId, AwbcSignature, AwbcSignatureId, AwbcStringId,
-            AwbcTableRange, AwbcTerminator, AwbcTrapCode, AwbcTypeId,
+            AwbcFrameLayoutId, AwbcFrameSlot, AwbcFrameSlotRole, AwbcFunction, AwbcFunctionFlag,
+            AwbcFunctionFlags, AwbcFunctionId, AwbcFunctionKind, AwbcInstruction, AwbcProgram,
+            AwbcRegisterId, AwbcResumePoint, AwbcResumePointId, AwbcRuntimeType,
+            AwbcRuntimeTypeShape, AwbcSafePointKind, AwbcScopeId, AwbcSignature, AwbcSignatureId,
+            AwbcStringId, AwbcTableRange, AwbcTerminator, AwbcTrapCode, AwbcTypeId,
         },
         verify::{AwbcVerifyBudget, AwbcVerifyContext},
         vm::{self, VmExit, VmObservation, VmStepOptions},
@@ -32,7 +32,7 @@ const AWAIT_RESUME: AwbcResumePointId = AwbcResumePointId(1);
 const NEED_REGISTER: AwbcRegisterId = AwbcRegisterId(0);
 const RETURN_REGISTER: AwbcRegisterId = AwbcRegisterId(1);
 const CLEANUP_EFFECT: AwbcEffectPlanId = AwbcEffectPlanId(0);
-const DROP_CLEANUP_EFFECT: AwbcEffectPlanId = AwbcEffectPlanId(1);
+const CLOSE_CLEANUP_EFFECT: AwbcEffectPlanId = AwbcEffectPlanId(1);
 
 #[test]
 fn direct_call_reaches_need_await_on_the_same_fiber() {
@@ -335,7 +335,7 @@ fn suspended_owned_resource_cleanup_runs_exactly_once_on_cancellation() {
         .root_cleanups
         .push(FiberScopeCleanup {
             key: "resource.avatar".to_owned(),
-            effect: DROP_CLEANUP_EFFECT,
+            effect: CLOSE_CLEANUP_EFFECT,
             args: Vec::new(),
         });
 
@@ -347,7 +347,7 @@ fn suspended_owned_resource_cleanup_runs_exactly_once_on_cancellation() {
             .filter(|observation| matches!(
                 observation,
                 VmObservation::Effect {
-                    effect: DROP_CLEANUP_EFFECT,
+                    effect: CLOSE_CLEANUP_EFFECT,
                     args,
                 } if args.is_empty()
             ))
@@ -536,7 +536,7 @@ fn direct_return_program() -> AwbcProgram {
         value: Some(NEED_REGISTER),
     };
     program.functions[1].blocks = AwbcTableRange::new(2, 1);
-    program.functions[1].flags = AwbcFunctionFlags(AwbcFunctionFlags::DETERMINISTIC);
+    program.functions[1].flags = AwbcFunctionFlags::empty().with(AwbcFunctionFlag::Deterministic);
     program.blocks.truncate(3);
     program.resume_points.truncate(1);
     program
@@ -645,7 +645,7 @@ fn direct_suspension_functions() -> Vec<AwbcFunction> {
             frame_layout: AwbcFrameLayoutId(0),
             blocks: AwbcTableRange::new(0, 2),
             entry_block: AwbcBlockId(0),
-            flags: AwbcFunctionFlags(AwbcFunctionFlags::DETERMINISTIC),
+            flags: AwbcFunctionFlags::empty().with(AwbcFunctionFlag::Deterministic),
         },
         AwbcFunction {
             public_id: None,
@@ -654,9 +654,9 @@ fn direct_suspension_functions() -> Vec<AwbcFunction> {
             frame_layout: AwbcFrameLayoutId(1),
             blocks: AwbcTableRange::new(2, 2),
             entry_block: AwbcBlockId(2),
-            flags: AwbcFunctionFlags(
-                AwbcFunctionFlags::DETERMINISTIC | AwbcFunctionFlags::MAY_SUSPEND,
-            ),
+            flags: AwbcFunctionFlags::empty()
+                .with(AwbcFunctionFlag::Deterministic)
+                .with(AwbcFunctionFlag::MaySuspend),
         },
     ]
 }
@@ -732,7 +732,7 @@ fn direct_suspension_effect_plans() -> Vec<AwbcEffectPlan> {
             resources: Vec::new(),
         },
         AwbcEffectPlan {
-            kind: AwbcEffectKind::DropHandle,
+            kind: AwbcEffectKind::Close,
             signature: AwbcSignatureId(2),
             capability: None,
             audio: None,

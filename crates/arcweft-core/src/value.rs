@@ -4,7 +4,7 @@ use crate::entry::{
     RuntimeValueDigest,
 };
 use crate::math::{DenseMatrixF32, DenseMatrixF64, DenseTensorF32, DenseTensorF64};
-use crate::pattern::{RuntimePattern, RuntimeVariantIdentity};
+use crate::pattern::{RuntimeBuiltinVariantCaseIdentity, RuntimePattern, RuntimeVariantIdentity};
 use crate::plan::{
     RuntimeLineId, RuntimePlan, RuntimePlanValueTypeError, RuntimePureHelperId,
     RuntimePureInputType, RuntimePureOutputType, RuntimeReceiverMode, RuntimeTraitMethodId,
@@ -34,13 +34,34 @@ mod sequence_constructors;
 mod sequence_impls;
 mod shape;
 
+mod runtime_public_id {
+    use arcweft_id::PublicId;
+    use serde::{Deserialize, Deserializer, Serializer};
+
+    pub(super) fn serialize<S>(value: &PublicId, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: Serializer,
+    {
+        serializer.serialize_str(value.as_str())
+    }
+
+    pub(super) fn deserialize<'de, D>(deserializer: D) -> Result<PublicId, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        PublicId::try_new_engine_owned(String::deserialize(deserializer)?)
+            .map_err(serde::de::Error::custom)
+    }
+}
+
 pub use agent::{
     AgentPredicateOperands, AgentPredicateOperandsError, RuntimeAgentAction,
     RuntimeAgentActionDispatch, RuntimeAgentActionTarget, RuntimeAgentCaptureTarget,
     RuntimeAgentCompareOp, RuntimeAgentConstructionError, RuntimeAgentConstructor,
     RuntimeAgentExpr, RuntimeAgentField, RuntimeAgentFieldOwner, RuntimeAgentFieldResult,
-    RuntimeAgentPath, RuntimeAgentPathExpr, RuntimeAgentPredicate, RuntimeAgentPredicateExpr,
-    RuntimeAgentProbe, RuntimeAgentProbeExpr, RuntimeAgentTargetExpr, RuntimeAgentValue,
+    RuntimeAgentFieldValue, RuntimeAgentPath, RuntimeAgentPathExpr, RuntimeAgentPredicate,
+    RuntimeAgentPredicateExpr, RuntimeAgentProbe, RuntimeAgentProbeExpr, RuntimeAgentTargetExpr,
+    RuntimeAgentValue,
 };
 pub use awbc_save::{AwbcRuntimeValueSnapshot, AwbcRuntimeValueSnapshotError};
 pub use integer::{RuntimeInt, RuntimeSignedIntWidth, RuntimeUInt, RuntimeUnsignedIntWidth};
@@ -473,7 +494,7 @@ pub enum RuntimeValue {
     Progress(Progress),
     Range(RuntimeRange),
     Iterator(RuntimeIterator),
-    EntityRef(String),
+    EntityRef(RuntimeEntityReference),
     Tuple(Vec<RuntimeValue>),
     Seq(RuntimeSeq),
     Record(Vec<RuntimeFieldValue>),
@@ -488,6 +509,17 @@ pub enum RuntimeValue {
         name: String,
         payload: Option<Box<RuntimeValue>>,
     },
+}
+
+/// Rejection produced when a caller attempts to construct a builtin variant
+/// without following the case schema owned by
+/// [`crate::pattern::RuntimeBuiltinVariantIdentity`].
+#[derive(Clone, Copy, Debug, Eq, Error, PartialEq)]
+pub enum RuntimeBuiltinVariantValueError {
+    #[error("builtin variant case belongs to a different owner")]
+    WrongOwner,
+    #[error("builtin variant case payload presence does not match its schema")]
+    InvalidPayloadPresence,
 }
 
 impl RuntimeValue {
@@ -1038,24 +1070,61 @@ impl RuntimeIntrinsic {
 }
 
 impl RuntimeValue {
+    /// Constructs one core-owned builtin variant through its canonical case
+    /// schema. Callers provide a semantic case coordinate, never a copied
+    /// ordinal or case label.
+    pub fn try_builtin_variant(
+        case: RuntimeBuiltinVariantCaseIdentity,
+        payload: Option<RuntimeValue>,
+    ) -> Result<Self, RuntimeBuiltinVariantValueError> {
+        let owner = case.owner();
+        let Some((ordinal, schema)) = owner.resolve_case(case) else {
+            return Err(RuntimeBuiltinVariantValueError::WrongOwner);
+        };
+        if schema.has_payload() != payload.is_some() {
+            return Err(RuntimeBuiltinVariantValueError::InvalidPayloadPresence);
+        }
+        Ok(Self::Variant {
+            owner: RuntimeVariantIdentity::Builtin(owner),
+            ordinal,
+            name: schema.name().to_owned(),
+            payload: payload.map(Box::new),
+        })
+    }
+
+    /// Returns the admitted semantic case coordinate and payload for one
+    /// canonical builtin variant value. Malformed owner/ordinal/name/payload
+    /// combinations are rejected instead of being partially interpreted.
+    #[must_use]
+    pub fn builtin_variant_case(
+        &self,
+    ) -> Option<(RuntimeBuiltinVariantCaseIdentity, Option<&RuntimeValue>)> {
+        let Self::Variant {
+            owner: RuntimeVariantIdentity::Builtin(owner),
+            ordinal,
+            name,
+            payload,
+        } = self
+        else {
+            return None;
+        };
+        let schema = owner.case_at(*ordinal)?;
+        if name != schema.name() || payload.is_some() != schema.has_payload() {
+            return None;
+        }
+        Some((schema.identity(), payload.as_deref()))
+    }
+
     /// Materializes the canonical runtime representation of `Result::Ok`.
     pub fn result_ok(value: RuntimeValue) -> Self {
-        Self::Variant {
-            owner: RuntimeVariantIdentity::Result,
-            ordinal: 0,
-            name: "Ok".to_owned(),
-            payload: Some(Box::new(value)),
-        }
+        Self::try_builtin_variant(RuntimeBuiltinVariantCaseIdentity::ResultOk, Some(value))
+            .expect("Result::Ok builtin schema requires exactly one payload")
     }
 
     /// Materializes the canonical runtime representation of `Result::Err`.
     pub fn result_err(error: RuntimeValue) -> Self {
-        Self::Variant {
-            owner: RuntimeVariantIdentity::Result,
-            ordinal: 1,
-            name: "Err".to_owned(),
-            payload: Some(Box::new(error)),
-        }
+        Self::try_builtin_variant(RuntimeBuiltinVariantCaseIdentity::ResultErr, Some(error))
+            .expect("Result::Err builtin schema requires exactly one payload")
     }
 
     /// Returns this value as a nominal record without accepting anonymous
@@ -1156,9 +1225,10 @@ impl RuntimeValue {
         Self::TensorF64(value)
     }
 
-    pub fn as_identifier(&self) -> Option<&str> {
+    pub fn as_identifier(&self) -> Option<String> {
         match self {
-            Self::EntityRef(value) | Self::String(value) => Some(value.as_str()),
+            Self::EntityRef(value) => Some(value.runtime_label()),
+            Self::String(value) => Some(value.clone()),
             _ => None,
         }
     }
@@ -1396,7 +1466,7 @@ pub enum DenseSeq {
     Chars(DenseSeqStorage<char>),
     Durations(DenseSeqStorage<LogicalDuration>),
     Strings(DenseSeqStorage<String>),
-    EntityRefs(DenseSeqStorage<String>),
+    EntityRefs(DenseSeqStorage<RuntimeEntityReference>),
 }
 
 /// Generic backing store for one dense homogeneous sequence.
@@ -1457,13 +1527,18 @@ pub struct RuntimeExpr {
 /// Checked runtime identity retained by an entity-reference expression or
 /// pattern. Project identities preserve their accepted declaration family;
 /// structural dialogue lines retain their typed runtime ID.
-#[derive(Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+#[derive(Clone, Debug, Deserialize, Eq, Hash, Ord, PartialEq, PartialOrd, Serialize)]
 pub enum RuntimeEntityReference {
     Project {
         family: DeclarationIdentityFamily,
+        #[serde(with = "runtime_public_id")]
         public_id: PublicId,
     },
     DialogueLine(RuntimeLineId),
+    CharacterLook {
+        character: arcweft_character::id::CharacterId,
+        look: arcweft_character::id::CharacterLookId,
+    },
 }
 
 /// Closed projection coordinate exposed by entity-reference values.
@@ -1543,7 +1618,20 @@ impl RuntimeEntityReference {
     pub const fn project_family(&self) -> Option<DeclarationIdentityFamily> {
         match self {
             Self::Project { family, .. } => Some(*family),
-            Self::DialogueLine(_) => None,
+            Self::DialogueLine(_) | Self::CharacterLook { .. } => None,
+        }
+    }
+
+    #[must_use]
+    pub const fn character_look(
+        &self,
+    ) -> Option<(
+        &arcweft_character::id::CharacterId,
+        &arcweft_character::id::CharacterLookId,
+    )> {
+        match self {
+            Self::CharacterLook { character, look } => Some((character, look)),
+            Self::Project { .. } | Self::DialogueLine(_) => None,
         }
     }
 
@@ -1552,6 +1640,27 @@ impl RuntimeEntityReference {
         match self {
             Self::Project { public_id, .. } => public_id.as_str().to_owned(),
             Self::DialogueLine(line) => line.canonical_label(),
+            Self::CharacterLook { character, look } => {
+                format!("{character}.look.{}", look.as_str())
+            }
+        }
+    }
+
+    /// Projects the typed reference into one of its explicit string fields.
+    ///
+    /// This is the only string projection used by field consumers; the
+    /// resulting label is never interpreted as a new runtime identity.
+    #[must_use]
+    pub fn field_value(&self, field: RuntimeEntityReferenceField) -> String {
+        let label = self.runtime_label();
+        match field {
+            RuntimeEntityReferenceField::Id => label,
+            RuntimeEntityReferenceField::Family => label
+                .split_once('.')
+                .map_or_else(|| label.clone(), |(family, _)| family.to_owned()),
+            RuntimeEntityReferenceField::Name => label
+                .split_once('.')
+                .map_or_else(String::new, |(_, name)| name.to_owned()),
         }
     }
 }
@@ -1937,6 +2046,18 @@ struct RuntimeScope {
 
 #[derive(Clone, Debug, Error, PartialEq)]
 pub enum RuntimeEvalError {
+    #[error("runtime fiber/execution identity space is exhausted")]
+    FiberIdentityOverflow,
+    #[error("scheduled dialogue callback has an invalid runtime lifecycle state")]
+    InvalidScheduledLineTaskState,
+    #[error("scheduled callback action has no live typed capture packet")]
+    MissingScheduledCapturePacket,
+    #[error("scheduled callback action has more than one live typed capture packet")]
+    AmbiguousScheduledCapturePacket,
+    #[error("scheduled callback action has more than one schedule owner")]
+    AmbiguousScheduledCaptureOwner,
+    #[error("scheduled callback affine capture graph violates its typed ownership packet")]
+    InvalidScheduledCaptureGraph,
     #[error("unknown runtime binding `{0}`")]
     UnknownBinding(String),
     #[error("unknown runtime local declaration {0}")]
@@ -3179,7 +3300,7 @@ fn take_string_value(value: RuntimeValue) -> Result<String, RuntimeValue> {
     }
 }
 
-fn take_entity_ref_value(value: RuntimeValue) -> Result<String, RuntimeValue> {
+fn take_entity_ref_value(value: RuntimeValue) -> Result<RuntimeEntityReference, RuntimeValue> {
     match value {
         RuntimeValue::EntityRef(value) => Ok(value),
         value => Err(value),
@@ -3348,7 +3469,8 @@ pub(crate) fn runtime_value_label(value: &RuntimeValue) -> String {
         RuntimeValue::TensorF64(value) => {
             format!("tensor/f64/{:?}", value.shape().dims())
         }
-        RuntimeValue::String(value) | RuntimeValue::EntityRef(value) => value.clone(),
+        RuntimeValue::String(value) => value.clone(),
+        RuntimeValue::EntityRef(value) => value.runtime_label(),
         RuntimeValue::Char(value) => value.to_string(),
         RuntimeValue::Duration(value) => format!("{}ns", value.as_nanos()),
         RuntimeValue::Progress(value) => value

@@ -5,14 +5,18 @@ use crate::awbc::schema::{
     AwbcAwaitManyPolicy, AwbcChildCancelPolicy, AwbcChildCleanup, AwbcChildJoinPolicy, AwbcChoice,
     AwbcChoiceOption, AwbcConflictPolicy, AwbcConstantId, AwbcEffectKind, AwbcEffectPlan,
     AwbcEffectPlanId, AwbcFunctionId, AwbcHostArgument, AwbcHostCall, AwbcHostCallMode,
-    AwbcIntrinsic, AwbcLineCancelHandler, AwbcLineCleanupPolicy, AwbcLineTaskGroup,
+    AwbcIntrinsic, AwbcLineCancelHandler, AwbcLineCleanupPolicy, AwbcLineHandleSite,
+    AwbcLineHandleSiteId, AwbcLineOperation, AwbcLineTaskGroup, AwbcLineTaskGroupId,
     AwbcLineTaskNode, AwbcLineTaskNodeId, AwbcLineTaskTrigger, AwbcParallelPolicy,
     AwbcPresentationCleanup, AwbcPureHelper, AwbcPureHelperOrigin, AwbcReduceOp, AwbcRegisterId,
     AwbcResourceAccess, AwbcResourceAccessMode, AwbcResourceId, AwbcSignatureId, AwbcStreamPlan,
     AwbcStringId, AwbcTableRange, AwbcTaskClass, AwbcTaskPlan, AwbcTaskPolicy, AwbcTypeId,
 };
-use crate::runtime_id::{RuntimeDialogueMarkId, RuntimeLocalDeclarationId};
+use crate::runtime_id::{
+    RuntimeDialogueEffectSiteId, RuntimeDialogueMarkId, RuntimeLocalDeclarationId,
+};
 use crate::value::{RuntimeCallTarget, RuntimeIntrinsic};
+use arcweft_character::id::CharacterId;
 use arcweft_interaction_model::audio::{
     AudioEffectParameterKind, AudioLoopMode, MicrophoneConstraints,
 };
@@ -544,27 +548,25 @@ impl Wire for AwbcEffectPlan {
 }
 
 wire_enum!(AwbcEffectKind, "effect kind", {
-    0 => AwbcEffectKind::RegisterHandle,
-    1 => AwbcEffectKind::DropHandle,
-    2 => AwbcEffectKind::Wait,
-    3 => AwbcEffectKind::Audio,
-    4 => AwbcEffectKind::Call,
-    5 => AwbcEffectKind::Log,
-    6 => AwbcEffectKind::SignalWrite,
-    7 => AwbcEffectKind::MetricWrite,
-    8 => AwbcEffectKind::EmitEvent,
-    9 => AwbcEffectKind::Out,
-    10 => AwbcEffectKind::Return,
-    11 => AwbcEffectKind::Goto,
-    12 => AwbcEffectKind::Panic,
-    13 => AwbcEffectKind::Fail,
-    14 => AwbcEffectKind::Bail,
-    15 => AwbcEffectKind::Ensure,
-    16 => AwbcEffectKind::Assert,
-    17 => AwbcEffectKind::Close,
-    18 => AwbcEffectKind::Select,
-    19 => AwbcEffectKind::Break,
-    20 => AwbcEffectKind::Continue,
+    0 => AwbcEffectKind::Wait,
+    1 => AwbcEffectKind::Audio,
+    2 => AwbcEffectKind::Call,
+    3 => AwbcEffectKind::Log,
+    4 => AwbcEffectKind::SignalWrite,
+    5 => AwbcEffectKind::MetricWrite,
+    6 => AwbcEffectKind::EmitEvent,
+    7 => AwbcEffectKind::Out,
+    8 => AwbcEffectKind::Return,
+    9 => AwbcEffectKind::Goto,
+    10 => AwbcEffectKind::Panic,
+    11 => AwbcEffectKind::Fail,
+    12 => AwbcEffectKind::Bail,
+    13 => AwbcEffectKind::Ensure,
+    14 => AwbcEffectKind::Assert,
+    15 => AwbcEffectKind::Close,
+    16 => AwbcEffectKind::Select,
+    17 => AwbcEffectKind::Break,
+    18 => AwbcEffectKind::Continue,
 });
 
 impl Wire for AwbcResourceAccess {
@@ -679,6 +681,9 @@ impl Wire for AwbcChoiceOption {
 impl Wire for AwbcLineTaskGroup {
     fn write_wire(&self, writer: &mut Writer) -> Result<(), AwbcCodecError> {
         self.captures.write_wire(writer)?;
+        self.activation.write_wire(writer)?;
+        self.result_type.write_wire(writer)?;
+        self.handle_sites.write_wire(writer)?;
         self.root.write_wire(writer)?;
         self.nodes.write_wire(writer)?;
         self.cancel_handlers.write_wire(writer)?;
@@ -691,6 +696,9 @@ impl Wire for AwbcLineTaskGroup {
     fn read_wire(reader: &mut Reader<'_>) -> Result<Self, AwbcCodecError> {
         Ok(Self {
             captures: Vec::<RuntimeLocalDeclarationId>::read_wire(reader)?,
+            activation: AwbcFunctionId::read_wire(reader)?,
+            result_type: AwbcTypeId::read_wire(reader)?,
+            handle_sites: Vec::<AwbcLineHandleSite>::read_wire(reader)?,
             root: AwbcLineTaskNodeId::read_wire(reader)?,
             nodes: AwbcTableRange::read_wire(reader)?,
             cancel_handlers: Vec::<AwbcLineCancelHandler>::read_wire(reader)?,
@@ -698,6 +706,177 @@ impl Wire for AwbcLineTaskGroup {
             cleanup_cancelled: Option::<AwbcFunctionId>::read_wire(reader)?,
             cleanup_failed: Option::<AwbcFunctionId>::read_wire(reader)?,
             cleanup: AwbcLineCleanupPolicy::read_wire(reader)?,
+        })
+    }
+}
+
+impl Wire for AwbcLineHandleSite {
+    fn write_wire(&self, writer: &mut Writer) -> Result<(), AwbcCodecError> {
+        self.source_ordinal.write_wire(writer)?;
+        self.kind.write_wire(writer)?;
+        self.result_type.write_wire(writer)?;
+        self.character.write_wire(writer)?;
+        self.scheduled_child.write_wire(writer)
+    }
+
+    fn read_wire(reader: &mut Reader<'_>) -> Result<Self, AwbcCodecError> {
+        Ok(Self {
+            source_ordinal: u32::read_wire(reader)?,
+            kind: crate::value::RuntimeHandleKind::read_wire(reader)?,
+            result_type: AwbcTypeId::read_wire(reader)?,
+            character: Option::<CharacterId>::read_wire(reader)?,
+            scheduled_child: Option::<AwbcLineTaskNodeId>::read_wire(reader)?,
+        })
+    }
+}
+
+impl Wire for crate::awbc::schema::AwbcLineScheduledCapture {
+    fn write_wire(&self, writer: &mut Writer) -> Result<(), AwbcCodecError> {
+        self.local.write_wire(writer)?;
+        self.ty.write_wire(writer)
+    }
+
+    fn read_wire(reader: &mut Reader<'_>) -> Result<Self, AwbcCodecError> {
+        Ok(Self {
+            local: RuntimeLocalDeclarationId::read_wire(reader)?,
+            ty: AwbcTypeId::read_wire(reader)?,
+        })
+    }
+}
+
+impl Wire for AwbcLineOperation {
+    fn write_wire(&self, writer: &mut Writer) -> Result<(), AwbcCodecError> {
+        match self {
+            Self::AcquireActor {
+                group,
+                site,
+                character,
+                scope,
+                result_type,
+            } => {
+                writer.write_u8(0);
+                group.write_wire(writer)?;
+                site.write_wire(writer)?;
+                character.write_wire(writer)?;
+                match scope {
+                    crate::line_task::RuntimeLineHandleScope::Line => writer.write_u8(0),
+                }
+                result_type.write_wire(writer)?;
+            }
+            Self::Schedule {
+                group,
+                site,
+                child,
+                captures,
+                result_type,
+            } => {
+                writer.write_u8(1);
+                group.write_wire(writer)?;
+                site.write_wire(writer)?;
+                child.write_wire(writer)?;
+                captures.write_wire(writer)?;
+                result_type.write_wire(writer)?;
+            }
+            Self::ActorLook {
+                group,
+                site,
+                character,
+                actor_type,
+                look_type,
+                result_type,
+            } => {
+                writer.write_u8(2);
+                group.write_wire(writer)?;
+                site.write_wire(writer)?;
+                character.write_wire(writer)?;
+                actor_type.write_wire(writer)?;
+                look_type.write_wire(writer)?;
+                result_type.write_wire(writer)?;
+            }
+            Self::VoiceHandle {
+                group,
+                site,
+                result_type,
+            } => {
+                writer.write_u8(3);
+                group.write_wire(writer)?;
+                site.write_wire(writer)?;
+                result_type.write_wire(writer)?;
+            }
+        }
+        Ok(())
+    }
+
+    fn read_wire(reader: &mut Reader<'_>) -> Result<Self, AwbcCodecError> {
+        let offset = reader.offset();
+        Ok(match reader.read_u8()? {
+            0 => {
+                let group = AwbcLineTaskGroupId::read_wire(reader)?;
+                let site = AwbcLineHandleSiteId::read_wire(reader)?;
+                let character = CharacterId::read_wire(reader)?;
+                let scope_offset = reader.offset();
+                let scope = match reader.read_u8()? {
+                    0 => crate::line_task::RuntimeLineHandleScope::Line,
+                    tag => {
+                        return Err(AwbcCodecError::UnknownTag {
+                            kind: "line handle scope",
+                            tag,
+                            offset: scope_offset,
+                        });
+                    }
+                };
+                Self::AcquireActor {
+                    group,
+                    site,
+                    character,
+                    scope,
+                    result_type: AwbcTypeId::read_wire(reader)?,
+                }
+            }
+            1 => Self::Schedule {
+                group: AwbcLineTaskGroupId::read_wire(reader)?,
+                site: AwbcLineHandleSiteId::read_wire(reader)?,
+                child: AwbcLineTaskNodeId::read_wire(reader)?,
+                captures: Vec::<crate::awbc::schema::AwbcLineScheduledCapture>::read_wire(reader)?,
+                result_type: AwbcTypeId::read_wire(reader)?,
+            },
+            2 => Self::ActorLook {
+                group: AwbcLineTaskGroupId::read_wire(reader)?,
+                site: AwbcLineHandleSiteId::read_wire(reader)?,
+                character: CharacterId::read_wire(reader)?,
+                actor_type: AwbcTypeId::read_wire(reader)?,
+                look_type: AwbcTypeId::read_wire(reader)?,
+                result_type: AwbcTypeId::read_wire(reader)?,
+            },
+            3 => Self::VoiceHandle {
+                group: AwbcLineTaskGroupId::read_wire(reader)?,
+                site: AwbcLineHandleSiteId::read_wire(reader)?,
+                result_type: AwbcTypeId::read_wire(reader)?,
+            },
+            tag => {
+                return Err(AwbcCodecError::UnknownTag {
+                    kind: "line operation",
+                    tag,
+                    offset,
+                });
+            }
+        })
+    }
+}
+
+impl Wire for CharacterId {
+    fn write_wire(&self, writer: &mut Writer) -> Result<(), AwbcCodecError> {
+        self.as_str().to_owned().write_wire(writer)
+    }
+
+    fn read_wire(reader: &mut Reader<'_>) -> Result<Self, AwbcCodecError> {
+        let offset = reader.offset();
+        CharacterId::try_new(String::read_wire(reader)?).map_err(|error| {
+            AwbcCodecError::InvalidMetadata {
+                kind: "Character identity",
+                message: error.to_string(),
+                offset,
+            }
         })
     }
 }
@@ -766,21 +945,13 @@ impl Wire for AwbcLineTaskNode {
                 children.write_wire(writer)?;
             }
             Self::Child {
-                id,
-                key,
-                name,
                 trigger,
-                priority,
                 join,
                 cancel,
                 scope,
             } => {
                 writer.write_u8(3);
-                id.write_wire(writer)?;
-                key.write_wire(writer)?;
-                name.write_wire(writer)?;
                 trigger.write_wire(writer)?;
-                priority.write_wire(writer)?;
                 join.write_wire(writer)?;
                 cancel.write_wire(writer)?;
                 scope.write_wire(writer)?;
@@ -803,11 +974,7 @@ impl Wire for AwbcLineTaskNode {
                 children: Vec::<AwbcLineTaskNodeId>::read_wire(reader)?,
             },
             3 => Self::Child {
-                id: AwbcStringId::read_wire(reader)?,
-                key: Option::<AwbcStringId>::read_wire(reader)?,
-                name: Option::<AwbcStringId>::read_wire(reader)?,
                 trigger: AwbcLineTaskTrigger::read_wire(reader)?,
-                priority: i32::read_wire(reader)?,
                 join: AwbcChildJoinPolicy::read_wire(reader)?,
                 cancel: AwbcChildCancelPolicy::read_wire(reader)?,
                 scope: AwbcLineTaskNodeId::read_wire(reader)?,
@@ -836,9 +1003,13 @@ impl Wire for AwbcLineTaskTrigger {
                 writer.write_u8(1);
                 mark.get().get().write_wire(writer)?;
             }
-            Self::DelayNanos(nanos) => {
+            Self::Scheduled(site) => {
                 writer.write_u8(2);
-                nanos.write_wire(writer)?;
+                site.write_wire(writer)?;
+            }
+            Self::ContentEffect(site) => {
+                writer.write_u8(3);
+                site.get().get().write_wire(writer)?;
             }
         }
         Ok(())
@@ -849,7 +1020,8 @@ impl Wire for AwbcLineTaskTrigger {
         Ok(match reader.read_u8()? {
             0 => Self::Immediate,
             1 => Self::Mark(runtime_dialogue_mark_id(reader)?),
-            2 => Self::DelayNanos(u64::read_wire(reader)?),
+            2 => Self::Scheduled(AwbcLineHandleSiteId::read_wire(reader)?),
+            3 => Self::ContentEffect(runtime_dialogue_effect_site_id(reader)?),
             tag => {
                 return Err(AwbcCodecError::UnknownTag {
                     kind: "line task trigger",
@@ -859,6 +1031,18 @@ impl Wire for AwbcLineTaskTrigger {
             }
         })
     }
+}
+
+fn runtime_dialogue_effect_site_id(
+    reader: &mut Reader<'_>,
+) -> Result<RuntimeDialogueEffectSiteId, AwbcCodecError> {
+    NonZeroU32::new(u32::read_wire(reader)?)
+        .map(RuntimeDialogueEffectSiteId::from_accepted_ordinal)
+        .ok_or_else(|| AwbcCodecError::InvalidMetadata {
+            kind: "runtime dialogue effect site identity",
+            message: "must be nonzero".to_owned(),
+            offset: reader.offset(),
+        })
 }
 
 impl Wire for RuntimeLocalDeclarationId {

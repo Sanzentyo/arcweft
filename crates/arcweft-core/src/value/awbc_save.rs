@@ -8,9 +8,9 @@ use super::{
     AgentPredicateOperands, DenseSeq, RecordSeq, RuntimeAgentActionTarget,
     RuntimeAgentCaptureTarget, RuntimeAgentCompareOp, RuntimeAgentConstructionError,
     RuntimeAgentPath, RuntimeAgentPredicate, RuntimeAgentProbe, RuntimeAgentValue, RuntimeBinding,
-    RuntimeCommand, RuntimeFunctionBody, RuntimeFunctionValue, RuntimeIterator,
-    RuntimeNominalRecordValue, RuntimeOpaqueValue, RuntimePayload, RuntimeReductionValue,
-    RuntimeSeq, RuntimeValue, TupleSeq,
+    RuntimeCommand, RuntimeEntityReference, RuntimeFunctionBody, RuntimeFunctionValue,
+    RuntimeIterator, RuntimeNominalRecordValue, RuntimeOpaqueValue, RuntimePayload,
+    RuntimeReductionValue, RuntimeSeq, RuntimeValue, TupleSeq,
 };
 use crate::awbc::schema::AwbcFunctionId;
 use crate::entry::{RuntimeCommandConstructorId, RuntimeCommandTargetId};
@@ -60,7 +60,7 @@ pub enum AwbcRuntimeValueSnapshot {
     },
     Range(super::RuntimeRange),
     Iterator(AwbcRuntimeIteratorSnapshot),
-    EntityRef(String),
+    EntityRef(RuntimeEntityReference),
     Tuple(Vec<Self>),
     Seq(AwbcRuntimeSeqSnapshot),
     Record(Vec<AwbcRuntimeFieldSnapshot>),
@@ -167,6 +167,7 @@ pub enum AwbcRuntimeAgentSnapshot {
     Diagnostics,
     Predicate(AwbcRuntimeAgentPredicateSnapshot),
     ViewportPoint { x: u32, y: u32 },
+    BinaryData(String),
 }
 
 #[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
@@ -622,6 +623,9 @@ impl AwbcRuntimeValueSnapshot {
             RuntimeAgentValue::ViewportPoint { x, y } => {
                 AwbcRuntimeAgentSnapshot::ViewportPoint { x: *x, y: *y }
             }
+            RuntimeAgentValue::BinaryData(data) => {
+                AwbcRuntimeAgentSnapshot::BinaryData(data.clone())
+            }
         })
     }
 
@@ -647,6 +651,7 @@ impl AwbcRuntimeValueSnapshot {
             AwbcRuntimeAgentSnapshot::ViewportPoint { x, y } => {
                 RuntimeAgentValue::ViewportPoint { x, y }
             }
+            AwbcRuntimeAgentSnapshot::BinaryData(data) => RuntimeAgentValue::BinaryData(data),
         })
     }
 

@@ -2,8 +2,8 @@ use std::collections::BTreeMap;
 use std::num::NonZeroU32;
 
 use crate::runtime_id::{
-    RuntimeDialogueContentPlanId, RuntimeDialogueMarkId, RuntimeDialogueValueSlotId,
-    RuntimeFunctionSiteId, RuntimeLineTaskGroupId,
+    RuntimeDialogueContentPlanId, RuntimeDialogueEffectSiteCount, RuntimeDialogueMarkId,
+    RuntimeDialogueValueSlotId, RuntimeFunctionSiteId, RuntimeLineTaskGroupId,
 };
 
 use super::RuntimeLineId;
@@ -58,6 +58,7 @@ pub struct RuntimeDialogueContentPlan {
     line: RuntimeLineId,
     values: Box<[RuntimeDialogueValueSite]>,
     marks: Box<[RuntimeDialogueMark]>,
+    effect_site_count: RuntimeDialogueEffectSiteCount,
     line_task_group: Option<RuntimeLineTaskGroupId>,
 }
 
@@ -89,11 +90,13 @@ impl RuntimeDialogueContentPlan {
         line: RuntimeLineId,
         values: Box<[RuntimeDialogueValueSite]>,
         marks: Box<[RuntimeDialogueMark]>,
+        effect_site_count: RuntimeDialogueEffectSiteCount,
     ) -> Self {
         Self {
             line,
             values,
             marks,
+            effect_site_count,
             line_task_group: None,
         }
     }
@@ -114,16 +117,13 @@ impl RuntimeDialogueContentPlan {
     }
 
     #[must_use]
-    pub const fn line_task_group(&self) -> Option<RuntimeLineTaskGroupId> {
-        self.line_task_group
+    pub const fn effect_site_count(&self) -> RuntimeDialogueEffectSiteCount {
+        self.effect_site_count
     }
 
     #[must_use]
-    pub fn resolve_mark_label(&self, label: &str) -> Option<RuntimeDialogueMarkId> {
-        self.marks
-            .iter()
-            .find(|mark| mark.label() == label)
-            .map(RuntimeDialogueMark::id)
+    pub const fn line_task_group(&self) -> Option<RuntimeLineTaskGroupId> {
+        self.line_task_group
     }
 
     pub(crate) fn attach_line_task_group(&mut self, group: RuntimeLineTaskGroupId) -> bool {

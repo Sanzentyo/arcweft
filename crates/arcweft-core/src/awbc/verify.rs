@@ -6,7 +6,7 @@ mod structure;
 #[cfg(test)]
 pub(crate) use structure::types_compatible;
 
-use super::schema::{AWBC_ABI_VERSION, AwbcDigest, AwbcProgram};
+use super::schema::{AWBC_ABI_VERSION, AwbcDigest, AwbcFunctionRoleError, AwbcProgram};
 use std::collections::BTreeSet;
 use thiserror::Error;
 
@@ -100,6 +100,12 @@ pub enum AwbcVerifyError {
     },
     #[error("AWBC function {function} parameter frame does not match signature")]
     ParameterLayoutMismatch { function: usize },
+    #[error("AWBC function {function} has invalid kind/flag producer roles: {source}")]
+    InvalidFunctionRoles {
+        function: usize,
+        #[source]
+        source: AwbcFunctionRoleError,
+    },
     #[error("AWBC frame layout {layout} exceeds `{budget}` budget")]
     FrameBudgetExceeded { layout: usize, budget: &'static str },
     #[error("AWBC signature {signature} exceeds `{budget}` budget")]

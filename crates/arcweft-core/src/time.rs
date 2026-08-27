@@ -46,6 +46,16 @@ impl LogicalDuration {
     pub const fn saturating_add(self, other: Self) -> Self {
         Self::from_nanos(self.nanos.saturating_add(other.nanos))
     }
+
+    /// Adds logical elapsed time without changing overflow into a valid
+    /// deadline.
+    #[must_use]
+    pub const fn checked_add(self, other: Self) -> Option<Self> {
+        match self.nanos.checked_add(other.nanos) {
+            Some(nanos) => Some(Self::from_nanos(nanos)),
+            None => None,
+        }
+    }
 }
 
 impl Default for LogicalDuration {

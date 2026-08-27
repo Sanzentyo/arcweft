@@ -195,6 +195,20 @@ fn vm_observation(event: &VmObservation) -> ParityEvent {
         VmObservation::StreamClose(stream) => ParityEvent::StreamClose {
             stream: format!("stream#{}", stream.0),
         },
+        VmObservation::LineOperation { operation, .. } => ParityEvent::Effect {
+            id: format!("line-operation#{}", operation.0),
+        },
+        VmObservation::DialogueResult { .. } => ParityEvent::Effect {
+            id: "dialogue-result".to_owned(),
+        },
+        VmObservation::Drop { policy } => ParityEvent::Effect {
+            id: match policy {
+                crate::effect::RuntimeDropPolicy::Stop { fade } => {
+                    format!("drop:stop:{}ns", fade.as_nanos())
+                }
+                policy => format!("drop:{}", policy.kind_label()),
+            },
+        },
         VmObservation::Trap(trap) => ParityEvent::Trap {
             code: trap_code(trap.code).to_owned(),
             message: trap.message.clone(),

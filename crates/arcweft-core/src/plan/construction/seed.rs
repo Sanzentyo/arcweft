@@ -6,12 +6,16 @@
 
 use std::{fmt, sync::Arc};
 
+use thiserror::Error;
+
 use crate::effect::{LineEffectRequest, RuntimeAssertionGuardId, RuntimeAssertionProfile};
 use crate::entry::{CallableContractHash, RuntimeCallableId, RuntimeCommandTargetId};
 use crate::pattern::RuntimeSemanticTypeId;
 use crate::runtime_id::{
-    RuntimeDialogueContentPlanId, RuntimeDialogueMarkId, RuntimeDialogueValueSlotId,
-    RuntimeFunctionSiteId, RuntimeLineTaskGroupId, RuntimeLocalDeclarationId, RuntimePlanTypeId,
+    RuntimeDialogueContentPlanId, RuntimeDialogueEffectSiteCount, RuntimeDialogueEffectSiteId,
+    RuntimeDialogueMarkId, RuntimeDialogueValueSlotId, RuntimeFunctionSiteId,
+    RuntimeLineHandleSiteId, RuntimeLineTaskGroupId, RuntimeLineTaskNodeId,
+    RuntimeLocalDeclarationId, RuntimePlanTypeId,
 };
 use crate::step::RuntimeHostCallMode;
 use crate::stream::StreamRuntimeId;
@@ -121,6 +125,7 @@ pub struct RuntimeDialogueContentPlanSeed {
     pub line: RuntimeLineId,
     pub values: Box<[RuntimeDialogueValueSiteSeed]>,
     pub marks: Box<[String]>,
+    pub effect_site_count: RuntimeDialogueEffectSiteCount,
 }
 
 /// Construction-only typed identity of a mark owned by one dialogue content
@@ -131,6 +136,55 @@ pub struct RuntimeDialogueMarkSeedId {
     content: RuntimeDialogueContentPlanId,
     mark: RuntimeDialogueMarkId,
 }
+
+/// Construction-only typed identity of an inline effect site owned by one
+/// dialogue content seed.
+#[derive(Clone)]
+pub struct RuntimeDialogueEffectSiteSeedId {
+    issuer: Arc<RuntimePlanConstructionIssuer>,
+    content: RuntimeDialogueContentPlanId,
+    site: RuntimeDialogueEffectSiteId,
+}
+
+impl RuntimeDialogueEffectSiteSeedId {
+    fn issued(
+        issuer: &Arc<RuntimePlanConstructionIssuer>,
+        content: RuntimeDialogueContentPlanId,
+        site: RuntimeDialogueEffectSiteId,
+    ) -> Self {
+        Self {
+            issuer: Arc::clone(issuer),
+            content,
+            site,
+        }
+    }
+
+    pub(super) fn resolve(
+        &self,
+        issuer: &Arc<RuntimePlanConstructionIssuer>,
+    ) -> Option<(RuntimeDialogueContentPlanId, RuntimeDialogueEffectSiteId)> {
+        Arc::ptr_eq(&self.issuer, issuer).then_some((self.content, self.site))
+    }
+}
+
+impl fmt::Debug for RuntimeDialogueEffectSiteSeedId {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter
+            .debug_tuple("RuntimeDialogueEffectSiteSeedId")
+            .field(&self.site)
+            .finish()
+    }
+}
+
+impl PartialEq for RuntimeDialogueEffectSiteSeedId {
+    fn eq(&self, other: &Self) -> bool {
+        Arc::ptr_eq(&self.issuer, &other.issuer)
+            && self.content == other.content
+            && self.site == other.site
+    }
+}
+
+impl Eq for RuntimeDialogueEffectSiteSeedId {}
 
 impl RuntimeDialogueMarkSeedId {
     pub(super) fn issued(
@@ -173,6 +227,28 @@ impl PartialEq for RuntimeDialogueMarkSeedId {
 impl Eq for RuntimeDialogueMarkSeedId {}
 
 /// Recursive source-order graph consumed atomically by the plan builder.
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub struct RuntimeLineTaskNodeSeedId(u32);
+
+impl RuntimeLineTaskNodeSeedId {
+    #[must_use]
+    pub fn from_zero_based(index: usize) -> Option<Self> {
+        u32::try_from(index).ok().map(Self)
+    }
+
+    #[must_use]
+    pub const fn get(self) -> u32 {
+        self.0
+    }
+
+    pub(super) fn runtime_id(self) -> Option<RuntimeLineTaskNodeId> {
+        usize::try_from(self.0)
+            .ok()
+            .and_then(RuntimeLineTaskNodeId::from_zero_based)
+    }
+}
+
+/// Recursive source-order graph consumed atomically by the plan builder.
 #[derive(Clone, Debug, PartialEq)]
 pub enum RuntimeLineTaskNodeSeed {
     Sequence(Vec<Self>),
@@ -182,11 +258,8 @@ pub enum RuntimeLineTaskNodeSeed {
         children: Vec<Self>,
     },
     Child {
-        id: crate::task::TaskId,
-        key: Option<crate::task::TaskKey>,
-        name: Option<String>,
+        node: RuntimeLineTaskNodeSeedId,
         trigger: RuntimeLineTaskTriggerSeed,
-        priority: crate::task::TaskPriority,
         join_policy: crate::line_task::ChildJoinPolicy,
         cancel_policy: crate::line_task::ChildCancelPolicy,
         scope: Box<Self>,
@@ -198,7 +271,8 @@ pub enum RuntimeLineTaskNodeSeed {
 pub enum RuntimeLineTaskTriggerSeed {
     Immediate,
     Mark(RuntimeDialogueMarkSeedId),
-    Delay(crate::time::LogicalDuration),
+    ContentEffect(RuntimeDialogueEffectSiteSeedId),
+    Scheduled(RuntimeLineHandleSiteId),
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -209,12 +283,25 @@ pub struct RuntimeLineTaskCancelRuleSeed {
 
 #[derive(Clone, Debug, PartialEq)]
 pub struct RuntimeLineTaskGroupSeed {
+    pub activation_ops: Vec<RuntimeFlowOpSeed>,
+    pub result_type: RuntimeSemanticTypeId,
+    pub handle_sites: Box<[RuntimeLineHandleSiteSeed]>,
     pub root: RuntimeLineTaskNodeSeed,
     pub cancel_rules: Box<[RuntimeLineTaskCancelRuleSeed]>,
     pub cleanup_completed: Vec<RuntimeFlowOpSeed>,
     pub cleanup_cancelled: Vec<RuntimeFlowOpSeed>,
     pub cleanup_failed: Vec<RuntimeFlowOpSeed>,
     pub cleanup_policy: crate::line_task::LineCleanupPolicy,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct RuntimeLineHandleSiteSeed {
+    pub id: RuntimeLineHandleSiteId,
+    pub source_ordinal: u32,
+    pub kind: crate::line_task::RuntimeLineHandleSiteKind,
+    pub result_type: RuntimeSemanticTypeId,
+    pub character: Option<arcweft_character::id::CharacterId>,
+    pub scheduled_child: Option<RuntimeLineTaskNodeSeedId>,
 }
 
 /// Builder-issued group handle used only to attach the sealed graph to its
@@ -326,6 +413,14 @@ pub enum RuntimeFlowOpSeed {
     },
     Dialogue {
         content: RuntimeDialogueContentPlanSeedId,
+        result: RuntimeDialogueResultTargetSeed,
+    },
+    LineOperation {
+        binding: Option<RuntimePatternSeed>,
+        operation: RuntimeLineOperationSeed,
+    },
+    CommitDialogueResult {
+        value: RuntimeExprSeed,
     },
     Choice {
         id: Option<String>,
@@ -406,11 +501,112 @@ pub enum RuntimeFlowOpSeed {
     Noop,
 }
 
+impl RuntimeFlowOpSeed {
+    /// Returns the source-ordered free locals captured by this sealed
+    /// construction operation. The operation algebra remains the sole owner of
+    /// binding semantics; downstream line-plan lowering must not reimplement
+    /// per-variant traversal.
+    #[must_use]
+    pub fn free_locals(&self) -> Box<[RuntimeLocalSeedId]> {
+        let mut bound = Vec::new();
+        let mut locals = Vec::new();
+        collect_flow_op_free_locals(self, &mut bound, &mut locals);
+        locals.into_boxed_slice()
+    }
+}
+
+#[derive(Clone, Copy, Debug, Error, Eq, PartialEq)]
+pub enum RuntimeDialogueResultTargetSeedError {
+    #[error(
+        "dialogue result target type {target:?} does not match result pattern type {pattern:?}"
+    )]
+    PatternTypeMismatch {
+        target: RuntimeSemanticTypeId,
+        pattern: RuntimeSemanticTypeId,
+    },
+}
+
+#[derive(Clone, Debug, PartialEq)]
+pub struct RuntimeDialogueResultTargetSeed {
+    ty: RuntimeSemanticTypeId,
+    pattern: RuntimePatternSeed,
+}
+
+impl RuntimeDialogueResultTargetSeed {
+    pub fn try_new(
+        ty: RuntimeSemanticTypeId,
+        pattern: RuntimePatternSeed,
+    ) -> Result<Self, RuntimeDialogueResultTargetSeedError> {
+        if pattern.ty() != ty {
+            return Err(RuntimeDialogueResultTargetSeedError::PatternTypeMismatch {
+                target: ty,
+                pattern: pattern.ty(),
+            });
+        }
+        Ok(Self { ty, pattern })
+    }
+
+    #[must_use]
+    pub const fn discard(ty: RuntimeSemanticTypeId) -> Self {
+        Self {
+            ty,
+            pattern: RuntimePatternSeed::new(ty, RuntimePatternSeedKind::Discard),
+        }
+    }
+
+    #[must_use]
+    pub const fn ty(&self) -> RuntimeSemanticTypeId {
+        self.ty
+    }
+
+    #[must_use]
+    pub const fn pattern(&self) -> &RuntimePatternSeed {
+        &self.pattern
+    }
+
+    #[must_use]
+    pub fn into_parts(self) -> (RuntimeSemanticTypeId, RuntimePatternSeed) {
+        (self.ty, self.pattern)
+    }
+}
+
+#[derive(Clone, Debug, PartialEq)]
+pub enum RuntimeLineOperationSeed {
+    AcquireActor {
+        site: RuntimeLineHandleSiteId,
+        character: arcweft_character::id::CharacterId,
+        scope: crate::line_task::RuntimeLineHandleScope,
+    },
+    Schedule {
+        site: RuntimeLineHandleSiteId,
+        delay: RuntimeExprSeed,
+        child: RuntimeLineTaskNodeSeedId,
+        captures: Box<[RuntimeScheduledCaptureSeed]>,
+    },
+    ActorLook {
+        site: RuntimeLineHandleSiteId,
+        character: arcweft_character::id::CharacterId,
+        actor: RuntimeExprSeed,
+        look: RuntimeExprSeed,
+        crossfade: RuntimeExprSeed,
+    },
+    VoiceHandle {
+        site: RuntimeLineHandleSiteId,
+    },
+}
+
+#[derive(Clone, Debug, PartialEq)]
+pub struct RuntimeScheduledCaptureSeed {
+    pub local: RuntimeLocalSeedId,
+    pub value: RuntimeExprSeed,
+}
+
 impl RuntimeLineTaskGroupSeed {
     /// Derives captures from every executable action in deterministic
     /// root/cancel/cleanup first-use order.
     pub(super) fn free_locals(&self) -> Box<[RuntimeLocalSeedId]> {
         let mut locals = Vec::new();
+        collect_flow_ops_free_locals(&self.activation_ops, &[], &mut locals);
         self.root.collect_free_locals(&mut locals);
         for rule in &self.cancel_rules {
             collect_flow_ops_free_locals(&rule.action, &[], &mut locals);
@@ -483,6 +679,15 @@ fn collect_binding_or_host_free_locals(
         RuntimeFlowOpSeed::AssignNominalField { base, value, .. } => {
             push_free_local(base, bound, locals);
             value.collect_free_locals(bound, locals);
+        }
+        RuntimeFlowOpSeed::Dialogue { result, .. } => {
+            result.pattern().collect_binding_locals(bound);
+        }
+        RuntimeFlowOpSeed::LineOperation { binding, operation } => {
+            operation.collect_free_locals(bound, locals);
+            if let Some(binding) = binding {
+                binding.collect_binding_locals(bound);
+            }
         }
         RuntimeFlowOpSeed::Await {
             binding,
@@ -617,8 +822,7 @@ fn collect_terminal_or_effect_free_locals(
     locals: &mut Vec<RuntimeLocalSeedId>,
 ) {
     match op {
-        RuntimeFlowOpSeed::Dialogue { .. }
-        | RuntimeFlowOpSeed::Continue
+        RuntimeFlowOpSeed::Continue
         | RuntimeFlowOpSeed::Goto(_)
         | RuntimeFlowOpSeed::Return(_)
         | RuntimeFlowOpSeed::CancelCleanup { .. }
@@ -640,6 +844,9 @@ fn collect_terminal_or_effect_free_locals(
         RuntimeFlowOpSeed::GotoExpr(value) | RuntimeFlowOpSeed::ReturnExpr(value) => {
             value.collect_free_locals(bound, locals);
         }
+        RuntimeFlowOpSeed::CommitDialogueResult { value } => {
+            value.collect_free_locals(bound, locals);
+        }
         RuntimeFlowOpSeed::Effect(effect) | RuntimeFlowOpSeed::RegisterCleanup { effect, .. } => {
             effect.collect_free_locals(bound, locals);
         }
@@ -649,6 +856,8 @@ fn collect_terminal_or_effect_free_locals(
         RuntimeFlowOpSeed::Let { .. }
         | RuntimeFlowOpSeed::LetElse { .. }
         | RuntimeFlowOpSeed::AssignNominalField { .. }
+        | RuntimeFlowOpSeed::Dialogue { .. }
+        | RuntimeFlowOpSeed::LineOperation { .. }
         | RuntimeFlowOpSeed::Await { .. }
         | RuntimeFlowOpSeed::AwaitMany { .. }
         | RuntimeFlowOpSeed::HostCall { .. }
@@ -661,6 +870,36 @@ fn collect_terminal_or_effect_free_locals(
         | RuntimeFlowOpSeed::For { .. }
         | RuntimeFlowOpSeed::Thread { .. }
         | RuntimeFlowOpSeed::Scope(_) => unreachable!("flow-op collector dispatched variant"),
+    }
+}
+
+impl RuntimeLineOperationSeed {
+    fn collect_free_locals(
+        &self,
+        bound: &[RuntimeLocalSeedId],
+        locals: &mut Vec<RuntimeLocalSeedId>,
+    ) {
+        match self {
+            Self::AcquireActor { .. } | Self::VoiceHandle { .. } => {}
+            Self::Schedule {
+                delay, captures, ..
+            } => {
+                delay.collect_free_locals(bound, locals);
+                for capture in captures {
+                    capture.value.collect_free_locals(bound, locals);
+                }
+            }
+            Self::ActorLook {
+                actor,
+                look,
+                crossfade,
+                ..
+            } => {
+                actor.collect_free_locals(bound, locals);
+                look.collect_free_locals(bound, locals);
+                crossfade.collect_free_locals(bound, locals);
+            }
+        }
     }
 }
 
@@ -686,16 +925,19 @@ fn collect_host_argument_free_locals(
 pub struct RuntimeDialogueContentPlanSeedId {
     issuer: Arc<RuntimePlanConstructionIssuer>,
     content: RuntimeDialogueContentPlanId,
+    effect_site_count: RuntimeDialogueEffectSiteCount,
 }
 
 impl RuntimeDialogueContentPlanSeedId {
     pub(super) fn issued(
         issuer: &Arc<RuntimePlanConstructionIssuer>,
         content: RuntimeDialogueContentPlanId,
+        effect_site_count: RuntimeDialogueEffectSiteCount,
     ) -> Self {
         Self {
             issuer: Arc::clone(issuer),
             content,
+            effect_site_count,
         }
     }
 
@@ -710,6 +952,13 @@ impl RuntimeDialogueContentPlanSeedId {
     pub fn mark(&self, index: usize) -> Option<RuntimeDialogueMarkSeedId> {
         RuntimeDialogueMarkId::from_zero_based(index)
             .map(|mark| RuntimeDialogueMarkSeedId::issued(&self.issuer, self.content, mark))
+    }
+
+    #[must_use]
+    pub fn effect_site(&self, index: usize) -> Option<RuntimeDialogueEffectSiteSeedId> {
+        self.effect_site_count
+            .site(index)
+            .map(|site| RuntimeDialogueEffectSiteSeedId::issued(&self.issuer, self.content, site))
     }
 }
 
@@ -916,6 +1165,16 @@ pub struct RuntimeEffectFieldSeed {
 }
 
 #[derive(Clone, Debug, PartialEq)]
+pub enum RuntimeDropPolicySeed {
+    Default,
+    Cancel,
+    Stop { fade: RuntimeExprSeed },
+    Finish,
+    Release,
+    Detach,
+}
+
+#[derive(Clone, Debug, PartialEq)]
 pub enum RuntimeEvaluatedEffectSeed {
     Log {
         level: String,
@@ -940,6 +1199,10 @@ pub enum RuntimeEvaluatedEffectSeed {
     Ensure {
         condition: RuntimeExprSeed,
         message: RuntimeExprSeed,
+    },
+    Drop {
+        target: RuntimeExprSeed,
+        policy: RuntimeDropPolicySeed,
     },
     Assert {
         guard: RuntimeAssertionGuardId,
@@ -1087,6 +1350,12 @@ impl RuntimeEvaluatedEffectSeed {
             }
             Self::Ensure { condition, message } => {
                 collect_expr_refs_free_locals(&[condition, message], bound, locals);
+            }
+            Self::Drop { target, policy } => {
+                target.collect_free_locals(bound, locals);
+                if let RuntimeDropPolicySeed::Stop { fade } = policy {
+                    fade.collect_free_locals(bound, locals);
+                }
             }
             Self::Assert { condition, .. } => condition.collect_free_locals(bound, locals),
         }

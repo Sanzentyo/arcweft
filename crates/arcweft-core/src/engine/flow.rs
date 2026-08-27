@@ -1,11 +1,11 @@
+use super::dialogue::{DialogueActivationFrame, DialogueLineTaskState, DialogueRuntimePhase};
 use super::{
-    AwaitState, ChoiceState, DialogueState, Engine, FlowControlStackEntry,
-    FlowControlStackEntryKind, FlowCursor, FlowEvent, FlowFiberStatus, FlowOp, FlowScopeCleanup,
-    HostCallState, RuntimeDiagnostic, RuntimeEvalError, RuntimeExpr, RuntimeIterator,
-    RuntimePattern, RuntimeStepInput, RuntimeStepOutput, RuntimeValue, runtime_value_label,
+    AwaitState, ChoiceState, Engine, FlowControlStackEntry, FlowControlStackEntryKind, FlowCursor,
+    FlowEvent, FlowFiberStatus, FlowOp, FlowScopeCleanup, HostCallState, RuntimeDiagnostic,
+    RuntimeEvalError, RuntimeExpr, RuntimeIterator, RuntimePattern, RuntimeStepOutput,
+    RuntimeValue, runtime_value_label,
 };
 use crate::effect::LineEffectRequest;
-use crate::line_task::{LineTaskLiveState, progress_live_line_task_group};
 use crate::pattern::pattern_binding_capacity;
 use crate::plan::{RuntimeIteratorEvidence, RuntimeIteratorWitnessExecutable, RuntimeReceiverMode};
 use crate::pure::RuntimeCallBackend;
@@ -15,37 +15,18 @@ use crate::task::{
     TaskKey, TaskPolicy, TaskPriority, TaskSpec,
 };
 use crate::time::LogicalDuration;
-use crate::value::RuntimeLocalBinding;
+use crate::value::{RuntimeEnv, RuntimeLocalBinding};
 use std::sync::Arc;
 
 impl Engine {
-    pub(super) fn dialogue_marks_for_input(
-        content: &crate::plan::RuntimeDialogueContentPlan,
-        input: &RuntimeStepInput,
-    ) -> std::collections::BTreeSet<crate::runtime_id::RuntimeDialogueMarkId> {
-        input
-            .input_events
-            .iter()
-            .filter_map(|event| {
-                let name = crate::step::input_event_trigger_name(event)?;
-                let label = if name == "mark" {
-                    crate::step::input_event_text_payload(event)?
-                } else {
-                    name.strip_prefix("mark:")?
-                };
-                content.resolve_mark_label(label)
-            })
-            .collect()
-    }
-
     // Keep the opcode dispatcher contiguous while the Phase 1 runtime surface is
     // still changing; extracting each arm now would obscure grammar coverage.
     #[allow(clippy::too_many_lines)]
     pub(super) fn step_flow(
         &mut self,
-        input: &RuntimeStepInput,
         output: &mut RuntimeStepOutput,
         pure_backend: &mut impl RuntimeCallBackend,
+        drop_policy: &mut Option<crate::effect::RuntimeDropPolicy>,
     ) {
         let (op, next_op_index) = if let Some(op) = self.fiber.pending_ops.pop_front() {
             (op, None)
@@ -110,7 +91,12 @@ impl Engine {
                     Err(error) => self.fail_eval(error, output),
                 }
             }
-            FlowOp::Dialogue { content } => {
+            FlowOp::LineOperation { .. } | FlowOp::CommitDialogueResult { .. } => {
+                self.fiber.status = FlowFiberStatus::Failed(
+                    "line operation escaped its dialogue activation authority".to_owned(),
+                );
+            }
+            FlowOp::Dialogue { content, result } => {
                 let Some(content_plan) = self.plan.dialogue_content().get(content).cloned() else {
                     self.fiber.status =
                         FlowFiberStatus::Failed(format!("missing dialogue content plan {content}"));
@@ -130,53 +116,71 @@ impl Engine {
                     }
                 }
                 let line = content_plan.line().clone();
-                output.flow_events.push(FlowEvent::DialogueLine {
-                    line: line.clone(),
-                    values: values.into_boxed_slice(),
-                });
-                let elapsed = LogicalDuration::default();
-                let task_group = content_plan.line_task_group();
-                let (captures, line_task) = match task_group {
-                    Some(task_group) => {
-                        let Some(group) = self
-                            .plan
-                            .line_task_groups()
-                            .get(task_group.index())
-                            .cloned()
-                        else {
-                            self.fiber.status = FlowFiberStatus::Failed(format!(
-                                "dialogue content references missing line task group {task_group}"
-                            ));
-                            return;
-                        };
-                        let captures = match self.capture_line_task_locals(&group) {
-                            Ok(captures) => captures,
-                            Err(message) => {
-                                self.fiber.status = FlowFiberStatus::Failed(message);
-                                return;
-                            }
-                        };
-                        let activation_id = self.next_line_task_activation;
-                        self.next_line_task_activation =
-                            self.next_line_task_activation.saturating_add(1);
-                        let mut line_task = LineTaskLiveState::new(&group, activation_id);
-                        let marks = Self::dialogue_marks_for_input(&content_plan, input);
-                        let activation =
-                            progress_live_line_task_group(&group, elapsed, &marks, &mut line_task);
-                        self.spawn_line_task_commands(&group, activation, &captures);
-                        (captures, Some(line_task))
-                    }
-                    None => (Box::<[RuntimeLocalBinding]>::default(), None),
+                let Some(task_group) = content_plan.line_task_group() else {
+                    self.fiber.status = FlowFiberStatus::Failed(
+                        crate::line_task::LineRuntimeError::MissingTaskGroup.to_string(),
+                    );
+                    return;
                 };
-                self.fiber.status = FlowFiberStatus::Dialogue(DialogueState {
+                let Some(group) = self
+                    .plan
+                    .line_task_groups()
+                    .get(task_group.index())
+                    .cloned()
+                else {
+                    self.fiber.status = FlowFiberStatus::Failed(
+                        crate::line_task::LineRuntimeError::UnknownTaskGroup.to_string(),
+                    );
+                    return;
+                };
+                if group.result_type() != result.ty() {
+                    self.fiber.status = FlowFiberStatus::Failed(
+                        crate::line_task::LineRuntimeError::DialogueResultTypeMismatch.to_string(),
+                    );
+                    return;
+                }
+                let captures = match self.capture_line_task_locals(&group) {
+                    Ok(captures) => captures,
+                    Err(error) => {
+                        self.fiber.status = FlowFiberStatus::Failed(error.to_string());
+                        return;
+                    }
+                };
+                let activation = match self.allocate_dialogue_activation(content) {
+                    Ok(activation) => activation,
+                    Err(message) => {
+                        self.fiber.status = FlowFiberStatus::Failed(message.to_string());
+                        return;
+                    }
+                };
+                self.advance_if_needed(next_op_index);
+                let mut locals = RuntimeEnv::default();
+                locals.bind_all_ref(&captures);
+                let dialogue = DialogueActivationFrame {
                     line,
                     content,
                     task_group,
-                    resume: self.resume_cursor(next_op_index),
+                    resume: self.fiber.cursor,
                     captures,
-                    line_task,
-                    elapsed,
-                });
+                    locals,
+                    line_task: DialogueLineTaskState::NotStarted,
+                    elapsed: LogicalDuration::default(),
+                    phase: DialogueRuntimePhase::Activating,
+                    result_target: result,
+                    voice: crate::presentation::RuntimeDialogueVoiceState::Absent,
+                    values: values.into_boxed_slice(),
+                    activation_pc: 0,
+                    pending_line_operation: None,
+                    failure: None,
+                };
+                if let Err(error) = self
+                    .dialogue_activations
+                    .begin(activation.clone(), dialogue)
+                {
+                    self.fiber.status = FlowFiberStatus::Failed(error.to_string());
+                    return;
+                }
+                self.fiber.status = FlowFiberStatus::Dialogue(activation);
             }
             FlowOp::Choice { id, options } => {
                 output.flow_events.push(FlowEvent::ChoicePresented {
@@ -456,7 +460,9 @@ impl Engine {
                     .requests
                     .tasks
                     .push(flow_thread_task_spec(name.as_deref()));
-                self.spawn_child_fiber(body);
+                if let Err(error) = self.spawn_child_fiber(body) {
+                    self.fail_eval(error, output);
+                }
             }
             FlowOp::Scope(ops) => {
                 self.advance_if_needed(next_op_index);
@@ -533,8 +539,20 @@ impl Engine {
             }
             FlowOp::EvaluatedEffect(effect) => {
                 match self.evaluate_effect_expr(&effect, pure_backend) {
-                    Ok(Some(effect)) => self.emit_line_effect(effect, output, pure_backend),
-                    Ok(None) => {}
+                    Ok(outcome) => {
+                        if let Some(policy) = outcome.drop_policy
+                            && drop_policy.replace(policy).is_some()
+                        {
+                            self.fail_eval(
+                                crate::line_task::LineRuntimeError::InvalidActivationOperation,
+                                output,
+                            );
+                            return;
+                        }
+                        if let Some(effect) = outcome.request {
+                            self.emit_line_effect(effect, output, pure_backend);
+                        }
+                    }
                     Err(error) => {
                         self.fail_eval(error, output);
                         return;

@@ -46,6 +46,7 @@ impl Wire for AwbcProgram {
         writer.write_table(&self.content_units)?;
         writer.write_table(&self.line_task_groups)?;
         writer.write_table(&self.line_task_nodes)?;
+        writer.write_table(&self.line_operations)?;
         writer.write_table(&self.stream_plans)?;
         writer.write_table(&self.pure_helpers)?;
         writer.write_table(&self.pure_programs)?;
@@ -85,6 +86,7 @@ impl Wire for AwbcProgram {
             content_units: reader.read_table("content_units", budget.content_units)?,
             line_task_groups: reader.read_table("line_task_groups", budget.line_task_groups)?,
             line_task_nodes: reader.read_table("line_task_nodes", budget.line_task_nodes)?,
+            line_operations: reader.read_table("line_operations", budget.line_operations)?,
             stream_plans: reader.read_table("stream_plans", budget.stream_plans)?,
             pure_helpers: reader.read_table("pure_helpers", budget.pure_helpers)?,
             pure_programs: reader.read_table("pure_programs", budget.pure_programs)?,
@@ -173,6 +175,7 @@ impl Wire for AwbcContentUnit {
     fn write_wire(&self, writer: &mut Writer) -> Result<(), AwbcCodecError> {
         self.public_id.write_wire(writer)?;
         self.marks.write_wire(writer)?;
+        self.effect_site_count.write_wire(writer)?;
         self.line_task_group.write_wire(writer)?;
         self.display.write_wire(writer)?;
         self.source.write_wire(writer)?;
@@ -183,6 +186,7 @@ impl Wire for AwbcContentUnit {
         Ok(Self {
             public_id: AwbcStringId::read_wire(reader)?,
             marks: Vec::<AwbcDialogueMark>::read_wire(reader)?,
+            effect_site_count: u32::read_wire(reader)?,
             line_task_group: Option::<AwbcLineTaskGroupId>::read_wire(reader)?,
             display: Option::<AwbcDisplayMapId>::read_wire(reader)?,
             source: Option::<AwbcSourceMapId>::read_wire(reader)?,

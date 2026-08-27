@@ -74,8 +74,28 @@ impl RuntimeEnv {
         self.scopes.iter().rev().find_map(|scope| scope.get(local))
     }
 
+    /// Removes and returns the nearest binding for one admitted local. This is
+    /// the structured runtime's move boundary; affine values are never cloned
+    /// before their consuming instruction commits.
+    pub(crate) fn take(&mut self, local: RuntimeLocalDeclarationId) -> Option<RuntimeValue> {
+        self.scopes
+            .iter_mut()
+            .rev()
+            .find_map(|scope| scope.take(local))
+    }
+
     pub(crate) fn get_cloned(&self, local: RuntimeLocalDeclarationId) -> Option<RuntimeValue> {
         self.get(local).cloned()
+    }
+
+    pub(crate) fn values(&self) -> impl Iterator<Item = &RuntimeValue> {
+        self.scopes
+            .iter()
+            .flat_map(|scope| scope.bindings.iter().map(|binding| &binding.value))
+    }
+
+    pub(crate) fn bindings(&self) -> impl Iterator<Item = &RuntimeLocalBinding> {
+        self.scopes.iter().flat_map(|scope| scope.bindings.iter())
     }
 
     pub(crate) fn set_record_field(
@@ -96,6 +116,13 @@ impl RuntimeEnv {
         self.scopes
             .iter()
             .flat_map(|scope| scope.bindings.iter().cloned())
+            .collect()
+    }
+
+    pub(crate) fn into_bindings(self) -> Vec<RuntimeLocalBinding> {
+        self.scopes
+            .into_iter()
+            .flat_map(|scope| scope.bindings)
             .collect()
     }
 
@@ -217,6 +244,14 @@ impl RuntimeScope {
             .iter_mut()
             .rev()
             .find(|binding| binding.local == local)
+    }
+
+    fn take(&mut self, local: RuntimeLocalDeclarationId) -> Option<RuntimeValue> {
+        let index = self
+            .bindings
+            .iter()
+            .rposition(|binding| binding.local == local)?;
+        Some(self.bindings.remove(index).value)
     }
 
     fn clear(&mut self) {

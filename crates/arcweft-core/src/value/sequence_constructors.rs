@@ -1,4 +1,7 @@
-use super::{RuntimeInt, RuntimeSeq, RuntimeUInt, RuntimeValue, runtime_sequence_values};
+use super::{
+    RuntimeEntityReference, RuntimeInt, RuntimeSeq, RuntimeUInt, RuntimeValue,
+    runtime_sequence_values,
+};
 use crate::time::LogicalDuration;
 pub fn runtime_sequence_repeat_value(value: &RuntimeValue, len: usize) -> RuntimeValue {
     match value {
@@ -120,6 +123,6 @@ pub fn runtime_sequence_dense_strings(values: Vec<String>) -> RuntimeValue {
     RuntimeValue::Seq(RuntimeSeq::dense_strings(values))
 }
 
-pub fn runtime_sequence_dense_entity_refs(values: Vec<String>) -> RuntimeValue {
+pub fn runtime_sequence_dense_entity_refs(values: Vec<RuntimeEntityReference>) -> RuntimeValue {
     RuntimeValue::Seq(RuntimeSeq::dense_entity_refs(values))
 }

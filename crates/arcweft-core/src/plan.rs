@@ -16,19 +16,22 @@ pub use construction::{
     RuntimeAwaitPendingObserverSeed, RuntimeAwaitTargetSeed, RuntimeBuiltinIteratorEvidenceSeed,
     RuntimeCallArgumentSeed, RuntimeCallableExecutableSeed, RuntimeCallableExecutableSeedCode,
     RuntimeChoiceOptionSeed, RuntimeDialogueContentPlanSeed, RuntimeDialogueContentPlanSeedId,
-    RuntimeDialogueMarkSeedId, RuntimeDialogueValueSiteSeed, RuntimeEffectFieldSeed,
-    RuntimeEvaluatedEffectSeed, RuntimeExprMatchArmSeed, RuntimeExprSeed, RuntimeExprSeedKind,
-    RuntimeFieldProjectionSeed, RuntimeFlowMatchArmSeed, RuntimeFlowOpSeed, RuntimeFlowSeed,
-    RuntimeFunctionSiteDeclarationSeed, RuntimeFunctionSiteSeedId, RuntimeHostArgumentSeed,
-    RuntimeHostCallTargetSeed, RuntimeHostTaskRequestTemplateSeed, RuntimeIteratorEvidenceSeed,
-    RuntimeIteratorWitnessEvidenceSeed, RuntimeIteratorWitnessExecutableSeed,
-    RuntimeLineEffectSeed, RuntimeLineTaskCancelRuleSeed, RuntimeLineTaskGroupSeed,
-    RuntimeLineTaskGroupSeedId, RuntimeLineTaskNodeSeed, RuntimeLineTaskTriggerSeed,
-    RuntimeLocalDeclarationSeed, RuntimeLocalSeedId, RuntimeNominalRecordFieldSeed,
-    RuntimePatternRestSeed, RuntimePatternSeed, RuntimePatternSeedKind, RuntimePlanBuildError,
-    RuntimePlanBuilder, RuntimePlanSemanticAdmission, RuntimePlanTable,
-    RuntimePureHelperDeclarationSeed, RuntimePureHelperSeed, RuntimePureHelperSeedId,
-    RuntimePureProgramBindingSeed, RuntimeRecordFieldSeedId, RuntimeRecordPatternFieldSeed,
+    RuntimeDialogueEffectSiteSeedId, RuntimeDialogueMarkSeedId, RuntimeDialogueResultTargetSeed,
+    RuntimeDialogueResultTargetSeedError, RuntimeDialogueValueSiteSeed, RuntimeDropPolicySeed,
+    RuntimeEffectFieldSeed, RuntimeEvaluatedEffectSeed, RuntimeExprMatchArmSeed, RuntimeExprSeed,
+    RuntimeExprSeedKind, RuntimeFieldProjectionSeed, RuntimeFlowMatchArmSeed, RuntimeFlowOpSeed,
+    RuntimeFlowSeed, RuntimeFunctionSiteDeclarationSeed, RuntimeFunctionSiteSeedId,
+    RuntimeHostArgumentSeed, RuntimeHostCallTargetSeed, RuntimeHostTaskRequestTemplateSeed,
+    RuntimeIteratorEvidenceSeed, RuntimeIteratorWitnessEvidenceSeed,
+    RuntimeIteratorWitnessExecutableSeed, RuntimeLineEffectSeed, RuntimeLineHandleSiteSeed,
+    RuntimeLineOperationSeed, RuntimeLineTaskCancelRuleSeed, RuntimeLineTaskGroupSeed,
+    RuntimeLineTaskGroupSeedId, RuntimeLineTaskNodeSeed, RuntimeLineTaskNodeSeedId,
+    RuntimeLineTaskTriggerSeed, RuntimeLocalDeclarationSeed, RuntimeLocalSeedId,
+    RuntimeNominalRecordFieldSeed, RuntimePatternRestSeed, RuntimePatternSeed,
+    RuntimePatternSeedKind, RuntimePlanBuildError, RuntimePlanBuilder,
+    RuntimePlanSemanticAdmission, RuntimePlanTable, RuntimePureHelperDeclarationSeed,
+    RuntimePureHelperSeed, RuntimePureHelperSeedId, RuntimePureProgramBindingSeed,
+    RuntimeRecordFieldSeedId, RuntimeRecordPatternFieldSeed, RuntimeScheduledCaptureSeed,
     RuntimeStreamMatchArmSeed, RuntimeStreamOpSeed, RuntimeStreamPlanSeed,
     RuntimeTraitMethodDeclarationSeed, RuntimeTraitMethodSeed, RuntimeTraitMethodSeedId,
 };
@@ -108,6 +111,7 @@ use thiserror::Error;
 
 #[derive(Clone, Debug, PartialEq)]
 pub struct RuntimePlan {
+    pub(crate) artifact: Option<crate::effect::RuntimeArtifactFingerprint>,
     pub(crate) type_table: RuntimePlanTypeTable,
     pub(crate) local_declarations: RuntimeLocalDeclarationTable,
     pub(crate) nominal_record_domains: RuntimeNominalRecordDomainTable,
@@ -136,6 +140,30 @@ pub enum RuntimePlanValueTypeError {
 }
 
 impl RuntimePlan {
+    /// Binds the in-memory plan to the exact accepted persisted artifact.
+    /// Rebinding to a different generation is rejected rather than silently
+    /// changing every dialogue-handle identity.
+    pub fn bind_artifact(
+        &mut self,
+        artifact: crate::effect::RuntimeArtifactFingerprint,
+    ) -> Result<(), RuntimePlanArtifactError> {
+        match self.artifact {
+            Some(existing) if existing != artifact => {
+                Err(RuntimePlanArtifactError::AlreadyBound { existing, artifact })
+            }
+            Some(_) => Ok(()),
+            None => {
+                self.artifact = Some(artifact);
+                Ok(())
+            }
+        }
+    }
+
+    #[must_use]
+    pub const fn artifact(&self) -> Option<crate::effect::RuntimeArtifactFingerprint> {
+        self.artifact
+    }
+
     #[must_use]
     pub const fn type_table(&self) -> &RuntimePlanTypeTable {
         &self.type_table
@@ -266,6 +294,7 @@ impl RuntimePlan {
             RuntimePlanTypeProjection::Duration => Some(RuntimeCheckedType::Duration),
             RuntimePlanTypeProjection::Progress => Some(RuntimeCheckedType::Progress),
             RuntimePlanTypeProjection::EntityReference => Some(RuntimeCheckedType::EntityReference),
+            RuntimePlanTypeProjection::AgentValue => Some(RuntimeCheckedType::AgentValue),
             RuntimePlanTypeProjection::Sequence { item, .. }
             | RuntimePlanTypeProjection::Array { item, .. } => self
                 .checked_type_inner(*item, memo, visiting)?
@@ -294,6 +323,31 @@ impl RuntimePlan {
             RuntimePlanTypeProjection::Option(item) => self
                 .checked_type_inner(*item, memo, visiting)?
                 .map(|item| RuntimeCheckedType::Option(Box::new(item))),
+            RuntimePlanTypeProjection::BuiltinVariant { owner, cases } => {
+                let mut checked_cases = Vec::with_capacity(cases.len());
+                for (schema, payload) in owner.cases().iter().zip(cases) {
+                    let payload = match payload {
+                        Some(payload) => {
+                            let Some(payload) =
+                                self.checked_type_inner(*payload, memo, visiting)?
+                            else {
+                                return Ok(None);
+                            };
+                            Some(Box::new(payload))
+                        }
+                        None => None,
+                    };
+                    checked_cases.push(RuntimeCheckedVariantCase {
+                        name: schema.name().to_owned(),
+                        payload,
+                    });
+                }
+                Some(RuntimeCheckedType::Variant {
+                    owner: crate::pattern::RuntimeVariantIdentity::Builtin(*owner),
+                    arguments: Vec::new(),
+                    cases: checked_cases,
+                })
+            }
             RuntimePlanTypeProjection::Opaque {
                 producer,
                 admission,
@@ -411,8 +465,10 @@ impl RuntimePlan {
             });
         }
         Ok(Some(RuntimeCheckedType::Variant {
-            nominal: domain.nominal().clone(),
-            semantic_identity,
+            owner: crate::pattern::RuntimeVariantIdentity::Nominal {
+                nominal: domain.nominal().clone(),
+                semantic_identity,
+            },
             arguments,
             cases,
         }))
@@ -433,6 +489,15 @@ impl RuntimePlan {
         }
         Ok(Some(checked))
     }
+}
+
+#[derive(Clone, Copy, Debug, Eq, Error, PartialEq)]
+pub enum RuntimePlanArtifactError {
+    #[error("runtime plan is already bound to artifact {existing:?}, not {artifact:?}")]
+    AlreadyBound {
+        existing: crate::effect::RuntimeArtifactFingerprint,
+        artifact: crate::effect::RuntimeArtifactFingerprint,
+    },
 }
 
 fn checked_agent_type(
@@ -865,8 +930,16 @@ pub enum FlowOp {
         field: crate::value::RuntimeRecordFieldId,
         value: RuntimeExpr,
     },
+    LineOperation {
+        binding: Option<RuntimePattern>,
+        operation: RuntimeLineOperation,
+    },
+    CommitDialogueResult {
+        value: RuntimeExpr,
+    },
     Dialogue {
         content: crate::runtime_id::RuntimeDialogueContentPlanId,
+        result: RuntimeDialogueResultTarget,
     },
     Choice {
         id: Option<String>,
@@ -977,6 +1050,90 @@ pub enum FlowOp {
     Noop,
 }
 
+/// Typed operation executable only inside its owning dialogue activation.
+#[derive(Clone, Debug, PartialEq)]
+pub enum RuntimeLineOperation {
+    AcquireActor {
+        site: crate::runtime_id::RuntimeLineHandleSiteId,
+        character: arcweft_character::id::CharacterId,
+        scope: crate::line_task::RuntimeLineHandleScope,
+    },
+    Schedule {
+        site: crate::runtime_id::RuntimeLineHandleSiteId,
+        delay: RuntimeExpr,
+        child: crate::runtime_id::RuntimeLineTaskNodeId,
+        captures: Box<[RuntimeScheduledCapture]>,
+    },
+    ActorLook {
+        site: crate::runtime_id::RuntimeLineHandleSiteId,
+        character: arcweft_character::id::CharacterId,
+        actor: RuntimeExpr,
+        look: RuntimeExpr,
+        crossfade: RuntimeExpr,
+    },
+    VoiceHandle {
+        site: crate::runtime_id::RuntimeLineHandleSiteId,
+    },
+}
+
+/// One exact callback-local/value pair captured at a scheduled source site.
+#[derive(Clone, Debug, PartialEq)]
+pub struct RuntimeScheduledCapture {
+    local: RuntimeLocalDeclarationId,
+    value: RuntimeExpr,
+}
+
+impl RuntimeScheduledCapture {
+    pub(crate) const fn new(local: RuntimeLocalDeclarationId, value: RuntimeExpr) -> Self {
+        Self { local, value }
+    }
+
+    #[must_use]
+    pub const fn local(&self) -> RuntimeLocalDeclarationId {
+        self.local
+    }
+
+    #[must_use]
+    pub const fn value(&self) -> &RuntimeExpr {
+        &self.value
+    }
+}
+
+impl RuntimeLineOperation {
+    #[must_use]
+    pub const fn site(&self) -> crate::runtime_id::RuntimeLineHandleSiteId {
+        match self {
+            Self::AcquireActor { site, .. }
+            | Self::Schedule { site, .. }
+            | Self::ActorLook { site, .. }
+            | Self::VoiceHandle { site } => *site,
+        }
+    }
+}
+
+/// Sole parent binding target for one dialogue result value.
+#[derive(Clone, Debug, PartialEq)]
+pub struct RuntimeDialogueResultTarget {
+    ty: RuntimePlanTypeId,
+    pattern: RuntimePattern,
+}
+
+impl RuntimeDialogueResultTarget {
+    pub(crate) const fn new(ty: RuntimePlanTypeId, pattern: RuntimePattern) -> Self {
+        Self { ty, pattern }
+    }
+
+    #[must_use]
+    pub const fn ty(&self) -> RuntimePlanTypeId {
+        self.ty
+    }
+
+    #[must_use]
+    pub const fn pattern(&self) -> &RuntimePattern {
+        &self.pattern
+    }
+}
+
 /// Direct host-call request surface for runtime-step hosts.
 #[derive(Clone, Debug, PartialEq)]
 pub struct RuntimeHostCallTarget {
@@ -1021,6 +1178,7 @@ pub struct ChoiceRuntimeOption {
 #[derive(Clone, Debug, PartialEq)]
 pub enum FlowEvent {
     DialogueLine {
+        activation: crate::runtime_id::DialogueActivationId,
         line: RuntimeLineId,
         values: Box<[RuntimeDialogueValueBinding]>,
     },

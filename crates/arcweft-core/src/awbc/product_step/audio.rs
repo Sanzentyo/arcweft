@@ -166,7 +166,7 @@ impl AudioPayloadContext<'_> {
         field: &str,
     ) -> Result<String, ProductStepError> {
         let value = self.value(value, field)?;
-        value.as_identifier().map(str::to_owned).ok_or_else(|| {
+        value.as_identifier().ok_or_else(|| {
             ProductStepError::Type(format!(
                 "AWBC audio field `{field}` expected audio identifier, found {}",
                 runtime_value_label(&value)

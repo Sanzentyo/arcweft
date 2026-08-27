@@ -58,7 +58,7 @@ fn minimal_program() -> AwbcProgram {
             frame_layout: AwbcFrameLayoutId(0),
             blocks: AwbcTableRange::new(0, 1),
             entry_block: AwbcBlockId(0),
-            flags: AwbcFunctionFlags(AwbcFunctionFlags::DETERMINISTIC),
+            flags: AwbcFunctionFlags::empty().with(AwbcFunctionFlag::Deterministic),
         }],
         blocks: vec![AwbcBlock {
             owner: AwbcFunctionId(0),
@@ -82,6 +82,170 @@ fn minimal_program() -> AwbcProgram {
         }],
         ..AwbcProgram::default()
     }
+}
+
+#[test]
+fn function_kind_and_producer_role_matrix_is_closed() {
+    assert_eq!(
+        AwbcFunctionFlags::empty().validate_for_kind(AwbcFunctionKind::Synthetic),
+        Ok(())
+    );
+    let need = AwbcFunctionFlags::empty()
+        .with(AwbcFunctionFlag::Deterministic)
+        .with(AwbcFunctionFlag::MayAllocate)
+        .with(AwbcFunctionFlag::NeedProducer);
+    assert_eq!(need.validate_for_kind(AwbcFunctionKind::Synthetic), Ok(()));
+    assert!(matches!(
+        need.validate_for_kind(AwbcFunctionKind::Ordinary),
+        Err(AwbcFunctionRoleError::NeedProducerKind {
+            actual: AwbcFunctionKind::Ordinary
+        })
+    ));
+    assert_eq!(
+        need.with(AwbcFunctionFlag::MaySuspend)
+            .validate_for_kind(AwbcFunctionKind::Synthetic),
+        Err(AwbcFunctionRoleError::NeedProducerFlags)
+    );
+    assert_eq!(
+        need.with(AwbcFunctionFlag::HasDynamicTarget)
+            .validate_for_kind(AwbcFunctionKind::Synthetic),
+        Err(AwbcFunctionRoleError::NeedProducerFlags)
+    );
+
+    let stream = AwbcFunctionFlags::empty()
+        .with(AwbcFunctionFlag::MaySuspend)
+        .with(AwbcFunctionFlag::OwnsStreamProducer);
+    assert_eq!(
+        stream.validate_for_kind(AwbcFunctionKind::GeneratorProducer),
+        Ok(())
+    );
+    assert!(matches!(
+        stream.validate_for_kind(AwbcFunctionKind::StreamTransform),
+        Err(AwbcFunctionRoleError::StreamProducerKind {
+            actual: AwbcFunctionKind::StreamTransform
+        })
+    ));
+    assert_eq!(
+        AwbcFunctionFlags::empty().validate_for_kind(AwbcFunctionKind::GeneratorProducer),
+        Err(AwbcFunctionRoleError::StreamProducerFlags)
+    );
+    assert_eq!(
+        need.with(AwbcFunctionFlag::OwnsStreamProducer)
+            .validate_for_kind(AwbcFunctionKind::Synthetic),
+        Err(AwbcFunctionRoleError::ConflictingProducerRoles)
+    );
+    assert!(AwbcFunctionFlags::try_from_bits(AwbcFunctionFlags::KNOWN_MASK + 1).is_err());
+}
+
+#[test]
+fn verifier_rejects_function_kind_role_mismatch_at_the_function_owner() {
+    let mut program = minimal_program();
+    program.functions[0].flags = AwbcFunctionFlags::empty()
+        .with(AwbcFunctionFlag::Deterministic)
+        .with(AwbcFunctionFlag::MayAllocate)
+        .with(AwbcFunctionFlag::NeedProducer);
+
+    assert!(matches!(
+        program.verify(AwbcVerifyBudget::default(), AwbcVerifyContext::default()),
+        Err(AwbcVerifyError::InvalidFunctionRoles {
+            function: 0,
+            source: AwbcFunctionRoleError::NeedProducerKind {
+                actual: AwbcFunctionKind::Flow
+            }
+        })
+    ));
+}
+
+#[test]
+fn typed_drop_is_an_exact_vm_transaction_boundary() {
+    let mut program = minimal_program();
+    program.runtime_types = vec![runtime_type(1, AwbcRuntimeTypeShape::Unit)];
+    program.constants = vec![AwbcConstant::Unit];
+    program.frame_layouts[0] = AwbcFrameLayout {
+        slots: vec![
+            AwbcFrameSlot {
+                name: None,
+                ty: AwbcTypeId(0),
+                role: AwbcFrameSlotRole::Local,
+                scope_depth: 0,
+            },
+            AwbcFrameSlot {
+                name: None,
+                ty: AwbcTypeId(0),
+                role: AwbcFrameSlotRole::Local,
+                scope_depth: 0,
+            },
+        ],
+        max_scope_depth: 0,
+    };
+    program.instructions = vec![
+        AwbcInstruction::LoadConst {
+            dst: AwbcRegisterId(0),
+            constant: AwbcConstantId(0),
+        },
+        AwbcInstruction::LoadConst {
+            dst: AwbcRegisterId(1),
+            constant: AwbcConstantId(0),
+        },
+        AwbcInstruction::Drop {
+            register: AwbcRegisterId(0),
+            policy: AwbcDropPolicy::Cancel,
+        },
+        AwbcInstruction::Drop {
+            register: AwbcRegisterId(1),
+            policy: AwbcDropPolicy::Finish,
+        },
+    ];
+    program.blocks[0].instructions = AwbcTableRange::new(0, 4);
+    program
+        .verify(AwbcVerifyBudget::default(), AwbcVerifyContext::default())
+        .expect("typed drop program verifies");
+
+    let mut fiber =
+        FiberState::for_entry(&program, AwbcEntryId(0), 0, 64).expect("typed drop fiber");
+    let first = super::vm::step(
+        &program,
+        &mut fiber,
+        super::vm::VmStepOptions {
+            max_instructions: 64,
+        },
+    )
+    .expect("first drop boundary");
+    assert_eq!(first.executed, 3);
+    assert_eq!(fiber.cursor.instruction_offset, 3);
+    assert_eq!(
+        first
+            .observations
+            .iter()
+            .filter_map(|observation| match observation {
+                super::vm::VmObservation::Drop { policy } => Some(*policy),
+                _ => None,
+            })
+            .collect::<Vec<_>>(),
+        vec![crate::effect::RuntimeDropPolicy::Cancel]
+    );
+
+    let second = super::vm::step(
+        &program,
+        &mut fiber,
+        super::vm::VmStepOptions {
+            max_instructions: 64,
+        },
+    )
+    .expect("second drop boundary");
+    assert_eq!(second.executed, 1);
+    assert_eq!(fiber.cursor.instruction_offset, 4);
+    assert_eq!(
+        second
+            .observations
+            .iter()
+            .filter_map(|observation| match observation {
+                super::vm::VmObservation::Drop { policy } => Some(*policy),
+                _ => None,
+            })
+            .collect::<Vec<_>>(),
+        vec![crate::effect::RuntimeDropPolicy::Finish]
+    );
 }
 
 #[test]
@@ -125,6 +289,36 @@ fn pattern_rest_modes_roundtrip_in_the_schema_one_codec() {
 
     assert_eq!(AWBC_CODEC_VERSION, 1);
     assert_eq!(decoded.patterns, patterns);
+}
+
+#[test]
+fn optional_agent_record_types_roundtrip_in_the_schema_one_codec() {
+    let runtime_types = [
+        RuntimeAgentOperationalType::SourcePosition,
+        RuntimeAgentOperationalType::ProjectFlowControlSummary,
+        RuntimeAgentOperationalType::ProjectGraphSummary,
+    ]
+    .into_iter()
+    .enumerate()
+    .map(|(index, operational)| {
+        runtime_type(
+            u8::try_from(index + 1).expect("bounded Agent type fixture"),
+            AwbcRuntimeTypeShape::Agent(AwbcAgentTypeShape::Leaf(operational)),
+        )
+    })
+    .collect::<Vec<_>>();
+    let program = AwbcProgram {
+        runtime_types: runtime_types.clone(),
+        ..AwbcProgram::default()
+    };
+
+    let encoded = program
+        .encode_canonical()
+        .expect("encode Agent record types");
+    let decoded = AwbcProgram::decode_canonical(&encoded, AwbcDecodeBudget::default())
+        .expect("decode Agent record types");
+
+    assert_eq!(decoded.runtime_types, runtime_types);
 }
 
 #[test]
@@ -290,7 +484,7 @@ fn verifier_rejects_incorrect_agent_field_destination_type() {
     program.instructions = vec![AwbcInstruction::ProjectField {
         dst: AwbcRegisterId(1),
         target: AwbcRegisterId(0),
-        field: AwbcStringId(1),
+        field: AwbcFieldProjection::Named(AwbcStringId(1)),
     }];
     program.blocks[0].instructions = AwbcTableRange::new(0, 1);
     program.canonicalize_string_table();
@@ -303,6 +497,82 @@ fn verifier_rejects_incorrect_agent_field_destination_type() {
             if message == "Agent field projection destination"),
         "{error:?}"
     );
+}
+
+#[test]
+fn verifier_requires_option_destination_for_optional_agent_fields() {
+    let mut program = minimal_program();
+    program
+        .strings
+        .extend(["parent_id".to_owned(), "Some".to_owned(), "None".to_owned()]);
+    program.runtime_types = vec![
+        runtime_type(
+            1,
+            AwbcRuntimeTypeShape::Agent(AwbcAgentTypeShape::Leaf(
+                RuntimeAgentOperationalType::ObservedObject,
+            )),
+        ),
+        runtime_type(2, AwbcRuntimeTypeShape::String),
+        runtime_type(
+            3,
+            AwbcRuntimeTypeShape::Variant {
+                owner: AwbcVariantIdentity::Builtin(
+                    crate::pattern::RuntimeBuiltinVariantIdentity::Option,
+                ),
+                arguments: Vec::new(),
+                cases: vec![
+                    AwbcVariantCase {
+                        name: AwbcStringId(2),
+                        payload: Some(AwbcTypeId(1)),
+                    },
+                    AwbcVariantCase {
+                        name: AwbcStringId(3),
+                        payload: None,
+                    },
+                ],
+            },
+        ),
+        runtime_type(4, AwbcRuntimeTypeShape::Bool),
+    ];
+    program.signatures[0].params = vec![AwbcTypeId(0)];
+    program.frame_layouts[0] = AwbcFrameLayout {
+        slots: vec![
+            AwbcFrameSlot {
+                name: None,
+                ty: AwbcTypeId(0),
+                role: AwbcFrameSlotRole::Parameter,
+                scope_depth: 0,
+            },
+            AwbcFrameSlot {
+                name: None,
+                ty: AwbcTypeId(2),
+                role: AwbcFrameSlotRole::Temporary,
+                scope_depth: 0,
+            },
+        ],
+        max_scope_depth: 0,
+    };
+    program.instructions = vec![AwbcInstruction::ProjectField {
+        dst: AwbcRegisterId(1),
+        target: AwbcRegisterId(0),
+        field: AwbcFieldProjection::Named(AwbcStringId(1)),
+    }];
+    program.blocks[0].instructions = AwbcTableRange::new(0, 1);
+    program.canonicalize_string_table();
+
+    program
+        .verify(AwbcVerifyBudget::default(), AwbcVerifyContext::default())
+        .expect("optional parent identity projects into Option<String>");
+
+    program.frame_layouts[0].slots[1].ty = AwbcTypeId(3);
+    let error = program
+        .verify(AwbcVerifyBudget::default(), AwbcVerifyContext::default())
+        .expect_err("optional parent identity must not project into bool");
+    assert!(matches!(
+        error,
+        AwbcVerifyError::InvalidInvariant { ref message, .. }
+            if message == "Agent field projection destination"
+    ));
 }
 
 #[test]
@@ -679,7 +949,7 @@ fn expression_apply_functions(synthetic_len: u32) -> Vec<AwbcFunction> {
             frame_layout: AwbcFrameLayoutId(0),
             blocks: AwbcTableRange::new(0, 1),
             entry_block: AwbcBlockId(0),
-            flags: AwbcFunctionFlags(AwbcFunctionFlags::DETERMINISTIC),
+            flags: AwbcFunctionFlags::empty().with(AwbcFunctionFlag::Deterministic),
         },
         AwbcFunction {
             public_id: None,
@@ -688,9 +958,9 @@ fn expression_apply_functions(synthetic_len: u32) -> Vec<AwbcFunction> {
             frame_layout: AwbcFrameLayoutId(1),
             blocks: AwbcTableRange::new(1, synthetic_len),
             entry_block: AwbcBlockId(1),
-            flags: AwbcFunctionFlags(
-                AwbcFunctionFlags::DETERMINISTIC | AwbcFunctionFlags::MAY_SUSPEND,
-            ),
+            flags: AwbcFunctionFlags::empty()
+                .with(AwbcFunctionFlag::Deterministic)
+                .with(AwbcFunctionFlag::MaySuspend),
         },
     ]
 }
@@ -1420,7 +1690,9 @@ fn verifier_rejects_non_canonical_builtin_variant_schema() {
     program.runtime_types.push(runtime_type(
         56,
         AwbcRuntimeTypeShape::Variant {
-            owner: AwbcVariantIdentity::Option,
+            owner: AwbcVariantIdentity::Builtin(
+                crate::pattern::RuntimeBuiltinVariantIdentity::Option,
+            ),
             arguments: Vec::new(),
             cases: vec![
                 AwbcVariantCase {
@@ -1830,7 +2102,7 @@ fn closure_instructions_capture_and_apply_awbc_function_value() {
                 frame_layout: AwbcFrameLayoutId(0),
                 blocks: AwbcTableRange::new(0, 1),
                 entry_block: AwbcBlockId(0),
-                flags: AwbcFunctionFlags(AwbcFunctionFlags::DETERMINISTIC),
+                flags: AwbcFunctionFlags::empty().with(AwbcFunctionFlag::Deterministic),
             },
             AwbcFunction {
                 public_id: None,
@@ -1839,7 +2111,7 @@ fn closure_instructions_capture_and_apply_awbc_function_value() {
                 frame_layout: AwbcFrameLayoutId(1),
                 blocks: AwbcTableRange::new(1, 1),
                 entry_block: AwbcBlockId(1),
-                flags: AwbcFunctionFlags(AwbcFunctionFlags::DETERMINISTIC),
+                flags: AwbcFunctionFlags::empty().with(AwbcFunctionFlag::Deterministic),
             },
         ],
         blocks: vec![
@@ -2460,7 +2732,7 @@ fn nested_return_restores_caller_resume_and_destination() {
         frame_layout: AwbcFrameLayoutId(1),
         blocks: AwbcTableRange::new(2, 1),
         entry_block: AwbcBlockId(2),
-        flags: AwbcFunctionFlags(AwbcFunctionFlags::DETERMINISTIC),
+        flags: AwbcFunctionFlags::empty().with(AwbcFunctionFlag::Deterministic),
     });
     program.blocks[0].terminator = AwbcTerminator::CallFunction {
         function: AwbcFunctionId(1),

@@ -61,6 +61,17 @@ pub enum RuntimeOwnedSlotId {
 
 impl RuntimeOwnedSlotId {
     #[must_use]
+    pub fn environment_local(
+        execution: ExecutionInstanceId,
+        local: crate::runtime_id::RuntimeLocalDeclarationId,
+    ) -> Self {
+        Self::EnvironmentLocal {
+            execution,
+            local: RuntimeLocalSlotId::from_allocated(std::num::NonZeroU64::from(local.get())),
+        }
+    }
+
+    #[must_use]
     pub const fn canonical_tag(self) -> u8 {
         match self {
             Self::EnvironmentLocal { .. } => 0,

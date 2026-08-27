@@ -15,20 +15,23 @@ pub use seed::{
     RuntimeAwaitPendingObserverSeed, RuntimeAwaitTargetSeed, RuntimeBuiltinIteratorEvidenceSeed,
     RuntimeCallArgumentSeed, RuntimeCallableExecutableSeed, RuntimeCallableExecutableSeedCode,
     RuntimeChoiceOptionSeed, RuntimeDialogueContentPlanSeed, RuntimeDialogueContentPlanSeedId,
-    RuntimeDialogueMarkSeedId, RuntimeDialogueValueSiteSeed, RuntimeEffectFieldSeed,
-    RuntimeEvaluatedEffectSeed, RuntimeExprMatchArmSeed, RuntimeExprSeed, RuntimeExprSeedKind,
-    RuntimeFieldProjectionSeed, RuntimeFlowMatchArmSeed, RuntimeFlowOpSeed, RuntimeFlowSeed,
-    RuntimeFunctionSiteDeclarationSeed, RuntimeFunctionSiteSeedId, RuntimeHostArgumentSeed,
-    RuntimeHostCallTargetSeed, RuntimeHostTaskRequestTemplateSeed, RuntimeIteratorEvidenceSeed,
-    RuntimeIteratorWitnessEvidenceSeed, RuntimeIteratorWitnessExecutableSeed,
-    RuntimeLineEffectSeed, RuntimeLineTaskCancelRuleSeed, RuntimeLineTaskGroupSeed,
-    RuntimeLineTaskGroupSeedId, RuntimeLineTaskNodeSeed, RuntimeLineTaskTriggerSeed,
-    RuntimeLocalDeclarationSeed, RuntimeLocalSeedId, RuntimeNominalRecordFieldSeed,
-    RuntimePatternRestSeed, RuntimePatternSeed, RuntimePatternSeedKind,
-    RuntimePureHelperDeclarationSeed, RuntimePureHelperSeed, RuntimePureHelperSeedId,
-    RuntimePureProgramBindingSeed, RuntimeRecordFieldSeedId, RuntimeRecordPatternFieldSeed,
-    RuntimeStreamMatchArmSeed, RuntimeStreamOpSeed, RuntimeStreamPlanSeed,
-    RuntimeTraitMethodDeclarationSeed, RuntimeTraitMethodSeed, RuntimeTraitMethodSeedId,
+    RuntimeDialogueEffectSiteSeedId, RuntimeDialogueMarkSeedId, RuntimeDialogueResultTargetSeed,
+    RuntimeDialogueResultTargetSeedError, RuntimeDialogueValueSiteSeed, RuntimeDropPolicySeed,
+    RuntimeEffectFieldSeed, RuntimeEvaluatedEffectSeed, RuntimeExprMatchArmSeed, RuntimeExprSeed,
+    RuntimeExprSeedKind, RuntimeFieldProjectionSeed, RuntimeFlowMatchArmSeed, RuntimeFlowOpSeed,
+    RuntimeFlowSeed, RuntimeFunctionSiteDeclarationSeed, RuntimeFunctionSiteSeedId,
+    RuntimeHostArgumentSeed, RuntimeHostCallTargetSeed, RuntimeHostTaskRequestTemplateSeed,
+    RuntimeIteratorEvidenceSeed, RuntimeIteratorWitnessEvidenceSeed,
+    RuntimeIteratorWitnessExecutableSeed, RuntimeLineEffectSeed, RuntimeLineHandleSiteSeed,
+    RuntimeLineOperationSeed, RuntimeLineTaskCancelRuleSeed, RuntimeLineTaskGroupSeed,
+    RuntimeLineTaskGroupSeedId, RuntimeLineTaskNodeSeed, RuntimeLineTaskNodeSeedId,
+    RuntimeLineTaskTriggerSeed, RuntimeLocalDeclarationSeed, RuntimeLocalSeedId,
+    RuntimeNominalRecordFieldSeed, RuntimePatternRestSeed, RuntimePatternSeed,
+    RuntimePatternSeedKind, RuntimePureHelperDeclarationSeed, RuntimePureHelperSeed,
+    RuntimePureHelperSeedId, RuntimePureProgramBindingSeed, RuntimeRecordFieldSeedId,
+    RuntimeRecordPatternFieldSeed, RuntimeScheduledCaptureSeed, RuntimeStreamMatchArmSeed,
+    RuntimeStreamOpSeed, RuntimeStreamPlanSeed, RuntimeTraitMethodDeclarationSeed,
+    RuntimeTraitMethodSeed, RuntimeTraitMethodSeedId,
 };
 
 use crate::entry::{
@@ -37,6 +40,7 @@ use crate::entry::{
 };
 use crate::line_task::{
     LineCancelRule, LineTaskCleanup, LineTaskGroup, LineTaskNode, LineTaskTrigger,
+    MAX_LINE_HANDLE_SITES, RuntimeLineHandleSite,
 };
 use crate::pattern::{RuntimePatternBindingPathError, RuntimeSemanticTypeId};
 use crate::runtime_id::{
@@ -149,18 +153,43 @@ pub enum RuntimePlanBuildError {
     ForeignDialogueContentSeed,
     #[error("a construction-only dialogue mark handle belongs to another runtime-plan builder")]
     ForeignDialogueMarkSeed,
+    #[error(
+        "a construction-only dialogue effect-site handle belongs to another runtime-plan builder"
+    )]
+    ForeignDialogueEffectSiteSeed,
     #[error("a construction-only line-task group handle belongs to another runtime-plan builder")]
     ForeignLineTaskGroupSeed,
     #[error("line-task graph has no node at required dense ordinal {ordinal}")]
     InvalidLineTaskNodeOrdinal { ordinal: usize },
+    #[error("line-task child seed {actual} is not canonical preorder node {expected}")]
+    NonCanonicalLineTaskNodeSeed { expected: u32, actual: u32 },
+    #[error("line-task child seed {actual} cannot be represented as a runtime node")]
+    InvalidLineTaskNodeSeedId { actual: u32 },
+    #[error("line-task handle site {actual} is not canonical dense site {expected}")]
+    NonCanonicalLineHandleSite { expected: u32, actual: u32 },
+    #[error("line-task handle site source ordinals are not strictly increasing")]
+    NonCanonicalLineHandleSourceOrder,
+    #[error("line-task handle site count {actual} exceeds limit {limit}")]
+    LineHandleSiteLimit { actual: usize, limit: usize },
+    #[error("line-task handle site {site} does not project to an exact affine opaque handle")]
+    InvalidLineHandleType {
+        site: crate::runtime_id::RuntimeLineHandleSiteId,
+    },
+    #[error("line-task scheduled handle site {site} does not match child {child}")]
+    InvalidScheduledLineTaskSite {
+        site: crate::runtime_id::RuntimeLineHandleSiteId,
+        child: RuntimeLineTaskNodeId,
+    },
+    #[error(transparent)]
+    LineRuntime(#[from] crate::line_task::LineRuntimeError),
     #[error("line-task Detach requires a proved ownership-transfer target and is not admitted")]
     UnsupportedLineTaskDetach,
     #[error("line-task group is attached to a dialogue content plan more than once")]
     DuplicateDialogueLineTaskGroup,
     #[error(
-        "line-task mark belongs to dialogue content {actual} rather than attached content {expected}"
+        "line-task content event belongs to dialogue content {actual} rather than attached content {expected}"
     )]
-    LineTaskMarkContentMismatch {
+    LineTaskContentEventOwnerMismatch {
         expected: RuntimeDialogueContentPlanId,
         actual: RuntimeDialogueContentPlanId,
     },
@@ -419,7 +448,7 @@ pub struct RuntimePlanBuilder {
     pure_programs: Vec<RuntimePureProgramBinding>,
     trait_methods: Vec<ReservedTraitMethod>,
     line_task_groups: Vec<LineTaskGroup>,
-    line_task_group_mark_owners: Vec<BTreeSet<RuntimeDialogueContentPlanId>>,
+    line_task_group_event_owners: Vec<BTreeSet<RuntimeDialogueContentPlanId>>,
     line_task_group_attachments: Vec<bool>,
     stream_plans: Vec<StreamPlan>,
 }
@@ -445,7 +474,7 @@ impl RuntimePlanBuilder {
             pure_programs: Vec::new(),
             trait_methods: Vec::new(),
             line_task_groups: Vec::new(),
-            line_task_group_mark_owners: Vec::new(),
+            line_task_group_event_owners: Vec::new(),
             line_task_group_attachments: Vec::new(),
             stream_plans: Vec::new(),
         }
@@ -686,14 +715,17 @@ impl RuntimePlanBuilder {
                 Ok(RuntimeDialogueMark::new(id, label))
             })
             .collect::<Result<Vec<_>, RuntimePlanBuildError>>()?;
+        let effect_site_count = seed.effect_site_count;
         let content = self.dialogue_content.push(RuntimeDialogueContentPlan::new(
             seed.line,
             values.into_boxed_slice(),
             marks.into_boxed_slice(),
+            effect_site_count,
         ))?;
         Ok(RuntimeDialogueContentPlanSeedId::issued(
             &self.issuer,
             content,
+            effect_site_count,
         ))
     }
 
@@ -718,7 +750,7 @@ impl RuntimePlanBuilder {
         if line_task_seed_requests_detach(&seed) {
             return Err(RuntimePlanBuildError::UnsupportedLineTaskDetach);
         }
-        let mark_owners = self.line_task_mark_owners(&seed)?;
+        let event_owners = self.line_task_event_owners(&seed)?;
         let captures = seed
             .free_locals()
             .into_vec()
@@ -731,6 +763,15 @@ impl RuntimePlanBuilder {
             })
             .collect::<Result<Vec<_>, _>>()?;
         let capture_scope = captures.iter().copied().collect::<BTreeSet<_>>();
+        let activation_ops = self.lower_flow_ops(seed.activation_ops)?;
+        let mut activation_scope = capture_scope.clone();
+        self.validate_flow_operation_locals(&activation_ops, &mut activation_scope)?;
+        let result_type = self.types.id_for_semantic(seed.result_type).ok_or(
+            RuntimePlanBuildError::UnknownSeedType {
+                context: "line-task result",
+                semantic_identity: seed.result_type,
+            },
+        )?;
         let mut nodes = Vec::new();
         let root = self.lower_line_task_node_seed(seed.root, &mut nodes)?;
         let nodes = nodes
@@ -740,6 +781,7 @@ impl RuntimePlanBuilder {
                 node.ok_or(RuntimePlanBuildError::InvalidLineTaskNodeOrdinal { ordinal })
             })
             .collect::<Result<Vec<_>, _>>()?;
+        let handle_sites = self.lower_line_handle_sites(seed.handle_sites, &nodes)?;
         let cancel_rules = seed
             .cancel_rules
             .into_vec()
@@ -773,12 +815,15 @@ impl RuntimePlanBuilder {
         )?;
         self.line_task_groups.push(LineTaskGroup::new(
             captures.into_boxed_slice(),
+            activation_ops.into_boxed_slice(),
+            result_type,
+            handle_sites,
             root,
             nodes.into_boxed_slice(),
             cancel_rules.into_boxed_slice(),
             cleanup,
         ));
-        self.line_task_group_mark_owners.push(mark_owners);
+        self.line_task_group_event_owners.push(event_owners);
         self.line_task_group_attachments.push(false);
         Ok(RuntimeLineTaskGroupSeedId::issued(&self.issuer, group))
     }
@@ -794,6 +839,10 @@ impl RuntimePlanBuilder {
                 table: RuntimePlanTable::LineTaskGroups,
             },
         )?;
+        let expected_seed =
+            u32::try_from(ordinal).map_err(|_| RuntimePlanBuildError::TooManyRows {
+                table: RuntimePlanTable::LineTaskGroups,
+            })?;
         nodes.push(None);
         let node = match seed {
             RuntimeLineTaskNodeSeed::Sequence(children) => LineTaskNode::Sequence(
@@ -819,24 +868,25 @@ impl RuntimePlanBuilder {
                     .into_boxed_slice(),
             },
             RuntimeLineTaskNodeSeed::Child {
-                id,
-                key,
-                name,
+                node,
                 trigger,
-                priority,
                 join_policy,
                 cancel_policy,
                 scope,
-            } => LineTaskNode::Child {
-                id,
-                key,
-                name,
-                trigger: self.lower_line_task_trigger_seed(trigger)?,
-                priority,
-                join_policy,
-                cancel_policy,
-                scope: self.lower_line_task_node_seed(*scope, nodes)?,
-            },
+            } => {
+                if node.get() != expected_seed {
+                    return Err(RuntimePlanBuildError::NonCanonicalLineTaskNodeSeed {
+                        expected: expected_seed,
+                        actual: node.get(),
+                    });
+                }
+                LineTaskNode::Child {
+                    trigger: self.lower_line_task_trigger_seed(trigger)?,
+                    join_policy,
+                    cancel_policy,
+                    scope: self.lower_line_task_node_seed(*scope, nodes)?,
+                }
+            }
             RuntimeLineTaskNodeSeed::Action(actions) => {
                 LineTaskNode::Action(self.lower_flow_ops(actions)?.into_boxed_slice())
             }
@@ -851,7 +901,20 @@ impl RuntimePlanBuilder {
     ) -> Result<LineTaskTrigger, RuntimePlanBuildError> {
         match seed {
             RuntimeLineTaskTriggerSeed::Immediate => Ok(LineTaskTrigger::Immediate),
-            RuntimeLineTaskTriggerSeed::Delay(delay) => Ok(LineTaskTrigger::Delay(delay)),
+            RuntimeLineTaskTriggerSeed::Scheduled(site) => Ok(LineTaskTrigger::Scheduled(site)),
+            RuntimeLineTaskTriggerSeed::ContentEffect(effect) => {
+                let (content, site) = effect
+                    .resolve(&self.issuer)
+                    .ok_or(RuntimePlanBuildError::ForeignDialogueEffectSiteSeed)?;
+                if self
+                    .dialogue_content
+                    .get(content)
+                    .is_none_or(|content| !content.effect_site_count().contains(site))
+                {
+                    return Err(RuntimePlanBuildError::ForeignDialogueEffectSiteSeed);
+                }
+                Ok(LineTaskTrigger::ContentEffect(site))
+            }
             RuntimeLineTaskTriggerSeed::Mark(mark) => {
                 let (content, mark) = mark
                     .resolve(&self.issuer)
@@ -867,6 +930,124 @@ impl RuntimePlanBuilder {
                 Ok(LineTaskTrigger::Mark(mark))
             }
         }
+    }
+
+    fn lower_line_handle_sites(
+        &self,
+        seeds: Box<[RuntimeLineHandleSiteSeed]>,
+        nodes: &[LineTaskNode],
+    ) -> Result<Box<[RuntimeLineHandleSite]>, RuntimePlanBuildError> {
+        if seeds.len() > MAX_LINE_HANDLE_SITES {
+            return Err(RuntimePlanBuildError::LineHandleSiteLimit {
+                actual: seeds.len(),
+                limit: MAX_LINE_HANDLE_SITES,
+            });
+        }
+        let mut previous_source = None;
+        let mut sites = Vec::with_capacity(seeds.len());
+        for (expected, seed) in seeds.into_vec().into_iter().enumerate() {
+            let expected = u32::try_from(expected).map_err(|_| {
+                RuntimePlanBuildError::LineHandleSiteLimit {
+                    actual: sites.len().saturating_add(1),
+                    limit: MAX_LINE_HANDLE_SITES,
+                }
+            })?;
+            if seed.id.get() != expected {
+                return Err(RuntimePlanBuildError::NonCanonicalLineHandleSite {
+                    expected,
+                    actual: seed.id.get(),
+                });
+            }
+            if previous_source.is_some_and(|previous| previous >= seed.source_ordinal) {
+                return Err(RuntimePlanBuildError::NonCanonicalLineHandleSourceOrder);
+            }
+            previous_source = Some(seed.source_ordinal);
+            let result_type = self.types.id_for_semantic(seed.result_type).ok_or(
+                RuntimePlanBuildError::UnknownSeedType {
+                    context: "line handle result",
+                    semantic_identity: seed.result_type,
+                },
+            )?;
+            let declaration = self
+                .types
+                .get(result_type)
+                .ok_or(RuntimePlanBuildError::InvalidLineHandleType { site: seed.id })?;
+            let RuntimePlanTypeProjection::Opaque {
+                producer,
+                admission: crate::pattern::RuntimeOpaqueTypeAdmission::ExactIdentity,
+                value_class,
+                persistence,
+                ..
+            } = declaration.projection()
+            else {
+                return Err(RuntimePlanBuildError::InvalidLineHandleType { site: seed.id });
+            };
+            let owner = crate::pattern::RuntimeOpaqueTypeOwner::exact_with(
+                producer.clone(),
+                declaration.semantic_identity(),
+                *value_class,
+                *persistence,
+            );
+            let scheduled_child = seed
+                .scheduled_child
+                .map(|child| {
+                    child
+                        .runtime_id()
+                        .ok_or(RuntimePlanBuildError::InvalidLineTaskNodeSeedId {
+                            actual: child.get(),
+                        })
+                })
+                .transpose()?;
+            let site = RuntimeLineHandleSite::new(
+                seed.id,
+                seed.source_ordinal,
+                seed.kind,
+                result_type,
+                seed.character,
+                scheduled_child,
+                owner,
+            )?;
+            if let Some(child) = site.scheduled_child()
+                && !matches!(
+                    nodes.get(child.index()),
+                    Some(LineTaskNode::Child {
+                        trigger: LineTaskTrigger::Scheduled(trigger),
+                        join_policy: crate::line_task::ChildJoinPolicy::Join,
+                        cancel_policy: crate::line_task::ChildCancelPolicy::CancelAndJoin,
+                        scope,
+                    }) if *trigger == site.id()
+                        && matches!(nodes.get(scope.index()), Some(LineTaskNode::Action(_)))
+                )
+            {
+                return Err(RuntimePlanBuildError::InvalidScheduledLineTaskSite {
+                    site: site.id(),
+                    child,
+                });
+            }
+            sites.push(site);
+        }
+        for (index, node) in nodes.iter().enumerate() {
+            let LineTaskNode::Child {
+                trigger: LineTaskTrigger::Scheduled(site),
+                ..
+            } = node
+            else {
+                continue;
+            };
+            let child = RuntimeLineTaskNodeId::from_zero_based(index)
+                .ok_or(RuntimePlanBuildError::InvalidLineTaskNodeOrdinal { ordinal: index })?;
+            if sites
+                .get(site.index())
+                .and_then(RuntimeLineHandleSite::scheduled_child)
+                != Some(child)
+            {
+                return Err(RuntimePlanBuildError::InvalidScheduledLineTaskSite {
+                    site: *site,
+                    child,
+                });
+            }
+        }
+        Ok(sites.into_boxed_slice())
     }
 
     fn lower_line_task_cancel_rule_seed(
@@ -929,11 +1110,11 @@ impl RuntimePlanBuilder {
             return Err(RuntimePlanBuildError::DuplicateDialogueLineTaskGroup);
         }
         let owners = self
-            .line_task_group_mark_owners
+            .line_task_group_event_owners
             .get(group.index())
             .ok_or(RuntimePlanBuildError::ForeignLineTaskGroupSeed)?;
         if let Some(actual) = owners.iter().copied().find(|owner| *owner != content) {
-            return Err(RuntimePlanBuildError::LineTaskMarkContentMismatch {
+            return Err(RuntimePlanBuildError::LineTaskContentEventOwnerMismatch {
                 expected: content,
                 actual,
             });
@@ -949,12 +1130,12 @@ impl RuntimePlanBuilder {
         Ok(())
     }
 
-    fn line_task_mark_owners(
+    fn line_task_event_owners(
         &self,
         seed: &RuntimeLineTaskGroupSeed,
     ) -> Result<BTreeSet<RuntimeDialogueContentPlanId>, RuntimePlanBuildError> {
         let mut owners = BTreeSet::new();
-        self.collect_line_task_node_mark_owners(&seed.root, &mut owners)?;
+        self.collect_line_task_node_event_owners(&seed.root, &mut owners)?;
         for rule in &seed.cancel_rules {
             let (content, _) = rule
                 .trigger
@@ -965,7 +1146,7 @@ impl RuntimePlanBuilder {
         Ok(owners)
     }
 
-    fn collect_line_task_node_mark_owners(
+    fn collect_line_task_node_event_owners(
         &self,
         node: &RuntimeLineTaskNodeSeed,
         owners: &mut BTreeSet<RuntimeDialogueContentPlanId>,
@@ -975,17 +1156,27 @@ impl RuntimePlanBuilder {
             | RuntimeLineTaskNodeSeed::Start(children)
             | RuntimeLineTaskNodeSeed::Parallel { children, .. } => {
                 for child in children {
-                    self.collect_line_task_node_mark_owners(child, owners)?;
+                    self.collect_line_task_node_event_owners(child, owners)?;
                 }
             }
             RuntimeLineTaskNodeSeed::Child { trigger, scope, .. } => {
-                if let RuntimeLineTaskTriggerSeed::Mark(mark) = trigger {
-                    let (content, _) = mark
-                        .resolve(&self.issuer)
-                        .ok_or(RuntimePlanBuildError::ForeignDialogueMarkSeed)?;
-                    owners.insert(content);
+                match trigger {
+                    RuntimeLineTaskTriggerSeed::Mark(mark) => {
+                        let (content, _) = mark
+                            .resolve(&self.issuer)
+                            .ok_or(RuntimePlanBuildError::ForeignDialogueMarkSeed)?;
+                        owners.insert(content);
+                    }
+                    RuntimeLineTaskTriggerSeed::ContentEffect(effect) => {
+                        let (content, _) = effect
+                            .resolve(&self.issuer)
+                            .ok_or(RuntimePlanBuildError::ForeignDialogueEffectSiteSeed)?;
+                        owners.insert(content);
+                    }
+                    RuntimeLineTaskTriggerSeed::Immediate
+                    | RuntimeLineTaskTriggerSeed::Scheduled(_) => {}
                 }
-                self.collect_line_task_node_mark_owners(scope, owners)?;
+                self.collect_line_task_node_event_owners(scope, owners)?;
             }
             RuntimeLineTaskNodeSeed::Action(_) => {}
         }
@@ -1415,6 +1606,7 @@ impl RuntimePlanBuilder {
             &type_table,
         )?;
         let plan = RuntimePlan {
+            artifact: None,
             type_table,
             local_declarations,
             nominal_record_domains: self.nominal_record_domains.finish(),
@@ -1821,6 +2013,26 @@ mod tests {
 
     fn nominal() -> RuntimeNominalTypeId {
         RuntimeNominalTypeId::try_new("game.State").expect("nominal identity")
+    }
+
+    #[test]
+    fn dialogue_result_target_seed_keeps_target_and_pattern_types_correlated() {
+        let target = identity(1);
+        let pattern_type = identity(2);
+        assert_eq!(
+            RuntimeDialogueResultTargetSeed::try_new(
+                target,
+                RuntimePatternSeed::new(pattern_type, RuntimePatternSeedKind::Discard),
+            ),
+            Err(RuntimeDialogueResultTargetSeedError::PatternTypeMismatch {
+                target,
+                pattern: pattern_type,
+            })
+        );
+
+        let discard = RuntimeDialogueResultTargetSeed::discard(target);
+        assert_eq!(discard.ty(), target);
+        assert_eq!(discard.pattern().ty(), target);
     }
 
     fn type_seeds() -> Vec<RuntimePlanTypeSeed> {

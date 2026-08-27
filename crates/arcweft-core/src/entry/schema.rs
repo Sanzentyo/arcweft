@@ -1,8 +1,8 @@
 //! Persistent runtime schemas, canonical value bytes, and validation.
 
 use super::identity::{RuntimeNominalTypeId, RuntimeValueDigest, TypeLayoutHash};
-use crate::pattern::RuntimeVariantIdentity;
-use crate::value::{RuntimeInt, RuntimePayload, RuntimeUInt, RuntimeValue};
+use crate::pattern::{RuntimeBuiltinVariantCaseIdentity, RuntimeVariantIdentity};
+use crate::value::{RuntimeEntityReference, RuntimeInt, RuntimePayload, RuntimeUInt, RuntimeValue};
 use serde::{Deserialize, Serialize};
 use std::collections::{BTreeMap, BTreeSet};
 use thiserror::Error;
@@ -430,6 +430,28 @@ impl<S: CanonicalRuntimeValueSink + ?Sized> CanonicalRuntimeValueVisitor<'_, S> 
         self.extend(value.as_bytes())
     }
 
+    fn entity_reference(
+        &mut self,
+        value: &RuntimeEntityReference,
+    ) -> Result<(), RuntimeSchemaError> {
+        match value {
+            RuntimeEntityReference::Project { family, public_id } => {
+                self.u8(0)?;
+                self.u8(entity_family_tag(*family))?;
+                self.string(public_id.as_str())
+            }
+            RuntimeEntityReference::DialogueLine(line) => {
+                self.u8(1)?;
+                self.string(&line.canonical_label())
+            }
+            RuntimeEntityReference::CharacterLook { character, look } => {
+                self.u8(2)?;
+                self.string(character.as_str())?;
+                self.string(look.as_str())
+            }
+        }
+    }
+
     fn option<T: ?Sized>(
         &mut self,
         value: Option<&T>,
@@ -524,7 +546,7 @@ impl<S: CanonicalRuntimeValueSink + ?Sized> CanonicalRuntimeValueVisitor<'_, S> 
             }
             RuntimeValue::EntityRef(value) => {
                 self.u8(10)?;
-                self.string(value)
+                self.entity_reference(value)
             }
             RuntimeValue::Tuple(values) => {
                 self.u8(11)?;
@@ -697,6 +719,10 @@ impl<S: CanonicalRuntimeValueSink + ?Sized> CanonicalRuntimeValueVisitor<'_, S> 
                 self.u32(*x)?;
                 self.u32(*y)
             }
+            crate::value::RuntimeAgentValue::BinaryData(data) => {
+                self.u8(8)?;
+                self.string(data)
+            }
         }
     }
 
@@ -789,8 +815,10 @@ impl<S: CanonicalRuntimeValueSink + ?Sized> CanonicalRuntimeValueVisitor<'_, S> 
                 self.string(nominal.as_str())?;
                 self.extend(semantic_identity.as_bytes())
             }
-            RuntimeVariantIdentity::Option => self.u8(1),
-            RuntimeVariantIdentity::Result => self.u8(2),
+            RuntimeVariantIdentity::Builtin(owner) => {
+                self.u8(1)?;
+                self.u8(owner.semantic_tag())
+            }
         }
     }
 }
@@ -1049,23 +1077,27 @@ impl<'a> SchemaValidationState<'a> {
                 let values = sequence.clone().into_values();
                 self.validate_sequence(&RuntimeTypeSchema::U8, &values, path, depth)
             }
-            (
-                RuntimeTypeSchema::Option(inner),
-                RuntimeValue::Variant {
-                    owner: RuntimeVariantIdentity::Option,
-                    ordinal,
-                    name,
-                    payload,
-                },
-            ) => match (*ordinal, name.as_str(), payload.as_deref()) {
-                (1, "None", None) => Ok(()),
-                (0, "Some", Some(payload)) => {
-                    self.validate(inner, payload, &format!("{path}.Some"), depth + 1)
+            (RuntimeTypeSchema::Option(inner), value @ RuntimeValue::Variant { .. }) => {
+                match value.builtin_variant_case() {
+                    Some((RuntimeBuiltinVariantCaseIdentity::OptionNone, None)) => Ok(()),
+                    Some((RuntimeBuiltinVariantCaseIdentity::OptionSome, Some(payload))) => {
+                        let case = RuntimeBuiltinVariantCaseIdentity::OptionSome;
+                        let (_, schema) = case
+                            .owner()
+                            .resolve_case(case)
+                            .expect("Option::Some belongs to the Option schema");
+                        self.validate(
+                            inner,
+                            payload,
+                            &format!("{path}.{}", schema.name()),
+                            depth + 1,
+                        )
+                    }
+                    _ => Err(RuntimeSchemaError::VariantPayload {
+                        path: path.to_owned(),
+                    }),
                 }
-                _ => Err(RuntimeSchemaError::VariantPayload {
-                    path: path.to_owned(),
-                }),
-            },
+            }
             (RuntimeTypeSchema::Seq(inner), RuntimeValue::Seq(sequence)) => {
                 let values = sequence.clone().into_values();
                 self.validate_sequence(inner, &values, path, depth)
@@ -1359,6 +1391,22 @@ fn type_error(path: &str, expected: &'static str, value: &RuntimeValue) -> Runti
         path: path.to_owned(),
         expected,
         actual: runtime_value_type(value),
+    }
+}
+
+const fn entity_family_tag(family: arcweft_id::DeclarationIdentityFamily) -> u8 {
+    match family {
+        arcweft_id::DeclarationIdentityFamily::Asset => 0,
+        arcweft_id::DeclarationIdentityFamily::Character => 1,
+        arcweft_id::DeclarationIdentityFamily::View => 2,
+        arcweft_id::DeclarationIdentityFamily::Action => 3,
+        arcweft_id::DeclarationIdentityFamily::Activity => 4,
+        arcweft_id::DeclarationIdentityFamily::Signal => 5,
+        arcweft_id::DeclarationIdentityFamily::Metric => 6,
+        arcweft_id::DeclarationIdentityFamily::Layer => 7,
+        arcweft_id::DeclarationIdentityFamily::Flow => 8,
+        arcweft_id::DeclarationIdentityFamily::Proof => 9,
+        arcweft_id::DeclarationIdentityFamily::Style => 10,
     }
 }
 

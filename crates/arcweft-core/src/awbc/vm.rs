@@ -12,12 +12,12 @@ use super::fiber::{
 };
 use super::schema::{
     AwbcBinaryOp, AwbcBlockId, AwbcCodeLocation, AwbcConstant, AwbcConstantId, AwbcContentUnitId,
-    AwbcEffectPlanId, AwbcFunctionId, AwbcInstruction, AwbcInstructionId, AwbcIntrinsicId,
-    AwbcOpcode, AwbcPattern, AwbcPatternId, AwbcPatternRest, AwbcProgram, AwbcPureHelperId,
-    AwbcRegisterId, AwbcResumePointId, AwbcRuntimeType, AwbcRuntimeTypeShape, AwbcSignedIntKind,
-    AwbcSourceMapId, AwbcStreamPlanId, AwbcStringId, AwbcTaskPlanId, AwbcTerminator,
-    AwbcTraitMethodId, AwbcTraitReceiverMode, AwbcTrapCode, AwbcTypeId, AwbcUnaryOp,
-    AwbcUnsignedIntKind,
+    AwbcDropPolicy, AwbcEffectPlanId, AwbcFieldProjection, AwbcFunctionId, AwbcInstruction,
+    AwbcInstructionId, AwbcIntrinsicId, AwbcLineOperationId, AwbcOpcode, AwbcPattern,
+    AwbcPatternId, AwbcPatternRest, AwbcProgram, AwbcPureHelperId, AwbcRegisterId,
+    AwbcResumePointId, AwbcRuntimeType, AwbcRuntimeTypeShape, AwbcSignedIntKind, AwbcSourceMapId,
+    AwbcStreamPlanId, AwbcStringId, AwbcTaskPlanId, AwbcTerminator, AwbcTraitMethodId,
+    AwbcTraitReceiverMode, AwbcTrapCode, AwbcTypeId, AwbcUnaryOp, AwbcUnsignedIntKind,
 };
 use crate::task::NeedId;
 use crate::time::LogicalDuration;
@@ -78,6 +78,32 @@ pub enum VmObservation {
         value: RuntimeValue,
     },
     StreamClose(AwbcStreamPlanId),
+    /// A typed line operation awaiting an atomic Product-runtime transaction.
+    ///
+    /// The VM deliberately retains `cursor` and does not advance it. The
+    /// Product owner must first issue the runtime resource and write `dst`,
+    /// then advance this exact cursor as one transaction.
+    LineOperation {
+        cursor: FiberCursor,
+        dst: AwbcRegisterId,
+        operation: AwbcLineOperationId,
+        args: Vec<(AwbcRegisterId, RuntimeValue)>,
+    },
+    /// A typed dialogue result awaiting the activation owner's commit.
+    ///
+    /// As with [`Self::LineOperation`], the instruction remains current until
+    /// the Product owner commits the result and advances the exact cursor.
+    DialogueResult {
+        cursor: FiberCursor,
+        source_register: AwbcRegisterId,
+        source: RuntimeValue,
+    },
+    /// Internal affine graph transaction evidence. This never becomes a
+    /// host-facing effect; the owning executor reconciles the before/after
+    /// register graph with its dialogue handle registry exactly once.
+    Drop {
+        policy: crate::effect::RuntimeDropPolicy,
+    },
     Trap(FiberTrap),
 }
 
@@ -123,6 +149,12 @@ pub enum VmError {
 enum InstructionControl {
     Continue,
     Transferred,
+    /// Commits the instruction-local fiber mutation, advances its exact
+    /// cursor once, and returns the observation batch to the owning runtime
+    /// before any later instruction can execute.
+    YieldAdvanced,
+    /// Leaves the cursor parked for an external two-phase owner to commit.
+    Yield,
 }
 
 pub trait VmHost {
@@ -267,13 +299,50 @@ pub fn step_with_host(
                     return Err(error);
                 }
             };
-            if control == InstructionControl::Continue {
-                if fiber.cursor != cursor {
-                    return Err(VmError::Runtime(
-                        "instruction changed control flow without reporting a transfer".to_owned(),
-                    ));
+            match control {
+                InstructionControl::Continue => {
+                    if fiber.cursor != cursor {
+                        return Err(VmError::Runtime(
+                            "instruction changed control flow without reporting a transfer"
+                                .to_owned(),
+                        ));
+                    }
+                    fiber.cursor.instruction_offset =
+                        cursor.instruction_offset.checked_add(1).ok_or_else(|| {
+                            VmError::Runtime("AWBC instruction cursor overflowed".to_owned())
+                        })?;
                 }
-                fiber.cursor.instruction_offset = cursor.instruction_offset.saturating_add(1);
+                InstructionControl::Transferred => {}
+                InstructionControl::YieldAdvanced => {
+                    if fiber.cursor != cursor {
+                        return Err(VmError::Runtime(
+                            "yielding instruction changed its execution cursor".to_owned(),
+                        ));
+                    }
+                    fiber.cursor.instruction_offset =
+                        cursor.instruction_offset.checked_add(1).ok_or_else(|| {
+                            VmError::Runtime("AWBC instruction cursor overflowed".to_owned())
+                        })?;
+                    executed = executed.saturating_add(1);
+                    return Ok(VmStepOutput {
+                        executed,
+                        observations,
+                        exit: VmExit::Running,
+                    });
+                }
+                InstructionControl::Yield => {
+                    if fiber.cursor != cursor {
+                        return Err(VmError::Runtime(
+                            "yielding instruction changed its execution cursor".to_owned(),
+                        ));
+                    }
+                    executed = executed.saturating_add(1);
+                    return Ok(VmStepOutput {
+                        executed,
+                        observations,
+                        exit: VmExit::Running,
+                    });
+                }
             }
             executed = executed.saturating_add(1);
             continue;
@@ -337,11 +406,57 @@ fn execute_instruction(
             fiber.active_frame_mut()?.set_register(*dst, value)?;
         }
         AwbcInstruction::Move { dst, src } => {
-            let value = register(fiber, *src)?.clone();
+            if dst != src {
+                let frame = fiber.active_frame_mut()?;
+                let mut registers = frame.registers.clone();
+                let value = registers
+                    .get_mut(src.index())
+                    .and_then(Option::take)
+                    .ok_or(FiberStateError::RegisterOutOfBounds {
+                        register: src.0,
+                        layout: frame.layout.0,
+                    })?;
+                let destination =
+                    registers
+                        .get_mut(dst.index())
+                        .ok_or(FiberStateError::RegisterOutOfBounds {
+                            register: dst.0,
+                            layout: frame.layout.0,
+                        })?;
+                *destination = Some(value);
+                frame.registers = registers;
+            } else {
+                register(fiber, *src)?;
+            }
+        }
+        AwbcInstruction::CopyValue { dst, src } => {
+            let value = register(fiber, *src)?;
+            if !value.ownership().permits_copy() {
+                return Err(VmError::Runtime(
+                    "CopyValue rejected an affine runtime value graph".to_owned(),
+                ));
+            }
+            let value = value.clone();
             fiber.active_frame_mut()?.set_register(*dst, value)?;
         }
-        AwbcInstruction::Clear { register } | AwbcInstruction::Drop { register } => {
-            fiber.active_frame_mut()?.clear_register(*register)?;
+        AwbcInstruction::Clear {
+            register: register_id,
+        } => {
+            if !register(fiber, *register_id)?.ownership().permits_copy() {
+                return Err(VmError::Runtime(
+                    "Clear rejected an affine runtime value graph".to_owned(),
+                ));
+            }
+            fiber.active_frame_mut()?.clear_register(*register_id)?;
+        }
+        AwbcInstruction::Drop {
+            register: register_id,
+            policy,
+        } => {
+            let policy = materialize_drop_policy(fiber, *policy)?;
+            fiber.active_frame_mut()?.clear_register(*register_id)?;
+            observations.push(VmObservation::Drop { policy });
+            return Ok(InstructionControl::YieldAdvanced);
         }
         AwbcInstruction::EnterScope { scope } => {
             let depth = u32::try_from(fiber.active_frame()?.scopes.len())
@@ -629,68 +744,70 @@ fn execute_instruction(
             fiber.active_frame_mut()?.set_register(*dst, value)?;
         }
         AwbcInstruction::ProjectField { dst, target, field } => {
-            let field = string(program, *field)?;
-            let value = match register(fiber, *target)? {
-                RuntimeValue::Record(items) => items
-                    .iter()
-                    .find(|item| item.name() == field)
-                    .map(|field| field.value().clone()),
-                RuntimeValue::Agent(value) => value.project_field_label(field),
-                RuntimeValue::Progress(progress) => match field {
-                    "ratio" => Some(RuntimeValue::F32(progress.ratio())),
-                    "label" => Some(
-                        progress
-                            .label()
-                            .map_or_else(RuntimeValue::option_none, |label| {
-                                RuntimeValue::option_some(RuntimeValue::String(label.to_owned()))
-                            }),
-                    ),
-                    _ => None,
-                },
-                _ => None,
+            let value = match field {
+                AwbcFieldProjection::Named(field) => {
+                    let field = string(program, *field)?;
+                    match register(fiber, *target)? {
+                        RuntimeValue::Record(items) => items
+                            .iter()
+                            .find(|item| item.name() == field)
+                            .map(|field| field.value().clone()),
+                        RuntimeValue::Agent(value) => value.project_field_label(field),
+                        RuntimeValue::Progress(progress) => match field {
+                            "ratio" => Some(RuntimeValue::F32(progress.ratio())),
+                            "label" => Some(progress.label().map_or_else(
+                                RuntimeValue::option_none,
+                                |label| {
+                                    RuntimeValue::option_some(RuntimeValue::String(
+                                        label.to_owned(),
+                                    ))
+                                },
+                            )),
+                            _ => None,
+                        },
+                        _ => None,
+                    }
+                    .ok_or_else(|| VmError::Runtime(format!("missing field `{field}`")))?
+                }
+                AwbcFieldProjection::OpaqueRecord {
+                    owner,
+                    field,
+                    field_type,
+                } => {
+                    let owner = program
+                        .opaque_owner(*owner)
+                        .map_err(|error| VmError::Runtime(error.to_string()))?
+                        .ok_or_else(|| {
+                            VmError::Runtime(
+                                "opaque-record projection requires an opaque owner type".to_owned(),
+                            )
+                        })?;
+                    let RuntimeValue::Opaque(value) = register(fiber, *target)? else {
+                        return Err(VmError::Runtime(
+                            "opaque-record projection expected an opaque value".to_owned(),
+                        ));
+                    };
+                    if !owner.accepts_opaque_value(value) {
+                        return Err(VmError::Runtime(
+                            "opaque-record projection rejected the target owner".to_owned(),
+                        ));
+                    }
+                    let RuntimeValue::Tuple(fields) = value.payload() else {
+                        return Err(VmError::Runtime(
+                            "opaque-record projection expected a tuple payload".to_owned(),
+                        ));
+                    };
+                    let value = fields.get(*field as usize).cloned().ok_or_else(|| {
+                        VmError::Runtime("opaque-record projection out of bounds".to_owned())
+                    })?;
+                    if !runtime_value_matches_type(program, &value, *field_type, 0) {
+                        return Err(VmError::Runtime(
+                            "opaque-record projection rejected the field value type".to_owned(),
+                        ));
+                    }
+                    value
+                }
             };
-            let value =
-                value.ok_or_else(|| VmError::Runtime(format!("missing field `{field}`")))?;
-            fiber.active_frame_mut()?.set_register(*dst, value)?;
-        }
-        AwbcInstruction::ProjectOpaqueRecordField {
-            dst,
-            target,
-            owner,
-            field,
-            field_type,
-        } => {
-            let owner = program
-                .opaque_owner(*owner)
-                .map_err(|error| VmError::Runtime(error.to_string()))?
-                .ok_or_else(|| {
-                    VmError::Runtime(
-                        "opaque-record projection requires an opaque owner type".to_owned(),
-                    )
-                })?;
-            let RuntimeValue::Opaque(value) = register(fiber, *target)? else {
-                return Err(VmError::Runtime(
-                    "opaque-record projection expected an opaque value".to_owned(),
-                ));
-            };
-            if !owner.accepts_opaque_value(value) {
-                return Err(VmError::Runtime(
-                    "opaque-record projection rejected the target owner".to_owned(),
-                ));
-            }
-            let RuntimeValue::Tuple(fields) = value.payload() else {
-                return Err(VmError::Runtime(
-                    "opaque-record projection expected a tuple payload".to_owned(),
-                ));
-            };
-            let value = fields.get(*field as usize).cloned().ok_or_else(|| {
-                VmError::Runtime("opaque-record projection out of bounds".to_owned())
-            })?;
-            if !runtime_value_matches_type(program, &value, *field_type, 0) {
-                return Err(VmError::Runtime(
-                    "opaque-record projection rejected the field value type".to_owned(),
-                ));
-            }
             fiber.active_frame_mut()?.set_register(*dst, value)?;
         }
         AwbcInstruction::Unary { dst, op, src } => {
@@ -896,6 +1013,31 @@ fn execute_instruction(
                 state.closed = true;
                 observations.push(VmObservation::StreamClose(*stream));
             }
+        }
+        AwbcInstruction::ExecuteLineOperation {
+            dst,
+            operation,
+            args,
+        } => {
+            observations.push(VmObservation::LineOperation {
+                cursor: fiber.cursor,
+                dst: *dst,
+                operation: *operation,
+                args: args
+                    .iter()
+                    .copied()
+                    .map(|slot| Ok((slot, register(fiber, slot)?.clone())))
+                    .collect::<Result<_, VmError>>()?,
+            });
+            return Ok(InstructionControl::Yield);
+        }
+        AwbcInstruction::CommitDialogueResult { source } => {
+            observations.push(VmObservation::DialogueResult {
+                cursor: fiber.cursor,
+                source_register: *source,
+                source: register(fiber, *source)?.clone(),
+            });
+            return Ok(InstructionControl::Yield);
         }
     }
     Ok(InstructionControl::Continue)
@@ -1186,8 +1328,12 @@ fn execute_terminator(
         AwbcTerminator::GotoDynamic { target, args } => {
             let target_value = register(fiber, *target)?.clone();
             let target = match &target_value {
-                RuntimeValue::String(target) | RuntimeValue::EntityRef(target) => program
+                RuntimeValue::String(target) => program
                     .resolve_flow_target_value(target)
+                    .map(|(_, function)| function)
+                    .map_err(|error| VmError::Runtime(error.to_string()))?,
+                RuntimeValue::EntityRef(target) => program
+                    .resolve_flow_target_value(&target.runtime_label())
                     .map(|(_, function)| function)
                     .map_err(|error| VmError::Runtime(error.to_string()))?,
                 _ => {
@@ -1207,6 +1353,7 @@ fn execute_terminator(
             content,
             values,
             line_task_captures,
+            result,
             resume,
         } => {
             let values = values
@@ -1231,6 +1378,7 @@ fn execute_terminator(
                     content: *content,
                     values,
                     line_task_captures,
+                    result: result.clone(),
                 },
             )
         }
@@ -1360,6 +1508,29 @@ fn register(fiber: &FiberState, register: AwbcRegisterId) -> Result<&RuntimeValu
         .map_err(VmError::from)
 }
 
+fn materialize_drop_policy(
+    fiber: &FiberState,
+    policy: AwbcDropPolicy,
+) -> Result<crate::effect::RuntimeDropPolicy, VmError> {
+    use crate::effect::RuntimeDropPolicy;
+
+    Ok(match policy {
+        AwbcDropPolicy::Default => RuntimeDropPolicy::Default,
+        AwbcDropPolicy::Cancel => RuntimeDropPolicy::Cancel,
+        AwbcDropPolicy::Stop { fade } => {
+            let RuntimeValue::Duration(fade) = register(fiber, fade)? else {
+                return Err(VmError::Runtime(
+                    "Drop Stop fade register does not contain Duration".to_owned(),
+                ));
+            };
+            RuntimeDropPolicy::Stop { fade: *fade }
+        }
+        AwbcDropPolicy::Finish => RuntimeDropPolicy::Finish,
+        AwbcDropPolicy::Release => RuntimeDropPolicy::Release,
+        AwbcDropPolicy::Detach => RuntimeDropPolicy::Detach,
+    })
+}
+
 fn await_target(
     program: &AwbcProgram,
     fiber: &FiberState,
@@ -1448,9 +1619,7 @@ pub(crate) fn constant_value(
         AwbcConstant::DurationNanos(nanos) => {
             Ok(RuntimeValue::Duration(LogicalDuration::from_nanos(*nanos)))
         }
-        AwbcConstant::EntityRef(id) => {
-            Ok(RuntimeValue::EntityRef(string(program, *id)?.to_owned()))
-        }
+        AwbcConstant::EntityRef(value) => Ok(RuntimeValue::EntityRef(value.clone())),
         AwbcConstant::Tuple(items) => Ok(RuntimeValue::Tuple(
             items
                 .iter()
@@ -1669,8 +1838,8 @@ pub(crate) fn test_pattern(
         }
         AwbcPattern::Discard => true,
         AwbcPattern::Literal(id) => constant_value(program, *id)? == *value,
-        AwbcPattern::Entity(id) => {
-            matches!(value, RuntimeValue::EntityRef(actual) if actual == string(program, *id)?)
+        AwbcPattern::Entity(expected) => {
+            matches!(value, RuntimeValue::EntityRef(actual) if actual == expected)
         }
         AwbcPattern::Tuple(patterns) => {
             matches!(value, RuntimeValue::Tuple(values) if values.len() == patterns.len() && patterns.iter().zip(values).all(|(pattern, value)| test_pattern(program, *pattern, value).unwrap_or(false)))

@@ -11,7 +11,6 @@ use crate::root::{
     RootRuntimeError, RootSaveBlockers, RootStateSnapshotV1, RuntimeCommandEnvelope,
 };
 use crate::step::{RuntimeStepInput, RuntimeStepOptions, RuntimeStepResult};
-use serde::{Deserialize, Serialize};
 use thiserror::Error;
 
 /// Sans I/O execution boundary used by CLI, LSP, tests, and future adapters.
@@ -77,8 +76,7 @@ impl ArcweftExecutionTier {
     }
 }
 
-#[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
-#[serde(tag = "tier", rename_all = "snake_case")]
+#[derive(Clone, Debug, PartialEq)]
 pub enum ArcweftRuntimeExecutorSnapshot {
     AwbcProduct(AwbcProductExecutorSnapshot),
 }

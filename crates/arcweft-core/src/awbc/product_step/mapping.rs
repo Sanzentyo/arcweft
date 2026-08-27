@@ -98,11 +98,6 @@ impl AwbcEffectKind {
             RuntimeAssertionGuardId::try_from_bytes(bytes).ok()
         };
         let mapped = match self {
-            Self::RegisterHandle => LineEffectRequest::RegisterHandle {
-                key: string(0),
-                handle: string(1),
-            },
-            Self::DropHandle => LineEffectRequest::DropHandle { key: string(0) },
             Self::Wait => match static_args.first() {
                 Some(RuntimeValue::Duration(duration)) => {
                     LineEffectRequest::Wait(RuntimeWaitTarget::Duration(*duration))

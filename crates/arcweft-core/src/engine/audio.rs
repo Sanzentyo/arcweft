@@ -8,24 +8,99 @@ use super::{
     RuntimeStepOutput,
 };
 use crate::audio::RuntimeAudioCommand;
-use crate::effect::RuntimeEffectExpr;
+use crate::effect::{
+    RuntimeDropPolicy, RuntimeDropPolicyExpr, RuntimeEffectExpr, RuntimeEffectMaterializeError,
+};
+use crate::line_task::LineRuntimeError;
 use crate::pure::RuntimeCallBackend;
 use crate::value::{RuntimeExpr, RuntimeValue, runtime_value_label};
+use thiserror::Error;
+
+#[derive(Clone, Debug, Error, PartialEq)]
+pub(super) enum RuntimeEffectExecutionError {
+    #[error(transparent)]
+    Evaluation(#[from] RuntimeEvalError),
+    #[error(transparent)]
+    Materialization(#[from] RuntimeEffectMaterializeError),
+    #[error(transparent)]
+    Line(#[from] LineRuntimeError),
+}
+
+pub(super) struct RuntimeEvaluatedEffectOutcome {
+    pub(super) request: Option<LineEffectRequest>,
+    pub(super) drop_policy: Option<RuntimeDropPolicy>,
+}
 
 impl Engine {
     pub(super) fn evaluate_effect_expr(
         &mut self,
         effect: &RuntimeEffectExpr,
         pure_backend: &mut impl RuntimeCallBackend,
-    ) -> Result<Option<LineEffectRequest>, RuntimeEvalError> {
+    ) -> Result<RuntimeEvaluatedEffectOutcome, RuntimeEffectExecutionError> {
+        if let RuntimeEffectExpr::Drop { target, policy } = effect {
+            let local = match target.kind() {
+                crate::value::RuntimeExprKind::Local(local) => {
+                    self.fiber
+                        .env
+                        .get(*local)
+                        .ok_or(RuntimeEvalError::UnknownLocal(*local))?;
+                    Some(*local)
+                }
+                _ => None,
+            };
+            let target = local
+                .is_none()
+                .then(|| self.evaluate_expr_with_backend(target, pure_backend))
+                .transpose()?;
+            let policy = self.evaluate_drop_policy_expr(policy, pure_backend)?;
+            let target = match (local, target) {
+                (Some(local), None) => self
+                    .fiber
+                    .env
+                    .take(local)
+                    .ok_or(RuntimeEvalError::UnknownLocal(local))?,
+                (None, Some(target)) => target,
+                (Some(_), Some(_)) | (None, None) => {
+                    return Err(LineRuntimeError::InvalidActivationOperation.into());
+                }
+            };
+            drop(target);
+            return Ok(RuntimeEvaluatedEffectOutcome {
+                request: None,
+                drop_policy: Some(policy),
+            });
+        }
         let values = effect
             .argument_exprs()
             .into_iter()
             .map(|expr| self.evaluate_expr_with_backend(expr, pure_backend))
             .collect::<Result<Vec<_>, _>>()?;
-        effect
-            .materialize(&values)
-            .map_err(|error| RuntimeEvalError::Effect(error.to_string()))
+        Ok(RuntimeEvaluatedEffectOutcome {
+            request: effect.materialize(&values)?,
+            drop_policy: None,
+        })
+    }
+
+    fn evaluate_drop_policy_expr(
+        &mut self,
+        policy: &RuntimeDropPolicyExpr,
+        pure_backend: &mut impl RuntimeCallBackend,
+    ) -> Result<RuntimeDropPolicy, RuntimeEffectExecutionError> {
+        Ok(match policy {
+            RuntimeDropPolicyExpr::Default => RuntimeDropPolicy::Default,
+            RuntimeDropPolicyExpr::Cancel => RuntimeDropPolicy::Cancel,
+            RuntimeDropPolicyExpr::Stop { fade } => {
+                let RuntimeValue::Duration(fade) =
+                    self.evaluate_expr_with_backend(fade, pure_backend)?
+                else {
+                    return Err(LineRuntimeError::InvalidDropPolicy.into());
+                };
+                RuntimeDropPolicy::Stop { fade }
+            }
+            RuntimeDropPolicyExpr::Finish => RuntimeDropPolicy::Finish,
+            RuntimeDropPolicyExpr::Release => RuntimeDropPolicy::Release,
+            RuntimeDropPolicyExpr::Detach => RuntimeDropPolicy::Detach,
+        })
     }
 
     /// Emits one lowered effect while resolving audio at the owning fiber's
@@ -264,7 +339,6 @@ impl Engine {
         let value = self.evaluate_audio_value(expression, pure_backend)?;
         value
             .as_identifier()
-            .map(str::to_owned)
             .ok_or_else(|| RuntimeEvalError::AudioValue {
                 expected: "audio identifier",
                 actual: runtime_value_label(&value),

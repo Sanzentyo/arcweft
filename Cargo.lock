@@ -778,6 +778,7 @@ dependencies = [
 name = "arcweft-core"
 version = "0.1.0"
 dependencies = [
+ "arcweft-character",
  "arcweft-codec-binary",
  "arcweft-codec-cbor",
  "arcweft-codec-json",

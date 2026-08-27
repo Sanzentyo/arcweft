@@ -122,9 +122,185 @@ runtime_u32_identity!(RuntimeChildPacketId);
 runtime_u32_identity!(RuntimeTransferPacketId);
 runtime_u32_identity!(RuntimeCleanupSlotId);
 runtime_u32_identity!(RuntimeDialogueValueSlotId);
+runtime_u32_identity!(RuntimeDialogueEffectSiteId);
 runtime_u32_identity!(RuntimeLineTaskGroupId);
 runtime_u32_identity!(RuntimeLineTaskNodeId);
 runtime_u32_identity!(RuntimeDialogueMarkId);
+
+/// Admitted number of source-ordered inline effect sites owned by one
+/// dialogue content plan.
+///
+/// Individual site identities are derived from their dense source ordinal;
+/// retaining the count avoids copying a metadata-free identity vector while
+/// still preventing construction handles from minting out-of-range sites.
+#[repr(transparent)]
+#[derive(
+    Clone, Copy, Debug, Default, Deserialize, Eq, Hash, Ord, PartialEq, PartialOrd, Serialize,
+)]
+#[serde(transparent)]
+pub struct RuntimeDialogueEffectSiteCount(u32);
+
+impl RuntimeDialogueEffectSiteCount {
+    #[must_use]
+    pub fn try_from_len(len: usize) -> Option<Self> {
+        u32::try_from(len).ok().map(Self)
+    }
+
+    #[must_use]
+    pub const fn get(self) -> u32 {
+        self.0
+    }
+
+    #[must_use]
+    pub const fn contains(self, site: RuntimeDialogueEffectSiteId) -> bool {
+        site.get().get() <= self.0
+    }
+
+    #[must_use]
+    pub fn site(self, index: usize) -> Option<RuntimeDialogueEffectSiteId> {
+        let index = u32::try_from(index).ok()?;
+        if index >= self.0 {
+            return None;
+        }
+        RuntimeDialogueEffectSiteId::from_zero_based(index as usize)
+    }
+}
+
+/// Snapshot-stable identity of one runtime fiber that can own dialogue
+/// activations across executor-local rescheduling.
+#[repr(transparent)]
+#[derive(
+    Clone, Copy, Debug, Default, Deserialize, Eq, Hash, Ord, PartialEq, PartialOrd, Serialize,
+)]
+#[serde(transparent)]
+pub struct RuntimePersistentFiberId(u64);
+
+impl RuntimePersistentFiberId {
+    #[must_use]
+    pub const fn from_allocated(value: u64) -> Self {
+        Self(value)
+    }
+
+    #[must_use]
+    pub const fn get(self) -> u64 {
+        self.0
+    }
+}
+
+/// Dense zero-based identity of one handle-producing operation in a line
+/// task group. Zero is valid because the identity is scoped by its dialogue
+/// activation rather than used as an optional sentinel.
+#[repr(transparent)]
+#[derive(Clone, Copy, Debug, Deserialize, Eq, Hash, Ord, PartialEq, PartialOrd, Serialize)]
+#[serde(transparent)]
+pub struct RuntimeLineHandleSiteId(u32);
+
+impl RuntimeLineHandleSiteId {
+    #[must_use]
+    pub const fn from_zero_based(value: u32) -> Self {
+        Self(value)
+    }
+
+    #[must_use]
+    pub const fn get(self) -> u32 {
+        self.0
+    }
+
+    #[must_use]
+    pub const fn index(self) -> usize {
+        self.0 as usize
+    }
+}
+
+impl fmt::Display for RuntimeLineHandleSiteId {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        self.0.fmt(formatter)
+    }
+}
+
+/// Stable identity of one concrete activation of a dialogue content plan.
+#[derive(Clone, Debug, Deserialize, Eq, Hash, Ord, PartialEq, PartialOrd, Serialize)]
+pub struct DialogueActivationId {
+    artifact: crate::effect::RuntimeArtifactFingerprint,
+    owner_fiber: RuntimePersistentFiberId,
+    content: RuntimeDialogueContentPlanId,
+    occurrence: u64,
+}
+
+impl DialogueActivationId {
+    #[must_use]
+    pub const fn new(
+        artifact: crate::effect::RuntimeArtifactFingerprint,
+        owner_fiber: RuntimePersistentFiberId,
+        content: RuntimeDialogueContentPlanId,
+        occurrence: u64,
+    ) -> Self {
+        Self {
+            artifact,
+            owner_fiber,
+            content,
+            occurrence,
+        }
+    }
+
+    #[must_use]
+    pub const fn artifact(&self) -> crate::effect::RuntimeArtifactFingerprint {
+        self.artifact
+    }
+
+    #[must_use]
+    pub const fn owner_fiber(&self) -> RuntimePersistentFiberId {
+        self.owner_fiber
+    }
+
+    #[must_use]
+    pub const fn content(&self) -> RuntimeDialogueContentPlanId {
+        self.content
+    }
+
+    #[must_use]
+    pub const fn occurrence(&self) -> u64 {
+        self.occurrence
+    }
+}
+
+/// Exact identity carried by every affine line handle.
+#[derive(Clone, Debug, Deserialize, Eq, Hash, Ord, PartialEq, PartialOrd, Serialize)]
+pub struct RuntimeLineHandleToken {
+    activation: DialogueActivationId,
+    site: RuntimeLineHandleSiteId,
+    issuance: u32,
+}
+
+impl RuntimeLineHandleToken {
+    #[must_use]
+    pub const fn new(
+        activation: DialogueActivationId,
+        site: RuntimeLineHandleSiteId,
+        issuance: u32,
+    ) -> Self {
+        Self {
+            activation,
+            site,
+            issuance,
+        }
+    }
+
+    #[must_use]
+    pub const fn activation(&self) -> &DialogueActivationId {
+        &self.activation
+    }
+
+    #[must_use]
+    pub const fn site(&self) -> RuntimeLineHandleSiteId {
+        self.site
+    }
+
+    #[must_use]
+    pub const fn issuance(&self) -> u32 {
+        self.issuance
+    }
+}
 
 impl RuntimeDialogueValueSlotId {
     /// Creates the canonical one-based identity for a document-local authored
@@ -170,7 +346,20 @@ impl RuntimeLineTaskGroupId {
 
 impl RuntimeDialogueMarkId {
     #[must_use]
-    pub(crate) fn from_zero_based(index: usize) -> Option<Self> {
+    pub fn from_zero_based(index: usize) -> Option<Self> {
+        let ordinal = u32::try_from(index).ok()?.checked_add(1)?;
+        NonZeroU32::new(ordinal).map(Self::from_accepted_ordinal)
+    }
+
+    #[must_use]
+    pub const fn index(self) -> usize {
+        (self.0.get() - 1) as usize
+    }
+}
+
+impl RuntimeDialogueEffectSiteId {
+    #[must_use]
+    pub fn from_zero_based(index: usize) -> Option<Self> {
         let ordinal = u32::try_from(index).ok()?.checked_add(1)?;
         NonZeroU32::new(ordinal).map(Self::from_accepted_ordinal)
     }
@@ -239,6 +428,129 @@ impl RuntimeDialogueContentPlanId {
     }
 }
 
+impl Serialize for RuntimeDialogueContentPlanId {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: Serializer,
+    {
+        serializer.serialize_u32(self.0.get())
+    }
+}
+
+impl<'de> Deserialize<'de> for RuntimeDialogueContentPlanId {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        NonZeroU32::new(u32::deserialize(deserializer)?)
+            .map(Self::from_accepted_ordinal)
+            .ok_or_else(|| D::Error::custom("runtime identity must be nonzero"))
+    }
+}
+
+/// Failure to decode the sole internal line-handle token carrier.
+#[derive(Clone, Debug, Eq, Error, PartialEq)]
+pub enum RuntimeLineHandleTokenDecodeError {
+    #[error("line handle token payload is not the canonical internal nominal record")]
+    Shape,
+    #[error("line handle token contains an invalid artifact fingerprint")]
+    Artifact,
+    #[error("line handle token contains an invalid dialogue content identity")]
+    Content,
+}
+
+impl RuntimeLineHandleToken {
+    /// Encodes the token into the sole runtime-value payload shape used by all
+    /// structured, AWBC, save, and replay consumers.
+    #[must_use]
+    pub fn encode_payload(&self) -> crate::value::RuntimeValue {
+        crate::value::RuntimeValue::NominalRecord(crate::value::RuntimeNominalRecordValue::new(
+            line_handle_token_nominal(),
+            line_handle_token_layout(),
+            vec![
+                crate::value::RuntimeValue::Seq(crate::value::RuntimeSeq::dense_bytes(
+                    self.activation.artifact().as_bytes().to_vec(),
+                )),
+                crate::value::RuntimeValue::u64(self.activation.owner_fiber().get()),
+                crate::value::RuntimeValue::u32(self.activation.content().get().get()),
+                crate::value::RuntimeValue::u64(self.activation.occurrence()),
+                crate::value::RuntimeValue::u32(self.site.get()),
+                crate::value::RuntimeValue::u32(self.issuance),
+            ],
+        ))
+    }
+
+    /// Decodes only the canonical internal nominal record. Tuple, string, and
+    /// debug-label representations are deliberately not accepted.
+    pub fn try_decode_payload(
+        value: &crate::value::RuntimeValue,
+    ) -> Result<Self, RuntimeLineHandleTokenDecodeError> {
+        let crate::value::RuntimeValue::NominalRecord(record) = value else {
+            return Err(RuntimeLineHandleTokenDecodeError::Shape);
+        };
+        record
+            .validate_shape(&line_handle_token_nominal(), line_handle_token_layout(), 6)
+            .map_err(|_| RuntimeLineHandleTokenDecodeError::Shape)?;
+        let [artifact, owner_fiber, content, occurrence, site, issuance] = record.fields() else {
+            return Err(RuntimeLineHandleTokenDecodeError::Shape);
+        };
+        let crate::value::RuntimeValue::Seq(artifact) = artifact else {
+            return Err(RuntimeLineHandleTokenDecodeError::Shape);
+        };
+        let artifact: [u8; 32] = artifact
+            .as_bytes()
+            .and_then(|bytes| bytes.try_into().ok())
+            .ok_or(RuntimeLineHandleTokenDecodeError::Shape)?;
+        let crate::value::RuntimeValue::UInt(crate::value::RuntimeUInt::U64(owner_fiber)) =
+            owner_fiber
+        else {
+            return Err(RuntimeLineHandleTokenDecodeError::Shape);
+        };
+        let crate::value::RuntimeValue::UInt(crate::value::RuntimeUInt::U32(content)) = content
+        else {
+            return Err(RuntimeLineHandleTokenDecodeError::Shape);
+        };
+        let crate::value::RuntimeValue::UInt(crate::value::RuntimeUInt::U64(occurrence)) =
+            occurrence
+        else {
+            return Err(RuntimeLineHandleTokenDecodeError::Shape);
+        };
+        let crate::value::RuntimeValue::UInt(crate::value::RuntimeUInt::U32(site)) = site else {
+            return Err(RuntimeLineHandleTokenDecodeError::Shape);
+        };
+        let crate::value::RuntimeValue::UInt(crate::value::RuntimeUInt::U32(issuance)) = issuance
+        else {
+            return Err(RuntimeLineHandleTokenDecodeError::Shape);
+        };
+        let artifact = crate::effect::RuntimeArtifactFingerprint::try_from_bytes(artifact)
+            .map_err(|_| RuntimeLineHandleTokenDecodeError::Artifact)?;
+        let content = NonZeroU32::new(*content)
+            .map(RuntimeDialogueContentPlanId::from_accepted_ordinal)
+            .ok_or(RuntimeLineHandleTokenDecodeError::Content)?;
+        Ok(Self::new(
+            DialogueActivationId::new(
+                artifact,
+                RuntimePersistentFiberId::from_allocated(*owner_fiber),
+                content,
+                *occurrence,
+            ),
+            RuntimeLineHandleSiteId::from_zero_based(*site),
+            *issuance,
+        ))
+    }
+}
+
+fn line_handle_token_nominal() -> crate::entry::RuntimeNominalTypeId {
+    crate::entry::RuntimeNominalTypeId::try_new("std.runtime.LineHandleTokenV1")
+        .expect("fixed line-handle token nominal identity is valid")
+}
+
+fn line_handle_token_layout() -> crate::entry::TypeLayoutHash {
+    crate::entry::TypeLayoutHash::from_bytes(
+        *blake3::hash(b"arcweft.runtime.line-handle-token.layout.v1").as_bytes(),
+    )
+}
+
 impl fmt::Display for RuntimeDialogueContentPlanId {
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
         self.0.fmt(formatter)
@@ -265,6 +577,8 @@ pub enum RuntimeIdNamespace {
     LocalSlot,
     OwnershipTransaction,
     AffineOwner,
+    FiberInstance,
+    FrameInstance,
 }
 
 #[derive(Clone, Copy, Debug, Eq, Error, Hash, Ord, PartialEq, PartialOrd)]

@@ -4,10 +4,10 @@ use crate::{
     runtime_id::RuntimeLocalDeclarationId,
     time::LogicalDuration,
     value::{
-        DenseSeqKind, MAX_RUNTIME_VALUE_NESTING_DEPTH, Progress, RuntimeBinaryOp, RuntimeEnv,
-        RuntimeIntrinsic, RuntimeIterator, RuntimeLocalBinding, RuntimeNominalRecordValue,
-        RuntimeRange, RuntimeSeq, RuntimeUnaryOp, RuntimeValue, RuntimeValueNestingError,
-        evaluate_core_iter_collect_intrinsic, evaluate_index_intrinsic,
+        DenseSeqKind, MAX_RUNTIME_VALUE_NESTING_DEPTH, Progress, RuntimeBinaryOp,
+        RuntimeEntityReference, RuntimeEnv, RuntimeIntrinsic, RuntimeIterator, RuntimeLocalBinding,
+        RuntimeNominalRecordValue, RuntimeRange, RuntimeSeq, RuntimeUnaryOp, RuntimeValue,
+        RuntimeValueNestingError, evaluate_core_iter_collect_intrinsic, evaluate_index_intrinsic,
         evaluate_std_float_intrinsic, evaluate_string_intrinsic, runtime_sequence_dense_bool,
         runtime_sequence_dense_bytes, runtime_sequence_dense_chars,
         runtime_sequence_dense_durations, runtime_sequence_dense_entity_refs,
@@ -20,12 +20,20 @@ use crate::{
         runtime_sequence_repeat_value, runtime_value_label,
     },
 };
+use arcweft_id::{DeclarationIdentityFamily, PublicId};
 use std::num::NonZeroU32;
 
 fn local(ordinal: u32) -> RuntimeLocalDeclarationId {
     RuntimeLocalDeclarationId::from_accepted_ordinal(
         NonZeroU32::new(ordinal).expect("test local ordinal is non-zero"),
     )
+}
+
+fn test_entity_ref(name: &str) -> RuntimeEntityReference {
+    RuntimeEntityReference::Project {
+        family: DeclarationIdentityFamily::Character,
+        public_id: PublicId::try_new(format!("character.{name}")).expect("test entity ID"),
+    }
 }
 
 #[test]
@@ -148,7 +156,9 @@ fn runtime_value_nesting_accepts_64_and_rejects_65() {
 #[test]
 fn option_none_conversion_rejects_same_named_non_option_variants() {
     let option = RuntimeValue::Variant {
-        owner: RuntimeVariantIdentity::Option,
+        owner: RuntimeVariantIdentity::Builtin(
+            crate::pattern::RuntimeBuiltinVariantIdentity::Option,
+        ),
         ordinal: 0,
         name: "Some".to_owned(),
         payload: Some(Box::new(RuntimeValue::Bool(true))),
@@ -156,7 +166,9 @@ fn option_none_conversion_rejects_same_named_non_option_variants() {
     assert_eq!(
         option.option_none_with_same_owner(),
         Some(RuntimeValue::Variant {
-            owner: RuntimeVariantIdentity::Option,
+            owner: RuntimeVariantIdentity::Builtin(
+                crate::pattern::RuntimeBuiltinVariantIdentity::Option,
+            ),
             ordinal: 1,
             name: "None".to_owned(),
             payload: None,
@@ -175,7 +187,9 @@ fn option_none_conversion_rejects_same_named_non_option_variants() {
     assert_eq!(unrelated.option_none_with_same_owner(), None);
 
     let malformed = RuntimeValue::Variant {
-        owner: RuntimeVariantIdentity::Option,
+        owner: RuntimeVariantIdentity::Builtin(
+            crate::pattern::RuntimeBuiltinVariantIdentity::Option,
+        ),
         ordinal: 0,
         name: "Some".to_owned(),
         payload: None,
@@ -186,7 +200,9 @@ fn option_none_conversion_rejects_same_named_non_option_variants() {
 #[test]
 fn variant_canonical_bytes_retain_closed_owner_ordinal_and_semantic_identity() {
     let option = RuntimeValue::Variant {
-        owner: RuntimeVariantIdentity::Option,
+        owner: RuntimeVariantIdentity::Builtin(
+            crate::pattern::RuntimeBuiltinVariantIdentity::Option,
+        ),
         ordinal: 0,
         name: "Some".to_owned(),
         payload: Some(Box::new(RuntimeValue::Unit)),
@@ -364,7 +380,7 @@ fn dense_sequence_kind_covers_deterministic_scalar_storage() {
             DenseSeqKind::Strings,
         ),
         (
-            runtime_sequence_dense_entity_refs(vec!["char.alice".to_owned()]),
+            runtime_sequence_dense_entity_refs(vec![test_entity_ref("alice")]),
             DenseSeqKind::EntityRefs,
         ),
     ];
@@ -687,8 +703,9 @@ fn dense_non_i64_integer_storage_does_not_widen_into_i64_projection() {
 #[test]
 fn dense_textual_sequences_expose_typed_views_and_materialize_values() {
     let strings_seq = runtime_sequence_dense_strings(vec!["a".to_owned(), "b".to_owned()]);
-    let entities_seq =
-        runtime_sequence_dense_entity_refs(vec!["char.alice".to_owned(), "char.bob".to_owned()]);
+    let alice = test_entity_ref("alice");
+    let bob = test_entity_ref("bob");
+    let entities_seq = runtime_sequence_dense_entity_refs(vec![alice.clone(), bob.clone()]);
 
     assert_eq!(runtime_value_label(&strings_seq), "seq/strings/2");
     assert_eq!(runtime_value_label(&entities_seq), "seq/entity_refs/2");
@@ -713,14 +730,11 @@ fn dense_textual_sequences_expose_typed_views_and_materialize_values() {
     };
     assert_eq!(
         entities_seq.as_entity_refs(),
-        Some(["char.alice".to_owned(), "char.bob".to_owned()].as_slice())
+        Some([alice.clone(), bob.clone()].as_slice())
     );
     assert_eq!(
         entities_seq.into_values(),
-        vec![
-            RuntimeValue::EntityRef("char.alice".to_owned()),
-            RuntimeValue::EntityRef("char.bob".to_owned())
-        ]
+        vec![RuntimeValue::EntityRef(alice), RuntimeValue::EntityRef(bob)]
     );
 }
 
@@ -821,14 +835,15 @@ fn literal_and_repeat_sequences_choose_dense_scalar_storage() {
     };
     assert_eq!(float_seq.as_f64_slice(), Some([(1.5), (1.5)].as_slice()));
 
+    let alice = test_entity_ref("alice");
     let RuntimeValue::Seq(entity_seq) =
-        runtime_sequence_repeat_value(&RuntimeValue::EntityRef("char.alice".to_owned()), 2)
+        runtime_sequence_repeat_value(&RuntimeValue::EntityRef(alice.clone()), 2)
     else {
         panic!("entity ref repeat lowers to a sequence");
     };
     assert_eq!(
         entity_seq.as_entity_refs(),
-        Some(["char.alice".to_owned(), "char.alice".to_owned()].as_slice())
+        Some([alice.clone(), alice].as_slice())
     );
 }
 
@@ -893,13 +908,17 @@ fn compound_literal_sequences_use_columnar_storage_when_shape_is_stable() {
 
     let RuntimeValue::Seq(variant_seq) = runtime_sequence_from_literal_values(vec![
         RuntimeValue::Variant {
-            owner: RuntimeVariantIdentity::Option,
+            owner: RuntimeVariantIdentity::Builtin(
+                crate::pattern::RuntimeBuiltinVariantIdentity::Option,
+            ),
             ordinal: 0,
             name: "Some".to_owned(),
             payload: Some(Box::new(RuntimeValue::i64(1))),
         },
         RuntimeValue::Variant {
-            owner: RuntimeVariantIdentity::Option,
+            owner: RuntimeVariantIdentity::Builtin(
+                crate::pattern::RuntimeBuiltinVariantIdentity::Option,
+            ),
             ordinal: 0,
             name: "Some".to_owned(),
             payload: Some(Box::new(RuntimeValue::i64(2))),

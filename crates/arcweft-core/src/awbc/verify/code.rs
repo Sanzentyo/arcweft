@@ -9,13 +9,16 @@ use super::structure::{
     types_compatible,
 };
 use crate::awbc::schema::{
-    AwbcBinaryOp, AwbcBindMode, AwbcBlockId, AwbcConstant, AwbcDialogueValueRole, AwbcEffectSetId,
-    AwbcFrameLayout, AwbcFrameSlotRole, AwbcFunctionFlags, AwbcFunctionKind, AwbcInstruction,
-    AwbcPattern, AwbcPatternId, AwbcPatternRest, AwbcProgram, AwbcRegisterId, AwbcResumePointId,
-    AwbcRuntimeType, AwbcRuntimeTypeShape, AwbcSafePointKind, AwbcScopeId, AwbcSignatureId,
-    AwbcTerminator, AwbcTraitReceiverMode, AwbcTypeId, AwbcUnaryOp, AwbcUnsignedIntKind,
+    AwbcBinaryOp, AwbcBindMode, AwbcBlockId, AwbcConstant, AwbcDialogueValueRole, AwbcDropPolicy,
+    AwbcEffectSetId, AwbcFrameLayout, AwbcFrameSlotRole, AwbcFunctionFlag, AwbcFunctionKind,
+    AwbcInstruction, AwbcPattern, AwbcPatternId, AwbcPatternRest, AwbcProgram, AwbcRegisterId,
+    AwbcResumePointId, AwbcRuntimeType, AwbcRuntimeTypeShape, AwbcSafePointKind, AwbcScopeId,
+    AwbcSignatureId, AwbcTerminator, AwbcTraitReceiverMode, AwbcTypeId, AwbcUnaryOp,
+    AwbcUnsignedIntKind, AwbcVariantIdentity,
 };
-use crate::value::{RuntimeAgentField, RuntimeAgentFieldResult, RuntimeReductionProducer};
+use crate::value::{
+    RuntimeAgentField, RuntimeAgentFieldResult, RuntimeAgentFieldValue, RuntimeReductionProducer,
+};
 use std::collections::{BTreeSet, VecDeque};
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -147,11 +150,14 @@ fn verify_entry_safe_point(
     }
     let expected = match function.kind {
         AwbcFunctionKind::Flow => AwbcSafePointKind::FlowEntry,
-        AwbcFunctionKind::PureHelper
+        AwbcFunctionKind::Ordinary
+        | AwbcFunctionKind::PureHelper
         | AwbcFunctionKind::TraitMethod
+        | AwbcFunctionKind::Synthetic
+        | AwbcFunctionKind::GeneratorProducer
         | AwbcFunctionKind::StreamTransform
-        | AwbcFunctionKind::LineTask
-        | AwbcFunctionKind::Synthetic => AwbcSafePointKind::CallableBoundary,
+        | AwbcFunctionKind::LineActivation
+        | AwbcFunctionKind::LineTask => AwbcSafePointKind::CallableBoundary,
     };
     let actual = verifier.program.blocks[block_index].safe_point;
     if actual != expected {
@@ -232,8 +238,24 @@ fn apply_instruction(
             let dst_ty = register_type(verifier, function, block, *dst)?;
             require_compatible(program, dst_ty, src_ty, &at)?;
             write_register(verifier, function, block, *dst, state)?;
+            if dst != src {
+                clear_register(verifier, function, block, *src, state)?;
+            }
+        }
+        AwbcInstruction::CopyValue { dst, src } => {
+            let src_ty = read_register(verifier, function, block, *src, state)?;
+            if !runtime_type_permits_copy(program, src_ty, 0) {
+                return invalid_type(&at, "recursively unrestricted CopyValue source");
+            }
+            let dst_ty = register_type(verifier, function, block, *dst)?;
+            require_compatible(program, dst_ty, src_ty, &at)?;
+            write_register(verifier, function, block, *dst, state)?;
         }
         AwbcInstruction::Clear { register } => {
+            let ty = read_register(verifier, function, block, *register, state)?;
+            if !runtime_type_permits_copy(program, ty, 0) {
+                return invalid_type(&at, "recursively unrestricted Clear source");
+            }
             clear_register(verifier, function, block, *register, state)?;
         }
         AwbcInstruction::EnterScope { scope } => {
@@ -582,154 +604,139 @@ fn apply_instruction(
                 verifier, function, block, *dst, *target, *ordinal, false, state, &at,
             )?;
         }
-        AwbcInstruction::ProjectField { dst, target, field } => {
-            check_string(program, *field, &at)?;
-            let target_ty = read_register(verifier, function, block, *target, state)?;
-            let dst_ty = register_type(verifier, function, block, *dst)?;
-            match runtime_shape(program, target_ty) {
-                Some(
-                    AwbcRuntimeTypeShape::Record { fields, .. }
-                    | AwbcRuntimeTypeShape::NominalRecord { fields, .. },
-                ) => {
-                    let Some(field_layout) =
-                        fields.iter().find(|candidate| candidate.name == *field)
-                    else {
-                        return Err(AwbcVerifyError::InvalidInvariant {
-                            at,
-                            message: "projected field does not exist".to_owned(),
-                        });
-                    };
-                    require_compatible(program, dst_ty, field_layout.ty, "field projection")?;
-                }
-                Some(AwbcRuntimeTypeShape::Dynamic) => {}
-                Some(AwbcRuntimeTypeShape::Progress) => {
-                    let label = program
-                        .strings
-                        .get(field.index())
-                        .map(String::as_str)
-                        .unwrap_or_default();
-                    let destination = runtime_shape(program, dst_ty);
-                    let destination_matches = match label {
-                        "ratio" => matches!(destination, Some(AwbcRuntimeTypeShape::F32)),
-                        "label" => matches!(
-                            destination,
-                            Some(AwbcRuntimeTypeShape::Variant {
-                                owner: crate::awbc::schema::AwbcVariantIdentity::Option,
-                                cases,
-                                ..
-                            }) if cases.first().and_then(|case| case.payload).is_some_and(|item| {
-                                matches!(
-                                    runtime_shape(program, item),
-                                    Some(AwbcRuntimeTypeShape::String)
-                                )
-                            })
-                        ),
-                        _ => false,
-                    };
-                    if !destination_matches {
-                        return invalid_type(&at, "Progress field projection destination");
+        AwbcInstruction::ProjectField { dst, target, field } => match field {
+            crate::awbc::schema::AwbcFieldProjection::Named(field) => {
+                check_string(program, *field, &at)?;
+                let target_ty = read_register(verifier, function, block, *target, state)?;
+                let dst_ty = register_type(verifier, function, block, *dst)?;
+                match runtime_shape(program, target_ty) {
+                    Some(
+                        AwbcRuntimeTypeShape::Record { fields, .. }
+                        | AwbcRuntimeTypeShape::NominalRecord { fields, .. },
+                    ) => {
+                        let Some(field_layout) =
+                            fields.iter().find(|candidate| candidate.name == *field)
+                        else {
+                            return Err(AwbcVerifyError::InvalidInvariant {
+                                at,
+                                message: "projected field does not exist".to_owned(),
+                            });
+                        };
+                        require_compatible(program, dst_ty, field_layout.ty, "field projection")?;
                     }
-                }
-                Some(AwbcRuntimeTypeShape::Agent(agent)) => {
-                    let label = program
-                        .strings
-                        .get(field.index())
-                        .map(String::as_str)
-                        .unwrap_or_default();
-                    let Some(field) =
-                        RuntimeAgentField::from_owner_label(agent.operational_type(), label)
-                    else {
-                        return Err(AwbcVerifyError::InvalidInvariant {
-                            at,
-                            message: "projected Agent field does not exist".to_owned(),
-                        });
-                    };
-                    let destination = runtime_shape(program, dst_ty);
-                    let destination_matches = match field.result() {
-                        RuntimeAgentFieldResult::String => matches!(
-                            destination,
-                            Some(AwbcRuntimeTypeShape::String | AwbcRuntimeTypeShape::Dynamic)
-                        ),
-                        RuntimeAgentFieldResult::Bool => {
-                            is_bool(destination)
-                                || matches!(destination, Some(AwbcRuntimeTypeShape::Dynamic))
-                        }
-                        RuntimeAgentFieldResult::U32 => matches!(
-                            destination,
-                            Some(
-                                AwbcRuntimeTypeShape::UInt(AwbcUnsignedIntKind::U32)
-                                    | AwbcRuntimeTypeShape::Dynamic
-                            )
-                        ),
-                        RuntimeAgentFieldResult::U64 => matches!(
-                            destination,
-                            Some(
-                                AwbcRuntimeTypeShape::UInt(AwbcUnsignedIntKind::U64)
-                                    | AwbcRuntimeTypeShape::Dynamic
-                            )
-                        ),
-                        RuntimeAgentFieldResult::Agent(expected) => {
-                            matches!(
+                    Some(AwbcRuntimeTypeShape::Dynamic) => {}
+                    Some(AwbcRuntimeTypeShape::Progress) => {
+                        let label = program
+                            .strings
+                            .get(field.index())
+                            .map(String::as_str)
+                            .unwrap_or_default();
+                        let destination = runtime_shape(program, dst_ty);
+                        let destination_matches = match label {
+                            "ratio" => matches!(destination, Some(AwbcRuntimeTypeShape::F32)),
+                            "label" => matches!(
                                 destination,
-                                Some(AwbcRuntimeTypeShape::Agent(actual))
-                                    if actual.operational_type() == expected
-                            ) || matches!(destination, Some(AwbcRuntimeTypeShape::Dynamic))
-                        }
-                        RuntimeAgentFieldResult::VecAgent(expected) => match destination {
-                            Some(AwbcRuntimeTypeShape::Sequence(item)) => matches!(
-                                runtime_shape(program, *item),
-                                Some(AwbcRuntimeTypeShape::Agent(actual))
-                                    if actual.operational_type() == expected
+                                Some(AwbcRuntimeTypeShape::Variant {
+                                    owner: crate::awbc::schema::AwbcVariantIdentity::Builtin(
+                                        crate::pattern::RuntimeBuiltinVariantIdentity::Option
+                                    ),
+                                    cases,
+                                    ..
+                                }) if cases.first().and_then(|case| case.payload).is_some_and(|item| {
+                                    matches!(
+                                        runtime_shape(program, item),
+                                        Some(AwbcRuntimeTypeShape::String)
+                                    )
+                                })
                             ),
-                            Some(AwbcRuntimeTypeShape::Dynamic) => true,
                             _ => false,
-                        },
-                        RuntimeAgentFieldResult::AgentValueMap => {
-                            matches!(destination, Some(AwbcRuntimeTypeShape::Dynamic))
+                        };
+                        if !destination_matches {
+                            return invalid_type(&at, "Progress field projection destination");
                         }
-                    };
-                    if !destination_matches {
-                        return invalid_type(&at, "Agent field projection destination");
                     }
+                    Some(AwbcRuntimeTypeShape::Agent(agent)) => {
+                        let label = program
+                            .strings
+                            .get(field.index())
+                            .map(String::as_str)
+                            .unwrap_or_default();
+                        let Some(field) =
+                            RuntimeAgentField::from_owner_label(agent.operational_type(), label)
+                        else {
+                            return Err(AwbcVerifyError::InvalidInvariant {
+                                at,
+                                message: "projected Agent field does not exist".to_owned(),
+                            });
+                        };
+                        let destination = runtime_shape(program, dst_ty);
+                        let destination_matches = match field.result() {
+                            RuntimeAgentFieldResult::Required(value) => {
+                                agent_field_value_destination_matches(program, destination, value)
+                            }
+                            RuntimeAgentFieldResult::Optional(value) => match destination {
+                                Some(AwbcRuntimeTypeShape::Variant {
+                                    owner:
+                                        crate::awbc::schema::AwbcVariantIdentity::Builtin(
+                                            crate::pattern::RuntimeBuiltinVariantIdentity::Option,
+                                        ),
+                                    cases,
+                                    ..
+                                }) => cases.first().and_then(|case| case.payload).is_some_and(
+                                    |item| {
+                                        agent_field_value_destination_matches(
+                                            program,
+                                            runtime_shape(program, item),
+                                            value,
+                                        )
+                                    },
+                                ),
+                                Some(AwbcRuntimeTypeShape::Dynamic) => true,
+                                _ => false,
+                            },
+                        };
+                        if !destination_matches {
+                            return invalid_type(&at, "Agent field projection destination");
+                        }
+                    }
+                    _ => return invalid_type(&at, "record projection target"),
                 }
-                _ => return invalid_type(&at, "record projection target"),
+                write_register(verifier, function, block, *dst, state)?;
             }
-            write_register(verifier, function, block, *dst, state)?;
-        }
-        AwbcInstruction::ProjectOpaqueRecordField {
-            dst,
-            target,
-            owner,
-            field: _,
-            field_type,
-        } => {
-            check_index(program.runtime_types.len(), owner.0, "runtime_types", &at)?;
-            check_index(
-                program.runtime_types.len(),
-                field_type.0,
-                "runtime_types",
-                &at,
-            )?;
-            let target_ty = read_register(verifier, function, block, *target, state)?;
-            if target_ty != *owner {
-                return type_mismatch(&at, *owner, target_ty);
+            crate::awbc::schema::AwbcFieldProjection::OpaqueRecord {
+                owner,
+                field: _,
+                field_type,
+            } => {
+                check_index(program.runtime_types.len(), owner.0, "runtime_types", &at)?;
+                check_index(
+                    program.runtime_types.len(),
+                    field_type.0,
+                    "runtime_types",
+                    &at,
+                )?;
+                let target_ty = read_register(verifier, function, block, *target, state)?;
+                if target_ty != *owner {
+                    return type_mismatch(&at, *owner, target_ty);
+                }
+                let exact_owner = program
+                    .runtime_types
+                    .get(owner.index())
+                    .and_then(|row| row.try_opaque_owner(&program.strings).ok().flatten())
+                    .is_some_and(|owner| {
+                        owner.admission()
+                            == crate::pattern::RuntimeOpaqueTypeAdmission::ExactIdentity
+                    });
+                if !exact_owner {
+                    return invalid_type(&at, "exact opaque-record projection owner");
+                }
+                let dst_ty = register_type(verifier, function, block, *dst)?;
+                if dst_ty != *field_type {
+                    return type_mismatch(&at, *field_type, dst_ty);
+                }
+                write_register(verifier, function, block, *dst, state)?;
             }
-            let exact_owner = program
-                .runtime_types
-                .get(owner.index())
-                .and_then(|row| row.try_opaque_owner(&program.strings).ok().flatten())
-                .is_some_and(|owner| {
-                    owner.admission() == crate::pattern::RuntimeOpaqueTypeAdmission::ExactIdentity
-                });
-            if !exact_owner {
-                return invalid_type(&at, "exact opaque-record projection owner");
-            }
-            let dst_ty = register_type(verifier, function, block, *dst)?;
-            if dst_ty != *field_type {
-                return type_mismatch(&at, *field_type, dst_ty);
-            }
-            write_register(verifier, function, block, *dst, state)?;
-        }
+        },
         AwbcInstruction::Unary { dst, op, src } => {
             let src_ty = read_register(verifier, function, block, *src, state)?;
             let dst_ty = register_type(verifier, function, block, *dst)?;
@@ -1030,8 +1037,159 @@ fn apply_instruction(
         AwbcInstruction::StreamClose { stream } => {
             check_index(program.stream_plans.len(), stream.0, "stream_plans", &at)?;
         }
-        AwbcInstruction::Drop { register } => {
+        AwbcInstruction::ExecuteLineOperation {
+            dst,
+            operation,
+            args,
+        } => {
+            check_index(
+                program.line_operations.len(),
+                operation.0,
+                "line_operations",
+                &at,
+            )?;
+            let group = line_group_for_function(program, function, &at)?;
+            let operation = &program.line_operations[operation.index()];
+            if program
+                .line_task_groups
+                .get(operation.group().index())
+                .is_none_or(|owner| !std::ptr::eq(owner, group))
+            {
+                return Err(AwbcVerifyError::InvalidInvariant {
+                    at: at.clone(),
+                    message: "line operation is referenced outside its owning group".to_owned(),
+                });
+            }
+            let site = group
+                .handle_sites
+                .get(operation.site().index())
+                .ok_or_else(|| AwbcVerifyError::InvalidInvariant {
+                    at: at.clone(),
+                    message: "line operation references a site outside its owning group".to_owned(),
+                })?;
+            if site.result_type != operation.result_type() {
+                return type_mismatch(&at, site.result_type, operation.result_type());
+            }
+            let dst_ty = register_type(verifier, function, block, *dst)?;
+            require_compatible(program, operation.result_type(), dst_ty, &at)?;
+            match operation {
+                crate::awbc::schema::AwbcLineOperation::AcquireActor {
+                    character,
+                    scope: crate::line_task::RuntimeLineHandleScope::Line,
+                    ..
+                } => {
+                    if !args.is_empty()
+                        || site.kind != crate::value::RuntimeHandleKind::StageActor
+                        || site.character.as_ref() != Some(character)
+                        || site.scheduled_child.is_some()
+                    {
+                        return Err(AwbcVerifyError::InvalidInvariant {
+                            at: at.clone(),
+                            message: "AcquireActor ABI does not match its handle site".to_owned(),
+                        });
+                    }
+                }
+                crate::awbc::schema::AwbcLineOperation::Schedule {
+                    child, captures, ..
+                } => {
+                    if args.len() != captures.len().saturating_add(1)
+                        || site.kind != crate::value::RuntimeHandleKind::Cue
+                        || site.character.is_some()
+                        || site.scheduled_child != Some(*child)
+                    {
+                        return Err(AwbcVerifyError::InvalidInvariant {
+                            at: at.clone(),
+                            message: "Schedule ABI does not match its handle site".to_owned(),
+                        });
+                    }
+                    let delay = read_register(verifier, function, block, args[0], state)?;
+                    if !matches!(
+                        runtime_shape(program, delay),
+                        Some(AwbcRuntimeTypeShape::Duration)
+                    ) {
+                        return invalid_type(&at, "Schedule Duration argument");
+                    }
+                    let mut capture_locals = BTreeSet::new();
+                    for (argument, capture) in args[1..].iter().zip(captures) {
+                        if !capture_locals.insert(capture.local) {
+                            return Err(AwbcVerifyError::InvalidInvariant {
+                                at: at.clone(),
+                                message: "Schedule capture destination local is duplicated"
+                                    .to_owned(),
+                            });
+                        }
+                        let actual = read_register(verifier, function, block, *argument, state)?;
+                        require_compatible(program, capture.ty, actual, &at)?;
+                    }
+                }
+                crate::awbc::schema::AwbcLineOperation::ActorLook {
+                    character,
+                    actor_type,
+                    look_type,
+                    ..
+                } => {
+                    if args.len() != 3
+                        || site.kind != crate::value::RuntimeHandleKind::Cue
+                        || site.character.as_ref() != Some(character)
+                        || site.scheduled_child.is_some()
+                    {
+                        return Err(AwbcVerifyError::InvalidInvariant {
+                            at: at.clone(),
+                            message: "ActorLook ABI does not match its handle site".to_owned(),
+                        });
+                    }
+                    let actor = read_register(verifier, function, block, args[0], state)?;
+                    let look = read_register(verifier, function, block, args[1], state)?;
+                    let crossfade = read_register(verifier, function, block, args[2], state)?;
+                    require_compatible(program, *actor_type, actor, &at)?;
+                    require_compatible(program, *look_type, look, &at)?;
+                    if !matches!(
+                        runtime_shape(program, crossfade),
+                        Some(AwbcRuntimeTypeShape::Duration)
+                    ) {
+                        return invalid_type(&at, "ActorLook crossfade Duration");
+                    }
+                }
+                crate::awbc::schema::AwbcLineOperation::VoiceHandle { .. } => {
+                    if !args.is_empty()
+                        || site.kind != crate::value::RuntimeHandleKind::Voice
+                        || site.character.is_some()
+                        || site.scheduled_child.is_some()
+                    {
+                        return Err(AwbcVerifyError::InvalidInvariant {
+                            at: at.clone(),
+                            message: "VoiceHandle ABI does not match its handle site".to_owned(),
+                        });
+                    }
+                }
+            }
+            write_register(verifier, function, block, *dst, state)?;
+        }
+        AwbcInstruction::CommitDialogueResult { source } => {
+            let group = line_group_for_function(program, function, &at)?;
+            if program.functions[function].kind != AwbcFunctionKind::LineActivation
+                || group.activation.index() != function
+            {
+                return Err(AwbcVerifyError::InvalidInvariant {
+                    at: at.clone(),
+                    message: "CommitDialogueResult is outside its owning activation function"
+                        .to_owned(),
+                });
+            }
+            let source_ty = read_register(verifier, function, block, *source, state)?;
+            require_compatible(program, group.result_type, source_ty, &at)?;
+        }
+        AwbcInstruction::Drop { register, policy } => {
             read_register(verifier, function, block, *register, state)?;
+            if let AwbcDropPolicy::Stop { fade } = policy {
+                let fade_ty = read_register(verifier, function, block, *fade, state)?;
+                if !matches!(
+                    runtime_shape(program, fade_ty),
+                    Some(AwbcRuntimeTypeShape::Duration)
+                ) {
+                    return invalid_type(&at, "Duration Drop Stop fade register");
+                }
+            }
             clear_register(verifier, function, block, *register, state)?;
         }
     }
@@ -1290,7 +1448,7 @@ fn apply_terminator(
             }
             if !program.functions[function]
                 .flags
-                .contains(AwbcFunctionFlags::HAS_DYNAMIC_TARGET)
+                .contains(AwbcFunctionFlag::HasDynamicTarget)
             {
                 return Err(AwbcVerifyError::InvalidInvariant {
                     at,
@@ -1302,6 +1460,7 @@ fn apply_terminator(
             content,
             values,
             line_task_captures,
+            result,
             resume,
         } => {
             check_index(program.content_units.len(), content.0, "content_units", &at)?;
@@ -1322,8 +1481,44 @@ fn apply_terminator(
                         .to_owned(),
                 });
             }
-            for capture in line_task_captures {
-                read_register(verifier, function, block, *capture, state)?;
+            let Some(group) = group else {
+                return Err(AwbcVerifyError::InvalidInvariant {
+                    at: at.clone(),
+                    message: "typed dialogue result requires a content-owned line-task group"
+                        .to_owned(),
+                });
+            };
+            if result.ty != group.result_type {
+                return type_mismatch(&at, group.result_type, result.ty);
+            }
+            let destination_ty = register_type(verifier, function, block, result.destination)?;
+            require_compatible(program, result.ty, destination_ty, &at)?;
+            let mut next = state.clone();
+            validate_pattern(
+                verifier,
+                function,
+                block,
+                result.pattern,
+                result.ty,
+                Some(AwbcBindMode::Declare),
+                &mut next,
+                0,
+            )?;
+            let capture_types = program
+                .functions
+                .get(group.activation.index())
+                .and_then(|function| program.signatures.get(function.signature.index()))
+                .map(|signature| signature.params.as_slice())
+                .ok_or_else(|| AwbcVerifyError::InvalidInvariant {
+                    at: at.clone(),
+                    message: "line activation capture signature is absent".to_owned(),
+                })?;
+            for (capture, expected) in line_task_captures.iter().zip(capture_types) {
+                let actual = read_register(verifier, function, block, *capture, state)?;
+                require_compatible(program, *expected, actual, &at)?;
+                if !runtime_type_permits_copy(program, actual, 0) {
+                    return invalid_type(&at, "recursively unrestricted line-task group capture");
+                }
             }
             for (index, binding) in values.iter().enumerate() {
                 let expected =
@@ -1353,7 +1548,7 @@ fn apply_terminator(
                     AwbcSafePointKind::Dialogue,
                     &at,
                 )?,
-                state.clone(),
+                next,
             ));
         }
         AwbcTerminator::Choice {
@@ -2402,6 +2597,204 @@ fn runtime_shape(program: &AwbcProgram, ty: AwbcTypeId) -> Option<&AwbcRuntimeTy
         .runtime_types
         .get(ty.index())
         .map(AwbcRuntimeType::shape)
+}
+
+fn line_group_for_function<'a>(
+    program: &'a AwbcProgram,
+    function: usize,
+    at: &str,
+) -> Result<&'a crate::awbc::schema::AwbcLineTaskGroup, AwbcVerifyError> {
+    let function = u32::try_from(function).map_err(|_| AwbcVerifyError::InvalidInvariant {
+        at: at.to_owned(),
+        message: "line function index exceeds the AWBC identity domain".to_owned(),
+    })?;
+    let function = crate::awbc::schema::AwbcFunctionId(function);
+    let mut matches = program.line_task_groups.iter().filter(|group| {
+        group.activation == function
+            || group.cleanup_completed == Some(function)
+            || group.cleanup_cancelled == Some(function)
+            || group.cleanup_failed == Some(function)
+            || group
+                .cancel_handlers
+                .iter()
+                .any(|handler| handler.function == function)
+            || group.nodes.checked_end().is_some_and(|end| {
+                (group.nodes.start..end).any(|node| {
+                    matches!(
+                        program.line_task_nodes.get(node as usize),
+                        Some(crate::awbc::schema::AwbcLineTaskNode::Action(owner))
+                            if *owner == function
+                    )
+                })
+            })
+    });
+    let group = matches
+        .next()
+        .ok_or_else(|| AwbcVerifyError::InvalidInvariant {
+            at: at.to_owned(),
+            message: "line instruction function has no owning line-task group".to_owned(),
+        })?;
+    if matches.next().is_some() {
+        return Err(AwbcVerifyError::InvalidInvariant {
+            at: at.to_owned(),
+            message: "line instruction function belongs to multiple line-task groups".to_owned(),
+        });
+    }
+    Ok(group)
+}
+
+pub(super) fn runtime_type_permits_copy(
+    program: &AwbcProgram,
+    ty: AwbcTypeId,
+    depth: usize,
+) -> bool {
+    fn visit(
+        program: &AwbcProgram,
+        ty: AwbcTypeId,
+        depth: usize,
+        active: &mut BTreeSet<AwbcTypeId>,
+    ) -> bool {
+        if depth > 64 || !active.insert(ty) {
+            return false;
+        }
+        let permits = match runtime_shape(program, ty) {
+            Some(
+                AwbcRuntimeTypeShape::Unit
+                | AwbcRuntimeTypeShape::Bool
+                | AwbcRuntimeTypeShape::Int(_)
+                | AwbcRuntimeTypeShape::UInt(_)
+                | AwbcRuntimeTypeShape::F32
+                | AwbcRuntimeTypeShape::F64
+                | AwbcRuntimeTypeShape::String
+                | AwbcRuntimeTypeShape::Char
+                | AwbcRuntimeTypeShape::Duration
+                | AwbcRuntimeTypeShape::Progress
+                | AwbcRuntimeTypeShape::EntityRef
+                | AwbcRuntimeTypeShape::Bytes
+                | AwbcRuntimeTypeShape::Never
+                | AwbcRuntimeTypeShape::MatrixF32
+                | AwbcRuntimeTypeShape::MatrixF64
+                | AwbcRuntimeTypeShape::TensorF32
+                | AwbcRuntimeTypeShape::TensorF64,
+            ) => true,
+            Some(AwbcRuntimeTypeShape::Tuple(items) | AwbcRuntimeTypeShape::Choice(items)) => items
+                .iter()
+                .all(|item| visit(program, *item, depth + 1, active)),
+            Some(
+                AwbcRuntimeTypeShape::Sequence(item)
+                | AwbcRuntimeTypeShape::Range(item)
+                | AwbcRuntimeTypeShape::Iterator(item)
+                | AwbcRuntimeTypeShape::Array { item, .. },
+            ) => visit(program, *item, depth + 1, active),
+            Some(
+                AwbcRuntimeTypeShape::Record { fields, .. }
+                | AwbcRuntimeTypeShape::NominalRecord { fields, .. },
+            ) => fields
+                .iter()
+                .all(|field| visit(program, field.ty, depth + 1, active)),
+            Some(AwbcRuntimeTypeShape::Variant { cases, .. }) => cases.iter().all(|case| {
+                case.payload
+                    .is_none_or(|payload| visit(program, payload, depth + 1, active))
+            }),
+            Some(AwbcRuntimeTypeShape::Opaque {
+                value_class: crate::value::RuntimeOpaqueValueClass::Plain,
+                arguments,
+                ..
+            }) => arguments
+                .iter()
+                .all(|argument| visit(program, *argument, depth + 1, active)),
+            Some(AwbcRuntimeTypeShape::Map { key, value }) => {
+                visit(program, *key, depth + 1, active) && visit(program, *value, depth + 1, active)
+            }
+            Some(
+                AwbcRuntimeTypeShape::Nominal { .. }
+                | AwbcRuntimeTypeShape::Opaque {
+                    value_class: crate::value::RuntimeOpaqueValueClass::AffineHandle(_),
+                    ..
+                }
+                | AwbcRuntimeTypeShape::AgentValue
+                | AwbcRuntimeTypeShape::Agent(_)
+                | AwbcRuntimeTypeShape::Need(_)
+                | AwbcRuntimeTypeShape::Task(_)
+                | AwbcRuntimeTypeShape::Stream { .. }
+                | AwbcRuntimeTypeShape::Shared(_)
+                | AwbcRuntimeTypeShape::Reference(_)
+                | AwbcRuntimeTypeShape::Function { .. }
+                | AwbcRuntimeTypeShape::Dynamic,
+            )
+            | None => false,
+        };
+        active.remove(&ty);
+        permits
+    }
+
+    visit(program, ty, depth, &mut BTreeSet::new())
+}
+
+fn agent_field_value_destination_matches(
+    program: &AwbcProgram,
+    destination: Option<&AwbcRuntimeTypeShape>,
+    expected: RuntimeAgentFieldValue,
+) -> bool {
+    match expected {
+        RuntimeAgentFieldValue::String => matches!(
+            destination,
+            Some(AwbcRuntimeTypeShape::String | AwbcRuntimeTypeShape::Dynamic)
+        ),
+        RuntimeAgentFieldValue::Bool => is_bool(destination),
+        RuntimeAgentFieldValue::U32 => matches!(
+            destination,
+            Some(
+                AwbcRuntimeTypeShape::UInt(AwbcUnsignedIntKind::U32)
+                    | AwbcRuntimeTypeShape::Dynamic
+            )
+        ),
+        RuntimeAgentFieldValue::U64 => matches!(
+            destination,
+            Some(
+                AwbcRuntimeTypeShape::UInt(AwbcUnsignedIntKind::U64)
+                    | AwbcRuntimeTypeShape::Dynamic
+            )
+        ),
+        RuntimeAgentFieldValue::Agent(expected) => {
+            matches!(
+                destination,
+                Some(AwbcRuntimeTypeShape::Agent(actual))
+                    if actual.operational_type() == expected
+            ) || is_dynamic(destination)
+        }
+        RuntimeAgentFieldValue::BuiltinVariant(expected) => {
+            matches!(
+                destination,
+                Some(AwbcRuntimeTypeShape::Variant {
+                    owner: AwbcVariantIdentity::Builtin(actual),
+                    ..
+                }) if *actual == expected
+            ) || is_dynamic(destination)
+        }
+        RuntimeAgentFieldValue::VecAgent(expected) => match destination {
+            Some(AwbcRuntimeTypeShape::Sequence(item)) => matches!(
+                runtime_shape(program, *item),
+                Some(AwbcRuntimeTypeShape::Agent(actual))
+                    if actual.operational_type() == expected
+            ),
+            Some(AwbcRuntimeTypeShape::Dynamic) => true,
+            _ => false,
+        },
+        RuntimeAgentFieldValue::AgentValueMap => match destination {
+            Some(AwbcRuntimeTypeShape::Map { key, value }) => {
+                matches!(
+                    runtime_shape(program, *key),
+                    Some(AwbcRuntimeTypeShape::AgentValue)
+                ) && matches!(
+                    runtime_shape(program, *value),
+                    Some(AwbcRuntimeTypeShape::AgentValue)
+                )
+            }
+            Some(AwbcRuntimeTypeShape::Dynamic) => true,
+            _ => false,
+        },
+    }
 }
 
 fn is_bool(ty: Option<&AwbcRuntimeTypeShape>) -> bool {

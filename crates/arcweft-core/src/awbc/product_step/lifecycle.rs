@@ -1,12 +1,12 @@
 use super::{
     AwaitState, AwaitTarget, AwbcContentUnitId, AwbcFunctionId, AwbcHostCallId,
     AwbcProductExecutorStatus, AwbcProductStepExecutor, AwbcResumePointId, AwbcTaskPlanId,
-    AwbcTrapCode, ChoiceRuntimeOption, ChoiceState, DialogueState, FiberAwaitTarget, FiberStatus,
+    AwbcTrapCode, ChoiceRuntimeOption, ChoiceState, FiberAwaitTarget, FiberStatus,
     FiberSuspensionReason, FiberTerminalValue, FiberTrap, FlowExit, FlowFiberStatus, HostCallState,
-    HostTaskRequestTemplate, LogicalDuration, MappedEffect, NeedId, ProductStepError,
-    RuntimeDiagnostic, RuntimeDiagnosticCategory, RuntimeHostCallId, RuntimeStepMode,
-    RuntimeStepOptions, RuntimeStepOutput, RuntimeStepStopReason, TaskId, has_host_requests,
-    has_visible_output, line_id_from_awbc_public_id, runtime_value_label, source_diagnostic,
+    HostTaskRequestTemplate, MappedEffect, NeedId, ProductStepError, RuntimeDiagnostic,
+    RuntimeDiagnosticCategory, RuntimeHostCallId, RuntimeStepMode, RuntimeStepOptions,
+    RuntimeStepOutput, RuntimeStepStopReason, TaskId, has_host_requests, has_visible_output,
+    runtime_value_label, source_diagnostic,
 };
 
 impl AwbcProductStepExecutor {
@@ -49,6 +49,35 @@ impl AwbcProductStepExecutor {
                 RuntimeDiagnosticCategory::Internal,
                 AwbcTrapCode::InternalInvariant,
                 message,
+            ),
+            ProductStepError::Line(error) => (
+                RuntimeDiagnosticCategory::Internal,
+                AwbcTrapCode::InternalInvariant,
+                error.to_string(),
+            ),
+            ProductStepError::LineTaskCompletion(error) => (
+                RuntimeDiagnosticCategory::Internal,
+                AwbcTrapCode::InternalInvariant,
+                error.to_string(),
+            ),
+            error @ (ProductStepError::DialogueContentIdentityOverflow
+            | ProductStepError::DialogueOccurrenceOverflow
+            | ProductStepError::ChildGenerationOverflow
+            | ProductStepError::DialogueLineCursorOverflow
+            | ProductStepError::StaleLineTaskChildContent { .. }) => (
+                RuntimeDiagnosticCategory::Internal,
+                AwbcTrapCode::InternalInvariant,
+                error.to_string(),
+            ),
+            ProductStepError::RuntimeIdentity(error) => (
+                RuntimeDiagnosticCategory::Internal,
+                AwbcTrapCode::InternalInvariant,
+                error.to_string(),
+            ),
+            ProductStepError::Fiber(error) => (
+                RuntimeDiagnosticCategory::Internal,
+                AwbcTrapCode::InternalInvariant,
+                error.to_string(),
             ),
         };
         output
@@ -99,6 +128,25 @@ impl AwbcProductStepExecutor {
             ProductStepError::Type(message) => (RuntimeDiagnosticCategory::Type, message),
             ProductStepError::Host(message) => (RuntimeDiagnosticCategory::Host, message),
             ProductStepError::Internal(message) => (RuntimeDiagnosticCategory::Internal, message),
+            ProductStepError::Line(error) => {
+                (RuntimeDiagnosticCategory::Internal, error.to_string())
+            }
+            ProductStepError::LineTaskCompletion(error) => {
+                (RuntimeDiagnosticCategory::Internal, error.to_string())
+            }
+            error @ (ProductStepError::DialogueContentIdentityOverflow
+            | ProductStepError::DialogueOccurrenceOverflow
+            | ProductStepError::ChildGenerationOverflow
+            | ProductStepError::DialogueLineCursorOverflow
+            | ProductStepError::StaleLineTaskChildContent { .. }) => {
+                (RuntimeDiagnosticCategory::Internal, error.to_string())
+            }
+            ProductStepError::RuntimeIdentity(error) => {
+                (RuntimeDiagnosticCategory::Internal, error.to_string())
+            }
+            ProductStepError::Fiber(error) => {
+                (RuntimeDiagnosticCategory::Internal, error.to_string())
+            }
         };
         output
             .diagnostics
@@ -286,63 +334,16 @@ impl AwbcProductStepExecutor {
         };
         match &suspension.reason {
             FiberSuspensionReason::Dialogue {
-                content,
+                content: _,
                 values: _,
                 line_task_captures: _,
-            } => {
-                let content_unit = self.program.content_units.get(content.index());
-                let group = content_unit
-                    .and_then(|content| content.line_task_group)
-                    .and_then(|group| self.program.line_task_groups.get(group.index()));
-                let active = self
-                    .active_dialogue
-                    .as_ref()
-                    .filter(|active| active.content == *content);
-                let captures = group
-                    .zip(active)
-                    .map(|(group, active)| {
-                        group
-                            .captures
-                            .iter()
-                            .copied()
-                            .zip(active.captures.iter().cloned())
-                            .map(|(local, value)| crate::value::RuntimeLocalBinding {
-                                local,
-                                value,
-                            })
-                            .collect()
-                    })
-                    .unwrap_or_default();
-                let task_group = content_unit.and_then(|content| {
-                    content.line_task_group.and_then(|group| {
-                        group
-                            .0
-                            .checked_add(1)
-                            .and_then(std::num::NonZeroU32::new)
-                            .map(crate::runtime_id::RuntimeLineTaskGroupId::from_accepted_ordinal)
-                    })
-                });
-                FlowFiberStatus::Dialogue(DialogueState {
-                    line: line_id_from_awbc_public_id(&self.content_public_id(*content))
-                        .expect("AWBC content public ID should be a valid runtime line ID"),
-                    content: crate::runtime_id::RuntimeDialogueContentPlanId::from_accepted_ordinal(
-                        std::num::NonZeroU32::new(
-                            content
-                                .0
-                                .checked_add(1)
-                                .expect("verified AWBC content identity should fit a plan ordinal"),
-                        )
-                        .expect("AWBC content plan ordinals are one-based"),
-                    ),
-                    task_group,
-                    resume: None,
-                    captures,
-                    line_task: active.and_then(|active| active.line_task.clone()),
-                    elapsed: LogicalDuration::from_nanos(
-                        active.map_or(0, |active| active.elapsed_nanos),
-                    ),
-                })
-            }
+                result: _,
+            } => self.dialogues.active_frame().map_or(
+                FlowFiberStatus::Failed(
+                    "AWBC dialogue suspension is missing its active typed owner".to_owned(),
+                ),
+                |active| FlowFiberStatus::Dialogue(active.activation.clone()),
+            ),
             FiberSuspensionReason::Choice { .. } => {
                 let active = self.active_choice.as_ref();
                 FlowFiberStatus::Choice(ChoiceState {

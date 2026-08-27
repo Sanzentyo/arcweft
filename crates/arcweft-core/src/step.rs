@@ -1,30 +1,30 @@
 use crate::effect::LineEffectRequest;
-use crate::plan::{FlowEvent, RuntimeLineId};
+use crate::plan::FlowEvent;
 use crate::root::{RootEventInput, RootTransitionOutcome, RuntimeCommandEnvelope};
+use crate::runtime_id::{DialogueActivationId, RuntimeDialogueEffectSiteId, RuntimeDialogueMarkId};
 use crate::stream::RuntimeStreamEvent;
 use crate::task::{CancelScopeId, NamedHostArg, RuntimeNeedState, TaskEvent, TaskSpec};
 use crate::time::{LogicalDuration, TickId};
 use crate::value::RuntimePayload;
 use arcweft_interaction_model::{
     audio::{AudioCommandEnvelope, AudioEvent},
-    id::Identifier,
-    input::{InputEpoch, InputEventKind, InputSequence, InteractionTarget, RoutedInputEvent},
+    input::{InputEventKind, RoutedInputEvent},
     payload::InteractionPayload,
 };
 pub use arcweft_manifest_model::HostCallContractDigest;
-
-const RUNTIME_INPUT_TARGET: &str = "runtime";
-const DIALOGUE_ADVANCE_INPUT: &str = "dialogue.advance";
 
 #[derive(Clone, Debug, Default, PartialEq)]
 pub struct RuntimeStepInput {
     pub tick: TickId,
     pub dt: LogicalDuration,
     pub input_events: Vec<RoutedInputEvent>,
+    pub dialogue_content_events: Vec<RuntimeDialogueContentEvent>,
+    pub dialogue_advances: Vec<DialogueActivationId>,
     pub need_states: Vec<RuntimeNeedState>,
     pub task_events: Vec<TaskEvent>,
     pub audio_events: Vec<AudioEvent>,
     pub host_call_results: Vec<RuntimeHostCallResult>,
+    pub line_outcomes: Vec<crate::presentation::RuntimeLineHostOutcome>,
     pub root_events: Vec<RootEventInput>,
     /// Typed events emitted by a later-phase owner for root ingress on the
     /// following step. They never participate in the current root phase.
@@ -41,11 +41,53 @@ pub struct RuntimeStepInputRef<'a> {
     tick: TickId,
     dt: LogicalDuration,
     input_events: &'a [RoutedInputEvent],
+    dialogue_content_events: &'a [RuntimeDialogueContentEvent],
+    dialogue_advances: &'a [DialogueActivationId],
     need_states: &'a [RuntimeNeedState],
     task_events: &'a [TaskEvent],
     audio_events: &'a [AudioEvent],
     host_call_results: &'a [RuntimeHostCallResult],
+    line_outcomes: &'a [crate::presentation::RuntimeLineHostOutcome],
     root_events: &'a [RootEventInput],
+}
+
+/// One source-ordered reveal event emitted by the presentation owner for an
+/// exact dialogue activation. Marks and inline effect sites share this carrier
+/// so neither can be reconstructed from a label or delivered to a later
+/// activation of the same authored line.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct RuntimeDialogueContentEvent {
+    activation: DialogueActivationId,
+    kind: RuntimeDialogueContentEventKind,
+}
+
+impl RuntimeDialogueContentEvent {
+    #[must_use]
+    pub const fn new(
+        activation: DialogueActivationId,
+        kind: RuntimeDialogueContentEventKind,
+    ) -> Self {
+        Self { activation, kind }
+    }
+
+    #[must_use]
+    pub const fn activation(&self) -> &DialogueActivationId {
+        &self.activation
+    }
+
+    #[must_use]
+    pub const fn kind(&self) -> RuntimeDialogueContentEventKind {
+        self.kind
+    }
+}
+
+/// Content-plan coordinate revealed within one dialogue activation.
+#[derive(
+    Clone, Copy, Debug, serde::Deserialize, Eq, Hash, Ord, PartialEq, PartialOrd, serde::Serialize,
+)]
+pub enum RuntimeDialogueContentEventKind {
+    Mark(RuntimeDialogueMarkId),
+    Effect(RuntimeDialogueEffectSiteId),
 }
 
 #[derive(Clone, Debug, Default, PartialEq)]
@@ -73,6 +115,7 @@ pub struct HostRequestBatch {
     pub cancel_scopes: Vec<CancelScopeId>,
     pub ensure_content: Vec<RuntimeContentRequest>,
     pub host_calls: Vec<RuntimeHostCallRequest>,
+    pub line_commands: Vec<crate::presentation::RuntimeLineHostCommand>,
     /// Events accepted from later-phase owners for deterministic next-step
     /// root ingress. The session driver owns the queue after this step.
     pub root_events_next_step: Vec<RootEventInput>,
@@ -449,62 +492,20 @@ pub struct RuntimeDiagnosticSource {
 }
 
 impl RuntimeStepInput {
-    /// Builds the canonical line-targeted core input emitted after a
-    /// presentation layer has validated its own occurrence/stage target.
-    ///
-    /// Interactive hosts using `arcweft-runtime-driver` should queue its typed
-    /// dialogue presentation input instead of constructing this lower-level
-    /// event directly.
-    ///
-    /// # Panics
-    ///
-    /// Panics only if Arcweft's compile-time canonical runtime target or input
-    /// name stops satisfying the interaction identifier invariants.
-    #[must_use]
-    pub fn dialogue_advance_event(line: &RuntimeLineId) -> RoutedInputEvent {
-        RoutedInputEvent::new(
-            InputEpoch::default(),
-            InputSequence::default(),
-            InteractionTarget::new(RUNTIME_INPUT_TARGET)
-                .expect("static runtime input target is non-empty"),
-            InputEventKind::Custom {
-                name: Identifier::new(DIALOGUE_ADVANCE_INPUT)
-                    .expect("static dialogue input name is non-empty"),
-            },
-        )
-        .with_payload(InteractionPayload::Text(
-            line.public_label().as_str().to_owned(),
-        ))
-    }
-
     pub fn as_view(&self) -> RuntimeStepInputRef<'_> {
         RuntimeStepInputRef {
             tick: self.tick,
             dt: self.dt,
             input_events: self.input_events.as_slice(),
+            dialogue_content_events: self.dialogue_content_events.as_slice(),
+            dialogue_advances: self.dialogue_advances.as_slice(),
             need_states: self.need_states.as_slice(),
             task_events: self.task_events.as_slice(),
             audio_events: self.audio_events.as_slice(),
             host_call_results: self.host_call_results.as_slice(),
+            line_outcomes: self.line_outcomes.as_slice(),
             root_events: self.root_events.as_slice(),
         }
-    }
-
-    /// Whether this step contains a targeted advance for the active line.
-    #[must_use]
-    pub fn advances_dialogue(&self, line: &RuntimeLineId) -> bool {
-        self.advances_dialogue_label(line.public_label().as_str())
-    }
-
-    pub(crate) fn advances_dialogue_label(&self, line: &str) -> bool {
-        self.input_events.iter().any(|event| {
-            event.target.as_str() == RUNTIME_INPUT_TARGET
-                && input_event_trigger_name(event) == Some(DIALOGUE_ADVANCE_INPUT)
-                && matches!(
-                    event.payload.as_ref(),
-                    Some(InteractionPayload::Text(value)) if value == line
-                )
-        })
     }
 }
 
@@ -550,6 +551,14 @@ impl<'a> RuntimeStepInputRef<'a> {
         self.input_events
     }
 
+    pub const fn dialogue_content_events(&self) -> &'a [RuntimeDialogueContentEvent] {
+        self.dialogue_content_events
+    }
+
+    pub const fn dialogue_advances(&self) -> &'a [DialogueActivationId] {
+        self.dialogue_advances
+    }
+
     pub const fn need_states(&self) -> &'a [RuntimeNeedState] {
         self.need_states
     }
@@ -564,6 +573,10 @@ impl<'a> RuntimeStepInputRef<'a> {
 
     pub const fn host_call_results(&self) -> &'a [RuntimeHostCallResult] {
         self.host_call_results
+    }
+
+    pub const fn line_outcomes(&self) -> &'a [crate::presentation::RuntimeLineHostOutcome] {
+        self.line_outcomes
     }
 
     pub const fn root_events(&self) -> &'a [RootEventInput] {
@@ -592,6 +605,9 @@ impl RuntimeStepOutput {
             .ensure_content
             .extend(other.requests.ensure_content);
         self.requests.host_calls.extend(other.requests.host_calls);
+        self.requests
+            .line_commands
+            .extend(other.requests.line_commands);
         self.root_transitions.extend(other.root_transitions);
         self.root_commands.extend(other.root_commands);
     }

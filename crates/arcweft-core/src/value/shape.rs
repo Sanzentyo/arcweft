@@ -89,7 +89,9 @@ mod tests {
         );
         assert_eq!(
             RuntimeValue::Variant {
-                owner: crate::pattern::RuntimeVariantIdentity::Option,
+                owner: crate::pattern::RuntimeVariantIdentity::Builtin(
+                    crate::pattern::RuntimeBuiltinVariantIdentity::Option,
+                ),
                 ordinal: 1,
                 name: "None".to_owned(),
                 payload: None,

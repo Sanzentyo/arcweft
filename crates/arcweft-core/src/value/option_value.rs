@@ -1,29 +1,21 @@
 //! Typed runtime `Option` recognition, construction, and intrinsics.
 
 use super::{RuntimeEvalError, RuntimeValue, runtime_value_label};
-use crate::pattern::RuntimeVariantIdentity;
+use crate::pattern::RuntimeBuiltinVariantCaseIdentity;
 
 impl RuntimeValue {
     /// Materializes the canonical runtime representation of `Option::Some`.
     #[must_use]
     pub fn option_some(value: RuntimeValue) -> Self {
-        Self::Variant {
-            owner: RuntimeVariantIdentity::Option,
-            ordinal: 0,
-            name: "Some".to_owned(),
-            payload: Some(Box::new(value)),
-        }
+        Self::try_builtin_variant(RuntimeBuiltinVariantCaseIdentity::OptionSome, Some(value))
+            .expect("Option::Some builtin schema requires exactly one payload")
     }
 
     /// Materializes the canonical runtime representation of `Option::None`.
     #[must_use]
     pub fn option_none() -> Self {
-        Self::Variant {
-            owner: RuntimeVariantIdentity::Option,
-            ordinal: 1,
-            name: "None".to_owned(),
-            payload: None,
-        }
+        Self::try_builtin_variant(RuntimeBuiltinVariantCaseIdentity::OptionNone, None)
+            .expect("Option::None builtin schema forbids a payload")
     }
 
     /// Produces the `None` value for a well-formed runtime `Option` while
@@ -51,22 +43,21 @@ pub fn evaluate_core_option_is_some_intrinsic(
 pub fn evaluate_core_option_unwrap_intrinsic(
     value: RuntimeValue,
 ) -> Result<RuntimeValue, RuntimeEvalError> {
-    match value {
-        RuntimeValue::Variant {
-            owner: RuntimeVariantIdentity::Option,
-            ordinal: 0,
-            name,
-            payload: Some(payload),
-        } if name == "Some" => Ok(*payload),
-        RuntimeValue::Variant {
-            owner: RuntimeVariantIdentity::Option,
-            ordinal: 1,
-            name,
-            payload: None,
-        } if name == "None" => Err(RuntimeEvalError::ExpectedBracketSeq(
-            "core.option.unwrap called on None".to_owned(),
-        )),
-        value => Err(RuntimeEvalError::ExpectedBracketSeq(format!(
+    match value.builtin_variant_case().map(|(case, _)| case) {
+        Some(RuntimeBuiltinVariantCaseIdentity::OptionSome) => {
+            let RuntimeValue::Variant {
+                payload: Some(payload),
+                ..
+            } = value
+            else {
+                unreachable!("admitted Option::Some has a payload")
+            };
+            Ok(*payload)
+        }
+        Some(RuntimeBuiltinVariantCaseIdentity::OptionNone) => Err(
+            RuntimeEvalError::ExpectedBracketSeq("core.option.unwrap called on None".to_owned()),
+        ),
+        _ => Err(RuntimeEvalError::ExpectedBracketSeq(format!(
             "core.option.unwrap expected Option, found {}",
             runtime_value_label(&value)
         ))),
@@ -79,21 +70,9 @@ enum RuntimeOptionPayload {
 }
 
 fn runtime_option_payload(value: &RuntimeValue) -> Option<RuntimeOptionPayload> {
-    let RuntimeValue::Variant {
-        owner,
-        ordinal,
-        name,
-        payload,
-    } = value
-    else {
-        return None;
-    };
-    if *owner != RuntimeVariantIdentity::Option {
-        return None;
-    }
-    match (*ordinal, name.as_str(), payload.as_deref()) {
-        (0, "Some", Some(_)) => Some(RuntimeOptionPayload::Some),
-        (1, "None", None) => Some(RuntimeOptionPayload::None),
+    match value.builtin_variant_case().map(|(case, _)| case) {
+        Some(RuntimeBuiltinVariantCaseIdentity::OptionSome) => Some(RuntimeOptionPayload::Some),
+        Some(RuntimeBuiltinVariantCaseIdentity::OptionNone) => Some(RuntimeOptionPayload::None),
         _ => None,
     }
 }

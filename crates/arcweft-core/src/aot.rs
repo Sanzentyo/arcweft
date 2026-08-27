@@ -111,6 +111,8 @@ impl AotLinearOp {
             }),
             FlowOp::Noop => Some(Self::Noop),
             FlowOp::LetElse { .. }
+            | FlowOp::LineOperation { .. }
+            | FlowOp::CommitDialogueResult { .. }
             | FlowOp::Dialogue { .. }
             | FlowOp::Choice { .. }
             | FlowOp::Await { .. }
@@ -239,6 +241,8 @@ pub(crate) fn aot_linear_supported_op(op: &FlowOp) -> bool {
         | FlowOp::Noop => true,
         FlowOp::Effect(effect) => !effect_changes_control(effect),
         FlowOp::LetElse { .. }
+        | FlowOp::LineOperation { .. }
+        | FlowOp::CommitDialogueResult { .. }
         | FlowOp::Dialogue { .. }
         | FlowOp::Choice { .. }
         | FlowOp::Await { .. }
@@ -310,7 +314,10 @@ impl AotOpClass {
             | FlowOp::ForNext { .. }
             | FlowOp::Thread { .. }
             | FlowOp::Scope(_) => Self::Branch,
-            FlowOp::Effect(_) | FlowOp::EvaluatedEffect(_) => Self::Effect,
+            FlowOp::Effect(_)
+            | FlowOp::EvaluatedEffect(_)
+            | FlowOp::CommitDialogueResult { .. } => Self::Effect,
+            FlowOp::LineOperation { .. } => Self::Await,
             FlowOp::Await { .. } | FlowOp::AwaitMany { .. } | FlowOp::HostCall { .. } => {
                 Self::Await
             }
@@ -361,6 +368,8 @@ impl AotProgramStats {
                 FlowOp::Bind(_)
                 | FlowOp::Let { .. }
                 | FlowOp::AssignNominalField { .. }
+                | FlowOp::LineOperation { .. }
+                | FlowOp::CommitDialogueResult { .. }
                 | FlowOp::Dialogue { .. }
                 | FlowOp::Choice { .. }
                 | FlowOp::AwaitMany { .. }

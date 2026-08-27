@@ -335,6 +335,23 @@ pub enum RuntimeHandleKind {
 }
 
 impl RuntimeHandleKind {
+    pub const fn label(self) -> &'static str {
+        match self {
+            Self::StageActor => "stage_actor",
+            Self::Cue => "cue",
+            Self::Voice => "voice",
+        }
+    }
+
+    pub fn from_label(label: &str) -> Option<Self> {
+        Some(match label {
+            "stage_actor" => Self::StageActor,
+            "cue" => Self::Cue,
+            "voice" => Self::Voice,
+            _ => return None,
+        })
+    }
+
     pub fn try_producer(
         self,
     ) -> Result<RuntimeOpaqueTypeProducerId, crate::entry::RuntimeIdentityError> {

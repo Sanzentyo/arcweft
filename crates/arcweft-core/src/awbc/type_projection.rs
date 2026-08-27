@@ -6,8 +6,8 @@ use super::schema::{
 };
 use crate::entry::{RuntimeIdentityError, RuntimeNominalTypeId, TypeLayoutHash};
 use crate::pattern::{
-    RuntimeCheckedType, RuntimeCheckedVariantCase, RuntimeOpaqueTypeOwner,
-    RuntimeOpaqueTypeProducerId, RuntimeSemanticTypeId,
+    RuntimeBuiltinVariantIdentity, RuntimeCheckedType, RuntimeCheckedVariantCase,
+    RuntimeOpaqueTypeOwner, RuntimeOpaqueTypeProducerId, RuntimeSemanticTypeId,
 };
 use crate::value::{
     RuntimeNominalRecordLayout, RuntimeNominalRecordLayoutError, RuntimeSignedIntWidth,
@@ -238,6 +238,7 @@ impl AwbcProgram {
             AwbcRuntimeTypeShape::Duration => Ok(RuntimeCheckedType::Duration),
             AwbcRuntimeTypeShape::Progress => Ok(RuntimeCheckedType::Progress),
             AwbcRuntimeTypeShape::EntityRef => Ok(RuntimeCheckedType::EntityReference),
+            AwbcRuntimeTypeShape::AgentValue => Ok(RuntimeCheckedType::AgentValue),
             AwbcRuntimeTypeShape::Bytes => Ok(RuntimeCheckedType::Bytes),
             AwbcRuntimeTypeShape::Sequence(item) => self
                 .checked_type_at_depth(*item, depth + 1, visiting)
@@ -346,12 +347,16 @@ impl AwbcProgram {
             .collect::<Result<Vec<_>, AwbcTypeProjectionError>>()?;
         match owner {
             AwbcVariantIdentity::Nominal { public_id } => Ok(RuntimeCheckedType::Variant {
-                nominal: self.nominal_identity(*public_id)?,
-                semantic_identity,
+                owner: crate::pattern::RuntimeVariantIdentity::Nominal {
+                    nominal: self.nominal_identity(*public_id)?,
+                    semantic_identity,
+                },
                 arguments: projected_arguments,
                 cases: projected,
             }),
-            AwbcVariantIdentity::Result if projected_arguments.is_empty() => {
+            AwbcVariantIdentity::Builtin(RuntimeBuiltinVariantIdentity::Result)
+                if projected_arguments.is_empty() =>
+            {
                 match projected.as_slice() {
                     [
                         RuntimeCheckedVariantCase {
@@ -369,7 +374,9 @@ impl AwbcProgram {
                     _ => Err(AwbcTypeProjectionError::InvalidBuiltinVariant { index: ty.0 }),
                 }
             }
-            AwbcVariantIdentity::Option if projected_arguments.is_empty() => {
+            AwbcVariantIdentity::Builtin(RuntimeBuiltinVariantIdentity::Option)
+                if projected_arguments.is_empty() =>
+            {
                 match projected.as_slice() {
                     [
                         RuntimeCheckedVariantCase {
@@ -386,7 +393,14 @@ impl AwbcProgram {
                     _ => Err(AwbcTypeProjectionError::InvalidBuiltinVariant { index: ty.0 }),
                 }
             }
-            AwbcVariantIdentity::Result | AwbcVariantIdentity::Option => {
+            AwbcVariantIdentity::Builtin(owner) if projected_arguments.is_empty() => {
+                Ok(RuntimeCheckedType::Variant {
+                    owner: crate::pattern::RuntimeVariantIdentity::Builtin(*owner),
+                    arguments: projected_arguments,
+                    cases: projected,
+                })
+            }
+            AwbcVariantIdentity::Builtin(_) => {
                 Err(AwbcTypeProjectionError::InvalidBuiltinVariant { index: ty.0 })
             }
         }

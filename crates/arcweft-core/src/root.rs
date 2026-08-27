@@ -9,7 +9,7 @@ use crate::entry::{
     RuntimeSchemaError, RuntimeSchemaLimits, RuntimeStatefulEntryRoles, RuntimeValueDigest,
     TypeLayoutHash, canonical_runtime_value_bytes,
 };
-use crate::pattern::RuntimeVariantIdentity;
+use crate::pattern::{RuntimeBuiltinVariantCaseIdentity, RuntimeVariantIdentity};
 use crate::plan::{
     EntryRuntimeId, FlowRuntimeId, RuntimeEntryRoles, RuntimePlan, RuntimePlanError,
 };
@@ -752,20 +752,20 @@ enum ParsedReducerResult {
 }
 
 fn parse_reducer_result(value: RuntimeValue) -> Result<ParsedReducerResult, String> {
+    let Some((case, Some(_))) = value.builtin_variant_case() else {
+        return Err("reducer must return Result<Reduction<State>, ReducerError>".to_owned());
+    };
     let RuntimeValue::Variant {
-        owner: RuntimeVariantIdentity::Result,
-        ordinal,
-        name,
         payload: Some(payload),
         ..
     } = value
     else {
-        return Err("reducer must return Result<Reduction<State>, ReducerError>".to_owned());
+        unreachable!("admitted reducer Result case carries a payload")
     };
-    match (ordinal, name.as_str()) {
-        (0, "Ok") => parse_reduction(*payload),
-        (1, "Err") => parse_reducer_error(*payload),
-        _ => Err(format!("reducer returned unknown result variant `{name}`")),
+    match case {
+        RuntimeBuiltinVariantCaseIdentity::ResultOk => parse_reduction(*payload),
+        RuntimeBuiltinVariantCaseIdentity::ResultErr => parse_reducer_error(*payload),
+        _ => Err("reducer must return Result<Reduction<State>, ReducerError>".to_owned()),
     }
 }
 
@@ -945,9 +945,10 @@ fn validate_replay_safe_value(
         RuntimeValue::F64(value) if !value.is_finite() => {
             Err("replay-safe payload contains non-finite f64".to_owned())
         }
-        RuntimeValue::String(value) | RuntimeValue::EntityRef(value)
-            if value.len() > limits.max_string_bytes =>
-        {
+        RuntimeValue::String(value) if value.len() > limits.max_string_bytes => {
+            Err("replay-safe payload exceeds string byte budget".to_owned())
+        }
+        RuntimeValue::EntityRef(value) if value.runtime_label().len() > limits.max_string_bytes => {
             Err("replay-safe payload exceeds string byte budget".to_owned())
         }
         RuntimeValue::Progress(value)

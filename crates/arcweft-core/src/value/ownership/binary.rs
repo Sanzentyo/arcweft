@@ -192,9 +192,14 @@ pub(super) fn encode_value_path(path: &RuntimeValuePath) -> Vec<u8> {
             RuntimeValuePathSegment::FunctionCapture(capture) => {
                 push_u32(&mut bytes, capture.get());
             }
+            RuntimeValuePathSegment::ReductionCommandPayload(index)
+            | RuntimeValuePathSegment::AgentEmbeddedValue(index) => {
+                bytes.extend_from_slice(&index.to_le_bytes());
+            }
             RuntimeValuePathSegment::VariantPayload
             | RuntimeValuePathSegment::IteratorWitnessState
-            | RuntimeValuePathSegment::OpaquePayload => {}
+            | RuntimeValuePathSegment::OpaquePayload
+            | RuntimeValuePathSegment::ReductionState => {}
         }
     }
     bytes
@@ -233,6 +238,9 @@ pub(super) fn decode_value_path(
             8 => RuntimeValuePathSegment::IteratorRemainder(reader.u64()?),
             9 => RuntimeValuePathSegment::IteratorWitnessState,
             10 => RuntimeValuePathSegment::OpaquePayload,
+            11 => RuntimeValuePathSegment::ReductionState,
+            12 => RuntimeValuePathSegment::ReductionCommandPayload(reader.u32()?),
+            13 => RuntimeValuePathSegment::AgentEmbeddedValue(reader.u32()?),
             tag => return Err(RuntimeOwnershipBinaryError::UnknownPathSegmentTag { tag }),
         };
         segments.push(segment);
@@ -398,8 +406,8 @@ mod tests {
         ));
         assert!(decode_owned_slot(&[0, 0, 0, 0, 0, 0, 0, 0, 0, 2, 0, 0, 0, 0, 0, 0, 0]).is_err());
         assert!(matches!(
-            decode_value_path(&[1, 0, 0, 0, 11]),
-            Err(RuntimeOwnershipBinaryError::UnknownPathSegmentTag { tag: 11 })
+            decode_value_path(&[1, 0, 0, 0, 14]),
+            Err(RuntimeOwnershipBinaryError::UnknownPathSegmentTag { tag: 14 })
         ));
         assert!(decode_value_path(&[1, 0, 0, 0, 3, 0, 0, 0, 0]).is_err());
         assert!(decode_value_path(&[2, 0, 0, 0, 7]).is_err());

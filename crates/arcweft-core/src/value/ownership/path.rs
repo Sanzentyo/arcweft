@@ -24,6 +24,9 @@ pub enum RuntimeValuePathSegment {
     IteratorRemainder(u64),
     IteratorWitnessState,
     OpaquePayload,
+    ReductionState,
+    ReductionCommandPayload(u32),
+    AgentEmbeddedValue(u32),
 }
 
 /// Failure to construct or resolve a canonical runtime-value path.
@@ -98,6 +101,9 @@ impl RuntimeValuePathSegment {
             Self::IteratorRemainder(_) => 8,
             Self::IteratorWitnessState => 9,
             Self::OpaquePayload => 10,
+            Self::ReductionState => 11,
+            Self::ReductionCommandPayload(_) => 12,
+            Self::AgentEmbeddedValue(_) => 13,
         }
     }
 }
@@ -119,6 +125,10 @@ impl Ord for RuntimeValuePathSegment {
                     left.cmp(right)
                 }
                 (Self::FunctionCapture(left), Self::FunctionCapture(right)) => left.cmp(right),
+                (
+                    Self::ReductionCommandPayload(left) | Self::AgentEmbeddedValue(left),
+                    Self::ReductionCommandPayload(right) | Self::AgentEmbeddedValue(right),
+                ) => left.cmp(right),
                 _ => Ordering::Equal,
             })
     }
@@ -156,6 +166,9 @@ enum HumanPathSegmentRef {
     IteratorRemainder { index: String },
     IteratorWitnessState,
     OpaquePayload {},
+    ReductionState,
+    ReductionCommandPayload { index: u32 },
+    AgentEmbeddedValue { index: u32 },
 }
 
 #[derive(Deserialize)]
@@ -172,6 +185,9 @@ enum HumanPathSegment {
     IteratorRemainder { index: String },
     IteratorWitnessState,
     OpaquePayload {},
+    ReductionState,
+    ReductionCommandPayload { index: u32 },
+    AgentEmbeddedValue { index: u32 },
 }
 
 #[derive(Serialize)]
@@ -188,6 +204,9 @@ enum NonHumanPathSegmentRef {
     IteratorRemainder { index: u64 },
     IteratorWitnessState,
     OpaquePayload {},
+    ReductionState,
+    ReductionCommandPayload { index: u32 },
+    AgentEmbeddedValue { index: u32 },
 }
 
 #[derive(Deserialize)]
@@ -204,6 +223,9 @@ enum NonHumanPathSegment {
     IteratorRemainder { index: u64 },
     IteratorWitnessState,
     OpaquePayload {},
+    ReductionState,
+    ReductionCommandPayload { index: u32 },
+    AgentEmbeddedValue { index: u32 },
 }
 
 fn parse_canonical_u64<E: serde::de::Error>(value: &str) -> Result<u64, E> {
@@ -240,6 +262,13 @@ impl Serialize for RuntimeValuePathSegment {
                 }
                 Self::IteratorWitnessState => NonHumanPathSegmentRef::IteratorWitnessState,
                 Self::OpaquePayload => NonHumanPathSegmentRef::OpaquePayload {},
+                Self::ReductionState => NonHumanPathSegmentRef::ReductionState,
+                Self::ReductionCommandPayload(index) => {
+                    NonHumanPathSegmentRef::ReductionCommandPayload { index }
+                }
+                Self::AgentEmbeddedValue(index) => {
+                    NonHumanPathSegmentRef::AgentEmbeddedValue { index }
+                }
             };
             return segment.serialize(serializer);
         }
@@ -259,6 +288,11 @@ impl Serialize for RuntimeValuePathSegment {
             },
             Self::IteratorWitnessState => HumanPathSegmentRef::IteratorWitnessState,
             Self::OpaquePayload => HumanPathSegmentRef::OpaquePayload {},
+            Self::ReductionState => HumanPathSegmentRef::ReductionState,
+            Self::ReductionCommandPayload(index) => {
+                HumanPathSegmentRef::ReductionCommandPayload { index }
+            }
+            Self::AgentEmbeddedValue(index) => HumanPathSegmentRef::AgentEmbeddedValue { index },
         };
         human.serialize(serializer)
     }
@@ -284,6 +318,13 @@ impl<'de> Deserialize<'de> for RuntimeValuePathSegment {
                 NonHumanPathSegment::IteratorRemainder { index } => Self::IteratorRemainder(index),
                 NonHumanPathSegment::IteratorWitnessState => Self::IteratorWitnessState,
                 NonHumanPathSegment::OpaquePayload {} => Self::OpaquePayload,
+                NonHumanPathSegment::ReductionState => Self::ReductionState,
+                NonHumanPathSegment::ReductionCommandPayload { index } => {
+                    Self::ReductionCommandPayload(index)
+                }
+                NonHumanPathSegment::AgentEmbeddedValue { index } => {
+                    Self::AgentEmbeddedValue(index)
+                }
             });
         }
         Ok(match HumanPathSegment::deserialize(deserializer)? {
@@ -302,6 +343,11 @@ impl<'de> Deserialize<'de> for RuntimeValuePathSegment {
             }
             HumanPathSegment::IteratorWitnessState => Self::IteratorWitnessState,
             HumanPathSegment::OpaquePayload {} => Self::OpaquePayload,
+            HumanPathSegment::ReductionState => Self::ReductionState,
+            HumanPathSegment::ReductionCommandPayload { index } => {
+                Self::ReductionCommandPayload(index)
+            }
+            HumanPathSegment::AgentEmbeddedValue { index } => Self::AgentEmbeddedValue(index),
         })
     }
 }

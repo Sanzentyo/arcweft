@@ -159,7 +159,7 @@ mod tests {
             profile: RuntimeAssertionProfile::Always,
         };
 
-        let LineEffectRequest::Assert(descriptor) = effect.descriptor() else {
+        let Some(LineEffectRequest::Assert(descriptor)) = effect.host_descriptor() else {
             panic!("assertion descriptor must retain its typed request kind");
         };
         assert_eq!(descriptor.guard(), guard);

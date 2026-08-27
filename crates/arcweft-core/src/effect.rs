@@ -13,13 +13,6 @@ pub use assertion_identity::{
 
 #[derive(Clone, Debug, PartialEq)]
 pub enum LineEffectRequest {
-    RegisterHandle {
-        key: String,
-        handle: String,
-    },
-    DropHandle {
-        key: String,
-    },
     Wait(RuntimeWaitTarget),
     Audio(Box<RuntimeAudioCommand>),
     Call(RuntimeCall),
@@ -90,6 +83,10 @@ pub enum RuntimeEffectExpr {
         condition: RuntimeExpr,
         message: RuntimeExpr,
     },
+    Drop {
+        target: RuntimeExpr,
+        policy: RuntimeDropPolicyExpr,
+    },
     Assert {
         guard: RuntimeAssertionGuardId,
         condition: RuntimeExpr,
@@ -114,6 +111,90 @@ pub enum RuntimeEffectMaterializeError {
     AssertionConditionNotBool,
 }
 
+/// Materialized policy applied to every affine handle leaf in one dropped
+/// value graph.
+#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
+pub enum RuntimeDropPolicy {
+    Default,
+    Cancel,
+    Stop { fade: LogicalDuration },
+    Finish,
+    Release,
+    Detach,
+}
+
+impl RuntimeDropPolicy {
+    #[must_use]
+    pub const fn kind(self) -> RuntimeDropPolicyKind {
+        match self {
+            Self::Default => RuntimeDropPolicyKind::Default,
+            Self::Cancel => RuntimeDropPolicyKind::Cancel,
+            Self::Stop { .. } => RuntimeDropPolicyKind::Stop,
+            Self::Finish => RuntimeDropPolicyKind::Finish,
+            Self::Release => RuntimeDropPolicyKind::Release,
+            Self::Detach => RuntimeDropPolicyKind::Detach,
+        }
+    }
+
+    pub const fn kind_label(self) -> &'static str {
+        self.kind().label()
+    }
+}
+
+/// Payload-independent identity used for typed drop-policy projections.
+#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
+pub enum RuntimeDropPolicyKind {
+    Default,
+    Cancel,
+    Stop,
+    Finish,
+    Release,
+    Detach,
+}
+
+impl RuntimeDropPolicyKind {
+    pub const fn label(self) -> &'static str {
+        match self {
+            Self::Default => "default",
+            Self::Cancel => "cancel",
+            Self::Stop => "stop",
+            Self::Finish => "finish",
+            Self::Release => "release",
+            Self::Detach => "detach",
+        }
+    }
+}
+
+/// Evaluated policy form retained in a runtime plan before a dynamic Stop fade
+/// is materialized.
+#[derive(Clone, Debug, PartialEq)]
+pub enum RuntimeDropPolicyExpr {
+    Default,
+    Cancel,
+    Stop { fade: RuntimeExpr },
+    Finish,
+    Release,
+    Detach,
+}
+
+impl RuntimeDropPolicyExpr {
+    #[must_use]
+    pub const fn kind(&self) -> RuntimeDropPolicyKind {
+        match self {
+            Self::Default => RuntimeDropPolicyKind::Default,
+            Self::Cancel => RuntimeDropPolicyKind::Cancel,
+            Self::Stop { .. } => RuntimeDropPolicyKind::Stop,
+            Self::Finish => RuntimeDropPolicyKind::Finish,
+            Self::Release => RuntimeDropPolicyKind::Release,
+            Self::Detach => RuntimeDropPolicyKind::Detach,
+        }
+    }
+
+    pub const fn kind_label(&self) -> &'static str {
+        self.kind().label()
+    }
+}
+
 impl RuntimeEffectExpr {
     /// Returns value expressions in the stable ABI order consumed by
     /// `materialize` and AWBC `EmitEffect.args`.
@@ -132,6 +213,13 @@ impl RuntimeEffectExpr {
                 .collect(),
             Self::Panic(message) | Self::Fail(message) | Self::Bail(message) => vec![message],
             Self::Ensure { condition, message } => vec![condition, message],
+            Self::Drop { target, policy } => {
+                let mut expressions = vec![target];
+                if let RuntimeDropPolicyExpr::Stop { fade } = policy {
+                    expressions.push(fade);
+                }
+                expressions
+            }
             Self::Assert { condition, .. } => vec![condition],
         }
     }
@@ -158,14 +246,23 @@ impl RuntimeEffectExpr {
             }
             Self::Panic(message) | Self::Fail(message) | Self::Bail(message) => vec![message],
             Self::Ensure { condition, message } => vec![condition, message],
+            Self::Drop { target, policy } => {
+                let mut expressions = vec![target];
+                if let RuntimeDropPolicyExpr::Stop { fade } = policy {
+                    expressions.push(fade);
+                }
+                expressions
+            }
             Self::Assert { condition, .. } => vec![condition],
         }
     }
 
-    /// Static descriptor interned by structured and AWBC runtimes. Dynamic
-    /// values are deliberately absent and travel through the argument ABI.
-    pub fn descriptor(&self) -> LineEffectRequest {
-        match self {
+    /// Returns the host-effect descriptor for expressions that use the host
+    /// request ABI. Typed `Drop` expressions are executed by the owning
+    /// runtime instruction and therefore have no host-effect descriptor.
+    pub fn host_descriptor(&self) -> Option<LineEffectRequest> {
+        let descriptor = match self {
+            Self::Drop { .. } => return None,
             Self::Log { level, fields, .. } => LineEffectRequest::Log(RuntimeLog {
                 level: level.clone(),
                 message: String::new(),
@@ -195,19 +292,25 @@ impl RuntimeEffectExpr {
                 message.clone(),
                 *profile,
             )),
-        }
+        };
+        Some(descriptor)
     }
 
     /// Materializes the host-facing effect after its arguments have been
     /// evaluated by the current fiber.
     ///
-    /// A successful assertion produces no host request. A failed assertion is
-    /// the only path that materializes `LineEffectRequest::Assert`; hosts can
-    /// therefore construct failure data without parsing the condition label.
+    /// Typed `Drop` expressions produce no host request because their owning
+    /// instruction performs the drop. A successful assertion likewise
+    /// produces no host request. A failed assertion is the only path that
+    /// materializes `LineEffectRequest::Assert`; hosts can therefore
+    /// construct failure data without parsing the condition label.
     pub fn materialize(
         &self,
         values: &[RuntimeValue],
     ) -> Result<Option<LineEffectRequest>, RuntimeEffectMaterializeError> {
+        if self.host_descriptor().is_none() {
+            return Ok(None);
+        }
         let expected = self.argument_exprs().len();
         if values.len() != expected {
             return Err(RuntimeEffectMaterializeError::ArgumentCount {
@@ -249,6 +352,7 @@ impl RuntimeEffectExpr {
                 condition: labels[0].clone(),
                 message: labels[1].clone(),
             },
+            Self::Drop { .. } => return Ok(None),
             Self::Assert {
                 guard,
                 message,

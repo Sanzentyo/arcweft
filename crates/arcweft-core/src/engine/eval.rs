@@ -6,7 +6,10 @@ use super::{
     runtime_sequence_repeat_value, runtime_sequence_values, runtime_value_into_sequence_values,
     runtime_value_label, sum_i64_sequence_ref,
 };
-use crate::pattern::{RuntimeOpaqueTypeAdmission, RuntimeOpaqueTypeOwner, RuntimeVariantIdentity};
+use crate::pattern::{
+    RuntimeBuiltinVariantIdentity, RuntimeOpaqueTypeAdmission, RuntimeOpaqueTypeOwner,
+    RuntimeVariantIdentity,
+};
 use crate::plan::{
     FlowRuntimeId, RuntimePlanTypeDeclaration, RuntimePlanTypeProjection, RuntimePureInputType,
     RuntimePureOutputType,
@@ -16,7 +19,7 @@ use crate::runtime_id::RuntimeLocalDeclarationId;
 use crate::value::RuntimeBinaryOp;
 use crate::value::{
     RuntimeAgentExpr, RuntimeAgentValue, RuntimeCallArgumentMode, RuntimeCallTarget,
-    RuntimeEntityReferenceField, RuntimeExprKind, RuntimeFieldProjection, RuntimeIntrinsic,
+    RuntimeExprKind, RuntimeFieldProjection, RuntimeIntrinsic,
     evaluate_core_iter_into_iter_intrinsic, evaluate_core_iter_next_intrinsic,
     evaluate_core_option_is_some_intrinsic, evaluate_core_option_unwrap_intrinsic,
 };
@@ -122,9 +125,7 @@ impl Engine {
                 .get(*local)
                 .cloned()
                 .ok_or(RuntimeEvalError::UnknownLocal(*local)),
-            RuntimeExprKind::EntityRef(target) => {
-                Ok(RuntimeValue::EntityRef(target.runtime_label()))
-            }
+            RuntimeExprKind::EntityRef(target) => Ok(RuntimeValue::EntityRef(target.clone())),
             RuntimeExprKind::Let {
                 binding,
                 expr,
@@ -234,7 +235,7 @@ impl Engine {
     ) -> Result<RuntimeValue, RuntimeEvalError> {
         let mut operands = Vec::new();
         if let Some(choice) = agent.choice() {
-            operands.push(RuntimeValue::EntityRef(choice.as_str().to_owned()));
+            operands.push(RuntimeValue::String(choice.as_str().to_owned()));
         }
         for operand in agent.operands() {
             operands.push(self.evaluate_expr_with_backend(operand, pure_backend)?);
@@ -505,13 +506,25 @@ impl Engine {
             .ok_or(RuntimeEvalError::UnknownPlanType(ty))?;
         let (owner, name) = match declaration.projection() {
             RuntimePlanTypeProjection::Option(_) => match ordinal {
-                0 => (RuntimeVariantIdentity::Option, "Some".to_owned()),
-                1 => (RuntimeVariantIdentity::Option, "None".to_owned()),
+                0 => (
+                    RuntimeVariantIdentity::Builtin(RuntimeBuiltinVariantIdentity::Option),
+                    "Some".to_owned(),
+                ),
+                1 => (
+                    RuntimeVariantIdentity::Builtin(RuntimeBuiltinVariantIdentity::Option),
+                    "None".to_owned(),
+                ),
                 _ => return Err(RuntimeEvalError::UnknownVariantCase { ty, ordinal }),
             },
             RuntimePlanTypeProjection::Result { .. } => match ordinal {
-                0 => (RuntimeVariantIdentity::Result, "Ok".to_owned()),
-                1 => (RuntimeVariantIdentity::Result, "Err".to_owned()),
+                0 => (
+                    RuntimeVariantIdentity::Builtin(RuntimeBuiltinVariantIdentity::Result),
+                    "Ok".to_owned(),
+                ),
+                1 => (
+                    RuntimeVariantIdentity::Builtin(RuntimeBuiltinVariantIdentity::Result),
+                    "Err".to_owned(),
+                ),
                 _ => return Err(RuntimeEvalError::UnknownVariantCase { ty, ordinal }),
             },
             RuntimePlanTypeProjection::ProjectNominal { .. }
@@ -626,7 +639,7 @@ impl Engine {
                     })
             }
             (RuntimeFieldProjection::EntityReference(field), RuntimeValue::EntityRef(id)) => {
-                Ok(Self::entity_ref_field(&id, *field))
+                Ok(RuntimeValue::String(id.field_value(*field)))
             }
             (RuntimeFieldProjection::Agent(field), RuntimeValue::Agent(value)) => value
                 .project_typed_field(*field)
@@ -663,22 +676,6 @@ impl Engine {
                 value: runtime_value_label(&value),
             }),
         }
-    }
-
-    fn entity_ref_field(id: &str, field: RuntimeEntityReferenceField) -> RuntimeValue {
-        RuntimeValue::String(match field {
-            RuntimeEntityReferenceField::Id => id.to_owned(),
-            RuntimeEntityReferenceField::Family => Self::entity_ref_family(id).to_owned(),
-            RuntimeEntityReferenceField::Name => Self::entity_ref_name(id).to_owned(),
-        })
-    }
-
-    fn entity_ref_family(id: &str) -> &str {
-        id.split_once('.').map_or(id, |(family, _)| family)
-    }
-
-    fn entity_ref_name(id: &str) -> &str {
-        id.split_once('.').map_or("", |(_, name)| name)
     }
 
     fn evaluate_project_tuple_expr(
@@ -907,13 +904,23 @@ impl Engine {
         expr: &RuntimeExpr,
     ) -> Result<FlowRuntimeId, RuntimeEvalError> {
         match self.evaluate_expr(expr)? {
-            RuntimeValue::EntityRef(target) | RuntimeValue::String(target) => self
-                .plan
-                .resolve_flow_target_value(&target)
-                .map_err(|error| RuntimeEvalError::InvalidEntityTarget {
-                    target,
-                    reason: error.to_string(),
-                }),
+            RuntimeValue::EntityRef(target) => {
+                let target = target.runtime_label();
+                self.plan
+                    .resolve_flow_target_value(&target)
+                    .map_err(|error| RuntimeEvalError::InvalidEntityTarget {
+                        target,
+                        reason: error.to_string(),
+                    })
+            }
+            RuntimeValue::String(target) => {
+                self.plan
+                    .resolve_flow_target_value(&target)
+                    .map_err(|error| RuntimeEvalError::InvalidEntityTarget {
+                        target,
+                        reason: error.to_string(),
+                    })
+            }
             value => Err(RuntimeEvalError::ExpectedEntityRef(runtime_value_label(
                 &value,
             ))),

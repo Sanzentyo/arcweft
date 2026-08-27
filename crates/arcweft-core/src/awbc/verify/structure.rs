@@ -305,6 +305,7 @@ fn verify_runtime_types(program: &AwbcProgram) -> Result<(), AwbcVerifyError> {
             | AwbcRuntimeTypeShape::Duration
             | AwbcRuntimeTypeShape::Progress
             | AwbcRuntimeTypeShape::EntityRef
+            | AwbcRuntimeTypeShape::AgentValue
             | AwbcRuntimeTypeShape::MatrixF32
             | AwbcRuntimeTypeShape::MatrixF64
             | AwbcRuntimeTypeShape::TensorF32
@@ -320,9 +321,7 @@ fn verify_constants(program: &AwbcProgram) -> Result<(), AwbcVerifyError> {
     for (index, constant) in program.constants.iter().enumerate() {
         let at = format!("constant {index}");
         match constant {
-            AwbcConstant::String(id) | AwbcConstant::EntityRef(id) => {
-                check_string(program, *id, &at)?;
-            }
+            AwbcConstant::String(id) => check_string(program, *id, &at)?,
             AwbcConstant::Char(value) => {
                 if char::from_u32(*value).is_none() {
                     return Err(AwbcVerifyError::InvalidInvariant {
@@ -483,6 +482,7 @@ fn verify_constants(program: &AwbcProgram) -> Result<(), AwbcVerifyError> {
             | AwbcConstant::F32Bits(_)
             | AwbcConstant::F64Bits(_)
             | AwbcConstant::DurationNanos(_)
+            | AwbcConstant::EntityRef(_)
             | AwbcConstant::Bytes(_) => {}
         }
     }
@@ -585,20 +585,16 @@ fn verify_builtin_variant_schema(
     cases: &[crate::awbc::schema::AwbcVariantCase],
     at: &str,
 ) -> Result<(), AwbcVerifyError> {
-    let matches_schema = |expected: &[(&str, bool)]| {
-        cases.len() == expected.len()
-            && cases.iter().zip(expected).all(|(case, (name, payload))| {
-                program.strings.get(case.name.index()).map(String::as_str) == Some(*name)
-                    && case.payload.is_some() == *payload
-            })
-    };
     let valid = match owner {
         AwbcVariantIdentity::Nominal { .. } => true,
-        AwbcVariantIdentity::Option => {
-            arguments.is_empty() && matches_schema(&[("Some", true), ("None", false)])
-        }
-        AwbcVariantIdentity::Result => {
-            arguments.is_empty() && matches_schema(&[("Ok", true), ("Err", true)])
+        AwbcVariantIdentity::Builtin(owner) => {
+            arguments.is_empty()
+                && cases.len() == owner.cases().len()
+                && cases.iter().zip(owner.cases()).all(|(case, expected)| {
+                    program.strings.get(case.name.index()).map(String::as_str)
+                        == Some(expected.name())
+                        && case.payload.is_some() == expected.has_payload()
+                })
         }
     };
     if !valid {
@@ -717,6 +713,13 @@ fn verify_function_blocks(program: &AwbcProgram) -> Result<Vec<usize>, AwbcVerif
     let mut owners = vec![None; program.blocks.len()];
     for (function_index, function) in program.functions.iter().enumerate() {
         let at = format!("function {function_index}");
+        function
+            .flags
+            .validate_for_kind(function.kind)
+            .map_err(|source| AwbcVerifyError::InvalidFunctionRoles {
+                function: function_index,
+                source,
+            })?;
         check_optional_string(program, function.public_id, &at)?;
         check_index(
             program.signatures.len(),
@@ -871,7 +874,7 @@ fn verify_patterns(verifier: &Verifier<'_, '_>) -> Result<(), AwbcVerifyError> {
             AwbcPattern::Literal(constant) => {
                 check_index(program.constants.len(), constant.0, "constants", &at)?;
             }
-            AwbcPattern::Entity(string) => check_string(program, *string, &at)?,
+            AwbcPattern::Entity(_) => {}
             AwbcPattern::Tuple(items) | AwbcPattern::Sequence { items, .. } => {
                 for child in items {
                     check_index(program.patterns.len(), child.0, "patterns", &at)?;
@@ -1371,11 +1374,10 @@ fn verify_effect_payload_shape(
             }
             Ok(())
         }
-        AwbcEffectKind::RegisterHandle | AwbcEffectKind::Out | AwbcEffectKind::Break => {
+        AwbcEffectKind::Out | AwbcEffectKind::Break => {
             require_static_only_effect(effect_index, effect.kind, static_count, parameter_count, 2)
         }
-        AwbcEffectKind::DropHandle
-        | AwbcEffectKind::Wait
+        AwbcEffectKind::Wait
         | AwbcEffectKind::Return
         | AwbcEffectKind::Goto
         | AwbcEffectKind::Close
@@ -1559,6 +1561,39 @@ fn verify_content_and_line_tables(verifier: &Verifier<'_, '_>) -> Result<(), Awb
     }
     for (index, group) in program.line_task_groups.iter().enumerate() {
         let at = format!("line task group {index}");
+        let activation = program
+            .functions
+            .get(group.activation.index())
+            .ok_or_else(|| AwbcVerifyError::InvalidInvariant {
+                at: at.clone(),
+                message: "line task group activation function is absent".to_owned(),
+            })?;
+        if activation.kind != AwbcFunctionKind::LineActivation {
+            return Err(AwbcVerifyError::InvalidInvariant {
+                at: at.clone(),
+                message: "line task group activation must target a LineActivation function"
+                    .to_owned(),
+            });
+        }
+        let capture_types = program
+            .signatures
+            .get(activation.signature.index())
+            .map(|signature| signature.params.as_slice())
+            .ok_or_else(|| AwbcVerifyError::InvalidInvariant {
+                at: at.clone(),
+                message: "line task group activation signature is absent".to_owned(),
+            })?;
+        if capture_types.len() != group.captures.len()
+            || capture_types
+                .iter()
+                .any(|ty| !super::code::runtime_type_permits_copy(program, *ty, 0))
+        {
+            return Err(AwbcVerifyError::InvalidInvariant {
+                at: at.clone(),
+                message: "line task group capture ABI must be exact and recursively unrestricted"
+                    .to_owned(),
+            });
+        }
         check_index(
             program.line_task_nodes.len(),
             group.root.0,
@@ -1582,6 +1617,80 @@ fn verify_content_and_line_tables(verifier: &Verifier<'_, '_>) -> Result<(), Awb
                 message: "line task root is outside its dense node range".to_owned(),
             });
         }
+        let mut scheduled_children = BTreeSet::new();
+        for (site_index, site) in group.handle_sites.iter().enumerate() {
+            let Some(child) = site.scheduled_child else {
+                continue;
+            };
+            let site_index =
+                u32::try_from(site_index).map_err(|_| AwbcVerifyError::InvalidInvariant {
+                    at: at.clone(),
+                    message: "line handle site index exceeds the AWBC identity domain".to_owned(),
+                })?;
+            if child.0 < group.nodes.start
+                || child.0 >= node_end
+                || !scheduled_children.insert(child)
+                || !matches!(
+                    program.line_task_nodes.get(child.index()),
+                    Some(AwbcLineTaskNode::Child {
+                        trigger: crate::awbc::schema::AwbcLineTaskTrigger::Scheduled(trigger),
+                        join: crate::awbc::schema::AwbcChildJoinPolicy::Join,
+                        cancel: crate::awbc::schema::AwbcChildCancelPolicy::CancelAndJoin,
+                        scope,
+                    }) if trigger.0 == site_index
+                        && matches!(
+                            program.line_task_nodes.get(scope.index()),
+                            Some(AwbcLineTaskNode::Action(_))
+                        )
+                )
+            {
+                return Err(AwbcVerifyError::InvalidInvariant {
+                    at: at.clone(),
+                    message:
+                        "scheduled handle site must pair one-to-one with a joined action child"
+                            .to_owned(),
+                });
+            }
+        }
+        for (node_index, node) in program.line_task_nodes
+            [group.nodes.start as usize..node_end as usize]
+            .iter()
+            .enumerate()
+        {
+            let AwbcLineTaskNode::Child {
+                trigger: crate::awbc::schema::AwbcLineTaskTrigger::Scheduled(site),
+                ..
+            } = node
+            else {
+                continue;
+            };
+            let global = group
+                .nodes
+                .start
+                .checked_add(u32::try_from(node_index).map_err(|_| {
+                    AwbcVerifyError::InvalidInvariant {
+                        at: at.clone(),
+                        message: "scheduled child index exceeds the AWBC identity domain"
+                            .to_owned(),
+                    }
+                })?)
+                .ok_or_else(|| AwbcVerifyError::InvalidInvariant {
+                    at: at.clone(),
+                    message: "scheduled child identity overflows".to_owned(),
+                })?;
+            if group
+                .handle_sites
+                .get(site.index())
+                .and_then(|site| site.scheduled_child)
+                != Some(crate::awbc::schema::AwbcLineTaskNodeId(global))
+            {
+                return Err(AwbcVerifyError::InvalidInvariant {
+                    at: at.clone(),
+                    message: "scheduled child does not point back to its sole handle site"
+                        .to_owned(),
+                });
+            }
+        }
         for handler in &group.cancel_handlers {
             check_index(
                 program.functions.len(),
@@ -1602,7 +1711,7 @@ fn verify_content_and_line_tables(verifier: &Verifier<'_, '_>) -> Result<(), Awb
                         .signature
                         .index(),
                 )
-                .is_none_or(|signature| signature.params.len() != group.captures.len())
+                .is_none_or(|signature| signature.params.as_slice() != capture_types)
             {
                 return Err(AwbcVerifyError::InvalidInvariant {
                     at: at.clone(),
@@ -1642,11 +1751,30 @@ fn verify_content_and_line_tables(verifier: &Verifier<'_, '_>) -> Result<(), Awb
                     .functions
                     .get(function.index())
                     .and_then(|function| program.signatures.get(function.signature.index()))
-                    .is_none_or(|signature| signature.params.len() != group.captures.len())
+                    .is_none_or(|signature| signature.params.as_slice() != capture_types)
             {
                 return Err(AwbcVerifyError::InvalidInvariant {
                     at: at.clone(),
                     message: "line action capture signature disagrees with its group".to_owned(),
+                });
+            }
+        }
+        for cleanup in [
+            group.cleanup_completed,
+            group.cleanup_cancelled,
+            group.cleanup_failed,
+        ]
+        .into_iter()
+        .flatten()
+        {
+            let signature = program
+                .functions
+                .get(cleanup.index())
+                .and_then(|function| program.signatures.get(function.signature.index()));
+            if signature.is_none_or(|signature| signature.params.as_slice() != capture_types) {
+                return Err(AwbcVerifyError::InvalidInvariant {
+                    at: at.clone(),
+                    message: "line cleanup capture signature disagrees with its group".to_owned(),
                 });
             }
         }
@@ -1669,21 +1797,11 @@ fn verify_content_and_line_tables(verifier: &Verifier<'_, '_>) -> Result<(), Awb
                 }
             }
             AwbcLineTaskNode::Child {
-                id,
-                key,
-                name,
                 trigger: _,
                 cancel,
                 scope,
                 ..
             } => {
-                check_string(program, *id, &at)?;
-                if let Some(key) = key {
-                    check_string(program, *key, &at)?;
-                }
-                if let Some(name) = name {
-                    check_string(program, *name, &at)?;
-                }
                 check_index(
                     program.line_task_nodes.len(),
                     scope.0,

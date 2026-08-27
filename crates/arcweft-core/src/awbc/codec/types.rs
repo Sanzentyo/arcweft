@@ -5,16 +5,21 @@ use crate::awbc::schema::{
     AwbcConstant, AwbcConstantId, AwbcContentUnitId, AwbcDigest, AwbcDisplayMapId,
     AwbcEffectPlanId, AwbcEffectSet, AwbcEffectSetId, AwbcEntryId, AwbcFrameLayout,
     AwbcFrameLayoutId, AwbcFrameSlot, AwbcFrameSlotRole, AwbcFunctionFlags, AwbcFunctionId,
-    AwbcHeader, AwbcHostCallId, AwbcInstructionId, AwbcIntrinsicId, AwbcLineTaskGroupId,
-    AwbcLineTaskNodeId, AwbcMatchArmId, AwbcPatternId, AwbcPureHelperId, AwbcRecordField,
-    AwbcRegisterId, AwbcResourceId, AwbcResumePointId, AwbcRuntimeType, AwbcRuntimeTypeShape,
-    AwbcScopeId, AwbcSignature, AwbcSignatureId, AwbcSignedIntKind, AwbcSourceMapId,
-    AwbcStreamPlanId, AwbcStringId, AwbcTableRange, AwbcTaskPlanId, AwbcTraitMethodId, AwbcTypeId,
-    AwbcUnsignedIntKind, AwbcVariantCase, AwbcVariantIdentity,
+    AwbcHeader, AwbcHostCallId, AwbcInstructionId, AwbcIntrinsicId, AwbcLineHandleSiteId,
+    AwbcLineOperationId, AwbcLineTaskGroupId, AwbcLineTaskNodeId, AwbcMatchArmId, AwbcPatternId,
+    AwbcPureHelperId, AwbcRecordField, AwbcRegisterId, AwbcResourceId, AwbcResumePointId,
+    AwbcRuntimeType, AwbcRuntimeTypeShape, AwbcScopeId, AwbcSignature, AwbcSignatureId,
+    AwbcSignedIntKind, AwbcSourceMapId, AwbcStreamPlanId, AwbcStringId, AwbcTableRange,
+    AwbcTaskPlanId, AwbcTraitMethodId, AwbcTypeId, AwbcUnsignedIntKind, AwbcVariantCase,
+    AwbcVariantIdentity,
 };
-use crate::pattern::RuntimeOpaqueTypeAdmission;
-use crate::plan::RuntimeAgentOperationalType;
-use crate::value::{RuntimeHandleKind, RuntimeOpaquePersistence, RuntimeOpaqueValueClass};
+use crate::pattern::{RuntimeBuiltinVariantIdentity, RuntimeOpaqueTypeAdmission};
+use crate::plan::{RuntimeAgentOperationalType, RuntimeLineId};
+use crate::value::{
+    RuntimeEntityReference, RuntimeHandleKind, RuntimeOpaquePersistence, RuntimeOpaqueValueClass,
+};
+use arcweft_character::id::CharacterLookId;
+use arcweft_id::{DeclarationIdentityFamily, PublicId};
 
 wire_id!(
     AwbcStringId,
@@ -41,6 +46,8 @@ wire_id!(
     AwbcContentUnitId,
     AwbcLineTaskGroupId,
     AwbcLineTaskNodeId,
+    AwbcLineHandleSiteId,
+    AwbcLineOperationId,
     AwbcStreamPlanId,
     AwbcPureHelperId,
     AwbcTraitMethodId,
@@ -58,6 +65,121 @@ impl Wire for AwbcDigest {
     fn read_wire(reader: &mut Reader<'_>) -> Result<Self, AwbcCodecError> {
         <[u8; 32]>::read_wire(reader).map(Self)
     }
+}
+
+impl Wire for RuntimeEntityReference {
+    fn write_wire(&self, writer: &mut Writer) -> Result<(), AwbcCodecError> {
+        match self {
+            Self::Project { family, public_id } => {
+                writer.write_u8(0);
+                writer.write_u8(entity_family_tag(*family));
+                public_id.as_str().to_owned().write_wire(writer)?;
+            }
+            Self::DialogueLine(line) => {
+                writer.write_u8(1);
+                line.canonical_label().write_wire(writer)?;
+            }
+            Self::CharacterLook { character, look } => {
+                writer.write_u8(2);
+                character.write_wire(writer)?;
+                look.as_str().to_owned().write_wire(writer)?;
+            }
+        }
+        Ok(())
+    }
+
+    fn read_wire(reader: &mut Reader<'_>) -> Result<Self, AwbcCodecError> {
+        let offset = reader.offset();
+        match reader.read_u8()? {
+            0 => {
+                let family_offset = reader.offset();
+                let family_tag = reader.read_u8()?;
+                let family =
+                    entity_family_from_tag(family_tag).ok_or(AwbcCodecError::UnknownTag {
+                        kind: "entity reference family",
+                        tag: family_tag,
+                        offset: family_offset,
+                    })?;
+                let public_id_offset = reader.offset();
+                let public_id = PublicId::try_new_engine_owned(String::read_wire(reader)?)
+                    .map_err(|error| AwbcCodecError::InvalidMetadata {
+                        kind: "entity reference public ID",
+                        message: error.to_string(),
+                        offset: public_id_offset,
+                    })?;
+                family.validate_public_id(&public_id).map_err(|error| {
+                    AwbcCodecError::InvalidMetadata {
+                        kind: "entity reference public ID family",
+                        message: error.to_string(),
+                        offset: public_id_offset,
+                    }
+                })?;
+                Ok(Self::Project { family, public_id })
+            }
+            1 => {
+                let line_offset = reader.offset();
+                let line = String::read_wire(reader)?;
+                RuntimeLineId::canonical(&line)
+                    .map(Self::DialogueLine)
+                    .map_err(|error| AwbcCodecError::InvalidMetadata {
+                        kind: "entity reference dialogue line",
+                        message: error.to_string(),
+                        offset: line_offset,
+                    })
+            }
+            2 => {
+                let character = arcweft_character::id::CharacterId::read_wire(reader)?;
+                let look_offset = reader.offset();
+                let look =
+                    CharacterLookId::try_new(String::read_wire(reader)?).map_err(|error| {
+                        AwbcCodecError::InvalidMetadata {
+                            kind: "entity reference character look",
+                            message: error.to_string(),
+                            offset: look_offset,
+                        }
+                    })?;
+                Ok(Self::CharacterLook { character, look })
+            }
+            tag => Err(AwbcCodecError::UnknownTag {
+                kind: "entity reference",
+                tag,
+                offset,
+            }),
+        }
+    }
+}
+
+const fn entity_family_tag(family: DeclarationIdentityFamily) -> u8 {
+    match family {
+        DeclarationIdentityFamily::Asset => 0,
+        DeclarationIdentityFamily::Character => 1,
+        DeclarationIdentityFamily::View => 2,
+        DeclarationIdentityFamily::Action => 3,
+        DeclarationIdentityFamily::Activity => 4,
+        DeclarationIdentityFamily::Signal => 5,
+        DeclarationIdentityFamily::Metric => 6,
+        DeclarationIdentityFamily::Layer => 7,
+        DeclarationIdentityFamily::Flow => 8,
+        DeclarationIdentityFamily::Proof => 9,
+        DeclarationIdentityFamily::Style => 10,
+    }
+}
+
+const fn entity_family_from_tag(tag: u8) -> Option<DeclarationIdentityFamily> {
+    Some(match tag {
+        0 => DeclarationIdentityFamily::Asset,
+        1 => DeclarationIdentityFamily::Character,
+        2 => DeclarationIdentityFamily::View,
+        3 => DeclarationIdentityFamily::Action,
+        4 => DeclarationIdentityFamily::Activity,
+        5 => DeclarationIdentityFamily::Signal,
+        6 => DeclarationIdentityFamily::Metric,
+        7 => DeclarationIdentityFamily::Layer,
+        8 => DeclarationIdentityFamily::Flow,
+        9 => DeclarationIdentityFamily::Proof,
+        10 => DeclarationIdentityFamily::Style,
+        _ => return None,
+    })
 }
 
 impl Wire for AwbcTableRange {
@@ -147,13 +269,9 @@ impl Wire for AwbcVariantIdentity {
                 writer.write_u8(0);
                 public_id.write_wire(writer)
             }
-            Self::Option => {
+            Self::Builtin(owner) => {
                 writer.write_u8(1);
-                Ok(())
-            }
-            Self::Result => {
-                writer.write_u8(2);
-                Ok(())
+                owner.write_wire(writer)
             }
         }
     }
@@ -164,14 +282,30 @@ impl Wire for AwbcVariantIdentity {
             0 => Ok(Self::Nominal {
                 public_id: AwbcStringId::read_wire(reader)?,
             }),
-            1 => Ok(Self::Option),
-            2 => Ok(Self::Result),
+            1 => RuntimeBuiltinVariantIdentity::read_wire(reader).map(Self::Builtin),
             tag => Err(AwbcCodecError::UnknownTag {
                 kind: "variant identity",
                 tag,
                 offset,
             }),
         }
+    }
+}
+
+impl Wire for RuntimeBuiltinVariantIdentity {
+    fn write_wire(&self, writer: &mut Writer) -> Result<(), AwbcCodecError> {
+        writer.write_u8(self.semantic_tag());
+        Ok(())
+    }
+
+    fn read_wire(reader: &mut Reader<'_>) -> Result<Self, AwbcCodecError> {
+        let offset = reader.offset();
+        let tag = reader.read_u8()?;
+        Self::from_wire_tag(tag).ok_or(AwbcCodecError::UnknownTag {
+            kind: "builtin variant identity",
+            tag,
+            offset,
+        })
     }
 }
 
@@ -298,6 +432,7 @@ impl Wire for AwbcRuntimeType {
                 parameters: Vec::<AwbcTypeId>::read_wire(reader)?,
                 result: AwbcTypeId::read_wire(reader)?,
             },
+            37 => AwbcRuntimeTypeShape::AgentValue,
             tag => {
                 return Err(AwbcCodecError::UnknownTag {
                     kind: "runtime type",
@@ -379,6 +514,10 @@ fn write_runtime_type_shape(
         }
         AwbcRuntimeTypeShape::Progress => {
             writer.write_u8(28);
+            Ok(())
+        }
+        AwbcRuntimeTypeShape::AgentValue => {
+            writer.write_u8(37);
             Ok(())
         }
         _ => write_runtime_type_composite_shape(shape, writer),
@@ -483,7 +622,8 @@ fn write_runtime_type_composite_shape(
         | AwbcRuntimeTypeShape::Dynamic
         | AwbcRuntimeTypeShape::Bytes
         | AwbcRuntimeTypeShape::Never
-        | AwbcRuntimeTypeShape::Progress => {
+        | AwbcRuntimeTypeShape::Progress
+        | AwbcRuntimeTypeShape::AgentValue => {
             unreachable!("scalar runtime type delegated to scalar writer")
         }
     }
@@ -514,7 +654,6 @@ wire_enum!(RuntimeAgentOperationalType, "Agent runtime type", {
     7 => RuntimeAgentOperationalType::ActionName,
     8 => RuntimeAgentOperationalType::ActionTarget,
     9 => RuntimeAgentOperationalType::ActionResult,
-    10 => RuntimeAgentOperationalType::AgentValue,
     11 => RuntimeAgentOperationalType::DataFormat,
     12 => RuntimeAgentOperationalType::DataShape,
     13 => RuntimeAgentOperationalType::EntityMetadata,
@@ -525,7 +664,6 @@ wire_enum!(RuntimeAgentOperationalType, "Agent runtime type", {
     18 => RuntimeAgentOperationalType::CaptureTarget,
     19 => RuntimeAgentOperationalType::CaptureReference,
     20 => RuntimeAgentOperationalType::Resource,
-    21 => RuntimeAgentOperationalType::ResourceBody,
     22 => RuntimeAgentOperationalType::RagContextPack,
     23 => RuntimeAgentOperationalType::ObservedObjectId,
     24 => RuntimeAgentOperationalType::CaptureFormat,
@@ -535,6 +673,11 @@ wire_enum!(RuntimeAgentOperationalType, "Agent runtime type", {
     28 => RuntimeAgentOperationalType::ViewportPoint,
     29 => RuntimeAgentOperationalType::PointerButton,
     30 => RuntimeAgentOperationalType::RagError,
+    31 => RuntimeAgentOperationalType::SourcePosition,
+    32 => RuntimeAgentOperationalType::ProjectFlowControlSummary,
+    33 => RuntimeAgentOperationalType::ProjectGraphSummary,
+    34 => RuntimeAgentOperationalType::BinaryResourceBody,
+    35 => RuntimeAgentOperationalType::BinaryData,
 });
 
 impl Wire for AwbcAgentTypeShape {
@@ -680,7 +823,7 @@ impl Wire for AwbcConstant {
             6 => Self::String(AwbcStringId::read_wire(reader)?),
             7 => Self::Char(u32::read_wire(reader)?),
             8 => Self::DurationNanos(u64::read_wire(reader)?),
-            9 => Self::EntityRef(AwbcStringId::read_wire(reader)?),
+            9 => Self::EntityRef(RuntimeEntityReference::read_wire(reader)?),
             10 => Self::Tuple(Vec::<AwbcConstantId>::read_wire(reader)?),
             11 => Self::Sequence(Vec::<AwbcConstantId>::read_wire(reader)?),
             12 => Self::Record {
@@ -839,11 +982,18 @@ wire_enum!(AwbcFrameSlotRole, "frame slot role", {
 
 impl Wire for AwbcFunctionFlags {
     fn write_wire(&self, writer: &mut Writer) -> Result<(), AwbcCodecError> {
-        self.0.write_wire(writer)
+        self.bits().write_wire(writer)
     }
 
     fn read_wire(reader: &mut Reader<'_>) -> Result<Self, AwbcCodecError> {
-        u32::read_wire(reader).map(Self)
+        let offset = reader.offset();
+        AwbcFunctionFlags::try_from_bits(u32::read_wire(reader)?).map_err(|error| {
+            AwbcCodecError::InvalidMetadata {
+                kind: "function flags",
+                message: error.to_string(),
+                offset,
+            }
+        })
     }
 }
 
@@ -898,5 +1048,25 @@ mod opaque_wire_tests {
                 offset: 34,
             }
         );
+    }
+
+    #[test]
+    fn entity_reference_wire_roundtrip_preserves_character_look() {
+        let reference = RuntimeEntityReference::CharacterLook {
+            character: arcweft_character::id::CharacterId::try_new("character.alice")
+                .expect("character identity"),
+            look: CharacterLookId::try_new("normal").expect("look identity"),
+        };
+        let mut writer = Writer::default();
+        reference
+            .write_wire(&mut writer)
+            .expect("encode character look identity");
+        let bytes = writer.finish();
+        let mut reader = Reader::new(&bytes, &AwbcDecodeBudget::default());
+        assert_eq!(
+            RuntimeEntityReference::read_wire(&mut reader).expect("decode character look identity"),
+            reference
+        );
+        reader.finish().expect("consume character look identity");
     }
 }

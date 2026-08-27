@@ -1,7 +1,7 @@
 use crate::math::{DenseMatrixF32, DenseMatrixF64, DenseTensorF32, DenseTensorF64};
 use crate::pattern::{
-    RuntimeOpaqueTypeAdmission, RuntimeOpaqueTypeOwner, RuntimePattern, RuntimeVariantIdentity,
-    match_runtime_pattern,
+    RuntimeBuiltinVariantCaseIdentity, RuntimeBuiltinVariantIdentity, RuntimeOpaqueTypeAdmission,
+    RuntimeOpaqueTypeOwner, RuntimePattern, RuntimeVariantIdentity, match_runtime_pattern,
 };
 use crate::plan::{
     RuntimePlan, RuntimePlanTypeDeclaration, RuntimePlanTypeProjection, RuntimePureHelper,
@@ -11,12 +11,12 @@ use crate::runtime_id::{RuntimeFunctionSiteId, RuntimeLocalDeclarationId};
 use crate::step::RuntimePureCallStats;
 use crate::value::{
     RuntimeAgentExpr, RuntimeAgentValue, RuntimeBinaryOp, RuntimeCallArgument,
-    RuntimeCallArgumentMode, RuntimeCallTarget, RuntimeEntityReferenceField, RuntimeEnv,
-    RuntimeEvalError, RuntimeExactInteger, RuntimeExpr, RuntimeExprKind, RuntimeExprMatchArm,
-    RuntimeFieldProjection, RuntimeFunctionApplyError, RuntimeFunctionValue, RuntimeISizeValue,
-    RuntimeIntrinsic, RuntimeIterator, RuntimeLocalBinding, RuntimeNominalRecordExpr,
-    RuntimeReductionValue, RuntimeSeq, RuntimeSignedIntWidth, RuntimeUSizeValue, RuntimeUnaryOp,
-    RuntimeUnsignedIntWidth, RuntimeValue, evaluate_binary, evaluate_core_iter_collect_intrinsic,
+    RuntimeCallArgumentMode, RuntimeCallTarget, RuntimeEnv, RuntimeEvalError, RuntimeExactInteger,
+    RuntimeExpr, RuntimeExprKind, RuntimeExprMatchArm, RuntimeFieldProjection,
+    RuntimeFunctionApplyError, RuntimeFunctionValue, RuntimeISizeValue, RuntimeIntrinsic,
+    RuntimeIterator, RuntimeLocalBinding, RuntimeNominalRecordExpr, RuntimeReductionValue,
+    RuntimeSeq, RuntimeSignedIntWidth, RuntimeUSizeValue, RuntimeUnaryOp, RuntimeUnsignedIntWidth,
+    RuntimeValue, evaluate_binary, evaluate_core_iter_collect_intrinsic,
     evaluate_core_iter_into_iter_intrinsic, evaluate_core_iter_next_intrinsic,
     evaluate_core_option_is_some_intrinsic, evaluate_core_option_unwrap_intrinsic,
     evaluate_core_range_intrinsic, evaluate_index_intrinsic, evaluate_numeric_op,
@@ -1614,9 +1614,7 @@ impl<'a> PureEvaluator<'a> {
             RuntimeExprKind::Value(value) => Ok(value.clone()),
             RuntimeExprKind::Agent(agent) => self.evaluate_agent_expr(agent),
             RuntimeExprKind::Local(local) => self.evaluate_local(*local),
-            RuntimeExprKind::EntityRef(target) => {
-                Ok(RuntimeValue::EntityRef(target.runtime_label()))
-            }
+            RuntimeExprKind::EntityRef(target) => Ok(RuntimeValue::EntityRef(target.clone())),
             RuntimeExprKind::Let {
                 binding,
                 expr,
@@ -1730,7 +1728,7 @@ impl<'a> PureEvaluator<'a> {
     ) -> Result<RuntimeValue, RuntimeEvalError> {
         let mut operands = Vec::new();
         if let Some(choice) = agent.choice() {
-            operands.push(RuntimeValue::EntityRef(choice.as_str().to_owned()));
+            operands.push(RuntimeValue::String(choice.as_str().to_owned()));
         }
         for operand in agent.operands() {
             operands.push(self.evaluate_expr(operand)?);
@@ -1810,28 +1808,53 @@ impl<'a> PureEvaluator<'a> {
             .get(ty)
             .ok_or(RuntimeEvalError::UnknownPlanType(ty))?;
         let (owner, name, payload_ty) = match declaration.projection() {
-            RuntimePlanTypeProjection::Option(item) => match ordinal {
-                0 => (
-                    RuntimeVariantIdentity::Option,
-                    "Some".to_owned(),
-                    Some(*item),
-                ),
-                1 => (RuntimeVariantIdentity::Option, "None".to_owned(), None),
-                _ => return Err(RuntimeEvalError::UnknownVariantCase { ty, ordinal }),
-            },
-            RuntimePlanTypeProjection::Result { value, error } => match ordinal {
-                0 => (
-                    RuntimeVariantIdentity::Result,
-                    "Ok".to_owned(),
-                    Some(*value),
-                ),
-                1 => (
-                    RuntimeVariantIdentity::Result,
-                    "Err".to_owned(),
-                    Some(*error),
-                ),
-                _ => return Err(RuntimeEvalError::UnknownVariantCase { ty, ordinal }),
-            },
+            RuntimePlanTypeProjection::Option(item) => {
+                let builtin = RuntimeBuiltinVariantIdentity::Option;
+                let schema = builtin
+                    .case_at(ordinal)
+                    .ok_or(RuntimeEvalError::UnknownVariantCase { ty, ordinal })?;
+                let payload = match schema.identity() {
+                    RuntimeBuiltinVariantCaseIdentity::OptionSome => Some(*item),
+                    RuntimeBuiltinVariantCaseIdentity::OptionNone => None,
+                    _ => return Err(RuntimeEvalError::UnknownVariantCase { ty, ordinal }),
+                };
+                (
+                    RuntimeVariantIdentity::Builtin(builtin),
+                    schema.name().to_owned(),
+                    payload,
+                )
+            }
+            RuntimePlanTypeProjection::Result { value, error } => {
+                let builtin = RuntimeBuiltinVariantIdentity::Result;
+                let schema = builtin
+                    .case_at(ordinal)
+                    .ok_or(RuntimeEvalError::UnknownVariantCase { ty, ordinal })?;
+                let payload = match schema.identity() {
+                    RuntimeBuiltinVariantCaseIdentity::ResultOk => Some(*value),
+                    RuntimeBuiltinVariantCaseIdentity::ResultErr => Some(*error),
+                    _ => return Err(RuntimeEvalError::UnknownVariantCase { ty, ordinal }),
+                };
+                (
+                    RuntimeVariantIdentity::Builtin(builtin),
+                    schema.name().to_owned(),
+                    payload,
+                )
+            }
+            RuntimePlanTypeProjection::BuiltinVariant { owner, cases } => {
+                let schema = owner
+                    .case_at(ordinal)
+                    .ok_or(RuntimeEvalError::UnknownVariantCase { ty, ordinal })?;
+                let payload = usize::try_from(ordinal)
+                    .ok()
+                    .and_then(|ordinal| cases.get(ordinal))
+                    .copied()
+                    .ok_or(RuntimeEvalError::UnknownVariantCase { ty, ordinal })?;
+                (
+                    RuntimeVariantIdentity::Builtin(*owner),
+                    schema.name().to_owned(),
+                    payload,
+                )
+            }
             RuntimePlanTypeProjection::ProjectNominal { .. }
             | RuntimePlanTypeProjection::Opaque { .. } => {
                 let domain = plan
@@ -2391,7 +2414,7 @@ impl<'a> PureEvaluator<'a> {
                     })
             }
             (RuntimeFieldProjection::EntityReference(field), RuntimeValue::EntityRef(id)) => {
-                Ok(Self::entity_ref_field(&id, *field))
+                Ok(RuntimeValue::String(id.field_value(*field)))
             }
             (RuntimeFieldProjection::Agent(field), RuntimeValue::Agent(value)) => value
                 .project_typed_field(*field)
@@ -2428,22 +2451,6 @@ impl<'a> PureEvaluator<'a> {
                 value: runtime_value_label(&value),
             }),
         }
-    }
-
-    fn entity_ref_field(id: &str, field: RuntimeEntityReferenceField) -> RuntimeValue {
-        RuntimeValue::String(match field {
-            RuntimeEntityReferenceField::Id => id.to_owned(),
-            RuntimeEntityReferenceField::Family => Self::entity_ref_family(id).to_owned(),
-            RuntimeEntityReferenceField::Name => Self::entity_ref_name(id).to_owned(),
-        })
-    }
-
-    fn entity_ref_family(id: &str) -> &str {
-        id.split_once('.').map_or(id, |(family, _)| family)
-    }
-
-    fn entity_ref_name(id: &str) -> &str {
-        id.split_once('.').map_or("", |(_, name)| name)
     }
 
     fn evaluate_project_tuple_expr(

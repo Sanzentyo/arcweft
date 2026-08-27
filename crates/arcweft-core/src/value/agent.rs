@@ -8,6 +8,7 @@
 use super::ownership::RuntimeValueOwnership;
 use super::{RuntimeExpr, RuntimeValue};
 use crate::entry::RuntimeCommandTargetId;
+use crate::pattern::RuntimeBuiltinVariantIdentity;
 use crate::plan::RuntimeAgentOperationalType;
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
@@ -133,24 +134,19 @@ pub enum RuntimeAgentField {
     ResourceMimeType,
     ResourceHash,
     ResourceBody,
-    ResourceBodyKind,
-    ResourceBodyJson,
-    ResourceBodyText,
-    ResourceBodyBase64,
-    ResourceBodyEncoding,
-    ResourceBodyValue,
+    BinaryBodyEncoding,
+    BinaryBodyData,
     EntityMetadataId,
     EntityMetadataKind,
     EntityMetadataSemanticHash,
     EntityMetadataSource,
-    SourceAnchorHasSource,
     SourceAnchorPath,
     SourceAnchorStartByte,
     SourceAnchorEndByte,
-    SourceAnchorStartLine,
-    SourceAnchorStartColumn,
-    SourceAnchorEndLine,
-    SourceAnchorEndColumn,
+    SourceAnchorStart,
+    SourceAnchorEnd,
+    SourcePositionLine,
+    SourcePositionColumn,
     ProjectGraphNeighborhoodRoot,
     ProjectGraphNeighborhoodNodeCount,
     ProjectGraphNeighborhoodEdgeCount,
@@ -161,25 +157,23 @@ pub enum RuntimeAgentField {
     ProjectGraphSymbolKind,
     ProjectGraphSymbolSemanticHash,
     ProjectGraphSymbolSummary,
-    ProjectGraphSymbolHasEntity,
-    ProjectGraphSymbolHasSemanticHash,
-    ProjectGraphSymbolHasFlowControl,
-    ProjectGraphSymbolHasDynamicControl,
-    ProjectGraphSymbolHasProjectSummary,
-    ProjectGraphSymbolEntityCount,
-    ProjectGraphSymbolAgentActionCount,
-    ProjectGraphSymbolProjectCallableCount,
-    ProjectGraphSymbolRelationCount,
-    ProjectGraphSymbolDependencyEdgeCount,
-    ProjectGraphSymbolDynamicControlFlowCount,
-    ProjectGraphSymbolDebugQueryCount,
-    ProjectGraphSymbolStaticGotoCount,
-    ProjectGraphSymbolDynamicGotoCount,
-    ProjectGraphSymbolBranchCount,
-    ProjectGraphSymbolLoopCount,
-    ProjectGraphSymbolAwaitCount,
-    ProjectGraphSymbolThreadCount,
-    ProjectGraphSymbolSelectBranchCount,
+    ProjectGraphSymbolFlowControl,
+    ProjectGraphSymbolProjectSummary,
+    ProjectFlowControlHasDynamicControl,
+    ProjectFlowControlStaticGotoCount,
+    ProjectFlowControlDynamicGotoCount,
+    ProjectFlowControlBranchCount,
+    ProjectFlowControlLoopCount,
+    ProjectFlowControlAwaitCount,
+    ProjectFlowControlThreadCount,
+    ProjectFlowControlSelectBranchCount,
+    ProjectGraphSummaryEntityCount,
+    ProjectGraphSummaryAgentActionCount,
+    ProjectGraphSummaryProjectCallableCount,
+    ProjectGraphSummaryRelationCount,
+    ProjectGraphSummaryDependencyEdgeCount,
+    ProjectGraphSummaryDynamicControlFlowCount,
+    ProjectGraphSummaryDebugQueryCount,
     ProjectGraphEdgeFromSymbolId,
     ProjectGraphEdgeToSymbolId,
     ProjectGraphEdgeKind,
@@ -197,16 +191,37 @@ pub enum RuntimeAgentFieldOwner {
     Reference,
 }
 
-/// Closed result family for one Agent protocol field coordinate.
+/// Closed value family for one Agent protocol field coordinate.
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
-pub enum RuntimeAgentFieldResult {
+pub enum RuntimeAgentFieldValue {
     Bool,
     String,
     U32,
     U64,
     Agent(RuntimeAgentOperationalType),
+    BuiltinVariant(RuntimeBuiltinVariantIdentity),
     VecAgent(RuntimeAgentOperationalType),
     AgentValueMap,
+}
+
+/// Closed cardinality and value family for one Agent protocol field
+/// coordinate.
+///
+/// Optional protocol members retain their `Option<T>` identity through sema,
+/// runtime-plan, AWBC, and host payload projection. They are never encoded as
+/// a parallel `has_*` field plus a default scalar.
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub enum RuntimeAgentFieldResult {
+    Required(RuntimeAgentFieldValue),
+    Optional(RuntimeAgentFieldValue),
+}
+
+const fn required(value: RuntimeAgentFieldValue) -> RuntimeAgentFieldResult {
+    RuntimeAgentFieldResult::Required(value)
+}
+
+const fn optional(value: RuntimeAgentFieldValue) -> RuntimeAgentFieldResult {
+    RuntimeAgentFieldResult::Optional(value)
 }
 
 impl RuntimeAgentField {
@@ -282,36 +297,25 @@ impl RuntimeAgentField {
             (RuntimeAgentOperationalType::Resource, "mime_type") => Self::ResourceMimeType,
             (RuntimeAgentOperationalType::Resource, "hash") => Self::ResourceHash,
             (RuntimeAgentOperationalType::Resource, "body") => Self::ResourceBody,
-            (RuntimeAgentOperationalType::ResourceBody, "kind") => Self::ResourceBodyKind,
-            (RuntimeAgentOperationalType::ResourceBody, "json") => Self::ResourceBodyJson,
-            (RuntimeAgentOperationalType::ResourceBody, "text") => Self::ResourceBodyText,
-            (RuntimeAgentOperationalType::ResourceBody, "base64") => Self::ResourceBodyBase64,
-            (RuntimeAgentOperationalType::ResourceBody, "encoding") => Self::ResourceBodyEncoding,
-            (RuntimeAgentOperationalType::ResourceBody, "value") => Self::ResourceBodyValue,
+            (RuntimeAgentOperationalType::BinaryResourceBody, "encoding") => {
+                Self::BinaryBodyEncoding
+            }
+            (RuntimeAgentOperationalType::BinaryResourceBody, "data") => Self::BinaryBodyData,
             (RuntimeAgentOperationalType::EntityMetadata, "id") => Self::EntityMetadataId,
             (RuntimeAgentOperationalType::EntityMetadata, "kind") => Self::EntityMetadataKind,
             (RuntimeAgentOperationalType::EntityMetadata, "semantic_hash") => {
                 Self::EntityMetadataSemanticHash
             }
             (RuntimeAgentOperationalType::EntityMetadata, "source") => Self::EntityMetadataSource,
-            (RuntimeAgentOperationalType::SourceAnchor, "has_source") => {
-                Self::SourceAnchorHasSource
-            }
             (RuntimeAgentOperationalType::SourceAnchor, "path") => Self::SourceAnchorPath,
             (RuntimeAgentOperationalType::SourceAnchor, "start_byte") => {
                 Self::SourceAnchorStartByte
             }
             (RuntimeAgentOperationalType::SourceAnchor, "end_byte") => Self::SourceAnchorEndByte,
-            (RuntimeAgentOperationalType::SourceAnchor, "start_line") => {
-                Self::SourceAnchorStartLine
-            }
-            (RuntimeAgentOperationalType::SourceAnchor, "start_column") => {
-                Self::SourceAnchorStartColumn
-            }
-            (RuntimeAgentOperationalType::SourceAnchor, "end_line") => Self::SourceAnchorEndLine,
-            (RuntimeAgentOperationalType::SourceAnchor, "end_column") => {
-                Self::SourceAnchorEndColumn
-            }
+            (RuntimeAgentOperationalType::SourceAnchor, "start") => Self::SourceAnchorStart,
+            (RuntimeAgentOperationalType::SourceAnchor, "end") => Self::SourceAnchorEnd,
+            (RuntimeAgentOperationalType::SourcePosition, "line") => Self::SourcePositionLine,
+            (RuntimeAgentOperationalType::SourcePosition, "column") => Self::SourcePositionColumn,
             (RuntimeAgentOperationalType::ProjectGraphNeighborhood, "root") => {
                 Self::ProjectGraphNeighborhoodRoot
             }
@@ -340,62 +344,56 @@ impl RuntimeAgentField {
             (RuntimeAgentOperationalType::ProjectGraphSymbol, "summary") => {
                 Self::ProjectGraphSymbolSummary
             }
-            (RuntimeAgentOperationalType::ProjectGraphSymbol, "has_entity") => {
-                Self::ProjectGraphSymbolHasEntity
+            (RuntimeAgentOperationalType::ProjectGraphSymbol, "flow_control") => {
+                Self::ProjectGraphSymbolFlowControl
             }
-            (RuntimeAgentOperationalType::ProjectGraphSymbol, "has_semantic_hash") => {
-                Self::ProjectGraphSymbolHasSemanticHash
+            (RuntimeAgentOperationalType::ProjectGraphSymbol, "project_summary") => {
+                Self::ProjectGraphSymbolProjectSummary
             }
-            (RuntimeAgentOperationalType::ProjectGraphSymbol, "has_flow_control") => {
-                Self::ProjectGraphSymbolHasFlowControl
+            (RuntimeAgentOperationalType::ProjectFlowControlSummary, "has_dynamic_control") => {
+                Self::ProjectFlowControlHasDynamicControl
             }
-            (RuntimeAgentOperationalType::ProjectGraphSymbol, "has_dynamic_control") => {
-                Self::ProjectGraphSymbolHasDynamicControl
+            (RuntimeAgentOperationalType::ProjectFlowControlSummary, "static_goto_count") => {
+                Self::ProjectFlowControlStaticGotoCount
             }
-            (RuntimeAgentOperationalType::ProjectGraphSymbol, "has_project_summary") => {
-                Self::ProjectGraphSymbolHasProjectSummary
+            (RuntimeAgentOperationalType::ProjectFlowControlSummary, "dynamic_goto_count") => {
+                Self::ProjectFlowControlDynamicGotoCount
             }
-            (RuntimeAgentOperationalType::ProjectGraphSymbol, "entity_count") => {
-                Self::ProjectGraphSymbolEntityCount
+            (RuntimeAgentOperationalType::ProjectFlowControlSummary, "branch_count") => {
+                Self::ProjectFlowControlBranchCount
             }
-            (RuntimeAgentOperationalType::ProjectGraphSymbol, "agent_action_count") => {
-                Self::ProjectGraphSymbolAgentActionCount
+            (RuntimeAgentOperationalType::ProjectFlowControlSummary, "loop_count") => {
+                Self::ProjectFlowControlLoopCount
             }
-            (RuntimeAgentOperationalType::ProjectGraphSymbol, "project_callable_count") => {
-                Self::ProjectGraphSymbolProjectCallableCount
+            (RuntimeAgentOperationalType::ProjectFlowControlSummary, "await_count") => {
+                Self::ProjectFlowControlAwaitCount
             }
-            (RuntimeAgentOperationalType::ProjectGraphSymbol, "relation_count") => {
-                Self::ProjectGraphSymbolRelationCount
+            (RuntimeAgentOperationalType::ProjectFlowControlSummary, "thread_count") => {
+                Self::ProjectFlowControlThreadCount
             }
-            (RuntimeAgentOperationalType::ProjectGraphSymbol, "dependency_edge_count") => {
-                Self::ProjectGraphSymbolDependencyEdgeCount
+            (RuntimeAgentOperationalType::ProjectFlowControlSummary, "select_branch_count") => {
+                Self::ProjectFlowControlSelectBranchCount
             }
-            (RuntimeAgentOperationalType::ProjectGraphSymbol, "dynamic_control_flow_count") => {
-                Self::ProjectGraphSymbolDynamicControlFlowCount
+            (RuntimeAgentOperationalType::ProjectGraphSummary, "entity_count") => {
+                Self::ProjectGraphSummaryEntityCount
             }
-            (RuntimeAgentOperationalType::ProjectGraphSymbol, "debug_query_count") => {
-                Self::ProjectGraphSymbolDebugQueryCount
+            (RuntimeAgentOperationalType::ProjectGraphSummary, "agent_action_count") => {
+                Self::ProjectGraphSummaryAgentActionCount
             }
-            (RuntimeAgentOperationalType::ProjectGraphSymbol, "static_goto_count") => {
-                Self::ProjectGraphSymbolStaticGotoCount
+            (RuntimeAgentOperationalType::ProjectGraphSummary, "project_callable_count") => {
+                Self::ProjectGraphSummaryProjectCallableCount
             }
-            (RuntimeAgentOperationalType::ProjectGraphSymbol, "dynamic_goto_count") => {
-                Self::ProjectGraphSymbolDynamicGotoCount
+            (RuntimeAgentOperationalType::ProjectGraphSummary, "relation_count") => {
+                Self::ProjectGraphSummaryRelationCount
             }
-            (RuntimeAgentOperationalType::ProjectGraphSymbol, "branch_count") => {
-                Self::ProjectGraphSymbolBranchCount
+            (RuntimeAgentOperationalType::ProjectGraphSummary, "dependency_edge_count") => {
+                Self::ProjectGraphSummaryDependencyEdgeCount
             }
-            (RuntimeAgentOperationalType::ProjectGraphSymbol, "loop_count") => {
-                Self::ProjectGraphSymbolLoopCount
+            (RuntimeAgentOperationalType::ProjectGraphSummary, "dynamic_control_flow_count") => {
+                Self::ProjectGraphSummaryDynamicControlFlowCount
             }
-            (RuntimeAgentOperationalType::ProjectGraphSymbol, "await_count") => {
-                Self::ProjectGraphSymbolAwaitCount
-            }
-            (RuntimeAgentOperationalType::ProjectGraphSymbol, "thread_count") => {
-                Self::ProjectGraphSymbolThreadCount
-            }
-            (RuntimeAgentOperationalType::ProjectGraphSymbol, "select_branch_count") => {
-                Self::ProjectGraphSymbolSelectBranchCount
+            (RuntimeAgentOperationalType::ProjectGraphSummary, "debug_query_count") => {
+                Self::ProjectGraphSummaryDebugQueryCount
             }
             (RuntimeAgentOperationalType::ProjectGraphEdge, "from_symbol_id") => {
                 Self::ProjectGraphEdgeFromSymbolId
@@ -475,26 +473,23 @@ impl RuntimeAgentField {
             | Self::ResourceMimeType
             | Self::ResourceHash
             | Self::ResourceBody => agent_owner(RuntimeAgentOperationalType::Resource),
-            Self::ResourceBodyKind
-            | Self::ResourceBodyJson
-            | Self::ResourceBodyText
-            | Self::ResourceBodyBase64
-            | Self::ResourceBodyEncoding
-            | Self::ResourceBodyValue => agent_owner(RuntimeAgentOperationalType::ResourceBody),
+            Self::BinaryBodyEncoding | Self::BinaryBodyData => {
+                agent_owner(RuntimeAgentOperationalType::BinaryResourceBody)
+            }
             Self::EntityMetadataId
             | Self::EntityMetadataKind
             | Self::EntityMetadataSemanticHash
             | Self::EntityMetadataSource => {
                 agent_owner(RuntimeAgentOperationalType::EntityMetadata)
             }
-            Self::SourceAnchorHasSource
-            | Self::SourceAnchorPath
+            Self::SourceAnchorPath
             | Self::SourceAnchorStartByte
             | Self::SourceAnchorEndByte
-            | Self::SourceAnchorStartLine
-            | Self::SourceAnchorStartColumn
-            | Self::SourceAnchorEndLine
-            | Self::SourceAnchorEndColumn => agent_owner(RuntimeAgentOperationalType::SourceAnchor),
+            | Self::SourceAnchorStart
+            | Self::SourceAnchorEnd => agent_owner(RuntimeAgentOperationalType::SourceAnchor),
+            Self::SourcePositionLine | Self::SourcePositionColumn => {
+                agent_owner(RuntimeAgentOperationalType::SourcePosition)
+            }
             Self::ViewportX | Self::ViewportY => {
                 agent_owner(RuntimeAgentOperationalType::ViewportPoint)
             }
@@ -516,25 +511,27 @@ impl RuntimeAgentField {
             | Self::ProjectGraphSymbolKind
             | Self::ProjectGraphSymbolSemanticHash
             | Self::ProjectGraphSymbolSummary
-            | Self::ProjectGraphSymbolHasEntity
-            | Self::ProjectGraphSymbolHasSemanticHash
-            | Self::ProjectGraphSymbolHasFlowControl
-            | Self::ProjectGraphSymbolHasDynamicControl
-            | Self::ProjectGraphSymbolHasProjectSummary
-            | Self::ProjectGraphSymbolEntityCount
-            | Self::ProjectGraphSymbolAgentActionCount
-            | Self::ProjectGraphSymbolProjectCallableCount
-            | Self::ProjectGraphSymbolRelationCount
-            | Self::ProjectGraphSymbolDependencyEdgeCount
-            | Self::ProjectGraphSymbolDynamicControlFlowCount
-            | Self::ProjectGraphSymbolDebugQueryCount
-            | Self::ProjectGraphSymbolStaticGotoCount
-            | Self::ProjectGraphSymbolDynamicGotoCount
-            | Self::ProjectGraphSymbolBranchCount
-            | Self::ProjectGraphSymbolLoopCount
-            | Self::ProjectGraphSymbolAwaitCount
-            | Self::ProjectGraphSymbolThreadCount
-            | Self::ProjectGraphSymbolSelectBranchCount => Some(project_graph_symbol_owner()),
+            | Self::ProjectGraphSymbolFlowControl
+            | Self::ProjectGraphSymbolProjectSummary => Some(project_graph_symbol_owner()),
+            Self::ProjectFlowControlHasDynamicControl
+            | Self::ProjectFlowControlStaticGotoCount
+            | Self::ProjectFlowControlDynamicGotoCount
+            | Self::ProjectFlowControlBranchCount
+            | Self::ProjectFlowControlLoopCount
+            | Self::ProjectFlowControlAwaitCount
+            | Self::ProjectFlowControlThreadCount
+            | Self::ProjectFlowControlSelectBranchCount => Some(agent_owner(
+                RuntimeAgentOperationalType::ProjectFlowControlSummary,
+            )),
+            Self::ProjectGraphSummaryEntityCount
+            | Self::ProjectGraphSummaryAgentActionCount
+            | Self::ProjectGraphSummaryProjectCallableCount
+            | Self::ProjectGraphSummaryRelationCount
+            | Self::ProjectGraphSummaryDependencyEdgeCount
+            | Self::ProjectGraphSummaryDynamicControlFlowCount
+            | Self::ProjectGraphSummaryDebugQueryCount => Some(agent_owner(
+                RuntimeAgentOperationalType::ProjectGraphSummary,
+            )),
             Self::ProjectGraphEdgeFromSymbolId
             | Self::ProjectGraphEdgeToSymbolId
             | Self::ProjectGraphEdgeKind => {
@@ -558,56 +555,65 @@ impl RuntimeAgentField {
             | Self::ActionResultAfterTick
             | Self::CaptureReferenceByteLen
             | Self::SourceAnchorStartByte
-            | Self::SourceAnchorEndByte => RuntimeAgentFieldResult::U64,
-            Self::ObservationActions => {
-                RuntimeAgentFieldResult::VecAgent(RuntimeAgentOperationalType::ActionTarget)
-            }
-            Self::ObservationObjects => {
-                RuntimeAgentFieldResult::VecAgent(RuntimeAgentOperationalType::ObservedObject)
-            }
-            Self::ObservationSignals => RuntimeAgentFieldResult::AgentValueMap,
-            Self::ObservedObjectId => {
-                RuntimeAgentFieldResult::Agent(RuntimeAgentOperationalType::ObservedObjectId)
-            }
+            | Self::SourceAnchorEndByte => required(RuntimeAgentFieldValue::U64),
+            Self::ObservationActions => required(RuntimeAgentFieldValue::VecAgent(
+                RuntimeAgentOperationalType::ActionTarget,
+            )),
+            Self::ObservationObjects => required(RuntimeAgentFieldValue::VecAgent(
+                RuntimeAgentOperationalType::ObservedObject,
+            )),
+            Self::ObservationSignals => required(RuntimeAgentFieldValue::AgentValueMap),
+            Self::ObservedObjectId => required(RuntimeAgentFieldValue::Agent(
+                RuntimeAgentOperationalType::ObservedObjectId,
+            )),
             Self::ObservedObjectVisible
             | Self::ObservedObjectEnabled
             | Self::ActionEnabled
             | Self::ActionResultAccepted
-            | Self::SourceAnchorHasSource
-            | Self::ProjectGraphSymbolHasEntity
-            | Self::ProjectGraphSymbolHasSemanticHash
-            | Self::ProjectGraphSymbolHasFlowControl
-            | Self::ProjectGraphSymbolHasDynamicControl
-            | Self::ProjectGraphSymbolHasProjectSummary => RuntimeAgentFieldResult::Bool,
-            Self::ObservedObjectBoundingBox => {
-                RuntimeAgentFieldResult::Agent(RuntimeAgentOperationalType::BoundingBox)
-            }
-            Self::ActionName => {
-                RuntimeAgentFieldResult::Agent(RuntimeAgentOperationalType::ActionName)
-            }
-            Self::ResourceBody => {
-                RuntimeAgentFieldResult::Agent(RuntimeAgentOperationalType::ResourceBody)
-            }
-            Self::ResourceBodyValue => {
-                RuntimeAgentFieldResult::Agent(RuntimeAgentOperationalType::AgentValue)
-            }
-            Self::EntityMetadataSource => {
-                RuntimeAgentFieldResult::Agent(RuntimeAgentOperationalType::SourceAnchor)
-            }
-            Self::ProjectGraphNeighborhoodSymbols => {
-                RuntimeAgentFieldResult::VecAgent(RuntimeAgentOperationalType::ProjectGraphSymbol)
-            }
-            Self::ProjectGraphNeighborhoodEdges => {
-                RuntimeAgentFieldResult::VecAgent(RuntimeAgentOperationalType::ProjectGraphEdge)
-            }
+            | Self::ProjectFlowControlHasDynamicControl => required(RuntimeAgentFieldValue::Bool),
+            Self::ObservedObjectBoundingBox => required(RuntimeAgentFieldValue::Agent(
+                RuntimeAgentOperationalType::BoundingBox,
+            )),
+            Self::ActionName => required(RuntimeAgentFieldValue::Agent(
+                RuntimeAgentOperationalType::ActionName,
+            )),
+            Self::ResourceBody => required(RuntimeAgentFieldValue::BuiltinVariant(
+                RuntimeBuiltinVariantIdentity::AgentResourceBody,
+            )),
+            Self::BinaryBodyEncoding => required(RuntimeAgentFieldValue::BuiltinVariant(
+                RuntimeBuiltinVariantIdentity::AgentBinaryEncoding,
+            )),
+            Self::BinaryBodyData => required(RuntimeAgentFieldValue::Agent(
+                RuntimeAgentOperationalType::BinaryData,
+            )),
+            Self::EntityMetadataSource => optional(RuntimeAgentFieldValue::Agent(
+                RuntimeAgentOperationalType::SourceAnchor,
+            )),
+            Self::SourceAnchorStart | Self::SourceAnchorEnd => optional(
+                RuntimeAgentFieldValue::Agent(RuntimeAgentOperationalType::SourcePosition),
+            ),
+            Self::ProjectGraphSymbolFlowControl => optional(RuntimeAgentFieldValue::Agent(
+                RuntimeAgentOperationalType::ProjectFlowControlSummary,
+            )),
+            Self::ProjectGraphSymbolProjectSummary => optional(RuntimeAgentFieldValue::Agent(
+                RuntimeAgentOperationalType::ProjectGraphSummary,
+            )),
+            Self::ProjectGraphNeighborhoodSymbols => required(RuntimeAgentFieldValue::VecAgent(
+                RuntimeAgentOperationalType::ProjectGraphSymbol,
+            )),
+            Self::ProjectGraphNeighborhoodEdges => required(RuntimeAgentFieldValue::VecAgent(
+                RuntimeAgentOperationalType::ProjectGraphEdge,
+            )),
+            Self::ObservedObjectParentId
+            | Self::ObservedObjectEntity
+            | Self::ObservedObjectText
+            | Self::ProjectGraphSymbolId
+            | Self::ProjectGraphSymbolSemanticHash => optional(RuntimeAgentFieldValue::String),
             Self::ObservationFrameId
             | Self::ObservationStateHash
             | Self::ObservationRenderHash
-            | Self::ObservedObjectParentId
-            | Self::ObservedObjectEntity
             | Self::ObservedObjectLayer
             | Self::ObservedObjectRole
-            | Self::ObservedObjectText
             | Self::BoundingBoxSpace
             | Self::ActionId
             | Self::ActionTarget
@@ -621,27 +627,20 @@ impl RuntimeAgentField {
             | Self::ResourceKind
             | Self::ResourceMimeType
             | Self::ResourceHash
-            | Self::ResourceBodyKind
-            | Self::ResourceBodyJson
-            | Self::ResourceBodyText
-            | Self::ResourceBodyBase64
-            | Self::ResourceBodyEncoding
             | Self::EntityMetadataId
             | Self::EntityMetadataKind
             | Self::EntityMetadataSemanticHash
             | Self::SourceAnchorPath
             | Self::ProjectGraphNeighborhoodRoot
             | Self::ProjectGraphSymbolSymbolId
-            | Self::ProjectGraphSymbolId
             | Self::ProjectGraphSymbolKind
-            | Self::ProjectGraphSymbolSemanticHash
             | Self::ProjectGraphSymbolSummary
             | Self::ProjectGraphEdgeFromSymbolId
             | Self::ProjectGraphEdgeToSymbolId
             | Self::ProjectGraphEdgeKind
             | Self::ReferenceId
             | Self::ReferenceFamily
-            | Self::ReferenceName => RuntimeAgentFieldResult::String,
+            | Self::ReferenceName => required(RuntimeAgentFieldValue::String),
             _ => unreachable!(),
         }
     }
@@ -650,30 +649,30 @@ impl RuntimeAgentField {
         match self {
             Self::ProjectGraphNeighborhoodNodeCount
             | Self::ProjectGraphNeighborhoodEdgeCount
-            | Self::SourceAnchorStartLine
-            | Self::SourceAnchorStartColumn
-            | Self::SourceAnchorEndLine
-            | Self::SourceAnchorEndColumn
+            | Self::SourcePositionLine
+            | Self::SourcePositionColumn
             | Self::BoundingBoxX
             | Self::BoundingBoxY
             | Self::BoundingBoxWidth
             | Self::BoundingBoxHeight
             | Self::ViewportX
             | Self::ViewportY
-            | Self::ProjectGraphSymbolEntityCount
-            | Self::ProjectGraphSymbolAgentActionCount
-            | Self::ProjectGraphSymbolProjectCallableCount
-            | Self::ProjectGraphSymbolRelationCount
-            | Self::ProjectGraphSymbolDependencyEdgeCount
-            | Self::ProjectGraphSymbolDynamicControlFlowCount
-            | Self::ProjectGraphSymbolDebugQueryCount
-            | Self::ProjectGraphSymbolStaticGotoCount
-            | Self::ProjectGraphSymbolDynamicGotoCount
-            | Self::ProjectGraphSymbolBranchCount
-            | Self::ProjectGraphSymbolLoopCount
-            | Self::ProjectGraphSymbolAwaitCount
-            | Self::ProjectGraphSymbolThreadCount
-            | Self::ProjectGraphSymbolSelectBranchCount => Some(RuntimeAgentFieldResult::U32),
+            | Self::ProjectFlowControlStaticGotoCount
+            | Self::ProjectFlowControlDynamicGotoCount
+            | Self::ProjectFlowControlBranchCount
+            | Self::ProjectFlowControlLoopCount
+            | Self::ProjectFlowControlAwaitCount
+            | Self::ProjectFlowControlThreadCount
+            | Self::ProjectFlowControlSelectBranchCount
+            | Self::ProjectGraphSummaryEntityCount
+            | Self::ProjectGraphSummaryAgentActionCount
+            | Self::ProjectGraphSummaryProjectCallableCount
+            | Self::ProjectGraphSummaryRelationCount
+            | Self::ProjectGraphSummaryDependencyEdgeCount
+            | Self::ProjectGraphSummaryDynamicControlFlowCount
+            | Self::ProjectGraphSummaryDebugQueryCount => {
+                Some(required(RuntimeAgentFieldValue::U32))
+            }
             _ => None,
         }
     }
@@ -697,7 +696,7 @@ impl RuntimeAgentField {
             Self::ObservedObjectEntity => "entity",
             Self::ObservedObjectLayer => "layer",
             Self::ObservedObjectRole => "role",
-            Self::ObservedObjectText | Self::ResourceBodyText => "text",
+            Self::ObservedObjectText => "text",
             Self::ObservedObjectVisible => "visible",
             Self::ObservedObjectEnabled | Self::ActionEnabled => "enabled",
             Self::ObservedObjectBoundingBox => "bbox",
@@ -712,8 +711,7 @@ impl RuntimeAgentField {
             | Self::ResourceKind
             | Self::EntityMetadataKind
             | Self::ProjectGraphSymbolKind
-            | Self::ProjectGraphEdgeKind
-            | Self::ResourceBodyKind => "kind",
+            | Self::ProjectGraphEdgeKind => "kind",
             Self::ActionResultAccepted => "accepted",
             Self::ActionResultBeforeTick => "before_tick",
             Self::ActionResultAfterTick => "after_tick",
@@ -726,22 +724,19 @@ impl RuntimeAgentField {
             Self::ResourceMimeType => "mime_type",
             Self::ResourceHash => "hash",
             Self::ResourceBody => "body",
-            Self::ResourceBodyJson => "json",
-            Self::ResourceBodyBase64 => "base64",
-            Self::ResourceBodyEncoding => "encoding",
-            Self::ResourceBodyValue => "value",
+            Self::BinaryBodyEncoding => "encoding",
+            Self::BinaryBodyData => "data",
             Self::EntityMetadataSemanticHash | Self::ProjectGraphSymbolSemanticHash => {
                 "semantic_hash"
             }
             Self::EntityMetadataSource => "source",
-            Self::SourceAnchorHasSource => "has_source",
             Self::SourceAnchorPath => "path",
             Self::SourceAnchorStartByte => "start_byte",
             Self::SourceAnchorEndByte => "end_byte",
-            Self::SourceAnchorStartLine => "start_line",
-            Self::SourceAnchorStartColumn => "start_column",
-            Self::SourceAnchorEndLine => "end_line",
-            Self::SourceAnchorEndColumn => "end_column",
+            Self::SourceAnchorStart => "start",
+            Self::SourceAnchorEnd => "end",
+            Self::SourcePositionLine => "line",
+            Self::SourcePositionColumn => "column",
             Self::ProjectGraphNeighborhoodRoot => "root",
             Self::ProjectGraphNeighborhoodNodeCount => "node_count",
             Self::ProjectGraphNeighborhoodEdgeCount => "edge_count",
@@ -749,25 +744,23 @@ impl RuntimeAgentField {
             Self::ProjectGraphNeighborhoodEdges => "edges",
             Self::ProjectGraphSymbolSymbolId => "symbol_id",
             Self::ProjectGraphSymbolSummary => "summary",
-            Self::ProjectGraphSymbolHasEntity => "has_entity",
-            Self::ProjectGraphSymbolHasSemanticHash => "has_semantic_hash",
-            Self::ProjectGraphSymbolHasFlowControl => "has_flow_control",
-            Self::ProjectGraphSymbolHasDynamicControl => "has_dynamic_control",
-            Self::ProjectGraphSymbolHasProjectSummary => "has_project_summary",
-            Self::ProjectGraphSymbolEntityCount => "entity_count",
-            Self::ProjectGraphSymbolAgentActionCount => "agent_action_count",
-            Self::ProjectGraphSymbolProjectCallableCount => "project_callable_count",
-            Self::ProjectGraphSymbolRelationCount => "relation_count",
-            Self::ProjectGraphSymbolDependencyEdgeCount => "dependency_edge_count",
-            Self::ProjectGraphSymbolDynamicControlFlowCount => "dynamic_control_flow_count",
-            Self::ProjectGraphSymbolDebugQueryCount => "debug_query_count",
-            Self::ProjectGraphSymbolStaticGotoCount => "static_goto_count",
-            Self::ProjectGraphSymbolDynamicGotoCount => "dynamic_goto_count",
-            Self::ProjectGraphSymbolBranchCount => "branch_count",
-            Self::ProjectGraphSymbolLoopCount => "loop_count",
-            Self::ProjectGraphSymbolAwaitCount => "await_count",
-            Self::ProjectGraphSymbolThreadCount => "thread_count",
-            Self::ProjectGraphSymbolSelectBranchCount => "select_branch_count",
+            Self::ProjectGraphSymbolFlowControl => "flow_control",
+            Self::ProjectGraphSymbolProjectSummary => "project_summary",
+            Self::ProjectFlowControlHasDynamicControl => "has_dynamic_control",
+            Self::ProjectFlowControlStaticGotoCount => "static_goto_count",
+            Self::ProjectFlowControlDynamicGotoCount => "dynamic_goto_count",
+            Self::ProjectFlowControlBranchCount => "branch_count",
+            Self::ProjectFlowControlLoopCount => "loop_count",
+            Self::ProjectFlowControlAwaitCount => "await_count",
+            Self::ProjectFlowControlThreadCount => "thread_count",
+            Self::ProjectFlowControlSelectBranchCount => "select_branch_count",
+            Self::ProjectGraphSummaryEntityCount => "entity_count",
+            Self::ProjectGraphSummaryAgentActionCount => "agent_action_count",
+            Self::ProjectGraphSummaryProjectCallableCount => "project_callable_count",
+            Self::ProjectGraphSummaryRelationCount => "relation_count",
+            Self::ProjectGraphSummaryDependencyEdgeCount => "dependency_edge_count",
+            Self::ProjectGraphSummaryDynamicControlFlowCount => "dynamic_control_flow_count",
+            Self::ProjectGraphSummaryDebugQueryCount => "debug_query_count",
             Self::ProjectGraphEdgeFromSymbolId => "from_symbol_id",
             Self::ProjectGraphEdgeToSymbolId => "to_symbol_id",
             Self::ReferenceFamily => "family",
@@ -1134,6 +1127,7 @@ pub enum RuntimeAgentValue {
     Diagnostics,
     Predicate(RuntimeAgentPredicate),
     ViewportPoint { x: u32, y: u32 },
+    BinaryData(String),
 }
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
@@ -1536,6 +1530,7 @@ impl RuntimeAgentValue {
             Self::Diagnostics => RuntimeAgentOperationalType::Diagnostics,
             Self::Predicate(_) => RuntimeAgentOperationalType::Predicate,
             Self::ViewportPoint { .. } => RuntimeAgentOperationalType::ViewportPoint,
+            Self::BinaryData(_) => RuntimeAgentOperationalType::BinaryData,
         }
     }
 
@@ -1596,6 +1591,7 @@ impl RuntimeAgentValue {
             Self::Diagnostics => "agent/diagnostics",
             Self::Predicate(_) => "agent/predicate",
             Self::ViewportPoint { .. } => "agent/viewport_point",
+            Self::BinaryData(_) => "agent/binary_data",
         }
     }
 
@@ -1645,6 +1641,7 @@ impl RuntimeAgentValue {
             }
             Self::Probe(probe) => collect_probe_strings(probe, &mut strings),
             Self::Predicate(predicate) => collect_predicate_strings(predicate, &mut strings),
+            Self::BinaryData(data) => strings.push(data),
         }
         strings
     }
@@ -1808,7 +1805,8 @@ fn target_operand(
     value: RuntimeValue,
 ) -> Result<RuntimeCommandTargetId, RuntimeAgentConstructionError> {
     let value = match value {
-        RuntimeValue::String(value) | RuntimeValue::EntityRef(value) => value,
+        RuntimeValue::String(value) => value,
+        RuntimeValue::EntityRef(value) => value.runtime_label(),
         value => return invalid_operand(constructor, "string or entity target", &value),
     };
     RuntimeCommandTargetId::try_new(value)
@@ -2052,7 +2050,7 @@ mod tests {
     fn choice_action_materializes_one_typed_action_target() {
         let value = RuntimeAgentValue::try_construct(
             RuntimeAgentConstructor::ChoiceAction,
-            vec![RuntimeValue::EntityRef("choice.opening.listen".to_owned())],
+            vec![RuntimeValue::String("choice.opening.listen".to_owned())],
         )
         .expect("accepted choice identity constructs an action target");
         let RuntimeAgentValue::ActionTarget(target) = value else {
@@ -2180,11 +2178,23 @@ mod tests {
         );
         assert_eq!(
             field.result(),
-            RuntimeAgentFieldResult::VecAgent(RuntimeAgentOperationalType::ProjectGraphSymbol)
+            RuntimeAgentFieldResult::Required(RuntimeAgentFieldValue::VecAgent(
+                RuntimeAgentOperationalType::ProjectGraphSymbol
+            ))
         );
         assert!(field.permits_protocol_record());
         assert!(!RuntimeAgentField::ActionId.permits_protocol_record());
         assert!(!RuntimeAgentField::ViewportX.permits_protocol_record());
+        assert_eq!(
+            RuntimeAgentField::ObservedObjectParentId.result(),
+            RuntimeAgentFieldResult::Optional(RuntimeAgentFieldValue::String)
+        );
+        assert_eq!(
+            RuntimeAgentField::ProjectGraphSymbolFlowControl.result(),
+            RuntimeAgentFieldResult::Optional(RuntimeAgentFieldValue::Agent(
+                RuntimeAgentOperationalType::ProjectFlowControlSummary
+            ))
+        );
     }
 
     #[test]
@@ -2225,6 +2235,13 @@ mod tests {
         );
         assert_eq!(
             RuntimeAgentField::from_owner_label(RuntimeAgentOperationalType::Observation, "uri"),
+            None
+        );
+        assert_eq!(
+            RuntimeAgentField::from_owner_label(
+                RuntimeAgentOperationalType::ProjectGraphSymbol,
+                "has_flow_control"
+            ),
             None
         );
     }

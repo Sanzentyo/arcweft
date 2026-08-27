@@ -30,7 +30,9 @@ fn task_outcome_contract_owns_one_exact_ready_payload() {
     assert!(matches!(
         ready.value(),
         RuntimeValue::Variant {
-            owner: RuntimeVariantIdentity::Result,
+            owner: RuntimeVariantIdentity::Builtin(
+                crate::pattern::RuntimeBuiltinVariantIdentity::Result,
+            ),
             ordinal: 0,
             ..
         }
@@ -41,7 +43,9 @@ fn task_outcome_contract_owns_one_exact_ready_payload() {
     assert!(matches!(
         error.value(),
         RuntimeValue::Variant {
-            owner: RuntimeVariantIdentity::Result,
+            owner: RuntimeVariantIdentity::Builtin(
+                crate::pattern::RuntimeBuiltinVariantIdentity::Result,
+            ),
             ordinal: 1,
             ..
         }

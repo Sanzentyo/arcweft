@@ -174,6 +174,7 @@ impl RuntimePlanTypeTable {
             | RuntimePlanTypeProjection::Duration
             | RuntimePlanTypeProjection::Progress
             | RuntimePlanTypeProjection::EntityReference
+            | RuntimePlanTypeProjection::AgentValue
             | RuntimePlanTypeProjection::ProjectNominal { .. }
             | RuntimePlanTypeProjection::Opaque { .. } => true,
             RuntimePlanTypeProjection::Sequence { item, .. }
@@ -182,6 +183,13 @@ impl RuntimePlanTypeTable {
             RuntimePlanTypeProjection::Tuple(items) | RuntimePlanTypeProjection::Choice(items) => {
                 let mut all_checked = true;
                 for child in items {
+                    all_checked &= self.is_checked_memoized(*child, memo)?;
+                }
+                all_checked
+            }
+            RuntimePlanTypeProjection::BuiltinVariant { cases, .. } => {
+                let mut all_checked = true;
+                for child in cases.iter().flatten() {
                     all_checked &= self.is_checked_memoized(*child, memo)?;
                 }
                 all_checked
@@ -270,6 +278,10 @@ pub enum RuntimePlanTypeTableError {
     },
     #[error("runtime plan type identity space is exhausted")]
     IdentityExhausted,
+    #[error("semantic type {semantic_identity:?} has a non-canonical builtin variant schema")]
+    InvalidBuiltinVariantSchema {
+        semantic_identity: RuntimeSemanticTypeId,
+    },
 }
 
 impl RuntimePlanTypeTableBuilder {
@@ -477,6 +489,17 @@ fn validate_candidate_graph(
     let mut edges = vec![Vec::<usize>::new(); rows.len()];
     let mut incoming = vec![0_usize; rows.len()];
     for (owner, row) in rows.iter().enumerate() {
+        if let RuntimePlanTypeProjection::BuiltinVariant { owner, cases } = &row.projection
+            && (cases.len() != owner.cases().len()
+                || cases
+                    .iter()
+                    .map(Option::is_some)
+                    .ne(owner.cases().iter().map(|case| case.has_payload())))
+        {
+            return Err(RuntimePlanTypeTableError::InvalidBuiltinVariantSchema {
+                semantic_identity: row.semantic_identity,
+            });
+        }
         for child_id in row.projection.children() {
             let child = declaration_index(*child_id).ok_or(
                 RuntimePlanTypeTableError::DanglingReference {

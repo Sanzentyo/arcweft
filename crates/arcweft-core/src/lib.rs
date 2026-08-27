@@ -12,6 +12,7 @@ pub mod math;
 pub mod observation;
 pub mod pattern;
 pub mod plan;
+pub mod presentation;
 pub mod pure;
 pub mod root;
 pub mod runtime_id;

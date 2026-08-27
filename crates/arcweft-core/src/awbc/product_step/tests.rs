@@ -1,19 +1,20 @@
 use super::{
-    ActiveChoice, AwbcProductExecutorSaveSnapshot, AwbcProductStepBuildError,
-    AwbcProductStepExecutor,
+    ActiveChoice, ActiveDialogue, AwbcProductExecutorSaveSnapshot, AwbcProductStepBuildError,
+    AwbcProductStepExecutor, ProductChildFiber, ProductChildFiberOwner, ProductDialoguePhase,
+    ProductLineTaskFiberPhase, ProductStepError,
 };
-use crate::awbc::fiber::FiberTerminalValue;
+use crate::awbc::fiber::{FiberStatus, FiberTerminalValue};
 use crate::awbc::product_step::mapping::MappedEffect;
 use crate::awbc::schema::{
     AwbcAudioArg, AwbcAudioCommand, AwbcAudioCommandId, AwbcAudioValueRef, AwbcBlock, AwbcBlockId,
-    AwbcChoice, AwbcChoiceId, AwbcChoiceOption, AwbcConstant, AwbcContentUnit, AwbcEffectKind,
-    AwbcEffectPlan, AwbcEffectPlanId, AwbcEffectSetId, AwbcEntryId, AwbcFlowBinding,
-    AwbcFlowExecutable, AwbcFrameLayout, AwbcFrameLayoutId, AwbcFrameSlot, AwbcFrameSlotRole,
-    AwbcFunction, AwbcFunctionFlags, AwbcFunctionId, AwbcFunctionKind, AwbcHostCall,
-    AwbcHostCallId, AwbcHostCallMode, AwbcInstruction, AwbcPattern, AwbcPatternId, AwbcProgram,
-    AwbcRegisterId, AwbcResumePoint, AwbcResumePointId, AwbcRuntimeType, AwbcRuntimeTypeShape,
-    AwbcSafePointKind, AwbcSignature, AwbcSignatureId, AwbcStringId, AwbcTableRange,
-    AwbcTerminator, AwbcTrapCode, AwbcTypeId,
+    AwbcChoice, AwbcChoiceId, AwbcChoiceOption, AwbcConstant, AwbcContentUnit, AwbcContentUnitId,
+    AwbcEffectKind, AwbcEffectPlan, AwbcEffectPlanId, AwbcEffectSetId, AwbcEntryId,
+    AwbcFlowBinding, AwbcFlowExecutable, AwbcFrameLayout, AwbcFrameLayoutId, AwbcFrameSlot,
+    AwbcFrameSlotRole, AwbcFunction, AwbcFunctionFlag, AwbcFunctionFlags, AwbcFunctionId,
+    AwbcFunctionKind, AwbcHostCall, AwbcHostCallId, AwbcHostCallMode, AwbcInstruction, AwbcPattern,
+    AwbcPatternId, AwbcProgram, AwbcRegisterId, AwbcResumePoint, AwbcResumePointId,
+    AwbcRuntimeType, AwbcRuntimeTypeShape, AwbcSafePointKind, AwbcSignature, AwbcSignatureId,
+    AwbcStringId, AwbcTableRange, AwbcTerminator, AwbcTrapCode, AwbcTypeId,
 };
 use crate::effect::{LineEffectRequest, RuntimeAssertionGuardId, RuntimeAssertionProfile};
 use crate::engine::{FlowExit, FlowFiberStatus};
@@ -43,6 +44,192 @@ fn minimal_return_program_finishes_without_diagnostics() {
     assert_eq!(result.stop_reason, RuntimeStepStopReason::Done);
     assert!(result.output.diagnostics.is_empty());
     assert!(matches!(result.fiber_status, FlowFiberStatus::Done(_)));
+}
+
+#[test]
+fn product_dialogue_failure_commits_abandoned_before_trapping_parent() {
+    let mut executor = AwbcProductStepExecutor::for_entry(
+        return_program(),
+        crate::awbc::schema::AwbcEntryId(0),
+        64,
+    )
+    .expect("product executor starts");
+    let content = crate::runtime_id::RuntimeDialogueContentPlanId::from_accepted_ordinal(
+        std::num::NonZeroU32::MIN,
+    );
+    let activation = crate::runtime_id::DialogueActivationId::new(
+        executor.artifact_fingerprint,
+        executor.facade_fiber.persistent_id,
+        content,
+        0,
+    );
+    executor
+        .dialogues
+        .begin(ActiveDialogue {
+            activation: activation.clone(),
+            content: AwbcContentUnitId(0),
+            line: crate::plan::RuntimeLineId::from_runtime_line_value("line.fixture")
+                .expect("fixture line identity"),
+            captures: Box::new([]),
+            values: Box::new([]),
+            voice: crate::presentation::RuntimeDialogueVoiceState::Absent,
+            result: crate::awbc::schema::AwbcDialogueResultTarget {
+                ty: AwbcTypeId(0),
+                pattern: AwbcPatternId(0),
+                destination: AwbcRegisterId(0),
+            },
+            phase: ProductDialoguePhase::Activating {
+                fiber: executor.fiber.clone(),
+                pending: None,
+            },
+            elapsed_nanos: 0,
+            pending_content_events: Vec::new(),
+            pending_advance: false,
+            pending_line_outcomes: Vec::new(),
+        })
+        .expect("fixture activation begins");
+    let transaction = executor
+        .dialogues
+        .begin_transaction(&activation)
+        .expect("fixture activation transaction");
+    let mut output = crate::step::RuntimeStepOutput::default();
+
+    assert!(executor.begin_product_dialogue_failure(
+        transaction,
+        ProductStepError::Internal("fixture activation failure".to_owned()),
+        &mut output,
+    ));
+
+    assert!(executor.dialogues.active_frame().is_none());
+    assert_eq!(executor.fiber.status, FiberStatus::Trapped);
+    assert!(matches!(
+        executor.fiber.terminal,
+        Some(FiberTerminalValue::Trapped(ref trap))
+            if trap.message.as_deref() == Some("fixture activation failure")
+    ));
+    assert!(output.requests.line_commands.is_empty());
+    assert_eq!(output.diagnostics.len(), 1);
+}
+
+#[test]
+fn product_dialogue_failure_cancels_joined_child_before_abandoning() {
+    let mut executor = AwbcProductStepExecutor::for_entry(
+        return_program(),
+        crate::awbc::schema::AwbcEntryId(0),
+        64,
+    )
+    .expect("product executor starts");
+    executor.program.content_units.push(AwbcContentUnit {
+        public_id: AwbcStringId(0),
+        marks: Vec::new(),
+        effect_site_count: 0,
+        line_task_group: Some(crate::awbc::schema::AwbcLineTaskGroupId(0)),
+        display: None,
+        source: None,
+        resources: Vec::new(),
+    });
+    executor
+        .program
+        .line_task_nodes
+        .push(crate::awbc::schema::AwbcLineTaskNode::Action(
+            AwbcFunctionId(0),
+        ));
+    executor
+        .program
+        .line_task_groups
+        .push(crate::awbc::schema::AwbcLineTaskGroup {
+            captures: Vec::new(),
+            activation: AwbcFunctionId(0),
+            result_type: AwbcTypeId(0),
+            handle_sites: Vec::new(),
+            root: crate::awbc::schema::AwbcLineTaskNodeId(0),
+            nodes: AwbcTableRange::new(0, 1),
+            cancel_handlers: Vec::new(),
+            cleanup_completed: None,
+            cleanup_cancelled: None,
+            cleanup_failed: None,
+            cleanup: crate::awbc::schema::AwbcLineCleanupPolicy {
+                child_tasks: crate::awbc::schema::AwbcChildCleanup::CancelAndJoin,
+                presentation: crate::awbc::schema::AwbcPresentationCleanup::DropRegistered,
+                audio: crate::awbc::schema::AwbcAudioCleanup::StopRegistered,
+            },
+        });
+    let content = crate::runtime_id::RuntimeDialogueContentPlanId::from_accepted_ordinal(
+        std::num::NonZeroU32::MIN,
+    );
+    let activation = crate::runtime_id::DialogueActivationId::new(
+        executor.artifact_fingerprint,
+        executor.facade_fiber.persistent_id,
+        content,
+        1,
+    );
+    let (live, tag, policy) = {
+        let view = executor
+            .line_task_view(AwbcContentUnitId(0))
+            .expect("line-task view");
+        let mut live = crate::line_task::LineTaskLiveState::new(&view, activation.clone());
+        let activation_batch = crate::line_task::progress_live_line_task_group(
+            &view,
+            crate::time::LogicalDuration::default(),
+            crate::line_task::LineTaskReadyEvents::new(
+                &std::collections::BTreeSet::new(),
+                &std::collections::BTreeSet::new(),
+            ),
+            &mut live,
+        )
+        .expect("activate action");
+        let [crate::line_task::LineTaskCommand::Run { tag, policy }] =
+            activation_batch.commands.as_slice()
+        else {
+            panic!("fixture must start one joined child")
+        };
+        (live, tag.clone(), *policy)
+    };
+    executor
+        .dialogues
+        .begin(ActiveDialogue {
+            activation: activation.clone(),
+            content: AwbcContentUnitId(0),
+            line: crate::plan::RuntimeLineId::from_runtime_line_value("line.fixture")
+                .expect("line"),
+            captures: Box::new([]),
+            values: Box::new([]),
+            voice: crate::presentation::RuntimeDialogueVoiceState::Absent,
+            result: crate::awbc::schema::AwbcDialogueResultTarget {
+                ty: AwbcTypeId(0),
+                pattern: AwbcPatternId(0),
+                destination: AwbcRegisterId(0),
+            },
+            phase: ProductDialoguePhase::Reducing { line_task: live },
+            elapsed_nanos: 0,
+            pending_content_events: Vec::new(),
+            pending_advance: false,
+            pending_line_outcomes: Vec::new(),
+        })
+        .expect("activation begins");
+    executor.child_fibers.push_back(ProductChildFiber {
+        owner: ProductChildFiberOwner::LineTask {
+            content: AwbcContentUnitId(0),
+            tag,
+            policy,
+            phase: ProductLineTaskFiberPhase::Active,
+        },
+        fiber: executor.fiber.clone(),
+    });
+    let transaction = executor
+        .dialogues
+        .begin_transaction(&activation)
+        .expect("failure transaction");
+    let mut output = crate::step::RuntimeStepOutput::default();
+
+    assert!(executor.begin_product_dialogue_failure(
+        transaction,
+        ProductStepError::Internal("joined child failure".to_owned()),
+        &mut output,
+    ));
+    assert!(executor.child_fibers.is_empty());
+    assert!(executor.dialogues.active_frame().is_none());
+    assert_eq!(executor.fiber.status, FiberStatus::Trapped);
 }
 
 #[test]
@@ -442,8 +629,6 @@ fn trap_terminators_project_typed_runtime_diagnostics() {
 fn effect_mapping_table_covers_every_awbc_effect_kind() {
     let mut program = AwbcProgram::default();
     let cases = [
-        (AwbcEffectKind::RegisterHandle, true),
-        (AwbcEffectKind::DropHandle, true),
         (AwbcEffectKind::Wait, true),
         (AwbcEffectKind::Audio, false),
         (AwbcEffectKind::Call, true),
@@ -691,6 +876,7 @@ fn content_ensure_program() -> AwbcProgram {
         content_units: vec![AwbcContentUnit {
             public_id: AwbcStringId(1),
             marks: Vec::new(),
+            effect_site_count: 0,
             line_task_group: None,
             display: None,
             source: None,
@@ -810,7 +996,7 @@ fn host_call_program() -> AwbcProgram {
             frame_layout: AwbcFrameLayoutId(0),
             blocks: AwbcTableRange::new(0, 2),
             entry_block: AwbcBlockId(0),
-            flags: AwbcFunctionFlags(AwbcFunctionFlags::MAY_SUSPEND),
+            flags: AwbcFunctionFlags::empty().with(AwbcFunctionFlag::MaySuspend),
         }],
         flow_bindings: vec![test_flow_binding()],
         flow_executables: vec![test_flow_executable()],
@@ -941,9 +1127,9 @@ fn direct_need_program() -> AwbcProgram {
             frame_layout: AwbcFrameLayoutId(0),
             blocks: AwbcTableRange::new(0, 2),
             entry_block: AwbcBlockId(0),
-            flags: AwbcFunctionFlags(
-                AwbcFunctionFlags::DETERMINISTIC | AwbcFunctionFlags::MAY_SUSPEND,
-            ),
+            flags: AwbcFunctionFlags::empty()
+                .with(AwbcFunctionFlag::Deterministic)
+                .with(AwbcFunctionFlag::MaySuspend),
         }],
         flow_bindings: vec![test_flow_binding()],
         flow_executables: vec![test_flow_executable()],
@@ -966,7 +1152,6 @@ fn push_effect_plan(program: &mut AwbcProgram, kind: AwbcEffectKind) -> AwbcEffe
     let static_arg_count = match kind {
         AwbcEffectKind::Audio => 0,
         AwbcEffectKind::Call
-        | AwbcEffectKind::RegisterHandle
         | AwbcEffectKind::SignalWrite
         | AwbcEffectKind::MetricWrite
         | AwbcEffectKind::Out
@@ -974,8 +1159,7 @@ fn push_effect_plan(program: &mut AwbcProgram, kind: AwbcEffectKind) -> AwbcEffe
         | AwbcEffectKind::Break => 2,
         AwbcEffectKind::Log | AwbcEffectKind::Assert => 4,
         AwbcEffectKind::EmitEvent => 3,
-        AwbcEffectKind::DropHandle
-        | AwbcEffectKind::Wait
+        AwbcEffectKind::Wait
         | AwbcEffectKind::Return
         | AwbcEffectKind::Goto
         | AwbcEffectKind::Panic

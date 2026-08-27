@@ -6,14 +6,17 @@
 
 mod audio;
 mod control;
+mod dialogue;
 mod execution;
 mod lifecycle;
+mod line;
 mod mapping;
 mod root;
 mod runtime_id;
 mod snapshot;
 mod suspension;
 
+use self::dialogue::ProductDialogueStore;
 use self::execution::{
     ProductVmHost, has_host_requests, has_visible_output, input_choice_selection, run_function,
     stream_id_for,
@@ -47,13 +50,14 @@ use crate::awbc::schema::{
 use crate::awbc::verify::{AwbcVerifyBudget, AwbcVerifyContext};
 use crate::awbc::vm::{VmExit, VmObservation, VmStepOptions, step_with_host};
 use crate::engine::{
-    AwaitState, ChoiceState, DialogueState, FlowExit, FlowFiber, FlowFiberId, FlowFiberOwner,
-    FlowFiberStatus, HostCallState,
+    AwaitState, ChoiceState, FlowExit, FlowFiber, FlowFiberId, FlowFiberOwner, FlowFiberStatus,
+    HostCallState,
 };
 use crate::line_task::{
-    ChildCancelPolicy, ChildJoinPolicy, LineTaskCommand, LineTaskExitPolicy, LineTaskLiveState,
-    LineTaskNodeView, LineTaskPlanView, LineTaskTrigger, LineTaskWork, LineTaskWorkTag, ScopeExit,
-    cancel_live_line_task_group, complete_live_line_task_work, finish_live_line_task_group,
+    AcceptedLineTaskContentEvents, ChildCancelPolicy, ChildJoinPolicy, LineRuntimeError,
+    LineTaskExitPolicy, LineTaskLiveState, LineTaskNodeView, LineTaskPlanView, LineTaskTrigger,
+    LineTaskWork, LineTaskWorkTag, ScopeExit, cancel_live_line_task_group,
+    complete_live_line_task_work, fail_live_line_task_group, finish_live_line_task_group,
     progress_live_line_task_group,
 };
 use crate::observation::RuntimeObservationState;
@@ -64,7 +68,6 @@ use crate::step::{
     RuntimeDiagnostic, RuntimeDiagnosticCategory, RuntimeHostCallId, RuntimeHostCallMode,
     RuntimeHostCallRequest, RuntimeStepInput, RuntimeStepMode, RuntimeStepOptions,
     RuntimeStepOutput, RuntimeStepResult, RuntimeStepStats, RuntimeStepStopReason,
-    input_event_trigger_name,
 };
 use crate::stream::{RuntimeStreamEvent, StreamRuntimeState};
 use crate::task::{
@@ -74,8 +77,8 @@ use crate::task::{
 };
 use crate::time::LogicalDuration;
 use crate::value::{
-    RuntimeEnv, RuntimeFlowParameterBinding, RuntimePayload, RuntimeValue, runtime_sequence_values,
-    runtime_value_label,
+    RuntimeEnv, RuntimeFlowParameterBinding, RuntimeLocalBinding, RuntimePayload, RuntimeValue,
+    runtime_sequence_values, runtime_value_label,
 };
 use arcweft_interaction_model::audio::{AudioCommandEnvelope, AudioDispatchId};
 use std::collections::{BTreeMap, BTreeSet, VecDeque};
@@ -162,6 +165,8 @@ pub enum AwbcProductStepBuildError {
     RootStartup { message: String },
     #[error("failed to restore product AWBC executor snapshot: {message}")]
     RestoreSnapshot { message: String },
+    #[error("failed to derive the accepted product AWBC artifact identity: {message}")]
+    ArtifactIdentity { message: String },
 }
 
 #[derive(Clone, Debug, Error, Eq, PartialEq)]
@@ -174,6 +179,35 @@ pub(super) enum ProductStepError {
     Host(String),
     #[error("{0}")]
     Internal(String),
+    #[error(transparent)]
+    Line(#[from] crate::line_task::LineRuntimeError),
+    #[error(transparent)]
+    LineTaskCompletion(#[from] crate::line_task::LineTaskCompletionError),
+    #[error("product AWBC dialogue content identity overflowed")]
+    DialogueContentIdentityOverflow,
+    #[error("product AWBC dialogue occurrence identity overflowed")]
+    DialogueOccurrenceOverflow,
+    #[error("product AWBC child generation identity overflowed")]
+    ChildGenerationOverflow,
+    #[error("product AWBC dialogue line cursor overflowed")]
+    DialogueLineCursorOverflow,
+    #[error(
+        "product AWBC line-task child completed for content {actual:?}, active dialogue is {expected:?}"
+    )]
+    StaleLineTaskChildContent {
+        expected: AwbcContentUnitId,
+        actual: AwbcContentUnitId,
+    },
+    #[error(transparent)]
+    RuntimeIdentity(#[from] crate::runtime_id::RuntimeIdExhausted),
+    #[error(transparent)]
+    Fiber(#[from] crate::awbc::fiber::FiberStateError),
+}
+
+impl From<crate::presentation::RuntimeCommandQueueError> for ProductStepError {
+    fn from(error: crate::presentation::RuntimeCommandQueueError) -> Self {
+        Self::Line(crate::line_task::LineRuntimeError::from(error))
+    }
 }
 
 impl ProductStepError {
@@ -182,17 +216,181 @@ impl ProductStepError {
             Self::Input(_) => RuntimeDiagnosticCategory::Input,
             Self::Type(_) => RuntimeDiagnosticCategory::Type,
             Self::Host(_) => RuntimeDiagnosticCategory::Host,
-            Self::Internal(_) => RuntimeDiagnosticCategory::Internal,
+            Self::Internal(_)
+            | Self::Line(_)
+            | Self::LineTaskCompletion(_)
+            | Self::DialogueContentIdentityOverflow
+            | Self::DialogueOccurrenceOverflow
+            | Self::ChildGenerationOverflow
+            | Self::DialogueLineCursorOverflow
+            | Self::StaleLineTaskChildContent { .. }
+            | Self::RuntimeIdentity(_)
+            | Self::Fiber(_) => RuntimeDiagnosticCategory::Internal,
+        }
+    }
+
+    const fn trap_code(&self) -> AwbcTrapCode {
+        match self {
+            Self::Type(_) => AwbcTrapCode::TypeMismatch,
+            Self::Host(_) => AwbcTrapCode::HostAbiMismatch,
+            Self::Input(_)
+            | Self::Internal(_)
+            | Self::Line(_)
+            | Self::LineTaskCompletion(_)
+            | Self::DialogueContentIdentityOverflow
+            | Self::DialogueOccurrenceOverflow
+            | Self::ChildGenerationOverflow
+            | Self::DialogueLineCursorOverflow
+            | Self::StaleLineTaskChildContent { .. }
+            | Self::RuntimeIdentity(_)
+            | Self::Fiber(_) => AwbcTrapCode::InternalInvariant,
         }
     }
 }
 
+fn partition_drop_observation(
+    observations: Vec<VmObservation>,
+) -> Result<
+    (Option<crate::effect::RuntimeDropPolicy>, Vec<VmObservation>),
+    crate::line_task::LineRuntimeError,
+> {
+    let mut drop_policy = None;
+    let mut remaining = Vec::with_capacity(observations.len());
+    for observation in observations {
+        match observation {
+            VmObservation::Drop { policy } => {
+                if drop_policy.replace(policy).is_some() {
+                    return Err(crate::line_task::LineRuntimeError::InvalidActivationOperation);
+                }
+            }
+            observation => remaining.push(observation),
+        }
+    }
+    Ok((drop_policy, remaining))
+}
+
 #[derive(Clone, Debug, PartialEq)]
 struct ActiveDialogue {
+    activation: crate::runtime_id::DialogueActivationId,
     content: AwbcContentUnitId,
+    line: crate::plan::RuntimeLineId,
     captures: Box<[RuntimeValue]>,
-    line_task: Option<LineTaskLiveState>,
+    values: Box<[crate::plan::RuntimeDialogueValueBinding]>,
+    voice: crate::presentation::RuntimeDialogueVoiceState,
+    result: crate::awbc::schema::AwbcDialogueResultTarget,
+    phase: ProductDialoguePhase,
     elapsed_nanos: u64,
+    pending_content_events: Vec<crate::step::RuntimeDialogueContentEventKind>,
+    pending_advance: bool,
+    pending_line_outcomes: Vec<crate::presentation::RuntimeLineHostOutcome>,
+}
+
+#[derive(Clone, Debug, PartialEq)]
+enum ProductDialoguePhase {
+    Activating {
+        fiber: FiberState,
+        pending: Option<ProductPendingLineOperation>,
+    },
+    Reducing {
+        line_task: LineTaskLiveState,
+    },
+    Publishing {
+        line_task: LineTaskLiveState,
+    },
+    Closing(ProductDialogueClosing),
+}
+
+#[derive(Clone, Debug, PartialEq)]
+struct ProductDialogueClosing {
+    failure: FiberTrap,
+    state: ProductDialogueClosingState,
+}
+
+#[derive(Clone, Debug, PartialEq)]
+enum ProductDialogueClosingState {
+    Activation {
+        fiber: FiberState,
+        pending: Option<ProductPendingLineOperation>,
+    },
+    LineTask {
+        line_task: LineTaskLiveState,
+    },
+}
+
+#[derive(Clone, Debug, PartialEq)]
+enum ProductPendingLineOperation {
+    AcquireActor {
+        cursor: FiberCursor,
+        destination: crate::awbc::schema::AwbcRegisterId,
+        command: crate::presentation::RuntimeLineCommandId,
+        value: RuntimeValue,
+        token: crate::runtime_id::RuntimeLineHandleToken,
+    },
+    ActorLook {
+        cursor: FiberCursor,
+        destination: crate::awbc::schema::AwbcRegisterId,
+        command: crate::presentation::RuntimeLineCommandId,
+        value: RuntimeValue,
+        token: crate::runtime_id::RuntimeLineHandleToken,
+    },
+    StartVoice {
+        cursor: FiberCursor,
+        destination: crate::awbc::schema::AwbcRegisterId,
+        command: crate::presentation::RuntimeLineCommandId,
+        site: crate::awbc::schema::AwbcLineHandleSiteId,
+    },
+}
+
+impl ProductPendingLineOperation {
+    fn command(&self) -> &crate::presentation::RuntimeLineCommandId {
+        match self {
+            Self::AcquireActor { command, .. }
+            | Self::ActorLook { command, .. }
+            | Self::StartVoice { command, .. } => command,
+        }
+    }
+}
+
+impl ActiveDialogue {
+    fn line_task(&self) -> Option<&LineTaskLiveState> {
+        match &self.phase {
+            ProductDialoguePhase::Reducing { line_task }
+            | ProductDialoguePhase::Publishing { line_task } => Some(line_task),
+            ProductDialoguePhase::Closing(ProductDialogueClosing {
+                state: ProductDialogueClosingState::LineTask { line_task },
+                ..
+            }) => Some(line_task),
+            ProductDialoguePhase::Closing(ProductDialogueClosing {
+                state: ProductDialogueClosingState::Activation { .. },
+                ..
+            }) => None,
+            ProductDialoguePhase::Activating { .. } => None,
+        }
+    }
+
+    fn line_task_mut(&mut self) -> Option<&mut LineTaskLiveState> {
+        match &mut self.phase {
+            ProductDialoguePhase::Reducing { line_task }
+            | ProductDialoguePhase::Publishing { line_task } => Some(line_task),
+            ProductDialoguePhase::Closing(ProductDialogueClosing {
+                state: ProductDialogueClosingState::LineTask { line_task },
+                ..
+            }) => Some(line_task),
+            ProductDialoguePhase::Closing(ProductDialogueClosing {
+                state: ProductDialogueClosingState::Activation { .. },
+                ..
+            }) => None,
+            ProductDialoguePhase::Activating { .. } => None,
+        }
+    }
+
+    fn is_ingress_ready(&self) -> bool {
+        matches!(
+            &self.phase,
+            ProductDialoguePhase::Reducing { line_task }
+                if !line_task.is_closing() && !line_task.is_closed()
+        )
+    }
 }
 
 impl AwbcProductStepExecutor {
@@ -201,6 +399,50 @@ impl AwbcProductStepExecutor {
             .content_units
             .get(content.index())
             .and_then(|content| content.line_task_group)
+    }
+
+    fn runtime_dialogue_content_id(
+        content: AwbcContentUnitId,
+    ) -> Result<crate::runtime_id::RuntimeDialogueContentPlanId, ProductStepError> {
+        let ordinal = content
+            .0
+            .checked_add(1)
+            .and_then(std::num::NonZeroU32::new)
+            .ok_or(ProductStepError::DialogueContentIdentityOverflow)?;
+        Ok(crate::runtime_id::RuntimeDialogueContentPlanId::from_accepted_ordinal(ordinal))
+    }
+
+    fn prepare_dialogue_activation(
+        &self,
+        content: AwbcContentUnitId,
+    ) -> Result<
+        (
+            crate::runtime_id::DialogueActivationId,
+            (
+                crate::runtime_id::RuntimePersistentFiberId,
+                crate::runtime_id::RuntimeDialogueContentPlanId,
+            ),
+            u64,
+        ),
+        ProductStepError,
+    > {
+        let content = Self::runtime_dialogue_content_id(content)?;
+        let owner = self.facade_fiber.persistent_id;
+        let key = (owner, content);
+        let occurrence = self.dialogue_occurrences.get(&key).copied().unwrap_or(0);
+        let next = occurrence
+            .checked_add(1)
+            .ok_or(ProductStepError::DialogueOccurrenceOverflow)?;
+        Ok((
+            crate::runtime_id::DialogueActivationId::new(
+                self.artifact_fingerprint,
+                owner,
+                content,
+                occurrence,
+            ),
+            key,
+            next,
+        ))
     }
 }
 
@@ -227,6 +469,34 @@ enum ProductLineTaskFiberPhase {
 struct ProductChildFiber {
     owner: ProductChildFiberOwner,
     fiber: FiberState,
+}
+
+/// Fallible realization of one reducer command batch. Child fibers and their
+/// identity cursors are prepared off to the side; the dialogue registry and
+/// this executor substate are committed only after every command has been
+/// validated and materialized.
+struct ProductLineTaskExecutionBatch {
+    child_fibers: VecDeque<ProductChildFiber>,
+    next_generation: u64,
+    next_fiber_instance: crate::runtime_id::RuntimeIdCursor,
+    observations: Vec<VmObservation>,
+    pure_stats: Option<crate::step::RuntimePureCallStats>,
+}
+
+impl ProductLineTaskExecutionBatch {
+    fn has_joined_dialogue_work(
+        &self,
+        activation: &crate::runtime_id::DialogueActivationId,
+    ) -> bool {
+        self.child_fibers.iter().any(|child| {
+            matches!(
+                &child.owner,
+                ProductChildFiberOwner::LineTask { tag, policy, .. }
+                    if tag.activation_id() == activation
+                        && policy.join == ChildJoinPolicy::Join
+            )
+        })
+    }
 }
 
 /// AWBC's payload-free view of one content-owned line task graph. The common
@@ -296,8 +566,8 @@ impl<'a> AwbcLineTaskPlanView<'a> {
             })
     }
 
-    fn function_for(&self, tag: LineTaskWorkTag) -> Option<AwbcFunctionId> {
-        match tag.work {
+    fn function_for(&self, tag: &LineTaskWorkTag) -> Option<AwbcFunctionId> {
+        match tag.work() {
             LineTaskWork::Node(node) => match self
                 .program
                 .line_task_nodes
@@ -348,9 +618,12 @@ impl LineTaskPlanView for AwbcLineTaskPlanView<'_> {
                 trigger: match trigger {
                     AwbcLineTaskTrigger::Immediate => LineTaskTrigger::Immediate,
                     AwbcLineTaskTrigger::Mark(mark) => LineTaskTrigger::Mark(*mark),
-                    AwbcLineTaskTrigger::DelayNanos(nanos) => {
-                        LineTaskTrigger::Delay(LogicalDuration::from_nanos(*nanos))
+                    AwbcLineTaskTrigger::ContentEffect(site) => {
+                        LineTaskTrigger::ContentEffect(*site)
                     }
+                    AwbcLineTaskTrigger::Scheduled(site) => LineTaskTrigger::Scheduled(
+                        crate::runtime_id::RuntimeLineHandleSiteId::from_zero_based(site.0),
+                    ),
                 },
                 policy: LineTaskExitPolicy {
                     join: match join {
@@ -408,6 +681,17 @@ impl LineTaskPlanView for AwbcLineTaskPlanView<'_> {
             ScopeExit::Failed => self.group.cleanup_failed.is_some(),
         }
     }
+
+    fn scheduled_child(
+        &self,
+        site: crate::runtime_id::RuntimeLineHandleSiteId,
+    ) -> Option<crate::runtime_id::RuntimeLineTaskNodeId> {
+        self.group
+            .handle_sites
+            .get(site.index())?
+            .scheduled_child
+            .and_then(|child| self.global_node_to_local(child))
+    }
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -437,10 +721,11 @@ enum AwbcProductExecutorStatus {
 #[derive(Clone, Debug, PartialEq)]
 pub struct AwbcProductStepExecutor {
     pub(super) program: AwbcProgram,
+    artifact_fingerprint: crate::effect::RuntimeArtifactFingerprint,
     fiber: FiberState,
     facade_fiber: FlowFiber,
     entry_bound: bool,
-    active_dialogue: Option<ActiveDialogue>,
+    dialogues: ProductDialogueStore,
     active_choice: Option<ActiveChoice>,
     pending_host_call: Option<PendingHostCall>,
     started_tasks: BTreeSet<TaskId>,
@@ -450,8 +735,15 @@ pub struct AwbcProductStepExecutor {
     emitted_content: BTreeSet<AwbcContentUnitId>,
     stream_sequences: BTreeMap<AwbcStreamPlanId, u64>,
     child_fibers: VecDeque<ProductChildFiber>,
-    next_line_task_activation: u64,
+    dialogue_occurrences: BTreeMap<
+        (
+            crate::runtime_id::RuntimePersistentFiberId,
+            crate::runtime_id::RuntimeDialogueContentPlanId,
+        ),
+        u64,
+    >,
     next_generation: u64,
+    next_fiber_instance: crate::runtime_id::RuntimeIdCursor,
     next_host_call_sequence: u64,
     next_audio_sequence: u64,
     compact_pure_stats: crate::step::RuntimePureCallStats,
@@ -459,6 +751,22 @@ pub struct AwbcProductStepExecutor {
 }
 
 impl AwbcProductStepExecutor {
+    fn artifact_fingerprint(
+        program: &AwbcProgram,
+    ) -> Result<crate::effect::RuntimeArtifactFingerprint, AwbcProductStepBuildError> {
+        let encoded = program.encode_canonical().map_err(|error| {
+            AwbcProductStepBuildError::ArtifactIdentity {
+                message: error.to_string(),
+            }
+        })?;
+        crate::effect::RuntimeArtifactFingerprint::try_from_bytes(
+            *blake3::hash(&encoded).as_bytes(),
+        )
+        .map_err(|error| AwbcProductStepBuildError::ArtifactIdentity {
+            message: error.to_string(),
+        })
+    }
+
     /// Rebinds a verified code-compatible program without rerunning entry
     /// startup or replacing durable root/fiber state.
     pub fn replace_program_preserving_state(
@@ -472,6 +780,7 @@ impl AwbcProductStepExecutor {
             })?;
         let snapshot = self.snapshot();
         let mut candidate = self.clone();
+        candidate.artifact_fingerprint = Self::artifact_fingerprint(&program)?;
         candidate.program = program;
         candidate.validate_snapshot(&snapshot)?;
         candidate.rebuild_facade_stream_states_from_compact();
@@ -493,6 +802,10 @@ impl AwbcProductStepExecutor {
         let mut root_startup = root::prepare_startup(&program, entry)?;
         let mut fiber = if program.entries.is_empty() {
             FiberState {
+                instance: crate::runtime_id::RuntimeFiberInstanceId::from_allocated(
+                    std::num::NonZeroU64::MIN,
+                ),
+                next_frame_instance: crate::runtime_id::RuntimeIdCursor::initial(),
                 generation: 0,
                 entry,
                 cursor: FiberCursor {
@@ -526,7 +839,8 @@ impl AwbcProductStepExecutor {
                     message: error.to_string(),
                 })?;
         }
-        let mut executor = Self::for_fiber(program, fiber);
+        let artifact_fingerprint = Self::artifact_fingerprint(&program)?;
+        let mut executor = Self::for_fiber(program, fiber, artifact_fingerprint);
         executor.entry_bound = true;
         if let Some(startup) = root_startup.take() {
             executor.install_root_startup(startup);
@@ -573,12 +887,22 @@ impl AwbcProductStepExecutor {
             .map_err(|error| AwbcProductStepBuildError::FiberState {
                 message: error.to_string(),
             })?;
-        let mut executor = Self::for_fiber(program, fiber);
+        let artifact_fingerprint = Self::artifact_fingerprint(&program)?;
+        let mut executor = Self::for_fiber(program, fiber, artifact_fingerprint);
         executor.entry_bound = true;
         Ok(executor)
     }
 
-    fn for_fiber(program: AwbcProgram, fiber: FiberState) -> Self {
+    fn for_fiber(
+        program: AwbcProgram,
+        fiber: FiberState,
+        artifact_fingerprint: crate::effect::RuntimeArtifactFingerprint,
+    ) -> Self {
+        let mut next_fiber_instance = crate::runtime_id::RuntimeIdCursor::initial();
+        let main_fiber_instance = next_fiber_instance
+            .take_next(crate::runtime_id::RuntimeIdNamespace::FiberInstance)
+            .expect("initial Product fiber identity is available");
+        debug_assert_eq!(fiber.instance.get(), main_fiber_instance);
         let mut facade_fiber = FlowFiber {
             line_cursor: 0,
             cursor: None,
@@ -590,6 +914,10 @@ impl AwbcProductStepExecutor {
             observations: RuntimeObservationState::default(),
             stream_states: BTreeMap::new(),
             id: FlowFiberId::from_executor_ordinal(0),
+            persistent_id: crate::runtime_id::RuntimePersistentFiberId::from_allocated(1),
+            execution: crate::runtime_id::ExecutionInstanceId::from_allocated(
+                std::num::NonZeroU64::MIN,
+            ),
             owner: FlowFiberOwner::Executor,
             status: if matches!(fiber.status, FiberStatus::Returned | FiberStatus::Cancelled) {
                 FlowFiberStatus::Done(FlowExit::Done)
@@ -608,10 +936,11 @@ impl AwbcProductStepExecutor {
         }
         Self {
             program,
+            artifact_fingerprint,
             fiber,
             facade_fiber,
             entry_bound: false,
-            active_dialogue: None,
+            dialogues: ProductDialogueStore::default(),
             active_choice: None,
             pending_host_call: None,
             started_tasks: BTreeSet::new(),
@@ -621,8 +950,9 @@ impl AwbcProductStepExecutor {
             emitted_content: BTreeSet::new(),
             stream_sequences: BTreeMap::new(),
             child_fibers: VecDeque::new(),
-            next_line_task_activation: 0,
+            dialogue_occurrences: BTreeMap::new(),
             next_generation: 1,
+            next_fiber_instance,
             next_host_call_sequence: 0,
             next_audio_sequence: 0,
             compact_pure_stats: crate::step::RuntimePureCallStats::default(),
@@ -640,6 +970,17 @@ impl AwbcProductStepExecutor {
 
     pub const fn compact_fiber(&self) -> &FiberState {
         &self.fiber
+    }
+
+    fn latch_dialogue_step_input(
+        &mut self,
+        input: &mut RuntimeStepInput,
+    ) -> Result<Vec<crate::line_task::LineRuntimeError>, ProductStepError> {
+        let content_events = std::mem::take(&mut input.dialogue_content_events);
+        let advances = std::mem::take(&mut input.dialogue_advances);
+        let line_outcomes = std::mem::take(&mut input.line_outcomes);
+        self.dialogues
+            .latch_step_input(input.dt, &content_events, &advances, &line_outcomes)
     }
 
     pub fn step(
@@ -664,6 +1005,41 @@ impl AwbcProductStepExecutor {
         let pending_ops_before = self.pending_ops_len();
         let root_events_in = input.root_events.len();
         let deferred_root_events = std::mem::take(&mut input.deferred_root_events);
+        output
+            .requests
+            .root_events_next_step
+            .extend(deferred_root_events);
+
+        let ingress_diagnostics = match self.latch_dialogue_step_input(&mut input) {
+            Ok(diagnostics) => diagnostics,
+            Err(error) => {
+                self.fail_with_error(error, &mut output);
+                self.sync_facade();
+                let stop_reason = self.stop_reason(options, executed_ops, &output);
+                let diagnostics = output.diagnostics.len();
+                return self.finish_result(
+                    output,
+                    stop_reason,
+                    RuntimeStepStats {
+                        pending_ops_before,
+                        pending_ops_after: self.pending_ops_len(),
+                        child_fibers: self.child_fibers.len(),
+                        pure: pure_backend
+                            .stats()
+                            .saturating_delta(pure_before)
+                            .saturating_add(
+                                self.compact_pure_stats.saturating_delta(local_pure_before),
+                            ),
+                        root_events_in,
+                        diagnostics,
+                        ..RuntimeStepStats::default()
+                    },
+                );
+            }
+        };
+        for diagnostic in ingress_diagnostics {
+            self.record_error(ProductStepError::Line(diagnostic), &mut output);
+        }
 
         if !self.run_root_phase(
             std::mem::take(&mut input.root_events),
@@ -696,11 +1072,6 @@ impl AwbcProductStepExecutor {
                 },
             );
         }
-        output
-            .requests
-            .root_events_next_step
-            .extend(deferred_root_events);
-
         let need_states = normalize_runtime_need_states(std::mem::take(&mut input.need_states));
         let task_events = normalize_task_events(std::mem::take(&mut input.task_events));
         let need_states_in = need_states.len();
@@ -851,20 +1222,67 @@ impl AwbcProductStepExecutor {
         output: &mut RuntimeStepOutput,
         pure_backend: &mut impl RuntimeCallBackend,
     ) -> usize {
+        let before = self.fiber.clone();
+        let mut candidate = before.clone();
+        let mut candidate_stats = self.compact_pure_stats.clone();
         let mut host = ProductVmHost {
             backend: pure_backend,
-            fallback_stats: &mut self.compact_pure_stats,
+            fallback_stats: &mut candidate_stats,
         };
         match step_with_host(
             &self.program,
-            &mut self.fiber,
+            &mut candidate,
             VmStepOptions {
                 max_instructions: 1,
             },
             &mut host,
         ) {
             Ok(vm_output) => {
-                self.consume_observations(vm_output.observations, output);
+                let (drop_policy, observations) =
+                    match partition_drop_observation(vm_output.observations) {
+                        Ok(parts) => parts,
+                        Err(error) => {
+                            self.fail_with_error(error.into(), output);
+                            return usize::try_from(vm_output.executed).unwrap_or(usize::MAX);
+                        }
+                    };
+                let before_owners =
+                    match line::product_fiber_handle_owners(self.facade_fiber.execution, &before) {
+                        Ok(owners) => owners,
+                        Err(error) => {
+                            self.fail_with_error(error, output);
+                            return usize::try_from(vm_output.executed).unwrap_or(usize::MAX);
+                        }
+                    };
+                let after_owners = match line::product_fiber_handle_owners(
+                    self.facade_fiber.execution,
+                    &candidate,
+                ) {
+                    Ok(owners) => owners,
+                    Err(error) => {
+                        self.fail_with_error(error, output);
+                        return usize::try_from(vm_output.executed).unwrap_or(usize::MAX);
+                    }
+                };
+                let drop_receipt = match self.dialogues.reconcile_parent_fiber(
+                    self.facade_fiber.execution,
+                    &before_owners,
+                    &after_owners,
+                    drop_policy,
+                ) {
+                    Ok(receipt) => receipt,
+                    Err(error) => {
+                        self.fail_with_error(error.into(), output);
+                        return usize::try_from(vm_output.executed).unwrap_or(usize::MAX);
+                    }
+                };
+                self.fiber = candidate;
+                self.compact_pure_stats = candidate_stats;
+                output
+                    .requests
+                    .line_commands
+                    .extend(drop_receipt.into_commands());
+                self.consume_observations(observations, output);
                 match vm_output.exit {
                     VmExit::Suspended(_) => {
                         self.sync_facade();
@@ -982,21 +1400,41 @@ impl AwbcProductStepExecutor {
         output: &mut RuntimeStepOutput,
         pure_backend: &mut impl RuntimeCallBackend,
     ) -> bool {
-        let Some(mut child) = self.child_fibers.pop_front() else {
+        let Some(front) = self.child_fibers.front() else {
+            return false;
+        };
+        if front.fiber.status != FiberStatus::Running {
+            if let Some(child) = self.child_fibers.pop_front() {
+                self.child_fibers.push_back(child);
+            }
+            return false;
+        }
+        let mut remaining = self.child_fibers.clone();
+        let Some(mut child) = remaining.pop_front() else {
             return false;
         };
         let owner = child.owner.clone();
-        if child.fiber.status != FiberStatus::Running {
-            self.child_fibers.push_back(child);
-            return false;
-        }
+        let before_handles = match &owner {
+            ProductChildFiberOwner::LineTask { .. } => {
+                match line::product_fiber_handle_owners(self.facade_fiber.execution, &child.fiber) {
+                    Ok(handles) => Some(handles.into_keys().collect::<BTreeSet<_>>()),
+                    Err(error) => {
+                        let ProductChildFiberOwner::LineTask { tag, .. } = &owner else {
+                            unreachable!("line-task handle scan has a line-task owner")
+                        };
+                        return self.begin_product_line_task_child_failure(tag, error, output);
+                    }
+                }
+            }
+            ProductChildFiberOwner::Independent => None,
+        };
         child.fiber.replenish_budget();
+        let mut candidate_stats = self.compact_pure_stats.clone();
         let mut host = ProductVmHost {
             backend: pure_backend,
-            fallback_stats: &mut self.compact_pure_stats,
+            fallback_stats: &mut candidate_stats,
         };
-        let mut completed = None;
-        match step_with_host(
+        let vm_output = match step_with_host(
             &self.program,
             &mut child.fiber,
             VmStepOptions {
@@ -1004,55 +1442,158 @@ impl AwbcProductStepExecutor {
             },
             &mut host,
         ) {
-            Ok(vm_output) => {
-                self.consume_observations(vm_output.observations, output);
-                match child.fiber.status {
-                    FiberStatus::Running => {
-                        self.child_fibers.push_back(child);
-                    }
-                    FiberStatus::Suspended => {
-                        if matches!(&owner, ProductChildFiberOwner::LineTask { .. }) {
-                            completed = Some(true);
-                            self.record_error(
-                                ProductStepError::Internal(
-                                    "AWBC line-task action suspended without an owned resume protocol"
-                                        .to_owned(),
-                                ),
-                                output,
-                            );
-                        } else {
-                            self.child_fibers.push_back(child);
-                        }
-                    }
-                    FiberStatus::Returned | FiberStatus::Cancelled => {
-                        completed = Some(false);
-                    }
-                    FiberStatus::Trapped => {
-                        completed = Some(true);
-                        if let Some(FiberTerminalValue::Trapped(trap)) = child.fiber.terminal {
-                            self.terminate_with_trap(trap, output);
-                        }
-                    }
-                }
-            }
+            Ok(vm_output) => vm_output,
             Err(error) => {
-                completed = Some(true);
+                if let ProductChildFiberOwner::LineTask { tag, .. } = &owner {
+                    return self.begin_product_line_task_child_failure(
+                        tag,
+                        ProductStepError::Internal(error.to_string()),
+                        output,
+                    );
+                }
                 self.fail_with_error(ProductStepError::Internal(error.to_string()), output);
+                return true;
             }
+        };
+        let (drop_policy, observations) = match partition_drop_observation(vm_output.observations) {
+            Ok(parts) => parts,
+            Err(error) => {
+                if let ProductChildFiberOwner::LineTask { tag, .. } = &owner {
+                    return self.begin_product_line_task_child_failure(tag, error.into(), output);
+                }
+                self.fail_with_error(error.into(), output);
+                return true;
+            }
+        };
+        if matches!(&owner, ProductChildFiberOwner::Independent) {
+            if matches!(
+                child.fiber.status,
+                FiberStatus::Running | FiberStatus::Suspended
+            ) {
+                remaining.push_back(child);
+            }
+            self.child_fibers = remaining;
+            self.compact_pure_stats = candidate_stats;
+            self.consume_observations(observations, output);
+            return true;
         }
-        if let (
-            Some(failed),
-            ProductChildFiberOwner::LineTask {
-                content,
-                tag,
-                policy,
-                ..
-            },
-        ) = (completed, owner)
-            && policy.join == ChildJoinPolicy::Join
-        {
-            self.complete_owned_line_task_work(content, tag, failed, output);
+        let ProductChildFiberOwner::LineTask {
+            content,
+            tag,
+            policy,
+            phase,
+            ..
+        } = owner
+        else {
+            self.fail_with_error(
+                crate::line_task::LineRuntimeError::InvalidActivationOperation.into(),
+                output,
+            );
+            return true;
+        };
+        if child.fiber.status == FiberStatus::Suspended {
+            return self.begin_product_line_task_child_failure(
+                &tag,
+                ProductStepError::Internal(
+                    "AWBC line-task action suspended without an owned resume protocol".to_owned(),
+                ),
+                output,
+            );
         }
+        let mut transaction = match self.dialogues.begin_transaction(tag.activation_id()) {
+            Ok(transaction) => transaction,
+            Err(error) => {
+                self.fail_with_error(error.into(), output);
+                return true;
+            }
+        };
+        let failure_transaction = transaction.clone();
+        let after_handles =
+            match line::product_fiber_handle_owners(self.facade_fiber.execution, &child.fiber) {
+                Ok(handles) => handles.into_keys().collect::<BTreeSet<_>>(),
+                Err(error) => {
+                    return self.begin_product_dialogue_failure(failure_transaction, error, output);
+                }
+            };
+        let Some(before_handles) = before_handles.as_ref() else {
+            return self.begin_product_dialogue_failure(
+                failure_transaction,
+                LineRuntimeError::InvalidActivationOperation.into(),
+                output,
+            );
+        };
+        if let Err(error) = transaction.line_mut().reconcile_child_scope_step(
+            &tag,
+            before_handles,
+            &after_handles,
+            drop_policy,
+        ) {
+            return self.begin_product_dialogue_failure(failure_transaction, error.into(), output);
+        }
+        if child.fiber.status == FiberStatus::Running {
+            remaining.push_back(child);
+            let receipt = match self.dialogues.commit(transaction) {
+                Ok(receipt) => receipt,
+                Err(error) => {
+                    self.fail_with_error(error.into(), output);
+                    return true;
+                }
+            };
+            self.child_fibers = remaining;
+            self.compact_pure_stats = candidate_stats;
+            let commands = receipt.into_line().into_commands();
+            output.requests.line_commands.extend(commands);
+            self.consume_observations(observations, output);
+            return true;
+        }
+        let failed = child.fiber.status == FiberStatus::Trapped;
+        let cancelled = child.fiber.status == FiberStatus::Cancelled
+            || phase == ProductLineTaskFiberPhase::Closing;
+        let batch = ProductLineTaskExecutionBatch {
+            child_fibers: remaining,
+            next_generation: self.next_generation,
+            next_fiber_instance: self.next_fiber_instance,
+            observations,
+            pure_stats: Some(candidate_stats),
+        };
+        let batch = match self.prepare_owned_line_task_completion(
+            &mut transaction,
+            content,
+            tag,
+            &mut child.fiber,
+            failed,
+            cancelled,
+            policy.join == ChildJoinPolicy::Join,
+            batch,
+        ) {
+            Ok(batch) => batch,
+            Err(error) => {
+                return self.begin_product_dialogue_failure(failure_transaction, error, output);
+            }
+        };
+        if let Some(FiberTerminalValue::Trapped(trap)) = child.fiber.terminal.as_ref() {
+            let trap = trap.clone();
+            self.record_trap(&trap, output);
+            let (transaction, batch) =
+                match self.prepare_product_dialogue_failure(transaction, trap, batch) {
+                    Ok(prepared) => prepared,
+                    Err(error) => {
+                        self.fail_with_error(error, output);
+                        return true;
+                    }
+                };
+            return self.commit_product_dialogue_failure_close(transaction, batch, output);
+        }
+        let receipt = match self.dialogues.commit(transaction) {
+            Ok(receipt) => receipt,
+            Err(error) => {
+                self.fail_with_error(error.into(), output);
+                return true;
+            }
+        };
+        self.commit_line_task_commands(batch, output);
+        let commands = receipt.into_line().into_commands();
+        output.requests.line_commands.extend(commands);
         true
     }
 
@@ -1071,7 +1612,8 @@ impl AwbcProductStepExecutor {
                 content,
                 values,
                 line_task_captures,
-            } => self.present_dialogue(content, values, line_task_captures, output),
+                result,
+            } => self.present_dialogue(content, values, line_task_captures, result, output),
             FiberSuspensionReason::Choice { choice, .. } => {
                 self.present_choice(choice, output, pure_backend);
             }
@@ -1123,7 +1665,16 @@ impl AwbcProductStepExecutor {
                 content,
                 values,
                 line_task_captures,
-            } => self.resume_dialogue(content, values, line_task_captures, resume, input, output),
+                result,
+            } => self.resume_dialogue(
+                content,
+                values,
+                line_task_captures,
+                result,
+                resume,
+                output,
+                pure_backend,
+            ),
             FiberSuspensionReason::Choice {
                 choice,
                 destination,
@@ -1155,11 +1706,12 @@ impl AwbcProductStepExecutor {
         content: AwbcContentUnitId,
         values: Box<[crate::plan::RuntimeDialogueValueBinding]>,
         captures: Box<[RuntimeValue]>,
+        result: crate::awbc::schema::AwbcDialogueResultTarget,
         output: &mut RuntimeStepOutput,
     ) {
         if self
-            .active_dialogue
-            .as_ref()
+            .dialogues
+            .active_frame()
             .is_some_and(|active| active.content == content)
         {
             return;
@@ -1172,21 +1724,112 @@ impl AwbcProductStepExecutor {
                 return;
             }
         };
-        output.flow_events.push(FlowEvent::DialogueLine {
-            line: line_id,
-            values,
-        });
-        self.emitted_content.insert(content);
-        let line_task = self.line_task_state(content);
-        let mut active = ActiveDialogue {
-            content,
-            captures,
-            line_task,
-            elapsed_nanos: 0,
+        let (activation, occurrence_key, next_occurrence) =
+            match self.prepare_dialogue_activation(content) {
+                Ok(prepared) => prepared,
+                Err(error) => {
+                    self.record_error(error, output);
+                    return;
+                }
+            };
+        let Some(group_id) = self.dialogue_group(content) else {
+            self.record_error(
+                ProductStepError::Line(crate::line_task::LineRuntimeError::MissingTaskGroup),
+                output,
+            );
+            return;
         };
-        self.progress_line_task(&mut active, &BTreeSet::new(), output);
-        self.active_dialogue = Some(active);
-        self.fiber.line_cursor = self.fiber.line_cursor.saturating_add(1);
+        let Some(group) = self.program.line_task_groups.get(group_id.index()) else {
+            self.record_error(
+                ProductStepError::Line(crate::line_task::LineRuntimeError::UnknownTaskGroup),
+                output,
+            );
+            return;
+        };
+        if group.result_type != result.ty {
+            self.record_error(
+                ProductStepError::Line(
+                    crate::line_task::LineRuntimeError::DialogueResultTypeMismatch,
+                ),
+                output,
+            );
+            return;
+        }
+        if captures
+            .iter()
+            .any(|capture| !capture.ownership().permits_copy())
+        {
+            self.record_error(
+                crate::line_task::LineRuntimeError::AffineGroupCapture.into(),
+                output,
+            );
+            return;
+        }
+        let Some(next_generation) = self.next_generation.checked_add(1) else {
+            self.record_error(ProductStepError::ChildGenerationOverflow, output);
+            return;
+        };
+        let Some(next_line_cursor) = self.fiber.line_cursor.checked_add(1) else {
+            self.record_error(ProductStepError::DialogueLineCursorOverflow, output);
+            return;
+        };
+        let mut next_fiber_instance = self.next_fiber_instance;
+        let activation_fiber_instance = match next_fiber_instance
+            .take_next(crate::runtime_id::RuntimeIdNamespace::FiberInstance)
+        {
+            Ok(instance) => crate::runtime_id::RuntimeFiberInstanceId::from_allocated(instance),
+            Err(error) => {
+                self.record_error(error.into(), output);
+                return;
+            }
+        };
+        let mut activation_fiber = match FiberState::for_function_with_instance(
+            &self.program,
+            self.fiber.entry,
+            group.activation,
+            activation_fiber_instance,
+            self.next_generation,
+            self.fiber.budget.quantum.max(1),
+        ) {
+            Ok(fiber) => fiber,
+            Err(error) => {
+                self.record_error(ProductStepError::Internal(error.to_string()), output);
+                return;
+            }
+        };
+        if let Err(error) = activation_fiber.bind_function_argument_values(&self.program, &captures)
+        {
+            self.record_error(ProductStepError::Type(error.to_string()), output);
+            return;
+        }
+        let active = ActiveDialogue {
+            activation,
+            content,
+            line: line_id,
+            captures,
+            values,
+            voice: crate::presentation::RuntimeDialogueVoiceState::Absent,
+            result,
+            phase: ProductDialoguePhase::Activating {
+                fiber: activation_fiber,
+                pending: None,
+            },
+            elapsed_nanos: 0,
+            pending_content_events: Vec::new(),
+            pending_advance: false,
+            pending_line_outcomes: Vec::new(),
+        };
+        let mut dialogues = self.dialogues.clone();
+        if let Err(error) = dialogues.begin(active) {
+            self.fail_with_error(error.into(), output);
+            return;
+        }
+        self.dialogues = dialogues;
+        self.dialogue_occurrences
+            .insert(occurrence_key, next_occurrence);
+        self.next_generation = next_generation;
+        self.next_fiber_instance = next_fiber_instance;
+        self.fiber.line_cursor = next_line_cursor;
     }
 
     fn resume_dialogue(
@@ -1194,41 +1837,433 @@ impl AwbcProductStepExecutor {
         content: AwbcContentUnitId,
         values: Box<[crate::plan::RuntimeDialogueValueBinding]>,
         captures: Box<[RuntimeValue]>,
+        result: crate::awbc::schema::AwbcDialogueResultTarget,
         resume: AwbcResumePointId,
-        input: &RuntimeStepInput,
         output: &mut RuntimeStepOutput,
+        pure_backend: &mut impl RuntimeCallBackend,
     ) -> bool {
-        if self.active_dialogue.is_none() {
-            self.present_dialogue(content, values, captures.clone(), output);
+        if self.dialogues.active_frame().is_none() {
+            self.present_dialogue(content, values, captures.clone(), result, output);
         }
-        let mut active = self.active_dialogue.take().unwrap_or(ActiveDialogue {
-            content,
-            captures,
-            line_task: self.line_task_state(content),
-            elapsed_nanos: 0,
-        });
-        active.elapsed_nanos = active.elapsed_nanos.saturating_add(input.dt.as_nanos());
-        let marks = self.dialogue_marks(active.content, input);
-        self.progress_line_task(&mut active, &marks, output);
-        if let Some(trigger) = self.cancel_line_task(&mut active, &marks, output) {
+        let Ok(mut transaction) = self.dialogues.begin_active_transaction() else {
+            return false;
+        };
+        if matches!(transaction.frame().phase, ProductDialoguePhase::Closing(_)) {
+            return self.resume_product_dialogue_failure_close(transaction, output);
+        }
+        if matches!(
+            transaction.frame().phase,
+            ProductDialoguePhase::Activating { .. }
+        ) {
+            let progress = match self.step_dialogue_activation(&mut transaction, pure_backend) {
+                Ok(progress) => progress,
+                Err(error) => {
+                    return self.begin_product_dialogue_failure(transaction, error, output);
+                }
+            };
+            let candidate_pure_stats = progress.pure_stats.clone();
+            let command_batch =
+                match self.prepare_line_task_commands(&mut transaction, progress.reducer) {
+                    Ok(batch) => batch,
+                    Err(error) => {
+                        return self.begin_product_dialogue_failure(transaction, error, output);
+                    }
+                };
+            let receipt = match self.dialogues.commit(transaction) {
+                Ok(receipt) => receipt,
+                Err(error) => {
+                    self.fail_with_error(error.into(), output);
+                    return true;
+                }
+            };
+            if let Some(stats) = candidate_pure_stats {
+                self.compact_pure_stats = stats;
+            }
+            self.commit_line_task_commands(command_batch, output);
+            let commands = receipt.into_line().into_commands();
+            output.requests.line_commands.extend(commands);
+            if let Some(event) = progress.presented {
+                self.emitted_content.insert(content);
+                output.flow_events.push(event);
+            }
+            return progress.progressed;
+        }
+        let outcomes = std::mem::take(&mut transaction.frame_mut().pending_line_outcomes);
+        match transaction.line_mut().accept_runtime_outcomes(&outcomes) {
+            Ok(diagnostics) if diagnostics.is_empty() => {}
+            Ok(mut diagnostics) => {
+                let error = diagnostics.remove(0);
+                return self.begin_product_dialogue_failure(transaction, error.into(), output);
+            }
+            Err(error) => {
+                return self.begin_product_dialogue_failure(transaction, error.into(), output);
+            }
+        }
+        let elapsed = LogicalDuration::from_nanos(transaction.frame().elapsed_nanos);
+        let due = match transaction.line_mut().arm_due_schedules(elapsed) {
+            Ok(due) => due,
+            Err(error) => {
+                return self.begin_product_dialogue_failure(transaction, error.into(), output);
+            }
+        };
+        let active = transaction.frame_mut();
+        let content_events = std::mem::take(&mut active.pending_content_events);
+        let advance = std::mem::take(&mut active.pending_advance);
+        let Some(content_unit) = self
+            .program
+            .content_units
+            .get(active.content.index())
+            .cloned()
+        else {
+            return self.begin_product_dialogue_failure(
+                transaction,
+                ProductStepError::Internal(
+                    "active dialogue references an absent AWBC content unit".to_owned(),
+                ),
+                output,
+            );
+        };
+        let accepted_content = match active.line_task_mut() {
+            Some(line_task) => {
+                for token in due {
+                    if let Err(error) = line_task.mark_scheduled_ready(token) {
+                        return self.begin_product_dialogue_failure(
+                            transaction,
+                            error.into(),
+                            output,
+                        );
+                    }
+                }
+                line_task.accept_content_event_kinds(&content_events, |event| match event {
+                    crate::step::RuntimeDialogueContentEventKind::Mark(mark) => content_unit
+                        .marks
+                        .get(mark.index())
+                        .is_some_and(|row| row.id == mark),
+                    crate::step::RuntimeDialogueContentEventKind::Effect(effect) => {
+                        effect.get().get() <= content_unit.effect_site_count
+                    }
+                })
+            }
+            None if content_events.is_empty() => Ok(AcceptedLineTaskContentEvents::default()),
+            None => Err(
+                crate::line_task::LineRuntimeError::ContentEventOutsideLiveLineTask {
+                    event: content_events[0],
+                },
+            ),
+        };
+        let accepted_content = match accepted_content {
+            Ok(events) => events,
+            Err(error) => {
+                return self.begin_product_dialogue_failure(
+                    transaction,
+                    ProductStepError::Input(error.to_string()),
+                    output,
+                );
+            }
+        };
+        let mut reducer_activation = match self.progress_line_task(active, &accepted_content) {
+            Ok(activation) => activation,
+            Err(error) => {
+                return self.begin_product_dialogue_failure(transaction, error, output);
+            }
+        };
+        let (cancel_trigger, cancel_activation) =
+            match self.cancel_line_task(active, accepted_content.marks()) {
+                Ok(result) => result,
+                Err(error) => {
+                    return self.begin_product_dialogue_failure(transaction, error, output);
+                }
+            };
+        reducer_activation.append(cancel_activation);
+        if advance {
+            let finish_activation = match self.finish_line_task(active) {
+                Ok(activation) => activation,
+                Err(error) => {
+                    return self.begin_product_dialogue_failure(transaction, error, output);
+                }
+            };
+            reducer_activation.append(finish_activation);
+        }
+        let command_batch =
+            match self.prepare_line_task_commands(&mut transaction, reducer_activation) {
+                Ok(batch) => batch,
+                Err(error) => {
+                    return self.begin_product_dialogue_failure(transaction, error, output);
+                }
+            };
+        if transaction
+            .frame()
+            .line_task()
+            .is_some_and(LineTaskLiveState::is_closed)
+        {
+            let publication = match self.prepare_dialogue_publication(&mut transaction, resume) {
+                Ok(publication) => publication,
+                Err(error) => {
+                    return self.begin_product_dialogue_failure(transaction, error, output);
+                }
+            };
+            return match publication {
+                line::ProductPublicationProgress::Pending => {
+                    let receipt = match self.dialogues.commit(transaction) {
+                        Ok(receipt) => receipt,
+                        Err(error) => {
+                            self.fail_with_error(error.into(), output);
+                            return false;
+                        }
+                    };
+                    let commands = receipt.into_line().into_commands();
+                    self.commit_line_task_commands(command_batch, output);
+                    output.requests.line_commands.extend(commands);
+                    if let Some(trigger) = cancel_trigger {
+                        output.flow_events.push(FlowEvent::LineCancelled {
+                            trigger: self.dialogue_mark_label(content, trigger),
+                        });
+                    }
+                    false
+                }
+                line::ProductPublicationProgress::Ready(parent) => {
+                    let receipt = match self.dialogues.commit_published(transaction) {
+                        Ok(receipt) => receipt,
+                        Err(error) => {
+                            self.fail_with_error(error.into(), output);
+                            return false;
+                        }
+                    };
+                    let commands = receipt.into_line().into_commands();
+                    self.commit_line_task_commands(command_batch, output);
+                    output.requests.line_commands.extend(commands);
+                    if let Some(trigger) = cancel_trigger {
+                        output.flow_events.push(FlowEvent::LineCancelled {
+                            trigger: self.dialogue_mark_label(content, trigger),
+                        });
+                    }
+                    self.fiber = parent;
+                    true
+                }
+            };
+        }
+        let receipt = match self.dialogues.commit(transaction) {
+            Ok(receipt) => receipt,
+            Err(error) => {
+                self.fail_with_error(error.into(), output);
+                return false;
+            }
+        };
+        self.commit_line_task_commands(command_batch, output);
+        let commands = receipt.into_line().into_commands();
+        output.requests.line_commands.extend(commands);
+        if let Some(trigger) = cancel_trigger {
             output.flow_events.push(FlowEvent::LineCancelled {
                 trigger: self.dialogue_mark_label(content, trigger),
             });
         }
-        let line = self.content_public_id(content);
-        if input.advances_dialogue_label(&line) {
-            self.finish_line_task(&mut active, output);
-            if active
-                .line_task
-                .as_ref()
-                .is_none_or(LineTaskLiveState::is_closed)
-            {
-                self.active_dialogue = None;
-                return self.resume_at(resume, output);
+        false
+    }
+
+    fn begin_product_dialogue_failure(
+        &mut self,
+        transaction: dialogue::ProductDialogueTransaction,
+        error: ProductStepError,
+        output: &mut RuntimeStepOutput,
+    ) -> bool {
+        let message = error.to_string();
+        let trap = FiberTrap {
+            code: error.trap_code(),
+            message: Some(message),
+            source_map: None,
+        };
+        self.record_error(error, output);
+        let batch = ProductLineTaskExecutionBatch {
+            child_fibers: self.child_fibers.clone(),
+            next_generation: self.next_generation,
+            next_fiber_instance: self.next_fiber_instance,
+            observations: Vec::new(),
+            pure_stats: None,
+        };
+        let (transaction, batch) =
+            match self.prepare_product_dialogue_failure(transaction, trap, batch) {
+                Ok(prepared) => prepared,
+                Err(cleanup) => {
+                    self.fail_with_error(cleanup, output);
+                    return true;
+                }
+            };
+        self.commit_product_dialogue_failure_close(transaction, batch, output)
+    }
+
+    fn begin_product_line_task_child_failure(
+        &mut self,
+        tag: &LineTaskWorkTag,
+        error: ProductStepError,
+        output: &mut RuntimeStepOutput,
+    ) -> bool {
+        let transaction = match self.dialogues.begin_transaction(tag.activation_id()) {
+            Ok(transaction) => transaction,
+            Err(registry) => {
+                self.fail_with_error(registry.into(), output);
+                return true;
+            }
+        };
+        self.begin_product_dialogue_failure(transaction, error, output)
+    }
+
+    fn prepare_product_dialogue_failure(
+        &self,
+        mut transaction: dialogue::ProductDialogueTransaction,
+        trap: FiberTrap,
+        batch: ProductLineTaskExecutionBatch,
+    ) -> Result<
+        (
+            dialogue::ProductDialogueTransaction,
+            ProductLineTaskExecutionBatch,
+        ),
+        ProductStepError,
+    > {
+        let activation = transaction.activation().clone();
+        let mut reducer = crate::line_task::LineTaskActivation::default();
+        let prior = transaction.frame().phase.clone();
+        let closing_state = match prior {
+            ProductDialoguePhase::Activating { fiber, pending } => {
+                ProductDialogueClosingState::Activation { fiber, pending }
+            }
+            ProductDialoguePhase::Reducing { mut line_task } => {
+                let view = self
+                    .line_task_view(transaction.frame().content)
+                    .ok_or(LineRuntimeError::UnknownTaskGroup)?;
+                reducer = fail_live_line_task_group(&view, &mut line_task);
+                ProductDialogueClosingState::LineTask { line_task }
+            }
+            ProductDialoguePhase::Publishing { line_task } => {
+                ProductDialogueClosingState::LineTask { line_task }
+            }
+            ProductDialoguePhase::Closing(closing) => {
+                transaction.frame_mut().phase = ProductDialoguePhase::Closing(closing);
+                return Ok((transaction, batch));
+            }
+        };
+        {
+            let frame = transaction.frame_mut();
+            frame.phase = ProductDialoguePhase::Closing(ProductDialogueClosing {
+                failure: trap,
+                state: closing_state,
+            });
+            frame.pending_content_events.clear();
+            frame.pending_advance = false;
+        }
+        transaction.line_mut().abandon()?;
+        let batch = self.prepare_line_task_commands_from(&mut transaction, reducer, batch)?;
+        transaction
+            .line_mut()
+            .prepare_handle_unwind(&activation, false)?;
+        Ok((transaction, batch))
+    }
+
+    fn resume_product_dialogue_failure_close(
+        &mut self,
+        mut transaction: dialogue::ProductDialogueTransaction,
+        output: &mut RuntimeStepOutput,
+    ) -> bool {
+        let activation = transaction.activation().clone();
+        let outcomes = std::mem::take(&mut transaction.frame_mut().pending_line_outcomes);
+        if !outcomes.is_empty() {
+            let pending = matches!(
+                transaction.frame().phase,
+                ProductDialoguePhase::Closing(ProductDialogueClosing {
+                    state: ProductDialogueClosingState::Activation {
+                        pending: Some(_),
+                        ..
+                    },
+                    ..
+                })
+            );
+            let reduced = if pending {
+                self.resume_pending_line_operation(&mut transaction, &outcomes)
+                    .map(|_| ())
+            } else {
+                transaction
+                    .line_mut()
+                    .accept_runtime_outcomes(&outcomes)
+                    .map(|diagnostics| {
+                        for diagnostic in diagnostics {
+                            output.diagnostics.push(RuntimeDiagnostic::new(format!(
+                                "dialogue cleanup after primary failure also failed: {diagnostic}"
+                            )));
+                        }
+                    })
+                    .map_err(ProductStepError::from)
+            };
+            if let Err(cleanup) = reduced {
+                output.diagnostics.push(RuntimeDiagnostic::new(format!(
+                    "dialogue cleanup after primary failure also failed: {cleanup}"
+                )));
             }
         }
-        self.active_dialogue = Some(active);
-        false
+        if let Err(cleanup) = transaction
+            .line_mut()
+            .prepare_handle_unwind(&activation, false)
+        {
+            output.diagnostics.push(RuntimeDiagnostic::new(format!(
+                "dialogue cleanup after primary failure also failed: {cleanup}"
+            )));
+        }
+        let batch = ProductLineTaskExecutionBatch {
+            child_fibers: self.child_fibers.clone(),
+            next_generation: self.next_generation,
+            next_fiber_instance: self.next_fiber_instance,
+            observations: Vec::new(),
+            pure_stats: None,
+        };
+        self.commit_product_dialogue_failure_close(transaction, batch, output)
+    }
+
+    fn commit_product_dialogue_failure_close(
+        &mut self,
+        mut transaction: dialogue::ProductDialogueTransaction,
+        batch: ProductLineTaskExecutionBatch,
+        output: &mut RuntimeStepOutput,
+    ) -> bool {
+        let activation = transaction.activation().clone();
+        let terminal = transaction.line().failure_close_ready()
+            && !batch.has_joined_dialogue_work(&activation);
+        if terminal {
+            if let Err(error) = transaction.line_mut().release_frame() {
+                self.fail_with_error(error.into(), output);
+                return true;
+            }
+            let failure = match &transaction.frame().phase {
+                ProductDialoguePhase::Closing(closing) => closing.failure.clone(),
+                ProductDialoguePhase::Activating { .. }
+                | ProductDialoguePhase::Reducing { .. }
+                | ProductDialoguePhase::Publishing { .. } => {
+                    self.fail_with_error(LineRuntimeError::InvalidResultTransition.into(), output);
+                    return true;
+                }
+            };
+            let receipt = match self.dialogues.commit_abandoned(transaction) {
+                Ok(receipt) => receipt,
+                Err(error) => {
+                    self.fail_with_error(error.into(), output);
+                    return true;
+                }
+            };
+            self.commit_line_task_commands(batch, output);
+            let commands = receipt.into_line().into_commands();
+            output.requests.line_commands.extend(commands);
+            self.terminate_with_trap(failure, output);
+            true
+        } else {
+            let receipt = match self.dialogues.commit(transaction) {
+                Ok(receipt) => receipt,
+                Err(error) => {
+                    self.fail_with_error(error.into(), output);
+                    return true;
+                }
+            };
+            self.commit_line_task_commands(batch, output);
+            let commands = receipt.into_line().into_commands();
+            output.requests.line_commands.extend(commands);
+            false
+        }
     }
 
     fn line_task_view(&self, content: AwbcContentUnitId) -> Option<AwbcLineTaskPlanView<'_>> {
@@ -1238,266 +2273,149 @@ impl AwbcProductStepExecutor {
         AwbcLineTaskPlanView::new(&self.program, group)
     }
 
-    fn line_task_state(&mut self, content: AwbcContentUnitId) -> Option<LineTaskLiveState> {
-        let group = self.dialogue_group(content)?;
-        self.program.line_task_groups.get(group.index())?;
-        let activation = self.next_line_task_activation;
-        self.next_line_task_activation = self.next_line_task_activation.saturating_add(1);
-        let view = self.line_task_view(content)?;
-        Some(LineTaskLiveState::new(&view, activation))
-    }
-
     fn progress_line_task(
-        &mut self,
+        &self,
         active: &mut ActiveDialogue,
-        marks: &BTreeSet<crate::runtime_id::RuntimeDialogueMarkId>,
-        output: &mut RuntimeStepOutput,
-    ) {
-        let commands = {
-            let Some(view) = self.line_task_view(active.content) else {
-                self.record_error(
-                    ProductStepError::Internal(
-                        "dialogue content has no verified AWBC line-task view".to_owned(),
-                    ),
-                    output,
-                );
-                return;
-            };
-            let Some(state) = active.line_task.as_mut() else {
-                return;
-            };
+        content_events: &AcceptedLineTaskContentEvents,
+    ) -> Result<crate::line_task::LineTaskActivation, ProductStepError> {
+        let elapsed_nanos = active.elapsed_nanos;
+        let activation = {
+            let view = self
+                .line_task_view(active.content)
+                .ok_or(crate::line_task::LineRuntimeError::UnknownTaskGroup)?;
+            let state = active
+                .line_task_mut()
+                .ok_or(crate::line_task::LineRuntimeError::InvalidActivationOperation)?;
             progress_live_line_task_group(
                 &view,
-                LogicalDuration::from_nanos(active.elapsed_nanos),
-                marks,
+                LogicalDuration::from_nanos(elapsed_nanos),
+                content_events.ready(),
                 state,
-            )
-            .commands
+            )?
         };
-        self.execute_line_task_commands(active, commands, output);
+        Ok(activation)
     }
 
     fn cancel_line_task(
-        &mut self,
+        &self,
         active: &mut ActiveDialogue,
         marks: &BTreeSet<crate::runtime_id::RuntimeDialogueMarkId>,
-        output: &mut RuntimeStepOutput,
-    ) -> Option<crate::runtime_id::RuntimeDialogueMarkId> {
+    ) -> Result<
+        (
+            Option<crate::runtime_id::RuntimeDialogueMarkId>,
+            crate::line_task::LineTaskActivation,
+        ),
+        ProductStepError,
+    > {
         let (selected, commands) = {
-            let view = self.line_task_view(active.content)?;
-            let state = active.line_task.as_mut()?;
+            let view = self
+                .line_task_view(active.content)
+                .ok_or(crate::line_task::LineRuntimeError::UnknownTaskGroup)?;
+            let state = active
+                .line_task_mut()
+                .ok_or(crate::line_task::LineRuntimeError::InvalidActivationOperation)?;
             let selected = view.cancellation_mark(marks);
             let activation = cancel_live_line_task_group(&view, marks, state);
             let selected = activation.as_ref().and(selected);
-            (selected, activation.unwrap_or_default().commands)
+            (selected, activation.unwrap_or_default())
         };
-        self.execute_line_task_commands(active, commands, output);
-        selected
+        Ok((selected, commands))
     }
 
-    fn finish_line_task(&mut self, active: &mut ActiveDialogue, output: &mut RuntimeStepOutput) {
-        let commands = {
-            let Some(view) = self.line_task_view(active.content) else {
-                return;
-            };
-            let Some(state) = active.line_task.as_mut() else {
-                return;
-            };
-            finish_live_line_task_group(&view, state).commands
-        };
-        self.execute_line_task_commands(active, commands, output);
-    }
-
-    fn execute_line_task_commands(
-        &mut self,
+    fn finish_line_task(
+        &self,
         active: &mut ActiveDialogue,
-        commands: Vec<LineTaskCommand>,
-        output: &mut RuntimeStepOutput,
-    ) {
-        let commands = {
-            let Some(view) = self.line_task_view(active.content) else {
-                return;
-            };
-            commands
+    ) -> Result<crate::line_task::LineTaskActivation, ProductStepError> {
+        let activation = {
+            let view = self
+                .line_task_view(active.content)
+                .ok_or(crate::line_task::LineRuntimeError::UnknownTaskGroup)?;
+            let state = active
+                .line_task_mut()
+                .ok_or(crate::line_task::LineRuntimeError::InvalidActivationOperation)?;
+            finish_live_line_task_group(&view, state)
+        };
+        Ok(activation)
+    }
+
+    fn prepare_owned_line_task_completion(
+        &self,
+        transaction: &mut dialogue::ProductDialogueTransaction,
+        content: AwbcContentUnitId,
+        tag: LineTaskWorkTag,
+        child: &mut FiberState,
+        failed: bool,
+        cancelled: bool,
+        joined: bool,
+        batch: ProductLineTaskExecutionBatch,
+    ) -> Result<ProductLineTaskExecutionBatch, ProductStepError> {
+        if transaction.frame().content != content {
+            return Err(ProductStepError::StaleLineTaskChildContent {
+                expected: transaction.frame().content,
+                actual: content,
+            });
+        }
+        if let Some(token) = tag.scheduled_token().cloned() {
+            let live = line::product_fiber_handle_owners(self.facade_fiber.execution, child)?
+                .into_keys()
+                .collect::<BTreeSet<_>>();
+            let locals = transaction.line().scheduled_child_locals(&token)?;
+            let values = child.take_function_argument_values(&self.program)?;
+            if values.len() != locals.len() {
+                return Err(
+                    crate::line_task::LineRuntimeError::InvalidScheduledCaptureGraph.into(),
+                );
+            }
+            let returned_bindings = locals
+                .into_vec()
                 .into_iter()
-                .map(|command| {
-                    let function = match &command {
-                        LineTaskCommand::Run { tag, .. } => view.function_for(*tag),
-                        LineTaskCommand::Cancel { .. } => None,
-                    };
-                    (command, function)
+                .zip(values)
+                .filter_map(|(local, value)| {
+                    value.map(|value| RuntimeLocalBinding { local, value })
                 })
                 .collect::<Vec<_>>()
-        };
-        for (command, function) in commands {
-            match command {
-                LineTaskCommand::Run { tag, policy } => {
-                    let Some(function) = function else {
-                        self.record_error(
-                            ProductStepError::Internal(
-                                "AWBC line-task reducer command has no action function".to_owned(),
-                            ),
-                            output,
-                        );
-                        continue;
-                    };
-                    let phase = if matches!(tag.work, LineTaskWork::Node(_)) {
-                        ProductLineTaskFiberPhase::Active
-                    } else {
-                        ProductLineTaskFiberPhase::Closing
-                    };
-                    self.spawn_owned_child(
-                        ProductChildFiberOwner::LineTask {
-                            content: active.content,
-                            tag,
-                            policy,
-                            phase,
-                        },
-                        function,
-                        &active.captures,
-                        output,
-                    );
-                }
-                LineTaskCommand::Cancel { activation, node } => {
-                    self.cancel_line_task_children(active, activation, node, output);
-                }
+                .into_boxed_slice();
+            let mut returned = BTreeSet::new();
+            for binding in &returned_bindings {
+                let handles = line::unique_line_handles(&binding.value)?;
+                returned.extend(handles.into_iter().map(|handle| handle.token().clone()));
             }
-        }
-    }
-
-    fn cancel_line_task_children(
-        &mut self,
-        active: &mut ActiveDialogue,
-        activation: crate::line_task::LineTaskActivationId,
-        node: crate::runtime_id::RuntimeLineTaskNodeId,
-        output: &mut RuntimeStepOutput,
-    ) {
-        let mut completed = Vec::new();
-        let mut observations = Vec::new();
-        let mut detach_rejected = false;
-        self.child_fibers.retain_mut(|child| {
-            let ProductChildFiberOwner::LineTask {
-                content,
-                tag,
-                policy,
-                phase,
-            } = &mut child.owner
-            else {
-                return true;
+            let terminal = if failed {
+                crate::line_task::RuntimeScheduledState::Failed
+            } else if cancelled {
+                crate::line_task::RuntimeScheduledState::Cancelled
+            } else {
+                crate::line_task::RuntimeScheduledState::Completed
             };
-            if *content != active.content
-                || tag.activation != activation
-                || tag.work != LineTaskWork::Node(node)
-            {
-                return true;
-            }
-            match policy.cancel {
-                ChildCancelPolicy::CancelAndJoin => {
-                    observations
-                        .extend(crate::awbc::vm::cancel_fiber(&mut child.fiber).observations);
-                    completed.push(*tag);
-                    false
-                }
-                ChildCancelPolicy::Finish => {
-                    *phase = ProductLineTaskFiberPhase::Closing;
-                    true
-                }
-                ChildCancelPolicy::Detach => {
-                    observations
-                        .extend(crate::awbc::vm::cancel_fiber(&mut child.fiber).observations);
-                    detach_rejected = true;
-                    completed.push(*tag);
-                    false
-                }
-            }
-        });
-        self.consume_observations(observations, output);
-        if detach_rejected {
-            self.record_error(
-                ProductStepError::Internal(
-                    "AWBC line-task detach has no verified detached-owner boundary".to_owned(),
-                ),
-                output,
-            );
+            transaction.line_mut().finish_child_scope(
+                &tag,
+                &live,
+                &returned,
+                crate::effect::RuntimeDropPolicy::Default,
+            )?;
+            transaction.line_mut().admit_scheduled_child_bindings(
+                &token,
+                returned_bindings,
+                terminal,
+            )?;
+            transaction
+                .line_mut()
+                .complete_scheduled_work(&token, failed, cancelled)?;
         }
-        for tag in completed {
-            self.complete_line_task_work(active, tag, false, output);
+        if !joined {
+            return Ok(batch);
         }
-    }
-
-    fn complete_line_task_work(
-        &mut self,
-        active: &mut ActiveDialogue,
-        tag: LineTaskWorkTag,
-        failed: bool,
-        output: &mut RuntimeStepOutput,
-    ) {
-        let commands = {
-            let Some(view) = self.line_task_view(active.content) else {
-                return;
-            };
-            let Some(state) = active.line_task.as_mut() else {
-                return;
-            };
-            complete_live_line_task_work(&view, state, tag, failed).commands
-        };
-        self.execute_line_task_commands(active, commands, output);
-    }
-
-    fn complete_owned_line_task_work(
-        &mut self,
-        content: AwbcContentUnitId,
-        tag: LineTaskWorkTag,
-        failed: bool,
-        output: &mut RuntimeStepOutput,
-    ) {
-        let Some(mut active) = self.active_dialogue.take() else {
-            self.record_error(
-                ProductStepError::Internal(
-                    "AWBC line-owned child completed outside an active dialogue".to_owned(),
-                ),
-                output,
-            );
-            return;
-        };
-        if active.content == content {
-            self.complete_line_task_work(&mut active, tag, failed, output);
-        } else {
-            self.record_error(
-                ProductStepError::Internal(
-                    "AWBC line-owned child completed for a stale dialogue content".to_owned(),
-                ),
-                output,
-            );
-        }
-        self.active_dialogue = Some(active);
-    }
-
-    fn dialogue_marks(
-        &self,
-        content: AwbcContentUnitId,
-        input: &RuntimeStepInput,
-    ) -> BTreeSet<crate::runtime_id::RuntimeDialogueMarkId> {
-        let Some(content) = self.program.content_units.get(content.index()) else {
-            return BTreeSet::new();
-        };
-        content
-            .marks
-            .iter()
-            .filter(|mark| {
-                self.program
-                    .strings
-                    .get(mark.label.index())
-                    .is_some_and(|label| {
-                        input.input_events.iter().any(|event| {
-                            input_event_trigger_name(event).is_some_and(|trigger| {
-                                trigger == label || trigger == format!("mark:{label}")
-                            })
-                        })
-                    })
-            })
-            .map(|mark| mark.id)
-            .collect()
+        let completion = {
+            let view = self
+                .line_task_view(content)
+                .ok_or(crate::line_task::LineRuntimeError::UnknownTaskGroup)?;
+            let state = transaction
+                .frame_mut()
+                .line_task_mut()
+                .ok_or(crate::line_task::LineRuntimeError::InvalidActivationOperation)?;
+            complete_live_line_task_work(&view, state, tag, failed)
+        }?;
+        self.prepare_line_task_commands_from(transaction, completion, batch)
     }
 
     fn dialogue_mark_label(

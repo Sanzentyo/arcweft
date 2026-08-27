@@ -673,6 +673,12 @@ impl AwbcProductStepExecutor {
                         });
                     }
                 }
+                VmObservation::LineOperation { .. }
+                | VmObservation::DialogueResult { .. }
+                | VmObservation::Drop { .. } => self.fail_with_error(
+                    crate::line_task::LineRuntimeError::InvalidActivationOperation.into(),
+                    output,
+                ),
                 VmObservation::Trap(trap) => self.record_trap(&trap, output),
             }
         }
@@ -729,23 +735,41 @@ impl AwbcProductStepExecutor {
         args: &[RuntimeValue],
         output: &mut RuntimeStepOutput,
     ) {
-        match FiberState::for_function(
+        let Some(next_generation) = self.next_generation.checked_add(1) else {
+            self.record_error(ProductStepError::ChildGenerationOverflow, output);
+            return;
+        };
+        let mut next_fiber_instance = self.next_fiber_instance;
+        let fiber_instance = match next_fiber_instance
+            .take_next(crate::runtime_id::RuntimeIdNamespace::FiberInstance)
+        {
+            Ok(instance) => crate::runtime_id::RuntimeFiberInstanceId::from_allocated(instance),
+            Err(error) => {
+                self.record_error(ProductStepError::RuntimeIdentity(error), output);
+                return;
+            }
+        };
+        match FiberState::for_function_with_instance(
             &self.program,
             self.fiber.entry,
             function,
+            fiber_instance,
             self.next_generation,
             self.fiber.budget.quantum.max(1),
         ) {
             Ok(mut child) => {
-                self.next_generation = self.next_generation.saturating_add(1);
                 match child
                     .active_frame_mut()
                     .and_then(|frame| frame.bind_positional_arguments(&self.program, args))
                 {
-                    Ok(()) => self.child_fibers.push_back(super::ProductChildFiber {
-                        owner,
-                        fiber: child,
-                    }),
+                    Ok(()) => {
+                        self.next_generation = next_generation;
+                        self.next_fiber_instance = next_fiber_instance;
+                        self.child_fibers.push_back(super::ProductChildFiber {
+                            owner,
+                            fiber: child,
+                        });
+                    }
                     Err(error) => {
                         self.record_error(ProductStepError::Type(error.to_string()), output);
                     }

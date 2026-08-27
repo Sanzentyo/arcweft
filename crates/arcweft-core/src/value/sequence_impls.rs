@@ -1,12 +1,12 @@
 use super::{
-    DenseSeq, DenseSeqKind, DenseSeqStorage, RecordSeq, RecordSeqField, RuntimeEvalError,
-    RuntimeExactInteger, RuntimeExactIntegerSlice, RuntimeExactIntegerSliceMut, RuntimeFieldValue,
-    RuntimeISizeValue, RuntimeInt, RuntimeRecordAdmissionError, RuntimeRecordFieldId, RuntimeSeq,
-    RuntimeSeqError, RuntimeUInt, RuntimeUSizeValue, RuntimeValue, TupleSeq,
-    materialize_i64_sequence, runtime_sequence_dense_i8, runtime_sequence_dense_i16,
-    runtime_sequence_dense_i32, runtime_sequence_dense_i128, runtime_sequence_dense_u8,
-    runtime_sequence_dense_u16, runtime_sequence_dense_u32, runtime_sequence_dense_u64,
-    runtime_sequence_dense_u128, runtime_value_label,
+    DenseSeq, DenseSeqKind, DenseSeqStorage, RecordSeq, RecordSeqField, RuntimeEntityReference,
+    RuntimeEvalError, RuntimeExactInteger, RuntimeExactIntegerSlice, RuntimeExactIntegerSliceMut,
+    RuntimeFieldValue, RuntimeISizeValue, RuntimeInt, RuntimeRecordAdmissionError,
+    RuntimeRecordFieldId, RuntimeSeq, RuntimeSeqError, RuntimeUInt, RuntimeUSizeValue,
+    RuntimeValue, TupleSeq, materialize_i64_sequence, runtime_sequence_dense_i8,
+    runtime_sequence_dense_i16, runtime_sequence_dense_i32, runtime_sequence_dense_i128,
+    runtime_sequence_dense_u8, runtime_sequence_dense_u16, runtime_sequence_dense_u32,
+    runtime_sequence_dense_u64, runtime_sequence_dense_u128, runtime_value_label,
 };
 use crate::plan::{RuntimePureInputType, RuntimePureOutputType};
 use crate::time::LogicalDuration;
@@ -705,7 +705,7 @@ impl RuntimeSeq {
         Self::Dense(DenseSeq::strings(values))
     }
 
-    pub fn dense_entity_refs(values: Vec<String>) -> Self {
+    pub fn dense_entity_refs(values: Vec<RuntimeEntityReference>) -> Self {
         Self::Dense(DenseSeq::entity_refs(values))
     }
 
@@ -922,7 +922,7 @@ impl RuntimeSeq {
         }
     }
 
-    pub fn as_entity_refs(&self) -> Option<&[String]> {
+    pub fn as_entity_refs(&self) -> Option<&[RuntimeEntityReference]> {
         match self {
             Self::Dense(values) => values.as_entity_refs(),
             Self::Values(_) | Self::TupleColumns(_) | Self::RecordColumns(_) => None,
@@ -1189,7 +1189,7 @@ impl DenseSeq {
         Self::Strings(DenseSeqStorage::new(values))
     }
 
-    pub fn entity_refs(values: Vec<String>) -> Self {
+    pub fn entity_refs(values: Vec<RuntimeEntityReference>) -> Self {
         Self::EntityRefs(DenseSeqStorage::new(values))
     }
 
@@ -1213,7 +1213,8 @@ impl DenseSeq {
             Self::Bool(values) => values.len(),
             Self::Chars(values) => values.len(),
             Self::Durations(values) => values.len(),
-            Self::Strings(values) | Self::EntityRefs(values) => values.len(),
+            Self::Strings(values) => values.len(),
+            Self::EntityRefs(values) => values.len(),
         }
     }
 
@@ -1506,7 +1507,7 @@ impl DenseSeq {
         }
     }
 
-    pub fn as_entity_refs(&self) -> Option<&[String]> {
+    pub fn as_entity_refs(&self) -> Option<&[RuntimeEntityReference]> {
         match self {
             Self::EntityRefs(values) => Some(values.as_slice()),
             _ => None,

@@ -1,7 +1,9 @@
 //! Canonical runtime-plan type projection graph.
 
 use crate::entry::{RuntimeNominalTypeId, TypeLayoutHash};
-use crate::pattern::{RuntimeOpaqueTypeAdmission, RuntimeOpaqueTypeProducerId};
+use crate::pattern::{
+    RuntimeBuiltinVariantIdentity, RuntimeOpaqueTypeAdmission, RuntimeOpaqueTypeProducerId,
+};
 use crate::value::{
     RuntimeOpaquePersistence, RuntimeOpaqueValueClass, RuntimeSignedIntWidth,
     RuntimeUnsignedIntWidth,
@@ -21,18 +23,19 @@ pub enum RuntimeAgentOperationalType {
     ActionName,
     ActionTarget,
     ActionResult,
-    AgentValue,
     DataFormat,
     DataShape,
     EntityMetadata,
     SourceAnchor,
+    SourcePosition,
     ProjectGraphNeighborhood,
     ProjectGraphSymbol,
     ProjectGraphEdge,
+    ProjectFlowControlSummary,
+    ProjectGraphSummary,
     CaptureTarget,
     CaptureReference,
     Resource,
-    ResourceBody,
     RagContextPack,
     ObservedObjectId,
     CaptureFormat,
@@ -42,6 +45,8 @@ pub enum RuntimeAgentOperationalType {
     ViewportPoint,
     PointerButton,
     RagError,
+    BinaryResourceBody,
+    BinaryData,
 }
 
 impl RuntimeAgentOperationalType {
@@ -59,7 +64,6 @@ impl RuntimeAgentOperationalType {
             Self::ActionName => 7,
             Self::ActionTarget => 8,
             Self::ActionResult => 9,
-            Self::AgentValue => 10,
             Self::DataFormat => 11,
             Self::DataShape => 12,
             Self::EntityMetadata => 13,
@@ -70,7 +74,6 @@ impl RuntimeAgentOperationalType {
             Self::CaptureTarget => 18,
             Self::CaptureReference => 19,
             Self::Resource => 20,
-            Self::ResourceBody => 21,
             Self::RagContextPack => 22,
             Self::ObservedObjectId => 23,
             Self::CaptureFormat => 24,
@@ -80,6 +83,11 @@ impl RuntimeAgentOperationalType {
             Self::ViewportPoint => 28,
             Self::PointerButton => 29,
             Self::RagError => 30,
+            Self::SourcePosition => 31,
+            Self::ProjectFlowControlSummary => 32,
+            Self::ProjectGraphSummary => 33,
+            Self::BinaryResourceBody => 34,
+            Self::BinaryData => 35,
         }
     }
 
@@ -104,12 +112,15 @@ impl RuntimeAgentOperationalType {
                 | Self::ActionResult
                 | Self::EntityMetadata
                 | Self::SourceAnchor
+                | Self::SourcePosition
                 | Self::ProjectGraphNeighborhood
                 | Self::ProjectGraphSymbol
                 | Self::ProjectGraphEdge
+                | Self::ProjectFlowControlSummary
+                | Self::ProjectGraphSummary
                 | Self::CaptureReference
                 | Self::Resource
-                | Self::ResourceBody
+                | Self::BinaryResourceBody
                 | Self::RagContextPack
                 | Self::Diagnostics
                 | Self::WaitError
@@ -176,6 +187,7 @@ pub enum RuntimePlanTypeProjection<R> {
     Duration,
     Progress,
     EntityReference,
+    AgentValue,
     Range(R),
     Iterator(R),
     Sequence {
@@ -200,6 +212,10 @@ pub enum RuntimePlanTypeProjection<R> {
         error: R,
     },
     Option(R),
+    BuiltinVariant {
+        owner: RuntimeBuiltinVariantIdentity,
+        cases: Box<[Option<R>]>,
+    },
     ThreadHandle(R),
     Shared(R),
     Reference(R),
@@ -237,18 +253,19 @@ pub enum RuntimeAgentTypeProjection<R> {
     ActionName,
     ActionTarget,
     ActionResult,
-    AgentValue,
     DataFormat,
     DataShape,
     EntityMetadata,
     SourceAnchor,
+    SourcePosition,
     ProjectGraphNeighborhood,
     ProjectGraphSymbol,
     ProjectGraphEdge,
+    ProjectFlowControlSummary,
+    ProjectGraphSummary,
     CaptureTarget,
     CaptureReference,
     Resource,
-    ResourceBody,
     RagContextPack,
     ObservedObjectId,
     CaptureFormat,
@@ -258,6 +275,8 @@ pub enum RuntimeAgentTypeProjection<R> {
     ViewportPoint,
     PointerButton,
     RagError,
+    BinaryResourceBody,
+    BinaryData,
 }
 
 impl<R> RuntimePlanTypeProjection<R> {
@@ -274,6 +293,7 @@ impl<R> RuntimePlanTypeProjection<R> {
             | Self::Sequence { item: child, .. }
             | Self::Array { item: child, .. }
             | Self::Agent(RuntimeAgentTypeProjection::Probe(child)) => Box::new([child]),
+            Self::BuiltinVariant { cases, .. } => cases.iter().filter_map(Option::as_ref).collect(),
             Self::Map { key, value }
             | Self::Stream {
                 item: key,
@@ -305,6 +325,7 @@ impl<R> RuntimePlanTypeProjection<R> {
             | Self::Duration
             | Self::Progress
             | Self::EntityReference
+            | Self::AgentValue
             | Self::Agent(_) => Box::new([]),
         }
     }
@@ -328,6 +349,7 @@ impl<R> RuntimePlanTypeProjection<R> {
             Self::Duration => RuntimePlanTypeProjection::Duration,
             Self::Progress => RuntimePlanTypeProjection::Progress,
             Self::EntityReference => RuntimePlanTypeProjection::EntityReference,
+            Self::AgentValue => RuntimePlanTypeProjection::AgentValue,
             Self::Range(child) => RuntimePlanTypeProjection::Range(map(child)?),
             Self::Iterator(child) => RuntimePlanTypeProjection::Iterator(map(child)?),
             Self::Sequence { kind, item } => RuntimePlanTypeProjection::Sequence {
@@ -352,6 +374,15 @@ impl<R> RuntimePlanTypeProjection<R> {
                 error: map(error)?,
             },
             Self::Option(child) => RuntimePlanTypeProjection::Option(map(child)?),
+            Self::BuiltinVariant { owner, cases } => RuntimePlanTypeProjection::BuiltinVariant {
+                owner,
+                cases: cases
+                    .into_vec()
+                    .into_iter()
+                    .map(|payload| payload.map(&mut map).transpose())
+                    .collect::<Result<Vec<_>, _>>()?
+                    .into_boxed_slice(),
+            },
             Self::ThreadHandle(child) => RuntimePlanTypeProjection::ThreadHandle(map(child)?),
             Self::Shared(child) => RuntimePlanTypeProjection::Shared(map(child)?),
             Self::Reference(child) => RuntimePlanTypeProjection::Reference(map(child)?),
@@ -422,6 +453,8 @@ impl<R> RuntimePlanTypeProjection<R> {
             | Self::Duration
             | Self::Progress
             | Self::EntityReference
+            | Self::AgentValue
+            | Self::BuiltinVariant { .. }
             | Self::ProjectNominal { .. }
             | Self::Opaque { .. } => None,
         }
@@ -456,18 +489,21 @@ impl<R> RuntimeAgentTypeProjection<R> {
             Self::ActionName => RuntimeAgentTypeProjection::ActionName,
             Self::ActionTarget => RuntimeAgentTypeProjection::ActionTarget,
             Self::ActionResult => RuntimeAgentTypeProjection::ActionResult,
-            Self::AgentValue => RuntimeAgentTypeProjection::AgentValue,
             Self::DataFormat => RuntimeAgentTypeProjection::DataFormat,
             Self::DataShape => RuntimeAgentTypeProjection::DataShape,
             Self::EntityMetadata => RuntimeAgentTypeProjection::EntityMetadata,
             Self::SourceAnchor => RuntimeAgentTypeProjection::SourceAnchor,
+            Self::SourcePosition => RuntimeAgentTypeProjection::SourcePosition,
             Self::ProjectGraphNeighborhood => RuntimeAgentTypeProjection::ProjectGraphNeighborhood,
             Self::ProjectGraphSymbol => RuntimeAgentTypeProjection::ProjectGraphSymbol,
             Self::ProjectGraphEdge => RuntimeAgentTypeProjection::ProjectGraphEdge,
+            Self::ProjectFlowControlSummary => {
+                RuntimeAgentTypeProjection::ProjectFlowControlSummary
+            }
+            Self::ProjectGraphSummary => RuntimeAgentTypeProjection::ProjectGraphSummary,
             Self::CaptureTarget => RuntimeAgentTypeProjection::CaptureTarget,
             Self::CaptureReference => RuntimeAgentTypeProjection::CaptureReference,
             Self::Resource => RuntimeAgentTypeProjection::Resource,
-            Self::ResourceBody => RuntimeAgentTypeProjection::ResourceBody,
             Self::RagContextPack => RuntimeAgentTypeProjection::RagContextPack,
             Self::ObservedObjectId => RuntimeAgentTypeProjection::ObservedObjectId,
             Self::CaptureFormat => RuntimeAgentTypeProjection::CaptureFormat,
@@ -477,6 +513,8 @@ impl<R> RuntimeAgentTypeProjection<R> {
             Self::ViewportPoint => RuntimeAgentTypeProjection::ViewportPoint,
             Self::PointerButton => RuntimeAgentTypeProjection::PointerButton,
             Self::RagError => RuntimeAgentTypeProjection::RagError,
+            Self::BinaryResourceBody => RuntimeAgentTypeProjection::BinaryResourceBody,
+            Self::BinaryData => RuntimeAgentTypeProjection::BinaryData,
         })
     }
 
@@ -493,18 +531,21 @@ impl<R> RuntimeAgentTypeProjection<R> {
             Self::ActionName => RuntimeAgentOperationalType::ActionName,
             Self::ActionTarget => RuntimeAgentOperationalType::ActionTarget,
             Self::ActionResult => RuntimeAgentOperationalType::ActionResult,
-            Self::AgentValue => RuntimeAgentOperationalType::AgentValue,
             Self::DataFormat => RuntimeAgentOperationalType::DataFormat,
             Self::DataShape => RuntimeAgentOperationalType::DataShape,
             Self::EntityMetadata => RuntimeAgentOperationalType::EntityMetadata,
             Self::SourceAnchor => RuntimeAgentOperationalType::SourceAnchor,
+            Self::SourcePosition => RuntimeAgentOperationalType::SourcePosition,
             Self::ProjectGraphNeighborhood => RuntimeAgentOperationalType::ProjectGraphNeighborhood,
             Self::ProjectGraphSymbol => RuntimeAgentOperationalType::ProjectGraphSymbol,
             Self::ProjectGraphEdge => RuntimeAgentOperationalType::ProjectGraphEdge,
+            Self::ProjectFlowControlSummary => {
+                RuntimeAgentOperationalType::ProjectFlowControlSummary
+            }
+            Self::ProjectGraphSummary => RuntimeAgentOperationalType::ProjectGraphSummary,
             Self::CaptureTarget => RuntimeAgentOperationalType::CaptureTarget,
             Self::CaptureReference => RuntimeAgentOperationalType::CaptureReference,
             Self::Resource => RuntimeAgentOperationalType::Resource,
-            Self::ResourceBody => RuntimeAgentOperationalType::ResourceBody,
             Self::RagContextPack => RuntimeAgentOperationalType::RagContextPack,
             Self::ObservedObjectId => RuntimeAgentOperationalType::ObservedObjectId,
             Self::CaptureFormat => RuntimeAgentOperationalType::CaptureFormat,
@@ -514,6 +555,8 @@ impl<R> RuntimeAgentTypeProjection<R> {
             Self::ViewportPoint => RuntimeAgentOperationalType::ViewportPoint,
             Self::PointerButton => RuntimeAgentOperationalType::PointerButton,
             Self::RagError => RuntimeAgentOperationalType::RagError,
+            Self::BinaryResourceBody => RuntimeAgentOperationalType::BinaryResourceBody,
+            Self::BinaryData => RuntimeAgentOperationalType::BinaryData,
         }
     }
 }

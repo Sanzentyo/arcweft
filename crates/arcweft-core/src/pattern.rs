@@ -368,8 +368,204 @@ pub enum RuntimeVariantIdentity {
         nominal: RuntimeNominalTypeId,
         semantic_identity: RuntimeSemanticTypeId,
     },
-    Option,
-    Result,
+    Builtin(RuntimeBuiltinVariantIdentity),
+}
+
+/// Core-owned identity and canonical case schema for standard runtime
+/// variants. Every builtin variant boundary uses this same owner; codecs and
+/// host adapters must not reconstruct it from case strings.
+#[repr(u8)]
+#[derive(Clone, Copy, Debug, Deserialize, Eq, Hash, Ord, PartialEq, PartialOrd, Serialize)]
+pub enum RuntimeBuiltinVariantIdentity {
+    Option = 0,
+    Result = 1,
+    AgentResourceBody = 2,
+    AgentBinaryEncoding = 3,
+}
+
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub struct RuntimeBuiltinVariantCaseSchema {
+    identity: RuntimeBuiltinVariantCaseIdentity,
+    name: &'static str,
+    has_payload: bool,
+}
+
+impl RuntimeBuiltinVariantCaseSchema {
+    const fn new(
+        identity: RuntimeBuiltinVariantCaseIdentity,
+        name: &'static str,
+        has_payload: bool,
+    ) -> Self {
+        Self {
+            identity,
+            name,
+            has_payload,
+        }
+    }
+
+    pub const fn identity(self) -> RuntimeBuiltinVariantCaseIdentity {
+        self.identity
+    }
+
+    pub const fn name(self) -> &'static str {
+        self.name
+    }
+
+    pub const fn has_payload(self) -> bool {
+        self.has_payload
+    }
+}
+
+/// Semantic identity of one case in a core-owned builtin variant.
+///
+/// Callers use this coordinate instead of copying case ordinals or names.
+/// The source-ordered schema slice owned by [`RuntimeBuiltinVariantIdentity`]
+/// remains the sole ordinal authority.
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub enum RuntimeBuiltinVariantCaseIdentity {
+    OptionSome,
+    OptionNone,
+    ResultOk,
+    ResultErr,
+    AgentResourceBodyJson,
+    AgentResourceBodyText,
+    AgentResourceBodyBytesBase64,
+    AgentBinaryEncodingBase64,
+}
+
+impl RuntimeBuiltinVariantCaseIdentity {
+    #[must_use]
+    pub const fn owner(self) -> RuntimeBuiltinVariantIdentity {
+        match self {
+            Self::OptionSome | Self::OptionNone => RuntimeBuiltinVariantIdentity::Option,
+            Self::ResultOk | Self::ResultErr => RuntimeBuiltinVariantIdentity::Result,
+            Self::AgentResourceBodyJson
+            | Self::AgentResourceBodyText
+            | Self::AgentResourceBodyBytesBase64 => {
+                RuntimeBuiltinVariantIdentity::AgentResourceBody
+            }
+            Self::AgentBinaryEncodingBase64 => RuntimeBuiltinVariantIdentity::AgentBinaryEncoding,
+        }
+    }
+}
+
+const OPTION_CASES: [RuntimeBuiltinVariantCaseSchema; 2] = [
+    RuntimeBuiltinVariantCaseSchema::new(
+        RuntimeBuiltinVariantCaseIdentity::OptionSome,
+        "Some",
+        true,
+    ),
+    RuntimeBuiltinVariantCaseSchema::new(
+        RuntimeBuiltinVariantCaseIdentity::OptionNone,
+        "None",
+        false,
+    ),
+];
+const RESULT_CASES: [RuntimeBuiltinVariantCaseSchema; 2] = [
+    RuntimeBuiltinVariantCaseSchema::new(RuntimeBuiltinVariantCaseIdentity::ResultOk, "Ok", true),
+    RuntimeBuiltinVariantCaseSchema::new(RuntimeBuiltinVariantCaseIdentity::ResultErr, "Err", true),
+];
+const AGENT_RESOURCE_BODY_CASES: [RuntimeBuiltinVariantCaseSchema; 3] = [
+    RuntimeBuiltinVariantCaseSchema::new(
+        RuntimeBuiltinVariantCaseIdentity::AgentResourceBodyJson,
+        "Json",
+        true,
+    ),
+    RuntimeBuiltinVariantCaseSchema::new(
+        RuntimeBuiltinVariantCaseIdentity::AgentResourceBodyText,
+        "Text",
+        true,
+    ),
+    RuntimeBuiltinVariantCaseSchema::new(
+        RuntimeBuiltinVariantCaseIdentity::AgentResourceBodyBytesBase64,
+        "BytesBase64",
+        true,
+    ),
+];
+const AGENT_BINARY_ENCODING_CASES: [RuntimeBuiltinVariantCaseSchema; 1] =
+    [RuntimeBuiltinVariantCaseSchema::new(
+        RuntimeBuiltinVariantCaseIdentity::AgentBinaryEncodingBase64,
+        "Base64",
+        false,
+    )];
+
+impl RuntimeBuiltinVariantIdentity {
+    const COUNT: usize = Self::AgentBinaryEncoding as usize + 1;
+    const DECODE: [Option<Self>; RuntimeBuiltinVariantIdentity::COUNT] = {
+        let mut decode = [None; RuntimeBuiltinVariantIdentity::COUNT];
+        decode[Self::Option as usize] = Some(Self::Option);
+        decode[Self::Result as usize] = Some(Self::Result);
+        decode[Self::AgentResourceBody as usize] = Some(Self::AgentResourceBody);
+        decode[Self::AgentBinaryEncoding as usize] = Some(Self::AgentBinaryEncoding);
+        decode
+    };
+
+    #[must_use]
+    pub const fn semantic_tag(self) -> u8 {
+        self as u8
+    }
+
+    #[must_use]
+    pub fn from_wire_tag(tag: u8) -> Option<Self> {
+        Self::DECODE.get(tag as usize).copied().flatten()
+    }
+
+    #[must_use]
+    pub const fn cases(self) -> &'static [RuntimeBuiltinVariantCaseSchema] {
+        match self {
+            Self::Option => &OPTION_CASES,
+            Self::Result => &RESULT_CASES,
+            Self::AgentResourceBody => &AGENT_RESOURCE_BODY_CASES,
+            Self::AgentBinaryEncoding => &AGENT_BINARY_ENCODING_CASES,
+        }
+    }
+
+    /// Resolves a semantic case coordinate to its canonical source ordinal
+    /// and schema row.
+    #[must_use]
+    pub fn resolve_case(
+        self,
+        identity: RuntimeBuiltinVariantCaseIdentity,
+    ) -> Option<(u32, RuntimeBuiltinVariantCaseSchema)> {
+        if identity.owner() != self {
+            return None;
+        }
+        self.cases()
+            .iter()
+            .copied()
+            .enumerate()
+            .find(|(_, schema)| schema.identity() == identity)
+            .and_then(|(ordinal, schema)| {
+                u32::try_from(ordinal).ok().map(|ordinal| (ordinal, schema))
+            })
+    }
+
+    /// Resolves one runtime ordinal through the canonical schema table.
+    #[must_use]
+    pub fn case_at(self, ordinal: u32) -> Option<RuntimeBuiltinVariantCaseSchema> {
+        usize::try_from(ordinal)
+            .ok()
+            .and_then(|ordinal| self.cases().get(ordinal))
+            .copied()
+    }
+}
+
+/// Rejection produced while sealing a checked type for one core-owned
+/// builtin variant family.
+#[derive(Clone, Debug, Eq, Error, PartialEq)]
+pub enum RuntimeBuiltinVariantTypeError {
+    #[error(
+        "builtin variant {owner:?} requires {expected} cases, but {actual} payload rows were supplied"
+    )]
+    CaseCount {
+        owner: RuntimeBuiltinVariantIdentity,
+        expected: usize,
+        actual: usize,
+    },
+    #[error("builtin variant case {case:?} has the wrong payload presence")]
+    InvalidPayloadPresence {
+        case: RuntimeBuiltinVariantCaseIdentity,
+    },
 }
 
 /// One source-ordered case in a checked nominal enum.
@@ -488,6 +684,7 @@ pub enum RuntimeCheckedType {
     Duration,
     Progress,
     EntityReference,
+    AgentValue,
     Bytes,
     Sequence(Box<RuntimeCheckedType>),
     Tuple(Vec<RuntimeCheckedType>),
@@ -502,8 +699,7 @@ pub enum RuntimeCheckedType {
         owner: RuntimeOpaqueTypeOwner,
     },
     Variant {
-        nominal: RuntimeNominalTypeId,
-        semantic_identity: RuntimeSemanticTypeId,
+        owner: RuntimeVariantIdentity,
         arguments: Vec<RuntimeCheckedType>,
         cases: Vec<RuntimeCheckedVariantCase>,
     },
@@ -516,6 +712,45 @@ pub enum RuntimeCheckedType {
 }
 
 impl RuntimeCheckedType {
+    /// Seals one core-owned builtin variant type through its canonical case
+    /// schema. Callers provide payload types only; names and ordinals remain
+    /// owned by [`RuntimeBuiltinVariantIdentity`].
+    pub fn try_builtin_variant(
+        owner: RuntimeBuiltinVariantIdentity,
+        payloads: impl IntoIterator<Item = Option<RuntimeCheckedType>>,
+    ) -> Result<Self, RuntimeBuiltinVariantTypeError> {
+        let payloads = payloads.into_iter().collect::<Vec<_>>();
+        let schemas = owner.cases();
+        if payloads.len() != schemas.len() {
+            return Err(RuntimeBuiltinVariantTypeError::CaseCount {
+                owner,
+                expected: schemas.len(),
+                actual: payloads.len(),
+            });
+        }
+        let cases = schemas
+            .iter()
+            .copied()
+            .zip(payloads)
+            .map(|(schema, payload)| {
+                if schema.has_payload() != payload.is_some() {
+                    return Err(RuntimeBuiltinVariantTypeError::InvalidPayloadPresence {
+                        case: schema.identity(),
+                    });
+                }
+                Ok(RuntimeCheckedVariantCase {
+                    name: schema.name().to_owned(),
+                    payload: payload.map(Box::new),
+                })
+            })
+            .collect::<Result<Vec<_>, _>>()?;
+        Ok(Self::Variant {
+            owner: RuntimeVariantIdentity::Builtin(owner),
+            arguments: Vec::new(),
+            cases,
+        })
+    }
+
     /// Appends this checked type's canonical structural transcript to an
     /// enclosing semantic-type identity.
     ///
@@ -540,16 +775,13 @@ impl RuntimeCheckedType {
     #[must_use]
     pub fn variant_identity(&self) -> Option<RuntimeVariantIdentity> {
         match self {
-            Self::Variant {
-                nominal,
-                semantic_identity,
-                ..
-            } => Some(RuntimeVariantIdentity::Nominal {
-                nominal: nominal.clone(),
-                semantic_identity: *semantic_identity,
-            }),
-            Self::Result { .. } => Some(RuntimeVariantIdentity::Result),
-            Self::Option(_) => Some(RuntimeVariantIdentity::Option),
+            Self::Variant { owner, .. } => Some(owner.clone()),
+            Self::Result { .. } => Some(RuntimeVariantIdentity::Builtin(
+                RuntimeBuiltinVariantIdentity::Result,
+            )),
+            Self::Option(_) => Some(RuntimeVariantIdentity::Builtin(
+                RuntimeBuiltinVariantIdentity::Option,
+            )),
             _ => None,
         }
     }
@@ -561,28 +793,30 @@ impl RuntimeCheckedType {
                 .ok()
                 .and_then(|ordinal| cases.get(ordinal))
                 .cloned(),
-            Self::Result { ok, error } => match ordinal {
-                0 => Some(RuntimeCheckedVariantCase {
-                    name: "Ok".to_owned(),
-                    payload: Some(ok.clone()),
-                }),
-                1 => Some(RuntimeCheckedVariantCase {
-                    name: "Err".to_owned(),
-                    payload: Some(error.clone()),
-                }),
-                _ => None,
-            },
-            Self::Option(item) => match ordinal {
-                0 => Some(RuntimeCheckedVariantCase {
-                    name: "Some".to_owned(),
-                    payload: Some(item.clone()),
-                }),
-                1 => Some(RuntimeCheckedVariantCase {
-                    name: "None".to_owned(),
-                    payload: None,
-                }),
-                _ => None,
-            },
+            Self::Result { ok, error } => {
+                let schema = RuntimeBuiltinVariantIdentity::Result.case_at(ordinal)?;
+                let payload = match schema.identity() {
+                    RuntimeBuiltinVariantCaseIdentity::ResultOk => Some(ok.clone()),
+                    RuntimeBuiltinVariantCaseIdentity::ResultErr => Some(error.clone()),
+                    _ => return None,
+                };
+                Some(RuntimeCheckedVariantCase {
+                    name: schema.name().to_owned(),
+                    payload,
+                })
+            }
+            Self::Option(item) => {
+                let schema = RuntimeBuiltinVariantIdentity::Option.case_at(ordinal)?;
+                let payload = match schema.identity() {
+                    RuntimeBuiltinVariantCaseIdentity::OptionSome => Some(item.clone()),
+                    RuntimeBuiltinVariantCaseIdentity::OptionNone => None,
+                    _ => return None,
+                };
+                Some(RuntimeCheckedVariantCase {
+                    name: schema.name().to_owned(),
+                    payload,
+                })
+            }
             _ => None,
         }
     }
@@ -607,6 +841,7 @@ impl RuntimeCheckedType {
             | (RuntimeValue::Duration(_), Self::Duration)
             | (RuntimeValue::Progress(_), Self::Progress)
             | (RuntimeValue::EntityRef(_), Self::EntityReference) => true,
+            (value, Self::AgentValue) => runtime_value_is_agent_value(value, depth),
             (RuntimeValue::Int(value), Self::Signed(width)) => value.width() == *width,
             (RuntimeValue::UInt(value), Self::Unsigned(width)) => value.width() == *width,
             (RuntimeValue::Seq(sequence), Self::Bytes) => sequence
@@ -656,33 +891,23 @@ impl RuntimeCheckedType {
                 payload.as_deref(),
                 depth,
             ),
-            (
-                RuntimeValue::Variant {
-                    owner,
-                    ordinal,
-                    name,
-                    payload,
-                },
-                Self::Result { ok, error },
-            ) if *owner == RuntimeVariantIdentity::Result => {
-                match (*ordinal, name.as_str(), payload.as_deref()) {
-                    (0, "Ok", Some(value)) => ok.accepts_value_at_depth(value, depth + 1),
-                    (1, "Err", Some(value)) => error.accepts_value_at_depth(value, depth + 1),
+            (value @ RuntimeValue::Variant { .. }, Self::Result { ok, error }) => {
+                match value.builtin_variant_case() {
+                    Some((RuntimeBuiltinVariantCaseIdentity::ResultOk, Some(value))) => {
+                        ok.accepts_value_at_depth(value, depth + 1)
+                    }
+                    Some((RuntimeBuiltinVariantCaseIdentity::ResultErr, Some(value))) => {
+                        error.accepts_value_at_depth(value, depth + 1)
+                    }
                     _ => false,
                 }
             }
-            (
-                RuntimeValue::Variant {
-                    owner,
-                    ordinal,
-                    name,
-                    payload,
-                },
-                Self::Option(item),
-            ) if *owner == RuntimeVariantIdentity::Option => {
-                match (*ordinal, name.as_str(), payload.as_deref()) {
-                    (0, "Some", Some(value)) => item.accepts_value_at_depth(value, depth + 1),
-                    (1, "None", None) => true,
+            (value @ RuntimeValue::Variant { .. }, Self::Option(item)) => {
+                match value.builtin_variant_case() {
+                    Some((RuntimeBuiltinVariantCaseIdentity::OptionSome, Some(value))) => {
+                        item.accepts_value_at_depth(value, depth + 1)
+                    }
+                    Some((RuntimeBuiltinVariantCaseIdentity::OptionNone, None)) => true,
                     _ => false,
                 }
             }
@@ -703,20 +928,14 @@ impl RuntimeCheckedType {
         depth: usize,
     ) -> bool {
         let Self::Variant {
-            nominal,
-            semantic_identity,
+            owner: expected_owner,
             cases,
             ..
         } = self
         else {
             return false;
         };
-        if owner
-            != &(RuntimeVariantIdentity::Nominal {
-                nominal: nominal.clone(),
-                semantic_identity: *semantic_identity,
-            })
-        {
+        if owner != expected_owner {
             return false;
         }
         usize::try_from(ordinal)
@@ -818,13 +1037,12 @@ fn write_checked_type_identity(
             encoder.write_u8(owner.persistence().semantic_tag());
         }
         RuntimeCheckedType::Variant {
-            semantic_identity,
+            owner,
             arguments,
             cases,
-            ..
         } => {
             encoder.write_tag(18);
-            encoder.write_bytes(semantic_identity.as_bytes());
+            write_variant_identity(encoder, owner);
             encoder.write_len(arguments.len());
             for argument in arguments {
                 write_checked_type_identity(encoder, argument);
@@ -852,44 +1070,67 @@ fn write_checked_type_identity(
         }
         RuntimeCheckedType::Agent(agent) => {
             encoder.write_tag(21);
-            encoder.write_u8(agent_semantic_tag(*agent));
+            encoder.write_u8(agent.semantic_tag());
         }
+        RuntimeCheckedType::AgentValue => encoder.write_tag(22),
     }
 }
 
-const fn agent_semantic_tag(agent: crate::plan::RuntimeAgentOperationalType) -> u8 {
-    match agent {
-        crate::plan::RuntimeAgentOperationalType::DebugStatePath => 0,
-        crate::plan::RuntimeAgentOperationalType::ObservationFieldPath => 1,
-        crate::plan::RuntimeAgentOperationalType::Probe => 2,
-        crate::plan::RuntimeAgentOperationalType::Predicate => 3,
-        crate::plan::RuntimeAgentOperationalType::Observation => 4,
-        crate::plan::RuntimeAgentOperationalType::ObservedObject => 5,
-        crate::plan::RuntimeAgentOperationalType::BoundingBox => 6,
-        crate::plan::RuntimeAgentOperationalType::ActionName => 7,
-        crate::plan::RuntimeAgentOperationalType::ActionTarget => 8,
-        crate::plan::RuntimeAgentOperationalType::ActionResult => 9,
-        crate::plan::RuntimeAgentOperationalType::AgentValue => 10,
-        crate::plan::RuntimeAgentOperationalType::DataFormat => 11,
-        crate::plan::RuntimeAgentOperationalType::DataShape => 12,
-        crate::plan::RuntimeAgentOperationalType::EntityMetadata => 13,
-        crate::plan::RuntimeAgentOperationalType::SourceAnchor => 14,
-        crate::plan::RuntimeAgentOperationalType::ProjectGraphNeighborhood => 15,
-        crate::plan::RuntimeAgentOperationalType::ProjectGraphSymbol => 16,
-        crate::plan::RuntimeAgentOperationalType::ProjectGraphEdge => 17,
-        crate::plan::RuntimeAgentOperationalType::CaptureTarget => 18,
-        crate::plan::RuntimeAgentOperationalType::CaptureReference => 19,
-        crate::plan::RuntimeAgentOperationalType::Resource => 20,
-        crate::plan::RuntimeAgentOperationalType::ResourceBody => 21,
-        crate::plan::RuntimeAgentOperationalType::RagContextPack => 22,
-        crate::plan::RuntimeAgentOperationalType::ObservedObjectId => 23,
-        crate::plan::RuntimeAgentOperationalType::CaptureFormat => 24,
-        crate::plan::RuntimeAgentOperationalType::CaptureKind => 25,
-        crate::plan::RuntimeAgentOperationalType::Diagnostics => 26,
-        crate::plan::RuntimeAgentOperationalType::WaitError => 27,
-        crate::plan::RuntimeAgentOperationalType::ViewportPoint => 28,
-        crate::plan::RuntimeAgentOperationalType::PointerButton => 29,
-        crate::plan::RuntimeAgentOperationalType::RagError => 30,
+fn runtime_value_is_agent_value(value: &RuntimeValue, depth: usize) -> bool {
+    if depth > crate::value::MAX_RUNTIME_VALUE_NESTING_DEPTH {
+        return false;
+    }
+    match value {
+        RuntimeValue::Unit
+        | RuntimeValue::Bool(_)
+        | RuntimeValue::String(_)
+        | RuntimeValue::EntityRef(_) => true,
+        RuntimeValue::Int(value) => value.width() == RuntimeSignedIntWidth::I64,
+        RuntimeValue::UInt(value) => value.width() == RuntimeUnsignedIntWidth::U64,
+        RuntimeValue::F64(value) => value.is_finite(),
+        RuntimeValue::Seq(values) => values
+            .clone()
+            .into_values()
+            .iter()
+            .all(|value| runtime_value_is_agent_value(value, depth + 1)),
+        RuntimeValue::Record(fields) => fields
+            .iter()
+            .all(|field| runtime_value_is_agent_value(field.value(), depth + 1)),
+        RuntimeValue::F32(_)
+        | RuntimeValue::MatrixF32(_)
+        | RuntimeValue::MatrixF64(_)
+        | RuntimeValue::TensorF32(_)
+        | RuntimeValue::TensorF64(_)
+        | RuntimeValue::Char(_)
+        | RuntimeValue::Duration(_)
+        | RuntimeValue::Progress(_)
+        | RuntimeValue::Range(_)
+        | RuntimeValue::Iterator(_)
+        | RuntimeValue::Tuple(_)
+        | RuntimeValue::NominalRecord(_)
+        | RuntimeValue::Opaque(_)
+        | RuntimeValue::Reduction(_)
+        | RuntimeValue::Agent(_)
+        | RuntimeValue::Function(_)
+        | RuntimeValue::Variant { .. } => false,
+    }
+}
+
+fn write_variant_identity(
+    encoder: &mut RuntimeSemanticTypeIdentityEncoder,
+    owner: &RuntimeVariantIdentity,
+) {
+    match owner {
+        RuntimeVariantIdentity::Nominal {
+            semantic_identity, ..
+        } => {
+            encoder.write_u8(0);
+            encoder.write_bytes(semantic_identity.as_bytes());
+        }
+        RuntimeVariantIdentity::Builtin(owner) => {
+            encoder.write_u8(1);
+            encoder.write_u8(owner.semantic_tag());
+        }
     }
 }
 
@@ -1314,7 +1555,7 @@ fn collect_pattern_bindings(
         RuntimePatternKind::Literal(expected) => Ok(expected == value),
         RuntimePatternKind::Entity(expected) => Ok(matches!(
             value,
-            RuntimeValue::EntityRef(actual) if actual == &expected.runtime_label()
+            RuntimeValue::EntityRef(actual) if actual == expected
         )),
         RuntimePatternKind::Tuple(patterns) => {
             let RuntimeValue::Tuple(values) = value else {
@@ -1502,32 +1743,18 @@ fn runtime_value_matches_type_inner(
         (RuntimePlanTypeProjection::Choice(types), value) => {
             runtime_choice_matches_type(plan, types, value, depth)
         }
-        (
-            RuntimePlanTypeProjection::Result { value: ok, error },
-            RuntimeValue::Variant {
-                owner: RuntimeVariantIdentity::Result,
-                ordinal,
-                name,
-                payload,
-            },
-        ) => runtime_result_matches_type(
-            plan,
-            *ok,
-            *error,
-            *ordinal,
-            name,
-            payload.as_deref(),
-            depth,
-        ),
-        (
-            RuntimePlanTypeProjection::Option(item),
-            RuntimeValue::Variant {
-                owner: RuntimeVariantIdentity::Option,
-                ordinal,
-                name,
-                payload,
-            },
-        ) => runtime_option_matches_type(plan, *item, *ordinal, name, payload.as_deref(), depth),
+        (RuntimePlanTypeProjection::Result { value: ok, error }, value) => {
+            runtime_result_matches_type(plan, *ok, *error, value, depth)
+        }
+        (RuntimePlanTypeProjection::Option(item), value) => {
+            runtime_option_matches_type(plan, *item, value, depth)
+        }
+        (RuntimePlanTypeProjection::BuiltinVariant { owner, cases }, value) => {
+            runtime_builtin_variant_matches_type(plan, *owner, cases, value, depth)
+        }
+        (RuntimePlanTypeProjection::AgentValue, value) => {
+            RuntimeCheckedType::AgentValue.accepts_value(value)
+        }
         (
             RuntimePlanTypeProjection::ProjectNominal {
                 nominal, layout, ..
@@ -1612,14 +1839,16 @@ fn runtime_result_matches_type(
     plan: &RuntimePlan,
     ok: RuntimePlanTypeId,
     error: RuntimePlanTypeId,
-    ordinal: u32,
-    name: &str,
-    payload: Option<&RuntimeValue>,
+    value: &RuntimeValue,
     depth: usize,
 ) -> bool {
-    match (ordinal, name, payload) {
-        (0, "Ok", Some(value)) => runtime_value_matches_type_inner(plan, ok, value, depth + 1),
-        (1, "Err", Some(value)) => runtime_value_matches_type_inner(plan, error, value, depth + 1),
+    match value.builtin_variant_case() {
+        Some((RuntimeBuiltinVariantCaseIdentity::ResultOk, Some(value))) => {
+            runtime_value_matches_type_inner(plan, ok, value, depth + 1)
+        }
+        Some((RuntimeBuiltinVariantCaseIdentity::ResultErr, Some(value))) => {
+            runtime_value_matches_type_inner(plan, error, value, depth + 1)
+        }
         _ => false,
     }
 }
@@ -1627,14 +1856,45 @@ fn runtime_result_matches_type(
 fn runtime_option_matches_type(
     plan: &RuntimePlan,
     item: RuntimePlanTypeId,
-    ordinal: u32,
-    name: &str,
-    payload: Option<&RuntimeValue>,
+    value: &RuntimeValue,
     depth: usize,
 ) -> bool {
-    match (ordinal, name, payload) {
-        (0, "Some", Some(value)) => runtime_value_matches_type_inner(plan, item, value, depth + 1),
-        (1, "None", None) => true,
+    match value.builtin_variant_case() {
+        Some((RuntimeBuiltinVariantCaseIdentity::OptionSome, Some(value))) => {
+            runtime_value_matches_type_inner(plan, item, value, depth + 1)
+        }
+        Some((RuntimeBuiltinVariantCaseIdentity::OptionNone, None)) => true,
+        _ => false,
+    }
+}
+
+fn runtime_builtin_variant_matches_type(
+    plan: &RuntimePlan,
+    owner: RuntimeBuiltinVariantIdentity,
+    cases: &[Option<RuntimePlanTypeId>],
+    value: &RuntimeValue,
+    depth: usize,
+) -> bool {
+    let Some((case, payload)) = value.builtin_variant_case() else {
+        return false;
+    };
+    if case.owner() != owner {
+        return false;
+    }
+    let Some((ordinal, _)) = owner.resolve_case(case) else {
+        return false;
+    };
+    let Some(expected_payload) = usize::try_from(ordinal)
+        .ok()
+        .and_then(|ordinal| cases.get(ordinal))
+    else {
+        return false;
+    };
+    match (expected_payload, payload) {
+        (Some(expected), Some(payload)) => {
+            runtime_value_matches_type_inner(plan, *expected, payload, depth + 1)
+        }
+        (None, None) => true,
         _ => false,
     }
 }
@@ -1724,10 +1984,136 @@ mod tests {
         RuntimePlanBuildError, RuntimePlanBuilder, RuntimePlanTypeProjection, RuntimePlanTypeSeed,
         RuntimeRecordFieldSeedId, RuntimeRecordPatternFieldSeed,
     };
-    use crate::value::{RuntimeNominalRecordValue, runtime_sequence_values};
+    use crate::value::{
+        RuntimeBuiltinVariantValueError, RuntimeNominalRecordValue, runtime_sequence_values,
+    };
 
     fn identity(marker: u8) -> RuntimeSemanticTypeId {
         RuntimeSemanticTypeId::from_bytes([marker; 32])
+    }
+
+    #[test]
+    fn builtin_variant_owner_is_the_sole_tag_case_and_payload_authority() {
+        let owners = [
+            RuntimeBuiltinVariantIdentity::Option,
+            RuntimeBuiltinVariantIdentity::Result,
+            RuntimeBuiltinVariantIdentity::AgentResourceBody,
+            RuntimeBuiltinVariantIdentity::AgentBinaryEncoding,
+        ];
+        for owner in owners {
+            assert_eq!(
+                RuntimeBuiltinVariantIdentity::from_wire_tag(owner.semantic_tag()),
+                Some(owner)
+            );
+            for (expected_ordinal, schema) in owner.cases().iter().copied().enumerate() {
+                let (ordinal, resolved) = owner
+                    .resolve_case(schema.identity())
+                    .expect("schema identity resolves through its owner");
+                assert_eq!(usize::try_from(ordinal).ok(), Some(expected_ordinal));
+                assert_eq!(resolved, schema);
+                assert_eq!(owner.case_at(ordinal), Some(schema));
+
+                let payload = schema.has_payload().then_some(RuntimeValue::Unit);
+                let value = RuntimeValue::try_builtin_variant(schema.identity(), payload)
+                    .expect("schema-derived payload cardinality is accepted");
+                assert_eq!(
+                    value.builtin_variant_case().map(|(case, _)| case),
+                    Some(schema.identity())
+                );
+            }
+        }
+        assert_eq!(RuntimeBuiltinVariantIdentity::from_wire_tag(u8::MAX), None);
+        assert_eq!(
+            RuntimeValue::try_builtin_variant(
+                RuntimeBuiltinVariantCaseIdentity::AgentResourceBodyJson,
+                None,
+            ),
+            Err(RuntimeBuiltinVariantValueError::InvalidPayloadPresence)
+        );
+        assert_eq!(
+            RuntimeValue::try_builtin_variant(
+                RuntimeBuiltinVariantCaseIdentity::AgentBinaryEncodingBase64,
+                Some(RuntimeValue::Unit),
+            ),
+            Err(RuntimeBuiltinVariantValueError::InvalidPayloadPresence)
+        );
+    }
+
+    #[test]
+    fn resource_body_builtin_rejects_unknown_wrong_and_flat_legacy_shapes() {
+        let owner = RuntimeBuiltinVariantIdentity::AgentResourceBody;
+        let cases = owner
+            .cases()
+            .iter()
+            .copied()
+            .map(|schema| RuntimeCheckedVariantCase {
+                name: schema.name().to_owned(),
+                payload: Some(Box::new(match schema.identity() {
+                    RuntimeBuiltinVariantCaseIdentity::AgentResourceBodyJson => {
+                        RuntimeCheckedType::AgentValue
+                    }
+                    RuntimeBuiltinVariantCaseIdentity::AgentResourceBodyText => {
+                        RuntimeCheckedType::String
+                    }
+                    RuntimeBuiltinVariantCaseIdentity::AgentResourceBodyBytesBase64 => {
+                        RuntimeCheckedType::Agent(
+                            crate::plan::RuntimeAgentOperationalType::BinaryResourceBody,
+                        )
+                    }
+                    _ => unreachable!("resource body schema only contains resource body cases"),
+                })),
+            })
+            .collect();
+        let expected = RuntimeCheckedType::Variant {
+            owner: RuntimeVariantIdentity::Builtin(owner),
+            arguments: Vec::new(),
+            cases,
+        };
+        let json = RuntimeValue::try_builtin_variant(
+            RuntimeBuiltinVariantCaseIdentity::AgentResourceBodyJson,
+            Some(
+                RuntimeValue::try_record(vec![("enabled".to_owned(), RuntimeValue::Bool(true))])
+                    .expect("fixture JSON object"),
+            ),
+        )
+        .expect("typed Json resource body");
+        assert!(expected.accepts_value(&json));
+
+        let (_, json_schema) = owner
+            .resolve_case(RuntimeBuiltinVariantCaseIdentity::AgentResourceBodyJson)
+            .expect("Json case");
+        let wrong_name = RuntimeValue::Variant {
+            owner: RuntimeVariantIdentity::Builtin(owner),
+            ordinal: owner
+                .resolve_case(RuntimeBuiltinVariantCaseIdentity::AgentResourceBodyJson)
+                .expect("Json case")
+                .0,
+            name: "not-a-resource-case".to_owned(),
+            payload: Some(Box::new(RuntimeValue::Unit)),
+        };
+        assert!(wrong_name.builtin_variant_case().is_none());
+        assert!(!expected.accepts_value(&wrong_name));
+        assert!(owner.case_at(u32::MAX).is_none());
+        assert_eq!(
+            json_schema.identity(),
+            RuntimeBuiltinVariantCaseIdentity::AgentResourceBodyJson
+        );
+
+        let flat_legacy = RuntimeValue::try_record(vec![
+            ("kind".to_owned(), RuntimeValue::String("json".to_owned())),
+            ("json".to_owned(), RuntimeValue::String("{}".to_owned())),
+            ("text".to_owned(), RuntimeValue::String(String::new())),
+            ("base64".to_owned(), RuntimeValue::String(String::new())),
+        ])
+        .expect("legacy flat record is structurally a record");
+        assert!(!expected.accepts_value(&flat_legacy));
+
+        let wrong_payload = RuntimeValue::try_builtin_variant(
+            RuntimeBuiltinVariantCaseIdentity::AgentResourceBodyText,
+            Some(RuntimeValue::Bool(false)),
+        )
+        .expect("case cardinality is valid before type checking");
+        assert!(!expected.accepts_value(&wrong_payload));
     }
 
     #[test]

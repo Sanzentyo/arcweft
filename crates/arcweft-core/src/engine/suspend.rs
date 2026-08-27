@@ -1,8 +1,9 @@
+use super::dialogue::{DialogueLineTaskState, DialogueRuntimePhase};
 use super::{
-    AwaitManyInFlight, AwaitManyState, AwaitState, AwaitTarget, CancelScopeId, ChoiceState,
-    DialogueState, Engine, FlowEvent, FlowExit, FlowFiberStatus, HostCallState, LineEffectRequest,
-    RuntimeDiagnostic, RuntimeEvalError, RuntimePayload, RuntimeSeq, RuntimeStepInput,
-    RuntimeStepOutput, RuntimeValue, TaskEvent, TaskEventKind, TaskKey, TaskPolicy, TaskPriority,
+    AwaitManyInFlight, AwaitManyState, AwaitState, AwaitTarget, CancelScopeId, ChoiceState, Engine,
+    FlowEvent, FlowExit, FlowFiberStatus, HostCallState, LineEffectRequest, RuntimeDiagnostic,
+    RuntimeEvalError, RuntimePayload, RuntimeSeq, RuntimeStepInput, RuntimeStepOutput,
+    RuntimeValue, TaskEvent, TaskEventKind, TaskKey, TaskPolicy, TaskPriority,
     TaskPublicationCursor, TaskSpec, runtime_sequence_values, runtime_value_into_sequence_values,
 };
 use crate::line_task::{
@@ -29,8 +30,15 @@ impl Engine {
     ) -> bool {
         let status = std::mem::replace(&mut self.fiber.status, FlowFiberStatus::Running);
         match status {
-            FlowFiberStatus::Dialogue(state) => {
-                self.resume_dialogue_state(state, input, output);
+            FlowFiberStatus::Dialogue(activation) => {
+                let transaction = match self.begin_dialogue_activation_transaction(&activation) {
+                    Ok(transaction) => transaction,
+                    Err(error) => {
+                        self.fail_eval(error, output);
+                        return true;
+                    }
+                };
+                self.resume_dialogue_state(transaction, output, pure_backend);
                 true
             }
             FlowFiberStatus::Waiting(state) => {
@@ -64,91 +72,207 @@ impl Engine {
 
     fn resume_dialogue_state(
         &mut self,
-        mut state: DialogueState,
-        input: &RuntimeStepInput,
+        mut transaction: super::dialogue::DialogueActivationTransaction,
         output: &mut RuntimeStepOutput,
+        pure_backend: &mut impl RuntimeCallBackend,
     ) {
-        let Some(content) = self.plan.dialogue_content().get(state.content).cloned() else {
-            let message = format!("missing dialogue content plan {}", state.content);
-            self.fiber.status = FlowFiberStatus::Failed(message.clone());
-            output.diagnostics.push(RuntimeDiagnostic::categorized(
-                RuntimeDiagnosticCategory::Internal,
-                message,
-            ));
+        let line_outcomes = transaction.take_line_outcomes();
+        if let Err(error) = self.consume_dialogue_host_outcomes(&mut transaction, &line_outcomes) {
+            if transaction.frame().failure.is_some() {
+                output.diagnostics.push(RuntimeDiagnostic::new(format!(
+                    "dialogue cleanup after primary failure also failed: {error}"
+                )));
+                self.resume_dialogue_failure_close(transaction, output);
+            } else {
+                self.begin_dialogue_failure(transaction, error, output);
+            }
+            return;
+        }
+        if transaction.frame().failure.is_some() {
+            self.resume_dialogue_failure_close(transaction, output);
+            return;
+        }
+        if transaction.frame().phase == DialogueRuntimePhase::Closing {
+            self.resume_dialogue_successful_close(transaction, output);
+            return;
+        }
+        if transaction.frame().phase == DialogueRuntimePhase::Publishing {
+            self.resume_dialogue_publication(transaction, output);
+            return;
+        }
+        if transaction.frame().phase == DialogueRuntimePhase::Activating {
+            match self.resume_dialogue_activation(&mut transaction, &line_outcomes, pure_backend) {
+                Ok(start) => self.commit_and_suspend_dialogue(transaction, output, start),
+                Err(error) => self.begin_dialogue_failure(transaction, error, output),
+            }
+            return;
+        }
+        let content_id = transaction.frame().content;
+        let Some(content) = self.plan.dialogue_content().get(content_id).cloned() else {
+            self.begin_dialogue_failure(
+                transaction,
+                crate::line_task::LineRuntimeError::UnknownContentPlan.into(),
+                output,
+            );
             return;
         };
-        let marks = Self::dialogue_marks_for_input(&content, input);
-        if let (Some(group_id), Some(line_task)) = (state.task_group, state.line_task.as_mut()) {
-            let Some(group) = self.plan.line_task_groups().get(group_id.index()).cloned() else {
-                let message = format!("missing line task group {group_id}");
-                self.fiber.status = FlowFiberStatus::Failed(message.clone());
-                output.diagnostics.push(RuntimeDiagnostic::categorized(
-                    RuntimeDiagnosticCategory::Internal,
-                    message,
-                ));
+        let elapsed = transaction.frame().elapsed;
+        let due_tokens = match transaction.line_mut().arm_due_schedules(elapsed) {
+            Ok(due) => due,
+            Err(error) => {
+                self.begin_dialogue_failure(transaction, error.into(), output);
+                return;
+            }
+        };
+        let content_events = transaction.take_content_events();
+        let advance = transaction.take_advance();
+        let mut frame = transaction.frame().clone();
+        let mut start = None;
+        if let DialogueLineTaskState::Live(line_task) = &mut frame.line_task {
+            let Some(group) = self
+                .plan
+                .line_task_groups()
+                .get(frame.task_group.index())
+                .cloned()
+            else {
+                *transaction.frame_mut() = frame;
+                self.begin_dialogue_failure(
+                    transaction,
+                    crate::line_task::LineRuntimeError::UnknownTaskGroup.into(),
+                    output,
+                );
                 return;
             };
+            let accepted_content =
+                match line_task.accept_content_event_kinds(&content_events, |event| match event {
+                    crate::step::RuntimeDialogueContentEventKind::Mark(mark) => content
+                        .marks()
+                        .get(mark.index())
+                        .is_some_and(|candidate| candidate.id() == mark),
+                    crate::step::RuntimeDialogueContentEventKind::Effect(effect) => {
+                        content.effect_site_count().contains(effect)
+                    }
+                }) {
+                    Ok(events) => events,
+                    Err(error) => {
+                        *transaction.frame_mut() = frame;
+                        self.begin_dialogue_failure(transaction, error.into(), output);
+                        return;
+                    }
+                };
+            let marks = accepted_content.marks();
             if let Some(cancelled) = cancel_live_line_task_group(&group, &marks, line_task) {
-                if let Some(mark) = marks.iter().copied().find(|mark| {
+                let event = marks.iter().copied().find_map(|mark| {
                     group
                         .cancel_rules()
                         .iter()
-                        .any(|rule| rule.trigger() == *mark)
-                }) && let Some(trigger) = content
-                    .marks()
-                    .iter()
-                    .find(|candidate| candidate.id() == mark)
-                    .map(|candidate| candidate.label().to_owned())
-                {
-                    output
-                        .flow_events
-                        .push(FlowEvent::LineCancelled { trigger });
-                }
-                self.request_line_task_cancellation();
-                self.spawn_line_task_commands(&group, cancelled, &state.captures);
-                // Cancellation never drops queued fibers. Keep the dialogue
-                // owner suspended until the reducer's Closing protocol has
-                // observed all joined work and its cleanup.
-                self.fiber.status = FlowFiberStatus::Dialogue(state);
+                        .any(|rule| rule.trigger() == mark)
+                        .then(|| {
+                            content
+                                .marks()
+                                .iter()
+                                .find(|candidate| candidate.id() == mark)
+                                .map(|candidate| FlowEvent::LineCancelled {
+                                    trigger: candidate.label().to_owned(),
+                                })
+                        })
+                        .flatten()
+                });
+                start = Some(super::dialogue::DialogueLineTaskStart {
+                    event,
+                    request_cancellation: true,
+                    group,
+                    activation: cancelled,
+                    captures: frame.captures.clone(),
+                });
+                *transaction.frame_mut() = frame;
+                self.commit_and_suspend_dialogue(transaction, output, start);
                 return;
             }
             if line_task.is_closing() {
                 let activation = finalize_live_line_task_close(&group, line_task);
-                self.spawn_line_task_commands(&group, activation, &state.captures);
                 if line_task.is_closed() {
-                    self.fiber.cursor = state.resume;
-                    self.fiber.status = FlowFiberStatus::Running;
-                } else {
-                    self.fiber.status = FlowFiberStatus::Dialogue(state);
+                    frame.line_task = DialogueLineTaskState::Closed;
+                    frame.phase = DialogueRuntimePhase::Closing;
                 }
+                start = Some(super::dialogue::DialogueLineTaskStart {
+                    event: None,
+                    request_cancellation: false,
+                    group,
+                    activation,
+                    captures: frame.captures.clone(),
+                });
+                *transaction.frame_mut() = frame;
+                self.commit_and_suspend_dialogue(transaction, output, start);
                 return;
             }
-            state.elapsed = state.elapsed.saturating_add(input.dt);
-            let activation =
-                progress_live_line_task_group(&group, state.elapsed, &marks, line_task);
-            self.spawn_line_task_commands(&group, activation, &state.captures);
+            for token in due_tokens {
+                if let Err(error) = line_task.mark_scheduled_ready(token) {
+                    *transaction.frame_mut() = frame;
+                    self.begin_dialogue_failure(transaction, error.into(), output);
+                    return;
+                }
+            }
+            let activation = match progress_live_line_task_group(
+                &group,
+                frame.elapsed,
+                accepted_content.ready(),
+                line_task,
+            ) {
+                Ok(activation) => activation,
+                Err(error) => {
+                    *transaction.frame_mut() = frame;
+                    self.begin_dialogue_failure(transaction, error.into(), output);
+                    return;
+                }
+            };
+            start = Some(super::dialogue::DialogueLineTaskStart {
+                event: None,
+                request_cancellation: false,
+                group,
+                activation,
+                captures: frame.captures.clone(),
+            });
+        } else if !content_events.is_empty() {
+            let event = content_events[0];
+            *transaction.frame_mut() = frame;
+            self.begin_dialogue_failure(
+                transaction,
+                crate::line_task::LineRuntimeError::ContentEventOutsideLiveLineTask { event }
+                    .into(),
+                output,
+            );
+            return;
         }
-        if input.advances_dialogue(&state.line) {
-            if let (Some(group_id), Some(line_task)) = (state.task_group, state.line_task.as_mut())
-                && let Some(group) = self.plan.line_task_groups().get(group_id.index()).cloned()
+        if advance {
+            if let DialogueLineTaskState::Live(line_task) = &mut frame.line_task
+                && let Some(group) = self
+                    .plan
+                    .line_task_groups()
+                    .get(frame.task_group.index())
+                    .cloned()
             {
                 let cleanup = finish_live_line_task_group(&group, line_task);
-                self.request_line_task_cancellation();
-                self.spawn_line_task_commands(&group, cleanup, &state.captures);
+                start = Some(super::dialogue::DialogueLineTaskStart {
+                    event: None,
+                    request_cancellation: true,
+                    group,
+                    activation: cleanup,
+                    captures: frame.captures.clone(),
+                });
             }
-            if state
-                .line_task
-                .as_ref()
-                .is_none_or(super::super::line_task::LineTaskLiveState::is_closed)
+            if matches!(frame.line_task, DialogueLineTaskState::Closed)
+                || matches!(
+                    &frame.line_task,
+                    DialogueLineTaskState::Live(line_task) if line_task.is_closed()
+                )
             {
-                self.fiber.cursor = state.resume;
-                self.fiber.status = FlowFiberStatus::Running;
-            } else {
-                self.fiber.status = FlowFiberStatus::Dialogue(state);
+                frame.line_task = DialogueLineTaskState::Closed;
+                frame.phase = DialogueRuntimePhase::Closing;
             }
-        } else {
-            self.fiber.status = FlowFiberStatus::Dialogue(state);
         }
+        *transaction.frame_mut() = frame;
+        self.commit_and_suspend_dialogue(transaction, output, start);
     }
 
     pub(super) fn resume_await_state(
@@ -926,7 +1050,12 @@ fn named_string_seq(args: &[EvaluatedHostArg], name: &str) -> Option<Vec<String>
                 .iter()
                 .map(|value| format!("{}ns", value.as_nanos()))
                 .collect(),
-            DenseSeq::Strings(items) | DenseSeq::EntityRefs(items) => items.as_slice().to_vec(),
+            DenseSeq::Strings(items) => items.as_slice().to_vec(),
+            DenseSeq::EntityRefs(items) => items
+                .as_slice()
+                .iter()
+                .map(|value| value.runtime_label())
+                .collect(),
         },
         value => vec![runtime_value_to_string(value)],
     })
@@ -1035,7 +1164,8 @@ fn runtime_value_to_bytes(value: &RuntimeValue) -> Result<Vec<u8>, String> {
 
 fn runtime_value_to_string(value: &RuntimeValue) -> String {
     match value {
-        RuntimeValue::String(value) | RuntimeValue::EntityRef(value) => value.clone(),
+        RuntimeValue::String(value) => value.clone(),
+        RuntimeValue::EntityRef(value) => value.runtime_label(),
         RuntimeValue::Char(value) => value.to_string(),
         RuntimeValue::Int(value) => value.to_string(),
         RuntimeValue::UInt(value) => value.to_string(),

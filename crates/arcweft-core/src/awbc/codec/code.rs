@@ -7,12 +7,13 @@ use super::AwbcCodecError;
 use super::wire::{Reader, Wire, Writer, wire_enum};
 use crate::awbc::schema::{
     AwbcAwaitObserverResume, AwbcBinaryOp, AwbcBindMode, AwbcBlock, AwbcBlockId, AwbcChoiceId,
-    AwbcConstantId, AwbcContentUnitId, AwbcDialogueValueBinding, AwbcDialogueValueRole,
-    AwbcEffectPlanId, AwbcFrameLayoutId, AwbcFunction, AwbcFunctionFlags, AwbcFunctionId,
-    AwbcFunctionKind, AwbcHostCallId, AwbcInstruction, AwbcIntrinsicId, AwbcMatchArm, AwbcOpcode,
-    AwbcPattern, AwbcPatternId, AwbcPatternRest, AwbcPureHelperId, AwbcRecordPatternField,
-    AwbcRegisterId, AwbcResumePoint, AwbcResumePointId, AwbcSafePointKind, AwbcScopeId,
-    AwbcSignatureId, AwbcSourceMapId, AwbcStreamPlanId, AwbcStringId, AwbcTableRange,
+    AwbcConstantId, AwbcContentUnitId, AwbcDialogueResultTarget, AwbcDialogueValueBinding,
+    AwbcDialogueValueRole, AwbcDropPolicy, AwbcEffectPlanId, AwbcFieldProjection,
+    AwbcFrameLayoutId, AwbcFunction, AwbcFunctionFlags, AwbcFunctionId, AwbcFunctionKind,
+    AwbcHostCallId, AwbcInstruction, AwbcIntrinsicId, AwbcLineOperationId, AwbcMatchArm,
+    AwbcOpcode, AwbcPattern, AwbcPatternId, AwbcPatternRest, AwbcPureHelperId,
+    AwbcRecordPatternField, AwbcRegisterId, AwbcResumePoint, AwbcResumePointId, AwbcSafePointKind,
+    AwbcScopeId, AwbcSignatureId, AwbcSourceMapId, AwbcStreamPlanId, AwbcStringId, AwbcTableRange,
     AwbcTaskPlanId, AwbcTerminator, AwbcTraitMethodId, AwbcTrapCode, AwbcTypeId, AwbcUnaryOp,
 };
 use crate::value::RuntimeAgentConstructor;
@@ -41,14 +42,22 @@ impl Wire for AwbcFunction {
     }
 }
 
-wire_enum!(AwbcFunctionKind, "function kind", {
-    0 => AwbcFunctionKind::Flow,
-    1 => AwbcFunctionKind::PureHelper,
-    2 => AwbcFunctionKind::TraitMethod,
-    3 => AwbcFunctionKind::StreamTransform,
-    6 => AwbcFunctionKind::LineTask,
-    7 => AwbcFunctionKind::Synthetic,
-});
+impl Wire for AwbcFunctionKind {
+    fn write_wire(&self, writer: &mut Writer) -> Result<(), AwbcCodecError> {
+        writer.write_u8(self.encoded());
+        Ok(())
+    }
+
+    fn read_wire(reader: &mut Reader<'_>) -> Result<Self, AwbcCodecError> {
+        let offset = reader.offset();
+        let tag = reader.read_u8()?;
+        Self::from_encoded(tag).ok_or(AwbcCodecError::UnknownTag {
+            kind: "function kind",
+            tag,
+            offset,
+        })
+    }
+}
 
 wire_enum!(AwbcDialogueValueRole, "dialogue value role", {
     0 => AwbcDialogueValueRole::Interpolation,
@@ -83,6 +92,22 @@ impl Wire for AwbcDialogueValueBinding {
     }
 }
 
+impl Wire for AwbcDialogueResultTarget {
+    fn write_wire(&self, writer: &mut Writer) -> Result<(), AwbcCodecError> {
+        self.ty.write_wire(writer)?;
+        self.pattern.write_wire(writer)?;
+        self.destination.write_wire(writer)
+    }
+
+    fn read_wire(reader: &mut Reader<'_>) -> Result<Self, AwbcCodecError> {
+        Ok(Self {
+            ty: AwbcTypeId::read_wire(reader)?,
+            pattern: AwbcPatternId::read_wire(reader)?,
+            destination: AwbcRegisterId::read_wire(reader)?,
+        })
+    }
+}
+
 impl Wire for AwbcBlock {
     fn write_wire(&self, writer: &mut Writer) -> Result<(), AwbcCodecError> {
         self.owner.write_wire(writer)?;
@@ -103,6 +128,47 @@ impl Wire for AwbcBlock {
     }
 }
 
+impl Wire for AwbcFieldProjection {
+    fn write_wire(&self, writer: &mut Writer) -> Result<(), AwbcCodecError> {
+        match self {
+            Self::Named(field) => {
+                writer.write_u8(0);
+                field.write_wire(writer)?;
+            }
+            Self::OpaqueRecord {
+                owner,
+                field,
+                field_type,
+            } => {
+                writer.write_u8(1);
+                owner.write_wire(writer)?;
+                field.write_wire(writer)?;
+                field_type.write_wire(writer)?;
+            }
+        }
+        Ok(())
+    }
+
+    fn read_wire(reader: &mut Reader<'_>) -> Result<Self, AwbcCodecError> {
+        let offset = reader.offset();
+        Ok(match reader.read_u8()? {
+            0 => Self::Named(AwbcStringId::read_wire(reader)?),
+            1 => Self::OpaqueRecord {
+                owner: AwbcTypeId::read_wire(reader)?,
+                field: u32::read_wire(reader)?,
+                field_type: AwbcTypeId::read_wire(reader)?,
+            },
+            tag => {
+                return Err(AwbcCodecError::UnknownTag {
+                    kind: "field projection",
+                    tag,
+                    offset,
+                });
+            }
+        })
+    }
+}
+
 impl Wire for AwbcInstruction {
     fn write_wire(&self, writer: &mut Writer) -> Result<(), AwbcCodecError> {
         writer.write_u8(self.opcode().encoded());
@@ -112,11 +178,15 @@ impl Wire for AwbcInstruction {
                 dst.write_wire(writer)?;
                 constant.write_wire(writer)?;
             }
-            Self::Move { dst, src } => {
+            Self::Move { dst, src } | Self::CopyValue { dst, src } => {
                 dst.write_wire(writer)?;
                 src.write_wire(writer)?;
             }
-            Self::Clear { register } | Self::Drop { register } => register.write_wire(writer)?,
+            Self::Clear { register } => register.write_wire(writer)?,
+            Self::Drop { register, policy } => {
+                register.write_wire(writer)?;
+                policy.write_wire(writer)?;
+            }
             Self::EnterScope { scope } | Self::ExitScope { scope } => scope.write_wire(writer)?,
             Self::BindPattern {
                 pattern,
@@ -214,19 +284,6 @@ impl Wire for AwbcInstruction {
                 target.write_wire(writer)?;
                 field.write_wire(writer)?;
             }
-            Self::ProjectOpaqueRecordField {
-                dst,
-                target,
-                owner,
-                field,
-                field_type,
-            } => {
-                dst.write_wire(writer)?;
-                target.write_wire(writer)?;
-                owner.write_wire(writer)?;
-                field.write_wire(writer)?;
-                field_type.write_wire(writer)?;
-            }
             Self::Unary { dst, op, src } => {
                 dst.write_wire(writer)?;
                 op.write_wire(writer)?;
@@ -276,6 +333,16 @@ impl Wire for AwbcInstruction {
                 value.write_wire(writer)?;
             }
             Self::StreamClose { stream } => stream.write_wire(writer)?,
+            Self::ExecuteLineOperation {
+                dst,
+                operation,
+                args,
+            } => {
+                dst.write_wire(writer)?;
+                operation.write_wire(writer)?;
+                args.write_wire(writer)?;
+            }
+            Self::CommitDialogueResult { source } => source.write_wire(writer)?,
             Self::AssignRecordField {
                 target,
                 field,
@@ -367,6 +434,10 @@ impl Wire for AwbcInstruction {
                 dst: AwbcRegisterId::read_wire(reader)?,
                 src: AwbcRegisterId::read_wire(reader)?,
             },
+            AwbcOpcode::CopyValue => Self::CopyValue {
+                dst: AwbcRegisterId::read_wire(reader)?,
+                src: AwbcRegisterId::read_wire(reader)?,
+            },
             AwbcOpcode::Clear => Self::Clear {
                 register: AwbcRegisterId::read_wire(reader)?,
             },
@@ -443,14 +514,7 @@ impl Wire for AwbcInstruction {
             AwbcOpcode::ProjectField => Self::ProjectField {
                 dst: AwbcRegisterId::read_wire(reader)?,
                 target: AwbcRegisterId::read_wire(reader)?,
-                field: AwbcStringId::read_wire(reader)?,
-            },
-            AwbcOpcode::ProjectOpaqueRecordField => Self::ProjectOpaqueRecordField {
-                dst: AwbcRegisterId::read_wire(reader)?,
-                target: AwbcRegisterId::read_wire(reader)?,
-                owner: AwbcTypeId::read_wire(reader)?,
-                field: u32::read_wire(reader)?,
-                field_type: AwbcTypeId::read_wire(reader)?,
+                field: AwbcFieldProjection::read_wire(reader)?,
             },
             AwbcOpcode::Unary => Self::Unary {
                 dst: AwbcRegisterId::read_wire(reader)?,
@@ -497,8 +561,17 @@ impl Wire for AwbcInstruction {
             AwbcOpcode::StreamClose => Self::StreamClose {
                 stream: AwbcStreamPlanId::read_wire(reader)?,
             },
+            AwbcOpcode::ExecuteLineOperation => Self::ExecuteLineOperation {
+                dst: AwbcRegisterId::read_wire(reader)?,
+                operation: AwbcLineOperationId::read_wire(reader)?,
+                args: Vec::<AwbcRegisterId>::read_wire(reader)?,
+            },
+            AwbcOpcode::CommitDialogueResult => Self::CommitDialogueResult {
+                source: AwbcRegisterId::read_wire(reader)?,
+            },
             AwbcOpcode::Drop => Self::Drop {
                 register: AwbcRegisterId::read_wire(reader)?,
+                policy: AwbcDropPolicy::read_wire(reader)?,
             },
             AwbcOpcode::AssignRecordField => Self::AssignRecordField {
                 target: AwbcRegisterId::read_wire(reader)?,
@@ -561,6 +634,44 @@ impl Wire for AwbcInstruction {
     }
 }
 
+impl Wire for AwbcDropPolicy {
+    fn write_wire(&self, writer: &mut Writer) -> Result<(), AwbcCodecError> {
+        match self {
+            Self::Default => writer.write_u8(0),
+            Self::Cancel => writer.write_u8(1),
+            Self::Stop { fade } => {
+                writer.write_u8(2);
+                fade.write_wire(writer)?;
+            }
+            Self::Finish => writer.write_u8(3),
+            Self::Release => writer.write_u8(4),
+            Self::Detach => writer.write_u8(5),
+        }
+        Ok(())
+    }
+
+    fn read_wire(reader: &mut Reader<'_>) -> Result<Self, AwbcCodecError> {
+        let offset = reader.offset();
+        Ok(match reader.read_u8()? {
+            0 => Self::Default,
+            1 => Self::Cancel,
+            2 => Self::Stop {
+                fade: AwbcRegisterId::read_wire(reader)?,
+            },
+            3 => Self::Finish,
+            4 => Self::Release,
+            5 => Self::Detach,
+            tag => {
+                return Err(AwbcCodecError::UnknownTag {
+                    kind: "drop policy",
+                    tag,
+                    offset,
+                });
+            }
+        })
+    }
+}
+
 impl Wire for AwbcTerminator {
     fn write_wire(&self, writer: &mut Writer) -> Result<(), AwbcCodecError> {
         writer.write_u8(self.opcode().encoded());
@@ -607,11 +718,13 @@ impl Wire for AwbcTerminator {
                 content,
                 values,
                 line_task_captures,
+                result,
                 resume,
             } => {
                 content.write_wire(writer)?;
                 values.write_wire(writer)?;
                 line_task_captures.write_wire(writer)?;
+                result.write_wire(writer)?;
                 resume.write_wire(writer)?;
             }
             Self::Choice {
@@ -716,6 +829,7 @@ impl Wire for AwbcTerminator {
                 content: AwbcContentUnitId::read_wire(reader)?,
                 values: Vec::<AwbcDialogueValueBinding>::read_wire(reader)?,
                 line_task_captures: Vec::<AwbcRegisterId>::read_wire(reader)?,
+                result: AwbcDialogueResultTarget::read_wire(reader)?,
                 resume: AwbcResumePointId::read_wire(reader)?,
             },
             AwbcOpcode::Choice => Self::Choice {
@@ -755,6 +869,7 @@ impl Wire for AwbcTerminator {
             AwbcOpcode::Nop
             | AwbcOpcode::LoadConst
             | AwbcOpcode::Move
+            | AwbcOpcode::CopyValue
             | AwbcOpcode::Clear
             | AwbcOpcode::EnterScope
             | AwbcOpcode::ExitScope
@@ -772,7 +887,6 @@ impl Wire for AwbcTerminator {
             | AwbcOpcode::ProjectTuple
             | AwbcOpcode::ProjectRecord
             | AwbcOpcode::ProjectField
-            | AwbcOpcode::ProjectOpaqueRecordField
             | AwbcOpcode::Unary
             | AwbcOpcode::Binary
             | AwbcOpcode::CallPureHelper
@@ -783,6 +897,8 @@ impl Wire for AwbcTerminator {
             | AwbcOpcode::SpawnFiber
             | AwbcOpcode::StreamYield
             | AwbcOpcode::StreamClose
+            | AwbcOpcode::ExecuteLineOperation
+            | AwbcOpcode::CommitDialogueResult
             | AwbcOpcode::Drop
             | AwbcOpcode::AssignRecordField
             | AwbcOpcode::CallTraitMethod
@@ -978,7 +1094,7 @@ impl Wire for AwbcPattern {
             },
             1 => Self::Discard,
             2 => Self::Literal(AwbcConstantId::read_wire(reader)?),
-            3 => Self::Entity(AwbcStringId::read_wire(reader)?),
+            3 => Self::Entity(crate::value::RuntimeEntityReference::read_wire(reader)?),
             4 => Self::Tuple(Vec::<AwbcPatternId>::read_wire(reader)?),
             5 => Self::Record {
                 ty: Option::<AwbcTypeId>::read_wire(reader)?,
