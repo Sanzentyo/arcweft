@@ -213,6 +213,22 @@ pub enum RuntimeOpaqueTypeAdmission {
     ProducerWide = 1,
 }
 
+impl RuntimeOpaqueTypeAdmission {
+    #[must_use]
+    pub const fn encoded(self) -> u8 {
+        self as u8
+    }
+
+    #[must_use]
+    pub const fn from_encoded(value: u8) -> Option<Self> {
+        Some(match value {
+            0 => Self::ExactIdentity,
+            1 => Self::ProducerWide,
+            _ => return None,
+        })
+    }
+}
+
 /// Closed checked owner for one producer-validated opaque type.
 #[derive(Clone, Debug, Deserialize, Eq, Hash, Ord, PartialEq, PartialOrd, Serialize)]
 pub struct RuntimeOpaqueTypeOwner {
@@ -1032,7 +1048,7 @@ fn write_checked_type_identity(
             encoder.write_tag(17);
             encoder.write_str(owner.producer().as_str());
             encoder.write_bytes(owner.semantic_identity().as_bytes());
-            encoder.write_u8(owner.admission() as u8);
+            encoder.write_u8(owner.admission().encoded());
             encoder.write_u8(owner.value_class().semantic_tag());
             encoder.write_u8(owner.persistence().semantic_tag());
         }
@@ -1990,6 +2006,24 @@ mod tests {
 
     fn identity(marker: u8) -> RuntimeSemanticTypeId {
         RuntimeSemanticTypeId::from_bytes([marker; 32])
+    }
+
+    #[test]
+    fn opaque_type_admission_tags_are_stable_and_closed() {
+        let cases = [
+            (RuntimeOpaqueTypeAdmission::ExactIdentity, 0),
+            (RuntimeOpaqueTypeAdmission::ProducerWide, 1),
+        ];
+
+        for (admission, tag) in cases {
+            assert_eq!(admission.encoded(), tag);
+            assert_eq!(
+                RuntimeOpaqueTypeAdmission::from_encoded(tag),
+                Some(admission)
+            );
+        }
+        assert_eq!(RuntimeOpaqueTypeAdmission::from_encoded(2), None);
+        assert_eq!(RuntimeOpaqueTypeAdmission::from_encoded(u8::MAX), None);
     }
 
     #[test]

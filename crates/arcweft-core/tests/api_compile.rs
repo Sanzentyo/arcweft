@@ -9,4 +9,5 @@ fn core_identity_boundaries_are_compile_time_closed() {
     cases.compile_fail("tests/ui/record_seq_new_is_absent.rs");
     cases.compile_fail("tests/ui/record_columns_rejects_raw_carriers.rs");
     cases.compile_fail("tests/ui/runtime_flow_invocation_is_affine.rs");
+    cases.compile_fail("tests/ui/removed_awbc_effect_variants_are_absent.rs");
 }

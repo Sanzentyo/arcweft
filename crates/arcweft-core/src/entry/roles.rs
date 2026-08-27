@@ -193,10 +193,10 @@ pub enum RuntimeEntryRoles {
 #[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub struct RootExecutionLimits {
     pub schema: RuntimeSchemaLimits,
-    pub max_commands_per_transition: usize,
-    pub max_command_bytes_per_transition: usize,
-    pub max_pending_events: usize,
-    pub max_pending_commands: usize,
+    pub max_commands_per_transition: u32,
+    pub max_command_bytes_per_transition: u64,
+    pub max_pending_events: u32,
+    pub max_pending_commands: u32,
 }
 
 impl RootExecutionLimits {
@@ -227,9 +227,26 @@ impl RootExecutionLimits {
             && self.max_pending_events > 0
             && self.max_pending_commands > 0
             && self.max_commands_per_transition <= self.max_pending_commands
-            && self.max_commands_per_transition <= u32::MAX as usize
-            && self.max_pending_events <= u32::MAX as usize
-            && self.max_pending_commands <= u32::MAX as usize
+    }
+
+    #[must_use]
+    pub fn permits_transition_commands(self, actual: usize) -> bool {
+        u32::try_from(actual).is_ok_and(|actual| actual <= self.max_commands_per_transition)
+    }
+
+    #[must_use]
+    pub fn permits_transition_command_bytes(self, actual: usize) -> bool {
+        u64::try_from(actual).is_ok_and(|actual| actual <= self.max_command_bytes_per_transition)
+    }
+
+    #[must_use]
+    pub fn permits_pending_events(self, actual: usize) -> bool {
+        u32::try_from(actual).is_ok_and(|actual| actual <= self.max_pending_events)
+    }
+
+    #[must_use]
+    pub fn permits_pending_commands(self, actual: usize) -> bool {
+        u32::try_from(actual).is_ok_and(|actual| actual <= self.max_pending_commands)
     }
 }
 

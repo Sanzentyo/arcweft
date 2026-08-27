@@ -216,7 +216,7 @@ pub enum RootRuntimeError {
     #[error("root-event batch is not valid: {0}")]
     InvalidEvent(#[source] RuntimeSchemaError),
     #[error("root-event queue exceeds the selected runtime limit of {limit}")]
-    EventQueueLimit { limit: usize },
+    EventQueueLimit { limit: u32 },
     #[error("root-event transition sequence is exhausted")]
     TransitionSequenceExhausted,
     #[error("committed root commands must be accepted by the driver before another step")]
@@ -536,7 +536,7 @@ impl RootRuntime {
             .ok_or(RootRuntimeError::EventQueueLimit {
                 limit: self.limits.max_pending_events,
             })?;
-        if pending_events > self.limits.max_pending_events {
+        if !self.limits.permits_pending_events(pending_events) {
             return Err(RootRuntimeError::EventQueueLimit {
                 limit: self.limits.max_pending_events,
             });
@@ -673,7 +673,7 @@ impl RootRuntime {
             .ok_or_else(|| {
                 Self::failure_for(event.sequence, "pending root command count overflows usize")
             })?;
-        if pending_commands > self.limits.max_pending_commands {
+        if !self.limits.permits_pending_commands(pending_commands) {
             return Err(Self::failure_for(
                 event.sequence,
                 "pending root commands exceed the selected runtime limit",
@@ -838,7 +838,7 @@ fn validate_commands(
     contracts: &[RuntimeCommandContract],
     limits: RootExecutionLimits,
 ) -> Result<Vec<RuntimeValueDigest>, String> {
-    if commands.len() > limits.max_commands_per_transition {
+    if !limits.permits_transition_commands(commands.len()) {
         return Err("command count exceeds the per-transition budget".to_owned());
     }
     let mut encoded_bytes = 0_usize;
@@ -860,11 +860,11 @@ fn validate_commands(
             .payload_schema
             .validate_payload(command.payload(), limits.schema)
             .map_err(|error| error.to_string())?;
-        let encoded = canonical_command_bytes(command, limits.schema.max_encoded_bytes)?;
+        let encoded = canonical_command_bytes(command, limits.schema.platform_encoded_bytes())?;
         encoded_bytes = encoded_bytes
             .checked_add(encoded.len())
             .ok_or_else(|| "command byte count overflows usize".to_owned())?;
-        if encoded_bytes > limits.max_command_bytes_per_transition {
+        if !limits.permits_transition_command_bytes(encoded_bytes) {
             return Err("command bytes exceed the per-transition budget".to_owned());
         }
         digests.push(RuntimeValueDigest::from_bytes(
@@ -918,7 +918,7 @@ pub fn validate_replay_safe_payload(
 ) -> Result<RuntimeValueDigest, String> {
     let mut nodes = 0_usize;
     validate_replay_safe_value(&payload.0, limits, 0, &mut nodes)?;
-    let bytes = canonical_runtime_value_bytes(&payload.0, limits.max_encoded_bytes)
+    let bytes = canonical_runtime_value_bytes(&payload.0, limits.platform_encoded_bytes())
         .map_err(|error| error.to_string())?;
     Ok(RuntimeValueDigest::from_bytes(blake3::hash(&bytes).into()))
 }
@@ -929,13 +929,13 @@ fn validate_replay_safe_value(
     depth: usize,
     nodes: &mut usize,
 ) -> Result<(), String> {
-    if depth > limits.max_depth {
+    if !limits.permits_depth(depth) {
         return Err("replay-safe payload exceeds depth budget".to_owned());
     }
     *nodes = nodes
         .checked_add(1)
         .ok_or_else(|| "replay-safe node count overflows usize".to_owned())?;
-    if *nodes > limits.max_nodes {
+    if !limits.permits_nodes(*nodes) {
         return Err("replay-safe payload exceeds node budget".to_owned());
     }
     match value {
@@ -945,16 +945,18 @@ fn validate_replay_safe_value(
         RuntimeValue::F64(value) if !value.is_finite() => {
             Err("replay-safe payload contains non-finite f64".to_owned())
         }
-        RuntimeValue::String(value) if value.len() > limits.max_string_bytes => {
+        RuntimeValue::String(value) if !limits.permits_string_bytes(value.len()) => {
             Err("replay-safe payload exceeds string byte budget".to_owned())
         }
-        RuntimeValue::EntityRef(value) if value.runtime_label().len() > limits.max_string_bytes => {
+        RuntimeValue::EntityRef(value)
+            if !limits.permits_string_bytes(value.runtime_label().len()) =>
+        {
             Err("replay-safe payload exceeds string byte budget".to_owned())
         }
         RuntimeValue::Progress(value)
             if value
                 .label()
-                .is_some_and(|label| label.len() > limits.max_string_bytes) =>
+                .is_some_and(|label| !limits.permits_string_bytes(label.len())) =>
         {
             Err("replay-safe progress label exceeds string byte budget".to_owned())
         }
@@ -966,7 +968,7 @@ fn validate_replay_safe_value(
         }
         RuntimeValue::Seq(values) => {
             let values = values.clone().into_values();
-            if values.len() > limits.max_sequence_items {
+            if !limits.permits_sequence_items(values.len()) {
                 return Err("replay-safe payload exceeds sequence item budget".to_owned());
             }
             for value in &values {
@@ -988,7 +990,7 @@ fn validate_replay_safe_value(
             Ok(())
         }
         RuntimeValue::NominalRecord(record) => {
-            if record.fields().len() > limits.max_sequence_items {
+            if !limits.permits_sequence_items(record.fields().len()) {
                 return Err("replay-safe payload exceeds nominal field budget".to_owned());
             }
             for field in record.fields() {
@@ -1051,16 +1053,16 @@ fn validate_replay_safe_reduction(
     depth: usize,
     nodes: &mut usize,
 ) -> Result<(), String> {
-    if value.owner().producer().as_str().len() > limits.max_string_bytes {
+    if !limits.permits_string_bytes(value.owner().producer().as_str().len()) {
         return Err("replay-safe Reduction producer exceeds string byte budget".to_owned());
     }
-    if value.commands().len() > limits.max_sequence_items {
+    if !limits.permits_sequence_items(value.commands().len()) {
         return Err("replay-safe Reduction exceeds command item budget".to_owned());
     }
     validate_replay_safe_value(value.state(), limits, depth + 1, nodes)?;
     for command in value.commands() {
-        if command.constructor().as_str().len() > limits.max_string_bytes
-            || command.target().as_str().len() > limits.max_string_bytes
+        if !limits.permits_string_bytes(command.constructor().as_str().len())
+            || !limits.permits_string_bytes(command.target().as_str().len())
         {
             return Err(
                 "replay-safe Reduction command identity exceeds string byte budget".to_owned(),
@@ -1077,26 +1079,26 @@ fn validate_replay_safe_agent_value(
     depth: usize,
     nodes: &mut usize,
 ) -> Result<(), String> {
-    if depth.saturating_add(value.structural_nesting_depth()) > limits.max_depth {
+    if !limits.permits_depth(depth.saturating_add(value.structural_nesting_depth())) {
         return Err("replay-safe payload exceeds depth budget".to_owned());
     }
     *nodes = nodes
         .checked_add(value.additional_structural_node_count())
         .ok_or_else(|| "replay-safe node count overflows usize".to_owned())?;
-    if *nodes > limits.max_nodes {
+    if !limits.permits_nodes(*nodes) {
         return Err("replay-safe payload exceeds node budget".to_owned());
     }
     if value
         .text_values()
         .into_iter()
-        .any(|value| value.len() > limits.max_string_bytes)
+        .any(|value| !limits.permits_string_bytes(value.len()))
     {
         return Err("replay-safe payload exceeds string byte budget".to_owned());
     }
     if value
         .predicate_collection_lengths()
         .into_iter()
-        .any(|length| length > limits.max_sequence_items)
+        .any(|length| !limits.permits_sequence_items(length))
     {
         return Err("replay-safe payload exceeds sequence item budget".to_owned());
     }

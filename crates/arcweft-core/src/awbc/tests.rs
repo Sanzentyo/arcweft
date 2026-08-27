@@ -85,6 +85,178 @@ fn minimal_program() -> AwbcProgram {
 }
 
 #[test]
+fn opcode_owner_exhaustively_seals_every_v1_byte_and_family() {
+    use AwbcOpcodeFamily::{CallTask, Ownership, StreamLine, Terminator, Value};
+
+    let expected = [
+        (AwbcOpcode::Nop, 0x00, Value),
+        (AwbcOpcode::LoadConst, 0x01, Value),
+        (AwbcOpcode::MakeTuple, 0x02, Value),
+        (AwbcOpcode::MakeSequence, 0x03, Value),
+        (AwbcOpcode::RepeatSequence, 0x04, Value),
+        (AwbcOpcode::MakeRecord, 0x05, Value),
+        (AwbcOpcode::MakeVariant, 0x06, Value),
+        (AwbcOpcode::MakeFunction, 0x07, Value),
+        (AwbcOpcode::MakeAgent, 0x08, Value),
+        (AwbcOpcode::MakeReductionUnchanged, 0x09, Value),
+        (AwbcOpcode::SequenceLen, 0x0a, Value),
+        (AwbcOpcode::SequenceGet, 0x0b, Value),
+        (AwbcOpcode::SequenceSlice, 0x0c, Value),
+        (AwbcOpcode::SequencePush, 0x0d, Value),
+        (AwbcOpcode::ProjectTuple, 0x0e, Value),
+        (AwbcOpcode::ProjectRecord, 0x0f, Value),
+        (AwbcOpcode::ProjectField, 0x10, Value),
+        (AwbcOpcode::AssignRecordField, 0x11, Value),
+        (AwbcOpcode::TestPattern, 0x12, Value),
+        (AwbcOpcode::Unary, 0x13, Value),
+        (AwbcOpcode::Binary, 0x14, Value),
+        (AwbcOpcode::CallPureHelper, 0x20, CallTask),
+        (AwbcOpcode::CallIntrinsic, 0x21, CallTask),
+        (AwbcOpcode::CallTraitMethod, 0x22, CallTask),
+        (AwbcOpcode::ApplyFunction, 0x23, CallTask),
+        (AwbcOpcode::EnsureContent, 0x24, CallTask),
+        (AwbcOpcode::EmitEffect, 0x25, CallTask),
+        (AwbcOpcode::StartTask, 0x26, CallTask),
+        (AwbcOpcode::SpawnFiber, 0x27, CallTask),
+        (AwbcOpcode::StreamYield, 0x32, StreamLine),
+        (AwbcOpcode::StreamClose, 0x34, StreamLine),
+        (AwbcOpcode::ExecuteLineOperation, 0x35, StreamLine),
+        (AwbcOpcode::CommitDialogueResult, 0x36, StreamLine),
+        (AwbcOpcode::Move, 0x40, Ownership),
+        (AwbcOpcode::CopyValue, 0x41, Ownership),
+        (AwbcOpcode::Clear, 0x42, Ownership),
+        (AwbcOpcode::Drop, 0x43, Ownership),
+        (AwbcOpcode::EnterScope, 0x44, Ownership),
+        (AwbcOpcode::ExitScope, 0x45, Ownership),
+        (AwbcOpcode::BindPattern, 0x46, Ownership),
+        (AwbcOpcode::RegisterCleanup, 0x47, Ownership),
+        (AwbcOpcode::CancelCleanup, 0x48, Ownership),
+        (AwbcOpcode::Jump, 0x80, Terminator),
+        (AwbcOpcode::Branch, 0x81, Terminator),
+        (AwbcOpcode::Match, 0x82, Terminator),
+        (AwbcOpcode::CallFunction, 0x83, Terminator),
+        (AwbcOpcode::GotoStatic, 0x84, Terminator),
+        (AwbcOpcode::GotoDynamic, 0x85, Terminator),
+        (AwbcOpcode::Return, 0x86, Terminator),
+        (AwbcOpcode::HostCall, 0x88, Terminator),
+        (AwbcOpcode::Await, 0x89, Terminator),
+        (AwbcOpcode::AwaitMany, 0x8a, Terminator),
+        (AwbcOpcode::BudgetYield, 0x8b, Terminator),
+        (AwbcOpcode::Dialogue, 0x98, Terminator),
+        (AwbcOpcode::Choice, 0x99, Terminator),
+        (AwbcOpcode::Trap, 0xa0, Terminator),
+        (AwbcOpcode::Unreachable, 0xa1, Terminator),
+    ];
+    assert_eq!(AwbcOpcode::ALL, expected.map(|(opcode, _, _)| opcode));
+
+    for (opcode, encoded, family) in expected {
+        assert_eq!(opcode.encoded(), encoded);
+        assert_eq!(opcode.family(), family);
+        assert_eq!(opcode.class(), family.class());
+        assert_eq!(AwbcOpcode::from_encoded(encoded), Some(opcode));
+        assert_eq!(
+            serde_json::to_value(opcode).expect("opcode serializes numerically"),
+            serde_json::json!(encoded)
+        );
+        assert_eq!(
+            serde_json::from_value::<AwbcOpcode>(serde_json::json!(encoded))
+                .expect("opcode numeric Serde round trip"),
+            opcode
+        );
+    }
+
+    for encoded in u8::MIN..=u8::MAX {
+        let expected = AwbcOpcode::ALL
+            .iter()
+            .copied()
+            .find(|opcode| opcode.encoded() == encoded);
+        assert_eq!(AwbcOpcode::from_encoded(encoded), expected);
+    }
+    assert!(serde_json::from_value::<AwbcOpcode>(serde_json::json!(0xff)).is_err());
+}
+
+#[test]
+fn function_kind_numeric_inventory_is_total_and_closed() {
+    let expected = [
+        AwbcFunctionKind::Flow,
+        AwbcFunctionKind::Ordinary,
+        AwbcFunctionKind::PureHelper,
+        AwbcFunctionKind::TraitMethod,
+        AwbcFunctionKind::Synthetic,
+        AwbcFunctionKind::GeneratorProducer,
+        AwbcFunctionKind::StreamTransform,
+        AwbcFunctionKind::LineActivation,
+        AwbcFunctionKind::LineTask,
+    ];
+    assert_eq!(AwbcFunctionKind::ALL, expected);
+    for (encoded, kind) in expected.into_iter().enumerate() {
+        let encoded = u8::try_from(encoded).expect("bounded function kind inventory");
+        assert_eq!(kind.encoded(), encoded);
+        assert_eq!(AwbcFunctionKind::from_encoded(encoded), Some(kind));
+        assert_eq!(
+            serde_json::to_value(kind).expect("function kind serializes numerically"),
+            serde_json::json!(encoded)
+        );
+    }
+    for encoded in 9..=u8::MAX {
+        assert_eq!(AwbcFunctionKind::from_encoded(encoded), None);
+    }
+}
+
+#[test]
+fn awbc_owned_unit_enum_tags_are_total_and_numeric() {
+    macro_rules! assert_owner {
+        ($ty:ty) => {{
+            for value in <$ty>::ALL.iter().copied() {
+                let encoded = value.encoded();
+                assert_eq!(<$ty>::from_encoded(encoded), Some(value));
+                assert_eq!(
+                    serde_json::to_value(value).expect("AWBC enum serializes numerically"),
+                    serde_json::json!(encoded)
+                );
+                assert_eq!(
+                    serde_json::from_value::<$ty>(serde_json::json!(encoded))
+                        .expect("AWBC enum numeric Serde round trip"),
+                    value
+                );
+            }
+            for encoded in u8::MIN..=u8::MAX {
+                let expected = <$ty>::ALL
+                    .iter()
+                    .copied()
+                    .find(|value| value.encoded() == encoded);
+                assert_eq!(<$ty>::from_encoded(encoded), expected);
+            }
+        }};
+    }
+
+    assert_owner!(AwbcSignedIntKind);
+    assert_owner!(AwbcUnsignedIntKind);
+    assert_owner!(AwbcFrameSlotRole);
+    assert_owner!(AwbcDialogueValueRole);
+    assert_owner!(AwbcTraitReceiverMode);
+    assert_owner!(AwbcBindMode);
+    assert_owner!(AwbcUnaryOp);
+    assert_owner!(AwbcBinaryOp);
+    assert_owner!(AwbcSafePointKind);
+    assert_owner!(AwbcTrapCode);
+    assert_owner!(AwbcHostCallMode);
+    assert_owner!(AwbcTaskClass);
+    assert_owner!(AwbcTaskPolicy);
+    assert_owner!(AwbcEffectKind);
+    assert_owner!(AwbcResourceAccessMode);
+    assert_owner!(AwbcReduceOp);
+    assert_owner!(AwbcChildCleanup);
+    assert_owner!(AwbcPresentationCleanup);
+    assert_owner!(AwbcAudioCleanup);
+    assert_owner!(AwbcParallelPolicy);
+    assert_owner!(AwbcChildJoinPolicy);
+    assert_owner!(AwbcChildCancelPolicy);
+    assert_owner!(AwbcPureHelperOrigin);
+    assert_owner!(AwbcResourceResidency);
+}
+
+#[test]
 fn function_kind_and_producer_role_matrix_is_closed() {
     assert_eq!(
         AwbcFunctionFlags::empty().validate_for_kind(AwbcFunctionKind::Synthetic),
@@ -135,6 +307,48 @@ fn function_kind_and_producer_role_matrix_is_closed() {
         Err(AwbcFunctionRoleError::ConflictingProducerRoles)
     );
     assert!(AwbcFunctionFlags::try_from_bits(AwbcFunctionFlags::KNOWN_MASK + 1).is_err());
+
+    let mut observed_mask = 0_u32;
+    for (index, flag) in AwbcFunctionFlag::ALL.iter().copied().enumerate() {
+        let expected = 1_u32 << u32::try_from(index).expect("bounded function flag inventory");
+        assert_eq!(flag.mask(), expected);
+        assert_eq!(observed_mask & flag.mask(), 0);
+        observed_mask |= flag.mask();
+    }
+    assert_eq!(observed_mask, AwbcFunctionFlags::KNOWN_MASK);
+
+    for bits in 0..=AwbcFunctionFlags::KNOWN_MASK {
+        let flags = AwbcFunctionFlags::try_from_bits(bits).expect("known flag subset");
+        for kind in AwbcFunctionKind::ALL.iter().copied() {
+            let need = flags.contains(AwbcFunctionFlag::NeedProducer);
+            let stream = flags.contains(AwbcFunctionFlag::OwnsStreamProducer);
+            let expected = if need && stream {
+                Err(AwbcFunctionRoleError::ConflictingProducerRoles)
+            } else if need && kind != AwbcFunctionKind::Synthetic {
+                Err(AwbcFunctionRoleError::NeedProducerKind { actual: kind })
+            } else if need
+                && (!flags.contains(AwbcFunctionFlag::Deterministic)
+                    || !flags.contains(AwbcFunctionFlag::MayAllocate)
+                    || flags.contains(AwbcFunctionFlag::MaySuspend)
+                    || flags.contains(AwbcFunctionFlag::HasDynamicTarget))
+            {
+                Err(AwbcFunctionRoleError::NeedProducerFlags)
+            } else if kind == AwbcFunctionKind::GeneratorProducer
+                && (!stream || !flags.contains(AwbcFunctionFlag::MaySuspend))
+            {
+                Err(AwbcFunctionRoleError::StreamProducerFlags)
+            } else if stream && kind != AwbcFunctionKind::GeneratorProducer {
+                Err(AwbcFunctionRoleError::StreamProducerKind { actual: kind })
+            } else {
+                Ok(())
+            };
+            assert_eq!(
+                flags.validate_for_kind(kind),
+                expected,
+                "{kind:?} {bits:#x}"
+            );
+        }
+    }
 }
 
 #[test]
@@ -153,6 +367,56 @@ fn verifier_rejects_function_kind_role_mismatch_at_the_function_owner() {
                 actual: AwbcFunctionKind::Flow
             }
         })
+    ));
+}
+
+#[test]
+fn removed_register_handle_effect_row_cannot_reenter_through_dense_tag_zero() {
+    let mut program = minimal_program();
+    program.constants = vec![AwbcConstant::Unit, AwbcConstant::Unit];
+    program.effect_plans = vec![AwbcEffectPlan {
+        kind: AwbcEffectKind::Wait,
+        signature: AwbcSignatureId(0),
+        capability: None,
+        audio: None,
+        static_args: vec![AwbcConstantId(0), AwbcConstantId(1)],
+        resources: Vec::new(),
+    }];
+
+    let encoded = program
+        .encode_canonical()
+        .expect("encode complete former RegisterHandle row shape");
+    let decoded = AwbcProgram::decode_canonical(&encoded, AwbcDecodeBudget::default())
+        .expect("dense v1 tag zero decodes only as Wait");
+    assert_eq!(decoded.effect_plans[0].kind, AwbcEffectKind::Wait);
+    assert!(matches!(
+        decoded.verify(AwbcVerifyBudget::default(), AwbcVerifyContext::default()),
+        Err(AwbcVerifyError::MalformedEffectPayload { effect: 0, .. })
+    ));
+}
+
+#[test]
+fn removed_drop_handle_effect_row_cannot_reenter_through_dense_tag_one() {
+    let mut program = minimal_program();
+    program.constants = vec![AwbcConstant::Unit];
+    program.effect_plans = vec![AwbcEffectPlan {
+        kind: AwbcEffectKind::Audio,
+        signature: AwbcSignatureId(0),
+        capability: None,
+        audio: None,
+        static_args: vec![AwbcConstantId(0)],
+        resources: Vec::new(),
+    }];
+
+    let encoded = program
+        .encode_canonical()
+        .expect("encode complete former DropHandle row shape");
+    let decoded = AwbcProgram::decode_canonical(&encoded, AwbcDecodeBudget::default())
+        .expect("dense v1 tag one decodes only as Audio");
+    assert_eq!(decoded.effect_plans[0].kind, AwbcEffectKind::Audio);
+    assert!(matches!(
+        decoded.verify(AwbcVerifyBudget::default(), AwbcVerifyContext::default()),
+        Err(AwbcVerifyError::MalformedAudioPayload { effect: 0, .. })
     ));
 }
 
@@ -246,6 +510,105 @@ fn typed_drop_is_an_exact_vm_transaction_boundary() {
             .collect::<Vec<_>>(),
         vec![crate::effect::RuntimeDropPolicy::Finish]
     );
+}
+
+#[test]
+fn execute_line_operation_codec_row_rejects_a_missing_typed_operation() {
+    let mut program = minimal_program();
+    program.instructions = vec![AwbcInstruction::ExecuteLineOperation {
+        dst: AwbcRegisterId(0),
+        operation: AwbcLineOperationId(0),
+        args: Vec::new(),
+    }];
+    program.blocks[0].instructions = AwbcTableRange::new(0, 1);
+
+    let encoded = program
+        .encode_canonical()
+        .expect("encode ExecuteLineOperation row");
+    let decoded = AwbcProgram::decode_canonical(&encoded, AwbcDecodeBudget::default())
+        .expect("decode typed ExecuteLineOperation row");
+    assert!(matches!(
+        decoded.instructions.as_slice(),
+        [AwbcInstruction::ExecuteLineOperation { .. }]
+    ));
+    assert!(matches!(
+        decoded.verify(AwbcVerifyBudget::default(), AwbcVerifyContext::default()),
+        Err(AwbcVerifyError::IndexOutOfBounds {
+            table: "line_operations",
+            index: 0,
+            ..
+        })
+    ));
+}
+
+#[test]
+fn commit_dialogue_result_codec_row_rejects_a_non_activation_owner() {
+    let mut program = minimal_program();
+    program.instructions = vec![AwbcInstruction::CommitDialogueResult {
+        source: AwbcRegisterId(0),
+    }];
+    program.blocks[0].instructions = AwbcTableRange::new(0, 1);
+
+    let encoded = program
+        .encode_canonical()
+        .expect("encode CommitDialogueResult row");
+    let decoded = AwbcProgram::decode_canonical(&encoded, AwbcDecodeBudget::default())
+        .expect("decode typed CommitDialogueResult row");
+    assert!(matches!(
+        decoded.instructions.as_slice(),
+        [AwbcInstruction::CommitDialogueResult { .. }]
+    ));
+    assert!(matches!(
+        decoded.verify(AwbcVerifyBudget::default(), AwbcVerifyContext::default()),
+        Err(AwbcVerifyError::InvalidInvariant { .. })
+    ));
+}
+
+#[test]
+fn typed_drop_stop_codec_row_rejects_a_non_duration_fade() {
+    let mut program = minimal_program();
+    program.runtime_types = vec![runtime_type(1, AwbcRuntimeTypeShape::Unit)];
+    program.constants = vec![AwbcConstant::Unit];
+    program.frame_layouts[0] = AwbcFrameLayout {
+        slots: vec![AwbcFrameSlot {
+            name: None,
+            ty: AwbcTypeId(0),
+            role: AwbcFrameSlotRole::Local,
+            scope_depth: 0,
+        }],
+        max_scope_depth: 0,
+    };
+    program.instructions = vec![
+        AwbcInstruction::LoadConst {
+            dst: AwbcRegisterId(0),
+            constant: AwbcConstantId(0),
+        },
+        AwbcInstruction::Drop {
+            register: AwbcRegisterId(0),
+            policy: AwbcDropPolicy::Stop {
+                fade: AwbcRegisterId(0),
+            },
+        },
+    ];
+    program.blocks[0].instructions = AwbcTableRange::new(0, 2);
+
+    let encoded = program.encode_canonical().expect("encode typed Drop row");
+    let decoded = AwbcProgram::decode_canonical(&encoded, AwbcDecodeBudget::default())
+        .expect("decode typed Drop row");
+    assert!(matches!(
+        decoded.instructions.as_slice(),
+        [
+            _,
+            AwbcInstruction::Drop {
+                policy: AwbcDropPolicy::Stop { .. },
+                ..
+            }
+        ]
+    ));
+    assert!(matches!(
+        decoded.verify(AwbcVerifyBudget::default(), AwbcVerifyContext::default()),
+        Err(AwbcVerifyError::InvalidInvariant { .. })
+    ));
 }
 
 #[test]
@@ -1061,9 +1424,20 @@ fn canonical_codec_is_deterministic_and_round_trips() {
     let first = program.encode_canonical().expect("encode AWBC");
     let second = program.encode_canonical().expect("encode AWBC again");
     assert_eq!(first, second);
+    let payload_len = u64::from_le_bytes(first[12..20].try_into().expect("fixed envelope width"));
+    assert_eq!(
+        payload_len,
+        u64::try_from(first.len() - 20).expect("encoded payload length fits u64")
+    );
     let decoded = AwbcProgram::decode_canonical(&first, AwbcDecodeBudget::default())
         .expect("decode canonical AWBC");
     assert_eq!(decoded, program);
+    assert_eq!(
+        decoded
+            .encode_canonical()
+            .expect("re-encode canonical AWBC"),
+        first
+    );
     decoded
         .verify(AwbcVerifyBudget::default(), AwbcVerifyContext::default())
         .expect("verify decoded AWBC");

@@ -4,14 +4,14 @@
 )]
 
 use super::AwbcCodecError;
-use super::wire::{Reader, Wire, Writer, wire_enum};
+use super::wire::{Reader, Wire, Writer};
 use crate::awbc::schema::{
     AwbcAwaitObserverResume, AwbcBinaryOp, AwbcBindMode, AwbcBlock, AwbcBlockId, AwbcChoiceId,
     AwbcConstantId, AwbcContentUnitId, AwbcDialogueResultTarget, AwbcDialogueValueBinding,
     AwbcDialogueValueRole, AwbcDropPolicy, AwbcEffectPlanId, AwbcFieldProjection,
     AwbcFrameLayoutId, AwbcFunction, AwbcFunctionFlags, AwbcFunctionId, AwbcFunctionKind,
     AwbcHostCallId, AwbcInstruction, AwbcIntrinsicId, AwbcLineOperationId, AwbcMatchArm,
-    AwbcOpcode, AwbcPattern, AwbcPatternId, AwbcPatternRest, AwbcPureHelperId,
+    AwbcOpcode, AwbcOpcodeClass, AwbcPattern, AwbcPatternId, AwbcPatternRest, AwbcPureHelperId,
     AwbcRecordPatternField, AwbcRegisterId, AwbcResumePoint, AwbcResumePointId, AwbcSafePointKind,
     AwbcScopeId, AwbcSignatureId, AwbcSourceMapId, AwbcStreamPlanId, AwbcStringId, AwbcTableRange,
     AwbcTaskPlanId, AwbcTerminator, AwbcTraitMethodId, AwbcTrapCode, AwbcTypeId, AwbcUnaryOp,
@@ -59,10 +59,22 @@ impl Wire for AwbcFunctionKind {
     }
 }
 
-wire_enum!(AwbcDialogueValueRole, "dialogue value role", {
-    0 => AwbcDialogueValueRole::Interpolation,
-    1 => AwbcDialogueValueRole::Condition,
-});
+impl Wire for AwbcDialogueValueRole {
+    fn write_wire(&self, writer: &mut Writer) -> Result<(), AwbcCodecError> {
+        writer.write_u8(self.encoded());
+        Ok(())
+    }
+
+    fn read_wire(reader: &mut Reader<'_>) -> Result<Self, AwbcCodecError> {
+        let offset = reader.offset();
+        let tag = reader.read_u8()?;
+        Self::from_encoded(tag).ok_or(AwbcCodecError::UnknownTag {
+            kind: "dialogue value role",
+            tag,
+            offset,
+        })
+    }
+}
 
 impl Wire for AwbcDialogueValueBinding {
     fn write_wire(&self, writer: &mut Writer) -> Result<(), AwbcCodecError> {
@@ -417,7 +429,7 @@ impl Wire for AwbcInstruction {
                 offset,
             });
         };
-        if opcode.is_terminator() {
+        if opcode.class() != AwbcOpcodeClass::Instruction {
             return Err(AwbcCodecError::UnknownTag {
                 kind: "instruction opcode",
                 tag: encoded,
@@ -790,7 +802,7 @@ impl Wire for AwbcTerminator {
                 offset,
             });
         };
-        if !opcode.is_terminator() {
+        if opcode.class() != AwbcOpcodeClass::Terminator {
             return Err(AwbcCodecError::UnknownTag {
                 kind: "terminator opcode",
                 tag: encoded,
@@ -928,72 +940,90 @@ impl Wire for AwbcAwaitObserverResume {
     }
 }
 
-wire_enum!(AwbcBindMode, "bind mode", {
-    0 => AwbcBindMode::Declare,
-    1 => AwbcBindMode::Assign,
-});
+impl Wire for AwbcBindMode {
+    fn write_wire(&self, writer: &mut Writer) -> Result<(), AwbcCodecError> {
+        writer.write_u8(self.encoded());
+        Ok(())
+    }
 
-wire_enum!(AwbcUnaryOp, "unary operator", {
-    0 => AwbcUnaryOp::Not,
-    1 => AwbcUnaryOp::Neg,
-});
+    fn read_wire(reader: &mut Reader<'_>) -> Result<Self, AwbcCodecError> {
+        let offset = reader.offset();
+        let tag = reader.read_u8()?;
+        Self::from_encoded(tag).ok_or(AwbcCodecError::UnknownTag {
+            kind: "bind mode",
+            tag,
+            offset,
+        })
+    }
+}
 
-wire_enum!(AwbcBinaryOp, "binary operator", {
-    0 => AwbcBinaryOp::Eq,
-    1 => AwbcBinaryOp::Ne,
-    2 => AwbcBinaryOp::Lt,
-    3 => AwbcBinaryOp::Le,
-    4 => AwbcBinaryOp::Gt,
-    5 => AwbcBinaryOp::Ge,
-    6 => AwbcBinaryOp::Add,
-    7 => AwbcBinaryOp::Sub,
-    8 => AwbcBinaryOp::Mul,
-    9 => AwbcBinaryOp::Div,
-    10 => AwbcBinaryOp::And,
-    11 => AwbcBinaryOp::Or,
-});
+impl Wire for AwbcUnaryOp {
+    fn write_wire(&self, writer: &mut Writer) -> Result<(), AwbcCodecError> {
+        writer.write_u8(self.encoded());
+        Ok(())
+    }
 
-wire_enum!(RuntimeAgentConstructor, "Agent constructor", {
-    0 => RuntimeAgentConstructor::ChoiceAction,
-    1 => RuntimeAgentConstructor::CaptureViewport,
-    2 => RuntimeAgentConstructor::CaptureLayer,
-    3 => RuntimeAgentConstructor::CaptureObject,
-    4 => RuntimeAgentConstructor::StatePath,
-    5 => RuntimeAgentConstructor::ObservationPath,
-    6 => RuntimeAgentConstructor::ProbeSignal,
-    7 => RuntimeAgentConstructor::ProbeMetric,
-    8 => RuntimeAgentConstructor::ProbeState,
-    9 => RuntimeAgentConstructor::ProbeObservation,
-    10 => RuntimeAgentConstructor::Diagnostics,
-    11 => RuntimeAgentConstructor::PredicateExists,
-    12 => RuntimeAgentConstructor::PredicateActionEnabled,
-    13 => RuntimeAgentConstructor::PredicateDiagnosticsHasError,
-    14 => RuntimeAgentConstructor::PredicateAll,
-    15 => RuntimeAgentConstructor::PredicateAny,
-    16 => RuntimeAgentConstructor::PredicateNot,
-    17 => RuntimeAgentConstructor::PredicateEq,
-    18 => RuntimeAgentConstructor::PredicateNotEq,
-    19 => RuntimeAgentConstructor::PredicateGreater,
-    20 => RuntimeAgentConstructor::PredicateGreaterOrEqual,
-    21 => RuntimeAgentConstructor::PredicateLess,
-    22 => RuntimeAgentConstructor::PredicateLessOrEqual,
-    23 => RuntimeAgentConstructor::ViewportPoint,
-});
+    fn read_wire(reader: &mut Reader<'_>) -> Result<Self, AwbcCodecError> {
+        let offset = reader.offset();
+        let tag = reader.read_u8()?;
+        Self::from_encoded(tag).ok_or(AwbcCodecError::UnknownTag {
+            kind: "unary operator",
+            tag,
+            offset,
+        })
+    }
+}
 
-wire_enum!(AwbcSafePointKind, "safe point kind", {
-    0 => AwbcSafePointKind::FlowEntry,
-    1 => AwbcSafePointKind::CallableBoundary,
-    2 => AwbcSafePointKind::Dialogue,
-    3 => AwbcSafePointKind::Choice,
-    4 => AwbcSafePointKind::Await,
-    5 => AwbcSafePointKind::AwaitMany,
-    6 => AwbcSafePointKind::HostCall,
-    7 => AwbcSafePointKind::LoopBackedge,
-    8 => AwbcSafePointKind::BudgetYield,
-    9 => AwbcSafePointKind::Return,
-    10 => AwbcSafePointKind::Trap,
-    11 => AwbcSafePointKind::None,
-});
+impl Wire for AwbcBinaryOp {
+    fn write_wire(&self, writer: &mut Writer) -> Result<(), AwbcCodecError> {
+        writer.write_u8(self.encoded());
+        Ok(())
+    }
+
+    fn read_wire(reader: &mut Reader<'_>) -> Result<Self, AwbcCodecError> {
+        let offset = reader.offset();
+        let tag = reader.read_u8()?;
+        Self::from_encoded(tag).ok_or(AwbcCodecError::UnknownTag {
+            kind: "binary operator",
+            tag,
+            offset,
+        })
+    }
+}
+
+impl Wire for RuntimeAgentConstructor {
+    fn write_wire(&self, writer: &mut Writer) -> Result<(), AwbcCodecError> {
+        writer.write_u8(self.semantic_tag());
+        Ok(())
+    }
+
+    fn read_wire(reader: &mut Reader<'_>) -> Result<Self, AwbcCodecError> {
+        let offset = reader.offset();
+        let tag = reader.read_u8()?;
+        Self::from_semantic_tag(tag).ok_or(AwbcCodecError::UnknownTag {
+            kind: "Agent constructor",
+            tag,
+            offset,
+        })
+    }
+}
+
+impl Wire for AwbcSafePointKind {
+    fn write_wire(&self, writer: &mut Writer) -> Result<(), AwbcCodecError> {
+        writer.write_u8(self.encoded());
+        Ok(())
+    }
+
+    fn read_wire(reader: &mut Reader<'_>) -> Result<Self, AwbcCodecError> {
+        let offset = reader.offset();
+        let tag = reader.read_u8()?;
+        Self::from_encoded(tag).ok_or(AwbcCodecError::UnknownTag {
+            kind: "safe point kind",
+            tag,
+            offset,
+        })
+    }
+}
 
 impl Wire for AwbcResumePoint {
     fn write_wire(&self, writer: &mut Writer) -> Result<(), AwbcCodecError> {
@@ -1013,18 +1043,22 @@ impl Wire for AwbcResumePoint {
     }
 }
 
-wire_enum!(AwbcTrapCode, "trap code", {
-    0 => AwbcTrapCode::TypeMismatch,
-    1 => AwbcTrapCode::UninitializedRegister,
-    2 => AwbcTrapCode::InvalidIndex,
-    3 => AwbcTrapCode::DivisionByZero,
-    4 => AwbcTrapCode::PatternMismatch,
-    5 => AwbcTrapCode::MissingDynamicTarget,
-    6 => AwbcTrapCode::HostAbiMismatch,
-    7 => AwbcTrapCode::CapabilityDenied,
-    8 => AwbcTrapCode::ExplicitPanic,
-    9 => AwbcTrapCode::InternalInvariant,
-});
+impl Wire for AwbcTrapCode {
+    fn write_wire(&self, writer: &mut Writer) -> Result<(), AwbcCodecError> {
+        writer.write_u8(self.encoded());
+        Ok(())
+    }
+
+    fn read_wire(reader: &mut Reader<'_>) -> Result<Self, AwbcCodecError> {
+        let offset = reader.offset();
+        let tag = reader.read_u8()?;
+        Self::from_encoded(tag).ok_or(AwbcCodecError::UnknownTag {
+            kind: "trap code",
+            tag,
+            offset,
+        })
+    }
+}
 
 impl Wire for AwbcPattern {
     fn write_wire(&self, writer: &mut Writer) -> Result<(), AwbcCodecError> {
@@ -1181,5 +1215,64 @@ impl Wire for AwbcMatchArm {
             guard: Option::<AwbcFunctionId>::read_wire(reader)?,
             target: AwbcBlockId::read_wire(reader)?,
         })
+    }
+}
+
+#[cfg(test)]
+mod opcode_class_tests {
+    use super::*;
+    use crate::awbc::codec::AwbcDecodeBudget;
+
+    #[test]
+    fn instruction_decoder_rejects_a_known_terminator_opcode() {
+        let bytes = [AwbcOpcode::Jump.encoded()];
+        let mut reader = Reader::new(&bytes, &AwbcDecodeBudget::default());
+        assert_eq!(
+            AwbcInstruction::read_wire(&mut reader)
+                .expect_err("terminator cannot enter instruction table"),
+            AwbcCodecError::UnknownTag {
+                kind: "instruction opcode",
+                tag: AwbcOpcode::Jump.encoded(),
+                offset: 0,
+            }
+        );
+    }
+
+    #[test]
+    fn terminator_decoder_rejects_a_known_instruction_opcode() {
+        let bytes = [AwbcOpcode::Nop.encoded()];
+        let mut reader = Reader::new(&bytes, &AwbcDecodeBudget::default());
+        assert_eq!(
+            AwbcTerminator::read_wire(&mut reader)
+                .expect_err("instruction cannot enter terminator table"),
+            AwbcCodecError::UnknownTag {
+                kind: "terminator opcode",
+                tag: AwbcOpcode::Nop.encoded(),
+                offset: 0,
+            }
+        );
+    }
+
+    #[test]
+    fn both_opcode_decoders_reject_an_unassigned_byte() {
+        let bytes = [0xff];
+        let mut instruction = Reader::new(&bytes, &AwbcDecodeBudget::default());
+        assert!(matches!(
+            AwbcInstruction::read_wire(&mut instruction),
+            Err(AwbcCodecError::UnknownTag {
+                kind: "instruction opcode",
+                tag: 0xff,
+                offset: 0,
+            })
+        ));
+        let mut terminator = Reader::new(&bytes, &AwbcDecodeBudget::default());
+        assert!(matches!(
+            AwbcTerminator::read_wire(&mut terminator),
+            Err(AwbcCodecError::UnknownTag {
+                kind: "terminator opcode",
+                tag: 0xff,
+                offset: 0,
+            })
+        ));
     }
 }

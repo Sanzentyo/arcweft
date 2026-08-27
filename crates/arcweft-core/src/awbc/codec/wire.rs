@@ -1,5 +1,6 @@
 use super::{AwbcCodecError, AwbcDecodeBudget};
 use crate::canonical_varint::{CanonicalU32VarintError, decode_u32, encode_u32};
+use crate::runtime_id::RuntimeIdPath;
 
 pub(super) trait Wire: Sized {
     fn write_wire(&self, writer: &mut Writer) -> Result<(), AwbcCodecError>;
@@ -12,8 +13,32 @@ pub(super) struct Writer {
 }
 
 impl Writer {
-    pub(super) fn finish(self) -> Vec<u8> {
+    pub(super) fn with_capacity(capacity: usize) -> Self {
+        Self {
+            bytes: Vec::with_capacity(capacity),
+        }
+    }
+
+    pub(super) fn into_bytes(self) -> Vec<u8> {
         self.bytes
+    }
+
+    pub(super) const fn len(&self) -> usize {
+        self.bytes.len()
+    }
+
+    pub(super) fn transaction<T>(
+        &mut self,
+        write: impl FnOnce(&mut Self) -> Result<T, AwbcCodecError>,
+    ) -> Result<T, AwbcCodecError> {
+        let checkpoint = self.bytes.len();
+        match write(self) {
+            Ok(value) => Ok(value),
+            Err(error) => {
+                self.bytes.truncate(checkpoint);
+                Err(error)
+            }
+        }
     }
 
     pub(super) fn write_u8(&mut self, value: u8) {
@@ -28,7 +53,7 @@ impl Writer {
         self.write_bytes(&value.to_le_bytes());
     }
 
-    pub(super) fn write_u32_le(&mut self, value: u32) {
+    pub(super) fn write_f32_bits(&mut self, value: u32) {
         self.write_bytes(&value.to_le_bytes());
     }
 
@@ -36,11 +61,11 @@ impl Writer {
         self.write_bytes(&value.to_le_bytes());
     }
 
-    pub(super) fn write_i32_le(&mut self, value: i32) {
+    pub(super) fn write_f64_bits(&mut self, value: u64) {
         self.write_bytes(&value.to_le_bytes());
     }
 
-    pub(super) fn write_i128_le(&mut self, value: i128) {
+    pub(super) fn write_i32_le(&mut self, value: i32) {
         self.write_bytes(&value.to_le_bytes());
     }
 
@@ -60,6 +85,44 @@ impl Writer {
         for value in values {
             value.write_wire(self)?;
         }
+        Ok(())
+    }
+
+    pub(super) fn write_str(&mut self, value: &str) -> Result<(), AwbcCodecError> {
+        self.write_len(value.len())?;
+        self.write_bytes(value.as_bytes());
+        Ok(())
+    }
+
+    pub(super) fn write_runtime_id_path(
+        &mut self,
+        path: &RuntimeIdPath,
+    ) -> Result<(), AwbcCodecError> {
+        let segments = path.segments();
+        let separators = segments.len().saturating_sub(1);
+        let len = segments.iter().try_fold(separators, |len, segment| {
+            len.checked_add(segment.as_str().len())
+                .ok_or(AwbcCodecError::LengthOverflow)
+        })?;
+        self.write_len(len)?;
+        for (index, segment) in segments.iter().enumerate() {
+            if index > 0 {
+                self.write_u8(b'.');
+            }
+            self.write_bytes(segment.as_str().as_bytes());
+        }
+        Ok(())
+    }
+
+    pub(super) fn patch_u64_le(&mut self, offset: usize, value: u64) -> Result<(), AwbcCodecError> {
+        let end = offset
+            .checked_add(std::mem::size_of::<u64>())
+            .ok_or(AwbcCodecError::LengthOverflow)?;
+        let destination = self
+            .bytes
+            .get_mut(offset..end)
+            .ok_or(AwbcCodecError::LengthOverflow)?;
+        destination.copy_from_slice(&value.to_le_bytes());
         Ok(())
     }
 }
@@ -138,7 +201,7 @@ impl<'a> Reader<'a> {
         ))
     }
 
-    pub(super) fn read_u32_le(&mut self) -> Result<u32, AwbcCodecError> {
+    pub(super) fn read_f32_bits(&mut self) -> Result<u32, AwbcCodecError> {
         Ok(u32::from_le_bytes(
             self.read_exact(4)?
                 .try_into()
@@ -154,17 +217,17 @@ impl<'a> Reader<'a> {
         ))
     }
 
-    pub(super) fn read_i32_le(&mut self) -> Result<i32, AwbcCodecError> {
-        Ok(i32::from_le_bytes(
-            self.read_exact(4)?
+    pub(super) fn read_f64_bits(&mut self) -> Result<u64, AwbcCodecError> {
+        Ok(u64::from_le_bytes(
+            self.read_exact(8)?
                 .try_into()
                 .expect("fixed wire width checked"),
         ))
     }
 
-    pub(super) fn read_i128_le(&mut self) -> Result<i128, AwbcCodecError> {
-        Ok(i128::from_le_bytes(
-            self.read_exact(16)?
+    pub(super) fn read_i32_le(&mut self) -> Result<i32, AwbcCodecError> {
+        Ok(i32::from_le_bytes(
+            self.read_exact(4)?
                 .try_into()
                 .expect("fixed wire width checked"),
         ))
@@ -237,6 +300,14 @@ impl<'a> Reader<'a> {
         Self::check_limit("string_bytes", next, self.budget.string_bytes)?;
         self.string_bytes = next;
         Ok(())
+    }
+
+    pub(super) fn read_str(&mut self) -> Result<&'a str, AwbcCodecError> {
+        let len = self.read_len()?;
+        self.add_string_bytes(len)?;
+        let offset = self.offset();
+        let bytes = self.read_exact(len)?;
+        std::str::from_utf8(bytes).map_err(|_| AwbcCodecError::InvalidUtf8 { offset })
     }
 
     pub(super) fn check_limit(
@@ -338,18 +409,6 @@ impl Wire for u64 {
     }
 }
 
-impl Wire for usize {
-    fn write_wire(&self, writer: &mut Writer) -> Result<(), AwbcCodecError> {
-        u64::try_from(*self)
-            .map_err(|_| AwbcCodecError::LengthOverflow)?
-            .write_wire(writer)
-    }
-
-    fn read_wire(reader: &mut Reader<'_>) -> Result<Self, AwbcCodecError> {
-        usize::try_from(u64::read_wire(reader)?).map_err(|_| AwbcCodecError::LengthOverflow)
-    }
-}
-
 impl Wire for i32 {
     fn write_wire(&self, writer: &mut Writer) -> Result<(), AwbcCodecError> {
         writer.write_i32_le(*self);
@@ -358,17 +417,6 @@ impl Wire for i32 {
 
     fn read_wire(reader: &mut Reader<'_>) -> Result<Self, AwbcCodecError> {
         reader.read_i32_le()
-    }
-}
-
-impl Wire for i128 {
-    fn write_wire(&self, writer: &mut Writer) -> Result<(), AwbcCodecError> {
-        writer.write_i128_le(*self);
-        Ok(())
-    }
-
-    fn read_wire(reader: &mut Reader<'_>) -> Result<Self, AwbcCodecError> {
-        reader.read_i128_le()
     }
 }
 
@@ -402,17 +450,11 @@ impl Wire for [u8; 32] {
 
 impl Wire for String {
     fn write_wire(&self, writer: &mut Writer) -> Result<(), AwbcCodecError> {
-        writer.write_len(self.len())?;
-        writer.write_bytes(self.as_bytes());
-        Ok(())
+        writer.write_str(self)
     }
 
     fn read_wire(reader: &mut Reader<'_>) -> Result<Self, AwbcCodecError> {
-        let len = reader.read_len()?;
-        reader.add_string_bytes(len)?;
-        let offset = reader.offset();
-        let bytes = reader.read_exact(len)?;
-        String::from_utf8(bytes.to_vec()).map_err(|_| AwbcCodecError::InvalidUtf8 { offset })
+        reader.read_str().map(str::to_owned)
     }
 }
 
@@ -469,33 +511,6 @@ macro_rules! wire_id {
     };
 }
 
-macro_rules! wire_enum {
-    ($ty:ty, $kind:literal, {$($tag:literal => $variant:path),+ $(,)?}) => {
-        impl Wire for $ty {
-            fn write_wire(&self, writer: &mut Writer) -> Result<(), AwbcCodecError> {
-                let tag = match self {
-                    $($variant => $tag,)+
-                };
-                writer.write_u8(tag);
-                Ok(())
-            }
-
-            fn read_wire(reader: &mut Reader<'_>) -> Result<Self, AwbcCodecError> {
-                let offset = reader.offset();
-                match reader.read_u8()? {
-                    $($tag => Ok($variant),)+
-                    tag => Err(AwbcCodecError::UnknownTag {
-                        kind: $kind,
-                        tag,
-                        offset,
-                    }),
-                }
-            }
-        }
-    };
-}
-
-pub(super) use wire_enum;
 pub(super) use wire_id;
 
 #[cfg(test)]
@@ -508,7 +523,70 @@ mod tests {
         writer.write_u32_var(128);
         writer.write_u8(0xaa);
 
-        assert_eq!(writer.finish(), vec![0x80, 0x01, 0xaa]);
+        assert_eq!(writer.into_bytes(), vec![0x80, 0x01, 0xaa]);
+    }
+
+    #[test]
+    fn writer_transaction_rolls_back_every_partial_byte() {
+        let mut writer = Writer::with_capacity(20);
+        writer.write_bytes(b"prefix");
+        let result: Result<(), AwbcCodecError> = writer.transaction(|writer| {
+            writer.write_bytes(b"partial");
+            Err(AwbcCodecError::LengthOverflow)
+        });
+
+        assert_eq!(result, Err(AwbcCodecError::LengthOverflow));
+        assert_eq!(writer.into_bytes(), b"prefix");
+    }
+
+    #[test]
+    fn writer_patches_the_reserved_envelope_length_in_place() {
+        let mut writer = Writer::with_capacity(20);
+        writer.write_bytes(&[0; 20]);
+        writer.write_bytes(&[1, 2, 3]);
+        writer.patch_u64_le(12, 3).expect("patch envelope length");
+
+        let bytes = writer.into_bytes();
+        assert_eq!(&bytes[12..20], &3_u64.to_le_bytes());
+        assert_eq!(&bytes[20..], &[1, 2, 3]);
+    }
+
+    #[test]
+    fn reader_borrows_utf8_directly_from_the_input_slice() {
+        let bytes = [3, b'a', b'w', b'b'];
+        let mut reader = Reader::new(&bytes, &AwbcDecodeBudget::default());
+        let value = reader.read_str().expect("borrow canonical UTF-8");
+
+        assert_eq!(value, "awb");
+        assert_eq!(value.as_ptr(), bytes[1..].as_ptr());
+        reader.finish().expect("consume borrowed string");
+    }
+
+    #[test]
+    fn borrowed_string_reader_retains_budget_and_utf8_fail_closed_rules() {
+        let budget = AwbcDecodeBudget {
+            string_bytes: 2,
+            ..AwbcDecodeBudget::default()
+        };
+        let mut over_budget = Reader::new(&[3, b'a', b'w', b'b'], &budget);
+        assert_eq!(
+            over_budget
+                .read_str()
+                .expect_err("borrowed path still enforces byte budget"),
+            AwbcCodecError::BudgetExceeded {
+                budget: "string_bytes",
+                actual: 3,
+                limit: 2,
+            }
+        );
+
+        let mut invalid_utf8 = Reader::new(&[1, 0xff], &AwbcDecodeBudget::default());
+        assert_eq!(
+            invalid_utf8
+                .read_str()
+                .expect_err("borrowed path still validates UTF-8"),
+            AwbcCodecError::InvalidUtf8 { offset: 1 }
+        );
     }
 
     #[test]

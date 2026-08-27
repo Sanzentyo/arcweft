@@ -1,5 +1,5 @@
 use super::AwbcCodecError;
-use super::wire::{Reader, Wire, Writer, wire_enum};
+use super::wire::{Reader, Wire, Writer};
 use crate::awbc::schema::{
     AwbcBlockId, AwbcCallableExecutable, AwbcCodeLocation, AwbcContentUnit, AwbcContentUnitId,
     AwbcDialogueMark, AwbcDigest, AwbcDisplayMapEntry, AwbcDisplayMapId, AwbcEntry, AwbcEntryKind,
@@ -165,11 +165,22 @@ impl Wire for AwbcDialogueMark {
     }
 }
 
-wire_enum!(AwbcTraitReceiverMode, "trait receiver mode", {
-    0 => AwbcTraitReceiverMode::Owned,
-    1 => AwbcTraitReceiverMode::SharedRef,
-    2 => AwbcTraitReceiverMode::MutRef,
-});
+impl Wire for AwbcTraitReceiverMode {
+    fn write_wire(&self, writer: &mut Writer) -> Result<(), AwbcCodecError> {
+        writer.write_u8(self.encoded());
+        Ok(())
+    }
+
+    fn read_wire(reader: &mut Reader<'_>) -> Result<Self, AwbcCodecError> {
+        let offset = reader.offset();
+        let tag = reader.read_u8()?;
+        Self::from_encoded(tag).ok_or(AwbcCodecError::UnknownTag {
+            kind: "trait receiver mode",
+            tag,
+            offset,
+        })
+    }
+}
 
 impl Wire for AwbcContentUnit {
     fn write_wire(&self, writer: &mut Writer) -> Result<(), AwbcCodecError> {
@@ -285,11 +296,22 @@ impl Wire for AwbcResourceRef {
     }
 }
 
-wire_enum!(AwbcResourceResidency, "resource residency", {
-    0 => AwbcResourceResidency::Startup,
-    1 => AwbcResourceResidency::OnDemand,
-    2 => AwbcResourceResidency::Streaming,
-});
+impl Wire for AwbcResourceResidency {
+    fn write_wire(&self, writer: &mut Writer) -> Result<(), AwbcCodecError> {
+        writer.write_u8(self.encoded());
+        Ok(())
+    }
+
+    fn read_wire(reader: &mut Reader<'_>) -> Result<Self, AwbcCodecError> {
+        let offset = reader.offset();
+        let tag = reader.read_u8()?;
+        Self::from_encoded(tag).ok_or(AwbcCodecError::UnknownTag {
+            kind: "resource residency",
+            tag,
+            offset,
+        })
+    }
+}
 
 impl Wire for AwbcEntry {
     fn write_wire(&self, writer: &mut Writer) -> Result<(), AwbcCodecError> {
@@ -382,12 +404,12 @@ wire_digest!(
 
 impl Wire for RuntimeNominalTypeId {
     fn write_wire(&self, writer: &mut Writer) -> Result<(), AwbcCodecError> {
-        self.as_str().to_owned().write_wire(writer)
+        writer.write_str(self.as_str())
     }
 
     fn read_wire(reader: &mut Reader<'_>) -> Result<Self, AwbcCodecError> {
         let offset = reader.offset();
-        let value = String::read_wire(reader)?;
+        let value = reader.read_str()?;
         Self::try_new(value).map_err(|error| AwbcCodecError::InvalidMetadata {
             kind: "nominal type identity",
             message: error.to_string(),
@@ -398,12 +420,12 @@ impl Wire for RuntimeNominalTypeId {
 
 impl Wire for RuntimeCallableId {
     fn write_wire(&self, writer: &mut Writer) -> Result<(), AwbcCodecError> {
-        self.as_str().to_owned().write_wire(writer)
+        writer.write_str(self.as_str())
     }
 
     fn read_wire(reader: &mut Reader<'_>) -> Result<Self, AwbcCodecError> {
         let offset = reader.offset();
-        let value = String::read_wire(reader)?;
+        let value = reader.read_str()?;
         Self::try_new(value).map_err(|error| AwbcCodecError::InvalidMetadata {
             kind: "callable identity",
             message: error.to_string(),
@@ -414,12 +436,12 @@ impl Wire for RuntimeCallableId {
 
 impl Wire for RuntimeCommandConstructorId {
     fn write_wire(&self, writer: &mut Writer) -> Result<(), AwbcCodecError> {
-        self.as_str().to_owned().write_wire(writer)
+        writer.write_str(self.as_str())
     }
 
     fn read_wire(reader: &mut Reader<'_>) -> Result<Self, AwbcCodecError> {
         let offset = reader.offset();
-        let value = String::read_wire(reader)?;
+        let value = reader.read_str()?;
         Self::try_new(value).map_err(|error| AwbcCodecError::InvalidMetadata {
             kind: "command constructor identity",
             message: error.to_string(),
@@ -430,12 +452,12 @@ impl Wire for RuntimeCommandConstructorId {
 
 impl Wire for RuntimeCommandTargetId {
     fn write_wire(&self, writer: &mut Writer) -> Result<(), AwbcCodecError> {
-        self.as_str().to_owned().write_wire(writer)
+        writer.write_str(self.as_str())
     }
 
     fn read_wire(reader: &mut Reader<'_>) -> Result<Self, AwbcCodecError> {
         let offset = reader.offset();
-        let value = String::read_wire(reader)?;
+        let value = reader.read_str()?;
         Self::try_new(value).map_err(|error| AwbcCodecError::InvalidMetadata {
             kind: "command target identity",
             message: error.to_string(),
@@ -446,15 +468,15 @@ impl Wire for RuntimeCommandTargetId {
 
 impl Wire for FlowRuntimeId {
     fn write_wire(&self, writer: &mut Writer) -> Result<(), AwbcCodecError> {
-        self.canonical_label().write_wire(writer)?;
-        self.public_label().into_string().write_wire(writer)
+        writer.write_runtime_id_path(self.path())?;
+        writer.write_str(self.public_label_ref().as_str())
     }
 
     fn read_wire(reader: &mut Reader<'_>) -> Result<Self, AwbcCodecError> {
         let offset = reader.offset();
-        let identity = String::read_wire(reader)?;
-        let public_id = String::read_wire(reader)?;
-        Self::from_runtime_contract(&identity, &public_id).map_err(|error| {
+        let identity = reader.read_str()?;
+        let public_id = reader.read_str()?;
+        Self::from_runtime_contract(identity, public_id).map_err(|error| {
             AwbcCodecError::InvalidMetadata {
                 kind: "flow runtime identity",
                 message: error.to_string(),
@@ -466,13 +488,13 @@ impl Wire for FlowRuntimeId {
 
 impl Wire for EntryRuntimeId {
     fn write_wire(&self, writer: &mut Writer) -> Result<(), AwbcCodecError> {
-        self.canonical_label().write_wire(writer)
+        writer.write_runtime_id_path(self.path())
     }
 
     fn read_wire(reader: &mut Reader<'_>) -> Result<Self, AwbcCodecError> {
         let offset = reader.offset();
-        let value = String::read_wire(reader)?;
-        Self::canonical(&value).map_err(|error| AwbcCodecError::InvalidMetadata {
+        let value = reader.read_str()?;
+        Self::canonical(value).map_err(|error| AwbcCodecError::InvalidMetadata {
             kind: "entry runtime identity",
             message: error.to_string(),
             offset,
@@ -585,11 +607,11 @@ impl Wire for RuntimeSchemaLimits {
 
     fn read_wire(reader: &mut Reader<'_>) -> Result<Self, AwbcCodecError> {
         Ok(Self {
-            max_depth: usize::read_wire(reader)?,
-            max_nodes: usize::read_wire(reader)?,
-            max_sequence_items: usize::read_wire(reader)?,
-            max_string_bytes: usize::read_wire(reader)?,
-            max_encoded_bytes: usize::read_wire(reader)?,
+            max_depth: u32::read_wire(reader)?,
+            max_nodes: u32::read_wire(reader)?,
+            max_sequence_items: u32::read_wire(reader)?,
+            max_string_bytes: u64::read_wire(reader)?,
+            max_encoded_bytes: u64::read_wire(reader)?,
         })
     }
 }
@@ -606,10 +628,10 @@ impl Wire for RootExecutionLimits {
     fn read_wire(reader: &mut Reader<'_>) -> Result<Self, AwbcCodecError> {
         Ok(Self {
             schema: RuntimeSchemaLimits::read_wire(reader)?,
-            max_commands_per_transition: usize::read_wire(reader)?,
-            max_command_bytes_per_transition: usize::read_wire(reader)?,
-            max_pending_events: usize::read_wire(reader)?,
-            max_pending_commands: usize::read_wire(reader)?,
+            max_commands_per_transition: u32::read_wire(reader)?,
+            max_command_bytes_per_transition: u64::read_wire(reader)?,
+            max_pending_events: u32::read_wire(reader)?,
+            max_pending_commands: u32::read_wire(reader)?,
         })
     }
 }
@@ -742,40 +764,79 @@ impl Wire for RuntimeSchemaVariant {
         self.rust_name.write_wire(writer)?;
         self.wire_name.write_wire(writer)?;
         self.payload.write_wire(writer)?;
-        self.discriminant.write_wire(writer)
+        match self.discriminant {
+            None => writer.write_u8(0),
+            Some(discriminant) => {
+                writer.write_u8(1);
+                writer.write_bytes(&discriminant.to_le_bytes());
+            }
+        }
+        Ok(())
     }
 
     fn read_wire(reader: &mut Reader<'_>) -> Result<Self, AwbcCodecError> {
+        let rust_name = String::read_wire(reader)?;
+        let wire_name = String::read_wire(reader)?;
+        let payload = Option::<RuntimeTypeSchema>::read_wire(reader)?;
+        let offset = reader.offset();
+        let discriminant = match reader.read_u8()? {
+            0 => None,
+            1 => Some(i128::from_le_bytes(
+                reader
+                    .read_exact(16)?
+                    .try_into()
+                    .expect("fixed wire width checked"),
+            )),
+            tag => {
+                return Err(AwbcCodecError::UnknownTag {
+                    kind: "runtime schema discriminant",
+                    tag,
+                    offset,
+                });
+            }
+        };
         Ok(Self {
-            rust_name: String::read_wire(reader)?,
-            wire_name: String::read_wire(reader)?,
-            payload: Option::<RuntimeTypeSchema>::read_wire(reader)?,
-            discriminant: Option::<i128>::read_wire(reader)?,
+            rust_name,
+            wire_name,
+            payload,
+            discriminant,
         })
     }
 }
 
-wire_enum!(RuntimeBytesFormat, "runtime bytes format", {
-    0 => RuntimeBytesFormat::Binary,
-    1 => RuntimeBytesFormat::Base64,
-    2 => RuntimeBytesFormat::Hex,
-    3 => RuntimeBytesFormat::Array,
-});
+impl Wire for RuntimeBytesFormat {
+    fn write_wire(&self, writer: &mut Writer) -> Result<(), AwbcCodecError> {
+        writer.write_u8(self.semantic_tag());
+        Ok(())
+    }
 
-wire_enum!(RuntimeEnumRepr, "runtime enum repr", {
-    0 => RuntimeEnumRepr::I8,
-    1 => RuntimeEnumRepr::I16,
-    2 => RuntimeEnumRepr::I32,
-    3 => RuntimeEnumRepr::I64,
-    4 => RuntimeEnumRepr::I128,
-    5 => RuntimeEnumRepr::ISize,
-    6 => RuntimeEnumRepr::U8,
-    7 => RuntimeEnumRepr::U16,
-    8 => RuntimeEnumRepr::U32,
-    9 => RuntimeEnumRepr::U64,
-    10 => RuntimeEnumRepr::U128,
-    11 => RuntimeEnumRepr::USize,
-});
+    fn read_wire(reader: &mut Reader<'_>) -> Result<Self, AwbcCodecError> {
+        let offset = reader.offset();
+        let tag = reader.read_u8()?;
+        Self::from_semantic_tag(tag).ok_or(AwbcCodecError::UnknownTag {
+            kind: "runtime bytes format",
+            tag,
+            offset,
+        })
+    }
+}
+
+impl Wire for RuntimeEnumRepr {
+    fn write_wire(&self, writer: &mut Writer) -> Result<(), AwbcCodecError> {
+        writer.write_u8(self.semantic_tag());
+        Ok(())
+    }
+
+    fn read_wire(reader: &mut Reader<'_>) -> Result<Self, AwbcCodecError> {
+        let offset = reader.offset();
+        let tag = reader.read_u8()?;
+        Self::from_semantic_tag(tag).ok_or(AwbcCodecError::UnknownTag {
+            kind: "runtime enum repr",
+            tag,
+            offset,
+        })
+    }
+}
 
 impl Wire for RuntimeEnumTagStyle {
     fn write_wire(&self, writer: &mut Writer) -> Result<(), AwbcCodecError> {
@@ -1130,6 +1191,101 @@ impl Wire for AwbcRouteBindingSource {
                 tag,
                 offset,
             }),
+        }
+    }
+}
+
+#[cfg(test)]
+mod limit_wire_tests {
+    use super::*;
+    use crate::awbc::codec::AwbcDecodeBudget;
+
+    #[test]
+    fn runtime_schema_limits_use_u32_varint_counts_and_u64_byte_budgets() {
+        let limits = RuntimeSchemaLimits {
+            max_depth: 127,
+            max_nodes: 128,
+            max_sequence_items: u32::MAX,
+            max_string_bytes: 0x0102_0304_0506_0708,
+            max_encoded_bytes: u64::MAX,
+        };
+        let mut writer = Writer::default();
+        limits
+            .write_wire(&mut writer)
+            .expect("encode schema limits");
+        let bytes = writer.into_bytes();
+        assert_eq!(
+            bytes,
+            vec![
+                0x7f, 0x80, 0x01, 0xff, 0xff, 0xff, 0xff, 0x0f, 0x08, 0x07, 0x06, 0x05, 0x04, 0x03,
+                0x02, 0x01, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff,
+            ]
+        );
+
+        let mut reader = Reader::new(&bytes, &AwbcDecodeBudget::default());
+        assert_eq!(
+            RuntimeSchemaLimits::read_wire(&mut reader).expect("decode schema limits"),
+            limits
+        );
+        reader.finish().expect("consume schema limits");
+    }
+
+    #[test]
+    fn root_limits_reject_a_count_outside_the_canonical_u32_domain() {
+        let bytes = [0xff, 0xff, 0xff, 0xff, 0x10];
+        let mut reader = Reader::new(&bytes, &AwbcDecodeBudget::default());
+        assert_eq!(
+            RootExecutionLimits::read_wire(&mut reader)
+                .expect_err("out-of-domain max depth must reject"),
+            AwbcCodecError::NonCanonicalVarint { offset: 0 }
+        );
+    }
+
+    #[test]
+    fn root_limits_keep_command_bytes_u64_and_queue_counts_u32() {
+        let limits = RootExecutionLimits {
+            schema: RuntimeSchemaLimits {
+                max_depth: 1,
+                max_nodes: 1,
+                max_sequence_items: 1,
+                max_string_bytes: 2,
+                max_encoded_bytes: 3,
+            },
+            max_commands_per_transition: 128,
+            max_command_bytes_per_transition: 0x0102_0304_0506_0708,
+            max_pending_events: 127,
+            max_pending_commands: u32::MAX,
+        };
+        let mut writer = Writer::default();
+        limits.write_wire(&mut writer).expect("encode root limits");
+        let bytes = writer.into_bytes();
+        assert_eq!(
+            bytes,
+            vec![
+                1, 1, 1, 2, 0, 0, 0, 0, 0, 0, 0, 3, 0, 0, 0, 0, 0, 0, 0, 0x80, 1, 0x08, 0x07, 0x06,
+                0x05, 0x04, 0x03, 0x02, 0x01, 0x7f, 0xff, 0xff, 0xff, 0xff, 0x0f,
+            ]
+        );
+
+        let mut reader = Reader::new(&bytes, &AwbcDecodeBudget::default());
+        assert_eq!(
+            RootExecutionLimits::read_wire(&mut reader).expect("decode root limits"),
+            limits
+        );
+        reader.finish().expect("consume root limits");
+    }
+
+    #[test]
+    fn typed_limit_predicates_reject_platform_counts_outside_u32() {
+        if let Ok(too_many) = usize::try_from(u64::from(u32::MAX) + 1) {
+            let schema = RuntimeSchemaLimits::engine_default();
+            let root = RootExecutionLimits::engine_default();
+            assert!(!schema.permits_depth(too_many));
+            assert!(!schema.permits_nodes(too_many));
+            assert!(!schema.permits_sequence_items(too_many));
+            assert!(!root.permits_transition_commands(too_many));
+            assert!(!root.permits_pending_events(too_many));
+            assert!(!root.permits_pending_commands(too_many));
         }
     }
 }

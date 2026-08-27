@@ -351,13 +351,21 @@ fn apply_instruction(
         AwbcInstruction::MakeSequence { dst, items } => {
             check_args_budget(verifier, items.len())?;
             let dst_ty = register_type(verifier, function, block, *dst)?;
-            let Some(AwbcRuntimeTypeShape::Sequence(item_ty)) = runtime_shape(program, dst_ty)
-            else {
-                return invalid_type(&at, "sequence destination");
+            let (item_ty, expected_len) = match runtime_shape(program, dst_ty) {
+                Some(AwbcRuntimeTypeShape::Sequence(item_ty)) => (*item_ty, None),
+                Some(AwbcRuntimeTypeShape::Array { item, length }) => {
+                    let expected = usize::try_from(*length)
+                        .map_err(|_| AwbcVerifyError::ResultShapeMismatch { at: at.clone() })?;
+                    (*item, Some(expected))
+                }
+                _ => return invalid_type(&at, "sequence destination"),
             };
+            if expected_len.is_some_and(|expected| expected != items.len()) {
+                return argument_count(&at, expected_len.unwrap_or_default(), items.len());
+            }
             for item in items {
                 let actual = read_register(verifier, function, block, *item, state)?;
-                require_compatible(program, *item_ty, actual, &at)?;
+                require_compatible(program, item_ty, actual, &at)?;
             }
             write_register(verifier, function, block, *dst, state)?;
         }
@@ -394,12 +402,15 @@ fn apply_instruction(
                 return invalid_type(&at, "integer sequence index");
             }
             let dst_ty = register_type(verifier, function, block, *dst)?;
-            if let Some(AwbcRuntimeTypeShape::Sequence(item_ty)) =
-                runtime_shape(program, sequence_ty)
-            {
-                require_compatible(program, dst_ty, *item_ty, &at)?;
-            } else if !is_dynamic(runtime_shape(program, sequence_ty)) {
-                return invalid_type(&at, "sequence input");
+            match runtime_shape(program, sequence_ty) {
+                Some(AwbcRuntimeTypeShape::Sequence(item_ty)) => {
+                    require_compatible(program, dst_ty, *item_ty, &at)?;
+                }
+                Some(AwbcRuntimeTypeShape::Array { item, .. }) => {
+                    require_compatible(program, dst_ty, *item, &at)?;
+                }
+                Some(AwbcRuntimeTypeShape::Dynamic) => {}
+                _ => return invalid_type(&at, "sequence input"),
             }
             write_register(verifier, function, block, *dst, state)?;
         }
@@ -881,7 +892,7 @@ fn apply_instruction(
                 None,
                 state,
                 &at,
-                &format!("effect plan {}", effect.kind as u8),
+                &format!("effect plan {}", effect.kind.encoded()),
             )?;
         }
         AwbcInstruction::RegisterCleanup { key, effect, args } => {
@@ -897,7 +908,7 @@ fn apply_instruction(
                 None,
                 state,
                 &at,
-                &format!("cleanup effect plan {}", effect.kind as u8),
+                &format!("cleanup effect plan {}", effect.kind.encoded()),
             )?;
         }
         AwbcInstruction::CancelCleanup { key } => {
@@ -2831,7 +2842,11 @@ fn is_numeric(ty: Option<&AwbcRuntimeTypeShape>) -> bool {
 fn is_sequence_or_dynamic(ty: Option<&AwbcRuntimeTypeShape>) -> bool {
     matches!(
         ty,
-        Some(AwbcRuntimeTypeShape::Sequence(_) | AwbcRuntimeTypeShape::Dynamic)
+        Some(
+            AwbcRuntimeTypeShape::Sequence(_)
+                | AwbcRuntimeTypeShape::Array { .. }
+                | AwbcRuntimeTypeShape::Dynamic
+        )
     )
 }
 

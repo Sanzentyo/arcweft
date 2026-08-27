@@ -1,5 +1,5 @@
 use super::AwbcCodecError;
-use super::wire::{Reader, Wire, Writer, wire_enum};
+use super::wire::{Reader, Wire, Writer};
 use crate::awbc::schema::{
     AwbcAudioArg, AwbcAudioCleanup, AwbcAudioCommand, AwbcAudioCommandId, AwbcAudioValueRef,
     AwbcAwaitManyPolicy, AwbcChildCancelPolicy, AwbcChildCleanup, AwbcChildJoinPolicy, AwbcChoice,
@@ -43,7 +43,7 @@ impl Wire for RuntimeCallTarget {
         match self {
             Self::Intrinsic(intrinsic) => {
                 0_u8.write_wire(writer)?;
-                intrinsic.as_label().to_owned().write_wire(writer)
+                writer.write_str(intrinsic.as_label())
             }
             Self::Callable(callable) => {
                 1_u8.write_wire(writer)?;
@@ -56,8 +56,8 @@ impl Wire for RuntimeCallTarget {
         let offset = reader.offset();
         match u8::read_wire(reader)? {
             0 => {
-                let label = String::read_wire(reader)?;
-                RuntimeIntrinsic::from_label(&label)
+                let label = reader.read_str()?;
+                RuntimeIntrinsic::from_label(label)
                     .map(Self::Intrinsic)
                     .ok_or(AwbcCodecError::InvalidMetadata {
                         kind: "runtime intrinsic identity",
@@ -111,10 +111,22 @@ impl Wire for crate::step::HostCallContractDigest {
     }
 }
 
-wire_enum!(AwbcHostCallMode, "host call mode", {
-    0 => AwbcHostCallMode::Immediate,
-    1 => AwbcHostCallMode::Suspend,
-});
+impl Wire for AwbcHostCallMode {
+    fn write_wire(&self, writer: &mut Writer) -> Result<(), AwbcCodecError> {
+        writer.write_u8(self.encoded());
+        Ok(())
+    }
+
+    fn read_wire(reader: &mut Reader<'_>) -> Result<Self, AwbcCodecError> {
+        let offset = reader.offset();
+        let tag = reader.read_u8()?;
+        Self::from_encoded(tag).ok_or(AwbcCodecError::UnknownTag {
+            kind: "host call mode",
+            tag,
+            offset,
+        })
+    }
+}
 
 impl Wire for AwbcTaskPlan {
     fn write_wire(&self, writer: &mut Writer) -> Result<(), AwbcCodecError> {
@@ -150,26 +162,39 @@ impl Wire for AwbcTaskPlan {
     }
 }
 
-wire_enum!(AwbcTaskClass, "task class", {
-    0 => AwbcTaskClass::LocalView,
-    1 => AwbcTaskClass::Io,
-    2 => AwbcTaskClass::Cpu,
-    3 => AwbcTaskClass::GpuPrepare,
-    4 => AwbcTaskClass::ShaderCompile,
-    5 => AwbcTaskClass::WasmCall,
-    6 => AwbcTaskClass::AssetDecode,
-    7 => AwbcTaskClass::AudioDecode,
-    8 => AwbcTaskClass::AudioRender,
-    9 => AwbcTaskClass::TtsSynthesis,
-    10 => AwbcTaskClass::BgmPrecompose,
-    11 => AwbcTaskClass::Lsp,
-    12 => AwbcTaskClass::Background,
-});
+impl Wire for AwbcTaskClass {
+    fn write_wire(&self, writer: &mut Writer) -> Result<(), AwbcCodecError> {
+        writer.write_u8(self.encoded());
+        Ok(())
+    }
 
-wire_enum!(AwbcTaskPolicy, "task policy", {
-    0 => AwbcTaskPolicy::JoinSameKey,
-    1 => AwbcTaskPolicy::AlwaysStart,
-});
+    fn read_wire(reader: &mut Reader<'_>) -> Result<Self, AwbcCodecError> {
+        let offset = reader.offset();
+        let tag = reader.read_u8()?;
+        Self::from_encoded(tag).ok_or(AwbcCodecError::UnknownTag {
+            kind: "task class",
+            tag,
+            offset,
+        })
+    }
+}
+
+impl Wire for AwbcTaskPolicy {
+    fn write_wire(&self, writer: &mut Writer) -> Result<(), AwbcCodecError> {
+        writer.write_u8(self.encoded());
+        Ok(())
+    }
+
+    fn read_wire(reader: &mut Reader<'_>) -> Result<Self, AwbcCodecError> {
+        let offset = reader.offset();
+        let tag = reader.read_u8()?;
+        Self::from_encoded(tag).ok_or(AwbcCodecError::UnknownTag {
+            kind: "task policy",
+            tag,
+            offset,
+        })
+    }
+}
 
 impl Wire for AwbcHostArgument {
     fn write_wire(&self, writer: &mut Writer) -> Result<(), AwbcCodecError> {
@@ -277,23 +302,22 @@ impl Wire for AudioLoopMode {
     }
 }
 
-wire_enum!(AudioEffectParameterKind, "audio effect parameter kind", {
-    0 => AudioEffectParameterKind::BiquadCutoffMilliHz,
-    1 => AudioEffectParameterKind::BiquadQMilli,
-    2 => AudioEffectParameterKind::CompressorThresholdDbMilli,
-    3 => AudioEffectParameterKind::CompressorRatioMilli,
-    4 => AudioEffectParameterKind::CompressorAttackMicros,
-    5 => AudioEffectParameterKind::CompressorReleaseMicros,
-    6 => AudioEffectParameterKind::CompressorMakeupDbMilli,
-    7 => AudioEffectParameterKind::DelayTimeMillis,
-    8 => AudioEffectParameterKind::DelayFeedbackMilli,
-    9 => AudioEffectParameterKind::ReverbRoomSizeMilli,
-    10 => AudioEffectParameterKind::ReverbDampingMilli,
-    11 => AudioEffectParameterKind::WetGainDbMilli,
-    12 => AudioEffectParameterKind::DryGainDbMilli,
-    13 => AudioEffectParameterKind::LimiterCeilingDbMilli,
-    14 => AudioEffectParameterKind::LimiterReleaseMicros,
-});
+impl Wire for AudioEffectParameterKind {
+    fn write_wire(&self, writer: &mut Writer) -> Result<(), AwbcCodecError> {
+        writer.write_u8(self.semantic_tag());
+        Ok(())
+    }
+
+    fn read_wire(reader: &mut Reader<'_>) -> Result<Self, AwbcCodecError> {
+        let offset = reader.offset();
+        let tag = reader.read_u8()?;
+        Self::from_semantic_tag(tag).ok_or(AwbcCodecError::UnknownTag {
+            kind: "audio effect parameter kind",
+            tag,
+            offset,
+        })
+    }
+}
 
 impl Wire for MicrophoneConstraints {
     fn write_wire(&self, writer: &mut Writer) -> Result<(), AwbcCodecError> {
@@ -547,27 +571,22 @@ impl Wire for AwbcEffectPlan {
     }
 }
 
-wire_enum!(AwbcEffectKind, "effect kind", {
-    0 => AwbcEffectKind::Wait,
-    1 => AwbcEffectKind::Audio,
-    2 => AwbcEffectKind::Call,
-    3 => AwbcEffectKind::Log,
-    4 => AwbcEffectKind::SignalWrite,
-    5 => AwbcEffectKind::MetricWrite,
-    6 => AwbcEffectKind::EmitEvent,
-    7 => AwbcEffectKind::Out,
-    8 => AwbcEffectKind::Return,
-    9 => AwbcEffectKind::Goto,
-    10 => AwbcEffectKind::Panic,
-    11 => AwbcEffectKind::Fail,
-    12 => AwbcEffectKind::Bail,
-    13 => AwbcEffectKind::Ensure,
-    14 => AwbcEffectKind::Assert,
-    15 => AwbcEffectKind::Close,
-    16 => AwbcEffectKind::Select,
-    17 => AwbcEffectKind::Break,
-    18 => AwbcEffectKind::Continue,
-});
+impl Wire for AwbcEffectKind {
+    fn write_wire(&self, writer: &mut Writer) -> Result<(), AwbcCodecError> {
+        writer.write_u8(self.encoded());
+        Ok(())
+    }
+
+    fn read_wire(reader: &mut Reader<'_>) -> Result<Self, AwbcCodecError> {
+        let offset = reader.offset();
+        let tag = reader.read_u8()?;
+        Self::from_encoded(tag).ok_or(AwbcCodecError::UnknownTag {
+            kind: "effect kind",
+            tag,
+            offset,
+        })
+    }
+}
 
 impl Wire for AwbcResourceAccess {
     fn write_wire(&self, writer: &mut Writer) -> Result<(), AwbcCodecError> {
@@ -585,13 +604,22 @@ impl Wire for AwbcResourceAccess {
     }
 }
 
-wire_enum!(AwbcResourceAccessMode, "resource access mode", {
-    0 => AwbcResourceAccessMode::Read,
-    1 => AwbcResourceAccessMode::Write,
-    2 => AwbcResourceAccessMode::Drop,
-    3 => AwbcResourceAccessMode::Append,
-    4 => AwbcResourceAccessMode::Control,
-});
+impl Wire for AwbcResourceAccessMode {
+    fn write_wire(&self, writer: &mut Writer) -> Result<(), AwbcCodecError> {
+        writer.write_u8(self.encoded());
+        Ok(())
+    }
+
+    fn read_wire(reader: &mut Reader<'_>) -> Result<Self, AwbcCodecError> {
+        let offset = reader.offset();
+        let tag = reader.read_u8()?;
+        Self::from_encoded(tag).ok_or(AwbcCodecError::UnknownTag {
+            kind: "resource access mode",
+            tag,
+            offset,
+        })
+    }
+}
 
 impl Wire for AwbcConflictPolicy {
     fn write_wire(&self, writer: &mut Writer) -> Result<(), AwbcCodecError> {
@@ -634,13 +662,22 @@ impl Wire for AwbcConflictPolicy {
     }
 }
 
-wire_enum!(AwbcReduceOp, "reduce operator", {
-    0 => AwbcReduceOp::Sum,
-    1 => AwbcReduceOp::Min,
-    2 => AwbcReduceOp::Max,
-    3 => AwbcReduceOp::And,
-    4 => AwbcReduceOp::Or,
-});
+impl Wire for AwbcReduceOp {
+    fn write_wire(&self, writer: &mut Writer) -> Result<(), AwbcCodecError> {
+        writer.write_u8(self.encoded());
+        Ok(())
+    }
+
+    fn read_wire(reader: &mut Reader<'_>) -> Result<Self, AwbcCodecError> {
+        let offset = reader.offset();
+        let tag = reader.read_u8()?;
+        Self::from_encoded(tag).ok_or(AwbcCodecError::UnknownTag {
+            kind: "reduce operator",
+            tag,
+            offset,
+        })
+    }
+}
 
 impl Wire for AwbcChoice {
     fn write_wire(&self, writer: &mut Writer) -> Result<(), AwbcCodecError> {
@@ -866,17 +903,15 @@ impl Wire for AwbcLineOperation {
 
 impl Wire for CharacterId {
     fn write_wire(&self, writer: &mut Writer) -> Result<(), AwbcCodecError> {
-        self.as_str().to_owned().write_wire(writer)
+        writer.write_str(self.as_str())
     }
 
     fn read_wire(reader: &mut Reader<'_>) -> Result<Self, AwbcCodecError> {
         let offset = reader.offset();
-        CharacterId::try_new(String::read_wire(reader)?).map_err(|error| {
-            AwbcCodecError::InvalidMetadata {
-                kind: "Character identity",
-                message: error.to_string(),
-                offset,
-            }
+        CharacterId::try_new(reader.read_str()?).map_err(|error| AwbcCodecError::InvalidMetadata {
+            kind: "Character identity",
+            message: error.to_string(),
+            offset,
         })
     }
 }
@@ -911,22 +946,56 @@ impl Wire for AwbcLineCleanupPolicy {
     }
 }
 
-wire_enum!(AwbcChildCleanup, "child cleanup", {
-    0 => AwbcChildCleanup::CancelAndJoin,
-    1 => AwbcChildCleanup::Detach,
-    2 => AwbcChildCleanup::Finish,
-});
+impl Wire for AwbcChildCleanup {
+    fn write_wire(&self, writer: &mut Writer) -> Result<(), AwbcCodecError> {
+        writer.write_u8(self.encoded());
+        Ok(())
+    }
 
-wire_enum!(AwbcPresentationCleanup, "presentation cleanup", {
-    0 => AwbcPresentationCleanup::DropRegistered,
-    1 => AwbcPresentationCleanup::KeepRegistered,
-});
+    fn read_wire(reader: &mut Reader<'_>) -> Result<Self, AwbcCodecError> {
+        let offset = reader.offset();
+        let tag = reader.read_u8()?;
+        Self::from_encoded(tag).ok_or(AwbcCodecError::UnknownTag {
+            kind: "child cleanup",
+            tag,
+            offset,
+        })
+    }
+}
 
-wire_enum!(AwbcAudioCleanup, "audio cleanup", {
-    0 => AwbcAudioCleanup::StopRegistered,
-    1 => AwbcAudioCleanup::FadeRegistered,
-    2 => AwbcAudioCleanup::KeepRegistered,
-});
+impl Wire for AwbcPresentationCleanup {
+    fn write_wire(&self, writer: &mut Writer) -> Result<(), AwbcCodecError> {
+        writer.write_u8(self.encoded());
+        Ok(())
+    }
+
+    fn read_wire(reader: &mut Reader<'_>) -> Result<Self, AwbcCodecError> {
+        let offset = reader.offset();
+        let tag = reader.read_u8()?;
+        Self::from_encoded(tag).ok_or(AwbcCodecError::UnknownTag {
+            kind: "presentation cleanup",
+            tag,
+            offset,
+        })
+    }
+}
+
+impl Wire for AwbcAudioCleanup {
+    fn write_wire(&self, writer: &mut Writer) -> Result<(), AwbcCodecError> {
+        writer.write_u8(self.encoded());
+        Ok(())
+    }
+
+    fn read_wire(reader: &mut Reader<'_>) -> Result<Self, AwbcCodecError> {
+        let offset = reader.offset();
+        let tag = reader.read_u8()?;
+        Self::from_encoded(tag).ok_or(AwbcCodecError::UnknownTag {
+            kind: "audio cleanup",
+            tag,
+            offset,
+        })
+    }
+}
 
 impl Wire for AwbcLineTaskNode {
     fn write_wire(&self, writer: &mut Writer) -> Result<(), AwbcCodecError> {
@@ -991,9 +1060,22 @@ impl Wire for AwbcLineTaskNode {
     }
 }
 
-wire_enum!(AwbcParallelPolicy, "parallel policy", {
-    0 => AwbcParallelPolicy::JoinAll,
-});
+impl Wire for AwbcParallelPolicy {
+    fn write_wire(&self, writer: &mut Writer) -> Result<(), AwbcCodecError> {
+        writer.write_u8(self.encoded());
+        Ok(())
+    }
+
+    fn read_wire(reader: &mut Reader<'_>) -> Result<Self, AwbcCodecError> {
+        let offset = reader.offset();
+        let tag = reader.read_u8()?;
+        Self::from_encoded(tag).ok_or(AwbcCodecError::UnknownTag {
+            kind: "parallel policy",
+            tag,
+            offset,
+        })
+    }
+}
 
 impl Wire for AwbcLineTaskTrigger {
     fn write_wire(&self, writer: &mut Writer) -> Result<(), AwbcCodecError> {
@@ -1073,16 +1155,39 @@ pub(super) fn runtime_dialogue_mark_id(
         })
 }
 
-wire_enum!(AwbcChildJoinPolicy, "child join policy", {
-    0 => AwbcChildJoinPolicy::Join,
-    1 => AwbcChildJoinPolicy::Detached,
-});
+impl Wire for AwbcChildJoinPolicy {
+    fn write_wire(&self, writer: &mut Writer) -> Result<(), AwbcCodecError> {
+        writer.write_u8(self.encoded());
+        Ok(())
+    }
 
-wire_enum!(AwbcChildCancelPolicy, "child cancel policy", {
-    0 => AwbcChildCancelPolicy::CancelAndJoin,
-    1 => AwbcChildCancelPolicy::Finish,
-    2 => AwbcChildCancelPolicy::Detach,
-});
+    fn read_wire(reader: &mut Reader<'_>) -> Result<Self, AwbcCodecError> {
+        let offset = reader.offset();
+        let tag = reader.read_u8()?;
+        Self::from_encoded(tag).ok_or(AwbcCodecError::UnknownTag {
+            kind: "child join policy",
+            tag,
+            offset,
+        })
+    }
+}
+
+impl Wire for AwbcChildCancelPolicy {
+    fn write_wire(&self, writer: &mut Writer) -> Result<(), AwbcCodecError> {
+        writer.write_u8(self.encoded());
+        Ok(())
+    }
+
+    fn read_wire(reader: &mut Reader<'_>) -> Result<Self, AwbcCodecError> {
+        let offset = reader.offset();
+        let tag = reader.read_u8()?;
+        Self::from_encoded(tag).ok_or(AwbcCodecError::UnknownTag {
+            kind: "child cancel policy",
+            tag,
+            offset,
+        })
+    }
+}
 
 impl Wire for AwbcStreamPlan {
     fn write_wire(&self, writer: &mut Writer) -> Result<(), AwbcCodecError> {
@@ -1122,8 +1227,19 @@ impl Wire for AwbcPureHelper {
     }
 }
 
-wire_enum!(AwbcPureHelperOrigin, "pure helper origin", {
-    0 => AwbcPureHelperOrigin::Annotated,
-    1 => AwbcPureHelperOrigin::Inferred,
-    2 => AwbcPureHelperOrigin::EngineOwned,
-});
+impl Wire for AwbcPureHelperOrigin {
+    fn write_wire(&self, writer: &mut Writer) -> Result<(), AwbcCodecError> {
+        writer.write_u8(self.encoded());
+        Ok(())
+    }
+
+    fn read_wire(reader: &mut Reader<'_>) -> Result<Self, AwbcCodecError> {
+        let offset = reader.offset();
+        let tag = reader.read_u8()?;
+        Self::from_encoded(tag).ok_or(AwbcCodecError::UnknownTag {
+            kind: "pure helper origin",
+            tag,
+            offset,
+        })
+    }
+}

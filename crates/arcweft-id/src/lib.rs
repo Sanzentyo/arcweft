@@ -66,18 +66,19 @@ pub struct AssetId(PublicId);
 /// instead of maintaining parser-local string tables.
 #[derive(Clone, Copy, Debug, Deserialize, Eq, Hash, Ord, PartialEq, PartialOrd, Serialize)]
 #[serde(rename_all = "snake_case")]
+#[repr(u8)]
 pub enum DeclarationIdentityFamily {
-    Asset,
-    Character,
-    View,
-    Action,
-    Activity,
-    Signal,
-    Metric,
-    Layer,
-    Flow,
-    Proof,
-    Style,
+    Asset = 0,
+    Character = 1,
+    View = 2,
+    Action = 3,
+    Activity = 4,
+    Signal = 5,
+    Metric = 6,
+    Layer = 7,
+    Flow = 8,
+    Proof = 9,
+    Style = 10,
 }
 
 /// Validated module-local spelling of a retained declaration.
@@ -163,6 +164,29 @@ impl PublicId {
 }
 
 impl DeclarationIdentityFamily {
+    #[must_use]
+    pub const fn semantic_tag(self) -> u8 {
+        self as u8
+    }
+
+    #[must_use]
+    pub const fn from_semantic_tag(tag: u8) -> Option<Self> {
+        Some(match tag {
+            0 => Self::Asset,
+            1 => Self::Character,
+            2 => Self::View,
+            3 => Self::Action,
+            4 => Self::Activity,
+            5 => Self::Signal,
+            6 => Self::Metric,
+            7 => Self::Layer,
+            8 => Self::Flow,
+            9 => Self::Proof,
+            10 => Self::Style,
+            _ => return None,
+        })
+    }
+
     pub const fn prefix(self) -> &'static str {
         match self {
             Self::Asset => "asset",
@@ -582,6 +606,33 @@ mod tests {
             );
         }
         assert_eq!(DeclarationIdentityFamily::from_prefix("image"), None);
+    }
+
+    #[test]
+    fn declaration_family_semantic_tags_are_stable_and_closed() {
+        let cases = [
+            (DeclarationIdentityFamily::Asset, 0),
+            (DeclarationIdentityFamily::Character, 1),
+            (DeclarationIdentityFamily::View, 2),
+            (DeclarationIdentityFamily::Action, 3),
+            (DeclarationIdentityFamily::Activity, 4),
+            (DeclarationIdentityFamily::Signal, 5),
+            (DeclarationIdentityFamily::Metric, 6),
+            (DeclarationIdentityFamily::Layer, 7),
+            (DeclarationIdentityFamily::Flow, 8),
+            (DeclarationIdentityFamily::Proof, 9),
+            (DeclarationIdentityFamily::Style, 10),
+        ];
+
+        for (family, tag) in cases {
+            assert_eq!(family.semantic_tag(), tag);
+            assert_eq!(
+                DeclarationIdentityFamily::from_semantic_tag(tag),
+                Some(family)
+            );
+        }
+        assert_eq!(DeclarationIdentityFamily::from_semantic_tag(11), None);
+        assert_eq!(DeclarationIdentityFamily::from_semantic_tag(u8::MAX), None);
     }
 
     #[test]

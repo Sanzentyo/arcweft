@@ -346,25 +346,53 @@ impl AudioLoopMode {
 
 #[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
 #[serde(rename_all = "snake_case")]
+#[repr(u8)]
 pub enum AudioEffectParameterKind {
-    BiquadCutoffMilliHz,
-    BiquadQMilli,
-    CompressorThresholdDbMilli,
-    CompressorRatioMilli,
-    CompressorAttackMicros,
-    CompressorReleaseMicros,
-    CompressorMakeupDbMilli,
-    DelayTimeMillis,
-    DelayFeedbackMilli,
-    ReverbRoomSizeMilli,
-    ReverbDampingMilli,
-    WetGainDbMilli,
-    DryGainDbMilli,
-    LimiterCeilingDbMilli,
-    LimiterReleaseMicros,
+    BiquadCutoffMilliHz = 0,
+    BiquadQMilli = 1,
+    CompressorThresholdDbMilli = 2,
+    CompressorRatioMilli = 3,
+    CompressorAttackMicros = 4,
+    CompressorReleaseMicros = 5,
+    CompressorMakeupDbMilli = 6,
+    DelayTimeMillis = 7,
+    DelayFeedbackMilli = 8,
+    ReverbRoomSizeMilli = 9,
+    ReverbDampingMilli = 10,
+    WetGainDbMilli = 11,
+    DryGainDbMilli = 12,
+    LimiterCeilingDbMilli = 13,
+    LimiterReleaseMicros = 14,
 }
 
 impl AudioEffectParameterKind {
+    #[must_use]
+    pub const fn semantic_tag(self) -> u8 {
+        self as u8
+    }
+
+    #[must_use]
+    pub const fn from_semantic_tag(tag: u8) -> Option<Self> {
+        Some(match tag {
+            0 => Self::BiquadCutoffMilliHz,
+            1 => Self::BiquadQMilli,
+            2 => Self::CompressorThresholdDbMilli,
+            3 => Self::CompressorRatioMilli,
+            4 => Self::CompressorAttackMicros,
+            5 => Self::CompressorReleaseMicros,
+            6 => Self::CompressorMakeupDbMilli,
+            7 => Self::DelayTimeMillis,
+            8 => Self::DelayFeedbackMilli,
+            9 => Self::ReverbRoomSizeMilli,
+            10 => Self::ReverbDampingMilli,
+            11 => Self::WetGainDbMilli,
+            12 => Self::DryGainDbMilli,
+            13 => Self::LimiterCeilingDbMilli,
+            14 => Self::LimiterReleaseMicros,
+            _ => return None,
+        })
+    }
+
     #[must_use]
     pub fn from_name(name: &str) -> Option<Self> {
         match name {
@@ -908,4 +936,37 @@ pub enum AudioValueError {
         value: i64,
         requirement: &'static str,
     },
+}
+
+#[cfg(test)]
+mod tests {
+    use super::AudioEffectParameterKind;
+
+    #[test]
+    fn effect_parameter_kind_tags_are_stable_and_closed() {
+        let cases = [
+            (AudioEffectParameterKind::BiquadCutoffMilliHz, 0),
+            (AudioEffectParameterKind::BiquadQMilli, 1),
+            (AudioEffectParameterKind::CompressorThresholdDbMilli, 2),
+            (AudioEffectParameterKind::CompressorRatioMilli, 3),
+            (AudioEffectParameterKind::CompressorAttackMicros, 4),
+            (AudioEffectParameterKind::CompressorReleaseMicros, 5),
+            (AudioEffectParameterKind::CompressorMakeupDbMilli, 6),
+            (AudioEffectParameterKind::DelayTimeMillis, 7),
+            (AudioEffectParameterKind::DelayFeedbackMilli, 8),
+            (AudioEffectParameterKind::ReverbRoomSizeMilli, 9),
+            (AudioEffectParameterKind::ReverbDampingMilli, 10),
+            (AudioEffectParameterKind::WetGainDbMilli, 11),
+            (AudioEffectParameterKind::DryGainDbMilli, 12),
+            (AudioEffectParameterKind::LimiterCeilingDbMilli, 13),
+            (AudioEffectParameterKind::LimiterReleaseMicros, 14),
+        ];
+
+        for (kind, tag) in cases {
+            assert_eq!(kind.semantic_tag(), tag);
+            assert_eq!(AudioEffectParameterKind::from_semantic_tag(tag), Some(kind));
+        }
+        assert_eq!(AudioEffectParameterKind::from_semantic_tag(15), None);
+        assert_eq!(AudioEffectParameterKind::from_semantic_tag(u8::MAX), None);
+    }
 }

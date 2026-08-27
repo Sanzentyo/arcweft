@@ -1,0 +1,11 @@
+error[E0599]: no variant, associated function, or constant named `RegisterHandle` found for enum `AwbcEffectKind` in the current scope
+ --> tests/ui/removed_awbc_effect_variants_are_absent.rs:4:29
+  |
+4 |     let _ = AwbcEffectKind::RegisterHandle;
+  |                             ^^^^^^^^^^^^^^ variant, associated function, or constant not found in `AwbcEffectKind`
+
+error[E0599]: no variant, associated function, or constant named `DropHandle` found for enum `AwbcEffectKind` in the current scope
+ --> tests/ui/removed_awbc_effect_variants_are_absent.rs:5:29
+  |
+5 |     let _ = AwbcEffectKind::DropHandle;
+  |                             ^^^^^^^^^^ variant, associated function, or constant not found in `AwbcEffectKind`

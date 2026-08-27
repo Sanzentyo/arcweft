@@ -1,5 +1,5 @@
 use super::AwbcCodecError;
-use super::wire::{Reader, Wire, Writer, wire_enum, wire_id};
+use super::wire::{Reader, Wire, Writer, wire_id};
 use crate::awbc::schema::{
     AwbcAgentTypeShape, AwbcAudioCommandId, AwbcBlockId, AwbcChoiceId, AwbcChoiceOptionId,
     AwbcConstant, AwbcConstantId, AwbcContentUnitId, AwbcDigest, AwbcDisplayMapId,
@@ -72,17 +72,17 @@ impl Wire for RuntimeEntityReference {
         match self {
             Self::Project { family, public_id } => {
                 writer.write_u8(0);
-                writer.write_u8(entity_family_tag(*family));
-                public_id.as_str().to_owned().write_wire(writer)?;
+                writer.write_u8(family.semantic_tag());
+                writer.write_str(public_id.as_str())?;
             }
             Self::DialogueLine(line) => {
                 writer.write_u8(1);
-                line.canonical_label().write_wire(writer)?;
+                writer.write_runtime_id_path(line.path())?;
             }
             Self::CharacterLook { character, look } => {
                 writer.write_u8(2);
                 character.write_wire(writer)?;
-                look.as_str().to_owned().write_wire(writer)?;
+                writer.write_str(look.as_str())?;
             }
         }
         Ok(())
@@ -94,18 +94,21 @@ impl Wire for RuntimeEntityReference {
             0 => {
                 let family_offset = reader.offset();
                 let family_tag = reader.read_u8()?;
-                let family =
-                    entity_family_from_tag(family_tag).ok_or(AwbcCodecError::UnknownTag {
+                let family = DeclarationIdentityFamily::from_semantic_tag(family_tag).ok_or(
+                    AwbcCodecError::UnknownTag {
                         kind: "entity reference family",
                         tag: family_tag,
                         offset: family_offset,
-                    })?;
+                    },
+                )?;
                 let public_id_offset = reader.offset();
-                let public_id = PublicId::try_new_engine_owned(String::read_wire(reader)?)
-                    .map_err(|error| AwbcCodecError::InvalidMetadata {
-                        kind: "entity reference public ID",
-                        message: error.to_string(),
-                        offset: public_id_offset,
+                let public_id =
+                    PublicId::try_new_engine_owned(reader.read_str()?).map_err(|error| {
+                        AwbcCodecError::InvalidMetadata {
+                            kind: "entity reference public ID",
+                            message: error.to_string(),
+                            offset: public_id_offset,
+                        }
                     })?;
                 family.validate_public_id(&public_id).map_err(|error| {
                     AwbcCodecError::InvalidMetadata {
@@ -118,8 +121,8 @@ impl Wire for RuntimeEntityReference {
             }
             1 => {
                 let line_offset = reader.offset();
-                let line = String::read_wire(reader)?;
-                RuntimeLineId::canonical(&line)
+                let line = reader.read_str()?;
+                RuntimeLineId::canonical(line)
                     .map(Self::DialogueLine)
                     .map_err(|error| AwbcCodecError::InvalidMetadata {
                         kind: "entity reference dialogue line",
@@ -130,14 +133,13 @@ impl Wire for RuntimeEntityReference {
             2 => {
                 let character = arcweft_character::id::CharacterId::read_wire(reader)?;
                 let look_offset = reader.offset();
-                let look =
-                    CharacterLookId::try_new(String::read_wire(reader)?).map_err(|error| {
-                        AwbcCodecError::InvalidMetadata {
-                            kind: "entity reference character look",
-                            message: error.to_string(),
-                            offset: look_offset,
-                        }
-                    })?;
+                let look = CharacterLookId::try_new(reader.read_str()?).map_err(|error| {
+                    AwbcCodecError::InvalidMetadata {
+                        kind: "entity reference character look",
+                        message: error.to_string(),
+                        offset: look_offset,
+                    }
+                })?;
                 Ok(Self::CharacterLook { character, look })
             }
             tag => Err(AwbcCodecError::UnknownTag {
@@ -147,39 +149,6 @@ impl Wire for RuntimeEntityReference {
             }),
         }
     }
-}
-
-const fn entity_family_tag(family: DeclarationIdentityFamily) -> u8 {
-    match family {
-        DeclarationIdentityFamily::Asset => 0,
-        DeclarationIdentityFamily::Character => 1,
-        DeclarationIdentityFamily::View => 2,
-        DeclarationIdentityFamily::Action => 3,
-        DeclarationIdentityFamily::Activity => 4,
-        DeclarationIdentityFamily::Signal => 5,
-        DeclarationIdentityFamily::Metric => 6,
-        DeclarationIdentityFamily::Layer => 7,
-        DeclarationIdentityFamily::Flow => 8,
-        DeclarationIdentityFamily::Proof => 9,
-        DeclarationIdentityFamily::Style => 10,
-    }
-}
-
-const fn entity_family_from_tag(tag: u8) -> Option<DeclarationIdentityFamily> {
-    Some(match tag {
-        0 => DeclarationIdentityFamily::Asset,
-        1 => DeclarationIdentityFamily::Character,
-        2 => DeclarationIdentityFamily::View,
-        3 => DeclarationIdentityFamily::Action,
-        4 => DeclarationIdentityFamily::Activity,
-        5 => DeclarationIdentityFamily::Signal,
-        6 => DeclarationIdentityFamily::Metric,
-        7 => DeclarationIdentityFamily::Layer,
-        8 => DeclarationIdentityFamily::Flow,
-        9 => DeclarationIdentityFamily::Proof,
-        10 => DeclarationIdentityFamily::Style,
-        _ => return None,
-    })
 }
 
 impl Wire for AwbcTableRange {
@@ -216,23 +185,39 @@ impl Wire for AwbcHeader {
     }
 }
 
-wire_enum!(AwbcSignedIntKind, "signed integer kind", {
-    0 => AwbcSignedIntKind::I8,
-    1 => AwbcSignedIntKind::I16,
-    2 => AwbcSignedIntKind::I32,
-    3 => AwbcSignedIntKind::I64,
-    4 => AwbcSignedIntKind::I128,
-    5 => AwbcSignedIntKind::ISize,
-});
+impl Wire for AwbcSignedIntKind {
+    fn write_wire(&self, writer: &mut Writer) -> Result<(), AwbcCodecError> {
+        writer.write_u8(self.encoded());
+        Ok(())
+    }
 
-wire_enum!(AwbcUnsignedIntKind, "unsigned integer kind", {
-    0 => AwbcUnsignedIntKind::U8,
-    1 => AwbcUnsignedIntKind::U16,
-    2 => AwbcUnsignedIntKind::U32,
-    3 => AwbcUnsignedIntKind::U64,
-    4 => AwbcUnsignedIntKind::U128,
-    5 => AwbcUnsignedIntKind::USize,
-});
+    fn read_wire(reader: &mut Reader<'_>) -> Result<Self, AwbcCodecError> {
+        let offset = reader.offset();
+        let tag = reader.read_u8()?;
+        Self::from_encoded(tag).ok_or(AwbcCodecError::UnknownTag {
+            kind: "signed integer kind",
+            tag,
+            offset,
+        })
+    }
+}
+
+impl Wire for AwbcUnsignedIntKind {
+    fn write_wire(&self, writer: &mut Writer) -> Result<(), AwbcCodecError> {
+        writer.write_u8(self.encoded());
+        Ok(())
+    }
+
+    fn read_wire(reader: &mut Reader<'_>) -> Result<Self, AwbcCodecError> {
+        let offset = reader.offset();
+        let tag = reader.read_u8()?;
+        Self::from_encoded(tag).ok_or(AwbcCodecError::UnknownTag {
+            kind: "unsigned integer kind",
+            tag,
+            offset,
+        })
+    }
+}
 
 impl Wire for AwbcRecordField {
     fn write_wire(&self, writer: &mut Writer) -> Result<(), AwbcCodecError> {
@@ -309,16 +294,39 @@ impl Wire for RuntimeBuiltinVariantIdentity {
     }
 }
 
-wire_enum!(RuntimeOpaqueTypeAdmission, "opaque type admission", {
-    0 => RuntimeOpaqueTypeAdmission::ExactIdentity,
-    1 => RuntimeOpaqueTypeAdmission::ProducerWide,
-});
+impl Wire for RuntimeOpaqueTypeAdmission {
+    fn write_wire(&self, writer: &mut Writer) -> Result<(), AwbcCodecError> {
+        writer.write_u8(self.encoded());
+        Ok(())
+    }
 
-wire_enum!(RuntimeHandleKind, "runtime handle kind", {
-    0 => RuntimeHandleKind::StageActor,
-    1 => RuntimeHandleKind::Cue,
-    2 => RuntimeHandleKind::Voice,
-});
+    fn read_wire(reader: &mut Reader<'_>) -> Result<Self, AwbcCodecError> {
+        let offset = reader.offset();
+        let tag = reader.read_u8()?;
+        Self::from_encoded(tag).ok_or(AwbcCodecError::UnknownTag {
+            kind: "opaque type admission",
+            tag,
+            offset,
+        })
+    }
+}
+
+impl Wire for RuntimeHandleKind {
+    fn write_wire(&self, writer: &mut Writer) -> Result<(), AwbcCodecError> {
+        writer.write_u8(self.encoded());
+        Ok(())
+    }
+
+    fn read_wire(reader: &mut Reader<'_>) -> Result<Self, AwbcCodecError> {
+        let offset = reader.offset();
+        let tag = reader.read_u8()?;
+        Self::from_encoded(tag).ok_or(AwbcCodecError::UnknownTag {
+            kind: "runtime handle kind",
+            tag,
+            offset,
+        })
+    }
+}
 
 impl Wire for RuntimeOpaqueValueClass {
     fn write_wire(&self, writer: &mut Writer) -> Result<(), AwbcCodecError> {
@@ -346,10 +354,22 @@ impl Wire for RuntimeOpaqueValueClass {
     }
 }
 
-wire_enum!(RuntimeOpaquePersistence, "opaque persistence", {
-    0 => RuntimeOpaquePersistence::ConstantAndSnapshot,
-    1 => RuntimeOpaquePersistence::SnapshotOnly,
-});
+impl Wire for RuntimeOpaquePersistence {
+    fn write_wire(&self, writer: &mut Writer) -> Result<(), AwbcCodecError> {
+        writer.write_u8(self.semantic_tag());
+        Ok(())
+    }
+
+    fn read_wire(reader: &mut Reader<'_>) -> Result<Self, AwbcCodecError> {
+        let offset = reader.offset();
+        let tag = reader.read_u8()?;
+        Self::from_semantic_tag(tag).ok_or(AwbcCodecError::UnknownTag {
+            kind: "opaque persistence",
+            tag,
+            offset,
+        })
+    }
+}
 
 impl Wire for AwbcRuntimeType {
     fn write_wire(&self, writer: &mut Writer) -> Result<(), AwbcCodecError> {
@@ -643,42 +663,22 @@ fn write_tagged_fields(
     write_fields(writer)
 }
 
-wire_enum!(RuntimeAgentOperationalType, "Agent runtime type", {
-    0 => RuntimeAgentOperationalType::DebugStatePath,
-    1 => RuntimeAgentOperationalType::ObservationFieldPath,
-    2 => RuntimeAgentOperationalType::Probe,
-    3 => RuntimeAgentOperationalType::Predicate,
-    4 => RuntimeAgentOperationalType::Observation,
-    5 => RuntimeAgentOperationalType::ObservedObject,
-    6 => RuntimeAgentOperationalType::BoundingBox,
-    7 => RuntimeAgentOperationalType::ActionName,
-    8 => RuntimeAgentOperationalType::ActionTarget,
-    9 => RuntimeAgentOperationalType::ActionResult,
-    11 => RuntimeAgentOperationalType::DataFormat,
-    12 => RuntimeAgentOperationalType::DataShape,
-    13 => RuntimeAgentOperationalType::EntityMetadata,
-    14 => RuntimeAgentOperationalType::SourceAnchor,
-    15 => RuntimeAgentOperationalType::ProjectGraphNeighborhood,
-    16 => RuntimeAgentOperationalType::ProjectGraphSymbol,
-    17 => RuntimeAgentOperationalType::ProjectGraphEdge,
-    18 => RuntimeAgentOperationalType::CaptureTarget,
-    19 => RuntimeAgentOperationalType::CaptureReference,
-    20 => RuntimeAgentOperationalType::Resource,
-    22 => RuntimeAgentOperationalType::RagContextPack,
-    23 => RuntimeAgentOperationalType::ObservedObjectId,
-    24 => RuntimeAgentOperationalType::CaptureFormat,
-    25 => RuntimeAgentOperationalType::CaptureKind,
-    26 => RuntimeAgentOperationalType::Diagnostics,
-    27 => RuntimeAgentOperationalType::WaitError,
-    28 => RuntimeAgentOperationalType::ViewportPoint,
-    29 => RuntimeAgentOperationalType::PointerButton,
-    30 => RuntimeAgentOperationalType::RagError,
-    31 => RuntimeAgentOperationalType::SourcePosition,
-    32 => RuntimeAgentOperationalType::ProjectFlowControlSummary,
-    33 => RuntimeAgentOperationalType::ProjectGraphSummary,
-    34 => RuntimeAgentOperationalType::BinaryResourceBody,
-    35 => RuntimeAgentOperationalType::BinaryData,
-});
+impl Wire for RuntimeAgentOperationalType {
+    fn write_wire(&self, writer: &mut Writer) -> Result<(), AwbcCodecError> {
+        writer.write_u8(self.semantic_tag());
+        Ok(())
+    }
+
+    fn read_wire(reader: &mut Reader<'_>) -> Result<Self, AwbcCodecError> {
+        let offset = reader.offset();
+        let tag = reader.read_u8()?;
+        Self::from_semantic_tag(tag).ok_or(AwbcCodecError::UnknownTag {
+            kind: "Agent runtime type",
+            tag,
+            offset,
+        })
+    }
+}
 
 impl Wire for AwbcAgentTypeShape {
     fn write_wire(&self, writer: &mut Writer) -> Result<(), AwbcCodecError> {
@@ -728,11 +728,11 @@ impl Wire for AwbcConstant {
             }
             Self::F32Bits(value) => {
                 writer.write_u8(4);
-                writer.write_u32_le(*value);
+                writer.write_f32_bits(*value);
             }
             Self::F64Bits(value) => {
                 writer.write_u8(5);
-                writer.write_u64_le(*value);
+                writer.write_f64_bits(*value);
             }
             Self::String(value) => {
                 writer.write_u8(6);
@@ -818,8 +818,8 @@ impl Wire for AwbcConstant {
                 kind: AwbcUnsignedIntKind::read_wire(reader)?,
                 bits: <[u8; 16]>::read_wire(reader)?,
             },
-            4 => Self::F32Bits(reader.read_u32_le()?),
-            5 => Self::F64Bits(reader.read_u64_le()?),
+            4 => Self::F32Bits(reader.read_f32_bits()?),
+            5 => Self::F64Bits(reader.read_f64_bits()?),
             6 => Self::String(AwbcStringId::read_wire(reader)?),
             7 => Self::Char(u32::read_wire(reader)?),
             8 => Self::DurationNanos(u64::read_wire(reader)?),
@@ -848,7 +848,7 @@ impl Wire for AwbcConstant {
                 let len = reader.read_len()?;
                 Reader::check_limit("tensor_elements", len, reader.budget().tensor_elements)?;
                 let values = (0..len)
-                    .map(|_| reader.read_u32_le())
+                    .map(|_| reader.read_f32_bits())
                     .collect::<Result<Vec<_>, _>>()?;
                 Self::TensorF32 { shape, values }
             }
@@ -857,7 +857,7 @@ impl Wire for AwbcConstant {
                 let len = reader.read_len()?;
                 Reader::check_limit("tensor_elements", len, reader.budget().tensor_elements)?;
                 let values = (0..len)
-                    .map(|_| reader.read_u64_le())
+                    .map(|_| reader.read_f64_bits())
                     .collect::<Result<Vec<_>, _>>()?;
                 Self::TensorF64 { shape, values }
             }
@@ -882,10 +882,10 @@ fn write_tensor_f32_constant(
     values: &[u32],
 ) -> Result<(), AwbcCodecError> {
     writer.write_u8(15);
-    write_u32_slice(writer, shape)?;
+    writer.write_table(shape)?;
     writer.write_len(values.len())?;
     for value in values {
-        writer.write_u32_le(*value);
+        writer.write_f32_bits(*value);
     }
     Ok(())
 }
@@ -896,18 +896,10 @@ fn write_tensor_f64_constant(
     values: &[u64],
 ) -> Result<(), AwbcCodecError> {
     writer.write_u8(16);
-    write_u32_slice(writer, shape)?;
+    writer.write_table(shape)?;
     writer.write_len(values.len())?;
     for value in values {
-        writer.write_u64_le(*value);
-    }
-    Ok(())
-}
-
-fn write_u32_slice(writer: &mut Writer, values: &[u32]) -> Result<(), AwbcCodecError> {
-    writer.write_len(values.len())?;
-    for value in values {
-        writer.write_u32_le(*value);
+        writer.write_f64_bits(*value);
     }
     Ok(())
 }
@@ -972,13 +964,22 @@ impl Wire for AwbcFrameSlot {
     }
 }
 
-wire_enum!(AwbcFrameSlotRole, "frame slot role", {
-    0 => AwbcFrameSlotRole::Parameter,
-    1 => AwbcFrameSlotRole::Local,
-    2 => AwbcFrameSlotRole::Temporary,
-    3 => AwbcFrameSlotRole::ReturnValue,
-    4 => AwbcFrameSlotRole::RuntimeState,
-});
+impl Wire for AwbcFrameSlotRole {
+    fn write_wire(&self, writer: &mut Writer) -> Result<(), AwbcCodecError> {
+        writer.write_u8(self.encoded());
+        Ok(())
+    }
+
+    fn read_wire(reader: &mut Reader<'_>) -> Result<Self, AwbcCodecError> {
+        let offset = reader.offset();
+        let tag = reader.read_u8()?;
+        Self::from_encoded(tag).ok_or(AwbcCodecError::UnknownTag {
+            kind: "frame slot role",
+            tag,
+            offset,
+        })
+    }
+}
 
 impl Wire for AwbcFunctionFlags {
     fn write_wire(&self, writer: &mut Writer) -> Result<(), AwbcCodecError> {
@@ -1020,7 +1021,7 @@ mod opaque_wire_tests {
         let mut expected = vec![9; 32];
         expected.extend([23, 7]);
         expected.extend([0, 0, 0, 0]);
-        assert_eq!(writer.finish(), expected);
+        assert_eq!(writer.into_bytes(), expected);
 
         let constant = AwbcConstant::Opaque {
             ty: AwbcTypeId(3),
@@ -1030,7 +1031,7 @@ mod opaque_wire_tests {
         constant
             .write_wire(&mut writer)
             .expect("encode opaque constant");
-        assert_eq!(writer.finish(), vec![18, 3, 5]);
+        assert_eq!(writer.into_bytes(), vec![18, 3, 5]);
     }
 
     #[test]
@@ -1051,6 +1052,42 @@ mod opaque_wire_tests {
     }
 
     #[test]
+    fn tensor_shape_uses_canonical_varints_while_elements_remain_fixed_bits() {
+        let constant = AwbcConstant::TensorF32 {
+            shape: vec![1, 128],
+            values: vec![0x0102_0304, 0xa0b0_c0d0],
+        };
+        let mut writer = Writer::default();
+        constant
+            .write_wire(&mut writer)
+            .expect("encode tensor constant");
+        let bytes = writer.into_bytes();
+
+        assert_eq!(&bytes[..6], &[15, 2, 1, 0x80, 0x01, 2]);
+        assert_eq!(&bytes[6..10], &0x0102_0304_u32.to_le_bytes());
+        assert_eq!(&bytes[10..14], &0xa0b0_c0d0_u32.to_le_bytes());
+
+        let mut reader = Reader::new(&bytes, &AwbcDecodeBudget::default());
+        assert_eq!(
+            AwbcConstant::read_wire(&mut reader).expect("decode tensor constant"),
+            constant
+        );
+        reader.finish().expect("consume tensor constant");
+    }
+
+    #[test]
+    fn tensor_shape_rejects_noncanonical_dimension_varints() {
+        let bytes = [15, 2, 0x81, 0x00, 0x80, 0x01, 0];
+        let mut reader = Reader::new(&bytes, &AwbcDecodeBudget::default());
+
+        assert_eq!(
+            AwbcConstant::read_wire(&mut reader)
+                .expect_err("overlong tensor dimension must reject"),
+            AwbcCodecError::NonCanonicalVarint { offset: 2 }
+        );
+    }
+
+    #[test]
     fn entity_reference_wire_roundtrip_preserves_character_look() {
         let reference = RuntimeEntityReference::CharacterLook {
             character: arcweft_character::id::CharacterId::try_new("character.alice")
@@ -1061,7 +1098,7 @@ mod opaque_wire_tests {
         reference
             .write_wire(&mut writer)
             .expect("encode character look identity");
-        let bytes = writer.finish();
+        let bytes = writer.into_bytes();
         let mut reader = Reader::new(&bytes, &AwbcDecodeBudget::default());
         assert_eq!(
             RuntimeEntityReference::read_wire(&mut reader).expect("decode character look identity"),

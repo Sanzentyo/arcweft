@@ -148,18 +148,22 @@ pub enum AwbcCodecError {
 impl AwbcProgram {
     /// Encodes this program into the unique AWBC v1 byte representation.
     pub fn encode_canonical(&self) -> Result<Vec<u8>, AwbcCodecError> {
-        let mut payload = Writer::default();
-        self.write_wire(&mut payload)?;
-        let payload = payload.finish();
-        let payload_len =
-            u64::try_from(payload.len()).map_err(|_| AwbcCodecError::LengthOverflow)?;
-        let mut bytes = Vec::with_capacity(ENVELOPE_BYTES.saturating_add(payload.len()));
-        bytes.extend_from_slice(&AWBC_MAGIC);
-        bytes.extend_from_slice(&AWBC_CODEC_VERSION.to_le_bytes());
-        bytes.extend_from_slice(&0_u16.to_le_bytes());
-        bytes.extend_from_slice(&payload_len.to_le_bytes());
-        bytes.extend_from_slice(&payload);
-        Ok(bytes)
+        let mut writer = Writer::with_capacity(ENVELOPE_BYTES);
+        writer.transaction(|writer| {
+            writer.write_bytes(&AWBC_MAGIC);
+            writer.write_u16_le(AWBC_CODEC_VERSION);
+            writer.write_u16_le(0);
+            writer.write_u64_le(0);
+            let payload_start = writer.len();
+            self.write_wire(writer)?;
+            let payload_len = writer
+                .len()
+                .checked_sub(payload_start)
+                .and_then(|len| u64::try_from(len).ok())
+                .ok_or(AwbcCodecError::LengthOverflow)?;
+            writer.patch_u64_le(12, payload_len)
+        })?;
+        Ok(writer.into_bytes())
     }
 
     /// Decodes canonical AWBC bytes while enforcing all allocation budgets.

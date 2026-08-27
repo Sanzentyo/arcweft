@@ -69,11 +69,42 @@ pub struct RuntimeSchemaVariant {
 }
 
 #[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[repr(u8)]
 pub enum RuntimeBytesFormat {
-    Binary,
-    Base64,
-    Hex,
-    Array,
+    Binary = 0,
+    Base64 = 1,
+    Hex = 2,
+    Array = 3,
+}
+
+impl RuntimeBytesFormat {
+    pub const ALL: &'static [Self] = &[Self::Binary, Self::Base64, Self::Hex, Self::Array];
+
+    const DECODE: [Option<Self>; 256] = {
+        let mut table = [None; 256];
+        let mut index = 0;
+        while index < Self::ALL.len() {
+            let value = Self::ALL[index];
+            let encoded = value as u8 as usize;
+            assert!(
+                table[encoded].is_none(),
+                "duplicate runtime bytes format tag"
+            );
+            table[encoded] = Some(value);
+            index += 1;
+        }
+        table
+    };
+
+    #[must_use]
+    pub const fn semantic_tag(self) -> u8 {
+        self as u8
+    }
+
+    #[must_use]
+    pub const fn from_semantic_tag(tag: u8) -> Option<Self> {
+        Self::DECODE[tag as usize]
+    }
 }
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
@@ -84,30 +115,71 @@ pub enum RuntimeEnumTagStyle {
 }
 
 #[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[repr(u8)]
 pub enum RuntimeEnumRepr {
-    I8,
-    I16,
-    I32,
-    I64,
-    I128,
-    ISize,
-    U8,
-    U16,
-    U32,
-    U64,
-    U128,
-    USize,
+    I8 = 0,
+    I16 = 1,
+    I32 = 2,
+    I64 = 3,
+    I128 = 4,
+    ISize = 5,
+    U8 = 6,
+    U16 = 7,
+    U32 = 8,
+    U64 = 9,
+    U128 = 10,
+    USize = 11,
+}
+
+impl RuntimeEnumRepr {
+    pub const ALL: &'static [Self] = &[
+        Self::I8,
+        Self::I16,
+        Self::I32,
+        Self::I64,
+        Self::I128,
+        Self::ISize,
+        Self::U8,
+        Self::U16,
+        Self::U32,
+        Self::U64,
+        Self::U128,
+        Self::USize,
+    ];
+
+    const DECODE: [Option<Self>; 256] = {
+        let mut table = [None; 256];
+        let mut index = 0;
+        while index < Self::ALL.len() {
+            let value = Self::ALL[index];
+            let encoded = value as u8 as usize;
+            assert!(table[encoded].is_none(), "duplicate runtime enum repr tag");
+            table[encoded] = Some(value);
+            index += 1;
+        }
+        table
+    };
+
+    #[must_use]
+    pub const fn semantic_tag(self) -> u8 {
+        self as u8
+    }
+
+    #[must_use]
+    pub const fn from_semantic_tag(tag: u8) -> Option<Self> {
+        Self::DECODE[tag as usize]
+    }
 }
 
 /// Persistent-value validation limits used at startup, ingress, reducer,
 /// save/restore, and replay boundaries.
 #[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub struct RuntimeSchemaLimits {
-    pub max_depth: usize,
-    pub max_nodes: usize,
-    pub max_sequence_items: usize,
-    pub max_string_bytes: usize,
-    pub max_encoded_bytes: usize,
+    pub max_depth: u32,
+    pub max_nodes: u32,
+    pub max_sequence_items: u32,
+    pub max_string_bytes: u64,
+    pub max_encoded_bytes: u64,
 }
 
 impl RuntimeSchemaLimits {
@@ -123,6 +195,36 @@ impl RuntimeSchemaLimits {
             max_sequence_items: 65_536,
             max_string_bytes: 1_048_576,
             max_encoded_bytes: 8_388_608,
+        }
+    }
+
+    #[must_use]
+    pub fn permits_depth(self, actual: usize) -> bool {
+        u32::try_from(actual).is_ok_and(|actual| actual <= self.max_depth)
+    }
+
+    #[must_use]
+    pub fn permits_nodes(self, actual: usize) -> bool {
+        u32::try_from(actual).is_ok_and(|actual| actual <= self.max_nodes)
+    }
+
+    #[must_use]
+    pub fn permits_sequence_items(self, actual: usize) -> bool {
+        u32::try_from(actual).is_ok_and(|actual| actual <= self.max_sequence_items)
+    }
+
+    #[must_use]
+    pub fn permits_string_bytes(self, actual: usize) -> bool {
+        u64::try_from(actual).is_ok_and(|actual| actual <= self.max_string_bytes)
+    }
+
+    /// Projects the u64 product limit onto the host address space. When the
+    /// selected limit exceeds `usize`, every representable allocation is still
+    /// within that limit, so `usize::MAX` is the exact host-side bound.
+    pub(crate) fn platform_encoded_bytes(self) -> usize {
+        match usize::try_from(self.max_encoded_bytes) {
+            Ok(limit) => limit,
+            Err(_) => usize::MAX,
         }
     }
 }
@@ -220,7 +322,7 @@ impl RuntimeTypeSchema {
             }
             _ => state.validate(self, &payload.0, "$", 0)?,
         }
-        canonical_runtime_value_digest(&payload.0, limits.max_encoded_bytes)
+        canonical_runtime_value_digest(&payload.0, limits.platform_encoded_bytes())
     }
 
     pub fn validate_value(
@@ -235,7 +337,7 @@ impl RuntimeTypeSchema {
             definitions,
         };
         state.validate(self, value, "$", 0)?;
-        canonical_runtime_value_digest(value, limits.max_encoded_bytes)
+        canonical_runtime_value_digest(value, limits.platform_encoded_bytes())
     }
 
     fn canonical_bytes(&self) -> Option<Vec<u8>> {
@@ -437,7 +539,7 @@ impl<S: CanonicalRuntimeValueSink + ?Sized> CanonicalRuntimeValueVisitor<'_, S> 
         match value {
             RuntimeEntityReference::Project { family, public_id } => {
                 self.u8(0)?;
-                self.u8(entity_family_tag(*family))?;
+                self.u8(family.semantic_tag())?;
                 self.string(public_id.as_str())
             }
             RuntimeEntityReference::DialogueLine(line) => {
@@ -1028,14 +1130,14 @@ impl<'a> SchemaValidationState<'a> {
         path: &str,
         depth: usize,
     ) -> Result<(), RuntimeSchemaError> {
-        if depth > self.limits.max_depth {
+        if !self.limits.permits_depth(depth) {
             return Err(RuntimeSchemaError::BudgetExceeded { budget: "depth" });
         }
         self.nodes = self
             .nodes
             .checked_add(1)
             .ok_or(RuntimeSchemaError::BudgetExceeded { budget: "nodes" })?;
-        if self.nodes > self.limits.max_nodes {
+        if !self.limits.permits_nodes(self.nodes) {
             return Err(RuntimeSchemaError::BudgetExceeded { budget: "nodes" });
         }
         match (schema, value) {
@@ -1065,12 +1167,12 @@ impl<'a> SchemaValidationState<'a> {
                 kind: "f64",
             }),
             (RuntimeTypeSchema::String, RuntimeValue::String(value)) => {
-                if value.len() > self.limits.max_string_bytes {
+                if self.limits.permits_string_bytes(value.len()) {
+                    Ok(())
+                } else {
                     Err(RuntimeSchemaError::BudgetExceeded {
                         budget: "string_bytes",
                     })
-                } else {
-                    Ok(())
                 }
             }
             (RuntimeTypeSchema::Bytes { .. }, RuntimeValue::Seq(sequence)) => {
@@ -1153,7 +1255,7 @@ impl<'a> SchemaValidationState<'a> {
         path: &str,
         depth: usize,
     ) -> Result<(), RuntimeSchemaError> {
-        if entries.len() > self.limits.max_sequence_items {
+        if !self.limits.permits_sequence_items(entries.len()) {
             return Err(RuntimeSchemaError::BudgetExceeded {
                 budget: "sequence_items",
             });
@@ -1288,7 +1390,7 @@ impl<'a> SchemaValidationState<'a> {
         path: &str,
         depth: usize,
     ) -> Result<(), RuntimeSchemaError> {
-        if values.len() > self.limits.max_sequence_items {
+        if !self.limits.permits_sequence_items(values.len()) {
             return Err(RuntimeSchemaError::BudgetExceeded {
                 budget: "sequence_items",
             });
@@ -1391,22 +1493,6 @@ fn type_error(path: &str, expected: &'static str, value: &RuntimeValue) -> Runti
         path: path.to_owned(),
         expected,
         actual: runtime_value_type(value),
-    }
-}
-
-const fn entity_family_tag(family: arcweft_id::DeclarationIdentityFamily) -> u8 {
-    match family {
-        arcweft_id::DeclarationIdentityFamily::Asset => 0,
-        arcweft_id::DeclarationIdentityFamily::Character => 1,
-        arcweft_id::DeclarationIdentityFamily::View => 2,
-        arcweft_id::DeclarationIdentityFamily::Action => 3,
-        arcweft_id::DeclarationIdentityFamily::Activity => 4,
-        arcweft_id::DeclarationIdentityFamily::Signal => 5,
-        arcweft_id::DeclarationIdentityFamily::Metric => 6,
-        arcweft_id::DeclarationIdentityFamily::Layer => 7,
-        arcweft_id::DeclarationIdentityFamily::Flow => 8,
-        arcweft_id::DeclarationIdentityFamily::Proof => 9,
-        arcweft_id::DeclarationIdentityFamily::Style => 10,
     }
 }
 

@@ -605,6 +605,11 @@ impl FlowRuntimeId {
         self.public_label.clone()
     }
 
+    #[must_use]
+    pub(crate) const fn public_label_ref(&self) -> &RuntimePublicLabel {
+        &self.public_label
+    }
+
     /// Selects one exact accepted Flow identity for a runtime-authored target.
     ///
     /// Canonical identities admitted by the public/manual `RuntimePlan`

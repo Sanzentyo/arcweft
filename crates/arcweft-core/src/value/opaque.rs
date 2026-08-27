@@ -328,13 +328,29 @@ fn wrap_dialogue_payload(role: RuntimeDialogueOpaqueRole, payload: RuntimeValue)
 
 #[derive(Clone, Copy, Debug, Deserialize, Eq, Hash, Ord, PartialEq, PartialOrd, Serialize)]
 #[serde(rename_all = "snake_case")]
+#[repr(u8)]
 pub enum RuntimeHandleKind {
-    StageActor,
-    Cue,
-    Voice,
+    StageActor = 0,
+    Cue = 1,
+    Voice = 2,
 }
 
 impl RuntimeHandleKind {
+    #[must_use]
+    pub const fn encoded(self) -> u8 {
+        self as u8
+    }
+
+    #[must_use]
+    pub const fn from_encoded(value: u8) -> Option<Self> {
+        Some(match value {
+            0 => Self::StageActor,
+            1 => Self::Cue,
+            2 => Self::Voice,
+            _ => return None,
+        })
+    }
+
     pub const fn label(self) -> &'static str {
         match self {
             Self::StageActor => "stage_actor",
@@ -361,14 +377,6 @@ impl RuntimeHandleKind {
             Self::Voice => "std.line.voice_handle",
         })
     }
-
-    pub(crate) const fn canonical_tag(self) -> u8 {
-        match self {
-            Self::StageActor => 1,
-            Self::Cue => 2,
-            Self::Voice => 3,
-        }
-    }
 }
 
 #[derive(Clone, Copy, Debug, Deserialize, Eq, Hash, Ord, PartialEq, PartialOrd, Serialize)]
@@ -384,26 +392,33 @@ impl RuntimeOpaqueValueClass {
     pub const fn semantic_tag(self) -> u8 {
         match self {
             Self::Plain => 0,
-            Self::AffineHandle(kind) => kind.canonical_tag(),
+            Self::AffineHandle(kind) => kind.encoded() + 1,
         }
     }
 }
 
 #[derive(Clone, Copy, Debug, Deserialize, Eq, Hash, Ord, PartialEq, PartialOrd, Serialize)]
 #[serde(rename_all = "snake_case")]
+#[repr(u8)]
 pub enum RuntimeOpaquePersistence {
-    ConstantAndSnapshot,
-    SnapshotOnly,
+    ConstantAndSnapshot = 0,
+    SnapshotOnly = 1,
 }
 
 impl RuntimeOpaquePersistence {
     /// Stable semantic tag used by catalog and ownership digests.
     #[must_use]
     pub const fn semantic_tag(self) -> u8 {
-        match self {
-            Self::ConstantAndSnapshot => 0,
-            Self::SnapshotOnly => 1,
-        }
+        self as u8
+    }
+
+    #[must_use]
+    pub const fn from_semantic_tag(tag: u8) -> Option<Self> {
+        Some(match tag {
+            0 => Self::ConstantAndSnapshot,
+            1 => Self::SnapshotOnly,
+            _ => return None,
+        })
     }
 }
 
@@ -734,8 +749,49 @@ mod tests {
 
     #[test]
     fn admission_discriminants_are_stable() {
-        assert_eq!(RuntimeOpaqueTypeAdmission::ExactIdentity as u8, 0);
-        assert_eq!(RuntimeOpaqueTypeAdmission::ProducerWide as u8, 1);
+        assert_eq!(RuntimeOpaqueTypeAdmission::ExactIdentity.encoded(), 0);
+        assert_eq!(RuntimeOpaqueTypeAdmission::ProducerWide.encoded(), 1);
+        assert_eq!(RuntimeOpaqueTypeAdmission::from_encoded(2), None);
+    }
+
+    #[test]
+    fn opaque_value_class_and_persistence_tags_are_stable_and_closed() {
+        let handles = [
+            (RuntimeHandleKind::StageActor, 0),
+            (RuntimeHandleKind::Cue, 1),
+            (RuntimeHandleKind::Voice, 2),
+        ];
+        for (kind, tag) in handles {
+            assert_eq!(kind.encoded(), tag);
+            assert_eq!(RuntimeHandleKind::from_encoded(tag), Some(kind));
+        }
+        assert_eq!(RuntimeHandleKind::from_encoded(3), None);
+        assert_eq!(RuntimeHandleKind::from_encoded(u8::MAX), None);
+
+        assert_eq!(RuntimeOpaqueValueClass::Plain.semantic_tag(), 0);
+        assert_eq!(
+            RuntimeOpaqueValueClass::AffineHandle(RuntimeHandleKind::StageActor).semantic_tag(),
+            1
+        );
+        assert_eq!(
+            RuntimeOpaqueValueClass::AffineHandle(RuntimeHandleKind::Cue).semantic_tag(),
+            2
+        );
+        assert_eq!(
+            RuntimeOpaqueValueClass::AffineHandle(RuntimeHandleKind::Voice).semantic_tag(),
+            3
+        );
+
+        let persistence = [
+            (RuntimeOpaquePersistence::ConstantAndSnapshot, 0),
+            (RuntimeOpaquePersistence::SnapshotOnly, 1),
+        ];
+        for (kind, tag) in persistence {
+            assert_eq!(kind.semantic_tag(), tag);
+            assert_eq!(RuntimeOpaquePersistence::from_semantic_tag(tag), Some(kind));
+        }
+        assert_eq!(RuntimeOpaquePersistence::from_semantic_tag(2), None);
+        assert_eq!(RuntimeOpaquePersistence::from_semantic_tag(u8::MAX), None);
     }
 
     #[test]

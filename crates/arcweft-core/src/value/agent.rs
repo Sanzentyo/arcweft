@@ -793,34 +793,85 @@ impl RuntimeAgentCompareOp {
 
 /// Typed operation encoded by native evaluation and AWBC `MakeAgent`.
 #[derive(Clone, Copy, Debug, Deserialize, Eq, Hash, Ord, PartialEq, PartialOrd, Serialize)]
+#[repr(u8)]
 pub enum RuntimeAgentConstructor {
-    ChoiceAction,
-    CaptureViewport,
-    CaptureLayer,
-    CaptureObject,
-    StatePath,
-    ObservationPath,
-    ProbeSignal,
-    ProbeMetric,
-    ProbeState,
-    ProbeObservation,
-    Diagnostics,
-    PredicateExists,
-    PredicateActionEnabled,
-    PredicateDiagnosticsHasError,
-    PredicateAll,
-    PredicateAny,
-    PredicateNot,
-    PredicateEq,
-    PredicateNotEq,
-    PredicateGreater,
-    PredicateGreaterOrEqual,
-    PredicateLess,
-    PredicateLessOrEqual,
-    ViewportPoint,
+    ChoiceAction = 0,
+    CaptureViewport = 1,
+    CaptureLayer = 2,
+    CaptureObject = 3,
+    StatePath = 4,
+    ObservationPath = 5,
+    ProbeSignal = 6,
+    ProbeMetric = 7,
+    ProbeState = 8,
+    ProbeObservation = 9,
+    Diagnostics = 10,
+    PredicateExists = 11,
+    PredicateActionEnabled = 12,
+    PredicateDiagnosticsHasError = 13,
+    PredicateAll = 14,
+    PredicateAny = 15,
+    PredicateNot = 16,
+    PredicateEq = 17,
+    PredicateNotEq = 18,
+    PredicateGreater = 19,
+    PredicateGreaterOrEqual = 20,
+    PredicateLess = 21,
+    PredicateLessOrEqual = 22,
+    ViewportPoint = 23,
 }
 
 impl RuntimeAgentConstructor {
+    pub const ALL: &'static [Self] = &[
+        Self::ChoiceAction,
+        Self::CaptureViewport,
+        Self::CaptureLayer,
+        Self::CaptureObject,
+        Self::StatePath,
+        Self::ObservationPath,
+        Self::ProbeSignal,
+        Self::ProbeMetric,
+        Self::ProbeState,
+        Self::ProbeObservation,
+        Self::Diagnostics,
+        Self::PredicateExists,
+        Self::PredicateActionEnabled,
+        Self::PredicateDiagnosticsHasError,
+        Self::PredicateAll,
+        Self::PredicateAny,
+        Self::PredicateNot,
+        Self::PredicateEq,
+        Self::PredicateNotEq,
+        Self::PredicateGreater,
+        Self::PredicateGreaterOrEqual,
+        Self::PredicateLess,
+        Self::PredicateLessOrEqual,
+        Self::ViewportPoint,
+    ];
+
+    const DECODE: [Option<Self>; 256] = {
+        let mut table = [None; 256];
+        let mut index = 0;
+        while index < Self::ALL.len() {
+            let value = Self::ALL[index];
+            let encoded = value as u8 as usize;
+            assert!(table[encoded].is_none(), "duplicate Agent constructor tag");
+            table[encoded] = Some(value);
+            index += 1;
+        }
+        table
+    };
+
+    #[must_use]
+    pub const fn semantic_tag(self) -> u8 {
+        self as u8
+    }
+
+    #[must_use]
+    pub const fn from_semantic_tag(tag: u8) -> Option<Self> {
+        Self::DECODE[tag as usize]
+    }
+
     #[must_use]
     pub const fn result_type(self) -> RuntimeAgentOperationalType {
         match self {

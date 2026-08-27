@@ -39,6 +39,37 @@ fn product_awbc_malformed_reports_typed_diagnostic() {
     ));
 }
 
+#[test]
+fn product_awbc_section_roundtrip_preserves_the_canonical_core_bytes() {
+    let original = BundleAwbcProgram::new(minimal_awbc_program());
+    let bytes = original
+        .encode_product_section()
+        .expect("canonical AWBC section encodes");
+    let decoded = BundleAwbcProgram::decode_product_section(&bytes)
+        .expect("canonical AWBC section decodes and verifies");
+
+    assert_eq!(decoded, original);
+    assert_eq!(
+        decoded
+            .encode_product_section()
+            .expect("decoded AWBC section re-encodes"),
+        bytes
+    );
+}
+
+#[test]
+fn product_awbc_section_rejects_a_tampered_envelope_length() {
+    let mut bytes = BundleAwbcProgram::new(minimal_awbc_program())
+        .encode_product_section()
+        .expect("canonical AWBC section encodes");
+    bytes[12] ^= 1;
+
+    assert!(matches!(
+        BundleAwbcProgram::decode_product_section(&bytes),
+        Err(BundleCodecError::MalformedProductAwbcExecutable { .. })
+    ));
+}
+
 fn minimal_bundle() -> ArcweftBundle {
     ArcweftBundle::try_new(
         BundleManifest {

@@ -12,83 +12,90 @@ use serde::{Deserialize, Serialize};
 
 /// Closed top-level runtime families owned by the Agent Prelude.
 #[derive(Clone, Copy, Debug, Deserialize, Eq, Hash, Ord, PartialEq, PartialOrd, Serialize)]
+#[repr(u8)]
 pub enum RuntimeAgentOperationalType {
-    DebugStatePath,
-    ObservationFieldPath,
-    Probe,
-    Predicate,
-    Observation,
-    ObservedObject,
-    BoundingBox,
-    ActionName,
-    ActionTarget,
-    ActionResult,
-    DataFormat,
-    DataShape,
-    EntityMetadata,
-    SourceAnchor,
-    SourcePosition,
-    ProjectGraphNeighborhood,
-    ProjectGraphSymbol,
-    ProjectGraphEdge,
-    ProjectFlowControlSummary,
-    ProjectGraphSummary,
-    CaptureTarget,
-    CaptureReference,
-    Resource,
-    RagContextPack,
-    ObservedObjectId,
-    CaptureFormat,
-    CaptureKind,
-    Diagnostics,
-    WaitError,
-    ViewportPoint,
-    PointerButton,
-    RagError,
-    BinaryResourceBody,
-    BinaryData,
+    DebugStatePath = 0,
+    ObservationFieldPath = 1,
+    Probe = 2,
+    Predicate = 3,
+    Observation = 4,
+    ObservedObject = 5,
+    BoundingBox = 6,
+    ActionName = 7,
+    ActionTarget = 8,
+    ActionResult = 9,
+    DataFormat = 11,
+    DataShape = 12,
+    EntityMetadata = 13,
+    SourceAnchor = 14,
+    SourcePosition = 31,
+    ProjectGraphNeighborhood = 15,
+    ProjectGraphSymbol = 16,
+    ProjectGraphEdge = 17,
+    ProjectFlowControlSummary = 32,
+    ProjectGraphSummary = 33,
+    CaptureTarget = 18,
+    CaptureReference = 19,
+    Resource = 20,
+    RagContextPack = 22,
+    ObservedObjectId = 23,
+    CaptureFormat = 24,
+    CaptureKind = 25,
+    Diagnostics = 26,
+    WaitError = 27,
+    ViewportPoint = 28,
+    PointerButton = 29,
+    RagError = 30,
+    BinaryResourceBody = 34,
+    BinaryData = 35,
 }
 
 impl RuntimeAgentOperationalType {
     /// Stable kind tag shared by Agent DTO type and snapshot evidence.
     #[must_use]
     pub const fn semantic_tag(self) -> u8 {
-        match self {
-            Self::DebugStatePath => 0,
-            Self::ObservationFieldPath => 1,
-            Self::Probe => 2,
-            Self::Predicate => 3,
-            Self::Observation => 4,
-            Self::ObservedObject => 5,
-            Self::BoundingBox => 6,
-            Self::ActionName => 7,
-            Self::ActionTarget => 8,
-            Self::ActionResult => 9,
-            Self::DataFormat => 11,
-            Self::DataShape => 12,
-            Self::EntityMetadata => 13,
-            Self::SourceAnchor => 14,
-            Self::ProjectGraphNeighborhood => 15,
-            Self::ProjectGraphSymbol => 16,
-            Self::ProjectGraphEdge => 17,
-            Self::CaptureTarget => 18,
-            Self::CaptureReference => 19,
-            Self::Resource => 20,
-            Self::RagContextPack => 22,
-            Self::ObservedObjectId => 23,
-            Self::CaptureFormat => 24,
-            Self::CaptureKind => 25,
-            Self::Diagnostics => 26,
-            Self::WaitError => 27,
-            Self::ViewportPoint => 28,
-            Self::PointerButton => 29,
-            Self::RagError => 30,
-            Self::SourcePosition => 31,
-            Self::ProjectFlowControlSummary => 32,
-            Self::ProjectGraphSummary => 33,
-            Self::BinaryResourceBody => 34,
-            Self::BinaryData => 35,
-        }
+        self as u8
+    }
+
+    #[must_use]
+    pub const fn from_semantic_tag(tag: u8) -> Option<Self> {
+        Some(match tag {
+            0 => Self::DebugStatePath,
+            1 => Self::ObservationFieldPath,
+            2 => Self::Probe,
+            3 => Self::Predicate,
+            4 => Self::Observation,
+            5 => Self::ObservedObject,
+            6 => Self::BoundingBox,
+            7 => Self::ActionName,
+            8 => Self::ActionTarget,
+            9 => Self::ActionResult,
+            11 => Self::DataFormat,
+            12 => Self::DataShape,
+            13 => Self::EntityMetadata,
+            14 => Self::SourceAnchor,
+            15 => Self::ProjectGraphNeighborhood,
+            16 => Self::ProjectGraphSymbol,
+            17 => Self::ProjectGraphEdge,
+            18 => Self::CaptureTarget,
+            19 => Self::CaptureReference,
+            20 => Self::Resource,
+            22 => Self::RagContextPack,
+            23 => Self::ObservedObjectId,
+            24 => Self::CaptureFormat,
+            25 => Self::CaptureKind,
+            26 => Self::Diagnostics,
+            27 => Self::WaitError,
+            28 => Self::ViewportPoint,
+            29 => Self::PointerButton,
+            30 => Self::RagError,
+            31 => Self::SourcePosition,
+            32 => Self::ProjectFlowControlSummary,
+            33 => Self::ProjectGraphSummary,
+            34 => Self::BinaryResourceBody,
+            35 => Self::BinaryData,
+            _ => return None,
+        })
     }
 
     /// Digest of the core-owned DTO snapshot contract for this closed kind.
@@ -558,5 +565,65 @@ impl<R> RuntimeAgentTypeProjection<R> {
             Self::BinaryResourceBody => RuntimeAgentOperationalType::BinaryResourceBody,
             Self::BinaryData => RuntimeAgentOperationalType::BinaryData,
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::RuntimeAgentOperationalType;
+
+    #[test]
+    fn agent_operational_type_tags_are_stable_sparse_and_closed() {
+        let cases = [
+            (RuntimeAgentOperationalType::DebugStatePath, 0),
+            (RuntimeAgentOperationalType::ObservationFieldPath, 1),
+            (RuntimeAgentOperationalType::Probe, 2),
+            (RuntimeAgentOperationalType::Predicate, 3),
+            (RuntimeAgentOperationalType::Observation, 4),
+            (RuntimeAgentOperationalType::ObservedObject, 5),
+            (RuntimeAgentOperationalType::BoundingBox, 6),
+            (RuntimeAgentOperationalType::ActionName, 7),
+            (RuntimeAgentOperationalType::ActionTarget, 8),
+            (RuntimeAgentOperationalType::ActionResult, 9),
+            (RuntimeAgentOperationalType::DataFormat, 11),
+            (RuntimeAgentOperationalType::DataShape, 12),
+            (RuntimeAgentOperationalType::EntityMetadata, 13),
+            (RuntimeAgentOperationalType::SourceAnchor, 14),
+            (RuntimeAgentOperationalType::ProjectGraphNeighborhood, 15),
+            (RuntimeAgentOperationalType::ProjectGraphSymbol, 16),
+            (RuntimeAgentOperationalType::ProjectGraphEdge, 17),
+            (RuntimeAgentOperationalType::CaptureTarget, 18),
+            (RuntimeAgentOperationalType::CaptureReference, 19),
+            (RuntimeAgentOperationalType::Resource, 20),
+            (RuntimeAgentOperationalType::RagContextPack, 22),
+            (RuntimeAgentOperationalType::ObservedObjectId, 23),
+            (RuntimeAgentOperationalType::CaptureFormat, 24),
+            (RuntimeAgentOperationalType::CaptureKind, 25),
+            (RuntimeAgentOperationalType::Diagnostics, 26),
+            (RuntimeAgentOperationalType::WaitError, 27),
+            (RuntimeAgentOperationalType::ViewportPoint, 28),
+            (RuntimeAgentOperationalType::PointerButton, 29),
+            (RuntimeAgentOperationalType::RagError, 30),
+            (RuntimeAgentOperationalType::SourcePosition, 31),
+            (RuntimeAgentOperationalType::ProjectFlowControlSummary, 32),
+            (RuntimeAgentOperationalType::ProjectGraphSummary, 33),
+            (RuntimeAgentOperationalType::BinaryResourceBody, 34),
+            (RuntimeAgentOperationalType::BinaryData, 35),
+        ];
+
+        for (kind, tag) in cases {
+            assert_eq!(kind.semantic_tag(), tag);
+            assert_eq!(
+                RuntimeAgentOperationalType::from_semantic_tag(tag),
+                Some(kind)
+            );
+        }
+        assert_eq!(RuntimeAgentOperationalType::from_semantic_tag(10), None);
+        assert_eq!(RuntimeAgentOperationalType::from_semantic_tag(21), None);
+        assert_eq!(RuntimeAgentOperationalType::from_semantic_tag(36), None);
+        assert_eq!(
+            RuntimeAgentOperationalType::from_semantic_tag(u8::MAX),
+            None
+        );
     }
 }

@@ -17,6 +17,70 @@ use arcweft_interaction_model::audio::{
 };
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
 
+/// Defines a closed AWBC-owned one-byte enum together with its sole numeric
+/// inventory, allocation-free decoder, and numeric structured-data contract.
+macro_rules! awbc_u8_enum {
+    ($(#[$meta:meta])* pub enum $name:ident { $($variant:ident = $tag:literal),+ $(,)? }) => {
+        $(#[$meta])*
+        #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+        #[repr(u8)]
+        pub enum $name {
+            $($variant = $tag),+
+        }
+
+        impl $name {
+            pub const ALL: &'static [Self] = &[$(Self::$variant),+];
+
+            const DECODE: [Option<Self>; 256] = {
+                let mut table = [None; 256];
+                let mut index = 0;
+                while index < Self::ALL.len() {
+                    let value = Self::ALL[index];
+                    let encoded = value as u8 as usize;
+                    assert!(table[encoded].is_none(), concat!("duplicate ", stringify!($name), " tag"));
+                    table[encoded] = Some(value);
+                    index += 1;
+                }
+                table
+            };
+
+            #[must_use]
+            pub const fn encoded(self) -> u8 {
+                self as u8
+            }
+
+            #[must_use]
+            pub const fn from_encoded(encoded: u8) -> Option<Self> {
+                Self::DECODE[encoded as usize]
+            }
+        }
+
+        impl Serialize for $name {
+            fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+            where
+                S: Serializer,
+            {
+                serializer.serialize_u8(self.encoded())
+            }
+        }
+
+        impl<'de> Deserialize<'de> for $name {
+            fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+            where
+                D: Deserializer<'de>,
+            {
+                let encoded = u8::deserialize(deserializer)?;
+                Self::from_encoded(encoded).ok_or_else(|| {
+                    serde::de::Error::custom(format_args!(
+                        "unknown {} tag {encoded}",
+                        stringify!($name)
+                    ))
+                })
+            }
+        }
+    };
+}
+
 /// Canonical AWBC executable ABI implemented by this schema.
 pub const AWBC_ABI_VERSION: u32 = 1;
 /// Canonical binary codec version used inside an `AWBC` product section.
@@ -856,24 +920,26 @@ pub enum AwbcVariantIdentity {
     Builtin(crate::pattern::RuntimeBuiltinVariantIdentity),
 }
 
-#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
-pub enum AwbcSignedIntKind {
-    I8,
-    I16,
-    I32,
-    I64,
-    I128,
-    ISize,
+awbc_u8_enum! {
+    pub enum AwbcSignedIntKind {
+        I8 = 0,
+        I16 = 1,
+        I32 = 2,
+        I64 = 3,
+        I128 = 4,
+        ISize = 5,
+    }
 }
 
-#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
-pub enum AwbcUnsignedIntKind {
-    U8,
-    U16,
-    U32,
-    U64,
-    U128,
-    USize,
+awbc_u8_enum! {
+    pub enum AwbcUnsignedIntKind {
+        U8 = 0,
+        U16 = 1,
+        U32 = 2,
+        U64 = 3,
+        U128 = 4,
+        USize = 5,
+    }
 }
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
@@ -970,13 +1036,14 @@ pub struct AwbcFrameSlot {
     pub scope_depth: u32,
 }
 
-#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
-pub enum AwbcFrameSlotRole {
-    Parameter,
-    Local,
-    Temporary,
-    ReturnValue,
-    RuntimeState,
+awbc_u8_enum! {
+    pub enum AwbcFrameSlotRole {
+        Parameter = 0,
+        Local = 1,
+        Temporary = 2,
+        ReturnValue = 3,
+        RuntimeState = 4,
+    }
 }
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
@@ -1005,17 +1072,28 @@ pub enum AwbcFunctionKind {
 }
 
 impl AwbcFunctionKind {
+    pub const ALL: &'static [Self] = &[
+        Self::Flow,
+        Self::Ordinary,
+        Self::PureHelper,
+        Self::TraitMethod,
+        Self::Synthetic,
+        Self::GeneratorProducer,
+        Self::StreamTransform,
+        Self::LineActivation,
+        Self::LineTask,
+    ];
+
     const DECODE: [Option<Self>; 256] = {
         let mut table = [None; 256];
-        table[Self::Flow as usize] = Some(Self::Flow);
-        table[Self::Ordinary as usize] = Some(Self::Ordinary);
-        table[Self::PureHelper as usize] = Some(Self::PureHelper);
-        table[Self::TraitMethod as usize] = Some(Self::TraitMethod);
-        table[Self::Synthetic as usize] = Some(Self::Synthetic);
-        table[Self::GeneratorProducer as usize] = Some(Self::GeneratorProducer);
-        table[Self::StreamTransform as usize] = Some(Self::StreamTransform);
-        table[Self::LineActivation as usize] = Some(Self::LineActivation);
-        table[Self::LineTask as usize] = Some(Self::LineTask);
+        let mut index = 0;
+        while index < Self::ALL.len() {
+            let kind = Self::ALL[index];
+            let encoded = kind as u8 as usize;
+            assert!(table[encoded].is_none(), "duplicate AWBC function kind");
+            table[encoded] = Some(kind);
+            index += 1;
+        }
         table
     };
 
@@ -1068,6 +1146,15 @@ pub enum AwbcFunctionFlag {
 }
 
 impl AwbcFunctionFlag {
+    pub const ALL: &'static [Self] = &[
+        Self::Deterministic,
+        Self::MayAllocate,
+        Self::MaySuspend,
+        Self::HasDynamicTarget,
+        Self::NeedProducer,
+        Self::OwnsStreamProducer,
+    ];
+
     #[must_use]
     pub const fn mask(self) -> u32 {
         1_u32 << (self as u8)
@@ -1080,7 +1167,15 @@ pub struct AwbcFunctionFlags {
 }
 
 impl AwbcFunctionFlags {
-    pub const KNOWN_MASK: u32 = 0x3f;
+    pub const KNOWN_MASK: u32 = {
+        let mut mask = 0;
+        let mut index = 0;
+        while index < AwbcFunctionFlag::ALL.len() {
+            mask |= AwbcFunctionFlag::ALL[index].mask();
+            index += 1;
+        }
+        mask
+    };
 
     #[must_use]
     pub const fn empty() -> Self {
@@ -1184,12 +1279,12 @@ impl<'de> Deserialize<'de> for AwbcFunctionFlags {
     }
 }
 
-/// Typed role of one value supplied to a dialogue content slot.
-#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
-#[serde(rename_all = "snake_case")]
-pub enum AwbcDialogueValueRole {
-    Interpolation,
-    Condition,
+awbc_u8_enum! {
+    /// Typed role of one value supplied to a dialogue content slot.
+    pub enum AwbcDialogueValueRole {
+        Interpolation = 0,
+        Condition = 1,
+    }
 }
 
 /// Register-backed value supplied at a dialogue safe point.
@@ -1217,196 +1312,276 @@ pub struct AwbcBlock {
     pub source_map: Option<AwbcSourceMapId>,
 }
 
-/// Stable opcode values. `encoded` and `from_encoded` are the sole mapping.
-#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
+/// Top-level execution class of one AWBC opcode.
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub enum AwbcOpcodeClass {
+    Instruction,
+    Terminator,
+}
+
+/// Semantic instruction family owned by the opcode inventory.
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub enum AwbcOpcodeFamily {
+    Value,
+    CallTask,
+    StreamLine,
+    Ownership,
+    Terminator,
+}
+
+impl AwbcOpcodeFamily {
+    #[must_use]
+    pub const fn class(self) -> AwbcOpcodeClass {
+        match self {
+            Self::Value | Self::CallTask | Self::StreamLine | Self::Ownership => {
+                AwbcOpcodeClass::Instruction
+            }
+            Self::Terminator => AwbcOpcodeClass::Terminator,
+        }
+    }
+}
+
+/// Stable opcode values. The discriminants are the canonical AWBC v1 wire
+/// representation; [`Self::ALL`] and the compile-time decode table are the
+/// sole inventory.
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+#[repr(u8)]
 pub enum AwbcOpcode {
-    Nop,
-    LoadConst,
-    Move,
-    CopyValue,
-    Clear,
-    EnterScope,
-    ExitScope,
-    BindPattern,
-    TestPattern,
-    MakeTuple,
-    MakeSequence,
-    RepeatSequence,
-    SequenceLen,
-    SequenceGet,
-    SequenceSlice,
-    SequencePush,
-    MakeRecord,
-    MakeVariant,
-    ProjectTuple,
-    ProjectRecord,
-    ProjectField,
-    Unary,
-    Binary,
-    CallPureHelper,
-    CallIntrinsic,
-    EnsureContent,
-    EmitEffect,
-    StartTask,
-    SpawnFiber,
-    StreamYield,
-    StreamClose,
-    ExecuteLineOperation,
-    CommitDialogueResult,
-    Drop,
-    AssignRecordField,
-    CallTraitMethod,
-    RegisterCleanup,
-    CancelCleanup,
-    MakeFunction,
-    ApplyFunction,
-    MakeAgent,
-    MakeReductionUnchanged,
-    Jump,
-    Branch,
-    Match,
-    CallFunction,
-    GotoStatic,
-    GotoDynamic,
-    Dialogue,
-    Choice,
-    Await,
-    AwaitMany,
-    HostCall,
-    Return,
-    Trap,
-    BudgetYield,
-    Unreachable,
+    Nop = 0x00,
+    LoadConst = 0x01,
+    MakeTuple = 0x02,
+    MakeSequence = 0x03,
+    RepeatSequence = 0x04,
+    MakeRecord = 0x05,
+    MakeVariant = 0x06,
+    MakeFunction = 0x07,
+    MakeAgent = 0x08,
+    MakeReductionUnchanged = 0x09,
+    SequenceLen = 0x0a,
+    SequenceGet = 0x0b,
+    SequenceSlice = 0x0c,
+    SequencePush = 0x0d,
+    ProjectTuple = 0x0e,
+    ProjectRecord = 0x0f,
+    ProjectField = 0x10,
+    AssignRecordField = 0x11,
+    TestPattern = 0x12,
+    Unary = 0x13,
+    Binary = 0x14,
+    CallPureHelper = 0x20,
+    CallIntrinsic = 0x21,
+    CallTraitMethod = 0x22,
+    ApplyFunction = 0x23,
+    EnsureContent = 0x24,
+    EmitEffect = 0x25,
+    StartTask = 0x26,
+    SpawnFiber = 0x27,
+    StreamYield = 0x32,
+    StreamClose = 0x34,
+    ExecuteLineOperation = 0x35,
+    CommitDialogueResult = 0x36,
+    Move = 0x40,
+    CopyValue = 0x41,
+    Clear = 0x42,
+    Drop = 0x43,
+    EnterScope = 0x44,
+    ExitScope = 0x45,
+    BindPattern = 0x46,
+    RegisterCleanup = 0x47,
+    CancelCleanup = 0x48,
+    Jump = 0x80,
+    Branch = 0x81,
+    Match = 0x82,
+    CallFunction = 0x83,
+    GotoStatic = 0x84,
+    GotoDynamic = 0x85,
+    Return = 0x86,
+    HostCall = 0x88,
+    Await = 0x89,
+    AwaitMany = 0x8a,
+    BudgetYield = 0x8b,
+    Dialogue = 0x98,
+    Choice = 0x99,
+    Trap = 0xa0,
+    Unreachable = 0xa1,
 }
 
 impl AwbcOpcode {
+    pub const ALL: &'static [Self] = &[
+        Self::Nop,
+        Self::LoadConst,
+        Self::MakeTuple,
+        Self::MakeSequence,
+        Self::RepeatSequence,
+        Self::MakeRecord,
+        Self::MakeVariant,
+        Self::MakeFunction,
+        Self::MakeAgent,
+        Self::MakeReductionUnchanged,
+        Self::SequenceLen,
+        Self::SequenceGet,
+        Self::SequenceSlice,
+        Self::SequencePush,
+        Self::ProjectTuple,
+        Self::ProjectRecord,
+        Self::ProjectField,
+        Self::AssignRecordField,
+        Self::TestPattern,
+        Self::Unary,
+        Self::Binary,
+        Self::CallPureHelper,
+        Self::CallIntrinsic,
+        Self::CallTraitMethod,
+        Self::ApplyFunction,
+        Self::EnsureContent,
+        Self::EmitEffect,
+        Self::StartTask,
+        Self::SpawnFiber,
+        Self::StreamYield,
+        Self::StreamClose,
+        Self::ExecuteLineOperation,
+        Self::CommitDialogueResult,
+        Self::Move,
+        Self::CopyValue,
+        Self::Clear,
+        Self::Drop,
+        Self::EnterScope,
+        Self::ExitScope,
+        Self::BindPattern,
+        Self::RegisterCleanup,
+        Self::CancelCleanup,
+        Self::Jump,
+        Self::Branch,
+        Self::Match,
+        Self::CallFunction,
+        Self::GotoStatic,
+        Self::GotoDynamic,
+        Self::Return,
+        Self::HostCall,
+        Self::Await,
+        Self::AwaitMany,
+        Self::BudgetYield,
+        Self::Dialogue,
+        Self::Choice,
+        Self::Trap,
+        Self::Unreachable,
+    ];
+
+    const DECODE: [Option<Self>; 256] = Self::build_decode();
+
+    const fn build_decode() -> [Option<Self>; 256] {
+        let mut table = [None; 256];
+        let mut index = 0;
+        while index < Self::ALL.len() {
+            let opcode = Self::ALL[index];
+            let encoded = opcode as u8 as usize;
+            assert!(
+                table[encoded].is_none(),
+                "duplicate AWBC opcode discriminant"
+            );
+            table[encoded] = Some(opcode);
+            index += 1;
+        }
+        table
+    }
+
+    #[must_use]
     pub const fn encoded(self) -> u8 {
+        self as u8
+    }
+
+    #[must_use]
+    pub const fn from_encoded(value: u8) -> Option<Self> {
+        Self::DECODE[value as usize]
+    }
+
+    #[must_use]
+    pub const fn family(self) -> AwbcOpcodeFamily {
         match self {
-            Self::Nop => 0x00,
-            Self::LoadConst => 0x01,
-            Self::MakeTuple => 0x02,
-            Self::MakeSequence => 0x03,
-            Self::RepeatSequence => 0x04,
-            Self::MakeRecord => 0x05,
-            Self::MakeVariant => 0x06,
-            Self::MakeFunction => 0x07,
-            Self::MakeAgent => 0x08,
-            Self::MakeReductionUnchanged => 0x09,
-            Self::SequenceLen => 0x0a,
-            Self::SequenceGet => 0x0b,
-            Self::SequenceSlice => 0x0c,
-            Self::SequencePush => 0x0d,
-            Self::ProjectTuple => 0x0e,
-            Self::ProjectRecord => 0x0f,
-            Self::ProjectField => 0x10,
-            Self::AssignRecordField => 0x11,
-            Self::TestPattern => 0x12,
-            Self::Unary => 0x13,
-            Self::Binary => 0x14,
-            Self::CallPureHelper => 0x20,
-            Self::CallIntrinsic => 0x21,
-            Self::CallTraitMethod => 0x22,
-            Self::ApplyFunction => 0x23,
-            Self::EnsureContent => 0x24,
-            Self::EmitEffect => 0x25,
-            Self::StartTask => 0x26,
-            Self::SpawnFiber => 0x27,
-            Self::StreamYield => 0x32,
-            Self::StreamClose => 0x34,
-            Self::ExecuteLineOperation => 0x35,
-            Self::CommitDialogueResult => 0x36,
-            Self::Move => 0x40,
-            Self::CopyValue => 0x41,
-            Self::Clear => 0x42,
-            Self::Drop => 0x43,
-            Self::EnterScope => 0x44,
-            Self::ExitScope => 0x45,
-            Self::BindPattern => 0x46,
-            Self::RegisterCleanup => 0x47,
-            Self::CancelCleanup => 0x48,
-            Self::Jump => 0x80,
-            Self::Branch => 0x81,
-            Self::Match => 0x82,
-            Self::CallFunction => 0x83,
-            Self::GotoStatic => 0x84,
-            Self::GotoDynamic => 0x85,
-            Self::Return => 0x86,
-            Self::HostCall => 0x88,
-            Self::Await => 0x89,
-            Self::AwaitMany => 0x8a,
-            Self::BudgetYield => 0x8b,
-            Self::Dialogue => 0x98,
-            Self::Choice => 0x99,
-            Self::Trap => 0xa0,
-            Self::Unreachable => 0xa1,
+            Self::Nop
+            | Self::LoadConst
+            | Self::MakeTuple
+            | Self::MakeSequence
+            | Self::RepeatSequence
+            | Self::MakeRecord
+            | Self::MakeVariant
+            | Self::MakeFunction
+            | Self::MakeAgent
+            | Self::MakeReductionUnchanged
+            | Self::SequenceLen
+            | Self::SequenceGet
+            | Self::SequenceSlice
+            | Self::SequencePush
+            | Self::ProjectTuple
+            | Self::ProjectRecord
+            | Self::ProjectField
+            | Self::AssignRecordField
+            | Self::TestPattern
+            | Self::Unary
+            | Self::Binary => AwbcOpcodeFamily::Value,
+            Self::CallPureHelper
+            | Self::CallIntrinsic
+            | Self::CallTraitMethod
+            | Self::ApplyFunction
+            | Self::EnsureContent
+            | Self::EmitEffect
+            | Self::StartTask
+            | Self::SpawnFiber => AwbcOpcodeFamily::CallTask,
+            Self::StreamYield
+            | Self::StreamClose
+            | Self::ExecuteLineOperation
+            | Self::CommitDialogueResult => AwbcOpcodeFamily::StreamLine,
+            Self::Move
+            | Self::CopyValue
+            | Self::Clear
+            | Self::Drop
+            | Self::EnterScope
+            | Self::ExitScope
+            | Self::BindPattern
+            | Self::RegisterCleanup
+            | Self::CancelCleanup => AwbcOpcodeFamily::Ownership,
+            Self::Jump
+            | Self::Branch
+            | Self::Match
+            | Self::CallFunction
+            | Self::GotoStatic
+            | Self::GotoDynamic
+            | Self::Return
+            | Self::HostCall
+            | Self::Await
+            | Self::AwaitMany
+            | Self::BudgetYield
+            | Self::Dialogue
+            | Self::Choice
+            | Self::Trap
+            | Self::Unreachable => AwbcOpcodeFamily::Terminator,
         }
     }
 
-    pub const fn from_encoded(value: u8) -> Option<Self> {
-        Some(match value {
-            0x00 => Self::Nop,
-            0x01 => Self::LoadConst,
-            0x02 => Self::MakeTuple,
-            0x03 => Self::MakeSequence,
-            0x04 => Self::RepeatSequence,
-            0x05 => Self::MakeRecord,
-            0x06 => Self::MakeVariant,
-            0x07 => Self::MakeFunction,
-            0x08 => Self::MakeAgent,
-            0x09 => Self::MakeReductionUnchanged,
-            0x0a => Self::SequenceLen,
-            0x0b => Self::SequenceGet,
-            0x0c => Self::SequenceSlice,
-            0x0d => Self::SequencePush,
-            0x0e => Self::ProjectTuple,
-            0x0f => Self::ProjectRecord,
-            0x10 => Self::ProjectField,
-            0x11 => Self::AssignRecordField,
-            0x12 => Self::TestPattern,
-            0x13 => Self::Unary,
-            0x14 => Self::Binary,
-            0x20 => Self::CallPureHelper,
-            0x21 => Self::CallIntrinsic,
-            0x22 => Self::CallTraitMethod,
-            0x23 => Self::ApplyFunction,
-            0x24 => Self::EnsureContent,
-            0x25 => Self::EmitEffect,
-            0x26 => Self::StartTask,
-            0x27 => Self::SpawnFiber,
-            0x32 => Self::StreamYield,
-            0x34 => Self::StreamClose,
-            0x35 => Self::ExecuteLineOperation,
-            0x36 => Self::CommitDialogueResult,
-            0x40 => Self::Move,
-            0x41 => Self::CopyValue,
-            0x42 => Self::Clear,
-            0x43 => Self::Drop,
-            0x44 => Self::EnterScope,
-            0x45 => Self::ExitScope,
-            0x46 => Self::BindPattern,
-            0x47 => Self::RegisterCleanup,
-            0x48 => Self::CancelCleanup,
-            0x80 => Self::Jump,
-            0x81 => Self::Branch,
-            0x82 => Self::Match,
-            0x83 => Self::CallFunction,
-            0x84 => Self::GotoStatic,
-            0x85 => Self::GotoDynamic,
-            0x86 => Self::Return,
-            0x88 => Self::HostCall,
-            0x89 => Self::Await,
-            0x8a => Self::AwaitMany,
-            0x8b => Self::BudgetYield,
-            0x98 => Self::Dialogue,
-            0x99 => Self::Choice,
-            0xa0 => Self::Trap,
-            0xa1 => Self::Unreachable,
-            _ => return None,
-        })
+    #[must_use]
+    pub const fn class(self) -> AwbcOpcodeClass {
+        self.family().class()
     }
+}
 
-    pub const fn is_terminator(self) -> bool {
-        self.encoded() >= 0x80
+impl Serialize for AwbcOpcode {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: Serializer,
+    {
+        serializer.serialize_u8(self.encoded())
+    }
+}
+
+impl<'de> Deserialize<'de> for AwbcOpcode {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        let encoded = u8::deserialize(deserializer)?;
+        Self::from_encoded(encoded).ok_or_else(|| {
+            serde::de::Error::custom(format_args!("unknown AWBC opcode {encoded:#04x}"))
+        })
     }
 }
 
@@ -1690,39 +1865,43 @@ pub struct AwbcTraitMethod {
     pub receiver_state_slot: Option<AwbcRegisterId>,
 }
 
-#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
-pub enum AwbcTraitReceiverMode {
-    Owned,
-    SharedRef,
-    MutRef,
+awbc_u8_enum! {
+    pub enum AwbcTraitReceiverMode {
+        Owned = 0,
+        SharedRef = 1,
+        MutRef = 2,
+    }
 }
 
-#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
-pub enum AwbcBindMode {
-    Declare,
-    Assign,
+awbc_u8_enum! {
+    pub enum AwbcBindMode {
+        Declare = 0,
+        Assign = 1,
+    }
 }
 
-#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
-pub enum AwbcUnaryOp {
-    Not,
-    Neg,
+awbc_u8_enum! {
+    pub enum AwbcUnaryOp {
+        Not = 0,
+        Neg = 1,
+    }
 }
 
-#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
-pub enum AwbcBinaryOp {
-    Eq,
-    Ne,
-    Lt,
-    Le,
-    Gt,
-    Ge,
-    Add,
-    Sub,
-    Mul,
-    Div,
-    And,
-    Or,
+awbc_u8_enum! {
+    pub enum AwbcBinaryOp {
+        Eq = 0,
+        Ne = 1,
+        Lt = 2,
+        Le = 3,
+        Gt = 4,
+        Ge = 5,
+        Add = 6,
+        Sub = 7,
+        Mul = 8,
+        Div = 9,
+        And = 10,
+        Or = 11,
+    }
 }
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
@@ -1846,20 +2025,21 @@ impl AwbcTerminator {
     }
 }
 
-#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
-pub enum AwbcSafePointKind {
-    FlowEntry,
-    CallableBoundary,
-    Dialogue,
-    Choice,
-    Await,
-    AwaitMany,
-    HostCall,
-    LoopBackedge,
-    BudgetYield,
-    Return,
-    Trap,
-    None,
+awbc_u8_enum! {
+    pub enum AwbcSafePointKind {
+        FlowEntry = 0,
+        CallableBoundary = 1,
+        Dialogue = 2,
+        Choice = 3,
+        Await = 4,
+        AwaitMany = 5,
+        HostCall = 6,
+        LoopBackedge = 7,
+        BudgetYield = 8,
+        Return = 9,
+        Trap = 10,
+        None = 11,
+    }
 }
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
@@ -1870,18 +2050,19 @@ pub struct AwbcResumePoint {
     pub kind: AwbcSafePointKind,
 }
 
-#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
-pub enum AwbcTrapCode {
-    TypeMismatch,
-    UninitializedRegister,
-    InvalidIndex,
-    DivisionByZero,
-    PatternMismatch,
-    MissingDynamicTarget,
-    HostAbiMismatch,
-    CapabilityDenied,
-    ExplicitPanic,
-    InternalInvariant,
+awbc_u8_enum! {
+    pub enum AwbcTrapCode {
+        TypeMismatch = 0,
+        UninitializedRegister = 1,
+        InvalidIndex = 2,
+        DivisionByZero = 3,
+        PatternMismatch = 4,
+        MissingDynamicTarget = 5,
+        HostAbiMismatch = 6,
+        CapabilityDenied = 7,
+        ExplicitPanic = 8,
+        InternalInvariant = 9,
+    }
 }
 
 /// Executable pattern graph. Child references must be acyclic.
@@ -1968,10 +2149,11 @@ pub struct AwbcHostCall {
     pub arguments: Vec<AwbcHostArgument>,
 }
 
-#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
-pub enum AwbcHostCallMode {
-    Immediate,
-    Suspend,
+awbc_u8_enum! {
+    pub enum AwbcHostCallMode {
+        Immediate = 0,
+        Suspend = 1,
+    }
 }
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
@@ -1992,27 +2174,29 @@ pub struct AwbcTaskPlan {
     pub many: Option<AwbcAwaitManyPolicy>,
 }
 
-#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
-pub enum AwbcTaskClass {
-    LocalView,
-    Io,
-    Cpu,
-    GpuPrepare,
-    ShaderCompile,
-    WasmCall,
-    AssetDecode,
-    AudioDecode,
-    AudioRender,
-    TtsSynthesis,
-    BgmPrecompose,
-    Lsp,
-    Background,
+awbc_u8_enum! {
+    pub enum AwbcTaskClass {
+        LocalView = 0,
+        Io = 1,
+        Cpu = 2,
+        GpuPrepare = 3,
+        ShaderCompile = 4,
+        WasmCall = 5,
+        AssetDecode = 6,
+        AudioDecode = 7,
+        AudioRender = 8,
+        TtsSynthesis = 9,
+        BgmPrecompose = 10,
+        Lsp = 11,
+        Background = 12,
+    }
 }
 
-#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
-pub enum AwbcTaskPolicy {
-    JoinSameKey,
-    AlwaysStart,
+awbc_u8_enum! {
+    pub enum AwbcTaskPolicy {
+        JoinSameKey = 0,
+        AlwaysStart = 1,
+    }
 }
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
@@ -2211,27 +2395,28 @@ pub struct AwbcEffectPlan {
     pub resources: Vec<AwbcResourceAccess>,
 }
 
-#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
-pub enum AwbcEffectKind {
-    Wait,
-    Audio,
-    Call,
-    Log,
-    SignalWrite,
-    MetricWrite,
-    EmitEvent,
-    Out,
-    Return,
-    Goto,
-    Panic,
-    Fail,
-    Bail,
-    Ensure,
-    Assert,
-    Close,
-    Select,
-    Break,
-    Continue,
+awbc_u8_enum! {
+    pub enum AwbcEffectKind {
+        Wait = 0,
+        Audio = 1,
+        Call = 2,
+        Log = 3,
+        SignalWrite = 4,
+        MetricWrite = 5,
+        EmitEvent = 6,
+        Out = 7,
+        Return = 8,
+        Goto = 9,
+        Panic = 10,
+        Fail = 11,
+        Bail = 12,
+        Ensure = 13,
+        Assert = 14,
+        Close = 15,
+        Select = 16,
+        Break = 17,
+        Continue = 18,
+    }
 }
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
@@ -2241,13 +2426,14 @@ pub struct AwbcResourceAccess {
     pub conflict: AwbcConflictPolicy,
 }
 
-#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
-pub enum AwbcResourceAccessMode {
-    Read,
-    Write,
-    Drop,
-    Append,
-    Control,
+awbc_u8_enum! {
+    pub enum AwbcResourceAccessMode {
+        Read = 0,
+        Write = 1,
+        Drop = 2,
+        Append = 3,
+        Control = 4,
+    }
 }
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
@@ -2259,13 +2445,14 @@ pub enum AwbcConflictPolicy {
     Reduce { op: AwbcReduceOp },
 }
 
-#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
-pub enum AwbcReduceOp {
-    Sum,
-    Min,
-    Max,
-    And,
-    Or,
+awbc_u8_enum! {
+    pub enum AwbcReduceOp {
+        Sum = 0,
+        Min = 1,
+        Max = 2,
+        And = 3,
+        Or = 4,
+    }
 }
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
@@ -2412,24 +2599,27 @@ pub struct AwbcLineCleanupPolicy {
     pub audio: AwbcAudioCleanup,
 }
 
-#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
-pub enum AwbcChildCleanup {
-    CancelAndJoin,
-    Detach,
-    Finish,
+awbc_u8_enum! {
+    pub enum AwbcChildCleanup {
+        CancelAndJoin = 0,
+        Detach = 1,
+        Finish = 2,
+    }
 }
 
-#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
-pub enum AwbcPresentationCleanup {
-    DropRegistered,
-    KeepRegistered,
+awbc_u8_enum! {
+    pub enum AwbcPresentationCleanup {
+        DropRegistered = 0,
+        KeepRegistered = 1,
+    }
 }
 
-#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
-pub enum AwbcAudioCleanup {
-    StopRegistered,
-    FadeRegistered,
-    KeepRegistered,
+awbc_u8_enum! {
+    pub enum AwbcAudioCleanup {
+        StopRegistered = 0,
+        FadeRegistered = 1,
+        KeepRegistered = 2,
+    }
 }
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
@@ -2449,9 +2639,10 @@ pub enum AwbcLineTaskNode {
     Action(AwbcFunctionId),
 }
 
-#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
-pub enum AwbcParallelPolicy {
-    JoinAll,
+awbc_u8_enum! {
+    pub enum AwbcParallelPolicy {
+        JoinAll = 0,
+    }
 }
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
@@ -2462,17 +2653,19 @@ pub enum AwbcLineTaskTrigger {
     ContentEffect(RuntimeDialogueEffectSiteId),
 }
 
-#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
-pub enum AwbcChildJoinPolicy {
-    Join,
-    Detached,
+awbc_u8_enum! {
+    pub enum AwbcChildJoinPolicy {
+        Join = 0,
+        Detached = 1,
+    }
 }
 
-#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
-pub enum AwbcChildCancelPolicy {
-    CancelAndJoin,
-    Finish,
-    Detach,
+awbc_u8_enum! {
+    pub enum AwbcChildCancelPolicy {
+        CancelAndJoin = 0,
+        Finish = 1,
+        Detach = 2,
+    }
 }
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
@@ -2501,11 +2694,12 @@ pub struct AwbcPureProgramBinding {
     pub result_type: RuntimeSemanticTypeId,
 }
 
-#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
-pub enum AwbcPureHelperOrigin {
-    Annotated,
-    Inferred,
-    EngineOwned,
+awbc_u8_enum! {
+    pub enum AwbcPureHelperOrigin {
+        Annotated = 0,
+        Inferred = 1,
+        EngineOwned = 2,
+    }
 }
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
@@ -2539,11 +2733,12 @@ pub struct AwbcResourceRef {
     pub residency: AwbcResourceResidency,
 }
 
-#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
-pub enum AwbcResourceResidency {
-    Startup,
-    OnDemand,
-    Streaming,
+awbc_u8_enum! {
+    pub enum AwbcResourceResidency {
+        Startup = 0,
+        OnDemand = 1,
+        Streaming = 2,
+    }
 }
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
