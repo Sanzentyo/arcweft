@@ -433,7 +433,7 @@ where
             );
         }
         return context
-            .add_binding(path, parameter.clone(), actual, actual_shape, false)
+            .add_binding(path, parameter.clone(), actual, actual_shape)
             .map(|path| path.into_iter().collect());
     }
 

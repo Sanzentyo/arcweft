@@ -105,10 +105,6 @@ pub(crate) enum EffectConstraintEnvironmentError {
     NonCanonicalScope,
     #[error("effect rows are not in the subset relation")]
     MissingEffects { missing: EffectSet },
-    #[error("inherited effect binding is not a closed canonical row")]
-    NonCanonicalInheritedBinding { variable: EffectVar },
-    #[error("inherited effect binding was supplied more than once")]
-    DuplicateInheritedBinding { variable: EffectVar },
 }
 
 #[derive(Clone, Debug, Eq, Error, PartialEq)]
@@ -517,28 +513,27 @@ impl EffectConstraintEnvironment {
         }
     }
 
-    pub(crate) fn seed_inherited(
+    /// Restore one row from the opaque completed type-constraint solution.
+    /// The solution owner has already proved exact scope membership and a
+    /// canonical closed value; this method only enforces the target
+    /// environment's unique-coordinate transition.
+    pub(crate) fn restore_completed_inherited(
         &mut self,
         variable: EffectVar,
-        row: &EffectRow,
-    ) -> Result<(), EffectConstraintEnvironmentError> {
-        self.validate_row(row)?;
-        let EffectRowTail::Closed = row.tail else {
-            return Err(
-                EffectConstraintEnvironmentError::NonCanonicalInheritedBinding { variable },
-            );
-        };
-        let Some(bounds) = self.bounds.get_mut(&variable) else {
-            return Err(EffectConstraintEnvironmentError::ForeignVariable { variable });
-        };
-        if bounds.inherited.is_some() {
-            return Err(EffectConstraintEnvironmentError::DuplicateInheritedBinding { variable });
-        }
-        bounds.lower = row.concrete.clone();
-        bounds.upper = Some(row.concrete.clone());
+        concrete: &EffectSet,
+    ) {
+        let bounds = self
+            .bounds
+            .get_mut(&variable)
+            .expect("completed effect scope transition retains every sealed variable");
+        assert!(
+            bounds.inherited.is_none(),
+            "completed effect rows are uniquely sealed before restoration"
+        );
+        bounds.lower = concrete.clone();
+        bounds.upper = Some(concrete.clone());
         bounds.touched = true;
-        bounds.inherited = Some(row.concrete.clone());
-        Ok(())
+        bounds.inherited = Some(concrete.clone());
     }
 
     /// Record `actual <= permitted` without prematurely closing either tail.
@@ -607,22 +602,6 @@ impl EffectConstraintEnvironment {
         other: &Self,
     ) -> Result<bool, EffectConstraintEnvironmentError> {
         Ok(self.bindings()? == other.bindings()?)
-    }
-
-    pub(crate) fn validate_inherited_extension(
-        &self,
-    ) -> Result<(), EffectConstraintEnvironmentError> {
-        let solved = self.solve_bounds()?;
-        for (variable, bounds) in solved {
-            if let Some(inherited) = bounds.inherited
-                && bounds.lower != inherited
-            {
-                return Err(
-                    EffectConstraintEnvironmentError::NonCanonicalInheritedBinding { variable },
-                );
-            }
-        }
-        Ok(())
     }
 
     pub(crate) fn substitution(

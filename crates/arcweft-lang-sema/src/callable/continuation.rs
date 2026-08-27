@@ -2030,23 +2030,6 @@ where
                 .collect::<Vec<_>>()
         })
         .unwrap_or_default();
-    if inherited_effects.windows(2).any(|rows| rows[0] >= rows[1])
-        || inherited_effects.iter().any(|variable| {
-            variable.issuer() != candidate.prepared_effect_instantiation().issuer()
-                || !candidate
-                    .prepared_effect_instantiation()
-                    .variables()
-                    .iter()
-                    .any(|row| row.variable() == *variable)
-        })
-    {
-        return Err(CallConstraintInvariant::Lower(TypeConstraintInvariant::Effect(
-            crate::types::constraints::TypeConstraintEffectInvariant {
-                kind: crate::types::constraints::TypeConstraintEffectInvariantKind::NonCanonicalInherited,
-                variable: inherited_effects.first().copied(),
-            },
-        )));
-    }
     let inherited_effects = inherited_effects.into_iter().collect::<BTreeSet<_>>();
     let mut required_effects = Vec::new();
     let effect_rows = candidate

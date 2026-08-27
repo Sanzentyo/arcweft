@@ -6,13 +6,14 @@
 #[cfg(test)]
 use std::collections::BTreeMap;
 use std::{
+    collections::BTreeSet,
     marker::PhantomData,
     sync::atomic::{AtomicBool, Ordering},
 };
 
 use crate::effect_row::{
-    EffectConstraintEligibility, EffectConstraintEnvironment, EffectConstraintVariable, EffectRow,
-    EffectVar,
+    EffectConstraintEligibility, EffectConstraintEnvironment, EffectConstraintVariable,
+    EffectIssuerRebindError, EffectRow, EffectVar, EffectVarIssuer,
 };
 
 use super::super::{
@@ -21,9 +22,8 @@ use super::super::{
 #[cfg(test)]
 use super::NoConstraintClient;
 use super::{
-    ConstraintDomain, ConstraintPath, InheritedSolutionInvariant, InheritedSolutionInvariantKind,
-    TypeConstraintAbort, TypeConstraintError, TypeConstraintInvariant,
-    TypeConstraintParameterScopeInvariant, TypeConstraintRejection, TypeConstraintShape,
+    ConstraintDomain, ConstraintPath, TypeConstraintAbort, TypeConstraintError,
+    TypeConstraintInvariant, TypeConstraintParameterScopeInvariant, TypeConstraintShape,
     effect_invariant, map_effect_environment_error, occurs_in_shape,
 };
 
@@ -242,6 +242,71 @@ impl TypeConstraintEffectScope {
 
     pub(crate) fn required_inherited(&self) -> &[EffectVar] {
         &self.required_inherited
+    }
+
+    /// Accepts only the exact variable inventory and the monotone continuation
+    /// transition `FutureEligible -> FutureEligible | Bindable`. Completed
+    /// bindable rows cannot become future rows again.
+    pub(super) fn accepts_continuation_scope(&self, other: &Self) -> bool {
+        self.variables.len() == other.variables.len()
+            && self
+                .variables
+                .iter()
+                .zip(&other.variables)
+                .all(|(completed, next)| {
+                    completed.variable() == next.variable()
+                        && matches!(
+                            (completed.eligibility(), next.eligibility()),
+                            (
+                                EffectConstraintEligibility::Bindable,
+                                EffectConstraintEligibility::Bindable,
+                            ) | (
+                                EffectConstraintEligibility::FutureEligible,
+                                EffectConstraintEligibility::FutureEligible
+                                    | EffectConstraintEligibility::Bindable,
+                            )
+                        )
+                })
+    }
+
+    /// Rebind the complete prepared scope at the checked-call boundary. This
+    /// is a bijective issuer transition owned by the sealed solution; it does
+    /// not reconstruct or revalidate solution rows downstream.
+    pub(super) fn checked_rebind_issuer(
+        &self,
+        prepared: EffectVarIssuer,
+        checked: EffectVarIssuer,
+        authorized_ordinals: &BTreeSet<u32>,
+    ) -> Result<Self, EffectIssuerRebindError> {
+        let rebind = |variable: EffectVar| {
+            if variable.issuer() != prepared {
+                return Err(EffectIssuerRebindError::ForeignVariable { variable });
+            }
+            if !authorized_ordinals.contains(&variable.index()) {
+                return Err(EffectIssuerRebindError::UnauthorizedVariable { variable });
+            }
+            Ok(variable.rebind_issuer(prepared, checked))
+        };
+        let variables = self
+            .variables
+            .iter()
+            .map(|row| {
+                Ok(EffectConstraintVariable::new(
+                    rebind(row.variable())?,
+                    row.eligibility(),
+                ))
+            })
+            .collect::<Result<Box<[_]>, _>>()?;
+        let required_inherited = self
+            .required_inherited
+            .iter()
+            .copied()
+            .map(rebind)
+            .collect::<Result<Box<[_]>, _>>()?;
+        Ok(Self {
+            variables,
+            required_inherited,
+        })
     }
 }
 
@@ -478,6 +543,39 @@ impl TypeConstraintParameterScope {
         self.type_parameters
             .iter()
             .map(|row| (&row.parameter, &row.eligibility))
+    }
+
+    /// Accepts only the exact declaration inventory and monotone continuation
+    /// transitions. Rigid and completed bindable roles are stable;
+    /// `FutureEligible` alone may become `Bindable` in a later group.
+    pub(super) fn accepts_continuation_scope(&self, other: &Self) -> bool {
+        self.type_parameters.len() == other.type_parameters.len()
+            && self
+                .type_parameters
+                .iter()
+                .zip(&other.type_parameters)
+                .all(|(completed, next)| {
+                    completed.parameter == next.parameter
+                        && matches!(
+                            (completed.eligibility, next.eligibility),
+                            (
+                                TypeConstraintParameterEligibility::Rigid,
+                                TypeConstraintParameterEligibility::Rigid,
+                            ) | (
+                                TypeConstraintParameterEligibility::Bindable,
+                                TypeConstraintParameterEligibility::Bindable,
+                            ) | (
+                                TypeConstraintParameterEligibility::FutureEligible,
+                                TypeConstraintParameterEligibility::FutureEligible
+                                    | TypeConstraintParameterEligibility::Bindable,
+                            )
+                        )
+                })
+            && self
+                .const_parameters
+                .iter()
+                .map(|row| &row.parameter)
+                .eq(other.const_parameters.iter().map(|row| &row.parameter))
     }
 
     pub(super) fn required_inherited_keys(&self) -> &[GenericTypeParameterId] {
@@ -763,21 +861,12 @@ where
         parameter: GenericTypeParameterId,
         value: &TypeKind,
         value_shape: TypeConstraintShape<'_>,
-        inherited: bool,
     ) -> Result<Option<ConstraintPath<D>>, TypeConstraintError> {
         self.check_cancelled()?;
         if path.bindings.contains_key(&parameter) {
             return Ok(Some(path));
         }
         match self.parameter_scope.eligibility(&parameter) {
-            None if inherited => {
-                return Err(TypeConstraintError::Invariant(
-                    TypeConstraintInvariant::InheritedSolution(InheritedSolutionInvariant {
-                        kind: InheritedSolutionInvariantKind::OutOfScope,
-                        parameter: Some(parameter),
-                    }),
-                ));
-            }
             None => {
                 return Err(TypeConstraintError::Invariant(
                     TypeConstraintInvariant::ParameterScope(
@@ -788,16 +877,11 @@ where
                 ));
             }
             Some(TypeConstraintParameterEligibility::Rigid) => {
-                return Err(TypeConstraintError::Invariant(if inherited {
-                    TypeConstraintInvariant::InheritedSolution(InheritedSolutionInvariant {
-                        kind: InheritedSolutionInvariantKind::RigidBinding,
-                        parameter: Some(parameter),
-                    })
-                } else {
+                return Err(TypeConstraintError::Invariant(
                     TypeConstraintInvariant::ParameterScope(
                         TypeConstraintParameterScopeInvariant::RigidBinding { parameter },
-                    )
-                }));
+                    ),
+                ));
             }
             Some(_) => {}
         }
@@ -842,6 +926,31 @@ where
             path.deferred_cycles.parameters.insert(parameter.clone());
         }
         path.bindings.insert(parameter, value);
+        Ok(())
+    }
+
+    /// Restores a row from the opaque completed-solution owner. Canonicality,
+    /// scope, and occurs checks have already been sealed by that owner; this
+    /// operation only charges the new path and transfers the row.
+    pub(super) fn restore_completed_binding(
+        &mut self,
+        path: &mut ConstraintPath<D>,
+        parameter: GenericTypeParameterId,
+        value: TypeKind,
+    ) -> Result<(), TypeConstraintError> {
+        let binding_count = path
+            .bindings
+            .len()
+            .checked_add(1)
+            .and_then(|count| u64::try_from(count).ok())
+            .ok_or(TypeConstraintError::Abort(
+                TypeConstraintAbort::ArithmeticOverflow,
+            ))?;
+        self.charge_binding(binding_count)?;
+        assert!(
+            path.bindings.insert(parameter, value).is_none(),
+            "completed solution rows are uniquely sealed before restoration"
+        );
         Ok(())
     }
 
@@ -922,27 +1031,6 @@ where
         delta: &TypeConstraintWorkReport,
     ) -> Result<(), TypeConstraintError> {
         self.accounting.charge_constraint(delta, self.limits)
-    }
-
-    pub(crate) fn validate_terminal_scope(
-        &self,
-        path: &ConstraintPath<D>,
-    ) -> Result<(), TypeConstraintError> {
-        for (parameter, eligibility) in self.parameter_scope.iter() {
-            if matches!(eligibility, TypeConstraintParameterEligibility::Bindable)
-                && !path.bindings.contains_key(parameter)
-            {
-                return Err(TypeConstraintError::Rejected(
-                    TypeConstraintRejection::IncompleteInstantiation {
-                        parameter: parameter.clone(),
-                    },
-                ));
-            }
-        }
-        path.effects
-            .bindings()
-            .map_err(map_effect_environment_error)?;
-        Ok(())
     }
 
     pub(crate) fn commit_accounting(&mut self) {

@@ -33,10 +33,64 @@ fn parameter(ordinal: u16) -> GenericTypeParameterId {
     )
 }
 
+fn try_type_only_solution(
+    bindings: impl IntoIterator<Item = (GenericTypeParameterId, TypeKind)>,
+    future: &[GenericTypeParameterId],
+) -> Result<TypeConstraintSolution, TypeConstraintError> {
+    fn collect(ty: &TypeKind, parameters: &mut BTreeSet<GenericTypeParameterId>) {
+        match ty.constraint_shape() {
+            super::TypeConstraintShape::Generic(parameter) => {
+                parameters.insert(parameter.clone());
+            }
+            super::TypeConstraintShape::Unresolved | super::TypeConstraintShape::Never => {}
+            shape => {
+                for child in shape.children() {
+                    collect(child, parameters);
+                }
+            }
+        }
+    }
+
+    let bindings = bindings.into_iter().collect::<Vec<_>>();
+    let binding_keys = bindings
+        .iter()
+        .map(|(parameter, _)| parameter.clone())
+        .collect::<BTreeSet<_>>();
+    let future = future.iter().cloned().collect::<BTreeSet<_>>();
+    let mut parameters = binding_keys.clone();
+    for (_, value) in &bindings {
+        collect(value, &mut parameters);
+    }
+    let scope = TypeConstraintParameterScope::seal_call_scope(
+        parameters.into_iter().map(|parameter| {
+            let eligibility = if binding_keys.contains(&parameter) {
+                TypeConstraintParameterEligibility::Bindable
+            } else if future.contains(&parameter) {
+                TypeConstraintParameterEligibility::FutureEligible
+            } else {
+                TypeConstraintParameterEligibility::Rigid
+            };
+            super::context::TypeConstraintTypeParameterScopeRow::new(parameter, eligibility)
+        }),
+        std::iter::empty(),
+        std::iter::empty(),
+    )
+    .expect("test completed-solution scope is canonical");
+    let cancellation = AtomicBool::new(false);
+    let mut context =
+        TypeConstraintContext::<LocalConstraintAccounting<'_>, NoConstraintClient>::with_scope(
+            TypeConstraintLimits::new(4_096, 2_048, 256, 128),
+            &cancellation,
+            scope,
+        );
+    TypeConstraintSolution::test_seal_completed(bindings, std::iter::empty(), &mut context)
+}
+
 fn type_only_solution(
     bindings: BTreeMap<GenericTypeParameterId, TypeKind>,
+    future: &[GenericTypeParameterId],
 ) -> TypeConstraintSolution {
-    TypeConstraintSolution::from_maps(bindings, BTreeMap::new())
+    try_type_only_solution(bindings, future).expect("canonical completed test solution")
 }
 
 fn bindable_scope(types: &[&TypeKind]) -> TypeConstraintParameterScope {
@@ -691,35 +745,21 @@ enum InheritedFailureClass {
 
 fn inherited_failure_for(value: TypeKind) -> InheritedFailureClass {
     let parameter = owned_parameter(14, 0);
-    let scope = TypeConstraintParameterScope::new([(
-        parameter.clone(),
-        TypeConstraintParameterEligibility::Bindable,
-    )])
-    .expect("inherited test scope");
     let mut bindings = BTreeMap::new();
     bindings.insert(parameter, value);
-    let inherited = type_only_solution(bindings);
-    let cancellation = AtomicBool::new(false);
-    let mut context =
-        TypeConstraintContext::<LocalConstraintAccounting<'_>, NoConstraintClient>::with_scope(
-            TypeConstraintLimits::new(1_024, 512, 128, 64),
-            &cancellation,
-            scope,
-        );
-    let mut lower = TypeConstraintTransaction::new();
-    match lower.initialize(&mut context, Some(Arc::new(inherited))) {
-        Err(TypeConstraintInitializationFailure::Invariant(
-            TypeConstraintInvariant::InheritedSolution(InheritedSolutionInvariant { kind, .. }),
-        )) => InheritedFailureClass::Type(kind),
-        Err(TypeConstraintInitializationFailure::Invariant(TypeConstraintInvariant::Effect(
-            invariant,
-        ))) => InheritedFailureClass::Effect(invariant.kind),
-        other => panic!("expected typed inherited initialization failure, got {other:?}"),
+    match try_type_only_solution(bindings, &[]) {
+        Err(TypeConstraintError::Invariant(TypeConstraintInvariant::InheritedSolution(
+            InheritedSolutionInvariant { kind, .. },
+        ))) => InheritedFailureClass::Type(kind),
+        Err(TypeConstraintError::Invariant(TypeConstraintInvariant::Effect(invariant))) => {
+            InheritedFailureClass::Effect(invariant.kind)
+        }
+        other => panic!("expected typed completed-solution failure, got {other:?}"),
     }
 }
 
 #[test]
-fn inherited_forbidden_rows_are_initialization_invariants() {
+fn forbidden_completed_rows_are_solution_owner_invariants() {
     let unknown_effect_function = TypeKind::Function {
         params: Vec::new(),
         return_type: Box::new(TypeKind::I32),
@@ -744,54 +784,26 @@ fn inherited_forbidden_rows_are_initialization_invariants() {
 }
 
 #[test]
-fn completed_inherited_chain_is_noncanonical_before_unexpected_key_without_repair() {
+fn completed_inherited_chain_is_rejected_by_the_solution_owner_without_repair() {
     let t = owned_parameter(15, 0);
     let u = owned_parameter(15, 1);
-    let scope = TypeConstraintParameterScope::seal_call_scope(
-        [
-            super::context::TypeConstraintTypeParameterScopeRow::new(
-                t.clone(),
-                TypeConstraintParameterEligibility::Bindable,
-            ),
-            super::context::TypeConstraintTypeParameterScopeRow::new(
-                u.clone(),
-                TypeConstraintParameterEligibility::Bindable,
-            ),
-        ],
-        std::iter::empty(),
-        [t.clone()],
-    )
-    .expect("required inherited test scope");
     let expected_rows = vec![
         (t.clone(), TypeKind::GenericParam(u.clone())),
         (u.clone(), TypeKind::I32),
     ];
-    let inherited = Arc::new(type_only_solution(expected_rows.iter().cloned().collect()));
-    let cancellation = AtomicBool::new(false);
-    let mut context =
-        TypeConstraintContext::<LocalConstraintAccounting<'_>, NoConstraintClient>::with_scope(
-            TypeConstraintLimits::new(1_024, 512, 128, 64),
-            &cancellation,
-            scope,
-        );
-    let mut transaction = TypeConstraintTransaction::<NoConstraintClient>::new();
+    let failure: TypeConstraintFailure<NoConstraintClient> =
+        try_type_only_solution(expected_rows, &[])
+            .expect_err("a non-canonical completed carrier cannot be issued")
+            .into();
     assert!(matches!(
-        transaction.initialize(&mut context, Some(Arc::clone(&inherited))),
-        Err(TypeConstraintInitializationFailure::Invariant(
+        failure,
+        TypeConstraintFailure::Invariant(TypeConstraintFailureInvariant::Constraint(
             TypeConstraintInvariant::InheritedSolution(InheritedSolutionInvariant {
                 kind: super::InheritedSolutionInvariantKind::NonCanonical,
                 parameter: Some(found),
             }),
         )) if found == t
     ));
-    assert_eq!(
-        inherited
-            .bindings()
-            .map(|(parameter, value)| (parameter.clone(), value.clone()))
-            .collect::<Vec<_>>(),
-        expected_rows,
-        "the consumer must not repair the opaque inherited carrier"
-    );
 }
 
 #[test]
@@ -802,7 +814,7 @@ fn inherited_rigid_binding_is_an_initialization_invariant() {
         TypeConstraintParameterEligibility::Rigid,
     )])
     .expect("rigid scope");
-    let inherited = type_only_solution(BTreeMap::from([(parameter.clone(), TypeKind::I32)]));
+    let inherited = type_only_solution(BTreeMap::from([(parameter.clone(), TypeKind::I32)]), &[]);
     let cancellation = AtomicBool::new(false);
     let mut context =
         TypeConstraintContext::<LocalConstraintAccounting<'_>, NoConstraintClient>::with_scope(
@@ -823,28 +835,14 @@ fn inherited_rigid_binding_is_an_initialization_invariant() {
 }
 
 #[test]
-fn inherited_self_binding_and_occurs_cycle_are_distinct_initialization_invariants() {
+fn completed_solution_self_binding_and_occurs_cycle_are_distinct_invariants() {
     let parameter = owned_parameter(151, 0);
-    let scope = TypeConstraintParameterScope::new([(
-        parameter.clone(),
-        TypeConstraintParameterEligibility::Bindable,
-    )])
-    .expect("bindable scope");
-    let cancellation = AtomicBool::new(false);
-    let mut context =
-        TypeConstraintContext::<LocalConstraintAccounting<'_>, NoConstraintClient>::with_scope(
-            TypeConstraintLimits::new(256, 128, 32, 16),
-            &cancellation,
-            scope.clone(),
-        );
-    let mut lower = TypeConstraintTransaction::<NoConstraintClient>::new();
-    let self_binding = type_only_solution(BTreeMap::from([(
-        parameter.clone(),
-        TypeKind::GenericParam(parameter.clone()),
-    )]));
     assert!(matches!(
-        lower.initialize(&mut context, Some(Arc::new(self_binding))),
-        Err(TypeConstraintInitializationFailure::Invariant(
+        try_type_only_solution(
+            [(parameter.clone(), TypeKind::GenericParam(parameter.clone()),)],
+            &[],
+        ),
+        Err(TypeConstraintError::Invariant(
             TypeConstraintInvariant::InheritedSolution(InheritedSolutionInvariant {
                 kind: InheritedSolutionInvariantKind::SelfBinding,
                 ..
@@ -852,20 +850,15 @@ fn inherited_self_binding_and_occurs_cycle_are_distinct_initialization_invariant
         ))
     ));
 
-    let mut context =
-        TypeConstraintContext::<LocalConstraintAccounting<'_>, NoConstraintClient>::with_scope(
-            TypeConstraintLimits::new(256, 128, 32, 16),
-            &cancellation,
-            scope,
-        );
-    let mut lower = TypeConstraintTransaction::<NoConstraintClient>::new();
-    let cyclic = type_only_solution(BTreeMap::from([(
-        parameter.clone(),
-        TypeKind::Vec(Box::new(TypeKind::GenericParam(parameter.clone()))),
-    )]));
     assert!(matches!(
-        lower.initialize(&mut context, Some(Arc::new(cyclic))),
-        Err(TypeConstraintInitializationFailure::Invariant(
+        try_type_only_solution(
+            [(
+                parameter.clone(),
+                TypeKind::Vec(Box::new(TypeKind::GenericParam(parameter))),
+            )],
+            &[],
+        ),
+        Err(TypeConstraintError::Invariant(
             TypeConstraintInvariant::InheritedSolution(InheritedSolutionInvariant {
                 kind: InheritedSolutionInvariantKind::OccursOrCycle,
                 ..
@@ -1004,10 +997,13 @@ fn inherited_key_merge_classifies_canonical_extra_and_rigid_extra_exactly() {
         [required.clone()],
     )
     .expect("required scope");
-    let inherited = type_only_solution(BTreeMap::from([
-        (required.clone(), TypeKind::I32),
-        (extra.clone(), TypeKind::String),
-    ]));
+    let inherited = type_only_solution(
+        BTreeMap::from([
+            (required.clone(), TypeKind::I32),
+            (extra.clone(), TypeKind::String),
+        ]),
+        &[],
+    );
     let cancellation = AtomicBool::new(false);
     let mut context =
         TypeConstraintContext::<LocalConstraintAccounting<'_>, NoConstraintClient>::with_scope(
@@ -1042,10 +1038,10 @@ fn inherited_key_merge_classifies_canonical_extra_and_rigid_extra_exactly() {
         [required.clone()],
     )
     .expect("required and rigid scope");
-    let inherited = type_only_solution(BTreeMap::from([
-        (required, TypeKind::I32),
-        (rigid.clone(), TypeKind::String),
-    ]));
+    let inherited = type_only_solution(
+        BTreeMap::from([(required, TypeKind::I32), (rigid.clone(), TypeKind::String)]),
+        &[],
+    );
     let mut context =
         TypeConstraintContext::<LocalConstraintAccounting<'_>, NoConstraintClient>::with_scope(
             TypeConstraintLimits::new(256, 128, 32, 16),
@@ -1085,7 +1081,7 @@ fn inherited_rigid_atom_and_rigid_projection_self_accept() {
     .expect("rigid self scope");
     let mut bindings = BTreeMap::new();
     bindings.insert(bindable.clone(), TypeKind::GenericParam(rigid.clone()));
-    let inherited = type_only_solution(bindings);
+    let inherited = type_only_solution(bindings, &[]);
     let cancellation = AtomicBool::new(false);
     let transaction = TestConstraintTransaction::begin(
         TypeConstraintContext::<LocalConstraintAccounting<'_>, NoConstraintClient>::with_scope(
@@ -1205,7 +1201,10 @@ fn foreign_binding_value_is_rejected_before_solution_publish() {
         TypeConstraintParameterEligibility::Bindable,
     )])
     .expect("local scope");
-    let inherited = type_only_solution(BTreeMap::from([(local, TypeKind::GenericParam(foreign))]));
+    let inherited = type_only_solution(
+        BTreeMap::from([(local, TypeKind::GenericParam(foreign))]),
+        &[],
+    );
     let cancellation = AtomicBool::new(false);
     let mut context =
         TypeConstraintContext::<LocalConstraintAccounting<'_>, NoConstraintClient>::with_scope(
@@ -1339,10 +1338,10 @@ fn canonical_inherited_type_extension_normalizes_then_terminal_rejects_unresolve
         [first.clone()],
     )
     .expect("extension scope");
-    let inherited = type_only_solution(BTreeMap::from([(
-        first.clone(),
-        TypeKind::GenericParam(second.clone()),
-    )]));
+    let inherited = type_only_solution(
+        BTreeMap::from([(first.clone(), TypeKind::GenericParam(second.clone()))]),
+        std::slice::from_ref(&second),
+    );
     let cancellation = AtomicBool::new(false);
     let mut transaction = TestConstraintTransaction::begin(
         TypeConstraintContext::<LocalConstraintAccounting<'_>, NoConstraintClient>::with_scope(
@@ -1366,7 +1365,10 @@ fn canonical_inherited_type_extension_normalizes_then_terminal_rejects_unresolve
         vec![(&first, &TypeKind::I32), (&second, &TypeKind::I32)]
     );
 
-    let unresolved = type_only_solution(BTreeMap::from([(first, TypeKind::GenericParam(second))]));
+    let unresolved = type_only_solution(
+        BTreeMap::from([(first, TypeKind::GenericParam(second.clone()))]),
+        std::slice::from_ref(&second),
+    );
     let unresolved_scope = TypeConstraintParameterScope::seal_call_scope(
         [
             super::context::TypeConstraintTypeParameterScopeRow::new(
@@ -1390,14 +1392,18 @@ fn canonical_inherited_type_extension_normalizes_then_terminal_rejects_unresolve
         ),
         Some(Arc::new(unresolved)),
     );
-    assert!(matches!(
-        transaction.finish().complete(),
-        Err(TypeConstraintFailure::Rejected(
-            TypeConstraintCandidateFailure::Constraint(
-                TypeConstraintRejection::IncompleteInstantiation { .. },
-            ),
-        ))
-    ));
+    let unresolved_outcome = transaction.finish().complete();
+    assert!(
+        matches!(
+            &unresolved_outcome,
+            Err(TypeConstraintFailure::Rejected(
+                TypeConstraintCandidateFailure::Constraint(
+                    TypeConstraintRejection::IncompleteInstantiation { .. },
+                ),
+            ))
+        ),
+        "unexpected unresolved completion outcome: {unresolved_outcome:?}"
+    );
 }
 
 #[test]
@@ -1419,10 +1425,15 @@ fn canonical_inherited_binding_closes_through_current_group_constraint() {
         [t.clone()],
     )
     .expect("canonical inherited scope");
-    let inherited = type_only_solution(BTreeMap::from([(
-        t.clone(),
-        TypeKind::GenericParam(u.clone()),
-    )]));
+    let inherited = type_only_solution(
+        BTreeMap::from([(t.clone(), TypeKind::GenericParam(u.clone()))]),
+        std::slice::from_ref(&u),
+    );
+    assert_eq!(
+        inherited.bindings().collect::<Vec<_>>(),
+        vec![(&t, &TypeKind::GenericParam(u.clone()))],
+        "the previous group seals a canonical edge to its future frontier"
+    );
     let cancellation = AtomicBool::new(false);
     let mut transaction = TestConstraintTransaction::begin(
         TypeConstraintContext::<LocalConstraintAccounting<'_>, NoConstraintClient>::with_scope(
@@ -1460,7 +1471,7 @@ fn inherited_key_cannot_be_replaced_by_a_later_group_constraint() {
         [parameter.clone()],
     )
     .expect("replacement scope");
-    let inherited = type_only_solution(BTreeMap::from([(parameter.clone(), TypeKind::I32)]));
+    let inherited = type_only_solution(BTreeMap::from([(parameter.clone(), TypeKind::I32)]), &[]);
     let cancellation = AtomicBool::new(false);
     let mut transaction = TestConstraintTransaction::begin(
         TypeConstraintContext::<LocalConstraintAccounting<'_>, NoConstraintClient>::with_scope(
@@ -1502,10 +1513,10 @@ fn inherited_future_symbol_survives_for_the_exact_continuation_scope() {
         [bound.clone()],
     )
     .expect("continuation scope");
-    let inherited = type_only_solution(BTreeMap::from([(
-        bound.clone(),
-        TypeKind::GenericParam(future.clone()),
-    )]));
+    let inherited = type_only_solution(
+        BTreeMap::from([(bound.clone(), TypeKind::GenericParam(future.clone()))]),
+        std::slice::from_ref(&future),
+    );
     let cancellation = AtomicBool::new(false);
     let transaction = TestConstraintTransaction::begin(
         TypeConstraintContext::<LocalConstraintAccounting<'_>, NoConstraintClient>::with_scope(
@@ -1539,26 +1550,6 @@ fn hint_projection_cancellation_is_checked_before_descent() {
             &TypeKind::Vec(Box::new(TypeKind::I32)),
             &BTreeMap::new(),
             super::ConstraintClosurePolicy::Hint,
-            &mut context,
-        ),
-        Err(TypeConstraintError::Abort(TypeConstraintAbort::Cancelled))
-    ));
-}
-
-#[test]
-fn inherited_projection_cancellation_is_checked_before_descent() {
-    let cancellation = AtomicBool::new(true);
-    let mut context =
-        TypeConstraintContext::<LocalConstraintAccounting<'_>, NoConstraintClient>::with_scope(
-            TypeConstraintLimits::new(256, 128, 32, 16),
-            &cancellation,
-            TypeConstraintParameterScope::empty(),
-        );
-    assert!(matches!(
-        super::normalization::project_type(
-            &TypeKind::I32,
-            &BTreeMap::new(),
-            super::ConstraintClosurePolicy::InheritedSeed,
             &mut context,
         ),
         Err(TypeConstraintError::Abort(TypeConstraintAbort::Cancelled))
@@ -1654,10 +1645,9 @@ fn concrete_and_generic_array_projection_charge_exactly_three_nodes() {
     ];
     let policies = [
         super::ConstraintClosurePolicy::Hint,
-        super::ConstraintClosurePolicy::InheritedSeed,
         super::ConstraintClosurePolicy::ProjectionClosed,
         super::ConstraintClosurePolicy::ProjectionFuture,
-        super::ConstraintClosurePolicy::Terminal,
+        super::ConstraintClosurePolicy::SolutionCompletion,
     ];
     for (array, scope) in cases {
         for policy in policies {
@@ -1702,10 +1692,9 @@ fn unresolved_array_length_charges_container_and_header_before_rejection() {
     ];
     let policies = [
         super::ConstraintClosurePolicy::Hint,
-        super::ConstraintClosurePolicy::InheritedSeed,
         super::ConstraintClosurePolicy::ProjectionClosed,
         super::ConstraintClosurePolicy::ProjectionFuture,
-        super::ConstraintClosurePolicy::Terminal,
+        super::ConstraintClosurePolicy::SolutionCompletion,
     ];
     for length in cases {
         let array = TypeKind::Array {

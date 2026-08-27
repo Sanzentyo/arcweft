@@ -16,6 +16,7 @@ pub(crate) mod context;
 mod hints;
 mod normalization;
 mod shape;
+mod solution;
 #[cfg(test)]
 mod tests;
 pub(crate) mod transaction;
@@ -40,12 +41,13 @@ pub(crate) use hints::{
 pub(crate) use normalization::{
     ConstraintClosurePolicy, KeyedConstraintProjection, RejectedConstraintSourceProjection,
     SolvedCandidate, TypeConstraintCandidateFailure, TypeConstraintFailure,
-    TypeConstraintFailureInvariant, TypeConstraintSolution,
+    TypeConstraintFailureInvariant,
 };
 pub(super) use normalization::{
     bindings_equal, occurs_in_shape, seal_path, seal_type, validate_type,
 };
 pub(crate) use shape::TypeConstraintShape;
+pub(crate) use solution::TypeConstraintSolution;
 pub(crate) use transaction::ClosedConstraintProbe;
 pub(super) use transaction::{ChoiceDerivationStep, ChoiceForkRole, ConstraintPath};
 
@@ -234,18 +236,6 @@ pub(super) fn map_effect_environment_error(
             TypeConstraintEffectInvariantKind::DuplicateOrUnorderedScope,
             None,
         ),
-        EffectConstraintEnvironmentError::NonCanonicalInheritedBinding { variable } => {
-            effect_invariant(
-                TypeConstraintEffectInvariantKind::NonCanonicalInherited,
-                Some(variable),
-            )
-        }
-        EffectConstraintEnvironmentError::DuplicateInheritedBinding { variable } => {
-            effect_invariant(
-                TypeConstraintEffectInvariantKind::DuplicateOrUnorderedInherited,
-                Some(variable),
-            )
-        }
     }
 }
 

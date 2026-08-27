@@ -1,13 +1,9 @@
-//! Opaque normalized binding rows and deterministic read-only iteration.
+//! Canonical type projection, path normalization, and equality.
 
 use std::{
     collections::{BTreeMap, BTreeSet},
-    fmt, slice,
+    fmt,
     sync::Arc,
-};
-
-use crate::effect_row::{
-    EffectIssuerRebindError, EffectRow, EffectSubstitution, EffectVar, EffectVarIssuer,
 };
 
 use super::super::{GenericTypeParameterId, TypeKind};
@@ -17,16 +13,19 @@ use super::{
     ConstraintDomain, ConstraintPath, SourceError, TypeConstraintAbort,
     TypeConstraintConstEligibility, TypeConstraintError, TypeConstraintInvariant,
     TypeConstraintParameterEligibility, TypeConstraintRejection, TypeConstraintShape,
+    TypeConstraintSolution,
 };
 
 /// Closure phase used by the one typed projected-type visitor.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub(crate) enum ConstraintClosurePolicy {
     Hint,
-    InheritedSeed,
     ProjectionClosed,
     ProjectionFuture,
-    Terminal,
+    /// Seal one constraint-group solution relative to its exact scope.
+    /// Future-eligible atoms remain open for the next group; bindable atoms
+    /// must be present in the completed solution.
+    SolutionCompletion,
 }
 
 /// A typed type parameter remaining after one projection.  Constant
@@ -49,8 +48,8 @@ pub(crate) struct ProjectedConstraintType {
 }
 
 /// Borrow-only substitution authority accepted by the single projection
-/// visitor.  This trait is confined to the private normalization module, so
-/// the solver path map and the opaque sorted solution are its only owners.
+/// visitor. This trait is confined to the private constraint owner, so the
+/// active path map and the opaque completed solution are its only producers.
 pub(super) trait ConstraintBindingLookup {
     fn binding(&self, parameter: &GenericTypeParameterId) -> Option<&TypeKind>;
 }
@@ -121,10 +120,9 @@ where
                         remaining.insert(RemainingConstraintParameter(parameter.clone()));
                         Ok(TypeKind::GenericParam(parameter.clone()))
                     }
-                    ConstraintClosurePolicy::InheritedSeed
-                    | ConstraintClosurePolicy::ProjectionClosed
+                    ConstraintClosurePolicy::ProjectionClosed
                     | ConstraintClosurePolicy::ProjectionFuture
-                    | ConstraintClosurePolicy::Terminal => {
+                    | ConstraintClosurePolicy::SolutionCompletion => {
                         Err(TypeConstraintRejection::CyclicInstantiation {
                             parameter: parameter.clone(),
                         }
@@ -169,7 +167,7 @@ fn allows_unbound_type(
     eligibility: TypeConstraintParameterEligibility,
 ) -> bool {
     match policy {
-        ConstraintClosurePolicy::Hint | ConstraintClosurePolicy::InheritedSeed => true,
+        ConstraintClosurePolicy::Hint => true,
         ConstraintClosurePolicy::ProjectionClosed => {
             matches!(eligibility, TypeConstraintParameterEligibility::Rigid)
         }
@@ -178,11 +176,11 @@ fn allows_unbound_type(
             TypeConstraintParameterEligibility::Rigid
                 | TypeConstraintParameterEligibility::FutureEligible
         ),
-        // A completed candidate solution may retain a future-eligible atom
-        // only because the exact scope classifies it for a later callable
-        // group.  A truly terminal call is closed by its higher owner by
-        // issuing no FutureEligible entries at all.
-        ConstraintClosurePolicy::Terminal => matches!(
+        // Completion is relative to this exact constraint-group scope. A
+        // future-eligible atom is deliberately retained for a later callable
+        // group; the final group is closed because its owner issues no
+        // FutureEligible entries.
+        ConstraintClosurePolicy::SolutionCompletion => matches!(
             eligibility,
             TypeConstraintParameterEligibility::Rigid
                 | TypeConstraintParameterEligibility::FutureEligible
@@ -218,39 +216,6 @@ where
             Err(TypeConstraintRejection::UnresolvedType.into())
         }
     }
-}
-
-/// One declaration-owned generic binding in a sealed constraint path.
-#[derive(Debug, Eq, Hash, PartialEq)]
-struct CheckedTypeArgumentBinding {
-    parameter: GenericTypeParameterId,
-    value: TypeKind,
-}
-
-impl CheckedTypeArgumentBinding {
-    fn new(parameter: GenericTypeParameterId, value: TypeKind) -> Self {
-        Self { parameter, value }
-    }
-}
-
-#[derive(Debug, Eq, PartialEq)]
-struct CheckedEffectArgumentBinding {
-    variable: EffectVar,
-    value: EffectRow,
-}
-
-impl CheckedEffectArgumentBinding {
-    fn new(variable: EffectVar, value: EffectRow) -> Self {
-        Self { variable, value }
-    }
-}
-
-/// Sorted, opaque binding solution. It intentionally does not implement
-/// `Clone`; sharing is represented by `Arc<TypeConstraintSolution>` only.
-#[derive(Debug, Eq, PartialEq)]
-pub(crate) struct TypeConstraintSolution {
-    bindings: Box<[CheckedTypeArgumentBinding]>,
-    effect_bindings: Box<[CheckedEffectArgumentBinding]>,
 }
 
 #[derive(Debug, Eq, PartialEq)]
@@ -501,155 +466,26 @@ impl<D: ConstraintDomain> fmt::Debug for super::MaterializationImmediateFailure<
     }
 }
 
-impl TypeConstraintSolution {
-    pub(crate) fn bindings(&self) -> TypeConstraintBindingIter<'_> {
-        TypeConstraintBindingIter(self.bindings.iter())
-    }
-
-    pub(crate) fn effect_bindings(&self) -> TypeConstraintEffectBindingIter<'_> {
-        TypeConstraintEffectBindingIter(self.effect_bindings.iter())
-    }
-
-    pub(super) fn from_maps(
-        bindings: BTreeMap<GenericTypeParameterId, TypeKind>,
-        effect_bindings: BTreeMap<EffectVar, EffectRow>,
-    ) -> Self {
-        Self {
-            bindings: bindings
-                .into_iter()
-                .map(|(parameter, value)| CheckedTypeArgumentBinding::new(parameter, value))
-                .collect(),
-            effect_bindings: effect_bindings
-                .into_iter()
-                .map(|(variable, value)| CheckedEffectArgumentBinding::new(variable, value))
-                .collect(),
-        }
-    }
-
-    /// Apply the sealed lower solution without exposing a caller-owned
-    /// substitution table. Callers only receive the normalized type result.
-    pub(crate) fn apply(&self, ty: &TypeKind) -> TypeKind {
-        let bindings = self
-            .bindings()
-            .map(|(parameter, value)| (parameter.clone(), value.clone()))
-            .collect::<BTreeMap<_, _>>();
-        let effects = EffectSubstitution::from_rows(
-            self.effect_bindings()
-                .map(|(variable, value)| (*variable, value.clone())),
-        );
-        ty.substitute_type_parameters(&bindings)
-            .substitute_effect_rows(&effects)
-            .expect("sealed constraint solutions contain only canonical effect rows")
-    }
-
-    pub(crate) fn checked_rebind_effect_issuer(
-        &self,
-        prepared: EffectVarIssuer,
-        checked: EffectVarIssuer,
-        authorized_ordinals: &BTreeSet<u32>,
-    ) -> Result<Self, EffectIssuerRebindError> {
-        let bindings = self
-            .bindings()
-            .map(|(parameter, value)| {
-                Ok((
-                    parameter.clone(),
-                    value.checked_rebind_effect_rows(prepared, checked, authorized_ordinals)?,
-                ))
-            })
-            .collect::<Result<BTreeMap<_, _>, _>>()?;
-        let effect_bindings = self
-            .effect_bindings()
-            .map(|(variable, value)| {
-                if variable.issuer() != prepared {
-                    return Err(EffectIssuerRebindError::ForeignVariable {
-                        variable: *variable,
-                    });
-                }
-                if !authorized_ordinals.contains(&variable.index()) {
-                    return Err(EffectIssuerRebindError::UnauthorizedVariable {
-                        variable: *variable,
-                    });
-                }
-                Ok((
-                    variable.rebind_issuer(prepared, checked),
-                    value.checked_rebind_issuer(prepared, checked, authorized_ordinals)?,
-                ))
-            })
-            .collect::<Result<BTreeMap<_, _>, _>>()?;
-        Ok(Self::from_maps(bindings, effect_bindings))
-    }
+pub(super) fn validate_selected_call_self<A, D>(
+    value: &TypeKind,
+    context: &mut TypeConstraintContext<'_, A, D>,
+) -> Result<(), TypeConstraintError>
+where
+    A: TypeConstraintAccounting,
+    D: ConstraintDomain,
+{
+    let accepted = value
+        .accepts_with(
+            value,
+            super::super::compatibility::TypeCompatibilityPolicy::SelectedCall,
+            context,
+        )
+        .map_err(super::super::compatibility::binding_plan::map_compatibility_error)?;
+    accepted.then_some(()).ok_or(TypeConstraintError::Rejected(
+        TypeConstraintRejection::Mismatch,
+    ))
 }
 
-impl ConstraintBindingLookup for TypeConstraintSolution {
-    fn binding(&self, parameter: &GenericTypeParameterId) -> Option<&TypeKind> {
-        self.bindings
-            .binary_search_by(|binding| binding.parameter.cmp(parameter))
-            .ok()
-            .map(|index| &self.bindings[index].value)
-    }
-}
-
-pub(crate) struct TypeConstraintBindingIter<'a>(slice::Iter<'a, CheckedTypeArgumentBinding>);
-
-pub(crate) struct TypeConstraintEffectBindingIter<'a>(
-    slice::Iter<'a, CheckedEffectArgumentBinding>,
-);
-
-impl<'a> Iterator for TypeConstraintBindingIter<'a> {
-    type Item = (&'a GenericTypeParameterId, &'a TypeKind);
-
-    fn next(&mut self) -> Option<Self::Item> {
-        self.0
-            .next()
-            .map(|binding| (&binding.parameter, &binding.value))
-    }
-
-    fn size_hint(&self) -> (usize, Option<usize>) {
-        self.0.size_hint()
-    }
-}
-
-impl DoubleEndedIterator for TypeConstraintBindingIter<'_> {
-    fn next_back(&mut self) -> Option<Self::Item> {
-        self.0
-            .next_back()
-            .map(|binding| (&binding.parameter, &binding.value))
-    }
-}
-
-impl ExactSizeIterator for TypeConstraintBindingIter<'_> {
-    fn len(&self) -> usize {
-        self.0.len()
-    }
-}
-
-impl<'a> Iterator for TypeConstraintEffectBindingIter<'a> {
-    type Item = (&'a EffectVar, &'a EffectRow);
-
-    fn next(&mut self) -> Option<Self::Item> {
-        self.0
-            .next()
-            .map(|binding| (&binding.variable, &binding.value))
-    }
-
-    fn size_hint(&self) -> (usize, Option<usize>) {
-        self.0.size_hint()
-    }
-}
-
-impl DoubleEndedIterator for TypeConstraintEffectBindingIter<'_> {
-    fn next_back(&mut self) -> Option<Self::Item> {
-        self.0
-            .next_back()
-            .map(|binding| (&binding.variable, &binding.value))
-    }
-}
-
-impl ExactSizeIterator for TypeConstraintEffectBindingIter<'_> {
-    fn len(&self) -> usize {
-        self.0.len()
-    }
-}
 pub(crate) fn validate_type<A, D>(
     ty: &TypeKind,
     context: &mut TypeConstraintContext<'_, A, D>,
@@ -849,87 +685,6 @@ where
             (Some(left), Some(right)) if types_equal(left, right, context)? => {}
             (Some(_), Some(_)) | (Some(_), None) | (None, Some(_)) => return Ok(false),
             (None, None) => return Ok(true),
-        }
-    }
-}
-
-#[cfg(test)]
-mod malformed_inherited_tests {
-    use super::*;
-    use crate::types::constraints::context::{
-        LocalConstraintAccounting, TypeConstraintContext, TypeConstraintLimits,
-    };
-    use crate::types::constraints::transaction::TypeConstraintTransaction;
-    use crate::types::constraints::{
-        InheritedSolutionInvariant, InheritedSolutionInvariantKind, NoConstraintClient,
-        TypeConstraintInitializationFailure, TypeConstraintInvariant,
-        TypeConstraintParameterEligibility, TypeConstraintParameterScope,
-    };
-    use crate::types::{DetachedGenericOwnerId, GenericParameterOwnerId, GenericTypeParameterId};
-    use std::{
-        collections::BTreeSet,
-        sync::{Arc, atomic::AtomicBool},
-    };
-
-    fn parameter(ordinal: u16) -> GenericTypeParameterId {
-        GenericTypeParameterId::new(
-            GenericParameterOwnerId::Detached(DetachedGenericOwnerId::new(190)),
-            ordinal,
-        )
-    }
-
-    fn initialize(
-        rows: Vec<(GenericTypeParameterId, TypeKind)>,
-    ) -> Result<(), TypeConstraintInitializationFailure> {
-        let parameters = rows
-            .iter()
-            .map(|(parameter, _)| parameter.clone())
-            .collect::<BTreeSet<_>>()
-            .into_iter()
-            .map(|parameter| (parameter, TypeConstraintParameterEligibility::Bindable))
-            .collect::<Vec<_>>();
-        let scope = TypeConstraintParameterScope::new(parameters).expect("unique test scope");
-        let solution = TypeConstraintSolution {
-            bindings: rows
-                .into_iter()
-                .map(|(parameter, value)| CheckedTypeArgumentBinding::new(parameter, value))
-                .collect(),
-            effect_bindings: Box::new([]),
-        };
-        let cancellation = AtomicBool::new(false);
-        let mut context =
-            TypeConstraintContext::<LocalConstraintAccounting<'_>, NoConstraintClient>::with_scope(
-                TypeConstraintLimits::new(256, 128, 32, 16),
-                &cancellation,
-                scope,
-            );
-        let mut transaction = TypeConstraintTransaction::<NoConstraintClient>::new();
-        transaction.initialize(&mut context, Some(Arc::new(solution)))
-    }
-
-    #[test]
-    fn malformed_inherited_rows_are_typed_duplicate_or_unordered_invariants() {
-        let first = parameter(0);
-        let second = parameter(1);
-        for (rows, expected) in [
-            (
-                vec![(first.clone(), TypeKind::I32), (first, TypeKind::String)],
-                InheritedSolutionInvariantKind::DuplicateOrUnordered,
-            ),
-            (
-                vec![(second, TypeKind::I32), (parameter(0), TypeKind::String)],
-                InheritedSolutionInvariantKind::DuplicateOrUnordered,
-            ),
-        ] {
-            assert!(matches!(
-                initialize(rows),
-                Err(TypeConstraintInitializationFailure::Invariant(
-                    TypeConstraintInvariant::InheritedSolution(InheritedSolutionInvariant {
-                        kind,
-                        ..
-                    }),
-                )) if kind == expected
-            ));
         }
     }
 }

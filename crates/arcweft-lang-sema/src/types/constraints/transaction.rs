@@ -8,7 +8,7 @@ use std::{
 use super::super::{GenericTypeParameterId, TypeKind};
 use super::RejectedConstraintSourceProjection;
 use super::context::{TypeConstraintAccounting, TypeConstraintContext};
-use super::normalization::project_type;
+use super::normalization::{project_type, validate_selected_call_self};
 use super::{
     CheckedConstraintSourceProjection, ClosedMaterializationSubmission, ConstraintAcceptance,
     ConstraintClosurePolicy, ConstraintDomain, ExpectedHint, InheritedSolutionInvariant,
@@ -589,7 +589,6 @@ pub(crate) struct TypeConstraintTransaction<D: ConstraintDomain> {
     next_materialization_ticket_ordinal: u64,
     materialization_issuer: Arc<MaterializationTicketIssuer>,
     active_materialization: Option<MaterializationTicketIdentity>,
-    inherited_solution: Option<Arc<TypeConstraintSolution>>,
     probe: Option<ProbeOperation<D>>,
     probe_group: Option<ProbeGroup<D>>,
     prepared_sources: BTreeSet<D::Source>,
@@ -611,7 +610,6 @@ impl<D: ConstraintDomain> TypeConstraintTransaction<D> {
             next_materialization_ticket_ordinal: 0,
             materialization_issuer: Arc::new(MaterializationTicketIssuer),
             active_materialization: None,
-            inherited_solution: None,
             probe: None,
             probe_group: None,
             prepared_sources: BTreeSet::new(),
@@ -629,8 +627,7 @@ impl<D: ConstraintDomain> TypeConstraintTransaction<D> {
     where
         A: TypeConstraintAccounting,
     {
-        self.inherited_solution = inherited;
-        match Self::seed(context, self.inherited_solution.as_deref()) {
+        match Self::seed(context, inherited.as_deref()) {
             Ok(path) => {
                 self.frontier.push(path);
                 Ok(())
@@ -1338,7 +1335,6 @@ impl<D: ConstraintDomain> TypeConstraintTransaction<D> {
                 }
             }
             if valid {
-                self.validate_inherited_extension(&path, context)?;
                 finalized.push(path);
             }
         }
@@ -1512,17 +1508,6 @@ impl<D: ConstraintDomain> TypeConstraintTransaction<D> {
         }
         let (path, sealed_branch) = candidates.pop().expect("candidate length checked");
         context.check_cancelled()?;
-        context.validate_terminal_scope(&path)?;
-        let mut normalized_bindings = BTreeMap::new();
-        for (parameter, value) in &path.bindings {
-            let projected = project_type(
-                value,
-                &path.bindings,
-                ConstraintClosurePolicy::Terminal,
-                context,
-            )?;
-            normalized_bindings.insert(parameter.clone(), projected.value);
-        }
         let projections = self.finish_projections(&path, context)?;
         let effect_bindings = path
             .effects
@@ -1530,63 +1515,17 @@ impl<D: ConstraintDomain> TypeConstraintTransaction<D> {
             .map_err(super::map_effect_environment_error)?
             .into_iter()
             .collect::<BTreeMap<_, _>>();
-        let solution = Arc::new(TypeConstraintSolution::from_maps(
-            normalized_bindings,
+        let solution = Arc::new(TypeConstraintSolution::complete_path(
+            path.bindings,
             effect_bindings,
-        ));
+            context,
+        )?);
         Ok(SolvedCandidate {
             solution,
             sealed_branch,
             projections,
             closed_sources: path.probe_trace.into_boxed_slice(),
         })
-    }
-
-    fn validate_inherited_extension<A>(
-        &self,
-        path: &ConstraintPath<D>,
-        context: &mut TypeConstraintContext<'_, A, D>,
-    ) -> Result<(), TypeConstraintError>
-    where
-        A: TypeConstraintAccounting,
-    {
-        let Some(inherited) = self.inherited_solution.as_deref() else {
-            return Ok(());
-        };
-        for (parameter, original) in inherited.bindings() {
-            let Some(normalized) = path.bindings.get(parameter) else {
-                return Err(TypeConstraintError::Invariant(
-                    TypeConstraintInvariant::InheritedSolution(InheritedSolutionInvariant {
-                        kind: InheritedSolutionInvariantKind::OutOfScope,
-                        parameter: Some(parameter.clone()),
-                    }),
-                ));
-            };
-            let projected = project_type(
-                original,
-                &path.bindings,
-                ConstraintClosurePolicy::Terminal,
-                context,
-            )?;
-            let normalized = project_type(
-                normalized,
-                &path.bindings,
-                ConstraintClosurePolicy::Terminal,
-                context,
-            )?;
-            if projected.value != normalized.value {
-                return Err(TypeConstraintError::Invariant(
-                    TypeConstraintInvariant::InheritedSolution(InheritedSolutionInvariant {
-                        kind: InheritedSolutionInvariantKind::NonCanonical,
-                        parameter: Some(parameter.clone()),
-                    }),
-                ));
-            }
-        }
-        path.effects
-            .validate_inherited_extension()
-            .map_err(super::map_effect_environment_error)?;
-        Ok(())
     }
 
     fn finish_projections<A>(
@@ -1657,9 +1596,11 @@ impl<D: ConstraintDomain> TypeConstraintTransaction<D> {
         context.check_cancelled()?;
         let Some(inherited) = inherited else {
             if let Some(parameter) = context.required_inherited_keys().first() {
-                return Err(inherited_invariant(
-                    InheritedSolutionInvariantKind::Unclosed,
-                    Some(parameter.clone()),
+                return Err(TypeConstraintError::Invariant(
+                    TypeConstraintInvariant::InheritedSolution(InheritedSolutionInvariant {
+                        kind: InheritedSolutionInvariantKind::Unclosed,
+                        parameter: Some(parameter.clone()),
+                    }),
                 ));
             }
             if let Some(variable) = context.required_inherited_effects().first() {
@@ -1670,316 +1611,7 @@ impl<D: ConstraintDomain> TypeConstraintTransaction<D> {
             }
             return context.start_path();
         };
-
-        // Stage 1: the opaque seed's row representation must already be
-        // strictly ordered.  Nothing about keys or values is interpreted
-        // before this check wins.
-        let rows = inherited.bindings().collect::<Vec<_>>();
-        for pair in rows.windows(2) {
-            if pair[0].0 >= pair[1].0 {
-                return Err(inherited_invariant(
-                    InheritedSolutionInvariantKind::DuplicateOrUnordered,
-                    Some(pair[1].0.clone()),
-                ));
-            }
-        }
-
-        // Stage 2: validate all identities and binding-key roles against the
-        // immutable, kind-separated scope before attempting any projection.
-        for (parameter, value) in &rows {
-            match context.parameter_eligibility(parameter) {
-                None => {
-                    return Err(inherited_invariant(
-                        InheritedSolutionInvariantKind::OutOfScope,
-                        Some((*parameter).clone()),
-                    ));
-                }
-                Some(super::TypeConstraintParameterEligibility::Rigid) => {
-                    return Err(inherited_invariant(
-                        InheritedSolutionInvariantKind::RigidBinding,
-                        Some((*parameter).clone()),
-                    ));
-                }
-                Some(
-                    super::TypeConstraintParameterEligibility::Bindable
-                    | super::TypeConstraintParameterEligibility::FutureEligible,
-                ) => {}
-            }
-            validate_type(value, context)
-                .map_err(|error| map_seed_scope_error(error, (*parameter).clone()))?;
-        }
-
-        // Stage 3: normalize the complete seed as one unit.  An eligible
-        // reference (T -> U) is canonical, while a completed chain (T -> U,
-        // U -> i32) is not canonical until the active continuation closes it.
-        let bindings = rows
-            .iter()
-            .map(|(parameter, value)| ((*parameter).clone(), (*value).clone()))
-            .collect::<BTreeMap<_, _>>();
-        for (parameter, value) in &rows {
-            if matches!(
-                value.constraint_shape(),
-                super::TypeConstraintShape::Generic(bound) if bound == *parameter
-            ) {
-                return Err(inherited_invariant(
-                    InheritedSolutionInvariantKind::SelfBinding,
-                    Some((*parameter).clone()),
-                ));
-            }
-            let projected = project_type(
-                value,
-                &bindings,
-                ConstraintClosurePolicy::InheritedSeed,
-                context,
-            )
-            .map_err(|error| map_seed_canonical_error(error, (*parameter).clone()))?;
-            if projected.value != **value {
-                return Err(inherited_invariant(
-                    InheritedSolutionInvariantKind::NonCanonical,
-                    Some((*parameter).clone()),
-                ));
-            }
-            validate_selected_call_self(&projected.value, context)
-                .map_err(|error| map_seed_self_error(error, (*parameter).clone()))?;
-        }
-
-        // Stage 4: exact merge of required and actual eligible keys.  Neither
-        // side is sorted or repaired here; both were sealed by their owners.
-        let required = context.required_inherited_keys();
-        let mut row_index = 0;
-        for required_key in required {
-            if row_index < rows.len() && rows[row_index].0 < required_key {
-                return Err(inherited_invariant(
-                    InheritedSolutionInvariantKind::UnexpectedKey,
-                    Some(rows[row_index].0.clone()),
-                ));
-            }
-            if row_index == rows.len() || rows[row_index].0 > required_key {
-                return Err(inherited_invariant(
-                    InheritedSolutionInvariantKind::Unclosed,
-                    Some(required_key.clone()),
-                ));
-            }
-            row_index += 1;
-        }
-        if let Some((parameter, _)) = rows.get(row_index) {
-            return Err(inherited_invariant(
-                InheritedSolutionInvariantKind::UnexpectedKey,
-                Some((*parameter).clone()),
-            ));
-        }
-
-        let effect_rows = inherited.effect_bindings().collect::<Vec<_>>();
-        for pair in effect_rows.windows(2) {
-            if pair[0].0 >= pair[1].0 {
-                return Err(super::effect_invariant(
-                    super::TypeConstraintEffectInvariantKind::DuplicateOrUnorderedInherited,
-                    Some(*pair[1].0),
-                ));
-            }
-        }
-        for (variable, value) in &effect_rows {
-            if context.effect_eligibility(**variable).is_none() {
-                return Err(super::effect_invariant(
-                    super::TypeConstraintEffectInvariantKind::ForeignVariable,
-                    Some(**variable),
-                ));
-            }
-            if !matches!(value.tail(), crate::effect_row::EffectRowTail::Closed) {
-                return Err(super::effect_invariant(
-                    super::TypeConstraintEffectInvariantKind::NonCanonicalInherited,
-                    Some(**variable),
-                ));
-            }
-        }
-        let required_effects = context.required_inherited_effects();
-        let mut effect_index = 0;
-        for required in required_effects {
-            if effect_index < effect_rows.len() && effect_rows[effect_index].0 < required {
-                return Err(super::effect_invariant(
-                    super::TypeConstraintEffectInvariantKind::UnexpectedInherited,
-                    Some(*effect_rows[effect_index].0),
-                ));
-            }
-            if effect_index == effect_rows.len() || effect_rows[effect_index].0 > required {
-                return Err(super::effect_invariant(
-                    super::TypeConstraintEffectInvariantKind::MissingInherited,
-                    Some(*required),
-                ));
-            }
-            effect_index += 1;
-        }
-        if let Some((variable, _)) = effect_rows.get(effect_index) {
-            return Err(super::effect_invariant(
-                super::TypeConstraintEffectInvariantKind::UnexpectedInherited,
-                Some(**variable),
-            ));
-        }
-
-        let mut path = context.start_path()?;
-        for (parameter, value) in rows {
-            path = context
-                .add_binding(
-                    path,
-                    parameter.clone(),
-                    value,
-                    value.constraint_shape(),
-                    true,
-                )?
-                .ok_or_else(|| {
-                    inherited_invariant(
-                        InheritedSolutionInvariantKind::SelfBinding,
-                        Some(parameter.clone()),
-                    )
-                })?;
-        }
-        for (variable, value) in effect_rows {
-            path.effects
-                .seed_inherited(*variable, value)
-                .map_err(super::map_effect_environment_error)?;
-        }
-        Ok(path)
-    }
-}
-
-fn inherited_invariant(
-    kind: InheritedSolutionInvariantKind,
-    parameter: Option<GenericTypeParameterId>,
-) -> TypeConstraintError {
-    TypeConstraintError::Invariant(TypeConstraintInvariant::InheritedSolution(
-        InheritedSolutionInvariant { kind, parameter },
-    ))
-}
-
-fn map_seed_scope_error(
-    error: TypeConstraintError,
-    binding_parameter: GenericTypeParameterId,
-) -> TypeConstraintError {
-    match error {
-        TypeConstraintError::Abort(error) => TypeConstraintError::Abort(error),
-        TypeConstraintError::Invariant(TypeConstraintInvariant::ParameterScope(
-            super::TypeConstraintParameterScopeInvariant::TypeParameterOutOfScope { parameter },
-        )) => inherited_invariant(InheritedSolutionInvariantKind::OutOfScope, Some(parameter)),
-        TypeConstraintError::Invariant(TypeConstraintInvariant::ParameterScope(
-            super::TypeConstraintParameterScopeInvariant::ConstParameterOutOfScope { parameter },
-        )) => TypeConstraintError::Invariant(TypeConstraintInvariant::ParameterScope(
-            super::TypeConstraintParameterScopeInvariant::ConstParameterOutOfScope { parameter },
-        )),
-        TypeConstraintError::Invariant(TypeConstraintInvariant::ParameterScope(
-            super::TypeConstraintParameterScopeInvariant::UnsupportedConstParameter { parameter },
-        )) => TypeConstraintError::Invariant(TypeConstraintInvariant::ParameterScope(
-            super::TypeConstraintParameterScopeInvariant::UnsupportedConstParameter { parameter },
-        )),
-        TypeConstraintError::Invariant(TypeConstraintInvariant::ParameterScope(
-            super::TypeConstraintParameterScopeInvariant::RigidBinding { parameter },
-        )) => inherited_invariant(
-            InheritedSolutionInvariantKind::RigidBinding,
-            Some(parameter),
-        ),
-        TypeConstraintError::Invariant(TypeConstraintInvariant::InheritedSolution(error)) => {
-            TypeConstraintError::Invariant(TypeConstraintInvariant::InheritedSolution(error))
-        }
-        TypeConstraintError::Invariant(TypeConstraintInvariant::Effect(error)) => {
-            TypeConstraintError::Invariant(TypeConstraintInvariant::Effect(error))
-        }
-        TypeConstraintError::Invariant(
-            TypeConstraintInvariant::ParameterScope(
-                super::TypeConstraintParameterScopeInvariant::DuplicateParameter,
-            )
-            | TypeConstraintInvariant::ParameterScope(
-                super::TypeConstraintParameterScopeInvariant::ParameterUnordered,
-            )
-            | TypeConstraintInvariant::ParameterScope(
-                super::TypeConstraintParameterScopeInvariant::ConstParameterUnordered,
-            )
-            | TypeConstraintInvariant::ParameterScope(
-                super::TypeConstraintParameterScopeInvariant::RequiredInheritedKeyOutOfScope {
-                    ..
-                },
-            )
-            | TypeConstraintInvariant::ParameterScope(
-                super::TypeConstraintParameterScopeInvariant::RequiredInheritedKeyNotBindable {
-                    ..
-                },
-            )
-            | TypeConstraintInvariant::Projection(_)
-            | TypeConstraintInvariant::PreparedSource(_)
-            | TypeConstraintInvariant::SourceProtocol(_),
-        ) => inherited_invariant(
-            InheritedSolutionInvariantKind::Forbidden,
-            Some(binding_parameter),
-        ),
-        TypeConstraintError::Rejected(TypeConstraintRejection::UnresolvedType)
-        | TypeConstraintError::Rejected(TypeConstraintRejection::Mismatch)
-        | TypeConstraintError::Rejected(TypeConstraintRejection::AmbiguousSolution { .. })
-        | TypeConstraintError::Rejected(TypeConstraintRejection::CyclicInstantiation { .. })
-        | TypeConstraintError::Rejected(TypeConstraintRejection::IncompleteInstantiation {
-            ..
-        })
-        | TypeConstraintError::Rejected(TypeConstraintRejection::EffectSubset { .. }) => {
-            inherited_invariant(
-                InheritedSolutionInvariantKind::Forbidden,
-                Some(binding_parameter),
-            )
-        }
-    }
-}
-
-fn map_seed_canonical_error(
-    error: TypeConstraintError,
-    binding_parameter: GenericTypeParameterId,
-) -> TypeConstraintError {
-    match error {
-        TypeConstraintError::Abort(error) => TypeConstraintError::Abort(error),
-        TypeConstraintError::Rejected(TypeConstraintRejection::CyclicInstantiation {
-            parameter,
-        }) => inherited_invariant(
-            InheritedSolutionInvariantKind::OccursOrCycle,
-            Some(parameter),
-        ),
-        TypeConstraintError::Rejected(TypeConstraintRejection::IncompleteInstantiation {
-            parameter,
-        }) => inherited_invariant(InheritedSolutionInvariantKind::Unclosed, Some(parameter)),
-        TypeConstraintError::Invariant(TypeConstraintInvariant::ParameterScope(
-            super::TypeConstraintParameterScopeInvariant::TypeParameterOutOfScope { parameter },
-        )) => inherited_invariant(InheritedSolutionInvariantKind::OutOfScope, Some(parameter)),
-        TypeConstraintError::Invariant(TypeConstraintInvariant::ParameterScope(
-            super::TypeConstraintParameterScopeInvariant::ConstParameterOutOfScope { parameter },
-        )) => TypeConstraintError::Invariant(TypeConstraintInvariant::ParameterScope(
-            super::TypeConstraintParameterScopeInvariant::ConstParameterOutOfScope { parameter },
-        )),
-        TypeConstraintError::Invariant(TypeConstraintInvariant::InheritedSolution(error)) => {
-            TypeConstraintError::Invariant(TypeConstraintInvariant::InheritedSolution(error))
-        }
-        TypeConstraintError::Invariant(_) | TypeConstraintError::Rejected(_) => {
-            inherited_invariant(
-                InheritedSolutionInvariantKind::Forbidden,
-                Some(binding_parameter),
-            )
-        }
-    }
-}
-
-fn map_seed_self_error(
-    error: TypeConstraintError,
-    binding_parameter: GenericTypeParameterId,
-) -> TypeConstraintError {
-    match error {
-        TypeConstraintError::Abort(error) => TypeConstraintError::Abort(error),
-        TypeConstraintError::Invariant(error) => TypeConstraintError::Invariant(error),
-        TypeConstraintError::Rejected(TypeConstraintRejection::UnresolvedType)
-        | TypeConstraintError::Rejected(TypeConstraintRejection::Mismatch)
-        | TypeConstraintError::Rejected(TypeConstraintRejection::AmbiguousSolution { .. })
-        | TypeConstraintError::Rejected(TypeConstraintRejection::CyclicInstantiation { .. })
-        | TypeConstraintError::Rejected(TypeConstraintRejection::IncompleteInstantiation {
-            ..
-        })
-        | TypeConstraintError::Rejected(TypeConstraintRejection::EffectSubset { .. }) => {
-            inherited_invariant(
-                InheritedSolutionInvariantKind::Forbidden,
-                Some(binding_parameter),
-            )
-        }
+        inherited.restore_inherited_path(context)
     }
 }
 
@@ -2203,7 +1835,7 @@ where
         let actual = project_type(
             &probe.actual,
             &path.bindings,
-            ConstraintClosurePolicy::Terminal,
+            ConstraintClosurePolicy::SolutionCompletion,
             context,
         )?
         .value
@@ -2243,7 +1875,7 @@ where
         let value_expected = project_type(
             value_expected,
             &path.bindings,
-            ConstraintClosurePolicy::Terminal,
+            ConstraintClosurePolicy::SolutionCompletion,
             context,
         )?
         .value
@@ -2290,26 +1922,6 @@ fn path_correlation_cmp<D: ConstraintDomain>(
                 )
         })
         .then_with(|| left.probe_trace.len().cmp(&right.probe_trace.len()))
-}
-
-fn validate_selected_call_self<A, D>(
-    value: &TypeKind,
-    context: &mut TypeConstraintContext<'_, A, D>,
-) -> Result<(), TypeConstraintError>
-where
-    A: TypeConstraintAccounting,
-    D: ConstraintDomain,
-{
-    let accepted = value
-        .accepts_with(
-            value,
-            super::super::compatibility::TypeCompatibilityPolicy::SelectedCall,
-            context,
-        )
-        .map_err(super::super::compatibility::binding_plan::map_compatibility_error)?;
-    accepted.then_some(()).ok_or(TypeConstraintError::Rejected(
-        TypeConstraintRejection::Mismatch,
-    ))
 }
 
 fn protocol_error(kind: TypeConstraintSourceProtocolInvariant) -> TypeConstraintError {
