@@ -8,7 +8,7 @@ use core::str::FromStr;
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
 use thiserror::Error;
 
-pub use locale::{LocaleTag, LocaleTagError};
+pub use locale::{LocaleSemanticDigest, LocaleTag, LocaleTagError};
 pub use semantic_type::RuntimeSemanticTypeId;
 
 #[derive(Clone, Debug, Eq, Error, PartialEq)]

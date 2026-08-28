@@ -6,10 +6,26 @@ use std::collections::BTreeSet;
 use thiserror::Error;
 
 const MAX_LOCALE_TAG_BYTES: usize = 64;
+const LOCALE_SEMANTIC_DOMAIN: &[u8] = b"arcweft.id.locale-semantic.v1\0";
 
 /// A canonical locale tag in Arcweft's deterministic ASCII locale subset.
 #[derive(Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub struct LocaleTag(Box<str>);
+
+/// Stable semantic identity of one canonical [`LocaleTag`].
+///
+/// The digest is owner-issued so downstream semantic products never hash a
+/// locale's display text or duplicate its canonicalization rules.
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub struct LocaleSemanticDigest([u8; 32]);
+
+impl LocaleSemanticDigest {
+    /// Returns the exact version-one digest bytes.
+    #[must_use]
+    pub const fn as_bytes(&self) -> &[u8; 32] {
+        &self.0
+    }
+}
 
 /// Failure to validate or canonicalize a [`LocaleTag`].
 #[derive(Clone, Debug, Eq, Error, PartialEq)]
@@ -59,6 +75,16 @@ impl LocaleTag {
     #[must_use]
     pub fn into_boxed_str(self) -> Box<str> {
         self.0
+    }
+
+    /// Issues the semantic identity of this already-canonical locale.
+    #[must_use]
+    pub fn semantic_digest(&self) -> LocaleSemanticDigest {
+        let bytes = self.as_str().as_bytes();
+        let mut hasher = blake3::Hasher::new();
+        hasher.update(LOCALE_SEMANTIC_DOMAIN);
+        hasher.update(bytes);
+        LocaleSemanticDigest(*hasher.finalize().as_bytes())
     }
 }
 
@@ -230,5 +256,16 @@ mod tests {
         assert_eq!(accepted.as_str(), "zh-Hant-TW");
         assert_eq!(serde_json::to_string(&accepted).unwrap(), "\"zh-Hant-TW\"");
         assert!(serde_json::from_str::<LocaleTag>("\"zh-hant-tw\"").is_err());
+    }
+
+    #[test]
+    fn semantic_digest_is_owned_by_the_canonical_locale() {
+        let canonical = LocaleTag::try_new("zh-Hant-TW").unwrap();
+        let normalized = LocaleTag::canonicalize("ZH-hant-tw").unwrap();
+        let different = LocaleTag::try_new("zh-Hans-TW").unwrap();
+
+        assert_eq!(canonical.semantic_digest(), normalized.semantic_digest());
+        assert_ne!(canonical.semantic_digest(), different.semantic_digest());
+        assert_eq!(canonical.semantic_digest().as_bytes().len(), 32);
     }
 }
