@@ -122,6 +122,13 @@ These are prerequisites only. The sparse statement role and the lazy
 Match-only transcript builder remain scheduled for deletion by the following
 statement-seal and atomic transcript cuts.
 
+The remaining Trigger, Select, dialogue-mark, unsafe-audit, and exhaustive
+statement-payload authority is design-gated by
+[Lang-01.5.1.1.2.1.1.1.1.1.1.1.2.2](../reviews/requests/2026-08-29-lang-01.5.1.1.2.1.1.1.1.1.1.1.2.2-checked-statement-trigger-select-mark-and-unsafe-audit-authority-correction.md).
+That request selects one deletion-driven typed boundary; it is not permission
+to add a temporary Trigger/Select payload, string mark resolver, or unsafe-ID
+fallback while the design gate is open.
+
 ## Structural review
 
 The canonical audit scanned 2,262 files and 95 workspace packages, reported
