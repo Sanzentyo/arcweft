@@ -184,6 +184,51 @@ pub enum HirExprKind {
 }
 
 impl HirExprKind {
+    /// Returns the stable semantic constructor tag used by checked
+    /// expression transcripts.
+    pub const fn semantic_transcript_tag(&self) -> u16 {
+        match self {
+            Self::Unit => 0x0100,
+            Self::Literal(_) => 0x0101,
+            Self::EntityReference(_) => 0x0102,
+            Self::LifetimePath(_) => 0x0103,
+            Self::Path(_) => 0x0104,
+            Self::ShortVariant(_) => 0x0105,
+            Self::Placeholder(_) => 0x0106,
+            Self::Tuple(_) => 0x0107,
+            Self::BracketSequence(_) => 0x0108,
+            Self::NumericBracketSequence(_) => 0x0109,
+            Self::ArrayRepeat(_) => 0x010A,
+            Self::Call(_) => 0x010B,
+            Self::Select(_) => 0x010C,
+            Self::Index(_) => 0x010D,
+            Self::Pipe(_) => 0x010E,
+            Self::Try(_) => 0x010F,
+            Self::Await(_) => 0x0110,
+            Self::Thread(_) => 0x0111,
+            Self::Choice(_) => 0x0112,
+            Self::Range(_) => 0x0113,
+            Self::Record(_) => 0x0114,
+            Self::RecordLiteral(_) => 0x0115,
+            Self::Binary(_) => 0x0116,
+            Self::Borrow(_) => 0x0117,
+            Self::Dereference(_) => 0x0118,
+            Self::Closure(_) => 0x0119,
+            Self::Unary(_) => 0x011A,
+            Self::Block(_) => 0x011B,
+            Self::ComputationBlock(_) => 0x011C,
+            Self::NamedBlock(_) => 0x011D,
+            Self::Loop(_) => 0x011E,
+            Self::If(_) => 0x011F,
+            Self::IfLet(_) => 0x0120,
+            Self::Match(_) => 0x0121,
+            Self::DialogueContentApplication(_) => 0x0122,
+            Self::PostfixBracket(_) => 0x0123,
+            Self::Error(_) => 0x0124,
+            Self::ForSynthetic(_) => 0x0125,
+        }
+    }
+
     /// Returns every type-arena root attached directly to this expression.
     ///
     /// Nested type structure remains owned by [`crate::type_ref::HirTypeKind`].

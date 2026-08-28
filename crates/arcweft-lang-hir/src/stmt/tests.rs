@@ -2,6 +2,7 @@ use arcweft_lang_syntax::assertion::AssertionMode;
 use arcweft_lang_syntax::ast::line_plan::DeferOutcome;
 use core::fmt::Debug;
 use core::num::{NonZeroU32, NonZeroU64};
+use std::collections::BTreeSet;
 
 use super::{
     HirAssertionMode, HirConditionalElseBranch, HirContextualStmtBody, HirForStmt, HirIfLetStmt,
@@ -697,6 +698,20 @@ fn evaluation_plan_matrix_covers_all_thirty_five_statement_families() {
     ];
 
     assert_eq!(rows.len(), 35);
+    let tags = rows
+        .iter()
+        .map(|(_, statement)| statement.semantic_transcript_tag())
+        .collect::<Vec<_>>();
+    assert_eq!(
+        tags,
+        (0x0700_u16..=0x0722_u16).collect::<Vec<_>>(),
+        "statement transcript tags must follow the owner enum order"
+    );
+    assert_eq!(
+        tags.iter().collect::<BTreeSet<_>>().len(),
+        tags.len(),
+        "statement transcript tags must be unique"
+    );
     for (ordinal, (family, statement)) in rows.into_iter().enumerate() {
         let plan = statement.evaluation_plan();
         let mut steps = Vec::new();
@@ -1656,57 +1671,6 @@ fn unsafe_lifetime_constructor_rejects_payload_and_poison_state_drift() {
             HirStmtPoisonState::Poisoned(HirStmtRecoveryIssue::UnclosedBody),
         )
         .is_ok()
-    );
-}
-
-fn statement_variant_ordinal(kind: &HirStmtKind) -> u8 {
-    match kind {
-        HirStmtKind::Assertion { .. } => 0,
-        HirStmtKind::Let { .. } => 1,
-        HirStmtKind::Assign { .. } => 2,
-        HirStmtKind::LetElse { .. } => 3,
-        HirStmtKind::LetChoice { .. } => 4,
-        HirStmtKind::LetScope { .. } => 5,
-        HirStmtKind::LetActionReceive { .. } => 6,
-        HirStmtKind::Return { .. } => 7,
-        HirStmtKind::Out { .. } => 8,
-        HirStmtKind::Goto { .. } => 9,
-        HirStmtKind::DeferBlock { .. } => 10,
-        HirStmtKind::Defer { .. } => 11,
-        HirStmtKind::Yield { .. } => 12,
-        HirStmtKind::Signal { .. } => 13,
-        HirStmtKind::LifetimeSet { .. } => 14,
-        HirStmtKind::Wait { .. } => 15,
-        HirStmtKind::On { .. } => 16,
-        HirStmtKind::UnsafeLifetime { .. } => 17,
-        HirStmtKind::Choice { .. } => 18,
-        HirStmtKind::If(_) => 19,
-        HirStmtKind::IfLet(_) => 20,
-        HirStmtKind::Match(_) => 21,
-        HirStmtKind::While(_) => 22,
-        HirStmtKind::WhileLet(_) => 23,
-        HirStmtKind::For(_) => 24,
-        HirStmtKind::Close { .. } => 25,
-        HirStmtKind::Select(_) => 26,
-        HirStmtKind::SourceLocale(_) => 27,
-        HirStmtKind::Scope(_) => 28,
-        HirStmtKind::Include(_) => 29,
-        HirStmtKind::Break { .. } => 30,
-        HirStmtKind::Continue { .. } => 31,
-        HirStmtKind::Expression { .. } => 32,
-        HirStmtKind::ProofCall { .. } => 33,
-        HirStmtKind::Error => 34,
-    }
-}
-
-#[test]
-fn statement_inventory_is_the_closed_typed_contract() {
-    assert_eq!(statement_variant_ordinal(&HirStmtKind::Error), 34);
-    assert_eq!(
-        statement_variant_ordinal(&HirStmtKind::Continue {
-            label: Some(name("outer")),
-        }),
-        31
     );
 }
 

@@ -612,7 +612,7 @@ impl MatchTranscriptBuilder<'_, '_, '_, '_> {
         let mut hasher = TranscriptHasher::new(&mut self.budget);
         transcript_update!(hasher, b"arcweft.lang.checked-pattern-semantic.v1\0");
         transcript_update!(hasher, &coordinate.canonical_bytes()?);
-        transcript_update!(hasher, &[pattern_kind_tag(hir.kind())]);
+        transcript_update!(hasher, &hir.kind().semantic_transcript_tag().to_le_bytes());
         transcript_update!(hasher, &checked.resolution().semantic_tag().to_le_bytes());
         transcript_update!(hasher, checked.ty().semantic_identity_digest().as_bytes());
         write_pattern_resolution(
@@ -848,24 +848,6 @@ fn record_pattern_child_coordinate(
     let mut steps = parent.steps().to_vec();
     steps.extend_from_slice(relative.steps());
     Ok(StablePatternCoordinate::new(steps))
-}
-
-fn pattern_kind_tag(kind: &HirPatternKind) -> u8 {
-    match kind {
-        HirPatternKind::Binding(_) => 0,
-        HirPatternKind::MutableBinding(_) => 1,
-        HirPatternKind::Literal(_) => 2,
-        HirPatternKind::EntityReference(_) => 3,
-        HirPatternKind::Variant(_) => 4,
-        HirPatternKind::Discard => 5,
-        HirPatternKind::Tuple { .. } => 6,
-        HirPatternKind::Record { .. } => 7,
-        HirPatternKind::BracketSequence { .. } => 8,
-        HirPatternKind::WholeBinding { .. } => 9,
-        HirPatternKind::Or { .. } => 10,
-        HirPatternKind::TypedBinding { .. } => 11,
-        HirPatternKind::Error(_) => 12,
-    }
 }
 
 fn write_literal(

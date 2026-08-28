@@ -1342,6 +1342,48 @@ impl HirAssertionMode {
 }
 
 impl HirStmtKind {
+    /// Returns the stable semantic constructor tag used by checked
+    /// statement transcripts.
+    pub const fn semantic_transcript_tag(&self) -> u16 {
+        match self {
+            Self::Assertion { .. } => 0x0700,
+            Self::Let { .. } => 0x0701,
+            Self::Assign { .. } => 0x0702,
+            Self::LetElse { .. } => 0x0703,
+            Self::LetChoice { .. } => 0x0704,
+            Self::LetScope { .. } => 0x0705,
+            Self::LetActionReceive { .. } => 0x0706,
+            Self::Return { .. } => 0x0707,
+            Self::Out { .. } => 0x0708,
+            Self::Goto { .. } => 0x0709,
+            Self::DeferBlock { .. } => 0x070A,
+            Self::Defer { .. } => 0x070B,
+            Self::Yield { .. } => 0x070C,
+            Self::Signal { .. } => 0x070D,
+            Self::LifetimeSet { .. } => 0x070E,
+            Self::Wait { .. } => 0x070F,
+            Self::On { .. } => 0x0710,
+            Self::UnsafeLifetime { .. } => 0x0711,
+            Self::Choice { .. } => 0x0712,
+            Self::If(_) => 0x0713,
+            Self::IfLet(_) => 0x0714,
+            Self::Match(_) => 0x0715,
+            Self::While(_) => 0x0716,
+            Self::WhileLet(_) => 0x0717,
+            Self::For(_) => 0x0718,
+            Self::Close { .. } => 0x0719,
+            Self::Select(_) => 0x071A,
+            Self::SourceLocale(_) => 0x071B,
+            Self::Scope(_) => 0x071C,
+            Self::Include(_) => 0x071D,
+            Self::Break { .. } => 0x071E,
+            Self::Continue { .. } => 0x071F,
+            Self::Expression { .. } => 0x0720,
+            Self::ProofCall { .. } => 0x0721,
+            Self::Error => 0x0722,
+        }
+    }
+
     /// Returns the typed evaluation order for every statement family.
     ///
     /// This projection is borrowed from the statement payload and is not a

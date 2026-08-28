@@ -21,7 +21,25 @@ const SELECT_PROGRESS_FIELD_TAG: u16 = 0x0403;
 const SELECT_FIELD_TAG: u16 = 0x0404;
 pub(crate) const REMOVED_SELECT_TUPLE_ELEMENT_TAG: u16 = 0x0405;
 pub(crate) const REMOVED_SELECT_RECORD_ELEMENT_TAG: u16 = 0x0406;
+const EXPRESSION_RESOLUTION_TAG_BASE: u16 = 0x0200;
+const EXPRESSION_RESOLUTION_TAG_END: u16 = 0x021B;
+const EXPRESSION_RESOLUTION_TAG_COUNT: u16 = 28;
+const VALUE_RESOLUTION_TAG_BASE: u16 = 0x0300;
+const VALUE_RESOLUTION_TAG_END: u16 = 0x0307;
+const VALUE_RESOLUTION_TAG_COUNT: u16 = 8;
+const PATTERN_RESOLUTION_TAG_BASE: u16 = 0x0600;
+const PATTERN_RESOLUTION_TAG_END: u16 = 0x0605;
+const PATTERN_RESOLUTION_TAG_COUNT: u16 = 6;
 const _: () = {
+    assert!(
+        EXPRESSION_RESOLUTION_TAG_END
+            == EXPRESSION_RESOLUTION_TAG_BASE + EXPRESSION_RESOLUTION_TAG_COUNT - 1
+    );
+    assert!(
+        PATTERN_RESOLUTION_TAG_END
+            == PATTERN_RESOLUTION_TAG_BASE + PATTERN_RESOLUTION_TAG_COUNT - 1
+    );
+    assert!(VALUE_RESOLUTION_TAG_END == VALUE_RESOLUTION_TAG_BASE + VALUE_RESOLUTION_TAG_COUNT - 1);
     assert!(REMOVED_SELECT_TUPLE_ELEMENT_TAG > SELECT_FIELD_TAG);
     assert!(REMOVED_SELECT_RECORD_ELEMENT_TAG > REMOVED_SELECT_TUPLE_ELEMENT_TAG);
 };
@@ -330,34 +348,34 @@ impl CheckedExpressionResolution {
     /// Stable semantic constructor tag retained by the Cut 1 transcript.
     pub const fn semantic_tag(&self) -> u16 {
         match self {
-            Self::Structural => 0x0200,
-            Self::Literal(_) => 0x0201,
-            Self::Value(_) => 0x0202,
-            Self::Select(_) => 0x0203,
-            Self::Nominal(_) => 0x0204,
-            Self::Variant(_) => 0x0205,
-            Self::StageLook(_) => 0x0206,
-            Self::Effect(_) => 0x0207,
-            Self::Call => 0x0208,
-            Self::Await(_) => 0x0209,
-            Self::Choice(_) => 0x020A,
-            Self::Try(_) => 0x020B,
-            Self::ImplicitCallable(_) => 0x020C,
-            Self::ImplicitParameter { .. } => 0x020D,
-            Self::Pipe(_) => 0x020E,
-            Self::PipeLeft { .. } => 0x020F,
-            Self::ViewCall(_) => 0x0210,
-            Self::ViewCallee(_) => 0x0211,
-            Self::StyleValue(_) => 0x0212,
-            Self::StyleCallee(_) => 0x0213,
-            Self::DialogueLineReference(_) => 0x0214,
-            Self::DialogueLineCoordinate(_) => 0x0215,
-            Self::DialogueTextKeyCoordinate(_) => 0x0216,
-            Self::CharacterDialogueFactory(_) => 0x0217,
-            Self::CharacterDialogueReconfigure(_) => 0x0218,
-            Self::DialogueApplication { .. } => 0x0219,
-            Self::PostfixBracket(_) => 0x021A,
-            Self::Closure(_) => 0x021B,
+            Self::Structural => EXPRESSION_RESOLUTION_TAG_BASE,
+            Self::Literal(_) => EXPRESSION_RESOLUTION_TAG_BASE + 1,
+            Self::Value(_) => EXPRESSION_RESOLUTION_TAG_BASE + 2,
+            Self::Select(_) => EXPRESSION_RESOLUTION_TAG_BASE + 3,
+            Self::Nominal(_) => EXPRESSION_RESOLUTION_TAG_BASE + 4,
+            Self::Variant(_) => EXPRESSION_RESOLUTION_TAG_BASE + 5,
+            Self::StageLook(_) => EXPRESSION_RESOLUTION_TAG_BASE + 6,
+            Self::Effect(_) => EXPRESSION_RESOLUTION_TAG_BASE + 7,
+            Self::Call => EXPRESSION_RESOLUTION_TAG_BASE + 8,
+            Self::Await(_) => EXPRESSION_RESOLUTION_TAG_BASE + 9,
+            Self::Choice(_) => EXPRESSION_RESOLUTION_TAG_BASE + 10,
+            Self::Try(_) => EXPRESSION_RESOLUTION_TAG_BASE + 11,
+            Self::ImplicitCallable(_) => EXPRESSION_RESOLUTION_TAG_BASE + 12,
+            Self::ImplicitParameter { .. } => EXPRESSION_RESOLUTION_TAG_BASE + 13,
+            Self::Pipe(_) => EXPRESSION_RESOLUTION_TAG_BASE + 14,
+            Self::PipeLeft { .. } => EXPRESSION_RESOLUTION_TAG_BASE + 15,
+            Self::ViewCall(_) => EXPRESSION_RESOLUTION_TAG_BASE + 16,
+            Self::ViewCallee(_) => EXPRESSION_RESOLUTION_TAG_BASE + 17,
+            Self::StyleValue(_) => EXPRESSION_RESOLUTION_TAG_BASE + 18,
+            Self::StyleCallee(_) => EXPRESSION_RESOLUTION_TAG_BASE + 19,
+            Self::DialogueLineReference(_) => EXPRESSION_RESOLUTION_TAG_BASE + 20,
+            Self::DialogueLineCoordinate(_) => EXPRESSION_RESOLUTION_TAG_BASE + 21,
+            Self::DialogueTextKeyCoordinate(_) => EXPRESSION_RESOLUTION_TAG_BASE + 22,
+            Self::CharacterDialogueFactory(_) => EXPRESSION_RESOLUTION_TAG_BASE + 23,
+            Self::CharacterDialogueReconfigure(_) => EXPRESSION_RESOLUTION_TAG_BASE + 24,
+            Self::DialogueApplication { .. } => EXPRESSION_RESOLUTION_TAG_BASE + 25,
+            Self::PostfixBracket(_) => EXPRESSION_RESOLUTION_TAG_BASE + 26,
+            Self::Closure(_) => EXPRESSION_RESOLUTION_TAG_END,
         }
     }
 }
@@ -366,14 +384,14 @@ impl CheckedValueResolution {
     /// Stable semantic constructor tag retained by the Cut 1 transcript.
     pub const fn semantic_tag(&self) -> u16 {
         match self {
-            Self::Local(_) => 0x0300,
-            Self::LineContext => 0x0301,
-            Self::CharacterField { .. } => 0x0302,
-            Self::ProjectCallable { .. } => 0x0303,
-            Self::ProjectItem(_) => 0x0304,
-            Self::Entry(_) => 0x0305,
-            Self::Registered(_) => 0x0306,
-            Self::Constant(_) => 0x0307,
+            Self::Local(_) => VALUE_RESOLUTION_TAG_BASE,
+            Self::LineContext => VALUE_RESOLUTION_TAG_BASE + 1,
+            Self::CharacterField { .. } => VALUE_RESOLUTION_TAG_BASE + 2,
+            Self::ProjectCallable { .. } => VALUE_RESOLUTION_TAG_BASE + 3,
+            Self::ProjectItem(_) => VALUE_RESOLUTION_TAG_BASE + 4,
+            Self::Entry(_) => VALUE_RESOLUTION_TAG_BASE + 5,
+            Self::Registered(_) => VALUE_RESOLUTION_TAG_BASE + 6,
+            Self::Constant(_) => VALUE_RESOLUTION_TAG_END,
         }
     }
 }
@@ -395,12 +413,12 @@ impl CheckedPatternResolution {
     /// Stable semantic constructor tag retained by the Cut 1 transcript.
     pub const fn semantic_tag(&self) -> u16 {
         match self {
-            Self::Structural => 0x0600,
-            Self::Literal(_) => 0x0601,
-            Self::Entity(_) => 0x0602,
-            Self::Record(_) => 0x0603,
-            Self::Variant(_) => 0x0604,
-            Self::TypedBinding(_) => 0x0605,
+            Self::Structural => PATTERN_RESOLUTION_TAG_BASE,
+            Self::Literal(_) => PATTERN_RESOLUTION_TAG_BASE + 1,
+            Self::Entity(_) => PATTERN_RESOLUTION_TAG_BASE + 2,
+            Self::Record(_) => PATTERN_RESOLUTION_TAG_BASE + 3,
+            Self::Variant(_) => PATTERN_RESOLUTION_TAG_BASE + 4,
+            Self::TypedBinding(_) => PATTERN_RESOLUTION_TAG_END,
         }
     }
 }
@@ -410,14 +428,60 @@ mod tests {
     use std::collections::BTreeSet;
 
     use super::{
-        REMOVED_SELECT_RECORD_ELEMENT_TAG, REMOVED_SELECT_TUPLE_ELEMENT_TAG,
-        SELECT_AGENT_FIELD_TAG, SELECT_DIALOGUE_VIEW_TAG, SELECT_FIELD_TAG, SELECT_METHOD_TAG,
-        SELECT_PROGRESS_FIELD_TAG,
+        EXPRESSION_RESOLUTION_TAG_BASE, EXPRESSION_RESOLUTION_TAG_COUNT,
+        EXPRESSION_RESOLUTION_TAG_END, PATTERN_RESOLUTION_TAG_BASE, PATTERN_RESOLUTION_TAG_COUNT,
+        PATTERN_RESOLUTION_TAG_END, REMOVED_SELECT_RECORD_ELEMENT_TAG,
+        REMOVED_SELECT_TUPLE_ELEMENT_TAG, SELECT_AGENT_FIELD_TAG, SELECT_DIALOGUE_VIEW_TAG,
+        SELECT_FIELD_TAG, SELECT_METHOD_TAG, SELECT_PROGRESS_FIELD_TAG, VALUE_RESOLUTION_TAG_BASE,
+        VALUE_RESOLUTION_TAG_COUNT, VALUE_RESOLUTION_TAG_END,
     };
 
+    fn assert_unique(tags: &[u16]) {
+        assert_eq!(
+            tags.iter().collect::<BTreeSet<_>>().len(),
+            tags.len(),
+            "semantic constructor tags must be unique"
+        );
+    }
+
     #[test]
-    fn live_and_removed_select_tags_are_disjoint_and_never_reassigned() {
-        let tags = [
+    fn semantic_constructor_tag_layouts_are_exact_and_disjoint() {
+        let expression =
+            (EXPRESSION_RESOLUTION_TAG_BASE..=EXPRESSION_RESOLUTION_TAG_END).collect::<Vec<_>>();
+        assert_eq!(
+            expression.len(),
+            usize::from(EXPRESSION_RESOLUTION_TAG_COUNT)
+        );
+        assert_eq!(expression[0], 0x0200);
+        assert_eq!(expression[26], 0x021A);
+        assert_eq!(expression[27], 0x021B);
+        assert_unique(&expression);
+        assert_eq!(
+            EXPRESSION_RESOLUTION_TAG_END,
+            EXPRESSION_RESOLUTION_TAG_BASE + EXPRESSION_RESOLUTION_TAG_COUNT - 1
+        );
+        assert_eq!(EXPRESSION_RESOLUTION_TAG_END, 0x021B);
+
+        let value = (VALUE_RESOLUTION_TAG_BASE..=VALUE_RESOLUTION_TAG_END).collect::<Vec<_>>();
+        assert_eq!(value.len(), usize::from(VALUE_RESOLUTION_TAG_COUNT));
+        assert_eq!(value, (0x0300_u16..=0x0307_u16).collect::<Vec<_>>());
+        assert_unique(&value);
+        assert_eq!(
+            VALUE_RESOLUTION_TAG_END,
+            VALUE_RESOLUTION_TAG_BASE + VALUE_RESOLUTION_TAG_COUNT - 1
+        );
+
+        let select = [
+            SELECT_METHOD_TAG,
+            SELECT_DIALOGUE_VIEW_TAG,
+            SELECT_AGENT_FIELD_TAG,
+            SELECT_PROGRESS_FIELD_TAG,
+            SELECT_FIELD_TAG,
+        ];
+        assert_eq!(select, [0x0400, 0x0401, 0x0402, 0x0403, 0x0404]);
+        assert_unique(&select);
+
+        let select_with_removed = [
             SELECT_METHOD_TAG,
             SELECT_DIALOGUE_VIEW_TAG,
             SELECT_AGENT_FIELD_TAG,
@@ -426,8 +490,25 @@ mod tests {
             REMOVED_SELECT_TUPLE_ELEMENT_TAG,
             REMOVED_SELECT_RECORD_ELEMENT_TAG,
         ];
-        assert_eq!(tags.into_iter().collect::<BTreeSet<_>>().len(), tags.len());
+        assert_unique(&select_with_removed);
         assert_eq!(REMOVED_SELECT_TUPLE_ELEMENT_TAG, 0x0405);
         assert_eq!(REMOVED_SELECT_RECORD_ELEMENT_TAG, 0x0406);
+
+        let pattern =
+            (PATTERN_RESOLUTION_TAG_BASE..=PATTERN_RESOLUTION_TAG_END).collect::<Vec<_>>();
+        assert_eq!(pattern.len(), usize::from(PATTERN_RESOLUTION_TAG_COUNT));
+        assert_eq!(pattern, (0x0600_u16..=0x0605_u16).collect::<Vec<_>>());
+        assert_unique(&pattern);
+        assert_eq!(
+            PATTERN_RESOLUTION_TAG_END,
+            PATTERN_RESOLUTION_TAG_BASE + PATTERN_RESOLUTION_TAG_COUNT - 1
+        );
+        assert_eq!(PATTERN_RESOLUTION_TAG_END, 0x0605);
+
+        let mut all = expression;
+        all.extend(value);
+        all.extend(select_with_removed);
+        all.extend(pattern);
+        assert_unique(&all);
     }
 }

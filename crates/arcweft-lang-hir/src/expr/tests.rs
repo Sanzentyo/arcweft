@@ -45,6 +45,7 @@ use crate::source_index::{
 use core::fmt::Debug;
 use core::hash::Hash;
 use core::num::{NonZeroU32, NonZeroU64};
+use std::collections::BTreeSet;
 
 fn module(database: u64) -> HirModuleId {
     HirModuleId::new(
@@ -1904,6 +1905,20 @@ fn child_edges_have_independent_expected_children_and_role_families_for_all_38_v
     ];
 
     assert_eq!(cases.len(), 38);
+    let tags = cases
+        .iter()
+        .map(|(kind, _, _)| kind.semantic_transcript_tag())
+        .collect::<Vec<_>>();
+    assert_eq!(
+        tags,
+        (0x0100_u16..=0x0125_u16).collect::<Vec<_>>(),
+        "expression transcript tags must follow the owner enum order"
+    );
+    assert_eq!(
+        tags.iter().collect::<BTreeSet<_>>().len(),
+        tags.len(),
+        "expression transcript tags must be unique"
+    );
     for (kind, expected_children, expected_roles) in cases {
         assert_edge_contract(&kind, &expected_children, &expected_roles);
     }
@@ -2206,49 +2221,6 @@ fn dialogue_line_plan_edges_keep_sibling_group_deep_lifo_order_and_paths() {
     );
 }
 
-fn final_variant_ordinal(kind: &HirExprKind) -> u8 {
-    match kind {
-        HirExprKind::Unit => 0,
-        HirExprKind::Literal(_) => 1,
-        HirExprKind::EntityReference(_) => 2,
-        HirExprKind::LifetimePath(_) => 3,
-        HirExprKind::Path(_) => 4,
-        HirExprKind::ShortVariant(_) => 5,
-        HirExprKind::Placeholder(_) => 6,
-        HirExprKind::Tuple(_) => 7,
-        HirExprKind::BracketSequence(_) => 8,
-        HirExprKind::NumericBracketSequence(_) => 9,
-        HirExprKind::ArrayRepeat(_) => 10,
-        HirExprKind::Call(_) => 11,
-        HirExprKind::Select(_) => 12,
-        HirExprKind::Index(_) => 13,
-        HirExprKind::Pipe(_) => 14,
-        HirExprKind::Try(_) => 15,
-        HirExprKind::Await(_) => 16,
-        HirExprKind::Thread(_) => 17,
-        HirExprKind::Choice(_) => 18,
-        HirExprKind::Range(_) => 19,
-        HirExprKind::Record(_) => 20,
-        HirExprKind::RecordLiteral(_) => 21,
-        HirExprKind::Binary(_) => 22,
-        HirExprKind::Borrow(_) => 23,
-        HirExprKind::Dereference(_) => 24,
-        HirExprKind::Closure(_) => 25,
-        HirExprKind::Unary(_) => 26,
-        HirExprKind::Block(_) => 27,
-        HirExprKind::ComputationBlock(_) => 28,
-        HirExprKind::NamedBlock(_) => 29,
-        HirExprKind::Loop(_) => 30,
-        HirExprKind::If(_) => 31,
-        HirExprKind::IfLet(_) => 32,
-        HirExprKind::Match(_) => 33,
-        HirExprKind::DialogueContentApplication(_) => 34,
-        HirExprKind::PostfixBracket(_) => 35,
-        HirExprKind::Error(_) => 36,
-        HirExprKind::ForSynthetic(_) => 37,
-    }
-}
-
 #[test]
 fn for_input_edge_is_reference_only_for_topology_completeness() {
     assert_eq!(
@@ -2258,22 +2230,5 @@ fn for_input_edge_is_reference_only_for_topology_completeness() {
     assert_eq!(
         HirExpressionChildRole::Operand.ownership(),
         HirExpressionChildOwnership::Owning
-    );
-}
-
-#[test]
-fn expression_inventory_is_the_closed_38_variant_contract() {
-    assert_eq!(final_variant_ordinal(&HirExprKind::Unit), 0);
-    assert_eq!(
-        final_variant_ordinal(&HirExprKind::Error(super::HirExprError::new(
-            HirGenericExprIssue::UnclassifiedSyntax,
-        ))),
-        36
-    );
-    assert_eq!(
-        final_variant_ordinal(&HirExprKind::ForSynthetic(
-            super::HirForSyntheticExpr::iterator(id(module(1), 1)),
-        )),
-        37
     );
 }

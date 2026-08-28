@@ -138,6 +138,26 @@ pub enum HirPatternKind {
 }
 
 impl HirPatternKind {
+    /// Returns the stable semantic constructor tag used by checked pattern
+    /// transcripts.
+    pub const fn semantic_transcript_tag(&self) -> u16 {
+        match self {
+            Self::Binding(_) => 0x0500,
+            Self::MutableBinding(_) => 0x0501,
+            Self::Literal(_) => 0x0502,
+            Self::EntityReference(_) => 0x0503,
+            Self::Variant(_) => 0x0504,
+            Self::Discard => 0x0505,
+            Self::Tuple { .. } => 0x0506,
+            Self::Record { .. } => 0x0507,
+            Self::BracketSequence { .. } => 0x0508,
+            Self::WholeBinding { .. } => 0x0509,
+            Self::Or { .. } => 0x050A,
+            Self::TypedBinding { .. } => 0x050B,
+            Self::Error(_) => 0x050C,
+        }
+    }
+
     #[allow(
         dead_code,
         reason = "retained only as the differential projection of typed pattern child edges"

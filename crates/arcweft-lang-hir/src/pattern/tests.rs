@@ -411,6 +411,20 @@ fn exact_pattern_families_construct_through_one_typed_owner() {
     ];
 
     assert_eq!(families.len(), 13);
+    let tags = families
+        .iter()
+        .map(HirPatternKind::semantic_transcript_tag)
+        .collect::<Vec<_>>();
+    assert_eq!(
+        tags,
+        (0x0500_u16..=0x050C_u16).collect::<Vec<_>>(),
+        "pattern transcript tags must follow the owner enum order"
+    );
+    assert_eq!(
+        tags.iter().collect::<BTreeSet<_>>().len(),
+        tags.len(),
+        "pattern transcript tags must be unique"
+    );
     for (ordinal, kind) in families.into_iter().enumerate() {
         let pattern = if ordinal == 12 {
             poisoned(
